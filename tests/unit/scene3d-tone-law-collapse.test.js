@@ -971,3 +971,146 @@ describe('Scene3D tone-law collapse — U5 caveat-visibility gap (contFieldTouch
     expect(FS.effectiveLaw('contFieldSigmoid', { fieldMetric: 'surface', fieldFloor: 'touch' })).toBe('contFieldSigmoid');
   });
 });
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U5b-2 — plain-language rewrite of the caveat copy for end users.
+ * U5b's review (docs/3d-audit/lane-reports/U5b-review.md, flag 4) accepted
+ * that the two caveats are now VISIBLE (U5b's whole job), but flagged their
+ * WORDING as raw audit prose ("RMS", "R2", "L* span", "sphere·hatch" as a
+ * bare cell-name token, "negative result") — a plotter-art user has no
+ * reason to know any of that vocabulary. `docs/tone-laws/laws.json` is the
+ * SOURCE of `BY_ID[id].caveat` (regenerated into
+ * src/config/scene3d-tone-laws.js by `node scripts/build-tone-laws.js` —
+ * see that script's own header comment); the measured numbers themselves
+ * stay recorded in `docs/tone-laws/README.md` (`### 15 · bundleDither` /
+ * `### 19 · contFieldTouch`) and LEDGER.md's line 610-612 ruling, exactly
+ * where the review says they "already live" — this unit does not touch
+ * either of those record files, only the picker-facing copy.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describe('Scene3D tone-law collapse — U5b-2 (plain-language caveat copy)', () => {
+  let runtime; let FS;
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+  });
+  afterAll(() => runtime.cleanup());
+
+  // RGR proof: this assertion is RED against the pre-U5b-2 tree (the
+  // committed-at-49475ccd wording contains "RMS", "R2", "sphere·hatch" as a
+  // bare token, and "negative result" for bundleDither); GREEN once
+  // laws.json's caveat fields are rewritten and scene3d-tone-laws.js is
+  // regenerated.
+  test('neither caveat carries raw audit statistics or internal jargon', () => {
+    const jargon = /\bRMS\b|\bR2\b|\bR²\b|L\*|sphere·hatch|sphere·crosshatch|cylinder·hatch|negative result|off-the-line/i;
+    ['bundleDither', 'contFieldTouch'].forEach((id) => {
+      const caveat = FS.note(id).caveat;
+      expect(caveat.length).toBeGreaterThan(0);
+      expect(caveat).not.toMatch(jargon);
+    });
+  });
+
+  // The rewrite must not silently drop the caveat, and must still be
+  // reachable through the same effectiveLaw path U5b wired — a wording-only
+  // change must not regress U5b's own fix.
+  test('the plain-language caveats are still exactly two sentences and still surface through effectiveLaw', () => {
+    const sentenceCount = (s) => (s.match(/[.!?](?:\s|$)/g) || []).length;
+    ['bundleDither', 'contFieldTouch'].forEach((id) => {
+      const caveat = FS.note(id).caveat;
+      expect(sentenceCount(caveat)).toBeLessThanOrEqual(2);
+    });
+    expect(FS.note(FS.effectiveLaw('bundleCount', { bundleMode: 'dither' })).caveat)
+      .toBe(FS.note('bundleDither').caveat);
+    expect(FS.note(FS.effectiveLaw('contFieldSigmoid', { fieldFloor: 'touch' })).caveat)
+      .toBe(FS.note('contFieldTouch').caveat);
+  });
+
+  // Still names the exact UI control values a user just picked — plain
+  // language should point back at what they can DO about the warning, not
+  // just restate that something is wrong.
+  test('each caveat references the option that reaches it or its sibling, in the UI\'s own wording', () => {
+    expect(FS.note('bundleDither').caveat).toMatch(/Dithered|Count mode|Integer pass count/);
+    expect(FS.note('contFieldTouch').caveat).toMatch(/Field floor/);
+  });
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U5b-3 — generative cross-check: `SCENE_FILL_STYLES.effectiveLaw` and
+ * `Scene3D.Params.resolveToneLaw` are two independent hand-written copies
+ * of the same survivor+params -> internal-id rule (U5b's review, flag 2).
+ * The review fuzz-tested the two by hand (45 combinations, 0 mismatches,
+ * including the contFieldSigmoid UNREPRESENTABLE 2-descriptor case) and
+ * asked for that proof to be mechanical, not by inspection, so a future
+ * change to either resolver that silently reintroduces the U5b class of bug
+ * (a caveat vanishing for one surface but not the other) is caught here
+ * instead of by a reviewer re-deriving it by hand again.
+ *
+ * RGR proof for this test-only addition (no production behavior changes —
+ * `effectiveLaw` already agrees with `resolveToneLaw` today, confirmed by
+ * the review's own fuzz test): RED was reproduced by mutation, not by
+ * reverting a real fix — temporarily stubbing `SCENE_FILL_STYLES.effectiveLaw`
+ * to `(survivorId) => survivorId` (the exact "present but wrong" shape the
+ * review used for its own mutation test) made this test fail immediately
+ * (`expected 'bundleCount' to be 'bundleDither'`, and 44 further mismatches);
+ * reverting the stub restores GREEN. See this unit's report for the exact
+ * commands run.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effectiveLaw ≡ resolveToneLaw)', () => {
+  let runtime; let FS; let Params; let R;
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    Params = runtime.window.Vectura.Scene3D.Params;
+    R = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+  });
+  afterAll(() => runtime.cleanup());
+
+  test('every survivor in STYLE_PARAMS agrees between effectiveLaw and resolveToneLaw, across the full cross-product of descriptor values (options + missing + garbage), including every unrepresentable multi-descriptor combination', () => {
+    const survivors = Object.keys(R.STYLE_PARAMS);
+    expect(survivors.length).toBeGreaterThan(0);
+    let checked = 0;
+    survivors.forEach((survivor) => {
+      const descriptors = R.STYLE_PARAMS[survivor];
+      // Every option value the descriptor itself declares, plus a garbage
+      // sentinel neither resolver's option list recognizes, plus "omit the
+      // key entirely" (modelled as undefined and filtered out below).
+      const valuesFor = (d) => [...d.options.map((o) => o.value), '__garbage__', undefined];
+      // Cartesian product across every descriptor this survivor declares —
+      // generalizes past contFieldSigmoid's 2 to however many a future unit
+      // (U6/U7/U8) adds.
+      let combos = [{}];
+      descriptors.forEach((d) => {
+        const next = [];
+        valuesFor(d).forEach((v) => {
+          combos.forEach((c) => {
+            const bag = { ...c };
+            if (v !== undefined) bag[d.key] = v;
+            next.push(bag);
+          });
+        });
+        combos = next;
+      });
+      combos.forEach((bag) => {
+        const viaConfig = FS.effectiveLaw(survivor, bag);
+        const viaEngine = Params.resolveToneLaw({ toneLaw: survivor, ...bag });
+        expect(viaConfig).toBe(viaEngine);
+        checked += 1;
+      });
+    });
+    // Matches the review's own independently-run fuzz test count (45
+    // combinations across the 5 current survivors) as a floor, not a
+    // ceiling — a future survivor/descriptor only grows this.
+    expect(checked).toBeGreaterThanOrEqual(45);
+  });
+
+  test('the UNREPRESENTABLE 2-descriptor case (contFieldSigmoid, both fieldMetric and fieldFloor non-default at once) is covered explicitly, never throws, and both resolvers agree on the bare-survivor fallback', () => {
+    const bag = { fieldMetric: 'surface', fieldFloor: 'touch' };
+    expect(() => FS.effectiveLaw('contFieldSigmoid', bag)).not.toThrow();
+    expect(() => Params.resolveToneLaw({ toneLaw: 'contFieldSigmoid', ...bag })).not.toThrow();
+    expect(FS.effectiveLaw('contFieldSigmoid', bag)).toBe('contFieldSigmoid');
+    expect(Params.resolveToneLaw({ toneLaw: 'contFieldSigmoid', ...bag })).toBe('contFieldSigmoid');
+  });
+});

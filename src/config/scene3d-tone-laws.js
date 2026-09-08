@@ -332,7 +332,7 @@
     "strengths": "Second-best off-the-line in the table on cylinder·hatch (5.4%), and it does successfully break the level contour into a ragged edge, as designed.",
     "weaknesses": "A documented negative result: waving the boundary made long-wave moire worse, not better (3.43 vs bundleCount's 2.90 on sphere·hatch), trading a local artefact for a global one, and R2 also drops.",
     "chooseWhen": "Don't choose it on this evidence — it is documented so the idea is not tried a third time; if a level contour needs dithering, do it at higher frequency, or change what is quantised instead (bundleEased).",
-    "caveat": "A negative result, kept as one: waving the pass-count boundary made long-wave moire worse, not better, than the plain bundleCount baseline (3.43 vs 2.90 RMS on sphere·hatch), and R2 also dropped.",
+    "caveat": "Dithered bundle mode can make repeating patterns (moire) more visible than the default Count mode, not less. If you see new banding, switch back to Integer pass count.",
     "simulated": false,
     "tier": "library"
   },
@@ -384,7 +384,7 @@
     "strengths": "Genuine black from spacing alone — darkest L* 4.5 on every cell — against the L* ~76 a single family at the plot floor otherwise saturates at, with 81% monotonic ordering and zero free ends.",
     "weaknesses": "It floods by design and by a lot — 55% of placed rulings on sphere·hatch, 20-60% on other hatch cells — and monotonicity collapses to 31.3% on cylinder·hatch.",
     "chooseWhen": "Choose it on a hatch mapper when a real black is needed without a second family, a swell, or an overdraw; check the flood counter before plotting.",
-    "caveat": "It is a hatch-only law: on sphere·crosshatch it floods completely — R2, L* span, moire and highlight falloff all come back 0 because both families flood and the cell renders as a solid black disc with no tone left in it at all.",
+    "caveat": "On crosshatch fills, this floor setting floods the whole surface to solid black with no shading left. If your fill looks like a solid dark blob, try a different Field floor option.",
     "simulated": false,
     "tier": "library"
   },
@@ -1149,7 +1149,7 @@
   }
 
   Vectura.SCENE3D_TONE_LAWS = {
-    VERSION: "363e6c556530e8d473563841aec8e06a4ae245c9",
+    VERSION: "1819221f2a80c42be1ede76b2e8cee274d4b392b",
     DEFAULT: 'ladder',
     IDS,
     PRODUCTION,
