@@ -2407,6 +2407,32 @@
     // error budget over that distance and below `PLOT_FLOOR_PEN` so the
     // walked polyline cannot itself read as a filled polygon.
     const MK_ARC_PEN = 1.2;
+    // T1b (STILL-OPEN.md, 2026-09-06 ruling; T1-review.md §6) — the chart
+    // walk's own D2 "truncate, don't refuse" fix can leave two
+    // INDEPENDENTLY placed marks (different rows) each cut short at the
+    // same limb, landing almost coincident there — measured: torus/contour
+    // worst pair 0.448 -> 0.032 pens, torus/crosshatch 0.080 -> 0.032 pens
+    // (0.0095 mm gap at the shipped 0.3 mm pen — effectively overlapping
+    // ink). `MK_MIN_ADJ_PEN` is the floor below which two marks read as one
+    // blot rather than two distinct strokes, stated in pens like every
+    // other bar in this file. Checked below (`place`) against EVERY earlier
+    // walked mark, not only truncated ones — measured, restricting the
+    // check to truncated-vs-truncated pairs alone left a residual
+    // non-truncated-vs-non-truncated pair at 0.248 pens (still under bar);
+    // the bulk/dark-region design spacing is comfortably clear of this
+    // floor regardless (measured p5 ~0.93-1.03 pens, unaffected — see the
+    // guard's own `mkMidBuckets` comment for why this stays cheap even
+    // checked broadly).
+    const MK_MIN_ADJ_PEN = 0.5;
+    // T1b (T1-review.md §7) — no code-level ceiling existed on a walked
+    // arm's own step count (`Math.ceil(edgeLen / MK_ARC_MM)`); measured max
+    // 107 points in a single mark (p99 43, median 6) on the audit fixture,
+    // but nothing stopped a finer pen (smaller `MK_ARC_MM`) or a longer
+    // tick from growing that without bound. Capped PER ARM — a mark carries
+    // at most two arms plus the shared hub point, so this bounds the whole
+    // mark to `2 * MK_MAX_WALK_STEPS + 1` points, generously over the
+    // measured max.
+    const MK_MAX_WALK_STEPS = 64;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2429,11 +2455,33 @@
       // drawn). `dirOver10 / marks <= 0.01` is p99 <= 10 deg restated as a
       // fraction, which is exact (not an approximation) and needs no
       // external ground truth or per-mark array.
-      trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0,
+      // T1b — `dupStub` counts marks DROPPED because their own representative
+      // midpoint landed within `MK_MIN_ADJ_PEN` of an earlier walked mark's
+      // (see `mkMidBuckets` below and the guard in `place`). `markMids` is
+      // the representative midpoint of every ACCEPTED walked mark this
+      // object's whole render placed — published so a caller can verify the
+      // spacing guard directly against the population it actually governs,
+      // rather than re-deriving "which output path is a walked mark" from
+      // the algorithm's own return value (which carries no such tag by the
+      // time it reaches a caller).
+      trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0, dupStub: 0, markMids: [],
     };
     const mkSites = new Map();          // blue-noise / Poisson occupancy
     const mkED = new Map();             // error-diffusion sideways carry
     const mkKey = (x, y) => `${Math.round(x / MK_CELL)},${Math.round(y / MK_CELL)}`;
+    // T1b — grid-bucketed representative midpoint of every WALKED mark
+    // (`isWalkedShape`) placed so far, across THIS object's WHOLE render
+    // (every ruling row shares this one map — reset per `generate()` call,
+    // exactly like `mkSites`/`mkED` above, since a new one of these
+    // closures is built per object per call but `emitMarks` itself runs
+    // once per ruling row). Bucket size is `MK_MIN_ADJ_PEN * penWidth`
+    // (computed at use-time in `place`, since `penWidth` is assigned later
+    // in this same function), so any two marks within that distance are
+    // guaranteed to land in the same or an adjacent bucket — the standard
+    // fixed-radius grid-neighbour check, O(1) average per mark instead of
+    // an O(n^2) scan against every earlier mark (needed since a render can
+    // place thousands of marks).
+    const mkMidBuckets = new Map();
 
     // ── THE TWELVE, AS DATA ───────────────────────────────────────────────────
     // `chan` is the TONE CHANNEL and it is the axis that separates these laws
@@ -5908,7 +5956,11 @@
           let curPt = seedPt;
           const pts = [];
           let truncated = false;
-          const steps = Math.max(1, Math.ceil(edgeLen / MK_ARC_MM));
+          // T1b — capped per arm (see `MK_MAX_WALK_STEPS` above); a fine pen
+          // or a long tick no longer grows a single mark's point count
+          // without bound, at the cost of a coarser (but still on-surface)
+          // walk in that pathological tail.
+          const steps = Math.min(MK_MAX_WALK_STEPS, Math.max(1, Math.ceil(edgeLen / MK_ARC_MM)));
           for (let s = 1; s <= steps; s += 1) {
             const f = s / steps;
             const stepU = seedUV.u + (target.u - seedUV.u) * f;
@@ -5989,6 +6041,12 @@
         const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
         const runs = [];
         let askTot = 0; let sawTrunc = false; let sawDirBad = false;
+        // T1b — representative midpoint of each WALKED poly in THIS mark
+        // (whether or not it was truncated — see `MK_MIN_ADJ_PEN` above for
+        // why the check below is not restricted to truncated pairs),
+        // checked against every earlier mark's own midpoint before this
+        // one is allowed onto the page.
+        const markMids = [];
         for (let i = 0; i < polys.length; i++) {
           const poly = polys[i];
           if (isWalkedShape) {
@@ -5996,6 +6054,10 @@
             if (!wk.pts) { mkStat.offSurface += 1; return false; }
             askTot += wk.askLen;
             if (wk.truncated) sawTrunc = true;
+            {
+              const ta = wk.pts[0]; const tb = wk.pts[wk.pts.length - 1];
+              markMids.push({ x: (ta.x + tb.x) / 2, y: (ta.y + tb.y) / 2 });
+            }
             if (i === 0 && wk.pts.length >= 2) {
               const reqDir = requestedDir(fr, uOff, theta, poly);
               const a = wk.pts[0]; const b = wk.pts[wk.pts.length - 1];
@@ -6031,6 +6093,31 @@
           }
           runs.push(pts);
         }
+        // T1b (STILL-OPEN.md, 2026-09-06 ruling) — MIN-ADJACENT-MARK
+        // SPACING GUARD. Two independently placed marks (most often — but
+        // not only — limb-truncated stubs from adjacent rows) can land
+        // almost coincident at the same silhouette edge (D2's "keep what's
+        // drawn" never checked against any OTHER mark). Checked against
+        // EVERY earlier walked mark via a grid-neighbour lookup (see
+        // `mkMidBuckets` above) — bulk/dark-region packing sits comfortably
+        // above this floor by design and measured unaffected.
+        const minAdjMM = MK_MIN_ADJ_PEN * penWidth;
+        for (let k = 0; k < markMids.length; k += 1) {
+          const tm = markMids[k];
+          const cx = Math.floor(tm.x / minAdjMM); const cy = Math.floor(tm.y / minAdjMM);
+          for (let dx = -1; dx <= 1; dx += 1) {
+            for (let dy = -1; dy <= 1; dy += 1) {
+              const bucket = mkMidBuckets.get(`${cx + dx},${cy + dy}`);
+              if (!bucket) continue;
+              for (let h = 0; h < bucket.length; h += 1) {
+                if (Math.hypot(tm.x - bucket[h].x, tm.y - bucket[h].y) < minAdjMM) {
+                  mkStat.dupStub += 1;
+                  return false;
+                }
+              }
+            }
+          }
+        }
         let tot = 0;
         runs.forEach((r) => {
           for (let i = 1; i < r.length; i++) tot += Math.hypot(r[i].x - r[i - 1].x, r[i].y - r[i - 1].y);
@@ -6054,6 +6141,18 @@
           mkStat.drawnSum += tot;
           if (sawTrunc) mkStat.trunc += 1;
           if (sawDirBad) mkStat.dirOver10 += 1;
+        }
+        // T1b — this mark cleared the spacing guard; record its own
+        // midpoint(s) in the grid so a LATER row's mark can be checked
+        // against them in turn.
+        for (let k = 0; k < markMids.length; k += 1) {
+          const tm = markMids[k];
+          const cx = Math.floor(tm.x / minAdjMM); const cy = Math.floor(tm.y / minAdjMM);
+          const key = `${cx},${cy}`;
+          let bucket = mkMidBuckets.get(key);
+          if (!bucket) { bucket = []; mkMidBuckets.set(key, bucket); }
+          bucket.push(tm);
+          mkStat.markMids.push(tm);
         }
         return true;
       };
