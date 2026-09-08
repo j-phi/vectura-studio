@@ -1002,14 +1002,22 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
         });
       });
       expect(ringsChecked).toBeGreaterThan(15); // the sweep actually ran
-      // RECORDED, not gated: this implementer measures 7.09deg here (under
-      // the plan's <=8deg bar) using the exact rig and an open-polyline-aware
-      // metric; the review cites 39.8deg for "that same ring" and this
-      // implementer could not reproduce that specific figure (see the lane
-      // report). The bound below is intentionally loose (documents the
-      // measurement without taking a side in the unreconciled discrepancy).
+      // W-34 (docs/3d-audit/lane-reports/W-34-plan.md §7.1) settles and closes
+      // this dispute for good: 7.09deg here IS the world-space per-vertex max
+      // (this test measures `refined` directly, with no camera projection at
+      // all) at the reviewer's own rig, and 39.8deg was a DIFFERENT metric
+      // entirely -- the old wraparound-on-an-open-ring bug, since withdrawn
+      // (W-27c-review-2.md). Neither figure was ever wrong about what it
+      // measured; they were measuring two different things. The
+      // device-space per-vertex max at the AUDIT-GALLERY rig (not this
+      // test's rig) is 8.088deg pre-W-34-Fix-A, brought under 8 by Fix A
+      // (see scene3d-contour-slice-corners.test.js T1). This test's own
+      // WORLD-space number is untouched by Fix A (no `opts.project` is
+      // passed here) and simply gets its placeholder bound tightened from
+      // the old "somewhere under 45" to the ledger's own real bar, now that
+      // there is no more live dispute to stay agnostic about.
       expect(worst).toBeGreaterThan(0);
-      expect(worst).toBeLessThan(45);
+      expect(worst).toBeLessThanOrEqual(8);
     });
   });
 

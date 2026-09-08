@@ -553,6 +553,26 @@
         gx: (2 * dr * p.x) / pr, gy: 2 * p.y, gz: (2 * dr * p.z) / pr,
       };
     }
+    if (mode === 'capsule') {
+      // W-34 Fix B — mirrors charts.js topoCapsule exactly (cylindrical
+      // barrel of radius r capped by two hemispheres of the same radius;
+      // r = min(sx,sz) there, and the default rig's sx===sz makes the
+      // circular-cross-section assumption exact). Closing this gap removes
+      // the ONLY invented sharpening in the roster (docs/3d-audit/
+      // lane-reports/W-34-plan.md §2.3/§4 Fix B) — every other primitive is
+      // untouched by this dispatch.
+      const r = Math.max(1, Math.min(sx, sz));
+      const half = Math.max(r, sy);
+      const cylHalf = Math.max(0, half - r);
+      const ay = Math.abs(p.y);
+      if (ay <= cylHalf) {
+        return { F: p.x * p.x + p.z * p.z - r * r, gx: 2 * p.x, gy: 0, gz: 2 * p.z };
+      }
+      const dy = p.y > 0 ? p.y - cylHalf : p.y + cylHalf;
+      return {
+        F: p.x * p.x + p.z * p.z + dy * dy - r * r, gx: 2 * p.x, gy: 2 * dy, gz: 2 * p.z,
+      };
+    }
     return null; // ellipsoid handled by 'sphere' branch via TOPOFORM_MODES; others: no closed form yet
   };
 
@@ -741,10 +761,21 @@
     const maxAngle = Number.isFinite(opts.maxAngleDeg) ? opts.maxAngleDeg : SLICE_REFINE_MAX_ANGLE_DEG;
     const maxRounds = Number.isFinite(opts.maxRounds) ? opts.maxRounds : SLICE_REFINE_MAX_ROUNDS;
     const analyticProject = typeof opts.analyticProject === 'function' ? opts.analyticProject : null;
+    // W-34 Fix A — `opts.project`, if supplied, projects a WORLD point to
+    // device space for the purpose of MEASURING the stop condition only
+    // (subdivision and the Newton analytic snap below stay in world space,
+    // unchanged). An orthographic camera foreshortens a ring obliquely to
+    // the view, so the world-space turn can sit comfortably under the
+    // ledger's <=8 bar while the projected, DEVICE-space turn the user
+    // actually sees exceeds it (measured: cone 8.088 deg, capsule 9.075 deg
+    // — docs/3d-audit/lane-reports/W-34-plan.md §2.2). Absent `opts.project`,
+    // behaviour is byte-identical to before this fix.
+    const proj2 = typeof opts.project === 'function' ? opts.project : null;
     const first = worldPts[0];
     const last = worldPts[worldPts.length - 1];
     const closed = worldPts.length >= 4
       && Math.hypot(first.x - last.x, first.y - last.y, first.z - last.z) < 1e-6;
+    const measure = (pts) => sliceRingMaxTurn(proj2 ? pts.map((q) => proj2(q) || q) : pts, closed);
     let base = closed ? worldPts.slice(0, -1) : worldPts.slice();
     // A mesh seam (e.g. a sphere's u=0/u=1 longitude fold) can hand linkSegments
     // two crossing points a fraction of a micron apart. The 4-point scheme is
@@ -773,7 +804,7 @@
     // so few points every one of them dominates the visible shape.
     if (analyticProject) base = base.map((pt) => analyticProject(pt) || pt);
     let round = 0;
-    while (round < maxRounds && sliceRingMaxTurn(base, closed) > maxAngle) {
+    while (round < maxRounds && measure(base) > maxAngle) {
       base = sliceRingSubdivideOnce(base, closed);
       // Every newly-inserted midpoint is a Catmull-Rom interpolation between
       // surface points, so it is only APPROXIMATELY on the true surface —
@@ -4445,10 +4476,20 @@
             // straying into the tessellation-noise band) is byte-identical —
             // it never had this defect and doesn't need the wider bias.
             const segCtx = { objectId: record.id, selfOcclude: !!(smoothSurface && analyticProject) };
+            // W-34 Fix A — supply the pass's own camera as the refinement's
+            // device-space projector (see refineSliceRing's own comment).
+            // `scene.projectWorld` is the SAME projector `projectPath` below
+            // uses, so the stop condition sees exactly the space the pen
+            // draws in, not a re-derivation of it.
+            const refineProjectFn = (pt) => {
+              const P2 = scene.projectWorld(pt);
+              return (P2 && Number.isFinite(P2.x) && Number.isFinite(P2.y)) ? { x: P2.x, y: P2.y, z: 0 } : null;
+            };
             const linkPlane = (segs) => {
               const rings = linkSegments ? linkSegments(segs) : segs.map((e) => [e[0], e[1]]);
               return smoothSurface
-                ? rings.map((ring) => refineSliceRing(ring, analyticProject ? { analyticProject } : undefined))
+                ? rings.map((ring) => refineSliceRing(ring, analyticProject
+                  ? { analyticProject, project: refineProjectFn } : { project: refineProjectFn }))
                 : rings;
             };
             const projectPath = (worldPts) => {
