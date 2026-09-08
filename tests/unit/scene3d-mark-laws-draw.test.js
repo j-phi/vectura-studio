@@ -373,6 +373,23 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
       expect(maxLen).toBeGreaterThan(2);
       expect(maxLen).toBeLessThanOrEqual(200);
     });
+
+    // T1's own impl report (T1-impl.md "Guards run") measured mkTick/
+    // mkDashRamp on torus d=220 at 848ms/266ms against a 2500ms guard —
+    // an ad-hoc measurement, never landed as a test. T1b adds the walk's
+    // per-arm step ceiling (`MK_MAX_WALK_STEPS`) and a min-adjacent-mark
+    // spacing scan over every walked mark's midpoint (`mkMidBuckets`) —
+    // both touch the hot path, so this pins the same budget as a real
+    // regression test rather than leaving it as a one-off measurement.
+    test('generation stays within budget at torus d=220 for mkTick and mkDashRamp (perf ceiling)', () => {
+      ['mkTick', 'mkDashRamp'].forEach((law) => {
+        const t0 = Date.now();
+        const paths = algo.generate(buildSceneParams(law, 'hatch', 220, 'torus'), null, null, BOUNDS);
+        const ms = Date.now() - t0;
+        expect(paths.length).toBeGreaterThan(0);
+        expect(ms).toBeLessThan(2500);
+      });
+    });
   });
 
   describe('W-06 — mkDashRamp dashes lie on the rulings at low/med (F-06)', () => {
