@@ -567,6 +567,30 @@
     if (primitiveMode === 'torus' && id === 'originSpiral') return false;
     return true;
   };
+  // W-10d-2 — the ONLY (primitive, law) pairs a saved document is migrated
+  // away from. Deliberately NOT `isReachableOn`: measured, 2014 of 2800
+  // (primitive x mapper x law) combinations are unreachable, 1365 of those in
+  // a context where `ladder` is unreachable too, and the curved+spiral/stipple
+  // arm of the gate hides DEGRADED pictures, not no-ops (sphere/spiral/
+  // taperedEnds renders 136 paths vs ladder's 106). Rewriting on that gate
+  // would destroy user picks and change most renders. This table is the
+  // narrow case where the render is genuinely unplottable and the product
+  // ruling is to substitute: W-10c measured torus+originSpiral at 87.8% of
+  // interior pixels in a blank-paper run longer than two pen widths.
+  SCENE_FILL_STYLES.UNREACHABLE_WRITEBACK = [
+    { primitive: 'torus', id: 'originSpiral' },
+  ];
+  // -> the picker's own fallback (FILL_STYLE_DEFAULT), or null for no change.
+  SCENE_FILL_STYLES.writeBackFor = (id, primitiveMode, mapper) => {
+    if (typeof id !== 'string' || !id) return null;
+    // Never rewrite where no fallback is live: `none`/`wireframe`/
+    // `contourSlice` (and a faceted primitive off hatch/crosshatch) make
+    // EVERY option inert, `ladder` included - there is nothing to move to.
+    if (!SCENE_FILL_STYLES.isReachableOn(FILL_STYLE_DEFAULT, primitiveMode, undefined, mapper)) return null;
+    const hit = SCENE_FILL_STYLES.UNREACHABLE_WRITEBACK
+      .some((e) => e.primitive === primitiveMode && e.id === id);
+    return hit ? FILL_STYLE_DEFAULT : null;
+  };
   SCENE_FILL_STYLES.NO_EFFECT_SUFFIX = ' — no effect here';
   SCENE_FILL_STYLES.FACETED_NOTE = 'This shape is faceted: fill styles greyed out above draw exactly like Ladder here, whichever one is picked.';
   SCENE_FILL_STYLES.FACETED_CAP_NOTE = 'This solid has no planar fill support, and its body exceeds the fill engine’s per-object face budget — so even the styles that work on a box/plane fall back to Ladder here. Only NO TONE still differs. A simpler solid (fewer faces) can restore the rest.';

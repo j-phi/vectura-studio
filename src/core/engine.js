@@ -419,7 +419,17 @@
     if (layerType === 'object3d' || layerType === 'sceneGroup3d' || layerType === 'booleanGroup3d') {
       const sceneParams = window.Vectura?.Scene3D?.Params;
       if (sceneParams && typeof sceneParams.migrateScene === 'function') {
-        return sceneParams.migrateScene(sanitized);
+        const migrated = sceneParams.migrateScene(sanitized);
+        // W-10d-2 (Contract A) — the leaf load channel. Only object3d /
+        // booleanGroup3d carry a leaf `.style` this write-back can key on
+        // (a sceneGroup3d monolith's styleTable is migrated separately by
+        // sanitizeSceneParams -> normalizeParams's own correlation pass);
+        // `writeBackObjectLayerStyle` is a same-reference no-op for
+        // everything outside the curated set, so this is safe on all three.
+        if (typeof sceneParams.writeBackObjectLayerStyle === 'function') {
+          return sceneParams.writeBackObjectLayerStyle(migrated);
+        }
+        return migrated;
       }
     }
     return sanitized;

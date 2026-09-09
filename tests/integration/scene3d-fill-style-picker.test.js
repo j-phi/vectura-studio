@@ -264,27 +264,35 @@ describe('Fill Style — the shared mark-class config', () => {
       });
     });
 
-    // ── W-10d deserialization — the gate is picker-presentation ONLY. A
-    // document saved before this fix (or hand-edited) that names a torus
-    // object with toneLaw 'originSpiral' must load without throwing and must
-    // NOT be silently rewritten: `clampStyleParam`'s 'toneLaw' case (params.js)
-    // only rejects ids the roster does not recognize at all — it has no
-    // primitiveMode argument and cannot know the value is unreachable on THIS
-    // shape. So the saved id survives normalization unchanged, `resolve()`
-    // (which only checks roster membership, same reason) still returns it,
-    // and the render keeps producing the known wedge defect — `isReachableOn`
-    // is the only place that knows better, and it only shapes the dropdown.
-    // This is the documented fallback (STILL-OPEN.md W-10d/FU-1): hidden in
-    // the picker, not repaired, and not engine-gated.
-    test('a torus layer saved with toneLaw "originSpiral" deserializes unchanged — no throw, no silent rewrite (W-10d)', () => {
+    // ── W-10d deserialization — the gate is picker-presentation ONLY at the
+    // STYLE level: `normalizeStyle` alone (no primitive argument in scope)
+    // cannot know a law is unreachable on a particular shape, so a bare style
+    // bag still deserializes unchanged here — `clampStyleParam`'s 'toneLaw'
+    // case only rejects ids the roster does not recognize at all.
+    //
+    // UPDATED for W-10d-2 (Contract A) — the STALE half of this test was the
+    // final assertion below: the FULL scene sanitizer (`sanitizeSceneParams`
+    // -> `normalizeParams`) has BOTH the object's primitive and its style in
+    // scope (out.objects + out.styleTable), which is exactly the "correlation
+    // pass" W-10d's own comment said no live path could do. W-10d-2 adds that
+    // pass, curated to ONE pair (torus + originSpiral) — see
+    // docs/3d-audit/lane-reports/W-10d-2-plan.md §B-1/§1.1. A torus object's
+    // saved `originSpiral` no longer survives the FULL sanitizer unchanged;
+    // it is migrated to the picker's own fallback, `ladder`, once, at load.
+    // This is a deliberate, CHANGELOG-listed render change for this ONE
+    // combination — not a regression of the no-throw/no-silent-mutation
+    // guarantee for every OTHER (primitive, law) pair (pinned by the second
+    // block below, and by R8/R9 in the W-10d-2 describe further down this
+    // file).
+    test('a torus layer saved with toneLaw "originSpiral": normalizeStyle alone is context-blind (unchanged); the full sanitizer migrates it (W-10d / W-10d-2)', () => {
       const P = window.Vectura.Scene3D.Params;
       const style = P.normalizeStyle({ mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
       expect(style.params.toneLaw).toBe('originSpiral');
       expect(F.resolve('originSpiral')).toBe('originSpiral');
       expect(F.isReachableOn(F.resolve(style.params.toneLaw), 'torus')).toBe(false);
-      // Round-trip through the full scene sanitizer too — a torus object
-      // carrying this style in styleTable.byObject must not throw or mutate
-      // the id either.
+      // Round-trip through the full scene sanitizer: a torus object carrying
+      // this style in styleTable.byObject must not throw, and (W-10d-2,
+      // Contract A) IS migrated to the picker's own fallback.
       const sanitized = P.sanitizeSceneParams({
         objects: [{ id: 'obj-1', primitive: 'torus', params: { sx: 30, sy: 22, sz: 22 } }],
         styleTable: {
@@ -293,7 +301,19 @@ describe('Fill Style — the shared mark-class config', () => {
           byFace: {},
         },
       });
-      expect(sanitized.styleTable.byObject['obj-1'].params.toneLaw).toBe('originSpiral');
+      expect(sanitized.styleTable.byObject['obj-1'].params.toneLaw).toBe(F.DEFAULT);
+      // Guard: a NON-curated (primitive, law) pair through the same full
+      // sanitizer is untouched — the migration is scoped to the one entry in
+      // SCENE_FILL_STYLES.UNREACHABLE_WRITEBACK, not a blanket reachability remap.
+      const sanitizedSphere = P.sanitizeSceneParams({
+        objects: [{ id: 'obj-1', primitive: 'sphere', params: { sx: 30, sy: 22, sz: 22 } }],
+        styleTable: {
+          scene: { mapper: 'hatch', params: {} },
+          byObject: { 'obj-1': { mapper: 'spiral', params: { toneLaw: 'taperedEnds' } } },
+          byFace: {},
+        },
+      });
+      expect(sanitizedSphere.styleTable.byObject['obj-1'].params.toneLaw).toBe('taperedEnds');
     });
 
     test('box/plane are faceted, and only none/ladder/mono laws reach them', () => {
@@ -2686,5 +2706,228 @@ describe('Shadow — "Shadows land on objects" (docked 3D Scene panel)', () => {
     fire(onOffBtn(rowCtl(host2, 'Shadows land on objects'), 'off'), 'click');
     expect(layer.params.shadow.shadowReceiveOnObjects).toBe(false);
     expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// W-10d-2 (Contract A) — curated unreachable-toneLaw write-back.
+//
+// A saved torus leaf carrying toneLaw:'originSpiral' cannot be repaired at
+// the render engine (W-10c/FU-1, out of scope): the mono law's radial fan
+// draws solid ink wedges (measured 87.8% interior-pixel coverage). The
+// picker already HIDES 'originSpiral' from new picks (context-bar.js:567,
+// isReachableOn), but a document saved before that gate — or any hand-
+// edited/preset file — still carries and RENDERS the raw id (W-10d's own
+// comment: "hidden from new picks, not repaired"). This unit substitutes
+// the picker's own fallback (`ladder`) for the ONE curated (primitive, law)
+// pair — torus + originSpiral — at the two channels that can see both the
+// primitive and the style in one scope: the load channel (engine.js:419-
+// 423/:1931, persisted) and the live-compose channel (collectSceneParams,
+// render-facing only — see the "no per-pass rewrite" tests below for why
+// the live channel intentionally never touches the live layer bag).
+//
+// Assertions are on the STORED params / assembled render input, never on
+// the picker's DISPLAY value — that is the whole distinction from W-10d-3's
+// displayParams seed (a read-only, disjoint-id-set mechanism; see that
+// unit's own tests).
+// ══════════════════════════════════════════════════════════════════════════
+describe('W-10d-2 — curated unreachable toneLaw write-back (Contract A)', () => {
+  let runtime, window, document, V;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    if (typeof window.getThemeToken !== 'function') {
+      window.getThemeToken = (_token, fallback) => fallback ?? '';
+    }
+    V = window.Vectura;
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+
+  // Build a fresh scene3d group whose one object3d child carries the given
+  // primitive + style, then round-trip it through a NEW engine's
+  // exportState -> importState — so every assertion below is against a
+  // REOPENED document, not a hand-poked in-memory bag (mirrors the file's
+  // own `roundTrip` helper, W-10d-3's R4/R5).
+  const openLeaf = (primitive, style) => {
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    obj.params.primitive = primitive;
+    obj.params.style = style;
+    const e2 = new V.VectorEngine();
+    e2.importState(JSON.parse(JSON.stringify(e1.exportState())));
+    const group2 = e2.layers.find((l) => l.type === 'scene3d' && l.isGroup);
+    const obj2 = e2.getLayerDescendants(group2.id).find((l) => l.type === 'object3d');
+    return { e2, group2, obj2 };
+  };
+
+  test('R1 — .vectura load: object3d torus leaf with toneLaw originSpiral reopens as ladder', () => {
+    const { obj2 } = openLeaf('torus', { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+    expect(obj2.params.style.params.toneLaw).toBe('ladder');
+  });
+
+  test('R1b — .vectura load, MONOLITH form: styleTable.byObject on a torus object is migrated too', () => {
+    const params = {
+      sceneVersion: 1, seed: 0,
+      objects: [{ id: 'obj-1', name: 'Torus 1', primitive: 'torus', params: {}, transform: {}, visibility: 'solid' }],
+      lights: [], ground: { enabled: false }, backdrop: { enabled: false }, camera: {}, groups: [], assets: {},
+      styleTable: {
+        scene: { penId: null, mapper: 'none', params: {} },
+        byObject: { 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } } },
+        byFace: {},
+      },
+    };
+    const layer = { id: 'mono-1', type: 'scene3d', name: 'Scene', isGroup: false, params };
+    const e1 = new V.VectorEngine();
+    e1.importState(JSON.parse(JSON.stringify({ layers: [layer], activeLayerId: null, formatVersion: V.VECTURA_FORMAT_VERSION || 1 })));
+    const reopened = e1.layers.find((l) => l.id === 'mono-1');
+    expect(reopened.params.styleTable.byObject['obj-1'].params.toneLaw).toBe('ladder');
+  });
+
+  test('R2 — once-only: re-importing an already-migrated document is byte-identical (idempotent)', () => {
+    const { e2, obj2 } = openLeaf('torus', { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+    const snap1 = JSON.stringify(obj2.params);
+    const e3 = new V.VectorEngine();
+    e3.importState(JSON.parse(JSON.stringify(e2.exportState())));
+    const group3 = e3.layers.find((l) => l.type === 'scene3d' && l.isGroup);
+    const obj3 = e3.getLayerDescendants(group3.id).find((l) => l.type === 'object3d');
+    const snap2 = JSON.stringify(obj3.params);
+    expect(snap2).toBe(snap1);
+  });
+
+  test('R3 — no per-pass rewrite, REACHABLE law: byte-identical across 3 composes', () => {
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    obj.params.primitive = 'sphere';
+    obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw: 'etfKang' } };
+    const snap0 = JSON.stringify(obj.params);
+    e1.computeAllDisplayGeometry();
+    const snap1 = JSON.stringify(obj.params);
+    e1.computeAllDisplayGeometry();
+    const snap2 = JSON.stringify(obj.params);
+    e1.computeAllDisplayGeometry();
+    const snap3 = JSON.stringify(obj.params);
+    expect(snap1).toBe(snap0);
+    expect(snap2).toBe(snap0);
+    expect(snap3).toBe(snap0);
+  });
+
+  test('R4 — no per-pass rewrite, UNREACHABLE law reached by a LIVE edit (sphere -> torus)', () => {
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const group = e1.layers.find((l) => l.id === gid);
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    // Reachable to start (sphere+hatch+originSpiral is a live, distinct picture).
+    obj.params.primitive = 'sphere';
+    obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } };
+    e1.computeAllDisplayGeometry();
+    expect(V.Scene3D.Params.resolveToneLaw(group._sceneAssembled.styleTable.byObject[obj.id].params)).toBe('originSpiral');
+    // Live edit makes it unreachable.
+    obj.params.primitive = 'torus';
+    e1.computeAllDisplayGeometry(); // compose #1
+    const afterFirst = group._sceneAssembled.styleTable.byObject[obj.id].params.toneLaw;
+    expect(afterFirst).toBe('ladder');
+    // Guard: the LIVE layer bag itself is never touched by the compose path —
+    // the write-back is render-facing only here (the leaf's OWN stored law is
+    // migrated at the load channel, R1/R7, not by a display-geometry pass).
+    const snap1 = JSON.stringify(obj.params);
+    expect(obj.params.style.params.toneLaw).toBe('originSpiral');
+    e1.computeAllDisplayGeometry(); // compose #2
+    const snap2 = JSON.stringify(obj.params);
+    e1.computeAllDisplayGeometry(); // compose #3
+    const snap3 = JSON.stringify(obj.params);
+    expect(snap2).toBe(snap1);
+    expect(snap3).toBe(snap1);
+    expect(group._sceneAssembled.styleTable.byObject[obj.id].params.toneLaw).toBe('ladder');
+  });
+
+  test('R5 — no undo entry at load: app.applyState of a doc needing write-back pushes no history itself', () => {
+    const app = new V.App();
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    obj.params.primitive = 'torus';
+    obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } };
+    const affectedState = { engine: e1.exportState(), settings: JSON.parse(JSON.stringify(V.SETTINGS)) };
+
+    const e0 = new V.VectorEngine();
+    e0.addLayer('scene3d');
+    const controlState = { engine: e0.exportState(), settings: JSON.parse(JSON.stringify(V.SETTINGS)) };
+
+    app.history = [];
+    const beforeAffected = app.history.length;
+    app.applyState(JSON.parse(JSON.stringify(affectedState)));
+    const afterAffected = app.history.length;
+
+    app.history = [];
+    const beforeControl = app.history.length;
+    app.applyState(JSON.parse(JSON.stringify(controlState)));
+    const afterControl = app.history.length;
+
+    expect(afterAffected).toBe(beforeAffected);
+    expect(afterControl).toBe(beforeControl);
+    expect(afterAffected).toBe(afterControl);
+  });
+
+  test('R6 — undo/redo: the migrated value survives push/edit/undo (never resurrects originSpiral)', () => {
+    const app = new V.App();
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    obj.params.primitive = 'torus';
+    obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } };
+    app.applyState({ engine: e1.exportState(), settings: JSON.parse(JSON.stringify(V.SETTINGS)) });
+    app.history = [];
+    app.pushHistory();
+    const findObj = () => {
+      const group = app.engine.layers.find((l) => l.type === 'scene3d' && l.isGroup);
+      return app.engine.getLayerDescendants(group.id).find((l) => l.type === 'object3d');
+    };
+    expect(findObj().params.style.params.toneLaw).toBe('ladder');
+    // A real edit, pushed, then undone.
+    findObj().params.transform.yaw = 45;
+    app.pushHistory();
+    app.undo();
+    expect(findObj().params.style.params.toneLaw).toBe('ladder');
+  });
+
+  test('R7 — round trip: saving the migrated doc serializes ladder; re-import is a no-op', () => {
+    const { e2, obj2 } = openLeaf('torus', { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+    const exported = e2.exportState();
+    const savedLayer = exported.layers.find((l) => l.id === obj2.id);
+    expect(savedLayer.params.style.params.toneLaw).toBe('ladder');
+  });
+
+  test('R8 — no-fallback guard: mapper wireframe (every id unreachable, ladder too) leaves toneLaw unchanged', () => {
+    const { obj2 } = openLeaf('torus', { penId: null, mapper: 'wireframe', params: { toneLaw: 'mkTick' } });
+    expect(obj2.params.style.params.toneLaw).toBe('mkTick');
+  });
+
+  test('R9 — blast-radius guard (Contract A): sphere/spiral/taperedEnds (unreachable, render DIFFERS from ladder) is untouched', () => {
+    const { e2, obj2, group2 } = openLeaf('sphere', { penId: null, mapper: 'spiral', params: { toneLaw: 'taperedEnds' } });
+    expect(obj2.params.style.params.toneLaw).toBe('taperedEnds');
+    e2.computeAllDisplayGeometry();
+    expect(group2._sceneAssembled.styleTable.byObject[obj2.id].params.toneLaw).toBe('taperedEnds');
+  });
+
+  test('R10 — UI agreement: after write-back the Style tab shows ladder, enabled, no disabled-selected option', () => {
+    const { obj2 } = openLeaf('torus', { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+    const ui = { app: { pushHistory: () => {}, regen: () => {} }, storeLayerParams: () => {} };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    V.UI.Scene3DPanel.build(ui, obj2, container);
+    const tab = Array.from(container.querySelectorAll('.tab-btn')).find((b) => b.dataset && b.dataset.value === 'style');
+    if (tab) fire(tab, 'click');
+    const row = Array.from(container.querySelectorAll('.vs3-row'))
+      .find((r) => r.querySelector('.vs3-lbl') && r.querySelector('.vs3-lbl').textContent === 'Fill Style');
+    const sel = row.querySelector('select');
+    expect(sel.value).toBe('ladder');
+    const selectedOption = sel.options[sel.selectedIndex];
+    expect(selectedOption.disabled).toBe(false);
+    expect(selectedOption.label).not.toMatch(/no effect here/);
   });
 });
