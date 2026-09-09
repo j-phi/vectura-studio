@@ -393,9 +393,15 @@ describe('Fill Style — the shared mark-class config', () => {
       // at every unit that folds another id): U1 46 total - 11 alive = 35;
       // U2 44 total - 11 = 33; U3 43 total - 11 = 32; U4 40 total - 11 = 29;
       // U5 (C-05, contFieldSigmoid/fieldMetric+fieldFloor, 4 more folded)
-      // 36 total - 11 = 25.
+      // 36 total - 11 = 25. U7 (C-07, ampSpacing/nesting, 1 more folded —
+      // weaveDepth, a wave-family law, dead on a box exactly like its
+      // survivor ampSpacing; ALIVE unaffected, neither ampSpacing nor
+      // weaveDepth is a mono law) 35 total - 11 = 24. Re-measured directly
+      // (not assumed): `groups('box')` now offers 35 options (34 PICKER_IDS
+      // + 'ladder'), confirmed failing at 25 (`expected 24 to be 25`) before
+      // this edit, passing at 24 after.
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(25);
+      expect(dead.length).toBe(24);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
