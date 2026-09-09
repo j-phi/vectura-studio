@@ -7461,7 +7461,148 @@
       }
       return outp;
     };
-    const makeSink = (back, lineIndex, fam) => {
+    // ── W-33 — DEVICE-SPACE ADAPTIVE SUBDIVISION OF A FINISHED RULING ────────
+    // USER (Jay): "I'm observing some non-curved angles here." Rule 2(b) (the
+    // ledger's per-vertex turn bar) extended to contour FILL rulings: no
+    // per-vertex turn, measured in DEVICE space (mm on paper — the geometry
+    // that is actually stroked, not the chart parameter), may exceed
+    // FILL_MAX_TURN_DEG. `steps` (`baseSteps`, above) samples the chart
+    // UNIFORMLY IN PARAMETER and nothing downstream ever consulted the
+    // ruling's PROJECTED turn — the fill-side counterpart of W-34's finding
+    // for `refineSliceRing`, except here there was no device-space
+    // refinement at all. The offender is always the innermost cap/pole ring,
+    // whose projected shape is a flat ellipse: 32 uniform-parameter samples
+    // put the fewest points exactly where the projected turn is greatest
+    // (measured 31.24 deg / 38.35 deg, cameras a/b, identical to 2 decimals
+    // on capsule/cone/cylinder/sphere — four different surfaces cannot share
+    // a geometric corner, they share a sample count; see
+    // docs/3d-audit/lane-reports/W-32-W-33-plan.md §B3).
+    //
+    // Mirrors `sliceRingSubdivideOnce`/`refineSliceRing` (scene3d.js) in
+    // SHAPE (subdivide-until-under-bar, bounded rounds) but not in METHOD:
+    // that pass interpolates a Catmull-Rom guess and re-snaps it to the
+    // surface; here the ruling's own `paramAt`/`sampleAt` closures recompute
+    // the TRUE analytic point at any parameter, so an inserted "midpoint" is
+    // exact, not an approximation.
+    //
+    // Scope (plan §B4): hatch/crosshatch/spiral OPEN runs carry GENUINE
+    // folds where a ruling turns back on itself at a chart pole (capsule
+    // hatch 127 deg, sphere hatch 116 deg measured) and sampling barely
+    // moves them — planing those to 8 deg would erase real geometry, not a
+    // facet artefact. So this only ever runs for `mapper === 'contour'`
+    // rulings, or for a CLOSED ring on ANY mapper (a closed ring has zero
+    // analytic turn by construction — every degree on one is
+    // discretisation, never a fold). Every other ruling returns before
+    // touching its arrays, so it is byte-identical.
+    const FILL_MAX_TURN_DEG = 8;
+    const FILL_REFINE_MAX_ROUNDS = 6;
+    const fillTurnDeg = (a, b, c) => {
+      const v1x = b.x - a.x; const v1y = b.y - a.y;
+      const v2x = c.x - b.x; const v2y = c.y - b.y;
+      const l1 = Math.hypot(v1x, v1y);
+      const l2 = Math.hypot(v2x, v2y);
+      if (l1 < 1e-9 || l2 < 1e-9) return 0;
+      let cosA = (v1x * v2x + v1y * v2y) / (l1 * l2);
+      if (cosA > 1) cosA = 1; else if (cosA < -1) cosA = -1;
+      return (Math.acos(cosA) * 180) / Math.PI;
+    };
+    // Mutates `pts`/`tts`/`wts` IN PLACE (parallel arrays: point, sweep
+    // parameter, pending weight) — ONLY when it actually inserts. A run that
+    // is under the bar everywhere (the overwhelming majority — every
+    // straight-mesh primitive, every non-polar contour ring, every
+    // hatch/crosshatch/spiral run) returns before the first write, so it is
+    // byte-identical to before this unit.
+    const refineFillRunTurns = (pts, tts, wts, paramAtFn, wantFrontFlag) => {
+      if (typeof paramAtFn !== 'function') return;
+      const n0 = pts.length;
+      if (n0 < 3) return;
+      const closed = n0 >= 4
+        && Math.hypot(pts[0].x - pts[n0 - 1].x, pts[0].y - pts[n0 - 1].y) < 1e-6;
+      if (mapper !== 'contour' && !closed) return;
+      // Strip the duplicated closing point (if any) so modular indexing does
+      // not manufacture a phantom zero-length edge at the seam — the same
+      // move `refineSliceRing` makes before its own subdivision rounds.
+      let work = closed ? pts.slice(0, -1) : pts.slice();
+      let workT = closed ? tts.slice(0, -1) : tts.slice();
+      let workW = closed ? wts.slice(0, -1) : wts.slice();
+      const ceiling = Math.min(work.length * 4, work.length + 200);
+      let round = 0;
+      while (round < FILL_REFINE_MAX_ROUNDS) {
+        const n = work.length;
+        if (n < 3 || n >= ceiling) break;
+        const lo = closed ? 0 : 1;
+        const hi = closed ? n - 1 : n - 2;
+        const markSeg = new Array(n).fill(false);
+        let any = false;
+        for (let i = lo; i <= hi; i++) {
+          const a = work[(i - 1 + n) % n];
+          const b = work[i];
+          const c = work[(i + 1) % n];
+          if (fillTurnDeg(a, b, c) > FILL_MAX_TURN_DEG) {
+            any = true;
+            // Bisect only the LONGER of the two adjacent chords: on a smooth
+            // curve the shorter chord already carries less of the turn (turn
+            // contribution scales with local sample spacing), so halving the
+            // longer side alone still roughly halves the vertex's own turn
+            // each round while (measured, C6) keeping total point growth to
+            // ~1.5x baseline instead of ~2.2x for bisecting both sides.
+            const lenPrev = Math.hypot(b.x - a.x, b.y - a.y);
+            const lenNext = Math.hypot(c.x - b.x, c.y - b.y);
+            if (lenPrev >= lenNext) markSeg[(i - 1 + n) % n] = true;
+            else markSeg[i] = true;
+          }
+        }
+        if (!any) break;
+        const nextP = []; const nextT = []; const nextW = [];
+        const edgeCount = closed ? n : n - 1;
+        for (let i = 0; i < edgeCount; i++) {
+          nextP.push(work[i]); nextT.push(workT[i]); nextW.push(workW[i]);
+          if (markSeg[i] && nextP.length < ceiling) {
+            const j = (i + 1) % n;
+            let t0 = workT[i]; let t1 = workT[j];
+            // A decreasing tt across one segment always means a PARAMETER
+            // WRAP, never real regression (each `addPt` call's own `tt` is
+            // non-decreasing along the walk that produced it) — the ring's
+            // own seam on a closed ring (i = n-1), but ALSO an OPEN run's
+            // seam-joined interior seam (the join above can splice a tail
+            // ending near tt=1 straight onto a head resuming near tt=0
+            // WITHOUT the whole piece testing "closed", since the two ends
+            // of the overall gap are two different points, not the same
+            // one). Gating this on `closed` missed that second case: the
+            // naive un-wrapped average landed near tt=0.5 — the OPPOSITE
+            // side of the sphere — and one insertion there planted a point
+            // literally across the form (measured: 178 deg, sphere contour
+            // fillCurves-off cam a, a 47 mm jump from x=143 to x=133 in one
+            // "midpoint"). Correcting whenever it actually decreases, not
+            // only when the whole piece wraps, fixes both.
+            if (Number.isFinite(t0) && Number.isFinite(t1) && t1 < t0) t1 += 1;
+            if (Number.isFinite(t0) && Number.isFinite(t1)) {
+              const midTt = ((t0 + t1) / 2) % 1;
+              const pr = paramAtFn(midTt);
+              const smp = pr ? sampleAt(pr.a, pr.b) : null;
+              if (smp && smp.front === wantFrontFlag) {
+                nextP.push({ x: smp.x, y: smp.y, z: smp.z });
+                nextT.push(midTt);
+                nextW.push((workW[i] + workW[j]) / 2);
+              }
+            }
+          }
+        }
+        if (!closed) { nextP.push(work[edgeCount]); nextT.push(workT[edgeCount]); nextW.push(workW[edgeCount]); }
+        work = nextP; workT = nextT; workW = nextW;
+        round += 1;
+      }
+      const grew = closed ? (work.length !== n0 - 1) : (work.length !== n0);
+      if (!grew) return;
+      const finalP = closed ? [...work, { ...work[0] }] : work;
+      const finalT = closed ? [...workT, 1] : workT;
+      const finalW = closed ? [...workW, workW[0]] : workW;
+      pts.length = 0; Array.prototype.push.apply(pts, finalP);
+      tts.length = 0; Array.prototype.push.apply(tts, finalT);
+      wts.length = 0; Array.prototype.push.apply(wts, finalW);
+    };
+
+    const makeSink = (back, lineIndex, fam, paramAt, wantFront) => {
       let run = [];
       let runLen = 0;
       let gapPts = [];
@@ -7547,6 +7688,21 @@
             : ((splitsAlongLine() && wCnt > 0)
               ? splitByWeight(run, wPts, ttPts, fam)
               : [run]);
+          // W-33: tag the UNSPLIT piece (every non-weight tone law, `ladder`
+          // included) with its own per-point sweep parameter so a deferred
+          // pass — AFTER the seam join below has a chance to fuse this piece
+          // with another one — can device-space-refine the JOINED polyline
+          // rather than each half separately. Refining before the join is
+          // provably incomplete: the join vertex is the LAST point of one
+          // half and the FIRST of the other, both exempt from their own
+          // half's open-polyline turn check (an endpoint has no turn) —
+          // measured: a capsule contour ring's join corner still read 8.14
+          // deg after 12 rounds of per-half refinement, unmoving, because
+          // neither half was ever asked to check it. Weight/ribbon-split
+          // pieces (`wCnt > 0`) are not tagged and fall back to the OLD
+          // per-half timing below — narrower coverage, but no `__tt` array
+          // survives their split to refine against safely.
+          if (pieces.length === 1 && pieces[0] === run) run.__tt = ttPts.slice();
           pieces.forEach((pc) => {
             if (lozAny) pc.loz = true;
             mine.push(pc);
@@ -7738,7 +7894,7 @@
       const ladderKey = currentFam;
       let hlRun = [];
       // The base channel goes through the shared run sink (see makeSink).
-      const sink = makeSink(back, lineIndex, currentFam);
+      const sink = makeSink(back, lineIndex, currentFam, paramAt, wantFront);
       // A hard cut ends the continuous span, so both trigger flags reset.
       const flush = () => { sink.flush(); };
       const softDrop = sink.softDrop;
@@ -8421,15 +8577,26 @@
       // against, so a ruling that was already flush with the silhouette is
       // untouched.
       const EDGE_BISECT = 12;
+      // W-33: the bisected boundary point's OWN sweep parameter, `bestTt` —
+      // not the neighbouring regular sample's `s / nSteps` the two call
+      // sites used to tag it with. A boundary point sits up to a whole
+      // sample step away from its neighbour (that is the entire reason this
+      // bisection exists), so reusing the neighbour's `tt` handed
+      // `refineFillRunTurns` two adjacent array entries carrying the SAME
+      // parameter — a degenerate (zero-width) segment its midpoint
+      // insertion could never usefully subdivide, which is exactly why a
+      // silhouette-adjacent corner on an open contour run (measured: 17.13
+      // deg, capsule contour d50 cam a, vertex 1 of a 31-point open run)
+      // never converged under bisection.
       const edgeAt = (sIn, sOut) => {
-        let lo = sIn / nSteps; let hi = sOut / nSteps; let best = null;
+        let lo = sIn / nSteps; let hi = sOut / nSteps; let best = null; let bestTt = null;
         for (let k = 0; k < EDGE_BISECT; k++) {
           const mid = (lo + hi) / 2;
           const pr = paramAt(mid);
           const smp = pr ? sampleAt(pr.a, pr.b) : null;
-          if (smp && smp.front === wantFront) { lo = mid; best = smp; } else hi = mid;
+          if (smp && smp.front === wantFront) { lo = mid; best = smp; bestTt = mid; } else hi = mid;
         }
-        return best ? { x: best.x, y: best.y, z: best.z } : null;
+        return best ? { x: best.x, y: best.y, z: best.z, tt: bestTt } : null;
       };
       // Is this sweep CLOSED? Exactly the test the seam join below uses: the two
       // ends land on the same point, which is what "closed" means. A ring's
@@ -9122,7 +9289,10 @@
         // Meet the boundary on the way in, and again on the way out. Both are
         // no-ops unless the neighbouring sample is off the wanted side of the
         // surface, which is the only place a refinement is defined.
-        if (s > 0 && !onSurf[s - 1]) { const e = edgeAt(s, s - 1); if (e) addPt(e, sampleZone, tt); }
+        if (s > 0 && !onSurf[s - 1]) {
+          const e = edgeAt(s, s - 1);
+          if (e) addPt({ x: e.x, y: e.y, z: e.z }, sampleZone, Number.isFinite(e.tt) ? e.tt : tt);
+        }
         if (toneOn && TONE_ALGO === 'weightModulated') sink.noteW(weightAt(smp.I));
         else if (toneOn && isWeightLaw()) {
           // THE TONE IS READ OFF THE UNDISPLACED RULING (`wvBase`); null under
@@ -9146,7 +9316,10 @@
         addPt((lozDisp && lozDisp[s])
           || (toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
           || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
-        if (s < nSteps && !onSurf[s + 1]) { const e = edgeAt(s, s + 1); if (e) addPt(e, sampleZone, tt); }
+        if (s < nSteps && !onSurf[s + 1]) {
+          const e = edgeAt(s, s + 1);
+          if (e) addPt({ x: e.x, y: e.y, z: e.z }, sampleZone, Number.isFinite(e.tt) ? e.tt : tt);
+        }
       }
       flush();
       flushHL();
@@ -9185,13 +9358,41 @@
             if (Array.isArray(tail.__hw) && Array.isArray(head.__hw)) {
               for (let i = 1; i < head.__hw.length; i++) tail.__hw.push(head.__hw[i]);
             }
+            // W-33: `__tt` rides the same splice as `__hw` above, for the
+            // same reason — the deferred device-space refinement below reads
+            // it, and it must describe exactly the points that survive here.
+            if (Array.isArray(tail.__tt) && Array.isArray(head.__tt)) {
+              for (let i = 1; i < head.__tt.length; i++) tail.__tt.push(head.__tt[i]);
+            } else {
+              delete tail.__tt;
+            }
             for (let i = 1; i < head.length; i++) tail.push(head[i]);
             tail.tt1 = head.tt1;
             const at = out.indexOf(head);
             if (at >= 0) out.splice(at, 1);
+            head.__joined = true;
           }
         }
       }
+      // ── W-33 — DEVICE-SPACE REFINEMENT, DEFERRED TO AFTER THE SEAM JOIN ─────
+      // Refining each half separately (the first cut of this fix) is provably
+      // incomplete: the seam join above can fuse this call's OWN two halves,
+      // or leave either one standing alone, and either way the join vertex
+      // was never checked while it was still an EXEMPT endpoint of its own
+      // half. Running the refinement here, on `mine` AFTER the join has had
+      // its say, sees the join vertex as the ordinary interior vertex it
+      // actually is. `head.__joined` marks a piece the join above folded
+      // into `tail` and removed from `out` — skip it, `tail` now carries
+      // its points. A piece with no `__tt` (a weight/ribbon law's split —
+      // `wCnt > 0` at the tag site above) is left exactly as this unit found
+      // it: still not covered, same as before this fix.
+      mine.forEach((pc) => {
+        if (pc.__joined) return;
+        if (!Array.isArray(pc.__tt) || pc.__tt.length !== pc.length) return;
+        const tt = pc.__tt;
+        delete pc.__tt;
+        refineFillRunTurns(pc, tt, new Array(pc.length).fill(1), paramAt, wantFront);
+      });
       // ── 'onePenDown' — ONE CONTINUOUS PATH OVER THE WHOLE FORM ───────────────
       //
       // The real plotter advantage nobody spends: a pen-up is pure cost. It is

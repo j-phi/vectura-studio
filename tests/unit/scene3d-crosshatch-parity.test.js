@@ -222,10 +222,18 @@ describe('W-36 — crosshatch crossing family carries the same pitch as the prim
       expect(paths.length).toBe(145);
       expect(inkOf(paths)).toBeCloseTo(4495.5, 0);
     });
-    test('sphere contour d=50 = 18 fills / 656.4 mm', () => {
+    // W-33 re-pin (device-space adaptive subdivision of contour rulings):
+    // the plan's own W-32/W-33 analysis (§1 guard table) named this exact
+    // cell as "directly in W-33's path" and predicted "measured drift =~
+    // +0.9mm" — measured here: 656.4 -> 657.25mm (+0.85mm). Fill COUNT is
+    // unchanged (still 18): the ring count and placement are untouched,
+    // only each ring's own polyline gained a handful of points that trace
+    // slightly longer than the chords they replace. See W-33-impl.md
+    // "Bars changed".
+    test('sphere contour d=50 = 18 fills / 657.25 mm', () => {
       const paths = finalFills(sceneFor('sphere', 'contour', 50));
       expect(paths.length).toBe(18);
-      expect(inkOf(paths)).toBeCloseTo(656.4, 0);
+      expect(inkOf(paths)).toBeCloseTo(657.25, 1);
     });
   });
 

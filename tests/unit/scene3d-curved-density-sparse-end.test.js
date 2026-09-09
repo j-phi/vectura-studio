@@ -338,7 +338,14 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     });
 
     test('torus + contour + ladder at d=50', () => {
-      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('c4af8b99aee05127ac916103b1281ed5');
+      // W-33 re-pin (device-space adaptive subdivision of contour rulings,
+      // surface-fill.js `refineFillRunTurns`): torus+contour is squarely in
+      // scope (mapper === 'contour'), so its ring geometry legitimately
+      // changes — every per-vertex turn on this cell now measures <= 8 deg
+      // where it did not before. Old c4af8b99aee05127ac916103b1281ed5 ->
+      // new 5d5e4e87f98447a282188c182b243cf5. See W-33-impl.md "Bars
+      // changed".
+      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('5d5e4e87f98447a282188c182b243cf5');
     });
 
     test('cone + spiral + ladder at d=50', () => {
