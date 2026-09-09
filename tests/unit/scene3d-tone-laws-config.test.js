@@ -115,11 +115,11 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
     // product decision, not a file collision). Bump this pair (and the id
     // list below) at U6/U8; paste the before/after in the unit's commit
     // body.
-    const EXPECTED_PICKER_IDS_LENGTH = 34;
+    const EXPECTED_PICKER_IDS_LENGTH = 33;
     const EXPECTED_ALIAS_IDS = [
       'fineLadder', 'phaseFineLadder', 'perceptualRamp', 'whiteBand', 'nibAngle', 'weightSmoothstep',
       'bundleEased', 'bundleDither', 'bundleHandoff', 'contFieldFore', 'contFieldSurface',
-      'contFieldQuant', 'contFieldTouch', 'weaveDepth',
+      'contFieldQuant', 'contFieldTouch', 'weaveDepth', 'onePenDown',
     ];
 
     expect(Array.isArray(LAWS.PICKER_IDS)).toBe(true);

@@ -894,7 +894,6 @@
   "interlockWeave",
   "trochoidLoop",
   "amplitudeOnly",
-  "onePenDown",
   "etfKang",
   "defectSplit",
   "mezzoRegion",
@@ -988,6 +987,12 @@
     "into": "ampSpacing",
     "params": {
       "nesting": "nested"
+    }
+  },
+  "onePenDown": {
+    "into": "interlockWeave",
+    "params": {
+      "penDown": "continuous"
     }
   }
 };
@@ -1154,6 +1159,25 @@
           "value": "nested",
           "label": "Nested rows",
           "law": "weaveDepth"
+        }
+      ]
+    }
+  ],
+  "interlockWeave": [
+    {
+      "key": "penDown",
+      "label": "Pen down",
+      "default": "perRuling",
+      "options": [
+        {
+          "value": "perRuling",
+          "label": "One stroke per ruling",
+          "law": "interlockWeave"
+        },
+        {
+          "value": "continuous",
+          "label": "One pen-down per family",
+          "law": "onePenDown"
         }
       ]
     }
