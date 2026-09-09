@@ -1403,6 +1403,11 @@
       // then clipped to the face's own visible outline. null when the flag is
       // off, the light is absent/draft, or nothing lands on this face.
       const faceFootprintCache = new Map();
+      // W-30c (F3) — the light BEHIND each face footprint. Keyed by `scaf.uv`
+      // exactly like `faceFootprintCache`, so the R3 tone-sample fix below can
+      // recover which light actually built a given footprint (needed for its
+      // own `shadowFn(worldPoint, fpLight)` calls).
+      const faceFootprintLightCache = new Map();
       const buildFaceFootprint = (scaf, normalWorldArg, selfId) => {
         if (!(shadowReceiveOn && toneOn && scaf && lightDir && Shadows
           && typeof Shadows.projectAlongDirToPlane === 'function'
@@ -1411,6 +1416,18 @@
         const faceCCW = asCCW(scaf.uv);
         const anchor = scaf.origin;
         const polys = [];
+        // W-30c — R4: the footprint is a GEOMETRIC construction and needs a
+        // light that has a position/direction. `light` (== lights[0]) may be
+        // an ambient — the UI appends new lights AFTER the default sun, so any
+        // light a user *adds* is never lights[0] — which fell back to
+        // `lightWorldDir`'s 135/45 default and put the shadow nowhere (see
+        // W-30c-plan.md §1d: `[ambient, point]` measured ratio 1.00 = "the
+        // shadow is gone"). Deliberately scoped to buildFaceFootprint only —
+        // `light`/`lightDir` themselves are left untouched because they also
+        // feed `toneOn`, the specular term and `shadowReceiveOn`.
+        const fpLight = (p.lights || []).find((l) => l && l.type !== 'ambient' && l.castShadows !== false) || light;
+        const fpDir = (Lighting && fpLight !== light && typeof Lighting.lightWorldDir === 'function')
+          ? Lighting.lightWorldDir(fpLight) : lightDir;
         // W-30b — light-type-aware projector. `Shadows.projectLightToPlane`
         // (W-30) dispatches on `light.type`/`light.position`: a point/spot/
         // area light with a real world position gets the true PERSPECTIVE
@@ -1421,8 +1438,8 @@
         // directly if `projectLightToPlane` isn't present for any reason
         // (defensive; it always is on this tree).
         const projectFootprintPoint = typeof Shadows.projectLightToPlane === 'function'
-          ? (P) => Shadows.projectLightToPlane(P, light, anchor, normalWorldArg, lightDir)
-          : (P) => Shadows.projectAlongDirToPlane(P, lightDir, anchor, normalWorldArg);
+          ? (P) => Shadows.projectLightToPlane(P, fpLight, anchor, normalWorldArg, fpDir)
+          : (P) => Shadows.projectAlongDirToPlane(P, fpDir, anchor, normalWorldArg);
         scene.objects.forEach((otherRec) => {
           if (!otherRec || otherRec.id === selfId) return;
           const world = otherRec.world || [];
@@ -1438,6 +1455,7 @@
         });
         const result = polys.length ? polys : null;
         faceFootprintCache.set(scaf.uv, result);
+        faceFootprintLightCache.set(scaf.uv, fpLight);
         return result;
       };
       // I8 — per-sample specular term for light-driven highlight mode. Reads the
@@ -2493,11 +2511,48 @@
           // spacing; `perPointGrade` (true) bypasses recordBands' per-FACE rank
           // cache, which would otherwise silently override this single sample
           // with the unshadowed centroid value (see v1's second bug).
+          //
+          // W-30c (F2b, R3) — for a NON-CONVEX caster (a torus, say) the
+          // footprint polygon is `Shadows.convexHull`'s outer wrap (R2 — the
+          // hole itself is NOT fixed by this unit; tracked as W-30d), so its
+          // own centroid can land in the caster's real geometric hole.
+          // `pointInShadow` there correctly reports "not occluded" (it
+          // ray-casts the real mesh, not the hull), so the naive centroid
+          // sample silently read the UNSHADOWED spacing and the whole
+          // footprint rendered at the outside pitch — the torus cast NO
+          // visible shadow at all (W-30c-plan.md §1b: density ratio 1.00 vs
+          // 3.02 for a sphere on the same rig). Fix: if the centroid isn't
+          // actually occluded, search inward from each hull vertex — the
+          // vertices ARE real projected caster-surface points, so a point
+          // mostly toward one of them from the centroid is far more likely to
+          // sit over solid caster material than the hull's own mean — for one
+          // that IS occluded, and grade from that instead. No genuinely
+          // shadowed sample found → emit no inside pass (never regresses to
+          // drawing the region as unshadowed; today's behavior for every
+          // convex caster is untouched, since its own centroid is already
+          // occluded and the `!shadowFn(...)` branch below never triggers).
+          const fpLight = faceFootprintLightCache.get(scaf.uv) || light;
+          const firstOccludedSample = (fp) => {
+            let icx = 0; let icy = 0;
+            fp.forEach((pt) => { icx += pt.x; icy += pt.y; });
+            icx /= fp.length; icy /= fp.length;
+            for (let i = 0; i < fp.length; i++) {
+              const mx = fp[i].x * 0.9 + icx * 0.1;
+              const my = fp[i].y * 0.9 + icy * 0.1;
+              const wp = scaf.toWorld({ x: mx, y: my });
+              if (wp && shadowFn(wp, fpLight)) return wp;
+            }
+            return null;
+          };
           footprintPolys.forEach((fp) => {
             let cx = 0; let cy = 0;
             fp.forEach((pt) => { cx += pt.x; cy += pt.y; });
-            const centroidWorld = scaf.toWorld({ x: cx / fp.length, y: cy / fp.length });
-            const insideSpacing = spacingBand(normalWorld, styleParams, centroidWorld, face, record, hlOpts, true).spacing;
+            let sampleWorld = scaf.toWorld({ x: cx / fp.length, y: cy / fp.length });
+            if (typeof shadowFn === 'function' && !shadowFn(sampleWorld, fpLight)) {
+              sampleWorld = firstOccludedSample(fp);
+            }
+            if (!sampleWorld) return; // no genuinely shadowed sample → emit no split
+            const insideSpacing = spacingBand(normalWorld, styleParams, sampleWorld, face, record, hlOpts, true).spacing;
             const insideScreen = Math.max(hatchFloorFor(styleParams.fillDensity), planeRaw(baseAngle, insideSpacing));
             maybeLink(Shadows.hatchRingsEvenOdd([fp], baseAngle, insideScreen), styleParams)
               .forEach((l) => uvLines.push(l));
