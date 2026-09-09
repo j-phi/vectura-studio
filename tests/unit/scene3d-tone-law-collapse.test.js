@@ -1040,3 +1040,203 @@ describe('Scene3D tone-law collapse — U5b-2 (plain-language caveat copy)', () 
 // so it can be lifted cleanly at rebase against main's chunked U0 rewrite of
 // this file and U9's in-flight edits to it on handoff-c2 (orchestrator
 // direction, U5b-2/3 checkpoint follow-up).
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U7 — C-07 · survivor `ampSpacing` · param `nesting`
+ * Folded: weaveDepth ('nested'). Bare option: single->ampSpacing.
+ * RED (pre-U7, verified via a scratch `git stash` of the two implementation
+ * files, not asserted here): resolveToneLaw({toneLaw:'ampSpacing',
+ * nesting:'nested'}) returned 'ampSpacing' unchanged (no STYLE_PARAMS entry)
+ * — rendering diverged from weaveDepth's own picture (3925.9 vs 3917.8 mm
+ * ink on torus+hatch+med, within 0.2% — a genuinely tight pair per the
+ * plan's own §1 C-07 note). GREEN below closes it by construction, same
+ * mechanism U1-U5 ran five times (see docs/3d-audit/lane-reports/U1-U5-impl.md).
+ *
+ * TWO CONDITIONS THIS UNIT ADDS ON TOP OF THE STANDARD TEMPLATE (secretary
+ * flags on U7's brief, docs/3d-audit/STILL-OPEN.md):
+ *
+ * (a) The standing caveat ruling ("folding a law must NOT hide its measured
+ * caveat", U5b) binds U7 too — but U7 is the FIRST cluster in this chain
+ * where BOTH the survivor (`ampSpacing`) AND the folded id (`weaveDepth`)
+ * carry their own real, DIFFERENT measured caveats (every earlier cluster's
+ * survivor had none). `effectiveLaw`/`resolveToneLaw` must therefore surface
+ * `ampSpacing`'s own caveat at the descriptor default (`nesting:'single'`)
+ * — not silently show nothing, as U4/U5's survivors correctly did — and
+ * swap to `weaveDepth`'s distinct caveat once `nesting:'nested'` is picked.
+ * See the "U7 caveat" describe block below, and
+ * tests/unit/scene3d-fill-style-effective-law.test.js (the shared U5b-3
+ * cross-check, extended here rather than duplicated in a private test).
+ *
+ * (b) `ampSpacing` is the survivor, and F1-placement's ruled condition 4
+ * (docs/3d-audit/STILL-OPEN.md, fill-audit-a2 lane) requires `ampSpacing`
+ * and the rest of the WV6 family to render BYTE-IDENTICAL — a live ruling
+ * on another lane depends on that exact law being unaffected by this fold.
+ * U1-U5's aggregate 48-law sweep (test 4, U0 block) only ever proved this on
+ * ONE cell (torus+hatch+med default density, sphere-only geometry via
+ * captureOpts). The "U7 multi-primitive x multi-density" describe block
+ * below extends that proof across every primitive the audit's own capture
+ * script (scripts/audit/scene3d-capture.js: TIER_B_PRIMITIVES minus `box`,
+ * which is unreachable for ampSpacing/weaveDepth per
+ * docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl) x every density it
+ * sweeps (DENSITY_VALUES low/med/max) can reach — sphere/torus/cone x
+ * low/med/max, 9 combinations, not just 1.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describeSingleParamCluster('Scene3D tone-law collapse — U7 (C-07, ampSpacing/nesting)', {
+  survivor: 'ampSpacing',
+  key: 'nesting',
+  pickerIdsLength: 34,
+  folded: [
+    { id: 'weaveDepth', value: 'nested' },
+  ],
+});
+
+describe('Scene3D tone-law collapse — U7 caveat: BOTH the survivor (ampSpacing) AND the folded law (weaveDepth) carry real, DIFFERENT measured caveats', () => {
+  let runtime;
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  afterAll(() => runtime.cleanup());
+
+  test('BY_ID-direct: ampSpacing and weaveDepth each carry their own non-empty, DISTINCT caveat — the roster corpus is untouched', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const survivorCaveat = FS.note('ampSpacing').caveat;
+    const foldedCaveat = FS.note('weaveDepth').caveat;
+    expect(survivorCaveat.length).toBeGreaterThan(0);
+    expect(foldedCaveat.length).toBeGreaterThan(0);
+    // Distinct — this is the first cluster in the chain where the survivor's
+    // OWN default state also carries a real caveat, so a naive "resolve to
+    // the survivor and stop" would show the WRONG one of the two, not none.
+    expect(survivorCaveat).not.toBe(foldedCaveat);
+    expect(survivorCaveat).toMatch(/single-weight/);
+    expect(foldedCaveat).toMatch(/single-weight/);
+  });
+
+  test('effectiveLaw: nesting default (single) shows ampSpacing\'s OWN caveat (unlike U4/U5, this is NOT empty)', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.effectiveLaw('ampSpacing', { nesting: 'single' })).toBe('ampSpacing');
+    expect(FS.effectiveLaw('ampSpacing', {})).toBe('ampSpacing');
+    const caveat = FS.note(FS.effectiveLaw('ampSpacing', {})).caveat;
+    expect(caveat).toBe(FS.note('ampSpacing').caveat);
+    expect(caveat.length).toBeGreaterThan(0);
+  });
+
+  test('effectiveLaw: nesting=nested resolves to weaveDepth, surfacing ITS distinct caveat, not ampSpacing\'s', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.effectiveLaw('ampSpacing', { nesting: 'nested' })).toBe('weaveDepth');
+    const caveat = FS.note(FS.effectiveLaw('ampSpacing', { nesting: 'nested' })).caveat;
+    expect(caveat).toBe(FS.note('weaveDepth').caveat);
+    expect(caveat).not.toBe(FS.note('ampSpacing').caveat);
+    expect(caveat.length).toBeGreaterThan(0);
+  });
+
+  test('resolveToneLaw (engine) agrees with effectiveLaw (config) on both states — the U5b-3 cross-check\'s own generic sweep already covers this by construction; re-asserted directly here for the two states this unit\'s caveat depends on', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const Params = runtime.window.Vectura.Scene3D.Params;
+    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing' })).toBe(FS.effectiveLaw('ampSpacing', {}));
+    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', nesting: 'nested' })).toBe(FS.effectiveLaw('ampSpacing', { nesting: 'nested' }));
+  });
+});
+
+describe('Scene3D tone-law collapse — U7 multi-primitive x multi-density: ampSpacing byte-identity (F1-placement ruled condition 4)', () => {
+  // NOT the single-cell captureOpts every earlier unit in this file uses —
+  // parametrized on BOTH primitive and fillDensity so the sweep below can
+  // cover every (primitive, density) pair the audit's own gallery capture
+  // script reaches for ampSpacing/weaveDepth (scripts/audit/scene3d-capture.js
+  // TIER_B_PRIMITIVES minus `box`, DENSITY_VALUES). `box`/`plane`/`solid` are
+  // excluded: ampSpacing/weaveDepth are wave-family laws dispatched off
+  // SurfaceFill's parametric chart, which box/plane/solid do not have
+  // (confirmed unreachable in docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl
+  // — "primitive":"box","mapper":"hatch","style":"ampSpacing","status":"unreachable",
+  // same for weaveDepth).
+  let runtime; let V; let algo; let defaults; let SF; let Params; let PPD;
+  const PRIMITIVES = ['sphere', 'torus', 'cone'];
+  const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
+
+  const captureOpts = (primitive, densityValue) => {
+    const p = clone(defaults);
+    p.objects = [{
+      id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
+      transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.lights = [SUN];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(opts) {
+      const result = orig.call(this, opts);
+      calls.push({ opts, result });
+      return result;
+    };
+    try {
+      algo.generate(p, null, null, BOUNDS);
+    } finally {
+      SF.buildObject = orig;
+    }
+    let best = calls[0];
+    for (const c of calls) {
+      if ((c.result || []).length > (best.result || []).length) best = c;
+    }
+    return best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Params = V.Scene3D.Params;
+    PPD = Params.PRIMITIVE_PARAM_DEFAULTS || {};
+  }, SLOW);
+  afterAll(() => runtime.cleanup());
+
+  // Condition (b): the FOLD is correct (ampSpacing+nesting:'nested' renders
+  // byte-identically to the legacy weaveDepth id) across all 9
+  // (primitive, density) pairs — not just the single torus+hatch+med cell
+  // the plan's own §1 table cites. This is IN-TREE evidence (both paths run
+  // in the same process, same tree); the cross-tree "did adding the
+  // COLLAPSE row perturb ampSpacing's OWN bare rendering at all" proof
+  // (git HEAD blob vs working tree, 9/9 identical) is evidence-only —
+  // reported in docs/3d-audit/fill-audit/after/U7/report.json, not
+  // repeated here as a permanent test, because within one process
+  // `SF.buildObject({toneLaw:'ampSpacing'})` never even reads
+  // STYLE_PARAMS/ALIASES (only `resolveToneLaw` does, and this test calls
+  // that explicitly) — there is no in-tree way to "un-fold" ampSpacing's
+  // own dispatch to compare against, only a cross-tree one.
+  test('the fold (ampSpacing+nesting:nested === legacy weaveDepth) is byte-identical across every reachable primitive x density pair', () => {
+    const offenders = [];
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        const resolved = Params.resolveToneLaw({ toneLaw: 'ampSpacing', nesting: 'nested' });
+        if (resolved !== 'weaveDepth') { offenders.push(`${primitive}__${densityKey}: resolved to "${resolved}", not weaveDepth`); return; }
+        const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
+        const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'weaveDepth' }));
+        if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy weaveDepth`);
+      });
+    });
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  }, SLOW);
+
+  // The bare survivor (nesting at its own default, or the key entirely
+  // absent) is untouched across every combination too — the same invariant
+  // describeSingleParamCluster's own "byte-identity" test asserts on one
+  // cell, extended here to all 9.
+  test('the bare survivor (nesting:single, or omitted) resolves to itself, unaffected by geometry or density', () => {
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing' })).toBe('ampSpacing');
+        expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', nesting: 'single' })).toBe('ampSpacing');
+        const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'ampSpacing' }));
+        const resolved = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: 'ampSpacing' }) }));
+        expect(resolved).toBe(direct);
+      });
+    });
+  }, SLOW);
+});

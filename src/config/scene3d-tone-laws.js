@@ -891,7 +891,6 @@
   "mkDashRamp",
   "mkDotScreen",
   "ampSpacing",
-  "weaveDepth",
   "interlockWeave",
   "trochoidLoop",
   "amplitudeOnly",
@@ -983,6 +982,12 @@
     "into": "contFieldSigmoid",
     "params": {
       "fieldFloor": "touch"
+    }
+  },
+  "weaveDepth": {
+    "into": "ampSpacing",
+    "params": {
+      "nesting": "nested"
     }
   }
 };
@@ -1130,6 +1135,25 @@
           "value": "touch",
           "label": "Ink-width floor",
           "law": "contFieldTouch"
+        }
+      ]
+    }
+  ],
+  "ampSpacing": [
+    {
+      "key": "nesting",
+      "label": "Nesting",
+      "default": "single",
+      "options": [
+        {
+          "value": "single",
+          "label": "Single wave row",
+          "law": "ampSpacing"
+        },
+        {
+          "value": "nested",
+          "label": "Nested rows",
+          "law": "weaveDepth"
         }
       ]
     }

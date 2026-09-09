@@ -298,6 +298,33 @@ const COLLAPSE = {
       ],
     },
   ],
+  // C-07 (U7) — the one WV6 (wave-family) survivor in this collapse. Ink is
+  // within 0.2% (ampSpacing 3925.9mm / weaveDepth 3917.8mm on
+  // torus+hatch+med) — a genuinely tight pair, per the plan's own §1 C-07
+  // note. `ampSpacing` MUST come out byte-identical: a live ruling on
+  // another lane (F1-placement, docs/3d-audit/STILL-OPEN.md, "condition 4")
+  // depends on `ampSpacing` and the rest of the WV6 family being unaffected
+  // by anything this collapse does — verified in
+  // tests/unit/scene3d-tone-law-collapse.test.js's U7 block across every
+  // TIER_B_PRIMITIVES x DENSITY_VALUES combination the audit's own capture
+  // script sweeps, not just the single torus+hatch+med cell every other
+  // unit in this chain checked.
+  //
+  // Both `ampSpacing` (the survivor) AND `weaveDepth` (the folded id) carry
+  // their OWN real, DIFFERENT measured caveats (both "not single-weight",
+  // see docs/tone-laws/laws.json) — unlike every earlier unit in this chain,
+  // where only the folded id had one. `effectiveLaw`/`resolveToneLaw` must
+  // therefore surface the SURVIVOR's own caveat at the descriptor default
+  // (`nesting:'single'`), not silently show nothing, and swap to
+  // `weaveDepth`'s distinct caveat once `nesting:'nested'` is picked — both
+  // paths verified in the U7 caveat describe block.
+  ampSpacing: [{
+    key: 'nesting', label: 'Nesting', default: 'single',
+    options: [
+      { value: 'single', label: 'Single wave row', law: 'ampSpacing' },
+      { value: 'nested', label: 'Nested rows', law: 'weaveDepth' },
+    ],
+  }],
 };
 
 // ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────

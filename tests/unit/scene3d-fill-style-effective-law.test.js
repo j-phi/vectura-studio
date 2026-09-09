@@ -84,4 +84,39 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
     expect(FS.effectiveLaw('contFieldSigmoid', bag)).toBe('contFieldSigmoid');
     expect(Params.resolveToneLaw({ toneLaw: 'contFieldSigmoid', ...bag })).toBe('contFieldSigmoid');
   });
+
+  // U7 (C-07, ampSpacing/nesting) — secretary condition (a),
+  // docs/3d-audit/STILL-OPEN.md: "the standing caveat ruling binds U7 ...
+  // the generative cross-check must cover the new fold." Unlike every
+  // earlier cluster in this chain, U7 is the first where BOTH the survivor
+  // (`ampSpacing`) AND the folded id (`weaveDepth`) carry their own real,
+  // DIFFERENT measured caveats — so this pins that `FS.note` reads the
+  // RIGHT one of the two off `effectiveLaw`'s result, not just "a" caveat.
+  // This lives in the SHARED cross-check file (not a private test in
+  // scene3d-tone-law-collapse.test.js's own U7 block) because it is the
+  // third site encoding ALIASES-> sibling-key knowledge that must never
+  // drift from `resolveToneLaw`/`effectiveLaw` (the same reason U5b-3 itself
+  // exists) — a caveat-survival regression here is exactly the class of bug
+  // this file was built to catch mechanically instead of by inspection.
+  test('U7: weaveDepth\'s caveat survives the fold through effectiveLaw, and is distinct from ampSpacing\'s own — both resolvers agree', () => {
+    const R = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+    expect(R.ALIASES.weaveDepth).toEqual({ into: 'ampSpacing', params: { nesting: 'nested' } });
+    expect(R.BY_ID.ampSpacing.caveat.length).toBeGreaterThan(0);
+    expect(R.BY_ID.weaveDepth.caveat.length).toBeGreaterThan(0);
+    expect(R.BY_ID.ampSpacing.caveat).not.toBe(R.BY_ID.weaveDepth.caveat);
+
+    // Default (nesting:'single', or omitted) -> ampSpacing's OWN caveat,
+    // not empty (unlike every earlier survivor in this chain).
+    expect(FS.effectiveLaw('ampSpacing', {})).toBe('ampSpacing');
+    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing' })).toBe('ampSpacing');
+    expect(FS.note(FS.effectiveLaw('ampSpacing', {})).caveat).toBe(R.BY_ID.ampSpacing.caveat);
+
+    // nesting:'nested' -> weaveDepth's DISTINCT caveat, agreed by both
+    // resolvers, and it must not silently fall back to ampSpacing's own.
+    expect(FS.effectiveLaw('ampSpacing', { nesting: 'nested' })).toBe('weaveDepth');
+    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', nesting: 'nested' })).toBe('weaveDepth');
+    const foldedCaveat = FS.note(FS.effectiveLaw('ampSpacing', { nesting: 'nested' })).caveat;
+    expect(foldedCaveat).toBe(R.BY_ID.weaveDepth.caveat);
+    expect(foldedCaveat).not.toBe(R.BY_ID.ampSpacing.caveat);
+  });
 });
