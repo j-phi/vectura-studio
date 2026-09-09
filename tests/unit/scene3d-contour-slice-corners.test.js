@@ -164,9 +164,20 @@ const coneCrossSectionWorld = (sizes, z0, n = 20001) => {
     const x = Math.sqrt(Math.max(0, r2));
     pts.push({ x, y, z: z0 });
   }
-  // base(+x) -> vertex(+x branch reaches x~0) -> mirror back down as -x branch
+  // base(+x) -> vertex(+x branch reaches x~0) -> mirror back down as -x branch.
   const mirrored = pts.slice(0, -1).reverse().map((p) => ({ x: -p.x, y: p.y, z: p.z }));
-  return pts.concat(mirrored).concat([{ ...pts[0] }]);
+  // NO closing-point append here (W-34b correction): unlike the capsule
+  // below, the cone has a flat base DISK, so this base(+x) -> vertex ->
+  // base(-x) curve is a genuinely OPEN arc — the two base-rim endpoints are
+  // real, distinct points (at +x and -x on the base circle) connected only
+  // by the (undrawn) base rim, not by the lateral surface this cross-section
+  // traces. Appending `{...pts[0]}` as a synthetic closing point invented a
+  // phantom wrap-around window straddling the ~36mm base chord, which
+  // `turnOverArc`/`isClosedRun` then read as "closed" and used to compute a
+  // spurious 141.56 deg/mm "corner" at the seam — nearly 2x the true
+  // ~76.18 deg/mm near-apex corner. See W-34-review.md §3 and
+  // docs/3d-audit/lane-reports/W-34b-impl.md.
+  return pts.concat(mirrored);
 };
 
 // Capsule: axis y, radius r = min(sx,sz) (the default rig has sx===sz, so the
