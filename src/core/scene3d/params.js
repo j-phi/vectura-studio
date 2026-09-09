@@ -729,6 +729,10 @@
       case 'sliceRotate': return clamp(finite(value, 0), -360, 360);
       case 'sliceTilt': return clamp(finite(value, 0), -180, 180);
       case 'sliceVisibility': return SLICE_VISIBILITIES.includes(value) ? value : 'visibleOnly';
+      // W-35 — end overlap (docs/3d-audit/lane-reports/W-35-plan.md). Unit is
+      // pen widths, in [-2, 8]; 0 (default) is a byte-identical no-op. See
+      // scene3d.js's own END_OVER_MM comment for the mechanism.
+      case 'sliceEndOverlap': return clamp(finite(value, 0), -2, 8);
       case 'burstCount': return clamp(Math.round(finite(value, 16)), 6, 48);
       case 'burstCenter': return BURST_CENTERS.includes(value) ? value : 'specular';
       // Surface-fill TONE LAW. The roster is owned by src/config/scene3d-tone-laws.js

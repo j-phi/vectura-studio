@@ -816,6 +816,133 @@
     return closed ? [...base, { ...base[0] }] : base;
   };
 
+  // ── W-35 — end overlap. Pure geometry, no per-pass closure (no
+  // smoothSurface/analyticProject — the caller refines the result exactly as
+  // it already refines linkPlane's output). docs/3d-audit/lane-reports/
+  // W-35-plan.md §4.1 is the mechanism this implements.
+  //
+  // `frontSegs`/`backSegs` are one PLANE's buildSliceSegments cut list,
+  // already split front/back (`[{a,b}, ...]` as `[a,b]` pairs — the shape
+  // `byPlane` groups them into). `targetMm` is `sliceEndOverlap` already
+  // resolved to world mm (0 ⇒ the literal pre-W-35 `G3.linkSegments(frontSegs)`
+  // call, unconditionally — this is what makes the default an EXACT no-op,
+  // not an approximately-equal one).
+  const slice2DKey = (pt) => `${pt.x.toFixed(3)},${pt.y.toFixed(3)}`;
+  const sliceDist3 = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+  // The neighbour of ring[idx] that is NOT the chain's own known interior
+  // point (avoidPt) — the direction AWAY from the front chain, along the
+  // combined front+back ring. `ring` may be a literal closed loop (first ===
+  // last) or an open strand; both are handled, wrapping only when closed.
+  const sliceNeighborAway = (ring, idx, avoidPt) => {
+    const n = ring.length;
+    const closed = n > 2 && slice2DKey(ring[0]) === slice2DKey(ring[n - 1]);
+    const upIdx = idx + 1 < n ? idx + 1 : (closed ? 1 : -1);
+    const downIdx = idx - 1 >= 0 ? idx - 1 : (closed ? n - 2 : -1);
+    const avoidKey = slice2DKey(avoidPt);
+    if (upIdx !== -1 && slice2DKey(ring[upIdx]) !== avoidKey) return { idx: upIdx, dir: 1, closed, n };
+    if (downIdx !== -1 && slice2DKey(ring[downIdx]) !== avoidKey) return { idx: downIdx, dir: -1, closed, n };
+    return null;
+  };
+  // Walk `ring` from `ring[startIdx]` in `dir` (wrapping iff `closed`),
+  // accumulating world-space arc length up to `targetMm`. Returns the walked
+  // points (NOT including ring[startIdx]), the last one interpolated so the
+  // returned polyline's arc length is exactly targetMm — or, if the ring
+  // runs out first (an open full-ring strand, or a topological edge), as far
+  // as it goes.
+  const sliceWalkArc = (ring, startIdx, dir, closed, n, targetMm) => {
+    const out = [];
+    let acc = 0;
+    let prevIdx = startIdx;
+    let cur = dir === 1 ? startIdx + 1 : startIdx - 1;
+    let steps = 0;
+    while (steps <= n + 1) {
+      let curIdx = cur;
+      if (closed) curIdx = ((cur % n) + n) % n;
+      else if (curIdx < 0 || curIdx >= n) break;
+      const a = ring[((prevIdx % n) + n) % n];
+      const b = ring[curIdx];
+      const segLen = sliceDist3(a, b);
+      if (acc + segLen >= targetMm) {
+        const t = segLen > 1e-9 ? (targetMm - acc) / segLen : 0;
+        out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
+        return out;
+      }
+      acc += segLen;
+      out.push({ ...b });
+      prevIdx = curIdx;
+      cur = dir === 1 ? cur + 1 : cur - 1;
+      steps += 1;
+    }
+    return out;
+  };
+  // Trim `pts` from its own start by `target` mm of arc, replacing the
+  // consumed points with the single exact interpolated point.
+  const sliceTrimFromStart = (pts, target) => {
+    if (target <= 0) return pts;
+    let acc = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const segLen = sliceDist3(pts[i - 1], pts[i]);
+      if (acc + segLen >= target) {
+        const t = segLen > 1e-9 ? (target - acc) / segLen : 0;
+        const a = pts[i - 1]; const b = pts[i];
+        const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t };
+        return [p, ...pts.slice(i)];
+      }
+      acc += segLen;
+    }
+    return pts.slice(-1);
+  };
+  const extendFrontChains = (frontSegs, backSegs, targetMm) => {
+    const linkSegments = G3.linkSegments;
+    if (!linkSegments) return frontSegs.map((e) => [e[0], e[1]]);
+    if (!targetMm) return linkSegments(frontSegs);
+    const frontChains = linkSegments(frontSegs);
+    if (!frontChains.length) return [];
+    let fullPlaneRings = null;
+    const getFullPlaneRings = () => {
+      if (!fullPlaneRings) fullPlaneRings = linkSegments(frontSegs.concat(backSegs));
+      return fullPlaneRings;
+    };
+    const findInRings = (rings, pt) => {
+      for (let ri = 0; ri < rings.length; ri++) {
+        const idx = rings[ri].findIndex((p) => slice2DKey(p) === slice2DKey(pt));
+        if (idx !== -1) return { ring: rings[ri], idx };
+      }
+      return null;
+    };
+    return frontChains.map((chain) => {
+      if (chain.length < 2) return chain;
+      const a0 = chain[0];
+      const aN = chain[chain.length - 1];
+      const isClosedChain = chain.length >= 4 && sliceDist3(a0, aN) < 1e-6;
+      if (isClosedChain) return chain; // no ends to move
+      if (targetMm > 0) {
+        const rings = getFullPlaneRings();
+        const hit0 = findInRings(rings, a0);
+        const hitN = findInRings(rings, aN);
+        let extraStart = [];
+        if (hit0 && chain.length > 1) {
+          const nb = sliceNeighborAway(hit0.ring, hit0.idx, chain[1]);
+          if (nb) extraStart = sliceWalkArc(hit0.ring, hit0.idx, nb.dir, nb.closed, nb.n, targetMm);
+        }
+        let extraEnd = [];
+        if (hitN && chain.length > 1) {
+          const nb = sliceNeighborAway(hitN.ring, hitN.idx, chain[chain.length - 2]);
+          if (nb) extraEnd = sliceWalkArc(hitN.ring, hitN.idx, nb.dir, nb.closed, nb.n, targetMm);
+        }
+        return [...extraStart.slice().reverse(), ...chain, ...extraEnd];
+      }
+      // Negative — trim inward from each end, capped so the two trims can
+      // never cross (a run can shrink but never vanish or invert).
+      let chainLen = 0;
+      for (let i = 1; i < chain.length; i++) chainLen += sliceDist3(chain[i - 1], chain[i]);
+      const cap = Math.min(-targetMm, chainLen * 0.45);
+      let trimmed = sliceTrimFromStart(chain, cap);
+      trimmed = sliceTrimFromStart(trimmed.slice().reverse(), cap).reverse();
+      return trimmed;
+    });
+  };
+
   const Scene3DNS = (Vectura.Scene3D = Vectura.Scene3D || {});
   // analyticProjectLocal / localPlaneNormal / inverseObjectTransform are
   // exposed alongside refineRing/buildSliceSegments so tests can drive the
@@ -830,6 +957,11 @@
     analyticProjectLocal: sliceAnalyticProjectLocal,
     localPlaneNormal: sliceLocalPlaneNormal,
     inverseObjectTransform: sliceInverseObjectTransform,
+    // W-35 — exposed for direct, world-space unit coverage of the end-overlap
+    // mechanism (arc advance / trim / faceted inertness), the same rationale
+    // as the four exports above: validate THIS wiring, not a re-derivation
+    // of it in test code.
+    extendFrontChains,
   };
 
   const FALLBACK_STYLE = { penId: null, mapper: 'none', params: {} };
@@ -4392,6 +4524,17 @@
               sliceTilt: finite(sp.sliceTilt, 0),
             });
             const sliceTreat = strokeTreatment(sp);
+            // W-35 — "end overlap" (USER product request,
+            // docs/3d-audit/lane-reports/W-35-plan.md, the stair-step at ring
+            // ends). `sliceEndOverlap` is in PEN WIDTHS, the same unit
+            // CROWD_CULL_K * penWidth already uses just below. 0 (default) is
+            // a byte-identical no-op — see linkFrontExtended's own literal
+            // `linkPlane(g.front)` fast path. Positive: each open front run
+            // is carried further along ITS OWN ring past the facet cut
+            // (subtly more overlap at the silhouette, better outer-edge
+            // fidelity — Jay's ask). Negative: each run is trimmed back
+            // (less ink piling on the outline, for wet-ink plotting).
+            const END_OVER_MM = clamp(finite(sp.sliceEndOverlap, 0), -2, 8) * penWidth;
             // NOT selfObject: a through-body slice SHOULD self-occlude (the far
             // side hides behind the near surface) — only on-surface fills opt out.
             // segCtx.selfOcclude is set below, once analyticProject is known —
@@ -4492,6 +4635,41 @@
                   ? { analyticProject, project: refineProjectFn } : { project: refineProjectFn }))
                 : rings;
             };
+            // W-35 — sliceEndOverlap's mechanism. At END_OVER_MM === 0 this
+            // is EXACTLY `linkPlane(g.front)` (the literal pre-W-35 call),
+            // proving T1 (byte-identical default) by construction rather than
+            // by numeric equality. Otherwise, for each OPEN front chain (a
+            // CLOSED front ring — e.g. a fully-visible equator — has no ends
+            // to move and is returned unchanged), relink the WHOLE plane
+            // (front + back) into its full ring: the front chain's two
+            // endpoints are exact facet-edge crossings shared bit-for-bit by
+            // an adjacent back segment (both computed by the same edgeCross
+            // arithmetic on the same two vertices), so they are always
+            // present, at the same coordinates, in that combined ring.
+            // Positive k walks OUTWARD from each endpoint along the full
+            // ring (into what was the back-facing arc), accumulating
+            // world-space arc length until k mm; negative k instead walks
+            // INWARD along the front chain itself, trimming it. Either way
+            // the result is refined exactly like `linkPlane` (the SAME
+            // `refineSliceRing` call, so added/kept points are re-snapped to
+            // the analytic surface, not left as raw chords — this is what
+            // keeps the extension ON the surface instead of flying off it).
+            // Pure geometry lives in the module-level `extendFrontChains`
+            // (exposed at Scene3DNS.Slices.extendFrontChains for direct
+            // world-space unit coverage). At END_OVER_MM === 0 it returns
+            // `G3.linkSegments(front)` unconditionally, matching the literal
+            // pre-W-35 `linkPlane` call's own first step exactly, so T1's
+            // byte-identity holds by construction. The result is then
+            // refined exactly as `linkPlane` already refines its output.
+            // GATED on `smoothSurface` (forced to 0 otherwise) — on a
+            // faceted primitive the front/back split is exact geometry, so
+            // extending past it would draw onto a genuinely back-facing
+            // plane; T5 asserts this inertness (see the plan's §2.1 gate).
+            const linkFrontExtended = (front, back) => extendFrontChains(front, back, smoothSurface ? END_OVER_MM : 0)
+              .map((ring) => (smoothSurface
+                ? refineSliceRing(ring, analyticProject
+                  ? { analyticProject, project: refineProjectFn } : { project: refineProjectFn })
+                : ring));
             const projectPath = (worldPts) => {
               const proj = [];
               for (let i = 0; i < worldPts.length; i++) {
@@ -4530,7 +4708,7 @@
             byPlane.forEach((g, level) => {
               // Front rings: HLR-clipped (occluded/self-occluded) until the fixed
               // budget is spent, then raw — never dropped.
-              linkPlane(g.front).forEach((worldPts) => {
+              linkFrontExtended(g.front, g.back).forEach((worldPts) => {
                 const proj = projectPath(worldPts);
                 if (proj.length < 2) return;
                 // W-27c-0a iteration 3 — the crowding decision is made ONCE,

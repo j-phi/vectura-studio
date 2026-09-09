@@ -817,6 +817,40 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(p.toneLaw).toBe('etfKang');
   });
 
+  // W-35 — "End overlap" (USER product request, docs/3d-audit/lane-reports/
+  // W-35-plan.md). The descriptor default is LIVE (mapperDefaults seeds it
+  // on every mapper switch, scene3d-panel.js ~493-500) — this is the ONE
+  // origin generate()-level tests (scene3d-slice-end-overlap.test.js) cannot
+  // see, per CLAUDE.md's "four origins" warning: a non-zero descriptor
+  // default would silently write a non-zero value into a fresh hatch ->
+  // Slices detour, even though scene3d.js's own `finite(sp.sliceEndOverlap,
+  // 0)` fallback is correct.
+  test('Style tab · mapper Slices seeds sliceEndOverlap: 0 and mounts the End overlap slider (-2..8, step 0.25)', () => {
+    const { container, layer } = mount({ objects: [fixtureObject(1)] });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+    const mapSel = [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'contourSlice'));
+    expect(mapSel).toBeTruthy();
+    mapSel.value = 'contourSlice';
+    fire(mapSel, 'change');
+    const stored = layer.params.styleTable.byObject['obj-1'];
+    expect(stored.mapper).toBe('contourSlice');
+    expect(stored.params.sliceEndOverlap).toBe(0);
+
+    const endOverlap = container.querySelector('input.ctrl-slider[aria-label="Slice end overlap"]');
+    expect(endOverlap).toBeTruthy();
+    expect(Number(endOverlap.min)).toBe(-2);
+    expect(Number(endOverlap.max)).toBe(8);
+    expect(Number(endOverlap.step)).toBe(0.25);
+    expect(Number(endOverlap.value)).toBe(0);
+
+    endOverlap.value = '4';
+    fire(endOverlap, 'input');
+    fire(endOverlap, 'change');
+    expect(layer.params.styleTable.byObject['obj-1'].params.sliceEndOverlap).toBe(4);
+  });
+
   // I15 — Dash-length (renamed from "Dash scale") is hidden when Line = solid
   // and appears only for dashed / dash-dot / dotted line types.
   test('Style tab · Dash length is hidden for a solid line and appears when dashed (I15)', () => {

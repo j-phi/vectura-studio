@@ -439,6 +439,13 @@
       { key: 'sliceVisibility', kind: 'seg', label: 'Show', ariaLabel: 'Slice visibility', default: 'visibleOnly', options: SLICE_VIS_OPTS },
       { key: 'sliceRotate', kind: 'dial', label: 'Rotate', ariaLabel: 'Slice plane rotate', min: -360, max: 360, step: 1, default: 0 },
       { key: 'sliceTilt', kind: 'dial', label: 'Tilt', ariaLabel: 'Slice plane tilt', min: -180, max: 180, step: 1, default: 0 },
+      // W-35 — USER product request: how far each ring end is carried past
+      // (positive) or pulled back from (negative) the silhouette, in pen
+      // widths. default MUST be 0 — mapperDefaults (below) seeds this on
+      // EVERY mapper switch, so a non-zero default here would silently write
+      // a non-zero value into a fresh hatch->Slices detour (see
+      // docs/3d-audit/lane-reports/W-35-plan.md §2.2).
+      { key: 'sliceEndOverlap', kind: 'slider', label: 'End overlap', ariaLabel: 'Slice end overlap', min: -2, max: 8, step: 0.25, default: 0 },
     ],
   };
   const carry = (cur, key, dflt) => (cur[key] !== undefined && cur[key] !== null ? cur[key] : dflt);
@@ -1367,6 +1374,12 @@
           value: Number.isFinite(style.params.sliceTilt) ? style.params.sliceTilt : 0,
           min: -180, max: 180, step: 1, defaultValue: 0, ariaLabel: 'Slice plane tilt',
           ...liveSlider((v) => { style.params.sliceTilt = Math.round(v); }),
+        });
+        // W-35 — end overlap (pen widths, -2..8, default 0 no-op).
+        slider(host, 'End overlap', {
+          value: Number.isFinite(style.params.sliceEndOverlap) ? style.params.sliceEndOverlap : 0,
+          min: -2, max: 8, step: 0.25, defaultValue: 0, ariaLabel: 'Slice end overlap',
+          ...liveSlider((v) => { style.params.sliceEndOverlap = v; }),
         });
       }
 
