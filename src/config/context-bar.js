@@ -256,6 +256,34 @@
     const sp = R && R.STYLE_PARAMS && R.STYLE_PARAMS[id];
     return Array.isArray(sp) ? sp : [];
   };
+  // W-10d-3 — the bag the picker should DISPLAY for a style whose `toneLaw`
+  // is still a RAW folded id (a .vectura saved before the U1-U5 collapse; an
+  // object3d leaf is never normalized at load — engine.js:422 runs only
+  // migrateScene for that type). The compositor sees the shim's reconstruction
+  // (params.js normalizeStyle, :833) and renders the folded law correctly; the
+  // panel reads the LAYER bag, where the sibling collapse key does not exist,
+  // and so falls back to the descriptor default. This seeds that key for
+  // DISPLAY only - nothing is written back (a write-back at panel-open time
+  // would dirty the document and push an undo entry; the once-only write-back
+  // contract belongs to W-10d-2, params.js, fill-collapse-2's file).
+  //
+  // Precedence mirrors normalizeStyle's shim EXACTLY - `=== undefined` only,
+  // so an explicitly stored key (including `null`) always wins, and the panel
+  // shows the same law resolveToneLaw dispatches. Returns the SAME object when
+  // `toneLaw` is not an ALIASES key, so every reachable picker state is a
+  // provable no-op (and stays one once W-10d-2 migrates the bag).
+  SCENE_FILL_STYLES.displayParams = (rawValue, paramsBag) => {
+    const bag = (paramsBag && typeof paramsBag === 'object') ? paramsBag : {};
+    const raw = (typeof rawValue === 'string' && rawValue)
+      ? rawValue : (typeof bag.toneLaw === 'string' ? bag.toneLaw : '');
+    const R = fillStyleRoster();
+    const alias = raw && R && R.ALIASES && R.ALIASES[raw];
+    const seed = alias && alias.params;
+    if (!seed) return bag;
+    const out = { ...bag };
+    Object.keys(seed).forEach((k) => { if (out[k] === undefined) out[k] = seed[k]; });
+    return out;
+  };
   // [{ group, options: [{ value, label, disabled? }] }] for UI.Select, grouped
   // by MARK CLASS. Every law the roster knows is always offered — all 47 plus
   // the shipped default — with no tier gate and no per-option suffix; the

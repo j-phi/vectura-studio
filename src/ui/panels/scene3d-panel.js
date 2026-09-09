@@ -691,7 +691,12 @@
     // no-op. `o.paramsBag` is the SAME live params object `o.write` commits
     // into; `o.writeStyleParams` is that call site's whole-bag-aware sibling
     // of `o.write` (patches one or more keys at once instead of just toneLaw).
-    const styleParamBag = o.paramsBag || {};
+    // W-10d-3 — seed the DISPLAY bag from ALIASES when `o.value` is still a
+    // raw folded toneLaw (see src/config/context-bar.js's `displayParams`
+    // comment for why). Read-only here: every write below still goes through
+    // `o.write`/`o.writeStyleParams` against the untouched live bag.
+    const styleParamBag = FS.displayParams
+      ? FS.displayParams(o.value, o.paramsBag || {}) : (o.paramsBag || {});
     FS.styleParams(law).forEach((d) => {
       const has = styleParamBag[d.key] !== undefined && styleParamBag[d.key] !== null;
       const dv = has ? styleParamBag[d.key] : d.default;

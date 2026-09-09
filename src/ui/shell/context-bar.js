@@ -1604,16 +1604,23 @@
       // (COLLAPSE === {}), so this loop runs zero times today — a provable
       // no-op. The write carries the FULL params bag, matching the Fill
       // Style row's own write above.
+      // W-10d-3 — seed the DISPLAY bag from ALIASES when `params.toneLaw` is
+      // still a raw folded id (see src/config/context-bar.js's
+      // `displayParams` comment). `params` itself stays the write source
+      // below (`write({ params: { ...params, … } })`) — only the READ side
+      // is seeded.
+      const dispParams = FS.displayParams ? FS.displayParams(params.toneLaw, params) : params;
       FS.styleParams(law).forEach((d) => {
-        const has = params[d.key] !== undefined && params[d.key] !== null;
-        const dv = has ? params[d.key] : d.default;
+        const has = dispParams[d.key] !== undefined && dispParams[d.key] !== null;
+        const dv = has ? dispParams[d.key] : d.default;
         const subHost = flyRow(fly, d.label);
         attachSelectArrowStep(selectElOf(flyMixedSelect(subHost, {
           options: d.options.map((opt) => ({ value: opt.value, label: opt.label })),
           value: dv,
           ariaLabel: d.label,
           mixed: sceneAgree(sc, (id) => {
-            const p = rs(id).params || {};
+            const q = rs(id).params || {};
+            const p = FS.displayParams ? FS.displayParams(q.toneLaw, q) : q;
             return (p[d.key] !== undefined && p[d.key] !== null) ? p[d.key] : d.default;
           }).mixed,
           onChange: (v) => { write({ params: { ...params, [d.key]: v } }); rebuild(); },

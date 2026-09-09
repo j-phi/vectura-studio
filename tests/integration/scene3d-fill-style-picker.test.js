@@ -1274,6 +1274,43 @@ describe('Fill Style — context-bar Style flyout', () => {
       expect(openFly().querySelector('.ctxbar-fly-note.is-faceted')).toBeTruthy();
     });
   });
+
+  // ── W-10d-3 — same lie on the ctxbar Style flyout, on a REAL scene-tree
+  // child (not the monolith `styleTable` fixture the rest of this describe
+  // uses) — `getSceneObjectResolvedStyle` patches in the child layer's LIVE
+  // `params.style` for a tree object, so this exercises the actual bag both
+  // real entry points (canvas pick / layer-row click) select against.
+  describe('W-10d-3 — sub-control DISPLAY value for a raw folded toneLaw (real tree)', () => {
+    const buildTreeWithStyle = (style) => {
+      app.engine.layers = app.engine.layers.filter((l) => l.type !== 'scene3d');
+      const gid = app.engine.addLayer('scene3d');
+      const group = app.engine.getLayerById(gid);
+      const kids = app.engine.getLayerChildren(gid);
+      const objChild = kids.find((l) => l.type === 'object3d');
+      objChild.params.style = style;
+      app.engine.computeAllDisplayGeometry();
+      app.renderer.setSelection([objChild.id], objChild.id);
+      app.renderer.setSceneSelection({
+        layerId: gid, mode: 'object', objectIds: [objChild.id], faceKeys: [], edgeKeys: [],
+      });
+      CB.restoreState();
+      return { group, objChild };
+    };
+
+    test('R3 — ctxbar flyout, real tree child, raw contFieldTouch: Field floor shows touch, not the plot default', () => {
+      buildTreeWithStyle({ penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldTouch' } });
+      pillByLabel('Style').click();
+      const fly = openFly();
+      expect(rowCtl(fly, 'Field floor').querySelector('select').value).toBe('touch');
+    });
+
+    test('R3g — over-fix guard: Field metric (the OTHER descriptor on the same law) is untouched', () => {
+      buildTreeWithStyle({ penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldTouch' } });
+      pillByLabel('Style').click();
+      const fly = openFly();
+      expect(rowCtl(fly, 'Field metric').querySelector('select').value).toBe('screen');
+    });
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1653,6 +1690,79 @@ describe('Fill Style — docked 3D Scene panel', () => {
   test('the LEAF panel hides the row on wireframe', () => {
     const { container } = mountLeaf('object3d', { penId: null, mapper: 'wireframe', params: {} });
     expect(leafRow(container, 'Fill Style')).toBeUndefined();
+  });
+
+  // ── W-10d-3 — the Style tab shows the WRONG sub-control value for a RAW
+  // FOLDED toneLaw. A `.vectura` saved before the U1-U5 collapse (or any
+  // live-composed leaf) carries the folded id alone (e.g. `{toneLaw:
+  // 'bundleDither'}`) — `normalizeStyle`'s U0 migration shim reconstructs
+  // the `{survivor, siblingKey}` shape only on the throw-away compose-time
+  // copy the compositor feeds `algo.generate` (engine.js:2690/:2714); the
+  // panel and ctxbar read the LIVE layer bag, where the sibling key never
+  // existed, so `FS.styleParams(law)`'s `has` check is always false and the
+  // sub-control silently falls back to its descriptor DEFAULT — even though
+  // the canvas renders the folded id correctly. `object3d` leaves are never
+  // migrated at load either (engine.js:422 runs only `migrateScene` for that
+  // type). See docs/3d-audit/lane-reports/W-10d-3-plan.md.
+  describe('W-10d-3 — sub-control DISPLAY value for a raw folded toneLaw', () => {
+    test('R1 — docked LEAF, raw fineLadder: Rung detail shows fine, not the coarse default', () => {
+      const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: { toneLaw: 'fineLadder' } });
+      expect(leafRow(container, 'Rung detail').querySelector('select').value).toBe('fine');
+    });
+
+    test('R1g — over-fix guard: the Fill Style row itself is untouched (still the survivor, ladder)', () => {
+      const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: { toneLaw: 'fineLadder' } });
+      expect(leafRow(container, 'Fill Style').querySelector('select').value).toBe('ladder');
+    });
+
+    test('R2 — docked LEAF, raw bundleDither: Bundle mode shows dither, not the count default', () => {
+      const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleDither' } });
+      expect(leafRow(container, 'Bundle mode').querySelector('select').value).toBe('dither');
+    });
+
+    // ── R4/R5 — the real save/open path (exportState → importState), not a
+    // hand-poked bag: proves the load channel (engine.js:422, migrateScene
+    // only) really does leave the leaf bag raw, and that the render side
+    // (which independently calls Params.normalizeParams inside
+    // algo.generate — engine.js:2714 / scene3d.js:1191) is unaffected.
+    const roundTrip = (toneLaw) => {
+      const V = window.Vectura;
+      const e1 = new V.VectorEngine();
+      const gid = e1.addLayer('scene3d');
+      const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+      obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw } };
+      const e2 = new V.VectorEngine();
+      e2.importState(JSON.parse(JSON.stringify(e1.exportState())));
+      const group2 = e2.layers.find((l) => l.type === 'scene3d' && l.isGroup);
+      const obj2 = e2.getLayerDescendants(group2.id).find((l) => l.type === 'object3d');
+      return { V, e2, group2, obj2 };
+    };
+
+    test('R4 — save/open round trip: docked LEAF Bundle mode shows dither for a reopened bundleDither document', () => {
+      const { V, obj2 } = roundTrip('bundleDither');
+      // Guard the fixture itself: the leaf bag really does reopen raw —
+      // if this ever flips (e.g. W-10d-2's write-back generalizes to this
+      // type), R4 stops proving anything and must be revisited, not silently
+      // kept green by a fix that moved upstream of it.
+      expect(obj2.params.style.params.toneLaw).toBe('bundleDither');
+      const ui = { app: { pushHistory: () => {}, regen: () => {} }, storeLayerParams: () => {} };
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      V.UI.Scene3DPanel.build(ui, obj2, container);
+      const tab = Array.from(container.querySelectorAll('.tab-btn'))
+        .find((b) => b.dataset && b.dataset.value === 'style');
+      if (tab) fire(tab, 'click');
+      expect(leafRow(container, 'Bundle mode').querySelector('select').value).toBe('dither');
+    });
+
+    test('R5 — canvas-vs-UI anchor: the render already resolves bundleDither correctly and must not move', () => {
+      const { V, e2, group2, obj2 } = roundTrip('bundleDither');
+      e2.computeAllDisplayGeometry();
+      const assembled = group2._sceneAssembled;
+      expect(assembled).toBeTruthy();
+      const byObjectParams = assembled.styleTable.byObject[obj2.id].params;
+      expect(V.Scene3D.Params.resolveToneLaw(byObjectParams)).toBe('bundleDither');
+    });
   });
 
   // fs-m2 Job 1 — same focus-retention contract as the scene/object/face
