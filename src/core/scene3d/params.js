@@ -999,6 +999,42 @@
     };
   };
 
+  // U9 (resolve half, docs/3d-audit/lane-reports/W-22-24-W-18-plan.md §U9) —
+  // `shadowToneLaw`'s OWN clamp, no longer routed through the shared
+  // `clampStyleParam('toneLaw', …)` case above. That shared case collapses a
+  // FOLDED (ALIASES) id straight to its survivor (e.g. 'fineLadder' ->
+  // 'ladder') because `normalizeStyle`'s migration shim is what restores the
+  // lost information for `style.params.toneLaw` — it independently re-reads
+  // the RAW `src.params.toneLaw` and writes the sibling collapse param (e.g.
+  // `rungMode:'fine'`) onto the same bag. The shadow bag has no such shim and
+  // no sibling sub-control field to write that param into (see DEFAULT_SHADOW
+  // above — one flat `shadowToneLaw` string, nothing else), so collapsing it
+  // here has no way to get the information back: `shadows.js`'s
+  // `HATCH_LAW_RECIPES` is keyed by the INTERNAL id (`fineLadder` has its own
+  // recipe distinct from plain `ladder`'s fallback) and would silently draw
+  // the wrong texture for every scene saved with a pre-collapse value.
+  // A folded id is still a full member of the 48-id engine vocabulary
+  // (`IDS` never shrinks on collapse), so this mirrors `resolveToneLaw`'s own
+  // rule 2 verbatim ("an id that is itself a key of ALIASES is already the
+  // correct internal id") — checked directly against `ALIASES`, not inferred
+  // from `IDS` membership, so it is passed through unchanged exactly like any
+  // other recognized id. The picker only ever offers `PICKER_IDS` (folded ids
+  // excluded), so this never lets a NEW pick reach the folded value — it only
+  // preserves what an already-saved scene/preset carries.
+  const clampShadowToneLaw = (value) => {
+    const roster = Vectura.SCENE3D_TONE_LAWS || null;
+    const R = (roster && roster.IDS) || null;
+    const DEF = (roster && roster.DEFAULT) || 'ladder';
+    if (typeof value === 'string' && value === DEF) return DEF;
+    const ALIASES = (roster && roster.ALIASES) || null;
+    if (typeof value === 'string' && ALIASES && Object.prototype.hasOwnProperty.call(ALIASES, value)) return value;
+    if (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) return value;
+    // Warn only for a genuinely unrecognized id — same reasoning as the shared
+    // clampStyleParam('toneLaw') case above.
+    if (typeof value === 'string' && value && R) warnUnknownToneLaw(value);
+    return 'ladder';
+  };
+
   const normalizeShadow = (shadow) => {
     const src = isObject(shadow) ? shadow : {};
     return {
@@ -1011,9 +1047,7 @@
       shadowLayerCount: clamp(Math.round(finite(src.shadowLayerCount, DEFAULT_SHADOW.shadowLayerCount)), 2, 4),
       shadowFalloff: clamp(finite(src.shadowFalloff, DEFAULT_SHADOW.shadowFalloff), 0.2, 1),
       shadowAngleFollowsLight: src.shadowAngleFollowsLight === true,
-      // Reuses the exact `toneLaw` clamp `style.params.toneLaw` goes through
-      // (single choke point, no drift) — unknown/absent id resolves to 'ladder'.
-      shadowToneLaw: clampStyleParam('toneLaw', src.shadowToneLaw),
+      shadowToneLaw: clampShadowToneLaw(src.shadowToneLaw),
       shadowToneDepth: clamp(finite(src.shadowToneDepth, DEFAULT_SHADOW.shadowToneDepth), 0, 1),
       shadowReceiveOnObjects: src.shadowReceiveOnObjects === true,
     };
