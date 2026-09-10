@@ -2558,4 +2558,340 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       expect(med.largestW).toBeLessThan(41.7 * 1.10);
     });
   });
+
+  // ── W-27c-0a-5 — measure-and-guard: the default torus's contourSlice rings
+  // that arrive at refineSliceRing with <=4 RAW points (docs/3d-audit/
+  // lane-reports/W-27c-0a-5-impl.md has the full measurement). Tests-only:
+  // `refineSliceRing` is exercised ONLY through the already-public
+  // `Scene3D.Slices.refineRing` / `buildSliceSegments` / `Geometry3D.
+  // linkSegments` / `analyticProjectLocal` / `localPlaneNormal` /
+  // `inverseObjectTransform` / `Scene.assembleScene` / `Scene.
+  // applyObjectTransform` — the SAME real production wiring the mapper uses
+  // internally (mirrors this file's own `linkPlane`/`analyticProject`
+  // construction and W-34's `realPlaneZ0s()` precedent), never a private
+  // reach into scene3d.js.
+  //
+  // MEASURED (default torus, sliceCount 26 — the mapper's own default, a
+  // pure function of sliceCount so fillDensity 50 "med" and 220 "max" are
+  // byte-identical by construction, confirmed below): of 47 total FRONT
+  // rings, exactly 5 arrive at refineSliceRing with <=4 raw points — TWO
+  // 3-point, ONE 2-point, TWO 4-point (a leftover-finding note: the brief's
+  // "one is a 3-point ring" underccounts; measured precisely, it's two).
+  // None is crowd-cull-dropped (confirmed via a from-scratch instrumented
+  // copy of this exact commit, kept out of this file — see the impl report).
+  //
+  // The level-6 ring is the interesting one: two RAW points 0.0038mm apart
+  // (inside the seam-DUP_EPS-adjacent but not deduped band) drive the
+  // Catmull-Rom subdivision into a genuine non-convergence: it consumes ALL
+  // 8 rounds, balloons to 513 points, and its device-space max turn NEVER
+  // drops below the 8 deg stop condition (measured ~180 deg at round 8).
+  // It is harmless TODAY only because its total drawn length is ~0.004mm —
+  // far below one pen width. This guard pins that harmlessness explicitly
+  // (length bar) so a future refinement change cannot silently let this
+  // same non-convergent ring balloon into a VISIBLE blob while still
+  // "passing" every other torus O2 bar in this file.
+  //
+  // THIS IS A MEASUREMENT PIN, NOT A CLAIM OF CORRECTNESS: it does not
+  // assert the level-6 ring's behavior is right (a non-converging refine
+  // loop bailing out at the round cap is a pre-existing, undisclosed-until-
+  // now defect, not something this tests-only unit fixes) — only that its
+  // FIVE tiny-raw-point siblings' post-refine shape (count, per-ring length,
+  // per-ring device max turn, round count) stays within the measured
+  // envelope, and that none of the five is silently turned into a fragment
+  // (<2 points) or a materially bigger blob by an unrelated future change.
+  describe('W-27c-0a-5 — torus contourSlice rings with <=4 raw points at refineSliceRing (measurement pin)', () => {
+    const turnDeg = (a, b, c) => {
+      const v1x = b.x - a.x; const v1y = b.y - a.y;
+      const v2x = c.x - b.x; const v2y = c.y - b.y;
+      const l1 = Math.hypot(v1x, v1y); const l2 = Math.hypot(v2x, v2y);
+      if (l1 < 1e-9 || l2 < 1e-9) return 0;
+      let cosA = (v1x * v2x + v1y * v2y) / (l1 * l2);
+      if (cosA > 1) cosA = 1; else if (cosA < -1) cosA = -1;
+      return (Math.acos(cosA) * 180) / Math.PI;
+    };
+    const isClosedRun5 = (pts) => pts.length >= 4
+      && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6;
+    const maxVertexTurnOpenAware5 = (ptsIn) => {
+      const closed = isClosedRun5(ptsIn);
+      const pts = closed ? ptsIn.slice(0, -1) : ptsIn;
+      const n = pts.length;
+      if (n < 3) return 0;
+      let max = 0;
+      const lo = closed ? 0 : 1;
+      const hi = closed ? n - 1 : n - 2;
+      for (let i = lo; i <= hi; i++) {
+        const a = pts[(i - 1 + n) % n];
+        const b = pts[i];
+        const c = pts[(i + 1) % n];
+        const t = turnDeg(a, b, c);
+        if (t > max) max = t;
+      }
+      return max;
+    };
+    const sceneParamsForTorus5 = (sliceCount = 26) => {
+      const p = clone(defaults);
+      p.seed = 1;
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.torus;
+      p.objects = [{
+        id: 'obj-1', name: 'obj-1', primitive: 'torus', params: { ...Prm },
+        transform: {
+          x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
+        },
+        visibility: 'solid',
+      }];
+      p.ground = { enabled: false };
+      p.camera = { ...V.Scene3D.Params.DEFAULT_CAMERA };
+      p.styleTable = {
+        scene: {
+          penId: null,
+          mapper: 'contourSlice',
+          params: {
+            sliceCount, fillAngle: 45, fillDensity: 50, toneLaw: 'ladder',
+          },
+        },
+        byObject: {}, byFace: {},
+      };
+      return p;
+    };
+    // Reconstructs the mapper's OWN raw-link -> refine wiring using only
+    // Scene3D/Geometry3D's public exports (see the describe-block header).
+    // `sliceRotate`/`sliceTilt` default to 0, so the plane normal is exactly
+    // world +z (matches W-34's `realPlaneZ0s()` comment on the same rig).
+    const reconstructTorusRings5 = (sliceCount = 26) => {
+      const p = sceneParamsForTorus5(sliceCount);
+      const scene = V.Scene3D.Scene.assembleScene(p, BOUNDS);
+      const obj = scene.objects[0];
+      const objDesc = p.objects[0];
+      const sliced = V.Scene3D.Slices.buildSliceSegments({
+        world: obj.world,
+        faces: obj.faceIndexArrays,
+        front: obj.faces.map((f) => !!(f && f.front)),
+        sliceCount,
+      });
+      const byPlane = new Map();
+      sliced.segments.forEach((s) => {
+        let g = byPlane.get(s.plane);
+        if (!g) { g = { front: [], back: [] }; byPlane.set(s.plane, g); }
+        (s.front ? g.front : g.back).push([s.a, s.b]);
+      });
+      const pr = objDesc.params || {};
+      const sizes = {
+        sx: pr.sx != null ? pr.sx : 20, sy: pr.sy != null ? pr.sy : 20, sz: pr.sz != null ? pr.sz : 20,
+      };
+      const t = objDesc.transform;
+      const worldNormal = { x: 0, y: 0, z: 1 };
+      const localPlaneNormal = V.Scene3D.Slices.localPlaneNormal(worldNormal, t);
+      const analyticProject = (worldPt) => {
+        const local = V.Scene3D.Slices.inverseObjectTransform(worldPt, t);
+        const correctedLocal = V.Scene3D.Slices.analyticProjectLocal('torus', sizes, local, localPlaneNormal);
+        if (!correctedLocal) return null;
+        const cw = V.Scene3D.Scene.applyObjectTransform(correctedLocal, t);
+        const anx = worldNormal.x; const any = worldNormal.y; const anz = worldNormal.z;
+        const d0 = (worldPt.x * anx) + (worldPt.y * any) + (worldPt.z * anz);
+        const dc = (cw.x * anx) + (cw.y * any) + (cw.z * anz);
+        const diff = dc - d0;
+        return { x: cw.x - (diff * anx), y: cw.y - (diff * any), z: cw.z - (diff * anz) };
+      };
+      const refineProjectFn = (pt) => {
+        const P2 = scene.projectWorld(pt);
+        return (P2 && Number.isFinite(P2.x) && Number.isFinite(P2.y)) ? { x: P2.x, y: P2.y, z: 0 } : null;
+      };
+      const linkSegments = V.Geometry3D.linkSegments;
+      const out = [];
+      byPlane.forEach((g, level) => {
+        linkSegments(g.front).forEach((worldPts) => {
+          const first = worldPts[0]; const last = worldPts[worldPts.length - 1];
+          const closedRaw = worldPts.length >= 4
+            && Math.hypot(first.x - last.x, first.y - last.y, first.z - last.z) < 1e-6;
+          const rawCount = closedRaw ? worldPts.length - 1 : worldPts.length;
+          const refined = V.Scene3D.Slices.refineRing(worldPts, { analyticProject, project: refineProjectFn });
+          const refFirst = refined[0]; const refLast = refined[refined.length - 1];
+          const refClosed = refined.length >= 4
+            && Math.hypot(refFirst.x - refLast.x, refFirst.y - refLast.y, refFirst.z - refLast.z) < 1e-6;
+          const refBase = refClosed ? refined.slice(0, -1) : refined;
+          let len = 0;
+          for (let i = 1; i < refBase.length; i++) {
+            len += Math.hypot(refBase[i].x - refBase[i - 1].x, refBase[i].y - refBase[i - 1].y, refBase[i].z - refBase[i - 1].z);
+          }
+          if (refClosed && refBase.length) {
+            len += Math.hypot(
+              refBase[0].x - refBase[refBase.length - 1].x,
+              refBase[0].y - refBase[refBase.length - 1].y,
+              refBase[0].z - refBase[refBase.length - 1].z,
+            );
+          }
+          const devicePts = refBase.map((q) => refineProjectFn(q) || q);
+          const deviceMaxTurn = maxVertexTurnOpenAware5(refClosed ? [...devicePts, devicePts[0]] : devicePts);
+          // Rounds actually run: bisect maxRounds (public refineRing has no
+          // direct "rounds used" return; subdivision is monotone in
+          // maxRounds, so the smallest N whose result matches the default
+          // (uncapped-by-us) call's own point count IS the round count that
+          // call actually consumed).
+          let roundsUsed = 0;
+          for (let n = 0; n <= 8; n++) {
+            const r = V.Scene3D.Slices.refineRing(worldPts, { analyticProject, project: refineProjectFn, maxRounds: n });
+            if (r.length === refined.length) { roundsUsed = n; break; }
+            roundsUsed = n + 1;
+          }
+          out.push({
+            level, rawCount, closed: closedRaw, finalCount: refBase.length, finalLengthMm: len, deviceMaxTurn, roundsUsed,
+          });
+        });
+      });
+      return out;
+    };
+    const buildRealEngineFills5 = (fillDensity) => {
+      const engine = new V.VectorEngine();
+      engine.layers = [];
+      const gid = engine.addLayer('scene3d');
+      engine.layers = engine.layers.filter((l) => l.parentId !== gid);
+      const g = engine.layers.find((l) => l.id === gid);
+      g.isGroup = true; g.containerRole = 'scene';
+      const q = g.params;
+      q.camera = { ...V.Scene3D.Params.DEFAULT_CAMERA };
+      q.ground = { enabled: false };
+      q.backdrop = { enabled: false };
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.torus;
+      q.objects = [{
+        id: 'obj', name: 'Obj', primitive: 'torus', params: { ...Prm },
+        transform: {
+          x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
+        },
+        visibility: 'solid',
+      }];
+      q.lights = [{
+        id: 'sun', type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: false,
+      }];
+      const st = {
+        penId: null, mapper: 'contourSlice', params: { fillAngle: 45, fillDensity, toneLaw: 'ladder' },
+      };
+      q.styleTable = { scene: JSON.parse(JSON.stringify(st)), byObject: { obj: JSON.parse(JSON.stringify(st)) }, byFace: {} };
+      engine.computeAllDisplayGeometry();
+      const paths = g.scenePaths || [];
+      return paths.filter((pp) => pp && pp.meta && pp.meta.kind === 'sceneFill' && pp.length >= 2
+        && pp.meta.sceneTarget && pp.meta.sceneTarget.objectId === 'obj' && !pp.meta.sceneTarget.occluded);
+    };
+
+    // ── (a) count of tiny (<=4 raw point) rings, both densities ───────────
+    test('total front-ring count and <=4-raw-point count, sliceCount 26 — envelope + tight small-ring-count pin', () => {
+      const rings = reconstructTorusRings5(26);
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-5 total/small', rings.length, rings.filter((r) => r.rawCount <= 4).length);
+      // Envelope (generous, sanity only):
+      expect(rings.length).toBeGreaterThan(40);
+      expect(rings.length).toBeLessThan(55);
+      // Fingerprint (tight, measured at this commit — see impl report):
+      expect(rings.length).toBe(47);
+      const small = rings.filter((r) => r.rawCount <= 4);
+      expect(small.length).toBe(5);
+    });
+    test('contourSlice plane count (and therefore this ring set) is byte-identical at fillDensity 50 "med" and 220 "max"', () => {
+      const med = buildRealEngineFills5(50);
+      const max = buildRealEngineFills5(220);
+      expect(med.length).toBe(max.length);
+      const medLen = med.reduce((s, pp) => s + pp.reduce((a, pt, i) => (i ? a + Math.hypot(pt.x - pp[i - 1].x, pt.y - pp[i - 1].y) : 0), 0), 0);
+      const maxLen = max.reduce((s, pp) => s + pp.reduce((a, pt, i) => (i ? a + Math.hypot(pt.x - pp[i - 1].x, pt.y - pp[i - 1].y) : 0), 0), 0);
+      expect(medLen).toBeCloseTo(maxLen, 6);
+    });
+
+    // ── (b)/(c) — the five rings' measured post-refine shape: floor/ceiling
+    // envelope + tight +-10% fingerprint band (W-26b-3 shape), plus the
+    // fragment/blob guards. Sorted by (level, rawCount) for a stable,
+    // deterministic assertion order regardless of linkSegments' internal
+    // iteration order.
+    const EXPECTED5 = [
+      {
+        level: 2, rawCount: 3, closed: false, finalCount: 3, finalLengthMm: 0.9577085225447255, deviceMaxTurn: 1.903903680150751, roundsUsed: 0,
+      },
+      {
+        level: 2, rawCount: 4, closed: false, finalCount: 4, finalLengthMm: 9.008240123917343, deviceMaxTurn: 2.2996801184195714, roundsUsed: 0,
+      },
+      {
+        level: 6, rawCount: 3, closed: false, finalCount: 513, finalLengthMm: 0.0040003198533569585, deviceMaxTurn: 179.99932751408932, roundsUsed: 8,
+      },
+      {
+        level: 21, rawCount: 2, closed: false, finalCount: 2, finalLengthMm: 2.4294681743220017, deviceMaxTurn: 0, roundsUsed: 0,
+      },
+      {
+        level: 25, rawCount: 4, closed: false, finalCount: 4, finalLengthMm: 5.727369993006849, deviceMaxTurn: 5.440164012679135, roundsUsed: 0,
+      },
+    ];
+    const bandLo = (v) => v - Math.max(Math.abs(v) * 0.10, 0.001);
+    const bandHi = (v) => v + Math.max(Math.abs(v) * 0.10, 0.001);
+
+    test('the five rings — exact discrete signature (level/rawCount/closed/roundsUsed) + +-10% band on continuous outputs', () => {
+      const rings = reconstructTorusRings5(26);
+      const small = rings.filter((r) => r.rawCount <= 4)
+        .sort((a, b) => (a.level - b.level) || (a.rawCount - b.rawCount));
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-5 small rings', JSON.stringify(small));
+      expect(small.length).toBe(EXPECTED5.length);
+      small.forEach((r, i) => {
+        const e = EXPECTED5[i];
+        // Discrete facts — exact:
+        expect(r.level).toBe(e.level);
+        expect(r.rawCount).toBe(e.rawCount);
+        expect(r.closed).toBe(e.closed);
+        expect(r.roundsUsed).toBe(e.roundsUsed);
+        // Continuous outputs — floor/ceiling +-10% band (a measurement pin,
+        // NOT a claim these values are "right"; see describe-block header):
+        expect(r.finalCount).toBeGreaterThanOrEqual(bandLo(e.finalCount));
+        expect(r.finalCount).toBeLessThanOrEqual(bandHi(e.finalCount));
+        expect(r.finalLengthMm).toBeGreaterThanOrEqual(bandLo(e.finalLengthMm));
+        expect(r.finalLengthMm).toBeLessThanOrEqual(bandHi(e.finalLengthMm));
+        expect(r.deviceMaxTurn).toBeGreaterThanOrEqual(bandLo(e.deviceMaxTurn));
+        expect(r.deviceMaxTurn).toBeLessThanOrEqual(bandHi(e.deviceMaxTurn));
+      });
+    });
+
+    test('none of the five becomes a fragment (<2 points) or flips open<->closed after refinement', () => {
+      const rings = reconstructTorusRings5(26);
+      const small = rings.filter((r) => r.rawCount <= 4);
+      expect(small.length).toBeGreaterThan(0);
+      small.forEach((r) => {
+        expect(r.finalCount).toBeGreaterThanOrEqual(2);
+        // Every one of the five arrives OPEN (see EXPECTED5); refinement must
+        // never spuriously close an open run (it only appends the closing
+        // duplicate when the RAW ring was already closed).
+        expect(r.closed).toBe(false);
+      });
+    });
+
+    test('the level-6 non-convergent ring (0.0038mm-apart raw points) stays a harmless micro-stub, not a blob', () => {
+      const rings = reconstructTorusRings5(26);
+      const lvl6 = rings.find((r) => r.level === 6 && r.rawCount === 3);
+      expect(lvl6).toBeTruthy();
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-5 level-6 ring', JSON.stringify(lvl6));
+      // It never converges (still consumes every round) — tight, since a
+      // future change that makes it converge is a genuine improvement that
+      // must be disclosed under `## Bars changed`, not silently absorbed:
+      expect(lvl6.roundsUsed).toBe(8);
+      expect(lvl6.deviceMaxTurn).toBeGreaterThan(160);
+      // ...but its total drawn length must stay far below one pen width
+      // (BOUNDS.penWidth 0.3mm here) — this is the actual "does not become
+      // a visible blob" guard. Measured 0.004mm; 0.05mm is >10x headroom.
+      expect(lvl6.finalLengthMm).toBeLessThan(0.05);
+      // And the point-count runaway must stay bounded (measured 513; a
+      // future change that makes this WORSE, not better, is what this line
+      // catches — the round cap already bounds it structurally, but a
+      // change to sliceRingSubdivideOnce's insertion rate could still grow
+      // the per-round yield).
+      expect(lvl6.finalCount).toBeLessThanOrEqual(700);
+    });
+
+    test('total post-refine length + worst device max turn across the five, +-10% band on the sum', () => {
+      const rings = reconstructTorusRings5(26);
+      const small = rings.filter((r) => r.rawCount <= 4);
+      const totalLen = small.reduce((s, r) => s + r.finalLengthMm, 0);
+      const worstTurn = small.reduce((m, r) => Math.max(m, r.deviceMaxTurn), 0);
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-5 total/worst', totalLen, worstTurn);
+      const expectedTotal = EXPECTED5.reduce((s, e) => s + e.finalLengthMm, 0);
+      expect(totalLen).toBeGreaterThanOrEqual(bandLo(expectedTotal));
+      expect(totalLen).toBeLessThanOrEqual(bandHi(expectedTotal));
+      expect(worstTurn).toBeGreaterThan(160); // the level-6 non-convergence dominates
+      expect(worstTurn).toBeLessThanOrEqual(180.001);
+    });
+  });
 });
