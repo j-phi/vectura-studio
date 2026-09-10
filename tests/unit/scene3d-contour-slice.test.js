@@ -2580,25 +2580,37 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
   // None is crowd-cull-dropped (confirmed via a from-scratch instrumented
   // copy of this exact commit, kept out of this file — see the impl report).
   //
-  // The level-6 ring is the interesting one: two RAW points 0.0038mm apart
-  // (inside the seam-DUP_EPS-adjacent but not deduped band) drive the
-  // Catmull-Rom subdivision into a genuine non-convergence: it consumes ALL
-  // 8 rounds, balloons to 513 points, and its device-space max turn NEVER
-  // drops below the 8 deg stop condition (measured ~180 deg at round 8).
-  // It is harmless TODAY only because its total drawn length is ~0.004mm —
-  // far below one pen width. This guard pins that harmlessness explicitly
-  // (length bar) so a future refinement change cannot silently let this
-  // same non-convergent ring balloon into a VISIBLE blob while still
-  // "passing" every other torus O2 bar in this file.
+  // The level-6 ring WAS the interesting one: two RAW points 0.0038mm apart
+  // (inside the seam-DUP_EPS-adjacent but not deduped band) used to drive
+  // the Catmull-Rom subdivision into a genuine non-convergence — consuming
+  // ALL 8 rounds, ballooning to 513 points, its device-space max turn NEVER
+  // dropping below the 8 deg stop condition (measured ~180 deg at round 8).
+  // It was harmless only because its total drawn length stayed ~0.004mm —
+  // far below one pen width.
   //
-  // THIS IS A MEASUREMENT PIN, NOT A CLAIM OF CORRECTNESS: it does not
-  // assert the level-6 ring's behavior is right (a non-converging refine
-  // loop bailing out at the round cap is a pre-existing, undisclosed-until-
-  // now defect, not something this tests-only unit fixes) — only that its
-  // FIVE tiny-raw-point siblings' post-refine shape (count, per-ring length,
-  // per-ring device max turn, round count) stays within the measured
-  // envelope, and that none of the five is silently turned into a fragment
-  // (<2 points) or a materially bigger blob by an unrelated future change.
+  // FIXED by W-27c-0a-6 (docs/3d-audit/lane-reports/W-27c-0a-6-impl.md):
+  // `refineSliceRing` now skips subdivision for a tiny (<=4-point) ring
+  // whose own raw perimeter is below a 0.05mm hazard gate, the same way it
+  // already skips a <3-point stub — this ring's 0.0041mm raw length falls
+  // squarely inside that gate. Below, roundsUsed/finalCount are re-pinned
+  // to the FIXED values (0 rounds, 3 points, unchanged from raw) per
+  // W-27c-0a-5-review.md's finding that the OLD 8-round/513-point pins
+  // measured a round-count ARTIFACT, not anything load-bearing for the
+  // drawn picture (the reviewer's own mutation testing showed round 0 and
+  // round 8 draw within 5 significant figures of each other). The two bars
+  // that DID measure something real — `deviceMaxTurn > 160` and
+  // `finalLengthMm < 0.05` — are unchanged and still pass (this is a skip,
+  // not a shape change: the ring still draws its raw near-degenerate spike,
+  // just without the wasted, previously-non-convergent subdivision).
+  //
+  // THIS IS STILL A MEASUREMENT PIN, NOT A CLAIM OF CORRECTNESS about the
+  // level-6 ring's underlying near-degenerate raw geometry (a real feature
+  // of the torus's own saddle-adjacent tessellation, untouched by this
+  // fix) — only that its FIVE tiny-raw-point siblings' post-refine shape
+  // (count, per-ring length, per-ring device max turn, round count) stays
+  // within the measured envelope, and that none of the five is silently
+  // turned into a fragment (<2 points) or a materially bigger blob by an
+  // unrelated future change.
   describe('W-27c-0a-5 — torus contourSlice rings with <=4 raw points at refineSliceRing (measurement pin)', () => {
     const turnDeg = (a, b, c) => {
       const v1x = b.x - a.x; const v1y = b.y - a.y;
@@ -2807,7 +2819,10 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
         level: 2, rawCount: 4, closed: false, finalCount: 4, finalLengthMm: 9.008240123917343, deviceMaxTurn: 2.2996801184195714, roundsUsed: 0,
       },
       {
-        level: 6, rawCount: 3, closed: false, finalCount: 513, finalLengthMm: 0.0040003198533569585, deviceMaxTurn: 179.99932751408932, roundsUsed: 8,
+        // W-27c-0a-6: re-pinned from finalCount 513/deviceMaxTurn 179.999.../
+        // roundsUsed 8 (the pre-fix non-convergence) to the FIXED values —
+        // see the describe-block header and W-27c-0a-6-impl.md.
+        level: 6, rawCount: 3, closed: false, finalCount: 3, finalLengthMm: 0.004099155900223327, deviceMaxTurn: 180, roundsUsed: 0,
       },
       {
         level: 21, rawCount: 2, closed: false, finalCount: 2, finalLengthMm: 2.4294681743220017, deviceMaxTurn: 0, roundsUsed: 0,
@@ -2857,27 +2872,38 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       });
     });
 
-    test('the level-6 non-convergent ring (0.0038mm-apart raw points) stays a harmless micro-stub, not a blob', () => {
+    test('the level-6 near-degenerate ring (0.0038mm-apart raw points) stays a harmless micro-stub, not a blob', () => {
       const rings = reconstructTorusRings5(26);
       const lvl6 = rings.find((r) => r.level === 6 && r.rawCount === 3);
       expect(lvl6).toBeTruthy();
       // eslint-disable-next-line no-console
       console.log('W-27c-0a-5 level-6 ring', JSON.stringify(lvl6));
-      // It never converges (still consumes every round) — tight, since a
-      // future change that makes it converge is a genuine improvement that
-      // must be disclosed under `## Bars changed`, not silently absorbed:
-      expect(lvl6.roundsUsed).toBe(8);
+      // W-27c-0a-6 RE-PIN (docs/3d-audit/lane-reports/W-27c-0a-6-impl.md):
+      // the OLD bar here (`toBe(8)`) pinned a round-count ARTIFACT, not
+      // anything load-bearing for the drawn picture — W-27c-0a-5-review.md
+      // §5 measured that round 0 and round 8 draw within 5 significant
+      // figures of each other for this exact ring, and that a harmless,
+      // UNRELATED future retune of SLICE_REFINE_MAX_ROUNDS would trip the
+      // old bar identically to a real convergence fix, indistinguishable
+      // from one. `refineSliceRing` now skips subdivision entirely for this
+      // ring (whole-ring raw-length hazard gate, <=4 points AND <0.05mm
+      // raw perimeter) — roundsUsed is now a REAL, non-round-cap-dependent
+      // 0, proof-of-fix is the RGR pair in the impl report:
+      expect(lvl6.roundsUsed).toBe(0);
       expect(lvl6.deviceMaxTurn).toBeGreaterThan(160);
       // ...but its total drawn length must stay far below one pen width
       // (BOUNDS.penWidth 0.3mm here) — this is the actual "does not become
-      // a visible blob" guard. Measured 0.004mm; 0.05mm is >10x headroom.
+      // a visible blob" guard. Measured 0.0041mm; 0.05mm is >10x headroom.
+      // Unchanged by the fix (this bar already measured something real).
       expect(lvl6.finalLengthMm).toBeLessThan(0.05);
-      // And the point-count runaway must stay bounded (measured 513; a
-      // future change that makes this WORSE, not better, is what this line
-      // catches — the round cap already bounds it structurally, but a
-      // change to sliceRingSubdivideOnce's insertion rate could still grow
-      // the per-round yield).
-      expect(lvl6.finalCount).toBeLessThanOrEqual(700);
+      // W-27c-0a-6 RE-PIN: was `<=700` (>10x headroom over the pre-fix
+      // 513-point balloon — itself purely a function of round count via
+      // doubling, per the review). Now that the ring skips subdivision
+      // entirely, finalCount is the RAW 3-point count, not round-count-
+      // sensitive at all — tightened to `<=10` so a REGRESSION back toward
+      // subdivision (this hazard gate silently stops firing) is caught
+      // immediately instead of allowing up to 700 points again.
+      expect(lvl6.finalCount).toBeLessThanOrEqual(10);
     });
 
     test('total post-refine length + worst device max turn across the five, +-10% band on the sum', () => {
@@ -2892,6 +2918,297 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
       expect(totalLen).toBeLessThanOrEqual(bandHi(expectedTotal));
       expect(worstTurn).toBeGreaterThan(160); // the level-6 non-convergence dominates
       expect(worstTurn).toBeLessThanOrEqual(180.001);
+    });
+  });
+
+  // ── W-27c-0a-6 — refineSliceRing: fix the level-6 ring's non-convergence
+  // (docs/3d-audit/lane-reports/W-27c-0a-6-impl.md has the full RGR proof).
+  // W-27c-0a-5 measured that the torus's level-6 contourSlice ring — two
+  // raw points 0.0038mm apart, ABOVE `refineSliceRing`'s DUP_EPS (1e-4mm)
+  // seam-dedup but inside a numerical-hazard band for the centripetal
+  // Catmull-Rom subdivision scheme — never converges: it burns every one of
+  // SLICE_REFINE_MAX_ROUNDS (8), balloons to 513 points, and its
+  // device-space max turn never drops under the 8deg stop condition
+  // (measured ~180deg at round 8). Harmless only because its drawn length
+  // stayed ~0.004mm, far below one pen width.
+  //
+  // FIX: `refineSliceRing` gains a whole-ring raw-length hazard gate — a
+  // tiny (<=4-point) ring whose own raw perimeter is below 0.05mm skips
+  // subdivision entirely (same no-op-on-tiny-input shape the existing `< 3`
+  // bail already uses). Widening DUP_EPS itself (an absolute PER-EDGE
+  // epsilon) was tried and rejected: measured across all six primitives
+  // (sphere/torus/ellipsoid/cone/cylinder/capsule, default rig,
+  // sliceCount 26), legitimately dense (46-84 raw point) rings on
+  // sphere/ellipsoid/cone/capsule carry adjacent-vertex gaps up to
+  // 0.0074mm — BIGGER than this ring's own 0.0038mm gap — so no single
+  // per-edge distance threshold can separate the pathological pair from
+  // real fine-tessellation detail without also corrupting those rings. A
+  // WHOLE-RING length gate can: the next-smallest genuine tiny
+  // (<=4-point) ring on any of the six primitives is 0.235mm (cone,
+  // level 4) — 4.7x above the 0.05mm gate — while the pathological ring's
+  // own raw length (0.0041mm) sits 12x below it. Both margins measured
+  // directly (see impl report), not assumed.
+  describe('W-27c-0a-6 — refineSliceRing convergence fix (torus level-6 ring)', () => {
+    const turnDeg6 = (a, b, c) => {
+      const v1x = b.x - a.x; const v1y = b.y - a.y;
+      const v2x = c.x - b.x; const v2y = c.y - b.y;
+      const l1 = Math.hypot(v1x, v1y); const l2 = Math.hypot(v2x, v2y);
+      if (l1 < 1e-9 || l2 < 1e-9) return 0;
+      let cosA = (v1x * v2x + v1y * v2y) / (l1 * l2);
+      if (cosA > 1) cosA = 1; else if (cosA < -1) cosA = -1;
+      return (Math.acos(cosA) * 180) / Math.PI;
+    };
+    const isClosedRun6 = (pts) => pts.length >= 4
+      && Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) < 1e-6;
+    const maxVertexTurnOpenAware6 = (ptsIn) => {
+      const closed = isClosedRun6(ptsIn);
+      const pts = closed ? ptsIn.slice(0, -1) : ptsIn;
+      const n = pts.length;
+      if (n < 3) return 0;
+      let max = 0;
+      const lo = closed ? 0 : 1;
+      const hi = closed ? n - 1 : n - 2;
+      for (let i = lo; i <= hi; i++) {
+        const a = pts[(i - 1 + n) % n];
+        const b = pts[i];
+        const c = pts[(i + 1) % n];
+        const t = turnDeg6(a, b, c);
+        if (t > max) max = t;
+      }
+      return max;
+    };
+    // Same reconstruction as W-27c-0a-5's `reconstructTorusRings5` (own
+    // copy per this file's established per-describe-block rig pattern —
+    // see W-27c-0a-4b-impl.md).
+    const reconstructTorusRings6 = (sliceCount = 26) => {
+      const p = clone(defaults);
+      p.seed = 1;
+      const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS.torus;
+      p.objects = [{
+        id: 'obj-1', name: 'obj-1', primitive: 'torus', params: { ...Prm },
+        transform: {
+          x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
+        },
+        visibility: 'solid',
+      }];
+      p.ground = { enabled: false };
+      p.camera = { ...V.Scene3D.Params.DEFAULT_CAMERA };
+      p.styleTable = {
+        scene: {
+          penId: null,
+          mapper: 'contourSlice',
+          params: {
+            sliceCount, fillAngle: 45, fillDensity: 50, toneLaw: 'ladder',
+          },
+        },
+        byObject: {}, byFace: {},
+      };
+      const scene = V.Scene3D.Scene.assembleScene(p, BOUNDS);
+      const obj = scene.objects[0];
+      const objDesc = p.objects[0];
+      const sliced = V.Scene3D.Slices.buildSliceSegments({
+        world: obj.world,
+        faces: obj.faceIndexArrays,
+        front: obj.faces.map((f) => !!(f && f.front)),
+        sliceCount,
+      });
+      const byPlane = new Map();
+      sliced.segments.forEach((s) => {
+        let g = byPlane.get(s.plane);
+        if (!g) { g = { front: [], back: [] }; byPlane.set(s.plane, g); }
+        (s.front ? g.front : g.back).push([s.a, s.b]);
+      });
+      const pr = objDesc.params || {};
+      const sizes = {
+        sx: pr.sx != null ? pr.sx : 20, sy: pr.sy != null ? pr.sy : 20, sz: pr.sz != null ? pr.sz : 20,
+      };
+      const t = objDesc.transform;
+      const worldNormal = { x: 0, y: 0, z: 1 };
+      const localPlaneNormal = V.Scene3D.Slices.localPlaneNormal(worldNormal, t);
+      const analyticProject = (worldPt) => {
+        const local = V.Scene3D.Slices.inverseObjectTransform(worldPt, t);
+        const correctedLocal = V.Scene3D.Slices.analyticProjectLocal('torus', sizes, local, localPlaneNormal);
+        if (!correctedLocal) return null;
+        const cw = V.Scene3D.Scene.applyObjectTransform(correctedLocal, t);
+        const anx = worldNormal.x; const any = worldNormal.y; const anz = worldNormal.z;
+        const d0 = (worldPt.x * anx) + (worldPt.y * any) + (worldPt.z * anz);
+        const dc = (cw.x * anx) + (cw.y * any) + (cw.z * anz);
+        const diff = dc - d0;
+        return { x: cw.x - (diff * anx), y: cw.y - (diff * any), z: cw.z - (diff * anz) };
+      };
+      const refineProjectFn = (pt) => {
+        const P2 = scene.projectWorld(pt);
+        return (P2 && Number.isFinite(P2.x) && Number.isFinite(P2.y)) ? { x: P2.x, y: P2.y, z: 0 } : null;
+      };
+      const linkSegments = V.Geometry3D.linkSegments;
+      const out = [];
+      byPlane.forEach((g, level) => {
+        linkSegments(g.front).forEach((worldPts) => {
+          const first = worldPts[0]; const last = worldPts[worldPts.length - 1];
+          const closedRaw = worldPts.length >= 4
+            && Math.hypot(first.x - last.x, first.y - last.y, first.z - last.z) < 1e-6;
+          const rawCount = closedRaw ? worldPts.length - 1 : worldPts.length;
+          const refined = V.Scene3D.Slices.refineRing(worldPts, { analyticProject, project: refineProjectFn });
+          const refFirst = refined[0]; const refLast = refined[refined.length - 1];
+          const refClosed = refined.length >= 4
+            && Math.hypot(refFirst.x - refLast.x, refFirst.y - refLast.y, refFirst.z - refLast.z) < 1e-6;
+          const refBase = refClosed ? refined.slice(0, -1) : refined;
+          let len = 0;
+          for (let i = 1; i < refBase.length; i++) {
+            len += Math.hypot(refBase[i].x - refBase[i - 1].x, refBase[i].y - refBase[i - 1].y, refBase[i].z - refBase[i - 1].z);
+          }
+          if (refClosed && refBase.length) {
+            len += Math.hypot(
+              refBase[0].x - refBase[refBase.length - 1].x,
+              refBase[0].y - refBase[refBase.length - 1].y,
+              refBase[0].z - refBase[refBase.length - 1].z,
+            );
+          }
+          const devicePts = refBase.map((q) => refineProjectFn(q) || q);
+          const deviceMaxTurn = maxVertexTurnOpenAware6(refClosed ? [...devicePts, devicePts[0]] : devicePts);
+          let roundsUsed = 0;
+          for (let n = 0; n <= 8; n++) {
+            const r = V.Scene3D.Slices.refineRing(worldPts, { analyticProject, project: refineProjectFn, maxRounds: n });
+            if (r.length === refined.length) { roundsUsed = n; break; }
+            roundsUsed = n + 1;
+          }
+          out.push({
+            level, rawCount, closed: closedRaw, finalCount: refBase.length, finalLengthMm: len, deviceMaxTurn, roundsUsed,
+          });
+        });
+      });
+      return out;
+    };
+
+    // ── THE RED/GREEN PROOF: at 49cf0e3e (pre-fix), the level-6 ring fails
+    // this exact assertion (roundsUsed===8 AND deviceMaxTurn===179.999...,
+    // i.e. it neither used fewer than every round NOR settled under the
+    // stop condition). At the fix, it passes (roundsUsed===0, skipped
+    // entirely) — every OTHER ring already passed on both sides (they all
+    // settle in round 0 with deviceMaxTurn well under 8deg).
+    test('every torus contourSlice front ring converges: rounds used < max, OR final device turn <= the 8deg stop condition', () => {
+      const rings = reconstructTorusRings6(26);
+      expect(rings.length).toBe(47);
+      const nonConverged = rings.filter((r) => r.roundsUsed >= 8 && r.deviceMaxTurn > 8);
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-6 non-converged rings', JSON.stringify(nonConverged));
+      expect(nonConverged).toEqual([]);
+    });
+
+    test('the fixed level-6 ring: subdivision skipped, raw 3-point shape drawn as-is, still harmless', () => {
+      const rings = reconstructTorusRings6(26);
+      const lvl6 = rings.find((r) => r.level === 6 && r.rawCount === 3);
+      expect(lvl6).toBeTruthy();
+      expect(lvl6.roundsUsed).toBe(0);
+      expect(lvl6.finalCount).toBe(3);
+      expect(lvl6.finalLengthMm).toBeCloseTo(0.004099155900223327, 9);
+      expect(lvl6.deviceMaxTurn).toBe(180);
+      expect(lvl6.finalLengthMm).toBeLessThan(0.05);
+    });
+
+    // The fix is scoped to a whole-ring length gate on <=4-point rings —
+    // every OTHER tiny ring (which already converged in round 0 pre-fix)
+    // must be byte-identical, proving the fix touches ONLY the pathological
+    // ring, not the other four.
+    test('the other four tiny rings are byte-identical to their pre-fix measurement', () => {
+      const rings = reconstructTorusRings6(26);
+      const small = rings.filter((r) => r.rawCount <= 4 && !(r.level === 6 && r.rawCount === 3));
+      expect(small.length).toBe(4);
+      const UNCHANGED = [
+        {
+          level: 2, rawCount: 3, finalCount: 3, finalLengthMm: 0.9577085225447255, deviceMaxTurn: 1.903903680150751, roundsUsed: 0,
+        },
+        {
+          level: 2, rawCount: 4, finalCount: 4, finalLengthMm: 9.008240123917343, deviceMaxTurn: 2.2996801184195714, roundsUsed: 0,
+        },
+        {
+          level: 21, rawCount: 2, finalCount: 2, finalLengthMm: 2.4294681743220017, deviceMaxTurn: 0, roundsUsed: 0,
+        },
+        {
+          level: 25, rawCount: 4, finalCount: 4, finalLengthMm: 5.727369993006849, deviceMaxTurn: 5.440164012679135, roundsUsed: 0,
+        },
+      ];
+      small.sort((a, b) => (a.level - b.level) || (a.rawCount - b.rawCount));
+      UNCHANGED.forEach((e, i) => {
+        const r = small[i];
+        expect(r.level).toBe(e.level);
+        expect(r.rawCount).toBe(e.rawCount);
+        expect(r.finalCount).toBe(e.finalCount);
+        expect(r.finalLengthMm).toBeCloseTo(e.finalLengthMm, 9);
+        expect(r.deviceMaxTurn).toBeCloseTo(e.deviceMaxTurn, 9);
+        expect(r.roundsUsed).toBe(e.roundsUsed);
+      });
+    });
+
+    // Whole-file measurement across all six primitives (the fix's own
+    // safety margin — see the describe-block header) — pinned here so a
+    // future change to the 0.05mm gate or the <=4-point scope must
+    // re-derive and disclose these numbers, not silently drift. Scoped to
+    // rawCount 3-4 only: a rawCount<3 ring already bails at the pre-existing
+    // `< 3` gate regardless of length (several exist — e.g. sphere
+    // level 18/23 — with near-zero raw length; they are NOT reachable by
+    // the new 0.05mm gate and are not part of its safety margin).
+    test('safety margin: no 3-or-4-point ring on any of the six primitives (other than the fixed one) has raw length under 0.05mm', () => {
+      const primitives = ['sphere', 'torus', 'ellipsoid', 'cone', 'cylinder', 'capsule'];
+      const linkSegments = V.Geometry3D.linkSegments;
+      const tinyLens = [];
+      primitives.forEach((primitive) => {
+        const p = clone(defaults);
+        p.seed = 1;
+        const Prm = V.Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS[primitive];
+        p.objects = [{
+          id: 'obj-1', name: 'obj-1', primitive, params: { ...Prm },
+          transform: {
+            x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1,
+          },
+          visibility: 'solid',
+        }];
+        p.ground = { enabled: false };
+        p.camera = { ...V.Scene3D.Params.DEFAULT_CAMERA };
+        p.styleTable = {
+          scene: { penId: null, mapper: 'contourSlice', params: { sliceCount: 26, fillAngle: 45, fillDensity: 50, toneLaw: 'ladder' } },
+          byObject: {}, byFace: {},
+        };
+        const scene = V.Scene3D.Scene.assembleScene(p, BOUNDS);
+        const obj = scene.objects[0];
+        const sliced = V.Scene3D.Slices.buildSliceSegments({
+          world: obj.world,
+          faces: obj.faceIndexArrays,
+          front: obj.faces.map((f) => !!(f && f.front)),
+          sliceCount: 26,
+        });
+        const byPlane = new Map();
+        sliced.segments.forEach((s) => {
+          let g = byPlane.get(s.plane);
+          if (!g) { g = { front: [], back: [] }; byPlane.set(s.plane, g); }
+          (s.front ? g.front : g.back).push([s.a, s.b]);
+        });
+        byPlane.forEach((g, level) => {
+          linkSegments(g.front).forEach((worldPts) => {
+            const first = worldPts[0]; const last = worldPts[worldPts.length - 1];
+            const closedRaw = worldPts.length >= 4
+              && Math.hypot(first.x - last.x, first.y - last.y, first.z - last.z) < 1e-6;
+            const rawCount = closedRaw ? worldPts.length - 1 : worldPts.length;
+            if (rawCount === 3 || rawCount === 4) {
+              let len = 0;
+              for (let i = 1; i < worldPts.length; i++) {
+                len += Math.hypot(worldPts[i].x - worldPts[i - 1].x, worldPts[i].y - worldPts[i - 1].y, worldPts[i].z - worldPts[i - 1].z);
+              }
+              // The one KNOWN, intended exception: the torus's level-6 ring
+              // (the fix's own target — its raw length, 0.0041mm, is BELOW
+              // the 0.05mm gate by design).
+              if (primitive === 'torus' && level === 6 && rawCount === 3) return;
+              tinyLens.push({ primitive, level, rawCount, len });
+            }
+          });
+        });
+      });
+      // eslint-disable-next-line no-console
+      console.log('W-27c-0a-6 safety-margin tiny rings', JSON.stringify(tinyLens));
+      expect(tinyLens.length).toBeGreaterThan(0);
+      tinyLens.forEach((r) => {
+        expect(r.len).toBeGreaterThanOrEqual(0.05 * 4.5);
+      });
     });
   });
 });

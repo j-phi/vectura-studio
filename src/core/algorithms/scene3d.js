@@ -798,6 +798,34 @@
     }
     base = deduped;
     if (base.length < 3) return worldPts;
+    // W-27c-0a-6 — a tiny (<=4-point) ring whose own total raw length sits
+    // deep inside "numerical hazard" territory: an adjacent pair can be
+    // ABOVE DUP_EPS (so not deduped above) yet close enough that the
+    // centripetal Catmull-Rom scheme above never converges on it — measured
+    // on the default torus's level-6 ring (two raw points 0.0038mm apart,
+    // 0.0041mm total raw length): it burns every one of SLICE_REFINE_MAX_
+    // ROUNDS, balloons past 500 points, and its device-space turn never
+    // drops below ~180°, instead of the harmless single-round settle every
+    // OTHER tiny ring reaches. Widening DUP_EPS itself is not a safe fix —
+    // measured across all six primitives, legitimate small (<=4-point)
+    // rings start at 0.235mm total length (cone, level 4), and dense
+    // (46-84 point) rings on sphere/ellipsoid/cone/capsule legitimately
+    // carry adjacent gaps up to 0.0074mm, bigger than this ring's own
+    // 0.0038mm gap — an absolute per-edge epsilon cannot separate the two
+    // without also touching real geometry. A whole-ring length gate can:
+    // 0.05mm sits >10x above the measured pathological case and >4x below
+    // the next-smallest genuine tiny ring, with the same scale already used
+    // by this file's own harmlessness guard. Below it, refinement cannot
+    // help (the entire ring occupies less space than a pen can draw) and
+    // is the very thing driving the non-convergence, so skip it — same
+    // no-op-on-tiny-input behavior the `< 3` bail just above already uses.
+    if (base.length <= 4) {
+      let rawLen = 0;
+      for (let i = 1; i < base.length; i++) {
+        rawLen += Math.hypot(base[i].x - base[i - 1].x, base[i].y - base[i - 1].y, base[i].z - base[i - 1].z);
+      }
+      if (rawLen < 0.05) return worldPts;
+    }
     // Snap the ORIGINAL vertices onto the true surface too — they are exact
     // mesh-chord crossings (inside the surface), not on it, and a 3-point
     // triangle needs this correction even more than a dense ring, since with
