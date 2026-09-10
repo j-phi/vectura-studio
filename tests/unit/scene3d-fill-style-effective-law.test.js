@@ -119,4 +119,33 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
     expect(foldedCaveat).toBe(R.BY_ID.weaveDepth.caveat);
     expect(foldedCaveat).not.toBe(R.BY_ID.ampSpacing.caveat);
   });
+
+  // U8 (C-08, interlockWeave/penDown) — LEDGER.md row 12b: "carry U7's
+  // finding forward" — checked and confirmed true: BOTH `interlockWeave`
+  // (survivor) AND `onePenDown` (folded) carry their own real, DISTINCT
+  // measured caveats, the same situation U7 hit first. Pinned here in the
+  // SHARED cross-check file for the same reason as the U7 case above — the
+  // third site encoding ALIASES-> sibling-key knowledge must never drift
+  // from `resolveToneLaw`/`effectiveLaw`.
+  test('U8: onePenDown\'s caveat survives the fold through effectiveLaw, and is distinct from interlockWeave\'s own — both resolvers agree', () => {
+    const R2 = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+    expect(R2.ALIASES.onePenDown).toEqual({ into: 'interlockWeave', params: { penDown: 'continuous' } });
+    expect(R2.BY_ID.interlockWeave.caveat.length).toBeGreaterThan(0);
+    expect(R2.BY_ID.onePenDown.caveat.length).toBeGreaterThan(0);
+    expect(R2.BY_ID.interlockWeave.caveat).not.toBe(R2.BY_ID.onePenDown.caveat);
+
+    // Default (penDown:'perRuling', or omitted) -> interlockWeave's OWN
+    // caveat, not empty.
+    expect(FS.effectiveLaw('interlockWeave', {})).toBe('interlockWeave');
+    expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave' })).toBe('interlockWeave');
+    expect(FS.note(FS.effectiveLaw('interlockWeave', {})).caveat).toBe(R2.BY_ID.interlockWeave.caveat);
+
+    // penDown:'continuous' -> onePenDown's DISTINCT caveat, agreed by both
+    // resolvers, and it must not silently fall back to interlockWeave's own.
+    expect(FS.effectiveLaw('interlockWeave', { penDown: 'continuous' })).toBe('onePenDown');
+    expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave', penDown: 'continuous' })).toBe('onePenDown');
+    const foldedCaveat2 = FS.note(FS.effectiveLaw('interlockWeave', { penDown: 'continuous' })).caveat;
+    expect(foldedCaveat2).toBe(R2.BY_ID.onePenDown.caveat);
+    expect(foldedCaveat2).not.toBe(R2.BY_ID.interlockWeave.caveat);
+  });
 });

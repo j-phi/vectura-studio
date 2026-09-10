@@ -396,12 +396,18 @@ describe('Fill Style — the shared mark-class config', () => {
       // 36 total - 11 = 25. U7 (C-07, ampSpacing/nesting, 1 more folded —
       // weaveDepth, a wave-family law, dead on a box exactly like its
       // survivor ampSpacing; ALIVE unaffected, neither ampSpacing nor
-      // weaveDepth is a mono law) 35 total - 11 = 24. Re-measured directly
-      // (not assumed): `groups('box')` now offers 35 options (34 PICKER_IDS
-      // + 'ladder'), confirmed failing at 25 (`expected 24 to be 25`) before
-      // this edit, passing at 24 after.
+      // weaveDepth is a mono law) 35 total - 11 = 24. U8 (C-08,
+      // interlockWeave/penDown, 1 more folded — onePenDown, also a
+      // wave-family law, dead on a box exactly like its survivor
+      // interlockWeave, per
+      // docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl (every mapper,
+      // both ids); ALIVE unaffected, neither interlockWeave nor onePenDown
+      // is a mono law) 34 total - 11 = 23. Re-measured directly (not
+      // assumed): `groups('box')` now offers 34 options (33 PICKER_IDS +
+      // 'ladder'), confirmed failing at 24 (`expected 23 to be 24`) before
+      // this edit, passing at 23 after.
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(24);
+      expect(dead.length).toBe(23);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
