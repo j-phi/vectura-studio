@@ -2556,16 +2556,32 @@
           // the group, not just the outer wrap, is what
           // `Shadows.hatchRingsEvenOdd` below hatches, so the hole now
           // genuinely re-opens in the INSIDE pass too, not only the outside
-          // one). `firstOccludedSample` walks every ring's own vertices
-          // (outer AND any hole rings) toward the group centroid, at the
-          // fraction F2b established (0.9) — see the follow-up W-30d commit
-          // for a thin-torus refinement of this search. No genuinely shadowed
-          // sample found anywhere → emit no inside pass (never regresses to
-          // drawing the region as unshadowed; today's behavior for every
-          // convex caster is untouched, since its own centroid is already
-          // occluded and the `!shadowFn(...)` branch below never triggers).
+          // one).
+          //
+          // W-30d (thin-torus blank-void fix, W-30c-review.md secretary flag
+          // 1) — `firstOccludedSample` walks every ring's own vertices
+          // (outer AND any hole rings) at a GRADED series of fractions toward
+          // the group centroid, not one fixed 0.9. F2b's original single
+          // fraction is a fixed FRACTION OF THE RADIUS, not a fixed absolute
+          // step, so for a torus whose solid annulus band is thin relative to
+          // its own ring radius (a large ring, a thin tube), 0.9 can jump
+          // clean over the whole band and land back in the hole on the OTHER
+          // side too — reporting "no occluded sample anywhere" and leaving a
+          // genuine shadow blank instead of the correct (if imprecise, R2
+          // pre-dates this) annular one. Measured on a razor-thin rig (torus
+          // sx=180/sy=3/sz=180, tube radius floor-clamped to 1mm against a
+          // 135mm ring radius — see scene3d-shadow-footprint-torus-thin-
+          // blank.test.js): a single 0.9 fraction gives ratio ~1.05 (blank);
+          // the graded series below gives ~2.10 (visible). The already-
+          // working sy=12 rig (W-30c's own) is unaffected either way, since
+          // its band is wide enough for 0.9 alone to already land inside it.
+          // No genuinely shadowed sample found anywhere → emit no inside pass
+          // (never regresses to drawing the region as unshadowed; today's
+          // behavior for every convex caster is untouched, since its own
+          // centroid is already occluded and the `!shadowFn(...)` branch
+          // below never triggers).
           const fpLight = faceFootprintLightCache.get(scaf.uv) || light;
-          const INWARD_FRACTIONS = [0.9];
+          const INWARD_FRACTIONS = [0.99, 0.97, 0.94, 0.9, 0.85, 0.78, 0.7, 0.6, 0.5, 0.35, 0.2];
           const firstOccludedSample = (group, icx, icy) => {
             for (let g = 0; g < group.length; g++) {
               const ring = group[g];
