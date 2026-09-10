@@ -343,24 +343,65 @@
     const key = (cx, cy) => `${cx},${cy}`;
     const buckets = new Map();
     return {
-      insert(x, y) {
+      // W-27c-0a iteration 4 — `level` (the slice PLANE INDEX this ink came
+      // from, 1..sliceCount) rides along with each inserted point. See
+      // `isNear`'s own comment for why.
+      insert(x, y, level) {
         const k = key(Math.floor(x / cell), Math.floor(y / cell));
         let arr = buckets.get(k);
         if (!arr) { arr = []; buckets.set(k, arr); }
-        arr.push({ x, y });
+        arr.push({ x, y, level });
       },
-      isNear(x, y) {
+      // W-27c-0a iteration 4 — re-scoping the crowding cull to genuine
+      // saddle/pole convergence (review-3 §6, STILL-OPEN.md line 169).
+      //
+      // Iteration 3's test ("is there ANY already-kept point within
+      // `radius`, from any earlier plane") fires just as readily on a
+      // single anomalous adjacent-level coincidence (two consecutive rings
+      // that merely happen to sit close in projection somewhere ordinary —
+      // exactly what stripped whole rings from the torus's flat, uncrowded
+      // lower band) as on a genuine pileup. The two are NOT told apart by
+      // "how far apart in level are the two closest rings" (a torus saddle
+      // and a sphere pole turn out to differ on that axis — see below) but
+      // by MULTIPLICITY: near a genuine critical point of the slicing
+      // height function (a saddle or a pole), ds/dh collapses toward zero,
+      // so a WHOLE RUN of consecutive levels — not just one pair — all sit
+      // within `radius` of each other at once, at the SAME screen location.
+      // An ordinary adjacent-level coincidence never gathers more than a
+      // couple of levels at one spot.
+      //
+      // `queryLevel`/`minDistinctLevels`: count the DISTINCT plane levels
+      // (excluding `queryLevel` itself — same-plane ink, e.g. a torus's
+      // inner+outer ring at one level, is a different phenomenon) already
+      // inked within `radius` of (x,y); "near" only when that count reaches
+      // `minDistinctLevels`. This is why a raw level-GAP test (matched point
+      // must be >= N levels away) does not serve both primitives: a torus
+      // saddle's two branches come from levels far apart in index (the
+      // classic figure-8 self-crossing), so a gap test catches it, but a
+      // sphere's pole crowding is the OPPOSITE signature — many
+      // IMMEDIATELY-adjacent levels bunching together as the latitude
+      // circle's radius shrinks toward zero (adjacent Δlevel spacing
+      // collapsing, not a jump to a distant level) — a gap test structurally
+      // excludes it (measured: sphere O2 was untouched at every gap value
+      // from 2 to 10). Counting DISTINCT levels within radius catches both:
+      // a torus saddle gathers many far-apart levels, a sphere pole gathers
+      // many near-together ones, but either way MANY distinct levels pile
+      // into one spot only near an actual critical point.
+      isNear(x, y, queryLevel, minDistinctLevels) {
         const cx = Math.floor(x / cell); const cy = Math.floor(y / cell);
+        const levels = new Set();
         for (let dx = -1; dx <= 1; dx++) {
           for (let dy = -1; dy <= 1; dy++) {
             const arr = buckets.get(key(cx + dx, cy + dy));
             if (!arr) continue;
             for (let i = 0; i < arr.length; i++) {
-              if (Math.hypot(arr[i].x - x, arr[i].y - y) < radius) return true;
+              const e = arr[i];
+              if (e.level === queryLevel) continue;
+              if (Math.hypot(e.x - x, e.y - y) < radius) levels.add(e.level);
             }
           }
         }
-        return false;
+        return levels.size >= minDistinctLevels;
       },
     };
   };
@@ -373,18 +414,32 @@
   // miss, not a reason to keep tuning past the point of diminishing, and
   // increasingly costly, returns.
   const CROWD_MIN_ARC_MULT = 3;
+  // W-27c-0a iteration 4 — the saddle/pole re-scope, keyed on how many
+  // DISTINCT slice levels pile ink into the same spot, rather than a
+  // per-point surface-tangency threshold (tried first this iteration — see
+  // docs/3d-audit/lane-reports/W-27c-0a-impl-4.md §1 for why it could not be
+  // tuned to separate the two on this rig) or a raw level-gap test (tried
+  // second — structurally excludes the sphere, whose pole crowding is
+  // adjacent-level, not far-level; see `makeCrowdGrid.isNear`'s own
+  // comment). Measured on the default torus/sphere rig: this is the value
+  // that cleanly separates "many levels piling up" (a saddle or a pole) from
+  // "one adjacent pair happens to be close" (the ordinary, everywhere-else
+  // case that must be left alone).
+  const CROWD_MIN_DISTINCT_LEVELS = 2;
   // Whole-ring decision: crowded if it contains a CONTIGUOUS stretch (index-
-  // adjacent points, each within `radius` of already-KEPT ink from an
-  // earlier plane) whose arc length reaches `minArc`. A single isolated
-  // near-sample contributes ~0 arc length (no adjacent near-sample to sum a
-  // segment against), so it never reaches `minArc` — only a SUSTAINED
-  // stretch does. No partial result — the caller either keeps every point
-  // of the ring (and lets clipping proceed normally) or drops every point
-  // (and skips clipping entirely); this function only decides which.
-  const isRunCrowded = (pts, grid, minArc) => {
+  // adjacent points, each within `radius` of already-KEPT ink from at least
+  // `CROWD_MIN_DISTINCT_LEVELS` DIFFERENT planes — see
+  // `makeCrowdGrid.isNear`) whose arc length reaches `minArc`. A single
+  // isolated near-sample contributes ~0 arc length (no adjacent near-sample
+  // to sum a segment against), so it never reaches `minArc` — only a
+  // SUSTAINED stretch does. No partial result — the caller either keeps
+  // every point of the ring (and lets clipping proceed normally) or drops
+  // every point (and skips clipping entirely); this function only decides
+  // which.
+  const isRunCrowded = (pts, grid, minArc, level, minDistinctLevels) => {
     let curLen = 0; let maxLen = 0; let prevNear = false;
     for (let i = 0; i < pts.length; i++) {
-      const near = grid.isNear(pts[i].x, pts[i].y);
+      const near = grid.isNear(pts[i].x, pts[i].y, level, minDistinctLevels);
       if (near) {
         if (prevNear) curLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
         if (curLen > maxLen) maxLen = curLen;
@@ -496,6 +551,26 @@
       return {
         F: dr * dr + p.y * p.y - minor * minor,
         gx: (2 * dr * p.x) / pr, gy: 2 * p.y, gz: (2 * dr * p.z) / pr,
+      };
+    }
+    if (mode === 'capsule') {
+      // W-34 Fix B — mirrors charts.js topoCapsule exactly (cylindrical
+      // barrel of radius r capped by two hemispheres of the same radius;
+      // r = min(sx,sz) there, and the default rig's sx===sz makes the
+      // circular-cross-section assumption exact). Closing this gap removes
+      // the ONLY invented sharpening in the roster (docs/3d-audit/
+      // lane-reports/W-34-plan.md §2.3/§4 Fix B) — every other primitive is
+      // untouched by this dispatch.
+      const r = Math.max(1, Math.min(sx, sz));
+      const half = Math.max(r, sy);
+      const cylHalf = Math.max(0, half - r);
+      const ay = Math.abs(p.y);
+      if (ay <= cylHalf) {
+        return { F: p.x * p.x + p.z * p.z - r * r, gx: 2 * p.x, gy: 0, gz: 2 * p.z };
+      }
+      const dy = p.y > 0 ? p.y - cylHalf : p.y + cylHalf;
+      return {
+        F: p.x * p.x + p.z * p.z + dy * dy - r * r, gx: 2 * p.x, gy: 2 * dy, gz: 2 * p.z,
       };
     }
     return null; // ellipsoid handled by 'sphere' branch via TOPOFORM_MODES; others: no closed form yet
@@ -686,10 +761,21 @@
     const maxAngle = Number.isFinite(opts.maxAngleDeg) ? opts.maxAngleDeg : SLICE_REFINE_MAX_ANGLE_DEG;
     const maxRounds = Number.isFinite(opts.maxRounds) ? opts.maxRounds : SLICE_REFINE_MAX_ROUNDS;
     const analyticProject = typeof opts.analyticProject === 'function' ? opts.analyticProject : null;
+    // W-34 Fix A — `opts.project`, if supplied, projects a WORLD point to
+    // device space for the purpose of MEASURING the stop condition only
+    // (subdivision and the Newton analytic snap below stay in world space,
+    // unchanged). An orthographic camera foreshortens a ring obliquely to
+    // the view, so the world-space turn can sit comfortably under the
+    // ledger's <=8 bar while the projected, DEVICE-space turn the user
+    // actually sees exceeds it (measured: cone 8.088 deg, capsule 9.075 deg
+    // — docs/3d-audit/lane-reports/W-34-plan.md §2.2). Absent `opts.project`,
+    // behaviour is byte-identical to before this fix.
+    const proj2 = typeof opts.project === 'function' ? opts.project : null;
     const first = worldPts[0];
     const last = worldPts[worldPts.length - 1];
     const closed = worldPts.length >= 4
       && Math.hypot(first.x - last.x, first.y - last.y, first.z - last.z) < 1e-6;
+    const measure = (pts) => sliceRingMaxTurn(proj2 ? pts.map((q) => proj2(q) || q) : pts, closed);
     let base = closed ? worldPts.slice(0, -1) : worldPts.slice();
     // A mesh seam (e.g. a sphere's u=0/u=1 longitude fold) can hand linkSegments
     // two crossing points a fraction of a micron apart. The 4-point scheme is
@@ -712,13 +798,41 @@
     }
     base = deduped;
     if (base.length < 3) return worldPts;
+    // W-27c-0a-6 — a tiny (<=4-point) ring whose own total raw length sits
+    // deep inside "numerical hazard" territory: an adjacent pair can be
+    // ABOVE DUP_EPS (so not deduped above) yet close enough that the
+    // centripetal Catmull-Rom scheme above never converges on it — measured
+    // on the default torus's level-6 ring (two raw points 0.0038mm apart,
+    // 0.0041mm total raw length): it burns every one of SLICE_REFINE_MAX_
+    // ROUNDS, balloons past 500 points, and its device-space turn never
+    // drops below ~180°, instead of the harmless single-round settle every
+    // OTHER tiny ring reaches. Widening DUP_EPS itself is not a safe fix —
+    // measured across all six primitives, legitimate small (<=4-point)
+    // rings start at 0.235mm total length (cone, level 4), and dense
+    // (46-84 point) rings on sphere/ellipsoid/cone/capsule legitimately
+    // carry adjacent gaps up to 0.0074mm, bigger than this ring's own
+    // 0.0038mm gap — an absolute per-edge epsilon cannot separate the two
+    // without also touching real geometry. A whole-ring length gate can:
+    // 0.05mm sits >10x above the measured pathological case and >4x below
+    // the next-smallest genuine tiny ring, with the same scale already used
+    // by this file's own harmlessness guard. Below it, refinement cannot
+    // help (the entire ring occupies less space than a pen can draw) and
+    // is the very thing driving the non-convergence, so skip it — same
+    // no-op-on-tiny-input behavior the `< 3` bail just above already uses.
+    if (base.length <= 4) {
+      let rawLen = 0;
+      for (let i = 1; i < base.length; i++) {
+        rawLen += Math.hypot(base[i].x - base[i - 1].x, base[i].y - base[i - 1].y, base[i].z - base[i - 1].z);
+      }
+      if (rawLen < 0.05) return worldPts;
+    }
     // Snap the ORIGINAL vertices onto the true surface too — they are exact
     // mesh-chord crossings (inside the surface), not on it, and a 3-point
     // triangle needs this correction even more than a dense ring, since with
     // so few points every one of them dominates the visible shape.
     if (analyticProject) base = base.map((pt) => analyticProject(pt) || pt);
     let round = 0;
-    while (round < maxRounds && sliceRingMaxTurn(base, closed) > maxAngle) {
+    while (round < maxRounds && measure(base) > maxAngle) {
       base = sliceRingSubdivideOnce(base, closed);
       // Every newly-inserted midpoint is a Catmull-Rom interpolation between
       // surface points, so it is only APPROXIMATELY on the true surface —
@@ -728,6 +842,133 @@
       round += 1;
     }
     return closed ? [...base, { ...base[0] }] : base;
+  };
+
+  // ── W-35 — end overlap. Pure geometry, no per-pass closure (no
+  // smoothSurface/analyticProject — the caller refines the result exactly as
+  // it already refines linkPlane's output). docs/3d-audit/lane-reports/
+  // W-35-plan.md §4.1 is the mechanism this implements.
+  //
+  // `frontSegs`/`backSegs` are one PLANE's buildSliceSegments cut list,
+  // already split front/back (`[{a,b}, ...]` as `[a,b]` pairs — the shape
+  // `byPlane` groups them into). `targetMm` is `sliceEndOverlap` already
+  // resolved to world mm (0 ⇒ the literal pre-W-35 `G3.linkSegments(frontSegs)`
+  // call, unconditionally — this is what makes the default an EXACT no-op,
+  // not an approximately-equal one).
+  const slice2DKey = (pt) => `${pt.x.toFixed(3)},${pt.y.toFixed(3)}`;
+  const sliceDist3 = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+  // The neighbour of ring[idx] that is NOT the chain's own known interior
+  // point (avoidPt) — the direction AWAY from the front chain, along the
+  // combined front+back ring. `ring` may be a literal closed loop (first ===
+  // last) or an open strand; both are handled, wrapping only when closed.
+  const sliceNeighborAway = (ring, idx, avoidPt) => {
+    const n = ring.length;
+    const closed = n > 2 && slice2DKey(ring[0]) === slice2DKey(ring[n - 1]);
+    const upIdx = idx + 1 < n ? idx + 1 : (closed ? 1 : -1);
+    const downIdx = idx - 1 >= 0 ? idx - 1 : (closed ? n - 2 : -1);
+    const avoidKey = slice2DKey(avoidPt);
+    if (upIdx !== -1 && slice2DKey(ring[upIdx]) !== avoidKey) return { idx: upIdx, dir: 1, closed, n };
+    if (downIdx !== -1 && slice2DKey(ring[downIdx]) !== avoidKey) return { idx: downIdx, dir: -1, closed, n };
+    return null;
+  };
+  // Walk `ring` from `ring[startIdx]` in `dir` (wrapping iff `closed`),
+  // accumulating world-space arc length up to `targetMm`. Returns the walked
+  // points (NOT including ring[startIdx]), the last one interpolated so the
+  // returned polyline's arc length is exactly targetMm — or, if the ring
+  // runs out first (an open full-ring strand, or a topological edge), as far
+  // as it goes.
+  const sliceWalkArc = (ring, startIdx, dir, closed, n, targetMm) => {
+    const out = [];
+    let acc = 0;
+    let prevIdx = startIdx;
+    let cur = dir === 1 ? startIdx + 1 : startIdx - 1;
+    let steps = 0;
+    while (steps <= n + 1) {
+      let curIdx = cur;
+      if (closed) curIdx = ((cur % n) + n) % n;
+      else if (curIdx < 0 || curIdx >= n) break;
+      const a = ring[((prevIdx % n) + n) % n];
+      const b = ring[curIdx];
+      const segLen = sliceDist3(a, b);
+      if (acc + segLen >= targetMm) {
+        const t = segLen > 1e-9 ? (targetMm - acc) / segLen : 0;
+        out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t });
+        return out;
+      }
+      acc += segLen;
+      out.push({ ...b });
+      prevIdx = curIdx;
+      cur = dir === 1 ? cur + 1 : cur - 1;
+      steps += 1;
+    }
+    return out;
+  };
+  // Trim `pts` from its own start by `target` mm of arc, replacing the
+  // consumed points with the single exact interpolated point.
+  const sliceTrimFromStart = (pts, target) => {
+    if (target <= 0) return pts;
+    let acc = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const segLen = sliceDist3(pts[i - 1], pts[i]);
+      if (acc + segLen >= target) {
+        const t = segLen > 1e-9 ? (target - acc) / segLen : 0;
+        const a = pts[i - 1]; const b = pts[i];
+        const p = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t };
+        return [p, ...pts.slice(i)];
+      }
+      acc += segLen;
+    }
+    return pts.slice(-1);
+  };
+  const extendFrontChains = (frontSegs, backSegs, targetMm) => {
+    const linkSegments = G3.linkSegments;
+    if (!linkSegments) return frontSegs.map((e) => [e[0], e[1]]);
+    if (!targetMm) return linkSegments(frontSegs);
+    const frontChains = linkSegments(frontSegs);
+    if (!frontChains.length) return [];
+    let fullPlaneRings = null;
+    const getFullPlaneRings = () => {
+      if (!fullPlaneRings) fullPlaneRings = linkSegments(frontSegs.concat(backSegs));
+      return fullPlaneRings;
+    };
+    const findInRings = (rings, pt) => {
+      for (let ri = 0; ri < rings.length; ri++) {
+        const idx = rings[ri].findIndex((p) => slice2DKey(p) === slice2DKey(pt));
+        if (idx !== -1) return { ring: rings[ri], idx };
+      }
+      return null;
+    };
+    return frontChains.map((chain) => {
+      if (chain.length < 2) return chain;
+      const a0 = chain[0];
+      const aN = chain[chain.length - 1];
+      const isClosedChain = chain.length >= 4 && sliceDist3(a0, aN) < 1e-6;
+      if (isClosedChain) return chain; // no ends to move
+      if (targetMm > 0) {
+        const rings = getFullPlaneRings();
+        const hit0 = findInRings(rings, a0);
+        const hitN = findInRings(rings, aN);
+        let extraStart = [];
+        if (hit0 && chain.length > 1) {
+          const nb = sliceNeighborAway(hit0.ring, hit0.idx, chain[1]);
+          if (nb) extraStart = sliceWalkArc(hit0.ring, hit0.idx, nb.dir, nb.closed, nb.n, targetMm);
+        }
+        let extraEnd = [];
+        if (hitN && chain.length > 1) {
+          const nb = sliceNeighborAway(hitN.ring, hitN.idx, chain[chain.length - 2]);
+          if (nb) extraEnd = sliceWalkArc(hitN.ring, hitN.idx, nb.dir, nb.closed, nb.n, targetMm);
+        }
+        return [...extraStart.slice().reverse(), ...chain, ...extraEnd];
+      }
+      // Negative — trim inward from each end, capped so the two trims can
+      // never cross (a run can shrink but never vanish or invert).
+      let chainLen = 0;
+      for (let i = 1; i < chain.length; i++) chainLen += sliceDist3(chain[i - 1], chain[i]);
+      const cap = Math.min(-targetMm, chainLen * 0.45);
+      let trimmed = sliceTrimFromStart(chain, cap);
+      trimmed = sliceTrimFromStart(trimmed.slice().reverse(), cap).reverse();
+      return trimmed;
+    });
   };
 
   const Scene3DNS = (Vectura.Scene3D = Vectura.Scene3D || {});
@@ -744,6 +985,11 @@
     analyticProjectLocal: sliceAnalyticProjectLocal,
     localPlaneNormal: sliceLocalPlaneNormal,
     inverseObjectTransform: sliceInverseObjectTransform,
+    // W-35 — exposed for direct, world-space unit coverage of the end-overlap
+    // mechanism (arc advance / trim / faceted inertness), the same rationale
+    // as the four exports above: validate THIS wiring, not a re-derivation
+    // of it in test code.
+    extendFrontChains,
   };
 
   const FALLBACK_STYLE = { penId: null, mapper: 'none', params: {} };
@@ -4429,6 +4675,17 @@
               sliceTilt: finite(sp.sliceTilt, 0),
             });
             const sliceTreat = strokeTreatment(sp);
+            // W-35 — "end overlap" (USER product request,
+            // docs/3d-audit/lane-reports/W-35-plan.md, the stair-step at ring
+            // ends). `sliceEndOverlap` is in PEN WIDTHS, the same unit
+            // CROWD_CULL_K * penWidth already uses just below. 0 (default) is
+            // a byte-identical no-op — see linkFrontExtended's own literal
+            // `linkPlane(g.front)` fast path. Positive: each open front run
+            // is carried further along ITS OWN ring past the facet cut
+            // (subtly more overlap at the silhouette, better outer-edge
+            // fidelity — Jay's ask). Negative: each run is trimmed back
+            // (less ink piling on the outline, for wet-ink plotting).
+            const END_OVER_MM = clamp(finite(sp.sliceEndOverlap, 0), -2, 8) * penWidth;
             // NOT selfObject: a through-body slice SHOULD self-occlude (the far
             // side hides behind the near surface) — only on-surface fills opt out.
             // segCtx.selfOcclude is set below, once analyticProject is known —
@@ -4513,12 +4770,57 @@
             // straying into the tessellation-noise band) is byte-identical —
             // it never had this defect and doesn't need the wider bias.
             const segCtx = { objectId: record.id, selfOcclude: !!(smoothSurface && analyticProject) };
+            // W-34 Fix A — supply the pass's own camera as the refinement's
+            // device-space projector (see refineSliceRing's own comment).
+            // `scene.projectWorld` is the SAME projector `projectPath` below
+            // uses, so the stop condition sees exactly the space the pen
+            // draws in, not a re-derivation of it.
+            const refineProjectFn = (pt) => {
+              const P2 = scene.projectWorld(pt);
+              return (P2 && Number.isFinite(P2.x) && Number.isFinite(P2.y)) ? { x: P2.x, y: P2.y, z: 0 } : null;
+            };
             const linkPlane = (segs) => {
               const rings = linkSegments ? linkSegments(segs) : segs.map((e) => [e[0], e[1]]);
               return smoothSurface
-                ? rings.map((ring) => refineSliceRing(ring, analyticProject ? { analyticProject } : undefined))
+                ? rings.map((ring) => refineSliceRing(ring, analyticProject
+                  ? { analyticProject, project: refineProjectFn } : { project: refineProjectFn }))
                 : rings;
             };
+            // W-35 — sliceEndOverlap's mechanism. At END_OVER_MM === 0 this
+            // is EXACTLY `linkPlane(g.front)` (the literal pre-W-35 call),
+            // proving T1 (byte-identical default) by construction rather than
+            // by numeric equality. Otherwise, for each OPEN front chain (a
+            // CLOSED front ring — e.g. a fully-visible equator — has no ends
+            // to move and is returned unchanged), relink the WHOLE plane
+            // (front + back) into its full ring: the front chain's two
+            // endpoints are exact facet-edge crossings shared bit-for-bit by
+            // an adjacent back segment (both computed by the same edgeCross
+            // arithmetic on the same two vertices), so they are always
+            // present, at the same coordinates, in that combined ring.
+            // Positive k walks OUTWARD from each endpoint along the full
+            // ring (into what was the back-facing arc), accumulating
+            // world-space arc length until k mm; negative k instead walks
+            // INWARD along the front chain itself, trimming it. Either way
+            // the result is refined exactly like `linkPlane` (the SAME
+            // `refineSliceRing` call, so added/kept points are re-snapped to
+            // the analytic surface, not left as raw chords — this is what
+            // keeps the extension ON the surface instead of flying off it).
+            // Pure geometry lives in the module-level `extendFrontChains`
+            // (exposed at Scene3DNS.Slices.extendFrontChains for direct
+            // world-space unit coverage). At END_OVER_MM === 0 it returns
+            // `G3.linkSegments(front)` unconditionally, matching the literal
+            // pre-W-35 `linkPlane` call's own first step exactly, so T1's
+            // byte-identity holds by construction. The result is then
+            // refined exactly as `linkPlane` already refines its output.
+            // GATED on `smoothSurface` (forced to 0 otherwise) — on a
+            // faceted primitive the front/back split is exact geometry, so
+            // extending past it would draw onto a genuinely back-facing
+            // plane; T5 asserts this inertness (see the plan's §2.1 gate).
+            const linkFrontExtended = (front, back) => extendFrontChains(front, back, smoothSurface ? END_OVER_MM : 0)
+              .map((ring) => (smoothSurface
+                ? refineSliceRing(ring, analyticProject
+                  ? { analyticProject, project: refineProjectFn } : { project: refineProjectFn })
+                : ring));
             const projectPath = (worldPts) => {
               const proj = [];
               for (let i = 0; i < worldPts.length; i++) {
@@ -4554,10 +4856,10 @@
             const crowdMinArc = CROWD_MIN_ARC_MULT * penWidth;
             const crowdGrid = (smoothSurface && analyticProject)
               ? makeCrowdGrid(crowdRadius) : null;
-            byPlane.forEach((g) => {
+            byPlane.forEach((g, level) => {
               // Front rings: HLR-clipped (occluded/self-occluded) until the fixed
               // budget is spent, then raw — never dropped.
-              linkPlane(g.front).forEach((worldPts) => {
+              linkFrontExtended(g.front, g.back).forEach((worldPts) => {
                 const proj = projectPath(worldPts);
                 if (proj.length < 2) return;
                 // W-27c-0a iteration 3 — the crowding decision is made ONCE,
@@ -4575,8 +4877,11 @@
                 // so any full-vs-draft difference is once again ONLY real
                 // HLR occlusion — 0(b)'s own invariant, untouched by this
                 // fix's mechanism.
-                if (crowdGrid && isRunCrowded(proj, crowdGrid, crowdMinArc)) return;
-                if (crowdGrid) proj.forEach((pt) => crowdGrid.insert(pt.x, pt.y));
+                // W-27c-0a iteration 4 — `level` (this ring's own slice
+                // plane index) re-scopes "crowded" to the saddle/pole zone
+                // only: see `makeCrowdGrid.isNear`'s own comment.
+                if (crowdGrid && isRunCrowded(proj, crowdGrid, crowdMinArc, level, CROWD_MIN_DISTINCT_LEVELS)) return;
+                if (crowdGrid) proj.forEach((pt) => crowdGrid.insert(pt.x, pt.y, level));
                 const meta = metaFor(proj);
                 if (draft || workUsed >= SLICE_CLIP_WORK) {
                   emitRuns([{ visible: true, pts: proj }], meta, hiddenTreatment, null, sliceTreat);
