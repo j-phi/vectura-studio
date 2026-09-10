@@ -1399,10 +1399,19 @@
       };
       // One footprint set per face scaffold (faceHatchLines calls this once
       // per face it hatches) — every OTHER object's world vertices projected
-      // onto THIS face's own plane along the light travel direction, hulled,
-      // then clipped to the face's own visible outline. null when the flag is
-      // off, the light is absent/draft, or nothing lands on this face.
+      // onto THIS face's own plane along the light travel direction, silhouetted
+      // (W-30d — holes preserved; falls back to a hull), then clipped to the
+      // face's own visible outline. Returns an array of GROUPS, one group per
+      // other object, each group an array of 1+ clipped rings (1 for every
+      // convex caster; 2+ for a caster whose silhouette has a hole, e.g. a
+      // torus). null when the flag is off, the light is absent/draft, or
+      // nothing lands on this face.
       const faceFootprintCache = new Map();
+      // W-30c (F3) — the light BEHIND each face footprint. Keyed by `scaf.uv`
+      // exactly like `faceFootprintCache`, so the R3 tone-sample fix below can
+      // recover which light actually built a given footprint (needed for its
+      // own `shadowFn(worldPoint, fpLight)` calls).
+      const faceFootprintLightCache = new Map();
       const buildFaceFootprint = (scaf, normalWorldArg, selfId) => {
         if (!(shadowReceiveOn && toneOn && scaf && lightDir && Shadows
           && typeof Shadows.projectAlongDirToPlane === 'function'
@@ -1411,21 +1420,70 @@
         const faceCCW = asCCW(scaf.uv);
         const anchor = scaf.origin;
         const polys = [];
+        // W-30c — R4: the footprint is a GEOMETRIC construction and needs a
+        // light that has a position/direction. `light` (== lights[0]) may be
+        // an ambient — the UI appends new lights AFTER the default sun, so any
+        // light a user *adds* is never lights[0] — which fell back to
+        // `lightWorldDir`'s 135/45 default and put the shadow nowhere (see
+        // W-30c-plan.md §1d: `[ambient, point]` measured ratio 1.00 = "the
+        // shadow is gone"). Deliberately scoped to buildFaceFootprint only —
+        // `light`/`lightDir` themselves are left untouched because they also
+        // feed `toneOn`, the specular term and `shadowReceiveOn`.
+        const fpLight = (p.lights || []).find((l) => l && l.type !== 'ambient' && l.castShadows !== false) || light;
+        const fpDir = (Lighting && fpLight !== light && typeof Lighting.lightWorldDir === 'function')
+          ? Lighting.lightWorldDir(fpLight) : lightDir;
+        // W-30b — light-type-aware projector. `Shadows.projectLightToPlane`
+        // (W-30) dispatches on `light.type`/`light.position`: a point/spot/
+        // area light with a real world position gets the true PERSPECTIVE
+        // footprint from that position; a directional (or any other) light
+        // falls straight through to the SAME parallel `projectAlongDirToPlane`
+        // call this used unconditionally before — byte-identical for every
+        // directional-light scene. Falls back to the old parallel call
+        // directly if `projectLightToPlane` isn't present for any reason
+        // (defensive; it always is on this tree).
+        const projectFootprintPoint = typeof Shadows.projectLightToPlane === 'function'
+          ? (P) => Shadows.projectLightToPlane(P, fpLight, anchor, normalWorldArg, fpDir)
+          : (P) => Shadows.projectAlongDirToPlane(P, fpDir, anchor, normalWorldArg);
+        // W-30d (F2a) — `Shadows.footprintRings` generalizes `casterSilhouetteLoops`'s
+        // ground-only (y=0) bail to THIS face's own plane (`anchor`/`normalWorldArg`),
+        // so a non-convex caster's TRUE silhouette (a torus's outer + inner rim, R2
+        // from W-30c-plan.md) projects here instead of always collapsing to
+        // `Shadows.convexHull`'s hole-filling wrap. Each entry of `polys` is now a
+        // GROUP of one-or-more rings for a SINGLE other object — usually one ring
+        // (every convex caster: the silhouette loop and the hull are the same ring,
+        // so this is byte-identical for box/sphere/etc.), two for an annular caster.
+        // Falls back to the old single-hull group when `footprintRings` is absent
+        // (defensive; it always exists on this tree) so behavior never regresses.
+        const projectVertexUV = (P) => {
+          const wp = projectFootprintPoint(P);
+          return wp ? worldToUV(scaf, wp) : null;
+        };
         scene.objects.forEach((otherRec) => {
           if (!otherRec || otherRec.id === selfId) return;
-          const world = otherRec.world || [];
-          const uvPts = [];
-          for (let i = 0; i < world.length; i++) {
-            const wp = Shadows.projectAlongDirToPlane(world[i], lightDir, anchor, normalWorldArg);
-            if (wp) uvPts.push(worldToUV(scaf, wp));
+          let rawRings;
+          if (typeof Shadows.footprintRings === 'function') {
+            rawRings = Shadows.footprintRings(otherRec, projectVertexUV, fpLight, anchor, normalWorldArg, fpDir);
+          } else {
+            const world = otherRec.world || [];
+            const uvPts = [];
+            for (let i = 0; i < world.length; i++) {
+              const uv = projectVertexUV(world[i]);
+              if (uv) uvPts.push(uv);
+            }
+            const hull = Shadows.convexHull(uvPts);
+            rawRings = hull.length >= 3 ? [hull] : null;
           }
-          const hull = Shadows.convexHull(uvPts);
-          if (hull.length < 3) return;
-          const clipped = clipToConvexCCW(hull, faceCCW);
-          if (clipped.length >= 3 && Math.abs(ringArea2(clipped)) > 1e-6) polys.push(clipped);
+          if (!rawRings || !rawRings.length) return;
+          const group = [];
+          rawRings.forEach((ring) => {
+            const clipped = clipToConvexCCW(ring, faceCCW);
+            if (clipped.length >= 3 && Math.abs(ringArea2(clipped)) > 1e-6) group.push(clipped);
+          });
+          if (group.length) polys.push(group);
         });
         const result = polys.length ? polys : null;
         faceFootprintCache.set(scaf.uv, result);
+        faceFootprintLightCache.set(scaf.uv, fpLight);
         return result;
       };
       // I8 — per-sample specular term for light-driven highlight mode. Reads the
@@ -2472,7 +2530,11 @@
           // physically correct meaning of "the face's normal pitch".
           const outsideSpacing = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts, true, true).spacing;
           const outsideScreen = Math.max(hatchFloorFor(styleParams.fillDensity), planeRaw(baseAngle, outsideSpacing));
-          const outsideRings = [asCCW(scaf.uv)].concat(footprintPolys);
+          // W-30d — `footprintPolys` is now an array of GROUPS (one per other
+          // object, each 1+ rings); spread every group's rings into one flat
+          // even-odd call so a hole ring correctly re-admits the outside pitch
+          // there, exactly as before for the common one-ring-per-object case.
+          const outsideRings = [asCCW(scaf.uv)].concat(...footprintPolys);
           maybeLink(Shadows.hatchRingsEvenOdd(outsideRings, baseAngle, outsideScreen), styleParams)
             .forEach((l) => uvLines.push(l));
           // A directional hard shadow is BINARY — every point inside it shares
@@ -2481,13 +2543,74 @@
           // spacing; `perPointGrade` (true) bypasses recordBands' per-FACE rank
           // cache, which would otherwise silently override this single sample
           // with the unshadowed centroid value (see v1's second bug).
-          footprintPolys.forEach((fp) => {
+          //
+          // W-30c (F2b, R3) — for a NON-CONVEX caster (a torus, say) the
+          // footprint's own centroid can land in the caster's real geometric
+          // hole. `pointInShadow` there correctly reports "not occluded" (it
+          // ray-casts the real mesh, not the polygon), so the naive centroid
+          // sample would silently read the UNSHADOWED spacing. Fix: if the
+          // centroid isn't actually occluded, search for a point that IS.
+          //
+          // W-30d (F2a) — `fp` is now a GROUP: the caster's outer ring plus
+          // any hole rings `Shadows.footprintRings` found (R2's actual fix —
+          // the group, not just the outer wrap, is what
+          // `Shadows.hatchRingsEvenOdd` below hatches, so the hole now
+          // genuinely re-opens in the INSIDE pass too, not only the outside
+          // one).
+          //
+          // W-30d (thin-torus blank-void fix, W-30c-review.md secretary flag
+          // 1) — `firstOccludedSample` walks every ring's own vertices
+          // (outer AND any hole rings) at a GRADED series of fractions toward
+          // the group centroid, not one fixed 0.9. F2b's original single
+          // fraction is a fixed FRACTION OF THE RADIUS, not a fixed absolute
+          // step, so for a torus whose solid annulus band is thin relative to
+          // its own ring radius (a large ring, a thin tube), 0.9 can jump
+          // clean over the whole band and land back in the hole on the OTHER
+          // side too — reporting "no occluded sample anywhere" and leaving a
+          // genuine shadow blank instead of the correct (if imprecise, R2
+          // pre-dates this) annular one. Measured on a razor-thin rig (torus
+          // sx=180/sy=3/sz=180, tube radius floor-clamped to 1mm against a
+          // 135mm ring radius — see scene3d-shadow-footprint-torus-thin-
+          // blank.test.js): a single 0.9 fraction gives ratio ~1.05 (blank);
+          // the graded series below gives ~2.10 (visible). The already-
+          // working sy=12 rig (W-30c's own) is unaffected either way, since
+          // its band is wide enough for 0.9 alone to already land inside it.
+          // No genuinely shadowed sample found anywhere → emit no inside pass
+          // (never regresses to drawing the region as unshadowed; today's
+          // behavior for every convex caster is untouched, since its own
+          // centroid is already occluded and the `!shadowFn(...)` branch
+          // below never triggers).
+          const fpLight = faceFootprintLightCache.get(scaf.uv) || light;
+          const INWARD_FRACTIONS = [0.99, 0.97, 0.94, 0.9, 0.85, 0.78, 0.7, 0.6, 0.5, 0.35, 0.2];
+          const firstOccludedSample = (group, icx, icy) => {
+            for (let g = 0; g < group.length; g++) {
+              const ring = group[g];
+              for (let i = 0; i < ring.length; i++) {
+                const vx = ring[i].x; const vy = ring[i].y;
+                for (let f = 0; f < INWARD_FRACTIONS.length; f++) {
+                  const t = INWARD_FRACTIONS[f];
+                  const mx = vx * t + icx * (1 - t);
+                  const my = vy * t + icy * (1 - t);
+                  const wp = scaf.toWorld({ x: mx, y: my });
+                  if (wp && shadowFn(wp, fpLight)) return wp;
+                }
+              }
+            }
+            return null;
+          };
+          footprintPolys.forEach((group) => {
+            const outer = group[0];
             let cx = 0; let cy = 0;
-            fp.forEach((pt) => { cx += pt.x; cy += pt.y; });
-            const centroidWorld = scaf.toWorld({ x: cx / fp.length, y: cy / fp.length });
-            const insideSpacing = spacingBand(normalWorld, styleParams, centroidWorld, face, record, hlOpts, true).spacing;
+            outer.forEach((pt) => { cx += pt.x; cy += pt.y; });
+            cx /= outer.length; cy /= outer.length;
+            let sampleWorld = scaf.toWorld({ x: cx, y: cy });
+            if (typeof shadowFn === 'function' && !shadowFn(sampleWorld, fpLight)) {
+              sampleWorld = firstOccludedSample(group, cx, cy);
+            }
+            if (!sampleWorld) return; // no genuinely shadowed sample → emit no split
+            const insideSpacing = spacingBand(normalWorld, styleParams, sampleWorld, face, record, hlOpts, true).spacing;
             const insideScreen = Math.max(hatchFloorFor(styleParams.fillDensity), planeRaw(baseAngle, insideSpacing));
-            maybeLink(Shadows.hatchRingsEvenOdd([fp], baseAngle, insideScreen), styleParams)
+            maybeLink(Shadows.hatchRingsEvenOdd(group, baseAngle, insideScreen), styleParams)
               .forEach((l) => uvLines.push(l));
           });
         } else {

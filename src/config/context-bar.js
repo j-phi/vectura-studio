@@ -256,6 +256,42 @@
     const sp = R && R.STYLE_PARAMS && R.STYLE_PARAMS[id];
     return Array.isArray(sp) ? sp : [];
   };
+  // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06 — "Folding a law must NOT
+  // hide its measured caveat") — the (survivor id, current collapse
+  // sub-control values) -> SPECIFIC internal law id the values select. Both
+  // caveat-rendering call sites (scene3d-panel.js `fillStyleControls`, the
+  // ctxbar Style flyout) must read the CAVEAT off this id, not off the
+  // survivor `entry()`/`note()` reads directly — folding e.g. `bundleDither`
+  // into `bundleCount` must not make its own measured caveat ("waving the
+  // pass-count boundary made long-wave moire worse") vanish just because the
+  // picker now stores the survivor id plus a `bundleMode` sub-param. The
+  // (i) popover's blurb (mechanism/strengths/weaknesses) stays on the plain
+  // survivor `entry` — the two lookups are deliberately NOT the same one,
+  // per the standing ruling.
+  //
+  // Mirrors `Scene3D.Params.resolveToneLaw`'s survivor+params rule (its rules
+  // 3/4) rather than calling it, so this config file never needs the core
+  // engine module loaded — it already owns STYLE_PARAMS via `styleParams()`
+  // above. A survivor with no collapse descriptors (no fold at all) passes
+  // straight through; several descriptors non-default AT ONCE is the same
+  // UNREPRESENTABLE case `resolveToneLaw` falls back on — deterministically
+  // the bare survivor id, never a throw.
+  SCENE_FILL_STYLES.effectiveLaw = (survivorId, paramsBag) => {
+    const bag = paramsBag && typeof paramsBag === 'object' ? paramsBag : {};
+    const descriptors = SCENE_FILL_STYLES.styleParams(survivorId);
+    if (!descriptors.length) return survivorId;
+    let activeLaw = null;
+    let activeCount = 0;
+    descriptors.forEach((d) => {
+      const opts = Array.isArray(d.options) ? d.options : [];
+      const asked = bag[d.key];
+      const matched = opts.find((o) => o.value === asked) || opts.find((o) => o.value === d.default) || null;
+      if (!matched || matched.value === d.default) return;
+      activeCount += 1;
+      activeLaw = matched.law;
+    });
+    return activeCount === 1 ? activeLaw : survivorId;
+  };
   // [{ group, options: [{ value, label, disabled? }] }] for UI.Select, grouped
   // by MARK CLASS. Every law the roster knows is always offered — all 47 plus
   // the shipped default — with no tier gate and no per-option suffix; the
