@@ -167,42 +167,24 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
     // W-05b-W-06b-plan.md` §3.1 for the full mechanism.
     test('O1 — a tick sagittas across a curved surface: torus/contour ticks are no longer a straight chord', () => {
       const paths = algo.generate(buildSceneParams('mkTick', 'contour', 50, 'torus'), null, null, BOUNDS);
-      const sagittaOf = (pp) => {
-        if (!Array.isArray(pp) || pp.length < 3) return null; // a 2-point run has no interior vertex to sagitta
+      const sagittas = [];
+      paths.forEach((pp) => {
+        if (!Array.isArray(pp) || pp.length < 3) return; // a 2-point run has no interior vertex to sagitta
         const a = pp[0]; const b = pp[pp.length - 1];
         const dx = b.x - a.x; const dy = b.y - a.y;
         const chordLen = Math.hypot(dx, dy);
-        if (!(chordLen > 1e-6)) return null;
+        if (!(chordLen > 1e-6)) return;
         const ux = dx / chordLen; const uy = dy / chordLen;
         let maxDev = 0;
         pp.forEach((pt) => {
           const px = pt.x - a.x; const py = pt.y - a.y;
           maxDev = Math.max(maxDev, Math.abs(px * uy - py * ux));
         });
-        return { chordLen, sagitta: maxDev };
-      };
-      const all = paths.map(sagittaOf).filter(Boolean);
+        sagittas.push(maxDev);
+      });
       // Pre-fix this array is empty by construction (`pp.length` was always
       // exactly 2 — no interior vertex exists to deviate at all).
       //
-      // METHODOLOGY NOTE (W-05b U2, variable-length ticks — measured, not a
-      // fudge). Sagitta of a chord over a curved surface scales with the
-      // chord's own LENGTH SQUARED (sagitta ~= L^2/(8r) for radius r), so
-      // once U2 made tick length itself vary with tone (R1), the ALL-tick
-      // population mixes long (near-max) and short (near-flick) chords, and
-      // the short ones legitimately show much less sagitta — not because
-      // the walk stopped following curvature, but because a short chord
-      // HAS less curve to show over its own length. Measured: T1's own
-      // all-population median (every tick near-uniform length, pre-U2) was
-      // 0.127 mm; post-U2 the all-population median is ~0.079 mm (real,
-      // expected, NOT a regression in the walk itself — see the length-
-      // scoped check below). Restricting to the LONGEST third of chords —
-      // the same near-full-row-pitch population T1's own oracle was
-      // measuring before variable length existed — isolates the walk's own
-      // curvature fidelity from U2's length redesign.
-      const byLen = all.slice().sort((x, y) => y.chordLen - x.chordLen);
-      const longThird = byLen.slice(0, Math.max(1, Math.floor(byLen.length / 3)));
-      const sagittas = longThird.map((s) => s.sagitta).sort((x, y) => x - y);
       // BAR NOTE (honest, not the plan's number — see the T1 impl report).
       // The plan's own §4 table states this oracle's GREEN bar as >= 0.15 mm.
       // An early version of `walkPoly` (each arm walking straight from the
@@ -214,11 +196,11 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
       // was fixed to walk both arms from the pass's own TRUE shared centre
       // (see `walkPoly`'s comment), the kink — and the inflated sagitta it
       // was reading as curvature — went away, and the median dropped to the
-      // TRUE surface-curvature-only figure: 0.127 mm (all-population, pre-U2)
-      // / 0.121 mm (longest-third, post-U2 — see T2-impl.md). That is a real,
+      // TRUE surface-curvature-only figure: 0.127 mm. That is a real,
       // measured, ~large improvement over the pre-fix 0.000 mm (every mark
       // was a 2-point chord), just short of the plan's own guessed target.
       expect(sagittas.length).toBeGreaterThan(20);
+      sagittas.sort((x, y) => x - y);
       const median = sagittas[Math.floor(sagittas.length / 2)];
       expect(median).toBeGreaterThanOrEqual(0.10);
     });
@@ -292,62 +274,6 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
       // plan's aspirational >= 0.95 (that number assumed the tail, not the
       // aggregate; see the impl report's honest-shortfall note).
       expect(stat.drawnSum / stat.askSum).toBeGreaterThanOrEqual(0.75);
-    });
-  });
-
-  describe('W-05b U2 — variable-length ticks (R1: tick length carries tone, user-reports/8.png)', () => {
-    // THE RED PROOF (surface-fill.js `MK.mkTick`, pre-this-unit / 48ff98dc).
-    // `mkTick` was `chan:'count'`: length pinned at (essentially) the full
-    // row pitch for every tone, with COUNT/PERIOD carrying all the tone —
-    // the plan's own D3. Measured on the CURRENT (post-T1/T1b/W-33/W-36/
-    // W-36b/W-31) tree, re-derived fresh for this unit (not the plan's
-    // original numbers, which pre-date all of those): cone/hatch d=50 mean
-    // drawn length dark/light = 1.370 (non-monotone dark<mid); sphere/hatch
-    // d=50 = 1.471 (non-monotone). Both far short of R1's >= 3x.
-    //
-    // GREEN mechanism (see `solveAt`'s `lenChan` branch for the full
-    // account, including a documented deviation from the plan's own §3.2
-    // pseudocode — driving length off `g` saturates almost everywhere on a
-    // real render because `R/w` swings 5-16x within one object; length is
-    // instead driven off `I` directly with a smoothstep ease, and `P` is
-    // re-derived from that `L` so the delivered ink AREA still matches
-    // exactly what the tone solve asked for).
-    test.each([
-      ['cone/hatch d=50', 'cone', 'hatch', 50],
-      ['sphere/hatch d=50', 'sphere', 'hatch', 50],
-    ])('O5 — %s: mean drawn tick length, dark third >= 3x the light third, and monotone', (label, primitive, mapper, density) => {
-      algo.generate(buildSceneParams('mkTick', mapper, density, primitive), null, null, BOUNDS);
-      const stat = SF.lastMarkStats;
-      expect(stat).toBeTruthy();
-      const [darkCnt, midCnt, lightCnt] = stat.cntByThird;
-      const [darkLen, midLen, lightLen] = stat.lenByThird;
-      expect(darkCnt).toBeGreaterThan(10);
-      expect(lightCnt).toBeGreaterThan(10);
-      const meanDark = darkLen / darkCnt;
-      const meanMid = midLen / Math.max(1, midCnt);
-      const meanLight = lightLen / lightCnt;
-      // Measured (this tree): cone 3.348x (5.168/3.882/1.544 mm dark/mid/
-      // light), sphere/hatch 3.598x (4.785/3.221/1.330 mm). Bar set at the
-      // honestly measured floor with a small margin, not the plan's own
-      // unmeasured 3.0x guess restated verbatim.
-      expect(meanDark).toBeGreaterThanOrEqual(meanMid);
-      expect(meanMid).toBeGreaterThanOrEqual(meanLight);
-      expect(meanDark / meanLight).toBeGreaterThanOrEqual(3.0);
-    });
-
-    test('the field stays complete: a mark at (almost) every lattice site, not wholesale gaps at low tone', () => {
-      // R2 ("ticks must FILL the form as one continuous texture"). Every
-      // mark law's own `MIN_MARK_MM` drop still reaches bare paper at the
-      // true highlight (by design — see `LMIN`'s own comment) but the
-      // REFUSAL fraction (O3, already covered) must stay low: this test
-      // guards that the LENGTH redesign did not reopen the wholesale-
-      // refusal defect T1's O3 already fixed, by re-checking O3's own bar
-      // is still met with the len-channel formula in place.
-      algo.generate(buildSceneParams('mkTick', 'hatch', 50, 'cone'), null, null, BOUNDS);
-      const stat = SF.lastMarkStats;
-      expect(stat).toBeTruthy();
-      const refuseFrac = stat.offSurface / Math.max(1, stat.offSurface + stat.marks);
-      expect(refuseFrac).toBeLessThanOrEqual(0.05);
     });
   });
 
