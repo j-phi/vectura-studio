@@ -1,0 +1,116 @@
+{
+  "generatedAt": "2026-09-08T23:11:38.302Z",
+  "shots": {
+    "pointAfter": {
+      "label": "point-after (fixed)",
+      "ver": "1.3.99",
+      "stats": {
+        "layerId": "77928794-53b8-451a-91ba-b86bc6dea320",
+        "total": 217,
+        "receiverFillCount": 116,
+        "casterBB": {
+          "minx": 175.89374070677258,
+          "maxx": 215.87293252799074,
+          "miny": 59.35327034719958,
+          "maxy": 99.3410868875815
+        }
+      },
+      "errors": []
+    },
+    "pointBefore": {
+      "label": "point-before (pre-fix, pinned 1e681432)",
+      "ver": "1.3.99",
+      "stats": {
+        "layerId": "a76eae52-382b-491a-b051-7ba4d675f14c",
+        "total": 196,
+        "receiverFillCount": 95,
+        "casterBB": {
+          "minx": 175.89374070677258,
+          "maxx": 215.87293252799074,
+          "miny": 59.35327034719958,
+          "maxy": 99.3410868875815
+        }
+      },
+      "errors": []
+    },
+    "spotAfter": {
+      "label": "spot-after (fixed)",
+      "ver": "1.3.99",
+      "stats": {
+        "layerId": "9244d939-2f62-4dce-b584-8f8c89ce9893",
+        "total": 217,
+        "receiverFillCount": 116,
+        "casterBB": {
+          "minx": 175.89374070677258,
+          "maxx": 215.87293252799074,
+          "miny": 59.35327034719958,
+          "maxy": 99.3410868875815
+        }
+      },
+      "errors": []
+    },
+    "spotBefore": {
+      "label": "spot-before (pre-fix, pinned 1e681432)",
+      "ver": "1.3.99",
+      "stats": {
+        "layerId": "3daeeaec-88b9-47a4-8781-d7d8415e8dfa",
+        "total": 196,
+        "receiverFillCount": 95,
+        "casterBB": {
+          "minx": 175.89374070677258,
+          "maxx": 215.87293252799074,
+          "miny": 59.35327034719958,
+          "maxy": 99.3410868875815
+        }
+      },
+      "errors": []
+    },
+    "directionalFixed": {
+      "label": "directional (fixed, byte-identity control)",
+      "ver": "1.3.99",
+      "stats": {
+        "layerId": "1d9e28a1-a140-42b3-8d64-91dfbf8c04f1",
+        "total": 201,
+        "receiverFillCount": 98,
+        "casterBB": {
+          "minx": 175.89374070677258,
+          "maxx": 215.86937378753643,
+          "miny": 59.35306166922014,
+          "maxy": 99.3410868875815
+        }
+      },
+      "errors": []
+    },
+    "directionalPre": {
+      "label": "directional (pre-fix, byte-identity control)",
+      "ver": "1.3.99",
+      "stats": {
+        "layerId": "54bc9912-b15a-447f-886d-f9ad42ed5da0",
+        "total": 201,
+        "receiverFillCount": 98,
+        "casterBB": {
+          "minx": 175.89374070677258,
+          "maxx": 215.86937378753643,
+          "miny": 59.35306166922014,
+          "maxy": 99.3410868875815
+        }
+      },
+      "errors": []
+    }
+  },
+  "pngMd5": {
+    "directional_full_fixed": "65b64abbc7514d7f7c1258d95f99dadc",
+    "directional_full_pre": "65b64abbc7514d7f7c1258d95f99dadc",
+    "directional_crop_fixed": "c4305b69ef7ad0994da77e88bf08cbb1",
+    "directional_crop_pre": "c4305b69ef7ad0994da77e88bf08cbb1",
+    "directionalByteIdentical": true
+  },
+  "looked": {
+    "point_before_full.png": "Uniform diagonal hatch runs straight through/behind the sphere caster; NO distinct shadow patch anywhere near it \u2014 the pre-fix parallel/default-direction projector puts the footprint nowhere visible in this frame.",
+    "point_after_full.png": "A visible cluster of shorter, tighter-packed diagonal segments (denser hatch) appears immediately to the lower-right of the sphere, on the far side from the point light at (-300,150,0) \u2014 exactly the TRUE perspective footprint the fix wires in.",
+    "point_after_crop.png / point_before_crop.png": "Native-resolution crop centred on world (140,0,0) (the unit test PROBE) confirms the same: before = plain uniform hatch, no patch; after = the denser cluster is clearly present in the same crop window.",
+    "spot_after_full.png": "Visually identical to point-after (same position) \u2014 confirms the spot branch of projectLightToPlane dispatches through the same positional path as point.",
+    "directional_fixed_full.png / directional_pre_full.png": "Both show the SAME elongated shadow patch to the lower-left of the sphere (matching the directional azimuth 90/elevation 25) \u2014 this path was never broken. PNG bytes are pixel-for-pixel identical before/after (see pngMd5)."
+  },
+  "note": "Evidence uses a sphere caster + large flat PLANE receiver object (not the special p.ground) with shadowReceiveOnObjects=true \u2014 the exact buildFaceFootprint mechanism W-30b rewires. A literal ground-plane cast-shadow scene would not exercise this code path (that path, Shadows.build(), already handled point/spot correctly per W-30-impl.md)."
+}

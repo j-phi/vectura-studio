@@ -1,0 +1,77 @@
+{
+  "generatedAt": "2026-09-10T01:29:06.626Z",
+  "footprintHole": {
+    "sphere-point-after": {
+      "layerId": "7b1c16e0-5bb3-46fb-823a-e4af3a77e5bf",
+      "total": 173,
+      "receiverFillCount": 93
+    },
+    "sphere-directional-after": {
+      "layerId": "578c0f04-3632-43b4-af15-2312efc00654",
+      "total": 201,
+      "receiverFillCount": 98
+    },
+    "box-point-after": {
+      "layerId": "6ae0913a-da27-4dce-88f7-cb7fdf75a160",
+      "total": 119,
+      "receiverFillCount": 98
+    },
+    "box-directional-after": {
+      "layerId": "747f2ae9-4528-4e20-a13f-b3e8d0ff7585",
+      "total": 143,
+      "receiverFillCount": 107
+    },
+    "torus-point-after": {
+      "layerId": "c03a0400-0a50-47bf-b168-a5f169d10f8e",
+      "total": 252,
+      "receiverFillCount": 135
+    },
+    "torus-directional-after": {
+      "layerId": "1a6f094d-b621-4fcd-9450-cd0dad52399b",
+      "total": 260,
+      "receiverFillCount": 133
+    },
+    "sphere-point-before": {
+      "layerId": "e047b87f-77fe-4192-b09b-19537a56950c",
+      "total": 173,
+      "receiverFillCount": 93
+    },
+    "sphere-directional-before": {
+      "layerId": "af661cf8-0fdb-4734-8276-b9884e4aed4b",
+      "total": 201,
+      "receiverFillCount": 98
+    },
+    "box-point-before": {
+      "layerId": "6bb55ab1-29db-41b7-bbf1-014e3ec1f7eb",
+      "total": 119,
+      "receiverFillCount": 98
+    },
+    "box-directional-before": {
+      "layerId": "a0d4c9b5-a400-4a97-b654-e4bef93e9e75",
+      "total": 143,
+      "receiverFillCount": 107
+    },
+    "torus-point-before": {
+      "layerId": "68d15edf-3e7b-44ff-842d-ee7d86328156",
+      "total": 241,
+      "receiverFillCount": 124
+    },
+    "torus-directional-before": {
+      "layerId": "e37005c7-9278-4d2a-99e3-3734ca269bd9",
+      "total": 244,
+      "receiverFillCount": 117
+    }
+  },
+  "thinTorus": {
+    "after": {
+      "layerId": "c92ee532-6516-4ee3-a9a2-03840d140417",
+      "total": 467,
+      "receiverFillCount": 351
+    },
+    "before": {
+      "layerId": "b8c16c73-6600-4f03-afe8-7d6b53fd575e",
+      "total": 310,
+      "receiverFillCount": 194
+    }
+  }
+}

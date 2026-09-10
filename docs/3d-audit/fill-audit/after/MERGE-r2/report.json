@@ -1,0 +1,133 @@
+{
+  "id": "MERGE-r2-item-7",
+  "baseUrl": "http://127.0.0.1:8493",
+  "cases": [
+    {
+      "raw": "bundleDither",
+      "survivorShownInPicker": "bundleCount",
+      "subControls": [
+        {
+          "label": "Bundle mode",
+          "value": "dither"
+        },
+        {
+          "label": "Stroke Fill",
+          "value": "spiral"
+        },
+        {
+          "label": "Pen",
+          "value": ""
+        }
+      ],
+      "caveatShown": true,
+      "caveatText": "Dithered bundle mode can make repeating patterns (moire) more visible than the default Count mode, not less. If you see new banding, switch back to Integer pass count.",
+      "foldedLawHasOwnCaveat": true,
+      "foldedLawCaveatText": "Dithered bundle mode can make repeating patterns (moire) more visible than the default Count mode, not less. If you see new banding, switch back to Integer pass count.",
+      "survivorHasCaveat": false,
+      "verdict": "PASS — folded law caveat shown"
+    },
+    {
+      "raw": "contFieldTouch",
+      "survivorShownInPicker": "contFieldSigmoid",
+      "subControls": [
+        {
+          "label": "Field metric",
+          "value": "screen"
+        },
+        {
+          "label": "Field floor",
+          "value": "touch"
+        },
+        {
+          "label": "Stroke Fill",
+          "value": "spiral"
+        },
+        {
+          "label": "Pen",
+          "value": ""
+        }
+      ],
+      "caveatShown": true,
+      "caveatText": "On crosshatch fills, this floor setting floods the whole surface to solid black with no shading left. If your fill looks like a solid dark blob, try a different Field floor option.",
+      "foldedLawHasOwnCaveat": true,
+      "foldedLawCaveatText": "On crosshatch fills, this floor setting floods the whole surface to solid black with no shading left. If your fill looks like a solid dark blob, try a different Field floor option.",
+      "survivorHasCaveat": false,
+      "verdict": "PASS — folded law caveat shown"
+    },
+    {
+      "raw": "weaveDepth",
+      "survivorShownInPicker": "ampSpacing",
+      "subControls": [
+        {
+          "label": "Nesting",
+          "value": "nested"
+        },
+        {
+          "label": "Stroke Fill",
+          "value": "spiral"
+        },
+        {
+          "label": "Pen",
+          "value": ""
+        }
+      ],
+      "caveatShown": true,
+      "caveatText": "Not single-weight: it appears in isWaveLaw()/WEIGHT_LAWS and splits per sample along the line, because stroke weight takes over wherever the spacing field bottoms at the (lowered) plot floor.",
+      "foldedLawHasOwnCaveat": true,
+      "foldedLawCaveatText": "Not single-weight: it appears in isWaveLaw()/WEIGHT_LAWS and splits per sample along the line, because stroke weight takes over wherever the spacing field bottoms at the (lowered) plot floor.",
+      "survivorHasCaveat": true,
+      "verdict": "PASS — folded law caveat shown"
+    },
+    {
+      "raw": "onePenDown",
+      "survivorShownInPicker": "interlockWeave",
+      "subControls": [
+        {
+          "label": "Pen down",
+          "value": "continuous"
+        },
+        {
+          "label": "Stroke Fill",
+          "value": "spiral"
+        },
+        {
+          "label": "Pen",
+          "value": ""
+        }
+      ],
+      "caveatShown": true,
+      "caveatText": "Like the rest of the wave family it is not single-weight — it varies weight stroke to stroke — but unlike every other member it deliberately does NOT split along the line: splitsAlongLine() excludes it by name, because a chain of abutting sub-paths would be the exact opposite of its one-continuous-stroke premise.",
+      "foldedLawHasOwnCaveat": true,
+      "foldedLawCaveatText": "Like the rest of the wave family it is not single-weight — it varies weight stroke to stroke — but unlike every other member it deliberately does NOT split along the line: splitsAlongLine() excludes it by name, because a chain of abutting sub-paths would be the exact opposite of its one-continuous-stroke premise.",
+      "survivorHasCaveat": true,
+      "verdict": "PASS — folded law caveat shown"
+    },
+    {
+      "raw": "fineLadder",
+      "survivorShownInPicker": "ladder",
+      "subControls": [
+        {
+          "label": "Rung detail",
+          "value": "fine"
+        },
+        {
+          "label": "Stroke Fill",
+          "value": "spiral"
+        },
+        {
+          "label": "Pen",
+          "value": ""
+        }
+      ],
+      "caveatShown": false,
+      "caveatText": null,
+      "foldedLawHasOwnCaveat": false,
+      "foldedLawCaveatText": null,
+      "survivorHasCaveat": false,
+      "verdict": "n/a — folded law has no caveat of its own"
+    }
+  ],
+  "appVersion": "1.4.0",
+  "packageVersion": "1.4.0",
+  "generatedAt": "2026-09-10T16:05:13.971Z"
+}

@@ -1,0 +1,55 @@
+{
+  "unit": "U8",
+  "cluster": "C-08",
+  "survivor": "interlockWeave",
+  "param": "penDown",
+  "folded": [{ "id": "onePenDown", "value": "continuous" }],
+  "not_folded": [{ "id": "trochoidLoop", "reason": "12% more ink (4422.7 vs 3956.2mm on torus+hatch+med), genuinely deeper dark ('polygon shards'); plan defers resolving it to after handoff item A lands. Left as its own picker row." }],
+  "picker_ids": { "before": 34, "after": 33 },
+  "aliases": { "before": 14, "after": 15 },
+  "commit_base": "79c07770",
+  "checkpoint": "9a26aa5e",
+  "byte_identity": {
+    "method_1_in_tree_resolver_sweep": {
+      "description": "Real algo.generate()-captured opts (same harness scene3d-tone-law-dispatch.test.js and the U0-U7 chain use), sphere+torus+cone x low/med/max fillDensity, mapper hatch. Compares SF.buildObject(toneLaw:'interlockWeave') directly vs via Params.resolveToneLaw, and the fold (interlockWeave+penDown:'continuous' via resolveToneLaw) vs the legacy 'onePenDown' id directly.",
+      "combinations": 9,
+      "offenders": 0,
+      "result": "9/9 byte-identical (JSON.stringify of SF.buildObject output), both for the bare-survivor no-op and for the fold. Permanent regression guard in tests/unit/scene3d-tone-law-collapse.test.js's 'U8 multi-primitive x multi-density' describe block."
+    },
+    "method_2_cross_tree_real_capture_pipeline": {
+      "description": "scripts/audit/scene3d-capture.js (the REAL headless-browser gallery capture, not a synthetic jsdom harness) run against a scratch export of the pre-U8 commit (79c07770, git archive + node_modules symlink, dev server on port 8483) and against the post-U8 worktree (dev server on port 8482, the actual worktree). Same 18 cells both sides: sphere/torus/cone x hatch x interlockWeave/onePenDown x low/med/max, angle a.",
+      "combinations": 18,
+      "offenders": 0,
+      "result": "18/18 md5-identical between the true pre-U8 and post-U8 trees, using the real capture pipeline (not the unit-test jsdom harness)."
+    },
+    "note_on_stale_gallery_baseline": "Comparing the SAME 18 post-U8 cells against docs/3d-audit/fill-audit/shots/B/ (the committed gallery baseline) shows the SAME 10-of-18-cell divergence set U7's own report recorded (torus at all 3 densities, sphere/cone at 'low' density only) -- confirmed SYMMETRIC: the pre-U8 capture diverges from shots/B/ on the identical 10 cells as the post-U8 capture. This is pre-existing drift unrelated to U8 (the gallery baseline predates v1.3.99), not a regression."
+  },
+  "cells_captured": [
+    "sphere__hatch__interlockWeave__low__a", "sphere__hatch__interlockWeave__med__a", "sphere__hatch__interlockWeave__max__a",
+    "sphere__hatch__onePenDown__low__a", "sphere__hatch__onePenDown__med__a", "sphere__hatch__onePenDown__max__a",
+    "torus__hatch__interlockWeave__low__a", "torus__hatch__interlockWeave__med__a", "torus__hatch__interlockWeave__max__a",
+    "torus__hatch__onePenDown__low__a", "torus__hatch__onePenDown__med__a", "torus__hatch__onePenDown__max__a",
+    "cone__hatch__interlockWeave__low__a", "cone__hatch__interlockWeave__med__a", "cone__hatch__interlockWeave__max__a",
+    "cone__hatch__onePenDown__low__a", "cone__hatch__onePenDown__med__a", "cone__hatch__onePenDown__max__a"
+  ],
+  "visual_inspection": {
+    "torus__hatch__interlockWeave__med__a_vs_onePenDown": "LOOKED (Read tool, converted webp->png via sips) at both images directly. Both are a torus covered in a 'ragged spike' fill: a sawtooth crown of triangular spikes running along both edge-bands of the torus, with smoother wavy centreline strokes in the darker interior band. The two are visually indistinguishable at plot scale (same spike density, same band placement, same silhouette) -- matching the plan's own C-08 characterization verbatim ('interlockWeave and onePenDown are indistinguishable ragged spike fills ... at every density'). Path counts differ (198 vs 106 on torus+hatch+med, confirmed against the manifest) -- the pen-down saving is real; the picture is not. Confirms this is a genuine fold, not a near-duplicate requiring a STOP per the C-05 precedent."
+  },
+  "caveat_survival": {
+    "novel_situation_carried_forward_from_u7": "Per LEDGER.md row 12b ('carry U7's finding forward'), checked and CONFIRMED TRUE: BOTH the survivor (interlockWeave) AND the folded id (onePenDown) carry their own real, DIFFERENT measured caveats (docs/tone-laws/laws.json) -- the same situation U7 hit first with ampSpacing/weaveDepth. Every earlier survivor in U1-U6 had NO caveat of its own; U7 and U8 are the two exceptions so far.",
+    "verified_paths": [
+      "FS.note('interlockWeave').caveat and FS.note('onePenDown').caveat are both non-empty and distinct (both about 'not single-weight' behavior, but interlockWeave's is about the anti-phase-vs-in-phase clearance intuition and onePenDown's is about deliberately NOT splitting along the line, the wave family's one exception).",
+      "FS.effectiveLaw('interlockWeave', {}) === 'interlockWeave' -> FS.note(...).caveat === interlockWeave's own caveat (NOT empty).",
+      "FS.effectiveLaw('interlockWeave', {penDown:'continuous'}) === 'onePenDown' -> FS.note(...).caveat === onePenDown's DISTINCT caveat.",
+      "Params.resolveToneLaw agrees with FS.effectiveLaw on both states.",
+      "The shared U5b-3/U7 cross-check file (tests/unit/scene3d-fill-style-effective-law.test.js) was extended with an explicit U8 test proving all of the above mechanically -- not a private test in the collapse file."
+    ],
+    "live_verified": "Real running app, port 8482, ctxbar Style flyout, sphere object3d (mapper hatch). Screenshots interlockWeave-perRuling-crop-native.png (Pen down=One stroke per ruling, the default) shows interlockWeave's own caveat; interlockWeave-continuous-crop-native.png (Pen down=One pen-down per family) shows onePenDown's distinct caveat. Both LOOKED at directly and matched verbatim against docs/tone-laws/laws.json. The (i)/note text ('Wavy lines & scribble -- Superseded by the Round 6 family ... keep it as the historical anti-phase reference point') stayed static across both states -- that is interlockWeave's own blurb, not the caveat, matching U7's finding that the (i) popover always shows the survivor's own note while the caveat is the field that resolves per sub-control state."
+  },
+  "identical_exceptions": [
+    { "cells": "all 18", "identical": true, "reason": "U8 is a picker-tier collapse only; the internal law id dispatched to SurfaceFill.buildObject is unchanged by construction, verified empirically (not just by construction) by both methods above." }
+  ],
+  "u9b_unblocked": {
+    "description": "U9b (QUEUED behind U8, handoff-c2) can now proceed. Its scope per LEDGER.md row 18b: (1) re-pin scene3d-shadow-tone-law-uniqueness.test.js from 'one build per OFFERED law id' to 'offered set x each survivor's collapse options'; (2) the shadow Fill Style row must exclude the penDown COMBINATION (not the bare id) by not rendering the penDown sub-control on the shadow path and pinning penDown:'perRuling'; (3) the full survivor x sub-control live sweep. This unit supplies the exact ALIASES.onePenDown = {into:'interlockWeave', params:{penDown:'continuous'}} entry and the STYLE_PARAMS.interlockWeave descriptor U9b's re-pin needs, and confirms (verified directly in this unit's own run of scene3d-shadow-tone-law-uniqueness.test.js, unmodified) that the test stays green today because its offeredLawIds() sweep already only walks PICKER_IDS survivors -- onePenDown is simply no longer offered, introducing no new collision for U9b to inherit. TONE_LAW_NOT_DISTINGUISHABLE (shadows.js ~:614) still contains 'onePenDown' by its bare id; U9b's job is to make the shadow row's own exclusion logic key off the (interlockWeave, penDown:'continuous') COMBINATION per the plan's §2.4, not this unit's."
+  }
+}

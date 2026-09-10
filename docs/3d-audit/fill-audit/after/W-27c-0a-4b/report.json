@@ -1,0 +1,91 @@
+{
+  "id": "W-27c-0a-4b",
+  "title": "W-27c-0a iteration-4 review follow-ups 2/3 — measure cone/cylinder contourSlice under the re-scoped crowding cull, add regression guards, disclose the floor limitation",
+  "lane": "fill-audit-d2",
+  "worktree": ".claude/worktrees/fill-audit-d2",
+  "branch": "3d-scene/fill-audit-d2",
+  "base_sha": "c6dd6130 (this lane's HEAD, iteration 4 — CROWD_MIN_DISTINCT_LEVELS=2 re-scope; unchanged by this unit)",
+  "compare_shas": {
+    "pre": "47a5a755 (main, iteration 3's unscoped whole-ring cull — this lane's own base commit)",
+    "post": "c6dd6130 (this lane's HEAD, iteration 4)"
+  },
+  "source_review": "docs/3d-audit/lane-reports/W-27c-0a-review-4.md §4 (floor-limitation disclosure), §8 (cone/cylinder blocking follow-up)",
+  "brief": "W-27c-0a-4b: measurement + regression-guard tests only, no scene3d.js change",
+  "impl_report": "docs/3d-audit/lane-reports/W-27c-0a-4b-impl.md",
+  "files_changed": [
+    "tests/unit/scene3d-contour-slice.test.js (new describe block only, +437/-0; src/core/algorithms/scene3d.js untouched, per this unit's own brief)"
+  ],
+  "measurement_method": "Same rig as W-27c-0a-impl-4.md §2 (measureO2/measureRealO2/measureBlobs), ported to a standalone Node script (no vitest) run against from-scratch git-archive exports of 47a5a755 and c6dd6130 via loadVecturaRuntime({rootDir}). No node_modules copy needed (helper resolved from the worktree, only the runtime source loaded from each export).",
+  "measurements": {
+    "cone_unit_rig": {
+      "pathCount": { "pre_iteration_3": 17, "post_iteration_4": 22, "cull_inert_baseline": 22 },
+      "totalInk_mm": { "pre_iteration_3": 626.67, "post_iteration_4": 787.18, "cull_inert_baseline": 787.18 },
+      "retained_pct": { "pre_iteration_3": "79.6%", "post_iteration_4": "~100.0% (byte-identical to cull-inert)" },
+      "pct_ink_within_0.5w": { "pre_iteration_3": "1.607%", "post_iteration_4": "5.357%" },
+      "pct_ink_within_1.0w": { "pre_iteration_3": "7.427%", "post_iteration_4": "18.936%" },
+      "waist_mm": { "pre_iteration_3": "0.0372 (0.124w)", "post_iteration_4": "0.0372 (0.124w) — BYTE-IDENTICAL to pre" }
+    },
+    "cylinder_unit_rig": {
+      "pathCount": { "pre_iteration_3": 23, "post_iteration_4": 26, "cull_inert_baseline": 26 },
+      "totalInk_mm": { "pre_iteration_3": 950.97, "post_iteration_4": 1075.01, "cull_inert_baseline": 1075.01 },
+      "retained_pct": { "pre_iteration_3": "88.46%", "post_iteration_4": "100.0% (byte-identical to cull-inert)" },
+      "pct_ink_within_0.5w": { "pre_iteration_3": "0%", "post_iteration_4": "0%" },
+      "pct_ink_within_1.0w": { "pre_iteration_3": "0%", "post_iteration_4": "0%" },
+      "waist_mm": { "pre_iteration_3": "no qualifying same-path pair found (Infinity)", "post_iteration_4": "same (Infinity) — no same-ring self-approach on this primitive" }
+    },
+    "cone_engine_pipeline": {
+      "blobCount": { "pre_iteration_3": 25, "post_iteration_4": 44 },
+      "largestW_mm": { "pre_iteration_3": 26.3, "post_iteration_4": 31.3 },
+      "med_vs_max_density": "byte-identical (confirmed directly; fillDensity does not affect contourSlice sliceCount)"
+    },
+    "cylinder_engine_pipeline": {
+      "blobCount": { "pre_iteration_3": 3, "post_iteration_4": 2 },
+      "largestW_mm": { "pre_iteration_3": 40.9, "post_iteration_4": 41.7 },
+      "med_vs_max_density": "byte-identical (confirmed directly)"
+    },
+    "ring_count_flat_region": {
+      "cone_base_band": { "pre_iteration_3": "8/10", "post_iteration_4": "10/10 (byte-identical to cull-inert)" },
+      "cone_mid_band": { "pre_iteration_3": "7/10", "post_iteration_4": "10/10" },
+      "cone_apex_band": { "pre_iteration_3": "2/2 (unaffected in both)", "post_iteration_4": "2/2" },
+      "cylinder_wall_band": { "pre_iteration_3": "23/26", "post_iteration_4": "26/26 (byte-identical to cull-inert)" }
+    }
+  },
+  "finding": "Iteration 4's re-scope (CROWD_MIN_DISTINCT_LEVELS=2), whose whole purpose was to stop the whole-ring cull firing in genuinely flat/uncrowded regions (the torus lower band, review-3's REJECT reason), turns out to ALSO fully restore cone's flat base region and cylinder's entire wall. For both primitives the mechanism is now COMPLETELY INERT at this configuration (26 slice planes) — every post-iteration-4 metric is byte-identical to the cull-disabled ground truth. This is NOT a regression: it is the same class of fix already made for torus/sphere's over-culled flat regions, just discovered here for the first time (review-4 §8 found this collateral scope was never measured or tested before this unit). No STOP was warranted; scene3d.js was not touched.",
+  "why_inert": "Cylinder's wall is a stack of parallel, evenly-spaced circles with zero genuine multi-level convergence (no saddle, no pole) — CROWD_MIN_DISTINCT_LEVELS=2 can never fire there. Cone's apex is too sparse (2 rings only) to ever produce a >=2-distinct-level pileup at 26 slice planes, and its base/wall are otherwise as uncrowded as the cylinder's. Iteration 3's own over-culling on both primitives (79.6%/88.46% retained) was pure collateral damage from the unscoped whole-ring test, not a fix for anything real on cone/cylinder.",
+  "regression_guards_added": {
+    "file": "tests/unit/scene3d-contour-slice.test.js",
+    "describe_block": "W-27c-0a-4b — cone/cylinder contourSlice under the re-scoped crowding cull (measured for the first time)",
+    "shape": "W-26b-3 (floor/ceiling below/above the whole envelope with real, generous margin, PLUS a separate tight +-10%(or +-5% for the ring-band tests) fingerprint band pinned to the exact c6dd6130-measured value)",
+    "tests_added": 6,
+    "rgr_proof": "4 of 6 fail at 47a5a755 (pre-fix) via a from-scratch scratch export run; all 6 pass at c6dd6130 (HEAD). See W-27c-0a-4b-impl.md for the exact assertion-level RED/GREEN numbers."
+  },
+  "disclosure_per_review_4_section_4": "The four existing torus/sphere floor+10% bars (engine-pipeline waist/largestW, added in iteration 4) are pinned AT their RED values because — per review-4's own independent mutation testing — under this mechanism's subtractive-only, whole-ring design, the pairwise-minimum self-approach (waist) can only stay the same or increase, and the largest-merged-blob-width (largestW) can only stay the same or shrink, as the cull is tuned MORE aggressive. RED is therefore a structural ceiling/floor for those two quantities that no tuning of CROWD_CULL_K / CROWD_MIN_ARC_MULT / CROWD_MIN_DISTINCT_LEVELS can ever cross. Those four bars cannot fail from retuning this mechanism's own constants; their only reachable failure mode is an unrelated future change to the shared projector/refinement/clipper code they also depend on. This test-file comment (and this same disclosure) now also covers the new cone/cylinder guards added by this unit, which are byte-identical to their own cull-inert ground truth for the identical structural reason.",
+  "evidence": {
+    "capture_command": "node scripts/audit/scene3d-capture.js --tier A --root .claude/worktrees/fill-audit-d2 --port 8481 --only '^(cone|cylinder)__contourSlice__ladder__(med|max)__a$' --out docs/3d-audit/fill-audit/after/W-27c-0a-4b",
+    "cells_verified_present_before_capture": [
+      "cone__contourSlice__ladder__med__a", "cone__contourSlice__ladder__max__a",
+      "cylinder__contourSlice__ladder__med__a", "cylinder__contourSlice__ladder__max__a"
+    ],
+    "after": [
+      "after/W-27c-0a-4b/shots/A/cone__contourSlice__ladder__med__a.webp",
+      "after/W-27c-0a-4b/shots/A/cone__contourSlice__ladder__max__a.webp",
+      "after/W-27c-0a-4b/shots/A/cylinder__contourSlice__ladder__med__a.webp",
+      "after/W-27c-0a-4b/shots/A/cylinder__contourSlice__ladder__max__a.webp"
+    ],
+    "before_true_apples_to_apples": [
+      "after/W-27c-0a-4b/before-47a5a755/shots/A/cone__contourSlice__ladder__med__a.webp (captured from the SAME scratch export used for measurement, via --root pointed at the scratch dir — NOT the stale gallery baseline shot committed to docs/3d-audit/fill-audit/shots/A/, which predates even iteration 3 and shows an unrelated faceted-vs-smooth ring-refinement difference that has nothing to do with this diff)",
+      "after/W-27c-0a-4b/before-47a5a755/shots/A/cone__contourSlice__ladder__max__a.webp",
+      "after/W-27c-0a-4b/before-47a5a755/shots/A/cylinder__contourSlice__ladder__med__a.webp",
+      "after/W-27c-0a-4b/before-47a5a755/shots/A/cylinder__contourSlice__ladder__max__a.webp"
+    ],
+    "med_max_byte_identical": "Confirmed directly (identical file sizes/md5 for med vs max on both primitives, both before and after) — contourSlice's plane count is a pure function of sliceCount, which fillDensity never touches, consistent with the SAME finding review-4 made for torus/sphere/solid.",
+    "visual_findings": [
+      "IMPORTANT CORRECTION: the pre-existing committed gallery baseline (docs/3d-audit/fill-audit/shots/A/cone__contourSlice__ladder__med__a.webp, appVersion 1.3.98) is STALE — it shows visibly FACETED/polygonal rings, while both this lane's 47a5a755 and c6dd6130 exports show SMOOTH rings. That gallery shot predates the W-27b/W-27c ring-refinement work entirely and is NOT a valid before-image for isolating this unit's diff. A true apples-to-apples 'before' was captured separately by pointing scene3d-capture.js's --root directly at the 47a5a755 scratch export (port 8482) — see before-47a5a755/ above.",
+      "cone, native-resolution lower-half crop (rows 350-738 of 738): 'before' (47a5a755) shows 7 nested arcs in this band; 'after' (c6dd6130) shows 8 — one additional ring restored near the base, consistent with the measured base-band count going 8/10 -> 10/10.",
+      "cone apex crop, 3x zoom: byte-identical-looking in both — no fused/defective tip at either version (waist stays 0.0372mm in both, unaffected, as expected — a cross-ring cull cannot touch a same-ring self-approach).",
+      "cone base-rim crop, 3x zoom, left portion: no visible difference at this specific sub-region — the 2 restored rings sit elsewhere in the base band, not at this exact crop.",
+      "cylinder, right-edge crop (x=380-505/506, y=300-500) at 3x zoom: 'after' shows one additional bright/thicker band near the right silhouette not present in 'before' — a restored ring, consistent with the measured wall-band count going 23/26 -> 26/26. Cylinder's cap-rim crops (top and bottom, 3x zoom) show no visible difference — the 3 restored rings are mid-wall, not at either cap."
+    ]
+  },
+  "conclusion": "No STOP required. Cone and cylinder contourSlice showed a real, measured, and now visually-confirmed change under iteration 4 (mechanism goes from actively-but-accidentally over-culling to fully inert), which is a benign side effect of the SAME re-scope that fixed torus's flat lower band — not a new defect. 6 new regression-guard tests added in the W-26b-3 envelope+fingerprint shape, RGR-proven (4/6 genuinely RED at 47a5a755, all 6 GREEN at c6dd6130). scene3d.js untouched. All required guard suites re-run green (scene3d-contour-slice 57/57, scene3d-mappers 32/32, scene3d-hlr 11/11, scene3d-mesh-self-occlusion 5/5)."
+}

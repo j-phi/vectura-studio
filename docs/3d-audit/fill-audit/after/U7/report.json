@@ -1,0 +1,52 @@
+{
+  "unit": "U7",
+  "cluster": "C-07",
+  "survivor": "ampSpacing",
+  "param": "nesting",
+  "folded": [{ "id": "weaveDepth", "value": "nested" }],
+  "picker_ids": { "before": 35, "after": 34 },
+  "aliases": { "before": 13, "after": 14 },
+  "commit_base": "57aa71b2",
+  "checkpoint": "bfe8fdb4",
+  "byte_identity": {
+    "method_1_in_tree_resolver_sweep": {
+      "description": "Real algo.generate()-captured opts (same harness scene3d-tone-law-dispatch.test.js and the U0-U5 chain use), sphere+torus+cone x low/med/max fillDensity, mapper hatch. Compares SF.buildObject(toneLaw:'ampSpacing') directly vs via Params.resolveToneLaw, and the fold (ampSpacing+nesting:'nested' via resolveToneLaw) vs the legacy 'weaveDepth' id directly.",
+      "combinations": 9,
+      "offenders": 0,
+      "result": "9/9 byte-identical (JSON.stringify of SF.buildObject output), both for the bare-survivor no-op and for the fold. This is now a permanent regression guard in tests/unit/scene3d-tone-law-collapse.test.js's 'U7 multi-primitive x multi-density' describe block."
+    },
+    "method_2_cross_tree_real_capture_pipeline": {
+      "description": "scripts/audit/scene3d-capture.js (the REAL headless-browser gallery capture, not a synthetic jsdom harness) run against a scratch export of the pre-U7 commit (57aa71b2, git archive + node_modules symlink, dev server on port 8483) and against the post-U7 checkpoint (bfe8fdb4, dev server on port 8482, the actual worktree). Same 18 cells both sides: sphere/torus/cone x hatch x ampSpacing/weaveDepth x low/med/max, angle a.",
+      "combinations": 18,
+      "offenders": 0,
+      "result": "18/18 md5-identical between the true pre-U7 and post-U7 commits, using the real capture pipeline (not the unit-test jsdom harness). This is the strongest evidence for F1-placement's ruled condition 4 (docs/3d-audit/STILL-OPEN.md) — proves the U7 diff (scripts/build-tone-laws.js + generated config only) does not perturb ampSpacing's or the WV6 family's rendering at all, independent of the jsdom-vs-browser rendering-pipeline question."
+    },
+    "note_on_stale_gallery_baseline": "Comparing the SAME 18 post-U7 cells against docs/3d-audit/fill-audit/shots/B/ (the committed gallery baseline, captured at an earlier commit) shows several differences (torus at all 3 densities, sphere/cone at 'low' density only). This is PRE-EXISTING DRIFT unrelated to U7 — verified directly: running the identical capture against the pre-U7 commit (57aa71b2) ALSO diverges from shots/B/ on the identical cells (see method_2 above, which used 57aa71b2 as its 'before' side and matched exactly, cell-for-cell, against the post-U7 capture). The gallery baseline is stale relative to this branch's current tip (v1.3.99, many commits past the v1.3.98 baseline the plan's §1 numbers were measured against) — not a U7 regression. Do not treat the shots/B/ mismatch as a U7 defect."
+  },
+  "cells_captured": [
+    "sphere__hatch__ampSpacing__low__a", "sphere__hatch__ampSpacing__med__a", "sphere__hatch__ampSpacing__max__a",
+    "sphere__hatch__weaveDepth__low__a", "sphere__hatch__weaveDepth__med__a", "sphere__hatch__weaveDepth__max__a",
+    "torus__hatch__ampSpacing__low__a", "torus__hatch__ampSpacing__med__a", "torus__hatch__ampSpacing__max__a",
+    "torus__hatch__weaveDepth__low__a", "torus__hatch__weaveDepth__med__a", "torus__hatch__weaveDepth__max__a",
+    "cone__hatch__ampSpacing__low__a", "cone__hatch__ampSpacing__med__a", "cone__hatch__ampSpacing__max__a",
+    "cone__hatch__weaveDepth__low__a", "cone__hatch__weaveDepth__med__a", "cone__hatch__weaveDepth__max__a"
+  ],
+  "visual_inspection": {
+    "torus__hatch__ampSpacing__med__a_vs_weaveDepth": "LOOKED (Read tool) at both webp images directly. Both are a torus covered in a zigzag/wave lattice ('diamond' crosshatch of wavy lines). weaveDepth's rows are visibly denser/tighter than ampSpacing's (matches the plan's own cluster note: 'weaveDepth's rows are ~1.4x denser'). Genuinely two different pictures at the pixel level, confirming the pair is a picker-tier near-duplicate (ink within 0.2%, per §1 of the plan) not a rendering-tier duplicate — the same honesty distinction U1-U5 established for their own clusters."
+  },
+  "caveat_survival": {
+    "novel_situation_this_unit": "Unlike every earlier cluster in this chain (U1-U5), BOTH the survivor (ampSpacing) AND the folded id (weaveDepth) carry their own real, DIFFERENT measured caveats (docs/tone-laws/laws.json). Every earlier survivor had NO caveat of its own.",
+    "verified_paths": [
+      "FS.note('ampSpacing').caveat and FS.note('weaveDepth').caveat are both non-empty and distinct (both about 'not single-weight' stroke-weight-takeover behavior, worded slightly differently for the tighter 'lowered' plot floor on weaveDepth).",
+      "FS.effectiveLaw('ampSpacing', {}) === 'ampSpacing' -> FS.note(...).caveat === ampSpacing's own caveat (NOT empty, unlike U4/U5's survivors).",
+      "FS.effectiveLaw('ampSpacing', {nesting:'nested'}) === 'weaveDepth' -> FS.note(...).caveat === weaveDepth's DISTINCT caveat.",
+      "Params.resolveToneLaw agrees with FS.effectiveLaw on both states.",
+      "The shared U5b-3 cross-check file (tests/unit/scene3d-fill-style-effective-law.test.js) was extended with an explicit U7 test proving all of the above mechanically, per secretary condition (a) — not a private test in the collapse file."
+    ],
+    "live_verified": "Real running app, port 8482, docked Style tab, sphere object3d leaf. Screenshots ampSpacing-single-crop-native.png (Nesting=Single wave row) shows ampSpacing's own caveat; ampSpacing-nested-crop-native.png (Nesting=Nested rows) shows weaveDepth's distinct caveat. Both LOOKED at directly.",
+    "known_wording_gap_not_fixed_here": "Both caveats are audit-report engineering jargon ('WEIGHT_LAWS', 'isWaveLaw()', 'splitsAlongLine()') exactly like bundleDither/contFieldTouch were before U5b-2's plain-language rewrite. Flagged as an open item (a 'U7-2' analog to U5b-2) — not fixed here: out of scope for this data-only unit, and the brief's two predates-conditions were about SURVIVAL through effectiveLaw, not wording quality."
+  },
+  "identical_exceptions": [
+    { "cells": "all 18", "identical": true, "reason": "U7 is a picker-tier collapse only; the internal law id dispatched to SurfaceFill.buildObject is unchanged by construction, and this is verified empirically (not just by construction) by both methods above." }
+  ]
+}

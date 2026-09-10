@@ -1,0 +1,413 @@
+{
+  "formatVersion": 2,
+  "activeLayerId": "9f213e75-5902-4e8f-9908-d67c9c1804b8",
+  "layers": [
+    {
+      "id": "b551a716-215b-4d40-97e0-359d84a377db",
+      "type": "scene3d",
+      "name": "3D Scene 01",
+      "params": {
+        "label": "Scene 3D",
+        "is3d": true,
+        "preset": "scene3d-default",
+        "sceneVersion": 4,
+        "strokeFillStyle": "spiral",
+        "seed": 424242,
+        "objects": [],
+        "lights": [],
+        "tone": {
+          "enabled": true,
+          "bands": 3,
+          "thresholds": [
+            0.33,
+            0.66
+          ],
+          "ladder": [
+            0.2,
+            0.5,
+            0.85
+          ],
+          "specular": {
+            "enabled": true,
+            "size": 1
+          }
+        },
+        "shadow": {
+          "shadowMode": "additive",
+          "shadowAngle": 45,
+          "shadowDensity": 50,
+          "shadowPenId": null,
+          "shadowLineType": "solid",
+          "shadowLayers": false,
+          "shadowLayerCount": 3,
+          "shadowFalloff": 0.5,
+          "shadowAngleFollowsLight": false,
+          "shadowToneLaw": "ladder",
+          "shadowToneDepth": 0.75,
+          "shadowReceiveOnObjects": false
+        },
+        "ground": {
+          "enabled": false
+        },
+        "backdrop": {
+          "enabled": false
+        },
+        "camera": {
+          "projection": "orthographic",
+          "yaw": -30,
+          "pitch": 20,
+          "roll": 0,
+          "cameraDistance": 620,
+          "focalLength": 520,
+          "zoom": 1
+        },
+        "groups": [],
+        "assets": {},
+        "styleTable": {
+          "scene": {
+            "penId": null,
+            "mapper": "wireframe",
+            "params": {}
+          },
+          "byObject": {},
+          "byFace": {}
+        },
+        "posX": 0,
+        "posY": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotation": 0
+      },
+      "paramStates": {},
+      "parentId": null,
+      "isGroup": true,
+      "containerRole": "scene",
+      "groupType": "scene",
+      "groupParams": null,
+      "groupCollapsed": false,
+      "modifier": null,
+      "sourcePaths": null,
+      "compound": null,
+      "mask": {
+        "enabled": false,
+        "sourceIds": [],
+        "mode": "parent",
+        "hideLayer": false,
+        "invert": false,
+        "materialized": false
+      },
+      "penId": "pen-1",
+      "color": "#e6f1ff",
+      "strokeWidth": 0.3,
+      "lineCap": "round",
+      "lineJoin": "round",
+      "miterLimit": 10,
+      "dash": {
+        "enabled": false,
+        "pattern": []
+      },
+      "strokeAlign": "center",
+      "divisions": {
+        "enabled": false,
+        "phaseMm": 0,
+        "penMode": "cycle",
+        "phaseMode": "fixed",
+        "seed": 0,
+        "classes": [
+          {
+            "lenMm": 10,
+            "penId": null,
+            "gap": false,
+            "weight": 1
+          },
+          {
+            "lenMm": 2,
+            "penId": null,
+            "gap": true,
+            "weight": 1
+          }
+        ]
+      },
+      "visible": true,
+      "origin": {
+        "x": 0,
+        "y": 0
+      },
+      "fills": [],
+      "sourceFillRecord": null
+    },
+    {
+      "id": "9f213e75-5902-4e8f-9908-d67c9c1804b8",
+      "type": "object3d",
+      "name": "Object 02",
+      "params": {
+        "label": "Object 3D",
+        "hidden": true,
+        "is3d": true,
+        "preset": "object3d-default",
+        "sceneVersion": 4,
+        "strokeFillStyle": "spiral",
+        "primitive": "torus",
+        "params": {
+          "radius": 25,
+          "detail": 28
+        },
+        "transform": {
+          "x": 0,
+          "y": 25,
+          "z": 0,
+          "yaw": 0,
+          "pitch": 0,
+          "roll": 0,
+          "scale": 1
+        },
+        "visibility": "solid",
+        "role": "solid",
+        "shadow": {
+          "enabled": null
+        },
+        "border": {
+          "enabled": false,
+          "strength": 1,
+          "penId": null
+        },
+        "emissive": {
+          "enabled": false,
+          "intensity": 1,
+          "penId": null,
+          "halo": "burst",
+          "haloCount": 16,
+          "haloRings": 3,
+          "coreBlank": true
+        },
+        "style": {
+          "penId": null,
+          "mapper": "hatch",
+          "params": {
+            "toneLaw": "ladder"
+          }
+        },
+        "faceStyles": {},
+        "seed": 424242,
+        "posX": 0,
+        "posY": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotation": 0,
+        "curves": true,
+        "id": "9f213e75-5902-4e8f-9908-d67c9c1804b8"
+      },
+      "paramStates": {},
+      "parentId": "b551a716-215b-4d40-97e0-359d84a377db",
+      "isGroup": false,
+      "containerRole": null,
+      "groupType": null,
+      "groupParams": null,
+      "groupCollapsed": false,
+      "modifier": null,
+      "sourcePaths": null,
+      "compound": null,
+      "mask": {
+        "enabled": false,
+        "sourceIds": [],
+        "mode": "parent",
+        "hideLayer": false,
+        "invert": false,
+        "materialized": false
+      },
+      "penId": "pen-1",
+      "color": "#e6f1ff",
+      "strokeWidth": 0.3,
+      "lineCap": "round",
+      "lineJoin": "round",
+      "miterLimit": 10,
+      "dash": {
+        "enabled": false,
+        "pattern": []
+      },
+      "strokeAlign": "center",
+      "divisions": {
+        "enabled": false,
+        "phaseMm": 0,
+        "penMode": "cycle",
+        "phaseMode": "fixed",
+        "seed": 0,
+        "classes": [
+          {
+            "lenMm": 10,
+            "penId": null,
+            "gap": false,
+            "weight": 1
+          },
+          {
+            "lenMm": 2,
+            "penId": null,
+            "gap": true,
+            "weight": 1
+          }
+        ]
+      },
+      "visible": true,
+      "origin": {
+        "x": 0,
+        "y": 0
+      },
+      "fills": [],
+      "sourceFillRecord": null
+    },
+    {
+      "id": "25993be3-8bcf-4c15-a3a7-e9d520b0c364",
+      "type": "sceneLight3d",
+      "name": "Sun 03",
+      "params": {
+        "label": "Light",
+        "hidden": true,
+        "is3d": true,
+        "preset": "scenelight3d-default",
+        "type": "directional",
+        "azimuth": 135,
+        "elevation": 45,
+        "intensity": 1,
+        "castShadows": true,
+        "seed": 26504,
+        "posX": 0,
+        "posY": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotation": 0
+      },
+      "paramStates": {},
+      "parentId": "b551a716-215b-4d40-97e0-359d84a377db",
+      "isGroup": false,
+      "containerRole": null,
+      "groupType": null,
+      "groupParams": null,
+      "groupCollapsed": false,
+      "modifier": null,
+      "sourcePaths": null,
+      "compound": null,
+      "mask": {
+        "enabled": false,
+        "sourceIds": [],
+        "mode": "parent",
+        "hideLayer": false,
+        "invert": false,
+        "materialized": false
+      },
+      "penId": "pen-1",
+      "color": "#e6f1ff",
+      "strokeWidth": 0.3,
+      "lineCap": "round",
+      "lineJoin": "round",
+      "miterLimit": 10,
+      "dash": {
+        "enabled": false,
+        "pattern": []
+      },
+      "strokeAlign": "center",
+      "divisions": {
+        "enabled": false,
+        "phaseMm": 0,
+        "penMode": "cycle",
+        "phaseMode": "fixed",
+        "seed": 0,
+        "classes": [
+          {
+            "lenMm": 10,
+            "penId": null,
+            "gap": false,
+            "weight": 1
+          },
+          {
+            "lenMm": 2,
+            "penId": null,
+            "gap": true,
+            "weight": 1
+          }
+        ]
+      },
+      "visible": true,
+      "origin": {
+        "x": 0,
+        "y": 0
+      },
+      "fills": [],
+      "sourceFillRecord": null
+    },
+    {
+      "id": "cea90109-cc4e-4d59-8443-cf8dc2021bdc",
+      "type": "sceneGround3d",
+      "name": "Ground 04",
+      "params": {
+        "label": "Ground",
+        "hidden": true,
+        "is3d": true,
+        "preset": "sceneground3d-default",
+        "enabled": true,
+        "seed": 54733,
+        "posX": 0,
+        "posY": 0,
+        "scaleX": 1,
+        "scaleY": 1,
+        "rotation": 0
+      },
+      "paramStates": {},
+      "parentId": "b551a716-215b-4d40-97e0-359d84a377db",
+      "isGroup": false,
+      "containerRole": null,
+      "groupType": null,
+      "groupParams": null,
+      "groupCollapsed": false,
+      "modifier": null,
+      "sourcePaths": null,
+      "compound": null,
+      "mask": {
+        "enabled": false,
+        "sourceIds": [],
+        "mode": "parent",
+        "hideLayer": false,
+        "invert": false,
+        "materialized": false
+      },
+      "penId": "pen-1",
+      "color": "#e6f1ff",
+      "strokeWidth": 0.3,
+      "lineCap": "round",
+      "lineJoin": "round",
+      "miterLimit": 10,
+      "dash": {
+        "enabled": false,
+        "pattern": []
+      },
+      "strokeAlign": "center",
+      "divisions": {
+        "enabled": false,
+        "phaseMm": 0,
+        "penMode": "cycle",
+        "phaseMode": "fixed",
+        "seed": 0,
+        "classes": [
+          {
+            "lenMm": 10,
+            "penId": null,
+            "gap": false,
+            "weight": 1
+          },
+          {
+            "lenMm": 2,
+            "penId": null,
+            "gap": true,
+            "weight": 1
+          }
+        ]
+      },
+      "visible": true,
+      "origin": {
+        "x": 0,
+        "y": 0
+      },
+      "fills": [],
+      "sourceFillRecord": null
+    }
+  ]
+}

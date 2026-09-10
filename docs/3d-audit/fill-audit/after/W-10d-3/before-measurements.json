@@ -1,0 +1,31 @@
+{
+  "label": "before",
+  "version": "1.3.99",
+  "rawToneLaw": "bundleDither",
+  "docked": {
+    "x": 4,
+    "y": 475.796875,
+    "width": 282,
+    "height": 88,
+    "bundleModeValue": "count",
+    "fillStyleValue": "bundleCount",
+    "caveatPresent": false
+  },
+  "ctxbar": {
+    "x": 519.34375,
+    "y": 256.953125,
+    "width": 230,
+    "height": 168,
+    "bundleModeValue": "count",
+    "fillStyleValue": "bundleCount"
+  },
+  "contField": {
+    "x": 4,
+    "y": 517.796875,
+    "width": 282,
+    "height": 88,
+    "fieldMetricValue": "screen",
+    "fieldFloorValue": "plot"
+  },
+  "pageErrors": []
+}

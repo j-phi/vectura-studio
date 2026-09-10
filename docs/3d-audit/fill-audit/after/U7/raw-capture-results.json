@@ -1,0 +1,294 @@
+{
+  "version": "1.3.99",
+  "pageErrors": [],
+  "setFillStyle": {
+    "ok": true
+  },
+  "stateSingle": {
+    "rows": [
+      {
+        "text": "Name",
+        "selectValue": null
+      },
+      {
+        "text": "Shape",
+        "selectValue": null
+      },
+      {
+        "text": "Radius",
+        "selectValue": null
+      },
+      {
+        "text": "Fidelity",
+        "selectValue": null
+      },
+      {
+        "text": "Curves",
+        "selectValue": null
+      },
+      {
+        "text": "Smoothing",
+        "selectValue": null
+      },
+      {
+        "text": "Simplify",
+        "selectValue": null
+      },
+      {
+        "text": "X (mm)",
+        "selectValue": null
+      },
+      {
+        "text": "Y (mm)",
+        "selectValue": null
+      },
+      {
+        "text": "Z (mm)",
+        "selectValue": null
+      },
+      {
+        "text": "Yaw",
+        "selectValue": null
+      },
+      {
+        "text": "Pitch",
+        "selectValue": null
+      },
+      {
+        "text": "Roll",
+        "selectValue": null
+      },
+      {
+        "text": "Scale",
+        "selectValue": null
+      },
+      {
+        "text": "Visibility",
+        "selectValue": null
+      },
+      {
+        "text": "Cast shadow",
+        "selectValue": null
+      },
+      {
+        "text": "PenLayer penPen 1Pen 2Pen 3",
+        "selectValue": ""
+      },
+      {
+        "text": "TypeNoneWireframeHatchCrosshatchContourSpiralStippleSlices",
+        "selectValue": "hatch"
+      },
+      {
+        "text": "Fill StyleNo ToneLadder (default)Tapered EndsWeight ModulatedIsophote WidthBundle · CountBundle · Sub-NibBundle · LozengeContinuous Field · ",
+        "selectValue": "ampSpacing"
+      },
+      {
+        "text": "NestingSingle wave rowNested rows",
+        "selectValue": "single"
+      },
+      {
+        "text": "Stroke FillSpiralConcentricSerpentineContour-Parallel",
+        "selectValue": "spiral"
+      },
+      {
+        "text": "Density",
+        "selectValue": null
+      },
+      {
+        "text": "Angle°",
+        "selectValue": null
+      },
+      {
+        "text": "CurvesOffOn",
+        "selectValue": null
+      },
+      {
+        "text": "Smoothing",
+        "selectValue": null
+      },
+      {
+        "text": "Simplify",
+        "selectValue": null
+      },
+      {
+        "text": "Fidelity",
+        "selectValue": null
+      },
+      {
+        "text": "BorderOffOn",
+        "selectValue": null
+      },
+      {
+        "text": "SilhouetteInherit (scene)Override",
+        "selectValue": null
+      },
+      {
+        "text": "CreaseInherit (scene)Override",
+        "selectValue": null
+      },
+      {
+        "text": "BoundaryInherit (scene)Override",
+        "selectValue": null
+      },
+      {
+        "text": "InteriorInherit (scene)Override",
+        "selectValue": null
+      },
+      {
+        "text": "HiddenInherit (scene)Override",
+        "selectValue": null
+      }
+    ],
+    "caveat": "Despite belonging to the wave family, it is not single-weight: it is registered in surface-fill.js's WEIGHT_LAWS list and splits per sample along the line (splitsAlongLine()), because stroke weight takes over wherever the spacing field bottoms out at the plot floor."
+  },
+  "setNested": {
+    "ok": true
+  },
+  "stateNested": {
+    "rows": [
+      {
+        "text": "Name",
+        "selectValue": null
+      },
+      {
+        "text": "Shape",
+        "selectValue": null
+      },
+      {
+        "text": "Radius",
+        "selectValue": null
+      },
+      {
+        "text": "Fidelity",
+        "selectValue": null
+      },
+      {
+        "text": "Curves",
+        "selectValue": null
+      },
+      {
+        "text": "Smoothing",
+        "selectValue": null
+      },
+      {
+        "text": "Simplify",
+        "selectValue": null
+      },
+      {
+        "text": "X (mm)",
+        "selectValue": null
+      },
+      {
+        "text": "Y (mm)",
+        "selectValue": null
+      },
+      {
+        "text": "Z (mm)",
+        "selectValue": null
+      },
+      {
+        "text": "Yaw",
+        "selectValue": null
+      },
+      {
+        "text": "Pitch",
+        "selectValue": null
+      },
+      {
+        "text": "Roll",
+        "selectValue": null
+      },
+      {
+        "text": "Scale",
+        "selectValue": null
+      },
+      {
+        "text": "Visibility",
+        "selectValue": null
+      },
+      {
+        "text": "Cast shadow",
+        "selectValue": null
+      },
+      {
+        "text": "PenLayer penPen 1Pen 2Pen 3",
+        "selectValue": ""
+      },
+      {
+        "text": "TypeNoneWireframeHatchCrosshatchContourSpiralStippleSlices",
+        "selectValue": "hatch"
+      },
+      {
+        "text": "Fill StyleNo ToneLadder (default)Tapered EndsWeight ModulatedIsophote WidthBundle · CountBundle · Sub-NibBundle · LozengeContinuous Field · ",
+        "selectValue": "ampSpacing"
+      },
+      {
+        "text": "NestingSingle wave rowNested rows",
+        "selectValue": "nested"
+      },
+      {
+        "text": "Stroke FillSpiralConcentricSerpentineContour-Parallel",
+        "selectValue": "spiral"
+      },
+      {
+        "text": "Density",
+        "selectValue": null
+      },
+      {
+        "text": "Angle°",
+        "selectValue": null
+      },
+      {
+        "text": "CurvesOffOn",
+        "selectValue": null
+      },
+      {
+        "text": "Smoothing",
+        "selectValue": null
+      },
+      {
+        "text": "Simplify",
+        "selectValue": null
+      },
+      {
+        "text": "Fidelity",
+        "selectValue": null
+      },
+      {
+        "text": "BorderOffOn",
+        "selectValue": null
+      },
+      {
+        "text": "SilhouetteInherit (scene)Override",
+        "selectValue": null
+      },
+      {
+        "text": "CreaseInherit (scene)Override",
+        "selectValue": null
+      },
+      {
+        "text": "BoundaryInherit (scene)Override",
+        "selectValue": null
+      },
+      {
+        "text": "InteriorInherit (scene)Override",
+        "selectValue": null
+      },
+      {
+        "text": "HiddenInherit (scene)Override",
+        "selectValue": null
+      }
+    ],
+    "caveat": "Not single-weight: it appears in isWaveLaw()/WEIGHT_LAWS and splits per sample along the line, because stroke weight takes over wherever the spacing field bottoms at the (lowered) plot floor."
+  },
+  "pickerListLength": 35,
+  "hasWeaveDepthRow": false,
+  "hasAmpSpacingRow": true,
+  "roundtrip": {
+    "ok": true
+  },
+  "roundtripPanel": {
+    "fillStyleValue": null,
+    "nestingValue": null
+  }
+}

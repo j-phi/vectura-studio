@@ -1,0 +1,16 @@
+{
+  "label": "before",
+  "version": "1.3.99",
+  "result": {
+    "objId": "6722488c-208f-4bd1-8723-2c27c3c91756",
+    "groupId": "9a1465cf-689a-4ec9-be6d-cc5c5c5bc8ce",
+    "toneLaw": "originSpiral",
+    "exported": "originSpiral"
+  },
+  "rowInfo": {
+    "value": "originSpiral",
+    "label": "Origin Spiral — no effect here",
+    "disabled": true
+  },
+  "errors": []
+}

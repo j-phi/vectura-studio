@@ -1,0 +1,17 @@
+{
+  "unit": "W-27c-0a-6",
+  "lane": "fill-audit-d2",
+  "worktree": ".claude/worktrees/fill-audit-d2",
+  "port": 8481,
+  "baseSha": "49cf0e3e",
+  "cells": [
+    "torus__contourSlice__ladder__med__a",
+    "torus__contourSlice__ladder__med__b",
+    "torus__contourSlice__ladder__max__a",
+    "torus__contourSlice__ladder__max__b"
+  ],
+  "byteIdentical": true,
+  "explanation": "All 4 named cells are BYTE-IDENTICAL (md5-matched .webp files, identical pathCount 107 / totalPoints 3421 / inkMm 1098.6 for med-a/max-a and pathCount 103 / totalPoints 3259 / inkMm 1000.7 for med-b/max-b) between the pre-fix tree (49cf0e3e, captured from a disposable `git worktree add --detach` at that sha, port 8482, deleted after use) and the post-fix worktree (port 8481). This matches an independent, broader confirmation: an in-process md5 sweep of `algo.generate()` output (Scene3D.Slices via Vectura.AlgorithmRegistry.scene3d) across ALL SIX primitives (sphere/torus/ellipsoid/cone/cylinder/capsule) x both cameras x both densities (med/max) x contourSlice found 0/24 cells changed. The fix only ever fires on the torus's level-6 ring (raw length 0.0041mm, below the new 0.05mm hazard gate) and its effect there — collapsing a 513-point, 8-round non-convergent subdivision back down to the raw 3-point shape (roundsUsed 8->0, finalCount 513->3, finalLengthMm 0.0040003->0.0040992, deviceMaxTurn 179.9993->180 exactly) — is at a scale (~0.004mm total drawn length, ~13x below the pen width of 0.3mm) that is invisible both at the pixel/webp level and even in the intermediate un-rounded `generate()` output once downstream Simplify/rounding is applied. Same-scale finding already anticipated by W-27c-0a-5-impl.md's own harmlessness framing (the ring is invisible today; this unit removes the wasted non-convergent subdivision behind that invisible geometry, it does not change what gets drawn).",
+  "look": "Read the med/a cell (torus__contourSlice__ladder__med__a.webp) at native resolution: a healthy torus contourSlice ladder, dense concentric rings following the tube, with the two saddle-adjacent 'eye' regions (visible pinch points at roughly the horizontal midline) showing normal, evenly-spaced rings and no visible defect, blob, or fused ink at any of the four corners of the image. This is exactly the outcome predicted by the harmlessness bar (0.004mm drawn length, far below anything visible at this render scale) and confirmed identical to the pre-fix render by direct md5 match, which is a stronger and more precise confirmation than a visual crop diff could provide (0 bytes differ, not merely 'looks the same').",
+  "conclusion": "No STOP warranted. The fix is a pure internal-quality/non-convergence fix with zero drawn-output delta at this rig; its value is removing a previously-undisclosed non-convergence defect (per review W-27c-0a-5-review.md) and de-risking a future scenario where this ring's raw geometry grows (e.g. a slice-plane placement or mesh-detail default change) enough for the same non-convergence to become visible."
+}

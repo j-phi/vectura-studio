@@ -1,0 +1,138 @@
+{
+ "base": {
+  "ellipsoid": {
+   "runs": 27,
+   "ink": 1321.7784,
+   "md5": "2da44441c7b9",
+   "endMed": 0.08,
+   "endMax": 0.351
+  },
+  "sphere": {
+   "runs": 26,
+   "ink": 1118.6882,
+   "md5": "8b08610b346f",
+   "endMed": 0.055,
+   "endMax": 0.367
+  },
+  "torus": {
+   "runs": 44,
+   "ink": 897.1044,
+   "md5": "aff2924210f5",
+   "endMed": 0.03,
+   "endMax": 0.149
+  }
+ },
+ "proto": {
+  "ellipsoid": {
+   "k0": {
+    "runs": 27,
+    "ink": 1321.7784,
+    "md5": "2da44441c7b9",
+    "endMed": 0.08,
+    "endMax": 0.351
+   },
+   "k1": {
+    "runs": 27,
+    "ink": 1330.5416,
+    "md5": "f1336e2ce2ee",
+    "endMed": 0.081,
+    "endMax": 0.355
+   },
+   "k2": {
+    "runs": 27,
+    "ink": 1339.2112,
+    "md5": "e8432457a84d",
+    "endMed": 0.079,
+    "endMax": 0.354
+   },
+   "k4": {
+    "runs": 26,
+    "ink": 1344.5038,
+    "md5": "18f630560825",
+    "endMed": 0.071,
+    "endMax": 0.343
+   },
+   "k8": {
+    "runs": 27,
+    "ink": 1390.7215,
+    "md5": "09b0d5cf7d4b",
+    "endMed": 0.076,
+    "endMax": 0.341
+   }
+  },
+  "sphere": {
+   "k0": {
+    "runs": 26,
+    "ink": 1118.6882,
+    "md5": "8b08610b346f",
+    "endMed": 0.055,
+    "endMax": 0.367
+   },
+   "k1": {
+    "runs": 27,
+    "ink": 1126.6071,
+    "md5": "abd06c5208bc",
+    "endMed": 0.048,
+    "endMax": 0.372
+   },
+   "k2": {
+    "runs": 26,
+    "ink": 1110.2973,
+    "md5": "492f0b02fac4",
+    "endMed": 0.055,
+    "endMax": 0.373
+   },
+   "k4": {
+    "runs": 27,
+    "ink": 1149.4147,
+    "md5": "5727adfff3f2",
+    "endMed": 0.061,
+    "endMax": 0.367
+   },
+   "k8": {
+    "runs": 27,
+    "ink": 1179.6778,
+    "md5": "2f8fafb6ae1e",
+    "endMed": 0.058,
+    "endMax": 0.367
+   }
+  },
+  "torus": {
+   "k0": {
+    "runs": 44,
+    "ink": 897.1044,
+    "md5": "aff2924210f5",
+    "endMed": 0.03,
+    "endMax": 0.149
+   },
+   "k1": {
+    "runs": 45,
+    "ink": 928.1545,
+    "md5": "8addb8aa5cd0",
+    "endMed": 0.029,
+    "endMax": 0.155
+   },
+   "k2": {
+    "runs": 44,
+    "ink": 891.9389,
+    "md5": "ffe15db4b2c3",
+    "endMed": 0.03,
+    "endMax": 0.185
+   },
+   "k4": {
+    "runs": 42,
+    "ink": 883.2395,
+    "md5": "b05c3cdf1978",
+    "endMed": 0.038,
+    "endMax": 0.298
+   },
+   "k8": {
+    "runs": 40,
+    "ink": 885.84,
+    "md5": "03c390ddc2e7",
+    "endMed": 0.078,
+    "endMax": 0.473
+   }
+  }
+ }
+}

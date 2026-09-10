@@ -195,7 +195,28 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    `npm run test:ci`, reconcile intentionally-red tests, bump version + `version:sync`, CHANGELOG/plans/
    README, commit, STOP.
 
-## How to run the next session (added 2026-09-06 after the local merge)
+## How to run the next session — ROUND 3 (added 2026-09-10, after the round-2 merge)
+
+**Resume prompt for the next orchestrator (paste verbatim):**
+> Resume the 3D fill audit at round 3. Read, in order: `docs/3d-audit/fill-audit-handoff.md`, `docs/3d-audit/lane-reports/SESSION-SUMMARY.md` (round 2 is complete and merged — §2 is empty, §3 is the round-3 order, §4 has NINE decisions waiting on me), `docs/3d-audit/lane-reports/LEDGER.md` (standing rulings + the MERGE CHECKLIST, which is self-contained), `docs/3d-audit/STILL-OPEN.md`, and `docs/3d-audit/lane-reports/AGENT-PROTOCOL.md`. **Branch every round-3 lane off the integrated `main`, not off any round-2 lane — those are historical.** Serve main with `node scripts/dev-server.js 8460` for the gallery. Do not start any unit marked FROZEN in §3 until I answer its §4 decision. Same process: lane secretary first, then Sonnet implementers → Sonnet adversarial reviewers → Opus judges/planners; Fable only orchestrates and looks at pictures. Commit per unit in the lane worktree, never push.
+
+**What changed in how to run it, learned in round 2 — apply these from the start:**
+- **Spike-gate any plan whose Rank 1 is argued rather than prototyped**, and say so in the plan. W-31's gate
+  caught an unshippable mechanism before a line of source moved; W-36's prototyped Rank 1 shipped first time.
+- **Ask of every new bar: what quantity does this actually measure?** Five times in round 2 the mechanism was
+  right and the instrument was wrong, and each was found by re-deriving a number rather than reading it.
+  "The mechanism works" and "the bar measures the mechanism" are separate claims.
+- **Re-derive a plan's RED numbers on the CURRENT tree.** Plans written days earlier were repeatedly stale;
+  W-36 had to re-derive, and both T2 conditions existed for this reason.
+- **Name the behaviours no single lane can test, and make them merge-checklist items.** Both rounds' worst
+  defects were found by the merge, not by a lane — round 1's X-ray regression and round 2's ctxbar caveat.
+- **Foreground only — and put that rule in REVIEWER and PLANNER briefs, not just implementer briefs.** Three
+  of the four background-wait deviations came from agents whose brief only addressed implementers.
+- **Sweep both cameras in the slices pass.** Camera-a-only measurement has cost this audit twice in one file.
+- **The secretary keeps `LEDGER.md`, `STILL-OPEN.md` and `SESSION-SUMMARY.md`, and the merge checklist must
+  stay self-contained** — the merge planner reads it alone.
+
+## How to run the next session (added 2026-09-06 after the local merge — round 2's version, kept)
 
 **Resume prompt for the next orchestrator (paste verbatim):**
 > Resume the 3D fill audit. Read, in order: `docs/3d-audit/fill-audit-handoff.md`, `docs/3d-audit/lane-reports/SESSION-SUMMARY.md`, `docs/3d-audit/lane-reports/LEDGER.md` (standing orchestrator rulings + per-unit rows), `docs/3d-audit/STILL-OPEN.md`, and `docs/3d-audit/lane-reports/AGENT-PROTOCOL.md`. Serve main with `node scripts/dev-server.js 8460` for the gallery. Work the per-lane resume order in SESSION-SUMMARY §3; do not start T4, U6, or the W-06/ground-plane items until I answer the five decisions in §4. Same process: lane secretary first, then Sonnet implementers → Sonnet adversarial reviewers → Opus judges/planners; Fable only orchestrates and looks at pictures. Commit per unit in the lane worktree, never push.

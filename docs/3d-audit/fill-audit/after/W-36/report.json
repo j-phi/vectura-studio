@@ -1,0 +1,77 @@
+{
+  "unit": "W-36",
+  "lane": "fill-audit-a2",
+  "worktree": ".claude/worktrees/fill-audit-a2",
+  "branch": "3d-scene/fill-audit-a2",
+  "baseSha": "f828d828",
+  "port": 8475,
+  "capture": {
+    "command": "node scripts/audit/scene3d-capture.js --tier A --root .claude/worktrees/fill-audit-a2 --port 8475 --only '^(sphere|cylinder|torus|ellipsoid)__crosshatch__ladder__(low|med|max)__a$' --out docs/3d-audit/fill-audit/after/W-36",
+    "appVersion": "1.3.99",
+    "manifestFile": "manifest.A.1-1.jsonl",
+    "cellsCaptured": 12,
+    "note": "low/med map to fillDensity 1/50 in the capture harness; both are byte-identical at v1.3.98 (the F-01 dead zone W-01/W-26 deliberately removed) — this is expected and pre-dates W-36, not a W-36 byte-identical pair."
+  },
+  "inkMm": {
+    "note": "before = v1.3.98 reference from docs/3d-audit/fill-audit/manifest.A.*.jsonl (pre-existing, captured previously); after = this unit's fresh capture in after/W-36/manifest.A.1-1.jsonl. No crosshatch cell is byte-identical before/after (all 12 changed, as expected since the fix touches every crosshatch cell).",
+    "sphere__crosshatch__ladder__max__a": { "before": 4359.3, "after": 3838.2 },
+    "cylinder__crosshatch__ladder__max__a": { "before": 4912.6, "after": 5209.5, "deltaPct": 6.04, "cap": "v1.3.98 + 15% = 5649.5; well under" },
+    "torus__crosshatch__ladder__max__a": { "before": 4725.4, "after": 3396.4 },
+    "ellipsoid__crosshatch__ladder__max__a": { "before": 4875.7, "after": 4323.1 }
+  },
+  "familySplit_rig_BOUNDS_320x220_pen0.3_PRIMITIVE_PARAM_DEFAULTS": {
+    "note": "measured directly via SurfaceFill.buildObject raw runs (A#0/A#1 split), same rig as tests/unit/scene3d-crosshatch-parity.test.js. 'before' = scratch export of f828d828 (T1b, the real base), 'after' = this commit.",
+    "sphere":   { "d1":  { "before": {"nA":4,"nB":1},  "after": {"nA":2,"nB":4}  }, "d50":  { "before": {"nA":16,"nB":3,"gapA":1.466,"gapB":16.775}, "after": {"nA":9,"nB":11,"gapA":2.901,"gapB":2.641} }, "d220": { "before": {"nA":69,"nB":9,"gapA":0.488,"gapB":3.278}, "after": {"nA":37,"nB":48,"gapA":0.770,"gapB":0.696} } },
+    "cylinder": { "d1":  { "before": {"nA":6,"nB":1},  "after": {"nA":3,"nB":4}  }, "d50":  { "before": {"nA":22,"nB":3,"gapA":1.188,"gapB":6.437}, "after": {"nA":12,"nB":12,"gapA":2.149,"gapB":2.135} }, "d220": { "before": {"nA":94,"nB":10,"gapA":0.383,"gapB":2.662}, "after": {"nA":52,"nB":54,"gapA":0.600,"gapB":0.602} } },
+    "torus":    { "d1":  { "before": {"nA":3,"nB":1},  "after": {"nA":2,"nB":2}  }, "d50":  { "before": {"nA":12,"nB":1},  "after": {"nA":7,"nB":7,"gapA":5.135,"gapB":4.302} }, "d220": { "before": {"nA":46,"nB":4,"gapA":0.777,"gapB":24.234}, "after": {"nA":25,"nB":25,"gapA":1.029,"gapB":1.092} } },
+    "ellipsoid":{ "d1":  { "before": {"nA":5,"nB":1},  "after": {"nA":2,"nB":4}  }, "d50":  { "before": {"nA":16,"nB":3,"gapA":1.572,"gapB":17.585}, "after": {"nA":9,"nB":11,"gapA":2.794,"gapB":2.782} }, "d220": { "before": {"nA":67,"nB":9,"gapA":0.525,"gapB":3.501}, "after": {"nA":36,"nB":47,"gapA":0.889,"gapB":0.723} } }
+  },
+  "jaysCell": {
+    "description": "sphere, Type=Crosshatch, Fill Style=Ladder, Rung detail=Fine rungs, Angle=45, Density=50 (USER report 16)",
+    "manifestCoverage": "none — scene3d-capture.js never writes rungMode, so this cell is not in any tier-A/B manifest (per plan §6)",
+    "bespokeCaptureMethod": "Playwright script (not committed — scratch, per protocol) driving window.app.engine directly (same page.evaluate idiom as scripts/audit/scene3d-capture.js), starting/killing its own dev server. 'before' rendered from a scratch git-archive export of f828d828 on port 8476 (self-started, self-killed); 'after' rendered against the live worktree server on port 8475 (already running, left untouched).",
+    "files": ["jays-cell-before.png", "jays-cell-after.png", "jays-cell-before-crop.png", "jays-cell-after-crop.png"],
+    "rawStats": {
+      "before": { "nA": 17, "gapA": 1.600, "nB": 3, "gapB": 16.845, "inkMm": 860.0 },
+      "after":  { "nA": 9,  "gapA": 2.949, "nB": 11, "gapB": 2.717, "inkMm": 862.2 }
+    },
+    "visualDescription": "before: a single dominant family of ~17 near-parallel tilted arcs reads as latitude-band hatching; the crossing family is reduced to ~3 widely-spaced arcs, barely visible against the primary family — reproduces Jay's screenshot exactly (report 16). after: a clear, roughly-square crosshatch grid, both families visibly present at comparable density, no blobbing."
+  },
+  "nativeResolutionCrops": {
+    "dir": "crops/",
+    "cylinder__crosshatch__ladder__max__a": {
+      "regressionBefore": "crops/cylinder-max-REGRESSION-before.png (T1b/f828d828 state, the real pre-fix defect)",
+      "v1.3.98Reference": "crops/cylinder-max-before.png (pre-audit reference, already roughly balanced — NOT the regression; kept only as an additional reference)",
+      "after": "crops/cylinder-max-after.png",
+      "seen": "regression crop: a dense near-solid pack of ~0.38mm-pitch parallel diagonal lines (family A) with the crossing family reduced to one or two widely-spaced, barely-visible perpendicular strokes — reads as a hatch, not a crosshatch. After: a clean diamond crosshatch grid, both families at matched pitch (~0.60mm each), no saturation/blobbing, cells clearly resolved."
+    },
+    "sphere__crosshatch__ladder__med__a": {
+      "regressionBefore": "crops/sphere-med-REGRESSION-before.png (T1b/f828d828 state)",
+      "v1.3.98Reference": "crops/sphere-med-before.png (pre-audit reference)",
+      "after": "crops/sphere-med-after.png",
+      "seen": "regression crop: ~11 parallel curved lines (family A) with the crossing family reduced to a single thin arc at the corner — reads as one family. After: a clear diamond/curved crosshatch grid, both families present at comparable, matched pitch."
+    }
+  },
+  "guardsRun": {
+    "scene3d-plot-safety.test.js": "5/5 (+1 skip) — unchanged from plan prediction",
+    "scene3d-fill-span-verdict.test.js": "11/11 — includes crosshatch d=220 anti-blob coverage checks, all green",
+    "scene3d-curved-crosshatch-controls.test.js": "18/18",
+    "scene3d-ladder-uniform-field-spacing.test.js": "9/9 — R1a gap-jump <=1.15 holds",
+    "scene3d-fill-even-spacing.test.js": "12/12",
+    "scene3d-curved-density-sparse-end.test.js": "20/20",
+    "scene3d-curved-density-floor.test.js": "13/13 after two re-pins + one bar replacement (see commit '## Bars changed')",
+    "scene3d-crosshatch-parity.test.js (new, this unit's own oracle P1-P6)": "37/37"
+  },
+  "outOfScopeFindingNOTFixed": {
+    "file": "tests/unit/scene3d-hatch-density-angle-stable.test.js",
+    "status": "2 of 9 tests now fail (sphere-crosshatch, cone-crosshatch 'mean rendered bearing is stable across Density 50->150'); NOT in this unit's ALLOWED file list, NOT edited",
+    "measured": "sphere gap 3.70deg (was 0.57deg), cone gap 3.82deg (was 0.06deg); tolerance is 3deg",
+    "rootCause": "mathematically explained, not a placement bug: this guard's 'stability' metric is the COMBINED length-weighted bearing of both crosshatch families. Before W-36 family A held ~91% of the ink share, so the combined bearing was dominated by (and effectively measured only) family A's own direction field. W-36 intentionally moves the split toward 50/50 (measured shareA 0.47-0.52 across Density 50/150 on sphere/cone) - averaging two bearings that are themselves nearly orthogonal (measured per-family: sphere bearingA 63.0->62.1deg, bearingB 168.71->168.72deg between Density 50 and 150; cone bearingA 84.4->83.1deg, bearingB 144.18->144.18deg - EACH family's own direction field is stable to <1.5deg, exactly the property this guard file's docstring says it exists to verify). A near-50/50 vector average of two near-orthogonal bearings is maximally sensitive to a small (2-3%) shift in the ink-share ratio between the two families, which is what produces the combined-metric swing. Cylinder and torus crosshatch (not near a 50/50-orthogonal cancellation point at this fillAngle) still pass.",
+    "recommendation": "orchestrator decision needed: either accept as an inherent, understood consequence of shipping crosshatch parity (and have a follow-up unit redesign that guard to check each family's bearing separately, which is what it actually intends to guard), or something else. Not touched here — outside this unit's ALLOWED file list and not named in the plan's guard list."
+  },
+  "mutationChecks": {
+    "revertToPreFixBlob": "P1-P4 fail on every cell — this IS the RED proof, reproduced in a scratch export of f828d828 with the new test file: 24/37 failed there, matching the in-worktree RED run exactly",
+    "CROSS_PAIR_BUDGET_2.0": "cylinder d=220 crosshatch ink = 9136.78 mm (matches plan's predicted ~9137, P5 fails as predicted) — applied and reverted in-place, verified back to 5019.59 after revert",
+    "roleAlwaysFullShare": "crossPairShare forced to always return 1 (both families read the full, un-shared target) -> cylinder d=220 ink = 9136.78 mm, identical to the CROSS_PAIR_BUDGET=2.0 mutation, confirming P5 is the anti-saturation guard and not a fingerprint of one specific constant — applied and reverted in-place"
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "unit": "W-10d-2",
+  "contract": "A (CURATED write-back)",
+  "lane": "fill-audit-2",
+  "worktree": ".claude/worktrees/fill-audit-2",
+  "branch": "3d-scene/fill-audit-2",
+  "baseSha": "66d9092d",
+  "port": 8476,
+  "servedAppVersion": "1.3.99",
+  "worktreePackageJsonVersion": "1.3.99",
+  "curatedSet": [{ "primitive": "torus", "id": "originSpiral" }],
+  "summary": "torus+originSpiral saved documents now migrate to the picker's own fallback (ladder) once, at load and at the first live-edit compose that reaches the pair; every other (primitive, mapper, law) combination is untouched.",
+  "evidence": {
+    "leafScene": {
+      "dir": "leaf-scene/",
+      "recipe": "engine.addLayer('scene3d') -> object3d child primitive='torus', style={mapper:'hatch', params:{toneLaw:'originSpiral'}} -> exportState -> app.applyState (reopened document) -> select child -> app.ui.buildControls() -> click Style tab. Same recipe re-run against pre-fix source (git show HEAD:<file>, temporarily restored) for the BEFORE shot.",
+      "before": {
+        "files": ["before-style-row.png", "before-canvas.png", "before-meta.json", "before-exported-state.json"],
+        "styleRow": { "value": "originSpiral", "label": "Origin Spiral — no effect here", "disabled": true },
+        "storedToneLawAfterReopen": "originSpiral",
+        "look": "Fill Style select shows 'Origin Spiral — no effect here', greyed/disabled. Canvas torus carries a dense radial-fan/spiral texture with a visible dark wedge in the lower-left — the W-10c ink-wedge defect."
+      },
+      "after": {
+        "files": ["after-style-row.png", "after-canvas.png", "after-meta.json", "after-exported-state.json"],
+        "styleRow": { "value": "ladder", "label": "Ladder (default)", "disabled": false },
+        "storedToneLawAfterReopen": "ladder",
+        "look": "Fill Style select shows 'Ladder (default)', enabled, no 'no effect here' suffix. Canvas torus carries clean, evenly-spaced concentric ladder rings — visibly different from BEFORE, no dark wedge."
+      },
+      "ladderControlCanvas": "ladder-control-canvas.png (same scene, toneLaw explicitly 'ladder' from creation, no write-back needed — a secondary DOM-level look; the load-bearing identity proof is the geometry probe below, which isolates the render path from canvas/DOM timing and per-session id/seed confounds observed while iterating on this evidence)."
+    },
+    "geometryIdentityProbe": {
+      "method": "Same object id/seed (seed pinned to 424242) built via engine.addLayer('scene3d'), round-tripped through exportState/importState, then group.scenePaths after computeAllDisplayGeometry() reduced to {pathCount, pointCount, checksum(sum of all x+y)}. Run via tests/integration/_w10d2-geom-probe*.test.js (throwaway, not committed) foreground vitest, once against pre-fix source and once against post-fix source.",
+      "preFix_originSpiral": { "pathCount": 556, "pointCount": 5851, "checksum": 1343838.2003113925 },
+      "postFix_writeBack_toLadder": { "pathCount": 135, "pointCount": 910, "checksum": 203336.35766751465 },
+      "postFix_explicitLadderPick_sameSeed": { "pathCount": 135, "pointCount": 910, "checksum": 203336.35766751465 },
+      "result": "postFix_writeBack_toLadder is EXACT (path/point/checksum) match to postFix_explicitLadderPick_sameSeed -- the write-back's rendered geometry is indistinguishable from a user picking Ladder directly. preFix_originSpiral (556/5851) matches the plan's own independently-measured baseline exactly, confirming this lane's fix reproduces the planner's numbers precisely and the fix eliminates the 4.1x path-count/wedge defect."
+    },
+    "tierBGuardRow": {
+      "cell": "torus__hatch__<law>__med__a for all 48 laws in the current 48-id roster (this lane predates the U0 48->35 collapse merge)",
+      "method": "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-audit-2 --port 8476 --only 'torus__hatch__.*__med__a' --out docs/3d-audit/fill-audit/after/W-10d-2/guard-tierB-{before,after}, run from MAIN, once against pre-fix source (git show HEAD:<file> temporarily restored in the lane) and once against post-fix (this unit's) source. NOT compared against main's pre-existing docs/3d-audit/fill-audit/shots/B/ -- that baseline was captured at appVersion 1.3.98 and differs on EVERY cell including 'ladder' itself (unrelated drift from other landed lanes since that baseline was shot), so a same-worktree before/after pair is the valid isolation.",
+      "originSpiralExcluded": "torus+originSpiral is unreachable in the picker (W-10d's own context-bar.js gate, unchanged by this unit) so scene3d-capture.js's Tier B reachability filter (computeTierBReachability) never shoots it on either side -- consistent with the plan's '47/48, excluded on both sides by W-10d' note, except this lane's roster is still 48 total ids (pre-U0-collapse), so the excluded row here is 48/49 (48 laws + the synthetic 'none' entry, minus originSpiral) each side.",
+      "shotCount": 48,
+      "md5Identical": 48,
+      "md5Different": 0,
+      "result": "48/48 md5-identical between pre-fix and post-fix source for every torus+hatch law INCLUDING ladder itself. Proves the write-back touches nothing outside the load/compose write-back call sites -- the general torus+hatch render path (48 other laws, including the picker's own fallback) is byte-for-byte unaffected."
+    },
+    "unreachableWriteBackNote": "SCENE_FILL_STYLES.UNREACHABLE_WRITEBACK = [{ primitive: 'torus', id: 'originSpiral' }] -- the only entry; G1/G1b in tests/unit/scene3d-tone-law-writeback.test.js sweep all 10 primitives x 8 mappers x 35 PICKER_IDS (2800 combinations) and assert writeBackFor returns non-null for exactly this one shape family."
+  },
+  "tests": {
+    "integration": {
+      "file": "tests/integration/scene3d-fill-style-picker.test.js",
+      "baselineBeforeThisUnit": "149/149 at 66d9092d (includes W-10d-3's 9 new tests on top of the original 140/140 baseline)",
+      "afterThisUnit": "160/160 in this file (149 pre-existing rows, one of them -- the W-10d torus/originSpiral deserialization test -- updated in place for the deliberate Contract-A change, not added/removed; +11 new R1/R1b/R2-R10 rows = 160)",
+      "newRows": ["R1", "R1b", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10"]
+    },
+    "unit": {
+      "file": "tests/unit/scene3d-tone-law-writeback.test.js",
+      "result": "7/7 (new file)",
+      "rows": ["G1", "G1b", "G2", "G3", "G4", "G5", "mutation-check harness"]
+    },
+    "guards": {
+      "tests/integration/scene3d-fill-style-picker.test.js": "160/160 (this file alone)",
+      "tests/unit/scene3d-tone-law-writeback.test.js (combined run with the file above)": "167/167 total (160 + 7)",
+      "tests/unit/scene3d-solid-cap-reachability.test.js": "10/10",
+      "tests/unit/scene3d-tone-laws-config.test.js": "8/8",
+      "tests/unit/scene3d-faceted-tone-law.test.js": "19/19 (1 transient vitest-worker RPC timeout warning, not a test failure, matches W-10d-3's own report)",
+      "tests/unit/scene3d-tone-law-plumbing.test.js": "5/5",
+      "tests/unit/scene3d-shadow-tone-law.test.js": "20/20 (U9's shadow-bag fix not merged into this lane; 20, not 22 -- expected)",
+      "tests/unit/scene3d-tone-law-collapse.test.js": "54/54 (not edited; ~469s wall, matches W-10d-3's own measured runtime and count)"
+    },
+    "redAtBaseSha": "R1, R1b, R4, R6, R7, R10 fail at 66d9092d (source reverted via git show HEAD:<file>) on real value assertions ('originSpiral' vs 'ladder'), never TypeError. R2/R3/R5/R8/R9 already pass at base (guard-style, no regression to catch pre-fix).",
+    "mutationCheck": "SCENE_FILL_STYLES.writeBackFor stubbed to always return null (identity). Re-ran the same 6 tests: R1, R1b, R4, R6, R7, R10 all re-failed on the identical real-value assertions as the base-sha RED run. Reverted; diff clean."
+  },
+  "barsChanged": "NONE. No tolerance, count bar, or pinned fingerprint touched. One pre-existing test assertion changed from a NOW-STALE claim ('a torus layer saved with toneLaw originSpiral deserializes unchanged') to the new Contract-A behavior -- this is the unit's own deliberate contract change (documented in the test's own updated comment), not a bar/tolerance/fingerprint.",
+  "filesTouched": {
+    "src/config/context-bar.js": "UNREACHABLE_WRITEBACK table + writeBackFor(), appended immediately after isReachableOn (context-bar.js ~L568-592)",
+    "src/core/scene3d/params.js": "applyLawWriteBack() helper (new, ~L880-896); normalizeObjectLayerParams's style line updated (~L1092-1098, was L1075); normalizeParams correlation pass for the monolith styleTable.byObject/byFace (new block, ~L1445-1466); writeBackObjectLayerStyle() (new, ~L1729-1745) + export",
+    "src/core/engine.js": "sanitizeImportedParams's object3d/sceneGroup3d/booleanGroup3d branch (~L419-432) now also calls Scene3D.Params.writeBackObjectLayerStyle after migrateScene",
+    "tests/integration/scene3d-fill-style-picker.test.js": "appended new describe 'W-10d-2 -- curated unreachable toneLaw write-back (Contract A)' (R1-R10); updated one pre-existing W-10d test to reflect the Contract-A change + added a non-curated guard assertion inside it",
+    "tests/unit/scene3d-tone-law-writeback.test.js": "new file, G1/G1b/G2/G3/G4/G5 + mutation-check sanity"
+  },
+  "u9Disjointness": {
+    "u9FootprintInFillAudit2AtHead": "clampShadowToneLaw / U9's shadow-bag fix is NOT present in this lane (fill-audit-2 has not merged handoff-c2); normalizeShadow at this lane's params.js still calls clampStyleParam('toneLaw', src.shadowToneLaw) directly, around params.js:1002-1020",
+    "w10d2EditRanges": ["params.js ~880-896 (new applyLawWriteBack helper)", "params.js ~1092-1098 (normalizeObjectLayerParams style line)", "params.js ~1445-1466 (normalizeParams correlation pass)", "params.js ~1729-1745 (writeBackObjectLayerStyle + export)"],
+    "verified": "None of the above ranges touch params.js 995-1025 (the shadow-bag/clampShadowToneLaw region reserved for U9) or clampStyleParam (655-779). Confirmed by direct read of the file before editing and by G4 in the new unit test file, which pins normalizeShadow's behavior is unchanged by this unit."
+  },
+  "docsContract": {
+    "CHANGELOG": "Fixed: a saved 3D Scene torus object using the Origin Spiral fill style now opens as Ladder (the picker's own default). Origin Spiral cannot be plotted cleanly on a torus -- W-10c measured 87.8% of interior pixels covered by solid ink wedges longer than two pen widths -- so a document carrying that combination is migrated once, at load, to the fill style the app already treats as its safe fallback everywhere else. This changes what the object draws (once); every other fill-style/primitive combination is unaffected.",
+    "helpText": "Wherever the Fill Style row's greyed-out 'no effect here' copy is documented (README / in-app help), add: a torus object that already has Origin Spiral picked cannot show this state any more -- opening or editing such a document migrates it to Ladder automatically, once. Only the torus + Origin Spiral combination is migrated this way; every other greyed-out option stays as the user left it and simply does nothing differently, as before.",
+    "notImplementedByThisImplementer": "Per the assignment's explicit docs-contract instruction ('CHANGELOG line + help text in the report; do not edit CHANGELOG.md'), CHANGELOG.md/README.md/plans.md/STILL-OPEN.md/LEDGER.md were left untouched. The text above is ready for the docs-contract owner to apply verbatim."
+  }
+}

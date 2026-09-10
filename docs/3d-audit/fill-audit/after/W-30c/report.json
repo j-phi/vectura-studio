@@ -1,0 +1,769 @@
+{
+  "generatedAt": "2026-09-09T14:10:42.987Z",
+  "footprintShapes": {
+    "sphere-point-after": {
+      "layerId": "aaa89cef-2e94-4231-b21c-6ffb373f1cd5",
+      "total": 173,
+      "receiverFillCount": 93
+    },
+    "sphere-directional-after": {
+      "layerId": "27af160e-dd2b-4274-a163-2d1dd96610a7",
+      "total": 201,
+      "receiverFillCount": 98
+    },
+    "box-point-after": {
+      "layerId": "1a442517-6929-4caf-897d-6171bbd8a740",
+      "total": 119,
+      "receiverFillCount": 98
+    },
+    "box-directional-after": {
+      "layerId": "cd8c8e1f-e316-440c-a862-769d6b80ebee",
+      "total": 143,
+      "receiverFillCount": 107
+    },
+    "torus-point-after": {
+      "layerId": "57a25a0f-0380-45f2-bb19-136bb730c913",
+      "total": 241,
+      "receiverFillCount": 124
+    },
+    "torus-directional-after": {
+      "layerId": "c147e5a1-5dd0-4816-8c1e-fa87de9b0c16",
+      "total": 244,
+      "receiverFillCount": 117
+    },
+    "sphere-point-before": {
+      "layerId": "6c064796-9b80-4a3e-8ba2-bfcf0ca1dc1e",
+      "total": 173,
+      "receiverFillCount": 93
+    },
+    "sphere-directional-before": {
+      "layerId": "d66a6af7-7445-4ea2-a557-f753bd6832a3",
+      "total": 201,
+      "receiverFillCount": 98
+    },
+    "box-point-before": {
+      "layerId": "cd191bbf-cb14-4f22-8f17-719aa090efa7",
+      "total": 119,
+      "receiverFillCount": 98
+    },
+    "box-directional-before": {
+      "layerId": "530f47c4-41bb-49c9-b289-b8375cd03029",
+      "total": 143,
+      "receiverFillCount": 107
+    },
+    "torus-point-before": {
+      "layerId": "ad0255ab-1470-4f39-b84a-7b47a218599f",
+      "total": 215,
+      "receiverFillCount": 98
+    },
+    "torus-directional-before": {
+      "layerId": "d4893bc6-c0ac-4f34-89a6-cac20ef7d4bf",
+      "total": 228,
+      "receiverFillCount": 101
+    }
+  },
+  "areaPenumbra": {
+    "after": {
+      "stats": {
+        "layerId": "480e22d9-2f3d-4af1-987f-e63df1709784",
+        "total": 154,
+        "receiverFillCount": 121
+      },
+      "profile": [
+        {
+          "x": 30,
+          "current": 0.09631970203332901,
+          "gated": 0.09631970203332901,
+          "unshadowed": 0.6709132060472215
+        },
+        {
+          "x": 32,
+          "current": 0.09598417318138273,
+          "gated": 0.09598417318138273,
+          "unshadowed": 0.6687165741210758
+        },
+        {
+          "x": 34,
+          "current": 0.09565039786168335,
+          "gated": 0.09565039786168335,
+          "unshadowed": 0.6665282403037368
+        },
+        {
+          "x": 36,
+          "current": 0.09531836979954926,
+          "gated": 0.09531836979954926,
+          "unshadowed": 0.6643482414127403
+        },
+        {
+          "x": 38,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6621766119583525
+        },
+        {
+          "x": 40,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6600133842004731
+        },
+        {
+          "x": 42,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6578585882045865
+        },
+        {
+          "x": 44,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6557122518967687
+        },
+        {
+          "x": 46,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6535744011177477
+        },
+        {
+          "x": 48,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6514450596760215
+        },
+        {
+          "x": 50,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6493242494000377
+        },
+        {
+          "x": 52,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6472119901894392
+        },
+        {
+          "x": 54,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6451083000653791
+        },
+        {
+          "x": 56,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6430131952199128
+        },
+        {
+          "x": 58,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6409266900644726
+        },
+        {
+          "x": 60,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6388487972774288
+        },
+        {
+          "x": 62,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6367795278507508
+        },
+        {
+          "x": 64,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6347188911357681
+        },
+        {
+          "x": 66,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6326668948880454
+        },
+        {
+          "x": 68,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6306235453113755
+        },
+        {
+          "x": 70,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6285888471009047
+        },
+        {
+          "x": 72,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6265628034853915
+        },
+        {
+          "x": 74,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6245454162686168
+        },
+        {
+          "x": 76,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6225366858699491
+        },
+        {
+          "x": 78,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6205366113640772
+        },
+        {
+          "x": 80,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6185451905199197
+        },
+        {
+          "x": 82,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6165624198387231
+        },
+        {
+          "x": 84,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6145882945913568
+        },
+        {
+          "x": 86,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6126228088548175
+        },
+        {
+          "x": 88,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6106659555479539
+        },
+        {
+          "x": 90,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6087177264664195
+        },
+        {
+          "x": 92,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6067781123168711
+        },
+        {
+          "x": 94,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6048471027504155
+        },
+        {
+          "x": 96,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6029246863953236
+        },
+        {
+          "x": 98,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.601010850889019
+        },
+        {
+          "x": 100,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.5991055829093507
+        },
+        {
+          "x": 102,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.5972088682051673
+        },
+        {
+          "x": 104,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.595320691626198
+        },
+        {
+          "x": 106,
+          "current": 0.1140714047808416,
+          "gated": 0.11407140478084159,
+          "unshadowed": 0.5934410371522544
+        },
+        {
+          "x": 108,
+          "current": 0.11374665593415895,
+          "gated": 0.11374665593415895,
+          "unshadowed": 0.5915698879217645
+        },
+        {
+          "x": 110,
+          "current": 0.11342294966610544,
+          "gated": 0.11342294966610544,
+          "unshadowed": 0.5897072262596496
+        },
+        {
+          "x": 112,
+          "current": 0.11310029072357379,
+          "gated": 0.11310029072357379,
+          "unshadowed": 0.5878530337045552
+        },
+        {
+          "x": 114,
+          "current": 0.11277868361858545,
+          "gated": 0.11277868361858545,
+          "unshadowed": 0.5860072910354482
+        },
+        {
+          "x": 116,
+          "current": 0.11245813263316111,
+          "gated": 0.11245813263316111,
+          "unshadowed": 0.5841699782975899
+        },
+        {
+          "x": 118,
+          "current": 0.11213864182412586,
+          "gated": 0.11213864182412586,
+          "unshadowed": 0.5823410748278968
+        },
+        {
+          "x": 120,
+          "current": 0.11182021502784945,
+          "gated": 0.11182021502784943,
+          "unshadowed": 0.5805205592797013
+        },
+        {
+          "x": 122,
+          "current": 0.11150285586492077,
+          "gated": 0.11150285586492077,
+          "unshadowed": 0.578708409646921
+        },
+        {
+          "x": 124,
+          "current": 0.11118656774475727,
+          "gated": 0.11118656774475727,
+          "unshadowed": 0.5769046032876494
+        },
+        {
+          "x": 126,
+          "current": 0.11087135387014825,
+          "gated": 0.11087135387014825,
+          "unshadowed": 0.5751091169471769
+        },
+        {
+          "x": 128,
+          "current": 0.11055721724173335,
+          "gated": 0.11055721724173335,
+          "unshadowed": 0.573321926780456
+        },
+        {
+          "x": 130,
+          "current": 0.3062201665788784,
+          "gated": 0.3062201665788784,
+          "unshadowed": 0.5715430083740168
+        },
+        {
+          "x": 132,
+          "current": 0.30529255416676726,
+          "gated": 0.3052925541667672,
+          "unshadowed": 0.569772336767348
+        },
+        {
+          "x": 134,
+          "current": 0.3043688334749905,
+          "gated": 0.3043688334749905,
+          "unshadowed": 0.5680098864737494
+        },
+        {
+          "x": 136,
+          "current": 0.39845942362288383,
+          "gated": 0.39845942362288383,
+          "unshadowed": 0.5662556315006702
+        },
+        {
+          "x": 138,
+          "current": 0.3972750889466647,
+          "gated": 0.3972750889466646,
+          "unshadowed": 0.5645095453695406
+        },
+        {
+          "x": 140,
+          "current": 0.396095778235197,
+          "gated": 0.396095778235197,
+          "unshadowed": 0.5627716011351066
+        }
+      ]
+    },
+    "before": {
+      "stats": {
+        "layerId": "3688359d-147f-4e6a-95e7-b904ed8fe7a7",
+        "total": 154,
+        "receiverFillCount": 121
+      },
+      "profile": [
+        {
+          "x": 30,
+          "current": 0,
+          "gated": 0.09631970203332901,
+          "unshadowed": 0.6709132060472215
+        },
+        {
+          "x": 32,
+          "current": 0,
+          "gated": 0.09598417318138273,
+          "unshadowed": 0.6687165741210758
+        },
+        {
+          "x": 34,
+          "current": 0,
+          "gated": 0.09565039786168335,
+          "unshadowed": 0.6665282403037368
+        },
+        {
+          "x": 36,
+          "current": 0,
+          "gated": 0.09531836979954926,
+          "unshadowed": 0.6643482414127403
+        },
+        {
+          "x": 38,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6621766119583525
+        },
+        {
+          "x": 40,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6600133842004731
+        },
+        {
+          "x": 42,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6578585882045865
+        },
+        {
+          "x": 44,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6557122518967687
+        },
+        {
+          "x": 46,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6535744011177477
+        },
+        {
+          "x": 48,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6514450596760215
+        },
+        {
+          "x": 50,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6493242494000377
+        },
+        {
+          "x": 52,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6472119901894392
+        },
+        {
+          "x": 54,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6451083000653791
+        },
+        {
+          "x": 56,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6430131952199128
+        },
+        {
+          "x": 58,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6409266900644726
+        },
+        {
+          "x": 60,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6388487972774288
+        },
+        {
+          "x": 62,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6367795278507508
+        },
+        {
+          "x": 64,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6347188911357681
+        },
+        {
+          "x": 66,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6326668948880454
+        },
+        {
+          "x": 68,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6306235453113755
+        },
+        {
+          "x": 70,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6285888471009047
+        },
+        {
+          "x": 72,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6265628034853915
+        },
+        {
+          "x": 74,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6245454162686168
+        },
+        {
+          "x": 76,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6225366858699491
+        },
+        {
+          "x": 78,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6205366113640772
+        },
+        {
+          "x": 80,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6185451905199197
+        },
+        {
+          "x": 82,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6165624198387231
+        },
+        {
+          "x": 84,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6145882945913568
+        },
+        {
+          "x": 86,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6126228088548175
+        },
+        {
+          "x": 88,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6106659555479539
+        },
+        {
+          "x": 90,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6087177264664195
+        },
+        {
+          "x": 92,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6067781123168711
+        },
+        {
+          "x": 94,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6048471027504155
+        },
+        {
+          "x": 96,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.6029246863953236
+        },
+        {
+          "x": 98,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.601010850889019
+        },
+        {
+          "x": 100,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.5991055829093507
+        },
+        {
+          "x": 102,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.5972088682051673
+        },
+        {
+          "x": 104,
+          "current": 0,
+          "gated": 0,
+          "unshadowed": 0.595320691626198
+        },
+        {
+          "x": 106,
+          "current": 0,
+          "gated": 0.11407140478084159,
+          "unshadowed": 0.5934410371522544
+        },
+        {
+          "x": 108,
+          "current": 0,
+          "gated": 0.11374665593415895,
+          "unshadowed": 0.5915698879217645
+        },
+        {
+          "x": 110,
+          "current": 0,
+          "gated": 0.11342294966610544,
+          "unshadowed": 0.5897072262596496
+        },
+        {
+          "x": 112,
+          "current": 0,
+          "gated": 0.11310029072357379,
+          "unshadowed": 0.5878530337045552
+        },
+        {
+          "x": 114,
+          "current": 0,
+          "gated": 0.11277868361858545,
+          "unshadowed": 0.5860072910354482
+        },
+        {
+          "x": 116,
+          "current": 0,
+          "gated": 0.11245813263316111,
+          "unshadowed": 0.5841699782975899
+        },
+        {
+          "x": 118,
+          "current": 0,
+          "gated": 0.11213864182412586,
+          "unshadowed": 0.5823410748278968
+        },
+        {
+          "x": 120,
+          "current": 0,
+          "gated": 0.11182021502784943,
+          "unshadowed": 0.5805205592797013
+        },
+        {
+          "x": 122,
+          "current": 0,
+          "gated": 0.11150285586492077,
+          "unshadowed": 0.578708409646921
+        },
+        {
+          "x": 124,
+          "current": 0,
+          "gated": 0.11118656774475727,
+          "unshadowed": 0.5769046032876494
+        },
+        {
+          "x": 126,
+          "current": 0,
+          "gated": 0.11087135387014825,
+          "unshadowed": 0.5751091169471769
+        },
+        {
+          "x": 128,
+          "current": 0,
+          "gated": 0.11055721724173335,
+          "unshadowed": 0.573321926780456
+        },
+        {
+          "x": 130,
+          "current": 0,
+          "gated": 0.3062201665788784,
+          "unshadowed": 0.5715430083740168
+        },
+        {
+          "x": 132,
+          "current": 0,
+          "gated": 0.3052925541667672,
+          "unshadowed": 0.569772336767348
+        },
+        {
+          "x": 134,
+          "current": 0,
+          "gated": 0.3043688334749905,
+          "unshadowed": 0.5680098864737494
+        },
+        {
+          "x": 136,
+          "current": 0,
+          "gated": 0.39845942362288383,
+          "unshadowed": 0.5662556315006702
+        },
+        {
+          "x": 138,
+          "current": 0.5645095453695406,
+          "gated": 0.3972750889466646,
+          "unshadowed": 0.5645095453695406
+        },
+        {
+          "x": 140,
+          "current": 0.5627716011351066,
+          "gated": 0.396095778235197,
+          "unshadowed": 0.5627716011351066
+        }
+      ]
+    }
+  },
+  "multilight": {
+    "after": {
+      "layerId": "942cbdba-ac71-4bbb-9b4e-a8b50621f4f4",
+      "total": 173,
+      "receiverFillCount": 93
+    },
+    "before": {
+      "layerId": "2731a971-62be-48f9-b974-019f034a6c2c",
+      "total": 163,
+      "receiverFillCount": 83
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "label": "after",
+  "version": "1.3.99",
+  "result": {
+    "objId": "9f213e75-5902-4e8f-9908-d67c9c1804b8",
+    "groupId": "b551a716-215b-4d40-97e0-359d84a377db",
+    "toneLaw": "ladder",
+    "exported": "ladder"
+  },
+  "rowInfo": {
+    "value": "ladder",
+    "label": "Ladder (default)",
+    "disabled": false
+  },
+  "errors": []
+}

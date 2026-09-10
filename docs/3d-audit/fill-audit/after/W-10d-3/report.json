@@ -1,0 +1,63 @@
+{
+  "unit": "W-10d-3",
+  "lane": "fill-audit-2",
+  "worktree": ".claude/worktrees/fill-audit-2",
+  "branch": "3d-scene/fill-audit-2",
+  "base_sha": "a5812496",
+  "checkpoint_sha": "4ca6a507",
+  "final_sha": "SEE lane-reports/W-10d-3-impl.md",
+  "port": 8476,
+  "app_version": "1.3.99",
+  "summary": "The Style tab / ctxbar sub-control for a raw folded toneLaw (e.g. bundleDither) showed its descriptor DEFAULT instead of the sibling value the canvas already renders. Rank-1 fix: SCENE_FILL_STYLES.displayParams seeds the DISPLAY bag from ALIASES; both UI surfaces now read the seeded bag while writes are untouched.",
+  "byte_identity": {
+    "tier_a_cell": {
+      "cell": "box__hatch__ladder__low__a",
+      "manifest_confirmed": "docs/3d-audit/fill-audit/shots/A/box__hatch__ladder__low__a.webp (pre-existing in main gallery)",
+      "lane_reshoot_md5": "35369c77553170a1ee2969569ef63980",
+      "main_gallery_md5": "35369c77553170a1ee2969569ef63980",
+      "match": true,
+      "note": "General render-path smoke test, unrelated to bundleDither/contFieldTouch specifically — proves the fix (config + 2 UI files) did not disturb the shared gallery render path at all."
+    },
+    "bespoke_canvas_crop": {
+      "scene": "object3d sphere, mapper=hatch, style.params.toneLaw='bundleDither', built via engine.addLayer('scene3d') -> exportState -> importState (reopened document)",
+      "crop_box_fraction": "x:0.30-0.70, y:0.30-0.70 of the canvas bounding box, deviceScaleFactor 2",
+      "before_md5": "a1b3470e382f42b319440f14c154ba26",
+      "after_md5": "a1b3470e382f42b319440f14c154ba26",
+      "match": true,
+      "expected": true,
+      "explanation": "This unit touches ONLY src/config/context-bar.js (a new displayParams function), src/ui/panels/scene3d-panel.js (one read-site line), and src/ui/shell/context-bar.js (the styleParams sub-control loop + its mixed closure) — no engine, algorithm, or renderer file. Params.normalizeParams inside algo.generate (scene3d.js:1191) already resolved bundleDither correctly before this fix (measured in the plan, R5 pins it). A byte-identical canvas pair is therefore the EXPECTED result, not a false negative."
+    }
+  },
+  "evidence_files": {
+    "before_docked_style_tab_crop": "before-docked-crop.png",
+    "after_docked_style_tab_crop": "after-docked-crop.png",
+    "before_ctxbar_style_flyout_crop": "before-ctxbar-crop.png",
+    "after_ctxbar_style_flyout_crop": "after-ctxbar-crop.png",
+    "before_contfield_overfix_guard_crop": "before-contfield-crop.png",
+    "after_contfield_overfix_guard_crop": "after-contfield-crop.png",
+    "before_canvas_crop": "before-canvas.png",
+    "after_canvas_crop": "after-canvas.png",
+    "before_docked_full_page": "before-docked-full.png",
+    "after_docked_full_page": "after-docked-full.png",
+    "before_measurements": "before-measurements.json",
+    "after_measurements": "after-measurements.json"
+  },
+  "what_was_seen": {
+    "docked_style_tab": {
+      "before": "Fill Style = 'Bundle · Count' (correct, untouched), Bundle mode = 'Integer pass count' (WRONG — the raw bag's toneLaw is 'bundleDither', so the panel should show Dithered). No caveat row (U5b's effectiveLaw is not merged into this lane, so caveat absence is expected pre- AND post-fix here — not a regression).",
+      "after": "Fill Style unchanged ('Bundle · Count'). Bundle mode now reads 'Dithered' — the value the canvas has been rendering all along. Still no caveat row (unchanged — this unit does not touch that mechanism; see plan §2 vs U5b)."
+    },
+    "ctxbar_style_flyout": {
+      "before": "Same lie as the docked panel: Fill Style = 'Bundle · Count', Bundle mode = 'Integer pass count'.",
+      "after": "Bundle mode = 'Dithered'; Fill Style unchanged. Visually identical row layout/copy to the docked panel, confirming both surfaces read off the same seeded bag."
+    },
+    "contfield_overfix_guard": {
+      "before": "Field metric = 'Screen metric', Field floor = 'Plot floor' (WRONG — raw toneLaw is 'contFieldTouch', so Field floor should read the ink-width option).",
+      "after": "Field metric UNCHANGED at 'Screen metric' (over-fix guard holds — the seed only fills undefined keys, and fieldMetric was never part of contFieldTouch's alias.params). Field floor now reads 'Ink-width floor' — correct."
+    },
+    "canvas": {
+      "both": "Sphere, hatch fill, dithered bundle banding visible (the bundleDither mark). Selection handles/gizmo overlay present (object selected for the panel shot). Before and after renders are pixel/byte-identical (md5 match) — the canvas never lied and this unit does not move it."
+    }
+  },
+  "bars_changed": []
+}

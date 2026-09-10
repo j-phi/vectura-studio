@@ -1,0 +1,53 @@
+{
+  "unit": "W-33",
+  "lane": "fill-audit-a2",
+  "worktree": ".claude/worktrees/fill-audit-a2",
+  "baseSha": "e31d8591",
+  "newSha": "c6ff81de",
+  "userReport": "docs/3d-audit/fill-audit/user-reports/14-w26-capsule-cone-cylinder-spiral.png",
+  "userQuote": "I'm observing some non-curved angles here.",
+  "fixSummary": "Device-space adaptive subdivision of contour fill rulings (refineFillRunTurns, surface-fill.js), deferred to run after the seam join so a join vertex is checked as an ordinary interior vertex; edgeAt now returns its own bisected sweep parameter instead of reusing its neighbour's.",
+  "bar": "FILL_MAX_TURN_DEG = 8 (device-space per-vertex exterior turn, open-polyline-aware, closed-ring wrap-aware)",
+  "cells": [
+    "capsule__contour__ladder__med__a",
+    "capsule__contour__ladder__med__b",
+    "cone__contour__ladder__med__a",
+    "cone__contour__ladder__med__b",
+    "cylinder__contour__ladder__med__a",
+    "cylinder__contour__ladder__med__b",
+    "sphere__contour__ladder__med__a",
+    "sphere__contour__ladder__med__b"
+  ],
+  "measurements": {
+    "note": "M1 = max per-vertex device-space exterior turn (deg), measured on the RAW drawn polyline via the RGR oracle in tests/unit/scene3d-fill-ruling-corners.test.js. Gallery cells (C1/C3) and the real app-default scene (C2) both measured.",
+    "galleryDefaults_cameraA": {
+      "before": { "capsule": 31.24, "cone": 31.24, "cylinder": 31.24, "sphere": 31.24 },
+      "after": { "capsule": "<=8", "cone": "<=8", "cylinder": "<=8", "sphere": "<=8" }
+    },
+    "galleryDefaults_cameraB": {
+      "before": { "capsule": 38.35, "cone": 38.35, "cylinder": 38.35, "sphere": 38.35 },
+      "after": { "capsule": "<=8", "cone": "<=8", "cylinder": "<=8", "sphere": "<=8" }
+    },
+    "appDefaultScene_raw": {
+      "before": { "sphere": 18.46, "capsule": 23.25, "cone": 21.70, "cylinder": 21.70 },
+      "after": { "sphere": "<=8", "capsule": "<=8", "cone": "<=8", "cylinder": "<=8" }
+    },
+    "appDefaultScene_postFillCurvesFit_reportedNotAsserted": {
+      "note": "The shipped Fill-Curves fitter (src/core/geometry-utils.js, out of this lane) can still read over 8deg on this fix's now-uneven point density. Measured this run: capsule 14.72, cone 28.07, cylinder 28.23, sphere 15.37 deg. See implementer report 'Known limitation'.",
+      "after": { "capsule": 14.72, "cone": 28.07, "cylinder": 28.23, "sphere": 15.37 }
+    },
+    "pointCount_sphereContourD50CamA": {
+      "before": 353,
+      "after": 752,
+      "growthPct": 113,
+      "rejectedAlternative_RaisingDetailGlobally": { "points": 995, "growthPct": 182 }
+    }
+  },
+  "byteIdenticalPairsExplained": "None expected in this cell set — every named cell is mapper==='contour', squarely in scope; the fix is expected to (and does) move every one of them. Byte-identity is instead verified via the guard suite on OUT-OF-SCOPE cells (sphere hatch, cylinder hatch, box/plane/pyramid/solid) — see the implementer report's guard list, all green.",
+  "look": {
+    "capsule__contour__ladder__med__a": "Crop (150,10)-(310,90) at 6x on the innermost cap ring: reads as a clean, smooth ellipse with no visible corner or facet at either end of its major axis (previously the sharpest defect on this rig, per the W-32/W-33 plan's own crop of the same region).",
+    "sphere__contour__ladder__med__a": "Crop (140,10)-(320,100) at 6x near the pole: the innermost small ring and its neighbours all read as smooth curves; the near-tangent crossing points between adjacent rings near the silhouette are smooth arcs, not polygon vertices.",
+    "cone__contour__ladder__med__b": "Crop (140,10)-(320,110) at 6x near the apex: the small rings stacked toward the tip read smooth.",
+    "cylinder__contour__ladder__med__a": "Crop (140,10)-(320,100) at 6x near the top cap: the innermost cap ring and the two rings below it all read smooth."
+  }
+}

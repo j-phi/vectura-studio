@@ -1,0 +1,74 @@
+{
+  "id": "W-34",
+  "title": "There are some angles in this curved shape that should not be there — contourSlice ring corners",
+  "lane": "fill-audit-d2",
+  "worktree": ".claude/worktrees/fill-audit-d2",
+  "branch": "3d-scene/fill-audit-d2",
+  "base_sha": "be5cfcf8 (this lane's HEAD, W-27c-0a-4b's cone/cylinder guards)",
+  "plan": "docs/3d-audit/lane-reports/W-34-plan.md",
+  "ruling": "docs/3d-audit/lane-reports/LEDGER.md § Standing orchestrator rulings, 2026-09-08 — ship Fix A always, Fix B only if T3 RED, Fix C forbidden (needs Jay)",
+  "brief": "Fix A: refineSliceRing's stop condition measured in DEVICE space via opts.project, supplied by linkPlane from the pass's own camera. Fix B (landed because T3 was RED): closed form for capsule in sliceSurfaceFG, mirroring charts.js topoCapsule.",
+  "files_changed": [
+    "src/core/algorithms/scene3d.js (refineSliceRing opts.project + measure(); linkPlane supplies refineProjectFn; sliceSurfaceFG capsule branch)",
+    "tests/unit/scene3d-contour-slice-corners.test.js (new — T1/T2/T3/T4 oracle + mutation guard, 25 tests)",
+    "tests/unit/scene3d-contour-slice.test.js (lines ~1011-1012 only — item (b) placeholder tightened per plan §7.1)"
+  ],
+  "rgr": {
+    "red_at_be5cfcf8": {
+      "T1_M1_camera_a": { "cone": 8.0882, "capsule": 9.0750 },
+      "T1_M1_camera_b_ALSO_RED_not_in_plan_table": { "sphere": 8.3913, "ellipsoid": 8.3551, "cone": 9.3168, "torus": 10.6330, "capsule": 8.5539 },
+      "T3_capsule_truth_oracle": { "emittedWorst": 32.4195, "analyticWorst_realPlanes": 8.1659, "excessPct": 297.0, "bar": "<=15%" },
+      "note": "T1 camera b was RED on sphere/ellipsoid/torus too (not measured by the plan, which only tabulated camera a for M1) -- Fix A closes all of these, see green_after_fix_a."
+    },
+    "green_after_fix_a": {
+      "T1_M1_all_12_cases_pass": true,
+      "camera_a": { "sphere": "<8 (pass)", "ellipsoid": "<8 (pass)", "cone": "<8 (pass)", "cylinder": 0, "torus": 7.5795, "capsule": 7.9278 },
+      "camera_b": { "sphere": "<8 (pass)", "ellipsoid": "<8 (pass)", "cone": "<8 (pass)", "cylinder": 0, "torus": 7.8643, "capsule": 7.9215 },
+      "T2_all_pass": true,
+      "T3_still_RED_after_fix_a_alone": { "emittedWorst": 32.4685, "analyticWorst": 8.1659, "excessPct": 297.6, "decision": "Fix B warranted per ruling" }
+    },
+    "green_after_fix_b": {
+      "T3": { "emittedWorst": 8.3745, "analyticWorst": 8.1659, "excessPct": 2.56, "bar": "<=15%", "verdict": "PASS" },
+      "all_25_new_tests_pass": true
+    }
+  },
+  "guards_run_foreground_one_file_at_a_time": {
+    "scene3d-contour-slice.test.js": "57/57 pass (incl. W-27c-0a-4b's 6 new guards, byte-identical to their own cull-inert baseline)",
+    "scene3d-mappers.test.js": "32/32 pass",
+    "scene3d-hlr.test.js": "11/11 pass",
+    "scene3d-curves.test.js": "13/13 pass",
+    "W-27c_ellipsoid_rotated_transform_accuracy": "untouched, part of the 57 -- test drives Slices.analyticProjectLocal directly, no opts.project involved, still < 0.15mm bar (measured 9.8e-10mm class)",
+    "item_0b_ceiling_le_55": "untouched at 36, part of the 57 -- did NOT move"
+  },
+  "byte_identity_sweep": {
+    "method": "loadVecturaRuntime scriptOverrides -- pre (be5cfcf8 scene3d.js via git show) vs post (Fix A + Fix B) in ONE vitest process, md5 of algo.generate() output",
+    "byte_identical_confirmed": [
+      "box__contourSlice", "plane__contourSlice", "pyramid__contourSlice", "solid(buckyball)__contourSlice", "cylinder__contourSlice",
+      "sphere__hatch", "ellipsoid__hatch", "cone__hatch", "cylinder__hatch", "torus__hatch", "capsule__hatch", "box__hatch", "plane__hatch", "pyramid__hatch"
+    ],
+    "all_14_cases_matched": true
+  },
+  "evidence_capture": {
+    "command": "node scripts/audit/scene3d-capture.js --tier A --root .claude/worktrees/fill-audit-d2 --port 8481 --only '^(cone|capsule|ellipsoid|cylinder|sphere|torus)__contourSlice__ladder__med__(a|b)$' --out docs/3d-audit/fill-audit/after/W-34",
+    "cells_captured": 12,
+    "run_from": "MAIN repo root, served from the fill-audit-d2 worktree at :8481 (appVersion 1.3.99, matches worktree package.json)"
+  },
+  "ink_before_after_full_pipeline_manifest_med_camera_a_and_b": {
+    "note": "'before' = main's existing gallery capture (manifest.A.1-1.jsonl, appVersion 1.3.98, pre-W-34). 'after' = this unit's capture from the fixed worktree. inkMm is the FULL app pipeline (post-simplify), not the raw generate() totals in the RGR numbers above -- raw generate() point counts (T4) are a different, earlier pipeline stage.",
+    "sphere":    { "a": { "before_inkMm": 1311.2, "after_inkMm": 1243.8, "before_pathCount": 95, "after_pathCount": 94 }, "b": { "before_inkMm": 1267.6, "after_inkMm": 1281.8, "before_pathCount": 95, "after_pathCount": 95 } },
+    "ellipsoid": { "a": { "before_inkMm": 1437.3, "after_inkMm": 1457.2, "before_pathCount": 91, "after_pathCount": 91 }, "b": { "before_inkMm": 1360.8, "after_inkMm": 1378.7, "before_pathCount": 95, "after_pathCount": 95 } },
+    "cone":      { "a": { "before_inkMm": 914.3,  "after_inkMm": 917.3,  "before_pathCount": 95, "after_pathCount": 95 }, "b": { "before_inkMm": 797.5,  "after_inkMm": 781.3,  "before_pathCount": 102, "after_pathCount": 101 } },
+    "cylinder":  { "a": { "before_inkMm": 1264.9, "after_inkMm": 1264.9, "before_pathCount": 106, "after_pathCount": 106, "byte_identical": true }, "b": { "before_inkMm": 1293.2, "after_inkMm": 1293.2, "before_pathCount": 106, "after_pathCount": 106, "byte_identical": true } },
+    "torus":     { "a": { "before_inkMm": 1123.2, "after_inkMm": 1098.6, "before_pathCount": 109, "after_pathCount": 107 }, "b": { "before_inkMm": 989.6,  "after_inkMm": 1000.7, "before_pathCount": 103, "after_pathCount": 103 } },
+    "capsule":   { "a": { "before_inkMm": 1444.1, "after_inkMm": 1385.3, "before_pathCount": 91, "after_pathCount": 90 }, "b": { "before_inkMm": 1426.5, "after_inkMm": 1318.4, "before_pathCount": 87, "after_pathCount": 85 } }
+  },
+  "look": {
+    "cone_apex_crop_190x0_to_390x180_native": "IDENTICAL in character before vs after -- the sharp inverted-V chevron near the near-apex rings is still present, unchanged, exactly as the ruling requires (true geometry, Fix A/B correctly leave it alone; only Fix C, forbidden here, would remove it).",
+    "capsule_corner_crop": "DRAMATIC visible fix -- 'before' shows clearly polygonal/faceted corners (multiple straight facets meeting at sharp vertices) on the inner nested rings at the stadium shape's 4 corners; 'after' shows every ring as a smooth, continuous round corner with no faceting anywhere. Matches the T3 numeric result (32.4deg -> 8.4deg).",
+    "ellipsoid_upper_left_crop_0x60_to_220x340": "Unexpected side benefit (not this unit's target -- W-35's territory): the small stair-step kinks visible on a couple of clipped ring ends in 'before' are visibly smoother in 'after'. Not claimed as a W-35 fix -- different mechanism (HLR clip-end fidelity vs. refinement stop-condition space) -- but the picture measurably improved and W-35 should re-baseline against this post-W-34 tree per plan §7.2."
+  },
+  "identical_exceptions": [
+    { "cell": "cylinder__contourSlice__ladder__med__a", "reason": "cylinder rings are 2-point straight lines with no interior vertex to subdivide -- refineSliceRing never runs on them. Byte-identical by construction (plan §4)." },
+    { "cell": "cylinder__contourSlice__ladder__med__b", "reason": "same as above." }
+  ]
+}

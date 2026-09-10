@@ -1,0 +1,37 @@
+{
+  "version": "1.3.99",
+  "pkgVersion": "1.3.99",
+  "pageErrors": [],
+  "results": {
+    "bundleDither": {
+      "changed": {
+        "ok": true
+      },
+      "beforeCaveat": false,
+      "afterCaveat": {
+        "text": "Dithered bundle mode can make repeating patterns (moire) more visible than the default Count mode, not less. If you see new banding, switch back to Integer pass count.",
+        "rect": {
+          "x": 12,
+          "y": 569.796875,
+          "width": 266,
+          "height": 54
+        }
+      }
+    },
+    "contFieldTouch": {
+      "changed": {
+        "ok": true
+      },
+      "beforeCaveat": false,
+      "afterCaveat": {
+        "text": "On crosshatch fills, this floor setting floods the whole surface to solid black with no shading left. If your fill looks like a solid dark blob, try a different Field floor option.",
+        "rect": {
+          "x": 12,
+          "y": 611.796875,
+          "width": 266,
+          "height": 54
+        }
+      }
+    }
+  }
+}
