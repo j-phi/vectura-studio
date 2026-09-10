@@ -46,6 +46,7 @@ function parseArgs(argv) {
     else if (a === '--only') out.only = new RegExp(argv[++i]);
     else if (a === '--root') out.root = path.resolve(argv[++i]);
     else if (a === '--no-shard-default') out.noShardDefault = true;
+    else if (a === '--legacy-detail') out.legacyDetail = true;
   }
   return out;
 }
@@ -193,7 +194,7 @@ function shotRelPath(item) {
 // ── In-page: build the scene, style it, generate, gather stats ───────────
 async function buildAndMeasure(page, item, consts) {
   const camera = cameraFor(consts, item.angle);
-  return page.evaluate(({ item, camera, densityValue, solidType }) => {
+  return page.evaluate(({ item, camera, densityValue, solidType, legacyDetail }) => {
     const P = window.Vectura.Scene3D.Params;
     const app = window.app;
     const engine = app.engine;
@@ -207,7 +208,18 @@ async function buildAndMeasure(page, item, consts) {
     q.camera = camera;
     q.ground = { enabled: false };
     q.backdrop = { enabled: false };
-    const bag = { ...(P.PRIMITIVE_PARAM_DEFAULTS[item.primitive] || {}) };
+    // Object rig: seed from the DESERIALIZATION defaults, then overlay the
+    // CREATION defaults — the same bag a real "Add primitive" / primitive
+    // swap gets (engine.setObjectPrimitive -> Scene3D.Params.buildPrimitiveParams,
+    // which is seeded purely from PRIMITIVE_CREATE_DEFAULTS). This fixes the
+    // rig rendering at the deserialization `detail` (16 for most primitives)
+    // instead of what a user actually sees (e.g. sphere detail 28, cone/cylinder
+    // 24, capsule 22). --legacy-detail reverts to the pre-fix deserialization-only
+    // bag for A/B comparison.
+    const bag = {
+      ...(P.PRIMITIVE_PARAM_DEFAULTS[item.primitive] || {}),
+      ...(legacyDetail ? {} : (P.PRIMITIVE_CREATE_DEFAULTS[item.primitive] || {})),
+    };
     if (item.primitive === 'solid') bag.solidType = solidType;
     const OBJ = {
       id: 'obj', name: 'Obj', primitive: item.primitive, params: bag,
@@ -260,7 +272,7 @@ async function buildAndMeasure(page, item, consts) {
       bareCentrelinesOnly,
       appVersion: window.Vectura.APP_VERSION,
     };
-  }, { item, camera, densityValue: DENSITY_VALUES[item.density], solidType: consts.SOLID_DEFAULT_TYPE });
+  }, { item, camera, densityValue: DENSITY_VALUES[item.density], solidType: consts.SOLID_DEFAULT_TYPE, legacyDetail: !!consts.legacyDetail });
 }
 
 // Fixed zoom for every shot (a consistent framing convention, not tuned per
@@ -381,7 +393,11 @@ async function main() {
   const browser = await chromium.launch();
   let page = await openPage(browser, baseUrl);
   const consts = await getConstants(page);
+  consts.legacyDetail = !!args.legacyDetail;
   console.log('served version', consts.version);
+  console.log(consts.legacyDetail
+    ? 'object rig: --legacy-detail set, using PRIMITIVE_PARAM_DEFAULTS (deserialization defaults, detail 16)'
+    : 'object rig: PRIMITIVE_CREATE_DEFAULTS (app creation defaults) merged over PRIMITIVE_PARAM_DEFAULTS');
   console.log('PRIMITIVES', consts.PRIMITIVES.length, 'MAPPERS', consts.MAPPERS.length,
     'fill-style roster', fullStyleRoster(consts).length);
 

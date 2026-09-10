@@ -1,6 +1,6 @@
 # 3D fill audit — SESSION SUMMARY (round 1: 2026-09-05 → 06 · round 2: 2026-09-06 19:05 EDT →)
 
-**ROUND 2 IS COMPLETE AND MERGED (local only). Integration is `4421d514` on `3d-scene/integrate-r2`, v1.4.1 — awaiting the fast-forward onto `main`. NOT pushed.** Round 1 is closed: all units landed,
+**ROUND 2 IS COMPLETE AND MERGED INTO LOCAL `main` at `9cf09b39`, v1.4.1** (the merge of `3d-scene/integrate-r2 @4421d514`, with the docs commit `1e504ce6` beneath it). Merge review **ACCEPT** (`MERGE-review-r2.md` — every claim reproduced). Main is **44 ahead of origin/main and NOT pushed**; pushing remains Jay's call. Round 1 is closed: all units landed,
 reviewed, and merged into local `main` at `817424dc`, with the docs wrap-up at `6ad1d93e` and the ledger
 record at `47a5a755`. **The seven round-1 `3d-scene/*` lanes are historical**; round 2 runs in five NEW
 worktrees branched off `main` — map and first-unit briefs in `ROUND2-BRIEFS.md`, queue in `LEDGER.md`
@@ -118,11 +118,22 @@ T2 iteration 2, T3, W-31b, W-35b, U9b+W-10d-3b, U7-2 and W-37 — enough for a f
 | 16 (2026-09-06 18:31) | crosshatch renders ONE family | **FIXED (W-36) — and it reframed your rule.** Gap ratio B:A **5.4–31.2× → 0.814–1.061**; your own cell went **A 17 / B 3 → A 9 / B 11**. But the review found the pre-audit design **already spent ONE shared budget across both families** (sphere d=50 was A 15 / B 11 against a hatch count of 24), so *"each family carries the hatch count"* was never the shipped convention — hence **§4 decision 6**, a three-way choice. Superseded detail: | — *"make crosshatch have the same number of crosshatch lines as it has hatch lines unless … variation is needed for highlight/shadow. This seems off."* | **OPEN → W-36, P1.** Sphere/ladder/fine-rungs/d=50 shows ~22 bands and **no** crossing family; montage counts cylinder ≈ 30 vs ≈ 5, ellipsoid ≈ 25 vs ≈ 4, T1 sphere ≈ 24 vs ≈ 8, against v1.3.98's ≈ 22 vs ≈ 20 — **a regression between v1.3.98 and the merge**. Prime suspect `CROSS_SHARE_BASE = 0.1` (`surface-fill.js:4652`) → crossing coverage 10% of family A's at ratio 1. Lane fill-audit-a2, before W-31 |
 | "not close to zero yet" (F1) | torus ribbon streaks | **OPEN, mechanism found** — 62.63 mm² bare strip, 30× A3's whole residue; Prototype B ruled, deep blank 11.89 → **0.28 mm²**. |
 
-## 5b. ROUND-2 MERGE — DONE (local only), pending fast-forward
+## 5b. ROUND-2 MERGE — DONE (local only)
 
-**Integration is `4421d514` on `3d-scene/integrate-r2`, v1.4.1** (`MERGE-impl-r2.md`). Five lanes merged
-`--no-ff`; **merge, not rebase**. Merge review in flight (`a7d39601..4421d514`). **`main` fast-forward sha:
-`<PENDING>`** — to be filled in when the orchestrator confirms it. **NOT pushed.**
+**Local `main` is `9cf09b39`** — the merge of `3d-scene/integrate-r2 @4421d514`, **v1.4.1**, with the docs
+commit `1e504ce6` beneath it (`MERGE-impl-r2.md`). Five lanes merged `--no-ff`; **merge, not rebase**.
+Merge review **ACCEPT** (`MERGE-review-r2.md`, pinned `a7d39601..4421d514`) — all claims reproduced, safe to
+fast-forward, and it was. `package.json` reads **1.4.1**, tree clean, **44 ahead of `origin/main`. NOT pushed.**
+
+- **The five round-2 lanes are now HISTORICAL — `fill-audit-a2 @94cca882`, `fill-collapse-2 @9aad87b8`,
+  `fill-audit-d2 @392696ac`, `fill-audit-2 @79b626d2`, `handoff-c2 @ed778940`. Nobody works in them; read them
+  as provenance. The next session branches off `main`.**
+- **The gallery rebuild is RUNNING NOW on `main`, as the last step** — W-32's creation-defaults re-shoot,
+  W-28b's taller-listbox re-shoot, then `scene3d-assemble.js` → `scene3d-audit-findings.js` →
+  `scene3d-before-after.js`. It also picks up the two evidence dirs known stale (W-30c's two torus "after"
+  frames, superseded by W-30d on the same lane; W-28b's listbox at option count 36 → 34 after the U7/U8 fold).
+  The gallery was last built **2026-09-05 20:11** and predates every round-2 unit; expect the 47 unexplained
+  byte-identical pairs to resolve.
 
 - **`test:ci` ZERO failures** on the integrated tree: unit **5199**, integration **1973**, e2e **62**,
   visual **99**, perf **10**. Version **1.4.1** synced; CHANGELOG, README and `plans.md` landed.

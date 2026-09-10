@@ -155,10 +155,16 @@ const waitForServer = (url, timeoutMs) => new Promise((resolve, reject) => {
       await panel.screenshot({ path: path.join(outDir, 'shots', `${fileBase}-collapsed.png`) });
 
       // Then force the SAME select into a visible listbox for the capture
-      // only (does not change .disabled/.value on any option).
+      // only (does not change .disabled/.value on any option). Sized to
+      // el.options.length (36), not capped at 16 — the review flag: the 9
+      // rows that flip between case A and case B are scattered across the
+      // full 36-option roster (indices 12, 15-17, 27, 32-35), so a capped
+      // size=16 listbox only ever showed `End Shorten` (index 12) and left
+      // the other 8 below the fold. Uncapped, the panel screenshot grows to
+      // the full listbox height and every row is visible with no scroll.
       await selectHandle.evaluate((el) => {
         el.dataset.__w28bOrigSize = String(el.size || 0);
-        el.size = Math.min(el.options.length, 16);
+        el.size = el.options.length;
         el.style.height = 'auto';
       });
       await panel.screenshot({ path: path.join(outDir, 'shots', `${fileBase}-expanded.png`) });

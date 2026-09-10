@@ -7,9 +7,9 @@
       "mode": "small",
       "totalFaces": 12,
       "solidType": "importedMesh",
-      "optionCount": 36,
+      "optionCount": 34,
       "enabledCount": 11,
-      "disabledCount": 25,
+      "disabledCount": 23,
       "noteText": "This shape is faceted: fill styles greyed out above draw exactly like Ladder here, whichever one is picked.",
       "options": [
         {
@@ -113,11 +113,6 @@
           "disabled": true
         },
         {
-          "value": "weaveDepth",
-          "label": "Weave Depth — no effect here",
-          "disabled": true
-        },
-        {
           "value": "interlockWeave",
           "label": "Interlock Weave — no effect here",
           "disabled": true
@@ -130,11 +125,6 @@
         {
           "value": "amplitudeOnly",
           "label": "Amplitude Only — no effect here",
-          "disabled": true
-        },
-        {
-          "value": "onePenDown",
-          "label": "One Pen Down — no effect here",
           "disabled": true
         },
         {
@@ -199,9 +189,9 @@
       "mode": "large",
       "totalFaces": 80,
       "solidType": "importedMesh",
-      "optionCount": 36,
+      "optionCount": 34,
       "enabledCount": 2,
-      "disabledCount": 34,
+      "disabledCount": 32,
       "noteText": "This solid has no planar fill support, and its body exceeds the fill engine’s per-object face budget — so even the styles that work on a box/plane fall back to Ladder here. Only NO TONE still differs. A simpler solid (fewer faces) can restore the rest.",
       "options": [
         {
@@ -305,11 +295,6 @@
           "disabled": true
         },
         {
-          "value": "weaveDepth",
-          "label": "Weave Depth — no effect here",
-          "disabled": true
-        },
-        {
           "value": "interlockWeave",
           "label": "Interlock Weave — no effect here",
           "disabled": true
@@ -322,11 +307,6 @@
         {
           "value": "amplitudeOnly",
           "label": "Amplitude Only — no effect here",
-          "disabled": true
-        },
-        {
-          "value": "onePenDown",
-          "label": "One Pen Down — no effect here",
           "disabled": true
         },
         {
@@ -387,5 +367,5 @@
       ]
     }
   ],
-  "appVersion": "1.3.99"
+  "appVersion": "1.4.1"
 }
