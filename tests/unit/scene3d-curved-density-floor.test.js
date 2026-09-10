@@ -38,13 +38,14 @@ const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, truncate: tru
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
 describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches drawn geometry', () => {
-  let runtime; let V; let algo; let defaults;
+  let runtime; let V; let algo; let defaults; let SurfaceFill;
 
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d; // objects[0] is the app-default sphere
+    SurfaceFill = V.Scene3D.SurfaceFill;
   });
   afterAll(() => runtime.cleanup());
 
@@ -69,6 +70,34 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
     const paths = algo.generate(params, null, null, { ...BOUNDS, fastPreview: false }) || [];
     const t1 = Date.now();
     return { count: fillCount(paths), ms: t1 - t0 };
+  };
+
+  // W-36 — the crossing family's OWN ruling count (`A#1`), read off the raw
+  // `SurfaceFill.buildObject` runs the same way `scene3d-crosshatch-parity
+  // .test.js` does (only `.fam`/`.lineIndex` survive there; `runSphere`'s
+  // `fillCount` above is the TOTAL of both families and can no longer show
+  // what the dial does to family B alone once family A also moves).
+  const crossFamilyBCount = (d, ratio) => {
+    const params = sceneParams(defaults.objects);
+    params.styleTable.byObject['obj-1'] = {
+      penId: null, mapper: 'crosshatch', params: { fillAngle: 45, fillDensity: d, crossDensityRatio: ratio },
+    };
+    const seen = [];
+    const real = SurfaceFill.buildObject;
+    SurfaceFill.buildObject = (o) => {
+      const r = real(o);
+      if (Array.isArray(r)) r.forEach((run) => seen.push(run));
+      return r;
+    };
+    try {
+      algo.generate(params, null, null, { ...BOUNDS, fastPreview: false });
+    } finally {
+      SurfaceFill.buildObject = real;
+    }
+    const front = seen.filter((r) => !r.back);
+    const fams = Array.from(new Set(front.map((r) => r.fam))).sort();
+    const bFam = fams[1]; // A#0 = primary, A#1 = crossing (see parity test §3.0)
+    return new Set(front.filter((r) => r.fam === bFam && r.lineIndex != null).map((r) => r.lineIndex)).size;
   };
 
   test('test seam is published', () => {
@@ -242,42 +271,54 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
       expect(runSphere(100, 'hatch').count).toBe(53);
     });
 
-    // RE-PINNED A FOURTH TIME (W-26b-1, judge C1). The crosshatch SECOND
-    // family used to independently chase the exact same `ladderCov(I)`
-    // target family A does — two crossed families each at coverage c combine
-    // to `1-(1-c)^2`, which saturated a cylinder at Density 220 to a 0.906
-    // silhouette ink-coverage solid block (+89.9% ink) while `crossDensityRatio`
-    // (the "how much sparser is the crossing family" control) barely moved
-    // the count any more: this file's own d=100 spread had collapsed 2.2x
-    // (183 vs 83) -> 1.12x (130 vs 116). Fixed in `ladderCrossWantedPitch`
-    // (`surface-fill.js`) — the crossing family now asks for a SHARE of
-    // family A's own coverage (`crossDensityRatio`-derived), not the SAME
-    // full target — with `dfMaxMul` widening the walk's own step ceiling to
-    // match, since the ceiling (built from the SAME `count` family A's own
-    // call sees) otherwise clamped the wider share-driven pitch straight back
-    // down and the ratio-1-vs-ratio-0.25 ink spread stayed near 1.6x no
-    // matter how far the coverage share was cut. Restored: d=10 20->22 /
-    // 18->10 (2.2x, matches the PRE-W-26 tree's own 2.2x almost exactly);
-    // d=100 130 (unchanged — already near its own saturation ceiling, see
-    // the ratio assertion below) / 116->60 (2.3x).
-    test('crosshatch mapper (ratio-scaled family B): pinned fill counts at d=10/100, ratio 0.25 and 1.0', () => {
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(22);
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(10);
-      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(138);
-      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(60);
+    // RE-PINNED A FIFTH TIME (W-36, PROOF — see `## Bars changed` in that
+    // unit's commit body and docs/3d-audit/lane-reports/W-36-impl.md).
+    // W-26b-1 gave the crossing family a SHARE of family A's own coverage
+    // (`crossShareOf`, `CROSS_SHARE_BASE = 0.1`) — at the shipped
+    // `crossDensityRatio = 1` that made family B's wanted PITCH ~10x family
+    // A's (USER report 16: a crosshatch sphere reads as ONE family). W-36
+    // replaces that with `CROSS_PAIR_BUDGET = 1.1` split evenly between the
+    // two families (`crossPairShare`, `ladderPairWantedPitch`) — the same
+    // measured-safe SUM W-26b-1 proved plot-safe, redistributed rather than
+    // widened. Family A now also spends its HALF of the shared budget
+    // (previously the whole of `ladderCov`), so its own (TOTAL, both
+    // families) count moves too — this is the intended, measured
+    // consequence, not a regression: d=10 ratio 0.25 22 -> 18 / ratio 1.0
+    // 10 -> 11 (family B alone was drawing as few as 1 ruling here — this
+    // is Jay's literal defect); d=100 ratio 0.25 138 -> 114 / ratio 1.0
+    // 60 -> 64. Measured via `crossFamilyBCount` (family-split, not
+    // `runSphere`'s TOTAL): d=10 ratio 0.25 -> A 3 / B 9; ratio 1 -> A 3 /
+    // B 4; ratio 2 -> A 3 / B 3. d=100 ratio 0.25 -> A 20 / B 61; ratio 1 ->
+    // A 20 / B 26; ratio 2 -> A 20 / B 13.
+    test('crosshatch mapper (pair-budget family B): pinned fill counts at d=10/100, ratio 0.25 and 1.0', () => {
+      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(18);
+      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(11);
+      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(114);
+      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(64);
     });
 
-    // W-26b-1 (judge C1) — the control the pinned counts above cannot show
-    // on their own: the RATIO between a dense (0.25) and even (1.0)
-    // `crossDensityRatio` must be restored to at least the pre-W-26 tree's
-    // own spread (183 vs 83 = 2.2x), not the broken 1.12x this commit
-    // inherited.
-    test('crosshatch mapper: crossDensityRatio spread restored to >=2.0x at d=10 and d=100', () => {
-      const d10Dense = runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count;
-      const d10Even = runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count;
-      const d100Dense = runSphere(100, 'crosshatch', { crossDensityRatio: 0.25 }).count;
-      const d100Even = runSphere(100, 'crosshatch', { crossDensityRatio: 1.0 }).count;
-      expect(d10Dense / d10Even).toBeGreaterThanOrEqual(2.0);
+    // REPLACED (W-36, PROOF). The old bar ("TOTAL fill count spread between
+    // crossDensityRatio 0.25 and 1.0 restored to >=2.0x") is now arithmetically
+    // incompatible with Jay's own rule: it was large only because ratio-1
+    // produced a near-invisible family B, so the denominator was ~family A
+    // alone. Parity necessarily roughly doubles that denominator (family A
+    // now shares the budget too) and dilutes any total-count spread —
+    // measured 1.636 (d=10) / 1.781 (d=100), both now BELOW the old >=2.0
+    // bar despite the crossing family being MORE responsive to the dial than
+    // before, not less. The direct, honest measurement of the control the
+    // dial actually owns is the CROSSING FAMILY's own count across the dial
+    // ends, which this replacement bar checks instead:
+    //   nB(0.25) / nB(2)   d=10:  9 / 3 = 3.00   (>= 2.5)
+    //   nB(0.25) / nB(2)   d=100: 61 / 13 = 4.69 (>= 2.5)
+    //   nB(0.25) / nB(1.0) d=100: 61 / 26 = 2.35 (>= 2.0)
+    test("crosshatch mapper: crossing family's own count spans >=2.5x across the crossDensityRatio dial ends (0.25 vs 2.0) at d=10 and d=100", () => {
+      const d10Dense = crossFamilyBCount(10, 0.25);
+      const d10Sparse = crossFamilyBCount(10, 2.0);
+      const d100Dense = crossFamilyBCount(100, 0.25);
+      const d100Even = crossFamilyBCount(100, 1.0);
+      const d100Sparse = crossFamilyBCount(100, 2.0);
+      expect(d10Dense / d10Sparse).toBeGreaterThanOrEqual(2.5);
+      expect(d100Dense / d100Sparse).toBeGreaterThanOrEqual(2.5);
       expect(d100Dense / d100Even).toBeGreaterThanOrEqual(2.0);
     });
 

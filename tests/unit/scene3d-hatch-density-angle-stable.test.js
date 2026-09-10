@@ -51,6 +51,23 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * per-location direction field, under camera/occlusion conditions symmetric
  * enough not to trigger (2) — measuring the actual rendered angle (not the
  * way the owner observed the bug.
+ *
+ * W-36b (2026-09-09): W-36 split crosshatch's ink share ~50/50 between its
+ * two families (previously family A held ~91%). The COMBINED, ink-weighted
+ * bearing this file's crosshatch sub-tests used to measure is a near-50/50
+ * vector average of two bearings that are themselves far from parallel on
+ * sphere/cone at this angle — that combination is maximally sensitive to a
+ * small (2-5%) shift in the inter-family ink-share ratio, which is exactly
+ * what W-36 legitimately moves. Measured per-family (sphere bearingA
+ * 63.05->62.08deg, bearingB 168.711->168.715deg; cone bearingA 84.40->83.05deg,
+ * bearingB 144.175->144.181deg, Density 50->150): every family is stable to
+ * well under 1.5deg. The combined metric was the flawed instrument, not a
+ * moved direction field — this guard's own docstring intent above ("no code
+ * path derives a line's direction from spacing/density/count") is a
+ * PER-FAMILY claim, so the crosshatch sub-tests below now measure each
+ * family separately instead of a combined vector average. Ruled by
+ * W-36-review.md Sec.(5) and cross-checked independently by the W-36
+ * implementer; see docs/3d-audit/lane-reports/W-36b-impl.md.
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -97,13 +114,14 @@ const CURVED = {
 };
 
 describe('Scene3D — the per-location fill direction field is Density-invariant (curved primitives)', () => {
-  let runtime; let V; let algo; let defaults;
+  let runtime; let V; let algo; let defaults; let SurfaceFill;
 
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;
+    SurfaceFill = V.Scene3D.SurfaceFill;
   });
   afterAll(() => runtime.cleanup());
 
@@ -131,6 +149,40 @@ describe('Scene3D — the per-location fill direction field is Density-invariant
     (algo.generate(scene(primitive, params, mapper, fillAngle, density), null, null, BOUNDS) || [])
       .filter((pp) => pp.meta && pp.meta.kind === 'sceneFill');
 
+  // W-36b — per-family raw runs. `.fam`/`.back` only survive on
+  // SurfaceFill.buildObject's raw return (scene3d.js re-emits fills without
+  // them), so this wraps it exactly like scene3d-crosshatch-parity.test.js's
+  // `rawRuns`/`crosshatchStats` idiom. Family identity is order-of-first-
+  // -appearance: surface-fill.js's crosshatch path always builds family A
+  // (role 'a') to completion before family B (role 'b') — see
+  // src/core/scene3d/surface-fill.js:11077-11097 — so "family A" / "family
+  // B" below name the SAME physical family across a density comparison
+  // within one `rawFamilyRuns` call pair, exactly like the parity test's own
+  // `[famA, famB] = fams`.
+  const rawFamilyRuns = (primitive, params, fillAngle, density) => {
+    const seen = [];
+    const real = SurfaceFill.buildObject;
+    SurfaceFill.buildObject = (o) => {
+      const r = real(o);
+      if (Array.isArray(r)) r.forEach((run) => seen.push(run));
+      return r;
+    };
+    try {
+      algo.generate(scene(primitive, params, 'crosshatch', fillAngle, density), null, null, BOUNDS);
+    } finally {
+      SurfaceFill.buildObject = real;
+    }
+    const front = seen.filter((r) => !r.back);
+    const fams = [];
+    front.forEach((r) => { if (r.fam && fams.indexOf(r.fam) === -1) fams.push(r.fam); });
+    expect(fams.length).toBe(2);
+    const [famA, famB] = fams;
+    return {
+      a: front.filter((r) => r.fam === famA),
+      b: front.filter((r) => r.fam === famB),
+    };
+  };
+
   // Distinctive non-45 deg angle, exactly as the owner reproduced it.
   const FILL_ANGLE = 20;
   // Generous vs. the measured noise floor (<1.4 deg on the worst curved case,
@@ -154,12 +206,29 @@ describe('Scene3D — the per-location fill direction field is Density-invariant
       expect(b50again).toBe(b50);
     });
 
-    test('crosshatch: mean rendered bearing is stable across Density 50 -> 150 -> 50', () => {
-      const b50 = meanBearing(fillsOf(primitive, params, 'crosshatch', FILL_ANGLE, 50));
-      const b150 = meanBearing(fillsOf(primitive, params, 'crosshatch', FILL_ANGLE, 150));
-      expect(Number.isFinite(b50)).toBe(true);
-      expect(Number.isFinite(b150)).toBe(true);
-      expect(bearingGap(b50, b150)).toBeLessThan(TOLERANCE_DEG);
+    // W-36b: re-expressed PER FAMILY (was one combined, ink-weighted vector
+    // average across both crosshatch families). See the file header note
+    // dated 2026-09-09: since W-36 the two families carry near-equal ink
+    // share and are far from parallel on sphere/cone at this angle, so their
+    // combined vector average is maximally sensitive to a small shift in
+    // that ink-share ratio — an instrument flaw, not a direction-field
+    // regression. The guard's docstring intent ("no code path derives a
+    // line's direction from spacing/density/count") is a per-family claim;
+    // this measures it as one. Tolerance UNCHANGED at 3deg — only the metric
+    // changed (combined vector average -> two per-family bearings).
+    test('crosshatch: per-family mean rendered bearing is stable across Density 50 -> 150', () => {
+      const r50 = rawFamilyRuns(primitive, params, FILL_ANGLE, 50);
+      const r150 = rawFamilyRuns(primitive, params, FILL_ANGLE, 150);
+      const bA50 = meanBearing(r50.a);
+      const bA150 = meanBearing(r150.a);
+      const bB50 = meanBearing(r50.b);
+      const bB150 = meanBearing(r150.b);
+      expect(Number.isFinite(bA50)).toBe(true);
+      expect(Number.isFinite(bA150)).toBe(true);
+      expect(Number.isFinite(bB50)).toBe(true);
+      expect(Number.isFinite(bB150)).toBe(true);
+      expect(bearingGap(bA50, bA150)).toBeLessThan(TOLERANCE_DEG);
+      expect(bearingGap(bB50, bB150)).toBeLessThan(TOLERANCE_DEG);
     });
   });
 
