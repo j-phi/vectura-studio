@@ -32,7 +32,7 @@
  * listbox instead of a closed dropdown — the picker's real disabled state is
  * untouched.
  *
- *   node scripts/w28b-face-count-threshold-evidence.js [baseUrl] [outDir]
+ *   node scripts/audit/w28b-face-count-threshold-evidence.js [baseUrl] [outDir]
  * With no baseUrl, starts and kills its own dev server on port 8476.
  */
 const path = require('path');
@@ -41,7 +41,7 @@ const { spawn } = require('child_process');
 const { chromium } = require('@playwright/test');
 
 const PORT = 8476;
-const WORKTREE_ROOT = path.resolve(__dirname, '..');
+const WORKTREE_ROOT = path.resolve(__dirname, '..', '..');
 const argBaseUrl = process.argv[2];
 const baseUrl = argBaseUrl || `http://localhost:${PORT}`;
 const outDir = process.argv[3]

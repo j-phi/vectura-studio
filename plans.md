@@ -22,6 +22,29 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **3D fill audit round 2 — post-merge queue (2026-09-10, integration branch
+  `3d-scene/integrate-r2`, v1.4.1, NOT pushed and `main` NOT fast-forwarded).** Work these in
+  order; none is auto-started.
+  1. **U9b (with W-10d-3b folded in)** — the first unit that can only run on the integrated tree,
+     because no lane held both `clampShadowToneLaw` (handoff-c2) and `PICKER_IDS = 33`
+     (fill-collapse-2). Re-pin `scene3d-shadow-tone-law-uniqueness.test.js` from "one build per
+     OFFERED law id" to "offered set × each survivor's collapse options", with old/new offered
+     counts and a collision count of 0 under `## Bars changed`; exclude the `penDown`
+     COMBINATION (pin `penDown:'perRuling'`, do not render the sub-control); answer W-10d-3b's
+     `fineLadder` → `Ladder` label question at `shadows.js:2713`; run the survivor × sub-control
+     live sweep. The file is **26/26 green as-is**, so this is a bar-strengthening, not a repair.
+  2. **The gallery rebuild — LAST, once, orchestrator only.** `scene3d-assemble.js` →
+     `scene3d-audit-findings.js` → `scene3d-before-after.js`. Fold in **W-32's re-shoot at
+     CREATION defaults** and **W-28b's re-shoot with a taller or scrolled listbox** (9 rows flip
+     between the small- and large-import cases, not just `End Shorten`; the merge also moved its
+     option count 36 → 34, so its committed evidence is stale twice over).
+  3. **Lane work resumes:** T2 iteration 2 → T3 on `fill-audit-a2`, W-31b, W-35b, F1-placement.
+  4. **Filed follow-ups from the merge:** open a **"3D Scene" tab in the in-app Help Guide**
+     (`src/ui/modals/help-shortcuts.js` has no 3D section at all — W-35's help copy landed on the
+     control instead, via the new descriptor `help` field); and W-35 review item (a), a coarse
+     end-to-end tripwire of the shape *"run count never drops by more than 1 between adjacent k
+     steps on a non-self-occluding primitive"* — **not written at merge**, because the
+     W-27c-0a crowd-cull confound makes an honest monotonic oracle unwritable today.
 - **3D fill audit — per-lane resume order (2026-09-06, after the local merge into
   `3d-scene/integrate`).** No item below is auto-started; each needs a fresh worktree off the
   merged integration branch (or main, once fast-forwarded). Per lane:
@@ -401,6 +424,16 @@ or completes.
   `tests/unit/text-outline-ops.test.js`).
 
 ## Blocked on Jay
+Nine 3D-fill-audit decisions are frozen and must NOT be implemented at merge or by a lane; each
+needs a call. In `docs/3d-audit/lane-reports/MERGE-plan-r2.md` §7 and `LEDGER.md`: **(1)** W-06 max
+density / T4 · **(2)** `penStipple` mark class / U6 · **(3)** ground-plane density after W-15c ·
+**(4)** F1 "which white did you mean?" · **(5)** W-27c-0a — which defect do you mean: the thicker
+line (already inside one pen width at 0.783/0.849 mm) or the smear · **(6)** W-36's budget
+convention (a three-way choice, not a yes/no) · **(7)** F-14 graded — close as by-design, or expose
+`FACET_MIN_RULINGS` · **(8)** W-34 Fix C, cone apex-band warping (a look change to exact geometry) ·
+**(9)** W-32 Rank 3/4, refine the fill border to the true silhouette (which would also satisfy
+W-35). Details for 1–7 below and in `docs/audit-remediation-todo.md`.
+
 Seven audit decisions (full options in `docs/audit-remediation-todo.md`) plus two design
 questions. Do not start these without a decision:
 - **3D fill audit — W-06 max density (2995 → 529 mm ink).** Accept the lighter mkDashRamp max as
@@ -459,6 +492,26 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
+  (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
+  Merged `3d-scene/handoff-c2` → `3d-scene/fill-collapse-2` → `3d-scene/fill-audit-2` →
+  `3d-scene/fill-audit-d2` → `3d-scene/fill-audit-a2`, in that order, with `git merge --no-ff`
+  (no rebase — a rebase would have re-asked each collision once per replayed commit). Landed:
+  crosshatch budget parity (W-36/W-36b), the curved-corner fidelity cluster (W-33/W-34/W-34b),
+  the shadow-receive cluster (W-30b/W-30c/W-30d) with its documented ~465:1 thin-torus
+  limitation, the U7/U8 roster folds, U5b/U5b-2/3's plain-language caveats, U9's shadow-bag
+  resolve, W-28b's small-import cap fix, W-10d-2/W-10d-3's picker-display fixes, T1b's mark
+  spacing, and W-35's `sliceEndOverlap`. **Two textual conflicts** — `src/config/context-bar.js`
+  (add/add: `effectiveLaw` and `displayParams` are different lookups on different mechanisms;
+  took BOTH) and the `torus + contour + ladder @ d=50` md5 in
+  `scene3d-curved-density-sparse-end.test.js` (neither side correct; re-measured on the merged
+  source as `bc212164fdc8e72486dcef4e200eaa8d`). **One semantic conflict** — W-10d-3's
+  `ALIASES.length` pin of 13 against U7's 14th and U8's 15th alias; a stale assertion, corrected
+  to 15 and disclosed. Also discharged at merge: the U1–U5 clusters re-run through U7's
+  multi-primitive × density harness, four evidence scripts relocated to `scripts/audit/` and
+  re-run byte-identical, the C-05 "byte-identical" claim corrected in `findings.json` /
+  `worklist.json`, the W-26 hygiene pair, and Unit F's stale "intentionally RED" bar (measured 0
+  on both the integration tree and unmodified `main`, tightened `<= 2` → `=== 0`).
 - **2026-09-06 — 3D fill audit merge: seven lanes, ~35 W-ids landed, roster collapsed 48 → 35
   (local integration branch `3d-scene/integrate`, NOT pushed).** Merged `3d-scene/handoff-c` →
   `3d-scene/handoff-b` → `3d-scene/fill-audit` → `3d-scene/fill-audit-a` → `3d-scene/fill-audit-c`

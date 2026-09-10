@@ -1109,6 +1109,47 @@ describe('Fill Style — context-bar Style flyout', () => {
     expect(caveat.textContent).toMatch(/moire/);
   });
 
+  // MERGE CHECKLIST item 7 (integration r2, 2026-09-10) — THE ONE BEHAVIOUR NO
+  // LANE COULD TEST. U5b's caveat renderer (`effectiveLaw`) lives on
+  // fill-collapse-2; W-10d-3's raw-folded-id display seed (`displayParams`)
+  // lives on fill-audit-2. Until this merge the two had never been in one tree,
+  // so nobody could check the case where they meet: a `.vectura` saved BEFORE
+  // the collapse, whose style bag still carries a RAW FOLDED `toneLaw` and no
+  // sibling collapse key at all.
+  //
+  // RED at the merge point: the ctxbar flyout computed
+  // `effectiveLaw(law, params)` off the UN-SEEDED bag, which has no
+  // `bundleMode`, so `effectiveLaw` returned the bare survivor and the folded
+  // law's own measured caveat vanished — the survivor's silence, exactly what
+  // the standing ruling "folding a law must NOT hide its measured caveat"
+  // forbids. The docked panel already did this correctly (it seeds
+  // `styleParamBag` through `displayParams` FIRST, scene3d-panel.js:716); the
+  // ctxbar computed its seeded bag only AFTER the caveat, and used it only for
+  // the sub-control selects. A one-site ordering drift between two surfaces
+  // whose stated contract is that they must not drift.
+  test('MERGE r2 item 7 — a RAW folded toneLaw (bundleDither, saved pre-collapse) still shows its OWN caveat in the ctxbar flyout', () => {
+    const { fly } = openStyle({
+      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleDither' } } }),
+    });
+    // The picker resolves the row to the survivor — that half was already right.
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('bundleCount');
+    // ...and the sub-control displays the folded value (W-10d-3).
+    expect(rowCtl(fly, 'Bundle mode').querySelector('select').value).toBe('dither');
+    // The caveat must be bundleDither's own, not the survivor's silence.
+    const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/moire/);
+  });
+
+  test('MERGE r2 item 7 — a RAW folded toneLaw (contFieldTouch) likewise shows its own caveat in the ctxbar flyout', () => {
+    const { fly } = openStyle({
+      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldTouch' } } }),
+    });
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('contFieldSigmoid');
+    expect(rowCtl(fly, 'Field floor').querySelector('select').value).toBe('touch');
+    expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeTruthy();
+  });
+
   test('U5b — picking a folded sub-control value (Field floor: Ink-width floor) surfaces contFieldTouch\'s own caveat in the ctxbar flyout', () => {
     const { fly } = openStyle({
       styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldSigmoid' } } }),

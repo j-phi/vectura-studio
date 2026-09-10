@@ -6,6 +6,78 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added
+- **3D Scene · Slices gains an End overlap control.** How far each depth-slice ring is carried
+  past (or pulled back from) the object's silhouette, in pen widths (−2…8, step 0.25). **The
+  default is 0 and is byte-identical to previous builds** — nothing about an existing scene
+  changes until you move the slider. Increase it for a continuous outer edge; decrease it to keep
+  wet ink off the outline. Inert on faceted primitives (box, plane, pyramid), where slice ends are
+  not smoothed. (W-35)
+
+### Changed
+- **3D Scene · Fill Style picker: two more near-duplicate options folded away (35 → 33).**
+  `weaveDepth` now lives behind a **Nesting** control on Amplitude Spacing (`single` / `nested`),
+  and `onePenDown` behind a **Pen down** control on Interlock Weave (one stroke per ruling / one
+  pen-down per family — a real 198-vs-106-path plotting economy, not a picture difference). Both
+  render exactly as before; ink is within 0.2% on the `ampSpacing` pair. Saved documents resolve to
+  the surviving option automatically at load. `trochoidLoop` is deliberately NOT folded — it draws
+  12% more ink with visibly different polygon shards, so it keeps its own row. **No forward
+  compatibility: a file saved here opens as plain Ladder in an older build.** (U7, U8)
+- **3D Scene · Fill Style caveats are written in plain language.** The picker's warnings for
+  Dithered bundle mode and the Ink-width field floor now say what you will see and what to do
+  about it, instead of quoting raw audit measurements. (U5b, U5b-2)
+- **3D Scene · crosshatch draws a real crossing grid again.** The two crosshatch line families now
+  split one shared coverage budget evenly instead of the second family receiving roughly a tenth of
+  the first's. Measured gap ratio between the families falls from 5.4–31.2× to 0.81–1.06 across
+  every primitive and density tested; total ink is essentially preserved (cylinder at Density 220:
+  106 lines vs 108 before the audit, now split 52/54 instead of 94/10). (W-36)
+- **3D Scene · a small imported mesh is no longer cap-limited in the Fill Style picker.** An import
+  whose TOTAL face count is 12 or fewer can never present more than 12 camera-facing faces from any
+  angle, so it now gets the full fill-style roster instead of the two options every import used to
+  be restricted to. (W-28b)
+
+### Fixed
+- **3D Scene · shadows landing on other objects now follow the light.** A point, spot, or area
+  light's shadow-receive footprint on another object's flat face used to be built from a fixed
+  default direction; it now uses the light's real position. Directional lights are unaffected.
+  (W-30b)
+- **3D Scene · area lights keep their soft edge when partially occluded**, instead of losing all
+  softening the instant the centre ray is blocked (`src/core/scene3d/regions.js`). (W-30c)
+- **3D Scene · an ambient light listed before a point, spot, or area light no longer deletes that
+  light's cast shadow** (`src/core/algorithms/scene3d.js`). (W-30c)
+- **3D Scene · a torus now casts a visible, correctly-holed shadow onto other objects.** It
+  previously cast no receive-shadow at all (the footprint's tone was sampled at the hull centroid,
+  which for a torus lands in the ring's real hole), and the first fix for that filled the hole in
+  solid. Both are fixed: the shadow renders, and the caster's own hole re-opens as unshadowed.
+  A razor-thin torus — a large ring with a very thin tube — also no longer casts a blank shadow.
+  **Documented limitation:** the blank-shadow case returns at a major:minor tube ratio of roughly
+  465:1, which the UI cannot reach (the torus `sx` slider caps at 200) but a hand-edited or
+  imported `.vectura`, or a compounded `transform.scale`, can. (W-30c, W-30d)
+- **3D Scene · a saved scene whose cast shadow used a pre-collapse fill style renders that style
+  again**, instead of silently falling back to plain hatch. (U9)
+- **3D Scene · curved fill rulings and slice rings no longer show invented sharp corners.** The
+  ring-refinement stop condition is now measured in device space — millimetres on paper, where the
+  eye sees it — rather than in world space, and the capsule gains its own true cross-section
+  instead of a chord approximation. Worst per-vertex turn on contour fill rulings falls from
+  18.5–38.4° to at or under 8° everywhere; the capsule's slice rings from 297% over their analytic
+  truth to 2.6%. A cone's apex chevron is unchanged, because that corner is exact geometry rather
+  than an artefact. (W-33, W-34)
+- **3D Scene · Slices keeps its evenly-spaced rings.** The crowding cull that merges ink at poles
+  and saddles is now scoped to genuine multi-level pileups, so flat, evenly-spaced regions keep
+  their rings: ink retention on a torus rises from 70.8% to 96.2%, and cone and cylinder are left
+  untouched entirely. A degenerate near-zero-length ring also no longer burns the whole refinement
+  budget subdividing itself into 513 invisible points. (W-27c-0a-4, W-27c-0a-6)
+- **3D Scene · the Style tab and the context-bar Style flyout show the right sub-control value**
+  for a fill law saved before the roster collapse. The canvas was always correct; only the picker's
+  own display was stale. (W-10d-3)
+- **3D Scene · a saved torus using the Origin Spiral fill style now opens as Ladder**, the
+  picker's own default. Origin Spiral cannot be plotted cleanly on a torus — 87.8% of interior
+  pixels are covered by solid ink wedges longer than two pen widths — so that one combination is
+  migrated once, at load. Every other fill-style/primitive pair is untouched. (W-10d-2)
+- **3D Scene · walked mark fills no longer stack near-duplicate stub marks.** Minimum spacing
+  between adjacent marks rises from 0.03 to at least 0.50 pen widths, removing redundant ink a
+  plotter would otherwise re-draw. (T1b)
+
 ## 1.4.0 - 2026-09-06
 
 ### Changed

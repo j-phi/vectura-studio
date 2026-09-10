@@ -421,8 +421,15 @@ different round) → new 1.35×, both re-confirmed against the bar (1.3) with he
 `emitContFamily`'s own `dfMax` step ceiling specifically for `isEvenLadder()` narrows the pole gap
 (1.45× at dfMax/3, 1.66× at dfMax/6) but **breaks** the adjacent RAMP-not-STEP assertion on `hatch`
 at dfMax/6 (a real, measured trade-off, not a free win) — reverted rather than trade one measured
-regression for another. `hatch`'s own bar (1.2) is unaffected by any of this and still measures
-higher than it did before the fix.
+regression for another. `hatch`'s own bar (1.2) is unaffected by any of this.
+
+> **CORRECTION (MERGE CHECKLIST item 17d, integration r2, 2026-09-10).** The sentence that stood
+> here — *"`hatch`'s own bar (1.2) is unaffected by any of this and still measures higher than it
+> did before the fix"* — was wrong on its second clause. The `hatch` BAR is indeed untouched at
+> 1.2, but the measured `hatch` ink RAMP **fell 1.369 → 1.229, −10.2%**. It still clears the 1.2
+> bar, with 2.4% headroom rather than 14%. Saying it "still measures higher" reads as a claim the
+> fix improved hatch; it did not — it cost hatch ramp strength, disclosed here, and the bar was
+> left where it was rather than lowered to hide it.
 
 **Why I am not reopening or re-tightening this bar in this pass:** the review's own verdict
 (ACCEPT-WITH-FOLLOWUPS, item 3) already classified this as "disclosed, argued, not blocking," and
@@ -434,3 +441,27 @@ review's item 4, as one of the two things a judge pass should specifically re-ex
 being the capsule-cap evidence above): a genuine, disclosed, honestly-measured trade-off — a
 one-pole-region ramp-strength reduction (2.08× → 1.35×, bar 1.3) in exchange for removing the
 barrel's 1×/2× drawn-gap alternation everywhere else — not a hidden or fudged number.
+
+
+## Bars changed — ADDENDUM (MERGE CHECKLIST item 17d, integration r2, 2026-09-10)
+
+A second bar moved in the W-26 chain and **was never disclosed under a `## Bars changed` heading in
+any report** — the omission the merge checklist flags. Recorded here now, at source, rather than
+silently carried:
+
+- `tests/unit/scene3d-plot-safety.test.js:262` — `expect(q(0.98)).toBeGreaterThan(0.35)` **→
+  `toBeGreaterThan(0.40)`**, and its sibling `expect(q(0.5)).toBeLessThan(0.35)` **→
+  `toBeLessThan(0.40)`, with the measured median pinned separately at 0.308–0.377**.
+  **Why:** W-26 moved `ladder` onto continuous placement (`isEvenLadder`, `surface-fill.js`), which
+  never drops a placed ruling. The discrete grid's all-or-nothing subsetting used to leave many
+  coverage windows near-bare and few near-max; continuous placement spreads the same total ink more
+  evenly over the SAME tone range, moving the median window up (0.30 → 0.3425 measured) without
+  narrowing the spread (q(0)=0.001, q(0.98)=0.923, q(1)=1 all unchanged in character).
+  **Direction:** the q(0.5) ceiling was **loosened** 0.35 → 0.40 and the q(0.98) floor **tightened**
+  0.35 → 0.40. The loosened half is the one that needs the disclosure: at a measured 0.3425 the old
+  0.35 coin left 2.2% headroom, so W-26b-3's judge (C3, BLOCKING) required both the wider bar AND a
+  separate ±10% fingerprint band (0.308–0.377) so drift alone cannot flip either half. 0.3425 remains
+  well below the 0.56 flood ceiling this describe block's dormant `whenCoverageCap`-gated sibling
+  checks, so this is a disclosed shift in WHERE the median sits, not a flattening toward the cap.
+  The reasoning was already written inline in the test file's own comment; what was missing, and is
+  supplied here, is the `## Bars changed` entry AGENT-PROTOCOL requires.

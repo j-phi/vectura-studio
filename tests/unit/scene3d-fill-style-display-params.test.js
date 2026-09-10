@@ -47,9 +47,19 @@ describe('Scene3D tone-law collapse — W-10d-3 (generative cross-check: display
   });
   afterAll(() => runtime.cleanup());
 
-  test('G1 — every one of the 13 ALIASES entries: the seeded display value round-trips through resolveToneLaw back to the SAME folded id, for every descriptor key the alias declares', () => {
+  test('G1 — every one of the 15 ALIASES entries: the seeded display value round-trips through resolveToneLaw back to the SAME folded id, for every descriptor key the alias declares', () => {
     const aliasIds = Object.keys(R.ALIASES);
-    expect(aliasIds.length).toBe(13);
+    // MERGE NOTE (integration r2, 2026-09-10) / BAR CHANGE: 13 -> 15.
+    // STALE ASSERTION, not a regression. W-10d-3 (fill-audit-2) pinned 13
+    // against the roster its own lane could see. U7 added a 14th alias
+    // (`nesting`, `ampSpacing` <- `weaveDepth`) and U8 a 15th (`penDown`,
+    // `interlockWeave` <- `onePenDown`) on fill-collapse-2; neither lane
+    // could observe the other. The loop underneath is generative over
+    // `Object.keys(R.ALIASES)`, so it covers all 15 with no other edit, and
+    // the companion `checked` assertion below stays a deliberate FLOOR.
+    // This is the first time W-10d-3's display seed has been exercised
+    // against U7's and U8's folds at all — all 15 round-trip.
+    expect(aliasIds.length).toBe(15);
     let checked = 0;
     aliasIds.forEach((id) => {
       const alias = R.ALIASES[id];

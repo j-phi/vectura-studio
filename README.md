@@ -142,7 +142,7 @@ Select an object and a **Contextual Task Bar** floats just below it with the act
 
 - 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, pendula, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort, plus a 3D family — spirograph, spiralizer, polyhedron, topoform, raster-plane, and the multi-object **3D Scene Studio**
 - **3D suite:** the mesh-rendering algorithms (Topoform, Polyhedron) import binary or ASCII **`.stl` meshes** and render them as wireframes, depth-plane contours, or face/edge/vertex art with hidden-line removal; Topoform ships 10 primitives (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) with detail up to 100. All four 3D algorithms support **orthographic or perspective projection**, full **Rotate X/Y/Z** view control via sliders or the on-canvas three-ring rotation gizmo (amber X, violet Y, cyan Z — drawn ring-only, with no backing disc over the artwork), and contour/line smoothing produces true bezier curves on screen and in export. The live preview fidelity while dragging a 3D shape is tunable in **Document Setup → Guides & Display → 3D move preview** (Draft / Balanced / High)
-- **3D Scene Studio:** a multi-object scene builder — assemble box · sphere · cylinder · cone · torus · torus-knot · capsule · superellipsoid · pyramid · plane · solids on a shared camera, select and move/rotate/scale objects (or push-pull box faces) with on-canvas gizmos, and light them with a **multi-light rig** (directional · ambient · point · spot, each draggable via a 3-axis gizmo). Surfaces render *light-made tone* through per-object/per-face **fill mappers** (hatch, crosshatch, contour, spiral, stipple, wireframe — each with its own control inventory), controllable **cast shadows** (angle / density / pen / line type / **Softness**, a **Layers** control — Off / 2 / 3 / 4 — that builds contact, umbra and penumbra zones in stages, and an **inverse** mode that thins a patterned ground for dark-paper plots), selectable **highlight treatments**, **x-ray** see-through back-face fills, a per-object **border** drawn as one contiguous silhouette outline, and a shared **stroke treatment** (line type, hand-drawn wobble, overstroke). Line output splits by role: the Object tab's **Border lines** (Curves / Smoothing / Simplify) govern the silhouette, creases and face outlines, while the Style tab's **Fill lines** (Curves / Smoothing / Simplify / Fidelity) govern the internal fill. Per-class **Edge Styles** give silhouette / crease / boundary / interior / hidden edges each their own pen, weight, and dash, with hidden edges drawn or dropped scene-wide. Per-object Style / Shadow / Highlight / X-ray flyouts live on the contextual task bar. Each scene is a **layer tree** — one object per layer, with boolean (CSG) groups, lights, and the ground as their own rows — so you build it object-by-object, click the canvas or the tree to select and edit a single object, and older saved scenes upgrade to the tree automatically
+- **3D Scene Studio:** a multi-object scene builder — assemble box · sphere · cylinder · cone · torus · torus-knot · capsule · superellipsoid · pyramid · plane · solids on a shared camera, select and move/rotate/scale objects (or push-pull box faces) with on-canvas gizmos, and light them with a **multi-light rig** (directional · ambient · point · spot, each draggable via a 3-axis gizmo). Surfaces render *light-made tone* through per-object/per-face **fill mappers** (hatch, crosshatch, contour, spiral, stipple, wireframe — each with its own control inventory), controllable **cast shadows** (angle / density / pen / line type / **Softness**, a **Layers** control — Off / 2 / 3 / 4 — that builds contact, umbra and penumbra zones in stages, and an **inverse** mode that thins a patterned ground for dark-paper plots), selectable **highlight treatments**, **x-ray** see-through back-face fills, a per-object **border** drawn as one contiguous silhouette outline, and a shared **stroke treatment** (line type, hand-drawn wobble, overstroke). Line output splits by role: the Object tab's **Border lines** (Curves / Smoothing / Simplify) govern the silhouette, creases and face outlines, while the Style tab's **Fill lines** (Curves / Smoothing / Simplify / Fidelity) govern the internal fill. Per-class **Edge Styles** give silhouette / crease / boundary / interior / hidden edges each their own pen, weight, and dash, with hidden edges drawn or dropped scene-wide. Slices gains **End overlap** — how far each depth-slice ring is carried past (or pulled back from) the silhouette, in pen widths; default 0 = unchanged. Per-object Style / Shadow / Highlight / X-ray flyouts live on the contextual task bar. Each scene is a **layer tree** — one object per layer, with boolean (CSG) groups, lights, and the ground as their own rows — so you build it object-by-object, click the canvas or the tree to select and edit a single object, and older saved scenes upgrade to the tree automatically
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
 - Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation
@@ -596,6 +596,42 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### 1.4.1
+- **3D Scene · crosshatch draws a real crossing grid again.** The two crosshatch line families now
+  split one shared coverage budget evenly instead of the second family receiving roughly a tenth of
+  the first's. Measured gap ratio between the families falls from 5.4–31.2× to 0.81–1.06 across
+  every primitive and density tested, with total ink essentially preserved.
+- **3D Scene · curved rulings and slice rings lose their invented corners.** Ring refinement now
+  stops on a device-space measurement — millimetres on paper, where the eye sees it — instead of a
+  world-space one, and the capsule gains its own true cross-section. Worst per-vertex turn on
+  contour fill rulings falls from 18.5–38.4° to at or under 8° everywhere; the capsule's slice
+  rings from 297% over their analytic truth to 2.6%. Slices also keeps its evenly-spaced rings:
+  the crowding cull is now scoped to genuine multi-level pileups, lifting ink retention on a torus
+  from 70.8% to 96.2% while leaving cone and cylinder untouched.
+- **3D Scene · shadows that land on other objects follow the light.** A point, spot, or area
+  light's shadow-receive footprint is built from the light's real position rather than a fixed
+  default direction; area lights keep their soft edge when partially occluded; an ambient light
+  listed first no longer deletes the next light's cast shadow; and a torus casts a visible,
+  correctly-holed shadow instead of none at all. **Known limitation:** a razor-thin torus still
+  casts a blank shadow at a major:minor tube ratio of roughly 465:1 — unreachable through the UI
+  (the `sx` slider caps at 200) but reachable via a hand-edited or imported `.vectura`.
+- **3D Scene · the Fill Style roster collapses two rows further, to 33.** `weaveDepth` now lives
+  behind a **Nesting** control on Amplitude Spacing and `onePenDown` behind a **Pen down** control
+  on Interlock Weave; both render exactly as before, and saved documents resolve to the surviving
+  option at load. **Counting convention, stated once so the notes stop disagreeing with
+  themselves:** `PICKER_IDS` — the collapsed list — is **33**; the picker *offers* **34** (that
+  list plus `ladder`); `IDS`, the engine's own vocabulary, stays **48** forever. The 1.4.0 entry
+  below reports the same series at its own shipped figure of 35, and is left as shipped;
+  post-1.4.1 the correct figures are **48 → 33 with 15 aliases across 7 collapse clusters**.
+  A picker showing a pre-collapse law now also displays the right sub-control value, and a saved
+  torus using Origin Spiral opens as Ladder — that one pairing cannot be plotted cleanly.
+- **3D Scene · Slices gains End overlap.** How far each depth-slice ring is carried past (or pulled
+  back from) the silhouette, in pen widths (−2…8). The default is 0 and is byte-identical to
+  previous builds; the control is inert on box, plane and pyramid.
+- **Known open.** T2/T3 (mark-length tone laws — T2 was measured, rejected and reverted),
+  W-31b, W-32 Rank 3/4 (refine the fill border to the true silhouette), F-14, and nine frozen
+  design decisions awaiting a call.
 
 ### 1.4.0
 - **3D Scene Studio — the headline feature.** 3D Scene grew from a single mesh into a full

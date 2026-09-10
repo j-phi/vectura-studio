@@ -16,7 +16,7 @@
  * pre-fix `buildFaceFootprint`, not a simulated one. Both servers are killed
  * on exit (success or failure).
  *
- *   node scripts/w30b-footprint-wiring-evidence.js [outDir] [preRoot]
+ *   node scripts/audit/w30b-footprint-wiring-evidence.js [outDir] [preRoot]
  *
  * Defaults: outDir = docs/3d-audit/fill-audit/after/W-30b (relative to the
  * repo this script's OWN worktree lives in — NOT necessarily MAIN; pass an
@@ -29,7 +29,7 @@ const http = require('http');
 const { spawn } = require('child_process');
 const { chromium } = require('@playwright/test');
 
-const THIS_ROOT = path.resolve(__dirname, '..');
+const THIS_ROOT = path.resolve(__dirname, '..', '..');
 const outDir = path.resolve(process.argv[2] || path.join(THIS_ROOT, 'docs/3d-audit/fill-audit/after/W-30b'));
 const preRoot = path.resolve(process.argv[3] || '/private/tmp/claude-501/-Users-jayphi-Documents-github-vectura-studio/85578c5a-c89b-4e50-b45b-df0e42b19e84/scratchpad/w30b-pre');
 

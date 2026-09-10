@@ -445,7 +445,18 @@
       // EVERY mapper switch, so a non-zero default here would silently write
       // a non-zero value into a fresh hatch->Slices detour (see
       // docs/3d-audit/lane-reports/W-35-plan.md §2.2).
-      { key: 'sliceEndOverlap', kind: 'slider', label: 'End overlap', ariaLabel: 'Slice end overlap', min: -2, max: 8, step: 0.25, default: 0 },
+      // MERGE CHECKLIST item 13 / MERGE-plan-r2 §3.3 option (a): the in-app
+      // Help Guide (`src/ui/modals/help-shortcuts.js`) has NO 3D Scene section
+      // to add a line to, so W-35's help sentence lands on the control — the
+      // generic `help` field below, rendered by `renderControl` as the row's
+      // own tooltip. Opening a "3D Scene" Help Guide tab is a separate unit,
+      // filed as a follow-up rather than done at merge.
+      {
+        key: 'sliceEndOverlap', kind: 'slider', label: 'End overlap', ariaLabel: 'Slice end overlap', min: -2, max: 8, step: 0.25, default: 0,
+        help: 'How far each slice ring is carried past (or pulled back from) the silhouette, in pen widths. '
+          + 'Increase for a continuous outer edge; decrease to keep wet ink off the outline. '
+          + 'Default 0 draws exactly as before. No effect on box, plane or pyramid.',
+      },
     ],
   };
   const carry = (cur, key, dflt) => (cur[key] !== undefined && cur[key] !== null ? cur[key] : dflt);
@@ -4129,7 +4140,20 @@
         styleHost.appendChild(row);
         return host;
       };
+      // A descriptor may carry `help` — one sentence of plain-language help
+      // copy, rendered as the row's own tooltip. This is the documentation
+      // surface for 3D params: the in-app Help Guide has no 3D Scene section,
+      // and the (i) popover is the Fill Style picker's alone.
       const renderControl = (d) => {
+        const startIdx = styleHost.childElementCount;
+        renderControlBase(d);
+        if (!d.help) return;
+        for (let i = startIdx; i < styleHost.childElementCount; i += 1) {
+          const el = styleHost.children[i];
+          if (el && el.classList && el.classList.contains('vs3-row')) el.setAttribute('title', d.help);
+        }
+      };
+      const renderControlBase = (d) => {
         const rp = resolved.params || {};
         const has = rp[d.key] !== undefined && rp[d.key] !== null;
         const raw = has ? rp[d.key] : d.default;

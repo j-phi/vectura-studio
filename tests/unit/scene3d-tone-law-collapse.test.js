@@ -1456,3 +1456,130 @@ describe('Scene3D tone-law collapse — U8 multi-primitive x multi-density: inte
     });
   }, SLOW);
 });
+
+/*
+ * MERGE CHECKLIST item 8 (integration r2, 2026-09-10) — re-run U1..U5's
+ * survivor/folded pairs through U7's multi-primitive x multi-density harness.
+ *
+ * WHY THIS EXISTS. U1-U5 each proved their byte-identity claim on ONE cell:
+ * a sphere, at a single unparametrized `fillDensity` (60 for U1/U5, the
+ * describeSingleParamCluster default for U2/U3/U4). U7 was the first fold in
+ * the chain to DIMENSION that claim (sphere/torus/cone x low/med/max), and it
+ * only did so because F1-placement's ruled condition 4 depends on `ampSpacing`
+ * specifically. U8 then copied U7's shape. That left five clusters proven to a
+ * strictly weaker bar than the sixth and seventh. This block closes the
+ * asymmetry using the SAME harness shape, the same three primitives and the
+ * same three densities.
+ *
+ * HONEST SCOPE, so nobody over-reads it. In-process, `resolveToneLaw(survivor
+ * + folded params)` returns the folded id itself, so the fold leg's two
+ * `SF.buildObject` calls receive an identical argument — that leg proves the
+ * RESOLUTION is correct at every (primitive, density) pair and that the render
+ * is deterministic, exactly as U7's and U8's own fold legs do. The leg that
+ * carries real geometric weight is the BARE-SURVIVOR one: the survivor with
+ * its sub-control at the default (and with the key absent entirely) must
+ * render byte-identically to the pre-collapse survivor across all nine pairs.
+ * `box`/`plane`/`solid` are excluded for the same reason U7 excludes them
+ * (no parametric chart; see U7's block).
+ */
+describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (MERGE CHECKLIST item 8)', () => {
+  let runtime; let V; let algo; let defaults; let SF; let Params; let PPD; let R;
+  const PRIMITIVES = ['sphere', 'torus', 'cone'];
+  const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
+  const SURVIVORS = ['ladder', 'taperedEnds', 'weightModulated', 'bundleCount', 'contFieldSigmoid'];
+  const optsCache = new Map();
+
+  const captureOpts = (primitive, densityValue) => {
+    const ck = `${primitive}__${densityValue}`;
+    if (optsCache.has(ck)) return optsCache.get(ck);
+    const p = clone(defaults);
+    p.objects = [{
+      id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
+      transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.lights = [SUN];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(opts) {
+      const result = orig.call(this, opts);
+      calls.push({ opts, result });
+      return result;
+    };
+    try {
+      algo.generate(p, null, null, BOUNDS);
+    } finally {
+      SF.buildObject = orig;
+    }
+    let best = calls[0];
+    for (const c of calls) {
+      if ((c.result || []).length > (best.result || []).length) best = c;
+    }
+    optsCache.set(ck, best.opts);
+    return best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Params = V.Scene3D.Params;
+    PPD = Params.PRIMITIVE_PARAM_DEFAULTS || {};
+    R = V.SCENE3D_TONE_LAWS;
+  }, SLOW);
+  afterAll(() => runtime.cleanup());
+
+  test('every U1..U5 fold resolves to its own legacy id, and renders identically to it, at every reachable primitive x density pair', () => {
+    const offenders = [];
+    const folds = Object.keys(R.ALIASES)
+      .map((id) => ({ id, into: R.ALIASES[id].into, params: R.ALIASES[id].params }))
+      .filter((f) => SURVIVORS.indexOf(f.into) !== -1);
+    // 13 folds across the five clusters: ladder 3, taperedEnds 2,
+    // weightModulated 1, bundleCount 3, contFieldSigmoid 4.
+    expect(folds.length).toBe(13);
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        folds.forEach((f) => {
+          const resolved = Params.resolveToneLaw({ toneLaw: f.into, ...f.params });
+          if (resolved !== f.id) {
+            offenders.push(`${primitive}__${densityKey}__${f.into}+${JSON.stringify(f.params)}: resolved to "${resolved}", not ${f.id}`);
+            return;
+          }
+          const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
+          const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: f.id }));
+          if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy ${f.id}`);
+        });
+      });
+    });
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  }, SLOW);
+
+  test('every U1..U5 bare survivor (sub-control at its default, or omitted) resolves to itself and renders identically, unaffected by geometry or density', () => {
+    const offenders = [];
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        SURVIVORS.forEach((survivor) => {
+          const descriptors = R.STYLE_PARAMS[survivor] || [];
+          expect(descriptors.length).toBeGreaterThan(0);
+          const defaultsBag = {};
+          descriptors.forEach((d) => { defaultsBag[d.key] = d.default; });
+          if (Params.resolveToneLaw({ toneLaw: survivor }) !== survivor) offenders.push(`${primitive}__${densityKey}__${survivor}: bare id did not resolve to itself`);
+          if (Params.resolveToneLaw({ toneLaw: survivor, ...defaultsBag }) !== survivor) offenders.push(`${primitive}__${densityKey}__${survivor}: explicit defaults did not resolve to itself`);
+          const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: survivor }));
+          const viaResolve = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: survivor, ...defaultsBag }) }));
+          if (direct !== viaResolve) offenders.push(`${primitive}__${densityKey}__${survivor}: bare survivor render moved`);
+        });
+      });
+    });
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  }, SLOW);
+});

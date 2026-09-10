@@ -851,6 +851,35 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     expect(layer.params.styleTable.byObject['obj-1'].params.sliceEndOverlap).toBe(4);
   });
 
+  // MERGE CHECKLIST item 13 / MERGE-plan-r2 §3.3 option (a) — W-35's help
+  // sentence has no home in the in-app Help Guide (`help-shortcuts.js` has no
+  // 3D Scene section), so it lands on the control itself, the way the Fill
+  // Style row's own disabled-note already does. RED before this merge: the
+  // End overlap row carried no `title` at all, so the documentation contract
+  // for a user-facing parameter was unmet.
+  test('Style tab · the End overlap row carries the trade-off help copy on the row itself (W-35 docs contract)', () => {
+    const { container } = mount({ objects: [fixtureObject(1)] });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+    const mapSel = [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'contourSlice'));
+    mapSel.value = 'contourSlice';
+    fire(mapSel, 'change');
+
+    const endOverlap = container.querySelector('input.ctrl-slider[aria-label="Slice end overlap"]');
+    expect(endOverlap).toBeTruthy();
+    const row = endOverlap.closest('.vs3-row');
+    expect(row).toBeTruthy();
+    const help = row.getAttribute('title') || '';
+    expect(help).toContain('pen widths');
+    expect(help).toContain('continuous outer edge');
+    expect(help).toContain('wet ink off the outline');
+    // The byte-identical default and the faceted inertness are the two facts
+    // CHANGELOG item 21 requires be stated to the user, so state them here too.
+    expect(help).toContain('Default 0');
+    expect(help).toMatch(/box, plane or pyramid/);
+  });
+
   // I15 — Dash-length (renamed from "Dash scale") is hidden when Line = solid
   // and appears only for dashed / dash-dot / dotted line types.
   test('Style tab · Dash length is hidden for a solid line and appears when dashed (I15)', () => {
