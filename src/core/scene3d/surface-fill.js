@@ -1116,10 +1116,17 @@
   //                   and past that the dash thickens into a BAND of parallel
   //                   passes an inkWidth apart. One mark language, four states.
   //   'mkTick'        Short dashes PERPENDICULAR to the ruling, on a brick
-  //                   lattice, at a fixed size of nearly the full row pitch.
-  //                   Tone is COUNT. Black by pure abutment: the ticks pack
-  //                   along the row until they touch, and a row of touching
-  //                   ticks IS a solid band. The cheapest black on the board.
+  //                   lattice, ONE PER ROW-PITCH CELL (W-05b U2 — was a
+  //                   fixed size with COUNT as the tone channel; a user
+  //                   report found that design read as fans of same-length
+  //                   spokes with hard-edged gaps, `user-reports/8.png`).
+  //                   Tone is now LENGTH: the tick GROWS from a short flick
+  //                   in the highlight to the full row pitch in the shadow,
+  //                   so the site lattice is always complete — a mark
+  //                   everywhere the light asks for one — and black is
+  //                   still reached by pure abutment: full-length ticks in
+  //                   adjacent rows meet and a row of touching ticks IS a
+  //                   solid band. The cheapest black on the board.
   //   'mkChevron'     A V, its apex turned to the ISOPHOTE — the mark is aligned
   //                   to the form's own tone contour, not to the ruling — so the
   //                   texture turns with the surface. Tone is SIZE; the arms
@@ -1180,10 +1187,15 @@
   //   mkLozenge      1–1×    0.505  65.1   4.5  6.78  20.41  4835   931   0   0
   //   mkTriangle     1–1×    0.468  60.5   4.5  6.84  18.87  4578  1112   0   0
   //   mkChevron      1–1×    0.444  42.9   4.5  6.40  15.03  4135  1798   0   0
-  //   mkTick         1–1×    0.436  40.2  35.4  8.19  12.83  3975  2484   0   0
+  //   mkTick*        1–1×    0.436  40.2  35.4  8.19  12.83  3975  2484   0   0
   //   mkCrossPlus    1–1×    0.416  38.3  34.1  7.16  13.10  3788  2355   0   0
   //   mkComma        1–1×    0.373  38.2  36.2  7.42  12.60  3751  3128   0   0
   //   mkSFlick       1–1×    0.256  53.8   4.5  8.26  22.97  4183   831   0   0
+  //
+  // * mkTick's row is PRE-W-05b (`chan:'count'`, fixed length) — recorded
+  //   here as historical since fillcmp/v6mark.mjs was never re-run against
+  //   the `chan:'len'` redesign (W-05b U2); it is not a live measurement of
+  //   the current mkTick.
   //
   // SEVEN of the twelve beat whiteBand's L* SPAN and all twelve beat it on the
   // worst adjacent tone step in the highlight (whiteBand 79.4, the twelve
@@ -2465,6 +2477,17 @@
       // the algorithm's own return value (which carries no such tag by the
       // time it reaches a caller).
       trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0, dupStub: 0, markMids: [],
+      // W-05b U2 (R1: "ticks must have VARIABLE LENGTH, tick length carries
+      // tone") — total DRAWN ink length (`lenByThird`) and mark COUNT
+      // (`cntByThird`) per radiance third, so a caller can read
+      // `lenByThird[i]/cntByThird[i]` as the mean drawn tick length in that
+      // third directly, without re-deriving it from the raw path array
+      // (which carries no per-mark radiance tag). Distinct from `byThird`
+      // above (also a per-third count, kept for the pre-existing W-05
+      // "count scales with darkness" guard) — `cntByThird` exists
+      // alongside it so a reader of the length ratio does not have to know
+      // the two counts are numerically identical.
+      lenByThird: [0, 0, 0], cntByThird: [0, 0, 0],
     };
     const mkSites = new Map();          // blue-noise / Poisson occupancy
     const mkED = new Map();             // error-diffusion sideways carry
@@ -2487,17 +2510,29 @@
     // `chan` is the TONE CHANNEL and it is the axis that separates these laws
     // from each other more than any other single field:
     //   'size'   fixed count, the mark grows          (dot screen, lozenge, …)
-    //   'count'  fixed size, the marks multiply       (tick, comma, radial flick)
+    //   'count'  fixed size, the marks multiply       (comma, radial flick)
+    //   'len'    fixed period, the mark GROWS/SHRINKS (tick — W-05b U2, below)
     //   'elong'  fixed period, the mark CHANGES KIND  (the dissolution ramp)
     //   'amp'    one continuous stroke, amplitude and wavelength both move
     //   'alt'    alternating rows, a different channel on each
     // `lat` is the lattice, `or` the orientation, `P0`/`L0` the cell geometry in
-    // units of the row pitch.
+    // units of the row pitch. `LMIN` (len channel only) is the floor a mark's
+    // length may shrink to before the ordinary `MIN_MARK_MM` drop takes over,
+    // also in units of the row pitch.
     const MK = {
       mkDotScreen:   { shape: 'disc',     chan: 'size',  lat: 'hex',     or: 'none',   P0: 1.00 },
       mkLozenge:     { shape: 'lozenge',  chan: 'size',  lat: 'brick',   or: 'along',  P0: 1.15 },
       mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25 },
-      mkTick:        { shape: 'tick',     chan: 'count', lat: 'brick',   or: 'none',   L0: 1.02 },
+      // W-05b U2 (user 8.png: "ticks must have VARIABLE LENGTH, tick length
+      // carries tone"). Was `chan:'count'` (fixed length ~L0*R, tone carried
+      // by period/count alone — D3 in the plan, `docs/3d-audit/lane-reports/
+      // W-05b-W-06b-plan.md` §2 D3). Now `chan:'len'`: a fixed lattice site
+      // every `P0*R` (P0=1.02 ~= one site per row pitch, so the field is
+      // COMPLETE — a mark at every site the light asks for anything, R2's
+      // "continuous texture"), and the mark's own LENGTH is the primary tone
+      // carrier, growing from a flick (`LMIN*R`) to the full row pitch
+      // (`L0*R`) as the surface darkens. See `solveAt`'s `'len'` branch.
+      mkTick:        { shape: 'tick',     chan: 'len',   lat: 'brick',   or: 'none',   L0: 1.02, LMIN: 0.18, P0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
       mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
       mkSFlick:      { shape: 'sflick',   chan: 'elong', lat: 'errdiff', or: 'along',  P0: 0.95 },
@@ -6164,7 +6199,12 @@
           bucket.push(tm);
           mkStat.markMids.push(tm);
         }
-        return true;
+        // W-05b U2 — the drawn ink length `tot` is returned (rather than a
+        // bare `true`) so `layMark` can accumulate `lenByThird`/
+        // `cntByThird` without re-deriving it. `tot >= MIN_MARK_MM > 0` on
+        // every path that reaches here, so this stays truthy for every
+        // existing `if (place(...))` call site.
+        return tot;
       };
 
       // The mark's own turn. 'iso' and 'radial' read the intensity gradient IN
@@ -6208,9 +6248,11 @@
         const I = clamp(finite(smp.I, 0), 0, 1);
         const lp = pitchAtStep(smp, k);
         const R = clamp(((Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch) / MK_ROW_COV, 0.25, 40);
-        const g = clamp((mkAsk(I) * R) / w, 0, 26);
+        const askArea = mkAsk(I);
+        const g = clamp((askArea * R) / w, 0, 26);
         let P; let L;
         const countChan = law.chan === 'count' || (law.chan === 'alt' && parity === 1);
+        const lenChan = law.chan === 'len';
         // F-06 / W-06 — the dash BAND's capacity is a function of the period,
         // so it is stated here; every other shape's is a function of the cell
         // alone. `R` is the ROW pitch (the master pitch inflated by
@@ -6229,6 +6271,77 @@
           L = Math.min(L0 * R, capOf(PMIN));
           P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
           if (P <= PMIN + 1e-9) L = Math.min(g * P, capOf(P));
+        } else if (lenChan) {
+          // W-05b U2 (R1: "ticks must have VARIABLE LENGTH, tick length
+          // carries tone", user-reports/8.png). LENGTH is the primary tone
+          // channel and PERIOD the secondary one, the opposite of
+          // `countChan` above — but see the deviation from the plan's own
+          // pseudocode below, and why it is necessary.
+          //
+          // MEASURED DEVIATION from docs/3d-audit/lane-reports/
+          // W-05b-W-06b-plan.md §3.2, which drove `L` off `g` (i.e.
+          // `clamp(g*P, LMIN*R, L0*R)`, `g = askArea*R/w`) directly. That
+          // saturates almost everywhere on a real render: `R/w` (row pitch
+          // over pen width) commonly spans 5-16x within ONE object from
+          // foreshortening alone (measured cone/hatch d=50: 0.8-16.5x), so
+          // `g` crosses the `L0/P0 = 1` ceiling by roughly a third of the
+          // way into the tone range and only clears the `LMIN/P0` floor in
+          // the last ~10% of it — over 80% of samples rendered at the SAME
+          // maxed-out length regardless of where they sat in between
+          // (measured dark/light length ratio 1.2-1.5x, not the ≥3x R1
+          // asks for — see T2-impl.md).
+          //
+          // Fix, part 1: drive the LENGTH off `I` (the sample's own
+          // radiance), not off `g` — which removes `R/w` from the length
+          // response entirely, so length tracks the LIGHT ITSELF smoothly
+          // and monotonically everywhere, independent of local
+          // foreshortening. `P` is then RE-DERIVED from this `L` exactly as
+          // the count-channel design does (`P = L/g`), which is what
+          // actually keeps the delivered ink AREA FRACTION honest:
+          // physically, a tick's own ink occupies `L` (across the row, its
+          // length) by `w` (along the row, the pen's own width) inside a
+          // cell `R` (across) by `P` (along), so area = `L*w/(R*P)`; the
+          // tone solve's target is exactly `askArea`, and `P = L/g` is the
+          // unique period that makes `L*w/(R*P) = askArea` hold — for ANY
+          // `L`, not only the plan's own `g*P` one. So this keeps R1
+          // (length monotone with darkness, decoupled from `R/w`) AND the
+          // plan's own conservation property (the rendered tone still
+          // matches what the light asked for) at the same time — dropping
+          // the `P` re-derivation (an earlier draft of this fix fixed `P`
+          // at `P0*R` unconditionally) was tried and found wrong: it caps
+          // the deepest black at area fraction `w/R` (a bare single
+          // ruling's own coverage, often a few percent) because it removes
+          // the SAME period-shrink packing the roster's own "ABUTMENT"
+          // description requires ("ticks pack ALONG THE ROW until they
+          // touch, and a ROW of touching ticks IS a solid band" — packing
+          // ALONG the row is exactly what a shrinking `P` is).
+          //
+          // Fix, part 2: the SHAPE of the length ramp over `I`. A first
+          // attempt drove length off `askArea` (`mkAsk(I)`, the SAME
+          // perceptually L*-linear area fraction the anchors are stated
+          // in) — real and monotone (measured 2.0-2.7x), but still short of
+          // R1's >= 3x, because `mkAsk` itself holds AREA within ~20% of
+          // its dark anchor until roughly the last quarter of the `I`
+          // range (measured: area is still 0.35 at I=0.8, against anchors
+          // 0.96/0.012) — so a THIRD-AVERAGED "light" bucket (I in
+          // [0.667,1]) still contains mostly middling, not-yet-collapsed
+          // area values, diluting the mean. `O5`'s bar is a mean over a
+          // whole third, not the two true endpoints, so what the bucket
+          // average needs is a curve that holds each third close to ITS
+          // OWN anchor and spends its transition in between — `smoothstep`
+          // (zero slope at both 0 and 1) does exactly that, applied here to
+          // `I` directly (not to `askArea`, which is already compressive
+          // enough on its own that stacking a second ease on top measured
+          // as barely different — see T2-impl.md). Same two endpoints
+          // (I=0 -> full length, I=1 -> the floor), same monotonicity, same
+          // `LMIN`/`L0` range; only the shape in between changes. This is a
+          // COSMETIC curve for the length channel specifically — the actual
+          // delivered darkness is unaffected, because `P = L/g` (above)
+          // re-targets `askArea` exactly regardless of how `L` got there.
+          const t = clamp(1 - I, 0, 1);
+          const eased = t * t * (3 - 2 * t);
+          L = (law.LMIN || 0) * R + (law.L0 - (law.LMIN || 0)) * R * eased;
+          P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
         } else {
           P = clamp(law.P0 * R, PMIN, MK_PMAX);
           L = Math.min(g * P, capOf(P));
@@ -6298,8 +6411,16 @@
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
         }
-        if (place(fr, polys, a - arcMM[k], thetaAt(k, fr))) {
-          mkStat.byThird[Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3))] += 1;
+        const drawnLen = place(fr, polys, a - arcMM[k], thetaAt(k, fr));
+        if (drawnLen) {
+          const third = Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3));
+          mkStat.byThird[third] += 1;
+          // W-05b U2 (R1) — the DRAWN ink length of this mark, not the
+          // solve's own asked `sv.L` (which a limb-truncated walk may not
+          // have fully delivered — see `askSum`/`drawnSum` above), against
+          // the SAME radiance third used for the pre-existing count guard.
+          mkStat.lenByThird[third] += drawnLen;
+          mkStat.cntByThird[third] += 1;
         }
       };
 
