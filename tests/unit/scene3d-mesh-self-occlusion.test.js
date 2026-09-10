@@ -29,6 +29,22 @@
  *     touch, so it is recorded, not fixed. This test is intentionally RED on
  *     `spiral` — a quantified gap, not a mistake to silence.
  *
+ *   spiral mapper (CURRENT, MERGE CHECKLIST item 17a, integration r2,
+ *     2026-09-10): **0 survivors — GREEN, and no longer intentionally RED at
+ *     all.** Both halves of the paragraph above are now retired: the root
+ *     cause it names (`Mappers.regionFill`'s polygon-union failing on
+ *     degenerate geometry) was DISPROVEN by W-25, and the smaller HLR-
+ *     precision residual W-25 left behind (2 survivors / 46 candidates) has
+ *     since closed too. MEASURED, not assumed: the bar was blanked and the
+ *     thrown value read on BOTH the round-2 integration tree AND on
+ *     unmodified `main` (`git archive main` scratch export) — **0 on both**,
+ *     so this is a pre-existing improvement inherited from the round-1
+ *     integration, NOT anything round 2 did. No round-2 lane touches this
+ *     file, `mappers.js` or `hlr.js` (verified: five empty `git diff --stat`s).
+ *     The bar is therefore tightened `<= 2` -> `=== 0`, matching this file's
+ *     own hatch/contour branches, so a return of either defect fails loudly
+ *     instead of hiding inside two units of slack. See `## Bars changed`.
+ *
  * TWO SCOPE CORRECTIONS found while writing this test, both recorded in
  * docs/3d-audit/handoff/unit-f-notes.md:
  *
@@ -405,9 +421,20 @@ describe('SurfaceFill (per-face fill) — Unit F: imported non-convex mesh vs th
       // sliver … still gets a genuine curl, not a near-straight stub
       // (W-25)"), RED before / GREEN after that fix in isolation.
       //
+      // MERGE CHECKLIST item 17a (integration r2, 2026-09-10) — the
+      // paragraph below said this "does NOT reach 0 total survivors" and
+      // pinned `<= 2`. RE-MEASURED on the integrated tree by blanking the
+      // bar and reading the thrown value: **0 survivors**. The same
+      // measurement on unmodified `main` (git archive scratch export) also
+      // reads **0**, and no round-2 lane touches this file, `mappers.js` or
+      // `hlr.js` — so the sub-0.05mm adjacent-face seam described below
+      // closed at some point in the round-1 integration, not here. Bar
+      // tightened to `toBe(0)`, matching the hatch/contour branches above.
+      // The text below is kept as the W-25-era analysis of the residual.
+      //
       // That fix retires THIS test's original survivor
       // (172.18602666957324, 104.42211992678234) — asserted directly below.
-      // It does NOT reach 0 total survivors: increasing the spiral's
+      // It did NOT, AT THE TIME, reach 0 total survivors: increasing the spiral's
       // coverage on small faces raises candidateFarPositions (29→46) enough
       // to newly sample a SEPARATE, much smaller crack (verified via a
       // finer-grained depth-field probe: the "gap" there collapses to a
@@ -420,11 +447,13 @@ describe('SurfaceFill (per-face fill) — Unit F: imported non-convex mesh vs th
       // fill-boolean.js defect.
       const ORIGINAL_SURVIVOR_KEY = '172.18602666957324,104.42211992678234';
       expect(survivorKeys.has(ORIGINAL_SURVIVOR_KEY)).toBe(false);
-      // The residual is a DIFFERENT location (opposite side of the mesh)
-      // from the fixed one, and small — not a regression back toward the
-      // pre-fix defect's scale (29 candidates / 1 survivor became 46
-      // candidates / 2 survivors, still under 5% of candidates).
-      expect(survivorKeys.size).toBeLessThanOrEqual(2);
+      // The residual was a DIFFERENT location (opposite side of the mesh)
+      // from the fixed one, and small — 29 candidates / 1 survivor became 46
+      // candidates / 2 survivors. It has since closed entirely (see the
+      // MERGE NOTE above): measured 0 on both the integration tree and
+      // unmodified main, so the bar is the same `0` the other two mappers
+      // assert rather than the old `<= 2` slack.
+      expect(survivorKeys.size).toBe(0);
     } else {
       // THE CLAIM under test on today's HEAD. Recorded either way — see
       // docs/3d-audit/handoff/unit-f-notes.md for the verdict this run

@@ -478,22 +478,40 @@
     return lower.concat(upper);
   };
 
-  // One clean shadow footprint for a caster: project EVERY above-ground world
-  // vertex to the ground (y = 0) along the light, then take the 2D convex hull —
-  // the light-lab model (proposal §Prototypes, shadowHulls). Robust where the old
-  // per-face-ring union was fragile: no mixed-winding ring soup, no FillBoolean
-  // needed to merge a single object's faces, and a below-ground vertex (a caster
-  // straddling the receiver) is simply dropped rather than projected the wrong
-  // way into a mirrored bow-tie. Trade-off: the hull fills a concave/torus hole.
-  // The DRAFT frame uses this cheap convex approximation; the FULL frame prefers
-  // the true silhouette loops below (holes preserved). Returns a screen-space
-  // ring (≥3 pts) or null.
-  const casterHull = (record, projectVertex) => {
+  // Signed distance of a world point from an arbitrary plane (anchor + unit
+  // normal). W-30d — generalizes the ground-only "P.y" test `casterHull` and
+  // `casterSilhouetteLoops` used to hardcode: with `anchor=(0,0,0)`,
+  // `normal=(0,1,0)` this reduces to exactly `P.y`, so every existing caller
+  // (build()'s own ground-shadow path, which never passes these args) is
+  // byte-identical.
+  const planeSignedDist = (P, anchor, normal) => (
+    (P.x - anchor.x) * normal.x + (P.y - anchor.y) * normal.y + (P.z - anchor.z) * normal.z
+  );
+  const GROUND_ANCHOR = { x: 0, y: 0, z: 0 };
+  const GROUND_NORMAL = { x: 0, y: 1, z: 0 };
+
+  // One clean shadow footprint for a caster: project EVERY vertex on or above
+  // the RECEIVING PLANE (the ground, y = 0, unless `planeAnchor`/`planeNormal`
+  // name a different plane — W-30d) to that plane along the light, then take
+  // the 2D convex hull — the light-lab model (proposal §Prototypes,
+  // shadowHulls). Robust where the old per-face-ring union was fragile: no
+  // mixed-winding ring soup, no FillBoolean needed to merge a single object's
+  // faces, and a vertex behind the receiving plane (a caster straddling it) is
+  // simply dropped rather than projected the wrong way into a mirrored
+  // bow-tie. Trade-off: the hull fills a concave/torus hole. The DRAFT frame
+  // uses this cheap convex approximation; the FULL frame prefers the true
+  // silhouette loops below (holes preserved). Returns a screen-space ring
+  // (≥3 pts) or null.
+  const casterHull = (record, projectVertex, planeAnchor, planeNormal) => {
+    const anchor = planeAnchor || GROUND_ANCHOR;
+    const normal = planeNormal || GROUND_NORMAL;
     const world = record.world || [];
     const pts = [];
     for (let i = 0; i < world.length; i++) {
       const P = world[i];
-      if (!P || !Number.isFinite(P.y) || P.y < -1e-6) continue; // below ground casts nothing onto y=0
+      if (!P) continue;
+      const sd = planeSignedDist(P, anchor, normal);
+      if (!Number.isFinite(sd) || sd < -1e-6) continue; // behind the plane casts nothing onto it
       const q = projectVertex(P);
       if (q) pts.push({ x: q.x, y: q.y });
     }
@@ -553,14 +571,20 @@
   // a LIGHT-relative classifier — silhouette = a toward/away-the-light frontier —
   // so the footprint depends only on the light + geometry, not the camera), keep
   // the silhouette + boundary rims (light frontier + open-surface borders),
-  // chain them into ordered loops, and project each loop's world vertices to the
-  // ground along the light. A torus yields an OUTER and an INNER ground loop, so
-  // an even-odd fill leaves the middle open (I25 — annular shadow, hole intact).
-  // ROBUSTNESS: only the small clean loop set is projected (not every triangle),
-  // so there is no dense polygon-clipping on the hot path. Returns screen-space
-  // rings (outer first) or null — null falls back to the convex hull, which keeps
-  // a caster straddling the receiver from folding into a mirrored bow-tie.
-  const casterSilhouetteLoops = (record, projectVertex, classifyEdges) => {
+  // chain them into ordered loops, and project each loop's world vertices onto
+  // the RECEIVING PLANE (the ground, y = 0, unless `planeAnchor`/`planeNormal`
+  // name a different plane — W-30d, so `scene3d.js`'s per-FACE receive-shadow
+  // footprint can reuse this instead of being stuck on the hole-filling convex
+  // hull) along the light. A torus yields an OUTER and an INNER loop on that
+  // plane, so an even-odd fill leaves the middle open (I25 — annular shadow,
+  // hole intact). ROBUSTNESS: only the small clean loop set is projected (not
+  // every triangle), so there is no dense polygon-clipping on the hot path.
+  // Returns screen-space rings (outer first) or null — null falls back to the
+  // convex hull, which keeps a caster straddling the receiver from folding into
+  // a mirrored bow-tie.
+  const casterSilhouetteLoops = (record, projectVertex, classifyEdges, planeAnchor, planeNormal) => {
+    const anchor = planeAnchor || GROUND_ANCHOR;
+    const normal = planeNormal || GROUND_NORMAL;
     let classified;
     try { classified = classifyEdges(record, {}); } catch (_e) { return null; }
     if (!Array.isArray(classified)) return null;
@@ -570,9 +594,10 @@
       const e = classified[i];
       if (!e || (e.cls !== 'silhouette' && e.cls !== 'boundary')) continue;
       const Pa = world[e.a]; const Pb = world[e.b];
-      // A silhouette vertex below the receiver folds the ground projection into a
-      // bow-tie; bail to the hull rather than emit a mirrored loop.
-      if ((Pa && Pa.y < -1e-6) || (Pb && Pb.y < -1e-6)) return null;
+      // A silhouette vertex behind the receiving plane folds the projection into
+      // a bow-tie; bail to the hull rather than emit a mirrored loop.
+      if ((Pa && planeSignedDist(Pa, anchor, normal) < -1e-6)
+        || (Pb && planeSignedDist(Pb, anchor, normal) < -1e-6)) return null;
       silEdges.push([e.a, e.b]);
     }
     if (silEdges.length < 3) return null;
@@ -592,6 +617,86 @@
     // Outer (largest |area|) first — pickPolygon / ring-extent expect it.
     rings.sort((a, b) => Math.abs(ringSignedArea(b)) - Math.abs(ringSignedArea(a)));
     return rings;
+  };
+
+  // W-30d — `lightFaceSign`/`lightClassifyEdges` HOISTED out of `build()`'s own
+  // closure (where they lived, parked, as the "risky part" W-30c's stop
+  // condition flagged) to module scope, parameterized by `ctx =
+  // { positional, lightPosition, lightDir }` instead of closing over build()'s
+  // locals. `build()` below still gets its own byte-identical wrappers built
+  // from its own locals — this hoist changes NOTHING about the ground-shadow
+  // path; it only makes the light-relative silhouette classifier reusable by
+  // `footprintRings` for an arbitrary receiving plane (scene3d.js's per-face
+  // shadow-receive footprint), which cannot see build()'s closure at all.
+  const lightFaceSignFor = (face, ctx) => {
+    const n = face && face.normalWorld;
+    if (!n) return 0;
+    let lx; let ly; let lz;
+    if (ctx.positional) {
+      const c = faceCenterWorld(face);
+      lx = ctx.lightPosition.x - c.x; ly = ctx.lightPosition.y - c.y; lz = ctx.lightPosition.z - c.z;
+    } else {
+      lx = ctx.lightDir.x; ly = ctx.lightDir.y; lz = ctx.lightDir.z;
+    }
+    return n.x * lx + n.y * ly + n.z * lz;
+  };
+  const lightClassifyEdgesFor = (record, ctx) => {
+    const faces = record.faces || [];
+    return (record.edges || []).map((edge) => {
+      const adjacent = edge.faces.map((idx) => faces[idx]).filter(Boolean);
+      let cls = 'interior';
+      if (adjacent.length === 1) {
+        cls = 'boundary';
+      } else if (adjacent.length === 2) {
+        const s0 = lightFaceSignFor(adjacent[0], ctx);
+        const s1 = lightFaceSignFor(adjacent[1], ctx);
+        if ((s0 >= 0) !== (s1 >= 0)) cls = 'silhouette';
+      }
+      return { a: edge.a, b: edge.b, cls };
+    });
+  };
+
+  // W-30d (F2a) — the non-convex-aware footprint primitive `buildFaceFootprint`
+  // (scene3d.js) needs: the caster's TRUE silhouette loops (holes preserved —
+  // R2/R3 from W-30c-plan.md) projected onto an ARBITRARY receiving plane, not
+  // just the y = 0 ground `build()` casts onto. `light` supplies both the
+  // classification reference (toward/away-the-light sign) and, when positional,
+  // the light position; `fallbackDir` is the directional travel vector used
+  // when `light` has no usable world position (mirrors `projectLightToPlane`'s
+  // own positional detection, kept independent of it since the caller's
+  // `projectVertex` already encodes the actual projection).
+  //
+  // The silhouette computation is used ONLY to detect a genuine HOLE (more
+  // than one loop, e.g. a torus's outer + inner rim) — the silhouette loop and
+  // convex hull are the exact same RING for any convex caster (a box, a
+  // sphere, ...), but a mesh commonly stores a duplicate copy of "the same"
+  // corner per adjacent face, and the hull's sort-based vertex selection can
+  // pick a different (1-ULP-different) copy of that corner than the
+  // edge-chain-based silhouette loop, even though the polygon SHAPE is
+  // identical. Always returning the hull for the single-loop case — instead of
+  // the silhouette loop itself — keeps every convex caster's footprint
+  // bit-identical to pre-W-30d behaviour (verified: `scene3d-shadow-footprint-
+  // wiring.test.js`'s directional-light md5 guard). Only a genuine hole (>=2
+  // loops) switches to the true silhouette rings, which is the only case where
+  // the hull's answer (hole filled in) and the truth actually differ. Also
+  // falls back to the hull outright when the silhouette computation degenerates
+  // (a straddling caster, or a mesh missing edge/face topology) or the light is
+  // unusable — exactly what `buildFaceFootprint` used exclusively before this
+  // fix, so a caster that never exercised the silhouette path is unaffected.
+  // Returns an array of plane-local rings (outer first) or null when the
+  // caster casts nothing onto this plane.
+  const footprintRings = (record, projectVertex, light, planeAnchor, planeNormal, fallbackDir) => {
+    const pos = light && light.position;
+    const type = light && light.type;
+    const positional = Boolean(pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z)
+      && (type === 'point' || type === 'spot' || type === 'area'));
+    if (!positional && !fallbackDir) return null;
+    const ctx = { positional, lightPosition: pos, lightDir: fallbackDir };
+    const classifyEdges = (rec) => lightClassifyEdgesFor(rec, ctx);
+    const loops = casterSilhouetteLoops(record, projectVertex, classifyEdges, planeAnchor, planeNormal);
+    if (loops && loops.length > 1) return loops; // a genuine hole — the hull cannot represent this
+    const hull = casterHull(record, projectVertex, planeAnchor, planeNormal);
+    return hull ? [hull] : null;
   };
 
   // Cheap analytic clip of a subject polygon against a CONVEX clip polygon
@@ -2620,37 +2725,20 @@
     //     — so a diverging light silhouettes each face by its own bearing.
     // Only the CLASSIFICATION source changes; the loops still chain + project +
     // even-odd fill through the exact same path as before.
-    const lightFaceSign = (face) => {
-      const n = face && face.normalWorld;
-      if (!n) return 0;
-      let lx; let ly; let lz;
-      if (positional) {
-        const c = faceCenterWorld(face);
-        lx = lightPosition.x - c.x; ly = lightPosition.y - c.y; lz = lightPosition.z - c.z;
-      } else {
-        lx = lightDir.x; ly = lightDir.y; lz = lightDir.z;
-      }
-      return n.x * lx + n.y * ly + n.z * lz;
-    };
+    //
+    // W-30d — `lightClassifyEdges` is now a thin wrapper over the module-scope
+    // `lightClassifyEdgesFor`/`lightFaceSignFor` (hoisted above `build()` so
+    // `footprintRings` can reuse the identical light-relative classification
+    // rule for an arbitrary receiving plane). `lightCtx0` below is built from
+    // this closure's own `positional`/`lightPosition`/`lightDir` locals, so
+    // this call site and every value it produces are byte-identical to the
+    // pre-hoist inline version.
+    const lightCtx0 = { positional, lightPosition, lightDir };
     // Drop-in replacement for Edges.classifyEdges within casterSilhouetteLoops:
     // returns { a, b, cls } per edge with cls ∈ {silhouette, boundary, interior}
     // decided by the LIGHT, not the camera. Boundary (single-face / open-surface)
     // rims still bound the footprint, exactly as the camera classifier did.
-    const lightClassifyEdges = (record) => {
-      const faces = record.faces || [];
-      return (record.edges || []).map((edge) => {
-        const adjacent = edge.faces.map((idx) => faces[idx]).filter(Boolean);
-        let cls = 'interior';
-        if (adjacent.length === 1) {
-          cls = 'boundary';
-        } else if (adjacent.length === 2) {
-          const s0 = lightFaceSign(adjacent[0]);
-          const s1 = lightFaceSign(adjacent[1]);
-          if ((s0 >= 0) !== (s1 >= 0)) cls = 'silhouette';
-        }
-        return { a: edge.a, b: edge.b, cls };
-      });
-    };
+    const lightClassifyEdges = (record) => lightClassifyEdgesFor(record, lightCtx0);
 
     const groundFace = scene.ground.faces && scene.ground.faces[0];
     const groundPlane = groundFace && HLR ? HLR.fitSupportPlane(groundFace.polygon) : null;
@@ -3287,6 +3375,10 @@
       projectFromPositionToPlane,
       projectLightToPlane,
       convexHull,
+      // W-30d (F2a) — the non-convex-aware (hole-preserving) footprint
+      // primitive for an arbitrary receiving plane. See the comment above its
+      // definition for why this exists and how it degrades to `convexHull`.
+      footprintRings,
       // Fill Style (tone-law) on shadow hatch: `toneLawApplies(lawId)` is the
       // predicate a UI picker should gate on (hide ids whose mark class does
       // not change shadow geometry); `toneLawMarkClass` is the underlying

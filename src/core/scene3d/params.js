@@ -729,6 +729,10 @@
       case 'sliceRotate': return clamp(finite(value, 0), -360, 360);
       case 'sliceTilt': return clamp(finite(value, 0), -180, 180);
       case 'sliceVisibility': return SLICE_VISIBILITIES.includes(value) ? value : 'visibleOnly';
+      // W-35 — end overlap (docs/3d-audit/lane-reports/W-35-plan.md). Unit is
+      // pen widths, in [-2, 8]; 0 (default) is a byte-identical no-op. See
+      // scene3d.js's own END_OVER_MM comment for the mechanism.
+      case 'sliceEndOverlap': return clamp(finite(value, 0), -2, 8);
       case 'burstCount': return clamp(Math.round(finite(value, 16)), 6, 48);
       case 'burstCenter': return BURST_CENTERS.includes(value) ? value : 'specular';
       // Surface-fill TONE LAW. The roster is owned by src/config/scene3d-tone-laws.js
@@ -879,6 +883,23 @@
     };
   };
 
+  // W-10d-2 (Contract A) — apply the picker's curated unreachable-law
+  // write-back to ONE style bag ({ mapper, params: { toneLaw } }), keyed on
+  // the primitive it is rendered on. Lazy `Vectura.SCENE_FILL_STYLES` read —
+  // safe, the same lazy cross-module read `context-bar.js` already does in
+  // the opposite direction (its own `isReachableOn`/`displayParams` comments).
+  // Returns the SAME object reference when no write-back applies, so every
+  // non-triggering bag (2799 of 2800 combinations) is a provable no-op.
+  const applyLawWriteBack = (style, primitiveMode) => {
+    const FS = Vectura.SCENE_FILL_STYLES;
+    if (!FS || typeof FS.writeBackFor !== 'function') return style;
+    if (!isObject(style)) return style;
+    const id = isObject(style.params) ? style.params.toneLaw : undefined;
+    const target = FS.writeBackFor(id, primitiveMode, style.mapper);
+    if (!target || target === id) return style;
+    return { ...style, params: { ...style.params, toneLaw: target } };
+  };
+
   const normalizeStyleTable = (table) => {
     const src = isObject(table) ? table : {};
     const mapOf = (bag) => {
@@ -999,6 +1020,42 @@
     };
   };
 
+  // U9 (resolve half, docs/3d-audit/lane-reports/W-22-24-W-18-plan.md §U9) —
+  // `shadowToneLaw`'s OWN clamp, no longer routed through the shared
+  // `clampStyleParam('toneLaw', …)` case above. That shared case collapses a
+  // FOLDED (ALIASES) id straight to its survivor (e.g. 'fineLadder' ->
+  // 'ladder') because `normalizeStyle`'s migration shim is what restores the
+  // lost information for `style.params.toneLaw` — it independently re-reads
+  // the RAW `src.params.toneLaw` and writes the sibling collapse param (e.g.
+  // `rungMode:'fine'`) onto the same bag. The shadow bag has no such shim and
+  // no sibling sub-control field to write that param into (see DEFAULT_SHADOW
+  // above — one flat `shadowToneLaw` string, nothing else), so collapsing it
+  // here has no way to get the information back: `shadows.js`'s
+  // `HATCH_LAW_RECIPES` is keyed by the INTERNAL id (`fineLadder` has its own
+  // recipe distinct from plain `ladder`'s fallback) and would silently draw
+  // the wrong texture for every scene saved with a pre-collapse value.
+  // A folded id is still a full member of the 48-id engine vocabulary
+  // (`IDS` never shrinks on collapse), so this mirrors `resolveToneLaw`'s own
+  // rule 2 verbatim ("an id that is itself a key of ALIASES is already the
+  // correct internal id") — checked directly against `ALIASES`, not inferred
+  // from `IDS` membership, so it is passed through unchanged exactly like any
+  // other recognized id. The picker only ever offers `PICKER_IDS` (folded ids
+  // excluded), so this never lets a NEW pick reach the folded value — it only
+  // preserves what an already-saved scene/preset carries.
+  const clampShadowToneLaw = (value) => {
+    const roster = Vectura.SCENE3D_TONE_LAWS || null;
+    const R = (roster && roster.IDS) || null;
+    const DEF = (roster && roster.DEFAULT) || 'ladder';
+    if (typeof value === 'string' && value === DEF) return DEF;
+    const ALIASES = (roster && roster.ALIASES) || null;
+    if (typeof value === 'string' && ALIASES && Object.prototype.hasOwnProperty.call(ALIASES, value)) return value;
+    if (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) return value;
+    // Warn only for a genuinely unrecognized id — same reasoning as the shared
+    // clampStyleParam('toneLaw') case above.
+    if (typeof value === 'string' && value && R) warnUnknownToneLaw(value);
+    return 'ladder';
+  };
+
   const normalizeShadow = (shadow) => {
     const src = isObject(shadow) ? shadow : {};
     return {
@@ -1011,9 +1068,7 @@
       shadowLayerCount: clamp(Math.round(finite(src.shadowLayerCount, DEFAULT_SHADOW.shadowLayerCount)), 2, 4),
       shadowFalloff: clamp(finite(src.shadowFalloff, DEFAULT_SHADOW.shadowFalloff), 0.2, 1),
       shadowAngleFollowsLight: src.shadowAngleFollowsLight === true,
-      // Reuses the exact `toneLaw` clamp `style.params.toneLaw` goes through
-      // (single choke point, no drift) — unknown/absent id resolves to 'ladder'.
-      shadowToneLaw: clampStyleParam('toneLaw', src.shadowToneLaw),
+      shadowToneLaw: clampShadowToneLaw(src.shadowToneLaw),
       shadowToneDepth: clamp(finite(src.shadowToneDepth, DEFAULT_SHADOW.shadowToneDepth), 0, 1),
       shadowReceiveOnObjects: src.shadowReceiveOnObjects === true,
     };
@@ -1072,7 +1127,13 @@
       shadow: obj.shadow,
       border: obj.border,
       emissive: obj.emissive,
-      style: normalizeStyle(src.style),
+      // W-10d-2 (Contract A) — curated write-back applied to the RENDER-
+      // facing style only (this function's own return is a throw-away copy
+      // consumed by collectSceneParams/object3d.js's generate call; it is
+      // never assigned back onto the live layer bag). Idempotent + a same-
+      // reference no-op outside the curated set, so every compose pass
+      // recomputes the identical result — no per-pass state, nothing to guard.
+      style: applyLawWriteBack(normalizeStyle(src.style), obj.primitive),
       faceStyles,
       // Polish P-B — per-object EdgeStyle override (null ⇒ inherit scene).
       edgeStyles: normalizeObjectEdgeStyles(src.edgeStyles),
@@ -1419,6 +1480,28 @@
     out.groups = normalizeGroups(src.groups, new Set(out.objects.map((o) => o.id)));
     out.assets = isObject(src.assets) ? src.assets : {};
     out.styleTable = normalizeStyleTable(src.styleTable);
+    // W-10d-2 (Contract A) — monolith load-channel write-back. This is the
+    // ONE correlation pass where `out.objects` (each with `.primitive`) and
+    // `out.styleTable.byObject`/`byFace` are both in scope. A monolith's
+    // styleTable IS already normalized-and-persisted at load (sanitizeSceneParams
+    // -> normalizeParams, engine.js:408-411/:1931), so this reaches saved
+    // documents directly. `byFace` keys are `${objectId}/${faceId}`.
+    {
+      const primitiveById = {};
+      out.objects.forEach((o) => { if (o && o.id) primitiveById[o.id] = o.primitive; });
+      Object.keys(out.styleTable.byObject).forEach((objId) => {
+        const primitiveMode = primitiveById[objId];
+        if (!primitiveMode) return;
+        out.styleTable.byObject[objId] = applyLawWriteBack(out.styleTable.byObject[objId], primitiveMode);
+      });
+      Object.keys(out.styleTable.byFace).forEach((key) => {
+        const slash = key.indexOf('/');
+        const objId = slash >= 0 ? key.slice(0, slash) : key;
+        const primitiveMode = primitiveById[objId];
+        if (!primitiveMode) return;
+        out.styleTable.byFace[key] = applyLawWriteBack(out.styleTable.byFace[key], primitiveMode);
+      });
+    }
     // Per-edge-class EdgeStyle table (C-06). Attached ONLY when the scene carries
     // one, so a legacy/default scene keeps its exact serialized shape (and, since
     // every default is a no-op, its exact render). scene3d.js reads p.edgeStyles
@@ -1682,6 +1765,23 @@
   // normalize. Never throws; garbage in → canonical scene out.
   const sanitizeSceneParams = (params) => normalizeParams(migrateScene(params));
 
+  // W-10d-2 (Contract A) — the object3d/booleanGroup3d LEAF load channel.
+  // `sanitized` here is `migrateScene`'s own return (engine.js:422) — a raw,
+  // un-normalized { primitive, style: { mapper, params: { toneLaw } }, ... }
+  // bag, NOT yet run through normalizeObjectLayerParams (an object3d leaf is
+  // never normalized at load; only migrateScene runs). This is the ONLY
+  // write-back call whose return is persisted: engine.js:1931 assigns
+  // `layer.params = sanitizeImportedParams(...)` directly, so a rewritten
+  // style here IS the saved-and-reopened document, once, at load. Same
+  // reference back when nothing applies (identity, no dirtying).
+  const writeBackObjectLayerStyle = (sanitized) => {
+    const src = isObject(sanitized) ? sanitized : {};
+    if (!isObject(src.style)) return src;
+    const style = applyLawWriteBack(src.style, src.primitive);
+    if (style === src.style) return src;
+    return { ...src, style };
+  };
+
   const api = {
     SCENE_VERSION,
     PRIMITIVES,
@@ -1730,6 +1830,7 @@
     normalizeParams,
     migrateScene,
     sanitizeSceneParams,
+    writeBackObjectLayerStyle,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Params: api });

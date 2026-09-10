@@ -173,18 +173,29 @@
       const weight = finite(light.intensity, 1);
       const type = light.type;
       if (type === 'ambient') { total += weight; continue; }
-      if (typeof shadowFn === 'function' && shadowFn(P, light)) continue; // this light is blocked at P
       if (type === 'area') {
         // Average N deterministic point-light sub-samples spread across the
         // emitter's extent. No distance range (softness, not falloff) → each
         // sub-sample is a pure Lambert term; the average softens the terminator.
+        //
+        // W-30c (F1, R1) — gate PER SUB-SAMPLE, not once for the whole emitter.
+        // The old code ran the single `shadowFn(P, light)` gate below (one ray
+        // at `light.position`, the emitter's centre — `shadow-receive.js`'s
+        // `pointInShadow`) BEFORE this branch, so a partly occluded area light
+        // collapsed straight to 0 instead of softening: the N-sample spread
+        // never ran when the centre ray alone was blocked. Moving the gate
+        // inside the loop, keyed to each sub-sample's own position, restores
+        // the penumbra (measured RED→GREEN in
+        // tests/unit/scene3d-area-light-shadow-softening.test.js).
         const pos = light.position || v(0, 0, 0);
         const radius = Math.max(0, finite(light.size, 120) / 2);
         const N = clamp(Math.round(finite(light.samples, 6)), 2, 16);
         let sum = 0;
         for (let s = 0; s < N; s++) {
           const off = areaSampleOffset(s, N, radius);
-          const toL = sub(v(pos.x + off.x, pos.y + off.y, pos.z + off.z), P);
+          const Ls = v(pos.x + off.x, pos.y + off.y, pos.z + off.z);
+          if (typeof shadowFn === 'function' && shadowFn(P, { ...light, type: 'point', position: Ls })) continue;
+          const toL = sub(Ls, P);
           const dist = Math.hypot(toL.x, toL.y, toL.z);
           const dir = dist > 1e-9 ? mul(toL, 1 / dist) : v(0, 1, 0);
           sum += Math.max(0, dot(n, dir));
@@ -192,6 +203,7 @@
         total += (sum / N) * weight;
         continue;
       }
+      if (typeof shadowFn === 'function' && shadowFn(P, light)) continue; // this light is blocked at P
       if (type === 'point' || type === 'spot') {
         const pos = light.position || v(0, 0, 0);
         const toL = sub(pos, P);

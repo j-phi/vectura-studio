@@ -2407,6 +2407,32 @@
     // error budget over that distance and below `PLOT_FLOOR_PEN` so the
     // walked polyline cannot itself read as a filled polygon.
     const MK_ARC_PEN = 1.2;
+    // T1b (STILL-OPEN.md, 2026-09-06 ruling; T1-review.md §6) — the chart
+    // walk's own D2 "truncate, don't refuse" fix can leave two
+    // INDEPENDENTLY placed marks (different rows) each cut short at the
+    // same limb, landing almost coincident there — measured: torus/contour
+    // worst pair 0.448 -> 0.032 pens, torus/crosshatch 0.080 -> 0.032 pens
+    // (0.0095 mm gap at the shipped 0.3 mm pen — effectively overlapping
+    // ink). `MK_MIN_ADJ_PEN` is the floor below which two marks read as one
+    // blot rather than two distinct strokes, stated in pens like every
+    // other bar in this file. Checked below (`place`) against EVERY earlier
+    // walked mark, not only truncated ones — measured, restricting the
+    // check to truncated-vs-truncated pairs alone left a residual
+    // non-truncated-vs-non-truncated pair at 0.248 pens (still under bar);
+    // the bulk/dark-region design spacing is comfortably clear of this
+    // floor regardless (measured p5 ~0.93-1.03 pens, unaffected — see the
+    // guard's own `mkMidBuckets` comment for why this stays cheap even
+    // checked broadly).
+    const MK_MIN_ADJ_PEN = 0.5;
+    // T1b (T1-review.md §7) — no code-level ceiling existed on a walked
+    // arm's own step count (`Math.ceil(edgeLen / MK_ARC_MM)`); measured max
+    // 107 points in a single mark (p99 43, median 6) on the audit fixture,
+    // but nothing stopped a finer pen (smaller `MK_ARC_MM`) or a longer
+    // tick from growing that without bound. Capped PER ARM — a mark carries
+    // at most two arms plus the shared hub point, so this bounds the whole
+    // mark to `2 * MK_MAX_WALK_STEPS + 1` points, generously over the
+    // measured max.
+    const MK_MAX_WALK_STEPS = 64;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2429,11 +2455,33 @@
       // drawn). `dirOver10 / marks <= 0.01` is p99 <= 10 deg restated as a
       // fraction, which is exact (not an approximation) and needs no
       // external ground truth or per-mark array.
-      trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0,
+      // T1b — `dupStub` counts marks DROPPED because their own representative
+      // midpoint landed within `MK_MIN_ADJ_PEN` of an earlier walked mark's
+      // (see `mkMidBuckets` below and the guard in `place`). `markMids` is
+      // the representative midpoint of every ACCEPTED walked mark this
+      // object's whole render placed — published so a caller can verify the
+      // spacing guard directly against the population it actually governs,
+      // rather than re-deriving "which output path is a walked mark" from
+      // the algorithm's own return value (which carries no such tag by the
+      // time it reaches a caller).
+      trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0, dupStub: 0, markMids: [],
     };
     const mkSites = new Map();          // blue-noise / Poisson occupancy
     const mkED = new Map();             // error-diffusion sideways carry
     const mkKey = (x, y) => `${Math.round(x / MK_CELL)},${Math.round(y / MK_CELL)}`;
+    // T1b — grid-bucketed representative midpoint of every WALKED mark
+    // (`isWalkedShape`) placed so far, across THIS object's WHOLE render
+    // (every ruling row shares this one map — reset per `generate()` call,
+    // exactly like `mkSites`/`mkED` above, since a new one of these
+    // closures is built per object per call but `emitMarks` itself runs
+    // once per ruling row). Bucket size is `MK_MIN_ADJ_PEN * penWidth`
+    // (computed at use-time in `place`, since `penWidth` is assigned later
+    // in this same function), so any two marks within that distance are
+    // guaranteed to land in the same or an adjacent bucket — the standard
+    // fixed-radius grid-neighbour check, O(1) average per mark instead of
+    // an O(n^2) scan against every earlier mark (needed since a render can
+    // place thousands of marks).
+    const mkMidBuckets = new Map();
 
     // ── THE TWELVE, AS DATA ───────────────────────────────────────────────────
     // `chan` is the TONE CHANNEL and it is the axis that separates these laws
@@ -4649,19 +4697,29 @@
     // `cA -> 1` (family A already at full darkness) `cB`'s CONTRIBUTION to
     // the combined coverage vanishes on its own (there is no headroom left
     // to add to), so this needs no separate clamp for the darkest band.
-    const CROSS_SHARE_BASE = 0.1;
-    // `crossRatio` -> the crossing family's fixed SHARE multiplier (not a
-    // function of `I`; used both to scale coverage below AND, in the walk,
-    // to widen the step ceiling that shared coverage target needs to reach
-    // — see `dfMax`'s own W-26b-1 note).
-    const crossShareOf = (crossRatio) => {
+    // ── W-36 — THE CROSSED PAIR SPENDS ONE COVERAGE BUDGET ───────────────────
+    // W-26b-1 (above) proved the SUM `1.0*cA + 0.1*cA` is plot-safe (cylinder
+    // D220 4912.6 -> 5153.7 mm measured on that unit's own prototype, ink
+    // coverage 0.971 -> 0.805) — it never justified spending 91% of that sum
+    // on ONE family. Jay's rule (USER report 16, verbatim): "make crosshatch
+    // have the same number of crosshatch lines as it has hatch lines...".
+    // `CROSS_PAIR_BUDGET` IS that measured-safe sum, so this unit
+    // REDISTRIBUTES ink rather than adding it: at the shipped
+    // `crossDensityRatio = 1` both families ask for exactly half the budget,
+    // i.e. the SAME coverage share and therefore the SAME pitch — parity by
+    // construction, not by widening the crossing family's own reach. `role`
+    // is 'a' for the primary family, 'b' for the crossing one; the dial
+    // keeps its documented sense (`crossDensityRatio` = family B's SPACING
+    // relative to family A's) by dividing only family B's half by `r`.
+    const CROSS_PAIR_BUDGET = 1.1;
+    const crossPairShare = (crossRatio, role) => {
       const r = clamp(finite(crossRatio, 1), 0.25, 2);
-      return CROSS_SHARE_BASE / (r * r);
+      const half = CROSS_PAIR_BUDGET / 2;
+      return (role === 'b') ? half / r : half;
     };
-    const ladderCrossWantedPitch = (I, crossRatio) => {
-      const cA = ladderCov(I);
-      const cB = clamp(cA * crossShareOf(crossRatio), LADDER_COV_MIN, 1);
-      return masterPitch / cB;
+    const ladderPairWantedPitch = (I, crossRatio, role) => {
+      const c = clamp(ladderCov(I) * crossPairShare(crossRatio, role), LADDER_COV_MIN, 1);
+      return masterPitch / c;
     };
 
     // 'contFieldQuant' — the control. The SAME field, with the gap allowed only
@@ -5908,7 +5966,11 @@
           let curPt = seedPt;
           const pts = [];
           let truncated = false;
-          const steps = Math.max(1, Math.ceil(edgeLen / MK_ARC_MM));
+          // T1b — capped per arm (see `MK_MAX_WALK_STEPS` above); a fine pen
+          // or a long tick no longer grows a single mark's point count
+          // without bound, at the cost of a coarser (but still on-surface)
+          // walk in that pathological tail.
+          const steps = Math.min(MK_MAX_WALK_STEPS, Math.max(1, Math.ceil(edgeLen / MK_ARC_MM)));
           for (let s = 1; s <= steps; s += 1) {
             const f = s / steps;
             const stepU = seedUV.u + (target.u - seedUV.u) * f;
@@ -5989,6 +6051,12 @@
         const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
         const runs = [];
         let askTot = 0; let sawTrunc = false; let sawDirBad = false;
+        // T1b — representative midpoint of each WALKED poly in THIS mark
+        // (whether or not it was truncated — see `MK_MIN_ADJ_PEN` above for
+        // why the check below is not restricted to truncated pairs),
+        // checked against every earlier mark's own midpoint before this
+        // one is allowed onto the page.
+        const markMids = [];
         for (let i = 0; i < polys.length; i++) {
           const poly = polys[i];
           if (isWalkedShape) {
@@ -5996,6 +6064,10 @@
             if (!wk.pts) { mkStat.offSurface += 1; return false; }
             askTot += wk.askLen;
             if (wk.truncated) sawTrunc = true;
+            {
+              const ta = wk.pts[0]; const tb = wk.pts[wk.pts.length - 1];
+              markMids.push({ x: (ta.x + tb.x) / 2, y: (ta.y + tb.y) / 2 });
+            }
             if (i === 0 && wk.pts.length >= 2) {
               const reqDir = requestedDir(fr, uOff, theta, poly);
               const a = wk.pts[0]; const b = wk.pts[wk.pts.length - 1];
@@ -6031,6 +6103,31 @@
           }
           runs.push(pts);
         }
+        // T1b (STILL-OPEN.md, 2026-09-06 ruling) — MIN-ADJACENT-MARK
+        // SPACING GUARD. Two independently placed marks (most often — but
+        // not only — limb-truncated stubs from adjacent rows) can land
+        // almost coincident at the same silhouette edge (D2's "keep what's
+        // drawn" never checked against any OTHER mark). Checked against
+        // EVERY earlier walked mark via a grid-neighbour lookup (see
+        // `mkMidBuckets` above) — bulk/dark-region packing sits comfortably
+        // above this floor by design and measured unaffected.
+        const minAdjMM = MK_MIN_ADJ_PEN * penWidth;
+        for (let k = 0; k < markMids.length; k += 1) {
+          const tm = markMids[k];
+          const cx = Math.floor(tm.x / minAdjMM); const cy = Math.floor(tm.y / minAdjMM);
+          for (let dx = -1; dx <= 1; dx += 1) {
+            for (let dy = -1; dy <= 1; dy += 1) {
+              const bucket = mkMidBuckets.get(`${cx + dx},${cy + dy}`);
+              if (!bucket) continue;
+              for (let h = 0; h < bucket.length; h += 1) {
+                if (Math.hypot(tm.x - bucket[h].x, tm.y - bucket[h].y) < minAdjMM) {
+                  mkStat.dupStub += 1;
+                  return false;
+                }
+              }
+            }
+          }
+        }
         let tot = 0;
         runs.forEach((r) => {
           for (let i = 1; i < r.length; i++) tot += Math.hypot(r[i].x - r[i - 1].x, r[i].y - r[i - 1].y);
@@ -6054,6 +6151,18 @@
           mkStat.drawnSum += tot;
           if (sawTrunc) mkStat.trunc += 1;
           if (sawDirBad) mkStat.dirOver10 += 1;
+        }
+        // T1b — this mark cleared the spacing guard; record its own
+        // midpoint(s) in the grid so a LATER row's mark can be checked
+        // against them in turn.
+        for (let k = 0; k < markMids.length; k += 1) {
+          const tm = markMids[k];
+          const cx = Math.floor(tm.x / minAdjMM); const cy = Math.floor(tm.y / minAdjMM);
+          const key = `${cx},${cy}`;
+          let bucket = mkMidBuckets.get(key);
+          if (!bucket) { bucket = []; mkMidBuckets.set(key, bucket); }
+          bucket.push(tm);
+          mkStat.markMids.push(tm);
         }
         return true;
       };
@@ -7352,7 +7461,148 @@
       }
       return outp;
     };
-    const makeSink = (back, lineIndex, fam) => {
+    // ── W-33 — DEVICE-SPACE ADAPTIVE SUBDIVISION OF A FINISHED RULING ────────
+    // USER (Jay): "I'm observing some non-curved angles here." Rule 2(b) (the
+    // ledger's per-vertex turn bar) extended to contour FILL rulings: no
+    // per-vertex turn, measured in DEVICE space (mm on paper — the geometry
+    // that is actually stroked, not the chart parameter), may exceed
+    // FILL_MAX_TURN_DEG. `steps` (`baseSteps`, above) samples the chart
+    // UNIFORMLY IN PARAMETER and nothing downstream ever consulted the
+    // ruling's PROJECTED turn — the fill-side counterpart of W-34's finding
+    // for `refineSliceRing`, except here there was no device-space
+    // refinement at all. The offender is always the innermost cap/pole ring,
+    // whose projected shape is a flat ellipse: 32 uniform-parameter samples
+    // put the fewest points exactly where the projected turn is greatest
+    // (measured 31.24 deg / 38.35 deg, cameras a/b, identical to 2 decimals
+    // on capsule/cone/cylinder/sphere — four different surfaces cannot share
+    // a geometric corner, they share a sample count; see
+    // docs/3d-audit/lane-reports/W-32-W-33-plan.md §B3).
+    //
+    // Mirrors `sliceRingSubdivideOnce`/`refineSliceRing` (scene3d.js) in
+    // SHAPE (subdivide-until-under-bar, bounded rounds) but not in METHOD:
+    // that pass interpolates a Catmull-Rom guess and re-snaps it to the
+    // surface; here the ruling's own `paramAt`/`sampleAt` closures recompute
+    // the TRUE analytic point at any parameter, so an inserted "midpoint" is
+    // exact, not an approximation.
+    //
+    // Scope (plan §B4): hatch/crosshatch/spiral OPEN runs carry GENUINE
+    // folds where a ruling turns back on itself at a chart pole (capsule
+    // hatch 127 deg, sphere hatch 116 deg measured) and sampling barely
+    // moves them — planing those to 8 deg would erase real geometry, not a
+    // facet artefact. So this only ever runs for `mapper === 'contour'`
+    // rulings, or for a CLOSED ring on ANY mapper (a closed ring has zero
+    // analytic turn by construction — every degree on one is
+    // discretisation, never a fold). Every other ruling returns before
+    // touching its arrays, so it is byte-identical.
+    const FILL_MAX_TURN_DEG = 8;
+    const FILL_REFINE_MAX_ROUNDS = 6;
+    const fillTurnDeg = (a, b, c) => {
+      const v1x = b.x - a.x; const v1y = b.y - a.y;
+      const v2x = c.x - b.x; const v2y = c.y - b.y;
+      const l1 = Math.hypot(v1x, v1y);
+      const l2 = Math.hypot(v2x, v2y);
+      if (l1 < 1e-9 || l2 < 1e-9) return 0;
+      let cosA = (v1x * v2x + v1y * v2y) / (l1 * l2);
+      if (cosA > 1) cosA = 1; else if (cosA < -1) cosA = -1;
+      return (Math.acos(cosA) * 180) / Math.PI;
+    };
+    // Mutates `pts`/`tts`/`wts` IN PLACE (parallel arrays: point, sweep
+    // parameter, pending weight) — ONLY when it actually inserts. A run that
+    // is under the bar everywhere (the overwhelming majority — every
+    // straight-mesh primitive, every non-polar contour ring, every
+    // hatch/crosshatch/spiral run) returns before the first write, so it is
+    // byte-identical to before this unit.
+    const refineFillRunTurns = (pts, tts, wts, paramAtFn, wantFrontFlag) => {
+      if (typeof paramAtFn !== 'function') return;
+      const n0 = pts.length;
+      if (n0 < 3) return;
+      const closed = n0 >= 4
+        && Math.hypot(pts[0].x - pts[n0 - 1].x, pts[0].y - pts[n0 - 1].y) < 1e-6;
+      if (mapper !== 'contour' && !closed) return;
+      // Strip the duplicated closing point (if any) so modular indexing does
+      // not manufacture a phantom zero-length edge at the seam — the same
+      // move `refineSliceRing` makes before its own subdivision rounds.
+      let work = closed ? pts.slice(0, -1) : pts.slice();
+      let workT = closed ? tts.slice(0, -1) : tts.slice();
+      let workW = closed ? wts.slice(0, -1) : wts.slice();
+      const ceiling = Math.min(work.length * 4, work.length + 200);
+      let round = 0;
+      while (round < FILL_REFINE_MAX_ROUNDS) {
+        const n = work.length;
+        if (n < 3 || n >= ceiling) break;
+        const lo = closed ? 0 : 1;
+        const hi = closed ? n - 1 : n - 2;
+        const markSeg = new Array(n).fill(false);
+        let any = false;
+        for (let i = lo; i <= hi; i++) {
+          const a = work[(i - 1 + n) % n];
+          const b = work[i];
+          const c = work[(i + 1) % n];
+          if (fillTurnDeg(a, b, c) > FILL_MAX_TURN_DEG) {
+            any = true;
+            // Bisect only the LONGER of the two adjacent chords: on a smooth
+            // curve the shorter chord already carries less of the turn (turn
+            // contribution scales with local sample spacing), so halving the
+            // longer side alone still roughly halves the vertex's own turn
+            // each round while (measured, C6) keeping total point growth to
+            // ~1.5x baseline instead of ~2.2x for bisecting both sides.
+            const lenPrev = Math.hypot(b.x - a.x, b.y - a.y);
+            const lenNext = Math.hypot(c.x - b.x, c.y - b.y);
+            if (lenPrev >= lenNext) markSeg[(i - 1 + n) % n] = true;
+            else markSeg[i] = true;
+          }
+        }
+        if (!any) break;
+        const nextP = []; const nextT = []; const nextW = [];
+        const edgeCount = closed ? n : n - 1;
+        for (let i = 0; i < edgeCount; i++) {
+          nextP.push(work[i]); nextT.push(workT[i]); nextW.push(workW[i]);
+          if (markSeg[i] && nextP.length < ceiling) {
+            const j = (i + 1) % n;
+            let t0 = workT[i]; let t1 = workT[j];
+            // A decreasing tt across one segment always means a PARAMETER
+            // WRAP, never real regression (each `addPt` call's own `tt` is
+            // non-decreasing along the walk that produced it) — the ring's
+            // own seam on a closed ring (i = n-1), but ALSO an OPEN run's
+            // seam-joined interior seam (the join above can splice a tail
+            // ending near tt=1 straight onto a head resuming near tt=0
+            // WITHOUT the whole piece testing "closed", since the two ends
+            // of the overall gap are two different points, not the same
+            // one). Gating this on `closed` missed that second case: the
+            // naive un-wrapped average landed near tt=0.5 — the OPPOSITE
+            // side of the sphere — and one insertion there planted a point
+            // literally across the form (measured: 178 deg, sphere contour
+            // fillCurves-off cam a, a 47 mm jump from x=143 to x=133 in one
+            // "midpoint"). Correcting whenever it actually decreases, not
+            // only when the whole piece wraps, fixes both.
+            if (Number.isFinite(t0) && Number.isFinite(t1) && t1 < t0) t1 += 1;
+            if (Number.isFinite(t0) && Number.isFinite(t1)) {
+              const midTt = ((t0 + t1) / 2) % 1;
+              const pr = paramAtFn(midTt);
+              const smp = pr ? sampleAt(pr.a, pr.b) : null;
+              if (smp && smp.front === wantFrontFlag) {
+                nextP.push({ x: smp.x, y: smp.y, z: smp.z });
+                nextT.push(midTt);
+                nextW.push((workW[i] + workW[j]) / 2);
+              }
+            }
+          }
+        }
+        if (!closed) { nextP.push(work[edgeCount]); nextT.push(workT[edgeCount]); nextW.push(workW[edgeCount]); }
+        work = nextP; workT = nextT; workW = nextW;
+        round += 1;
+      }
+      const grew = closed ? (work.length !== n0 - 1) : (work.length !== n0);
+      if (!grew) return;
+      const finalP = closed ? [...work, { ...work[0] }] : work;
+      const finalT = closed ? [...workT, 1] : workT;
+      const finalW = closed ? [...workW, workW[0]] : workW;
+      pts.length = 0; Array.prototype.push.apply(pts, finalP);
+      tts.length = 0; Array.prototype.push.apply(tts, finalT);
+      wts.length = 0; Array.prototype.push.apply(wts, finalW);
+    };
+
+    const makeSink = (back, lineIndex, fam, paramAt, wantFront) => {
       let run = [];
       let runLen = 0;
       let gapPts = [];
@@ -7438,6 +7688,21 @@
             : ((splitsAlongLine() && wCnt > 0)
               ? splitByWeight(run, wPts, ttPts, fam)
               : [run]);
+          // W-33: tag the UNSPLIT piece (every non-weight tone law, `ladder`
+          // included) with its own per-point sweep parameter so a deferred
+          // pass — AFTER the seam join below has a chance to fuse this piece
+          // with another one — can device-space-refine the JOINED polyline
+          // rather than each half separately. Refining before the join is
+          // provably incomplete: the join vertex is the LAST point of one
+          // half and the FIRST of the other, both exempt from their own
+          // half's open-polyline turn check (an endpoint has no turn) —
+          // measured: a capsule contour ring's join corner still read 8.14
+          // deg after 12 rounds of per-half refinement, unmoving, because
+          // neither half was ever asked to check it. Weight/ribbon-split
+          // pieces (`wCnt > 0`) are not tagged and fall back to the OLD
+          // per-half timing below — narrower coverage, but no `__tt` array
+          // survives their split to refine against safely.
+          if (pieces.length === 1 && pieces[0] === run) run.__tt = ttPts.slice();
           pieces.forEach((pc) => {
             if (lozAny) pc.loz = true;
             mine.push(pc);
@@ -7629,7 +7894,7 @@
       const ladderKey = currentFam;
       let hlRun = [];
       // The base channel goes through the shared run sink (see makeSink).
-      const sink = makeSink(back, lineIndex, currentFam);
+      const sink = makeSink(back, lineIndex, currentFam, paramAt, wantFront);
       // A hard cut ends the continuous span, so both trigger flags reset.
       const flush = () => { sink.flush(); };
       const softDrop = sink.softDrop;
@@ -8312,15 +8577,26 @@
       // against, so a ruling that was already flush with the silhouette is
       // untouched.
       const EDGE_BISECT = 12;
+      // W-33: the bisected boundary point's OWN sweep parameter, `bestTt` —
+      // not the neighbouring regular sample's `s / nSteps` the two call
+      // sites used to tag it with. A boundary point sits up to a whole
+      // sample step away from its neighbour (that is the entire reason this
+      // bisection exists), so reusing the neighbour's `tt` handed
+      // `refineFillRunTurns` two adjacent array entries carrying the SAME
+      // parameter — a degenerate (zero-width) segment its midpoint
+      // insertion could never usefully subdivide, which is exactly why a
+      // silhouette-adjacent corner on an open contour run (measured: 17.13
+      // deg, capsule contour d50 cam a, vertex 1 of a 31-point open run)
+      // never converged under bisection.
       const edgeAt = (sIn, sOut) => {
-        let lo = sIn / nSteps; let hi = sOut / nSteps; let best = null;
+        let lo = sIn / nSteps; let hi = sOut / nSteps; let best = null; let bestTt = null;
         for (let k = 0; k < EDGE_BISECT; k++) {
           const mid = (lo + hi) / 2;
           const pr = paramAt(mid);
           const smp = pr ? sampleAt(pr.a, pr.b) : null;
-          if (smp && smp.front === wantFront) { lo = mid; best = smp; } else hi = mid;
+          if (smp && smp.front === wantFront) { lo = mid; best = smp; bestTt = mid; } else hi = mid;
         }
-        return best ? { x: best.x, y: best.y, z: best.z } : null;
+        return best ? { x: best.x, y: best.y, z: best.z, tt: bestTt } : null;
       };
       // Is this sweep CLOSED? Exactly the test the seam join below uses: the two
       // ends land on the same point, which is what "closed" means. A ring's
@@ -9013,7 +9289,10 @@
         // Meet the boundary on the way in, and again on the way out. Both are
         // no-ops unless the neighbouring sample is off the wanted side of the
         // surface, which is the only place a refinement is defined.
-        if (s > 0 && !onSurf[s - 1]) { const e = edgeAt(s, s - 1); if (e) addPt(e, sampleZone, tt); }
+        if (s > 0 && !onSurf[s - 1]) {
+          const e = edgeAt(s, s - 1);
+          if (e) addPt({ x: e.x, y: e.y, z: e.z }, sampleZone, Number.isFinite(e.tt) ? e.tt : tt);
+        }
         if (toneOn && TONE_ALGO === 'weightModulated') sink.noteW(weightAt(smp.I));
         else if (toneOn && isWeightLaw()) {
           // THE TONE IS READ OFF THE UNDISPLACED RULING (`wvBase`); null under
@@ -9037,7 +9316,10 @@
         addPt((lozDisp && lozDisp[s])
           || (toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
           || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
-        if (s < nSteps && !onSurf[s + 1]) { const e = edgeAt(s, s + 1); if (e) addPt(e, sampleZone, tt); }
+        if (s < nSteps && !onSurf[s + 1]) {
+          const e = edgeAt(s, s + 1);
+          if (e) addPt({ x: e.x, y: e.y, z: e.z }, sampleZone, Number.isFinite(e.tt) ? e.tt : tt);
+        }
       }
       flush();
       flushHL();
@@ -9076,13 +9358,41 @@
             if (Array.isArray(tail.__hw) && Array.isArray(head.__hw)) {
               for (let i = 1; i < head.__hw.length; i++) tail.__hw.push(head.__hw[i]);
             }
+            // W-33: `__tt` rides the same splice as `__hw` above, for the
+            // same reason — the deferred device-space refinement below reads
+            // it, and it must describe exactly the points that survive here.
+            if (Array.isArray(tail.__tt) && Array.isArray(head.__tt)) {
+              for (let i = 1; i < head.__tt.length; i++) tail.__tt.push(head.__tt[i]);
+            } else {
+              delete tail.__tt;
+            }
             for (let i = 1; i < head.length; i++) tail.push(head[i]);
             tail.tt1 = head.tt1;
             const at = out.indexOf(head);
             if (at >= 0) out.splice(at, 1);
+            head.__joined = true;
           }
         }
       }
+      // ── W-33 — DEVICE-SPACE REFINEMENT, DEFERRED TO AFTER THE SEAM JOIN ─────
+      // Refining each half separately (the first cut of this fix) is provably
+      // incomplete: the seam join above can fuse this call's OWN two halves,
+      // or leave either one standing alone, and either way the join vertex
+      // was never checked while it was still an EXEMPT endpoint of its own
+      // half. Running the refinement here, on `mine` AFTER the join has had
+      // its say, sees the join vertex as the ordinary interior vertex it
+      // actually is. `head.__joined` marks a piece the join above folded
+      // into `tail` and removed from `out` — skip it, `tail` now carries
+      // its points. A piece with no `__tt` (a weight/ribbon law's split —
+      // `wCnt > 0` at the tag site above) is left exactly as this unit found
+      // it: still not covered, same as before this fix.
+      mine.forEach((pc) => {
+        if (pc.__joined) return;
+        if (!Array.isArray(pc.__tt) || pc.__tt.length !== pc.length) return;
+        const tt = pc.__tt;
+        delete pc.__tt;
+        refineFillRunTurns(pc, tt, new Array(pc.length).fill(1), paramAt, wantFront);
+      });
       // ── 'onePenDown' — ONE CONTINUOUS PATH OVER THE WHOLE FORM ───────────────
       //
       // The real plotter advantage nobody spends: a pen-up is pure cost. It is
@@ -9516,10 +9826,13 @@
     // dropped ruling. Nothing is placed outside the parameter domain and every
     // sample is still back-face culled and HLR-clipped by `emitLine`, so nothing
     // can land outside the silhouette either.
-    // `crossShare` (W-26b-1): non-null only for the crosshatch second-family
-    // call — the `crossDensityRatio` value to derive `ladderCrossWantedPitch`
-    // from. Every other caller (contour, hatch, crosshatch's OWN family A,
-    // every `contField*` law) omits it and is byte-identical to before.
+    // `crossShare` (W-26b-1, redefined W-36): `{ ratio, role }` — non-null
+    // ONLY for crosshatch's two `emitContFamily` calls (both family A, role
+    // 'a', AND family B, role 'b' — W-36 needs family A to read the PAIR
+    // budget too, not the old un-shared `ladderWantedPitch`, or the two
+    // families could not land on the same pitch). Every other caller
+    // (contour, hatch, every `contField*` law) omits it and is
+    // byte-identical to before.
     const emitContFamily = (kind, angleDeg, count, back, crossShare) => {
       const wantFront = !back;
       const fam = (kind === 'angle') ? angleFamily(angleDeg) : null;
@@ -9704,20 +10017,25 @@
       // sparse end (6 x the master pitch is past the O6 bar) and far too narrow
       // to swallow a form.
       //
-      // W-26b-1: the crosshatch SECOND family asks `ladderCrossWantedPitch`
-      // for a SHARE of family A's coverage (wider `want`, on purpose — see
+      // W-26b-1 / W-36: the crosshatch pair asks `ladderPairWantedPitch` for
+      // its OWN share of `CROSS_PAIR_BUDGET` (wider `want`, on purpose — see
       // that function). Left alone, this ceiling — built from the SAME
       // `count` family A's own call sees — clamped the wider `want` right
-      // back down to family A's own step size, so the coverage-share fix
-      // had NO effect at `crossDensityRatio` 1 (measured: the ratio-0.25-
-      // vs-ratio-1 fill-count spread stayed 1.6x, not the required ~2x, no
-      // matter how far the share was cut). `dfMaxMul` widens the ceiling by
-      // the SAME reciprocal share, capped so a genuinely sparse crossing
-      // family still cannot swallow the whole form the way an unbounded
-      // widening could.
+      // back down to family A's own step size, so a coverage-share fix has
+      // NO effect at `crossDensityRatio` 1 unless the ceiling widens with it
+      // (originally measured on W-26b-1's family-B-only share: the
+      // ratio-0.25-vs-ratio-1 fill-count spread stayed 1.6x, not the
+      // required ~2x, no matter how far the share was cut). `dfMaxMul`
+      // widens the ceiling by the SAME reciprocal share — now read for
+      // WHICHEVER role is walking (W-36 gives family A a share too, so it
+      // gets the same treatment) — capped so a genuinely sparse family still
+      // cannot swallow the whole form the way an unbounded widening could.
+      // W-36 measured range across the full `crossDensityRatio` dial and
+      // both roles: [1.00, 3.64] (vs a clamped 10-40 under the old
+      // family-B-only share) — the cap is now a dormant safety rail.
       const CROSS_DFMAX_BOOST_CAP = 20;
       const dfMaxMul = (crossShare != null && isEvenLadder())
-        ? clamp(1 / Math.max(1e-6, crossShareOf(crossShare)), 1, CROSS_DFMAX_BOOST_CAP)
+        ? clamp(1 / Math.max(1e-6, crossPairShare(crossShare.ratio, crossShare.role)), 1, CROSS_DFMAX_BOOST_CAP)
         : 1;
       const dfMax = (6 * dfMaxMul) / Math.max(6, count);
       const creep = 1 / Math.max(8, count * 3);
@@ -9735,12 +10053,14 @@
           // `ladderWantedPitch` (the master-grid pitch each law always
           // computed, asked for directly) rather than `cfWantedPitch`'s own
           // area-based field — the tone stays each law's own, only the
-          // placement is shared. W-26b-1: the crosshatch SECOND family
-          // (`crossShare` non-null) reads its own `ladderCrossWantedPitch`
-          // instead — see that function's comment for why.
+          // placement is shared. W-36: crosshatch's TWO families
+          // (`crossShare` non-null on both) read `ladderPairWantedPitch`
+          // instead — each asks for its OWN half of one shared pair budget,
+          // which is what makes them land on the SAME pitch at the shipped
+          // `crossDensityRatio = 1` — see that function's comment for why.
           let want = isEvenLadder()
             ? (crossShare != null
-              ? ladderCrossWantedPitch(pb.I, crossShare)
+              ? ladderPairWantedPitch(pb.I, crossShare.ratio, crossShare.role)
               : ladderWantedPitch(pb.I))
             : cfWantedPitch(pb.I);
           // 'contFieldMeasured' — the global response inversion, from pass 1.
@@ -10749,12 +11069,18 @@
           angleDeg: finite(opts.fillAngle, 0),
         });
       } else if (contMapper) {
+        // W-36: crosshatch's family A now also reads the shared PAIR budget
+        // (role 'a') instead of the un-shared `ladderWantedPitch` — that is
+        // what lets it land on the SAME pitch as family B (role 'b') below.
+        // Contour and hatch (neither a crossed pair) keep `undefined` and
+        // are byte-identical to before.
+        const crossShareA = (mapper === 'crosshatch') ? { ratio: crossRatio, role: 'a' } : undefined;
         if (mapper === 'contour') {
           emitContFamily('a', 0, count, back);
         } else if (onMeridianAxis) {
-          emitContFamily('b', 0, count, back);
+          emitContFamily('b', 0, count, back, crossShareA);
         } else {
-          emitContFamily('angle', hatchAngle, count, back);
+          emitContFamily('angle', hatchAngle, count, back, crossShareA);
         }
         // Crosshatch keeps its second family, placed by the SAME field — the
         // mapper is a crossed pair by definition and dropping the pair would
@@ -10762,12 +11088,13 @@
         if (mapper === 'crosshatch') {
           const aB = hatchAngle + crossDelta;
           const a180 = (((aB % 180) + 180) % 180);
-          // W-26b-1: the crossing family passes `crossRatio` through as its
-          // `crossShare` so the walk derives its OWN (reduced) coverage
-          // target from family A's — see `ladderCrossWantedPitch`.
-          if (onMeridianAxis && a180 === 0) emitContFamily('b', 0, Math.max(2, Math.round(count / crossRatio)), back, crossRatio);
-          else if (onMeridianAxis && a180 === 90) emitContFamily('a', 0, Math.max(2, Math.round(count / crossRatio)), back, crossRatio);
-          else emitContFamily('angle', aB, Math.max(2, Math.round(count / crossRatio)), back, crossRatio);
+          // W-26b-1 / W-36: the crossing family passes `{ ratio: crossRatio,
+          // role: 'b' }` as its `crossShare` so the walk derives its own
+          // half of the shared PAIR budget — see `ladderPairWantedPitch`.
+          const crossShareB = { ratio: crossRatio, role: 'b' };
+          if (onMeridianAxis && a180 === 0) emitContFamily('b', 0, Math.max(2, Math.round(count / crossRatio)), back, crossShareB);
+          else if (onMeridianAxis && a180 === 90) emitContFamily('a', 0, Math.max(2, Math.round(count / crossRatio)), back, crossShareB);
+          else emitContFamily('angle', aB, Math.max(2, Math.round(count / crossRatio)), back, crossShareB);
         }
       } else if (flowMapper) {
         const fBase = finite(opts.fillAngle, 0);

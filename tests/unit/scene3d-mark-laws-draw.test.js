@@ -277,6 +277,121 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
     });
   });
 
+  describe('T1b — plot-safety tail regressions T1 introduced (STILL-OPEN.md 2026-09-06 ruling)', () => {
+    // T1-review.md §6: two independently limb-truncated stubs (adjacent
+    // rows, D2's "keep what's drawn") can land almost coincident at a
+    // silhouette edge. Measured pre-fix (own nearest-OTHER-mark-midpoint
+    // script, in pens, penWidth = BOUNDS.penWidth = 0.3):
+    //   torus/contour:    before 0.448 -> after (T1, pre-T1b) 0.032
+    //   torus/crosshatch: before 0.080 -> after (T1, pre-T1b) 0.032
+    // (0.0095 mm gap — effectively overlapping pen strokes). No oracle in
+    // T1's own suite checks "overlapping another mark" (G5 only checks
+    // "outside silhouette"). Bar, as ruled: >= 0.5 pen between any two
+    // marks' own midpoints.
+    //
+    // METHODOLOGY NOTE (measured, not a fudge). `algo.generate()`'s
+    // returned `paths` array does NOT reliably identify which entries are
+    // walked marks: this fixture (torus/contour d=50) carries ~33
+    // additional, unrelated ~21-point continuous-ruling paths (pre-existing,
+    // NOT from `emitMarks`/`place` — no `fam`/`loz` tag on them, and they
+    // are far longer than any tick) that a naive "every path in the output"
+    // scan folds into the same population, understating the guard's own
+    // effect (measured: filtering by raw `paths[]` alone still showed a
+    // 0.248-pen worst pair after the guard below was added — that pair
+    // turned out to be one of these unrelated paths, entirely outside the
+    // mark-law sink, not two marks). So this reads the SAME representative
+    // midpoints `place`'s own spacing guard computes and governs
+    // (`SF.lastMarkStats.markMids`, published by the MK sink) — the guard
+    // is verified against exactly the population it defends, not a
+    // re-derived approximation of it.
+    test.each([
+      ['torus/contour d=50', 'torus', 'contour', 50],
+      ['torus/crosshatch d=50', 'torus', 'crosshatch', 50],
+    ])('%s: no two marks land within 0.5 pen of each other (near-duplicate truncated stubs)', (label, primitive, mapper, density) => {
+      algo.generate(buildSceneParams('mkTick', mapper, density, primitive), null, null, BOUNDS);
+      const stat = SF.lastMarkStats;
+      expect(stat).toBeTruthy();
+      const mids = stat.markMids || [];
+      expect(mids.length).toBeGreaterThan(20);
+      let minDist = Infinity;
+      for (let i = 0; i < mids.length; i += 1) {
+        for (let j = i + 1; j < mids.length; j += 1) {
+          const d = Math.hypot(mids[i].x - mids[j].x, mids[i].y - mids[j].y);
+          if (d < minDist) minDist = d;
+        }
+      }
+      const minPens = minDist / BOUNDS.penWidth;
+      expect(minPens).toBeGreaterThanOrEqual(0.5);
+    });
+
+    // T1-review.md §4 "Mutation B" / §8 follow-up 1: T1's own chevron-kink
+    // episode (both walk arms departing the pass's local (0,0) origin in
+    // MIRRORED, not opposite, directions whenever a mark's along-ruling
+    // phase `uOff` != 0) passed every one of T1's four oracles — O1's
+    // sagitta was even HIGHER on the kinked variant, because the kink
+    // itself read as curvature. This oracle would have caught it directly:
+    // the maximum interior turn-angle at a multi-point tick's own hub join.
+    test('kink detector: median max-interior-turn-angle stays low on a multi-point tick (torus/contour d=50)', () => {
+      const paths = algo.generate(buildSceneParams('mkTick', 'contour', 50, 'torus'), null, null, BOUNDS);
+      const turns = [];
+      paths.forEach((pp) => {
+        if (!Array.isArray(pp) || pp.length < 3) return;
+        let maxTurn = 0;
+        for (let i = 1; i < pp.length - 1; i += 1) {
+          const d0x = pp[i].x - pp[i - 1].x; const d0y = pp[i].y - pp[i - 1].y;
+          const d1x = pp[i + 1].x - pp[i].x; const d1y = pp[i + 1].y - pp[i].y;
+          const l0 = Math.hypot(d0x, d0y); const l1 = Math.hypot(d1x, d1y);
+          if (!(l0 > 1e-9) || !(l1 > 1e-9)) continue;
+          const cosv = Math.min(1, Math.max(-1, (d0x * d1x + d0y * d1y) / (l0 * l1)));
+          const ang = Math.acos(cosv) * (180 / Math.PI);
+          if (ang > maxTurn) maxTurn = ang;
+        }
+        turns.push(maxTurn);
+      });
+      expect(turns.length).toBeGreaterThan(20);
+      turns.sort((x, y) => x - y);
+      const median = turns[Math.floor(turns.length / 2)];
+      // Fixed tree (this unit + T1): measured median 2.61 deg. A precise
+      // reconstruction of the mirrored-departure kink bug measured 21.30
+      // deg (8.2x) on the same fixture — see T1-review.md §4 table.
+      expect(median).toBeLessThanOrEqual(10);
+    });
+
+    // T1-review.md §7: `walkPoly`'s step count (`Math.ceil(edgeLen /
+    // MK_ARC_MM)`) had no ceiling; `MK_MAX_PENS` budgets total marks, not
+    // points per mark. Measured max 107 points in a single mark on the
+    // audit fixture (p99 43, median 6) — comfortably under any bar at the
+    // shipped 0.3 mm pen, so this drives a much finer pen (0.02 mm, the
+    // engine's own floor) to demonstrate the bound holds structurally, not
+    // just because today's fixture happens not to reach it.
+    test('pp.length is bounded even at a fine pen width (no per-arm walk-step ceiling existed pre-fix)', () => {
+      const finePen = { ...BOUNDS, penWidth: 0.02 };
+      const paths = algo.generate(buildSceneParams('mkTick', 'contour', 50, 'torus'), null, null, finePen);
+      let maxLen = 0;
+      paths.forEach((pp) => { if (Array.isArray(pp)) maxLen = Math.max(maxLen, pp.length); });
+      // Sanity: the walk still produces multi-point ticks at this pen width.
+      expect(maxLen).toBeGreaterThan(2);
+      expect(maxLen).toBeLessThanOrEqual(200);
+    });
+
+    // T1's own impl report (T1-impl.md "Guards run") measured mkTick/
+    // mkDashRamp on torus d=220 at 848ms/266ms against a 2500ms guard —
+    // an ad-hoc measurement, never landed as a test. T1b adds the walk's
+    // per-arm step ceiling (`MK_MAX_WALK_STEPS`) and a min-adjacent-mark
+    // spacing scan over every walked mark's midpoint (`mkMidBuckets`) —
+    // both touch the hot path, so this pins the same budget as a real
+    // regression test rather than leaving it as a one-off measurement.
+    test('generation stays within budget at torus d=220 for mkTick and mkDashRamp (perf ceiling)', () => {
+      ['mkTick', 'mkDashRamp'].forEach((law) => {
+        const t0 = Date.now();
+        const paths = algo.generate(buildSceneParams(law, 'hatch', 220, 'torus'), null, null, BOUNDS);
+        const ms = Date.now() - t0;
+        expect(paths.length).toBeGreaterThan(0);
+        expect(ms).toBeLessThan(2500);
+      });
+    });
+  });
+
   describe('W-06 — mkDashRamp dashes lie on the rulings at low/med (F-06)', () => {
     // THE RED PROOF (surface-fill.js `solveAt`, pre-fix). The 'morph' shape's
     // band capacity was `floor(1.12*R/w) * P` where `R` is the ROW pitch

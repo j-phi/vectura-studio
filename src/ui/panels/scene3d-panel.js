@@ -439,6 +439,24 @@
       { key: 'sliceVisibility', kind: 'seg', label: 'Show', ariaLabel: 'Slice visibility', default: 'visibleOnly', options: SLICE_VIS_OPTS },
       { key: 'sliceRotate', kind: 'dial', label: 'Rotate', ariaLabel: 'Slice plane rotate', min: -360, max: 360, step: 1, default: 0 },
       { key: 'sliceTilt', kind: 'dial', label: 'Tilt', ariaLabel: 'Slice plane tilt', min: -180, max: 180, step: 1, default: 0 },
+      // W-35 — USER product request: how far each ring end is carried past
+      // (positive) or pulled back from (negative) the silhouette, in pen
+      // widths. default MUST be 0 — mapperDefaults (below) seeds this on
+      // EVERY mapper switch, so a non-zero default here would silently write
+      // a non-zero value into a fresh hatch->Slices detour (see
+      // docs/3d-audit/lane-reports/W-35-plan.md §2.2).
+      // MERGE CHECKLIST item 13 / MERGE-plan-r2 §3.3 option (a): the in-app
+      // Help Guide (`src/ui/modals/help-shortcuts.js`) has NO 3D Scene section
+      // to add a line to, so W-35's help sentence lands on the control — the
+      // generic `help` field below, rendered by `renderControl` as the row's
+      // own tooltip. Opening a "3D Scene" Help Guide tab is a separate unit,
+      // filed as a follow-up rather than done at merge.
+      {
+        key: 'sliceEndOverlap', kind: 'slider', label: 'End overlap', ariaLabel: 'Slice end overlap', min: -2, max: 8, step: 0.25, default: 0,
+        help: 'How far each slice ring is carried past (or pulled back from) the silhouette, in pen widths. '
+          + 'Increase for a continuous outer edge; decrease to keep wet ink off the outline. '
+          + 'Default 0 draws exactly as before. No effect on box, plane or pyramid.',
+      },
     ],
   };
   const carry = (cur, key, dflt) => (cur[key] !== undefined && cur[key] !== null ? cur[key] : dflt);
@@ -619,11 +637,27 @@
   // `o.solidType` (optional) — only meaningful when primitiveMode === 'solid';
   // see SCENE_FILL_STYLES.isCapLimited for why the SOLID primitive needs this
   // second signal that box/plane do not.
+  // `o.totalFaces` (optional, W-28b) — only meaningful when solidType ===
+  // 'importedMesh'; the real TOTAL face count `engine.importMeshAsScene`
+  // stored at import (`params.importedMesh.faces.length`). Lets
+  // isCapLimited's fast path recognise a small (<=12 total faces) import as
+  // NOT cap-limited instead of the W-28 unconditional fallback — see the
+  // helper below and isCapLimited's own comment (context-bar.js).
   // `o.mapper` (fs-e1 item 1) — the edited object's fill Type (hatch/contour/
   // spiral/…). SCENE_FILL_STYLES.isReachableOn is mapper-aware: a faceted
   // primitive under Contour/Spiral/Stipple never dispatches through the
   // tone-law machinery at all, so every option (including None/Ladder) is
   // inert there — see isReachableOn for the full rule.
+  //
+  // W-28b — the real stored face count for an `importedMesh` primitive param
+  // bag, or undefined for anything else (including a bag with no mesh, or a
+  // mesh with a malformed `faces` array — isCapLimited treats a non-finite
+  // totalFaces the same as "unknown", its pre-W-28b fallback).
+  const importedMeshTotalFaces = (primitiveParamsBag) => {
+    const mesh = primitiveParamsBag && primitiveParamsBag.solidType === 'importedMesh'
+      ? primitiveParamsBag.importedMesh : null;
+    return (mesh && Array.isArray(mesh.faces)) ? mesh.faces.length : undefined;
+  };
   const fillStyleControls = (host, comps, o) => {
     const UI = Vectura.UI;
     const FS = Vectura.SCENE_FILL_STYLES;
@@ -631,7 +665,7 @@
     const law = FS.resolve(o.value);
     const ctl = o.row(FS.LABEL);
     const lawSelect = UI.Select(ctl, {
-      options: FS.groups(o.primitiveMode, o.solidType, o.mapper),
+      options: FS.groups(o.primitiveMode, o.solidType, o.mapper, o.totalFaces),
       value: law,
       ariaLabel: FS.ARIA,
       onChange: (v) => o.write(v),
@@ -640,7 +674,7 @@
     attachSelectArrowStep(selectElOf(lawSelect));
     const entry = FS.entry(law) || {};
     const note = FS.note(law);
-    const facetedText = FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper) : '';
+    const facetedText = FS.facetedNote ? FS.facetedNote(o.primitiveMode, o.solidType, o.mapper, o.totalFaces) : '';
 
     // fs-m2 Job 2 — mechanism/strengths/weaknesses/mark-class blurb used to
     // print as an always-on paragraph block that dominated the panel (a user
@@ -675,7 +709,12 @@
     // no-op. `o.paramsBag` is the SAME live params object `o.write` commits
     // into; `o.writeStyleParams` is that call site's whole-bag-aware sibling
     // of `o.write` (patches one or more keys at once instead of just toneLaw).
-    const styleParamBag = o.paramsBag || {};
+    // W-10d-3 — seed the DISPLAY bag from ALIASES when `o.value` is still a
+    // raw folded toneLaw (see src/config/context-bar.js's `displayParams`
+    // comment for why). Read-only here: every write below still goes through
+    // `o.write`/`o.writeStyleParams` against the untouched live bag.
+    const styleParamBag = FS.displayParams
+      ? FS.displayParams(o.value, o.paramsBag || {}) : (o.paramsBag || {});
     FS.styleParams(law).forEach((d) => {
       const has = styleParamBag[d.key] !== undefined && styleParamBag[d.key] !== null;
       const dv = has ? styleParamBag[d.key] : d.default;
@@ -695,10 +734,21 @@
     // must not have to hover to discover. Every law is offered now (no
     // Off/On disclosure), but the caveat still prints only for the SELECTED
     // one.
-    if (note.caveat) {
+    //
+    // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — read the caveat off
+    // the law the collapse sub-control(s) ACTUALLY select (`effectiveLaw`),
+    // not off the resolved survivor `law`/`note` above. Folding e.g.
+    // `bundleDither` into `bundleCount` must not hide bundleDither's own
+    // measured caveat just because the picker now stores the survivor id
+    // plus a `bundleMode` sub-param — `note`/`entry` above (the (i)
+    // popover's blurb) deliberately stay on the plain survivor per the
+    // ruling; only the caveat line switches.
+    const effectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(law, styleParamBag) : law;
+    const caveatNote = FS.note(effectiveLaw);
+    if (caveatNote.caveat) {
       const caveatLine = document.createElement('p');
       caveatLine.className = 'vs3-lawnote is-caveat';
-      caveatLine.textContent = note.caveat;
+      caveatLine.textContent = caveatNote.caveat;
       host.appendChild(caveatLine);
     }
 
@@ -1310,6 +1360,7 @@
           commit,
           primitiveMode: params.primitive,
           solidType: params.params && params.params.solidType,
+          totalFaces: importedMeshTotalFaces(params.params),
           mapper: style.mapper,
         });
       }
@@ -1367,6 +1418,12 @@
           value: Number.isFinite(style.params.sliceTilt) ? style.params.sliceTilt : 0,
           min: -180, max: 180, step: 1, defaultValue: 0, ariaLabel: 'Slice plane tilt',
           ...liveSlider((v) => { style.params.sliceTilt = Math.round(v); }),
+        });
+        // W-35 — end overlap (pen widths, -2..8, default 0 no-op).
+        slider(host, 'End overlap', {
+          value: Number.isFinite(style.params.sliceEndOverlap) ? style.params.sliceEndOverlap : 0,
+          min: -2, max: 8, step: 0.25, defaultValue: 0, ariaLabel: 'Slice end overlap',
+          ...liveSlider((v) => { style.params.sliceEndOverlap = v; }),
         });
       }
 
@@ -1687,6 +1744,7 @@
           commit,
           primitiveMode: primary && primary.params && primary.params.primitive,
           solidType: primary && primary.params && primary.params.params && primary.params.params.solidType,
+          totalFaces: importedMeshTotalFaces(primary && primary.params && primary.params.params),
           mapper: style.mapper,
         });
       }
@@ -3945,6 +4003,13 @@
       const obj = getObject(scope.target.objectId);
       return obj && obj.params ? obj.params.solidType : undefined;
     };
+    // Only meaningful when scopeSolidType(scope) === 'importedMesh' (W-28b) —
+    // see importedMeshTotalFaces above.
+    const scopeTotalFaces = (scope) => {
+      if (scope.scope === 'scene') return undefined;
+      const obj = getObject(scope.target.objectId);
+      return importedMeshTotalFaces(obj && obj.params);
+    };
 
     const scopeDisplayName = (scope) => {
       if (scope.scope === 'scene') return 'Scene';
@@ -4075,7 +4140,20 @@
         styleHost.appendChild(row);
         return host;
       };
+      // A descriptor may carry `help` — one sentence of plain-language help
+      // copy, rendered as the row's own tooltip. This is the documentation
+      // surface for 3D params: the in-app Help Guide has no 3D Scene section,
+      // and the (i) popover is the Fill Style picker's alone.
       const renderControl = (d) => {
+        const startIdx = styleHost.childElementCount;
+        renderControlBase(d);
+        if (!d.help) return;
+        for (let i = startIdx; i < styleHost.childElementCount; i += 1) {
+          const el = styleHost.children[i];
+          if (el && el.classList && el.classList.contains('vs3-row')) el.setAttribute('title', d.help);
+        }
+      };
+      const renderControlBase = (d) => {
         const rp = resolved.params || {};
         const has = rp[d.key] !== undefined && rp[d.key] !== null;
         const raw = has ? rp[d.key] : d.default;
@@ -4117,6 +4195,7 @@
             commit,
             primitiveMode: scopePrimitiveMode(scope),
             solidType: scopeSolidType(scope),
+            totalFaces: scopeTotalFaces(scope),
             mapper: resolved.mapper,
           });
         } else if (d.kind === 'seg') {

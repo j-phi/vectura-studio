@@ -342,7 +342,27 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     });
 
     test('torus + contour + ladder at d=50', () => {
-      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('c049412aaed515dd6c82c91c53d0bd9f');
+      // W-33 re-pin (device-space adaptive subdivision of contour rulings,
+      // surface-fill.js `refineFillRunTurns`): torus+contour is squarely in
+      // scope (mapper === 'contour'), so its ring geometry legitimately
+      // changes — every per-vertex turn on this cell now measures <= 8 deg
+      // where it did not before. See W-33-impl.md "Bars changed".
+      //
+      // MERGE NOTE (integration r2, 2026-09-10) / BAR CHANGE: NEITHER side of
+      // this merge was correct. HEAD carried `c049412aaed515dd6c82c91c53d0bd9f`
+      // — main's `1193cbe1`, which rewrote this file's own `runMd5` helper to
+      // hash `normalizePaths(...)` (4dp rounding) to kill arm64/x86_64 CI drift;
+      // fill-audit-a2 carried W-33's `5d5e4e87f98447a282188c182b243cf5`, measured
+      // with the OLD raw `JSON.stringify` helper because the lane branched before
+      // `1193cbe1`. Taking HEAD drops W-33's turn-refinement coverage; taking
+      // W-33's drops the CI-drift fix. Resolution: keep main's `runMd5`
+      // mechanism (it auto-merged — W-33 never touched the helper), keep W-33's
+      // reasoning, and RE-MEASURE against the truly-merged source via this
+      // file's own helper. Measured: `bc212164fdc8e72486dcef4e200eaa8d`. The
+      // other 19 rows in this file pass UNEDITED, which is the proof that W-33
+      // is scoped to `mapper === 'contour'` and disturbs neither the sphere/cone
+      // rows nor main's rounding.
+      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('bc212164fdc8e72486dcef4e200eaa8d');
     });
 
     test('cone + spiral + ladder at d=50', () => {

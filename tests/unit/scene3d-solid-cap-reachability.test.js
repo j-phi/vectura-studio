@@ -178,4 +178,114 @@ describe('solid front-face cap — the U12 correction', () => {
     expect(FS.isReachableOn('none', 'solid', 'importedMesh')).toBe(true);
     expect(FS.isReachableOn('ladder', 'solid', 'importedMesh')).toBe(true);
   });
+
+  // ── W-28b: the face-count fast path, driven through the REAL import path ──
+  // W-28 (above) is unconditional because the picker has no channel to the
+  // mesh's real face count. But `engine.importMeshAsScene` DOES store that
+  // number at import time (`buildImportedMeshParams` → `params.importedMesh
+  // .faces.length`, engine.js), so a caller who reads it back off the stored
+  // layer can hand it to `isCapLimited` as a 4th `totalFaces` argument and get
+  // a real answer for a small mesh instead of the blanket W-28 fallback.
+  // front-facing count is always <= total count, so a TOTAL <= 12 guarantees
+  // `faceMonoLines`'s `MONO_MAX_FRONT_FACES` (scene3d.js:2634, ==12) can never
+  // trip, from any camera angle — this is what makes the fast path SAFE, not
+  // a guess. This block goes through the actual `V.ObjImport.parse` +
+  // `engine.importMeshAsScene` pipeline (the same one a real OBJ drag-and-
+  // drop drives), not a hand-built params bag, so it also proves the stored
+  // face count really is reachable from where the picker would read it.
+  describe('W-28b — the face-count fast path (real import pipeline)', () => {
+    // A cube OBJ: 6 quad faces, triangulated to 12 — exactly AT the
+    // MONO_MAX_FRONT_FACES boundary (the `<= 12` edge, not comfortably under
+    // it), so this is the sharpest real-file proof of the fast path.
+    const CUBE_OBJ = `# cube
+v -1 -1 -1
+v  1 -1 -1
+v  1  1 -1
+v -1  1 -1
+v -1 -1  1
+v  1 -1  1
+v  1  1  1
+v -1  1  1
+f 1 2 3 4
+f 5 6 7 8
+f 1 2 6 5
+f 2 3 7 6
+f 3 4 8 7
+f 4 1 5 8
+`;
+
+    const freshEngine = () => {
+      const engine = new V.VectorEngine();
+      engine.layers = [];
+      return engine;
+    };
+
+    it('a 12-face cube import: stored totalFaces is 12, and the picker fast path is NOT cap-limited', () => {
+      const engine = freshEngine();
+      const mesh = V.ObjImport.parse(CUBE_OBJ, 'cube.obj');
+      expect(mesh.faces.length).toBe(12);
+      const result = engine.importMeshAsScene(mesh, 'Cube');
+      expect(result.ok).toBe(true);
+      expect(result.faces).toBe(12);
+      const child = engine.getLayerById(result.childId);
+      const solidParams = child.params.params;
+      expect(solidParams.solidType).toBe('importedMesh');
+      const totalFaces = solidParams.importedMesh.faces.length;
+      expect(totalFaces).toBe(12);
+
+      const FS = V.SCENE_FILL_STYLES;
+      expect(FS.isCapLimited('solid', 'importedMesh', totalFaces)).toBe(false);
+      expect(FS.isReachableOn('mazeFill', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+      expect(FS.isReachableOn('etfKang', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+      expect(FS.isReachableOn('none', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+      expect(FS.isReachableOn('ladder', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+    });
+
+    it('the SAME 12-face cube, rendered with a mono law, actually moves the geometry — the fast path is not just picker-cosmetic', () => {
+      const engine = freshEngine();
+      const mesh = V.ObjImport.parse(CUBE_OBJ, 'cube.obj');
+      const result = engine.importMeshAsScene(mesh, 'Cube');
+      const child = engine.getLayerById(result.childId);
+      const solidParams = child.params.params;
+
+      const importedBody = {
+        id: 'solid', name: 'Solid', primitive: 'solid', params: clone(solidParams),
+        transform: { x: 0, y: 48, z: 0, yaw: 12, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+      };
+      const renderMesh = (law) => {
+        const Params = V.Scene3D.Params;
+        const p = clone(V.ALGO_DEFAULTS.scene3d);
+        p.seed = SEED;
+        p.camera = clone(CAMERA);
+        p.ground = { enabled: false };
+        p.backdrop = { enabled: false };
+        p.objects = [clone(importedBody)];
+        p.lights = [clone(SUN)];
+        p.tone = clone(toneBands(4));
+        p.styleTable = styleTable(p.objects, law === null ? {} : { toneLaw: law });
+        const np = Params.normalizeParams(p);
+        const paths = V.AlgorithmRegistry.scene3d.generate(
+          Params.collectSceneParams(np, []), new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS,
+        ) || [];
+        const fills = paths.filter((q) => q.meta && q.meta.kind === 'sceneFill');
+        const geom = fills.map((q) => q.map((pt) => `${pt.x.toFixed(4)},${pt.y.toFixed(4)}`).join(';')).join('|');
+        return { md5: crypto.createHash('md5').update(geom).digest('hex'), paths: fills.length };
+      };
+      const base = renderMesh(null);
+      const maze = renderMesh('mazeFill');
+      expect(base.paths).toBeGreaterThan(0);
+      expect(maze.md5).not.toBe(base.md5);
+    }, 60000);
+
+    it('an 80-face imported mesh (over the boundary) stays cap-limited even when totalFaces is supplied', () => {
+      const Mesh = V.Scene3D.Mesh;
+      const geo = Mesh.createGeodesicMesh(1, 2); // 80 faces
+      const totalFaces = geo.faces.length;
+      expect(totalFaces).toBeGreaterThan(12);
+      const FS = V.SCENE_FILL_STYLES;
+      expect(FS.isCapLimited('solid', 'importedMesh', totalFaces)).toBe(true);
+      expect(FS.isReachableOn('mazeFill', 'solid', 'importedMesh', undefined, totalFaces)).toBe(false);
+      expect(FS.isReachableOn('none', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+    });
+  });
 });

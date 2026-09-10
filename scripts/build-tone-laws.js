@@ -298,6 +298,57 @@ const COLLAPSE = {
       ],
     },
   ],
+  // C-07 (U7) — the one WV6 (wave-family) survivor in this collapse. Ink is
+  // within 0.2% (ampSpacing 3925.9mm / weaveDepth 3917.8mm on
+  // torus+hatch+med) — a genuinely tight pair, per the plan's own §1 C-07
+  // note. `ampSpacing` MUST come out byte-identical: a live ruling on
+  // another lane (F1-placement, docs/3d-audit/STILL-OPEN.md, "condition 4")
+  // depends on `ampSpacing` and the rest of the WV6 family being unaffected
+  // by anything this collapse does — verified in
+  // tests/unit/scene3d-tone-law-collapse.test.js's U7 block across every
+  // TIER_B_PRIMITIVES x DENSITY_VALUES combination the audit's own capture
+  // script sweeps, not just the single torus+hatch+med cell every other
+  // unit in this chain checked.
+  //
+  // Both `ampSpacing` (the survivor) AND `weaveDepth` (the folded id) carry
+  // their OWN real, DIFFERENT measured caveats (both "not single-weight",
+  // see docs/tone-laws/laws.json) — unlike every earlier unit in this chain,
+  // where only the folded id had one. `effectiveLaw`/`resolveToneLaw` must
+  // therefore surface the SURVIVOR's own caveat at the descriptor default
+  // (`nesting:'single'`), not silently show nothing, and swap to
+  // `weaveDepth`'s distinct caveat once `nesting:'nested'` is picked — both
+  // paths verified in the U7 caveat describe block.
+  ampSpacing: [{
+    key: 'nesting', label: 'Nesting', default: 'single',
+    options: [
+      { value: 'single', label: 'Single wave row', law: 'ampSpacing' },
+      { value: 'nested', label: 'Nested rows', law: 'weaveDepth' },
+    ],
+  }],
+  // C-08 (U8) — the other WV6 (wave-family) survivor in this collapse.
+  // perRuling (default, interlockWeave: 198 paths / 3956.2mm) -> continuous
+  // (onePenDown: 106 paths / 4136.2mm) on torus+hatch+med, per the plan's
+  // own §1 C-08 note: "interlockWeave and onePenDown are indistinguishable
+  // ragged spike fills ... at every density"; the pen-down saving (198 ->
+  // 106) is real, the picture is not. `trochoidLoop` (333 / 4422.7mm, 12%
+  // more ink, "polygon shards") is NOT folded -- the plan defers it to
+  // after handoff item A lands; it stays its own row.
+  //
+  // Like C-07 (U7), BOTH `interlockWeave` (survivor) AND `onePenDown`
+  // (folded) carry their own real, DIFFERENT measured caveats (both "not
+  // single-weight", see docs/tone-laws/laws.json) -- per LEDGER.md row 12b
+  // ("carry U7's finding forward"). `effectiveLaw`/`resolveToneLaw` surface
+  // the SURVIVOR's own caveat at the descriptor default (`penDown:
+  // 'perRuling'`), not silently show nothing, and swap to `onePenDown`'s
+  // distinct caveat once `penDown:'continuous'` is picked -- verified in
+  // the U8 caveat describe block.
+  interlockWeave: [{
+    key: 'penDown', label: 'Pen down', default: 'perRuling',
+    options: [
+      { value: 'perRuling', label: 'One stroke per ruling', law: 'interlockWeave' },
+      { value: 'continuous', label: 'One pen-down per family', law: 'onePenDown' },
+    ],
+  }],
 };
 
 // ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────

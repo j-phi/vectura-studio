@@ -223,14 +223,26 @@ describe('Scene3D tone-law collapse — U0 foundation', () => {
     }
   });
 
-  test('7. clampStyleParam belt-and-brace: the single-key shadowToneLaw path maps an alias to its survivor without warning', () => {
+  // STALE ASSERTION UPDATE (U9, resolve half — docs/3d-audit/lane-reports/
+  // W-22-24-W-18-plan.md §U9): this test originally pinned "the shadow bag
+  // collapses a folded id to its survivor, same as style.params.toneLaw" as
+  // the belt-and-brace behaviour. That was the U9 bug, not a feature: the
+  // shadow bag has no sibling sub-control field to carry the collapsed
+  // param (unlike `style.params`, which gets one from `normalizeStyle`'s
+  // migration shim), so collapsing here silently loses which
+  // `shadows.js` HATCH_LAW_RECIPES entry to draw — every scene saved with a
+  // pre-collapse `shadowToneLaw` would render the wrong shadow texture. U9
+  // fixed `normalizeShadow` to pass a folded id straight through instead
+  // (still never warning — it is a KNOWN, valid id, not an unrecognized
+  // one) — updated here with the same test number/scope rather than deleted.
+  test('7. clampStyleParam belt-and-brace: the single-key shadowToneLaw path passes a folded id through UNCHANGED, without warning (U9)', () => {
     const R = roster();
     const savedAliases = R.ALIASES;
     R.ALIASES = { syntheticFolded: { into: 'ladder', params: { rungMode: 'fine' } } };
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       const shadow = Params.normalizeShadow({ shadowToneLaw: 'syntheticFolded' });
-      expect(shadow.shadowToneLaw).toBe('ladder');
+      expect(shadow.shadowToneLaw).toBe('syntheticFolded');
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       R.ALIASES = savedAliases;
@@ -401,12 +413,17 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
     });
   });
 
-  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id maps to the survivor, never warns', () => {
+  // STALE ASSERTION UPDATE (U9, resolve half) — see the U0 test 7 comment
+  // above for the full reasoning: the shadow bag has no sibling sub-control
+  // field, so collapsing a folded `shadowToneLaw` to its survivor silently
+  // loses which shadows.js HATCH_LAW_RECIPES entry to draw. U9 fixed
+  // `normalizeShadow` to pass a folded id through unchanged instead.
+  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, never warns (U9)', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       FOLDED.forEach(({ id }) => {
         const shadow = Params.normalizeShadow({ shadowToneLaw: id });
-        expect(shadow.shadowToneLaw).toBe('ladder');
+        expect(shadow.shadowToneLaw).toBe(id);
       });
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {
@@ -579,12 +596,17 @@ function describeSingleParamCluster(label, { survivor, key, pickerIdsLength, fol
       expect(out2.params[key]).toBe(defaultValue);
     });
 
-    test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id maps to the survivor, never warns', () => {
+    // STALE ASSERTION UPDATE (U9, resolve half) — see the U0 test 7 comment
+    // for the full reasoning: the shadow bag has no sibling sub-control
+    // field, so collapsing a folded `shadowToneLaw` to its survivor silently
+    // loses which shadows.js HATCH_LAW_RECIPES entry to draw. U9 fixed
+    // `normalizeShadow` to pass a folded id through unchanged instead.
+    test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, never warns (U9)', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         folded.forEach(({ id }) => {
           const shadow = Params.normalizeShadow({ shadowToneLaw: id });
-          expect(shadow.shadowToneLaw).toBe(survivor);
+          expect(shadow.shadowToneLaw).toBe(id);
         });
         expect(warnSpy).not.toHaveBeenCalled();
       } finally {
@@ -718,6 +740,31 @@ describe('Scene3D tone-law collapse — U4 caveat-visibility gap (bundleDither, 
     expect(FS.resolve('bundleDither')).toBe('bundleCount');
     const survivorNote = FS.note('bundleCount');
     expect(survivorNote.caveat).toBe(''); // bundleCount's OWN caveat is null/empty
+  });
+
+  // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — the fix. Folding a law
+  // must NOT hide its measured caveat: `SCENE_FILL_STYLES.effectiveLaw`
+  // resolves (survivor id, current collapse sub-control values) back to the
+  // SPECIFIC internal id those values select — mirroring
+  // `Scene3D.Params.resolveToneLaw`'s own survivor+params rule (rules 3/4)
+  // without this config file depending on the core engine module. The two
+  // UI surfaces (scene3d-panel.js, context-bar.js) read the CAVEAT off this
+  // effective id while still reading the (i) popover's blurb off the plain
+  // survivor `entry`/`note` — the two are deliberately NOT the same lookup.
+  test('U5b FIX: effectiveLaw resolves the "Dithered" sub-control choice back to bundleDither, surfacing its own caveat', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(typeof FS.effectiveLaw).toBe('function');
+    expect(FS.effectiveLaw('bundleCount', { bundleMode: 'dither' })).toBe('bundleDither');
+    const caveat = FS.note(FS.effectiveLaw('bundleCount', { bundleMode: 'dither' })).caveat;
+    expect(caveat.length).toBeGreaterThan(0);
+    expect(caveat).toMatch(/moire/);
+    // The bare survivor (sub-control at its own default, or the bag empty)
+    // still shows no caveat — this must not manufacture one out of nothing.
+    expect(FS.effectiveLaw('bundleCount', { bundleMode: 'count' })).toBe('bundleCount');
+    expect(FS.note(FS.effectiveLaw('bundleCount', {})).caveat).toBe('');
+    // A survivor with no collapse descriptors at all (no STYLE_PARAMS entry)
+    // passes through unchanged, regardless of the bag it is handed.
+    expect(FS.effectiveLaw('etfKang', { bundleMode: 'dither' })).toBe('etfKang');
   });
 });
 
@@ -890,12 +937,17 @@ describe('Scene3D tone-law collapse — U5 (C-05, contFieldSigmoid/fieldMetric+f
     expect(out2.params.fieldMetric).toBe('screen');
   });
 
-  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id maps to the survivor, never warns', () => {
+  // STALE ASSERTION UPDATE (U9, resolve half) — see the U0 test 7 comment
+  // for the full reasoning: the shadow bag has no sibling sub-control field,
+  // so collapsing a folded `shadowToneLaw` to its survivor silently loses
+  // which shadows.js HATCH_LAW_RECIPES entry to draw. U9 fixed
+  // `normalizeShadow` to pass a folded id through unchanged instead.
+  test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, never warns (U9)', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
       FOLDED.forEach(({ id }) => {
         const shadow = Params.normalizeShadow({ shadowToneLaw: id });
-        expect(shadow.shadowToneLaw).toBe(SURVIVOR);
+        expect(shadow.shadowToneLaw).toBe(id);
       });
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {
@@ -945,4 +997,589 @@ describe('Scene3D tone-law collapse — U5 caveat-visibility gap (contFieldTouch
     const survivorNote = FS.note('contFieldSigmoid');
     expect(survivorNote.caveat).toBe('');
   });
+
+  // U5b FIX — the two-descriptor survivor (contFieldSigmoid has BOTH
+  // fieldMetric and fieldFloor), exercising resolveToneLaw's rule 4 case
+  // (exactly one descriptor active -> that descriptor's law; more than one
+  // active at once -> deterministic fallback to the bare survivor, never a
+  // throw) through effectiveLaw as well.
+  test('U5b FIX: effectiveLaw resolves the "Ink-width floor" sub-control choice back to contFieldTouch, surfacing its own caveat', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.effectiveLaw('contFieldSigmoid', { fieldFloor: 'touch' })).toBe('contFieldTouch');
+    const caveat = FS.note(FS.effectiveLaw('contFieldSigmoid', { fieldFloor: 'touch' })).caveat;
+    expect(caveat.length).toBeGreaterThan(0);
+    expect(caveat).toMatch(/floods/);
+    // Both descriptors at default -> the bare survivor, no caveat.
+    expect(FS.effectiveLaw('contFieldSigmoid', {})).toBe('contFieldSigmoid');
+    expect(FS.note(FS.effectiveLaw('contFieldSigmoid', {})).caveat).toBe('');
+    // Unrepresentable combination (both non-default at once) falls back to
+    // the bare survivor deterministically, matching resolveToneLaw rule 4.
+    expect(FS.effectiveLaw('contFieldSigmoid', { fieldMetric: 'surface', fieldFloor: 'touch' })).toBe('contFieldSigmoid');
+  });
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U5b-2 — plain-language rewrite of the caveat copy for end users.
+ * U5b's review (docs/3d-audit/lane-reports/U5b-review.md, flag 4) accepted
+ * that the two caveats are now VISIBLE (U5b's whole job), but flagged their
+ * WORDING as raw audit prose ("RMS", "R2", "L* span", "sphere·hatch" as a
+ * bare cell-name token, "negative result") — a plotter-art user has no
+ * reason to know any of that vocabulary. `docs/tone-laws/laws.json` is the
+ * SOURCE of `BY_ID[id].caveat` (regenerated into
+ * src/config/scene3d-tone-laws.js by `node scripts/build-tone-laws.js` —
+ * see that script's own header comment); the measured numbers themselves
+ * stay recorded in `docs/tone-laws/README.md` (`### 15 · bundleDither` /
+ * `### 19 · contFieldTouch`) and LEDGER.md's line 610-612 ruling, exactly
+ * where the review says they "already live" — this unit does not touch
+ * either of those record files, only the picker-facing copy.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describe('Scene3D tone-law collapse — U5b-2 (plain-language caveat copy)', () => {
+  let runtime; let FS;
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+  });
+  afterAll(() => runtime.cleanup());
+
+  // RGR proof: this assertion is RED against the pre-U5b-2 tree (the
+  // committed-at-49475ccd wording contains "RMS", "R2", "sphere·hatch" as a
+  // bare token, and "negative result" for bundleDither); GREEN once
+  // laws.json's caveat fields are rewritten and scene3d-tone-laws.js is
+  // regenerated.
+  test('neither caveat carries raw audit statistics or internal jargon', () => {
+    const jargon = /\bRMS\b|\bR2\b|\bR²\b|L\*|sphere·hatch|sphere·crosshatch|cylinder·hatch|negative result|off-the-line/i;
+    ['bundleDither', 'contFieldTouch'].forEach((id) => {
+      const caveat = FS.note(id).caveat;
+      expect(caveat.length).toBeGreaterThan(0);
+      expect(caveat).not.toMatch(jargon);
+    });
+  });
+
+  // The rewrite must not silently drop the caveat, and must still be
+  // reachable through the same effectiveLaw path U5b wired — a wording-only
+  // change must not regress U5b's own fix.
+  test('the plain-language caveats are still exactly two sentences and still surface through effectiveLaw', () => {
+    const sentenceCount = (s) => (s.match(/[.!?](?:\s|$)/g) || []).length;
+    ['bundleDither', 'contFieldTouch'].forEach((id) => {
+      const caveat = FS.note(id).caveat;
+      expect(sentenceCount(caveat)).toBeLessThanOrEqual(2);
+    });
+    expect(FS.note(FS.effectiveLaw('bundleCount', { bundleMode: 'dither' })).caveat)
+      .toBe(FS.note('bundleDither').caveat);
+    expect(FS.note(FS.effectiveLaw('contFieldSigmoid', { fieldFloor: 'touch' })).caveat)
+      .toBe(FS.note('contFieldTouch').caveat);
+  });
+
+  // Still names the exact UI control values a user just picked — plain
+  // language should point back at what they can DO about the warning, not
+  // just restate that something is wrong.
+  test('each caveat references the option that reaches it or its sibling, in the UI\'s own wording', () => {
+    expect(FS.note('bundleDither').caveat).toMatch(/Dithered|Count mode|Integer pass count/);
+    expect(FS.note('contFieldTouch').caveat).toMatch(/Field floor/);
+  });
+});
+
+// U5b-3 (generative cross-check: effectiveLaw ≡ resolveToneLaw) lives in its
+// own file, tests/unit/scene3d-fill-style-effective-law.test.js — split out
+// so it can be lifted cleanly at rebase against main's chunked U0 rewrite of
+// this file and U9's in-flight edits to it on handoff-c2 (orchestrator
+// direction, U5b-2/3 checkpoint follow-up).
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U7 — C-07 · survivor `ampSpacing` · param `nesting`
+ * Folded: weaveDepth ('nested'). Bare option: single->ampSpacing.
+ * RED (pre-U7, verified via a scratch `git stash` of the two implementation
+ * files, not asserted here): resolveToneLaw({toneLaw:'ampSpacing',
+ * nesting:'nested'}) returned 'ampSpacing' unchanged (no STYLE_PARAMS entry)
+ * — rendering diverged from weaveDepth's own picture (3925.9 vs 3917.8 mm
+ * ink on torus+hatch+med, within 0.2% — a genuinely tight pair per the
+ * plan's own §1 C-07 note). GREEN below closes it by construction, same
+ * mechanism U1-U5 ran five times (see docs/3d-audit/lane-reports/U1-U5-impl.md).
+ *
+ * TWO CONDITIONS THIS UNIT ADDS ON TOP OF THE STANDARD TEMPLATE (secretary
+ * flags on U7's brief, docs/3d-audit/STILL-OPEN.md):
+ *
+ * (a) The standing caveat ruling ("folding a law must NOT hide its measured
+ * caveat", U5b) binds U7 too — but U7 is the FIRST cluster in this chain
+ * where BOTH the survivor (`ampSpacing`) AND the folded id (`weaveDepth`)
+ * carry their own real, DIFFERENT measured caveats (every earlier cluster's
+ * survivor had none). `effectiveLaw`/`resolveToneLaw` must therefore surface
+ * `ampSpacing`'s own caveat at the descriptor default (`nesting:'single'`)
+ * — not silently show nothing, as U4/U5's survivors correctly did — and
+ * swap to `weaveDepth`'s distinct caveat once `nesting:'nested'` is picked.
+ * See the "U7 caveat" describe block below, and
+ * tests/unit/scene3d-fill-style-effective-law.test.js (the shared U5b-3
+ * cross-check, extended here rather than duplicated in a private test).
+ *
+ * (b) `ampSpacing` is the survivor, and F1-placement's ruled condition 4
+ * (docs/3d-audit/STILL-OPEN.md, fill-audit-a2 lane) requires `ampSpacing`
+ * and the rest of the WV6 family to render BYTE-IDENTICAL — a live ruling
+ * on another lane depends on that exact law being unaffected by this fold.
+ * U1-U5's aggregate 48-law sweep (test 4, U0 block) only ever proved this on
+ * ONE cell (torus+hatch+med default density, sphere-only geometry via
+ * captureOpts). The "U7 multi-primitive x multi-density" describe block
+ * below extends that proof across every primitive the audit's own capture
+ * script (scripts/audit/scene3d-capture.js: TIER_B_PRIMITIVES minus `box`,
+ * which is unreachable for ampSpacing/weaveDepth per
+ * docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl) x every density it
+ * sweeps (DENSITY_VALUES low/med/max) can reach — sphere/torus/cone x
+ * low/med/max, 9 combinations, not just 1.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describeSingleParamCluster('Scene3D tone-law collapse — U7 (C-07, ampSpacing/nesting)', {
+  survivor: 'ampSpacing',
+  key: 'nesting',
+  pickerIdsLength: 34,
+  folded: [
+    { id: 'weaveDepth', value: 'nested' },
+  ],
+});
+
+describe('Scene3D tone-law collapse — U7 caveat: BOTH the survivor (ampSpacing) AND the folded law (weaveDepth) carry real, DIFFERENT measured caveats', () => {
+  let runtime;
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  afterAll(() => runtime.cleanup());
+
+  test('BY_ID-direct: ampSpacing and weaveDepth each carry their own non-empty, DISTINCT caveat — the roster corpus is untouched', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const survivorCaveat = FS.note('ampSpacing').caveat;
+    const foldedCaveat = FS.note('weaveDepth').caveat;
+    expect(survivorCaveat.length).toBeGreaterThan(0);
+    expect(foldedCaveat.length).toBeGreaterThan(0);
+    // Distinct — this is the first cluster in the chain where the survivor's
+    // OWN default state also carries a real caveat, so a naive "resolve to
+    // the survivor and stop" would show the WRONG one of the two, not none.
+    expect(survivorCaveat).not.toBe(foldedCaveat);
+    expect(survivorCaveat).toMatch(/single-weight/);
+    expect(foldedCaveat).toMatch(/single-weight/);
+  });
+
+  test('effectiveLaw: nesting default (single) shows ampSpacing\'s OWN caveat (unlike U4/U5, this is NOT empty)', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.effectiveLaw('ampSpacing', { nesting: 'single' })).toBe('ampSpacing');
+    expect(FS.effectiveLaw('ampSpacing', {})).toBe('ampSpacing');
+    const caveat = FS.note(FS.effectiveLaw('ampSpacing', {})).caveat;
+    expect(caveat).toBe(FS.note('ampSpacing').caveat);
+    expect(caveat.length).toBeGreaterThan(0);
+  });
+
+  test('effectiveLaw: nesting=nested resolves to weaveDepth, surfacing ITS distinct caveat, not ampSpacing\'s', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.effectiveLaw('ampSpacing', { nesting: 'nested' })).toBe('weaveDepth');
+    const caveat = FS.note(FS.effectiveLaw('ampSpacing', { nesting: 'nested' })).caveat;
+    expect(caveat).toBe(FS.note('weaveDepth').caveat);
+    expect(caveat).not.toBe(FS.note('ampSpacing').caveat);
+    expect(caveat.length).toBeGreaterThan(0);
+  });
+
+  test('resolveToneLaw (engine) agrees with effectiveLaw (config) on both states — the U5b-3 cross-check\'s own generic sweep already covers this by construction; re-asserted directly here for the two states this unit\'s caveat depends on', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const Params = runtime.window.Vectura.Scene3D.Params;
+    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing' })).toBe(FS.effectiveLaw('ampSpacing', {}));
+    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', nesting: 'nested' })).toBe(FS.effectiveLaw('ampSpacing', { nesting: 'nested' }));
+  });
+});
+
+describe('Scene3D tone-law collapse — U7 multi-primitive x multi-density: ampSpacing byte-identity (F1-placement ruled condition 4)', () => {
+  // NOT the single-cell captureOpts every earlier unit in this file uses —
+  // parametrized on BOTH primitive and fillDensity so the sweep below can
+  // cover every (primitive, density) pair the audit's own gallery capture
+  // script reaches for ampSpacing/weaveDepth (scripts/audit/scene3d-capture.js
+  // TIER_B_PRIMITIVES minus `box`, DENSITY_VALUES). `box`/`plane`/`solid` are
+  // excluded: ampSpacing/weaveDepth are wave-family laws dispatched off
+  // SurfaceFill's parametric chart, which box/plane/solid do not have
+  // (confirmed unreachable in docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl
+  // — "primitive":"box","mapper":"hatch","style":"ampSpacing","status":"unreachable",
+  // same for weaveDepth).
+  let runtime; let V; let algo; let defaults; let SF; let Params; let PPD;
+  const PRIMITIVES = ['sphere', 'torus', 'cone'];
+  const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
+
+  const captureOpts = (primitive, densityValue) => {
+    const p = clone(defaults);
+    p.objects = [{
+      id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
+      transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.lights = [SUN];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(opts) {
+      const result = orig.call(this, opts);
+      calls.push({ opts, result });
+      return result;
+    };
+    try {
+      algo.generate(p, null, null, BOUNDS);
+    } finally {
+      SF.buildObject = orig;
+    }
+    let best = calls[0];
+    for (const c of calls) {
+      if ((c.result || []).length > (best.result || []).length) best = c;
+    }
+    return best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Params = V.Scene3D.Params;
+    PPD = Params.PRIMITIVE_PARAM_DEFAULTS || {};
+  }, SLOW);
+  afterAll(() => runtime.cleanup());
+
+  // Condition (b): the FOLD is correct (ampSpacing+nesting:'nested' renders
+  // byte-identically to the legacy weaveDepth id) across all 9
+  // (primitive, density) pairs — not just the single torus+hatch+med cell
+  // the plan's own §1 table cites. This is IN-TREE evidence (both paths run
+  // in the same process, same tree); the cross-tree "did adding the
+  // COLLAPSE row perturb ampSpacing's OWN bare rendering at all" proof
+  // (git HEAD blob vs working tree, 9/9 identical) is evidence-only —
+  // reported in docs/3d-audit/fill-audit/after/U7/report.json, not
+  // repeated here as a permanent test, because within one process
+  // `SF.buildObject({toneLaw:'ampSpacing'})` never even reads
+  // STYLE_PARAMS/ALIASES (only `resolveToneLaw` does, and this test calls
+  // that explicitly) — there is no in-tree way to "un-fold" ampSpacing's
+  // own dispatch to compare against, only a cross-tree one.
+  test('the fold (ampSpacing+nesting:nested === legacy weaveDepth) is byte-identical across every reachable primitive x density pair', () => {
+    const offenders = [];
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        const resolved = Params.resolveToneLaw({ toneLaw: 'ampSpacing', nesting: 'nested' });
+        if (resolved !== 'weaveDepth') { offenders.push(`${primitive}__${densityKey}: resolved to "${resolved}", not weaveDepth`); return; }
+        const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
+        const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'weaveDepth' }));
+        if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy weaveDepth`);
+      });
+    });
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  }, SLOW);
+
+  // The bare survivor (nesting at its own default, or the key entirely
+  // absent) is untouched across every combination too — the same invariant
+  // describeSingleParamCluster's own "byte-identity" test asserts on one
+  // cell, extended here to all 9.
+  test('the bare survivor (nesting:single, or omitted) resolves to itself, unaffected by geometry or density', () => {
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing' })).toBe('ampSpacing');
+        expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', nesting: 'single' })).toBe('ampSpacing');
+        const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'ampSpacing' }));
+        const resolved = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: 'ampSpacing' }) }));
+        expect(resolved).toBe(direct);
+      });
+    });
+  }, SLOW);
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U8 — C-08 · survivor `interlockWeave` · param `penDown`
+ * Folded: onePenDown ('continuous'). Bare option: perRuling->interlockWeave
+ * (default). W-22-24-W-18-plan.md §1 "C-08 -> U8":
+ *   perRuling (default) -> interlockWeave: 198 paths / 3956.2 mm ink
+ *   continuous           -> onePenDown:    106 paths / 4136.2 mm ink
+ * "interlockWeave and onePenDown are indistinguishable ragged spike fills
+ * ... at every density"; onePenDown's stated purpose is 9 pen-downs vs 36,
+ * invisible on paper — paths 198 -> 106 confirms the pen-down saving is
+ * real and the picture is not. RED (pre-U8): resolveToneLaw({toneLaw:
+ * 'interlockWeave', penDown:'continuous'}) returns 'interlockWeave'
+ * unchanged (no STYLE_PARAMS.interlockWeave descriptor) -- rendering
+ * diverges from onePenDown's own picture. GREEN below closes it.
+ * `trochoidLoop` is NOT folded (333 paths / 4422.7 mm, 12% more ink,
+ * "polygon shards") -- the plan says resolve after handoff item A lands;
+ * left as its own row, not touched by this unit.
+ *
+ * (a) Per LEDGER.md row 12b ("carry U7's finding forward"): BOTH
+ * `interlockWeave` (survivor) AND `onePenDown` (folded) carry their own
+ * real, DIFFERENT measured caveats (docs/tone-laws/laws.json) -- the same
+ * situation U7 hit first (unlike U1-U5, where only the folded id had a
+ * caveat). `effectiveLaw`/`resolveToneLaw` must surface `interlockWeave`'s
+ * own caveat at the descriptor default (`penDown:'perRuling'`), and swap to
+ * `onePenDown`'s distinct caveat once `penDown:'continuous'` is picked --
+ * verified in the "U8 caveat" describe block below, and cross-checked
+ * against the shared U5b-3/U7 file
+ * (tests/unit/scene3d-fill-style-effective-law.test.js).
+ *
+ * (b) Both `interlockWeave` and `onePenDown` are wave-family laws
+ * (docs/tone-laws/laws.json "family":"wave") and are BOTH unreachable on a
+ * box, per docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl (every
+ * mapper, both ids) -- the same TIER_B_PRIMITIVES-minus-`box` shape U7's
+ * multi-primitive x multi-density sweep used, extended here.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describeSingleParamCluster('Scene3D tone-law collapse — U8 (C-08, interlockWeave/penDown)', {
+  survivor: 'interlockWeave',
+  key: 'penDown',
+  pickerIdsLength: 33,
+  folded: [
+    { id: 'onePenDown', value: 'continuous' },
+  ],
+});
+
+describe('Scene3D tone-law collapse — U8 caveat: BOTH the survivor (interlockWeave) AND the folded law (onePenDown) carry real, DIFFERENT measured caveats', () => {
+  let runtime;
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  afterAll(() => runtime.cleanup());
+
+  test('BY_ID-direct: interlockWeave and onePenDown each carry their own non-empty, DISTINCT caveat — the roster corpus is untouched', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const survivorCaveat = FS.note('interlockWeave').caveat;
+    const foldedCaveat = FS.note('onePenDown').caveat;
+    expect(survivorCaveat.length).toBeGreaterThan(0);
+    expect(foldedCaveat.length).toBeGreaterThan(0);
+    // Distinct — like U7, this is a cluster where the survivor's OWN
+    // default state also carries a real caveat, so a naive "resolve to the
+    // survivor and stop" would show the WRONG one of the two, not none.
+    expect(survivorCaveat).not.toBe(foldedCaveat);
+    expect(survivorCaveat).toMatch(/single-weight/);
+    expect(foldedCaveat).toMatch(/single-weight/);
+  });
+
+  test('effectiveLaw: penDown default (perRuling) shows interlockWeave\'s OWN caveat (not empty)', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.effectiveLaw('interlockWeave', { penDown: 'perRuling' })).toBe('interlockWeave');
+    expect(FS.effectiveLaw('interlockWeave', {})).toBe('interlockWeave');
+    const caveat = FS.note(FS.effectiveLaw('interlockWeave', {})).caveat;
+    expect(caveat).toBe(FS.note('interlockWeave').caveat);
+    expect(caveat.length).toBeGreaterThan(0);
+  });
+
+  test('effectiveLaw: penDown=continuous resolves to onePenDown, surfacing ITS distinct caveat, not interlockWeave\'s', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.effectiveLaw('interlockWeave', { penDown: 'continuous' })).toBe('onePenDown');
+    const caveat = FS.note(FS.effectiveLaw('interlockWeave', { penDown: 'continuous' })).caveat;
+    expect(caveat).toBe(FS.note('onePenDown').caveat);
+    expect(caveat).not.toBe(FS.note('interlockWeave').caveat);
+    expect(caveat.length).toBeGreaterThan(0);
+  });
+
+  test('resolveToneLaw (engine) agrees with effectiveLaw (config) on both states', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const Params = runtime.window.Vectura.Scene3D.Params;
+    expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave' })).toBe(FS.effectiveLaw('interlockWeave', {}));
+    expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave', penDown: 'continuous' })).toBe(FS.effectiveLaw('interlockWeave', { penDown: 'continuous' }));
+  });
+});
+
+describe('Scene3D tone-law collapse — U8 multi-primitive x multi-density: interlockWeave byte-identity', () => {
+  // Same shape as U7's own multi-primitive x multi-density sweep (both
+  // clusters are wave-family, both unreachable on box per
+  // manifest.B.unreachable.jsonl). TIER_B_PRIMITIVES minus `box`.
+  let runtime; let V; let algo; let defaults; let SF; let Params; let PPD;
+  const PRIMITIVES = ['sphere', 'torus', 'cone'];
+  const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
+
+  const captureOpts = (primitive, densityValue) => {
+    const p = clone(defaults);
+    p.objects = [{
+      id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
+      transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.lights = [SUN];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(opts) {
+      const result = orig.call(this, opts);
+      calls.push({ opts, result });
+      return result;
+    };
+    try {
+      algo.generate(p, null, null, BOUNDS);
+    } finally {
+      SF.buildObject = orig;
+    }
+    let best = calls[0];
+    for (const c of calls) {
+      if ((c.result || []).length > (best.result || []).length) best = c;
+    }
+    return best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Params = V.Scene3D.Params;
+    PPD = Params.PRIMITIVE_PARAM_DEFAULTS || {};
+  }, SLOW);
+  afterAll(() => runtime.cleanup());
+
+  test('the fold (interlockWeave+penDown:continuous === legacy onePenDown) is byte-identical across every reachable primitive x density pair', () => {
+    const offenders = [];
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        const resolved = Params.resolveToneLaw({ toneLaw: 'interlockWeave', penDown: 'continuous' });
+        if (resolved !== 'onePenDown') { offenders.push(`${primitive}__${densityKey}: resolved to "${resolved}", not onePenDown`); return; }
+        const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
+        const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'onePenDown' }));
+        if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy onePenDown`);
+      });
+    });
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  }, SLOW);
+
+  test('the bare survivor (penDown:perRuling, or omitted) resolves to itself, unaffected by geometry or density', () => {
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave' })).toBe('interlockWeave');
+        expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave', penDown: 'perRuling' })).toBe('interlockWeave');
+        const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'interlockWeave' }));
+        const resolved = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: 'interlockWeave' }) }));
+        expect(resolved).toBe(direct);
+      });
+    });
+  }, SLOW);
+});
+
+/*
+ * MERGE CHECKLIST item 8 (integration r2, 2026-09-10) — re-run U1..U5's
+ * survivor/folded pairs through U7's multi-primitive x multi-density harness.
+ *
+ * WHY THIS EXISTS. U1-U5 each proved their byte-identity claim on ONE cell:
+ * a sphere, at a single unparametrized `fillDensity` (60 for U1/U5, the
+ * describeSingleParamCluster default for U2/U3/U4). U7 was the first fold in
+ * the chain to DIMENSION that claim (sphere/torus/cone x low/med/max), and it
+ * only did so because F1-placement's ruled condition 4 depends on `ampSpacing`
+ * specifically. U8 then copied U7's shape. That left five clusters proven to a
+ * strictly weaker bar than the sixth and seventh. This block closes the
+ * asymmetry using the SAME harness shape, the same three primitives and the
+ * same three densities.
+ *
+ * HONEST SCOPE, so nobody over-reads it. In-process, `resolveToneLaw(survivor
+ * + folded params)` returns the folded id itself, so the fold leg's two
+ * `SF.buildObject` calls receive an identical argument — that leg proves the
+ * RESOLUTION is correct at every (primitive, density) pair and that the render
+ * is deterministic, exactly as U7's and U8's own fold legs do. The leg that
+ * carries real geometric weight is the BARE-SURVIVOR one: the survivor with
+ * its sub-control at the default (and with the key absent entirely) must
+ * render byte-identically to the pre-collapse survivor across all nine pairs.
+ * `box`/`plane`/`solid` are excluded for the same reason U7 excludes them
+ * (no parametric chart; see U7's block).
+ */
+describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (MERGE CHECKLIST item 8)', () => {
+  let runtime; let V; let algo; let defaults; let SF; let Params; let PPD; let R;
+  const PRIMITIVES = ['sphere', 'torus', 'cone'];
+  const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
+  const SURVIVORS = ['ladder', 'taperedEnds', 'weightModulated', 'bundleCount', 'contFieldSigmoid'];
+  const optsCache = new Map();
+
+  const captureOpts = (primitive, densityValue) => {
+    const ck = `${primitive}__${densityValue}`;
+    if (optsCache.has(ck)) return optsCache.get(ck);
+    const p = clone(defaults);
+    p.objects = [{
+      id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
+      transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.lights = [SUN];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(opts) {
+      const result = orig.call(this, opts);
+      calls.push({ opts, result });
+      return result;
+    };
+    try {
+      algo.generate(p, null, null, BOUNDS);
+    } finally {
+      SF.buildObject = orig;
+    }
+    let best = calls[0];
+    for (const c of calls) {
+      if ((c.result || []).length > (best.result || []).length) best = c;
+    }
+    optsCache.set(ck, best.opts);
+    return best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Params = V.Scene3D.Params;
+    PPD = Params.PRIMITIVE_PARAM_DEFAULTS || {};
+    R = V.SCENE3D_TONE_LAWS;
+  }, SLOW);
+  afterAll(() => runtime.cleanup());
+
+  test('every U1..U5 fold resolves to its own legacy id, and renders identically to it, at every reachable primitive x density pair', () => {
+    const offenders = [];
+    const folds = Object.keys(R.ALIASES)
+      .map((id) => ({ id, into: R.ALIASES[id].into, params: R.ALIASES[id].params }))
+      .filter((f) => SURVIVORS.indexOf(f.into) !== -1);
+    // 13 folds across the five clusters: ladder 3, taperedEnds 2,
+    // weightModulated 1, bundleCount 3, contFieldSigmoid 4.
+    expect(folds.length).toBe(13);
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        folds.forEach((f) => {
+          const resolved = Params.resolveToneLaw({ toneLaw: f.into, ...f.params });
+          if (resolved !== f.id) {
+            offenders.push(`${primitive}__${densityKey}__${f.into}+${JSON.stringify(f.params)}: resolved to "${resolved}", not ${f.id}`);
+            return;
+          }
+          const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
+          const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: f.id }));
+          if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy ${f.id}`);
+        });
+      });
+    });
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  }, SLOW);
+
+  test('every U1..U5 bare survivor (sub-control at its default, or omitted) resolves to itself and renders identically, unaffected by geometry or density', () => {
+    const offenders = [];
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        SURVIVORS.forEach((survivor) => {
+          const descriptors = R.STYLE_PARAMS[survivor] || [];
+          expect(descriptors.length).toBeGreaterThan(0);
+          const defaultsBag = {};
+          descriptors.forEach((d) => { defaultsBag[d.key] = d.default; });
+          if (Params.resolveToneLaw({ toneLaw: survivor }) !== survivor) offenders.push(`${primitive}__${densityKey}__${survivor}: bare id did not resolve to itself`);
+          if (Params.resolveToneLaw({ toneLaw: survivor, ...defaultsBag }) !== survivor) offenders.push(`${primitive}__${densityKey}__${survivor}: explicit defaults did not resolve to itself`);
+          const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: survivor }));
+          const viaResolve = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: survivor, ...defaultsBag }) }));
+          if (direct !== viaResolve) offenders.push(`${primitive}__${densityKey}__${survivor}: bare survivor render moved`);
+        });
+      });
+    });
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  }, SLOW);
 });

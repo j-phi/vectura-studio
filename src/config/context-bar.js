@@ -256,6 +256,70 @@
     const sp = R && R.STYLE_PARAMS && R.STYLE_PARAMS[id];
     return Array.isArray(sp) ? sp : [];
   };
+  // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06 — "Folding a law must NOT
+  // hide its measured caveat") — the (survivor id, current collapse
+  // sub-control values) -> SPECIFIC internal law id the values select. Both
+  // caveat-rendering call sites (scene3d-panel.js `fillStyleControls`, the
+  // ctxbar Style flyout) must read the CAVEAT off this id, not off the
+  // survivor `entry()`/`note()` reads directly — folding e.g. `bundleDither`
+  // into `bundleCount` must not make its own measured caveat ("waving the
+  // pass-count boundary made long-wave moire worse") vanish just because the
+  // picker now stores the survivor id plus a `bundleMode` sub-param. The
+  // (i) popover's blurb (mechanism/strengths/weaknesses) stays on the plain
+  // survivor `entry` — the two lookups are deliberately NOT the same one,
+  // per the standing ruling.
+  //
+  // Mirrors `Scene3D.Params.resolveToneLaw`'s survivor+params rule (its rules
+  // 3/4) rather than calling it, so this config file never needs the core
+  // engine module loaded — it already owns STYLE_PARAMS via `styleParams()`
+  // above. A survivor with no collapse descriptors (no fold at all) passes
+  // straight through; several descriptors non-default AT ONCE is the same
+  // UNREPRESENTABLE case `resolveToneLaw` falls back on — deterministically
+  // the bare survivor id, never a throw.
+  SCENE_FILL_STYLES.effectiveLaw = (survivorId, paramsBag) => {
+    const bag = paramsBag && typeof paramsBag === 'object' ? paramsBag : {};
+    const descriptors = SCENE_FILL_STYLES.styleParams(survivorId);
+    if (!descriptors.length) return survivorId;
+    let activeLaw = null;
+    let activeCount = 0;
+    descriptors.forEach((d) => {
+      const opts = Array.isArray(d.options) ? d.options : [];
+      const asked = bag[d.key];
+      const matched = opts.find((o) => o.value === asked) || opts.find((o) => o.value === d.default) || null;
+      if (!matched || matched.value === d.default) return;
+      activeCount += 1;
+      activeLaw = matched.law;
+    });
+    return activeCount === 1 ? activeLaw : survivorId;
+  };
+  // W-10d-3 — the bag the picker should DISPLAY for a style whose `toneLaw`
+  // is still a RAW folded id (a .vectura saved before the U1-U5 collapse; an
+  // object3d leaf is never normalized at load — engine.js:422 runs only
+  // migrateScene for that type). The compositor sees the shim's reconstruction
+  // (params.js normalizeStyle, :833) and renders the folded law correctly; the
+  // panel reads the LAYER bag, where the sibling collapse key does not exist,
+  // and so falls back to the descriptor default. This seeds that key for
+  // DISPLAY only - nothing is written back (a write-back at panel-open time
+  // would dirty the document and push an undo entry; the once-only write-back
+  // contract belongs to W-10d-2, params.js, fill-collapse-2's file).
+  //
+  // Precedence mirrors normalizeStyle's shim EXACTLY - `=== undefined` only,
+  // so an explicitly stored key (including `null`) always wins, and the panel
+  // shows the same law resolveToneLaw dispatches. Returns the SAME object when
+  // `toneLaw` is not an ALIASES key, so every reachable picker state is a
+  // provable no-op (and stays one once W-10d-2 migrates the bag).
+  SCENE_FILL_STYLES.displayParams = (rawValue, paramsBag) => {
+    const bag = (paramsBag && typeof paramsBag === 'object') ? paramsBag : {};
+    const raw = (typeof rawValue === 'string' && rawValue)
+      ? rawValue : (typeof bag.toneLaw === 'string' ? bag.toneLaw : '');
+    const R = fillStyleRoster();
+    const alias = raw && R && R.ALIASES && R.ALIASES[raw];
+    const seed = alias && alias.params;
+    if (!seed) return bag;
+    const out = { ...bag };
+    Object.keys(seed).forEach((k) => { if (out[k] === undefined) out[k] = seed[k]; });
+    return out;
+  };
   // [{ group, options: [{ value, label, disabled? }] }] for UI.Select, grouped
   // by MARK CLASS. Every law the roster knows is always offered — all 47 plus
   // the shipped default — with no tier gate and no per-option suffix; the
@@ -275,7 +339,7 @@
   // blind, so a faceted primitive under Type=Contour/Spiral/Stipple showed
   // eleven "live" options that are all silent no-ops there. See
   // `isReachableOn` below.
-  SCENE_FILL_STYLES.groups = (primitiveMode, solidType, mapper) => {
+  SCENE_FILL_STYLES.groups = (primitiveMode, solidType, mapper, totalFaces) => {
     const R = fillStyleRoster();
     // Fill-collapse U0 — the flat list this picker offers is `PICKER_IDS`
     // (roster minus every folded id), NOT the full 48-id `IDS` (the engine
@@ -294,7 +358,7 @@
       // through the tone-law machinery at all — so it must grey out and
       // suffix along with the rest, not stay silently exempt.
       if (cls.id === FILL_STYLE_DEFAULT_ENTRY.markClass) {
-        const defaultReachable = SCENE_FILL_STYLES.isReachableOn(FILL_STYLE_DEFAULT, primitiveMode, solidType, mapper);
+        const defaultReachable = SCENE_FILL_STYLES.isReachableOn(FILL_STYLE_DEFAULT, primitiveMode, solidType, mapper, totalFaces);
         options.push({
           value: FILL_STYLE_DEFAULT,
           label: FILL_STYLE_DEFAULT_ENTRY.label + (defaultReachable ? '' : SCENE_FILL_STYLES.NO_EFFECT_SUFFIX),
@@ -303,7 +367,7 @@
       }
       ids.forEach((id) => {
         if (SCENE_FILL_STYLES.markClass(id) !== cls.id) return;
-        const reachable = SCENE_FILL_STYLES.isReachableOn(id, primitiveMode, solidType, mapper);
+        const reachable = SCENE_FILL_STYLES.isReachableOn(id, primitiveMode, solidType, mapper, totalFaces);
         const label = R.BY_ID[id].label + (reachable ? '' : SCENE_FILL_STYLES.NO_EFFECT_SUFFIX);
         options.push({ value: id, label, disabled: !reachable });
       });
@@ -388,22 +452,28 @@
   // the one low-poly solid this repo has actually measured (a dodecahedron) —
   // rather than guessed at without evidence.
   //
-  // `importedMesh` is the one exception to that "assumed under the cap"
-  // default, and it is unconditional (W-28). `faceMonoLines`'s
-  // `MONO_MAX_FRONT_FACES` check (scene3d.js) reads a live camera-facing
-  // mesh record's real front-face count mid-render — this config has no
-  // channel to that number at picker time, for ANY imported mesh, so unlike
-  // a named platonic/geodesic solid (whose face count is a fixed, known
-  // constant this file could in principle special-case) there is no safe
-  // "assume it's fine" default here: a real .obj/.stl import is essentially
-  // always well over 12 faces. Treating it as cap-limited unconditionally
-  // means the picker under-promises (it hides mono laws that a rare
-  // sub-13-face import could actually reach) rather than over-promises (
-  // offering laws that silently render as Ladder) — the same fail-toward-
-  // fewer-live-options bias `isReachableOn`'s mapper gate already uses.
-  SCENE_FILL_STYLES.isCapLimited = (primitiveMode, solidType) => {
+  // `importedMesh` was, until W-28b, an UNCONDITIONAL exception to that
+  // "assumed under the cap" default (W-28). `faceMonoLines`'s
+  // `MONO_MAX_FRONT_FACES` check (scene3d.js:2634, ==12) reads a live
+  // camera-facing mesh record's real front-face count mid-render — this
+  // config has no channel to THAT number at picker time, for any imported
+  // mesh. But `engine.js`'s `importMeshAsScene` (via `buildImportedMeshParams`)
+  // DOES store the mesh's real TOTAL face count at import time, in
+  // `params.importedMesh.faces.length` (engine.js ~1244, ~593) — and a
+  // fourth argument, `totalFaces`, is how a caller who can reach that number
+  // hands it in. front-facing ⊆ total, so an import whose TOTAL face count is
+  // at or under the 12-face budget can NEVER present more than 12 camera-
+  // facing faces either, from any angle — a hard geometric guarantee, not a
+  // guess, unlike trying to predict `front` itself. When `totalFaces` is
+  // absent/non-finite (a caller with no channel to it) or above 12, this
+  // still fails toward the unconditional W-28 answer: the picker
+  // under-promises (hides mono laws a sub-13-face import could actually
+  // reach) rather than over-promises (offering laws that silently render as
+  // Ladder) — the same fail-toward-fewer-live-options bias `isReachableOn`'s
+  // mapper gate already uses.
+  SCENE_FILL_STYLES.isCapLimited = (primitiveMode, solidType, totalFaces) => {
     if (primitiveMode !== 'solid') return false;
-    if (solidType === 'importedMesh') return true;
+    if (solidType === 'importedMesh') return !(Number.isFinite(totalFaces) && totalFaces <= 12);
     const P = Vectura.Scene3D && Vectura.Scene3D.Params;
     const dflt = (P && P.PRIMITIVE_PARAM_DEFAULTS && P.PRIMITIVE_PARAM_DEFAULTS.solid
       && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
@@ -466,7 +536,7 @@
   // EVERY option — including `none` and the shipped default `ladder` — draws
   // no differently. This check runs before the default/none early-out so
   // those two are not silently exempted.
-  SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType, mapper) => {
+  SCENE_FILL_STYLES.isReachableOn = (id, primitiveMode, solidType, mapper, totalFaces) => {
     // fs-e2 (W-02, F-02) — `none`/`wireframe`/`contourSlice` never reach the
     // tone-law machinery AT ALL, on ANY primitive, faceted or chart-wrapped:
     // scene3d.js's SURFACE_FILL only dispatches for hatch/crosshatch/contour/
@@ -500,7 +570,7 @@
       if (!M.isMono(id)) return false;
       // A mono law has a real planar implementation — reachable on box/plane,
       // and on a solid UNLESS that solid's own front-face budget is exceeded.
-      return !SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType);
+      return !SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType, totalFaces);
     }
     // Curved (chart-wrapped) primitive.
     if (mapper === 'spiral' || mapper === 'stipple') {
@@ -533,6 +603,30 @@
     if (primitiveMode === 'torus' && id === 'originSpiral') return false;
     return true;
   };
+  // W-10d-2 — the ONLY (primitive, law) pairs a saved document is migrated
+  // away from. Deliberately NOT `isReachableOn`: measured, 2014 of 2800
+  // (primitive x mapper x law) combinations are unreachable, 1365 of those in
+  // a context where `ladder` is unreachable too, and the curved+spiral/stipple
+  // arm of the gate hides DEGRADED pictures, not no-ops (sphere/spiral/
+  // taperedEnds renders 136 paths vs ladder's 106). Rewriting on that gate
+  // would destroy user picks and change most renders. This table is the
+  // narrow case where the render is genuinely unplottable and the product
+  // ruling is to substitute: W-10c measured torus+originSpiral at 87.8% of
+  // interior pixels in a blank-paper run longer than two pen widths.
+  SCENE_FILL_STYLES.UNREACHABLE_WRITEBACK = [
+    { primitive: 'torus', id: 'originSpiral' },
+  ];
+  // -> the picker's own fallback (FILL_STYLE_DEFAULT), or null for no change.
+  SCENE_FILL_STYLES.writeBackFor = (id, primitiveMode, mapper) => {
+    if (typeof id !== 'string' || !id) return null;
+    // Never rewrite where no fallback is live: `none`/`wireframe`/
+    // `contourSlice` (and a faceted primitive off hatch/crosshatch) make
+    // EVERY option inert, `ladder` included - there is nothing to move to.
+    if (!SCENE_FILL_STYLES.isReachableOn(FILL_STYLE_DEFAULT, primitiveMode, undefined, mapper)) return null;
+    const hit = SCENE_FILL_STYLES.UNREACHABLE_WRITEBACK
+      .some((e) => e.primitive === primitiveMode && e.id === id);
+    return hit ? FILL_STYLE_DEFAULT : null;
+  };
   SCENE_FILL_STYLES.NO_EFFECT_SUFFIX = ' — no effect here';
   SCENE_FILL_STYLES.FACETED_NOTE = 'This shape is faceted: fill styles greyed out above draw exactly like Ladder here, whichever one is picked.';
   SCENE_FILL_STYLES.FACETED_CAP_NOTE = 'This solid has no planar fill support, and its body exceeds the fill engine’s per-object face budget — so even the styles that work on a box/plane fall back to Ladder here. Only NO TONE still differs. A simpler solid (fewer faces) can restore the rest.';
@@ -542,10 +636,10 @@
   // NOTHING differs there, not even No Tone. Judge measured 1 distinct
   // picture out of 48 on a default buckyball + Contour.
   SCENE_FILL_STYLES.FACETED_OFF_AXIS_NOTE = 'This shape is faceted, and its Type (Contour, Spiral or Stipple) has no planar fill support here: no fill style — not even No Tone — draws any differently. Switch Type to Hatch or Crosshatch to use Fill Style.';
-  SCENE_FILL_STYLES.facetedNote = (primitiveMode, solidType, mapper) => {
+  SCENE_FILL_STYLES.facetedNote = (primitiveMode, solidType, mapper, totalFaces) => {
     if (!SCENE_FILL_STYLES.isFaceted(primitiveMode)) return '';
     if (mapper && mapper !== 'hatch' && mapper !== 'crosshatch') return SCENE_FILL_STYLES.FACETED_OFF_AXIS_NOTE;
-    if (SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType)) return SCENE_FILL_STYLES.FACETED_CAP_NOTE;
+    if (SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType, totalFaces)) return SCENE_FILL_STYLES.FACETED_CAP_NOTE;
     return SCENE_FILL_STYLES.FACETED_NOTE;
   };
   Vectura.SCENE_FILL_STYLES = SCENE_FILL_STYLES;

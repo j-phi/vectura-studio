@@ -264,27 +264,35 @@ describe('Fill Style — the shared mark-class config', () => {
       });
     });
 
-    // ── W-10d deserialization — the gate is picker-presentation ONLY. A
-    // document saved before this fix (or hand-edited) that names a torus
-    // object with toneLaw 'originSpiral' must load without throwing and must
-    // NOT be silently rewritten: `clampStyleParam`'s 'toneLaw' case (params.js)
-    // only rejects ids the roster does not recognize at all — it has no
-    // primitiveMode argument and cannot know the value is unreachable on THIS
-    // shape. So the saved id survives normalization unchanged, `resolve()`
-    // (which only checks roster membership, same reason) still returns it,
-    // and the render keeps producing the known wedge defect — `isReachableOn`
-    // is the only place that knows better, and it only shapes the dropdown.
-    // This is the documented fallback (STILL-OPEN.md W-10d/FU-1): hidden in
-    // the picker, not repaired, and not engine-gated.
-    test('a torus layer saved with toneLaw "originSpiral" deserializes unchanged — no throw, no silent rewrite (W-10d)', () => {
+    // ── W-10d deserialization — the gate is picker-presentation ONLY at the
+    // STYLE level: `normalizeStyle` alone (no primitive argument in scope)
+    // cannot know a law is unreachable on a particular shape, so a bare style
+    // bag still deserializes unchanged here — `clampStyleParam`'s 'toneLaw'
+    // case only rejects ids the roster does not recognize at all.
+    //
+    // UPDATED for W-10d-2 (Contract A) — the STALE half of this test was the
+    // final assertion below: the FULL scene sanitizer (`sanitizeSceneParams`
+    // -> `normalizeParams`) has BOTH the object's primitive and its style in
+    // scope (out.objects + out.styleTable), which is exactly the "correlation
+    // pass" W-10d's own comment said no live path could do. W-10d-2 adds that
+    // pass, curated to ONE pair (torus + originSpiral) — see
+    // docs/3d-audit/lane-reports/W-10d-2-plan.md §B-1/§1.1. A torus object's
+    // saved `originSpiral` no longer survives the FULL sanitizer unchanged;
+    // it is migrated to the picker's own fallback, `ladder`, once, at load.
+    // This is a deliberate, CHANGELOG-listed render change for this ONE
+    // combination — not a regression of the no-throw/no-silent-mutation
+    // guarantee for every OTHER (primitive, law) pair (pinned by the second
+    // block below, and by R8/R9 in the W-10d-2 describe further down this
+    // file).
+    test('a torus layer saved with toneLaw "originSpiral": normalizeStyle alone is context-blind (unchanged); the full sanitizer migrates it (W-10d / W-10d-2)', () => {
       const P = window.Vectura.Scene3D.Params;
       const style = P.normalizeStyle({ mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
       expect(style.params.toneLaw).toBe('originSpiral');
       expect(F.resolve('originSpiral')).toBe('originSpiral');
       expect(F.isReachableOn(F.resolve(style.params.toneLaw), 'torus')).toBe(false);
-      // Round-trip through the full scene sanitizer too — a torus object
-      // carrying this style in styleTable.byObject must not throw or mutate
-      // the id either.
+      // Round-trip through the full scene sanitizer: a torus object carrying
+      // this style in styleTable.byObject must not throw, and (W-10d-2,
+      // Contract A) IS migrated to the picker's own fallback.
       const sanitized = P.sanitizeSceneParams({
         objects: [{ id: 'obj-1', primitive: 'torus', params: { sx: 30, sy: 22, sz: 22 } }],
         styleTable: {
@@ -293,7 +301,19 @@ describe('Fill Style — the shared mark-class config', () => {
           byFace: {},
         },
       });
-      expect(sanitized.styleTable.byObject['obj-1'].params.toneLaw).toBe('originSpiral');
+      expect(sanitized.styleTable.byObject['obj-1'].params.toneLaw).toBe(F.DEFAULT);
+      // Guard: a NON-curated (primitive, law) pair through the same full
+      // sanitizer is untouched — the migration is scoped to the one entry in
+      // SCENE_FILL_STYLES.UNREACHABLE_WRITEBACK, not a blanket reachability remap.
+      const sanitizedSphere = P.sanitizeSceneParams({
+        objects: [{ id: 'obj-1', primitive: 'sphere', params: { sx: 30, sy: 22, sz: 22 } }],
+        styleTable: {
+          scene: { mapper: 'hatch', params: {} },
+          byObject: { 'obj-1': { mapper: 'spiral', params: { toneLaw: 'taperedEnds' } } },
+          byFace: {},
+        },
+      });
+      expect(sanitizedSphere.styleTable.byObject['obj-1'].params.toneLaw).toBe('taperedEnds');
     });
 
     test('box/plane are faceted, and only none/ladder/mono laws reach them', () => {
@@ -362,6 +382,41 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.isReachableOn('ladder', 'solid', 'importedMesh')).toBe(true);
     });
 
+    // ── W-28b: the face-count fast path ─────────────────────────────────────
+    // The blanket W-28 rule above was itself flagged (LEDGER row 20/28,
+    // STILL-OPEN.md) as offering imports only 2 of 49 styles even though
+    // `engine.importMeshAsScene` stores the mesh's real TOTAL face count at
+    // import time (`params.importedMesh.faces.length`, engine.js ~1244).
+    // front-facing count ⊆ total count, so a mesh whose TOTAL is at or under
+    // `MONO_MAX_FRONT_FACES` (scene3d.js:2634, ==12) can never present more
+    // than 12 camera-facing faces from ANY angle — a caller who can supply
+    // that number as a 4th `totalFaces` argument gets a real, non-blanket
+    // answer instead of the unconditional W-28 fallback.
+    test('solid: an imported mesh with totalFaces <= 12 is NOT cap-limited (W-28b fast path)', () => {
+      [0, 1, 4, 11, 12].forEach((totalFaces) => {
+        expect(F.isCapLimited('solid', 'importedMesh', totalFaces)).toBe(false);
+        R.IDS.forEach((id) => {
+          if (id === 'none') { expect(F.isReachableOn(id, 'solid', 'importedMesh', undefined, totalFaces)).toBe(true); return; }
+          expect(F.isReachableOn(id, 'solid', 'importedMesh', undefined, totalFaces)).toBe(M.isMono(id));
+        });
+        expect(F.isReachableOn('ladder', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+      });
+    });
+
+    test('solid: an imported mesh with totalFaces > 12, or an unknown/non-finite totalFaces, stays cap-limited (W-28b)', () => {
+      [13, 20, 80, NaN, Infinity, -Infinity, 'nope', null, undefined].forEach((totalFaces) => {
+        expect(F.isCapLimited('solid', 'importedMesh', totalFaces)).toBe(true);
+        expect(F.isReachableOn('mazeFill', 'solid', 'importedMesh', undefined, totalFaces)).toBe(false);
+        expect(F.isReachableOn('none', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+        expect(F.isReachableOn('ladder', 'solid', 'importedMesh', undefined, totalFaces)).toBe(true);
+      });
+      // Calling with no 4th argument at all (the pre-W-28b call shape) must
+      // keep behaving exactly like the unconditional W-28 test above — no
+      // caller that has not been updated to pass totalFaces silently changes
+      // behavior.
+      expect(F.isCapLimited('solid', 'importedMesh')).toBe(true);
+    });
+
     test('an absent/unknown primitiveMode fails OPEN — never disables a law it cannot verify', () => {
       expect(F.isFaceted(undefined)).toBe(false);
       expect(F.isFaceted(null)).toBe(false);
@@ -393,9 +448,21 @@ describe('Fill Style — the shared mark-class config', () => {
       // at every unit that folds another id): U1 46 total - 11 alive = 35;
       // U2 44 total - 11 = 33; U3 43 total - 11 = 32; U4 40 total - 11 = 29;
       // U5 (C-05, contFieldSigmoid/fieldMetric+fieldFloor, 4 more folded)
-      // 36 total - 11 = 25.
+      // 36 total - 11 = 25. U7 (C-07, ampSpacing/nesting, 1 more folded —
+      // weaveDepth, a wave-family law, dead on a box exactly like its
+      // survivor ampSpacing; ALIVE unaffected, neither ampSpacing nor
+      // weaveDepth is a mono law) 35 total - 11 = 24. U8 (C-08,
+      // interlockWeave/penDown, 1 more folded — onePenDown, also a
+      // wave-family law, dead on a box exactly like its survivor
+      // interlockWeave, per
+      // docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl (every mapper,
+      // both ids); ALIVE unaffected, neither interlockWeave nor onePenDown
+      // is a mono law) 34 total - 11 = 23. Re-measured directly (not
+      // assumed): `groups('box')` now offers 34 options (33 PICKER_IDS +
+      // 'ladder'), confirmed failing at 24 (`expected 23 to be 24`) before
+      // this edit, passing at 23 after.
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(25);
+      expect(dead.length).toBe(23);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
@@ -1026,6 +1093,76 @@ describe('Fill Style — context-bar Style flyout', () => {
     });
   });
 
+  // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — same fix, ctxbar Style
+  // flyout surface. See the docked-panel version of this test below for the
+  // full rationale.
+  test('U5b — picking a folded sub-control value (Bundle mode: Dithered) surfaces bundleDither\'s own caveat in the ctxbar flyout', () => {
+    const { fly } = openStyle({
+      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleCount' } } }),
+    });
+    expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
+    const bundleModeSel = rowCtl(fly, 'Bundle mode').querySelector('select');
+    bundleModeSel.value = 'dither';
+    fire(bundleModeSel, 'change');
+    const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/moire/);
+  });
+
+  // MERGE CHECKLIST item 7 (integration r2, 2026-09-10) — THE ONE BEHAVIOUR NO
+  // LANE COULD TEST. U5b's caveat renderer (`effectiveLaw`) lives on
+  // fill-collapse-2; W-10d-3's raw-folded-id display seed (`displayParams`)
+  // lives on fill-audit-2. Until this merge the two had never been in one tree,
+  // so nobody could check the case where they meet: a `.vectura` saved BEFORE
+  // the collapse, whose style bag still carries a RAW FOLDED `toneLaw` and no
+  // sibling collapse key at all.
+  //
+  // RED at the merge point: the ctxbar flyout computed
+  // `effectiveLaw(law, params)` off the UN-SEEDED bag, which has no
+  // `bundleMode`, so `effectiveLaw` returned the bare survivor and the folded
+  // law's own measured caveat vanished — the survivor's silence, exactly what
+  // the standing ruling "folding a law must NOT hide its measured caveat"
+  // forbids. The docked panel already did this correctly (it seeds
+  // `styleParamBag` through `displayParams` FIRST, scene3d-panel.js:716); the
+  // ctxbar computed its seeded bag only AFTER the caveat, and used it only for
+  // the sub-control selects. A one-site ordering drift between two surfaces
+  // whose stated contract is that they must not drift.
+  test('MERGE r2 item 7 — a RAW folded toneLaw (bundleDither, saved pre-collapse) still shows its OWN caveat in the ctxbar flyout', () => {
+    const { fly } = openStyle({
+      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleDither' } } }),
+    });
+    // The picker resolves the row to the survivor — that half was already right.
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('bundleCount');
+    // ...and the sub-control displays the folded value (W-10d-3).
+    expect(rowCtl(fly, 'Bundle mode').querySelector('select').value).toBe('dither');
+    // The caveat must be bundleDither's own, not the survivor's silence.
+    const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/moire/);
+  });
+
+  test('MERGE r2 item 7 — a RAW folded toneLaw (contFieldTouch) likewise shows its own caveat in the ctxbar flyout', () => {
+    const { fly } = openStyle({
+      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldTouch' } } }),
+    });
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('contFieldSigmoid');
+    expect(rowCtl(fly, 'Field floor').querySelector('select').value).toBe('touch');
+    expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeTruthy();
+  });
+
+  test('U5b — picking a folded sub-control value (Field floor: Ink-width floor) surfaces contFieldTouch\'s own caveat in the ctxbar flyout', () => {
+    const { fly } = openStyle({
+      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldSigmoid' } } }),
+    });
+    expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
+    const fieldFloorSel = rowCtl(fly, 'Field floor').querySelector('select');
+    fieldFloorSel.value = 'touch';
+    fire(fieldFloorSel, 'change');
+    const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/floods/);
+  });
+
   // The owner's decision retired the Off/On "Experimental" toggle: every law
   // is offered all the time, on both surfaces, with no per-option suffix and
   // no view-state to persist. This test used to prove the toggle grew the
@@ -1239,6 +1376,43 @@ describe('Fill Style — context-bar Style flyout', () => {
       expect(openFly().querySelector('.ctxbar-fly-note.is-faceted')).toBeTruthy();
     });
   });
+
+  // ── W-10d-3 — same lie on the ctxbar Style flyout, on a REAL scene-tree
+  // child (not the monolith `styleTable` fixture the rest of this describe
+  // uses) — `getSceneObjectResolvedStyle` patches in the child layer's LIVE
+  // `params.style` for a tree object, so this exercises the actual bag both
+  // real entry points (canvas pick / layer-row click) select against.
+  describe('W-10d-3 — sub-control DISPLAY value for a raw folded toneLaw (real tree)', () => {
+    const buildTreeWithStyle = (style) => {
+      app.engine.layers = app.engine.layers.filter((l) => l.type !== 'scene3d');
+      const gid = app.engine.addLayer('scene3d');
+      const group = app.engine.getLayerById(gid);
+      const kids = app.engine.getLayerChildren(gid);
+      const objChild = kids.find((l) => l.type === 'object3d');
+      objChild.params.style = style;
+      app.engine.computeAllDisplayGeometry();
+      app.renderer.setSelection([objChild.id], objChild.id);
+      app.renderer.setSceneSelection({
+        layerId: gid, mode: 'object', objectIds: [objChild.id], faceKeys: [], edgeKeys: [],
+      });
+      CB.restoreState();
+      return { group, objChild };
+    };
+
+    test('R3 — ctxbar flyout, real tree child, raw contFieldTouch: Field floor shows touch, not the plot default', () => {
+      buildTreeWithStyle({ penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldTouch' } });
+      pillByLabel('Style').click();
+      const fly = openFly();
+      expect(rowCtl(fly, 'Field floor').querySelector('select').value).toBe('touch');
+    });
+
+    test('R3g — over-fix guard: Field metric (the OTHER descriptor on the same law) is untouched', () => {
+      buildTreeWithStyle({ penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldTouch' } });
+      pillByLabel('Style').click();
+      const fly = openFly();
+      expect(rowCtl(fly, 'Field metric').querySelector('select').value).toBe('screen');
+    });
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1360,6 +1534,40 @@ describe('Fill Style — docked 3D Scene panel', () => {
     const caveat = stylePage(lib.container).querySelector('.vs3-lawnote.is-caveat');
     expect(caveat).toBeTruthy();
     expect(caveat.textContent.length).toBeGreaterThan(10);
+  });
+
+  // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — a folded law reached via
+  // its own collapse sub-control must still show ITS OWN measured caveat,
+  // not the survivor's (which has none). Fixes the gap the U4/U5 units
+  // documented and deliberately left open (see
+  // "Scene3D tone-law collapse — U4/U5 caveat-visibility gap" in
+  // scene3d-tone-law-collapse.test.js).
+  test('U5b — picking a folded sub-control value (Bundle mode: Dithered) surfaces bundleDither\'s own caveat, not the survivor\'s (none)', () => {
+    const { container } = openStyle(hatchOn({ toneLaw: 'bundleCount' }));
+    // Baseline: the bare survivor shows no caveat.
+    expect(stylePage(container).querySelector('.vs3-lawnote.is-caveat')).toBeNull();
+    const bundleModeSel = styleRow(container, 'Bundle mode').querySelector('select');
+    bundleModeSel.value = 'dither';
+    fire(bundleModeSel, 'change');
+    const caveat = stylePage(container).querySelector('.vs3-lawnote.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/moire/);
+    // The (i) popover's blurb stays on the SURVIVOR, per the ruling — it must
+    // not switch to bundleDither's own mechanism text. The popover content is
+    // always in the DOM (only visibility is gated on open/closed).
+    expect(stylePage(container).querySelector('.vs3-lawinfo-pop').textContent)
+      .toContain(F.entry('bundleCount').mechanism);
+  });
+
+  test('U5b — picking a folded sub-control value (Field floor: Ink-width floor) surfaces contFieldTouch\'s own caveat, not the survivor\'s (none)', () => {
+    const { container } = openStyle(hatchOn({ toneLaw: 'contFieldSigmoid' }));
+    expect(stylePage(container).querySelector('.vs3-lawnote.is-caveat')).toBeNull();
+    const fieldFloorSel = styleRow(container, 'Field floor').querySelector('select');
+    fieldFloorSel.value = 'touch';
+    fire(fieldFloorSel, 'change');
+    const caveat = stylePage(container).querySelector('.vs3-lawnote.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toMatch(/floods/);
   });
 
   // fs-m2 Job 2 — the mechanism/strengths/weaknesses paragraph dominated the
@@ -1618,6 +1826,79 @@ describe('Fill Style — docked 3D Scene panel', () => {
   test('the LEAF panel hides the row on wireframe', () => {
     const { container } = mountLeaf('object3d', { penId: null, mapper: 'wireframe', params: {} });
     expect(leafRow(container, 'Fill Style')).toBeUndefined();
+  });
+
+  // ── W-10d-3 — the Style tab shows the WRONG sub-control value for a RAW
+  // FOLDED toneLaw. A `.vectura` saved before the U1-U5 collapse (or any
+  // live-composed leaf) carries the folded id alone (e.g. `{toneLaw:
+  // 'bundleDither'}`) — `normalizeStyle`'s U0 migration shim reconstructs
+  // the `{survivor, siblingKey}` shape only on the throw-away compose-time
+  // copy the compositor feeds `algo.generate` (engine.js:2690/:2714); the
+  // panel and ctxbar read the LIVE layer bag, where the sibling key never
+  // existed, so `FS.styleParams(law)`'s `has` check is always false and the
+  // sub-control silently falls back to its descriptor DEFAULT — even though
+  // the canvas renders the folded id correctly. `object3d` leaves are never
+  // migrated at load either (engine.js:422 runs only `migrateScene` for that
+  // type). See docs/3d-audit/lane-reports/W-10d-3-plan.md.
+  describe('W-10d-3 — sub-control DISPLAY value for a raw folded toneLaw', () => {
+    test('R1 — docked LEAF, raw fineLadder: Rung detail shows fine, not the coarse default', () => {
+      const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: { toneLaw: 'fineLadder' } });
+      expect(leafRow(container, 'Rung detail').querySelector('select').value).toBe('fine');
+    });
+
+    test('R1g — over-fix guard: the Fill Style row itself is untouched (still the survivor, ladder)', () => {
+      const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: { toneLaw: 'fineLadder' } });
+      expect(leafRow(container, 'Fill Style').querySelector('select').value).toBe('ladder');
+    });
+
+    test('R2 — docked LEAF, raw bundleDither: Bundle mode shows dither, not the count default', () => {
+      const { container } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: { toneLaw: 'bundleDither' } });
+      expect(leafRow(container, 'Bundle mode').querySelector('select').value).toBe('dither');
+    });
+
+    // ── R4/R5 — the real save/open path (exportState → importState), not a
+    // hand-poked bag: proves the load channel (engine.js:422, migrateScene
+    // only) really does leave the leaf bag raw, and that the render side
+    // (which independently calls Params.normalizeParams inside
+    // algo.generate — engine.js:2714 / scene3d.js:1191) is unaffected.
+    const roundTrip = (toneLaw) => {
+      const V = window.Vectura;
+      const e1 = new V.VectorEngine();
+      const gid = e1.addLayer('scene3d');
+      const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+      obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw } };
+      const e2 = new V.VectorEngine();
+      e2.importState(JSON.parse(JSON.stringify(e1.exportState())));
+      const group2 = e2.layers.find((l) => l.type === 'scene3d' && l.isGroup);
+      const obj2 = e2.getLayerDescendants(group2.id).find((l) => l.type === 'object3d');
+      return { V, e2, group2, obj2 };
+    };
+
+    test('R4 — save/open round trip: docked LEAF Bundle mode shows dither for a reopened bundleDither document', () => {
+      const { V, obj2 } = roundTrip('bundleDither');
+      // Guard the fixture itself: the leaf bag really does reopen raw —
+      // if this ever flips (e.g. W-10d-2's write-back generalizes to this
+      // type), R4 stops proving anything and must be revisited, not silently
+      // kept green by a fix that moved upstream of it.
+      expect(obj2.params.style.params.toneLaw).toBe('bundleDither');
+      const ui = { app: { pushHistory: () => {}, regen: () => {} }, storeLayerParams: () => {} };
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      V.UI.Scene3DPanel.build(ui, obj2, container);
+      const tab = Array.from(container.querySelectorAll('.tab-btn'))
+        .find((b) => b.dataset && b.dataset.value === 'style');
+      if (tab) fire(tab, 'click');
+      expect(leafRow(container, 'Bundle mode').querySelector('select').value).toBe('dither');
+    });
+
+    test('R5 — canvas-vs-UI anchor: the render already resolves bundleDither correctly and must not move', () => {
+      const { V, e2, group2, obj2 } = roundTrip('bundleDither');
+      e2.computeAllDisplayGeometry();
+      const assembled = group2._sceneAssembled;
+      expect(assembled).toBeTruthy();
+      const byObjectParams = assembled.styleTable.byObject[obj2.id].params;
+      expect(V.Scene3D.Params.resolveToneLaw(byObjectParams)).toBe('bundleDither');
+    });
   });
 
   // fs-m2 Job 1 — same focus-retention contract as the scene/object/face
@@ -2541,5 +2822,228 @@ describe('Shadow — "Shadows land on objects" (docked 3D Scene panel)', () => {
     fire(onOffBtn(rowCtl(host2, 'Shadows land on objects'), 'off'), 'click');
     expect(layer.params.shadow.shadowReceiveOnObjects).toBe(false);
     expect(layer.params.shadow.shadowToneLaw).toBe('mkScribble');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// W-10d-2 (Contract A) — curated unreachable-toneLaw write-back.
+//
+// A saved torus leaf carrying toneLaw:'originSpiral' cannot be repaired at
+// the render engine (W-10c/FU-1, out of scope): the mono law's radial fan
+// draws solid ink wedges (measured 87.8% interior-pixel coverage). The
+// picker already HIDES 'originSpiral' from new picks (context-bar.js:567,
+// isReachableOn), but a document saved before that gate — or any hand-
+// edited/preset file — still carries and RENDERS the raw id (W-10d's own
+// comment: "hidden from new picks, not repaired"). This unit substitutes
+// the picker's own fallback (`ladder`) for the ONE curated (primitive, law)
+// pair — torus + originSpiral — at the two channels that can see both the
+// primitive and the style in one scope: the load channel (engine.js:419-
+// 423/:1931, persisted) and the live-compose channel (collectSceneParams,
+// render-facing only — see the "no per-pass rewrite" tests below for why
+// the live channel intentionally never touches the live layer bag).
+//
+// Assertions are on the STORED params / assembled render input, never on
+// the picker's DISPLAY value — that is the whole distinction from W-10d-3's
+// displayParams seed (a read-only, disjoint-id-set mechanism; see that
+// unit's own tests).
+// ══════════════════════════════════════════════════════════════════════════
+describe('W-10d-2 — curated unreachable toneLaw write-back (Contract A)', () => {
+  let runtime, window, document, V;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime(FULL_STACK);
+    ({ window, document } = runtime);
+    if (typeof window.getThemeToken !== 'function') {
+      window.getThemeToken = (_token, fallback) => fallback ?? '';
+    }
+    V = window.Vectura;
+  });
+  afterAll(() => { runtime?.cleanup?.(); runtime = null; });
+
+  const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+
+  // Build a fresh scene3d group whose one object3d child carries the given
+  // primitive + style, then round-trip it through a NEW engine's
+  // exportState -> importState — so every assertion below is against a
+  // REOPENED document, not a hand-poked in-memory bag (mirrors the file's
+  // own `roundTrip` helper, W-10d-3's R4/R5).
+  const openLeaf = (primitive, style) => {
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    obj.params.primitive = primitive;
+    obj.params.style = style;
+    const e2 = new V.VectorEngine();
+    e2.importState(JSON.parse(JSON.stringify(e1.exportState())));
+    const group2 = e2.layers.find((l) => l.type === 'scene3d' && l.isGroup);
+    const obj2 = e2.getLayerDescendants(group2.id).find((l) => l.type === 'object3d');
+    return { e2, group2, obj2 };
+  };
+
+  test('R1 — .vectura load: object3d torus leaf with toneLaw originSpiral reopens as ladder', () => {
+    const { obj2 } = openLeaf('torus', { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+    expect(obj2.params.style.params.toneLaw).toBe('ladder');
+  });
+
+  test('R1b — .vectura load, MONOLITH form: styleTable.byObject on a torus object is migrated too', () => {
+    const params = {
+      sceneVersion: 1, seed: 0,
+      objects: [{ id: 'obj-1', name: 'Torus 1', primitive: 'torus', params: {}, transform: {}, visibility: 'solid' }],
+      lights: [], ground: { enabled: false }, backdrop: { enabled: false }, camera: {}, groups: [], assets: {},
+      styleTable: {
+        scene: { penId: null, mapper: 'none', params: {} },
+        byObject: { 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } } },
+        byFace: {},
+      },
+    };
+    const layer = { id: 'mono-1', type: 'scene3d', name: 'Scene', isGroup: false, params };
+    const e1 = new V.VectorEngine();
+    e1.importState(JSON.parse(JSON.stringify({ layers: [layer], activeLayerId: null, formatVersion: V.VECTURA_FORMAT_VERSION || 1 })));
+    const reopened = e1.layers.find((l) => l.id === 'mono-1');
+    expect(reopened.params.styleTable.byObject['obj-1'].params.toneLaw).toBe('ladder');
+  });
+
+  test('R2 — once-only: re-importing an already-migrated document is byte-identical (idempotent)', () => {
+    const { e2, obj2 } = openLeaf('torus', { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+    const snap1 = JSON.stringify(obj2.params);
+    const e3 = new V.VectorEngine();
+    e3.importState(JSON.parse(JSON.stringify(e2.exportState())));
+    const group3 = e3.layers.find((l) => l.type === 'scene3d' && l.isGroup);
+    const obj3 = e3.getLayerDescendants(group3.id).find((l) => l.type === 'object3d');
+    const snap2 = JSON.stringify(obj3.params);
+    expect(snap2).toBe(snap1);
+  });
+
+  test('R3 — no per-pass rewrite, REACHABLE law: byte-identical across 3 composes', () => {
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    obj.params.primitive = 'sphere';
+    obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw: 'etfKang' } };
+    const snap0 = JSON.stringify(obj.params);
+    e1.computeAllDisplayGeometry();
+    const snap1 = JSON.stringify(obj.params);
+    e1.computeAllDisplayGeometry();
+    const snap2 = JSON.stringify(obj.params);
+    e1.computeAllDisplayGeometry();
+    const snap3 = JSON.stringify(obj.params);
+    expect(snap1).toBe(snap0);
+    expect(snap2).toBe(snap0);
+    expect(snap3).toBe(snap0);
+  });
+
+  test('R4 — no per-pass rewrite, UNREACHABLE law reached by a LIVE edit (sphere -> torus)', () => {
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const group = e1.layers.find((l) => l.id === gid);
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    // Reachable to start (sphere+hatch+originSpiral is a live, distinct picture).
+    obj.params.primitive = 'sphere';
+    obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } };
+    e1.computeAllDisplayGeometry();
+    expect(V.Scene3D.Params.resolveToneLaw(group._sceneAssembled.styleTable.byObject[obj.id].params)).toBe('originSpiral');
+    // Live edit makes it unreachable.
+    obj.params.primitive = 'torus';
+    e1.computeAllDisplayGeometry(); // compose #1
+    const afterFirst = group._sceneAssembled.styleTable.byObject[obj.id].params.toneLaw;
+    expect(afterFirst).toBe('ladder');
+    // Guard: the LIVE layer bag itself is never touched by the compose path —
+    // the write-back is render-facing only here (the leaf's OWN stored law is
+    // migrated at the load channel, R1/R7, not by a display-geometry pass).
+    const snap1 = JSON.stringify(obj.params);
+    expect(obj.params.style.params.toneLaw).toBe('originSpiral');
+    e1.computeAllDisplayGeometry(); // compose #2
+    const snap2 = JSON.stringify(obj.params);
+    e1.computeAllDisplayGeometry(); // compose #3
+    const snap3 = JSON.stringify(obj.params);
+    expect(snap2).toBe(snap1);
+    expect(snap3).toBe(snap1);
+    expect(group._sceneAssembled.styleTable.byObject[obj.id].params.toneLaw).toBe('ladder');
+  });
+
+  test('R5 — no undo entry at load: app.applyState of a doc needing write-back pushes no history itself', () => {
+    const app = new V.App();
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    obj.params.primitive = 'torus';
+    obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } };
+    const affectedState = { engine: e1.exportState(), settings: JSON.parse(JSON.stringify(V.SETTINGS)) };
+
+    const e0 = new V.VectorEngine();
+    e0.addLayer('scene3d');
+    const controlState = { engine: e0.exportState(), settings: JSON.parse(JSON.stringify(V.SETTINGS)) };
+
+    app.history = [];
+    const beforeAffected = app.history.length;
+    app.applyState(JSON.parse(JSON.stringify(affectedState)));
+    const afterAffected = app.history.length;
+
+    app.history = [];
+    const beforeControl = app.history.length;
+    app.applyState(JSON.parse(JSON.stringify(controlState)));
+    const afterControl = app.history.length;
+
+    expect(afterAffected).toBe(beforeAffected);
+    expect(afterControl).toBe(beforeControl);
+    expect(afterAffected).toBe(afterControl);
+  });
+
+  test('R6 — undo/redo: the migrated value survives push/edit/undo (never resurrects originSpiral)', () => {
+    const app = new V.App();
+    const e1 = new V.VectorEngine();
+    const gid = e1.addLayer('scene3d');
+    const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
+    obj.params.primitive = 'torus';
+    obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } };
+    app.applyState({ engine: e1.exportState(), settings: JSON.parse(JSON.stringify(V.SETTINGS)) });
+    app.history = [];
+    app.pushHistory();
+    const findObj = () => {
+      const group = app.engine.layers.find((l) => l.type === 'scene3d' && l.isGroup);
+      return app.engine.getLayerDescendants(group.id).find((l) => l.type === 'object3d');
+    };
+    expect(findObj().params.style.params.toneLaw).toBe('ladder');
+    // A real edit, pushed, then undone.
+    findObj().params.transform.yaw = 45;
+    app.pushHistory();
+    app.undo();
+    expect(findObj().params.style.params.toneLaw).toBe('ladder');
+  });
+
+  test('R7 — round trip: saving the migrated doc serializes ladder; re-import is a no-op', () => {
+    const { e2, obj2 } = openLeaf('torus', { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+    const exported = e2.exportState();
+    const savedLayer = exported.layers.find((l) => l.id === obj2.id);
+    expect(savedLayer.params.style.params.toneLaw).toBe('ladder');
+  });
+
+  test('R8 — no-fallback guard: mapper wireframe (every id unreachable, ladder too) leaves toneLaw unchanged', () => {
+    const { obj2 } = openLeaf('torus', { penId: null, mapper: 'wireframe', params: { toneLaw: 'mkTick' } });
+    expect(obj2.params.style.params.toneLaw).toBe('mkTick');
+  });
+
+  test('R9 — blast-radius guard (Contract A): sphere/spiral/taperedEnds (unreachable, render DIFFERS from ladder) is untouched', () => {
+    const { e2, obj2, group2 } = openLeaf('sphere', { penId: null, mapper: 'spiral', params: { toneLaw: 'taperedEnds' } });
+    expect(obj2.params.style.params.toneLaw).toBe('taperedEnds');
+    e2.computeAllDisplayGeometry();
+    expect(group2._sceneAssembled.styleTable.byObject[obj2.id].params.toneLaw).toBe('taperedEnds');
+  });
+
+  test('R10 — UI agreement: after write-back the Style tab shows ladder, enabled, no disabled-selected option', () => {
+    const { obj2 } = openLeaf('torus', { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
+    const ui = { app: { pushHistory: () => {}, regen: () => {} }, storeLayerParams: () => {} };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    V.UI.Scene3DPanel.build(ui, obj2, container);
+    const tab = Array.from(container.querySelectorAll('.tab-btn')).find((b) => b.dataset && b.dataset.value === 'style');
+    if (tab) fire(tab, 'click');
+    const row = Array.from(container.querySelectorAll('.vs3-row'))
+      .find((r) => r.querySelector('.vs3-lbl') && r.querySelector('.vs3-lbl').textContent === 'Fill Style');
+    const sel = row.querySelector('select');
+    expect(sel.value).toBe('ladder');
+    const selectedOption = sel.options[sel.selectedIndex];
+    expect(selectedOption.disabled).toBe(false);
+    expect(selectedOption.label).not.toMatch(/no effect here/);
   });
 });

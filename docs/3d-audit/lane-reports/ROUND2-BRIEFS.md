@@ -47,8 +47,14 @@ NATIVE resolution before judging, one-line final message `REPORT <path> — <STA
 - **Why it is BLOCKING BEFORE MERGE:** folding `bundleDither` (U4) and `contFieldTouch` (U5) hides their real
   measured caveats, because `fillStyleControls` renders the caveat line from the **resolved survivor id**,
   which has none. That is a product regression, not an acceptable cost of the collapse.
-- **Files ALLOWED:** `src/config/context-bar.js`, `src/ui/panels/scene3d-panel.js`,
-  `tests/unit/scene3d-tone-law-collapse.test.js`, `tests/integration/scene3d-fill-style-picker.test.js`.
+- **Files ALLOWED:** `src/config/context-bar.js`, `src/ui/shell/context-bar.js`,
+  `src/ui/panels/scene3d-panel.js`, `tests/unit/scene3d-tone-law-collapse.test.js`,
+  `tests/integration/scene3d-fill-style-picker.test.js`.
+  *(HOUSEKEEPING CORRECTION, MERGE CHECKLIST item 16, 2026-09-10: `src/ui/shell/context-bar.js` was
+  missing from this list. U5b legitimately edits it — the ctxbar Style flyout is the second of the
+  two caveat-rendering surfaces the brief's own RED oracle names — and its reviewer flagged the
+  omission. The file is added here so the record matches what the unit was actually asked to do; no
+  scope changed retroactively.)*
 - **Files FORBIDDEN:** `src/core/scene3d/surface-fill.js`, `surface-fill-mono.js`, `mappers.js`, `hlr.js`,
   `shadows.js`, `src/core/algorithms/scene3d.js`, `src/core/scene3d/params.js` (W-10d-2/-3 own that file).
 - **RED oracle (one line):** at `8610fd66` (now on main) the caveat text for a **folded** id is absent from

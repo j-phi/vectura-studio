@@ -1595,7 +1595,31 @@
         { text: entry.strengths ? `Strengths: ${entry.strengths}` : '' },
         { text: entry.weaknesses ? `Weaknesses: ${entry.weaknesses}` : '' },
       ], `About ${entry.label || FSC.label}`);
-      if (note.caveat) flyNote(fly, note.caveat).classList.add('is-caveat');
+      // U5b (BLOCKING BEFORE MERGE, ruled 2026-09-06) — the caveat must
+      // reflect the law the collapse sub-control(s) ACTUALLY select
+      // (`effectiveLaw`, off the live `params` bag), not the resolved
+      // survivor `law` `note`/`entry` above are keyed to — see the identical
+      // fix + rationale on the docked panel's `fillStyleControls`
+      // (scene3d-panel.js). The (i) popover above stays on the survivor.
+      //
+      // MERGE r2 item 7 — `effectiveLaw` MUST read the SEEDED bag, not the raw
+      // one. A `.vectura` saved before the collapse carries a raw folded
+      // `toneLaw` (e.g. `bundleDither`) and NO sibling collapse key, so the raw
+      // bag makes every descriptor look default and `effectiveLaw` returns the
+      // bare survivor — the folded law's measured caveat disappears, which the
+      // standing ruling forbids. The docked panel already seeds first
+      // (scene3d-panel.js `styleParamBag`); this surface computed its seeded
+      // bag only afterwards, for the sub-control selects. Hoisted so the two
+      // surfaces read the same bag, which is their stated contract.
+      // W-10d-3 — seed the DISPLAY bag from ALIASES when `params.toneLaw` is
+      // still a raw folded id (see src/config/context-bar.js's
+      // `displayParams` comment). `params` itself stays the write source
+      // below (`write({ params: { ...params, … } })`) — only the READ side
+      // is seeded.
+      const dispParams = FS.displayParams ? FS.displayParams(params.toneLaw, params) : params;
+      const effectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(law, dispParams) : law;
+      const caveatNote = FS.note(effectiveLaw);
+      if (caveatNote.caveat) flyNote(fly, caveatNote.caveat).classList.add('is-caveat');
 
       // Fill-collapse U0 — one Select per collapse sub-control the CURRENT
       // (resolved) law declares (FS.styleParams(law), the SAME data the
@@ -1604,16 +1628,19 @@
       // (COLLAPSE === {}), so this loop runs zero times today — a provable
       // no-op. The write carries the FULL params bag, matching the Fill
       // Style row's own write above.
+      // `dispParams` (W-10d-3's display seed) is computed above, with the
+      // caveat that now shares it.
       FS.styleParams(law).forEach((d) => {
-        const has = params[d.key] !== undefined && params[d.key] !== null;
-        const dv = has ? params[d.key] : d.default;
+        const has = dispParams[d.key] !== undefined && dispParams[d.key] !== null;
+        const dv = has ? dispParams[d.key] : d.default;
         const subHost = flyRow(fly, d.label);
         attachSelectArrowStep(selectElOf(flyMixedSelect(subHost, {
           options: d.options.map((opt) => ({ value: opt.value, label: opt.label })),
           value: dv,
           ariaLabel: d.label,
           mixed: sceneAgree(sc, (id) => {
-            const p = rs(id).params || {};
+            const q = rs(id).params || {};
+            const p = FS.displayParams ? FS.displayParams(q.toneLaw, q) : q;
             return (p[d.key] !== undefined && p[d.key] !== null) ? p[d.key] : d.default;
           }).mixed,
           onChange: (v) => { write({ params: { ...params, [d.key]: v } }); rebuild(); },

@@ -75,10 +75,26 @@ describe('onePenDown — promoted from unreachable to the roster (fs-r1)', () =>
     expect(LAWS.IDS.length).toBe(PRE_EXISTING_47.length + 1);
   });
 
-  test('clampStyleParam keeps "onePenDown" as-is instead of rewriting it to ladder', () => {
+  // STALE ASSERTION UPDATE (U8, C-08): this test originally pinned
+  // `onePenDown` surviving `normalizeStyle` UNCHANGED — true before the
+  // fill-roster collapse folded it into `interlockWeave` behind `penDown`.
+  // W-22-24-W-18-plan.md §5's own guard table names this exact test:
+  // "`onePenDown` is now `interlockWeave` + `penDown:'continuous'` —
+  // re-express, do not delete." The claim this test exists to protect
+  // (onePenDown is never silently demoted to `ladder`) is unchanged and
+  // re-expressed below: the migration shim now rewrites it to its survivor
+  // + collapse param, and `Params.resolveToneLaw` on THAT bag still
+  // resolves back to the exact internal id `onePenDown` — never `ladder`,
+  // and the render is byte-identical (covered by the U8 cluster block in
+  // tests/unit/scene3d-tone-law-collapse.test.js).
+  test('normalizeStyle migrates "onePenDown" to its survivor (interlockWeave + penDown:continuous), never to ladder (U8 fold)', () => {
     const out = Params.normalizeStyle({ mapper: 'hatch', params: { toneLaw: 'onePenDown' } });
-    expect(out.params.toneLaw).toBe('onePenDown');
+    expect(out.params.toneLaw).toBe('interlockWeave');
+    expect(out.params.penDown).toBe('continuous');
     expect(out.params.toneLaw).not.toBe('ladder');
+    // Round-trip: resolving the migrated bag lands back on the exact
+    // internal id this test is about — the migration is lossless.
+    expect(Params.resolveToneLaw({ toneLaw: out.params.toneLaw, penDown: out.params.penDown })).toBe('onePenDown');
   });
 
   const scene = (toneLaw) => {
