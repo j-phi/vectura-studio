@@ -1170,8 +1170,11 @@ describe('Scene3D tone-law collapse — U7 caveat: BOTH the survivor (ampSpacing
     // OWN default state also carries a real caveat, so a naive "resolve to
     // the survivor and stop" would show the WRONG one of the two, not none.
     expect(survivorCaveat).not.toBe(foldedCaveat);
-    expect(survivorCaveat).toMatch(/single-weight/);
-    expect(foldedCaveat).toMatch(/single-weight/);
+    // U7-2 copy re-pin: the caveats no longer carry the internal term
+    // "single-weight" (plain-language pass) — both now say, in user words,
+    // that the line's weight is not constant along its length.
+    expect(survivorCaveat).toMatch(/weight.*(?:isn't constant|varies)/);
+    expect(foldedCaveat).toMatch(/weight (?:varies|isn't constant)/);
   });
 
   test('effectiveLaw: nesting default (single) shows ampSpacing\'s OWN caveat (unlike U4/U5, this is NOT empty)', () => {
@@ -1371,8 +1374,11 @@ describe('Scene3D tone-law collapse — U8 caveat: BOTH the survivor (interlockW
     // default state also carries a real caveat, so a naive "resolve to the
     // survivor and stop" would show the WRONG one of the two, not none.
     expect(survivorCaveat).not.toBe(foldedCaveat);
-    expect(survivorCaveat).toMatch(/single-weight/);
-    expect(foldedCaveat).toMatch(/single-weight/);
+    // U7-2 copy re-pin: the caveats no longer carry the internal term
+    // "single-weight" — both now say, in user words, that the line's weight
+    // varies rather than staying constant.
+    expect(survivorCaveat).toMatch(/weight.*varies/);
+    expect(foldedCaveat).toMatch(/weight varies/);
   });
 
   test('effectiveLaw: penDown default (perRuling) shows interlockWeave\'s OWN caveat (not empty)', () => {
@@ -1863,4 +1869,126 @@ describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (
     });
     expect(offenders, offenders.join('; ')).toEqual([]);
   }, SLOW);
+});
+
+/*
+ * U7-2 — plain-language pass over EVERY remaining folded fill-law caveat
+ * (and the two jargon-free-on-inspection ones this pass left untouched:
+ * `none`/"NO TONE" got a light polish too, of the 20 laws.json entries that
+ * ever had a caveat, 3 were already rewritten to plain language before this
+ * unit — bundleDither/contFieldTouch by U5b-2, penStipple by U6 — this unit
+ * rewrote the remaining 17: deepFillTSP, bundleSubNib, penInterleave,
+ * penReserve, penCross, penPitchMatch, penFacing, ampSpacing, weaveDepth,
+ * interlockWeave, trochoidLoop, amplitudeOnly, onePenDown, mezzoRegion,
+ * dutyConst, endShorten, and "none" (NO TONE). See
+ * docs/3d-audit/lane-reports/U7-2-impl.md for the full old -> new table.
+ *
+ * `docs/tone-laws/laws.json` is the SOURCE of `BY_ID[id].caveat`
+ * (regenerated into src/config/scene3d-tone-laws.js by
+ * `node scripts/build-tone-laws.js`). Each rewritten entry also gained a
+ * NEW `measured` field on the laws.json source object, holding the original
+ * audit-prose caveat verbatim so the measured evidence is not lost — that
+ * field is deliberately NOT picked up by build-tone-laws.js's `BY_ID[id] = {...}`
+ * literal (see that file's own comment beside the `caveat:` line), so it
+ * never reaches src/config/scene3d-tone-laws.js and therefore cannot render
+ * anywhere a UI surface reads from `SCENE_FILL_STYLES.note()`/`entry()`.
+ */
+describe('Scene3D tone-law collapse — U7-2 (plain-language pass over every remaining caveat)', () => {
+  let runtime; let FS; let R;
+  const REWRITTEN_IDS = [
+    'none', 'deepFillTSP', 'bundleSubNib', 'penInterleave', 'penReserve', 'penCross',
+    'penPitchMatch', 'penFacing', 'ampSpacing', 'weaveDepth', 'interlockWeave',
+    'trochoidLoop', 'amplitudeOnly', 'onePenDown', 'mezzoRegion', 'dutyConst', 'endShorten',
+  ];
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    R = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+  });
+  afterAll(() => runtime.cleanup());
+
+  // RGR proof: RED against the pre-U7-2 tree (every id below carried at
+  // least one of these tokens — R2/L*/RMS/percentages/mm measurements/
+  // function names/file names/"CONTROL/REFUTATION"/bare cell-name tokens
+  // like "sphere·hatch"); GREEN once laws.json's caveat fields are
+  // rewritten and scene3d-tone-laws.js is regenerated.
+  test('none of the 17 rewritten caveats carry raw audit statistics, internal jargon, or bare cell-name tokens', () => {
+    const jargon = /\bRMS\b|\bR2\b|\bR²\b|L\*|·hatch|·crosshatch|·contour|CONTROL\/REFUTATION|WEIGHT_LAWS|isWaveLaw|splitsAlongLine|\bpenId\b|scene3d\.js|surface-fill\.js|single-weight|\bmm\b|\d+(?:\.\d+)?%|\bgated samples\b|\bStage 0\b/i;
+    REWRITTEN_IDS.forEach((id) => {
+      const caveat = FS.note(id).caveat;
+      expect(caveat.length, `caveat for ${id}`).toBeGreaterThan(0);
+      expect(caveat, `caveat for ${id}`).not.toMatch(jargon);
+    });
+  });
+
+  // Style match: U5b-2's own precedent aimed for <=2 sentences. A few of
+  // these 17 carried two genuinely distinct measured warnings that do not
+  // compress losslessly into one — allow up to 3, but never more.
+  test('every rewritten caveat is at most 3 sentences', () => {
+    const sentenceCount = (s) => (s.match(/[.!?](?:\s|$)/g) || []).length;
+    REWRITTEN_IDS.forEach((id) => {
+      const caveat = FS.note(id).caveat;
+      expect(sentenceCount(caveat), `${id}: "${caveat}"`).toBeLessThanOrEqual(3);
+    });
+  });
+
+  // Every rewritten law kept a `measured` field on its laws.json source
+  // entry (the original audit-prose caveat, verbatim) — proving the
+  // evidence was archived, not deleted — and that field is provably absent
+  // from the generated, UI-facing roster.
+  test('a `measured` field archives the original audit caveat for every rewritten id, and never reaches the generated roster', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const lawsJsonPath = path.join(__dirname, '../../docs/tone-laws/laws.json');
+    const doc = JSON.parse(fs.readFileSync(lawsJsonPath, 'utf8'));
+    const mapId = (id) => (id === 'NO TONE' ? 'none' : id);
+    const byId = {};
+    doc.laws.forEach((law) => { byId[mapId(law.id)] = law; });
+    REWRITTEN_IDS.forEach((id) => {
+      const law = byId[id];
+      expect(law, id).toBeTruthy();
+      expect(typeof law.measured, `${id}.measured`).toBe('string');
+      expect(law.measured.length, `${id}.measured`).toBeGreaterThan(0);
+      // The archived text is NOT the live caveat (it is the ORIGINAL,
+      // jargon-heavy one this unit replaced).
+      expect(law.measured).not.toBe(law.caveat);
+    });
+    // Never rendered: the generated file has no `measured` key at all.
+    const generatedPath = path.join(__dirname, '../../src/config/scene3d-tone-laws.js');
+    const generatedSrc = fs.readFileSync(generatedPath, 'utf8');
+    expect(generatedSrc).not.toMatch(/"measured"/);
+  });
+
+  // Distinctness the fold clusters depend on (U7/U8/U6's own rulings)
+  // survives the rewrite: ampSpacing vs weaveDepth, interlockWeave vs
+  // onePenDown, and the deliberate penPitchMatch === penFacing duplicate.
+  test('cross-cluster distinctness survives the rewrite', () => {
+    expect(FS.note('ampSpacing').caveat).not.toBe(FS.note('weaveDepth').caveat);
+    expect(FS.note('interlockWeave').caveat).not.toBe(FS.note('onePenDown').caveat);
+    expect(FS.note('penPitchMatch').caveat).toBe(FS.note('penFacing').caveat);
+    expect(FS.note('penInterleave').caveat).not.toBe(FS.note('penPitchMatch').caveat);
+  });
+
+  // Each caveat still references the option the user can actually act on,
+  // in the picker's own wording — matching U5b-2's "point back at what they
+  // can DO about the warning" precedent.
+  test('sub-control-facing caveats name the actual UI option values', () => {
+    expect(FS.note('bundleSubNib').caveat).toMatch(/Bundle · Count/);
+    expect(FS.note('weaveDepth').caveat).toMatch(/Single wave row|Nested rows/);
+    expect(FS.note('onePenDown').caveat).toMatch(/One stroke per ruling/);
+  });
+
+  // BY_ID-direct (not just FS.note()) still carries the rewritten text —
+  // the roster corpus itself changed, not just a display-layer filter.
+  // FS.note() prepends SIMULATED_NOTE for the six threePen-family ids, so
+  // compare with that prefix stripped for those, verbatim for the rest.
+  test('BY_ID-direct lookups reflect the rewrite (the roster corpus itself changed)', () => {
+    REWRITTEN_IDS.forEach((id) => {
+      const direct = R.BY_ID[id].caveat;
+      expect(direct.length, id).toBeGreaterThan(0);
+      const viaNote = FS.note(id).caveat;
+      const expected = FS.entry(id).simulated ? `${FS.SIMULATED_NOTE} ${direct}` : direct;
+      expect(viaNote, id).toBe(expected);
+    });
+  });
 });
