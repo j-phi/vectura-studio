@@ -47,7 +47,7 @@ describe('Scene3D tone-law collapse — W-10d-3 (generative cross-check: display
   });
   afterAll(() => runtime.cleanup());
 
-  test('G1 — every one of the 15 ALIASES entries: the seeded display value round-trips through resolveToneLaw back to the SAME folded id, for every descriptor key the alias declares', () => {
+  test('G1 — every one of the 18 ALIASES entries: the seeded display value round-trips through resolveToneLaw back to the SAME folded id, for every descriptor key the alias declares', () => {
     const aliasIds = Object.keys(R.ALIASES);
     // MERGE NOTE (integration r2, 2026-09-10) / BAR CHANGE: 13 -> 15.
     // STALE ASSERTION, not a regression. W-10d-3 (fill-audit-2) pinned 13
@@ -59,7 +59,18 @@ describe('Scene3D tone-law collapse — W-10d-3 (generative cross-check: display
     // the companion `checked` assertion below stays a deliberate FLOOR.
     // This is the first time W-10d-3's display seed has been exercised
     // against U7's and U8's folds at all — all 15 round-trip.
-    expect(aliasIds.length).toBe(15);
+    //
+    // U6-2 (folded into U9b, per U6-review.md §2b) / BAR CHANGE: 15 -> 18.
+    // STALE ASSERTION again, same class: this file's own base (`426cc5e4`)
+    // predates U6, which folds 3 more ids (`penPitchMatch`, `penFacing`,
+    // `penStipple` -> `penInterleave`/`penMode`) into ALIASES. U6-review
+    // flagged this test as genuinely RED in the post-U6 tree (2/3 passing,
+    // `expected 18 to be 15`) and NEVER RUN by U6's own guard table — a real,
+    // currently-shipping gap, not a report-accuracy slip. The generative
+    // `forEach` body below needs no other change: it is generic over
+    // `Object.keys(R.ALIASES)` and already covers `penInterleave`'s three
+    // new folds correctly once this count is corrected.
+    expect(aliasIds.length).toBe(18);
     let checked = 0;
     aliasIds.forEach((id) => {
       const alias = R.ALIASES[id];
