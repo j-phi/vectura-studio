@@ -2673,7 +2673,22 @@
             const soloDens = soloOrient
               ? Math.round((f.ext / Math.max(1e-6, hatchSpacing(styleParams.fillDensity))) - 0.5)
               : 0;
-            const want = Math.min(ceilCount, Math.max(FACET_MIN_RULINGS, soloDens));
+            // W-38 (F-14b, docs/3d-audit/lane-reports/W-38-plan.md) — the
+            // per-style "minimum facet rulings" control. `FACET_MIN_RULINGS`
+            // itself is UNCHANGED (still 3, still the solo-path floor): on a
+            // SOLO-orientation record (the ground plane, a `plane` primitive)
+            // `userFloor` is forced to the constant so the ground stays
+            // byte-identical by construction (decision 3's invariant) — do
+            // NOT rely on `Math.max(userFloor, soloDens)` alone to make that
+            // true, `soloDens` can fall below 3 at the bottom of the Density
+            // range. On every graded record the user's `facetMinRulings`
+            // (clamped [1,8], default 3 — byte-identical to today at the
+            // default) replaces the tone-blind constant, still bounded above
+            // by the same zone ceiling `ceilCount`.
+            const userFloor = soloOrient
+              ? FACET_MIN_RULINGS
+              : Math.round(Math.min(8, Math.max(1, finite(styleParams.facetMinRulings, FACET_MIN_RULINGS))));
+            const want = Math.min(ceilCount, Math.max(userFloor, soloDens));
             if (want >= 1) {
               // A MAXIMUM PITCH, not a count top-up. `hatchPolygon` rules at
               // `pMin + i*spacing`, so a pitch that merely DIVIDES into the
