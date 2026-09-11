@@ -2433,6 +2433,21 @@
     // mark to `2 * MK_MAX_WALK_STEPS + 1` points, generously over the
     // measured max.
     const MK_MAX_WALK_STEPS = 64;
+    // W-06b (T4) — an ABSOLUTE ceiling on `mkDashRamp`'s band (the count of
+    // parallel passes one mark replicates into once it reaches full duty).
+    // The width-relative-to-pitch cap below (`bandN`, in `solveAt`) is
+    // necessary but not sufficient: at the sparsest densities a mark law
+    // keeps very few rows (measured: 3 on a 40 mm sphere at d=1), so even a
+    // WIDTH-legal band (no wider than its own master pitch) reads as an
+    // isolated, disconnected wide ribbon rather than a hatched band — there
+    // is no neighbouring row nearby to blend with (confirmed by rendering
+    // `sphere__hatch__mkDashRamp__low__a`: pitch-relative-only band, up to
+    // 23 passes measured, read as flat rectangular slabs; capped here, the
+    // same cell reads as a bundle of distinguishable parallel lines). 6
+    // matches this file's own established granularity for "replicate to
+    // reach solid" mechanisms (`mkCrossPlus`'s 2->3->4->6 arm progression,
+    // `:2690`) — a small integer, not a re-derivation of the pitch itself.
+    const MK_BAND_MAX_PASSES = 6;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2465,6 +2480,12 @@
       // the algorithm's own return value (which carries no such tag by the
       // time it reaches a caller).
       trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0, dupStub: 0, markMids: [],
+      // W-06b (T4) — the deepest state of `mkDashRamp`'s dissolution ramp
+      // (dot -> dash -> unbroken ruling -> BAND) any placed mark reached
+      // this render: the count of parallel passes in one mark. 1 = never
+      // past an unbroken ruling (W-06's own post-fix ceiling); >= 2 proves
+      // the band states are reachable again.
+      bandMax: 0,
     };
     const mkSites = new Map();          // blue-noise / Poisson occupancy
     const mkED = new Map();             // error-diffusion sideways carry
@@ -6216,14 +6237,39 @@
         // alone. `R` is the ROW pitch (the master pitch inflated by
         // `1/MK_ROW_COV` so a mark law's row has room to carry a mark) — the
         // finding's "several rulings wide" is this band sized off the ROW
-        // pitch, three master rulings' worth. Capped instead at 2x the TRUE
-        // master pitch (`lp`, uninflated), so a full-black dash dissolves into
-        // a band no wider than its own ruling's immediate neighbourhood, not
-        // the row scaffold's.
+        // pitch, three master rulings' worth.
         const truePitch = (Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch;
-        const capOf = (per) => (law.shape === 'morph'
-          ? Math.min(Math.max(1, Math.floor((1.12 * R) / w)) * per, 2 * truePitch)
-          : mkCap(shapeFor(), R, w));
+        // W-06b (T4, Jay's decision 2026-09-10 #1=B) — W-06's fix capped the
+        // band's LENGTH at 2x truePitch, which caps the DUTY CYCLE itself
+        // (`L <= 2*truePitch` against `P = 1.25*truePitch` gives `L/P <=
+        // 0.533` at every density, so `ceil(L/P)` is always 1 and states 3-4
+        // of the law's own documented ramp — unbroken ruling, then a BAND of
+        // parallel passes — became structurally unreachable; measured
+        // ink collapse 2995mm -> 529mm at d=220). Capping band WIDTH instead
+        // (in the same units the F-06 defect was measured in — multiples of
+        // the ruling's own TRUE pitch, not the inflated row pitch) restores
+        // every ramp state while keeping "several rulings wide" dead by
+        // construction: `bandN` parallel passes, an ink width apart, can
+        // never stack wider than 0.90x the distance to the next ruling —
+        // STRICTLY TIGHTER than W-06's own 2x truePitch on the quantity that
+        // actually mattered (width), with no cap left on the quantity that
+        // did not (duty cycle / length).
+        //
+        // `bandPitch` bounds this by the NOMINAL master pitch, not the raw
+        // per-sample `lp`. Measured (sphere/hatch d=1, worst case): `lp` can
+        // read up to 8.78 mm against a 5.82 mm nominal masterPitch — a
+        // foreshortening/projection outlier, not a real widening of the
+        // family's own spacing — and sizing the band off it directly
+        // regrew exactly the F-06 picture (disconnected rectangular slabs,
+        // confirmed by rendering `sphere__hatch__mkDashRamp__low__a` before
+        // this bound: 0.717 of dashes within 2.5 mm of a master ruling
+        // against a 0.85 bar). Clamping to the nominal keeps every dash's
+        // band the SAME width-relative-to-the-family everywhere on the
+        // object, which is what "an inkWidth apart, never past the next
+        // ruling" is actually supposed to mean.
+        const bandPitch = Math.min(truePitch, masterPitch);
+        const bandN = Math.max(1, Math.min(MK_BAND_MAX_PASSES, Math.floor((0.90 * bandPitch) / w)));
+        const capOf = (per) => (law.shape === 'morph' ? bandN * per : mkCap(shapeFor(), R, w));
         if (countChan) {
           const L0 = law.chan === 'alt' ? 1.60 : law.L0;
           L = Math.min(L0 * R, capOf(PMIN));
@@ -6233,7 +6279,7 @@
           P = clamp(law.P0 * R, PMIN, MK_PMAX);
           L = Math.min(g * P, capOf(P));
         }
-        return { P, L, R, I, g };
+        return { P, L, R, I, g, truePitch, bandPitch };
       };
 
       const shapeFor = () => {
@@ -6287,8 +6333,14 @@
           // PERIOD, so L < P is a gapped dash, L = P is an unbroken ruling, and
           // L > P is that ruling thickened into a BAND of parallel passes an ink
           // width apart. Dot → dash → line → band, with no thresholds in it.
+          // W-06b (T4) — `bandN` (band-WIDTH cap, see `solveAt`'s `capOf`
+          // above) replaces the old `1.12*sv.R`-derived (ROW-pitch) cap; both
+          // sides of the ramp must agree on the same cap or `sv.L` (already
+          // clamped by `capOf` in `solveAt`) and `nn` (recomputed here) could
+          // disagree about how many passes the ink is spread across.
           const n0 = Math.max(1, Math.ceil(sv.L / Math.max(1e-6, sv.P)));
-          const nn = Math.min(n0, Math.max(1, Math.floor((1.12 * sv.R) / w)));
+          const bandN = Math.max(1, Math.min(MK_BAND_MAX_PASSES, Math.floor((0.90 * sv.bandPitch) / w)));
+          const nn = Math.min(n0, bandN);
           const each = sv.L / nn;
           polys = [];
           for (let j = 0; j < nn; j++) {
@@ -6300,6 +6352,11 @@
         }
         if (place(fr, polys, a - arcMM[k], thetaAt(k, fr))) {
           mkStat.byThird[Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3))] += 1;
+          // W-06b (T4) — `bandMax`, published via `lastMarkStats`, is the
+          // deepest state of the dissolution ramp any placed mark actually
+          // reached this render (O8's oracle: >= 2 proves the band states
+          // are reachable again, not just the dash state).
+          if (law.shape === 'morph') mkStat.bandMax = Math.max(mkStat.bandMax, polys.length);
         }
       };
 
