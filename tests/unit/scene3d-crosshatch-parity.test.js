@@ -24,6 +24,20 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * physical content of Jay's rule; count parity is its consequence up to the
  * silhouette's own aspect.
  *
+ * W-36c (2026-09-10, JAY'S DECISION 6 -> option C, docs/3d-audit/
+ * lane-reports/W-36c-plan.md): W-36's shipped Rank 1 gave the crossed pair
+ * ONE shared coverage budget (`CROSS_PAIR_BUDGET = 1.1`, split so each
+ * family got roughly HALF of a lone hatch's target) — MEASURED, no family
+ * anywhere rose above 0.74x the matching hatch count. Jay's rule is
+ * stronger: EACH family carries the SAME ruling count a single-family hatch
+ * draws at the same Density — not a shared split. That is ~2x the ink of a
+ * hatch (accepted explicitly), which needs a NEW anti-saturation cap so
+ * Density 220 does not go solid: `crossMinPitch() = 2 x inkWidth()`, the
+ * pitch at which the pair's cell keeps one clear ink-width of white on each
+ * side. P3 and P5 below are REWRITTEN for this rule; P1/P2/P4/P6 and the
+ * whole W-26 gap-jump / W-36b bearing-stability / plot-safety guard battery
+ * are untouched (see the sibling lane reports for full guard results).
+ *
  * Rig (matches the audit-capture rig used throughout this plan):
  * PRIMITIVE_PARAM_DEFAULTS + DEFAULT_CAMERA, sun 135deg/45deg (no cast
  * shadow — irrelevant to fill placement), ground+backdrop off, fillAngle 45,
@@ -35,6 +49,8 @@ const BOUNDS = {
 };
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const PRIMS = ['sphere', 'cylinder', 'torus', 'ellipsoid'];
+const PRIMS6 = ['sphere', 'cylinder', 'torus', 'ellipsoid', 'cone', 'capsule'];
+const PEN_MM = 0.3;
 
 describe('W-36 — crosshatch crossing family carries the same pitch as the primary family', () => {
   let runtime; let V; let algo; let P; let SurfaceFill; let defaults;
@@ -142,6 +158,14 @@ describe('W-36 — crosshatch crossing family carries the same pitch as the prim
     };
   };
 
+  // W-36c — the single-family hatch ruling count at the same rig/density,
+  // the TARGET each crosshatch family is measured against (P3a).
+  const hatchRulingCount = (primitive, density, extraStyle = {}) => {
+    const runs = rawRuns(sceneFor(primitive, 'hatch', density, extraStyle));
+    const front = runs.filter((r) => !r.back);
+    return rulingStats(front).n;
+  };
+
   const finalFills = (params) => (algo.generate(params, null, null, BOUNDS) || [])
     .filter((pth) => pth.meta && pth.meta.kind === 'sceneFill');
   const inkOf = (paths) => paths.reduce((acc, pth) => {
@@ -149,6 +173,82 @@ describe('W-36 — crosshatch crossing family carries the same pitch as the prim
     for (let i = 1; i < pth.length; i += 1) s += Math.hypot(pth[i].x - pth[i - 1].x, pth[i].y - pth[i - 1].y);
     return acc + s;
   }, 0);
+
+  // W-26b `inkCoverage` instrument, copied VERBATIM from
+  // scene3d-fill-span-verdict.test.js (`disc` + `inkCoverage`) so this
+  // unit's cap bar and that file's pre-existing `< 0.85` anti-blob bar can
+  // never drift apart — same code, applied to this rig's own raw runs.
+  const disc = (raw) => {
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    raw.forEach((q) => q.forEach((pt) => {
+      if (pt.x < minX) minX = pt.x;
+      if (pt.y < minY) minY = pt.y;
+      if (pt.x > maxX) maxX = pt.x;
+      if (pt.y > maxY) maxY = pt.y;
+    }));
+    return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, R: (maxX - minX) / 2 };
+  };
+  const inkCoverage = (raw, penWidth) => {
+    const d = disc(raw);
+    if (!(d.R > 0)) return 0;
+    const CELL = 0.1;
+    const G = Math.max(4, Math.ceil((2 * d.R) / CELL));
+    const x0 = d.cx - d.R; const y0 = d.cy - d.R;
+    const r = penWidth / 2;
+    const rc = Math.max(1, Math.ceil(r / CELL));
+    const inked = new Uint8Array(G * G);
+    const stamp = (x, y) => {
+      const ci = Math.round((x - x0) / CELL); const cj = Math.round((y - y0) / CELL);
+      for (let j = cj - rc; j <= cj + rc; j++) {
+        if (j < 0 || j >= G) continue;
+        for (let i = ci - rc; i <= ci + rc; i++) {
+          if (i < 0 || i >= G) continue;
+          const dx = (i - ci) * CELL; const dy = (j - cj) * CELL;
+          if (dx * dx + dy * dy <= r * r) inked[j * G + i] = 1;
+        }
+      }
+    };
+    raw.filter((q) => !q.back).forEach((q) => {
+      for (let i = 1; i < q.length; i++) {
+        const a = q[i - 1]; const b = q[i];
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        if (!(len > 0)) continue;
+        const n = Math.max(1, Math.ceil(len / (CELL / 2)));
+        for (let k = 0; k <= n; k++) {
+          const t = k / n;
+          stamp(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+        }
+      }
+    });
+    let inkedN = 0; let totalN = 0;
+    for (let gy = 0; gy < G; gy++) {
+      for (let gx = 0; gx < G; gx++) {
+        const X = (x0 + (gx + 0.5) * CELL - d.cx) / d.R;
+        const Y = (y0 + (gy + 0.5) * CELL - d.cy) / d.R;
+        if (Math.hypot(X, Y) > 1) continue;
+        totalN += 1;
+        if (inked[gy * G + gx]) inkedN += 1;
+      }
+    }
+    return totalN ? inkedN / totalN : 0;
+  };
+  // Same-rig crosshatch coverage helper, used by P5a/P5c.
+  const crossCov = (primitive, density, extraStyle = {}) => {
+    const raw = rawRuns(sceneFor(primitive, 'crosshatch', density, extraStyle)).filter((r) => !r.back);
+    return inkCoverage(raw, PEN_MM);
+  };
+  // The cap's own pitch floor, reproduced from surface-fill.js's derivation
+  // (2 x inkWidth, generalised over crossDensityRatio/crossAngleDelta) so
+  // P5c can assert "the family sits AT the cap" without importing a private.
+  const INK_SPREAD = 0.12;
+  const inkWidth = PEN_MM * (1 + INK_SPREAD);
+  const crossMinPitchFor = (ratio, role, deltaDeg) => {
+    const r = Math.min(2, Math.max(0.25, ratio));
+    const th = (Math.min(170, Math.max(10, deltaDeg)) * Math.PI) / 180;
+    const s = Math.max(0.17, Math.abs(Math.sin(th)));
+    const pA = (2 * inkWidth) / Math.sqrt(Math.max(1e-6, r * s));
+    return role === 'b' ? r * pA : pA;
+  };
 
   // ── P1 — both families draw at least 2 rulings on every cell ────────────
   describe('P1 — both families draw >= 2 rulings on every cell', () => {
@@ -179,8 +279,34 @@ describe('W-36 — crosshatch crossing family carries the same pitch as the prim
     });
   });
 
-  // ── P3 — count ratio B:A in [0.72, 1.40] at d=50/220 ─────────────────────
-  describe('P3 — count ratio B:A in [0.72, 1.40] at d=50/220', () => {
+  // ── P3a (NEW — W-36c, JAY'S RULE) — each family >= 0.85x the matching
+  // hatch ruling count, below the density where the anti-saturation cap
+  // starts biting (docs/3d-audit/lane-reports/W-36c-plan.md §2.4: the cap is
+  // dormant through d=110 on every primitive and only "first touch"es at
+  // d=140; measured worst margin at d=140 is 0.933, cylinder). Jay's own
+  // Fine-rungs cell is included — it is the cell the decision was checked
+  // against.
+  describe('P3a (NEW) — each family >= 0.85x the matching hatch ruling count', () => {
+    PRIMS.forEach((prim) => {
+      [1, 50, 80, 110, 140].forEach((d) => {
+        test(`${prim} d=${d}`, () => {
+          const hatchN = hatchRulingCount(prim, d);
+          const { a, b } = crosshatchStats(prim, d);
+          expect(a.n / hatchN).toBeGreaterThanOrEqual(0.85);
+          expect(b.n / hatchN).toBeGreaterThanOrEqual(0.85);
+        });
+      });
+    });
+    test("Jay's cell — sphere d=50, rungMode 'fine'", () => {
+      const hatchN = hatchRulingCount('sphere', 50, { rungMode: 'fine' });
+      const { a, b } = crosshatchStats('sphere', 50, { rungMode: 'fine' });
+      expect(a.n / hatchN).toBeGreaterThanOrEqual(0.85);
+      expect(b.n / hatchN).toBeGreaterThanOrEqual(0.85);
+    });
+  });
+
+  // ── P3b (kept, re-scoped) — count ratio B:A in [0.72, 1.40] at d=50/220 ──
+  describe('P3b (kept) — count ratio B:A in [0.72, 1.40] at d=50/220', () => {
     PRIMS.forEach((prim) => {
       [50, 220].forEach((d) => {
         test(`${prim} d=${d}`, () => {
@@ -203,11 +329,50 @@ describe('W-36 — crosshatch crossing family carries the same pitch as the prim
     });
   });
 
-  // ── P5 — anti-saturation guard (judge C1's cell) ─────────────────────────
-  test('P5 — cylinder d=220 crosshatch ink stays in [4200, 5431] mm (v1.3.98 + 15% cap)', () => {
-    const ink = inkOf(finalFills(sceneFor('cylinder', 'crosshatch', 220)));
-    expect(ink).toBeGreaterThanOrEqual(4200);
-    expect(ink).toBeLessThanOrEqual(5431);
+  // ── P5a (NEW — the cap) — W-26b ink coverage stays < 0.85, the SAME bar
+  // scene3d-fill-span-verdict.test.js already enforces, on every primitive
+  // at the densities where the cap is meant to bind.
+  describe('P5a (NEW) — ink coverage < 0.85 (the cap)', () => {
+    PRIMS6.forEach((prim) => {
+      [170, 220, 300].forEach((d) => {
+        test(`${prim} d=${d}`, () => {
+          expect(crossCov(prim, d)).toBeLessThan(0.85);
+        });
+      });
+    });
+  });
+
+  // ── P5b (NEW — the cap is not too tight) — at d=220 crosshatch ink must
+  // never be LESS than v1.4.1's shipped value: W-36c must not make the
+  // picture lighter than what shipped before it.
+  describe('P5b (NEW) — d=220 crosshatch ink >= v1.4.1 shipped value', () => {
+    const SHIPPED_220 = {
+      sphere: 3713.0, cylinder: 5019.6, torus: 3195.0, ellipsoid: 4187.6,
+    };
+    PRIMS.forEach((prim) => {
+      test(`${prim} d=220`, () => {
+        const ink = inkOf(finalFills(sceneFor(prim, 'crosshatch', 220)));
+        expect(ink).toBeGreaterThanOrEqual(SHIPPED_220[prim]);
+      });
+    });
+  });
+
+  // ── P5c (NEW — the family sits AT the cap, not below it) — where the cap
+  // binds (d in {170, 220, 300}), each family's median gap must be >= 0.80x
+  // `crossMinPitch` — i.e. the walk is actually reaching the floor the cap
+  // sets, not falling short of it.
+  describe('P5c (NEW) — at the cap, median gap >= 0.80x crossMinPitch', () => {
+    PRIMS.forEach((prim) => {
+      [170, 220, 300].forEach((d) => {
+        test(`${prim} d=${d}`, () => {
+          const { a, b } = crosshatchStats(prim, d);
+          const floorA = crossMinPitchFor(1, 'a', 90);
+          const floorB = crossMinPitchFor(1, 'b', 90);
+          expect(a.gap / floorA).toBeGreaterThanOrEqual(0.80);
+          expect(b.gap / floorB).toBeGreaterThanOrEqual(0.80);
+        });
+      });
+    });
   });
 
   // ── P6 — byte-identity controls: non-crosshatch mappers are untouched ────
@@ -239,7 +404,7 @@ describe('W-36 — crosshatch crossing family carries the same pitch as the prim
 
   // ── Jay's own cell — sphere, Crosshatch, Ladder, Fine rungs, angle 45, d=50
   describe("Jay's cell — sphere crosshatch, rungMode 'fine', fillAngle 45, d=50", () => {
-    test('P2/P3 hold on the Fine-rungs cell too', () => {
+    test('P2/P3b hold on the Fine-rungs cell too', () => {
       const { a, b } = crosshatchStats('sphere', 50, { rungMode: 'fine' });
       const gapRatio = b.gap / a.gap;
       const countRatio = b.n / a.n;

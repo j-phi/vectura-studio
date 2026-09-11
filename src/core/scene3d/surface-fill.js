@@ -4718,29 +4718,55 @@
     // `cA -> 1` (family A already at full darkness) `cB`'s CONTRIBUTION to
     // the combined coverage vanishes on its own (there is no headroom left
     // to add to), so this needs no separate clamp for the darkest band.
-    // ── W-36 — THE CROSSED PAIR SPENDS ONE COVERAGE BUDGET ───────────────────
-    // W-26b-1 (above) proved the SUM `1.0*cA + 0.1*cA` is plot-safe (cylinder
-    // D220 4912.6 -> 5153.7 mm measured on that unit's own prototype, ink
-    // coverage 0.971 -> 0.805) — it never justified spending 91% of that sum
-    // on ONE family. Jay's rule (USER report 16, verbatim): "make crosshatch
-    // have the same number of crosshatch lines as it has hatch lines...".
-    // `CROSS_PAIR_BUDGET` IS that measured-safe sum, so this unit
-    // REDISTRIBUTES ink rather than adding it: at the shipped
-    // `crossDensityRatio = 1` both families ask for exactly half the budget,
-    // i.e. the SAME coverage share and therefore the SAME pitch — parity by
-    // construction, not by widening the crossing family's own reach. `role`
-    // is 'a' for the primary family, 'b' for the crossing one; the dial
-    // keeps its documented sense (`crossDensityRatio` = family B's SPACING
-    // relative to family A's) by dividing only family B's half by `r`.
-    const CROSS_PAIR_BUDGET = 1.1;
+    // ── W-36c — EACH FAMILY CARRIES THE SINGLE-FAMILY HATCH COUNT ────────────
+    // JAY'S RULE (2026-09-10, decision 6 option C, verbatim intent): "make
+    // crosshatch have the same number of crosshatch lines as it has hatch
+    // lines" — for EACH family, at the same Density, not a shared budget split
+    // between them. W-36's shipped `CROSS_PAIR_BUDGET = 1.1` (one shared sum,
+    // split so each family got roughly HALF of what a lone hatch asks for) is
+    // superseded: MEASURED, no family anywhere got above 0.74x the matching
+    // hatch count under that split (docs/3d-audit/lane-reports/W-36c-plan.md
+    // §1). `CROSS_FAMILY_BUDGET = 1.0` gives EACH family the WHOLE
+    // `ladderCov(I)` target a lone family asks for — at the prototype this
+    // reproduces the hatch ruling count to the digit on every primitive at
+    // every Density where the cap below is dormant. That is ~2x the ink of a
+    // hatch (Jay accepted this explicitly), which is why the cap exists.
+    const CROSS_FAMILY_BUDGET = 1.0;
     const crossPairShare = (crossRatio, role) => {
       const r = clamp(finite(crossRatio, 1), 0.25, 2);
-      const half = CROSS_PAIR_BUDGET / 2;
-      return (role === 'b') ? half / r : half;
+      return (role === 'b') ? CROSS_FAMILY_BUDGET / r : CROSS_FAMILY_BUDGET;
     };
-    const ladderPairWantedPitch = (I, crossRatio, role) => {
+    // ── W-36c — ANTI-SATURATION CAP ───────────────────────────────────────────
+    // Two crossed families each asking for FULL single-family coverage combine
+    // as `1 - (1 - c)^2` and go SOLID at high Density — MEASURED, uncapped:
+    // sphere D220 ink coverage 0.984, cylinder D220 0.987, cylinder D300
+    // 0.999, median white hole 0.11 pen^2 (the W-26b `inkCoverage` instrument's
+    // own floor — no cell left). That reproduces judge C1's saturation
+    // (cylinder D220 = 9136.78 mm, W-36's own rejected Rank 3 number, to the
+    // digit) and fails `scene3d-fill-span-verdict.test.js`'s pre-existing,
+    // un-widened `< 0.85` anti-blob bar (measures 0.9714 there).
+    //
+    // The cap: the pair's cell must keep one clear ink-width of white on each
+    // side. `inkWidth() = penWidth * (1 + INK_SPREAD)` is the nib's own drawn
+    // width, so a cell whose side equals TWO ink-widths has exactly as much
+    // white as ink — the smallest form of the rule that clears the 0.85 bar on
+    // every measured cell (plan §2.2's sweep; a looser `1.9x` cap breaches on
+    // capsule D220/D300). Stated on the pair's CELL AREA, not a single pitch,
+    // so neither user dial (`crossDensityRatio` = family B's pitch as `r x`
+    // family A's; `crossAngleDelta` = the angle the families meet at) can
+    // defeat it by trading one for the other.
+    const CROSS_MIN_CLEAR_INKW = 1;
+    const crossMinPitch = () => inkWidth() * (1 + CROSS_MIN_CLEAR_INKW);
+    const crossFloorPitch = (crossRatio, role, delta) => {
+      const r = clamp(finite(crossRatio, 1), 0.25, 2);
+      const th = (clamp(finite(delta, 90), 10, 170) * Math.PI) / 180;
+      const s = Math.max(0.17, Math.abs(Math.sin(th)));
+      const pA = crossMinPitch() / Math.sqrt(Math.max(1e-6, r * s));
+      return (role === 'b') ? r * pA : pA;
+    };
+    const ladderPairWantedPitch = (I, crossRatio, role, delta) => {
       const c = clamp(ladderCov(I) * crossPairShare(crossRatio, role), LADDER_COV_MIN, 1);
-      return masterPitch / c;
+      return Math.max(masterPitch / c, crossFloorPitch(crossRatio, role, delta));
     };
 
     // 'contFieldQuant' — the control. The SAME field, with the gap allowed only
@@ -10074,25 +10100,31 @@
       // sparse end (6 x the master pitch is past the O6 bar) and far too narrow
       // to swallow a form.
       //
-      // W-26b-1 / W-36: the crosshatch pair asks `ladderPairWantedPitch` for
-      // its OWN share of `CROSS_PAIR_BUDGET` (wider `want`, on purpose — see
-      // that function). Left alone, this ceiling — built from the SAME
+      // W-26b-1 / W-36 / W-36c: the crosshatch pair asks `ladderPairWantedPitch`
+      // for its OWN share of the per-family budget (wider `want`, on purpose —
+      // see that function). Left alone, this ceiling — built from the SAME
       // `count` family A's own call sees — clamped the wider `want` right
       // back down to family A's own step size, so a coverage-share fix has
       // NO effect at `crossDensityRatio` 1 unless the ceiling widens with it
       // (originally measured on W-26b-1's family-B-only share: the
       // ratio-0.25-vs-ratio-1 fill-count spread stayed 1.6x, not the
       // required ~2x, no matter how far the share was cut). `dfMaxMul`
-      // widens the ceiling by the SAME reciprocal share — now read for
-      // WHICHEVER role is walking (W-36 gives family A a share too, so it
-      // gets the same treatment) — capped so a genuinely sparse family still
-      // cannot swallow the whole form the way an unbounded widening could.
-      // W-36 measured range across the full `crossDensityRatio` dial and
-      // both roles: [1.00, 3.64] (vs a clamped 10-40 under the old
-      // family-B-only share) — the cap is now a dormant safety rail.
+      // widens the ceiling by whichever is LARGER: the reciprocal share (as
+      // before), or how far the anti-saturation CAP's floor pitch sits above
+      // the nominal master pitch — the cap cannot be spent (the walk would
+      // clamp `want` right back down before `ladderPairWantedPitch` ever gets
+      // to return the floor) unless this ceiling widens with it too, exactly
+      // the trap W-26b-1 documented at this line. Capped so a genuinely sparse
+      // family still cannot swallow the whole form the way an unbounded
+      // widening could. W-36c measured range across the full dial, both
+      // roles, and the cap's own floor: [1.00, ~2.2] — `CROSS_DFMAX_BOOST_CAP`
+      // stays a dormant safety rail.
       const CROSS_DFMAX_BOOST_CAP = 20;
       const dfMaxMul = (crossShare != null && isEvenLadder())
-        ? clamp(1 / Math.max(1e-6, crossPairShare(crossShare.ratio, crossShare.role)), 1, CROSS_DFMAX_BOOST_CAP)
+        ? clamp(Math.max(
+          1 / Math.max(1e-6, crossPairShare(crossShare.ratio, crossShare.role)),
+          crossFloorPitch(crossShare.ratio, crossShare.role, crossShare.delta) / Math.max(1e-6, masterPitch),
+        ), 1, CROSS_DFMAX_BOOST_CAP)
         : 1;
       const dfMax = (6 * dfMaxMul) / Math.max(6, count);
       const creep = 1 / Math.max(8, count * 3);
@@ -10110,14 +10142,15 @@
           // `ladderWantedPitch` (the master-grid pitch each law always
           // computed, asked for directly) rather than `cfWantedPitch`'s own
           // area-based field — the tone stays each law's own, only the
-          // placement is shared. W-36: crosshatch's TWO families
+          // placement is shared. W-36c: crosshatch's TWO families
           // (`crossShare` non-null on both) read `ladderPairWantedPitch`
-          // instead — each asks for its OWN half of one shared pair budget,
-          // which is what makes them land on the SAME pitch at the shipped
+          // instead — each asks for the FULL single-family coverage target,
+          // floored by the anti-saturation cap, which is what makes them
+          // land on the hatch-matching pitch at the shipped
           // `crossDensityRatio = 1` — see that function's comment for why.
           let want = isEvenLadder()
             ? (crossShare != null
-              ? ladderPairWantedPitch(pb.I, crossShare.ratio, crossShare.role)
+              ? ladderPairWantedPitch(pb.I, crossShare.ratio, crossShare.role, crossShare.delta)
               : ladderWantedPitch(pb.I))
             : cfWantedPitch(pb.I);
           // 'contFieldMeasured' — the global response inversion, from pass 1.
@@ -11126,12 +11159,12 @@
           angleDeg: finite(opts.fillAngle, 0),
         });
       } else if (contMapper) {
-        // W-36: crosshatch's family A now also reads the shared PAIR budget
+        // W-36c: crosshatch's family A now also reads the per-family budget
         // (role 'a') instead of the un-shared `ladderWantedPitch` — that is
-        // what lets it land on the SAME pitch as family B (role 'b') below.
-        // Contour and hatch (neither a crossed pair) keep `undefined` and
-        // are byte-identical to before.
-        const crossShareA = (mapper === 'crosshatch') ? { ratio: crossRatio, role: 'a' } : undefined;
+        // what lets it land on the hatch-matching pitch, the same one family
+        // B (role 'b') below lands on. Contour and hatch (neither a crossed
+        // pair) keep `undefined` and are byte-identical to before.
+        const crossShareA = (mapper === 'crosshatch') ? { ratio: crossRatio, role: 'a', delta: crossDelta } : undefined;
         if (mapper === 'contour') {
           emitContFamily('a', 0, count, back);
         } else if (onMeridianAxis) {
@@ -11145,10 +11178,11 @@
         if (mapper === 'crosshatch') {
           const aB = hatchAngle + crossDelta;
           const a180 = (((aB % 180) + 180) % 180);
-          // W-26b-1 / W-36: the crossing family passes `{ ratio: crossRatio,
-          // role: 'b' }` as its `crossShare` so the walk derives its own
-          // half of the shared PAIR budget — see `ladderPairWantedPitch`.
-          const crossShareB = { ratio: crossRatio, role: 'b' };
+          // W-26b-1 / W-36c: the crossing family passes `{ ratio: crossRatio,
+          // role: 'b', delta: crossDelta }` as its `crossShare` so the walk
+          // derives its own full per-family target under the cap — see
+          // `ladderPairWantedPitch`.
+          const crossShareB = { ratio: crossRatio, role: 'b', delta: crossDelta };
           if (onMeridianAxis && a180 === 0) emitContFamily('b', 0, Math.max(2, Math.round(count / crossRatio)), back, crossShareB);
           else if (onMeridianAxis && a180 === 90) emitContFamily('a', 0, Math.max(2, Math.round(count / crossRatio)), back, crossShareB);
           else emitContFamily('angle', aB, Math.max(2, Math.round(count / crossRatio)), back, crossShareB);

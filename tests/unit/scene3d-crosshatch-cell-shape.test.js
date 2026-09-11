@@ -264,55 +264,75 @@ describe('W-31 — crosshatch CELL SHAPE, Rank-3 non-regression ceiling (no sour
     };
   };
 
-  // ── The ceiling: TODAY's own numbers at `716b435b`, measured by this
-  // instrument (not the plan's own numbers at a different base — re-derived
-  // per AGENT-PROTOCOL.md). Nothing tightened, nothing widened; a `null`
-  // column means fewer than 3 samples of one family fell in that fifth of
-  // the interior box (thin at d=50, expected). ─────────────────────────────
+  // ── The ceiling: RE-PINNED for W-36c (JAY'S DECISION 2026-09-10, #6 ->
+  // option C — see `## Bars changed` in that unit's commit body and
+  // docs/3d-audit/lane-reports/W-36c-impl.md). Each family now carries the
+  // single-family hatch ruling count under a new anti-saturation cap
+  // (`surface-fill.js`, `CROSS_FAMILY_BUDGET` + `crossMinPitch`), so BOTH
+  // families draw more rulings than under W-36's shared-budget split — `nA`/
+  // `nB`/`windows`/`cols[].n` all rise (denser families give the
+  // interior-window instrument more samples: C5, measurability, improves on
+  // all 11 configs). The ASPECT RANGE — what W-31 actually protects — does
+  // NOT regress: narrower on 3 configs (sphere d=50 a, torus d=220 a, cone
+  // d=220 a), flat on 4, wider on 2 that gained measurable columns (cylinder
+  // d=50 a: 2->3 cols; ellipsoid d=50 a: 3->5 cols), and cone d=50 a's old
+  // 0.191 minimum (one column had n=1, a one-sample artefact) is gone now
+  // that every column has n>=3 — NOT a regression against that artefact.
+  // ⚠ C2 (within-family local-gap p95/p05 spread, the ceiling test below)
+  // WORSENS on 9 of 11 configs — this is the W-31b defect (`probe()`'s
+  // per-ruling MEAN `mmPerFrac` spent as one scalar step) made more visible
+  // by denser families and a larger order-statistic population; it is a
+  // ceiling going UP, disclosed under `## Bars changed`, and is NOT fixed
+  // here (W-31 already measured its own Rank 1/Rank 2 dead; this belongs to
+  // W-31b). Re-derived on THIS unit's own base (`a3b651f0`) per
+  // AGENT-PROTOCOL.md — not the plan's `426cc5e4` numbers, though they match
+  // to the digit (T4 landed disjoint code). A `null` column means fewer than
+  // 3 samples of one family fell in that fifth of the interior box (thin at
+  // d=50, expected). ─────────────────────────────────────────────────────
   const CEILING = [
     {
-      prim: 'sphere', d: 220, cam: 'a', nA: 48, nB: 48, windows: 90, spreadA: 15.74, spreadB: 15.87,
-      cols: [{ n: 7, aspect: 0.8326 }, { n: 24, aspect: 0.9474 }, { n: 26, aspect: 1.0080 }, { n: 24, aspect: 1.0743 }, { n: 9, aspect: 1.2221 }],
+      prim: 'sphere', d: 220, cam: 'a', nA: 53, nB: 54, windows: 110, spreadA: 15.18, spreadB: 15.58,
+      cols: [{ n: 9, aspect: 0.8259 }, { n: 28, aspect: 0.9515 }, { n: 33, aspect: 1.0083 }, { n: 31, aspect: 1.0707 }, { n: 9, aspect: 1.2390 }],
     },
     {
-      prim: 'sphere', d: 50, cam: 'a', nA: 11, nB: 11, windows: 9, spreadA: 14.87, spreadB: 13.39,
-      cols: [{ n: 0, aspect: null }, { n: 3, aspect: 0.8984 }, { n: 3, aspect: 1.0013 }, { n: 3, aspect: 1.0519 }, { n: 0, aspect: null }],
+      prim: 'sphere', d: 50, cam: 'a', nA: 21, nB: 21, windows: 28, spreadA: 14.27, spreadB: 14.31,
+      cols: [{ n: 0, aspect: null }, { n: 11, aspect: 0.9511 }, { n: 6, aspect: 1.0048 }, { n: 11, aspect: 1.0317 }, { n: 0, aspect: null }],
     },
     {
-      prim: 'sphere', d: 220, cam: 'b', nA: 48, nB: 48, windows: 91, spreadA: 15.11, spreadB: 15.19,
-      cols: [{ n: 9, aspect: 1.0221 }, { n: 23, aspect: 0.9785 }, { n: 27, aspect: 1.0019 }, { n: 24, aspect: 1.0253 }, { n: 8, aspect: 0.9739 }],
+      prim: 'sphere', d: 220, cam: 'b', nA: 54, nB: 53, windows: 106, spreadA: 15.00, spreadB: 14.97,
+      cols: [{ n: 10, aspect: 1.0015 }, { n: 28, aspect: 0.9748 }, { n: 30, aspect: 1.0002 }, { n: 27, aspect: 1.0275 }, { n: 11, aspect: 1.0063 }],
     },
     {
-      prim: 'cylinder', d: 220, cam: 'a', nA: 57, nB: 59, windows: 76, spreadA: 9.76, spreadB: 9.45,
-      cols: [{ n: 3, aspect: 0.7256 }, { n: 25, aspect: 0.8699 }, { n: 18, aspect: 1.0033 }, { n: 28, aspect: 1.1756 }, { n: 2, aspect: 1.3400 }],
+      prim: 'cylinder', d: 220, cam: 'a', nA: 64, nB: 66, windows: 90, spreadA: 9.81, spreadB: 9.57,
+      cols: [{ n: 5, aspect: 0.7408 }, { n: 34, aspect: 0.8644 }, { n: 18, aspect: 1.0001 }, { n: 29, aspect: 1.1636 }, { n: 4, aspect: 1.3770 }],
     },
     {
-      prim: 'cylinder', d: 50, cam: 'a', nA: 14, nB: 14, windows: 7, spreadA: 9.00, spreadB: 9.41,
-      cols: [{ n: 0, aspect: null }, { n: 3, aspect: 0.8911 }, { n: 0, aspect: null }, { n: 4, aspect: 1.1092 }, { n: 0, aspect: null }],
+      prim: 'cylinder', d: 50, cam: 'a', nA: 24, nB: 25, windows: 29, spreadA: 9.76, spreadB: 8.94,
+      cols: [{ n: 0, aspect: null }, { n: 8, aspect: 0.8673 }, { n: 14, aspect: 1.0023 }, { n: 7, aspect: 1.1894 }, { n: 0, aspect: null }],
     },
     {
-      prim: 'torus', d: 220, cam: 'a', nA: 37, nB: 37, windows: 81, spreadA: 5.83, spreadB: 5.90,
-      cols: [{ n: 6, aspect: 1.1242 }, { n: 25, aspect: 1.0673 }, { n: 20, aspect: 0.9387 }, { n: 24, aspect: 0.8721 }, { n: 6, aspect: 0.9923 }],
+      prim: 'torus', d: 220, cam: 'a', nA: 41, nB: 42, windows: 100, spreadA: 6.50, spreadB: 7.49,
+      cols: [{ n: 6, aspect: 1.0396 }, { n: 32, aspect: 1.0643 }, { n: 27, aspect: 0.9263 }, { n: 29, aspect: 0.9676 }, { n: 6, aspect: 1.0997 }],
     },
     {
-      prim: 'torus', d: 50, cam: 'a', nA: 9, nB: 9, windows: 8, spreadA: 4.09, spreadB: 4.50,
-      cols: [{ n: 0, aspect: null }, { n: 2, aspect: 1.3569 }, { n: 2, aspect: 0.9229 }, { n: 2, aspect: 0.8500 }, { n: 2, aspect: 1.3089 }],
+      prim: 'torus', d: 50, cam: 'a', nA: 16, nB: 16, windows: 20, spreadA: 4.47, spreadB: 4.72,
+      cols: [{ n: 2, aspect: 1.2841 }, { n: 7, aspect: 0.9766 }, { n: 5, aspect: 0.7237 }, { n: 6, aspect: 0.9775 }, { n: 0, aspect: null }],
     },
     {
-      prim: 'ellipsoid', d: 220, cam: 'a', nA: 46, nB: 49, windows: 63, spreadA: 12.97, spreadB: 13.99,
-      cols: [{ n: 4, aspect: 0.9230 }, { n: 18, aspect: 1.0205 }, { n: 16, aspect: 0.9839 }, { n: 20, aspect: 0.9625 }, { n: 5, aspect: 1.0298 }],
+      prim: 'ellipsoid', d: 220, cam: 'a', nA: 52, nB: 54, windows: 86, spreadA: 14.70, spreadB: 14.71,
+      cols: [{ n: 7, aspect: 0.9923 }, { n: 24, aspect: 1.0244 }, { n: 22, aspect: 0.9906 }, { n: 26, aspect: 0.9585 }, { n: 7, aspect: 1.0437 }],
     },
     {
-      prim: 'ellipsoid', d: 50, cam: 'a', nA: 11, nB: 11, windows: 9, spreadA: 11.68, spreadB: 11.41,
-      cols: [{ n: 0, aspect: null }, { n: 3, aspect: 1.0206 }, { n: 3, aspect: 0.9868 }, { n: 3, aspect: 1.0047 }, { n: 0, aspect: null }],
+      prim: 'ellipsoid', d: 50, cam: 'a', nA: 20, nB: 21, windows: 32, spreadA: 12.65, spreadB: 12.74,
+      cols: [{ n: 4, aspect: 1.0011 }, { n: 5, aspect: 1.0279 }, { n: 10, aspect: 1.0009 }, { n: 9, aspect: 0.9554 }, { n: 4, aspect: 0.9896 }],
     },
     {
-      prim: 'cone', d: 220, cam: 'a', nA: 44, nB: 46, windows: 90, spreadA: 16.09, spreadB: 18.67,
-      cols: [{ n: 5, aspect: 0.6003 }, { n: 28, aspect: 0.7102 }, { n: 22, aspect: 1.0258 }, { n: 30, aspect: 1.4394 }, { n: 5, aspect: 1.7728 }],
+      prim: 'cone', d: 220, cam: 'a', nA: 49, nB: 51, windows: 101, spreadA: 16.80, spreadB: 18.84,
+      cols: [{ n: 6, aspect: 0.6438 }, { n: 31, aspect: 0.6917 }, { n: 28, aspect: 1.0151 }, { n: 30, aspect: 1.4652 }, { n: 6, aspect: 1.6427 }],
     },
     {
-      prim: 'cone', d: 50, cam: 'a', nA: 10, nB: 11, windows: 9, spreadA: 8.35, spreadB: 11.79,
-      cols: [{ n: 2, aspect: 0.6102 }, { n: 1, aspect: 0.1905 }, { n: 4, aspect: 0.7950 }, { n: 2, aspect: 1.3232 }, { n: 0, aspect: null }],
+      prim: 'cone', d: 50, cam: 'a', nA: 19, nB: 20, windows: 28, spreadA: 10.73, spreadB: 16.88,
+      cols: [{ n: 0, aspect: null }, { n: 10, aspect: 0.7682 }, { n: 8, aspect: 1.0456 }, { n: 7, aspect: 1.6212 }, { n: 3, aspect: 1.5620 }],
     },
   ];
 
