@@ -1907,7 +1907,15 @@
         });
         // fs-y1 Job 1 — "for all fill styles": the shadow tone-law picker is
         // a Fill Style control too.
-        const shadowEntry = FS.entry(law) || {};
+        //
+        // U9b / W-10d-3b — the ctxbar flyout twin of the docked panel's fix
+        // (scene3d-panel.js `renderShadowControls`): the (i) popover reads
+        // the id `FS.shadowDisplayLaw` resolves off the RAW stored value, not
+        // the bare survivor `law` the select itself is bound to, so a raw
+        // folded id with its own distinguishable shadows.js recipe shows its
+        // OWN entry here too, not the survivor's.
+        const shadowInfoLaw = FS.shadowDisplayLaw ? FS.shadowDisplayLaw(bag.shadowToneLaw, law) : law;
+        const shadowEntry = FS.entry(shadowInfoLaw) || {};
         flyLawInfo(fly, toneLawHost, [
           { text: shadowEntry.mechanism ? `How: ${shadowEntry.mechanism}` : '' },
           { text: shadowEntry.strengths ? `Strengths: ${shadowEntry.strengths}` : '' },

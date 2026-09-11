@@ -470,7 +470,9 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
  * round-trip, and a real sanitizeSceneParams end-to-end pass.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function describeSingleParamCluster(label, { survivor, key, pickerIdsLength, folded }) {
+function describeSingleParamCluster(label, {
+  survivor, key, pickerIdsLength, folded, shadowResolvesToSurvivor,
+}) {
   describe(label, () => {
     let runtime; let V; let algo; let defaults; let SF; let Params; let hatchOpts;
 
@@ -601,12 +603,27 @@ function describeSingleParamCluster(label, { survivor, key, pickerIdsLength, fol
     // field, so collapsing a folded `shadowToneLaw` to its survivor silently
     // loses which shadows.js HATCH_LAW_RECIPES entry to draw. U9 fixed
     // `normalizeShadow` to pass a folded id through unchanged instead.
-    test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, never warns (U9)', () => {
+    //
+    // STALE ASSERTION UPDATE (U9b) — ONE exception to that pass-through:
+    // `shadowResolvesToSurvivor` (opt-in, empty for every cluster except
+    // U8's) names folded ids shadows.js itself judges NOT DISTINGUISHABLE
+    // from their survivor there (`Shadows.toneLawApplies` false — no recipe
+    // of its own in any `*_LAW_RECIPES` table). For those, U9b's
+    // `clampShadowToneLaw` resolves FORWARD to the survivor instead of
+    // passing the raw id through, so it draws the survivor's own real
+    // recipe rather than silently degrading to the undifferentiated plain-
+    // hatch fallback (byte-identical to 'ladder') — the same failure mode
+    // U9's fix retired for every OTHER folded id, from a different cause.
+    // See params.js `clampShadowToneLaw` and
+    // tests/unit/scene3d-shadow-tone-law-uniqueness.test.js's own
+    // "onePenDown (U9b)" test for the render-level proof.
+    test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, UNLESS shadows.js judges it not distinguishable from its survivor there (U9b) — never warns either way', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         folded.forEach(({ id }) => {
           const shadow = Params.normalizeShadow({ shadowToneLaw: id });
-          expect(shadow.shadowToneLaw).toBe(id);
+          const expected = (shadowResolvesToSurvivor || []).includes(id) ? survivor : id;
+          expect(shadow.shadowToneLaw).toBe(expected);
         });
         expect(warnSpy).not.toHaveBeenCalled();
       } finally {
@@ -1330,6 +1347,13 @@ describeSingleParamCluster('Scene3D tone-law collapse — U8 (C-08, interlockWea
   folded: [
     { id: 'onePenDown', value: 'continuous' },
   ],
+  // U9b — `onePenDown` has no shadows.js recipe of its own (it is also a
+  // member of shadows.js's own `TONE_LAW_NOT_DISTINGUISHABLE` set, for an
+  // independent reason unrelated to this fold — see params.js's
+  // `clampShadowToneLaw` comment); the shadow bag resolves it FORWARD to
+  // `interlockWeave` instead of the general raw pass-through every other
+  // folded id in this file keeps.
+  shadowResolvesToSurvivor: ['onePenDown'],
 });
 
 describe('Scene3D tone-law collapse — U8 caveat: BOTH the survivor (interlockWeave) AND the folded law (onePenDown) carry real, DIFFERENT measured caveats', () => {

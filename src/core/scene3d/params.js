@@ -1042,13 +1042,52 @@
   // other recognized id. The picker only ever offers `PICKER_IDS` (folded ids
   // excluded), so this never lets a NEW pick reach the folded value — it only
   // preserves what an already-saved scene/preset carries.
+  //
+  // U9b (2026-09-10) — ONE exception to "pass through unchanged": `onePenDown`
+  // (U8's fold, into `interlockWeave`) has NO shadows.js recipe of its own
+  // (`Shadows.toneLawApplies('onePenDown')` is false — it is the one ALIASES
+  // id shadows.js's own `TONE_LAW_NOT_DISTINGUISHABLE` set names, for an
+  // independent reason: its chart-bridging mechanism has nothing to walk on
+  // a flat shadow footprint). Passed through raw it would silently fall to
+  // the plain-hatch fallback (byte-identical to 'ladder') instead of its
+  // survivor's own real, already-verified recipe — see the branch below.
   const clampShadowToneLaw = (value) => {
     const roster = Vectura.SCENE3D_TONE_LAWS || null;
     const R = (roster && roster.IDS) || null;
     const DEF = (roster && roster.DEFAULT) || 'ladder';
     if (typeof value === 'string' && value === DEF) return DEF;
     const ALIASES = (roster && roster.ALIASES) || null;
-    if (typeof value === 'string' && ALIASES && Object.prototype.hasOwnProperty.call(ALIASES, value)) return value;
+    if (typeof value === 'string' && ALIASES && Object.prototype.hasOwnProperty.call(ALIASES, value)) {
+      // U9b — most folded ids (e.g. `fineLadder`) have their own genuinely
+      // distinct shadows.js recipe (HATCH_LAW_RECIPES.fineLadder etc.) and
+      // must keep U9's raw pass-through unchanged. One folded id is
+      // different: `onePenDown` is BOTH an ALIASES member (U8, into
+      // `interlockWeave`) AND a member of shadows.js's own
+      // `TONE_LAW_NOT_DISTINGUISHABLE` set — its whole mechanism (bridging
+      // rulings in CHART space, sample-by-sample against the surface) has
+      // nothing to walk on a flat, ground-projected shadow footprint (see
+      // shadows.js's comment above that Set), so it carries NO recipe of
+      // its own in any *_LAW_RECIPES table there. Passed through raw, it
+      // would fall through shadows.js's own markClass override (`toneLawId
+      // -> 'hatch'` for any id `!toneLawApplies`) to the undifferentiated
+      // plain-hatch fallback — byte-identical to 'ladder', the exact
+      // silent-wrong-texture failure mode U9 fixed for every OTHER folded
+      // id. Resolve THIS one forward to its survivor instead: `interlockWeave`
+      // and `onePenDown` are already a documented near-duplicate PICTURE
+      // (U8 — "the pen-down saving is real and the picture is not"), so
+      // drawing `interlockWeave`'s own real recipe for a raw `onePenDown`
+      // document is the honest answer, not a fabrication. Reuses the
+      // already-exported `Shadows.toneLawApplies` predicate rather than
+      // duplicating shadows.js's own exclusion set here, so this stays
+      // correct automatically if that set ever changes.
+      const Shadows = Vectura.Scene3D && Vectura.Scene3D.Shadows;
+      const alias = ALIASES[value];
+      if (Shadows && typeof Shadows.toneLawApplies === 'function'
+          && !Shadows.toneLawApplies(value) && alias && typeof alias.into === 'string') {
+        return alias.into;
+      }
+      return value;
+    }
     if (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) return value;
     // Warn only for a genuinely unrecognized id — same reasoning as the shared
     // clampStyleParam('toneLaw') case above.

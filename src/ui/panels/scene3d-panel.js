@@ -3263,8 +3263,16 @@
         // the Style tab's row, holding this law's mechanism/strengths/
         // weaknesses. SHADOW_NOTE (flow/web unavailable here) stays its own
         // always-visible line below, unchanged.
-        const shadowLawEntry = FS.entry(law) || {};
-        const shadowLawNote = FS.note(law);
+        //
+        // U9b / W-10d-3b — the (i)/caveat read the id `FS.shadowDisplayLaw`
+        // resolves, NOT the bare survivor `law` used for the select's own
+        // value: a raw stored folded id (`fineLadder`, …) with its own
+        // distinguishable shadows.js recipe must show ITS OWN entry/caveat,
+        // not the survivor's. The <select> itself stays on `law` — the
+        // survivor is the only option the dropdown actually offers.
+        const shadowInfoLaw = FS.shadowDisplayLaw ? FS.shadowDisplayLaw(s.shadowToneLaw, law) : law;
+        const shadowLawEntry = FS.entry(shadowInfoLaw) || {};
+        const shadowLawNote = FS.note(shadowInfoLaw);
         buildLawInfoAffordance(lawRow, [
           { text: shadowLawNote.text },
           { text: shadowLawEntry.mechanism ? `How: ${shadowLawEntry.mechanism}` : '' },

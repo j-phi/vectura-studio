@@ -2250,6 +2250,39 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
     expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
     expect(Array.from(ctl.querySelectorAll('option')).map((o) => o.textContent)).not.toContain('Mixed');
   });
+
+  // U9b / W-10d-3b — the shadow row's own DISPLAY lie, the shadow-side twin
+  // of W-10d-3's style-row sub-control fix. The shadow bag stays a ONE-KEY
+  // raw pass-through (U9's own ruling forbids a shadow sub-control), so the
+  // <select> correctly keeps showing the resolved SURVIVOR — but the (i)
+  // popover used to always read the survivor's own entry too, hiding a raw
+  // folded id's OWN distinct mechanism/caveat (fineLadder's own text, not
+  // Ladder's).
+  test('U9b — a raw folded shadowToneLaw (fineLadder): select still shows the survivor (Ladder), but the (i) popover shows Fine Ladder\'s OWN entry', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'fineLadder' } });
+    const row = rowCtl(fly, 'Fill Style').parentNode;
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('ladder'); // over-fix guard: unchanged
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    fire(btn, 'click');
+    const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.textContent).toContain(F.entry('fineLadder').mechanism);
+    expect(box.textContent).not.toContain(F.entry('ladder').mechanism);
+  });
+
+  // onePenDown is the one ALIASES id shadows.js has NO recipe of its own for
+  // (see params.js clampShadowToneLaw) — it resolves and DISPLAYS as its
+  // survivor interlockWeave, correctly, because the render is now
+  // byte-identical to interlockWeave's (U9b's params.js fix). Showing
+  // interlockWeave's own entry here is correct, not a lie.
+  test('U9b — a raw legacy shadowToneLaw (onePenDown): both the select AND the (i) popover show Interlock Weave (byte-identical duplicate, not its own entry)', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'onePenDown' } });
+    const row = rowCtl(fly, 'Fill Style').parentNode;
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('interlockWeave');
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    fire(btn, 'click');
+    const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.textContent).toContain(F.entry('interlockWeave').mechanism);
+  });
 });
 
 describe('Shadow Fill Style — docked 3D Scene panel', () => {
@@ -2332,6 +2365,30 @@ describe('Shadow Fill Style — docked 3D Scene panel', () => {
   test('an unknown shadowToneLaw id resolves to the default (ladder), not a blank/invalid select', () => {
     const { container } = mount({ shadow: { shadowToneLaw: 'not-a-real-law' } });
     expect(rowCtl(shadowHost(container), 'Fill Style').querySelector('select').value).toBe('ladder');
+  });
+
+  // U9b / W-10d-3b — docked-panel twin of the ctxbar tests above.
+  test('U9b — a raw folded shadowToneLaw (fineLadder): select still shows the survivor (Ladder), but the (i) popover shows Fine Ladder\'s OWN entry', () => {
+    const { container } = mount({ shadow: { shadowToneLaw: 'fineLadder' } });
+    const host2 = shadowHost(container);
+    const row = rowCtl(host2, 'Fill Style').parentNode;
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('ladder'); // over-fix guard
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    btn.dispatchEvent(new window.Event('click', { bubbles: true }));
+    const box = host2.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.textContent).toContain(F.entry('fineLadder').mechanism);
+    expect(box.textContent).not.toContain(F.entry('ladder').mechanism);
+  });
+
+  test('U9b — a raw legacy shadowToneLaw (onePenDown): both the select AND the (i) popover show Interlock Weave (byte-identical duplicate, not its own entry)', () => {
+    const { container } = mount({ shadow: { shadowToneLaw: 'onePenDown' } });
+    const host2 = shadowHost(container);
+    const row = rowCtl(host2, 'Fill Style').parentNode;
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('interlockWeave');
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    btn.dispatchEvent(new window.Event('click', { bubbles: true }));
+    const box = host2.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.textContent).toContain(F.entry('interlockWeave').mechanism);
   });
 });
 
