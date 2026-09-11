@@ -24,9 +24,27 @@
  * direct call supplies the value under test and cannot see three of the
  * four origins of a default).
  *
- * T1  — the default is a no-op: md5(key absent) === md5(=3) === md5(pre-fix
- *       tree), across {box,solid,pyramid,plane,sphere} x {hatch,crosshatch}
- *       x d in {1,50,220} x fillAngle in {20,45}.
+ * T1  — the default is a no-op: md5(key absent) === md5(=3) (the four-origin
+ *       no-op — the algorithm's own `finite(...,3)` fallback agrees with an
+ *       explicit 3), AND md5(key absent)'s `pathSignature` matches a PINNED
+ *       golden fingerprint recorded once at W-38b (see EXPECTED_T1 below),
+ *       across {box,solid,pyramid,plane,sphere} x {hatch,crosshatch} x d in
+ *       {1,50,220} x fillAngle in {20,45}.
+ *
+ *       W-38b (docs/3d-audit/lane-reports/W-38-review.md, Follow-up 1):
+ *       the original third leg compared against `git show HEAD:scene3d.js`
+ *       at test-run time. Once the work is committed, `HEAD` IS the
+ *       post-fix tree forever, so that leg was structurally incapable of
+ *       ever disagreeing with the runtime under test — a standing false
+ *       sense of protection. Replaced with a fixed golden fingerprint (the
+ *       same `pathSignature`/EXPECTED-map convention
+ *       `scene3d-hlr-spatial-index-identity.test.js` uses, precision 4 —
+ *       loose enough to absorb the arm64/x86_64 ULP drift 1193cbe1 found in
+ *       this exact test family, tight enough to catch a real regression).
+ *       RE-PIN ONLY WITH PROOF: a fingerprint change here must be
+ *       accompanied in the commit body by the RED/GREEN numbers showing the
+ *       product change that legitimately moved it — never re-pinned to
+ *       silence a failure.
  * T2  — control 1 lowers the floor on the app-default box's lit facets.
  * T3  — object ink is strictly increasing in the control (box AND solid).
  * T4  — the zone ceiling still wins (control 8 does not exceed ceilCount),
@@ -50,11 +68,81 @@
  */
 const crypto = require('crypto');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { pathSignature } = require('../helpers/path-signature');
 
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
+
+// T1's pinned golden fingerprints (W-38b) — `pathSignature` (precision 4,
+// tests/helpers/path-signature.js) of the absent-key faceted output, one
+// per {primitive, mapper, density, angle} fixture. Recorded once against
+// 575f886d (v1.4.1, this file's own base sha) and NEVER moved except with
+// proof in the commit body (RGR numbers showing what product change
+// legitimately moved it). See the T1 doc comment above for why this
+// replaced the vacuous `git show HEAD` leg.
+const EXPECTED_T1 = {
+  'box|hatch|d1|a20': '4e9e8d48202eb705de0c7f313332d369abe44304ebad37753a57d536317b0c56',
+  'box|hatch|d1|a45': '91e215092d884c8c0f178196af9f54d0e28d7e88724c517b61fd897adc2e7ac1',
+  'box|hatch|d50|a20': 'e2d24665e4cfe164b17b1bfa15d806e2a3b173ed7594ba4411a0eb83560e79df',
+  'box|hatch|d50|a45': '63824db264e028709fdfd53cbfc6391025ec3a286b326eeebe9c44a8e32c5afc',
+  'box|hatch|d220|a20': '9da5dfeaf6d7208b73f754fa7c2cda359c2c8c0b2f2a42a7943b5a29f639f1ba',
+  'box|hatch|d220|a45': 'e8112d0a2334364f289a1f4f67bf5c68fac1d52ae579583c631967a46d372de8',
+  'box|crosshatch|d1|a20': '841980988e08d5601e7e5e356f8267ffcff3834f2f59d546289a2cd7705d7ce7',
+  'box|crosshatch|d1|a45': 'a45c97cd66d2bb7503abb08a3bafec658f3db455d201b43f800495bbb831057d',
+  'box|crosshatch|d50|a20': '230f278e46e725bb7144ecacb6a9a49017d7d13d477fddf652c255685edd2cd5',
+  'box|crosshatch|d50|a45': '5f33ddac1b690b276fd8775a4dbbaef561830057b61f2ac25d8cc457e9c798ca',
+  'box|crosshatch|d220|a20': '8811ae623c366641fa80d22d9e10b6cf0bca8e3b9aa8f372fbb7b91b77142e58',
+  'box|crosshatch|d220|a45': 'cff22135e0d36c104a17faddde5feaa45f747dd519079a49eae829af260621dc',
+  'solid|hatch|d1|a20': '09cfac39b0028aafec5e586e0a0471dd3a6580bd39634fccf25cdea910fcce98',
+  'solid|hatch|d1|a45': 'b52b0942c0cc628077e744c00966e15528a9f110b3e5940b00bc38bcdf99a1d2',
+  'solid|hatch|d50|a20': '09cfac39b0028aafec5e586e0a0471dd3a6580bd39634fccf25cdea910fcce98',
+  'solid|hatch|d50|a45': 'b52b0942c0cc628077e744c00966e15528a9f110b3e5940b00bc38bcdf99a1d2',
+  'solid|hatch|d220|a20': 'e037752454990f3fa87315cdf8152c018446ae3bd50ccc6c294a9cf093a91a88',
+  'solid|hatch|d220|a45': '7df6d65ae238625b8cc30234b41c87be0356a3ba152a4b92fcf3baf8709655d1',
+  'solid|crosshatch|d1|a20': 'e4be52a9aaec832103d6406f63551bc7ddb6d02e2937885c2b632fa246ad1683',
+  'solid|crosshatch|d1|a45': 'd1f3ff4ff9bdcdc7399d8396fe9f0a5e84642d4703237f19e93789d6c8ada8b8',
+  'solid|crosshatch|d50|a20': '2ec8868a5be65641aed0c17b215ddf811912f23a8f44ea8c7d3677e311b25e2c',
+  'solid|crosshatch|d50|a45': '899987719f0019e5b246c79fea3311fb95a50bce8f792f1e91e72a3efeaec553',
+  'solid|crosshatch|d220|a20': 'ef1f47aa5989812bad8438a98c9f0cef6950d31bc8f88928379eb8651d3fb91e',
+  'solid|crosshatch|d220|a45': '1f08f5f39110a92d8ec8cc809a9a19c03c2edc9236fefe424539c8ed85f0027b',
+  'pyramid|hatch|d1|a20': '613d76c685713dc990a294abdfe3c1e4950cf6bf868cc2b9b57ae7246ab95939',
+  'pyramid|hatch|d1|a45': 'e2fd7df0374a90bb841680c9d4cdcd1b978735c414cd4a165a3fb1aee2ced007',
+  'pyramid|hatch|d50|a20': '15cc09681e985b31f09e48af75ea6c1c9e3cac5ddefff10e36e2234f62082423',
+  'pyramid|hatch|d50|a45': '9700854444d61cb745c46bdcf8461cca51598c80d4aa5a3846d171737a91e83b',
+  'pyramid|hatch|d220|a20': 'a6a97f1d217dbc618e0df91ba0ddf1daa2d8bfe2b9f45d87064dacaaf31954c1',
+  'pyramid|hatch|d220|a45': 'baf50d16f571c4df33bb28aec70662aa9a6f588e096cec3beca74139e612c1c2',
+  'pyramid|crosshatch|d1|a20': 'c828f8205254349005d0644e6a72ee9cfd552a2989caa046ef330b7016c73155',
+  'pyramid|crosshatch|d1|a45': 'c69a13732e00f60b2f94cec5df9b8fe38ec113dbfb52400458904ac0d2c0b31f',
+  'pyramid|crosshatch|d50|a20': '226db79a96327949ad92babc7d701a8091582e8a47967a4c32c3a6c0407a91ad',
+  'pyramid|crosshatch|d50|a45': '55ec1e454b476a134cf885f2da08ef7efba5febf0ad282fea6a3d9fb8d0a8c12',
+  'pyramid|crosshatch|d220|a20': '3e9d465727c1229c1f576fc7dbe5b6ddce865fc8df37087439ce0b5732d1c709',
+  'pyramid|crosshatch|d220|a45': '8768d5ae79d4adc52e6598491ebda8a86937e16620b0907608a6b122ddf6452d',
+  'plane|hatch|d1|a20': '33f813aba4762dea6ff2b6ddb56b9d95bf796f5ef0877412d59179b5b042aa11',
+  'plane|hatch|d1|a45': '6445759ac9d86752b0752660277bf76f57a0257eb8052b5372e75f4fefa247bb',
+  'plane|hatch|d50|a20': '117304b53fed661c380f59268b0918fcc4ff37a01f67b005cce44d5e84edf47c',
+  'plane|hatch|d50|a45': '5d781e788e2bb7b5e9b409e7dca0d410c47dd54d1f0517893426241e8b9b42cb',
+  'plane|hatch|d220|a20': 'f78e804bddbc7b974d49e43fd7039aa029b63179af7cb67bfd33d15dff73ea69',
+  'plane|hatch|d220|a45': 'fa2eb5e61f323362c07d68fdb1550dcd0a2745218108ebb315d94e688abed95b',
+  'plane|crosshatch|d1|a20': '00eae19436f73cfd53503375f803a6bcf552345d603a7c62ed03d252c5d0b950',
+  'plane|crosshatch|d1|a45': 'eab50180d5f805dbfe5fab79c1b329e458352b65b1e1be27862809ee433b744e',
+  'plane|crosshatch|d50|a20': 'e25ef73ab407f06107d4d30fa6592cb06c9e97ba4093a9e5acec3d1dbcca1d8d',
+  'plane|crosshatch|d50|a45': '4b85aaef53f9a1816dc8b954863ddcecde4f737b32bcf83d017651f81627be3a',
+  'plane|crosshatch|d220|a20': '8c29ed26800081ca35352f5adb76821129dba34fe8c660743467dbbf9a86446d',
+  'plane|crosshatch|d220|a45': 'c6643c706acfe8f78f024efb3529df438b0ce2c34bf12e9a1df2efba94276f48',
+  'sphere|hatch|d1|a20': 'b4262ee2a412181918dc32d2aa373adc47d4f89e688ae12ac1f6b533d785c34d',
+  'sphere|hatch|d1|a45': '4fd58822a276b5c81f5b5a75f162c15eb2c764cac46a1b05699e227ee91bb789',
+  'sphere|hatch|d50|a20': '34c207a9b9700a55183094f01dacb907ce6f2161907499b9150e68e39c421021',
+  'sphere|hatch|d50|a45': 'd90e19dee1e8485ea9605cf2c8edd644c2626fcb9946f7be827ce193cf228a4b',
+  'sphere|hatch|d220|a20': '0ad94fe1e5333e25820f7c1ba5af98cf2dcb1677df494a7abe3486f2912547a2',
+  'sphere|hatch|d220|a45': 'f0d6bdd4afe47bb18f6605f3f8576dae1ef75ec9a17284047902ca3cdd924818',
+  'sphere|crosshatch|d1|a20': 'cce03d11ff86d3b6e4388dbd3da31cb621b759be6a11431f7d0f476090086839',
+  'sphere|crosshatch|d1|a45': '0e6b17e69764f509d5ac34689d96ed18641f634994bc65e6cf7bdb600acd4bd3',
+  'sphere|crosshatch|d50|a20': 'e4b1b436da2c3f3c9c8ba2d9cfadd89373eacaba1454b22150e13ce288e4b93b',
+  'sphere|crosshatch|d50|a45': '0b2f20c7d22c762f6542f41f6ddae8a9112e3919039f09cc2bda220f3f54b622',
+  'sphere|crosshatch|d220|a20': '72e53e49df2aa7cd23d05743fa741522e63e93dde733d8f0594e0d9ecf85f673',
+  'sphere|crosshatch|d220|a45': 'a5fdf736fd8de7027a84028420488764bb05b66e06a51eb1178feb48bd1957ba',
+};
 
 const md5PathsAll = (paths) => crypto.createHash('md5')
   .update(JSON.stringify((paths || []).map((p) => p.map((pt) => [
@@ -65,28 +153,14 @@ const md5PathsAll = (paths) => crypto.createHash('md5')
 describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulings)', () => {
   let runtime;
   let V;
-  let preFixRuntime;
-  let preFixV;
 
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
     V = runtime.window.Vectura;
-
-    // T1's pre-fix baseline: HEAD is the base commit this unit started from
-    // (this worktree's working tree is uncommitted at the time this test is
-    // authored, so `git show HEAD:...` is exactly the tree BEFORE this
-    // unit's scene3d.js edit) — the same scriptOverrides technique
-    // `scene3d-slice-end-overlap.test.js` (W-35) uses.
-    const preFixSrc = execFileSync('git', ['show', `HEAD:${SCENE3D_REL}`], {
-      cwd: ROOT_DIR, maxBuffer: 1024 * 1024 * 64,
-    }).toString('utf8');
-    preFixRuntime = await loadVecturaRuntime({ scriptOverrides: { [SCENE3D_REL]: preFixSrc } });
-    preFixV = preFixRuntime.window.Vectura;
   }, 120000);
 
   afterAll(() => {
     runtime && runtime.cleanup();
-    preFixRuntime && preFixRuntime.cleanup();
   });
 
   // ── Harness — the app-default scene with the primitive swapped exactly
@@ -143,7 +217,7 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
   const objectInk = (result) => inkOf(objectPaths(result));
 
   // ── T1 — the default is a no-op ────────────────────────────────────────
-  describe('T1 — facetMinRulings absent === 3 === the pre-fix (pre-W-38) tree', () => {
+  describe('T1 — facetMinRulings absent === 3 === a pinned golden fingerprint', () => {
     const PRIMITIVES = ['box', 'solid', 'pyramid', 'plane', 'sphere'];
     const MAPPERS = ['hatch', 'crosshatch'];
     const DENSITIES = [1, 50, 220];
@@ -153,14 +227,33 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
       MAPPERS.forEach((mapper) => {
         DENSITIES.forEach((density) => {
           ANGLES.forEach((angle) => {
+            const key = `${primitive}|${mapper}|d${density}|a${angle}`;
             test(`${primitive} / ${mapper} / d=${density} / a=${angle}`, () => {
               const absent = buildScene(V, { primitive, mapper, density, angle });
               const withDefault = buildScene(V, {
                 primitive, mapper, density, angle, facetMinRulings: 3,
               });
-              const pre = buildScene(preFixV, { primitive, mapper, density, angle });
+              // Leg 1 (four-origin no-op): the algorithm's own
+              // `finite(styleParams.facetMinRulings, FACET_MIN_RULINGS)`
+              // fallback, exercised when the key is absent, must agree with
+              // an explicitly-set 3.
               expect(md5PathsAll(absent.paths)).toBe(md5PathsAll(withDefault.paths));
-              expect(md5PathsAll(absent.paths)).toBe(md5PathsAll(pre.paths));
+
+              // Leg 2 (standing, non-vacuous): the absent-key output must
+              // match a fixed golden fingerprint pinned below. Unlike the
+              // old `git show HEAD` leg, this reference does not move when
+              // this file's own commit lands — it is a literal, so a future
+              // regression to the default has something fixed to disagree
+              // with, forever, not just until this unit is committed.
+              const expected = EXPECTED_T1[key];
+              if (!expected) {
+                // eslint-disable-next-line no-console
+                console.log(
+                  `EXPECTED_T1 missing entry — paste this in:\n  '${key}': '${pathSignature(absent.paths)}',`,
+                );
+              }
+              expect(expected).toBeTruthy();
+              expect(pathSignature(absent.paths)).toBe(expected);
             });
           });
         });
