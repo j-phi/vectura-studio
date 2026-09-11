@@ -188,6 +188,44 @@ describe('Scene3D.Shadows — shadowToneLaw (Fill Style on shadow hatch)', () =>
     expect(JSON.stringify(sPaths(withDefault))).toBe(JSON.stringify(sPaths(explicitLadder)));
   });
 
+  // U6 (C-06/W-18a, docs/3d-audit/lane-reports/W-22-24-W-18-plan.md §1
+  // "C-06 -> U6"). `penStipple`'s mark class moved from 'dot' to 'hatch'
+  // (Jay's decision, 2026-09-10) so it could fold into `penInterleave`
+  // without corrupting the §2.4 "mark class is constant within a cluster"
+  // invariant (its three siblings — penInterleave/penPitchMatch/penFacing —
+  // are already 'hatch'). That move is REAL on the shadow path too, not
+  // just the picker: `shadowMarkLines` dispatches on markClass, so
+  // `penStipple` now resolves through `HATCH_LAW_RECIPES` instead of
+  // `DOT_LAW_RECIPES`. Left with no HATCH_LAW_RECIPES entry of its own, it
+  // would silently degrade to the undifferentiated hatch fallback — BYTE-
+  // IDENTICAL to 'ladder' on shadows, exactly the failure mode this file's
+  // own onePenDown comment (src/config/context-bar.js) already names as a
+  // known-bad prior state for a law whose markClass defaults without a
+  // recipe. This unit adds `HATCH_LAW_RECIPES.penStipple` (an end-trimmed
+  // hatch, translating "the fine nib stippling the highlight fade by
+  // shortening its marks" into hatch terms) so it keeps a purpose-built
+  // shadow recipe instead.
+  test('HEADLINE (U6) — shadowToneLaw:"penStipple" (moved to hatch) emits its OWN recipe, not the plain-hatch fallback', () => {
+    const plainLadder = buildShadows({ shadowToneLaw: 'ladder' });
+    const penStipple = buildShadows({ shadowToneLaw: 'penStipple' });
+    expect(sPaths(penStipple).length).toBeGreaterThan(0);
+    expect(geomSignature(penStipple)).not.toBe(geomSignature(plainLadder));
+  });
+
+  test('U6 — shadowToneLaw:"penStipple" markClass is now "hatch", not "dot"', () => {
+    expect(Shadows.toneLawMarkClass('penStipple')).toBe('hatch');
+    expect(Shadows.toneLawApplies('penStipple')).toBe(true);
+  });
+
+  test('U6 — the other three C-06 members (penInterleave/penPitchMatch/penFacing) are unaffected: still hatch, still distinct from plain ladder', () => {
+    const plainLadder = buildShadows({ shadowToneLaw: 'ladder' });
+    ['penInterleave', 'penPitchMatch', 'penFacing'].forEach((law) => {
+      const built = buildShadows({ shadowToneLaw: law });
+      expect(sPaths(built).length).toBeGreaterThan(0);
+      expect(geomSignature(built)).not.toBe(geomSignature(plainLadder));
+    });
+  });
+
   describe('Shadows.toneLawApplies — the exported UI-gating predicate', () => {
     test('applicable classes: ref, hatch, cross, wave, dash, dot', () => {
       expect(Shadows.toneLawApplies('none')).toBe(true);       // ref

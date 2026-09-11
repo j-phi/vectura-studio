@@ -148,4 +148,63 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
     expect(foldedCaveat2).toBe(R2.BY_ID.onePenDown.caveat);
     expect(foldedCaveat2).not.toBe(R2.BY_ID.interlockWeave.caveat);
   });
+
+  // U6 (C-06/W-18a, penInterleave/penMode) — the FROZEN-ON-JAY cluster,
+  // unblocked 2026-09-10. Unlike U7/U8's two-caveat pair, this is a
+  // FOUR-caveat cluster: the survivor (`penInterleave`) AND all three folded
+  // ids (`penPitchMatch`, `penFacing`, `penStipple`) each carry their own
+  // real, DISTINCT measured caveats. `penStipple`'s caveat is additionally
+  // the mark-class-move explanation (its markClass moved 'dot' -> 'hatch'),
+  // not the bare three-pens-simulated restatement its siblings carry —
+  // pinned here in the SHARED cross-check file for the same reason as the
+  // U7/U8 cases above.
+  test('U6: all three folded ids (penPitchMatch, penFacing, penStipple) survive the fold through effectiveLaw with their OWN distinct caveats — both resolvers agree', () => {
+    const R3 = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+    expect(R3.ALIASES.penPitchMatch).toEqual({ into: 'penInterleave', params: { penMode: 'pitchMatch' } });
+    expect(R3.ALIASES.penFacing).toEqual({ into: 'penInterleave', params: { penMode: 'facing' } });
+    expect(R3.ALIASES.penStipple).toEqual({ into: 'penInterleave', params: { penMode: 'stipple' } });
+
+    const ids = ['penInterleave', 'penPitchMatch', 'penFacing', 'penStipple'];
+    ids.forEach((id) => expect(R3.BY_ID[id].caveat.length, id).toBeGreaterThan(0));
+    // NOT all four are pairwise distinct — measured, not assumed:
+    // penPitchMatch and penFacing carry the EXACT SAME "three pens are
+    // simulated" sentence (both true, both correctly stating the same
+    // real fact); this is a genuine duplicate, unlike U7/U8's pairs. What
+    // matters is that penStipple's own caveat (the mark-class-move
+    // explanation) is DISTINCT from every sibling, and penInterleave's own
+    // (longer, "in scene3d.js"/"read every number...") is also distinct.
+    expect(R3.BY_ID.penPitchMatch.caveat).toBe(R3.BY_ID.penFacing.caveat);
+    [['penInterleave', 'penPitchMatch'], ['penInterleave', 'penFacing'], ['penInterleave', 'penStipple'],
+      ['penPitchMatch', 'penStipple'], ['penFacing', 'penStipple']].forEach(([a, b]) => {
+      expect(R3.BY_ID[a].caveat, `${a} vs ${b}`).not.toBe(R3.BY_ID[b].caveat);
+    });
+
+    // Default (penMode:'interleave', or omitted) -> penInterleave's OWN
+    // caveat, not empty. Compared via FS.note() on BOTH sides (not the raw
+    // BY_ID field) because all four C-06 members are `simulated` — note()
+    // auto-prepends SIMULATED_NOTE, so the raw BY_ID caveat alone would
+    // never match what the UI actually shows.
+    expect(FS.effectiveLaw('penInterleave', {})).toBe('penInterleave');
+    expect(Params.resolveToneLaw({ toneLaw: 'penInterleave' })).toBe('penInterleave');
+    expect(FS.note(FS.effectiveLaw('penInterleave', {})).caveat).toBe(FS.note('penInterleave').caveat);
+
+    // Each of the other three penMode values -> its OWN distinct law and
+    // caveat, agreed by both resolvers, never silently falling back to
+    // penInterleave's own.
+    [
+      { penMode: 'pitchMatch', law: 'penPitchMatch' },
+      { penMode: 'facing', law: 'penFacing' },
+      { penMode: 'stipple', law: 'penStipple' },
+    ].forEach(({ penMode, law }) => {
+      expect(FS.effectiveLaw('penInterleave', { penMode })).toBe(law);
+      expect(Params.resolveToneLaw({ toneLaw: 'penInterleave', penMode })).toBe(law);
+      const foldedCaveat = FS.note(FS.effectiveLaw('penInterleave', { penMode })).caveat;
+      expect(foldedCaveat).toBe(FS.note(law).caveat);
+      expect(foldedCaveat).not.toBe(FS.note('penInterleave').caveat);
+    });
+
+    // penStipple's caveat specifically explains the mark-class move, not the
+    // bare three-pens-simulated fact SIMULATED_NOTE already auto-prepends.
+    expect(R3.BY_ID.penStipple.caveat).toMatch(/Parallel hatching/);
+  });
 });

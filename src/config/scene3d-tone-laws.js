@@ -449,7 +449,7 @@
     "strengths": "Best off-the-line in the whole 47-law table on sphere·crosshatch (18.0%), second-best tier seam of the family (9.9 L*), and the fewest paths of the tonally-useful pen laws on the hatch cells.",
     "weaknesses": "Real free ends (2.46-3.08 mm) — short and deliberate, a stipple flick is a free end, but still counted — and R2 0.001 on cylinder·hatch.",
     "chooseWhen": "Choose it when the drawing has a large soft highlight that needs to fade to nothing and short stipple flicks are acceptable — the family's best answer on crosshatch.",
-    "caveat": "Three pens are SIMULATED, not expressible: penId is carried per style group, not per run, so no real plot could switch nibs within one fill.",
+    "caveat": "Pen Stipple moved from \"Dots & stipple\" to \"Parallel hatching\": it has never drawn dots — its highlight fade comes from shortening the fine nib's hatch marks, the same ruled-darks mechanism as the other Pen options. If you want an actual dot pattern, this option won't give you one.",
     "simulated": true,
     "tier": "library"
   },
@@ -881,11 +881,8 @@
   "bundleLozenge",
   "contFieldSigmoid",
   "penInterleave",
-  "penStipple",
   "penReserve",
   "penCross",
-  "penPitchMatch",
-  "penFacing",
   "mkScribble",
   "mkTick",
   "mkDashRamp",
@@ -993,6 +990,24 @@
     "into": "interlockWeave",
     "params": {
       "penDown": "continuous"
+    }
+  },
+  "penPitchMatch": {
+    "into": "penInterleave",
+    "params": {
+      "penMode": "pitchMatch"
+    }
+  },
+  "penFacing": {
+    "into": "penInterleave",
+    "params": {
+      "penMode": "facing"
+    }
+  },
+  "penStipple": {
+    "into": "penInterleave",
+    "params": {
+      "penMode": "stipple"
     }
   }
 };
@@ -1181,6 +1196,35 @@
         }
       ]
     }
+  ],
+  "penInterleave": [
+    {
+      "key": "penMode",
+      "label": "Pen mode",
+      "default": "interleave",
+      "options": [
+        {
+          "value": "interleave",
+          "label": "Interleaved nibs",
+          "law": "penInterleave"
+        },
+        {
+          "value": "pitchMatch",
+          "label": "Pitch-matched",
+          "law": "penPitchMatch"
+        },
+        {
+          "value": "facing",
+          "label": "Facing bias",
+          "law": "penFacing"
+        },
+        {
+          "value": "stipple",
+          "label": "Stipple",
+          "law": "penStipple"
+        }
+      ]
+    }
   ]
 };
 
@@ -1197,7 +1241,7 @@
   }
 
   Vectura.SCENE3D_TONE_LAWS = {
-    VERSION: "1819221f2a80c42be1ede76b2e8cee274d4b392b",
+    VERSION: "839a306b86037a27ddc5b07072e1c613838ede9f",
     DEFAULT: 'ladder',
     IDS,
     PRODUCTION,

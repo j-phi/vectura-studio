@@ -131,6 +131,17 @@
     contFieldSigmoid: 'hatch', contFieldTouch: 'hatch', contFieldFore: 'hatch',
     contFieldSurface: 'hatch', contFieldQuant: 'hatch',
     penInterleave: 'hatch', penPitchMatch: 'hatch', penFacing: 'hatch',
+    // penStipple (C-06/U6, JAY'S DECISION 2026-09-10, §4 decision 2 -> A):
+    // moved here from 'dot' — its own measured mechanism ("Broad ruled
+    // darks, medium hatch through the mids, and the fine nib stippling the
+    // highlight fade by shortening its marks") is a hatch, not the drawn
+    // dots the old grouping implied, and it is now folded into penInterleave
+    // as penMode:'stipple' (§2.4 invariant: mark class must be constant
+    // across a collapse cluster, and its three siblings above are already
+    // 'hatch'). The move is real on the SHADOW path too, not just the
+    // picker: shadows.js `shadowMarkLines` now resolves it through
+    // HATCH_LAW_RECIPES.penStipple instead of DOT_LAW_RECIPES.penStipple.
+    penStipple: 'hatch',
     endShorten: 'hatch',
     // penCross draws medium x broad CROSSHATCH in the darks; penReserve cuts
     // white reserves TRANSVERSE to the ruling and hatches inside them. Both
@@ -155,7 +166,7 @@
     // fall back to plain hatch, byte-identical to ladder on shadows).
     onePenDown: 'wave',
     mkTick: 'dash', mkDashRamp: 'dash', dutyConst: 'dash',
-    mkDotScreen: 'dot', lozengeStipple: 'dot', penStipple: 'dot',
+    mkDotScreen: 'dot', lozengeStipple: 'dot',
     voronoiWeb: 'web', mazeFill: 'web', originSpiral: 'web', deepFillTSP: 'web',
     turingStripe: 'web',
   };

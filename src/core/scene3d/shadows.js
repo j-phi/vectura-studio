@@ -1135,11 +1135,21 @@
     contFieldSurface: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, -1.6, 1.12),
     contFieldQuant: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 0, 0.93),
     // three-pen family (the hatch-mark-class subset — penCross/penReserve are
-    // 'cross', penStipple is 'dot') — penInterleave's "alternating nib" is a
-    // 2-pass bundle; the other two are pitch/facing constants.
+    // 'cross') — penInterleave's "alternating nib" is a 2-pass bundle; the
+    // next two are pitch/facing constants. penStipple (C-06/U6, moved here
+    // from the 'dot' class 2026-09-10 — see context-bar.js's
+    // FILL_STYLE_MARK_OF comment) translates its own measured mechanism
+    // ("the fine nib stippling the highlight fade by shortening its marks")
+    // into hatch terms via a heavy end-trim — the same `hatchEndTrim`
+    // device `taperedEnds`/`endShorten` use for "shorten", just at a fraction
+    // heavy enough to read as stippled rather than merely tapered. Without
+    // this entry it would fall through to the undifferentiated hatch
+    // default, byte-identical to 'ladder' on shadows — the exact failure
+    // mode the onePenDown comment above already names as known-bad.
     penInterleave: (rings, angleDeg, spacing) => hatchDoublePass(rings, angleDeg, spacing, { passes: 2, passSpacingMult: 0.45 }),
     penPitchMatch: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 0, 1.15),
     penFacing: (rings, angleDeg, spacing) => hatchOffset(rings, angleDeg, spacing, 2.4, 1),
+    penStipple: (rings, angleDeg, spacing) => hatchEndTrim(hatchRingsEvenOdd(rings, angleDeg, spacing), 0.24),
     // mono family (hatch subset) — endShorten's own text is literally an end
     // treatment, at a heavier fraction than taperedEnds's soft taper.
     endShorten: (rings, angleDeg, spacing) => hatchEndTrim(hatchRingsEvenOdd(rings, angleDeg, spacing), 0.14),
@@ -1272,7 +1282,12 @@
     // longer flicks.
     lozengeStipple: (rings, angleDeg, spacing) => dotMarks(rings, spacing, { pitchMult: 0.75, flickLenMult: 1.6, jitterMult: 0.5 }),
     // penStipple: "the fine nib stippling... by shortening its marks" — a
-    // sparser lattice of short, more jittered flicks.
+    // sparser lattice of short, more jittered flicks. UNREACHABLE since
+    // C-06/U6 (2026-09-10): penStipple's markClass moved to 'hatch'
+    // (context-bar.js FILL_STYLE_MARK_OF), so `shadowMarkLines` no longer
+    // dispatches here for it — see HATCH_LAW_RECIPES.penStipple above.
+    // Left in place (harmless, dead) rather than deleted: it documents the
+    // pre-move design intent and nothing else reaches this key.
     penStipple: (rings, angleDeg, spacing) => dotMarks(rings, spacing, { pitchMult: 1.3, flickLenMult: 0.5, jitterMult: 1.4 }),
   };
 

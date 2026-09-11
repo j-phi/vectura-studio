@@ -150,8 +150,13 @@ describe('Fill Style — the shared mark-class config', () => {
   });
 
   test('the note leads with the mark class; simulated laws are prefixed; caveats survive', () => {
+    // U6 (C-06/W-18a): penStipple's mark class moved 'dot' -> 'hatch'
+    // (Jay's decision, 2026-09-10) — the note now leads with "Parallel
+    // hatching", not "Dots & stipple". It is still `simulated` (unaffected
+    // by the move), so the SIMULATED_NOTE prefix assertion below is
+    // unchanged.
     const n = F.note('penStipple');
-    expect(n.text).toMatch(/^Dots & stipple —/);
+    expect(n.text).toMatch(/^Parallel hatching —/);
     expect(n.caveat.startsWith(F.SIMULATED_NOTE)).toBe(true);
     // A non-simulated library law still shows its measured caveat.
     expect(F.note('bundleDither').caveat.length).toBeGreaterThan(0);
@@ -457,12 +462,18 @@ describe('Fill Style — the shared mark-class config', () => {
       // interlockWeave, per
       // docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl (every mapper,
       // both ids); ALIVE unaffected, neither interlockWeave nor onePenDown
-      // is a mono law) 34 total - 11 = 23. Re-measured directly (not
-      // assumed): `groups('box')` now offers 34 options (33 PICKER_IDS +
-      // 'ladder'), confirmed failing at 24 (`expected 23 to be 24`) before
-      // this edit, passing at 23 after.
+      // is a mono law) 34 total - 11 = 23. U6 (C-06/W-18a,
+      // penInterleave/penMode, 3 more folded — penPitchMatch/penFacing/
+      // penStipple, all threePen-family laws, dead on box+hatch exactly
+      // like their survivor penInterleave, per
+      // docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl; ALIVE
+      // unaffected — none of the four is a mono law, and penStipple's
+      // mark-class move ('dot' -> 'hatch') does not touch mono-ness) 31
+      // total - 11 = 20. Re-measured directly (not assumed): `groups('box')`
+      // now offers 31 options (30 PICKER_IDS + 'ladder'), confirmed failing
+      // at 23 (`expected 20 to be 23`) before this edit, passing at 20 after.
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(23);
+      expect(dead.length).toBe(20);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
@@ -1011,8 +1022,11 @@ describe('Fill Style — context-bar Style flyout', () => {
 
     // The picker offers every law permanently now — no disclosure to open
     // before a previously-demoted (simulated pen) law is selectable.
+    // penCross (not penStipple — U6/C-06 folded penStipple away as its own
+    // picker row, 2026-09-10) is still directly selectable and still
+    // `simulated`, so it exercises the same property.
     const sel = rowCtl(fly, 'Fill Style').querySelector('select');
-    sel.value = 'penStipple';
+    sel.value = 'penCross';
     fire(sel, 'change');
     const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
     expect(caveat).toBeTruthy();
