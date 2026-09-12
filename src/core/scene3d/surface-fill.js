@@ -4010,6 +4010,32 @@
       const c = masterPitch / (wvPitchPen() * inkWidth());
       return clamp(finite(c, env.covLight), env.covLight, env.covDark);
     };
+    // F1-placement — Prototype B ("LOCAL"), ship-ruled 2026-09-06
+    // (docs/3d-audit/lane-reports/LEDGER.md, "F1-placement ships Prototype B
+    // (LOCAL)"). `wvFlatCov()` states its reserve against the GLOBAL
+    // `masterPitch` — ONE number for the whole object, with no per-ruling or
+    // per-screen-position term at all — so the Sturmian accumulator it feeds
+    // (`ladderStep`) keeps a strictly PERIODIC kept-index gap pattern on a
+    // family whose rulings are wildly non-uniform on screen (a torus's front
+    // rulings span a 4.4x range of visible length). The widest gap then lands
+    // wherever the INDEX pattern happens to put it, not wherever the screen
+    // is actually sparse — on the default torus this puts a 3-gap across the
+    // darkest band, an up-to-6.6mm-deep bare strip with zero tone behind it.
+    //
+    // `wvPlaceCov` states the identical reserve against `localPitch` instead
+    // — already projection-correct, already computed by `covAtSample`
+    // (`perpPitch`) and already handed to `weightCovAt`, which the flat
+    // fallthrough below simply never read. Stating the reserve against it
+    // makes the accumulator advance by SCREEN DISTANCE rather than by grid
+    // index, which is the same quantity `emitContFamily`'s continuous walk
+    // integrates (W-26) without routing through it or touching the master
+    // grid, `ladderStep`, or `spanDrops`.
+    const wvPlaceCov = (localPitch) => {
+      if (!(Number.isFinite(localPitch) && localPitch > 0)) return wvFlatCov();
+      const env = toneEnvelope();
+      const c = localPitch / (wvPitchPen() * inkWidth());
+      return clamp(finite(c, env.covLight), env.covLight, env.covDark);
+    };
     // 0 at and above WV_I0 (a plain ruling), 1 at black. One definition, read by
     // the amplitude, by the wavelength ramp and by the octave count.
     const wvRamp = (I) => {
@@ -4398,6 +4424,11 @@
       if (TONE_ALGO === 'screenAngles') {
         return saCovAt(clamp(finite(I, 0), 0, 1), localPitch, xfLayer);
       }
+      // F1-placement, Prototype B — the flat-coverage wave laws only
+      // (`isWaveLaw() && !isWv6()`: the WV6 family already states a genuine
+      // tone-driven reserve above, via `isWv6()`, and must stay untouched —
+      // F1-placement condition 4). See `wvPlaceCov`'s own comment.
+      if (isWaveLaw() && !isWv6()) return wvPlaceCov(localPitch);
       return weightBaseCov();
     };
     // ...AND THE COVERAGE THE FLOOR ACTUALLY LEFT. `covAtSample` clamps coverage
