@@ -1167,6 +1167,17 @@ describeSingleParamCluster('Scene3D tone-law collapse — U7 (C-07, ampSpacing/n
   ],
 });
 
+// U7-2b: bounded proximity regex for the survivor-side caveat claim (the U7-2
+// reviewer's non-blocking follow-up). The old `/weight.*(?:isn't constant|varies)/`
+// let `.*` span the whole rest of the string, so it also matched unrelated
+// prose that merely mentions "weight" and "varies"/"isn't constant" far apart
+// (verified: a synthetic decoy sentence about pen weight and room humidity
+// matched it). Real production text keeps the claim within one word of
+// "weight" (0 words in ampSpacing's "weight isn't constant", 1 word — "also"
+// — in interlockWeave's "weight also varies" below), so bound the gap instead
+// of leaving it open-ended.
+const SURVIVOR_WEIGHT_CLAIM_U7 = /\bweight\b(?:\s+\S+){0,1}\s+(?:isn't constant|varies)\b/;
+
 describe('Scene3D tone-law collapse — U7 caveat: BOTH the survivor (ampSpacing) AND the folded law (weaveDepth) carry real, DIFFERENT measured caveats', () => {
   let runtime;
   beforeAll(async () => { runtime = await loadVecturaRuntime(); });
@@ -1185,8 +1196,18 @@ describe('Scene3D tone-law collapse — U7 caveat: BOTH the survivor (ampSpacing
     // U7-2 copy re-pin: the caveats no longer carry the internal term
     // "single-weight" (plain-language pass) — both now say, in user words,
     // that the line's weight is not constant along its length.
-    expect(survivorCaveat).toMatch(/weight.*(?:isn't constant|varies)/);
+    // U7-2b: bounded proximity match, see SURVIVOR_WEIGHT_CLAIM_U7 above.
+    expect(survivorCaveat).toMatch(SURVIVOR_WEIGHT_CLAIM_U7);
     expect(foldedCaveat).toMatch(/weight (?:varies|isn't constant)/);
+  });
+
+  test('U7-2b: the tightened survivor regex does not match unrelated weight/varies prose (reviewer decoy)', () => {
+    // Same shape of decoy the reviewer used to demonstrate the old `.*` was
+    // too loose: "weight" and the claim term both appear, but several words
+    // apart in an unrelated sentence. The old regex matched this; the
+    // bounded regex above must not.
+    const decoy = "The weight and overall balance isn't constant across models.";
+    expect(decoy).not.toMatch(SURVIVOR_WEIGHT_CLAIM_U7);
   });
 
   test('effectiveLaw: nesting default (single) shows ampSpacing\'s OWN caveat (unlike U4/U5, this is NOT empty)', () => {
@@ -1371,6 +1392,10 @@ describeSingleParamCluster('Scene3D tone-law collapse — U8 (C-08, interlockWea
   shadowResolvesToSurvivor: ['onePenDown'],
 });
 
+// U7-2b: same bounded-proximity fix as SURVIVOR_WEIGHT_CLAIM_U7 above, for the
+// U8 survivor (interlockWeave says "weight also varies" — 1 intervening word).
+const SURVIVOR_WEIGHT_CLAIM_U8 = /\bweight\b(?:\s+\S+){0,1}\s+varies\b/;
+
 describe('Scene3D tone-law collapse — U8 caveat: BOTH the survivor (interlockWeave) AND the folded law (onePenDown) carry real, DIFFERENT measured caveats', () => {
   let runtime;
   beforeAll(async () => { runtime = await loadVecturaRuntime(); });
@@ -1389,8 +1414,14 @@ describe('Scene3D tone-law collapse — U8 caveat: BOTH the survivor (interlockW
     // U7-2 copy re-pin: the caveats no longer carry the internal term
     // "single-weight" — both now say, in user words, that the line's weight
     // varies rather than staying constant.
-    expect(survivorCaveat).toMatch(/weight.*varies/);
+    // U7-2b: bounded proximity match, see SURVIVOR_WEIGHT_CLAIM_U8 above.
+    expect(survivorCaveat).toMatch(SURVIVOR_WEIGHT_CLAIM_U8);
     expect(foldedCaveat).toMatch(/weight varies/);
+  });
+
+  test('U7-2b: the tightened survivor regex does not match unrelated weight/varies prose (reviewer decoy)', () => {
+    const decoy = 'The weight and shipping cost varies by region.';
+    expect(decoy).not.toMatch(SURVIVOR_WEIGHT_CLAIM_U8);
   });
 
   test('effectiveLaw: penDown default (perRuling) shows interlockWeave\'s OWN caveat (not empty)', () => {

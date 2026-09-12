@@ -87,6 +87,13 @@ describe('U9b-2 — onePenDown shadow write-back (the ONE undisclosed exception,
       expect(group3.params.shadow.shadowToneLaw).toBe('interlockWeave');
     });
 
+    // U9b-2/U5b-4 reviewer follow-up 2: this test alone is vacuous against a
+    // "write-back also fires on every compose" regression, because the value
+    // is already resolved to `interlockWeave` here and re-resolving an
+    // already-resolved value is a no-op either way — the sibling bypass test
+    // below (raw, unresolved `onePenDown`, never loaded) is the load-bearing
+    // proof of the "never per compose" claim; this test only proves stability
+    // of the already-resolved state.
     test('no per-pass rewrite after load: the bag is byte-identical across 3 composes', () => {
       const { e2, group2 } = openScene({ shadowToneLaw: 'onePenDown' });
       const snap0 = JSON.stringify(group2.params.shadow);
