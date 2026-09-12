@@ -12089,6 +12089,18 @@ body.mobile-layout .hud-bar {
   justify-content: flex-end;
 }
 .ctxbar-fly-ctl > * { max-width: 100%; }
+/* U5b-5 — every scene flyout row is narrow (`.ctxbar-scene-flyout` is
+   min-width: 232px) and a native <select> clips an overflowing label
+   mid-word with no ellipsis by default (e.g. "Duty Cycle · Constant" →
+   "Duty Cycle · Constar" in the Shadow flyout's Fill Style row). Give every
+   flyout select proper overflow treatment instead of a raw cut. Scoped to
+   `.ctxbar-fly-ctl` so the docked panel's own (wider) selects, which do not
+   clip, are untouched. */
+.ctxbar-fly-ctl .ctrl-sel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* Multi-select "Mixed" state: the selected objects disagree on this control.
    The sentinel option / blanked chip already communicate it; the muted italic
    accent keeps the surface from reading as a real shared value. */

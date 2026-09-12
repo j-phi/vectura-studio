@@ -2316,6 +2316,31 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
     expect(shadowKeys).not.toContain('penDown');
     expect(shadowKeys).not.toContain('penMode');
   });
+
+  // U5b-5 (LEDGER row 11c) — the Shadow flyout's Fill Style <select> clips a
+  // long label mid-word with no ellipsis ("Duty Cycle · Constant" rendered
+  // as "Duty Cycle · Constar"), proven pre-existing at `49a5ef88` by the
+  // U9b-2/U5b-4 reviewer. jsdom does not run a real CSS layout/paint engine
+  // (`getComputedStyle` here cannot reproduce actual text clipping), so —
+  // matching this repo's own established pattern for CSS-only regressions
+  // (see tests/unit/css-on-tokens-and-no-transition-all.test.js) — this pins
+  // the fix at the CSS-source level: every `.ctxbar-fly-ctl` select (every
+  // scene flyout row, Style and Shadow alike — the reviewer's "check the
+  // whole roster, not just dutyConst" note) must declare a real overflow
+  // treatment instead of the browser's raw, ellipsis-less clip.
+  test('U5b-5 — every ctxbar scene-flyout <select> (.ctxbar-fly-ctl .ctrl-sel) declares text-overflow: ellipsis, not a raw clip', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const css = fs.readFileSync(
+      path.resolve(__dirname, '..', '..', 'src', 'ui', 'skin', 'components.css'),
+      'utf8'
+    );
+    const rule = css.match(/\.ctxbar-fly-ctl\s+\.ctrl-sel\s*\{([^}]*)\}/);
+    expect(rule).toBeTruthy();
+    expect(rule[1]).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule[1]).toMatch(/overflow:\s*hidden/);
+    expect(rule[1]).toMatch(/white-space:\s*nowrap/);
+  });
 });
 
 describe('Shadow Fill Style — docked 3D Scene panel', () => {
