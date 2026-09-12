@@ -326,6 +326,38 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
       expect(d100Even).toBeGreaterThan(d100Sparse);
     });
 
+    // ADDED (W-36d, per W-36c-review.md §5b follow-up: "restore a bounded
+    // lower-half sub-check ... so a regression concentrated in one half of
+    // the dial is caught again"). The kept strict-monotonicity check above
+    // only requires nB(0.25) > nB(1.0) > nB(2.0) — it says nothing about BY
+    // HOW MUCH, so a regression that compresses the dial's LOWER half
+    // [0.25, 1.0] to a near-flat response (a real, user-visible defect:
+    // turning the ratio dial from 0.5 to 1.0 would do almost nothing) still
+    // passes it, and still passes the endpoint-ratio bar above (which only
+    // constrains the FULL span 0.25 vs 2.0, not either half alone) —
+    // MUTATION-PROVEN against the review's own scratch mutation (a
+    // `crossPairShare` role-'b' branch frozen to a 2%-slope near-constant
+    // for ratio <= 1, ratio > 1 left untouched): the kept test above still
+    // PASSES (nB 8/7/4 at d=10, 55/47/24 at d=100 — endpoint ratio and
+    // strict monotonicity both hold) while this sub-check FAILS at 1.143
+    // (d=10) / 1.170 (d=100), both under the 1.2 floor. This sub-check
+    // restores a BOUNDED MAGNITUDE guard on that specific half of the dial,
+    // pinned at the review's own measured-minimal value: `nB(0.25) >=
+    // 1.2 x nB(1.0)`, comfortably under today's re-derived margin — 1.2857
+    // (d=10, 9/7) and 1.2979 (d=100, 61/47), matching the review's disclosed
+    // 1.286/1.298 to the same precision — not a coin bar, and a regression
+    // concentrated in the lower half (the exact shape the old, removed
+    // `>= 2.0x` sub-check used to catch, at the OLD ceiling's headroom) is
+    // caught again.
+    test('crosshatch mapper: lower-half magnitude guard — nB(0.25) >= 1.2x nB(1.0) at d=10 and d=100', () => {
+      const d10Dense = crossFamilyBCount(10, 0.25);
+      const d10Even = crossFamilyBCount(10, 1.0);
+      const d100Dense = crossFamilyBCount(100, 0.25);
+      const d100Even = crossFamilyBCount(100, 1.0);
+      expect(d10Dense / d10Even).toBeGreaterThanOrEqual(1.2);
+      expect(d100Dense / d100Even).toBeGreaterThanOrEqual(1.2);
+    });
+
     test('draft (live-drag) fallback stays on its own untouched floor at d=10/50/100', () => {
       const runDraft = (d) => {
         const params = sceneParams(defaults.objects);
