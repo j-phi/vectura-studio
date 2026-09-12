@@ -155,6 +155,15 @@ describe('U9b-2 — onePenDown shadow write-back (the ONE undisclosed exception,
       app.applyState(JSON.parse(JSON.stringify(affectedState)));
       const afterAffected = app.history.length;
 
+      // Confirm the write-back really did fire on THIS load (else the "no
+      // entry" result would be vacuously true for the wrong reason). Must be
+      // read here, before controlState is applied and replaces app.engine's
+      // layers with the control's (fixing a test-ordering bug: reading this
+      // after both applyState calls would report the control's default
+      // 'ladder' shadowToneLaw instead of the affected doc's 'interlockWeave').
+      const group2 = app.engine.layers.find((l) => l.type === 'scene3d' && l.isGroup);
+      expect(group2.params.shadow.shadowToneLaw).toBe('interlockWeave');
+
       app.history = [];
       const beforeControl = app.history.length;
       app.applyState(JSON.parse(JSON.stringify(controlState)));
@@ -163,11 +172,6 @@ describe('U9b-2 — onePenDown shadow write-back (the ONE undisclosed exception,
       expect(afterAffected).toBe(beforeAffected);
       expect(afterControl).toBe(beforeControl);
       expect(afterAffected).toBe(afterControl);
-
-      // Confirm the write-back really did fire on this load (else the "no
-      // entry" result would be vacuously true for the wrong reason).
-      const group2 = app.engine.layers.find((l) => l.type === 'scene3d' && l.isGroup);
-      expect(group2.params.shadow.shadowToneLaw).toBe('interlockWeave');
     });
 
     test('undo/redo: the migrated value survives push/edit/undo (never resurrects onePenDown)', () => {

@@ -470,9 +470,21 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
  * round-trip, and a real sanitizeSceneParams end-to-end pass.
  * ═══════════════════════════════════════════════════════════════════════
  */
+// U9b-2 — records every `shadowResolvesToSurvivor` array actually passed to
+// this template across all 6 call sites (only U8's names anything today), so
+// a tail test (see "U9b-2 — shadowResolvesToSurvivor coupling" below) can
+// assert the DECLARED set matches what `Shadows.toneLawApplies` independently
+// computes from the shipped roster, rather than trusting each call site by
+// eye. The coupling between "add a folded id here" and "shadows.js actually
+// judges it not-distinguishable" stays a MANUAL edit (no code derives one
+// from the other) — this recorder only makes a forgotten/stale entry fail
+// loudly instead of silently.
+const RECORDED_SHADOW_RESOLVES_TO_SURVIVOR = [];
+
 function describeSingleParamCluster(label, {
   survivor, key, pickerIdsLength, folded, shadowResolvesToSurvivor,
 }) {
+  RECORDED_SHADOW_RESOLVES_TO_SURVIVOR.push(...(shadowResolvesToSurvivor || []));
   describe(label, () => {
     let runtime; let V; let algo; let defaults; let SF; let Params; let hatchOpts;
 
@@ -1990,5 +2002,52 @@ describe('Scene3D tone-law collapse — U7-2 (plain-language pass over every rem
       const expected = FS.entry(id).simulated ? `${FS.SIMULATED_NOTE} ${direct}` : direct;
       expect(viaNote, id).toBe(expected);
     });
+  });
+});
+
+/*
+ * U9b-2 — tie the `shadowResolvesToSurvivor` test-side literal(s) to the
+ * production-side `Shadows.toneLawApplies` set (U9b review follow-up 3 /
+ * ROUND3-RESUME-BRIEFS.md §2 scope item 4).
+ *
+ * Today exactly one of the 6 `describeSingleParamCluster` call sites in this
+ * file names anything (U8's, `['onePenDown']`) — the other 5 implicitly pass
+ * `undefined`, defaulting every folded id there to the raw pass-through. That
+ * per-call-site array is hand-written; nothing forces it to track
+ * `shadows.js`'s own judgment of which folded ids have no recipe of their
+ * own (`Shadows.toneLawApplies(id) === false`). This block is that force:
+ * it recomputes the "should resolve forward" set directly from the shipped
+ * roster + `Shadows.toneLawApplies`, independent of anything this file
+ * declares, and asserts it against what was actually recorded across every
+ * `describeSingleParamCluster` call. If a future unit adds a folded id to a
+ * `*_LAW_RECIPES` table (making it distinguishable again) or removes one
+ * (making a previously-fine id newly indistinguishable) WITHOUT updating the
+ * matching `shadowResolvesToSurvivor` array, this test goes RED — the two
+ * are still edited by hand in two different places (this test does not
+ * eliminate that), but a mismatch between them can no longer pass silently.
+ */
+describe('U9b-2 — shadowResolvesToSurvivor coupling (test-side literal vs. production Shadows.toneLawApplies)', () => {
+  let runtime; let V;
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); V = runtime.window.Vectura; });
+  afterAll(() => runtime.cleanup());
+
+  test('every ALIASES id Shadows.toneLawApplies judges NOT distinguishable is, and is the ONLY id, named in some call site\'s shadowResolvesToSurvivor array', () => {
+    const LAWS = V.SCENE3D_TONE_LAWS;
+    const Shadows = V.Scene3D.Shadows;
+    const aliasIds = Object.keys(LAWS.ALIASES);
+    const productionExceptions = aliasIds.filter((id) => Shadows.toneLawApplies(id) === false).sort();
+    const declaredExceptions = [...new Set(RECORDED_SHADOW_RESOLVES_TO_SURVIVOR)].sort();
+    expect(declaredExceptions).toEqual(productionExceptions);
+    // Today that set is exactly one id — pin the number, not just the
+    // shape, so a silent widening (or narrowing) of either side is loud.
+    expect(productionExceptions).toEqual(['onePenDown']);
+  });
+
+  test('mutation: declared-vs-production comparison actually distinguishes a stale literal (not vacuously equal)', () => {
+    // Simulate a stale test-side literal that forgot a second exception —
+    // this is the shape of drift this coupling test exists to catch.
+    const staleDeclared = [...new Set(RECORDED_SHADOW_RESOLVES_TO_SURVIVOR)].sort();
+    const withExtra = [...staleDeclared, 'someOtherFoldedId'].sort();
+    expect(withExtra).not.toEqual(staleDeclared);
   });
 });
