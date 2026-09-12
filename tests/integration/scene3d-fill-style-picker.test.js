@@ -2283,6 +2283,39 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
     const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
     expect(box.textContent).toContain(F.entry('interlockWeave').mechanism);
   });
+
+  // U5b-4 (LEDGER row 11a) — the shadow row's Fill Style picker previously
+  // rendered NO standalone caveat paragraph on either surface: a caveat-
+  // bearing shadow law's warning was reachable only inside the (i) popover's
+  // "Weaknesses:" text (U7-2's live-verification finding). Ctxbar twin of the
+  // docked-panel tests below. `dutyConst` is U7-2's own probe case and a real
+  // caveat-bearing law reachable here (Shadows.toneLawApplies('dutyConst')
+  // === true).
+  test('U5b-4 — a caveat-bearing shadow law (dutyConst) renders a standalone .is-caveat paragraph in the Shadow flyout', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'dutyConst' } });
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('dutyConst');
+    const caveat = fly.querySelector('.ctxbar-fly-note.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toBe(F.note('dutyConst').caveat);
+  });
+
+  test('U5b-4 — a non-caveat shadow law (ladder) renders NO .is-caveat paragraph (no empty warning)', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'ladder' } });
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('ladder');
+    expect(fly.querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
+  });
+
+  // The shadow bag has NO sub-control (U9's reviewer forbids giving it one)
+  // — the caveat must not seed or read any sub-control key onto `shadow`.
+  test('U5b-4 — the caveat does not seed a sub-control onto the shadow bag', () => {
+    const { scene, fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'dutyConst' } });
+    expect(fly.querySelector('.ctxbar-fly-note.is-caveat')).toBeTruthy();
+    const shadowKeys = Object.keys(scene.params.shadow || {});
+    expect(shadowKeys).not.toContain('rungDetail');
+    expect(shadowKeys).not.toContain('bundleMode');
+    expect(shadowKeys).not.toContain('penDown');
+    expect(shadowKeys).not.toContain('penMode');
+  });
 });
 
 describe('Shadow Fill Style — docked 3D Scene panel', () => {
@@ -2389,6 +2422,36 @@ describe('Shadow Fill Style — docked 3D Scene panel', () => {
     btn.dispatchEvent(new window.Event('click', { bubbles: true }));
     const box = host2.querySelector(`#${btn.getAttribute('aria-describedby')}`);
     expect(box.textContent).toContain(F.entry('interlockWeave').mechanism);
+  });
+
+  // U5b-4 (LEDGER row 11a) — docked-panel twin of the ctxbar tests above.
+  test('U5b-4 — a caveat-bearing shadow law (dutyConst) renders a standalone .vs3-lawnote.is-caveat paragraph in the docked Shadow section', () => {
+    const { container } = mount({ shadow: { shadowToneLaw: 'dutyConst' } });
+    const host2 = shadowHost(container);
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('dutyConst');
+    const caveat = host2.querySelector('.vs3-lawnote.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toBe(F.note('dutyConst').caveat);
+  });
+
+  test('U5b-4 — a non-caveat shadow law (ladder) renders NO .vs3-lawnote.is-caveat paragraph (no empty warning)', () => {
+    const { container } = mount({ shadow: { shadowToneLaw: 'ladder' } });
+    const host2 = shadowHost(container);
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('ladder');
+    expect(host2.querySelector('.vs3-lawnote.is-caveat')).toBeNull();
+  });
+
+  // The shadow bag has NO sub-control (U9's reviewer forbids giving it one)
+  // — the caveat must not seed or read any sub-control key onto `shadow`.
+  test('U5b-4 — the caveat does not seed a sub-control onto the shadow bag', () => {
+    const { container, layer } = mount({ shadow: { shadowToneLaw: 'dutyConst' } });
+    const host2 = shadowHost(container);
+    expect(host2.querySelector('.vs3-lawnote.is-caveat')).toBeTruthy();
+    const shadowKeys = Object.keys(layer.params.shadow || {});
+    expect(shadowKeys).not.toContain('rungDetail');
+    expect(shadowKeys).not.toContain('bundleMode');
+    expect(shadowKeys).not.toContain('penDown');
+    expect(shadowKeys).not.toContain('penMode');
   });
 });
 

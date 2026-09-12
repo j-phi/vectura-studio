@@ -1921,6 +1921,22 @@
           { text: shadowEntry.strengths ? `Strengths: ${shadowEntry.strengths}` : '' },
           { text: shadowEntry.weaknesses ? `Weaknesses: ${shadowEntry.weaknesses}` : '' },
         ], `About ${shadowEntry.label || C.toneLaw.label}`);
+        // U5b-4 — the ctxbar flyout twin of the docked panel's caveat
+        // paragraph fix (scene3d-panel.js `renderShadowControls`), mirroring
+        // the Style flyout's own `effectiveLaw`/`caveatNote`/`flyNote(...)
+        // .classList.add('is-caveat')` pattern above exactly. Before this, a
+        // caveat-bearing shadow law's warning was reachable only inside the
+        // (i) popover's "Weaknesses:" text (U7-2's live-verification finding,
+        // LEDGER row 11a) — no standalone paragraph existed on this surface
+        // either. The shadow bag has NO sub-control (U9's reviewer forbids
+        // giving it one), so `FS.effectiveLaw(shadowInfoLaw, {})` is a
+        // provable no-op today — this reads `shadowInfoLaw` (already
+        // resolved above for the (i) popover) through the SAME mechanism the
+        // Style flyout uses. A caveat paragraph, not a param seed: nothing is
+        // written to `bag`/`shadow`.
+        const shadowEffectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(shadowInfoLaw, {}) : shadowInfoLaw;
+        const shadowCaveatNote = FS.note(shadowEffectiveLaw);
+        if (shadowCaveatNote.caveat) flyNote(fly, shadowCaveatNote.caveat).classList.add('is-caveat');
         if (C.toneLawNote) flyNote(fly, C.toneLawNote);
       } else if (FS && Shadows && !isLive && C.toneLawInertNote) {
         flyNote(fly, C.toneLawInertNote);

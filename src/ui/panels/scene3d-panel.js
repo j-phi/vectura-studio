@@ -3279,6 +3279,30 @@
           { text: shadowLawEntry.strengths ? `Strengths: ${shadowLawEntry.strengths}` : '' },
           { text: shadowLawEntry.weaknesses ? `Weaknesses: ${shadowLawEntry.weaknesses}` : '' },
         ], `About ${shadowLawEntry.label || FS.LABEL}`);
+        // U5b-4 — the standalone caveat paragraph, mirroring the Style row's
+        // own pattern (`fillStyleControls` above, `effectiveLaw`/`caveatNote`)
+        // exactly. Before this, `shadowLawNote.caveat` was computed above (as
+        // part of `shadowLawNote.text`'s prefix) but only ever reached the (i)
+        // popover — a user had to open it and read past mechanism/strengths
+        // to "Weaknesses:" to see a caveat-bearing shadow law's warning at
+        // all (U7-2's live-verification finding, LEDGER row 11a). The shadow
+        // bag has NO sub-control (U9's reviewer forbids giving it one — "two
+        // mechanisms, not one path"), so `FS.effectiveLaw(shadowInfoLaw, {})`
+        // is a provable no-op today (no descriptor's key can ever be found in
+        // an empty bag) — this reads `shadowInfoLaw`, already resolved above
+        // for the (i) popover, through the SAME mechanism the Style row uses,
+        // so a future shadow-side sub-control (should one ever exist) is
+        // handled correctly with zero further change here. This is a caveat
+        // PARAGRAPH, not a param seed: nothing is written to `s`/the shadow
+        // bag.
+        const shadowEffectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(shadowInfoLaw, {}) : shadowInfoLaw;
+        const shadowCaveatNote = FS.note(shadowEffectiveLaw);
+        if (shadowCaveatNote.caveat) {
+          const shadowCaveatLine = document.createElement('p');
+          shadowCaveatLine.className = 'vs3-lawnote is-caveat';
+          shadowCaveatLine.textContent = shadowCaveatNote.caveat;
+          host.appendChild(shadowCaveatLine);
+        }
         if (FS.SHADOW_NOTE) {
           const note = document.createElement('p');
           note.className = 'vs3-empty';
