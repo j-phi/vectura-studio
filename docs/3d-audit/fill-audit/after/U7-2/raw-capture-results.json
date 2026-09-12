@@ -1,0 +1,48 @@
+{
+  "unit": "U7-2",
+  "version": "1.4.1",
+  "pageErrors": [],
+  "shots": [
+    {
+      "id": "ampSpacing",
+      "surface": "docked Style tab",
+      "state": "Nesting: Single wave row (default)",
+      "caveat": "This line's weight isn't constant along its length — it thickens and thins as it goes. That happens because wherever the wave spacing gets too tight to draw cleanly, weight takes over to keep carrying the shading.",
+      "file": "ampSpacing-docked-full.png",
+      "cropFile": "ampSpacing-docked-crop-native.png"
+    },
+    {
+      "id": "weaveDepth",
+      "surface": "docked Style tab",
+      "state": "Nesting: Nested rows",
+      "caveat": "Like Single wave row, this line's weight varies along its length rather than staying constant. Choosing Nested rows tightens the spacing further, so weight takes over sooner to keep the shading going.",
+      "file": "weaveDepth-docked-full.png",
+      "cropFile": "weaveDepth-docked-crop-native.png"
+    },
+    {
+      "id": "interlockWeave",
+      "surface": "ctxbar Style flyout",
+      "state": "Pen down: One stroke per ruling (default)",
+      "caveat": "Despite its name, this weave doesn't pack lines tightly — it leaves more open space between them than you might expect from an interlocking pattern. Its line weight also varies along its length rather than staying constant.",
+      "file": "interlockWeave-ctxbar-full.png",
+      "cropFile": "interlockWeave-ctxbar-crop-native.png"
+    },
+    {
+      "id": "penPitchMatch",
+      "surface": "ctxbar Style flyout",
+      "state": "Pen mode: Pitch-matched",
+      "caveat": "Simulated — 3 nib widths on one pen layer. Like the other Pen options, this fill's three nib widths are simulated on one pen layer — a real plot would need three separate pen passes to reproduce them exactly.",
+      "file": "penPitchMatch-ctxbar-full.png",
+      "cropFile": "penPitchMatch-ctxbar-crop-native.png"
+    },
+    {
+      "id": "dutyConst",
+      "surface": "shadow row (docked panel, \"Shadow\" section)",
+      "state": "shadowToneLaw: dutyConst",
+      "caveat": null,
+      "finding": "shadowSectionFound=true, rows=[\"Mode\",\"Fill Style\",\"Shadows land on objects\",\"Follow light\",\"Angle\",\"Density\",\"Pen\",\"Line\",\"Layers\"], hasStandaloneCaveatElement=false. The shadow row's own Fill Style picker (dutyConst has a real, rewritten caveat in the roster) renders its (i) info popover but NO standalone caveat paragraph — confirmed live via DOM probe, matching a direct read of scene3d-panel.js/context-bar.js source (only two call sites in the whole app render is-caveat: the docked object Style tab and the ctxbar Style flyout, both captured above). Pre-existing, out of scope for this copy-only unit.",
+      "file": "shadow-row-docked-full.png",
+      "cropFile": "shadow-row-docked-crop-native.png"
+    }
+  ]
+}

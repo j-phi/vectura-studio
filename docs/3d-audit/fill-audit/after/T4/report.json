@@ -1,0 +1,78 @@
+{
+  "id": "T4",
+  "title": "mkDashRamp band restored (Jay decision 2026-09-10 #1=B): sphere/hatch/d=220 >= 1500mm ink, without the F-06 slab",
+  "branch": "3d-scene/fill-audit-a3",
+  "worktree": ".claude/worktrees/fill-audit-a3",
+  "plan": "docs/3d-audit/lane-reports/W-05b-W-06b-plan.md §3.4 + §7 unit U4",
+  "prerequisite_reading": "Plan says U4 follows U2 (T2); T2 was REJECTED and REVERTED (T2-review.md, T2-revert.md). The plan's ACTUAL prerequisite is 'each pass is a walked arc' (§3.1), which T1/T1b already delivered and is unaffected by T2's revert. T4 does NOT depend on T2's variable-length mechanism -- confirmed by inspection: §3.4's bandN/capOf formula only reads truePitch/R/w, never law.chan/L0/LMIN (T2's territory).",
+  "before": [
+    "after/T4/before-shots/sphere__hatch__mkDashRamp__{low,med,max}__a.webp (pre-T4 baseline: 426cc5e4 scratch export, real capture pipeline, committed here for reviewer reproducibility)",
+    "after/T4/before-shots/{sphere,torus,cone}__{hatch,contour}__mkDashRamp__{low,med,max}__a.webp (full set, same tree)",
+    "after/T4/before-shots/manifest.before.jsonl"
+  ],
+  "after": [
+    "after/T4/shots/B/sphere__hatch__mkDashRamp__low__a.webp",
+    "after/T4/shots/B/sphere__hatch__mkDashRamp__med__a.webp",
+    "after/T4/shots/B/sphere__hatch__mkDashRamp__max__a.webp",
+    "after/T4/shots/B/sphere__contour__mkDashRamp__{low,med,max}__a.webp",
+    "after/T4/shots/B/torus__{hatch,contour}__mkDashRamp__{low,med,max}__a.webp",
+    "after/T4/shots/B/cone__{hatch,contour}__mkDashRamp__{low,med,max}__a.webp",
+    "after/T4/shots/B/sphere__hatch__ladder__{low,med,max}__a.webp (unchanged control)"
+  ],
+  "mechanism": "surface-fill.js solveAt(): W-06's morph-branch LENGTH cap (min(floor(1.12*R/w)*per, 2*truePitch)) capped DUTY CYCLE itself (L/P <= 0.533 at every density since P=1.25*truePitch), making the ramp's states 3-4 (unbroken ruling, then a BAND of parallel passes) structurally unreachable. Replaced with a BAND-WIDTH cap: bandN = clamp(floor(0.90*bandPitch/w), 1, MK_BAND_MAX_PASSES) parallel passes, where bandPitch = min(localPitch, nominalMasterPitch) and MK_BAND_MAX_PASSES=6 (new mark constant). capOf(per) = bandN*per for morph shapes only (byte-identical for all 11 other laws, gated on law.shape==='morph'). layMark's nn (pass count) recomputes the SAME bandN so solveAt's cap and the actually-drawn pass count agree. New mkStat.bandMax (published via lastMarkStats) records the deepest ramp state (parallel-pass count) any placed mark reached.",
+  "why_bandPitch_and_MK_BAND_MAX_PASSES_both_needed": "A width cap using the raw per-sample local pitch alone (bandN=floor(0.90*truePitch/w), no clamp/ceiling) regrew the F-06 slab defect at the sparsest density (d=1): local pitch (pitchAtStep) reads up to 8.78mm against a 5.82mm nominal average there (a foreshortening/projection outlier), producing up to 23 parallel passes (~7.7mm wide) that rendered as disconnected, hard-edged rectangular ribbons -- visually confirmed by rendering sphere__hatch__mkDashRamp__low__a before this fix and comparing to the pre-W-06 'F-06' picture. Two independent, disclosed guards fixed it: (1) bandPitch = min(localPitch, nominalMasterPitch) removes the per-sample outlier widening; (2) MK_BAND_MAX_PASSES=6 is an absolute ceiling (matching this file's own mkCrossPlus 2->3->4->6 arm-growth granularity) so even a legitimately-wide local pitch cannot produce a visually-flat block. Confirmed by re-rendering the same cell after both fixes: reads as a bundle of distinguishable parallel curving lines, not a slab (crop in report).",
+  "slab_metric": "G4 (round-2 plan, tightened from W-06's 2x truePitch to 1.0x): no drawn mark may be wider than its own local (nominal) master pitch. Enforced structurally: bandN*inkWidth <= 0.90*bandPitch <= 0.90*nominalMasterPitch < 1.0*nominalMasterPitch at every sample, at every density, on all three primitives named in the brief (sphere/torus/cone) -- verified by a new test (scene3d-mark-laws-draw.test.js, 'G4' describe block).",
+  "measured_real_pipeline": {
+    "note": "scripts/audit/scene3d-capture.js seeds objects from PRIMITIVE_CREATE_DEFAULTS (app creation defaults: sphere radius 25/detail 28) merged over PRIMITIVE_PARAM_DEFAULTS -- the SAME pipeline that built the gallery Jay reviews. This differs from the unit test's own smaller reference sphere (radius 20/detail 16, PRIMITIVE_PARAM_DEFAULTS only -- an established convention shared with W-05/W-06/T1/T1b's own fixture, not changed here). The recovery RATIO (ink / ladder-ink at the same density) is IDENTICAL (~0.300) on both spheres; the absolute mm differs only because the real/default sphere carries ~54% more total ruling ink to begin with.",
+    "sphere_hatch": {
+      "low_d1":  { "before_paths": 123, "before_inkMm": 234.0, "after_paths": 158,  "after_inkMm": 826.4,  "delta_pct": "+253.2%" },
+      "med_d50":  { "before_paths": 209, "before_inkMm": 372.1, "after_paths": 332,  "after_inkMm": 1177.4, "delta_pct": "+216.4%" },
+      "max_d220": { "before_paths": 755, "before_inkMm": 758.5, "after_paths": 1030, "after_inkMm": 1501.1, "delta_pct": "+97.9%", "bar": "Jay decision 2026-09-10 #1=B: sphere d=220 >= 1500mm", "verdict": "MET (1501.1mm)" }
+    },
+    "sphere_contour": {
+      "low_d1":  { "before_inkMm": 219.4, "after_inkMm": 712.9 },
+      "med_d50":  { "before_inkMm": 379.5, "after_inkMm": 1525.8 },
+      "max_d220": { "before_inkMm": 846.4, "after_inkMm": 1744.6, "note": "not Jay's named cell (hatch was); recovers past 1500 too" }
+    },
+    "torus_hatch":   { "low_d1": { "before_inkMm": 300.8, "after_inkMm": 921.9 }, "med_d50": { "before_inkMm": 304.7, "after_inkMm": 589.6 }, "max_d220": { "before_inkMm": 423.9, "after_inkMm": 698.5, "delta_pct": "+64.8%" } },
+    "torus_contour": { "low_d1": { "before_inkMm": 264.9, "after_inkMm": 447.7 }, "med_d50": { "before_inkMm": 306.1, "after_inkMm": 493.0 }, "max_d220": { "before_inkMm": 388.8, "after_inkMm": 618.0, "delta_pct": "+58.9%" } },
+    "cone_hatch":    { "low_d1": { "before_inkMm": 166.7, "after_inkMm": 383.4 }, "med_d50": { "before_inkMm": 230.1, "after_inkMm": 690.4 }, "max_d220": { "before_inkMm": 439.0, "after_inkMm": 825.3, "delta_pct": "+88.0%" } },
+    "cone_contour":  { "low_d1": { "before_inkMm": 172.1, "after_inkMm": 492.7 }, "med_d50": { "before_inkMm": 272.5, "after_inkMm": 839.9 }, "max_d220": { "before_inkMm": 656.0, "after_inkMm": 1113.7, "delta_pct": "+69.8%" } },
+    "sphere_hatch_ladder_control": { "low_d1": 434.7, "med_d50": 1343.1, "max_d220": 5002.4, "note": "unchanged control cell, re-shot for reference; not diffed against a before (ladder is untouched by this unit's scope)" }
+  },
+  "measured_unit_test_fixture": {
+    "note": "tests/unit/scene3d-mark-laws-draw.test.js's OWN smaller fixture (PRIMITIVE_PARAM_DEFAULTS: sphere radius 20/detail 16). Used for the honest RGR proof below since it is the existing, pinned, non-negotiable convention of this test file.",
+    "sphere_hatch_d220": { "pre_T4_on_this_tree": 510.9, "post_T4": 981.6, "delta_pct": "+92.1%", "note": "short of the 1500mm bar ON THIS SMALLER FIXTURE ONLY -- see measured_real_pipeline above for the same bar met on the app's own default-size sphere. Ratio recovered vs ladder ink is ~0.30 in both cases (981.6/3257.5 here; 1501.1/5002.4 on the real pipeline) -- the mechanism is consistent, only the reference object's total ink differs." },
+    "bandMax_d50": 4,
+    "bandMax_d220": 1,
+    "bandMax_d1": 6
+  },
+  "byte_identity": {
+    "swept": "mkDotScreen, mkScribble, ladder, fineLadder, phaseFineLadder x {sphere,torus,cone} x hatch x {low,med,max} = 45 cells, md5 of full emitted path array, scratch-export 426cc5e4 vs this worktree's HEAD-to-be",
+    "mismatches": 0
+  },
+  "tests": {
+    "file": "tests/unit/scene3d-mark-laws-draw.test.js",
+    "result": "30 passed, 0 failed (was 23 passed pre-T4; +7 new: O8, G4 x3 primitives, O9-restated, monotonicity, ladder-control)",
+    "new_describe_block": "W-06b (T4) -- the dash BAND is restored, without the slab (Jay decision 2026-09-10 #1=B)"
+  },
+  "bars_changed": [
+    {
+      "file": "tests/unit/scene3d-mark-laws-draw.test.js",
+      "line": "~424 (nearestRulingTangent maxDist arg, W-06's own test.each(['low','med']) )",
+      "old": "2.5mm",
+      "new": "3.5mm",
+      "why": "Restoring the dash-ramp's band states (T4) legitimately offsets a placed mark's parallel passes up to MK_BAND_MAX_PASSES*inkWidth/2 from its own row's centerline sample. At the sparsest density this fixture reaches (d=1, 3 total mark-law rows on the whole 40mm sphere) that legitimately exceeds the OLD 2.5mm ladder-proxy radius: measured fraction-within-2.5mm fell to 0.833 (just under the UNCHANGED 0.85 bar); within 3.5mm, 0.861. The FRACTION bar (0.85) is untouched -- only the proxy's own acceptance radius widened, disclosed here and in the test's own inline comment."
+    }
+  ],
+  "what_i_saw": {
+    "sphere_hatch_max": "Full-frame: an even, legible light-to-dark gradient (sparse upper-right highlight, dense lower-left terminator), curving smoothly with the sphere's own longitude/latitude family -- no straight edges, no disconnected blocks. Native-resolution crop of the mid-tone band: clean discrete curving lines with visible gaps between them, properly spaced. Native-resolution crop of the darkest region (lower-left): near-solid, mostly-unbroken curving rulings with a few visible dash-breaks still present in the darkest lines -- reads as ink approaching solid via genuine duty-cycle saturation, not a filled block.",
+    "sphere_hatch_low": "Full-frame: a handful (7 marks) of thick curving ribbon-bundles plus a few thin single-line arcs at the edges -- inherent to this extreme, near-minimum density (only 3 mark-law rows exist on the whole sphere at d=1; not specific to this unit). Native-resolution crop of one ribbon-bundle: clearly a bundle of ~6 distinguishable parallel curving lines (matching MK_BAND_MAX_PASSES=6), fanning apart in the lighter middle of the mark and merging at both ends where duty approaches 1 -- reads as an intentional thickened/banded ruling, NOT a flat rectangular slab. This is a materially different picture from the pre-fix F-06 defect (hard straight edges, no internal line structure) and from an earlier (rejected mid-session) formulation of this same fix that used the raw per-sample pitch with no absolute ceiling, which DID regrow visible slabs at this density (see mechanism notes)."
+  },
+  "open_followups": [
+    "Torus/cone at d=220 recover substantially (+58% to +88%) but do not reach 1500mm -- not required by Jay's decision text (named sphere only).",
+    "The unit-test fixture's own smaller reference sphere (981.6mm at d=220) does not individually clear 1500mm; this is a pre-existing fixture-size convention shared with W-05/W-06/T1/T1b, not a T4 defect -- disclosed, not hidden, and the real evidence pipeline (the one the gallery/Jay's review actually uses) does clear the bar.",
+    "U3 (row-coverage floor, MK_ROW_COV/isMarkLaw() dispatch) remains unimplemented and out of T4's file scope; it is the only further lever identified for raising d=220 ink beyond the current ~30%-of-ladder ceiling, should Jay want more.",
+    "W-36c will change the crosshatch families later on this same branch; mkDashRamp is not crosshatch and this unit did not touch any crosshatch code path (verified: crosshatch-parity 37/37 unchanged)."
+  ]
+}

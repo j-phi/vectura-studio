@@ -1,6 +1,6 @@
 # 3D fill audit — SESSION SUMMARY (round 1: 2026-09-05 → 06 · round 2: 2026-09-06 19:05 EDT →)
 
-**ROUND 2 IS COMPLETE AND MERGED INTO LOCAL `main` at `9cf09b39`, v1.4.1** (the merge of `3d-scene/integrate-r2 @4421d514`, with the docs commit `1e504ce6` beneath it). Merge review **ACCEPT** (`MERGE-review-r2.md` — every claim reproduced). Main is **44 ahead of origin/main and NOT pushed**; pushing remains Jay's call. Round 1 is closed: all units landed,
+**ROUND 3 IS PAUSED BY JAY (2026-09-12 07:50 EDT). NOT MERGED — five lanes hold unmerged work, two of them on unverified WIP checkpoints. Round 2 is complete and merged into local `main` at `9cf09b39`, v1.4.1** (the merge of `3d-scene/integrate-r2 @4421d514`, with the docs commit `1e504ce6` beneath it). Merge review **ACCEPT** (`MERGE-review-r2.md` — every claim reproduced). Main is **44 ahead of origin/main and NOT pushed**; pushing remains Jay's call. Round 1 is closed: all units landed,
 reviewed, and merged into local `main` at `817424dc`, with the docs wrap-up at `6ad1d93e` and the ledger
 record at `47a5a755`. **The seven round-1 `3d-scene/*` lanes are historical**; round 2 runs in five NEW
 worktrees branched off `main` — map and first-unit briefs in `ROUND2-BRIEFS.md`, queue in `LEDGER.md`
@@ -23,6 +23,21 @@ Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents
 ---
 
 ## 1. LANDED & REVIEWED
+
+### Round 3 (2026-09-10 → 12, PAUSED) — all on lanes, NOT merged
+
+| unit | lane | sha | outcome |
+|---|---|---|---|
+| **W-37** | fill-audit-d3 | — | **CLOSED MEASURED, no unit.** A scout found the fitter gate now engages roster-wide after W-34's device-space refinement; the cone residual costs **0 mm**. The defect had been fixed by another unit's side effect. |
+| **T4** (Jay's decision 1 = B) | fill-audit-a3 | `a3b651f0` | **DONE/FU.** Sphere/hatch/mkDashRamp d=220 ink **758.5 → 1501.1 mm** on the real capture pipeline, **no slab** (G4 enforced structurally). The one widened bar (2.5 → 3.5 mm) ruled **principled, not minimal** — derived from the mechanism's own worst-case offset. → **T4b** (no CI guard on the 1500 mm bar). |
+| **U6** (decision 2 = A) | fill-collapse-3 | `2af329dd` | **DONE/FU**, conditional on U6-2 — since satisfied. Picker **33 → 30**, aliases 15 → 18. Found that **`shadows.js` dispatches on MARK CLASS**, so the `'dot'` → `'hatch'` move needed its own `HATCH_LAW_RECIPES` entry or the shadow would have silently fallen back to `ladder`. Corrected counts: **53/53 row, 544 total — not 550**. |
+| **W-38** (decision 7 = B) | fill-audit-3 | `575f886d` | **DONE/FU.** `facetMinRulings` ships, **default 3 byte-identical**; ground plane untouched **by construction**. The mono-law boundary was **enumerated on both sides**, not claimed. |
+| **W-38b** | fill-audit-3 | `141ed0b5` | **DONE/FU.** T1's `git show HEAD:` leg was **structurally vacuous forever**; replaced with 60 pinned goldens, proven by a **contrast** mutation. |
+| **W-36c** (decision 6 = C) | fill-audit-a3 | `8adfd5af` | **DONE/FU — decision 6 DELIVERED.** Per-family budget + a measured anti-saturation cap; Jay's cell is a full even crosshatch. The `2.5 → 2.0` ceiling accepted; **the sub-check removal loses real coverage** (a lower-half freeze passes both surviving bars) → **W-36d**. |
+| **U9b + W-10d-3b + U6-2** | fill-collapse-3 | `2b189b5f` | **DONE/FU.** 406/406. **The picture flag ruled FIXED, not half-fixed** — the survivor in the select plus the raw id's own text in the popover is the designed end state. → **U9b-2** (the `onePenDown` exception is an undisclosed **write-back-on-load**). |
+| **U7-2** | fill-collapse-3 | `49a5ef88` | **DONE — REVIEW NOT DONE (owed).** 17 caveats rewritten, 555/555, originals preserved in a non-rendered `measured` field. Found that **the shadow row renders no caveat at all on either surface** → **U5b-4**. |
+
+### Rounds 1–2 (merged at `9cf09b39`)
 
 | unit | lane | sha | outcome (before → after) |
 |---|---|---|---|
@@ -59,64 +74,109 @@ Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents
 | **U9** (resolve half) | handoff-c2 | `fc8b0fba` | Shadow bag no longer clamps folded ids before `HATCH_LAW_RECIPES`. **22/22 new tests; reviewer ACCEPT-WITH-FOLLOWUPS** — the six rewritten collapse assertions proven **STALE** (they pinned a real pre-existing defect as a feature). Visually near-identical (+2.7% lines) — honest but weak; follow-ups → U9-2. |
 | **W-26b** (C1+C2+C3+4a) | fill-audit-a | `7bc2b1a0`/`4a858445`/`0930cb2d` | Crosshatch **9326.7 → 5153.7 mm (+4.9% vs pre-W-26)**; `crossDensityRatio` 1.12× → **2.3×**; tautology guard replaced; three coin bars → floor + band. |
 
-## 2. IN FLIGHT — NONE (round-2 lane work is EXHAUSTED, 2026-09-10)
+## 2. IN FLIGHT AT THE PAUSE (2026-09-12 07:50 EDT) — three DEAD agents, restart fresh
 
-All five lanes are final and merged. Nothing is in flight but the **merge review**
-(`a7d39601..4421d514`; content completeness per lane and the four bar edits are gating).
-Everything still open is a **Jay decision (§4, nine of them)** or a **round-3 unit (§3)**.
+**Incident 8 killed three agents the evening of 2026-09-11; Jay paused before the reset could be used, so
+NONE were resumed. All three are dead and the next session restarts them FRESH from the on-disk state** —
+the Incident-3 pattern, not the Incident-4/5/7 one.
 
-One unit was rejected and reverted rather than shipped:
-
-| unit | lane | sha | state |
+| unit | lane | state at the pause | how to restart |
 |---|---|---|---|
-| **T2** (variable-length ticks) | fill-audit-a2 | reverted at `94cca882` | **REJECTED in review — the round's only reject, out of ~30 units.** The smoothstep length-response on radiance created hard-edged ink plateaus with enlarged bare wedges (coverage collapse, worst at d=220), confirming the orchestrator's picture flag. `git diff 48ff98dc..94cca882 -- src tests` is empty. **Its measurement survives:** the plan's own `g`-based formula was proven broken (dark/light 1.2–1.5×), so **T2 iteration 2** starts from a known-dead formula rather than re-deriving it. |
+| **F1-placement** (Prototype B, decision 4 = A) | fill-audit-a3 | **WIP `32ec6ef0`, UNVERIFIED** — a `surface-fill.js` edit plus new `tests/helpers/scene3d-blank-map.js` and `tests/unit/scene3d-ribbon-flat-field-placement.test.js`. `after/F1-placement/` holds manifests and shots, but **`report.json` was mid-write and there is NO `F1-placement-impl.md`.** | **Verify-or-revert `32ec6ef0` FIRST.** Brief: `F1-placement-plan.md`, Prototype B under its **five ruled conditions**. |
+| **U9b-2 + U5b-4** (one two-commit run) | fill-collapse-3 | **WIP `d00ec210`, UNVERIFIED** — **only** `tests/integration/scene3d-shadow-writeback.test.js`; **commit 1 was never made**, and there is no report. | **Verify-or-revert `d00ec210` FIRST.** Scope for both units is in `LEDGER.md` rows 10a and 11a. |
+| **U7-2 review** | fill-collapse-3 | **Nothing written.** U7-2 itself is DONE at `49a5ef88`; its review is **owed**. | Fresh reviewer, pinned `2b189b5f..49a5ef88`. The secretary's four flags are in the ledger. |
 
-## 3. RESUME ORDER FOR ROUND 3, PER LANE (branch off the integrated tree, not off the round-2 lanes)
+⚠ **Both WIP commits are unverified — nothing may be built on top until each is verified or reverted.** And
+once again **the two units that died mid-step are exactly the two with no report on disk**: the reports are
+what make a from-scratch restart possible, and these two have none.
 
-**The five round-2 lanes are historical the moment the fast-forward lands** — read them as provenance.
-Round 3 branches off the integrated `main`. Nothing below is started; several items are gated on §4.
+## 3. RESUME ORDER FOR ROUND 4 (continue round 3's queue), PER LANE
 
-| lane / file ownership | order |
+**Lanes are the five `-3` worktrees off `main` `426cc5e4` — they are LIVE, not historical.** Nothing is
+frozen: all nine §4 decisions are answered.
+
+| lane / worktree | order |
 |---|---|
-| **`surface-fill.js`** | **T2 iteration 2** (`T2-review.md` is the brief — a different length-response curve, and a per-cell acceptance table on all SIX combinations, not the plan's two) → **T3** (mkDashRamp low density, the plan's U3 — alone it answers W-06b) → **W-31b** (crosshatch cell shape; Rank 1's per-ruling scalar step is exhausted, Rank 2 is prototyped-and-rejected, the `48ff98dc` ceiling is the baseline to beat) → **W-35b** (end-overlap for surface-fill rulings) → **F1-placement** (**FROZEN**, §4 decision 4) → **T4** (**FROZEN**, §4 decision 1) |
-| **collapse chain / picker** | **U9b + W-10d-3b** (now unblocked — the integrated tree is the first to hold both U9 and U8) → **U7-2** (plain-language caveat pass over EVERY folded law — see §6) → **U6** (**FROZEN**, §4 decision 2) → U10–U12 (W-26-blocked, lossy) |
-| **slices pass** | **W-27c-0a-2** (**FROZEN**, §4 decision 5) · **W-34 Fix C** (**FROZEN**, §4 decision 8) |
-| **faceted path / context-bar** | **F-14 graded remainder** (**FROZEN**, §4 decision 7) · **ground-plane density** (**FROZEN**, §4 decision 3) |
-| **cross-lane / product** | **W-32 Rank 3/4** (**FROZEN**, §4 decision 9 — would satisfy W-32 and W-35 together) · **W-36 budget convention** (**FROZEN**, §4 decision 6) |
-| **unscheduled** | W-37 (Fill Curves declines on contourSlice output — `geometry-utils.js`, needs its own lane) · W-33's fitter-limitation follow-up (`flattenSmoothedPath` reduces density where the fix made it dense — **distinct from W-37**, proven) · F1-amp · W-07b · W-25 hlr seam · `insetMultiPolygon` ladder |
+| **`fill-audit-a3`** (:8475) | **finish F1-placement** (verify-or-revert `32ec6ef0` first) → **F1-amp** → **W-36d** (restore the lower-half magnitude sub-bar, tests-only) → **T4b** (floor+band CI guard on the 1500 mm result, tests-only) → **T2 iteration 2** (`T2-review.md` is the brief) → **T3** → **W-31b** (needs a planner) → **W-35b** (likely needs a planner) |
+| **`fill-collapse-3`** (:8482) | **U7-2's review** (owed) → **U9b-2 + U5b-4** (verify-or-revert `d00ec210` first) → then idle; U10–U12 remain W-26-blocked and lossy |
+| **`fill-audit-3`** (:8476) | **IDLE** — W-38 and W-38b both closed; nothing on its files is ready |
+| **`fill-audit-d3`** (:8481) | **IDLE** — W-37 closed MEASURED; the W-29 stub-path family is unscheduled |
+| **`handoff-c3`** (:8470) | **IDLE by design** → its real work is **F1-amp**, which is serialized behind F1-placement on fill-audit-a3 and may want this lane when it comes |
+| **unscheduled** | W-33's fitter-limitation follow-up (distinct from W-37, proven) · W-32 Rank 4 (true-silhouette border — would also satisfy W-35; §4 decision 9 closed it *for now*) · W-07b · `insetMultiPolygon` ladder · the W-29 degenerate-stub family |
 
-**Six of the nine §4 decisions gate a queued unit.** Until they are answered, round 3's real work is
-T2 iteration 2, T3, W-31b, W-35b, U9b+W-10d-3b, U7-2 and W-37 — enough for a full session.
+**Merge when the round-3 queue is exhausted** — and the **round-2 merge checklist still has open items**,
+including the **`git show HEAD:` idiom sweep** (item 23), which matters because `scene3d-slice-end-overlap.test.js`
+(W-35) carries it and is **already merged**.
 
-## 4. DECISIONS FOR JAY
+## 4. DECISIONS — ALL NINE ANSWERED BY JAY (2026-09-10)
 
-1. **W-06 max density (2995 → 529 mm ink).** Accept the lighter max as final, **or** restore the band in T4? *Recommended: CONDITIONAL — sign off the lost byte-identity (the old max was the slab defect at higher density), but not the ink collapse; T4 should bring max back to ≥1500 mm.* If the lighter look wins, mkDashRamp becomes the lightest of 12 mark laws, its roster text drops to "dot → dash", and O8/O9 are struck.
-2. **U6 `penStipple` mark class.** `'dot'` → `'hatch'` (a visible picker re-categorisation), **or** keep `'dot'` and record the known lie? *Plan asks for the change; U6 cannot proceed until decided.*
-3. **Ground-plane density after W-15c.** Confirm ~**2.5× denser** ground hatch at defaults (ink 12164 → 30215 mm), **or** exclude the ground from the solo-orientation gate? *Reviewer accepted it on the picture; the app's default scene is unaffected — its ground carries a style override.*
-4. **F1 — "which white did you mean?"** No F1 screenshot exists in the repo. *The plan now says it is the 41.7 × 6.6 mm bare strip on the lower front torus; a bench look would confirm before F1-placement's evidence is judged.*
-5. **W-27c-0a — which defect do you mean? (AMENDED 2026-09-09 — the old framing rested on a broken measurement.)** The "blob width" that drove three iterations of culling was `largestW`, which is **the bounding box of the largest 8-connected component — a connectivity extent, not an ink width**. The sphere's "34.5 mm blob" fills **4.5%** of that box. The quantity that matters, **max inscribed-disc diameter, is 0.783 mm (sphere) and 0.849 mm (torus) — already inside the 0.9 mm bar.** *Exhibit: `user-reports/17-w27c-0a-2-decision5-sphere-pole-torus-saddle.png` (native crop). On the picture both sites read as adjacent strokes **merging into a thicker line**, not a grey smear. If the thicker line is the complaint, it is within one pen width and the item closes as MEASURED. If a **smear** is the complaint, the fix is **fewer slices at the pole/saddle**, driving merged area (torus 2.465 mm² / sphere 26.962 mm²) down. Either way the crowding cull cannot help — it is parked.*
-6. **W-36 — which crosshatch budget convention? (AMENDED 2026-09-09 — the review turned this into a three-way choice.)** The pre-audit picture you accept **already spent ONE shared budget across both families**: sphere d=50 was **A 15 / B 11** against a single-family hatch count of **24**. So *"each crosshatch family carries the hatch count"* was **never the shipped convention** — which changes the question from yes/no to which rule to adopt. *(a) One shared budget, split evenly — **shipped now as Rank 1**: cylinder d=220 total preserved at 106 vs v1.3.98's 108, sphere reads mildly more open (20 vs 26 lines). (b) Rank 2, a larger pair budget: +16% ink on cylinder d=220, **over the +15% cap** — needs the W-26 conditional-acceptance ruling re-applied per delta, or your explicit call. (c) Per-family = the hatch count: roughly **2× ink**, and it needs a **new anti-saturation cap**, since the current one is v1.3.98 + 15%.* **Exhibit: `after/W-36/review-montage-a-halved.png`** — v1.3.98 / pre-W-36 / post, side by side. Nothing is blocked; Rank 1 stands until you say otherwise.
+**Every frozen item is now unfrozen.** Recorded verbatim as Jay gave them; the letter is his choice.
 
-7. **F-14's graded remainder — close as by-design, or expose the dial?** Six designs have now been measured (A, B, C, D, Fix 2 by analysis, E), and design E proved the bar is **arithmetically impossible, not undiscovered**: on the app-default box, 6 rulings on the lit facet puts it at **4.632 mm of paper coverage against the darkest facet's 5.228 mm — 0.89×, the lit facet DARKER than the darkest one**; at 4 rulings it is already at O20's 1.25× readability bar. The 3-ruling floor is the readability floor working, on facets whose honest ask is 0.7–1.8 rulings. *Options: (a) close **by-design**, with a release note that on graded objects Density sets the object's ink RANGE while tone allocates within it; or (b) a **product unit** exposing `FACET_MIN_RULINGS` as a per-style "minimum facet rulings" control defaulted to 3, handing you the ladder-versus-fill trade explicitly.* Exhibit: `W-15c-E-plan.md` §2's inversion table.
-8. **W-34 Fix C — warp the cone's apex band?** The corner you circled is **exact geometry** (76.4° emitted = 76.4° analytic), so removing it is a **look change to a shipped treatment**, not a bug fix. Cost: holding the turn ≤ 25°/mm moves planes 12–15 of 26; ≤ 20°/mm moves planes 11–16 — **every cone contourSlice ring shifts, all 300 cone cells change**. *Same class as W-35; comes to you with a before/after montage of cone planes 11–16.* Fix A (the honest close of the ≤ 8° bar) and Fix B (the capsule closed form) both shipped regardless.
-9. **W-32 — refine the fill border to the true silhouette?** The "lines breaking out beyond the border" is **not in the app**: in-app overshoot measures **0.50 pen against a 0.50-pen bar with zero endpoints over**. It was the gallery rig rendering at deserialization `detail` 16, and the re-shoot folds into the wrap-up gallery rebuild. *But the plan's Rank 3/4 option — refining the fill border to the **true** silhouette rather than the tessellated one — **would satisfy W-32 and W-35 together**, which is why it comes to you rather than being closed.* (Raising the `detail` default 16 → 24 is rejected outright: `params.js` says those must never move.)
+> **This section is the authoritative record.** Jay answered **in chat**; the answers are mirrored in the
+> decisions page's db store, but **the Claude app viewer cannot save**, so the page is not the source of
+> truth. Reconcile any later reading of the page against this section, not the reverse.
+
+1. **W-06 max density → B.** T4 **restores a dark end** — sphere Density 220 **≥ 1500 mm ink, with no slab
+   defect**. *The lost byte-identity is signed off; the ink collapse is not.* → **T4 proceeds** (the
+   W-05b/W-06b plan's U4: band-width cap + `bandMax`, carrying the max sign-off report).
+2. **U6 `penStipple` mark class → A.** Pen Stipple **moves from `'dot'` to `'hatch'`**; **U6 proceeds**, and
+   its **caveat text must say why it moved** — a visible picker re-categorisation the user should not have to
+   infer.
+3. **Ground-plane density → A.** The **~2.5× denser ground at defaults is CONFIRMED** (ink 12164 → 30215 mm).
+   **The frozen item closes; no unit.**
+4. **F1 "which white did you mean?" → A.** The **41.7 × 6.6 mm bare strip on the lower front torus IS the
+   streak.** → **F1-placement proceeds** (Prototype B, under its five ruled conditions), **then F1-amp.**
+5. **W-27c-0a-2 → A.** The merged strokes are **within one pen width — CLOSED as MEASURED. No further
+   culling**; the crowding cull stays parked, and sub-bars **(d1) max inscribed disc ≤ 0.9 mm** and
+   **(d2) merged area** stand as re-oracled.
+6. **W-36 crosshatch budget → C.** **EACH family carries the single-family hatch count (≈2× ink)** — and it
+   **needs a NEW anti-saturation cap** so Density 220 does not go solid. → new unit **W-36c**: re-derive
+   `CROSS_PAIR_BUDGET`, **P3 and P5** for per-family = hatch count; **keep P1/P2/P4/P6 and the W-26
+   gap-jump**; **define the new cap by measurement**, not by analogy; evidence on all four primitives plus
+   Jay's own cell. **T2 iteration 2 inherits from it.**
+7. **F-14 graded remainder → B.** A **PRODUCT UNIT**: expose **`FACET_MIN_RULINGS`** as a per-style
+   **"minimum facet rulings"** control, **default 3 and byte-identical there** — `scene3d.js` faceted path +
+   `params.js` + context-bar/panel, with the **full docs contract**. → new id **W-38** (alias F-14b).
+8. **W-34 Fix C → A.** **Leave the cone apex as true geometry. CLOSED.** The corner is 76.4° emitted against
+   76.4° analytic; Fix A and Fix B already shipped.
+9. **W-32 → A.** **CLOSED for now.** Rank 4 (refining the fill border to the true silhouette, which would
+   also satisfy W-35) **stays filed, unscheduled.**
+
+**At the pause, five of the six have landed or are in flight: 1 → T4 DONE, 2 → U6 DONE, 6 → W-36c DONE (delivered), 7 → W-38 DONE, 4 → F1-placement WIP; F1-amp is the only one not yet started.** Net effect on round 3: six decisions start work (1 → T4, 2 → U6, 4 → F1-placement + F1-amp, 6 → W-36c,
+7 → W-38), **three close items outright** (3, 5, 8, plus 9 for now). Nothing in round 3 is frozen any more.
 
 ## 5. USER-REPORTED DEFECTS
 
 | report | defect | status |
 |---|---|---|
 | ladder-gap rule | Sturmian doubling on flat-tone surfaces | **FIXED** — gap jump 2.00 → **1.03–1.17**; crosshatch regression found and fixed in W-26b (coverage 0.91 → legible grid). **P0 closed.** |
-| 8.png | mkTick leaves un-ticked bands, hard cone edge | **STILL PARTIAL after round 2 — T2 was REJECTED and reverted.** T1 landed the chart-walked mark and T1b the plot-safety guard, but **variable tick length is not shipped**: T2's smoothstep response created hard ink plateaus with enlarged bare wedges. **T2 iteration 2 carries it into round 3**, with a per-cell acceptance table on all six combinations. The cone hard edge remains the `MK_ROW_COV` scaffold, which is **T3's**. Superseded detail: | **PARTIAL** — T1 landed the chart-walked mark (refusal 0.61 → 0.007); variable length is T2. The brief's "coverage hole" premise was wrong: coverage was already 0.96–1.00. Cone hard edge = pre-existing `MK_ROW_COV` scaffold, T3's. |
+| 8.png | mkTick leaves un-ticked bands, hard cone edge | **STILL PARTIAL at the round-3 pause.** T1 + T1b landed; **T2 was rejected and reverted**, and **T2 iteration 2 has not started**. The cone hard edge is the `MK_ROW_COV` scaffold — **T3's**, also not started. Detail:  T1 landed the chart-walked mark and T1b the plot-safety guard, but **variable tick length is not shipped**: T2's smoothstep response created hard ink plateaus with enlarged bare wedges. **T2 iteration 2 carries it into round 3**, with a per-cell acceptance table on all six combinations. The cone hard edge remains the `MK_ROW_COV` scaffold, which is **T3's**. Superseded detail: | **PARTIAL** — T1 landed the chart-walked mark (refusal 0.61 → 0.007); variable length is T2. The brief's "coverage hole" premise was wrong: coverage was already 0.96–1.00. Cone hard edge = pre-existing `MK_ROW_COV` scaffold, T3's. |
 | 9.png | torus ticks read as straight-spoke fans | **FIXED in kind** — ticks curve along the family (sagitta 0.000 → 0.127 mm), bulk texture reads as one coherent weave. A mid-tick kink was found and fixed; a min-spacing tail regression → T1b. |
-| 10.png | mkDashRamp draws ONE dash at d=1 | **OPEN** — T3. Measured 5 dashes at d=1 (bar ≥40), count non-monotone `5,2,9,56,416`. |
+| 10.png | mkDashRamp draws ONE dash at d=1 | **LOW END STILL OPEN (T3, not started) — but the MAX end is FIXED: T4 restored the dark end to 1501.1 mm on Jay's own named cell (decision 1 = B), with no slab.** Detail:  **OPEN** — T3. Measured 5 dashes at d=1 (bar ≥40), count non-monotone `5,2,9,56,416`. |
 | 11.png | torus contourSlice angled points + micro-gaps | **micro-gaps FIXED** (107 → 46 paths); **"angled points" = ink merging** — improved, not fixed (blob 3.35 → 2.10 mm vs 0.9). Iter-4 queued. |
 | 12.png | buckyball contourSlice ring with an open end | **FIXED** — open rings 6 → 0, plane counts unchanged. |
 | 13 (2026-09-06) | crosshatch cells uneven — *"diamond/square gaps vs rectangular gaps"* | **MEASURED, ceiling pinned — the fix needs a new mechanism (W-31b).** Confirmed a real PLACEMENT defect with **tone OFF**: cell aspect ramps **0.60 → 1.75** across a cone, C1 failing on 4 of 5 primitives. Root cause is a **ruling-MEAN metric spent as one scalar step**, i.e. the P0 ladder-gap rule generalised to local geometry. The Rank-1 spike **failed its gate**, so a non-regression ceiling shipped and nothing else. **W-36 is proven not to be the cause.** Superseded detail: | 13-old |  — *"diamond/square gaps vs rectangular gaps… are lines not being evenly spaced?"* | **OPEN → W-31.** Generalises the P0 rule to crosshatch **cell shape**: both families evenly spaced except where tone demands. Re-measure on `0930cb2d` — W-26b-1 changed the crossing family's share. |
 | 14 | *"Some of these lines are breaking out beyond the border."* + *"non-curved angles"* | **BOTH ANSWERED.** **W-33 FIXED** the non-curved angles — contour FILL rulings now ≤ 8° in device space (C1 31.24°/38.35° → ≤8; C2 18.46–23.25° → ≤8), after finding refinement ran *before* the seam join where the join vertex is exempt from the turn check. **W-32 is MEASURED, no code**: in-app overshoot is **0.50 pen against a 0.50-pen bar with zero endpoints over** — what you saw was the gallery rig at deserialization `detail` 16. The true-silhouette option is **§4 decision 9**. Superseded detail: | **OPEN → W-32** (silhouette overshoot; RGR ≤ 0.5 pen — note `scene3d-fill-boundary-ends` passed 41/41, so establish whether it measures overshoot at all) and **W-33** (the contour-rounding rule extends to contour FILL rulings). |
 | 15 (W-35) | *"stairstepping where line segments end … perhaps having a parameter we can control"* | **DELIVERED — awaiting Jay's look at the control.** `sliceEndOverlap` ships at −2..8, **default 0 = byte-identical**, so nothing changes until he moves it. The mechanism turned out to be a **facet-quantised front/back cut, not a trim**. Evidence: `after/W-35/bespoke/` (k = −2/0/4/8 sweeps + the Style tab). |
 | 15 | *"angles in this curved shape that should not be there"* + *"stairstepping where line segments end"* | **OPEN → W-34** (extends W-27c item (b), bar ≤ 8°, open-polyline-aware metric mandatory) and **W-35** (product request: a user-controllable end-overlap / edge-fidelity param). |
-| 16 (2026-09-06 18:31) | crosshatch renders ONE family | **FIXED (W-36) — and it reframed your rule.** Gap ratio B:A **5.4–31.2× → 0.814–1.061**; your own cell went **A 17 / B 3 → A 9 / B 11**. But the review found the pre-audit design **already spent ONE shared budget across both families** (sphere d=50 was A 15 / B 11 against a hatch count of 24), so *"each family carries the hatch count"* was never the shipped convention — hence **§4 decision 6**, a three-way choice. Superseded detail: | — *"make crosshatch have the same number of crosshatch lines as it has hatch lines unless … variation is needed for highlight/shadow. This seems off."* | **OPEN → W-36, P1.** Sphere/ladder/fine-rungs/d=50 shows ~22 bands and **no** crossing family; montage counts cylinder ≈ 30 vs ≈ 5, ellipsoid ≈ 25 vs ≈ 4, T1 sphere ≈ 24 vs ≈ 8, against v1.3.98's ≈ 22 vs ≈ 20 — **a regression between v1.3.98 and the merge**. Prime suspect `CROSS_SHARE_BASE = 0.1` (`surface-fill.js:4652`) → crossing coverage 10% of family A's at ratio 1. Lane fill-audit-a2, before W-31 |
-| "not close to zero yet" (F1) | torus ribbon streaks | **OPEN, mechanism found** — 62.63 mm² bare strip, 30× A3's whole residue; Prototype B ruled, deep blank 11.89 → **0.28 mm²**. |
+| 16 (2026-09-06 18:31) | crosshatch renders ONE family | **FIXED TWICE — W-36 restored the crossing family, then W-36c delivered your decision 6 = C: EACH family now carries the single-family hatch count, under a new measured anti-saturation cap. Your own cell is a full even crosshatch.** Earlier detail:  Gap ratio B:A **5.4–31.2× → 0.814–1.061**; your own cell went **A 17 / B 3 → A 9 / B 11**. But the review found the pre-audit design **already spent ONE shared budget across both families** (sphere d=50 was A 15 / B 11 against a hatch count of 24), so *"each family carries the hatch count"* was never the shipped convention — hence **§4 decision 6**, a three-way choice. Superseded detail: | — *"make crosshatch have the same number of crosshatch lines as it has hatch lines unless … variation is needed for highlight/shadow. This seems off."* | **OPEN → W-36, P1.** Sphere/ladder/fine-rungs/d=50 shows ~22 bands and **no** crossing family; montage counts cylinder ≈ 30 vs ≈ 5, ellipsoid ≈ 25 vs ≈ 4, T1 sphere ≈ 24 vs ≈ 8, against v1.3.98's ≈ 22 vs ≈ 20 — **a regression between v1.3.98 and the merge**. Prime suspect `CROSS_SHARE_BASE = 0.1` (`surface-fill.js:4652`) → crossing coverage 10% of family A's at ratio 1. Lane fill-audit-a2, before W-31 |
+| "not close to zero yet" (F1) | torus ribbon streaks | **IN PROGRESS — your decision 4 = A confirmed the 41.7 × 6.6 mm lower-front torus strip IS the streak, and F1-placement (Prototype B) was mid-implementation when the pause hit (WIP `32ec6ef0`, unverified). F1-amp follows it.** Earlier detail:  **OPEN, mechanism found** — 62.63 mm² bare strip, 30× A3's whole residue; Prototype B ruled, deep blank 11.89 → **0.28 mm²**. |
+
+## 6. MERGE STATUS — ROUND 3 IS **NOT** MERGED
+
+**Nothing from round 3 is on `main`.** Lane HEADs at the pause, verified read-only 2026-09-12:
+
+| lane | HEAD | note |
+|---|---|---|
+| `fill-audit-a3` | **`32ec6ef0`** | **unverified WIP** on top of `8adfd5af` (W-36c) |
+| `fill-collapse-3` | **`d00ec210`** | **unverified WIP** on top of `49a5ef88` (U7-2) |
+| `fill-audit-3` | **`141ed0b5`** | clean — W-38 + W-38b |
+| `fill-audit-d3` | **`426cc5e4`** | clean, never written to (W-37 closed MEASURED) |
+| `handoff-c3` | **`426cc5e4`** | clean, idle by design |
+
+**`main` is `426cc5e4`** (round 2, v1.4.1) **plus uncommitted docs** — this pause point. **Main remains
+44+ ahead of `origin/main` and NOT pushed.** **The round-2 merge checklist in `LEDGER.md` still has open
+items** that belong to whoever merges round 3, the `git show HEAD:` sweep among them.
 
 ## 5b. ROUND-2 MERGE — DONE (local only)
 
@@ -203,6 +263,51 @@ Verified read-only against `main` 47a5a755. **None of these blocks a lane from s
   byte-identical pairs now WARN).
 
 ## 7. PROCESS — lessons & incidents
+
+### Round 3's lessons (2026-09-10 → 12)
+
+**Two more oracle-instrument findings, seven in total — and both were caught BEFORE a merge this time.**
+**(6) W-38's T1 leg compared against `git show HEAD:`, which always equals the loaded source on a clean
+tree — structurally incapable of ever failing, forever.** It is the hardest kind to see, because it *looks*
+like the strongest available check (a comparison against the real pre-fix source) and fails precisely
+because **the reference moves with the thing it is meant to check**. **The identical idiom is in
+`scene3d-slice-end-overlap.test.js` (W-35), already merged** — hence the sweep on the merge checklist.
+**(7) W-36c's replacement dial bar could be gamed by a lower-half freeze**, proven by mutation: a dial inert
+from 0.25 to 1.0 — a real user-visible defect — **passes both strict monotonicity and the endpoint-ratio
+bar**. The general form is worth keeping: **"monotonic" plus "endpoint ratio" does not constrain the SHAPE
+of a response between its endpoints.**
+
+**Three of the round's most useful findings came from units looking at something else.** U6 found that
+`shadows.js` dispatches on **mark class** while doing a picker re-categorisation — without a matching
+recipe its shadow would have silently become `ladder`. W-38's reviewer found the vacuous leg while checking
+a default. U7-2 found **an entire missing caveat surface** (the shadow row renders no caveat on either
+surface) while rewriting copy. **None was on anyone's list; each came from reading the code adjacent to the
+change rather than only the lines being edited.**
+
+**Scout before planning anything filed more than a few units ago.** W-37 was closed by one read-only
+measurement — the defect had been fixed by W-34's side effect. That is the **third** time this audit found
+an item already fixed (after Unit F's stale bar and W-30c's cone/cylinder collateral), and each time the
+alternative was a planner, an implementer and a review chasing something that no longer existed.
+
+**The background-polling rule cannot be fixed with prose — it needs a number.** Seven occurrences across
+implementers, reviewers and a planner, **including two agents whose own briefs carried the foreground-only
+wording**. The mechanism is mechanical: on a shared machine the long vitest files exceed the default Bash
+timeout, the tool backgrounds the command, and everyone reaches for the same workaround. **Brief an explicit
+`timeout: 600000` for the known-slow files** instead of restating the rule more firmly.
+
+**Reports and evidence live in MAIN, and a missing file is not evidence of a missing deliverable.** The U9b
+reviewer searched the worktree, found nothing, and issued a REJECT on that premise; the verdict was
+re-issued as ACCEPT-WITH-FOLLOWUPS once it read MAIN's paths. Round 2 logged the mirror image of this
+repeatedly (implementers *writing* into their worktrees); this was the first time a reviewer *read* from one
+and drew a conclusion from the absence.
+
+**A fourth reviewer-caught arithmetic slip** (U6's 550-vs-544, after U0, U1–U5 and U8). None was ever a
+missed regression; all four would have been copied forward. **Sum the table, don't restate the headline.**
+
+**Two rules promoted to standing.** A unit that turns another unit's test green **must say so** — U9b
+carried U6-2's fix, and a red → green transition inside an innocent unit reads as "all tests pass" at merge.
+And **the generative cross-check is part of every fold's scope**: U7 and U8 each had to extend it and **U6
+broke it outright**, so a fold that ships green leaves the next one a red file it did not cause.
 
 ### Round 2's own lessons (2026-09-06 → 10)
 

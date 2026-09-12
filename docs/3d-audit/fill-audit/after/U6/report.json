@@ -1,0 +1,83 @@
+{
+  "unit": "U6",
+  "cluster": "C-06 / W-18a",
+  "survivor": "penInterleave",
+  "collapse_param": "penMode",
+  "folded": [
+    { "id": "penPitchMatch", "value": "pitchMatch" },
+    { "id": "penFacing", "value": "facing" },
+    { "id": "penStipple", "value": "stipple" }
+  ],
+  "jay_decision": "2026-09-10, §4 decision 2 -> option A: fold penStipple into penInterleave AND move its mark class from 'dot' to 'hatch', with caveat text explaining why it moved.",
+  "roster_counts": {
+    "IDS_before": 48, "IDS_after": 48,
+    "PICKER_IDS_before": 33, "PICKER_IDS_after": 30,
+    "ALIASES_before": 15, "ALIASES_after": 18
+  },
+  "mark_class_move": {
+    "id": "penStipple",
+    "from": "dot",
+    "to": "hatch",
+    "picker_group_before": "Dots & stipple",
+    "picker_group_after": "Parallel hatching",
+    "live_verified_optgroups": {
+      "Parallel hatching": ["ladder", "taperedEnds", "weightModulated", "bundleCount", "bundleSubNib", "bundleLozenge", "contFieldSigmoid", "penInterleave", "endShorten"],
+      "Dots & stipple": ["lozengeStipple", "mkDotScreen"]
+    },
+    "shadow_path_also_moves": true,
+    "shadow_recipe_added": "HATCH_LAW_RECIPES.penStipple (src/core/scene3d/shadows.js) — hatchEndTrim(hatchRingsEvenOdd(...), 0.24); DOT_LAW_RECIPES.penStipple left in place but unreachable"
+  },
+  "byte_identity": {
+    "method_1_in_tree_resolver_sweep": {
+      "primitives": ["sphere", "torus", "cone"],
+      "densities": ["low", "med", "max"],
+      "mapper": "hatch",
+      "folds_checked": ["penPitchMatch", "penFacing", "penStipple"],
+      "result": "9/9 combinations byte-identical per fold (27/27 total), plus the bare survivor (penMode:'interleave' or omitted) unaffected by geometry/density — see tests/unit/scene3d-tone-law-collapse.test.js 'U6 multi-primitive x multi-density' describe block"
+    },
+    "method_2_real_gallery_capture": {
+      "cells": 36,
+      "primitives": ["sphere", "torus", "cone"],
+      "densities": ["low", "med", "max"],
+      "ids": ["penInterleave", "penPitchMatch", "penFacing", "penStipple"],
+      "pre_commit": "426cc5e4 (base, v1.4.1, unchanged HEAD at capture time)",
+      "post_commit": "working tree (post U6 edits), port 8482",
+      "pre_capture_port": 8483,
+      "post_capture_port": 8482,
+      "result": "36/36 md5-identical between pre-U6 and post-U6 trees"
+    },
+    "vs_committed_gallery_baseline": {
+      "note": "Unlike U7/U8, no staleness found: all 36 cells are ALSO md5-identical to docs/3d-audit/fill-audit/shots/B/ (the committed main gallery). MISSING=0, DIFF=0."
+    }
+  },
+  "visual_inspection": {
+    "cells_looked_at": [
+      "torus__hatch__penInterleave__med__a.webp",
+      "torus__hatch__penStipple__med__a.webp",
+      "torus__hatch__penPitchMatch__med__a.webp",
+      "torus__hatch__penFacing__med__a.webp"
+    ],
+    "description": "All four are the same capsule-stepped ruling family on a torus (thick white capsule/dash-segmented bands over black background) — visually indistinguishable at plot scale, matching the plan's own C-06 note ('By eye the four are the same capsule-stepped rulings on torus hatch/contour and sphere hatch'). penFacing shows slightly larger/longer capsule segments toward the upper-right of the ring, a genuine but minor difference consistent with its distinct path count (154 vs 118-121 for the others per the plan's ink table) — not enough to call it a different picture; a picker-tier near-duplicate, not a rendering-tier one, matching the plan's own characterization."
+  },
+  "caveat_condition": {
+    "rule": "Folding a law must NOT hide its measured caveat (standing ruling, U5b).",
+    "finding": "All four members carry real, non-empty caveats. NOT all four are pairwise distinct: penPitchMatch and penFacing share the byte-identical 'three pens are simulated' sentence (both true, both correctly restating the same measured fact) -- a genuine duplicate, unlike U7/U8's two-caveat pairs. penInterleave's own (longer wording, mentions scene3d.js) and penStipple's own (the mark-class-move explanation) are each distinct from every sibling.",
+    "penStipple_caveat_text": "Pen Stipple moved from \"Dots & stipple\" to \"Parallel hatching\": it has never drawn dots — its highlight fade comes from shortening the fine nib's hatch marks, the same ruled-darks mechanism as the other Pen options. If you want an actual dot pattern, this option won't give you one.",
+    "verified_via": [
+      "tests/unit/scene3d-tone-law-collapse.test.js 'U6 caveat' describe block",
+      "tests/unit/scene3d-fill-style-effective-law.test.js 'U6' cross-check test",
+      "live screenshots: docked Style tab (penInterleave-interleave-crop-native.png vs penStipple-stipple-crop-native.png) and the ctxbar Style flyout (ctxbar-style-stipple-crop-native.png)"
+    ]
+  },
+  "live_verification": {
+    "port": 8482,
+    "app_version": "1.4.1",
+    "page_errors": [],
+    "screens": [
+      "docked Style tab, penMode default (Interleaved nibs): Fill Style 'Pen · Interleave', caveat = penInterleave's own (three-pens-simulated, generic)",
+      "docked Style tab, penMode = Stipple: Fill Style unchanged 'Pen · Interleave', Pen mode 'Stipple', caveat swaps to penStipple's own mark-class-move text",
+      "ctxbar Style flyout (real scene-object selection, ctxKind:'scene-object'), penMode = Stipple: same caveat swap, (i) blurb still reads 'Parallel hatching — ...' (penInterleave's own, unaffected)",
+      "optgroup introspection: 'Parallel hatching' group contains penInterleave (not penPitchMatch/penFacing/penStipple, all folded away); 'Dots & stipple' group contains only lozengeStipple + mkDotScreen (penStipple no longer present)"
+    ]
+  }
+}

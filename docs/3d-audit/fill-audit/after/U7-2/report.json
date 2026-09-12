@@ -1,0 +1,43 @@
+{
+  "unit": "U7-2",
+  "lane": "fill-collapse-3",
+  "worktree": ".claude/worktrees/fill-collapse-3",
+  "branch": "3d-scene/fill-collapse-3",
+  "base_sha": "2b189b5f",
+  "port": 8482,
+  "scope": "Plain-language rewrite of every remaining folded fill-law caveat (docs/tone-laws/laws.json -> regenerated src/config/scene3d-tone-laws.js); copy only, no rendering change.",
+  "rewritten_count": 17,
+  "already_plain_before_this_unit": ["bundleDither (U5b-2)", "contFieldTouch (U5b-2)", "penStipple (U6)"],
+  "measured_field": "Every rewritten laws.json entry gained a new `measured` field holding the original audit-prose caveat verbatim. Confirmed NOT picked up by scripts/build-tone-laws.js's BY_ID literal, so it never reaches src/config/scene3d-tone-laws.js and cannot render on any UI surface.",
+  "byte_identity": "No production/render file touched (surface-fill.js, surface-fill-mono.js, mappers.js, hlr.js, shadows.js, scene3d.js untouched, confirmed via git diff --stat). Grepped src/ for `.caveat` reads outside UI files: none in geometry code, so caveat text is provably never read by SF.buildObject or any render path. node scripts/build-tone-laws.js regenerates byte-identically from the new laws.json (deterministic, re-verified).",
+  "guards_run": {
+    "tests/unit/scene3d-tone-law-collapse.test.js": "117/117",
+    "tests/unit/scene3d-fill-style-effective-law.test.js": "7/7",
+    "tests/unit/scene3d-tone-laws-config.test.js": "8/8",
+    "tests/integration/scene3d-fill-style-picker.test.js": "170/170",
+    "tests/unit/scene3d-shadow-tone-law.test.js + scene3d-shadow-tone-law-uniqueness.test.js + scene3d-one-pen-down-reachability.test.js": "40/40",
+    "tests/integration/stroke-fill-style-control.test.js + scene3d-panel.test.js + context-bar-scene-flyouts.test.js": "107/107",
+    "tests/integration/scene3d-panel-style-live-sync.test.js + tests/unit/scene3d-faceted-tone-law.test.js + scene3d-solid-cap-reachability.test.js + scene3d-tone-law-dispatch.test.js + scene3d-tone-law-plumbing.test.js": "47/47",
+    "tests/unit/scene3d-ribbon-weightscale-invariant.test.js + tests/integration/scene3d-ribbon-weightscale.test.js": "59/59"
+  },
+  "total_tests_green": 555,
+  "bars_changed": [
+    "tests/unit/scene3d-tone-law-collapse.test.js ~1173-1174 (ampSpacing/weaveDepth) and ~1374-1375 (interlockWeave/onePenDown) -- the pinned /single-weight/ regex re-pinned to /weight.*(isn't constant|varies)/ style patterns. Not a numeric bar: a copy re-pin required because the plain-language rewrite deliberately removed the internal term 'single-weight'. Disclosed per protocol, proof is the still-passing distinctness/non-empty assertions around it."
+  ],
+  "live_verification": {
+    "app_version": "1.4.1 (matches worktree package.json, no bump per protocol)",
+    "page_errors": [],
+    "shots": [
+      {"id": "ampSpacing", "surface": "docked Style tab", "state": "Nesting: Single wave row (default)", "file": "ampSpacing-docked-crop-native.png", "looked": "Confirmed: exact plain-language text, no jargon, red warning-colour paragraph."},
+      {"id": "weaveDepth", "surface": "docked Style tab", "state": "Nesting: Nested rows", "file": "weaveDepth-docked-crop-native.png", "looked": "Confirmed: distinct plain-language text from ampSpacing's, references 'Single wave row'/'Nested rows' UI labels verbatim."},
+      {"id": "interlockWeave", "surface": "ctxbar Style flyout", "state": "Pen down: One stroke per ruling (default)", "file": "interlockWeave-ctxbar-crop-native.png", "looked": "Confirmed: plain-language text, preserves the 'intuition backwards' warning without the removed nestedSerpentine/mm jargon."},
+      {"id": "penPitchMatch", "surface": "ctxbar Style flyout", "state": "Pen mode: Pitch-matched", "file": "penPitchMatch-ctxbar-crop-native.png", "looked": "Confirmed: SIMULATED_NOTE prefix + plain-language caveat, byte-identical to penFacing's (deliberate, per U6's own finding)."},
+      {"id": "dutyConst", "surface": "shadow row (docked panel, \"Shadow\" section)", "state": "shadowToneLaw: dutyConst", "file": "shadow-row-docked-crop-native.png", "looked": "Confirmed finding: the shadow row's Fill Style picker (label 'Duty Cycle - Constant') shows an (i) icon but NO standalone caveat paragraph -- only the docked object Style tab and ctxbar Style flyout render .is-caveat anywhere in the app (verified by grep + live DOM probe). Pre-existing structural gap, out of scope for this copy-only unit."}
+    ]
+  },
+  "changelog_line": "Fill Style picker: rewrote every remaining audit-report caveat (ampSpacing, weaveDepth, interlockWeave, onePenDown, penInterleave, penReserve, penCross, penPitchMatch, penFacing, deepFillTSP, bundleSubNib, trochoidLoop, amplitudeOnly, mezzoRegion, dutyConst, endShorten, No Tone) into plain language -- what you'll see and what to do about it, no metric names, no numbers, no function/file names. The original measured text is preserved in docs/tone-laws/laws.json's new `measured` field for audit reference; it never renders.",
+  "open_items": [
+    "The shadow row (docked panel 'Shadow' section AND ctxbar Shadow flyout) has never rendered a standalone caveat paragraph for its own Fill Style picker -- only the (i) popover's mechanism/strengths/weaknesses (untouched, out of scope). A law like dutyConst has a real measured caveat that a user picking it in the shadow row today cannot see without opening the (i). Flagged, not fixed -- would be a rendering/behavior change, forbidden by this unit's copy-only scope.",
+    "mechanism/strengths/weaknesses fields (the (i) popover's 'How:'/'Strengths:'/'Weaknesses:' text) remain raw audit prose (R2, L*, mm, cell-name tokens) for all 48 laws -- established out of scope by three prior ACCEPTed units (U5b-2, U7, U8, U6) and this one; a further pass would be a much larger, separately-scoped effort."
+  ]
+}

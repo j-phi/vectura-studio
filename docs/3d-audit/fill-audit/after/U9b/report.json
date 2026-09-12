@@ -1,0 +1,51 @@
+{
+  "unit": "U9b (+ W-10d-3b folded in)",
+  "lane": "fill-collapse-3",
+  "worktree": ".claude/worktrees/fill-collapse-3",
+  "port": 8482,
+  "baseSha": "2af329dd",
+  "beforeServer": "http://localhost:18482 (scratch git-archive export of 2af329dd, this unit's own pre-fix base)",
+  "afterServer": "http://localhost:8482 (this worktree, post-fix)",
+  "script": "scripts/audit/u9b-shadow-display-evidence.js",
+  "rawCapture": "raw-capture.json (full page.evaluate() results for every case)",
+  "scene": "sphere r=34 on an enabled ground plane, one directional light (az135/el40, castShadows), orthographic camera -- the same monolith-group shape and camera/light rig U9's own u9-shadow-resolve-evidence.js uses (proven to populate scenePaths with castShadow-classed regions).",
+  "cases": {
+    "fineLadder": {
+      "part": "(c) W-10d-3b -- shadow row DISPLAY fix",
+      "claim": "The shadow Fill Style row's <select> correctly shows the resolved survivor (Ladder) both before and after (over-fix guard: unchanged); the (i) popover incorrectly showed Ladder's OWN mechanism/strengths/weaknesses text before this fix, and now shows Fine Ladder's OWN distinct text -- the display-only lie W-10d-3b names.",
+      "beforeSelectValue": "ladder",
+      "afterSelectValue": "ladder",
+      "beforePopoverStartsWith": "How: The shipped default: rulings are selected from a small set of discrete coverage rungs at one constant pen weight...",
+      "afterPopoverStartsWith": "How: The shipped ladder selects rulings from a small set of discrete coverage rungs; fineLadder keeps that mechanism and only increases the rung count...",
+      "beforeShadowPathCount": 151,
+      "afterShadowPathCount": 151,
+      "geomSigEqualBeforeAfter": true,
+      "canvasPngMd5BeforeAfter": "34a545297f174aae6c26b67ab6304b63 (both -- byte-identical PNG)",
+      "verdict": "PASS -- render untouched (canvas + geomSig + PNG md5 all identical before/after), display corrected (own mechanism text now shown, not the survivor's)."
+    },
+    "onePenDown": {
+      "part": "(b) shadow RECIPE fix",
+      "claim": "A raw legacy shadowToneLaw:'onePenDown' (pre-U8-fold documents) used to fall through shadows.js's own markClass override (toneLawApplies==false forces markClass='hatch') to the undifferentiated plain-hatch fallback -- byte-identical to 'ladder' -- instead of drawing its survivor interlockWeave's own real wave recipe. params.js clampShadowToneLaw now resolves it forward to 'interlockWeave' (the ONE exception to U9's general raw-pass-through rule, since onePenDown has no shadow recipe of its own anywhere).",
+      "beforeSelectValue": "interlockWeave",
+      "afterSelectValue": "interlockWeave",
+      "displayUnchanged": true,
+      "displayNote": "The (i) popover already showed interlockWeave's own entry before this fix too (FS.resolve('onePenDown') was already 'interlockWeave', and the pre-fix code used FS.entry(law) directly) -- there was never a display lie for onePenDown specifically, only a render lie. Confirmed: before/after row screenshots are visually identical.",
+      "beforeShadowPathCount": 147,
+      "afterShadowPathCount": 147,
+      "geomSigEqualBeforeAfter": false,
+      "note": "Path COUNT unchanged (147 both) is expected, not a red flag: WAVE_LAW_RECIPES dispatch maps 1:1 over hatchRingsEvenOdd's own line count via waveSegment resampling -- it perturbs each line's shape, not the number of lines. geomSig (exact coordinates) DIFFERS, confirmed both via the unit-test oracle and this live capture.",
+      "beforeIsByteIdenticalToPlainLadder": "confirmed via tests/unit/scene3d-shadow-tone-law-uniqueness.test.js's own pre-fix RED reproduction (see U9b-impl.md RED section) -- at 2af329dd, buildShadows('onePenDown') === buildShadows('ladder') exactly.",
+      "afterIsByteIdenticalToInterlockWeave": "confirmed both by the unit tests (HEADLINE (U9b) in scene3d-shadow-tone-law.test.js, and the uniqueness file's own onePenDown test) and independently by this live capture's geomSig.",
+      "verdict": "PASS -- render corrected (onePenDown now draws interlockWeave's real recipe, confirmed by geomSig + a visible subtle wave texture at native crop), display was already correct and stays unchanged."
+    }
+  },
+  "lookedAt": [
+    "before-fineLadder-row.png / after-fineLadder-row.png -- (i) popover text visibly different, correctly so (Ladder's own text -> Fine Ladder's own text, including its own 'only 61 paths' / 'R2 0.032' measured strengths-weaknesses prose). Select value unchanged (Ladder (default)).",
+    "before-onePenDown-row.png / after-onePenDown-row.png -- visually IDENTICAL (Interlock Weave, same mechanism/strengths/weaknesses text both sides) -- correct, this was never broken.",
+    "before-onePenDown-canvas-crop.png / after-onePenDown-canvas-crop.png (native-resolution crop of the shadow region, 591x388 window at full 2880x1900 canvas res) -- the AFTER crop shows a subtle wavy/undulating quality on the vertical shadow rulings (interlockWeave's anti-phase lateral wave) that the BEFORE crop's straighter verticals (the plain-hatch fallback) lack. Genuinely subtle at this scale, matching the honesty precedent U9's own fineLadder evidence set (0.97x spacing multiplier was also 'genuinely subtle by design') -- the numeric geomSig inequality is the real oracle, this crop corroborates it visually, not the other way around.",
+    "before-fineLadder-canvas.png / after-fineLadder-canvas.png -- full-frame PNG md5 byte-identical (34a545297f174aae6c26b67ab6304b63 both) -- confirms this unit's part (c) touches no render/engine file."
+  ],
+  "bespoke": true,
+  "whyBespoke": "No gallery manifest cell renders a cast shadow, and none exercises the ctxbar Shadow flyout's (i) popover -- same reasoning U9's own report gave for its bespoke evidence.",
+  "generatedAt": "2026-09-11"
+}

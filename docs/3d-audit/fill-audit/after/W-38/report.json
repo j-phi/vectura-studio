@@ -1,0 +1,100 @@
+{
+  "unit": "W-38",
+  "title": "facetMinRulings (\"Min rulings\") — per-style minimum facet rulings control",
+  "lane": "fill-audit-3",
+  "worktree": ".claude/worktrees/fill-audit-3",
+  "port": 8476,
+  "baseSha": "426cc5e4",
+  "gallery_reshoot": {
+    "command": "node scripts/audit/scene3d-capture.js --tier A --root .claude/worktrees/fill-audit-3 --port 8476 --only '(box|solid|pyramid|plane)__(hatch|crosshatch)__ladder' --out docs/3d-audit/fill-audit/after/W-38",
+    "cells_captured": 48,
+    "compared_against": "docs/3d-audit/fill-audit/manifest.A.1-1.jsonl (r2 baseline, appVersion 1.4.1)",
+    "result": "48/48 byte-identical on pathCount/totalPoints/inkMm — confirms the default (facetMinRulings absent) is a no-op through the full gallery/app pipeline, not only inside the unit-test harness."
+  },
+  "bespoke_sweep": {
+    "script": "scripts/audit/w38-facet-floor-sweep.js (new, not committed to the worktree — evidence tooling in MAIN, mirrors scene3d-capture.js's buildAndMeasure)",
+    "command": "node scripts/audit/w38-facet-floor-sweep.js --root .claude/worktrees/fill-audit-3 --port 8476 --out docs/3d-audit/fill-audit/after/W-38/bespoke",
+    "fixture": "engine.addLayer('scene3d') creation-default box / solid, hatch mapper, fillDensity 50, fillAngle 45, camera Params.DEFAULT_CAMERA (a), ground/backdrop disabled to isolate the object",
+    "controls": [1, 2, 3, 5, 8],
+    "note_on_numbers": "These are NOT the plan's own §1.3/§4.3 numbers (measured on a DIFFERENT rig: engine.addLayer + box-density-bearing's app-default camera/light/ground/tone at fillAngle 20). This sweep uses the gallery capture rig's own camera/light convention (Params.DEFAULT_CAMERA, single directional sun, no ground) at fillAngle 45 to match FIXED_ZOOM framing. Both rigs independently show the SAME mechanism: monotone increase, ceiling saturation on the smaller facet, and the dark carrier facet held exactly flat.",
+    "box_rulingsByFace": {
+      "control1": { "face:+X": 2, "face:+Y": 1, "face:+Z": 11, "ink": 559.8 },
+      "control2": { "face:+X": 2, "face:+Y": 2, "face:+Z": 11, "ink": 589.0 },
+      "control3": { "face:+X": 3, "face:+Y": 3, "face:+Z": 11, "ink": 632.1 },
+      "control5": { "face:+X": 5, "face:+Y": 5, "face:+Z": 11, "ink": 720.7 },
+      "control8": { "face:+X": 8, "face:+Y": 6, "face:+Z": 11, "ink": 797.5 }
+    },
+    "box_observations": [
+      "ink is strictly increasing across 1/2/3/5/8: 559.8 < 589.0 < 632.1 < 720.7 < 797.5",
+      "face:+Z (the dark, already-ruled carrier) stays at EXACTLY 11 rulings at every control value — the floor never darkens what Density has already ruled",
+      "face:+Y plateaus below its own zone ceiling (6 rulings at control 8, not 8) — the ceiling still wins",
+      "face:+X reaches the full 8 at control 8 (its own ceiling is higher than face:+Y's)"
+    ],
+    "solid_rulingsByFace_control1": { "face:0": 1, "face:1": 1, "face:5": 1, "face:6": 2, "face:10": 2, "face:14": 2, "face:15": 2, "face:19": 1, "face:21": 1, "face:24": 2, "face:25": 2, "face:29": 1, "ink": 289.0 },
+    "solid_rulingsByFace_control8": { "face:0": 5, "face:1": 4, "face:5": 7, "face:6": 8, "face:10": 8, "face:14": 8, "face:15": 8, "face:19": 3, "face:21": 2, "face:24": 8, "face:25": 8, "face:29": 8, "ink": 780.9 },
+    "solid_observations": [
+      "ink strictly increasing: 289.0 (c1) < 354.7 (c2) < 447.8 (c3) < 604.7 (c5) < 780.9 (c8)",
+      "face:19 and face:21 saturate EARLY (plateau at 3/2 rulings from control 3 onward) — small facets with tight zone ceilings, exactly the ceiling-still-wins invariant on a 12-facet body"
+    ],
+    "images_examined_at_native_resolution": [
+      "box__control1.png / box__control3.png / box__control8.png — full frame, LOOKED at directly (not just cropped): at control 1 the top (+X) and right (+Y) facets read as nearly bare (1-2 sparse diagonal strokes each) against the densely-ruled left (+Z) facet; at control 8 the top and right facets are filled with parallel rulings approaching the density of the left facet — the box reads dramatically more evenly filled, exactly the plan's described trade ('at 8 the box reading flat').",
+      "crop_right_c1.png / crop_right_c8.png (395x300 native-resolution crop of the +Y/right facet region) — at c1: a single long diagonal stroke, mostly bare paper. At c8: the same facet region carries 5+ clean parallel rulings, correctly inset from the facet edges, with clean intersections at the ridge shared with +X. No overshoot past the silhouette, no gaps, no rendering artifacts at either extreme.",
+      "solid__control1.png / solid__control8.png — full frame. At c1 most visible facets carry exactly ONE short stroke each ('a single stripe per lit facet', matching the plan's own description verbatim). At c8 the same polyhedron is densely cross-hatched-looking (still single-direction hatch per facet, but many parallel rulings per facet) — a dramatically fuller read, no artifacts, no ink outside any facet boundary."
+    ]
+  },
+  "live_app_verification": {
+    "tooling": "Playwright (chrome-devtools MCP was a shared singleton failing to connect this session — CLAUDE.md's documented fallback)",
+    "script": "scripts/audit/w38-live-verify.js (new, not committed to the worktree — evidence tooling in MAIN)",
+    "server": "this lane's own dev server, http://127.0.0.1:8476 (already running)",
+    "H2_style_tab_scene_group_scope": {
+      "screenshots": [
+        "after/W-38/live/style-tab-min-rulings-1.png",
+        "after/W-38/live/style-tab-min-rulings-3.png",
+        "after/W-38/live/style-tab-min-rulings-8.png"
+      ],
+      "row_present_under_hatch": true,
+      "row_present_under_contour": false,
+      "row_present_under_wireframe": false,
+      "row_present_under_contourSlice": false,
+      "drag_1_3_8_stored_values": { "1": 1, "3": 3, "8": 8 },
+      "pushHistory_calls_for_3_drags": 3,
+      "one_undo_per_gesture": "CONFIRMED — exactly 3 pushHistory() calls for 3 separate drag gestures (one commit per onCommit, via the shared sliderRow/renderControl -> commitStyle path every other descriptor uses)",
+      "hatch_wireframe_hatch_survives_at_5": true,
+      "json_round_trip_survives_at_5": true,
+      "ground_ink_at_control_1_3_8": { "1": 2650.16, "3": 2650.16, "8": 2650.16 },
+      "ground_unaffected": "CONFIRMED — identical ground ink (2650.16mm) at control 1/3/8, decision 3's invariant holds",
+      "sphere_hatch_row_present": true,
+      "sphere_hatch_row_present_note": "The row DOES mount for sphere+hatch (structurally correct per the plan's own H2 instruction: D_FACETFLOOR is appended to MAPPER_CONTROLS.hatch/crosshatch at the MAPPER level, exactly like Density/Angle/Fill Style, none of which are hidden on a sphere either — sphere+hatch is a legitimate, meaningful combination that just uses a completely different mechanism, surface-fill.js, where the control is numerically inert (scene3d-facet-min-rulings.test.js T5, byte-identical at control 1 vs 8). This is disclosed explicitly, not a bug: no existing Style-tab control is gated by primitive smoothness, and gating this one alone would be new, unplanned surface area. Numeric inertness (T5) is the contract; the row's presence mirrors every sibling control's existing behavior."
+    },
+    "H3_object_tab_standalone_object3d_leaf": {
+      "screenshot": "after/W-38/live/object-tab-min-rulings.png",
+      "confirmed": "row mounts at min=1 max=8 step=1 value=3, placed directly after the Angle dial, before Border — matches H3's placement and agrees exactly with the H2 Style-tab descriptor (same key, same range, same default)."
+    }
+  },
+  "unit_tests": {
+    "new_file": "tests/unit/scene3d-facet-min-rulings.test.js",
+    "result": "79/79 pass"
+  },
+  "integration_tests": {
+    "file": "tests/integration/scene3d-panel.test.js",
+    "result": "42/42 pass (was 38 + 1 pre-existing stale assertion updated to include facetMinRulings:3 in an exact-match toEqual)"
+  },
+  "guard_suite": {
+    "scene3d-facet-tone.test.js": "15/15",
+    "scene3d-projected-pitch.test.js": "17/17",
+    "scene3d-box-density-bearing.test.js": "4/4",
+    "scene3d-appdefault-facet-fill.test.js": "7/7",
+    "scene3d-subwindow-density.test.js": "3 pass + 2 skipped",
+    "scene3d-hatch-density-500.test.js": "14/14",
+    "scene3d-faceted-highlight-dispatch.test.js": "12/12",
+    "scene3d-faceted-tone-law.test.js": "19/19",
+    "scene3d-faceted-density-calibration.test.js": "7/7",
+    "scene3d-hlr-spatial-index-identity.test.js": "6/6",
+    "scene3d-appdefault-lit-floor.test.js": "4 pass + 1 skipped",
+    "all_at_original_counts": true
+  },
+  "preset_bundler": {
+    "command": "node scripts/build-user-presets.js",
+    "result": "git status --short -- src/config/user-presets.js is empty after the run — byte-identical, bundler unaffected (no shipped preset names facetMinRulings)"
+  }
+}

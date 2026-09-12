@@ -1,0 +1,86 @@
+{
+  "unit": "F1-placement",
+  "lane": "fill-audit-a3",
+  "worktree": ".claude/worktrees/fill-audit-a3",
+  "branch": "3d-scene/fill-audit-a3",
+  "base_sha": "8adfd5af",
+  "prototype": "B (LOCAL) — ruled 2026-09-06, docs/3d-audit/lane-reports/LEDGER.md",
+  "fix": {
+    "file": "src/core/scene3d/surface-fill.js",
+    "new_function": "wvPlaceCov(localPitch)",
+    "wired_at": "weightCovAt's wave fallthrough, guarded to isWaveLaw() && !isWv6()",
+    "mechanism": "States the wave laws' flat placement reserve against localPitch (projection-correct, already passed into weightCovAt) instead of the global masterPitch — the accumulator now advances by screen distance instead of grid index."
+  },
+  "subject_laws": ["interlockWeave", "onePenDown", "trochoidLoop"],
+  "control_laws_untouched": ["ampSpacing", "weaveDepth", "taperedEnds (not gated, same defect via wbFlatCov, out of scope)"],
+  "primary_oracle_condition_1": {
+    "description": "deep-blank (dist-to-nearest-ink > 2.0mm) area over the front visible-form region, torus/hatch/Density50, 0.1mm raster",
+    "measured_on_this_tree": {
+      "pre_fix_8adfd5af": { "interlockWeave": 3.02, "onePenDown": 4.00, "trochoidLoop": 1.79 },
+      "prototype_B": { "interlockWeave": 0.03, "onePenDown": 0.00, "trochoidLoop": 0.00 }
+    },
+    "bar": "<=0.5mm2 (+-10% => 0.55mm2), restated on THIS tree's own numbers — see report body ## Bars changed",
+    "note": "The plan's own §10 figures (11.89/14.70/12.15 pre-fix, bar 3.0mm2) were measured at the plan's base sha 3c88605f and are stale for this tree: other fixes landed on the lane between 3c88605f and 8adfd5af already reduced the pre-fix baseline."
+  },
+  "condition_2_total_area_bar_restated": {
+    "largest_dist_gt_0.8mm_cluster": {
+      "pre_fix_8adfd5af": {
+        "interlockWeave": "45.89mm2 (27.6x4.1mm)",
+        "onePenDown": "39.04mm2 (24.2x4.0mm)",
+        "trochoidLoop": "55.67mm2 (41.6x6.3mm)"
+      },
+      "prototype_B": {
+        "interlockWeave": "39.81mm2 (27.4x6.9mm)",
+        "onePenDown": "21.27mm2 (23.3x3.0mm)",
+        "trochoidLoop": "14.03mm2 (19.2x2.7mm)"
+      }
+    },
+    "bar": "area <=45mm2, longest extent <=30mm — restated to what Prototype B meets with margin",
+    "note": "Does NOT cleanly separate pre- from post-fix for every law on its own (pre-fix onePenDown's 39.04mm2 is below interlockWeave's post-fix 39.81mm2) — this is exactly why condition 1 (deep-blank), not this bar, is the PRIMARY gate, per the plan's own §2 rationale."
+  },
+  "condition_3_red1b_restated": {
+    "on": "drawn perpendicular gap (nearest-approach distance between adjacent kept rulings' point sets), not the index gap",
+    "status": "measured, NOT gated — retired as a pass/fail bar",
+    "why": "interlockWeave/onePenDown/trochoidLoop are serpentine families; nearest-approach distance is dominated by where weave crests/troughs happen to swing toward each other, not by placement spacing. Pre-fix ratio 10.4/12.8/18.3 (min gaps 0.11-0.24mm, weave passes nearly touching); Prototype B 11.9/12.4/5.1. No bar separates defect from fix on this metric. RED-2 (deep-blank) is the metric that does."
+  },
+  "condition_4_byte_identity": {
+    "method_1_unit_test": "SF.buildObject ink output, ampSpacing/weaveDepth, torus/sphere/cone x density 25/50/100 (18 combinations), pre-fix source (git show 8adfd5af) vs post-fix, in tests/unit/scene3d-ribbon-flat-field-placement.test.js's own describe block.",
+    "result_1": "18/18 byte-identical (JSON.stringify of rounded path coordinates)",
+    "method_2_real_capture": "scripts/audit/scene3d-capture.js, torus__hatch__{ampSpacing,weaveDepth}__{med,max}__a + cone__contour__ampSpacing__med__a, before (committed gallery baseline) vs after (this unit's capture)",
+    "result_2": "6/6 byte-identical (cmp -s), confirmed both by md5-class comparison and by direct visual read"
+  },
+  "condition_5_f1amp_handoff": "See report body ## F1-amp handoff — filed as the follow-up, not merged in.",
+  "guards": {
+    "clean": [
+      "scene3d-ladder-uniform-field-spacing (9/9)",
+      "scene3d-style-fill-lines (15/15)",
+      "scene3d-curved-density-floor",
+      "scene3d-curved-density-sparse-end",
+      "scene3d-ribbon-c3-rule5",
+      "scene3d-ribbon-outline-fill-seam",
+      "scene3d-ribbon-wall-region-clip",
+      "scene3d-ribbon-weightscale-invariant",
+      "scene3d-ribbon-primitives",
+      "scene3d-ribbon-f6-self-occlusion",
+      "scene3d-fill-even-spacing",
+      "scene3d-fill-span-verdict",
+      "scene3d-fill-ruling-continuity",
+      "scene3d-fill-seam-continuity",
+      "scene3d-fill-boundary-ends",
+      "scene3d-plot-floor-obj",
+      "scene3d-plot-safety",
+      "scene3d-tone-algo-default",
+      "scene3d-hatch-density-500",
+      "scene3d-subwindow-density",
+      "scene3d-appdefault-lit-floor",
+      "scene3d-crosshatch-parity (W-36c P-suite proxy, 37 cases)"
+    ],
+    "pre_existing_failures_not_caused_by_this_unit": {
+      "files": ["tests/unit/scene3d-ribbon-f1b-streaks.test.js", "tests/unit/scene3d-ribbon-wall-coverage.test.js"],
+      "affected_laws": ["interlockWeave", "trochoidLoop"],
+      "proof": "Identical failures, identical numeric values (e.g. ringFillRate=0.9363204944266638 to 13 decimal places), whether run against the current Prototype-B tree OR against VECTURA_PRE_F1P=1 (the pristine pre-fix 8adfd5af source loaded via git show). Reproduced 3+ times each way, stable.",
+      "anomaly": "An early run in this session's history (before any edits existed) showed scene3d-ribbon-f1b-streaks.test.js passing 44/44; every later run (many repeats, pre- and post-fix alike) shows 8/44 failing. Root cause not identified within this unit's budget — not resolved, not silenced. See report body for full detail.",
+      "disposition": "Out of this unit's file scope (points at self-occlusion/erosion pipeline territory, forbidden files). Flagged for the orchestrator to open as its own W-id / STILL-OPEN item, not fixed here."
+    }
+  }
+}

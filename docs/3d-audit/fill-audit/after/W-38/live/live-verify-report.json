@@ -1,0 +1,22 @@
+{
+  "rowPresence": {
+    "hatch": true
+  },
+  "afterContour": false,
+  "afterWireframe": false,
+  "afterSlices": false,
+  "shots": {
+    "1": 1,
+    "3": 3,
+    "8": 8
+  },
+  "historyCallsAfter3Drags": 3,
+  "survivedWireframeDetour": 5,
+  "roundTrip": 5,
+  "sphereHasRow": true,
+  "groundInk": {
+    "1": 2650.16,
+    "3": 2650.16,
+    "8": 2650.16
+  }
+}

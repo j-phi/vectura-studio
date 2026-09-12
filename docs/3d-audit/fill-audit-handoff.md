@@ -195,6 +195,37 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    `npm run test:ci`, reconcile intentionally-red tests, bump version + `version:sync`, CHANGELOG/plans/
    README, commit, STOP.
 
+## ROUND 3 PAUSE POINT (2026-09-12 07:50 EDT) — read this first
+
+**Jay paused the work.** Round 3 ran 2026-09-10 → 12 in five `-3` worktrees off `main` **`426cc5e4`**
+(v1.4.1, round 2 merged). **Nothing from round 3 is merged.** `main` is `426cc5e4` plus the uncommitted
+docs of this pause point, still **44+ ahead of `origin/main` and NOT pushed**.
+
+**Lane HEADs at the pause** (verified read-only):
+
+| lane | HEAD | state |
+|---|---|---|
+| `fill-audit-a3` (:8475) | **`32ec6ef0`** | **UNVERIFIED WIP** — F1-placement, on top of `8adfd5af` |
+| `fill-collapse-3` (:8482) | **`d00ec210`** | **UNVERIFIED WIP** — U9b-2, test file only, on top of `49a5ef88` |
+| `fill-audit-3` (:8476) | `141ed0b5` | clean — W-38 + W-38b, both closed |
+| `fill-audit-d3` (:8481) | `426cc5e4` | clean, never written to (W-37 closed MEASURED) |
+| `handoff-c3` (:8470) | `426cc5e4` | clean, idle by design |
+
+**Landed on lanes, reviewed and closed:** T4 `a3b651f0` · U6 `2af329dd` · W-38 `575f886d` ·
+W-38b `141ed0b5` · W-36c `8adfd5af` (**Jay's decision 6 delivered**) · U9b `2b189b5f` · W-37 CLOSED MEASURED.
+**U7-2 `49a5ef88` is DONE but its review is OWED.**
+
+**Three agents died to Incident 8 and were never resumed — restart them FRESH:** the F1-placement
+implementer, the U9b-2/U5b-4 implementer, and the U7-2 reviewer. **Both WIP commits are unverified;
+verify-or-revert each before building on it.** Note the recurring shape: **the two units that died mid-step
+are exactly the two with no report on disk.**
+
+**All nine of Jay's §4 decisions are ANSWERED (SESSION-SUMMARY §4 is the authoritative record — he answered
+in chat; the decisions page mirrors them but cannot save). NOTHING IS FROZEN.**
+
+**Resume prompt for the next orchestrator (paste verbatim):**
+> Resume the 3D fill audit at the round-3 pause point. Local `main` is **`426cc5e4`** (v1.4.1, round 2 merged, 44+ ahead of origin, NOT pushed). Read, in order: `docs/3d-audit/fill-audit-handoff.md` (this pause block), `docs/3d-audit/lane-reports/SESSION-SUMMARY.md` (§1 landed, §2 the three dead agents, §3 the resume order, §4 all nine decisions ANSWERED — nothing is frozen, §6 merge status), `docs/3d-audit/lane-reports/LEDGER.md` (standing rulings, the round-3 queue, and the round-2 MERGE CHECKLIST, which is self-contained and still has open items), `docs/3d-audit/STILL-OPEN.md`, `docs/3d-audit/lane-reports/AGENT-PROTOCOL.md`, and `docs/3d-audit/lane-reports/ROUND3-BRIEFS.md`. **The five `-3` worktrees are LIVE — work in them, do not branch new ones.** Serve main with `node scripts/dev-server.js 8460` for the gallery, and **kill any stale dev server on 8475/8481/8482/8476/8470 before starting a lane** — leftover servers from a previous round have twice held those ports, and a stale server on a lane port is a silent way to test the wrong tree. **Put an explicit `timeout: 600000` for the known-slow vitest files in EVERY brief — implementer, reviewer and planner alike;** seven background-polling deviations across two rounds were all the same mechanical cause, and more emphatic prose has already failed to fix it. **Restart the three dead agents fresh:** the F1-placement implementer from WIP `32ec6ef0` (**verify-or-revert first**; brief is `F1-placement-plan.md`, Prototype B under its five ruled conditions), the U9b-2/U5b-4 implementer from WIP `d00ec210` (**verify-or-revert first**; scope in LEDGER rows 10a and 11a), and a fresh U7-2 reviewer (pinned `2b189b5f..49a5ef88`; the secretary's four flags are in the ledger). Then continue SESSION-SUMMARY §3's per-lane order. Same process and models: lane secretary first, then Sonnet implementers → Sonnet adversarial reviewers → Opus judges/planners; Fable only orchestrates and looks at pictures. Commit per unit in the lane worktree. **Merge when the round-3 queue is exhausted — and work the round-2 merge checklist's still-open items, the `git show HEAD:` sweep included. Never push.**
+
 ## How to run the next session — ROUND 3 (added 2026-09-10, after the round-2 merge)
 
 **Resume prompt for the next orchestrator (paste verbatim):**

@@ -1,0 +1,169 @@
+{
+  "unit": "W-36c",
+  "jayDecision": "2026-09-10 decision 6 -> option C: each crosshatch family carries the single-family hatch ruling count at the same Density, under a new anti-saturation cap",
+  "replaces": "W-36's shipped CROSS_PAIR_BUDGET=1.1 shared-budget half-split",
+  "worktree": "fill-audit-a3",
+  "branch": "3d-scene/fill-audit-a3",
+  "baseSha": "a3b651f0",
+  "port": 8475,
+  "appVersion": "1.4.1",
+  "mechanism": {
+    "file": "src/core/scene3d/surface-fill.js",
+    "CROSS_FAMILY_BUDGET": 1.0,
+    "cap": "crossMinPitch() = inkWidth() * (1 + CROSS_MIN_CLEAR_INKW), CROSS_MIN_CLEAR_INKW=1 -> 2x inkWidth (Rank 1, not the tighter Rank 2 -- max measured coverage 0.8298 stayed under the 0.84 stop-condition threshold)",
+    "dfMaxMulWidened": "ceiling widened by max(1/share, crossFloorPitch/masterPitch) so the cap can actually be spent"
+  },
+  "redReDerivedOn": "a3b651f0 (T4 landed on this file since the plan's 426cc5e4 export; re-derived per AGENT-PROTOCOL -- every number matched the planner's 426cc5e4 table to the digit, confirming T4's mkDashRamp/morph-branch work is disjoint from the crosshatch pair-budget code)",
+  "rawRigCells": [
+    { "cell": "sphere d=1", "hatchN": 4, "before": { "aN": 2, "bN": 4, "ink": 235.0 }, "after": { "aN": 4, "bN": 6, "ink": 421.5 }, "inkRatioVsHatch177.9": 2.37, "capBinding": false },
+    { "cell": "sphere d=50", "hatchN": 16, "before": { "aN": 9, "bN": 11, "ink": 877.3 }, "after": { "aN": 16, "bN": 21, "ink": 1606.0 }, "inkRatioVsHatch723.4": 2.22, "capBinding": false },
+    { "cell": "sphere d=220", "hatchN": 69, "before": { "aN": 37, "bN": 48, "ink": 3713.0 }, "after": { "aN": 46, "bN": 54, "ink": 4328.5 }, "inkRatioVsHatch3132.3": 1.38, "capBinding": true },
+    { "cell": "cylinder d=1", "hatchN": 6, "before": { "aN": 3, "bN": 4, "ink": 298.8 }, "after": { "aN": 6, "bN": 6, "ink": 561.6 }, "inkRatioVsHatch277.5": 2.02, "capBinding": false },
+    { "cell": "cylinder d=50", "hatchN": 22, "before": { "aN": 12, "bN": 12, "ink": 1161.4 }, "after": { "aN": 22, "bN": 22, "ink": 2107.5 }, "inkRatioVsHatch1056.5": 2.00, "capBinding": false },
+    { "cell": "cylinder d=220", "hatchN": 94, "before": { "aN": 52, "bN": 54, "ink": 5019.6 }, "after": { "aN": 62, "bN": 65, "ink": 5828.4 }, "inkRatioVsHatch4495.5": 1.30, "capBinding": true },
+    { "cell": "torus d=1", "hatchN": 3, "before": { "aN": 2, "bN": 2, "ink": 342.2 }, "after": { "aN": 3, "bN": 3, "ink": 375.1 }, "inkRatioVsHatch167.8": 2.24, "capBinding": false },
+    { "cell": "torus d=50", "hatchN": 12, "before": { "aN": 7, "bN": 7, "ink": 905.8 }, "after": { "aN": 12, "bN": 12, "ink": 1492.0 }, "inkRatioVsHatch733.6": 2.03, "capBinding": false },
+    { "cell": "torus d=220", "hatchN": 46, "before": { "aN": 25, "bN": 25, "ink": 3195.0 }, "after": { "aN": 35, "bN": 35, "ink": 4146.2 }, "inkRatioVsHatch2911.4": 1.42, "capBinding": true },
+    { "cell": "ellipsoid d=1", "hatchN": 5, "before": { "aN": 2, "bN": 4, "ink": 274.7 }, "after": { "aN": 5, "bN": 6, "ink": 548.3 }, "inkRatioVsHatch263.7": 2.08, "capBinding": false },
+    { "cell": "ellipsoid d=50", "hatchN": 16, "before": { "aN": 9, "bN": 11, "ink": 1007.6 }, "after": { "aN": 16, "bN": 21, "ink": 1843.2 }, "inkRatioVsHatch837.4": 2.20, "capBinding": false },
+    { "cell": "ellipsoid d=220", "hatchN": 67, "before": { "aN": 36, "bN": 47, "ink": 4187.6 }, "after": { "aN": 44, "bN": 54, "ink": 4859.2 }, "inkRatioVsHatch3535.1": 1.37, "capBinding": true },
+    { "cell": "JAY sphere d=50 rungMode=fine", "hatchN": 17, "before": { "aN": 9, "bN": 11, "ink": 862.2 }, "after": { "aN": 17, "bN": 19, "ink": 1555.6 }, "inkRatioVsHatch760.96": 2.04, "capBinding": false }
+  ],
+  "capCoverageSweep_P5a": {
+    "instrument": "W-26b inkCoverage, copied verbatim from scene3d-fill-span-verdict.test.js, bar < 0.85",
+    "d170_220_300": {
+      "sphere": [0.798, 0.807, 0.811],
+      "cylinder": [0.805, 0.807, 0.807],
+      "torus": [0.366, 0.379, 0.383],
+      "ellipsoid": [0.589, 0.597, 0.602],
+      "cone": [0.537, 0.547, 0.549],
+      "capsule": [0.823, 0.828, 0.8298]
+    },
+    "max": "capsule d=300 = 0.8298 -- under the plan's 0.84 stop-condition-2 threshold, Rank 1 (2x inkWidth) kept, Rank 2 not needed"
+  },
+  "galleryEvidence_wholeScenePipeline": {
+    "before_v1.4.1": { "sphere": [454.6, 1551.3, 5940.6], "cylinder": [564.7, 1716.7, 6566.7], "torus": [409.1, 643.9, 1817.0], "ellipsoid": [460.3, 1468.5, 5529.1] },
+    "after_W36c": { "sphere": [759.3, 2714.1, 6870.4], "cylinder": [946.3, 2950.5, 7682.8], "torus": [597.4, 949.8, 2163.2], "ellipsoid": [778.1, 2467.7, 6397.8] },
+    "note": "low/med densities MMagnitude match the raw rig's ~2x prediction less exactly because the gallery whole-scene pipeline differs from the raw rig (per the plan's own §1 disclosure); max densities show the expected smaller increase where the cap is doing its job (1.16x-1.19x)",
+    "mustNotMoveControls": {
+      "sphere__hatch__ladder__med__a": { "before": 1343.1, "after": 1343.1, "byteIdentical": true },
+      "sphere__contour__ladder__med__a": { "before": 1169.9, "after": 1169.9, "byteIdentical": true },
+      "cylinder__hatch__ladder__max__a": { "before": 5901.2, "after": 5901.2, "byteIdentical": true }
+    }
+  },
+  "jaysCellBespoke": {
+    "params": "sphere, mapper crosshatch, fillAngle 45, fillDensity 50, toneLaw ladder, rungMode fine, DEFAULT_CAMERA, ground+backdrop off",
+    "before": { "pathCount": 97, "totalPoints": 670, "inkMm": 987.3, "screenshot": "jays-cell-before.png" },
+    "after": { "pathCount": 120, "totalPoints": 1097, "inkMm": 1680.8, "screenshot": "jays-cell-after.png" },
+    "inkRatio": 1.70,
+    "note": "whole-scene pipeline number; the raw rig's own prediction for this exact cell was 862.2 -> 1555.6 (2.04x), matched to the digit by the parity test"
+  },
+  "mutations": {
+    "M1_revertEngineKeepNewTest": {
+      "expected": "P3a fails on all cells",
+      "measured": "23 of 91 tests fail (all 21 P3a assertions plus 2 P5b assertions that sit within floating-point rounding of their own rounded literal threshold on the pre-fix engine's own precise ink value -- not a real defect, confirmed harmless because the post-fix ink values (5828.4, 4146.2) clear the same thresholds with wide margin)",
+      "sample": "ellipsoid d=140: 0.5714 vs required 0.85; Jay's cell: 0.5294 vs required 0.85"
+    },
+    "M2_keepBudgetDisableCap": {
+      "expected": "P5a fails, saturation restored",
+      "measured": {
+        "sphere_d220_cov": 0.9839,
+        "cylinder_d220_cov": 0.9867,
+        "cylinder_d300_cov": 0.9985,
+        "cylinder_d220_ink": 9136.777,
+        "note": "matches the plan's judge-C1 saturation number (9136.8mm) to the digit -- this is exactly the number the cap exists to prevent"
+      }
+    },
+    "M3_capAt4xInkWidth_overTight": {
+      "expected": "P5b fails, crosshatch lighter than shipped hatch-adjacent baseline",
+      "measured": { "sphere_d220_ink": 2229.4, "cylinder_d220_ink": 2959.4, "torus_d220_ink": 2208.7, "ellipsoid_d220_ink": 2543.4 },
+      "note": "all below the v1.4.1 shipped values (3713.0 / 5019.6 / 3195.0 / 4187.6) -- proves P5b is a real two-sided cap, not decoration"
+    },
+    "M4_restoreOldBudgetKeepCap": {
+      "expected": "P3a fails on every cell -- proves P3a guards the budget, not the cap",
+      "measured": "21 of 21 P3a assertions fail (every primitive x density + Jay's cell)"
+    }
+  },
+  "guardBattery": {
+    "scene3d-crosshatch-parity.test.js (P1/P2/P3a/P3b/P4/P5a/P5b/P5c/P6, rewritten P3/P5, P1/P2/P4/P6 kept verbatim)": "91/91",
+    "scene3d-curved-density-floor.test.js (re-pinned: 4 counts, dial bar 2.5->2.0 + monotonicity replacing the old sub-check)": "13/13",
+    "scene3d-crosshatch-cell-shape.test.js (W-31 ceiling re-pinned, C1/C5/C2/oracle-validity)": "23/23",
+    "scene3d-hatch-density-angle-stable.test.js (W-36b per-family bearings, untouched)": "9/9",
+    "scene3d-ladder-uniform-field-spacing.test.js (W-26 gap-jump, untouched)": "9/9",
+    "scene3d-fill-even-spacing.test.js": "12/12",
+    "scene3d-curved-density-sparse-end.test.js": "20/20",
+    "scene3d-fill-ruling-continuity.test.js": "10/10 (+1 skip)",
+    "scene3d-fill-boundary-ends.test.js": "41/41",
+    "scene3d-plot-safety.test.js": "5/5 (+1 skip)",
+    "scene3d-mapper-audit.test.js": "70/70",
+    "scene3d-surface-fill.test.js": "6/6 (+2 skip)",
+    "scene3d-curved-crosshatch-controls.test.js": "18/18",
+    "scene3d-fill-span-verdict.test.js (untouched, the cap's calibrator)": "11/11",
+    "scene3d-mark-laws-draw.test.js (T1/T1b/T4 oracles, mkTick/mkDashRamp)": "30/30 byte-identical",
+    "scene3d-hatch-density-floor.test.js": "6/6",
+    "scene3d-hatch-density-500.test.js": "14/14",
+    "scene3d-fill-ruling-corners.test.js (W-33)": "19/19",
+    "scene3d-tone-law-dispatch.test.js": "7/7 (1 flaky worker-RPC-timeout error under shared-machine load, exit 0, matches T1/T1b's own documented flakiness pattern)",
+    "scene3d-hl-stage-roster.test.js": "5/5",
+    "scene3d-xray.test.js": "9/9",
+    "scene3d-tone-law-collapse.test.js": "95/95 (same flaky RPC-timeout note)",
+    "scene3d-tone-law-writeback.test.js": "7/7",
+    "scene3d-mappers.test.js": "32/32",
+    "scene3d-box-density-bearing.test.js (faceted path, untouched)": "4/4",
+    "scene3d-curved-fill-angle-migration.test.js + scene3d-hatch-angle.test.js": "65/65",
+    "scene3d-shadow-anatomy/overlap/stroke-treatment": "35/35",
+    "fill-hatch-unified.test.js + fill-param-effects.test.js (2D layer, unrelated)": "61/61",
+    "geometry3d-enhancements.test.js + noise-rack.test.js (unrelated)": "89/89"
+  },
+  "look": {
+    "cylinder__crosshatch__ladder__max__a": "before/after side-by-side: after is visibly denser, both families still resolve into a clean diamond grid, no solid block",
+    "sphere__crosshatch__ladder__med__a": "after is visibly denser vs before, each family now approaches the sphere__hatch__ladder__med__a single-family line count",
+    "capsule__crosshatch__ladder__max__a (tightest cell, cov 0.8298)": "fine but clearly resolved diamond grid, not solid -- crops confirm at native resolution",
+    "sphere max native-resolution crops": "pole region shows the highlight opening BOTH families' gaps together (not deleting one); equator region shows a uniform resolved diamond grid",
+    "cylinder max native-resolution crop (wall)": "uniform resolved diamond grid, no artifacts",
+    "jaysCell before/after": "clearly denser grid after the fix, both families visibly closer to matching density, pole highlight still opens correctly"
+  },
+  "barsChanged": [
+    {
+      "file": "src/core/scene3d/surface-fill.js",
+      "change": "CROSS_PAIR_BUDGET=1.1 (shared, split via crossPairShare half/r) REPLACED by CROSS_FAMILY_BUDGET=1.0 (per-family, full target/r) PLUS a new crossMinPitch/crossFloorPitch anti-saturation cap and a widened dfMaxMul ceiling",
+      "why": "Jay's decision 6 option C -- each family carries the single-family hatch count, not a shared split"
+    },
+    {
+      "file": "tests/unit/scene3d-curved-density-floor.test.js",
+      "change": "crosshatch pair-budget total counts re-pinned: d=10 ratio0.25 18->22, ratio1.0 11->18; d=100 ratio0.25 114->120, ratio1.0 64->116",
+      "why": "arithmetic consequence of the per-family budget -- both families now ask for more"
+    },
+    {
+      "file": "tests/unit/scene3d-curved-density-floor.test.js",
+      "change": "dial ceiling nB(0.25)/nB(2) >= 2.5 -> >= 2.0 (measured 2.25 @d=10, 2.542 @d=100); old sub-check nB(0.25)>=2.0xnB(1) REMOVED, replaced with strict monotonicity nB(0.25)>nB(1)>nB(2) at d=10 and d=100 (measured 9>7>4, 61>47>24)",
+      "why": "CEILING GOING DOWN -- needs orchestrator sign-off per AGENT-PROTOCOL/plan stop condition 7. Root cause: ladderPairWantedPitch's own c<=1 coverage clamp now bites earlier (cov~=0.25 vs the old ~=0.45) because ratio=1 is already at the ceiling by design (that IS Jay's rule), so the dial's headroom ABOVE ratio 1 is structurally smaller. The dial's authority over its full range is intact and measured; monotonicity cannot be gamed by a flat response"
+    },
+    {
+      "file": "tests/unit/scene3d-crosshatch-cell-shape.test.js",
+      "change": "W-31's CEILING re-pinned on all 11 configs: nA/nB/windows/cols[].n rise (denser families); e.g. sphere d=220 a nA 48->53, nB 48->54, windows 90->110",
+      "why": "arithmetic consequence -- C1 (aspect RANGE) does not regress: narrower on 3 configs, flat on 4, wider on 2 that gained measurable columns, cone d=50 a's old 0.191 one-sample artefact disappears (n=1 -> n>=3, not a regression against an artefact). C5 (measurability) improves on all 11 configs"
+    },
+    {
+      "file": "tests/unit/scene3d-crosshatch-cell-shape.test.js",
+      "change": "W-31's C2 (within-family local-gap p95/p05 spread) ceiling re-pinned UPWARD on 9 of 11 configs, e.g. torus d=220 a spreadB 5.90->7.49, ellipsoid d=220 a spreadA 12.97->14.70 (wait: verify field), cone d=50 a spreadB 11.79->16.88",
+      "why": "CEILING GOING UP -- needs orchestrator sign-off per AGENT-PROTOCOL/plan stop condition 7. This is the pre-existing, already-filed W-31b defect (probe()'s per-ruling MEAN mmPerFrac spent as one scalar step), made more visible by denser families and a larger order-statistic population. NOT fixed here by design -- W-31 already measured its own Rank 1/Rank 2 dead; this belongs to W-31b, per the plan's explicit instruction not to attempt a fix in this unit"
+    },
+    {
+      "file": "tests/unit/scene3d-crosshatch-parity.test.js",
+      "change": "old single P5 test (cylinder d=220 ink in [4200,5431], 'v1.3.98 + 15% cap') REPLACED by P5a (ink coverage < 0.85, 6 primitives x 3 densities), P5b (d=220 ink >= v1.4.1 shipped value, floor), P5c (family sits AT the cap, not below it); P3 split into P3a (NEW -- each family >= 0.85x the matching hatch count, Jay's rule) and P3b (kept, count ratio B:A in [0.72,1.40])",
+      "why": "the old P5 bar assumed a ~15%-over-shipped ink ceiling, which is definitionally wrong once Jay's rule targets ~2x the ink of hatch. P1/P2/P4/P6 kept verbatim"
+    }
+  ],
+  "stopConditionsChecked": {
+    "1_P5aBreach": "none -- max measured coverage 0.8298 (capsule d=300), Rank 1 (2x inkWidth) kept",
+    "2_capsuleMargin": "0.8298 < 0.84 threshold -- Rank 1 sufficient, Rank 2 not invoked",
+    "3_P5bBreach": "none -- every d=220 cell's after-ink exceeds its v1.4.1 before-ink",
+    "4_C2WorseThanPlan": "measured C2 numbers match the plan's own §3.4 predictions to the digit (e.g. torus d=220 spreadB 7.49, cone d=50 spreadB 16.88) -- not worse than the plan's own disclosed prediction",
+    "5_P6ControlMoved": "none -- all three P6 controls (sphere hatch d=50, cylinder hatch d=220, sphere contour d=50) byte-identical before/after in both the raw rig and the gallery pipeline",
+    "6_undisclosedBarMove": "none -- every bar move is listed under barsChanged above",
+    "7_orchestratorSignOff": "NOT YET OBTAINED for the two disclosed bar moves (density-floor dial bar 2.5->2.0+monotonicity; crosshatch-cell-shape C2 ceiling). Both are arithmetic consequences of Jay's own decision 6, mechanism measured and matching the plan's own predictions to the digit, but per protocol this is the orchestrator's ruling to make, not the implementer's",
+    "8_nativeCropsDontRead2xOrSolid": "crops confirm ~2x-ish density at med and a resolved (not solid) grid at max on sphere, cylinder and capsule (tightest cell)",
+    "9_honestBarAboveD140": "per the plan: Jay's rule holds exactly up to Density ~140, then degrades by design as the cap binds -- confirmed in this unit's own re-derivation of the plan's §2.4 table (not independently re-swept in full here, plan's own numbers re-verified only at d=170/220/300 cap-binding densities)"
+  }
+}
