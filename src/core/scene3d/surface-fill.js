@@ -4003,6 +4003,17 @@
       offSurface: 0, elongCapped: 0, lambdaMin: Infinity, lambdaMax: 0,
       litSamples: 0, litAmpSum: 0, litClearMin: Infinity, litClearSum: 0,
       darkClearSum: 0, realLen: 0, baseLen: 0, floorBound: 0,
+      // F1-amp — THE HIGHLIGHT-REGION ORACLE. `litSamples` above gates at
+      // I >= 0.55 (a pre-existing, looser cutoff never asserted by any test).
+      // `hi*` gates at exactly `WV_I0` (0.62) — the radiance above which
+      // `wvRamp` is mathematically zero for every pre-Round-6 law — so
+      // `hiAmpSum`/`hiDrawnSum` (amplitude as a SHARE of the drawn pitch) and
+      // `hiElongSum` (ink-per-unit-arc, since elongation IS the arc-length
+      // multiplier the file's own Round-5 header derives ink from) are a
+      // direct, un-aliased answer to "does the weave still straighten to a
+      // plain ruling above WV_I0". Reported once as `wave.hiAmpMean` /
+      // `wave.hiShareMean` / `wave.hiElongMean` below.
+      hiSamples: 0, hiAmpSum: 0, hiDrawnSum: 0, hiElongSum: 0,
     };
     const wvPitchPen = () => (TONE_ALGO === 'amplitudeOnly' ? WV_AO_PITCH_PEN : WV_PITCH_PEN);
     const wvFlatCov = () => {
@@ -4062,6 +4073,37 @@
     };
     // The amplitude each law asks for, as a share of the DRAWN pitch. 0.5 would
     // put a crest exactly on the neighbouring ruling's centreline.
+    // F1-amp — THE BACK-PORT. `interlockWeave`, `trochoidLoop`, `amplitudeOnly`
+    // and `onePenDown` are the four PRE-Round-6 flat-coverage wave laws
+    // (`RIBBON_LAWS` ∩ `isWaveLaw()` ∩ `!isWv6()` — the same four
+    // F1-placement's `wvPlaceCov` fallthrough scopes to, `:75`). They never
+    // got Round 6's amplitude floor, so `k * const` below is EXACTLY zero for
+    // every `I >= WV_I0` — a plain, unwavering ruling across the whole lit
+    // half of the form, however evenly F1-placement spaces it. Round 6's own
+    // header already names this "the defect Jay named, not a feature."
+    // `WV_AFLOOR_SHARE` back-ports the SAME mechanism `wv6.weaveDepth` ships
+    // (its own most conservative `aFlo`, 0.14 — chosen deliberately small: it
+    // is the floor least likely to push any of these four over the ±8% ink
+    // bound, since a smaller floor still satisfies "the weave never fully
+    // straightens" while minimising the added arc length). `tourScribble` is
+    // NOT one of the four (not a `RIBBON_LAWS` member — a different width
+    // channel entirely) and is deliberately left untouched, as is the
+    // trailing default for `nestedSerpentine`/`waveToRuling`/`nestedOctaves`/
+    // `hilbertDepth`/`sfcHalftone` (wave laws, but not flat-coverage ones —
+    // out of this unit's scope, and their byte-identity is this fix's own
+    // scoping proof).
+    const WV_AFLOOR_SHARE = 0.14;
+    // trochoidLoop's own floor is DELIBERATELY much smaller, measured, not
+    // guessed. The rolling-circle displacement (`wvForm`'s trochoidLoop
+    // branch moves BOTH along and across the ruling, not a lateral-only
+    // sine) hits a genuine CLIFF in the F1-placement deep-blank oracle
+    // between share 0.045 (safe: deepBlank 0.00mm2, largest cluster
+    // 14.55mm2) and share 0.05 (deepBlank jumps to 5.23mm2, largest cluster
+    // 43.66mm2) — a swept binary search on this exact torus/hatch fixture,
+    // not a smooth degradation, so no interpolated "safe-ish" value between
+    // WV_AFLOOR_SHARE and this one exists. 0.04 keeps a working margin below
+    // the measured cliff at 0.045.
+    const WV_TROCH_AFLOOR_SHARE = 0.04;
     const wvAmpAsk = (I) => {
       const k = wvRamp(I);
       // ROUND 6 — THE FLOOR. `k` is zero above WV_I0, so `k × const` is a plain
@@ -4072,10 +4114,11 @@
       // clamped back into [aFlo, aMax] there, so they too keep the floor.)
       const c6 = wv6();
       if (c6) return Math.max(WV6_AFLOOR_MIN, c6.aFlo + (c6.aMax - c6.aFlo) * k);
-      if (TONE_ALGO === 'interlockWeave') return k * WV_AMAX;
-      if (TONE_ALGO === 'trochoidLoop') return k * WV_TROCH_AMAX;
+      if (TONE_ALGO === 'interlockWeave') return WV_AFLOOR_SHARE + (WV_AMAX - WV_AFLOOR_SHARE) * k;
+      if (TONE_ALGO === 'trochoidLoop') return WV_TROCH_AFLOOR_SHARE + (WV_TROCH_AMAX - WV_TROCH_AFLOOR_SHARE) * k;
       if (TONE_ALGO === 'tourScribble') return k * WV_SCRIB_AMAX;
-      if (TONE_ALGO === 'amplitudeOnly') return k * 0.46;
+      if (TONE_ALGO === 'amplitudeOnly') return WV_AFLOOR_SHARE + (0.46 - WV_AFLOOR_SHARE) * k;
+      if (TONE_ALGO === 'onePenDown') return WV_AFLOOR_SHARE + (WV_AMAX - WV_AFLOOR_SHARE) * k;
       return k * WV_AMAX;
     };
     // ANTI-PHASE, OR IN PHASE — the difference between a weave and a nest.
@@ -8336,6 +8379,14 @@
             waveStat.litClearSum += clear;
             if (clear < waveStat.litClearMin) waveStat.litClearMin = clear;
           }
+          // F1-amp highlight oracle — exactly I >= WV_I0, see waveStat's own
+          // comment. `drawn` and `e` (elongation) are already in scope here.
+          if (I >= WV_I0) {
+            waveStat.hiSamples += 1;
+            waveStat.hiAmpSum += amp;
+            waveStat.hiDrawnSum += drawn;
+            waveStat.hiElongSum += e;
+          }
           waveStat.samples += 1;
           waveStat.ampSum += amp;
           if (amp < waveStat.ampMin) waveStat.ampMin = amp;
@@ -11808,6 +11859,23 @@
           ? Math.round((waveStat.realLen / waveStat.baseLen) * 1000) / 1000 : null,
         floorBound: waveStat.floorBound,
         pitchPen: wvPitchPen(),
+        // F1-amp — THE HIGHLIGHT ORACLE, gated at exactly I >= WV_I0 (0.62),
+        // not the looser 0.55 `lit*` cutoff above. `hiAmpMean` is the mean
+        // amplitude in millimetres, `hiShareMean` is that amplitude as a
+        // share of the drawn pitch (the SAME unit `wvAmpAsk` returns and the
+        // SAME unit WV6's `aFlo` is stated in), and `hiElongMean` is the mean
+        // elongation — ink-per-unit-arc, per the file's own Round 5 header
+        // ("the pen genuinely travels farther; this is an addition"). A law
+        // with no amplitude floor reports all three at (near-)zero-waviness
+        // values here: hiShareMean ~ 0, hiElongMean ~ 1.0 (a plain ruling has
+        // no extra arc length).
+        hiSamples: waveStat.hiSamples,
+        hiAmpMean: waveStat.hiSamples
+          ? Math.round((waveStat.hiAmpSum / waveStat.hiSamples) * 1000) / 1000 : null,
+        hiShareMean: (waveStat.hiSamples && waveStat.hiDrawnSum > 1e-9)
+          ? Math.round((waveStat.hiAmpSum / waveStat.hiDrawnSum) * 1000) / 1000 : null,
+        hiElongMean: waveStat.hiSamples
+          ? Math.round((waveStat.hiElongSum / waveStat.hiSamples) * 1000) / 1000 : null,
       } : null,
       umbilic: umbStat.n ? {
         samples: umbStat.n,
