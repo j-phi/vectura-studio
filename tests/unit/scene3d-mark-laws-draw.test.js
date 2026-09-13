@@ -167,43 +167,24 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
     // W-05b-W-06b-plan.md` §3.1 for the full mechanism.
     test('O1 — a tick sagittas across a curved surface: torus/contour ticks are no longer a straight chord', () => {
       const paths = algo.generate(buildSceneParams('mkTick', 'contour', 50, 'torus'), null, null, BOUNDS);
-      const sagittaOf = (pp) => {
-        if (!Array.isArray(pp) || pp.length < 3) return null; // a 2-point run has no interior vertex to sagitta
+      const sagittas = [];
+      paths.forEach((pp) => {
+        if (!Array.isArray(pp) || pp.length < 3) return; // a 2-point run has no interior vertex to sagitta
         const a = pp[0]; const b = pp[pp.length - 1];
         const dx = b.x - a.x; const dy = b.y - a.y;
         const chordLen = Math.hypot(dx, dy);
-        if (!(chordLen > 1e-6)) return null;
+        if (!(chordLen > 1e-6)) return;
         const ux = dx / chordLen; const uy = dy / chordLen;
         let maxDev = 0;
         pp.forEach((pt) => {
           const px = pt.x - a.x; const py = pt.y - a.y;
           maxDev = Math.max(maxDev, Math.abs(px * uy - py * ux));
         });
-        return { chordLen, sagitta: maxDev };
-      };
-      const all = paths.map(sagittaOf).filter(Boolean);
+        sagittas.push(maxDev);
+      });
       // Pre-fix this array is empty by construction (`pp.length` was always
       // exactly 2 — no interior vertex exists to deviate at all).
       //
-      // METHODOLOGY NOTE (T2-2, W-05b U2 — measured, not a fudge; same
-      // re-scope reasoning T2-review.md independently ruled sound in the
-      // sibling lane's own iteration of this unit). Sagitta of a chord over
-      // a curved surface scales with the chord's own LENGTH SQUARED
-      // (sagitta ~= L^2/(8r) for radius r), so once T2-2 made tick length
-      // itself vary with tone (R1), the ALL-tick population mixes long
-      // (near-max) and short (near-flick) chords, and the short ones
-      // legitimately show much less sagitta — not because the walk stopped
-      // following curvature, but because a short chord HAS less curve to
-      // show over its own length. Measured on this tree: all-population
-      // median (every tick near-uniform length, pre-T2-2) 0.127 mm ->
-      // 0.076 mm post-T2-2 (real, expected, NOT a regression in the walk
-      // itself). Restricting to the LONGEST third of chords — the same
-      // near-full-row-pitch population T1's own oracle was measuring before
-      // variable length existed — isolates the walk's own curvature
-      // fidelity from this unit's length redesign.
-      const byLen = all.slice().sort((x, y) => y.chordLen - x.chordLen);
-      const longThird = byLen.slice(0, Math.max(1, Math.floor(byLen.length / 3)));
-      const sagittas = longThird.map((s) => s.sagitta).sort((x, y) => x - y);
       // BAR NOTE (honest, not the plan's number — see the T1 impl report).
       // The plan's own §4 table states this oracle's GREEN bar as >= 0.15 mm.
       // An early version of `walkPoly` (each arm walking straight from the
@@ -215,12 +196,11 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
       // was fixed to walk both arms from the pass's own TRUE shared centre
       // (see `walkPoly`'s comment), the kink — and the inflated sagitta it
       // was reading as curvature — went away, and the median dropped to the
-      // TRUE surface-curvature-only figure: 0.127 mm (all-population,
-      // pre-T2-2) / see the longest-third figure asserted below
-      // (post-T2-2). That is a real, measured, ~large improvement over the
-      // pre-fix 0.000 mm (every mark was a 2-point chord), just short of
-      // the plan's own guessed target.
+      // TRUE surface-curvature-only figure: 0.127 mm. That is a real,
+      // measured, ~large improvement over the pre-fix 0.000 mm (every mark
+      // was a 2-point chord), just short of the plan's own guessed target.
       expect(sagittas.length).toBeGreaterThan(20);
+      sagittas.sort((x, y) => x - y);
       const median = sagittas[Math.floor(sagittas.length / 2)];
       expect(median).toBeGreaterThanOrEqual(0.10);
     });

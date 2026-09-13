@@ -1116,17 +1116,10 @@
   //                   and past that the dash thickens into a BAND of parallel
   //                   passes an inkWidth apart. One mark language, four states.
   //   'mkTick'        Short dashes PERPENDICULAR to the ruling, on a brick
-  //                   lattice, ONE PER ROW-PITCH CELL (T2-2, W-05b U2 — was
-  //                   a fixed size with COUNT as the tone channel; a user
-  //                   report found that design read as fans of same-length
-  //                   spokes with hard-edged gaps, `user-reports/8.png`).
-  //                   Tone is now LENGTH: the tick GROWS from a short flick
-  //                   in the highlight to the full row pitch in the shadow,
-  //                   so the site lattice is always complete — a mark
-  //                   everywhere the light asks for one — and black is
-  //                   still reached by pure abutment: full-length ticks in
-  //                   adjacent rows meet and a row of touching ticks IS a
-  //                   solid band. The cheapest black on the board.
+  //                   lattice, at a fixed size of nearly the full row pitch.
+  //                   Tone is COUNT. Black by pure abutment: the ticks pack
+  //                   along the row until they touch, and a row of touching
+  //                   ticks IS a solid band. The cheapest black on the board.
   //   'mkChevron'     A V, its apex turned to the ISOPHOTE — the mark is aligned
   //                   to the form's own tone contour, not to the ruling — so the
   //                   texture turns with the surface. Tone is SIZE; the arms
@@ -1187,15 +1180,10 @@
   //   mkLozenge      1–1×    0.505  65.1   4.5  6.78  20.41  4835   931   0   0
   //   mkTriangle     1–1×    0.468  60.5   4.5  6.84  18.87  4578  1112   0   0
   //   mkChevron      1–1×    0.444  42.9   4.5  6.40  15.03  4135  1798   0   0
-  //   mkTick*        1–1×    0.436  40.2  35.4  8.19  12.83  3975  2484   0   0
+  //   mkTick         1–1×    0.436  40.2  35.4  8.19  12.83  3975  2484   0   0
   //   mkCrossPlus    1–1×    0.416  38.3  34.1  7.16  13.10  3788  2355   0   0
   //   mkComma        1–1×    0.373  38.2  36.2  7.42  12.60  3751  3128   0   0
   //   mkSFlick       1–1×    0.256  53.8   4.5  8.26  22.97  4183   831   0   0
-  //
-  // * mkTick's row is PRE-T2-2 (`chan:'count'`, fixed length) — recorded
-  //   here as historical since fillcmp/v6mark.mjs was never re-run against
-  //   the `chan:'len'` redesign; it is not a live measurement of the
-  //   current mkTick.
   //
   // SEVEN of the twelve beat whiteBand's L* SPAN and all twelve beat it on the
   // worst adjacent tone step in the highlight (whiteBand 79.4, the twelve
@@ -2460,48 +2448,6 @@
     // reach solid" mechanisms (`mkCrossPlus`'s 2->3->4->6 arm progression,
     // `:2690`) — a small integer, not a re-derivation of the pitch itself.
     const MK_BAND_MAX_PASSES = 6;
-    // T2-2 (W-05b U2 iteration 2, mkTick's length-response curve — see
-    // `solveAt`'s `lenChan` branch). T2's own first attempt eased the
-    // length response with a bare cubic smoothstep on `t = 1 - I`
-    // (`t*t*(3-2*t)`), which has ZERO SLOPE at BOTH `t=0` and `t=1` by
-    // construction. Reviewed and REJECTED (T2-review.md): a spatially
-    // continuous `I` field mapped through a zero-derivative-at-both-ends
-    // curve produces two near-constant-length SHELVES joined by one steep
-    // transition — legible as hard-edged, flat-topped ink PLATEAUS with
-    // enlarged bare wedges, not the one continuous graded texture R1/R2 ask
-    // for, and at high density (small `R`) it also collapses coverage
-    // (reviewer measured `tooShort` +116% to +245% at d=220, coverage
-    // 0.925-0.999 -> 0.670-0.814 on all six primitive x mapper cells).
-    //
-    // This ships `eased = (1-BLEND)*t + BLEND*smoothstep(t)`: a blend of
-    // the smoothstep ease with the IDENTITY (plain linear) map, which has
-    // slope `(1-BLEND)` at BOTH `t=0` and `t=1` (never exactly 0, unlike
-    // pure smoothstep) and is monotonic by construction (a nonnegative-
-    // weighted sum of two monotonically increasing functions of `t`).
-    // A pure linear response (`BLEND=0`) is real but measures only 2.0-2.7x
-    // on O5's mean-of-thirds bar (see T2-impl.md) — short of the >= 3.0x
-    // asked for on every cell; `BLEND=0.88` was the smallest value measured
-    // (six-cell sweep, this unit, d=50) to clear 3.0x on ALL SIX primitive
-    // x mapper combinations with margin (3.05-3.67x; the tightest cell,
-    // torus/hatch, sits at 3.06x — see `T2-2-impl.md`'s acceptance table).
-    //
-    // MEASURED, NOT ASSUMED: raising `BLEND` fixes O5 but does NOT rescue
-    // d=220 coverage. Swept `BLEND` from 0.62 to 0.92 on this tree and
-    // found d=220 coverage/`tooShort` essentially flat throughout (e.g.
-    // cone/hatch d=220 coverage 0.823 at BLEND=0.62 vs 0.815 at BLEND=0.88,
-    // `tooShort` 745 vs 761) — a decile breakdown (drawn-fraction vs `I`,
-    // cone/hatch d=220) shows the drawn-fraction collapse starting around
-    // `I~0.6-0.7` at EVERY blend tried, not narrowing as the endpoint slope
-    // rises. The d=220 coverage story is therefore NOT primarily a
-    // curve-SHAPE defect this unit can close by choosing a gentler ease —
-    // it is `LMIN*R` legitimately approaching `MIN_MARK_MM` at high
-    // density, which the plan's own §3.2 already calls out as correct
-    // ("the existing drop rule still reaches bare paper at the extreme
-    // light end... left alone"). The mandated acceptance bar
-    // (`docs/3d-audit/lane-reports/T2-2-impl.md`) scopes coverage to d=50,
-    // where it holds comfortably (0.97-1.00) at every `BLEND` tried; d=220
-    // is reported honestly, not gated, and stays an open item.
-    const MK_TICK_EASE_BLEND = 0.88;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2534,16 +2480,6 @@
       // the algorithm's own return value (which carries no such tag by the
       // time it reaches a caller).
       trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0, dupStub: 0, markMids: [],
-      // T2-2 (W-05b/W-06b plan U2, R1: "ticks must have VARIABLE LENGTH,
-      // tick length carries tone", user-reports/8.png) — total DRAWN ink
-      // length (`lenByThird`) and mark COUNT (`cntByThird`) per radiance
-      // third, so a caller can read `lenByThird[i]/cntByThird[i]` as the
-      // mean drawn tick length in that third directly. Distinct from
-      // `byThird` above (kept for the pre-existing W-05 "count scales with
-      // darkness" guard, which under `chan:'len'` is no longer the tone
-      // carrier but still moves at the extremes where `L` clamps and `P`
-      // is re-derived — see `solveAt`'s `lenChan` branch).
-      lenByThird: [0, 0, 0], cntByThird: [0, 0, 0],
       // W-06b (T4) — the deepest state of `mkDashRamp`'s dissolution ramp
       // (dot -> dash -> unbroken ruling -> BAND) any placed mark reached
       // this render: the count of parallel passes in one mark. 1 = never
@@ -2572,31 +2508,17 @@
     // `chan` is the TONE CHANNEL and it is the axis that separates these laws
     // from each other more than any other single field:
     //   'size'   fixed count, the mark grows          (dot screen, lozenge, …)
-    //   'count'  fixed size, the marks multiply       (comma, radial flick)
-    //   'len'    fixed period, the mark GROWS/SHRINKS (tick — T2-2, below)
+    //   'count'  fixed size, the marks multiply       (tick, comma, radial flick)
     //   'elong'  fixed period, the mark CHANGES KIND  (the dissolution ramp)
     //   'amp'    one continuous stroke, amplitude and wavelength both move
     //   'alt'    alternating rows, a different channel on each
     // `lat` is the lattice, `or` the orientation, `P0`/`L0` the cell geometry in
-    // units of the row pitch. `LMIN` (len channel only) is the floor a mark's
-    // length may shrink to before the ordinary `MIN_MARK_MM` drop takes over,
-    // also in units of the row pitch.
+    // units of the row pitch.
     const MK = {
       mkDotScreen:   { shape: 'disc',     chan: 'size',  lat: 'hex',     or: 'none',   P0: 1.00 },
       mkLozenge:     { shape: 'lozenge',  chan: 'size',  lat: 'brick',   or: 'along',  P0: 1.15 },
       mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25 },
-      // T2-2 (W-05b U2, user 8.png: "ticks must have VARIABLE LENGTH, tick
-      // length carries tone"). Was `chan:'count'` (fixed length ~L0*R, tone
-      // carried by period/count alone). Now `chan:'len'`: a fixed lattice
-      // site every `P0*R` (P0=1.02 ~= one site per row pitch, so the field
-      // is COMPLETE — a mark at every site the light asks for anything,
-      // R2's "continuous texture"), and the mark's own LENGTH is the
-      // primary tone carrier, growing from a flick (`LMIN*R`) to the full
-      // row pitch (`L0*R`) as the surface darkens. See `solveAt`'s `'len'`
-      // branch, and its comment for a DIFFERENT length-response curve than
-      // T2's own first attempt (rejected — smoothstep-on-radiance made
-      // hard-edged ink plateaus with enlarged bare wedges, see T2-review.md).
-      mkTick:        { shape: 'tick',     chan: 'len',   lat: 'brick',   or: 'none',   L0: 1.02, LMIN: 0.18, P0: 1.02 },
+      mkTick:        { shape: 'tick',     chan: 'count', lat: 'brick',   or: 'none',   L0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
       mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
       mkSFlick:      { shape: 'sflick',   chan: 'elong', lat: 'errdiff', or: 'along',  P0: 0.95 },
@@ -6363,13 +6285,7 @@
           bucket.push(tm);
           mkStat.markMids.push(tm);
         }
-        // T2-2 — the drawn ink length `tot` is returned (rather than a bare
-        // `true`) so `layMark` can accumulate `lenByThird`/`cntByThird`
-        // without re-deriving it. `tot >= MIN_MARK_MM > 0` on every path
-        // that reaches here (the `tot < MIN_MARK_MM` branch above already
-        // returned `false`), so this stays truthy for every existing
-        // `if (place(...))` call site.
-        return tot;
+        return true;
       };
 
       // The mark's own turn. 'iso' and 'radial' read the intensity gradient IN
@@ -6416,7 +6332,6 @@
         const g = clamp((mkAsk(I) * R) / w, 0, 26);
         let P; let L;
         const countChan = law.chan === 'count' || (law.chan === 'alt' && parity === 1);
-        const lenChan = law.chan === 'len';
         // F-06 / W-06 — the dash BAND's capacity is a function of the period,
         // so it is stated here; every other shape's is a function of the cell
         // alone. `R` is the ROW pitch (the master pitch inflated by
@@ -6460,33 +6375,6 @@
           L = Math.min(L0 * R, capOf(PMIN));
           P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
           if (P <= PMIN + 1e-9) L = Math.min(g * P, capOf(P));
-        } else if (lenChan) {
-          // T2-2 (W-05b U2, R1: "ticks must have VARIABLE LENGTH, tick
-          // length carries tone", user-reports/8.png). LENGTH is the
-          // primary tone channel and PERIOD the secondary one — see the
-          // `MK_TICK_EASE_BLEND` comment above for the length-response
-          // curve and why T2's own first shipped curve (a bare smoothstep
-          // on radiance) was REJECTED (T2-review.md): it has zero
-          // derivative at BOTH ends, so `L` sits almost pinned near
-          // `LMIN*R` over roughly a THIRD of the tone range approaching the
-          // highlight — and at high density (small `R`) `LMIN*R` is already
-          // close to `MIN_MARK_MM`, so that whole wide band gets dropped as
-          // `tooShort` (measured by the reviewer: 360->776 marks dropped,
-          // cone/hatch d=220), reading as hard-edged ink plateaus with
-          // enlarged bare wedges rather than one continuous graded texture.
-          //
-          // As with `countChan` above, `P` is RE-DERIVED from `L` (not
-          // fixed at `P0*R`) so the delivered ink AREA FRACTION stays
-          // exactly what the tone solve asked for: a tick occupies `L`
-          // (across the row) by `w` (along the row, the pen width) inside a
-          // cell `R` (across) by `P` (along), so `area = L*w/(R*P)`, and
-          // `P = L/g` is the unique period making that equal `mkAsk(I)` —
-          // for ANY `L`. This is what keeps "black by pure abutment"
-          // correct even though `L` no longer comes from `g` directly.
-          const t = clamp(1 - I, 0, 1);
-          const eased = (1 - MK_TICK_EASE_BLEND) * t + MK_TICK_EASE_BLEND * (t * t * (3 - 2 * t));
-          L = (law.LMIN || 0) * R + (law.L0 - (law.LMIN || 0)) * R * eased;
-          P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
         } else {
           P = clamp(law.P0 * R, PMIN, MK_PMAX);
           L = Math.min(g * P, capOf(P));
@@ -6562,16 +6450,8 @@
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
         }
-        const drawnLen = place(fr, polys, a - arcMM[k], thetaAt(k, fr));
-        if (drawnLen) {
-          const third = Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3));
-          mkStat.byThird[third] += 1;
-          // T2-2 (R1) — the DRAWN ink length of this mark, not the solve's
-          // own asked `sv.L` (which a limb-truncated walk may not have
-          // fully delivered — see `askSum`/`drawnSum` above), against the
-          // SAME radiance third used for the pre-existing count guard.
-          mkStat.lenByThird[third] += drawnLen;
-          mkStat.cntByThird[third] += 1;
+        if (place(fr, polys, a - arcMM[k], thetaAt(k, fr))) {
+          mkStat.byThird[Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3))] += 1;
           // W-06b (T4) — `bandMax`, published via `lastMarkStats`, is the
           // deepest state of the dissolution ramp any placed mark actually
           // reached this render (O8's oracle: >= 2 proves the band states
@@ -11782,15 +11662,7 @@
     // so a caller can tell "not a mark law" apart from "a mark law that
     // placed nothing" (samples === 0).
     const publishMarkStats = () => {
-      lastMarkStats = mkStat.samples
-        ? {
-          algo: TONE_ALGO,
-          ...mkStat,
-          byThird: mkStat.byThird.slice(),
-          lenByThird: mkStat.lenByThird.slice(),
-          cntByThird: mkStat.cntByThird.slice(),
-        }
-        : null;
+      lastMarkStats = mkStat.samples ? { algo: TONE_ALGO, ...mkStat, byThird: mkStat.byThird.slice() } : null;
     };
     if (!runMapper(N, false)) { flushDeferredRibbons(); publishRibbonStats(); publishMarkStats(); return null; } // front surface (unchanged when no x-ray)
     // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
