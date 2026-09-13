@@ -1116,10 +1116,23 @@
   //                   and past that the dash thickens into a BAND of parallel
   //                   passes an inkWidth apart. One mark language, four states.
   //   'mkTick'        Short dashes PERPENDICULAR to the ruling, on a brick
-  //                   lattice, at a fixed size of nearly the full row pitch.
-  //                   Tone is COUNT. Black by pure abutment: the ticks pack
-  //                   along the row until they touch, and a row of touching
-  //                   ticks IS a solid band. The cheapest black on the board.
+  //                   lattice, ONE PER ROW-PITCH CELL (T2-2, W-05b U2 — was
+  //                   a fixed size with COUNT as the tone channel; a user
+  //                   report found that design read as fans of same-length
+  //                   spokes with hard-edged gaps, `user-reports/8.png`).
+  //                   Tone is now LENGTH: the tick GROWS from a short flick
+  //                   in the highlight to the full row pitch in the shadow,
+  //                   so the site lattice is always complete — a mark
+  //                   everywhere the light asks for one — and black is
+  //                   still reached by pure abutment: full-length ticks in
+  //                   adjacent rows meet and a row of touching ticks IS a
+  //                   solid band. T2-3 adds a low-discrepancy STAGGER of
+  //                   each tick's own centre across the row (the room its
+  //                   own shortening creates), fixing a bare cross-row
+  //                   wedge two earlier length-response curves both shipped
+  //                   (T2-review.md, T2-2-review.md) — see the `MK.mkTick`
+  //                   entry and `layMark` below. The cheapest black on the
+  //                   board.
   //   'mkChevron'     A V, its apex turned to the ISOPHOTE — the mark is aligned
   //                   to the form's own tone contour, not to the ruling — so the
   //                   texture turns with the surface. Tone is SIZE; the arms
@@ -1180,10 +1193,15 @@
   //   mkLozenge      1–1×    0.505  65.1   4.5  6.78  20.41  4835   931   0   0
   //   mkTriangle     1–1×    0.468  60.5   4.5  6.84  18.87  4578  1112   0   0
   //   mkChevron      1–1×    0.444  42.9   4.5  6.40  15.03  4135  1798   0   0
-  //   mkTick         1–1×    0.436  40.2  35.4  8.19  12.83  3975  2484   0   0
+  //   mkTick*        1–1×    0.436  40.2  35.4  8.19  12.83  3975  2484   0   0
   //   mkCrossPlus    1–1×    0.416  38.3  34.1  7.16  13.10  3788  2355   0   0
   //   mkComma        1–1×    0.373  38.2  36.2  7.42  12.60  3751  3128   0   0
   //   mkSFlick       1–1×    0.256  53.8   4.5  8.26  22.97  4183   831   0   0
+  //
+  // * mkTick's row is PRE-T2-2 (`chan:'count'`, fixed length) — recorded
+  //   here as historical since fillcmp/v6mark.mjs was never re-run against
+  //   the `chan:'len'` + T2-3 stagger redesign; it is not a live
+  //   measurement of the current mkTick.
   //
   // SEVEN of the twelve beat whiteBand's L* SPAN and all twelve beat it on the
   // worst adjacent tone step in the highlight (whiteBand 79.4, the twelve
@@ -2448,6 +2466,22 @@
     // reach solid" mechanisms (`mkCrossPlus`'s 2->3->4->6 arm progression,
     // `:2690`) — a small integer, not a re-derivation of the pitch itself.
     const MK_BAND_MAX_PASSES = 6;
+    // T2-3 (W-05b U2, iteration 3 — mkTick's length-response curve, see
+    // `solveAt`'s `lenChan` branch, and the ROW-TO-ROW STAGGER at the tick
+    // placement site in `layMark`). T2 (`dbad2d88`) and T2-2 (`9d911b05`)
+    // were BOTH rejected on the same finding (T2-review.md, T2-2-review.md):
+    // whichever ease curve was used, `mkShape`'s `'tick'` branch spends the
+    // ENTIRE length response in the ACROSS-ROW direction, centred on the row
+    // line (`surface-fill.js:2637`), so every mm the curve removes opens a
+    // bare strip of `(R-L)/2` on BOTH sides of every row, running the row's
+    // whole length — a WEDGE, because `L` grades along the row. Measured
+    // (`T2-3-plan.md` §0): T2-1's smoothstep and T2-2's blended smoothstep
+    // are, on this defect, THE SAME RENDER to within 1% on every wedge
+    // metric — the curve was never the lever. The fix that actually closes
+    // the wedge is the STAGGER at the placement site, not a different curve;
+    // this constant only sets O5's headroom now that the curve is free to
+    // be chosen on that bar alone.
+    const MK_TICK_EASE_BLEND = 0.92;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2480,6 +2514,39 @@
       // the algorithm's own return value (which carries no such tag by the
       // time it reaches a caller).
       trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0, dupStub: 0, markMids: [],
+      // T2-2/T2-3 (W-05b U2, R1: "ticks must have VARIABLE LENGTH, tick
+      // length carries tone", user-reports/8.png) — total DRAWN ink length
+      // (`lenByThird`) and mark COUNT (`cntByThird`) per radiance third, so
+      // a caller can read `lenByThird[i]/cntByThird[i]` as the mean drawn
+      // tick length in that third directly. Distinct from `byThird` above
+      // (kept for the pre-existing W-05 "count scales with darkness" guard,
+      // which under `chan:'len'` is no longer the tone carrier but still
+      // moves at the extremes where `L` clamps and `P` is re-derived — see
+      // `solveAt`'s `lenChan` branch).
+      lenByThird: [0, 0, 0], cntByThird: [0, 0, 0],
+      // T2-3 (`tests/unit/scene3d-mktick-wedge.test.js`'s rasterised
+      // bare-wedge oracle, `T2-3-plan.md` §2) — gated to `mkTick`'s own
+      // shape, republishes the field samples each ruling ALREADY computed
+      // (`smps` in `emitLineOnce`, no extra `sampleAt` calls) so a
+      // test-side rasteriser can measure bare area against the actual
+      // shaded silhouette instead of the site lattice: a site metric scores
+      // a cell "covered" the instant it draws ANY tick inside its own cell,
+      // however short — exactly the blindness (§1.3) that let a wedge ship
+      // twice under a passing coverage bar. `pts` is a flat `[x,y,I,...]`
+      // triple array (not an array of objects) to keep this cheap for a
+      // render with thousands of samples; `rowPitch` is `masterPitch /
+      // MK_ROW_COV`, captured once. Read-only diagnostic state — nothing
+      // here feeds back into the render.
+      tickField: { pts: [], rowPitch: null },
+      // T2-3 — one entry per mkTick LATTICE SITE (every `layMark` call, not
+      // every drawn mark), `[I, R, P, drawn]` flat quads. This is the
+      // reviewer's own per-site coverage quantity (T2-2-review.md §2:
+      // `cov = 1 - Σ(R·P over undrawn I<0.90 sites) / Σ(R·P over all I<0.90
+      // sites)`) — reported by the wedge oracle alongside the raster
+      // metrics precisely BECAUSE it is the metric proven blind to a
+      // cross-row wedge (a site scores fully covered the instant it draws
+      // ANY tick inside its own cell), not because it is being re-trusted.
+      tickSites: [],
       // W-06b (T4) — the deepest state of `mkDashRamp`'s dissolution ramp
       // (dot -> dash -> unbroken ruling -> BAND) any placed mark reached
       // this render: the count of parallel passes in one mark. 1 = never
@@ -2508,17 +2575,40 @@
     // `chan` is the TONE CHANNEL and it is the axis that separates these laws
     // from each other more than any other single field:
     //   'size'   fixed count, the mark grows          (dot screen, lozenge, …)
-    //   'count'  fixed size, the marks multiply       (tick, comma, radial flick)
+    //   'count'  fixed size, the marks multiply       (comma, radial flick)
+    //   'len'    fixed period, the mark GROWS/SHRINKS (tick — T2-2/T2-3, below)
     //   'elong'  fixed period, the mark CHANGES KIND  (the dissolution ramp)
     //   'amp'    one continuous stroke, amplitude and wavelength both move
     //   'alt'    alternating rows, a different channel on each
     // `lat` is the lattice, `or` the orientation, `P0`/`L0` the cell geometry in
-    // units of the row pitch.
+    // units of the row pitch. `LMIN` (`len` channel only) is the floor a
+    // mark's length may shrink to before the ordinary `MIN_MARK_MM` drop
+    // takes over, also in units of the row pitch.
     const MK = {
       mkDotScreen:   { shape: 'disc',     chan: 'size',  lat: 'hex',     or: 'none',   P0: 1.00 },
       mkLozenge:     { shape: 'lozenge',  chan: 'size',  lat: 'brick',   or: 'along',  P0: 1.15 },
       mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25 },
-      mkTick:        { shape: 'tick',     chan: 'count', lat: 'brick',   or: 'none',   L0: 1.02 },
+      // T2-2 (W-05b U2, user 8.png: "ticks must have VARIABLE LENGTH, tick
+      // length carries tone") made this `chan:'len'` (was `chan:'count'`,
+      // fixed length ~L0*R, tone carried by count/period alone) — a fixed
+      // lattice site every `P0*R` (P0=1.02, one site per row pitch, so the
+      // field is COMPLETE: a mark at every site the light asks for
+      // anything, R2's "continuous texture"), with the mark's own LENGTH as
+      // the primary tone carrier, growing from a flick (`LMIN*R`) to
+      // `L0*R` as the surface darkens (`solveAt`'s `lenChan` branch).
+      // T2-2's own `L0=1.02` (barely past the row pitch, T2's `LMIN=0.18`
+      // unchanged) shipped with a wedge — the tick's length response is
+      // spent ENTIRELY in the across-row direction and centred on the row
+      // line, so `(R-L)/2` opens bare on BOTH sides of every row (rejected
+      // twice, T2-review.md / T2-2-review.md). T2-3 (`T2-3-plan.md` §3
+      // Rank 1) fixes this at the PLACEMENT site (`layMark`, a row-to-row
+      // stagger of the tick's own centre) rather than the curve, and raises
+      // `L0` to 1.16: the stagger spends part of the dark-anchor's abutment
+      // margin (two adjacent rows' ticks can land up to `2*room` apart), so
+      // black-by-abutment needs a little more length in reserve to stay
+      // solid — measured effect on O5's weakest cell, `torus/hatch`: 2.772
+      // -> 2.999 (test rig, d=50).
+      mkTick:        { shape: 'tick',     chan: 'len',   lat: 'brick',   or: 'none',   L0: 1.16, LMIN: 0.18, P0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
       mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
       mkSFlick:      { shape: 'sflick',   chan: 'elong', lat: 'errdiff', or: 'along',  P0: 0.95 },
@@ -6285,7 +6375,13 @@
           bucket.push(tm);
           mkStat.markMids.push(tm);
         }
-        return true;
+        // T2-2/T2-3 — the drawn ink length `tot` is returned (rather than a
+        // bare `true`) so `layMark` can accumulate `lenByThird`/
+        // `cntByThird` without re-deriving it. `tot >= MIN_MARK_MM > 0` on
+        // every path that reaches here (the `tot < MIN_MARK_MM` branch
+        // above already returned `false`), so this stays truthy for every
+        // existing `if (place(...))` call site.
+        return tot;
       };
 
       // The mark's own turn. 'iso' and 'radial' read the intensity gradient IN
@@ -6332,6 +6428,7 @@
         const g = clamp((mkAsk(I) * R) / w, 0, 26);
         let P; let L;
         const countChan = law.chan === 'count' || (law.chan === 'alt' && parity === 1);
+        const lenChan = law.chan === 'len';
         // F-06 / W-06 — the dash BAND's capacity is a function of the period,
         // so it is stated here; every other shape's is a function of the cell
         // alone. `R` is the ROW pitch (the master pitch inflated by
@@ -6375,6 +6472,35 @@
           L = Math.min(L0 * R, capOf(PMIN));
           P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
           if (P <= PMIN + 1e-9) L = Math.min(g * P, capOf(P));
+        } else if (lenChan) {
+          // T2-2/T2-3 (W-05b U2, R1: "ticks must have VARIABLE LENGTH, tick
+          // length carries tone", user-reports/8.png). LENGTH is the
+          // primary tone channel and PERIOD the secondary one. T2's own
+          // first shipped curve (a bare smoothstep on radiance) was
+          // REJECTED (T2-review.md): zero derivative at BOTH ends pins `L`
+          // near `LMIN*R` over roughly a third of the tone range. T2-2's
+          // blended curve (`(1-BLEND)*t + BLEND*smoothstep(t)`, never
+          // exactly zero slope) was ALSO rejected (T2-2-review.md) — not
+          // for the curve's shape, but because the wedge it was blamed for
+          // is not a curve-shape defect at all (`T2-3-plan.md` §0: the two
+          // curves are the same render to within 1% on every wedge metric).
+          // `MK_TICK_EASE_BLEND` is kept at T2-2's own formula, raised only
+          // for O5 headroom now that it is free to be chosen on that bar
+          // alone — the wedge fix lives at the PLACEMENT site (`layMark`,
+          // below), not here.
+          //
+          // As with `countChan` above, `P` is RE-DERIVED from `L` (not
+          // fixed at `P0*R`) so the delivered ink AREA FRACTION stays
+          // exactly what the tone solve asked for: a tick occupies `L`
+          // (across the row) by `w` (along the row, the pen width) inside a
+          // cell `R` (across) by `P` (along), so `area = L*w/(R*P)`, and
+          // `P = L/g` is the unique period making that equal `mkAsk(I)` —
+          // for ANY `L`. This is what keeps "black by pure abutment"
+          // correct even though `L` no longer comes from `g` directly.
+          const t = clamp(1 - I, 0, 1);
+          const eased = (1 - MK_TICK_EASE_BLEND) * t + MK_TICK_EASE_BLEND * (t * t * (3 - 2 * t));
+          L = (law.LMIN || 0) * R + (law.L0 - (law.LMIN || 0)) * R * eased;
+          P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
         } else {
           P = clamp(law.P0 * R, PMIN, MK_PMAX);
           L = Math.min(g * P, capOf(P));
@@ -6449,9 +6575,43 @@
           }
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
+          // T2-3 (`T2-3-plan.md` §3 Rank 1 — PROTOTYPED and spike-gated
+          // there) — a 'tick' spends its whole LENGTH across the row and is
+          // built CENTRED on the row line (`mkShape`'s `'tick'` branch,
+          // `:2637` area), so every mm the length response takes off the
+          // tick is subtracted from the ROW-TO-ROW direction and opens a
+          // bare strip of `(R-L)/2` on BOTH sides of every row, running the
+          // row's whole length — the wedge T2 and T2-2 were both rejected
+          // for (T2-review.md, T2-2-review.md). Scatter the tick's own
+          // centre over exactly the room its shortening created, on a
+          // golden-ratio (low-discrepancy) sweep of the site's own arc
+          // index, so successive ticks in one row TILE the row's cell
+          // instead of stacking on its centre line. Zero at the dark anchor
+          // (`L -> L0*R` leaves no room, so pure abutment is preserved
+          // bit-for-bit) and maximal exactly where the wedge is. `STAG=1`
+          // (the full room) measured best on every cell and every metric in
+          // an amplitude sweep (plan §3) — do not damp it.
+          if (law.shape === 'tick') {
+            const room = 0.5 * Math.max(0, sv.R - sv.L);
+            if (room > 1e-6) {
+              const idx = a / Math.max(1e-6, sv.P);
+              const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
+              const cOff = room * (2 * uu - 1);
+              polys = polys.map((pl) => pl.map((pt) => [pt[0], pt[1] + cOff]));
+            }
+          }
         }
-        if (place(fr, polys, a - arcMM[k], thetaAt(k, fr))) {
-          mkStat.byThird[Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3))] += 1;
+        const drawnLen = place(fr, polys, a - arcMM[k], thetaAt(k, fr));
+        if (law.shape === 'tick') mkStat.tickSites.push(sv.I, sv.R, sv.P, drawnLen ? 1 : 0);
+        if (drawnLen) {
+          const third = Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3));
+          mkStat.byThird[third] += 1;
+          // T2-2/T2-3 (R1) — the DRAWN ink length of this mark, not the
+          // solve's own asked `sv.L` (which a limb-truncated walk may not
+          // have fully delivered — see `askSum`/`drawnSum` above), against
+          // the SAME radiance third used for the pre-existing count guard.
+          mkStat.lenByThird[third] += drawnLen;
+          mkStat.cntByThird[third] += 1;
           // W-06b (T4) — `bandMax`, published via `lastMarkStats`, is the
           // deepest state of the dissolution ramp any placed mark actually
           // reached this render (O8's oracle: >= 2 proves the band states
@@ -8854,6 +9014,24 @@
       // single-weight by construction: `sink.noteW` is never reached, no run is
       // ever handed a `weightScale`, and `splitByWeight` is never called.
       if (toneOn && isMarkLaw() && arcMM) {
+        // T2-3 (`tests/unit/scene3d-mktick-wedge.test.js`'s rasterised
+        // bare-wedge oracle, `T2-3-plan.md` §2) — gated to `mkTick`'s own
+        // shape, republish the field samples this ruling ALREADY computed
+        // above (no extra `sampleAt` calls) into `mkStat.tickField` so a
+        // test-side rasteriser can measure bare area against the actual
+        // shaded silhouette instead of the site lattice (§1.3: a site
+        // metric scores a cell "covered" the instant it draws ANY tick
+        // inside its own cell, however short). `wantFront`-gated so an
+        // x-ray back pass never contaminates the front-surface field.
+        // Read-only diagnostic — nothing here feeds back into the render.
+        if (wantFront && MK[TONE_ALGO] && MK[TONE_ALGO].shape === 'tick') {
+          if (mkStat.tickField.rowPitch == null) mkStat.tickField.rowPitch = masterPitch / MK_ROW_COV;
+          const pts = mkStat.tickField.pts;
+          for (let s = 0; s <= nSteps; s += 1) {
+            const smp = smps[s];
+            if (smp && Number.isFinite(smp.x) && Number.isFinite(smp.I)) pts.push(smp.x, smp.y, smp.I);
+          }
+        }
         emitMarks({
           smps, arcMM, nSteps, spanDrop, paramAt, pitchStep, lineDir,
           lineIndex, wantFront, back, fam: currentFam, pitchAtStep,
@@ -11662,7 +11840,17 @@
     // so a caller can tell "not a mark law" apart from "a mark law that
     // placed nothing" (samples === 0).
     const publishMarkStats = () => {
-      lastMarkStats = mkStat.samples ? { algo: TONE_ALGO, ...mkStat, byThird: mkStat.byThird.slice() } : null;
+      lastMarkStats = mkStat.samples
+        ? {
+          algo: TONE_ALGO,
+          ...mkStat,
+          byThird: mkStat.byThird.slice(),
+          lenByThird: mkStat.lenByThird.slice(),
+          cntByThird: mkStat.cntByThird.slice(),
+          tickField: { pts: mkStat.tickField.pts.slice(), rowPitch: mkStat.tickField.rowPitch },
+          tickSites: mkStat.tickSites.slice(),
+        }
+        : null;
     };
     if (!runMapper(N, false)) { flushDeferredRibbons(); publishRibbonStats(); publishMarkStats(); return null; } // front surface (unchanged when no x-ray)
     // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
