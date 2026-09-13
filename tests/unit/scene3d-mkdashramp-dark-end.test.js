@@ -78,6 +78,13 @@
  * BAND = measured-baseline +/-10% ([1350.96mm, 1651.17mm]) — a second,
  * tighter, independent check on the identical quantity, layered ON TOP of
  * the floor (never the band alone), exactly the W-26b-3/U9-2 shape.
+ *
+ * SCOPE (T4c, 2026-09-12): this file gates only the ink-MAGNITUDE half of
+ * Jay's decision-1 bar at sphere/hatch/d=220 — the slab half is gated by G4
+ * in `scene3d-mark-laws-draw.test.js` (mutation-proven: T4-review's own
+ * rejected-first-draft slab-regrowing formula trips G4 at low density,
+ * sphere/torus/cone/hatch, byte-identical/silent at this file's own d=220
+ * cell where the mutation is undetectable).
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
