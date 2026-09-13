@@ -25,6 +25,11 @@ orchestrator scrutinises images, commit-then-stop, never push.
    node scripts/audit/scene3d-capture.js --tier A|B --root <worktree or git-archive export> --port <free> \
      --only '^(sphere|torus)__hatch__ladder__(low|med|max)__a$' --out docs/3d-audit/fill-audit/after/<W-id>
    ```
+   Add `--rig addLayer` (default `create`, byte-identical) to build the object from the plain
+   `engine.addLayer('scene3d')` deserialization-defaults path every ribbon-lane unit test uses instead of
+   the "Add primitive" shelf's `PRIMITIVE_CREATE_DEFAULTS` rig — see GH-2 and `after/F1-erode/report.json`'s
+   `gallery_capture_finding` for why some fixes need it to show up in the gallery at all (`--rig addLayer`
+   shots/manifests get an `__addlayer` suffix / `.addlayer.jsonl`, so they never collide with the default rig).
    `shots/` (373 MB) and `after/*/shots` are NOT committed; the manifests, `report.json`s, findings and
    `index.html` are.
 2. **Two user rules are binding, verbatim.** (a) "ladder, fine ladder, and contour must not have irregular

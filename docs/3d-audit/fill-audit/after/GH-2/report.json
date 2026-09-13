@@ -1,0 +1,58 @@
+{
+  "unit": "GH-2",
+  "summary": "Added --rig create|addLayer to scripts/audit/scene3d-capture.js so gallery cells can be shot with the same engine.addLayer('scene3d') deserialization-defaults construction the ribbon-lane unit tests use, instead of only the 'Add primitive' shelf's PRIMITIVE_CREATE_DEFAULTS rig. Proves the fix closes the exact gap docs/3d-audit/fill-audit/after/F1-erode/report.json's gallery_capture_finding described (torus/hatch/interlockWeave was byte-identical across a proven runtime fix because the gallery rig never reached the swallowed-boolean-failure stretch).",
+  "files_touched": ["scripts/audit/scene3d-capture.js"],
+  "rig_definitions": {
+    "create": "UNCHANGED default behaviour. Strips the descendant layers engine.addLayer('scene3d') creates and rebuilds a MONOLITH-shaped inline scene (group.params.objects/lights/styleTable) with the object's params bag seeded from Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS merged with PRIMITIVE_CREATE_DEFAULTS on top (the 'Add primitive' shelf's rig).",
+    "addLayer": "Keeps the WHOLE scene tree engine.addLayer('scene3d') builds (group + one seed object3d leaf [primitive='sphere', the ALGO_DEFAULTS.object3d default] + one sceneLight3d 'Sun' + one sceneGround3d child, hidden for a clean crop) and mutates the object3d leaf's params.primitive field DIRECTLY -- never through engine.setObjectPrimitive/Scene3D.Params.buildPrimitiveParams. This is the exact construction tests/unit/scene3d-ribbon-wall-coverage.test.js (L47-59) and tests/unit/scene3d-ribbon-f1b-streaks.test.js (L221-233) use, both of which call `const groupId = engine.addLayer('scene3d'); const obj = engine.getLayerDescendants(groupId).filter(l => l.type === 'object3d')[0]; obj.params.primitive = 'torus'; obj.params.style = ...`. Because the primitive is swapped without rebuilding params.params, the object3d leaf keeps whatever the SEED primitive's own PRIMITIVE_CREATE_DEFAULTS bag was (sphere: radius 25, detail 28) -- exactly the mismatch the F1-erode gallery_capture_finding names."
+  },
+  "byte_identical_proof_for_default_rig": {
+    "method": "Captured 2 cells with the pre-edit script (git show HEAD:scripts/audit/scene3d-capture.js) and with the edited script (no --rig flag, and explicit --rig create), same MAIN dev server (port 8930, v1.4.1).",
+    "cells": [
+      {
+        "cell": "torus__hatch__interlockWeave__med__a (Tier B)",
+        "md5_pre_edit": "86f08b57b17a0812a442e58f24810569",
+        "md5_post_edit_default": "86f08b57b17a0812a442e58f24810569",
+        "md5_post_edit_explicit_create": "86f08b57b17a0812a442e58f24810569",
+        "identical": true
+      },
+      {
+        "cell": "sphere__hatch__ladder__low__a (Tier A)",
+        "md5_pre_edit": "396a0a13e7c4c8db8c517d603c855c1c",
+        "md5_post_edit_default": "396a0a13e7c4c8db8c517d603c855c1c",
+        "identical": true
+      }
+    ],
+    "manifest_diff": "The only diff between pre-edit and post-edit manifest rows for these cells is the new `rig` field (`\"rig\":\"create\"`) appended to the record; every other field (pathCount, totalPoints, inkMm, wallRings, wide, appVersion, ...) is unchanged."
+  },
+  "rig_addlayer_proves_the_runtime_fix_moves": {
+    "method": "git -C .claude/worktrees/fill-audit-a3 archive <sha> | tar -x exported to /private/tmp/claude-501/scratch-GH2/<sha>, node_modules symlinked from MAIN, dev-server auto-started via --root <export> --port 8931|8932 (both freed after capture). Captured torus__hatch__interlockWeave__med__a with --rig addLayer at 7f805654 (pre-fix, T4b TESTS-ONLY commit, tree tip below the F1-erode fix) and e2c3ca85 (fix(3d-audit): F1-erode -- insetMultiPolygon ladder treats a swallowed boolean failure as failure).",
+    "capture_commands": [
+      "node scripts/audit/scene3d-capture.js --tier B --root /private/tmp/claude-501/scratch-GH2/7f805654 --port 8931 --rig addLayer --only '^torus__hatch__interlockWeave__med__a$' --out /private/tmp/claude-501/scratch-GH2/before-7f805654",
+      "node scripts/audit/scene3d-capture.js --tier B --root /private/tmp/claude-501/scratch-GH2/e2c3ca85 --port 8932 --rig addLayer --only '^torus__hatch__interlockWeave__med__a$' --out /private/tmp/claude-501/scratch-GH2/after-e2c3ca85"
+    ],
+    "md5_before_7f805654": "a8bc839e6a557c39060182cca16ee13b",
+    "md5_after_e2c3ca85": "83607149689c54e5088140560001729d",
+    "identical": false,
+    "manifest_before": { "pathCount": 174, "totalPoints": 17713, "inkMm": 3836.7, "wallRings": 37, "wide": 40, "ribbonLaw": true },
+    "manifest_after":  { "pathCount": 175, "totalPoints": 19044, "inkMm": 4056.0, "wallRings": 37, "wide": 40, "ribbonLaw": true },
+    "control_same_two_shas_with_default_create_rig": {
+      "capture_commands": [
+        "node scripts/audit/scene3d-capture.js --tier B --root /private/tmp/claude-501/scratch-GH2/7f805654 --port 8931 --rig create --only '^torus__hatch__interlockWeave__med__a$' --out /private/tmp/claude-501/scratch-GH2/before-7f805654",
+        "node scripts/audit/scene3d-capture.js --tier B --root /private/tmp/claude-501/scratch-GH2/e2c3ca85 --port 8932 --rig create --only '^torus__hatch__interlockWeave__med__a$' --out /private/tmp/claude-501/scratch-GH2/after-e2c3ca85"
+      ],
+      "md5_before_7f805654": "b9860c2f2fbdb5b6c499f58b8adbd4d5",
+      "md5_after_e2c3ca85": "b9860c2f2fbdb5b6c499f58b8adbd4d5",
+      "identical": true,
+      "note": "Confirms the F1-erode gallery_capture_finding exactly: the default 'create' rig cannot see this fix move at all (byte-identical, same as the original F1-erode gallery capture); only --rig addLayer does."
+    }
+  },
+  "visual_proof": {
+    "method": "Both full 800x400 addLayer-rig shots (docs/3d-audit/fill-audit/after/GH-2/shots/torus__hatch__interlockWeave__med__a__addlayer__at-<sha>.webp) converted to PNG; a per-pixel luminance diff (threshold 30) located the busiest changed region, then cropped at native pixel resolution (box 420,30-620,130, upsampled 4x with NEAREST for legibility only -- no smoothing/re-render) into docs/3d-audit/fill-audit/after/GH-2/crops/interlockWeave-defect-crop-at-<sha>.png.",
+    "what_i_saw": "BEFORE (7f805654): a thin, bare, UNFILLED zigzag stroke -- just the up-down outline of the zigzag path, black (no ink) in its interior -- crosses the crop diagonally, clearly starved of fill compared to the bold solid diamond-filled zigzag rows immediately above and below it in the same band. AFTER (e2c3ca85): that exact same zigzag stretch is now filled bold and solid -- the interior of every up/down zigzag tooth is inked white, matching the diamond-fill pattern of its neighbouring rows -- with no visible bare-centreline interruption. This is the same class of defect (a swallowed insetMultiPolygon failure erroneously treated as 'erode to empty') the F1-erode unit's own bespoke Playwright re-render showed under the CREATE rig; --rig addLayer reproduces it directly through the gallery capture script itself."
+  },
+  "help_and_docs_updated": [
+    "scripts/audit/scene3d-capture.js header usage comment (the script's --help-equivalent doc block; the script has no separate --help flag)",
+    "docs/3d-audit/fill-audit-handoff.md 'Read this first' item 1 (Re-shoot any subset recipe)"
+  ]
+}

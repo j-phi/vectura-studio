@@ -16,6 +16,25 @@
  *          (mapper, fillStyle) pair (per Vectura.SCENE_FILL_STYLES.isReachableOn),
  *          3 densities, 2 angles.
  *
+ * --rig create|addLayer (default create, byte-identical to pre-existing
+ *          behaviour). `create` builds a MONOLITH-shaped inline scene seeded
+ *          from PRIMITIVE_CREATE_DEFAULTS merged over PRIMITIVE_PARAM_DEFAULTS
+ *          — the "Add primitive" shelf's rig. `addLayer` instead keeps the
+ *          WHOLE scene TREE `engine.addLayer('scene3d')` builds and swaps the
+ *          seed object3d leaf's `primitive` field DIRECTLY, exactly as
+ *          tests/unit/scene3d-ribbon-wall-coverage.test.js and
+ *          scene3d-ribbon-f1b-streaks.test.js do — this is the plain
+ *          `engine.addLayer` deserialization-defaults path every ribbon-lane
+ *          unit test actually exercises (see
+ *          docs/3d-audit/fill-audit/after/F1-erode/report.json's
+ *          `gallery_capture_finding`: the `create` rig's denser bag never
+ *          reaches the swallowed-boolean-failure stretch those tests catch,
+ *          so a real runtime fix can be byte-identical in the gallery). Shot
+ *          filenames get an `__addlayer` suffix and manifest rows carry a
+ *          `rig` field under `--rig addLayer`, so the two rigs (and GH-1's
+ *          before/after pairing, which always used the default `create` rig)
+ *          never collide.
+ *
  * Deterministic ordering: primitives/mappers/styles are iterated in the
  * exact order the live app exposes them (no re-sorting), so the SAME
  * `--shard i/n` slice is stable across runs and across shard workers.
@@ -35,7 +54,9 @@ const ROOT = path.resolve(__dirname, '..', '..');
 
 // ── CLI ──────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  const out = { tier: 'A', shard: '1/1', port: 8460, out: 'docs/3d-audit/fill-audit' };
+  const out = {
+    tier: 'A', shard: '1/1', port: 8460, out: 'docs/3d-audit/fill-audit', rig: 'create',
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--tier') out.tier = argv[++i];
@@ -47,6 +68,10 @@ function parseArgs(argv) {
     else if (a === '--root') out.root = path.resolve(argv[++i]);
     else if (a === '--no-shard-default') out.noShardDefault = true;
     else if (a === '--legacy-detail') out.legacyDetail = true;
+    else if (a === '--rig') out.rig = argv[++i];
+  }
+  if (out.rig !== 'create' && out.rig !== 'addLayer') {
+    throw new Error(`Unknown --rig "${out.rig}" (expected create or addLayer)`);
   }
   return out;
 }
@@ -132,11 +157,14 @@ function cameraFor(consts, angleKey) {
 // ── Matrix builders ────────────────────────────────────────────────────────
 function buildTierA(consts) {
   const items = [];
+  const rig = consts.rig || 'create';
   consts.PRIMITIVES.forEach((primitive) => {
     consts.MAPPERS.forEach((mapper) => {
       ['low', 'med', 'max'].forEach((density) => {
         ANGLE_KEYS.forEach((angle) => {
-          items.push({ tier: 'A', primitive, mapper, style: consts.DEFAULT_FILL_STYLE, density, angle });
+          items.push({
+            tier: 'A', primitive, mapper, style: consts.DEFAULT_FILL_STYLE, density, angle, rig,
+          });
         });
       });
     });
@@ -168,6 +196,7 @@ async function computeTierBReachability(page, consts) {
 function buildTierB(consts, reach) {
   const items = [];
   const unreachable = [];
+  const rig = consts.rig || 'create';
   TIER_B_PRIMITIVES.forEach((primitive) => {
     consts.MAPPERS.forEach((mapper) => {
       const roster = fullStyleRoster(consts);
@@ -176,7 +205,9 @@ function buildTierB(consts, reach) {
         if (!reachSet.has(style)) { unreachable.push({ primitive, mapper, style }); return; }
         ['low', 'med', 'max'].forEach((density) => {
           ANGLE_KEYS.forEach((angle) => {
-            items.push({ tier: 'B', primitive, mapper, style, density, angle });
+            items.push({
+              tier: 'B', primitive, mapper, style, density, angle, rig,
+            });
           });
         });
       });
@@ -186,50 +217,102 @@ function buildTierB(consts, reach) {
 }
 
 // ── Shot naming ─────────────────────────────────────────────────────────
+// `--rig addLayer` shots get an `__addlayer` filename suffix so they never
+// collide with (or overwrite) the default `--rig create` shots the rest of
+// the gallery — including GH-1's before/after pairing, which is always shot
+// under the default `create` rig — living in the same `--out` directory.
 function shotRelPath(item) {
-  const file = `${item.primitive}__${item.mapper}__${item.style}__${item.density}__${item.angle}.webp`;
+  const suffix = item.rig === 'addLayer' ? '__addlayer' : '';
+  const file = `${item.primitive}__${item.mapper}__${item.style}__${item.density}__${item.angle}${suffix}.webp`;
   return path.join('shots', item.tier, file);
 }
 
 // ── In-page: build the scene, style it, generate, gather stats ───────────
 async function buildAndMeasure(page, item, consts) {
   const camera = cameraFor(consts, item.angle);
-  return page.evaluate(({ item, camera, densityValue, solidType, legacyDetail }) => {
+  return page.evaluate(({
+    item, camera, densityValue, solidType, legacyDetail, rig,
+  }) => {
     const P = window.Vectura.Scene3D.Params;
     const app = window.app;
     const engine = app.engine;
     engine.layers = [];
     const gid = engine.addLayer('scene3d');
-    engine.layers = engine.layers.filter((l) => l.parentId !== gid);
-    const g = engine.layers.find((l) => l.id === gid);
-    g.isGroup = true;
-    g.containerRole = 'scene';
-    const q = g.params;
-    q.camera = camera;
-    q.ground = { enabled: false };
-    q.backdrop = { enabled: false };
-    // Object rig: seed from the DESERIALIZATION defaults, then overlay the
-    // CREATION defaults — the same bag a real "Add primitive" / primitive
-    // swap gets (engine.setObjectPrimitive -> Scene3D.Params.buildPrimitiveParams,
-    // which is seeded purely from PRIMITIVE_CREATE_DEFAULTS). This fixes the
-    // rig rendering at the deserialization `detail` (16 for most primitives)
-    // instead of what a user actually sees (e.g. sphere detail 28, cone/cylinder
-    // 24, capsule 22). --legacy-detail reverts to the pre-fix deserialization-only
-    // bag for A/B comparison.
-    const bag = {
-      ...(P.PRIMITIVE_PARAM_DEFAULTS[item.primitive] || {}),
-      ...(legacyDetail ? {} : (P.PRIMITIVE_CREATE_DEFAULTS[item.primitive] || {})),
-    };
-    if (item.primitive === 'solid') bag.solidType = solidType;
-    const OBJ = {
-      id: 'obj', name: 'Obj', primitive: item.primitive, params: bag,
-      transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
-    };
-    const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: false };
-    q.objects = [OBJ];
-    q.lights = [SUN];
-    const style = { penId: null, mapper: item.mapper, params: { fillAngle: 45, fillDensity: densityValue, toneLaw: item.style } };
-    q.styleTable = { scene: JSON.parse(JSON.stringify(style)), byObject: { obj: JSON.parse(JSON.stringify(style)) }, byFace: {} };
+    let g;
+
+    if (rig === 'addLayer') {
+      // --rig addLayer — reproduce the OBJECT-GEOMETRY-DEFAULTS path every
+      // ribbon-lane unit test actually uses (tests/unit/scene3d-ribbon-wall-
+      // coverage.test.js L47-59, tests/unit/scene3d-ribbon-f1b-streaks.test.js
+      // L221-233 — both construct identically), NOT the "Add primitive" shelf's
+      // PRIMITIVE_CREATE_DEFAULTS rig in the `else` branch below. Keep the
+      // WHOLE scene TREE addLayer('scene3d') builds (group + one seed
+      // object3d leaf [primitive = ALGO_DEFAULTS.object3d.primitive, i.e.
+      // 'sphere'] + one sceneLight3d 'Sun' + one sceneGround3d child) and
+      // mutate the object3d leaf's `primitive` field DIRECTLY — never through
+      // engine.setObjectPrimitive / Scene3D.Params.buildPrimitiveParams. This
+      // deliberately LEAVES `obj.params.params` at whatever the SEED
+      // primitive's own PRIMITIVE_CREATE_DEFAULTS bag was (sphere: radius 25,
+      // detail 28) instead of rebuilding it for the new primitive — exactly
+      // the mismatch docs/3d-audit/fill-audit/after/F1-erode/report.json's
+      // `gallery_capture_finding` describes: a torus rendered this way reuses
+      // sphere-shaped params for every field the torus generator doesn't
+      // itself name (e.g. `tube` falls back to the algorithm's own
+      // `finite(p.tube, <literal>)` default).
+      g = engine.layers.find((l) => l.id === gid);
+      g.params.camera = camera;
+      g.params.backdrop = { enabled: false };
+      // A ground CHILD already exists (addSceneTree -> addGroundToScene) and
+      // wins over the group's inline `params.ground` during compose
+      // (_composeSceneGroup sources ground from a live descendant once one
+      // exists) — hide the CHILD, not the envelope field, for a clean
+      // object-only crop.
+      const groundChild = engine.getLayerDescendants(gid)
+        .find((l) => l && l.type === 'sceneGround3d');
+      if (groundChild) groundChild.visible = false;
+      const obj = engine.getLayerDescendants(gid)
+        .filter((l) => l && l.type === 'object3d')[0];
+      obj.params.primitive = item.primitive;
+      obj.params.style = obj.params.style || { penId: null, mapper: item.mapper, params: {} };
+      obj.params.style.mapper = item.mapper;
+      obj.params.style.params = {
+        ...(obj.params.style.params || {}),
+        fillAngle: 45,
+        fillDensity: densityValue,
+        toneLaw: item.style,
+      };
+    } else {
+      engine.layers = engine.layers.filter((l) => l.parentId !== gid);
+      g = engine.layers.find((l) => l.id === gid);
+      g.isGroup = true;
+      g.containerRole = 'scene';
+      const q = g.params;
+      q.camera = camera;
+      q.ground = { enabled: false };
+      q.backdrop = { enabled: false };
+      // Object rig: seed from the DESERIALIZATION defaults, then overlay the
+      // CREATION defaults — the same bag a real "Add primitive" / primitive
+      // swap gets (engine.setObjectPrimitive -> Scene3D.Params.buildPrimitiveParams,
+      // which is seeded purely from PRIMITIVE_CREATE_DEFAULTS). This fixes the
+      // rig rendering at the deserialization `detail` (16 for most primitives)
+      // instead of what a user actually sees (e.g. sphere detail 28, cone/cylinder
+      // 24, capsule 22). --legacy-detail reverts to the pre-fix deserialization-only
+      // bag for A/B comparison.
+      const bag = {
+        ...(P.PRIMITIVE_PARAM_DEFAULTS[item.primitive] || {}),
+        ...(legacyDetail ? {} : (P.PRIMITIVE_CREATE_DEFAULTS[item.primitive] || {})),
+      };
+      if (item.primitive === 'solid') bag.solidType = solidType;
+      const OBJ = {
+        id: 'obj', name: 'Obj', primitive: item.primitive, params: bag,
+        transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+      };
+      const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: false };
+      q.objects = [OBJ];
+      q.lights = [SUN];
+      const style = { penId: null, mapper: item.mapper, params: { fillAngle: 45, fillDensity: densityValue, toneLaw: item.style } };
+      q.styleTable = { scene: JSON.parse(JSON.stringify(style)), byObject: { obj: JSON.parse(JSON.stringify(style)) }, byFace: {} };
+    }
 
     const t0 = performance.now();
     let genError = null;
@@ -272,7 +355,14 @@ async function buildAndMeasure(page, item, consts) {
       bareCentrelinesOnly,
       appVersion: window.Vectura.APP_VERSION,
     };
-  }, { item, camera, densityValue: DENSITY_VALUES[item.density], solidType: consts.SOLID_DEFAULT_TYPE, legacyDetail: !!consts.legacyDetail });
+  }, {
+    item,
+    camera,
+    densityValue: DENSITY_VALUES[item.density],
+    solidType: consts.SOLID_DEFAULT_TYPE,
+    legacyDetail: !!consts.legacyDetail,
+    rig: item.rig || consts.rig || 'create',
+  });
 }
 
 // Fixed zoom for every shot (a consistent framing convention, not tuned per
@@ -394,10 +484,16 @@ async function main() {
   let page = await openPage(browser, baseUrl);
   const consts = await getConstants(page);
   consts.legacyDetail = !!args.legacyDetail;
+  consts.rig = args.rig;
   console.log('served version', consts.version);
-  console.log(consts.legacyDetail
-    ? 'object rig: --legacy-detail set, using PRIMITIVE_PARAM_DEFAULTS (deserialization defaults, detail 16)'
-    : 'object rig: PRIMITIVE_CREATE_DEFAULTS (app creation defaults) merged over PRIMITIVE_PARAM_DEFAULTS');
+  if (consts.rig === 'addLayer') {
+    console.log('object rig: --rig addLayer — engine.addLayer(\'scene3d\') tree, primitive swapped '
+      + 'in place on the seed object3d leaf (the plain unit-test construction path; ignores --legacy-detail)');
+  } else {
+    console.log(consts.legacyDetail
+      ? 'object rig: --legacy-detail set, using PRIMITIVE_PARAM_DEFAULTS (deserialization defaults, detail 16)'
+      : 'object rig: PRIMITIVE_CREATE_DEFAULTS (app creation defaults) merged over PRIMITIVE_PARAM_DEFAULTS');
+  }
   console.log('PRIMITIVES', consts.PRIMITIVES.length, 'MAPPERS', consts.MAPPERS.length,
     'fill-style roster', fullStyleRoster(consts).length);
 
@@ -423,7 +519,13 @@ async function main() {
   }
 
   const shardLabel = `${shardI}-${shardN}`;
-  const manifestPath = path.join(outDir, `manifest.${args.tier}.${shardLabel}.jsonl`);
+  // --rig addLayer gets its own manifest file (`.addlayer.jsonl`) so a run
+  // never appends addLayer-rig rows into (or clobbers) the default create-rig
+  // manifest that GH-1's before/after pairing reads from the same --out dir.
+  const manifestPath = path.join(
+    outDir,
+    `manifest.${args.tier}.${shardLabel}${args.rig === 'addLayer' ? '.addlayer' : ''}.jsonl`,
+  );
   let shard = items.filter((_, idx) => idx % shardN === (shardI - 1));
   if (args.only) shard = shard.filter((it) => args.only.test(`${it.primitive}__${it.mapper}__${it.style}__${it.density}__${it.angle}`));
   console.log(`Shard ${args.shard}: ${shard.length} of ${items.length} shots -> ${manifestPath}`);
