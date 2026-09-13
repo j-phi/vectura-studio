@@ -1303,17 +1303,30 @@
       [inset * 1.0053, 0.87, inset * 0.08],
     ];
     const joinSkipAngle = Number.isFinite(opts.joinSkipAngle) ? opts.joinSkipAngle : 0.35;
+    // A swallowed `FillBoolean` failure (AUD-05: `polygon-clipping` throws,
+    // `safeOp` catches it and returns `null`/`[]`) is indistinguishable from a
+    // genuinely empty erosion UNLESS `consumeLastOpError` is read — the same
+    // idiom `ribbon-geometry.js`'s `runBooleanOp` already uses. Without this,
+    // rung 0 of the ladder below `break`s on a swallowed failure and the other
+    // four rungs — which do recover this class of failure — never run.
+    const consumeErr = (typeof FB.consumeLastOpError === 'function')
+      ? () => FB.consumeLastOpError()
+      : () => null;
     let region = null;
     for (const [ins, phase, tol] of attempts) {
       try {
+        consumeErr(); // clear anything a prior caller left pending
         const rings = tol > 0
           ? boundaryRings.map((r) => { const s = simplifyPath(r, tol); return (s && s.length >= 4) ? s : r; })
           : boundaryRings;
         const cut = strokeRingsToBand(rings, ins * 2, { boolean: FB, joinSides, diskPhase: phase, joinSkipAngle });
+        if (consumeErr()) { region = null; continue; } // swallowed failure -> next rung
         region = (cut && cut.length) ? (FB.difference(snappedMp, cut) || []) : [];
+        if (consumeErr()) { region = null; continue; }
         break;
       } catch (_) { region = null; }
     }
+    consumeErr(); // do not leak a pending error to the next caller
     if (!region || !region.length) return [];
     const minArea = Number.isFinite(opts.minArea) && opts.minArea > 0 ? opts.minArea : 0;
     if (!minArea) return region;
