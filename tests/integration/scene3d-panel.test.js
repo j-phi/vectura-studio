@@ -741,8 +741,13 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     // seeded alongside `toneLaw:'ladder'` (mapperDefaults, scene3d-panel.js
     // — this was already the mechanism's OWN documented behaviour in U0, a
     // no-op until a real COLLAPSE row existed; U1 is the first row).
+    // STALE ASSERTION UPDATE (W-38) — `facetMinRulings: 3` is now seeded
+    // alongside every hatch/crosshatch descriptor default (D_FACETFLOOR,
+    // MAPPER_CONTROLS). 3 is byte-identical to today's tone-blind
+    // FACET_MIN_RULINGS constant — see scene3d-facet-min-rulings.test.js T1.
     expect(stored.params).toEqual({
       fillAngle: 45, fillDensity: 50, toneLaw: 'ladder', rungMode: 'coarse', angleRef: 'face', linkFill: false,
+      facetMinRulings: 3,
       lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false,
     });
 
@@ -878,6 +883,89 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     // CHANGELOG item 21 requires be stated to the user, so state them here too.
     expect(help).toContain('Default 0');
     expect(help).toMatch(/box, plane or pyramid/);
+  });
+
+  // W-38 (F-14b) — "Min rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
+  // Same live-descriptor-default hazard the W-35 test above documents:
+  // mapperDefaults seeds facetMinRulings: 3 on EVERY hatch/crosshatch
+  // mapper switch (scene3d-panel.js's MAPPER_CONTROLS), which is the ONE
+  // origin a generate()-level test cannot see.
+  test('Style tab · mapper hatch seeds facetMinRulings: 3 and mounts the Min rulings slider (1..8, step 1)', () => {
+    const { container, layer } = mount({ objects: [fixtureObject(1)] });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+    const mapSel = [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'hatch'));
+    expect(mapSel).toBeTruthy();
+    mapSel.value = 'hatch';
+    fire(mapSel, 'change');
+    const stored = layer.params.styleTable.byObject['obj-1'];
+    expect(stored.mapper).toBe('hatch');
+    expect(stored.params.facetMinRulings).toBe(3);
+
+    const minRulings = container.querySelector('input.ctrl-slider[aria-label="Minimum facet rulings"]');
+    expect(minRulings).toBeTruthy();
+    expect(Number(minRulings.min)).toBe(1);
+    expect(Number(minRulings.max)).toBe(8);
+    expect(Number(minRulings.step)).toBe(1);
+    expect(Number(minRulings.value)).toBe(3);
+
+    minRulings.value = '5';
+    fire(minRulings, 'input');
+    fire(minRulings, 'change');
+    expect(layer.params.styleTable.byObject['obj-1'].params.facetMinRulings).toBe(5);
+  });
+
+  test('Style tab · mapper crosshatch also mounts Min rulings', () => {
+    const { container, layer } = mount({ objects: [fixtureObject(1)] });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+    const mapSel = [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'crosshatch'));
+    mapSel.value = 'crosshatch';
+    fire(mapSel, 'change');
+    expect(layer.params.styleTable.byObject['obj-1'].params.facetMinRulings).toBe(3);
+    expect(container.querySelector('input.ctrl-slider[aria-label="Minimum facet rulings"]')).toBeTruthy();
+  });
+
+  test('Style tab · Min rulings does NOT appear under contour / spiral / stipple / wireframe / Slices', () => {
+    const { container } = mount({ objects: [fixtureObject(1)] });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+    const mapSel = () => container.querySelector('select');
+    ['contour', 'spiral', 'stipple', 'wireframe', 'contourSlice'].forEach((mapper) => {
+      const sel = [...container.querySelectorAll('select')]
+        .find((s) => [...(s.options || [])].some((o) => o.value === mapper));
+      if (!sel) return; // some mappers may not be offered in this fixture's roster
+      sel.value = mapper;
+      fire(sel, 'change');
+      expect(container.querySelector('input.ctrl-slider[aria-label="Minimum facet rulings"]')).toBeFalsy();
+    });
+  });
+
+  // persistentStyleKeys() — a hatch -> wireframe -> hatch detour must
+  // preserve a user-set facetMinRulings, exactly as fillDensity/fillAngle/
+  // toneLaw already do (H4, scene3d-panel.js's base persistent-keys array).
+  test('Style tab · Min rulings SURVIVES a detour through Wireframe', () => {
+    const { container, layer } = mount({
+      objects: [fixtureObject(1)],
+      styleTable: {
+        scene: { penId: null, mapper: 'none', params: {} },
+        byObject: { 'obj-1': { penId: null, mapper: 'hatch', params: { fillDensity: 50, fillAngle: 45, facetMinRulings: 6 } } },
+        byFace: {},
+      },
+    });
+    fire(container.querySelector('.vs3-tree-row'), 'click');
+    clickTab(container, 'style');
+    const mapSel = () => [...container.querySelectorAll('select')]
+      .find((s) => [...(s.options || [])].some((o) => o.value === 'wireframe'));
+    mapSel().value = 'wireframe';
+    fire(mapSel(), 'change');
+    expect(layer.params.styleTable.byObject['obj-1'].mapper).toBe('wireframe');
+    expect(container.querySelector('input.ctrl-slider[aria-label="Minimum facet rulings"]')).toBeFalsy();
+    mapSel().value = 'hatch';
+    fire(mapSel(), 'change');
+    expect(layer.params.styleTable.byObject['obj-1'].params.facetMinRulings).toBe(6);
   });
 
   // I15 — Dash-length (renamed from "Dash scale") is hidden when Line = solid

@@ -401,13 +401,23 @@
   // crosshatch would silently reset the user's law (whole-style-wins makes
   // that a real, easy-to-ship bug).
   const D_TONELAW = { key: 'toneLaw', kind: 'lawpick', label: 'Fill Style', ariaLabel: 'Fill style', default: 'ladder' };
+  // W-38 — "minimum facet rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
+  // hatch/crosshatch only; inert on smooth primitives, contour/spiral/
+  // stipple, and the ground (solo-orientation gate in scene3d.js). Default 3
+  // is byte-identical to today.
+  const D_FACETFLOOR = {
+    key: 'facetMinRulings', kind: 'slider', label: 'Min rulings', ariaLabel: 'Minimum facet rulings',
+    min: 1, max: 8, step: 1, default: 3,
+    help: 'The fewest rulings a facet may be given when Density asks for less. Lower (1-2) keeps the tone ladder\'s contrast but leaves facets nearly bare; higher (4-8) fills the lit facets at the cost of that contrast. No effect on smooth shapes, on contour/spiral/stipple fills, or on the ground.',
+  };
   const MAPPER_CONTROLS = {
-    hatch: [D_ANGLE, D_DENSITY, D_TONELAW, D_ANGLEREF, D_LINKFILL],
+    hatch: [D_ANGLE, D_DENSITY, D_TONELAW, D_ANGLEREF, D_LINKFILL, D_FACETFLOOR],
     crosshatch: [
       D_ANGLE, D_DENSITY, D_TONELAW, D_ANGLEREF, D_LINKFILL,
       { key: 'crossAngleDelta', kind: 'dial', label: 'Cross angle', ariaLabel: 'Crosshatch angle delta', min: 10, max: 170, step: 1, default: 90 },
       { key: 'crossDensityRatio', kind: 'slider', label: 'Cross density', ariaLabel: 'Second family density ratio', min: 0.25, max: 2, step: 0.05, default: 1 },
       { key: 'tripleHatch', kind: 'toggle', label: 'Triple hatch', ariaLabel: 'Triple hatch in darkest band', default: false },
+      D_FACETFLOOR,
     ],
     contour: [
       D_DENSITY, D_TONELAW,
@@ -486,7 +496,7 @@
   // bare test process; an absent/empty STYLE_PARAMS ({} in U0) yields exactly
   // the static 3-key list this replaces — a provable no-op today.
   const persistentStyleKeys = () => {
-    const base = ['fillDensity', 'fillAngle', 'toneLaw'];
+    const base = ['fillDensity', 'fillAngle', 'toneLaw', 'facetMinRulings'];
     const R = Vectura.SCENE3D_TONE_LAWS;
     const SP = R && R.STYLE_PARAMS;
     if (!SP) return base;
@@ -1393,6 +1403,16 @@
           onChange: (d) => angleKit.onChange(dialToParam(d)),
           onCommit: (d) => angleKit.onCommit(dialToParam(d)),
         }));
+        // W-38 — "minimum facet rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
+        // hatch/crosshatch only, matching D_FACETFLOOR's MAPPER_CONTROLS entry.
+        if (style.mapper === 'hatch' || style.mapper === 'crosshatch') {
+          slider(host, 'Min rulings', {
+            value: Number.isFinite(style.params.facetMinRulings) ? style.params.facetMinRulings : 3,
+            min: 1, max: 8, step: 1, defaultValue: 3,
+            ariaLabel: 'Minimum facet rulings',
+            ...liveSlider((v) => { style.params.facetMinRulings = Math.round(v); }),
+          });
+        }
       }
       // CtS I5 — depth-slice ('contourSlice') controls on a converted/native
       // topoform-contours object: slice count, visibility, and plane orientation.

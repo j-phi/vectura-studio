@@ -720,6 +720,11 @@
       case 'highlightPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
       case 'highlightDensity': return clamp(finite(value, 25), 1, 100);
       case 'altFillMapper': return ALT_FILL_MAPPERS.includes(value) ? value : 'stipple';
+      // W-38 — "minimum facet rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
+      // Per-style floor on the carrier-family grant in `faceHatchLines`
+      // (scene3d.js). Range [1,8], integer, default 3 — `FACET_MIN_RULINGS`'s
+      // own value, byte-identical there. hatch/crosshatch only.
+      case 'facetMinRulings': return clamp(Math.round(finite(value, 3)), 1, 8);
       // CtS I5 — depth-slice ('contourSlice') controls. sliceCount mirrors
       // topoform's lineCount (default 26); sliceRotate/sliceTilt fully orient the
       // cutting planes (topoform planeRotate/planeTilt — together they reach any
