@@ -1116,10 +1116,23 @@
   //                   and past that the dash thickens into a BAND of parallel
   //                   passes an inkWidth apart. One mark language, four states.
   //   'mkTick'        Short dashes PERPENDICULAR to the ruling, on a brick
-  //                   lattice, at a fixed size of nearly the full row pitch.
-  //                   Tone is COUNT. Black by pure abutment: the ticks pack
-  //                   along the row until they touch, and a row of touching
-  //                   ticks IS a solid band. The cheapest black on the board.
+  //                   lattice, ONE PER ROW-PITCH CELL (T2-2, W-05b U2 — was
+  //                   a fixed size with COUNT as the tone channel; a user
+  //                   report found that design read as fans of same-length
+  //                   spokes with hard-edged gaps, `user-reports/8.png`).
+  //                   Tone is now LENGTH: the tick GROWS from a short flick
+  //                   in the highlight to the full row pitch in the shadow,
+  //                   so the site lattice is always complete — a mark
+  //                   everywhere the light asks for one — and black is
+  //                   still reached by pure abutment: full-length ticks in
+  //                   adjacent rows meet and a row of touching ticks IS a
+  //                   solid band. T2-3 adds a low-discrepancy STAGGER of
+  //                   each tick's own centre across the row (the room its
+  //                   own shortening creates), fixing a bare cross-row
+  //                   wedge two earlier length-response curves both shipped
+  //                   (T2-review.md, T2-2-review.md) — see the `MK.mkTick`
+  //                   entry and `layMark` below. The cheapest black on the
+  //                   board.
   //   'mkChevron'     A V, its apex turned to the ISOPHOTE — the mark is aligned
   //                   to the form's own tone contour, not to the ruling — so the
   //                   texture turns with the surface. Tone is SIZE; the arms
@@ -1180,10 +1193,15 @@
   //   mkLozenge      1–1×    0.505  65.1   4.5  6.78  20.41  4835   931   0   0
   //   mkTriangle     1–1×    0.468  60.5   4.5  6.84  18.87  4578  1112   0   0
   //   mkChevron      1–1×    0.444  42.9   4.5  6.40  15.03  4135  1798   0   0
-  //   mkTick         1–1×    0.436  40.2  35.4  8.19  12.83  3975  2484   0   0
+  //   mkTick*        1–1×    0.436  40.2  35.4  8.19  12.83  3975  2484   0   0
   //   mkCrossPlus    1–1×    0.416  38.3  34.1  7.16  13.10  3788  2355   0   0
   //   mkComma        1–1×    0.373  38.2  36.2  7.42  12.60  3751  3128   0   0
   //   mkSFlick       1–1×    0.256  53.8   4.5  8.26  22.97  4183   831   0   0
+  //
+  // * mkTick's row is PRE-T2-2 (`chan:'count'`, fixed length) — recorded
+  //   here as historical since fillcmp/v6mark.mjs was never re-run against
+  //   the `chan:'len'` + T2-3 stagger redesign; it is not a live
+  //   measurement of the current mkTick.
   //
   // SEVEN of the twelve beat whiteBand's L* SPAN and all twelve beat it on the
   // worst adjacent tone step in the highlight (whiteBand 79.4, the twelve
@@ -2433,6 +2451,65 @@
     // mark to `2 * MK_MAX_WALK_STEPS + 1` points, generously over the
     // measured max.
     const MK_MAX_WALK_STEPS = 64;
+    // T2-3c (`T2-3b-review.md` flag 2, `T2-3b-plan.md` §4.3's own disclosure)
+    // — the STEP-COUNT ceiling above bounds a walked mark's own point count,
+    // but it does nothing about a single accepted STEP's real screen
+    // distance. `walkFrom` re-derives its local frame from every newly
+    // accepted sample (`frameFrom`), and that frame's basis vectors
+    // (`u`/`v` in `frameFrom`) are `1/|dA·ld|`-scaled — near a chart
+    // singularity (a `contour` mapper's row converging at a pole, a
+    // silhouette-adjacent patch going near edge-on) that scale blows up, so
+    // a walk step sized for an ORDINARY patch (`MK_ARC_MM`, ~1 pen width)
+    // can land a sample tens of millimetres from the one before it in a
+    // SINGLE step — not a drift across many steps, a discontinuous jump.
+    // Measured on `sphere/contour`/mkTick/med, create rig: path #943's own
+    // 19 points are eighteen ordinary ~0.27-0.36 mm steps (`MK_ARC_MM`
+    // itself is 0.36 mm at the shipped 0.3 mm pen) AND ONE 46.73 mm jump
+    // between the hub and its second arm's very first accepted sample — the
+    // walk's per-arm point-count budget was never threatened (that arm
+    // stopped at its OWN small step count, just each step was enormous).
+    // `MK_TICK_JUMP_PEN` states, in the same pen-width units every bar in
+    // this file uses, how far past the walk's own per-step budget
+    // (`MK_ARC_MM`) a single step may land before it is refused exactly as
+    // an off-surface sample already is (`truncated = true`, keep what
+    // already walked) — restricted to `'tick'` alone (see the `place()`
+    // call site below); `'morph'` (`mkDashRamp`) is unchanged. 12x is
+    // comfortably above every ordinary step measured on any gated cell
+    // (worst ordinary step seen: ~1.1x `MK_ARC_MM` on a strongly curved
+    // torus patch) and two full orders of magnitude below the measured
+    // defect (~130x `MK_ARC_MM`), so it cannot bite a normal tick.
+    const MK_TICK_JUMP_PEN = 12;
+    // W-06b (T4) — an ABSOLUTE ceiling on `mkDashRamp`'s band (the count of
+    // parallel passes one mark replicates into once it reaches full duty).
+    // The width-relative-to-pitch cap below (`bandN`, in `solveAt`) is
+    // necessary but not sufficient: at the sparsest densities a mark law
+    // keeps very few rows (measured: 3 on a 40 mm sphere at d=1), so even a
+    // WIDTH-legal band (no wider than its own master pitch) reads as an
+    // isolated, disconnected wide ribbon rather than a hatched band — there
+    // is no neighbouring row nearby to blend with (confirmed by rendering
+    // `sphere__hatch__mkDashRamp__low__a`: pitch-relative-only band, up to
+    // 23 passes measured, read as flat rectangular slabs; capped here, the
+    // same cell reads as a bundle of distinguishable parallel lines). 6
+    // matches this file's own established granularity for "replicate to
+    // reach solid" mechanisms (`mkCrossPlus`'s 2->3->4->6 arm progression,
+    // `:2690`) — a small integer, not a re-derivation of the pitch itself.
+    const MK_BAND_MAX_PASSES = 6;
+    // T2-3 (W-05b U2, iteration 3 — mkTick's length-response curve, see
+    // `solveAt`'s `lenChan` branch, and the ROW-TO-ROW STAGGER at the tick
+    // placement site in `layMark`). T2 (`dbad2d88`) and T2-2 (`9d911b05`)
+    // were BOTH rejected on the same finding (T2-review.md, T2-2-review.md):
+    // whichever ease curve was used, `mkShape`'s `'tick'` branch spends the
+    // ENTIRE length response in the ACROSS-ROW direction, centred on the row
+    // line (`surface-fill.js:2637`), so every mm the curve removes opens a
+    // bare strip of `(R-L)/2` on BOTH sides of every row, running the row's
+    // whole length — a WEDGE, because `L` grades along the row. Measured
+    // (`T2-3-plan.md` §0): T2-1's smoothstep and T2-2's blended smoothstep
+    // are, on this defect, THE SAME RENDER to within 1% on every wedge
+    // metric — the curve was never the lever. The fix that actually closes
+    // the wedge is the STAGGER at the placement site, not a different curve;
+    // this constant only sets O5's headroom now that the curve is free to
+    // be chosen on that bar alone.
+    const MK_TICK_EASE_BLEND = 0.92;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2465,6 +2542,45 @@
       // the algorithm's own return value (which carries no such tag by the
       // time it reaches a caller).
       trunc: 0, askSum: 0, drawnSum: 0, dirOver10: 0, dupStub: 0, markMids: [],
+      // T2-2/T2-3 (W-05b U2, R1: "ticks must have VARIABLE LENGTH, tick
+      // length carries tone", user-reports/8.png) — total DRAWN ink length
+      // (`lenByThird`) and mark COUNT (`cntByThird`) per radiance third, so
+      // a caller can read `lenByThird[i]/cntByThird[i]` as the mean drawn
+      // tick length in that third directly. Distinct from `byThird` above
+      // (kept for the pre-existing W-05 "count scales with darkness" guard,
+      // which under `chan:'len'` is no longer the tone carrier but still
+      // moves at the extremes where `L` clamps and `P` is re-derived — see
+      // `solveAt`'s `lenChan` branch).
+      lenByThird: [0, 0, 0], cntByThird: [0, 0, 0],
+      // T2-3 (`tests/unit/scene3d-mktick-wedge.test.js`'s rasterised
+      // bare-wedge oracle, `T2-3-plan.md` §2) — gated to `mkTick`'s own
+      // shape, republishes the field samples each ruling ALREADY computed
+      // (`smps` in `emitLineOnce`, no extra `sampleAt` calls) so a
+      // test-side rasteriser can measure bare area against the actual
+      // shaded silhouette instead of the site lattice: a site metric scores
+      // a cell "covered" the instant it draws ANY tick inside its own cell,
+      // however short — exactly the blindness (§1.3) that let a wedge ship
+      // twice under a passing coverage bar. `pts` is a flat `[x,y,I,...]`
+      // triple array (not an array of objects) to keep this cheap for a
+      // render with thousands of samples; `rowPitch` is `masterPitch /
+      // MK_ROW_COV`, captured once. Read-only diagnostic state — nothing
+      // here feeds back into the render.
+      tickField: { pts: [], rowPitch: null },
+      // T2-3 — one entry per mkTick LATTICE SITE (every `layMark` call, not
+      // every drawn mark), `[I, R, P, drawn]` flat quads. This is the
+      // reviewer's own per-site coverage quantity (T2-2-review.md §2:
+      // `cov = 1 - Σ(R·P over undrawn I<0.90 sites) / Σ(R·P over all I<0.90
+      // sites)`) — reported by the wedge oracle alongside the raster
+      // metrics precisely BECAUSE it is the metric proven blind to a
+      // cross-row wedge (a site scores fully covered the instant it draws
+      // ANY tick inside its own cell), not because it is being re-trusted.
+      tickSites: [],
+      // W-06b (T4) — the deepest state of `mkDashRamp`'s dissolution ramp
+      // (dot -> dash -> unbroken ruling -> BAND) any placed mark reached
+      // this render: the count of parallel passes in one mark. 1 = never
+      // past an unbroken ruling (W-06's own post-fix ceiling); >= 2 proves
+      // the band states are reachable again.
+      bandMax: 0,
     };
     const mkSites = new Map();          // blue-noise / Poisson occupancy
     const mkED = new Map();             // error-diffusion sideways carry
@@ -2487,17 +2603,49 @@
     // `chan` is the TONE CHANNEL and it is the axis that separates these laws
     // from each other more than any other single field:
     //   'size'   fixed count, the mark grows          (dot screen, lozenge, …)
-    //   'count'  fixed size, the marks multiply       (tick, comma, radial flick)
+    //   'count'  fixed size, the marks multiply       (comma, radial flick)
+    //   'len'    fixed period, the mark GROWS/SHRINKS (tick — T2-2/T2-3, below)
     //   'elong'  fixed period, the mark CHANGES KIND  (the dissolution ramp)
     //   'amp'    one continuous stroke, amplitude and wavelength both move
     //   'alt'    alternating rows, a different channel on each
     // `lat` is the lattice, `or` the orientation, `P0`/`L0` the cell geometry in
-    // units of the row pitch.
+    // units of the row pitch. `LMIN` (`len` channel only) is the floor a
+    // mark's length may shrink to before the ordinary `MIN_MARK_MM` drop
+    // takes over, also in units of the row pitch.
     const MK = {
       mkDotScreen:   { shape: 'disc',     chan: 'size',  lat: 'hex',     or: 'none',   P0: 1.00 },
       mkLozenge:     { shape: 'lozenge',  chan: 'size',  lat: 'brick',   or: 'along',  P0: 1.15 },
-      mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25 },
-      mkTick:        { shape: 'tick',     chan: 'count', lat: 'brick',   or: 'none',   L0: 1.02 },
+      // W-06b (T3, W-05b-W-06b-plan.md §3.3, user 10.png: "mkDashRamp @ d=1
+      // draws ONE dash on the whole sphere") — `rowFloor: true` opts this law
+      // (and ONLY this law) into `markRowCoverage()`'s pitch-ceiling scaffold
+      // below: at the sparse end, where the master pitch itself is already
+      // wider than the ceiling (~4.8mm at a 0.3mm pen), the mark-law row
+      // scaffold keeps MORE than a flat third of the master grid, because
+      // three rows on a 40mm sphere cannot carry a sparse-but-COMPLETE dash
+      // texture. Byte-identical at every density where the master pitch is
+      // already finer than the ceiling (measured: d>=50 on this fixture).
+      mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25, rowFloor: true },
+      // T2-2 (W-05b U2, user 8.png: "ticks must have VARIABLE LENGTH, tick
+      // length carries tone") made this `chan:'len'` (was `chan:'count'`,
+      // fixed length ~L0*R, tone carried by count/period alone) — a fixed
+      // lattice site every `P0*R` (P0=1.02, one site per row pitch, so the
+      // field is COMPLETE: a mark at every site the light asks for
+      // anything, R2's "continuous texture"), with the mark's own LENGTH as
+      // the primary tone carrier, growing from a flick (`LMIN*R`) to
+      // `L0*R` as the surface darkens (`solveAt`'s `lenChan` branch).
+      // T2-2's own `L0=1.02` (barely past the row pitch, T2's `LMIN=0.18`
+      // unchanged) shipped with a wedge — the tick's length response is
+      // spent ENTIRELY in the across-row direction and centred on the row
+      // line, so `(R-L)/2` opens bare on BOTH sides of every row (rejected
+      // twice, T2-review.md / T2-2-review.md). T2-3 (`T2-3-plan.md` §3
+      // Rank 1) fixes this at the PLACEMENT site (`layMark`, a row-to-row
+      // stagger of the tick's own centre) rather than the curve, and raises
+      // `L0` to 1.16: the stagger spends part of the dark-anchor's abutment
+      // margin (two adjacent rows' ticks can land up to `2*room` apart), so
+      // black-by-abutment needs a little more length in reserve to stay
+      // solid — measured effect on O5's weakest cell, `torus/hatch`: 2.772
+      // -> 2.999 (test rig, d=50).
+      mkTick:        { shape: 'tick',     chan: 'len',   lat: 'brick',   or: 'none',   L0: 1.16, LMIN: 0.18, P0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
       mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
       mkSFlick:      { shape: 'sflick',   chan: 'elong', lat: 'errdiff', or: 'along',  P0: 0.95 },
@@ -2506,6 +2654,32 @@
       mkScribble:    { shape: 'scribble', chan: 'amp',   lat: 'row',     or: 'along',  P0: 1.25 },
       mkDotLozenge:  { shape: 'altrow',   chan: 'alt',   lat: 'altrow',  or: 'along',  P0: 1.15 },
       mkRadialFlick: { shape: 'dash',     chan: 'count', lat: 'blue',    or: 'radial', L0: 1.25 },
+    };
+
+    // W-06b (T3) — the row-coverage FLOOR. `MK_ROW_COV` (1/3) is a fixed
+    // fraction of the master grid: at a fine master pitch (dense scaffolds)
+    // 1/3 of it is still legible-row-tall, but at the sparse end (masterPitch
+    // 5.8mm on a 40mm sphere at d=1) one third of an 8-ruling master grid is
+    // only 3 rows, and no mark language can carry a "sparse but complete"
+    // texture on 3 rows across a whole sphere (measured: 5-7 dashes total,
+    // the user's "ONE dash" complaint). `MK_ROW_TARGET_PEN` states a row-pitch
+    // CEILING in pen widths (16 x 0.3mm pen = 4.8mm): keep every third master
+    // ruling while that is FINER than the ceiling (unchanged design), and
+    // keep MORE — up to every ruling — once the master pitch alone is already
+    // coarser than it, so the row scaffold never gets coarser than the
+    // ceiling just because the master grid is sparse. Scoped by `MK[...]
+    // .rowFloor` so the other eleven mark laws (mkTick included — its own
+    // sparse-end/wedge work is T2/T2-3's, a different mechanism) are
+    // byte-identical. `algoCoverage`'s `isMarkLaw()` branch and `solveAt`'s
+    // row-pitch divisor must read the SAME coverage or they disagree about
+    // what the scaffold they are both describing actually is — hoisted here
+    // so both call sites divide by one number.
+    const MK_ROW_TARGET_PEN = 16;
+    const markRowCoverage = () => {
+      const law = MK[TONE_ALGO];
+      if (!law || !law.rowFloor) return MK_ROW_COV;
+      const ceilingMM = MK_ROW_TARGET_PEN * penWidth;
+      return clamp(masterPitch / Math.max(1e-6, ceilingMM), MK_ROW_COV, 1);
     };
 
     // ── THE MARK SHAPES ───────────────────────────────────────────────────────
@@ -3982,11 +4156,48 @@
       offSurface: 0, elongCapped: 0, lambdaMin: Infinity, lambdaMax: 0,
       litSamples: 0, litAmpSum: 0, litClearMin: Infinity, litClearSum: 0,
       darkClearSum: 0, realLen: 0, baseLen: 0, floorBound: 0,
+      // F1-amp — THE HIGHLIGHT-REGION ORACLE. `litSamples` above gates at
+      // I >= 0.55 (a pre-existing, looser cutoff never asserted by any test).
+      // `hi*` gates at exactly `WV_I0` (0.62) — the radiance above which
+      // `wvRamp` is mathematically zero for every pre-Round-6 law — so
+      // `hiAmpSum`/`hiDrawnSum` (amplitude as a SHARE of the drawn pitch) and
+      // `hiElongSum` (ink-per-unit-arc, since elongation IS the arc-length
+      // multiplier the file's own Round-5 header derives ink from) are a
+      // direct, un-aliased answer to "does the weave still straighten to a
+      // plain ruling above WV_I0". Reported once as `wave.hiAmpMean` /
+      // `wave.hiShareMean` / `wave.hiElongMean` below.
+      hiSamples: 0, hiAmpSum: 0, hiDrawnSum: 0, hiElongSum: 0,
     };
     const wvPitchPen = () => (TONE_ALGO === 'amplitudeOnly' ? WV_AO_PITCH_PEN : WV_PITCH_PEN);
     const wvFlatCov = () => {
       const env = toneEnvelope();
       const c = masterPitch / (wvPitchPen() * inkWidth());
+      return clamp(finite(c, env.covLight), env.covLight, env.covDark);
+    };
+    // F1-placement — Prototype B ("LOCAL"), ship-ruled 2026-09-06
+    // (docs/3d-audit/lane-reports/LEDGER.md, "F1-placement ships Prototype B
+    // (LOCAL)"). `wvFlatCov()` states its reserve against the GLOBAL
+    // `masterPitch` — ONE number for the whole object, with no per-ruling or
+    // per-screen-position term at all — so the Sturmian accumulator it feeds
+    // (`ladderStep`) keeps a strictly PERIODIC kept-index gap pattern on a
+    // family whose rulings are wildly non-uniform on screen (a torus's front
+    // rulings span a 4.4x range of visible length). The widest gap then lands
+    // wherever the INDEX pattern happens to put it, not wherever the screen
+    // is actually sparse — on the default torus this puts a 3-gap across the
+    // darkest band, an up-to-6.6mm-deep bare strip with zero tone behind it.
+    //
+    // `wvPlaceCov` states the identical reserve against `localPitch` instead
+    // — already projection-correct, already computed by `covAtSample`
+    // (`perpPitch`) and already handed to `weightCovAt`, which the flat
+    // fallthrough below simply never read. Stating the reserve against it
+    // makes the accumulator advance by SCREEN DISTANCE rather than by grid
+    // index, which is the same quantity `emitContFamily`'s continuous walk
+    // integrates (W-26) without routing through it or touching the master
+    // grid, `ladderStep`, or `spanDrops`.
+    const wvPlaceCov = (localPitch) => {
+      if (!(Number.isFinite(localPitch) && localPitch > 0)) return wvFlatCov();
+      const env = toneEnvelope();
+      const c = localPitch / (wvPitchPen() * inkWidth());
       return clamp(finite(c, env.covLight), env.covLight, env.covDark);
     };
     // 0 at and above WV_I0 (a plain ruling), 1 at black. One definition, read by
@@ -4015,6 +4226,37 @@
     };
     // The amplitude each law asks for, as a share of the DRAWN pitch. 0.5 would
     // put a crest exactly on the neighbouring ruling's centreline.
+    // F1-amp — THE BACK-PORT. `interlockWeave`, `trochoidLoop`, `amplitudeOnly`
+    // and `onePenDown` are the four PRE-Round-6 flat-coverage wave laws
+    // (`RIBBON_LAWS` ∩ `isWaveLaw()` ∩ `!isWv6()` — the same four
+    // F1-placement's `wvPlaceCov` fallthrough scopes to, `:75`). They never
+    // got Round 6's amplitude floor, so `k * const` below is EXACTLY zero for
+    // every `I >= WV_I0` — a plain, unwavering ruling across the whole lit
+    // half of the form, however evenly F1-placement spaces it. Round 6's own
+    // header already names this "the defect Jay named, not a feature."
+    // `WV_AFLOOR_SHARE` back-ports the SAME mechanism `wv6.weaveDepth` ships
+    // (its own most conservative `aFlo`, 0.14 — chosen deliberately small: it
+    // is the floor least likely to push any of these four over the ±8% ink
+    // bound, since a smaller floor still satisfies "the weave never fully
+    // straightens" while minimising the added arc length). `tourScribble` is
+    // NOT one of the four (not a `RIBBON_LAWS` member — a different width
+    // channel entirely) and is deliberately left untouched, as is the
+    // trailing default for `nestedSerpentine`/`waveToRuling`/`nestedOctaves`/
+    // `hilbertDepth`/`sfcHalftone` (wave laws, but not flat-coverage ones —
+    // out of this unit's scope, and their byte-identity is this fix's own
+    // scoping proof).
+    const WV_AFLOOR_SHARE = 0.14;
+    // trochoidLoop's own floor is DELIBERATELY much smaller, measured, not
+    // guessed. The rolling-circle displacement (`wvForm`'s trochoidLoop
+    // branch moves BOTH along and across the ruling, not a lateral-only
+    // sine) hits a genuine CLIFF in the F1-placement deep-blank oracle
+    // between share 0.045 (safe: deepBlank 0.00mm2, largest cluster
+    // 14.55mm2) and share 0.05 (deepBlank jumps to 5.23mm2, largest cluster
+    // 43.66mm2) — a swept binary search on this exact torus/hatch fixture,
+    // not a smooth degradation, so no interpolated "safe-ish" value between
+    // WV_AFLOOR_SHARE and this one exists. 0.04 keeps a working margin below
+    // the measured cliff at 0.045.
+    const WV_TROCH_AFLOOR_SHARE = 0.04;
     const wvAmpAsk = (I) => {
       const k = wvRamp(I);
       // ROUND 6 — THE FLOOR. `k` is zero above WV_I0, so `k × const` is a plain
@@ -4025,10 +4267,11 @@
       // clamped back into [aFlo, aMax] there, so they too keep the floor.)
       const c6 = wv6();
       if (c6) return Math.max(WV6_AFLOOR_MIN, c6.aFlo + (c6.aMax - c6.aFlo) * k);
-      if (TONE_ALGO === 'interlockWeave') return k * WV_AMAX;
-      if (TONE_ALGO === 'trochoidLoop') return k * WV_TROCH_AMAX;
+      if (TONE_ALGO === 'interlockWeave') return WV_AFLOOR_SHARE + (WV_AMAX - WV_AFLOOR_SHARE) * k;
+      if (TONE_ALGO === 'trochoidLoop') return WV_TROCH_AFLOOR_SHARE + (WV_TROCH_AMAX - WV_TROCH_AFLOOR_SHARE) * k;
       if (TONE_ALGO === 'tourScribble') return k * WV_SCRIB_AMAX;
-      if (TONE_ALGO === 'amplitudeOnly') return k * 0.46;
+      if (TONE_ALGO === 'amplitudeOnly') return WV_AFLOOR_SHARE + (0.46 - WV_AFLOOR_SHARE) * k;
+      if (TONE_ALGO === 'onePenDown') return WV_AFLOOR_SHARE + (WV_AMAX - WV_AFLOOR_SHARE) * k;
       return k * WV_AMAX;
     };
     // ANTI-PHASE, OR IN PHASE — the difference between a weave and a nest.
@@ -4377,6 +4620,11 @@
       if (TONE_ALGO === 'screenAngles') {
         return saCovAt(clamp(finite(I, 0), 0, 1), localPitch, xfLayer);
       }
+      // F1-placement, Prototype B — the flat-coverage wave laws only
+      // (`isWaveLaw() && !isWv6()`: the WV6 family already states a genuine
+      // tone-driven reserve above, via `isWv6()`, and must stay untouched —
+      // F1-placement condition 4). See `wvPlaceCov`'s own comment.
+      if (isWaveLaw() && !isWv6()) return wvPlaceCov(localPitch);
       return weightBaseCov();
     };
     // ...AND THE COVERAGE THE FLOOR ACTUALLY LEFT. `covAtSample` clamps coverage
@@ -4697,29 +4945,55 @@
     // `cA -> 1` (family A already at full darkness) `cB`'s CONTRIBUTION to
     // the combined coverage vanishes on its own (there is no headroom left
     // to add to), so this needs no separate clamp for the darkest band.
-    // ── W-36 — THE CROSSED PAIR SPENDS ONE COVERAGE BUDGET ───────────────────
-    // W-26b-1 (above) proved the SUM `1.0*cA + 0.1*cA` is plot-safe (cylinder
-    // D220 4912.6 -> 5153.7 mm measured on that unit's own prototype, ink
-    // coverage 0.971 -> 0.805) — it never justified spending 91% of that sum
-    // on ONE family. Jay's rule (USER report 16, verbatim): "make crosshatch
-    // have the same number of crosshatch lines as it has hatch lines...".
-    // `CROSS_PAIR_BUDGET` IS that measured-safe sum, so this unit
-    // REDISTRIBUTES ink rather than adding it: at the shipped
-    // `crossDensityRatio = 1` both families ask for exactly half the budget,
-    // i.e. the SAME coverage share and therefore the SAME pitch — parity by
-    // construction, not by widening the crossing family's own reach. `role`
-    // is 'a' for the primary family, 'b' for the crossing one; the dial
-    // keeps its documented sense (`crossDensityRatio` = family B's SPACING
-    // relative to family A's) by dividing only family B's half by `r`.
-    const CROSS_PAIR_BUDGET = 1.1;
+    // ── W-36c — EACH FAMILY CARRIES THE SINGLE-FAMILY HATCH COUNT ────────────
+    // JAY'S RULE (2026-09-10, decision 6 option C, verbatim intent): "make
+    // crosshatch have the same number of crosshatch lines as it has hatch
+    // lines" — for EACH family, at the same Density, not a shared budget split
+    // between them. W-36's shipped `CROSS_PAIR_BUDGET = 1.1` (one shared sum,
+    // split so each family got roughly HALF of what a lone hatch asks for) is
+    // superseded: MEASURED, no family anywhere got above 0.74x the matching
+    // hatch count under that split (docs/3d-audit/lane-reports/W-36c-plan.md
+    // §1). `CROSS_FAMILY_BUDGET = 1.0` gives EACH family the WHOLE
+    // `ladderCov(I)` target a lone family asks for — at the prototype this
+    // reproduces the hatch ruling count to the digit on every primitive at
+    // every Density where the cap below is dormant. That is ~2x the ink of a
+    // hatch (Jay accepted this explicitly), which is why the cap exists.
+    const CROSS_FAMILY_BUDGET = 1.0;
     const crossPairShare = (crossRatio, role) => {
       const r = clamp(finite(crossRatio, 1), 0.25, 2);
-      const half = CROSS_PAIR_BUDGET / 2;
-      return (role === 'b') ? half / r : half;
+      return (role === 'b') ? CROSS_FAMILY_BUDGET / r : CROSS_FAMILY_BUDGET;
     };
-    const ladderPairWantedPitch = (I, crossRatio, role) => {
+    // ── W-36c — ANTI-SATURATION CAP ───────────────────────────────────────────
+    // Two crossed families each asking for FULL single-family coverage combine
+    // as `1 - (1 - c)^2` and go SOLID at high Density — MEASURED, uncapped:
+    // sphere D220 ink coverage 0.984, cylinder D220 0.987, cylinder D300
+    // 0.999, median white hole 0.11 pen^2 (the W-26b `inkCoverage` instrument's
+    // own floor — no cell left). That reproduces judge C1's saturation
+    // (cylinder D220 = 9136.78 mm, W-36's own rejected Rank 3 number, to the
+    // digit) and fails `scene3d-fill-span-verdict.test.js`'s pre-existing,
+    // un-widened `< 0.85` anti-blob bar (measures 0.9714 there).
+    //
+    // The cap: the pair's cell must keep one clear ink-width of white on each
+    // side. `inkWidth() = penWidth * (1 + INK_SPREAD)` is the nib's own drawn
+    // width, so a cell whose side equals TWO ink-widths has exactly as much
+    // white as ink — the smallest form of the rule that clears the 0.85 bar on
+    // every measured cell (plan §2.2's sweep; a looser `1.9x` cap breaches on
+    // capsule D220/D300). Stated on the pair's CELL AREA, not a single pitch,
+    // so neither user dial (`crossDensityRatio` = family B's pitch as `r x`
+    // family A's; `crossAngleDelta` = the angle the families meet at) can
+    // defeat it by trading one for the other.
+    const CROSS_MIN_CLEAR_INKW = 1;
+    const crossMinPitch = () => inkWidth() * (1 + CROSS_MIN_CLEAR_INKW);
+    const crossFloorPitch = (crossRatio, role, delta) => {
+      const r = clamp(finite(crossRatio, 1), 0.25, 2);
+      const th = (clamp(finite(delta, 90), 10, 170) * Math.PI) / 180;
+      const s = Math.max(0.17, Math.abs(Math.sin(th)));
+      const pA = crossMinPitch() / Math.sqrt(Math.max(1e-6, r * s));
+      return (role === 'b') ? r * pA : pA;
+    };
+    const ladderPairWantedPitch = (I, crossRatio, role, delta) => {
       const c = clamp(ladderCov(I) * crossPairShare(crossRatio, role), LADDER_COV_MIN, 1);
-      return masterPitch / c;
+      return Math.max(masterPitch / c, crossFloorPitch(crossRatio, role, delta));
     };
 
     // 'contFieldQuant' — the control. The SAME field, with the gap allowed only
@@ -4869,7 +5143,7 @@
       // ROUND 6 — the twelve mark languages rule ONE even scaffold and never
       // drop a row. The whole tone ramp is carried by the marks strung on it, so
       // the coverage they hand back is a constant.
-      if (isMarkLaw()) return MK_ROW_COV;
+      if (isMarkLaw()) return markRowCoverage();
       // W-26 — 'ladder' (this law's OWN default), 'fineLadder' and
       // 'phaseFineLadder' are now placed continuously (see `emitContFamily`'s
       // dispatch and `ladderWantedPitch` above): the spacing off the master
@@ -5914,6 +6188,10 @@
       };
       // W-05b — the walk step, in screen millimetres (see `MK_ARC_PEN` above).
       const MK_ARC_MM = MK_ARC_PEN * penWidth;
+      // T2-3c — see `MK_TICK_JUMP_PEN`'s own comment (above `MK_MAX_WALK_STEPS`)
+      // for the mechanism. Stated in mm here, once, in this closure, since
+      // `penWidth` (and so `MK_ARC_MM`) is only known per-render.
+      const MK_TICK_STEP_CAP_MM = MK_TICK_JUMP_PEN * MK_ARC_MM;
       // THE CHART-WALKED EDGE. `poly` is a 2-vertex segment (every 'tick'/
       // 'morph' pass built by `mkShape`/`layMark` is exactly that) whose
       // MIDPOINT is the ruling's own sample `fr0` — the one point on the
@@ -5933,7 +6211,7 @@
       // walked edges' length in the flat local frame, ≈ `sv.L` by
       // construction — exact when the pass sits on the ruling itself);
       // `drawnLen` is what actually landed on the curved surface.
-      const walkPoly = (fr0, uOff, theta, poly) => {
+      const walkPoly = (fr0, uOff, theta, poly, stepCapMM) => {
         const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
         const toUV = (pt) => ({
           u: (uOff || 0) + pt[0] * c - pt[1] * sn,
@@ -5958,7 +6236,7 @@
         // (the seed point itself excluded) plus the frame/point the walk
         // actually ended at, so the caller can chain a further walk from
         // there.
-        const walkFrom = (seedFr, seedPt, seedUV, target) => {
+        const walkFrom = (seedFr, seedPt, seedUV, target, stepCapMM) => {
           const edgeLen = Math.hypot(target.u - seedUV.u, target.v - seedUV.v);
           if (!(edgeLen > 1e-9)) return { pts: [], askLen: 0, truncated: false, endFr: seedFr, endPt: seedPt };
           let fr = seedFr;
@@ -5978,7 +6256,19 @@
             const du = stepU - curUV.u; const dv = stepV - curUV.v;
             const hit = mapOne(fr, { u: du, v: dv });
             if (!hit) { truncated = true; break; }
-            curPt = { x: hit.sm.x, y: hit.sm.y, z: hit.sm.z };
+            const nextPt = { x: hit.sm.x, y: hit.sm.y, z: hit.sm.z };
+            // T2-3c — `stepCapMM` (tick-only, see the `place()` call site)
+            // refuses a step whose REAL screen distance from the last
+            // accepted point blows past the walk's own per-step budget by
+            // more than `MK_TICK_JUMP_PEN`x — the signature of a re-derived
+            // frame going near-singular (a chart pole/silhouette), not of
+            // ordinary curvature. Refused exactly like an off-surface
+            // sample: `truncated = true`, keep what already walked.
+            if (stepCapMM && Math.hypot(nextPt.x - curPt.x, nextPt.y - curPt.y) > stepCapMM) {
+              truncated = true;
+              break;
+            }
+            curPt = nextPt;
             pts.push(curPt);
             curUV = { u: stepU, v: stepV };
             const nfr = frameFrom(hit.sm, fr0.ld, fr0.st, hit.pr);
@@ -6002,14 +6292,14 @@
         const t1 = toUV(poly[poly.length - 1]);
         const hubUV = { u: (t0.u + t1.u) / 2, v: (t0.v + t1.v) / 2 };
         const fr0Pt = { x: fr0.smp.x, y: fr0.smp.y, z: fr0.smp.z };
-        const toHub = walkFrom(fr0, fr0Pt, { u: 0, v: 0 }, hubUV);
+        const toHub = walkFrom(fr0, fr0Pt, { u: 0, v: 0 }, hubUV, stepCapMM);
         const hubFr = toHub.endFr; const hubPt = toHub.endPt;
-        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v });
+        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v }, stepCapMM);
         const pts = w0.pts.slice().reverse();
         pts.push(hubPt);
         let askLen = w0.askLen; let truncated = toHub.truncated || w0.truncated;
         if (poly.length > 1) {
-          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v });
+          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v }, stepCapMM);
           pts.push(...w1.pts);
           askLen += w1.askLen;
           truncated = truncated || w1.truncated;
@@ -6060,7 +6350,10 @@
         for (let i = 0; i < polys.length; i++) {
           const poly = polys[i];
           if (isWalkedShape) {
-            const wk = walkPoly(fr, uOff, theta, poly);
+            // T2-3c — the jump guard is TICK-ONLY (`law.shape === 'tick'`);
+            // `'morph'` (`mkDashRamp`, the only other walked shape) passes
+            // `undefined` and is byte-for-byte unaffected.
+            const wk = walkPoly(fr, uOff, theta, poly, law.shape === 'tick' ? MK_TICK_STEP_CAP_MM : undefined);
             if (!wk.pts) { mkStat.offSurface += 1; return false; }
             askTot += wk.askLen;
             if (wk.truncated) sawTrunc = true;
@@ -6164,7 +6457,13 @@
           bucket.push(tm);
           mkStat.markMids.push(tm);
         }
-        return true;
+        // T2-2/T2-3 — the drawn ink length `tot` is returned (rather than a
+        // bare `true`) so `layMark` can accumulate `lenByThird`/
+        // `cntByThird` without re-deriving it. `tot >= MIN_MARK_MM > 0` on
+        // every path that reaches here (the `tot < MIN_MARK_MM` branch
+        // above already returned `false`), so this stays truthy for every
+        // existing `if (place(...))` call site.
+        return tot;
       };
 
       // The mark's own turn. 'iso' and 'radial' read the intensity gradient IN
@@ -6207,33 +6506,111 @@
         const smp = smps[k];
         const I = clamp(finite(smp.I, 0), 0, 1);
         const lp = pitchAtStep(smp, k);
-        const R = clamp(((Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch) / MK_ROW_COV, 0.25, 40);
+        // W-06b (T3) — `R` is the mark law's own ROW pitch, which must read the
+        // SAME coverage `algoCoverage`'s `isMarkLaw()` branch computed (above),
+        // or the row-floor scaffold and the tone solve that draws onto it
+        // disagree about how many rows actually survived.
+        const R = clamp(((Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch) / markRowCoverage(), 0.25, 40);
         const g = clamp((mkAsk(I) * R) / w, 0, 26);
         let P; let L;
         const countChan = law.chan === 'count' || (law.chan === 'alt' && parity === 1);
+        const lenChan = law.chan === 'len';
         // F-06 / W-06 — the dash BAND's capacity is a function of the period,
         // so it is stated here; every other shape's is a function of the cell
         // alone. `R` is the ROW pitch (the master pitch inflated by
         // `1/MK_ROW_COV` so a mark law's row has room to carry a mark) — the
         // finding's "several rulings wide" is this band sized off the ROW
-        // pitch, three master rulings' worth. Capped instead at 2x the TRUE
-        // master pitch (`lp`, uninflated), so a full-black dash dissolves into
-        // a band no wider than its own ruling's immediate neighbourhood, not
-        // the row scaffold's.
+        // pitch, three master rulings' worth.
         const truePitch = (Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch;
-        const capOf = (per) => (law.shape === 'morph'
-          ? Math.min(Math.max(1, Math.floor((1.12 * R) / w)) * per, 2 * truePitch)
-          : mkCap(shapeFor(), R, w));
+        // W-06b (T4, Jay's decision 2026-09-10 #1=B) — W-06's fix capped the
+        // band's LENGTH at 2x truePitch, which caps the DUTY CYCLE itself
+        // (`L <= 2*truePitch` against `P = 1.25*truePitch` gives `L/P <=
+        // 0.533` at every density, so `ceil(L/P)` is always 1 and states 3-4
+        // of the law's own documented ramp — unbroken ruling, then a BAND of
+        // parallel passes — became structurally unreachable; measured
+        // ink collapse 2995mm -> 529mm at d=220). Capping band WIDTH instead
+        // (in the same units the F-06 defect was measured in — multiples of
+        // the ruling's own TRUE pitch, not the inflated row pitch) restores
+        // every ramp state while keeping "several rulings wide" dead by
+        // construction: `bandN` parallel passes, an ink width apart, can
+        // never stack wider than 0.90x the distance to the next ruling —
+        // STRICTLY TIGHTER than W-06's own 2x truePitch on the quantity that
+        // actually mattered (width), with no cap left on the quantity that
+        // did not (duty cycle / length).
+        //
+        // `bandPitch` bounds this by the NOMINAL master pitch, not the raw
+        // per-sample `lp`. Measured (sphere/hatch d=1, worst case): `lp` can
+        // read up to 8.78 mm against a 5.82 mm nominal masterPitch — a
+        // foreshortening/projection outlier, not a real widening of the
+        // family's own spacing — and sizing the band off it directly
+        // regrew exactly the F-06 picture (disconnected rectangular slabs,
+        // confirmed by rendering `sphere__hatch__mkDashRamp__low__a` before
+        // this bound: 0.717 of dashes within 2.5 mm of a master ruling
+        // against a 0.85 bar). Clamping to the nominal keeps every dash's
+        // band the SAME width-relative-to-the-family everywhere on the
+        // object, which is what "an inkWidth apart, never past the next
+        // ruling" is actually supposed to mean.
+        const bandPitch = Math.min(truePitch, masterPitch);
+        const bandN = Math.max(1, Math.min(MK_BAND_MAX_PASSES, Math.floor((0.90 * bandPitch) / w)));
+        const capOf = (per) => (law.shape === 'morph' ? bandN * per : mkCap(shapeFor(), R, w));
         if (countChan) {
           const L0 = law.chan === 'alt' ? 1.60 : law.L0;
           L = Math.min(L0 * R, capOf(PMIN));
           P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
           if (P <= PMIN + 1e-9) L = Math.min(g * P, capOf(P));
+        } else if (lenChan) {
+          // T2-2/T2-3 (W-05b U2, R1: "ticks must have VARIABLE LENGTH, tick
+          // length carries tone", user-reports/8.png). LENGTH is the
+          // primary tone channel and PERIOD the secondary one. T2's own
+          // first shipped curve (a bare smoothstep on radiance) was
+          // REJECTED (T2-review.md): zero derivative at BOTH ends pins `L`
+          // near `LMIN*R` over roughly a third of the tone range. T2-2's
+          // blended curve (`(1-BLEND)*t + BLEND*smoothstep(t)`, never
+          // exactly zero slope) was ALSO rejected (T2-2-review.md) — not
+          // for the curve's shape, but because the wedge it was blamed for
+          // is not a curve-shape defect at all (`T2-3-plan.md` §0: the two
+          // curves are the same render to within 1% on every wedge metric).
+          // `MK_TICK_EASE_BLEND` is kept at T2-2's own formula, raised only
+          // for O5 headroom now that it is free to be chosen on that bar
+          // alone — the wedge fix lives at the PLACEMENT site (`layMark`,
+          // below), not here.
+          //
+          // As with `countChan` above, `P` is RE-DERIVED from `L` (not
+          // fixed at `P0*R`) so the delivered ink AREA FRACTION stays
+          // exactly what the tone solve asked for: a tick occupies `L`
+          // (across the row) by `w` (along the row, the pen width) inside a
+          // cell `R` (across) by `P` (along), so `area = L*w/(R*P)`, and
+          // `P = L/g` is the unique period making that equal `mkAsk(I)` —
+          // for ANY `L`. This is what keeps "black by pure abutment"
+          // correct even though `L` no longer comes from `g` directly.
+          const t = clamp(1 - I, 0, 1);
+          const eased = (1 - MK_TICK_EASE_BLEND) * t + MK_TICK_EASE_BLEND * (t * t * (3 - 2 * t));
+          // T2-3b Rank 1 (`T2-3b-plan.md` §4): unlike `countChan` three lines
+          // above, this branch used to derive `P` from `L` and STOP — when
+          // the resulting `P` clamps to `PMIN` (the whole midtone, I in
+          // [0.30, 0.90] on this fixture), the delivered ink area
+          // `L*w/(R*P)` sags up to 25% below `mkAsk(I)` because `L` was never
+          // re-solved against the floor `P` actually delivered. That sag is
+          // a second, unasked-for tone transfer printed along the isophotes
+          // — the diagonal banding `T2-3-review.md` photographed on the
+          // CONTOUR mapper. `Lfloor` is the length `P=PMIN` can actually
+          // carry; blending it in with a smooth (4-norm) floor instead of a
+          // hard `max` avoids adding a new hard-edged isophote of its own
+          // (measured: −5% to −30% of `bandC` vs the hard-max idiom
+          // `countChan` uses, e.g. cone/contour 0.0390 -> 0.0271).
+          // `Math.min(law.L0 * R, …)` keeps the dark anchor bit-for-bit at
+          // its shipped `L0*R` — without it the floor can ask for `L` well
+          // past the nominal row pitch in foreshortened patches, and the
+          // dark region turns chunky instead of solid-by-abutment.
+          const Lease = (law.LMIN || 0) * R + (law.L0 - (law.LMIN || 0)) * R * eased;
+          const Lfloor = g * PMIN;
+          L = Math.min(law.L0 * R, Math.pow(Math.pow(Lease, 4) + Math.pow(Lfloor, 4), 1 / 4));
+          P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
         } else {
           P = clamp(law.P0 * R, PMIN, MK_PMAX);
           L = Math.min(g * P, capOf(P));
         }
-        return { P, L, R, I, g };
+        return { P, L, R, I, g, truePitch, bandPitch };
       };
 
       const shapeFor = () => {
@@ -6287,8 +6664,14 @@
           // PERIOD, so L < P is a gapped dash, L = P is an unbroken ruling, and
           // L > P is that ruling thickened into a BAND of parallel passes an ink
           // width apart. Dot → dash → line → band, with no thresholds in it.
+          // W-06b (T4) — `bandN` (band-WIDTH cap, see `solveAt`'s `capOf`
+          // above) replaces the old `1.12*sv.R`-derived (ROW-pitch) cap; both
+          // sides of the ramp must agree on the same cap or `sv.L` (already
+          // clamped by `capOf` in `solveAt`) and `nn` (recomputed here) could
+          // disagree about how many passes the ink is spread across.
           const n0 = Math.max(1, Math.ceil(sv.L / Math.max(1e-6, sv.P)));
-          const nn = Math.min(n0, Math.max(1, Math.floor((1.12 * sv.R) / w)));
+          const bandN = Math.max(1, Math.min(MK_BAND_MAX_PASSES, Math.floor((0.90 * sv.bandPitch) / w)));
+          const nn = Math.min(n0, bandN);
           const each = sv.L / nn;
           polys = [];
           for (let j = 0; j < nn; j++) {
@@ -6297,9 +6680,48 @@
           }
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
+          // T2-3 (`T2-3-plan.md` §3 Rank 1 — PROTOTYPED and spike-gated
+          // there) — a 'tick' spends its whole LENGTH across the row and is
+          // built CENTRED on the row line (`mkShape`'s `'tick'` branch,
+          // `:2637` area), so every mm the length response takes off the
+          // tick is subtracted from the ROW-TO-ROW direction and opens a
+          // bare strip of `(R-L)/2` on BOTH sides of every row, running the
+          // row's whole length — the wedge T2 and T2-2 were both rejected
+          // for (T2-review.md, T2-2-review.md). Scatter the tick's own
+          // centre over exactly the room its shortening created, on a
+          // golden-ratio (low-discrepancy) sweep of the site's own arc
+          // index, so successive ticks in one row TILE the row's cell
+          // instead of stacking on its centre line. Zero at the dark anchor
+          // (`L -> L0*R` leaves no room, so pure abutment is preserved
+          // bit-for-bit) and maximal exactly where the wedge is. `STAG=1`
+          // (the full room) measured best on every cell and every metric in
+          // an amplitude sweep (plan §3) — do not damp it.
+          if (law.shape === 'tick') {
+            const room = 0.5 * Math.max(0, sv.R - sv.L);
+            if (room > 1e-6) {
+              const idx = a / Math.max(1e-6, sv.P);
+              const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
+              const cOff = room * (2 * uu - 1);
+              polys = polys.map((pl) => pl.map((pt) => [pt[0], pt[1] + cOff]));
+            }
+          }
         }
-        if (place(fr, polys, a - arcMM[k], thetaAt(k, fr))) {
-          mkStat.byThird[Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3))] += 1;
+        const drawnLen = place(fr, polys, a - arcMM[k], thetaAt(k, fr));
+        if (law.shape === 'tick') mkStat.tickSites.push(sv.I, sv.R, sv.P, drawnLen ? 1 : 0);
+        if (drawnLen) {
+          const third = Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3));
+          mkStat.byThird[third] += 1;
+          // T2-2/T2-3 (R1) — the DRAWN ink length of this mark, not the
+          // solve's own asked `sv.L` (which a limb-truncated walk may not
+          // have fully delivered — see `askSum`/`drawnSum` above), against
+          // the SAME radiance third used for the pre-existing count guard.
+          mkStat.lenByThird[third] += drawnLen;
+          mkStat.cntByThird[third] += 1;
+          // W-06b (T4) — `bandMax`, published via `lastMarkStats`, is the
+          // deepest state of the dissolution ramp any placed mark actually
+          // reached this render (O8's oracle: >= 2 proves the band states
+          // are reachable again, not just the dash state).
+          if (law.shape === 'morph') mkStat.bandMax = Math.max(mkStat.bandMax, polys.length);
         }
       };
 
@@ -8222,6 +8644,14 @@
             waveStat.litClearSum += clear;
             if (clear < waveStat.litClearMin) waveStat.litClearMin = clear;
           }
+          // F1-amp highlight oracle — exactly I >= WV_I0, see waveStat's own
+          // comment. `drawn` and `e` (elongation) are already in scope here.
+          if (I >= WV_I0) {
+            waveStat.hiSamples += 1;
+            waveStat.hiAmpSum += amp;
+            waveStat.hiDrawnSum += drawn;
+            waveStat.hiElongSum += e;
+          }
           waveStat.samples += 1;
           waveStat.ampSum += amp;
           if (amp < waveStat.ampMin) waveStat.ampMin = amp;
@@ -8689,6 +9119,24 @@
       // single-weight by construction: `sink.noteW` is never reached, no run is
       // ever handed a `weightScale`, and `splitByWeight` is never called.
       if (toneOn && isMarkLaw() && arcMM) {
+        // T2-3 (`tests/unit/scene3d-mktick-wedge.test.js`'s rasterised
+        // bare-wedge oracle, `T2-3-plan.md` §2) — gated to `mkTick`'s own
+        // shape, republish the field samples this ruling ALREADY computed
+        // above (no extra `sampleAt` calls) into `mkStat.tickField` so a
+        // test-side rasteriser can measure bare area against the actual
+        // shaded silhouette instead of the site lattice (§1.3: a site
+        // metric scores a cell "covered" the instant it draws ANY tick
+        // inside its own cell, however short). `wantFront`-gated so an
+        // x-ray back pass never contaminates the front-surface field.
+        // Read-only diagnostic — nothing here feeds back into the render.
+        if (wantFront && MK[TONE_ALGO] && MK[TONE_ALGO].shape === 'tick') {
+          if (mkStat.tickField.rowPitch == null) mkStat.tickField.rowPitch = masterPitch / MK_ROW_COV;
+          const pts = mkStat.tickField.pts;
+          for (let s = 0; s <= nSteps; s += 1) {
+            const smp = smps[s];
+            if (smp && Number.isFinite(smp.x) && Number.isFinite(smp.I)) pts.push(smp.x, smp.y, smp.I);
+          }
+        }
         emitMarks({
           smps, arcMM, nSteps, spanDrop, paramAt, pitchStep, lineDir,
           lineIndex, wantFront, back, fam: currentFam, pitchAtStep,
@@ -10017,25 +10465,31 @@
       // sparse end (6 x the master pitch is past the O6 bar) and far too narrow
       // to swallow a form.
       //
-      // W-26b-1 / W-36: the crosshatch pair asks `ladderPairWantedPitch` for
-      // its OWN share of `CROSS_PAIR_BUDGET` (wider `want`, on purpose — see
-      // that function). Left alone, this ceiling — built from the SAME
+      // W-26b-1 / W-36 / W-36c: the crosshatch pair asks `ladderPairWantedPitch`
+      // for its OWN share of the per-family budget (wider `want`, on purpose —
+      // see that function). Left alone, this ceiling — built from the SAME
       // `count` family A's own call sees — clamped the wider `want` right
       // back down to family A's own step size, so a coverage-share fix has
       // NO effect at `crossDensityRatio` 1 unless the ceiling widens with it
       // (originally measured on W-26b-1's family-B-only share: the
       // ratio-0.25-vs-ratio-1 fill-count spread stayed 1.6x, not the
       // required ~2x, no matter how far the share was cut). `dfMaxMul`
-      // widens the ceiling by the SAME reciprocal share — now read for
-      // WHICHEVER role is walking (W-36 gives family A a share too, so it
-      // gets the same treatment) — capped so a genuinely sparse family still
-      // cannot swallow the whole form the way an unbounded widening could.
-      // W-36 measured range across the full `crossDensityRatio` dial and
-      // both roles: [1.00, 3.64] (vs a clamped 10-40 under the old
-      // family-B-only share) — the cap is now a dormant safety rail.
+      // widens the ceiling by whichever is LARGER: the reciprocal share (as
+      // before), or how far the anti-saturation CAP's floor pitch sits above
+      // the nominal master pitch — the cap cannot be spent (the walk would
+      // clamp `want` right back down before `ladderPairWantedPitch` ever gets
+      // to return the floor) unless this ceiling widens with it too, exactly
+      // the trap W-26b-1 documented at this line. Capped so a genuinely sparse
+      // family still cannot swallow the whole form the way an unbounded
+      // widening could. W-36c measured range across the full dial, both
+      // roles, and the cap's own floor: [1.00, ~2.2] — `CROSS_DFMAX_BOOST_CAP`
+      // stays a dormant safety rail.
       const CROSS_DFMAX_BOOST_CAP = 20;
       const dfMaxMul = (crossShare != null && isEvenLadder())
-        ? clamp(1 / Math.max(1e-6, crossPairShare(crossShare.ratio, crossShare.role)), 1, CROSS_DFMAX_BOOST_CAP)
+        ? clamp(Math.max(
+          1 / Math.max(1e-6, crossPairShare(crossShare.ratio, crossShare.role)),
+          crossFloorPitch(crossShare.ratio, crossShare.role, crossShare.delta) / Math.max(1e-6, masterPitch),
+        ), 1, CROSS_DFMAX_BOOST_CAP)
         : 1;
       const dfMax = (6 * dfMaxMul) / Math.max(6, count);
       const creep = 1 / Math.max(8, count * 3);
@@ -10053,14 +10507,15 @@
           // `ladderWantedPitch` (the master-grid pitch each law always
           // computed, asked for directly) rather than `cfWantedPitch`'s own
           // area-based field — the tone stays each law's own, only the
-          // placement is shared. W-36: crosshatch's TWO families
+          // placement is shared. W-36c: crosshatch's TWO families
           // (`crossShare` non-null on both) read `ladderPairWantedPitch`
-          // instead — each asks for its OWN half of one shared pair budget,
-          // which is what makes them land on the SAME pitch at the shipped
+          // instead — each asks for the FULL single-family coverage target,
+          // floored by the anti-saturation cap, which is what makes them
+          // land on the hatch-matching pitch at the shipped
           // `crossDensityRatio = 1` — see that function's comment for why.
           let want = isEvenLadder()
             ? (crossShare != null
-              ? ladderPairWantedPitch(pb.I, crossShare.ratio, crossShare.role)
+              ? ladderPairWantedPitch(pb.I, crossShare.ratio, crossShare.role, crossShare.delta)
               : ladderWantedPitch(pb.I))
             : cfWantedPitch(pb.I);
           // 'contFieldMeasured' — the global response inversion, from pass 1.
@@ -11069,12 +11524,12 @@
           angleDeg: finite(opts.fillAngle, 0),
         });
       } else if (contMapper) {
-        // W-36: crosshatch's family A now also reads the shared PAIR budget
+        // W-36c: crosshatch's family A now also reads the per-family budget
         // (role 'a') instead of the un-shared `ladderWantedPitch` — that is
-        // what lets it land on the SAME pitch as family B (role 'b') below.
-        // Contour and hatch (neither a crossed pair) keep `undefined` and
-        // are byte-identical to before.
-        const crossShareA = (mapper === 'crosshatch') ? { ratio: crossRatio, role: 'a' } : undefined;
+        // what lets it land on the hatch-matching pitch, the same one family
+        // B (role 'b') below lands on. Contour and hatch (neither a crossed
+        // pair) keep `undefined` and are byte-identical to before.
+        const crossShareA = (mapper === 'crosshatch') ? { ratio: crossRatio, role: 'a', delta: crossDelta } : undefined;
         if (mapper === 'contour') {
           emitContFamily('a', 0, count, back);
         } else if (onMeridianAxis) {
@@ -11088,10 +11543,11 @@
         if (mapper === 'crosshatch') {
           const aB = hatchAngle + crossDelta;
           const a180 = (((aB % 180) + 180) % 180);
-          // W-26b-1 / W-36: the crossing family passes `{ ratio: crossRatio,
-          // role: 'b' }` as its `crossShare` so the walk derives its own
-          // half of the shared PAIR budget — see `ladderPairWantedPitch`.
-          const crossShareB = { ratio: crossRatio, role: 'b' };
+          // W-26b-1 / W-36c: the crossing family passes `{ ratio: crossRatio,
+          // role: 'b', delta: crossDelta }` as its `crossShare` so the walk
+          // derives its own full per-family target under the cap — see
+          // `ladderPairWantedPitch`.
+          const crossShareB = { ratio: crossRatio, role: 'b', delta: crossDelta };
           if (onMeridianAxis && a180 === 0) emitContFamily('b', 0, Math.max(2, Math.round(count / crossRatio)), back, crossShareB);
           else if (onMeridianAxis && a180 === 90) emitContFamily('a', 0, Math.max(2, Math.round(count / crossRatio)), back, crossShareB);
           else emitContFamily('angle', aB, Math.max(2, Math.round(count / crossRatio)), back, crossShareB);
@@ -11489,7 +11945,17 @@
     // so a caller can tell "not a mark law" apart from "a mark law that
     // placed nothing" (samples === 0).
     const publishMarkStats = () => {
-      lastMarkStats = mkStat.samples ? { algo: TONE_ALGO, ...mkStat, byThird: mkStat.byThird.slice() } : null;
+      lastMarkStats = mkStat.samples
+        ? {
+          algo: TONE_ALGO,
+          ...mkStat,
+          byThird: mkStat.byThird.slice(),
+          lenByThird: mkStat.lenByThird.slice(),
+          cntByThird: mkStat.cntByThird.slice(),
+          tickField: { pts: mkStat.tickField.pts.slice(), rowPitch: mkStat.tickField.rowPitch },
+          tickSites: mkStat.tickSites.slice(),
+        }
+        : null;
     };
     if (!runMapper(N, false)) { flushDeferredRibbons(); publishRibbonStats(); publishMarkStats(); return null; } // front surface (unchanged when no x-ray)
     // X-ray back surface: sparser (count × backDensity) far-side family, tagged.
@@ -11615,7 +12081,7 @@
         budget: mkStat.budget,
         pMin: Number.isFinite(mkStat.pMin) ? Math.round(mkStat.pMin * 1000) / 1000 : null,
         gMax: Math.round(mkStat.gMax * 100) / 100,
-        rowPitch: Math.round((masterPitch / MK_ROW_COV) * 1000) / 1000,
+        rowPitch: Math.round((masterPitch / markRowCoverage()) * 1000) / 1000,
         floorPitch: Math.round(floorPitch * 1000) / 1000,
       } : null,
       loz: lozStat.samples ? {
@@ -11686,6 +12152,23 @@
           ? Math.round((waveStat.realLen / waveStat.baseLen) * 1000) / 1000 : null,
         floorBound: waveStat.floorBound,
         pitchPen: wvPitchPen(),
+        // F1-amp — THE HIGHLIGHT ORACLE, gated at exactly I >= WV_I0 (0.62),
+        // not the looser 0.55 `lit*` cutoff above. `hiAmpMean` is the mean
+        // amplitude in millimetres, `hiShareMean` is that amplitude as a
+        // share of the drawn pitch (the SAME unit `wvAmpAsk` returns and the
+        // SAME unit WV6's `aFlo` is stated in), and `hiElongMean` is the mean
+        // elongation — ink-per-unit-arc, per the file's own Round 5 header
+        // ("the pen genuinely travels farther; this is an addition"). A law
+        // with no amplitude floor reports all three at (near-)zero-waviness
+        // values here: hiShareMean ~ 0, hiElongMean ~ 1.0 (a plain ruling has
+        // no extra arc length).
+        hiSamples: waveStat.hiSamples,
+        hiAmpMean: waveStat.hiSamples
+          ? Math.round((waveStat.hiAmpSum / waveStat.hiSamples) * 1000) / 1000 : null,
+        hiShareMean: (waveStat.hiSamples && waveStat.hiDrawnSum > 1e-9)
+          ? Math.round((waveStat.hiAmpSum / waveStat.hiDrawnSum) * 1000) / 1000 : null,
+        hiElongMean: waveStat.hiSamples
+          ? Math.round((waveStat.hiElongSum / waveStat.hiSamples) * 1000) / 1000 : null,
       } : null,
       umbilic: umbStat.n ? {
         samples: umbStat.n,

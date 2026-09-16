@@ -271,55 +271,91 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
       expect(runSphere(100, 'hatch').count).toBe(53);
     });
 
-    // RE-PINNED A FIFTH TIME (W-36, PROOF — see `## Bars changed` in that
-    // unit's commit body and docs/3d-audit/lane-reports/W-36-impl.md).
-    // W-26b-1 gave the crossing family a SHARE of family A's own coverage
-    // (`crossShareOf`, `CROSS_SHARE_BASE = 0.1`) — at the shipped
-    // `crossDensityRatio = 1` that made family B's wanted PITCH ~10x family
-    // A's (USER report 16: a crosshatch sphere reads as ONE family). W-36
-    // replaces that with `CROSS_PAIR_BUDGET = 1.1` split evenly between the
-    // two families (`crossPairShare`, `ladderPairWantedPitch`) — the same
-    // measured-safe SUM W-26b-1 proved plot-safe, redistributed rather than
-    // widened. Family A now also spends its HALF of the shared budget
-    // (previously the whole of `ladderCov`), so its own (TOTAL, both
-    // families) count moves too — this is the intended, measured
-    // consequence, not a regression: d=10 ratio 0.25 22 -> 18 / ratio 1.0
-    // 10 -> 11 (family B alone was drawing as few as 1 ruling here — this
-    // is Jay's literal defect); d=100 ratio 0.25 138 -> 114 / ratio 1.0
-    // 60 -> 64. Measured via `crossFamilyBCount` (family-split, not
-    // `runSphere`'s TOTAL): d=10 ratio 0.25 -> A 3 / B 9; ratio 1 -> A 3 /
-    // B 4; ratio 2 -> A 3 / B 3. d=100 ratio 0.25 -> A 20 / B 61; ratio 1 ->
-    // A 20 / B 26; ratio 2 -> A 20 / B 13.
-    test('crosshatch mapper (pair-budget family B): pinned fill counts at d=10/100, ratio 0.25 and 1.0', () => {
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(18);
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(11);
-      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(114);
-      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(64);
+    // RE-PINNED A SIXTH TIME (W-36c, PROOF — see `## Bars changed` in that
+    // unit's commit body and docs/3d-audit/lane-reports/W-36c-impl.md, and
+    // the plan's own §5 table). JAY'S DECISION 2026-09-10 (#6 -> option C):
+    // each crosshatch family now carries the SAME ruling count a single-
+    // family hatch draws at the same Density, not a shared coverage budget
+    // split between the two (W-36's `CROSS_PAIR_BUDGET = 1.1` half-split is
+    // superseded by `CROSS_FAMILY_BUDGET = 1.0` given to EACH family, under
+    // a new anti-saturation cap — see `surface-fill.js`). Both families ask
+    // for MORE than before, so the TOTAL (both families) count rises again:
+    // d=10 ratio 0.25 18 -> 22 / ratio 1.0 11 -> 18; d=100 ratio 0.25
+    // 114 -> 120 / ratio 1.0 64 -> 116 — the largest single move, and the
+    // direct expression of Jay's rule (ratio 1 total count nearly DOUBLES,
+    // because both families now draw a hatch-equivalent count instead of
+    // one drawing it and the other roughly half of it). Measured via
+    // `crossFamilyBCount` (family-split, not `runSphere`'s TOTAL): d=10
+    // ratio 0.25 -> B 9; ratio 1 -> B 7; ratio 2 -> B 4. d=100 ratio
+    // 0.25 -> B 61; ratio 1 -> B 47; ratio 2 -> B 24.
+    test('crosshatch mapper (per-family budget): pinned fill counts at d=10/100, ratio 0.25 and 1.0', () => {
+      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(22);
+      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(18);
+      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(120);
+      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(116);
     });
 
-    // REPLACED (W-36, PROOF). The old bar ("TOTAL fill count spread between
-    // crossDensityRatio 0.25 and 1.0 restored to >=2.0x") is now arithmetically
-    // incompatible with Jay's own rule: it was large only because ratio-1
-    // produced a near-invisible family B, so the denominator was ~family A
-    // alone. Parity necessarily roughly doubles that denominator (family A
-    // now shares the budget too) and dilutes any total-count spread —
-    // measured 1.636 (d=10) / 1.781 (d=100), both now BELOW the old >=2.0
-    // bar despite the crossing family being MORE responsive to the dial than
-    // before, not less. The direct, honest measurement of the control the
-    // dial actually owns is the CROSSING FAMILY's own count across the dial
-    // ends, which this replacement bar checks instead:
-    //   nB(0.25) / nB(2)   d=10:  9 / 3 = 3.00   (>= 2.5)
-    //   nB(0.25) / nB(2)   d=100: 61 / 13 = 4.69 (>= 2.5)
-    //   nB(0.25) / nB(1.0) d=100: 61 / 26 = 2.35 (>= 2.0)
-    test("crosshatch mapper: crossing family's own count spans >=2.5x across the crossDensityRatio dial ends (0.25 vs 2.0) at d=10 and d=100", () => {
+    // RE-PINNED (W-36c, PROOF — A CEILING GOING DOWN, disclosed under
+    // `## Bars changed`; orchestrator sign-off required per AGENT-PROTOCOL).
+    // At ratio 0.25 the user asks family B for 4x the single-family target,
+    // but `ladderPairWantedPitch` clamps coverage at `c <= 1` (the engine's
+    // own ceiling) — under W-36's 0.55 base the clamp only bit above
+    // `cov ~= 0.45`; at parity (W-36c) it bites above `cov ~= 0.25`, so the
+    // dial's headroom ABOVE ratio 1 is structurally smaller BECAUSE ratio 1
+    // is now already at the ceiling, which is Jay's rule. Measured:
+    // nB(0.25)/nB(2) = 2.25 (d=10), 2.542 (d=100) — both now below the old
+    // >=2.5 bar, which is REPLACED by >=2.0. The old sub-check
+    // "nB(0.25) >= 2.0 x nB(1)" is arithmetically dead under the new
+    // ceiling (measured 61/47 = 1.30) for the SAME reason and is REMOVED,
+    // replaced by STRICT MONOTONICITY (nB(0.25) > nB(1) > nB(2), which
+    // cannot be gamed by a flat response and is what the old magnitude bar
+    // existed to catch) — measured 9 > 7 > 4 (d=10) and 61 > 47 > 24
+    // (d=100).
+    test("crosshatch mapper: crossing family's own count spans >=2.0x across the crossDensityRatio dial ends (0.25 vs 2.0) at d=10 and d=100, and is strictly monotonic across 0.25/1.0/2.0", () => {
       const d10Dense = crossFamilyBCount(10, 0.25);
+      const d10Even = crossFamilyBCount(10, 1.0);
       const d10Sparse = crossFamilyBCount(10, 2.0);
       const d100Dense = crossFamilyBCount(100, 0.25);
       const d100Even = crossFamilyBCount(100, 1.0);
       const d100Sparse = crossFamilyBCount(100, 2.0);
-      expect(d10Dense / d10Sparse).toBeGreaterThanOrEqual(2.5);
-      expect(d100Dense / d100Sparse).toBeGreaterThanOrEqual(2.5);
-      expect(d100Dense / d100Even).toBeGreaterThanOrEqual(2.0);
+      expect(d10Dense / d10Sparse).toBeGreaterThanOrEqual(2.0);
+      expect(d100Dense / d100Sparse).toBeGreaterThanOrEqual(2.0);
+      expect(d10Dense).toBeGreaterThan(d10Even);
+      expect(d10Even).toBeGreaterThan(d10Sparse);
+      expect(d100Dense).toBeGreaterThan(d100Even);
+      expect(d100Even).toBeGreaterThan(d100Sparse);
+    });
+
+    // ADDED (W-36d, per W-36c-review.md §5b follow-up: "restore a bounded
+    // lower-half sub-check ... so a regression concentrated in one half of
+    // the dial is caught again"). The kept strict-monotonicity check above
+    // only requires nB(0.25) > nB(1.0) > nB(2.0) — it says nothing about BY
+    // HOW MUCH, so a regression that compresses the dial's LOWER half
+    // [0.25, 1.0] to a near-flat response (a real, user-visible defect:
+    // turning the ratio dial from 0.5 to 1.0 would do almost nothing) still
+    // passes it, and still passes the endpoint-ratio bar above (which only
+    // constrains the FULL span 0.25 vs 2.0, not either half alone) —
+    // MUTATION-PROVEN against the review's own scratch mutation (a
+    // `crossPairShare` role-'b' branch frozen to a 2%-slope near-constant
+    // for ratio <= 1, ratio > 1 left untouched): the kept test above still
+    // PASSES (nB 8/7/4 at d=10, 55/47/24 at d=100 — endpoint ratio and
+    // strict monotonicity both hold) while this sub-check FAILS at 1.143
+    // (d=10) / 1.170 (d=100), both under the 1.2 floor. This sub-check
+    // restores a BOUNDED MAGNITUDE guard on that specific half of the dial,
+    // pinned at the review's own measured-minimal value: `nB(0.25) >=
+    // 1.2 x nB(1.0)`, comfortably under today's re-derived margin — 1.2857
+    // (d=10, 9/7) and 1.2979 (d=100, 61/47), matching the review's disclosed
+    // 1.286/1.298 to the same precision — not a coin bar, and a regression
+    // concentrated in the lower half (the exact shape the old, removed
+    // `>= 2.0x` sub-check used to catch, at the OLD ceiling's headroom) is
+    // caught again.
+    test('crosshatch mapper: lower-half magnitude guard — nB(0.25) >= 1.2x nB(1.0) at d=10 and d=100', () => {
+      const d10Dense = crossFamilyBCount(10, 0.25);
+      const d10Even = crossFamilyBCount(10, 1.0);
+      const d100Dense = crossFamilyBCount(100, 0.25);
+      const d100Even = crossFamilyBCount(100, 1.0);
+      expect(d10Dense / d10Even).toBeGreaterThanOrEqual(1.2);
+      expect(d100Dense / d100Even).toBeGreaterThanOrEqual(1.2);
     });
 
     test('draft (live-drag) fallback stays on its own untouched floor at d=10/50/100', () => {
