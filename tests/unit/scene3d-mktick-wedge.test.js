@@ -283,9 +283,10 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
       expect(src).not.toMatch(/mkTick:\s*\{[^}]*chan: 'count'/);
     });
 
-    // T2-3b (b)'s own area floor — asserted once Rank 1 lands (see the
-    // "T2-3b Rank 1" describe block below); kept as a single leg-2 site so
-    // there is exactly one place asserting on the live disk source.
+    test("T2-3b's own area floor (Lfloor) is present in the lenChan branch of solveAt", () => {
+      const src = loadHeadSource();
+      expect(src).toContain('const Lfloor = g * PMIN;');
+    });
   });
 
   describe('pinned pathSignature goldens, both rigs, all six cells (RE-PIN ONLY WITH PROOF)', () => {
@@ -309,19 +310,25 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // T2-3b-impl.md). Recorded from a run with this table empty — each miss
     // prints `'<rig>|<cell>': '<sha256>',` to paste back (the
     // `scene3d-hlr-spatial-index-identity.test.js` missing-entry convention).
+    // T2-3b (b): RE-PINNED — Rank 1 (the `Lfloor` area-restoring smooth
+    // floor, `surface-fill.js`'s `lenChan` branch of `solveAt`) changes
+    // mkTick's own geometry on every one of these 12 combinations (that
+    // change IS the fix's own mutation-kill proof — see T2-3b-impl.md
+    // "MUTATION-KILL 1"). Prior values (pre-Rank-1, T2-3b (a)'s commit) are
+    // recorded in that commit's history for the diff.
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': '75337a63beadeaca39d9b0510965780bd827f20b082a6d770caa946e34c65be5',
-      'test|sphere/contour': 'bec156a1de2178377fbd95c1821ea7bb87d0f0107eb2cc26b9e623101038d9b9',
-      'test|torus/hatch': 'ca54b4bc8d2b0fd8d646d9cefa23fb5927c0fe81e1b9ff651fef444bd38534cb',
-      'test|torus/contour': '47e59f273ef1835b144abc0a6133f7301e3f484a0a5e8397b87b6ff52d324604',
-      'test|cone/hatch': '70fa896b1d3f943a37641a0d74ffe6b6d8a64a8a0d71cbfce19708a2cd17e71e',
-      'test|cone/contour': '885e02c9f5418caf68d49d168fbd08fe352ab8ae3f07b5ebb118156127216415',
-      'create|sphere/hatch': '1d4447175fb39ff056d50928782e412eb0a7adc46d61df56687adc7c36daa5b5',
-      'create|sphere/contour': 'c50bcc5381ff7fee1e7b34063230f1ee603bf4196a5645cc9f4daaddf554bad0',
-      'create|torus/hatch': 'b879568127a3b2ac8658e2a8590ff36efb43215561e3705dd3d1b3f8be467392',
-      'create|torus/contour': '5f6dec8e28919908d16265cdbfc4a07c416cbc4d074fedaeabd1498d512c5b21',
-      'create|cone/hatch': '316724f75bb7eb89c2be5f5387115c5cbee91d9f9ef2e1ebb43acc2538c9a774',
-      'create|cone/contour': '60ce1043a8fb22ec49ecb181090644d18d72ae4ad2a194c2b0454cc2ba27a82b',
+      'test|sphere/hatch': '648f39403a5ad5334ed29f256fb7ea6c579159a188587173a18739219e2c4a4f',
+      'test|sphere/contour': 'eb5b2c976cfb39a7b32fc6df593cca048e478c26ba05da05461a2cf24ac3f4cb',
+      'test|torus/hatch': '67bdce631e2514112694d8bab54c27222400052f99e228afc66403948ffb58a4',
+      'test|torus/contour': '7dffeecad68df334a29e321a13d888abdb51acdb28f628c1d6d4f90ec902680b',
+      'test|cone/hatch': 'abfee29919cc9a116414f3580fa53fefcb6902353e83b223bc92c1f535d7b299',
+      'test|cone/contour': '39c62512ef2027985eecb6b56994cfee2be0de4e3a939daa70b90105d0c45b29',
+      'create|sphere/hatch': 'bb2cda472ab44d14c609e5b0cc48af120c09da5165e39df14e0d9e2ee69b6db5',
+      'create|sphere/contour': 'f937c4380d869ace72c051126764e25739a2db910f0f27c29e8824fb31d239d8',
+      'create|torus/hatch': '20e76cb60d211effc86421804549af371235fd128c6124206d54daee2544d0c0',
+      'create|torus/contour': 'e66fd9d9c652220e9c377156d754ec2a18c5a4bd1cbf1ff1cc75f7af5e8c289f',
+      'create|cone/hatch': '8ee9c718ce99531e948f98ae8b05a03819bff9f903e4eedbf70c0671bfd80227',
+      'create|cone/contour': '3a64b05a04bd92367d0896e5f6382a6b36de60e0a44b7322b6b32b4f899b0bed',
     };
 
     ['test', 'create'].forEach((rig) => {
@@ -340,7 +347,23 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     });
   });
 
-  describe('six-cell O5 (R1) — gated: length ratio >= 3.0, monotone, both rigs, ALL six cells', () => {
+  // ── T2-3b (b): bar LOWERED 3.0 -> 2.30, per Jay's ruling on
+  // `T2-3b-plan.md` §4.4 option (A) — see `## Bars changed` in
+  // T2-3b-impl.md for the full derivation. `T2-3b-plan.md` §3.4: at the
+  // period floor (`P = PMIN`) the maximum deliverable ink-area fraction at
+  // a given tick length is `(L/R)*(w/PMIN) = 0.909*L/R`, so an
+  // AREA-CORRECT tick has `L >= mkAsk(I)*R/0.909` — the tone *determines*
+  // the length over the whole midtone, and O5 (dark-third / light-third
+  // mean length) collapses onto the ratio of `mkAsk` over those thirds,
+  // which on this fixture is ~2.3-3.2. The `>= 3.0` bar was T2-3's own
+  // planner's PROXY for "length carries tone" (user-reports/8.png R1), not
+  // a number Jay chose; it sits ABOVE the ceiling an area-correct tick can
+  // reach at this row density (`MK_ROW_COV`, T3's — not this unit's, see
+  // `T2-3b-plan.md` §3.3/§4.4 option (C), filed to T3 as a measured
+  // requirement to halve the row pitch). RE-LOWER ONLY WITH THE SAME PROOF.
+  const O5_BAR = 2.30;
+
+  describe(`six-cell O5 (R1) — gated: length ratio >= ${O5_BAR}, monotone, both rigs, ALL six cells`, () => {
     let runtime;
     const results = { test: {}, create: {} };
 
@@ -359,10 +382,10 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
 
     ['test', 'create'].forEach((rig) => {
       CELLS.forEach(([primitive, mapper]) => {
-        test(`${rig} rig — ${primitive}/${mapper}: O5 ratio >= 3.0 and monotone dark>=mid>=light`, () => {
+        test(`${rig} rig — ${primitive}/${mapper}: O5 ratio >= ${O5_BAR} and monotone dark>=mid>=light`, () => {
           const r = results[rig][`${primitive}/${mapper}`];
           expect(r.ratio).not.toBeNull();
-          expect(r.ratio).toBeGreaterThanOrEqual(3.0);
+          expect(r.ratio).toBeGreaterThanOrEqual(O5_BAR);
           expect(r.monotone).toBe(true);
         });
       });

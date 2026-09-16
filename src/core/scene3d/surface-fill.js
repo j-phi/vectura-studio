@@ -6538,7 +6538,26 @@
           // correct even though `L` no longer comes from `g` directly.
           const t = clamp(1 - I, 0, 1);
           const eased = (1 - MK_TICK_EASE_BLEND) * t + MK_TICK_EASE_BLEND * (t * t * (3 - 2 * t));
-          L = (law.LMIN || 0) * R + (law.L0 - (law.LMIN || 0)) * R * eased;
+          // T2-3b Rank 1 (`T2-3b-plan.md` §4): unlike `countChan` three lines
+          // above, this branch used to derive `P` from `L` and STOP — when
+          // the resulting `P` clamps to `PMIN` (the whole midtone, I in
+          // [0.30, 0.90] on this fixture), the delivered ink area
+          // `L*w/(R*P)` sags up to 25% below `mkAsk(I)` because `L` was never
+          // re-solved against the floor `P` actually delivered. That sag is
+          // a second, unasked-for tone transfer printed along the isophotes
+          // — the diagonal banding `T2-3-review.md` photographed on the
+          // CONTOUR mapper. `Lfloor` is the length `P=PMIN` can actually
+          // carry; blending it in with a smooth (4-norm) floor instead of a
+          // hard `max` avoids adding a new hard-edged isophote of its own
+          // (measured: −5% to −30% of `bandC` vs the hard-max idiom
+          // `countChan` uses, e.g. cone/contour 0.0390 -> 0.0271).
+          // `Math.min(law.L0 * R, …)` keeps the dark anchor bit-for-bit at
+          // its shipped `L0*R` — without it the floor can ask for `L` well
+          // past the nominal row pitch in foreshortened patches, and the
+          // dark region turns chunky instead of solid-by-abutment.
+          const Lease = (law.LMIN || 0) * R + (law.L0 - (law.LMIN || 0)) * R * eased;
+          const Lfloor = g * PMIN;
+          L = Math.min(law.L0 * R, Math.pow(Math.pow(Lease, 4) + Math.pow(Lfloor, 4), 1 / 4));
           P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
         } else {
           P = clamp(law.P0 * R, PMIN, MK_PMAX);
