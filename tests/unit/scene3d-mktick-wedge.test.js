@@ -4,6 +4,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const {
   wedgeFromMasks, measureWedge, siteCoverage, lengthCarriesTone,
 } = require('../helpers/scene3d-mktick-wedge');
+const { pathSignature } = require('../helpers/path-signature');
 
 /*
  * T2-3 — mkTick's RASTERISED BARE-WEDGE ORACLE (R2) + the length-carries-
@@ -266,35 +267,76 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     });
   });
 
-  describe('RED at the pre-fix tree (this file HEAD, i.e. T2-2-revert `179d9218`/F1-width-bar `42acff7b` — no chan:len mechanism at all)', () => {
-    let stat;
-
-    beforeAll(async () => {
-      // mkTick's MK-table entry, pre-fix — `git show HEAD:...`, where HEAD
-      // is the commit this unit starts from (T2-2's revert / F1-width-bar,
-      // no T2-3 change applied yet), NOT the file on disk this test process
-      // otherwise loads (which already carries this unit's fix).
-      const { execSync } = require('child_process');
-      const preFixSource = execSync('git show HEAD:src/core/scene3d/surface-fill.js', { cwd: ROOT_DIR, maxBuffer: 1024 * 1024 * 64 }).toString('utf8');
-      expect(preFixSource).toContain("chan: 'count'"); // BASE: mkTick was still count-channel at HEAD
-      expect(preFixSource).not.toContain("chan: 'len'");
-      const preRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: preFixSource } });
-      const r = renderCell(preRuntime.window.Vectura, { primitive: 'cone', mapper: 'hatch' });
-      stat = r.stat;
-      await preRuntime.cleanup();
-    }, 60000);
-
-    test('lenByThird/cntByThird/tickField do not exist pre-fix (the mechanism this unit adds is entirely new)', () => {
-      expect(stat.lenByThird).toBeUndefined();
-      expect(stat.cntByThird).toBeUndefined();
-      expect(stat.tickField).toBeUndefined();
+  // ── T2-3b deliverable (a): the `git show HEAD:...` "RED at the pre-fix
+  // tree" block above is provably vacuous at the commit that ships it — HEAD
+  // IS the post-fix tree the instant this file's own commit lands, so the
+  // second assertion throws inside `beforeAll` forever after
+  // (`T2-3-review.md` §7, BLOCKING; the same anti-pattern `W-38b` removed
+  // from `scene3d-facet-min-rulings.test.js`). Replaced with the `W-38b`
+  // pattern: pinned `pathSignature` goldens (a string constant in THIS file,
+  // not "the same code as the runtime under test") plus a live-disk-source
+  // mechanism assertion. `docs/3d-audit/lane-reports/T2-3b-plan.md` §5.
+  describe('mechanism assertions — read from the LIVE disk source, not `git show HEAD` (T2-3b)', () => {
+    test("mkTick is on the T2-2/T2-3 chan:'len' mechanism, not the pre-fix chan:'count' design", () => {
+      const src = loadHeadSource();
+      expect(src).toMatch(/mkTick:\s*\{[^}]*chan: 'len'/);
+      expect(src).not.toMatch(/mkTick:\s*\{[^}]*chan: 'count'/);
     });
 
-    test('O5 (R1) is unmeasurable pre-fix, which is itself the RED: length never carried tone at all (fixed L0*R design)', () => {
-      // byThird (the OLD, pre-existing count guard) exists and moves, but it
-      // is COUNT, not LENGTH — exactly the mechanism R1 asks to replace.
-      expect(stat.byThird).toBeDefined();
-      expect(stat.lenByThird).toBeUndefined();
+    // T2-3b (b)'s own area floor — asserted once Rank 1 lands (see the
+    // "T2-3b Rank 1" describe block below); kept as a single leg-2 site so
+    // there is exactly one place asserting on the live disk source.
+  });
+
+  describe('pinned pathSignature goldens, both rigs, all six cells (RE-PIN ONLY WITH PROOF)', () => {
+    let runtime;
+    const results = { test: {}, create: {} };
+
+    beforeAll(async () => {
+      runtime = await loadVecturaRuntime();
+      const V = runtime.window.Vectura;
+      ['test', 'create'].forEach((rig) => {
+        CELLS.forEach(([primitive, mapper]) => {
+          const { paths } = renderCell(V, { primitive, mapper, rig });
+          results[rig][`${primitive}/${mapper}`] = pathSignature(paths, 4);
+        });
+      });
+    }, 120000);
+
+    afterAll(async () => { if (runtime) await runtime.cleanup(); });
+
+    // RE-PIN ONLY WITH PROOF (mutation-kill in the commit body/report; see
+    // T2-3b-impl.md). Recorded from a run with this table empty — each miss
+    // prints `'<rig>|<cell>': '<sha256>',` to paste back (the
+    // `scene3d-hlr-spatial-index-identity.test.js` missing-entry convention).
+    const EXPECTED_SIGNATURE = {
+      'test|sphere/hatch': '75337a63beadeaca39d9b0510965780bd827f20b082a6d770caa946e34c65be5',
+      'test|sphere/contour': 'bec156a1de2178377fbd95c1821ea7bb87d0f0107eb2cc26b9e623101038d9b9',
+      'test|torus/hatch': 'ca54b4bc8d2b0fd8d646d9cefa23fb5927c0fe81e1b9ff651fef444bd38534cb',
+      'test|torus/contour': '47e59f273ef1835b144abc0a6133f7301e3f484a0a5e8397b87b6ff52d324604',
+      'test|cone/hatch': '70fa896b1d3f943a37641a0d74ffe6b6d8a64a8a0d71cbfce19708a2cd17e71e',
+      'test|cone/contour': '885e02c9f5418caf68d49d168fbd08fe352ab8ae3f07b5ebb118156127216415',
+      'create|sphere/hatch': '1d4447175fb39ff056d50928782e412eb0a7adc46d61df56687adc7c36daa5b5',
+      'create|sphere/contour': 'c50bcc5381ff7fee1e7b34063230f1ee603bf4196a5645cc9f4daaddf554bad0',
+      'create|torus/hatch': 'b879568127a3b2ac8658e2a8590ff36efb43215561e3705dd3d1b3f8be467392',
+      'create|torus/contour': '5f6dec8e28919908d16265cdbfc4a07c416cbc4d074fedaeabd1498d512c5b21',
+      'create|cone/hatch': '316724f75bb7eb89c2be5f5387115c5cbee91d9f9ef2e1ebb43acc2538c9a774',
+      'create|cone/contour': '60ce1043a8fb22ec49ecb181090644d18d72ae4ad2a194c2b0454cc2ba27a82b',
+    };
+
+    ['test', 'create'].forEach((rig) => {
+      CELLS.forEach(([primitive, mapper]) => {
+        test(`${rig} rig — ${primitive}/${mapper}: pathSignature(paths, 4) is pinned`, () => {
+          const key = `${rig}|${primitive}/${mapper}`;
+          const actual = results[rig][`${primitive}/${mapper}`];
+          const expected = EXPECTED_SIGNATURE[key];
+          if (expected === 'PENDING') {
+            // eslint-disable-next-line no-console
+            console.log(`EXPECTED_SIGNATURE missing entry — paste this in: '${key}': '${actual}',`);
+          }
+          expect(actual).toBe(expected);
+        });
+      });
     });
   });
 
