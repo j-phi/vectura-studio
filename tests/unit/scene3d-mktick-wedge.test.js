@@ -316,18 +316,28 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // change IS the fix's own mutation-kill proof — see T2-3b-impl.md
     // "MUTATION-KILL 1"). Prior values (pre-Rank-1, T2-3b (a)'s commit) are
     // recorded in that commit's history for the diff.
+    // T2-3c — RE-PINNED again, 11 of 12. The tick-only walk jump-guard
+    // (`MK_TICK_JUMP_PEN`, `surface-fill.js`'s `walkFrom`/`walkPoly`) refuses
+    // any walked step whose real screen distance blows past the walk's own
+    // per-step budget — see that constant's comment for the mechanism and
+    // `T2-3c-impl.md` for the per-cell longest-path proof this re-pin rests
+    // on. `create|cone/contour` is the ONE cell this tree's own runaway
+    // census (both the T2-3b review's and this unit's) never found a single
+    // step over 5 mm on — its golden is UNCHANGED, byte-for-byte, which is
+    // itself part of the mutation-kill proof (a guard that is truly inert on
+    // an unaffected cell should not move that cell's own fingerprint).
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': '648f39403a5ad5334ed29f256fb7ea6c579159a188587173a18739219e2c4a4f',
-      'test|sphere/contour': 'eb5b2c976cfb39a7b32fc6df593cca048e478c26ba05da05461a2cf24ac3f4cb',
-      'test|torus/hatch': '67bdce631e2514112694d8bab54c27222400052f99e228afc66403948ffb58a4',
-      'test|torus/contour': '7dffeecad68df334a29e321a13d888abdb51acdb28f628c1d6d4f90ec902680b',
-      'test|cone/hatch': 'abfee29919cc9a116414f3580fa53fefcb6902353e83b223bc92c1f535d7b299',
-      'test|cone/contour': '39c62512ef2027985eecb6b56994cfee2be0de4e3a939daa70b90105d0c45b29',
-      'create|sphere/hatch': 'bb2cda472ab44d14c609e5b0cc48af120c09da5165e39df14e0d9e2ee69b6db5',
-      'create|sphere/contour': 'f937c4380d869ace72c051126764e25739a2db910f0f27c29e8824fb31d239d8',
-      'create|torus/hatch': '20e76cb60d211effc86421804549af371235fd128c6124206d54daee2544d0c0',
-      'create|torus/contour': 'e66fd9d9c652220e9c377156d754ec2a18c5a4bd1cbf1ff1cc75f7af5e8c289f',
-      'create|cone/hatch': '8ee9c718ce99531e948f98ae8b05a03819bff9f903e4eedbf70c0671bfd80227',
+      'test|sphere/hatch': 'af0b4a9146aaffed83172d45fd803003ecc4edbc1235b5b07f06ec3d4b8c4308',
+      'test|sphere/contour': '93933cdfe37148467c9b07bd535b4591e5a7e476f22eba1edce7734ffbb46e96',
+      'test|torus/hatch': '7c12b6b4b17a54461852c3384dc3808f4adfb87eb14860c3c4a7b18b4923f4ca',
+      'test|torus/contour': 'aa9ea62cf7ad8dfedd28aae2400b14e2f04880c85656350cd4655c2642d56a5c',
+      'test|cone/hatch': '828e02845d84974b884be401447fb267499dedd8dfc3c7bee7cecba501148f4b',
+      'test|cone/contour': '3aff4e5cdb31a1cbdfa96fe7e7cb0778e578316cdcd02f3d93520b573ab2f438',
+      'create|sphere/hatch': '7de0d679be955f4c8c0012f22f62607318790ffb300a1d181a7b91c3c2de4a7f',
+      'create|sphere/contour': 'ee6137a05a246a22294764059f12c3de32e2583bfc1d0012400b0a67f9806e09',
+      'create|torus/hatch': '467252415a17e9d9e5d1b02e701e618ed3dd10db96057a313ffdf8fb85822916',
+      'create|torus/contour': '558ff66b39673e54c10a23fa52f8d2eb3fed50558177c10a8b7a014509f823cd',
+      'create|cone/hatch': '552411c8a2a33857944cbd90f99935d841f7432b65bf45c254a9d2d558423d97',
       'create|cone/contour': '3a64b05a04bd92367d0896e5f6382a6b36de60e0a44b7322b6b32b4f899b0bed',
     };
 

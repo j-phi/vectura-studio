@@ -2451,6 +2451,34 @@
     // mark to `2 * MK_MAX_WALK_STEPS + 1` points, generously over the
     // measured max.
     const MK_MAX_WALK_STEPS = 64;
+    // T2-3c (`T2-3b-review.md` flag 2, `T2-3b-plan.md` §4.3's own disclosure)
+    // — the STEP-COUNT ceiling above bounds a walked mark's own point count,
+    // but it does nothing about a single accepted STEP's real screen
+    // distance. `walkFrom` re-derives its local frame from every newly
+    // accepted sample (`frameFrom`), and that frame's basis vectors
+    // (`u`/`v` in `frameFrom`) are `1/|dA·ld|`-scaled — near a chart
+    // singularity (a `contour` mapper's row converging at a pole, a
+    // silhouette-adjacent patch going near edge-on) that scale blows up, so
+    // a walk step sized for an ORDINARY patch (`MK_ARC_MM`, ~1 pen width)
+    // can land a sample tens of millimetres from the one before it in a
+    // SINGLE step — not a drift across many steps, a discontinuous jump.
+    // Measured on `sphere/contour`/mkTick/med, create rig: path #943's own
+    // 19 points are eighteen ordinary ~0.27-0.36 mm steps (`MK_ARC_MM`
+    // itself is 0.36 mm at the shipped 0.3 mm pen) AND ONE 46.73 mm jump
+    // between the hub and its second arm's very first accepted sample — the
+    // walk's per-arm point-count budget was never threatened (that arm
+    // stopped at its OWN small step count, just each step was enormous).
+    // `MK_TICK_JUMP_PEN` states, in the same pen-width units every bar in
+    // this file uses, how far past the walk's own per-step budget
+    // (`MK_ARC_MM`) a single step may land before it is refused exactly as
+    // an off-surface sample already is (`truncated = true`, keep what
+    // already walked) — restricted to `'tick'` alone (see the `place()`
+    // call site below); `'morph'` (`mkDashRamp`) is unchanged. 12x is
+    // comfortably above every ordinary step measured on any gated cell
+    // (worst ordinary step seen: ~1.1x `MK_ARC_MM` on a strongly curved
+    // torus patch) and two full orders of magnitude below the measured
+    // defect (~130x `MK_ARC_MM`), so it cannot bite a normal tick.
+    const MK_TICK_JUMP_PEN = 12;
     // W-06b (T4) — an ABSOLUTE ceiling on `mkDashRamp`'s band (the count of
     // parallel passes one mark replicates into once it reaches full duty).
     // The width-relative-to-pitch cap below (`bandN`, in `solveAt`) is
@@ -6160,6 +6188,10 @@
       };
       // W-05b — the walk step, in screen millimetres (see `MK_ARC_PEN` above).
       const MK_ARC_MM = MK_ARC_PEN * penWidth;
+      // T2-3c — see `MK_TICK_JUMP_PEN`'s own comment (above `MK_MAX_WALK_STEPS`)
+      // for the mechanism. Stated in mm here, once, in this closure, since
+      // `penWidth` (and so `MK_ARC_MM`) is only known per-render.
+      const MK_TICK_STEP_CAP_MM = MK_TICK_JUMP_PEN * MK_ARC_MM;
       // THE CHART-WALKED EDGE. `poly` is a 2-vertex segment (every 'tick'/
       // 'morph' pass built by `mkShape`/`layMark` is exactly that) whose
       // MIDPOINT is the ruling's own sample `fr0` — the one point on the
@@ -6179,7 +6211,7 @@
       // walked edges' length in the flat local frame, ≈ `sv.L` by
       // construction — exact when the pass sits on the ruling itself);
       // `drawnLen` is what actually landed on the curved surface.
-      const walkPoly = (fr0, uOff, theta, poly) => {
+      const walkPoly = (fr0, uOff, theta, poly, stepCapMM) => {
         const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
         const toUV = (pt) => ({
           u: (uOff || 0) + pt[0] * c - pt[1] * sn,
@@ -6204,7 +6236,7 @@
         // (the seed point itself excluded) plus the frame/point the walk
         // actually ended at, so the caller can chain a further walk from
         // there.
-        const walkFrom = (seedFr, seedPt, seedUV, target) => {
+        const walkFrom = (seedFr, seedPt, seedUV, target, stepCapMM) => {
           const edgeLen = Math.hypot(target.u - seedUV.u, target.v - seedUV.v);
           if (!(edgeLen > 1e-9)) return { pts: [], askLen: 0, truncated: false, endFr: seedFr, endPt: seedPt };
           let fr = seedFr;
@@ -6224,7 +6256,19 @@
             const du = stepU - curUV.u; const dv = stepV - curUV.v;
             const hit = mapOne(fr, { u: du, v: dv });
             if (!hit) { truncated = true; break; }
-            curPt = { x: hit.sm.x, y: hit.sm.y, z: hit.sm.z };
+            const nextPt = { x: hit.sm.x, y: hit.sm.y, z: hit.sm.z };
+            // T2-3c — `stepCapMM` (tick-only, see the `place()` call site)
+            // refuses a step whose REAL screen distance from the last
+            // accepted point blows past the walk's own per-step budget by
+            // more than `MK_TICK_JUMP_PEN`x — the signature of a re-derived
+            // frame going near-singular (a chart pole/silhouette), not of
+            // ordinary curvature. Refused exactly like an off-surface
+            // sample: `truncated = true`, keep what already walked.
+            if (stepCapMM && Math.hypot(nextPt.x - curPt.x, nextPt.y - curPt.y) > stepCapMM) {
+              truncated = true;
+              break;
+            }
+            curPt = nextPt;
             pts.push(curPt);
             curUV = { u: stepU, v: stepV };
             const nfr = frameFrom(hit.sm, fr0.ld, fr0.st, hit.pr);
@@ -6248,14 +6292,14 @@
         const t1 = toUV(poly[poly.length - 1]);
         const hubUV = { u: (t0.u + t1.u) / 2, v: (t0.v + t1.v) / 2 };
         const fr0Pt = { x: fr0.smp.x, y: fr0.smp.y, z: fr0.smp.z };
-        const toHub = walkFrom(fr0, fr0Pt, { u: 0, v: 0 }, hubUV);
+        const toHub = walkFrom(fr0, fr0Pt, { u: 0, v: 0 }, hubUV, stepCapMM);
         const hubFr = toHub.endFr; const hubPt = toHub.endPt;
-        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v });
+        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v }, stepCapMM);
         const pts = w0.pts.slice().reverse();
         pts.push(hubPt);
         let askLen = w0.askLen; let truncated = toHub.truncated || w0.truncated;
         if (poly.length > 1) {
-          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v });
+          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v }, stepCapMM);
           pts.push(...w1.pts);
           askLen += w1.askLen;
           truncated = truncated || w1.truncated;
@@ -6306,7 +6350,10 @@
         for (let i = 0; i < polys.length; i++) {
           const poly = polys[i];
           if (isWalkedShape) {
-            const wk = walkPoly(fr, uOff, theta, poly);
+            // T2-3c — the jump guard is TICK-ONLY (`law.shape === 'tick'`);
+            // `'morph'` (`mkDashRamp`, the only other walked shape) passes
+            // `undefined` and is byte-for-byte unaffected.
+            const wk = walkPoly(fr, uOff, theta, poly, law.shape === 'tick' ? MK_TICK_STEP_CAP_MM : undefined);
             if (!wk.pts) { mkStat.offSurface += 1; return false; }
             askTot += wk.askLen;
             if (wk.truncated) sawTrunc = true;
