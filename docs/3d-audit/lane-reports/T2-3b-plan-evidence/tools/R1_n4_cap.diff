@@ -1,0 +1,15 @@
+diff --git a/private/tmp/claude-501/scratch-T23b/post/src/core/scene3d/surface-fill.js b/private/tmp/claude-501/-Users-jayphi-Documents-github-vectura-studio/78f116a4-7aa5-4acf-b732-54fd8bcd7a6f/scratchpad/t23b/variants/R1_n4_cap.js
+index b778eca0..0a79e258 100644
+--- a/private/tmp/claude-501/scratch-T23b/post/src/core/scene3d/surface-fill.js
++++ b/private/tmp/claude-501/-Users-jayphi-Documents-github-vectura-studio/78f116a4-7aa5-4acf-b732-54fd8bcd7a6f/scratchpad/t23b/variants/R1_n4_cap.js
+@@ -6499,7 +6499,9 @@
+           // correct even though `L` no longer comes from `g` directly.
+           const t = clamp(1 - I, 0, 1);
+           const eased = (1 - MK_TICK_EASE_BLEND) * t + MK_TICK_EASE_BLEND * (t * t * (3 - 2 * t));
+-          L = (law.LMIN || 0) * R + (law.L0 - (law.LMIN || 0)) * R * eased;
++          const Lease = (law.LMIN || 0) * R + (law.L0 - (law.LMIN || 0)) * R * eased;
++          const Lfloor = g * PMIN;
++          L = Math.min(law.L0 * R, Math.pow(Math.pow(Lease, 4) + Math.pow(Lfloor, 4), 1 / 4));
+           P = clamp(L / Math.max(1e-6, g), PMIN, MK_PMAX);
+         } else {
+           P = clamp(law.P0 * R, PMIN, MK_PMAX);

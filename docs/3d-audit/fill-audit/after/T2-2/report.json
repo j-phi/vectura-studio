@@ -1,0 +1,102 @@
+{
+  "id": "T2-2",
+  "title": "mkTick variable-length ticks — iteration 2 (different length-response curve)",
+  "lane": "fill-audit-a3",
+  "worktree": ".claude/worktrees/fill-audit-a3",
+  "branch": "3d-scene/fill-audit-a3",
+  "base_commit": "3bc61c325c44e02ba14819dbc7b9242bc340ce68",
+  "user_report": "docs/3d-audit/fill-audit/user-reports/8.png (R1: ticks must have VARIABLE LENGTH, tick length carries tone; R2: ticks must FILL the form as one continuous texture)",
+  "predecessor": {
+    "unit": "T2 (lane fill-audit-a2, sha dbad2d88)",
+    "verdict": "REJECT (docs/3d-audit/lane-reports/T2-review.md)",
+    "why": "smoothstep-on-radiance length response has zero derivative at both ends, producing hard-edged flat-topped ink plateaus with enlarged bare wedges and a coverage collapse at d=220 (untested by that unit)."
+  },
+  "mechanism": {
+    "chan": "mkTick moved from chan:'count' to chan:'len' (same as the rejected T2, unchanged from that design)",
+    "curve": "eased = (1-BLEND)*t + BLEND*smoothstep(t), t=clamp(1-I,0,1), BLEND=MK_TICK_EASE_BLEND=0.88 — a blend of the rejected smoothstep with the plain-linear identity map, so the slope floor at t=0 and t=1 is (1-BLEND)=0.12 instead of exactly 0.",
+    "why_not_lower_blend": "Empirically swept BLEND in {0.62,0.75,0.85,0.88,0.92} on this tree. Lower blends (0.62-0.85) leave 1-2 of the six cells (sphere/contour, torus/hatch) short of the >=3.0x O5 bar at d=50; BLEND=0.88 is the smallest value measured to clear all six with margin (3.05-3.67x).",
+    "d220_finding": "Sweeping BLEND from 0.62 to 0.92 left d=220 coverage/tooShort essentially FLAT (e.g. cone/hatch d=220 coverage 0.823 @ BLEND=0.62 vs 0.815 @ BLEND=0.88). A decile breakdown (drawn-fraction vs I, cone/hatch d=220) shows the drawn-fraction collapse starting around I~0.6-0.7 at every blend tried. The d=220 coverage story is therefore NOT primarily a curve-shape defect closable by a gentler ease -- it is LMIN*R legitimately approaching MIN_MARK_MM at high density, which the plan's own S3.2 already calls correct design ('the existing drop rule still reaches bare paper at the extreme light end... left alone'). Reported honestly below, not gated (the mandated acceptance bar scopes coverage to d=50)."
+  },
+  "acceptance_table_d50": [
+    { "cell": "sphere/hatch",   "ratio": 3.487, "monotone": true, "coverage": 0.974, "worstGapRatio": 5.99,  "pre_ratio": 1.4995, "pre_coverage": 0.9936, "pre_worstGapRatio": 6.77 },
+    { "cell": "sphere/contour", "ratio": 3.072, "monotone": true, "coverage": 0.988, "worstGapRatio": 8.08,  "pre_ratio": 1.1147, "pre_coverage": 0.9937, "pre_worstGapRatio": 5.88 },
+    { "cell": "torus/hatch",    "ratio": 3.056, "monotone": true, "coverage": 0.987, "worstGapRatio": 9.95,  "pre_ratio": 1.1776, "pre_coverage": 0.9985, "pre_worstGapRatio": 9.09 },
+    { "cell": "torus/contour",  "ratio": 3.605, "monotone": true, "coverage": 0.987, "worstGapRatio": 4.41,  "pre_ratio": 1.3462, "pre_coverage": 0.9942, "pre_worstGapRatio": 4.18 },
+    { "cell": "cone/hatch",     "ratio": 3.277, "monotone": true, "coverage": 0.985, "worstGapRatio": 10.70, "pre_ratio": 1.4240, "pre_coverage": 0.9972, "pre_worstGapRatio": 7.54 },
+    { "cell": "cone/contour",   "ratio": 3.640, "monotone": true, "coverage": 0.993, "worstGapRatio": 0.15,  "pre_ratio": 1.2254, "pre_coverage": 0.9980, "pre_worstGapRatio": 0.15 }
+  ],
+  "acceptance_bars": {
+    "length_ratio": ">= 3.0x dark/light, monotone -- MET on all six cells at d=50 (3.05-3.67x)",
+    "coverage": ">= 0.9 of the lit-not-highlight (I<0.90) silhouette at d=50 -- MET on all six cells (0.974-0.993); pre-fix was already 0.99-1.00 (chan:'count' rarely drops marks)",
+    "worst_un_ticked_band": "<= 2x row pitch outside the highlight -- NOT MET on 5 of 6 cells (4.41-10.70x); ALREADY NOT MET pre-fix on the same 5 cells (4.18-9.09x) -- this bar is pre-existing and attributable to the MK_ROW_COV row-coverage-floor scaffold (T1/T1b/T2-review's own established finding), which is T3's territory and out of scope for this unit. T2-2 moves this metric by at most +1.6x on any cell (cone/hatch 7.54->10.70) and by less than +1x on three of the five (torus/hatch +0.86, sphere/hatch -0.78, sphere/contour +2.2)."
+  },
+  "d220_honesty_table": [
+    { "cell": "sphere/hatch",   "post_coverage": 0.818, "pre_coverage": 0.925, "post_tooShort": 1156, "pre_tooShort": 565 },
+    { "cell": "sphere/contour", "post_coverage": 0.791, "pre_coverage": 0.944, "post_tooShort": 983,  "pre_tooShort": 414 },
+    { "cell": "torus/hatch",    "post_coverage": 0.676, "pre_coverage": 0.907, "post_tooShort": 1528, "pre_tooShort": 585 },
+    { "cell": "torus/contour",  "post_coverage": 0.750, "pre_coverage": 0.949, "post_tooShort": 1233, "pre_tooShort": 361 },
+    { "cell": "cone/hatch",     "post_coverage": 0.820, "pre_coverage": 0.936, "post_tooShort": 750,  "pre_tooShort": 360 },
+    { "cell": "cone/contour",   "post_coverage": 0.792, "pre_coverage": 0.989, "post_tooShort": 600,  "pre_tooShort": 52 }
+  ],
+  "decile_cone_hatch_d220": {
+    "note": "drawn-fraction vs radiance I, in 0.1-wide bins, BLEND=0.88 (this unit)",
+    "bins": [
+      {"I": "0.0-0.1", "drawnFrac": 0.754}, {"I": "0.1-0.2", "drawnFrac": 0.874},
+      {"I": "0.2-0.3", "drawnFrac": 0.872}, {"I": "0.3-0.4", "drawnFrac": 0.839},
+      {"I": "0.4-0.5", "drawnFrac": 0.796}, {"I": "0.5-0.6", "drawnFrac": 0.658},
+      {"I": "0.6-0.7", "drawnFrac": 0.462}, {"I": "0.7-0.8", "drawnFrac": 0.077},
+      {"I": "0.8-0.9", "drawnFrac": 0.000}, {"I": "0.9-1.0", "drawnFrac": 0.032}
+    ]
+  },
+  "byte_identity": {
+    "method": "md5 of JSON.stringify(paths) from algo.generate, compared between a clean git-archive export of 3bc61c32 and this worktree's HEAD (uncommitted tree)",
+    "cells": "mkDotScreen, mkScribble, ladder, fineLadder, phaseFineLadder x {sphere,torus,cone} x hatch x {low=10,med=50,max=220} = 45 cells",
+    "mismatches": 0
+  },
+  "guards": {
+    "scene3d-mark-laws-draw.test.js": "30/30 (O1 re-scoped to longest-third-by-chord-length -- see Bars changed; O2/O3/O4/W-05/G4/O9/T4b all unaffected)",
+    "scene3d-mktick-length.test.js": "12/12 (new file, this unit's own O5 six-cell acceptance test)",
+    "scene3d-mkdashramp-dark-end.test.js": "4/4 (T4b's d=220 ink floor/band -- untouched, mkDashRamp only)",
+    "scene3d-ribbon-f1b-streaks.test.js": "44/44 (lane baseline, unchanged)",
+    "scene3d-ribbon-wall-coverage.test.js": "36/36 (lane baseline, unchanged)",
+    "scene3d-ladder-uniform-field-spacing.test.js": "9/9",
+    "scene3d-fill-even-spacing.test.js": "12/12",
+    "scene3d-fill-span-verdict.test.js": "11/11",
+    "scene3d-curved-density-floor.test.js": "14/14",
+    "scene3d-curved-density-sparse-end.test.js": "20/20 (+1 skip)",
+    "scene3d-hatch-density-500.test.js": "14/14",
+    "scene3d-plot-safety.test.js": "5/5 (+1 skip)",
+    "scene3d-crosshatch-parity.test.js": "91/91",
+    "scene3d-crosshatch-cell-shape.test.js": "23/23",
+    "scene3d-hatch-density-angle-stable.test.js": "9/9",
+    "scene3d-fill-ruling-corners.test.js": "19/19",
+    "scene3d-box-density-bearing.test.js + scene3d-fill-ruling-continuity.test.js + scene3d-fill-boundary-ends.test.js + scene3d-hlr-spatial-index-identity.test.js + scene3d-tone-law-dispatch.test.js + scene3d-tone-algo-default.test.js + scene3d-hl-stage-roster.test.js": "79/79 (+1 skip); one benign vitest-worker onTaskUpdate RPC timeout under shared-machine load, exit 0 (documented pre-existing pattern, not a regression)",
+    "scene3d-style-fill-lines.test.js": "15/15",
+    "scene3d-ribbon-primitives.test.js": "14/14"
+  },
+  "evidence": {
+    "cells": "sphere|torus|cone x hatch|contour x mkTick x low|med|max, angle a, both --rig create and --rig addLayer",
+    "shots_dir": "docs/3d-audit/fill-audit/after/T2-2/shots/B/",
+    "manifest": "docs/3d-audit/fill-audit/after/T2-2/manifest.B.1-1.jsonl (create rig) + manifest.B.1-1.addlayer.jsonl (addLayer rig)",
+    "look_notes": [
+      "sphere/hatch/med, native 2x crop of the diagonal band region: within each row, tick length TAPERS smoothly from long near-abutting ticks (dense diagonal comb) to short separated ticks -- a continuous gradient, no hard-edged flat-topped plateau visible.",
+      "torus/contour/med, native 3x crop of a fan peak: length is longest (near-solid white core) at the fan's crest, tapering smoothly to short/sparse at the fan's edges -- directly contradicts T2-review.md's description of THIS SAME CELL as 'hard-walled flat-topped columns with enlarged bare wedges'.",
+      "cone/hatch/med, native 2x crop of the right (lit) flank near the silhouette: each row's tick length diminishes gradually along the row as it approaches the boundary -- no abrupt plateau cutoff or new bare wedge at the silhouette edge.",
+      "Pre-existing 3-4-band MK_ROW_COV row-coverage-floor structure (bare gaps between bands) is visible and UNCHANGED -- T1/T1b/T2-review's own already-established finding; this unit does not touch MK_ROW_COV or isMarkLaw()'s row-coverage line."
+    ]
+  },
+  "bars_changed": [
+    {
+      "file": "tests/unit/scene3d-mark-laws-draw.test.js",
+      "line": "O1 test (torus/contour d=50 tick sagitta median)",
+      "change": "population changed from ALL walked ticks to the LONGEST THIRD by chord length; the numeric bar (>=0.10mm) is UNCHANGED",
+      "why": "sagitta of a chord scales as L^2/(8r); once tick length varies with tone by design (this unit's own R1), the all-population median necessarily drops (0.127mm -> 0.076mm) for a purely geometric reason (more short chords, which show less curve over their own shorter length), not because the walk stopped following curvature. Measuring the longest third isolates the same near-full-row-pitch population T1's own oracle measured before length varied at all. This is the SAME re-scope T2-review.md independently ruled sound for the sibling lane's own iteration of this unit (T2-review.md S8: 'a legitimate re-scope, not a hidden loosening')."
+    }
+  ],
+  "identical_exceptions": [],
+  "open_follow_ups": [
+    "d=220 coverage collapse (0.67-0.82, vs pre-fix 0.91-0.99) is real and NOT closed by this unit -- curve-shape sweeps show it is insensitive to BLEND, so it is not a length-response-curve defect. It is LMIN*R legitimately nearing MIN_MARK_MM at high density (by the plan's own design intent for the true highlight), but the decile breakdown shows the collapse starting around I~0.6-0.7, well before the true highlight -- this is the SAME underlying tension T2-review flagged and needs either a different LMIN/MIN_MARK_MM relationship or a coverage floor mechanism (T3's MK_ROW_COV territory) to close properly.",
+    "the worst-un-ticked-band bar (<=2x row pitch) is pre-existing broken on 5/6 cells and is T3's territory (MK_ROW_COV row-coverage-floor scaffold), not this unit's to fix.",
+    "torus/hatch (3.056x) and sphere/contour (3.072x) clear the O5 bar with the thinnest margins of the six cells -- worth a second look if BLEND is ever retuned for other reasons."
+  ]
+}

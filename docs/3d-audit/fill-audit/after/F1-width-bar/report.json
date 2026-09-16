@@ -1,0 +1,124 @@
+{
+  "unit": "F1-width-bar",
+  "type": "TESTS ONLY -- measurement instrument, not a visual fix",
+  "worktree": "fill-audit-a3",
+  "base_sha": "179d9218",
+  "note": "This unit adds a FLOOR guard on ribbon width; it makes no src/ change and therefore has no 'before/after' visual diff of its own. The captures below document the CURRENT (post F1-placement + F1-erode + F1-amp) shipped state on both rigs, as the visual backing for the width numbers this unit measured and floored -- decision 10's evidence packet.",
+  "fixture": "torus / hatch / density 50 (med) / camera 'a' (default)",
+  "canonical_script": "scripts/audit/scene3d-ribbon-width.js",
+  "shared_helper": "tests/helpers/scene3d-ribbon-width.js",
+  "width_measurements_mm_addLayer_rig": {
+    "interlockWeave": { "pre_6e1ed52f": 1.1381, "post_current": 0.9832, "delta_pct": -13.6 },
+    "trochoidLoop": { "pre_6e1ed52f": 0.9739, "post_current": 0.9377, "delta_pct": -3.7 },
+    "amplitudeOnly": { "pre_6e1ed52f": null, "post_current": null, "note": "0 CLS_RIBBON stretches on this fixture, both trees -- excluded from the width floor, own control test instead" },
+    "onePenDown": { "pre_6e1ed52f": 1.0089, "post_current": 0.8801, "delta_pct": -12.8 },
+    "ampSpacing_WV6_control": { "pre_6e1ed52f": 0.7787, "post_current": 0.7787, "delta_pct": 0.0 }
+  },
+  "cross_camera_drift_envelope_mm": {
+    "interlockWeave": { "camera_a": 0.9832, "camera_b": 0.9784 },
+    "trochoidLoop": { "camera_a": 0.9377, "camera_b": 0.8270 },
+    "onePenDown": { "camera_a": 0.8801, "camera_b": "not measured -- aborted after 40+ min under heavy shared-machine load; onePenDown's own floor uses a larger 0.80x margin (vs 0.85x for the other two) as a conservative stand-in" }
+  },
+  "width_floor_mm": {
+    "interlockWeave": 0.8316,
+    "trochoidLoop": 0.7030,
+    "onePenDown": 0.7041
+  },
+  "job1_discrepancy_resolution": {
+    "claim_A_implementer": "trochoidLoop 6645.83 -> 6581.01mm (-0.98%)",
+    "claim_B_reviewer": "trochoidLoop 6645.828 -> 6572.712mm (-1.10%)",
+    "canonical_script_result": "6645.8279 -> 6572.7118mm (-1.10%), matching claim B (the reviewer) to 4 decimal places, run against the ACTUAL committed 3bc61c32 surface-fill.js content (verified byte-identical to this worktree's current file via zero-line git diff)",
+    "conclusion": "The reviewer's number is the canonical, reproducible reading; the implementer's original 6581.01 does not reproduce under the standard addLayer/torus/hatch/d=50 construction and is treated as a measurement slip in that one script, not a legitimate second rig/fixture answer. The other three subject laws matched both reports exactly (pre and post), ruling out a rig/fixture/density difference.",
+    "determinism_check": "three fresh runtime loads of the identical tree gave the identical trochoidLoop ink figure to the last printed digit"
+  },
+  "cells": {
+    "create_rig": [
+      "shots/B/torus__hatch__interlockWeave__med__a.webp",
+      "shots/B/torus__hatch__trochoidLoop__med__a.webp",
+      "shots/B/torus__hatch__amplitudeOnly__med__a.webp",
+      "shots/B/torus__hatch__onePenDown__med__a.webp"
+    ],
+    "addLayer_rig": [
+      "shots/B/torus__hatch__interlockWeave__med__a__addlayer.webp",
+      "shots/B/torus__hatch__trochoidLoop__med__a__addlayer.webp",
+      "shots/B/torus__hatch__amplitudeOnly__med__a__addlayer.webp",
+      "shots/B/torus__hatch__onePenDown__med__a__addlayer.webp"
+    ],
+    "addLayer_rig_measured_fixture_2026-09-13": [
+      "measured-fixture/shots/torus__hatch__interlockWeave__med__a__addlayer__measured.png",
+      "measured-fixture/shots/torus__hatch__trochoidLoop__med__a__addlayer__measured.png",
+      "measured-fixture/shots/torus__hatch__amplitudeOnly__med__a__addlayer__measured.png",
+      "measured-fixture/shots/torus__hatch__onePenDown__med__a__addlayer__measured.png"
+    ]
+  },
+  "fixture": {
+    "_purpose": "Added 2026-09-13, F1-width-bar-reshoot unit (evidence-integrity re-shoot). Follow-up 2 of F1-width-bar-review.md found the two original shot sets above were captured at an explicit fillAngle:45 while the width/ink table in F1-width-bar-impl.md (JOB 2 / this file's width_measurements_mm_addLayer_rig and job1_discrepancy_resolution) was measured with fillAngle left absent -- a ~35-40% inkMm gap between the pictures and the numbers in the SAME report. This block states both fixtures explicitly and records what the gap actually turned out to be.",
+    "original_shots_create_rig": {
+      "label": "illustrative, fillAngle 45, NOT the measured render",
+      "source_script": "scripts/audit/scene3d-capture.js (MAIN), --rig create (default)",
+      "rig": "create -- PRIMITIVE_CREATE_DEFAULTS merged over PRIMITIVE_PARAM_DEFAULTS, an inline MONOLITH-shaped scene (not the plain engine.addLayer('scene3d') tree)",
+      "primitive": "torus",
+      "mapper": "hatch",
+      "density": "med (fillDensity=50)",
+      "camera": "'a' (DEFAULT_CAMERA, untouched)",
+      "non_default_params": {
+        "fillAngle": "45 -- literal, hardcoded at scene3d-capture.js:313 inside the styleTable.scene/byObject style params; not exposed by any CLI flag",
+        "ground": "{ enabled: false } -- explicit, scene3d-capture.js:291",
+        "backdrop": "{ enabled: false } -- explicit, scene3d-capture.js:292 (matches ALGO_DEFAULTS default anyway)",
+        "sun": "{ azimuth: 135, elevation: 45, intensity: 1, castShadows: false } -- explicit, scene3d-capture.js:310 (castShadows:false differs from ALGO_DEFAULTS.scene3d.lights[0].castShadows:true)",
+        "object_params_bag": "PRIMITIVE_PARAM_DEFAULTS[torus] with PRIMITIVE_CREATE_DEFAULTS[torus] overlaid (denser detail than the addLayer rig's sphere-seed leftovers)"
+      }
+    },
+    "original_shots_addLayer_rig": {
+      "label": "illustrative, fillAngle 45, NOT the measured render",
+      "source_script": "scripts/audit/scene3d-capture.js (MAIN), --rig addLayer",
+      "rig": "addLayer -- engine.addLayer('scene3d') tree, primitive swapped in place on the seed object3d leaf",
+      "primitive": "torus",
+      "mapper": "hatch",
+      "density": "med (fillDensity=50)",
+      "camera": "'a' (DEFAULT_CAMERA, untouched)",
+      "non_default_params": {
+        "fillAngle": "45 -- literal, hardcoded at scene3d-capture.js:280 inside obj.params.style.params; not exposed by any CLI flag",
+        "ground": "sceneGround3d CHILD explicitly hidden (groundChild.visible = false, scene3d-capture.js:270-272) -- NOT the same mechanism as the create-rig's params.ground.enabled=false, but the same visual effect (no ground rendered)",
+        "backdrop": "{ enabled: false } -- explicit, scene3d-capture.js:264 (matches ALGO_DEFAULTS default anyway)",
+        "object_params_bag": "left at whatever the seed sphere's PRIMITIVE_CREATE_DEFAULTS bag was (sphere: radius 25, detail 28) -- torus-specific fields fall back to the algorithm's own literal defaults (documented gallery_capture_finding in after/F1-erode/report.json)"
+      }
+    },
+    "new_shots_addLayer_rig_measured_fixture": {
+      "label": "measured fixture -- reproduces F1-width-bar-impl.md's JOB 1/JOB 2 numbers to the exact digit",
+      "source_script": "BESPOKE script (scripts/audit/f1-width-bar-measured-fixture-capture.js, run from a read-only scratch export of the fill-audit-a3 worktree at 42acff7b, --root pointed at the scratch export, --port 8501; NOT committed anywhere -- see the reshoot report for why a bespoke scene was required)",
+      "why_bespoke": "scene3d-capture.js hardcodes fillAngle:45 as a literal in BOTH its create (line 313) and addLayer (line 280) construction branches, unconditionally, with no CLI flag to omit it. There is therefore NO cell in ANY gallery manifest, on either rig, shot at an unset fillAngle -- confirmed by reading the script source. Per the task brief, a bespoke scene was captured instead.",
+      "rig": "addLayer -- IDENTICAL construction to tests/helpers/scene3d-ribbon-width.js's measureRibbonWidth() (engine.addLayer('scene3d'), primitive swapped on the seed object3d leaf, obj.params.style.params = { ...existing, toneLaw: law } -- no other key written)",
+      "primitive": "torus",
+      "mapper": "hatch",
+      "density": "med (fillDensity absent, resolves to 50 via scene3d.js's own finite(sp.fillDensity, 50) fallback -- the SAME numeric value 'med' pins explicitly, confirmed by exact-digit ink/width matches below)",
+      "camera": "'a' (DEFAULT_CAMERA, untouched -- ALGO_DEFAULTS.scene3d.camera is byte-identical to P.DEFAULT_CAMERA)",
+      "non_default_params": {
+        "fillAngle": "ABSENT (not written into obj.params.style.params at all) -- resolves via scene3d.js's own finite(sp.fillAngle, 45) fallback at generate() time. EMPIRICALLY CONFIRMED to resolve to the SAME visible/numeric result as the original shots' explicit fillAngle:45 (see finding below) -- so despite being the literal difference the review flagged, fillAngle is NOT the cause of the inkMm gap.",
+        "ground": "NOT hidden -- left at its ALGO_DEFAULTS default (sceneGround3d child visible, ground renders and casts a hatched shadow ellipse). This is the ONE deliberate construction choice that diverges from scene3d-capture.js's addLayer branch, chosen because it is exactly what measureRibbonWidth() (the function that produced every number in F1-width-bar-impl.md's tables) actually builds -- it never touches the ground child."
+      }
+    },
+    "finding_2026-09-13_fillAngle_is_not_the_cause_of_the_ink_gap": {
+      "summary": "The ~35-40% inkMm gap the reviewer found is caused ENTIRELY by ground-plane inclusion, not by fillAngle. Proof: hiding the sceneGround3d child in the exact-same measured-fixture construction (fillAngle still absent, everything else unchanged) reproduces the ORIGINAL gallery addLayer-rig inkMm figures to the LAST PRINTED DIGIT for all four subject laws -- interlockWeave 3897.9, trochoidLoop 4303.7, onePenDown 3794.7, amplitudeOnly 1617.4, exactly matching manifest.B.1-1.addlayer.jsonl. The residual (measured minus ground-hidden) is 2269.0 / 2269.0 / 2269.0 / 2269.1 mm -- a CONSTANT additive amount across all four tone laws (the ground quad + the torus's own cast-shadow hatch ink, independent of the object's own tone-law pattern), not a per-law effect an angle change would produce.",
+      "method": "Ran the bespoke capture script's exact in-page construction twice: once as measureRibbonWidth() builds it (ground untouched) and once with an added `groundChild.visible = false` line (matching scene3d-capture.js's own addLayer-branch ground-hiding technique), both against the identical 42acff7b-sha scratch export, same port, same session.",
+      "measured_ink_mm": {
+        "interlockWeave": { "with_ground": 6166.9, "ground_hidden": 3897.9, "gallery_addLayer_reported": 3897.9, "delta_ground_contribution": 2269.0 },
+        "trochoidLoop": { "with_ground": 6572.7, "ground_hidden": 4303.7, "gallery_addLayer_reported": 4303.7, "delta_ground_contribution": 2269.0 },
+        "onePenDown": { "with_ground": 6063.7, "ground_hidden": 3794.7, "gallery_addLayer_reported": 3794.7, "delta_ground_contribution": 2269.0 },
+        "amplitudeOnly": { "with_ground": 3886.5, "ground_hidden": 1617.4, "gallery_addLayer_reported": 1617.4, "delta_ground_contribution": 2269.1 }
+      },
+      "conclusion": "fillAngle absent vs fillAngle:45 produce IDENTICAL ink and (where measurable) width numbers once ground is equalized -- this is a direct, measured proof that the algorithm's finite(sp.fillAngle, 45) fallback really does make an absent fillAngle behave as 45 for this fixture (torus/hatch), consistent with src/core/scene3d/params.js's SCENE_MIGRATIONS[2] comment ('a fresh hatch keeps the panel's 45 seed on a curved primitive'). The review's follow-up 2 correctly identified that the pictures and the numbers used different explicit constructions, and correctly declined to treat it as blocking -- but the SPECIFIC mechanism it named (fillAngle) is not the actual cause; ground-plane inclusion is."
+    },
+    "visual_diff_2026-09-13": "Looked at torus__hatch__onePenDown__med__a__addlayer.webp (original, 800x400, ground hidden) vs torus__hatch__onePenDown__med__a__addlayer__measured.png (new, 800x561, ground shown) at native resolution. The torus itself -- the actual measured object -- is visually indistinguishable between the two: same thin zigzag-tooth ribbon pattern, same ~11 CLS_RIBBON stretches' worth of visible gaps, same overall wireframe-like read. The new capture additionally shows a large ellipse below the torus: the ground plane, rendered with straight diagonal hatch lines (the ground's own fill/shadow pattern, unrelated to the torus's toneLaw), which the original excludes by design (scene3d-capture.js hides the ground child for a clean object-only crop). This ground ellipse is the entire source of the extra ~2269mm of ink and the ~561px vs ~400px taller crop -- not a change in the torus's own rendering."
+  },
+  "what_i_saw": "onePenDown, both rigs: the ring's ribbons are thin zigzag lines with visible black gaps between successive teeth -- a wireframe-like read, not a bold filled band. This matches the 'thin wireframe zigzags' description that raised decision 10, and is consistent with this unit's own measured mean CLS_RIBBON width of 0.88mm (2.93 pen widths) on this fixture -- thinner than the pre-F1-amp 1.01mm (3.36 pen) and thinner still than F1-placement's own pre-fix numbers (F1-erode-plan.md Section 7: 1.03mm at 8adfd5af).",
+  "guards_run": {
+    "scene3d-ribbon-f1b-streaks.test.js": "44/44",
+    "scene3d-ribbon-wall-coverage.test.js": "36/36",
+    "scene3d-ribbon-f1-amp.test.js": "47/47",
+    "scene3d-ribbon-flat-field-placement.test.js": "22/22",
+    "scene3d-ribbon-erode-refusal.test.js": "16/16",
+    "scene3d-mark-laws-draw.test.js": "30/30",
+    "scene3d-ribbon-width-bar.test.js (new, this unit)": "10/10"
+  }
+}

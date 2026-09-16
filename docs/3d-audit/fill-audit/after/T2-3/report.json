@@ -1,0 +1,64 @@
+{
+  "unit": "T2-3",
+  "rig_named": true,
+  "rigs": {
+    "addLayer": "engine.addLayer('scene3d') deserialization defaults (PRIMITIVE_PARAM_DEFAULTS) — the fixture scene3d-mark-laws-draw.test.js and every RGR file in this lane uses. Referred to as 'test rig' in T2-3-plan.md.",
+    "create": "PRIMITIVE_CREATE_DEFAULTS merged over PRIMITIVE_PARAM_DEFAULTS — the gallery's and Jay's own screenshots' rig."
+  },
+  "density": 50,
+  "mechanism": "MK.mkTick reintroduced as chan:'len' (T2-2's mechanism: LMIN=0.18, P0=1.02, L0 raised 1.02->1.16, MK_TICK_EASE_BLEND raised 0.88->0.92) PLUS a new low-discrepancy cross-row STAGGER of each tick's own centre at the tick placement site (layMark, surface-fill.js), scattering the tick over exactly the room its own length-shortening created. See T2-3-plan.md Rank 1.",
+  "six_cell_addLayer_rig": {
+    "sphere/hatch":   { "O5_ratio": 3.818, "O5_monotone": true, "wedge25": 0.07899, "holeMax": 1.110, "siteCoverage": 0.978 },
+    "sphere/contour": { "O5_ratio": 3.130, "O5_monotone": true, "wedge25": 0.06667, "holeMax": 1.079, "siteCoverage": 0.991 },
+    "torus/hatch":    { "O5_ratio": 3.008, "O5_monotone": true, "wedge25": 0.07751, "holeMax": 1.044, "siteCoverage": 0.984 },
+    "torus/contour":  { "O5_ratio": 3.741, "O5_monotone": true, "wedge25": 0.08758, "holeMax": 1.081, "siteCoverage": 0.991 },
+    "cone/hatch":     { "O5_ratio": 3.385, "O5_monotone": true, "wedge25": 0.07146, "holeMax": 0.984, "siteCoverage": 0.985 },
+    "cone/contour":   { "O5_ratio": 3.813, "O5_monotone": true, "wedge25": 0.07511, "holeMax": 1.039, "siteCoverage": 0.993 },
+    "six_cell_mean":  { "wedge25": 0.07622, "holeMax": 1.056 }
+  },
+  "six_cell_create_rig": {
+    "sphere/hatch":   { "O5_ratio": 4.281, "O5_monotone": true, "wedge25": 0.05449, "holeMax": 0.992, "siteCoverage": 0.978 },
+    "sphere/contour": { "O5_ratio": 3.084, "O5_monotone": true, "wedge25": 0.06510, "holeMax": 1.038, "siteCoverage": 0.990 },
+    "torus/hatch":    { "O5_ratio": 3.039, "O5_monotone": true, "wedge25": 0.13794, "holeMax": 0.980, "siteCoverage": 0.975 },
+    "torus/contour":  { "O5_ratio": 3.731, "O5_monotone": true, "wedge25": 0.17307, "holeMax": 0.991, "siteCoverage": 0.958 },
+    "cone/hatch":     { "O5_ratio": 3.257, "O5_monotone": true, "wedge25": 0.06098, "holeMax": 1.038, "siteCoverage": 0.987 },
+    "cone/contour":   { "O5_ratio": 3.542, "O5_monotone": true, "wedge25": 0.04111, "holeMax": 1.008, "siteCoverage": 0.999 },
+    "six_cell_mean":  { "wedge25": 0.08878, "holeMax": 1.008 }
+  },
+  "mutation_kill_2_no_stagger_addLayer_rig": {
+    "note": "same tree, room forced to 0 (T2/T2-2-shaped placement, this unit's own L0/BLEND) — measured on all six cells",
+    "sphere/hatch": 0.09079, "sphere/contour": 0.08686, "torus/hatch": 0.08285,
+    "torus/contour": 0.10065, "cone/hatch": 0.09188, "cone/contour": 0.08039,
+    "six_cell_mean": 0.08890
+  },
+  "mutation_kill_2_no_stagger_create_rig": {
+    "sphere/hatch": 0.07066, "sphere/contour": 0.08675, "torus/hatch": 0.15145,
+    "torus/contour": 0.17522, "cone/hatch": 0.08449, "cone/contour": 0.04810,
+    "six_cell_mean": 0.10278
+  },
+  "d220_reported_not_gated_T2_4_territory": {
+    "sphere/hatch": { "siteCoverage": 0.835, "marks": 1920, "tooShort": 1058 },
+    "torus/hatch":  { "siteCoverage": 0.709, "marks": 1824, "tooShort": 1345 },
+    "cone/hatch":   { "siteCoverage": 0.839, "marks": 1295, "tooShort": 661 },
+    "note": "matches T2-3-plan.md section 2.5's prototype numbers (0.835/0.709/0.839) exactly. Recovers +1.5 to +3.5 points of the collapse vs T2-2's own d=220 table but does not close it -- LMIN*R nearing MIN_MARK_MM at high density, T2-4's item, NOT fixed here."
+  },
+  "byte_identity_sweep": {
+    "population": "8 laws (mkTick, mkDashRamp, mkDotScreen, mkScribble, ladder, fineLadder, phaseFineLadder, taperedEnds) x 8 mappers (full roster) x 3 primitives (sphere,torus,cone) x 2 densities (50,220)",
+    "total_cells": 384,
+    "identical": 366,
+    "differ": 18,
+    "differ_all_mkTick": true,
+    "non_mkTick_differences": 0,
+    "matches_plan_exactly": true
+  },
+  "evidence": {
+    "crops": [
+      "crops/cone-hatch-lit-flank-before-3x.png",
+      "crops/cone-hatch-lit-flank-after-3x.png",
+      "crops/torus-contour-fan-peak-before-4x.png",
+      "crops/torus-contour-fan-peak-after-4x.png"
+    ],
+    "what_was_seen": "cone/hatch lit flank: BEFORE (chan:count) shows a comb of same-length ticks with WIDENING SPACING approaching the highlight -- count-carries-tone. AFTER (T2-3) shows ticks SHRINKING in length (dashes getting shorter) while staying densely spaced, and the short ticks near the highlight are visibly SCATTERED at different perpendicular offsets rather than all sitting on one rigid row line -- reads as an even, organic scatter of varying-length marks, not a fan of straight same-length spokes with a hard gap. torus/contour fan peak: BEFORE shows the radial fan transition directly into a flat white highlight plateau via continuous full-length lines. AFTER shows the same transition breaking into shorter, dash-like ticks just before the highlight boundary -- less of a hard single-line-to-white cutoff.",
+    "served_version": "1.4.1"
+  }
+}

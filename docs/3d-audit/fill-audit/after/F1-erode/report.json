@@ -1,0 +1,104 @@
+{
+  "unit": "F1-erode",
+  "lane": "fill-audit-a3",
+  "worktree": "/Users/jayphi/Documents/github/vectura-studio/.claude/worktrees/fill-audit-a3",
+  "baseSha": "cd541f87",
+  "headShaAtStart": "7f805654",
+  "port": 8475,
+  "appVersion": "1.4.1",
+  "fix": "src/core/geometry-utils.js insetMultiPolygon retry ladder (Rank 1): read FillBoolean.consumeLastOpError() before/after each rung so a swallowed polygon-clipping failure is retried instead of accepted as an empty region.",
+  "capture_command": "node scripts/audit/scene3d-capture.js --tier B --root <a3 worktree> --port 8510 --only '^(torus__hatch__(interlockWeave|onePenDown|trochoidLoop|ampSpacing|weaveDepth)__(med|max)__a|sphere__hatch__(isophoteWidth|whiteBand)__med__a|cone__hatch__(taperedEnds|trochoidLoop)__med__a)$' --out docs/3d-audit/fill-audit/after/F1-erode",
+  "cells_captured": [
+    "torus__hatch__interlockWeave__med__a",
+    "torus__hatch__interlockWeave__max__a",
+    "torus__hatch__onePenDown__med__a",
+    "torus__hatch__onePenDown__max__a",
+    "torus__hatch__trochoidLoop__med__a",
+    "torus__hatch__trochoidLoop__max__a",
+    "torus__hatch__ampSpacing__med__a",
+    "torus__hatch__ampSpacing__max__a",
+    "torus__hatch__weaveDepth__med__a",
+    "torus__hatch__weaveDepth__max__a",
+    "sphere__hatch__isophoteWidth__med__a",
+    "sphere__hatch__whiteBand__med__a",
+    "cone__hatch__taperedEnds__med__a",
+    "cone__hatch__trochoidLoop__med__a"
+  ],
+  "before_pointer": "docs/3d-audit/fill-audit/shots/B/ (top-level gallery baseline, per AGENT-PROTOCOL)",
+  "gallery_capture_finding": {
+    "summary": "All 14 gallery cells (this unit's own capture and the top-level shots/B baseline) are byte-identical for EVERY cell, including torus/hatch/interlockWeave which is proven (by direct runtime instrumentation) to change under this fix. This is NOT a scoping miss -- verified via the manifest's own recorded metrics.",
+    "explanation": "scripts/audit/scene3d-capture.js builds its object rig from PRIMITIVE_CREATE_DEFAULTS merged over PRIMITIVE_PARAM_DEFAULTS (a denser/differently-sized 'Add primitive' rig), not from the plain engine.addLayer('scene3d') deserialization defaults every unit test in this lane (scene3d-ribbon-f1b-streaks.test.js, scene3d-ribbon-wall-coverage.test.js, this unit's own scene3d-ribbon-erode-refusal.test.js) uses. Manifest proof for torus__hatch__interlockWeave__med__a: pathCount=226, totalPoints=9042, inkMm=2006.6, wide=30 -- IDENTICAL before and after, because the gallery's own rig geometry never reaches the swallowed-boolean-failure stretch in the first place. This is a genuine gap in gallery coverage for this specific defect class (the gallery cannot evidence this fix at all with its current rig), not evidence the fix does nothing.",
+    "manifest_before": {"path": "path recorded from a standalone capture at cd541f87 with --root pointed at a clean git-archive export, same command", "pathCount": 226, "totalPoints": 9042, "inkMm": 2006.6, "wide": 30, "wallRings": 19, "ribbonLaw": true, "bareCentrelinesOnly": false},
+    "manifest_after": {"pathCount": 226, "totalPoints": 9042, "inkMm": 2006.6, "wide": 30, "wallRings": 19, "ribbonLaw": true, "bareCentrelinesOnly": false}
+  },
+  "identical_exceptions": [
+    { "cell": "torus__hatch__onePenDown__med__a", "reason": "byte-identical under the gallery rig -- see gallery_capture_finding; the runtime-level md5 sweep (see below) also finds this exact (torus, hatch, onePenDown) combination byte-identical, which is the correct-scoping proof (onePenDown/torus/hatch never hits a swallowed erosion failure)." },
+    { "cell": "torus__hatch__onePenDown__max__a", "reason": "same as above" },
+    { "cell": "torus__hatch__trochoidLoop__med__a", "reason": "byte-identical under both the gallery rig and the runtime-level md5 sweep -- trochoidLoop/torus/hatch is unaffected by this fix (its two standing reds are a different, out-of-scope defect, see ## Out of scope, still red)." },
+    { "cell": "torus__hatch__trochoidLoop__max__a", "reason": "same as above" },
+    { "cell": "torus__hatch__ampSpacing__med__a", "reason": "correct-scoping proof: ampSpacing is a WV6 law and must stay byte-identical per condition 4 of the ruled F1-placement conditions; confirmed both by the gallery capture and by the runtime md5 sweep." },
+    { "cell": "torus__hatch__ampSpacing__max__a", "reason": "same as above" },
+    { "cell": "torus__hatch__weaveDepth__med__a", "reason": "correct-scoping proof, WV6 law -- gallery capture byte-identical (note: the runtime-level md5 sweep DOES find torus/CONTOUR/weaveDepth changes slightly, +1.25% ink, from a fill-depth swallowed failure invisible to erodeEmpty -- that is a different mapper, not this hatch cell)." },
+    { "cell": "torus__hatch__weaveDepth__max__a", "reason": "same as above" },
+    { "cell": "sphere__hatch__isophoteWidth__med__a", "reason": "gallery-rig byte-identical (see gallery_capture_finding); the plan's own runtime-level md5 sweep at the plan's own fixture DID find this cell's ink move (+4.6%) from a fill-depth swallowed failure -- the gallery's denser rig simply does not reach it, consistent with the general finding that this defect class is rig/geometry-dependent." },
+    { "cell": "sphere__hatch__whiteBand__med__a", "reason": "same as above (plan measured +4.3% ink at the plan's own fixture; gallery rig does not reach it)." },
+    { "cell": "cone__hatch__taperedEnds__med__a", "reason": "same as above (plan measured +5.2% ink at the plan's own fixture; gallery rig does not reach it)." },
+    { "cell": "cone__hatch__trochoidLoop__med__a", "reason": "plan measured a -0.01% (effectively noise-level) ink change at its own fixture; gallery rig byte-identical, consistent." }
+  ],
+  "runtime_md5_sweep": {
+    "method": "Instrumented md5 of every emitted scenePath (kind + 6dp points) via engine.addLayer('scene3d') + computeAllDisplayGeometry(), sweeping ALL 8 MAPPERS (none, hatch, wireframe, crosshatch, contour, spiral, stipple, contourSlice) x torus x 37 PRODUCTION tone laws = 296 cells, comparing a clean git-archive export at cd541f87 against the Rank-1-fixed worktree.",
+    "changed_cells": 8,
+    "total_cells": 296,
+    "changed": [
+      { "mapper": "hatch", "law": "interlockWeave", "inkBefore": 6105.7213, "inkAfter": 6325.0175, "deltaPct": 3.59, "erodeEmptyBefore": 1, "erodeEmptyAfter": 0 },
+      { "mapper": "crosshatch", "law": "interlockWeave", "inkBefore": 9441.0572, "inkAfter": 9660.3534, "deltaPct": 2.32, "erodeEmptyBefore": 1, "erodeEmptyAfter": 0, "note": "found by extending the plan's sweep to all 8 mapper Types -- a SECOND swallowed-erosion instance the plan's narrower hatch+contour sweep did not cover" },
+      { "mapper": "contour", "law": "ampSpacing", "inkBefore": 6546.3891, "inkAfter": 6548.4611, "deltaPct": 0.03 },
+      { "mapper": "contour", "law": "onePenDown", "inkBefore": 6845.8851, "inkAfter": 6800.4661, "deltaPct": -0.66 },
+      { "mapper": "contour", "law": "trochoidLoop", "inkBefore": 6521.6252, "inkAfter": 6525.3959, "deltaPct": 0.06 },
+      { "mapper": "contour", "law": "weaveDepth", "inkBefore": 6302.4580, "inkAfter": 6380.9444, "deltaPct": 1.25 },
+      { "mapper": "crosshatch", "law": "trochoidLoop", "inkBefore": 11129.9919, "inkAfter": 11105.0871, "deltaPct": -0.22, "note": "found by extending the sweep to all 8 mapper Types" },
+      { "mapper": "crosshatch", "law": "weaveDepth", "inkBefore": 10454.3272, "inkAfter": 10624.1732, "deltaPct": 1.63, "note": "found by extending the sweep to all 8 mapper Types" }
+    ],
+    "unchanged_mappers_on_torus": ["none", "wireframe", "spiral", "stipple", "contourSlice"],
+    "all_within_stop_condition_2_bar": true,
+    "stop_condition_2_bar_pct": 8
+  },
+  "swallowed_call_instrumentation": {
+    "method": "external wrap of GeometryUtils.insetMultiPolygon (no production counter added -- surface-fill.js is outside this unit's file grant), clearing/reading FillBoolean.consumeLastOpError() around every call, over the 8 changed cells found by the extended sweep.",
+    "pre_fix": [
+      { "mapper": "hatch", "law": "interlockWeave", "calls": 79, "swallowedAndEmpty": 1, "erodeEmpty": 1, "degenerate": 1 },
+      { "mapper": "crosshatch", "law": "interlockWeave", "calls": 147, "swallowedAndEmpty": 1, "erodeEmpty": 1, "degenerate": 1 },
+      { "mapper": "contour", "law": "ampSpacing", "calls": 140, "swallowedAndEmpty": 0, "erodeEmpty": 0, "degenerate": 0 },
+      { "mapper": "contour", "law": "onePenDown", "calls": 46, "swallowedAndEmpty": 0, "erodeEmpty": 0, "degenerate": 0 },
+      { "mapper": "contour", "law": "trochoidLoop", "calls": 124, "swallowedAndEmpty": 1, "erodeEmpty": 0, "degenerate": 0 },
+      { "mapper": "contour", "law": "weaveDepth", "calls": 126, "swallowedAndEmpty": 2, "erodeEmpty": 0, "degenerate": 0 },
+      { "mapper": "crosshatch", "law": "trochoidLoop", "calls": 226, "swallowedAndEmpty": 0, "erodeEmpty": 0, "degenerate": 0 },
+      { "mapper": "crosshatch", "law": "weaveDepth", "calls": 130, "swallowedAndEmpty": 1, "erodeEmpty": 0, "degenerate": 0 }
+    ],
+    "post_fix": [
+      { "mapper": "hatch", "law": "interlockWeave", "calls": 80, "swallowedAndEmpty": 0, "erodeEmpty": 0, "degenerate": 0 },
+      { "mapper": "crosshatch", "law": "interlockWeave", "calls": 148, "swallowedAndEmpty": 0, "erodeEmpty": 0, "degenerate": 0 },
+      { "mapper": "contour", "law": "ampSpacing", "calls": 140, "swallowedAndEmpty": 0 },
+      { "mapper": "contour", "law": "onePenDown", "calls": 46, "swallowedAndEmpty": 0 },
+      { "mapper": "contour", "law": "trochoidLoop", "calls": 124, "swallowedAndEmpty": 0 },
+      { "mapper": "contour", "law": "weaveDepth", "calls": 126, "swallowedAndEmpty": 0 },
+      { "mapper": "crosshatch", "law": "trochoidLoop", "calls": 226, "swallowedAndEmpty": 0 },
+      { "mapper": "crosshatch", "law": "weaveDepth", "calls": 130, "swallowedAndEmpty": 0 }
+    ],
+    "note": "6 of the 8 changed cells' ink deltas are fully explained by a swallowed-and-empty top-level insetMultiPolygon call going to 0. The other 2 (contour/ampSpacing +0.03%, contour/onePenDown -0.66%) and crosshatch/trochoidLoop (-0.22%) show ZERO swallowed calls at either depth and are attributed to the FillBoolean.consumeLastOpError() clear-before-read coupling the plan's own section 8 disclosed (Rank 1 clears any error a PRIOR unrelated caller left pending, which can change a later, unrelated consumer's read) -- all three deltas are noise-level and well inside the +/-8% bar."
+  },
+  "deep_blank_condition_1": {
+    "method": "captureRegionRings/buildBlankMap/findBlankClusters, the exact helpers scene3d-ribbon-flat-field-placement.test.js uses, re-run standalone on a clean cd541f87 export vs the Rank-1-fixed worktree.",
+    "bar_mm2": 0.55,
+    "interlockWeave": { "before": 0.0300, "after": 0.0000, "largestClusterBefore": { "areaMm2": 39.81, "lengthMm": 27.40 }, "largestClusterAfter": { "areaMm2": 28.39, "lengthMm": 26.30 } },
+    "onePenDown": { "before": 0.0000, "after": 0.0000, "largestCluster": { "areaMm2": 21.27, "lengthMm": 23.30 }, "byteIdentical": true },
+    "trochoidLoop": { "before": 0.0000, "after": 0.0000, "largestCluster": { "areaMm2": 14.03, "lengthMm": 19.20 }, "byteIdentical": true },
+    "all_pass": true
+  },
+  "visual_proof": {
+    "method": "Since the gallery capture rig does not reach the bug, a bespoke native-resolution (30px/mm) SVG re-render of the EXACT bug-reproducing fixture (engine.addLayer('scene3d'), torus, hatch, interlockWeave, default camera/density/pen) was built via Playwright, cropped to the stretch's own document-space bbox (x128-158, y69-85mm, a small margin around the plan's measured x130.156-155.890,y71.033-82.841mm), one shot against a clean cd541f87 dev server and one against the Rank-1-fixed worktree dev server.",
+    "before_stats": "erodeEmpty=1 degenerate=1 wide=40 ribbons=39",
+    "after_stats": "erodeEmpty=0 degenerate=0 wide=40 ribbons=40",
+    "what_i_saw": "BEFORE: a single thin zigzag centreline (bare wireframe, no fill) crosses the upper-middle-right of the crop, visibly thinner and starved of ink compared to every neighbouring zigzag ribbon in the same band, which are all bold and filled solid. AFTER: that exact same stretch is now filled bold and solid, matching its neighbours -- the bare centreline is gone and the band reads as one continuous, evenly-inked ribbon pattern with no visible interruption."
+  }
+}

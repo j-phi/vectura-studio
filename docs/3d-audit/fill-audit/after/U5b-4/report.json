@@ -1,0 +1,39 @@
+{
+  "id": "U5b-4",
+  "unit": "U5b-4 — render the caveat on the SHADOW row, both surfaces (LEDGER row 11a)",
+  "lane": "fill-collapse-3",
+  "worktree": ".claude/worktrees/fill-collapse-3",
+  "branch": "3d-scene/fill-collapse-3",
+  "port": 8482,
+  "appVersion": "1.4.1",
+  "method": "Playwright (chromium.launch()) in a scratch script, deleted after this run, per ROUND3-RESUME-BRIEFS.md §2. Drives the REAL app: ctxbar surface via V.UI.ContextBar.restoreState()+pill.click() (real DOM, real event handlers); docked surface via app.ui.buildControls() against the page's own #dynamic-controls container (not a synthetic mount) so this is the actual running-app render path, not a test harness.",
+  "cases": [
+    {
+      "rawId": "dutyConst",
+      "label": "caveat-bearing shadow law (U7-2's own probe case, reproduces the gap)",
+      "files": [
+        "ctxbar-dutyConst-flyout-full.png",
+        "ctxbar-dutyConst-row-native.png",
+        "docked-dutyConst-section-full.png",
+        "docked-dutyConst-row-native.png"
+      ],
+      "observed": "Both surfaces render a standalone red/warning-colour .is-caveat paragraph directly beneath the Fill Style row, above the flow/web note (docked) or the 'Shadows land on objects' row (ctxbar) -- matching the already-accepted Style-row placement exactly. Text is byte-identical to FS.note('dutyConst').caveat on both surfaces. Select value stays 'dutyConst' on both (dutyConst is a directly-offered roster law, not a folded id -- no over-fix)."
+    },
+    {
+      "rawId": "ladder",
+      "label": "non-caveat control (the shipped default, no caveat)",
+      "files": [
+        "ctxbar-ladder-flyout-full.png",
+        "ctxbar-ladder-row-native.png",
+        "docked-ladder-section-full.png",
+        "docked-ladder-row-native.png"
+      ],
+      "observed": "No .is-caveat paragraph renders on either surface -- confirms the fix does not emit an empty warning box when the resolved law has no caveat."
+    }
+  ],
+  "pageErrors": "none on any of the 4 captures (see raw-capture-results.json)",
+  "lookedAt": true,
+  "notes": [
+    "U9b-2 (the companion commit in this same run) is tests + disclosure only, no rendering/UI change -- no visual evidence directory was produced for it; see U9b-2-impl.md."
+  ]
+}

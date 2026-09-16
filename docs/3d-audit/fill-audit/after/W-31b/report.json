@@ -1,0 +1,95 @@
+{
+  "unit": "W-31b",
+  "lane": "fill-audit-a3",
+  "worktree": ".claude/worktrees/fill-audit-a3",
+  "branch": "3d-scene/fill-audit-a3",
+  "base_sha": "64b160a0",
+  "final_sha": "c28b3490 (only tests/unit/scene3d-crosshatch-cell-shape-b.test.js added; surface-fill.js byte-identical to base_sha)",
+  "disposition": "RANK 3 (MEASURED-with-guards). M1 (the plan's Appendix A prototype) was attempted under the orchestrator's bounded spike (start from Appendix A, at most two iterations, judged against the four closure conditions) and DISCARDED after both iterations failed to close it. No source change ships. Two new mutation-proved guards (C7, C8) land instead.",
+  "user_rule_gated": "Jay, user-reports/13: \"are lines not being evenly spaced? The only reason there should be greater amounts of space in some areas is if we're trying to represent highlights\" — clause 1 (evenness) is STILL RED and UNFIXED by this unit (that is the defect Rank 3 measures-and-stops on); clause 2 (highlight exemption) is now gated for the first time by C7.",
+  "m1_spike": {
+    "iteration_1": {
+      "what": "Applied the plan's Appendix A diff verbatim (V7 config: mode=gap, smooth=8, rmax=2, lam=1, wsmooth=2, decouple=true) to the worktree's surface-fill.js. Fixed one bug versus the plan's own text while porting it (the curvature-bound smoothing must run on the ACCUMULATED warp field across rulings, not on each ruling's own per-sample increment shape) and re-verified against Appendix A's own numbers after the fix.",
+      "byte_identity_proof": "globalThis.__W31B={off:true} reproduced every CEILING column exactly to 4 decimals (cone 0.6438/0.6917/1.0151/1.4652/1.6427, etc.) — the reimplementation's OFF path is provably inert.",
+      "v7_reproduction": "With the fixed port, V7 (pfloor=0, i.e. no new mechanism) reproduced the plan's own Appendix A table to 3-4 decimals on every primitive (cone 0.886/0.984/1.041/1.030/1.013 ramp 1.175; cylinder 1.138/1.055/1.208/1.331/1.082 ramp 1.262; sphere 1.035/1.081/1.111/1.146/1.182 ramp 1.142; torus 0.979/0.914/1.051/0.978/0.943 ramp 1.149; ellipsoid 1.105/1.497/1.310/0.983/1.291 ramp 1.523; sphere-cam-b 0.911/0.920/0.966/0.727/1.064 ramp 1.465), and the within-family p01 collapse the plan reported: torus 0.0507->0.0004mm (plan: 0.0674->0.0005), sphere-cam-b 0.0302->0.0000mm (plan: 0.0301->0.0000). This CONFIRMS the plan's own GATE VERDICT: FAIL — cylinder 2 columns still outside [0.85,1.18], ellipsoid and sphere-cam-b regress out of the band, torus/sphere-cam-b p01 collapse toward zero (rulings touching).",
+      "new_attempt": "Added a probe-based local plot-safety floor: after computing this ruling's curvature-bounded warp update, probe the candidate NEXT ruling it would place and measure its actual clearance to THIS ruling's own (already-fixed) points via the exact acrossClear() construction contFieldAniso already uses; if under a floor (0.5x want), damp the whole delta toward zero (i.e. toward the previous ruling's own accumulated field) in up to 4 iterations.",
+      "result": "WORSE across the board, not better. Cone: ramp 1.175 -> 3.076, windows (measurability) 79 -> 12 — a measurability collapse. Cylinder/sphere/ellipsoid all degraded similarly. The mechanism is unstable: damping THIS ruling's own warp contribution without re-deriving how `f` accumulates forward creates a feedback loop across the family (a damped ruling still advances `f` by the same `df`, so the warp field and the parameter position decouple, and the next ruling's own floor check compounds the error). REJECTED BY MEASUREMENT within iteration 1."
+    },
+    "iteration_2": {
+      "what": "Abandoned the custom floor mechanism (pfloor=0, i.e. disabled). Retuned only the plan's own existing V7 knobs: wsmooth 2->6 and 2->10, rmax 2->1.3, lam 1->0.6 (in combination).",
+      "result": "wsmooth=6/rmax=1.3: torus p01 0.0507->0.0007mm (needs >=0.0431), sphere-cam-b p01 ->0mm (needs >=0.0257) — STILL FAILS. Some ramps improved marginally (ellipsoid 1.523->1.165, cylinder 1.262->1.826 [worse]) but the core crossing defect (condition 1) never closed in either retune. wsmooth=10/rmax=1.3/lam=0.6: same story, torus p01 0.0034mm, sphere-cam-b p01 0mm — still fails.",
+      "conclusion": "Confirms the plan's own §2.2 point 4 / §4.1 finding: amplitude and smoothing knobs bound HOW FAR a sample moves, not how the ruling BENDS relative to its actual neighbour. Closing condition 1 needs the 'fifth required change' (an explicit neighbour-clearance fixed point reading the previous ruling's own emitted field, per the plan's own words) — genuinely new machinery, not a parameter retune, and out of reach of a two-iteration bounded spike without a real risk of shipping an unstable placement (as iteration 1 demonstrated)."
+    },
+    "final_state": "surface-fill.js reverted to a clean checkout of 64b160a0 (git status confirms zero diff). scene3d-crosshatch-cell-shape.test.js re-verified 23/23 on the pristine file after the revert. M1 is NOT committed anywhere."
+  },
+  "closure_conditions_verdict": {
+    "condition_1_curvature_bound": "FAIL (both iterations)",
+    "condition_2_no_regression_on_passing_configs": "FAIL under V7 (ellipsoid, sphere-cam-b regress out of band)",
+    "condition_3_ink_floor_P5b": "NOT REACHED — conditions 1 and 2 already failed; ink was not separately re-measured through finalFills since the gate already failed upstream",
+    "condition_4_measurability_C5b": "FAIL under both the custom-floor attempt (windows collapsed 30-85%) and V7 alone (30-50% loss, matching the plan's own finding)"
+  },
+  "rank3_guards": {
+    "file": "tests/unit/scene3d-crosshatch-cell-shape-b.test.js (new)",
+    "no_source_change": true,
+    "C7": {
+      "gates": "Jay's SECOND clause — tone-driven variation must be preserved",
+      "fixture": "lit rig, d=50, camera a, crosshatch/ladder, both PRIMITIVE_CREATE_DEFAULTS-shaped scene per the ceiling test's sceneFor(), lights=[{azimuth 315|135, elevation 45}]",
+      "measured_today": { "sphere_ratio": 2.1196, "cone_ratio": 1.8020, "sphere_area_315": 7.5491, "sphere_area_135": 3.5617, "cone_area_315": 6.0793, "cone_area_135": 3.3736 },
+      "mutation_proof": "az135-vs-az135 (no light-direction difference at all) collapses the ratio to ~1.0 and fails both floors — run in the same commit as a MUTATION test, proving C7 is sensitive to a genuine tone response and not to geometry alone. Chosen over patching ladderPairWantedPitch(I,...) -> ladderPairWantedPitch(0.5,...) because that closure is not exposed as a test seam and this unit's file scope (crosshatch placement only) does not license adding one solely for a mutation harness."
+    },
+    "C8": {
+      "gates": "neither clause directly — the plot-safety rail a per-sample placement mechanism (like the discarded M1 spike) can out-run even while every column-median bar looks fine",
+      "fixture": "flat tone (lights: []), d=220, crosshatch/ladder, camera a for {sphere, cylinder, torus, ellipsoid, cone}, camera b for sphere",
+      "pinned_today_this_base": {
+        "sphere_d220_a": 0.0127, "cylinder_d220_a": 0.0452, "torus_d220_a": 0.0507,
+        "ellipsoid_d220_a": 0.0153, "cone_d220_a": 0.0128, "sphere_d220_b": 0.0302
+      },
+      "note_vs_plan_numbers": "The plan's own scratch-export table (3bc61c32) lists slightly different values for torus (0.0674) and sphere (0.0200) — both are 'today's own base', measured with the same instrument construction but a different percentile population size; this file pins ITS OWN measurement (re-derived per AGENT-PROTOCOL, not copied), with an 0.85x floor and a loose 0.5x sanity band.",
+      "mutation_proof": "Injects enough synthetic near-zero gap samples (M1's exact failure mode — two rulings of the same family touching) into a real, freshly measured population to guarantee the 1st-percentile index lands on one regardless of population size, and confirms the resulting p01 falls below every one of the six pinned floors — proving the assertion's arithmetic (a true 1st percentile, not a mean or windowed statistic a single close call could hide inside) actually trips on a touch."
+    }
+  },
+  "guards_run": {
+    "scene3d-crosshatch-cell-shape-b (new)": "11/11",
+    "scene3d-crosshatch-cell-shape (W-31 ceiling)": "23/23 (unchanged)",
+    "scene3d-crosshatch-parity (W-36c P1-P6)": "91/91 (unchanged)",
+    "scene3d-curved-density-floor": "14/14 (unchanged)",
+    "scene3d-fill-even-spacing": "12/12 (unchanged)",
+    "scene3d-ladder-uniform-field-spacing (W-26 R1a)": "9/9 (unchanged)",
+    "scene3d-fill-span-verdict": "11/11 (unchanged)",
+    "scene3d-plot-safety": "5/5 +1 skip (unchanged)",
+    "scene3d-curved-density-sparse-end": "20/20 (unchanged)",
+    "scene3d-curved-crosshatch-controls": "18/18 (unchanged)",
+    "scene3d-fill-boundary-ends": "41/41 (unchanged)",
+    "scene3d-fill-ruling-continuity": "10/10 +1 skip (unchanged)",
+    "scene3d-fill-ruling-corners (W-33)": "19/19 (unchanged)",
+    "scene3d-hatch-density-angle-stable (W-36b)": "9/9 (unchanged)",
+    "scene3d-mapper-audit": "70/70 (unchanged)",
+    "scene3d-surface-fill": "6/6 +2 skip (unchanged)",
+    "scene3d-mark-laws-draw (T4/W-36c oracle)": "30/30 (unchanged)"
+  },
+  "pre_existing_red": {
+    "scene3d-mktick-wedge.test.js": "44 passed / 2 skipped / 1 failed — matches the documented known lane red (T2-3b's), unchanged by this unit, not touched"
+  },
+  "byte_identity": "surface-fill.js has ZERO diff against 64b160a0 (git status confirms). Since no source changed, every cell in the roster is trivially byte-identical to this unit's own base by construction — the byte-identity sweep required for a source-changing unit does not apply.",
+  "fixture_note": "Every number above was measured with: rig PRIMITIVE_CREATE_DEFAULTS-over-PRIMITIVE_PARAM_DEFAULTS (the ceiling test's own sceneFor(), matching the 'create' rig, NOT --rig addLayer), ground/backdrop disabled, camera a = DEFAULT_CAMERA, camera b = yaw 40/pitch -15, mapper crosshatch, fillAngle 45, toneLaw ladder, fillDensity as stated (50 or 220). Ground-plane ink is NOT included anywhere in this unit (ground.enabled=false throughout, matching the ceiling file).",
+  "evidence": {
+    "captures": [
+      "shots/B/{sphere,cone,torus}__crosshatch__ladder__{med,max}__{a,b}.webp (create rig)",
+      "shots/B/...__addlayer.webp (addLayer rig)",
+      "shots/A/{cylinder,ellipsoid}__crosshatch__ladder__{med,max}__{a,b}.webp (both rigs) + sphere__hatch__ladder__med__a + sphere__contour__ladder__med__a + cylinder__hatch__ladder__max__a (non-crosshatch controls, both rigs)"
+    ],
+    "identical_exceptions": "Not applicable this unit (no source change to compare pre/post against) — the captures document TODAY's still-unfixed state and the passing controls, not a before/after diff.",
+    "visual_findings": {
+      "cylinder__crosshatch__ladder__max__a (Jay's own panel)": "Cropped left limb, centre, right limb natively. Centre shows near-square uniform diamonds. Left limb shows visibly more compressed/narrow diamond cells; right limb shows visibly more stretched/elongated cells. Confirms Jay's original complaint is still present, unchanged.",
+      "cone__crosshatch__ladder__max__a": "Worst measured ramp (0.644->1.643). A horizontal band crop (native, left silhouette to right) shows tight compressed slivers near both left and right edges and near-square cells in the middle band — visibly asymmetric evenness across the surface, unfixed.",
+      "torus__crosshatch__ladder__max__a": "Full image and a native 3x seam-region crop show NO neighbouring rulings of the same family touching or merging anywhere — this cell's own ramp (1.187) already passes and this unit shipped no change, so it is exactly as before.",
+      "sphere__crosshatch__ladder__max__b (control)": "Even diamond coverage across the visible disc, matching its already-passing columns (~1.0). Unregressed (no source change).",
+      "ellipsoid__crosshatch__ladder__max__a": "Even diamond coverage, matching its already-passing columns (~1.0). Unregressed.",
+      "sphere__crosshatch__ladder__med__a": "The chart-pole knot is visible at the top pole (a small bunching/convergence artefact). Filed as W-31c per the plan; NOT chased in this unit."
+    }
+  },
+  "follow_ups": {
+    "W-31d": "The curvature/neighbour-clearance bound (§2.2 point 4 / §4.1 condition 1) is the blocking prerequisite for any future per-sample crosshatch placement mechanism in this file — file as the next attempt's starting point, not a fresh Rank 1 derivation. This unit's own failed probe-based floor attempt (in the header comment of the new test file) is a documented dead end: damping a ruling's own warp contribution without re-deriving forward `f` accumulation destabilises the whole family and should not be retried as stated.",
+    "W-31c": "The chart-pole knot (sphere/ellipsoid camera a, near the pole) remains visible and unaddressed, excluded by the INTERIOR definition per W-31."
+  }
+}

@@ -44,7 +44,9 @@ Development & Working-Tree Safety". All paths below are relative to the MAIN rep
 5. Stop-and-report beats a fudge. If the oracle cannot be met honestly, ship the measurement and say so.
 
 ## Bars changed — mandatory disclosure
-Any change to a numeric threshold, tolerance, count bar, or pinned fingerprint in an existing test — up OR down — must
+Any change to a numeric threshold, tolerance, count bar, or pinned fingerprint in an existing test — up OR down —
+**or any change to the POPULATION or FIXTURE an existing assertion measures over** (2026-09-13: narrowing a population
+hides a defect exactly as a widened tolerance does, and "the number is unchanged" is not a defence) — must
 appear in your report under a heading `## Bars changed` as `file:line — old → new — why`, and in the commit body. A bar
 change with no entry is treated as a hidden regression and REJECTS the unit (two were caught only by reviewers on
 2026-09-05: an ink-ramp bar 1.8 → 1.3 and an O2 sub-bar 5 → 10).

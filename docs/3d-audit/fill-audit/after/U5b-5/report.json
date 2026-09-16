@@ -1,0 +1,36 @@
+{
+  "unit": "U5b-5",
+  "lane": "fill-collapse-3",
+  "worktree": ".claude/worktrees/fill-collapse-3",
+  "baseSha": "eb9707a8",
+  "scope": "ctxbar Shadow flyout <select> label truncation (UI polish) — LEDGER row 11c",
+  "cellNote": "Not an audit manifest cell (no primitive/tone-law fill cell covers a UI control's label rendering) — bespoke Playwright capture against the real dev server per AGENT-PROTOCOL's 'no cell covers your unit' clause.",
+  "fix": {
+    "file": "src/ui/skin/components.css",
+    "selector": ".ctxbar-fly-ctl .ctrl-sel",
+    "declaration": "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;",
+    "scopeRationale": "Scoped to .ctxbar-fly-ctl (every ctxbar scene-flyout row's control host) so ALL flyout selects get the fix, not just the Shadow flyout's dutyConst row (per the ledger's 'check the whole roster' instruction) — while leaving the docked panel's own (wider) .ctrl-sel instances, which the U9b-2/U5b-4 reviewer confirmed render the label in full, untouched."
+  },
+  "liveVerification": {
+    "method": "Playwright against the real dev server on port 8482 (nohup node scripts/dev-server.js 8482), driving window.app + Vectura.UI.ContextBar directly (app.renderer.setSceneSelection + CB.restoreState() + pill.click(), the same real production path the U9b-2/U5b-4 reviewer used) — not a synthetic createElement mount.",
+    "appVersion": "1.4.1",
+    "pageErrors": [],
+    "before": "Pre-fix (49a5ef88/eb9707a8 CSS): select shows \"Duty Cycle · Constar\" — clipped mid-word, no ellipsis (matches the reviewer's proven-pre-existing finding).",
+    "after": "Post-fix: select shows \"Duty Cycle · Const…\" — a real ellipsis, not a raw clip. getComputedStyle: textOverflow=ellipsis, whiteSpace=nowrap (overflow reports 'visible' per Chromium's native <select> computed-style quirk, but the rendered ellipsis is real and confirmed visually).",
+    "screenshots": [
+      "ctxbar-dutyConst-row-native-fixed.png — the Fill Style row alone, native resolution, post-fix",
+      "ctxbar-dutyConst-flyout-full-fixed.png — the whole Shadow flyout, post-fix"
+    ]
+  },
+  "testsOnly": false,
+  "testCoverage": {
+    "file": "tests/integration/scene3d-fill-style-picker.test.js",
+    "test": "U5b-5 — every ctxbar scene-flyout <select> (.ctxbar-fly-ctl .ctrl-sel) declares text-overflow: ellipsis, not a raw clip",
+    "method": "jsdom has no real CSS layout/paint engine (getComputedStyle cannot reproduce actual text clipping in this harness), so — matching the repo's established pattern for CSS-only regressions (tests/unit/css-on-tokens-and-no-transition-all.test.js) — the test pins the fix at the CSS-source level: reads src/ui/skin/components.css and asserts the .ctxbar-fly-ctl .ctrl-sel rule declares overflow:hidden, text-overflow:ellipsis, white-space:nowrap.",
+    "red": "Reverted components.css to the eb9707a8 (pre-fix) blob in the live worktree, re-ran -t \"U5b-5\": FAILED (rule regex matched null — expected true, received null). Then restored the fixed file.",
+    "green": "Restored components.css with the fix; re-ran -t \"U5b-5\": 1 passed | 176 skipped (177)."
+  },
+  "fullFileRun": "tests/integration/scene3d-fill-style-picker.test.js: 177/177 passed, 85.64s",
+  "barsChanged": "None — new CSS rule and one new additive test only; no existing numeric threshold, tolerance, or fingerprint touched.",
+  "notContained": "No other row in the ctxbar Style/Shadow flyouts was found broken by this fix — the selector only ADDS overflow handling, it does not change any element's width or position. Only the .is-caveat / other unrelated content in the flyout was visually spot-checked incidentally and looked unaffected."
+}

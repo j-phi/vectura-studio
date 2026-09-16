@@ -1,0 +1,55 @@
+{
+  "id": "U5b-4",
+  "baseUrl": "http://localhost:8482",
+  "cases": [
+    {
+      "rawId": "dutyConst",
+      "label": "caveat-bearing",
+      "ctxbar": {
+        "surface": "ctxbar",
+        "rawId": "dutyConst",
+        "ver": "1.4.1",
+        "pageErrors": [],
+        "selectValue": "dutyConst",
+        "caveatText": "The open paper you see in highlight areas is intentional — marks shrink down to dots there, so the gaps between them are the shading effect working as designed, not a defect.",
+        "hasRow": true,
+        "hasCaveat": true
+      },
+      "docked": {
+        "surface": "docked",
+        "rawId": "dutyConst",
+        "ver": "1.4.1",
+        "pageErrors": [],
+        "selectValue": "dutyConst",
+        "caveatText": "The open paper you see in highlight areas is intentional — marks shrink down to dots there, so the gaps between them are the shading effect working as designed, not a defect.",
+        "hasRow": true,
+        "hasCaveat": true
+      }
+    },
+    {
+      "rawId": "ladder",
+      "label": "no-caveat-control",
+      "ctxbar": {
+        "surface": "ctxbar",
+        "rawId": "ladder",
+        "ver": "1.4.1",
+        "pageErrors": [],
+        "selectValue": "ladder",
+        "caveatText": null,
+        "hasRow": true,
+        "hasCaveat": false
+      },
+      "docked": {
+        "surface": "docked",
+        "rawId": "ladder",
+        "ver": "1.4.1",
+        "pageErrors": [],
+        "selectValue": "ladder",
+        "caveatText": null,
+        "hasRow": true,
+        "hasCaveat": false
+      }
+    }
+  ],
+  "generatedAt": "2026-09-12T22:31:50.335Z"
+}

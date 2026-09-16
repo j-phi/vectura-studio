@@ -4,6 +4,8 @@
   "worktree": ".claude/worktrees/fill-audit-a3",
   "branch": "3d-scene/fill-audit-a3",
   "base_sha": "8adfd5af",
+  "final_sha": "cd541f87",
+  "implementer_note": "Predecessor's WIP (32ec6ef0) was UNVERIFIED (killed by rate limit 2026-09-11). This implementer verified it green on all four STEP-0 checks and adopted it with ONE change: corrected a stale/inaccurate comment in the test file (condition-3 numbers) and re-derived the f1b-streaks/wall-coverage 'pre-existing red' claim, which was WRONG. No src/ changes made in this session.",
   "prototype": "B (LOCAL) — ruled 2026-09-06, docs/3d-audit/lane-reports/LEDGER.md",
   "fix": {
     "file": "src/core/scene3d/surface-fill.js",
@@ -20,6 +22,7 @@
       "prototype_B": { "interlockWeave": 0.03, "onePenDown": 0.00, "trochoidLoop": 0.00 }
     },
     "bar": "<=0.5mm2 (+-10% => 0.55mm2), restated on THIS tree's own numbers — see report body ## Bars changed",
+    "verified_by_this_implementer": "Re-ran tests/unit/scene3d-ribbon-flat-field-placement.test.js with and without VECTURA_PRE_F1P=1 (that test file DOES read the flag correctly, unlike f1b-streaks/wall-coverage below): pre-fix run failed exactly these three PRIMARY assertions with these exact values (3.0200/4.0000/1.7900mm2); post-fix run passed all 22 tests. RED and GREEN both independently reproduced.",
     "note": "The plan's own §10 figures (11.89/14.70/12.15 pre-fix, bar 3.0mm2) were measured at the plan's base sha 3c88605f and are stale for this tree: other fixes landed on the lane between 3c88605f and 8adfd5af already reduced the pre-fix baseline."
   },
   "condition_2_total_area_bar_restated": {
@@ -36,51 +39,71 @@
       }
     },
     "bar": "area <=45mm2, longest extent <=30mm — restated to what Prototype B meets with margin",
-    "note": "Does NOT cleanly separate pre- from post-fix for every law on its own (pre-fix onePenDown's 39.04mm2 is below interlockWeave's post-fix 39.81mm2) — this is exactly why condition 1 (deep-blank), not this bar, is the PRIMARY gate, per the plan's own §2 rationale."
+    "verified_by_this_implementer": "Re-derived independently via a temporary unconditional console.log added to the two RED-2 assertions, run, values recorded, edit reverted (git diff confirmed clean before final commit). Numbers match the WIP's claim exactly.",
+    "note": "Does NOT cleanly separate pre- from post-fix for every law on its own (pre-fix onePenDown's 39.04mm2 is below interlockWeave's post-fix 39.81mm2) — this is exactly why condition 1 (deep-blank), not this bar, is the PRIMARY gate, per the plan's own §2 rationale.",
+    "likely_same_event_as": "See guards.corrected_finding below — interlockWeave's 39.81mm2 cluster here and the 38.95mm2 ringNotInkMm2 residue that f1b-streaks/wall-coverage flag are close in magnitude and in document-space location (both land in x~137-165, y~71-98mm on this fixture). Plausibly the SAME erosion-fallback event seen through two different oracles (a raster distance-map vs a polygon-coverage map), not two independent defects — could not be proven identical with certainty in this unit's budget."
   },
   "condition_3_red1b_restated": {
     "on": "drawn perpendicular gap (nearest-approach distance between adjacent kept rulings' point sets), not the index gap",
-    "status": "measured, NOT gated — retired as a pass/fail bar",
-    "why": "interlockWeave/onePenDown/trochoidLoop are serpentine families; nearest-approach distance is dominated by where weave crests/troughs happen to swing toward each other, not by placement spacing. Pre-fix ratio 10.4/12.8/18.3 (min gaps 0.11-0.24mm, weave passes nearly touching); Prototype B 11.9/12.4/5.1. No bar separates defect from fix on this metric. RED-2 (deep-blank) is the metric that does."
+    "status": "measured, NOT gated (only a sanity ceiling <200 is asserted) — RESTATED per the orchestrator's ruling, not RETIRED",
+    "corrected_numbers": "The predecessor's own test-file comment claimed post-fix ratios 11.9/12.4/5.1 and used the word 'RETIRED'. Re-measured by this implementer on this tree (foreground vitest, twice): pre-fix (VECTURA_PRE_F1P=1) ratio = 10.37/12.83/18.30 (interlockWeave/onePenDown/trochoidLoop) — matches the predecessor's rounded 10.4/12.8/18.3. Post-fix (Prototype B) ratio = 7.58/11.20/3.50 — does NOT match the predecessor's claimed 11.9/12.4/5.1 for two of three laws.",
+    "why_not_gated": "interlockWeave/onePenDown/trochoidLoop are serpentine families; nearest-approach distance is dominated by where weave crests/troughs happen to swing toward each other, not by placement spacing. Populations overlap even with the corrected numbers: pre-fix minimum (10.37) is LESS than post-fix maximum (11.20), so no single bar in [10.37, 11.20] passes every post-fix law while failing every pre-fix law. Proven, not asserted. RED-2 (deep-blank, condition 1) is the metric that DOES cleanly separate RED from GREEN and is the enforced gate.",
+    "test_file_comment_corrected": "tests/unit/scene3d-ribbon-flat-field-placement.test.js:287-311, this commit (cd541f87) — numbers and 'restated not retired' framing fixed; no assertion changed."
   },
   "condition_4_byte_identity": {
     "method_1_unit_test": "SF.buildObject ink output, ampSpacing/weaveDepth, torus/sphere/cone x density 25/50/100 (18 combinations), pre-fix source (git show 8adfd5af) vs post-fix, in tests/unit/scene3d-ribbon-flat-field-placement.test.js's own describe block.",
-    "result_1": "18/18 byte-identical (JSON.stringify of rounded path coordinates)",
-    "method_2_real_capture": "scripts/audit/scene3d-capture.js, torus__hatch__{ampSpacing,weaveDepth}__{med,max}__a + cone__contour__ampSpacing__med__a, before (committed gallery baseline) vs after (this unit's capture)",
-    "result_2": "6/6 byte-identical (cmp -s), confirmed both by md5-class comparison and by direct visual read"
+    "result_1": "18/18 byte-identical (JSON.stringify of rounded path coordinates) — re-verified by this implementer, test passed (156s)",
+    "method_2_real_capture": "scripts/audit/scene3d-capture.js, torus__hatch__{ampSpacing,weaveDepth}__{med,max}__a + cone__contour__{ampSpacing,amplitudeOnly}__med__a, before (committed gallery baseline) vs after (this implementer's own fresh re-shoot from the worktree, NOT the dead predecessor's stale shots — those were moved aside and confirmed byte-identical to the fresh re-render, proving determinism, then discarded)",
+    "result_2_corrected": "5/6 byte-identical by md5: torus/ampSpacing (med+max), torus/weaveDepth (med+max), cone/ampSpacing. The 6th, cone__contour__amplitudeOnly__med__a, is NOT byte-identical to the gallery baseline — but this is CORRECT, not a leak: amplitudeOnly is one of isWaveLaw()'s four pre-Round-6 members (surface-fill.js, alongside interlockWeave/trochoidLoop/onePenDown — see plan §6), not a WV6 law, so it is intentionally inside wvPlaceCov's scope (isWaveLaw() && !isWv6()). It is NOT in stop-condition-1's must-not-move list (ampSpacing/weaveDepth/taperedEnds/weightSmoothstep only). The predecessor's plan text calling it a 'control' was imprecise."
   },
-  "condition_5_f1amp_handoff": "See report body ## F1-amp handoff — filed as the follow-up, not merged in.",
+  "condition_5_f1amp_handoff": "See report body ## F1-amp handoff — filed as the follow-up, not merged in. wvRamp(I)=0 for I>=WV_I0=0.62 for all three subject laws (no Round-6 amplitude floor), so a plain-ruling highlight stripe persists after placement alone.",
   "guards": {
-    "clean": [
+    "clean_24_files": [
       "scene3d-ladder-uniform-field-spacing (9/9)",
       "scene3d-style-fill-lines (15/15)",
-      "scene3d-curved-density-floor",
-      "scene3d-curved-density-sparse-end",
-      "scene3d-ribbon-c3-rule5",
-      "scene3d-ribbon-outline-fill-seam",
-      "scene3d-ribbon-wall-region-clip",
-      "scene3d-ribbon-weightscale-invariant",
-      "scene3d-ribbon-primitives",
-      "scene3d-ribbon-f6-self-occlusion",
-      "scene3d-fill-even-spacing",
-      "scene3d-fill-span-verdict",
-      "scene3d-fill-ruling-continuity",
-      "scene3d-fill-seam-continuity",
-      "scene3d-fill-boundary-ends",
-      "scene3d-plot-floor-obj",
-      "scene3d-plot-safety",
-      "scene3d-tone-algo-default",
-      "scene3d-hatch-density-500",
-      "scene3d-subwindow-density",
-      "scene3d-appdefault-lit-floor",
-      "scene3d-crosshatch-parity (W-36c P-suite proxy, 37 cases)"
+      "scene3d-curved-density-floor (13/13)",
+      "scene3d-curved-density-sparse-end (20/20)",
+      "scene3d-ribbon-f7-self-occlusion (2/2)",
+      "scene3d-mark-laws-draw (30/30)",
+      "scene3d-ribbon-c3-rule5 (6/6)",
+      "scene3d-ribbon-outline-fill-seam (4/4)",
+      "scene3d-ribbon-wall-region-clip (1/1)",
+      "scene3d-ribbon-weightscale-invariant (18/18)",
+      "scene3d-ribbon-primitives (14/14)",
+      "scene3d-ribbon-f6-self-occlusion (2/2)",
+      "scene3d-fill-even-spacing (12/12)",
+      "scene3d-fill-span-verdict (11/11)",
+      "scene3d-fill-ruling-continuity (10/10, 1 pre-existing unrelated skip)",
+      "scene3d-fill-seam-continuity (5/5)",
+      "scene3d-fill-boundary-ends (41/41)",
+      "scene3d-plot-floor-obj (12/12)",
+      "scene3d-plot-safety (5/5, 1 pre-existing unrelated skip)",
+      "scene3d-tone-algo-default (6/6)",
+      "scene3d-hatch-density-500 (14/14)",
+      "scene3d-subwindow-density (3/3, 2 pre-existing unrelated skips)",
+      "scene3d-appdefault-lit-floor (4/4, 1 pre-existing unrelated skip)",
+      "expand-scene3d-weight-to-strokes (5/5)"
     ],
-    "pre_existing_failures_not_caused_by_this_unit": {
-      "files": ["tests/unit/scene3d-ribbon-f1b-streaks.test.js", "tests/unit/scene3d-ribbon-wall-coverage.test.js"],
-      "affected_laws": ["interlockWeave", "trochoidLoop"],
-      "proof": "Identical failures, identical numeric values (e.g. ringFillRate=0.9363204944266638 to 13 decimal places), whether run against the current Prototype-B tree OR against VECTURA_PRE_F1P=1 (the pristine pre-fix 8adfd5af source loaded via git show). Reproduced 3+ times each way, stable.",
-      "anomaly": "An early run in this session's history (before any edits existed) showed scene3d-ribbon-f1b-streaks.test.js passing 44/44; every later run (many repeats, pre- and post-fix alike) shows 8/44 failing. Root cause not identified within this unit's budget — not resolved, not silenced. See report body for full detail.",
-      "disposition": "Out of this unit's file scope (points at self-occlusion/erosion pipeline territory, forbidden files). Flagged for the orchestrator to open as its own W-id / STILL-OPEN item, not fixed here."
+    "corrected_finding": {
+      "headline": "The predecessor's claim that scene3d-ribbon-f1b-streaks.test.js (8/44) and scene3d-ribbon-wall-coverage.test.js (1/36) are PRE-EXISTING RED, 'not caused by the fix', is WRONG. This implementer disproved it.",
+      "why_the_predecessors_proof_was_vacuous": "Its 'pre-fix' comparison ran the SAME worktree test file with VECTURA_PRE_F1P=1 set — but neither scene3d-ribbon-f1b-streaks.test.js nor scene3d-ribbon-wall-coverage.test.js reads that env var at all (f1b-streaks reads a DIFFERENT flag, VECTURA_PRE_F1B, gated to its own d5af9e30 baseline). Setting VECTURA_PRE_F1P=1 while running those two files does nothing — both of the predecessor's 'pre-fix' and 'post-fix' runs executed the identical post-fix worktree code. Comparing a thing to itself and calling the match 'proof' is exactly the vacuous-comparison failure mode the protocol warns about.",
+      "true_pre_fix_measurement": "Built a scratch export via `git archive 8adfd5af | tar -x`, symlinked node_modules from MAIN, ran both files there (genuinely no wvPlaceCov present, grepped to confirm): scene3d-ribbon-f1b-streaks.test.js 44/44 PASS, scene3d-ribbon-wall-coverage.test.js 36/36 PASS. Both clean.",
+      "post_fix_measurement": "Same two files run in the shipped worktree (Prototype B): f1b-streaks 36/44 (8 fail), wall-coverage 35/36 (1 fail). All failures are on interlockWeave (7 of 8 in f1b-streaks + the 1 in wall-coverage) plus 1 additional interlockWeave-adjacent failure; trochoidLoop's lattice-sensitivity and streak-shape checks also fail (2 of the 8 in f1b-streaks), but far more mildly. onePenDown: 0 failures in either file.",
+      "interlockWeave_numbers": {
+        "ringFillRate": "0.99688 (pre) -> 0.93632 (post), bar is >=0.995",
+        "ringNotInkMm2": "2.059 (pre) -> 38.948 (post), bar is <3",
+        "degenerate": "0 (pre) -> 1 (post)",
+        "erodeEmpty": "0 (pre) -> 1 (post)"
+      },
+      "trochoidLoop_numbers": {
+        "ringFillRate": "0.99751 (pre) -> 0.99627 (post), bar is >=0.995 (fails narrowly)",
+        "ringNotInkMm2": "1.710 (pre) -> 2.469 (post), bar is <3 (still passes)",
+        "degenerate": "0 (pre) -> 0 (post), no erosion failure here — this is a milder, different-mechanism dip"
+      },
+      "root_cause_traced": "surface-fill.js's ribbonize(), the erode()-then-fill path (~:7208-7228): under Prototype B, one CLS_RIBBON stretch's erosion produces an empty outline+fill multipolygon (a pre-existing FillBoolean/insetMultiPolygon robustness gap the plan's §9 already named, exposed here by B's changed geometry, NOT introduced by it). The code's own `if (!any) { ribbonRefuse('erodeEmpty'); outp.push(centrePass(st.a, st.b)); return; }` fallback IS taken — it does not leave a total void, it substitutes a bare single-pen centreline for that one stretch's usual full-width ribbon fill.",
+      "visual_confirmation": "Built a direct document-space PNG reconstruction of the ring polygons (blue), final ink (white), and uncovered cells (red) from the exact grid tests/helpers/scene3d-ring-coverage.js computes, for both the true pre-fix scratch export and the post-fix worktree. Pre-fix: clean zigzag pattern, ~5 stray red flecks (366 uncovered cells total). Post-fix: same pattern EXCEPT one ~25-30mm run of the family (2 clusters, 18.75mm2 + 17.65mm2 = 36.4mm2, together 99% of interlockWeave's 36.64mm2 reachable residue) renders as a THIN CENTRELINE (visible as a thin white zigzag line inside the red/uncovered overlay) instead of the neighboring stretches' full wide-ribbon fill.",
+      "relationship_to_condition_2": "This thinned stretch is very likely the SAME event as condition 2's own already-disclosed 39.81mm2 restated-bar cluster for interlockWeave (close in magnitude — 39.81 vs 38.95mm2 — and in document-space location, both ~x137-165/y71-98mm on this fixture). If so, this is not a SEPARATE undisclosed catastrophe — it is the already-priced-in condition-2 trade-off (Prototype B trades depth for area), just also visible through TWO OLDER guard files whose bars (ringFillRate>=0.995, ringNotInkMm2<3) were never re-pinned to accommodate that trade-off. Could not prove the two are the literal same polygon within this unit's budget.",
+      "disposition": "tests/unit/scene3d-ribbon-f1b-streaks.test.js and tests/unit/scene3d-ribbon-wall-coverage.test.js are OUTSIDE F1-placement's allowed-file scope (only tests/unit/scene3d-ribbon-flat-field-placement.test.js, the new oracle file, is allowed) — this implementer did not and could not re-pin their bars, per the 'do NOT try to fix it — outside your allowed files' instruction. Flagging for the orchestrator: either (a) grant scope to re-pin these two files' interlockWeave bars to match condition 2's already-ruled trade-off, or (b) rule that shipping Prototype B despite this fallout is/isn't acceptable as-is. This is the blocking item keeping this unit at MEASURED rather than DONE."
     }
   }
 }

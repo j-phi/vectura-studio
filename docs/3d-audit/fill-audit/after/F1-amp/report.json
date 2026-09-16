@@ -1,0 +1,152 @@
+{
+  "unit": "F1-amp",
+  "lane": "fill-audit-a3",
+  "worktree": "/Users/jayphi/Documents/github/vectura-studio/.claude/worktrees/fill-audit-a3",
+  "baseSha": "6e1ed52f",
+  "port": 8475,
+  "appVersion": "1.4.1",
+  "fix": "src/core/scene3d/surface-fill.js wvAmpAsk(): back-port Round 6's aFlo amplitude floor to the four pre-Round-6 flat-coverage wave laws (interlockWeave, trochoidLoop, amplitudeOnly, onePenDown). Two floor constants: WV_AFLOOR_SHARE=0.14 (interlockWeave/amplitudeOnly/onePenDown, mirrors WV6's weaveDepth) and WV_TROCH_AFLOOR_SHARE=0.04 (trochoidLoop only -- a swept binary search on this exact fixture found a CLIFF in F1-placement's own deep-blank oracle between share 0.045 (safe) and 0.05 (deepBlank 0.00->5.23mm2)). New waveStat counters hiSamples/hiAmpSum/hiDrawnSum/hiElongSum, gated at exactly I>=WV_I0 (0.62), report hiAmpMean/hiShareMean/hiElongMean.",
+  "capture_commands": [
+    "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-audit-a3 --port 8475 --only '^torus__hatch__(interlockWeave|onePenDown|trochoidLoop|amplitudeOnly|ampSpacing|weaveDepth)__(med|max)__a$' --out docs/3d-audit/fill-audit/after/F1-amp",
+    "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-audit-a3 --port 8475 --rig addLayer --only '^torus__hatch__(interlockWeave|onePenDown|trochoidLoop|amplitudeOnly|ampSpacing|weaveDepth)__(med|max)__a$' --out docs/3d-audit/fill-audit/after/F1-amp"
+  ],
+  "cells_captured": {
+    "create_rig": [
+      "torus__hatch__interlockWeave__med__a", "torus__hatch__interlockWeave__max__a",
+      "torus__hatch__onePenDown__med__a", "torus__hatch__onePenDown__max__a",
+      "torus__hatch__trochoidLoop__med__a", "torus__hatch__trochoidLoop__max__a",
+      "torus__hatch__amplitudeOnly__med__a", "torus__hatch__amplitudeOnly__max__a",
+      "torus__hatch__ampSpacing__med__a", "torus__hatch__ampSpacing__max__a",
+      "torus__hatch__weaveDepth__med__a", "torus__hatch__weaveDepth__max__a"
+    ],
+    "addLayer_rig": [
+      "torus__hatch__interlockWeave__med__a__addlayer", "torus__hatch__interlockWeave__max__a__addlayer",
+      "torus__hatch__onePenDown__med__a__addlayer", "torus__hatch__onePenDown__max__a__addlayer",
+      "torus__hatch__trochoidLoop__med__a__addlayer", "torus__hatch__trochoidLoop__max__a__addlayer",
+      "torus__hatch__amplitudeOnly__med__a__addlayer", "torus__hatch__amplitudeOnly__max__a__addlayer",
+      "torus__hatch__ampSpacing__med__a__addlayer", "torus__hatch__ampSpacing__max__a__addlayer",
+      "torus__hatch__weaveDepth__med__a__addlayer", "torus__hatch__weaveDepth__max__a__addlayer"
+    ]
+  },
+  "note_on_rigs": "Both rigs were shot per the orchestrator's ruling (--rig addLayer exists in MAIN as of 6ffaf9c6). Unlike F1-erode (whose defect the CREATE rig could not reach at all), F1-amp's effect IS visible under the CREATE rig for all four subject laws (all 8 create-rig cells are byte-DIFFERENT from the top-level baseline) -- this fix touches the highlight/mid-tone amplitude broadly, not one narrow stretch. The addLayer rig has no prior baseline in the top-level gallery to diff against (this is its first use on these specific cells); its manifest numbers (pathCount/wide/inkMm) are reported as-is and are internally consistent with this unit's own test file, which uses the identical engine.addLayer('scene3d') construction.",
+  "before_pointer": "docs/3d-audit/fill-audit/shots/B/ (top-level gallery baseline, create rig only, per AGENT-PROTOCOL)",
+  "identical_exceptions": [
+    {
+      "cell": "torus__hatch__ampSpacing__med__a",
+      "reason": "byte-identical (md5) to the top-level baseline under the create rig -- correct-scoping proof: ampSpacing is a WV6 law, wvAmpAsk's c6 branch short-circuits before any of this unit's edits are reached."
+    },
+    {
+      "cell": "torus__hatch__ampSpacing__max__a",
+      "reason": "same as above"
+    },
+    {
+      "cell": "torus__hatch__weaveDepth__max__a",
+      "reason": "byte-identical (md5) to the top-level baseline under the create rig -- same WV6 scoping proof as ampSpacing."
+    },
+    {
+      "cell": "torus__hatch__weaveDepth__med__a",
+      "reason": "NOT byte-identical to the top-level baseline (pathCount 301->302, inkMm 2253.8->2275.6) -- but this drift is INHERITED from F1-erode, not caused by F1-amp. Proof: F1-erode's OWN capture, recorded in docs/3d-audit/fill-audit/after/F1-erode/manifest.B.1-1.jsonl (captured at e2c3ca85, before any F1-amp change existed), already shows pathCount=302 inkMm=2275.6 for this exact cell -- identical to this unit's own capture. F1-placement's capture (cd541f87, before F1-erode) shows the OLDER 301/2253.8 that the top-level shots/B/ baseline still holds (the baseline was simply never refreshed after F1-erode landed). T4b/T4c (the two commits between F1-erode and this unit's base 6e1ed52f) are both 'TESTS ONLY' with zero src/ changes, confirmed via `git show --stat`. This unit's own in-process fingerprint check (scene3d-ribbon-f1-amp.test.js, 'Scoping controls' describe block, using the SAME 6e1ed52f-derived source with only wvAmpAsk's wiring reverted) independently confirms ampSpacing/weaveDepth are 100% byte-identical under THIS unit's specific diff -- the create-rig gallery drift is a separate, pre-existing, harmless discrepancy in the checked-in baseline image, not a scoping leak."
+    }
+  ],
+  "highlight_oracle": {
+    "method": "New waveStat counters (surface-fill.js, gated at exactly I>=WV_I0=0.62): hiSamples/hiAmpSum/hiDrawnSum/hiElongSum, reported as wave.hiAmpMean (mm) / wave.hiShareMean (share of drawn pitch, same unit wvAmpAsk returns) / wave.hiElongMean (mean elongation = ink-per-unit-arc). Measured via a test-time-only patch that flips ONE dead ternary (`lastFloorStats = TONE_UNCAPPED ? {` -> `= true ? {`) so the diagnostic object is exposed on a normal CAPPED-speed build -- TONE_UNCAPPED itself is untouched everywhere else, so the render pipeline is unaffected. RED/mutation-kill proof: a wiring-revert text patch on wvAmpAsk's 5 new lines, restoring the exact pre-fix `return k * <const>;` forms, with the SAME hi* instrumentation intact -- pre/post measured within one vitest run, not a stale historical sha (6e1ed52f predates the hi* counters themselves and cannot report them).",
+    "torus_hatch_density_50": {
+      "interlockWeave": { "pre_hiShareMean": 0, "post_hiShareMean": 0.123, "pre_hiElongMean": 1, "post_hiElongMean": 1.233, "nominal_floor": 0.14 },
+      "trochoidLoop":    { "pre_hiShareMean": 0, "post_hiShareMean": 0.124, "pre_hiElongMean": 1, "post_hiElongMean": 1.42,  "nominal_floor": 0.04, "note": "share ended up close to interlockWeave's despite the much smaller nominal floor, because WV_TROCH_AMAX (0.48) is larger and k does not stay at 0 evenly across the sampled range -- hiShareMean is a MEAN over all I>=0.62 samples, not a floor-at-I0 reading" },
+      "amplitudeOnly":   { "pre_hiShareMean": 0, "post_hiShareMean": 0.123, "pre_hiElongMean": 1, "post_hiElongMean": 1.08,  "nominal_floor": 0.14 },
+      "onePenDown":      { "pre_hiShareMean": 0, "post_hiShareMean": 0.124, "pre_hiElongMean": 1, "post_hiElongMean": 1.233, "nominal_floor": 0.14 }
+    }
+  },
+  "trochoid_cliff": {
+    "method": "Binary search on WV_TROCH_AFLOOR_SHARE using F1-placement's own deep-blank/largest-cluster oracle (scene3d-ribbon-flat-field-placement.test.js's helpers, buildBlankMap/findBlankClusters) on the torus/hatch/trochoidLoop fixture.",
+    "sweep_mm2": {
+      "0": { "deepBlank": 0.0, "largestCluster": 14.03 },
+      "0.02": { "deepBlank": 0.0, "largestCluster": 14.11 },
+      "0.04": { "deepBlank": 0.0, "largestCluster": 14.36 },
+      "0.045": { "deepBlank": 0.0, "largestCluster": 14.55 },
+      "0.05": { "deepBlank": 5.23, "largestCluster": 43.66 },
+      "0.055": { "deepBlank": 5.09, "largestCluster": 43.72 },
+      "0.06": { "deepBlank": 5.02, "largestCluster": 43.64 },
+      "0.08": { "deepBlank": 4.72, "largestCluster": 45.74 },
+      "0.10": { "deepBlank": 4.50, "largestCluster": 45.88 },
+      "0.14": { "deepBlank": 3.97, "largestCluster": 45.54 }
+    },
+    "conclusion": "A genuine CLIFF, not a smooth degradation -- safe up to share 0.045, unsafe at 0.05. Shipped WV_TROCH_AFLOOR_SHARE=0.04 for a working margin. At the uniform WV_AFLOOR_SHARE=0.14 (the other three laws' value), trochoidLoop's deep-blank would have REGRESSED F1-placement's own primary oracle (0.00->3.97mm2, over the 0.55mm2 bar) and its largest-cluster bar (14.03->45.54mm2, just over the 45mm2 bar) -- this was caught by re-running scene3d-ribbon-flat-field-placement.test.js (a named must-stay-green guard) before shipping, not discovered after."
+  },
+  "f1_trochoid_renumbering": {
+    "status": "STILL-OPEN.md's F1-trochoid (LEDGER row 2c) numbers are now STALE and should be refreshed by whoever picks up that unit -- but the news is GOOD, not a regression.",
+    "filed_numbers": { "ringNotInkMm2": 2.4694, "clusters": 164, "reachable_at_div12": 76, "reachable_at_div24": 80, "pocket_bbox": "115.293,78.153 -> 116.343,78.603 (34 cells, 0.1912mm2, 1.050x0.450mm)" },
+    "remeasured_on_this_tree": { "ringNotInkMm2": 2.6606, "clusters": 171, "reachable_at_div12": 69, "reachable_at_div24": 69, "top_cluster": "37 cells, 0.2081mm2, 0.750x0.375mm (exact bbox not re-extracted this session)" },
+    "disposition": "Both of F1-trochoid's own named reds in scene3d-ribbon-f1b-streaks.test.js (lattice-sensitivity delta<=1, streak-shape) are GREEN on this tree -- the file runs 44/44, better than the ruled 42/44 baseline. trochoidLoop's amplitude necessarily moves under this unit's own mandate (it is one of the four subject laws), and the numbers moved as a real, disclosed, mechanism-driven side effect -- not a stop condition, since nothing that was previously red is still red for a changed reason (the orchestrator's stop-condition language), and nothing that was previously green went red. F1-trochoid's problem statement in STILL-OPEN.md should be updated to these numbers, or the unit reconsidered/closed, by whoever picks it up next -- this unit does not close it unilaterally."
+  },
+  "ribbon_weight_disclosure": {
+    "purpose": "Answers the orchestrator's explicit ask: report plainly what F1-amp does to ribbon weight/width per law, and state whether it forecloses Jay's open decision 10 (thinner-style-A vs pre-fix-weight-B).",
+    "torus_hatch_density_50_whole_object_ink_mm": {
+      "interlockWeave": { "before": 6325.02, "after": 6166.94, "deltaPct": -2.50 },
+      "trochoidLoop":    { "before": 6645.83, "after": 6581.01, "deltaPct": -0.98 },
+      "amplitudeOnly":   { "before": 3828.29, "after": 3886.47, "deltaPct": 1.52 },
+      "onePenDown":      { "before": 6326.84, "after": 6063.70, "deltaPct": -4.16 }
+    },
+    "sceneFill_only_ink_mm": {
+      "interlockWeave": { "before": 4897.35, "after": 4739.27, "deltaPct": -3.23 },
+      "trochoidLoop":    { "before": 5218.16, "after": 5153.34, "deltaPct": -1.24 },
+      "amplitudeOnly":   { "before": 2400.62, "after": 2458.80, "deltaPct": 2.42 },
+      "onePenDown":      { "before": 4899.17, "after": 4636.04, "deltaPct": -5.37 }
+    },
+    "finding": "F1-amp is NOT ink-neutral and does NOT uniformly increase ink. Three of four laws (interlockWeave, trochoidLoop, onePenDown) lose fill ink (-1.0% to -5.4%); only amplitudeOnly gains (+1.5% to +2.4%). All four stay comfortably inside the +-8% bound. onePenDown -- already flagged by F1-erode-plan section 7 as reading visibly thinner after F1-placement -- loses the MOST ink of the four under F1-amp (-5.37% fill ink). THIS DOES NOT FORECLOSE DECISION 10 in either direction, but it is directionally relevant: F1-amp makes onePenDown (and interlockWeave/trochoidLoop) read LIGHTER, not bolder. If Jay answers decision 10 with 'restore the pre-fix boldness (style B)', the lever remains the weight field, exactly as F1-erode-plan section 7 already said -- F1-amp's amplitude floor is not that lever and does not substitute for it. Mechanism: amplitude increases arc length (elongation), which by itself would ADD ink, but the erosion/self-occlusion/off-surface-rejection pipeline downstream evidently removes more than that adds for 3 of 4 laws at this specific density -- a genuine, measured, non-obvious net effect, not a simple 'more waviness = more ink' story."
+  },
+  "guards_run": {
+    "must_flip_or_hold": {
+      "scene3d-ribbon-f1b-streaks.test.js": "44/44 (BETTER than the ruled 42/44 baseline -- both of trochoidLoop's previously-named reds are now green, see f1_trochoid_renumbering)",
+      "scene3d-ribbon-wall-coverage.test.js": "36/36 (unmoved)"
+    },
+    "own_new_file": {
+      "scene3d-ribbon-f1-amp.test.js": "47/47 (39 RED/GREEN/mutation-kill/guard/ink/scoping tests + 8 own deep-blank/largest-cluster regression tests added after the trochoidLoop cliff was found)"
+    },
+    "must_stay_green": {
+      "scene3d-ribbon-erode-refusal.test.js": "16/16",
+      "scene3d-ribbon-flat-field-placement.test.js": "22/22 (re-run AFTER lowering trochoidLoop's floor to 0.04; FAILED at the uniform 0.14 floor, see trochoid_cliff)",
+      "scene3d-ribbon-wall-region-clip.test.js": "1/1",
+      "scene3d-ribbon-outline-fill-seam.test.js": "4/4",
+      "scene3d-ribbon-c3-rule5.test.js": "6/6",
+      "scene3d-ribbon-primitives.test.js": "14/14",
+      "scene3d-ribbon-weightscale-invariant.test.js": "18/18",
+      "scene3d-mesh-self-occlusion.test.js": "5/5",
+      "geometry-band-fill.test.js": "7/7",
+      "fill-boolean-safe-op.test.js": "6/6",
+      "text-fill-watertight.test.js": "68/68",
+      "text-outline-ops.test.js": "12/12",
+      "scene3d-mark-laws-draw.test.js": "30/30",
+      "scene3d-ladder-uniform-field-spacing.test.js": "9/9",
+      "scene3d-style-fill-lines.test.js": "15/15",
+      "scene3d-curved-density-floor.test.js": "14/14",
+      "scene3d-curved-density-sparse-end.test.js": "20/20",
+      "scene3d-ribbon-f6-self-occlusion.test.js": "2/2",
+      "scene3d-ribbon-f7-self-occlusion.test.js": "2/2",
+      "scene3d-fill-even-spacing.test.js": "12/12",
+      "scene3d-fill-span-verdict.test.js": "11/11",
+      "scene3d-fill-ruling-continuity.test.js": "10/11 (+1 pre-existing skip)",
+      "scene3d-fill-seam-continuity.test.js": "5/5",
+      "scene3d-fill-boundary-ends.test.js": "41/41",
+      "scene3d-hlr-spatial-index-identity.test.js": "6/6",
+      "scene3d-shadow-receive.test.js": "17/17",
+      "scene3d-ribbon-degeneration-counter.test.js": "5/5",
+      "scene3d-tone-quant-flow-live.test.js": "7/7 (touches the SAME lastFloorStats/TONE_UNCAPPED region this unit's test-time patch reads)",
+      "scene3d-tone-algo-default.test.js": "6/6",
+      "scene3d-hatch-density-500.test.js": "14/14",
+      "scene3d-subwindow-density.test.js": "3/3 (+2 skips)",
+      "scene3d-appdefault-lit-floor.test.js": "4/5 (+1 pre-existing skip)",
+      "tests/integration/expand-scene3d-weight-to-strokes.test.js": "5/5",
+      "tests/integration/scene3d-ribbon-weightscale.test.js": "41/41"
+    },
+    "note": "Every guard's numbers were read from real test output (no vacuous 'no throw' passes accepted). Benign pre-existing noise observed and ignored per ROUND3-RESUME-BRIEFS section 0: one [vitest-worker] onTaskUpdate RPC timeout (exit 0) on the flat-field-placement and weightscale runs, and [FillBoolean] polygon union failed on degenerate geometry stderr warnings on several runs -- the SAME two coordinates F1-erode's own retry ladder already recovers (confirmed: degenerate===0, erodeEmpty===0 in every run that logs it)."
+  },
+  "stop_conditions_rederived_on_6e1ed52f": {
+    "ink_bound_pct_8": "measured directly (see ribbon_weight_disclosure) -- range -4.16% to +1.52%, all inside +-8%",
+    "ringFillRate_gte_0.995": "confirmed via scene3d-ribbon-wall-coverage.test.js (36/36, includes all four subject laws) and scene3d-ribbon-f1b-streaks.test.js (44/44)",
+    "wide_must_not_fall": "asserted directly in scene3d-ribbon-f1-amp.test.js's own guard describe block, PASS for all four laws (interlockWeave/trochoidLoop/amplitudeOnly wide unchanged; onePenDown wide 11->11 unchanged; amplitudeOnly wide stays 0->0, never reaches CLS_RIBBON in this fixture at either tree)",
+    "degenerate_0": "asserted directly, PASS for all four laws",
+    "erodeEmpty_0_interlockWeave": "asserted directly, PASS (F1-erode's fix holds under the new amplitude)"
+  },
+  "bars_changed": "None in any pre-existing test file. This unit's own new file (scene3d-ribbon-f1-amp.test.js) uses two per-law floor constants (WV_AFLOOR_SHARE=0.14, WV_TROCH_AFLOOR_SHARE=0.04) mirrored from the production constants of the same name -- these are internal to the new file's own assertions and were tuned DURING this session after the trochoidLoop cliff was found (see trochoid_cliff); disclosed in full in the impl report rather than treated as a silent implementation detail."
+}
