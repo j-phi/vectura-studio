@@ -40,12 +40,17 @@
  *
  * IDENTITY PROOF (this unit's own job): does the jsdom `create`-rig
  * construction above match a REAL browser page running the SAME
- * construction, on the SAME tree? `scripts/audit/scene3d-ribbon-width-
- * create-rig-identity.js` answers this for all four laws at `81925ee8`:
- * IDENTICAL path counts (282/278/138/229) on every law, but a DIFFERENT md5
- * -- because md5 is sensitive to cross-engine float64 last-ULP noise that a
- * geometric-equivalence check is not. A point-by-point max-coordinate-delta
- * diff (no rounding) found 5.12e-13mm / 8.53e-14mm / 2.84e-14mm / 2.27e-13mm
+ * construction, on the SAME tree? Verified with a one-off probe script (run
+ * against `81925ee8`, NOT committed here -- it drove MAIN's own
+ * `ensureServer`/`openPage`/`getConstants` from `scene3d-capture.js` against
+ * a real headless Chromium page and diffed its `g.scenePaths` against this
+ * helper's own jsdom output; full method + numbers are in
+ * `docs/3d-audit/lane-reports/F1-width-bar-b-impl.md` rather than kept as a
+ * second script in a MAIN-owned directory). Result, all four laws: IDENTICAL
+ * path counts (282/278/138/229) on every law, but a DIFFERENT md5 -- because
+ * md5 is sensitive to cross-engine float64 last-ULP noise that a geometric-
+ * equivalence check is not. A point-by-point max-coordinate-delta diff (no
+ * rounding) found 5.12e-13mm / 8.53e-14mm / 2.84e-14mm / 2.27e-13mm
  * (interlockWeave/trochoidLoop/onePenDown/amplitudeOnly) -- 12-13 orders of
  * magnitude below the 0.3mm pen this whole file measures in. MD5 CANNOT
  * MATCH ON THIS PAIR OF ENGINES BY CONSTRUCTION (jsdom's `vm`-hosted V8 vs a
@@ -53,8 +58,7 @@
  * slightly different last bits across ~280 paths' worth of coordinates --
  * ANY single 1-ULP difference anywhere changes the hash), but GEOMETRIC
  * EQUIVALENCE is proven to 12+ significant decimal digits, on all four laws,
- * both structurally (identical path/point counts) and numerically. Full
- * numbers: `docs/3d-audit/lane-reports/F1-width-bar-b-impl.md`.
+ * both structurally (identical path/point counts) and numerically.
  *
  * WHICH LAWS GET A FLOOR, AND WHY (measured, not assumed -- see the MEASURED
  * table below for the actual numbers):
