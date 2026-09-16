@@ -188,6 +188,64 @@ describe('Scene3D.Shadows — shadowToneLaw (Fill Style on shadow hatch)', () =>
     expect(JSON.stringify(sPaths(withDefault))).toBe(JSON.stringify(sPaths(explicitLadder)));
   });
 
+  // U6 (C-06/W-18a, docs/3d-audit/lane-reports/W-22-24-W-18-plan.md §1
+  // "C-06 -> U6"). `penStipple`'s mark class moved from 'dot' to 'hatch'
+  // (Jay's decision, 2026-09-10) so it could fold into `penInterleave`
+  // without corrupting the §2.4 "mark class is constant within a cluster"
+  // invariant (its three siblings — penInterleave/penPitchMatch/penFacing —
+  // are already 'hatch'). That move is REAL on the shadow path too, not
+  // just the picker: `shadowMarkLines` dispatches on markClass, so
+  // `penStipple` now resolves through `HATCH_LAW_RECIPES` instead of
+  // `DOT_LAW_RECIPES`. Left with no HATCH_LAW_RECIPES entry of its own, it
+  // would silently degrade to the undifferentiated hatch fallback — BYTE-
+  // IDENTICAL to 'ladder' on shadows, exactly the failure mode this file's
+  // own onePenDown comment (src/config/context-bar.js) already names as a
+  // known-bad prior state for a law whose markClass defaults without a
+  // recipe. This unit adds `HATCH_LAW_RECIPES.penStipple` (an end-trimmed
+  // hatch, translating "the fine nib stippling the highlight fade by
+  // shortening its marks" into hatch terms) so it keeps a purpose-built
+  // shadow recipe instead.
+  test('HEADLINE (U6) — shadowToneLaw:"penStipple" (moved to hatch) emits its OWN recipe, not the plain-hatch fallback', () => {
+    const plainLadder = buildShadows({ shadowToneLaw: 'ladder' });
+    const penStipple = buildShadows({ shadowToneLaw: 'penStipple' });
+    expect(sPaths(penStipple).length).toBeGreaterThan(0);
+    expect(geomSignature(penStipple)).not.toBe(geomSignature(plainLadder));
+  });
+
+  test('U6 — shadowToneLaw:"penStipple" markClass is now "hatch", not "dot"', () => {
+    expect(Shadows.toneLawMarkClass('penStipple')).toBe('hatch');
+    expect(Shadows.toneLawApplies('penStipple')).toBe(true);
+  });
+
+  test('U6 — the other three C-06 members (penInterleave/penPitchMatch/penFacing) are unaffected: still hatch, still distinct from plain ladder', () => {
+    const plainLadder = buildShadows({ shadowToneLaw: 'ladder' });
+    ['penInterleave', 'penPitchMatch', 'penFacing'].forEach((law) => {
+      const built = buildShadows({ shadowToneLaw: law });
+      expect(sPaths(built).length).toBeGreaterThan(0);
+      expect(geomSignature(built)).not.toBe(geomSignature(plainLadder));
+    });
+  });
+
+  // U9b (LEDGER.md row 18b item 2/b) — `onePenDown` (U8's fold, into
+  // `interlockWeave`) is the ONE exception to U9's general "folded id keeps
+  // its own recipe" rule: it has NO shadows.js recipe of its own anywhere
+  // (it is also independently a member of `TONE_LAW_NOT_DISTINGUISHABLE` —
+  // see the comment above that Set for the unrelated chart-bridging reason).
+  // Before this unit, a raw `shadowToneLaw:'onePenDown'` fell all the way
+  // through to the undifferentiated plain-hatch fallback — byte-identical
+  // to 'ladder' — via shadows.js's own markClass override for any id
+  // `!toneLawApplies`. params.js's `clampShadowToneLaw` now resolves it
+  // FORWARD to its survivor `interlockWeave` instead, so it draws
+  // `interlockWeave`'s own real, already-verified recipe.
+  test('HEADLINE (U9b) — shadowToneLaw:"onePenDown" (a folded id with no shadow recipe of its own) renders interlockWeave\'s recipe, not the plain-hatch fallback', () => {
+    const plainLadder = buildShadows({ shadowToneLaw: 'ladder' });
+    const interlockWeave = buildShadows({ shadowToneLaw: 'interlockWeave' });
+    const onePenDown = buildShadows({ shadowToneLaw: 'onePenDown' });
+    expect(sPaths(onePenDown).length).toBeGreaterThan(0);
+    expect(geomSignature(onePenDown)).not.toBe(geomSignature(plainLadder));
+    expect(geomSignature(onePenDown)).toBe(geomSignature(interlockWeave));
+  });
+
   describe('Shadows.toneLawApplies — the exported UI-gating predicate', () => {
     test('applicable classes: ref, hatch, cross, wave, dash, dot', () => {
       expect(Shadows.toneLawApplies('none')).toBe(true);       // ref
@@ -322,5 +380,46 @@ describe('Scene3D.Params — shadowToneLaw whitelist', () => {
   test('round-trips through the full normalizeParams -> object.shadow chain', () => {
     const p = Params.normalizeParams({ objects: [{ primitive: 'box' }], shadow: { shadowToneLaw: 'mkTick' } });
     expect(p.shadow.shadowToneLaw).toBe('mkTick');
+  });
+
+  // U9b — the one documented exception to "a FOLDED id survives normalization
+  // unchanged" above: `onePenDown` resolves FORWARD to its survivor
+  // `interlockWeave`. This bare `require()` process loads no `Shadows`
+  // module at all (no `Vectura.Scene3D`), so — like the "U9 — a FOLDED id"
+  // test above — both the roster AND a minimal `Shadows.toneLawApplies`
+  // stub must be synthesized for this branch of `clampShadowToneLaw` to
+  // exercise at all; without the `Shadows` stub the guard silently falls
+  // back to plain pass-through (verified: this is exactly what a REAL
+  // integration/unit test running inside a full loadVecturaRuntime() proves
+  // instead — see scene3d-shadow-tone-law-uniqueness.test.js's own
+  // "onePenDown (U9b)" test and this file's "HEADLINE (U9b)" test above,
+  // both of which run against the REAL roster + REAL Shadows module).
+  test('U9b — the ONE exception: "onePenDown" resolves to its survivor "interlockWeave", not passed through raw', () => {
+    const globalScope = typeof window !== 'undefined' ? window : globalThis;
+    const priorRoster = globalScope.Vectura.SCENE3D_TONE_LAWS;
+    const priorScene3D = globalScope.Vectura.Scene3D;
+    globalScope.Vectura.SCENE3D_TONE_LAWS = {
+      IDS: ['ladder', 'interlockWeave', 'onePenDown', 'fineLadder'],
+      DEFAULT: 'ladder',
+      ALIASES: {
+        onePenDown: { into: 'interlockWeave', params: { penDown: 'continuous' } },
+        fineLadder: { into: 'ladder', params: { rungMode: 'fine' } },
+      },
+    };
+    globalScope.Vectura.Scene3D = {
+      ...priorScene3D,
+      Shadows: { toneLawApplies: (id) => id !== 'onePenDown' },
+    };
+    try {
+      expect(shadowOf({ shadowToneLaw: 'onePenDown' }).shadowToneLaw).toBe('interlockWeave');
+      // Sanity: its survivor itself, and an ordinary non-folded id, still
+      // pass straight through — a narrow, single-id exception, not a
+      // regression to the pre-U9 collapse-everything behaviour.
+      expect(shadowOf({ shadowToneLaw: 'interlockWeave' }).shadowToneLaw).toBe('interlockWeave');
+      expect(shadowOf({ shadowToneLaw: 'fineLadder' }).shadowToneLaw).toBe('fineLadder');
+    } finally {
+      globalScope.Vectura.SCENE3D_TONE_LAWS = priorRoster;
+      globalScope.Vectura.Scene3D = priorScene3D;
+    }
   });
 });

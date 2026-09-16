@@ -3263,14 +3263,46 @@
         // the Style tab's row, holding this law's mechanism/strengths/
         // weaknesses. SHADOW_NOTE (flow/web unavailable here) stays its own
         // always-visible line below, unchanged.
-        const shadowLawEntry = FS.entry(law) || {};
-        const shadowLawNote = FS.note(law);
+        //
+        // U9b / W-10d-3b — the (i)/caveat read the id `FS.shadowDisplayLaw`
+        // resolves, NOT the bare survivor `law` used for the select's own
+        // value: a raw stored folded id (`fineLadder`, …) with its own
+        // distinguishable shadows.js recipe must show ITS OWN entry/caveat,
+        // not the survivor's. The <select> itself stays on `law` — the
+        // survivor is the only option the dropdown actually offers.
+        const shadowInfoLaw = FS.shadowDisplayLaw ? FS.shadowDisplayLaw(s.shadowToneLaw, law) : law;
+        const shadowLawEntry = FS.entry(shadowInfoLaw) || {};
+        const shadowLawNote = FS.note(shadowInfoLaw);
         buildLawInfoAffordance(lawRow, [
           { text: shadowLawNote.text },
           { text: shadowLawEntry.mechanism ? `How: ${shadowLawEntry.mechanism}` : '' },
           { text: shadowLawEntry.strengths ? `Strengths: ${shadowLawEntry.strengths}` : '' },
           { text: shadowLawEntry.weaknesses ? `Weaknesses: ${shadowLawEntry.weaknesses}` : '' },
         ], `About ${shadowLawEntry.label || FS.LABEL}`);
+        // U5b-4 — the standalone caveat paragraph, mirroring the Style row's
+        // own pattern (`fillStyleControls` above, `effectiveLaw`/`caveatNote`)
+        // exactly. Before this, `shadowLawNote.caveat` was computed above (as
+        // part of `shadowLawNote.text`'s prefix) but only ever reached the (i)
+        // popover — a user had to open it and read past mechanism/strengths
+        // to "Weaknesses:" to see a caveat-bearing shadow law's warning at
+        // all (U7-2's live-verification finding, LEDGER row 11a). The shadow
+        // bag has NO sub-control (U9's reviewer forbids giving it one — "two
+        // mechanisms, not one path"), so `FS.effectiveLaw(shadowInfoLaw, {})`
+        // is a provable no-op today (no descriptor's key can ever be found in
+        // an empty bag) — this reads `shadowInfoLaw`, already resolved above
+        // for the (i) popover, through the SAME mechanism the Style row uses,
+        // so a future shadow-side sub-control (should one ever exist) is
+        // handled correctly with zero further change here. This is a caveat
+        // PARAGRAPH, not a param seed: nothing is written to `s`/the shadow
+        // bag.
+        const shadowEffectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(shadowInfoLaw, {}) : shadowInfoLaw;
+        const shadowCaveatNote = FS.note(shadowEffectiveLaw);
+        if (shadowCaveatNote.caveat) {
+          const shadowCaveatLine = document.createElement('p');
+          shadowCaveatLine.className = 'vs3-lawnote is-caveat';
+          shadowCaveatLine.textContent = shadowCaveatNote.caveat;
+          host.appendChild(shadowCaveatLine);
+        }
         if (FS.SHADOW_NOTE) {
           const note = document.createElement('p');
           note.className = 'vs3-empty';

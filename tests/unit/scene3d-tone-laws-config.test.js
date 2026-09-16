@@ -108,18 +108,19 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
   // above stay untouched forever — this is a picker-tier cut, not an
   // engine-vocabulary change.
   test('PICKER_IDS/ALIASES: cumulative collapse state (bumped by every unit, U1 through U8) — every alias resolvable', () => {
-    // Current state after U7 (C-07, ampSpacing/nesting): 34 survivors, 14
-    // aliases (U1's 3 + U2's 2 + U3's 1 + U4's 3 + U5's 4 + U7's 1;
-    // U6/`penStipple` is FROZEN-ON-JAY and has not run — U7 landed out of
-    // the plan's literal U6-then-U7 order because U6 is blocked on a
-    // product decision, not a file collision). Bump this pair (and the id
-    // list below) at U6/U8; paste the before/after in the unit's commit
-    // body.
-    const EXPECTED_PICKER_IDS_LENGTH = 33;
+    // Current state after U6 (C-06/W-18a, penInterleave/penMode — the
+    // FROZEN-ON-JAY cluster, unblocked 2026-09-10 by Jay's decision to move
+    // penStipple's mark class 'dot' -> 'hatch' and fold it): 30 survivors,
+    // 18 aliases (U1's 3 + U2's 2 + U3's 1 + U4's 3 + U5's 4 + U7's 1 +
+    // U8's 1 + U6's 3: penPitchMatch/penFacing/penStipple). U7/U8 landed out
+    // of the plan's literal U6-then-U7-then-U8 order because U6 was blocked
+    // on a product decision, not a file collision.
+    const EXPECTED_PICKER_IDS_LENGTH = 30;
     const EXPECTED_ALIAS_IDS = [
       'fineLadder', 'phaseFineLadder', 'perceptualRamp', 'whiteBand', 'nibAngle', 'weightSmoothstep',
       'bundleEased', 'bundleDither', 'bundleHandoff', 'contFieldFore', 'contFieldSurface',
       'contFieldQuant', 'contFieldTouch', 'weaveDepth', 'onePenDown',
+      'penPitchMatch', 'penFacing', 'penStipple',
     ];
 
     expect(Array.isArray(LAWS.PICKER_IDS)).toBe(true);

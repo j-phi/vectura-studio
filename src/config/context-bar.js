@@ -131,6 +131,17 @@
     contFieldSigmoid: 'hatch', contFieldTouch: 'hatch', contFieldFore: 'hatch',
     contFieldSurface: 'hatch', contFieldQuant: 'hatch',
     penInterleave: 'hatch', penPitchMatch: 'hatch', penFacing: 'hatch',
+    // penStipple (C-06/U6, JAY'S DECISION 2026-09-10, §4 decision 2 -> A):
+    // moved here from 'dot' — its own measured mechanism ("Broad ruled
+    // darks, medium hatch through the mids, and the fine nib stippling the
+    // highlight fade by shortening its marks") is a hatch, not the drawn
+    // dots the old grouping implied, and it is now folded into penInterleave
+    // as penMode:'stipple' (§2.4 invariant: mark class must be constant
+    // across a collapse cluster, and its three siblings above are already
+    // 'hatch'). The move is real on the SHADOW path too, not just the
+    // picker: shadows.js `shadowMarkLines` now resolves it through
+    // HATCH_LAW_RECIPES.penStipple instead of DOT_LAW_RECIPES.penStipple.
+    penStipple: 'hatch',
     endShorten: 'hatch',
     // penCross draws medium x broad CROSSHATCH in the darks; penReserve cuts
     // white reserves TRANSVERSE to the ruling and hatches inside them. Both
@@ -155,7 +166,7 @@
     // fall back to plain hatch, byte-identical to ladder on shadows).
     onePenDown: 'wave',
     mkTick: 'dash', mkDashRamp: 'dash', dutyConst: 'dash',
-    mkDotScreen: 'dot', lozengeStipple: 'dot', penStipple: 'dot',
+    mkDotScreen: 'dot', lozengeStipple: 'dot',
     voronoiWeb: 'web', mazeFill: 'web', originSpiral: 'web', deepFillTSP: 'web',
     turingStripe: 'web',
   };
@@ -319,6 +330,41 @@
     const out = { ...bag };
     Object.keys(seed).forEach((k) => { if (out[k] === undefined) out[k] = seed[k]; });
     return out;
+  };
+  // U9b / W-10d-3b — the shadow row's ONE-KEY-bag analog of `displayParams`
+  // above. `shadow.shadowToneLaw` has no sub-control field at all (U9's own
+  // ruling: "two mechanisms, not one path" — giving it `displayParams`'s
+  // two-key shape is exactly what that reviewer forbids), so there is no
+  // sibling param to seed. What WAS still wrong: the row's (i) info popover
+  // and caveat always read `FS.entry(FS.resolve(rawValue))` — the RESOLVED
+  // SURVIVOR's own entry — even when `rawValue` is a raw folded id
+  // (`fineLadder`, `bundleDither`, …) whose shadows.js recipe is genuinely
+  // its own, distinct from the survivor's (see params.js
+  // `clampShadowToneLaw`, which keeps these raw for exactly that reason). A
+  // stored `fineLadder` therefore showed "Ladder"'s mechanism/caveat text,
+  // never Fine Ladder's own — a one-key display lie, the shadow-side twin of
+  // W-10d-3's style-row sub-control lie.
+  //
+  // Resolves the id whose `entry()`/`note()` the row's (i)/caveat should
+  // actually read: the raw id itself when it is a real roster member AND
+  // `Shadows.toneLawApplies` says it draws its OWN distinguishable geometry
+  // there; otherwise the already-resolved survivor. This naturally covers
+  // `onePenDown` too, with no special case needed: post-U9b,
+  // `clampShadowToneLaw` resolves a raw `onePenDown` FORWARD to
+  // `interlockWeave` because shadows.js judges it NOT DISTINGUISHABLE there
+  // (no recipe of its own) — `toneLawApplies('onePenDown')` is false, so
+  // this helper falls to the survivor too, and showing `interlockWeave`'s
+  // own entry/caveat for a legacy `onePenDown` document is correct, not a
+  // lie: the shadow render is now byte-identical to `interlockWeave`'s.
+  // Never writes anything — display only, exactly like `displayParams`.
+  SCENE_FILL_STYLES.shadowDisplayLaw = (rawValue, survivorLaw) => {
+    const Shadows = Vectura.Scene3D && Vectura.Scene3D.Shadows;
+    if (typeof rawValue === 'string' && rawValue && Shadows
+        && typeof Shadows.toneLawApplies === 'function'
+        && SCENE_FILL_STYLES.entry(rawValue) && Shadows.toneLawApplies(rawValue)) {
+      return rawValue;
+    }
+    return survivorLaw;
   };
   // [{ group, options: [{ value, label, disabled? }] }] for UI.Select, grouped
   // by MARK CLASS. Every law the roster knows is always offered — all 47 plus

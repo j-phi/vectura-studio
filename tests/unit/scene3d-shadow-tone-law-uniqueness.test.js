@@ -21,6 +21,17 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * fingerprints collide.
  *
  * This test FAILS against the pre-fs-n2 shadows.js (dozens of collisions).
+ *
+ * U9b re-pin (LEDGER.md row 18b item 1) — widened from "one build per
+ * OFFERED law id" to "offered set x each survivor's collapse options": once
+ * U9 (handoff-c2) made the shadow bag a raw pass-through, a folded id never
+ * offered by the picker (e.g. `fineLadder`) became reachable anyway through
+ * an old saved document, and shadows.js draws it its OWN distinct recipe —
+ * a second axis of possible collision the original "offered only" sweep
+ * could never see. See `collapseOptionIds`/`sweepIds` below. `onePenDown` is
+ * the one ALIASES member excluded from both axes (no shadow recipe of its
+ * own — see params.js's `clampShadowToneLaw`) and is pinned instead as a
+ * deliberate, byte-identical duplicate of its survivor in its own test.
  */
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -82,20 +93,10 @@ describe('Scene3D.Shadows — offered Fill Style options render distinct geometr
   //
   // MERGE NOTE (integration, 2026-09-06, fill-collapse U0-U5): the roster
   // split `IDS` (the full 48-id engine vocabulary, needed to load an
-  // old saved document — never shrinks) from `PICKER_IDS` (the 35-id
-  // collapsed list a picker actually offers today; folded ids like
-  // `fineLadder`/`phaseFineLadder`/`perceptualRamp` now live only as
-  // `ALIASES` resolving to a canonical id + a sub-param). Driving `IDS`
-  // directly, as this test used to, bypasses that alias resolution and
-  // asks e.g. `shadowToneLaw: 'fineLadder'` to render with no `rungMode`
-  // override — which collides with plain `ladder`. That is a REAL, known
-  // gap (SESSION-SUMMARY.md's open item U5b: a folded id driven directly by
-  // its old name, rather than through the picker's law+param combo, loses
-  // its distinguishing sub-param) but it is not reachable through either
-  // real UI surface, which both build from `PICKER_IDS` and never offer a
-  // folded id as a standalone option. This guard's job — "no two OFFERED
-  // picker options render the same picture" — is honestly measured only
-  // against what a picker offers.
+  // old saved document — never shrinks) from `PICKER_IDS` (the collapsed
+  // list a picker actually offers today; folded ids like `fineLadder`/
+  // `phaseFineLadder`/`perceptualRamp` now live only as `ALIASES` resolving
+  // to a canonical id + a sub-param).
   const offeredLawIds = () => {
     const roster = V.SCENE3D_TONE_LAWS;
     const pickerIds = roster ? (roster.PICKER_IDS || roster.IDS) : [];
@@ -103,23 +104,82 @@ describe('Scene3D.Shadows — offered Fill Style options render distinct geometr
     return ids.filter((id) => Shadows.toneLawApplies(id));
   };
 
+  // U9b re-pin (LEDGER.md row 18b item 1) — the sweep used to be "one build
+  // per OFFERED law id" only, which was honest exactly as far as it went
+  // ("no two options a picker actually SHOWS collide") but stopped short of
+  // what U9 (handoff-c2, fc8b0fba) then made true: the shadow bag is a RAW
+  // PASS-THROUGH (`params.js clampShadowToneLaw`), so a raw folded id from
+  // an old saved document — never offered as its own picker row, but very
+  // reachable through a `.vectura` file — draws its OWN real shadows.js
+  // recipe, not the survivor's. If two of THOSE collided nobody would ever
+  // catch it: the old sweep never built them at all. This is exactly the
+  // shape U9-2 already used for `shadowPathCount` (a hand-run script proof,
+  // not a committed bar) — the sibling gap here is a COVERAGE gap, not a
+  // numeric one, and this closes it with a real sweep.
+  //
+  // For every offered survivor, gather the folded ids whose `ALIASES.into`
+  // names it AND which shadows.js itself judges capable of drawing its own,
+  // genuinely distinguishable geometry there (`Shadows.toneLawApplies`) —
+  // i.e. every real per-id entry in shadows.js's `*_LAW_RECIPES` tables.
+  // `onePenDown` is the sole ALIASES member `toneLawApplies` excludes (it is
+  // also a member of shadows.js's own `TONE_LAW_NOT_DISTINGUISHABLE` set,
+  // for an unrelated, independent reason — no chart to bridge rulings on a
+  // flat footprint) — it is deliberately NOT in this sweep, exactly as it
+  // was already deliberately excluded from `offeredLawIds()` above. Its
+  // byte-identity with its survivor `interlockWeave` is pinned as an
+  // EXPECTED, documented duplicate in its own test below, not folded into
+  // this "must all be distinct" sweep.
+  const collapseOptionIds = (survivors) => {
+    const roster = V.SCENE3D_TONE_LAWS;
+    const ALIASES = (roster && roster.ALIASES) || {};
+    const out = [];
+    survivors.forEach((survivorId) => {
+      Object.keys(ALIASES).forEach((foldedId) => {
+        if (ALIASES[foldedId].into === survivorId && Shadows.toneLawApplies(foldedId)) out.push(foldedId);
+      });
+    });
+    return out;
+  };
+
+  const sweepIds = () => {
+    const offered = offeredLawIds();
+    return offered.concat(collapseOptionIds(offered));
+  };
+
   test('sanity — the roster and the toneLawApplies predicate are wired up', () => {
     const offered = offeredLawIds();
-    // BAR CHANGE (integration merge, 2026-09-06): 30 -> 20. Was measured
-    // against the raw 48-id `IDS` engine vocabulary (41 offered before this
-    // file's own class/id narrowing); now measured against the real picker's
-    // `PICKER_IDS` (35, after fill-collapse U0-U5 folded 13 variant ids into
-    // 5 canonical ids + a sub-param), so the offered count is legitimately
-    // lower (currently 27) — not a widened tolerance hiding a regression,
-    // the underlying roster itself shrank by design. See the MERGE NOTE on
-    // `offeredLawIds` above.
-    expect(offered.length).toBeGreaterThan(20);
+    // U9b re-pin, measured against the roster shipped at this unit (30
+    // PICKER_IDS / 18 ALIASES, post U1-U9/U6-U8): 23 offered survivors
+    // (was a stale "currently 27" comment here, itself already stale by the
+    // time this file was re-measured — further folds since then narrowed
+    // it further; pinned exactly now instead of re-describing a moving
+    // target in prose). Not a widened tolerance: the roster itself shrank
+    // by design, same as every prior re-pin in this chain.
+    expect(offered.length).toBe(23);
     expect(offered).toContain('ladder');
     expect(offered).toContain('none');
     expect(offered).not.toContain('etfKang'); // flow, excluded by mark class
     expect(offered).not.toContain('mazeFill'); // web, excluded by mark class
     expect(offered).not.toContain('isophoteWidth'); // hatch, excluded per-id (fs-n2 Stage 1)
-    expect(offered).not.toContain('onePenDown'); // wave, excluded per-id (fs-t1) — chart-space-verified bridge, nothing to walk on a flat footprint
+    expect(offered).not.toContain('onePenDown'); // wave, excluded per-id (fs-t1/U9b) — chart-space-verified bridge, nothing to walk on a flat footprint; ALSO has no recipe of its own (see clampShadowToneLaw's forward-resolve)
+  });
+
+  // U9b — the sweep's own shape: every ALIASES member either (a) has its own
+  // shadows.js recipe and joins the sweep, or (b) is `onePenDown`, the one
+  // exception. Pinned explicitly so a future fold silently landing without a
+  // shadow recipe (U6's own "known-bad" failure mode, caught and fixed for
+  // `penStipple`) fails HERE, at the roster-shape level, not just by chance
+  // in the collision sweep below.
+  test('sanity — collapse-option sweep: every ALIASES member is IN the sweep except onePenDown, exactly', () => {
+    const offered = offeredLawIds();
+    const extra = collapseOptionIds(offered);
+    const roster = V.SCENE3D_TONE_LAWS;
+    const allAliases = Object.keys(roster.ALIASES);
+    expect(allAliases.length).toBe(18);
+    expect(extra.length).toBe(17);
+    expect(extra.sort()).toEqual(allAliases.filter((id) => id !== 'onePenDown').sort());
+    expect(extra).not.toContain('onePenDown');
+    expect(sweepIds().length).toBe(40);
   });
 
   test('HEADLINE — no two offered Fill Style options render byte-identical shadow geometry', () => {
@@ -137,9 +197,60 @@ describe('Scene3D.Shadows — offered Fill Style options render distinct geometr
     expect(seen.size).toBe(offered.length);
   });
 
+  // U9b — the re-pinned HEADLINE: "offered set x each survivor's collapse
+  // options" (LEDGER.md row 18b item 1), extending the OFFERED-only check
+  // above to also cover every raw folded id a saved document can carry and
+  // shadows.js can actually draw distinctly. No-collision bar KEPT (still
+  // `expect(collisions).toEqual([])`) — only the universe swept grew.
+  test('HEADLINE (U9b) — no two ids in the FULL sweep (offered survivors + each one\'s collapse options) render byte-identical shadow geometry', () => {
+    const sweep = sweepIds();
+    expect(sweep.length).toBe(40); // 23 offered + 17 collapse options
+    const seen = new Map();
+    sweep.forEach((id) => {
+      const paths = buildShadows(id);
+      expect(sPaths(paths).length, id).toBeGreaterThan(0);
+      const fp = fingerprint(paths);
+      if (!seen.has(fp)) seen.set(fp, []);
+      seen.get(fp).push(id);
+    });
+    const collisions = [...seen.values()].filter((ids) => ids.length > 1);
+    expect(collisions).toEqual([]); // 0 collisions across the full 40-id sweep
+    expect(seen.size).toBe(sweep.length);
+  });
+
+  // U9b (b) — the documented EXCEPTION to the "no collision" bar: onePenDown
+  // is not IN the sweep above (excluded, same as it is excluded from
+  // `offeredLawIds()`), but a raw `shadowToneLaw:'onePenDown'` is still
+  // reachable through an old saved document (U9's own raw-pass-through
+  // contract), and params.js's `clampShadowToneLaw` now resolves it FORWARD
+  // to its survivor `interlockWeave` (U9b's own fix — see params.js) rather
+  // than letting it fall through shadows.js's own markClass override to the
+  // undifferentiated 'ladder' fallback. This is a DELIBERATE, byte-identical
+  // duplicate — U8's own finding that interlockWeave/onePenDown are already
+  // an indistinguishable PICTURE — never a defect the HEADLINE sweeps
+  // should catch.
+  test('onePenDown (U9b) — a raw legacy shadowToneLaw resolves through Params.normalizeParams to interlockWeave and draws BYTE-IDENTICAL to it, never the plain-hatch fallback', () => {
+    const onePenDown = buildShadows('onePenDown');
+    const interlockWeave = buildShadows('interlockWeave');
+    const ladder = buildShadows('ladder');
+    expect(fingerprint(onePenDown)).toBe(fingerprint(interlockWeave));
+    expect(fingerprint(onePenDown)).not.toBe(fingerprint(ladder));
+    expect(sPaths(onePenDown).length).toBeGreaterThan(0);
+  });
+
   test('determinism survives per-law-id variation — same id, same output, twice', () => {
     const offered = offeredLawIds();
     offered.forEach((id) => {
+      const a = buildShadows(id);
+      const b = buildShadows(id);
+      expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+    });
+  });
+
+  // U9b — determinism must also hold across the WIDER sweep (collapse
+  // options included), not just the offered survivors above.
+  test('determinism (U9b) — the full sweep is deterministic too, same id twice', () => {
+    sweepIds().forEach((id) => {
       const a = buildShadows(id);
       const b = buildShadows(id);
       expect(JSON.stringify(a)).toBe(JSON.stringify(b));

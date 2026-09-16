@@ -470,7 +470,21 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
  * round-trip, and a real sanitizeSceneParams end-to-end pass.
  * ═══════════════════════════════════════════════════════════════════════
  */
-function describeSingleParamCluster(label, { survivor, key, pickerIdsLength, folded }) {
+// U9b-2 — records every `shadowResolvesToSurvivor` array actually passed to
+// this template across all 6 call sites (only U8's names anything today), so
+// a tail test (see "U9b-2 — shadowResolvesToSurvivor coupling" below) can
+// assert the DECLARED set matches what `Shadows.toneLawApplies` independently
+// computes from the shipped roster, rather than trusting each call site by
+// eye. The coupling between "add a folded id here" and "shadows.js actually
+// judges it not-distinguishable" stays a MANUAL edit (no code derives one
+// from the other) — this recorder only makes a forgotten/stale entry fail
+// loudly instead of silently.
+const RECORDED_SHADOW_RESOLVES_TO_SURVIVOR = [];
+
+function describeSingleParamCluster(label, {
+  survivor, key, pickerIdsLength, folded, shadowResolvesToSurvivor,
+}) {
+  RECORDED_SHADOW_RESOLVES_TO_SURVIVOR.push(...(shadowResolvesToSurvivor || []));
   describe(label, () => {
     let runtime; let V; let algo; let defaults; let SF; let Params; let hatchOpts;
 
@@ -601,12 +615,27 @@ function describeSingleParamCluster(label, { survivor, key, pickerIdsLength, fol
     // field, so collapsing a folded `shadowToneLaw` to its survivor silently
     // loses which shadows.js HATCH_LAW_RECIPES entry to draw. U9 fixed
     // `normalizeShadow` to pass a folded id through unchanged instead.
-    test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, never warns (U9)', () => {
+    //
+    // STALE ASSERTION UPDATE (U9b) — ONE exception to that pass-through:
+    // `shadowResolvesToSurvivor` (opt-in, empty for every cluster except
+    // U8's) names folded ids shadows.js itself judges NOT DISTINGUISHABLE
+    // from their survivor there (`Shadows.toneLawApplies` false — no recipe
+    // of its own in any `*_LAW_RECIPES` table). For those, U9b's
+    // `clampShadowToneLaw` resolves FORWARD to the survivor instead of
+    // passing the raw id through, so it draws the survivor's own real
+    // recipe rather than silently degrading to the undifferentiated plain-
+    // hatch fallback (byte-identical to 'ladder') — the same failure mode
+    // U9's fix retired for every OTHER folded id, from a different cause.
+    // See params.js `clampShadowToneLaw` and
+    // tests/unit/scene3d-shadow-tone-law-uniqueness.test.js's own
+    // "onePenDown (U9b)" test for the render-level proof.
+    test('clampStyleParam belt-and-brace: shadowToneLaw carrying a folded id passes through UNCHANGED, UNLESS shadows.js judges it not distinguishable from its survivor there (U9b) — never warns either way', () => {
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
         folded.forEach(({ id }) => {
           const shadow = Params.normalizeShadow({ shadowToneLaw: id });
-          expect(shadow.shadowToneLaw).toBe(id);
+          const expected = (shadowResolvesToSurvivor || []).includes(id) ? survivor : id;
+          expect(shadow.shadowToneLaw).toBe(expected);
         });
         expect(warnSpy).not.toHaveBeenCalled();
       } finally {
@@ -1138,6 +1167,17 @@ describeSingleParamCluster('Scene3D tone-law collapse — U7 (C-07, ampSpacing/n
   ],
 });
 
+// U7-2b: bounded proximity regex for the survivor-side caveat claim (the U7-2
+// reviewer's non-blocking follow-up). The old `/weight.*(?:isn't constant|varies)/`
+// let `.*` span the whole rest of the string, so it also matched unrelated
+// prose that merely mentions "weight" and "varies"/"isn't constant" far apart
+// (verified: a synthetic decoy sentence about pen weight and room humidity
+// matched it). Real production text keeps the claim within one word of
+// "weight" (0 words in ampSpacing's "weight isn't constant", 1 word — "also"
+// — in interlockWeave's "weight also varies" below), so bound the gap instead
+// of leaving it open-ended.
+const SURVIVOR_WEIGHT_CLAIM_U7 = /\bweight\b(?:\s+\S+){0,1}\s+(?:isn't constant|varies)\b/;
+
 describe('Scene3D tone-law collapse — U7 caveat: BOTH the survivor (ampSpacing) AND the folded law (weaveDepth) carry real, DIFFERENT measured caveats', () => {
   let runtime;
   beforeAll(async () => { runtime = await loadVecturaRuntime(); });
@@ -1153,8 +1193,21 @@ describe('Scene3D tone-law collapse — U7 caveat: BOTH the survivor (ampSpacing
     // OWN default state also carries a real caveat, so a naive "resolve to
     // the survivor and stop" would show the WRONG one of the two, not none.
     expect(survivorCaveat).not.toBe(foldedCaveat);
-    expect(survivorCaveat).toMatch(/single-weight/);
-    expect(foldedCaveat).toMatch(/single-weight/);
+    // U7-2 copy re-pin: the caveats no longer carry the internal term
+    // "single-weight" (plain-language pass) — both now say, in user words,
+    // that the line's weight is not constant along its length.
+    // U7-2b: bounded proximity match, see SURVIVOR_WEIGHT_CLAIM_U7 above.
+    expect(survivorCaveat).toMatch(SURVIVOR_WEIGHT_CLAIM_U7);
+    expect(foldedCaveat).toMatch(/weight (?:varies|isn't constant)/);
+  });
+
+  test('U7-2b: the tightened survivor regex does not match unrelated weight/varies prose (reviewer decoy)', () => {
+    // Same shape of decoy the reviewer used to demonstrate the old `.*` was
+    // too loose: "weight" and the claim term both appear, but several words
+    // apart in an unrelated sentence. The old regex matched this; the
+    // bounded regex above must not.
+    const decoy = "The weight and overall balance isn't constant across models.";
+    expect(decoy).not.toMatch(SURVIVOR_WEIGHT_CLAIM_U7);
   });
 
   test('effectiveLaw: nesting default (single) shows ampSpacing\'s OWN caveat (unlike U4/U5, this is NOT empty)', () => {
@@ -1330,7 +1383,18 @@ describeSingleParamCluster('Scene3D tone-law collapse — U8 (C-08, interlockWea
   folded: [
     { id: 'onePenDown', value: 'continuous' },
   ],
+  // U9b — `onePenDown` has no shadows.js recipe of its own (it is also a
+  // member of shadows.js's own `TONE_LAW_NOT_DISTINGUISHABLE` set, for an
+  // independent reason unrelated to this fold — see params.js's
+  // `clampShadowToneLaw` comment); the shadow bag resolves it FORWARD to
+  // `interlockWeave` instead of the general raw pass-through every other
+  // folded id in this file keeps.
+  shadowResolvesToSurvivor: ['onePenDown'],
 });
+
+// U7-2b: same bounded-proximity fix as SURVIVOR_WEIGHT_CLAIM_U7 above, for the
+// U8 survivor (interlockWeave says "weight also varies" — 1 intervening word).
+const SURVIVOR_WEIGHT_CLAIM_U8 = /\bweight\b(?:\s+\S+){0,1}\s+varies\b/;
 
 describe('Scene3D tone-law collapse — U8 caveat: BOTH the survivor (interlockWeave) AND the folded law (onePenDown) carry real, DIFFERENT measured caveats', () => {
   let runtime;
@@ -1347,8 +1411,17 @@ describe('Scene3D tone-law collapse — U8 caveat: BOTH the survivor (interlockW
     // default state also carries a real caveat, so a naive "resolve to the
     // survivor and stop" would show the WRONG one of the two, not none.
     expect(survivorCaveat).not.toBe(foldedCaveat);
-    expect(survivorCaveat).toMatch(/single-weight/);
-    expect(foldedCaveat).toMatch(/single-weight/);
+    // U7-2 copy re-pin: the caveats no longer carry the internal term
+    // "single-weight" — both now say, in user words, that the line's weight
+    // varies rather than staying constant.
+    // U7-2b: bounded proximity match, see SURVIVOR_WEIGHT_CLAIM_U8 above.
+    expect(survivorCaveat).toMatch(SURVIVOR_WEIGHT_CLAIM_U8);
+    expect(foldedCaveat).toMatch(/weight varies/);
+  });
+
+  test('U7-2b: the tightened survivor regex does not match unrelated weight/varies prose (reviewer decoy)', () => {
+    const decoy = 'The weight and shipping cost varies by region.';
+    expect(decoy).not.toMatch(SURVIVOR_WEIGHT_CLAIM_U8);
   });
 
   test('effectiveLaw: penDown default (perRuling) shows interlockWeave\'s OWN caveat (not empty)', () => {
@@ -1451,6 +1524,263 @@ describe('Scene3D tone-law collapse — U8 multi-primitive x multi-density: inte
         expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave', penDown: 'perRuling' })).toBe('interlockWeave');
         const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'interlockWeave' }));
         const resolved = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: 'interlockWeave' }) }));
+        expect(resolved).toBe(direct);
+      });
+    });
+  }, SLOW);
+});
+
+/*
+ * ═══════════════════════════════════════════════════════════════════════
+ * U6 — C-06 / W-18a · survivor `penInterleave` · param `penMode`
+ * Folded: penPitchMatch ('pitchMatch'), penFacing ('facing'), penStipple
+ * ('stipple'). Bare option: interleave->penInterleave (default).
+ * W-22-24-W-18-plan.md §1 "C-06 -> U6", ink on torus+hatch+med:
+ *   interleave  (default) -> penInterleave: 118 paths / 868.1 mm
+ *   pitchMatch             -> penPitchMatch: 121 paths / 922.0 mm
+ *   facing                 -> penFacing:     154 paths / 867.7 mm
+ *   stipple                -> penStipple:    119 paths / 910.6 mm
+ * "By eye the four are the same capsule-stepped rulings on torus
+ * hatch/contour and sphere hatch; byte-identical trio on spiral/stipple."
+ * `penCross` (856.2, crossed) and `penReserve` (1166.7, transverse reserves)
+ * are genuinely different pictures and are NOT folded — the plan says so
+ * explicitly; not touched by this unit.
+ *
+ * RED (pre-U6, verified via a scratch `git stash` of
+ * scripts/build-tone-laws.js + src/config/scene3d-tone-laws.js): before this
+ * unit's COLLAPSE row existed, resolveToneLaw({toneLaw:'penInterleave',
+ * penMode:'stipple'}) returned 'penInterleave' unchanged (no
+ * STYLE_PARAMS.penInterleave descriptor) — rendering diverged from
+ * penStipple's own picture (868.1 vs 910.6 mm ink on torus+hatch+med).
+ * GREEN below closes it by construction, same mechanism U1-U5/U7/U8 ran.
+ *
+ * THIS UNIT WAS FROZEN-ON-JAY (LEDGER.md row 11, §4 decision 2) because,
+ * unlike every other C-0x cluster, folding `penStipple` requires a VISIBLE
+ * product decision on top of the ordinary data-only fold: `penStipple`'s
+ * `FILL_STYLE_MARK_OF` entry was 'dot' (src/config/context-bar.js), while
+ * its three siblings (`penInterleave`/`penPitchMatch`/`penFacing`) are all
+ * already 'hatch' — folding it in place would have broken the §2.4
+ * invariant ("mark class is constant within every cluster") unless the
+ * mark class itself moved too. Jay's decision (2026-09-10, option A): move
+ * `penStipple` from the 'dot' mark class ("Dots & stipple") to 'hatch'
+ * ("Parallel hatching") — its own measured mechanism ("Broad ruled darks,
+ * medium hatch through the mids, and the fine nib stippling the highlight
+ * fade by shortening its marks") is a hatch, not the drawn dots the old
+ * grouping implied; `docs/tone-laws/laws.json`'s `penStipple.caveat` was
+ * rewritten (U5b-2 plain-language precedent) to say so.
+ *
+ * THE SHADOW PATH ALSO MOVES, NOT JUST THE PICKER (verified, not assumed):
+ * `src/core/scene3d/shadows.js`'s `shadowMarkLines` branches on markClass
+ * to pick a recipe table — `DOT_LAW_RECIPES.penStipple` (a real, designed
+ * "shorten the marks" flick recipe) versus `HATCH_LAW_RECIPES` (which had
+ * NO `penStipple` entry, because it was never reachable there before this
+ * unit). Left alone, moving the mark class would have silently dropped
+ * `penStipple`'s shadow onto the generic `hatchRingsEvenOdd` fallback
+ * instead of a deliberate recipe — so this unit ALSO adds
+ * `HATCH_LAW_RECIPES.penStipple`, translating the same "shorten the marks"
+ * mechanism into hatch terms (`hatchEndTrim`), so the shadow keeps a
+ * purpose-built recipe rather than degrading to the undifferentiated
+ * default. See tests/unit/scene3d-shadow-tone-law.test.js's own "HEADLINE
+ * (U6)" test (the shadow-path harness for this file already lives there,
+ * next to U9's identical fineLadder precedent — not duplicated here).
+ *
+ * CAVEAT CONDITION (per U7/U8's own finding, carried forward and widened):
+ * ALL FOUR members of this cluster carry their own real, non-empty measured
+ * caveats (docs/tone-laws/laws.json) — unlike U7/U8's two-caveat pair, this
+ * is a FOUR-caveat cluster. They are NOT all pairwise distinct, though:
+ * penPitchMatch and penFacing carry the exact same "three pens are
+ * simulated" sentence (measured, not assumed — see the U6 caveat describe
+ * block). `effectiveLaw`/`resolveToneLaw` must surface the SPECIFIC
+ * member's own caveat at every one of the four `penMode` states.
+ * See the "U6 caveat" describe block below, and the shared cross-check
+ * tests/unit/scene3d-fill-style-effective-law.test.js.
+ * ═══════════════════════════════════════════════════════════════════════
+ */
+describeSingleParamCluster('Scene3D tone-law collapse — U6 (C-06, penInterleave/penMode)', {
+  survivor: 'penInterleave',
+  key: 'penMode',
+  pickerIdsLength: 30,
+  folded: [
+    { id: 'penPitchMatch', value: 'pitchMatch' },
+    { id: 'penFacing', value: 'facing' },
+    { id: 'penStipple', value: 'stipple' },
+  ],
+});
+
+describe('Scene3D tone-law collapse — U6 mark-class move: penStipple leaves "dot" for "hatch" (§2.4 invariant, the reason this unit was FROZEN-ON-JAY)', () => {
+  let runtime;
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  afterAll(() => runtime.cleanup());
+
+  test('penStipple now reports "hatch", not "dot" — matching all three of its cluster siblings', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.markClass('penStipple')).toBe('hatch');
+    expect(FS.markClass('penStipple')).not.toBe('dot');
+    ['penInterleave', 'penPitchMatch', 'penFacing'].forEach((id) => {
+      expect(FS.markClass(id)).toBe('hatch');
+    });
+  });
+
+  test('"Dots & stipple" no longer lists penStipple; "Parallel hatching" does', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const R = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+    const dotMembers = R.IDS.filter((id) => FS.markClass(id) === 'dot');
+    const hatchMembers = R.IDS.filter((id) => FS.markClass(id) === 'hatch');
+    expect(dotMembers.indexOf('penStipple')).toBe(-1);
+    expect(hatchMembers.indexOf('penStipple')).not.toBe(-1);
+    // mkDotScreen/lozengeStipple are the two remaining dot-class laws;
+    // penStipple's departure is the ONLY membership change this unit makes.
+    expect(dotMembers.sort()).toEqual(['lozengeStipple', 'mkDotScreen']);
+  });
+});
+
+describe('Scene3D tone-law collapse — U6 caveat: all FOUR members (penInterleave, penPitchMatch, penFacing, penStipple) carry real, non-empty measured caveats', () => {
+  let runtime;
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  afterAll(() => runtime.cleanup());
+
+  test('BY_ID-direct: all four ids carry their own non-empty caveat; penStipple\'s and penInterleave\'s are each distinct from every sibling', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const ids = ['penInterleave', 'penPitchMatch', 'penFacing', 'penStipple'];
+    const caveats = ids.map((id) => FS.note(id).caveat);
+    caveats.forEach((c, i) => expect(c.length, `caveat for ${ids[i]}`).toBeGreaterThan(0));
+    // NOT all four are pairwise distinct — measured, not assumed:
+    // penPitchMatch and penFacing carry the EXACT SAME "three pens are
+    // simulated" sentence (both true, both correctly stating the same real
+    // fact) — a genuine duplicate, unlike U7/U8's pairs. penInterleave's own
+    // (longer wording) and penStipple's own (the mark-class-move
+    // explanation) are each distinct from every other member.
+    expect(FS.note('penPitchMatch').caveat).toBe(FS.note('penFacing').caveat);
+    [['penInterleave', 'penPitchMatch'], ['penInterleave', 'penFacing'], ['penInterleave', 'penStipple'],
+      ['penPitchMatch', 'penStipple'], ['penFacing', 'penStipple']].forEach(([a, b]) => {
+      expect(FS.note(a).caveat, `${a} vs ${b}`).not.toBe(FS.note(b).caveat);
+    });
+    // penStipple's caveat is the mark-class-move explanation, not the bare
+    // three-pens-simulated restatement its siblings carry.
+    expect(FS.note('penStipple').caveat).toMatch(/Parallel hatching/);
+    expect(FS.note('penStipple').caveat).toMatch(/dot/i);
+  });
+
+  test('effectiveLaw: penMode default (interleave, or omitted) shows penInterleave\'s OWN caveat', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    expect(FS.effectiveLaw('penInterleave', {})).toBe('penInterleave');
+    expect(FS.effectiveLaw('penInterleave', { penMode: 'interleave' })).toBe('penInterleave');
+    const caveat = FS.note(FS.effectiveLaw('penInterleave', {})).caveat;
+    expect(caveat).toBe(FS.note('penInterleave').caveat);
+    expect(caveat.length).toBeGreaterThan(0);
+  });
+
+  test('effectiveLaw: each of the three non-default penMode values resolves to its OWN law, surfacing its OWN distinct caveat', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const CASES = [
+      { penMode: 'pitchMatch', law: 'penPitchMatch' },
+      { penMode: 'facing', law: 'penFacing' },
+      { penMode: 'stipple', law: 'penStipple' },
+    ];
+    CASES.forEach(({ penMode, law }) => {
+      expect(FS.effectiveLaw('penInterleave', { penMode })).toBe(law);
+      const caveat = FS.note(FS.effectiveLaw('penInterleave', { penMode })).caveat;
+      expect(caveat).toBe(FS.note(law).caveat);
+      expect(caveat).not.toBe(FS.note('penInterleave').caveat);
+      expect(caveat.length).toBeGreaterThan(0);
+    });
+  });
+
+  test('resolveToneLaw (engine) agrees with effectiveLaw (config) on all four states', () => {
+    const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    const Params = runtime.window.Vectura.Scene3D.Params;
+    expect(Params.resolveToneLaw({ toneLaw: 'penInterleave' })).toBe(FS.effectiveLaw('penInterleave', {}));
+    ['pitchMatch', 'facing', 'stipple'].forEach((penMode) => {
+      expect(Params.resolveToneLaw({ toneLaw: 'penInterleave', penMode }))
+        .toBe(FS.effectiveLaw('penInterleave', { penMode }));
+    });
+  });
+});
+
+describe('Scene3D tone-law collapse — U6 multi-primitive x multi-density: penInterleave/penPitchMatch/penFacing/penStipple byte-identity', () => {
+  // Same shape as U7's/U8's own multi-primitive x multi-density sweep.
+  // Unlike U7/U8 (wave-family, unreachable on box for every mapper), this
+  // cluster's threePen family is unreachable on box even at the 'hatch'
+  // mapper (docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl) — same
+  // TIER_B_PRIMITIVES-minus-box exclusion, confirmed against the manifest,
+  // not assumed.
+  let runtime; let V; let algo; let defaults; let SF; let Params; let PPD;
+  const PRIMITIVES = ['sphere', 'torus', 'cone'];
+  const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
+  const FOLDED = [
+    { id: 'penPitchMatch', penMode: 'pitchMatch' },
+    { id: 'penFacing', penMode: 'facing' },
+    { id: 'penStipple', penMode: 'stipple' },
+  ];
+
+  const captureOpts = (primitive, densityValue) => {
+    const p = clone(defaults);
+    p.objects = [{
+      id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
+      transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+    }];
+    p.ground = { enabled: false };
+    p.camera = {
+      projection: 'orthographic', yaw: -20, pitch: 15, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
+    };
+    p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
+    p.tone = { ...clone(defaults).tone, enabled: true };
+    p.lights = [SUN];
+    const calls = [];
+    const orig = SF.buildObject;
+    SF.buildObject = function wrapped(opts) {
+      const result = orig.call(this, opts);
+      calls.push({ opts, result });
+      return result;
+    };
+    try {
+      algo.generate(p, null, null, BOUNDS);
+    } finally {
+      SF.buildObject = orig;
+    }
+    let best = calls[0];
+    for (const c of calls) {
+      if ((c.result || []).length > (best.result || []).length) best = c;
+    }
+    return best.opts;
+  };
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    algo = V.AlgorithmRegistry.scene3d;
+    defaults = V.ALGO_DEFAULTS.scene3d;
+    SF = V.Scene3D.SurfaceFill;
+    Params = V.Scene3D.Params;
+    PPD = Params.PRIMITIVE_PARAM_DEFAULTS || {};
+  }, SLOW);
+  afterAll(() => runtime.cleanup());
+
+  test('every fold (survivor+penMode === legacy folded id) is byte-identical across every reachable primitive x density pair', () => {
+    const offenders = [];
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        FOLDED.forEach(({ id, penMode }) => {
+          const resolved = Params.resolveToneLaw({ toneLaw: 'penInterleave', penMode });
+          if (resolved !== id) { offenders.push(`${primitive}__${densityKey}__${penMode}: resolved to "${resolved}", not ${id}`); return; }
+          const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
+          const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: id }));
+          if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy ${id}`);
+        });
+      });
+    });
+    expect(offenders, offenders.join('; ')).toEqual([]);
+  }, SLOW);
+
+  test('the bare survivor (penMode:interleave, or omitted) resolves to itself, unaffected by geometry or density', () => {
+    PRIMITIVES.forEach((primitive) => {
+      Object.keys(DENSITY_VALUES).forEach((densityKey) => {
+        const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
+        expect(Params.resolveToneLaw({ toneLaw: 'penInterleave' })).toBe('penInterleave');
+        expect(Params.resolveToneLaw({ toneLaw: 'penInterleave', penMode: 'interleave' })).toBe('penInterleave');
+        const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'penInterleave' }));
+        const resolved = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: 'penInterleave' }) }));
         expect(resolved).toBe(direct);
       });
     });
@@ -1582,4 +1912,173 @@ describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (
     });
     expect(offenders, offenders.join('; ')).toEqual([]);
   }, SLOW);
+});
+
+/*
+ * U7-2 — plain-language pass over EVERY remaining folded fill-law caveat
+ * (and the two jargon-free-on-inspection ones this pass left untouched:
+ * `none`/"NO TONE" got a light polish too, of the 20 laws.json entries that
+ * ever had a caveat, 3 were already rewritten to plain language before this
+ * unit — bundleDither/contFieldTouch by U5b-2, penStipple by U6 — this unit
+ * rewrote the remaining 17: deepFillTSP, bundleSubNib, penInterleave,
+ * penReserve, penCross, penPitchMatch, penFacing, ampSpacing, weaveDepth,
+ * interlockWeave, trochoidLoop, amplitudeOnly, onePenDown, mezzoRegion,
+ * dutyConst, endShorten, and "none" (NO TONE). See
+ * docs/3d-audit/lane-reports/U7-2-impl.md for the full old -> new table.
+ *
+ * `docs/tone-laws/laws.json` is the SOURCE of `BY_ID[id].caveat`
+ * (regenerated into src/config/scene3d-tone-laws.js by
+ * `node scripts/build-tone-laws.js`). Each rewritten entry also gained a
+ * NEW `measured` field on the laws.json source object, holding the original
+ * audit-prose caveat verbatim so the measured evidence is not lost — that
+ * field is deliberately NOT picked up by build-tone-laws.js's `BY_ID[id] = {...}`
+ * literal (see that file's own comment beside the `caveat:` line), so it
+ * never reaches src/config/scene3d-tone-laws.js and therefore cannot render
+ * anywhere a UI surface reads from `SCENE_FILL_STYLES.note()`/`entry()`.
+ */
+describe('Scene3D tone-law collapse — U7-2 (plain-language pass over every remaining caveat)', () => {
+  let runtime; let FS; let R;
+  const REWRITTEN_IDS = [
+    'none', 'deepFillTSP', 'bundleSubNib', 'penInterleave', 'penReserve', 'penCross',
+    'penPitchMatch', 'penFacing', 'ampSpacing', 'weaveDepth', 'interlockWeave',
+    'trochoidLoop', 'amplitudeOnly', 'onePenDown', 'mezzoRegion', 'dutyConst', 'endShorten',
+  ];
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime();
+    FS = runtime.window.Vectura.SCENE_FILL_STYLES;
+    R = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+  });
+  afterAll(() => runtime.cleanup());
+
+  // RGR proof: RED against the pre-U7-2 tree (every id below carried at
+  // least one of these tokens — R2/L*/RMS/percentages/mm measurements/
+  // function names/file names/"CONTROL/REFUTATION"/bare cell-name tokens
+  // like "sphere·hatch"); GREEN once laws.json's caveat fields are
+  // rewritten and scene3d-tone-laws.js is regenerated.
+  test('none of the 17 rewritten caveats carry raw audit statistics, internal jargon, or bare cell-name tokens', () => {
+    const jargon = /\bRMS\b|\bR2\b|\bR²\b|L\*|·hatch|·crosshatch|·contour|CONTROL\/REFUTATION|WEIGHT_LAWS|isWaveLaw|splitsAlongLine|\bpenId\b|scene3d\.js|surface-fill\.js|single-weight|\bmm\b|\d+(?:\.\d+)?%|\bgated samples\b|\bStage 0\b/i;
+    REWRITTEN_IDS.forEach((id) => {
+      const caveat = FS.note(id).caveat;
+      expect(caveat.length, `caveat for ${id}`).toBeGreaterThan(0);
+      expect(caveat, `caveat for ${id}`).not.toMatch(jargon);
+    });
+  });
+
+  // Style match: U5b-2's own precedent aimed for <=2 sentences. A few of
+  // these 17 carried two genuinely distinct measured warnings that do not
+  // compress losslessly into one — allow up to 3, but never more.
+  test('every rewritten caveat is at most 3 sentences', () => {
+    const sentenceCount = (s) => (s.match(/[.!?](?:\s|$)/g) || []).length;
+    REWRITTEN_IDS.forEach((id) => {
+      const caveat = FS.note(id).caveat;
+      expect(sentenceCount(caveat), `${id}: "${caveat}"`).toBeLessThanOrEqual(3);
+    });
+  });
+
+  // Every rewritten law kept a `measured` field on its laws.json source
+  // entry (the original audit-prose caveat, verbatim) — proving the
+  // evidence was archived, not deleted — and that field is provably absent
+  // from the generated, UI-facing roster.
+  test('a `measured` field archives the original audit caveat for every rewritten id, and never reaches the generated roster', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const lawsJsonPath = path.join(__dirname, '../../docs/tone-laws/laws.json');
+    const doc = JSON.parse(fs.readFileSync(lawsJsonPath, 'utf8'));
+    const mapId = (id) => (id === 'NO TONE' ? 'none' : id);
+    const byId = {};
+    doc.laws.forEach((law) => { byId[mapId(law.id)] = law; });
+    REWRITTEN_IDS.forEach((id) => {
+      const law = byId[id];
+      expect(law, id).toBeTruthy();
+      expect(typeof law.measured, `${id}.measured`).toBe('string');
+      expect(law.measured.length, `${id}.measured`).toBeGreaterThan(0);
+      // The archived text is NOT the live caveat (it is the ORIGINAL,
+      // jargon-heavy one this unit replaced).
+      expect(law.measured).not.toBe(law.caveat);
+    });
+    // Never rendered: the generated file has no `measured` key at all.
+    const generatedPath = path.join(__dirname, '../../src/config/scene3d-tone-laws.js');
+    const generatedSrc = fs.readFileSync(generatedPath, 'utf8');
+    expect(generatedSrc).not.toMatch(/"measured"/);
+  });
+
+  // Distinctness the fold clusters depend on (U7/U8/U6's own rulings)
+  // survives the rewrite: ampSpacing vs weaveDepth, interlockWeave vs
+  // onePenDown, and the deliberate penPitchMatch === penFacing duplicate.
+  test('cross-cluster distinctness survives the rewrite', () => {
+    expect(FS.note('ampSpacing').caveat).not.toBe(FS.note('weaveDepth').caveat);
+    expect(FS.note('interlockWeave').caveat).not.toBe(FS.note('onePenDown').caveat);
+    expect(FS.note('penPitchMatch').caveat).toBe(FS.note('penFacing').caveat);
+    expect(FS.note('penInterleave').caveat).not.toBe(FS.note('penPitchMatch').caveat);
+  });
+
+  // Each caveat still references the option the user can actually act on,
+  // in the picker's own wording — matching U5b-2's "point back at what they
+  // can DO about the warning" precedent.
+  test('sub-control-facing caveats name the actual UI option values', () => {
+    expect(FS.note('bundleSubNib').caveat).toMatch(/Bundle · Count/);
+    expect(FS.note('weaveDepth').caveat).toMatch(/Single wave row|Nested rows/);
+    expect(FS.note('onePenDown').caveat).toMatch(/One stroke per ruling/);
+  });
+
+  // BY_ID-direct (not just FS.note()) still carries the rewritten text —
+  // the roster corpus itself changed, not just a display-layer filter.
+  // FS.note() prepends SIMULATED_NOTE for the six threePen-family ids, so
+  // compare with that prefix stripped for those, verbatim for the rest.
+  test('BY_ID-direct lookups reflect the rewrite (the roster corpus itself changed)', () => {
+    REWRITTEN_IDS.forEach((id) => {
+      const direct = R.BY_ID[id].caveat;
+      expect(direct.length, id).toBeGreaterThan(0);
+      const viaNote = FS.note(id).caveat;
+      const expected = FS.entry(id).simulated ? `${FS.SIMULATED_NOTE} ${direct}` : direct;
+      expect(viaNote, id).toBe(expected);
+    });
+  });
+});
+
+/*
+ * U9b-2 — tie the `shadowResolvesToSurvivor` test-side literal(s) to the
+ * production-side `Shadows.toneLawApplies` set (U9b review follow-up 3 /
+ * ROUND3-RESUME-BRIEFS.md §2 scope item 4).
+ *
+ * Today exactly one of the 6 `describeSingleParamCluster` call sites in this
+ * file names anything (U8's, `['onePenDown']`) — the other 5 implicitly pass
+ * `undefined`, defaulting every folded id there to the raw pass-through. That
+ * per-call-site array is hand-written; nothing forces it to track
+ * `shadows.js`'s own judgment of which folded ids have no recipe of their
+ * own (`Shadows.toneLawApplies(id) === false`). This block is that force:
+ * it recomputes the "should resolve forward" set directly from the shipped
+ * roster + `Shadows.toneLawApplies`, independent of anything this file
+ * declares, and asserts it against what was actually recorded across every
+ * `describeSingleParamCluster` call. If a future unit adds a folded id to a
+ * `*_LAW_RECIPES` table (making it distinguishable again) or removes one
+ * (making a previously-fine id newly indistinguishable) WITHOUT updating the
+ * matching `shadowResolvesToSurvivor` array, this test goes RED — the two
+ * are still edited by hand in two different places (this test does not
+ * eliminate that), but a mismatch between them can no longer pass silently.
+ */
+describe('U9b-2 — shadowResolvesToSurvivor coupling (test-side literal vs. production Shadows.toneLawApplies)', () => {
+  let runtime; let V;
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); V = runtime.window.Vectura; });
+  afterAll(() => runtime.cleanup());
+
+  test('every ALIASES id Shadows.toneLawApplies judges NOT distinguishable is, and is the ONLY id, named in some call site\'s shadowResolvesToSurvivor array', () => {
+    const LAWS = V.SCENE3D_TONE_LAWS;
+    const Shadows = V.Scene3D.Shadows;
+    const aliasIds = Object.keys(LAWS.ALIASES);
+    const productionExceptions = aliasIds.filter((id) => Shadows.toneLawApplies(id) === false).sort();
+    const declaredExceptions = [...new Set(RECORDED_SHADOW_RESOLVES_TO_SURVIVOR)].sort();
+    expect(declaredExceptions).toEqual(productionExceptions);
+    // Today that set is exactly one id — pin the number, not just the
+    // shape, so a silent widening (or narrowing) of either side is loud.
+    expect(productionExceptions).toEqual(['onePenDown']);
+  });
+
+  test('mutation: declared-vs-production comparison actually distinguishes a stale literal (not vacuously equal)', () => {
+    // Simulate a stale test-side literal that forgot a second exception —
+    // this is the shape of drift this coupling test exists to catch.
+    const staleDeclared = [...new Set(RECORDED_SHADOW_RESOLVES_TO_SURVIVOR)].sort();
+    const withExtra = [...staleDeclared, 'someOtherFoldedId'].sort();
+    expect(withExtra).not.toEqual(staleDeclared);
+  });
 });

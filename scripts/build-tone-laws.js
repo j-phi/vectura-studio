@@ -349,6 +349,44 @@ const COLLAPSE = {
       { value: 'continuous', label: 'One pen-down per family', law: 'onePenDown' },
     ],
   }],
+  // C-06 (U6, also W-18's roster half) — the FROZEN-ON-JAY cluster
+  // (LEDGER.md row 11/§4 decision 2), unblocked 2026-09-10: Jay chose
+  // option A — fold `penStipple` INTO this survivor as `penMode:'stipple'`
+  // (lossless: its internal id, and DOT_LAW_RECIPES.penStipple on the shadow
+  // path, are both untouched — only the PICKER stops offering it as its own
+  // row) AND move it from the 'dot' mark class to 'hatch' in
+  // src/config/context-bar.js's FILL_STYLE_MARK_OF, since its own measured
+  // mechanism ("Broad ruled darks, medium hatch through the mids...") is a
+  // hatch, not the drawn dots its old grouping implied — the roster's own
+  // §2.4 "mark class is constant within every cluster" invariant otherwise
+  // corrupts (penInterleave/penPitchMatch/penFacing are all already
+  // 'hatch'). This is a VISIBLE picker re-categorisation (Pen Stipple moves
+  // from "Dots & stipple" to "Parallel hatching") — `docs/tone-laws/
+  // laws.json`'s `penStipple.caveat` was rewritten (U5b-2 plain-language
+  // precedent) to say so, in place of restating the plain
+  // three-pens-are-simulated fact `SIMULATED_NOTE` already auto-prepends
+  // (see context-bar.js `SCENE_FILL_STYLES.note`, `e.simulated`).
+  //
+  // ALL FOUR members carry their own real, non-empty measured caveats
+  // (unlike U7/U8's two-caveat pair, this cluster has four) — though NOT
+  // all four are pairwise distinct: penPitchMatch and penFacing carry the
+  // exact same "three pens are simulated" sentence (measured, not a
+  // reporting error — see the U6 caveat describe block). penInterleave's
+  // own (longer wording) and penStipple's own (the mark-class-move
+  // explanation) are each distinct from every other member.
+  // `effectiveLaw`/`resolveToneLaw` must surface the SPECIFIC member's own
+  // caveat at every one of the four `penMode` states, never silently
+  // collapsing onto the survivor's — verified in the U6 caveat describe
+  // block.
+  penInterleave: [{
+    key: 'penMode', label: 'Pen mode', default: 'interleave',
+    options: [
+      { value: 'interleave', label: 'Interleaved nibs', law: 'penInterleave' },
+      { value: 'pitchMatch', label: 'Pitch-matched', law: 'penPitchMatch' },
+      { value: 'facing', label: 'Facing bias', law: 'penFacing' },
+      { value: 'stipple', label: 'Stipple', law: 'penStipple' },
+    ],
+  }],
 };
 
 // ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────

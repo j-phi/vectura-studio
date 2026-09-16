@@ -148,4 +148,119 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
     expect(foldedCaveat2).toBe(R2.BY_ID.onePenDown.caveat);
     expect(foldedCaveat2).not.toBe(R2.BY_ID.interlockWeave.caveat);
   });
+
+  // U6 (C-06/W-18a, penInterleave/penMode) — the FROZEN-ON-JAY cluster,
+  // unblocked 2026-09-10. Unlike U7/U8's two-caveat pair, this is a
+  // FOUR-caveat cluster: the survivor (`penInterleave`) AND all three folded
+  // ids (`penPitchMatch`, `penFacing`, `penStipple`) each carry their own
+  // real, DISTINCT measured caveats. `penStipple`'s caveat is additionally
+  // the mark-class-move explanation (its markClass moved 'dot' -> 'hatch'),
+  // not the bare three-pens-simulated restatement its siblings carry —
+  // pinned here in the SHARED cross-check file for the same reason as the
+  // U7/U8 cases above.
+  test('U6: all three folded ids (penPitchMatch, penFacing, penStipple) survive the fold through effectiveLaw with their OWN distinct caveats — both resolvers agree', () => {
+    const R3 = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+    expect(R3.ALIASES.penPitchMatch).toEqual({ into: 'penInterleave', params: { penMode: 'pitchMatch' } });
+    expect(R3.ALIASES.penFacing).toEqual({ into: 'penInterleave', params: { penMode: 'facing' } });
+    expect(R3.ALIASES.penStipple).toEqual({ into: 'penInterleave', params: { penMode: 'stipple' } });
+
+    const ids = ['penInterleave', 'penPitchMatch', 'penFacing', 'penStipple'];
+    ids.forEach((id) => expect(R3.BY_ID[id].caveat.length, id).toBeGreaterThan(0));
+    // NOT all four are pairwise distinct — measured, not assumed:
+    // penPitchMatch and penFacing carry the EXACT SAME "three pens are
+    // simulated" sentence (both true, both correctly stating the same
+    // real fact); this is a genuine duplicate, unlike U7/U8's pairs. What
+    // matters is that penStipple's own caveat (the mark-class-move
+    // explanation) is DISTINCT from every sibling, and penInterleave's own
+    // (longer, "in scene3d.js"/"read every number...") is also distinct.
+    expect(R3.BY_ID.penPitchMatch.caveat).toBe(R3.BY_ID.penFacing.caveat);
+    [['penInterleave', 'penPitchMatch'], ['penInterleave', 'penFacing'], ['penInterleave', 'penStipple'],
+      ['penPitchMatch', 'penStipple'], ['penFacing', 'penStipple']].forEach(([a, b]) => {
+      expect(R3.BY_ID[a].caveat, `${a} vs ${b}`).not.toBe(R3.BY_ID[b].caveat);
+    });
+
+    // Default (penMode:'interleave', or omitted) -> penInterleave's OWN
+    // caveat, not empty. Compared via FS.note() on BOTH sides (not the raw
+    // BY_ID field) because all four C-06 members are `simulated` — note()
+    // auto-prepends SIMULATED_NOTE, so the raw BY_ID caveat alone would
+    // never match what the UI actually shows.
+    expect(FS.effectiveLaw('penInterleave', {})).toBe('penInterleave');
+    expect(Params.resolveToneLaw({ toneLaw: 'penInterleave' })).toBe('penInterleave');
+    expect(FS.note(FS.effectiveLaw('penInterleave', {})).caveat).toBe(FS.note('penInterleave').caveat);
+
+    // Each of the other three penMode values -> its OWN distinct law and
+    // caveat, agreed by both resolvers, never silently falling back to
+    // penInterleave's own.
+    [
+      { penMode: 'pitchMatch', law: 'penPitchMatch' },
+      { penMode: 'facing', law: 'penFacing' },
+      { penMode: 'stipple', law: 'penStipple' },
+    ].forEach(({ penMode, law }) => {
+      expect(FS.effectiveLaw('penInterleave', { penMode })).toBe(law);
+      expect(Params.resolveToneLaw({ toneLaw: 'penInterleave', penMode })).toBe(law);
+      const foldedCaveat = FS.note(FS.effectiveLaw('penInterleave', { penMode })).caveat;
+      expect(foldedCaveat).toBe(FS.note(law).caveat);
+      expect(foldedCaveat).not.toBe(FS.note('penInterleave').caveat);
+    });
+
+    // penStipple's caveat specifically explains the mark-class move, not the
+    // bare three-pens-simulated fact SIMULATED_NOTE already auto-prepends.
+    expect(R3.BY_ID.penStipple.caveat).toMatch(/Parallel hatching/);
+  });
+
+  // U9b / W-10d-3b — the SHADOW row's own display-resolution cross-check,
+  // the shadow-side twin of the STYLE-row checks above. `SCENE_FILL_STYLES.
+  // shadowDisplayLaw` (src/config/context-bar.js) is a SEPARATE, one-key-bag
+  // resolver from `effectiveLaw`/`displayParams` (U9's own "two mechanisms,
+  // not one path" ruling forbids giving the shadow bag a sub-control), but
+  // it must still never drift from what the real render dispatch
+  // (`Params.normalizeShadow` -> `clampShadowToneLaw`) actually resolves —
+  // this pins that mechanically, for every ALIASES id and every PICKER_IDS
+  // survivor, rather than trusting the two hand-written call sites
+  // (scene3d-panel.js, src/ui/shell/context-bar.js) to agree by inspection.
+  test('U9b: SCENE_FILL_STYLES.shadowDisplayLaw agrees with Params.normalizeShadow(clampShadowToneLaw) for every ALIASES id and every PICKER_IDS survivor', () => {
+    const Rn = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+    const Paramsn = runtime.window.Vectura.Scene3D.Params;
+    let checked = 0;
+    Object.keys(Rn.ALIASES).forEach((rawId) => {
+      const survivorLaw = FS.resolve(rawId);
+      const viaShadowDisplay = FS.shadowDisplayLaw(rawId, survivorLaw);
+      const viaRender = Paramsn.normalizeShadow({ shadowToneLaw: rawId }).shadowToneLaw;
+      expect(viaShadowDisplay, rawId).toBe(viaRender);
+      checked += 1;
+    });
+    (Rn.PICKER_IDS || Rn.IDS).forEach((survivorId) => {
+      const viaShadowDisplay = FS.shadowDisplayLaw(survivorId, survivorId);
+      const viaRender = Paramsn.normalizeShadow({ shadowToneLaw: survivorId }).shadowToneLaw;
+      expect(viaShadowDisplay, survivorId).toBe(viaRender);
+      checked += 1;
+    });
+    // garbage / absent — both resolvers must degrade the same way.
+    ['__garbage__', '', undefined, null].forEach((bad) => {
+      const survivorLaw = FS.resolve(bad);
+      const viaShadowDisplay = FS.shadowDisplayLaw(bad, survivorLaw);
+      const viaRender = Paramsn.normalizeShadow({ shadowToneLaw: bad }).shadowToneLaw;
+      expect(viaShadowDisplay, String(bad)).toBe(viaRender);
+      checked += 1;
+    });
+    expect(checked).toBe(Object.keys(Rn.ALIASES).length + (Rn.PICKER_IDS || Rn.IDS).length + 4);
+  });
+
+  // The one case where the two resolvers must DISAGREE with a naive
+  // "always show the raw id" reading: `onePenDown` — `shadowDisplayLaw`
+  // (and the real render) both resolve it to `interlockWeave`, never to
+  // `onePenDown` itself, because shadows.js has no recipe of its own for it
+  // (see the params.js `clampShadowToneLaw` comment).
+  test('U9b: onePenDown is the one ALIASES id shadowDisplayLaw resolves to its SURVIVOR, not itself', () => {
+    const survivorLaw = FS.resolve('onePenDown');
+    expect(survivorLaw).toBe('interlockWeave');
+    expect(FS.shadowDisplayLaw('onePenDown', survivorLaw)).toBe('interlockWeave');
+    // Every OTHER ALIASES id resolves to ITSELF (its own distinguishable
+    // shadows.js recipe), not its survivor.
+    const R4 = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+    Object.keys(R4.ALIASES).filter((id) => id !== 'onePenDown').forEach((id) => {
+      const sv = FS.resolve(id);
+      expect(FS.shadowDisplayLaw(id, sv), id).toBe(id);
+    });
+  });
 });

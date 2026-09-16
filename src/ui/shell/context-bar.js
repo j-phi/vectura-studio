@@ -1907,12 +1907,36 @@
         });
         // fs-y1 Job 1 — "for all fill styles": the shadow tone-law picker is
         // a Fill Style control too.
-        const shadowEntry = FS.entry(law) || {};
+        //
+        // U9b / W-10d-3b — the ctxbar flyout twin of the docked panel's fix
+        // (scene3d-panel.js `renderShadowControls`): the (i) popover reads
+        // the id `FS.shadowDisplayLaw` resolves off the RAW stored value, not
+        // the bare survivor `law` the select itself is bound to, so a raw
+        // folded id with its own distinguishable shadows.js recipe shows its
+        // OWN entry here too, not the survivor's.
+        const shadowInfoLaw = FS.shadowDisplayLaw ? FS.shadowDisplayLaw(bag.shadowToneLaw, law) : law;
+        const shadowEntry = FS.entry(shadowInfoLaw) || {};
         flyLawInfo(fly, toneLawHost, [
           { text: shadowEntry.mechanism ? `How: ${shadowEntry.mechanism}` : '' },
           { text: shadowEntry.strengths ? `Strengths: ${shadowEntry.strengths}` : '' },
           { text: shadowEntry.weaknesses ? `Weaknesses: ${shadowEntry.weaknesses}` : '' },
         ], `About ${shadowEntry.label || C.toneLaw.label}`);
+        // U5b-4 — the ctxbar flyout twin of the docked panel's caveat
+        // paragraph fix (scene3d-panel.js `renderShadowControls`), mirroring
+        // the Style flyout's own `effectiveLaw`/`caveatNote`/`flyNote(...)
+        // .classList.add('is-caveat')` pattern above exactly. Before this, a
+        // caveat-bearing shadow law's warning was reachable only inside the
+        // (i) popover's "Weaknesses:" text (U7-2's live-verification finding,
+        // LEDGER row 11a) — no standalone paragraph existed on this surface
+        // either. The shadow bag has NO sub-control (U9's reviewer forbids
+        // giving it one), so `FS.effectiveLaw(shadowInfoLaw, {})` is a
+        // provable no-op today — this reads `shadowInfoLaw` (already
+        // resolved above for the (i) popover) through the SAME mechanism the
+        // Style flyout uses. A caveat paragraph, not a param seed: nothing is
+        // written to `bag`/`shadow`.
+        const shadowEffectiveLaw = FS.effectiveLaw ? FS.effectiveLaw(shadowInfoLaw, {}) : shadowInfoLaw;
+        const shadowCaveatNote = FS.note(shadowEffectiveLaw);
+        if (shadowCaveatNote.caveat) flyNote(fly, shadowCaveatNote.caveat).classList.add('is-caveat');
         if (C.toneLawNote) flyNote(fly, C.toneLawNote);
       } else if (FS && Shadows && !isLive && C.toneLawInertNote) {
         flyNote(fly, C.toneLawInertNote);

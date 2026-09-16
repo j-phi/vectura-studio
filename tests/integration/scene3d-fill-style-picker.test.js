@@ -150,8 +150,13 @@ describe('Fill Style — the shared mark-class config', () => {
   });
 
   test('the note leads with the mark class; simulated laws are prefixed; caveats survive', () => {
+    // U6 (C-06/W-18a): penStipple's mark class moved 'dot' -> 'hatch'
+    // (Jay's decision, 2026-09-10) — the note now leads with "Parallel
+    // hatching", not "Dots & stipple". It is still `simulated` (unaffected
+    // by the move), so the SIMULATED_NOTE prefix assertion below is
+    // unchanged.
     const n = F.note('penStipple');
-    expect(n.text).toMatch(/^Dots & stipple —/);
+    expect(n.text).toMatch(/^Parallel hatching —/);
     expect(n.caveat.startsWith(F.SIMULATED_NOTE)).toBe(true);
     // A non-simulated library law still shows its measured caveat.
     expect(F.note('bundleDither').caveat.length).toBeGreaterThan(0);
@@ -457,12 +462,18 @@ describe('Fill Style — the shared mark-class config', () => {
       // interlockWeave, per
       // docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl (every mapper,
       // both ids); ALIVE unaffected, neither interlockWeave nor onePenDown
-      // is a mono law) 34 total - 11 = 23. Re-measured directly (not
-      // assumed): `groups('box')` now offers 34 options (33 PICKER_IDS +
-      // 'ladder'), confirmed failing at 24 (`expected 23 to be 24`) before
-      // this edit, passing at 23 after.
+      // is a mono law) 34 total - 11 = 23. U6 (C-06/W-18a,
+      // penInterleave/penMode, 3 more folded — penPitchMatch/penFacing/
+      // penStipple, all threePen-family laws, dead on box+hatch exactly
+      // like their survivor penInterleave, per
+      // docs/3d-audit/fill-audit/manifest.B.unreachable.jsonl; ALIVE
+      // unaffected — none of the four is a mono law, and penStipple's
+      // mark-class move ('dot' -> 'hatch') does not touch mono-ness) 31
+      // total - 11 = 20. Re-measured directly (not assumed): `groups('box')`
+      // now offers 31 options (30 PICKER_IDS + 'ladder'), confirmed failing
+      // at 23 (`expected 20 to be 23`) before this edit, passing at 20 after.
       expect(alive.length).toBe(11);
-      expect(dead.length).toBe(23);
+      expect(dead.length).toBe(20);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
@@ -1011,8 +1022,11 @@ describe('Fill Style — context-bar Style flyout', () => {
 
     // The picker offers every law permanently now — no disclosure to open
     // before a previously-demoted (simulated pen) law is selectable.
+    // penCross (not penStipple — U6/C-06 folded penStipple away as its own
+    // picker row, 2026-09-10) is still directly selectable and still
+    // `simulated`, so it exercises the same property.
     const sel = rowCtl(fly, 'Fill Style').querySelector('select');
-    sel.value = 'penStipple';
+    sel.value = 'penCross';
     fire(sel, 'change');
     const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
     expect(caveat).toBeTruthy();
@@ -2236,6 +2250,97 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
     expect(ctl.classList.contains('ctxbar-fly-mixed')).toBe(false);
     expect(Array.from(ctl.querySelectorAll('option')).map((o) => o.textContent)).not.toContain('Mixed');
   });
+
+  // U9b / W-10d-3b — the shadow row's own DISPLAY lie, the shadow-side twin
+  // of W-10d-3's style-row sub-control fix. The shadow bag stays a ONE-KEY
+  // raw pass-through (U9's own ruling forbids a shadow sub-control), so the
+  // <select> correctly keeps showing the resolved SURVIVOR — but the (i)
+  // popover used to always read the survivor's own entry too, hiding a raw
+  // folded id's OWN distinct mechanism/caveat (fineLadder's own text, not
+  // Ladder's).
+  test('U9b — a raw folded shadowToneLaw (fineLadder): select still shows the survivor (Ladder), but the (i) popover shows Fine Ladder\'s OWN entry', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'fineLadder' } });
+    const row = rowCtl(fly, 'Fill Style').parentNode;
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('ladder'); // over-fix guard: unchanged
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    fire(btn, 'click');
+    const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.textContent).toContain(F.entry('fineLadder').mechanism);
+    expect(box.textContent).not.toContain(F.entry('ladder').mechanism);
+  });
+
+  // onePenDown is the one ALIASES id shadows.js has NO recipe of its own for
+  // (see params.js clampShadowToneLaw) — it resolves and DISPLAYS as its
+  // survivor interlockWeave, correctly, because the render is now
+  // byte-identical to interlockWeave's (U9b's params.js fix). Showing
+  // interlockWeave's own entry here is correct, not a lie.
+  test('U9b — a raw legacy shadowToneLaw (onePenDown): both the select AND the (i) popover show Interlock Weave (byte-identical duplicate, not its own entry)', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'onePenDown' } });
+    const row = rowCtl(fly, 'Fill Style').parentNode;
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('interlockWeave');
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    fire(btn, 'click');
+    const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.textContent).toContain(F.entry('interlockWeave').mechanism);
+  });
+
+  // U5b-4 (LEDGER row 11a) — the shadow row's Fill Style picker previously
+  // rendered NO standalone caveat paragraph on either surface: a caveat-
+  // bearing shadow law's warning was reachable only inside the (i) popover's
+  // "Weaknesses:" text (U7-2's live-verification finding). Ctxbar twin of the
+  // docked-panel tests below. `dutyConst` is U7-2's own probe case and a real
+  // caveat-bearing law reachable here (Shadows.toneLawApplies('dutyConst')
+  // === true).
+  test('U5b-4 — a caveat-bearing shadow law (dutyConst) renders a standalone .is-caveat paragraph in the Shadow flyout', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'dutyConst' } });
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('dutyConst');
+    const caveat = fly.querySelector('.ctxbar-fly-note.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toBe(F.note('dutyConst').caveat);
+  });
+
+  test('U5b-4 — a non-caveat shadow law (ladder) renders NO .is-caveat paragraph (no empty warning)', () => {
+    const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'ladder' } });
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('ladder');
+    expect(fly.querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
+  });
+
+  // The shadow bag has NO sub-control (U9's reviewer forbids giving it one)
+  // — the caveat must not seed or read any sub-control key onto `shadow`.
+  test('U5b-4 — the caveat does not seed a sub-control onto the shadow bag', () => {
+    const { scene, fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'dutyConst' } });
+    expect(fly.querySelector('.ctxbar-fly-note.is-caveat')).toBeTruthy();
+    const shadowKeys = Object.keys(scene.params.shadow || {});
+    expect(shadowKeys).not.toContain('rungDetail');
+    expect(shadowKeys).not.toContain('bundleMode');
+    expect(shadowKeys).not.toContain('penDown');
+    expect(shadowKeys).not.toContain('penMode');
+  });
+
+  // U5b-5 (LEDGER row 11c) — the Shadow flyout's Fill Style <select> clips a
+  // long label mid-word with no ellipsis ("Duty Cycle · Constant" rendered
+  // as "Duty Cycle · Constar"), proven pre-existing at `49a5ef88` by the
+  // U9b-2/U5b-4 reviewer. jsdom does not run a real CSS layout/paint engine
+  // (`getComputedStyle` here cannot reproduce actual text clipping), so —
+  // matching this repo's own established pattern for CSS-only regressions
+  // (see tests/unit/css-on-tokens-and-no-transition-all.test.js) — this pins
+  // the fix at the CSS-source level: every `.ctxbar-fly-ctl` select (every
+  // scene flyout row, Style and Shadow alike — the reviewer's "check the
+  // whole roster, not just dutyConst" note) must declare a real overflow
+  // treatment instead of the browser's raw, ellipsis-less clip.
+  test('U5b-5 — every ctxbar scene-flyout <select> (.ctxbar-fly-ctl .ctrl-sel) declares text-overflow: ellipsis, not a raw clip', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const css = fs.readFileSync(
+      path.resolve(__dirname, '..', '..', 'src', 'ui', 'skin', 'components.css'),
+      'utf8'
+    );
+    const rule = css.match(/\.ctxbar-fly-ctl\s+\.ctrl-sel\s*\{([^}]*)\}/);
+    expect(rule).toBeTruthy();
+    expect(rule[1]).toMatch(/text-overflow:\s*ellipsis/);
+    expect(rule[1]).toMatch(/overflow:\s*hidden/);
+    expect(rule[1]).toMatch(/white-space:\s*nowrap/);
+  });
 });
 
 describe('Shadow Fill Style — docked 3D Scene panel', () => {
@@ -2318,6 +2423,60 @@ describe('Shadow Fill Style — docked 3D Scene panel', () => {
   test('an unknown shadowToneLaw id resolves to the default (ladder), not a blank/invalid select', () => {
     const { container } = mount({ shadow: { shadowToneLaw: 'not-a-real-law' } });
     expect(rowCtl(shadowHost(container), 'Fill Style').querySelector('select').value).toBe('ladder');
+  });
+
+  // U9b / W-10d-3b — docked-panel twin of the ctxbar tests above.
+  test('U9b — a raw folded shadowToneLaw (fineLadder): select still shows the survivor (Ladder), but the (i) popover shows Fine Ladder\'s OWN entry', () => {
+    const { container } = mount({ shadow: { shadowToneLaw: 'fineLadder' } });
+    const host2 = shadowHost(container);
+    const row = rowCtl(host2, 'Fill Style').parentNode;
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('ladder'); // over-fix guard
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    btn.dispatchEvent(new window.Event('click', { bubbles: true }));
+    const box = host2.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.textContent).toContain(F.entry('fineLadder').mechanism);
+    expect(box.textContent).not.toContain(F.entry('ladder').mechanism);
+  });
+
+  test('U9b — a raw legacy shadowToneLaw (onePenDown): both the select AND the (i) popover show Interlock Weave (byte-identical duplicate, not its own entry)', () => {
+    const { container } = mount({ shadow: { shadowToneLaw: 'onePenDown' } });
+    const host2 = shadowHost(container);
+    const row = rowCtl(host2, 'Fill Style').parentNode;
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('interlockWeave');
+    const btn = row.querySelector('.vs3-lawinfo-btn');
+    btn.dispatchEvent(new window.Event('click', { bubbles: true }));
+    const box = host2.querySelector(`#${btn.getAttribute('aria-describedby')}`);
+    expect(box.textContent).toContain(F.entry('interlockWeave').mechanism);
+  });
+
+  // U5b-4 (LEDGER row 11a) — docked-panel twin of the ctxbar tests above.
+  test('U5b-4 — a caveat-bearing shadow law (dutyConst) renders a standalone .vs3-lawnote.is-caveat paragraph in the docked Shadow section', () => {
+    const { container } = mount({ shadow: { shadowToneLaw: 'dutyConst' } });
+    const host2 = shadowHost(container);
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('dutyConst');
+    const caveat = host2.querySelector('.vs3-lawnote.is-caveat');
+    expect(caveat).toBeTruthy();
+    expect(caveat.textContent).toBe(F.note('dutyConst').caveat);
+  });
+
+  test('U5b-4 — a non-caveat shadow law (ladder) renders NO .vs3-lawnote.is-caveat paragraph (no empty warning)', () => {
+    const { container } = mount({ shadow: { shadowToneLaw: 'ladder' } });
+    const host2 = shadowHost(container);
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('ladder');
+    expect(host2.querySelector('.vs3-lawnote.is-caveat')).toBeNull();
+  });
+
+  // The shadow bag has NO sub-control (U9's reviewer forbids giving it one)
+  // — the caveat must not seed or read any sub-control key onto `shadow`.
+  test('U5b-4 — the caveat does not seed a sub-control onto the shadow bag', () => {
+    const { container, layer } = mount({ shadow: { shadowToneLaw: 'dutyConst' } });
+    const host2 = shadowHost(container);
+    expect(host2.querySelector('.vs3-lawnote.is-caveat')).toBeTruthy();
+    const shadowKeys = Object.keys(layer.params.shadow || {});
+    expect(shadowKeys).not.toContain('rungDetail');
+    expect(shadowKeys).not.toContain('bundleMode');
+    expect(shadowKeys).not.toContain('penDown');
+    expect(shadowKeys).not.toContain('penMode');
   });
 });
 

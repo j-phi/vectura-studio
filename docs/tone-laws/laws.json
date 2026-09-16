@@ -10,7 +10,8 @@
       "strengths": "Perfect evenness by construction (spacing CoV 0.0, spacing step 1x, zero free ends), the gentlest highlight falloff and among the lowest moire and ink cost of the whole roster.",
       "weaknesses": "Carries no tone at all — R2 0.036, L* span 4.3, darkest L* 92.6 — the form reads as a wire cage, not a shaded solid.",
       "chooseWhen": "Choose it for line work without shading, a technical read of the form, or a base pass a second layer will shade; use it as the control every other law is judged against.",
-      "caveat": "It is the Stage 0 reference, not a tone law — it carries no tone at all."
+      "caveat": "This isn't a tone law at all — it's the plain reference with no shading step applied.",
+      "measured": "It is the Stage 0 reference, not a tone law — it carries no tone at all."
     },
     {
       "id": "nibAngle",
@@ -142,7 +143,8 @@
       "strengths": "The cleanest signal of the original twelve and still among the lowest moire anywhere in the table (1.69 RMS on ellipsoid·contour), aperiodic by construction, gentle highlight falloff, only 40 paths.",
       "weaknesses": "It only acts in the deepest 15%, so on a fixture where little of the form is that dark it barely engages: R2 0.014, L* span 7.3, darkest L* 86.6, worst linearity in the table (off-line 88.4%).",
       "chooseWhen": "Choose it as a shadow-region partner to another law, not as the whole tone law — the answer when the deep shadow has gone flat and a second family is not wanted, but only where real deep shadow exists in the drawing.",
-      "caveat": "This is a CONTROL/REFUTATION on this fixture: its poor overall numbers are a fixture artefact because it only acts in the darkest 15% of the tone range, which this scene, at this sun angle, barely reaches."
+      "caveat": "This option only shades the very darkest part of the form. If your scene has little deep shadow (a shallow sun angle, a light setup), it can look like it isn't doing anything — that's expected, not a bug.",
+      "measured": "This is a CONTROL/REFUTATION on this fixture: its poor overall numbers are a fixture artefact because it only acts in the darkest 15% of the tone range, which this scene, at this sun angle, barely reaches."
     },
     {
       "id": "bundleCount",
@@ -166,7 +168,8 @@
       "strengths": "The largest L* span in the whole table (82.3) and the only law besides contFieldTouch to reach the dark end on every cell, including ellipsoid·contour where nothing else gets below 33.6.",
       "weaknesses": "The reported darkest L* is optimistic because Murray-Davies double-counts overlapped ink, and it is the most expensive law here in ink and paths.",
       "chooseWhen": "Choose it when true black out of one pen is needed and plot time and wet ink can be spent; use it as a shadow partner, not the whole law.",
-      "caveat": "The reported darkest L* 4.5 is optimistic: correcting for the 0.55-nib overlap, the geometry gives L* about 21.6, not 4.5 — still the deepest black in the set, but not what the table prints. It floods 78% of gated samples on sphere·hatch (sub-nib steps laying ink on ink)."
+      "caveat": "On a curved surface this can flood large areas to solid black, because its closely stacked passes lay ink on top of ink — try Bundle · Count if that happens. It still reaches the deepest black of any Fill Style option, just not quite as deep as its own numbers suggest.",
+      "measured": "The reported darkest L* 4.5 is optimistic: correcting for the 0.55-nib overlap, the geometry gives L* about 21.6, not 4.5 — still the deepest black in the set, but not what the table prints. It floods 78% of gated samples on sphere·hatch (sub-nib steps laying ink on ink)."
     },
     {
       "id": "bundleEased",
@@ -286,7 +289,8 @@
       "strengths": "The cheapest plot of the three-pen family and the smoothest highlight falloff (8.56 on sphere·hatch, the family's best), because an even grid has no boundary for the ink to stop at; zero free ends on every cell.",
       "weaknesses": "R2 only 0.004-0.154 on the hatch cells — the even grid that buys the smooth highlight also refuses to carry the ramp — and long-wave moire is high (10.34) because two alternating nib widths on a fixed grid is itself periodic.",
       "chooseWhen": "Choose it for an even, technical, unfussy ruling with real nib weight in it, not for tonal accuracy — best of the six for a highlight that must not show where the ink stopped.",
-      "caveat": "Three pens are SIMULATED, not expressible: penId is carried per style group in scene3d.js, not per run, so no real plot could name three nibs within one fill — read every number with that in mind."
+      "caveat": "A real plot would need three separate pen passes to reproduce this fill exactly — treat any per-nib detail in its numbers as illustrative, not a literal plotting instruction.",
+      "measured": "Three pens are SIMULATED, not expressible: penId is carried per style group in scene3d.js, not per run, so no real plot could name three nibs within one fill — read every number with that in mind."
     },
     {
       "id": "penStipple",
@@ -298,7 +302,7 @@
       "strengths": "Best off-the-line in the whole 47-law table on sphere·crosshatch (18.0%), second-best tier seam of the family (9.9 L*), and the fewest paths of the tonally-useful pen laws on the hatch cells.",
       "weaknesses": "Real free ends (2.46-3.08 mm) — short and deliberate, a stipple flick is a free end, but still counted — and R2 0.001 on cylinder·hatch.",
       "chooseWhen": "Choose it when the drawing has a large soft highlight that needs to fade to nothing and short stipple flicks are acceptable — the family's best answer on crosshatch.",
-      "caveat": "Three pens are SIMULATED, not expressible: penId is carried per style group, not per run, so no real plot could switch nibs within one fill."
+      "caveat": "Pen Stipple moved from \"Dots & stipple\" to \"Parallel hatching\": it has never drawn dots — its highlight fade comes from shortening the fine nib's hatch marks, the same ruled-darks mechanism as the other Pen options. If you want an actual dot pattern, this option won't give you one."
     },
     {
       "id": "penReserve",
@@ -310,7 +314,8 @@
       "strengths": "The most engraved-looking result of the whole roster, and the darkest of the usable pen laws — 5th-percentile L* 48.4 on sphere·hatch, using all three nibs genuinely.",
       "weaknesses": "Tonally weak (R2 0.003-0.210) with the narrowest span of the tonally-active pen laws, and 23.5 mm free ends on sphere·hatch where the reserves cut rulings and the cut ends stop in open surface.",
       "chooseWhen": "Choose it when the engraved look is the point — a hero object, a frontispiece — not for tonal fidelity, and not where cut ends read as errors.",
-      "caveat": "It is a crosshatch law, not a hatch law — it composes a second family by construction, so its numbers are not directly comparable to the single-direction laws. Three pens are also SIMULATED, not expressible: penId is per style group, not per run."
+      "caveat": "This is a crosshatch fill: it always adds a second crossing pass, so it looks and costs differently than the single-direction Fill Style options.",
+      "measured": "It is a crosshatch law, not a hatch law — it composes a second family by construction, so its numbers are not directly comparable to the single-direction laws. Three pens are also SIMULATED, not expressible: penId is per style group, not per run."
     },
     {
       "id": "penCross",
@@ -322,7 +327,8 @@
       "strengths": "The fewest paths in the entire 47-law table (65 on sphere·hatch, 26 on ellipsoid·contour) and the lowest weighted ink of the three-pen family.",
       "weaknesses": "Its defect is that it never uses the pen it was built around, and putting the seam on a family boundary gives it the worst tier seam of the six (53.8 L*).",
       "chooseWhen": "Don't — it is documented because the reasoning was sound and the result refutes it: the perceptual cluster boundary is exactly the wrong place to put a register change.",
-      "caveat": "It never uses its fine nib — 0 paths at the 0.87x multiplier on all five cells — so a law specified with three nibs emits only two. It is also a crosshatch law, not a hatch law, and its three pens are simulated, not expressible (penId is per style group, not per run)."
+      "caveat": "Despite being described as three nib widths, its finest nib never actually draws — only two widths appear. It's also a crosshatch fill: it always adds a second crossing pass, rather than drawing in a single direction.",
+      "measured": "It never uses its fine nib — 0 paths at the 0.87x multiplier on all five cells — so a law specified with three nibs emits only two. It is also a crosshatch law, not a hatch law, and its three pens are simulated, not expressible (penId is per style group, not per run)."
     },
     {
       "id": "penPitchMatch",
@@ -334,7 +340,8 @@
       "strengths": "The winner on every tone axis of the pen family — best R2 of the six on four cells, best off-the-line on sphere·hatch (22.0%), and the smallest tier seam of all ten three-pen laws (9.3 L*, against whiteBand's own 28.8).",
       "weaknesses": "Highest master-grid spacing CoV of the family (0.724) — with width fixed to three values all the tonal work lands on spacing — and it is still nowhere near the width laws on linearity.",
       "chooseWhen": "Choose it first in this family — if three nibs ever become expressible per run, start here; the simplest policy beat every scheduled handoff, which is the family's real finding.",
-      "caveat": "Three pens are SIMULATED, not expressible: penId is carried per style group, not per run."
+      "caveat": "Like the other Pen options, this fill's three nib widths are simulated on one pen layer — a real plot would need three separate pen passes to reproduce them exactly.",
+      "measured": "Three pens are SIMULATED, not expressible: penId is carried per style group, not per run."
     },
     {
       "id": "penFacing",
@@ -346,7 +353,8 @@
       "strengths": "It does read as form — the broad limb and fine crown give a strong, immediate sense of roundness with no reference to the light at all — and darkest L* 43.1 beats whiteBand's 51.4.",
       "weaknesses": "Carries almost no tone: L* span 4.4 on sphere·hatch and R2 0.000, the lowest R2 of any tone-carrying law in the table, with the highest master-grid spacing CoV in the entire table (0.876).",
       "chooseWhen": "Choose it as a decorative treatment, not a tonal one — a diagram, a logotype, an object drawn for its shape — or compose it under a tonal law that owns the spacing; never as the tone law itself.",
-      "caveat": "Three pens are SIMULATED, not expressible: penId is carried per style group, not per run."
+      "caveat": "Like the other Pen options, this fill's three nib widths are simulated on one pen layer — a real plot would need three separate pen passes to reproduce them exactly.",
+      "measured": "Three pens are SIMULATED, not expressible: penId is carried per style group, not per run."
     },
     {
       "id": "mkScribble",
@@ -406,7 +414,8 @@
       "strengths": "Cuts unintended bare area to 3.3% (from interlockWeave's 34.1%) and keeps the elongation model within 1.5% of the realised polyline length (1.068 modelled vs 1.050 real) — the round's two headline fixes.",
       "weaknesses": "Modest R2 (0.188 on sphere·hatch) and off-the-line 11.7%, and on cylinder·hatch the whole family including this law collapses to R2 near 0 because a cylinder's wide near-constant-radiance band drives spacing to the plot floor everywhere at once and the wave floods it.",
       "chooseWhen": "Choose it as the default Round-6 wave law when a texture needs to stay visibly wavy across the whole tone range rather than straightening in the highlight.",
-      "caveat": "Despite belonging to the wave family, it is not single-weight: it is registered in surface-fill.js's WEIGHT_LAWS list and splits per sample along the line (splitsAlongLine()), because stroke weight takes over wherever the spacing field bottoms out at the plot floor."
+      "caveat": "This line's weight isn't constant along its length — it thickens and thins as it goes. That happens because wherever the wave spacing gets too tight to draw cleanly, weight takes over to keep carrying the shading.",
+      "measured": "Despite belonging to the wave family, it is not single-weight: it is registered in surface-fill.js's WEIGHT_LAWS list and splits per sample along the line (splitsAlongLine()), because stroke weight takes over wherever the spacing field bottoms out at the plot floor."
     },
     {
       "id": "weaveDepth",
@@ -418,7 +427,8 @@
       "strengths": "Holds the family's waviness-survives-the-highlight fix (retained amplitude 152% of the shadow mean) while also delivering the family's second-lowest unintended bare area (3.0%) and comparable elongation accuracy (1.028 modelled vs 1.025 real).",
       "weaknesses": "R2 0.185 and off-the-line 18.0% on sphere·hatch — no better than the round's baseline — and, like the rest of the family, collapses on cylinder·hatch where the near-constant radiance band drives the whole spacing field to the plot floor at once.",
       "chooseWhen": "Choose it over ampSpacing when the perpendicular clearance itself, not the raw radiance ramp, is the quantity that should ease smoothly.",
-      "caveat": "Not single-weight: it appears in isWaveLaw()/WEIGHT_LAWS and splits per sample along the line, because stroke weight takes over wherever the spacing field bottoms at the (lowered) plot floor."
+      "caveat": "Like Single wave row, this line's weight varies along its length rather than staying constant. Choosing Nested rows tightens the spacing further, so weight takes over sooner to keep the shading going.",
+      "measured": "Not single-weight: it appears in isWaveLaw()/WEIGHT_LAWS and splits per sample along the line, because stroke weight takes over wherever the spacing field bottoms at the (lowered) plot floor."
     },
     {
       "id": "interlockWeave",
@@ -430,7 +440,8 @@
       "strengths": "The round's anti-phase reference point: darkest L* 50.9 on sphere·hatch with 1253 mm of ink and 752 pen-downs, and a median darks clearance of 1.30 mm.",
       "weaknesses": "Its amplitude collapses to near zero in the lit region (0.3% of the shadow mean retained) because k = wvRamp(I) goes to zero above the light threshold — a straight ruling in the highlight, the defect the whole Round 6 wave family was built to fix — and unintended bare area is the worst of the wave laws measured (34.1%).",
       "chooseWhen": "Superseded by the Round 6 family (ampSpacing, weaveDepth, etc.) for production use; keep it as the historical anti-phase reference point.",
-      "caveat": "The intuition about phase is backwards here: in-phase nesting (nestedSerpentine) narrows the perpendicular clearance to 1.05 mm while this anti-phase weave stays open at 1.30 mm — the nest minimises open space, the interlock only looks as though it should. It is also not single-weight — it appears in isWaveLaw()/WEIGHT_LAWS and splits per sample along the line."
+      "caveat": "Despite its name, this weave doesn't pack lines tightly — it leaves more open space between them than you might expect from an interlocking pattern. Its line weight also varies along its length rather than staying constant.",
+      "measured": "The intuition about phase is backwards here: in-phase nesting (nestedSerpentine) narrows the perpendicular clearance to 1.05 mm while this anti-phase weave stays open at 1.30 mm — the nest minimises open space, the interlock only looks as though it should. It is also not single-weight — it appears in isWaveLaw()/WEIGHT_LAWS and splits per sample along the line."
     },
     {
       "id": "trochoidLoop",
@@ -442,7 +453,8 @@
       "strengths": "Darkest L* 20.2 on sphere·hatch — deeper than any other Round 5/6 wave law and deeper honestly than the prior deepest (transverseReserve's 23.6), with a better fit (R2 0.354), less deviation (13.9% off-line), a wider span (39.2), and zero free ends where transverseReserve left 21.5 mm.",
       "weaknesses": "The extra depth is bought partly below the plot floor: 5th-percentile clearance in the darks is 0.286 mm against the 0.66 mm floor, and the elongation cap fired on 2165 samples; bare area is still 23.9% and it costs about 1.5x whiteBand's ink for the extra reach.",
       "chooseWhen": "Choose it when the single deepest dark in the wave family is worth paying for in ink and a controlled amount of below-floor crowding at the core shadow.",
-      "caveat": "Like the rest of the wave family it is width-varying, not single-weight — it appears in isWaveLaw()/splitsAlongLine(), so stroke weight still takes over wherever the loop's own spacing bottoms at the floor."
+      "caveat": "Like the other Wavy lines & scribble options, this line's weight varies along its length rather than staying constant, thickening wherever the loop's own spacing gets too tight to draw cleanly.",
+      "measured": "Like the rest of the wave family it is width-varying, not single-weight — it appears in isWaveLaw()/splitsAlongLine(), so stroke weight still takes over wherever the loop's own spacing bottoms at the floor."
     },
     {
       "id": "amplitudeOnly",
@@ -454,7 +466,8 @@
       "strengths": "It is unambiguous as a control: it isolates exactly one variable (arc length) and answers the question the other nine wave laws exist to route around.",
       "weaknesses": "Confirms the prior negative result decisively: R2 0.005, L* span only 7.2, off-the-line 48.8% on sphere·hatch. A single-valued serpentine's elongation only runs to about 1.5x at a fixed pen and pitch, so that is the whole tonal range available — there is no ramp in it.",
       "chooseWhen": "Never choose it as a production law — it exists to prove that amplitude by itself is not a usable tone channel, the finding every other wave law in the roster is built on.",
-      "caveat": "A CONTROL/REFUTATION, not a production law: it proves amplitude is not a tone channel (R2 0.005), which is why every other Round 6 wave law splits tone onto the spacing field and keeps amplitude as a texture only."
+      "caveat": "This option exists to show that wave amplitude alone can't create visible shading — that's why every other Wavy lines & scribble option controls tone through line spacing instead, and only uses amplitude for texture. Expect little to no shading effect from this one.",
+      "measured": "A CONTROL/REFUTATION, not a production law: it proves amplitude is not a tone channel (R2 0.005), which is why every other Round 6 wave law splits tone onto the spacing field and keeps amplitude as a texture only."
     },
     {
       "id": "onePenDown",
@@ -466,7 +479,8 @@
       "strengths": "Its whole claim is pen-lift economy, and it holds it under independent re-measurement: on a hatch-filled default-camera sphere (fillDensity 60) it produced 9 continuous paths against 36 for the ladder default and 263 for whiteBand in the identical fixture — 4x and 29x fewer pen-downs respectively — while still emitting finite, non-empty geometry that is visibly distinct from ladder's ruling pattern. A prior measurement on a different (higher-resolution) sphere cell recorded 19 pen-downs against whiteBand's 450, the same direction at a larger scale. Every pen-down removed is a lift-and-drop the plotter does not spend time on and a registration error it cannot introduce.",
       "weaknesses": "The saving is bought in ink, not free: the same re-measurement fixture spent 3316.5 mm against ladder's 2117.4 mm (+56.6%) and whiteBand's 1690.2 mm (+96.2%), because a chart-space bridge is still arc length the pen has to travel. It also inherits the wave family's historical Round 5 softness on tone fit (R2 0.249, off-line 16.5%, clearance 1.17 mm) — it is not a contender for the deepest or most linear dark, only for the fewest lifts.",
       "chooseWhen": "Choose it when plot time and registration drift from repeated pen-lifts matter more than raw ink economy or tone linearity — a large, mostly-lit curved form (a sphere, a dome) on a machine where every pen-down carries real overhead.",
-      "caveat": "Like the rest of the wave family it is not single-weight — it varies weight stroke to stroke — but unlike every other member it deliberately does NOT split along the line: splitsAlongLine() excludes it by name, because a chain of abutting sub-paths would be the exact opposite of its one-continuous-stroke premise."
+      "caveat": "Like One stroke per ruling, this line's weight varies — but stroke to stroke, not gradually along each line. Unlike that option, it deliberately keeps every line as one unbroken stroke, since breaking it up would defeat the point of drawing it in a single pen-down.",
+      "measured": "Like the rest of the wave family it is not single-weight — it varies weight stroke to stroke — but unlike every other member it deliberately does NOT split along the line: splitsAlongLine() excludes it by name, because a chain of abutting sub-paths would be the exact opposite of its one-continuous-stroke premise."
     },
     {
       "id": "etfKang",
@@ -502,7 +516,8 @@
       "strengths": "Widest L* span of the mono direction-field group (63.3) and reaches the plot floor in the darks on every cell measured, because there is no scheduled global angle for the tone to run out of room against.",
       "weaknesses": "Highest moire of the direction-field group (20.95 RMS) — decorrelating the angle every few millimetres removes the classic lattice beat but replaces it with region-boundary noise — and the highest highlight falloff among the four.",
       "chooseWhen": "Choose it for a hatched form where a single global ruling angle would produce a visible period, and a mezzotint-like irregular grain is acceptable in its place.",
-      "caveat": "One 3.2 mm bare spot survives on superellipsoid, where a region boundary lands on the chart seam. It is the only mezzoRegion cell over 2.3 mm and it is not the white-gap defect the monoline fix closed — superellipsoid’s unreachable area is 0.00%."
+      "caveat": "On a Superellipsoid shape, a small blank spot can appear where a region boundary lines up with a seam in the form. It's a rare, minor gap — not the larger white-gap issue that's already been fixed elsewhere.",
+      "measured": "One 3.2 mm bare spot survives on superellipsoid, where a region boundary lands on the chart seam. It is the only mezzoRegion cell over 2.3 mm and it is not the white-gap defect the monoline fix closed — superellipsoid’s unreachable area is 0.00%."
     },
     {
       "id": "originSpiral",
@@ -526,7 +541,8 @@
       "strengths": "No mark is ever born or killed as tone changes, so there is no locus where a mark \"appears\" for the eye to trace — its texture frequency is exactly the same everywhere and only the duty cycle moves.",
       "weaknesses": "Narrow span (about 18 L* on the light cells) and R2 only 0.393-0.620, because the fixed period caps how dark the drawing can get before neighbouring marks must literally merge into a continuous ruling.",
       "chooseWhen": "Choose it where a perfectly steady mark frequency (a fixed dots-per-millimetre grain) matters more than reaching a deep shadow.",
-      "caveat": "Its widest bare gaps — 4.5 mm on sphere, 3.9 mm on capsule, 2.6 mm on ellipsoid — are the highlight dots, not holes. At low duty the mark shortens until it is a pen-down dot, so open paper between dots in the light is the duty cycle doing its job. Read the widest-bare-gap row for this law as mark spacing."
+      "caveat": "The open paper you see in highlight areas is intentional — marks shrink down to dots there, so the gaps between them are the shading effect working as designed, not a defect.",
+      "measured": "Its widest bare gaps — 4.5 mm on sphere, 3.9 mm on capsule, 2.6 mm on ellipsoid — are the highlight dots, not holes. At low duty the mark shortens until it is a pen-down dot, so open paper between dots in the light is the duty cycle doing its job. Read the widest-bare-gap row for this law as mark spacing."
     },
     {
       "id": "endShorten",
@@ -538,7 +554,8 @@
       "strengths": "Highest R2 of the whole mono roster on the hatch and contour cells (0.826-0.875) — a per-ruling free-end retraction that is a smooth function of the local tone at the end fits the light better than any full-field direction or spacing law measured here — and zero highlight-falloff residual, because the end simply is not there rather than fading.",
       "weaknesses": "Narrowest span of any usable mono law (about 17.8-17.9 on the light cells) — the mechanism can only ever remove ink at the ends, so it never reaches a real shadow (darkest L* 81) — and it produces real, deliberate free ends, the opposite of the roster's usual zero-free-end guarantee.",
       "chooseWhen": "Choose it when the highlight boundary — a form's shoulder rolling out of the light — is what needs to read convincingly, and a deep shadow is not required.",
-      "caveat": "Its 21.6-30.7% bare interior area, and bare gaps up to 19.2 mm, are the mechanism and not a defect: the law shades by pulling each ruling’s ends back from the silhouette, so bare paper at the ends is exactly what it is for. It is also the one mono law that produces real, deliberate free ends. Do not read either figure as the white gap the monoline fix closed."
+      "caveat": "The open paper you see near the edges of the form is intentional — this option shades by pulling each line's ends back from the outline, so blank space there is the effect working as designed, not a defect.",
+      "measured": "Its 21.6-30.7% bare interior area, and bare gaps up to 19.2 mm, are the mechanism and not a defect: the law shades by pulling each ruling’s ends back from the silhouette, so bare paper at the ends is exactly what it is for. It is also the one mono law that produces real, deliberate free ends. Do not read either figure as the white gap the monoline fix closed."
     },
     {
       "id": "turingStripe",
