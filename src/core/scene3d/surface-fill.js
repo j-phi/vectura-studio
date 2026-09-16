@@ -2587,7 +2587,16 @@
     const MK = {
       mkDotScreen:   { shape: 'disc',     chan: 'size',  lat: 'hex',     or: 'none',   P0: 1.00 },
       mkLozenge:     { shape: 'lozenge',  chan: 'size',  lat: 'brick',   or: 'along',  P0: 1.15 },
-      mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25 },
+      // W-06b (T3, W-05b-W-06b-plan.md §3.3, user 10.png: "mkDashRamp @ d=1
+      // draws ONE dash on the whole sphere") — `rowFloor: true` opts this law
+      // (and ONLY this law) into `markRowCoverage()`'s pitch-ceiling scaffold
+      // below: at the sparse end, where the master pitch itself is already
+      // wider than the ceiling (~4.8mm at a 0.3mm pen), the mark-law row
+      // scaffold keeps MORE than a flat third of the master grid, because
+      // three rows on a 40mm sphere cannot carry a sparse-but-COMPLETE dash
+      // texture. Byte-identical at every density where the master pitch is
+      // already finer than the ceiling (measured: d>=50 on this fixture).
+      mkDashRamp:    { shape: 'morph',    chan: 'elong', lat: 'row',     or: 'along',  P0: 1.25, rowFloor: true },
       // T2-2 (W-05b U2, user 8.png: "ticks must have VARIABLE LENGTH, tick
       // length carries tone") made this `chan:'len'` (was `chan:'count'`,
       // fixed length ~L0*R, tone carried by count/period alone) — a fixed
@@ -2617,6 +2626,32 @@
       mkScribble:    { shape: 'scribble', chan: 'amp',   lat: 'row',     or: 'along',  P0: 1.25 },
       mkDotLozenge:  { shape: 'altrow',   chan: 'alt',   lat: 'altrow',  or: 'along',  P0: 1.15 },
       mkRadialFlick: { shape: 'dash',     chan: 'count', lat: 'blue',    or: 'radial', L0: 1.25 },
+    };
+
+    // W-06b (T3) — the row-coverage FLOOR. `MK_ROW_COV` (1/3) is a fixed
+    // fraction of the master grid: at a fine master pitch (dense scaffolds)
+    // 1/3 of it is still legible-row-tall, but at the sparse end (masterPitch
+    // 5.8mm on a 40mm sphere at d=1) one third of an 8-ruling master grid is
+    // only 3 rows, and no mark language can carry a "sparse but complete"
+    // texture on 3 rows across a whole sphere (measured: 5-7 dashes total,
+    // the user's "ONE dash" complaint). `MK_ROW_TARGET_PEN` states a row-pitch
+    // CEILING in pen widths (16 x 0.3mm pen = 4.8mm): keep every third master
+    // ruling while that is FINER than the ceiling (unchanged design), and
+    // keep MORE — up to every ruling — once the master pitch alone is already
+    // coarser than it, so the row scaffold never gets coarser than the
+    // ceiling just because the master grid is sparse. Scoped by `MK[...]
+    // .rowFloor` so the other eleven mark laws (mkTick included — its own
+    // sparse-end/wedge work is T2/T2-3's, a different mechanism) are
+    // byte-identical. `algoCoverage`'s `isMarkLaw()` branch and `solveAt`'s
+    // row-pitch divisor must read the SAME coverage or they disagree about
+    // what the scaffold they are both describing actually is — hoisted here
+    // so both call sites divide by one number.
+    const MK_ROW_TARGET_PEN = 16;
+    const markRowCoverage = () => {
+      const law = MK[TONE_ALGO];
+      if (!law || !law.rowFloor) return MK_ROW_COV;
+      const ceilingMM = MK_ROW_TARGET_PEN * penWidth;
+      return clamp(masterPitch / Math.max(1e-6, ceilingMM), MK_ROW_COV, 1);
     };
 
     // ── THE MARK SHAPES ───────────────────────────────────────────────────────
@@ -5080,7 +5115,7 @@
       // ROUND 6 — the twelve mark languages rule ONE even scaffold and never
       // drop a row. The whole tone ramp is carried by the marks strung on it, so
       // the coverage they hand back is a constant.
-      if (isMarkLaw()) return MK_ROW_COV;
+      if (isMarkLaw()) return markRowCoverage();
       // W-26 — 'ladder' (this law's OWN default), 'fineLadder' and
       // 'phaseFineLadder' are now placed continuously (see `emitContFamily`'s
       // dispatch and `ladderWantedPitch` above): the spacing off the master
@@ -6424,7 +6459,11 @@
         const smp = smps[k];
         const I = clamp(finite(smp.I, 0), 0, 1);
         const lp = pitchAtStep(smp, k);
-        const R = clamp(((Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch) / MK_ROW_COV, 0.25, 40);
+        // W-06b (T3) — `R` is the mark law's own ROW pitch, which must read the
+        // SAME coverage `algoCoverage`'s `isMarkLaw()` branch computed (above),
+        // or the row-floor scaffold and the tone solve that draws onto it
+        // disagree about how many rows actually survived.
+        const R = clamp(((Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch) / markRowCoverage(), 0.25, 40);
         const g = clamp((mkAsk(I) * R) / w, 0, 26);
         let P; let L;
         const countChan = law.chan === 'count' || (law.chan === 'alt' && parity === 1);
@@ -11976,7 +12015,7 @@
         budget: mkStat.budget,
         pMin: Number.isFinite(mkStat.pMin) ? Math.round(mkStat.pMin * 1000) / 1000 : null,
         gMax: Math.round(mkStat.gMax * 100) / 100,
-        rowPitch: Math.round((masterPitch / MK_ROW_COV) * 1000) / 1000,
+        rowPitch: Math.round((masterPitch / markRowCoverage()) * 1000) / 1000,
         floorPitch: Math.round(floorPitch * 1000) / 1000,
       } : null,
       loz: lozStat.samples ? {

@@ -548,11 +548,32 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
       expect(ink).toBeGreaterThan(510.9 * 1.5);
     });
 
-    test('ink is monotone non-decreasing d=1 -> 50 -> 220 (sphere/hatch) — the duty/band ramp now tracks density', () => {
+    // BARS CHANGED (W-06b/T3, W-05b-W-06b-plan.md §3.3, user 10.png): the
+    // `low < med` leg of this chain is RETIRED, disclosed here and in the
+    // impl report. T3's row-coverage floor legitimately gives the SPARSE end
+    // (d=1) more surviving rows (3 -> 6 on this fixture, masterPitch 5.8mm >
+    // the row-pitch ceiling) so the dash COUNT can clear Jay's own bar
+    // (>=40 dashes on the 40mm sphere at d=1, was 7 — see the count-
+    // monotonicity oracle in `scene3d-mkdashramp-low-end.test.js`, T3's own
+    // file). More surviving rows at a coarser master pitch legitimately draws
+    // MORE total ink than the old, under-served 3-row scaffold did — measured
+    // on this fixture: 671.6 -> 1160.9mm at d=1, now ABOVE d=50's UNCHANGED
+    // 926.5mm (d=50/d=220 are byte-identical before and after T3: masterPitch
+    // there is already finer than the row-pitch ceiling, so `markRowCoverage()`
+    // clamps to the original constant `MK_ROW_COV`). This is T3's fix working
+    // as designed — count, not raw ink, is what the user's complaint and
+    // Jay's bar are about — not a lost guarantee. T4's own half of this chain
+    // (max > med, the dark-end band restoration) is untouched and still
+    // gated below.
+    test('ink is monotone non-decreasing med -> max (sphere/hatch) — the duty/band ramp now tracks density (T4, unaffected by T3)', () => {
       const low = totalInk(algo.generate(buildSceneParams('mkDashRamp', 'hatch', 1), null, null, BOUNDS));
       const med = totalInk(algo.generate(buildSceneParams('mkDashRamp', 'hatch', 50), null, null, BOUNDS));
       const max = totalInk(algo.generate(buildSceneParams('mkDashRamp', 'hatch', 220), null, null, BOUNDS));
-      expect(med).toBeGreaterThan(low);
+      // d=1 now legitimately draws a non-trivial, complete texture (not a
+      // single stroke) rather than being compared against d=50 — see
+      // `scene3d-mkdashramp-low-end.test.js` for the bar this value is
+      // actually held to.
+      expect(low).toBeGreaterThan(0);
       expect(max).toBeGreaterThan(med);
     });
 
