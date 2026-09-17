@@ -358,6 +358,124 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
       expect(d100Dense / d100Even).toBeGreaterThanOrEqual(1.2);
     });
 
+    // ADDED (W-36e, per W-36d-review.md follow-up 1 / LEDGER row 4b: "close the
+    // crosshatch dial bar's INTERIOR blind spot"). Both bars above are
+    // FULL-SPAN, 2-3-POINT checks — the endpoint ratio spans 0.25 vs 2.0/1.0,
+    // and strict monotonicity only orders three points (0.25/1.0/2.0). Neither
+    // samples the INTERIOR of any sub-interval, and W-36d-review.md
+    // demonstrated the resulting blind spot with two independently constructed
+    // mutations that touch NO sampled point: an interior notch frozen over
+    // `[0.4, 0.9]` and one concentrated over `[0.6, 0.95]` (secretary's own
+    // ask). Both freeze `crossPairShare`'s role-'b' branch to a nearby real
+    // value for `r` in that range, and BOTH evade every bar above while
+    // erasing a real, visible decline at `r = 0.9` (d=100 nB 52 -> 55, d=10 nB
+    // 7 -> 8 — see the review's mutations 3 and 5).
+    //
+    // WHICH QUANTITY, AND WHY NOT nB. `nB` (the bar above) is `Set.size` on an
+    // integer `lineIndex` count — W-36d-d5-scout.md proved that integer is a
+    // QUANTIZATION artefact below Density ~10 (d=2/3/4/5 round to the identical
+    // N=8 and are bit-for-bit identical), and this file's own fine sweep at
+    // d=100 shows the SAME small-integer plateau in the interior: nB is
+    // literally flat at 55 across r=0.5..0.8, even on real, correct code. A
+    // ratio-of-integer-counts bar sampled inside that plateau cannot tell real
+    // code from a frozen defect — they'd read identically. So this sub-bar
+    // uses `crossFamilyBInk(d, ratio)`: the total drawn length (mm, Euclidean
+    // polyline sum — the same `pathLength` convention T2-3c's runaway census
+    // uses on `Scene3D.generate()`'s own output points) of family B's own
+    // rulings, summed the same way `crossFamilyBCount` selects them (front,
+    // `fam === bFam`). Ink is continuous even where the ruling COUNT is
+    // pinned to a shared integer — measured on this file's own fixture, real
+    // code shows a genuine (if small) ink change across that same r=0.5..0.8
+    // band (2308.10 -> 2308.95 -> 2309.50 mm at d=100) where nB cannot move at
+    // all. This is the "ink- or budget-based quantity" the LEDGER row asks
+    // for, not a rescoped nB.
+    //
+    // WHICH HALF OF THE CONTRACT THIS GATES: the two bars above gate the FULL
+    // SPAN's magnitude/ordering; this bar gates SHAPE inside the span — three
+    // consecutive interior steps (r = 0.25 -> 0.8 -> 0.9 -> 1.0), each
+    // required to decline by a real, non-trivial amount, so neither a flat
+    // interior plateau nor a local inversion can hide inside an
+    // otherwise-passing endpoint ratio. `r = 0.8` and `r = 0.9` are chosen
+    // (not 0.5/0.75, this file's own worked example) because measurement
+    // showed `r = 0.6` sometimes sits on the anti-saturation floor rather than
+    // the `crossPairShare` budget and does not reliably move under either
+    // mutation, while `r = 0.8` -> `r = 0.9` is exactly the step the review's
+    // own two mutations erase (see above) and reliably collapses under both.
+    //
+    // BAND, MEASURED (own standalone probe, real unmutated `e60d102e` source,
+    // `pathLength` summed the same way as the committed helper below):
+    //   d=10:  0.25->0.8 = 1.0868 (8.68%) | 0.8->0.9 = 1.0782 (7.82%) | 0.9->1.0 = 1.0592 (5.92%)
+    //   d=100: 0.25->0.8 = 1.0766 (7.66%) | 0.8->0.9 = 1.0571 (5.71%) | 0.9->1.0 = 1.1088 (10.88%)
+    // Repeated 3x (deterministic, `seed: 1`, zero drift) and re-checked under a
+    // second, unrelated camera (yaw 40/pitch -15/roll 8/dist 750) and a
+    // perspective camera: the SIGN and rough magnitude of every step held in
+    // both, though the absolute margins moved with the camera (as W-36d-review
+    // already found for `nB`'s own ratio) — this bar, like the two above it,
+    // is scoped to THIS file's one fixed camera/primitive/mapper fixture, not
+    // asserted as a general dial law. Floor picked at 1.02 (2%): comfortably
+    // below every measured real margin (5.71% is the tightest) and
+    // comfortably above the mutated values below (exactly 1.0, or inverted).
+    //
+    // MUTATION PROOF (own scratch `git archive e60d102e` export,
+    // `crossPairShare` mutated, never in this worktree):
+    //  - Review's notch `[0.4, 0.9]` frozen to the real r=0.7 value: the
+    //    0.8->0.9 step becomes EXACTLY 1.0 (2309.4972 / 2309.4972) at d=100,
+    //    and 337.0614 / 337.0614 at d=10 — flat, fails the 1.02 floor, while
+    //    0.25->0.8 and 0.9->1.0 are untouched (r=0.25 and r=1.0 sit outside
+    //    the notch).
+    //  - Review's concentrated `[0.6, 0.95]` frozen to the real r=0.8 value
+    //    (secretary's own ask): same collapse, same numbers — 0.8->0.9 is
+    //    EXACTLY 1.0 at both densities.
+    //  - W-36d's own lower-half-freeze mutation (`role==='b' && r<=1`
+    //    compressed to a 2%-slope near-constant) — confirmed it STILL trips
+    //    this bar too, more severely: at d=100 both 0.8->0.9 (1.0015) and
+    //    0.9->1.0 (1.0023) fail the floor, and at d=10 both steps are
+    //    literally INVERTED (0.9989 and 0.9990, i.e. < 1 — ink rises as the
+    //    ratio dial approaches 1.0, the wrong direction).
+    // All three scratch exports deleted after measurement; nothing left in
+    // the worktree.
+    test('crosshatch mapper: INTERIOR-SHAPE guard — family-B ink (mm) declines by >= 2% at each of r=0.25->0.8->0.9->1.0, at d=10 and d=100', () => {
+      const pathLength = (p) => {
+        let tot = 0;
+        for (let i = 1; i < p.length; i += 1) tot += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
+        return tot;
+      };
+      const crossFamilyBInk = (d, ratio) => {
+        const params = sceneParams(defaults.objects);
+        params.styleTable.byObject['obj-1'] = {
+          penId: null, mapper: 'crosshatch', params: { fillAngle: 45, fillDensity: d, crossDensityRatio: ratio },
+        };
+        const seen = [];
+        const real = SurfaceFill.buildObject;
+        SurfaceFill.buildObject = (o) => {
+          const r = real(o);
+          if (Array.isArray(r)) r.forEach((run) => seen.push(run));
+          return r;
+        };
+        try {
+          algo.generate(params, null, null, { ...BOUNDS, fastPreview: false });
+        } finally {
+          SurfaceFill.buildObject = real;
+        }
+        const front = seen.filter((r) => !r.back);
+        const fams = Array.from(new Set(front.map((r) => r.fam))).sort();
+        const bFam = fams[1]; // A#0 = primary, A#1 = crossing (see crossFamilyBCount above)
+        let tot = 0;
+        front.filter((r) => r.fam === bFam && r.lineIndex != null).forEach((r) => { tot += pathLength(r); });
+        return tot;
+      };
+      const STEP_FLOOR = 1.02;
+      [10, 100].forEach((d) => {
+        const mm025 = crossFamilyBInk(d, 0.25);
+        const mm080 = crossFamilyBInk(d, 0.8);
+        const mm090 = crossFamilyBInk(d, 0.9);
+        const mm100 = crossFamilyBInk(d, 1.0);
+        expect(mm025 / mm080).toBeGreaterThanOrEqual(STEP_FLOOR);
+        expect(mm080 / mm090).toBeGreaterThanOrEqual(STEP_FLOOR);
+        expect(mm090 / mm100).toBeGreaterThanOrEqual(STEP_FLOOR);
+      });
+    });
+
     test('draft (live-drag) fallback stays on its own untouched floor at d=10/50/100', () => {
       const runDraft = (d) => {
         const params = sceneParams(defaults.objects);
