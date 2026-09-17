@@ -2494,6 +2494,46 @@
     // reach solid" mechanisms (`mkCrossPlus`'s 2->3->4->6 arm progression,
     // `:2690`) — a small integer, not a re-derivation of the pitch itself.
     const MK_BAND_MAX_PASSES = 6;
+    // T3b (Jay decision 12=B, 2026-09-17, `SESSION-SUMMARY.md` §4 item 12:
+    // "draw single-pass dashes below some density threshold, keeping the
+    // band mechanism where it earns its keep"). MEASURED FIRST
+    // (`T3b-impl.md`): `MK_BAND_MAX_PASSES` alone is density-BLIND — at
+    // every density from d=1 through ~d=70 (sphere/hatch, BOTH rigs) a
+    // hypothetical single-pass-only render loses 34-73% of the object's own
+    // ink relative to the band-enabled render, i.e. the band is genuinely
+    // load-bearing there, not decorative; it only stops mattering (0% ink
+    // delta) once density reaches ~80, where `bandPitch` itself has become
+    // too fine for a 2nd parallel pass to fit (a PACKING limit, not a tone
+    // one). T4's own O8 guard (`scene3d-mark-laws-draw.test.js`) already
+    // pins `bandMax >= 2` at d=50, sphere/hatch — accepted, unmodified
+    // evidence that a multi-pass bundle at d=50 ("med") is NOT the "tile"
+    // Jay flagged; only the SPARSE end (T3's own low-end row-coverage floor
+    // territory, `rowFloor`) is. A hard on/off switch at any single density
+    // below 50 would still cost the full 34-73% ink at whichever density it
+    // sits just below the switch — a large STEP with no natural counterpart
+    // anywhere else in this sweep (ordinary density-to-density ink already
+    // varies, but only by a few percent). `bandOnsetCap` instead RAMPS the
+    // per-mark pass ceiling continuously from 1 (single pass, at the
+    // sparsest d=1) up to the full `MK_BAND_MAX_PASSES`, so no two adjacent
+    // integer densities differ by more than one pass. `MK_BAND_ONSET_D` is
+    // not a round number chosen for its own sake — it is the LAST integer
+    // density at which the ramp's target ceiling (`MK_BAND_MAX_PASSES`)
+    // still equals what the UNGATED mechanism already used naturally, on
+    // EVERY ONE of {sphere, torus} x {addLayer, create} (fine sweep,
+    // `T3b-impl.md`): all four combinations still measure the natural
+    // bandMax at the hard 6-pass ceiling at d=35 (three of the four had
+    // already dropped to 5 by d=36). Below `MK_BAND_ONSET_D` this gate
+    // changes rendered output (by design — that is the fix); at and above
+    // it, `bandOnsetCap(d) === MK_BAND_MAX_PASSES` always, so the `min()`
+    // below is a byte-identical no-op — this is what keeps O8 (d=50) and
+    // T4b/G4's d=220 floor untouched without editing either of those files.
+    const MK_BAND_ONSET_D = 35;
+    const bandOnsetCap = (density) => {
+      const d = finite(density, 50);
+      if (d >= MK_BAND_ONSET_D) return MK_BAND_MAX_PASSES;
+      const t = clamp((d - 1) / (MK_BAND_ONSET_D - 1), 0, 1);
+      return clamp(Math.round(1 + t * (MK_BAND_MAX_PASSES - 1)), 1, MK_BAND_MAX_PASSES);
+    };
     // T2-3 (W-05b U2, iteration 3 — mkTick's length-response curve, see
     // `solveAt`'s `lenChan` branch, and the ROW-TO-ROW STAGGER at the tick
     // placement site in `layMark`). T2 (`dbad2d88`) and T2-2 (`9d911b05`)
@@ -6551,7 +6591,9 @@
         // object, which is what "an inkWidth apart, never past the next
         // ruling" is actually supposed to mean.
         const bandPitch = Math.min(truePitch, masterPitch);
-        const bandN = Math.max(1, Math.min(MK_BAND_MAX_PASSES, Math.floor((0.90 * bandPitch) / w)));
+        // T3b — the per-mark pass ceiling is `bandOnsetCap(density)`, not
+        // the raw `MK_BAND_MAX_PASSES` constant (see its own comment above).
+        const bandN = Math.max(1, Math.min(bandOnsetCap(opts.fillDensity), Math.floor((0.90 * bandPitch) / w)));
         const capOf = (per) => (law.shape === 'morph' ? bandN * per : mkCap(shapeFor(), R, w));
         if (countChan) {
           const L0 = law.chan === 'alt' ? 1.60 : law.L0;
@@ -6670,7 +6712,9 @@
           // clamped by `capOf` in `solveAt`) and `nn` (recomputed here) could
           // disagree about how many passes the ink is spread across.
           const n0 = Math.max(1, Math.ceil(sv.L / Math.max(1e-6, sv.P)));
-          const bandN = Math.max(1, Math.min(MK_BAND_MAX_PASSES, Math.floor((0.90 * sv.bandPitch) / w)));
+          // T3b — the SAME `bandOnsetCap(density)` `solveAt` used for `sv.L`'s
+          // own cap, so this side of the ramp can never disagree with that one.
+          const bandN = Math.max(1, Math.min(bandOnsetCap(opts.fillDensity), Math.floor((0.90 * sv.bandPitch) / w)));
           const nn = Math.min(n0, bandN);
           const each = sv.L / nn;
           polys = [];
