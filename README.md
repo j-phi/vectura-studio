@@ -265,7 +265,7 @@ Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom
 | **Polyhedron** | Platonic/Archimedean solids, a **swept-profile family** (flat polygon, prism, antiprism, bipyramid, cone, frustum, cupola, star prism — all driven by a side count, with taper/star-inset where it applies), **or imported STL meshes** — face bands, edges, and vertex rings with front-face culling, dashed hidden lines, extrude/explode/twist effects, and orthographic or perspective projection |
 | **Topoform** | Primitive 3D meshes (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) **or imported STL meshes**, rendered as projected wireframes or depth-plane topographic contours — with detail up to 100 on every primitive, bezier contour smoothing, dashed hidden lines, an optional Scene Lighting pass, and orthographic/perspective view |
 | **Raster-Plane** | A height source (built-in relief, preloaded noise, imported image, or hand-painted canvas) projected as line relief, deformed mesh, raster topography, or extruded bars — Bars take a **Bar Sides** count (3–8) that interlocks gap-free as triangles / squares / hexagons (other counts inscribe a regular polygon in each cell), a **Bar Rotate** dial to orient the footprints, and a **Corner Radius** that fillets the bar footprints into rounded columns. Plus a **Surface Noise** rack stack where each layer's own Blend Mode + Field Weight emboss the surface live, a **Base Height** lift and a **Plane Width** slider for "Lines as Planes" (100% = a solid extruded slab, lower widths = free-standing planes with real gaps between rows), **See-Through** for an x-ray render that dots in whatever the planes hide, clean hidden-line removal on opaque bars, and orthographic or perspective view |
-| **3D Scene Studio** | A multi-object scene: assemble box / sphere / cylinder / cone / torus / torus-knot / capsule / superellipsoid / pyramid / plane / solids on a shared camera and render them as hidden-line-removed solids with per-object and per-face styling. Select and **move / rotate / scale** objects (or push-pull box faces) with on-canvas gizmos, and light with a **multi-light rig** — directional / ambient / point / spot, each draggable via a 3-axis light gizmo, with position-aware shading and perspective ground shadows. Surfaces render **light-made tone** through per-object/per-face **fill mappers** (hatch, crosshatch, contour, true Archimedean spiral, stipple, wireframe — each with its own control inventory: hatch angle-reference + boustrophedon linking, contour surface/region, stipple mark shape/size/jitter, wireframe edge-class toggles). Plus controllable **cast shadows** (angle / density / pen / line type / Softness / per-object cast toggle, with a **Layers** control — Off / 2 / 3 / 4 — that builds contact, umbra and penumbra zones in stages instead of adding flat ink), selectable **highlight treatments** (none / blank / dashed / dotted / sparse / altFill / burst / stipple-out), **x-ray** see-through back-face fills, a per-object **border** drawn as one contiguous silhouette outline, a shared **stroke treatment** (line type, hand-drawn wobble, overstroke), a **Geometry** selector that swaps an object's primitive in place and reveals that shape's own controls, split line output (Object tab **Border lines**, Style tab **Fill lines** with its own Curves / Smoothing / Simplify / Fidelity), and Style / Shadow / Highlight / X-ray flyouts on the contextual task bar. Each scene is a **layer tree** (one object per layer; boolean groups, lights, and ground as their own rows) — build it object-by-object, click the canvas or a tree row to select and edit one object, and saved single-layer scenes migrate to the tree on load (rendering identically) |
+| **3D Scene Studio** | A multi-object scene: assemble box / sphere / cylinder / cone / torus / torus-knot / capsule / superellipsoid / pyramid / plane / solids on a shared camera and render them as hidden-line-removed solids with per-object and per-face styling. Select and **move / rotate / scale** objects (or push-pull box faces) with on-canvas gizmos, and light with a **multi-light rig** — directional / ambient / point / spot, each draggable via a 3-axis light gizmo, with position-aware shading and perspective ground shadows. Surfaces render **light-made tone** through per-object/per-face **fill mappers** (hatch, crosshatch, contour, true Archimedean spiral, stipple, wireframe — each with its own control inventory: hatch angle-reference + boustrophedon linking, **Min rulings** — the fewest rulings a flat facet may receive when Density asks for fewer, hatch/crosshatch only — contour surface/region, stipple mark shape/size/jitter, wireframe edge-class toggles). Plus controllable **cast shadows** (angle / density / pen / line type / Softness / per-object cast toggle, with a **Layers** control — Off / 2 / 3 / 4 — that builds contact, umbra and penumbra zones in stages instead of adding flat ink), selectable **highlight treatments** (none / blank / dashed / dotted / sparse / altFill / burst / stipple-out), **x-ray** see-through back-face fills, a per-object **border** drawn as one contiguous silhouette outline, a shared **stroke treatment** (line type, hand-drawn wobble, overstroke), a **Geometry** selector that swaps an object's primitive in place and reveals that shape's own controls, split line output (Object tab **Border lines**, Style tab **Fill lines** with its own Curves / Smoothing / Simplify / Fidelity), and Style / Shadow / Highlight / X-ray flyouts on the contextual task bar. Each scene is a **layer tree** (one object per layer; boolean groups, lights, and ground as their own rows) — build it object-by-object, click the canvas or a tree row to select and edit one object, and saved single-layer scenes migrate to the tree on load (rendering identically) |
 
 Algorithm defaults live in `src/config/defaults.js`, modifier defaults/descriptions in `src/config/modifiers.js`, and algorithm descriptions in `src/config/descriptions.js`.
 
@@ -596,6 +596,31 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### 1.4.2
+- **3D Scene — "Min rulings" (per fill style).** Hatch and Crosshatch styles gain a *minimum
+  facet rulings* control (1–8, default 3) setting the fewest rulings a flat facet may receive
+  when Density asks for fewer. Default 3 is byte-identical to previous releases; no effect on
+  smooth shapes, on Contour / Spiral / Stipple fills, or on the ground plane.
+- **3D Scene — the Fill Style roster collapses further, to 30.** *Pen Stipple*, *Pen Pitch
+  Match* and *Pen Facing* now appear as modes of **Pen Interleave**. Every folded style now
+  explains itself in plain language on both the Fill Style row and the Shadow row, on the
+  docked panel and the context-bar flyout. A shadow using a folded style shows that style's own
+  recipe rather than the surviving style's.
+- **3D Scene — Dash Ramp fixed at both ends.** A full dark tone returns at maximum Density
+  (drawn as a short band of parallel passes); a readable row of dashes returns at Density 1,
+  rising smoothly across the range.
+- **3D Scene — tick fills and wave-ribbon fills are placed evenly.** Tick fills no longer leave
+  an un-ticked band where rows line up. Wave-ribbon fills (the twelve pen-width RIBBON laws) no
+  longer leave a deep bare strip on the lower front of curved forms, and no longer collapse to a
+  bare centreline when an internal geometry step silently failed.
+- **3D Scene — crosshatch spends a full hatch budget per family**, with a new cap so maximum
+  Density does not fill solid.
+- **Context-bar flyout labels no longer cut off mid-word** — a long fill-style label now ends
+  in an ellipsis instead of a clipped fragment.
+- **Known open.** Whether to retune the crosshatch cap's onset, and whether to restore
+  wave-ribbon weight while keeping the new even placement, are both open product decisions not
+  settled by this release.
 
 ### 1.4.1
 - **3D Scene · crosshatch draws a real crossing grid again.** The two crosshatch line families now

@@ -112,12 +112,21 @@ const EXPECTED_T1 = {
   'pyramid|hatch|d50|a45': '9700854444d61cb745c46bdcf8461cca51598c80d4aa5a3846d171737a91e83b',
   'pyramid|hatch|d220|a20': 'a6a97f1d217dbc618e0df91ba0ddf1daa2d8bfe2b9f45d87064dacaaf31954c1',
   'pyramid|hatch|d220|a45': 'baf50d16f571c4df33bb28aec70662aa9a6f588e096cec3beca74139e612c1c2',
-  'pyramid|crosshatch|d1|a20': 'c828f8205254349005d0644e6a72ee9cfd552a2989caa046ef330b7016c73155',
-  'pyramid|crosshatch|d1|a45': 'c69a13732e00f60b2f94cec5df9b8fe38ec113dbfb52400458904ac0d2c0b31f',
-  'pyramid|crosshatch|d50|a20': '226db79a96327949ad92babc7d701a8091582e8a47967a4c32c3a6c0407a91ad',
-  'pyramid|crosshatch|d50|a45': '55ec1e454b476a134cf885f2da08ef7efba5febf0ad282fea6a3d9fb8d0a8c12',
-  'pyramid|crosshatch|d220|a20': '3e9d465727c1229c1f576fc7dbe5b6ddce865fc8df37087439ce0b5732d1c709',
-  'pyramid|crosshatch|d220|a45': '8768d5ae79d4adc52e6598491ebda8a86937e16620b0907608a6b122ddf6452d',
+  // MERGE-r3 re-pin (integrate-r3, disclosed under `## Bars changed`): W-36c
+  // (`8adfd5af`, ACCEPT-WITH-FOLLOWUPS, `3d-scene/fill-audit-a3`) changed each
+  // crosshatch family's own hatch ruling count, independent of and unseen by
+  // this file's own lane (`3d-scene/fill-audit-3`) at authoring time. Leg 1
+  // (absent === explicit 3) still passes 100% on the merged tree, proving
+  // facetMinRulings' own no-op is unaffected; only this fixed literal, pinned
+  // before W-36c existed in the same tree, moved. box/solid/plane crosshatch
+  // are unaffected (W-36c's cap does not engage on those fixtures at this
+  // density/angle grid) — only pyramid and sphere moved.
+  'pyramid|crosshatch|d1|a20': '90339144d953bf79ac5d8d9ca54ad69df24bfa4c85c26ab1bbfe79b32190896f',
+  'pyramid|crosshatch|d1|a45': 'ed9fa501c88d37c3fba276598a286aa30fde73acb3e6f734e24023539dc3cc46',
+  'pyramid|crosshatch|d50|a20': '5062e51651ee4e348a2c1477c10ad4ec44f445e253e4148f1a4e192f0e0e8513',
+  'pyramid|crosshatch|d50|a45': '1f9f047ef132ce780b0d403fde9122bc5ca0418ee799b2192348256e8d28c6bf',
+  'pyramid|crosshatch|d220|a20': '08355704d7b3d7d79f299af2fc4a748ab42b1190a447b3b4200f82f23de833de',
+  'pyramid|crosshatch|d220|a45': 'e73c05d596d8a4619e751bf457c96b668488e393fbede83fdb263d53b5b470a1',
   'plane|hatch|d1|a20': '33f813aba4762dea6ff2b6ddb56b9d95bf796f5ef0877412d59179b5b042aa11',
   'plane|hatch|d1|a45': '6445759ac9d86752b0752660277bf76f57a0257eb8052b5372e75f4fefa247bb',
   'plane|hatch|d50|a20': '117304b53fed661c380f59268b0918fcc4ff37a01f67b005cce44d5e84edf47c',
@@ -136,12 +145,14 @@ const EXPECTED_T1 = {
   'sphere|hatch|d50|a45': 'd90e19dee1e8485ea9605cf2c8edd644c2626fcb9946f7be827ce193cf228a4b',
   'sphere|hatch|d220|a20': '0ad94fe1e5333e25820f7c1ba5af98cf2dcb1677df494a7abe3486f2912547a2',
   'sphere|hatch|d220|a45': 'f0d6bdd4afe47bb18f6605f3f8576dae1ef75ec9a17284047902ca3cdd924818',
-  'sphere|crosshatch|d1|a20': 'cce03d11ff86d3b6e4388dbd3da31cb621b759be6a11431f7d0f476090086839',
-  'sphere|crosshatch|d1|a45': '0e6b17e69764f509d5ac34689d96ed18641f634994bc65e6cf7bdb600acd4bd3',
-  'sphere|crosshatch|d50|a20': 'e4b1b436da2c3f3c9c8ba2d9cfadd89373eacaba1454b22150e13ce288e4b93b',
-  'sphere|crosshatch|d50|a45': '0b2f20c7d22c762f6542f41f6ddae8a9112e3919039f09cc2bda220f3f54b622',
-  'sphere|crosshatch|d220|a20': '72e53e49df2aa7cd23d05743fa741522e63e93dde733d8f0594e0d9ecf85f673',
-  'sphere|crosshatch|d220|a45': 'a5fdf736fd8de7027a84028420488764bb05b66e06a51eb1178feb48bd1957ba',
+  // MERGE-r3 re-pin — same cause and proof as the pyramid block above (W-36c,
+  // `8adfd5af`, independent of facetMinRulings; Leg 1 still 100% green).
+  'sphere|crosshatch|d1|a20': '71e6f1056822a94e6619891d6ebcad26776186f1a79373411570857f00d3416c',
+  'sphere|crosshatch|d1|a45': '313b56902c958f808f6e689fdab77d5d217d18d3ade2f089318c7db3dc64817d',
+  'sphere|crosshatch|d50|a20': '058c007006226362e8fae9ebc97022abde3d451e4a25257fe90e11d0d93c2d82',
+  'sphere|crosshatch|d50|a45': '81de50e8314685fd5430ddedeaea52d6104a52e889c0b4f65dae9b587cde0d07',
+  'sphere|crosshatch|d220|a20': '4a1e03b3b1cc8305854f9681d6dbe2799299432b14a9063f3a9cee1844b52caf',
+  'sphere|crosshatch|d220|a45': '4118528f91062d86d640dad991af60ff3c5c29b91e2830e98818bde281f91ba8',
 };
 
 const md5PathsAll = (paths) => crypto.createHash('md5')

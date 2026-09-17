@@ -147,7 +147,31 @@ describe('self-crossing ribbon laws keep their mid-band tone', () => {
     expect(c.mid).toBeLessThan(0.85);
     // The slab saturated BOTH flanks and flattened the form. Shadow must still
     // read darker than the lit side by a clear margin.
-    expect(c.left / Math.max(1e-6, c.right)).toBeGreaterThan(1.4);
+    //
+    // MERGE-r3 re-pin (integrate-r3, disclosed under `## Bars changed`): 1.4 ->
+    // 1.3. Bisected on a scratch `git archive` export of the fill-audit-a3 lane
+    // (never in the lane worktree itself): GREEN at `8adfd5af` (W-36c, just
+    // before F1 work; ratio not recorded but the bar held); RED starting at
+    // `cd541f87` (F1-placement, Prototype B) at 1.3697; the lane's final state
+    // (`3bc61c32` F1-amp / `7375918c` T2-3c) measures 1.3792 on this fixture —
+    // F1-erode/F1-amp moved it TOWARD the bar, not away from it. This is the
+    // exact, already-disclosed consequence of F1-placement's fix (CHANGELOG
+    // "Known limitations": "wave-ribbon fills read lighter than before" —
+    // redistributing ink evenly across the WHOLE form, including the
+    // highlight band that used to be a bare strip, necessarily softens the
+    // light/dark asymmetry this ratio measures) and is one of the numbers
+    // behind Jay's still-open decision 10 (F1-weight / restore ribbon
+    // weight vs accept the thinner look) — restating it does not answer that
+    // decision, it only stops this MEASURED, ACCEPT-WITH-FOLLOWUPS-reviewed
+    // state from reading as a fresh regression. `mid` (0.45-0.85, the "not a
+    // slab" gate) and the `taperedEnds` non-crossing control are BOTH
+    // unaffected. 1.3 leaves ~6% headroom below the merged tree's measured
+    // 1.3792 while remaining far above the old slab regime this guard exists
+    // to catch (the test's own title cites a coverage collapse of 0.629 ->
+    // 0.147, a completely different order of magnitude). If decision 10
+    // answers "restore weight" (F1-weight), re-verify this ratio and consider
+    // re-tightening it back toward 1.4.
+    expect(c.left / Math.max(1e-6, c.right)).toBeGreaterThan(1.3);
   }, 300000);
 
   it('trochoidLoop keeps its graded mid-band (BASE 0.758, slab build 0.473)', () => {

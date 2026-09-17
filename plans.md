@@ -22,29 +22,31 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
-- **3D fill audit round 2 — post-merge queue (2026-09-10, integration branch
-  `3d-scene/integrate-r2`, v1.4.1, NOT pushed and `main` NOT fast-forwarded).** Work these in
-  order; none is auto-started.
-  1. **U9b (with W-10d-3b folded in)** — the first unit that can only run on the integrated tree,
-     because no lane held both `clampShadowToneLaw` (handoff-c2) and `PICKER_IDS = 33`
-     (fill-collapse-2). Re-pin `scene3d-shadow-tone-law-uniqueness.test.js` from "one build per
-     OFFERED law id" to "offered set × each survivor's collapse options", with old/new offered
-     counts and a collision count of 0 under `## Bars changed`; exclude the `penDown`
-     COMBINATION (pin `penDown:'perRuling'`, do not render the sub-control); answer W-10d-3b's
-     `fineLadder` → `Ladder` label question at `shadows.js:2713`; run the survivor × sub-control
-     live sweep. The file is **26/26 green as-is**, so this is a bar-strengthening, not a repair.
-  2. **The gallery rebuild — LAST, once, orchestrator only.** `scene3d-assemble.js` →
-     `scene3d-audit-findings.js` → `scene3d-before-after.js`. Fold in **W-32's re-shoot at
-     CREATION defaults** and **W-28b's re-shoot with a taller or scrolled listbox** (9 rows flip
-     between the small- and large-import cases, not just `End Shorten`; the merge also moved its
-     option count 36 → 34, so its committed evidence is stale twice over).
-  3. **Lane work resumes:** T2 iteration 2 → T3 on `fill-audit-a2`, W-31b, W-35b, F1-placement.
-  4. **Filed follow-ups from the merge:** open a **"3D Scene" tab in the in-app Help Guide**
-     (`src/ui/modals/help-shortcuts.js` has no 3D section at all — W-35's help copy landed on the
-     control instead, via the new descriptor `help` field); and W-35 review item (a), a coarse
-     end-to-end tripwire of the shape *"run count never drops by more than 1 between adjacent k
-     steps on a non-self-occluding primitive"* — **not written at merge**, because the
-     W-27c-0a crowd-cull confound makes an honest monotonic oracle unwritable today.
+- **3D fill audit round 3 — post-merge queue (2026-09-16, integration branch
+  `3d-scene/integrate-r3`, v1.4.2, NOT pushed and `main` NOT fast-forwarded).** Round 2's queue
+  above is superseded — U9b/W-10d-3b, the gallery rebuild, and the round-2 lane resumes (T2 iter
+  2, T3, W-31b, W-35b, F1-placement) all landed inside round 3's three merged lanes
+  (`fill-collapse-3`, `fill-audit-3`, `fill-audit-a3`; see `docs/3d-audit/lane-reports/
+  MERGE-impl-r3.md` for the full unit list and test counts). Open items carried forward:
+  1. **Jay's decisions 9-amendment, 10, 11, 12** (see `Blocked on Jay`) — none pre-empted by the
+     merge; each Changed/Known-limitations line in this release's CHANGELOG entry states the
+     consequence and leaves the choice open, per the merge plan's ruling.
+  2. **T2-4, F1-count, W-36e** — unscheduled follow-ups named in `ROUND3-RESUME-BRIEFS.md` /
+     `LEDGER.md`; not started.
+  3. **`tests/unit/scene3d-slice-end-overlap.test.js`'s vacuous `git show HEAD:` leg** (merge
+     checklist item 23) — needs its own W-id: replace with an absent-key/equality oracle plus a
+     mutation proof, or pin a fixed historical sha the way
+     `scene3d-hlr-spatial-index-identity.test.js` does. Tests-only, not touched at merge.
+  4. **`tests/unit/text-fill-watertight.test.js`** (merge checklist item 25) — re-classified at
+     the round-3 merge: **68/68 GREEN on both unmodified `main` and the merged tree.** The file's
+     own header comment ("EXPECTED TO FAIL until the composite fills are fixed") is stale
+     documentation, not a live failing assertion — no W-id needed; the comment should be updated
+     or removed by whoever next touches that file.
+  5. **Filed follow-ups still open from round 2:** the **"3D Scene" tab in the in-app Help
+     Guide** (`src/ui/modals/help-shortcuts.js` still has no 3D section at all — round 3's new
+     "Min rulings" control also lands only as a per-control tooltip `help:` string, same as
+     W-35's did); and W-35 review item (a) (coarse monotonic run-count tripwire, still unwritable
+     honestly until the W-27c-0a crowd-cull confound is resolved).
 - **3D fill audit — per-lane resume order (2026-09-06, after the local merge into
   `3d-scene/integrate`).** No item below is auto-started; each needs a fresh worktree off the
   merged integration branch (or main, once fast-forwarded). Per lane:
@@ -424,7 +426,33 @@ or completes.
   `tests/unit/text-outline-ops.test.js`).
 
 ## Blocked on Jay
-Nine 3D-fill-audit decisions are frozen and must NOT be implemented at merge or by a lane; each
+**Round 3 additions (2026-09-16, `MERGE-plan-r3.md` §8, none pre-empted by the merge):**
+- **Decision 9-amendment, 10, 11, 12** — the merge's CHANGELOG discloses each as a consequence
+  and leaves the choice open rather than picking one:
+  - **9-amendment / 10 — wave-ribbon weight.** F1-placement + F1-erode + F1-amp closed the bare
+    strip and the amplitude floor, but ribbons now read measurably thinner (most on One Pen
+    Down; total ruling length unchanged to +0.1%). Restore the previous ribbon weight while
+    keeping the new even placement (F1-weight), or accept the thinner look as final? A width bar
+    (`scene3d-ribbon-width-bar.test.js`) now exists as that unit's acceptance instrument either
+    way.
+  - **11 — crosshatch cap onset.** W-36c/W-36d's anti-saturation cap (added so Density 220
+    doesn't fill solid) means the tone dial has no effect on cell size at the top of the range.
+    Retune the cap's onset so some tone authority survives at maximum density, or accept the
+    trade as shipped?
+  - **12 — Dash Ramp band tiles at Density 1.** The band mechanism that restored the Density-220
+    dark end applies at every density, so a Density-1 dash now reads as a thick tile rather than
+    a thin stroke. Add a single-pass threshold at low density, or accept?
+- **T2-4, F1-count, W-36e** — unscheduled follow-ups, not yet scoped.
+- **W-38's "Min rulings" control is docked-panel-only — the ctxbar Style flyout never got it**
+  (found live at the round-3 merge: `context-bar.js`'s Style flyout only builds the Fill Style
+  select + `FS.styleParams(law)` collapse sub-controls + Angle/Density; it never reads
+  `MAPPER_CONTROLS[mapper]`, which is where `D_FACETFLOOR` lives in `scene3d-panel.js`).
+  Confirmed live: the caveat paragraph and Angle/Density both render correctly on both
+  surfaces; Min Rulings renders only on the docked panel. Not a regression, not tested by any
+  landed unit either way — a real completeness gap in W-38's own scope, disclosed rather than
+  fixed at merge. Not blocking (Min Rulings still fully reachable from the docked panel).
+
+Nine 3D-fill-audit decisions from round 2 are frozen and must NOT be implemented at merge or by a lane; each
 needs a call. In `docs/3d-audit/lane-reports/MERGE-plan-r2.md` §7 and `LEDGER.md`: **(1)** W-06 max
 density / T4 · **(2)** `penStipple` mark class / U6 · **(3)** ground-plane density after W-15c ·
 **(4)** F1 "which white did you mean?" · **(5)** W-27c-0a — which defect do you mean: the thicker

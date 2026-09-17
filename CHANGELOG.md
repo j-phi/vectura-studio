@@ -13,6 +13,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   changes until you move the slider. Increase it for a continuous outer edge; decrease it to keep
   wet ink off the outline. Inert on faceted primitives (box, plane, pyramid), where slice ends are
   not smoothed. (W-35)
+- **3D Scene — "Min rulings" (per fill style).** Hatch and Crosshatch styles gain a *minimum
+  facet rulings* control (1–8, default 3). It sets the fewest rulings a flat facet may receive
+  when Density asks for fewer. Lower values (1–2) keep the tone ladder's contrast but leave
+  facets nearly bare; higher values (4–8) fill the lit facets at the cost of that contrast.
+  **Default 3 is byte-identical to previous releases.** No effect on smooth shapes, on
+  Contour / Spiral / Stipple fills, or on the ground plane. (W-38, W-38b)
 
 ### Changed
 - **3D Scene · Fill Style picker: two more near-duplicate options folded away (35 → 33).**
@@ -35,6 +41,31 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   whose TOTAL face count is 12 or fewer can never present more than 12 camera-facing faces from any
   angle, so it now gets the full fill-style roster instead of the two options every import used to
   be restricted to. (W-28b)
+- **3D Scene — fill style list is shorter and clearer.** *Pen Stipple*, *Pen Pitch Match* and
+  *Pen Facing* now appear as modes of **Pen Interleave** rather than as three separate styles;
+  the style count drops from 33 to 30. Existing documents keep their look — a saved style
+  resolves to the same drawing. **Pen Stipple has also moved from the "dot" group to the
+  "hatch" group in the picker**, because that is how it actually draws. (U6)
+- **3D Scene — every folded fill style now explains itself in plain language.** The style
+  picker and the context-bar flyout show each style's own caveat, written for users rather than
+  as audit prose, on both the Fill Style row and the Shadow row. (U7-2, U9b-2, U5b-4)
+- **3D Scene — dark end of Dash Ramp restored.** At maximum Density a Dash Ramp fill now lays
+  down a full dark tone again instead of thinning out. Marks are drawn as a short band of
+  parallel passes so they can carry the ink. (T4, T4b)
+- **3D Scene — low end of Dash Ramp fixed.** At Density 1 a sphere now draws a readable row of
+  dashes instead of one or two; dash count rises smoothly with density across the whole range.
+  (T3)
+- **3D Scene — tick fills cover the bare wedge.** Tick-based fills no longer leave an un-ticked
+  band where rows line up; rows are staggered against one another. A per-arm walk-jump guard
+  also removes an occasional runaway stray stroke, and the contour-mapper moiré introduced by
+  the stagger fix is corrected with its own area floor. (T2-3, T2-3b, T2-3c)
+- **3D Scene — wave-ribbon fills are placed evenly across the form.** The deep bare strip that
+  appeared on the lower front of a torus is gone and the weave now runs continuously around the
+  whole shape, including the highlight band. See *Known limitations* for the weight trade.
+  (F1-placement, F1-erode, F1-amp)
+- **3D Scene — crosshatch spends a full hatch budget per family.** Each of the two crossed
+  families now carries the ruling count a single-family hatch would, with a new cap so maximum
+  Density does not fill solid. See *Known limitations*. (W-36c, W-36d)
 
 ### Fixed
 - **3D Scene · shadows landing on other objects now follow the light.** A point, spot, or area
@@ -77,6 +108,36 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **3D Scene · walked mark fills no longer stack near-duplicate stub marks.** Minimum spacing
   between adjacent marks rises from 0.03 to at least 0.50 pen widths, removing redundant ink a
   plotter would otherwise re-draw. (T1b)
+- **3D Scene — context-bar flyout labels no longer cut off mid-word.** A long fill-style label
+  in a narrow flyout now ends in an ellipsis ("Duty Cycle …") instead of being clipped to a
+  fragment ("Duty Cycle · Constar"). (U5b-5)
+- **3D Scene — the Shadow row shows the shadow's own recipe.** A shadow using a folded style
+  now displays that style's own settings and caveat rather than the surviving style's. (U9b-2,
+  U5b-4)
+- **3D Scene — wave-ribbon fills no longer collapse to a bare centreline.** A swallowed geometry
+  failure inside the fill inset step was being treated as success, which left a single thin line
+  where a ribbon belonged. (F1-erode)
+
+### Known limitations
+- **Crosshatch at maximum Density: the tone dial has no effect on cell size.** The new
+  anti-saturation cap — added so Density 220 does not fill solid — binds at the top of the
+  range, so turning the tone dial there changes nothing. This is the trade the cap exists to
+  make; **whether the cap's onset should be retuned so some tone authority survives at maximum
+  density is an open product decision and is not settled by this release.** (W-36c/d)
+- **Wave-ribbon fills read lighter than before.** Fixing the bare strip redistributes ink
+  rather than removing it (total ruling length is unchanged to +0.1%), but the ribbons are
+  measurably thinner — most on *One Pen Down*. **Whether to restore the previous ribbon weight
+  while keeping the new even placement is an open product decision and is not settled by this
+  release.** A width bar now exists (`scene3d-ribbon-width-bar.test.js`) so a future retune has
+  something to measure against. (F1-placement, F1-amp, F1-width-bar)
+- **Dash Ramp marks are bands, not single strokes.** The band mechanism that restored the dark
+  end applies at every density, so at Density 1 each dash reads as a thick tile rather than a
+  thin stroke. (T4)
+- *(carried)* The thin-torus shadow blank-void ceiling returns at a major:minor tube ratio of
+  about 465:1–488:1 — unreachable through the UI, reachable via a hand-edited or imported
+  `.vectura`. (W-30d)
+- *(carried)* `sliceEndOverlap` defaults to 0 and is byte-identical there — no visual change on
+  upgrade. (W-35)
 
 ## 1.4.0 - 2026-09-06
 

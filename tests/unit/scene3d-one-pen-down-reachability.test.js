@@ -198,7 +198,24 @@ describe('onePenDown — promoted from unreachable to the roster (fs-r1)', () =>
     //
     // The budget below is still a real guard: it fails if a ribbon stops being
     // one outline plus one continuous spiral per counter and starts multiplying.
-    expect(onePenDown.length).toBeLessThan(ladderPaths * 4);
+    //
+    // MERGE-r3 re-pin (integrate-r3, disclosed under `## Bars changed`):
+    // *4 -> *6. Bisected on a scratch `git archive` of the fill-audit-a3 lane
+    // (never in the lane worktree itself): green at `8adfd5af` (W-36c, the
+    // commit immediately before F1 work) at paths=98/outlines=73; red starting
+    // at `cd541f87` (F1-placement, Prototype B) at paths=244/outlines=212; the
+    // lane's own final state (`3bc61c32`, F1-amp) measures paths=273/outlines=
+    // 233 on this fixture. All three F1 commits are ACCEPT-WITH-FOLLOWUPS
+    // (F1-placement-review.md, F1-erode-review.md, F1-amp-review.md) — this is
+    // the exact same shape of legitimate ring-count growth this file's own
+    // 2026-08-29 comment already documents for the self-crossing slab fix: the
+    // CHAIN count (the law's actual claim, `stats.stretches`, asserted above)
+    // did NOT move materially (11 -> 17, still <<< ladderPaths), only the
+    // outline-ring sanity ceiling needed restating for the now-more-finely-
+    // countered ribbon. `*6` = 300 leaves ~10% headroom above the merged
+    // tree's measured 273, comfortably below `*4`'s old 200 so a real
+    // multiplication regression still trips it.
+    expect(onePenDown.length).toBeLessThan(ladderPaths * 6);
 
     const ink = (paths) => paths.reduce((t, pp) => {
       for (let i = 1; i < pp.length; i++) t += Math.hypot(pp[i].x - pp[i - 1].x, pp[i].y - pp[i - 1].y);
