@@ -7143,6 +7143,35 @@
       stretches: 0, wide: 0, narrow: 0, ribbons: 0, clipped: 0,
       outlines: 0, fills: 0, degenerate: 0,
       noRing: 0, clipEmpty: 0, erodeEmpty: 0,
+      // F1-count (docs/3d-audit/lane-reports/LEDGER.md row 2d/6, planned in
+      // F1-erode-plan.md §1) — a PRODUCTION counter for the fill-depth blind
+      // spot `erodeEmpty` structurally cannot see: `erodeEmpty` only fires
+      // when `any` (outline shipped OR fill shipped) is false, but a stretch
+      // whose OUTLINE erosion succeeds and whose FILL erosion then comes back
+      // empty leaves `any === true`, so `erodeEmpty` never fires even though
+      // the second (deeper) `insetMultiPolygon` call may have swallowed a
+      // `FillBoolean` failure exactly like the one F1-erode fixed. Before
+      // F1-erode's ladder fix, 4 of the 6 swallowed-and-empty
+      // `insetMultiPolygon` calls measured on the torus (`contour`
+      // trochoidLoop x1, `contour` weaveDepth x2, `crosshatch` weaveDepth x1)
+      // landed exactly here and were invisible to every counter that existed
+      // then. This counter is the SAME trigger condition as `outlineOnly`
+      // below (both fire on `outlineMP.length && !fillMP.length`) — it does
+      // not, and structurally cannot without instrumenting the FORBIDDEN
+      // `geometry-utils.js`, distinguish "genuinely too narrow for a second
+      // erosion" from "a swallowed boolean failure the ladder could not
+      // recover" (that signal is consumed and cleared inside
+      // `insetMultiPolygon` itself before it ever returns, by design, so no
+      // caller can leak it to the next unrelated erosion). What it buys is
+      // OBSERVABILITY: a spike here now shows up in `stats` next to
+      // `erodeEmpty`/`clipEmpty`/`degenerate` instead of blending silently
+      // into `outlineOnly`'s ordinary ribbon bookkeeping. Deliberately NOT
+      // folded into `degenerate` — `scene3d-ribbon-degeneration-counter.test.js`
+      // pins `degenerate === noRing + clipEmpty + erodeEmpty` as a structural
+      // invariant, and this event is not a refusal: the stretch still ships
+      // its outline and still counts as a ribbon. Gates observability of
+      // silent ink loss at the fill depth, not geometry.
+      fillEmpty: 0,
       // A ribbon that got an OUTLINE but no interior fill. Not a refusal — the
       // outline ships and the stretch counts as a ribbon — but it IS the second
       // erosion coming back empty, and an erosion returning empty in silence is
@@ -7609,7 +7638,16 @@
           });
         });
         if (!any) { ribbonRefuse('erodeEmpty'); outp.push(centrePass(st.a, st.b)); return; }
-        if (!fillMP.length) ribbonStat.outlineOnly += 1;
+        if (!fillMP.length) {
+          ribbonStat.outlineOnly += 1;
+          // F1-count — see the `fillEmpty` field comment above. Same trigger,
+          // observability-family counter; never routed through `ribbonRefuse`
+          // (that call also bails to a centreline, which would discard the
+          // outline this stretch just shipped — an OUTPUT change forbidden
+          // for this unit) and never added to `degenerate` (would break the
+          // pinned `degenerate === noRing + clipEmpty + erodeEmpty` invariant).
+          ribbonStat.fillEmpty += 1;
+        }
         ribbonStat.ribbons += 1;
       });
 
