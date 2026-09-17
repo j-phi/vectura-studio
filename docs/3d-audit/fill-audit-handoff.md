@@ -200,6 +200,88 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    `npm run test:ci`, reconcile intentionally-red tests, bump version + `version:sync`, CHANGELOG/plans/
    README, commit, STOP.
 
+## ROUND 3 CLOSED (2026-09-17) — merged locally at `d3b01d28`, v1.4.2, NOT PUSHED — read this first
+
+**Round 3 ran 2026-09-10 → 17 across five `-3` worktrees off `main` `426cc5e4`** (paused by Jay on 09-12,
+resumed the same day). **Every unit on the stop line is landed-or-measured; the merge measured ZERO conflicts;
+all five `test:ci` suites are green; the gallery is rebuilt.** **Integration branch `3d-scene/integrate-r3`,
+integration commit `d3b01d28`, `main` fast-forwarded onto it.** Merge review **ACCEPT-WITH-FOLLOWUPS**
+(`lane-reports/MERGE-review-r3.md`). ⚠ **`main` is 44+ ahead of `origin/main` and NOT PUSHED — pushing is
+still Jay's call, now across two full rounds.**
+
+**Merged lane HEADs:** `fill-audit-a3` `7375918c` · `fill-collapse-3` `28cc745d` · `fill-audit-3` `141ed0b5`.
+**`fill-audit-d3` and `handoff-c3` were never written to** — W-37 and the HLR sub-pen unit both closed
+MEASURED by read-only passes. **Already on `main` separately:** GH-2 `6ffaf9c6` (the `--rig addLayer` capture
+tier) and the docs checkpoint `06c46203`. **The five `-3` worktrees are HISTORICAL; round 4 branches off
+`main`.**
+
+**What shipped, by theme:** **F1 is delivered but NOT closed** — placement `cd541f87` (MEASURED), erode
+`e2c3ca85`, amp `3bc61c32`: the streak is gone (deep-blank **3.02/4.00/1.79 → 0.03/0.00/0.00 mm²**) and the
+weave runs continuously around the torus, **but the wave laws read THINNER than pre-fix** → decision 10.
+**Jay's decisions 1 and 6 closed early** (T4, W-36c), with T4b/T4c/W-36d/W-36e adding the CI guards they
+shipped without. **The mkTick family took three attempts** — T2-1 and T2-2 both REJECTED and REVERTED; T2-3
+fixed the wedge; **T2-3b found a real TONE ERROR behind the contour banding** (`lenChan` clamping `P` without
+re-solving `L` — up to 25 % of asked ink undelivered across the midtone, for every length-channel law,
+pre-dating T2-3); T2-3c cleared the stray stroke that fix exposed. **Two items closed with NO unit** (W-37,
+W-35b), both by read-only scouts. **W-31b is MEASURED-with-guards, not fixed:** three attempts have failed to
+find a placement mechanism for Jay's report-13 crosshatch cells and two ranks are marked never-retry — **the
+cells can no longer silently get worse; they are not yet even.**
+
+⚠ **THREE BARS WERE RE-PINNED AT THE MERGE, all disclosed:** `scene3d-facet-min-rulings` (12 hashes, from
+W-36c) · `scene3d-one-pen-down-reachability` (×4 → ×6, F1 chain) · **`scene3d-self-crossing-tone` (1.4 → 1.3,
+F1 chain) — a RIBBON-WEIGHT number in all but name that moved DOWNWARD, i.e. decision 10's thinning showing up
+in a pre-existing INDEPENDENT guard.** **Both prior rounds' worst defects were also found by the merge, not by
+a lane.**
+
+**FIVE OPEN DECISIONS FOR JAY. ✅ Answers live on the DECISION DESK —
+https://claude.ai/code/artifact/811ab725-f61c-4664-bdb6-2780bd4ba56d — which is db-backed and REPLACES the old
+page that could not save. The orchestrator reads it via `read_db` and TRANSCRIBES answers into SESSION-SUMMARY
+§4. ⚠ §4 REMAINS THE AUTHORITATIVE RECORD: the desk is where Jay answers, §4 is where the answer binds —
+reconcile the desk against §4, never the reverse.**
+1. **§4 decision 9 AMENDMENT** — W-32 was closed "for now" on a 0.50-pen bar; **the ellipsoid measures 0.72
+   pen**, a primitive W-32 never swept. Accept, or reopen Rank 4? *(A conditional design is already written.)*
+2. **§4 decision 10 — READY, packet complete.** Accept the thinner even style (A), or fund **F1-weight** (B)?
+   **Nothing shipped moves ribbon weight today.**
+3. **§4 decision 11** — the anti-saturation cap he asked for **voids tone authority at Density 220**. Accept
+   (A) or retune the onset (B)? **A CHANGELOG line discloses it either way.**
+4. **§4 decision 12** — mkDashRamp dashes are **multi-pass bands** (T4's mechanism, his own decision 1 = B);
+   at d=1 they read as thick tiles. Accept (A), or **T3b** (B)?
+5. **§4 decision 13** — the moiré fix **costs tick-length range** (3.0–4.3× → 2.3–3.2×, still monotone).
+   Accept (A), or fund **T2-3d** to recover ≥3× via row pitch (B)?
+
+**ROUND-4 CARRY-OVERS, all with briefs or measured starting points already written:** **F1-count** (the
+fill-depth swallowed-failure counter — the fix landed, the blindness did not) · **W-36e** (the crosshatch
+dial's interior blind spot; **its bar must be ink/budget-based or d ≥ 10**) · **T2-4** (d=220 mkTick coverage;
+**MEASURED is an acceptable outcome**) · **T2-3d** (gated on decision 13) · **T2-3e** (the row-lattice pattern
+— pre-existing, measured, disclosed in Jay's T2 row) · **W-07b** and the unscheduled list (W-33's fitter
+follow-up, W-32 Rank 4, `insetMultiPolygon` ladder, the W-29 stub family, U10–U12 which stay W-26-blocked).
+
+**PROCESS THAT BINDS ROUND 4 — read before staffing anything:**
+- **Jay's scale-down ruling (2026-09-15): the roster was over-levelled.** Tests-only units get a **light VERIFY
+  pass** (RED reproduces, mutation trips, `## Bars changed` accurate) and are marked **VERIFIED**, not
+  reviewed. **Secretary flags only for units that change `src/`, capped at SIX.** **No planner unless a unit
+  was REJECTED or its mechanism is UNKNOWN.** **No evidence-integrity side units unless a mismatch blocks a
+  decision.** **SCOUTS STAY — they were the best value of the round** (seven; two closed units outright, one
+  deleted a wrong answer before a planner could chase it).
+- **`lane-reports/ROUND3-RESUME-BRIEFS.md` §0 is THE BINDING CHECKLIST — paste it verbatim into every brief.**
+  Six rules: **which half of the acceptance bar you gate (the mutation proof is BLOCKING)** · **sweep coverage
+  as a fraction of the roster, exclusions justified** · **state the FIXTURE behind every number — rig, camera,
+  density, every non-default param, and whether GROUND-PLANE INK is included** · **check each pin's FIXTURE,
+  not just the law name** · **say so when you turn another unit's test green or inherit its red** ·
+  **`## Bars changed` is mandatory, INCLUDING population and fixture changes.**
+- **§0b lists the known-slow vitest files.** `scene3d-tone-law-collapse.test.js` measured **390–1046 s** and
+  **exceeds the Bash tool's 600 s maximum** — expect the tool to background it and read the completion
+  notification. **That exemption covers ONLY the named slow test files.**
+- **Incidents 8–12 (2026-09-11 → 16), five kills including the first WEEKLY cap (~2 days) and one that hit the
+  MERGE IMPLEMENTER.** **Nothing was ever lost.** **The on-disk record was the recovery mechanism every single
+  time**, which is why the ledger is now checkpointed to `main`. **Resume killed agents with `SendMessage`;
+  checkpoint any mid-unit tree as `wip(...) (unverified)` and make the next agent VERIFY-OR-REVERT it.**
+
+**Resume prompt for the next orchestrator (paste verbatim):**
+> Resume the 3D fill audit at round 4. Local `main` is **`d3b01d28`** (v1.4.2, round 3 merged, 44+ ahead of origin, **NOT pushed**). Read, in order: `docs/3d-audit/fill-audit-handoff.md` (this block), `docs/3d-audit/lane-reports/SESSION-SUMMARY.md` (§1 what landed, §3 the round-4 order, §4 the decisions — **five are OPEN**, §6 the merge record), `docs/3d-audit/lane-reports/LEDGER.md` (standing rulings, the round-3 rows and their carry-overs, and the MERGE CHECKLIST — **items 23 and 30 are still owed**), `docs/3d-audit/STILL-OPEN.md`, `docs/3d-audit/lane-reports/AGENT-PROTOCOL.md`, and **`docs/3d-audit/lane-reports/ROUND3-RESUME-BRIEFS.md` §0 and §0b — paste §0 verbatim into every brief.** **The five `-3` worktrees are HISTORICAL — branch round 4 off `main`.** Serve main with `node scripts/dev-server.js 8460` for the gallery, and **kill any stale dev server on a lane port before starting** — leftover servers have held ports in every round, and orphaned scratch-port servers are now the largest cleanup cost of an incident. **Check the Decision Desk (https://claude.ai/code/artifact/811ab725-f61c-4664-bdb6-2780bd4ba56d) with `read_db` and TRANSCRIBE any answers into SESSION-SUMMARY §4, which stays authoritative.** **Do not start a conditional unit (W-32 Rank 4, F1-weight, the cap retune, T3b, T2-3d) until its decision is answered.** **Jay's scale-down regime binds: tests-only units get a light VERIFY pass, no planner unless a unit was rejected or its mechanism is unknown, secretary flags only for `src/` units and capped at six, and scouts stay.** Same roles otherwise: lane secretary first, then Sonnet implementers → Sonnet adversarial reviewers → Opus planners only where earned. Commit per unit in the lane worktree. **Never push.**
+
+---
+
 ## ROUND 3 PAUSE POINT (2026-09-12 07:50 EDT) — read this first
 
 **Jay paused the work.** Round 3 ran 2026-09-10 → 12 in five `-3` worktrees off `main` **`426cc5e4`**

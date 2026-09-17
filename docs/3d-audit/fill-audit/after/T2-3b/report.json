@@ -1,0 +1,57 @@
+{
+  "unit": "T2-3b",
+  "lane": "fill-audit-a3",
+  "worktree": ".claude/worktrees/fill-audit-a3",
+  "branch": "3d-scene/fill-audit-a3",
+  "base_sha": "c28b3490",
+  "final_sha": "a8e2269f",
+  "capture_command": [
+    "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-audit-a3 --port 8490 --rig create --only '^(sphere|torus|cone)__(hatch|contour)__mkTick__med__a$|^(sphere|cone)__contour__mkTick__max__a$' --out docs/3d-audit/fill-audit/after/T2-3b",
+    "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-audit-a3 --port 8491 --rig addLayer --only '^(sphere|torus|cone)__(hatch|contour)__mkTick__med__a$|^(sphere|cone)__contour__mkTick__max__a$' --out docs/3d-audit/fill-audit/after/T2-3b"
+  ],
+  "served_version": "1.4.1 (confirmed matching worktree package.json at a8e2269f)",
+  "ports_used_and_killed": [8490, 8491],
+  "fixture": {
+    "camera": "DEFAULT_CAMERA (angle key 'a' — the app default camera; no angle 'b' shot taken for this unit)",
+    "density": "med (fillDensity 50) for the six primary cells; max (fillDensity 220) additionally for sphere/contour and cone/cone/contour per the coordinator's ask",
+    "non_default_params": "styleTable.scene.params = { fillAngle: 45 (app default), fillDensity: per-cell, toneLaw: 'mkTick' } — mapper varies per cell (hatch | contour). No other non-default object/light/tone params — capture harness uses the app's own PRIMITIVE_CREATE_DEFAULTS (create rig) or engine.addLayer('scene3d') tree (addLayer rig) unmodified.",
+    "ground_plane_ink": "Ground/backdrop are the capture harness's own scene defaults (NOT the unit-fixture's ground:{enabled:false} used by the vitest tests) — the gallery capture always includes whatever ground/backdrop the live app's own creation defaults produce. This is a DIFFERENT fixture than the vitest unit-test numbers in T2-3b-impl.md's per-cell table (which explicitly disable ground/backdrop). Do not compare pathCount or inkMm between this report.json and the vitest per-cell table directly — they are two different, both-disclosed fixtures.",
+    "rigs": "create (PRIMITIVE_CREATE_DEFAULTS over PRIMITIVE_PARAM_DEFAULTS) and addLayer (engine.addLayer('scene3d') tree, primitive swapped in place) — both captured, filenames disambiguated by the harness's own '__addlayer' suffix."
+  },
+  "shots": {
+    "create": {
+      "sphere__hatch__mkTick__med__a": { "pathCount": 1119, "inkMm": 4999.0 },
+      "sphere__contour__mkTick__med__a": { "pathCount": 1123, "inkMm": 4807.3 },
+      "sphere__contour__mkTick__max__a": { "pathCount": 3634, "inkMm": 4613.4 },
+      "torus__hatch__mkTick__med__a": { "pathCount": 438, "inkMm": 1314.2 },
+      "torus__contour__mkTick__med__a": { "pathCount": 386, "inkMm": 1383.4 },
+      "cone__hatch__mkTick__med__a": { "pathCount": 580, "inkMm": 2501.6 },
+      "cone__contour__mkTick__med__a": { "pathCount": 683, "inkMm": 2530.5 },
+      "cone__contour__mkTick__max__a": { "pathCount": 2265, "inkMm": 2493.0 }
+    },
+    "addLayer": {
+      "sphere__hatch__mkTick__med__a": { "pathCount": 1004, "inkMm": 4999.0 },
+      "sphere__contour__mkTick__med__a": { "pathCount": 1008, "inkMm": 4807.3 },
+      "sphere__contour__mkTick__max__a": { "pathCount": 3519, "inkMm": 4613.4 },
+      "torus__hatch__mkTick__med__a": { "pathCount": 770, "inkMm": 2972.7 },
+      "torus__contour__mkTick__med__a": { "pathCount": 553, "inkMm": 2748.2 },
+      "cone__hatch__mkTick__med__a": { "pathCount": 411, "inkMm": 2250.4 },
+      "cone__contour__mkTick__med__a": { "pathCount": 511, "inkMm": 2369.1 },
+      "cone__contour__mkTick__max__a": { "pathCount": 1909, "inkMm": 2321.0 }
+    }
+  },
+  "byte_identical_pairs": "None. All 16 shots (8 create + 8 addLayer) have distinct pathCounts (386-3634) — no two shots in this capture are byte-identical, so none needs a rig-mismatch or stale-cache explanation. sphere__hatch and sphere__contour share the identical inkMm (4999.0 / 4807.3) ACROSS the create and addLayer rig at med density purely by coincidence of rounding at this fixture's ink total, NOT because the shots are byte-identical (pathCounts 1119 vs 1004, 1123 vs 1008 — clearly different geometries; the harness's own before/after pairing logic is per-shot pathCount+ink, not a single rounded figure).",
+  "baseline_comparison_pathCount_create_med_order_sphereHatch_sphereContour_torusHatch_torusContour_coneHatch_coneContour": {
+    "42acff7b_pre_T2-3": [1112, 1088, 403, 338, 566, 645],
+    "81925ee8_T2-3_shipped_banded_plan_measurement": [1146, 1166, 440, 393, 600, 713],
+    "a8e2269f_this_unit_Rank_1_measured_here": [1119, 1123, 438, 386, 580, 683],
+    "note": "This tree carries T3 + W-31b on top of 81925ee8, neither touching tick code, so these numbers are expected to differ slightly from both historical baselines while remaining in the same range — none is zero, none is a wholesale refusal."
+  },
+  "crops": [
+    "crops/sphere-contour-native-before-after.png (full native-resolution object crop, before vs after)",
+    "crops/sphere-contour-defect-crop-native.png (tight native-resolution crop on the defect region)",
+    "crops/cone-hatch-native-before-after.png (full native-resolution object crop, before vs after)",
+    "crops/cone-hatch-defect-crop-native.png (tight native-resolution crop on the defect region)"
+  ],
+  "look_verdict": "See T2-3b-impl.md ## Evidence (re-shot) for the full LOOK writeup: the sharp diagonal banding is visibly reduced on both cells; sphere/contour AFTER additionally shows one new long straight diagonal stroke (the disclosed, pre-flagged runaway-stroke artifact, not a re-emergence of the banding); tick length still visibly grades from long (dark) to short (light) on both cells, both before and after."
+}

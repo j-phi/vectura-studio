@@ -1,0 +1,72 @@
+{
+  "unit": "T2-3c",
+  "lane": "fill-audit-a3",
+  "worktree": ".claude/worktrees/fill-audit-a3",
+  "branch": "3d-scene/fill-audit-a3",
+  "base_sha": "a8e2269f",
+  "final_sha": "7375918c",
+  "capture_command": [
+    "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-audit-a3 --port 8475 --rig create --only '^(sphere|torus|cone)__(hatch|contour)__mkTick__med__a$' --out docs/3d-audit/fill-audit/after/T2-3c",
+    "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-audit-a3 --port 8475 --rig addLayer --only '^(sphere|torus|cone)__(hatch|contour)__mkTick__med__a$' --out docs/3d-audit/fill-audit/after/T2-3c"
+  ],
+  "served_version": "1.4.1 (confirmed matching worktree package.json at a8e2269f + this unit's uncommitted-at-capture-time changes)",
+  "ports_used_and_killed": [8475],
+  "fixture_gallery_capture": {
+    "camera": "DEFAULT_CAMERA (angle key 'a')",
+    "density": "med (fillDensity 50), six cells only — no max-density re-shoot for this unit",
+    "non_default_params": "styleTable.scene.params = { fillAngle: 45 (app default), fillDensity: 50, toneLaw: 'mkTick' }; mapper varies per cell (hatch | contour). No other non-default object/light/tone params.",
+    "ground_plane_ink": "Ground/backdrop are the capture harness's own scene defaults (gallery capture, NOT the vitest unit-test fixture which explicitly sets ground:{enabled:false}/backdrop:{enabled:false}). Do not compare this report's pathCount/inkMm to the vitest per-cell table in T2-3c-impl.md directly.",
+    "rigs": "create (PRIMITIVE_CREATE_DEFAULTS over PRIMITIVE_PARAM_DEFAULTS) and addLayer (engine.addLayer('scene3d') tree, primitive swapped in place) — both captured."
+  },
+  "fixture_vitest_unit_test": {
+    "camera": "DEFAULT_CAMERA",
+    "bounds": "{ width: 1200, height: 1000, m: 20, dW: 1160, dH: 960, penWidth: 0.3 } (Fixture A, this unit's and T2-3b-review's own renderCell)",
+    "density": "fillDensity 50 ('med'), all per-cell longest/count15 numbers in T2-3c-impl.md are measured here",
+    "ground_plane_ink": "ground:{enabled:false}, backdrop:{enabled:false} — explicitly excluded, this is the RGR/census fixture, not the gallery fixture above",
+    "rigs": "create (PRIMITIVE_CREATE_DEFAULTS+PARAM_DEFAULTS) and test/addLayer (PRIMITIVE_PARAM_DEFAULTS alone) — the plain construction every RGR test in this lane uses"
+  },
+  "shots": {
+    "create": {
+      "sphere__hatch__mkTick__med__a": { "pathCount": 1117, "inkMm": 4894.8 },
+      "sphere__contour__mkTick__med__a": { "pathCount": 1121, "inkMm": 4748.8 },
+      "torus__hatch__mkTick__med__a": { "pathCount": 435, "inkMm": 1268.8 },
+      "torus__contour__mkTick__med__a": { "pathCount": 387, "inkMm": 1365.8 },
+      "cone__hatch__mkTick__med__a": { "pathCount": 580, "inkMm": 2485.7 },
+      "cone__contour__mkTick__med__a": { "pathCount": 683, "inkMm": 2530.5 }
+    },
+    "addLayer": {
+      "sphere__hatch__mkTick__med__a": { "pathCount": 1002, "inkMm": 4894.8 },
+      "sphere__contour__mkTick__med__a": { "pathCount": 1006, "inkMm": 4748.8 },
+      "torus__hatch__mkTick__med__a": { "pathCount": 765, "inkMm": 2893.3 },
+      "torus__contour__mkTick__med__a": { "pathCount": 552, "inkMm": 2730.5 },
+      "cone__hatch__mkTick__med__a": { "pathCount": 410, "inkMm": 2180.8 },
+      "cone__contour__mkTick__med__a": { "pathCount": 508, "inkMm": 2297.3 }
+    }
+  },
+  "vitest_fixture_per_cell_runaway_census": {
+    "note": "longest/count15 measured with tests/helpers/scene3d-mktick-runaway.js's runawayCensus(paths, 15), Fixture A (see fixture_vitest_unit_test above). PRE_T23B = scratch git archive 56481503 (T2-3b (a), before Rank 1). BASE_a8e2269f = this unit's own starting point (T2-3b (b) shipped, pre-T2-3c). FIXED = this tree (T2-3c applied).",
+    "create": {
+      "sphere/hatch":    { "PRE_T23B": [47.085, 4], "BASE_a8e2269f": [46.690, 3], "FIXED": [8.713, 0] },
+      "sphere/contour":  { "PRE_T23B": [7.189, 0],  "BASE_a8e2269f": [52.386, 1], "FIXED": [7.189, 0] },
+      "torus/hatch":     { "PRE_T23B": [14.199, 0], "BASE_a8e2269f": [14.199, 0], "FIXED": [8.474, 0] },
+      "torus/contour":   { "PRE_T23B": [10.513, 0], "BASE_a8e2269f": [11.876, 0], "FIXED": [10.513, 0] },
+      "cone/hatch":      { "PRE_T23B": [9.735, 0],  "BASE_a8e2269f": [12.239, 0], "FIXED": [9.896, 0] },
+      "cone/contour":    { "PRE_T23B": [5.206, 0],  "BASE_a8e2269f": [5.206, 0],  "FIXED": [5.206, 0] }
+    },
+    "test": {
+      "sphere/hatch":    { "PRE_T23B": [37.376, 2], "BASE_a8e2269f": [37.376, 2], "FIXED": [8.854, 0] },
+      "sphere/contour":  { "PRE_T23B": [20.249, 1], "BASE_a8e2269f": [20.249, 1], "FIXED": [7.048, 0] },
+      "torus/hatch":     { "PRE_T23B": [17.814, 1], "BASE_a8e2269f": [17.814, 2], "FIXED": [7.228, 0] },
+      "torus/contour":   { "PRE_T23B": [12.734, 0], "BASE_a8e2269f": [12.734, 0], "FIXED": [12.734, 0] },
+      "cone/hatch":      { "PRE_T23B": [10.287, 0], "BASE_a8e2269f": [15.610, 1], "FIXED": [10.306, 0] },
+      "cone/contour":    { "PRE_T23B": [8.061, 0],  "BASE_a8e2269f": [22.435, 1], "FIXED": [7.010, 0] }
+    },
+    "units": "[longest_mm, count_paths_over_15mm]"
+  },
+  "byte_identical_pairs": "None across the 12 gallery shots in this capture. create vs addLayer share identical inkMm per cell (rounding coincidence of the same ink total across rig constructions, as T2-3b's report already noted) but distinct pathCounts, so no rig-mismatch concern.",
+  "crops": [
+    "crops/sphere-contour-create-native-before.png / -after.png (native-resolution crop, create rig, the flagged defect region)",
+    "crops/sphere-contour-addlayer-native-before.png / -after.png (native-resolution crop, addLayer rig, same region)"
+  ],
+  "look_verdict": "create rig, sphere/contour: BEFORE shows one long, straight diagonal stroke crossing the whole lit flank from upper-left to lower-right (the disclosed T2-3b-review.md defect). AFTER: that stroke is completely gone; the tick field, row banding, and length-carries-tone gradient are visually unchanged/unaffected — nothing new appears. addLayer rig, sphere/contour: the SAME class of full-diameter diagonal is visible BEFORE (a larger/more visible instance than the 20.25mm single-segment path this unit's own vitest Fixture A found on this rig — see 'addLayer-rig diagonal characterisation' in T2-3c-impl.md for the fixture-size discrepancy) and is likewise completely gone AFTER. torus/hatch, cone/hatch (create rig): several small jagged diagonal spikes visible BEFORE are visibly smoothed/reduced AFTER (consistent with the per-cell census: both cells improved even though neither was over this unit's count15 bar). torus/contour, cone/contour: visually indistinguishable before/after at this zoom (both already clean, per the census)."
+}
