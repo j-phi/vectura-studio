@@ -2534,6 +2534,26 @@
       const t = clamp((d - 1) / (MK_BAND_ONSET_D - 1), 0, 1);
       return clamp(Math.round(1 + t * (MK_BAND_MAX_PASSES - 1)), 1, MK_BAND_MAX_PASSES);
     };
+    // T3c — T3b's own reviewer (condition 3, `T3b-review.md`) found and
+    // quantified a SECOND, T4-inherited defect `bandOnsetCap` above never
+    // touches: within the onset ramp (`bandOnsetCap(d) < MK_BAND_MAX_PASSES`,
+    // measured d<32 on every {sphere,torus}x{addLayer,create} combo — see
+    // `layMark`'s own comment) a single PASS can still occupy its own entire
+    // PERIOD (`each === sv.P`, "L=P is an unbroken ruling" per the dissolution
+    // comment below), so consecutive dashes ABUT with no gap and the row
+    // reads as a broken/continuous ruling rather than a sparse texture of
+    // discrete marks — exactly Jay's `user-reports/10.png` complaint
+    // (`STILL-OPEN.md` W-06b row: "discrete dashes riding rulings at every
+    // density, never row-wide tiles"). `MK_DASH_LEN_FRAC` bounds a drawn
+    // pass to at most this fraction of its own period `sv.P` (applied in
+    // `layMark`, never here — `mkAsk`/`g` themselves are untouched, so
+    // `mkTick`'s own `lenChan` branch, which reads the same `g`, cannot see
+    // this at all). 0.5 (measured, `T3c-impl.md`): the classic 50% dash/gap
+    // duty convention, and the largest fraction that still guarantees a
+    // visually real gap (`P - each >= 0.5*P`) while leaving the biggest
+    // possible margin above `MIN_MARK_MM` for the many foreshortened,
+    // small-`P` samples this ramp reaches (see `layMark`'s own floor logic).
+    const MK_DASH_LEN_FRAC = 0.5;
     // T2-3 (W-05b U2, iteration 3 — mkTick's length-response curve, see
     // `solveAt`'s `lenChan` branch, and the ROW-TO-ROW STAGGER at the tick
     // placement site in `layMark`). T2 (`dbad2d88`) and T2-2 (`9d911b05`)
@@ -6731,10 +6751,45 @@
           const bandN = Math.max(1, Math.min(bandOnsetCap(opts.fillDensity), Math.floor((0.90 * sv.bandPitch) / w)));
           const nn = Math.min(n0, bandN);
           const each = sv.L / nn;
+          // T3c — bound dash LENGTH (not band WIDTH, T4/T3b's own territory,
+          // untouched above) so a dash reads as a discrete mark riding its
+          // ruling, not a broken/abutting one. T3b's O10 mutation-kill and
+          // O11's mark-count array proved this cannot be done by scaling `L`
+          // (or `capOf`) upstream: that also shrinks `nn`, which is the ONLY
+          // thing keeping `tot` (place()'s own MIN_MARK_MM gate, summed
+          // across all `nn` stacked passes) above the floor at the many
+          // foreshortened, small-`P` samples this fixture has — measured:
+          // scaling `capOf` by 0.5 dropped sphere/hatch/addLayer d=1 from 46
+          // marks to 34 (`T3c-impl.md` §RED). Capping `each` HERE instead,
+          // strictly after `nn` is fixed, leaves `nn` — and therefore every
+          // sample's own MIN_MARK_MM margin — byte-identical to T3b; only
+          // the along-row extent of each already-surviving pass shrinks.
+          // Gated to the SAME onset ramp T3b's own `bandOnsetCap` already
+          // governs (`bandOnsetCap(d) < MK_BAND_MAX_PASSES`, true for d<32
+          // on every combo measured) — NOT `bandN` itself, which also falls
+          // below `MK_BAND_MAX_PASSES` at high density for an unrelated
+          // reason (`0.90*bandPitch/w`'s own packing floor, ~d>=50); gating
+          // on `bandN` was tried first and leaked the cap into that
+          // territory, corrupting O13's d=50/d=220 byte-identity.
+          // `MK_DASH_LEN_FRAC` bounds a pass to at most half its own period
+          // (measured target, `T3c-impl.md`), so consecutive marks always
+          // leave a real gap — but never below `MIN_MARK_MM` (`place()`'s own
+          // survival floor, +5% headroom for walk truncation): a mark that
+          // would only clear that floor via a LONGER pass is left at its own
+          // original (uncut) length instead of being pushed under the floor,
+          // so `place()`'s accept/reject outcome for every sample is
+          // provably unchanged from T3b's own tree (`T3c-impl.md`'s O11/O10
+          // byte-identical re-derivation, sphere AND torus, both rigs).
+          const dashOnset = bandOnsetCap(opts.fillDensity);
+          const dashLenFloor = MIN_MARK_MM * 1.05;
+          const dashLenTarget = MK_DASH_LEN_FRAC * sv.P;
+          const eachDrawn = (dashOnset < MK_BAND_MAX_PASSES && each > dashLenFloor && each > dashLenTarget)
+            ? Math.min(each, Math.max(dashLenFloor, dashLenTarget))
+            : each;
           polys = [];
           for (let j = 0; j < nn; j++) {
             const off = (j - (nn - 1) / 2) * w;
-            polys.push([[-each / 2, off], [each / 2, off]]);
+            polys.push([[-eachDrawn / 2, off], [eachDrawn / 2, off]]);
           }
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
