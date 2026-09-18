@@ -398,18 +398,18 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // `cone/*` cells differ from BOTH prior sides (they carry a fill delta
     // AND an edge delta). See `MERGE-impl-r4.md` §2.5 for the full table.
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': 'PENDING',
-      'test|sphere/contour': 'PENDING',
-      'test|torus/hatch': 'PENDING',
-      'test|torus/contour': 'PENDING',
-      'test|cone/hatch': 'PENDING',
-      'test|cone/contour': 'PENDING',
-      'create|sphere/hatch': 'PENDING',
-      'create|sphere/contour': 'PENDING',
-      'create|torus/hatch': 'PENDING',
-      'create|torus/contour': 'PENDING',
-      'create|cone/hatch': 'PENDING',
-      'create|cone/contour': 'PENDING',
+      'test|sphere/hatch': '5b90b967b14ecabf16317386c47a704e12a86abe3f8752623f097c29259245cb',
+      'test|sphere/contour': '9cb13371e29d2afd661fecf007529733c2b1901b7067d1184fd0a03f0a632cec',
+      'test|torus/hatch': 'cd2c062e44c72285489334bdc0c0219e08a25db3b0fd60623016a11c466e7c58',
+      'test|torus/contour': 'e1312b97406cf0d800dda5efb88e4332ce6018c82a1b51b896612d544d31bd94',
+      'test|cone/hatch': 'db708574701279a33557aa181ff96b4b9d60dd03bcc98e61b2f1222ba8e44e0c',
+      'test|cone/contour': 'b0985d9544d4b1317dded14e2bbca984479b984704e7ab597b70e70f0e7b9aca',
+      'create|sphere/hatch': 'ea0c70a0f3ecd23a11e4928c770bf5cf704e5af9215f66351e87a661a236f10a',
+      'create|sphere/contour': '99ccc200042a4bbbc8d70195253cf21b02f0e882f72f137bb4be5de33486360c',
+      'create|torus/hatch': '41d0659dd2c0d3e12dec62b7e95e811e266c2226790c2207b76b3e71df172b76',
+      'create|torus/contour': '8a752bfb5c3d01d5b3c7635d478e6dd7f7d37882a7f53900240cb1db6b2f7000',
+      'create|cone/hatch': '3f863784e04663f19af5d378d0b3ac6e9f08f02013f5e14db27c8b742e9abaf8',
+      'create|cone/contour': '8484613215da23560edbf2ae762545f26ee5c85fbf2f7a2e1d311f2b699a1262',
     };
 
     ['test', 'create'].forEach((rig) => {
