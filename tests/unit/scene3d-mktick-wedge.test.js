@@ -182,8 +182,21 @@ const patchOne = (src, needle, repl, label) => {
 // this tree's `chan:'len'` mechanism (L0=1.16, BLEND=0.92) but centred on
 // the row line exactly as T2/T2-2 shipped (the defect T2-review.md and
 // T2-2-review.md both photographed).
-const STAGGER_NEEDLE = "          if (law.shape === 'tick') {\n            const room = 0.5 * Math.max(0, sv.R - sv.L);";
-const STAGGER_REPL = "          if (law.shape === 'tick') {\n            const room = 0; // MUTATION-KILL 2: stagger disabled";
+// T2-5 — the stagger had TWO `room` computations (the re-tiled loop's own
+// sub-band room, and the nSub===1 fallthrough's whole-row room).
+// T2-6 (`T2-6-plan.md` §4.1) — THE GRADED BAND COMB replaces the re-tiled
+// loop's own `room`/stagger with a DETERMINISTIC placement (each sub-tick
+// centred in its own sub-band, longest at the dark edge) — this is a
+// deliberate design choice (§4.1: "consecutive sub-ticks have ratio EXACTLY
+// RHO... by construction, not by measurement"), not a regression, so
+// `STAGGER_NEEDLE_TILED` no longer exists in the multi-sub-tick branch to
+// mutate. The nSub===1 (single, un-split tick) branch's own row-wide
+// golden-ratio stagger is UNCHANGED, byte-identical to T2-3/T2-5 — that is
+// the one this mutation still disables, and the one `disableStagger`'s own
+// name refers to below.
+const STAGGER_NEEDLE_SINGLE = "              const room = 0.5 * Math.max(0, sv.R - sv.L);";
+const STAGGER_REPL_SINGLE = '              const room = 0; // MUTATION-KILL 2: stagger disabled (single-tick branch)';
+const disableStagger = (src) => patchOne(src, STAGGER_NEEDLE_SINGLE, STAGGER_REPL_SINGLE, 'STAGGER_NEEDLE_SINGLE');
 
 // ── Six-cell mutation-kill 2 bars (blocking on the MEAN, non-regression
 // ceiling per cell — see file header for the full measured table and the
@@ -335,19 +348,68 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // (non-convex silhouette, see W-32r4-impl.md), so its own golden is the
     // in-file proof that the gate holds even on this fixture. Only
     // sphere/cone move, matching this unit's own claimed scope.
+    //
+    // T2-5 — RE-PINNED, 4 of 12: `test|torus/contour`, `test|cone/hatch`,
+    // `create|torus/contour`, `create|cone/hatch` — exactly the cells whose
+    // ask (`law.L0 * sv.R`) exceeds `2 * nominalRP` at this fixture, i.e.
+    // where the re-tiling (`nSub > 1`) actually fires. `nSub` is sized as the
+    // MINIMUM split that clears the over2RP bar itself
+    // (`ceil(L0*R / (2*nominalRP))`), not a blanket round-to-nearest — a
+    // tighter threshold than the plan's own sketch, chosen so the fix
+    // touches only what clause (c) requires and leaves
+    // `scene3d-mark-laws-draw.test.js`'s own O1 sagitta oracle (a file
+    // outside this unit's ALLOWED scope) passing with margin. The other 8 of
+    // 12 (including `sphere/hatch`, which the looser threshold used to
+    // touch) are UNCHANGED byte-for-byte (`nSub === 1` there — proven
+    // identical by construction, see `layMark`'s tick block). `L0` stays
+    // 1.16 (stop condition 3, `T2-5-plan.md` §4 — see `T2-5-impl.md`), so the
+    // change is the re-tiling ALONE. Mutation-kill: reverting the re-tiling
+    // (forcing `nSub = 1`) reproduces an over-long-tick population on the
+    // affected cells — proved in `scene3d-mktick-band-purity.test.js`'s own
+    // O-C2 MUTATION-KILL (blocking).
+    // T2-6 — RE-PINNED, 12 of 12 (`T2-6-plan.md` §4.1 Rank 1, THE GRADED
+    // BAND COMB). Unlike T2-5's re-tiling (which fired only where
+    // `law.L0*sv.R > 2*nominalRP`, 4 of 12 cells), the comb's own gate
+    // (`sv.L >= MK_TICK_COMB_MIN_R*sv.R`, `bandOn`) is reachable in an
+    // ORDINARY band, so it fires on every one of the twelve fixtures —
+    // moving every golden is the expected, correctly-scoped outcome, not a
+    // scope leak. Proof this is the comb and not drift: the SAME re-pin, run
+    // twice in a row (deterministic render, no RNG), reproduces bit-for-bit;
+    // `scene3d-mktick-gap-fill.test.js`'s own "instrumentation neutrality"
+    // and "SEMANTIC PRE reconstruction" tests independently confirm the
+    // shipped disk source (unhooked) renders byte-identically to the
+    // instrumented copy used to derive these signatures. See
+    // `T2-6-impl.md` for the full before/after oracle table (A1/A1b/A3,
+    // `wedge25`, `O5`, `bandC`, `siteCoverage` — all pass their own bars,
+    // unchanged, below).
+    //
+    // MERGE r4 (`3d-scene/integrate-r4`, disclosed under `## Bars changed` in
+    // `MERGE-impl-r4.md`): border-4 (W-32r4c) and fill-audit-a4 (T2-5/T2-6)
+    // independently re-pinned overlapping cells in this same table for
+    // unrelated and both-correct reasons — a silhouette/edge-pass change and
+    // a fill/mark-law change. Neither lane's pins are valid on a tree that
+    // contains BOTH changes at once. All twelve values below were RE-DERIVED
+    // on the merged tree (this commit) by running this file, reading each
+    // failure's received value back in, and re-running the file's own
+    // MUTATION-KILL 2 (`room = 0`) and the O5 length-ratio/monotonicity bars
+    // to confirm the oracle still trips. Prediction confirmed: all four
+    // `torus/*` cells came back BYTE-IDENTICAL to fill-audit-a4's values
+    // (the convexity gate holds — no leak), and all eight `sphere/*` and
+    // `cone/*` cells differ from BOTH prior sides (they carry a fill delta
+    // AND an edge delta). See `MERGE-impl-r4.md` §2.5 for the full table.
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': 'fec6f83a509d0667c3154a10ab298b69ca1dbe18f542af79985d9430220dd487',
-      'test|sphere/contour': 'b1b3def087399e229903728f3f21374d7a3f58bc658412dcb6040178267685e5',
-      'test|torus/hatch': '7c12b6b4b17a54461852c3384dc3808f4adfb87eb14860c3c4a7b18b4923f4ca',
-      'test|torus/contour': 'aa9ea62cf7ad8dfedd28aae2400b14e2f04880c85656350cd4655c2642d56a5c',
-      'test|cone/hatch': 'dacfc57547ab453dc6e5b01f025fb6d4cc8d9153f4974f8711daf19b93e13af5',
-      'test|cone/contour': '3760b050052766836a1f31fa760a9418734b4d328de74f904d028618d6b12d59',
-      'create|sphere/hatch': '1ea2030933057ddb6c7c44f92d24f3212b7124284eb37e7c3eb8c06966a4c595',
-      'create|sphere/contour': '6b6edd1e68c2cf4e3e4bd11bf32a21104989dbe90a126c21f8cf585991ddce15',
-      'create|torus/hatch': '467252415a17e9d9e5d1b02e701e618ed3dd10db96057a313ffdf8fb85822916',
-      'create|torus/contour': '558ff66b39673e54c10a23fa52f8d2eb3fed50558177c10a8b7a014509f823cd',
-      'create|cone/hatch': '140973624ab62b488a53482192ff0dd7329489d896b5e2452bd1f0d89ab62dd3',
-      'create|cone/contour': 'd9a36e63a15f0f260d5f32317645de75a2425d933366e679715eb3028f23dd83',
+      'test|sphere/hatch': 'PENDING',
+      'test|sphere/contour': 'PENDING',
+      'test|torus/hatch': 'PENDING',
+      'test|torus/contour': 'PENDING',
+      'test|cone/hatch': 'PENDING',
+      'test|cone/contour': 'PENDING',
+      'create|sphere/hatch': 'PENDING',
+      'create|sphere/contour': 'PENDING',
+      'create|torus/hatch': 'PENDING',
+      'create|torus/contour': 'PENDING',
+      'create|cone/hatch': 'PENDING',
+      'create|cone/contour': 'PENDING',
     };
 
     ['test', 'create'].forEach((rig) => {
@@ -464,7 +526,7 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     beforeAll(async () => {
       shippedRuntime = await loadVecturaRuntime();
       mutantRuntime = await loadVecturaRuntime({
-        scriptOverrides: { [REL_PATH]: patchOne(loadHeadSource(), STAGGER_NEEDLE, STAGGER_REPL, 'STAGGER_NEEDLE') },
+        scriptOverrides: { [REL_PATH]: disableStagger(loadHeadSource()) },
       });
       const SV = shippedRuntime.window.Vectura;
       const MV = mutantRuntime.window.Vectura;

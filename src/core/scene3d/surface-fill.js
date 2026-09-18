@@ -2494,6 +2494,66 @@
     // reach solid" mechanisms (`mkCrossPlus`'s 2->3->4->6 arm progression,
     // `:2690`) — a small integer, not a re-derivation of the pitch itself.
     const MK_BAND_MAX_PASSES = 6;
+    // T3b (Jay decision 12=B, 2026-09-17, `SESSION-SUMMARY.md` §4 item 12:
+    // "draw single-pass dashes below some density threshold, keeping the
+    // band mechanism where it earns its keep"). MEASURED FIRST
+    // (`T3b-impl.md`): `MK_BAND_MAX_PASSES` alone is density-BLIND — at
+    // every density from d=1 through ~d=70 (sphere/hatch, BOTH rigs) a
+    // hypothetical single-pass-only render loses 34-73% of the object's own
+    // ink relative to the band-enabled render, i.e. the band is genuinely
+    // load-bearing there, not decorative; it only stops mattering (0% ink
+    // delta) once density reaches ~80, where `bandPitch` itself has become
+    // too fine for a 2nd parallel pass to fit (a PACKING limit, not a tone
+    // one). T4's own O8 guard (`scene3d-mark-laws-draw.test.js`) already
+    // pins `bandMax >= 2` at d=50, sphere/hatch — accepted, unmodified
+    // evidence that a multi-pass bundle at d=50 ("med") is NOT the "tile"
+    // Jay flagged; only the SPARSE end (T3's own low-end row-coverage floor
+    // territory, `rowFloor`) is. A hard on/off switch at any single density
+    // below 50 would still cost the full 34-73% ink at whichever density it
+    // sits just below the switch — a large STEP with no natural counterpart
+    // anywhere else in this sweep (ordinary density-to-density ink already
+    // varies, but only by a few percent). `bandOnsetCap` instead RAMPS the
+    // per-mark pass ceiling continuously from 1 (single pass, at the
+    // sparsest d=1) up to the full `MK_BAND_MAX_PASSES`, so no two adjacent
+    // integer densities differ by more than one pass. `MK_BAND_ONSET_D` is
+    // not a round number chosen for its own sake — it is the LAST integer
+    // density at which the ramp's target ceiling (`MK_BAND_MAX_PASSES`)
+    // still equals what the UNGATED mechanism already used naturally, on
+    // EVERY ONE of {sphere, torus} x {addLayer, create} (fine sweep,
+    // `T3b-impl.md`): all four combinations still measure the natural
+    // bandMax at the hard 6-pass ceiling at d=35 (three of the four had
+    // already dropped to 5 by d=36). Below `MK_BAND_ONSET_D` this gate
+    // changes rendered output (by design — that is the fix); at and above
+    // it, `bandOnsetCap(d) === MK_BAND_MAX_PASSES` always, so the `min()`
+    // below is a byte-identical no-op — this is what keeps O8 (d=50) and
+    // T4b/G4's d=220 floor untouched without editing either of those files.
+    const MK_BAND_ONSET_D = 35;
+    const bandOnsetCap = (density) => {
+      const d = finite(density, 50);
+      if (d >= MK_BAND_ONSET_D) return MK_BAND_MAX_PASSES;
+      const t = clamp((d - 1) / (MK_BAND_ONSET_D - 1), 0, 1);
+      return clamp(Math.round(1 + t * (MK_BAND_MAX_PASSES - 1)), 1, MK_BAND_MAX_PASSES);
+    };
+    // T3c — T3b's own reviewer (condition 3, `T3b-review.md`) found and
+    // quantified a SECOND, T4-inherited defect `bandOnsetCap` above never
+    // touches: within the onset ramp (`bandOnsetCap(d) < MK_BAND_MAX_PASSES`,
+    // measured d<32 on every {sphere,torus}x{addLayer,create} combo — see
+    // `layMark`'s own comment) a single PASS can still occupy its own entire
+    // PERIOD (`each === sv.P`, "L=P is an unbroken ruling" per the dissolution
+    // comment below), so consecutive dashes ABUT with no gap and the row
+    // reads as a broken/continuous ruling rather than a sparse texture of
+    // discrete marks — exactly Jay's `user-reports/10.png` complaint
+    // (`STILL-OPEN.md` W-06b row: "discrete dashes riding rulings at every
+    // density, never row-wide tiles"). `MK_DASH_LEN_FRAC` bounds a drawn
+    // pass to at most this fraction of its own period `sv.P` (applied in
+    // `layMark`, never here — `mkAsk`/`g` themselves are untouched, so
+    // `mkTick`'s own `lenChan` branch, which reads the same `g`, cannot see
+    // this at all). 0.5 (measured, `T3c-impl.md`): the classic 50% dash/gap
+    // duty convention, and the largest fraction that still guarantees a
+    // visually real gap (`P - each >= 0.5*P`) while leaving the biggest
+    // possible margin above `MIN_MARK_MM` for the many foreshortened,
+    // small-`P` samples this ramp reaches (see `layMark`'s own floor logic).
+    const MK_DASH_LEN_FRAC = 0.5;
     // T2-3 (W-05b U2, iteration 3 — mkTick's length-response curve, see
     // `solveAt`'s `lenChan` branch, and the ROW-TO-ROW STAGGER at the tick
     // placement site in `layMark`). T2 (`dbad2d88`) and T2-2 (`9d911b05`)
@@ -2510,6 +2570,36 @@
     // this constant only sets O5's headroom now that the curve is free to
     // be chosen on that bar alone.
     const MK_TICK_EASE_BLEND = 0.92;
+    // T2-6 (`T2-6-plan.md` §4.1 Rank 1 — THE GRADED BAND COMB, prototyped
+    // "F3", spike-gated on 12 fixtures, md5-swept 1184 cells). Jay's clause
+    // (a), verbatim: "Instead of tick fragments on the right, use gradually
+    // shortening ticks to fill the black gaps at the bottom of the vertical
+    // waves." Applied in `layMark`'s `'tick'` branch, below T2-5's own
+    // over-wide-band retiling (clause c, untouched). Four dials, each
+    // measured against the whole twelve-fixture table (`T2-6-plan.md` §4.4
+    // "the dials are a cliff, not a ramp" — every one of these breaks
+    // something if moved without re-running that table):
+    // `MK_TICK_COMB_RHO` — the geometric ratio between consecutive sub-ticks
+    // (`each_j = e0*RHO^j`). 0.62 (measured): RHO=0.75 fails the test-rig
+    // `wedge25` mean (0.080->0.0815-0.0820) and goes non-monotone on O5.
+    const MK_TICK_COMB_RHO = 0.62;
+    // `MK_TICK_COMB_MAX` — the largest sub-tick count a band may be split
+    // into by the comb (T2-5's own `nSub` clamp of 6 is clause (c)'s, a
+    // separate ceiling, untouched). 2 (measured): raising to 4 with no other
+    // change collapses O5 on `torus/hatch` (2.59->2.01, non-monotone) via
+    // `place()`'s shared off-surface drop — 2 is already enough to deliver
+    // Jay's sentence on the cell he was looking at (A1 0.03->0.48).
+    const MK_TICK_COMB_MAX = 2;
+    // `MK_TICK_COMB_MIN_R` — the comb only fires when `sv.L >= MIN_R*sv.R`;
+    // below this the light end of the band is SUPPOSED to stay bare (that is
+    // "the highlight", not a defect). 0.40 (measured): 0.30 pushed the
+    // `bandC` clause on `sphere/contour` up 62%.
+    const MK_TICK_COMB_MIN_R = 0.40;
+    // `MK_TICK_COMB_ENV` — the comb occupies the middle ENV fraction of the
+    // band, keeping the outermost sub-tick off the chart edge. 0.85
+    // (measured): 1.0 (no margin) pushes `wedge25` and `bandC` past their
+    // bars on the same cells `MK_TICK_COMB_MIN_R` protects.
+    const MK_TICK_COMB_ENV = 0.85;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2645,6 +2735,20 @@
       // black-by-abutment needs a little more length in reserve to stay
       // solid — measured effect on O5's weakest cell, `torus/hatch`: 2.772
       // -> 2.999 (test rig, d=50).
+      // T2-5 (`T2-5-plan.md` §4 stop condition 3, reached honestly) — `L0`
+      // stays 1.16, UNCHANGED. Clause (b) of Jay's rule ("don't increase
+      // overlap at the seams") wants `L0` 1.16 -> 1.05 (`ovMax=(L0-1)/2`
+      // exactly: 0.0800*R -> 0.0250*R, under the pre-T2-3 0.0280*R bar) but
+      // that costs O5 below its own shipped `>= 2.30` bar on 4-6 of 12
+      // fixtures (measured 2.19-2.23; `MK_TICK_EASE_BLEND` swept 0.92 -> 0.98
+      // and does not recover it — confirms T2-3's own finding that the ease
+      // curve is not an O5 lever). Per the plan's own ruling, ship the
+      // re-tiling ALONE (clause c) rather than fail O5's bar; clause (b) is
+      // reported MEASURED-not-fixed with the L0/O5 trade table in
+      // `T2-5-impl.md` for Jay to choose (`plan.md` §4: L0=1.06 -> ovMax
+      // 0.0300, still above 0.0280; L0=1.02 -> ovMax 0.0100 but O5 down to
+      // ~2.19 on the same cells `T2-3-plan.md` §3 already measured this
+      // thin on).
       mkTick:        { shape: 'tick',     chan: 'len',   lat: 'brick',   or: 'none',   L0: 1.16, LMIN: 0.18, P0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
       mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
@@ -6551,7 +6655,9 @@
         // object, which is what "an inkWidth apart, never past the next
         // ruling" is actually supposed to mean.
         const bandPitch = Math.min(truePitch, masterPitch);
-        const bandN = Math.max(1, Math.min(MK_BAND_MAX_PASSES, Math.floor((0.90 * bandPitch) / w)));
+        // T3b — the per-mark pass ceiling is `bandOnsetCap(density)`, not
+        // the raw `MK_BAND_MAX_PASSES` constant (see its own comment above).
+        const bandN = Math.max(1, Math.min(bandOnsetCap(opts.fillDensity), Math.floor((0.90 * bandPitch) / w)));
         const capOf = (per) => (law.shape === 'morph' ? bandN * per : mkCap(shapeFor(), R, w));
         if (countChan) {
           const L0 = law.chan === 'alt' ? 1.60 : law.L0;
@@ -6670,39 +6776,175 @@
           // clamped by `capOf` in `solveAt`) and `nn` (recomputed here) could
           // disagree about how many passes the ink is spread across.
           const n0 = Math.max(1, Math.ceil(sv.L / Math.max(1e-6, sv.P)));
-          const bandN = Math.max(1, Math.min(MK_BAND_MAX_PASSES, Math.floor((0.90 * sv.bandPitch) / w)));
+          // T3b — the SAME `bandOnsetCap(density)` `solveAt` used for `sv.L`'s
+          // own cap, so this side of the ramp can never disagree with that one.
+          const bandN = Math.max(1, Math.min(bandOnsetCap(opts.fillDensity), Math.floor((0.90 * sv.bandPitch) / w)));
           const nn = Math.min(n0, bandN);
           const each = sv.L / nn;
+          // T3c — bound dash LENGTH (not band WIDTH, T4/T3b's own territory,
+          // untouched above) so a dash reads as a discrete mark riding its
+          // ruling, not a broken/abutting one. T3b's O10 mutation-kill and
+          // O11's mark-count array proved this cannot be done by scaling `L`
+          // (or `capOf`) upstream: that also shrinks `nn`, which is the ONLY
+          // thing keeping `tot` (place()'s own MIN_MARK_MM gate, summed
+          // across all `nn` stacked passes) above the floor at the many
+          // foreshortened, small-`P` samples this fixture has — measured:
+          // scaling `capOf` by 0.5 dropped sphere/hatch/addLayer d=1 from 46
+          // marks to 34 (`T3c-impl.md` §RED). Capping `each` HERE instead,
+          // strictly after `nn` is fixed, leaves `nn` — and therefore every
+          // sample's own MIN_MARK_MM margin — byte-identical to T3b; only
+          // the along-row extent of each already-surviving pass shrinks.
+          // Gated to the SAME onset ramp T3b's own `bandOnsetCap` already
+          // governs (`bandOnsetCap(d) < MK_BAND_MAX_PASSES`, true for d<32
+          // on every combo measured) — NOT `bandN` itself, which also falls
+          // below `MK_BAND_MAX_PASSES` at high density for an unrelated
+          // reason (`0.90*bandPitch/w`'s own packing floor, ~d>=50); gating
+          // on `bandN` was tried first and leaked the cap into that
+          // territory, corrupting O13's d=50/d=220 byte-identity.
+          // `MK_DASH_LEN_FRAC` bounds a pass to at most half its own period
+          // (measured target, `T3c-impl.md`), so consecutive marks always
+          // leave a real gap — but never below `MIN_MARK_MM` (`place()`'s own
+          // survival floor, +5% headroom for walk truncation): a mark that
+          // would only clear that floor via a LONGER pass is left at its own
+          // original (uncut) length instead of being pushed under the floor,
+          // so `place()`'s accept/reject outcome for every sample is
+          // provably unchanged from T3b's own tree (`T3c-impl.md`'s O11/O10
+          // byte-identical re-derivation, sphere AND torus, both rigs).
+          const dashOnset = bandOnsetCap(opts.fillDensity);
+          const dashLenFloor = MIN_MARK_MM * 1.05;
+          const dashLenTarget = MK_DASH_LEN_FRAC * sv.P;
+          const eachDrawn = (dashOnset < MK_BAND_MAX_PASSES && each > dashLenFloor && each > dashLenTarget)
+            ? Math.min(each, Math.max(dashLenFloor, dashLenTarget))
+            : each;
           polys = [];
           for (let j = 0; j < nn; j++) {
             const off = (j - (nn - 1) / 2) * w;
-            polys.push([[-each / 2, off], [each / 2, off]]);
+            polys.push([[-eachDrawn / 2, off], [eachDrawn / 2, off]]);
           }
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
-          // T2-3 (`T2-3-plan.md` §3 Rank 1 — PROTOTYPED and spike-gated
-          // there) — a 'tick' spends its whole LENGTH across the row and is
-          // built CENTRED on the row line (`mkShape`'s `'tick'` branch,
-          // `:2637` area), so every mm the length response takes off the
-          // tick is subtracted from the ROW-TO-ROW direction and opens a
-          // bare strip of `(R-L)/2` on BOTH sides of every row, running the
-          // row's whole length — the wedge T2 and T2-2 were both rejected
-          // for (T2-review.md, T2-2-review.md). Scatter the tick's own
-          // centre over exactly the room its shortening created, on a
-          // golden-ratio (low-discrepancy) sweep of the site's own arc
-          // index, so successive ticks in one row TILE the row's cell
-          // instead of stacking on its centre line. Zero at the dark anchor
-          // (`L -> L0*R` leaves no room, so pure abutment is preserved
-          // bit-for-bit) and maximal exactly where the wedge is. `STAG=1`
-          // (the full room) measured best on every cell and every metric in
-          // an amplitude sweep (plan §3) — do not damp it.
+          // T2-5 (`T2-5-plan.md` §4 Rank 1 — SUB-TICK RE-TILING, spike-gated,
+          // 296-cell md5 sweep). Jay's user rule, verbatim (cone/hatch/mkTick/
+          // d=50): "Instead of tick fragments on the right, use gradually
+          // shortening ticks to fill the black gaps at the bottom of the
+          // vertical waves. Also don't increase overlap at the seams. And
+          // remove any lines not part of a tick band." T2-3's stagger (the
+          // `else` branch below, unchanged) scatters ONE tick's centre across
+          // the whole row band `sv.R` — but `sv.R` is the LOCAL row pitch at
+          // THIS sample, which on a foreshortened patch can read up to ~2x
+          // the field's own NOMINAL row pitch (`masterPitch / MK_ROW_COV`);
+          // since a tick's length ceiling is `L0*sv.R`, that lets ONE tick
+          // cross two whole rows — clause (c) of Jay's rule, "lines not part
+          // of a tick band" (measured: 40 of 470 ticks on cone/hatch/create,
+          // 381.2mm, `T2-5-plan.md` §2 O-C2). Re-tile the over-wide band into
+          // the MINIMUM `nSub` that clears the over2RP threshold itself
+          // (`ceil(L0*R / (2*nominalRP))` — not the plan's own round-to-
+          // nearest sketch, which also touches `sphere/hatch` and dilutes
+          // `scene3d-mark-laws-draw.test.js`'s O1 sagitta oracle below its
+          // own bar, see `T2-5-impl.md`), each sub-band carrying its own
+          // share `sv.L/nSub` of the SAME total length (so the delivered
+          // ink-area fraction is UNCHANGED: `Σlength = L`, `R` and `P`
+          // untouched — a pure re-tiling, proven exactly neutral on tone,
+          // `T2-5-plan.md` §4) and its own golden-ratio stagger scaled to its
+          // own (smaller) room — the SAME low-discrepancy formula T2-3 uses,
+          // just confined to a sub-band instead of the whole row. `nSub` is 1
+          // on every ordinary (non-foreshortened) sample — where this is
+          // BYTE-IDENTICAL to the single-tick stagger below — and clamped to
+          // 6 so a pathological outlier cannot explode pen-down count.
           if (law.shape === 'tick') {
-            const room = 0.5 * Math.max(0, sv.R - sv.L);
-            if (room > 1e-6) {
-              const idx = a / Math.max(1e-6, sv.P);
-              const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
-              const cOff = room * (2 * uu - 1);
-              polys = polys.map((pl) => pl.map((pt) => [pt[0], pt[1] + cOff]));
+            const nominalRP = masterPitch / MK_ROW_COV;
+            // `nOver` is T2-5's own MINIMUM split that clears the over2RP bar
+            // itself (`law.L0*R > 2*nominalRP`) — clause (c), untouched by
+            // this unit. Touching only the sites that actually need it keeps
+            // the longest-third chord population
+            // (`scene3d-mark-laws-draw.test.js`'s own O1 sagitta oracle) as
+            // close to untouched as clause (c) allows.
+            const nOver = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);
+            // T2-6 — THE GRADED BAND COMB (`T2-6-plan.md` §4.1). Two
+            // `sampleAt` probes at the band's own +-R/2 edges (in the SAME
+            // frame-local `v` coordinate `mkShape`'s tick spans) find which
+            // side of the band is darker. When the band is wide enough to
+            // hold >=2 sub-ticks without any of them falling under one pen
+            // width, lay a GEOMETRIC RUN `each_j = e0*RHO^j` across `nComb`
+            // sub-bands, longest at the DARK edge (`j=0`), chosen as the
+            // LARGEST `n` for which the run fits inside its own `ENV`-scaled
+            // envelope. `Sum(e0*RHO^j, j=0..n-1) = e0*(1-RHO^n)/(1-RHO) =
+            // sv.L` EXACTLY (closed-form geometric series) — so `R`/`P` stay
+            // untouched and the delivered ink-area fraction
+            // `sv.L*w/(sv.R*sv.P) = mkAsk(I)` is bit-identical: a pure
+            // redistribution of one band's own ink, the same neutrality
+            // proof T2-5 used for its own uniform split. Consecutive
+            // sub-ticks have ratio EXACTLY `MK_TICK_COMB_RHO`, so at
+            // RHO>=0.5 Jay's "no tick under half its neighbour" holds BY
+            // CONSTRUCTION, not by measurement.
+            //
+            // `bandOn` (both probes on-chart) is the correctness gate, not a
+            // dial: without it a sub-tick near a foreshortened band's own
+            // edge can leave the chart, and `place()` drops the WHOLE mark
+            // (shared by all twelve mark laws) — measured to collapse O5 on
+            // `torus/hatch` (2.59->2.01, non-monotone) with no gate,
+            // `T2-6-plan.md` §4.4. It costs nothing: the same two probes
+            // also set the shorten-toward-the-light direction.
+            const probeI = (dv) => {
+              const pp = fr.toParam(0, dv);
+              if (!(pp.a >= 0 && pp.a <= 1)) return null;
+              let bb = pp.b;
+              if (bb < 0 || bb > 1) {
+                if (bb < -0.25 || bb > 1.25) return null;
+                bb = ((bb % 1) + 1) % 1;
+              }
+              const sm = sampleAt(pp.a, bb);
+              return (sm && sm.front === wantFront && Number.isFinite(sm.I)) ? sm.I : null;
+            };
+            const iP = probeI(0.5 * sv.R);
+            const iM = probeI(-0.5 * sv.R);
+            // sgnDark > 0 => the +v side of the band is the DARKER side.
+            let sgnDark = 0;
+            if (iP != null && iM != null) sgnDark = (iP < iM) ? 1 : ((iP > iM) ? -1 : 0);
+            else if (iP != null) sgnDark = -1;
+            else if (iM != null) sgnDark = 1;
+            const bandOn = (iP != null && iM != null);
+            const minKeep = penWidth;
+            let nComb = 1;
+            let e0 = 0;
+            if (bandOn && sv.L >= MK_TICK_COMB_MIN_R * sv.R && sv.L < 0.98 * sv.R) {
+              for (let n = MK_TICK_COMB_MAX; n >= 2; n -= 1) {
+                const den = (1 - MK_TICK_COMB_RHO ** n) / (1 - MK_TICK_COMB_RHO);
+                const a0 = sv.L / den;
+                if (a0 <= (MK_TICK_COMB_ENV * sv.R) / n && a0 * MK_TICK_COMB_RHO ** (n - 1) >= minKeep) {
+                  nComb = n; e0 = a0; break;
+                }
+              }
+            }
+            const nSub = Math.max(nOver, nComb);
+            // When `nSub` is set by clause (c) alone (no comb fits, or the
+            // band is >= its own row pitch), fall back to a plain UNIFORM
+            // split across the full band `sv.R` — clause (c)'s own mechanism,
+            // now centred per sub-band (the comb's own placement, not T2-3's
+            // row-wide stagger, which only applies to an un-split band below).
+            const uniformSplit = (nComb < 2 || nSub !== nComb || sv.L >= sv.R);
+            if (nSub > 1) {
+              const sub = (uniformSplit ? sv.R : MK_TICK_COMB_ENV * sv.R) / nSub;
+              const dir = sgnDark >= 0 ? 1 : -1;   // +1 => the +v side is DARKER
+              const tiled = [];
+              for (let j = 0; j < nSub; j++) {
+                // j = 0 is the DARKEST sub-band; lengths fall toward the light.
+                const each = uniformSplit ? (sv.L / nSub) : (e0 * MK_TICK_COMB_RHO ** j);
+                const slot = dir > 0 ? (nSub - 1 - j) : j;   // slot index in +v order
+                const vCenter = (slot - (nSub - 1) / 2) * sub;
+                tiled.push([[0, vCenter - each / 2], [0, vCenter + each / 2]]);
+              }
+              polys = tiled;
+            } else {
+              // A single, un-split tick: T2-3's own row-wide golden-ratio
+              // stagger, byte-identical to before this unit.
+              const room = 0.5 * Math.max(0, sv.R - sv.L);
+              if (room > 1e-6) {
+                const idx = a / Math.max(1e-6, sv.P);
+                const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
+                const cOff = room * (2 * uu - 1);
+                polys = polys.map((pl) => pl.map((pt) => [pt[0], pt[1] + cOff]));
+              }
             }
           }
         }
@@ -7099,6 +7341,35 @@
       stretches: 0, wide: 0, narrow: 0, ribbons: 0, clipped: 0,
       outlines: 0, fills: 0, degenerate: 0,
       noRing: 0, clipEmpty: 0, erodeEmpty: 0,
+      // F1-count (docs/3d-audit/lane-reports/LEDGER.md row 2d/6, planned in
+      // F1-erode-plan.md §1) — a PRODUCTION counter for the fill-depth blind
+      // spot `erodeEmpty` structurally cannot see: `erodeEmpty` only fires
+      // when `any` (outline shipped OR fill shipped) is false, but a stretch
+      // whose OUTLINE erosion succeeds and whose FILL erosion then comes back
+      // empty leaves `any === true`, so `erodeEmpty` never fires even though
+      // the second (deeper) `insetMultiPolygon` call may have swallowed a
+      // `FillBoolean` failure exactly like the one F1-erode fixed. Before
+      // F1-erode's ladder fix, 4 of the 6 swallowed-and-empty
+      // `insetMultiPolygon` calls measured on the torus (`contour`
+      // trochoidLoop x1, `contour` weaveDepth x2, `crosshatch` weaveDepth x1)
+      // landed exactly here and were invisible to every counter that existed
+      // then. This counter is the SAME trigger condition as `outlineOnly`
+      // below (both fire on `outlineMP.length && !fillMP.length`) — it does
+      // not, and structurally cannot without instrumenting the FORBIDDEN
+      // `geometry-utils.js`, distinguish "genuinely too narrow for a second
+      // erosion" from "a swallowed boolean failure the ladder could not
+      // recover" (that signal is consumed and cleared inside
+      // `insetMultiPolygon` itself before it ever returns, by design, so no
+      // caller can leak it to the next unrelated erosion). What it buys is
+      // OBSERVABILITY: a spike here now shows up in `stats` next to
+      // `erodeEmpty`/`clipEmpty`/`degenerate` instead of blending silently
+      // into `outlineOnly`'s ordinary ribbon bookkeeping. Deliberately NOT
+      // folded into `degenerate` — `scene3d-ribbon-degeneration-counter.test.js`
+      // pins `degenerate === noRing + clipEmpty + erodeEmpty` as a structural
+      // invariant, and this event is not a refusal: the stretch still ships
+      // its outline and still counts as a ribbon. Gates observability of
+      // silent ink loss at the fill depth, not geometry.
+      fillEmpty: 0,
       // A ribbon that got an OUTLINE but no interior fill. Not a refusal — the
       // outline ships and the stretch counts as a ribbon — but it IS the second
       // erosion coming back empty, and an erosion returning empty in silence is
@@ -7565,7 +7836,16 @@
           });
         });
         if (!any) { ribbonRefuse('erodeEmpty'); outp.push(centrePass(st.a, st.b)); return; }
-        if (!fillMP.length) ribbonStat.outlineOnly += 1;
+        if (!fillMP.length) {
+          ribbonStat.outlineOnly += 1;
+          // F1-count — see the `fillEmpty` field comment above. Same trigger,
+          // observability-family counter; never routed through `ribbonRefuse`
+          // (that call also bails to a centreline, which would discard the
+          // outline this stretch just shipped — an OUTPUT change forbidden
+          // for this unit) and never added to `degenerate` (would break the
+          // pinned `degenerate === noRing + clipEmpty + erodeEmpty` invariant).
+          ribbonStat.fillEmpty += 1;
+        }
         ribbonStat.ribbons += 1;
       });
 
