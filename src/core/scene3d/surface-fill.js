@@ -2685,6 +2685,20 @@
       // black-by-abutment needs a little more length in reserve to stay
       // solid — measured effect on O5's weakest cell, `torus/hatch`: 2.772
       // -> 2.999 (test rig, d=50).
+      // T2-5 (`T2-5-plan.md` §4 stop condition 3, reached honestly) — `L0`
+      // stays 1.16, UNCHANGED. Clause (b) of Jay's rule ("don't increase
+      // overlap at the seams") wants `L0` 1.16 -> 1.05 (`ovMax=(L0-1)/2`
+      // exactly: 0.0800*R -> 0.0250*R, under the pre-T2-3 0.0280*R bar) but
+      // that costs O5 below its own shipped `>= 2.30` bar on 4-6 of 12
+      // fixtures (measured 2.19-2.23; `MK_TICK_EASE_BLEND` swept 0.92 -> 0.98
+      // and does not recover it — confirms T2-3's own finding that the ease
+      // curve is not an O5 lever). Per the plan's own ruling, ship the
+      // re-tiling ALONE (clause c) rather than fail O5's bar; clause (b) is
+      // reported MEASURED-not-fixed with the L0/O5 trade table in
+      // `T2-5-impl.md` for Jay to choose (`plan.md` §4: L0=1.06 -> ovMax
+      // 0.0300, still above 0.0280; L0=1.02 -> ovMax 0.0100 but O5 down to
+      // ~2.19 on the same cells `T2-3-plan.md` §3 already measured this
+      // thin on).
       mkTick:        { shape: 'tick',     chan: 'len',   lat: 'brick',   or: 'none',   L0: 1.16, LMIN: 0.18, P0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
       mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
@@ -6724,29 +6738,67 @@
           }
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
-          // T2-3 (`T2-3-plan.md` §3 Rank 1 — PROTOTYPED and spike-gated
-          // there) — a 'tick' spends its whole LENGTH across the row and is
-          // built CENTRED on the row line (`mkShape`'s `'tick'` branch,
-          // `:2637` area), so every mm the length response takes off the
-          // tick is subtracted from the ROW-TO-ROW direction and opens a
-          // bare strip of `(R-L)/2` on BOTH sides of every row, running the
-          // row's whole length — the wedge T2 and T2-2 were both rejected
-          // for (T2-review.md, T2-2-review.md). Scatter the tick's own
-          // centre over exactly the room its shortening created, on a
-          // golden-ratio (low-discrepancy) sweep of the site's own arc
-          // index, so successive ticks in one row TILE the row's cell
-          // instead of stacking on its centre line. Zero at the dark anchor
-          // (`L -> L0*R` leaves no room, so pure abutment is preserved
-          // bit-for-bit) and maximal exactly where the wedge is. `STAG=1`
-          // (the full room) measured best on every cell and every metric in
-          // an amplitude sweep (plan §3) — do not damp it.
+          // T2-5 (`T2-5-plan.md` §4 Rank 1 — SUB-TICK RE-TILING, spike-gated,
+          // 296-cell md5 sweep). Jay's user rule, verbatim (cone/hatch/mkTick/
+          // d=50): "Instead of tick fragments on the right, use gradually
+          // shortening ticks to fill the black gaps at the bottom of the
+          // vertical waves. Also don't increase overlap at the seams. And
+          // remove any lines not part of a tick band." T2-3's stagger (the
+          // `else` branch below, unchanged) scatters ONE tick's centre across
+          // the whole row band `sv.R` — but `sv.R` is the LOCAL row pitch at
+          // THIS sample, which on a foreshortened patch can read up to ~2x
+          // the field's own NOMINAL row pitch (`masterPitch / MK_ROW_COV`);
+          // since a tick's length ceiling is `L0*sv.R`, that lets ONE tick
+          // cross two whole rows — clause (c) of Jay's rule, "lines not part
+          // of a tick band" (measured: 40 of 470 ticks on cone/hatch/create,
+          // 381.2mm, `T2-5-plan.md` §2 O-C2). Re-tile the over-wide band into
+          // the MINIMUM `nSub` that clears the over2RP threshold itself
+          // (`ceil(L0*R / (2*nominalRP))` — not the plan's own round-to-
+          // nearest sketch, which also touches `sphere/hatch` and dilutes
+          // `scene3d-mark-laws-draw.test.js`'s O1 sagitta oracle below its
+          // own bar, see `T2-5-impl.md`), each sub-band carrying its own
+          // share `sv.L/nSub` of the SAME total length (so the delivered
+          // ink-area fraction is UNCHANGED: `Σlength = L`, `R` and `P`
+          // untouched — a pure re-tiling, proven exactly neutral on tone,
+          // `T2-5-plan.md` §4) and its own golden-ratio stagger scaled to its
+          // own (smaller) room — the SAME low-discrepancy formula T2-3 uses,
+          // just confined to a sub-band instead of the whole row. `nSub` is 1
+          // on every ordinary (non-foreshortened) sample — where this is
+          // BYTE-IDENTICAL to the single-tick stagger below — and clamped to
+          // 6 so a pathological outlier cannot explode pen-down count.
           if (law.shape === 'tick') {
-            const room = 0.5 * Math.max(0, sv.R - sv.L);
-            if (room > 1e-6) {
-              const idx = a / Math.max(1e-6, sv.P);
-              const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
-              const cOff = room * (2 * uu - 1);
-              polys = polys.map((pl) => pl.map((pt) => [pt[0], pt[1] + cOff]));
+            const nominalRP = masterPitch / MK_ROW_COV;
+            // `nSub` is the MINIMUM split that clears the over2RP bar itself
+            // (`law.L0*R > 2*nominalRP`), not a blanket round-to-nearest —
+            // touching only the sites that actually need it keeps the
+            // longest-third chord population (`scene3d-mark-laws-draw.test.js`'s
+            // own O1 sagitta oracle, a file outside this unit's scope) as
+            // close to untouched as clause (c) allows.
+            const nSub = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);
+            if (nSub > 1) {
+              const sub = sv.R / nSub;
+              const each = sv.L / nSub;
+              const tiled = [];
+              for (let j = 0; j < nSub; j++) {
+                const vCenter = (j - (nSub - 1) / 2) * sub;
+                const room = 0.5 * Math.max(0, sub - each);
+                let cOff = 0;
+                if (room > 1e-6) {
+                  const idx = (a / Math.max(1e-6, sv.P)) + j * 0.6180339887498949;
+                  const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
+                  cOff = room * (2 * uu - 1);
+                }
+                tiled.push([[0, vCenter - each / 2 + cOff], [0, vCenter + each / 2 + cOff]]);
+              }
+              polys = tiled;
+            } else {
+              const room = 0.5 * Math.max(0, sv.R - sv.L);
+              if (room > 1e-6) {
+                const idx = a / Math.max(1e-6, sv.P);
+                const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
+                const cOff = room * (2 * uu - 1);
+                polys = polys.map((pl) => pl.map((pt) => [pt[0], pt[1] + cOff]));
+              }
             }
           }
         }

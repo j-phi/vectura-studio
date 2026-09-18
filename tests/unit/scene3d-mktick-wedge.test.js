@@ -182,8 +182,20 @@ const patchOne = (src, needle, repl, label) => {
 // this tree's `chan:'len'` mechanism (L0=1.16, BLEND=0.92) but centred on
 // the row line exactly as T2/T2-2 shipped (the defect T2-review.md and
 // T2-2-review.md both photographed).
-const STAGGER_NEEDLE = "          if (law.shape === 'tick') {\n            const room = 0.5 * Math.max(0, sv.R - sv.L);";
-const STAGGER_REPL = "          if (law.shape === 'tick') {\n            const room = 0; // MUTATION-KILL 2: stagger disabled";
+// T2-5 — the stagger now has TWO `room` computations (the re-tiled loop's
+// own sub-band room, and the nSub===1 fallthrough's whole-row room, both in
+// `surface-fill.js`'s `layMark` tick block). Disabling BOTH is what
+// reproduces "centred on the row line exactly as T2/T2-2 shipped" — the
+// mutant this test measures against.
+const STAGGER_NEEDLE_TILED = 'const room = 0.5 * Math.max(0, sub - each);';
+const STAGGER_REPL_TILED = 'const room = 0; // MUTATION-KILL 2: stagger disabled (re-tiled branch)';
+const STAGGER_NEEDLE_SINGLE = "              const room = 0.5 * Math.max(0, sv.R - sv.L);";
+const STAGGER_REPL_SINGLE = '              const room = 0; // MUTATION-KILL 2: stagger disabled (single-tick branch)';
+const disableStagger = (src) => {
+  let out = patchOne(src, STAGGER_NEEDLE_TILED, STAGGER_REPL_TILED, 'STAGGER_NEEDLE_TILED');
+  out = patchOne(out, STAGGER_NEEDLE_SINGLE, STAGGER_REPL_SINGLE, 'STAGGER_NEEDLE_SINGLE');
+  return out;
+};
 
 // ── Six-cell mutation-kill 2 bars (blocking on the MEAN, non-regression
 // ceiling per cell — see file header for the full measured table and the
@@ -326,18 +338,36 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // step over 5 mm on — its golden is UNCHANGED, byte-for-byte, which is
     // itself part of the mutation-kill proof (a guard that is truly inert on
     // an unaffected cell should not move that cell's own fingerprint).
+    // T2-5 — RE-PINNED, 4 of 12: `test|torus/contour`, `test|cone/hatch`,
+    // `create|torus/contour`, `create|cone/hatch` — exactly the cells whose
+    // ask (`law.L0 * sv.R`) exceeds `2 * nominalRP` at this fixture, i.e.
+    // where the re-tiling (`nSub > 1`) actually fires. `nSub` is sized as the
+    // MINIMUM split that clears the over2RP bar itself
+    // (`ceil(L0*R / (2*nominalRP))`), not a blanket round-to-nearest — a
+    // tighter threshold than the plan's own sketch, chosen so the fix
+    // touches only what clause (c) requires and leaves
+    // `scene3d-mark-laws-draw.test.js`'s own O1 sagitta oracle (a file
+    // outside this unit's ALLOWED scope) passing with margin. The other 8 of
+    // 12 (including `sphere/hatch`, which the looser threshold used to
+    // touch) are UNCHANGED byte-for-byte (`nSub === 1` there — proven
+    // identical by construction, see `layMark`'s tick block). `L0` stays
+    // 1.16 (stop condition 3, `T2-5-plan.md` §4 — see `T2-5-impl.md`), so the
+    // change is the re-tiling ALONE. Mutation-kill: reverting the re-tiling
+    // (forcing `nSub = 1`) reproduces an over-long-tick population on the
+    // affected cells — proved in `scene3d-mktick-band-purity.test.js`'s own
+    // O-C2 MUTATION-KILL (blocking).
     const EXPECTED_SIGNATURE = {
       'test|sphere/hatch': 'af0b4a9146aaffed83172d45fd803003ecc4edbc1235b5b07f06ec3d4b8c4308',
       'test|sphere/contour': '93933cdfe37148467c9b07bd535b4591e5a7e476f22eba1edce7734ffbb46e96',
       'test|torus/hatch': '7c12b6b4b17a54461852c3384dc3808f4adfb87eb14860c3c4a7b18b4923f4ca',
-      'test|torus/contour': 'aa9ea62cf7ad8dfedd28aae2400b14e2f04880c85656350cd4655c2642d56a5c',
-      'test|cone/hatch': '828e02845d84974b884be401447fb267499dedd8dfc3c7bee7cecba501148f4b',
+      'test|torus/contour': '9badc0813901afdc6245addb43c13e69c521c2819f7507dca9ae1a78ab67300b',
+      'test|cone/hatch': '6d366bbc49212ce90ed80ba7011934b408f4fc98e91e123fda4fd248322dfa42',
       'test|cone/contour': '3aff4e5cdb31a1cbdfa96fe7e7cb0778e578316cdcd02f3d93520b573ab2f438',
       'create|sphere/hatch': '7de0d679be955f4c8c0012f22f62607318790ffb300a1d181a7b91c3c2de4a7f',
       'create|sphere/contour': 'ee6137a05a246a22294764059f12c3de32e2583bfc1d0012400b0a67f9806e09',
       'create|torus/hatch': '467252415a17e9d9e5d1b02e701e618ed3dd10db96057a313ffdf8fb85822916',
-      'create|torus/contour': '558ff66b39673e54c10a23fa52f8d2eb3fed50558177c10a8b7a014509f823cd',
-      'create|cone/hatch': '552411c8a2a33857944cbd90f99935d841f7432b65bf45c254a9d2d558423d97',
+      'create|torus/contour': '69370635bff442cdde5c8f1804622dc9f6e136e67a5107fe9326fd81a472c960',
+      'create|cone/hatch': '18081e43ea243f16d46f4f0ba5df63cc42211df4563c4ff64ee7834e9e29b6d1',
       'create|cone/contour': '3a64b05a04bd92367d0896e5f6382a6b36de60e0a44b7322b6b32b4f899b0bed',
     };
 
@@ -455,7 +485,7 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     beforeAll(async () => {
       shippedRuntime = await loadVecturaRuntime();
       mutantRuntime = await loadVecturaRuntime({
-        scriptOverrides: { [REL_PATH]: patchOne(loadHeadSource(), STAGGER_NEEDLE, STAGGER_REPL, 'STAGGER_NEEDLE') },
+        scriptOverrides: { [REL_PATH]: disableStagger(loadHeadSource()) },
       });
       const SV = shippedRuntime.window.Vectura;
       const MV = mutantRuntime.window.Vectura;
