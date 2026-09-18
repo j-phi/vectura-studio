@@ -182,20 +182,21 @@ const patchOne = (src, needle, repl, label) => {
 // this tree's `chan:'len'` mechanism (L0=1.16, BLEND=0.92) but centred on
 // the row line exactly as T2/T2-2 shipped (the defect T2-review.md and
 // T2-2-review.md both photographed).
-// T2-5 — the stagger now has TWO `room` computations (the re-tiled loop's
-// own sub-band room, and the nSub===1 fallthrough's whole-row room, both in
-// `surface-fill.js`'s `layMark` tick block). Disabling BOTH is what
-// reproduces "centred on the row line exactly as T2/T2-2 shipped" — the
-// mutant this test measures against.
-const STAGGER_NEEDLE_TILED = 'const room = 0.5 * Math.max(0, sub - each);';
-const STAGGER_REPL_TILED = 'const room = 0; // MUTATION-KILL 2: stagger disabled (re-tiled branch)';
+// T2-5 — the stagger had TWO `room` computations (the re-tiled loop's own
+// sub-band room, and the nSub===1 fallthrough's whole-row room).
+// T2-6 (`T2-6-plan.md` §4.1) — THE GRADED BAND COMB replaces the re-tiled
+// loop's own `room`/stagger with a DETERMINISTIC placement (each sub-tick
+// centred in its own sub-band, longest at the dark edge) — this is a
+// deliberate design choice (§4.1: "consecutive sub-ticks have ratio EXACTLY
+// RHO... by construction, not by measurement"), not a regression, so
+// `STAGGER_NEEDLE_TILED` no longer exists in the multi-sub-tick branch to
+// mutate. The nSub===1 (single, un-split tick) branch's own row-wide
+// golden-ratio stagger is UNCHANGED, byte-identical to T2-3/T2-5 — that is
+// the one this mutation still disables, and the one `disableStagger`'s own
+// name refers to below.
 const STAGGER_NEEDLE_SINGLE = "              const room = 0.5 * Math.max(0, sv.R - sv.L);";
 const STAGGER_REPL_SINGLE = '              const room = 0; // MUTATION-KILL 2: stagger disabled (single-tick branch)';
-const disableStagger = (src) => {
-  let out = patchOne(src, STAGGER_NEEDLE_TILED, STAGGER_REPL_TILED, 'STAGGER_NEEDLE_TILED');
-  out = patchOne(out, STAGGER_NEEDLE_SINGLE, STAGGER_REPL_SINGLE, 'STAGGER_NEEDLE_SINGLE');
-  return out;
-};
+const disableStagger = (src) => patchOne(src, STAGGER_NEEDLE_SINGLE, STAGGER_REPL_SINGLE, 'STAGGER_NEEDLE_SINGLE');
 
 // ── Six-cell mutation-kill 2 bars (blocking on the MEAN, non-regression
 // ceiling per cell — see file header for the full measured table and the
@@ -356,19 +357,34 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // (forcing `nSub = 1`) reproduces an over-long-tick population on the
     // affected cells — proved in `scene3d-mktick-band-purity.test.js`'s own
     // O-C2 MUTATION-KILL (blocking).
+    // T2-6 — RE-PINNED, 12 of 12 (`T2-6-plan.md` §4.1 Rank 1, THE GRADED
+    // BAND COMB). Unlike T2-5's re-tiling (which fired only where
+    // `law.L0*sv.R > 2*nominalRP`, 4 of 12 cells), the comb's own gate
+    // (`sv.L >= MK_TICK_COMB_MIN_R*sv.R`, `bandOn`) is reachable in an
+    // ORDINARY band, so it fires on every one of the twelve fixtures —
+    // moving every golden is the expected, correctly-scoped outcome, not a
+    // scope leak. Proof this is the comb and not drift: the SAME re-pin, run
+    // twice in a row (deterministic render, no RNG), reproduces bit-for-bit;
+    // `scene3d-mktick-gap-fill.test.js`'s own "instrumentation neutrality"
+    // and "SEMANTIC PRE reconstruction" tests independently confirm the
+    // shipped disk source (unhooked) renders byte-identically to the
+    // instrumented copy used to derive these signatures. See
+    // `T2-6-impl.md` for the full before/after oracle table (A1/A1b/A3,
+    // `wedge25`, `O5`, `bandC`, `siteCoverage` — all pass their own bars,
+    // unchanged, below).
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': 'af0b4a9146aaffed83172d45fd803003ecc4edbc1235b5b07f06ec3d4b8c4308',
-      'test|sphere/contour': '93933cdfe37148467c9b07bd535b4591e5a7e476f22eba1edce7734ffbb46e96',
-      'test|torus/hatch': '7c12b6b4b17a54461852c3384dc3808f4adfb87eb14860c3c4a7b18b4923f4ca',
-      'test|torus/contour': '9badc0813901afdc6245addb43c13e69c521c2819f7507dca9ae1a78ab67300b',
-      'test|cone/hatch': '6d366bbc49212ce90ed80ba7011934b408f4fc98e91e123fda4fd248322dfa42',
-      'test|cone/contour': '3aff4e5cdb31a1cbdfa96fe7e7cb0778e578316cdcd02f3d93520b573ab2f438',
-      'create|sphere/hatch': '7de0d679be955f4c8c0012f22f62607318790ffb300a1d181a7b91c3c2de4a7f',
-      'create|sphere/contour': 'ee6137a05a246a22294764059f12c3de32e2583bfc1d0012400b0a67f9806e09',
-      'create|torus/hatch': '467252415a17e9d9e5d1b02e701e618ed3dd10db96057a313ffdf8fb85822916',
-      'create|torus/contour': '69370635bff442cdde5c8f1804622dc9f6e136e67a5107fe9326fd81a472c960',
-      'create|cone/hatch': '18081e43ea243f16d46f4f0ba5df63cc42211df4563c4ff64ee7834e9e29b6d1',
-      'create|cone/contour': '3a64b05a04bd92367d0896e5f6382a6b36de60e0a44b7322b6b32b4f899b0bed',
+      'test|sphere/hatch': 'e1d6e011e11839ba365aa6368e924005bc93991583235d6283220a2d4afc1330',
+      'test|sphere/contour': '4e4524ab17cf189651b7e746625f06c1b78985842aaf08b495c545e14cf3d09a',
+      'test|torus/hatch': 'cd2c062e44c72285489334bdc0c0219e08a25db3b0fd60623016a11c466e7c58',
+      'test|torus/contour': 'e1312b97406cf0d800dda5efb88e4332ce6018c82a1b51b896612d544d31bd94',
+      'test|cone/hatch': 'eb8ce54645517d20c34077e1914e4bb1508e844815e0bc9ca91f51ca9f110dc7',
+      'test|cone/contour': '9703754b6d5ab465b484655d7117876fe45b2a99c60e9b3a3af600b575e764f8',
+      'create|sphere/hatch': '58b1b7f1b17bcae0afbda3cf6f48269925f2703ce7dc896c9e99f7eb21261d28',
+      'create|sphere/contour': '239b2fbcbf626bea2e43e5c6b737af68e1260c024b93c6c3ccc51517a3dd813d',
+      'create|torus/hatch': '41d0659dd2c0d3e12dec62b7e95e811e266c2226790c2207b76b3e71df172b76',
+      'create|torus/contour': '8a752bfb5c3d01d5b3c7635d478e6dd7f7d37882a7f53900240cb1db6b2f7000',
+      'create|cone/hatch': 'd1c3048a5b27e6116a0435b74b2610142ada6bde276326c3475e132779886082',
+      'create|cone/contour': '2b1234f1ac1624b788de52c30011978ee687674d00b8168a1e17db8f81879b0a',
     };
 
     ['test', 'create'].forEach((rig) => {

@@ -2570,6 +2570,36 @@
     // this constant only sets O5's headroom now that the curve is free to
     // be chosen on that bar alone.
     const MK_TICK_EASE_BLEND = 0.92;
+    // T2-6 (`T2-6-plan.md` §4.1 Rank 1 — THE GRADED BAND COMB, prototyped
+    // "F3", spike-gated on 12 fixtures, md5-swept 1184 cells). Jay's clause
+    // (a), verbatim: "Instead of tick fragments on the right, use gradually
+    // shortening ticks to fill the black gaps at the bottom of the vertical
+    // waves." Applied in `layMark`'s `'tick'` branch, below T2-5's own
+    // over-wide-band retiling (clause c, untouched). Four dials, each
+    // measured against the whole twelve-fixture table (`T2-6-plan.md` §4.4
+    // "the dials are a cliff, not a ramp" — every one of these breaks
+    // something if moved without re-running that table):
+    // `MK_TICK_COMB_RHO` — the geometric ratio between consecutive sub-ticks
+    // (`each_j = e0*RHO^j`). 0.62 (measured): RHO=0.75 fails the test-rig
+    // `wedge25` mean (0.080->0.0815-0.0820) and goes non-monotone on O5.
+    const MK_TICK_COMB_RHO = 0.62;
+    // `MK_TICK_COMB_MAX` — the largest sub-tick count a band may be split
+    // into by the comb (T2-5's own `nSub` clamp of 6 is clause (c)'s, a
+    // separate ceiling, untouched). 2 (measured): raising to 4 with no other
+    // change collapses O5 on `torus/hatch` (2.59->2.01, non-monotone) via
+    // `place()`'s shared off-surface drop — 2 is already enough to deliver
+    // Jay's sentence on the cell he was looking at (A1 0.03->0.48).
+    const MK_TICK_COMB_MAX = 2;
+    // `MK_TICK_COMB_MIN_R` — the comb only fires when `sv.L >= MIN_R*sv.R`;
+    // below this the light end of the band is SUPPOSED to stay bare (that is
+    // "the highlight", not a defect). 0.40 (measured): 0.30 pushed the
+    // `bandC` clause on `sphere/contour` up 62%.
+    const MK_TICK_COMB_MIN_R = 0.40;
+    // `MK_TICK_COMB_ENV` — the comb occupies the middle ENV fraction of the
+    // band, keeping the outermost sub-tick off the chart edge. 0.85
+    // (measured): 1.0 (no margin) pushes `wedge25` and `bandC` past their
+    // bars on the same cells `MK_TICK_COMB_MIN_R` protects.
+    const MK_TICK_COMB_ENV = 0.85;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -6823,30 +6853,91 @@
           // 6 so a pathological outlier cannot explode pen-down count.
           if (law.shape === 'tick') {
             const nominalRP = masterPitch / MK_ROW_COV;
-            // `nSub` is the MINIMUM split that clears the over2RP bar itself
-            // (`law.L0*R > 2*nominalRP`), not a blanket round-to-nearest —
-            // touching only the sites that actually need it keeps the
-            // longest-third chord population (`scene3d-mark-laws-draw.test.js`'s
-            // own O1 sagitta oracle, a file outside this unit's scope) as
+            // `nOver` is T2-5's own MINIMUM split that clears the over2RP bar
+            // itself (`law.L0*R > 2*nominalRP`) — clause (c), untouched by
+            // this unit. Touching only the sites that actually need it keeps
+            // the longest-third chord population
+            // (`scene3d-mark-laws-draw.test.js`'s own O1 sagitta oracle) as
             // close to untouched as clause (c) allows.
-            const nSub = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);
+            const nOver = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);
+            // T2-6 — THE GRADED BAND COMB (`T2-6-plan.md` §4.1). Two
+            // `sampleAt` probes at the band's own +-R/2 edges (in the SAME
+            // frame-local `v` coordinate `mkShape`'s tick spans) find which
+            // side of the band is darker. When the band is wide enough to
+            // hold >=2 sub-ticks without any of them falling under one pen
+            // width, lay a GEOMETRIC RUN `each_j = e0*RHO^j` across `nComb`
+            // sub-bands, longest at the DARK edge (`j=0`), chosen as the
+            // LARGEST `n` for which the run fits inside its own `ENV`-scaled
+            // envelope. `Sum(e0*RHO^j, j=0..n-1) = e0*(1-RHO^n)/(1-RHO) =
+            // sv.L` EXACTLY (closed-form geometric series) — so `R`/`P` stay
+            // untouched and the delivered ink-area fraction
+            // `sv.L*w/(sv.R*sv.P) = mkAsk(I)` is bit-identical: a pure
+            // redistribution of one band's own ink, the same neutrality
+            // proof T2-5 used for its own uniform split. Consecutive
+            // sub-ticks have ratio EXACTLY `MK_TICK_COMB_RHO`, so at
+            // RHO>=0.5 Jay's "no tick under half its neighbour" holds BY
+            // CONSTRUCTION, not by measurement.
+            //
+            // `bandOn` (both probes on-chart) is the correctness gate, not a
+            // dial: without it a sub-tick near a foreshortened band's own
+            // edge can leave the chart, and `place()` drops the WHOLE mark
+            // (shared by all twelve mark laws) — measured to collapse O5 on
+            // `torus/hatch` (2.59->2.01, non-monotone) with no gate,
+            // `T2-6-plan.md` §4.4. It costs nothing: the same two probes
+            // also set the shorten-toward-the-light direction.
+            const probeI = (dv) => {
+              const pp = fr.toParam(0, dv);
+              if (!(pp.a >= 0 && pp.a <= 1)) return null;
+              let bb = pp.b;
+              if (bb < 0 || bb > 1) {
+                if (bb < -0.25 || bb > 1.25) return null;
+                bb = ((bb % 1) + 1) % 1;
+              }
+              const sm = sampleAt(pp.a, bb);
+              return (sm && sm.front === wantFront && Number.isFinite(sm.I)) ? sm.I : null;
+            };
+            const iP = probeI(0.5 * sv.R);
+            const iM = probeI(-0.5 * sv.R);
+            // sgnDark > 0 => the +v side of the band is the DARKER side.
+            let sgnDark = 0;
+            if (iP != null && iM != null) sgnDark = (iP < iM) ? 1 : ((iP > iM) ? -1 : 0);
+            else if (iP != null) sgnDark = -1;
+            else if (iM != null) sgnDark = 1;
+            const bandOn = (iP != null && iM != null);
+            const minKeep = penWidth;
+            let nComb = 1;
+            let e0 = 0;
+            if (bandOn && sv.L >= MK_TICK_COMB_MIN_R * sv.R && sv.L < 0.98 * sv.R) {
+              for (let n = MK_TICK_COMB_MAX; n >= 2; n -= 1) {
+                const den = (1 - MK_TICK_COMB_RHO ** n) / (1 - MK_TICK_COMB_RHO);
+                const a0 = sv.L / den;
+                if (a0 <= (MK_TICK_COMB_ENV * sv.R) / n && a0 * MK_TICK_COMB_RHO ** (n - 1) >= minKeep) {
+                  nComb = n; e0 = a0; break;
+                }
+              }
+            }
+            const nSub = Math.max(nOver, nComb);
+            // When `nSub` is set by clause (c) alone (no comb fits, or the
+            // band is >= its own row pitch), fall back to a plain UNIFORM
+            // split across the full band `sv.R` — clause (c)'s own mechanism,
+            // now centred per sub-band (the comb's own placement, not T2-3's
+            // row-wide stagger, which only applies to an un-split band below).
+            const uniformSplit = (nComb < 2 || nSub !== nComb || sv.L >= sv.R);
             if (nSub > 1) {
-              const sub = sv.R / nSub;
-              const each = sv.L / nSub;
+              const sub = (uniformSplit ? sv.R : MK_TICK_COMB_ENV * sv.R) / nSub;
+              const dir = sgnDark >= 0 ? 1 : -1;   // +1 => the +v side is DARKER
               const tiled = [];
               for (let j = 0; j < nSub; j++) {
-                const vCenter = (j - (nSub - 1) / 2) * sub;
-                const room = 0.5 * Math.max(0, sub - each);
-                let cOff = 0;
-                if (room > 1e-6) {
-                  const idx = (a / Math.max(1e-6, sv.P)) + j * 0.6180339887498949;
-                  const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
-                  cOff = room * (2 * uu - 1);
-                }
-                tiled.push([[0, vCenter - each / 2 + cOff], [0, vCenter + each / 2 + cOff]]);
+                // j = 0 is the DARKEST sub-band; lengths fall toward the light.
+                const each = uniformSplit ? (sv.L / nSub) : (e0 * MK_TICK_COMB_RHO ** j);
+                const slot = dir > 0 ? (nSub - 1 - j) : j;   // slot index in +v order
+                const vCenter = (slot - (nSub - 1) / 2) * sub;
+                tiled.push([[0, vCenter - each / 2], [0, vCenter + each / 2]]);
               }
               polys = tiled;
             } else {
+              // A single, un-split tick: T2-3's own row-wide golden-ratio
+              // stagger, byte-identical to before this unit.
               const room = 0.5 * Math.max(0, sv.R - sv.L);
               if (room > 1e-6) {
                 const idx = a / Math.max(1e-6, sv.P);

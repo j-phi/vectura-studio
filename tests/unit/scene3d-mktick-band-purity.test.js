@@ -142,30 +142,83 @@ const patchOne = (src, needle, repl, label) => {
 const T25_BLOCK_START_NEEDLE = "        } else {\n          polys = mkShape(shapeFor(), sv.L, sv.R, w);\n          // T2-5 (`T2-5-plan.md` §4 Rank 1";
 const T25_BLOCK_END_NEEDLE = '                polys = polys.map((pl) => pl.map((pt) => [pt[0], pt[1] + cOff]));\n              }\n            }\n          }\n        }';
 
+// T2-6 (`T2-6-plan.md` §4.1) rewrote the `if (law.shape === 'tick') { ... }`
+// body this splice replaces — THE GRADED BAND COMB now sits between
+// `T25_BLOCK_START_NEEDLE` and `T25_BLOCK_END_NEEDLE` (both still match the
+// live disk source unchanged, since T2-6 touched only what lies BETWEEN
+// them). Left as the stale T2-5-only reconstruction, this splice would
+// silently freeze every "GREEN at the shipped tree" assertion below at
+// T2-5's OWN mechanism — exactly the trap `T2-3-review.md`/`T2-3b-plan.md`
+// §5.1 named for `git show HEAD`, reproduced here via a stale hand-
+// maintained string instead. Updated to mirror the CURRENT shipped block
+// (same formulas, same branches — `nOver`, `nComb`, `e0`, `RHO`, `dir`) with
+// one hook call PER EMITTED SUB-TICK, in the SAME `{ I, R, P, L, a, k, band,
+// each, cOff, nSub, j }` shape T2-5's own hook used — `band` is the
+// SUB-BAND width this sub-tick actually owns (`sub`) and `cOff` is its own
+// ABSOLUTE local centre (`vCenter`; the comb has no separate jitter term, so
+// `v0 = cOff - each/2`, `v1 = cOff + each/2` still holds exactly, which is
+// what `seamOverlap`/`over2RP` in the helper file assume). Proven neutral by
+// the "instrumentation neutrality" test immediately below.
 const POST_TICK_BLOCK_INSTRUMENTED = `        } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
           if (law.shape === 'tick') {
             const nominalRP = masterPitch / MK_ROW_COV;
-            const nSub = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);
+            const nOver = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);
+            const probeI = (dv) => {
+              const pp = fr.toParam(0, dv);
+              if (!(pp.a >= 0 && pp.a <= 1)) return null;
+              let bb = pp.b;
+              if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return null; bb = ((bb % 1) + 1) % 1; }
+              const sm = sampleAt(pp.a, bb);
+              return (sm && sm.front === wantFront && Number.isFinite(sm.I)) ? sm.I : null;
+            };
+            const iP = probeI(0.5 * sv.R);
+            const iM = probeI(-0.5 * sv.R);
+            let sgnDark = 0;
+            if (iP != null && iM != null) sgnDark = (iP < iM) ? 1 : ((iP > iM) ? -1 : 0);
+            else if (iP != null) sgnDark = -1;
+            else if (iM != null) sgnDark = 1;
+            const bandOn = (iP != null && iM != null);
+            const minKeep = penWidth;
+            let nComb = 1;
+            let e0 = 0;
+            if (bandOn && sv.L >= MK_TICK_COMB_MIN_R * sv.R && sv.L < 0.98 * sv.R) {
+              for (let n = MK_TICK_COMB_MAX; n >= 2; n -= 1) {
+                const den = (1 - MK_TICK_COMB_RHO ** n) / (1 - MK_TICK_COMB_RHO);
+                const a0 = sv.L / den;
+                if (a0 <= (MK_TICK_COMB_ENV * sv.R) / n && a0 * MK_TICK_COMB_RHO ** (n - 1) >= minKeep) {
+                  nComb = n; e0 = a0; break;
+                }
+              }
+            }
+            const nSub = Math.max(nOver, nComb);
+            const uniformSplit = (nComb < 2 || nSub !== nComb || sv.L >= sv.R);
             if (nSub > 1) {
-              const sub = sv.R / nSub;
-              const each = sv.L / nSub;
+              const sub = (uniformSplit ? sv.R : MK_TICK_COMB_ENV * sv.R) / nSub;
+              const dir = sgnDark >= 0 ? 1 : -1;
               const tiled = [];
               for (let j = 0; j < nSub; j++) {
-                const vCenter = (j - (nSub - 1) / 2) * sub;
-                const room = 0.5 * Math.max(0, sub - each);
-                let cOff = 0;
-                if (room > 1e-6) {
-                  const idx = (a / Math.max(1e-6, sv.P)) + j * 0.6180339887498949;
-                  const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
-                  cOff = room * (2 * uu - 1);
-                }
+                const each = uniformSplit ? (sv.L / nSub) : (e0 * MK_TICK_COMB_RHO ** j);
+                const slot = dir > 0 ? (nSub - 1 - j) : j;
+                const vCenter = (slot - (nSub - 1) / 2) * sub;
                 if (typeof globalThis.__T25_HOOK__ === 'function') {
+                  // O-B's OWN convention (this file's ORIGINAL T2-5 hook):
+                  // \`cOff\` is the LOCAL offset WITHIN a sub-tick's own slot
+                  // (what \`seamOverlap\` bounds against its own \`band/2\`) —
+                  // NOT the slot's global position (\`vCenter\`, which every
+                  // slot legitimately has and is irrelevant to whether a
+                  // sub-tick spills past its OWN boundary). T2-5's stagger
+                  // had a real jitter term here; the comb places every
+                  // sub-tick EXACTLY at its own slot centre with no further
+                  // offset, so \`cOff\` is exactly 0. \`band\` is the NOMINAL
+                  // per-slot scoring width \`sv.R / nSub\` (metrics26.js's own
+                  // convention), not the comb's narrower ENV-scaled
+                  // placement width \`sub\`.
                   globalThis.__T25_HOOK__({
-                    I: sv.I, R: sv.R, P: sv.P, L: sv.L, a, k, band: sub, each, cOff, nSub, j,
+                    I: sv.I, R: sv.R, P: sv.P, L: sv.L, a, k, band: sv.R / nSub, each, cOff: 0, nSub, j,
                   });
                 }
-                tiled.push([[0, vCenter - each / 2 + cOff], [0, vCenter + each / 2 + cOff]]);
+                tiled.push([[0, vCenter - each / 2], [0, vCenter + each / 2]]);
               }
               polys = tiled;
             } else {
@@ -363,11 +416,11 @@ describe('Scene3D.SurfaceFill — mkTick band-purity oracle (T2-5, Jay\'s USER R
       // on torus/contour instead, whose measured max local-R/nominalRP ratio
       // is ~2.43x (`T2-5-plan.md` §3.2) — 1.05*2.43=2.55 > 2, so disabling
       // ONLY the retiling isolates its own contribution to clause (c) there.
-      test('MUTATION-KILL (blocking): reverting the retiling (nSub forced to 1) reproduces an over-long-tick population on torus/contour (L0 alone does not save this cell)', async () => {
+      test('MUTATION-KILL (blocking): reverting the retiling (nOver forced to 1, T2-6\'s comb left ACTIVE) reproduces an over-long-tick population on torus/contour (L0 alone does not save this cell, and the comb alone cannot either — its own sub-ticks are always shorter than an unsplit tick, by construction)', async () => {
         const mutatedBlock = patchOne(
           POST_TICK_BLOCK_INSTRUMENTED,
-          'const nSub = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);',
-          'const nSub = 1; // MUTATION-KILL: retiling disabled',
+          'const nOver = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);',
+          'const nOver = 1; // MUTATION-KILL: clause (c) retiling disabled (T2-6\'s own nComb, if any, is untouched)',
           'NO_RETILE_NEEDLE',
         );
         const patched = spliceTickBlock(loadHeadSource(), mutatedBlock);
