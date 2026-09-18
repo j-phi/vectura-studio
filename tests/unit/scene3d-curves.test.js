@@ -132,13 +132,28 @@ describe('scene3d Curves / Simplify', () => {
 
   // ── 1. The silhouette: chained, then fitted ────────────────────────────────
 
-  test('RED: with Curves OFF the capsule silhouette is unsmoothable 2-point sticks', () => {
+  // W-32r4 RE-PIN (2026-09-17, PROOF, `3d-scene/border-4`) — STALE ASSERTION,
+  // rewritten, coverage kept. The product behaviour intentionally changed:
+  // a refined silhouette/boundary edge (docs/3d-audit/lane-reports/
+  // W-32r4-plan.md §3.2) is a 5-point polyline projected onto the ANALYTIC
+  // silhouette/rim, so it is no longer a 2-point straight chord and no
+  // longer carries `meta.straight` — exactly the rule `emitBorderChains`
+  // already applies to a stitched strip (`if (pts.length > 2) delete
+  // meta.straight;`). This test's actual PURPOSE — "Curves OFF must not
+  // smooth the silhouette into fitted curve commands" — is still fully
+  // gateable and is kept: assert the edges carry no fitted-curve anchors
+  // (`curvedPaths(edges).length === 0`), which passed before this unit and
+  // still passes after it. The 12 other tests in this file, including
+  // "Curves ON chains the capsule silhouette into real curved runs" and the
+  // three never-curved gates (box/solid/plane), are unaffected.
+  test('with Curves OFF the capsule silhouette carries no fitted curve, even though refined edges are now polylines', () => {
     const { paths } = composeObject('capsule', CAPSULE, { curves: false });
     const edges = kindsOf(paths, 'sceneEdge');
     expect(edges.length).toBeGreaterThan(20);
-    // Every edge is its own 2-point straight path — this is the defect.
-    expect(edges.every((p) => p.length === 2)).toBe(true);
-    expect(edges.every((p) => p.meta.straight === true)).toBe(true);
+    // A refined silhouette/boundary edge may now be a short polyline (W-32
+    // Rank 4) rather than a 2-point chord — that is not curve-smoothing, it
+    // is straight-line refinement onto the analytic silhouette. What Curves
+    // OFF must still forbid is a FITTED CURVE (anchors with in/out handles).
     expect(curvedPaths(edges).length).toBe(0);
   });
 

@@ -326,19 +326,28 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // step over 5 mm on — its golden is UNCHANGED, byte-for-byte, which is
     // itself part of the mutation-kill proof (a guard that is truly inert on
     // an unaffected cell should not move that cell's own fingerprint).
+    // W-32r4c re-pin (border-4, disclosed under `## Bars changed`): W-32
+    // Rank 4 (`76a77f22`) refines sphere's and cone's drawn silhouette/
+    // boundary onto the analytic silhouette curve — a structural-edge-pass
+    // change in scene3d.js, completely independent of mkTick/surface-fill.
+    // `torus/*` (both rigs, both mappers) is confirmed BYTE-IDENTICAL,
+    // unedited below — the torus is excluded by this unit's convexity gate
+    // (non-convex silhouette, see W-32r4-impl.md), so its own golden is the
+    // in-file proof that the gate holds even on this fixture. Only
+    // sphere/cone move, matching this unit's own claimed scope.
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': 'af0b4a9146aaffed83172d45fd803003ecc4edbc1235b5b07f06ec3d4b8c4308',
-      'test|sphere/contour': '93933cdfe37148467c9b07bd535b4591e5a7e476f22eba1edce7734ffbb46e96',
+      'test|sphere/hatch': 'fec6f83a509d0667c3154a10ab298b69ca1dbe18f542af79985d9430220dd487',
+      'test|sphere/contour': 'b1b3def087399e229903728f3f21374d7a3f58bc658412dcb6040178267685e5',
       'test|torus/hatch': '7c12b6b4b17a54461852c3384dc3808f4adfb87eb14860c3c4a7b18b4923f4ca',
       'test|torus/contour': 'aa9ea62cf7ad8dfedd28aae2400b14e2f04880c85656350cd4655c2642d56a5c',
-      'test|cone/hatch': '828e02845d84974b884be401447fb267499dedd8dfc3c7bee7cecba501148f4b',
-      'test|cone/contour': '3aff4e5cdb31a1cbdfa96fe7e7cb0778e578316cdcd02f3d93520b573ab2f438',
-      'create|sphere/hatch': '7de0d679be955f4c8c0012f22f62607318790ffb300a1d181a7b91c3c2de4a7f',
-      'create|sphere/contour': 'ee6137a05a246a22294764059f12c3de32e2583bfc1d0012400b0a67f9806e09',
+      'test|cone/hatch': 'dacfc57547ab453dc6e5b01f025fb6d4cc8d9153f4974f8711daf19b93e13af5',
+      'test|cone/contour': '3760b050052766836a1f31fa760a9418734b4d328de74f904d028618d6b12d59',
+      'create|sphere/hatch': '1ea2030933057ddb6c7c44f92d24f3212b7124284eb37e7c3eb8c06966a4c595',
+      'create|sphere/contour': '6b6edd1e68c2cf4e3e4bd11bf32a21104989dbe90a126c21f8cf585991ddce15',
       'create|torus/hatch': '467252415a17e9d9e5d1b02e701e618ed3dd10db96057a313ffdf8fb85822916',
       'create|torus/contour': '558ff66b39673e54c10a23fa52f8d2eb3fed50558177c10a8b7a014509f823cd',
-      'create|cone/hatch': '552411c8a2a33857944cbd90f99935d841f7432b65bf45c254a9d2d558423d97',
-      'create|cone/contour': '3a64b05a04bd92367d0896e5f6382a6b36de60e0a44b7322b6b32b4f899b0bed',
+      'create|cone/hatch': '140973624ab62b488a53482192ff0dd7329489d896b5e2452bd1f0d89ab62dd3',
+      'create|cone/contour': 'd9a36e63a15f0f260d5f32317645de75a2425d933366e679715eb3028f23dd83',
     };
 
     ['test', 'create'].forEach((rig) => {

@@ -227,7 +227,18 @@ describe('Scene3D — how a BOX\'s rendered fill bearing responds to Density', (
     // (sphere, curved) touch disjoint primitives in this guard, so both
     // re-pins apply independently with no interaction; re-run against the
     // actual merged source to confirm (see below).
-    expect(fingerprint(50, 'sphere')).toBe('6c237f90:23012');
-    expect(fingerprint(150, 'sphere')).toBe('3dc1b467:55668');
+    // W-32r4c re-pin (border-4, disclosed under `## Bars changed`): W-32
+    // Rank 4 (`76a77f22`) refines sphere's drawn silhouette/boundary onto
+    // the analytic silhouette curve — this fingerprint hashes EVERY
+    // scenePaths entry (see the comment above `fingerprint()`'s own
+    // definition), so the sphere object's own sceneEdge ink is exactly
+    // what this guard now sees move. box/solid/plane (faceted, unsupported
+    // by the chart this unit refines) are verified UNCHANGED above and
+    // below this line — only sphere moved, matching this unit's own
+    // claimed scope. Re-derived directly against this working tree (not
+    // copied from any report), same convention as this file's own W-15c/
+    // W-26 re-pins.
+    expect(fingerprint(50, 'sphere')).toBe('56fa048b:29028');
+    expect(fingerprint(150, 'sphere')).toBe('5ea7a962:61684');
   });
 });

@@ -336,13 +336,37 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   // 424/1500) — the opposite direction from every other re-pin in this file,
   // which is the expected signature of "back density now actually works"
   // rather than another interaction/re-measurement artifact.
+  // W-32r4 RE-PIN (2026-09-17, PROOF, `3d-scene/border-4`): the fill BORDER
+  // is now refined onto the ANALYTIC silhouette/rim for CONVEX charted
+  // primitives (docs/3d-audit/lane-reports/W-32r4-plan.md §3.2). Both curved
+  // scenarios here carry sphere/cylinder/cone (and `denseMixed` a torus,
+  // excluded by the convexity gate but still contributing via the other
+  // four) under this scene's own default `hatch` mapper, so their outline
+  // vertices/chords move; `facetedOverlap-orthographic-hatch` (box-only, no
+  // curved primitive) is UNCHANGED, confirmed byte-identical below — the
+  // proof that the gate is scoped correctly, not a blanket re-measurement.
+  // Both `|settled` AND `|draft` rows move on the two curved scenarios: the
+  // structural edge pass that refines the outline is NOT gated by
+  // `bounds.fastPreview` (only fill density is), so draft-mode silhouette
+  // geometry gets the same correction, which is the intended behaviour, not
+  // a leak — `sceneFill` is unaffected either way (this unit's own O4/O5
+  // oracle, `tests/unit/scene3d-fill-silhouette-overshoot.test.js`, proves
+  // fill immobility with a byte-identity md5 sweep, and this file's own
+  // `facetedOverlap` row proves nothing moves where the chart is absent).
+  // Before -> after (this unit alone, measured via
+  // `docs/3d-audit/lane-reports/W-32r4-plan-evidence/w32r4-repin-probe.js`
+  // against `3d-scene/border-4` HEAD):
+  //   curvedOverlap-perspective-mixed-xray|settled: pathCount 424 -> 424 (UNCHANGED — only point density rises), pointCount 1500 -> 1760 (+17.3%)
+  //   curvedOverlap-perspective-mixed-xray|draft:   pathCount 302 -> 302 (UNCHANGED), pointCount 604 -> 773 (+28.0%, draft outline refined too — see above)
+  //   denseMixed-8obj-shadows|settled:              pathCount 662 -> 668 (+6, <1% — a few previously-collinear-merged edge chains no longer weld once refined, not a dropped/split defect: `scene3d-silhouette-contiguity` 6/6 and `scene3d-border-contiguity` 7/7 both still pass, and `scene3d-shadows`/`scene3d-shadow-light-silhouette` pass 18/18 + 4/4 unchanged — shadows ride FACES, not edges), pointCount 2712 -> 3032 (+11.8%)
+  //   denseMixed-8obj-shadows|draft:                pathCount 466 -> 471 (+5, same cause), pointCount 932 -> 1146 (+23.0%)
   const EXPECTED = {
     'facetedOverlap-orthographic-hatch|settled': { hash: 'aa696fa2ebb27f1218aed6858298beb57b8cb7064c3e1e331f83fc80411ebbbd', pathCount: 208, pointCount: 416 },
     'facetedOverlap-orthographic-hatch|draft': { hash: '82bacd44d6706bd4f484fa2c9b719bf119a7bd93b91a6b6cca798caed1634066', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: 'cf19f35d0f84caa430a0ea7c371f0572854272ae7535b8d22882e43bae230102', pathCount: 424, pointCount: 1500 },
-    'curvedOverlap-perspective-mixed-xray|draft': { hash: '82c40da7672e6b14cac48b460e03a66b8b07450e082297019de4ec668fdb1924', pathCount: 302, pointCount: 604 },
-    'denseMixed-8obj-shadows|settled': { hash: '38f2f85b73c6604d165d0008a808040a9cab9acb494177fedf5688c93bf6a34f', pathCount: 662, pointCount: 2712 },
-    'denseMixed-8obj-shadows|draft': { hash: '8f4025c44dd5eeda54570195f9a76335c6ce76947fc931cc6c032467e40cfc2f', pathCount: 466, pointCount: 932 },
+    'curvedOverlap-perspective-mixed-xray|settled': { hash: '24653523df6f2ecde68b1e807a8f086cea19404d453c7d03a19cb38c4c180645', pathCount: 424, pointCount: 1760 },
+    'curvedOverlap-perspective-mixed-xray|draft': { hash: '3bfb988870d36a77aa88e5e9df77cb93224929b17b4eafc3bb6ca0c9e984d369', pathCount: 302, pointCount: 773 },
+    'denseMixed-8obj-shadows|settled': { hash: 'fe6516d18c34921f23364c7f8b539104f680b949f36a963e65b180242efa86cd', pathCount: 668, pointCount: 3032 },
+    'denseMixed-8obj-shadows|draft': { hash: 'fcfe9f21529f486d386ef9c1a19e4cc2f15a75a999e5ccf6275412c60b8d28d5', pathCount: 471, pointCount: 1146 },
   };
 
   scenarios.forEach(({ name, objects, extra }) => {

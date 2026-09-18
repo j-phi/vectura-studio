@@ -68,6 +68,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   Density does not fill solid. See *Known limitations*. (W-36c, W-36d)
 
 ### Fixed
+- **3D Scene · curved fills no longer draw a ruling end past the object's outline.** A sphere,
+  ellipsoid, cone, cylinder, or capsule's drawn silhouette was the projected mesh — a polygon
+  chord-inscribed in the true curve, up to 0.72 pen (0.22 mm) short of it on a large ellipsoid —
+  so rulings correctly reaching the real edge of the surface read as barbs breaking out past the
+  grey outline. The outline is now refined onto the analytic silhouette instead: worst overshoot
+  falls from 0.72 to 0.02 pen and every endpoint over the 0.5-pen bar (111 of them, across the
+  measured sweep) is now at 0. Fill ink is unchanged (0.000%) — only the border moves, onto the
+  curve the fill was already reaching. The torus is excluded (its silhouette is non-convex and a
+  refined point is cut by the object's own occluders); every faceted or unsupported primitive
+  (box, plane, pyramid, imported mesh, superellipsoid, torus knot) is untouched. (W-32 Rank 4)
 - **3D Scene · shadows landing on other objects now follow the light.** A point, spot, or area
   light's shadow-receive footprint on another object's flat face used to be built from a fixed
   default direction; it now uses the light's real position. Directional lights are unaffected.

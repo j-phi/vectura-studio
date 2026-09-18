@@ -460,7 +460,15 @@ line (already inside one pen width at 0.783/0.849 mm) or the smear · **(6)** W-
 convention (a three-way choice, not a yes/no) · **(7)** F-14 graded — close as by-design, or expose
 `FACET_MIN_RULINGS` · **(8)** W-34 Fix C, cone apex-band warping (a look change to exact geometry) ·
 **(9)** W-32 Rank 3/4, refine the fill border to the true silhouette (which would also satisfy
-W-35). Details for 1–7 below and in `docs/audit-remediation-todo.md`.
+W-35) — **DECIDED (round 4), amended to B: RESOLVED.** The fill was already correct (≤0.01 pen
+of the true silhouette on every measured cell); the drawn outline — a mesh-chord polygon inscribed
+in it — fell short by up to 0.72 pen, which is what read as a ruling breaking out past the border.
+Shipped: the outline is refined onto the analytic silhouette for convex charted primitives (torus
+excluded, filed as its own follow-up). Worst overshoot 0.72 → 0.02 pen; fill ink byte-identical.
+**Correction to the round-2 framing:** it satisfies only W-35's outer-edge-fidelity half — the
+spiral's alternation (W-35b's own FU-2) is untouched and remains open. (W-32 Rank 4,
+`docs/3d-audit/lane-reports/W-32r4-plan.md`, `W-32r4-impl.md`)
+Details for 1–7 below and in `docs/audit-remediation-todo.md`.
 
 Seven audit decisions (full options in `docs/audit-remediation-todo.md`) plus two design
 questions. Do not start these without a decision:

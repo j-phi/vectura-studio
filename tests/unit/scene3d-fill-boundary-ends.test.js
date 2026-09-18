@@ -82,7 +82,14 @@ describe('Scene3D.SurfaceFill — a ruling ends on the boundary, not a sample sh
     const paths = eng.getLayerById(gid).scenePaths || [];
     const fill = paths.filter((p) => p.meta && p.meta.kind === 'sceneFill'
       && p.meta.sceneTarget && p.meta.sceneTarget.objectId === obj.id && !p.meta.sceneTarget.occluded);
-    return { opts, fill };
+    // W-32r4b: the DRAWN silhouette-class border ink, same object/fixture. Added
+    // for the repair block at the bottom of this file — the original 41 CASES
+    // above never looked at this, which is WHY they were blind to W-32's
+    // defect (see that block's header comment for the measured proof).
+    const silhouette = paths.filter((p) => p.meta && p.meta.kind === 'sceneEdge'
+      && p.meta.sceneTarget && p.meta.sceneTarget.objectId === obj.id && !p.meta.sceneTarget.occluded
+      && p.meta.sceneTarget.edgeClass === 'silhouette');
+    return { opts, fill, silhouette };
   };
 
   const maskFor = (primitive, opts) => {
@@ -208,7 +215,57 @@ describe('Scene3D.SurfaceFill — a ruling ends on the boundary, not a sample sh
       const k = gy * W + gx;
       return on[k] && Number.isFinite(D[k]) ? D[k] * CELL : 0;
     };
-    const out = { depth, stats: () => { let n=0, mx=0; for (let k=0;k<W*H;k+=1) if (on[k]) { n+=1; if (Number.isFinite(D[k]) && D[k]*CELL>mx) mx=D[k]*CELL; } return { cells: n, maxDepth: +mx.toFixed(2) }; } };
+
+    // W-32r4b REPAIR — the off-mask blind spot named in W-32r4-plan.md §1.6
+    // reason 2 (`:205-210` at `b43fa4e3`, the lines `depth()` occupied before
+    // this unit): an off-mask point used to fall through to the trailing
+    // `: 0` above with no distance computed at all — "the best possible
+    // value" for what is, in general, an unbounded overshoot. This is a
+    // SEPARATE distance transform (through the OFF-mask cells only, seeded
+    // from the same boundary cells `D` uses) so an off-mask point now reports
+    // its true outward distance. Disclosed as NOT the mechanism that hid
+    // W-32's drawn-outline defect from this file (that was reason 1 — this
+    // file only ever looked at FILL data, and fill never left the mask in
+    // either direction; see the repair block's header comment for the
+    // measured proof) — it closes a real, independent latent flaw instead,
+    // proven with a synthetic off-mask point in that block's mutation test.
+    const Dout = new Float64Array(W * H).fill(Infinity);
+    const qo = [];
+    for (let k = 0; k < W * H; k += 1) if (bnd[k]) { Dout[k] = 0; qo.push(k); }
+    for (let head = 0; head < qo.length; head += 1) {
+      const k0 = qo[head];
+      const x = k0 % W; const y = Math.floor(k0 / W);
+      const d = Dout[k0];
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1) {
+          if (!dx && !dy) continue;
+          const nx = x + dx; const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+          const nk = ny * W + nx;
+          if (on[nk]) continue; // propagate through OFF-mask cells only
+          const nd = d + Math.hypot(dx, dy);
+          if (nd < Dout[nk] - 1e-9) { Dout[nk] = nd; qo.push(nk); }
+        }
+      }
+    }
+    const overshoot = (x, y) => {
+      const gx = Math.round((x - ox) / CELL); const gy = Math.round((y - oy) / CELL);
+      if (gx < 0 || gy < 0 || gx >= W || gy >= H) {
+        // Off the padded raster entirely (beyond the chart's own bbox + the
+        // 2mm pad `ox`/`oy` add). Clamp to the nearest edge cell and add the
+        // clamped distance, so a wildly-outside point still reports a real
+        // (if coarse) magnitude rather than silently 0.
+        const cgx = Math.max(0, Math.min(W - 1, gx)); const cgy = Math.max(0, Math.min(H - 1, gy));
+        const ck = cgy * W + cgx;
+        const clampDist = Math.hypot(gx - cgx, gy - cgy) * CELL;
+        return (Number.isFinite(Dout[ck]) ? Dout[ck] * CELL : 0) + clampDist;
+      }
+      const k = gy * W + gx;
+      if (on[k]) return 0; // inside the mask — no overshoot
+      return Number.isFinite(Dout[k]) ? Dout[k] * CELL : 0;
+    };
+
+    const out = { depth, overshoot, stats: () => { let n=0, mx=0; for (let k=0;k<W*H;k+=1) if (on[k]) { n+=1; if (Number.isFinite(D[k]) && D[k]*CELL>mx) mx=D[k]*CELL; } return { cells: n, maxDepth: +mx.toFixed(2) }; } };
     masks.set(primitive, out);
     return out;
   };
@@ -336,4 +393,163 @@ describe('Scene3D.SurfaceFill — a ruling ends on the boundary, not a sample sh
     expect(mask.depth(100, 76)).toBeGreaterThan(20);     // the middle of a 50 mm ball
     expect(mask.depth(75.4, 76)).toBeLessThan(1.5);      // on its silhouette
   }, 40000);
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // W-32r4b — REPAIR of the off-mask-scores-0.00 blind spot (LEDGER row 4a).
+  //
+  // W-32r4-plan.md §1.6 gave four independent reasons this file could not see
+  // W-32's drawn-outline defect (0.70/0.52/0.53 pen). Reason 2 — "off-mask
+  // scores the best possible value" (`:205-210` at `b43fa4e3`, the lines
+  // `depth()` occupied) — is the one this LEDGER row names for repair. It IS
+  // a real, independent latent flaw (see the mutation test below), but
+  // MEASURED, not assumed, it turns out NOT to be the mechanism that hid
+  // W-32's defect:
+  //
+  //   ellipsoid · hatch · create · a · d220 (the plan's own worst cell,
+  //   0.2172 mm / 0.72 pen osDrawn), measured on this file's OWN fixture
+  //   at `b43fa4e3` (scratch `git archive`, before this unit):
+  //     FILL endpoints off-mask:    0 / 202
+  //     BORDER vertices off-mask:   0 / 204
+  //
+  //   Every fill endpoint and every drawn-border VERTEX sits ON this file's
+  //   chart-derived mask, pre-fix and post-fix alike — a mesh silhouette
+  //   vertex is itself a chart sample, and an inscribed chord between two
+  //   such vertices never crosses OUTSIDE a convex curve. The off-mask
+  //   branch structurally cannot fire for this defect in either direction.
+  //   Reason 1 ("its reference is the CHART, not the drawn border") is what
+  //   actually hid it: this file only ever fed FILL data through its mask;
+  //   it never looked at the drawn BORDER ink at all.
+  //
+  // THE ACTUAL REPAIR, therefore, has two parts:
+  //
+  //   (1) Feed the drawn silhouette-edge CHORD MIDPOINTS — not just its
+  //       vertices — through this file's own mask/depth instrument. A chord
+  //       sags INWARD from the true curve between its endpoints (basic
+  //       convexity), so its midpoint IS detectably deep inside the mask
+  //       pre-fix. This is a genuinely new measurement this file never took,
+  //       using the instrument it already has, and it does not touch or
+  //       duplicate the 41 CASES above (still the undershoot-into-open-
+  //       surface gate, unaffected) or O1-O5 in
+  //       `scene3d-fill-silhouette-overshoot.test.js` (an exact convex-hull
+  //       measurement against the drawn outline, a different technique,
+  //       0.0037 mm residual — this file's 0.35 mm raster cannot match that
+  //       precision and does not try to).
+  //   (2) Fix the off-mask scoring bug itself (`maskFor`'s new `overshoot()`
+  //       function, above) so it is no longer a live landmine for a FUTURE
+  //       defect this instrument's reference COULD see (e.g. a fill or
+  //       border point that genuinely leaves the analytic surface) —
+  //       disclosed as defensive, not as what closes W-32's own gap.
+  //
+  // SWEEP: the 5 primitives W-32r4 actually refines — capsule, cone,
+  // cylinder, sphere, ellipsoid (rank1-prototype's convexity gate; torus is
+  // excluded there and stays FU-1, tracked, not silently dropped here).
+  // Faceted/unsupported primitives (pyramid, box, plane, solid,
+  // superellipsoid, torusKnot) have no smooth chart to sag away from and are
+  // already covered by O5's byte-identity sweep in the sibling file — out of
+  // scope here for the same reason. MAPPER is excluded from this sweep, and
+  // that exclusion is measured, not assumed: `sphere · hatch` and
+  // `sphere · crosshatch` gave byte-identical 0.3500 mm pre-fix — border/
+  // silhouette-edge geometry does not depend on the fill mapper at all, only
+  // on the mesh and camera, so sweeping mappers here would be pure
+  // duplication.
+  //
+  // BAR: 0.20 mm — a NEW, separate bar (not `TOL_MM`, not touched), chosen
+  // to sit clear on both sides of the two measured values (0.00 mm post-fix,
+  // 0.35 mm pre-fix — the pre-fix number is itself the file's own 0.35 mm
+  // CELL raster resolution floor: the true sagitta this measures is finer
+  // than one cell can resolve, so it reads as exactly one cell deep, a
+  // coarser echo of the plan's own exact 0.52-0.72 pen hull measurement, not
+  // a re-derivation of it). ⚠ KNOWN LIMITATION, disclosed rather than
+  // hidden: on THIS fixture (the app-default `addSceneTree()` scene this
+  // file already builds — its own detail/camera, not the plan's `create`/
+  // `addLayer` rigs), 4 of 5 swept primitives (capsule, cone, sphere,
+  // ellipsoid) measure exactly one raster cell (0.3500 mm) pre-fix and 0.00
+  // mm post-fix — real signal on capsule too, not just the three the plan's
+  // own table names. Only CYLINDER shows 0.00 mm on both trees: its
+  // silhouette is two straight vertical lines (zero curvature along the
+  // profile at this camera), so it has no sagitta to detect in the first
+  // place — measured, not assumed (its own defect in the plan's table, 0.07
+  // pen create-rig / 0.12 pen elsewhere, is the SMALLEST in the whole
+  // sweep). This bar gates capsule/cone/sphere/ellipsoid; cylinder passes
+  // vacuously because it was never broken by more than this raster can see.
+  //
+  // MUTATION PROOF (blocking, binding rule 1): `__SIL_PROTO_OFF` is the same
+  // test-only flag W-32r4 shipped in `scene3d.js` to gate its own O1 proof —
+  // reused here rather than re-invented. With it set, the CURRENT (patched)
+  // tree reproduces the scratch-`git archive` RED at `b43fa4e3` to the
+  // ten-thousandth of a millimetre (independently verified both ways).
+  describe('W-32r4b — repair: the drawn border must not sag a whole cell inside the chart', () => {
+    const SIL_SAGITTA_BAR_MM = 0.20;
+
+    const midSagitta = (primitive) => {
+      const { opts, silhouette } = build(primitive, 'hatch');
+      const { depth } = maskFor(primitive, opts);
+      let worst = 0;
+      silhouette.forEach((p) => {
+        for (let i = 0; i < p.length - 1; i += 1) {
+          const a = p[i]; const b = p[i + 1];
+          const d = depth((a.x + b.x) / 2, (a.y + b.y) / 2);
+          if (d > worst) worst = d;
+        }
+      });
+      return worst;
+    };
+
+    test.each(['capsule', 'cone', 'cylinder', 'sphere', 'ellipsoid'])(
+      '%s: no silhouette chord sags more than 0.2 mm inside the chart',
+      (primitive) => {
+        expect(midSagitta(primitive)).toBeLessThanOrEqual(SIL_SAGITTA_BAR_MM);
+      },
+      40000,
+    );
+
+    test('MUTATION PROOF — with __SIL_PROTO_OFF (W-32r4\'s own flag), the same tree reproduces the RED', () => {
+      const PRIMS4 = ['ellipsoid', 'sphere', 'cone', 'capsule'];
+      runtime.window.__SIL_PROTO_OFF = true;
+      PRIMS4.forEach((p) => masks.delete(p));
+      const off = PRIMS4.map((p) => midSagitta(p));
+      runtime.window.__SIL_PROTO_OFF = false;
+      PRIMS4.forEach((p) => masks.delete(p));
+      const on = PRIMS4.map((p) => midSagitta(p));
+      // Fails the bar with the fix off, by exactly one raster cell (this
+      // instrument's resolution floor — see the header comment above) — on
+      // all four primitives this bar actually gates (cylinder excluded,
+      // measured reason above).
+      off.forEach((v) => expect(v).toBeGreaterThan(SIL_SAGITTA_BAR_MM));
+      off.forEach((v) => expect(v).toBeCloseTo(CELL, 2));
+      // Passes with the fix on (the shipped, default state) — same four.
+      on.forEach((v) => expect(v).toBeLessThanOrEqual(SIL_SAGITTA_BAR_MM));
+    }, 60000);
+
+    test('DOCUMENTED PROOF — fill and border VERTICES never go off-mask by more than raster noise', () => {
+      // The empirical measurement the header comment quotes, made executable:
+      // this is WHY the off-mask branch was never the mechanism, and why
+      // part (1) of the repair (chord midpoints) was necessary, not optional.
+      // A vertex or fill endpoint occasionally lands in the boundary cell's
+      // immediate 0.35 mm raster neighbourhood (rounding at a chart seam,
+      // not a defect — `overshoot()`'s own resolution floor is one CELL);
+      // the assertion is that this never approaches W-32's 0.15 mm (0.5 pen)
+      // bar, not that the raster is noiseless.
+      const { opts, fill, silhouette } = build('ellipsoid', 'hatch');
+      const { overshoot } = maskFor('ellipsoid', opts);
+      let worst = 0; let total = 0;
+      fill.forEach((p) => { if (p.length < 2) return; [p[0], p[p.length - 1]].forEach((q) => { total += 1; const o = overshoot(q.x, q.y); if (o > worst) worst = o; }); });
+      silhouette.forEach((p) => p.forEach((q) => { total += 1; const o = overshoot(q.x, q.y); if (o > worst) worst = o; }));
+      expect(worst).toBeLessThanOrEqual(CELL); // raster-noise ceiling, not a real overshoot
+      expect(total).toBeGreaterThan(50);
+    }, 40000);
+
+    test('REPAIR — the off-mask branch itself now reports a real distance, not 0.00 (defensive fix, `overshoot()`)', () => {
+      const { opts } = build('sphere', 'hatch');
+      const mask = maskFor('sphere', opts);
+      // 10 mm to the left of the sphere's own silhouette (`depth(75.4, 76)`
+      // above) is unambiguously off-mask for a 50 mm ball.
+      const farOff = mask.overshoot(65.4, 76);
+      expect(farOff).toBeGreaterThan(8);          // real magnitude, not 0
+      expect(mask.overshoot(100, 76)).toBe(0);     // deep inside the mask — no overshoot
+      // A point 1000 mm away (off the padded raster entirely) still reports
+      // a real, large magnitude via the clamp path, not a silent 0.
+      expect(mask.overshoot(1065, 976)).toBeGreaterThan(500);
+    }, 40000);
+  });
 });
