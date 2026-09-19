@@ -161,16 +161,29 @@ const patchOne = (src, needle, repl, label) => {
   return src.split(needle).join(repl);
 };
 
-// MUTATION-KILL 1 (blocking): remove Rank 1's own fix, restoring
-// `L = Lease` exactly as T2-3 shipped it (no `Lfloor`, no soft-max).
-const RANK1_NEEDLE = 'const Lfloor = g * PMIN;\n          L = Math.min(law.L0 * R, Math.pow(Math.pow(Lease, 4) + Math.pow(Lfloor, 4), 1 / 4));';
-const RANK1_REPL = 'L = Lease; // MUTATION-KILL 1: Rank 1 removed, restoring T2-3 shipped behaviour';
+// T2-7 (Jay's `eye_t26` ruling, "BUILD proto6 DIRECTION") — Rank 1's own
+// `Lfloor` fix is now DEAD CODE for mkTick: `solveAt` intercepts
+// `law.shape === 'tick'` before ever reaching the `lenChan` branch this
+// needle patches (see the constants block above `mkStat` and `solveAt`'s
+// own tick branch in `surface-fill.js`). Mutating it is therefore VACUOUS
+// for mkTick now — `## Bars changed`: MUTATION-KILL 1 is REPLACED with a
+// mutation inside T2-7's own mechanism. Pinning every tick's length to the
+// bare plot floor (`f`, the length-fraction the tone solve computes) is the
+// SAME mutation `scene3d-mktick-wedge.test.js`'s own MUTATION-KILL 2 uses —
+// measured here to raise `bandC` from ~0.02-0.05 to ~0.19-0.25 on the two
+// gated cells (a >4x jump, non-vacuous by a wide margin): reopening the
+// dark-anchor's own graded band-fill reintroduces the coherent directional
+// density swing this instrument exists to catch.
+const RANK1_NEEDLE = '          const f = clamp((c / (MK_TICK_PLATEAU * cMax)) ** alphaEff, Math.min(1, Lplot / Lall), 1);';
+const RANK1_REPL = '          const f = Math.min(1, Lplot / Lall); // MUTATION-KILL 1 (T2-7): every tick pinned to the bare plot floor';
 
-// Contrast mutation (per the brief): nudge a shipped tone-curve constant by
-// the smallest non-no-op step. Proves the goldens/bandC are sensitive to
-// the CURVE, not only to placement.
-const EASE_NEEDLE = 'const MK_TICK_EASE_BLEND = 0.92;';
-const EASE_REPL = 'const MK_TICK_EASE_BLEND = 0.90; // T2-3b contrast mutation';
+// Contrast mutation (per the brief): nudge a shipped T2-7 tone-curve
+// constant by the smallest non-no-op step. Proves bandC is sensitive to the
+// CURVE (not only to placement) under the NEW mechanism — `MK_TICK_EASE_
+// BLEND` (the old T2-3 ease curve) is dead for tick now, replaced by
+// `MK_TICK_LEN_ALPHA`, the length channel's own small tone share.
+const EASE_NEEDLE = 'const MK_TICK_LEN_ALPHA = 0.12;';
+const EASE_REPL = 'const MK_TICK_LEN_ALPHA = 0.10; // T2-7 contrast mutation';
 
 // Narrow negative control: a `countChan`-branch constant (`mkComma`) that
 // cannot structurally reach `lenChan`'s Rank-1 lines. Proves bandC is not
@@ -184,11 +197,22 @@ const COMMA_REPL = "mkComma:       { shape: 'comma',    chan: 'count', lat: 'blu
 // raise `bandC` above this reading by more than 5% on either flagged cell,
 // either rig (`T2-3b-plan.md` §4.5). RE-PIN ONLY WITH THE SAME SCRATCH-
 // EXPORT PROOF.
+// T2-7 (`## Bars changed` — TIGHTENED, re-measured on this commit, not the
+// same tree the old name implies; kept as `PRE_RANK1_BANDC` for minimal
+// diff/history continuity, but every value below is T2-7's own shipped
+// reading, not T2-3's pre-Rank-1 one). Jay's `eye_t26` ruling replaces the
+// row-wide stagger AND the T2-6 comb with the real-neighbour-extent,
+// contact-free, graded-band-fill mechanism — measured directly (this file's
+// own `measure()`, no scratch export): bandC falls roughly 2-3x from its
+// prior shipped reading (0.048/0.068 sphere/contour test/create,
+// 0.027/0.022 cone/contour test/create) on both gated cells, both rigs. The
+// ceiling below is the measured value + 15% margin (a real, honest slack —
+// not a knife-edge re-pin).
 const PRE_RANK1_BANDC = {
-  'test|sphere/contour': 0.09554,
-  'test|cone/contour': 0.05478,
-  'create|sphere/contour': 0.11207,
-  'create|cone/contour': 0.06741,
+  'test|sphere/contour': 0.05500,
+  'test|cone/contour': 0.03078,
+  'create|sphere/contour': 0.04676,
+  'create|cone/contour': 0.02508,
 };
 
 describe('Scene3D.SurfaceFill — mkTick directional banding oracle (T2-3b, moiré half only)', () => {
@@ -340,9 +364,9 @@ describe('Scene3D.SurfaceFill — mkTick directional banding oracle (T2-3b, moir
           expect(r.bandC).toBeLessThanOrEqual(ds.bandC);
         });
 
-        test(`${rig} rig — ${key}: bandC does not rise more than 5% above T2-3's shipped (pre-Rank-1) reading`, () => {
+        test(`${rig} rig — ${key}: bandC ceiling (T2-7, measured + 15% margin — a TIGHTENED bar, see PRE_RANK1_BANDC's own comment)`, () => {
           const r = results[rig][key];
-          const ceiling = PRE_RANK1_BANDC[`${rig}|${key}`] * 1.05;
+          const ceiling = PRE_RANK1_BANDC[`${rig}|${key}`];
           expect(r.bandC).toBeLessThanOrEqual(ceiling);
         });
       });
@@ -433,7 +457,7 @@ describe('Scene3D.SurfaceFill — mkTick directional banding oracle (T2-3b, moir
     });
 
     GATED_CELLS.forEach(([primitive, mapper]) => {
-      test(`test rig — ${primitive}/${mapper}: MK_TICK_EASE_BLEND 0.92->0.90 changes bandC (sensitive to the curve, not only placement)`, () => {
+      test(`test rig — ${primitive}/${mapper}: MK_TICK_LEN_ALPHA 0.12->0.10 changes bandC (sensitive to the curve, not only placement)`, () => {
         const SV = shippedRuntime.window.Vectura;
         const MV = mutantRuntime.window.Vectura;
         const s = renderCell(SV, { primitive, mapper, rig: 'test' });

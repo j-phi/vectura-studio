@@ -221,6 +221,46 @@ function siteCoverage(tickSites, hi = HI_DEFAULT) {
   return litArea > 0 ? 1 - bareArea / litArea : null;
 }
 
+/** T2-7 (Amendment 1, Jay's ruling: "wedge25 -> RE-DERIVE AS MONOTONE; the
+ * fixed 0.090 cap retires") — the mean raster bare distance (mm, chamfer
+ * distance to nearest ink), binned by tone `I` in 0.1 steps below `hi`, over
+ * shaded-and-bare pixels only. `nInversions` counts adjacent POPULATED bins
+ * (bin i+1's mean < bin i's mean, i.e. it is NOT true that bare distance is
+ * non-decreasing toward the light) — an empty bin (no shaded-bare pixels,
+ * e.g. a fully-black dark anchor with the field's own splat-endpoint
+ * artefact aside) is skipped, not counted as a violation. */
+function wedgeByBin({
+  tickField, paths, penWidth, ppmm = PPMM_DEFAULT, hi = HI_DEFAULT, nBins = 9,
+}) {
+  const raster = rasterizeField(tickField, ppmm);
+  const ink = rasterizeInk(raster, paths, penWidth);
+  const dist = distanceTransform(raster.W, raster.H, ink);
+  const sum = new Float64Array(nBins);
+  const cnt = new Float64Array(nBins);
+  const { W, H, surf, tone } = raster;
+  const toMM = (v) => v / ppmm;
+  for (let k = 0; k < W * H; k += 1) {
+    if (!surf[k]) continue;
+    const I = tone[k];
+    if (I >= hi) continue;
+    if (ink[k]) continue; // shaded + bare only
+    let bin = Math.floor((I / hi) * nBins);
+    if (bin < 0) bin = 0; if (bin >= nBins) bin = nBins - 1;
+    sum[bin] += toMM(dist[k]);
+    cnt[bin] += 1;
+  }
+  const means = [];
+  for (let b = 0; b < nBins; b += 1) means.push(cnt[b] > 0 ? sum[b] / cnt[b] : null);
+  let nInversions = 0;
+  let prev = null;
+  means.forEach((m) => {
+    if (m == null) return;
+    if (prev != null && m < prev - 1e-9) nInversions += 1;
+    prev = m;
+  });
+  return { means, nInversions };
+}
+
 /** O5 — mean drawn tick length by radiance third, dark/light ratio. R1:
  * "ticks must have VARIABLE LENGTH, tick length carries tone." */
 function lengthCarriesTone(lenByThird, cntByThird) {
@@ -239,6 +279,7 @@ module.exports = {
   distanceTransform,
   wedgeFromMasks,
   measureWedge,
+  wedgeByBin,
   siteCoverage,
   lengthCarriesTone,
 };
