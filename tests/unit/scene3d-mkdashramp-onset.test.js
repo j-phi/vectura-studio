@@ -26,11 +26,32 @@
  * METRIC — same convention `scene3d-mkdashramp-discrete.test.js` already uses:
  * average DRAWN LENGTH of dark-third marks
  * (`lastMarkStats.lenByThird[2] / cntByThird[2]`), compared as a ratio against
- * the pre-T3c tree (`T3C_BASE_SHA`, `75777240` — no dash-length bound exists
- * at all there, i.e. the true "uncapped" baseline for this metric). A ratio
- * strictly less than 1 means the bound is ACTIVE (mark length reduced from
- * the uncapped baseline); a ratio of EXACTLY 1 together with md5 geometry
- * identity means it is INACTIVE (byte-identical to uncapped).
+ * an "uncapped" baseline (no dash-length bound at all). A ratio strictly less
+ * than 1 means the bound is ACTIVE (mark length reduced from the uncapped
+ * baseline); a ratio of EXACTLY 1 together with md5 geometry identity means
+ * it is INACTIVE (byte-identical to uncapped).
+ *
+ * BASELINE SOURCE (T3c-onset-2, fixing `T3c-onset-verify.md`'s NOT-VERIFIED
+ * finding): the FIRST version of this file built the uncapped baseline via
+ * `execFileSync('git', ['show', '75777240:...'])` — a fixed historical sha.
+ * That fails under CI's actual shallow clone (`actions/checkout@v7`, default
+ * `fetch-depth: 1`, confirmed against a live failing GitHub Actions run,
+ * `T3c-onset-verify.md` §3) — the exact class of defect `R4-fix`
+ * (`ff37531d`) already fixed twice in the two sibling files this unit edits
+ * (items 1-2 of that commit: replace a stale-sha comparison with a mutant
+ * built from the CURRENT on-disk source with only the unit's own mechanism
+ * reverted). Applying the SAME pattern here: `getT3cNeutralizedSource()`
+ * below reads the CURRENT disk source (`fs.readFileSync`, no git, no
+ * `/private/tmp` path, no skip condition) and reverts ONLY T3c's own
+ * `eachDrawn` gate (the exact needle `R4-fix` already uses in both sibling
+ * files) — this is a MORE precise isolation of "T3c's own contribution" than
+ * the historical sha ever was, since it cannot be confounded by any
+ * unrelated drift between `75777240` and HEAD (see `R4-fix-impl.md` item 1:
+ * exactly this class of drift, from an unrelated lane, broke the sha-based
+ * comparison once already). Re-verified byte-for-byte identical to the
+ * original sha-based numbers below (own probe, both techniques, all 8
+ * cells) before swapping — the numeric findings are UNCHANGED, only the
+ * mechanism that produces the comparison tree moved.
  *
  * MEASURED (this unit's own run, `T3c-onset-impl.md` full table — NOT copied
  * from `T3c-review.md`'s gap-fraction numbers, which are a different metric
@@ -54,27 +75,9 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-// This unit's own base sha — the tree immediately BEFORE T3c's dash-length
-// fix landed (same pin `scene3d-mkdashramp-discrete.test.js` uses). An
-// EXPLICIT pin, never `HEAD`.
-const T3C_BASE_SHA = '75777240';
 const SF_REL_PATH = 'src/core/scene3d/surface-fill.js';
-
-const getPreT3cSource = (() => {
-  let cached = null;
-  return () => {
-    if (cached) return cached;
-    const rootDir = path.resolve(__dirname, '../..');
-    cached = execFileSync('git', ['show', `${T3C_BASE_SHA}:${SF_REL_PATH}`], {
-      cwd: rootDir,
-      maxBuffer: 1024 * 1024 * 64,
-    }).toString('utf8');
-    return cached;
-  };
-})();
 
 const getCurrentSource = (() => {
   let cached = null;
@@ -86,11 +89,6 @@ const getCurrentSource = (() => {
   };
 })();
 
-// M1/M2/M3 — the three mutations named in the brief. Each is built by a
-// surgical, needle-checked string replacement against the CURRENT (fixed)
-// disk source — these mutate the onset MECHANISM itself (`bandOnsetCap`,
-// `MK_BAND_ONSET_D`, or the gate condition), all of which only exist post-
-// T3c, so they cannot be built from the pre-T3c export.
 const buildMutant = (needle, replacement, label) => {
   const src = getCurrentSource();
   const idx = src.indexOf(needle);
@@ -100,6 +98,30 @@ const buildMutant = (needle, replacement, label) => {
   }
   return src.slice(0, idx) + replacement + src.slice(idx + needle.length);
 };
+
+// UNCAPPED BASELINE (T3c-onset-2). Same technique `R4-fix` (`ff37531d`)
+// already used in this file's two sibling files (`scene3d-mkdashramp-
+// {discrete,single-pass}.test.js`, "T4b's own fixture" + the byte-identity
+// sweep's `mkTick` entry): build the comparison tree from the CURRENT disk
+// source with ONLY this unit's own mechanism reverted, via a needle-checked
+// string replacement — never `git show <sha>`. Needle text identical to the
+// sibling files' own `getT3cNeutralizedSource()` (same block, same file).
+const getT3cNeutralizedSource = () => buildMutant(
+  '          const dashOnset = bandOnsetCap(opts.fillDensity);\n'
+    + '          const dashLenFloor = MIN_MARK_MM * 1.05;\n'
+    + '          const dashLenTarget = MK_DASH_LEN_FRAC * sv.P;\n'
+    + '          const eachDrawn = (dashOnset < MK_BAND_MAX_PASSES && each > dashLenFloor && each > dashLenTarget)\n'
+    + '            ? Math.min(each, Math.max(dashLenFloor, dashLenTarget))\n'
+    + '            : each;',
+  '          const eachDrawn = each;',
+  'getT3cNeutralizedSource (revert T3c\'s own eachDrawn gate)',
+);
+
+// M1/M2/M3 — the three mutations named in the brief. Each is built by a
+// surgical, needle-checked string replacement against the CURRENT (fixed)
+// disk source — these mutate the onset MECHANISM itself (`bandOnsetCap`,
+// `MK_BAND_ONSET_D`, or the gate condition), all of which only exist post-
+// T3c, so they cannot be built from a reverted-T3c baseline either.
 
 // M1: Math.round -> Math.floor in bandOnsetCap. Predicted effect: the ramp no
 // longer rounds UP to 6 early, so it stays below MK_BAND_MAX_PASSES through a
@@ -181,9 +203,10 @@ describe('Scene3D.SurfaceFill — mkDashRamp ONSET edge: where the dash-length b
     SF = V.Scene3D.SurfaceFill;
     Params = V.Scene3D.Params;
 
-    // The uncapped baseline: pre-T3c source, no dash-length bound exists.
+    // The uncapped baseline: CURRENT source with T3c's own eachDrawn gate
+    // reverted (no git, no historical sha — see getT3cNeutralizedSource above).
     baselineRuntime = await loadVecturaRuntime({
-      scriptOverrides: { [SF_REL_PATH]: getPreT3cSource() },
+      scriptOverrides: { [SF_REL_PATH]: getT3cNeutralizedSource() },
     });
     baselineAlgo = baselineRuntime.window.Vectura.AlgorithmRegistry.scene3d;
     baselineSF = baselineRuntime.window.Vectura.Scene3D.SurfaceFill;
