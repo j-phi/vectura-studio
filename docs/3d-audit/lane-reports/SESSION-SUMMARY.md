@@ -56,7 +56,7 @@ Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents
 | **U9b + W-10d-3b + U6-2** | fill-collapse-3 | `2b189b5f` | **DONE/FU.** 406/406. **The picture flag ruled FIXED, not half-fixed** — the survivor in the select plus the raw id's own text in the popover is the designed end state. → **U9b-2** (the `onePenDown` exception is an undisclosed **write-back-on-load**). |
 | **U7-2** | fill-collapse-3 | `49a5ef88` | **DONE — CLOSED 2026-09-12. Reviewer ACCEPT** (`U7-2-review.md`) — unqualified, **all seven secretary conditions reproduced adversarially**, two mutation-kill probes non-vacuous, and the **555/555 re-summed with the report's own derivation gap closed** (naive sum 576; rows 2/3 proven *disjoint* `-t` subsets of the 117, 576 − 21 = 555 — **the first clean sum in this chain after four slips**). 17 caveats rewritten, originals preserved in a non-rendered `measured` field. Found that **the shadow row renders no caveat at all on either surface** → **U5b-4**. → **U7-2b** (two `.*` regexes looser in the abstract than the term match they replaced). |
 
-### Round 4 (2026-09-17 → 19) — 🏁 **CLOSED; MERGED AND PUSHED at `7965abd8` (v1.4.3)**
+### Round 4 (2026-09-17 → 19) — 🏁 **CLOSED; merged at `ff37531d` (v1.4.3, round 4 + R4-fix)**
 
 | unit | lane | sha | outcome |
 |---|---|---|---|
@@ -502,9 +502,51 @@ quantity that was real, and none of them measured what he was looking at.**
 | 16 (2026-09-06 18:31) | crosshatch renders ONE family | **FIXED TWICE — W-36 restored the crossing family, then W-36c delivered your decision 6 = C: EACH family now carries the single-family hatch count, under a new measured anti-saturation cap. Your own cell is a full even crosshatch.** Earlier detail:  Gap ratio B:A **5.4–31.2× → 0.814–1.061**; your own cell went **A 17 / B 3 → A 9 / B 11**. But the review found the pre-audit design **already spent ONE shared budget across both families** (sphere d=50 was A 15 / B 11 against a hatch count of 24), so *"each family carries the hatch count"* was never the shipped convention — hence **§4 decision 6**, a three-way choice. Superseded detail: | — *"make crosshatch have the same number of crosshatch lines as it has hatch lines unless … variation is needed for highlight/shadow. This seems off."* | **OPEN → W-36, P1.** Sphere/ladder/fine-rungs/d=50 shows ~22 bands and **no** crossing family; montage counts cylinder ≈ 30 vs ≈ 5, ellipsoid ≈ 25 vs ≈ 4, T1 sphere ≈ 24 vs ≈ 8, against v1.3.98's ≈ 22 vs ≈ 20 — **a regression between v1.3.98 and the merge**. Prime suspect `CROSS_SHARE_BASE = 0.1` (`surface-fill.js:4652`) → crossing coverage 10% of family A's at ratio 1. Lane fill-audit-a2, before W-31 |
 | "not close to zero yet" (F1) | torus ribbon streaks | **THE WHOLE CHAIN HAS LANDED AND BEEN REVIEWED — placement `cd541f87` (MEASURED), erode `e2c3ca85` (DONE/FU), amp `3bc61c32` (DONE/FU) — AND IT NEEDS YOUR EYE, NOT ANOTHER TEST. The streak is GONE (deep-blank 3.02/4.00/1.79 → 0.03/0.00/0.00 mm²), the erode-fallback centreline is gone, and the weave now runs continuously around the whole torus including the highlight band that previously straightened or went bare. The cost: the wave laws read THINNER than pre-fix, `onePenDown` most — and F1-amp, the unit expected to put the weight back, thinned them further instead (its floor is "not the lever"). → §4 DECISION 10 is the open question: accept the thinner even style (A), or build F1-weight to restore ribbon weight under the new placement (B), which no shipped lever does today.** Superseded: **HALF DELIVERED, MEASURED, review in flight — and one new defect it exposed. Your decision 4 = A confirmed the 41.7 × 6.6 mm lower-front torus strip IS the streak. F1-placement shipped at `cd541f87`: the DEEP blank is gone — >2 mm blank area 3.02 / 4.00 / 1.79 → 0.03 / 0.00 / 0.00 mm². The band is narrower, not closed:** placement is only half the mechanism, because the three affected laws never got Round 6's amplitude floor, so a plain thin ruling in the highlight remains until **F1-amp**. ⚠ **And shipping it exposed a latent erosion bug — one stretch now draws a single thin centreline instead of its full ribbon (visible in the same lower-front region) → new unit F1-erode, which runs BEFORE F1-amp.** **Not closed, and it needs your eye on the re-shot `torus__hatch__trochoidLoop__med` pair when the pair is finished.** Earlier detail:  **OPEN, mechanism found** — 62.63 mm² bare strip, 30× A3's whole residue; Prototype B ruled, deep blank 11.89 → **0.28 mm²**. |
 
-## 6. MERGE STATUS — ✅ **ROUND 4 MERGED AND PUSHED at `7965abd8` (v1.4.3)**
+## 6. MERGE STATUS — ✅ **ROUND 4 MERGED at `ff37531d` (v1.4.3, round 4 + R4-fix)**
 
-> ✅✅ **ROUND 4 IS MERGED: COMMITTED AT `7965abd8` (v1.4.3) AND PUSHED** — the merge of **`3d-scene/integrate-r4` @ `e05cd36a`**
+> ✅ **`main` = `ff37531d` (v1.4.3, round 4 + R4-fix). Pushed: `<YES/NO — orchestrator fills>`.**
+> **R4-fix is DONE and HOOK-VERIFIED: all four causes measured and RE-PINNED WITH PROOF — T4b's d=220 pin
+> moved by W-32r4's edge ink · the mkTick md5 controls re-derived after T2-5/T2-6 · gap-fill's `git archive`
+> leg REPLACED by pinned goldens with a contrast mutation · the O1 bar re-derived under T2-6's disclosure.**
+> **unit / integration / visual / perf all 0 failed.**
+>
+> ⚠ **Read the sequence honestly, because it is the round's most useful record: the merge review reported a
+> green it had never observed (Incident 17), the PRE-PUSH HOOK caught four red files, and R4-fix closed all
+> four with proofs.** **Three of them were real findings — a CROSS-LANE interaction no single lane could see,
+> a within-lane stale pin that serial ordering did not prevent, and the audit's FOURTH `git archive` proof
+> leg — and the fourth was a disclosed miss that should never have shipped red.** ✅ **The fourth `git
+> archive` instance is now RETIRED the same way W-38b retired the first: pinned goldens plus a contrast
+> mutation. Four instances, and this is the first time the pattern was FIXED rather than just found.**
+> ⚠ **"Hook-verified" is deliberate wording: after Incident 17, the authority cited for green is the hook —
+> not a reviewer, not a report.**
+
+### Round 4 — merge detail
+
+> 🛑 **CORRECTION TO THE RECORD (2026-09-19): THE MERGE REVIEW'S "ALL FIVE SUITES GREEN" WAS FALSE.**
+> **The pre-push hook ran `test:unit` on merged `main` (`cf6b3c2f`) and FOUR FILES ARE RED. The push is
+> BLOCKED BY THE HOOK; `origin/main` is still `b43fa4e3`.** **R4-fix — tests-only re-pins WITH PROOF, in a new
+> worktree `r4-fix` — is in flight.**
+>
+> **The four red files, and three of them are exactly what a merge exists to find:**
+> 1. **`scene3d-mkdashramp-single-pass`** and 2. **`scene3d-mkdashramp-discrete`** — ⚠⚠ **T4b's d=220 pin
+>    moved `1501.0637 → 1501.2671` BECAUSE OF W-32r4's EDGE INK.** **That is a genuine CROSS-LANE
+>    interaction: `border-4` refined the silhouette, `fill-audit-a4` owns the ink bar, and neither lane could
+>    have seen it alone.** **Plus an mkTick md5 control pinned BEFORE T2-5/T2-6 changed mkTick ON THE SAME
+>    LANE — within-lane staleness that serial ordering did not prevent.**
+> 3. **`scene3d-mktick-gap-fill`** — ⚠⚠ **a `git archive` OF A LANE SHA as a proof leg: the W-38
+>    ENVIRONMENT-DEPENDENT class AGAIN.** **Merge-checklist item 23's sweep is precisely for this, and it has
+>    not been run** — the idiom has now shipped FOUR times in this audit.
+> 4. **`scene3d-mark-laws-draw`** — ⚠⚠ **T2-6's DISCLOSED O1 2 % miss was SHIPPED AS A RED TEST.**
+>    **Disclosure is not a substitute for green.**
+>
+> ⚠ **The merge itself is sound — `3d-scene/integrate-r4` @ `e05cd36a` on the docs commit `6678a0f1`, gallery
+> rebuilt, 13 goldens re-derived, the semantic conflict handled correctly. What failed was the VERIFICATION
+> of it** (see Incident 17). **`MERGE-review-r4.md`'s other claims were reproduced; its suite claim was not
+> a claim it had earned.**
+
+### Round 4 — merge detail
+
+> ⚠ **ROUND 4 IS MERGED LOCALLY AT `7965abd8` / `cf6b3c2f` (v1.4.3) — the PUSH IS BLOCKED by the pre-push hook (four red unit files; see the correction above). Previously recorded here as pushed:** — the merge of **`3d-scene/integrate-r4` @ `e05cd36a`**
 > on top of the docs commit **`6678a0f1`**, on Jay's standing answer **push = A**. **Gallery rebuilt on `main`.**
 > **Merge review `MERGE-review-r4.md`: ACCEPT-WITH-FOLLOWUPS — every claim reproduced**, and the README older-releases duplication it
 > found was **fixed in `e05cd36a`** before the fast-forward. ⚠ **A merge reviewer catching a docs defect and it being fixed INSIDE the
@@ -532,7 +574,7 @@ quantity that was real, and none of them measured what he was looking at.**
 > own instruction. ⚠ **Both disclosed rather than discovered — the distinction this audit has spent four
 > rounds enforcing, and the reason a merge carrying two deviations is still a clean merge.**
 >
-> **`main` today: `7965abd8` (v1.4.3), PUSHED.** *(Was `b43fa4e3` v1.4.2 before this merge.)*
+> **`main` today: `ff37531d` (v1.4.3, round 4 + R4-fix).** *(Was `7965abd8` / `cf6b3c2f` before R4-fix, and `b43fa4e3` v1.4.2 before the merge.)*
 
 ### Round 3 — ✅ **MERGED at `d3b01d28` (v1.4.2) AND PUSHED**
 

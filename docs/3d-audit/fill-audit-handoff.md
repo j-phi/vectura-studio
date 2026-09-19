@@ -217,8 +217,8 @@ MERGED** — what remains is his two open answers and round 5. This block is sel
 
 ### (a) Where `main` is
 
-⚠ **SUPERSEDED BY (c): `main` = `7965abd8` (v1.4.3), pushed.** Previously **`b43fa4e3` (v1.4.2)**, also pushed. Round 3 merged at `d3b01d28`
-and was pushed on Jay's standing answer **push = A** (86 commits, rounds 2 + 3). **Round 4's lane work is MERGED at `7965abd8` (v1.4.3) and PUSHED — see (c).**
+⚠ **SUPERSEDED BY (c): `main` = `ff37531d` (v1.4.3, round 4 + R4-fix).** Round 3 merged at `d3b01d28`
+and was pushed on Jay's standing answer **push = A** (86 commits, rounds 2 + 3). **Round 4's lane work is MERGED — `main` = `ff37531d` (v1.4.3, round 4 + R4-fix); see (c) for the push flag.**
 
 ### (b) The two round-4 lanes — BOTH FINAL, ALL UNITS REVIEWED OR VERIFIED
 
@@ -235,7 +235,14 @@ nothing, and the reviewer accepted that content. **It is not an unverified WIP; 
 
 ### (c) THE MERGE — LANDED
 
-✅ **MERGE r4: LANDED at `7965abd8` (v1.4.3) · PUSHED: YES.** The merge of **`3d-scene/integrate-r4` @ `e05cd36a`**
+✅ **MERGE r4: `main` = `ff37531d` (v1.4.3, round 4 + R4-fix) · pushed: `<YES/NO — orchestrator fills>`.**
+
+⚠ **The route there matters to anyone reading the shas: the merge landed at `7965abd8` / `cf6b3c2f`, the PRE-PUSH HOOK then found
+FOUR RED UNIT FILES, and **R4-fix** (tests-only, re-pins with proof) closed all four — `main` fast-forwarded to `ff37531d`, with
+unit / integration / visual / perf all 0 failed.** **Three of the four were real findings: a CROSS-LANE interaction (W-32r4's edge
+ink moved T4b's d=220 pin), a within-lane stale pin (an mkTick md5 control pinned before T2-5/T2-6), and the audit's FOURTH
+`git archive` proof leg — now RETIRED with pinned goldens + a contrast mutation. The fourth was T2-6's disclosed O1 miss,
+shipped red.** Superseded record: The merge of **`3d-scene/integrate-r4` @ `e05cd36a`**
 on top of the docs commit **`6678a0f1`**, on Jay's standing answer **push = A**. **Gallery rebuilt on `main`.**
 **Merge review `MERGE-review-r4.md`: ACCEPT-WITH-FOLLOWUPS — all claims reproduced**, and the README
 older-releases duplication it found was **fixed in `e05cd36a`** before the fast-forward.
@@ -311,7 +318,7 @@ the W-29 stub family, U10–U12 which stay W-26-blocked).
 
 ### (g) Resume prompt for the next orchestrator (paste verbatim)
 
-> Resume the 3D fill audit at the ROUND 4 PAUSE POINT. **Round 4 is COMPLETE, REVIEWED AND MERGED: `main` is `7965abd8` (v1.4.3), pushed, gallery rebuilt. Nothing is mid-flight.** Read, in order: `docs/3d-audit/fill-audit-handoff.md` (this pause block), `docs/3d-audit/lane-reports/SESSION-SUMMARY.md` (**§1** what landed in round 4, **§2c** the round-4 handoff block, **§3** the round-5 candidates, **§4** the decisions — **TWO ARE OPEN**, **§6** the merge record), `docs/3d-audit/lane-reports/LEDGER.md` (the **Round 4** section and queue, the standing rulings, and the MERGE CHECKLIST — **items 23 and 30 are still owed**), `docs/3d-audit/STILL-OPEN.md`, `docs/3d-audit/lane-reports/AGENT-PROTOCOL.md`, and **`docs/3d-audit/lane-reports/ROUND3-RESUME-BRIEFS.md` §0 and §0b — paste §0 verbatim into every brief.** **FIRST ACTION: read the Decision Desk (https://claude.ai/code/artifact/811ab725-f61c-4664-bdb6-2780bd4ba56d) with `read_db` on collection `decisions`, docs `d11b` and `eye_t26`, and TRANSCRIBE the answers into SESSION-SUMMARY §4, which stays the AUTHORITATIVE record.** **Then run round 5 per §3.** ⚠ **Do not start T2-6b, T2-7 or the W-36f mechanism until the relevant answer is in** — the T2-6 eye check decides whether T2 CLOSES or T2-7 is planned, and decision 11-amended decides whether a cap mechanism exists at all. **Branch round-5 lanes off `main`; the `-a4` / `border-4` worktrees are HISTORICAL.** Same roles and models — lane secretary first, then Sonnet implementers → Sonnet adversarial reviewers → Opus planners only where earned — **under Jay's scaled-down regime: tests-only units get a light VERIFY pass, no planner unless a unit was rejected or its mechanism is unknown, secretary flags only for `src/` units and capped at six, and scouts stay.** **Kill any stale dev server on a lane or scratch port before starting; serve `main` on 8460 for the gallery; run every vitest file in the FOREGROUND with `timeout: 600000`.** Commit per unit in the lane worktree. **Never push a lane branch.**
+> Resume the 3D fill audit at the ROUND 4 PAUSE POINT. **Round 4 is COMPLETE, REVIEWED AND MERGED: `main` is `ff37531d` (v1.4.3, round 4 + R4-fix), gallery rebuilt, unit / integration / visual / perf all 0 failed. Nothing is mid-flight** — check (c) for whether the push completed. Read, in order: `docs/3d-audit/fill-audit-handoff.md` (this pause block), `docs/3d-audit/lane-reports/SESSION-SUMMARY.md` (**§1** what landed in round 4, **§2c** the round-4 handoff block, **§3** the round-5 candidates, **§4** the decisions — **TWO ARE OPEN**, **§6** the merge record), `docs/3d-audit/lane-reports/LEDGER.md` (the **Round 4** section and queue, the standing rulings, and the MERGE CHECKLIST — **items 23 and 30 are still owed**), `docs/3d-audit/STILL-OPEN.md`, `docs/3d-audit/lane-reports/AGENT-PROTOCOL.md`, and **`docs/3d-audit/lane-reports/ROUND3-RESUME-BRIEFS.md` §0 and §0b — paste §0 verbatim into every brief.** **FIRST ACTION: read the Decision Desk (https://claude.ai/code/artifact/811ab725-f61c-4664-bdb6-2780bd4ba56d) with `read_db` on collection `decisions`, docs `d11b` and `eye_t26`, and TRANSCRIBE the answers into SESSION-SUMMARY §4, which stays the AUTHORITATIVE record.** **Then run round 5 per §3.** ⚠ **Do not start T2-6b, T2-7 or the W-36f mechanism until the relevant answer is in** — the T2-6 eye check decides whether T2 CLOSES or T2-7 is planned, and decision 11-amended decides whether a cap mechanism exists at all. **Branch round-5 lanes off `main`; the `-a4` / `border-4` worktrees are HISTORICAL.** Same roles and models — lane secretary first, then Sonnet implementers → Sonnet adversarial reviewers → Opus planners only where earned — **under Jay's scaled-down regime: tests-only units get a light VERIFY pass, no planner unless a unit was rejected or its mechanism is unknown, secretary flags only for `src/` units and capped at six, and scouts stay.** **Kill any stale dev server on a lane or scratch port before starting; serve `main` on 8460 for the gallery; run every vitest file in the FOREGROUND with `timeout: 600000`.** Commit per unit in the lane worktree. **Never push a lane branch.**
 
 ---
 
