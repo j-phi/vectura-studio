@@ -13,7 +13,16 @@ jobs:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 (full history) — several tests/unit/*.test.js RGR
+      # proofs read a historical revision of a file via `git show <sha>:path`
+      # (the pinned commit is always an ancestor of the checked-out ref, never
+      # a foreign branch) to prove a fix's guard trips against the real
+      # pre-fix tree. actions/checkout's default depth: 1 makes that sha
+      # unreachable and those tests fail with a git error, not a real
+      # regression (docs/3d-audit/lane-reports/CI-5-impl.md).
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 20
@@ -93,7 +102,12 @@ jobs:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — see the `unit` job's checkout step above; this job
+      # runs the exact same tests/unit/*.test.js RGR-history proofs (via
+      # `tests/**/*.test.js` under coverage) and needs the same full history.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 20

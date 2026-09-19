@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { oracles, combNeutrality } = require('../helpers/scene3d-mktick-gap-fill');
 const { pathSignature } = require('../helpers/path-signature');
@@ -292,7 +293,38 @@ const buildPreSource = () => spliceTickBlock(loadHeadSource(), PRE_TICK_BLOCK);
 // Verify PRE_TICK_BLOCK is a faithful reconstruction of this unit's OWN base
 // sha (`75777240`), not a re-typed guess — the class of error
 // `T2-3-review.md`/`T2-3b-plan.md` §5.1 found `git show HEAD` is prone to.
-const BASE_SHA_SRC = '/private/tmp/claude-501/scratch-T26-red/src/core/scene3d/surface-fill.js';
+//
+// CI-5, 2026-09-19: this leg used to require a hand-materialized scratch
+// export at a hardcoded `/private/tmp/claude-501/scratch-T26-red/...` path
+// (`git archive 75777240 | tar -x -C ...`, run by hand before committing) —
+// that path never exists on a fresh CI runner, so the test threw
+// unconditionally there (ci.log: "base-sha scratch export missing"). Reads
+// the same historical blob directly via `git show <sha>:<path>` instead (the
+// idiom every other `getPreFixXSource`/`getPreT3cSource` helper in this
+// suite already uses, e.g. `scene3d-shadow-footprint-wiring.test.js`), with
+// no scratch directory and no hardcoded path. `75777240` is an ancestor of
+// `main` (`git merge-base --is-ancestor 75777240 <main HEAD>` — verified),
+// so this only needs the checkout to carry full history: the `unit`/
+// `coverage` jobs in `.github/workflows/test.yml` now pass
+// `fetch-depth: 0`.
+const BASE_SHA = '75777240';
+let baseShaSrcCache = null;
+const getBaseShaSrc = () => {
+  if (baseShaSrcCache) return baseShaSrcCache;
+  const rootDir = path.resolve(__dirname, '..', '..');
+  try {
+    baseShaSrcCache = execFileSync(
+      'git',
+      ['show', `${BASE_SHA}:${REL_PATH}`],
+      { cwd: rootDir, maxBuffer: 1024 * 1024 * 64 },
+    ).toString('utf8');
+  } catch (e) {
+    throw new Error(`git show ${BASE_SHA}:${REL_PATH} failed — needs full git history `
+      + `(this checkout may be shallow; CI passes fetch-depth: 0 for this reason). `
+      + `Original error: ${e && e.message}`);
+  }
+  return baseShaSrcCache;
+};
 
 // PINNED GOLDEN (R4-fix, replaces the live `git archive 75777240` comparison
 // — see the file header comment for why). `pathSignature` (precision 4,
@@ -354,11 +386,7 @@ const A1_CELLS = [
 
 describe("Scene3D.SurfaceFill — mkTick graded band comb (T2-6, Jay's USER RULE clause a)", () => {
   test('PRE_TICK_BLOCK CODE (comments stripped) is identical to the real base sha (75777240) tick block', () => {
-    if (!fs.existsSync(BASE_SHA_SRC)) {
-      throw new Error(`base-sha scratch export missing at ${BASE_SHA_SRC} — re-run: `
-        + 'git archive 75777240 | tar -x -C /private/tmp/claude-501/scratch-T26-red');
-    }
-    const baseSrc = fs.readFileSync(BASE_SHA_SRC, 'utf8');
+    const baseSrc = getBaseShaSrc();
     const startIdx = baseSrc.indexOf(T26_BLOCK_START_NEEDLE);
     const endIdx = baseSrc.indexOf(T26_BLOCK_END_NEEDLE, startIdx);
     expect(startIdx).toBeGreaterThan(-1);
