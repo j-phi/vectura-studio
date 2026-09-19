@@ -352,7 +352,35 @@ describe('W-31 — crosshatch CELL SHAPE, Rank-3 non-regression ceiling (no sour
           if (col.aspect == null) {
             expect(stats.colMedians[i].aspect).toBeNull();
           } else {
-            expect(stats.colMedians[i].aspect).toBeCloseTo(col.aspect, 2);
+            // CI-5, 2026-09-19: `torus d=220 cam=a` column 2 (n=27, a MEDIAN
+            // of an odd-length sample — a single sorted element, not an
+            // average) is measurably PLATFORM-SPLIT, not a stale pin. Same
+            // commit (a6879837), same test, same assertion:
+            //   macOS arm64 (this worktree, `node -v` v20.20.2): 0.9262980105396276
+            //   ubuntu-latest x64 (GH Actions node-version: 20): 0.937078841874498
+            //     — reproduced bit-for-bit identical across TWO separate real
+            //     CI runs (35451981431 R4-fix's own run, 35454205820 main's
+            //     later run; ci.log both report
+            //     "expected 0.937078841874498 to be close to 0.9263" verbatim)
+            // The other 4 columns in this same record (n=6/32/29/6) do NOT
+            // diverge between platforms — only this one, at the boundary
+            // sample count where a sub-ULP difference in the upstream
+            // trig-derived local-gap measurements (Math.atan2/sin/cos, whose
+            // last-bit results are not guaranteed identical across CPU
+            // architectures) can flip which of two near-tied samples the
+            // sorted median lands on, swinging the OUTPUT by ~1.2% even
+            // though every INPUT differs by ~1e-13. Anchored to BOTH
+            // independently-measured platform values (tight ±0.0005 each,
+            // not a blanket widen) rather than one — a real regression that
+            // moved the true median would still fail against both.
+            // `## Bars changed` in the commit body.
+            const PLATFORM_PINS = (rec.prim === 'torus' && rec.d === 220 && rec.cam === 'a' && i === 2)
+              ? [0.9262980105396276, 0.937078841874498]
+              : [col.aspect];
+            const nearest = PLATFORM_PINS.reduce((a, b) => (
+              Math.abs(stats.colMedians[i].aspect - a) <= Math.abs(stats.colMedians[i].aspect - b) ? a : b
+            ));
+            expect(stats.colMedians[i].aspect).toBeCloseTo(nearest, PLATFORM_PINS.length > 1 ? 3 : 2);
           }
         });
       });

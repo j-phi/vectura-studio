@@ -606,6 +606,20 @@ describe('Scene3D.SurfaceFill — mkTick band-purity oracle (T2-5, Jay\'s USER R
         await postRuntime.cleanup();
         await preRuntime.cleanup();
       }
-    }, 500000);
+      // CI-5, 2026-09-19: measured 305394ms on an uncontended local
+      // singleFork run (macOS, `npx vitest run
+      // tests/unit/scene3d-mktick-band-purity.test.js --pool=forks
+      // --poolOptions.forks.singleFork=true`, whole-file total 316365ms, 35/35
+      // green). GitHub Actions' `unit`/`coverage` jobs run this file inside
+      // the shared `forks` pool (`maxForks: 2` under `CI`) sharing the runner
+      // with 480+ other files, and this SAME sweep — same commit, same
+      // assertions, no other change — hit `Error: Test timed out in 500000ms`
+      // in TWO separate CI runs (35451981431, 35454205820; both `unit` and
+      // `coverage` jobs, ci.log lines ~5028/5054, ~13887/13888). 500000ms
+      // already exceeds the uncontended local measurement by ~64%; CI's own
+      // contended wall time is unmeasured beyond "more than 500000ms", so
+      // this raises with real headroom rather than nudging just past the
+      // observed floor. `## Bars changed` in the commit body.
+    }, 900000);
   });
 });
