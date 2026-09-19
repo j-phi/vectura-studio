@@ -307,6 +307,22 @@ ask him.**
 >   — T2-7 starts from the T2-5 state, not on top of T2-6's comb; (3) tone = tick SPACING (density), ticks may
 >   vary in size, minimal tick-to-tick contact; (4) stippling/pointillist tick-shading research is licensed.
 >   **T2-6b folds into T2-7** (its rung artefact belongs to the T2-6 comb that T2-7 replaces).
+> - **T2-7 plan rulings (chat, 2026-09-19, on `T2-7-plan.md` §3.1/§4.1):** **dark-end trade (contact-free ⇒ ~50 %
+>   max coverage, −40–60 % mkTick ink) → "SHOW ME FIRST"** (pictures owed before the implementer finishes) ·
+>   **O5 (`O5_BAR = 2.30`, length carries tone) → "KEEP BOTH"** — tone must ride LENGTH *and* SPACING (B4
+>   spacingShare ≥ 0.60 stays; O5 ≥ 2.30 stays); the planner re-prototypes a two-channel field (proto4) that
+>   does it without re-opening the dark-band seam gaps (eye_mktick) · **wedge25 → RE-DERIVE AS MONOTONE**
+>   (bare distance non-decreasing in I; the fixed 0.090 cap retires, disclosed under `## Bars changed`).
+> - **T2-7 round 2 (chat, 2026-09-19, after seeing proto4):** **tone bars → A** ("length AND spacing each open
+>   ≥ 2.3× shadow→light": O5 ≥ 2.30 + new SP5 ≥ 2.30 monotone; B4's 0.60 *share* retires; gentler γ ≈ 2).
+>   **Dark end → answered with an ANNOTATED SCREENSHOT OF proto3 (not proto4)** — proto3 is the look he
+>   is correcting from. GREEN = "should be filled with ticks": the dark SEAM GUTTERS between bands along the
+>   cone's right flank (long outlines, several bands), two dark WEDGES at the cone's base, missing ticks
+>   along the LIT SILHOUETTE (cone right edge near the apex; sphere right limb mid-height; sphere
+>   bottom-right rim). RED = "lines where they're wonky or the wrong direction": limb ticks at the sphere's
+>   left edge (three spots) and bottom rim (two), and at the cone's left edge (upper), right edge (lower)
+>   and bottom-left corner. ⇒ Amendment 2: proto5 = proto3 geometry + fill seam gutters/wedges with
+>   gradually SHORTENING ticks (the standing eye_mktick words) + limb fill + limb direction fix.
 > - Re-stated unchanged: 10 A · 13 A · 12 B · 11 B (superseded by 11-amended A) · 9-amended B · push A ·
 >   `eye_mktick` "Wrong direction" (the 2026-09-17 note, repeated verbatim).
 
