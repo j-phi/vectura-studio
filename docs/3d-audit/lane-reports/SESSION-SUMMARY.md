@@ -56,7 +56,7 @@ Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents
 | **U9b + W-10d-3b + U6-2** | fill-collapse-3 | `2b189b5f` | **DONE/FU.** 406/406. **The picture flag ruled FIXED, not half-fixed** — the survivor in the select plus the raw id's own text in the popover is the designed end state. → **U9b-2** (the `onePenDown` exception is an undisclosed **write-back-on-load**). |
 | **U7-2** | fill-collapse-3 | `49a5ef88` | **DONE — CLOSED 2026-09-12. Reviewer ACCEPT** (`U7-2-review.md`) — unqualified, **all seven secretary conditions reproduced adversarially**, two mutation-kill probes non-vacuous, and the **555/555 re-summed with the report's own derivation gap closed** (naive sum 576; rows 2/3 proven *disjoint* `-t` subsets of the 117, 576 − 21 = 555 — **the first clean sum in this chain after four slips**). 17 caveats rewritten, originals preserved in a non-rendered `measured` field. Found that **the shadow row renders no caveat at all on either surface** → **U5b-4**. → **U7-2b** (two `.*` regexes looser in the abstract than the term match they replaced). |
 
-### Round 4 (2026-09-17 → 18) — lanes off `b43fa4e3`, **merge IN PROGRESS, not committed**
+### Round 4 (2026-09-17 → 19) — 🏁 **CLOSED; MERGED AND PUSHED at `7965abd8` (v1.4.3)**
 
 | unit | lane | sha | outcome |
 |---|---|---|---|
@@ -502,9 +502,15 @@ quantity that was real, and none of them measured what he was looking at.**
 | 16 (2026-09-06 18:31) | crosshatch renders ONE family | **FIXED TWICE — W-36 restored the crossing family, then W-36c delivered your decision 6 = C: EACH family now carries the single-family hatch count, under a new measured anti-saturation cap. Your own cell is a full even crosshatch.** Earlier detail:  Gap ratio B:A **5.4–31.2× → 0.814–1.061**; your own cell went **A 17 / B 3 → A 9 / B 11**. But the review found the pre-audit design **already spent ONE shared budget across both families** (sphere d=50 was A 15 / B 11 against a hatch count of 24), so *"each family carries the hatch count"* was never the shipped convention — hence **§4 decision 6**, a three-way choice. Superseded detail: | — *"make crosshatch have the same number of crosshatch lines as it has hatch lines unless … variation is needed for highlight/shadow. This seems off."* | **OPEN → W-36, P1.** Sphere/ladder/fine-rungs/d=50 shows ~22 bands and **no** crossing family; montage counts cylinder ≈ 30 vs ≈ 5, ellipsoid ≈ 25 vs ≈ 4, T1 sphere ≈ 24 vs ≈ 8, against v1.3.98's ≈ 22 vs ≈ 20 — **a regression between v1.3.98 and the merge**. Prime suspect `CROSS_SHARE_BASE = 0.1` (`surface-fill.js:4652`) → crossing coverage 10% of family A's at ratio 1. Lane fill-audit-a2, before W-31 |
 | "not close to zero yet" (F1) | torus ribbon streaks | **THE WHOLE CHAIN HAS LANDED AND BEEN REVIEWED — placement `cd541f87` (MEASURED), erode `e2c3ca85` (DONE/FU), amp `3bc61c32` (DONE/FU) — AND IT NEEDS YOUR EYE, NOT ANOTHER TEST. The streak is GONE (deep-blank 3.02/4.00/1.79 → 0.03/0.00/0.00 mm²), the erode-fallback centreline is gone, and the weave now runs continuously around the whole torus including the highlight band that previously straightened or went bare. The cost: the wave laws read THINNER than pre-fix, `onePenDown` most — and F1-amp, the unit expected to put the weight back, thinned them further instead (its floor is "not the lever"). → §4 DECISION 10 is the open question: accept the thinner even style (A), or build F1-weight to restore ribbon weight under the new placement (B), which no shipped lever does today.** Superseded: **HALF DELIVERED, MEASURED, review in flight — and one new defect it exposed. Your decision 4 = A confirmed the 41.7 × 6.6 mm lower-front torus strip IS the streak. F1-placement shipped at `cd541f87`: the DEEP blank is gone — >2 mm blank area 3.02 / 4.00 / 1.79 → 0.03 / 0.00 / 0.00 mm². The band is narrower, not closed:** placement is only half the mechanism, because the three affected laws never got Round 6's amplitude floor, so a plain thin ruling in the highlight remains until **F1-amp**. ⚠ **And shipping it exposed a latent erosion bug — one stretch now draws a single thin centreline instead of its full ribbon (visible in the same lower-front region) → new unit F1-erode, which runs BEFORE F1-amp.** **Not closed, and it needs your eye on the re-shot `torus__hatch__trochoidLoop__med` pair when the pair is finished.** Earlier detail:  **OPEN, mechanism found** — 62.63 mm² bare strip, 30× A3's whole residue; Prototype B ruled, deep blank 11.89 → **0.28 mm²**. |
 
-## 6. MERGE STATUS — round 3 MERGED + PUSHED; **round 4 READY-TO-COMMIT at v1.4.3**
+## 6. MERGE STATUS — ✅ **ROUND 4 MERGED AND PUSHED at `7965abd8` (v1.4.3)**
 
-> 🔄 **ROUND 4 — READY-TO-COMMIT, STAGED, NOT COMMITTED; MERGE REVIEWER IN FLIGHT** (six conditions, including
+> ✅✅ **ROUND 4 IS MERGED: COMMITTED AT `7965abd8` (v1.4.3) AND PUSHED** — the merge of **`3d-scene/integrate-r4` @ `e05cd36a`**
+> on top of the docs commit **`6678a0f1`**, on Jay's standing answer **push = A**. **Gallery rebuilt on `main`.**
+> **Merge review `MERGE-review-r4.md`: ACCEPT-WITH-FOLLOWUPS — every claim reproduced**, and the README older-releases duplication it
+> found was **fixed in `e05cd36a`** before the fast-forward. ⚠ **A merge reviewer catching a docs defect and it being fixed INSIDE the
+> integration branch is the cheapest correction this audit has recorded — one commit earlier and it would have been a follow-up.**
+>
+> *(Previously: READY-TO-COMMIT, staged, reviewer in flight.)* **ROUND 4 — merge detail** (six conditions, including
 > **re-running `test:ci`** and the **CURVED-PRIMITIVE GREP** that round 4's own REJECT turned into a standing
 > rule). Executed from `MERGE-plan-r4.md` in `.claude/worktrees/integrate-r4`, branch
 > **`3d-scene/integrate-r4`**, off `b43fa4e3`. **Both lanes FINAL: `fill-audit-a4` `0f420747` · `border-4`
@@ -526,7 +532,7 @@ quantity that was real, and none of them measured what he was looking at.**
 > own instruction. ⚠ **Both disclosed rather than discovered — the distinction this audit has spent four
 > rounds enforcing, and the reason a merge carrying two deviations is still a clean merge.**
 >
-> **`main` today: `b43fa4e3` (v1.4.2), pushed.** **The round-4 fast-forward and push follow the review.**
+> **`main` today: `7965abd8` (v1.4.3), PUSHED.** *(Was `b43fa4e3` v1.4.2 before this merge.)*
 
 ### Round 3 — ✅ **MERGED at `d3b01d28` (v1.4.2) AND PUSHED**
 
