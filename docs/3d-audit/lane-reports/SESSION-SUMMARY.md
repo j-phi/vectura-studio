@@ -293,6 +293,22 @@ ask him.**
 > published HTML), so if Jay clicked them the answers may be stuck in that browser's localStorage fallback
 > — **asked him to re-click or paste "Copy summary".** **Gates unchanged: T2-6b, T2-7 and the W-36f
 > mechanism stay PARKED; round 5 opens with the ungated rows (§3 #2 T3c onset, #3 T2-4, #4 T2-3e, #6 W-07b).**
+>
+> ✅ **JAY ANSWERED BOTH IN CHAT, 2026-09-19 (pasted desk summary) — transcribed verbatim; these BIND:**
+> - **11 amended → A — "Accept the cap as inherent after all."** ⇒ **W-36f CLOSES MEASURED; no cap mechanism
+>   (no ANGLE / PEN-WEIGHT planner).** CHANGELOG disclosure line still owed (merge checklist item 29).
+> - **T2-6 eye check (`eye_t26`) → "Wrong direction"**, note verbatim: *"You still have some purely horizontal
+>   lines that must be removed. Additionally, the previous version was better than this. Minimize tick contact
+>   and ensure that you've thoughtfully applied gradual shifts in tone to capture highlights and shadows. And
+>   the shifts and tone should be accomplished by increased or decreased spacing of ticks, noting that ticks
+>   can be any size. Feel free to research pointillism shading with ticks to see if there's a better approach
+>   you could leverage."* ⇒ **T2 does NOT close. T2-7 is PLANNED (Opus planner earned: eye-rejected, mechanism
+>   unknown).** Reading: (1) purely horizontal lines are a defect to remove; (2) **T2-5's picture beats T2-6's**
+>   — T2-7 starts from the T2-5 state, not on top of T2-6's comb; (3) tone = tick SPACING (density), ticks may
+>   vary in size, minimal tick-to-tick contact; (4) stippling/pointillist tick-shading research is licensed.
+>   **T2-6b folds into T2-7** (its rung artefact belongs to the T2-6 comb that T2-7 replaces).
+> - Re-stated unchanged: 10 A · 13 A · 12 B · 11 B (superseded by 11-amended A) · 9-amended B · push A ·
+>   `eye_mktick` "Wrong direction" (the 2026-09-17 note, repeated verbatim).
 
 > ✅ **JAY ANSWERED 10, 11, 12, 13, the 9-amendment AND the push question on 2026-09-17, via the Decision Desk
 > — https://claude.ai/code/artifact/811ab725-f61c-4664-bdb6-2780bd4ba56d.** **Transcribed verbatim below; the
