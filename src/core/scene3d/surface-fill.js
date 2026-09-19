@@ -5275,38 +5275,40 @@
         || TONE_ALGO === 'importanceGreedy') {
         return perceptualCov(I, localPitch);
       }
-      // 'deepFillTSP' — THE RULING NO LONGER THINS TO OPEN A GAP.
+      // 'deepFillTSP' — THE RULINGS THIN SO THE TRAVERSE HAS A GAP TO FILL.
       //
-      // MEASURED, AND IT IS WHY THIS LINE CHANGED (W-07b, round 5 fill audit,
-      // docs/3d-audit/lane-reports/W-07b-scout.md). The previous cut halved
-      // coverage in the shadow ramp (`base / (1 + tspRamp)`) and handed
-      // `tspAt` the freed gap to spend on a lateral traverse — but that
-      // traverse's own amplitude bound (`endMM[s]/2`, `1.5x` the local pitch)
-      // was nowhere near large enough to recover the ink the halving dropped:
-      // measured shadow-third ink at 29-51% of Ladder's on all 12 sampled
-      // cells (sphere/torus/cone x med/max x {addLayer,create}), never once
-      // reaching "at least as dense as Ladder" — the worklist oracle this law
-      // was reopened against. A law cannot promise the shadow AT LEAST Ladder's
-      // density while drawing FEWER rulings than Ladder to pay for its own
-      // traverse.
+      // MEASURED, AND IT IS WHY THIS LINE EXISTS. The first cut left the
+      // coverage alone and displaced the ruling laterally into "its own gap".
+      // At the plot floor there IS no gap: uncapped, the master grid rules AT
+      // `floorPitch` and `covAtSample` clamps coverage to `localPitch/floorPitch`
+      // wherever the geometry crowds, so the drawn pitch in the darkest zone is
+      // exactly the floor and the amplitude came out zero on every sample. The
+      // law measured byte-identical to `perceptualRamp` (ink 2341.3 against
+      // 2341.3) — a no-op dressed as a variant.
       //
-      // So the family now rules at Ladder's own flat density (`isEvenLadder`'s
-      // `1` above) in EVERY zone, lit or dark — no halving, no thinning. The
-      // "space-filling" character is carried entirely by `tspAt`'s lateral
-      // wander, which only ADDS arc length on top of a full ruling and never
-      // removes one to fund it, so the shadow can only measure AT LEAST as
-      // dense as Ladder's, never less.
+      // A space-filling fill is not an ADDITION to a ruled family; it REPLACES
+      // it. So the darkest zone rules at HALF the density and the traverse
+      // spends the freed gap, which lands the same ink through one continuous
+      // aperiodic path instead of two straight ones.
       //
-      // This also fixes the second, independently-measured defect: outside
-      // the ramp (I >= TSP_I) the previous branch fell through to
-      // `perceptualCov(I, localPitch)` instead of Ladder's flat `1`, which
-      // measurably drifted lit-third ink even where the law is supposed to be
-      // indistinguishable from Ladder (56.9 vs 71.9mm, sphere/med/addLayer).
-      // Returning the SAME flat `1` everywhere removes that drift outright —
-      // and outside the ramp `tspAt` also returns null (`tspRamp(I)` is
-      // exactly 0 there), so the two laws are geometrically identical above
-      // TSP_I, not merely close.
-      if (TONE_ALGO === 'deepFillTSP') return 1;
+      // F-07 / W-07 — the SECOND way this thinned-for-nothing: at the med
+      // master pitch the gap `(1 + tspRamp)` opens is itself only a fraction
+      // of a millimetre, well under half a pen — too little for a zig-zag to
+      // read as anything but noise on top of an already-thinner ruling. Gate
+      // the halving itself on that gap actually clearing the floor, computed
+      // LOCALLY (`localPitch / base` before any global cap), not against
+      // `floorPitch`, which is why the first fix (see comment above) still
+      // measured a no-op: at the pitch this bug actually fires at, drawn and
+      // floorPitch were already the same number.
+      if (TONE_ALGO === 'deepFillTSP') {
+        const base = clamp(perceptualCov(I, localPitch), 0.005, 1);
+        const ramp = tspRamp(I);
+        if (!(ramp > 0) || !(localPitch > 1e-6)) return base;
+        const drawnBase = localPitch / base;
+        const amp = (drawnBase * ramp) / 2;
+        if (!(amp > 0.5 * inkWidth())) return base; // not enough room to zig-zag — don't thin for nothing
+        return clamp(base / (1 + ramp), 0.005, 1);
+      }
       // 'forcedContrast' — the same target, on a tone field the draughtsman has
       // deliberately pushed apart (see `fcIntensity`).
       if (TONE_ALGO === 'forcedContrast') return perceptualCov(fcIntensity(I), localPitch);
@@ -9572,32 +9574,30 @@
       // a secondary lattice. The amplitude is bounded by the plot floor at one
       // end and by the ruling's own distance-to-its-end at the other, so a
       // displaced point can neither flood nor leave the surface.
-      const TSP_PERIOD = 3.2;   // mm, one zig and one zag — see the note below on why this stays FIXED
-      const TSP_AMP_SHARE = 1.5; // W-07b: peak amplitude as a share of local pitch at full ramp (k=1) —
-      // 1.5 exactly saturates the `1.5 * p` width clamp below at k=1, i.e. this is the largest share that
-      // ever changes anything: the clamp, not the share, is the true ceiling.
+      const TSP_PERIOD = 3.2;   // mm, one zig and one zag
       const tspAt = (smp, s) => {
         if (!arcMM || !endMM) return null;
         const k = tspRamp(smp.I);
         if (!(k > 0)) return null;
         const p = pitchAtStep(smp, s);
         if (!(Number.isFinite(p) && p > 1e-6)) return null;
-        // W-07b — `amp` used to be derived from the gap `algoCoverage`'s
-        // halving freed (`drawn - drawnBase`, drawn against `covAtSample`).
-        // That halving is gone (see the deepFillTSP branch of `algoCoverage`
-        // above — the family now rules at Ladder's own flat density
-        // everywhere), so there is no freed gap left to spend: `drawnBase`
-        // would now equal `drawn` and the old formula would zero `amp` on
-        // every sample. The traverse instead takes a direct share of the
-        // LOCAL pitch, scaled by `k` (0 at the ramp's own edge, 1 at black),
-        // so it still eases in exactly where the law claims to and vanishes
-        // above TSP_I exactly as `tspRamp` already gates it.
-        let amp = k * TSP_AMP_SHARE * p;
+        // F-07 / W-07 — THE LOCAL GAP THE HALVING OPENED, not the distance to
+        // the (global) plot floor. `algoCoverage`'s deepFillTSP branch draws
+        // at `base / (1 + k)`; every other cap it and `covAtSample` apply
+        // (the composed budget, the floor-crowding multiply) is the SAME
+        // factor with or without the ramp, so it cancels in the ratio:
+        // `drawn = drawnBase * (1 + k)` exactly, and `drawnBase` is what this
+        // ruling would have drawn WITHOUT deepFillTSP. Half that gap, split
+        // either side of the ruling, is exactly the excursion that spends the
+        // ink the thinning freed — this is the same quantity the coverage
+        // gate above already cleared, computed here against the pitch this
+        // sample actually drew at.
+        const drawn = p / Math.max(1e-6, covAtSample(smp, s, zones[s]));
+        const drawnBase = drawn / (1 + k);
+        let amp = Math.max(0, (drawn - drawnBase) / 2);
         // Bounded by the ruling's own distance-to-its-end (unchanged) and by
         // 1.5x the local pitch, so the full zig-zag excursion (2x amplitude)
-        // can never read as more than 3 pitches wide — a PLOT-SAFETY bound
-        // (crossing into a neighbouring ruling), not just a visual one, so
-        // W-07b leaves it exactly as it was and does not widen it.
+        // can never read as more than 3 pitches wide.
         amp = Math.min(amp, endMM[s] / 2, 1.5 * p);
         if (!(amp > 1e-3)) return null;
         const a = smps[Math.max(0, s - 1)] || smp;
@@ -9605,27 +9605,6 @@
         const dx = b.x - a.x; const dy = b.y - a.y;
         const L = Math.hypot(dx, dy);
         if (!(L > 1e-9)) return null;
-        // W-07b — TRIED and REVERTED: scaling `TSP_PERIOD` down with the
-        // local pitch (so amp/wavelength — and so the elongation — held
-        // roughly constant across densities) looked promising on the ink
-        // numbers alone, but measurement caught why it is wrong: at max
-        // density the forward SAMPLE spacing along a ruling (`arcMM[s+1] -
-        // arcMM[s]`) is ~1.5-2.3mm (cone/max/addLayer, measured), while a
-        // pitch-scaled period collapses to ~0.3-0.6mm there — under HALF a
-        // sample apart. The phase would advance 3+ full cycles between two
-        // CONSECUTIVE DRAWN POINTS, which are joined by a straight segment
-        // with no interpolation in between: the "zig-zag" would not be
-        // under-sampled, it would be ALIASED — a jagged jump between
-        // effectively random left/right excursions, exactly the "reads as
-        // noise, not a zig-zag" failure this law was reopened over in the
-        // first place. A fixed, generously-larger-than-the-sample-spacing
-        // period is the SAFE choice and is kept. Net effect: this leaves a
-        // measured, disclosed gap on cone/max specifically (shadow-third
-        // ratio 0.87-0.98x Ladder's, see the impl report's `## Bars
-        // changed` / measured-shortfall section) that a placement-level
-        // follow-up would need to close — out of scope here (W-07b is
-        // `algoCoverage`'s deepFillTSP branch and this function ONLY; see
-        // the brief).
         const ph = (arcMM[s] / TSP_PERIOD + (Number(lineIndex) || 0) * GOLDEN_STEP) * Math.PI * 2;
         // A TRIANGLE wave, not a sine: constant lateral speed is what makes the
         // traverse fill its gap evenly instead of dwelling at the turns.
