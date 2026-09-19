@@ -1891,9 +1891,9 @@
     const fcIntensity = (I) => clamp(0.5 + (clamp(finite(I, 0), 0, 1) - 0.5) * (1 + FC_GAIN), 0, 1);
 
     // 'deepFillTSP' — how deep into the shadow the traverse has taken over.
-    // 0 at and above TSP_I (an ordinary ruled family), 1 at black (half the
-    // rulings, each filling the doubled gap). One definition, read by the
-    // coverage law and by the displacement.
+    // 0 at and above TSP_I (an ordinary ruled family, Ladder's own rulings
+    // and nothing else), 1 at black (every ruling carries its full corridor-
+    // bounded zig-zag). One definition, read by the displacement (`tspAmp`).
     const TSP_I = 0.18;       // the darkest ~15 % of the radiance range
     const tspRamp = (I) => clamp((TSP_I - clamp(finite(I, 0), 0, 1)) / Math.max(1e-6, TSP_I), 0, 1);
 
@@ -4957,7 +4957,7 @@
     // downstream ever drops a ruling again — only WHERE the next one lands
     // moves.
     const isEvenLadder = () => TONE_ALGO === 'ladder' || TONE_ALGO === 'fineLadder'
-      || TONE_ALGO === 'phaseFineLadder';
+      || TONE_ALGO === 'phaseFineLadder' || TONE_ALGO === 'deepFillTSP';
     // The tone TARGET is exactly what each law computed before this round —
     // ONLY the placement changes. `phaseFineLadder`'s `nestedCov` wants the
     // per-sample DRAWN pitch as its second argument, so a family already
@@ -5275,40 +5275,12 @@
         || TONE_ALGO === 'importanceGreedy') {
         return perceptualCov(I, localPitch);
       }
-      // 'deepFillTSP' — THE RULINGS THIN SO THE TRAVERSE HAS A GAP TO FILL.
-      //
-      // MEASURED, AND IT IS WHY THIS LINE EXISTS. The first cut left the
-      // coverage alone and displaced the ruling laterally into "its own gap".
-      // At the plot floor there IS no gap: uncapped, the master grid rules AT
-      // `floorPitch` and `covAtSample` clamps coverage to `localPitch/floorPitch`
-      // wherever the geometry crowds, so the drawn pitch in the darkest zone is
-      // exactly the floor and the amplitude came out zero on every sample. The
-      // law measured byte-identical to `perceptualRamp` (ink 2341.3 against
-      // 2341.3) — a no-op dressed as a variant.
-      //
-      // A space-filling fill is not an ADDITION to a ruled family; it REPLACES
-      // it. So the darkest zone rules at HALF the density and the traverse
-      // spends the freed gap, which lands the same ink through one continuous
-      // aperiodic path instead of two straight ones.
-      //
-      // F-07 / W-07 — the SECOND way this thinned-for-nothing: at the med
-      // master pitch the gap `(1 + tspRamp)` opens is itself only a fraction
-      // of a millimetre, well under half a pen — too little for a zig-zag to
-      // read as anything but noise on top of an already-thinner ruling. Gate
-      // the halving itself on that gap actually clearing the floor, computed
-      // LOCALLY (`localPitch / base` before any global cap), not against
-      // `floorPitch`, which is why the first fix (see comment above) still
-      // measured a no-op: at the pitch this bug actually fires at, drawn and
-      // floorPitch were already the same number.
-      if (TONE_ALGO === 'deepFillTSP') {
-        const base = clamp(perceptualCov(I, localPitch), 0.005, 1);
-        const ramp = tspRamp(I);
-        if (!(ramp > 0) || !(localPitch > 1e-6)) return base;
-        const drawnBase = localPitch / base;
-        const amp = (drawnBase * ramp) / 2;
-        if (!(amp > 0.5 * inkWidth())) return base; // not enough room to zig-zag — don't thin for nothing
-        return clamp(base / (1 + ramp), 0.005, 1);
-      }
+      // 'deepFillTSP' now rides `isEvenLadder()`'s own flat-1 placement (see
+      // above): it is a member of the continuous even-ladder family, and the
+      // shadow-third density comes from the corridor-bounded traverse added
+      // at the emit loop (`tspVerts`), not from thinning this verdict. This
+      // branch is therefore unreachable and deliberately removed — see
+      // W-07b-2-plan.md §1.1 step 1.
       // 'forcedContrast' — the same target, on a tone field the draughtsman has
       // deliberately pushed apart (see `fcIntensity`).
       if (TONE_ALGO === 'forcedContrast') return perceptualCov(fcIntensity(I), localPitch);
@@ -9574,42 +9546,151 @@
       // a secondary lattice. The amplitude is bounded by the plot floor at one
       // end and by the ruling's own distance-to-its-end at the other, so a
       // displaced point can neither flood nor leave the surface.
-      const TSP_PERIOD = 3.2;   // mm, one zig and one zag
-      const tspAt = (smp, s) => {
-        if (!arcMM || !endMM) return null;
+      // deepFillTSP RIDES `isEvenLadder()`'s own flat-1 placement (Ladder's
+      // rulings, unchanged) and adds a CORRIDOR-BOUNDED triangle-wave
+      // traverse on top, only where the form is darker than TSP_I. Outside
+      // the ramp the output is bit-identical to Ladder. See
+      // docs/3d-audit/lane-reports/W-07b-2-plan.md §1.1 for the mechanism
+      // and the measured bars.
+      const TSP_CORRIDOR = 0.4;      // share of the real neighbour gap
+      const TSP_PERIOD_PITCH = 1.6;  // x max(masterPitch, floorPitch), fixed per object
+      const tspPeriod = () => TSP_PERIOD_PITCH * Math.max(masterPitch > 0 ? masterPitch : floorPitch, floorPitch);
+      const tspWrap = (v) => { const w = v % 1; return w < 0 ? w + 1 : w; };
+      let tspPh = null;     // accumulated phase per sample, lazily built (tspPrep)
+      let tspPrevS = -2;    // the last sample index this ruling emitted, for tspVerts' A0
+      // Amplitude at sample s. Zero on the family's first/last ruling (the
+      // closed-chart seam duplicate would otherwise cross an out-of-phase
+      // twin), zero where the real neighbour gap is already solid ink, and
+      // zero off the ramp (k = 0). `p` starts as the linearised pitch and is
+      // tightened to the REAL perpendicular gap to the nearer neighbour,
+      // probed on the chart one ruling-step either side — the linearised
+      // pitch misses foreshortening at the limb.
+      const tspAmp = (s) => {
+        const smp = smps[s];
+        if (!smp || !arcMM || !endMM) return 0;
         const k = tspRamp(smp.I);
-        if (!(k > 0)) return null;
-        const p = pitchAtStep(smp, s);
-        if (!(Number.isFinite(p) && p > 1e-6)) return null;
-        // F-07 / W-07 — THE LOCAL GAP THE HALVING OPENED, not the distance to
-        // the (global) plot floor. `algoCoverage`'s deepFillTSP branch draws
-        // at `base / (1 + k)`; every other cap it and `covAtSample` apply
-        // (the composed budget, the floor-crowding multiply) is the SAME
-        // factor with or without the ramp, so it cancels in the ratio:
-        // `drawn = drawnBase * (1 + k)` exactly, and `drawnBase` is what this
-        // ruling would have drawn WITHOUT deepFillTSP. Half that gap, split
-        // either side of the ruling, is exactly the excursion that spends the
-        // ink the thinning freed — this is the same quantity the coverage
-        // gate above already cleared, computed here against the pitch this
-        // sample actually drew at.
-        const drawn = p / Math.max(1e-6, covAtSample(smp, s, zones[s]));
-        const drawnBase = drawn / (1 + k);
-        let amp = Math.max(0, (drawn - drawnBase) / 2);
-        // Bounded by the ruling's own distance-to-its-end (unchanged) and by
-        // 1.5x the local pitch, so the full zig-zag excursion (2x amplitude)
-        // can never read as more than 3 pitches wide.
-        amp = Math.min(amp, endMM[s] / 2, 1.5 * p);
-        if (!(amp > 1e-3)) return null;
+        if (!(k > 0)) return 0;
+        if (Number(lineIndex) === 0 || Number(lineIndex) === Number(count) - 1) return 0;
+        let p = pitchAtStep(smp, s);
+        if (!(Number.isFinite(p) && p > 1e-6)) return 0;
+        const pr = paramAt(s / nSteps);
+        const st = typeof pitchStep === 'function' ? pitchStep(s / nSteps) : pitchStep;
+        const a = smps[Math.max(0, s - 1)] || smp; const b = smps[Math.min(nSteps, s + 1)] || smp;
+        const tx = b.x - a.x; const ty = b.y - a.y; const tl = Math.hypot(tx, ty);
+        if (pr && st && tl > 1e-9) {
+          [1, -1].forEach((sg) => {
+            const q = sampleAt(clamp(pr.a + sg * st.a, 0, 1), tspWrap(pr.b + sg * st.b));
+            if (!q || q.front !== wantFront) return;
+            const g = Math.abs((q.x - smp.x) * (ty / tl) - (q.y - smp.y) * (tx / tl));
+            if (g > 1e-6 && g < p) p = g;
+          });
+        }
+        if (p < inkWidth()) return 0; // rulings already overlap — solid ink, nothing to traverse
+        return Math.max(0, Math.min(k * TSP_CORRIDOR * p, endMM[s] / 2, tspPeriod() / 4));
+      };
+      // One phase track per ruling, accumulated along arc length at the
+      // fixed period. Keyed on the ruling's OWN family position (`threshold`,
+      // its ordered-dither rank/4096), not `lineIndex`, so a seam-duplicate
+      // ruling on a closed chart gets the SAME phase as its twin.
+      const tspPrep = () => {
+        tspPh = new Array(nSteps + 1).fill(NaN);
+        let prev = -1;
+        const P = tspPeriod();
+        for (let s = 0; s <= nSteps; s++) {
+          const smp = smps[s];
+          if (!smp) { prev = -1; continue; }
+          if (prev < 0) {
+            const fr = Number(threshold);
+            const key = Number.isFinite(fr) ? Math.round((((fr % 1) + 1) % 1) * 4096) : (Number(lineIndex) || 0);
+            tspPh[s] = (key * GOLDEN_STEP) % 1;
+          } else {
+            tspPh[s] = tspPh[prev] + (arcMM[s] - arcMM[prev]) / P;
+          }
+          prev = s;
+        }
+      };
+      // Place a lateral excursion ON THE SURFACE: push the screen-space
+      // offset back through the sample's own Jacobian frame (dA/dB) into the
+      // chart, resample there, and halve the excursion (x4) if the displaced
+      // point leaves the front surface or lands too far from the target.
+      const tspPlace = (bx, by, bz, ttHere, frame, nx, ny, A) => {
+        const pr = paramAt(ttHere);
+        if (!pr || !frame || !frame.dA || !frame.dB) return { x: bx, y: by, z: bz };
+        const det = frame.dA.x * frame.dB.y - frame.dA.y * frame.dB.x;
+        if (!(Math.abs(det) > 1e-12)) return { x: bx, y: by, z: bz };
+        let amp = A;
+        for (let it = 0; it < 4; it++, amp /= 2) {
+          const vx = nx * amp; const vy = ny * amp;
+          const da = (vx * frame.dB.y - vy * frame.dB.x) / det;
+          const db = (frame.dA.x * vy - frame.dA.y * vx) / det;
+          const cand = sampleAt(clamp(pr.a + da, 0, 1), tspWrap(pr.b + db));
+          if (cand && cand.front === wantFront
+            && Math.hypot(cand.x - (bx + vx), cand.y - (by + vy)) <= 0.35 * Math.abs(amp) + 1e-3) {
+            return { x: bx + vx, y: by + vy, z: bz };
+          }
+        }
+        return { x: bx, y: by, z: bz };
+      };
+      const triOf = (ph) => (2 / Math.PI) * Math.asin(Math.sin(ph * Math.PI * 2));
+      // Central-difference tangent normal at sample s (unit, or null on a
+      // degenerate span). Lerping this between s-1 and s (in tspVerts) is
+      // what removes the micro self-loops a chord normal leaves at a bend.
+      const tspNrm = (s) => {
+        const smp = smps[s];
         const a = smps[Math.max(0, s - 1)] || smp;
         const b = smps[Math.min(nSteps, s + 1)] || smp;
-        const dx = b.x - a.x; const dy = b.y - a.y;
-        const L = Math.hypot(dx, dy);
-        if (!(L > 1e-9)) return null;
-        const ph = (arcMM[s] / TSP_PERIOD + (Number(lineIndex) || 0) * GOLDEN_STEP) * Math.PI * 2;
-        // A TRIANGLE wave, not a sine: constant lateral speed is what makes the
-        // traverse fill its gap evenly instead of dwelling at the turns.
-        const tri = (2 / Math.PI) * Math.asin(Math.sin(ph));
-        return { x: smp.x + (-dy / L) * amp * tri, y: smp.y + (dx / L) * amp * tri, z: smp.z };
+        const dx = b.x - a.x; const dy = b.y - a.y; const L = Math.hypot(dx, dy);
+        return L > 1e-9 ? { x: -dy / L, y: dx / L } : null;
+      };
+      // Returns null (no traverse at sample s) or the ordered list of points
+      // to lay: the triangle wave's own turning points between the previous
+      // emitted sample and s (each its own vertex — a triangle wave is
+      // exactly piecewise-linear between its extrema, so this is what makes
+      // any period legal at any sample spacing), then s itself.
+      const tspVerts = (s) => {
+        if (!arcMM || !endMM) return null;
+        if (!tspPh) tspPrep();
+        const smp = smps[s];
+        const A1 = tspAmp(s);
+        const prevOk = s > 0 && tspPrevS === s - 1 && smps[s - 1];
+        const A0 = prevOk ? tspAmp(s - 1) : 0;
+        if (!(A1 > 1e-3) && !(A0 > 1e-3)) return null;
+        const outPts = [];
+        if (prevOk && Number.isFinite(tspPh[s - 1]) && Number.isFinite(tspPh[s])) {
+          const q0 = smps[s - 1]; const f0 = tspPh[s - 1]; const f1 = tspPh[s];
+          const dx = smp.x - q0.x; const dy = smp.y - q0.y; const L = Math.hypot(dx, dy);
+          if (L > 1e-9 && f1 > f0) {
+            let e = Math.ceil((f0 - 0.25) * 2) / 2 + 0.25;
+            if (e <= f0) e += 0.5;
+            let guard = 0;
+            for (; e < f1 && guard < 256; e += 0.5, guard++) {
+              const t = (e - f0) / (f1 - f0);
+              const A = A0 + (A1 - A0) * t;
+              const sg = triOf(e) >= 0 ? 1 : -1;
+              const bx = q0.x + dx * t; const by = q0.y + dy * t; const bz = q0.z + (smp.z - q0.z) * t;
+              const n0 = tspNrm(s - 1); const n1 = tspNrm(s);
+              let nx = -dy / L; let ny = dx / L;
+              if (n0 && n1) {
+                const mx = n0.x + (n1.x - n0.x) * t; const my = n0.y + (n1.y - n0.y) * t;
+                const ml = Math.hypot(mx, my);
+                if (ml > 1e-9) { nx = mx / ml; ny = my / ml; }
+              }
+              const q = A > 1e-3 ? tspPlace(bx, by, bz, (s - 1 + t) / nSteps, t < 0.5 ? q0 : smp, nx * sg, ny * sg, A)
+                : { x: bx, y: by, z: bz };
+              q.__t = t;
+              outPts.push(q);
+            }
+          }
+        }
+        if (A1 > 1e-3) {
+          const a = smps[Math.max(0, s - 1)] || smp;
+          const b = smps[Math.min(nSteps, s + 1)] || smp;
+          const dx = b.x - a.x; const dy = b.y - a.y; const L = Math.hypot(dx, dy);
+          const tri = triOf(tspPh[s]);
+          if (L > 1e-9) outPts.push(tspPlace(smp.x, smp.y, smp.z, s / nSteps, smp, -dy / L, dx / L, A1 * tri));
+          else outPts.push({ x: smp.x, y: smp.y, z: smp.z });
+        } else outPts.push({ x: smp.x, y: smp.y, z: smp.z });
+        return outPts;
       };
 
       // ── ROUND 5 — WHERE THE RULING DISSOLVES, AND INTO WHAT ─────────────────
@@ -10041,9 +10122,22 @@
         // the emitted stroke actually started and stopped on — the ruling's own
         // parameter ends are not it wherever the silhouette cut the run.
         if (wvChainOn) { if (wvStartS == null) wvStartS = s; wvEndS = s; }
-        addPt((lozDisp && lozDisp[s])
-          || (toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
-          || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
+        const tspV = (toneOn && TONE_ALGO === 'deepFillTSP') ? tspVerts(s) : null;
+        if (tspV) {
+          tspV.forEach((q) => {
+            // A displaced vertex (or an emitted turning point) carries NO
+            // sweep parameter: the ruling's own parameter names a point ON
+            // the ruling, and the contour mapper's turn refinement would
+            // otherwise bisect it back onto the centreline (see
+            // refineFillRunTurns' Number.isFinite(t0/t1) guard).
+            const moved = q.x !== smp.x || q.y !== smp.y;
+            addPt({ x: q.x, y: q.y, z: q.z }, sampleZone,
+              (moved || q.__t != null) ? NaN : tt);
+          });
+        } else {
+          addPt((lozDisp && lozDisp[s]) || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
+        }
+        tspPrevS = s;
         if (s < nSteps && !onSurf[s + 1]) {
           const e = edgeAt(s, s + 1);
           if (e) addPt({ x: e.x, y: e.y, z: e.z }, sampleZone, Number.isFinite(e.tt) ? e.tt : tt);
