@@ -286,6 +286,13 @@ ask him.**
 > CHECK** — `cone/hatch` whole cell + native crop **and** the `sphere/hatch` cell; **his answer decides
 > whether T2 CLOSES or T2-7 is planned.** **Read with `read_db` collection `decisions`, docs `d11b` and
 > `eye_t26`; transcribe here.**
+>
+> 📖 **READ 2026-09-19 (round-5 resume): BOTH STILL UNANSWERED IN THE STORE.** `get decisions/d11b` and
+> `get decisions/eye_t26` → *"No document"*; `list decisions` returns only the seven 2026-09-17 docs
+> (`d9 d10 d11 d12 d13 eye_mktick push`). The desk page DOES render both sheets (ids present in the
+> published HTML), so if Jay clicked them the answers may be stuck in that browser's localStorage fallback
+> — **asked him to re-click or paste "Copy summary".** **Gates unchanged: T2-6b, T2-7 and the W-36f
+> mechanism stay PARKED; round 5 opens with the ungated rows (§3 #2 T3c onset, #3 T2-4, #4 T2-3e, #6 W-07b).**
 
 > ✅ **JAY ANSWERED 10, 11, 12, 13, the 9-amendment AND the push question on 2026-09-17, via the Decision Desk
 > — https://claude.ai/code/artifact/811ab725-f61c-4664-bdb6-2780bd4ba56d.** **Transcribed verbatim below; the

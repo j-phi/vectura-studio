@@ -87,6 +87,58 @@ First-unit briefs (files allowed/forbidden, RED oracle, cells to re-shoot) are i
 | `fill-audit-2` | `3d-scene/fill-audit-2` | 8476 | `scene3d.js` faceted path + `context-bar.js` | **W-15c design D** |
 | `handoff-c2` | `3d-scene/handoff-c2` | 8470 | `hlr.js` / `shadows.js` / pen-fill | **U9** |
 
+## Round 5 (2026-09-19 →) — **OPEN**, one lane off `main` `6ebc76e8` (v1.4.3, round 4 merged and pushed)
+
+> **Briefs: `ROUND5-BRIEFS.md`** (lane map, parallel/serial proof, three first-wave briefs, and §0 pasted
+> verbatim into each one). **Staffing follows Jay's scale-down regime:** tests-only units get a Sonnet
+> implementer and a LIGHT VERIFY pass (marked VERIFIED). `src/` units get a Sonnet implementer, then a Sonnet
+> adversarial reviewer, with ≤6 secretary flags. No Opus planner unless a unit is REJECTED or its mechanism
+> is UNKNOWN. Scouts stay.
+>
+> ⏳ **Both desk answers (`d11b`, `eye_t26`) are STILL UNANSWERED** (SESSION-SUMMARY §4, read 2026-09-19).
+> Round 5 opens on the ungated rows only.
+
+| worktree (`.claude/worktrees/`) | branch | base | port | file ownership |
+|---|---|---|---|---|
+| `fill-audit-a5` | `3d-scene/fill-audit-a5` | `6ebc76e8` | **8471** | `surface-fill.js` + the `scene3d-mk*` / `mark-laws-draw` test family |
+
+**Other ports:** main's gallery server is **8460** (do not touch). The scouts' scratch servers use **8473**
+(T2-4) and **8474** (W-07b), and each scout kills its own. **8472 is RESERVED; no second lane is warranted.**
+Every prospective `src/` unit this round edits `surface-fill.js`, so the round has one file and one lane.
+
+### Round-5 queue
+
+| # | unit | gate | role / staffing | status | notes |
+|---|---|---|---|---|---|
+| 1 | **T3c-onset** — pin the EFFECTIVE mkDashRamp onset (d=32, not the declared 35) | none | **Sonnet implementer, TESTS ONLY → LIGHT VERIFY** | **FIRST WAVE — brief A** | The mechanism is KNOWN: `bandOnsetCap`'s `Math.round` saturates at d ≥ 31.6 (`surface-fill.js:2530–2536`), and T3c's dash bound gates on it (`:6813–6818`). Gap fraction goes 0.47 → 0.02 from d=31 to d=32 (`T3c-review.md` :74–80). **Pins O17 (location) and O18 (magnitude), and O19 corrects the comments. The mutations M1 (`round`→`floor`), M2 (onset 35→40) and M3 (gate on `d<35`) are BLOCKING.** ⚠ **It does NOT move the cliff.** Moving it is a behaviour change, so the report recommends and Jay decides. |
+| 2 | **T2-4** — the d=220 mkTick coverage loss | none | **Read-only SCOUT first** (Sonnet). The follow-on depends on the verdict | **FIRST WAVE — brief B** | **Every starting number is suspect.** The "0.67–0.82 vs 0.91–0.99" figure came from **T2-2, which was REVERTED** (so its code comment went too). It was measured with the per-site coverage class that **T2-3 proved blind across rows**. And T2-6's d=220 `siteCoverage` (0.8754, cone/hatch/create) does not agree with it. **Verdicts:** NO DEFECT · MEASURED/PHYSICAL LIMIT (→ a tests-only guard) · SRC UNIT, mechanism known (→ Sonnet impl + reviewer + ≤6 flags) · MECHANISM UNKNOWN (→ Opus planner). **MEASURED is an acceptable outcome.** |
+| 3 | **T2-3e** — the row-lattice light-block pattern | *(de facto `eye_t26`)* | — | 🗄 **STAYS FILED — NOT A UNIT** | Pre-existing, measured once, and disclosed in Jay's T2 row. **No instrument exists in the repo**, because the narrow-strip FFT was never committed (`T2-5-plan.md` §5, `T2-6-plan.md` §5.4). It is part of the same mkTick picture as the eye check. **If `eye_t26` opens T2-7, that planner owns T2-3e's measurement. If T2 closes, T2-3e stays a disclosed artefact.** `MK_ROW_COV` stays untouched. |
+| 4 | **W-07b** — `deepFillTSP` against the worklist oracle | none | **Read-only SCOUT first** (Sonnet): is it still a unit? | **FIRST WAVE — brief C** | The row dates from round 1 (`912f8471`), and the law was **rewritten** since (`surface-fill.js` :4082, :8814). It is tier `library`, and it is listed INERT on curved spiral/stipple (`context-bar.js:561`, C-13). **Verdicts:** CLOSED · GUARD UNIT (tests-only) · SRC UNIT · MECHANISM UNKNOWN · DEPRIORITISE (unreachable). |
+| — | **unscheduled** | — | — | QUEUED, not briefed | W-33's fitter follow-up · the `insetMultiPolygon` ladder · the W-29 stub family · U10–U12 (**still W-26-blocked**) |
+| — | ~~T2-3d~~ | — | — | CLOSED UNBUILT | Decision 13 = A. |
+
+**Parallel vs serial (grepped on `fill-audit-a5` @ `6ebc76e8`):** **units 1, 2 and 4 run IN PARALLEL.**
+Unit 1 writes only `tests/unit/scene3d-mkdashramp-*.test.js`. The two scouts write only in MAIN `docs/`,
+and they read their own scratch `git archive` exports. ⚠ **Every SECOND-WAVE `src/` unit serializes in
+`fill-audit-a5` AFTER unit 1 lands:** a T2-4 fix moves `MIN_MARK_MM` (`:5794`, from `MIN_MARK_PEN` at
+`:364`), and **T3c's dash floor reads that same constant** (`dashLenFloor = MIN_MARK_MM * 1.05`, `:6814`).
+So a T2-4 unit must run unit 1's onset file as a guard. A W-07b `src/` unit follows it in the same file.
+
+### Parked — gated on Jay (no brief, no plan, no prototype)
+
+| item | gate | what the answer decides |
+|---|---|---|
+| **T2-6b** (the `sphere/hatch` rung artefact) and **T2-7** (a seventh mkTick attempt) | ⏳ **`eye_t26`** — the T2-6 eye check (`cone/hatch` whole cell + native crop, and `sphere/hatch`) | Whether T2 CLOSES or T2-7 is planned. If he steers elsewhere, neither may exist. |
+| **The W-36f mechanism** (tone on crosshatch ANGLE or PEN WEIGHT at d=220) | ⏳ **`d11b`** — decision 11-amended | (A) accept the cap as inherent, so there is no unit. (B) fund a new mechanism with a new planner. The onset is proven NOT to be the lever. |
+
+### Owed at the NEXT merge — not units
+
+- **Checklist item 23:** the `git show HEAD:` sweep across every audit test file. **It hunts BROKEN
+  instances as well as always-passing ones.** `scene3d-slice-end-overlap.test.js` (W-35) is the known
+  unowned instance.
+- **Checklist item 30:** the ground-plane inclusion audit, one line per ink number: does it INCLUDE or
+  EXCLUDE the ground plane?
+
 ## Round 4 (2026-09-17 → 19) — **CLOSED; merge READY-TO-COMMIT at v1.4.3**, lanes off `b43fa4e3`
 
 > 🏁 **ROUND 4'S WORK IS COMPLETE AND REVIEWED. Both lanes are FINAL — `fill-audit-a4` `0f420747` ·
