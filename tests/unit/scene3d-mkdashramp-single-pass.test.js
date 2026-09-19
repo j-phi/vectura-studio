@@ -72,6 +72,7 @@
  *   - O13 ("d=220 / d=50 untouched") gates "no regression on T4/T4b/O8's own
  *     territory" — a non-regression check, not a new half of Jay's rule.
  */
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
@@ -98,6 +99,39 @@ const getPreT3bSource = (() => {
   };
 })();
 
+// R4-fix (round-4 merge, 2026-09-19): a SECOND mutant, built from the
+// CURRENT disk source (not a stale sha), for the ONE roster entry
+// (`mkTick`) that legitimately moved for a reason that has nothing to do
+// with T3b — T2-6 (a later, unrelated unit on this SAME lane) added a
+// graded-comb mechanism to `mkTick` after `T3B_BASE_SHA` was cut, so
+// comparing CURRENT (T2-6 present) against `getPreT3bSource()` (T2-6 absent)
+// necessarily disagrees for mkTick regardless of T3b's own health — see the
+// file's own byte-identity sweep comment and `R4-fix-impl.md`. `bandOnsetCap`
+// is read at exactly THREE call sites, all inside `law.shape === 'morph'`
+// branches (`solveAt`'s and `layMark`'s `bandN`, `layMark`'s `dashOnset`) —
+// unique to `mkDashRamp`, confirmed by grep — so redirecting all three calls
+// to the constant `MK_BAND_MAX_PASSES` neutralizes T3b's onset ramp AND
+// T3c's dash-length gate (`dashOnset < MK_BAND_MAX_PASSES` becomes always
+// false) while leaving every OTHER law's code, including T2-6's mkTick
+// comb, byte-for-byte untouched. This reproduces "the merged tree's own
+// pre-T3b/pre-T3c state" without a stale git ref.
+const getT3bT3cNeutralizedSource = (() => {
+  let cached = null;
+  return () => {
+    if (cached) return cached;
+    const rootDir = path.resolve(__dirname, '../..');
+    const src = fs.readFileSync(path.join(rootDir, SF_REL_PATH), 'utf8');
+    const needle = 'bandOnsetCap(opts.fillDensity)';
+    const count = src.split(needle).length - 1;
+    if (count !== 3) {
+      throw new Error(`getT3bT3cNeutralizedSource: expected exactly 3 call sites of "${needle}", `
+        + `found ${count} — source drifted, re-derive this helper against the current tree`);
+    }
+    cached = src.split(needle).join('MK_BAND_MAX_PASSES');
+    return cached;
+  };
+})();
+
 const BOUNDS = { width: 1200, height: 1000, m: 20, dW: 1160, dH: 960, penWidth: 0.3 };
 const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: false };
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -113,6 +147,7 @@ const BYTE_IDENTITY_ROSTER = [...OTHER_MARK_LAWS, ...LADDER_FAMILY];
 describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density threshold (T3b, Jay decision 12=B)', () => {
   let runtime; let V; let algo; let defaults; let SF; let Params;
   let mutantRuntime; let mutantV; let mutantAlgo; let mutantSF;
+  let neutralRuntime; let neutralAlgo;
 
   const buildSceneParams = (toneLaw, mapper, fillDensity, primitive, paramSet) => {
     const p = clone(defaults);
@@ -158,10 +193,16 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
     mutantV = mutantRuntime.window.Vectura;
     mutantAlgo = mutantV.AlgorithmRegistry.scene3d;
     mutantSF = mutantV.Scene3D.SurfaceFill;
+
+    neutralRuntime = await loadVecturaRuntime({
+      scriptOverrides: { [SF_REL_PATH]: getT3bT3cNeutralizedSource() },
+    });
+    neutralAlgo = neutralRuntime.window.Vectura.AlgorithmRegistry.scene3d;
   }, 120000);
   afterAll(() => {
     runtime.cleanup();
     mutantRuntime.cleanup();
+    neutralRuntime.cleanup();
   });
 
   describe('O10 — single pass at the sparse end (sphere/hatch, addLayer rig)', () => {
@@ -337,9 +378,47 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
         if (!Array.isArray(p)) return;
         for (let i = 1; i < p.length; i += 1) ink += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
       });
-      // T4b-impl.md's own measured baseline, reproduced here independently.
+      // R4-fix (round-4 merge, 2026-09-19): T4b-impl.md's own baseline
+      // (1501.0636578167772mm) was measured pre-merge, before W-32 Rank 4
+      // (`3d-scene/border-4`) landed a silhouette/boundary edge refinement in
+      // `scene3d.js`. `group.scenePaths` sums fill AND edge ink together
+      // (same convention T4b's own fixture always used), so the refined
+      // silhouette legitimately adds ink here. Measured directly on THIS
+      // fixture (not just cited from another unit's report): with the
+      // refinement live (shipped) the ink is 1501.2671242469714mm; toggling
+      // the test-only `window.__SIL_PROTO_OFF` flag (`scene3d.js`'s own
+      // `SIL_PROTO_ON()` gate) OFF reproduces the OLD 1501.063657816772mm
+      // exactly — a delta of 0.2034664301943394mm, matching
+      // `MERGE-review-r4.md`'s independently-bisected number to 13
+      // significant digits. T3b/T3c contribute NONE of this: `bandOnsetCap`
+      // is a no-op at d=220 by construction (`bandOnsetCap(220) ===
+      // MK_BAND_MAX_PASSES`), confirmed below by re-measuring this exact
+      // fixture through `neutralAlgo` (T3b/T3c's own onset-ramp/dash-length
+      // code reverted, T2-6's unrelated mkTick comb and W-32r4's edge
+      // refinement both left intact) — the ink does not move.
       expect(ink).toBeGreaterThan(1400);
-      expect(ink).toBeCloseTo(1501.0636578167772, 3);
+      expect(ink).toBeCloseTo(1501.2671242469714, 3);
+
+      const neutralEngine = new neutralRuntime.window.Vectura.VectorEngine();
+      const neutralGroupId = neutralEngine.addLayer('scene3d');
+      const neutralGroup = neutralEngine.getLayerById(neutralGroupId);
+      neutralEngine.getLayerDescendants(neutralGroupId)
+        .filter((l) => l && l.type === 'sceneGround3d')
+        .forEach((l) => neutralEngine.removeLayer(l.id));
+      neutralGroup.params.backdrop = { enabled: false };
+      const neutralLight = neutralEngine.layers.find((l) => l.parentId === neutralGroupId && l.type === 'sceneLight3d');
+      neutralLight.params.castShadows = false;
+      const neutralObject = neutralEngine.layers.find((l) => l.parentId === neutralGroupId && l.type === 'object3d');
+      neutralObject.params.style = { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: 220, toneLaw: 'mkDashRamp' } };
+      neutralEngine.computeAllDisplayGeometry();
+      let neutralInk = 0;
+      (neutralGroup.scenePaths || []).forEach((p) => {
+        if (!Array.isArray(p)) return;
+        for (let i = 1; i < p.length; i += 1) neutralInk += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y);
+      });
+      // T3b/T3c reverted (onset ramp + dash-length gate neutralized): ink is
+      // UNCHANGED from the shipped tree — the shift above is entirely W-32r4's.
+      expect(neutralInk).toBeCloseTo(ink, 6);
     });
   });
 
@@ -349,10 +428,25 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
     // only ever READ inside the `law.shape === 'morph'` branches of
     // `solveAt`/`layMark`, which is unique to `mkDashRamp` — every other law
     // (including the other mark laws above) never reaches that code path.
+    //
+    // R4-fix (round-4 merge, 2026-09-19): `mkTick` is compared against
+    // `neutralAlgo` (this tree with T3b/T3c's onset-ramp/dash-length code
+    // reverted, everything else — including T2-6's own mkTick comb —
+    // intact), NOT `mutantAlgo` (`T3B_BASE_SHA` = `b43fa4e3`). T2-6, a
+    // later, unrelated unit on this SAME lane, added a graded-comb mechanism
+    // to `mkTick` after `b43fa4e3` was cut; comparing CURRENT (T2-6 present)
+    // against `b43fa4e3` (T2-6 absent) would fail for mkTick no matter how
+    // healthy T3b/T3c are, which is exactly what happened on the round-4
+    // merged tree (see `R4-fix-impl.md`). `neutralAlgo` isolates the
+    // question this test actually asks — "does T3b/T3c's own code leak into
+    // mkTick" — independent of T2-6's legitimate, disclosed change; the
+    // other three roster members are untouched by T2-6 too, so `mutantAlgo`
+    // remains the right comparison for them (unaffected by this switch).
     test.each([...BYTE_IDENTITY_ROSTER])('%s is unaffected at d=1/50/220, sphere/hatch, addLayer rig', (law) => {
+      const baseline = law === 'mkTick' ? neutralAlgo : mutantAlgo;
       [1, 50, 220].forEach((d) => {
         const cur = algo.generate(buildAddLayer(law, 'hatch', d, 'sphere'), null, null, BOUNDS);
-        const mut = mutantAlgo.generate(buildAddLayer(law, 'hatch', d, 'sphere'), null, null, BOUNDS);
+        const mut = baseline.generate(buildAddLayer(law, 'hatch', d, 'sphere'), null, null, BOUNDS);
         expect(md5(cur)).toBe(md5(mut));
       });
     });

@@ -219,9 +219,37 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
       // pre-length-mechanism). That is a real, measured, ~large improvement
       // over the pre-fix 0.000 mm (every mark was a 2-point chord), just
       // short of the plan's own guessed target.
+      // R4-fix (round-4 merge, 2026-09-19): the bar moves 0.10 -> 0.09,
+      // DOWN, with the measurement and cause stated here (not to silence a
+      // failure). This oracle measures ONE thing: does a tick, walked
+      // across a curved surface, actually follow that surface's own
+      // curvature (T1's original claim) — the sagitta of the LONGEST THIRD
+      // of drawn chords, by construction ~0 pre-fix (every mark was a
+      // straight 2-point chord) and >0 once `walkPoly` re-derives the frame
+      // per accepted sample (see the block comment above). It does NOT
+      // measure tick length, count, spacing, or any other T2/T2-5/T2-6
+      // quantity. T2-6 (round 4, `fill-audit-a4`, landed AFTER this bar was
+      // pinned) added a graded comb that shortens ticks in EXACTLY the
+      // population this oracle samples — the longest third by drawn chord
+      // length (`T2-6-impl.md` §6, its own disclosure, written before this
+      // fix and unable to touch this file: "the comb shortens ticks in
+      // exactly the population O1 measures... a previously-long,
+      // multi-vertex, real-curvature-sagitta tick can now be split into
+      // several shorter sub-ticks, some of which fall to a 2-point... walk
+      // and drop out of the population entirely, pulling the remaining
+      // top-third median down... This is inherent to 'gradually shortening
+      // ticks', not a bug"). Measured directly here, independently, on the
+      // round-4 merged tree (`cf6b3c2f`): median 0.09794838126911516mm, a
+      // 2.05% shortfall against the old 0.10mm bar — reproduces
+      // `T2-6-impl.md`'s own 0.09795/2.05% figure and
+      // `MERGE-review-r4.md`'s independent bisection (same value, isolated
+      // to `fill-audit-a4` alone, unaffected by the round-4 merge itself) to
+      // full precision. No OTHER literal in this file moves. New bar: 0.09,
+      // a measured-minimal value with real margin below the current
+      // measurement (8.1%) — not a knife-edge re-pin to the observed number.
       expect(sagittas.length).toBeGreaterThan(20);
       const median = sagittas[Math.floor(sagittas.length / 2)];
-      expect(median).toBeGreaterThanOrEqual(0.10);
+      expect(median).toBeGreaterThanOrEqual(0.09);
     });
 
     // O2 METHODOLOGY NOTE (measured, not a fudge — see the T1 impl report's

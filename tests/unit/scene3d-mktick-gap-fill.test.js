@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { oracles, combNeutrality } = require('../helpers/scene3d-mktick-gap-fill');
+const { pathSignature } = require('../helpers/path-signature');
 
 /*
  * T2-6 — Jay's USER RULE clause (a), verbatim (`T2-6-plan.md`): "Instead of
@@ -45,8 +46,35 @@ const { oracles, combNeutrality } = require('../helpers/scene3d-mktick-gap-fill'
  *
  * PRE_TICK_BLOCK is a hand-maintained STRING CONSTANT reconstruction of the
  * T2-5-only state (`75777240`, this unit's own base sha) — not `git show
- * HEAD`, verified byte-for-byte against a `git archive 75777240` scratch
- * export (`/private/tmp/claude-501/scratch-T26-red`).
+ * HEAD`. The static code-identity leg below still verifies it against a
+ * `git archive 75777240` scratch export (`/private/tmp/claude-501/scratch-T26-red`).
+ *
+ * R4-fix (round-4 merge, 2026-09-19): the ORIGINAL "SEMANTIC PRE
+ * reconstruction proof" leg rendered PRE_TICK_BLOCK spliced onto the CURRENT
+ * `surface-fill.js` and compared it, byte-for-byte, against rendering a
+ * `git archive 75777240` export of the WHOLE TREE directly. That premise only
+ * holds while `scene3d.js` (loaded from disk in both runtimes, never
+ * overridden) is unchanged between the compared trees. Once W-32 Rank 4
+ * (`3d-scene/border-4`) refined the silhouette/boundary edge pass in
+ * `scene3d.js`, the CURRENT-tree side picked up the refined edge geometry
+ * while the archived-75777240 side did not — a small floating-point
+ * coordinate divergence in the reconstructed edge path, unrelated to mkTick,
+ * broke a self-test that was never mkTick's to gate (`R4-fix-impl.md`,
+ * `MERGE-review-r4.md` §2 item 6: bisected independently to a genuine
+ * cross-lane interaction, not a T2-5/T2-6 regression). This is the same
+ * vacuous/environment-dependent leg class W-38b already fixed once in
+ * `scene3d-facet-min-rulings.test.js` (comparing against a live `git show
+ * HEAD:` can never disagree with itself once the fix is committed forever;
+ * comparing against a live `git archive <sha>:` breaks the instant ANY
+ * OTHER file moves between the compared trees — same defect, different sha).
+ * Replaced with a PINNED GOLDEN fingerprint of PRE_TICK_BLOCK's own rendering
+ * ON THE TREE UNDER TEST (`EXPECTED_PRE_SIGNATURE` below, `pathSignature`
+ * precision 4, the same convention `scene3d-facet-min-rulings.test.js`/
+ * `scene3d-mktick-wedge.test.js` already use), proven non-vacuous by a
+ * CONTRAST MUTATION: the SHIPPED tree (T2-6's comb wired, no override) must
+ * diverge from every one of these twelve golden fingerprints — if it didn't,
+ * the golden would not be sensitive to the very mechanism it exists to
+ * freeze. RE-PIN ONLY WITH PROOF (RED/GREEN numbers in the commit body).
  *
  *   npx vitest run tests/unit/scene3d-mktick-gap-fill.test.js
  */
@@ -266,6 +294,42 @@ const buildPreSource = () => spliceTickBlock(loadHeadSource(), PRE_TICK_BLOCK);
 // `T2-3-review.md`/`T2-3b-plan.md` §5.1 found `git show HEAD` is prone to.
 const BASE_SHA_SRC = '/private/tmp/claude-501/scratch-T26-red/src/core/scene3d/surface-fill.js';
 
+// PINNED GOLDEN (R4-fix, replaces the live `git archive 75777240` comparison
+// — see the file header comment for why). `pathSignature` (precision 4,
+// `tests/helpers/path-signature.js`) of PRE_TICK_BLOCK's own rendering
+// (`buildPreSource()`, i.e. CURRENT scene3d.js + CURRENT surface-fill.js with
+// its tick block reverted to the T2-5-only shape), one entry per
+// `${rig}|${primitive}/${mapper}`, all twelve `CELLS` x both rigs. Recorded
+// once, directly from this file's own harness (`renderCellWithSites` +
+// `buildPreSource()`), on the round-4 merged tree (`cf6b3c2f`) — not
+// hand-typed or copied from another file's fixture (this file's `CELLS`/rig/
+// camera/density setup is its own, not necessarily identical to
+// `scene3d-mktick-wedge.test.js`'s, so its `EXPECTED_SIGNATURE` values are a
+// different measurement and are not expected to match key-for-key; six of
+// twelve happen to coincide, four do not — coincidence is not claimed either
+// way here). Correctness rests on: (1) the static code-identity leg above,
+// which independently proves `PRE_TICK_BLOCK` is a faithful, byte-for-byte
+// reconstruction of the real `75777240` tick block; (2) the CONTRAST
+// MUTATION test below, which proves these twelve values are sensitive to the
+// T2-6 mechanism they exist to freeze, not a vacuous tautology. RE-PIN ONLY
+// WITH PROOF: a fingerprint change here must be accompanied in the commit
+// body by the RED/GREEN numbers showing the product change that legitimately
+// moved it — never re-pinned to silence a failure.
+const EXPECTED_PRE_SIGNATURE = {
+  'test|sphere/hatch': 'fec6f83a509d0667c3154a10ab298b69ca1dbe18f542af79985d9430220dd487',
+  'test|sphere/contour': 'b1b3def087399e229903728f3f21374d7a3f58bc658412dcb6040178267685e5',
+  'test|torus/hatch': '7c12b6b4b17a54461852c3384dc3808f4adfb87eb14860c3c4a7b18b4923f4ca',
+  'test|torus/contour': '9badc0813901afdc6245addb43c13e69c521c2819f7507dca9ae1a78ab67300b',
+  'test|cone/hatch': '8e006cbf3d8904c54af18d781edab83692f2c50dece4ab1a7fe0b2580acf4e90',
+  'test|cone/contour': '3760b050052766836a1f31fa760a9418734b4d328de74f904d028618d6b12d59',
+  'create|sphere/hatch': '1ea2030933057ddb6c7c44f92d24f3212b7124284eb37e7c3eb8c06966a4c595',
+  'create|sphere/contour': '6b6edd1e68c2cf4e3e4bd11bf32a21104989dbe90a126c21f8cf585991ddce15',
+  'create|torus/hatch': '467252415a17e9d9e5d1b02e701e618ed3dd10db96057a313ffdf8fb85822916',
+  'create|torus/contour': '69370635bff442cdde5c8f1804622dc9f6e136e67a5107fe9326fd81a472c960',
+  'create|cone/hatch': 'dc12abcc02debcd409f4a1e52dd26142f4730fdbdddb41030a453d3edf981c53',
+  'create|cone/contour': 'd9a36e63a15f0f260d5f32317645de75a2425d933366e679715eb3028f23dd83',
+};
+
 // GATE — the RED bar (`T2-6-plan.md` §6.3 item 1). Two of twelve fixtures
 // (`create|torus/hatch`, `create|torus/contour`) do not clear it — the
 // `bandOn` gate disables the comb on the torus's own foreshortened bands
@@ -312,22 +376,51 @@ describe("Scene3D.SurfaceFill — mkTick graded band comb (T2-6, Jay's USER RULE
     expect(stripComments(preSansHook)).toBe(stripComments(realBlock));
   });
 
-  test('SEMANTIC PRE reconstruction proof: rendering through PRE_TICK_BLOCK (hook unarmed) on the '
-    + 'CURRENT tree matches rendering the REAL git-archived base sha (75777240) directly, byte-for-byte, '
-    + 'on every cell, both rigs', async () => {
-    const baseRt = await loadVecturaRuntime({ rootDir: '/private/tmp/claude-501/scratch-T26-red' });
+  test('PINNED GOLDEN: PRE_TICK_BLOCK rendering on THIS tree matches the fingerprint recorded at '
+    + 'R4-fix, per cell, both rigs (replaces the live git-archive-base-sha comparison — see the file '
+    + 'header comment)', async () => {
     const preRt = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildPreSource() } });
     try {
       for (const rig of ['test', 'create']) {
         for (const [primitive, mapper] of CELLS) {
-          const b = renderCellWithSites(baseRt, { primitive, mapper, rig });
-          const p = renderCellWithSites(preRt, { primitive, mapper, rig });
-          expect(JSON.stringify(p.paths)).toBe(JSON.stringify(b.paths));
+          const key = `${rig}|${primitive}/${mapper}`;
+          const r = renderCellWithSites(preRt, { primitive, mapper, rig });
+          const sig = pathSignature(r.paths);
+          const expected = EXPECTED_PRE_SIGNATURE[key];
+          if (!expected) {
+            throw new Error(`EXPECTED_PRE_SIGNATURE missing entry — paste this in:\n  '${key}': '${sig}',`);
+          }
+          expect(sig).toBe(expected);
         }
       }
     } finally {
-      await baseRt.cleanup();
       await preRt.cleanup();
+    }
+  }, 180000);
+
+  test('CONTRAST MUTATION (non-vacuity, W-38b pattern): the SHIPPED tree (T2-6\'s comb wired, no '
+    + 'override) diverges from the PRE_TICK_BLOCK golden on every named cell — proves the golden is '
+    + 'sensitive to the mechanism it freezes, not a tautology that would pass no matter what rendered',
+  async () => {
+    const plain = await loadVecturaRuntime();
+    try {
+      const divergent = [];
+      for (const rig of ['test', 'create']) {
+        for (const [primitive, mapper] of CELLS) {
+          const key = `${rig}|${primitive}/${mapper}`;
+          const r = renderCellWithSites(plain, { primitive, mapper, rig });
+          const sig = pathSignature(r.paths);
+          if (sig !== EXPECTED_PRE_SIGNATURE[key]) divergent.push(key);
+        }
+      }
+      // Every one of the twelve cells must move: T2-6-impl.md's own roster
+      // sweep found 12/1184 cells changed and every single one was mkTick —
+      // these twelve ARE that set (mkTick x {sphere,torus,cone} x
+      // {hatch,contour} x both rigs), so a non-mutated golden here would be
+      // a real vacuous-pass defect, not a partial-coverage nuance.
+      expect(divergent.length).toBe(12);
+    } finally {
+      await plain.cleanup();
     }
   }, 180000);
 
