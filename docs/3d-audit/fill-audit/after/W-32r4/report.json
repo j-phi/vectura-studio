@@ -1,0 +1,112 @@
+{
+  "rig": "create",
+  "unit": "W-32 Rank 4",
+  "lane": "border-4",
+  "branch": "3d-scene/border-4",
+  "worktree": "/Users/jayphi/Documents/github/vectura-studio/.claude/worktrees/border-4",
+  "base_sha": "b43fa4e3",
+  "checkpoint_sha": "e47afc16",
+  "app_version": "1.4.2",
+  "fixture_common": {
+    "pen_mm": 0.3,
+    "doc_bounds_mm": { "width": 320, "height": 220 },
+    "camera_a": "Params.DEFAULT_CAMERA (orthographic, yaw -30, pitch 20)",
+    "camera_b": "DEFAULT_CAMERA with yaw 40, pitch -15",
+    "camera_p": "DEFAULT_CAMERA with projection: 'perspective' (added this pass)",
+    "densities": { "med": 50, "max": 220 },
+    "style": { "fillAngle": 45, "toneLaw": "ladder (SCENE_FILL_STYLES.DEFAULT)", "no other non-default param" },
+    "ground_plane": "OFF in every measured overshoot/O1-O3 cell (q.ground={enabled:false}); ground-plane ink is NOT included in any inkFill/inkEdge total below. One dedicated ground cell (sphere+ground, hatch) is the byte-identity check.",
+    "lights": "one directional sun, azimuth 135, elevation 45, castShadows:false"
+  },
+  "root_cause": "src/core/algorithms/scene3d.js:5084-5215 structural edge pass draws the projected MESH silhouette (a chord polygon inscribed in the true one); src/core/scene3d/surface-fill.js's fill already reaches the analytic terminator. The gap between them is the drawn-border deficit.",
+  "fix": "New silhouetteProjectLocal (scene3d.js, near sliceAnalyticProjectLocal, ~line 665-716) solves F(p)=0 and G(p)=grad F . v=0 by Newton with a numerical grad G, projecting silhouette/boundary edge vertices AND 4x-subdivided interior points onto the analytic silhouette/rim. Gated to convex charted primitives (torus excluded). View direction v is derived per REFINED POINT (not once per record) from the pass's own projector, exact under orthographic and required for correctness under perspective (plan §3.7).",
+  "measurements": {
+    "O1_create_rig_osDrawn_worst_pen": {
+      "fixture": "create rig (PRIMITIVE_CREATE_DEFAULTS over PRIMITIVE_PARAM_DEFAULTS), cameras a+b, densities med+max, mappers hatch/contour/crosshatch/spiral, primitives capsule/cone/cylinder/sphere/ellipsoid",
+      "before": { "ellipsoid": 0.72, "sphere": 0.52, "cone": 0.52, "capsule": 0.25, "cylinder": 0.12 },
+      "after_create_med": { "ellipsoid": 0.01, "sphere": 0.00, "cone": 0.02, "capsule": 0.01, "cylinder": 0.00 },
+      "endpoints_over_0.5pen_before_to_after": "111 -> 0 across the full sweep",
+      "instrument": "W-32r4-plan-evidence/measure.js, re-run against 3d-scene/border-4 HEAD by the implementer, reproducing the planner's own numbers exactly (create/med: ellipsoid 0.01, sphere 0.00, cone 0.02, capsule 0.01, cylinder 0.00)"
+    },
+    "O3_anti_cheat_osTrue_pen": {
+      "claim": "overshoot vs the TRUE (detail-200) silhouette stays <= 0.01 pen on every measured cell, before AND after -- the fix does not pull fill ink off the true surface to satisfy O1",
+      "status": "GREEN before and after (unchanged, as required)"
+    },
+    "perspective_camera_section_3.7": {
+      "fixture": "create rig, med density, mapper contour, camera p (DEFAULT_CAMERA + projection:'perspective')",
+      "before_osDrawnPen": { "capsule": 0.09, "cone": 0.20, "cylinder": 0.00, "sphere": 0.19, "ellipsoid": 0.21 },
+      "after_osDrawnPen_this_implementation": { "capsule": 0.00, "cone": 0.00, "cylinder": 0.00, "sphere": -0.01, "ellipsoid": -0.01 },
+      "note": "The plan's own prototype (view direction computed ONCE per record) only partially corrected this case (sphere stayed at 0.21, ~10% recovered). This implementation derives the view direction PER REFINED POINT (plan §3.7's REQUIRED shipped behaviour) and the perspective case is now fully corrected, negative values meaning the worst end sits inside the drawn hull (no overshoot at all)."
+    },
+    "cross_object_occluder_scene_3.5": {
+      "fixture": "two-sphere scene (occl.js), create rig, camera a, 320x220, mappers hatch/contour/crosshatch/spiral/contourSlice, densities 50+220",
+      "before_worst_pen": 0.00,
+      "after_worst_pen": -0.39,
+      "after_median_pen_range": "-0.07 to -0.13",
+      "cuts_under_neg_0.5_pen": 0,
+      "conclusion": "matches the plan's 0.39-pen-worst / 0.07-pen-median finding; hlr.js (granted to this lane) is confirmed UNNEEDED and was NOT touched"
+    },
+    "identity_O4_O5": {
+      "sceneFill_byte_identity": "0.000% changed on every measured cell (132/132); confirmed by tests/unit/scene3d-fill-silhouette-overshoot.test.js O4 (5 primitives x 4 mappers, md5 at 9dp) and its mutation proof",
+      "faceted_unsupported_byte_identity": "48/48 cells (box, plane, pyramid, solid, superellipsoid, torusKnot x 8 mappers) confirmed byte-identical via O5",
+      "torus_byte_identity": "8/8 mappers confirmed byte-identical via O5 (excluded by the mode!=='torus' gate); mutation proof (test-only window.__SIL_PROTO_TORUS_ON override) confirms the gate, not luck, is what keeps it identical",
+      "ground_plane_byte_identity": "confirmed via O5's dedicated ground-plane test"
+    }
+  },
+  "guards": {
+    "scene3d-fill-boundary-ends": "41/41",
+    "scene3d-silhouette-contiguity": "6/6",
+    "scene3d-border-contiguity": "7/7",
+    "scene3d-border+offset+offset-geometry": "5/5, 7/7, 7/7",
+    "scene3d-hlr": "11/11",
+    "scene3d-edge-styles+object-edge-styles": "8/8, 6/6",
+    "topoform-silhouette-plane-tracking+scene-delete-and-silhouette": "5/5, 8/8",
+    "scene3d-shadows+shadow-light-silhouette": "18/18, 4/4",
+    "scene3d-mappers": "32/32",
+    "scene3d-mark-laws-draw": "30/30",
+    "scene3d-mkdashramp-dark-end+insert-default-ink": "4/4, 6/6",
+    "scene3d-ribbon-width-bar+width-create-rig": "10/10, 12/12",
+    "scene3d-plot-safety": "5 passed, 1 skipped (pre-existing)",
+    "scene3d-hlr-spatial-index-identity": "6/6 AFTER the disclosed re-pin (see ## Bars changed in impl report)",
+    "scene3d-curves": "13/13 AFTER the disclosed re-pin (see ## Bars changed in impl report)",
+    "scene3d-shadow-anatomy+receive+tone-gradient+cast-shadow-zones+form-shadow-limb": "77/79 (2 pre-existing skips)",
+    "scene3d-tone-law-collapse (Tier 1, singleFork)": "121/121",
+    "integration/scene3d-fill-style-picker": "177/177",
+    "test:visual (all 6 files)": "99/112 (13 pre-existing skips), no regressions"
+  },
+  "torus_exclusion": {
+    "reason": "non-convex silhouette; a refined point leaves the tessellated hull and is cut by the object's OWN occluder faces",
+    "measured_without_gate": "scene3d-silhouette-contiguity 5/6, scene3d-border-contiguity 6/7 (dangling endpoints 0 -> 48/96/176 at detail 12/24/44)",
+    "measured_with_gate": "both files back to 6/6 and 7/7, torus byte-identical on all 8 mappers",
+    "followup": "filed as Rank 2 / FU-1, not attempted (W-27c SELF_OCCLUDE_BIAS precedent)"
+  },
+  "evidence_cells": {
+    "tier_A": [
+      "ellipsoid__contour__ladder__med__a",
+      "ellipsoid__crosshatch__ladder__max__a",
+      "ellipsoid__spiral__ladder__med__a",
+      "ellipsoid__hatch__ladder__max__a",
+      "sphere__contour__ladder__med__a",
+      "sphere__hatch__ladder__med__a",
+      "capsule__contour__ladder__med__a",
+      "cylinder__contour__ladder__med__a",
+      "torus__contour__ladder__med__a"
+    ],
+    "tier_B": ["cone__crosshatch__ladder__med__a"],
+    "identical_exceptions": {
+      "torus__contour__ladder__med__a": "byte-identical before/after -- CORRECT (excluded by the convexity gate, see torus_exclusion above)"
+    },
+    "capture_command": "node scripts/audit/scene3d-capture.js --tier A|B --root <worktree> --port 8470 --only '<regex>' --out docs/3d-audit/fill-audit/after/W-32r4, run from MAIN",
+    "native_resolution_crop": "docs/3d-audit/fill-audit/after/W-32r4/ellipsoid-hatch-d220-equator-crop-before-after.png -- offline raster (grey=sceneEdge, black=sceneFill, 0.3mm strokes, 96 px/mm, 4x nearest-neighbour magnification) at the equator of ellipsoid.hatch.create.a.d220 (osDrawn 0.2172mm/0.72 pen, 8 ends over the bar BEFORE this unit; 0.0026mm/0.01 pen, 0 ends over AFTER). LOOKED AT IT: before shows a visibly kinked/faceted grey outline (straight mesh-chord segments meeting at angles); after shows a smoother, more continuously curving outline that better follows the true silhouette. This is a planning/diagnostic image (offline raster), same precedent as W-35/W-35b -- not an app screenshot.",
+    "live_app_screenshot": "docs/3d-audit/fill-audit/after/W-32r4/live-app-ellipsoid-hatch-d220.png -- the SAME cell (ellipsoid, hatch, density 220) built and rendered through the REAL running app (window.app.engine + window.app.renderer.draw()) on localhost:8470, v1.4.2, via Playwright. No console/page errors. Confirms the fix runs correctly end-to-end in the actual app, not just the jsdom test harness. The sub-0.22mm defect is below the resolvable threshold of a browser canvas screenshot at normal zoom (this is why the native-resolution offline raster is the primary visual proof, same as W-35/W-35b's own precedent)."
+  },
+  "stop_conditions_checked": {
+    "1_sceneFill_moves": "NO -- 0.000% on 132/132 cells, confirmed by O4",
+    "2_osTrue_rises": "NO -- stays <= 0.01 pen everywhere (O3 green before and after)",
+    "3_fill_boundary_ends_touched": "NO -- read-only, re-run 41/41, never edited",
+    "4_torus_ungated": "NOT DONE -- gated correctly, RED reproduced and disclosed",
+    "5_faceted_unsupported_changes": "NO -- 48/48 byte-identical",
+    "6_perspective_correction_skipped": "NOT SKIPPED -- implemented per-point v (stronger than the prototype), re-measured, see perspective_camera_section_3.7 above",
+    "7_stop_and_report": "not needed -- all bars met honestly"
+  }
+}

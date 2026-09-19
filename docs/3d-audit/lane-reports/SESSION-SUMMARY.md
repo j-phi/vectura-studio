@@ -1,6 +1,6 @@
 # 3D fill audit — SESSION SUMMARY (round 1: 2026-09-05 → 06 · round 2: 2026-09-06 19:05 EDT →)
 
-**✅ ROUND 3 IS MERGED into local `main` at `d3b01d28` (v1.4.2), 2026-09-17 — NOT PUSHED.** **🟢 DECISION 10 IS READY FOR JAY — the evidence packet is complete (both rigs' pictures, per-law ink and width numbers, and measured width floors). TWO DECISIONS ARE OPEN (§4). DECISION 10 BLOCKS F1 FROM CLOSING (ribbon WEIGHT after Prototype B: is the thinner ribbon acceptable, or must the fix keep the pre-fix weight?). It was found by eye, not by a bar — no guard measures ribbon width.** *(Superseded: round 3 was paused by Jay on 2026-09-12 and resumed the same day; both WIP checkpoints were verified and adopted, not reverted.)* ** Round 2 is complete and merged into local `main` at `9cf09b39`, v1.4.1** (the merge of `3d-scene/integrate-r2 @4421d514`, with the docs commit `1e504ce6` beneath it). Merge review **ACCEPT** (`MERGE-review-r2.md` — every claim reproduced). Main is **44 ahead of origin/main and NOT pushed**; pushing remains Jay's call. Round 1 is closed: all units landed,
+**✅ ROUND 3 IS MERGED at `d3b01d28` (v1.4.2) AND PUSHED — `origin/main` = `b43fa4e3`, 86 commits, 2026-09-17 — Jay answered the push question A on 2026-09-17, after three rounds and 44+ unpushed commits. 🔴 ROUND 4 IS OPEN off `b43fa4e3`, and it opens on a USER REJECTION: the mkTick eye check came back "Wrong direction" → T2-5, P0.** **🟢 DECISION 10 IS READY FOR JAY — the evidence packet is complete (both rigs' pictures, per-law ink and width numbers, and measured width floors). TWO DECISIONS ARE OPEN (§4). DECISION 10 BLOCKS F1 FROM CLOSING (ribbon WEIGHT after Prototype B: is the thinner ribbon acceptable, or must the fix keep the pre-fix weight?). It was found by eye, not by a bar — no guard measures ribbon width.** *(Superseded: round 3 was paused by Jay on 2026-09-12 and resumed the same day; both WIP checkpoints were verified and adopted, not reverted.)* ** Round 2 is complete and merged into local `main` at `9cf09b39`, v1.4.1** (the merge of `3d-scene/integrate-r2 @4421d514`, with the docs commit `1e504ce6` beneath it). Merge review **ACCEPT** (`MERGE-review-r2.md` — every claim reproduced). Main is **44 ahead of origin/main and NOT pushed**; pushing remains Jay's call. Round 1 is closed: all units landed,
 reviewed, and merged into local `main` at `817424dc`, with the docs wrap-up at `6ad1d93e` and the ledger
 record at `47a5a755`. **The seven round-1 `3d-scene/*` lanes are historical**; round 2 runs in five NEW
 worktrees branched off `main` — map and first-unit briefs in `ROUND2-BRIEFS.md`, queue in `LEDGER.md`
@@ -55,6 +55,19 @@ Detail: `LEDGER.md` (per-unit rows, secretary flags, standing rulings, incidents
 | **HLR sub-pen precision** | handoff-c3 | — | **CLOSED MEASURED / PARKED, no unit, no review.** Nothing committed; the lane is clean at `426cc5e4`. The **W-25 imported-torus seam is 0 mm — fully closed** (and its bar is already the tight `toBe(0)`); the **bridged micro-gap pair is 0.0038 mm = 0.0127 pen widths**, ~1.3 % of one pen, an order of magnitude under the park threshold. ⚠ **(a) had already closed before the unit started — the FOURTH item this audit found already fixed by another unit's side effect.** |
 | **U9b + W-10d-3b + U6-2** | fill-collapse-3 | `2b189b5f` | **DONE/FU.** 406/406. **The picture flag ruled FIXED, not half-fixed** — the survivor in the select plus the raw id's own text in the popover is the designed end state. → **U9b-2** (the `onePenDown` exception is an undisclosed **write-back-on-load**). |
 | **U7-2** | fill-collapse-3 | `49a5ef88` | **DONE — CLOSED 2026-09-12. Reviewer ACCEPT** (`U7-2-review.md`) — unqualified, **all seven secretary conditions reproduced adversarially**, two mutation-kill probes non-vacuous, and the **555/555 re-summed with the report's own derivation gap closed** (naive sum 576; rows 2/3 proven *disjoint* `-t` subsets of the 117, 576 − 21 = 555 — **the first clean sum in this chain after four slips**). 17 caveats rewritten, originals preserved in a non-rendered `measured` field. Found that **the shadow row renders no caveat at all on either surface** → **U5b-4**. → **U7-2b** (two `.*` regexes looser in the abstract than the term match they replaced). |
+
+### Round 4 (2026-09-17 → 18) — lanes off `b43fa4e3`, **merge IN PROGRESS, not committed**
+
+| unit | lane | sha | outcome |
+|---|---|---|---|
+| **T3b** (decision 12 = B) | fill-audit-a4 | `e60d102e` | **DONE/FU.** Single-pass dashes below a measured **d=35** threshold: pens per mark **3.93 → 1.00** at d=1, d=50/220 byte-identical. ⚠ The broken-ruling flag was **T4-inherited** (the duty proxy is unchanged) → T3c. |
+| **W-36e** | fill-audit-a4 | `a5d8a1be` | **DONE — VERIFIED.** The crosshatch dial's interior blind spot is gated by an **ink-based** sub-bar (15/15; interior mutation RED 14/15). ✅ The count-ratio metric was correctly **not** extended below d≈10. |
+| **F1-count** | fill-audit-a4 | `7ef20455` | **DONE — VERIFIED.** A `fillEmpty` counter in `ribbonize()`, output **md5-identical 30/30**. ✅ Its RED matched the ledger's own historical count — **4 pre-fix → 0** — a year-old probe's number reproduced by a permanent counter built from the row alone. |
+| **T2-5** (P0, user rule) | fill-audit-a4 | `75777240` | **DONE/FU.** Clause **(c) FIXED** (over-long ticks 0/12); **(b) MEASURED**, not shipped; ⚠ **(a) NOT DELIVERED** — the reviewer rejected "partial" at ~0 % of the substantive ask. |
+| **T3c** | fill-audit-a4 | `f0b0b0c8` | **DONE/FU.** Dash length bounded (3.33 → 1.95 mm at d=1, counts byte-identical). ✅ **Jay's 10.png words met on the picture: discrete dashes riding the rulings.** ⚠ Follow-up: true onset cliff is **d≈32, not 35**. |
+| **T2-6** (clause (a)) | fill-audit-a4 | `0f420747` | **DONE/FU.** The graded band comb; **ink area bit-identical**. ⚠ **Clause (a) = DELIVERED PER BARS, PENDING JAY'S EYE** — stair-stepped comb edges, bracket shapes, fragments near the highlight, and a **new rung artefact on `sphere/hatch`** (T2-6b candidate). |
+| **W-32r4 + W-32r4b + W-32r4c** (decision 9-amended = B) | border-4 | `76a77f22` + follow-ons | **DONE/FU.** ✅ **The border is drawn on the true silhouette: 0.72 → 0.02 pen, fill ink byte-identical.** ⚠ Took a **REJECT** (21 unrun goldens) and two follow-on units — **every one about the SUITE, never the mechanism.** W-32r4b's sagitta bar **corrected its own brief's RED hypothesis.** |
+| **W-36f** (decision 11 = B) | fill-audit-a4 | — | 🛑 **MEASURED / PARKED — NO SETTING EXISTS.** A scout proved every cap-onset retune breaks the 0.85 calibrator and cylinder never reaches 1.2× authority at d=220. → **§4 decision 11-amended.** |
 
 ### Rounds 1–2 (merged at `9cf09b39`)
 
@@ -117,6 +130,52 @@ the Incident-3 pattern, not the Incident-4/5/7 one.
 ⚠ **Both WIP commits are unverified — nothing may be built on top until each is verified or reverted.** And
 once again **the two units that died mid-step are exactly the two with no report on disk**: the reports are
 what make a from-scratch restart possible, and these two have none.
+
+## 2c. ROUND-4 CLOSED — HANDOFF BLOCK FOR `fill-audit-handoff.md` (paste after the merge sha is known)
+
+---
+
+### ROUND 4 CLOSED (2026-09-18) — merged at `<SHA>`, NOT YET PUSHED
+
+**Round 4 ran 2026-09-17 → 18 in TWO lanes off `main` `b43fa4e3` (v1.4.2), and it opened on a USER
+REJECTION rather than a queue:** Jay's eye check on the mkTick cone came back **"Wrong direction"**.
+**Both lanes are final — `fill-audit-a4` `0f420747`, `border-4` (W-32r4 + W-32r4b + W-32r4c) — with one
+measured merge conflict (the `mktick-wedge` goldens, re-pinned on BOTH lanes for unrelated correct reasons)
+and twelve goldens to re-derive on the integrated tree with contrast mutations.**
+
+**Four of Jay's answers were delivered:** **12 = B** (T3b single-pass dashes, then T3c bounded their length —
+**his 10.png words met on the picture**) · **9-amended = B** (W-32r4: the border drawn on the true
+silhouette, **0.72 → 0.02 pen, fill ink byte-identical**) · **10 = A** and **13 = A** needed no unit.
+⚠ **11 = B could NOT be delivered: a scout proved NO SETTING EXISTS** — every cap-onset retune breaks the
+0.85 calibrator and cylinder never reaches 1.2× authority at d=220 → **§4 decision 11-amended is open.**
+
+⏳ **TWO THINGS WAIT ON JAY, AND NEITHER IS A UNIT'S TO DECIDE:**
+1. **The T2-6 EYE CHECK on the Decision Desk**, now carrying the **SHIPPED** output — `cone/hatch` whole cell
+   and native crop, plus the `sphere/hatch` cell. **Clause (a) is "DELIVERED PER BARS, PENDING JAY'S EYE":
+   the ticks do grade, but stair-stepped comb edges, bracket shapes and fragments near the highlight remain,
+   and the reviewer found a NEW rung artefact on `sphere/hatch`.** **His answer decides whether T2 CLOSES or
+   T2-7 is planned; T2-6b (the rung artefact) is a CANDIDATE, not a row, for the same reason.**
+2. **§4 decision 11-amended** — accept the cap as inherent, or fund a different mechanism (tone on crosshatch
+   **ANGLE** or **PEN WEIGHT** at d=220). **The onset is proven not to be the lever.**
+
+**ROUND-5 CANDIDATES (SESSION-SUMMARY §3 has the table):** T2-6b / T2-7 *(pending Jay)* · **the T3c onset
+re-derive — the true cliff is d≈32, not the shipped 35** · T2-4 *(a `MIN_MARK_MM` limit; MEASURED is an
+acceptable outcome)* · T2-3d *(closed unbuilt by decision 13 = A)* · T2-3e *(the row lattice — pre-existing,
+measured, disclosed in Jay's T2 row)* · the W-36f mechanism *(pending 11-amended)* · W-07b · unscheduled.
+
+⚠ **Still owed at merge, neither a unit: checklist item 23** (the `git show HEAD:` sweep — **hunting BROKEN
+instances as well as always-passing ones, after one was found failing at its own landing commit**) **and
+item 30** (ground-plane inclusion across every ink number).
+
+**PROCESS — unchanged and still binding:** **Jay's scale-down regime** (tests-only ⇒ light VERIFY pass; no
+planner unless a unit was REJECTED or its mechanism is UNKNOWN; secretary flags only for `src/` units, capped
+at six; **scouts stay — they closed three items outright across two rounds**) · **`ROUND3-RESUME-BRIEFS.md`
+§0, pasted verbatim into every brief** · **§0b's slow-file list.** **New this round:** **an edge-geometry
+change must run EVERY pinned-golden file over curved primitives before commit — grep, don't recall** *(a
+REJECT on a correct mechanism)* and **a present report is NOT evidence of a landed unit — check the sha, not
+the STATUS line** *(Incident 15)*. **Incidents 13–15 cost nothing; the on-disk record recovered every one.**
+
+---
 
 ## 2b. ROUND-3 CLOSED — HANDOFF BLOCK FOR `fill-audit-handoff.md`
 
@@ -189,37 +248,87 @@ follow-up, W-32 Rank 4, `insetMultiPolygon` ladder, the W-29 stub family, U10–
 
 ---
 
-## 3. ROUND-4 ORDER — round 3 is closed and merged; nothing below is started
+## 3. ROUND 5 ORDER — **nothing is started; round 4 is closed and paused**
 
-> 🏁 **Round 3 closed at `d3b01d28` (v1.4.2). The five `-3` worktrees are HISTORICAL — nobody works in them;
-> round 4 branches off `main`.** **Every item below already has a brief or a measured starting point**, which
-> is the deliberate product of the stop line: **a finding became a BRIEF, not necessarily a UNIT.**
+> 🏁 **Round 4 is COMPLETE and REVIEWED; the merge is the last step and Jay pauses the moment it lands. NO NEW
+> UNITS START.** **Round-5 lanes branch off `main`; `fill-audit-a4` and `border-4` are HISTORICAL.**
+>
+> ⏳ **TWO ANSWERS GATE THE TOP OF THIS LIST, and neither is a unit's to decide** — both are live on the
+> Decision Desk (`read_db` collection `decisions`, docs **`d11b`** and **`eye_t26`**), and **whatever comes
+> back is transcribed into §4, which stays authoritative.**
 
-**CARRY-OVERS — unconditional, in rough priority order:**
-
-| unit | row | what it is | why it is not urgent |
+| # | candidate | gate | note |
 |---|---|---|---|
-| **F1-count** | 2d | the fill-depth swallowed-failure counter (`surface-fill.js` grant needed) | **The fix landed; the BLINDNESS did not.** 4 of 6 swallowed failures were invisible to every counter — **nothing in the shipped tree would report the next one.** Its RED is already measured (4 pre-fix, 0 post). |
-| **W-36e** | 4b | close the crosshatch dial bar's interior blind spot | Two interior-only mutations pass every bar in the file. ⚠ **Its bar must be INK- or BUDGET-based, or restricted to d ≥ 10** — the count-ratio metric is small-integer noise below that. |
-| **T2-4** | 5b | d=220 mkTick coverage 0.67–0.82 (vs pre-fix 0.91–0.99) | Proven NOT curve-shape-fixable; it is `LMIN·R` nearing `MIN_MARK_MM`. ⚠ **MEASURED is an acceptable outcome — raising that floor may be a plottability REGRESSION.** |
-| **T2-3e** | 5a-4 | the row-lattice light-block pattern | **Pre-existing and measured** (period ≈40→47 px, contrast 17.66→16.80, within noise). `MK_ROW_COV` is T3's territory. **Disclosed in Jay's T2 row, so it is named rather than unowned.** |
-| **W-07b** + the unscheduled list | — | W-33's fitter follow-up · W-32 Rank 4 · `insetMultiPolygon` ladder · the W-29 stub family · U10–U12 | U10–U12 stay **W-26-blocked and lossy**. |
+| 1 | **T2-6b** / **T2-7** | ⏳ **Jay's T2-6 eye check** | **T2-6b** = the **rung-shaped artefact on `sphere/hatch`** the reviewer found on a cell nobody was watching. **T2-7** = a seventh mkTick attempt. ⚠ **Clause (a) stands at "DELIVERED PER BARS, PENDING JAY'S EYE" — the bars say yes and the picture is unresolved. If he steers elsewhere, NEITHER may need to exist**, which is why they are candidates rather than rows. |
+| 2 | **T3c onset re-derive** | none — ready | **The true cliff is d≈32, not the shipped 35.** T3b measured where single-pass becomes *necessary*; the reviewer measured where the onset *is*. **Small, tests-only ⇒ light VERIFY pass.** |
+| 3 | **T2-4** | none — ready | d=220 mkTick coverage **0.67–0.82** vs a pre-fix 0.91–0.99. **Proven NOT curve-shape-fixable — it is `LMIN·R` nearing `MIN_MARK_MM`.** ⚠ **MEASURED is an acceptable outcome: raising that floor may be a plottability REGRESSION, not a coverage fix.** |
+| 4 | **T2-3e** | none — filed | The **row-lattice** pattern: **pre-existing, measured** (period ≈40→47 px, contrast 17.66→16.80, within noise) **and already disclosed in Jay's T2 row**, so the shipped pictures carry a named artefact rather than an unowned one. `MK_ROW_COV` is T3's territory. |
+| 5 | **W-36f mechanism** | ⏳ **decision 11-amended** | **Only exists if he answers (B):** tone on crosshatch **ANGLE** or **PEN WEIGHT** at d=220. ✅ **The onset is PROVEN not to be the lever** — a scout found no setting at all. |
+| 6 | **W-07b** + unscheduled | none | W-33's fitter follow-up · `insetMultiPolygon` ladder · the W-29 stub family · **U10–U12 (still W-26-blocked)**. |
+| — | ~~**T2-3d**~~ | — | **CLOSED UNBUILT** by decision 13 = A. Stays filed; **T2-5's attribution superseded its framing** anyway. |
 
-**CONDITIONAL — each exists only if Jay answers that way (Decision Desk → transcribe into §4):**
+⚠ **Owed by the NEXT merge, neither a unit: checklist item 23** (the `git show HEAD:` sweep — **hunting BROKEN
+instances as well as always-passing ones, after one was found failing at its own landing commit**) **and item
+30** (ground-plane inclusion across every ink number).
 
-| if Jay answers | then | note |
-|---|---|---|
-| **9-amendment = B** (reopen W-32) | **W-32 Rank 4** — refine the fill border to the true silhouette | **A conditional design is already written** (`W-35b-plan.md` §4), so it starts from a design, not a planner. It would also have satisfied W-35. |
-| **10 = B** (restore ribbon weight) | **F1-weight** | **Nothing shipped moves ribbon weight today** — not the placement reserve, not the amplitude floor. **F1-width-bar (both rigs) is its acceptance instrument and already exists.** |
-| **11 = B** (retune the cap) | **the cap-onset unit** | Must prove it does not reintroduce the saturation the cap prevents — **the mutation number is on record: naive parity gives cylinder d=220 = 9136.8 mm, +93.5 %.** |
-| **12 = B** (single-pass dashes) | **T3b** | Below some density threshold, keeping the band mechanism where it earns its keep. **Cost: a new threshold to justify and another mode boundary.** |
-| **13 = B** (recover ≥3× range) | **T2-3d** (row 5a-3) | Halve the row pitch — **the only MEASURED route to both.** ⚠ **Row-pitch code sits UPSTREAM of every mark law and of W-36c's cap, W-31b's ceiling and T4's band passes: its own plan and its own sweep.** |
+⚠⚠ **The lesson round 4 hands round 5: the mkDash side landed three pictures in a row while the mkTick side
+needed six attempts — and the difference was never effort.** **"Discrete dashes riding rulings" named a
+quantity a bar could hold; "fill the black gaps" did not, until T2-6's plan located the across-row strip
+`R − L` and showed the gaps and the fragments were ONE defect seen from two directions.** **When a user's
+words do not name a measurable quantity, find the quantity before building the mechanism — or prototype and
+ask him.**
 
-⚠ **Two round-3 findings that belong to whoever merges round 4, not to a unit:** **checklist item 23** (the
-`git show HEAD:` sweep — **now hunting BROKEN instances as well as always-passing ones**) and **item 30**
-(**ground-plane inclusion across every ink number**). Both are cheap and neither is optional.
+## 4. DECISIONS — fourteen answered; ⏳ **TWO OPEN ON THE DESK: 11-amended and the T2-6 eye check**
 
-## 4. DECISIONS — the original NINE are ANSWERED; **10, 11, 12 AND 13 ARE NEW AND OPEN** (2026-09-12 / 13 / 15)
+> ⏳ **OPEN, and both gate round 5's top items:** **(1) §4 decision 11-amended** — his answer to 11 was (B)
+> "retune the cap's onset", and a scout proved **NO SETTING EXISTS**; **(A) accept the cap as inherent /
+> (B) fund a different mechanism (tone on crosshatch ANGLE or PEN WEIGHT at d=220).** **(2) The T2-6 EYE
+> CHECK** — `cone/hatch` whole cell + native crop **and** the `sphere/hatch` cell; **his answer decides
+> whether T2 CLOSES or T2-7 is planned.** **Read with `read_db` collection `decisions`, docs `d11b` and
+> `eye_t26`; transcribe here.**
+
+> ✅ **JAY ANSWERED 10, 11, 12, 13, the 9-amendment AND the push question on 2026-09-17, via the Decision Desk
+> — https://claude.ai/code/artifact/811ab725-f61c-4664-bdb6-2780bd4ba56d.** **Transcribed verbatim below; the
+> letter is his choice.** ⚠ **The desk is where he answers; THIS SECTION is where the answer binds.**
+
+**THE 2026-09-17 ANSWERS, transcribed:**
+- **10 → A.** **Accept the thinner, even style.** *(No F1-weight unit. F1-width-bar's floors stand as the guard
+  that stops it thinning further.)*
+- **13 → A.** **Accept the shipped fix at 2.3–3.2×.** *(No T2-3d on the row-pitch route — and see T2-5, which
+  supersedes its framing entirely.)*
+- **12 → B.** **T3b: single-pass dashes below a density threshold.**
+- **11 → B.** **Retune the cap's onset so some tone authority survives at d=220.** *(→ W-36f.)*
+- **9, amended → B.** **Reopen W-32 Rank 4: fill border on the true silhouette.** *(The conditional design in
+  `W-35b-plan.md` §4 is its starting point.)*
+- **PUSH → A.** ✅✅ **DONE — `git push origin main` COMPLETED 2026-09-17. `origin/main` = `main` = `b43fa4e3`, 86 commits (rounds 2 AND 3).** **After three rounds this audit's work is on the remote.**
+
+**11-AMENDED — NEW AND OPEN (2026-09-17): your answer to 11 turns out to be infeasible, and this is not the
+same question asked twice.** **You chose (B) — retune the cap's onset so some tone authority survives at
+Density 220 — on the reasonable assumption that an onset could be moved. A read-only scout measured it:
+there is NO SETTING.** **Every cap-onset retune BREAKS the 0.85 coverage calibrator, and cylinder NEVER
+reaches 1.2× tone authority at d=220** (`W-36f-scout.md` has the table).
+**So the choice is now:**
+**(A)** **ACCEPT the cap as inherent after all** — the scout's table is the reason, and it is a better reason
+than the original one: at maximum density there is genuinely no room for tone to act on CELL SIZE.
+**(B)** **FUND A DIFFERENT MECHANISM** — tone acting on crosshatch **ANGLE**, or on **PEN WEIGHT**, at d=220
+instead of on cell size. **New planner; the onset is not the lever.**
+*(W-36f is closed MEASURED/PARKED pending this. **It is on the Decision Desk with a recommendation of (A)**,
+and Jay's six earlier answers are now in the desk's db store too. A CHANGELOG line discloses the outcome
+either way — merge checklist item 29.)*
+
+⚠⚠ **AND THE EYE CHECK ON THE mkTick CONE (T2-3c) CAME BACK "WRONG DIRECTION" — and as of 2026-09-18 it is STILL wrong direction: clause (c) is fixed, clause (a) is NOT DELIVERED and is pending T2-6. Jay, verbatim:**
+> *"Instead of tick fragments on the right, use gradually shortening ticks to fill the black gaps at the bottom
+> of the vertical waves. Also don't increase overlap at the seams. And remove any lines not part of a tick
+> band."*
+
+**Filed as USER RULE item T2-5 — P0 for round 4, lane `fill-audit-a4`.** ⚠ **It SUPERSEDES T2-3d's framing:
+the question was never how much tick-length RANGE to buy, it is WHERE the ticks go and what fills the gaps.**
+**T2-3e (the row lattice) and T2-4 (d=220 coverage) FOLD UNDER IT as sub-items** — all three are the same
+picture seen from three instruments. ⚠ **Three rejected attempts, one accepted attempt, and a positive
+orchestrator picture, and the user still says wrong direction: every instrument this round built measured a
+quantity that was real, and none of them measured what he was looking at.**
+
+*(Historical: the original nine were answered 2026-09-10; 10/11/12/13 were raised 2026-09-12 → 15.)*
 
 **Every frozen item is now unfrozen.** Recorded verbatim as Jay gave them; the letter is his choice.
 
@@ -393,17 +502,43 @@ follow-up, W-32 Rank 4, `insetMultiPolygon` ladder, the W-29 stub family, U10–
 | 16 (2026-09-06 18:31) | crosshatch renders ONE family | **FIXED TWICE — W-36 restored the crossing family, then W-36c delivered your decision 6 = C: EACH family now carries the single-family hatch count, under a new measured anti-saturation cap. Your own cell is a full even crosshatch.** Earlier detail:  Gap ratio B:A **5.4–31.2× → 0.814–1.061**; your own cell went **A 17 / B 3 → A 9 / B 11**. But the review found the pre-audit design **already spent ONE shared budget across both families** (sphere d=50 was A 15 / B 11 against a hatch count of 24), so *"each family carries the hatch count"* was never the shipped convention — hence **§4 decision 6**, a three-way choice. Superseded detail: | — *"make crosshatch have the same number of crosshatch lines as it has hatch lines unless … variation is needed for highlight/shadow. This seems off."* | **OPEN → W-36, P1.** Sphere/ladder/fine-rungs/d=50 shows ~22 bands and **no** crossing family; montage counts cylinder ≈ 30 vs ≈ 5, ellipsoid ≈ 25 vs ≈ 4, T1 sphere ≈ 24 vs ≈ 8, against v1.3.98's ≈ 22 vs ≈ 20 — **a regression between v1.3.98 and the merge**. Prime suspect `CROSS_SHARE_BASE = 0.1` (`surface-fill.js:4652`) → crossing coverage 10% of family A's at ratio 1. Lane fill-audit-a2, before W-31 |
 | "not close to zero yet" (F1) | torus ribbon streaks | **THE WHOLE CHAIN HAS LANDED AND BEEN REVIEWED — placement `cd541f87` (MEASURED), erode `e2c3ca85` (DONE/FU), amp `3bc61c32` (DONE/FU) — AND IT NEEDS YOUR EYE, NOT ANOTHER TEST. The streak is GONE (deep-blank 3.02/4.00/1.79 → 0.03/0.00/0.00 mm²), the erode-fallback centreline is gone, and the weave now runs continuously around the whole torus including the highlight band that previously straightened or went bare. The cost: the wave laws read THINNER than pre-fix, `onePenDown` most — and F1-amp, the unit expected to put the weight back, thinned them further instead (its floor is "not the lever"). → §4 DECISION 10 is the open question: accept the thinner even style (A), or build F1-weight to restore ribbon weight under the new placement (B), which no shipped lever does today.** Superseded: **HALF DELIVERED, MEASURED, review in flight — and one new defect it exposed. Your decision 4 = A confirmed the 41.7 × 6.6 mm lower-front torus strip IS the streak. F1-placement shipped at `cd541f87`: the DEEP blank is gone — >2 mm blank area 3.02 / 4.00 / 1.79 → 0.03 / 0.00 / 0.00 mm². The band is narrower, not closed:** placement is only half the mechanism, because the three affected laws never got Round 6's amplitude floor, so a plain thin ruling in the highlight remains until **F1-amp**. ⚠ **And shipping it exposed a latent erosion bug — one stretch now draws a single thin centreline instead of its full ribbon (visible in the same lower-front region) → new unit F1-erode, which runs BEFORE F1-amp.** **Not closed, and it needs your eye on the re-shot `torus__hatch__trochoidLoop__med` pair when the pair is finished.** Earlier detail:  **OPEN, mechanism found** — 62.63 mm² bare strip, 30× A3's whole residue; Prototype B ruled, deep blank 11.89 → **0.28 mm²**. |
 
-## 6. MERGE STATUS — ✅ **ROUND 3 IS MERGED at `d3b01d28` (v1.4.2)**
+## 6. MERGE STATUS — round 3 MERGED + PUSHED; **round 4 READY-TO-COMMIT at v1.4.3**
+
+> 🔄 **ROUND 4 — READY-TO-COMMIT, STAGED, NOT COMMITTED; MERGE REVIEWER IN FLIGHT** (six conditions, including
+> **re-running `test:ci`** and the **CURVED-PRIMITIVE GREP** that round 4's own REJECT turned into a standing
+> rule). Executed from `MERGE-plan-r4.md` in `.claude/worktrees/integrate-r4`, branch
+> **`3d-scene/integrate-r4`**, off `b43fa4e3`. **Both lanes FINAL: `fill-audit-a4` `0f420747` · `border-4`
+> (W-32r4 + W-32r4b + W-32r4c).**
+>
+> **Merge commits:** **`37a1de4e`** (a4, with the `mktick-wedge` conflict resolved as **PENDING pins**) ·
+> **`97ad4ad9`** (the `mktick-wedge` goldens **RE-DERIVED on the merged tree**) · **`d301f11f`** (the
+> `xray-fold-golden` fixture re-derived) · **`49af44d9`** (**v1.4.3** bump + docs).
+> **4 files staged · 13 goldens re-derived · all five suites green or at baseline.**
+>
+> ✅ **The predicted semantic conflict was handled exactly as ruled — resolved to PENDING pins, then
+> RE-DERIVED on the merged tree, never by choosing a side.** ⚠ **And it surfaced a THIRTEENTH golden the plan
+> had not predicted: the `xray-fold-golden` fixture. That is precisely why the instruction was "re-derive, do
+> not choose a side" — a side-choice would have left the unpredicted one silently wrong, and nothing would
+> have failed.**
+>
+> **TWO DEVIATIONS DISCLOSED AND ACCEPTED:** additive **fixture-annotation lines written into untracked MAIN
+> docs** (committed with the wrap-up) and the **skipped pre-merge docs commit**, which was the orchestrator's
+> own instruction. ⚠ **Both disclosed rather than discovered — the distinction this audit has spent four
+> rounds enforcing, and the reason a merge carrying two deviations is still a clean merge.**
+>
+> **`main` today: `b43fa4e3` (v1.4.2), pushed.** **The round-4 fast-forward and push follow the review.**
+
+### Round 3 — ✅ **MERGED at `d3b01d28` (v1.4.2) AND PUSHED**
 
 > 🏁 **ALL THREE LANES ARE FINAL. `MERGE-plan-r3.md` measured ZERO CONFLICTS, the merge is executing in
 > `.claude/worktrees/integrate-r3` off `main` (≥ `06c46203`) on integration branch **`3d-scene/integrate-r3`**,
 > and the last merge blocker (T2-3c) cleared review on 2026-09-16.**
 >
-> ✅ **COMMITTED AT `d3b01d28` (v1.4.2), 2026-09-17.** `main` fast-forwarded onto `3d-scene/integrate-r3`;
+> ✅✅ **COMMITTED AT `d3b01d28` (v1.4.2) AND PUSHED 2026-09-17 on Jay's decision push = A — `origin/main` = `main` = `b43fa4e3`, 86 commits covering rounds 2 AND 3.** **The audit's work is on the remote.**
+> ✅ **Committed at `d3b01d28`.** `main` fast-forwarded onto `3d-scene/integrate-r3`;
 > per-lane merge commits `6331336a`, `d3a36a8e`, `52fdbca3`. **Merge review ACCEPT-WITH-FOLLOWUPS
 > (`MERGE-review-r3.md`) — all six conditions verified. Gallery rebuilt on `main`.**
-> ⚠ **NOT PUSHED. `main` stays 44+ ahead of `origin/main`, and pushing remains Jay's call — it is the one
-> thing in this audit that has never been asked and never been done, now across two full rounds.**
+> *(Superseded: this stayed unpushed across two rounds until Jay answered push = A.)*
 >
 > **Two minor doc follow-ups from the review, neither touching `src/` or test correctness: (1)** the
 > slice-end-overlap vacuous-test follow-up in `plans.md` **lacks a formally numbered W-id** (content and

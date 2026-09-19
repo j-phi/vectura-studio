@@ -1,0 +1,104 @@
+{
+  "rig": "create+addLayer",
+  "id": "T3b",
+  "title": "mkDashRamp single-pass dashes below a density threshold, band mechanism kept at the dark end (Jay decision 12=B, SESSION-SUMMARY.md §4 item 12)",
+  "branch": "3d-scene/fill-audit-a4",
+  "worktree": ".claude/worktrees/fill-audit-a4",
+  "base_sha": "b43fa4e3",
+  "decision": "Jay decision 12=B, 2026-09-17: \"T3b, a new unit -- draw single-pass dashes below some density threshold, keeping the band mechanism where it earns its keep. The cost is a new threshold to justify and another mode boundary in a file that already has several.\"",
+  "acceptance_bar": "at the sparse end, mkDashRamp dashes must read as single-pass strokes riding the rulings, not multi-pass bundles/tiles; T3's own count (>=40 @ d=1) and monotonicity (d=1..med) bars must still hold; the band mechanism (T4, Jay decision 1=B) must remain intact at the dark end (d=220 >= 1500mm, no slab, G4 30/30).",
+  "which_half_each_test_gates": {
+    "O10 (single pass at the sparse end)": "tests/unit/scene3d-mkdashramp-single-pass.test.js describe('O10 ...') -- asserts bandMax===1 (pens===marks) for d=1..4, sphere/hatch/torus, BOTH rigs. Mutation-killed: reverting to the pre-T3b mechanism (git show b43fa4e3) reproduces bandMax=6 / pens-per-mark=3.9347826086956523 at d=1 exactly.",
+    "O11 (T3's count/monotonicity bars)": "tests/unit/scene3d-mkdashramp-single-pass.test.js describe('O11 ...') -- re-derives T3's own O6 (>=40 @ d=1) and O7 (non-decreasing d=1..50, sphere+torus) bars on the current tree; also pins the exact sphere sequence [46,46,62,63,73], byte-identical to T3's own tree, proving mark PLACEMENT COUNT is architecturally independent of bandN.",
+    "O12 (continuity at the threshold)": "tests/unit/scene3d-mkdashramp-single-pass.test.js describe('O12 ...') -- ink at d=34 vs d=35 (MK_BAND_ONSET_D) differs by <2%, both rigs, and matches the pre-T3b tree exactly at both points (the gate is a no-op there). A separate, explicitly-disclosed fingerprint test records the ramp's own largest internal step (40-80% at d=4->5) so a future change cannot make it silently worse.",
+    "O13 (non-regression, O8/T4b/G4 territory)": "tests/unit/scene3d-mkdashramp-single-pass.test.js describe('O13 ...') -- md5-identical to the pre-T3b tree at d=50 (O8's own checkpoint, both rigs) and d=220 (both primitives, both rigs), plus an independent reproduction of T4b's own engine.addLayer fixture ink number (1501.0636578167772mm)."
+  },
+  "fixture": {
+    "addLayer_rig": "Vectura.AlgorithmRegistry.scene3d.generate driven directly with Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS -- the same params engine.addLayer('scene3d') deserialization defaults to; the established convention of this lane's sibling oracles (T1/T1b/T2-3/T3/T4/T4b)",
+    "create_rig": "same generate() call with Scene3D.Params.PRIMITIVE_CREATE_DEFAULTS (app 'Add Layer' creation defaults: sphere radius 25/detail 28, torus per its own creation defaults) -- the gallery/capture-script rig",
+    "camera": "Scene3D.Params.DEFAULT_CAMERA (angle 'a')",
+    "sun": "directional, azimuth 135, elevation 45, intensity 1, castShadows false",
+    "mapper": "hatch",
+    "fillAngle": 45,
+    "penWidth": 0.3,
+    "ground": "disabled (p.ground.enabled = false) -- no ink total anywhere in this report includes ground ink",
+    "densities_measured": [1, 2, 3, 4, 5, 9, 10, 15, 20, 25, 30, 34, 35, 36, 40, 45, 49, 50, 60, 70, 80, 90, 100, 150, 220]
+  },
+  "measurement_1_pens_per_mark_by_density": {
+    "note": "sphere/hatch/mkDashRamp, PRE-T3b tree (b43fa4e3), addLayer rig unless noted",
+    "d1": 3.9347826086956523,
+    "d5": 3.9347826086956523,
+    "d10": 3.5806451612903225,
+    "d25": 3.365079365079365,
+    "d50": 2.1232876712328768,
+    "d100": 1,
+    "d220": 1
+  },
+  "measurement_2_forced_single_pass_ink_delta_pct": {
+    "note": "sphere/hatch/mkDashRamp, addLayer rig -- (actual_ink - forced_bandN1_ink) / actual_ink * 100, pre-T3b mechanism, at each density. Shows the band is genuinely load-bearing (not decorative) from d=1 through ~d=70, and stops mattering entirely (0%) once bandPitch itself becomes too fine to fit a 2nd pass, around d=80.",
+    "d1": 71.99, "d10": 72.55, "d25": 71.96, "d40": 66.27, "d50": 58.17,
+    "d60": 50.15, "d70": 34.66, "d80": 0, "d90": 0, "d100": 0, "d150": 0, "d220": 0
+  },
+  "measurement_3_natural_bandMax_ceiling_crossover": {
+    "note": "fine integer sweep d=25..45, all four combinations {sphere,torus}x{addLayer,create}, UNGATED tree. This is what MK_BAND_ONSET_D=35 is derived from: the LAST integer density at which every combination still sits at the hard MK_BAND_MAX_PASSES=6 ceiling.",
+    "addLayer_sphere": { "last_d_at_6": 35, "first_d_below_6": 36 },
+    "addLayer_torus":  { "last_d_at_6": 35, "first_d_below_6": 36 },
+    "create_sphere":   { "last_d_at_6": 35, "first_d_below_6": 36 },
+    "create_torus":    { "last_d_at_6": 37, "first_d_below_6": 38 }
+  },
+  "mechanism": "surface-fill.js: `MK_BAND_MAX_PASSES=6` was a density-BLIND ceiling on mkDashRamp's parallel-pass band (T4's own mechanism, Jay decision 1=B). New `bandOnsetCap(density)` ramps the EFFECTIVE per-mark pass ceiling from 1 (single pass) at d=1 up to the full MK_BAND_MAX_PASSES by MK_BAND_ONSET_D=35 -- measured as the last integer density at which the ungated mechanism already sat at its 6-pass ceiling naturally, on every one of {sphere,torus}x{addLayer,create}. At and above MK_BAND_ONSET_D the gate is a byte-identical no-op. `bandOnsetCap` is read in exactly the two places `MK_BAND_MAX_PASSES` used to be read directly: solveAt's `bandN` (feeds `capOf`, which bounds how much ink ONE mark can carry) and layMark's morph-branch `bandN` recompute (must agree with solveAt's own value) -- both gated to `law.shape === 'morph'`, unique to mkDashRamp.",
+  "continuity_measurement": {
+    "note": "sphere/hatch/mkDashRamp ink at MK_BAND_ONSET_D-1 (34) vs MK_BAND_ONSET_D (35) -- the ONE density where the gate itself starts/stops applying",
+    "addLayer_rig": { "d34_inkMm": 1181.06, "d35_inkMm": 1181.06, "delta_pct": 0.0 },
+    "create_rig":   { "d34_inkMm": 1911.88, "d35_inkMm": 1912.88, "delta_pct": 0.05, "note": "residual delta is ordinary per-density noise -- bandOnsetCap(34)===bandOnsetCap(35)===6 (unrestricted) on both sides" }
+  },
+  "ramp_internal_step_disclosure": {
+    "note": "STOP-AND-REPORT, not hidden (AGENT-PROTOCOL 'stop-and-report beats a fudge'): WITHIN the gated zone (d<35) the ramp's own individual integer-pass steps are NOT all sub-drift-envelope. O8 (T4's own guard) pins bandMax>=2 exactly at d=50, which forces ANY threshold this unit could choose to sit strictly below 50 -- and per measurement_2 above, the band is genuinely load-bearing (34-76% of total ink) at EVERY density below ~70. A hard on/off switch anywhere below 50 would cost that same 34-76% in ONE cliff; the ramp instead spreads it across several smaller integer-pass steps. The largest single step measured (addLayer & create rigs, sphere, d=4->5, the 1-pass->2-pass transition) is 59-76%, larger than ordinary density-to-density drift (a few percent in the unmodified baseline) -- inherent to any discrete integer-pass mechanism gated below 50, not an artifact of a poor threshold choice.",
+    "addLayer_sphere_d4_to_d5_step_pct": 59.02,
+    "create_sphere_d4_to_d5_step_pct": 76.23
+  },
+  "green_addLayer_rig_sphere_d1_bundle": {
+    "d1": { "marks": 46, "pens": 46, "bandMax": 1, "pensPerMark": 1.0, "inkMm": 325.19, "note": "was pens=181, bandMax=6, pensPerMark=3.93, inkMm=1160.86 pre-T3b" }
+  },
+  "non_regression_d50_d220": {
+    "addLayer_sphere_d50": { "bandMax": 4, "inkMm": 926.51, "note": "byte-identical to pre-T3b (O8's own checkpoint, unaffected)" },
+    "create_sphere_d50":   { "bandMax": 3, "inkMm": 1177.4, "note": "byte-identical to pre-T3b" },
+    "addLayer_sphere_d220": { "bandMax": 1, "inkMm": 981.65, "note": "byte-identical to pre-T3b" },
+    "create_sphere_d220":   { "bandMax": 1, "inkMm": 1501.06, "note": "byte-identical to pre-T3b -- matches T4b's own 1501.0636578167772mm floor/band guard exactly, still 4/4 green" }
+  },
+  "guards_run": {
+    "scene3d-mkdashramp-single-pass.test.js (new, this unit)": "20/20",
+    "scene3d-mkdashramp-low-end.test.js (T3's own oracle)": "13/13, unchanged",
+    "scene3d-mkdashramp-dark-end.test.js (T4b's own CI guard)": "4/4, unchanged",
+    "scene3d-mark-laws-draw.test.js (T4's O8/G4 oracle)": "30/30, unchanged from T4's own count",
+    "scene3d-mktick-wedge.test.js (T2-3 family)": "58/58 (pre-existing state at this unit's base sha; not touched)",
+    "scene3d-ribbon-width-bar.test.js": "10/10",
+    "scene3d-ribbon-width-create-rig.test.js": "12/12",
+    "scene3d-ribbon-f1b-streaks.test.js": "44/44",
+    "scene3d-ribbon-wall-coverage.test.js": "36/36",
+    "scene3d-curved-density-floor.test.js": "14/14",
+    "scene3d-curved-density-sparse-end.test.js": "20/20"
+  },
+  "byte_identity_sweep": {
+    "roster_reachable": ["mkDotScreen", "mkTick", "mkScribble", "ladder"],
+    "coverage_fraction": "4/4 reachable mark laws (100%) -- same reachability finding as T3's own sweep (8 of 12 raw MARK_LAWS shapes are dead code, unreachable via SCENE3D_TONE_LAWS.IDS/ALIASES)",
+    "cells": "4 laws x 2 primitives (sphere,torus) x 3 densities (1,50,220) x 2 rigs (addLayer,create) = 48 cells",
+    "mismatches": 0,
+    "structural_reason": "bandOnsetCap is only ever read inside solveAt/layMark's law.shape==='morph' branches, unique to mkDashRamp -- every other law's code path never reaches it, guaranteed by construction, not just measured-and-lucky (same argument T3-review made for its own equivalent claim)"
+  },
+  "evidence": {
+    "before": "docs/3d-audit/fill-audit/after/T3/shots/B/{sphere,torus}__hatch__mkDashRamp__{low,med,max}__a{,__addlayer}.webp (T3's own base-sha state, identical fixture)",
+    "after": "docs/3d-audit/fill-audit/after/T3b/shots/B/{sphere,torus}__hatch__mkDashRamp__{low,med,max}__a{,__addlayer}.webp",
+    "byte_identical_pairs": [
+      "sphere__hatch__mkDashRamp__med__a(.webp/__addlayer) -- both rigs",
+      "sphere__hatch__mkDashRamp__max__a(.webp/__addlayer) -- both rigs",
+      "torus__hatch__mkDashRamp__med__a(.webp/__addlayer) -- both rigs",
+      "torus__hatch__mkDashRamp__max__a(.webp/__addlayer) -- both rigs"
+    ],
+    "what_i_saw": "sphere/hatch/mkDashRamp/low (both rigs): BEFORE shows 6 curving rows, several of which fan out into 4-6 clearly-separated parallel hairlines that all start/stop together -- reads as thick ribbon bundles, exactly the 'row-wide tile' STILL-OPEN.md flagged. AFTER: the SAME 6 rows now draw as single, crisp, curving strokes with visible dash gaps -- reads unambiguously as discrete dashes riding the rulings, not bundles. A 3x-native crop of the darkest (upper-left) region makes this unambiguous: BEFORE shows three separate 4-6-line fanned bundles; AFTER shows three separate single hairlines with real gaps between segments. torus/hatch/mkDashRamp/low shows the identical improvement in kind (same crop comparison). sphere/torus max (d=220, both rigs) are pixel-for-pixel byte-identical to the pre-T3b tree -- the dark-end gradient T4 built is untouched."
+  },
+  "open_follow_ups": [
+    "The ramp's own largest internal step (d=4->5, 59-76%) exceeds ordinary density drift -- disclosed and fingerprinted, not hidden, but a future unit could investigate a non-integer/blended pass mechanism if this is judged too abrupt on the app's own live density slider.",
+    "torus/addLayer/d=1 mark count moved 37->38 (a gain), a side effect of `L`'s own shorter cap changing the placement-exclusion geometry -- disclosed under Bars changed, does not touch T3's own unpinned torus behavior (T3-impl.md itself calls torus a secondary, non-gated check)."
+  ]
+}

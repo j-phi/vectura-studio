@@ -1,0 +1,99 @@
+{
+  "rig": "create+addLayer",
+  "id": "T3c",
+  "title": "mkDashRamp: bound dash LENGTH below MK_BAND_ONSET_D so dashes read as discrete marks riding the rulings, not broken rulings (T3b-review.md condition 3 follow-up)",
+  "branch": "3d-scene/fill-audit-a4",
+  "worktree": ".claude/worktrees/fill-audit-a4",
+  "base_sha": "75777240",
+  "finding": "T3b-review.md condition 3: at d<=MK_BAND_ONSET_D each single-pass (or band) mark can still occupy its OWN ENTIRE PERIOD (each===sv.P, 'L=P is an unbroken ruling' per layMark's own dissolution-ramp comment), so consecutive dashes ABUT with no gap. T4's own duty-cycle mechanism (mkAsk/g/period) governs this and is UNCHANGED pre/post T3b -- STILL-OPEN.md's W-06b row (user-reports/10.png): 'discrete dashes riding rulings at every density, never row-wide tiles'.",
+  "acceptance_bar": "in the onset-ramp region (bandOnsetCap(density) < MK_BAND_MAX_PASSES, measured d<32 on every {sphere,torus}x{addLayer,create} combo) a dash's own drawn along-row length must be measurably bounded (this unit's public proxy: average dark-third mark length, lastMarkStats.lenByThird[2]/cntByThird[2], must drop to <=70% of the pre-fix value); T3's own dash-COUNT bar (>=40 @ d=1, non-decreasing d=1..50) and T3b's O10 (bandMax===1, pens===marks, d=1..4) must survive UNCHANGED; T4/T3b's own territory (d>=MK_BAND_ONSET_D, i.e. d=35/50/220) must stay byte-identical (md5).",
+  "which_half_each_test_gates": {
+    "O14 (dash length bounded)": "tests/unit/scene3d-mkdashramp-discrete.test.js describe('O14 ...') -- asserts average dark-third mark length at d=1/5/10/25 (sphere/hatch, addLayer rig, plus independent torus/addLayer and sphere/create reproductions) drops to <=70% of the pre-T3c value. Mutation-killed: reverting to the pre-T3c mechanism (git show 75777240) reproduces the unbounded 3.329mm at d=1 exactly. Says nothing about mark count or d>=35 territory.",
+    "O15 (T3/T3b count bars survive UNCHANGED)": "tests/unit/scene3d-mkdashramp-discrete.test.js describe('O15 ...') -- re-derives T3b's own O11 exact sphere/addLayer array [46,46,62,63,73] (also pinned, unmodified, in scene3d-mkdashramp-single-pass.test.js) AND extends it: torus/addLayer and sphere/create mark counts are also proven byte-identical to the pre-T3c tree (neither rig/primitive combination is pinned by any existing test). O10 (bandMax===1, pens===marks, d=1..4) and T3's own >=40/non-decreasing bars are re-derived too. Says nothing about dash length.",
+    "O16 (continuity/non-regression at and above MK_BAND_ONSET_D)": "tests/unit/scene3d-mkdashramp-discrete.test.js describe('O16 ...') -- md5-identical to the pre-T3c tree at d=35/50/220, BOTH primitives, BOTH rigs (6 combinations, not just the one T3b's own O13 pinned); the dark-third length ratio is asserted EXACTLY 1.0 (not merely close) at d=35/50; T4b's own engine.addLayer fixture (1501.0636578167772mm) re-derived independently."
+  },
+  "fixture": {
+    "addLayer_rig": "Vectura.AlgorithmRegistry.scene3d.generate driven directly with Scene3D.Params.PRIMITIVE_PARAM_DEFAULTS",
+    "create_rig": "same generate() call with Scene3D.Params.PRIMITIVE_CREATE_DEFAULTS (app 'Add Layer' creation defaults: sphere radius 25/detail 28) -- the gallery/capture-script rig",
+    "camera": "Scene3D.Params.DEFAULT_CAMERA (angle 'a')",
+    "sun": "directional, azimuth 135, elevation 45, intensity 1, castShadows false",
+    "mapper": "hatch",
+    "fillAngle": 45,
+    "penWidth": 0.3,
+    "ground": "disabled (p.ground.enabled = false) -- no ink total in this report includes ground ink",
+    "densities_measured": [1, 2, 3, 4, 5, 10, 25, 35, 50, 220]
+  },
+  "rejected_design_scaling_capOf_upstream": {
+    "note": "First design tried: scale the BAND cap (capOf(per) = bandN*per*X) in solveAt. REJECTED with measurement -- shrinking L this way also shrinks nn (Math.ceil(sv.L/sv.P)), and nn (stacked-pass count) is the ONLY thing keeping tot (place()'s own MIN_MARK_MM survival gate, summed across all nn passes) above the floor at this fixture's many foreshortened, small-local-P samples.",
+    "sphere_addLayer_mark_counts_d1_5_10_25_50_with_X0.5_capOf_scaling": [34, 41, 48, 48, 73],
+    "expected_unchanged": [46, 46, 62, 63, 73],
+    "conclusion": "d=1 dropped 46->34 (12 marks lost via MIN_MARK_MM), d=5 46->41, d=10 62->48, d=25 63->48 -- a bar change to a file this unit is FORBIDDEN to edit (scene3d-mkdashramp-single-pass.test.js). Diagnosed: died marks all had nn:1 (collapsed from their true bandN via the shared L/nn coupling), P as low as 0.37-3.23mm, each after the 0.5x cut as low as 0.139mm (<< MIN_MARK_MM=0.6mm)."
+  },
+  "shipped_design": "surface-fill.js, layMark's law.shape==='morph' branch only. nn/bandN/n0 computed EXACTLY as T3b left them (untouched). AFTER nn is fixed, each pass's own along-row length is separately bounded: eachDrawn = (bandOnsetCap(density) < MK_BAND_MAX_PASSES && each > floor && each > target) ? min(each, max(floor, target)) : each, where target = MK_DASH_LEN_FRAC(0.5) * sv.P and floor = MIN_MARK_MM * 1.05. The floor clause means a mark that would only clear MIN_MARK_MM via a LONGER pass is left at its own original (uncut) length instead of being pushed under the floor -- this is what makes place()'s accept/reject outcome, and therefore mark COUNT, provably unchanged from T3b's tree.",
+  "gate_choice_bandOnsetCap_not_bandN": {
+    "note": "Gating on the packing-limited `bandN` itself (not bandOnsetCap's own raw output) was tried and REJECTED: bandN also falls below MK_BAND_MAX_PASSES at HIGH density (~d>=50, the 0.90*bandPitch/w packing floor) for a reason unrelated to the onset ramp, and gating on it leaked the new cap into that untouchable territory, corrupting md5 byte-identity at d=50/d=220.",
+    "sphere_addLayer_d50_d220_md5_match_with_bandN_gate": false,
+    "sphere_addLayer_d50_d220_md5_match_with_bandOnsetCap_gate": true
+  },
+  "measurement_avg_dark_third_mark_length_mm": {
+    "note": "lastMarkStats.lenByThird[2]/cntByThird[2], sphere/hatch/mkDashRamp, addLayer rig unless noted",
+    "d1":  { "before": 3.329,  "after": 1.947, "ratio": 0.585 },
+    "d5":  { "before": 6.085,  "after": 3.706, "ratio": 0.609 },
+    "d10": { "before": 5.834,  "after": 3.372, "ratio": 0.578 },
+    "d25": { "before": 9.585,  "after": 5.199, "ratio": 0.542 },
+    "d35": { "before": 11.446, "after": 11.446, "ratio": 1.0 },
+    "d50": { "before": 8.305,  "after": 8.305, "ratio": 1.0 },
+    "torus_addLayer_d1":  { "before": 4.592,  "after": 2.430, "ratio": 0.529 },
+    "torus_addLayer_d5":  { "before": 7.421,  "after": 3.991, "ratio": 0.538 },
+    "torus_addLayer_d10": { "before": 6.585,  "after": 3.462, "ratio": 0.526 },
+    "torus_addLayer_d25": { "before": 14.994, "after": 9.497, "ratio": 0.634 },
+    "torus_addLayer_d35": { "before": 17.240, "after": 17.240, "ratio": 1.0 },
+    "sphere_create_d1":  { "before": 4.315,  "after": 2.416, "ratio": 0.560 },
+    "sphere_create_d5":  { "before": 5.107,  "after": 3.014, "ratio": 0.590 },
+    "sphere_create_d25": { "before": 11.705, "after": 6.646, "ratio": 0.568 },
+    "sphere_create_d35": { "before": 12.156, "after": 12.156, "ratio": 1.0 }
+  },
+  "non_regression_mark_counts": {
+    "sphere_addLayer_d1_5_10_25_50": { "before": [46, 46, 62, 63, 73], "after": [46, 46, 62, 63, 73] },
+    "torus_addLayer_d1_5_10_25_50":  { "before": [38, 51, 70, 77, 79], "after": [38, 51, 70, 77, 79] },
+    "sphere_create_d1_5_10_25_50":   { "before": [52, 83, 83, 96, 119], "after": [52, 83, 83, 96, 119] }
+  },
+  "non_regression_d35_d50_d220": {
+    "note": "md5 of generate()'s own path output, current vs pre-T3c mutant, sphere AND torus, both rigs -- all byte-identical",
+    "sphere_addLayer": "md5-identical at d=35/50/220",
+    "torus_addLayer": "md5-identical at d=35/50/220",
+    "sphere_create": "md5-identical at d=35/50/220",
+    "T4b_own_fixture_engine_addLayer_d220_inkMm": 1501.0636578167772
+  },
+  "guards_run": {
+    "scene3d-mkdashramp-discrete.test.js (new, this unit)": "22/22",
+    "scene3d-mkdashramp-single-pass.test.js (T3b's own oracle)": "20/20, unchanged",
+    "scene3d-mkdashramp-low-end.test.js (T3's own oracle)": "13/13, unchanged",
+    "scene3d-mkdashramp-dark-end.test.js (T4b's own CI guard)": "4/4, unchanged",
+    "scene3d-mark-laws-draw.test.js (T4's O8/G4 oracle)": "30/30, unchanged from T4's own count",
+    "scene3d-mktick-wedge.test.js": "58/58, byte-identical",
+    "scene3d-mktick-runaway.test.js": "37/37, byte-identical",
+    "scene3d-ribbon-width-bar.test.js": "10/10",
+    "scene3d-ribbon-width-create-rig.test.js": "12/12",
+    "scene3d-ribbon-f1b-streaks.test.js": "44/44",
+    "scene3d-ribbon-wall-coverage.test.js": "36/36",
+    "scene3d-ribbon-fill-depth-count.test.js": "12/12",
+    "scene3d-crosshatch-cell-shape-b.test.js": "11/11",
+    "scene3d-curved-density-floor.test.js": "15/15",
+    "scene3d-curved-density-sparse-end.test.js": "20/20"
+  },
+  "bars_changed": "None. This unit adds one new file only (tests/unit/scene3d-mkdashramp-discrete.test.js); no existing threshold, tolerance, population, or pinned fingerprint in any other file was touched. See rejected_design_scaling_capOf_upstream above for the design that WOULD have changed a bar and was abandoned before shipping.",
+  "evidence": {
+    "shots_dir": "after/T3c/shots/B",
+    "cells_captured": [
+      "sphere__hatch__mkDashRamp__low__a (create + addLayer)",
+      "sphere__hatch__mkDashRamp__med__a (create + addLayer)",
+      "sphere__hatch__mkDashRamp__max__a (create + addLayer)",
+      "torus__hatch__mkDashRamp__low__a (create + addLayer)",
+      "torus__hatch__mkDashRamp__med__a (create + addLayer)",
+      "torus__hatch__mkDashRamp__max__a (create + addLayer)"
+    ],
+    "before_source": "scratch git-archive export of this unit's own base sha (75777240), captured with the SAME rig/cell/camera as the after shot -- NOT the top-level gallery baseline (which still reflects a PRE-T3/T3b state, since T3/T3b/T3c have none of them merged to main yet and would misattribute T3+T3b's own contribution to this unit).",
+    "what_i_saw": "sphere/torus, low density, BOTH rigs: BEFORE each row reads as one long, mostly-continuous curving stroke broken only by occasional small nicks -- a broken ruling. AFTER the SAME rows read unambiguously as a series of short, clearly-separated discrete dash segments with real gaps between them -- a sparse texture of discrete marks riding the ruling, exactly Jay's stated goal. med/max density, both rigs: pixel-identical to the before state (confirmed both visually and by md5) -- T4's dark-end band mechanism is untouched."
+  }
+}

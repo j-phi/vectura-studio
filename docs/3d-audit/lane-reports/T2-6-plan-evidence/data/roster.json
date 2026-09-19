@@ -1,0 +1,26 @@
+{
+ "sphere:create": {
+  "cells": 296,
+  "changed": [
+   "hatch/mkTick",
+   "crosshatch/mkTick",
+   "contour/mkTick"
+  ]
+ },
+ "torus:create": {
+  "cells": 296,
+  "changed": [
+   "hatch/mkTick",
+   "crosshatch/mkTick",
+   "contour/mkTick"
+  ]
+ },
+ "cone:test": {
+  "cells": 296,
+  "changed": [
+   "hatch/mkTick",
+   "crosshatch/mkTick",
+   "contour/mkTick"
+  ]
+ }
+}

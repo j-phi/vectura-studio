@@ -1,0 +1,184 @@
+{
+  "rig": "create+addLayer",
+  "unit": "T2-5",
+  "lane": "fill-audit-a4",
+  "worktree": ".claude/worktrees/fill-audit-a4",
+  "branch": "3d-scene/fill-audit-a4",
+  "base_sha": "7ef20455",
+  "final_sha": "75777240",
+  "user_rule_verbatim": "Instead of tick fragments on the right, use gradually shortening ticks to fill the black gaps at the bottom of the vertical waves. Also don't increase overlap at the seams. And remove any lines not part of a tick band.",
+  "capture_command": [
+    "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-audit-a4 --port 8475 --rig create --only '^(sphere|torus|cone)__(hatch|contour)__mkTick__med__a$|^cone__crosshatch__mkTick__med__a$|^cone__hatch__mkTick__(low|max)__a$' --out docs/3d-audit/fill-audit/after/T2-5",
+    "node scripts/audit/scene3d-capture.js --tier B --root .claude/worktrees/fill-audit-a4 --port 8475 --rig addLayer --only '^(sphere|torus|cone)__(hatch|contour)__mkTick__med__a$|^cone__crosshatch__mkTick__med__a$|^cone__hatch__mkTick__(low|max)__a$' --out docs/3d-audit/fill-audit/after/T2-5"
+  ],
+  "before_capture_command_scratch": [
+    "git -C .claude/worktrees/fill-audit-a4 archive 7ef20455 | tar -x -C /private/tmp/claude-501/scratch-T25-base; ln -s <MAIN>/node_modules /private/tmp/claude-501/scratch-T25-base/node_modules",
+    "node scripts/audit/scene3d-capture.js --tier B --root /private/tmp/claude-501/scratch-T25-base --port 8496 --rig create|addLayer --only '<same regex>' --out /tmp/T2-5-before"
+  ],
+  "served_version": "1.4.2 (confirmed matching worktree package.json at 7ef20455)",
+  "ports_used_and_killed": [
+    8475,
+    8496
+  ],
+  "fixture_gallery_capture": {
+    "camera": "DEFAULT_CAMERA (angle key 'a')",
+    "density": "med (fillDensity 50) for the six primary cells; low/max added for cone/hatch (the primitive the root-cause was traced on); crosshatch added for cone (affected mapper not in the primary six, per plan \u00a70.4)",
+    "non_default_params": "styleTable.scene.params = { fillAngle: 45 (app default), fillDensity: <d>, toneLaw: 'mkTick' }; mapper varies per cell. No other non-default object/light/tone params.",
+    "ground_plane_ink": "Ground/backdrop are the capture harness's own scene defaults (gallery capture) \u2014 NOT the vitest unit-test fixture (ground/backdrop explicitly disabled there). Do not compare this report's pathCount/inkMm to the vitest per-cell numbers in T2-5-impl.md directly.",
+    "rigs": "create (PRIMITIVE_CREATE_DEFAULTS over PRIMITIVE_PARAM_DEFAULTS) and addLayer (engine.addLayer('scene3d') tree) \u2014 both captured, before and after."
+  },
+  "fixture_vitest_unit_test": {
+    "camera": "DEFAULT_CAMERA",
+    "bounds": "{ width: 1200, height: 1000, m: 20, dW: 1160, dH: 960, penWidth: 0.3 }",
+    "density": "fillDensity 50 ('med') for the gated oracle tables; d=1/5/10/220 used only for the mkDashRamp byte-identity check (unaffected)",
+    "ground_plane_ink": "ground:{enabled:false}, backdrop:{enabled:false} \u2014 explicitly excluded from every oracle number",
+    "rigs": "create (PRIMITIVE_CREATE_DEFAULTS+PARAM_DEFAULTS) and test/addLayer (PRIMITIVE_PARAM_DEFAULTS alone)"
+  },
+  "shots_create": {
+    "sphere__hatch__mkTick__med__a": {
+      "pathCount": 1117,
+      "inkMm": 4894.8
+    },
+    "sphere__contour__mkTick__med__a": {
+      "pathCount": 1121,
+      "inkMm": 4748.8
+    },
+    "torus__hatch__mkTick__med__a": {
+      "pathCount": 435,
+      "inkMm": 1268.8
+    },
+    "torus__contour__mkTick__med__a": {
+      "pathCount": 425,
+      "inkMm": 1369.0
+    },
+    "cone__hatch__mkTick__low__a": {
+      "pathCount": 193,
+      "inkMm": 835.1
+    },
+    "cone__hatch__mkTick__med__a": {
+      "pathCount": 664,
+      "inkMm": 2500.6
+    },
+    "cone__hatch__mkTick__max__a": {
+      "pathCount": 1982,
+      "inkMm": 2427.8
+    },
+    "cone__crosshatch__mkTick__med__a": {
+      "pathCount": 1164,
+      "inkMm": 4659.0
+    },
+    "cone__contour__mkTick__med__a": {
+      "pathCount": 683,
+      "inkMm": 2530.5
+    }
+  },
+  "shots_addlayer": {
+    "sphere__hatch__mkTick__med__a": {
+      "pathCount": 1002,
+      "inkMm": 4894.8
+    },
+    "sphere__contour__mkTick__med__a": {
+      "pathCount": 1006,
+      "inkMm": 4748.8
+    },
+    "torus__hatch__mkTick__med__a": {
+      "pathCount": 765,
+      "inkMm": 2893.3
+    },
+    "torus__contour__mkTick__med__a": {
+      "pathCount": 648,
+      "inkMm": 2723.0
+    },
+    "cone__hatch__mkTick__low__a": {
+      "pathCount": 56,
+      "inkMm": 558.8
+    },
+    "cone__hatch__mkTick__med__a": {
+      "pathCount": 497,
+      "inkMm": 2166.1
+    },
+    "cone__hatch__mkTick__max__a": {
+      "pathCount": 1756,
+      "inkMm": 2219.5
+    },
+    "cone__crosshatch__mkTick__med__a": {
+      "pathCount": 927,
+      "inkMm": 4033.9
+    },
+    "cone__contour__mkTick__med__a": {
+      "pathCount": 508,
+      "inkMm": 2297.3
+    }
+  },
+  "shots_before_create": {
+    "sphere__hatch__mkTick__med__a": {
+      "pathCount": 1117,
+      "inkMm": 4894.8
+    },
+    "sphere__contour__mkTick__med__a": {
+      "pathCount": 1121,
+      "inkMm": 4748.8
+    },
+    "torus__hatch__mkTick__med__a": {
+      "pathCount": 435,
+      "inkMm": 1268.8
+    },
+    "torus__contour__mkTick__med__a": {
+      "pathCount": 387,
+      "inkMm": 1365.8
+    },
+    "cone__hatch__mkTick__low__a": {
+      "pathCount": 190,
+      "inkMm": 831.2
+    },
+    "cone__hatch__mkTick__med__a": {
+      "pathCount": 580,
+      "inkMm": 2485.7
+    },
+    "cone__hatch__mkTick__max__a": {
+      "pathCount": 1668,
+      "inkMm": 2431.9
+    },
+    "cone__crosshatch__mkTick__med__a": {
+      "pathCount": 1002,
+      "inkMm": 4655.3
+    },
+    "cone__contour__mkTick__med__a": {
+      "pathCount": 683,
+      "inkMm": 2530.5
+    },
+    "_captured_from": "scratch git-archive export of 7ef20455 (this unit's own base sha, before any T2-5 edit), port 8496, same capture command with --root pointed at the scratch export"
+  },
+  "identical_exceptions_create_rig": {
+    "sphere__hatch__mkTick__med__a": "byte-identical (1117/1117) \u2014 nSub never exceeds 1 at this fixture's local-R distribution",
+    "sphere__contour__mkTick__med__a": "byte-identical (1121/1121)",
+    "torus__hatch__mkTick__med__a": "byte-identical (435/435)",
+    "cone__contour__mkTick__med__a": "byte-identical (683/683)"
+  },
+  "changed_cells_create_rig": {
+    "torus__contour__mkTick__med__a": "387 -> 425 (+9.8% paths), 1365.8 -> 1369.0mm ink (+0.2%) \u2014 the cell with the worst pre-fix over2RP count (18 at d=50 per the plan)",
+    "cone__hatch__mkTick__low__a": "190 -> 193 (+1.6%), 831.2 -> 835.1mm (+0.5%)",
+    "cone__hatch__mkTick__med__a": "580 -> 664 (+14.5%), 2485.7 -> 2500.6mm (+0.6%) \u2014 the cell this unit's own root-cause analysis (\u00a73.2 of the plan) is built on",
+    "cone__hatch__mkTick__max__a": "1668 -> 1982 (+18.8%), 2431.9 -> 2427.8mm (-0.2%) \u2014 see T2-4 note below, d=220 is reported not gated",
+    "cone__crosshatch__mkTick__med__a": "1002 -> 1164 (+16.2%), 4655.3 -> 4659.0mm (+0.1%) \u2014 affected mapper per plan \u00a70.4, not one of the primary six"
+  },
+  "notes": {
+    "clause_a": "MEASURED, not gated at a numeric absolute bar (stop condition, Rank 2 not prototyped). roughP95 (fragments/step-boundedness) improves vs the pre-fix reconstruction on cone/hatch/create, gated as a directional non-regression test. lenToneR2n (length-vs-tone R^2) is reported on every cell, not gated at 0.45 (Rank 1 alone reaches ~0.10-0.32, well under 0.45; Rank 2 -- a smooth spatial offset field -- is the mechanism that could move it, and it is out of this unit's scope per the plan).",
+    "clause_b": "STOP CONDITION 3 REACHED, disclosed. L0 stays 1.16 (unchanged from HEAD) -- dropping to 1.05 (the plan's own target, which would cut ovMax from 0.0800*R to 0.0250*R) fails the shipped O5>=2.30 bar on 4-6 of 12 fixtures (measured min ~2.19-2.23) even after sweeping MK_TICK_EASE_BLEND 0.92->0.98 (negligible recovery, ~0.005 at best, confirming T2-3's own finding that the ease curve is not an O5 lever). Per the plan's explicit ruling, shipped the re-tiling ALONE. ovMax is UNCHANGED from HEAD's own shipped 0.0800*R on every cell (retiling is exactly neutral on seam overlap by construction -- it only redistributes WHERE a tick's own length sits, never widens a single tick's L0*R ceiling). Clause (b) is NOT improved and NOT worsened.",
+    "clause_c": "FIXED. over2RP (ticks longer than 2 nominal row pitches) == 0 at d=50 on all 12 fixtures (6 cells x 2 rigs), gated blocking, mutation-killed on torus/contour/create -- cone/hatch/create does NOT work as the mutation-kill cell (measured directly: forcing nSub=1 there does not reproduce a violation, since L0=1.16 alone happens to stay under the 2x nominal RP threshold on this cell's own local-R distribution). Disclosed rather than picking a convenient cell."
+  },
+  "t2_4_d220_observation": {
+    "cell": "cone/hatch/create, d=220, NOT gated (per plan and caller's brief)",
+    "pre_fix": { "wedge25": 0.08907, "holeMax": 3.2030, "siteCoverage": 0.87545, "pathCount": 1668 },
+    "t2_5": { "wedge25": 0.09179, "holeMax": 3.2030, "siteCoverage": 0.87545, "pathCount": 1982 },
+    "delta": "wedge25 +3.1% relative (worsens, confirming plan's own T2-4 finding) -- far smaller than the plan's own round-based Rank-1 prototype (+53%, 0.0891->0.1365) because this unit's minimal-nSub threshold only retiles sites that genuinely need it. holeMax and siteCoverage UNCHANGED. T2-4 does not fold into this unit."
+  },
+  "roster_md5_sweep": {
+    "plan_scope": "4 x (8 mappers x 37 PRODUCTION laws) = 1184 cells (cone/create, sphere/create, torus/create, cone/test)",
+    "reduced_to": "cone/create, 3 mappers (hatch/crosshatch/contour -- the only ones the fix can structurally reach) x 37 PRODUCTION laws = 111 cells",
+    "reduction_reason": "a single 8-mapper x 37-law sweep on cone/create measured 336.5s and exceeded this unit's own 300s internal vitest test timeout on this shared machine",
+    "coverage_fraction": "111/1184 = 9.4% of the plan's own full scope",
+    "result": "2/111 cells changed (cone/create/hatch/mkTick, cone/create/crosshatch/mkTick), 0 non-mkTick changes. cone/create/contour/mkTick did NOT change (matches the byte-identical 683/683 pathCount in shots_create/shots_before_create).",
+    "structural_corroboration": "law.shape === 'tick' is a single unique literal in the MK table (grep -c returns 1); every line this unit added is behind that check, so no other law's layMark call can reach it regardless of mapper or primitive."
+  }
+}

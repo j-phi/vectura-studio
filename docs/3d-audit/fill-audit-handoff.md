@@ -200,14 +200,117 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    `npm run test:ci`, reconcile intentionally-red tests, bump version + `version:sync`, CHANGELOG/plans/
    README, commit, STOP.
 
-## ROUND 3 CLOSED (2026-09-17) — merged locally at `d3b01d28`, v1.4.2, NOT PUSHED — read this first
+## ROUND 4 PAUSE POINT (2026-09-18) — READ THIS FIRST
+
+**Jay paused to clear context AFTER the round-4 merge landed. Round 4's work is COMPLETE, REVIEWED AND
+MERGED** — what remains is his two open answers and round 5. This block is self-contained.
+
+### (a) Where `main` is
+
+**`main` = `b43fa4e3` (v1.4.2), and it is PUSHED — `origin/main` == `main`.** Round 3 merged at `d3b01d28`
+and was pushed on Jay's standing answer **push = A** (86 commits, rounds 2 + 3). **Round 4's lane work is MERGED — see (c) for the integration sha.**
+
+### (b) The two round-4 lanes — BOTH FINAL, ALL UNITS REVIEWED OR VERIFIED
+
+| lane | branch | FINAL HEAD | contents |
+|---|---|---|---|
+| `fill-audit-a4` | `3d-scene/fill-audit-a4` | **`0f420747`** | **T3b `e60d102e`** · **W-36e `a5d8a1be`** · **F1-count `7ef20455`** · **T2-5 `75777240`** · **T3c `f0b0b0c8`** · **T2-6 `0f420747`** |
+| `border-4` | `3d-scene/border-4` | **tip** | **W-32r4 `76a77f22`** + **W-32r4b** + **W-32r4c** — reviewed **ACCEPT** |
+
+⚠⚠ **DO NOT MISREAD T2-6's COMMIT: `0f420747` is titled `wip … checkpoint` because the orchestrator created
+it during Incident 15 — but it IS THE REVIEWED UNIT.** The implementer verified after the checkpoint, added
+nothing, and the reviewer accepted that content. **It is not an unverified WIP; do not revert it.**
+
+**Both lane HEADs are now MERGED into `main` (see (c)); the `-a4` and `border-4` worktrees are HISTORICAL — round 5 branches off `main`.**
+
+### (c) THE MERGE — LANDED
+
+**MERGE r4: landed at `<merge sha>` · pushed: `<pushed yes/no>`.** *(Two placeholders, nothing else. Jay's
+standing answer on pushing is **A**, so round 4 goes to `origin` the same way round 3 did.)*
+
+**Merge commits: `37a1de4e` · `97ad4ad9` · `d301f11f` · `49af44d9` (v1.4.3). 13 goldens re-derived on the
+merged tree; all five suites green or at baseline; two deviations disclosed and accepted.**
+
+**Executed from `lane-reports/MERGE-plan-r4.md` in `.claude/worktrees/integrate-r4`, branch
+`3d-scene/integrate-r4`, off `b43fa4e3`.** **The one measured conflict was the `scene3d-mktick-wedge`
+goldens, re-pinned on BOTH lanes for unrelated correct reasons** — `border-4` because the refined edge moved
+them, `fill-audit-a4` because T2-3's mechanism family owns that file. ⚠ **It was SEMANTIC, not textual: two
+CORRECT re-pins of the same hashes, where taking either side alone is wrong** — so the **twelve goldens were
+RE-DERIVED on the merged tree with their contrast mutations re-run**, not resolved by choosing a side.
+Everything else was disjoint by file (`scene3d.js` vs `surface-fill.js`).
+
+⚠ **Still owed by the NEXT merge, neither of them a unit: checklist item 23** (the `git show HEAD:` sweep —
+**hunting BROKEN instances as well as always-passing ones, after one was found failing at its own landing
+commit**) **and item 30** (ground-plane inclusion across every ink number). **Both cheap, neither optional.**
+
+### (d) OPEN FOR JAY — Decision Desk
+
+**https://claude.ai/code/artifact/811ab725-f61c-4664-bdb6-2780bd4ba56d** — read with
+**`read_db` on collection `decisions`, docs `d11b` and `eye_t26`**, then **TRANSCRIBE into SESSION-SUMMARY
+§4, which remains the AUTHORITATIVE record** (the desk is where he answers; §4 is where the answer binds).
+
+1. **Decision 11-amended** — his answer to 11 was (B) "retune the cap's onset", and **a scout proved NO
+   SETTING EXISTS**: every retune breaks the 0.85 coverage calibrator and cylinder never reaches 1.2× tone
+   authority at d=220. **(A) accept the cap as inherent / (B) fund a different mechanism — tone on crosshatch
+   ANGLE or PEN WEIGHT at d=220.** **He is not being asked the same question twice: the onset is not the
+   lever.**
+2. **The T2-6 EYE CHECK** (`cone/hatch` whole cell + native crop, **and `sphere/hatch`**). **Clause (a) is
+   "DELIVERED PER BARS, PENDING JAY'S EYE": the ticks DO grade within bands, but stair-stepped comb edges,
+   bracket-like shapes and fragments near the highlight remain, and the reviewer found a NEW rung-shaped
+   artefact on `sphere/hatch`.** **His answer decides whether T2 CLOSES or T2-7 is planned** — and **T2-6b
+   (the rung artefact) is a CANDIDATE, not a row, for the same reason.**
+
+### (e) Round-5 candidates
+
+**SESSION-SUMMARY §3 has the table.** In short: **T2-6b / T2-7** *(pending the eye check)* · **the T3c onset
+re-derive — the true cliff is d≈32, not the shipped 35** · **T2-4** *(d=220 mkTick coverage; a `MIN_MARK_MM`
+limit, and MEASURED is an acceptable outcome)* · **T2-3d** *(closed unbuilt by decision 13 = A)* · **T2-3e**
+*(the row lattice — pre-existing, measured, already disclosed in Jay's T2 row)* · **the W-36f mechanism**
+*(only if 11-amended = B)* · **W-07b** · unscheduled (W-33's fitter follow-up, `insetMultiPolygon` ladder,
+the W-29 stub family, U10–U12 which stay W-26-blocked).
+
+### (f) Process — binding, unchanged
+
+- **Jay's SCALE-DOWN regime (2026-09-15):** tests-only units get a **light VERIFY pass** (RED reproduces,
+  mutation trips, `## Bars changed` accurate) and are marked **VERIFIED**, not reviewed · **secretary flags
+  only for units that change `src/`, capped at SIX** · **no planner unless a unit was REJECTED or its
+  mechanism is UNKNOWN** · **no evidence-integrity side units unless a mismatch blocks a decision** ·
+  **SCOUTS STAY — they closed three items outright across two rounds and deleted a wrong answer before a
+  planner could chase it.**
+- **`lane-reports/ROUND3-RESUME-BRIEFS.md` §0 is THE BINDING CHECKLIST — paste it VERBATIM into every
+  brief** (which half of the bar you gate, **mutation proof BLOCKING** · sweep coverage as a fraction of the
+  roster · **state the FIXTURE behind every number — rig, camera, density, non-default params, and whether
+  GROUND-PLANE INK is included** · check each pin's FIXTURE not just the law name · say so when you turn
+  another unit's test green or inherit its red · `## Bars changed` **including population and fixture
+  changes**). **§0b is the slow-file list.**
+- **Standing rulings added in round 4:** **an edge-geometry change must run EVERY pinned-golden file over
+  curved primitives before commit — GREP, DON'T RECALL** *(this cost a full REJECT on a unit whose mechanism
+  was correct)* · **a present report is NOT evidence of a landed unit — check the sha, not the STATUS line**
+  *(Incident 15)* · **a fix whose defect no bar measures ships its instrument IN THE SAME UNIT.**
+- **SLOW FILES:** `scene3d-tone-law-collapse.test.js` measures **390–1046 s** and **exceeds the Bash tool's
+  600 s maximum** — expect the tool to background it and read the completion notification. **That exemption
+  covers ONLY the named slow test files; nothing else may be backgrounded.**
+- **INCIDENTS 8–15** (2026-09-11 → 18): eight kills, including the first **weekly** cap (~2 days) and ones
+  that hit the merge implementer and the secretary. ⚠ **Nothing was ever lost.** **The on-disk record was the
+  recovery mechanism every single time** — which is why the ledger is checkpointed to `main`. **Resume killed
+  agents with `SendMessage`; checkpoint any mid-unit tree as `wip(...) (unverified)` and make the next agent
+  VERIFY-OR-REVERT it.** ⚠ **Orphaned dev servers on scratch ports are the largest cleanup cost of an
+  incident — kill them.**
+
+### (g) Resume prompt for the next orchestrator (paste verbatim)
+
+> Resume the 3D fill audit at the ROUND 4 PAUSE POINT. **Round 4 is COMPLETE, REVIEWED AND MERGED; `main` carries it and is pushed. Nothing is mid-flight.** Read, in order: `docs/3d-audit/fill-audit-handoff.md` (this pause block), `docs/3d-audit/lane-reports/SESSION-SUMMARY.md` (**§1** what landed in round 4, **§2c** the round-4 handoff block, **§3** the round-5 candidates, **§4** the decisions — **TWO ARE OPEN**, **§6** the merge record), `docs/3d-audit/lane-reports/LEDGER.md` (the **Round 4** section and queue, the standing rulings, and the MERGE CHECKLIST — **items 23 and 30 are still owed**), `docs/3d-audit/STILL-OPEN.md`, `docs/3d-audit/lane-reports/AGENT-PROTOCOL.md`, and **`docs/3d-audit/lane-reports/ROUND3-RESUME-BRIEFS.md` §0 and §0b — paste §0 verbatim into every brief.** **FIRST ACTION: read the Decision Desk (https://claude.ai/code/artifact/811ab725-f61c-4664-bdb6-2780bd4ba56d) with `read_db` on collection `decisions`, docs `d11b` and `eye_t26`, and TRANSCRIBE the answers into SESSION-SUMMARY §4, which stays the AUTHORITATIVE record.** **Then run round 5 per §3.** ⚠ **Do not start T2-6b, T2-7 or the W-36f mechanism until the relevant answer is in** — the T2-6 eye check decides whether T2 CLOSES or T2-7 is planned, and decision 11-amended decides whether a cap mechanism exists at all. **Branch round-5 lanes off `main`; the `-a4` / `border-4` worktrees are HISTORICAL.** Same roles and models — lane secretary first, then Sonnet implementers → Sonnet adversarial reviewers → Opus planners only where earned — **under Jay's scaled-down regime: tests-only units get a light VERIFY pass, no planner unless a unit was rejected or its mechanism is unknown, secretary flags only for `src/` units and capped at six, and scouts stay.** **Kill any stale dev server on a lane or scratch port before starting; serve `main` on 8460 for the gallery; run every vitest file in the FOREGROUND with `timeout: 600000`.** Commit per unit in the lane worktree. **Never push a lane branch.**
+
+---
+
+## ROUND 3 CLOSED (2026-09-17) — merged at `d3b01d28`, v1.4.2, ✅ **PUSHED** — read this first
 
 **Round 3 ran 2026-09-10 → 17 across five `-3` worktrees off `main` `426cc5e4`** (paused by Jay on 09-12,
 resumed the same day). **Every unit on the stop line is landed-or-measured; the merge measured ZERO conflicts;
 all five `test:ci` suites are green; the gallery is rebuilt.** **Integration branch `3d-scene/integrate-r3`,
 integration commit `d3b01d28`, `main` fast-forwarded onto it.** Merge review **ACCEPT-WITH-FOLLOWUPS**
-(`lane-reports/MERGE-review-r3.md`). ⚠ **`main` is 44+ ahead of `origin/main` and NOT PUSHED — pushing is
-still Jay's call, now across two full rounds.**
+(`lane-reports/MERGE-review-r3.md`). ✅✅ **PUSHED 2026-09-17 on Jay's decision `push = A`: `origin/main` = `main` = `b43fa4e3`, 86 commits covering
+rounds 2 AND 3.** **After three rounds of local-only work, this audit is on the remote.**
 
 **Merged lane HEADs:** `fill-audit-a3` `7375918c` · `fill-collapse-3` `28cc745d` · `fill-audit-3` `141ed0b5`.
 **`fill-audit-d3` and `handoff-c3` were never written to** — W-37 and the HLR sub-pen unit both closed

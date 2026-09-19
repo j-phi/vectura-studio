@@ -1,0 +1,28 @@
+const { loadVecturaRuntime } = require('/private/tmp/claude-501/scratch-T25/tests/helpers/load-vectura-runtime');
+(async () => {
+const rt = await loadVecturaRuntime({ rootDir: '/private/tmp/claude-501/scratch-T25' });
+const V = rt.window.Vectura;
+const BOUNDS = { width:1200, height:1000, m:20, dW:1160, dH:960, penWidth:0.3 };
+const SUN = { id:'sun', type:'directional', azimuth:135, elevation:45, intensity:1, castShadows:false };
+const clone=(v)=>JSON.parse(JSON.stringify(v));
+const Params = V.Scene3D.Params;
+const defaults = V.ALGO_DEFAULTS.scene3d;
+const p = clone(defaults);
+const bag = { ...clone(Params.PRIMITIVE_PARAM_DEFAULTS.cone||{}), ...clone(Params.PRIMITIVE_CREATE_DEFAULTS.cone||{}) };
+p.objects=[{id:'obj',name:'Obj',primitive:'cone',params:bag,transform:{x:0,y:0,z:0,yaw:0,pitch:0,roll:0,scale:1},visibility:'solid'}];
+p.ground={enabled:false}; p.backdrop={enabled:false};
+p.camera=clone(Params.DEFAULT_CAMERA);
+p.tone={...clone(defaults).tone, enabled:true};
+p.lights=[SUN];
+p.styleTable={scene:{penId:null,mapper:'hatch',params:{fillAngle:45,fillDensity:50,toneLaw:'mkTick'}},byObject:{},byFace:{}};
+const paths = V.AlgorithmRegistry.scene3d.generate(p, null, null, BOUNDS);
+console.log('paths', paths.length, 'isArray0', Array.isArray(paths[0]));
+console.log('keys0', Object.keys(paths[0]||{}));
+console.log(JSON.stringify(paths[0]).slice(0,400));
+const metas = {};
+paths.forEach(pp=>{ const m = pp && pp.meta ? JSON.stringify(Object.keys(pp.meta).sort()) : (Array.isArray(pp)?'ARRAY':'nometa'); metas[m]=(metas[m]||0)+1; });
+console.log(metas);
+const st = V.Scene3D.SurfaceFill.lastMarkStats;
+console.log('markStats', st && Object.keys(st));
+process.exit(0);
+})();

@@ -1,0 +1,4 @@
+mappers 8 laws 37 => cells per sweep 296
+sphere:create: 3/296 changed -> hatch/mkTick, crosshatch/mkTick, contour/mkTick
+torus:create: 3/296 changed -> hatch/mkTick, crosshatch/mkTick, contour/mkTick
+cone:test: 3/296 changed -> hatch/mkTick, crosshatch/mkTick, contour/mkTick

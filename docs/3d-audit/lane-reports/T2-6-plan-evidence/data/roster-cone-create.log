@@ -1,0 +1,2 @@
+mappers 8 laws 37 => cells per sweep 296
+cone:create: 3/296 changed -> hatch/mkTick, crosshatch/mkTick, contour/mkTick

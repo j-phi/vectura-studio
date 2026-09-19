@@ -1,0 +1,778 @@
+[
+ {
+  "primitive": "sphere",
+  "mapper": "none",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 116
+ },
+ {
+  "primitive": "sphere",
+  "mapper": "hatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 146
+ },
+ {
+  "primitive": "sphere",
+  "mapper": "wireframe",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 2368
+ },
+ {
+  "primitive": "sphere",
+  "mapper": "crosshatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 181
+ },
+ {
+  "primitive": "sphere",
+  "mapper": "contour",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 138
+ },
+ {
+  "primitive": "sphere",
+  "mapper": "spiral",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 140
+ },
+ {
+  "primitive": "sphere",
+  "mapper": "stipple",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 906
+ },
+ {
+  "primitive": "sphere",
+  "mapper": "contourSlice",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 143
+ },
+ {
+  "primitive": "ellipsoid",
+  "mapper": "none",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 102
+ },
+ {
+  "primitive": "ellipsoid",
+  "mapper": "hatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 127
+ },
+ {
+  "primitive": "ellipsoid",
+  "mapper": "wireframe",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 2040
+ },
+ {
+  "primitive": "ellipsoid",
+  "mapper": "crosshatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 156
+ },
+ {
+  "primitive": "ellipsoid",
+  "mapper": "contour",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 121
+ },
+ {
+  "primitive": "ellipsoid",
+  "mapper": "spiral",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 123
+ },
+ {
+  "primitive": "ellipsoid",
+  "mapper": "stipple",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 739
+ },
+ {
+  "primitive": "ellipsoid",
+  "mapper": "contourSlice",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 128
+ },
+ {
+  "primitive": "capsule",
+  "mapper": "none",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 80
+ },
+ {
+  "primitive": "capsule",
+  "mapper": "hatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 100
+ },
+ {
+  "primitive": "capsule",
+  "mapper": "wireframe",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 1426
+ },
+ {
+  "primitive": "capsule",
+  "mapper": "crosshatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 123
+ },
+ {
+  "primitive": "capsule",
+  "mapper": "contour",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 93
+ },
+ {
+  "primitive": "capsule",
+  "mapper": "spiral",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 96
+ },
+ {
+  "primitive": "capsule",
+  "mapper": "stipple",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 383
+ },
+ {
+  "primitive": "capsule",
+  "mapper": "contourSlice",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 104
+ },
+ {
+  "primitive": "cone",
+  "mapper": "none",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 110
+ },
+ {
+  "primitive": "cone",
+  "mapper": "hatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 133
+ },
+ {
+  "primitive": "cone",
+  "mapper": "wireframe",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 2050
+ },
+ {
+  "primitive": "cone",
+  "mapper": "crosshatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 154
+ },
+ {
+  "primitive": "cone",
+  "mapper": "contour",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 135
+ },
+ {
+  "primitive": "cone",
+  "mapper": "spiral",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 126
+ },
+ {
+  "primitive": "cone",
+  "mapper": "stipple",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 483
+ },
+ {
+  "primitive": "cone",
+  "mapper": "contourSlice",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 130
+ },
+ {
+  "primitive": "cylinder",
+  "mapper": "none",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 120
+ },
+ {
+  "primitive": "cylinder",
+  "mapper": "hatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 157
+ },
+ {
+  "primitive": "cylinder",
+  "mapper": "wireframe",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 2161
+ },
+ {
+  "primitive": "cylinder",
+  "mapper": "crosshatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 194
+ },
+ {
+  "primitive": "cylinder",
+  "mapper": "contour",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 145
+ },
+ {
+  "primitive": "cylinder",
+  "mapper": "spiral",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 145
+ },
+ {
+  "primitive": "cylinder",
+  "mapper": "stipple",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 958
+ },
+ {
+  "primitive": "cylinder",
+  "mapper": "contourSlice",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 146
+ },
+ {
+  "primitive": "torus",
+  "mapper": "none",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": "114->111"
+ },
+ {
+  "primitive": "torus",
+  "mapper": "hatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": "120->117"
+ },
+ {
+  "primitive": "torus",
+  "mapper": "wireframe",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": "1773->1770"
+ },
+ {
+  "primitive": "torus",
+  "mapper": "crosshatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": "126->123"
+ },
+ {
+  "primitive": "torus",
+  "mapper": "contour",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": "164->161"
+ },
+ {
+  "primitive": "torus",
+  "mapper": "spiral",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": "170->167"
+ },
+ {
+  "primitive": "torus",
+  "mapper": "stipple",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": "176->173"
+ },
+ {
+  "primitive": "torus",
+  "mapper": "contourSlice",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": "164->161"
+ },
+ {
+  "primitive": "torusKnot",
+  "mapper": "none",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 269
+ },
+ {
+  "primitive": "torusKnot",
+  "mapper": "hatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 285
+ },
+ {
+  "primitive": "torusKnot",
+  "mapper": "wireframe",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 4474
+ },
+ {
+  "primitive": "torusKnot",
+  "mapper": "crosshatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 304
+ },
+ {
+  "primitive": "torusKnot",
+  "mapper": "contour",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 363
+ },
+ {
+  "primitive": "torusKnot",
+  "mapper": "spiral",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 360
+ },
+ {
+  "primitive": "torusKnot",
+  "mapper": "stipple",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 286
+ },
+ {
+  "primitive": "torusKnot",
+  "mapper": "contourSlice",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 357
+ },
+ {
+  "primitive": "superellipsoid",
+  "mapper": "none",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 80
+ },
+ {
+  "primitive": "superellipsoid",
+  "mapper": "hatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 122
+ },
+ {
+  "primitive": "superellipsoid",
+  "mapper": "wireframe",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 1696
+ },
+ {
+  "primitive": "superellipsoid",
+  "mapper": "crosshatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 158
+ },
+ {
+  "primitive": "superellipsoid",
+  "mapper": "contour",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 105
+ },
+ {
+  "primitive": "superellipsoid",
+  "mapper": "spiral",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 112
+ },
+ {
+  "primitive": "superellipsoid",
+  "mapper": "stipple",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 421
+ },
+ {
+  "primitive": "superellipsoid",
+  "mapper": "contourSlice",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 107
+ },
+ {
+  "primitive": "pyramid",
+  "mapper": "none",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 32
+ },
+ {
+  "primitive": "pyramid",
+  "mapper": "hatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 66
+ },
+ {
+  "primitive": "pyramid",
+  "mapper": "wireframe",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 376
+ },
+ {
+  "primitive": "pyramid",
+  "mapper": "crosshatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 99
+ },
+ {
+  "primitive": "pyramid",
+  "mapper": "contour",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 64
+ },
+ {
+  "primitive": "pyramid",
+  "mapper": "spiral",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 65
+ },
+ {
+  "primitive": "pyramid",
+  "mapper": "stipple",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 918
+ },
+ {
+  "primitive": "pyramid",
+  "mapper": "contourSlice",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 58
+ },
+ {
+  "primitive": "box",
+  "mapper": "none",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 6
+ },
+ {
+  "primitive": "box",
+  "mapper": "hatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 23
+ },
+ {
+  "primitive": "box",
+  "mapper": "wireframe",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 9
+ },
+ {
+  "primitive": "box",
+  "mapper": "crosshatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 32
+ },
+ {
+  "primitive": "box",
+  "mapper": "contour",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 15
+ },
+ {
+  "primitive": "box",
+  "mapper": "spiral",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 20
+ },
+ {
+  "primitive": "box",
+  "mapper": "stipple",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 81
+ },
+ {
+  "primitive": "box",
+  "mapper": "contourSlice",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 32
+ },
+ {
+  "primitive": "plane",
+  "mapper": "none",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 4
+ },
+ {
+  "primitive": "plane",
+  "mapper": "hatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 13
+ },
+ {
+  "primitive": "plane",
+  "mapper": "wireframe",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 4
+ },
+ {
+  "primitive": "plane",
+  "mapper": "crosshatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 18
+ },
+ {
+  "primitive": "plane",
+  "mapper": "contour",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 8
+ },
+ {
+  "primitive": "plane",
+  "mapper": "spiral",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 11
+ },
+ {
+  "primitive": "plane",
+  "mapper": "stipple",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 68
+ },
+ {
+  "primitive": "plane",
+  "mapper": "contourSlice",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 30
+ },
+ {
+  "primitive": "solid",
+  "mapper": "none",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 20
+ },
+ {
+  "primitive": "solid",
+  "mapper": "hatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 55
+ },
+ {
+  "primitive": "solid",
+  "mapper": "wireframe",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 55
+ },
+ {
+  "primitive": "solid",
+  "mapper": "crosshatch",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 67
+ },
+ {
+  "primitive": "solid",
+  "mapper": "contour",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 52
+ },
+ {
+  "primitive": "solid",
+  "mapper": "spiral",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 41
+ },
+ {
+  "primitive": "solid",
+  "mapper": "stipple",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 53
+ },
+ {
+  "primitive": "solid",
+  "mapper": "contourSlice",
+  "all": "IDENTICAL",
+  "fill": "IDENTICAL",
+  "edge": "IDENTICAL",
+  "paths": 52
+ },
+ {
+  "primitive": "sphere+GROUND",
+  "mapper": "hatch",
+  "all": "CHANGED",
+  "fill": "IDENTICAL",
+  "edge": "CHANGED",
+  "paths": 239
+ }
+]

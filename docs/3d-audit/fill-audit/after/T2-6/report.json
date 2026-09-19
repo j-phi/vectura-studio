@@ -1,0 +1,79 @@
+{
+  "rig": "create+addLayer",
+  "unit": "T2-6",
+  "lane": "fill-audit-a4",
+  "worktree": ".claude/worktrees/fill-audit-a4",
+  "branch": "3d-scene/fill-audit-a4",
+  "base_sha": "f0b0b0c8",
+  "clause": "Jay's USER RULE clause (a): Instead of tick fragments on the right, use gradually shortening ticks to fill the black gaps at the bottom of the vertical waves.",
+  "mechanism": "THE GRADED BAND COMB (T2-6-plan.md Rank 1, prototyped 'F3'). layMark's mkTick placement, when a band is wide enough (MK_TICK_COMB_MIN_R*sv.R <= sv.L < 0.98*sv.R) and both band edges are on-chart (two sampleAt probes), lays a geometric run each_j = e0*RHO^j across up to MK_TICK_COMB_MAX sub-bands, longest at the darker edge, envelope-scaled to MK_TICK_COMB_ENV*sv.R. Sum(each_j) = sv.L exactly, so the delivered ink-area fraction is bit-identical -- pure redistribution. Shipped dials: RHO=0.62, MAX=2, MIN_R=0.40, ENV=0.85.",
+  "fixture": {
+    "bounds": "{width:1200,height:1000,m:20,dW:1160,dH:960,penWidth:0.3}",
+    "camera": "DEFAULT_CAMERA, angle key 'a'",
+    "sun": "{azimuth:135,elevation:45,intensity:1,castShadows:false}",
+    "ground_plane_ink": "excluded (ground:{enabled:false}, backdrop:{enabled:false})",
+    "styleTable": "{fillAngle:45, fillDensity:<d>, toneLaw:'mkTick'}, d=50 unless stated",
+    "rigs": "create = PRIMITIVE_CREATE_DEFAULTS over PRIMITIVE_PARAM_DEFAULTS (gallery/Jay's); test = PRIMITIVE_PARAM_DEFAULTS alone (every RGR test in this lane) -- every number below names its rig"
+  },
+  "per_cell_d50": {
+    "create|sphere/hatch": { "A1": 0.4480, "A1b_bareRunP95_RP": 0.2981, "A3": 0.3806, "wedge25": 0.05649, "holeMax": 0.992, "bandC": 0.0800, "O5": 3.1280, "siteCoverage": 0.9793, "pens": 1093, "inkMm": 4882.0 },
+    "create|sphere/contour": { "A1": 0.4077, "A1b_bareRunP95_RP": 0.2703, "wedge25": 0.06507, "holeMax": 1.038, "bandC": 0.0529, "O5": 2.4397, "siteCoverage": 0.9895, "pens": 1084, "inkMm": 4745.4 },
+    "create|torus/hatch": { "A1": 0.1596, "A1b_bareRunP95_RP": 0.5082, "A1b_note": "own measured bar (bandOn gates comb off on this cell)", "wedge25": 0.13808, "holeMax": 0.980, "bandC": 0.2723, "O5": 2.5354, "siteCoverage": 0.9882, "pens": 335, "inkMm": 1272.1 },
+    "create|torus/contour": { "A1": 0.3231, "A1b_bareRunP95_RP": 0.4512, "A1b_note": "own measured bar (bandOn gates comb off on this cell)", "wedge25": 0.17307, "holeMax": 0.991, "bandC": 0.4610, "O5": 3.0353, "siteCoverage": 0.9770, "pens": 339, "inkMm": 1368.4 },
+    "create|cone/hatch": { "A1": 0.4506, "A1b_bareRunP95_RP": 0.3849, "A3": 0.1786, "wedge25": 0.06290, "holeMax": 1.038, "bandC": 0.0640, "O5": 2.4258, "siteCoverage": 0.9882, "pens": 602, "inkMm": 2498.4 },
+    "create|cone/contour": { "A1": 0.4790, "A1b_bareRunP95_RP": 0.2813, "wedge25": 0.04113, "holeMax": 0.995, "bandC": 0.0269, "O5": 2.6081, "siteCoverage": 0.9960, "pens": 634, "inkMm": 2527.2 },
+    "test|sphere/hatch": { "A1": 0.3702, "A1b_bareRunP95_RP": 0.3587, "A3": 0.3732, "wedge25": 0.07844, "holeMax": 1.110, "bandC": 0.0949, "O5": 3.0730, "siteCoverage": 0.9833, "pens": 704, "inkMm": 3155.2 },
+    "test|sphere/contour": { "A1": 0.4504, "A1b_bareRunP95_RP": 0.2606, "wedge25": 0.06681, "holeMax": 1.079, "bandC": 0.0459, "O5": 2.3479, "siteCoverage": 0.9898, "pens": 695, "inkMm": 3007.5 },
+    "test|torus/hatch": { "A1": 0.5176, "A1b_bareRunP95_RP": 0.3196, "wedge25": 0.07683, "holeMax": 1.044, "bandC": 0.2355, "O5": 2.3426, "O5_note": "the 12-fixture minimum", "siteCoverage": 0.9908, "pens": 976, "inkMm": 3200.5 },
+    "test|torus/contour": { "A1": 0.4302, "A1b_bareRunP95_RP": 0.4018, "wedge25": 0.08747, "holeMax": 1.081, "bandC": 0.2969, "O5": 2.8504, "siteCoverage": 0.9843, "pens": 730, "inkMm": 2725.0 },
+    "test|cone/hatch": { "A1": 0.3967, "A1b_bareRunP95_RP": 0.3415, "A3": 0.2312, "wedge25": 0.07011, "holeMax": 0.984, "bandC": 0.1043, "O5": 2.6537, "siteCoverage": 0.9860, "pens": 499, "inkMm": 2116.8 },
+    "test|cone/contour": { "A1": 0.4789, "A1b_bareRunP95_RP": 0.3554, "wedge25": 0.07475, "holeMax": 1.039, "bandC": 0.0224, "O5": 2.8962, "siteCoverage": 0.9924, "pens": 560, "inkMm": 2248.8 }
+  },
+  "aggregate_bars": {
+    "wedge25_mean_create_le_0.095": 0.08946,
+    "wedge25_mean_test_le_0.080": 0.07574,
+    "O5_bar_2.30_monotone_12of12": "held, min 2.3426",
+    "siteCoverage_gt_0.90_12of12": "held, min 0.9770",
+    "ovMax_clause_b": "exactly 0.0800 on 12/12, unchanged to 4 decimals",
+    "over2RP_clause_c": "0/12"
+  },
+  "d1_d220_observations_cone_hatch": {
+    "d1_create": { "paths": 193, "inkMm": 835.1, "pens": 83, "wedge25": 0.28428, "holeMax": 1.059, "siteCoverage": 0.9356, "tooShort": 2 },
+    "d1_test": { "paths": 126, "inkMm": 537.8, "pens": 53, "wedge25": 0.34163, "holeMax": 1.067, "siteCoverage": 0.9576, "tooShort": 1 },
+    "d220_create": { "paths": 1935, "inkMm": 2372.7, "pens": 1963, "wedge25": 0.11781, "holeMax": 3.203, "siteCoverage": 0.8754, "tooShort": 713 },
+    "d220_test": { "paths": 1709, "inkMm": 2089.7, "pens": 1738, "wedge25": 0.11079, "holeMax": 2.543, "siteCoverage": 0.8798, "tooShort": 552 }
+  },
+  "md5_roster_sweep": {
+    "scope": "4 combos (cone:create, sphere:create, torus:create, cone:test) x 8 mappers x 37 PRODUCTION laws = 1184 cells, current tree vs git-show f0b0b0c8 snapshot",
+    "changed": 12,
+    "total": 1184,
+    "coverage_fraction": "12/1184 = 1.0%",
+    "changed_cells_per_combo": ["hatch/mkTick", "crosshatch/mkTick", "contour/mkTick"],
+    "non_mkTick_changed": 0
+  },
+  "mkDashRamp_byte_identity": {
+    "scope": "6 cells (sphere/torus/cone x hatch) x 3 densities (1/50/220) x 2 rigs = 18 combinations, vs this unit's own base sha f0b0b0c8",
+    "result": "18/18 IDENTICAL"
+  },
+  "findings_not_fixed": {
+    "O1_sagitta_margin_miss": {
+      "file": "tests/unit/scene3d-mark-laws-draw.test.js (NOT in this unit's ALLOWED files)",
+      "fixture": "test|torus/contour, d=50, mkTick",
+      "measured": 0.09794838126911516,
+      "bar": 0.10,
+      "miss_pct": 2.05,
+      "cause": "the comb shortens the longest-chord-third population O1 measures; some sub-ticks now walk as 2-point (zero-sagitta) chords and drop out, pulling the top-third median down",
+      "action": "reported, not tuned -- file is out of scope, and every dial in the plan's own sweep has nonlinear knock-on effects elsewhere in the 12-fixture table"
+    },
+    "mkdashramp_single_pass_mkTick_subtest": {
+      "file": "tests/unit/scene3d-mkdashramp-single-pass.test.js (T3c's, FORBIDDEN to this unit)",
+      "subtest": "byte-identity sweep > mkTick is unaffected at d=1/50/220, sphere/hatch, addLayer rig",
+      "status": "RED, caused by this unit, unfixable by this unit",
+      "cause": "that test's mutant fixture is git show b43fa4e3 (T3b's base sha, a whole-file historical snapshot that already carries T2-5's mkTick code) -- any later commit touching mkTick breaks the comparison, unrelated to mkDashRamp itself",
+      "independent_proof_mkDashRamp_untouched": "see md5_roster_sweep sibling key mkDashRamp_byte_identity, 18/18 identical against THIS unit's own base sha"
+    }
+  },
+  "identical_exceptions": {
+    "note": "no cell in this unit's own evidence capture is expected byte-identical -- the comb fires on an ORDINARY band, unlike T2-5's over-wide-band-only retiling"
+  }
+}
