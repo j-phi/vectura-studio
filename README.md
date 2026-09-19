@@ -597,6 +597,24 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.4.3
+- **3D Scene — curved-primitive borders now sit on the true silhouette.** A sphere, ellipsoid,
+  cone, cylinder, or capsule's drawn outline used to fall up to 0.72 pen short of the real edge
+  (a projected-mesh chord polygon), so rulings that correctly reached the surface's edge read as
+  breaking out past the grey border. The border now sits on the analytic silhouette instead —
+  worst overshoot falls to 0.02 pen — with fill ink unchanged. The torus keeps its previous
+  outline (its silhouette isn't convex enough for this fix); every faceted or unsupported
+  primitive is untouched.
+- **3D Scene — Dash Ramp draws discrete dashes at low Density.** Below a density threshold each
+  mark is a single pass instead of a band of parallel passes, and its length is bounded, so a
+  sparse sphere reads as discrete dashes riding the rulings. Mid and high Density are unchanged.
+- **3D Scene — tick fills grade toward the dark edge of each band**, narrowing (not yet closing)
+  the bare strip at the bottom of a wave band, and no longer grow a single tick past its own band
+  on a wide one.
+- **Known open.** Whether to retune the crosshatch cap's onset — measured infeasible without a
+  different mechanism this round — and whether the tick fills' residual gap is acceptable, are
+  both open product decisions not settled by this release.
+
 ### 1.4.2
 - **3D Scene — "Min rulings" (per fill style).** Hatch and Crosshatch styles gain a *minimum
   facet rulings* control (1–8, default 3) setting the fewest rulings a flat facet may receive
@@ -657,6 +675,9 @@ CI lives in `.github/workflows/test.yml`:
 - **Known open.** T2/T3 (mark-length tone laws — T2 was measured, rejected and reverted),
   W-31b, W-32 Rank 3/4 (refine the fill border to the true silhouette), F-14, and nine frozen
   design decisions awaiting a call.
+
+<details>
+<summary>Older releases (1.4.0 and earlier)</summary>
 
 ### 1.4.0
 - **3D Scene Studio — the headline feature.** 3D Scene grew from a single mesh into a full
@@ -730,9 +751,6 @@ CI lives in `.github/workflows/test.yml`:
   are visible the instant the object appears. Box and wireframe are unchanged and stay one click
   away — the Add Objects shelf and the object Style flyout. The scene-scope fallback deliberately
   stays wireframe: it is what the ground fixture resolves to, and hatching it floods the ground quad.
-
-<details>
-<summary>Older releases (1.3.84 and earlier)</summary>
 
 ### 1.3.84
 - **Draw Order: the colours, the playback and the exported SVG finally agree.** The on-canvas

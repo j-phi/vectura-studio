@@ -66,6 +66,20 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **3D Scene — crosshatch spends a full hatch budget per family.** Each of the two crossed
   families now carries the ruling count a single-family hatch would, with a new cap so maximum
   Density does not fill solid. See *Known limitations*. (W-36c, W-36d)
+- **3D Scene — Dash Ramp draws discrete dashes at low Density.** Below a density threshold each
+  mark is now a single pass rather than a band of parallel passes, and its length is bounded, so a
+  sparse sphere reads as discrete dashes riding the rulings instead of one thick tile or a row of
+  broken rulings. Mid and high Density are byte-identical — the band mechanism that carries the
+  dark end is untouched. (T3b, T3c)
+- **3D Scene — tick fills no longer grow ticks past their own band.** A tick is now sized against
+  its band rather than against the local ruling pitch, so a band wide enough for several ticks
+  receives several instead of one over-long one. Total ink is within 0.6% and the seam overlap is
+  unchanged. (T2-5)
+- **3D Scene — tick fills grade toward the dark edge of each band.** Within a band, ticks now run
+  as a graded comb — longest at the dark edge, shortening away from it — so the bare strip at the
+  bottom of a wave band is narrower. Ink area per band is unchanged by construction.
+  **The result is an improvement rather than a completion: the gaps shrink but do not close, and
+  whether this reads correctly is being judged by eye, not by a bar.** (T2-6)
 
 ### Fixed
 - **3D Scene · curved fills no longer draw a ruling end past the object's outline.** A sphere,
@@ -129,20 +143,29 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   where a ribbon belonged. (F1-erode)
 
 ### Known limitations
-- **Crosshatch at maximum Density: the tone dial has no effect on cell size.** The new
-  anti-saturation cap — added so Density 220 does not fill solid — binds at the top of the
-  range, so turning the tone dial there changes nothing. This is the trade the cap exists to
-  make; **whether the cap's onset should be retuned so some tone authority survives at maximum
-  density is an open product decision and is not settled by this release.** (W-36c/d)
+- **Crosshatch at maximum Density: the tone dial still has no effect on cell size, and retuning
+  the cap's onset has been measured and cannot deliver one.** The new anti-saturation cap —
+  added so Density 220 does not fill solid — binds at the top of the range, so turning the tone
+  dial there changes nothing. Every onset setting that restores tone authority at Density 220
+  breaks the coverage calibrator the cap exists to satisfy, and one primitive (the cylinder)
+  never reaches meaningful authority at that density under any setting. **Whether to accept this
+  as inherent, or to fund a different mechanism — tone acting on crosshatch angle or on pen
+  weight rather than on cell size — is an open product decision and is not settled by this
+  release.** (W-36c/d, W-36f)
 - **Wave-ribbon fills read lighter than before.** Fixing the bare strip redistributes ink
   rather than removing it (total ruling length is unchanged to +0.1%), but the ribbons are
   measurably thinner — most on *One Pen Down*. **Whether to restore the previous ribbon weight
   while keeping the new even placement is an open product decision and is not settled by this
   release.** A width bar now exists (`scene3d-ribbon-width-bar.test.js`) so a future retune has
   something to measure against. (F1-placement, F1-amp, F1-width-bar)
-- **Dash Ramp marks are bands, not single strokes.** The band mechanism that restored the dark
-  end applies at every density, so at Density 1 each dash reads as a thick tile rather than a
-  thin stroke. (T4)
+- **Dash Ramp marks are bands, not single strokes, above the new low-density threshold.** Below
+  the threshold (T3b/T3c) dashes are now single, length-bounded passes; at and above it the band
+  mechanism that carries the dark end still applies, so a mid-to-high-density dash still reads as
+  a short band rather than a single thin stroke. (T4, T3b, T3c)
+- **Tick fills: the bare strip at the bottom of a wave band is narrower, not gone.** The graded
+  comb (T2-6) redistributes tick length within each band rather than adding ink, so a residual
+  gap remains on the steepest bands. **Whether the remaining gap is acceptable is being judged by
+  eye and is not settled by this release.**
 - *(carried)* The thin-torus shadow blank-void ceiling returns at a major:minor tube ratio of
   about 465:1–488:1 — unreachable through the UI, reachable via a hand-edited or imported
   `.vectura`. (W-30d)

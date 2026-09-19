@@ -22,31 +22,56 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
-- **3D fill audit round 3 — post-merge queue (2026-09-16, integration branch
-  `3d-scene/integrate-r3`, v1.4.2, NOT pushed and `main` NOT fast-forwarded).** Round 2's queue
-  above is superseded — U9b/W-10d-3b, the gallery rebuild, and the round-2 lane resumes (T2 iter
-  2, T3, W-31b, W-35b, F1-placement) all landed inside round 3's three merged lanes
-  (`fill-collapse-3`, `fill-audit-3`, `fill-audit-a3`; see `docs/3d-audit/lane-reports/
-  MERGE-impl-r3.md` for the full unit list and test counts). Open items carried forward:
-  1. **Jay's decisions 9-amendment, 10, 11, 12** (see `Blocked on Jay`) — none pre-empted by the
-     merge; each Changed/Known-limitations line in this release's CHANGELOG entry states the
-     consequence and leaves the choice open, per the merge plan's ruling.
-  2. **T2-4, F1-count, W-36e** — unscheduled follow-ups named in `ROUND3-RESUME-BRIEFS.md` /
-     `LEDGER.md`; not started.
-  3. **`tests/unit/scene3d-slice-end-overlap.test.js`'s vacuous `git show HEAD:` leg** (merge
-     checklist item 23) — needs its own W-id: replace with an absent-key/equality oracle plus a
-     mutation proof, or pin a fixed historical sha the way
-     `scene3d-hlr-spatial-index-identity.test.js` does. Tests-only, not touched at merge.
-  4. **`tests/unit/text-fill-watertight.test.js`** (merge checklist item 25) — re-classified at
+- **3D fill audit round 4 — post-merge queue (2026-09-18, integration branch
+  `3d-scene/integrate-r4`, v1.4.3, NOT pushed and `main` NOT fast-forwarded pending merge
+  review).** Round 3's queue above is superseded — the round-3 items it carried forward are now
+  resolved or re-filed below. Round 4 merged two lanes (`border-4`: W-32r4 + W-32r4b + W-32r4c;
+  `fill-audit-a4`: T3b, W-36e, F1-count, T2-5, T3c, T2-6 — see
+  `docs/3d-audit/lane-reports/MERGE-impl-r4.md` for the full unit list, the twelve re-derived
+  `scene3d-mktick-wedge.test.js` goldens, and test counts). Open items carried forward:
+  1. **Jay's decisions 10 and 11-amended** (see `Blocked on Jay`) — decisions 9-amendment and 12
+     are now DECIDED and shipped (W-32 Rank 4; T3b/T3c). Neither open decision is pre-empted by
+     this merge; each Changed/Known-limitations line in this release's CHANGELOG entry states the
+     consequence and leaves the choice open.
+  2. **T2-5 clause (b)** — the `L0` 1.16 → 1.05 seam-overlap trade, measured but not shipped;
+     Jay's ruling owed.
+  3. **T2-6's residual gap** — narrower, not closed; judged by eye, not settled by this release.
+  4. **T2-4** — unscheduled follow-up, not yet scoped. (F1-count and W-36e, previously listed
+     alongside it, landed this round.)
+  5. **W-39 — `tests/unit/scene3d-slice-end-overlap.test.js`'s vacuous `git show HEAD:` leg**
+     (merge checklist item 23; assigned at the round-4 merge, item R4-4a — third round unowned)
+     — replace with an absent-key/equality oracle plus a mutation proof, or pin a fixed historical
+     sha the way `scene3d-hlr-spatial-index-identity.test.js` does. Tests-only, not touched at
+     merge.
+  6. **`MK_BAND_ONSET_D` re-derivation** — T3c's reviewer measured the true dash-length cliff at
+     d ≈ 32, not the shipped constant's 35; a follow-up should re-derive the constant rather than
+     leave the two diverging.
+  7. **The refined silhouette border's torus exclusion** (W-32 Rank 4) — the torus keeps the
+     previous mesh-chord outline; a non-convex-silhouette refinement is a separate mechanism and
+     unscheduled.
+  8. **`tests/unit/text-fill-watertight.test.js`** (merge checklist item 25) — re-classified at
      the round-3 merge: **68/68 GREEN on both unmodified `main` and the merged tree.** The file's
      own header comment ("EXPECTED TO FAIL until the composite fills are fixed") is stale
      documentation, not a live failing assertion — no W-id needed; the comment should be updated
      or removed by whoever next touches that file.
-  5. **Filed follow-ups still open from round 2:** the **"3D Scene" tab in the in-app Help
-     Guide** (`src/ui/modals/help-shortcuts.js` still has no 3D section at all — round 3's new
-     "Min rulings" control also lands only as a per-control tooltip `help:` string, same as
-     W-35's did); and W-35 review item (a) (coarse monotonic run-count tripwire, still unwritable
-     honestly until the W-27c-0a crowd-cull confound is resolved).
+  9. **Filed follow-ups still open from round 2:** the **"3D Scene" tab in the in-app Help
+     Guide** (`src/ui/modals/help-shortcuts.js` still has no 3D section at all — no control or
+     shortcut changed this round, so nothing new is owed, but the standing gap remains); and
+     W-35 review item (a) (coarse monotonic run-count tripwire, still unwritable honestly until
+     the W-27c-0a crowd-cull confound is resolved).
+  10. **Merge-interaction findings from round 4's reconciliation, not fixed inside the merge**
+      (full numbers in `MERGE-impl-r4.md` §3): **(a)** `scene3d-mkdashramp-discrete.test.js` and
+      `scene3d-mkdashramp-single-pass.test.js` each carry one T4b-fixture ink assertion
+      (`toBeCloseTo(1501.0636578167772, 3)`) that now reads 1501.267 (Δ 0.203 mm, ~0.014%) once
+      border-4's silhouette refinement reaches that sphere fixture — a real, small, measured
+      cross-lane ink delta, left red rather than re-pinned without a dedicated unit's proof.
+      **(b)** `scene3d-mktick-gap-fill.test.js`'s "SEMANTIC PRE reconstruction proof" self-test
+      compares the CURRENT tree against a `git archive` export of base sha `75777240`; that
+      premise breaks once `scene3d.js`'s edge pass (border-4) also differs between the two trees,
+      independent of the tick mechanism the test exists to check — the actual A1/A1b bars and
+      O-C2 census (this file's real oracle) are unaffected and green. Both need a follow-up W-id
+      to either patch the reconstruction's base-sha export to include the edge-pass change too,
+      or narrow the comparison to the tick-affected geometry only.
 - **3D fill audit — per-lane resume order (2026-09-06, after the local merge into
   `3d-scene/integrate`).** No item below is auto-started; each needs a fresh worktree off the
   merged integration branch (or main, once fast-forwarded). Per lane:
@@ -439,10 +464,23 @@ or completes.
     doesn't fill solid) means the tone dial has no effect on cell size at the top of the range.
     Retune the cap's onset so some tone authority survives at maximum density, or accept the
     trade as shipped?
-  - **12 — Dash Ramp band tiles at Density 1.** The band mechanism that restored the Density-220
-    dark end applies at every density, so a Density-1 dash now reads as a thick tile rather than
-    a thin stroke. Add a single-pass threshold at low density, or accept?
-- **T2-4, F1-count, W-36e** — unscheduled follow-ups, not yet scoped.
+  - **12 — Dash Ramp band tiles at Density 1 — DECIDED (round 4) = B: a new unit, T3b, draws
+    single-pass dashes below a threshold, keeping the band mechanism where it earns its keep.**
+    Shipped as T3b (single-pass threshold) + T3c (bound the dash length below
+    `MK_BAND_ONSET_D`, true cliff re-derived at d ≈ 32, so dashes read as discrete marks riding
+    the rulings rather than abutting into an unbroken run). Mid/high Density unaffected.
+- **11-amended — the crosshatch cap's onset: retuning it has been MEASURED INFEASIBLE this round.**
+  Every onset setting that restores tone authority at Density 220 breaks the coverage calibrator
+  the cap exists to satisfy, and the cylinder never reaches meaningful authority at that density
+  under any setting (W-36f, closed MEASURED/PARKED, no code shipped). **Jay's call is still owed:
+  accept the trade as inherent, or fund a different mechanism (tone acting on crosshatch angle or
+  pen weight instead of cell size)?** Nothing in round 4 pre-empts this.
+- **T2-4** — unscheduled follow-up, not yet scoped.
+- **T2-5 clause (b) — the `L0` 1.16 → 1.05 seam-overlap trade.** Measured but not shipped in T2-5;
+  Jay's ruling owed on whether to take the tighter seam bound.
+- **T2-6's residual gap** — the graded band comb narrows the bare strip at the bottom of a wave
+  band but does not close it; whether the remaining gap is acceptable is judged by eye, not a
+  bar, and is not settled by this release.
 - **W-38's "Min rulings" control is docked-panel-only — the ctxbar Style flyout never got it**
   (found live at the round-3 merge: `context-bar.js`'s Style flyout only builds the Fill Style
   select + `FS.styleParams(law)` collapse sub-controls + Angle/Density; it never reads
