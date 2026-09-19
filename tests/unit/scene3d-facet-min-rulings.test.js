@@ -139,20 +139,33 @@ const EXPECTED_T1 = {
   'plane|crosshatch|d50|a45': '4b85aaef53f9a1816dc8b954863ddcecde4f737b32bcf83d017651f81627be3a',
   'plane|crosshatch|d220|a20': '8c29ed26800081ca35352f5adb76821129dba34fe8c660743467dbbf9a86446d',
   'plane|crosshatch|d220|a45': 'c6643c706acfe8f78f024efb3529df438b0ce2c34bf12e9a1df2efba94276f48',
-  'sphere|hatch|d1|a20': 'b4262ee2a412181918dc32d2aa373adc47d4f89e688ae12ac1f6b533d785c34d',
-  'sphere|hatch|d1|a45': '4fd58822a276b5c81f5b5a75f162c15eb2c764cac46a1b05699e227ee91bb789',
-  'sphere|hatch|d50|a20': '34c207a9b9700a55183094f01dacb907ce6f2161907499b9150e68e39c421021',
-  'sphere|hatch|d50|a45': 'd90e19dee1e8485ea9605cf2c8edd644c2626fcb9946f7be827ce193cf228a4b',
-  'sphere|hatch|d220|a20': '0ad94fe1e5333e25820f7c1ba5af98cf2dcb1677df494a7abe3486f2912547a2',
-  'sphere|hatch|d220|a45': 'f0d6bdd4afe47bb18f6605f3f8576dae1ef75ec9a17284047902ca3cdd924818',
+  // W-32r4c re-pin (border-4, disclosed under `## Bars changed`): W-32 Rank 4
+  // (`76a77f22`) refines the sphere's drawn silhouette/boundary onto the
+  // ANALYTIC silhouette curve — a structural-edge-pass change in scene3d.js,
+  // completely independent of facetMinRulings. Leg 1 (absent === explicit 3)
+  // still passes 100% here (proof the no-op itself is untouched); only this
+  // fixed literal moved, because pathSignature hashes the WHOLE scene
+  // (fill + edge ink together) and the sphere's edge ink is the one thing
+  // this unit legitimately changes. box/solid/pyramid/plane are box-faceted/
+  // unsupported charts and are confirmed byte-identical (unmoved) — only
+  // sphere moved, matching this unit's own claimed scope exactly (see
+  // W-32r4-impl.md's O5 byte-identity sweep and `## Bars changed`).
+  'sphere|hatch|d1|a20': '0754d828fabcff1c7dcce1a057ccda64a3d27c7b9d0b60f5cdf1719aca7402da',
+  'sphere|hatch|d1|a45': 'c94a8171fccd4c57721cab90823176aa065435b5832ebd793ea29551759fc969',
+  'sphere|hatch|d50|a20': '47b1a36e1eebc4fbcdbb40a391ddd04f329546d61897194651c71a7b060d4f1a',
+  'sphere|hatch|d50|a45': '8f86f982e26c2fb9dbd8be0d2f952e4dd7323a1907486c024d9081f12f2bb0b2',
+  'sphere|hatch|d220|a20': 'eb130588ef1241c30ab95c1b188835bf867d31151006f84203850383965c0c18',
+  'sphere|hatch|d220|a45': '0d0d868cdbb375230e1f04ae4eb57c240181e610a698c8f975dd95788f4ad4cf',
   // MERGE-r3 re-pin — same cause and proof as the pyramid block above (W-36c,
   // `8adfd5af`, independent of facetMinRulings; Leg 1 still 100% green).
-  'sphere|crosshatch|d1|a20': '71e6f1056822a94e6619891d6ebcad26776186f1a79373411570857f00d3416c',
-  'sphere|crosshatch|d1|a45': '313b56902c958f808f6e689fdab77d5d217d18d3ade2f089318c7db3dc64817d',
-  'sphere|crosshatch|d50|a20': '058c007006226362e8fae9ebc97022abde3d451e4a25257fe90e11d0d93c2d82',
-  'sphere|crosshatch|d50|a45': '81de50e8314685fd5430ddedeaea52d6104a52e889c0b4f65dae9b587cde0d07',
-  'sphere|crosshatch|d220|a20': '4a1e03b3b1cc8305854f9681d6dbe2799299432b14a9063f3a9cee1844b52caf',
-  'sphere|crosshatch|d220|a45': '4118528f91062d86d640dad991af60ff3c5c29b91e2830e98818bde281f91ba8',
+  // W-32r4c re-pin (border-4) layered on top of the same cells — see the
+  // hatch block's comment above for the full proof; identical reasoning.
+  'sphere|crosshatch|d1|a20': '0c110a558a28717d5a1c8ae52e023f2c960f9d6ed2c4fdd63d1d8f1253d20eac',
+  'sphere|crosshatch|d1|a45': '3c74e8776456653035e0a88001a61657c55cdab6441e5a36069af1d682a564dd',
+  'sphere|crosshatch|d50|a20': 'a6e77e58d7bd84ddadde2637f97a20e7b04bfca2d76998dbe5373fef0d9c5e60',
+  'sphere|crosshatch|d50|a45': 'ec513f8fd71a9baf487b3f3d81bc9064e23e511c8c7689fc0ad3c042c90ab5c2',
+  'sphere|crosshatch|d220|a20': 'a33307ef7e08517057a2d8e10ef935c67e87b4a8ad86ef07a092a23c2b12f433',
+  'sphere|crosshatch|d220|a45': 'c0cf181733f88c57309906e20f7fb7c49e384f418812d170cc6331ba6ea3ad82',
 };
 
 const md5PathsAll = (paths) => crypto.createHash('md5')

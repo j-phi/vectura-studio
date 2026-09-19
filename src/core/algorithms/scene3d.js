@@ -663,6 +663,63 @@
     }
     return best;
   };
+
+  // ── W-32 Rank 4 — refine the drawn silhouette/boundary onto the ANALYTIC
+  // silhouette curve of the implicit chart (docs/3d-audit/lane-reports/
+  // W-32r4-plan.md §3.2). The DRAWN outline is a chord polygon inscribed in
+  // the TRUE projected silhouette — every surface-fill ruling reaches the
+  // analytic terminator (osTrue <= 0.01 pen on 132/132 measured cells), so
+  // the deficit between the two reads as ruling ends sticking out past the
+  // grey outline (Jay's "lines breaking out beyond the border"). Solved in
+  // LOCAL space as two scalar equations on the point p:
+  //   F(p)      = 0                on the surface     (sliceSurfaceFG.F)
+  //   G(p) = grad F(p) . v = 0     on the silhouette   (v = local view dir)
+  // `grad G` is taken by central differences on sliceSurfaceFG, so this
+  // mechanism inherits exactly that function's primitive coverage and no
+  // more (sphere/ellipsoid, cylinder, cone, torus, capsule; null for
+  // superellipsoid / torusKnot / solid, in which case the caller leaves the
+  // mesh chord untouched). The step is the minimum-norm Newton step on the
+  // 2-equation system, with the same divergence guard sliceAnalyticProjectLocal
+  // already carries above (reject a step longer than the primitive's own
+  // scale; keep the best point seen).
+  const SIL_NEWTON_ITERS = 10;
+  const silhouetteProjectLocal = (mode, sizes, p0, v) => {
+    const scale = Math.max(sizes.sx || 0, sizes.sy || 0, sizes.sz || 0, 1);
+    const h = 1e-4 * scale;
+    let cur = { x: p0.x, y: p0.y, z: p0.z };
+    const Gat = (q) => { const fg = sliceSurfaceFG(mode, sizes, q); return fg ? (fg.gx * v.x + fg.gy * v.y + fg.gz * v.z) : null; };
+    for (let i = 0; i < SIL_NEWTON_ITERS; i++) {
+      const fg = sliceSurfaceFG(mode, sizes, cur);
+      if (!fg) return null;
+      const F = fg.F; const G = fg.gx * v.x + fg.gy * v.y + fg.gz * v.z;
+      if (Math.abs(F) < 1e-12 && Math.abs(G) < 1e-12) break;
+      const gpx = Gat({ x: cur.x + h, y: cur.y, z: cur.z }); const gmx = Gat({ x: cur.x - h, y: cur.y, z: cur.z });
+      const gpy = Gat({ x: cur.x, y: cur.y + h, z: cur.z }); const gmy = Gat({ x: cur.x, y: cur.y - h, z: cur.z });
+      const gpz = Gat({ x: cur.x, y: cur.y, z: cur.z + h }); const gmz = Gat({ x: cur.x, y: cur.y, z: cur.z - h });
+      if (gpx === null || gmx === null || gpy === null || gmy === null || gpz === null || gmz === null) break;
+      const Gx = (gpx - gmx) / (2 * h); const Gy = (gpy - gmy) / (2 * h); const Gz = (gpz - gmz) / (2 * h);
+      const a11 = fg.gx * fg.gx + fg.gy * fg.gy + fg.gz * fg.gz;
+      const a12 = fg.gx * Gx + fg.gy * Gy + fg.gz * Gz;
+      const a22 = Gx * Gx + Gy * Gy + Gz * Gz;
+      const det = a11 * a22 - a12 * a12;
+      if (!Number.isFinite(det) || Math.abs(det) < 1e-18) break;
+      const l1 = (a22 * -F - a12 * -G) / det;
+      const l2 = (-a12 * -F + a11 * -G) / det;
+      const dx = l1 * fg.gx + l2 * Gx; const dy = l1 * fg.gy + l2 * Gy; const dz = l1 * fg.gz + l2 * Gz;
+      if (!Number.isFinite(dx) || !Number.isFinite(dy) || !Number.isFinite(dz)) break;
+      const step = Math.hypot(dx, dy, dz);
+      if (step > scale) break;           // divergent: keep the best point so far
+      cur = { x: cur.x + dx, y: cur.y + dy, z: cur.z + dz };
+      if (step < 1e-9) break;
+    }
+    return cur;
+  };
+  // Test-only kill switch (mirrors the app's existing debug-flag pattern, e.g.
+  // HL_STAGE): unset/false in production, so SIL_PROTO_ON() is always true for
+  // every real user. `tests/unit/scene3d-fill-silhouette-overshoot.test.js`
+  // O4/O5 flip it in-process to build the SAME cell with and without the fix
+  // and diff the emitted geometry (never a source edit, never a stash).
+  const SIL_PROTO_ON = () => !(typeof window !== 'undefined' && window.__SIL_PROTO_OFF);
   // Deliberately NOT Params.CURVED_FILL_PRIMITIVES — see the pass's own comment
   // at its use site. `pyramid` is chart-wrapped but flat-faced (a real polygon
   // cross-section), so it stays excluded here exactly as it is excluded from
@@ -3926,6 +3983,147 @@
         // which is exactly why the two drew the same segments (§5.7). The
         // structural edge pass (further down) is now the sole reader.
         const classified = Edges.classifyEdges(record, {});
+        // ── W-32 Rank 4 — refine the outline onto the TRUE silhouette ──────
+        // (W-32r4-plan.md §3.2/§3.3). `silRefine(entry, aScr, bScr)` returns a
+        // polyline replacing a straight silhouette/boundary chord, or null to
+        // leave the chord alone (non-convex/unsupported charts, torus, box,
+        // plane, pyramid, solid/imported, ground — all byte-identical by
+        // construction, §3.4). Gated to CONVEX charted primitives: the torus
+        // is measured non-convex (a refined point leaves the tessellated hull
+        // and is cut by the object's OWN occluder faces, breaking both
+        // silhouette/border contiguity guards — §3.3's torus finding) and is
+        // therefore excluded here, not an oversight; Rank 2 (FU-1, filed, not
+        // attempted) is the same-object-bias fix W-27c already proved for the
+        // analytically-snapped slice rings.
+        let silRefine = null;
+        if (SIL_PROTO_ON() && record.id !== 'ground' && Array.isArray(record.world)) {
+          const rObj = objById.get(record.id);
+          const rChart = rObj ? curvedChartParams(rObj) : null;
+          const rT = rObj && rObj.transform;
+          // `window.__SIL_PROTO_TORUS_ON` is a test-only override (never set
+          // in production) so O5's mutation proof can show the torus MOVES
+          // with the gate bypassed and does NOT move with it in place —
+          // proving the gate, not just its absence, is what the byte-identity
+          // rests on.
+          const torusGateOpen = typeof window !== 'undefined' && window.__SIL_PROTO_TORUS_ON;
+          const convexChart = rChart && (rChart.mode !== 'torus' || torusGateOpen);
+          if (convexChart && rT && sliceSurfaceFG(rChart.mode, rChart.sizes, { x: rChart.sizes.sx || 1, y: 0, z: 0 })) {
+            const pw = (q) => { const P2 = scene.projectWorld(q); return (P2 && Number.isFinite(P2.x)) ? P2 : null; };
+            // View direction in LOCAL space at a given WORLD point, derived
+            // from the pass's OWN projector: the null direction of
+            // d(screen)/d(world) there. The world-space silhouette condition
+            // n_w . d_w = 0 is IDENTICALLY g_l . (M^-1 d_w) = 0, so no
+            // normal-matrix transpose is needed. Evaluated PER REFINED POINT,
+            // not once per record (§3.7): exact for an orthographic camera
+            // (constant null direction) and required for correctness under
+            // perspective, where the view ray turns across the object —
+            // measured to recover only ~10% of the perspective-camera
+            // overshoot if taken once at the record origin instead.
+            const e = 0.5;
+            const viewDirLocalAt = (wp) => {
+              const P0 = pw(wp);
+              const Px = pw({ x: wp.x + e, y: wp.y, z: wp.z });
+              const Py = pw({ x: wp.x, y: wp.y + e, z: wp.z });
+              const Pz = pw({ x: wp.x, y: wp.y, z: wp.z + e });
+              if (!P0 || !Px || !Py || !Pz) return null;
+              const r1 = { x: (Px.x - P0.x) / e, y: (Py.x - P0.x) / e, z: (Pz.x - P0.x) / e };
+              const r2 = { x: (Px.y - P0.y) / e, y: (Py.y - P0.y) / e, z: (Pz.y - P0.y) / e };
+              const vw = {
+                x: r1.y * r2.z - r1.z * r2.y,
+                y: r1.z * r2.x - r1.x * r2.z,
+                z: r1.x * r2.y - r1.y * r2.x,
+              };
+              const L = Math.hypot(vw.x, vw.y, vw.z);
+              if (L <= 1e-12) return null;
+              const o = sliceInverseObjectTransform(wp, rT);
+              const q = sliceInverseObjectTransform({ x: wp.x + vw.x / L, y: wp.y + vw.y / L, z: wp.z + vw.z / L }, rT);
+              const d = { x: q.x - o.x, y: q.y - o.y, z: q.z - o.z };
+              const dl = Math.hypot(d.x, d.y, d.z);
+              return dl > 1e-12 ? { x: d.x / dl, y: d.y / dl, z: d.z / dl } : null;
+            };
+            const c0 = record.world[0] || { x: 0, y: 0, z: 0 };
+            if (viewDirLocalAt(c0)) {
+              // A vertex shared with a BOUNDARY (open rim) edge is already
+              // exactly on the analytic rim — never move it, or the rim and
+              // the slant would disconnect.
+              const rimVerts = new Set();
+              classified.forEach((en) => { if (en.cls === 'boundary') { rimVerts.add(en.a); rimVerts.add(en.b); } });
+              const vmemo = new Map();
+              const corrWorld = (idx) => {
+                if (vmemo.has(idx)) return vmemo.get(idx);
+                let outPt = null;
+                const w = record.world[idx];
+                if (w && !rimVerts.has(idx)) {
+                  const vLocal = viewDirLocalAt(w);
+                  if (vLocal) {
+                    const loc = sliceInverseObjectTransform(w, rT);
+                    const fixed = silhouetteProjectLocal(rChart.mode, rChart.sizes, loc, vLocal);
+                    if (fixed) {
+                      const cw = Scene.applyObjectTransform(fixed, rT);
+                      const P2 = pw(cw);
+                      if (P2) outPt = { x: P2.x, y: P2.y, z: P2.z };
+                    }
+                  }
+                }
+                vmemo.set(idx, outPt);
+                return outPt;
+              };
+              const SUBDIV = 4;
+              silRefine = (entry, aScr, bScr) => {
+                const wa = record.world[entry.a]; const wb = record.world[entry.b];
+                if (!wa || !wb) return null;
+                const la = sliceInverseObjectTransform(wa, rT);
+                const lb = sliceInverseObjectTransform(wb, rT);
+                const isRim = entry.cls === 'boundary';
+                let planeN = null;
+                if (isRim) {
+                  const mid = { x: (la.x + lb.x) / 2, y: (la.y + lb.y) / 2, z: (la.z + lb.z) / 2 };
+                  const fgm = sliceSurfaceFG(rChart.mode, rChart.sizes, mid);
+                  if (!fgm) return null;
+                  const tx = lb.x - la.x; const ty = lb.y - la.y; const tz = lb.z - la.z;
+                  const tl = Math.hypot(tx, ty, tz) || 1e-9;
+                  if (Math.abs(ty) / tl < 1e-3) {
+                    // A chart RIM (cone base, cylinder cap) is a curve of
+                    // constant local y — the pole axis is its plane normal.
+                    // (`t x grad F` was the first prototype's rule; it tilts
+                    // with the cone's own slope and left 0.0707 mm on the
+                    // cone's base rim vs 0.0090 mm with this rule — §3.2.)
+                    planeN = { x: 0, y: 1, z: 0 };
+                  } else {
+                    const nx = ty * fgm.gz - tz * fgm.gy;
+                    const ny = tz * fgm.gx - tx * fgm.gz;
+                    const nz = tx * fgm.gy - ty * fgm.gx;
+                    const nl = Math.hypot(nx, ny, nz);
+                    if (nl < 1e-9) return null;
+                    planeN = { x: nx / nl, y: ny / nl, z: nz / nl };
+                  }
+                }
+                const pts = [];
+                const endA = isRim ? null : corrWorld(entry.a);
+                const endB = isRim ? null : corrWorld(entry.b);
+                pts.push(endA || aScr);
+                for (let k = 1; k < SUBDIV; k++) {
+                  const t = k / SUBDIV;
+                  const m = { x: la.x + (lb.x - la.x) * t, y: la.y + (lb.y - la.y) * t, z: la.z + (lb.z - la.z) * t };
+                  let fixed = null;
+                  if (isRim) {
+                    fixed = sliceAnalyticProjectLocal(rChart.mode, rChart.sizes, m, planeN);
+                  } else {
+                    const wm = { x: wa.x + (wb.x - wa.x) * t, y: wa.y + (wb.y - wa.y) * t, z: wa.z + (wb.z - wa.z) * t };
+                    const vHere = viewDirLocalAt(wm);
+                    if (vHere) fixed = silhouetteProjectLocal(rChart.mode, rChart.sizes, m, vHere);
+                  }
+                  if (!fixed) continue;
+                  const cw = Scene.applyObjectTransform(fixed, rT);
+                  const P2 = pw(cw);
+                  if (P2 && Number.isFinite(P2.x) && Number.isFinite(P2.y)) pts.push({ x: P2.x, y: P2.y, z: P2.z });
+                }
+                pts.push(endB || bScr);
+                return pts.length > 2 ? pts : null;
+              };
+            }
+          }
+        }
         // MERGE NOTE (shadow-anatomy R8-10 × p4). Both branches edited this block
         // and they are complementary, not rival, answers to "who owns the object
         // outline". shadow-anatomy retired the per-face outline pass; p4 made the
@@ -5170,7 +5368,14 @@
             ...(style.penId ? { penId: style.penId } : {}),
           };
           const ownerKeys = adjacentFaces.map((face) => face.key);
-          const clipped = clipper.clipPath([a, b], { ownerKeys, objectId: record.id });
+          // W-32 Rank 4: a refined silhouette/boundary chord is a short
+          // polyline on the analytic silhouette/rim instead of the straight
+          // mesh chord [a, b]. `meta.straight` is dropped for it — the same
+          // rule emitBorderChains already applies to a stitched strip.
+          const refinedPts = (silRefine && (cls === 'silhouette' || cls === 'boundary'))
+            ? silRefine(entry, a, b) : null;
+          if (refinedPts) delete baseMeta.straight;
+          const clipped = clipper.clipPath(refinedPts || [a, b], { ownerKeys, objectId: record.id });
           // Per-edge-class EdgeStyle (C-06). VISIBLE runs take the edge's own class
           // style (raw entry.cls, so a wireframe interior edge gets the 'interior'
           // style); HIDDEN runs take the 'hidden' class style. Default table ⇒ both

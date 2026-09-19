@@ -1,6 +1,16 @@
 # 3D Scene fill audit + stroke-fill handoff continuation — HANDOFF
 
-**Current as of 2026-09-06 (pause point + local merge), sessions `014DjdT7` → this one.** Nothing pushed. Local `main` is the merge of all seven lanes (v1.3.99) once the fast-forward in `lane-reports/MERGE-impl.md` is recorded; the lane worktrees remain for history. The per-unit truth is `lane-reports/LEDGER.md`; the resume order is `lane-reports/SESSION-SUMMARY.md` §3; five decisions wait on Jay in §4. See "How to run the next session" at the end of this file for agent roles, models and context protection.
+**Current as of 2026-09-18 (round 4 merge, integration branch `3d-scene/integrate-r4`, v1.4.3).**
+Local `main` before this merge was `b43fa4e3` (round 3 closed, v1.4.2) = `origin/main`. Round 4
+merged two lanes — `border-4` (W-32r4 + W-32r4b + W-32r4c, refined curved-primitive silhouette
+border) and `fill-audit-a4` (T3b, W-36e, F1-count, T2-5, T3c, T2-6, mkTick/mkDashRamp fill
+mechanisms) — see `docs/3d-audit/lane-reports/MERGE-plan-r4.md` and `MERGE-impl-r4.md` for the
+full unit list, the twelve re-derived `scene3d-mktick-wedge.test.js` goldens, and test counts.
+**Not pushed as of the merge commit** — pending merge review (ACCEPT), then orchestrator
+fast-forward of `main` and an explicit push instruction, per the standing push rule
+(`push = A`: merge → all five `test:ci` suites green → merge review ACCEPT → fast-forward → push).
+The per-unit truth is `lane-reports/LEDGER.md`; open items are tracked in `plans.md` → Now / Blocked
+on Jay. This paragraph supersedes the 2026-09-06 state below, kept for history.
 (`main` HEAD d5af9e30, v1.3.98). All work sits on six `3d-scene/*` branches in worktrees under
 `.claude/worktrees/`. The next session resumes with the same work style: orchestrator + Sonnet
 implementer → Sonnet adversarial reviewer (+ judge) per unit, evidence in the audit gallery,
