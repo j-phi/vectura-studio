@@ -1,0 +1,275 @@
+2690a2691,2692
+>     const mkInk = new Map();
+>     const mkClipArm = { m: false, p: false };
+6317a6320,6322
+>       const mkInkR = Math.max(0.34 * penWidth, Math.min(1.3 * penWidth, 0.5 * (masterPitch / markRowCoverage() - 1.15 * MIN_MARK_MM)));
+>       const mkInkHit = (p) => { const cx = Math.floor(p.x / mkInkR); const cy = Math.floor(p.y / mkInkR); for (let dx = -1; dx <= 1; dx += 1) for (let dy = -1; dy <= 1; dy += 1) { const b = mkInk.get(`${wantFront ? 1 : 0}:${cx + dx},${cy + dy}`); if (!b) continue; for (let i = 0; i < b.length; i += 1) if (b[i].li !== lineIndex && Math.hypot(b[i].x - p.x, b[i].y - p.y) < mkInkR) return true; } return false; };
+>       const mkInkAdd = (run) => { for (let i = 0; i < run.length; i += 1) { const p = run[i]; const key = `${wantFront ? 1 : 0}:${Math.floor(p.x / mkInkR)},${Math.floor(p.y / mkInkR)}`; let b = mkInk.get(key); if (!b) { b = []; mkInk.set(key, b); } b.push({ x: p.x, y: p.y, li: lineIndex }); if (i > 0) { const q = run[i - 1]; const m = { x: 0.5 * (p.x + q.x), y: 0.5 * (p.y + q.y), li: lineIndex }; const k2 = `${wantFront ? 1 : 0}:${Math.floor(m.x / mkInkR)},${Math.floor(m.y / mkInkR)}`; let b2 = mkInk.get(k2); if (!b2) { b2 = []; mkInk.set(k2, b2); } b2.push(m); } } };
+6343c6348
+<         const walkFrom = (seedFr, seedPt, seedUV, target, stepCapMM) => {
+---
+>         const walkFrom = (seedFr, seedPt, seedUV, target, stepCapMM, clipOn) => {
+6350a6356
+>           let d0x = null; let d0y = null;
+6374a6381,6388
+>             if (stepCapMM && clipOn && mkInkHit(nextPt)) { truncated = true; break; }
+>             if (stepCapMM) {
+>               const sx = nextPt.x - curPt.x; const sy = nextPt.y - curPt.y; const sl = Math.hypot(sx, sy);
+>               if (sl > 1e-9) {
+>                 if (d0x == null) { d0x = sx / sl; d0y = sy / sl; }
+>                 else if ((sx * d0x + sy * d0y) / sl < Math.cos(30.0 * Math.PI / 180)) { truncated = true; break; }
+>               }
+>             }
+6401c6415
+<         const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v }, stepCapMM);
+---
+>         const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v }, stepCapMM, mkClipArm.m);
+6406c6420
+<           const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v }, stepCapMM);
+---
+>           const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v }, stepCapMM, mkClipArm.p);
+6476a6491
+>                 if (law.shape === 'tick' && Math.acos(cosv) * (180 / Math.PI) > 40.0) { mkStat.offSurface += 1; return false; }
+6542a6558
+>           if (law.shape === 'tick') mkInkAdd(r);
+6710a6727,6841
+>           if (law.shape === 'tick') {
+>             // T2-7 PROTO5 — contact-free, two channels, extents from the REAL neighbour rows.
+>             const PMINT = (1 + 0.6) * w;
+>             const RPn = masterPitch / markRowCoverage();
+>             if (RPn / w < 6.0) {
+>               // high density (rows < HIDENS pens): proto3's centred contact-free solve + T2-4 floor
+>               const lamMax = clamp(1 - PMINT / R, 0.2, 0.95);
+>               L = lamMax * (0.8 + 0.2 * eased) * R;
+>               const Lplot3 = 1.15 * MIN_MARK_MM;
+>               if (L < Lplot3) L = Math.min(Lplot3, 0.98 * R);
+>               const cMax3 = Math.max(lamMax * R, L) / R * w / PMINT;
+>               const c3 = (mkAsk(I) / MK_DARK_AREA) * cMax3;
+>               P = L * w / Math.max(1e-9, c3 * R);
+>               if (P < PMINT) P = PMINT;
+>               if (P > MK_PMAX) { P = MK_PMAX; L = Math.min(L, c3 * R * P / w); }
+>               return { P, L, R, I, g, truePitch: 0, bandPitch: 0, segs: [[-L / 2, L / 2, 0]], edgeP: false, edgeM: false };
+>             }
+>             const fr5 = frameAt(k);
+>             // half-extent toward each side: to the midpoint of the gap to the neighbouring
+>             // MARKED ruling (every 1/cov master rulings), less half the contact gap; where there
+>             // is no neighbour on the front surface, to the silhouette/chart edge less 0.75 pen.
+>             const onFront = (dv) => {
+>               if (!fr5) return false;
+>               const pp = fr5.toParam(0, dv);
+>               if (!(pp.a >= 0 && pp.a <= 1)) return false;
+>               let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+>               const sm = sampleAt(pp.a, bb); return !!(sm && sm.front === wantFront);
+>             };
+>             const edgeDist = (sgn, lim) => {
+>               if (onFront(sgn * lim)) return lim;
+>               let lo = 0; let hi = lim;
+>               for (let it = 0; it < 12; it += 1) { const mid = 0.5 * (lo + hi); if (onFront(sgn * mid)) lo = mid; else hi = mid; }
+>               return lo;
+>             };
+>             let nbP = true; let nbM = true;
+>             const half = (sgn) => {
+>               const cap = RPn;                                  // over2RP: a tick never exceeds 2 RP
+>               let h = 0.5 * R - 0.5 * PMINT;                    // fallback = the local estimate
+>               if (1 && fr5 && fr5.st && fr5.pr) {
+>                 const nStep = 1 / markRowCoverage();
+>                 const qa = fr5.pr.a + sgn * nStep * fr5.st.a; let qb = fr5.pr.b + sgn * nStep * fr5.st.b;
+>                 let q = null;
+>                 if (qa >= 0 && qa <= 1) { if (qb < 0 || qb > 1) qb = ((qb % 1) + 1) % 1; q = sampleAt(qa, qb); }
+>                 if (q && q.front === wantFront) {
+>                   const d = Math.abs((q.x - smp.x) * fr5.v.x + (q.y - smp.y) * fr5.v.y);
+>                   if (d > 1e-6) h = 0.5 * d - 0.5 * PMINT;
+>                   h = Math.min(h, edgeDist(sgn, Math.max(h, 0) + 0.75 * w) - 0.75 * w);
+>                 } else {
+>                   if (sgn > 0) nbP = false; else nbM = false;
+>                   h = (1 && I >= 0.4) ? (edgeDist(sgn, cap + 0.75 * w) - 0.75 * w) : Math.min(0.5 * R - 0.5 * PMINT, edgeDist(sgn, cap + 0.75 * w) - 0.75 * w);   // limb / chart edge: reach it
+>                 }
+>               }
+>               return clamp(h, 0, cap);
+>             };
+>             let hP = half(1); let hM = half(-1);            // raw extents (edge case may exceed RPn)
+>             { const Lp0 = 1.15 * MIN_MARK_MM; const tot = hP + hM; const want = Math.min(Lp0, 0.98 * (tot + PMINT));
+>               if (tot < want) { const add = 0.5 * (want - tot); hP += add; hM += add; } }   // T2-4 floor: plottable size beats the seam gap
+>             const aP = Math.min(hP, RPn); const aM = Math.min(hM, RPn);
+>             // layout at full tone: one centred main tick + (edge case) a chain of gradually
+>             // SHORTENING ticks out to the silhouette/rim, PMINT apart
+>             const chain = (sgn, from, room) => {
+>               const out = []; let pos = from + PMINT; let len = Math.min(aP + aM, RPn) * 0.8;
+>               while (room - (pos - from) >= Math.max(2 * w, 0.5 * MIN_MARK_MM) + 1e-9 && out.length < 6) {
+>                 const l = Math.min(len, from + room - pos);
+>                 if (l < 2 * w) break;
+>                 out.push(sgn > 0 ? [pos, pos + l] : [-(pos + l), -pos]); pos += l + PMINT; len *= 0.8;
+>               }
+>               return out;
+>             };
+>             const chP = hP > aP + PMINT ? chain(1, aP, hP - aP) : [];
+>             const chM = hM > aM + PMINT ? chain(-1, aM, hM - aM) : [];
+>             const Lmain = Math.max(aP + aM, 1e-6);
+>             let Lall = Lmain; chP.concat(chM).forEach((q) => { Lall += q[1] - q[0]; });
+>             const Reff = Math.max(hP + hM + PMINT, 2 * PMINT);
+>             const Lplot = 1.15 * MIN_MARK_MM;
+>             const cMax = Lall / Reff * w / PMINT;
+>             const c = Math.pow(mkAsk(I) / MK_DARK_AREA, 1.0) * cMax;
+>             const alphaEff = 1 ? 0.12 * clamp((RPn / w - 4) / 6, 0, 1) : 0.12;
+>             const f = clamp(Math.pow(c / (0.9 * cMax), alphaEff), Math.min(1, Lplot / Lall), 1);
+>             // tone on the main band: f of its length; the rest of the band is NOT left as a seam
+>             // gutter — it is filled by two satellites flush to the band edges (split by a golden
+>             // hash so the channels between them never line up), each >= 2 pens or folded back.
+>             const segs = [];
+>             const Lm = f * Lmain; const G = Lmain - Lm;
+>             const P0guess = clamp(Lm * w / Math.max(1e-9, c * Reff), PMINT, MK_PMAX);
+>             // BAND FILL: the band's bare share G is cut into n slots no wider than ~2 contact
+>             // gaps (so no seam gutter), and the ink into n pieces that SHORTEN toward the light
+>             // side (ratio RHO), phase-shifted by a golden hash so the channels never line up.
+>             let n = Math.max(1, Math.floor(G / PMINT));
+>             while (n > 1 && Lm / n < 2 * w) n -= 1;
+>             if (!0) n = 1;
+>             const Iof = (dv) => { if (!fr5) return null; const pp = fr5.toParam(0, dv); if (!(pp.a >= 0 && pp.a <= 1)) return null; let bb = pp.b; if (bb < 0 || bb > 1) bb = ((bb % 1) + 1) % 1; const sm = sampleAt(pp.a, bb); return (sm && sm.front === wantFront && Number.isFinite(sm.I)) ? sm.I : null; };
+>             const iP5 = Iof(0.5 * aP); const iM5 = Iof(-0.5 * aM);
+>             const darkPlus = (iP5 != null && iM5 != null) ? (iP5 < iM5) : true;
+>             const gg = G / n; const uu5 = ((k * 0.6180339887498949) % 1 + 1) % 1; const shift = (n > 1 ? (uu5 - 0.5) * 0.5 * gg : 0);
+>             const wts = []; let wsum = 0; for (let j = 0; j < n; j += 1) { const wj = Math.pow(0.8, j); wts.push(wj); wsum += wj; }
+>             // pieces ordered from the DARK edge: j = 0 longest
+>             let pos = gg / 2 + shift;                 // distance from the dark edge
+>             const order = [];
+>             for (let j = 0; j < n; j += 1) { const lj = Lm * wts[j] / wsum; order.push([pos, pos + lj]); pos += lj + gg; }
+>             // a band that meets the silhouette/rim on one side is laid FROM that edge (pieces reach it)
+>             const edgeP = hP > 0 && !nbP; const edgeM = hM > 0 && !nbM;
+>             let fromPlus = darkPlus; let shiftBack = false;
+>             if (edgeP !== edgeM) { fromPlus = edgeP; shiftBack = true; }
+>             if (shiftBack) { const d0 = order[0][0]; order.forEach((q) => { q[0] -= d0; q[1] -= d0; }); if (fromPlus !== darkPlus) order.reverse().forEach((q, j, arr) => {}); }
+>             order.forEach((q, j) => { const sg = fromPlus ? [aP - q[1], aP - q[0]] : [-aM + q[0], -aM + q[1]]; sg.push((j % 2) ? 0.0 * P0guess : 0); segs.push(sg); });
+>             chP.concat(chM).forEach((q) => { const mid = 0.5 * (q[0] + q[1]); const hl = 0.5 * f * (q[1] - q[0]); if (2 * hl >= 2 * w) segs.push([mid - hl, mid + hl, 0]); });
+>             L = 0; segs.forEach((q) => { L += q[1] - q[0]; });
+>             L = Math.max(L, 1e-6);
+>             P = L * w / Math.max(1e-9, c * Reff);
+>             if (P < PMINT) P = PMINT;
+>             if (P > 26.0) { const sc = (c * Reff * 26.0 / w) / L; P = 26.0; if (sc < 1) { segs.forEach((q) => { const mid = 0.5 * (q[0] + q[1]); const hl = 0.5 * sc * (q[1] - q[0]); q[0] = mid - hl; q[1] = mid + hl; }); L *= sc; } }
+>             try { const __g = (typeof window !== 'undefined' ? window : globalThis); if (__g.__T27DBG) __g.__T27DBG.push([smp.x, smp.y, nbP ? 1 : 0, nbM ? 1 : 0, hP, hM]); } catch (e) {}
+>             return { P, L, R: Reff, I, g, truePitch: 0, bandPitch: 0, segs, edgeP: !nbP, edgeM: !nbM };
+>           } else {
+6714a6846
+>           }
+6854,6917c6986,6994
+<           if (law.shape === 'tick') {
+<             const nominalRP = masterPitch / MK_ROW_COV;
+<             // `nOver` is T2-5's own MINIMUM split that clears the over2RP bar
+<             // itself (`law.L0*R > 2*nominalRP`) — clause (c), untouched by
+<             // this unit. Touching only the sites that actually need it keeps
+<             // the longest-third chord population
+<             // (`scene3d-mark-laws-draw.test.js`'s own O1 sagitta oracle) as
+<             // close to untouched as clause (c) allows.
+<             const nOver = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);
+<             // T2-6 — THE GRADED BAND COMB (`T2-6-plan.md` §4.1). Two
+<             // `sampleAt` probes at the band's own +-R/2 edges (in the SAME
+<             // frame-local `v` coordinate `mkShape`'s tick spans) find which
+<             // side of the band is darker. When the band is wide enough to
+<             // hold >=2 sub-ticks without any of them falling under one pen
+<             // width, lay a GEOMETRIC RUN `each_j = e0*RHO^j` across `nComb`
+<             // sub-bands, longest at the DARK edge (`j=0`), chosen as the
+<             // LARGEST `n` for which the run fits inside its own `ENV`-scaled
+<             // envelope. `Sum(e0*RHO^j, j=0..n-1) = e0*(1-RHO^n)/(1-RHO) =
+<             // sv.L` EXACTLY (closed-form geometric series) — so `R`/`P` stay
+<             // untouched and the delivered ink-area fraction
+<             // `sv.L*w/(sv.R*sv.P) = mkAsk(I)` is bit-identical: a pure
+<             // redistribution of one band's own ink, the same neutrality
+<             // proof T2-5 used for its own uniform split. Consecutive
+<             // sub-ticks have ratio EXACTLY `MK_TICK_COMB_RHO`, so at
+<             // RHO>=0.5 Jay's "no tick under half its neighbour" holds BY
+<             // CONSTRUCTION, not by measurement.
+<             //
+<             // `bandOn` (both probes on-chart) is the correctness gate, not a
+<             // dial: without it a sub-tick near a foreshortened band's own
+<             // edge can leave the chart, and `place()` drops the WHOLE mark
+<             // (shared by all twelve mark laws) — measured to collapse O5 on
+<             // `torus/hatch` (2.59->2.01, non-monotone) with no gate,
+<             // `T2-6-plan.md` §4.4. It costs nothing: the same two probes
+<             // also set the shorten-toward-the-light direction.
+<             const probeI = (dv) => {
+<               const pp = fr.toParam(0, dv);
+<               if (!(pp.a >= 0 && pp.a <= 1)) return null;
+<               let bb = pp.b;
+<               if (bb < 0 || bb > 1) {
+<                 if (bb < -0.25 || bb > 1.25) return null;
+<                 bb = ((bb % 1) + 1) % 1;
+<               }
+<               const sm = sampleAt(pp.a, bb);
+<               return (sm && sm.front === wantFront && Number.isFinite(sm.I)) ? sm.I : null;
+<             };
+<             const iP = probeI(0.5 * sv.R);
+<             const iM = probeI(-0.5 * sv.R);
+<             // sgnDark > 0 => the +v side of the band is the DARKER side.
+<             let sgnDark = 0;
+<             if (iP != null && iM != null) sgnDark = (iP < iM) ? 1 : ((iP > iM) ? -1 : 0);
+<             else if (iP != null) sgnDark = -1;
+<             else if (iM != null) sgnDark = 1;
+<             const bandOn = (iP != null && iM != null);
+<             const minKeep = penWidth;
+<             let nComb = 1;
+<             let e0 = 0;
+<             if (bandOn && sv.L >= MK_TICK_COMB_MIN_R * sv.R && sv.L < 0.98 * sv.R) {
+<               for (let n = MK_TICK_COMB_MAX; n >= 2; n -= 1) {
+<                 const den = (1 - MK_TICK_COMB_RHO ** n) / (1 - MK_TICK_COMB_RHO);
+<                 const a0 = sv.L / den;
+<                 if (a0 <= (MK_TICK_COMB_ENV * sv.R) / n && a0 * MK_TICK_COMB_RHO ** (n - 1) >= minKeep) {
+<                   nComb = n; e0 = a0; break;
+<                 }
+<               }
+---
+>           if (law.shape === 'tick' && sv.segs) {
+>             // main tick = the longest segment; every other segment (gutter satellite, wedge/limb
+>             // chain tick) is placed as its OWN mark after the main one, so it is a tick of its own
+>             polys = sv.segs.map((q) => [[q[2] || 0, q[0]], [q[2] || 0, q[1]]]);
+>             mkClipArm.m = !!sv.edgeM; mkClipArm.p = !!sv.edgeP;
+>             if (1 && polys.length > 1) {
+>               let bi = 0; sv.segs.forEach((q, i) => { if (q[1] - q[0] > sv.segs[bi][1] - sv.segs[bi][0]) bi = i; });
+>               const extra = polys.filter((_, i) => i !== bi); polys = [polys[bi]];
+>               sv.__extra = extra;
+6919,6948d6995
+<             const nSub = Math.max(nOver, nComb);
+<             // When `nSub` is set by clause (c) alone (no comb fits, or the
+<             // band is >= its own row pitch), fall back to a plain UNIFORM
+<             // split across the full band `sv.R` — clause (c)'s own mechanism,
+<             // now centred per sub-band (the comb's own placement, not T2-3's
+<             // row-wide stagger, which only applies to an un-split band below).
+<             const uniformSplit = (nComb < 2 || nSub !== nComb || sv.L >= sv.R);
+<             if (nSub > 1) {
+<               const sub = (uniformSplit ? sv.R : MK_TICK_COMB_ENV * sv.R) / nSub;
+<               const dir = sgnDark >= 0 ? 1 : -1;   // +1 => the +v side is DARKER
+<               const tiled = [];
+<               for (let j = 0; j < nSub; j++) {
+<                 // j = 0 is the DARKEST sub-band; lengths fall toward the light.
+<                 const each = uniformSplit ? (sv.L / nSub) : (e0 * MK_TICK_COMB_RHO ** j);
+<                 const slot = dir > 0 ? (nSub - 1 - j) : j;   // slot index in +v order
+<                 const vCenter = (slot - (nSub - 1) / 2) * sub;
+<                 tiled.push([[0, vCenter - each / 2], [0, vCenter + each / 2]]);
+<               }
+<               polys = tiled;
+<             } else {
+<               // A single, un-split tick: T2-3's own row-wide golden-ratio
+<               // stagger, byte-identical to before this unit.
+<               const room = 0.5 * Math.max(0, sv.R - sv.L);
+<               if (room > 1e-6) {
+<                 const idx = a / Math.max(1e-6, sv.P);
+<                 const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
+<                 const cOff = room * (2 * uu - 1);
+<                 polys = polys.map((pl) => pl.map((pt) => [pt[0], pt[1] + cOff]));
+<               }
+<             }
+6952a7000,7009
+>         if (law.shape === 'tick' && sv.__extra) {
+>           const th3 = Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3));
+>           mkClipArm.m = true; mkClipArm.p = true;
+>           sv.__extra.forEach((pl) => {
+>             const dl = place(fr, [pl], a - arcMM[k], thetaAt(k, fr));
+>             if (dl) { mkStat.lenByThird[th3] += dl; mkStat.cntByThird[th3] += 1; }
+>           });
+>           sv.__extra = null;
+>         }
+>         mkClipArm.m = false; mkClipArm.p = false;
+7091a7149
+>         let lastA = -Infinity;
+7118a7177
+>           lastA = ao;
+7121a7181
+>         if (law.shape === 'tick') { const svE = solveAt(s1); if (arcMM[s1] - lastA > 0.5 * svE.P + (1.6 * w)) layMark(s1, arcMM[s1], svE); }

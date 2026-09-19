@@ -248,6 +248,18 @@ follow-up, W-32 Rank 4, `insetMultiPolygon` ladder, the W-29 stub family, U10–
 
 ---
 
+## 2d. ROUND 5 — LANDED SO FAR (lanes, nothing merged except CI-5)
+
+| unit | lane / sha | state |
+|---|---|---|
+| **T3c-onset** | `fill-audit-a5` `b1ab9ebd` (tests only) | ✅ **VERIFIED** (light pass, re-verified after the git-history read was removed; 27/27 green in a real `--depth 1` clone) |
+| **T2-4** | — | **MEASURED**, folded into T2-7 (its d=220 floor is a T2-7 bar) |
+| **T2-3e** | — | stays FILED (secretary ruling, not a unit) |
+| **W-07b** | `fill-audit-b5` `776d9285` | ❌ **REJECTED** (ink bar met by amplitude; shadow read as a self-crossing scribble, 4–6× crossings; clause A' unasserted) → reverted at `4d3501f7` |
+| **W-07b-2** | `fill-audit-b5` `5eb81cfb` | ✅ **ACCEPT-WITH-FOLLOWUPS** — reviewer's own instrument: **0 crossings/mm² on 24/24 cells** (rejected unit: 11–584), A' asserted + mutation trips 12/12, clause B hash-identical to Ladder, 72-cell byte-identity sweep. **Follow-up owed: the full 1504-cell sweep (machine contention).** |
+| **T2-7** | `fill-audit-b5` | IN PROGRESS (proto6 + wedges + G3, per Jay's round-3 ruling) |
+| **CI-5** | **MERGED to `main` `e772cd61`** | GitHub Actions "Tests" was red on main since ≥ `b43fa4e3`: `fetch-depth: 0` for the unit/coverage jobs (8 files read ancestor shas), plus a scratch-dir removal, a sweep timeout 500→900 s, and a macOS/Linux platform split pinned to both measured values. `test:ci` verification on main in flight; **not pushed yet**. |
+
 ## 3. ROUND 5 ORDER — **nothing is started; round 4 is closed and paused**
 
 > 🏁 **Round 4 is COMPLETE and REVIEWED; the merge is the last step and Jay pauses the moment it lands. NO NEW
@@ -323,6 +335,9 @@ ask him.**
 >   left edge (three spots) and bottom rim (two), and at the cone's left edge (upper), right edge (lower)
 >   and bottom-left corner. ⇒ Amendment 2: proto5 = proto3 geometry + fill seam gutters/wedges with
 >   gradually SHORTENING ticks (the standing eye_mktick words) + limb fill + limb direction fix.
+> - **T2-7 round 3 (chat, 2026-09-19, on proto6 `JAY3_*`): "BUILD proto6 DIRECTION"** — **O5 RETIRES** (length
+>   carries tone; 0/12 on proto3 and proto6); tone is gated on **SP5 ≥ 2.30 (full population)**; implementer also
+>   closes the base wedges (G2a/G2b/G5, plan §C5) and the new G3 horizontal bar, and **Jay sees the result before merge**.
 > - Re-stated unchanged: 10 A · 13 A · 12 B · 11 B (superseded by 11-amended A) · 9-amended B · push A ·
 >   `eye_mktick` "Wrong direction" (the 2026-09-17 note, repeated verbatim).
 

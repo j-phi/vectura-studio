@@ -1,4 +1,4 @@
-STATUS: PLAN-READY (prototype looks right in direction; three named residuals; two bars need Jay's ruling)
+STATUS: BRIEF-READY (Amendment 4 is the final implementer brief; Amendments 1–3 are its history)
 
 # T2-7 — plan (Jay's `eye_t26` ruling, mkTick; folds T2-6b and T2-4)
 
@@ -865,3 +865,624 @@ proto3 | proto5 | proto5-L).
 
 **None.** The work was read-only: scratch trees only, and nothing in any worktree or in MAIN's
 `src/`/`tests/` was touched.
+
+---
+
+## Amendment 3 — proto6 (orchestrator rulings: the picture beats the bar)
+
+**STATUS: MEASURED.** proto6 is built on proto5-L's tone (proto3-like mid-tones and lit-flank fill).
+**Spots: 5 fixed, 5 partly fixed, 5 not fixed, out of 15. There is 1 new defect (G3).**
+**O5 fails on every fixture. SP5 passes 11/12 over the full population. It passes 0/12 over I < 0.90,
+so the §B5 exemption makes both tone bars worse, not better.**
+
+### C1. What proto6 is (`scripts/mkproto6.py`, run as `0.6 0.9 0.12 1.0 30 … 1 0.8 0 1 0 1.3 1 1 26 40 1 0.4 6`; diff `scripts/proto6.diff`)
+
+- **Base: proto5-L.**
+  - Tone: γ 1, κ 0.9, α 0.12.
+  - Contact-free centred ticks, with the contact gap GAP at 0.6 pen.
+  - Real-neighbour band extents.
+  - Bend cap 30°. The chord-direction cut is loosened 25° → 40° (at 25° it costs B5; see r2 in the
+    component table).
+- **#1 Ink-occupancy clip.**
+  - Tick-only, in `walkFrom`, and applied **only to the arm that reaches past a missing neighbour**
+    (the edge-extension arm) and to the chain ticks.
+  - It clips only against ink from **other rows**. A same-row clip dropped 40 % of marks: consecutive
+    ticks on a fanning row converge. Measured by `scripts/dbgclip.js`: 331 of 469 hits came from the
+    same line.
+  - The radius is density-aware, `clamp(0.5·(RPn − 1.15·MIN_MARK_MM), 0.34w, 1.3w)`.
+- **#4 Density-aware length channel.**
+  - `α_eff = α·clamp((RPn/w − 4)/6, 0, 1)`.
+  - In addition, when rows are narrower than 6 pens (`RPn/w < 6`, i.e. d=220) the tick uses **proto3's
+    exact centred solve plus the T2-4 floor**. Without that fallback every neighbour-extent variant
+    collapses d=220 coverage to 2/12. This was isolated on q1/r1 and is independent of the clip.
+- **Lit-edge reach (G3/G6/G4).** The band extent runs to the silhouette where the neighbour row is off
+  the front surface, but only for `I ≥ 0.4`. On the dark limb it costs B5 (component table).
+- **End-of-span tick.** A final tick is laid at the span end when the remaining arc exceeds
+  `0.5·P + 1.6w`, so bands run to the silhouette along the row.
+- **#2 Wedges ("next row index"): NOT PROTOTYPED.** A tick hub must sit on a real ruling sample,
+  because `walkPoly` walks out from `fr0`. A ruling whose centre-line is off-surface has no samples to
+  anchor to. The design for the implementer is in §C5.
+
+### C2. Bar table — proto3 → proto6
+
+Fixture §0, no ground ink. Data: `data/m_{p3g,p6i}_{50,220}.log`.
+
+**d = 50, 12 fixtures**
+
+| bar | proto3 | proto6 |
+|---|---|---|
+| **O5** (shipped `lenByThird`) ≥ 2.30 | 0/12 | 0/12 |
+| **O5**, full population (per-site drawn length) | 0/12 (1.18–1.89) | 0/12 (0.93–1.89) |
+| **O5**, I < 0.90 | 0/12 (1.10–1.66) | 0/12 (0.90–1.44) |
+| **SP5**, full population | 8/12 (2.02–3.61) | **11/12 (2.25–3.98)** |
+| **SP5**, I < 0.90 | 0/12 (1.78–2.01) | 0/12 (1.98–2.23) |
+| **B1** tip contact ≤ 0.15 | 10/12 | 9/12 |
+| **B3** mark contact ≤ 0.30 | 10/12 | 10/12 |
+| **B5** monotone | 11/12 | **9/12** ✗ |
+| **B7** siteCoverage (min) | 0.984 | 0.938 |
+| **B8e** overlapping tips (emitted-path instrument: a tip within ½ pen of another mark's centreline; cone c/t, sphere c/t) | 0.026 / 0.008 / 0.052 / 0.078 | 0.013 / 0.034 / 0.054 / 0.063 |
+| **B9** over2RP | 0 | 0 (maxL/RP ≤ 1.94) |
+| **bareSeamFrac** (mean of 12) | 0.172 | **0.123** |
+| **limbGapFrac** (mean of 12) | 0.131 | 0.168 |
+| ink (mm, Σ12) | 18547 | 18373 |
+
+For scale, main (T2-6) reads 0.39–0.46 on B8e.
+
+**d = 220, 12 fixtures**
+
+| bar | proto3 | proto6 |
+|---|---|---|
+| O5, full population | 0/12 (1.01–1.41) | 0/12 (1.01–1.41) |
+| O5, I < 0.90 | 0/12 | 0/12 |
+| SP5, full population | 10/12 | 10/12 |
+| SP5, I < 0.90 | 0/12 | 0/12 |
+| B1 | 10/12 | 10/12 |
+| B3 | 12/12 | 12/12 |
+| B5 | 7/12 | 7/12 |
+| **B7** ≥ 0.90 (min) | 10/12 (0.894) | **10/12 (0.892)** ✓ |
+| subMin | 0 | 0 |
+| bareSeamFrac / limbGapFrac | 0.018 / 0.079 | 0.018 / 0.074 |
+| ink (mm, Σ12) | 13402 | 13493 |
+
+**Component attribution for B5.** Each variant toggles one part on a clean base at d=50
+(`data/m_r{1..4}_50.log`):
+
+| variant | B5 |
+|---|---|
+| bend cap alone | 11/12 (neutral) |
+| chord cut at 25° | 9/12 |
+| other-row clip applied to every arm | 7/12 |
+| end-of-span tick | 10/12 |
+| dark-limb edge reach | costs about 3 cells (p6f vs p6g) |
+
+proto6's two remaining B5 inversions beyond proto3's are `create torus/hatch` (bin 1) and
+`test torus/contour`, both from the clip or the lit-edge reach on the torus's inner flank.
+
+### C3. Per-spot verdict — native crops `JAY3_spot_*.png` (proto3 | proto6), all LOOKED at
+
+| spot | proto6 | what I see |
+|---|---|---|
+| **G1** cone lit-flank gutters | ◐ partly | Seams are narrower and the bands run closer to the silhouette. The hooked tick into the edge is gone. Gaps remain between the band ends and the edge on the upper flank. |
+| **G2a** base wedge, bottom-centre | ✗ | The triangle is unchanged (§C5, not prototyped). |
+| **G2b** base wedge, bottom-right | ✗ | Hooks are gone, but the ticks still stop short of the rim, and the gap is slightly larger than proto3's hooked version. |
+| **G3** cone right edge below apex | ✗ **plus a NEW DEFECT** | A short **horizontal bar** joins a tick to the silhouette, with a small fused blob beside it. This is the lit-edge reach meeting a limb-truncated neighbour. |
+| **G4** sphere right limb, mid | ◐ | The lower band now reaches the limb. Two ticks at the limb curve along it instead of hooking. |
+| **G5** sphere bottom-right rim | ✗ | The triangle persists (wedge class). |
+| **G6** sphere upper-right edge | ✗ | Sparse as in proto3. This is the highlight: the tone puts few ticks there. |
+| **R1** cone left edge, upper | ◐ | The stub pair is cleaner; one small fused fragment remains mid-crop. |
+| **R2** cone right edge, lower | ✓ | The hook is gone; clean. |
+| **R3** cone bottom-left corner | ✓ | The corner stubs are gone; ticks are clean to the limb. |
+| **R4** sphere left edge, upper | ◐ | proto3's fused blob is gone. One tick has a small step (a mis-joined tick) at the seam. |
+| **R5** sphere left edge, mid | ✓ | Clean. |
+| **R6** sphere left edge, lower | ◐ | Mostly clean. One small crossed/fused tick remains lower-middle. |
+| **R7** sphere bottom rim, centre | ✓ | The fused blob is gone. |
+| **R8** sphere bottom rim, right | ✓ | The crossing stub is gone. Curved tails along the rim remain at the far left. |
+
+**Tally.**
+- Fixed (5): R2, R3, R5, R7, R8.
+- Partly fixed (5): G1, G4, R1, R4, R6.
+- Not fixed (5): G2a, G2b, G3, G5, G6.
+- **New defect (1): the G3 horizontal bar.**
+- `JAY3_torus__hatch__mkTick__max__a.png`: proto5's torus clumps are **gone** in proto6, and it reads
+  as proto3.
+
+### C4. The one question for Jay
+
+Show `JAY3_cone__hatch__mkTick__med__a.png` and `JAY3_sphere__hatch__mkTick__med__a.png`.
+
+proto6 keeps proto3's tone, closes seams, reaches more of the limb and removes most wonky limb ticks.
+**But under this tone the length channel is not there: O5 is 0.9–1.9 against 2.30 on every fixture,
+under both populations.** SP5 passes 11/12, but only when the highlights are counted.
+
+The question: **"Is proto6's tone right? If so, O5 ≥ 2.30 retires as incompatible with this look,
+and SP5 over the full population stays as the tone bar. Or do you want the shorter lit ticks back,
+which is proto5's lit-side sparseness?"**
+
+### C5. Designs owed, not prototyped
+
+- **Wedges (G2a/G2b/G5), authorized.**
+  - Enumerate `lineIndex ± k` for rulings **one row beyond the last visible ruling** on each side.
+  - For each, walk its parameter line and find the **front-surface interval of its band**, not of its
+    centre-line: sample `sampleAt(line(t) ± v·st)` for `v ∈ [−½, ½]` of the row.
+  - Anchor each tick at the **nearest on-surface point of its band** and walk only the on-surface
+    part.
+  - Scope: tick-only. The `MK_ROW_COV` **value is untouched** and the loop over rulings is untouched;
+    this is an extra tick-only pass after the rows.
+  - Risk: `lineIndex`-keyed goldens. The list is below.
+- **G3 bar.** The lit-edge reach must respect the neighbour row's own edge truncation. Clip that arm
+  against the neighbour's limb samples as well as its ink, or cap the reach at the neighbour row's
+  last visible sample projected on v.
+- **B5 recovery to 11/12.**
+  - Stop the edge-reach arm at the last step where the local tone bin still matches the anchor.
+  - Or exempt `torus` inner-flank sites (`I ≥ 0.4` and a back-facing neighbour) from the reach.
+  - Both are unmeasured.
+
+---
+
+## Implementer section — FINAL (supersedes Amendment 2's)
+
+**Gate: Jay's one question (§C4) decides the tone bar.** Nothing starts before his answer and before
+W-07b lands (worktree `fill-audit-b5`). T2-7 rebases on W-07b. It must not touch
+`algoCoverage`/`tspAt`/`markRowCoverage`. T3c-onset's `00e9bc7d` file runs as a guard.
+
+**Mechanism = proto6 (§C1)**, plus the three designs of §C5. Constants, each a NEW bar documented in
+pens with its measured trade:
+
+| constant | value |
+|---|---|
+| `MK_TICK_GAP_PEN` | 0.6 |
+| `MK_TICK_BEND_CUT` | 30° |
+| `MK_TICK_DIR_CUT` | 40° |
+| `MK_TICK_CLIP_PEN` | 1.3, density-aware |
+| `MK_TICK_EDGE_MIN_I` | 0.4 |
+| `MK_TICK_HIDENS_PEN` | 6 (proto3 solve below it) |
+| `MK_TICK_LEN_ALPHA` | 0.12 |
+| `MK_TICK_PLATEAU` κ | 0.9 |
+| `MK_TICK_PLOT_FLOOR` | 1.15·MIN_MARK |
+
+**Files ALLOWED:**
+- `src/core/scene3d/surface-fill.js`:
+  - `solveAt`'s tick branch;
+  - `layMark`'s tick block;
+  - the tick-only extra-mark loop;
+  - the tick-only end-of-span tick in the lattice loop;
+  - a tick-only wedge pass after the rows;
+  - `walkFrom`/`walkPoly`, tick-only via `stepCapMM`/`clipOn`;
+  - one tick-only line in `place()`;
+  - the new constants;
+  - a render-scope `mkInk` grid next to `mkMidBuckets`.
+- `tests/unit/scene3d-mktick-*.test.js` and `tests/helpers/scene3d-mktick-*.js`.
+- A new `scene3d-mktick-spacing-tone.test.js`.
+- Retiring `scene3d-mktick-gap-fill.{test,helper}`.
+- `scene3d-mark-laws-draw.test.js`, O1 population only, with proof.
+
+**FORBIDDEN:**
+- The `MK_ROW_COV` value and `markRowCoverage()`.
+- `mkAsk`, the shared `MK_PMIN`/`MK_PMAX`, and `MIN_MARK_PEN`.
+- `place()` for non-tick shapes, and every non-tick law.
+- mkDashRamp's branches.
+- W-07b's hunks.
+- `scene3d.js`, `hlr.js`, `shadows.js`, `surface-fill-mono.js`, `mappers.js`, `params.js`.
+
+**Goldens that can move (GREPPED: `grep -l mkTick tests -r`, then the hash idioms; the wedge pass
+adds nothing outside mkTick):**
+- `scene3d-mktick-wedge.test.js`: 12 `pathSignature` goldens; `O5_BAR` (:445, per Jay's §C4 answer);
+  `WEDGE_*` (→ monotone, Amendment 1); `STAGGER_NEEDLE_SINGLE` (the stagger is gone, so the mutation
+  must be replaced).
+- `scene3d-mktick-gap-fill.test.js` and its helper: retire.
+- `scene3d-mktick-band-purity.test.js`: the hand-copied tick block, the roster md5 (3 mkTick cells
+  per sweep), and `ovMax` → the B8e instrument.
+- `scene3d-mktick-banding.test.js`: `PRE_RANK1_BANDC`, measure first.
+- `scene3d-mktick-runaway.test.js`: population.
+- `scene3d-mark-laws-draw.test.js`: O1.
+- `scene3d-mkdashramp-{single-pass,discrete,low-end}.test.js`: mkTick md5 controls. These use an
+  in-tree neutral patch and are expected green, but must be run. `scene3d-fill-style-picker` and
+  `scene3d-tone-law-collapse` have no mkTick hash pins, but run them (Tier 1: singleFork).
+
+**RED → GREEN bars, both rigs:**
+- d=50:
+  - B1 ≥ proto3's 10/12;
+  - B3 ≥ 10/12;
+  - **B5 ≥ 11/12**;
+  - B8e ≤ proto3 per cell;
+  - B9 = 0;
+  - `bareSeamFrac` ≤ proto3 per cell;
+  - SP5 (full population) ≥ 2.30 on ≥ 11/12;
+  - O5 per Jay.
+- d=220:
+  - **B7 ≥ 0.90 on ≥ 10/12**;
+  - `subMin` = 0.
+- Pictures: the **15 spot crops re-judged**, with **G3's bar gone**, and G2a/G2b/G5 either filled or
+  reported ✗ with the §C5 design's number.
+- Mutations, one per bar:
+  - clip off → silhouette overlaps (B8e / R-spots) return;
+  - bend cap off → R-class hooks return;
+  - HIDENS off → d=220 B7 falls to 2/12;
+  - end-tick off → `limbGapFrac` rises.
+
+**Reviewer flags (≤ 6):**
+1. Judge all 15 spots from native crops. G3 must show no horizontal bar.
+2. B5 ≥ 11/12, and the report names which component costs it (§C2 attribution).
+3. d=220 B7 must come from the HIDENS fallback, and that must be disclosed as a density-regime
+   switch.
+4. The clip must be other-row and edge-arm-only. A same-row clip is a measured 40 % mark drop.
+5. The O5 bar change follows Jay's §C4 answer and nothing else.
+6. The hand-copied tick blocks (band-purity, wedge MUTATION-KILL) mirror the shipped block.
+
+### Evidence added (Amendment 3)
+
+| path | what |
+|---|---|
+| `JAY3_{cone,sphere}__hatch__mkTick__med__a{,__addlayer}.png`, `JAY3_{cone,torus}__hatch__mkTick__max__a.png` | proto3 \| proto6, same framing as Jay's markup |
+| `JAY3_spot_cone_{G1,G2a,G2b,G3,R1,R2,R3}.png`, `JAY3_spot_sphere_{G4,G5,G6,R4,R5,R6,R7,R8}.png` | native crops of every marked spot |
+| `cap-proto6/` | captures, both rigs. Port 8475 was killed; the served source was grep-verified to carry `mkClipArm`. |
+| `data/m_{p3g,p6i}_{50,220}.log` (with `popFull`/`popLt09`), `data/m_{r1..r4,q1,p6a,p6h,p6j,p6k}_*.log` | the bar table and the component attribution |
+| `scripts/mkproto6.py`, `scripts/proto6.diff`, `scripts/dbgclip.js`, `scripts/dbg220.js` | prototype and the two diagnostics |
+
+## Bars changed (amendment 3)
+
+**None.** The work was read-only: scratch trees only, and nothing in any worktree or in MAIN's
+`src/`/`tests/` was touched.
+
+
+---
+
+## Amendment 4 — FINAL IMPLEMENTER BRIEF (T2-7, "BUILD proto6 DIRECTION")
+
+**Jay's ruling, verbatim as transcribed (SESSION-SUMMARY §4, "T2-7 round 3", 2026-09-19, on proto6
+`JAY3_*`):** "BUILD proto6 DIRECTION". **O5 RETIRES**: length carries tone, and it read 0/12 on proto3
+and on proto6. Tone is gated on **SP5 ≥ 2.30 over the full population**. The implementer also closes
+the base wedges (G2a/G2b/G5, plan §C5) and the new G3 horizontal bar, and **Jay sees the result before
+merge**.
+Standing words that still bind: eye_mktick (2026-09-17), *"Instead of tick fragments on the right, use
+gradually shortening ticks to fill the black gaps at the bottom of the vertical waves. Also don't
+increase overlap at the seams. And remove any lines not part of a tick band."*, and eye_t26
+(2026-09-19), *"…Minimize tick contact and ensure that you've thoughtfully applied gradual shifts in
+tone to capture highlights and shadows. And the shifts and tone should be accomplished by increased or
+decreased spacing of ticks, noting that ticks can be any size."*
+
+### 0. THE BINDING CHECKLIST (ROUND3-RESUME-BRIEFS.md §0, pasted verbatim)
+
+## 0. THE BINDING CHECKLIST — paste this whole section into every brief, verbatim
+
+**Six rules, all promoted to STANDING because a unit broke each one at least once. They are here rather
+than only in `LEDGER.md` because the single rule that ever reached implementers reliably was the one
+printed in their own brief.** ⚠ **Two of these were broken by the very NEXT unit after they were
+promoted** — sweep breadth (F1-erode → F1-amp) and rig-naming (GH-2 → F1-amp). Both were caught by
+reviewers, so the system worked; it worked at the cost of a review cycle each time.
+
+1. **STATE WHICH HALF OF THE ACCEPTANCE BAR YOUR GUARD GATES — AND MUTATION-TEST THE HALF YOU CLAIM.
+   THE MUTATION PROOF IS BLOCKING; a reviewer may REJECT without it.** "It is an integer gate where only
+   the fixed value passes" is an argument, not a proof. If the bar you were given has more than one clause,
+   name the clause you cover, name the clauses you do not, and show a mutation that trips the one you claim.
+   *(T4b gated the ink half of a two-half bar and read as if it gated both; W-36d's sub-bar missed
+   interior-only defects; F1-placement's nine reds never measured the quantity that visibly changed.)*
+2. **STATE YOUR SWEEP'S COVERAGE AS A FRACTION OF THE ROSTER, AND JUSTIFY EVERY EXCLUSION.** "The other
+   mappers are unrelated" is a claim to be measured, not assumed. The roster is
+   `MAPPERS = ['none','hatch','wireframe','crosshatch','contour','spiral','stipple','contourSlice']`
+   (`src/core/scene3d/params.js:79`) × `SCENE3D_TONE_LAWS.PRODUCTION` (37 laws).
+   *(F1-erode's planner swept `hatch`×4 primitives + `contour`×torus and missed a SECOND live instance of
+   its own defect, found only when the sweep was widened to all 8 mappers. F1-amp then reported on `hatch`
+   alone — 12.5 % of the roster — and its reviewer had to sweep 8×6 itself.)*
+3. **EVERY REPORTED NUMBER STATES THE FIXTURE IT WAS MEASURED ON — RIG, CAMERA, DENSITY, AND EVERY NON-DEFAULT PARAM — in the report
+   AND in `report.json`.** ⚠ **A number without its fixture is not reproducible, and "md5-identical source" is NOT a fixture.**
+   *(Three script-methodology discrepancies in one round, all in otherwise-rigorous reports, none detectable from the report alone:
+   `trochoidLoop` ink −0.98 % vs −1.10 %; `onePenDown` width 0.9860 vs 1.0089 mm, blamed on an intervening fix but actually pre-dating
+   it; and a ~35–40 % `inkMm` divergence between one report's pictures and its own table. Naming the rig alone caught none of them.)*
+   ⚠ **AND STATE WHETHER GROUND-PLANE INK IS INCLUDED IN ANY INK TOTAL.** *(That third divergence was first blamed on a `fillAngle`
+   mismatch; a re-shoot proved `fillAngle` absent ≡ 45 and found the real cause was ground-plane ink counted in one measurement and not
+   the other. **Two ink numbers for "the same cell" can differ by a third with both correct and neither wrong — the object's ink and
+   the scene's ink are different quantities, and nothing in a bare `inkMm` says which one you have.**)*
+   **NAME THE RIG BEHIND EVERY NUMBER.** Since GH-2 (`6ffaf9c6`) there are TWO:
+   **`create`** (the default — `PRIMITIVE_CREATE_DEFAULTS` over `PRIMITIVE_PARAM_DEFAULTS`, the denser rig
+   **the gallery and Jay's own screenshots use**) and **`--rig addLayer`** (plain `engine.addLayer('scene3d')`
+   deserialization defaults, **what every RGR test in these lanes constructs**). **A stop-condition measured
+   on one rig is a claim about one rig**, and a bound that matters to the user must be measured on the rig
+   the user sees. **An unexplained byte-identical before/after pair can mean the RIG CANNOT SEE YOUR FIX** —
+   a third legitimate cause GH-1 now recognises as "rig mismatch". *(F1-erode's fix was invisible on
+   `create`; F1-amp's ±8 % ink claim came only from `addLayer` and `onePenDown` is −7.99 % on `create`.)*
+4. **WHEN A SWEEP REPORTS A CHANGED LAW, GREP FOR PINS ON THAT LAW AND CHECK THE FIXTURE EACH PIN USES —
+   NOT JUST THE LAW NAME.** A law-name match is a hit list, not a verdict: the pin and the changed cell must
+   agree on primitive, mapper AND density before the pin is at risk, and before you may call it safe.
+   **Re-pinning a guard that was never threatened is the same class of damage as missing one that was.**
+   *(F1-erode's one candidate pin on `taperedEnds` survived only because its fixture was the sphere while the
+   cone moved.)*
+5. **A UNIT THAT TURNS ANOTHER UNIT'S TEST GREEN MUST SAY SO — and one that inherits another unit's RED must
+   name it, test by test, under `## Pre-existing red`.** A red→green transition inside an innocent unit reads
+   as "all tests pass" at merge and hides which unit owns the fix; an inherited red gets misattributed,
+   fixed out of scope, or quietly re-pinned. **Both need the failing set reproduced at your BASE sha, not
+   argued.** *(U9b carried U6-2's fix; F1-placement's "pre-existing" red turned out to be caused by its own
+   fix, disproved only because the brief demanded the base-sha reproduction.)*
+6. **`## Bars changed` IS MANDATORY — `file:line — old → new — why`, in the report AND the commit body.**
+   Up or down. A bar change with no entry is treated as a hidden regression and REJECTS the unit. A
+   *tightened* bar and a *new* bar are both disclosed too, labelled as such. ⚠ **AND SO IS A CHANGE TO THE
+   POPULATION OR FIXTURE AN EXISTING ASSERTION MEASURES OVER, even when the number is untouched** — narrowing a
+   population hides a defect exactly as a widened tolerance does. *(T2-2 re-scoped O1 from all walked ticks to the
+   longest third, keeping `>= 0.10 mm`; the re-scope is sound and was independently ruled so twice — but it was
+   disclosed only because the implementer chose to, since the old wording did not require it. Now it does.)*
+
+**And the two process rules that cost the most when skipped:**
+
+- **RED comes from a scratch `git archive` export of your base sha — never `git stash`, never an in-place
+  revert in the worktree.** This applies to **CSS and config files by name**, not only source files; ~8
+  in-worktree REDs have been tolerated across three rounds and the exemption has quietly become a habit.
+- **Reports go to MAIN's `docs/3d-audit/lane-reports/`, evidence to MAIN's `docs/3d-audit/fill-audit/after/<W-id>/`.
+  Never into your worktree. A missing file in a worktree is NOT evidence of a missing deliverable** — a
+  reviewer once issued a REJECT on that premise.
+
+### 0b. Timeout rule (ROUND3-RESUME-BRIEFS.md §0b, verbatim)
+
+> Run every vitest file in the FOREGROUND with the Bash tool parameter `timeout: 600000` (ten minutes).
+> Never use run_in_background, never arm a Monitor and end your turn. If a file still exceeds ten minutes,
+> kill it and rerun alone with `--pool=forks --poolOptions.forks.singleFork=true`, again with
+> `timeout: 600000`.
+
+`tests/unit/scene3d-tone-law-collapse.test.js` is the only Tier-1 file. Start it with singleFork. If
+the tool backgrounds it at the 600 s ceiling, carry on and read the completion notification (the §0b
+amendment).
+
+### 1. Where you work, and when
+
+- **Worktree:** `.claude/worktrees/fill-audit-b5`. Branch: that worktree's own. Port **8475** for your
+  dev server; kill it when done.
+- **Start only AFTER W-07b-2 has landed in that worktree** (`W-07b-2-plan.md`). It is the same file,
+  and it touches only `algoCoverage`'s `deepFillTSP` branch and `tspAt`. You must not touch either.
+- Before anything else:
+  - Run `git -C .claude/worktrees/fill-audit-b5 status --short -- . ':!graphify-out'` and
+    `git stash list`. If there is foreign WIP, STOP.
+  - Record the base sha (W-07b-2's commit). Every RED comes from a scratch `git archive` of THAT sha
+    under `/private/tmp/claude-501/scratch-T2-7-impl/`, with `node_modules` symlinked.
+- **Re-grep every line number in this brief on your base.** The numbers below are `a6879837`'s.
+- Guard to run: T3c-onset's test file (`00e9bc7d`), because mkDashRamp must stay byte-identical.
+- Reports go to MAIN's `docs/3d-audit/lane-reports/T2-7-impl.md`. Evidence goes to MAIN's
+  `docs/3d-audit/fill-audit/after/T2-7/`. Commit in the worktree, then STOP. No push, no merge.
+  **Jay sees the pictures before merge.**
+
+### 2. Mechanism — proto6, plus the §C5 wedges, plus the G3 fix
+
+The reference is `docs/3d-audit/lane-reports/T2-7-plan-evidence/scripts/proto6.diff` (the full
+`surface-fill.js` diff against `a6879837`). It was generated by
+`scripts/mkproto6.py 0.6 0.9 0.12 1.0 30 <out> 1 0.8 0 1 0 1.3 1 1 26 40 1 0.4 6`. The diff is a
+PROTOTYPE: re-implement it cleanly with named constants and comments. Do not paste it.
+
+All changes are **tick-only**: `law.shape === 'tick'`, or the tick-only `stepCapMM` walk path.
+
+1. **Contact-free centred ticks.**
+   - A tick-local minimum period `PMIN_T = (1 + MK_TICK_GAP_PEN)·w`, with `MK_TICK_GAP_PEN = 0.6`.
+   - The shared `MK_PMIN` is untouched.
+   - No golden-ratio stagger and no T2-6 comb (both removed).
+2. **Real-neighbour band extents** (in `solveAt`'s tick branch).
+   - Find the neighbouring MARKED ruling at chart offset `±(1/markRowCoverage())·pitchStep`.
+   - Half-extent = ½·(distance projected on the tick axis) − ½·PMIN_T, capped at one nominal row pitch.
+3. **Limb reach, lit side only.** Where the neighbour row is not on the front surface and `I ≥
+   MK_TICK_EDGE_MIN_I` (0.4), extend to the silhouette less 0.75 pen (binary search on `sampleAt`).
+   Beyond one row pitch, add a chain of gradually SHORTENING ticks (ratio 0.8), each its own mark.
+4. **Tone (proto5-L/proto3 tone):**
+   - `c = (mkAsk(I)/MK_DARK_AREA)·cMax`, with `cMax = (Lfull/Reff)·w/PMIN_T`.
+   - Length `L = f·Lfull`, with `f = min(1, (c/(κ·cMax))^α_eff)`, κ = 0.9, α = 0.12.
+   - `α_eff = α·clamp((RPn/w − 4)/6, 0, 1)`.
+   - `P = L·w/(c·Reff)`, clamped to `[PMIN_T, MK_PMAX]`.
+   - Beyond `MK_PMAX`, shrink `L` so the area stays exact.
+   - Plot floor: `L ≥ min(1.15·MIN_MARK_MM, 0.98·band)`. **The floor wins over the seam gap** (T2-4,
+     which folds in here).
+5. **High-density regime.** When `RPn/w < MK_TICK_HIDENS_PEN` (6), use proto3's centred contact-free
+   solve plus the plot floor. This is what holds d=220 `siteCoverage` at proto3's 10/12. Disclose it
+   as a density-regime switch.
+6. **Walk hygiene (H2), in `walkFrom`/`place()`, tick-only:**
+   - Bend cap: stop an arm when a step turns > `MK_TICK_BEND_CUT` (30°) from the arm's first step.
+   - Chord-direction refusal: > `MK_TICK_DIR_CUT` (**40°**, not 25°; 25° costs B5).
+7. **Ink-occupancy clip.**
+   - A render-scope grid `mkInk`, next to `mkMidBuckets`, filled with every accepted TICK run's points
+     and midpoints, keyed by `lineIndex`.
+   - `walkFrom` stops an arm at the first step within radius `r` of ink from a **different row**. The
+     radius is `r = clamp(0.5·(RPn − 1.15·MIN_MARK_MM), 0.34w, 1.3w)`.
+   - **Applied ONLY to the edge-extension arm and to chain ticks.** A same-row clip drops about 40 % of
+     marks (`scripts/dbgclip.js`); an every-arm clip costs B5 (7/12).
+8. **End-of-span tick.** After the along-row lattice loop, if `arcMM[s1] − lastPlaced > 0.5·P + 1.6w`,
+   lay one more tick at `s1`.
+9. **NEW — base wedges G2a/G2b/G5 (§C5, AUTHORIZED narrowly).** A tick-only pass after the rows:
+   - For each family, take the rulings **one row beyond the last visible ruling** on each side, i.e.
+     `lineIndex ± 1/markRowCoverage()` master rulings past the last row that produced samples.
+   - Walk each one's parameter line. At each step, find the **front-surface interval of its band**
+     (`sampleAt(line(t) ± v·pitchStep)` for `v ∈ [−½, ½]` of the row), not of its centre-line.
+   - Anchor a tick at the **nearest on-surface point of the band**, i.e. the sample `fr0` for
+     `walkPoly`, and lay only the on-surface part. Use the same tone, P and clip as item 7.
+   - **The `MK_ROW_COV` VALUE is untouched, and the existing loop over rulings is untouched.** This is
+     an additive tick-only pass.
+   - Success: the G2a/G2b/G5 crops show ticks running to the rim, with no new contact (B1/B3/B8
+     hold).
+   - If an anchor cannot be found without a chart sample, stop and report MEASURED with the crop. Do
+     not fake it.
+10. **NEW — G3 horizontal bar.** proto6's lit-edge reach meets a neighbour that is limb-truncated, and
+    one tick joins the silhouette with a horizontal bar.
+    - Fix: cap the edge-reach arm at the neighbour row's **last visible sample projected on v**, as
+      well as at the silhouette.
+    - And/or apply item 7's clip against the neighbour's limb samples.
+    - The G3 crop must show no horizontal bar and no fused blob.
+11. **B5 recovery to ≥ 11/12** (proto6 is at 9/12). The two extra inversions are `create torus/hatch`
+    and `test torus/contour`, both torus inner flank.
+    - Candidates (plan §C5): stop the edge-reach arm when the local tone bin differs from the anchor's,
+      or exclude sites with a back-facing neighbour on the torus inner flank from the reach.
+    - Measure it; do not assume it.
+
+### 3. Final bar table — BLOCKING marks, fixture §0 of the plan, both rigs, one mutation per bar
+
+Fixture: BOUNDS 1200×1000 m20, pen 0.3, `DEFAULT_CAMERA`, sun az135/el45, **ground and backdrop OFF (no
+ground-plane ink in any number)**, `fillAngle 45`, `toneLaw mkTick`. The 12 fixtures are
+`{sphere, torus, cone} × {hatch, contour} × {create, test}`. The instrument reference is
+`T2-7-plan-evidence/scripts/metrics.js`: port its math into `tests/helpers/`, **without** any file-system
+paths.
+
+| # | bar | fixture | proto3 / proto6 (measured) | GATE | mutation that must trip it |
+|---|---|---|---|---|---|
+| T1 ✦ | **SP5** = mean along-row period, light third ÷ dark third (drawn sites, full population), **≥ 2.30 and monotone** | 12 @ d=50 | 8/12 / 11/12 | **≥ 11/12**, and name the one exception | restore `chan:'len'` spacing (P from area with L0 1.16) → SP5 ≈ 1.0 |
+| T2 ✦ | **B1** tip contact (a tick tip within 1 pen of another fill mark) ≤ 0.15 | 12 @ d=50 | 10 / 9 | **≥ 10/12** | `MK_TICK_GAP_PEN` = −0.9 (overlap) → trips |
+| T3 ✦ | **B3** mark contact ≤ 0.30 | 12 @ d=50 | 10 / 10 | **≥ 10/12** | same |
+| T4 ✦ | **B5** binned ink-vs-I, monotone (9 bins, I < 0.9) | 12 @ d=50 | 11 / 9 | **≥ 11/12** | clip on every arm → 7/12 |
+| T5 ✦ | **B7** siteCoverage ≥ 0.90, and `subMin` = 0 (no drawn fill mark < 2 pens) | 12 @ d=220 | 10 / 10 | **≥ 10/12**, `subMin` = 0 | HIDENS off → 2/12 |
+| T6 ✦ | **B8e** (replaces `ovMax`) = share of tick tips within ½ pen of another mark's centreline | cone/sphere hatch × 2 rigs @ d=50 | 0.026/0.008/0.052/0.078 vs 0.013/0.034/0.054/0.063 | **≤ max(proto3, 0.03) per cell** | edge reach without the clip → the fused bars return |
+| T7 ✦ | **B9** over2RP (a drawn mark > 2 row pitches) = 0 | 12 @ d=50 and d=220 | 0 / 0 | **0** | lift the 1-RP extent cap → trips |
+| T8 ✦ | **H2**: rogueDev30 = 0 and bent30 ≤ 2 on the cone; ≤ 16 rogue on the sphere (proto6 12/16) | cone/sphere hatch × 2 rigs | — | **as stated** | bend cap off → rogues return |
+| T9 ✦ | **silhouette-overlap count** = fill ink within 1 pen of another tick's ink AND within 2 pens of an edge path | cone/sphere hatch × 2 rigs | — | **0** (new, for R1/R3/R4/G3) | clip off |
+| T10 | **bareSeamFrac** (dark/mid tick tips whose bare run to the next ink > 2 contact gaps) | 12 @ d=50 | mean 0.172 / 0.123 | **≤ proto3 per cell** (BLOCKING on the six hatch cells) | neighbour extents off → rises |
+| T11 | **limbGapFrac** (same, ending at the silhouette edge path) | 12 @ d=50 | 0.131 / 0.168 | **report**; ≤ proto3 on cone/sphere hatch | end-tick off → rises |
+| T12 ✦ | **wedge25 → MONOTONE**: mean raster bare distance per 0.1 I-bin (below 0.9) is non-decreasing | 12 @ d=50 | not measured | **0 inversions on ≥ 11/12** | swap two tone bins in the ramp → trips |
+| T13 ✦ | mkDashRamp and every non-mkTick law **byte-identical** | the roster md5 sweep, 4 × 8 × 37 = 1184 cells, coverage stated as a fraction | — | **only the mkTick × {hatch, wireframe, crosshatch, contour} cells move** | any leak |
+| T14 ✦ | **the 15-spot picture checklist (§4)** | — | proto6: 5 ✓, 5 ◐, 5 ✗, +1 new | **every GREEN spot ✓, every RED spot ✓, no new defect** — or stop-report per spot | — |
+
+Every T-bar test states which clause of Jay's words it gates (rule 1): T1 "spacing"; T2/T3/T6/T9
+"minimize contact / don't increase overlap at the seams"; T4/T12 "gradual shifts"; T7/T8 "remove any
+lines not part of a tick band"; T10/T11/T14 "fill the black gaps".
+
+### 4. The 15-spot crop checklist — re-shoot from your worktree and LOOK at every one
+
+Capture from MAIN:
+
+```
+node scripts/audit/scene3d-capture.js --tier B --shard 1/1 --root <worktree> --port 8475 --rig create|addLayer \
+  --only '^((cone|sphere)__hatch__mkTick__med__a|cone__hatch__mkTick__max__a|torus__hatch__mkTick__max__a)$' \
+  --out docs/3d-audit/fill-audit/after/T2-7
+```
+
+Then crop at native resolution, 2–3× nearest-neighbour, SAME boxes (gallery px), and put three panels
+side by side: **proto3 (`T2-7-plan-evidence/cap-proto3`) | proto6 (`cap-proto6`) | yours**.
+
+| spot | box (x0,y0,x1,y1), cell | Jay's mark | proto6 |
+|---|---|---|---|
+| G1 | (380,300,600,700) cone | fill lit-flank seam gutters | ◐ |
+| G2a | (330,600,480,745) cone | fill base wedge, bottom-centre | ✗ → **item 9** |
+| G2b | (470,560,620,720) cone | fill base wedge, bottom-right | ✗ → **item 9** |
+| G3 | (300,20,420,200) cone | fill right edge below apex | ✗ + new bar → **item 10** |
+| R1 | (130,60,320,300) cone | wonky, left edge upper | ◐ |
+| R2 | (470,450,627,700) cone | wonky, right edge lower | ✓ |
+| R3 | (0,520,170,700) cone | wonky, bottom-left corner | ✓ |
+| G4 | (640,280,775,480) sphere | fill right limb, mid | ◐ |
+| G5 | (560,560,760,760) sphere | fill bottom-right rim | ✗ → **item 9** |
+| G6 | (560,60,760,260) sphere | fill upper-right edge (highlight) | ✗: tone-limited, report honestly |
+| R4 | (20,120,200,300) sphere | wonky, left upper | ◐ |
+| R5 | (0,300,150,480) sphere | wonky, left mid | ✓ |
+| R6 | (20,480,220,680) sphere | wonky, left lower | ◐ |
+| R7 | (280,640,480,775) sphere | wonky, bottom rim centre | ✓ |
+| R8 | (480,600,680,775) sphere | wonky, bottom rim right | ✓ |
+
+Rules for the checklist:
+- Write a one-line "what I see" for **every** spot, and ✓/◐/✗.
+- Also look at the whole cells and at `torus__hatch__mkTick__max__a` (the proto5 clumps must not
+  return).
+- **A spot marked ✓ on a crop you did not look at is a REJECT.**
+- The picture beats the bar: a passing table beside a spot that visibly fails is **not DONE**.
+
+### 5. Files
+
+**ALLOWED:**
+- `src/core/scene3d/surface-fill.js`, only in:
+  - `solveAt`'s tick branch;
+  - `layMark`'s tick block and the tick-only extra-mark `place()` loop;
+  - the tick-only end-of-span tick in the lattice loop;
+  - the new tick-only wedge pass after the rows;
+  - `walkFrom`/`walkPoly` (tick-only via `stepCapMM`/a new `clipOn` argument);
+  - one tick-only line in `place()`;
+  - a render-scope `mkInk` grid beside `mkMidBuckets`;
+  - the new constants (`MK_TICK_GAP_PEN`, `_BEND_CUT`, `_DIR_CUT`, `_CLIP_PEN`, `_EDGE_MIN_I`,
+    `_HIDENS_PEN`, `_LEN_ALPHA`, `_PLATEAU`, `_PLOT_FLOOR`, `_CHAIN_RHO`), each documented in pens with
+    its measured trade.
+- `MK.mkTick`'s row: `L0`/`LMIN` become unused; remove them or document them.
+- `tests/unit/scene3d-mktick-*.test.js` and `tests/helpers/scene3d-mktick-*.js`.
+- A NEW `tests/unit/scene3d-mktick-spacing-tone.test.js` (T1–T12) plus its helper.
+- Retiring `tests/unit/scene3d-mktick-gap-fill.test.js` and `tests/helpers/scene3d-mktick-gap-fill.js`.
+- `tests/unit/scene3d-mark-laws-draw.test.js`: **only** O1's population/bar, with proof.
+
+**FORBIDDEN:**
+- The **`MK_ROW_COV` value** and `markRowCoverage()`.
+- `mkAsk`, `areaForTone`, the shared `MK_PMIN`/`MK_PMAX`, and `MIN_MARK_PEN`/`MIN_MARK_MM`.
+- `g`/`R` for non-tick laws.
+- `place()` for any non-tick shape, and `mkMidBuckets`/`dupStub` tuning.
+- mkDashRamp's `morph`/`else` branches and **every non-tick law**.
+- `algoCoverage` and `tspAt` (W-07b-2's).
+- `scene3d.js`, `hlr.js`, `shadows.js`, `surface-fill-mono.js`, `mappers.js`, `params.js`.
+- `git push`, merge, tag, version bump.
+
+### 6. Every pinned golden at risk — GREPPED on `a6879837` (`grep -l mkTick tests -r`, then hash idioms)
+
+| file | pins | expected |
+|---|---|---|
+| `tests/unit/scene3d-mktick-wedge.test.js` | 12 `EXPECTED_SIGNATURE` goldens; `O5_BAR = 2.30` (:445); `WEDGE_MEAN_BAR` / `WEDGE_CELL_CEILING`; `STAGGER_NEEDLE_SINGLE` MUTATION-KILL 2 | all 12 goldens move (re-pin WITH a contrast mutation); **O5_BAR retires**; wedge bars → monotone (T12); the stagger no longer exists, so **replace** the mutation (e.g. clip or bend cap off); do not delete it |
+| `tests/unit/scene3d-mktick-gap-fill.test.js` (+ helper) | R4-fix pinned goldens + contrast mutation; A1/A1b bars; `/private/tmp` + `git archive` provenance comments | **retire** (it gates T2-6's comb, which Jay rejected) |
+| `tests/unit/scene3d-mktick-band-purity.test.js` | hand-copied `POST_TICK_BLOCK_INSTRUMENTED` + needles; roster md5 sweep; `ovMax` (O-B) | the block copy must mirror the new block (the T2-6 §4a silent-staleness trap); `ovMax` → B8e (tightened); roster: 3 mkTick cells move |
+| `tests/unit/scene3d-mktick-banding.test.js` | `PRE_RANK1_BANDC` ×1.05 ceilings | measure first; a re-pin downward is a *tightening* |
+| `tests/unit/scene3d-mktick-runaway.test.js` | `PRE_T23B` longest/count15 | population change; disclose |
+| `tests/unit/scene3d-mark-laws-draw.test.js` | O1 sagitta (R4-fix re-derived under T2-6) | population change; re-derive with proof |
+| `tests/unit/scene3d-mkdashramp-single-pass.test.js`, `-discrete.test.js`, `-low-end.test.js` | mkTick md5 controls against in-tree `neutralAlgo` / rowFloor mutant | expected green because the comparison is in-tree; **run them**. They also carry `child_process` + `git show` (see §7) |
+| `tests/integration/scene3d-fill-style-picker.test.js`, `tests/unit/scene3d-tone-law-collapse.test.js` | no mkTick hash pins | run (Tier 2 / Tier 1) |
+
+Checked and not at risk: `scene3d-shadow-tone-law*.test.js` (the shadow dash law in `shadows.js`),
+`scene3d-faceted-tone-law`, `scene3d-tone-quant-flow-live`, `scene3d-ribbon-f1-amp` (its controls are
+other laws).
+
+### 7. CI-safety — main's CI is red for exactly this; any new or edited test must obey it
+
+- **No git history in a test.** No `git show`, no `git archive`, no sha-pinned source reads. RED
+  provenance goes in the REPORT (scratch export), **never** in a test. The in-test "pre-fix" is a
+  needle patch of the LIVE source via `loadVecturaRuntime({ scriptOverrides })`, or a pinned golden
+  plus a contrast mutation (the W-38b / R4-fix pattern).
+- **No `child_process`** (`execFileSync`/`execSync`), in new or edited tests.
+  `scene3d-mkdashramp-{single-pass,discrete,low-end}` already use it. Do not extend that. Report their
+  status as `## Pre-existing red` if CI fails them, per rule 5.
+- **No absolute or scratch paths** (`/private/tmp/...`, `/Users/...`) in tests or helpers.
+- **No skip conditions**: no `skipIf`, env-gated `describe`, or `.only`/`.skip`. A test that cannot
+  run in CI is not a guard.
+- Every needle patch asserts its needle count (== 1), so a source change cannot silently no-op it.
+- New helpers are pure math over `paths` / `lastMarkStats` / hook arrays.
+
+### 8. Bars changed — entries you WILL need (report AND commit body, `file:line — old → new — why`)
+
+- **`scene3d-mktick-wedge.test.js:445` `O5_BAR = 2.30` → RETIRED.** Why: Jay, 2026-09-19, *"BUILD
+  proto6 DIRECTION"*. O5 retires because length carries tone, and it read 0/12 on proto3 and proto6.
+  Tone is gated on SP5 ≥ 2.30 over the full population. Replacement: T1.
+- **B4 `spacingShare ≥ 0.60` → RETIRED** (plan bar, never shipped in a test; disclose anyway). Why: Jay,
+  round 2, *"tone bars → A"*: "length AND spacing each open ≥ 2.3× shadow→light". The *share* form
+  retired; SP5 replaces it.
+- **`WEDGE_MEAN_BAR` / `WEDGE_CELL_CEILING` (0.090/0.180 per cell, 0.080/0.095 mean) → a MONOTONE bar
+  (T12).** Why: Jay, round 1 of the T2-7 rulings, *"wedge25 → RE-DERIVE AS MONOTONE (bare distance
+  non-decreasing in I; the fixed 0.090 cap retires)"*.
+- **`ovMax` (band-purity O-B, 0.0800) → B8e ≤ max(proto3, 0.03)**, a TIGHTENING and a new instrument.
+  Why: eye_mktick, *"don't increase overlap at the seams"*, plus eye_t26, *"Minimize tick contact"*.
+- The 12 `pathSignature` goldens (re-pinned with a contrast mutation).
+- `STAGGER_NEEDLE_SINGLE` replaced: a POPULATION change.
+- The gap-fill file retired.
+- `PRE_RANK1_BANDC` and `PRE_T23B`: population.
+- O1: population.
+- Every new `MK_TICK_*` constant and every new T-bar: labelled NEW.
+
+### 9. Stop conditions (ship the measurement, do not fudge)
+
+- **STOP** if T1 (SP5) falls under 10/12, or any spot in §4 regresses from proto6's state.
+- **STOP** if B5 cannot reach 11/12 without breaking T2/T3/T6. Report which component costs which
+  cell. Do not widen T4.
+- **STOP** if the wedge pass (item 9) needs to touch the ruling loop or the `MK_ROW_COV` value.
+  Report MEASURED with the crops.
+- **STOP** if d=220 B7 falls under 10/12 or `subMin` > 0.
+- **STOP** if any non-mkTick cell moves in the roster sweep.
+- **Never** lower SP5, widen a contact bar, or re-pin a golden without its contrast mutation.
+
+### 10. Reviewer flags (≤ 6)
+
+1. **Look at all 15 spot crops yourself**, plus the whole cells and torus/max. G2a/G2b/G5 must show
+   ticks to the rim, and G3 must show no bar. A passing table next to a visibly failing spot is a
+   REJECT.
+2. **B5 ≥ 11/12, with attribution.** The report names which component cost which cell and how it was
+   recovered. Check that T4's population and the 9-bin rule are unchanged.
+3. **Wedge-pass scope.** Diff for any change to the ruling loop, `MK_ROW_COV` or `markRowCoverage`.
+   Confirm tick-only and run the roster md5 sweep (T13) yourself on at least one primitive×rig.
+4. **Clip scope.** It must be other-row and edge-arm/chain-only (a same-row clip is a measured 40 %
+   mark drop). Confirm the d=220 HIDENS switch is disclosed as a density regime, not hidden in a
+   constant.
+5. **CI-safety (§7).** grep the diff's tests for `git`, `child_process`, `/private`, `/Users`, `skip`,
+   `.only`. Every needle has a count assertion.
+6. **`## Bars changed`.** O5 retirement, B4 retirement, wedge25 → monotone and ovMax → B8e each quote
+   Jay. The hand-copied tick blocks (band-purity, wedge MUTATION-KILL) mirror the shipped block
+   byte-for-byte.
+
+## Bars changed (amendment 4)
+
+**None.** This is a brief. No test, source or golden was touched by the planner.
