@@ -235,7 +235,7 @@ nothing, and the reviewer accepted that content. **It is not an unverified WIP; 
 
 ### (c) THE MERGE — LANDED
 
-✅ **MERGE r4: `main` = `ff37531d` (v1.4.3, round 4 + R4-fix) · pushed: `<YES/NO — orchestrator fills>`.**
+✅ **MERGE r4: `main` = `ff37531d` (v1.4.3, round 4 + R4-fix) · pushed: YES (origin/main = main, pre-push hook suites green, 2026-09-19).**
 
 ⚠ **The route there matters to anyone reading the shas: the merge landed at `7965abd8` / `cf6b3c2f`, the PRE-PUSH HOOK then found
 FOUR RED UNIT FILES, and **R4-fix** (tests-only, re-pins with proof) closed all four — `main` fast-forwarded to `ff37531d`, with

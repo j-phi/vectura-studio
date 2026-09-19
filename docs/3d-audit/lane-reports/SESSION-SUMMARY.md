@@ -504,7 +504,7 @@ quantity that was real, and none of them measured what he was looking at.**
 
 ## 6. MERGE STATUS — ✅ **ROUND 4 MERGED at `ff37531d` (v1.4.3, round 4 + R4-fix)**
 
-> ✅ **`main` = `ff37531d` (v1.4.3, round 4 + R4-fix). Pushed: `<YES/NO — orchestrator fills>`.**
+> ✅ **`main` = `ff37531d` (v1.4.3, round 4 + R4-fix). Pushed: YES (origin/main = main, pre-push hook suites green, 2026-09-19).**
 > **R4-fix is DONE and HOOK-VERIFIED: all four causes measured and RE-PINNED WITH PROOF — T4b's d=220 pin
 > moved by W-32r4's edge ink · the mkTick md5 controls re-derived after T2-5/T2-6 · gap-fill's `git archive`
 > leg REPLACED by pinned goldens with a contrast mutation · the O1 bar re-derived under T2-6's disclosure.**
