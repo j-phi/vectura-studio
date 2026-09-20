@@ -3,7 +3,10 @@
 Workflow governance and documentation synchronization rules live in `docs/agentic-harness-strategy.md`.
 
 ## Toolchain
-- Unit/Integration/Visual/Perf: Vitest (`vitest.config.mjs`)
+- Node 20.19 or newer is required.
+- Unit/Integration/Visual/Perf: Vitest 4 (`vitest.config.mjs`); keep `vitest` and
+  `@vitest/coverage-v8` on matching versions. Worker limits use Vitest 4's top-level
+  `maxWorkers` option with the `forks` pool.
 - E2E smoke: Playwright (`playwright.config.js`)
 - Runtime loader for browser IIFE modules: `tests/helpers/load-vectura-runtime.js`
 - E2E smoke projects run on Chromium for both desktop and touch-tablet coverage (tablet uses touch/mobile emulation).

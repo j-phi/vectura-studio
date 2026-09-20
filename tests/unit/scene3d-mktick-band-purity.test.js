@@ -609,9 +609,9 @@ describe('Scene3D.SurfaceFill — mkTick band-purity oracle (T2-5, Jay\'s USER R
       // CI-5, 2026-09-19: measured 305394ms on an uncontended local
       // singleFork run (macOS, `npx vitest run
       // tests/unit/scene3d-mktick-band-purity.test.js --pool=forks
-      // --poolOptions.forks.singleFork=true`, whole-file total 316365ms, 35/35
+      // --maxWorkers=1`, whole-file total 316365ms, 35/35
       // green). GitHub Actions' `unit`/`coverage` jobs run this file inside
-      // the shared `forks` pool (`maxForks: 2` under `CI`) sharing the runner
+      // the shared `forks` pool (`maxWorkers: 2` under `CI`) sharing the runner
       // with 480+ other files, and this SAME sweep — same commit, same
       // assertions, no other change — hit `Error: Test timed out in 500000ms`
       // in TWO separate CI runs (35451981431, 35454205820; both `unit` and
