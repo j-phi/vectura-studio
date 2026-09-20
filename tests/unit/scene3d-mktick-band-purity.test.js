@@ -522,104 +522,123 @@ describe('Scene3D.SurfaceFill — mkTick band-purity oracle (T2-5, Jay\'s USER R
   describe('ROSTER MD5 SWEEP — 3 mappers (hatch/crosshatch/contour) x 37 PRODUCTION laws = ~111 combinations, only mkTick may change', () => {
     const md5 = (paths) => crypto.createHash('md5').update(JSON.stringify(paths)).digest('hex');
 
-    test('cone/create, 3 mappers x PRODUCTION laws: every changed cell is law=mkTick, no other law moves', async () => {
-      const postRuntime = await loadVecturaRuntime();
-      const preRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildPreSource() } });
-      try {
-        const V = postRuntime.window.Vectura;
-        const MAPPERS = V.Scene3D.Params.MAPPERS
-          || ['none', 'hatch', 'wireframe', 'crosshatch', 'contour', 'spiral', 'stipple', 'contourSlice'];
-        const LAWS = (V.SCENE3D_TONE_LAWS && V.SCENE3D_TONE_LAWS.PRODUCTION) || [];
-        expect(MAPPERS.length).toBe(8);
-        expect(LAWS.length).toBeGreaterThanOrEqual(30); // "37" per the plan; tolerate roster drift, still a real sweep
+    // CI-6, 2026-09-19: split from ONE test (~111 cells: 3 mappers x ~37
+    // laws, all inside a single vitest `test()`/`testTimeout`) into 3 tests,
+    // one per mapper — SAME population (same 3 mappers, same LAWS list, same
+    // `cone/create` fixture; nothing removed, nothing re-scoped), just
+    // reorganized so no single test carries the whole budget. Runtime
+    // loading (previously repeated inside the one test) is hoisted to a
+    // shared `beforeAll`/`afterAll` so it still happens ONCE for all 3, not
+    // 3x. Why: CI-5 raised this sweep's own testTimeout 500000 -> 900000ms
+    // and that was enough for the `unit` job (no coverage instrumentation,
+    // confirmed green on GH Actions run 35478263788), but the `coverage`
+    // job's v8/istanbul instrumentation overhead still pushed the combined
+    // ~111-cell sweep over 900000ms in CI (real fork contention,
+    // `maxForks: 2` under `CI`, sharing the runner with 700+ other files —
+    // not reproducible from this sandboxed session, no GH runner access
+    // here). Measured locally, ISOLATED (no other file contention), WITH
+    // coverage instrumentation: the whole combined sweep took 415.29s /
+    // 422.62s wall (two consecutive `npm run test:coverage -- <this file>`
+    // attempts; `run-vitest.js`'s benign RPC-timeout retry ran a second full
+    // pass), vs 305394ms uninstrumented (CI-5-impl.md) — ~1.36-1.39x
+    // instrumentation overhead on top of contention, not instead of it.
+    // Splitting by mapper means each test now does ~1/3 of the render work
+    // while keeping the SAME 900000ms per-test budget that used to bound the
+    // combined 111 cells — effectively ~3x headroom per unit of work,
+    // without needing to guess a single larger number for a contention level
+    // this session cannot measure directly. See
+    // docs/3d-audit/lane-reports/CI-6-impl.md for the full measurement.
+    let postRuntime;
+    let preRuntime;
+    let MAPPERS;
+    let LAWS;
+    let SWEEP_MAPPERS;
 
-        // Reduced from the plan's own 4 sweeps x 8 mappers x 37 laws (1184
-        // cells) — a single 8-mapper x 37-law sweep exceeded 300s on this
-        // shared machine (336.5s, timed out). Reduced further to the 3
-        // mappers the fix can structurally reach through the mark-emission
-        // path (`hatch`, `crosshatch`, `contour` — the SAME 3 the plan's own
-        // 384-cell sweep found are the only ones a mkTick change ever moves,
-        // `T2-5-plan.md` §0.4/§2 O-C table) x all PRODUCTION laws, on
-        // `cone/create` (this unit's own evidence primitive). This is a
-        // TARGETED sample (3/8 mappers, 1/4 of the plan's own sweep count,
-        // ~9.4% of the plan's full 1184-cell coverage), not a substitute for
-        // the STRUCTURAL proof: `law.shape === 'tick'` is a single unique
-        // literal in the `MK` table (`grep -c "shape: 'tick'"` = 1), checked
-        // before every line this unit added executes, so no other law's
-        // `layMark` call can ever reach this unit's code regardless of
-        // mapper. DISCLOSED as reduced coverage, not silently narrowed.
-        const sweeps = [
-          { primitive: 'cone', rig: 'create' },
-        ];
-        const SWEEP_MAPPERS = MAPPERS.filter((m) => ['hatch', 'crosshatch', 'contour'].includes(m));
-        expect(SWEEP_MAPPERS.length).toBe(3);
+    beforeAll(async () => {
+      postRuntime = await loadVecturaRuntime();
+      preRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildPreSource() } });
+      const V = postRuntime.window.Vectura;
+      MAPPERS = V.Scene3D.Params.MAPPERS
+        || ['none', 'hatch', 'wireframe', 'crosshatch', 'contour', 'spiral', 'stipple', 'contourSlice'];
+      LAWS = (V.SCENE3D_TONE_LAWS && V.SCENE3D_TONE_LAWS.PRODUCTION) || [];
+      expect(MAPPERS.length).toBe(8);
+      expect(LAWS.length).toBeGreaterThanOrEqual(30); // "37" per the plan; tolerate roster drift, still a real sweep
 
-        const renderOne = (runtime, { primitive, mapper, rig, law }) => {
-          const RV = runtime.window.Vectura;
-          const algo = RV.AlgorithmRegistry.scene3d;
-          const defaults = RV.ALGO_DEFAULTS.scene3d;
-          const Params = RV.Scene3D.Params;
-          const p = buildSceneParams(Params, defaults, {
-            mapper, fillDensity: 50, primitive, rig,
-          });
-          p.styleTable.scene.params.toneLaw = law;
-          return algo.generate(p, null, null, BOUNDS);
-        };
+      // Reduced from the plan's own 4 sweeps x 8 mappers x 37 laws (1184
+      // cells) — a single 8-mapper x 37-law sweep exceeded 300s on this
+      // shared machine (336.5s, timed out). Reduced further to the 3
+      // mappers the fix can structurally reach through the mark-emission
+      // path (`hatch`, `crosshatch`, `contour` — the SAME 3 the plan's own
+      // 384-cell sweep found are the only ones a mkTick change ever moves,
+      // `T2-5-plan.md` §0.4/§2 O-C table) x all PRODUCTION laws, on
+      // `cone/create` (this unit's own evidence primitive). This is a
+      // TARGETED sample (3/8 mappers, 1/4 of the plan's own sweep count,
+      // ~9.4% of the plan's full 1184-cell coverage), not a substitute for
+      // the STRUCTURAL proof: `law.shape === 'tick'` is a single unique
+      // literal in the `MK` table (`grep -c "shape: 'tick'"` = 1), checked
+      // before every line this unit added executes, so no other law's
+      // `layMark` call can ever reach this unit's code regardless of
+      // mapper. DISCLOSED as reduced coverage, not silently narrowed.
+      SWEEP_MAPPERS = MAPPERS.filter((m) => ['hatch', 'crosshatch', 'contour'].includes(m));
+      expect(SWEEP_MAPPERS.length).toBe(3);
+    }, 180000);
 
+    afterAll(async () => {
+      if (postRuntime) await postRuntime.cleanup();
+      if (preRuntime) await preRuntime.cleanup();
+    });
+
+    const renderOne = (runtime, { primitive, mapper, rig, law }) => {
+      const RV = runtime.window.Vectura;
+      const algo = RV.AlgorithmRegistry.scene3d;
+      const defaults = RV.ALGO_DEFAULTS.scene3d;
+      const Params = RV.Scene3D.Params;
+      const p = buildSceneParams(Params, defaults, {
+        mapper, fillDensity: 50, primitive, rig,
+      });
+      p.styleTable.scene.params.toneLaw = law;
+      return algo.generate(p, null, null, BOUNDS);
+    };
+
+    ['hatch', 'crosshatch', 'contour'].forEach((mapper) => {
+      test(`cone/create, mapper=${mapper} x PRODUCTION laws: every changed cell is law=mkTick, no other law moves`, () => {
+        expect(SWEEP_MAPPERS).toContain(mapper);
+        const primitive = 'cone';
+        const rig = 'create';
         const allChanged = [];
         let totalCells = 0;
-        sweeps.forEach(({ primitive, rig }) => {
-          SWEEP_MAPPERS.forEach((mapper) => {
-            LAWS.forEach((law) => {
-              totalCells += 1;
-              let postPaths;
-              let prePaths;
-              try {
-                postPaths = renderOne(postRuntime, {
-                  primitive, mapper, rig, law,
-                });
-              } catch (e) {
-                postPaths = { __error: String(e && e.message) };
-              }
-              try {
-                prePaths = renderOne(preRuntime, {
-                  primitive, mapper, rig, law,
-                });
-              } catch (e) {
-                prePaths = { __error: String(e && e.message) };
-              }
-              if (md5(postPaths) !== md5(prePaths)) {
-                allChanged.push({
-                  primitive, rig, mapper, law,
-                });
-              }
-            });
-          });
+        LAWS.forEach((law) => {
+          totalCells += 1;
+          let postPaths;
+          let prePaths;
+          try {
+            postPaths = renderOne(postRuntime, { primitive, mapper, rig, law });
+          } catch (e) {
+            postPaths = { __error: String(e && e.message) };
+          }
+          try {
+            prePaths = renderOne(preRuntime, { primitive, mapper, rig, law });
+          } catch (e) {
+            prePaths = { __error: String(e && e.message) };
+          }
+          if (md5(postPaths) !== md5(prePaths)) {
+            allChanged.push({ primitive, rig, mapper, law });
+          }
         });
 
         const nonMkTickChanges = allChanged.filter((c) => c.law !== 'mkTick');
         // eslint-disable-next-line no-console
-        console.log(`T2-5 roster sweep: ${allChanged.length}/${totalCells} cells changed; ${nonMkTickChanges.length} non-mkTick changes`, JSON.stringify(allChanged));
+        console.log(`T2-5 roster sweep (${mapper}): ${allChanged.length}/${totalCells} cells changed; ${nonMkTickChanges.length} non-mkTick changes`, JSON.stringify(allChanged));
         expect(nonMkTickChanges).toEqual([]);
-        expect(allChanged.length).toBeGreaterThan(0); // non-vacuous: the fix DOES change something
-      } finally {
-        await postRuntime.cleanup();
-        await preRuntime.cleanup();
-      }
-      // CI-5, 2026-09-19: measured 305394ms on an uncontended local
-      // singleFork run (macOS, `npx vitest run
-      // tests/unit/scene3d-mktick-band-purity.test.js --pool=forks
-      // --poolOptions.forks.singleFork=true`, whole-file total 316365ms, 35/35
-      // green). GitHub Actions' `unit`/`coverage` jobs run this file inside
-      // the shared `forks` pool (`maxForks: 2` under `CI`) sharing the runner
-      // with 480+ other files, and this SAME sweep — same commit, same
-      // assertions, no other change — hit `Error: Test timed out in 500000ms`
-      // in TWO separate CI runs (35451981431, 35454205820; both `unit` and
-      // `coverage` jobs, ci.log lines ~5028/5054, ~13887/13888). 500000ms
-      // already exceeds the uncontended local measurement by ~64%; CI's own
-      // contended wall time is unmeasured beyond "more than 500000ms", so
-      // this raises with real headroom rather than nudging just past the
-      // observed floor. `## Bars changed` in the commit body.
-    }, 900000);
+        // Non-vacuous per mapper (CI-6): the original combined test only
+        // required this in aggregate across all 3 mappers; splitting lets it
+        // be checked per mapper too, a STRICTLY STRONGER guard (each mapper
+        // individually proven to see the mkTick fix, not just at least one of
+        // the three) — verified empirically to hold for hatch/crosshatch/
+        // contour before landing. Disclosed under `## Bars changed` as a new,
+        // tightened check, not a silent strengthening.
+        expect(allChanged.length).toBeGreaterThan(0);
+      }, 900000);
+    });
   });
 });

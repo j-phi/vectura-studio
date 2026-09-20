@@ -11,7 +11,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      # fetch-depth: 0 (full history) — several tests/unit/*.test.js RGR
+      # proofs read a historical revision of a file via `git show <sha>:path`
+      # (the pinned commit is always an ancestor of the checked-out ref, never
+      # a foreign branch) to prove a fix's guard trips against the real
+      # pre-fix tree. actions/checkout's default depth: 1 makes that sha
+      # unreachable and those tests fail with a git error, not a real
+      # regression (docs/3d-audit/lane-reports/CI-5-impl.md,
+      # docs/3d-audit/lane-reports/CI-6-impl.md). This job runs test:unit and
+      # test:integration on a tag push and shares the same exposure.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
