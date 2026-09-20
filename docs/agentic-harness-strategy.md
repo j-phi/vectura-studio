@@ -103,6 +103,8 @@ Artifact reporting standard:
 
 Reference:
 - Test policies and command details live in `docs/testing.md`.
+- The harness currently assumes Node 20.19+ and a matched Vitest 4 / V8 coverage-provider pair;
+  version-specific pool configuration is documented in `docs/testing.md`.
 - Local Playwright compatibility notes also live in `docs/testing.md`; local browser fallbacks must stay documented there and in `AGENTS.md` whenever the e2e runtime contract changes.
 
 ## 6) Documentation Synchronization Matrix

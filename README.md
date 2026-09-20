@@ -32,9 +32,9 @@ npm run hooks:install   # one-time: installs pre-commit + pre-push (test:fast) h
 npm run test:ci
 ```
 
-> The `pre-push` hook runs `test:fast` (~12s — unit + integration + visual + perf) before every push. E2E is gated only by CI to keep local pushes snappy. Bypass with `SKIP_PREPUSH=1 git push`.
+Node 20.19 or newer is required for the development and test toolchain.
 
-> If your Node runtime doesn't support Unicode regex property escapes (some Node 18.16.x builds), run `npm run patch:test-runtime` first.
+> The `pre-push` hook runs `test:fast` (~12s — unit + integration + visual + perf) before every push. E2E is gated only by CI to keep local pushes snappy. Bypass with `SKIP_PREPUSH=1 git push`.
 
 ---
 

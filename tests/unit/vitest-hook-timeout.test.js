@@ -2,7 +2,7 @@
  * Guardrail: `hookTimeout` must be raised alongside `testTimeout` (2026-07-12).
  *
  * `vitest.config.mjs` raises `testTimeout` to 60s because the CI jobs run the
- * suite under fork contention (maxForks 4) and v8 coverage instrumentation,
+ * suite under fork contention (maxWorkers 4) and v8 coverage instrumentation,
  * which makes the heavy full-stack jsdom mounts run ~5-8x slower than an
  * isolated local run. But `testTimeout` does NOT apply to `beforeEach` /
  * `beforeAll` hooks — those are bounded by `hookTimeout`, which defaults to
@@ -27,5 +27,11 @@ describe('vitest config: hook timeout', () => {
 
   it('keeps hookTimeout at least as generous as testTimeout', () => {
     expect(config.test.hookTimeout).toBeGreaterThanOrEqual(config.test.testTimeout);
+  });
+
+  it('uses the Vitest 4 worker-limit keys while retaining the forks pool', () => {
+    expect(config.test.pool).toBe('forks');
+    expect(config.test.maxWorkers).toBeGreaterThan(0);
+    expect(config.test).not.toHaveProperty('poolOptions');
   });
 });

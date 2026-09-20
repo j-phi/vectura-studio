@@ -21,6 +21,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   Contour / Spiral / Stipple fills, or on the ground plane. (W-38, W-38b)
 
 ### Changed
+- **Development toolchain:** Vitest and its V8 coverage provider now move together to 4.1.8,
+  and the documented minimum Node runtime is 20.19 to match the current Vite, Playwright,
+  ESLint, and jsdom toolchain.
 - **3D Scene · Fill Style picker: two more near-duplicate options folded away (35 → 33).**
   `weaveDepth` now lives behind a **Nesting** control on Amplitude Spacing (`single` / `nested`),
   and `onePenDown` behind a **Pen down** control on Interlock Weave (one stroke per ruling / one

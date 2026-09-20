@@ -16,6 +16,7 @@
 - Universal noise work must converge on the shared `Noise Rack` model. Do not introduce new algorithm-specific noise stacks once shared primitives exist.
 
 ## Build, Test, and Development Commands
+- Node 20.19 or newer is required for the development and test toolchain.
 - `python -m http.server` runs a simple static server at `http://localhost:8000` for local testing.
 - You can also open `index.html` directly in a browser for a zero-build run.
 - `npm run version:sync` syncs derived version surfaces from `package.json`.
