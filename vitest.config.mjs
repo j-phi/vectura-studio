@@ -30,13 +30,11 @@ export default defineConfig({
     // birpc's RPC times out on (and runs ~1.7x faster), but jsdom inside
     // worker_threads segfaults V8 partway through this suite — a native crash is
     // worse than a slow run.
-    poolOptions: {
-      forks: {
-        // Leave the parent a core: it services every worker's RPC, and if it is
-        // starved on CI's shared runner the acks are what stall.
-        maxForks: CI ? 2 : 4,
-      },
-    },
+    pool: 'forks',
+    // Vitest 4 moved the old `poolOptions.forks.maxForks` limit to the top-level
+    // `maxWorkers` option. Leave the parent a core: it services every worker's
+    // RPC, and if it is starved on CI's shared runner the acks are what stall.
+    maxWorkers: CI ? 2 : 4,
     // NOTE: this block belongs under `test`. It sat as a sibling of it, where vitest
     // never reads it — so `include`/`exclude` silently did nothing and v8 instrumented
     // the WHOLE repo: build scripts, playwright.config.js, and (worst) the minified

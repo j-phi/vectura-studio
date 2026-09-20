@@ -22,6 +22,9 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **DONE — dependency PR consolidation (2026-09-20).** Keep Vitest and
+  `@vitest/coverage-v8` paired at 4.1.8 on the Node 20 toolchain; the separate Dependabot PRs
+  could not install independently, and Vitest 5 requires Node 22.12+.
 - **3D fill audit round 4 — post-merge queue (2026-09-18, integration branch
   `3d-scene/integrate-r4`, v1.4.3, NOT pushed and `main` NOT fast-forwarded pending merge
   review).** Round 3's queue above is superseded — the round-3 items it carried forward are now
