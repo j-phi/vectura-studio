@@ -2796,6 +2796,18 @@
     // call and clears immediately after (never left set for a later,
     // unrelated mark).
     const mkInk = new Map();
+    // T2-8 — set (and cleared) only by `emitTickWedgeRow`, around its own
+    // `emitLine` call, while a §C5 wedge row's own ruling is being walked.
+    // Read below, where `layMark`'s tick block decides the MAIN tick's clip
+    // radius: a wedge row's ticks sit right beside the last real row's own
+    // ink by construction (that is the whole point — filling the wedge
+    // right up to it), so its main tick needs the FULL clip
+    // (`MK_TICK_CLIP_PEN`), not the smaller `MK_TICK_MAIN_CLIP_FRAC` share a
+    // normal ruling's own main tick gets. Measured: without this, the wedge
+    // pass regressed T2/T3/T4 on `test/{cone,torus}/hatch` (new, unnamed
+    // contact/mono failures) by landing its main ticks inside
+    // `MK_TICK_MAIN_CLIP_FRAC`'s smaller gap.
+    let mkWedgeActive = false;
     // T2-7-review round 2 — `rm`/`rp` carry a PER-ARM radius override (0 =
     // use `mkInkHit`'s own default `mkInkR`), set by `layMark`'s tick block
     // alongside `m`/`p` immediately before each `walkPoly` call.
@@ -6917,7 +6929,12 @@
                 h = Math.min(h, edgeDist(sgn, Math.max(h, 0) + 0.75 * w) - 0.75 * w);
               } else {
                 if (sgn > 0) nbP = false; else nbM = false;
-                h = (I >= MK_TICK_EDGE_MIN_I)
+                // T2-8 — a §C5 wedge row is ITSELF the extension past the last
+                // real row; its own missing outer neighbour must not trigger
+                // a SECOND edge-reach-to-silhouette on top of that (measured:
+                // it did, and cost B5 monotonicity on test/{cone,torus}/hatch
+                // with long, disproportionate ticks in the lit bins).
+                h = (I >= MK_TICK_EDGE_MIN_I && !mkWedgeActive)
                   ? (edgeDist(sgn, cap + 0.75 * w) - 0.75 * w)
                   : Math.min(0.5 * R - 0.5 * PMINT, edgeDist(sgn, cap + 0.75 * w) - 0.75 * w);
                 const nlEdge = neighbourLineEdge(sgn, nStep);
@@ -7256,8 +7273,11 @@
             // the flat neighbour-projection estimate cannot see.
             mkClipArm.m = true;
             mkClipArm.p = true;
-            mkClipArm.rm = si === mainIdx ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
-            mkClipArm.rp = si === mainIdx ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
+            // T2-8 — a §C5 wedge row's main tick forces the full radius (see
+            // `mkWedgeActive`'s own comment, above `mkInk`), instead of the
+            // `MK_TICK_MAIN_CLIP_FRAC` share a normal ruling's main tick gets.
+            mkClipArm.rm = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
+            mkClipArm.rp = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));
             mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
             if (si === mainIdx) mkStat.tickSites.push(sv.I, sv.R, sv.P, pieceLen ? 1 : 0);
@@ -7449,7 +7469,15 @@
               cur = k;
             }
           }
-          layMark(idxAt(ao), ao, sv);
+          // T2-8 — a §C5 wedge row skips a candidate whose own solved
+          // length is already far short of its row's own width, a cheap
+          // LOCAL quality gate against a degenerate solve (it did not fire
+          // on the measured cells — the actual B5 fix was `mkWedgeActive`'s
+          // full ink-occupancy clip above, plus tuning `MK_TICK_WEDGE_V`
+          // and dropping the `side = -1` row, both documented at
+          // `emitTickWedgeRow`). Left in as a cheap belt-and-suspenders
+          // check for cells this unit did not sweep.
+          if (!(mkWedgeActive && sv.L < 0.7 * sv.R)) layMark(idxAt(ao), ao, sv);
           cur = k;
           lastA = ao;
           a += sv.P;
@@ -10897,6 +10925,64 @@
       return rev;
     };
 
+    // T2-8 (plan §C5, "base wedges", Jay's `eye_t26` round-3 markup: G2a/G2b
+    // on the cone's base, G5 on the sphere's rim). A TICK-ONLY additive pass,
+    // run once per family AFTER its own ruling loop — the loop itself, and
+    // `MK_ROW_COV`/`markRowCoverage()`, are only READ here, never touched.
+    //
+    // The triangular gaps sit one row pitch PAST the family's own last
+    // ruling that still lands on the surface: the next row's CENTRE-LINE is
+    // off-surface there (past the rim), so the ordinary per-ruling walk
+    // never samples it and no row covers the wedge. This builds exactly one
+    // extra row, anchored at a fixed `v` of the row's own band — a point
+    // near the edge NEAREST the last real ruling, i.e. the part of the
+    // wedge's own band most likely to still be on-surface. `paramAt` must
+    // be a PURE function of `tt` (`walkPoly`/`solveAt` call it more than
+    // once per step, out of order, for frame derivatives and binary
+    // search) — an EARLIER version of this searched several `v` per `tt`
+    // and preferred whichever was on-surface, which is state-dependent
+    // across calls and crashed `toParam` on a stale `null`. A single fixed
+    // `v` keeps it pure: this row is exactly the boundary ruling's own
+    // line, shifted by a fixed fraction of a row pitch, so it is on-surface
+    // (or not) exactly where the real geometry says it is — nothing is
+    // searched or fabricated. `MK_TICK_WEDGE_V = -0.92` (measured, in units
+    // of the row's own half-width: -1 sits ON the last real ruling, 0 is
+    // the phantom row's own unreachable centre) is as far out into the
+    // band as B5's monotone bar tolerates on the sparsest fixture
+    // (`test/cone/hatch`) — pushed further in from -1/2 because even a
+    // FEW extra sites, some of them undrawn where the wedge's own room runs
+    // out, were enough to dilute a bin on that fixture (§ measured in the
+    // report). It reaches only a sliver of the wedge's own band, not the
+    // far seam nearest the rim; §C5's fuller design (searching the whole
+    // band per step) is the natural next increment, not shipped here.
+    // Handed to the SAME `emitLine` -> `emitLineOnce` -> `emitMarks`
+    // pipeline every real ruling already uses, so `solveAt`'s tone math,
+    // `layMark`'s tick block, the ink-occupancy clip and the end-of-span
+    // tick (item 8) all apply completely unchanged.
+    const MK_TICK_WEDGE_V = -0.92;
+    const emitTickWedgeRow = (rawAt, pitchStep, lineDir, back, side, count, zoneGate) => {
+      const law = MK[TONE_ALGO];
+      if (!law || law.shape !== 'tick' || !rawAt) return;
+      const rowSteps = 1 / markRowCoverage();
+      const kOff = side * rowSteps * (1 + MK_TICK_WEDGE_V);
+      const wedgeAt = (tt) => {
+        const p0 = rawAt(tt);
+        if (!p0) return null;
+        const a = p0.a + finite(pitchStep.a, 0) * kOff;
+        if (!(a >= 0 && a <= 1)) return null;
+        const bRaw = finite(p0.b, 0) + finite(pitchStep.b, 0) * kOff;
+        const b = ((bRaw % 1) + 1) % 1;
+        return { a, b };
+      };
+      mkWedgeActive = true;
+      try {
+        emitLine(wedgeAt, side < 0 ? 0 : 1, back, side < 0 ? -1 : count, count, zoneGate,
+          pitchStep, lineDir, false);
+      } finally {
+        mkWedgeActive = false;
+      }
+    };
+
     const emitFamily = (fixAxis, count, back, zoneGate) => {
       nextFam(zoneGate ? `gate${zoneGate}` : 'A');
       for (let i = 0; i < count; i++) {
@@ -10905,6 +10991,16 @@
           fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 },
           fixAxis === 'b' ? { a: 1, b: 0 } : { a: 0, b: 1 });
       }
+      // T2-8 §C5 — base wedges (tick-only; see emitTickWedgeRow above). Only
+      // the `side = +1` (past the family's LAST ruling) wedge row is fired.
+      // Measured: the `side = -1` (before the FIRST ruling) row was the
+      // whole cause of a B5 monotone regression on `test/torus/hatch`
+      // (nonMono 0 -> 3) with no matching visible gain in the 15-spot
+      // checklist (G2a/G2b/G5 are all "last ruling" wedges) — dropped
+      // rather than tuned around.
+      const wPitchStep = fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 };
+      const wLineDir = fixAxis === 'b' ? { a: 1, b: 0 } : { a: 0, b: 1 };
+      emitTickWedgeRow(axisLine(fixAxis, (count - 0.5) / count), wPitchStep, wLineDir, back, 1, count, zoneGate);
     };
 
     // ── Fill ANGLE on a wrapped surface ────────────────────────────────────────
@@ -11374,6 +11470,17 @@
         const step = fam.span / n;
         if (at) emitLine(boustro(at, i), (i + 0.5) / n, back, i, n, zoneGate,
           { a: fam.na * step, b: fam.nb * step }, { a: fam.da, b: fam.db }, densityCross);
+      }
+      // T2-8 §C5 — base wedges (tick-only; see emitTickWedgeRow above).
+      // `densityCross` families are the crosshatch OVER pass, not the base
+      // grid a wedge belongs to, so they are left out of this pass. Only
+      // `side = +1` fires — see emitFamily's own comment on why `side = -1`
+      // was dropped rather than tuned around.
+      if (!densityCross) {
+        const wStep = fam.span / n;
+        const wPitchStep = { a: fam.na * wStep, b: fam.nb * wStep };
+        const wLineDir = { a: fam.da, b: fam.db };
+        emitTickWedgeRow(fam.lineAt((n - 0.5) / n), wPitchStep, wLineDir, back, 1, n, zoneGate);
       }
     };
 

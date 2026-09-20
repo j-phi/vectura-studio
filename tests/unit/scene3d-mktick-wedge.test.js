@@ -413,12 +413,19 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // own two arms (previously edge-extension/chain arms only), the plan's
     // own named fix candidate for the foreshortened-cell contact residual
     // (`T2-7-plan.md` §3.3 negative 3) — see that constant's own comment.
+    // T2-8 — RE-PINNED, 2 of 12: `test|torus/contour` and `test|cone/hatch`.
+    // These are the ONLY two of the six cells x both rigs where the new
+    // `emitTickWedgeRow` pass (§C5 base wedges, `T2-8-impl.md`) actually
+    // finds new on-surface room to draw (measured: `create` rig and the
+    // other four `test`-rig cells are BYTE-IDENTICAL — the wedge pass finds
+    // zero new sites there, see that report's own §2 for why). Every other
+    // entry below is untouched.
     const EXPECTED_SIGNATURE = {
       'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
       'test|sphere/contour': '6a5a1c0d5857c1db44bd3a5bb26c90ef5804e26dcbc3c4ec19b2429545123694',
       'test|torus/hatch': '71328eb4d9e31e35a2a6de3b12042d7c6ca672636b1ca7eeaa15a2d9b9491374',
-      'test|torus/contour': '437e8087475ffaa9ed8e8edb474cde4e91ce45a33b8fcd82c3ee46f906f75605',
-      'test|cone/hatch': 'dd3ff1ceeeeaa3f55f52bac07e3f3522829b0e29d089da95a4e0e2df6ce62980',
+      'test|torus/contour': 'fd5fa424967a558b111440f1618570b59aa97a2c32ac4186961eca30cc0c3c15',
+      'test|cone/hatch': 'd71d85d76e66384c8d80d0ce732615492dd47021cd08e8fa975d62c48e04a6b5',
       'test|cone/contour': 'e75dac4c2988682631c120931ab9d17e2fe72c61ca58aec247ca81132bcc54b9',
       'create|sphere/hatch': '9f4cd1f429f52a1587669b59f70b86edf8b093ac37ec6e19fb2786c0dca6bfd6',
       'create|sphere/contour': 'd0e69590983285c7c623509f62579c28fb52a58790ee4362f6a7d4d9386f6c65',

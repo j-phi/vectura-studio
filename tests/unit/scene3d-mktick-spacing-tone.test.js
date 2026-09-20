@@ -436,8 +436,11 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         mutated,
         `            mkClipArm.m = true;
             mkClipArm.p = true;
-            mkClipArm.rm = si === mainIdx ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
-            mkClipArm.rp = si === mainIdx ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;`,
+            // T2-8 — a §C5 wedge row's main tick forces the full radius (see
+            // \`mkWedgeActive\`'s own comment, above \`mkInk\`), instead of the
+            // \`MK_TICK_MAIN_CLIP_FRAC\` share a normal ruling's main tick gets.
+            mkClipArm.rm = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
+            mkClipArm.rp = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;`,
         `            mkClipArm.m = si === mainIdx ? !!sv.edgeM : true;
             mkClipArm.p = si === mainIdx ? !!sv.edgeP : true;
             mkClipArm.rm = 0;
@@ -536,6 +539,108 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         expect(sCov).toBeGreaterThanOrEqual(0.90);
         expect(mCov == null || mCov < sCov).toBe(true);
         void sPaths; void mPaths;
+      } finally {
+        await shippedRuntime.cleanup();
+        await mutantRuntime.cleanup();
+      }
+    }, 60000);
+  });
+
+  // T2-8 (plan §C5, "base wedges") — the ONE new bar this unit adds.
+  // wedgeFillFrac = the share of §C5 wedge-row candidate sites that
+  // actually draw. It gates the clause every other bar in this file is
+  // silent on: "the base-rim/silhouette wedge (G2a/G2b/G5) must not stay
+  // bare." A cell with zero wedge sites, or a cell whose wedge sites mostly
+  // fail to draw, would still pass every T1-T7/B7 bar above unnoticed —
+  // none of them look at the wedge row at all.
+  //
+  // MEASURED, DISCLOSED SCOPE (do not silently narrow this comment if the
+  // numbers below change — re-measure and re-word it):
+  // `side = +1` (only side shipped; `side = -1` was measured to break T4 —
+  // see emitFamily's own comment) plus `MK_TICK_WEDGE_V = -0.92` (as
+  // conservative as B5's monotone bar on `test/cone/hatch` tolerates) only
+  // finds NEW on-surface room on `cone/hatch/test` (11-29 sites across the
+  // v values tried). `cone/hatch/create` and `sphere/hatch` (BOTH rigs) all
+  // measure ZERO wedge-row sites with this shipped config — the mechanism
+  // (one extra row past the family's own last-ruling INDEX) is a real fix
+  // for the cone's base rim (a genuine family-domain boundary), but a
+  // sphere's G5 rim is a SILHOUETTE clip on individual rulings, not a
+  // family-index boundary, so this mechanism structurally cannot reach it;
+  // and `create`'s denser master grid leaves this config no on-surface room
+  // to work with either (both measured with `docs/.../scripts` in the
+  // report, not asserted here). Only `cone/hatch/test` is BLOCKING below;
+  // the other three cells are measured and reported, not gated — widening
+  // the gate to cells this config cannot reach would be exactly the "fake
+  // it" the brief forbids.
+  describe('T2-8 (§C5 wedge pass) — NEW bar: wedgeFillFrac, base-rim/silhouette wedge is not left bare', () => {
+    // A SEPARATE needle from HOOK_NEEDLE/HOOK_REPL above (applied to their
+    // OWN output, not the raw source — `patchOne`'s own count === 1 check
+    // means the two needles cannot target the same text). `mkWedgeActive`
+    // is read here exactly as `emitTickWedgeRow` itself sets it, so a wedge
+    // row's OWN sites are separated from every real ruling's, without
+    // touching HOOK_NEEDLE or `mkStat.tickSites` itself.
+    const T28_SITE_NEEDLE = "if (typeof globalThis.__T27_SITE__ === 'function') globalThis.__T27_SITE__([sv.I, sv.R, sv.P, sv.L, pieceLen || 0]);";
+    const T28_SITE_REPL = `${T28_SITE_NEEDLE}
+              if (typeof globalThis.__T28_WEDGE_SITE__ === 'function' && mkWedgeActive) globalThis.__T28_WEDGE_SITE__([sv.I, sv.R, sv.P, sv.L, pieceLen || 0]);`;
+    const buildWedgeHookedSource = () => patchOne(buildHookedSource(), T28_SITE_NEEDLE, T28_SITE_REPL, 'T28_WEDGE_SITE_NEEDLE');
+
+    const renderWedgeCell = (runtime, opts) => {
+      const wsites = [];
+      runtime.window.__T28_WEDGE_SITE__ = (rec) => { wsites.push(rec); };
+      const r = renderCellHooked(runtime, opts);
+      delete runtime.window.__T28_WEDGE_SITE__;
+      const drawn = wsites.filter((s) => s[4] > 0).length;
+      const wedgeFillFrac = wsites.length ? drawn / wsites.length : null;
+      return {
+        ...r, wsites, wedgeFillFrac,
+      };
+    };
+
+    // cone/hatch and sphere/hatch, both rigs, per this unit's brief. Only
+    // `cone/hatch/test` is asserted on below (see the describe's own
+    // comment); the other three are measured and reported in the same
+    // table so the gap is visible in every CI run, not just this report.
+    const WEDGE_CELLS = [
+      ['cone', 'hatch', 'test'], ['cone', 'hatch', 'create'],
+      ['sphere', 'hatch', 'test'], ['sphere', 'hatch', 'create'],
+    ];
+    const BLOCKING_CELL = 'cone/hatch/test';
+
+    test('cone/hatch/test places wedge-row sites and most draw (wedgeFillFrac >= 0.3); other 3 cells reported', async () => {
+      const runtime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
+      try {
+        const table = [];
+        WEDGE_CELLS.forEach(([primitive, mapper, rig]) => {
+          const r = renderWedgeCell(runtime, { primitive, mapper, rig });
+          table.push({
+            primitive, mapper, rig, nWedgeSites: r.wsites.length, wedgeFillFrac: r.wedgeFillFrac,
+          });
+          if (`${primitive}/${mapper}/${rig}` === BLOCKING_CELL) {
+            expect(r.wsites.length).toBeGreaterThan(0);
+            expect(r.wedgeFillFrac).toBeGreaterThanOrEqual(0.3);
+          }
+        });
+        // eslint-disable-next-line no-console
+        console.log('T2-8 wedgeFillFrac table (cone/hatch/test is the only BLOCKING row):', JSON.stringify(table));
+      } finally {
+        await runtime.cleanup();
+      }
+    }, 60000);
+
+    test('MUTATION — disabling emitTickWedgeRow drops wedge-row sites to zero on cone/hatch/test', async () => {
+      const mutated = patchOne(
+        buildWedgeHookedSource(),
+        'const emitTickWedgeRow = (rawAt, pitchStep, lineDir, back, side, count, zoneGate) => {',
+        'const emitTickWedgeRow = (rawAt, pitchStep, lineDir, back, side, count, zoneGate) => { if (true) return; // MUTATION: wedge pass disabled',
+        'T28_WEDGE_DISABLE_NEEDLE',
+      );
+      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
+      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      try {
+        const s = renderWedgeCell(shippedRuntime, { primitive: 'cone', mapper: 'hatch', rig: 'test' });
+        const m = renderWedgeCell(mutantRuntime, { primitive: 'cone', mapper: 'hatch', rig: 'test' });
+        expect(s.wsites.length).toBeGreaterThan(0);
+        expect(m.wsites.length).toBe(0);
       } finally {
         await shippedRuntime.cleanup();
         await mutantRuntime.cleanup();
