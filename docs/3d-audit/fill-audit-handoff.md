@@ -210,6 +210,62 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    `npm run test:ci`, reconcile intentionally-red tests, bump version + `version:sync`, CHANGELOG/plans/
    README, commit, STOP.
 
+## ROUND 5 PAUSE POINT (2026-09-20) — READ THIS FIRST
+
+**Jay paused round 5 with the token budget nearly exhausted. Nothing is mid-flight; every agent finished.**
+**`origin/main` = `e2607b16`.** Two lane units are ACCEPTED and committed but **NOT merged**; one is PARKED.
+
+### (a) Where things are
+
+| thing | state |
+|---|---|
+| `main` (local == `origin/main`) | **`e2607b16`** — carries **CI-5** (`e772cd61`) and **CI-6** (`f4709975`), plus two upstream PRs merged in: dependabot `#62` and the **Vitest 4 upgrade `#78`** (`4c2963c7`). ⚠ `package-lock.json` has an uncommitted 30-line dedup from a local `npm install` after the Vitest 4 merge — harmless, commit or discard. |
+| GitHub Actions "Tests" | Was RED on main since ≥ `b43fa4e3`. **CI-5 fixed unit/integration/e2e/visual/perf** (run `35478263788`: only `coverage` failed). **CI-6 fixes the coverage job.** Verification run for `e2607b16` = **`35515893834`, still in flight at pause — CHECK IT FIRST** (`gh run view 35515893834`). |
+| lane `3d-scene/fill-audit-a5` | `b1ab9ebd` — **T3c-onset, VERIFIED** (tests only; onset cliff pinned at d=32, not 35). Ready to merge. |
+| lane `3d-scene/fill-audit-b5` | `3c312359` — **W-07b-2 `5eb81cfb` (ACCEPT-WITH-FOLLOWUPS)** + **T2-7 `1d7a4182` (ACCEPT-WITH-FOLLOWUPS)** + **T2-8 `3c312359` (MEASURED, not visible)**. Ready to merge; T2-8's pass is inert on the create rig (see (c)). |
+| worktrees | `ci-green-5`, `ci-green-6` are spent (merged). `fill-audit-a5`, `fill-audit-b5` hold the unmerged work. Dev server on **8460** serves main's gallery (leave it). |
+
+### (b) What round 5 landed
+
+- **CI-5** (merged, pushed): `fetch-depth: 0` on the unit+coverage jobs — 8 test files read ancestor shas via `git show`, unreachable in CI's shallow clone. Plus a scratch-dir removal, a sweep timeout 500→900 s, and one genuine macOS-vs-Linux value pinned to both measurements.
+- **CI-6** (merged, pushed): the mkTick roster sweep split into one test per mapper (same population, setup hoisted) so coverage instrumentation fits the budget; `release.yml` got the same `fetch-depth: 0`.
+- **T3c-onset** (lane, VERIFIED): the true onset cliff is d=32.
+- **W-07b → REJECTED → W-07b-2 → ACCEPTED**: `deepFillTSP`'s shadow was 29–51 % of Ladder's ink. The first fix bought ink with amplitude and read as a self-crossing scribble (4–6× crossings) — reverted. W-07b-2 rides Ladder's own rulings with a corridor-bounded triangle wave: **0 crossings/mm² on 24/24 cells**, clause A' asserted + mutation, bit-identical to Ladder outside the ramp.
+- **T2-7** (lane, ACCEPTED after one REJECT for bar-widening): Jay's `eye_t26` mechanism — contact-free spacing-tone tick field. **O5 retired, tone gated on SP5 ≥ 2.30**; wedge25 re-derived monotone. T2 11/12, T3 11/12, T4 10/12 with two NAMED, gated exceptions. **Jay saw the pictures and accepted the direction.**
+- **T2-4** folded into T2-7; **T2-3e** stays filed; **W-36f closed MEASURED** by decision 11-amended = A.
+
+### (c) ⛔ PARKED BY JAY (2026-09-20): T2-8 — fill the dark non-highlight areas
+
+**Jay marked the T2-7 cone and sphere in green: the two triangular WEDGES at the cone's base, the thin
+slivers along the silhouette where band ends stop short of the outline, and the sphere's bottom-right rim
+triangle. His words: "no need to match my lines, just fill in the areas with green … We need to fill these
+but not today."**
+
+**T2-8 (`3c312359`) is groundwork, NOT a visible fix.** The §C5 wedge pass (`emitTickWedgeRow`) is
+bar-safe but draws **zero new geometry on the create rig** — the rig Jay's pictures come from. Two
+structural causes, both measured:
+1. **Cone:** the create rig's denser master grid leaves no room for a monotone-safe wedge row. A looser
+   setting DOES fill it visibly (12 sites, confirmed) but reopens the B5 monotone regression. **That
+   trade-off is Jay's call and is the first question of the next round.**
+2. **Sphere (G5):** the rim triangle is a per-ruling SILHOUETTE CLIP, not a family-domain boundary — this
+   mechanism structurally cannot reach it in any configuration tested. **A different mechanism is needed.**
+
+Also still open from T2-7: G1 (partial), G3 (a short horizontal bar below the cone apex), G6 (highlight,
+tone-limited), and the two named T4 exceptions.
+
+### (d) Owed by the NEXT merge (neither is a unit)
+
+**Merge checklist item 23** (the `git show HEAD:` sweep, hunting BROKEN and always-passing instances alike
+— note CI-5 has now catalogued the 8 history-reading files) and **item 30** (ground-plane inclusion across
+every ink number). Plus **W-07b-2's follow-up**: the full 1504-cell byte-identity sweep, which its reviewer
+could only run at 72 cells under machine contention.
+
+### (e) Resume prompt for the next orchestrator (paste verbatim)
+
+> Resume the 3D fill audit at the ROUND 5 PAUSE POINT. Read `docs/3d-audit/fill-audit-handoff.md` (this block) first, then `docs/3d-audit/lane-reports/SESSION-SUMMARY.md` (**§2d** what round 5 landed, **§3** the queue, **§4** the decisions — Jay's `eye_t26`, 11-amended=A and the three T2-7 rulings are transcribed there and BIND), `docs/3d-audit/lane-reports/LEDGER.md` (Round 5 + MERGE CHECKLIST, items 23 and 30 still owed), `docs/3d-audit/lane-reports/AGENT-PROTOCOL.md`, and **`ROUND3-RESUME-BRIEFS.md` §0 and §0b — paste §0 verbatim into every brief**. **FIRST ACTION: `gh run view 35515893834` — the Actions "Tests" run for `main` `e2607b16`, which was still in flight at the pause. If `coverage` (or anything else) is red, fixing GitHub is priority 1; CI-5/CI-6 already fixed unit/integration/e2e/visual/perf and the coverage-job timeout.** **THEN: merge the two ACCEPTED lanes into `main`** — `3d-scene/fill-audit-a5` (`b1ab9ebd`, T3c-onset, tests only) and `3d-scene/fill-audit-b5` (`3c312359`, W-07b-2 + T2-7 + T2-8) — via an integration worktree, running the MERGE CHECKLIST including owed items 23 and 30, re-deriving any golden the merge moves rather than taking a side, then `npm run test:ci` on the merged tree; **push only after test:ci is verified green on main (Jay's standing answer push = A)**. ⚠ **Note the repo moved to Vitest 4 (PR #78) and Node 20.19+; run `npm install` before testing.** **THEN put Jay's PARKED T2-8 question to him before building anything**: filling the cone's base wedges on the create rig costs the B5 monotone bar (12 sites confirmed visible at the looser setting), and the sphere's rim triangle needs a different mechanism entirely (silhouette clip, not a family boundary) — he may want the trade, a new mechanism, or a different picture. **Same roles and models under Jay's scaled-down regime: one Opus secretary, Sonnet implementers, Sonnet adversarial reviewers, Opus planners ONLY after a REJECT or an unknown mechanism, read-only scouts stay, tests-only units get a light VERIFY pass, secretary flags only for `src/` units capped at six. Jay's EYE is the acceptance test for any mkTick picture — show him crops before merging, and the orchestrator looks at every picture first.** **Kill stale dev servers on lane ports; main's gallery server on 8460 is live and should stay. Run every vitest file in the FOREGROUND with `timeout: 600000`.** Commit per unit in lane worktrees; never push a lane branch. ⚠ **Token economy: Jay is near his weekly cap — prefer one implementer at a time, skip ceremony that a rule does not require, and do not run the full suite except before a merge.**
+
+---
+
 ## ROUND 4 PAUSE POINT (2026-09-18) — READ THIS FIRST
 
 **Jay paused to clear context AFTER the round-4 merge landed. Round 4's work is COMPLETE, REVIEWED AND
