@@ -403,18 +403,28 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // (the new `disableStagger` needle) confirms this is the mechanism, not
     // drift, and the O5/wedge-monotone describe blocks below independently
     // corroborate the same render.
+    // T2-7-review round 2 — RE-PINNED, 10 of 12 (`create/cone/contour` and
+    // `test/cone/contour` are BYTE-IDENTICAL, unedited below: the main-tick
+    // ink-occupancy clip added this round rarely trips on the cone's
+    // contour rulings at this fixture — consistent with §1's own finding
+    // that the clip's effect concentrates on the hatch mapper and the
+    // torus/sphere primitives). Every other cell moves: `MK_TICK_MAIN_
+    // CLIP_FRAC` (0.6) now arms the ink-occupancy clip on the MAIN tick's
+    // own two arms (previously edge-extension/chain arms only), the plan's
+    // own named fix candidate for the foreshortened-cell contact residual
+    // (`T2-7-plan.md` §3.3 negative 3) — see that constant's own comment.
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': 'f58ce6b18f8aa95ca9ea1d47dd785a422647527f05073020aff88a8daee4e816',
-      'test|sphere/contour': '9c09fec0c2ad83ca4a7084ee69626ed61e34a86f57678e9866d92a5fc6110bf8',
-      'test|torus/hatch': '7cb12a26a1d408adba443d38484ffd61177d1afe269a59419be71b0b0d88e474',
-      'test|torus/contour': 'de136f5ae68041aa8269463266f14d24de83d87606b033e8d13bf82fb8c27c8c',
-      'test|cone/hatch': 'b57946e986827aac8d1556a636e0ec03a94d53e4885afa5fbddbefd0aa2f0a9c',
+      'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
+      'test|sphere/contour': '6a5a1c0d5857c1db44bd3a5bb26c90ef5804e26dcbc3c4ec19b2429545123694',
+      'test|torus/hatch': '71328eb4d9e31e35a2a6de3b12042d7c6ca672636b1ca7eeaa15a2d9b9491374',
+      'test|torus/contour': '437e8087475ffaa9ed8e8edb474cde4e91ce45a33b8fcd82c3ee46f906f75605',
+      'test|cone/hatch': 'dd3ff1ceeeeaa3f55f52bac07e3f3522829b0e29d089da95a4e0e2df6ce62980',
       'test|cone/contour': 'e75dac4c2988682631c120931ab9d17e2fe72c61ca58aec247ca81132bcc54b9',
-      'create|sphere/hatch': '33d9cf5a97302c25f03a3a73216c41db691895bc704beecca147813f72590e41',
-      'create|sphere/contour': '1f12d99aa68aaa335d2da54aee9841f36a7a1a241f1749e919d15e4423039240',
-      'create|torus/hatch': 'c0cf0bffbbe5f6a487714cabcbada0c51a7278815f1c1c201d49cf2790a31f0d',
-      'create|torus/contour': 'daff04117a6f39f6dc673c40f7e36c76f2948b7c36949e68b5fb14a730ce743a',
-      'create|cone/hatch': '24c96bab7c0df0fc258ad43f28d266f1ddbfc1ded6d089c5b27cc68e046f71a5',
+      'create|sphere/hatch': '9f4cd1f429f52a1587669b59f70b86edf8b093ac37ec6e19fb2786c0dca6bfd6',
+      'create|sphere/contour': 'd0e69590983285c7c623509f62579c28fb52a58790ee4362f6a7d4d9386f6c65',
+      'create|torus/hatch': '5bbcd92a3428377208aadcaf7299fcd37ed694be36723f133d64f3702b3bb1a2',
+      'create|torus/contour': 'a896dddf93b28bd164d24856e2a16841a94f839feac7c90a49ebb4882d1475e1',
+      'create|cone/hatch': 'ff1945b88b0fb28cae12b5151c1dec539d209b663ec6b6d1e1db87610dffbab4',
       'create|cone/contour': 'd9fb1c7acc9a9461503f958100c085b375e7937d899c725711496754ef0e7958',
     };
 

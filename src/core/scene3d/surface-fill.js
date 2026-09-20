@@ -2663,6 +2663,29 @@
     // is its ceiling, `MK_TICK_CLIP_FLOOR_PEN` (0.34) its floor.
     const MK_TICK_CLIP_PEN = 1.3;
     const MK_TICK_CLIP_FLOOR_PEN = 0.34;
+    // T2-7-review round 2 (Jay's `eye_t26` ruling, REJECT — "attempt the
+    // plan's own named fix candidate for the foreshortened cells before
+    // touching any bar", `T2-7-plan.md` §3.3 negative 3: "measure PMIN_T in
+    // SCREEN mm... or reject via the existing `mkMidBuckets` grid"). The
+    // real-neighbour extent solve sizes a MAIN tick's own seam gap from a
+    // FLAT local-frame projection of the neighbour SAMPLE's position
+    // (`half()`, `solveAt`); on a foreshortened patch (measured: the torus's
+    // own inner flank) the WALKED (curved) tick can land closer to that
+    // neighbour's own walked ink than the flat estimate assumed, because the
+    // flat projection and the true curved surface distance diverge exactly
+    // where curvature is strongest. The fix is the SAME ink-occupancy grid
+    // already built for edge-extension/chain arms (`mkInk`/`mkInkHit`),
+    // applied to the MAIN tick's own two arms too — but at a SMALLER radius
+    // than the edge-arm ceiling (`MK_TICK_CLIP_PEN`): measured (four radius
+    // fractions swept, `T2-7-impl-2.md` §1), the full edge-arm radius costs
+    // B5 monotonicity on 2-3 additional cells (9/12 -> 7/12 or 8/12) by
+    // over-truncating ordinary, non-foreshortened main ticks; 0.6x is the
+    // measured point that clears B1 (9/12 -> 11/12) and B3 (10/12 -> 11/12)
+    // with B5 UNCHANGED at 9/12 (same count, though not byte-identical cells
+    // — see the impl report). Named, not tuned per-cell: every main tick's
+    // own two arms get this radius, on every cell, applied only against a
+    // DIFFERENT row's ink exactly like the edge-arm clip.
+    const MK_TICK_MAIN_CLIP_FRAC = 0.6;
     // `MK_TICK_PLOT_FLOOR` — T2-4's own d=220 regime, folded in here as the
     // tick's minimum SIZE (`solveAt`): `L >= min(PLOT_FLOOR*MIN_MARK_MM,
     // 0.98*band)`. The floor WINS over the seam gap — the only regime where
@@ -2773,7 +2796,12 @@
     // call and clears immediately after (never left set for a later,
     // unrelated mark).
     const mkInk = new Map();
-    const mkClipArm = { m: false, p: false };
+    // T2-7-review round 2 — `rm`/`rp` carry a PER-ARM radius override (0 =
+    // use `mkInkHit`'s own default `mkInkR`), set by `layMark`'s tick block
+    // alongside `m`/`p` immediately before each `walkPoly` call.
+    const mkClipArm = {
+      m: false, p: false, rm: 0, rp: 0,
+    };
 
     // ── THE TWELVE, AS DATA ───────────────────────────────────────────────────
     // `chan` is the TONE CHANNEL and it is the axis that separates these laws
@@ -6375,14 +6403,21 @@
         MK_TICK_CLIP_PEN * w,
       );
       const mkInkKey = (x, y) => `${wantFront ? 1 : 0}:${Math.floor(x / mkInkR)},${Math.floor(y / mkInkR)}`;
-      const mkInkHit = (p) => {
+      // T2-7-review round 2 (Jay's `eye_t26` ruling, review REJECT on T2/T4 —
+      // "attempt the plan's own named fix candidate before touching any
+      // bar"). `rOverride` lets a caller clip at a SMALLER radius than the
+      // edge-arm ceiling (`mkInkR`) — see `MK_TICK_MAIN_CLIP_FRAC` below for
+      // why the MAIN tick's own two arms need one at all, and why it must be
+      // smaller than the edge-arm radius.
+      const mkInkHit = (p, rOverride) => {
+        const rr = rOverride || mkInkR;
         const cx = Math.floor(p.x / mkInkR); const cy = Math.floor(p.y / mkInkR);
         for (let dx = -1; dx <= 1; dx += 1) {
           for (let dy = -1; dy <= 1; dy += 1) {
             const bucket = mkInk.get(`${wantFront ? 1 : 0}:${cx + dx},${cy + dy}`);
             if (!bucket) continue;
             for (let i = 0; i < bucket.length; i += 1) {
-              if (bucket[i].li !== lineIndex && Math.hypot(bucket[i].x - p.x, bucket[i].y - p.y) < mkInkR) return true;
+              if (bucket[i].li !== lineIndex && Math.hypot(bucket[i].x - p.x, bucket[i].y - p.y) < rr) return true;
             }
           }
         }
@@ -6449,7 +6484,7 @@
         // (the seed point itself excluded) plus the frame/point the walk
         // actually ended at, so the caller can chain a further walk from
         // there.
-        const walkFrom = (seedFr, seedPt, seedUV, target, stepCapMM, clipOn) => {
+        const walkFrom = (seedFr, seedPt, seedUV, target, stepCapMM, clipOn, clipR) => {
           const edgeLen = Math.hypot(target.u - seedUV.u, target.v - seedUV.v);
           if (!(edgeLen > 1e-9)) return { pts: [], askLen: 0, truncated: false, endFr: seedFr, endPt: seedPt };
           let fr = seedFr;
@@ -6491,13 +6526,26 @@
               break;
             }
             // T2-7 — the ink-occupancy clip (tick-only, `clipOn`, set by
-            // `layMark`'s tick block only on the edge-extension arm and
-            // chain ticks; see `MK_TICK_CLIP_PEN`). A step that lands within
-            // the clip radius of a DIFFERENT row's already-placed ink stops
-            // the arm here — this is what keeps a lit-edge reach from
+            // `layMark`'s tick block on the edge-extension arm, chain ticks,
+            // and (T2-7-review round 2) the MAIN tick's own two arms; see
+            // `MK_TICK_CLIP_PEN`/`MK_TICK_MAIN_CLIP_FRAC`). A step that lands
+            // within the clip radius of a DIFFERENT row's already-placed ink
+            // stops the arm here — this is what keeps a lit-edge reach from
             // fusing into a neighbouring row's own ticks near a silhouette
-            // (R1/R3/R4, `T2-7-plan.md` §B4.1).
-            if (stepCapMM && clipOn && mkInkHit(nextPt)) { truncated = true; break; }
+            // (R1/R3/R4, `T2-7-plan.md` §B4.1), and (round 2) what closes the
+            // foreshortened-cell contact residual the flat neighbour-distance
+            // estimate cannot see (§3.3 negative 3). `s > 1` for the MAIN
+            // tick's own smaller-radius clip (`clipR` truthy — edge/chain
+            // arms pass no override and are unaffected, checked from their
+            // own first step as before): measured, `crosshatch` mappers cross
+            // two tick FAMILIES at a shared hub, and clipping the very FIRST
+            // step wholesale-refuses a legitimate crossing tick whose hub sits
+            // near the OTHER family's own ink (a real regression found on
+            // `torus/crosshatch`, `T2-7-impl-2.md` §3) — letting the hub's own
+            // immediate neighbourhood through, and only clipping a main arm
+            // that WALKS INTO nearby ink partway along, keeps the contact fix
+            // without refusing ordinary crossing ticks at their own hub.
+            if (stepCapMM && clipOn && (s > 1 || !clipR) && mkInkHit(nextPt, clipR)) { truncated = true; break; }
             if (stepCapMM) {
               const sx = nextPt.x - curPt.x; const sy = nextPt.y - curPt.y;
               const sl = Math.hypot(sx, sy);
@@ -6534,12 +6582,12 @@
         const fr0Pt = { x: fr0.smp.x, y: fr0.smp.y, z: fr0.smp.z };
         const toHub = walkFrom(fr0, fr0Pt, { u: 0, v: 0 }, hubUV, stepCapMM);
         const hubFr = toHub.endFr; const hubPt = toHub.endPt;
-        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v }, stepCapMM, mkClipArm.m);
+        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v }, stepCapMM, mkClipArm.m, mkClipArm.rm);
         const pts = w0.pts.slice().reverse();
         pts.push(hubPt);
         let askLen = w0.askLen; let truncated = toHub.truncated || w0.truncated;
         if (poly.length > 1) {
-          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v }, stepCapMM, mkClipArm.p);
+          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v }, stepCapMM, mkClipArm.p, mkClipArm.rp);
           pts.push(...w1.pts);
           askLen += w1.askLen;
           truncated = truncated || w1.truncated;
@@ -7197,16 +7245,21 @@
           }
           sv.segs.forEach((seg, si) => {
             const poly = [[0, seg[0]], [0, seg[1]]];
-            // The ink-occupancy clip (`MK_TICK_CLIP_PEN`) is armed on the
-            // main tick's own edge-extension arm(s) (`sv.edgeP`/`sv.edgeM`,
-            // set only where that side reached toward a silhouette/rim) and
-            // unconditionally on every satellite/chain piece, since those
-            // exist specifically to fill the seam/limb reach where an
-            // occupancy check matters.
-            mkClipArm.m = si === mainIdx ? !!sv.edgeM : true;
-            mkClipArm.p = si === mainIdx ? !!sv.edgeP : true;
+            // The ink-occupancy clip (`MK_TICK_CLIP_PEN`) is armed on every
+            // satellite/chain piece unconditionally (they exist specifically
+            // to fill the seam/limb reach where an occupancy check matters,
+            // full radius). T2-7-review round 2: it is now ALSO armed on the
+            // MAIN tick's own two arms, on every side (not only the
+            // edge-extension side) — at the smaller `MK_TICK_MAIN_CLIP_FRAC`
+            // radius (see that constant's own comment for the measured
+            // trade). This is what closes the foreshortened-cell contact gap
+            // the flat neighbour-projection estimate cannot see.
+            mkClipArm.m = true;
+            mkClipArm.p = true;
+            mkClipArm.rm = si === mainIdx ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
+            mkClipArm.rp = si === mainIdx ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));
-            mkClipArm.m = false; mkClipArm.p = false;
+            mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
             if (si === mainIdx) mkStat.tickSites.push(sv.I, sv.R, sv.P, pieceLen ? 1 : 0);
             if (pieceLen) {
               const third = Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3));

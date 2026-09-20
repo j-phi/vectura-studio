@@ -231,7 +231,7 @@ describe('Scene3D.SurfaceFill — mkTick runaway-stroke guard (T2-3c, per-cell, 
 
     test('walkFrom/walkPoly both accept the new stepCapMM parameter', () => {
       const src = loadHeadSource();
-      expect(src).toMatch(/const walkFrom = \(seedFr, seedPt, seedUV, target, stepCapMM, clipOn\) => \{/);
+      expect(src).toMatch(/const walkFrom = \(seedFr, seedPt, seedUV, target, stepCapMM, clipOn, clipR\) => \{/);
       expect(src).toMatch(/const walkPoly = \(fr0, uOff, theta, poly, stepCapMM\) => \{/);
     });
 
