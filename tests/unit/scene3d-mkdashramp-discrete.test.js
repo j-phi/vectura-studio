@@ -68,6 +68,20 @@
  * Reproduced independently on torus/addLayer (0.529-0.634 inside the ramp,
  * 1.000 at d=35/50) and sphere/create (0.556-0.649 inside the ramp, 1.000 at
  * d=35/50) — not just the one pinned fixture.
+ *
+ * RECORD CORRECTION (T3c-onset, round 5, lane fill-audit-a5): declared
+ * `MK_BAND_ONSET_D = 35`, effective onset d = 32 (rounding in
+ * `bandOnsetCap`) — `Math.round(1 + t*(MK_BAND_MAX_PASSES-1))` saturates at
+ * `MK_BAND_MAX_PASSES` once `t >= 0.9`, i.e. `d >= 31.6`, so the gate this
+ * file's O16 describes as switching off "at MK_BAND_ONSET_D (d=35)" is
+ * actually byte-identical to its untouched state starting at the integer
+ * density d=32. Measured and pinned in `scene3d-mkdashramp-onset.test.js`
+ * (O17/O18): active at d=31, inactive (md5 byte-identical) at d=32, on all
+ * four of {sphere,torus} x {addLayer,create}. This note corrects the record
+ * only — every assertion in THIS file remains unedited and valid, since
+ * d=35/50/220 (this file's own O16 densities) all sit at or above BOTH the
+ * declared and the effective onset, so the distinction does not change any
+ * pinned number here.
  */
 const fs = require('fs');
 const path = require('path');

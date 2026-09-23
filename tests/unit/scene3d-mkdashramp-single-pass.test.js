@@ -71,6 +71,22 @@
  *     (`MK_BAND_ONSET_D`) where the gate itself starts/stops applying.
  *   - O13 ("d=220 / d=50 untouched") gates "no regression on T4/T4b/O8's own
  *     territory" — a non-regression check, not a new half of Jay's rule.
+ *
+ * RECORD CORRECTION (T3c-onset, round 5, lane fill-audit-a5): declared
+ * `MK_BAND_ONSET_D = 35`, effective onset d = 32 (rounding in
+ * `bandOnsetCap`) — `Math.round(1 + t*(MK_BAND_MAX_PASSES-1))` saturates at
+ * `MK_BAND_MAX_PASSES` once `t >= 0.9`, i.e. `d >= 31.6`. This file's own
+ * `bandOnsetCap(d) === MK_BAND_MAX_PASSES` no-op (line 55 above) and O12's
+ * "the ONE density (`MK_BAND_ONSET_D`) where the gate itself starts/stops
+ * applying" (line 71 above) are both about the DECLARED constant, 35 — the
+ * gate is in fact already a byte-identical no-op starting at the integer
+ * density d=32. Measured and pinned in `scene3d-mkdashramp-onset.test.js`
+ * (O17/O18): active at d=31, inactive (md5 byte-identical) at d=32, on all
+ * four of {sphere,torus} x {addLayer,create}. This note corrects the record
+ * only — every assertion in THIS file remains unedited and valid, since
+ * this file's own densities (d<=35, d=50, d=220) all sit at or above the
+ * effective onset wherever they test post-onset behavior, so the
+ * distinction does not change any pinned number here.
  */
 const fs = require('fs');
 const path = require('path');
