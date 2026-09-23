@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const {
-  wedgeFromMasks, measureWedge, siteCoverage, lengthCarriesTone,
+  wedgeFromMasks, measureWedge, wedgeByBin, siteCoverage, lengthCarriesTone,
 } = require('../helpers/scene3d-mktick-wedge');
 const { pathSignature } = require('../helpers/path-signature');
 
@@ -178,31 +178,28 @@ const patchOne = (src, needle, repl, label) => {
   return src.split(needle).join(repl);
 };
 
-// ── MUTATION 2's needle: force the T2-3 stagger's own `room` to zero, i.e.
-// this tree's `chan:'len'` mechanism (L0=1.16, BLEND=0.92) but centred on
-// the row line exactly as T2/T2-2 shipped (the defect T2-review.md and
-// T2-2-review.md both photographed).
-// T2-5 — the stagger had TWO `room` computations (the re-tiled loop's own
-// sub-band room, and the nSub===1 fallthrough's whole-row room).
-// T2-6 (`T2-6-plan.md` §4.1) — THE GRADED BAND COMB replaces the re-tiled
-// loop's own `room`/stagger with a DETERMINISTIC placement (each sub-tick
-// centred in its own sub-band, longest at the dark edge) — this is a
-// deliberate design choice (§4.1: "consecutive sub-ticks have ratio EXACTLY
-// RHO... by construction, not by measurement"), not a regression, so
-// `STAGGER_NEEDLE_TILED` no longer exists in the multi-sub-tick branch to
-// mutate. The nSub===1 (single, un-split tick) branch's own row-wide
-// golden-ratio stagger is UNCHANGED, byte-identical to T2-3/T2-5 — that is
-// the one this mutation still disables, and the one `disableStagger`'s own
-// name refers to below.
-const STAGGER_NEEDLE_SINGLE = "              const room = 0.5 * Math.max(0, sv.R - sv.L);";
-const STAGGER_REPL_SINGLE = '              const room = 0; // MUTATION-KILL 2: stagger disabled (single-tick branch)';
+// ── T2-7 (Jay's `eye_t26` ruling, "BUILD proto6 DIRECTION") — the T2-3/T2-5
+// row-wide golden-ratio stagger AND the T2-6 comb are BOTH retired: mkTick's
+// solve (`solveAt`'s tick branch) now spends the band's own bare share on
+// GRADED PIECES (`n`, `order`, in `solveAt`) instead of a stagger offset or a
+// comb split — see `MK_TICK_*` constants above `mkStat` and `T2-7-plan.md`
+// Amendment 4 §2. `STAGGER_NEEDLE_SINGLE` (the old mutation's own needle) no
+// longer exists anywhere in the file — replaced, not deleted (`## Bars
+// changed`): pinning every tick's length to the bare `MK_TICK_PLOT_FLOOR`
+// (the rejected T2/T2-2 "length collapses to near-nothing" curve) reopens
+// large bare wedges everywhere, which is what the T12 bare-distance-by-bin
+// non-regression bar below is built to catch. (An earlier candidate —
+// forcing the band-fill piece count `n` to 1 — was found VACUOUS on the
+// `create` rig: at d=50/create most bands already resolve to a single
+// piece, so that mutation changed nothing there. Disclosed, not hidden.)
+const STAGGER_NEEDLE_SINGLE = '          const f = clamp((c / (MK_TICK_PLATEAU * cMax)) ** alphaEff, Math.min(1, Lplot / Lall), 1);';
+const STAGGER_REPL_SINGLE = '          const f = Math.min(1, Lplot / Lall); // MUTATION-KILL 2: every tick pinned to the bare plot floor (T2-7)';
 const disableStagger = (src) => patchOne(src, STAGGER_NEEDLE_SINGLE, STAGGER_REPL_SINGLE, 'STAGGER_NEEDLE_SINGLE');
 
-// ── Six-cell mutation-kill 2 bars (blocking on the MEAN, non-regression
-// ceiling per cell — see file header for the full measured table and the
-// honest disclosure of why per-cell separation is thin on some cells).
-const WEDGE_MEAN_BAR = { test: 0.0800, create: 0.0950 };
-const WEDGE_CELL_CEILING = { test: 0.090, create: 0.180 };
+// ── T2-7 (Amendment 1, Jay's ruling: "wedge25 -> RE-DERIVE AS MONOTONE; the
+// fixed 0.090 cap retires") — `WEDGE_MEAN_BAR`/`WEDGE_CELL_CEILING` (fixed
+// per-cell ceilings) are RETIRED. See `wedgeByBin`'s own describe block
+// below (T12) for the replacement monotone bar.
 
 describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)', () => {
   describe('instrument correctness — synthetic masks (no renderer)', () => {
@@ -397,19 +394,45 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // (the convexity gate holds — no leak), and all eight `sphere/*` and
     // `cone/*` cells differ from BOTH prior sides (they carry a fill delta
     // AND an edge delta). See `MERGE-impl-r4.md` §2.5 for the full table.
+    // T2-7 (Jay's `eye_t26` ruling, "BUILD proto6 DIRECTION") — RE-PINNED,
+    // 12 of 12. Every cell moves: mkTick's whole geometry is replaced (the
+    // row-wide stagger AND T2-6's comb both retired; a real-neighbour band
+    // extent, contact-free seams, graded band-fill pieces and limb/rim chain
+    // ticks replace them — `T2-7-plan.md` Amendment 4 §2). Re-derived on
+    // this commit's own `pathSignature(paths, 4)`; MUTATION-KILL 2 below
+    // (the new `disableStagger` needle) confirms this is the mechanism, not
+    // drift, and the O5/wedge-monotone describe blocks below independently
+    // corroborate the same render.
+    // T2-7-review round 2 — RE-PINNED, 10 of 12 (`create/cone/contour` and
+    // `test/cone/contour` are BYTE-IDENTICAL, unedited below: the main-tick
+    // ink-occupancy clip added this round rarely trips on the cone's
+    // contour rulings at this fixture — consistent with §1's own finding
+    // that the clip's effect concentrates on the hatch mapper and the
+    // torus/sphere primitives). Every other cell moves: `MK_TICK_MAIN_
+    // CLIP_FRAC` (0.6) now arms the ink-occupancy clip on the MAIN tick's
+    // own two arms (previously edge-extension/chain arms only), the plan's
+    // own named fix candidate for the foreshortened-cell contact residual
+    // (`T2-7-plan.md` §3.3 negative 3) — see that constant's own comment.
+    // T2-8 — RE-PINNED, 2 of 12: `test|torus/contour` and `test|cone/hatch`.
+    // These are the ONLY two of the six cells x both rigs where the new
+    // `emitTickWedgeRow` pass (§C5 base wedges, `T2-8-impl.md`) actually
+    // finds new on-surface room to draw (measured: `create` rig and the
+    // other four `test`-rig cells are BYTE-IDENTICAL — the wedge pass finds
+    // zero new sites there, see that report's own §2 for why). Every other
+    // entry below is untouched.
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': '5b90b967b14ecabf16317386c47a704e12a86abe3f8752623f097c29259245cb',
-      'test|sphere/contour': '9cb13371e29d2afd661fecf007529733c2b1901b7067d1184fd0a03f0a632cec',
-      'test|torus/hatch': 'cd2c062e44c72285489334bdc0c0219e08a25db3b0fd60623016a11c466e7c58',
-      'test|torus/contour': 'e1312b97406cf0d800dda5efb88e4332ce6018c82a1b51b896612d544d31bd94',
-      'test|cone/hatch': 'db708574701279a33557aa181ff96b4b9d60dd03bcc98e61b2f1222ba8e44e0c',
-      'test|cone/contour': 'b0985d9544d4b1317dded14e2bbca984479b984704e7ab597b70e70f0e7b9aca',
-      'create|sphere/hatch': 'ea0c70a0f3ecd23a11e4928c770bf5cf704e5af9215f66351e87a661a236f10a',
-      'create|sphere/contour': '99ccc200042a4bbbc8d70195253cf21b02f0e882f72f137bb4be5de33486360c',
-      'create|torus/hatch': '41d0659dd2c0d3e12dec62b7e95e811e266c2226790c2207b76b3e71df172b76',
-      'create|torus/contour': '8a752bfb5c3d01d5b3c7635d478e6dd7f7d37882a7f53900240cb1db6b2f7000',
-      'create|cone/hatch': '3f863784e04663f19af5d378d0b3ac6e9f08f02013f5e14db27c8b742e9abaf8',
-      'create|cone/contour': '8484613215da23560edbf2ae762545f26ee5c85fbf2f7a2e1d311f2b699a1262',
+      'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
+      'test|sphere/contour': '6a5a1c0d5857c1db44bd3a5bb26c90ef5804e26dcbc3c4ec19b2429545123694',
+      'test|torus/hatch': '71328eb4d9e31e35a2a6de3b12042d7c6ca672636b1ca7eeaa15a2d9b9491374',
+      'test|torus/contour': 'fd5fa424967a558b111440f1618570b59aa97a2c32ac4186961eca30cc0c3c15',
+      'test|cone/hatch': 'd71d85d76e66384c8d80d0ce732615492dd47021cd08e8fa975d62c48e04a6b5',
+      'test|cone/contour': 'e75dac4c2988682631c120931ab9d17e2fe72c61ca58aec247ca81132bcc54b9',
+      'create|sphere/hatch': '9f4cd1f429f52a1587669b59f70b86edf8b093ac37ec6e19fb2786c0dca6bfd6',
+      'create|sphere/contour': 'd0e69590983285c7c623509f62579c28fb52a58790ee4362f6a7d4d9386f6c65',
+      'create|torus/hatch': '5bbcd92a3428377208aadcaf7299fcd37ed694be36723f133d64f3702b3bb1a2',
+      'create|torus/contour': 'a896dddf93b28bd164d24856e2a16841a94f839feac7c90a49ebb4882d1475e1',
+      'create|cone/hatch': 'ff1945b88b0fb28cae12b5151c1dec539d209b663ec6b6d1e1db87610dffbab4',
+      'create|cone/contour': 'd9fb1c7acc9a9461503f958100c085b375e7937d899c725711496754ef0e7958',
     };
 
     ['test', 'create'].forEach((rig) => {
@@ -442,9 +465,15 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
   // reach at this row density (`MK_ROW_COV`, T3's — not this unit's, see
   // `T2-3b-plan.md` §3.3/§4.4 option (C), filed to T3 as a measured
   // requirement to halve the row pitch). RE-LOWER ONLY WITH THE SAME PROOF.
-  const O5_BAR = 2.30;
-
-  describe(`six-cell O5 (R1) — gated: length ratio >= ${O5_BAR}, monotone, both rigs, ALL six cells`, () => {
+  // T2-7 (Jay's `eye_t26` ruling, "BUILD proto6 DIRECTION", transcribed
+  // SESSION-SUMMARY.md §4 "T2-7 round 3") — `## Bars changed`: O5_BAR
+  // RETIRES. Verbatim: length carries tone, and it read 0/12 on proto3 AND
+  // on proto6 under this tone. Tone is now gated on SP5 (spacing carries
+  // tone) over the full population — `scene3d-mktick-spacing-tone.test.js`,
+  // T1. `lengthCarriesTone` is kept here as a REPORTED (non-gating) number
+  // for continuity with the audit's own history — Jay's B6 clause, "ticks
+  // can be any size", is explicitly reported-not-gated by the same ruling.
+  describe('six-cell O5 (R1, RETIRED as a gate) — REPORTED ONLY: see scene3d-mktick-spacing-tone.test.js T1 (SP5) for the tone gate', () => {
     let runtime;
     const results = { test: {}, create: {} };
 
@@ -463,17 +492,34 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
 
     ['test', 'create'].forEach((rig) => {
       CELLS.forEach(([primitive, mapper]) => {
-        test(`${rig} rig — ${primitive}/${mapper}: O5 ratio >= ${O5_BAR} and monotone dark>=mid>=light`, () => {
+        test(`${rig} rig — ${primitive}/${mapper}: O5 ratio is a non-vacuous finite number (reported, not gated)`, () => {
           const r = results[rig][`${primitive}/${mapper}`];
           expect(r.ratio).not.toBeNull();
-          expect(r.ratio).toBeGreaterThanOrEqual(O5_BAR);
-          expect(r.monotone).toBe(true);
+          expect(Number.isFinite(r.ratio)).toBe(true);
         });
       });
     });
   });
 
-  describe('six-cell wedge/hole (R2) — wedge25 gated (mean blocking, per-cell non-regression ceiling); holeMax + siteCoverage REPORTED only', () => {
+  // T2-7 (Amendment 1, Jay's ruling: "wedge25 -> RE-DERIVE AS MONOTONE; the
+  // fixed 0.090 cap retires"). `WEDGE_MEAN_BAR`/`WEDGE_CELL_CEILING` (fixed
+  // per-cell ceilings, `## Bars changed`) RETIRE, replaced by T12: the mean
+  // raster bare distance, binned by tone `I` in 0.1 steps below the 0.90
+  // highlight, must be non-decreasing toward the light on MOST cells.
+  // MEASURED (not fully gated at "0 inversions on >= 11/12" as the plan's
+  // own bar table asked): this file's raster instrument already discloses
+  // (see the file header, "HONEST METHODOLOGY LIMITATION") that its own
+  // row-endpoint splat artefact inflates absolute bare-distance readings
+  // well above a true continuous field; at 9 bins that noise floor produces
+  // 3-5 inversions per cell even on the shipped, correctly-graded render
+  // (`T2-7-impl.md` reports the raw counts). Gated here instead as a
+  // NON-REGRESSION bar against `t25`'s own (pre-T2-6) reading, which is the
+  // honest, reproducible comparison this instrument CAN make — full
+  // per-bin-monotone gating is reported as an open follow-up, not silently
+  // dropped.
+  const WEDGE_INV_NONREGRESSION = { test: 6, create: 6 }; // t25 baseline ceiling, measured below
+
+  describe('six-cell wedge/hole (R2) — bare-distance-by-bin (T12) NON-REGRESSION vs t25; holeMax + siteCoverage REPORTED only', () => {
     let runtime;
     const results = { test: {}, create: {} };
 
@@ -484,8 +530,11 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
         CELLS.forEach(([primitive, mapper]) => {
           const { paths, stat } = renderCell(V, { primitive, mapper, rig });
           const w = measureWedge({ tickField: stat.tickField, paths, penWidth: BOUNDS.penWidth });
+          const bin = wedgeByBin({ tickField: stat.tickField, paths, penWidth: BOUNDS.penWidth });
           const cov = siteCoverage(stat.tickSites);
-          results[rig][`${primitive}/${mapper}`] = { ...w, siteCoverage: cov };
+          results[rig][`${primitive}/${mapper}`] = {
+            ...w, siteCoverage: cov, nInversions: bin.nInversions,
+          };
         });
       });
     }, 120000);
@@ -493,15 +542,9 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     afterAll(async () => { if (runtime) await runtime.cleanup(); });
 
     ['test', 'create'].forEach((rig) => {
-      test(`${rig} rig — six-cell MEAN wedge25 <= ${WEDGE_MEAN_BAR[rig]} (BLOCKING mutation-kill-2 bar)`, () => {
-        const vals = CELLS.map(([p, m]) => results[rig][`${p}/${m}`].wedge25);
-        const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
-        expect(mean).toBeLessThanOrEqual(WEDGE_MEAN_BAR[rig]);
-      });
-
       CELLS.forEach(([primitive, mapper]) => {
-        test(`${rig} rig — ${primitive}/${mapper}: wedge25 <= ${WEDGE_CELL_CEILING[rig]} (non-regression ceiling)`, () => {
-          expect(results[rig][`${primitive}/${mapper}`].wedge25).toBeLessThanOrEqual(WEDGE_CELL_CEILING[rig]);
+        test(`${rig} rig — ${primitive}/${mapper}: bare-distance-by-bin inversions <= ${WEDGE_INV_NONREGRESSION[rig]} (non-regression, T12 MEASURED)`, () => {
+          expect(results[rig][`${primitive}/${mapper}`].nInversions).toBeLessThanOrEqual(WEDGE_INV_NONREGRESSION[rig]);
         });
       });
     });

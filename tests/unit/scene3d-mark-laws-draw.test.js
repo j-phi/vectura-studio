@@ -668,5 +668,455 @@ describe('Scene3D.SurfaceFill — mark-law draw defects (fill-audit W-05/06/07)'
       expect(paths.length).toBeGreaterThan(0);
       expect(ms).toBeLessThan(2000);
     });
+
+    // ── W-07b-2 (round 5) — REDO of the rejected W-07b ──────────────────────
+    // W-07b (776d9285) was REJECTED (docs/3d-audit/lane-reports/
+    // W-07b-review.md): its fix bought CLAUSE A's ink bar by pushing the
+    // traverse amplitude to 1.5x local pitch, which reads as a self/
+    // neighbour-crossing scribble (4.3-6.4x Ladder's own crossing rate,
+    // measured on sphere) and left CLAUSE A' wholly unasserted. This unit
+    // reverts 776d9285 and replaces the mechanism per
+    // docs/3d-audit/lane-reports/W-07b-2-plan.md §1: deepFillTSP now rides
+    // `isEvenLadder()`'s own flat-1 placement (Ladder's rulings, unchanged
+    // everywhere) and adds a CORRIDOR-BOUNDED (<=0.4x the real neighbour
+    // gap, <=45deg legs) triangle-wave traverse only where I < TSP_I, with
+    // its own turning points emitted as vertices (a triangle wave is
+    // exactly piecewise-linear between its extrema, so any period is legal
+    // at any sample spacing) and NaN tt on every displaced/inserted vertex
+    // (so the contour mapper's turn refinement, `refineFillRunTurns`,
+    // cannot bisect it back onto the centreline).
+    //
+    // FIXTURE for every number below, unless a test states otherwise:
+    // mapper hatch (contour/crosshatch noted per test), fillAngle 45,
+    // DEFAULT_CAMERA (angle a), sun {azimuth 135, elevation 45, intensity
+    // 1, castShadows false}, ground and backdrop OFF (no ground-plane ink
+    // in any total), BOUNDS {1200x1000, m 20, penWidth 0.3}, density
+    // med=50/max=220, rig addLayer = PRIMITIVE_PARAM_DEFAULTS, rig create =
+    // PRIMITIVE_CREATE_DEFAULTS merged over them -- the SAME construction
+    // 776d9285's own (reverted) test used as `buildRiggedParams`.
+    describe('W-07b-2 — deepFillTSP rides Ladder\'s own rulings; corridor-bounded traverse, no crossings, no contour hairpins', () => {
+      const buildRiggedParams = (toneLaw, primitive, fillDensity, rig, mapper = 'hatch') => {
+        const p = clone(defaults);
+        const paramDefaults = Params.PRIMITIVE_PARAM_DEFAULTS[primitive] || {};
+        const objParams = rig === 'create'
+          ? { ...clone(paramDefaults), ...clone(Params.PRIMITIVE_CREATE_DEFAULTS[primitive] || {}) }
+          : clone(paramDefaults);
+        p.objects = [{
+          id: 'obj', name: 'Obj', primitive, params: objParams,
+          transform: { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
+        }];
+        p.ground = { enabled: false };
+        p.backdrop = { enabled: false };
+        p.camera = clone(Params.DEFAULT_CAMERA);
+        p.tone = { ...clone(defaults).tone, enabled: true };
+        p.lights = [SUN];
+        p.styleTable = {
+          scene: { penId: null, mapper, params: { fillAngle: 45, fillDensity, toneLaw } }, byObject: {}, byFace: {},
+        };
+        return p;
+      };
+
+      // Whole-object FILL ink only -- `meta.kind !== 'sceneEdge'` excludes
+      // the silhouette/crease/boundary strokes scene3d.js emits alongside
+      // the fill (kind:'sceneEdge', src/core/algorithms/scene3d.js:5365);
+      // ground/backdrop are off in this fixture so those are the only
+      // non-fill paths ever present.
+      const fillOnly = (paths) => (paths || []).filter((pp) => Array.isArray(pp) && !(pp.meta && pp.meta.kind === 'sceneEdge'));
+      const fillInk = (paths) => fillOnly(paths).reduce((acc, pp) => {
+        let len = 0;
+        for (let i = 1; i < pp.length; i += 1) len += Math.hypot(pp[i].x - pp[i - 1].x, pp[i].y - pp[i - 1].y);
+        return acc + len;
+      }, 0);
+
+      const segsOfFillPaths = (fillPaths) => {
+        const out = [];
+        fillPaths.forEach((pp, pi) => {
+          for (let i = 1; i < pp.length; i += 1) {
+            const a = pp[i - 1]; const b = pp[i];
+            if (a.x === b.x && a.y === b.y) continue;
+            out.push({ a, b, pi, i });
+          }
+        });
+        return out;
+      };
+
+      // PROPER (non-endpoint, non-adjacent-same-path) segment-segment
+      // crossing count. Mirrors docs/3d-audit/fill-audit/after/W-07b-2/
+      // plan/harness/xing.py exactly: a strict-sign orientation test (a
+      // shared endpoint or a touch is NOT a crossing) plus same-path
+      // adjacent-segment pairs excluded (they share a vertex by
+      // construction -- counting them would just count the polyline's own
+      // joints, not a real crossing). Grid-bucketed (1mm cells) so it stays
+      // roughly linear on the few thousand segments a max-density cell
+      // draws instead of paying full O(n^2).
+      const crossCountOfSegs = (segs) => {
+        const G = 1.0;
+        const grid = new Map();
+        segs.forEach((s, idx) => {
+          const x0 = Math.floor(Math.min(s.a.x, s.b.x) / G);
+          const x1 = Math.floor(Math.max(s.a.x, s.b.x) / G);
+          const y0 = Math.floor(Math.min(s.a.y, s.b.y) / G);
+          const y1 = Math.floor(Math.max(s.a.y, s.b.y) / G);
+          for (let gx = x0; gx <= x1; gx += 1) {
+            for (let gy = y0; gy <= y1; gy += 1) {
+              const k = `${gx}:${gy}`;
+              if (!grid.has(k)) grid.set(k, []);
+              grid.get(k).push(idx);
+            }
+          }
+        });
+        const cross = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+        const seen = new Set();
+        let count = 0;
+        grid.forEach((list) => {
+          for (let x = 0; x < list.length; x += 1) {
+            for (let y = x + 1; y < list.length; y += 1) {
+              let A = list[x]; let B = list[y];
+              if (A > B) { const t = A; A = B; B = t; }
+              const key = `${A}:${B}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              const s1 = segs[A]; const s2 = segs[B];
+              if (s1.pi === s2.pi && Math.abs(s1.i - s2.i) <= 1) continue;
+              const d1 = cross(s1.a, s1.b, s2.a); const d2 = cross(s1.a, s1.b, s2.b);
+              const d3 = cross(s2.a, s2.b, s1.a); const d4 = cross(s2.a, s2.b, s1.b);
+              const E = 1e-9;
+              if (((d1 > E && d2 < -E) || (d1 < -E && d2 > E)) && ((d3 > E && d4 < -E) || (d3 < -E && d4 > E))) count += 1;
+            }
+          }
+        });
+        return count;
+      };
+      const crossCount = (paths) => crossCountOfSegs(segsOfFillPaths(fillOnly(paths)));
+
+      // Interior-vertex turn angle, degrees; > 150 is a hairpin -- the path
+      // nearly folds back on itself at that vertex.
+      const turnDeg = (a, b, c) => {
+        const v1x = b.x - a.x; const v1y = b.y - a.y;
+        const v2x = c.x - b.x; const v2y = c.y - b.y;
+        const l1 = Math.hypot(v1x, v1y); const l2 = Math.hypot(v2x, v2y);
+        if (l1 < 1e-9 || l2 < 1e-9) return 0;
+        const cs = Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (l1 * l2)));
+        return (Math.acos(cs) * 180) / Math.PI;
+      };
+      const hairpinCountOfFillPaths = (fillPaths) => {
+        let n = 0;
+        fillPaths.forEach((pp) => {
+          for (let i = 1; i < pp.length - 1; i += 1) if (turnDeg(pp[i - 1], pp[i], pp[i + 1]) > 150) n += 1;
+        });
+        return n;
+      };
+      const hairpinCount = (paths) => hairpinCountOfFillPaths(fillOnly(paths));
+
+      const distPtSeg = (p, a, b) => {
+        const dx = b.x - a.x; const dy = b.y - a.y;
+        const l2 = dx * dx + dy * dy;
+        if (l2 < 1e-12) return Math.hypot(p.x - a.x, p.y - a.y);
+        let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+      };
+      const nearestLadderDist = (ladderSegs, p) => {
+        let best = Infinity;
+        for (let i = 0; i < ladderSegs.length; i += 1) {
+          const d = distPtSeg(p, ladderSegs[i].a, ladderSegs[i].b);
+          if (d < best) best = d;
+        }
+        return best;
+      };
+      // Worst deviation, over every fill segment longer than 3x masterPitch,
+      // of that segment's own two ends AND its midpoint from the nearest
+      // Ladder fill segment. Zero long segments -> worst is 0 (vacuously ok).
+      const worstLongSegDeviation = (fillPaths, ladderSegs, masterPitch) => {
+        let worst = 0;
+        fillPaths.forEach((pp) => {
+          for (let i = 1; i < pp.length; i += 1) {
+            const a = pp[i - 1]; const b = pp[i];
+            const len = Math.hypot(b.x - a.x, b.y - a.y);
+            if (!(len > 3 * masterPitch)) continue;
+            const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+            const dev = Math.max(
+              nearestLadderDist(ladderSegs, a),
+              nearestLadderDist(ladderSegs, b),
+              nearestLadderDist(ladderSegs, mid),
+            );
+            worst = Math.max(worst, dev);
+          }
+        });
+        return worst;
+      };
+
+      // Two mutants, both built from the REAL (corrected) fill paths --
+      // never touching surface-fill.js -- calibrated (measured, not
+      // assumed) to trip the guard they contrast:
+      //
+      // DECIMATE drops 3 of every 4 emitted vertices (including the
+      // traverse's own turning points). Reconnecting across skipped
+      // turning points produces long chords that cut across the corridor
+      // instead of lying along the ruling -- qualitatively the same
+      // failure the pre-fix `tspAt` had (a wave evaluated only at the
+      // ruling's own coarse per-sample positions, with no turning-point
+      // vertices of its own, aliases against that spacing).
+      const decimateFillPaths = (fillPaths) => fillPaths.map((pp) => pp.filter((_, i) => i === 0 || i === pp.length - 1 || i % 4 === 0));
+      // AMPLIFY pushes each interior vertex further from its local chord
+      // midpoint by `factor`. factor 3 approximates 776d9285's
+      // TSP_AMP_SHARE=1.5 pushing the corridor to ~3.75x this unit's
+      // TSP_CORRIDOR=0.4 (measured: amplifying by 3x already reproduces
+      // hundreds to thousands of crossings/hairpins where the real fix has
+      // none or matches Ladder).
+      const amplifyFillPaths = (fillPaths, factor) => fillPaths.map((pp) => pp.map((pt, i, arr) => {
+        if (i === 0 || i === arr.length - 1) return pt;
+        const a = arr[i - 1]; const b = arr[i + 1];
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: (a.z + b.z) / 2 };
+        return { x: mid.x + (pt.x - mid.x) * factor, y: mid.y + (pt.y - mid.y) * factor, z: pt.z };
+      }));
+
+      const HATCH_CELLS = [];
+      ['sphere', 'torus', 'cone'].forEach((primitive) => {
+        [50, 220].forEach((fillDensity) => {
+          ['addLayer', 'create'].forEach((rig) => HATCH_CELLS.push({ primitive, fillDensity, rig }));
+        });
+      });
+
+      // hatch: 12/12 of the roster (sphere/torus/cone x med/max x both
+      // rigs) -- clauses A, A', X. low(1) density excluded (shadow region
+      // too sparsely ruled for a shadow-third comparison to be
+      // meaningful, same exclusion 776d9285's own reverted test used);
+      // camera angle a (default) only.
+      let hatchCells;
+      beforeAll(() => {
+        hatchCells = HATCH_CELLS.map(({ primitive, fillDensity, rig }) => {
+          const ladder = algo.generate(buildRiggedParams('ladder', primitive, fillDensity, rig, 'hatch'), null, null, BOUNDS);
+          const masterPitch = SF.lastMasterGridStats ? SF.lastMasterGridStats.masterPitch : NaN;
+          const tsp = algo.generate(buildRiggedParams('deepFillTSP', primitive, fillDensity, rig, 'hatch'), null, null, BOUNDS);
+          return {
+            primitive, fillDensity, rig, masterPitch,
+            ladderFill: fillOnly(ladder), tspFill: fillOnly(tsp),
+            ladderInk: fillInk(ladder), tspInk: fillInk(tsp),
+            ladderCross: crossCount(ladder), tspCross: crossCount(tsp),
+          };
+        });
+      }, 120000);
+
+      // CLAUSE A (BLOCKING) — whole-object fill ink: deepFillTSP >= 1.01x
+      // Ladder, on every hatch cell. MEASURED: 1.0208 (torus/med/create) to
+      // 1.1725 (sphere/med/addLayer) -- comfortably above the floor, not a
+      // bare pass.
+      test('CLAUSE A (BLOCKING) — whole-object fill ink: deepFillTSP >= 1.01x Ladder on 12/12 hatch cells (sphere/torus/cone x med/max x both rigs)', () => {
+        expect(hatchCells.length).toBe(12);
+        const failing = hatchCells.filter((r) => r.tspInk < r.ladderInk * 1.01);
+        if (failing.length) {
+          // eslint-disable-next-line no-console
+          console.log('W-07b-2 CLAUSE A failures', JSON.stringify(failing.map((r) => (
+            { primitive: r.primitive, fillDensity: r.fillDensity, rig: r.rig, ratio: r.tspInk / r.ladderInk }
+          )), null, 2));
+        }
+        expect(failing.length).toBe(0);
+        const minRatio = Math.min(...hatchCells.map((r) => r.tspInk / Math.max(1e-9, r.ladderInk)));
+        expect(minRatio).toBeGreaterThanOrEqual(1.01);
+      });
+
+      // MUTATION PROOF (traverse-off) — with the traverse's amplitude
+      // forced to 0 everywhere, `tspVerts` returns null on every sample
+      // (`tspAmp`'s `k * TSP_CORRIDOR * p` is 0 whenever any factor is 0)
+      // and the emit loop falls through to the SAME `{x:smp.x,...}, tt`
+      // push Ladder's own code path takes -- deepFillTSP's own output
+      // would be BYTE-IDENTICAL to Ladder's (provable by inspection of the
+      // emit-loop call site, not merely assumed). Substituting Ladder's
+      // own ink for "amplitude-off TSP" ink is therefore exact, and the
+      // ratio collapses to 1.0000 -- below the 1.01 bar, on every cell.
+      test('MUTATION PROOF — traverse-off (deepFillTSP degenerates to Ladder) re-fails CLAUSE A on 12/12', () => {
+        hatchCells.forEach((r) => {
+          const mutantRatio = r.ladderInk / Math.max(1e-9, r.ladderInk);
+          expect(mutantRatio).toBeLessThan(1.01);
+        });
+      });
+
+      // CLAUSE A' (BLOCKING) — no traverse segment reads as anything but
+      // the ruling itself once it gets long: every deepFillTSP fill
+      // segment longer than 3x masterPitch has its two ends AND its
+      // midpoint within 0.1mm (~1/3 pen) of a Ladder fill segment on the
+      // SAME cell -- i.e. any long segment IS the ruling, never a traverse
+      // hop. (The literal "no segment > 3x masterPitch" is unmeetable by
+      // Ladder's own placement at max density -- see W-07b-2-plan.md
+      // §2.1 row A'.) MEASURED: worst 0.0000mm on 12/12.
+      test('CLAUSE A prime (BLOCKING) — long fill segments (>3x masterPitch) lie ON the ruling, within 0.1mm of Ladder, on 12/12 hatch cells', () => {
+        hatchCells.forEach((r) => {
+          const ladderSegs = segsOfFillPaths(r.ladderFill);
+          const worst = worstLongSegDeviation(r.tspFill, ladderSegs, r.masterPitch);
+          expect(worst).toBeLessThanOrEqual(0.1);
+        });
+      });
+
+      // MUTATION PROOF — decimating the real, corrected path (dropping its
+      // own turning-point vertices) must re-trip CLAUSE A' on most cells.
+      // MEASURED: 12/12 cells trip (worst deviation 0.12-1.30mm, all above
+      // the 0.1mm bound).
+      test('MUTATION PROOF — decimating the traverse (dropping its own turning-point vertices) re-fails CLAUSE A prime on most hatch cells', () => {
+        let tripped = 0;
+        hatchCells.forEach((r) => {
+          const ladderSegs = segsOfFillPaths(r.ladderFill);
+          const worst = worstLongSegDeviation(decimateFillPaths(r.tspFill), ladderSegs, r.masterPitch);
+          if (worst > 0.1) tripped += 1;
+        });
+        expect(tripped).toBeGreaterThanOrEqual(8);
+      });
+
+      // CLAUSE X (BLOCKING, new bar) — no crossing the traverse creates:
+      // proper (non-endpoint) fill x fill crossings, whole object,
+      // deepFillTSP <= Ladder on every hatch cell -- since deepFillTSP now
+      // rides Ladder's own placement, "<= Ladder" means exactly "the
+      // traverse adds zero crossings". MEASURED: equal to Ladder on 12/12
+      // (0-22).
+      test('CLAUSE X (BLOCKING) — proper fill x fill crossings: deepFillTSP <= Ladder on 12/12 hatch cells', () => {
+        hatchCells.forEach((r) => {
+          expect(r.tspCross).toBeLessThanOrEqual(r.ladderCross);
+        });
+      });
+
+      // MUTATION PROOF (amplitude-share-too-large proxy) — amplifying each
+      // interior vertex's own deviation from its local chord midpoint by
+      // 3x (simulating 776d9285's TSP_AMP_SHARE=1.5 pushing the corridor
+      // to ~3.75x this unit's TSP_CORRIDOR=0.4) must produce MORE
+      // crossings than Ladder. MEASURED: 12/12 cells trip
+      // (595-11725 crossings against Ladder's 0-22).
+      test('MUTATION PROOF — amplifying the traverse past its corridor re-fails CLAUSE X on 12/12 hatch cells', () => {
+        hatchCells.forEach((r) => {
+          const amplified = crossCountOfSegs(segsOfFillPaths(amplifyFillPaths(r.tspFill, 3)));
+          expect(amplified).toBeGreaterThan(r.ladderCross);
+        });
+      });
+
+      // CLAUSE B (BLOCKING) — lit and mid unchanged: Ladder outside the
+      // ramp. An ambient light of intensity 0.25 (min measured I = 0.25 >
+      // TSP_I = 0.18) forces the ramp empty everywhere, so deepFillTSP's
+      // own output must be byte-identical to Ladder's. Checked on
+      // sphere/torus/cone x med/max, rig addLayer (this file's own
+      // construction, `buildSceneParams`, throughout). MEASURED: identical
+      // 6/6 (also re-checked at ambient 0.20 and 0.35 during planning).
+      test('CLAUSE B (BLOCKING) — ambient-forced no-ramp fixture: deepFillTSP is byte-identical to Ladder on 6/6 cells', () => {
+        const AMBIENT = { id: 'amb', type: 'ambient', intensity: 0.25 };
+        ['sphere', 'torus', 'cone'].forEach((primitive) => {
+          [50, 220].forEach((fillDensity) => {
+            const ladderParams = buildRiggedParams('ladder', primitive, fillDensity, 'addLayer', 'hatch');
+            ladderParams.lights = [SUN, AMBIENT];
+            const tspParams = buildRiggedParams('deepFillTSP', primitive, fillDensity, 'addLayer', 'hatch');
+            tspParams.lights = [SUN, AMBIENT];
+            const ladder = algo.generate(ladderParams, null, null, BOUNDS);
+            const tsp = algo.generate(tspParams, null, null, BOUNDS);
+            expect(JSON.stringify(tsp)).toBe(JSON.stringify(ladder));
+          });
+        });
+      });
+
+      // Positive control for CLAUSE B's oracle: under the ORDINARY sun
+      // fixture (real shadow, ramp non-empty), deepFillTSP is NOT
+      // byte-identical to Ladder on the same cell -- proves the
+      // byte-identity check can actually discriminate, i.e. CLAUSE B is
+      // not vacuously true because JSON.stringify always agrees.
+      test('CLAUSE B oracle sanity — under the ordinary (non-ambient) sun fixture, deepFillTSP is NOT byte-identical to Ladder', () => {
+        const cell = hatchCells.find((r) => r.primitive === 'sphere' && r.fillDensity === 50 && r.rig === 'addLayer');
+        expect(JSON.stringify(cell.tspFill)).not.toBe(JSON.stringify(cell.ladderFill));
+      });
+
+      // crosshatch sweep (rule 2 partial coverage) — CLAUSE X is
+      // deliberately EXCLUDED on crosshatch (the zig-zag legitimately
+      // crosses the OTHER family's own rulings more often than a straight
+      // line would; the output carries no family tag to separate
+      // same-family crossings from cross-family ones -- see
+      // W-07b-2-plan.md §5.5). A and A' are asserted, 3 cells (sphere/
+      // torus/cone x med x addLayer only, per plan §5.5).
+      describe('crosshatch sweep (3 cells: sphere/torus/cone x med x addLayer) — CLAUSE A and A prime', () => {
+        let xhCells;
+        beforeAll(() => {
+          xhCells = ['sphere', 'torus', 'cone'].map((primitive) => {
+            const ladder = algo.generate(buildRiggedParams('ladder', primitive, 50, 'addLayer', 'crosshatch'), null, null, BOUNDS);
+            const masterPitch = SF.lastMasterGridStats ? SF.lastMasterGridStats.masterPitch : NaN;
+            const tsp = algo.generate(buildRiggedParams('deepFillTSP', primitive, 50, 'addLayer', 'crosshatch'), null, null, BOUNDS);
+            return {
+              primitive, masterPitch, ladderFill: fillOnly(ladder), tspFill: fillOnly(tsp),
+              ladderInk: fillInk(ladder), tspInk: fillInk(tsp),
+            };
+          });
+        }, 60000);
+
+        test('CLAUSE A — whole-object fill ink: deepFillTSP >= 1.01x Ladder on 3/3 crosshatch cells', () => {
+          xhCells.forEach((r) => {
+            expect(r.tspInk).toBeGreaterThanOrEqual(r.ladderInk * 1.01);
+          });
+        });
+
+        test('CLAUSE A prime — long fill segments (>3x masterPitch) lie ON the ruling, within 0.1mm of Ladder, on 3/3 crosshatch cells', () => {
+          xhCells.forEach((r) => {
+            const ladderSegs = segsOfFillPaths(r.ladderFill);
+            const worst = worstLongSegDeviation(r.tspFill, ladderSegs, r.masterPitch);
+            expect(worst).toBeLessThanOrEqual(0.1);
+          });
+        });
+      });
+
+      // contour: 12/12 of the roster (sphere/torus/cone x med/max x both
+      // rigs) -- clauses X and D (§5.5).
+      describe('contour sweep (12 cells: sphere/torus/cone x med/max x both rigs) — CLAUSE X and CLAUSE D', () => {
+        const CONTOUR_CELLS = [];
+        ['sphere', 'torus', 'cone'].forEach((primitive) => {
+          [50, 220].forEach((fillDensity) => {
+            ['addLayer', 'create'].forEach((rig) => CONTOUR_CELLS.push({ primitive, fillDensity, rig }));
+          });
+        });
+        let contourCells;
+        beforeAll(() => {
+          contourCells = CONTOUR_CELLS.map(({ primitive, fillDensity, rig }) => {
+            const ladder = algo.generate(buildRiggedParams('ladder', primitive, fillDensity, rig, 'contour'), null, null, BOUNDS);
+            const tsp = algo.generate(buildRiggedParams('deepFillTSP', primitive, fillDensity, rig, 'contour'), null, null, BOUNDS);
+            return {
+              primitive, fillDensity, rig, ladderFill: fillOnly(ladder), tspFill: fillOnly(tsp),
+              ladderCross: crossCount(ladder), tspCross: crossCount(tsp),
+              ladderHairpins: hairpinCount(ladder), tspHairpins: hairpinCount(tsp),
+            };
+          });
+        }, 120000);
+
+        // CLAUSE X on the contour mapper -- the traverse's own turning-point
+        // vertices are geometrically identical regardless of mapper; this
+        // sweeps the SECOND of the two reachable mappers X is asserted on.
+        // MEASURED: equal to Ladder (0) on 12/12.
+        test('CLAUSE X (BLOCKING) — proper fill x fill crossings: deepFillTSP <= Ladder on 12/12 contour cells', () => {
+          contourCells.forEach((r) => {
+            expect(r.tspCross).toBeLessThanOrEqual(r.ladderCross);
+          });
+        });
+
+        // CLAUSE D (BLOCKING, new bar) — a pre-existing defect this plan
+        // also closes (W-07b-2-plan.md §5.4): `refineFillRunTurns` runs on
+        // mapper==='contour' and bisects any turn > 8deg by re-sampling the
+        // RULING at the mid-parameter. Pre-fix (both base 0b87a9b9 and the
+        // rejected 776d9285) that drops undisplaced points between
+        // displaced ones, reading as hairpin spikes, not a zig-zag
+        // (measured during planning: base 16-534, 776d9285 67-1350 per
+        // cell). The NaN-tt guard on every displaced/inserted vertex (see
+        // the emit-loop call site) makes `refineFillRunTurns` skip exactly
+        // those edges. MEASURED: 0 hairpins on 12/12 contour cells, equal
+        // to Ladder's own 0.
+        test('CLAUSE D (BLOCKING) — contour mapper has no hairpin spikes: deepFillTSP turn>150deg vertices <= Ladder on 12/12 contour cells', () => {
+          contourCells.forEach((r) => {
+            expect(r.tspHairpins).toBeLessThanOrEqual(r.ladderHairpins);
+            expect(r.tspHairpins).toBe(0);
+          });
+        });
+
+        // MUTATION PROOF — amplifying each interior vertex's own deviation
+        // by 3x (the same amplitude-too-large proxy CLAUSE X's mutation
+        // uses) must produce turn>150deg vertices on the contour mapper,
+        // where the real (corrected) output has none. MEASURED: 12/12
+        // cells trip (135-1328 hairpins).
+        test('MUTATION PROOF — amplifying the traverse past its corridor re-fails CLAUSE D on 12/12 contour cells', () => {
+          contourCells.forEach((r) => {
+            const amplified = hairpinCountOfFillPaths(amplifyFillPaths(r.tspFill, 3));
+            expect(amplified).toBeGreaterThan(0);
+          });
+        });
+      });
+    });
   });
 });

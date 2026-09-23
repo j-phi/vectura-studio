@@ -1891,9 +1891,9 @@
     const fcIntensity = (I) => clamp(0.5 + (clamp(finite(I, 0), 0, 1) - 0.5) * (1 + FC_GAIN), 0, 1);
 
     // 'deepFillTSP' — how deep into the shadow the traverse has taken over.
-    // 0 at and above TSP_I (an ordinary ruled family), 1 at black (half the
-    // rulings, each filling the doubled gap). One definition, read by the
-    // coverage law and by the displacement.
+    // 0 at and above TSP_I (an ordinary ruled family, Ladder's own rulings
+    // and nothing else), 1 at black (every ruling carries its full corridor-
+    // bounded zig-zag). One definition, read by the displacement (`tspAmp`).
     const TSP_I = 0.18;       // the darkest ~15 % of the radiance range
     const tspRamp = (I) => clamp((TSP_I - clamp(finite(I, 0), 0, 1)) / Math.max(1e-6, TSP_I), 0, 1);
 
@@ -2600,6 +2600,104 @@
     // (measured): 1.0 (no margin) pushes `wedge25` and `bandC` past their
     // bars on the same cells `MK_TICK_COMB_MIN_R` protects.
     const MK_TICK_COMB_ENV = 0.85;
+    // T2-7 (Jay's `eye_t26` ruling, 2026-09-19, "BUILD proto6 DIRECTION" —
+    // `SESSION-SUMMARY.md` §4 "T2-7 round 3"; `T2-7-plan.md` Amendment 4) —
+    // mkTick's OWN mechanism, replacing the row-wide stagger and the T2-6
+    // comb above for THIS shape only (`law.shape === 'tick'`; every other
+    // law's `chan`/`lat` path is untouched). Two standing rules: eye_mktick
+    // (2026-09-17) "remove any lines not part of a tick band... don't
+    // increase overlap at the seams", and eye_t26 (2026-09-19) "Minimize
+    // tick contact and ensure gradual shifts in tone... accomplished by
+    // increased or decreased spacing of ticks... ticks can be any size." O5
+    // (length carries tone, `scene3d-mktick-wedge.test.js:445`) RETIRES per
+    // this ruling — it read 0/12 on proto3 AND on proto6 — replaced by SP5
+    // (spacing carries tone, `tests/unit/scene3d-mktick-spacing-tone.test.js`).
+    //
+    // `MK_TICK_GAP_PEN` — the minimum CONTACT-FREE pen gap between two tick
+    // tips: `PMIN_T = (1+GAP)*w`, both along a row (period) and across rows
+    // (the seam). 0.6 (measured, `T2-7-plan.md` §B1/§C1): unchanged across
+    // every proto3/5/6 prototype; it is what keeps tipContact (B1) <= 0.15.
+    const MK_TICK_GAP_PEN = 0.6;
+    // `MK_TICK_BEND_CUT` — degrees. A walked tick ARM stops (keeps what it
+    // already drew) the first step that turns more than this from the arm's
+    // own first step. 30 (measured, §C2 component table): clears the H2
+    // limb hooks/crossings (R2, R5-R8) with B5 unaffected ("bend cap alone"
+    // row reads neutral).
+    const MK_TICK_BEND_CUT = 30;
+    // `MK_TICK_DIR_CUT` — degrees. A tick mark is REFUSED (not truncated)
+    // when its own walked chord departs more than this from its requested
+    // direction (the shared `isWalkedShape` `sawDirBad` stat above is a
+    // 10-degree COUNT only, never a refusal; this is tick-only and does
+    // refuse). 40, not proto3/5's 25: measured (§C2), 25 degrees costs B5
+    // (component table); 40 still clears the cone/sphere rogue counts (T8).
+    const MK_TICK_DIR_CUT = 40;
+    // `MK_TICK_EDGE_MIN_I` — the lit-side radiance threshold below which the
+    // limb/chart-edge reach (the extent-solve's back-facing-neighbour
+    // branch) does not fire. 0.4 (measured, §C2 "dark-limb edge reach" row):
+    // reaching the edge on the DARK limb costs B5 about 3 cells.
+    const MK_TICK_EDGE_MIN_I = 0.4;
+    // `MK_TICK_HIDENS_PEN` — row pitch, in pens (`RPn/w`), below which the
+    // field falls back to proto3's plain centred contact-free solve plus the
+    // T2-4 plot floor, instead of the real-neighbour-extent geometry. 6
+    // (measured, §C1 item #4 / §A2-A3): this is what holds d=220
+    // `siteCoverage` (B7) at proto3's 10/12 instead of collapsing to 2/12
+    // under the neighbour-extent geometry at 3.5-pen rows. Disclosed as a
+    // density-REGIME switch, not a tuned constant (reviewer flag 3).
+    const MK_TICK_HIDENS_PEN = 6;
+    // `MK_TICK_LEN_ALPHA` / `MK_TICK_PLATEAU` — proto5-L/proto6's own tone
+    // (§C1 "Base: proto5-L"): the (small) share of tone the LENGTH channel
+    // still carries (`alpha`), and the coverage fraction of `cMax` at which
+    // the tick reaches full length (`kappa`). O5 is retired above, so this
+    // is not gated on length carrying 2.3x — but a small length response
+    // keeps the dark anchor's own seam from widening the instant tone starts
+    // falling (eye_mktick's "don't increase overlap/gaps"). `alphaEff`
+    // (`solveAt`) fades this toward 0 as `RPn/w` approaches the HIDENS
+    // regime, where there is no length room left at all (§A3).
+    const MK_TICK_LEN_ALPHA = 0.12;
+    const MK_TICK_PLATEAU = 0.9;
+    // `MK_TICK_CLIP_PEN` — the ink-occupancy clip radius CEILING, in pens. A
+    // walked edge-extension/chain arm stops at the first step within this of
+    // ink from a DIFFERENT row (never its own — a same-row clip drops ~40%
+    // of marks on a fanning row, measured with `scripts/dbgclip.js`, §C1
+    // #1). The live radius is density-aware (`mkInkR`, in `emitMarks`); 1.3
+    // is its ceiling, `MK_TICK_CLIP_FLOOR_PEN` (0.34) its floor.
+    const MK_TICK_CLIP_PEN = 1.3;
+    const MK_TICK_CLIP_FLOOR_PEN = 0.34;
+    // T2-7-review round 2 (Jay's `eye_t26` ruling, REJECT — "attempt the
+    // plan's own named fix candidate for the foreshortened cells before
+    // touching any bar", `T2-7-plan.md` §3.3 negative 3: "measure PMIN_T in
+    // SCREEN mm... or reject via the existing `mkMidBuckets` grid"). The
+    // real-neighbour extent solve sizes a MAIN tick's own seam gap from a
+    // FLAT local-frame projection of the neighbour SAMPLE's position
+    // (`half()`, `solveAt`); on a foreshortened patch (measured: the torus's
+    // own inner flank) the WALKED (curved) tick can land closer to that
+    // neighbour's own walked ink than the flat estimate assumed, because the
+    // flat projection and the true curved surface distance diverge exactly
+    // where curvature is strongest. The fix is the SAME ink-occupancy grid
+    // already built for edge-extension/chain arms (`mkInk`/`mkInkHit`),
+    // applied to the MAIN tick's own two arms too — but at a SMALLER radius
+    // than the edge-arm ceiling (`MK_TICK_CLIP_PEN`): measured (four radius
+    // fractions swept, `T2-7-impl-2.md` §1), the full edge-arm radius costs
+    // B5 monotonicity on 2-3 additional cells (9/12 -> 7/12 or 8/12) by
+    // over-truncating ordinary, non-foreshortened main ticks; 0.6x is the
+    // measured point that clears B1 (9/12 -> 11/12) and B3 (10/12 -> 11/12)
+    // with B5 UNCHANGED at 9/12 (same count, though not byte-identical cells
+    // — see the impl report). Named, not tuned per-cell: every main tick's
+    // own two arms get this radius, on every cell, applied only against a
+    // DIFFERENT row's ink exactly like the edge-arm clip.
+    const MK_TICK_MAIN_CLIP_FRAC = 0.6;
+    // `MK_TICK_PLOT_FLOOR` — T2-4's own d=220 regime, folded in here as the
+    // tick's minimum SIZE (`solveAt`): `L >= min(PLOT_FLOOR*MIN_MARK_MM,
+    // 0.98*band)`. The floor WINS over the seam gap — the only regime where
+    // across-row near-contact is allowed back (§3.1 item 4 of the original
+    // mechanism plan). 1.15 (T2-4's own measured value, unchanged).
+    const MK_TICK_PLOT_FLOOR = 1.15;
+    // `MK_TICK_CHAIN_RHO` — the shortening ratio between consecutive chain
+    // ticks reaching toward a silhouette/rim beyond the main band's own
+    // extent (§B1(a)/§C1). 0.8 (measured): each chain tick is 0.8x its
+    // predecessor, so the chain visibly tapers rather than reading as a
+    // second uniform band.
+    const MK_TICK_CHAIN_RHO = 0.8;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2688,6 +2786,34 @@
     // an O(n^2) scan against every earlier mark (needed since a render can
     // place thousands of marks).
     const mkMidBuckets = new Map();
+    // T2-7 (Jay's eye_t26 ruling, "BUILD proto6 DIRECTION") — the render-scope
+    // ink-occupancy grid for mkTick's edge-extension/chain arms (see
+    // `MK_TICK_CLIP_PEN` below and `walkFrom`'s `clipOn` argument). Shared
+    // across every ruling row on this object's whole render, like
+    // `mkSites`/`mkMidBuckets` above — a later row's arm must be able to see
+    // an earlier row's already-placed ink. `mkClipArm` is the per-arm on/off
+    // switch `layMark`'s tick block sets immediately before each `walkPoly`
+    // call and clears immediately after (never left set for a later,
+    // unrelated mark).
+    const mkInk = new Map();
+    // T2-8 — set (and cleared) only by `emitTickWedgeRow`, around its own
+    // `emitLine` call, while a §C5 wedge row's own ruling is being walked.
+    // Read below, where `layMark`'s tick block decides the MAIN tick's clip
+    // radius: a wedge row's ticks sit right beside the last real row's own
+    // ink by construction (that is the whole point — filling the wedge
+    // right up to it), so its main tick needs the FULL clip
+    // (`MK_TICK_CLIP_PEN`), not the smaller `MK_TICK_MAIN_CLIP_FRAC` share a
+    // normal ruling's own main tick gets. Measured: without this, the wedge
+    // pass regressed T2/T3/T4 on `test/{cone,torus}/hatch` (new, unnamed
+    // contact/mono failures) by landing its main ticks inside
+    // `MK_TICK_MAIN_CLIP_FRAC`'s smaller gap.
+    let mkWedgeActive = false;
+    // T2-7-review round 2 — `rm`/`rp` carry a PER-ARM radius override (0 =
+    // use `mkInkHit`'s own default `mkInkR`), set by `layMark`'s tick block
+    // alongside `m`/`p` immediately before each `walkPoly` call.
+    const mkClipArm = {
+      m: false, p: false, rm: 0, rp: 0,
+    };
 
     // ── THE TWELVE, AS DATA ───────────────────────────────────────────────────
     // `chan` is the TONE CHANNEL and it is the axis that separates these laws
@@ -2749,6 +2875,13 @@
       // 0.0300, still above 0.0280; L0=1.02 -> ovMax 0.0100 but O5 down to
       // ~2.19 on the same cells `T2-3-plan.md` §3 already measured this
       // thin on).
+      // T2-7 — `solveAt` now intercepts `law.shape === 'tick'` BEFORE the
+      // generic `chan`/`lat` arithmetic below (see the constants block and
+      // `solveAt`'s own tick branch), so `L0`/`LMIN`/`P0`/`chan`/`lat` here
+      // are DEAD for mkTick specifically (kept, documented rather than
+      // removed, per `T2-7-plan.md` §6 — no other law shares mkTick's
+      // `chan:'len'`, so nothing else reads them either). The tick's own
+      // geometry is entirely `MK_TICK_*` now.
       mkTick:        { shape: 'tick',     chan: 'len',   lat: 'brick',   or: 'none',   L0: 1.16, LMIN: 0.18, P0: 1.02 },
       mkChevron:     { shape: 'chevron',  chan: 'size',  lat: 'row',     or: 'iso',    P0: 1.20 },
       mkComma:       { shape: 'comma',    chan: 'count', lat: 'blue',    or: 'along',  L0: 1.30 },
@@ -4957,7 +5090,7 @@
     // downstream ever drops a ruling again — only WHERE the next one lands
     // moves.
     const isEvenLadder = () => TONE_ALGO === 'ladder' || TONE_ALGO === 'fineLadder'
-      || TONE_ALGO === 'phaseFineLadder';
+      || TONE_ALGO === 'phaseFineLadder' || TONE_ALGO === 'deepFillTSP';
     // The tone TARGET is exactly what each law computed before this round —
     // ONLY the placement changes. `phaseFineLadder`'s `nestedCov` wants the
     // per-sample DRAWN pitch as its second argument, so a family already
@@ -5275,40 +5408,12 @@
         || TONE_ALGO === 'importanceGreedy') {
         return perceptualCov(I, localPitch);
       }
-      // 'deepFillTSP' — THE RULINGS THIN SO THE TRAVERSE HAS A GAP TO FILL.
-      //
-      // MEASURED, AND IT IS WHY THIS LINE EXISTS. The first cut left the
-      // coverage alone and displaced the ruling laterally into "its own gap".
-      // At the plot floor there IS no gap: uncapped, the master grid rules AT
-      // `floorPitch` and `covAtSample` clamps coverage to `localPitch/floorPitch`
-      // wherever the geometry crowds, so the drawn pitch in the darkest zone is
-      // exactly the floor and the amplitude came out zero on every sample. The
-      // law measured byte-identical to `perceptualRamp` (ink 2341.3 against
-      // 2341.3) — a no-op dressed as a variant.
-      //
-      // A space-filling fill is not an ADDITION to a ruled family; it REPLACES
-      // it. So the darkest zone rules at HALF the density and the traverse
-      // spends the freed gap, which lands the same ink through one continuous
-      // aperiodic path instead of two straight ones.
-      //
-      // F-07 / W-07 — the SECOND way this thinned-for-nothing: at the med
-      // master pitch the gap `(1 + tspRamp)` opens is itself only a fraction
-      // of a millimetre, well under half a pen — too little for a zig-zag to
-      // read as anything but noise on top of an already-thinner ruling. Gate
-      // the halving itself on that gap actually clearing the floor, computed
-      // LOCALLY (`localPitch / base` before any global cap), not against
-      // `floorPitch`, which is why the first fix (see comment above) still
-      // measured a no-op: at the pitch this bug actually fires at, drawn and
-      // floorPitch were already the same number.
-      if (TONE_ALGO === 'deepFillTSP') {
-        const base = clamp(perceptualCov(I, localPitch), 0.005, 1);
-        const ramp = tspRamp(I);
-        if (!(ramp > 0) || !(localPitch > 1e-6)) return base;
-        const drawnBase = localPitch / base;
-        const amp = (drawnBase * ramp) / 2;
-        if (!(amp > 0.5 * inkWidth())) return base; // not enough room to zig-zag — don't thin for nothing
-        return clamp(base / (1 + ramp), 0.005, 1);
-      }
+      // 'deepFillTSP' now rides `isEvenLadder()`'s own flat-1 placement (see
+      // above): it is a member of the continuous even-ladder family, and the
+      // shadow-third density comes from the corridor-bounded traverse added
+      // at the emit loop (`tspVerts`), not from thinning this verdict. This
+      // branch is therefore unreachable and deliberately removed — see
+      // W-07b-2-plan.md §1.1 step 1.
       // 'forcedContrast' — the same target, on a tone field the draughtsman has
       // deliberately pushed apart (see `fcIntensity`).
       if (TONE_ALGO === 'forcedContrast') return perceptualCov(fcIntensity(I), localPitch);
@@ -6296,6 +6401,57 @@
       // for the mechanism. Stated in mm here, once, in this closure, since
       // `penWidth` (and so `MK_ARC_MM`) is only known per-render.
       const MK_TICK_STEP_CAP_MM = MK_TICK_JUMP_PEN * MK_ARC_MM;
+      // T2-7 — the ink-occupancy grid's per-ruling helpers. `mkInk` itself
+      // (the Map) is render-scope, declared once outside `emitMarks` (see
+      // its own comment); these three closures are cheap to rebuild per
+      // ruling since they close over `masterPitch`/`wantFront`/`lineIndex`,
+      // which are per-ruling. The radius is density-aware: a coarse row
+      // (small `masterPitch/markRowCoverage() - plot floor`) needs a smaller
+      // clip so the arm is not stopped before it can even reach a legal
+      // seam; `clamp`d to `[FLOOR, CEILING] * w`.
+      const mkInkR = clamp(
+        0.5 * (masterPitch / markRowCoverage() - MK_TICK_PLOT_FLOOR * MIN_MARK_MM),
+        MK_TICK_CLIP_FLOOR_PEN * w,
+        MK_TICK_CLIP_PEN * w,
+      );
+      const mkInkKey = (x, y) => `${wantFront ? 1 : 0}:${Math.floor(x / mkInkR)},${Math.floor(y / mkInkR)}`;
+      // T2-7-review round 2 (Jay's `eye_t26` ruling, review REJECT on T2/T4 —
+      // "attempt the plan's own named fix candidate before touching any
+      // bar"). `rOverride` lets a caller clip at a SMALLER radius than the
+      // edge-arm ceiling (`mkInkR`) — see `MK_TICK_MAIN_CLIP_FRAC` below for
+      // why the MAIN tick's own two arms need one at all, and why it must be
+      // smaller than the edge-arm radius.
+      const mkInkHit = (p, rOverride) => {
+        const rr = rOverride || mkInkR;
+        const cx = Math.floor(p.x / mkInkR); const cy = Math.floor(p.y / mkInkR);
+        for (let dx = -1; dx <= 1; dx += 1) {
+          for (let dy = -1; dy <= 1; dy += 1) {
+            const bucket = mkInk.get(`${wantFront ? 1 : 0}:${cx + dx},${cy + dy}`);
+            if (!bucket) continue;
+            for (let i = 0; i < bucket.length; i += 1) {
+              if (bucket[i].li !== lineIndex && Math.hypot(bucket[i].x - p.x, bucket[i].y - p.y) < rr) return true;
+            }
+          }
+        }
+        return false;
+      };
+      const mkInkAdd = (run) => {
+        for (let i = 0; i < run.length; i += 1) {
+          const p = run[i];
+          const key = mkInkKey(p.x, p.y);
+          let bucket = mkInk.get(key);
+          if (!bucket) { bucket = []; mkInk.set(key, bucket); }
+          bucket.push({ x: p.x, y: p.y, li: lineIndex });
+          if (i > 0) {
+            const q = run[i - 1];
+            const mid = { x: 0.5 * (p.x + q.x), y: 0.5 * (p.y + q.y) };
+            const mkey = mkInkKey(mid.x, mid.y);
+            let mbucket = mkInk.get(mkey);
+            if (!mbucket) { mbucket = []; mkInk.set(mkey, mbucket); }
+            mbucket.push({ x: mid.x, y: mid.y, li: lineIndex });
+          }
+        }
+      };
       // THE CHART-WALKED EDGE. `poly` is a 2-vertex segment (every 'tick'/
       // 'morph' pass built by `mkShape`/`layMark` is exactly that) whose
       // MIDPOINT is the ruling's own sample `fr0` — the one point on the
@@ -6340,7 +6496,7 @@
         // (the seed point itself excluded) plus the frame/point the walk
         // actually ended at, so the caller can chain a further walk from
         // there.
-        const walkFrom = (seedFr, seedPt, seedUV, target, stepCapMM) => {
+        const walkFrom = (seedFr, seedPt, seedUV, target, stepCapMM, clipOn, clipR) => {
           const edgeLen = Math.hypot(target.u - seedUV.u, target.v - seedUV.v);
           if (!(edgeLen > 1e-9)) return { pts: [], askLen: 0, truncated: false, endFr: seedFr, endPt: seedPt };
           let fr = seedFr;
@@ -6348,6 +6504,15 @@
           let curPt = seedPt;
           const pts = [];
           let truncated = false;
+          // T2-7 — the H2 bend cap (tick-only, via `stepCapMM`, which is
+          // only ever passed for `law.shape === 'tick'`; `'morph'` passes
+          // `undefined` and is byte-for-byte unaffected). The arm's own
+          // FIRST accepted step direction is the reference; any later step
+          // that turns more than `MK_TICK_BEND_CUT` from it stops the arm —
+          // keeping what already walked, exactly like an off-surface
+          // sample — instead of letting the walk hook back on itself near a
+          // limb (H2: the `Y`/`⌐` tails `T2-7-plan.md` §1.1 photographed).
+          let d0x = null; let d0y = null;
           // T1b — capped per arm (see `MK_MAX_WALK_STEPS` above); a fine pen
           // or a long tick no longer grows a single mark's point count
           // without bound, at the cost of a coarser (but still on-surface)
@@ -6371,6 +6536,37 @@
             if (stepCapMM && Math.hypot(nextPt.x - curPt.x, nextPt.y - curPt.y) > stepCapMM) {
               truncated = true;
               break;
+            }
+            // T2-7 — the ink-occupancy clip (tick-only, `clipOn`, set by
+            // `layMark`'s tick block on the edge-extension arm, chain ticks,
+            // and (T2-7-review round 2) the MAIN tick's own two arms; see
+            // `MK_TICK_CLIP_PEN`/`MK_TICK_MAIN_CLIP_FRAC`). A step that lands
+            // within the clip radius of a DIFFERENT row's already-placed ink
+            // stops the arm here — this is what keeps a lit-edge reach from
+            // fusing into a neighbouring row's own ticks near a silhouette
+            // (R1/R3/R4, `T2-7-plan.md` §B4.1), and (round 2) what closes the
+            // foreshortened-cell contact residual the flat neighbour-distance
+            // estimate cannot see (§3.3 negative 3). `s > 1` for the MAIN
+            // tick's own smaller-radius clip (`clipR` truthy — edge/chain
+            // arms pass no override and are unaffected, checked from their
+            // own first step as before): measured, `crosshatch` mappers cross
+            // two tick FAMILIES at a shared hub, and clipping the very FIRST
+            // step wholesale-refuses a legitimate crossing tick whose hub sits
+            // near the OTHER family's own ink (a real regression found on
+            // `torus/crosshatch`, `T2-7-impl-2.md` §3) — letting the hub's own
+            // immediate neighbourhood through, and only clipping a main arm
+            // that WALKS INTO nearby ink partway along, keeps the contact fix
+            // without refusing ordinary crossing ticks at their own hub.
+            if (stepCapMM && clipOn && (s > 1 || !clipR) && mkInkHit(nextPt, clipR)) { truncated = true; break; }
+            if (stepCapMM) {
+              const sx = nextPt.x - curPt.x; const sy = nextPt.y - curPt.y;
+              const sl = Math.hypot(sx, sy);
+              if (sl > 1e-9) {
+                if (d0x == null) { d0x = sx / sl; d0y = sy / sl; } else {
+                  const cosb = (sx * d0x + sy * d0y) / sl;
+                  if (cosb < Math.cos((MK_TICK_BEND_CUT * Math.PI) / 180)) { truncated = true; break; }
+                }
+              }
             }
             curPt = nextPt;
             pts.push(curPt);
@@ -6398,12 +6594,12 @@
         const fr0Pt = { x: fr0.smp.x, y: fr0.smp.y, z: fr0.smp.z };
         const toHub = walkFrom(fr0, fr0Pt, { u: 0, v: 0 }, hubUV, stepCapMM);
         const hubFr = toHub.endFr; const hubPt = toHub.endPt;
-        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v }, stepCapMM);
+        const w0 = walkFrom(hubFr, hubPt, hubUV, { u: t0.u, v: t0.v }, stepCapMM, mkClipArm.m, mkClipArm.rm);
         const pts = w0.pts.slice().reverse();
         pts.push(hubPt);
         let askLen = w0.askLen; let truncated = toHub.truncated || w0.truncated;
         if (poly.length > 1) {
-          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v }, stepCapMM);
+          const w1 = walkFrom(hubFr, hubPt, hubUV, { u: t1.u, v: t1.v }, stepCapMM, mkClipArm.p, mkClipArm.rp);
           pts.push(...w1.pts);
           askLen += w1.askLen;
           truncated = truncated || w1.truncated;
@@ -6473,9 +6669,19 @@
               if (reqDir && dl > 1e-9) {
                 const drawnDir = { x: ddx / dl, y: ddy / dl };
                 const cosv = Math.min(1, Math.abs(drawnDir.x * reqDir.x + drawnDir.y * reqDir.y));
-                if (Math.acos(cosv) * (180 / Math.PI) > 10) sawDirBad = true;
+                const offDeg = Math.acos(cosv) * (180 / Math.PI);
+                if (offDeg > 10) sawDirBad = true;
+                // T2-7 — H2's chord-direction REFUSAL (tick-only; the stat
+                // above is a 10-degree COUNT for every walked shape and
+                // never refuses). `MK_TICK_DIR_CUT` (40): a tick whose own
+                // walked chord has departed this far from what was asked is
+                // the limb-rogue signature (`T2-7-plan.md` §1.1 H2) — refuse
+                // the whole mark rather than draw a wonky/near-horizontal
+                // stub.
+                if (law.shape === 'tick' && offDeg > MK_TICK_DIR_CUT) { mkStat.offSurface += 1; return false; }
               }
             }
+            if (law.shape === 'tick') mkInkAdd(wk.pts);
             runs.push(wk.pts);
             continue;
           }
@@ -6616,6 +6822,223 @@
         // disagree about how many rows actually survived.
         const R = clamp(((Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch) / markRowCoverage(), 0.25, 40);
         const g = clamp((mkAsk(I) * R) / w, 0, 26);
+        // T2-7 — mkTick's OWN solve (see the constants block above this
+        // function for the ruling this answers). Tick-only: every other
+        // law's `chan`/`lat` arithmetic below is untouched.
+        if (law.shape === 'tick') {
+          const PMINT = (1 + MK_TICK_GAP_PEN) * w;
+          const RPn = masterPitch / markRowCoverage();
+          if (RPn / w < MK_TICK_HIDENS_PEN) {
+            // HIGH-DENSITY REGIME (d=220's ~3.5-pen rows) — the
+            // real-neighbour-extent geometry below has no room to work with
+            // at this row pitch (measured: `siteCoverage` collapses to
+            // 2/12, `T2-7-plan.md` §A3/§C1 item #4). Fall back to proto3's
+            // plain centred contact-free solve plus the T2-4 plot floor,
+            // which is what holds B7 (`siteCoverage >= 0.90`) at proto3's
+            // own 10/12.
+            const lamMax = clamp(1 - PMINT / R, 0.2, 0.95);
+            const tH = clamp(1 - I, 0, 1);
+            const easedH = (1 - MK_TICK_EASE_BLEND) * tH + MK_TICK_EASE_BLEND * (tH * tH * (3 - 2 * tH));
+            let Lh = lamMax * (0.8 + 0.2 * easedH) * R;
+            const Lplot = MK_TICK_PLOT_FLOOR * MIN_MARK_MM;
+            if (Lh < Lplot) Lh = Math.min(Lplot, 0.98 * R);
+            const cMaxH = (Math.max(lamMax * R, Lh) / R) * (w / PMINT);
+            const cH = (mkAsk(I) / MK_DARK_AREA) * cMaxH;
+            let Ph = (Lh * w) / Math.max(1e-9, cH * R);
+            if (Ph < PMINT) Ph = PMINT;
+            if (Ph > MK_PMAX) { Ph = MK_PMAX; Lh = Math.min(Lh, (cH * R * Ph) / w); }
+            return {
+              P: Ph, L: Lh, R, I, g, truePitch: 0, bandPitch: 0,
+              segs: [[-Lh / 2, Lh / 2]], edgeP: false, edgeM: false,
+            };
+          }
+          const fr5 = frameAt(k);
+          // Real-neighbour band extents: each side's half-extent runs to the
+          // MIDPOINT of the gap to the neighbouring MARKED ruling (every
+          // `1/markRowCoverage()` master rulings), less half the contact
+          // gap. Where the neighbour is not on the front surface, the
+          // extent instead runs toward the silhouette/chart edge (LIT side
+          // only, `I >= MK_TICK_EDGE_MIN_I`), capped at one nominal row
+          // pitch — `T2-7-plan.md` §B1(a)/(b), §C1.
+          const onFront = (dv) => {
+            if (!fr5) return false;
+            const pp = fr5.toParam(0, dv);
+            if (!(pp.a >= 0 && pp.a <= 1)) return false;
+            let bb = pp.b;
+            if (bb < 0 || bb > 1) {
+              if (bb < -0.25 || bb > 1.25) return false;
+              bb = ((bb % 1) + 1) % 1;
+            }
+            const sm = sampleAt(pp.a, bb);
+            return !!(sm && sm.front === wantFront);
+          };
+          const edgeDist = (sgn, lim) => {
+            if (onFront(sgn * lim)) return lim;
+            let lo = 0; let hi = lim;
+            for (let it = 0; it < 12; it += 1) {
+              const mid = 0.5 * (lo + hi);
+              if (onFront(sgn * mid)) lo = mid; else hi = mid;
+            }
+            return lo;
+          };
+          // T2-7 (Amendment 4 item 10, the G3 fix) — where the neighbour
+          // ruling's OWN sample is off-front, cap the reach at the
+          // neighbour LINE's own last visible point (walked along the
+          // parameter segment toward the neighbour, not just linearly along
+          // `v`), so an edge-extension arm cannot run past where the true
+          // neighbouring row itself stops and fuse into ticks that row
+          // already placed nearer the limb (`T2-7-plan.md` §B4.1/§C1 #10,
+          // "G3 — a short horizontal bar joins a tick to the silhouette").
+          const neighbourLineEdge = (sgn, nStep) => {
+            if (!fr5 || !fr5.pr || !fr5.st) return null;
+            let lo = 0; let hi = 1;
+            const at = (t) => {
+              const qa = fr5.pr.a + sgn * t * nStep * fr5.st.a;
+              let qb = fr5.pr.b + sgn * t * nStep * fr5.st.b;
+              if (!(qa >= 0 && qa <= 1)) return null;
+              if (qb < 0 || qb > 1) qb = ((qb % 1) + 1) % 1;
+              return sampleAt(qa, qb);
+            };
+            if (!at(0) || at(0).front !== wantFront) return 0;
+            if (at(1) && at(1).front === wantFront) return null; // whole segment on-front: no cap needed
+            for (let it = 0; it < 12; it += 1) {
+              const mid = 0.5 * (lo + hi);
+              const sm = at(mid);
+              if (sm && sm.front === wantFront) lo = mid; else hi = mid;
+            }
+            const sm = at(lo);
+            if (!sm) return 0;
+            return Math.abs((sm.x - smp.x) * fr5.v.x + (sm.y - smp.y) * fr5.v.y);
+          };
+          let nbP = true; let nbM = true;
+          const half = (sgn) => {
+            const cap = RPn; // over2RP: a tick never exceeds one nominal row pitch of reach
+            let h = 0.5 * R - 0.5 * PMINT; // fallback: the local row-pitch estimate
+            if (fr5 && fr5.st && fr5.pr) {
+              const nStep = 1 / markRowCoverage();
+              const qa = fr5.pr.a + sgn * nStep * fr5.st.a;
+              let qb = fr5.pr.b + sgn * nStep * fr5.st.b;
+              let q = null;
+              if (qa >= 0 && qa <= 1) {
+                if (qb < 0 || qb > 1) qb = ((qb % 1) + 1) % 1;
+                q = sampleAt(qa, qb);
+              }
+              if (q && q.front === wantFront) {
+                const d = Math.abs((q.x - smp.x) * fr5.v.x + (q.y - smp.y) * fr5.v.y);
+                if (d > 1e-6) h = 0.5 * d - 0.5 * PMINT;
+                h = Math.min(h, edgeDist(sgn, Math.max(h, 0) + 0.75 * w) - 0.75 * w);
+              } else {
+                if (sgn > 0) nbP = false; else nbM = false;
+                // T2-8 — a §C5 wedge row is ITSELF the extension past the last
+                // real row; its own missing outer neighbour must not trigger
+                // a SECOND edge-reach-to-silhouette on top of that (measured:
+                // it did, and cost B5 monotonicity on test/{cone,torus}/hatch
+                // with long, disproportionate ticks in the lit bins).
+                h = (I >= MK_TICK_EDGE_MIN_I && !mkWedgeActive)
+                  ? (edgeDist(sgn, cap + 0.75 * w) - 0.75 * w)
+                  : Math.min(0.5 * R - 0.5 * PMINT, edgeDist(sgn, cap + 0.75 * w) - 0.75 * w);
+                const nlEdge = neighbourLineEdge(sgn, nStep);
+                if (nlEdge != null) h = Math.min(h, Math.max(0, nlEdge - 0.75 * w));
+              }
+            }
+            return clamp(h, 0, cap);
+          };
+          let hP = half(1); let hM = half(-1);
+          {
+            // T2-4's floor, folded in as the tick's minimum SIZE: the floor
+            // WINS over the seam gap.
+            const Lp0 = MK_TICK_PLOT_FLOOR * MIN_MARK_MM;
+            const tot = hP + hM;
+            const want = Math.min(Lp0, 0.98 * (tot + PMINT));
+            if (tot < want) { const add = 0.5 * (want - tot); hP += add; hM += add; }
+          }
+          const aP = Math.min(hP, RPn); const aM = Math.min(hM, RPn);
+          // Beyond the main band's own extent, a chain of gradually
+          // SHORTENING ticks (ratio `MK_TICK_CHAIN_RHO`) continues toward
+          // the silhouette/rim, each its own mark (§B1(b)).
+          const chain = (sgn, from, room) => {
+            const out = []; let pos = from + PMINT; let len = Math.min(aP + aM, RPn) * MK_TICK_CHAIN_RHO;
+            while (room - (pos - from) >= Math.max(2 * w, 0.5 * MIN_MARK_MM) + 1e-9 && out.length < 6) {
+              const l = Math.min(len, from + room - pos);
+              if (l < 2 * w) break;
+              out.push(sgn > 0 ? [pos, pos + l] : [-(pos + l), -pos]);
+              pos += l + PMINT; len *= MK_TICK_CHAIN_RHO;
+            }
+            return out;
+          };
+          const chP = hP > aP + PMINT ? chain(1, aP, hP - aP) : [];
+          const chM = hM > aM + PMINT ? chain(-1, aM, hM - aM) : [];
+          const Lmain = Math.max(aP + aM, 1e-6);
+          let Lall = Lmain;
+          chP.concat(chM).forEach((q) => { Lall += q[1] - q[0]; });
+          const Reff = Math.max(hP + hM + PMINT, 2 * PMINT);
+          const Lplot = MK_TICK_PLOT_FLOOR * MIN_MARK_MM;
+          const cMax = (Lall / Reff) * (w / PMINT);
+          // proto5-L / proto6's own tone (gamma 1 — proto3's tone; see the
+          // constants block above). `alphaEff` fades the (small) length
+          // channel to 0 as the row pitch approaches the HIDENS regime,
+          // where there is no length room at all.
+          const c = (mkAsk(I) / MK_DARK_AREA) * cMax;
+          const alphaEff = MK_TICK_LEN_ALPHA * clamp((RPn / w - 4) / MK_TICK_HIDENS_PEN, 0, 1);
+          const f = clamp((c / (MK_TICK_PLATEAU * cMax)) ** alphaEff, Math.min(1, Lplot / Lall), 1);
+          // BAND FILL: the band's bare share (Lmain - f*Lmain) is cut into
+          // pieces no wider than ~one contact gap, shortening toward the
+          // light (ratio `MK_TICK_CHAIN_RHO`) so no seam gutter is left
+          // unfilled — each piece its own mark.
+          const segs = [];
+          const Lm = f * Lmain; const gutter = Lmain - Lm;
+          let n = Math.max(1, Math.floor(gutter / PMINT));
+          while (n > 1 && Lm / n < 2 * w) n -= 1;
+          const iOf = (dv) => {
+            if (!fr5) return null;
+            const pp = fr5.toParam(0, dv);
+            if (!(pp.a >= 0 && pp.a <= 1)) return null;
+            let bb = pp.b;
+            if (bb < 0 || bb > 1) bb = ((bb % 1) + 1) % 1;
+            const sm = sampleAt(pp.a, bb);
+            return (sm && sm.front === wantFront && Number.isFinite(sm.I)) ? sm.I : null;
+          };
+          const iP5 = iOf(0.5 * aP); const iM5 = iOf(-0.5 * aM);
+          const darkPlus = (iP5 != null && iM5 != null) ? (iP5 < iM5) : true;
+          const gg = gutter / n;
+          const uu5 = ((k * 0.6180339887498949) % 1 + 1) % 1;
+          const shift = n > 1 ? (uu5 - 0.5) * 0.5 * gg : 0;
+          const wts = []; let wsum = 0;
+          for (let j = 0; j < n; j += 1) { const wj = MK_TICK_CHAIN_RHO ** j; wts.push(wj); wsum += wj; }
+          let pos = gg / 2 + shift; // distance from the dark edge
+          const order = [];
+          for (let j = 0; j < n; j += 1) { const lj = (Lm * wts[j]) / wsum; order.push([pos, pos + lj]); pos += lj + gg; }
+          const edgeP = hP > 0 && !nbP; const edgeM = hM > 0 && !nbM;
+          let fromPlus = darkPlus;
+          if (edgeP !== edgeM) fromPlus = edgeP;
+          order.forEach((q) => {
+            const seg = fromPlus ? [aP - q[1], aP - q[0]] : [-aM + q[0], -aM + q[1]];
+            segs.push(seg);
+          });
+          chP.concat(chM).forEach((q) => {
+            const mid = 0.5 * (q[0] + q[1]); const hl = 0.5 * f * (q[1] - q[0]);
+            if (2 * hl >= 2 * w) segs.push([mid - hl, mid + hl]);
+          });
+          let Ltot = 0; segs.forEach((q) => { Ltot += q[1] - q[0]; });
+          Ltot = Math.max(Ltot, 1e-6);
+          let Ptick = (Ltot * w) / Math.max(1e-9, c * Reff);
+          if (Ptick < PMINT) Ptick = PMINT;
+          if (Ptick > MK_PMAX) {
+            const sc = (c * Reff * MK_PMAX) / w / Ltot;
+            Ptick = MK_PMAX;
+            if (sc < 1) {
+              segs.forEach((q) => {
+                const mid = 0.5 * (q[0] + q[1]); const hl = 0.5 * sc * (q[1] - q[0]);
+                q[0] = mid - hl; q[1] = mid + hl;
+              });
+              Ltot *= sc;
+            }
+          }
+          return {
+            P: Ptick, L: Ltot, R: Reff, I, g, truePitch: 0, bandPitch: 0,
+            segs, edgeP: !nbP, edgeM: !nbM,
+          };
+        }
         let P; let L;
         const countChan = law.chan === 'count' || (law.chan === 'alt' && parity === 1);
         const lenChan = law.chan === 'len';
@@ -6821,135 +7244,59 @@
             const off = (j - (nn - 1) / 2) * w;
             polys.push([[-eachDrawn / 2, off], [eachDrawn / 2, off]]);
           }
+        } else if (law.shape === 'tick' && sv.segs) {
+          // T2-7 — `sv.segs` (from `solveAt`'s tick branch) is a list of
+          // absolute v-ranges: the main band, its graded band-fill pieces
+          // and any limb/rim chain ticks, EACH its own mark. The single
+          // LONGEST seg is the lattice SITE's own registered tick
+          // (`mkStat.tickSites`, the per-site coverage/wedge oracle); every
+          // other seg is placed independently, for ink/count purposes only
+          // — so a band's own piece count never dilutes the site population
+          // O5/SP5/the wedge oracle read (`T2-7-plan.md` §C1 "each piece its
+          // own mark"). This REPLACES T2-3's row-wide stagger and T2-6's
+          // comb for `mkTick` — both retired by Jay's `eye_t26` ruling (see
+          // the constants block above `solveAt`).
+          let mainIdx = 0;
+          for (let si = 1; si < sv.segs.length; si += 1) {
+            if (sv.segs[si][1] - sv.segs[si][0] > sv.segs[mainIdx][1] - sv.segs[mainIdx][0]) mainIdx = si;
+          }
+          sv.segs.forEach((seg, si) => {
+            const poly = [[0, seg[0]], [0, seg[1]]];
+            // The ink-occupancy clip (`MK_TICK_CLIP_PEN`) is armed on every
+            // satellite/chain piece unconditionally (they exist specifically
+            // to fill the seam/limb reach where an occupancy check matters,
+            // full radius). T2-7-review round 2: it is now ALSO armed on the
+            // MAIN tick's own two arms, on every side (not only the
+            // edge-extension side) — at the smaller `MK_TICK_MAIN_CLIP_FRAC`
+            // radius (see that constant's own comment for the measured
+            // trade). This is what closes the foreshortened-cell contact gap
+            // the flat neighbour-projection estimate cannot see.
+            mkClipArm.m = true;
+            mkClipArm.p = true;
+            // T2-8 — a §C5 wedge row's main tick forces the full radius (see
+            // `mkWedgeActive`'s own comment, above `mkInk`), instead of the
+            // `MK_TICK_MAIN_CLIP_FRAC` share a normal ruling's main tick gets.
+            mkClipArm.rm = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
+            mkClipArm.rp = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
+            const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));
+            mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
+            if (si === mainIdx) mkStat.tickSites.push(sv.I, sv.R, sv.P, pieceLen ? 1 : 0);
+            if (pieceLen) {
+              const third = Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3));
+              mkStat.byThird[third] += 1;
+              mkStat.lenByThird[third] += pieceLen;
+              mkStat.cntByThird[third] += 1;
+              if (si === mainIdx) {
+                mkStat.askSum += sv.L;
+                mkStat.drawnSum += pieceLen;
+              }
+            }
+          });
+          return;
         } else {
           polys = mkShape(shapeFor(), sv.L, sv.R, w);
-          // T2-5 (`T2-5-plan.md` §4 Rank 1 — SUB-TICK RE-TILING, spike-gated,
-          // 296-cell md5 sweep). Jay's user rule, verbatim (cone/hatch/mkTick/
-          // d=50): "Instead of tick fragments on the right, use gradually
-          // shortening ticks to fill the black gaps at the bottom of the
-          // vertical waves. Also don't increase overlap at the seams. And
-          // remove any lines not part of a tick band." T2-3's stagger (the
-          // `else` branch below, unchanged) scatters ONE tick's centre across
-          // the whole row band `sv.R` — but `sv.R` is the LOCAL row pitch at
-          // THIS sample, which on a foreshortened patch can read up to ~2x
-          // the field's own NOMINAL row pitch (`masterPitch / MK_ROW_COV`);
-          // since a tick's length ceiling is `L0*sv.R`, that lets ONE tick
-          // cross two whole rows — clause (c) of Jay's rule, "lines not part
-          // of a tick band" (measured: 40 of 470 ticks on cone/hatch/create,
-          // 381.2mm, `T2-5-plan.md` §2 O-C2). Re-tile the over-wide band into
-          // the MINIMUM `nSub` that clears the over2RP threshold itself
-          // (`ceil(L0*R / (2*nominalRP))` — not the plan's own round-to-
-          // nearest sketch, which also touches `sphere/hatch` and dilutes
-          // `scene3d-mark-laws-draw.test.js`'s O1 sagitta oracle below its
-          // own bar, see `T2-5-impl.md`), each sub-band carrying its own
-          // share `sv.L/nSub` of the SAME total length (so the delivered
-          // ink-area fraction is UNCHANGED: `Σlength = L`, `R` and `P`
-          // untouched — a pure re-tiling, proven exactly neutral on tone,
-          // `T2-5-plan.md` §4) and its own golden-ratio stagger scaled to its
-          // own (smaller) room — the SAME low-discrepancy formula T2-3 uses,
-          // just confined to a sub-band instead of the whole row. `nSub` is 1
-          // on every ordinary (non-foreshortened) sample — where this is
-          // BYTE-IDENTICAL to the single-tick stagger below — and clamped to
-          // 6 so a pathological outlier cannot explode pen-down count.
-          if (law.shape === 'tick') {
-            const nominalRP = masterPitch / MK_ROW_COV;
-            // `nOver` is T2-5's own MINIMUM split that clears the over2RP bar
-            // itself (`law.L0*R > 2*nominalRP`) — clause (c), untouched by
-            // this unit. Touching only the sites that actually need it keeps
-            // the longest-third chord population
-            // (`scene3d-mark-laws-draw.test.js`'s own O1 sagitta oracle) as
-            // close to untouched as clause (c) allows.
-            const nOver = clamp(Math.ceil((law.L0 * sv.R) / Math.max(1e-6, 2 * nominalRP)), 1, 6);
-            // T2-6 — THE GRADED BAND COMB (`T2-6-plan.md` §4.1). Two
-            // `sampleAt` probes at the band's own +-R/2 edges (in the SAME
-            // frame-local `v` coordinate `mkShape`'s tick spans) find which
-            // side of the band is darker. When the band is wide enough to
-            // hold >=2 sub-ticks without any of them falling under one pen
-            // width, lay a GEOMETRIC RUN `each_j = e0*RHO^j` across `nComb`
-            // sub-bands, longest at the DARK edge (`j=0`), chosen as the
-            // LARGEST `n` for which the run fits inside its own `ENV`-scaled
-            // envelope. `Sum(e0*RHO^j, j=0..n-1) = e0*(1-RHO^n)/(1-RHO) =
-            // sv.L` EXACTLY (closed-form geometric series) — so `R`/`P` stay
-            // untouched and the delivered ink-area fraction
-            // `sv.L*w/(sv.R*sv.P) = mkAsk(I)` is bit-identical: a pure
-            // redistribution of one band's own ink, the same neutrality
-            // proof T2-5 used for its own uniform split. Consecutive
-            // sub-ticks have ratio EXACTLY `MK_TICK_COMB_RHO`, so at
-            // RHO>=0.5 Jay's "no tick under half its neighbour" holds BY
-            // CONSTRUCTION, not by measurement.
-            //
-            // `bandOn` (both probes on-chart) is the correctness gate, not a
-            // dial: without it a sub-tick near a foreshortened band's own
-            // edge can leave the chart, and `place()` drops the WHOLE mark
-            // (shared by all twelve mark laws) — measured to collapse O5 on
-            // `torus/hatch` (2.59->2.01, non-monotone) with no gate,
-            // `T2-6-plan.md` §4.4. It costs nothing: the same two probes
-            // also set the shorten-toward-the-light direction.
-            const probeI = (dv) => {
-              const pp = fr.toParam(0, dv);
-              if (!(pp.a >= 0 && pp.a <= 1)) return null;
-              let bb = pp.b;
-              if (bb < 0 || bb > 1) {
-                if (bb < -0.25 || bb > 1.25) return null;
-                bb = ((bb % 1) + 1) % 1;
-              }
-              const sm = sampleAt(pp.a, bb);
-              return (sm && sm.front === wantFront && Number.isFinite(sm.I)) ? sm.I : null;
-            };
-            const iP = probeI(0.5 * sv.R);
-            const iM = probeI(-0.5 * sv.R);
-            // sgnDark > 0 => the +v side of the band is the DARKER side.
-            let sgnDark = 0;
-            if (iP != null && iM != null) sgnDark = (iP < iM) ? 1 : ((iP > iM) ? -1 : 0);
-            else if (iP != null) sgnDark = -1;
-            else if (iM != null) sgnDark = 1;
-            const bandOn = (iP != null && iM != null);
-            const minKeep = penWidth;
-            let nComb = 1;
-            let e0 = 0;
-            if (bandOn && sv.L >= MK_TICK_COMB_MIN_R * sv.R && sv.L < 0.98 * sv.R) {
-              for (let n = MK_TICK_COMB_MAX; n >= 2; n -= 1) {
-                const den = (1 - MK_TICK_COMB_RHO ** n) / (1 - MK_TICK_COMB_RHO);
-                const a0 = sv.L / den;
-                if (a0 <= (MK_TICK_COMB_ENV * sv.R) / n && a0 * MK_TICK_COMB_RHO ** (n - 1) >= minKeep) {
-                  nComb = n; e0 = a0; break;
-                }
-              }
-            }
-            const nSub = Math.max(nOver, nComb);
-            // When `nSub` is set by clause (c) alone (no comb fits, or the
-            // band is >= its own row pitch), fall back to a plain UNIFORM
-            // split across the full band `sv.R` — clause (c)'s own mechanism,
-            // now centred per sub-band (the comb's own placement, not T2-3's
-            // row-wide stagger, which only applies to an un-split band below).
-            const uniformSplit = (nComb < 2 || nSub !== nComb || sv.L >= sv.R);
-            if (nSub > 1) {
-              const sub = (uniformSplit ? sv.R : MK_TICK_COMB_ENV * sv.R) / nSub;
-              const dir = sgnDark >= 0 ? 1 : -1;   // +1 => the +v side is DARKER
-              const tiled = [];
-              for (let j = 0; j < nSub; j++) {
-                // j = 0 is the DARKEST sub-band; lengths fall toward the light.
-                const each = uniformSplit ? (sv.L / nSub) : (e0 * MK_TICK_COMB_RHO ** j);
-                const slot = dir > 0 ? (nSub - 1 - j) : j;   // slot index in +v order
-                const vCenter = (slot - (nSub - 1) / 2) * sub;
-                tiled.push([[0, vCenter - each / 2], [0, vCenter + each / 2]]);
-              }
-              polys = tiled;
-            } else {
-              // A single, un-split tick: T2-3's own row-wide golden-ratio
-              // stagger, byte-identical to before this unit.
-              const room = 0.5 * Math.max(0, sv.R - sv.L);
-              if (room > 1e-6) {
-                const idx = a / Math.max(1e-6, sv.P);
-                const uu = ((idx * 0.6180339887498949) % 1 + 1) % 1;
-                const cOff = room * (2 * uu - 1);
-                polys = polys.map((pl) => pl.map((pt) => [pt[0], pt[1] + cOff]));
-              }
-            }
-          }
         }
         const drawnLen = place(fr, polys, a - arcMM[k], thetaAt(k, fr));
-        if (law.shape === 'tick') mkStat.tickSites.push(sv.I, sv.R, sv.P, drawnLen ? 1 : 0);
         if (drawnLen) {
           const third = Math.min(2, Math.floor(clamp(sv.I, 0, 1) * 3));
           mkStat.byThird[third] += 1;
@@ -7090,6 +7437,13 @@
         else if (law.lat === 'hex') phase = (0.5 * parity + 0.13 * gold) % 1;
         let a = arcMM[s0] + phase * solveAt(s0).P;
         let guard = 0;
+        // T2-7 (Amendment 4 item 8, "end-of-span tick") — the last placed
+        // site's own arc position, so the lattice loop below can tell
+        // whether the span's own far end was left further than half a
+        // period plus a small margin short of the last tick — the base
+        // wedges G2a/G2b/G5's own "a whole period short of the span end,
+        // and no row covers the triangle past a ruling's exit" pattern.
+        let lastA = -Infinity;
         while (a <= arcMM[s1] && guard < 4000) {
           guard += 1;
           const k = idxAt(a);
@@ -7115,9 +7469,29 @@
               cur = k;
             }
           }
-          layMark(idxAt(ao), ao, sv);
+          // T2-8 — a §C5 wedge row skips a candidate whose own solved
+          // length is already far short of its row's own width, a cheap
+          // LOCAL quality gate against a degenerate solve (it did not fire
+          // on the measured cells — the actual B5 fix was `mkWedgeActive`'s
+          // full ink-occupancy clip above, plus tuning `MK_TICK_WEDGE_V`
+          // and dropping the `side = -1` row, both documented at
+          // `emitTickWedgeRow`). Left in as a cheap belt-and-suspenders
+          // check for cells this unit did not sweep.
+          if (!(mkWedgeActive && sv.L < 0.7 * sv.R)) layMark(idxAt(ao), ao, sv);
           cur = k;
+          lastA = ao;
           a += sv.P;
+        }
+        // T2-7 — the end-of-span tick (Amendment 4 item 8). Tick-only: for
+        // every other law the lattice loop above is byte-identical to
+        // before this unit. A final tick is laid at the span's own far end
+        // `s1` when the last placed site fell more than half a period plus
+        // 1.6 pens short of it — the along-row half of the base-wedge class
+        // (§C5): the lattice otherwise stops a whole period short of a
+        // span's true end, and no row covers the remainder.
+        if (law.shape === 'tick') {
+          const svEnd = solveAt(s1);
+          if (arcMM[s1] - lastA > 0.5 * svEnd.P + 1.6 * w) layMark(s1, arcMM[s1], svEnd);
         }
       });
     };
@@ -9574,42 +9948,151 @@
       // a secondary lattice. The amplitude is bounded by the plot floor at one
       // end and by the ruling's own distance-to-its-end at the other, so a
       // displaced point can neither flood nor leave the surface.
-      const TSP_PERIOD = 3.2;   // mm, one zig and one zag
-      const tspAt = (smp, s) => {
-        if (!arcMM || !endMM) return null;
+      // deepFillTSP RIDES `isEvenLadder()`'s own flat-1 placement (Ladder's
+      // rulings, unchanged) and adds a CORRIDOR-BOUNDED triangle-wave
+      // traverse on top, only where the form is darker than TSP_I. Outside
+      // the ramp the output is bit-identical to Ladder. See
+      // docs/3d-audit/lane-reports/W-07b-2-plan.md §1.1 for the mechanism
+      // and the measured bars.
+      const TSP_CORRIDOR = 0.4;      // share of the real neighbour gap
+      const TSP_PERIOD_PITCH = 1.6;  // x max(masterPitch, floorPitch), fixed per object
+      const tspPeriod = () => TSP_PERIOD_PITCH * Math.max(masterPitch > 0 ? masterPitch : floorPitch, floorPitch);
+      const tspWrap = (v) => { const w = v % 1; return w < 0 ? w + 1 : w; };
+      let tspPh = null;     // accumulated phase per sample, lazily built (tspPrep)
+      let tspPrevS = -2;    // the last sample index this ruling emitted, for tspVerts' A0
+      // Amplitude at sample s. Zero on the family's first/last ruling (the
+      // closed-chart seam duplicate would otherwise cross an out-of-phase
+      // twin), zero where the real neighbour gap is already solid ink, and
+      // zero off the ramp (k = 0). `p` starts as the linearised pitch and is
+      // tightened to the REAL perpendicular gap to the nearer neighbour,
+      // probed on the chart one ruling-step either side — the linearised
+      // pitch misses foreshortening at the limb.
+      const tspAmp = (s) => {
+        const smp = smps[s];
+        if (!smp || !arcMM || !endMM) return 0;
         const k = tspRamp(smp.I);
-        if (!(k > 0)) return null;
-        const p = pitchAtStep(smp, s);
-        if (!(Number.isFinite(p) && p > 1e-6)) return null;
-        // F-07 / W-07 — THE LOCAL GAP THE HALVING OPENED, not the distance to
-        // the (global) plot floor. `algoCoverage`'s deepFillTSP branch draws
-        // at `base / (1 + k)`; every other cap it and `covAtSample` apply
-        // (the composed budget, the floor-crowding multiply) is the SAME
-        // factor with or without the ramp, so it cancels in the ratio:
-        // `drawn = drawnBase * (1 + k)` exactly, and `drawnBase` is what this
-        // ruling would have drawn WITHOUT deepFillTSP. Half that gap, split
-        // either side of the ruling, is exactly the excursion that spends the
-        // ink the thinning freed — this is the same quantity the coverage
-        // gate above already cleared, computed here against the pitch this
-        // sample actually drew at.
-        const drawn = p / Math.max(1e-6, covAtSample(smp, s, zones[s]));
-        const drawnBase = drawn / (1 + k);
-        let amp = Math.max(0, (drawn - drawnBase) / 2);
-        // Bounded by the ruling's own distance-to-its-end (unchanged) and by
-        // 1.5x the local pitch, so the full zig-zag excursion (2x amplitude)
-        // can never read as more than 3 pitches wide.
-        amp = Math.min(amp, endMM[s] / 2, 1.5 * p);
-        if (!(amp > 1e-3)) return null;
+        if (!(k > 0)) return 0;
+        if (Number(lineIndex) === 0 || Number(lineIndex) === Number(count) - 1) return 0;
+        let p = pitchAtStep(smp, s);
+        if (!(Number.isFinite(p) && p > 1e-6)) return 0;
+        const pr = paramAt(s / nSteps);
+        const st = typeof pitchStep === 'function' ? pitchStep(s / nSteps) : pitchStep;
+        const a = smps[Math.max(0, s - 1)] || smp; const b = smps[Math.min(nSteps, s + 1)] || smp;
+        const tx = b.x - a.x; const ty = b.y - a.y; const tl = Math.hypot(tx, ty);
+        if (pr && st && tl > 1e-9) {
+          [1, -1].forEach((sg) => {
+            const q = sampleAt(clamp(pr.a + sg * st.a, 0, 1), tspWrap(pr.b + sg * st.b));
+            if (!q || q.front !== wantFront) return;
+            const g = Math.abs((q.x - smp.x) * (ty / tl) - (q.y - smp.y) * (tx / tl));
+            if (g > 1e-6 && g < p) p = g;
+          });
+        }
+        if (p < inkWidth()) return 0; // rulings already overlap — solid ink, nothing to traverse
+        return Math.max(0, Math.min(k * TSP_CORRIDOR * p, endMM[s] / 2, tspPeriod() / 4));
+      };
+      // One phase track per ruling, accumulated along arc length at the
+      // fixed period. Keyed on the ruling's OWN family position (`threshold`,
+      // its ordered-dither rank/4096), not `lineIndex`, so a seam-duplicate
+      // ruling on a closed chart gets the SAME phase as its twin.
+      const tspPrep = () => {
+        tspPh = new Array(nSteps + 1).fill(NaN);
+        let prev = -1;
+        const P = tspPeriod();
+        for (let s = 0; s <= nSteps; s++) {
+          const smp = smps[s];
+          if (!smp) { prev = -1; continue; }
+          if (prev < 0) {
+            const fr = Number(threshold);
+            const key = Number.isFinite(fr) ? Math.round((((fr % 1) + 1) % 1) * 4096) : (Number(lineIndex) || 0);
+            tspPh[s] = (key * GOLDEN_STEP) % 1;
+          } else {
+            tspPh[s] = tspPh[prev] + (arcMM[s] - arcMM[prev]) / P;
+          }
+          prev = s;
+        }
+      };
+      // Place a lateral excursion ON THE SURFACE: push the screen-space
+      // offset back through the sample's own Jacobian frame (dA/dB) into the
+      // chart, resample there, and halve the excursion (x4) if the displaced
+      // point leaves the front surface or lands too far from the target.
+      const tspPlace = (bx, by, bz, ttHere, frame, nx, ny, A) => {
+        const pr = paramAt(ttHere);
+        if (!pr || !frame || !frame.dA || !frame.dB) return { x: bx, y: by, z: bz };
+        const det = frame.dA.x * frame.dB.y - frame.dA.y * frame.dB.x;
+        if (!(Math.abs(det) > 1e-12)) return { x: bx, y: by, z: bz };
+        let amp = A;
+        for (let it = 0; it < 4; it++, amp /= 2) {
+          const vx = nx * amp; const vy = ny * amp;
+          const da = (vx * frame.dB.y - vy * frame.dB.x) / det;
+          const db = (frame.dA.x * vy - frame.dA.y * vx) / det;
+          const cand = sampleAt(clamp(pr.a + da, 0, 1), tspWrap(pr.b + db));
+          if (cand && cand.front === wantFront
+            && Math.hypot(cand.x - (bx + vx), cand.y - (by + vy)) <= 0.35 * Math.abs(amp) + 1e-3) {
+            return { x: bx + vx, y: by + vy, z: bz };
+          }
+        }
+        return { x: bx, y: by, z: bz };
+      };
+      const triOf = (ph) => (2 / Math.PI) * Math.asin(Math.sin(ph * Math.PI * 2));
+      // Central-difference tangent normal at sample s (unit, or null on a
+      // degenerate span). Lerping this between s-1 and s (in tspVerts) is
+      // what removes the micro self-loops a chord normal leaves at a bend.
+      const tspNrm = (s) => {
+        const smp = smps[s];
         const a = smps[Math.max(0, s - 1)] || smp;
         const b = smps[Math.min(nSteps, s + 1)] || smp;
-        const dx = b.x - a.x; const dy = b.y - a.y;
-        const L = Math.hypot(dx, dy);
-        if (!(L > 1e-9)) return null;
-        const ph = (arcMM[s] / TSP_PERIOD + (Number(lineIndex) || 0) * GOLDEN_STEP) * Math.PI * 2;
-        // A TRIANGLE wave, not a sine: constant lateral speed is what makes the
-        // traverse fill its gap evenly instead of dwelling at the turns.
-        const tri = (2 / Math.PI) * Math.asin(Math.sin(ph));
-        return { x: smp.x + (-dy / L) * amp * tri, y: smp.y + (dx / L) * amp * tri, z: smp.z };
+        const dx = b.x - a.x; const dy = b.y - a.y; const L = Math.hypot(dx, dy);
+        return L > 1e-9 ? { x: -dy / L, y: dx / L } : null;
+      };
+      // Returns null (no traverse at sample s) or the ordered list of points
+      // to lay: the triangle wave's own turning points between the previous
+      // emitted sample and s (each its own vertex — a triangle wave is
+      // exactly piecewise-linear between its extrema, so this is what makes
+      // any period legal at any sample spacing), then s itself.
+      const tspVerts = (s) => {
+        if (!arcMM || !endMM) return null;
+        if (!tspPh) tspPrep();
+        const smp = smps[s];
+        const A1 = tspAmp(s);
+        const prevOk = s > 0 && tspPrevS === s - 1 && smps[s - 1];
+        const A0 = prevOk ? tspAmp(s - 1) : 0;
+        if (!(A1 > 1e-3) && !(A0 > 1e-3)) return null;
+        const outPts = [];
+        if (prevOk && Number.isFinite(tspPh[s - 1]) && Number.isFinite(tspPh[s])) {
+          const q0 = smps[s - 1]; const f0 = tspPh[s - 1]; const f1 = tspPh[s];
+          const dx = smp.x - q0.x; const dy = smp.y - q0.y; const L = Math.hypot(dx, dy);
+          if (L > 1e-9 && f1 > f0) {
+            let e = Math.ceil((f0 - 0.25) * 2) / 2 + 0.25;
+            if (e <= f0) e += 0.5;
+            let guard = 0;
+            for (; e < f1 && guard < 256; e += 0.5, guard++) {
+              const t = (e - f0) / (f1 - f0);
+              const A = A0 + (A1 - A0) * t;
+              const sg = triOf(e) >= 0 ? 1 : -1;
+              const bx = q0.x + dx * t; const by = q0.y + dy * t; const bz = q0.z + (smp.z - q0.z) * t;
+              const n0 = tspNrm(s - 1); const n1 = tspNrm(s);
+              let nx = -dy / L; let ny = dx / L;
+              if (n0 && n1) {
+                const mx = n0.x + (n1.x - n0.x) * t; const my = n0.y + (n1.y - n0.y) * t;
+                const ml = Math.hypot(mx, my);
+                if (ml > 1e-9) { nx = mx / ml; ny = my / ml; }
+              }
+              const q = A > 1e-3 ? tspPlace(bx, by, bz, (s - 1 + t) / nSteps, t < 0.5 ? q0 : smp, nx * sg, ny * sg, A)
+                : { x: bx, y: by, z: bz };
+              q.__t = t;
+              outPts.push(q);
+            }
+          }
+        }
+        if (A1 > 1e-3) {
+          const a = smps[Math.max(0, s - 1)] || smp;
+          const b = smps[Math.min(nSteps, s + 1)] || smp;
+          const dx = b.x - a.x; const dy = b.y - a.y; const L = Math.hypot(dx, dy);
+          const tri = triOf(tspPh[s]);
+          if (L > 1e-9) outPts.push(tspPlace(smp.x, smp.y, smp.z, s / nSteps, smp, -dy / L, dx / L, A1 * tri));
+          else outPts.push({ x: smp.x, y: smp.y, z: smp.z });
+        } else outPts.push({ x: smp.x, y: smp.y, z: smp.z });
+        return outPts;
       };
 
       // ── ROUND 5 — WHERE THE RULING DISSOLVES, AND INTO WHAT ─────────────────
@@ -10041,9 +10524,22 @@
         // the emitted stroke actually started and stopped on — the ruling's own
         // parameter ends are not it wherever the silhouette cut the run.
         if (wvChainOn) { if (wvStartS == null) wvStartS = s; wvEndS = s; }
-        addPt((lozDisp && lozDisp[s])
-          || (toneOn && TONE_ALGO === 'deepFillTSP' && tspAt(smp, s))
-          || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
+        const tspV = (toneOn && TONE_ALGO === 'deepFillTSP') ? tspVerts(s) : null;
+        if (tspV) {
+          tspV.forEach((q) => {
+            // A displaced vertex (or an emitted turning point) carries NO
+            // sweep parameter: the ruling's own parameter names a point ON
+            // the ruling, and the contour mapper's turn refinement would
+            // otherwise bisect it back onto the centreline (see
+            // refineFillRunTurns' Number.isFinite(t0/t1) guard).
+            const moved = q.x !== smp.x || q.y !== smp.y;
+            addPt({ x: q.x, y: q.y, z: q.z }, sampleZone,
+              (moved || q.__t != null) ? NaN : tt);
+          });
+        } else {
+          addPt((lozDisp && lozDisp[s]) || { x: smp.x, y: smp.y, z: smp.z }, sampleZone, tt);
+        }
+        tspPrevS = s;
         if (s < nSteps && !onSurf[s + 1]) {
           const e = edgeAt(s, s + 1);
           if (e) addPt({ x: e.x, y: e.y, z: e.z }, sampleZone, Number.isFinite(e.tt) ? e.tt : tt);
@@ -10429,6 +10925,64 @@
       return rev;
     };
 
+    // T2-8 (plan §C5, "base wedges", Jay's `eye_t26` round-3 markup: G2a/G2b
+    // on the cone's base, G5 on the sphere's rim). A TICK-ONLY additive pass,
+    // run once per family AFTER its own ruling loop — the loop itself, and
+    // `MK_ROW_COV`/`markRowCoverage()`, are only READ here, never touched.
+    //
+    // The triangular gaps sit one row pitch PAST the family's own last
+    // ruling that still lands on the surface: the next row's CENTRE-LINE is
+    // off-surface there (past the rim), so the ordinary per-ruling walk
+    // never samples it and no row covers the wedge. This builds exactly one
+    // extra row, anchored at a fixed `v` of the row's own band — a point
+    // near the edge NEAREST the last real ruling, i.e. the part of the
+    // wedge's own band most likely to still be on-surface. `paramAt` must
+    // be a PURE function of `tt` (`walkPoly`/`solveAt` call it more than
+    // once per step, out of order, for frame derivatives and binary
+    // search) — an EARLIER version of this searched several `v` per `tt`
+    // and preferred whichever was on-surface, which is state-dependent
+    // across calls and crashed `toParam` on a stale `null`. A single fixed
+    // `v` keeps it pure: this row is exactly the boundary ruling's own
+    // line, shifted by a fixed fraction of a row pitch, so it is on-surface
+    // (or not) exactly where the real geometry says it is — nothing is
+    // searched or fabricated. `MK_TICK_WEDGE_V = -0.92` (measured, in units
+    // of the row's own half-width: -1 sits ON the last real ruling, 0 is
+    // the phantom row's own unreachable centre) is as far out into the
+    // band as B5's monotone bar tolerates on the sparsest fixture
+    // (`test/cone/hatch`) — pushed further in from -1/2 because even a
+    // FEW extra sites, some of them undrawn where the wedge's own room runs
+    // out, were enough to dilute a bin on that fixture (§ measured in the
+    // report). It reaches only a sliver of the wedge's own band, not the
+    // far seam nearest the rim; §C5's fuller design (searching the whole
+    // band per step) is the natural next increment, not shipped here.
+    // Handed to the SAME `emitLine` -> `emitLineOnce` -> `emitMarks`
+    // pipeline every real ruling already uses, so `solveAt`'s tone math,
+    // `layMark`'s tick block, the ink-occupancy clip and the end-of-span
+    // tick (item 8) all apply completely unchanged.
+    const MK_TICK_WEDGE_V = -0.92;
+    const emitTickWedgeRow = (rawAt, pitchStep, lineDir, back, side, count, zoneGate) => {
+      const law = MK[TONE_ALGO];
+      if (!law || law.shape !== 'tick' || !rawAt) return;
+      const rowSteps = 1 / markRowCoverage();
+      const kOff = side * rowSteps * (1 + MK_TICK_WEDGE_V);
+      const wedgeAt = (tt) => {
+        const p0 = rawAt(tt);
+        if (!p0) return null;
+        const a = p0.a + finite(pitchStep.a, 0) * kOff;
+        if (!(a >= 0 && a <= 1)) return null;
+        const bRaw = finite(p0.b, 0) + finite(pitchStep.b, 0) * kOff;
+        const b = ((bRaw % 1) + 1) % 1;
+        return { a, b };
+      };
+      mkWedgeActive = true;
+      try {
+        emitLine(wedgeAt, side < 0 ? 0 : 1, back, side < 0 ? -1 : count, count, zoneGate,
+          pitchStep, lineDir, false);
+      } finally {
+        mkWedgeActive = false;
+      }
+    };
+
     const emitFamily = (fixAxis, count, back, zoneGate) => {
       nextFam(zoneGate ? `gate${zoneGate}` : 'A');
       for (let i = 0; i < count; i++) {
@@ -10437,6 +10991,16 @@
           fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 },
           fixAxis === 'b' ? { a: 1, b: 0 } : { a: 0, b: 1 });
       }
+      // T2-8 §C5 — base wedges (tick-only; see emitTickWedgeRow above). Only
+      // the `side = +1` (past the family's LAST ruling) wedge row is fired.
+      // Measured: the `side = -1` (before the FIRST ruling) row was the
+      // whole cause of a B5 monotone regression on `test/torus/hatch`
+      // (nonMono 0 -> 3) with no matching visible gain in the 15-spot
+      // checklist (G2a/G2b/G5 are all "last ruling" wedges) — dropped
+      // rather than tuned around.
+      const wPitchStep = fixAxis === 'b' ? { a: 0, b: 1 / count } : { a: 1 / count, b: 0 };
+      const wLineDir = fixAxis === 'b' ? { a: 1, b: 0 } : { a: 0, b: 1 };
+      emitTickWedgeRow(axisLine(fixAxis, (count - 0.5) / count), wPitchStep, wLineDir, back, 1, count, zoneGate);
     };
 
     // ── Fill ANGLE on a wrapped surface ────────────────────────────────────────
@@ -10906,6 +11470,17 @@
         const step = fam.span / n;
         if (at) emitLine(boustro(at, i), (i + 0.5) / n, back, i, n, zoneGate,
           { a: fam.na * step, b: fam.nb * step }, { a: fam.da, b: fam.db }, densityCross);
+      }
+      // T2-8 §C5 — base wedges (tick-only; see emitTickWedgeRow above).
+      // `densityCross` families are the crosshatch OVER pass, not the base
+      // grid a wedge belongs to, so they are left out of this pass. Only
+      // `side = +1` fires — see emitFamily's own comment on why `side = -1`
+      // was dropped rather than tuned around.
+      if (!densityCross) {
+        const wStep = fam.span / n;
+        const wPitchStep = { a: fam.na * wStep, b: fam.nb * wStep };
+        const wLineDir = { a: fam.da, b: fam.db };
+        emitTickWedgeRow(fam.lineAt((n - 0.5) / n), wPitchStep, wLineDir, back, 1, n, zoneGate);
       }
     };
 
