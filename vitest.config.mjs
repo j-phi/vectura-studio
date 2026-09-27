@@ -52,11 +52,18 @@ export default defineConfig({
       // full `test:coverage` CI job fails on silent erosion. When coverage
       // rises meaningfully, re-measure and move these up — never down without
       // a deliberate decision recorded in plans.md.
+      // Re-pinned 2026-09-25 for Vitest 4 (#78), Jay's decision: its v8
+      // provider remaps coverage via the AST and reports less than Vitest 3
+      // did for the SAME tests. Same 729 files: Vitest 3 (run 35511272785,
+      // df912343) measured lines 86.95 / branches 73.94 / functions 79.68;
+      // Vitest 4 (run 35515893834, e2607b16) measured statements 75.42 /
+      // lines 77.44 / functions 75.63 / branches 63.06. A measurement
+      // change, not erosion.
       thresholds: {
-        statements: 83,
-        lines: 83,
-        functions: 77,
-        branches: 69,
+        statements: 74,
+        lines: 76,
+        functions: 74,
+        branches: 62,
       },
     },
   },

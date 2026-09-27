@@ -1917,6 +1917,10 @@ questions. Do not start these without a decision:
   shipped as **v1.2.0**. See `CHANGELOG.md` for the consolidated notes.
 
 ## Decisions
+- **Coverage ratchet re-pinned for Vitest 4 (2026-09-25, Jay).** `vitest.config.mjs` thresholds moved
+  83/83/77/69 → statements 74 / lines 76 / functions 74 / branches 62. Vitest 4's AST-based v8 remapping
+  measures the same 729 test files ~6–11 points lower than Vitest 3 did (lines 86.95 → 77.44). This is a
+  measurement change, not erosion. The ratchet rule still holds: raise the floor as coverage rises.
 - In Wavetable `Isometric`, `Line Gap` refers to visible cell spacing and `Row Shift` applies as a coherent lattice shear across all three line families rather than offsetting only the horizontal rows.
 - Positive Noise Rack amplitude only implies “up” for generators that convert noise directly into screen-space vertical displacement; radial, orbit, and vector-field consumers keep their existing amplitude semantics.
 - Export configuration stays single-sourced through the existing `SETTINGS` object and layer optimization state; the Export SVG modal is only a preview/configuration surface and must not introduce a second export rules path.

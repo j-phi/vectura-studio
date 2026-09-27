@@ -85,6 +85,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   whether this reads correctly is being judged by eye, not by a bar.** (T2-6)
 
 ### Fixed
+- **3D Scene · mkTick (Tick) fill reads as a tone field.** Tick spacing now carries the tone,
+  with no ticks touching at seams. Stray lines outside a tick band are gone, and short graded pieces
+  fill the gaps at band ends. The fill is monotone from light to dark on the tested shapes, with two
+  named exceptions at the darkest end. Still open: the cone's base wedges and the sphere's rim
+  triangle stay unfilled on the default create rig. (T2-7; T2-8 adds a wedge pass that is
+  inert on that rig.)
+- **3D Scene · Deep Fill TSP shadows are dense enough.** The shadow third was 29–51 % of
+  Ladder's ink. It now follows Ladder's own rulings with a bounded zig-zag, so it adds no self-
+  crossings and draws the same as Ladder outside the shadow ramp. (W-07b-2)
 - **3D Scene · curved fills no longer draw a ruling end past the object's outline.** A sphere,
   ellipsoid, cone, cylinder, or capsule's drawn silhouette was the projected mesh — a polygon
   chord-inscribed in the true curve, up to 0.72 pen (0.22 mm) short of it on a large ellipsoid —
