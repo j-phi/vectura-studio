@@ -420,7 +420,30 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // other four `test`-rig cells are BYTE-IDENTICAL — the wedge pass finds
     // zero new sites there, see that report's own §2 for why). Every other
     // entry below is untouched.
+    // T2-8b — RE-PINNED, 11 of 12 (every cell except `create|sphere/hatch`,
+    // whose golden is UNCHANGED byte-for-byte: SEC finds no continuation
+    // room there). Mechanism A, "SEC" — tick-only, deferred, NON-SITE
+    // continuation ticks past each ruling's span ends (`surface-fill.js`
+    // `mkEndQ` / `secSide`). The old values are kept below as
+    // `PRE_T28B_SIGNATURE`; the CONTRAST MUTATION test at the end of this
+    // block loads the shipped source with the deferred flush removed and
+    // asserts the OLD hash returns on all 12 (so the re-pin is SEC and not
+    // drift). See `T2-8b-impl.md` `## Bars changed`.
     const EXPECTED_SIGNATURE = {
+      'test|sphere/hatch': '6b91f1db28c4254e5e42e7aab16be0f2cf3f5ea00e5d9e32bf68f19efb3b412d',
+      'test|sphere/contour': '7c407b0681e5e30dbf542f4202306263b8cd2369c469cad24193f6000dd5bb6e',
+      'test|torus/hatch': '079d70c35331344277be0652768e7a9e280685bb952b4a161977f561df5e6e1d',
+      'test|torus/contour': '64d94a45d914c1e65cb0e9612609135cac63781c98e64bf9d697235506ab03e0',
+      'test|cone/hatch': 'dfabb4aca7ef2ad8b45fb4ab939efe95d857f89976d1b93bc0767898e84e292c',
+      'test|cone/contour': '215bbf87d4bcf332f3a68340e21ede52f04242eec116faf1517e68d389665d4b',
+      'create|sphere/hatch': '9f4cd1f429f52a1587669b59f70b86edf8b093ac37ec6e19fb2786c0dca6bfd6',
+      'create|sphere/contour': '030fe3ac74022266ed2b66695740f567f781f3542c55d425ea38b975bed5ae8a',
+      'create|torus/hatch': 'a012f8bb31d051e042c73927750b587c4f773bacaa9f2ede2d7a422563159ac6',
+      'create|torus/contour': '2257238b38937a98c9ce06e4041d338c1f859184b3549f2b38e18113ff5f80d6',
+      'create|cone/hatch': '485b0f6a8f6a54a47007e7eed9ae40c5dee81ee1eba32db344a0bf84a2396e6a',
+      'create|cone/contour': 'b84d490605aec9431c399ecfb59c3cfe6379347b2ef1b96f6333c1a72f31ba0a',
+    };
+    const PRE_T28B_SIGNATURE = {
       'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
       'test|sphere/contour': '6a5a1c0d5857c1db44bd3a5bb26c90ef5804e26dcbc3c4ec19b2429545123694',
       'test|torus/hatch': '71328eb4d9e31e35a2a6de3b12042d7c6ca672636b1ca7eeaa15a2d9b9491374',
@@ -449,6 +472,25 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
         });
       });
     });
+
+    test('CONTRAST MUTATION — SEC off (deferred flush removed) returns the PRE-T2-8b hash on all 12 cells', async () => {
+      const off = patchOne(
+        loadHeadSource(),
+        'for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();',
+        '',
+        'T28B_FLUSH_NEEDLE',
+      );
+      const rt = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: off } });
+      try {
+        const V = rt.window.Vectura;
+        ['test', 'create'].forEach((rig) => {
+          CELLS.forEach(([primitive, mapper]) => {
+            const { paths } = renderCell(V, { primitive, mapper, rig });
+            expect(pathSignature(paths, 4)).toBe(PRE_T28B_SIGNATURE[`${rig}|${primitive}/${mapper}`]);
+          });
+        });
+      } finally { await rt.cleanup(); }
+    }, 120000);
   });
 
   // ── T2-3b (b): bar LOWERED 3.0 -> 2.30, per Jay's ruling on

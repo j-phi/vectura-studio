@@ -1,8 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const crypto = require('crypto');
 const {
   contact, spacingShare, thirdsSplit, covByIBins, siteCoverage, pathLen, over2RP, subMinCount,
+  buildBareRaster, bareArea, inkCoverage,
 } = require('../helpers/scene3d-mktick-spacing-tone');
 
 /*
@@ -56,7 +58,7 @@ const B7_CELLS = [
 ];
 
 const buildSceneParams = (Params, defaults, {
-  mapper, fillDensity, primitive, rig,
+  mapper, fillDensity, primitive, rig, law = 'mkTick',
 }) => {
   const p = clone(defaults);
   const bag = rig === 'create'
@@ -76,7 +78,7 @@ const buildSceneParams = (Params, defaults, {
   p.lights = [SUN];
   p.styleTable = {
     scene: {
-      penId: null, mapper, params: { fillAngle: 45, fillDensity, toneLaw: 'mkTick' },
+      penId: null, mapper, params: { fillAngle: 45, fillDensity, toneLaw: law },
     },
     byObject: {},
     byFace: {},
@@ -105,14 +107,14 @@ const HOOK_REPL = `if (si === mainIdx) {
 const buildHookedSource = () => patchOne(loadHeadSource(), HOOK_NEEDLE, HOOK_REPL, 'HOOK_NEEDLE');
 
 const renderCellHooked = (runtime, {
-  mapper, primitive, rig = 'test', fillDensity = 50,
+  mapper, primitive, rig = 'test', fillDensity = 50, law = 'mkTick',
 }) => {
   const V = runtime.window.Vectura;
   const algo = V.AlgorithmRegistry.scene3d;
   const defaults = V.ALGO_DEFAULTS.scene3d;
   const Params = V.Scene3D.Params;
   const params = buildSceneParams(Params, defaults, {
-    mapper, fillDensity, primitive, rig,
+    mapper, fillDensity, primitive, rig, law,
   });
   const sites = [];
   runtime.window.__T27_SITE__ = (rec) => { sites.push(rec); };
@@ -120,7 +122,7 @@ const renderCellHooked = (runtime, {
   delete runtime.window.__T27_SITE__;
   const stat = V.Scene3D.SurfaceFill.lastMarkStats;
   const fills = paths.filter((p) => p.meta && p.meta.kind === 'sceneFill');
-  const rowPitch = stat.tickField.rowPitch;
+  const rowPitch = stat && stat.tickField ? stat.tickField.rowPitch : null;
   return {
     paths, stat, sites, fills, rowPitch,
   };
@@ -646,5 +648,297 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         await mutantRuntime.cleanup();
       }
     }, 60000);
+  });
+});
+
+/*
+ * T2-8b — mechanism A, "SEC" (span-END continuation), `T2-8b-plan.md` §3/§4.
+ * Fills the two cone base wedges (Jay's G2 triangles) with tick-only,
+ * DEFERRED, NON-SITE continuation ticks past each ruling's span ends,
+ * WITHOUT touching the master grid. Sphere G5 is NOT addressed (plan §5).
+ *
+ * MUTANTS (all needle-patched copies of the CURRENT disk source, each
+ * needle asserted count === 1; nothing is written to disk):
+ *   off      — the deferred flush removed: the queued closures never run
+ *              (== the "queued closure returns immediately" mutation; also
+ *              byte-identical to the pre-T2-8b render, checked below).
+ *   inline   — the closures run INLINE at queue time instead of deferred.
+ *   noadmit  — the 1.0w ink-admission check removed.
+ *   dense    — admission off, trims off, lattice doubled: an over-inked SEC.
+ *   ask6     — each continuation tick asked over 6 half-rows (a line).
+ *   nogate   — the `law.shape === 'tick'` gate removed from the queueing.
+ */
+const T28B_NEEDLES = {
+  off: [['for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();', '']],
+  inline: [
+    ['mkEndQ.push(() => secSide(s0, kIn0, -1, firstA - arcMM[s0], sv0));', 'secSide(s0, kIn0, -1, firstA - arcMM[s0], sv0);'],
+    ['mkEndQ.push(() => secSide(s1, kIn1, 1, arcMM[s1] - endA, svEnd));', 'secSide(s1, kIn1, 1, arcMM[s1] - endA, svEnd);'],
+  ],
+  noadmit: [['if (!wk.pts || !admit(wk.pts)) return;', 'if (!wk.pts) return;']],
+  dense: [
+    ['if (!wk.pts || !admit(wk.pts)) return;', 'if (!wk.pts) return;'],
+    ['const MK_TICK_SEC_TRIM = 0.25;', 'const MK_TICK_SEC_TRIM = 0;'],
+    ['const x = j * svEnd.P - off;', 'const x = j * svEnd.P * 0.4 - off;'],
+    ['const MK_TICK_SEC_MAXJ = 8;', 'const MK_TICK_SEC_MAXJ = 20;'],
+  ],
+  ask6: [
+    ['const duty = (svEnd.segs && svEnd.segs.length && segHi > segLo) ? clamp(segSum / (segHi - segLo), 0, 1) : 1;', 'const duty = 1;'],
+    ['const hi = (1 - found.d) * hSt * m - MK_TICK_SEC_TRIM * PMINT;', 'const hi = (1 - found.d) * hSt * m * 6 - MK_TICK_SEC_TRIM * PMINT;'],
+  ],
+  nogate: [["if (law.shape === 'tick' && !mkWedgeActive && s1 > s0", 'if (!mkWedgeActive && s1 > s0']],
+};
+const buildT28bSource = (kind) => {
+  let src = loadHeadSource();
+  (T28B_NEEDLES[kind] || []).forEach(([a, b], i) => { src = patchOne(src, a, b, `T28B_${kind}_${i}`); });
+  return patchOne(src, HOOK_NEEDLE, HOOK_REPL, 'HOOK_NEEDLE');
+};
+const md5 = (v) => crypto.createHash('md5').update(JSON.stringify(v)).digest('hex');
+const plain = (paths) => paths.map((p) => Object.assign(p.map((q) => ({ x: q.x, y: q.y })), { meta: p.meta }));
+const pathsMd5 = (paths) => md5(paths.map((p) => p.map((q) => [q.x, q.y])));
+const siteKey = (r) => md5([r.stat.tickSites, r.sites]);
+// The cone base wedges on the create rig, gallery angle "a", output mm space
+// (plan §1: W_L / W_R) and the equal-size band strips that abut them.
+const WIN_L = [588, 519, 599, 528]; const WIN_R = [603, 518, 614, 528];
+const STRIP_L = [588, 510, 599, 519]; const STRIP_R = [603, 509, 614, 518];
+
+describe('Scene3D.SurfaceFill — T2-8b SEC span-end continuation (cone base wedges)', () => {
+  const runtimes = {};
+  const R = {}; // R[kind][`${density}|${rig}|${prim}/${mapper}`]
+  const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
+  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'dense', 'ask6'];
+  const other = (kind) => (kind === 'ship' ? null : kind);
+
+  beforeAll(async () => {
+    for (const kind of KINDS) {
+      runtimes[kind] = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildT28bSource(other(kind)) } });
+      R[kind] = {};
+    }
+    const render = (kind, d, rig, primitive, mapper) => {
+      const r = renderCellHooked(runtimes[kind], { primitive, mapper, rig, fillDensity: d });
+      const pp = plain(r.paths);
+      const fills = pp.filter((p) => p.meta && p.meta.kind === 'sceneFill');
+      const c = contact(fills, BOUNDS.penWidth);
+      R[kind][key(d, rig, primitive, mapper)] = {
+        sites: siteKey(r), tip: c.tipContact, mark: c.markContact,
+        o2: over2RP(fills, r.rowPitch).count, sub: subMinCount(fills, BOUNDS.penWidth),
+        nFills: fills.length, bins: covByIBins(r.sites, BOUNDS.penWidth), md5: pathsMd5(r.paths), pp,
+      };
+    };
+    for (const kind of KINDS) {
+      ['test', 'create'].forEach((rig) => {
+        CELLS.forEach(([p, m]) => render(kind, 50, rig, p, m));
+        if (kind === 'ship' || kind === 'off' || kind === 'inline') B7_CELLS.forEach(([p, m]) => render(kind, 220, rig, p, m));
+      });
+    }
+  }, 300000);
+
+  afterAll(async () => { await Promise.all(Object.values(runtimes).map((rt) => rt.cleanup())); });
+
+  test('the T2-8b needles are non-vacuous (each count === 1, asserted by buildT28bSource) and SEC-off is byte-identical to the shipped tree minus SEC', () => {
+    expect(Object.keys(T28B_NEEDLES)).toHaveLength(6);
+    // "off" changes nothing else: every cell where shipped == off has no SEC ink;
+    // and the six d=50 create/test cells where shipped != off are exactly the
+    // ones SEC adds ticks to (11 of 12 — create sphere/hatch has none).
+    let changed = 0;
+    ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => {
+      if (R.ship[key(50, rig, p, m)].md5 !== R.off[key(50, rig, p, m)].md5) changed += 1;
+    }));
+    expect(changed).toBe(11);
+    expect(R.ship[key(50, 'create', 'sphere', 'hatch')].md5).toBe(R.off[key(50, 'create', 'sphere', 'hatch')].md5);
+  });
+
+  describe('A1 (BLOCKING) — the cone base wedges are filled: bare >= 0.75 mm <= 0.50 mm^2 in each of W_L and W_R (create cone/hatch d=50, cam a, no ground)', () => {
+    // GATES: the clause "fill the cone base wedges" (Jay's green G2 triangles)
+    // ONLY. Says nothing about tone (A4), contact (A3) or the master grid (A2).
+    const A1_BAR = 0.50;
+    test('shipped: both wedge windows are below the bar', () => {
+      const r = buildBareRaster(R.ship[key(50, 'create', 'cone', 'hatch')].pp);
+      const wl = bareArea(r, 0.75, WIN_L); const wr = bareArea(r, 0.75, WIN_R);
+      // eslint-disable-next-line no-console
+      console.log('A1 create cone/hatch shipped bare>=0.75:', JSON.stringify({ wl, wr }));
+      expect(wl).toBeLessThanOrEqual(A1_BAR);
+      expect(wr).toBeLessThanOrEqual(A1_BAR);
+    });
+    test('MUTATION — the queued closures return immediately (off): the wedges reopen (~8.3 / ~7.5 mm^2)', () => {
+      const r = buildBareRaster(R.off[key(50, 'create', 'cone', 'hatch')].pp);
+      expect(bareArea(r, 0.75, WIN_L)).toBeGreaterThan(5);
+      expect(bareArea(r, 0.75, WIN_R)).toBeGreaterThan(5);
+    });
+    test('A1t (REPORTED on the RGR rig) — test cone/hatch W_R bare >= 0.75 mm <= 1.5 mm^2', () => {
+      const r = buildBareRaster(R.ship[key(50, 'test', 'cone', 'hatch')].pp);
+      const wr = bareArea(r, 0.75, WIN_R);
+      // eslint-disable-next-line no-console
+      console.log('A1t test cone/hatch shipped W_R bare>=0.75:', wr);
+      expect(wr).toBeLessThanOrEqual(1.5);
+      const off = buildBareRaster(R.off[key(50, 'test', 'cone', 'hatch')].pp);
+      expect(bareArea(off, 0.75, WIN_R)).toBeGreaterThan(1.5);
+    });
+  });
+
+  describe('A2 (BLOCKING) — the master grid is untouched: tickSites and [I,R,P,L,drawn] records deep-equal SEC-off', () => {
+    // GATES: "do not touch the master grid / keep B5" ONLY (site records are
+    // the population SP5/B5/B7 read). Says nothing about where SEC ink lands.
+    const cells = [];
+    ['test', 'create'].forEach((rig) => {
+      CELLS.forEach(([p, m]) => cells.push([50, rig, p, m]));
+      B7_CELLS.forEach(([p, m]) => cells.push([220, rig, p, m]));
+    });
+    test('24 d=50 (6 cells x 2 rigs -> 12) + 4 B7 cells x 2 rigs at d=220 -> 20 runs: site records identical, shipped vs off', () => {
+      expect(cells).toHaveLength(20);
+      cells.forEach(([d, rig, p, m]) => {
+        expect(R.ship[key(d, rig, p, m)].sites).toBe(R.off[key(d, rig, p, m)].sites);
+      });
+    });
+    test('B5 nonMono identical shipped vs off on every d=50 cell', () => {
+      ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => {
+        expect(R.ship[key(50, rig, p, m)].bins.nonMono).toBe(R.off[key(50, rig, p, m)].bins.nonMono);
+      }));
+    });
+    test('MUTATION — running the closures INLINE (not deferred) moves the site records on at least one cell', () => {
+      const moved = cells.filter(([d, rig, p, m]) => R.inline[key(d, rig, p, m)].sites !== R.off[key(d, rig, p, m)].sites);
+      // eslint-disable-next-line no-console
+      console.log('A2 inline-mutant moved site records on', moved.length, 'of', cells.length, 'runs');
+      expect(moved.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('A3 (BLOCKING) — tip contact: tipContact <= SEC-off + 0.005 on each of the 12 d=50 cell x rig combinations', () => {
+    // GATES: "minimize tick contact" (B1) for the population SEC adds to ONLY.
+    // The existing T2/T3 aggregates (above, unchanged, unchanged named sets)
+    // still gate the absolute ceilings on the shipped render.
+    test('shipped tipContact <= off + 0.005 (and markContact <= off + 0.01) on all 12', () => {
+      ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => {
+        const s = R.ship[key(50, rig, p, m)]; const o = R.off[key(50, rig, p, m)];
+        expect(s.tip).toBeLessThanOrEqual(o.tip + 0.005);
+        expect(s.mark).toBeLessThanOrEqual(o.mark + 0.01);
+      }));
+    });
+    test('MUTATION — admission off: create cone/contour tipContact blows up (~0.04 -> ~0.34)', () => {
+      const s = R.ship[key(50, 'create', 'cone', 'contour')]; const n = R.noadmit[key(50, 'create', 'cone', 'contour')];
+      expect(n.tip).toBeGreaterThan(s.tip + 0.05);
+    });
+  });
+
+  describe('A4 (BLOCKING) — tone: raster ink coverage in each wedge window <= 1.20 x the equal-size band strip abutting it; T12 inversions <= 6 stays in scene3d-mktick-wedge.test.js', () => {
+    // GATES: the wedge is not over-inked relative to the band beside it
+    // ("tone by spacing", new population). Does NOT gate under-inking (A1
+    // does) and does not prove the end-duty length rule: duty === 1 on every
+    // measured SEC tick (see the report), so that rule is inert on this
+    // fixture set. The plan's mutation (duty forced 1 AND trims removed) did
+    // NOT trip this bar (measured 1.098 vs shipped 1.133) — disclosed; the
+    // mutation below ("dense") does.
+    const A4_BAR = 1.20;
+    const ratio = (pp, win, strip) => {
+      const r = buildBareRaster(pp);
+      return inkCoverage(r, win) / inkCoverage(r, strip);
+    };
+    ['test', 'create'].forEach((rig) => {
+      test(`${rig} rig cone/hatch — shipped coverage ratios W_L, W_R <= ${A4_BAR}`, () => {
+        const pp = R.ship[key(50, rig, 'cone', 'hatch')].pp;
+        const rl = ratio(pp, WIN_L, STRIP_L); const rr = ratio(pp, WIN_R, STRIP_R);
+        // eslint-disable-next-line no-console
+        console.log(`A4 ${rig} cone/hatch coverage ratio W/strip:`, JSON.stringify({ rl, rr }));
+        expect(rl).toBeLessThanOrEqual(A4_BAR);
+        expect(rr).toBeLessThanOrEqual(A4_BAR);
+      });
+    });
+    test('MUTATION — "dense" (admission + trims off, lattice x2.5): create W_R ratio exceeds the bar', () => {
+      const rr = ratio(R.dense[key(50, 'create', 'cone', 'hatch')].pp, WIN_R, STRIP_R);
+      expect(rr).toBeGreaterThan(A4_BAR);
+    });
+  });
+
+  describe('A5 — a tick is not a line (B9) and the plot floor: over2RP = 0 and subMin = 0 incl. SEC marks (12 at d=50); no SEC contribution at d=220', () => {
+    // GATES: "a tick is not a line" + the plot floor for the marks SEC adds.
+    test('d=50: over2RP === 0 and subMin === 0 on all 12', () => {
+      ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => {
+        expect(R.ship[key(50, rig, p, m)].o2).toBe(0);
+        expect(R.ship[key(50, rig, p, m)].sub).toBe(0);
+      }));
+    });
+    test('d=220 B7 set: subMin === 0 and over2RP no worse than SEC-off (base has pre-existing over2RP at d=220: torus 1-4)', () => {
+      ['test', 'create'].forEach((rig) => B7_CELLS.forEach(([p, m]) => {
+        expect(R.ship[key(220, rig, p, m)].sub).toBe(0);
+        expect(R.ship[key(220, rig, p, m)].o2).toBeLessThanOrEqual(R.off[key(220, rig, p, m)].o2);
+      }));
+    });
+    test('MUTATION — a tick asked over 6 half-rows (ask6) makes over2RP > 0 on at least one d=50 cell', () => {
+      const bad = [];
+      ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => { if (R.ask6[key(50, rig, p, m)].o2 > 0) bad.push(`${rig}|${p}/${m}`); }));
+      expect(bad.length).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('I1 (BLOCKING) — isolation: every non-mkTick law is byte-identical shipped vs SEC-off (cone, create, d=50, 8 mappers)', () => {
+    // GATES: "SEC is mkTick-only". Population: the 3 PRODUCTION mark laws
+    // that enter emitMarks (mkScribble, mkDashRamp, mkDotScreen) + the first
+    // 6 non-mark PRODUCTION laws, x all 8 mappers, on cone/create. The full
+    // 288-of-296 sweep over sphere/cone/torus was run out-of-tree against a
+    // `git archive` of the base sha (see T2-8b-impl.md): 288/288 identical
+    // on each primitive. Non-mark laws never reach emitMarks (`MK[algo]`
+    // is undefined -> early return), so they cannot see SEC by construction.
+    let laws; let mappers; let nonMk;
+    const MARK = ['mkScribble', 'mkDashRamp', 'mkDotScreen'];
+    const renderMd5 = (kind, mapper, law) => {
+      const V = runtimes[kind].window.Vectura;
+      const params = buildSceneParams(V.Scene3D.Params, V.ALGO_DEFAULTS.scene3d, {
+        mapper, fillDensity: 50, primitive: 'cone', rig: 'create', law,
+      });
+      return pathsMd5(V.AlgorithmRegistry.scene3d.generate(params, null, null, BOUNDS));
+    };
+    beforeAll(() => {
+      const V = runtimes.ship.window.Vectura;
+      laws = V.SCENE3D_TONE_LAWS.PRODUCTION;
+      mappers = V.Scene3D.Params.MAPPERS;
+      nonMk = laws.filter((l) => !/^mk/.test(l)).slice(0, 6);
+    });
+    test('roster shape: 8 mappers, 37 PRODUCTION laws, mkTick present', () => {
+      expect(mappers).toHaveLength(8);
+      expect(laws).toHaveLength(37);
+      expect(laws).toContain('mkTick');
+      MARK.forEach((l) => expect(laws).toContain(l));
+    });
+    test('mark laws (24 cells) + 6 non-mark laws (48 cells): md5 identical shipped vs off', () => {
+      let n = 0;
+      mappers.forEach((mapper) => MARK.concat(nonMk).forEach((law) => {
+        n += 1;
+        expect(renderMd5('ship', mapper, law)).toBe(renderMd5('off', mapper, law));
+      }));
+      expect(n).toBe(72);
+    });
+    test('MUTATION — removing the law.shape === tick gate changes an mkDashRamp cell', () => {
+      const V = runtimes.ship.window.Vectura;
+      expect(V).toBeTruthy();
+      return loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildT28bSource('nogate') } }).then(async (rt) => {
+        try {
+          runtimes.nogate = rt;
+          const changed = mappers.filter((mapper) => renderMd5('nogate', mapper, 'mkDashRamp') !== renderMd5('ship', mapper, 'mkDashRamp'));
+          expect(changed.length).toBeGreaterThanOrEqual(1);
+        } finally { await rt.cleanup(); }
+      });
+    }, 120000);
+  });
+
+  describe('I2 (REPORTED) — mkTick on the other 6 mappers x 3 primitives (create, d=50): contact no worse than SEC-off + 0.005; over2RP = 0; subMin = 0', () => {
+    // With hatch + contour (A3 above) that is 8/8 mappers = 100 % of the mkTick row.
+    const OTHER = ['none', 'wireframe', 'crosshatch', 'spiral', 'stipple', 'contourSlice'];
+    test('18 cells', () => {
+      let n = 0;
+      ['sphere', 'cone', 'torus'].forEach((primitive) => OTHER.forEach((mapper) => {
+        n += 1;
+        const rs = renderCellHooked(runtimes.ship, { primitive, mapper, rig: 'create' });
+        const ro = renderCellHooked(runtimes.off, { primitive, mapper, rig: 'create' });
+        const fs_ = rs.fills.map((p) => p.map((q) => ({ x: q.x, y: q.y })));
+        const fo = ro.fills.map((p) => p.map((q) => ({ x: q.x, y: q.y })));
+        const cs = contact(fs_, BOUNDS.penWidth); const co = contact(fo, BOUNDS.penWidth);
+        expect(cs.tipContact || 0).toBeLessThanOrEqual((co.tipContact || 0) + 0.005);
+        expect(cs.markContact || 0).toBeLessThanOrEqual((co.markContact || 0) + 0.005);
+        if (rs.rowPitch != null && ro.rowPitch != null) {
+          expect(over2RP(fs_, rs.rowPitch).count).toBeLessThanOrEqual(over2RP(fo, ro.rowPitch).count);
+        }
+        expect(subMinCount(fs_, BOUNDS.penWidth)).toBe(0);
+      }));
+      expect(n).toBe(18);
+    });
   });
 });

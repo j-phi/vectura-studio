@@ -164,7 +164,144 @@ function subMinCount(fills, penWidth) {
   return fills.filter((q) => pathLen(q) < MIN - 1e-6).length;
 }
 
+
+/**
+ * T2-8b — the BARE-AREA instrument (ported from the planner's read-only
+ * script; pure math over emitted paths, no fs/git). `paths` = the
+ * algorithm's emitted paths, each an array of `{x,y}` with `meta.kind`.
+ * Raster at `RES` mm; every `sceneFill` and `sceneEdge` path is stamped
+ * with radius `STAMP_R`; the INTERIOR is the set of pixels not
+ * flood-reachable from the bbox border without crossing `sceneEdge` ink;
+ * a two-pass chamfer gives each pixel's distance to any ink. `bareArea(T)`
+ * is the area (mm^2) of interior pixels at distance >= T.
+ */
+const BARE_RES = 0.05;
+const BARE_STAMP_R = 0.15;
+function buildBareRaster(paths, res = BARE_RES, stampR = BARE_STAMP_R) {
+  const use = paths.filter((p) => p.meta && (p.meta.kind === 'sceneFill' || p.meta.kind === 'sceneEdge') && p.length);
+  let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+  use.forEach((p) => p.forEach((q) => {
+    if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x;
+    if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+  }));
+  x0 -= 1; y0 -= 1; x1 += 1; y1 += 1;
+  const W = Math.ceil((x1 - x0) / res) + 1; const H = Math.ceil((y1 - y0) / res) + 1;
+  const ink = new Uint8Array(W * H); const edge = new Uint8Array(W * H);
+  const rp = Math.ceil(stampR / res);
+  const stamp = (arr, x, y) => {
+    const cx = Math.round((x - x0) / res); const cy = Math.round((y - y0) / res);
+    for (let dy = -rp; dy <= rp; dy += 1) {
+      for (let dx = -rp; dx <= rp; dx += 1) {
+        if (dx * dx + dy * dy > rp * rp) continue;
+        const ix = cx + dx; const iy = cy + dy;
+        if (ix >= 0 && iy >= 0 && ix < W && iy < H) arr[iy * W + ix] = 1;
+      }
+    }
+  };
+  use.forEach((p) => {
+    const isEdge = p.meta.kind === 'sceneEdge';
+    for (let i = 0; i < p.length; i += 1) {
+      const a = p[i]; const b = i ? p[i - 1] : p[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(a.x - b.x, a.y - b.y) / (res * 2)));
+      for (let k = 0; k <= n; k += 1) {
+        const x = b.x + ((a.x - b.x) * k) / n; const y = b.y + ((a.y - b.y) * k) / n;
+        stamp(ink, x, y);
+        if (isEdge) stamp(edge, x, y);
+      }
+    }
+  });
+  // exterior flood (4-connected) from the border, blocked by edge ink
+  const outside = new Uint8Array(W * H);
+  const stack = [];
+  const push = (ix, iy) => {
+    if (ix < 0 || iy < 0 || ix >= W || iy >= H) return;
+    const id = iy * W + ix;
+    if (outside[id] || edge[id]) return;
+    outside[id] = 1; stack.push(id);
+  };
+  for (let ix = 0; ix < W; ix += 1) { push(ix, 0); push(ix, H - 1); }
+  for (let iy = 0; iy < H; iy += 1) { push(0, iy); push(W - 1, iy); }
+  while (stack.length) {
+    const id = stack.pop(); const ix = id % W; const iy = (id - ix) / W;
+    push(ix + 1, iy); push(ix - 1, iy); push(ix, iy + 1); push(ix, iy - 1);
+  }
+  // two-pass chamfer distance to ink (pixel units)
+  const INF = 1e9; const d = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i += 1) d[i] = ink[i] ? 0 : INF;
+  const S2 = Math.SQRT2;
+  for (let iy = 0; iy < H; iy += 1) {
+    for (let ix = 0; ix < W; ix += 1) {
+      const id = iy * W + ix; let v = d[id];
+      if (ix > 0) v = Math.min(v, d[id - 1] + 1);
+      if (iy > 0) {
+        v = Math.min(v, d[id - W] + 1);
+        if (ix > 0) v = Math.min(v, d[id - W - 1] + S2);
+        if (ix < W - 1) v = Math.min(v, d[id - W + 1] + S2);
+      }
+      d[id] = v;
+    }
+  }
+  for (let iy = H - 1; iy >= 0; iy -= 1) {
+    for (let ix = W - 1; ix >= 0; ix -= 1) {
+      const id = iy * W + ix; let v = d[id];
+      if (ix < W - 1) v = Math.min(v, d[id + 1] + 1);
+      if (iy < H - 1) {
+        v = Math.min(v, d[id + W] + 1);
+        if (ix < W - 1) v = Math.min(v, d[id + W + 1] + S2);
+        if (ix > 0) v = Math.min(v, d[id + W - 1] + S2);
+      }
+      d[id] = v;
+    }
+  }
+  return {
+    x0, y0, W, H, res, ink, outside, dist: d,
+  };
+}
+
+/** Area (mm^2) of interior pixels at chamfer distance >= T mm, optionally
+ * restricted to a window `[xA, yA, xB, yB]` (mm, output path space). */
+function bareArea(r, T, win) {
+  const tPx = T / r.res; let n = 0;
+  let ixA = 0; let iyA = 0; let ixB = r.W - 1; let iyB = r.H - 1;
+  if (win) {
+    ixA = Math.max(0, Math.floor((win[0] - r.x0) / r.res)); iyA = Math.max(0, Math.floor((win[1] - r.y0) / r.res));
+    ixB = Math.min(r.W - 1, Math.ceil((win[2] - r.x0) / r.res)); iyB = Math.min(r.H - 1, Math.ceil((win[3] - r.y0) / r.res));
+  }
+  for (let iy = iyA; iy <= iyB; iy += 1) {
+    for (let ix = ixA; ix <= ixB; ix += 1) {
+      const id = iy * r.W + ix;
+      if (!r.outside[id] && r.dist[id] >= tPx) n += 1;
+    }
+  }
+  return n * r.res * r.res;
+}
+
+/** Raster ink coverage (fraction of INTERIOR pixels inked) inside a window. */
+function inkCoverage(r, win) {
+  let inked = 0; let tot = 0;
+  const ixA = Math.max(0, Math.floor((win[0] - r.x0) / r.res)); const iyA = Math.max(0, Math.floor((win[1] - r.y0) / r.res));
+  const ixB = Math.min(r.W - 1, Math.ceil((win[2] - r.x0) / r.res)); const iyB = Math.min(r.H - 1, Math.ceil((win[3] - r.y0) / r.res));
+  for (let iy = iyA; iy <= iyB; iy += 1) {
+    for (let ix = ixA; ix <= ixB; ix += 1) {
+      const id = iy * r.W + ix;
+      if (r.outside[id]) continue;
+      tot += 1; if (r.ink[id]) inked += 1;
+    }
+  }
+  return tot ? inked / tot : null;
+}
+
+/** Object ink in mm (sceneFill + sceneEdge path length; ground/backdrop are
+ * not present in the fixtures that call this). */
+function inkMm(paths) {
+  return paths.filter((p) => p.meta && (p.meta.kind === 'sceneFill' || p.meta.kind === 'sceneEdge')).reduce((a, p) => a + pathLen(p), 0);
+}
+
 module.exports = {
+  buildBareRaster,
+  bareArea,
+  inkCoverage,
+  inkMm,
   contact,
   spacingShare,
   thirdsSplit,
