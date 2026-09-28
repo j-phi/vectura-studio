@@ -7,6 +7,15 @@ updates:
       day: monday
       time: "07:00"
     open-pull-requests-limit: 10
+    # The toolchain is pinned to Node 20 (see plans.md). These majors require
+    # Node 22+ and fail every test job on Node 20; lift when CI moves to Node 22.
+    ignore:
+      - dependency-name: jsdom
+        versions: [">=30"]
+      - dependency-name: vitest
+        versions: [">=5"]
+      - dependency-name: "@vitest/coverage-v8"
+        versions: [">=5"]
     groups:
       npm-minor-and-patch:
         update-types:
