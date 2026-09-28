@@ -2698,6 +2698,27 @@
     // predecessor, so the chain visibly tapers rather than reading as a
     // second uniform band.
     const MK_TICK_CHAIN_RHO = 0.8;
+    // T2-8b (mechanism A, "SEC" — span-END continuation). A tick-only,
+    // deferred, NON-SITE pass that fills the triangle a ruling leaves PAST
+    // its own span end at a domain edge (the cone base wedges): the
+    // lattice starts `gold*P` past `s0` and item 8 guards only `s1`, and
+    // the base rim cuts the band obliquely, so the half-band on the
+    // obtuse side stays on-surface with no row sampling it.
+    //   `MK_TICK_SEC_MAXJ`       — continuation positions per span end.
+    //   `MK_TICK_SEC_ADMIT_PEN`  — a continuation tick is REFUSED when any
+    //                              walked point lies within this many pens
+    //                              of ANY ink already in `mkInk` (no
+    //                              lineIndex filter). Measured 1.0 is the
+    //                              smallest radius that holds tip contact.
+    //   `MK_TICK_SEC_DELTA`      — the ladder of sideways offsets, in units
+    //                              of the half row, searched for the first
+    //                              on-front sample.
+    //   `MK_TICK_SEC_TRIM`       — trim at each end of the half-band, in
+    //                              units of the contact gap `PMINT`.
+    const MK_TICK_SEC_MAXJ = 8;
+    const MK_TICK_SEC_ADMIT_PEN = 1.0;
+    const MK_TICK_SEC_DELTA = [0.15, 0.35, 0.55, 0.75, 0.95];
+    const MK_TICK_SEC_TRIM = 0.25;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2796,6 +2817,11 @@
     // call and clears immediately after (never left set for a later,
     // unrelated mark).
     const mkInk = new Map();
+    // T2-8b — the deferred span-end continuation queue (see
+    // `MK_TICK_SEC_MAXJ`). Closures pushed by `emitMarks`, flushed once after
+    // every mapper has run: running them inline changed later rulings' clip
+    // outcomes (site records moved on 10 of 24 measured runs).
+    const mkEndQ = [];
     // T2-8 — set (and cleared) only by `emitTickWedgeRow`, around its own
     // `emitLine` call, while a §C5 wedge row's own ruling is being walked.
     // Read below, where `layMark`'s tick block decides the MAIN tick's clip
@@ -7314,6 +7340,104 @@
         }
       };
 
+      // ── T2-8b — SEC: the span-END continuation (tick-only, deferred) ─────────
+      // See `MK_TICK_SEC_MAXJ`. For the lattice positions `j*P - off` PAST a
+      // span end (`off` = the gap from the end to the nearest placed site),
+      // the ruling's own param line is extended by the end's param-per-mm,
+      // a sideways ladder finds the first on-front sample each side, a FRESH
+      // frame is built there (the end's own flat frame is singular past a
+      // limb), and one centred tick per side fills that side's half-band —
+      // its length carrying the end's own duty, so tone continues by
+      // construction. Never touches `mkStat.tickSites`.
+      const secSide = (sEnd, kIn, dir, off, svEnd) => {
+        if (!(Number.isFinite(off)) || !svEnd) return;
+        const PMINT = (1 + MK_TICK_GAP_PEN) * w;
+        const LPF = MK_TICK_PLOT_FLOOR * MIN_MARK_MM;
+        const tE = sEnd / nSteps;
+        const ld = typeof lineDir === 'function' ? lineDir(tE) : lineDir;
+        const st = typeof pitchStep === 'function' ? pitchStep(tE) : pitchStep;
+        if (!ld || !st) return;
+        const dArc = Math.abs(arcMM[sEnd] - arcMM[kIn]);
+        if (!(dArc > 1e-6)) return;
+        const pE = paramAt(tE); const pI = paramAt(kIn / nSteps);
+        if (!pE || !pI) return;
+        let gb = pE.b - pI.b; gb -= Math.round(gb);
+        const ga = (pE.a - pI.a) / dArc; const gbb = gb / dArc;
+        const hSt = 0.5 / markRowCoverage();
+        let segSum = 0; let segLo = Infinity; let segHi = -Infinity;
+        (svEnd.segs || []).forEach((q) => { segSum += q[1] - q[0]; segLo = Math.min(segLo, q[0]); segHi = Math.max(segHi, q[1]); });
+        const duty = (svEnd.segs && svEnd.segs.length && segHi > segLo) ? clamp(segSum / (segHi - segLo), 0, 1) : 1;
+        const admitR = MK_TICK_SEC_ADMIT_PEN * w;
+        const admit = (pts) => {
+          const nb = Math.max(1, Math.ceil(admitR / mkInkR));
+          for (let i = 0; i < pts.length; i += 1) {
+            const cx = Math.floor(pts[i].x / mkInkR); const cy = Math.floor(pts[i].y / mkInkR);
+            for (let dx = -nb; dx <= nb; dx += 1) {
+              for (let dy = -nb; dy <= nb; dy += 1) {
+                const bucket = mkInk.get(`${wantFront ? 1 : 0}:${cx + dx},${cy + dy}`);
+                if (!bucket) continue;
+                for (let h = 0; h < bucket.length; h += 1) {
+                  if (Math.hypot(bucket[h].x - pts[i].x, bucket[h].y - pts[i].y) < admitR) return false;
+                }
+              }
+            }
+          }
+          return true;
+        };
+        const tryTick = (found, side) => {
+          const fr = frameFrom(found.sm, ld, st, found.pr);
+          if (!fr) return;
+          const px = found.sm.dA.x * st.a + found.sm.dB.x * st.b;
+          const py = found.sm.dA.y * st.a + found.sm.dB.y * st.b;
+          const m = Math.abs(px * fr.v.x + py * fr.v.y);
+          const lo = -found.d * hSt * m + MK_TICK_SEC_TRIM * PMINT;
+          const hi = (1 - found.d) * hSt * m - MK_TICK_SEC_TRIM * PMINT;
+          if (!(hi > lo)) return;
+          const v0 = side > 0 ? lo : -hi; const v1 = side > 0 ? hi : -lo;
+          const dry = walkPoly(fr, 0, 0, [[0, v0], [0, v1]], MK_TICK_STEP_CAP_MM);
+          if (!dry.pts || dry.drawnLen < LPF) return;
+          let tMin = Infinity; let tMax = -Infinity;
+          dry.pts.forEach((pt) => {
+            const t = (pt.x - found.sm.x) * fr.v.x + (pt.y - found.sm.y) * fr.v.y;
+            if (t < tMin) tMin = t;
+            if (t > tMax) tMax = t;
+          });
+          const mid = 0.5 * (tMin + tMax);
+          const L = Math.max(LPF, duty * dry.drawnLen);
+          const poly = [[0, mid - L / 2], [0, mid + L / 2]];
+          const wk = walkPoly(fr, 0, 0, poly, MK_TICK_STEP_CAP_MM);
+          if (!wk.pts || !admit(wk.pts)) return;
+          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0;
+          place(fr, [poly], 0, 0);
+          mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
+        };
+        for (let j = 1; j <= MK_TICK_SEC_MAXJ; j += 1) {
+          const x = j * svEnd.P - off;
+          if (x <= 0.25 * svEnd.P) continue;
+          const cA = pE.a + ga * x; const cB = pE.b + gbb * x;
+          let any = false;
+          [1, -1].forEach((side) => {
+            let found = null;
+            for (let di = 0; di < MK_TICK_SEC_DELTA.length && !found; di += 1) {
+              const d = MK_TICK_SEC_DELTA[di];
+              const qa = cA + side * d * hSt * st.a;
+              let qb = cB + side * d * hSt * st.b;
+              if (!(qa >= 0 && qa <= 1)) continue;
+              if (qb < 0 || qb > 1) {
+                if (qb < -0.25 || qb > 1.25) continue;
+                qb = ((qb % 1) + 1) % 1;
+              }
+              const sm = sampleAt(qa, qb);
+              if (sm && sm.front === wantFront) found = { sm, pr: { a: qa, b: qb }, d };
+            }
+            if (!found) return;
+            any = true;
+            tryTick(found, side);
+          });
+          if (!any) break;
+        }
+      };
+
       // ── THE SPANS ───────────────────────────────────────────────────────────
       // A span is a maximal run of on-surface samples this ruling actually kept,
       // so a mark can never straddle the silhouette or a pole.
@@ -7444,6 +7568,7 @@
         // wedges G2a/G2b/G5's own "a whole period short of the span end,
         // and no row covers the triangle past a ruling's exit" pattern.
         let lastA = -Infinity;
+        let firstA = Infinity;
         while (a <= arcMM[s1] && guard < 4000) {
           guard += 1;
           const k = idxAt(a);
@@ -7479,6 +7604,7 @@
           // check for cells this unit did not sweep.
           if (!(mkWedgeActive && sv.L < 0.7 * sv.R)) layMark(idxAt(ao), ao, sv);
           cur = k;
+          if (ao < firstA) firstA = ao;
           lastA = ao;
           a += sv.P;
         }
@@ -7489,9 +7615,21 @@
         // 1.6 pens short of it — the along-row half of the base-wedge class
         // (§C5): the lattice otherwise stops a whole period short of a
         // span's true end, and no row covers the remainder.
+        let endA = lastA;
+        let svEnd = null;
         if (law.shape === 'tick') {
-          const svEnd = solveAt(s1);
-          if (arcMM[s1] - lastA > 0.5 * svEnd.P + 1.6 * w) layMark(s1, arcMM[s1], svEnd);
+          svEnd = solveAt(s1);
+          if (arcMM[s1] - lastA > 0.5 * svEnd.P + 1.6 * w) { layMark(s1, arcMM[s1], svEnd); endA = arcMM[s1]; }
+        }
+        // T2-8b — queue the two span-end continuations (tick-only, deferred,
+        // non-site; see `secSide`). `endA` is the item-8 end tick if it
+        // fired, else the last placed site.
+        if (law.shape === 'tick' && !mkWedgeActive && s1 > s0 && Number.isFinite(firstA) && Number.isFinite(endA)) {
+          const sv0 = solveAt(s0);
+          const kIn0 = Math.min(s1, s0 + Math.min(2, s1 - s0));
+          const kIn1 = Math.max(s0, s1 - Math.min(2, s1 - s0));
+          mkEndQ.push(() => secSide(s0, kIn0, -1, firstA - arcMM[s0], sv0));
+          mkEndQ.push(() => secSide(s1, kIn1, 1, arcMM[s1] - endA, svEnd));
         }
       });
     };
@@ -12818,6 +12956,8 @@
     // Every chain is closed by now, so the deferred ribbons can be built — and
     // they must be built BEFORE the report, or the report describes a build that
     // has not happened yet.
+    // T2-8b — the deferred span-end continuations (see `mkEndQ`).
+    for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();
     flushDeferredRibbons();
     publishRibbonStats();
     publishMarkStats();
