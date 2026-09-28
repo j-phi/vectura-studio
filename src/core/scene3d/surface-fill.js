@@ -2719,6 +2719,11 @@
     const MK_TICK_SEC_ADMIT_PEN = 1.0;
     const MK_TICK_SEC_DELTA = [0.15, 0.35, 0.55, 0.75, 0.95];
     const MK_TICK_SEC_TRIM = 0.25;
+    //   `MK_TICK_SEC_DIR_CUT`     — degrees; a continuation tick whose walked
+    //                              chord departs further than this from the
+    //                              asked direction is refused (matches
+    //                              `place()`'s own 10-degree `dirOver10` count).
+    const MK_TICK_SEC_DIR_CUT = 10;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -7407,6 +7412,18 @@
           const poly = [[0, mid - L / 2], [0, mid + L / 2]];
           const wk = walkPoly(fr, 0, 0, poly, MK_TICK_STEP_CAP_MM);
           if (!wk.pts || !admit(wk.pts)) return;
+          // A continuation tick must track the local family frame like any
+          // other mark (`mark-laws-draw` O2's 10-degree bar reads `dirOver10`
+          // over EVERY placed walked mark): refuse one whose walked chord
+          // departs more than `MK_TICK_SEC_DIR_CUT` degrees from what was asked.
+          {
+            const reqDir = requestedDir(fr, 0, 0, poly);
+            const a0 = wk.pts[0]; const b0 = wk.pts[wk.pts.length - 1];
+            const dl = Math.hypot(b0.x - a0.x, b0.y - a0.y);
+            if (!reqDir || !(dl > 1e-9)) return;
+            const cosv = Math.min(1, Math.abs(((b0.x - a0.x) / dl) * reqDir.x + ((b0.y - a0.y) / dl) * reqDir.y));
+            if (Math.acos(cosv) * (180 / Math.PI) > MK_TICK_SEC_DIR_CUT) return;
+          }
           mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0;
           place(fr, [poly], 0, 0);
           mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
@@ -7624,7 +7641,11 @@
         // T2-8b — queue the two span-end continuations (tick-only, deferred,
         // non-site; see `secSide`). `endA` is the item-8 end tick if it
         // fired, else the last placed site.
-        if (law.shape === 'tick' && !mkWedgeActive && s1 > s0 && Number.isFinite(firstA) && Number.isFinite(endA)) {
+        // NOT on the `contour` mapper: the continuation ticks raise its directional
+        // banding (`mktick-banding` `bandC`, a gated moire bar) above the pinned
+        // ceiling (cone/contour 0.0218 -> 0.0408 vs 0.02508). The cone base
+        // wedges SEC exists for are a hatch-family defect.
+        if (law.shape === 'tick' && !mkWedgeActive && s1 > s0 && mapper !== 'contour' && Number.isFinite(firstA) && Number.isFinite(endA)) {
           const sv0 = solveAt(s0);
           const kIn0 = Math.min(s1, s0 + Math.min(2, s1 - s0));
           const kIn1 = Math.max(s0, s1 - Math.min(2, s1 - s0));

@@ -665,7 +665,9 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
  *   inline   — the closures run INLINE at queue time instead of deferred.
  *   noadmit  — the 1.0w ink-admission check removed.
  *   dense    — admission off, trims off, lattice doubled: an over-inked SEC.
- *   ask6     — each continuation tick asked over 6 half-rows (a line).
+ *   ask6     — each continuation tick asked over 6 half-rows (a line), with the
+ *              contour-mapper exclusion lifted (over2RP cannot trip on the
+ *              hatch cells: the surface bounds the walk).
  *   nogate   — the `law.shape === 'tick'` gate removed from the queueing.
  */
 const T28B_NEEDLES = {
@@ -682,6 +684,7 @@ const T28B_NEEDLES = {
     ['const MK_TICK_SEC_MAXJ = 8;', 'const MK_TICK_SEC_MAXJ = 20;'],
   ],
   ask6: [
+    [" && mapper !== 'contour'", ''],
     ['const duty = (svEnd.segs && svEnd.segs.length && segHi > segLo) ? clamp(segSum / (segHi - segLo), 0, 1) : 1;', 'const duty = 1;'],
     ['const hi = (1 - found.d) * hSt * m - MK_TICK_SEC_TRIM * PMINT;', 'const hi = (1 - found.d) * hSt * m * 6 - MK_TICK_SEC_TRIM * PMINT;'],
   ],
@@ -737,14 +740,16 @@ describe('Scene3D.SurfaceFill — T2-8b SEC span-end continuation (cone base wed
   test('the T2-8b needles are non-vacuous (each count === 1, asserted by buildT28bSource) and SEC-off is byte-identical to the shipped tree minus SEC', () => {
     expect(Object.keys(T28B_NEEDLES)).toHaveLength(6);
     // "off" changes nothing else: every cell where shipped == off has no SEC ink;
-    // and the six d=50 create/test cells where shipped != off are exactly the
-    // ones SEC adds ticks to (11 of 12 — create sphere/hatch has none).
+    // the d=50 cells where shipped != off are exactly the ones SEC adds ticks
+    // to (4 of 12 — {test,create} x {torus,cone}/hatch; both sphere/hatch cells
+    // get none and every contour cell is gated off).
     let changed = 0;
     ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => {
       if (R.ship[key(50, rig, p, m)].md5 !== R.off[key(50, rig, p, m)].md5) changed += 1;
     }));
-    expect(changed).toBe(11);
-    expect(R.ship[key(50, 'create', 'sphere', 'hatch')].md5).toBe(R.off[key(50, 'create', 'sphere', 'hatch')].md5);
+    expect(changed).toBe(4);
+    ['test', 'create'].forEach((rig) => expect(R.ship[key(50, rig, 'sphere', 'hatch')].md5).toBe(R.off[key(50, rig, 'sphere', 'hatch')].md5));
+    ['test', 'create'].forEach((rig) => ['sphere', 'torus', 'cone'].forEach((p) => expect(R.ship[key(50, rig, p, 'contour')].md5).toBe(R.off[key(50, rig, p, 'contour')].md5)));
   });
 
   describe('A1 (BLOCKING) — the cone base wedges are filled: bare >= 0.75 mm <= 0.50 mm^2 in each of W_L and W_R (create cone/hatch d=50, cam a, no ground)', () => {
@@ -813,9 +818,11 @@ describe('Scene3D.SurfaceFill — T2-8b SEC span-end continuation (cone base wed
         expect(s.mark).toBeLessThanOrEqual(o.mark + 0.01);
       }));
     });
-    test('MUTATION — admission off: create cone/contour tipContact blows up (~0.04 -> ~0.34)', () => {
-      const s = R.ship[key(50, 'create', 'cone', 'contour')]; const n = R.noadmit[key(50, 'create', 'cone', 'contour')];
-      expect(n.tip).toBeGreaterThan(s.tip + 0.05);
+    test('MUTATION — admission off: tipContact rises past off + 0.005 on create torus/hatch (0.035 -> 0.063) and test cone/hatch (0.045 -> 0.059)', () => {
+      [['create', 'torus'], ['test', 'cone'], ['test', 'torus']].forEach(([rig, p]) => {
+        const o = R.off[key(50, rig, p, 'hatch')]; const n = R.noadmit[key(50, rig, p, 'hatch')];
+        expect(n.tip).toBeGreaterThan(o.tip + 0.005);
+      });
     });
   });
 
@@ -862,7 +869,7 @@ describe('Scene3D.SurfaceFill — T2-8b SEC span-end continuation (cone base wed
         expect(R.ship[key(220, rig, p, m)].o2).toBeLessThanOrEqual(R.off[key(220, rig, p, m)].o2);
       }));
     });
-    test('MUTATION — a tick asked over 6 half-rows (ask6) makes over2RP > 0 on at least one d=50 cell', () => {
+    test('MUTATION — a tick asked over 6 half-rows with the contour gate lifted (ask6) makes over2RP > 0 on at least one d=50 cell', () => {
       const bad = [];
       ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => { if (R.ask6[key(50, rig, p, m)].o2 > 0) bad.push(`${rig}|${p}/${m}`); }));
       expect(bad.length).toBeGreaterThanOrEqual(1);
