@@ -2698,33 +2698,42 @@
     // predecessor, so the chain visibly tapers rather than reading as a
     // second uniform band.
     const MK_TICK_CHAIN_RHO = 0.8;
-    // T2-8b-2 (mechanism BC, "band continuation" — replaces T2-8b's SEC after
-    // Jay's REJECT: "it must continue the band but truncate the top/bottom
-    // gradually as they approach another band or a side"). A tick-only,
-    // deferred, NON-SITE pass that CONTINUES the lattice past each span end
-    // with the boundary site's own frame, P, phase and segs; only each tick's
-    // two ends move (they taper as the surface or neighbouring ink runs out).
-    //   `MK_TICK_BC_MAXJ`      — continuation positions per span end (guard).
-    //   `MK_TICK_BC_EDGE_PEN`  — outline clearance probe radius, in pens.
-    //   `MK_TICK_BC_ADMIT_PEN` — refuse (and END the chain) if any walked
-    //                            point is this close to ANY ink in `mkInk`.
-    //   `MK_TICK_BC_DIR_CUT`   — degrees; END the chain if a tick's walked
-    //                            chord departs further than this from asked.
-    //   `MK_TICK_BC_SCAN_MM`   — envelope scan step.
+    // T2-8b-3 (mechanism BC-E, "band continuation with an endpoint envelope";
+    // Jay: "fill open spaces where highlight isn't needed and form a consistent
+    // set of endpoints evenly offset from the perimeter or closest band").
+    // A tick-only, deferred, NON-SITE pass that CONTINUES the lattice past each
+    // span end with the boundary site's own P, phase, segs and tone. Each
+    // continuation tick is walked in its OWN local frame; each end stops
+    // EXACTLY (bisected) at a constant clearance from the first boundary it
+    // meets, so the ends form a constant-offset envelope.
+    //   `MK_TICK_BC_MAXJ`     — continuation positions per span end (guard;
+    //                           chains end at the apex, where the two envelopes meet).
+    //   `MK_TICK_BC_EDGE_PEN` — c_E, end offset from the outline, in pens
+    //                           (0.60 mm). The DRAWN silhouette sits 0.1-0.38 mm
+    //                           inside the analytic limb; 2.0 keeps OUTLINE >= 0.30.
+    //   `MK_TICK_BC_BAND_PEN` — c_B, end offset from another row's ink: the
+    //                           band's own contact-free seam `PMINT`
+    //                           (measured: 2 w leaves W_L bare 0.355 > the 0.30 bar).
+    //   `MK_TICK_BC_ADMIT_PEN`— contact guard against ANY ink.
+    //   `MK_TICK_BC_DIR_CUT`  — degrees; max turn vs the PREVIOUS DRAWN tick.
+    //   `MK_TICK_BC_SEAM`     — max perpendicular spacing vs the previous drawn
+    //                           tick, in P (no orphan, no jump).
+    //   `MK_TICK_BC_SCAN_MM`  — seed scan step.
+    //   `MK_TICK_BC_PROBES`   — outline-clearance probes (8 are anisotropic up to 7.6 %).
+    //   `MK_TICK_BC_BISECT`   — end bisection iterations (0.36/64 = 0.006 mm).
+    //   `MK_TICK_BC_HI_I`     — SP5's light third: a site at or above it is
+    //                           highlight and is never continued (0.8 or 0.9
+    //                           raise create sphere/contour bandC over its ceiling).
     const MK_TICK_BC_MAXJ = 16;
     const MK_TICK_BC_EDGE_PEN = 2.0;
+    const MK_TICK_BC_BAND_PEN = 1 + MK_TICK_GAP_PEN;
     const MK_TICK_BC_ADMIT_PEN = 1.0;
     const MK_TICK_BC_DIR_CUT = 10;
+    const MK_TICK_BC_SEAM = 1.35;
     const MK_TICK_BC_SCAN_MM = 0.05;
-    //   `MK_TICK_BC_REANCHOR_J` — T2-8b-2b: from this lattice step on, a tick
-    //                            that fails the direction cut is re-asked in a
-    //                            fresh local frame instead of ending the chain
-    //                            (the flat boundary frame drifts far from the
-    //                            surface family; li19 ended at j=10, leaving the
-    //                            W_L remnant). Measured: 4, 6 and 8 all close
-    //                            W_L; 1 (always) raises create sphere/contour
-    //                            bandC 0.0407 -> 0.0606 over its 0.04676 ceiling.
-    const MK_TICK_BC_REANCHOR_J = 8;
+    const MK_TICK_BC_PROBES = 16;
+    const MK_TICK_BC_BISECT = 6;
+    const MK_TICK_BC_HI_I = 2 / 3;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2844,7 +2853,7 @@
     // use `mkInkHit`'s own default `mkInkR`), set by `layMark`'s tick block
     // alongside `m`/`p` immediately before each `walkPoly` call.
     const mkClipArm = {
-      m: false, p: false, rm: 0, rp: 0, e: 0,
+      m: false, p: false, rm: 0, rp: 0,
     };
 
     // ── THE TWELVE, AS DATA ───────────────────────────────────────────────────
@@ -6521,20 +6530,6 @@
           if (!sm || sm.front !== wantFront) return null;
           return { sm, pr: { a: pp.a, b: bb } };
         };
-        // T2-8b-2 — the outline-clearance probe (only armed by `bcSide`, via
-        // `mkClipArm.e`; every other caller leaves it 0 so this is dead code
-        // for them): 8 samples on a circle of radius `r` mm around a walked
-        // point must all be on the front surface.
-        const mkEdgeOK = (sm, pr, r) => {
-          const f = frameFrom(sm, fr0.ld, fr0.st, pr); if (!f) return false;
-          for (let q = 0; q < 8; q += 1) {
-            const pp = f.toParam(Math.cos(q * Math.PI / 4) * r, Math.sin(q * Math.PI / 4) * r);
-            if (!(pp.a >= 0 && pp.a <= 1)) return false;
-            let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
-            const z = sampleAt(pp.a, bb); if (!z || z.front !== wantFront) return false;
-          }
-          return true;
-        };
         // Walk from a seed (frame, point, local uv) toward a local (u,v)
         // target expressed in that SAME seed frame's coordinates, in steps
         // of at most `MK_ARC_MM`, re-deriving the frame at every accepted
@@ -6604,7 +6599,6 @@
             // that WALKS INTO nearby ink partway along, keeps the contact fix
             // without refusing ordinary crossing ticks at their own hub.
             if (stepCapMM && clipOn && (s > 1 || !clipR) && mkInkHit(nextPt, clipR)) { truncated = true; break; }
-            if (clipOn && mkClipArm.e && !mkEdgeOK(hit.sm, hit.pr, mkClipArm.e)) { truncated = true; break; }
             if (stepCapMM) {
               const sx = nextPt.x - curPt.x; const sy = nextPt.y - curPt.y;
               const sl = Math.hypot(sx, sy);
@@ -6654,12 +6648,7 @@
         let drawnLen = 0;
         for (let i = 1; i < pts.length; i += 1) drawnLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
         if (pts.length < 2) return { pts: null, askLen: 0, drawnLen: 0, truncated: false };
-        return {
-          pts, askLen, drawnLen, truncated,
-          hub: w0.pts.length,
-          hubTrunc: toHub.truncated,
-          hubClear: mkClipArm.e ? mkEdgeOK(hubFr.smp, hubFr.pr, mkClipArm.e) : true,
-        };
+        return { pts, askLen, drawnLen, truncated };
       };
 
       // W-05b — 'tick' and 'morph' are the two shapes a mark law can build
@@ -6667,9 +6656,9 @@
       // radius (D1). Every other shape's `place` path is byte-for-byte
       // unchanged below; only these two route through `walkPoly`.
       const isWalkedShape = law.shape === 'tick' || law.shape === 'morph';
-      // T2-8b-2 — the last main tick's drawn length (read by the lattice loop's
-      // boundary bookkeeping; never feeds a site record).
-      let mkMainDrawn = 0;
+      // T2-8b-3 — the last placed run and the last MAIN tick's drawn run (read by
+      // the lattice loop's boundary bookkeeping; never feeds a site record).
+      let mkMainRun = null; let mkLastRun = null;
       // W-05b — O2's own ground truth. The REQUESTED direction is the
       // shape's own asked offset (its first-to-last vertex, in the mark's
       // local frame) projected through the ruling's FLAT frame (`fr.u`/
@@ -6803,6 +6792,7 @@
           pushRun(r, back, lineIndex);
           mkStat.pens += 1;
         });
+        mkLastRun = runs[0];
         mkStat.marks += 1; mkStat.ink += tot;
         if (isWalkedShape) {
           mkStat.askSum += askTot;
@@ -7334,7 +7324,7 @@
             mkClipArm.rm = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             mkClipArm.rp = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));
-            if (si === mainIdx) mkMainDrawn = pieceLen || 0;
+            if (si === mainIdx) { mkMainRun = pieceLen ? mkLastRun : null; }
             mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
             if (si === mainIdx) mkStat.tickSites.push(sv.I, sv.R, sv.P, pieceLen ? 1 : 0);
             if (pieceLen) {
@@ -7370,125 +7360,145 @@
         }
       };
 
-      // ── T2-8b-2 — BC: band continuation past a span end (tick-only, deferred) ──
-      // See `MK_TICK_BC_MAXJ`. The lattice loop is CONTINUED past the span end
-      // `kB`/`aB` (the boundary site) with that site's OWN frame, P, phase
-      // (`aB +- j*P`) and segs, so direction, spacing and tone carry on with
-      // no seam. Only each tick's two ends move: the envelope is re-scanned
-      // for the on-front run at every position and each end shrinks to where
-      // its arm actually stopped (neighbour ink, or the outline probe), never
-      // growing and never longer than the previous tick — the gradual taper.
-      // A refusal ENDS the chain (never a hole mid-chain). Never touches
-      // `mkStat.tickSites`.
-      const bcSide = (kB, dir, aB, Pc, svB, Lb) => {
+      // ── T2-8b-3 — BC-E: band continuation with an endpoint envelope (tick-only, deferred) ──
+      // See `MK_TICK_BC_MAXJ`. The lattice is CONTINUED past the span end `kB`/`aB`
+      // with the boundary site's OWN P, phase (`aB +- j*P`), segs and tone. Each tick
+      // is walked in its own LOCAL frame (its hub marches one P per step from the
+      // previous hub); each END walks toward the band's own extent and stops exactly,
+      // by bisection, at clearance c from the first boundary it meets: `cE` from the
+      // outline, `cB` from another row's ink. A tick is never longer than its
+      // predecessor (the gradual taper), must be contiguous with the previous DRAWN
+      // tick (no orphan), and a chain ends where the two envelopes meet (the apex)
+      // or at any refusal (never a hole mid-chain). Never touches `mkStat.tickSites`.
+      const bcSide = (kB, dir, aB, Pc, svB, Rb) => {
         if (!svB || !svB.segs || !svB.segs.length || !(Pc > 0) || !Number.isFinite(aB)) return;
+        if (!(svB.I < MK_TICK_BC_HI_I)) return;
         const fr0 = frameAt(kB); if (!fr0) return;
         const LPF = MK_TICK_PLOT_FLOOR * MIN_MARK_MM;
-        const cOut = MK_TICK_BC_EDGE_PEN * w; const admitR = MK_TICK_BC_ADMIT_PEN * w;
-        let lo = Infinity; let hi = -Infinity;
-        svB.segs.forEach((q) => { lo = Math.min(lo, q[0]); hi = Math.max(hi, q[1]); });
-        let Lprev = Lb > 0 ? Lb : Infinity;
-        const onF = (u, v) => {
-          const pp = fr0.toParam(u, v);
-          if (!(pp.a >= 0 && pp.a <= 1)) return false;
+        const cE = MK_TICK_BC_EDGE_PEN * w; const cB = MK_TICK_BC_BAND_PEN * w; const admitR = MK_TICK_BC_ADMIT_PEN * w;
+        let lo0 = Infinity; let hi0 = -Infinity;
+        svB.segs.forEach((q) => { lo0 = Math.min(lo0, q[0]); hi0 = Math.max(hi0, q[1]); });
+        const at = (fr, du, dv) => {
+          const pp = fr.toParam(du, dv);
+          if (!(pp.a >= 0 && pp.a <= 1)) return null;
           let bb = pp.b;
-          if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+          if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return null; bb = ((bb % 1) + 1) % 1; }
           const sm = sampleAt(pp.a, bb);
-          return !!(sm && sm.front === wantFront);
+          if (!sm || sm.front !== wantFront) return null;
+          const f = frameFrom(sm, fr0.ld, fr0.st, { a: pp.a, b: bb });
+          return f ? { sm, fr: f } : null;
         };
-        const arcOf = (pts, i0, i1) => {
-          let L = 0;
-          for (let i = i0 + 1; i <= i1; i += 1) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-          return L;
-        };
-        const admit = (pts) => {
-          const nb = Math.max(1, Math.ceil(admitR / mkInkR));
-          for (let i = 0; i < pts.length; i += 1) {
-            const cx = Math.floor(pts[i].x / mkInkR); const cy = Math.floor(pts[i].y / mkInkR);
-            for (let dx = -nb; dx <= nb; dx += 1) {
-              for (let dy = -nb; dy <= nb; dy += 1) {
-                const bucket = mkInk.get(`${wantFront ? 1 : 0}:${cx + dx},${cy + dy}`);
-                if (!bucket) continue;
-                for (let h = 0; h < bucket.length; h += 1) {
-                  if (Math.hypot(bucket[h].x - pts[i].x, bucket[h].y - pts[i].y) < admitR) return false;
-                }
+        const nb = Math.max(1, Math.ceil(Math.max(cB, admitR) / mkInkR));
+        const inkWithin = (x, y, r, anyLi) => {
+          const cx = Math.floor(x / mkInkR); const cy = Math.floor(y / mkInkR);
+          for (let dx = -nb; dx <= nb; dx += 1) {
+            for (let dy = -nb; dy <= nb; dy += 1) {
+              const bucket = mkInk.get(`${wantFront ? 1 : 0}:${cx + dx},${cy + dy}`);
+              if (!bucket) continue;
+              for (let h = 0; h < bucket.length; h += 1) {
+                if ((anyLi || bucket[h].li !== lineIndex) && Math.hypot(bucket[h].x - x, bucket[h].y - y) < r) return true;
               }
             }
           }
-          return true;
+          return false;
         };
-        const dirOK = (wk, poly, uOff, frD = fr0) => {
-          const rd = requestedDir(frD, uOff, 0, poly);
-          const a0 = wk.pts[0]; const b0 = wk.pts[wk.pts.length - 1];
-          const dl = Math.hypot(b0.x - a0.x, b0.y - a0.y);
-          if (!rd || !(dl > 1e-9)) return false;
-          const cosv = Math.min(1, Math.abs(((b0.x - a0.x) / dl) * rd.x + ((b0.y - a0.y) / dl) * rd.y));
-          return Math.acos(cosv) * (180 / Math.PI) <= MK_TICK_BC_DIR_CUT;
-        };
-        // T2-8b-2b — the chain's walk arms clip at the ADMISSION radius (1.0 w),
-        // not the larger default `mkInkR` (up to 1.3 w): a tick the admission would
-        // accept was being cut below the plot floor by the wider clip (the W_L
-        // remnant: measured bare >= 0.5 mm in W_L 0.73 -> 0.105 mm^2).
-        // T2-8b-2b — a tick far from the boundary frame can leave the flat frame's
-        // asked direction (the 10-degree cut ended the li19 chain at j=10 and left
-        // the W_L remnant). Re-ask it in a FRESH local frame at the tick's own hub
-        // (exactly what a regular tick at that spot would be asked), then apply the
-        // same 10-degree check and admission there. A tick that still departs, or
-        // whose hub is off the surface, still ENDS the chain.
-        const reAnchor = (q, uOff) => {
-          const hubV = 0.5 * (q[0] + q[1]);
-          const pp = fr0.toParam(uOff, hubV);
-          if (!(pp.a >= 0 && pp.a <= 1)) return false;
-          let bb = pp.b;
-          if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
-          const sm = sampleAt(pp.a, bb);
-          if (!sm || sm.front !== wantFront) return false;
-          const fr1 = frameFrom(sm, fr0.ld, fr0.st, { a: pp.a, b: bb });
-          if (!fr1) return false;
-          const poly1 = [[0, q[0] - hubV], [0, q[1] - hubV]];
-          const wk1 = walkPoly(fr1, 0, 0, poly1, MK_TICK_STEP_CAP_MM);
-          if (!(wk1.pts && admit(wk1.pts) && dirOK(wk1, poly1, 0, fr1))) return false;
-          place(fr1, [poly1], 0, 0);
-          return true;
-        };
-        for (let j = 1; j <= MK_TICK_BC_MAXJ; j += 1) {
-          const uOff = aB + dir * j * Pc - arcMM[kB];
-          // (i) the longest on-front run of the envelope at this along-offset
-          let bLo = NaN; let bHi = NaN; let bestLen = -1; let rs = null; let re = null;
-          const closeRun = () => {
-            if (rs != null && re - rs > bestLen) { bestLen = re - rs; bLo = rs; bHi = re; }
-            rs = null; re = null;
-          };
-          for (let v = lo; v <= hi + 1e-9; v += MK_TICK_BC_SCAN_MM) {
-            if (onF(uOff, v)) { if (rs == null) rs = v; re = v; } else closeRun();
+        const edgeClear = (fr) => {
+          for (let q = 0; q < MK_TICK_BC_PROBES; q += 1) {
+            const th = (2 * Math.PI * q) / MK_TICK_BC_PROBES;
+            const pp = fr.toParam(Math.cos(th) * cE, Math.sin(th) * cE);
+            if (!(pp.a >= 0 && pp.a <= 1)) return false;
+            let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+            const z = sampleAt(pp.a, bb); if (!z || z.front !== wantFront) return false;
           }
-          closeRun();
-          if (!(bestLen >= 0) || bHi - bLo < LPF) break;
-          lo = bLo; hi = bHi;
-          // (ii) measured dry walk: full ink clip + outline probe
-          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = admitR; mkClipArm.rp = admitR; mkClipArm.e = cOut;
-          const dry = walkPoly(fr0, uOff, 0, [[0, lo], [0, hi]], MK_TICK_STEP_CAP_MM);
-          mkClipArm.m = false; mkClipArm.p = false; mkClipArm.e = 0;
-          if (!dry.pts || dry.hubTrunc || !dry.hubClear) break;
-          const hubV = 0.5 * (lo + hi);
-          lo = Math.max(lo, hubV - arcOf(dry.pts, 0, dry.hub));
-          hi = Math.min(hi, hubV + arcOf(dry.pts, dry.hub, dry.pts.length - 1));
-          if (hi - lo > Lprev) { const f = Lprev / (hi - lo); const m = 0.5 * (lo + hi); lo = m - (m - lo) * f; hi = m + (hi - m) * f; }
-          if (!(hi - lo >= LPF)) break;
-          Lprev = hi - lo;
-          const segs = svB.segs.length === 1 ? [[lo, hi]]
-            : svB.segs.map((q) => [Math.max(q[0], lo), Math.min(q[1], hi)]).filter((q) => q[1] - q[0] >= 2 * w);
-          let stop = false;
+          return true;
+        };
+        let why = '';
+        const clear = (h) => {
+          if (!h) { why = 'S'; return false; }
+          if (!edgeClear(h.fr)) { why = 'E'; return false; }
+          if (inkWithin(h.sm.x, h.sm.y, cB, false)) { why = 'I'; return false; }
+          return true;
+        };
+        const arm = (h0, sgn, maxLen) => {
+          let h = h0; let len = 0; let d0 = null;
+          while (len < maxLen - 1e-9) {
+            const st = Math.min(MK_ARC_MM, maxLen - len);
+            const nx = at(h.fr, 0, sgn * st);
+            let ok = !!nx && Math.hypot(nx.sm.x - h.sm.x, nx.sm.y - h.sm.y) <= MK_TICK_STEP_CAP_MM;
+            if (ok) {
+              const sx = nx.sm.x - h.sm.x; const sy = nx.sm.y - h.sm.y; const sl = Math.hypot(sx, sy);
+              if (sl > 1e-9) {
+                if (!d0) d0 = { x: sx / sl, y: sy / sl };
+                else if ((sx * d0.x + sy * d0.y) / sl < Math.cos((MK_TICK_BEND_CUT * Math.PI) / 180)) ok = false;
+              }
+            }
+            if (ok && clear(nx)) { h = nx; len += st; continue; }
+            const reason = ok ? why : 'S';
+            let a = 0; let b = st;
+            for (let it = 0; it < MK_TICK_BC_BISECT; it += 1) {
+              const m = 0.5 * (a + b); const q = at(h.fr, 0, sgn * m); if (q && clear(q)) a = m; else b = m;
+            }
+            if (a > 1e-4 && at(h.fr, 0, sgn * a)) len += a;
+            return { len, stopped: true, reason };
+          }
+          return { len, stopped: false, reason: 'C' };
+        };
+        let h = at(fr0, aB - arcMM[kB], 0); if (!h) return;
+        let vRel = 0; let pLo = lo0; let pHi = hi0;
+        let pMid = { x: h.sm.x, y: h.sm.y }; let pDir = { x: fr0.v.x, y: fr0.v.y }; let Lprev = Infinity;
+        if (Rb && Rb.length >= 2) {
+          const e0 = Rb[0]; const e1 = Rb[Rb.length - 1]; const cl = Math.hypot(e1.x - e0.x, e1.y - e0.y) || 1;
+          pMid = { x: 0.5 * (e0.x + e1.x), y: 0.5 * (e0.y + e1.y) }; pDir = { x: (e1.x - e0.x) / cl, y: (e1.y - e0.y) / cl };
+          Lprev = 0; for (let i = 1; i < Rb.length; i += 1) Lprev += Math.hypot(Rb[i].x - Rb[i - 1].x, Rb[i].y - Rb[i - 1].y);
+        }
+        for (let j = 1; j <= MK_TICK_BC_MAXJ; j += 1) {
+          let n = at(h.fr, dir * Pc, 0); let dv = 0;
+          if (!(n && clear(n))) {
+            n = null;
+            const lim = Math.max(vRel - pLo, pHi - vRel);
+            for (let s = 1; !n && s * MK_TICK_BC_SCAN_MM <= lim; s += 1) {
+              for (const sg of [1, -1]) {
+                const v = sg * s * MK_TICK_BC_SCAN_MM;
+                if (vRel + v < Math.max(lo0, pLo) || vRel + v > Math.min(hi0, pHi)) continue;
+                const c = at(h.fr, dir * Pc, v); if (c && clear(c)) { n = c; dv = v; break; }
+              }
+            }
+          }
+          if (!n) break;
+          vRel += dv;
+          const up = arm(n, 1, hi0 - vRel); const dn = arm(n, -1, vRel - lo0);
+          let a0 = -dn.len; let a1 = up.len;
+          if (a1 - a0 > Lprev) {
+            let ex = a1 - a0 - Lprev;
+            if (!up.stopped) { const t = Math.min(ex, a1); a1 -= t; ex -= t; }
+            if (ex > 0 && !dn.stopped) { const t = Math.min(ex, -a0); a0 += t; ex -= t; }
+            if (ex > 0) { a0 += ex / 2; a1 -= ex / 2; }
+          }
+          if (!(a1 - a0 >= LPF)) break;
+          const segs = svB.segs.length === 1 ? [[a0, a1]]
+            : svB.segs.map((q) => [Math.max(q[0] - vRel, a0), Math.min(q[1] - vRel, a1)]).filter((q) => q[1] - q[0] >= 2 * w);
+          let stop = false; let main = null;
           segs.forEach((q) => {
             if (stop) return;
             const poly = [[0, q[0]], [0, q[1]]];
-            mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = admitR; mkClipArm.rp = admitR; mkClipArm.e = cOut;
-            const wk = walkPoly(fr0, uOff, 0, poly, MK_TICK_STEP_CAP_MM);
-            if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff)) place(fr0, [poly], uOff, 0);
-            else if (!(wk.pts && admit(wk.pts) && j >= MK_TICK_BC_REANCHOR_J && reAnchor(q, uOff))) stop = true;
-            mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0; mkClipArm.e = 0;
+            const wk = walkPoly(n.fr, 0, 0, poly, MK_TICK_STEP_CAP_MM);
+            let ok = !!wk.pts;
+            if (ok) for (let i = 0; i < wk.pts.length && ok; i += 1) if (inkWithin(wk.pts[i].x, wk.pts[i].y, admitR, true)) ok = false;
+            if (ok) {
+              const e0 = wk.pts[0]; const e1 = wk.pts[wk.pts.length - 1];
+              const md = { x: 0.5 * (e0.x + e1.x), y: 0.5 * (e0.y + e1.y) };
+              const cl = Math.hypot(e1.x - e0.x, e1.y - e0.y) || 1; const cd = { x: (e1.x - e0.x) / cl, y: (e1.y - e0.y) / cl };
+              const perpD = Math.abs((md.x - pMid.x) * -pDir.y + (md.y - pMid.y) * pDir.x);
+              if (perpD > MK_TICK_BC_SEAM * Pc
+                || Math.abs(cd.x * pDir.x + cd.y * pDir.y) < Math.cos((MK_TICK_BC_DIR_CUT * Math.PI) / 180)) ok = false;
+              else if (!main || cl > main.cl) main = { md, cd, cl };
+            }
+            if (ok) place(n.fr, [poly], 0, 0); else stop = true;
           });
           if (stop) break;
+          if (main) { pMid = main.md; pDir = main.cd; }
+          Lprev = Math.min(Lprev, a1 - a0); pLo = vRel + a0; pHi = vRel + a1;
+          h = n;
         }
       };
 
@@ -7624,8 +7634,8 @@
         let lastA = -Infinity;
         let firstA = Infinity;
         // T2-8b-2 — boundary-site bookkeeping (assignments only).
-        let firstK = -1; let firstSv = null; let firstD = 0;
-        let lastK = -1; let lastSv = null; let lastD = 0;
+        let firstK = -1; let firstSv = null; let firstR = null;
+        let lastK = -1; let lastSv = null; let lastR = null;
         while (a <= arcMM[s1] && guard < 4000) {
           guard += 1;
           const k = idxAt(a);
@@ -7660,11 +7670,11 @@
           // `emitTickWedgeRow`). Left in as a cheap belt-and-suspenders
           // check for cells this unit did not sweep.
           const kAo = idxAt(ao);
-          mkMainDrawn = 0;
+          mkMainRun = null;
           if (!(mkWedgeActive && sv.L < 0.7 * sv.R)) layMark(kAo, ao, sv);
           cur = k;
-          if (ao < firstA) { firstA = ao; firstK = kAo; firstSv = sv; firstD = mkMainDrawn; }
-          lastA = ao; lastK = kAo; lastSv = sv; lastD = mkMainDrawn;
+          if (ao < firstA) { firstA = ao; firstK = kAo; firstSv = sv; firstR = mkMainRun; }
+          lastA = ao; lastK = kAo; lastSv = sv; lastR = mkMainRun;
           a += sv.P;
         }
         // T2-7 — the end-of-span tick (Amendment 4 item 8). Tick-only: for
@@ -7675,22 +7685,22 @@
         // (§C5): the lattice otherwise stops a whole period short of a
         // span's true end, and no row covers the remainder.
         let endA = lastA;
-        let endK = -1; let endSv = null; let endD = 0;
+        let endK = -1; let endSv = null; let endR = null;
         if (law.shape === 'tick') {
           const svEnd = solveAt(s1);
           if (arcMM[s1] - lastA > 0.5 * svEnd.P + 1.6 * w) {
-            mkMainDrawn = 0;
+            mkMainRun = null;
             layMark(s1, arcMM[s1], svEnd);
-            endA = arcMM[s1]; endK = s1; endSv = svEnd; endD = mkMainDrawn;
+            endA = arcMM[s1]; endK = s1; endSv = svEnd; endR = mkMainRun;
           }
         }
         // T2-8b-2 — queue the two span-end continuations (tick-only, deferred,
         // non-site; see `bcSide`). `endA` is the item-8 end tick if it fired,
         // else the last placed site. No mapper gate.
         if (law.shape === 'tick' && !mkWedgeActive && s1 > s0 && Number.isFinite(firstA) && Number.isFinite(endA)) {
-          if (firstSv) mkEndQ.push(() => bcSide(firstK, -1, firstA, firstSv.P, firstSv, firstD));
-          if (endSv) mkEndQ.push(() => bcSide(endK, 1, endA, endSv.P, endSv, endD));
-          else if (lastSv) mkEndQ.push(() => bcSide(lastK, 1, lastA, lastSv.P, lastSv, lastD));
+          if (firstSv) mkEndQ.push(() => bcSide(firstK, -1, firstA, firstSv.P, firstSv, firstR));
+          if (endSv) mkEndQ.push(() => bcSide(endK, 1, endA, endSv.P, endSv, endR));
+          else if (lastSv) mkEndQ.push(() => bcSide(lastK, 1, lastA, lastSv.P, lastSv, lastR));
         }
       });
     };
