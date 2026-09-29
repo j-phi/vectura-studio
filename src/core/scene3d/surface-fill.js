@@ -2734,19 +2734,20 @@
     const MK_TICK_BC_PROBES = 16;
     const MK_TICK_BC_BISECT = 6;
     const MK_TICK_BC_HI_I = 2 / 3;
-    //   `MK_TICK_BC_APEX_MIN` — T2-8b-3b: the APEX floor, in pens. Where a chain's two
-    //                           envelopes meet, the last ticks may be shorter than the plot
-    //                           floor (`MK_TICK_PLOT_FLOOR*MIN_MARK_MM`, 0.69 mm) down to
-    //                           this many pens. 2.0 = `MIN_MARK_MM` (0.6 mm) is the LOWEST
-    //                           value that can draw: `place()` drops a mark under
-    //                           `MIN_MARK_MM` and `scene3d.js` drops any run under
-    //                           `MIN_RUN_MM = 0.6` afterwards (sub-two-pen marks are
-    //                           pen-down dots). Measured: 1.0, 1.25, 1.5 and 1.75 placed the
-    //                           tick but the render was byte-identical to 2.0 — the
-    //                           downstream floor removes it. Only apex ticks of a chain may
-    //                           sit between this floor and the plot floor; each is still
-    //                           contiguous, tapering and clear at the ends.
-    const MK_TICK_BC_APEX_MIN = 2.0;
+    //   `MK_TICK_BC_APEX_MIN`  — T2-8b-3c: the APEX floor, in pens (1.0 = 0.3 mm). Where a
+    //   `MK_TICK_BC_APEX_J`      chain is CLOSING into a wedge, its last ticks may be shorter
+    //   `MK_TICK_BC_APEX_TAPER`  than the plot floor (0.69 mm) and even than the 0.6 mm crumb
+    //                            filter, down to APEX_MIN. Admitted only when the chain has
+    //                            already tapered: j >= APEX_J, BOTH ends stopped by a boundary
+    //                            (outline or another row) and length <= APEX_TAPER x the
+    //                            boundary tick's drawn length. That admits the tapering li19
+    //                            chain into the W_L wedge and refuses runs of near-constant
+    //                            short dashes (create torus/hatch: ratio 0.87-1.0, ends
+    //                            unstopped). Such a run is flagged `apex` so `scene3d.js`
+    //                            exempts ONLY it from `MIN_RUN_MM`; every other stroke keeps 0.6 mm.
+    const MK_TICK_BC_APEX_MIN = 1.0;
+    const MK_TICK_BC_APEX_J = 3;
+    const MK_TICK_BC_APEX_TAPER = 0.5;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -6672,6 +6673,9 @@
       // T2-8b-3 — the last placed run and the last MAIN tick's drawn run (read by
       // the lattice loop's boundary bookkeeping; never feeds a site record).
       let mkMainRun = null; let mkLastRun = null;
+      // T2-8b-3c — set ONLY by `bcSide` around the placement of an APEX tick: its own floor
+      // (mm) and the flag that marks the emitted run for `scene3d.js`. 0/false everywhere else.
+      let mkMinOverride = 0; let mkApexRun = false;
       // W-05b — O2's own ground truth. The REQUESTED direction is the
       // shape's own asked offset (its first-to-last vertex, in the mark's
       // local frame) projected through the ruling's FLAT frame (`fr.u`/
@@ -6798,10 +6802,11 @@
         // walked shape this is also where a limb-truncated walk that came back
         // too short to read as a mark gets dropped (D2: shortened first, and
         // only dropped if the shortening left nothing worth a pen-down).
-        if (tot < MIN_MARK_MM) { mkStat.tooShort += 1; return false; }
+        if (tot < (mkMinOverride || MIN_MARK_MM)) { mkStat.tooShort += 1; return false; }
         runs.forEach((r) => {
           if (r.length < 2) return;
           r.fam = fam; r.loz = true;
+          if (mkApexRun) { r.apex = true; r.apexMin = mkMinOverride; }
           pushRun(r, back, lineIndex);
           mkStat.pens += 1;
         });
@@ -7464,6 +7469,7 @@
           pMid = { x: 0.5 * (e0.x + e1.x), y: 0.5 * (e0.y + e1.y) }; pDir = { x: (e1.x - e0.x) / cl, y: (e1.y - e0.y) / cl };
           Lprev = 0; for (let i = 1; i < Rb.length; i += 1) Lprev += Math.hypot(Rb[i].x - Rb[i - 1].x, Rb[i].y - Rb[i - 1].y);
         }
+        const Lbnd = Number.isFinite(Lprev) ? Lprev : 0;
         for (let j = 1; j <= MK_TICK_BC_MAXJ; j += 1) {
           let n = at(h.fr, dir * Pc, 0); let dv = 0;
           if (!(n && clear(n))) {
@@ -7488,7 +7494,11 @@
             if (ex > 0) { a0 += ex / 2; a1 -= ex / 2; }
           }
           const apexTick = a1 - a0 < LPF;
-          if (!(a1 - a0 >= (apexTick ? Math.min(LPF, MK_TICK_BC_APEX_MIN * penWidth) : LPF))) break;
+          if (apexTick) {
+            const closing = j >= MK_TICK_BC_APEX_J && up.stopped && dn.stopped && Lbnd > 0
+              && a1 - a0 <= MK_TICK_BC_APEX_TAPER * Lbnd && a1 - a0 >= MK_TICK_BC_APEX_MIN * penWidth;
+            if (!closing) break;
+          }
           const segs = svB.segs.length === 1 ? [[a0, a1]]
             : svB.segs.map((q) => [Math.max(q[0] - vRel, a0), Math.min(q[1] - vRel, a1)]).filter((q) => q[1] - q[0] >= 2 * w);
           let stop = false; let main = null;
@@ -7508,7 +7518,9 @@
               else if (!main || cl > main.cl) main = { md, cd, cl };
             }
             if (ok) {
+              if (apexTick) { mkMinOverride = MK_TICK_BC_APEX_MIN * penWidth; mkApexRun = true; }
               const placed = place(n.fr, [poly], 0, 0);
+              mkMinOverride = 0; mkApexRun = false;
               if (apexTick && !placed) stop = true;
             } else stop = true;
           });

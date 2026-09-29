@@ -681,7 +681,9 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
  *   rulingref j=1 continuity reference = the ruling frame, not the drawn boundary tick.
  *   nohi      highlight gate MK_TICK_BC_HI_I = 1.01 (never gates).
  *   nocap     taper cap off.
- *   apexlpf   the apex floor set back to the plot floor (== T2-8b-3, `2e59a16a`).
+ *   noapex    apex ticks never admitted (== T2-8b-3, `2e59a16a`, for the W_L gap).
+ *   apexnorule the closing-wedge rule removed: any tick >= 1 pen is an apex tick (== the 3b behaviour, stray dashes).
+ *   noflag    (scene3d.js) the apex flag check removed: EVERY run may be down to 0.3 mm (crumb probe).
  * Test-side RECORD needles (not mutations) tag every placed run so chains are
  * grouped by exact span identity and every end carries its stop reason.
  */
@@ -729,10 +731,11 @@ const BC_MUT = {
   rulingref: [['if (Rb && Rb.length >= 2) {', 'if (false && Rb && Rb.length >= 2) {']],
   nohi: [['const MK_TICK_BC_HI_I = 2 / 3;', 'const MK_TICK_BC_HI_I = 1.01;']],
   nocap: [[CAP, 'if (false) {']],
-  apexlpf: [['(apexTick ? Math.min(LPF, MK_TICK_BC_APEX_MIN * penWidth) : LPF)', 'LPF']],
+  noapex: [['if (!closing) break;', 'if (true) break;']],
+  apexnorule: [['if (!closing) break;', 'if (!(a1 - a0 >= MK_TICK_BC_APEX_MIN * penWidth)) break;']],
 };
 const REC_NEEDLES = [
-  ['pushRun(r, back, lineIndex);', "pushRun(r, back, lineIndex); if (typeof globalThis.__T28B_REC__ === 'function') globalThis.__T28B_REC__({ pts: r.map((q) => ({ x: q.x, y: q.y })), li: lineIndex, tag: globalThis.__TAG });"],
+  ['pushRun(r, back, lineIndex);', "pushRun(r, back, lineIndex); if (typeof globalThis.__T28B_REC__ === 'function') globalThis.__T28B_REC__({ pts: r.map((q) => ({ x: q.x, y: q.y })), li: lineIndex, tag: globalThis.__TAG, apex: r.apex === true });"],
   ['const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));', "globalThis.__TAG = 'reg:' + (si === mainIdx ? 'M' : 's') + ':' + a.toFixed(4) + ':' + k + ':' + sv.I.toFixed(3) + ':' + sv.P.toFixed(4); const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr)); globalThis.__TAG = null;"],
   ['const up = arm(n, 1, hi0 - vRel); const dn = arm(n, -1, vRel - lo0);', "const up = arm(n, 1, hi0 - vRel); const dn = arm(n, -1, vRel - lo0); globalThis.__TAG = 'cont|' + dir + '|' + kB + '|' + aB.toFixed(4) + '|' + j + '|' + svB.I.toFixed(3) + '|' + dn.reason + up.reason;"],
 ];
@@ -741,6 +744,15 @@ const buildBcSource = (kind) => {
   (BC_MUT[kind] || []).forEach(([a, b], i) => { src = patchOne(src, a, b, `BC_${kind}_${i}`); });
   REC_NEEDLES.forEach(([a, b], i) => { src = patchOne(src, a, b, `BC_REC_${i}_${kind}`); });
   return patchOne(src, HOOK_NEEDLE, HOOK_REPL, 'HOOK_NEEDLE');
+};
+const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
+const SCENE3D_MUT = {
+  noflag: [['runLength(run.pts) < (apexMin != null ? Math.min(MIN_RUN_MM, apexMin) : MIN_RUN_MM)', 'runLength(run.pts) < 0.3']],
+};
+const buildScene3dSource = (kind) => {
+  let src = fs.readFileSync(path.join(ROOT_DIR, SCENE3D_REL), 'utf8');
+  (SCENE3D_MUT[kind] || []).forEach(([a, b], i) => { src = patchOne(src, a, b, `S3D_${kind}_${i}`); });
+  return src;
 };
 const md5 = (v) => crypto.createHash('md5').update(JSON.stringify(v)).digest('hex');
 const plain = (paths) => paths.map((p) => Object.assign(p.map((q) => ({ x: q.x, y: q.y })), { meta: p.meta }));
@@ -755,7 +767,7 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
   const runtimes = {};
   const R = {};
   const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
-  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'thin', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6', 'nobisect', 'nocont', 'gap', 'cfat', 'rulingref', 'nohi', 'nocap', 'apexlpf'];
+  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'thin', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6', 'nobisect', 'nocont', 'gap', 'cfat', 'rulingref', 'nohi', 'nocap', 'noapex', 'apexnorule', 'noflag'];
   const FULL = ['ship', 'off', 'inline']; // kinds also rendered at d=220
   const ALL12 = [];
   ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => ALL12.push([rig, p, m])));
@@ -775,7 +787,9 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
 
   beforeAll(async () => {
     for (const kind of KINDS) {
-      runtimes[kind] = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildBcSource(kind === 'ship' ? null : kind) } });
+      runtimes[kind] = await loadVecturaRuntime({ scriptOverrides: kind === 'noflag'
+        ? { [REL_PATH]: buildBcSource(null), [SCENE3D_REL]: buildScene3dSource(kind) }
+        : { [REL_PATH]: buildBcSource(kind === 'ship' ? null : kind) } });
       R[kind] = {};
     }
     const render = (kind, d, rig, primitive, mapper) => {
@@ -788,13 +802,18 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
       const fills = pp.filter((p) => p.meta && p.meta.kind === 'sceneFill');
       const edges = pp.filter((p) => p.meta && p.meta.kind === 'sceneEdge');
       const c = contact(fills, BOUNDS.penWidth);
+      const apexSet = new Set(recs.filter((x) => x.apex).map((x) => `${x.pts[0].x.toFixed(4)},${x.pts[0].y.toFixed(4)}`));
       const chains = chainMetrics(recs, edges);
       const raster = d === 50 ? buildBareRaster(pp) : null;
       R[kind][key(d, rig, primitive, mapper)] = {
         sites: siteKey(r), tip: c.tipContact, mark: c.markContact,
-        o2: r.rowPitch != null ? over2RP(fills, r.rowPitch).count : 0, sub: subMinCount(fills, BOUNDS.penWidth),
+        o2: r.rowPitch != null ? over2RP(fills, r.rowPitch).count : 0,
+        // subMin exempts ONLY apex ticks (T2-8b-3c population change); subRaw counts every fill.
+        sub: subMinCount(fills.filter((f) => !apexSet.has(`${f[0].x.toFixed(4)},${f[0].y.toFixed(4)}`)), BOUNDS.penWidth),
+        subRaw: subMinCount(fills, BOUNDS.penWidth),
+        crumbs: fills.filter((f) => !apexSet.has(`${f[0].x.toFixed(4)},${f[0].y.toFixed(4)}`) && pathLen(f) < 2 * BOUNDS.penWidth - 1e-9).length,
         nFills: fills.length, bins: covByIBins(r.sites, BOUNDS.penWidth), md5: pathsMd5(r.paths), pp,
-        apexLens: recs.filter((x) => x.tag && x.tag.startsWith('cont|')).map((x) => pathLen(x.pts)).filter((l) => l < 1.15 * 2 * BOUNDS.penWidth - 1e-9),
+        apexLens: recs.filter((x) => x.apex).map((x) => pathLen(x.pts)),
         chains, raster, fill: raster ? holeComponents(raster, recs, { T: 0.5, hiI: 2 / 3, w: BOUNDS.penWidth }) : null,
       };
     };
@@ -809,7 +828,7 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
   afterAll(async () => { await Promise.all(Object.values(runtimes).map((rt) => rt.cleanup())); });
 
   test('needles are non-vacuous (counts asserted in buildBcSource) and BC-E differs from off on the chain cells only', () => {
-    expect(Object.keys(BC_MUT)).toHaveLength(19);
+    expect(Object.keys(BC_MUT)).toHaveLength(20);
     const changed = ALL12.filter(([rig, p, m]) => R.ship[key(50, rig, p, m)].md5 !== R.off[key(50, rig, p, m)].md5);
     // eslint-disable-next-line no-console
     console.log('BC-E changes', changed.length, 'of 12:', changed.map((c) => c.join('|')).join(', '));
@@ -933,37 +952,63 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
     });
   });
 
-  describe('APEX (BLOCKING, T2-8b-3b) — where a chain\'s envelopes meet, ticks shorter than the plot floor (down to MIN_MARK_MM, 0.6 mm) fill the closing gap', () => {
-    // GATES that apex ticks exist (drawn between MIN_MARK_MM and the plot floor 0.69 mm) and that they close bare space
-    // (create torus/hatch bare >= 0.5 mm falls by >= 2.0 mm^2 vs the apex floor = plot floor, measured 3.97). NO-ORPHAN and
-    // TAPER (12 cells) still gate their contiguity and taper. Does NOT gate the W_L apex: that gap ends at 0.50 mm, below the 0.6 mm
-    // emission floor (`place()` MIN_MARK_MM and scene3d.js MIN_RUN_MM), so it cannot be drawn; WL (0.098) is unchanged.
-    // subMin needs NO exemption: apex ticks are >= MIN_MARK_MM by construction (measured below).
+  describe('APEX (BLOCKING, T2-8b-3c; replaces the 3b APEX bar) — a CLOSING chain fills its wedge with ticks down to 1 pen; nothing else does', () => {
+    // GATES three things: (a) the W_L apex gap is closed (create cone/hatch bare >= 0.5 mm in W_L <= 0.05 mm^2; measured 0,
+    // 0.098 on both 2e59a16a and ac5c98b6); (b) create/test torus/hatch carry NO apex tick (Jay: the 3b run of five short
+    // dashes read as strays); (c) apex ticks are 0.3-0.69 mm. Does NOT gate crumbs (CRUMBS) or the test rig's W_L (a
+    // different, pre-existing remnant).
     const LPF_MM = 1.15 * 2 * BOUNDS.penWidth;
-    const bare05 = (kind, rig, p, m) => bareArea(R[kind][key(50, rig, p, m)].raster, 0.5);
-    const apexLens = (kind) => {
+    const wl = (kind) => bareArea(cone(kind, 'create').raster, 0.5, WIN_L);
+    test('(a) W_L bare >= 0.5 mm <= 0.05 mm^2 on create cone/hatch', () => {
+      // eslint-disable-next-line no-console
+      console.log('APEX W_L bare>=0.5', wl('ship'), 'noapex', wl('noapex'));
+      expect(wl('ship')).toBeLessThanOrEqual(0.05);
+    });
+    test('MUTATION noapex (== 2e59a16a for this gap) reopens W_L (0.098 > 0.05)', () => { expect(wl('noapex')).toBeGreaterThan(0.05); });
+    test('(b) torus/hatch has 0 apex ticks (create and test)', () => {
+      ['create', 'test'].forEach((rig) => expect(R.ship[key(50, rig, 'torus', 'hatch')].apexLens).toHaveLength(0));
+    });
+    test('MUTATION apexnorule (no closing-wedge rule) puts apex ticks on torus/hatch', () => {
+      const n = ['create', 'test'].reduce((a, rig) => a + R.apexnorule[key(50, rig, 'torus', 'hatch')].apexLens.length, 0);
+      // eslint-disable-next-line no-console
+      console.log('APEX apexnorule torus/hatch ticks', n);
+      expect(n).toBeGreaterThan(0);
+    });
+    test('(c) apex ticks exist (>= 3 over the 12 cells), all 0.3 mm <= length < the plot floor', () => {
       const lens = [];
-      ALL12.forEach(([rig, p, m]) => R[kind][key(50, rig, p, m)].apexLens.forEach((l) => lens.push(l)));
-      return lens;
-    };
-    test('apex ticks exist: >= 4 continuation ticks drawn between 0.6 mm and the plot floor, none below 0.6 mm', () => {
-      const lens = apexLens('ship');
+      ALL12.forEach(([rig, p, m]) => R.ship[key(50, rig, p, m)].apexLens.forEach((l) => lens.push(l)));
       // eslint-disable-next-line no-console
       console.log('APEX ticks', lens.length, lens.map((l) => l.toFixed(3)).join(','));
-      expect(lens.length).toBeGreaterThanOrEqual(4);
-      lens.forEach((l) => { expect(l).toBeGreaterThanOrEqual(2 * BOUNDS.penWidth - 1e-6); expect(l).toBeLessThan(LPF_MM); });
+      expect(lens.length).toBeGreaterThanOrEqual(3);
+      lens.forEach((l) => { expect(l).toBeGreaterThanOrEqual(BOUNDS.penWidth - 1e-6); expect(l).toBeLessThan(LPF_MM); });
     });
-    test('they close bare space: create torus/hatch bare >= 0.5 mm falls by >= 2.0 mm^2 vs the apex floor = plot floor', () => {
-      const d = bare05('apexlpf', 'create', 'torus', 'hatch') - bare05('ship', 'create', 'torus', 'hatch');
+  });
+
+  describe('CRUMBS (BLOCKING, T2-8b-3c) — only apex runs may be under 0.6 mm: non-apex runs under 2 pens stay at base (0) on 12 cells + 72 roster cells', () => {
+    // GATES the scene3d.js MIN_RUN_MM exemption scope ONLY (no other stroke bypasses the crumb filter). The full 864
+    // non-mkTick cells are md5-identical to base (out-of-tree; see report). Not apex length or placement (APEX).
+    // A5 subMin population change: `sub` now EXEMPTS apex runs (subRaw counts them); disclosed under ## Bars changed.
+    const MARK = ['mkScribble', 'mkDashRamp', 'mkDotScreen'];
+    test('12 mkTick cells: 0 non-apex crumbs, subMin (apex exempted) 0; apex exemption is exercised (subRaw > 0 on create cone/hatch)', () => {
+      ALL12.forEach(([rig, p, m]) => { expect(R.ship[key(50, rig, p, m)].crumbs).toBe(0); expect(R.ship[key(50, rig, p, m)].sub).toBe(0); });
+      expect(R.ship[key(50, 'create', 'cone', 'hatch')].subRaw).toBeGreaterThan(0);
+    });
+    test('MUTATION noflag (scene3d.js: every run may be 0.3 mm) yields crumbs on the 72-cell roster', () => {
+      const crumbCount = (kind) => {
+        const V = runtimes[kind].window.Vectura; let n = 0;
+        const laws = V.SCENE3D_TONE_LAWS.PRODUCTION; const nonMk = laws.filter((l) => !/^mk/.test(l)).slice(0, 6);
+        V.Scene3D.Params.MAPPERS.forEach((mapper) => MARK.concat(nonMk).forEach((law) => {
+          const params = buildSceneParams(V.Scene3D.Params, V.ALGO_DEFAULTS.scene3d, { mapper, fillDensity: 50, primitive: 'cone', rig: 'create', law });
+          const paths = V.AlgorithmRegistry.scene3d.generate(params, null, null, BOUNDS);
+          n += paths.filter((q) => q.meta && q.meta.kind === 'sceneFill' && pathLen(q) < 2 * BOUNDS.penWidth - 1e-9).length;
+        }));
+        return n;
+      };
+      const ship = crumbCount('ship'); const bad = crumbCount('noflag');
       // eslint-disable-next-line no-console
-      console.log('APEX bare>=0.5 reduction: create torus/hatch', d, 'test torus/contour', bare05('apexlpf', 'test', 'torus', 'contour') - bare05('ship', 'test', 'torus', 'contour'), 'create sphere/hatch', bare05('apexlpf', 'create', 'sphere', 'hatch') - bare05('ship', 'create', 'sphere', 'hatch'));
-      expect(d).toBeGreaterThanOrEqual(2.0);
-    });
-    test('MUTATION apexlpf (apex floor = plot floor, == 2e59a16a) has 0 apex ticks and fails both', () => {
-      expect(apexLens('apexlpf')).toHaveLength(0);
-    });
-    test('subMin needs no exemption: 0 fills under 2 pens on 12/12 (asserted in A5)', () => {
-      ALL12.forEach(([rig, p, m]) => expect(R.ship[key(50, rig, p, m)].sub).toBe(0));
+      console.log('CRUMBS roster ship', ship, 'noflag', bad);
+      expect(ship).toBe(crumbCount('off'));
+      expect(bad).toBeGreaterThan(ship);
     });
   });
 
@@ -1139,7 +1184,10 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
       let n = 0;
       ['sphere', 'cone', 'torus'].forEach((primitive) => OTHER.forEach((mapper) => {
         n += 1;
+        const recs = []; runtimes.ship.window.__T28B_REC__ = (rec) => recs.push(rec);
         const rs = renderCellHooked(runtimes.ship, { primitive, mapper, rig: 'create' });
+        delete runtimes.ship.window.__T28B_REC__;
+        const apexSet = new Set(recs.filter((x) => x.apex).map((x) => `${x.pts[0].x.toFixed(4)},${x.pts[0].y.toFixed(4)}`));
         const ro = renderCellHooked(runtimes.off, { primitive, mapper, rig: 'create' });
         const fs_ = rs.fills.map((pp) => pp.map((q) => ({ x: q.x, y: q.y })));
         const fo = ro.fills.map((pp) => pp.map((q) => ({ x: q.x, y: q.y })));
@@ -1147,7 +1195,8 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
         expect(cs.tipContact || 0).toBeLessThanOrEqual((co.tipContact || 0) + 0.005);
         expect(cs.markContact || 0).toBeLessThanOrEqual((co.markContact || 0) + 0.005);
         if (rs.rowPitch != null && ro.rowPitch != null) expect(over2RP(fs_, rs.rowPitch).count).toBeLessThanOrEqual(over2RP(fo, ro.rowPitch).count);
-        expect(subMinCount(fs_, BOUNDS.penWidth)).toBe(0);
+        // subMin exempts ONLY apex runs (T2-8b-3c population change).
+        expect(subMinCount(rs.fills.filter((f) => !apexSet.has(`${f[0].x.toFixed(4)},${f[0].y.toFixed(4)}`)).map((pp) => pp.map((q) => ({ x: q.x, y: q.y }))), BOUNDS.penWidth)).toBe(0);
       }));
       expect(n).toBe(18);
     });
