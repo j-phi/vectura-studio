@@ -427,6 +427,8 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // torus/contour, test cone/hatch, create sphere/hatch, create sphere/contour,
     // create torus/contour, create cone/hatch. The other 5 are byte-identical to
     // the pre-T2-8b hash (`PRE_T28B_SIGNATURE`) and are asserted equal to it below.
+    // T2-8b-3b then lets chain APEX ticks go down to MIN_MARK_MM: 3 further cells moved
+    // (test|torus/contour, create|sphere/hatch, create|torus/hatch), so 8 of 12 differ from base and 4 are unchanged.
     // The CONTRAST MUTATION test at the end of this block loads the shipped source
     // with the deferred flush removed and asserts the OLD hash on all 12 (so the
     // re-pin is BC-E and not drift). See `T2-8b-3-impl.md` `## Bars changed`.
@@ -434,17 +436,17 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
       'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
       'test|sphere/contour': '380604efd9ecde036e8b35a0497ad26021794d0deb8d6aacac10bee6d630939d',
       'test|torus/hatch': '71328eb4d9e31e35a2a6de3b12042d7c6ca672636b1ca7eeaa15a2d9b9491374',
-      'test|torus/contour': '146f13057131ae54b5f273ca84d2677775b069fd9ee7e524aa836b46fcfaf24c',
+      'test|torus/contour': '13c0b5588014311352f486cbbc1a42f6ca44d361d7d58b973c2077dbfcb571f6',
       'test|cone/hatch': '3a8a1489c7915d183fc723512f634d6989361aa20da14f5fc1ead7cd9b945c09',
       'test|cone/contour': 'e75dac4c2988682631c120931ab9d17e2fe72c61ca58aec247ca81132bcc54b9',
-      'create|sphere/hatch': '4dd4f955dc8d917d5162db32da8b040745de46c432b4edd6bead662afa6de307',
+      'create|sphere/hatch': 'd79b1058794c23b006cebce95df1a8cc96b67a0eb677756038cf71b1845b3f27',
       'create|sphere/contour': 'bfa4894409e677d11a2bd2008e20d0bb5cd758216c54a86a2444fae646a5c31f',
-      'create|torus/hatch': '5bbcd92a3428377208aadcaf7299fcd37ed694be36723f133d64f3702b3bb1a2',
+      'create|torus/hatch': 'af0a19a36af15d0a9070d2a9d510b21933f421a30d50a515ebbfea3a6244e0fe',
       'create|torus/contour': '6dd4ed7fc5d7f654f7ba6017dbeca35956acc4b17202de5ad18c5cb446f6f277',
       'create|cone/hatch': 'b22c98b2510abb7c1054517991f214959b948b33ea817f0c84a5dc6fbfaf233e',
       'create|cone/contour': 'd9fb1c7acc9a9461503f958100c085b375e7937d899c725711496754ef0e7958',
     };
-    const CHANGED_BY_BCE = new Set(['test|sphere/contour', 'test|torus/contour', 'test|cone/hatch', 'create|sphere/hatch', 'create|sphere/contour', 'create|torus/contour', 'create|cone/hatch']);
+    const CHANGED_BY_BCE = new Set(['test|sphere/contour', 'test|torus/contour', 'test|cone/hatch', 'create|sphere/hatch', 'create|sphere/contour', 'create|torus/hatch', 'create|torus/contour', 'create|cone/hatch']);
     const PRE_T28B_SIGNATURE = {
       'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
       'test|sphere/contour': '6a5a1c0d5857c1db44bd3a5bb26c90ef5804e26dcbc3c4ec19b2429545123694',

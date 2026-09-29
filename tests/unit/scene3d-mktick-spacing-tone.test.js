@@ -681,6 +681,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
  *   rulingref j=1 continuity reference = the ruling frame, not the drawn boundary tick.
  *   nohi      highlight gate MK_TICK_BC_HI_I = 1.01 (never gates).
  *   nocap     taper cap off.
+ *   apexlpf   the apex floor set back to the plot floor (== T2-8b-3, `2e59a16a`).
  * Test-side RECORD needles (not mutations) tag every placed run so chains are
  * grouped by exact span identity and every end carries its stop reason.
  */
@@ -710,7 +711,7 @@ const BC_MUT = {
     [NOADMIT, ''],
     [CONT_GUARD, 'if (false) ok = false;\n              else if'],
     ['const wk = walkPoly(n.fr, 0, 0, poly, MK_TICK_STEP_CAP_MM);', 'const wk = walkPoly(n.fr, 0, 0.2, poly, MK_TICK_STEP_CAP_MM);'],
-    ['if (ok) place(n.fr, [poly], 0, 0); else stop = true;', 'if (ok) place(n.fr, [poly], 0, 0.2); else stop = true;'],
+    ['const placed = place(n.fr, [poly], 0, 0);', 'const placed = place(n.fr, [poly], 0, 0.2);'],
   ],
   wide: [['let h = at(fr0, aB - arcMM[kB], 0); if (!h) return;', 'lo0 -= 1.0; hi0 += 1.0; let h = at(fr0, aB - arcMM[kB], 0); if (!h) return;'], [CAP, 'if (false) {']],
   noprobe: [['const cE = MK_TICK_BC_EDGE_PEN * w;', 'const cE = 0;']],
@@ -728,6 +729,7 @@ const BC_MUT = {
   rulingref: [['if (Rb && Rb.length >= 2) {', 'if (false && Rb && Rb.length >= 2) {']],
   nohi: [['const MK_TICK_BC_HI_I = 2 / 3;', 'const MK_TICK_BC_HI_I = 1.01;']],
   nocap: [[CAP, 'if (false) {']],
+  apexlpf: [['(apexTick ? Math.min(LPF, MK_TICK_BC_APEX_MIN * penWidth) : LPF)', 'LPF']],
 };
 const REC_NEEDLES = [
   ['pushRun(r, back, lineIndex);', "pushRun(r, back, lineIndex); if (typeof globalThis.__T28B_REC__ === 'function') globalThis.__T28B_REC__({ pts: r.map((q) => ({ x: q.x, y: q.y })), li: lineIndex, tag: globalThis.__TAG });"],
@@ -753,7 +755,7 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
   const runtimes = {};
   const R = {};
   const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
-  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'thin', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6', 'nobisect', 'nocont', 'gap', 'cfat', 'rulingref', 'nohi', 'nocap'];
+  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'thin', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6', 'nobisect', 'nocont', 'gap', 'cfat', 'rulingref', 'nohi', 'nocap', 'apexlpf'];
   const FULL = ['ship', 'off', 'inline']; // kinds also rendered at d=220
   const ALL12 = [];
   ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => ALL12.push([rig, p, m])));
@@ -792,6 +794,7 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
         sites: siteKey(r), tip: c.tipContact, mark: c.markContact,
         o2: r.rowPitch != null ? over2RP(fills, r.rowPitch).count : 0, sub: subMinCount(fills, BOUNDS.penWidth),
         nFills: fills.length, bins: covByIBins(r.sites, BOUNDS.penWidth), md5: pathsMd5(r.paths), pp,
+        apexLens: recs.filter((x) => x.tag && x.tag.startsWith('cont|')).map((x) => pathLen(x.pts)).filter((l) => l < 1.15 * 2 * BOUNDS.penWidth - 1e-9),
         chains, raster, fill: raster ? holeComponents(raster, recs, { T: 0.5, hiI: 2 / 3, w: BOUNDS.penWidth }) : null,
       };
     };
@@ -806,7 +809,7 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
   afterAll(async () => { await Promise.all(Object.values(runtimes).map((rt) => rt.cleanup())); });
 
   test('needles are non-vacuous (counts asserted in buildBcSource) and BC-E differs from off on the chain cells only', () => {
-    expect(Object.keys(BC_MUT)).toHaveLength(18);
+    expect(Object.keys(BC_MUT)).toHaveLength(19);
     const changed = ALL12.filter(([rig, p, m]) => R.ship[key(50, rig, p, m)].md5 !== R.off[key(50, rig, p, m)].md5);
     // eslint-disable-next-line no-console
     console.log('BC-E changes', changed.length, 'of 12:', changed.map((c) => c.join('|')).join(', '));
@@ -927,6 +930,40 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
     test('MUTATION nohi (gate never fires) yields chains with I >= 2/3', () => {
       const n = ALL12.reduce((a, [rig, p, m]) => a + R.nohi[key(50, rig, p, m)].chains.filter((c) => c.chainI >= 2 / 3).length, 0);
       expect(n).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('APEX (BLOCKING, T2-8b-3b) — where a chain\'s envelopes meet, ticks shorter than the plot floor (down to MIN_MARK_MM, 0.6 mm) fill the closing gap', () => {
+    // GATES that apex ticks exist (drawn between MIN_MARK_MM and the plot floor 0.69 mm) and that they close bare space
+    // (create torus/hatch bare >= 0.5 mm falls by >= 2.0 mm^2 vs the apex floor = plot floor, measured 3.97). NO-ORPHAN and
+    // TAPER (12 cells) still gate their contiguity and taper. Does NOT gate the W_L apex: that gap ends at 0.50 mm, below the 0.6 mm
+    // emission floor (`place()` MIN_MARK_MM and scene3d.js MIN_RUN_MM), so it cannot be drawn; WL (0.098) is unchanged.
+    // subMin needs NO exemption: apex ticks are >= MIN_MARK_MM by construction (measured below).
+    const LPF_MM = 1.15 * 2 * BOUNDS.penWidth;
+    const bare05 = (kind, rig, p, m) => bareArea(R[kind][key(50, rig, p, m)].raster, 0.5);
+    const apexLens = (kind) => {
+      const lens = [];
+      ALL12.forEach(([rig, p, m]) => R[kind][key(50, rig, p, m)].apexLens.forEach((l) => lens.push(l)));
+      return lens;
+    };
+    test('apex ticks exist: >= 4 continuation ticks drawn between 0.6 mm and the plot floor, none below 0.6 mm', () => {
+      const lens = apexLens('ship');
+      // eslint-disable-next-line no-console
+      console.log('APEX ticks', lens.length, lens.map((l) => l.toFixed(3)).join(','));
+      expect(lens.length).toBeGreaterThanOrEqual(4);
+      lens.forEach((l) => { expect(l).toBeGreaterThanOrEqual(2 * BOUNDS.penWidth - 1e-6); expect(l).toBeLessThan(LPF_MM); });
+    });
+    test('they close bare space: create torus/hatch bare >= 0.5 mm falls by >= 2.0 mm^2 vs the apex floor = plot floor', () => {
+      const d = bare05('apexlpf', 'create', 'torus', 'hatch') - bare05('ship', 'create', 'torus', 'hatch');
+      // eslint-disable-next-line no-console
+      console.log('APEX bare>=0.5 reduction: create torus/hatch', d, 'test torus/contour', bare05('apexlpf', 'test', 'torus', 'contour') - bare05('ship', 'test', 'torus', 'contour'), 'create sphere/hatch', bare05('apexlpf', 'create', 'sphere', 'hatch') - bare05('ship', 'create', 'sphere', 'hatch'));
+      expect(d).toBeGreaterThanOrEqual(2.0);
+    });
+    test('MUTATION apexlpf (apex floor = plot floor, == 2e59a16a) has 0 apex ticks and fails both', () => {
+      expect(apexLens('apexlpf')).toHaveLength(0);
+    });
+    test('subMin needs no exemption: 0 fills under 2 pens on 12/12 (asserted in A5)', () => {
+      ALL12.forEach(([rig, p, m]) => expect(R.ship[key(50, rig, p, m)].sub).toBe(0));
     });
   });
 

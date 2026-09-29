@@ -2734,6 +2734,19 @@
     const MK_TICK_BC_PROBES = 16;
     const MK_TICK_BC_BISECT = 6;
     const MK_TICK_BC_HI_I = 2 / 3;
+    //   `MK_TICK_BC_APEX_MIN` — T2-8b-3b: the APEX floor, in pens. Where a chain's two
+    //                           envelopes meet, the last ticks may be shorter than the plot
+    //                           floor (`MK_TICK_PLOT_FLOOR*MIN_MARK_MM`, 0.69 mm) down to
+    //                           this many pens. 2.0 = `MIN_MARK_MM` (0.6 mm) is the LOWEST
+    //                           value that can draw: `place()` drops a mark under
+    //                           `MIN_MARK_MM` and `scene3d.js` drops any run under
+    //                           `MIN_RUN_MM = 0.6` afterwards (sub-two-pen marks are
+    //                           pen-down dots). Measured: 1.0, 1.25, 1.5 and 1.75 placed the
+    //                           tick but the render was byte-identical to 2.0 — the
+    //                           downstream floor removes it. Only apex ticks of a chain may
+    //                           sit between this floor and the plot floor; each is still
+    //                           contiguous, tapering and clear at the ends.
+    const MK_TICK_BC_APEX_MIN = 2.0;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -7474,7 +7487,8 @@
             if (ex > 0 && !dn.stopped) { const t = Math.min(ex, -a0); a0 += t; ex -= t; }
             if (ex > 0) { a0 += ex / 2; a1 -= ex / 2; }
           }
-          if (!(a1 - a0 >= LPF)) break;
+          const apexTick = a1 - a0 < LPF;
+          if (!(a1 - a0 >= (apexTick ? Math.min(LPF, MK_TICK_BC_APEX_MIN * penWidth) : LPF))) break;
           const segs = svB.segs.length === 1 ? [[a0, a1]]
             : svB.segs.map((q) => [Math.max(q[0] - vRel, a0), Math.min(q[1] - vRel, a1)]).filter((q) => q[1] - q[0] >= 2 * w);
           let stop = false; let main = null;
@@ -7493,7 +7507,10 @@
                 || Math.abs(cd.x * pDir.x + cd.y * pDir.y) < Math.cos((MK_TICK_BC_DIR_CUT * Math.PI) / 180)) ok = false;
               else if (!main || cl > main.cl) main = { md, cd, cl };
             }
-            if (ok) place(n.fr, [poly], 0, 0); else stop = true;
+            if (ok) {
+              const placed = place(n.fr, [poly], 0, 0);
+              if (apexTick && !placed) stop = true;
+            } else stop = true;
           });
           if (stop) break;
           if (main) { pMid = main.md; pDir = main.cd; }
