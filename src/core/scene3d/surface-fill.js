@@ -2716,6 +2716,15 @@
     const MK_TICK_BC_ADMIT_PEN = 1.0;
     const MK_TICK_BC_DIR_CUT = 10;
     const MK_TICK_BC_SCAN_MM = 0.05;
+    //   `MK_TICK_BC_REANCHOR_J` — T2-8b-2b: from this lattice step on, a tick
+    //                            that fails the direction cut is re-asked in a
+    //                            fresh local frame instead of ending the chain
+    //                            (the flat boundary frame drifts far from the
+    //                            surface family; li19 ended at j=10, leaving the
+    //                            W_L remnant). Measured: 4, 6 and 8 all close
+    //                            W_L; 1 (always) raises create sphere/contour
+    //                            bandC 0.0407 -> 0.0606 over its 0.04676 ceiling.
+    const MK_TICK_BC_REANCHOR_J = 8;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -7476,7 +7485,7 @@
             mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = admitR; mkClipArm.rp = admitR; mkClipArm.e = cOut;
             const wk = walkPoly(fr0, uOff, 0, poly, MK_TICK_STEP_CAP_MM);
             if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff)) place(fr0, [poly], uOff, 0);
-            else if (!(wk.pts && admit(wk.pts) && reAnchor(q, uOff))) stop = true;
+            else if (!(wk.pts && admit(wk.pts) && j >= MK_TICK_BC_REANCHOR_J && reAnchor(q, uOff))) stop = true;
             mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0; mkClipArm.e = 0;
           });
           if (stop) break;
