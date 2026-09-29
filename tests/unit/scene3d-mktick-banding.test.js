@@ -367,6 +367,8 @@ describe('Scene3D.SurfaceFill — mkTick directional banding oracle (T2-3b, moir
         test(`${rig} rig — ${key}: bandC ceiling (T2-7, measured + 15% margin — a TIGHTENED bar, see PRE_RANK1_BANDC's own comment)`, () => {
           const r = results[rig][key];
           const ceiling = PRE_RANK1_BANDC[`${rig}|${key}`];
+          // eslint-disable-next-line no-console
+          console.log(`bandC ${rig}|${key} = ${r.bandC} (ceiling ${ceiling}, mkDotScreen ${dotScreen[rig][key].bandC})`);
           expect(r.bandC).toBeLessThanOrEqual(ceiling);
         });
       });

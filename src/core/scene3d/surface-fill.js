@@ -2698,32 +2698,24 @@
     // predecessor, so the chain visibly tapers rather than reading as a
     // second uniform band.
     const MK_TICK_CHAIN_RHO = 0.8;
-    // T2-8b (mechanism A, "SEC" — span-END continuation). A tick-only,
-    // deferred, NON-SITE pass that fills the triangle a ruling leaves PAST
-    // its own span end at a domain edge (the cone base wedges): the
-    // lattice starts `gold*P` past `s0` and item 8 guards only `s1`, and
-    // the base rim cuts the band obliquely, so the half-band on the
-    // obtuse side stays on-surface with no row sampling it.
-    //   `MK_TICK_SEC_MAXJ`       — continuation positions per span end.
-    //   `MK_TICK_SEC_ADMIT_PEN`  — a continuation tick is REFUSED when any
-    //                              walked point lies within this many pens
-    //                              of ANY ink already in `mkInk` (no
-    //                              lineIndex filter). Measured 1.0 is the
-    //                              smallest radius that holds tip contact.
-    //   `MK_TICK_SEC_DELTA`      — the ladder of sideways offsets, in units
-    //                              of the half row, searched for the first
-    //                              on-front sample.
-    //   `MK_TICK_SEC_TRIM`       — trim at each end of the half-band, in
-    //                              units of the contact gap `PMINT`.
-    const MK_TICK_SEC_MAXJ = 8;
-    const MK_TICK_SEC_ADMIT_PEN = 1.0;
-    const MK_TICK_SEC_DELTA = [0.15, 0.35, 0.55, 0.75, 0.95];
-    const MK_TICK_SEC_TRIM = 0.25;
-    //   `MK_TICK_SEC_DIR_CUT`     — degrees; a continuation tick whose walked
-    //                              chord departs further than this from the
-    //                              asked direction is refused (matches
-    //                              `place()`'s own 10-degree `dirOver10` count).
-    const MK_TICK_SEC_DIR_CUT = 10;
+    // T2-8b-2 (mechanism BC, "band continuation" — replaces T2-8b's SEC after
+    // Jay's REJECT: "it must continue the band but truncate the top/bottom
+    // gradually as they approach another band or a side"). A tick-only,
+    // deferred, NON-SITE pass that CONTINUES the lattice past each span end
+    // with the boundary site's own frame, P, phase and segs; only each tick's
+    // two ends move (they taper as the surface or neighbouring ink runs out).
+    //   `MK_TICK_BC_MAXJ`      — continuation positions per span end (guard).
+    //   `MK_TICK_BC_EDGE_PEN`  — outline clearance probe radius, in pens.
+    //   `MK_TICK_BC_ADMIT_PEN` — refuse (and END the chain) if any walked
+    //                            point is this close to ANY ink in `mkInk`.
+    //   `MK_TICK_BC_DIR_CUT`   — degrees; END the chain if a tick's walked
+    //                            chord departs further than this from asked.
+    //   `MK_TICK_BC_SCAN_MM`   — envelope scan step.
+    const MK_TICK_BC_MAXJ = 16;
+    const MK_TICK_BC_EDGE_PEN = 2.0;
+    const MK_TICK_BC_ADMIT_PEN = 1.0;
+    const MK_TICK_BC_DIR_CUT = 10;
+    const MK_TICK_BC_SCAN_MM = 0.05;
     const mkStat = {
       marks: 0, pens: 0, ink: 0, tooShort: 0, offSurface: 0, noFrame: 0,
       samples: 0, flood: 0, rows: 0, budget: 0, pMin: Infinity, gMax: 0,
@@ -2822,8 +2814,8 @@
     // call and clears immediately after (never left set for a later,
     // unrelated mark).
     const mkInk = new Map();
-    // T2-8b — the deferred span-end continuation queue (see
-    // `MK_TICK_SEC_MAXJ`). Closures pushed by `emitMarks`, flushed once after
+    // T2-8b-2 — the deferred span-end continuation queue (see
+    // `MK_TICK_BC_MAXJ`). Closures pushed by `emitMarks`, flushed once after
     // every mapper has run: running them inline changed later rulings' clip
     // outcomes (site records moved on 10 of 24 measured runs).
     const mkEndQ = [];
@@ -2843,7 +2835,7 @@
     // use `mkInkHit`'s own default `mkInkR`), set by `layMark`'s tick block
     // alongside `m`/`p` immediately before each `walkPoly` call.
     const mkClipArm = {
-      m: false, p: false, rm: 0, rp: 0,
+      m: false, p: false, rm: 0, rp: 0, e: 0,
     };
 
     // ── THE TWELVE, AS DATA ───────────────────────────────────────────────────
@@ -6520,6 +6512,20 @@
           if (!sm || sm.front !== wantFront) return null;
           return { sm, pr: { a: pp.a, b: bb } };
         };
+        // T2-8b-2 — the outline-clearance probe (only armed by `bcSide`, via
+        // `mkClipArm.e`; every other caller leaves it 0 so this is dead code
+        // for them): 8 samples on a circle of radius `r` mm around a walked
+        // point must all be on the front surface.
+        const mkEdgeOK = (sm, pr, r) => {
+          const f = frameFrom(sm, fr0.ld, fr0.st, pr); if (!f) return false;
+          for (let q = 0; q < 8; q += 1) {
+            const pp = f.toParam(Math.cos(q * Math.PI / 4) * r, Math.sin(q * Math.PI / 4) * r);
+            if (!(pp.a >= 0 && pp.a <= 1)) return false;
+            let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+            const z = sampleAt(pp.a, bb); if (!z || z.front !== wantFront) return false;
+          }
+          return true;
+        };
         // Walk from a seed (frame, point, local uv) toward a local (u,v)
         // target expressed in that SAME seed frame's coordinates, in steps
         // of at most `MK_ARC_MM`, re-deriving the frame at every accepted
@@ -6589,6 +6595,7 @@
             // that WALKS INTO nearby ink partway along, keeps the contact fix
             // without refusing ordinary crossing ticks at their own hub.
             if (stepCapMM && clipOn && (s > 1 || !clipR) && mkInkHit(nextPt, clipR)) { truncated = true; break; }
+            if (clipOn && mkClipArm.e && !mkEdgeOK(hit.sm, hit.pr, mkClipArm.e)) { truncated = true; break; }
             if (stepCapMM) {
               const sx = nextPt.x - curPt.x; const sy = nextPt.y - curPt.y;
               const sl = Math.hypot(sx, sy);
@@ -6638,7 +6645,12 @@
         let drawnLen = 0;
         for (let i = 1; i < pts.length; i += 1) drawnLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
         if (pts.length < 2) return { pts: null, askLen: 0, drawnLen: 0, truncated: false };
-        return { pts, askLen, drawnLen, truncated };
+        return {
+          pts, askLen, drawnLen, truncated,
+          hub: w0.pts.length,
+          hubTrunc: toHub.truncated,
+          hubClear: mkClipArm.e ? mkEdgeOK(hubFr.smp, hubFr.pr, mkClipArm.e) : true,
+        };
       };
 
       // W-05b — 'tick' and 'morph' are the two shapes a mark law can build
@@ -6646,6 +6658,9 @@
       // radius (D1). Every other shape's `place` path is byte-for-byte
       // unchanged below; only these two route through `walkPoly`.
       const isWalkedShape = law.shape === 'tick' || law.shape === 'morph';
+      // T2-8b-2 — the last main tick's drawn length (read by the lattice loop's
+      // boundary bookkeeping; never feeds a site record).
+      let mkMainDrawn = 0;
       // W-05b — O2's own ground truth. The REQUESTED direction is the
       // shape's own asked offset (its first-to-last vertex, in the mark's
       // local frame) projected through the ruling's FLAT frame (`fr.u`/
@@ -7310,6 +7325,7 @@
             mkClipArm.rm = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             mkClipArm.rp = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));
+            if (si === mainIdx) mkMainDrawn = pieceLen || 0;
             mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
             if (si === mainIdx) mkStat.tickSites.push(sv.I, sv.R, sv.P, pieceLen ? 1 : 0);
             if (pieceLen) {
@@ -7345,34 +7361,37 @@
         }
       };
 
-      // ── T2-8b — SEC: the span-END continuation (tick-only, deferred) ─────────
-      // See `MK_TICK_SEC_MAXJ`. For the lattice positions `j*P - off` PAST a
-      // span end (`off` = the gap from the end to the nearest placed site),
-      // the ruling's own param line is extended by the end's param-per-mm,
-      // a sideways ladder finds the first on-front sample each side, a FRESH
-      // frame is built there (the end's own flat frame is singular past a
-      // limb), and one centred tick per side fills that side's half-band —
-      // its length carrying the end's own duty, so tone continues by
-      // construction. Never touches `mkStat.tickSites`.
-      const secSide = (sEnd, kIn, dir, off, svEnd) => {
-        if (!(Number.isFinite(off)) || !svEnd) return;
-        const PMINT = (1 + MK_TICK_GAP_PEN) * w;
+      // ── T2-8b-2 — BC: band continuation past a span end (tick-only, deferred) ──
+      // See `MK_TICK_BC_MAXJ`. The lattice loop is CONTINUED past the span end
+      // `kB`/`aB` (the boundary site) with that site's OWN frame, P, phase
+      // (`aB +- j*P`) and segs, so direction, spacing and tone carry on with
+      // no seam. Only each tick's two ends move: the envelope is re-scanned
+      // for the on-front run at every position and each end shrinks to where
+      // its arm actually stopped (neighbour ink, or the outline probe), never
+      // growing and never longer than the previous tick — the gradual taper.
+      // A refusal ENDS the chain (never a hole mid-chain). Never touches
+      // `mkStat.tickSites`.
+      const bcSide = (kB, dir, aB, Pc, svB, Lb) => {
+        if (!svB || !svB.segs || !svB.segs.length || !(Pc > 0) || !Number.isFinite(aB)) return;
+        const fr0 = frameAt(kB); if (!fr0) return;
         const LPF = MK_TICK_PLOT_FLOOR * MIN_MARK_MM;
-        const tE = sEnd / nSteps;
-        const ld = typeof lineDir === 'function' ? lineDir(tE) : lineDir;
-        const st = typeof pitchStep === 'function' ? pitchStep(tE) : pitchStep;
-        if (!ld || !st) return;
-        const dArc = Math.abs(arcMM[sEnd] - arcMM[kIn]);
-        if (!(dArc > 1e-6)) return;
-        const pE = paramAt(tE); const pI = paramAt(kIn / nSteps);
-        if (!pE || !pI) return;
-        let gb = pE.b - pI.b; gb -= Math.round(gb);
-        const ga = (pE.a - pI.a) / dArc; const gbb = gb / dArc;
-        const hSt = 0.5 / markRowCoverage();
-        let segSum = 0; let segLo = Infinity; let segHi = -Infinity;
-        (svEnd.segs || []).forEach((q) => { segSum += q[1] - q[0]; segLo = Math.min(segLo, q[0]); segHi = Math.max(segHi, q[1]); });
-        const duty = (svEnd.segs && svEnd.segs.length && segHi > segLo) ? clamp(segSum / (segHi - segLo), 0, 1) : 1;
-        const admitR = MK_TICK_SEC_ADMIT_PEN * w;
+        const cOut = MK_TICK_BC_EDGE_PEN * w; const admitR = MK_TICK_BC_ADMIT_PEN * w;
+        let lo = Infinity; let hi = -Infinity;
+        svB.segs.forEach((q) => { lo = Math.min(lo, q[0]); hi = Math.max(hi, q[1]); });
+        let Lprev = Lb > 0 ? Lb : Infinity;
+        const onF = (u, v) => {
+          const pp = fr0.toParam(u, v);
+          if (!(pp.a >= 0 && pp.a <= 1)) return false;
+          let bb = pp.b;
+          if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+          const sm = sampleAt(pp.a, bb);
+          return !!(sm && sm.front === wantFront);
+        };
+        const arcOf = (pts, i0, i1) => {
+          let L = 0;
+          for (let i = i0 + 1; i <= i1; i += 1) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+          return L;
+        };
         const admit = (pts) => {
           const nb = Math.max(1, Math.ceil(admitR / mkInkR));
           for (let i = 0; i < pts.length; i += 1) {
@@ -7389,69 +7408,51 @@
           }
           return true;
         };
-        const tryTick = (found, side) => {
-          const fr = frameFrom(found.sm, ld, st, found.pr);
-          if (!fr) return;
-          const px = found.sm.dA.x * st.a + found.sm.dB.x * st.b;
-          const py = found.sm.dA.y * st.a + found.sm.dB.y * st.b;
-          const m = Math.abs(px * fr.v.x + py * fr.v.y);
-          const lo = -found.d * hSt * m + MK_TICK_SEC_TRIM * PMINT;
-          const hi = (1 - found.d) * hSt * m - MK_TICK_SEC_TRIM * PMINT;
-          if (!(hi > lo)) return;
-          const v0 = side > 0 ? lo : -hi; const v1 = side > 0 ? hi : -lo;
-          const dry = walkPoly(fr, 0, 0, [[0, v0], [0, v1]], MK_TICK_STEP_CAP_MM);
-          if (!dry.pts || dry.drawnLen < LPF) return;
-          let tMin = Infinity; let tMax = -Infinity;
-          dry.pts.forEach((pt) => {
-            const t = (pt.x - found.sm.x) * fr.v.x + (pt.y - found.sm.y) * fr.v.y;
-            if (t < tMin) tMin = t;
-            if (t > tMax) tMax = t;
-          });
-          const mid = 0.5 * (tMin + tMax);
-          const L = Math.max(LPF, duty * dry.drawnLen);
-          const poly = [[0, mid - L / 2], [0, mid + L / 2]];
-          const wk = walkPoly(fr, 0, 0, poly, MK_TICK_STEP_CAP_MM);
-          if (!wk.pts || !admit(wk.pts)) return;
-          // A continuation tick must track the local family frame like any
-          // other mark (`mark-laws-draw` O2's 10-degree bar reads `dirOver10`
-          // over EVERY placed walked mark): refuse one whose walked chord
-          // departs more than `MK_TICK_SEC_DIR_CUT` degrees from what was asked.
-          {
-            const reqDir = requestedDir(fr, 0, 0, poly);
-            const a0 = wk.pts[0]; const b0 = wk.pts[wk.pts.length - 1];
-            const dl = Math.hypot(b0.x - a0.x, b0.y - a0.y);
-            if (!reqDir || !(dl > 1e-9)) return;
-            const cosv = Math.min(1, Math.abs(((b0.x - a0.x) / dl) * reqDir.x + ((b0.y - a0.y) / dl) * reqDir.y));
-            if (Math.acos(cosv) * (180 / Math.PI) > MK_TICK_SEC_DIR_CUT) return;
-          }
-          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0;
-          place(fr, [poly], 0, 0);
-          mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
+        const dirOK = (wk, poly, uOff) => {
+          const rd = requestedDir(fr0, uOff, 0, poly);
+          const a0 = wk.pts[0]; const b0 = wk.pts[wk.pts.length - 1];
+          const dl = Math.hypot(b0.x - a0.x, b0.y - a0.y);
+          if (!rd || !(dl > 1e-9)) return false;
+          const cosv = Math.min(1, Math.abs(((b0.x - a0.x) / dl) * rd.x + ((b0.y - a0.y) / dl) * rd.y));
+          return Math.acos(cosv) * (180 / Math.PI) <= MK_TICK_BC_DIR_CUT;
         };
-        for (let j = 1; j <= MK_TICK_SEC_MAXJ; j += 1) {
-          const x = j * svEnd.P - off;
-          if (x <= 0.25 * svEnd.P) continue;
-          const cA = pE.a + ga * x; const cB = pE.b + gbb * x;
-          let any = false;
-          [1, -1].forEach((side) => {
-            let found = null;
-            for (let di = 0; di < MK_TICK_SEC_DELTA.length && !found; di += 1) {
-              const d = MK_TICK_SEC_DELTA[di];
-              const qa = cA + side * d * hSt * st.a;
-              let qb = cB + side * d * hSt * st.b;
-              if (!(qa >= 0 && qa <= 1)) continue;
-              if (qb < 0 || qb > 1) {
-                if (qb < -0.25 || qb > 1.25) continue;
-                qb = ((qb % 1) + 1) % 1;
-              }
-              const sm = sampleAt(qa, qb);
-              if (sm && sm.front === wantFront) found = { sm, pr: { a: qa, b: qb }, d };
-            }
-            if (!found) return;
-            any = true;
-            tryTick(found, side);
+        for (let j = 1; j <= MK_TICK_BC_MAXJ; j += 1) {
+          const uOff = aB + dir * j * Pc - arcMM[kB];
+          // (i) the longest on-front run of the envelope at this along-offset
+          let bLo = NaN; let bHi = NaN; let bestLen = -1; let rs = null; let re = null;
+          const closeRun = () => {
+            if (rs != null && re - rs > bestLen) { bestLen = re - rs; bLo = rs; bHi = re; }
+            rs = null; re = null;
+          };
+          for (let v = lo; v <= hi + 1e-9; v += MK_TICK_BC_SCAN_MM) {
+            if (onF(uOff, v)) { if (rs == null) rs = v; re = v; } else closeRun();
+          }
+          closeRun();
+          if (!(bestLen >= 0) || bHi - bLo < LPF) break;
+          lo = bLo; hi = bHi;
+          // (ii) measured dry walk: full ink clip + outline probe
+          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0; mkClipArm.e = cOut;
+          const dry = walkPoly(fr0, uOff, 0, [[0, lo], [0, hi]], MK_TICK_STEP_CAP_MM);
+          mkClipArm.m = false; mkClipArm.p = false; mkClipArm.e = 0;
+          if (!dry.pts || dry.hubTrunc || !dry.hubClear) break;
+          const hubV = 0.5 * (lo + hi);
+          lo = Math.max(lo, hubV - arcOf(dry.pts, 0, dry.hub));
+          hi = Math.min(hi, hubV + arcOf(dry.pts, dry.hub, dry.pts.length - 1));
+          if (hi - lo > Lprev) { const f = Lprev / (hi - lo); const m = 0.5 * (lo + hi); lo = m - (m - lo) * f; hi = m + (hi - m) * f; }
+          if (!(hi - lo >= LPF)) break;
+          Lprev = hi - lo;
+          const segs = svB.segs.length === 1 ? [[lo, hi]]
+            : svB.segs.map((q) => [Math.max(q[0], lo), Math.min(q[1], hi)]).filter((q) => q[1] - q[0] >= 2 * w);
+          let stop = false;
+          segs.forEach((q) => {
+            if (stop) return;
+            const poly = [[0, q[0]], [0, q[1]]];
+            mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0; mkClipArm.e = cOut;
+            const wk = walkPoly(fr0, uOff, 0, poly, MK_TICK_STEP_CAP_MM);
+            if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff)) place(fr0, [poly], uOff, 0); else stop = true;
+            mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0; mkClipArm.e = 0;
           });
-          if (!any) break;
+          if (stop) break;
         }
       };
 
@@ -7586,6 +7587,9 @@
         // and no row covers the triangle past a ruling's exit" pattern.
         let lastA = -Infinity;
         let firstA = Infinity;
+        // T2-8b-2 — boundary-site bookkeeping (assignments only).
+        let firstK = -1; let firstSv = null; let firstD = 0;
+        let lastK = -1; let lastSv = null; let lastD = 0;
         while (a <= arcMM[s1] && guard < 4000) {
           guard += 1;
           const k = idxAt(a);
@@ -7619,10 +7623,12 @@
           // and dropping the `side = -1` row, both documented at
           // `emitTickWedgeRow`). Left in as a cheap belt-and-suspenders
           // check for cells this unit did not sweep.
-          if (!(mkWedgeActive && sv.L < 0.7 * sv.R)) layMark(idxAt(ao), ao, sv);
+          const kAo = idxAt(ao);
+          mkMainDrawn = 0;
+          if (!(mkWedgeActive && sv.L < 0.7 * sv.R)) layMark(kAo, ao, sv);
           cur = k;
-          if (ao < firstA) firstA = ao;
-          lastA = ao;
+          if (ao < firstA) { firstA = ao; firstK = kAo; firstSv = sv; firstD = mkMainDrawn; }
+          lastA = ao; lastK = kAo; lastSv = sv; lastD = mkMainDrawn;
           a += sv.P;
         }
         // T2-7 — the end-of-span tick (Amendment 4 item 8). Tick-only: for
@@ -7633,24 +7639,22 @@
         // (§C5): the lattice otherwise stops a whole period short of a
         // span's true end, and no row covers the remainder.
         let endA = lastA;
-        let svEnd = null;
+        let endK = -1; let endSv = null; let endD = 0;
         if (law.shape === 'tick') {
-          svEnd = solveAt(s1);
-          if (arcMM[s1] - lastA > 0.5 * svEnd.P + 1.6 * w) { layMark(s1, arcMM[s1], svEnd); endA = arcMM[s1]; }
+          const svEnd = solveAt(s1);
+          if (arcMM[s1] - lastA > 0.5 * svEnd.P + 1.6 * w) {
+            mkMainDrawn = 0;
+            layMark(s1, arcMM[s1], svEnd);
+            endA = arcMM[s1]; endK = s1; endSv = svEnd; endD = mkMainDrawn;
+          }
         }
-        // T2-8b — queue the two span-end continuations (tick-only, deferred,
-        // non-site; see `secSide`). `endA` is the item-8 end tick if it
-        // fired, else the last placed site.
-        // NOT on the `contour` mapper: the continuation ticks raise its directional
-        // banding (`mktick-banding` `bandC`, a gated moire bar) above the pinned
-        // ceiling (cone/contour 0.0218 -> 0.0408 vs 0.02508). The cone base
-        // wedges SEC exists for are a hatch-family defect.
-        if (law.shape === 'tick' && !mkWedgeActive && s1 > s0 && mapper !== 'contour' && Number.isFinite(firstA) && Number.isFinite(endA)) {
-          const sv0 = solveAt(s0);
-          const kIn0 = Math.min(s1, s0 + Math.min(2, s1 - s0));
-          const kIn1 = Math.max(s0, s1 - Math.min(2, s1 - s0));
-          mkEndQ.push(() => secSide(s0, kIn0, -1, firstA - arcMM[s0], sv0));
-          mkEndQ.push(() => secSide(s1, kIn1, 1, arcMM[s1] - endA, svEnd));
+        // T2-8b-2 — queue the two span-end continuations (tick-only, deferred,
+        // non-site; see `bcSide`). `endA` is the item-8 end tick if it fired,
+        // else the last placed site. No mapper gate.
+        if (law.shape === 'tick' && !mkWedgeActive && s1 > s0 && Number.isFinite(firstA) && Number.isFinite(endA)) {
+          if (firstSv) mkEndQ.push(() => bcSide(firstK, -1, firstA, firstSv.P, firstSv, firstD));
+          if (endSv) mkEndQ.push(() => bcSide(endK, 1, endA, endSv.P, endSv, endD));
+          else if (lastSv) mkEndQ.push(() => bcSide(lastK, 1, lastA, lastSv.P, lastSv, lastD));
         }
       });
     };
@@ -12977,7 +12981,7 @@
     // Every chain is closed by now, so the deferred ribbons can be built — and
     // they must be built BEFORE the report, or the report describes a build that
     // has not happened yet.
-    // T2-8b — the deferred span-end continuations (see `mkEndQ`).
+    // T2-8b-2 — the deferred span-end continuations (see `mkEndQ`).
     for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();
     flushDeferredRibbons();
     publishRibbonStats();

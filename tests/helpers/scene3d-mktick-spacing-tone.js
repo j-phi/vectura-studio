@@ -297,7 +297,73 @@ function inkMm(paths) {
   return paths.filter((p) => p.meta && (p.meta.kind === 'sceneFill' || p.meta.kind === 'sceneEdge')).reduce((a, p) => a + pathLen(p), 0);
 }
 
+
+/**
+ * T2-8b-2 — chain metrics for the band-continuation bars (SEAM / DIR /
+ * TAPER / OUTLINE). Pure math over records captured by test-side needles
+ * (`{pts, li, tag}` per placed run): regular ticks are tagged
+ * `reg:M:<a>` (main piece) or `reg:s:<a>`; continuation pieces are tagged
+ * `cont|<dir>|<kB>|<aB>|<j>|<pieceIdx>`. Chains are grouped by EXACT span
+ * identity `(li, dir, kB, aB)` — never reconstructed from paths (on contour
+ * a ruling has up to 4 span ends). `edgePaths` = the `sceneEdge` polylines.
+ * Returns one object per chain.
+ */
+function chainMetrics(records, edgePaths) {
+  const chord = (r) => {
+    const a = r.pts[0]; const b = r.pts[r.pts.length - 1];
+    return {
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      ang: ((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI + 360) % 180,
+      n: (() => { const dx = b.x - a.x; const dy = b.y - a.y; const l = Math.hypot(dx, dy) || 1; return { x: -dy / l, y: dx / l }; })(),
+    };
+  };
+  const angDiff = (a, b) => { const d = Math.abs(a - b) % 180; return Math.min(d, 180 - d); };
+  const perp = (h1, h2) => Math.abs((h2.mid.x - h1.mid.x) * h1.n.x + (h2.mid.y - h1.mid.y) * h1.n.y);
+  const regM = records.filter((r) => r.tag && r.tag.startsWith('reg:M:'))
+    .map((r) => ({ r, li: r.li, a: Number(r.tag.split(':')[2]), c: chord(r), len: pathLen(r.pts) }));
+  const chains = new Map();
+  records.filter((r) => r.tag && r.tag.startsWith('cont|')).forEach((r) => {
+    const [, dir, kB, aB, j, pi] = r.tag.split('|');
+    const key = `${r.li}|${dir}|${kB}|${aB}`;
+    if (!chains.has(key)) chains.set(key, { li: r.li, dir: Number(dir), aB: Number(aB), pieces: [] });
+    chains.get(key).pieces.push({ r, j: Number(j), pi: Number(pi), len: pathLen(r.pts), c: chord(r) });
+  });
+  const segd = (px, py, a, b) => {
+    const dx = b.x - a.x; const dy = b.y - a.y; const l2 = dx * dx + dy * dy;
+    let t = l2 < 1e-12 ? 0 : ((px - a.x) * dx + (py - a.y) * dy) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - a.x - t * dx, py - a.y - t * dy);
+  };
+  const out = [];
+  chains.forEach((ch) => {
+    const byJ = new Map();
+    ch.pieces.forEach((pc) => { if (!byJ.has(pc.j) || pc.len > byJ.get(pc.j).len) byJ.set(pc.j, pc); });
+    const js = [...byJ.keys()].sort((x, y) => x - y);
+    const bnd = regM.find((m) => m.li === ch.li && m.a.toFixed(4) === ch.aB.toFixed(4));
+    const inner = regM.filter((m) => m.li === ch.li && (m.a - ch.aB) * ch.dir < 0)
+      .sort((x, y) => Math.abs(x.a - ch.aB) - Math.abs(y.a - ch.aB))[0];
+    const first = byJ.get(js[0]);
+    let s = null; let dirExcess = null;
+    if (bnd && inner && first) {
+      const ref = perp(bnd.c, inner.c);
+      s = ref > 1e-6 ? perp(bnd.c, first.c) / (first.j * ref) : null;
+      dirExcess = angDiff(bnd.c.ang, first.c.ang) / first.j - angDiff(inner.c.ang, bnd.c.ang);
+    }
+    let prev = bnd ? bnd.len : Infinity; let viol = 0;
+    js.forEach((j) => { const L = byJ.get(j).len; if (L > prev + 0.05) viol += 1; prev = L; });
+    let minEdge = Infinity;
+    ch.pieces.forEach((pc) => pc.r.pts.forEach((pt) => {
+      (edgePaths || []).forEach((e) => { for (let i = 1; i < e.length; i += 1) minEdge = Math.min(minEdge, segd(pt.x, pt.y, e[i - 1], e[i])); });
+    }));
+    out.push({
+      li: ch.li, dir: ch.dir, aB: ch.aB, j1: js[0], nTicks: ch.pieces.length, s, dirExcess, violations: viol, minEdge, hasBoundary: !!bnd,
+    });
+  });
+  return out;
+}
+
 module.exports = {
+  chainMetrics,
   buildBareRaster,
   bareArea,
   inkCoverage,

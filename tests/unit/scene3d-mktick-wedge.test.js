@@ -420,30 +420,31 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // other four `test`-rig cells are BYTE-IDENTICAL — the wedge pass finds
     // zero new sites there, see that report's own §2 for why). Every other
     // entry below is untouched.
-    // T2-8b — RE-PINNED, 4 of 12: `test|torus/hatch`, `test|cone/hatch`,
-    // `create|torus/hatch`, `create|cone/hatch`. Mechanism A, "SEC" — tick-only,
-    // deferred, NON-SITE continuation ticks past each ruling's span ends
-    // (`surface-fill.js` `mkEndQ` / `secSide`), NOT on the `contour` mapper
-    // (it raised `mktick-banding`'s gated `bandC`; see `T2-8b-impl.md`). The
-    // other 8 are UNCHANGED byte-for-byte (both sphere/hatch cells find no
-    // admissible continuation tick; every contour cell is gated off). The old
-    // values are kept below as `PRE_T28B_SIGNATURE`; the CONTRAST MUTATION test
-    // at the end of this block loads the shipped source with the deferred flush
-    // removed and asserts the OLD hash returns on all 12 (so the re-pin is SEC
-    // and not drift). See `T2-8b-impl.md` `## Bars changed`.
+    // T2-8b-2 — RE-PINNED, 11 of 12 (replaces T2-8b's SEC re-pin after Jay's
+    // REJECT of its picture). Mechanism BC — tick-only, deferred, NON-SITE
+    // BAND CONTINUATION past each span end with the boundary site's own
+    // frame/P/phase/segs, ends tapering and clipped away from neighbouring
+    // ink and the outline (`surface-fill.js` `mkEndQ` / `bcSide`), on ALL
+    // mappers including contour. Only `create|torus/hatch` (no chains) is
+    // byte-identical to base: it REVERTS from SEC's `a012f8bb...` to the
+    // pre-T2-8b hash `5bbcd92a...`. The old (`8b8f275e`) values are kept below
+    // as `PRE_T28B_SIGNATURE`; the CONTRAST MUTATION test at the end of this
+    // block loads the shipped source with the deferred flush removed and
+    // asserts the OLD hash returns on all 12 (so the re-pin is BC and not
+    // drift). See `T2-8b-2-impl.md` `## Bars changed`.
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
-      'test|sphere/contour': '6a5a1c0d5857c1db44bd3a5bb26c90ef5804e26dcbc3c4ec19b2429545123694',
-      'test|torus/hatch': '079d70c35331344277be0652768e7a9e280685bb952b4a161977f561df5e6e1d',
-      'test|torus/contour': 'fd5fa424967a558b111440f1618570b59aa97a2c32ac4186961eca30cc0c3c15',
-      'test|cone/hatch': 'e4bd158ba94bb2924a60ae15a2a4f1301621f491a591c8334268ac7e33441a82',
-      'test|cone/contour': 'e75dac4c2988682631c120931ab9d17e2fe72c61ca58aec247ca81132bcc54b9',
-      'create|sphere/hatch': '9f4cd1f429f52a1587669b59f70b86edf8b093ac37ec6e19fb2786c0dca6bfd6',
-      'create|sphere/contour': 'd0e69590983285c7c623509f62579c28fb52a58790ee4362f6a7d4d9386f6c65',
-      'create|torus/hatch': 'a012f8bb31d051e042c73927750b587c4f773bacaa9f2ede2d7a422563159ac6',
-      'create|torus/contour': 'a896dddf93b28bd164d24856e2a16841a94f839feac7c90a49ebb4882d1475e1',
-      'create|cone/hatch': '485b0f6a8f6a54a47007e7eed9ae40c5dee81ee1eba32db344a0bf84a2396e6a',
-      'create|cone/contour': 'd9fb1c7acc9a9461503f958100c085b375e7937d899c725711496754ef0e7958',
+      'test|sphere/hatch': '18d3a8cc2b337f905514128810ca40b8ffc8c3a853b84faaa2df413bbac143d0',
+      'test|sphere/contour': '6fa57fe560a04d8c2c81890258aca776e7a6eaecae184cde008b20a99f45a732',
+      'test|torus/hatch': 'bc0d1dc91201753ab7627e8ee0b08a64bf2c1b11c193142c065b25843979b76f',
+      'test|torus/contour': 'bee23b68814718e24afb16990b611aa453aac27bf40997aab87643b2d79bc71a',
+      'test|cone/hatch': '03ebdd4c57c90247d7a0a640a0366e06ff0cc5d9bed55d451dbd9a5a210a19cb',
+      'test|cone/contour': '700cacaefa74dd9ac58430d48173d766357d41e76f89f2f3498bf24c2a02de7f',
+      'create|sphere/hatch': '32adc24f5fbca4b87c2d9c415a23a5c166fdba2f57a5ef2cb5848be4dce00603',
+      'create|sphere/contour': '1c810ef23bda8327560d2393d484b6e71514c8eca29346a991000767fcbd0591',
+      'create|torus/hatch': '5bbcd92a3428377208aadcaf7299fcd37ed694be36723f133d64f3702b3bb1a2',
+      'create|torus/contour': 'd6b7965d190cbfbccd08df329fcb1b4fa1dc31c71ce685e98c856affb15c6659',
+      'create|cone/hatch': 'fdab604ccf9fc893d061ea23019b70d4b782541b2f3df5c8e715d83d5b8eb11b',
+      'create|cone/contour': '9e06b81b612ecbc0b55cbe7eb20eafd44b743393725ed2f74451f2c5fa6255c6',
     };
     const PRE_T28B_SIGNATURE = {
       'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
