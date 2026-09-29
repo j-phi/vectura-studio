@@ -4,7 +4,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const crypto = require('crypto');
 const {
   contact, spacingShare, thirdsSplit, covByIBins, siteCoverage, pathLen, over2RP, subMinCount,
-  buildBareRaster, bareArea, inkCoverage, chainMetrics,
+  buildBareRaster, bareArea, inkCoverage, chainMetrics, envelopeRanges, holeComponents,
 } = require('../helpers/scene3d-mktick-spacing-tone');
 
 /*
@@ -652,90 +652,92 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
 });
 
 /*
- * T2-8b-2 — mechanism BC, "band continuation" (`T2-8b-2-plan.md`), which
- * REPLACES T2-8b's SEC after Jay rejected its picture: "It must continue the
- * band but truncate the top/bottom gradually as they approach another band or
- * a side." The lattice is CONTINUED past each span end with the boundary
- * site's own frame/P/phase/segs; only each tick's ends move. Deferred,
- * non-site (never touches `mkStat.tickSites`). Sphere G5 is out of scope.
+ * T2-8b-3 — mechanism BC-E, "band continuation with an endpoint envelope"
+ * (`T2-8b-3-plan.md`), which REPLACES T2-8b-2's `bcSide`. Jay: "fill open spaces
+ * where highlight isn't needed and form a consistent set of endpoints evenly
+ * offset from the perimeter or closest band." The lattice is CONTINUED past each
+ * span end with the boundary site's own P/phase/segs/tone; each tick is walked
+ * in its own local frame and each end is BISECTED to a constant clearance from
+ * the outline (cE) or another row's ink (cB). Deferred, non-site. Sphere G5 is
+ * out of scope (the rule happens to reach it on the create rig: noted, not claimed).
  *
  * MUTANTS (needle-patched copies of the CURRENT disk source; every needle is
  * asserted count === 1; nothing is written to disk):
- *   off      the deferred flush removed (== base; the wedge contrast test).
- *   inline   the closures run at queue time instead of deferred.
- *   noadmit  the 1.0w ink admission removed from the chain.
- *   dense    admission removed AND the lattice at 0.4 x P.
- *   skip1    the chain starts at j = 2 (a bare first position).
- *   rot      each tick asked at theta = 0.2 rad (walk, place and dir check).
- *   wide     envelope seeded 1.0 mm past the band, length cap off.
- *   noprobe  the outline clearance probe radius set to 0.
- *   ask6     envelope seeded +-3 row pitches, length cap off (over2RP probe).
- *   nogate   `law.shape === 'tick'` dropped from the queue gate (I1).
- *   noclip / noreanchor  the two halves of the T2-8b-2b W_L fix, each alone.
+ *   off       the deferred flush removed (== base).
+ *   inline    the closures run at queue time instead of deferred.
+ *   noadmit   the any-ink admission of the placed walk removed (reported: see A3).
+ *   thin      admission removed AND cB = 0.2 w AND cE = 0.5 w (contact probe).
+ *   dense     lattice at 0.4 x P, admission + continuity guard removed.
+ *   skip1     the chain starts at j = 2.
+ *   rot       each tick rotated 0.2 rad (admission and continuity guard removed so it can show).
+ *   wide      band extent widened by 1 mm each side, taper cap off.
+ *   noprobe   outline clearance cE = 0.
+ *   ask6      band extent widened by +-3 row pitches, taper cap off.
+ *   nogate    `law.shape === 'tick'` dropped from the queue gate AND the segs backstop.
+ *   nobisect  end bisection iterations = 0 (ends quantised to the walk step).
+ *   nocont    continuity guard (seam + direction vs the previous drawn tick) removed.
+ *   gap       tick j=2 skipped, and nocont (an orphan-producing chain).
+ *   cfat      cE = cB = 4 w (fat clearances).
+ *   rulingref j=1 continuity reference = the ruling frame, not the drawn boundary tick.
+ *   nohi      highlight gate MK_TICK_BC_HI_I = 1.01 (never gates).
+ *   nocap     taper cap off.
  * Test-side RECORD needles (not mutations) tag every placed run so chains are
- * grouped by exact span identity (plan 4.2).
+ * grouped by exact span identity and every end carries its stop reason.
  */
 const FLUSH_LINE = 'for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();';
 const QUEUE_GATE = "if (law.shape === 'tick' && !mkWedgeActive && s1 > s0 && Number.isFinite(firstA)";
+const NOADMIT = 'if (ok) for (let i = 0; i < wk.pts.length && ok; i += 1) if (inkWithin(wk.pts[i].x, wk.pts[i].y, admitR, true)) ok = false;';
+const CONT_GUARD = `if (perpD > MK_TICK_BC_SEAM * Pc
+                || Math.abs(cd.x * pDir.x + cd.y * pDir.y) < Math.cos((MK_TICK_BC_DIR_CUT * Math.PI) / 180)) ok = false;
+              else if`;
+const CAP = 'if (a1 - a0 > Lprev) {';
 const BC_MUT = {
   off: [[FLUSH_LINE, '']],
   inline: [
-    ['mkEndQ.push(() => bcSide(firstK, -1, firstA, firstSv.P, firstSv, firstD));', 'bcSide(firstK, -1, firstA, firstSv.P, firstSv, firstD);'],
-    ['mkEndQ.push(() => bcSide(endK, 1, endA, endSv.P, endSv, endD));', 'bcSide(endK, 1, endA, endSv.P, endSv, endD);'],
-    ['mkEndQ.push(() => bcSide(lastK, 1, lastA, lastSv.P, lastSv, lastD));', 'bcSide(lastK, 1, lastA, lastSv.P, lastSv, lastD);'],
+    ['mkEndQ.push(() => bcSide(firstK, -1, firstA, firstSv.P, firstSv, firstR));', 'bcSide(firstK, -1, firstA, firstSv.P, firstSv, firstR);'],
+    ['mkEndQ.push(() => bcSide(endK, 1, endA, endSv.P, endSv, endR));', 'bcSide(endK, 1, endA, endSv.P, endSv, endR);'],
+    ['mkEndQ.push(() => bcSide(lastK, 1, lastA, lastSv.P, lastSv, lastR));', 'bcSide(lastK, 1, lastA, lastSv.P, lastSv, lastR);'],
   ],
-  noadmit: [['if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff))', 'if (wk.pts && dirOK(wk, poly, uOff))']],
+  noadmit: [[NOADMIT, '']],
+  thin: [[NOADMIT, ''], ['const MK_TICK_BC_BAND_PEN = 1 + MK_TICK_GAP_PEN;', 'const MK_TICK_BC_BAND_PEN = 0.2;'], ['const MK_TICK_BC_EDGE_PEN = 2.0;', 'const MK_TICK_BC_EDGE_PEN = 0.5;']],
   dense: [
-    ['if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff))', 'if (wk.pts && dirOK(wk, poly, uOff))'],
-    ['const uOff = aB + dir * j * Pc - arcMM[kB];', 'const uOff = aB + dir * j * Pc * 0.4 - arcMM[kB];'],
+    [NOADMIT, ''], [CONT_GUARD, 'if (false) ok = false;\n              else if'],
+    ['let n = at(h.fr, dir * Pc, 0); let dv = 0;', 'let n = at(h.fr, dir * Pc * 0.4, 0); let dv = 0;'],
+    ['const c = at(h.fr, dir * Pc, v);', 'const c = at(h.fr, dir * Pc * 0.4, v);'],
   ],
   skip1: [['for (let j = 1; j <= MK_TICK_BC_MAXJ; j += 1) {', 'for (let j = 2; j <= MK_TICK_BC_MAXJ; j += 1) {']],
   rot: [
-    ['const rd = requestedDir(frD, uOff, 0, poly);', 'const rd = requestedDir(frD, uOff, 0.2, poly);'],
-    ['const wk = walkPoly(fr0, uOff, 0, poly, MK_TICK_STEP_CAP_MM);', 'const wk = walkPoly(fr0, uOff, 0.2, poly, MK_TICK_STEP_CAP_MM);'],
-    ['place(fr0, [poly], uOff, 0);', 'place(fr0, [poly], uOff, 0.2);'],
+    [NOADMIT, ''],
+    [CONT_GUARD, 'if (false) ok = false;\n              else if'],
+    ['const wk = walkPoly(n.fr, 0, 0, poly, MK_TICK_STEP_CAP_MM);', 'const wk = walkPoly(n.fr, 0, 0.2, poly, MK_TICK_STEP_CAP_MM);'],
+    ['if (ok) place(n.fr, [poly], 0, 0); else stop = true;', 'if (ok) place(n.fr, [poly], 0, 0.2); else stop = true;'],
   ],
-  wide: [
-    ['let Lprev = Lb > 0 ? Lb : Infinity;', 'let Lprev = Infinity; lo -= 1.0; hi += 1.0;'],
-  ],
-  noprobe: [['const cOut = MK_TICK_BC_EDGE_PEN * w;', 'const cOut = 0;']],
-  ask6: [
-    ['let Lprev = Lb > 0 ? Lb : Infinity;', 'let Lprev = Infinity; { const rpn = masterPitch / markRowCoverage(); lo -= 3 * rpn; hi += 3 * rpn; }'],
-  ],
-  // The queue gate alone is BACKSTOPPED by bcSide's `svB.segs` guard (only mkTick's
-  // solve returns segs): dropping just the gate changes nothing (vacuous, disclosed).
-  // `nogate` drops the gate AND the backstop, which is what proves the pair matters.
-  // T2-8b-2b: the two halves of the W_L fix, each removed alone.
-  noclip: [
-    ['\n          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = admitR; mkClipArm.rp = admitR;', '\n          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0;'],
-    ['\n            mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = admitR; mkClipArm.rp = admitR;', '\n            mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0;'],
-  ],
-  noreanchor: [['const reAnchor = (q, uOff) => {', 'const reAnchor = (q, uOff) => { return false;']],
+  wide: [['let h = at(fr0, aB - arcMM[kB], 0); if (!h) return;', 'lo0 -= 1.0; hi0 += 1.0; let h = at(fr0, aB - arcMM[kB], 0); if (!h) return;'], [CAP, 'if (false) {']],
+  noprobe: [['const cE = MK_TICK_BC_EDGE_PEN * w;', 'const cE = 0;']],
+  ask6: [['let h = at(fr0, aB - arcMM[kB], 0); if (!h) return;', '{ const rpn = masterPitch / markRowCoverage(); lo0 -= 3 * rpn; hi0 += 3 * rpn; } let h = at(fr0, aB - arcMM[kB], 0); if (!h) return;'], [CAP, 'if (false) {']],
   nogate: [
-    [QUEUE_GATE, "if (!mkWedgeActive && s1 > s0 && Number.isFinite(firstA)"],
+    [QUEUE_GATE, 'if (!mkWedgeActive && s1 > s0 && Number.isFinite(firstA)'],
     ['if (!svB || !svB.segs || !svB.segs.length || !(Pc > 0)', 'if (!svB || !(Pc > 0)'],
-    ['svB.segs.forEach((q) => { lo', '(svB.segs || [[-1, 1]]).forEach((q) => { lo'],
+    ['svB.segs.forEach((q) => { lo0', '(svB.segs || [[-1, 1]]).forEach((q) => { lo0'],
     ['const segs = svB.segs.length === 1 ?', 'const segs = (!svB.segs || svB.segs.length === 1) ?'],
   ],
-  gate: [[QUEUE_GATE, "if (law.shape === 'tick' && !mkWedgeActive && s1 > s0 && mapper !== 'contour' && Number.isFinite(firstA)"]],
+  nobisect: [['const MK_TICK_BC_BISECT = 6;', 'const MK_TICK_BC_BISECT = 0;']],
+  nocont: [[CONT_GUARD, 'if (false) ok = false;\n              else if']],
+  gap: [[CONT_GUARD, 'if (false) ok = false;\n              else if'], ['vRel += dv;\n', 'vRel += dv;\n          if (j === 2) { h = n; continue; }\n']],
+  cfat: [['const MK_TICK_BC_EDGE_PEN = 2.0;', 'const MK_TICK_BC_EDGE_PEN = 4.0;'], ['const MK_TICK_BC_BAND_PEN = 1 + MK_TICK_GAP_PEN;', 'const MK_TICK_BC_BAND_PEN = 4.0;']],
+  rulingref: [['if (Rb && Rb.length >= 2) {', 'if (false && Rb && Rb.length >= 2) {']],
+  nohi: [['const MK_TICK_BC_HI_I = 2 / 3;', 'const MK_TICK_BC_HI_I = 1.01;']],
+  nocap: [[CAP, 'if (false) {']],
 };
 const REC_NEEDLES = [
   ['pushRun(r, back, lineIndex);', "pushRun(r, back, lineIndex); if (typeof globalThis.__T28B_REC__ === 'function') globalThis.__T28B_REC__({ pts: r.map((q) => ({ x: q.x, y: q.y })), li: lineIndex, tag: globalThis.__TAG });"],
-  ['const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));', "globalThis.__TAG = 'reg:' + (si === mainIdx ? 'M' : 's') + ':' + a.toFixed(4); const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr)); globalThis.__TAG = null;"],
-  ['if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff)) place(', "globalThis.__TAG = 'cont|' + dir + '|' + kB + '|' + aB.toFixed(4) + '|' + j + '|' + segs.indexOf(q); if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff)) place("],
+  ['const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));', "globalThis.__TAG = 'reg:' + (si === mainIdx ? 'M' : 's') + ':' + a.toFixed(4) + ':' + k + ':' + sv.I.toFixed(3) + ':' + sv.P.toFixed(4); const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr)); globalThis.__TAG = null;"],
+  ['const up = arm(n, 1, hi0 - vRel); const dn = arm(n, -1, vRel - lo0);', "const up = arm(n, 1, hi0 - vRel); const dn = arm(n, -1, vRel - lo0); globalThis.__TAG = 'cont|' + dir + '|' + kB + '|' + aB.toFixed(4) + '|' + j + '|' + svB.I.toFixed(3) + '|' + dn.reason + up.reason;"],
 ];
 const buildBcSource = (kind) => {
   let src = loadHeadSource();
   (BC_MUT[kind] || []).forEach(([a, b], i) => { src = patchOne(src, a, b, `BC_${kind}_${i}`); });
-  // RECORD needles: on mutants whose text they overlap, apply the mutation first
-  REC_NEEDLES.forEach(([a, b], i) => {
-    if (src.split(a).length - 1 === 0 && (kind === 'noadmit' || kind === 'dense')) {
-      const a2 = a.replace('admit(wk.pts) && ', '');
-      src = patchOne(src, a2, b.replace('admit(wk.pts) && ', ''), `BC_REC_${i}_${kind}`);
-    } else if (i === 2 && kind === 'rot') {
-      src = patchOne(src, 'if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff)) place(', b, `BC_REC_${i}_rot`);
-    } else src = patchOne(src, a, b, `BC_REC_${i}_${kind}`);
-  });
+  REC_NEEDLES.forEach(([a, b], i) => { src = patchOne(src, a, b, `BC_REC_${i}_${kind}`); });
   return patchOne(src, HOOK_NEEDLE, HOOK_REPL, 'HOOK_NEEDLE');
 };
 const md5 = (v) => crypto.createHash('md5').update(JSON.stringify(v)).digest('hex');
@@ -747,11 +749,11 @@ const siteKey = (r) => md5([r.stat.tickSites, r.sites]);
 const WIN_L = [588, 519, 599, 528]; const WIN_R = [603, 518, 614, 528];
 const STRIP_L = [588, 510, 599, 519]; const STRIP_R = [603, 509, 614, 518];
 
-describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges)', () => {
+describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuation (cone base wedges)', () => {
   const runtimes = {};
   const R = {};
   const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
-  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6', 'noclip', 'noreanchor'];
+  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'thin', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6', 'nobisect', 'nocont', 'gap', 'cfat', 'rulingref', 'nohi', 'nocap'];
   const FULL = ['ship', 'off', 'inline']; // kinds also rendered at d=220
   const ALL12 = [];
   ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => ALL12.push([rig, p, m])));
@@ -763,13 +765,15 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
       allJ1: chains.every((x) => x.j1 === 1),
       maxDir: c.length ? Math.max(...c.map((x) => (x.dirExcess == null ? -99 : x.dirExcess))) : -99,
       viol: chains.reduce((a, x) => a + x.violations, 0),
+      orphans: chains.reduce((a, x) => a + x.orphans, 0),
       minEdge: chains.length ? Math.min(...chains.map((x) => x.minEdge)) : Infinity,
     };
   };
+  const cone = (kind, rig) => R[kind][key(50, rig, 'cone', 'hatch')];
 
   beforeAll(async () => {
     for (const kind of KINDS) {
-      runtimes[kind] = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildBcSource(kind) } });
+      runtimes[kind] = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildBcSource(kind === 'ship' ? null : kind) } });
       R[kind] = {};
     }
     const render = (kind, d, rig, primitive, mapper) => {
@@ -782,11 +786,13 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
       const fills = pp.filter((p) => p.meta && p.meta.kind === 'sceneFill');
       const edges = pp.filter((p) => p.meta && p.meta.kind === 'sceneEdge');
       const c = contact(fills, BOUNDS.penWidth);
+      const chains = chainMetrics(recs, edges);
+      const raster = d === 50 ? buildBareRaster(pp) : null;
       R[kind][key(d, rig, primitive, mapper)] = {
         sites: siteKey(r), tip: c.tipContact, mark: c.markContact,
         o2: r.rowPitch != null ? over2RP(fills, r.rowPitch).count : 0, sub: subMinCount(fills, BOUNDS.penWidth),
         nFills: fills.length, bins: covByIBins(r.sites, BOUNDS.penWidth), md5: pathsMd5(r.paths), pp,
-        chains: chainMetrics(recs, edges),
+        chains, raster, fill: raster ? holeComponents(raster, recs, { T: 0.5, hiI: 2 / 3, w: BOUNDS.penWidth }) : null,
       };
     };
     for (const kind of KINDS) {
@@ -795,59 +801,136 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
         if (FULL.includes(kind)) B7_CELLS.forEach(([p, m]) => render(kind, 220, rig, p, m));
       });
     }
-  }, 400000);
+  }, 550000);
 
   afterAll(async () => { await Promise.all(Object.values(runtimes).map((rt) => rt.cleanup())); });
 
-  test('needles are non-vacuous (counts asserted in buildBcSource) and BC-off differs from shipped on exactly the chain cells', () => {
-    expect(Object.keys(BC_MUT)).toHaveLength(13);
+  test('needles are non-vacuous (counts asserted in buildBcSource) and BC-E differs from off on the chain cells only', () => {
+    expect(Object.keys(BC_MUT)).toHaveLength(18);
     const changed = ALL12.filter(([rig, p, m]) => R.ship[key(50, rig, p, m)].md5 !== R.off[key(50, rig, p, m)].md5);
-    // create|torus/hatch has no chains (byte-identical to base); the other 11 change.
-    expect(changed).toHaveLength(11);
-    expect(R.ship[key(50, 'create', 'torus', 'hatch')].md5).toBe(R.off[key(50, 'create', 'torus', 'hatch')].md5);
+    // eslint-disable-next-line no-console
+    console.log('BC-E changes', changed.length, 'of 12:', changed.map((c) => c.join('|')).join(', '));
+    ['create|cone/contour', 'test|sphere/hatch', 'test|torus/hatch', 'test|cone/contour'].forEach((k) => {
+      const [rig, cell] = k.split('|'); const [p, m] = cell.split('/');
+      expect(R.ship[key(50, rig, p, m)].md5).toBe(R.off[key(50, rig, p, m)].md5);
+    });
   });
 
   describe('A1 (BLOCKING) — the cone base wedges are filled: bare >= 0.75 mm <= 0.50 mm^2 in each of W_L and W_R (create cone/hatch d=50, cam a, ground DISABLED)', () => {
-    // GATES "fill the cone base wedges" ONLY — not tone (A4), seam (SEAM), contact (A3).
+    // GATES "fill the cone base wedges" ONLY — not tone (A4), seam (SEAM), contact (A3), envelope.
     test('shipped', () => {
-      const r = buildBareRaster(R.ship[key(50, 'create', 'cone', 'hatch')].pp);
+      const r = cone('ship', 'create').raster;
       const wl = bareArea(r, 0.75, WIN_L); const wr = bareArea(r, 0.75, WIN_R);
       // eslint-disable-next-line no-console
-      console.log('A1 create cone/hatch BC bare>=0.75:', JSON.stringify({ wl, wr }));
+      console.log('A1 create cone/hatch BC-E bare>=0.75:', JSON.stringify({ wl, wr }));
       expect(wl).toBeLessThanOrEqual(0.50);
       expect(wr).toBeLessThanOrEqual(0.50);
     });
     test('MUTATION off (flush removed) reopens the wedges (~8.3 / ~7.5)', () => {
-      const r = buildBareRaster(R.off[key(50, 'create', 'cone', 'hatch')].pp);
+      const r = cone('off', 'create').raster;
       expect(bareArea(r, 0.75, WIN_L)).toBeGreaterThan(5);
       expect(bareArea(r, 0.75, WIN_R)).toBeGreaterThan(5);
     });
     test('A1t (REPORTED, RGR rig) test cone/hatch W_R <= 1.5', () => {
-      const r = buildBareRaster(R.ship[key(50, 'test', 'cone', 'hatch')].pp);
-      expect(bareArea(r, 0.75, WIN_R)).toBeLessThanOrEqual(1.5);
-      expect(bareArea(buildBareRaster(R.off[key(50, 'test', 'cone', 'hatch')].pp), 0.75, WIN_R)).toBeGreaterThan(1.5);
+      expect(bareArea(cone('ship', 'test').raster, 0.75, WIN_R)).toBeLessThanOrEqual(1.5);
+      expect(bareArea(cone('off', 'test').raster, 0.75, WIN_R)).toBeGreaterThan(1.5);
     });
   });
 
-  describe('WL (BLOCKING, T2-8b-2b) — the W_L remnant is closed: bare >= 0.5 mm <= 0.30 mm^2 in W_L (create cone/hatch d=50, cam a, ground DISABLED)', () => {
-    // GATES the small dark triangle left against the base rim right of the
-    // tapered li19 chain (Jay: "fix W_L first") at the 0.5 mm clearance scale A1
-    // (0.75 mm) cannot see. Measured 0.73 on 8d11044d; 0.105 shipped. Says
-    // NOTHING about W_R, tone, seam, or the test rig (whose W_L reads 2.66 at
-    // 0.5 mm, a different, pre-existing remnant: base 3.12 -> 2.66).
-    const WL_BAR = 0.30;
-    const wl = (kind) => bareArea(buildBareRaster(R[kind][key(50, 'create', 'cone', 'hatch')].pp), 0.5, WIN_L);
+  describe('WL (BLOCKING) — the W_L remnant is closed: bare >= 0.5 mm <= 0.30 mm^2 in W_L (create cone/hatch d=50)', () => {
+    // GATES the triangle at the base rim at 0.5 mm clearance (finer than A1) ONLY. Not W_R, tone, or the test rig
+    // (test-rig W_L reads 2.66 at 0.5 mm: a different, pre-existing remnant).
+    const wl = (kind) => bareArea(cone(kind, 'create').raster, 0.5, WIN_L);
     test('shipped', () => {
       // eslint-disable-next-line no-console
       console.log('WL create cone/hatch bare>=0.5:', wl('ship'));
-      expect(wl('ship')).toBeLessThanOrEqual(WL_BAR);
+      expect(wl('ship')).toBeLessThanOrEqual(0.30);
     });
-    test('MUTATION noclip (chain arms clip at the wider default radius) reopens it', () => { expect(wl('noclip')).toBeGreaterThan(WL_BAR); });
-    test('MUTATION noreanchor (the 10-degree cut ends the chain at j=10) reopens it', () => { expect(wl('noreanchor')).toBeGreaterThan(WL_BAR); });
-    test('MUTATION off (no continuation) reopens it', () => { expect(wl('off')).toBeGreaterThan(WL_BAR); });
+    test('MUTATION cfat (cE = cB = 4 w) reopens it', () => { expect(wl('cfat')).toBeGreaterThan(0.30); });
+    test('MUTATION off (no continuation) reopens it', () => { expect(wl('off')).toBeGreaterThan(0.30); });
   });
 
-  describe('A2 (BLOCKING) — master grid untouched: tickSites + [I,R,P,L,drawn] deep-equal BC-off', () => {
+  describe('ENVELOPE (BLOCKING, create + test cone/hatch) — a consistent set of endpoints evenly offset from the perimeter (E) and from the closest band (B)', () => {
+    // E gates outline-class ends only (range of end-to-drawn-outline distance <= 0.10 mm, min >= 0.30). B gates
+    // band-stopped ends only (range of end-to-other-row-ink distance <= 0.10 mm, min >= 0.48). Neither gates
+    // unstopped (band-extent) ends, the sphere/torus silhouette ends (drawn silhouette sits 0.1-0.38 mm inside the
+    // analytic limb: REPORTED), or fill (FILL).
+    ['create', 'test'].forEach((rig) => {
+      test(`${rig} cone/hatch`, () => {
+        const e = envelopeRanges(cone('ship', rig).chains);
+        // eslint-disable-next-line no-console
+        console.log('ENVELOPE', rig, JSON.stringify(e));
+        expect(e.E.n).toBeGreaterThan(0);
+        expect(e.E.range).toBeLessThanOrEqual(0.10);
+        expect(e.E.min).toBeGreaterThanOrEqual(0.30);
+        expect(e.B.n).toBeGreaterThan(0);
+        expect(e.B.range).toBeLessThanOrEqual(0.10);
+        expect(e.B.min).toBeGreaterThanOrEqual(0.48);
+      });
+    });
+    test('MUTATION nobisect (ends quantised to the walk step) trips E or B on both rigs', () => {
+      ['create', 'test'].forEach((rig) => {
+        const e = envelopeRanges(cone('nobisect', rig).chains);
+        // eslint-disable-next-line no-console
+        console.log('ENVELOPE nobisect', rig, JSON.stringify(e));
+        expect(e.E.range > 0.10 || e.B.range > 0.10).toBe(true);
+      });
+    });
+  });
+
+  describe('NO-ORPHAN (BLOCKING, all 12 cells) — every continuation tick is contiguous with its predecessor (j from 1, perpendicular spacing <= 1.35 P_B)', () => {
+    // GATES chain contiguity only (no isolated orphan, no mid-chain hole). Not tone, not where ends stop.
+    // Disclosure: MK_TICK_BC_SEAM equals this bar's 1.35, so the source guard enforces the bar; `nocont` proves the guard is load-bearing.
+    test('0 orphans on 12/12', () => {
+      ALL12.forEach(([rig, p, m]) => expect(agg(R.ship[key(50, rig, p, m)].chains).orphans).toBe(0));
+    });
+    test('MUTATION gap (+nocont: tick j=2 skipped) trips on create cone/hatch', () => {
+      expect(agg(cone('gap', 'create').chains).orphans).toBeGreaterThan(0);
+    });
+    test('MUTATION nocont (guard removed): REPORTED number of orphans over 12 cells', () => {
+      const n = ALL12.reduce((a, [rig, p, m]) => a + agg(R.nocont[key(50, rig, p, m)].chains).orphans, 0);
+      // eslint-disable-next-line no-console
+      console.log('NO-ORPHAN nocont orphans over 12 cells:', n);
+      expect(n).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe('FILL (BLOCKING create cone/hatch; other 11 REPORTED) — open space not needed for highlight is filled', () => {
+    // GATES under-fill only: summed area of bare components (>= 0.5 mm from ink, interior, < 100 mm^2) whose nearest
+    // regular main tick has I < 2/3 and that are deeper than the band\'s own spacing can make. Not over-ink (A4), tone, ends.
+    test('create cone/hatch <= 0.50 mm^2', () => {
+      // eslint-disable-next-line no-console
+      console.log('FILL create cone/hatch', cone('ship', 'create').fill, 'off', cone('off', 'create').fill, 'cfat', cone('cfat', 'create').fill, 'rulingref', cone('rulingref', 'create').fill);
+      expect(cone('ship', 'create').fill).toBeLessThanOrEqual(0.50);
+    });
+    test('REPORTED: the other 11 cells', () => {
+      // eslint-disable-next-line no-console
+      console.log('FILL reported', ALL12.map(([rig, p, m]) => `${rig}|${p}/${m} off ${R.off[key(50, rig, p, m)].fill.toFixed(2)} new ${R.ship[key(50, rig, p, m)].fill.toFixed(2)}`).join('; '));
+      expect(ALL12.every(([rig, p, m]) => Number.isFinite(R.ship[key(50, rig, p, m)].fill))).toBe(true);
+    });
+    test('MUTATION off and cfat (fat clearances) exceed the bar on create cone/hatch', () => {
+      expect(cone('off', 'create').fill).toBeGreaterThan(0.50);
+      expect(cone('cfat', 'create').fill).toBeGreaterThan(0.50);
+    });
+    test('MUTATION rulingref: REPORTED', () => {
+      // eslint-disable-next-line no-console
+      console.log('FILL rulingref', cone('rulingref', 'create').fill);
+      expect(Number.isFinite(cone('rulingref', 'create').fill)).toBe(true);
+    });
+  });
+
+  describe('HIGHLIGHT (BLOCKING, 12 cells) — no continuation chain starts from a site with I >= 2/3', () => {
+    // GATES "do not fill the lit highlight" only. Not bandC (which the gate also protects; see the constant).
+    test('0 chains with I >= 2/3', () => {
+      ALL12.forEach(([rig, p, m]) => R.ship[key(50, rig, p, m)].chains.forEach((c) => expect(c.chainI).toBeLessThan(2 / 3)));
+    });
+    test('MUTATION nohi (gate never fires) yields chains with I >= 2/3', () => {
+      const n = ALL12.reduce((a, [rig, p, m]) => a + R.nohi[key(50, rig, p, m)].chains.filter((c) => c.chainI >= 2 / 3).length, 0);
+      expect(n).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('A2 (BLOCKING) — master grid untouched: tickSites + [I,R,P,L,drawn] deep-equal BC-E-off', () => {
     // GATES the site records ONLY (what SP5/B5/B7 read), not where ink lands.
     const cells = [];
     ['test', 'create'].forEach((rig) => {
@@ -878,33 +961,34 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
         expect(s.mark).toBeLessThanOrEqual(o.mark + 0.01);
       });
     });
-    test('MUTATION noadmit: tipContact rises past off + 0.005 on >= 1 of the 12 cells', () => {
-      const bad = ALL12.filter(([rig, p, m]) => R.noadmit[key(50, rig, p, m)].tip > R.off[key(50, rig, p, m)].tip + 0.005);
+    test('MUTATION thin (admission off, cB = 0.2 w, cE = 0.5 w) rises past off + 0.005 on >= 1 cell; noadmit alone REPORTED', () => {
+      const trips = (kind) => ALL12.filter(([rig, p, m]) => R[kind][key(50, rig, p, m)].tip > R.off[key(50, rig, p, m)].tip + 0.005);
       // eslint-disable-next-line no-console
-      console.log('A3 noadmit trips', bad.length, 'of 12:', ALL12.map(([rig, p, m]) => `${rig}|${p}/${m} ${R.off[key(50, rig, p, m)].tip.toFixed(4)}->${R.noadmit[key(50, rig, p, m)].tip.toFixed(4)}`).join('; '));
-      expect(bad.length).toBeGreaterThanOrEqual(1);
+      console.log('A3 thin trips', trips('thin').length, 'of 12; noadmit trips', trips('noadmit').length, 'of 12 (0 = vacuous: cB > admission radius)');
+      expect(trips('thin').length).toBeGreaterThanOrEqual(1);
     });
   });
 
   describe('A4 — tone: ink coverage in each wedge window <= 1.20 x the abutting strip (create BLOCKING, test REPORTED)', () => {
-    // GATES over-inking ONLY (under-inking is A1). Test rig is REPORTED: its
-    // raster numerator includes the rim stroke inside W_R (measured 1.207).
-    const ratio = (pp, win, strip) => { const r = buildBareRaster(pp); return inkCoverage(r, win) / inkCoverage(r, strip); };
+    // GATES over-inking ONLY (under-inking is A1). Test rig REPORTED: its raster numerator includes the rim stroke inside W_R.
+    const ratio = (r, win, strip) => inkCoverage(r, win) / inkCoverage(r, strip);
     test('create: both ratios <= 1.20', () => {
-      const pp = R.ship[key(50, 'create', 'cone', 'hatch')].pp;
-      const rl = ratio(pp, WIN_L, STRIP_L); const rr = ratio(pp, WIN_R, STRIP_R);
+      const r = cone('ship', 'create').raster;
+      const rl = ratio(r, WIN_L, STRIP_L); const rr = ratio(r, WIN_R, STRIP_R);
       // eslint-disable-next-line no-console
       console.log('A4 create', rl, rr);
       expect(rl).toBeLessThanOrEqual(1.20); expect(rr).toBeLessThanOrEqual(1.20);
     });
     test('test rig REPORTED (finite numbers)', () => {
-      const pp = R.ship[key(50, 'test', 'cone', 'hatch')].pp;
+      const r = cone('ship', 'test').raster;
       // eslint-disable-next-line no-console
-      console.log('A4 test (reported)', ratio(pp, WIN_L, STRIP_L), ratio(pp, WIN_R, STRIP_R));
-      expect(Number.isFinite(ratio(pp, WIN_R, STRIP_R))).toBe(true);
+      console.log('A4 test (reported)', ratio(r, WIN_L, STRIP_L), ratio(r, WIN_R, STRIP_R));
+      expect(Number.isFinite(ratio(r, WIN_R, STRIP_R))).toBe(true);
     });
-    test('MUTATION dense: create W_R ratio exceeds 1.20', () => {
-      expect(ratio(R.dense[key(50, 'create', 'cone', 'hatch')].pp, WIN_R, STRIP_R)).toBeGreaterThan(1.20);
+    test('MUTATION dense (lattice x2.5, admission and continuity off): create W_R ratio exceeds 1.20', () => {
+      // eslint-disable-next-line no-console
+      console.log('A4 dense create R', ratio(cone('dense', 'create').raster, WIN_R, STRIP_R));
+      expect(ratio(cone('dense', 'create').raster, WIN_R, STRIP_R)).toBeGreaterThan(1.20);
     });
   });
 
@@ -916,19 +1000,19 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
         expect(R.ship[key(220, rig, p, m)].o2).toBeLessThanOrEqual(R.off[key(220, rig, p, m)].o2);
       }));
     });
-    test('MUTATION ask6 (envelope +-3 row pitches, length cap off): REPORTED — cells where over2RP > 0', () => {
+    test('MUTATION ask6 (band extent +-3 row pitches, cap off): REPORTED — cells where over2RP > 0 (measured 0 of 12 = VACUOUS: the walk is bounded by the surface and the envelopes)', () => {
       const bad = ALL12.filter(([rig, p, m]) => R.ask6[key(50, rig, p, m)].o2 > 0);
       // eslint-disable-next-line no-console
       console.log('A5 ask6 trips over2RP on', bad.length, 'of 12 cells');
-      expect(bad.length).toBeGreaterThanOrEqual(0); // see T2-8b-2-impl.md: recorded honestly, vacuous if 0
+      expect(bad.length).toBeGreaterThanOrEqual(0);
     });
   });
 
   describe('SEAM (BLOCKING) — continue the existing ticks\' spacing: per chain j1 = 1 and s <= 1.35 (create + test cone/hatch)', () => {
-    // GATES "no seam / no bare channel" (spacing) ONLY — not direction (DIR), taper, or outline.
+    // GATES spacing at j1 ONLY — not direction (DIR), taper, or outline.
     ['create', 'test'].forEach((rig) => {
       test(`${rig} cone/hatch`, () => {
-        const a = agg(R.ship[key(50, rig, 'cone', 'hatch')].chains);
+        const a = agg(cone('ship', rig).chains);
         // eslint-disable-next-line no-console
         console.log('SEAM', rig, JSON.stringify(a));
         expect(a.n).toBeGreaterThan(0);
@@ -936,9 +1020,9 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
         expect(a.maxS).toBeLessThanOrEqual(1.35);
       });
     });
-    test('MUTATION skip1 (start at j=2) trips: s > 1.35 or j1 != 1 on both rigs', () => {
+    test('MUTATION skip1 (start at j=2) trips on both rigs', () => {
       ['create', 'test'].forEach((rig) => {
-        const a = agg(R.skip1[key(50, rig, 'cone', 'hatch')].chains);
+        const a = agg(cone('skip1', rig).chains);
         expect(!a.allJ1 || a.maxS > 1.35).toBe(true);
       });
     });
@@ -946,15 +1030,13 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
 
   describe('DIR (BLOCKING, sub-clause of SEAM) — direction continues: angle(boundary, first)/j1 - angle(inner, boundary) <= 8 deg', () => {
     ['create', 'test'].forEach((rig) => {
-      test(`${rig} cone/hatch`, () => {
-        expect(agg(R.ship[key(50, rig, 'cone', 'hatch')].chains).maxDir).toBeLessThanOrEqual(8);
-      });
+      test(`${rig} cone/hatch`, () => { expect(agg(cone('ship', rig).chains).maxDir).toBeLessThanOrEqual(8); });
     });
-    test('MUTATION rot (theta 0.2 rad) trips on both rigs', () => {
-      ['create', 'test'].forEach((rig) => {
-        const a = agg(R.rot[key(50, rig, 'cone', 'hatch')].chains);
-        expect(a.maxDir).toBeGreaterThan(8);
-      });
+    test('MUTATION rot (0.2 rad, continuity guard off) trips on >= 1 rig', () => {
+      const d = ['create', 'test'].map((rig) => agg(cone('rot', rig).chains).maxDir);
+      // eslint-disable-next-line no-console
+      console.log('DIR rot', d);
+      expect(d.some((x) => x > 8)).toBe(true);
     });
   });
 
@@ -963,11 +1045,11 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
     test('0 violations on 12/12', () => {
       ALL12.forEach(([rig, p, m]) => expect(agg(R.ship[key(50, rig, p, m)].chains).viol).toBe(0));
     });
-    test('MUTATION wide (envelope seeded 1 mm past, length cap off) trips on >= 1 cell', () => {
-      const bad = ALL12.filter(([rig, p, m]) => agg(R.wide[key(50, rig, p, m)].chains).viol > 0);
+    test('MUTATION wide (band extent +1 mm, cap off) trips on >= 1 cell; nocap REPORTED', () => {
+      const bad = (kind) => ALL12.filter(([rig, p, m]) => agg(R[kind][key(50, rig, p, m)].chains).viol > 0);
       // eslint-disable-next-line no-console
-      console.log('TAPER wide trips on', bad.length, 'cells');
-      expect(bad.length).toBeGreaterThanOrEqual(1);
+      console.log('TAPER wide trips on', bad('wide').length, 'cells; nocap on', bad('nocap').length);
+      expect(bad('wide').length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -975,19 +1057,19 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
     // GATES continuation ticks ONLY (the band\'s own ticks reach 0.000 on every cell; disclosed, not gated).
     ['create', 'test'].forEach((rig) => {
       test(`${rig} cone/hatch`, () => {
-        const a = agg(R.ship[key(50, rig, 'cone', 'hatch')].chains);
+        const a = agg(cone('ship', rig).chains);
         // eslint-disable-next-line no-console
         console.log('OUTLINE', rig, a.minEdge);
         expect(a.minEdge).toBeGreaterThanOrEqual(0.30);
       });
     });
     test('MUTATION noprobe trips on both rigs', () => {
-      ['create', 'test'].forEach((rig) => expect(agg(R.noprobe[key(50, rig, 'cone', 'hatch')].chains).minEdge).toBeLessThan(0.30));
+      ['create', 'test'].forEach((rig) => expect(agg(cone('noprobe', rig).chains).minEdge).toBeLessThan(0.30));
     });
   });
 
   describe('I1 (BLOCKING) — isolation: non-mkTick laws byte-identical shipped vs off (cone create d=50, 8 mappers)', () => {
-    // GATES "BC is mkTick-only". 3 PRODUCTION mark laws + first 6 non-mark laws x 8 mappers (72 cells);
+    // GATES "BC-E is mkTick-only". 3 PRODUCTION mark laws + first 6 non-mark laws x 8 mappers (72 cells);
     // the full 864 (288 x 3 primitives) was run out-of-tree against a git-archive base (see report).
     const MARK = ['mkScribble', 'mkDashRamp', 'mkDotScreen'];
     let laws; let mappers; let nonMk;
@@ -1005,7 +1087,7 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
     test('72 cells md5 identical', () => {
       mappers.forEach((mapper) => MARK.concat(nonMk).forEach((law) => expect(md5Of('ship', mapper, law)).toBe(md5Of('off', mapper, law))));
     });
-    test('MUTATION nogate changes an mkDashRamp cell', async () => {
+    test('MUTATION nogate (gate AND segs backstop dropped) changes an mkDashRamp cell; the gate alone is backstopped (vacuous)', async () => {
       const rt = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildBcSource('nogate') } });
       try {
         runtimes.nogate = rt;

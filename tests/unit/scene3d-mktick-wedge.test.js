@@ -420,34 +420,31 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // other four `test`-rig cells are BYTE-IDENTICAL — the wedge pass finds
     // zero new sites there, see that report's own §2 for why). Every other
     // entry below is untouched.
-    // T2-8b-2 — RE-PINNED, 11 of 12 (replaces T2-8b's SEC re-pin after Jay's
-    // REJECT of its picture). Mechanism BC — tick-only, deferred, NON-SITE
-    // BAND CONTINUATION past each span end with the boundary site's own
-    // frame/P/phase/segs, ends tapering and clipped away from neighbouring
-    // ink and the outline (`surface-fill.js` `mkEndQ` / `bcSide`), on ALL
-    // mappers including contour. Only `create|torus/hatch` (no chains) is
-    // byte-identical to base: it REVERTS from SEC's `a012f8bb...` to the
-    // pre-T2-8b hash `5bbcd92a...`. The old (`8b8f275e`) values are kept below
-    // as `PRE_T28B_SIGNATURE`; the CONTRAST MUTATION test at the end of this
-    // block loads the shipped source with the deferred flush removed and
-    // asserts the OLD hash returns on all 12 (so the re-pin is BC and not
-    // drift). See `T2-8b-2-impl.md` `## Bars changed`. T2-8b-2b then re-pinned
-    // the cells its W_L fix moved (chain arms clip at the admission radius; a
-    // far tick is re-asked in a fresh local frame): see the T2-8b-2b section.
+    // T2-8b-3 — RE-PINNED (replaces T2-8b-2/2b's BC pins). Mechanism BC-E — tick-only,
+    // deferred, NON-SITE band continuation with a bisected endpoint envelope
+    // (`surface-fill.js` `mkEndQ` / `bcSide`); sites at I >= 2/3 (highlight) are
+    // never continued. 7 of 12 cells change vs base: test sphere/contour, test
+    // torus/contour, test cone/hatch, create sphere/hatch, create sphere/contour,
+    // create torus/contour, create cone/hatch. The other 5 are byte-identical to
+    // the pre-T2-8b hash (`PRE_T28B_SIGNATURE`) and are asserted equal to it below.
+    // The CONTRAST MUTATION test at the end of this block loads the shipped source
+    // with the deferred flush removed and asserts the OLD hash on all 12 (so the
+    // re-pin is BC-E and not drift). See `T2-8b-3-impl.md` `## Bars changed`.
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': '18d3a8cc2b337f905514128810ca40b8ffc8c3a853b84faaa2df413bbac143d0',
-      'test|sphere/contour': '5ea61351af0335caece6c953dc252e80686cfdc0e8574c69d3444dbcc1222693',
-      'test|torus/hatch': 'bc0d1dc91201753ab7627e8ee0b08a64bf2c1b11c193142c065b25843979b76f',
-      'test|torus/contour': 'bee23b68814718e24afb16990b611aa453aac27bf40997aab87643b2d79bc71a',
-      'test|cone/hatch': '03ebdd4c57c90247d7a0a640a0366e06ff0cc5d9bed55d451dbd9a5a210a19cb',
-      'test|cone/contour': '700cacaefa74dd9ac58430d48173d766357d41e76f89f2f3498bf24c2a02de7f',
-      'create|sphere/hatch': '32adc24f5fbca4b87c2d9c415a23a5c166fdba2f57a5ef2cb5848be4dce00603',
-      'create|sphere/contour': '5130b3512fc278b89182b4283ab2ce83892f48f261177633a3b75c91b7679364',
+      'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
+      'test|sphere/contour': '380604efd9ecde036e8b35a0497ad26021794d0deb8d6aacac10bee6d630939d',
+      'test|torus/hatch': '71328eb4d9e31e35a2a6de3b12042d7c6ca672636b1ca7eeaa15a2d9b9491374',
+      'test|torus/contour': '146f13057131ae54b5f273ca84d2677775b069fd9ee7e524aa836b46fcfaf24c',
+      'test|cone/hatch': '3a8a1489c7915d183fc723512f634d6989361aa20da14f5fc1ead7cd9b945c09',
+      'test|cone/contour': 'e75dac4c2988682631c120931ab9d17e2fe72c61ca58aec247ca81132bcc54b9',
+      'create|sphere/hatch': '4dd4f955dc8d917d5162db32da8b040745de46c432b4edd6bead662afa6de307',
+      'create|sphere/contour': 'bfa4894409e677d11a2bd2008e20d0bb5cd758216c54a86a2444fae646a5c31f',
       'create|torus/hatch': '5bbcd92a3428377208aadcaf7299fcd37ed694be36723f133d64f3702b3bb1a2',
-      'create|torus/contour': 'd6b7965d190cbfbccd08df329fcb1b4fa1dc31c71ce685e98c856affb15c6659',
-      'create|cone/hatch': '9f69fb8728593624043a353375827e6a9c76a0a28e92042df30f3bbea08ee8b8',
-      'create|cone/contour': '9e06b81b612ecbc0b55cbe7eb20eafd44b743393725ed2f74451f2c5fa6255c6',
+      'create|torus/contour': '6dd4ed7fc5d7f654f7ba6017dbeca35956acc4b17202de5ad18c5cb446f6f277',
+      'create|cone/hatch': 'b22c98b2510abb7c1054517991f214959b948b33ea817f0c84a5dc6fbfaf233e',
+      'create|cone/contour': 'd9fb1c7acc9a9461503f958100c085b375e7937d899c725711496754ef0e7958',
     };
+    const CHANGED_BY_BCE = new Set(['test|sphere/contour', 'test|torus/contour', 'test|cone/hatch', 'create|sphere/hatch', 'create|sphere/contour', 'create|torus/contour', 'create|cone/hatch']);
     const PRE_T28B_SIGNATURE = {
       'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
       'test|sphere/contour': '6a5a1c0d5857c1db44bd3a5bb26c90ef5804e26dcbc3c4ec19b2429545123694',
@@ -474,6 +471,8 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
             console.log(`EXPECTED_SIGNATURE missing entry — paste this in: '${key}': '${actual}',`);
           }
           expect(actual).toBe(expected);
+          // A cell BC-E leaves untouched must equal the pre-T2-8b hash, not fresh hex.
+          if (!CHANGED_BY_BCE.has(key)) expect(actual).toBe(PRE_T28B_SIGNATURE[key]);
         });
       });
     });
