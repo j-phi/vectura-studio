@@ -7408,13 +7408,39 @@
           }
           return true;
         };
-        const dirOK = (wk, poly, uOff) => {
-          const rd = requestedDir(fr0, uOff, 0, poly);
+        const dirOK = (wk, poly, uOff, frD = fr0) => {
+          const rd = requestedDir(frD, uOff, 0, poly);
           const a0 = wk.pts[0]; const b0 = wk.pts[wk.pts.length - 1];
           const dl = Math.hypot(b0.x - a0.x, b0.y - a0.y);
           if (!rd || !(dl > 1e-9)) return false;
           const cosv = Math.min(1, Math.abs(((b0.x - a0.x) / dl) * rd.x + ((b0.y - a0.y) / dl) * rd.y));
           return Math.acos(cosv) * (180 / Math.PI) <= MK_TICK_BC_DIR_CUT;
+        };
+        // T2-8b-2b — the chain's walk arms clip at the ADMISSION radius (1.0 w),
+        // not the larger default `mkInkR` (up to 1.3 w): a tick the admission would
+        // accept was being cut below the plot floor by the wider clip (the W_L
+        // remnant: measured bare >= 0.5 mm in W_L 0.73 -> 0.105 mm^2).
+        // T2-8b-2b — a tick far from the boundary frame can leave the flat frame's
+        // asked direction (the 10-degree cut ended the li19 chain at j=10 and left
+        // the W_L remnant). Re-ask it in a FRESH local frame at the tick's own hub
+        // (exactly what a regular tick at that spot would be asked), then apply the
+        // same 10-degree check and admission there. A tick that still departs, or
+        // whose hub is off the surface, still ENDS the chain.
+        const reAnchor = (q, uOff) => {
+          const hubV = 0.5 * (q[0] + q[1]);
+          const pp = fr0.toParam(uOff, hubV);
+          if (!(pp.a >= 0 && pp.a <= 1)) return false;
+          let bb = pp.b;
+          if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+          const sm = sampleAt(pp.a, bb);
+          if (!sm || sm.front !== wantFront) return false;
+          const fr1 = frameFrom(sm, fr0.ld, fr0.st, { a: pp.a, b: bb });
+          if (!fr1) return false;
+          const poly1 = [[0, q[0] - hubV], [0, q[1] - hubV]];
+          const wk1 = walkPoly(fr1, 0, 0, poly1, MK_TICK_STEP_CAP_MM);
+          if (!(wk1.pts && admit(wk1.pts) && dirOK(wk1, poly1, 0, fr1))) return false;
+          place(fr1, [poly1], 0, 0);
+          return true;
         };
         for (let j = 1; j <= MK_TICK_BC_MAXJ; j += 1) {
           const uOff = aB + dir * j * Pc - arcMM[kB];
@@ -7431,7 +7457,7 @@
           if (!(bestLen >= 0) || bHi - bLo < LPF) break;
           lo = bLo; hi = bHi;
           // (ii) measured dry walk: full ink clip + outline probe
-          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0; mkClipArm.e = cOut;
+          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = admitR; mkClipArm.rp = admitR; mkClipArm.e = cOut;
           const dry = walkPoly(fr0, uOff, 0, [[0, lo], [0, hi]], MK_TICK_STEP_CAP_MM);
           mkClipArm.m = false; mkClipArm.p = false; mkClipArm.e = 0;
           if (!dry.pts || dry.hubTrunc || !dry.hubClear) break;
@@ -7447,9 +7473,10 @@
           segs.forEach((q) => {
             if (stop) return;
             const poly = [[0, q[0]], [0, q[1]]];
-            mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0; mkClipArm.e = cOut;
+            mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = admitR; mkClipArm.rp = admitR; mkClipArm.e = cOut;
             const wk = walkPoly(fr0, uOff, 0, poly, MK_TICK_STEP_CAP_MM);
-            if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff)) place(fr0, [poly], uOff, 0); else stop = true;
+            if (wk.pts && admit(wk.pts) && dirOK(wk, poly, uOff)) place(fr0, [poly], uOff, 0);
+            else if (!(wk.pts && admit(wk.pts) && reAnchor(q, uOff))) stop = true;
             mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0; mkClipArm.e = 0;
           });
           if (stop) break;

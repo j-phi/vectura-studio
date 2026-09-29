@@ -671,6 +671,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
  *   noprobe  the outline clearance probe radius set to 0.
  *   ask6     envelope seeded +-3 row pitches, length cap off (over2RP probe).
  *   nogate   `law.shape === 'tick'` dropped from the queue gate (I1).
+ *   noclip / noreanchor  the two halves of the T2-8b-2b W_L fix, each alone.
  * Test-side RECORD needles (not mutations) tag every placed run so chains are
  * grouped by exact span identity (plan 4.2).
  */
@@ -690,9 +691,9 @@ const BC_MUT = {
   ],
   skip1: [['for (let j = 1; j <= MK_TICK_BC_MAXJ; j += 1) {', 'for (let j = 2; j <= MK_TICK_BC_MAXJ; j += 1) {']],
   rot: [
-    ['const rd = requestedDir(fr0, uOff, 0, poly);', 'const rd = requestedDir(fr0, uOff, 0.2, poly);'],
+    ['const rd = requestedDir(frD, uOff, 0, poly);', 'const rd = requestedDir(frD, uOff, 0.2, poly);'],
     ['const wk = walkPoly(fr0, uOff, 0, poly, MK_TICK_STEP_CAP_MM);', 'const wk = walkPoly(fr0, uOff, 0.2, poly, MK_TICK_STEP_CAP_MM);'],
-    ['place(fr0, [poly], uOff, 0); else stop = true;', 'place(fr0, [poly], uOff, 0.2); else stop = true;'],
+    ['place(fr0, [poly], uOff, 0);', 'place(fr0, [poly], uOff, 0.2);'],
   ],
   wide: [
     ['let Lprev = Lb > 0 ? Lb : Infinity;', 'let Lprev = Infinity; lo -= 1.0; hi += 1.0;'],
@@ -704,6 +705,12 @@ const BC_MUT = {
   // The queue gate alone is BACKSTOPPED by bcSide's `svB.segs` guard (only mkTick's
   // solve returns segs): dropping just the gate changes nothing (vacuous, disclosed).
   // `nogate` drops the gate AND the backstop, which is what proves the pair matters.
+  // T2-8b-2b: the two halves of the W_L fix, each removed alone.
+  noclip: [
+    ['\n          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = admitR; mkClipArm.rp = admitR;', '\n          mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0;'],
+    ['\n            mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = admitR; mkClipArm.rp = admitR;', '\n            mkClipArm.m = true; mkClipArm.p = true; mkClipArm.rm = 0; mkClipArm.rp = 0;'],
+  ],
+  noreanchor: [['const reAnchor = (q, uOff) => {', 'const reAnchor = (q, uOff) => { return false;']],
   nogate: [
     [QUEUE_GATE, "if (!mkWedgeActive && s1 > s0 && Number.isFinite(firstA)"],
     ['if (!svB || !svB.segs || !svB.segs.length || !(Pc > 0)', 'if (!svB || !(Pc > 0)'],
@@ -744,7 +751,7 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
   const runtimes = {};
   const R = {};
   const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
-  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6'];
+  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6', 'noclip', 'noreanchor'];
   const FULL = ['ship', 'off', 'inline']; // kinds also rendered at d=220
   const ALL12 = [];
   ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => ALL12.push([rig, p, m])));
@@ -793,7 +800,7 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
   afterAll(async () => { await Promise.all(Object.values(runtimes).map((rt) => rt.cleanup())); });
 
   test('needles are non-vacuous (counts asserted in buildBcSource) and BC-off differs from shipped on exactly the chain cells', () => {
-    expect(Object.keys(BC_MUT)).toHaveLength(11);
+    expect(Object.keys(BC_MUT)).toHaveLength(13);
     const changed = ALL12.filter(([rig, p, m]) => R.ship[key(50, rig, p, m)].md5 !== R.off[key(50, rig, p, m)].md5);
     // create|torus/hatch has no chains (byte-identical to base); the other 11 change.
     expect(changed).toHaveLength(11);
@@ -820,6 +827,24 @@ describe('Scene3D.SurfaceFill — T2-8b-2 BC band continuation (cone base wedges
       expect(bareArea(r, 0.75, WIN_R)).toBeLessThanOrEqual(1.5);
       expect(bareArea(buildBareRaster(R.off[key(50, 'test', 'cone', 'hatch')].pp), 0.75, WIN_R)).toBeGreaterThan(1.5);
     });
+  });
+
+  describe('WL (BLOCKING, T2-8b-2b) — the W_L remnant is closed: bare >= 0.5 mm <= 0.30 mm^2 in W_L (create cone/hatch d=50, cam a, ground DISABLED)', () => {
+    // GATES the small dark triangle left against the base rim right of the
+    // tapered li19 chain (Jay: "fix W_L first") at the 0.5 mm clearance scale A1
+    // (0.75 mm) cannot see. Measured 0.73 on 8d11044d; 0.105 shipped. Says
+    // NOTHING about W_R, tone, seam, or the test rig (whose W_L reads 2.66 at
+    // 0.5 mm, a different, pre-existing remnant: base 3.12 -> 2.66).
+    const WL_BAR = 0.30;
+    const wl = (kind) => bareArea(buildBareRaster(R[kind][key(50, 'create', 'cone', 'hatch')].pp), 0.5, WIN_L);
+    test('shipped', () => {
+      // eslint-disable-next-line no-console
+      console.log('WL create cone/hatch bare>=0.5:', wl('ship'));
+      expect(wl('ship')).toBeLessThanOrEqual(WL_BAR);
+    });
+    test('MUTATION noclip (chain arms clip at the wider default radius) reopens it', () => { expect(wl('noclip')).toBeGreaterThan(WL_BAR); });
+    test('MUTATION noreanchor (the 10-degree cut ends the chain at j=10) reopens it', () => { expect(wl('noreanchor')).toBeGreaterThan(WL_BAR); });
+    test('MUTATION off (no continuation) reopens it', () => { expect(wl('off')).toBeGreaterThan(WL_BAR); });
   });
 
   describe('A2 (BLOCKING) — master grid untouched: tickSites + [I,R,P,L,drawn] deep-equal BC-off', () => {
