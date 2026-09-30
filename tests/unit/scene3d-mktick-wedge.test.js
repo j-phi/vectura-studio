@@ -420,7 +420,35 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // other four `test`-rig cells are BYTE-IDENTICAL — the wedge pass finds
     // zero new sites there, see that report's own §2 for why). Every other
     // entry below is untouched.
+    // T2-8b-3 — RE-PINNED (replaces T2-8b-2/2b's BC pins). Mechanism BC-E — tick-only,
+    // deferred, NON-SITE band continuation with a bisected endpoint envelope
+    // (`surface-fill.js` `mkEndQ` / `bcSide`); sites at I >= 2/3 (highlight) are
+    // never continued. 7 of 12 cells change vs base: test sphere/contour, test
+    // torus/contour, test cone/hatch, create sphere/hatch, create sphere/contour,
+    // create torus/contour, create cone/hatch. The other 5 are byte-identical to
+    // the pre-T2-8b hash (`PRE_T28B_SIGNATURE`) and are asserted equal to it below.
+    // T2-8b-3c: chain APEX ticks (a CLOSING chain only, down to 1 pen, exempt from the 0.6 mm
+    // crumb filter via a run flag) moved only test|cone/hatch and create|cone/hatch; the 3b apex ticks on
+    // torus/hatch were dropped (create|torus/hatch is back to the base hash). 7 of 12 differ from base.
+    // The CONTRAST MUTATION test at the end of this block loads the shipped source
+    // with the deferred flush removed and asserts the OLD hash on all 12 (so the
+    // re-pin is BC-E and not drift). See `T2-8b-3-impl.md` `## Bars changed`.
     const EXPECTED_SIGNATURE = {
+      'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
+      'test|sphere/contour': '380604efd9ecde036e8b35a0497ad26021794d0deb8d6aacac10bee6d630939d',
+      'test|torus/hatch': '71328eb4d9e31e35a2a6de3b12042d7c6ca672636b1ca7eeaa15a2d9b9491374',
+      'test|torus/contour': '146f13057131ae54b5f273ca84d2677775b069fd9ee7e524aa836b46fcfaf24c',
+      'test|cone/hatch': '8f247fb4948fee031a95673f5fc2c40539245628a4c32f4a1dc23ca0f7b06142',
+      'test|cone/contour': 'e75dac4c2988682631c120931ab9d17e2fe72c61ca58aec247ca81132bcc54b9',
+      'create|sphere/hatch': '4dd4f955dc8d917d5162db32da8b040745de46c432b4edd6bead662afa6de307',
+      'create|sphere/contour': 'bfa4894409e677d11a2bd2008e20d0bb5cd758216c54a86a2444fae646a5c31f',
+      'create|torus/hatch': '5bbcd92a3428377208aadcaf7299fcd37ed694be36723f133d64f3702b3bb1a2',
+      'create|torus/contour': '6dd4ed7fc5d7f654f7ba6017dbeca35956acc4b17202de5ad18c5cb446f6f277',
+      'create|cone/hatch': '150dd5d9a364d4f638612bd2b6ba5c8125c1e117a4002f546c111a6cd75486b0',
+      'create|cone/contour': 'd9fb1c7acc9a9461503f958100c085b375e7937d899c725711496754ef0e7958',
+    };
+    const CHANGED_BY_BCE = new Set(['test|sphere/contour', 'test|torus/contour', 'test|cone/hatch', 'create|sphere/hatch', 'create|sphere/contour', 'create|torus/contour', 'create|cone/hatch']);
+    const PRE_T28B_SIGNATURE = {
       'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
       'test|sphere/contour': '6a5a1c0d5857c1db44bd3a5bb26c90ef5804e26dcbc3c4ec19b2429545123694',
       'test|torus/hatch': '71328eb4d9e31e35a2a6de3b12042d7c6ca672636b1ca7eeaa15a2d9b9491374',
@@ -446,9 +474,30 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
             console.log(`EXPECTED_SIGNATURE missing entry — paste this in: '${key}': '${actual}',`);
           }
           expect(actual).toBe(expected);
+          // A cell BC-E leaves untouched must equal the pre-T2-8b hash, not fresh hex.
+          if (!CHANGED_BY_BCE.has(key)) expect(actual).toBe(PRE_T28B_SIGNATURE[key]);
         });
       });
     });
+
+    test('CONTRAST MUTATION — SEC off (deferred flush removed) returns the PRE-T2-8b hash on all 12 cells', async () => {
+      const off = patchOne(
+        loadHeadSource(),
+        'for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();',
+        '',
+        'T28B_FLUSH_NEEDLE',
+      );
+      const rt = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: off } });
+      try {
+        const V = rt.window.Vectura;
+        ['test', 'create'].forEach((rig) => {
+          CELLS.forEach(([primitive, mapper]) => {
+            const { paths } = renderCell(V, { primitive, mapper, rig });
+            expect(pathSignature(paths, 4)).toBe(PRE_T28B_SIGNATURE[`${rig}|${primitive}/${mapper}`]);
+          });
+        });
+      } finally { await rt.cleanup(); }
+    }, 120000);
   });
 
   // ── T2-3b (b): bar LOWERED 3.0 -> 2.30, per Jay's ruling on

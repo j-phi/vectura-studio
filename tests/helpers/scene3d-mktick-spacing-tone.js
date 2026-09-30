@@ -164,7 +164,299 @@ function subMinCount(fills, penWidth) {
   return fills.filter((q) => pathLen(q) < MIN - 1e-6).length;
 }
 
+
+/**
+ * T2-8b — the BARE-AREA instrument (ported from the planner's read-only
+ * script; pure math over emitted paths, no fs/git). `paths` = the
+ * algorithm's emitted paths, each an array of `{x,y}` with `meta.kind`.
+ * Raster at `RES` mm; every `sceneFill` and `sceneEdge` path is stamped
+ * with radius `STAMP_R`; the INTERIOR is the set of pixels not
+ * flood-reachable from the bbox border without crossing `sceneEdge` ink;
+ * a two-pass chamfer gives each pixel's distance to any ink. `bareArea(T)`
+ * is the area (mm^2) of interior pixels at distance >= T.
+ */
+const BARE_RES = 0.05;
+const BARE_STAMP_R = 0.15;
+function buildBareRaster(paths, res = BARE_RES, stampR = BARE_STAMP_R) {
+  const use = paths.filter((p) => p.meta && (p.meta.kind === 'sceneFill' || p.meta.kind === 'sceneEdge') && p.length);
+  let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+  use.forEach((p) => p.forEach((q) => {
+    if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x;
+    if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+  }));
+  x0 -= 1; y0 -= 1; x1 += 1; y1 += 1;
+  const W = Math.ceil((x1 - x0) / res) + 1; const H = Math.ceil((y1 - y0) / res) + 1;
+  const ink = new Uint8Array(W * H); const edge = new Uint8Array(W * H);
+  const rp = Math.ceil(stampR / res);
+  const stamp = (arr, x, y) => {
+    const cx = Math.round((x - x0) / res); const cy = Math.round((y - y0) / res);
+    for (let dy = -rp; dy <= rp; dy += 1) {
+      for (let dx = -rp; dx <= rp; dx += 1) {
+        if (dx * dx + dy * dy > rp * rp) continue;
+        const ix = cx + dx; const iy = cy + dy;
+        if (ix >= 0 && iy >= 0 && ix < W && iy < H) arr[iy * W + ix] = 1;
+      }
+    }
+  };
+  use.forEach((p) => {
+    const isEdge = p.meta.kind === 'sceneEdge';
+    for (let i = 0; i < p.length; i += 1) {
+      const a = p[i]; const b = i ? p[i - 1] : p[i];
+      const n = Math.max(1, Math.ceil(Math.hypot(a.x - b.x, a.y - b.y) / (res * 2)));
+      for (let k = 0; k <= n; k += 1) {
+        const x = b.x + ((a.x - b.x) * k) / n; const y = b.y + ((a.y - b.y) * k) / n;
+        stamp(ink, x, y);
+        if (isEdge) stamp(edge, x, y);
+      }
+    }
+  });
+  // exterior flood (4-connected) from the border, blocked by edge ink
+  const outside = new Uint8Array(W * H);
+  const stack = [];
+  const push = (ix, iy) => {
+    if (ix < 0 || iy < 0 || ix >= W || iy >= H) return;
+    const id = iy * W + ix;
+    if (outside[id] || edge[id]) return;
+    outside[id] = 1; stack.push(id);
+  };
+  for (let ix = 0; ix < W; ix += 1) { push(ix, 0); push(ix, H - 1); }
+  for (let iy = 0; iy < H; iy += 1) { push(0, iy); push(W - 1, iy); }
+  while (stack.length) {
+    const id = stack.pop(); const ix = id % W; const iy = (id - ix) / W;
+    push(ix + 1, iy); push(ix - 1, iy); push(ix, iy + 1); push(ix, iy - 1);
+  }
+  // two-pass chamfer distance to ink (pixel units)
+  const INF = 1e9; const d = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i += 1) d[i] = ink[i] ? 0 : INF;
+  const S2 = Math.SQRT2;
+  for (let iy = 0; iy < H; iy += 1) {
+    for (let ix = 0; ix < W; ix += 1) {
+      const id = iy * W + ix; let v = d[id];
+      if (ix > 0) v = Math.min(v, d[id - 1] + 1);
+      if (iy > 0) {
+        v = Math.min(v, d[id - W] + 1);
+        if (ix > 0) v = Math.min(v, d[id - W - 1] + S2);
+        if (ix < W - 1) v = Math.min(v, d[id - W + 1] + S2);
+      }
+      d[id] = v;
+    }
+  }
+  for (let iy = H - 1; iy >= 0; iy -= 1) {
+    for (let ix = W - 1; ix >= 0; ix -= 1) {
+      const id = iy * W + ix; let v = d[id];
+      if (ix < W - 1) v = Math.min(v, d[id + 1] + 1);
+      if (iy < H - 1) {
+        v = Math.min(v, d[id + W] + 1);
+        if (ix < W - 1) v = Math.min(v, d[id + W + 1] + S2);
+        if (ix > 0) v = Math.min(v, d[id + W - 1] + S2);
+      }
+      d[id] = v;
+    }
+  }
+  return {
+    x0, y0, W, H, res, ink, outside, dist: d,
+  };
+}
+
+/** Area (mm^2) of interior pixels at chamfer distance >= T mm, optionally
+ * restricted to a window `[xA, yA, xB, yB]` (mm, output path space). */
+function bareArea(r, T, win) {
+  const tPx = T / r.res; let n = 0;
+  let ixA = 0; let iyA = 0; let ixB = r.W - 1; let iyB = r.H - 1;
+  if (win) {
+    ixA = Math.max(0, Math.floor((win[0] - r.x0) / r.res)); iyA = Math.max(0, Math.floor((win[1] - r.y0) / r.res));
+    ixB = Math.min(r.W - 1, Math.ceil((win[2] - r.x0) / r.res)); iyB = Math.min(r.H - 1, Math.ceil((win[3] - r.y0) / r.res));
+  }
+  for (let iy = iyA; iy <= iyB; iy += 1) {
+    for (let ix = ixA; ix <= ixB; ix += 1) {
+      const id = iy * r.W + ix;
+      if (!r.outside[id] && r.dist[id] >= tPx) n += 1;
+    }
+  }
+  return n * r.res * r.res;
+}
+
+/** Raster ink coverage (fraction of INTERIOR pixels inked) inside a window. */
+function inkCoverage(r, win) {
+  let inked = 0; let tot = 0;
+  const ixA = Math.max(0, Math.floor((win[0] - r.x0) / r.res)); const iyA = Math.max(0, Math.floor((win[1] - r.y0) / r.res));
+  const ixB = Math.min(r.W - 1, Math.ceil((win[2] - r.x0) / r.res)); const iyB = Math.min(r.H - 1, Math.ceil((win[3] - r.y0) / r.res));
+  for (let iy = iyA; iy <= iyB; iy += 1) {
+    for (let ix = ixA; ix <= ixB; ix += 1) {
+      const id = iy * r.W + ix;
+      if (r.outside[id]) continue;
+      tot += 1; if (r.ink[id]) inked += 1;
+    }
+  }
+  return tot ? inked / tot : null;
+}
+
+/** Object ink in mm (sceneFill + sceneEdge path length; ground/backdrop are
+ * not present in the fixtures that call this). */
+function inkMm(paths) {
+  return paths.filter((p) => p.meta && (p.meta.kind === 'sceneFill' || p.meta.kind === 'sceneEdge')).reduce((a, p) => a + pathLen(p), 0);
+}
+
+
+/**
+ * T2-8b-3 — chain metrics for the band-continuation bars (SEAM / DIR / TAPER /
+ * OUTLINE / ENVELOPE / NO-ORPHAN / HIGHLIGHT). Pure math over records captured
+ * by test-side needles (`{pts, li, tag}` per placed run). Regular ticks:
+ * `reg:M|s:<a>:<k>:<I>:<P>`; continuation pieces:
+ * `cont|<dir>|<kB>|<aB>|<j>|<I>|<dn><up>` (`dn`/`up` = stop reason of the lower/
+ * upper end: S surface, E outline, I other-row ink, C the band's own extent).
+ * Chains are grouped by EXACT span identity `(li, dir, kB, aB)`; the boundary
+ * tick is matched by `(li, a, k)` — matching `(li, a)` alone conflated the
+ * several spans a contour ruling has at one arc position (an instrument
+ * artefact). `edgePaths` = the `sceneEdge` polylines.
+ */
+function chainMetrics(records, edgePaths) {
+  const chord = (r) => {
+    const a = r.pts[0]; const b = r.pts[r.pts.length - 1];
+    return {
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      ang: ((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI + 360) % 180,
+      n: (() => { const dx = b.x - a.x; const dy = b.y - a.y; const l = Math.hypot(dx, dy) || 1; return { x: -dy / l, y: dx / l }; })(),
+    };
+  };
+  const angDiff = (a, b) => { const d = Math.abs(a - b) % 180; return Math.min(d, 180 - d); };
+  const perp = (h1, h2) => Math.abs((h2.mid.x - h1.mid.x) * h1.n.x + (h2.mid.y - h1.mid.y) * h1.n.y);
+  const regM = records.filter((r) => r.tag && r.tag.startsWith('reg:M:'))
+    .map((r) => {
+      const t = r.tag.split(':');
+      return {
+        r, li: r.li, a: Number(t[2]), k: Number(t[3]), I: Number(t[4]), P: Number(t[5]), c: chord(r), len: pathLen(r.pts),
+      };
+    });
+  const chains = new Map();
+  records.filter((r) => r.tag && r.tag.startsWith('cont|')).forEach((r) => {
+    const [, dir, kB, aB, j, I, rs] = r.tag.split('|');
+    const key = `${r.li}|${dir}|${kB}|${aB}`;
+    if (!chains.has(key)) chains.set(key, { li: r.li, dir: Number(dir), kB: Number(kB), aB: Number(aB), I: Number(I), pieces: [] });
+    chains.get(key).pieces.push({ r, j: Number(j), len: pathLen(r.pts), c: chord(r), rs: rs || '' });
+  });
+  const segd = (px, py, a, b) => {
+    const dx = b.x - a.x; const dy = b.y - a.y; const l2 = dx * dx + dy * dy;
+    let t = l2 < 1e-12 ? 0 : ((px - a.x) * dx + (py - a.y) * dy) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - a.x - t * dx, py - a.y - t * dy);
+  };
+  const distTo = (pt, polys) => {
+    let m = Infinity;
+    polys.forEach((e) => { for (let i = 1; i < e.length; i += 1) m = Math.min(m, segd(pt.x, pt.y, e[i - 1], e[i])); });
+    return m;
+  };
+  const edges = edgePaths || [];
+  const out = [];
+  chains.forEach((ch) => {
+    const byJ = new Map();
+    ch.pieces.forEach((pc) => { if (!byJ.has(pc.j) || pc.len > byJ.get(pc.j).len) byJ.set(pc.j, pc); });
+    const js = [...byJ.keys()].sort((x, y) => x - y);
+    const bnd = regM.find((m) => m.li === ch.li && m.a.toFixed(4) === ch.aB.toFixed(4) && m.k === ch.kB);
+    const inner = regM.filter((m) => m.li === ch.li && (m.a - ch.aB) * ch.dir < 0)
+      .sort((x, y) => Math.abs(x.a - ch.aB) - Math.abs(y.a - ch.aB))[0];
+    const first = byJ.get(js[0]);
+    let s = null; let dirExcess = null;
+    if (bnd && inner && first) {
+      const ref = perp(bnd.c, inner.c);
+      s = ref > 1e-6 ? perp(bnd.c, first.c) / (first.j * ref) : null;
+      dirExcess = angDiff(bnd.c.ang, first.c.ang) / first.j - angDiff(inner.c.ang, bnd.c.ang);
+    }
+    let prev = bnd ? bnd.len : Infinity; let viol = 0;
+    js.forEach((j) => { const L = byJ.get(j).len; if (L > prev + 0.05) viol += 1; prev = L; });
+    // NO-ORPHAN: j contiguous from 1, and perpendicular spacing to the predecessor (the boundary tick for j=1) <= 1.35 P_B
+    let orphans = 0; const sP = [];
+    if (bnd) {
+      let pc = bnd.c;
+      js.forEach((j, idx) => {
+        const cur = byJ.get(j);
+        const sp = perp(pc, cur.c) / bnd.P; sP.push(sp);
+        if (j !== idx + 1 || sp > 1.35) orphans += 1;
+        pc = cur.c;
+      });
+    }
+    let minEdge = Infinity;
+    ch.pieces.forEach((pc) => pc.r.pts.forEach((pt) => { minEdge = Math.min(minEdge, distTo(pt, edges)); }));
+    // per-end stop reason and clearance to the drawn outline / to other rows' ink
+    const others = records.filter((r) => r.li !== ch.li && r.pts.length > 1).map((r) => r.pts);
+    const ends = [];
+    js.forEach((j) => {
+      const pc = byJ.get(j); const a = pc.r.pts[0]; const b = pc.r.pts[pc.r.pts.length - 1];
+      [[a, pc.rs[0]], [b, pc.rs[1]]].forEach(([pt, reason]) => {
+        ends.push({ j, reason: reason || '', gE: distTo(pt, edges), gI: distTo(pt, others) });
+      });
+    });
+    out.push({
+      li: ch.li, dir: ch.dir, aB: ch.aB, kB: ch.kB, chainI: ch.I, j1: js[0], nTicks: ch.pieces.length, s, dirExcess, violations: viol, minEdge, hasBoundary: !!bnd, orphans, sP, ends,
+    });
+  });
+  return out;
+}
+
+/**
+ * ENVELOPE ranges over chains' ends. E = outline-class ends (geometric: gE <= 1.0
+ * and gE < gI, so it works on trees with no stop reasons); B = band-stopped ends
+ * (reason 'I') measured to the nearest other-row ink.
+ */
+function envelopeRanges(chains) {
+  const e = []; const b = [];
+  chains.forEach((c) => c.ends.forEach((x) => {
+    if (x.gE <= 1.0 && x.gE < x.gI) e.push(x.gE);
+    if (x.reason === 'I') b.push(x.gI);
+  }));
+  const rng = (a) => (a.length ? { n: a.length, min: Math.min(...a), max: Math.max(...a), range: Math.max(...a) - Math.min(...a) } : { n: 0, min: Infinity, max: -Infinity, range: 0 });
+  return { E: rng(e), B: rng(b) };
+}
+
+/**
+ * FILL — bare components (interior, chamfer distance >= T) whose nearest regular
+ * main tick has I < hiI AND whose depth exceeds what the band's own spacing can
+ * make ((P_near - w)/2 + 0.1 mm); components >= 100 mm^2 (the torus hole) are
+ * excluded. Returns the summed area (mm^2). `regRecords` = records tagged reg:M.
+ */
+function holeComponents(r, records, { T = 0.5, hiI = 2 / 3, w = 0.3 } = {}) {
+  const reg = records.filter((x) => x.tag && x.tag.startsWith('reg:M:')).map((x) => {
+    const t = x.tag.split(':'); const a = x.pts[0]; const b = x.pts[x.pts.length - 1];
+    return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, I: Number(t[4]), P: Number(t[5]) };
+  });
+  if (!reg.length) return 0;
+  const tPx = T / r.res; const seen = new Uint8Array(r.W * r.H); let total = 0;
+  for (let y0 = 0; y0 < r.H; y0 += 1) {
+    for (let x0 = 0; x0 < r.W; x0 += 1) {
+      const id0 = y0 * r.W + x0;
+      if (seen[id0] || r.outside[id0] || r.dist[id0] < tPx) continue;
+      const stack = [id0]; seen[id0] = 1; let n = 0; let best = -1; let bx = 0; let by = 0;
+      while (stack.length) {
+        const id = stack.pop(); const x = id % r.W; const y = (id - x) / r.W; n += 1;
+        if (r.dist[id] > best) { best = r.dist[id]; bx = x; by = y; }
+        [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dy]) => {
+          const nx = x + dx; const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= r.W || ny >= r.H) return;
+          const nid = ny * r.W + nx;
+          if (seen[nid] || r.outside[nid] || r.dist[nid] < tPx) return;
+          seen[nid] = 1; stack.push(nid);
+        });
+      }
+      const area = n * r.res * r.res;
+      if (area >= 100) continue;
+      const px = r.x0 + bx * r.res; const py = r.y0 + by * r.res;
+      let near = reg[0]; let nd = Infinity;
+      reg.forEach((q) => { const d = Math.hypot(q.mx - px, q.my - py); if (d < nd) { nd = d; near = q; } });
+      const depth = best * r.res;
+      if (near.I < hiI && depth > (near.P - w) / 2 + 0.1) total += area;
+    }
+  }
+  return total;
+}
+
 module.exports = {
+  chainMetrics,
+  envelopeRanges,
+  holeComponents,
+  buildBareRaster,
+  bareArea,
+  inkCoverage,
+  inkMm,
   contact,
   spacingShare,
   thirdsSplit,

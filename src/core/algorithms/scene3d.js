@@ -3397,8 +3397,12 @@
         // edge pass sets it; every other caller leaves it undefined ⇒ the
         // per-run floor is byte-identical to what it always was.
         const chained = Boolean(opts && opts.chained);
+        // T2-8b-3c — a mark-tick chain's APEX run (surface-fill `bcSide`, flagged `apex` with its
+        // own floor `apexMin` in mm) is exempt from `MIN_RUN_MM` down to that floor. Only the
+        // front fill loop passes it; every other caller leaves it undefined => the 0.6 mm floor.
+        const apexMin = (opts && Number.isFinite(opts.apexMin)) ? opts.apexMin : null;
         runs.forEach((run) => {
-          if (!chained && runLength(run.pts) < MIN_RUN_MM) return;
+          if (!chained && runLength(run.pts) < (apexMin != null ? Math.min(MIN_RUN_MM, apexMin) : MIN_RUN_MM)) return;
           if (run.visible && !forceHidden) {
             if (hiddenOnly) return;
             const meta = (treat.active || visibleMeta) ? { ...baseMeta, ...(visibleMeta || {}) } : baseMeta;
@@ -4842,7 +4846,8 @@
                 const lineMeta = (Number.isFinite(rawW) && rawW !== 1)
                   ? { ...fillMeta, weightScale: round3(clamp(rawW, 0.1, 6)) }
                   : fillMeta;
-                emitRuns(clip.runs, lineMeta, hiddenTreatment, null, frontTreat);
+                emitRuns(clip.runs, lineMeta, hiddenTreatment, null, frontTreat,
+                  line.apex === true ? { apexMin: line.apexMin } : undefined);
               }
             });
           });
