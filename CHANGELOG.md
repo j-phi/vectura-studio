@@ -85,6 +85,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   whether this reads correctly is being judged by eye, not by a bar.** (T2-6)
 
 ### Fixed
+- **3D Scene · mkTick (Tick) fill reaches the dark corners.** Where a tick band ends at a rim or
+  another band, it now carries on at its own spacing and direction. The ticks shorten gradually,
+  and every tick end sits an even distance off the outline (0.6 mm) or the next band (0.5 mm).
+  This fills the cone's base wedges and the gaps at other span ends, with no orphan ticks.
+  Lit (highlight) areas are left open. Only the tip tick of a tapering chain may be shorter
+  than the usual 0.6 mm stroke minimum, down to 0.3 mm. The engine's optional Remove-tiny
+  filter and the export Min Length setting can still drop those tip ticks. (T2-8b)
 - **3D Scene · mkTick (Tick) fill reads as a tone field.** Tick spacing now carries the tone,
   with no ticks touching at seams. Stray lines outside a tick band are gone, and short graded pieces
   fill the gaps at band ends. The fill is monotone from light to dark on the tested shapes, with two
