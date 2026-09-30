@@ -2846,7 +2846,7 @@
     // call and clears immediately after (never left set for a later,
     // unrelated mark).
     const mkInk = new Map();
-    // T2-8b-2 — the deferred span-end continuation queue (see
+    // T2-8b-3/3c (BC-E; queue introduced in T2-8b-2) — the deferred span-end continuation queue (see
     // `MK_TICK_BC_MAXJ`). Closures pushed by `emitMarks`, flushed once after
     // every mapper has run: running them inline changed later rulings' clip
     // outcomes (site records moved on 10 of 24 measured runs).
@@ -7662,7 +7662,7 @@
         // and no row covers the triangle past a ruling's exit" pattern.
         let lastA = -Infinity;
         let firstA = Infinity;
-        // T2-8b-2 — boundary-site bookkeeping (assignments only).
+        // T2-8b-3/3c (BC-E) — boundary-site bookkeeping (assignments only).
         let firstK = -1; let firstSv = null; let firstR = null;
         let lastK = -1; let lastSv = null; let lastR = null;
         while (a <= arcMM[s1] && guard < 4000) {
@@ -7723,7 +7723,7 @@
             endA = arcMM[s1]; endK = s1; endSv = svEnd; endR = mkMainRun;
           }
         }
-        // T2-8b-2 — queue the two span-end continuations (tick-only, deferred,
+        // T2-8b-3/3c (BC-E) — queue the two span-end continuations (tick-only, deferred,
         // non-site; see `bcSide`). `endA` is the item-8 end tick if it fired,
         // else the last placed site. No mapper gate.
         if (law.shape === 'tick' && !mkWedgeActive && s1 > s0 && Number.isFinite(firstA) && Number.isFinite(endA)) {
@@ -13056,7 +13056,7 @@
     // Every chain is closed by now, so the deferred ribbons can be built — and
     // they must be built BEFORE the report, or the report describes a build that
     // has not happened yet.
-    // T2-8b-2 — the deferred span-end continuations (see `mkEndQ`).
+    // T2-8b-3/3c (BC-E) — the deferred span-end continuations (see `mkEndQ`).
     for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();
     flushDeferredRibbons();
     publishRibbonStats();
