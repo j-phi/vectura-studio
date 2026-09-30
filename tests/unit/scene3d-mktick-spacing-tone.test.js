@@ -993,8 +993,10 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
       ALL12.forEach(([rig, p, m]) => { expect(R.ship[key(50, rig, p, m)].crumbs).toBe(0); expect(R.ship[key(50, rig, p, m)].sub).toBe(0); });
       expect(R.ship[key(50, 'create', 'cone', 'hatch')].subRaw).toBeGreaterThan(0);
     });
-    test('MUTATION noflag (scene3d.js: every run may be 0.3 mm) yields crumbs on the 72-cell roster', () => {
-      const crumbCount = (kind) => {
+    // Split per variant (CI-6 pattern): SAME population (72 cone/create cells per variant), each render
+    // set in its own test with its own budget. The single 216-render test timed out at 180 s under the
+    // coverage job's v8 instrumentation on GH Actions (run 36654915260, 215 s).
+    const crumbCount = (kind) => {
         const V = runtimes[kind].window.Vectura; let n = 0;
         const laws = V.SCENE3D_TONE_LAWS.PRODUCTION; const nonMk = laws.filter((l) => !/^mk/.test(l)).slice(0, 6);
         V.Scene3D.Params.MAPPERS.forEach((mapper) => MARK.concat(nonMk).forEach((law) => {
@@ -1004,11 +1006,18 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
         }));
         return n;
       };
-      const ship = crumbCount('ship'); const bad = crumbCount('noflag');
-      // eslint-disable-next-line no-console
-      console.log('CRUMBS roster ship', ship, 'noflag', bad);
-      expect(ship).toBe(crumbCount('off'));
-      expect(bad).toBeGreaterThan(ship);
+    const counts = {};
+    ['off', 'ship', 'noflag'].forEach((kind) => {
+      test(`MUTATION noflag roster — count non-apex crumbs on the 72-cell roster [${kind}]`, () => {
+        counts[kind] = crumbCount(kind);
+        // eslint-disable-next-line no-console
+        console.log('CRUMBS roster', kind, counts[kind]);
+        expect(Number.isFinite(counts[kind])).toBe(true);
+      }, 900000);
+    });
+    test('MUTATION noflag (scene3d.js: every run may be 0.3 mm) yields crumbs on the 72-cell roster', () => {
+      expect(counts.ship).toBe(counts.off);
+      expect(counts.noflag).toBeGreaterThan(counts.ship);
     });
   });
 
