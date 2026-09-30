@@ -201,3 +201,9 @@ No other existing threshold, tolerance, or pinned fingerprint was changed. All s
   touched no crosshatch code path (`scene3d-crosshatch-parity` 37/37 unchanged).
 
 REPORT docs/3d-audit/lane-reports/T4-impl.md — DONE — sphere d=220 758.5->1501.1mm ink (real pipeline), meets Jay's 1500mm bar, no slab.
+
+---
+
+## Addendum 2026-09-30 — ink-number rig disclosure (MERGE item 30)
+
+**Rig disclosure.** The headline ink table (758.5 to 1501.1 mm, sphere/torus/cone) came from `scripts/audit/scene3d-capture.js` with its default `--rig create` (`PRIMITIVE_CREATE_DEFAULTS` merged over `PRIMITIVE_PARAM_DEFAULTS`, `scene3d-capture.js:293-305`). Camera: angle `a` = `DEFAULT_CAMERA` (`:153`). Density: low/med/max = 1/50/220 (`:148`); Jay's cell is d=220. Ground: EXCLUDED (`q.ground = {enabled:false}`, `:291`). The 981.6 mm and 510.9 mm "small fixture" numbers came from `tests/unit/scene3d-mark-laws-draw.test.js` (rig `test`: `PRIMITIVE_PARAM_DEFAULTS`, `DEFAULT_CAMERA`, ground off, `:33-35`; density 220). No ground-included number appears in this report.

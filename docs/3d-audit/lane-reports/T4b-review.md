@@ -195,3 +195,9 @@ a cheap low-density slab-mutation assertion in a future follow-up unit if Jay wa
 CI-gated too (currently it is, but only via G4 in the mark-laws file, not via this new file).
 
 REPORT docs/3d-audit/lane-reports/T4b-review.md — ACCEPT-WITH-FOLLOWUPS — numbers reproduce; band's lower half is dead, upper half misses the slab defect.
+
+---
+
+## Addendum 2026-09-30 — ink-number rig disclosure (MERGE item 30)
+
+**Rig disclosure.** The reviewer re-ran `tests/unit/scene3d-mkdashramp-dark-end.test.js`. Rig: `engine.addLayer('scene3d')` tree, seed sphere from `PRIMITIVE_CREATE_DEFAULTS`. Camera: `a` = `DEFAULT_CAMERA`, with the stated +/-2 and +/-5 degree perturbations. Density: 220 (218 to 222 sweep). Ground: EXCLUDED (ground child removed, test `:113-119`). The d=1 slab-mutation numbers (826 to 2207 mm) use the `scene3d-mark-laws-draw.test.js` rig: `test` (`PRIMITIVE_PARAM_DEFAULTS`), `DEFAULT_CAMERA`, ground off (`:33-35`).

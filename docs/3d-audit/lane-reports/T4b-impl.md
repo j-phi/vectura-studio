@@ -186,3 +186,9 @@ existing was widened, tightened, or re-pinned.
 - `docs/3d-audit/lane-reports/T4b-impl.md` (this report).
 
 REPORT docs/3d-audit/lane-reports/T4b-impl.md — DONE — floor 1400mm below the measured 1479.74mm envelope, ±10% band, RED reproduces T4's 758.5mm.
+
+---
+
+## Addendum 2026-09-30 — ink-number rig disclosure (MERGE item 30)
+
+**Rig disclosure.** All ink numbers (1501.06, the 1479.74 to 1517.52 envelope, 1528.997) came from `tests/unit/scene3d-mkdashramp-dark-end.test.js`. Rig: `engine.addLayer('scene3d')` tree, seed sphere from `PRIMITIVE_CREATE_DEFAULTS` (25/28), style overridden to hatch/mkDashRamp (`:102-130`). Camera: `a` = `DEFAULT_CAMERA` (`b` = yaw 40 / pitch -15 only for the 1528.997 cross-check). Density: 220. Ground: EXCLUDED (ground child removed with `engine.removeLayer`, `:113-119`; backdrop off; sun `castShadows` false). The 758.5 mm RED number is T4's `scene3d-capture.js` create-rig figure (ground excluded).

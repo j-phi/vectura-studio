@@ -228,3 +228,9 @@ by this unit). One measurement (`weaveDepth`, a WV6 control law not required for
 abandoned after 25+ minutes and dropped from the default law list with a comment explaining why; `onePenDown`
 camera-'b' was abandoned after 40+ minutes for the same reason (see follow-up 1). Every measurement actually
 used in this report's floors and mutation-kill completed and is reported above.
+
+---
+
+## Addendum 2026-09-30 — ink-number rig disclosure (MERGE item 30)
+
+**Rig disclosure.** The ink figures (for example interlockWeave 6166.940 mm) came from `tests/helpers/scene3d-ribbon-width.js` `measureRibbonWidth` (`:88-145`), run by `scripts/audit/scene3d-ribbon-width.js`. Rig: `addLayer`, torus/hatch, toneLaw swapped. Camera: `a` = default, and `b` (yaw 40, pitch -15) for the floor envelope. Density: 50 (untouched default). Ground: INCLUDED. `totalInkMm` sums all of `group.scenePaths`, and the ground child is not removed. The width figures (mean `CLS_RIBBON` width) concern the object ribbons only. The evidence screenshots and their `inkMm` (for example 3897.9) came from `scene3d-capture.js` with ground EXCLUDED and fillAngle 45, so those ink values are not comparable with the canonical totals. See `F1-width-bar-review.md` for the fillAngle finding.

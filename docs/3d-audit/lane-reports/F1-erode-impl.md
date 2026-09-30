@@ -231,3 +231,9 @@ new UI control to click).
 
 Committed in the worktree, explicit `git add` of the two touched files only. See commit hash in the final
 message to the orchestrator (not repeated here per the context-protection protocol). Never pushed.
+
+---
+
+## Addendum 2026-09-30 — ink-number rig disclosure (MERGE item 30)
+
+**Rig disclosure.** The RGR counts (`erodeEmpty`, `swallowedAndEmpty`, `degenerate`, `wide`, `ribbons`) and the deep-blank areas come from `engine.addLayer('scene3d')` tests (`tests/unit/scene3d-ribbon-erode-refusal.test.js:100-112`, `scene3d-ribbon-flat-field-placement.test.js:130`). Torus/hatch, default camera (yaw -30, pitch 20), default density 50. Ground: INCLUDED (the seeded ground child is not removed or hidden in these tests). These are ribbon-stat counts read from `SurfaceFill.lastRibbonStats`, not ink totals; whether the ground pass alters them was not isolated. The bespoke Playwright crop uses the same `addLayer` construction (ground INCLUDED, stated in this report). The one ink number (`inkMm=2006.6`, pathCount 226) is a `scene3d-capture.js` `--rig create` gallery value: camera `a`, density med = 50, ground EXCLUDED (`:291`).

@@ -245,3 +245,9 @@ count.
   record, not investigated further as it is outside this unit's scope and not touched by it.
 
 REPORT docs/3d-audit/lane-reports/T3b-impl.md — DONE — sphere/hatch d=1 pens/mark 3.93->1.00 (single pass), d=50/220 byte-identical, threshold d=35 measured.
+
+---
+
+## Addendum 2026-09-30 — ink-number rig disclosure (MERGE item 30)
+
+**Rig disclosure (closes the round-4 carryover).** The MEASURE FIRST tables and the new test run `Vectura.AlgorithmRegistry.scene3d.generate` directly (`tests/unit/scene3d-mkdashramp-single-pass.test.js:170-187`). Two rigs: the "addLayer" label in this report means `PRIMITIVE_PARAM_DEFAULTS` (what other reports call rig `test`; it is not the `engine.addLayer` tree). The "create" label means `PRIMITIVE_CREATE_DEFAULTS`. Camera: `DEFAULT_CAMERA` (angle `a`). Density: d=1 to 220 as listed per table (d=34/35 onset check, d=25 to 45 sweeps). Ground: EXCLUDED (`p.ground = {enabled:false}`, `:174`; stated in this report). The after-shots (`--rig create` and `--rig addLayer`) came from `scene3d-capture.js`, ground EXCLUDED (`:264-272`, `:291`). The "addLayer" shots there use the real `engine.addLayer` tree, so they differ from the "addLayer" label used in the tables.

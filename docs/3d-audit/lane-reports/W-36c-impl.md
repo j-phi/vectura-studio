@@ -283,3 +283,9 @@ carrying the full descriptive message (the checkpoint's content needed no change
   baseline.
 - No other follow-ups; every other guard is green unmodified and every stop condition not listed
   above as open is closed.
+
+---
+
+## Addendum 2026-09-30 — ink-number rig disclosure (MERGE item 30)
+
+**Rig disclosure and harness identity.** (1) Raw-rig table (ink 235.0 to 4328.5, coverage, A/B counts; d=1/50/220, cap sweep d=170/220/300): rig `test` (`PRIMITIVE_PARAM_DEFAULTS`, not `CREATE`), camera `DEFAULT_CAMERA`, ground EXCLUDED (and backdrop off), fillAngle 45, toneLaw ladder, bounds 320x220, pen 0.3. The committed oracle that reproduces these numbers is `tests/unit/scene3d-crosshatch-parity.test.js` (`sceneFor` `:66-95`, `inkOf` `:171`, hatch controls `:383-401`). (2) HARNESS: the numbers were first produced by the planner's scratch `zzz-*` vitest files in `/private/tmp/claude-501/scratch-W36c` (`W-36c-plan.md:536-545`). Those files were deleted and never committed. Search of `scripts/audit/`, `tests/` and `git log` (W-36c commits `ac412d61`, `8adfd5af`) found no surviving file. So the exact scratch file:line is UNDETERMINABLE. The idioms it was built from are in `scene3d-crosshatch-parity.test.js` (`rawRuns`), `scene3d-fill-span-verdict.test.js` (`inkCoverage`) and `scene3d-crosshatch-cell-shape.test.js` (`CEILING`). (3) Gallery table (454.6 to 7682.8 mm; low/med/max = 1/50/220) came from `scene3d-capture.js` `--rig create`, camera `a`, ground EXCLUDED (`:291`). (4) "Jay's bespoke cell" (987.3 to 1680.8 mm): an uncommitted Playwright script, sphere, crosshatch, d=50, rungMode fine, `DEFAULT_CAMERA`, ground+backdrop off (stated in this report); rig kind (create or addLayer) UNDETERMINABLE because the script is not in the repo.

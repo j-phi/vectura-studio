@@ -243,3 +243,9 @@ No probe files left in the worktree — three scratch scripts were written to
 the review, along with the `pre`/`post` `git archive` exports and the `node_modules` symlinks inside it. The
 worktree's own live T2-3 WIP (`surface-fill.js`, `tests/helpers/scene3d-mktick-wedge.js`) was observed but
 never touched.
+
+---
+
+## Addendum 2026-09-30 — ink-number rig disclosure (MERGE item 30)
+
+**Rig disclosure.** The reviewer re-measured with `scripts/audit/scene3d-ribbon-width.js` (no edits). Rig: `addLayer`, torus/hatch, camera `a`, density 50. Ground: INCLUDED (`tests/helpers/scene3d-ribbon-width.js:88-145` never removes the ground child). The capture-manifest comparison (for example `inkMm` 3897.9 against `totalInkMm` 6166.940) sets a ground-EXCLUDED number (`scene3d-capture.js:264-272`, fillAngle 45) against a ground-INCLUDED number. The review attributes the 35 to 40 percent gap to fillAngle only. Ground inclusion also differs between the two and was not separated out. The split between the two causes is UNDETERMINABLE from this report.

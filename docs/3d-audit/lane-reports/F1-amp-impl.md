@@ -271,3 +271,9 @@ and fixed with a measured, disclosed, per-law floor. **Status DONE/FU, never "F1
 not looked at these pictures, `onePenDown`'s visual effect at this crop is unconfirmed by eye, and
 F1-trochoid's own filed numbers (a separate, unscheduled unit) are now stale and need the
 secretary's attention.
+
+---
+
+## Addendum 2026-09-30 — ink-number rig disclosure (MERGE item 30)
+
+**Rig disclosure.** The whole-object ink table (6325.02 to 6166.94 mm and the other laws; `sceneEdge` 1427.669 mm) came from `tests/unit/scene3d-ribbon-f1-amp.test.js` `build()` (`:185-206`). Rig: `engine.addLayer('scene3d')`, torus/hatch, toneLaw swapped. Camera: default (yaw -30, pitch 20). Density: default 50. Ground: INCLUDED. `totalInkMm` sums all of `group.scenePaths`, and the ground child is not removed or hidden. The label "whole-object ink" therefore includes ground-plane ink. The `sceneFill-only` column also includes any ground fill. The 12-cell gallery shots (`create` and `addLayer` rigs, `scene3d-capture.js`) use camera `a`, med/max = 50/220, ground EXCLUDED (`:264-272`, `:291`).
