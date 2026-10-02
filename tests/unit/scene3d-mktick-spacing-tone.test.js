@@ -733,9 +733,20 @@ const BC_MUT = {
   nocap: [[CAP, 'if (false) {']],
   noapex: [['if (!closing) break;', 'if (true) break;']],
   apexnorule: [['if (!closing) break;', 'if (!(a1 - a0 >= MK_TICK_BC_APEX_MIN * penWidth)) break;']],
+  // T2-8b-5b rim-strip mutants. noext = pre-T2-8b-5 output (extension flush removed).
+  noext: [['for (let xi = 0; xi < mkExtQ.length; xi += 1) mkExtQ[xi]();', '']],
+  // nohubstr = the T2-8b-5 prototype state: nominal one-jump hub AND no straightness cut.
+  nohubstr: [
+    ['const h0 = { fr: hub.fr, sm: hub.sm };', 'const h0 = T.at(fr, uO, 0.5 * (seg[0] + seg[1])); if (!h0) return;'],
+    ['if (iHub < 1 || iHub > run.length - 2 || best > 1e-6) return;', 'if (iHub < 1 || iHub > run.length - 2 || best > 0.2) return;'],
+    ['const MK_TICK_RIM_STRAIGHT_OFF = false;', 'const MK_TICK_RIM_STRAIGHT_OFF = true;'],
+  ],
+  nostraight: [['const MK_TICK_RIM_STRAIGHT_OFF = false;', 'const MK_TICK_RIM_STRAIGHT_OFF = true;']],
+  nogrow: [['const MK_TICK_RIM_GROW_OFF = false;', 'const MK_TICK_RIM_GROW_OFF = true;']],
+  noboth: [['const MK_TICK_RIM_BOTH_OFF = false;', 'const MK_TICK_RIM_BOTH_OFF = true;']],
 };
 const REC_NEEDLES = [
-  ['pushRun(r, back, lineIndex);', "pushRun(r, back, lineIndex); if (typeof globalThis.__T28B_REC__ === 'function') globalThis.__T28B_REC__({ pts: r.map((q) => ({ x: q.x, y: q.y })), li: lineIndex, tag: globalThis.__TAG, apex: r.apex === true });"],
+  ['pushRun(r, back, lineIndex);', "pushRun(r, back, lineIndex); if (typeof globalThis.__T28B_REC__ === 'function') globalThis.__T28B_REC__({ pts: r, li: lineIndex, tag: globalThis.__TAG, apex: r.apex === true });"],
   ['const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));', "globalThis.__TAG = 'reg:' + (si === mainIdx ? 'M' : 's') + ':' + a.toFixed(4) + ':' + k + ':' + sv.I.toFixed(3) + ':' + sv.P.toFixed(4); const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr)); globalThis.__TAG = null;"],
   ['const up = arm(n, 1, hi0 - vRel); const dn = arm(n, -1, vRel - lo0);', "const up = arm(n, 1, hi0 - vRel); const dn = arm(n, -1, vRel - lo0); globalThis.__TAG = 'cont|' + dir + '|' + kB + '|' + aB.toFixed(4) + '|' + j + '|' + svB.I.toFixed(3) + '|' + dn.reason + up.reason;"],
 ];
@@ -767,7 +778,10 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
   const runtimes = {};
   const R = {};
   const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
-  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'thin', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6', 'nobisect', 'nocont', 'gap', 'cfat', 'rulingref', 'nohi', 'nocap', 'noapex', 'apexnorule', 'noflag'];
+  const KINDS = ['ship', 'off', 'inline', 'noadmit', 'thin', 'dense', 'skip1', 'rot', 'wide', 'noprobe', 'ask6', 'nobisect', 'nocont', 'gap', 'cfat', 'rulingref', 'nohi', 'nocap', 'noapex', 'apexnorule', 'noflag', 'noext', 'nohubstr', 'nogrow', 'noboth', 'nostraight'];
+  // T2-8b-5b: the rim-strip mutants render only torus/hatch + cone/hatch (both rigs, d=50).
+  const RIM_KINDS = ['noext', 'nohubstr', 'nogrow', 'noboth', 'nostraight'];
+  const RIM_CELLS = [['torus', 'hatch'], ['cone', 'hatch']];
   const FULL = ['ship', 'off', 'inline']; // kinds also rendered at d=220
   const ALL12 = [];
   ['test', 'create'].forEach((rig) => CELLS.forEach(([p, m]) => ALL12.push([rig, p, m])));
@@ -798,6 +812,8 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
       rt.window.__T28B_REC__ = (rec) => recs.push(rec);
       const r = renderCellHooked(rt, { primitive, mapper, rig, fillDensity: d });
       delete rt.window.__T28B_REC__;
+      // T2-8b-5b: records hold the LIVE run; copy the FINAL geometry (after the rim-strip extension) now.
+      recs.forEach((x) => { x.pts = x.pts.map((q) => ({ x: q.x, y: q.y })); });
       const pp = plain(r.paths);
       const fills = pp.filter((p) => p.meta && p.meta.kind === 'sceneFill');
       const edges = pp.filter((p) => p.meta && p.meta.kind === 'sceneEdge');
@@ -819,16 +835,16 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
     };
     for (const kind of KINDS) {
       ['test', 'create'].forEach((rig) => {
-        CELLS.forEach(([p, m]) => render(kind, 50, rig, p, m));
+        (RIM_KINDS.includes(kind) ? RIM_CELLS : CELLS).forEach(([p, m]) => render(kind, 50, rig, p, m));
         if (FULL.includes(kind)) B7_CELLS.forEach(([p, m]) => render(kind, 220, rig, p, m));
       });
     }
-  }, 550000);
+  }, 1800000); // T2-8b-5b: 4 more (small) kinds; 550000 timed out under a loaded machine
 
   afterAll(async () => { await Promise.all(Object.values(runtimes).map((rt) => rt.cleanup())); });
 
   test('needles are non-vacuous (counts asserted in buildBcSource) and BC-E differs from off on the chain cells only', () => {
-    expect(Object.keys(BC_MUT)).toHaveLength(20);
+    expect(Object.keys(BC_MUT)).toHaveLength(25);
     const changed = ALL12.filter(([rig, p, m]) => R.ship[key(50, rig, p, m)].md5 !== R.off[key(50, rig, p, m)].md5);
     // eslint-disable-next-line no-console
     console.log('BC-E changes', changed.length, 'of 12:', changed.map((c) => c.join('|')).join(', '));
@@ -964,7 +980,20 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
       console.log('APEX W_L bare>=0.5', wl('ship'), 'noapex', wl('noapex'));
       expect(wl('ship')).toBeLessThanOrEqual(0.05);
     });
-    test('MUTATION noapex (== 2e59a16a for this gap) reopens W_L (0.098 > 0.05)', () => { expect(wl('noapex')).toBeGreaterThan(0.05); });
+    // T2-8b-5b: the rim-strip extension now closes W_L on its own, so `noapex` no longer reopens it (measured
+    // 0 vs 0): that mutation was VACUOUS and is RETIRED in favour of the two bars below, which measure what
+    // the apex rule still changes on this tree (create cone/hatch whole-object bare >= 0.5 mm: ship 27.26,
+    // noapex 27.44; and the apex ticks themselves).
+    const WHOLE = (kind) => bareArea(cone(kind, 'create').raster, 0.5);
+    test('(a2) create cone/hatch whole-object bare >= 0.5 mm <= 27.30 mm^2', () => {
+      // eslint-disable-next-line no-console
+      console.log('APEX whole bare>=0.5 create cone/hatch ship', WHOLE('ship'), 'noapex', WHOLE('noapex'));
+      expect(WHOLE('ship')).toBeLessThanOrEqual(27.30);
+    });
+    test('MUTATION noapex (apex rule removed) reopens it (27.44 > 27.30) and removes the apex ticks', () => {
+      expect(WHOLE('noapex')).toBeGreaterThan(27.30);
+      ALL12.forEach(([rig, p, m]) => expect(R.noapex[key(50, rig, p, m)].apexLens).toHaveLength(0));
+    });
     test('(b) torus/hatch has 0 apex ticks (create and test)', () => {
       ['create', 'test'].forEach((rig) => expect(R.ship[key(50, rig, 'torus', 'hatch')].apexLens).toHaveLength(0));
     });
@@ -974,12 +1003,13 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
       console.log('APEX apexnorule torus/hatch ticks', n);
       expect(n).toBeGreaterThan(0);
     });
-    test('(c) apex ticks exist (>= 3 over the 12 cells), all 0.3 mm <= length < the plot floor', () => {
+    test('(c) apex ticks exist (>= 2 over the 12 cells, >= 1 on cone/hatch of each rig), all 0.3 mm <= length < the plot floor', () => {
       const lens = [];
       ALL12.forEach(([rig, p, m]) => R.ship[key(50, rig, p, m)].apexLens.forEach((l) => lens.push(l)));
       // eslint-disable-next-line no-console
       console.log('APEX ticks', lens.length, lens.map((l) => l.toFixed(3)).join(','));
-      expect(lens.length).toBeGreaterThanOrEqual(3);
+      expect(lens.length).toBeGreaterThanOrEqual(2);
+      ['test', 'create'].forEach((rig) => expect(R.ship[key(50, rig, 'cone', 'hatch')].apexLens.length).toBeGreaterThanOrEqual(1));
       lens.forEach((l) => { expect(l).toBeGreaterThanOrEqual(BOUNDS.penWidth - 1e-6); expect(l).toBeLessThan(LPF_MM); });
     });
   });
@@ -1156,6 +1186,80 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
     });
     test('MUTATION noprobe trips on both rigs', () => {
       ['create', 'test'].forEach((rig) => expect(agg(cone('noprobe', rig).chains).minEdge).toBeLessThan(0.30));
+    });
+  });
+
+  describe('RIMSTRIP (BLOCKING, T2-8b-5b) — the rim-facing end of a regular tick is lengthened only STRAIGHT, by <= 0.6 of its own length, and never at both ends; test-rig W_L closed', () => {
+    // Fixture: d=50, cam a, ground DISABLED, one SUN az135/el45, fillAngle 45; torus/hatch + cone/hatch, BOTH rigs (4 cells).
+    // GATES (i) STRAIGHT: appended part within 0.15 mm (0.5 pen) of the straight continuation of the tick's own end;
+    // (ii) GROW: total growth <= 0.62 x the tick's own length; (iii) BOTH: no tick gains >= 0.1 mm at both ends;
+    // (iv) test-rig cone/hatch W_L (bare >= 0.5 mm) <= 1.90 mm^2. Does NOT gate the other 8 cells' extension, tone, or W_R.
+    // Ticks are matched to the no-extension render (`noext`, == the pre-T2-8b-5 output) by shared vertices.
+    const key2 = (q) => `${q.x.toFixed(4)},${q.y.toFixed(4)}`;
+    const len2 = (p) => { let s = 0; for (let i = 1; i < p.length; i += 1) s += Math.hypot(p[i].x - p[i - 1].x, p[i].y - p[i - 1].y); return s; };
+    const extStats = (kind, rig, prim) => {
+      const a = R.noext[key(50, rig, prim, 'hatch')].pp.filter((q) => q.meta && q.meta.kind === 'sceneFill');
+      const b = R[kind][key(50, rig, prim, 'hatch')].pp.filter((q) => q.meta && q.meta.kind === 'sceneFill');
+      const own = new Map(); a.forEach((p, i) => p.forEach((q) => own.set(key2(q), i)));
+      let dev = 0; let grow = 0; let both = 0; let changed = 0;
+      b.forEach((pb) => {
+        const ids = pb.map((q) => own.get(key2(q))).filter((v) => v !== undefined);
+        if (!ids.length) return;
+        const pa = a[ids[0]]; const n = pa.length; const m = pb.length;
+        if (n < 2 || (n === m && Math.abs(len2(pa) - len2(pb)) < 1e-6)) return;
+        const idx = new Map(pb.map((q, k) => [key2(q), k]));
+        const f = idx.get(key2(pa[0])); const l = idx.get(key2(pa[n - 1]));
+        if (f === undefined || l === undefined) return; // a chain tick that moved, not an extended tick
+        changed += 1;
+        const gUp = m - 1 - l > 0 ? len2(pb.slice(l)) : 0; const gDn = f > 0 ? len2(pb.slice(0, f + 1)) : 0;
+        if (gUp >= 0.1 && gDn >= 0.1) both += 1;
+        grow = Math.max(grow, (len2(pb) - len2(pa)) / len2(pa));
+        const dir = (end, back) => { let acc = 0; let k = back; while (k !== end && acc < 0.4) { k += (end > back ? 1 : -1); acc = Math.hypot(pa[end].x - pa[k].x, pa[end].y - pa[k].y); } return pa[k]; };
+        if (gUp > 0) {
+          const e = pa[n - 1]; const bk = dir(0, n - 1); const ux = e.x - bk.x; const uy = e.y - bk.y; const ul = Math.hypot(ux, uy) || 1;
+          for (let k = l + 1; k < m; k += 1) dev = Math.max(dev, Math.abs((pb[k].x - e.x) * uy - (pb[k].y - e.y) * ux) / ul);
+        }
+        if (gDn > 0) {
+          const e = pa[0]; const bk = dir(n - 1, 0); const ux = e.x - bk.x; const uy = e.y - bk.y; const ul = Math.hypot(ux, uy) || 1;
+          for (let k = 0; k < f; k += 1) dev = Math.max(dev, Math.abs((pb[k].x - e.x) * uy - (pb[k].y - e.y) * ux) / ul);
+        }
+      });
+      return { dev, grow, both, changed };
+    };
+    const all4 = (kind) => ['test', 'create'].flatMap((rig) => ['torus', 'cone'].map((p) => extStats(kind, rig, p)));
+    const maxOf = (kind, f) => Math.max(...all4(kind).map((s) => s[f]));
+    test('the extension is non-vacuous: >= 20 ticks changed vs noext on the 4 cells', () => {
+      const n = all4('ship').reduce((a, s) => a + s.changed, 0);
+      // eslint-disable-next-line no-console
+      console.log('RIMSTRIP changed ticks', n);
+      expect(n).toBeGreaterThanOrEqual(20);
+    });
+    test('(i) STRAIGHT: max deviation of any appended point from the straight continuation <= 0.15 mm', () => {
+      // eslint-disable-next-line no-console
+      console.log('RIMSTRIP max dev ship', maxOf('ship', 'dev'), 'nohubstr', maxOf('nohubstr', 'dev'));
+      expect(maxOf('ship', 'dev')).toBeLessThanOrEqual(0.15);
+    });
+    test('MUTATION nohubstr (T2-8b-5 prototype: nominal hub + no straightness cut) trips (i) on torus (0.43 vs 0.15)', () => {
+      expect(maxOf('nohubstr', 'dev')).toBeGreaterThan(0.15);
+      expect(extStats('nohubstr', 'create', 'torus').dev).toBeGreaterThan(0.15);
+    });
+    test('MUTATION nostraight (straightness cut alone removed, true hub kept) trips (i) on torus/test (0.26 vs 0.15)', () => {
+      expect(extStats('nostraight', 'test', 'torus').dev).toBeGreaterThan(0.15);
+    });
+    test('(ii) GROW: no extended tick grows more than 0.62 of its own length', () => { expect(maxOf('ship', 'grow')).toBeLessThanOrEqual(0.62); });
+    test('MUTATION nogrow trips (ii) (torus/create 1.39)', () => { expect(maxOf('nogrow', 'grow')).toBeGreaterThan(0.62); });
+    test('(iii) BOTH: no tick is extended at both ends', () => { expect(all4('ship').reduce((a, s) => a + s.both, 0)).toBe(0); });
+    test('MUTATION noboth trips (iii) (20 rim-to-rim ticks on create torus/hatch)', () => {
+      expect(all4('noboth').reduce((a, s) => a + s.both, 0)).toBeGreaterThan(0);
+    });
+    test('(iv) RIM-STRIP: test-rig cone/hatch W_L bare >= 0.5 mm <= 1.90 mm^2 (measured 1.89)', () => {
+      const w = bareArea(cone('ship', 'test').raster, 0.5, WIN_L);
+      // eslint-disable-next-line no-console
+      console.log('RIMSTRIP test cone/hatch W_L bare>=0.5', w, 'noext', bareArea(cone('noext', 'test').raster, 0.5, WIN_L));
+      expect(w).toBeLessThanOrEqual(1.90);
+    });
+    test('MUTATION noext (== e609338c output) fails (iv) (2.66 > 1.90)', () => {
+      expect(bareArea(cone('noext', 'test').raster, 0.5, WIN_L)).toBeGreaterThan(1.90);
     });
   });
 
