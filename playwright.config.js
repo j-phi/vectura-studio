@@ -1,5 +1,29 @@
 const fs = require('fs');
 const { defineConfig, devices } = require('@playwright/test');
+const { CHROMIUM_PROJECTS, WEBKIT_PROJECTS, DEVICES } = require('./tests/e2e/touch/viewports');
+
+// Parallel worktrees must never cross-attach to another worktree's server
+// (reuseExistingServer greened against the wrong tree once). Set PW_PORT per lane.
+const PORT = Number(process.env.PW_PORT || 4173);
+
+const TOUCH_MATCH = /touch\/.*\.spec\.js$/;
+const touchUse = (d) => ({
+  viewport: { width: d.width, height: d.height },
+  deviceScaleFactor: d.dpr,
+  hasTouch: true,
+  isMobile: true,
+  userAgent: d.ua,
+});
+const chromiumTouchProjects = Object.entries(CHROMIUM_PROJECTS).map(([name, dev]) => ({
+  name,
+  use: { ...devices['Desktop Chrome'], ...touchUse(DEVICES[dev]) },
+  testMatch: TOUCH_MATCH,
+}));
+const webkitTouchProjects = Object.entries(WEBKIT_PROJECTS).map(([name, dev]) => ({
+  name,
+  use: { ...devices['Desktop Safari'], ...touchUse(DEVICES[dev]) },
+  testMatch: TOUCH_MATCH,
+}));
 
 const systemChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const useSystemChrome = !process.env.CI && fs.existsSync(systemChromePath);
@@ -18,14 +42,14 @@ module.exports = defineConfig({
   workers: 2,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: process.env.CI ? 'retain-on-failure' : 'off',
   },
   webServer: {
-    command: 'node scripts/dev-server.js 4173',
-    port: 4173,
+    command: `node scripts/dev-server.js ${PORT}`,
+    port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
@@ -77,5 +101,7 @@ module.exports = defineConfig({
       },
       testMatch: /iphone-mini\.spec\.js$/,
     },
+    ...chromiumTouchProjects,
+    ...webkitTouchProjects,
   ],
 });
