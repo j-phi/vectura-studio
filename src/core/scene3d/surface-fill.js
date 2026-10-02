@@ -2734,6 +2734,15 @@
     const MK_TICK_BC_PROBES = 16;
     const MK_TICK_BC_BISECT = 6;
     const MK_TICK_BC_HI_I = 2 / 3;
+    // T2-8b-5 — RIM-STRIP extension (Jay: ends "evenly offset from the perimeter", applied to the
+    // regular ticks). A deferred, NON-SITE pass lengthens the rim-facing end of a regular
+    // (non-highlight, I < MK_TICK_BC_HI_I) main tick to EXACTLY c_E from the outline, by the same
+    // bisected walk BC-E uses, when the outline is what stops it.
+    //   `MK_TICK_RIM_MAX_MM` — longest extension per end; also bounded so the tick stays <= 2 row pitches.
+    //   `MK_TICK_RIM_MIN_MM` — smallest worthwhile extension.
+    // The site record (`pieceLen`, tickSites) is captured BEFORE this pass, so the master grid is untouched.
+    const MK_TICK_RIM_MAX_MM = 2.0;
+    const MK_TICK_RIM_MIN_MM = 0.1;
     //   `MK_TICK_BC_APEX_MIN`  — T2-8b-3c: the APEX floor, in pens (1.0 = 0.3 mm). Where a
     //   `MK_TICK_BC_APEX_J`      chain is CLOSING into a wedge, its last ticks may be shorter
     //   `MK_TICK_BC_APEX_TAPER`  than the plot floor (0.69 mm) and even than the 0.6 mm crumb
@@ -2851,6 +2860,8 @@
     // every mapper has run: running them inline changed later rulings' clip
     // outcomes (site records moved on 10 of 24 measured runs).
     const mkEndQ = [];
+    // T2-8b-5 — the deferred rim-strip extension queue (see `MK_TICK_RIM_MAX_MM`), flushed before `mkEndQ`.
+    const mkExtQ = [];
     // T2-8 — set (and cleared) only by `emitTickWedgeRow`, around its own
     // `emitLine` call, while a §C5 wedge row's own ruling is being walked.
     // Read below, where `layMark`'s tick block decides the MAIN tick's clip
@@ -7342,7 +7353,13 @@
             mkClipArm.rm = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             mkClipArm.rp = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));
-            if (si === mainIdx) { mkMainRun = pieceLen ? mkLastRun : null; }
+            if (si === mainIdx) {
+              mkMainRun = pieceLen ? mkLastRun : null;
+              if (pieceLen && law.shape === 'tick' && sv.I < MK_TICK_BC_HI_I) {
+                const runX = mkMainRun; const uX = a - arcMM[k]; const sgX = [seg[0], seg[1]]; const frX = fr;
+                mkExtQ.push(() => extendTick(frX, uX, sgX, runX));
+              }
+            }
             mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
             if (si === mainIdx) mkStat.tickSites.push(sv.I, sv.R, sv.P, pieceLen ? 1 : 0);
             if (pieceLen) {
@@ -7378,24 +7395,11 @@
         }
       };
 
-      // ── T2-8b-3 — BC-E: band continuation with an endpoint envelope (tick-only, deferred) ──
-      // See `MK_TICK_BC_MAXJ`. The lattice is CONTINUED past the span end `kB`/`aB`
-      // with the boundary site's OWN P, phase (`aB +- j*P`), segs and tone. Each tick
-      // is walked in its own LOCAL frame (its hub marches one P per step from the
-      // previous hub); each END walks toward the band's own extent and stops exactly,
-      // by bisection, at clearance c from the first boundary it meets: `cE` from the
-      // outline, `cB` from another row's ink. A tick is never longer than its
-      // predecessor (the gradual taper), must be contiguous with the previous DRAWN
-      // tick (no orphan), and a chain ends where the two envelopes meet (the apex)
-      // or at any refusal (never a hole mid-chain). Never touches `mkStat.tickSites`.
-      const bcSide = (kB, dir, aB, Pc, svB, Rb) => {
-        if (!svB || !svB.segs || !svB.segs.length || !(Pc > 0) || !Number.isFinite(aB)) return;
-        if (!(svB.I < MK_TICK_BC_HI_I)) return;
-        const fr0 = frameAt(kB); if (!fr0) return;
-        const LPF = MK_TICK_PLOT_FLOOR * MIN_MARK_MM;
+      // T2-8b-5 — the BC-E clearance toolkit (local-frame step `at`, other-row ink query,
+      // outline probe, and the bisected end walk `arm`), shared by `bcSide` and the rim-strip
+      // extension `extendTick`. `fr0` supplies the frame parameters (ld, st).
+      const bcTools = (fr0) => {
         const cE = MK_TICK_BC_EDGE_PEN * w; const cB = MK_TICK_BC_BAND_PEN * w; const admitR = MK_TICK_BC_ADMIT_PEN * w;
-        let lo0 = Infinity; let hi0 = -Infinity;
-        svB.segs.forEach((q) => { lo0 = Math.min(lo0, q[0]); hi0 = Math.max(hi0, q[1]); });
         const at = (fr, du, dv) => {
           const pp = fr.toParam(du, dv);
           if (!(pp.a >= 0 && pp.a <= 1)) return null;
@@ -7438,9 +7442,10 @@
           return true;
         };
         const arm = (h0, sgn, maxLen) => {
-          let h = h0; let len = 0; let d0 = null;
+          let h = h0; let len = 0; let d0 = null; const pts = [];
           while (len < maxLen - 1e-9) {
-            const st = Math.min(MK_ARC_MM, maxLen - len);
+            // per-arm step ceiling (`MK_MAX_WALK_STEPS`): a fine pen must not grow the point count
+            const st = Math.min(Math.max(MK_ARC_MM, maxLen / MK_MAX_WALK_STEPS), maxLen - len);
             const nx = at(h.fr, 0, sgn * st);
             let ok = !!nx && Math.hypot(nx.sm.x - h.sm.x, nx.sm.y - h.sm.y) <= MK_TICK_STEP_CAP_MM;
             if (ok) {
@@ -7450,17 +7455,103 @@
                 else if ((sx * d0.x + sy * d0.y) / sl < Math.cos((MK_TICK_BEND_CUT * Math.PI) / 180)) ok = false;
               }
             }
-            if (ok && clear(nx)) { h = nx; len += st; continue; }
+            if (ok && clear(nx)) { h = nx; len += st; pts.push({ x: nx.sm.x, y: nx.sm.y, z: nx.sm.z }); continue; }
             const reason = ok ? why : 'S';
             let a = 0; let b = st;
             for (let it = 0; it < MK_TICK_BC_BISECT; it += 1) {
               const m = 0.5 * (a + b); const q = at(h.fr, 0, sgn * m); if (q && clear(q)) a = m; else b = m;
             }
-            if (a > 1e-4 && at(h.fr, 0, sgn * a)) len += a;
-            return { len, stopped: true, reason };
+            { const qa = a > 1e-4 ? at(h.fr, 0, sgn * a) : null; if (qa) { len += a; pts.push({ x: qa.sm.x, y: qa.sm.y, z: qa.sm.z }); } }
+            return { len, stopped: true, reason, pts };
           }
-          return { len, stopped: false, reason: 'C' };
+          return { len, stopped: false, reason: 'C', pts };
         };
+        return { at, inkWithin, clear, arm };
+      };
+
+      // ── T2-8b-5 — rim-strip extension of a regular tick's outline-facing ends ──
+      const extendTick = (fr, uO, seg, run) => {
+        if (!run || run.length < 3) return;
+        const T = bcTools(fr);
+        const RPn = masterPitch / markRowCoverage();
+        // the tick's own hub: the run point nearest the nominal hub (the walk's hub is one of its points)
+        const h0 = T.at(fr, uO, 0.5 * (seg[0] + seg[1]));
+        if (!h0) return;
+        let iHub = -1; let best = Infinity;
+        for (let i = 0; i < run.length; i += 1) {
+          const d = Math.hypot(run[i].x - h0.sm.x, run[i].y - h0.sm.y);
+          if (d < best) { best = d; iHub = i; }
+        }
+        if (iHub < 1 || iHub > run.length - 2 || best > 0.2) return;
+        const armLen = (i0, i1) => { let L = 0; for (let i = i0 + 1; i <= i1; i += 1) L += Math.hypot(run[i].x - run[i - 1].x, run[i].y - run[i - 1].y); return L; };
+        const lenUp = armLen(iHub, run.length - 1); const lenDn = armLen(0, iHub);
+        const room = Math.min(MK_TICK_RIM_MAX_MM, 2.05 * RPn - (lenUp + lenDn));
+        if (room < MK_TICK_RIM_MIN_MM) return;
+        // walk each half from the hub to the bisected c_E envelope; keep it only when the OUTLINE stops it
+        // beyond the present end (never shortens, never extends past an ink-stopped end).
+        // cheap prefilter: an end whose line is still on the front surface a full reach (extension + c_E)
+        // beyond it is nowhere near an outline; skip it before any 16-probe walk (this pass must stay
+        // affordable at d=220, where it sees thousands of ticks).
+        const reach = MK_TICK_RIM_MAX_MM + MK_TICK_BC_EDGE_PEN * w + 0.2;
+        const ringClear = (vEnd) => {
+          const he = T.at(fr, uO, vEnd); if (!he) return false;
+          for (let q = 0; q < 12; q += 1) {
+            const th = (2 * Math.PI * q) / 12;
+            const pp = he.fr.toParam(Math.cos(th) * reach, Math.sin(th) * reach);
+            if (!(pp.a >= 0 && pp.a <= 1)) return false;
+            let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+            const z = sampleAt(pp.a, bb); if (!z || z.front !== wantFront) return false;
+          }
+          return true;
+        };
+        const nearUp = !ringClear(seg[1]);
+        const nearDn = !ringClear(seg[0]);
+        if (!nearUp && !nearDn) return;
+        const none = { len: 0, stopped: false, reason: 'C', pts: [] };
+        const up = nearUp ? T.arm(h0, 1, lenUp + room) : none;
+        const dn = nearDn ? T.arm(h0, -1, lenDn + room) : none;
+        const gainUp = (up.stopped && up.reason === 'E') ? up.len - lenUp : 0;
+        const gainDn = (dn.stopped && dn.reason === 'E') ? dn.len - lenDn : 0;
+        const keepUp = gainUp >= MK_TICK_RIM_MIN_MM && up.pts.length;
+        const keepDn = gainDn >= MK_TICK_RIM_MIN_MM && dn.pts.length;
+        if (!keepUp && !keepDn) return;
+        // keep the tick's own points and APPEND only the part of the envelope walk beyond the present end
+        // (rebuilding the whole half from the hub put visible jogs mid-tick)
+        const beyond = (pts, have) => {
+          const out = []; let cum = 0; let prev = run[iHub];
+          for (let i = 0; i < pts.length; i += 1) {
+            cum += Math.hypot(pts[i].x - prev.x, pts[i].y - prev.y); prev = pts[i];
+            if (cum > have + 0.02) out.push(pts[i]);
+          }
+          return out;
+        };
+        const addUp = keepUp ? beyond(up.pts, lenUp) : [];
+        const addDn = keepDn ? beyond(dn.pts, lenDn) : [];
+        if (!addUp.length && !addDn.length) return;
+        addUp.forEach((pt) => run.push(pt));
+        addDn.forEach((pt) => run.unshift(pt));
+        mkInkAdd(addUp); mkInkAdd(addDn);
+      };
+
+      // ── T2-8b-3 — BC-E: band continuation with an endpoint envelope (tick-only, deferred) ──
+      // See `MK_TICK_BC_MAXJ`. The lattice is CONTINUED past the span end `kB`/`aB`
+      // with the boundary site's OWN P, phase (`aB +- j*P`), segs and tone. Each tick
+      // is walked in its own LOCAL frame (its hub marches one P per step from the
+      // previous hub); each END walks toward the band's own extent and stops exactly,
+      // by bisection, at clearance c from the first boundary it meets: `cE` from the
+      // outline, `cB` from another row's ink. A tick is never longer than its
+      // predecessor (the gradual taper), must be contiguous with the previous DRAWN
+      // tick (no orphan), and a chain ends where the two envelopes meet (the apex)
+      // or at any refusal (never a hole mid-chain). Never touches `mkStat.tickSites`.
+      const bcSide = (kB, dir, aB, Pc, svB, Rb) => {
+        if (!svB || !svB.segs || !svB.segs.length || !(Pc > 0) || !Number.isFinite(aB)) return;
+        if (!(svB.I < MK_TICK_BC_HI_I)) return;
+        const fr0 = frameAt(kB); if (!fr0) return;
+        const LPF = MK_TICK_PLOT_FLOOR * MIN_MARK_MM;
+        const admitR = MK_TICK_BC_ADMIT_PEN * w;
+        let lo0 = Infinity; let hi0 = -Infinity;
+        svB.segs.forEach((q) => { lo0 = Math.min(lo0, q[0]); hi0 = Math.max(hi0, q[1]); });
+        const { at, inkWithin, clear, arm } = bcTools(fr0);
         let h = at(fr0, aB - arcMM[kB], 0); if (!h) return;
         let vRel = 0; let pLo = lo0; let pHi = hi0;
         let pMid = { x: h.sm.x, y: h.sm.y }; let pDir = { x: fr0.v.x, y: fr0.v.y }; let Lprev = Infinity;
@@ -13057,6 +13148,7 @@
     // they must be built BEFORE the report, or the report describes a build that
     // has not happened yet.
     // T2-8b-3/3c (BC-E) — the deferred span-end continuations (see `mkEndQ`).
+    for (let xi = 0; xi < mkExtQ.length; xi += 1) mkExtQ[xi]();
     for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();
     flushDeferredRibbons();
     publishRibbonStats();
