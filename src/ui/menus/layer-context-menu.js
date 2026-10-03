@@ -537,7 +537,9 @@
   // the menu scrolls inside instead of leaving the screen.
   const _placeForTouch = (menu, x, y) => {
     const el = menu.el;
-    const vv = window.visualViewport;
+    // Visual viewport via the single reader (TUX-032 KeyboardInset).
+    const KI = window.Vectura && window.Vectura.KeyboardInset;
+    const vv = KI && KI.viewportSize ? KI.viewportSize() : null;
     const sa = _safeInsets();
     const gap = edgeGap();
     const clear = TH().fingerClearPx || 0;
