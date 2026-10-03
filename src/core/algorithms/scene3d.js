@@ -29,6 +29,15 @@
   // to the edge's own depth there). The depth-buffer fallback floors this to
   // 0.5 internally (quantized cells need the headroom).
   const HLR_BIAS = 0.05;
+  // F5 law-draft tier: pen scale for the mono (single-pen lattice) laws, whose
+  // every pitch, grid cell and seed spacing derives from the pen. 2.5 cuts
+  // their marks ~4x during a drag while keeping the same structure (measured
+  // in Chrome: turingStripe 458 -> 135 ms, mezzoRegion 386 -> 211 ms).
+  const MONO_DRAFT_PEN_SCALE = 2.5;
+  const isMonoToneLaw = (law) => {
+    const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
+    return Boolean(M && typeof M.isMono === 'function' && M.isMono(law));
+  };
   // Emission floor (document mm): visibility crumbs shorter than this draw as
   // dots at best on a plotter and are usually corner-transition artifacts.
   const MIN_RUN_MM = 0.6;
@@ -1616,6 +1625,14 @@
       // truth for "this is a live-drag preview frame" — reused here rather
       // than recomputed so the two draft-gated behaviors can't drift apart.)
       const draft = draftHLR;
+      // F5 — the LAW-PRESERVING draft tier (engine `_sceneDraftTier` 'law').
+      // Unlike `draft` it keeps the full compose (tone, the law's ruling
+      // placement, chart wrap, HLR, shadows) so a drag shows the chosen Fill
+      // Style. Only the two costs that do not change the picture at drag
+      // speed are cut: ribbon laws emit their rulings as weighted centrelines
+      // instead of pen-filled ribbons (SurfaceFill `ribbonDraft`), and the
+      // mono (single-pen lattice) laws run at a coarser pitch.
+      const lawDraft = !draft && Boolean(bounds && bounds.lawDraft);
       const toneOn = Boolean(!draft && p.tone && p.tone.enabled && Regions && lightDir);
       // Multi-light shading: intensity at a world normal + world POINT is
       // ambient + every directional Lambert term + every positional (point/spot)
@@ -4672,7 +4689,13 @@
                 // The line budget is floored off the pen so the ladder has a grid
                 // to stand on (§5.4 #1); without a pen width it stays exactly
                 // `lineCountFor(density)`.
-                penWidth,
+                // F5 law draft: a mono law's whole lattice (pitch, spacing grid,
+                // reaction-diffusion cells, seeds) is pen-derived, so a scaled
+                // pen coarsens it uniformly and keeps its character.
+                penWidth: lawDraft && isMonoToneLaw(Params.resolveToneLaw(sp))
+                  ? penWidth * MONO_DRAFT_PEN_SCALE : penWidth,
+                // F5 law draft: ribbon laws emit weighted centrelines.
+                ribbonDraft: lawDraft,
                 // Density: `hatchSpacing` UNCHANGED at d>=50 (the O27 parity
                 // direction: same dial, same monotone sense as the faceted
                 // path). Below 50, `curvedSparseTonePitch` widens the same

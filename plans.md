@@ -579,6 +579,13 @@ questions. Do not start these without a decision:
   greyed); Layers-panel Assign pen on object3d rows routes ink. Engine-side follow-ups for U4/U5:
   wire Jitter on curved stipple (then drop its gate), Seed / Stroke Fill plumbing, mark shapes
   and curvature-field hatch need roster entries (not exposed here), xrayHiddenEdges stays unread.
+- **2026-10-02 — Fill Style review U1: pipeline perf (branch `3d-scene/fr-u1`, NOT merged/pushed).**
+  B1 draft flag forwarded to scene groups; F5 law-preserving draft tier (ribbon laws as weighted
+  centrelines via SurfaceFill `ribbonDraft`, mono laws at pen × 2.5) with adaptive tier choice
+  (full ≤ 40 ms settled, flat if a law draft > 400 ms); B2 consumed object3d skips its standalone
+  render and child previews route to the owning group; B3 deferred + cancellable release settle;
+  NEW-3 full-compose memo keyed on the complete input signature. Open: mono laws still pay a
+  ~130–250 ms fixed cost per draft frame (field set-up inside surface-fill-mono.js, U2 scope).
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
   (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
   Merged `3d-scene/handoff-c2` → `3d-scene/fill-collapse-2` → `3d-scene/fill-audit-2` →
