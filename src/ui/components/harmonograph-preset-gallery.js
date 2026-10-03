@@ -31,6 +31,7 @@
   // Universal group vocabulary order. Empty groups are omitted at render time.
   const GROUP_ORDER = ['Classic', 'Geometric', 'Organic', 'Complex', 'Evolving', 'User'];
   const THUMB_SIZE = 28;
+  const ARM_MS = 3000; // touch two-tap Delete: how long the armed state lasts
 
   // Keys that belong to the layer's canvas placement, not the algorithm look —
   // stripped from a preset's params on both import and save so a preset never
@@ -673,11 +674,41 @@
             btn.title = isBuiltIn ? 'Delete preset (removes the .vectura source file)' : 'Delete preset';
             btn.innerHTML = `<svg viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
           }
+          // TUX-036: with no hover (touch) a plain user Delete is two-tap. The first tap arms the
+          // button (is-armed + "Confirm delete" label); a second tap within ARM_MS deletes.
+          // Tapping elsewhere or waiting disarms. Mouse (hover: hover) stays one click.
+          const touchTwoStep = () => {
+            try { return affordance === 'delete' && !isBuiltIn && window.matchMedia('(hover: none)').matches; } catch (_) { return false; }
+          };
+          const idleLabel = btn.getAttribute('aria-label');
+          let armTimer = null;
+          let disarmListener = null;
+          const disarm = () => {
+            if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+            if (disarmListener) { document.removeEventListener('pointerdown', disarmListener, true); disarmListener = null; }
+            if (!btn.classList.contains('is-armed')) return;
+            btn.classList.remove('is-armed');
+            btn.setAttribute('aria-label', idleLabel);
+            const t = btn.querySelector('.hg-preset-delete-confirm');
+            if (t) t.remove();
+          };
+          const arm = () => {
+            btn.classList.add('is-armed');
+            btn.setAttribute('aria-label', `Confirm delete “${label}”`);
+            const t = document.createElement('span');
+            t.className = 'hg-preset-delete-confirm';
+            t.textContent = 'Delete?';
+            btn.appendChild(t);
+            armTimer = setTimeout(disarm, ARM_MS);
+            disarmListener = (ev) => { if (!btn.contains(ev.target)) disarm(); };
+            document.addEventListener('pointerdown', disarmListener, true);
+          };
           btn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (affordance === 'revert') doRevert();
             else if (isBuiltIn) confirmThenDelete();
-            else doDelete();
+            else if (touchTwoStep() && !btn.classList.contains('is-armed')) arm();
+            else { disarm(); doDelete(); }
           });
           opt.appendChild(btn);
         }
