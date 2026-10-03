@@ -39,7 +39,6 @@
   mask: var(--chevron-svg) center / contain no-repeat;
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.vectura-skin-app-wrapper { display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; }
 
 /* ── HEADER ──────────────────────────────────────────────────── */
 .app-header {
@@ -2774,7 +2773,7 @@
   border-radius: var(--radius-lg, 8px);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
   width: min(420px, calc(100vw - 32px));
-  max-height: calc(100vh - 64px);
+  max-height: calc(100vh - 64px); max-height: calc(var(--app-vh) - 64px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -6024,7 +6023,7 @@
   width: max(80vw, 1080px);
   height: max(80vh, 720px);
   max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px); max-height: calc(var(--app-vh) - 32px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -6893,7 +6892,7 @@
 @media (max-width: 1100px) {
   .modal-card.modal-card--export {
     width: calc(100vw - 24px);
-    height: calc(100vh - 24px);
+    height: calc(100vh - 24px); height: calc(var(--app-vh) - 24px);
   }
 
   .export-modal-body {
@@ -6943,7 +6942,7 @@
   position: fixed;
   z-index: 95;
   width: min(720px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px); max-height: calc(var(--app-vh) - 32px);
   overflow: auto;
   border: 1px solid var(--ui-border-hi);
   border-radius: 14px;
@@ -7599,7 +7598,7 @@
   display: none; position: fixed; width: 180px;
   background: var(--ui-panel-alt); border: 1px solid var(--ui-border);
   border-radius: 6px; z-index: 9998;
-  max-height: calc(100vh - 16px); overflow-y: auto; overflow-x: hidden;
+  max-height: calc(100vh - 16px); max-height: calc(var(--app-vh) - 16px); overflow-y: auto; overflow-x: hidden;
   overscroll-behavior: contain;
   box-shadow: 0 4px 20px rgba(0,0,0,.7);
 }
@@ -7625,7 +7624,7 @@
   position: fixed; z-index: 9999; width: 175px;
   background: var(--ui-panel-alt); border: 1px solid var(--ui-border);
   border-radius: 6px;
-  max-height: calc(100vh - 16px); overflow-y: auto; overflow-x: hidden;
+  max-height: calc(100vh - 16px); max-height: calc(var(--app-vh) - 16px); overflow-y: auto; overflow-x: hidden;
   overscroll-behavior: contain;
   box-shadow: 0 4px 20px rgba(0,0,0,.7);
 }
@@ -11989,7 +11988,7 @@ body.mobile-layout .hud-bar {
    `max-height` would otherwise win the cascade and silently drop the clamp. */
 .ctxbar-align-flyout,
 .ctxbar-menu {
-  max-height: var(--ctxbar-menu-space, 100vh);
+  max-height: var(--ctxbar-menu-space, var(--app-vh));
   overflow-y: auto;
 }
 .ctxbar-align-group-label {
@@ -12006,7 +12005,7 @@ body.mobile-layout .hud-bar {
    box; items stretch full-width and left-align like a native menu. */
 .ctxbar-algo-flyout {
   gap: 1px;
-  max-height: min(320px, var(--ctxbar-menu-space, 100vh));
+  max-height: min(320px, var(--ctxbar-menu-space, var(--app-vh)));
   overflow-y: auto;
   min-width: 148px;
 }
@@ -12031,7 +12030,7 @@ body.mobile-layout .hud-bar {
 .ctxbar-scene-flyout {
   gap: 6px;
   min-width: 232px;
-  max-height: min(60vh, var(--ctxbar-menu-space, 100vh));
+  max-height: min(60vh, var(--ctxbar-menu-space, var(--app-vh)));
   overflow-y: auto;
 }
 .ctxbar-fly-row {
@@ -13902,3 +13901,37 @@ body.tablet-layout #app-header {
   .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
 }
 /* === END TUX-034 === */
+
+/* === TUX-002: fixed, non-scrolling shell ===
+ * The app is a fixed-size shell. The page itself must never scroll, rubber-band or pull to refresh.
+ * body IS the app wrapper (the Tailwind h-screen class was removed from index.html). Height comes
+ * from --app-vh (dynamic viewport). Only inner scroll regions scroll. */
+html, body { overflow: hidden; overscroll-behavior: none; }
+html { height: 100%; }
+body { position: fixed; top: 0; left: 0; right: 0; height: var(--app-vh); width: 100%; }
+
+/* Scroll-region rule (single list). Every element that scrolls on its own must contain its
+ * overscroll so a swipe at the end of the list never chains to the page. New scrollers join here.
+ * No universal * rule: it would also kill nested scroll-chaining on desktop. The body prefix
+ * out-ranks the runtime Tailwind overflow utilities. */
+body .pane-body, body .overflow-y-auto, body .overflow-auto,
+body .tool-bar, body .toolbar-docked-left, body .toolbar-docked-right, body .tool-drawer-body,
+body .vectura-modal-body, body .modal-card, body .modal-illustrations.scrollable,
+body .export-modal-nav, body .export-settings-scroll, body .petal-designer-window,
+body .lvl-layer-list, body #pen-list, body .pen-pick-list, body .vtp-fp-list, body .palette-options,
+body .gm-module-menu, body .settings-panel-body, body .right-panel-section-scroll,
+body .palette-picker-menu, body .hg-preset-popover, body .mp-root .mp-info-popover,
+body .ctxbar-menu, body .ctxbar-align-flyout, body .ctxbar-algo-flyout, body .ctxbar-scene-flyout,
+body .vtp-size-pop, body .lvl-algo-submenu, body .algo-draw-picker {
+  overscroll-behavior: contain;
+}
+/* === END TUX-002 === */
+
+/* === TUX-003: no page zoom on chrome ===
+ * Pinch on panels, toolbars and modals must not zoom the page. touch-action only affects touch
+ * input, so mouse and trackpad are unchanged. Surfaces that own a pinch (canvas, designers) opt in
+ * with [data-touch-zoom]; ui-touch.js installGestureZoomGuard() reads the same selector for the
+ * WebKit gesture* events. */
+html, body { touch-action: pan-x pan-y; }
+[data-touch-zoom] { touch-action: none; }
+/* === END TUX-003 === */

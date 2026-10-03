@@ -589,3 +589,245 @@ test.describe('TUX-001 phone header stays under an open modal', () => {
     expect(await layerCount(page), 'tap at the Undo position leaves layers unchanged').toBe(before);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// TUX-002 / TUX-003 / TUX-004: fixed non-scrolling shell, no page zoom on chrome, dvh heights.
+// Computed-style assertions run in BOTH engines (cross-engine RED). Swipe/pinch outcomes only
+// count in Chromium (engineSupports), because synthetic WebKit gestures are vacuous.
+// ---------------------------------------------------------------------------------------------
+const TUX2_PROJECTS = [
+  'touch-ipad-portrait', 'webkit-ipad-portrait', 'touch-ipad-landscape', 'webkit-ipad-landscape',
+  'touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-iphone-landscape', 'webkit-iphone-landscape',
+];
+const TUX2_PROJECTS_ALL = [...TUX2_PROJECTS, 'touch-iphone-portrait-chrome'];
+const TUX3_PROJECTS = ['touch-ipad-landscape', 'webkit-ipad-landscape', 'touch-iphone-portrait', 'webkit-iphone-portrait'];
+const TUX4_PROJECTS = [
+  ...TUX2_PROJECTS, 'touch-iphone-portrait-chrome',
+];
+const TUX234_EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after';
+
+const openLeftPane = (page) => page.evaluate(() => {
+  const pane = document.getElementById('left-pane');
+  const open = pane && !pane.classList.contains('pane-collapsed') && (!document.body.classList.contains('auto-collapsed') || pane.classList.contains('pane-force-open'));
+  if (open) return;
+  const b = document.getElementById('btn-mobile-pane-left');
+  const vis = (el) => el && el.getBoundingClientRect().width > 0;
+  (vis(b) ? b : document.getElementById('btn-pane-toggle-left')).click();
+});
+
+const SCROLLERS = ['#left-panel-content', '#export-settings-scroll', '.modal-card--help', '#petal-designer-window'];
+const overscrollOf = (page, sel) => page.evaluate((s) => {
+  const el = document.querySelector(s);
+  if (!el) return 'missing';
+  const cs = getComputedStyle(el);
+  return `${cs.overscrollBehaviorX}|${cs.overscrollBehaviorY}`;
+}, sel);
+
+const sweepScrollers = (page) => page.evaluate(() => {
+  const bad = [];
+  document.querySelectorAll('*').forEach((el) => {
+    const cs = getComputedStyle(el);
+    if (cs.overflowY !== 'auto' && cs.overflowY !== 'scroll') return;
+    if (cs.display === 'none' || cs.visibility === 'hidden') return;
+    if (!(el.scrollHeight > el.clientHeight + 1)) return;
+    if (cs.overscrollBehaviorY === 'contain' || cs.overscrollBehaviorY === 'none') return;
+    bad.push(`${el.tagName.toLowerCase()}${el.id ? `#${el.id}` : ''}${typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/).join('.')}` : ''}[${cs.overscrollBehaviorY}]`);
+  });
+  return bad;
+});
+
+const startPointsClear = (page, pts) => page.evaluate((points) => {
+  const ae = document.activeElement;
+  const editable = !!ae && (/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) || ae.isContentEditable);
+  return { editable, hits: points.map(([x, y]) => {
+    const t = document.elementFromPoint(x, y);
+    return { x, y, in: !!t && !t.closest('#main-canvas'), tag: t && (t.id || t.className) };
+  }) };
+}, pts);
+
+const metricsOf = (page) => page.evaluate(() => ({
+  sx: scrollX, sy: scrollY, ot: visualViewport.offsetTop, ol: visualViewport.offsetLeft,
+  scale: visualViewport.scale, iw: innerWidth, ih: innerHeight,
+}));
+
+const gotoFresh = async (page) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+};
+
+test.describe('TUX-002 shell does not scroll under swipes', () => {
+  test('computed shell styles', async ({ page }, testInfo) => {
+      const name = testInfo.project.name;
+      test.skip(!TUX2_PROJECTS_ALL.includes(name), 'project not in scope');
+      await gotoFresh(page);
+      const s = await page.evaluate(() => {
+        const h = getComputedStyle(document.documentElement);
+        const b = getComputedStyle(document.body);
+        return {
+          position: b.position, hOx: h.overflowX, hOy: h.overflowY, bOx: b.overflowX, bOy: b.overflowY,
+          hObx: h.overscrollBehaviorX, hOby: h.overscrollBehaviorY, bObx: b.overscrollBehaviorX, bOby: b.overscrollBehaviorY,
+          hScreen: document.body.classList.contains('h-screen'),
+        };
+      });
+      expect(s.position, 'body position').toBe('fixed');
+      expect([s.hOx, s.hOy, s.bOx, s.bOy], 'html/body overflow').toEqual(['hidden', 'hidden', 'hidden', 'hidden']);
+      expect([s.hObx, s.hOby, s.bObx, s.bOby], 'html/body overscroll-behavior').toEqual(['none', 'none', 'none', 'none']);
+      expect(s.hScreen, 'body.h-screen').toBe(false);
+    });
+
+  test('swipes leave the shell at offset 0', async ({ page }, testInfo) => {
+      const name = testInfo.project.name;
+      test.skip(!TUX2_PROJECTS_ALL.includes(name), 'project not in scope');
+      const spec = PROJECTS[name];
+      const gestures = [
+        { id: '#tool-bar', dir: 'up' },
+        { id: '#app-header', dir: 'side' },
+        { id: '#touch-modifier-bar', dir: 'up' },
+        { id: '#layer-list .layer-item, #layer-list > *', dir: 'hold', pane: true },
+      ];
+      for (const g of gestures) {
+        await gotoFresh(page);
+        if (g.pane) await openLeftPane(page);
+        await page.waitForTimeout(300);
+        const loc = page.locator(g.id).first();
+        if (!(await loc.count()) || !(await loc.isVisible())) continue;
+        const box = await loc.boundingBox();
+        if (!box || box.width < 4 || box.height < 4) continue;
+        const cx = box.x + box.width / 2;
+        const from = { x: cx, y: Math.min(box.y + box.height - 4, box.y + box.height * 0.8) };
+        const to = g.dir === 'side' ? { x: Math.max(2, cx - 150), y: from.y } : { x: cx, y: Math.max(1, from.y - 220) };
+        const probe = await startPointsClear(page, [[from.x, from.y]]);
+        expect(probe.editable, `${g.id} focused editable`).toBe(false);
+        expect(probe.hits[0].in, `${g.id} finger start must not be on the canvas (hit ${probe.hits[0].tag})`).toBe(true);
+        await touch.drag(page, from, to, { holdMs: g.dir === 'hold' ? 500 : 0, steps: 12 });
+        await page.waitForTimeout(200);
+        if (!touch.engineSupports(page, 'nativeDefaultActions')) continue;
+        const m = await metricsOf(page);
+        expect(m, `${g.id} metrics after swipe`).toMatchObject({ sx: 0, sy: 0, ot: 0, ol: 0, scale: 1, iw: spec.width, ih: spec.height });
+      }
+    });
+});
+
+test.describe('TUX-002 every scroll container contains overscroll', () => {
+  test('overscroll contain', async ({ page }, testInfo) => {
+      const name = testInfo.project.name;
+      test.skip(!TUX2_PROJECTS.includes(name), 'project not in scope');
+      await gotoFresh(page);
+      const offenders = [];
+      offenders.push(...(await sweepScrollers(page)).map((o) => `default: ${o}`));
+      await openLeftPane(page);
+      await page.waitForTimeout(300);
+      expect(['contain|contain', 'none|none'], `#left-panel-content ${await overscrollOf(page, '#left-panel-content')}`).toContain(await overscrollOf(page, '#left-panel-content'));
+      offenders.push(...(await sweepScrollers(page)).map((o) => `left-pane: ${o}`));
+      await page.evaluate(() => window.app.ui.openExportModal());
+      await page.waitForSelector('#export-settings-scroll', { state: 'attached' });
+      expect(['contain|contain', 'none|none'], `#export-settings-scroll ${await overscrollOf(page, '#export-settings-scroll')}`).toContain(await overscrollOf(page, '#export-settings-scroll'));
+      offenders.push(...(await sweepScrollers(page)).map((o) => `export: ${o}`));
+      await page.evaluate(() => window.app.ui.closeModal());
+      await page.evaluate(() => window.app.ui.openHelp());
+      await page.waitForSelector('.modal-card--help');
+      expect(['contain|contain', 'none|none'], `.modal-card--help ${await overscrollOf(page, '.modal-card--help')}`).toContain(await overscrollOf(page, '.modal-card--help'));
+      offenders.push(...(await sweepScrollers(page)).map((o) => `help: ${o}`));
+      await page.evaluate(() => window.app.ui.closeModal());
+      await page.evaluate(() => { const l = window.app.engine.addLayer('petalis'); window.app.ui.openPetalDesigner({ layer: l }); });
+      await page.waitForSelector('#petal-designer-window');
+      expect(['contain|contain', 'none|none'], `#petal-designer-window ${await overscrollOf(page, '#petal-designer-window')}`).toContain(await overscrollOf(page, '#petal-designer-window'));
+      offenders.push(...(await sweepScrollers(page)).map((o) => `petal: ${o}`));
+      expect(offenders, 'scrollers without overscroll-behavior contain/none').toEqual([]);
+    });
+});
+
+test.describe('TUX-003 pinch on chrome does not page-zoom', () => {
+  test('pinch scale stays 1', async ({ page }, testInfo) => {
+      const name = testInfo.project.name;
+      test.skip(!TUX3_PROJECTS.includes(name), 'project not in scope');
+      if (!touch.engineSupports(page, 'trustedMultiTouch')) { expect(true).toBe(true); return; }
+      const targets = [
+        { id: '#left-panel-content', pane: true },
+        { id: '#tool-bar' },
+        { id: '.modal-card', modal: true },
+        { id: '#main-canvas' },
+      ];
+      for (const t of targets) {
+        await gotoFresh(page);
+        if (t.pane) await openLeftPane(page);
+        if (t.modal) { await page.evaluate(() => window.app.ui.openExportModal()); await page.waitForSelector('#export-settings-scroll', { state: 'attached' }); }
+        await page.waitForTimeout(300);
+        const loc = page.locator(t.id).first();
+        const box = await loc.boundingBox();
+        const c = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+        const half = t.id === '#tool-bar' ? Math.max(8, Math.min(40, box.width / 2 - 6)) : 40;
+        const probe = await startPointsClear(page, [[c.x - half, c.y], [c.x + half, c.y]]);
+        if (t.id !== '#main-canvas') probe.hits.forEach((h) => expect(h.in, `${t.id} pinch start at ${h.x},${h.y} hit ${h.tag}`).toBe(true));
+        const startDist = t.id === '#tool-bar' ? Math.max(16, Math.min(80, box.width - 12)) : 80;
+        await touch.pinch(page, c, { startDist, endDist: 300, steps: 12 });
+        await page.waitForTimeout(250);
+        expect(await page.evaluate(() => visualViewport.scale), `${t.id} visualViewport.scale`).toBe(1);
+      }
+    });
+
+  test('gesture events are prevented on chrome, opt-in zones excepted', async ({ page }, testInfo) => {
+      const name = testInfo.project.name;
+      test.skip(!TUX3_PROJECTS.includes(name), 'project not in scope');
+      await gotoFresh(page);
+      await page.evaluate(() => window.app.ui.openExportModal());
+      await page.waitForSelector('#export-settings-scroll', { state: 'attached' });
+      const res = await page.evaluate(() => {
+        const out = {};
+        const fire = (el, type) => { const e = new Event(type, { bubbles: true, cancelable: true }); el.dispatchEvent(e); return e.defaultPrevented; };
+        const targets = { toolbar: '#tool-bar', header: '#app-header', pane: '#left-panel-content', modal: '.modal-card' };
+        Object.entries(targets).forEach(([k, sel]) => {
+          const el = document.querySelector(sel);
+          out[k] = el ? [fire(el, 'gesturestart'), fire(el, 'gesturechange')] : 'missing';
+        });
+        const z = document.createElement('div');
+        z.setAttribute('data-touch-zoom', '');
+        document.body.appendChild(z);
+        out.optin = [fire(z, 'gesturestart'), fire(z, 'gesturechange')];
+        z.remove();
+        out.touchAction = getComputedStyle(document.documentElement).touchAction;
+        return out;
+      });
+      for (const k of ['toolbar', 'header', 'pane', 'modal']) expect(res[k], `${k} gesturestart/gesturechange defaultPrevented`).toEqual([true, true]);
+      expect(res.optin, 'data-touch-zoom opt-in defaultPrevented').toEqual([false, false]);
+      expect(['pan-x pan-y', 'manipulation', 'none', 'pan-x', 'pan-y'], `html touch-action ${res.touchAction}`).toContain(res.touchAction);
+    });
+
+  test('desktop context: gesture guard is not registered', async ({ browser }, testInfo) => {
+    test.skip(testInfo.project.name !== 'touch-ipad-landscape', 'one run, Chromium only');
+    const ctx = await browser.newContext({ viewport: { width: 1600, height: 1000 }, hasTouch: false, isMobile: false });
+    try {
+      const page = await ctx.newPage();
+      await page.goto('/');
+      await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+      const prevented = await page.evaluate(() => { const e = new Event('gesturestart', { bubbles: true, cancelable: true }); document.getElementById('tool-bar').dispatchEvent(e); return e.defaultPrevented; });
+      expect(prevented, 'desktop gesturestart defaultPrevented').toBe(false);
+    } finally { await ctx.close(); }
+  });
+});
+
+test.describe('TUX-004 bottom chrome on screen (regression guard, passes before the fix)', () => {
+  test('bottom bars inside the visible viewport', async ({ page }, testInfo) => {
+      const name = testInfo.project.name;
+      test.skip(!TUX4_PROJECTS.includes(name), 'project not in scope');
+      const spec = PROJECTS[name];
+      await gotoFresh(page);
+      await page.waitForTimeout(300);
+      const r = await page.evaluate(() => {
+        const out = { vv: visualViewport.height };
+        ['touch-modifier-bar', 'status-bar'].forEach((id) => {
+          const el = document.getElementById(id);
+          const rect = el && el.getBoundingClientRect();
+          out[id] = rect && rect.width > 0 && rect.height > 0 && getComputedStyle(el).visibility !== 'hidden' ? rect.bottom : null;
+        });
+        return out;
+      });
+      const limit = Math.min(spec.height, r.vv) + 0.5;
+      ['touch-modifier-bar', 'status-bar'].forEach((id) => {
+        if (r[id] != null) expect(r[id], `#${id} bottom vs ${limit}`).toBeLessThanOrEqual(limit);
+      });
+      if (name === 'touch-iphone-portrait') {
+        await fs.promises.mkdir(`${TUX234_EVIDENCE}/TUX-004`, { recursive: true });
+      }
+    });
+});

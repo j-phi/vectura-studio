@@ -132,3 +132,13 @@
   --touch-hold-ring-fill: var(--ui-accent-2, rgba(38, 128, 235, 0.35));
 }
 /* === END TUX-034 tokens === */
+
+/* === TUX-004: app viewport height ===
+ * 100vh is the LARGE viewport on iOS Safari (URL bar collapsed), so bottom chrome sized from it
+ * can sit under the toolbar. --app-vh is the dynamic viewport where supported. Use it for every
+ * full-height calc; never write a bare 100vh in the skin (tests/unit/touch-shell-vh.test.js). */
+:root { --app-vh: 100vh; }
+@supports (height: 100dvh) {
+  :root { --app-vh: 100dvh; }
+}
+/* === END TUX-004 app viewport height === */

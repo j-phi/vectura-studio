@@ -1529,6 +1529,7 @@
     this.initAlgorithmTransformSection();
     this.initTouchModifierBar();
     this.initTouchMouseBridge();
+    this.installGestureZoomGuard();
     this.initTopMenuBar();
     document.addEventListener('click', () => {
       if (this.openPenMenu) {
