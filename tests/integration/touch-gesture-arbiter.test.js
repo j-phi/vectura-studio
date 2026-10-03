@@ -308,6 +308,29 @@ describe('TUX-017 gesture arbiter (renderer)', () => {
     });
   });
 
+  describe('rollback: Direct multi-path anchor selection (aux)', () => {
+    [
+      ['finger 1 on empty canvas', { x: 110, y: 150 }],
+      ['finger 1 on an aux anchor', { x: 140, y: 40 }],
+    ].forEach(([label, p1]) => {
+      test(label, () => {
+        add2d();
+        app.ui.setActiveTool('direct');
+        renderer._applyDirectMarquee({ x: 0, y: 0, w: 300, h: 300 });
+        expect(renderer.directAuxSelections.length).toBe(1);
+        const sigBefore = renderer.getSelectedAnchorSignature();
+        expect(sigBefore.split('|').length).toBe(2);
+        const before = runWindowRow({ p1, move: { dx: 3, dy: 0 } });
+        expect(renderer.touchGesture).toBeTruthy();
+        expect(renderer.getSelectedAnchorSignature()).toBe(sigBefore);
+        expect(renderer.directAuxSelections.length).toBe(1);
+        expect(stuckFlags()).toEqual([]);
+        expect(observe().hist).toBe(before.hist);
+        liftAll();
+      });
+    });
+  });
+
   test('rollback: rotation3DDrag (orbit gizmo on a polyhedron)', () => {
     reset();
     const id = engine.addLayer('polyhedron');

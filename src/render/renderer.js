@@ -1985,6 +1985,13 @@
         directSelectionAnchors: ds && Array.isArray(ds.anchors) ? this.cloneAnchors(ds.anchors) : null,
         directSelectionMeta: ds && ds.meta ? { ...ds.meta } : null,
         directSelectedIndices: ds && ds.selectedIndices ? new Set(ds.selectedIndices) : null,
+        // Multi-path anchor selection: the extra paths live in directAuxSelections.
+        directAux: (this.directAuxSelections || []).map((a) => ({
+          ...a,
+          anchors: Array.isArray(a.anchors) ? this.cloneAnchors(a.anchors) : a.anchors,
+          meta: a.meta ? { ...a.meta } : a.meta,
+          selectedIndices: a.selectedIndices ? new Set(a.selectedIndices) : a.selectedIndices,
+        })),
         groupEditMode: this.groupEditMode ? { ...this.groupEditMode } : null,
         activeTool: this.activeTool,
         penDraft: draft ? JSON.parse(JSON.stringify(draft)) : null,
@@ -2164,6 +2171,14 @@
         this.directSelection = null;
         this.directAuxSelections = [];
       }
+      // 9. Aux paths of a multi-path Direct selection (setSelection / setDirectSelection and
+      //    anchor promotion clear them), restored last so it holds for both branches of step 8.
+      this.directAuxSelections = (snap.directAux || []).map((a) => ({
+        ...a,
+        anchors: Array.isArray(a.anchors) ? this.cloneAnchors(a.anchors) : a.anchors,
+        meta: a.meta ? { ...a.meta } : a.meta,
+        selectedIndices: a.selectedIndices ? new Set(a.selectedIndices) : a.selectedIndices,
+      }));
     }
 
     // Commit the first finger's action at its current state. This runs the SAME finalize
