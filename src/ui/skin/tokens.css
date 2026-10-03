@@ -135,6 +135,14 @@
 }
 /* === END TUX-034 tokens === */
 
+/* === TUX-015: all tools drawer stacking === */
+:root {
+  /* Above the force-open pane (70), #tool-bar (60), slivers and the touch modifier bar (55/54); below .modal-overlay (100).
+     TUX-010 folds this into its --z-* scale. */
+  --z-tool-drawer: 80;
+}
+/* === END TUX-015 tokens === */
+
 /* === TUX-041 / TUX-042: touch tokens (lane C1) ===
  * Sizes only. Consumed by the coarse-pointer blocks at the end of components.css.
  * Skin files must not override these. */
