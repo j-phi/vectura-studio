@@ -3000,9 +3000,17 @@
     // with a 38 L*/mm highlight falloff, which is that bug and nothing else.) So
     // each shape states its capacity, the tone solve clamps to it, and a law that
     // saturates saturates honestly — visibly, in the numbers — instead of lying.
+    // U4b item 8: the Dot size / Dot angle keys reach the dot screen's disc.
+    // Both are ABSENT/0 by default, which is today's output exactly: the disc
+    // radius is 0.58 of its cell, and Dot size (an absolute radius, default 0.7)
+    // scales that share around its own default; Dot angle winds the spiral's
+    // start. A disc past ~1.0 of its cell would overlap its neighbours, so the
+    // scale is capped.
+    const dotScreenScale = () => (Number.isFinite(opts.dotSize) ? clamp(opts.dotSize / 0.7, 0.25, 1.5) : 1);
+    const DOT_SCREEN_TWIST = (finite(opts.dotAngle, 0) * Math.PI) / 180;
     const mkCap = (kind, R, w) => {
       const nCap = Math.max(1, Math.floor((0.98 * R) / w));
-      if (kind === 'disc') { const r = 0.58 * R; return (Math.PI * r * r) / w; }
+      if (kind === 'disc') { const r = 0.58 * R * dotScreenScale(); return (Math.PI * r * r) / w; }
       if (kind === 'lozenge') {
         const k = 0.42; const A = (0.50 * R) / k; const per = 4 * Math.sqrt(1 + k * k);
         let acc = 0;
@@ -3035,7 +3043,7 @@
         // FILLS. Length of the spiral to angle φ is w·φ²/(4π), so the radius the
         // tone asks for inverts in closed form; the cap is half the row pitch,
         // at which point neighbouring discs touch and the field is solid.
-        const rMax = 0.58 * R;
+        const rMax = 0.58 * R * dotScreenScale();
         let phi = Math.sqrt((4 * Math.PI * Math.max(0, L)) / w);
         if ((w * phi) / (2 * Math.PI) > rMax) phi = (2 * Math.PI * rMax) / w;
         if (phi < Math.PI) return [[[-L / 2, 0], [L / 2, 0]]];   // a dot, not a disc
@@ -3043,7 +3051,7 @@
         const dphi = Math.PI / 7;
         for (let t = 0; t <= phi; t += dphi) {
           const r = (w * t) / (2 * Math.PI);
-          pts.push([r * Math.cos(t), r * Math.sin(t)]);
+          pts.push([r * Math.cos(t + DOT_SCREEN_TWIST), r * Math.sin(t + DOT_SCREEN_TWIST)]);
         }
         return [pts];
       }
@@ -5124,12 +5132,25 @@
     // THE FIELD ITSELF: radiance → wanted clearance, in millimetres of screen.
     // Continuous everywhere, monotone in I by construction (every branch is a
     // monotone map of a monotone map), and it is the ONLY place tone is decided.
+    const CF_SIGMOID_VARIANTS = {
+      contFieldFore: 1, contFieldSurface: 1, contFieldQuant: 1, contFieldTouch: 1,
+    };
     const cfWantedPitch = (I) => {
       const pMin = cfTightPitch();
       const pMax = cfOpenPitch();
       const x = clamp(finite(I, 0), 0, 1);
       if (TONE_ALGO === 'contFieldEase') return pMin + (pMax - pMin) * ease(x);
-      if (TONE_ALGO === 'contFieldSigmoid') return pMin + (pMax - pMin) * sterzik(x);
+      // U4b item 4: the Sterzik curve is the survivor's OWN curve. Choosing a
+      // Field metric / Field floor sub-option resolves to contFieldFore /
+      // Surface / Quant / Touch, and those used to fall through to L*-linear —
+      // silently changing the curve as well as the metric. They keep the
+      // sigmoid now. A document migrated from the retired ids carries
+      // `fieldCurve:'lstar'` (params.js alias shim) and keeps its original
+      // L*-linear look.
+      if (TONE_ALGO === 'contFieldSigmoid'
+        || (CF_SIGMOID_VARIANTS[TONE_ALGO] === 1 && opts.fieldCurve !== 'lstar')) {
+        return pMin + (pMax - pMin) * sterzik(x);
+      }
       const a = cfAreaForTone(x, inkWidth() / pMin, inkWidth() / pMax);
       return clamp(inkWidth() / Math.max(1e-6, a), pMin, pMax);
     };
@@ -5148,8 +5169,14 @@
     // span-verdict a flat 1 for these three (see below) and nothing
     // downstream ever drops a ruling again — only WHERE the next one lands
     // moves.
+    // U4b item 5: `perceptualRamp` (Ladder > Rung detail > Perceptual ramp) joins
+    // the family. It used to return its coverage into the DISCRETE rung verdict,
+    // which reintroduced exactly the 1-and-2-pitch gaps W-26 removed. Only its
+    // tone TARGET (`perceptualCov`) survives; the placement is the continuous
+    // walk, like its three siblings.
     const isEvenLadder = () => TONE_ALGO === 'ladder' || TONE_ALGO === 'fineLadder'
-      || TONE_ALGO === 'phaseFineLadder' || TONE_ALGO === 'deepFillTSP';
+      || TONE_ALGO === 'phaseFineLadder' || TONE_ALGO === 'deepFillTSP'
+      || TONE_ALGO === 'perceptualRamp';
     // The tone TARGET is exactly what each law computed before this round —
     // ONLY the placement changes. `phaseFineLadder`'s `nestedCov` wants the
     // per-sample DRAWN pitch as its second argument, so a family already
@@ -5167,6 +5194,7 @@
       let cov;
       if (TONE_ALGO === 'fineLadder') cov = fineLadderCov(x);
       else if (TONE_ALGO === 'phaseFineLadder') cov = nestedCov(x, masterPitch);
+      else if (TONE_ALGO === 'perceptualRamp') cov = perceptualCov(x, masterPitch);
       else cov = coverageForSample(x);
       // THE SAME O6 SPARSE-END BAR the discrete ladder's own per-span
       // verdict charges (`litSpanFloor`, in `emitLineOnce`), applied to the
@@ -12538,9 +12566,16 @@
           if (toneOn && plan) {
             const base = finite(opts.fillAngle, 0);
             plan.forEach((f) => {
-              const n = Math.max(2, Math.round(count / Math.max(1, f.div)));
+              // U4b item 8: penCross's own crossing family follows the Cross
+              // angle / Cross density dials (crosshatch Type). Its designed
+              // 60 deg / half density is the DEFAULT (Cross angle 90, density 1),
+              // so the shift is zero there and the default is byte-identical.
+              const isCrossDial = TONE_ALGO === 'penCross';
+              const deg = isCrossDial && f.deg ? f.deg + (crossDelta - 90) : f.deg;
+              const div = isCrossDial ? f.div * crossRatio : f.div;
+              const n = Math.max(2, Math.round(count / Math.max(1, div)));
               xfLayer = clamp(Math.round(f.layer), 0, 2);
-              if (f.deg) { emitAngledFamily(base + f.deg, n, back); return; }
+              if (deg) { emitAngledFamily(base + deg, n, back); return; }
               if (mapper === 'contour') emitFamily('a', n, back);
               else if (onMeridianAxis) emitFamily('b', n, back);
               else emitAngledFamily(hatchAngle, n, back);
@@ -12698,6 +12733,9 @@
           minMarkMM: MIN_MARK_MM,
           hash: sfHash,
           angleDeg: finite(opts.fillAngle, 0),
+          densityScale: opts.densityScale,
+          crossDelta: crossDelta,
+          stripeAlign: opts.stripeAlign,
         });
       } else if (contMapper) {
         // W-36c: crosshatch's family A now also reads the per-family budget
@@ -12992,12 +13030,23 @@
         const SEG = 6;
         const dotShape = typeof opts.dotShape === 'string' ? opts.dotShape : 'dot';
         const dotAngle = finite(opts.dotAngle, 0);
+        // U4b item 7: Jitter now reaches the curved lattice. The scale is the
+        // faceted one (Mappers.jitterFracFor: 0-100 -> 0-1.75 cells peak to
+        // peak). An ABSENT key stays an exact lattice, which is today's output.
+        const jitFrac = Number.isFinite(opts.stippleJitter)
+          ? (clamp(opts.stippleJitter, 0, 100) * 1.75) / 100 : 0;
         const legacy = dotShape === 'dot' && !Number.isFinite(opts.dotSize);
         const R = Number.isFinite(opts.dotSize) ? clamp(opts.dotSize, 0.1, 3) : legacyR;
         const Marks = Vectura.Scene3D && Vectura.Scene3D.Mappers;
         for (let r = 0; r < rows; r++) {
           for (let c = 0; c < colsPer; c++) {
-            const smp = sampleAt((r + 0.5) / rows, (c + 0.5) / colsPer);
+            let sa = (r + 0.5) / rows; let sb = (c + 0.5) / colsPer;
+            if (jitFrac > 0) {
+              sa = clamp(sa + ((sfHash(r * 977 + 41, c) - 0.5) * jitFrac) / rows, 0, 1);
+              sb = sb + ((sfHash(r * 977 + 43, c + 7919) - 0.5) * jitFrac) / colsPer;
+              sb -= Math.floor(sb);
+            }
+            const smp = sampleAt(sa, sb);
             if (!smp || smp.front !== wantFront) continue;
             if (toneOn) {
               // O18 — stipple used a hardcoded `(…%7)/7` dither and never read

@@ -89,7 +89,7 @@ describe('Scene3D voronoiWeb web integrity + tone-by-cell-size', () => {
       projection: 'orthographic', yaw: 0, pitch: 0, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1,
     };
     p.styleTable = {
-      scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 60, toneLaw: 'voronoiWeb' } },
+      scene: { penId: null, mapper: 'hatch', params: { fillAngle: 0, fillDensity: 50, toneLaw: 'voronoiWeb' } },
       byObject: {},
       byFace: {},
     };

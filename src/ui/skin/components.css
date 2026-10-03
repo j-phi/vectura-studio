@@ -13579,3 +13579,9 @@ body.mobile-layout .hud-bar {
 .ctxbar-divisions-host {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
 }
+
+/* U4b — Seed greyed when no fill in the scene draws from it. The (i) beside the
+   "No effect for this style" line holds the reason (click-driven popover). */
+#seed-controls.is-seed-inert #inp-seed,
+#seed-controls.is-seed-inert #btn-rand-seed { opacity: .45; cursor: not-allowed; }
+#seed-controls .seed-inert-info { position: relative; }

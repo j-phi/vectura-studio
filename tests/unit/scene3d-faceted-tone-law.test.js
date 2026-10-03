@@ -96,7 +96,11 @@ describe('faceted tone laws — box / plane / solid read style.params.toneLaw', 
     p.objects = [clone(PRIMS[primKey])];
     p.lights = [elev ? { ...clone(SUN), elevation: elev } : clone(SUN)];
     p.tone = clone(toneBands(4));
-    p.styleTable = styleTable(p.objects, law === null ? {} : { toneLaw: law });
+    // U4b: Density now scales a mono law's clearances (it was ignored), and a
+    // denser setting narrows the ramp as faces reach the plot floor. This file
+    // states its tone contract at the SHIPPED default Density (50), where the
+    // numbers below were measured; the fixture's own 85 is a ladder setting.
+    p.styleTable = styleTable(p.objects, law === null ? { fillDensity: 50 } : { toneLaw: law, fillDensity: 50 });
     const np = Params.normalizeParams(p);
     const paths = V.AlgorithmRegistry.scene3d.generate(
       Params.collectSceneParams(np, []), new V.SeededRNG(SEED), new V.SimpleNoise(SEED), BOUNDS,

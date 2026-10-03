@@ -6,6 +6,57 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed / Changed (U4b engine defects, fill-style review)
+- **Monoline Crosshatch no longer redraws identical lines.** A monoline law that has no
+  direction (etfKang, defectSplit, originSpiral, turingStripe, voronoiWeb, mazeFill) ran its
+  second Crosshatch pass at another angle without ever reading the angle, so the same geometry
+  was inked twice. The second pass now runs only when pass one read the angle (mezzoRegion,
+  dutyConst, endShorten, and the unreachable directional laws), so Crosshatch draws those six as
+  Hatch. Sphere r40, Density 50, before -> after (paths = pen-downs, ink in mm): etfKang
+  850 -> 469 paths, 23123 -> 11687 mm; defectSplit 610 -> 349, 24320 -> 12286; originSpiral
+  1168 -> 628, 27832 -> 14042; turingStripe 794 -> 441, 15086 -> 7669; voronoiWeb 5224 -> 2656,
+  14001 -> 7126; mazeFill 17414 -> 8751, 13377 -> 6814. That is about -49 % ink and -43 to
+  -50 % pen-downs. The directional laws are byte-identical.
+- **Density and Angle work on the monoline laws.** Density scales every clearance (it was
+  ignored). Density 50 is byte-identical to before. Above 50, `dutyConst` and `endShorten`
+  already sit at the plot floor, so they cannot tighten; a denser setting also narrows the tone
+  range of the other laws as more of the form reaches the floor. Saved documents with a monoline
+  law at a Density other than 50 therefore change. Angle already worked on the laws that read it
+  (`mezzoRegion`, `dutyConst`, `endShorten`); the six direction-free laws now grey Angle and
+  Cross angle with an (i) reason. Cross angle moves the crossing pass of a directional law (its
+  designed 65 deg at the default).
+- **Contour is greyed under a monoline law.** Contour drew byte-for-byte what Hatch draws (the
+  laws never read the Type), so the Type list shows "Contour - same as Hatch" disabled and the
+  Fill Style (i) says why. No law has a contour form (all nine draw in screen space).
+- **Field metric keeps the sigmoid.** Picking a Field metric / Field floor sub-option under
+  Continuous Field used to change the curve from the Sterzik sigmoid to L*-linear as a side
+  effect. It now keeps the sigmoid. Documents saved with the retired ids (`contFieldFore`,
+  `contFieldSurface`, `contFieldQuant`, `contFieldTouch`) are pinned to the original L*-linear
+  curve with `fieldCurve:'lstar'` and render byte-identical.
+- **Perceptual ramp respects the even-spacing engine.** `rungMode:'perceptual'` kept the discrete
+  rung verdict and brought back the 1-and-2-pitch gaps W-26 removed (drawn gap ratio 2.00 on a
+  uniform cone and cylinder, bar 1.15). It now rides the continuous placement engine: gap ratio
+  within the bar, 128 -> 144 paths and 2481 -> 3491 mm on the Density-50 sphere.
+- **turingStripe stripe alignment is a real parameter.** The alignment term was multiplied by
+  0.0. `stripeAlign` (0-1.2, default 0 = today's output) wires it, with a "Stripe align" row.
+  The cap follows the measurement: 0.9 aligns the stripes in the lit zone, 3.0 breaks into noise.
+- **Curved Stipple honours Jitter.** The slider did nothing on curved shapes; it now scatters the
+  lattice (same 0-100 scale as faceted shapes). An absent key stays an exact lattice. A stipple
+  style that carries the seeded default (40) now shows jittered dots. The grey on Jitter is gone.
+- **penCross and mkDotScreen read their keys.** penCross's crossing family follows Cross angle
+  and Cross density on Crosshatch (its designed 60 deg / half density is the default).
+  mkDotScreen follows Dot size and Dot angle (new rows under that Fill Style on the line Types).
+- **Seed greys when it has no effect.** Seed and RANDOMIZE show "No effect for this style" with an
+  (i) when no fill in the layer can draw from the seed. The decision comes from a table measured
+  over every Fill Style, Type and a curved and a faceted shape, and fails open (anything unknown
+  stays live).
+- **Dead keys checked.** `highlightBands` is read only by the highlight-treatment dispatch, which
+  is switched off (`HL_STAGE.treatment`); it has no control and stays unwired. `xrayHiddenEdges`
+  is live (faceted x-ray with a dashed hidden-edge style) and has no control. Nothing to remove.
+- Tests re-pinned on purpose: `scene3d-faceted-tone-law` and `scene3d-voronoi-web-integrity` now
+  state their tone contract at the default Density 50 (the old fixtures used 85 / 60 while the
+  laws ignored Density); the Fill Style (i) test now reads the Fill Style row, not the first (i).
+
 ### Fixed / Changed (U4a engine defects + Seed)
 - **Seed and RANDOMIZE now drive every scene3d fill.** Seed feeds all hash, jitter and dither
   sites (stroke wobble, stipple jitter, shadow feather, light-driven dither, mono-law marks) and

@@ -783,6 +783,12 @@
       case 'toneQuantLevels': return clamp(Math.round(finite(value, 128)), 4, 256);
       // 'contourFlow' only — which streamline family the rulings follow.
       case 'toneFlowMode': return value === 'grad' ? 'grad' : 'iso';
+      // U4b — legacy curve marker for the migrated contField* ids (see
+      // normalizeStyle). Any other value drops the key (= the sigmoid default).
+      case 'fieldCurve': return value === 'lstar' ? 'lstar' : undefined;
+      // U4b — turingStripe stripe-alignment strength. 0 (default) is today's
+      // output. Capped at the measured-good ceiling (r2: 0.9 aligns, 3.0 is noise).
+      case 'stripeAlign': return clamp(finite(value, 0), 0, 1.2);
       default: return undefined;
     }
   };
@@ -839,6 +845,8 @@
     return activeCount === 1 ? activeLaw : raw; // rule 3 (activeCount<=... ) / rule 4
   };
 
+  const LEGACY_LSTAR_FIELD_IDS = ['contFieldFore', 'contFieldSurface', 'contFieldQuant', 'contFieldTouch'];
+
   const normalizeStyle = (style) => {
     const src = isObject(style) ? style : {};
     const params = {};
@@ -879,6 +887,12 @@
         Object.keys(a.params).forEach((k) => {
           if (params[k] === undefined) params[k] = a.params[k];
         });
+      }
+      // U4b item 4: the four retired contField* ids were L*-linear. The
+      // survivor's sub-options now keep the Sterzik sigmoid, so a document that
+      // arrives through one of these ids is pinned to its original curve.
+      if (LEGACY_LSTAR_FIELD_IDS.indexOf(rawToneLaw) !== -1 && params.fieldCurve === undefined) {
+        params.fieldCurve = 'lstar';
       }
     }
     return {
@@ -1857,6 +1871,119 @@
     return { ...src, style };
   };
 
+
+  // ── SEED REACH (fill-style review U4b, item 9) ──────────────────────────────
+  // The Seed field and RANDOMIZE sit in every 3D layer's Transform section, but
+  // a fill only draws from the seed where it has a random site (a hashed phase,
+  // jitter, or dither). Most Fill Styles on most shapes have none, so RANDOMIZE
+  // on a default hatch sphere changes nothing. These tables record, MEASURED on
+  // a seeded layer (seed 11 vs 7777, every roster id x every Type x a curved and
+  // a faceted shape — see tests/unit/scene3d-seed-reach.test.js), which
+  // combinations ignore the seed. `styleUsesSeed` answers true for anything it
+  // cannot prove dead, so the panel greys the field only when it is certain.
+  //
+  // Curved shapes: the laws whose picture does NOT change with the seed, per Type.
+  const SEED_CURVED_BASE = [
+    'bundleCount', 'bundleEased', 'bundleHandoff', 'bundleLozenge', 'bundleSubNib',
+    'contFieldFore', 'contFieldQuant', 'contFieldSigmoid', 'contFieldSurface', 'contFieldTouch', 'none',
+  ];
+  // The ladder family is dead on every line Type but scatters its dots on Stipple.
+  const SEED_LADDER_FAMILY = ['fineLadder', 'ladder', 'perceptualRamp', 'phaseFineLadder'];
+  const SEED_CURVED_LINE_DEAD = SEED_CURVED_BASE.concat(SEED_LADDER_FAMILY);
+  const SEED_CURVED_DEAD = {
+    hatch: SEED_CURVED_LINE_DEAD.concat(['defectSplit', 'etfKang', 'originSpiral']),
+    crosshatch: SEED_CURVED_LINE_DEAD.concat(['defectSplit', 'etfKang', 'originSpiral']),
+    contour: SEED_CURVED_LINE_DEAD.concat(['defectSplit', 'etfKang', 'originSpiral']),
+    spiral: SEED_CURVED_LINE_DEAD.concat(['bundleDither', 'deepFillTSP', 'penInterleave', 'penPitchMatch',
+      'penReserve', 'penStipple', 'weaveDepth']),
+    stipple: SEED_CURVED_BASE.concat(['bundleDither', 'penInterleave', 'penPitchMatch', 'penReserve',
+      'penStipple', 'weaveDepth']),
+  };
+  // Faceted shapes (box, plane): only these draw from the seed; every other law
+  // is dead on every Type except Stipple (whose lattice jitter is always seeded).
+  const SEED_FACETED_LIVE = {
+    hatch: ['endShorten', 'mazeFill', 'mezzoRegion', 'turingStripe', 'voronoiWeb'],
+    crosshatch: ['dutyConst', 'endShorten', 'mazeFill', 'mezzoRegion', 'turingStripe', 'voronoiWeb'],
+    contour: [],
+    spiral: [],
+  };
+  const SEED_FILL_MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
+  // Marks that draw from the seed whatever the Fill Style is: a wobbled or
+  // overstruck stroke, and the alternate-fill highlight. Anything else unusual
+  // (other highlight treatments or modes) is not measured here, so it counts as live.
+  const styleParamsUseSeed = (sp) => {
+    const q = isObject(sp) ? sp : {};
+    if (finite(q.wobble, 0) > 0 || q.overstroke === true) return true;
+    const ht = q.highlightTreatment;
+    if (ht !== undefined && ht !== null && ht !== '' && ht !== 'blank' && ht !== 'none') return true;
+    if (q.highlightMode === 'lightDriven') return true;
+    return false;
+  };
+  const seedClassOf = (primitive) => {
+    if (primitive === 'box' || primitive === 'plane') return 'faceted';
+    if (CURVED_FILL_PRIMITIVES.has(primitive) && !FLAT_FACED_CHART_PRIMITIVES.has(primitive)) return 'curved';
+    return null;
+  };
+  // True when a fill style ({ mapper, params }) on `primitive` can draw from the
+  // seed. Fails toward true: unknown shape, unknown Type or unknown law is live.
+  const styleUsesSeed = (primitive, style) => {
+    const st = isObject(style) ? style : {};
+    const mapper = typeof st.mapper === 'string' ? st.mapper : 'none';
+    const sp = isObject(st.params) ? st.params : {};
+    if (styleParamsUseSeed(sp)) return true;
+    // No fill at all: nothing random to draw (a wobble above is the exception).
+    if (mapper === 'none' || mapper === 'wireframe' || mapper === 'contourSlice') return false;
+    if (SEED_FILL_MAPPERS.indexOf(mapper) === -1) return true;
+    const cls = seedClassOf(primitive);
+    if (!cls) return true;
+    const FS = Vectura.SCENE_FILL_STYLES;
+    let law = 'ladder';
+    if (typeof sp.toneLaw === 'string' && sp.toneLaw) {
+      law = sp.toneLaw;
+      if (FS && typeof FS.resolve === 'function' && typeof FS.effectiveLaw === 'function') {
+        const survivor = FS.resolve(sp.toneLaw);
+        const shown = typeof FS.displayParams === 'function' ? FS.displayParams(sp.toneLaw, sp) : sp;
+        law = FS.effectiveLaw(survivor, shown) || survivor;
+      }
+    }
+    const R = Vectura.SCENE3D_TONE_LAWS;
+    const known = law === 'ladder' || !R || !Array.isArray(R.IDS) || R.IDS.indexOf(law) !== -1;
+    if (!known) return true;
+    if (cls === 'curved') return SEED_CURVED_DEAD[mapper].indexOf(law) === -1;
+    if (mapper === 'stipple') return true;
+    return (SEED_FACETED_LIVE[mapper] || []).indexOf(law) !== -1;
+  };
+  // True when ANY object style in a scene can draw from the seed, or the scene's
+  // shadows might. `scene` = { objects:[{id,primitive}], styleTable, lights, ground,
+  // shadow }. Empty or unreadable input is live.
+  const sceneUsesSeed = (scene) => {
+    const sc = isObject(scene) ? scene : {};
+    const objects = Array.isArray(sc.objects) ? sc.objects.filter((o) => isObject(o) && o.id) : [];
+    if (!objects.length) return true;
+    const lights = Array.isArray(sc.lights) ? sc.lights : [];
+    const casts = lights.some((l) => isObject(l) && l.castShadows !== false && l.type !== 'ambient');
+    if (casts && isObject(sc.ground) && sc.ground.enabled) {
+      const sh = isObject(sc.shadow) ? sc.shadow : {};
+      if (sh.shadowLayers === true) return true;
+      if (typeof sh.shadowToneLaw === 'string' && sh.shadowToneLaw && sh.shadowToneLaw !== 'ladder') return true;
+    }
+    const Cascade = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
+    if (!Cascade || typeof Cascade.resolve !== 'function') return true;
+    const table = isObject(sc.styleTable) ? sc.styleTable : {};
+    for (let i = 0; i < objects.length; i++) {
+      const o = objects[i];
+      if (styleUsesSeed(o.primitive, Cascade.resolve(table, { objectId: o.id }))) return true;
+      const byFace = isObject(table.byFace) ? table.byFace : {};
+      const prefix = `${o.id}/`;
+      const faceKeys = Object.keys(byFace).filter((k) => k.indexOf(prefix) === 0);
+      for (let f = 0; f < faceKeys.length; f++) {
+        const faceId = faceKeys[f].slice(prefix.length);
+        if (styleUsesSeed(o.primitive, Cascade.resolve(table, { objectId: o.id, faceId }))) return true;
+      }
+    }
+    return false;
+  };
+
   const api = {
     SCENE_VERSION,
     PRIMITIVES,
@@ -1899,6 +2026,8 @@
     normalizeStyle,
     normalizeStyleTable,
     resolveToneLaw,
+    styleUsesSeed,
+    sceneUsesSeed,
     normalizeObjectLayerParams,
     collectSceneParams,
     normalizeGroups,

@@ -1369,6 +1369,15 @@
     return hatchSpacing(50) * boost;
   };
 
+  // Density -> the mono laws' clearance scale (fill-style review U4b). Exactly 1
+  // at the shipped default Density (50), > 1 denser, < 1 sparser. The mono laws
+  // ignored Density entirely before this (their `makeCtx` never read
+  // `masterPitch`). Built from the same curve the curved ladder already uses, so
+  // the slider means the same thing on every Fill Style.
+  const monoDensityScale = (density) => clamp(
+    curvedSparseTonePitch(50) / Math.max(1e-6, curvedSparseTonePitch(density)), 0.25, 4,
+  );
+
   // Strip the geometry-mutating part of a treatment, keeping only the line-type
   // dash. Edges and per-face outlines are DOUBLE-DRAWN (the face outline loop and
   // the silhouette/crease/boundary edge pass both emit the same structural edge);
@@ -3255,6 +3264,9 @@
             minMarkMM: Math.max(MIN_RUN_MM, 2 * penWidth),
             hash: ldHash,
             angleDeg: screenAngleDeg,
+            densityScale: monoDensityScale(styleParams.fillDensity),
+            crossDelta: finite(styleParams.crossAngleDelta, 90),
+            stripeAlign: styleParams.stripeAlign,
           });
         } catch (e) {
           return null; // a law that throws must not take the facet with it
@@ -4655,6 +4667,12 @@
                 toneLaw: Params.resolveToneLaw(sp),
                 toneQuantLevels: sp.toneQuantLevels,
                 toneFlowMode: sp.toneFlowMode,
+                // U4b: mono-law Density / turingStripe alignment, and the
+                // legacy marker that keeps a migrated contField* document on
+                // its original L*-linear curve (see cfWantedPitch).
+                densityScale: monoDensityScale(finite(sp.fillDensity, 50)),
+                stripeAlign: sp.stripeAlign,
+                fieldCurve: sp.fieldCurve,
                 // C4 — how a RIBBON LAW fills its ribbon's interior once the
                 // outline is drawn ('spiral' | 'concentric' | 'serpentine' |
                 // 'contourParallel'). Forwarded verbatim, for exactly the
@@ -4698,6 +4716,8 @@
                 dotShape: sp.dotShape,
                 dotAngle: finite(sp.dotAngle, 0),
                 dotSize: Number.isFinite(sp.dotSize) ? clamp(sp.dotSize, 0.1, 3) : undefined,
+                // U4b item 7: curved stipple honours Jitter (absent = lattice).
+                stippleJitter: Number.isFinite(sp.stippleJitter) ? clamp(sp.stippleJitter, 0, 100) : undefined,
                 toneOn,
                 intensityFn,
                 // Pass the tone LADDER so SurfaceFill quantizes each sample into

@@ -1588,10 +1588,12 @@ describe('Fill Style — docked 3D Scene panel', () => {
   // panel; it now lives behind a compact (i) info affordance revealed on
   // hover OR keyboard focus, while the caveat (a genuinely useful warning)
   // stays OUTSIDE the popover, always visible — relocated, not lost.
+  // U4b: scoped to the Fill Style row — a greyed Angle row (monoline law with no
+  // direction) now carries its own (i), and it comes first in the page.
   describe('fs-m2 Job 2 — Fill Style description behind an (i) info popover', () => {
     test('an (i) button exists, aria-describedby-linked to a popover holding mechanism/strengths', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       expect(btn).toBeTruthy();
       expect(btn.tagName).toBe('BUTTON');
       expect(btn.getAttribute('aria-label')).toMatch(/\S/);
@@ -1608,7 +1610,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
 
     test('focusing the (i) button opens the popover (keyboard-reachable, not hover-only); blur closes it', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       expect(pop.classList.contains('is-open')).toBe(false);
       expect(btn.getAttribute('aria-expanded')).toBe('false');
@@ -1639,7 +1641,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
   describe('fs-y1 Job 1 — the (i) is CLICK-driven, not hover-only', () => {
     test('clicking the (i) opens the popover even with no prior hover/focus', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       expect(pop.classList.contains('is-open')).toBe(false);
       fire(btn, 'click');
@@ -1649,7 +1651,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
 
     test('a click-opened popover stays open after mouseleave/blur (pinned), then a second click closes it', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       fire(btn, 'click');
       expect(pop.classList.contains('is-open')).toBe(true);
@@ -1662,7 +1664,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
 
     test('a click outside the popover closes a pinned-open one', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       fire(btn, 'click');
       expect(pop.classList.contains('is-open')).toBe(true);
@@ -1672,7 +1674,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
 
     test('Escape un-pins and closes a click-opened popover', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       fire(btn, 'click');
       expect(pop.classList.contains('is-open')).toBe(true);

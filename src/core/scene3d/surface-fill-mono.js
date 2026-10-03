@@ -38,6 +38,12 @@
   const clamp = (val, lo, hi) => Math.max(lo, Math.min(hi, Number(val) || 0));
   const finite = (val, f = 0) => (Number.isFinite(Number(val)) ? Number(val) : f);
   const GOLDEN = 0.6180339887498949;
+  // turingStripe's stripe-alignment strength (fill-style review U4b). The
+  // advective term `k * along` pulls the stripes across the form's shading.
+  // MEASURED (r2): k = 0.9 aligns the stripes in the lit zone at -1 % ink;
+  // k = 3.0 breaks the pattern into noise (paths 297 -> 621, ink +28 %). The
+  // ceiling sits just above the measured-good value.
+  const STRIPE_ALIGN_MAX = 1.2;
   // Scene Seed (geometry3d.js): phase is 0 for a legacy layer ⇒ `x + 0` is exact.
   const SEED = (Vectura.Geometry3D && Vectura.Geometry3D.SEED) || { salt: 0, phase: 0, off: 0 };
 
@@ -106,7 +112,16 @@
     const PEN = o.penWidth;
     const INK = o.inkWidth;
     const FLOOR = o.floorPitch;
-    const PMAX = Math.max(FLOOR * 1.6, o.litMaxPitch);
+    // DENSITY (fill-style review U4b). `densityScale` is 1 at Density 50 (the
+    // shipped default) and rises/falls with the Density slider; every law that
+    // reads `pitchFor` / `pitchLegible` / `areaFor` follows it (see `pitchFor`).
+    // Laws whose clearance is a fixed multiple of the plot floor use `SPARSE`
+    // instead: they already sit AT the floor, so a denser setting cannot tighten
+    // them and a sparser one widens them. Absent => exactly 1, byte-identical.
+    const DS = clamp(finite(o.densityScale, 1), 0.25, 4);
+    const PMAX0 = Math.max(FLOOR * 1.6, o.litMaxPitch);
+    const PMAX = Math.max(FLOOR * 1.6, o.litMaxPitch / DS);
+    const SPARSE = Math.max(1, 1 / DS);
     const MINMARK = o.minMarkMM;
     const hash = o.hash;
     const wrapB = (b) => ((b % 1) + 1) % 1;
@@ -506,7 +521,7 @@
      * reports it. */
     const Lstar = (Y) => (Y > 0.008856 ? 116 * Math.pow(Y, 1 / 3) - 16 : 903.3 * Y);
     const invL = (Lv) => (Lv > 8 ? Math.pow((Lv + 16) / 116, 3) : Lv / 903.3);
-    const A_LIGHT = clamp(INK / PMAX, 0.02, 0.5);
+    const A_LIGHT = clamp(INK / PMAX0, 0.02, 0.5);
     const L_LIGHT = Lstar(1 - A_LIGHT);
     // The dark end is capped at 0.90 rather than at 1.0. At one pen width the
     // apparent-tone curve is brutal — area 0.5 is L* 76 and area 0.9 is L* 33 —
@@ -523,7 +538,12 @@
     const areaFor = (I) => clamp(
       1 - invL(L_DARK + (L_LIGHT - L_DARK) * clamp(finite(I, 0), 0, 1)), 0.02, A_DARK,
     );
-    const pitchFor = (I) => clamp(INK / areaFor(I), INK / A_DARK, PMAX);
+    // Density scales EVERY clearance (denser -> smaller pitch), floored at the
+    // darkest legal pitch and capped at the (scaled) sparse end. At the default
+    // (DS = 1) this is the unscaled map, byte for byte. A denser setting pushes
+    // more of the form to the plot floor, so tone RANGE narrows as ink rises: that
+    // is what Density means once a law is already at the floor.
+    const pitchFor = (I) => clamp(INK / areaFor(I) / DS, INK / A_DARK, PMAX);
     // The same map with the plot floor honoured, for the laws whose identity is
     // that they never crowd past legibility.
     const pitchLegible = (I) => Math.max(FLOOR, pitchFor(I));
@@ -531,7 +551,7 @@
     const shadeAt = (x, y) => { const s = inv(x, y); return s ? clamp(1 - finite(s.I, 0), 0, 1) : null; };
 
     return {
-      WF, PEN, INK, FLOOR, PMAX, MINMARK, hash, wrapB, at, solve, stepTo, frame,
+      WF, PEN, INK, FLOOR, PMAX, DS, SPARSE, MINMARK, hash, wrapB, at, solve, stepTo, frame,
       edgeBetween, emitPts, trace, gradOf, inv, emitScr, pitchFor, pitchLegible,
       areaFor, shadeAt,
       emittedCount: () => famIdx,
@@ -539,7 +559,11 @@
       lat, ok, minX, minY, maxX, maxY, W, H: Hh, R,
       hiA, hiB, hiX, hiY, faceA, faceB, faceX, faceY,
       targetArea: o.targetArea, back: o.back, mapper: o.mapper,
-      rot: 0,
+      stripeAlign: clamp(finite(o.stripeAlign, 0), 0, STRIPE_ALIGN_MAX),
+      get rot() { this.rotRead = true; return this.rotVal; },
+      set rot(v) { this.rotVal = v; },
+      rotVal: 0,
+      rotRead: false,
     };
   };
 
@@ -1458,7 +1482,7 @@
     const vx = -uy; const vy = ux;
     const cx = (C.minX + C.maxX) / 2; const cy = (C.minY + C.maxY) / 2;
     const half = Math.hypot(C.W, C.H) / 2;
-    const P = C.FLOOR * 1.05;             // ONE fixed clearance, everywhere
+    const P = C.FLOOR * 1.05 * C.SPARSE;  // ONE fixed clearance, everywhere (Density < 50 widens it)
     const PERIOD = C.FLOOR * 2.0;         // ONE fixed mark period
     const nLines = Math.ceil((2 * half) / P);
     const NS = Math.max(70, Math.round((2 * half) / 0.24));
@@ -1526,7 +1550,7 @@
     const vx = -uy; const vy = ux;
     const cx = (C.minX + C.maxX) / 2; const cy = (C.minY + C.maxY) / 2;
     const half = Math.hypot(C.W, C.H) / 2;
-    const P = C.FLOOR * 1.15;
+    const P = C.FLOOR * 1.15 * C.SPARSE;  // Density < 50 widens the ruling pitch
     const nLines = Math.ceil((2 * half) / P);
     const NS = Math.max(70, Math.round((2 * half) / 0.26));
     for (let li = 0; li <= nLines; li++) {
@@ -2547,6 +2571,7 @@
     // light cell now gets the LOW-Dv (long-wavelength, sparse) end and a
     // shadow cell gets the HIGH-Dv (short-wavelength, dense) end.
     const Du = 0.18;
+    const ALIGN = C.stripeAlign;
     const dxSafe = Math.max(1e-6, dx);
     const DvAt = new Float64Array(NX * NY);
     for (let k = 0; k < DvAt.length; k++) {
@@ -2569,7 +2594,7 @@
           const du = (u[k + 1] - u[k - 1]) / 2; const dv2 = (u[k + NX] - u[k - NX]) / 2;
           const along = ax * du + ay * dv2;
           const Dv = DvAt[k];
-          let nu = u[k] + 0.22 * (Du * lu + 0.9 * along * 0.0 + (u[k] - u[k] * u[k] * u[k]) - v[k]);
+          let nu = u[k] + 0.22 * (Du * lu + 0.9 * along * ALIGN + (u[k] - u[k] * u[k] * u[k]) - v[k]);
           nu = nu || 0;
           un[k] = nu < -2 ? -2 : (nu > 2 ? 2 : nu);
           let nv = v[k] + 0.22 * (Dv * lv * 0.06 + 0.32 * (u[k] - v[k]));
@@ -2995,16 +3020,30 @@
     attachFields(C);
     // The crosshatch mapper is a crossed pair by definition, so a law that owns
     // family A there owns family B too: the same construction, rotated by the
-    // file's own second-direction angle. Every other mapper runs one pass.
-    const passes = o.mapper === 'crosshatch' ? [0, 65] : [0];
+    // crossing angle. That only means something for a law that HAS a direction.
+    // A direction-free law (a Voronoi web, a maze, a reaction-diffusion field,
+    // concentric rings...) never reads `C.rot`, so a second pass at another
+    // angle redraws the identical geometry on top of the first (U4b item 1,
+    // measured: +50-65 % ink and +66-98 % pen-downs for zero new marks). The
+    // second pass therefore runs only when pass 0 actually READ the angle.
+    // The crossing angle keeps its designed 65 deg at the default Cross angle
+    // (90) and follows the slider from there, so the default is byte-identical.
+    const crossDeg = 65 + (clamp(finite(o.crossDelta, 90), 10, 170) - 90);
+    const passes = o.mapper === 'crosshatch' ? [0, crossDeg] : [0];
     // A law that throws must not take the whole fill with it, and the reason
     // has to survive to the harness — a silently empty cell is the one failure
     // mode this rig cannot tell apart from a law that draws nothing.
-    const diag = { algo: o.algo, lat: C.lat.length, ok: C.ok, R: C.R, emitted: 0, cut: 0, error: null };
-    passes.forEach((deg) => {
+    const diag = { algo: o.algo, lat: C.lat.length, ok: C.ok, R: C.R, emitted: 0, cut: 0, error: null, readsAngle: false };
+    for (let pi = 0; pi < passes.length; pi++) {
+      const deg = passes[pi];
       C.rot = o.angleDeg + deg;
+      C.rotRead = false;
       try { fn(C); } catch (e) { diag.error = String(e && e.message ? e.message : e); }
-    });
+      if (pi === 0) {
+        diag.readsAngle = C.rotRead;
+        if (!C.rotRead) break;
+      }
+    }
     diag.emitted = C.emittedCount();
     diag.cut = C.cutCount();
     // A law may publish its own numbers. `voronoiWeb`'s clamps are a claim
@@ -3021,5 +3060,11 @@
     return true;
   };
 
-  Scene3D.SurfaceFillMono = { LAWS, isMono, emit };
+  // The laws that read the Angle (screen direction) at all. Measured by
+  // `diag.readsAngle` and pinned against this list by a unit test. The panel
+  // greys the Angle control for every other mono law.
+  const ANGLE_LAWS = ['mezzoRegion', 'dutyConst', 'endShorten', 'creviceAO', 'transReserveMono',
+    'jitterOverdraw', 'mergeLadder', 'shearClear', 'phaseBlue', 'fiboQuasi'];
+  const readsAngle = (algo) => ANGLE_LAWS.indexOf(String(algo)) !== -1;
+  Scene3D.SurfaceFillMono = { LAWS, isMono, emit, readsAngle, STRIPE_ALIGN_MAX };
 }());

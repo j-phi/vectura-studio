@@ -1528,8 +1528,18 @@
     const params = resolved.params || {};
     const mapper = resolved.mapper || 'none';
     const write = (patch, opts) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, patch, opts);
+    // U4b — the Fill Style law decides which Type entries and which Angle row
+    // are live (a monoline law draws Contour as Hatch; a direction-free one
+    // has no Angle). Read off the first selected object, like the rest of this row.
+    const FSG = Vectura.SCENE_FILL_STYLES;
+    const monoLaw = (() => {
+      if (!FSG || !FSG.effectiveLaw) return '';
+      const survivor = FSG.resolve(params.toneLaw);
+      return FSG.effectiveLaw(survivor, FSG.displayParams ? FSG.displayParams(params.toneLaw, params) : params);
+    })();
+    const monoGate = (FSG && FSG.monoGate) ? FSG.monoGate(monoLaw) : { contourDead: false, angleDead: false };
     attachSelectArrowStep(selectElOf(flyMixedSelect(flyRow(fly, C.mapper.label), {
-      options: C.mappers, value: mapper, ariaLabel: C.mapper.aria,
+      options: (FSG && FSG.typeOptions) ? FSG.typeOptions(C.mappers, monoLaw) : C.mappers, value: mapper, ariaLabel: C.mapper.aria,
       mixed: sceneAgree(sc, (id) => (rs(id).mapper || 'none')).mixed,
       onChange: (v) => { write({ mapper: v, params: { ...params } }); rebuild(); },
     })));
@@ -1591,6 +1601,7 @@
       // SCENE_FILL_STYLES.entry() this reads from).
       const entry = FS.entry(law) || {};
       flyLawInfo(fly, fsHost, [
+        { text: monoGate.contourDead ? FSG.MONO_CONTOUR_NOTE : '', kind: 'faceted' },
         { text: entry.mechanism ? `How: ${entry.mechanism}` : '' },
         { text: entry.strengths ? `Strengths: ${entry.strengths}` : '' },
         { text: entry.weaknesses ? `Weaknesses: ${entry.weaknesses}` : '' },
@@ -1731,14 +1742,26 @@
     });
     if ((C.angleMappers || []).indexOf(mapper) !== -1 && UI.AngleDial) {
       const dv = Number.isFinite(params.fillAngle) ? params.fillAngle : 45;
-      flyMixedDial(flyRow(fly, C.angle.label), {
+      const angleDead = Boolean(monoGate.angleDead);
+      const angleHost = flyRow(fly, C.angle.label);
+      flyMixedDial(angleHost, {
         mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.fillAngle) ? p.fillAngle : 45; }).mixed,
         props: {
           value: dv, ariaLabel: C.angle.aria, defaultValue: 45,
-          onChange: (v) => write({ params: { ...params, fillAngle: norm360(v) } }, { gesture: true, preview: true }),
-          onCommit: (v) => write({ params: { ...params, fillAngle: norm360(v) } }),
+          onChange: (v) => { if (!angleDead) write({ params: { ...params, fillAngle: norm360(v) } }, { gesture: true, preview: true }); },
+          onCommit: (v) => { if (!angleDead) write({ params: { ...params, fillAngle: norm360(v) } }); },
         },
       });
+      // U4b — a direction-free monoline law ignores Angle: grey the row, say why.
+      if (angleDead) {
+        const angleRow = angleHost.parentNode;
+        if (angleRow && angleRow.classList) {
+          angleRow.classList.add('is-disabled');
+          angleRow.setAttribute('title', FSG.MONO_ANGLE_NOTE);
+          angleHost.inert = true;
+          flyLawInfo(fly, angleHost, [{ text: FSG.MONO_ANGLE_NOTE }], 'Why Angle has no effect');
+        }
+      }
     }
     if ((C.fillMappers || []).indexOf(mapper) !== -1) {
       const dv = Number.isFinite(params.fillDensity) ? params.fillDensity : 50;

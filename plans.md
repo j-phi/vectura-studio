@@ -572,6 +572,17 @@ questions. Do not start these without a decision:
 
 ## Done
 
+- **2026-10-03 — Fill-style review U4b: engine defects (branch `3d-scene/fr-u4b`, NOT pushed).**
+  Mono Crosshatch duplicate pass removed (about -49 % ink, -43 to -50 % pen-downs on six direction-free laws); mono
+  Density live, Angle greyed where the law has no direction, Contour greyed (screen-space laws);
+  fieldMetric keeps the sigmoid (legacy ids pinned `fieldCurve:'lstar'`); Perceptual ramp on the
+  W-26 engine; `stripeAlign` param + row; curved Stipple Jitter wired; penCross / mkDotScreen read
+  their keys; Seed greys with an (i) from a measured reach table (`Params.styleUsesSeed`).
+  Dead keys: `highlightBands` (stage off, no control) and `xrayHiddenEdges` (live, no control).
+  Deferred: Density above 50 cannot tighten `dutyConst` / `endShorten` (already at the plot floor);
+  U6 owns the remaining turingStripe controls; the seed-reach table covers curved shapes by
+  sphere only (other curved shapes are assumed to share the generic engine) and is a fixed
+  table, so a new Fill Style needs its row.
 - **U4a (fill-review): Seed wired to all scene3d fills (legacy migration), tree Stroke Fill, pen-tier tag, compose determinism (stale FillBoolean latch), makeRotator callers.** Deferred: golden-ratio low-discrepancy walks outside the listed sites stay structural; per-tier pen routing at export is U6.
 - **2026-10-02 — Fill-style review U3: Object 3D panel reach (branch `3d-scene/fr-u3`, NOT
   pushed).** Leaf Style tab parity with the scene Style editor through shared row renderers;

@@ -712,9 +712,13 @@
       ? FS.curvedSinkNote(o.primitiveMode, o.mapper,
         FS.effectiveLaw ? FS.effectiveLaw(law, FS.displayParams ? FS.displayParams(o.value, o.paramsBag || {}) : (o.paramsBag || {})) : law)
       : '';
+    const monoText = (FS.monoGate && FS.monoGate(FS.effectiveLaw
+      ? FS.effectiveLaw(law, FS.displayParams ? FS.displayParams(o.value, o.paramsBag || {}) : (o.paramsBag || {})) : law).contourDead)
+      ? FS.MONO_CONTOUR_NOTE : '';
     buildLawInfoAffordance(ctl.parentNode || ctl, [
       { text: facetedText, kind: 'faceted' },
       { text: sinkText, kind: 'faceted' },
+      { text: monoText, kind: 'faceted' },
       { text: note.text },
       { text: entry.mechanism ? `How: ${entry.mechanism}` : '' },
       { text: entry.strengths ? `Strengths: ${entry.strengths}` : '' },
@@ -749,6 +753,36 @@
       comps.push(subSelect);
       attachSelectArrowStep(selectElOf(subSelect));
     });
+
+    // U4b — law-specific dials. Each key is ABSENT (or 0) by default, which is
+    // today's output; the row writes the key only when the user moves it.
+    //   turingStripe -> Stripe alignment (0-1.2; r2 measured 0.9 as the good value)
+    //   mkDotScreen  -> Dot size / Dot angle (the stipple keys, read by the disc)
+    const lawDialLaw = FS.effectiveLaw ? FS.effectiveLaw(law, styleParamBag) : law;
+    const writeLawKey = (key, v) => {
+      if (typeof o.writeStyleParams === 'function') o.writeStyleParams({ [key]: v });
+    };
+    if (lawDialLaw === 'turingStripe') {
+      moduleSliderRow(host, comps, 'Stripe align', {
+        value: Number.isFinite(styleParamBag.stripeAlign) ? styleParamBag.stripeAlign : 0,
+        min: 0, max: 1.2, step: 0.05, defaultValue: 0, ariaLabel: 'Stripe alignment',
+        onCommit: (v) => writeLawKey('stripeAlign', Math.round(v * 100) / 100),
+      });
+    }
+    if (lawDialLaw === 'mkDotScreen' && (o.mapper === 'hatch' || o.mapper === 'crosshatch' || o.mapper === 'contour')) {
+      moduleSliderRow(host, comps, 'Dot size', {
+        value: Number.isFinite(styleParamBag.dotSize) ? styleParamBag.dotSize : 0.7,
+        min: 0.1, max: 3, step: 0.05, defaultValue: 0.7, ariaLabel: 'Dot size',
+        onCommit: (v) => writeLawKey('dotSize', Math.round(v * 100) / 100),
+      });
+      if (UI.AngleDial) {
+        comps.push(UI.AngleDial(o.row('Dot angle'), {
+          value: Number.isFinite(styleParamBag.dotAngle) ? styleParamBag.dotAngle : 0,
+          ariaLabel: 'Dot angle', defaultValue: 0,
+          onCommit: (v) => writeLawKey('dotAngle', ((Math.round(v) % 360) + 360) % 360),
+        }));
+      }
+    }
 
     // The measured caveat of a demoted law stays OUTSIDE the hover popover,
     // in the warning colour, directly under the row — relocated out of the
@@ -838,7 +872,11 @@
   const mkCommitKit = (ui, layer) => {
     const pushHist = () => { try { ui.app && ui.app.pushHistory && ui.app.pushHistory(); } catch (_) { /* */ } };
     const store = () => { try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ } };
-    const regen = () => { try { ui.app && ui.app.regen && ui.app.regen(); } catch (_) { /* */ } };
+    const regen = () => {
+      try { ui.app && ui.app.regen && ui.app.regen(); } catch (_) { /* */ }
+      // U4b — Seed is greyed when no fill draws from it; a style edit can flip that.
+      try { ui.updateSeedReach && ui.updateSeedReach(layer); } catch (_) { /* */ }
+    };
     const regenDraft = () => { try { ui.app && ui.app.regen && ui.app.regen({ preview: true }); } catch (_) { /* */ } };
     const commit = (mutate) => { pushHist(); mutate(); store(); regen(); };
     const liveSlider = (apply) => {
@@ -1131,19 +1169,35 @@
     const { survivor, law } = lawsOf(sp);
     return { cls: primClassOf(primitive), primitive, mapper, sp: sp || {}, survivor, law, mono: isMonoLaw(law) };
   };
+  const monoAngleDead = (c) => {
+    const FS = Vectura.SCENE_FILL_STYLES;
+    return Boolean(c && c.mono && FS && FS.monoGate && FS.monoGate(c.law).angleDead);
+  };
+  // The Type list for a style bag (Contour greyed under a monoline law).
+  const typeOptionsFor = (sp) => {
+    const FS = Vectura.SCENE_FILL_STYLES;
+    if (!FS || typeof FS.typeOptions !== 'function') return MAPPERS;
+    return FS.typeOptions(MAPPERS, lawsOf(sp).law);
+  };
   const GATE_NOTES = {
+    monoAngle: (Vectura.SCENE_FILL_STYLES && Vectura.SCENE_FILL_STYLES.MONO_ANGLE_NOTE) || 'This Fill Style has no direction to turn, so Angle changes nothing.',
+    monoCross: (Vectura.SCENE_FILL_STYLES && Vectura.SCENE_FILL_STYLES.MONO_CROSS_NOTE) || 'This Fill Style has no direction to cross, so Crosshatch draws the same picture as Hatch.',
     mono: 'This Fill Style draws its own marks and ignores this control.',
     triple: 'Triple hatch adds a third family only to Fill Styles that draw rung families. Ladder, Continuous Field, Deep Fill and the field-driven styles ignore it.',
     eccentricity: 'Eccentricity has no effect on a curved shape under Ladder or Deep Fill.',
-    jitter: 'Jitter has no effect on a curved shape yet.',
     curvedHL: '— no effect on curved shapes',
   };
   const CONTROL_GATES = {
     facetMinRulings: (c) => (c.cls === 'curved' ? false : (c.cls === 'faceted' && c.mono ? GATE_NOTES.mono : true)),
     angleRef: (c) => (c.cls === 'curved' ? false : (c.mono ? GATE_NOTES.mono : true)),
     linkFill: (c) => (c.cls === 'curved' ? false : (c.mono ? GATE_NOTES.mono : true)),
-    crossAngleDelta: (c) => (c.mono ? GATE_NOTES.mono : true),
-    crossDensityRatio: (c) => (c.mono ? GATE_NOTES.mono : true),
+    // U4b: Cross angle is wired into the monoline laws that have a direction;
+    // a law with no direction draws Crosshatch as Hatch, and no law reads
+    // Cross density.
+    crossAngleDelta: (c) => (monoAngleDead(c) ? GATE_NOTES.monoCross : true),
+    crossDensityRatio: (c) => (c.mono ? GATE_NOTES.monoCross : true),
+    // U4b: a direction-free monoline law ignores Angle.
+    fillAngle: (c) => (monoAngleDead(c) ? GATE_NOTES.monoAngle : true),
     tripleHatch: (c) => {
       if (c.cls === 'faceted') return false;
       if (c.mono) return GATE_NOTES.triple;
@@ -1155,7 +1209,6 @@
     spiralMode: (c) => c.cls !== 'faceted',
     spiralEccentricity: (c) => (c.cls === 'curved' && (c.survivor === 'ladder' || c.survivor === 'deepFillTSP') ? GATE_NOTES.eccentricity : true),
     dotAngle: (c) => { const s = c.sp.dotShape || 'dot'; return s !== 'dot' && s !== 'ring'; },
-    stippleJitter: (c) => (c.cls === 'curved' ? GATE_NOTES.jitter : true),
     // Hidden-but-live keys exposed by U3 (r3 §5). Each is shown only where it
     // measurably changes output.
     spiralPitch: (c) => c.cls !== 'curved' || c.sp.spiralMode === 'flatClip',
@@ -1807,7 +1860,7 @@
         },
       }));
       const leafTypeSelect = UI.Select(labeledRow(host, 'Type'), {
-        options: MAPPERS,
+        options: typeOptionsFor(style.params),
         value: style.mapper || 'wireframe',
         ariaLabel: 'Fill type',
         onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderStyle(); },
@@ -1856,7 +1909,8 @@
         const paramToDial = (v) => wrapDeg360(v + 90);
         const dialToParam = (d) => wrapDeg360(d - 90);
         const storedAngle = Number.isFinite(style.params.fillAngle) ? style.params.fillAngle : 45;
-        const angleKit = liveSlider((v) => { style.params.fillAngle = Math.round(v); });
+        const leafAngleVerdict = gateVerdict('fillAngle', styleGateCtx(params.primitive, style.mapper, style.params));
+        const angleKit = liveSlider((v) => { if (typeof leafAngleVerdict === 'string') return; style.params.fillAngle = Math.round(v); });
         comps.push(UI.AngleDial(angleHost, {
           value: paramToDial(storedAngle),
           ariaLabel: 'Fill angle',
@@ -1864,6 +1918,7 @@
           onChange: (d) => angleKit.onChange(dialToParam(d)),
           onCommit: (d) => angleKit.onCommit(dialToParam(d)),
         }));
+        if (typeof leafAngleVerdict === 'string') markRowDisabled(angleHost.parentNode, leafAngleVerdict);
         // W-38 — "minimum facet rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
         // hatch/crosshatch only, matching D_FACETFLOOR's MAPPER_CONTROLS entry.
         const minRulingsVerdict = gateVerdict('facetMinRulings', styleGateCtx(params.primitive, style.mapper, style.params));
@@ -2227,7 +2282,7 @@
         onChange: (v) => { commit(() => { style.penId = v || null; }); },
       }));
       const boolTypeSelect = UI.Select(labeledRow(sHost, 'Type'), {
-        options: MAPPERS,
+        options: typeOptionsFor(style.params),
         value: style.mapper || 'wireframe',
         ariaLabel: 'Fused fill type',
         onChange: (v) => { commit(() => { style.mapper = v; if (!style.params || typeof style.params !== 'object') style.params = {}; }); renderBoolStyle(); },
@@ -2614,7 +2669,11 @@
     // Host commit pattern — ONE undo step per gesture.
     const pushHist = () => { try { ui.app && ui.app.pushHistory && ui.app.pushHistory(); } catch (_) { /* */ } };
     const store = () => { try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ } };
-    const regen = () => { try { ui.app && ui.app.regen && ui.app.regen(); } catch (_) { /* */ } };
+    const regen = () => {
+      try { ui.app && ui.app.regen && ui.app.regen(); } catch (_) { /* */ }
+      // U4b — Seed is greyed when no fill draws from it; a style edit can flip that.
+      try { ui.updateSeedReach && ui.updateSeedReach(layer); } catch (_) { /* */ }
+    };
     // Draft-quality regen for live drags: sets bounds.fastPreview so scene3d
     // skips cast shadows + tone banding + the plane-projected surface hatch,
     // matching the on-canvas handle-drag path (renderer._scheduleSceneDragRegen).
@@ -4667,7 +4726,7 @@
       mapRow.appendChild(mapHost);
       styleHost.appendChild(mapRow);
       const mainTypeSelect = UI.Select(mapHost, {
-        options: MAPPERS,
+        options: typeOptionsFor(resolved.params),
         value: resolved.mapper || 'none',
         ariaLabel: 'Style mapper',
         onChange: (v) => commitStyle({ mapper: v, params: mapperDefaults(v, resolved.params) }),
@@ -5205,4 +5264,6 @@
   };
 
   Vectura.UI.Scene3DPanel = { build };
+  // U4b — the click-driven (i) popover, shared with the Transform & Seed row.
+  Vectura.UI.buildInfoAffordance = buildLawInfoAffordance;
 })();

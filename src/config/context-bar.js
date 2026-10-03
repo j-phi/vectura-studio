@@ -655,6 +655,31 @@
     return hit ? FILL_STYLE_DEFAULT : null;
   };
   SCENE_FILL_STYLES.NO_EFFECT_SUFFIX = ' — no effect here';
+  // U4b — the monoline laws (Voronoi web, maze, Turing stripes, ...) draw in
+  // SCREEN space. Measured on all nine reachable laws: Contour draws byte-for-
+  // byte what Hatch draws (they never read the mapper), and a law that has no
+  // direction (it follows the light or grows its own pattern) also ignores
+  // Angle, Cross angle and, in Crosshatch, draws the same picture as Hatch. The
+  // Type list and the Angle row grey these out instead of offering a control
+  // that moves nothing.
+  SCENE_FILL_STYLES.monoGate = (law) => {
+    const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
+    const mono = Boolean(law && M && typeof M.isMono === 'function' && M.isMono(law));
+    const readsAngle = mono && typeof M.readsAngle === 'function' ? M.readsAngle(law) : true;
+    return { mono, contourDead: mono, angleDead: mono && !readsAngle };
+  };
+  SCENE_FILL_STYLES.MONO_CONTOUR_SUFFIX = ' — same as Hatch';
+  SCENE_FILL_STYLES.MONO_CONTOUR_NOTE = 'This Fill Style draws in screen space, so Contour draws the same picture as Hatch. Contour is greyed in the Type list.';
+  SCENE_FILL_STYLES.MONO_ANGLE_NOTE = 'This Fill Style has no direction to turn. It follows the light or grows its own pattern, so Angle changes nothing.';
+  SCENE_FILL_STYLES.MONO_CROSS_NOTE = 'This Fill Style has no direction to cross. Crosshatch draws the same picture as Hatch, so Cross angle and Cross density change nothing.';
+  // The Type list for a style bag: Contour is disabled (kept, never removed)
+  // while a monoline law is the Fill Style.
+  SCENE_FILL_STYLES.typeOptions = (options, law) => {
+    const g = SCENE_FILL_STYLES.monoGate(law);
+    if (!g.contourDead || !Array.isArray(options)) return options;
+    return options.map((opt) => (opt && opt.value === 'contour'
+      ? { ...opt, label: opt.label + SCENE_FILL_STYLES.MONO_CONTOUR_SUFFIX, disabled: true } : opt));
+  };
   SCENE_FILL_STYLES.FACETED_NOTE = 'This shape is faceted: fill styles greyed out above draw exactly like Ladder here, whichever one is picked.';
   SCENE_FILL_STYLES.FACETED_CAP_NOTE = 'This solid has no planar fill support, and its body exceeds the fill engine’s per-object face budget — so even the styles that work on a box/plane fall back to Ladder here. Only NO TONE still differs. A simpler solid (fewer faces) can restore the rest.';
   // fs-e1 item 3 — the cap note's "Only NO TONE still differs" is FALSE for a

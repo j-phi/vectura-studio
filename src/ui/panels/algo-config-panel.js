@@ -1486,7 +1486,7 @@
     if (scaleX) scaleX.value = layer.params.scaleX;
     if (scaleY) scaleY.value = layer.params.scaleY;
     if (rotation) rotation.value = layer.params.rotation;
-    if (!isModifier) this.toggleSeedControls(layer.type);
+    if (!isModifier) this.toggleSeedControls(layer.type, layer);
 
     const desc = getEl('algo-desc');
     if (desc) {
@@ -5017,7 +5017,62 @@
   // Layer types whose fills draw from Seed only once `params.seedMode === 'seeded'`.
   const SEED_MODE_TYPES = new Set(['scene3d', 'object3d', 'booleanGroup3d']);
   const SEEDLESS_ALGOS_LIST = ['lissajous', 'harmonograph', 'pendula', 'shape', 'group'];
-  function toggleSeedControls(type) {
+  // Does the Seed do anything for this 3D layer? Answers true unless the style
+  // tables PROVE every fill is seed-free (Params.styleUsesSeed / sceneUsesSeed).
+  const SEED_NO_EFFECT_NOTE = 'Seed has no effect for this style. This Fill Style, Type and shape draw no random marks, so every seed gives the same picture. Pick a style that scatters marks (Stipple, Maze, Voronoi web, wobble) and the Seed returns.';
+  function layerSeedLive(layer) {
+    try {
+      const P = window.Vectura && window.Vectura.Scene3D && window.Vectura.Scene3D.Params;
+      if (!layer || !P || !SEED_MODE_TYPES.has(layer.type)) return true;
+      const params = layer.params || {};
+      if (layer.type === 'object3d') {
+        return P.styleUsesSeed(params.primitive, params.style);
+      }
+      if (layer.type !== 'scene3d') return true;
+      const a = layer._sceneAssembled;
+      const src = (a && Array.isArray(a.objects) && a.objects.length) ? a : params;
+      return P.sceneUsesSeed({
+        objects: src.objects,
+        styleTable: src.styleTable || params.styleTable,
+        lights: src.lights || params.lights,
+        ground: src.ground || params.ground,
+        shadow: src.shadow || params.shadow,
+      });
+    } catch (_) {
+      return true; // never grey on a failure
+    }
+  }
+  function applySeedReach(layer) {
+    const getEl = (DEPS && DEPS.getEl)
+      || ((id) => (typeof document !== 'undefined' ? document.getElementById(id) : null));
+    const input = getEl('inp-seed', { silent: true });
+    const dice = getEl('btn-rand-seed', { silent: true });
+    const wrap = getEl('seed-controls', { silent: true });
+    if (!input || !wrap) return;
+    const live = layerSeedLive(layer);
+    [input, dice].forEach((c) => {
+      if (!c) return;
+      c.disabled = !live;
+      c.classList.toggle('is-disabled', !live);
+      if (live) { c.removeAttribute('aria-disabled'); } else { c.setAttribute('aria-disabled', 'true'); }
+    });
+    if (live) { input.removeAttribute('title'); } else { input.setAttribute('title', SEED_NO_EFFECT_NOTE); }
+    wrap.classList.toggle('is-seed-inert', !live);
+    let note = wrap.querySelector('.seed-inert-info');
+    if (live) { if (note) note.remove(); return; }
+    if (note) return;
+    const make = window.Vectura && window.Vectura.UI && window.Vectura.UI.buildInfoAffordance;
+    note = document.createElement('div');
+    note.className = 'seed-inert-info';
+    note.style.cssText = 'grid-column:1 / -1;display:flex;align-items:center;gap:6px;font-size:11px;';
+    const text = document.createElement('span');
+    text.className = 'text-vectura-muted';
+    text.textContent = 'No effect for this style';
+    note.appendChild(text);
+    if (typeof make === 'function') make(note, [{ text: SEED_NO_EFFECT_NOTE }], 'Why Seed has no effect');
+    wrap.appendChild(note);
+  }
+  function toggleSeedControls(type, layer) {
     const getEl = (DEPS && DEPS.getEl)
       || ((id) => (typeof document !== 'undefined' ? document.getElementById(id) : null));
     const show = !SEEDLESS_ALGOS_LIST.includes(type);
@@ -5025,6 +5080,8 @@
     if (seedControls) seedControls.style.display = show ? '' : 'none';
     const label = getEl('transform-label', { silent: true });
     if (label) label.textContent = show ? 'Transform & Seed' : 'Transform';
+    if (show && SEED_MODE_TYPES.has(type)) applySeedReach(layer);
+    else if (show) applySeedReach(null);
   }
 
   UI.AlgoConfigPanel = {
@@ -5039,10 +5096,13 @@
     buildControls,
     bindAlgoConfigListeners,
     toggleSeedControls,
+    applySeedReach,
+    layerSeedLive,
     installOn(proto) {
       proto.buildControls = function() { return buildControls.call(this); };
       proto.bindAlgoConfigListeners = function() { return bindAlgoConfigListeners.call(this); };
-      proto.toggleSeedControls = function(type) { return toggleSeedControls.call(this, type); };
+      proto.toggleSeedControls = function(type, layer) { return toggleSeedControls.call(this, type, layer); };
+      proto.updateSeedReach = function(layer) { return applySeedReach.call(this, layer); };
     },
   };
 })();
