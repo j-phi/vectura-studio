@@ -32,7 +32,69 @@
     return v(a.x / len, a.y / len, a.z / len);
   };
 
+  // ── Rotation: yaw (about Y) → pitch (about X) → roll (about Z) ────────────
+  //
+  // PRECOMPUTED TRIG, SAME ARITHMETIC (fill-style review F3, U2). The legacy
+  // `rotatePoint` re-derived three `degToRad`→`finite(Number())` coercions and
+  // six sin/cos per call, and allocated three destructuring arrays — and the
+  // curved fill calls it 4-8x per surface sample. `rotationTrig` resolves the
+  // angles exactly as before (same `??` fallbacks, same `degToRad`), and
+  // `rotateWithTrig` runs the identical three sequential 2-D rotations with the
+  // identical expression order, so the output is BIT-IDENTICAL (pinned by
+  // tests/unit/geometry3d-rotator-identity.test.js).
+  const rotationTrig = (angles = {}) => {
+    const yaw = degToRad(angles.yaw ?? angles.rotate ?? 0);
+    const pitch = degToRad(angles.pitch ?? angles.tilt ?? 0);
+    const roll = degToRad(angles.roll ?? 0);
+    return {
+      cy: Math.cos(yaw), sy: Math.sin(yaw),
+      cp: Math.cos(pitch), sp: Math.sin(pitch),
+      cr: Math.cos(roll), sr: Math.sin(roll),
+    };
+  };
+  const rotateWithTrig = (point, e) => {
+    const x0 = point.x; const y0 = point.y; const z0 = point.z;
+    const x1 = x0 * e.cy + z0 * e.sy; const z1 = -x0 * e.sy + z0 * e.cy;
+    const y2 = y0 * e.cp - z1 * e.sp; const z2 = y0 * e.sp + z1 * e.cp;
+    const x3 = x1 * e.cr - y2 * e.sr; const y3 = x1 * e.sr + y2 * e.cr;
+    return v(x3, y3, z2);
+  };
+  /** A rotator with the trig of `angles` resolved once: `(pt) => rotatePoint(pt, angles)`. */
+  const makeRotator = (angles = {}) => {
+    const e = rotationTrig(angles);
+    return (point) => rotateWithTrig(point, e);
+  };
+  // A 4-slot memo keyed on the RAW angle inputs, so every existing caller of
+  // `rotatePoint` (object rotation + camera, alternating per sample) gets the
+  // precomputed trig without changing its call site. `Object.is`, not `===`:
+  // `0 === -0`, but sin(-0) is -0 and a signed zero can survive into a later
+  // division, so the memo must never hand a -0 key the +0 entry.
+  const ROT_MEMO = [];
+  for (let i = 0; i < 4; i += 1) ROT_MEMO.push({ a: undefined, b: undefined, c: undefined, used: false, e: null });
+  let rotMemoNext = 0;
+  const isKey = (a) => typeof a === 'number' || typeof a === 'string';
   const rotatePoint = (point, angles = {}) => {
+    const ay = angles.yaw ?? angles.rotate ?? 0;
+    const ap = angles.pitch ?? angles.tilt ?? 0;
+    const ar = angles.roll ?? 0;
+    // Only primitives are memoised: an object angle could coerce differently
+    // between calls (valueOf), so it always recomputes.
+    if (isKey(ay) && isKey(ap) && isKey(ar)) {
+      for (let i = 0; i < 4; i += 1) {
+        const m = ROT_MEMO[i];
+        if (m.used && Object.is(m.a, ay) && Object.is(m.b, ap) && Object.is(m.c, ar)) return rotateWithTrig(point, m.e);
+      }
+      const m = ROT_MEMO[rotMemoNext];
+      rotMemoNext = (rotMemoNext + 1) & 3;
+      m.a = ay; m.b = ap; m.c = ar; m.used = true;
+      m.e = rotationTrig({ yaw: ay, pitch: ap, roll: ar });
+      return rotateWithTrig(point, m.e);
+    }
+    return rotateWithTrig(point, rotationTrig({ yaw: ay, pitch: ap, roll: ar }));
+  };
+  // The legacy implementation, kept verbatim as the identity reference for the
+  // property test only — production code calls `rotatePoint` / `makeRotator`.
+  const rotatePointReference = (point, angles = {}) => {
     let { x, y, z } = point;
     const yaw = degToRad(angles.yaw ?? angles.rotate ?? 0);
     const pitch = degToRad(angles.pitch ?? angles.tilt ?? 0);
@@ -1249,6 +1311,8 @@
     length,
     normalize,
     rotatePoint,
+    makeRotator,
+    rotatePointReference,
     projectPoint,
     pathWithMeta,
     cleanPath,

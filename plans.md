@@ -571,6 +571,14 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **2026-10-02 — Fill-style review U2 (kernel perf), branch `3d-scene/fr-u2`, NOT merged.**
+  Ribbon erosion from one oriented distance field + oriented PenFill (output change accepted by
+  Jay; invariants pinned in `tests/unit/scene3d-ribbon-raster-erode.test.js`); bit-identical
+  mono streamline grid, turingStripe allocations, ground-shadow fields and rotator memo (pinned
+  in `tests/unit/scene3d-u2-kernel-identity.test.js` + `geometry3d-rotator-identity.test.js`);
+  perf ratios in `tests/perf/u2-kernel-perf.test.js`. Follow-up: switch the hot
+  `rotatePoint` / `Scene.applyObjectTransform` callers in scene.js / surface-fill.js `sampleAt`
+  to `Geometry3D.makeRotator` (outside U2's files).
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
   (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
   Merged `3d-scene/handoff-c2` → `3d-scene/fill-collapse-2` → `3d-scene/fill-audit-2` →

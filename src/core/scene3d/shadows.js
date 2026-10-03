@@ -1538,6 +1538,100 @@
     return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
   };
 
+  // ── Exact accelerated distance-to-segments (fill-style review F9, U2) ──────
+  //
+  // `buildShadowFields` used to call `distToSegs` (O(segments)) for every one
+  // of up to 40 000 lattice cells, twice — half of the default scene's frame.
+  // `makeSegDistIndex` covers the lattice with coarse blocks (G = 4 lattice
+  // cells) and, ONCE per block, keeps only the segments that can be nearest to
+  // some point of it: with c the block centre and r its half-diagonal, the
+  // nearest segment s* of any point p in the block satisfies
+  //   |c, s*| <= |p, s*| + r <= |p, s_c| + r <= |c, s_c| + 2r,
+  // where s_c is the segment nearest c. A query then runs the IDENTICAL
+  // squared-distance expression over that candidate list only. The list always
+  // contains s*, and `min` is order-independent, so the result is EXACTLY what
+  // `distToSegs` returns (slack on r absorbs rounding; a non-finite segment —
+  // which `distToSegs` can never pick, since `NaN < best` is false — is never
+  // listed; a query outside the lattice falls back to the full scan). Pinned
+  // bit-identical by tests/unit/scene3d-u2-kernel-identity.test.js.
+  const segDist2 = (px, py, a, b) => {
+    const vx = b.x - a.x; const vy = b.y - a.y;
+    const wx = px - a.x; const wy = py - a.y;
+    const vv = vx * vx + vy * vy;
+    let s = vv > 1e-12 ? (wx * vx + wy * vy) / vv : 0;
+    if (s < 0) s = 0; else if (s > 1) s = 1;
+    const dx = wx - vx * s; const dy = wy - vy * s;
+    return dx * dx + dy * dy;
+  };
+  const makeSegDistIndex = (segs, lat) => {
+    const live = [];
+    for (let i = 0; i < segs.length; i++) {
+      const a = segs[i][0]; const b = segs[i][1];
+      if (Number.isFinite(a.x) && Number.isFinite(a.y) && Number.isFinite(b.x) && Number.isFinite(b.y)) live.push(segs[i]);
+    }
+    if (!live.length) return () => Infinity;
+    const G = lat.cell * 4;
+    const bx = Math.max(1, Math.ceil((lat.maxX - lat.minX) / G) + 1);
+    const by = Math.max(1, Math.ceil((lat.maxY - lat.minY) / G) + 1);
+    const r = (G * Math.SQRT2) / 2 * (1 + 1e-9) + 1e-9;
+    const lists = new Array(bx * by);
+    const dc = new Float64Array(live.length);
+    const blockOf = (cx, cy) => {
+      let best = Infinity;
+      for (let n = 0; n < live.length; n++) {
+        const d = Math.sqrt(segDist2(cx, cy, live[n][0], live[n][1]));
+        dc[n] = d;
+        if (d < best) best = d;
+      }
+      const lim = best + 2 * r + 1e-9 * (1 + best);
+      const out = [];
+      for (let n = 0; n < live.length; n++) if (dc[n] <= lim) out.push(live[n]);
+      return out;
+    };
+    const scan = (px, py, list) => {
+      let best = Infinity;
+      for (let n = 0; n < list.length; n++) {
+        const d = segDist2(px, py, list[n][0], list[n][1]);
+        if (d < best) best = d;
+      }
+      return best === Infinity ? Infinity : Math.sqrt(best);
+    };
+    return (px, py) => {
+      const fi = (px - lat.minX) / G; const fj = (py - lat.minY) / G;
+      if (!(fi >= 0 && fj >= 0)) return scan(px, py, live);
+      const i = Math.floor(fi); const j = Math.floor(fj);
+      if (i >= bx || j >= by) return scan(px, py, live);
+      const k = j * bx + i;
+      let list = lists[k];
+      if (!list) {
+        list = blockOf(lat.minX + (i + 0.5) * G, lat.minY + (j + 0.5) * G);
+        lists[k] = list;
+      }
+      return scan(px, py, list);
+    };
+  };
+  // Scanline replacement for the per-cell `pointInRings` over a whole lattice
+  // row: the edge crossings of row `py` are computed ONCE with the identical
+  // expression `pointInRings` uses, and a cell at `px` is inside iff an odd
+  // number of them satisfy `px < x` — exactly the toggles `pointInRings` makes.
+  const rowCrossings = (py, rings, out) => {
+    out.length = 0;
+    for (let r = 0; r < rings.length; r++) {
+      const ring = rings[r];
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[j]; const b = ring[i];
+        if (!isFinitePt(a) || !isFinitePt(b)) continue;
+        if ((a.y > py) !== (b.y > py)) {
+          const x = a.x + ((py - a.y) / ((b.y - a.y) || 1e-12)) * (b.x - a.x);
+          // A NaN crossing never satisfies `px < x`, so it never toggles.
+          if (x === x) out.push(x);
+        }
+      }
+    }
+    out.sort((p, q) => p - q);
+    return out;
+  };
+
   // Sample the two fields on a lattice ONCE, then bilinear-sample per hatch
   // segment. A ruling at the master pitch over a large footprint produces tens of
   // thousands of midpoint queries; against a boolean-produced outline (hundreds of
@@ -1561,6 +1655,9 @@
     const dC = new Float32Array(nx * ny);
     const dE = new Float32Array(nx * ny);
     const hasContact = cSegs.length > 0;
+    const latBox = { minX, minY, maxX: minX + (nx - 1) * cell, maxY: minY + (ny - 1) * cell, cell };
+    const distC = hasContact ? makeSegDistIndex(cSegs, latBox) : null;
+    const distE = edgeSegs.length ? makeSegDistIndex(edgeSegs, latBox) : null;
     for (let j = 0; j < ny; j++) {
       const y = minY + j * cell;
       for (let i = 0; i < nx; i++) {
@@ -1569,8 +1666,8 @@
         // Distance to the contact SEGMENTS, with no inside test: the collar hugs
         // the boundary of the contact set, it never fills it. Filling it is how a
         // rounded caster's band grows to a whole diameter.
-        dC[k] = hasContact ? distToSegs(x, y, cSegs) : 0;
-        dE[k] = edgeSegs.length ? distToSegs(x, y, edgeSegs) : 1e6;
+        dC[k] = distC ? distC(x, y) : 0;
+        dE[k] = distE ? distE(x, y) : 1e6;
       }
     }
     const sample = (arr, x, y) => {
@@ -1621,16 +1718,25 @@
     // throw-derived penumbra margin is sub-millimetre and the umbra becomes the
     // whole shadow.
     let Rin = 0;
+    const xs = [];
     for (let j = 0; j < ny; j++) {
       const y = minY + j * cell;
+      rowCrossings(y, footRings || [], xs);
+      if (!xs.length) continue;
+      // `p` = how many crossings are <= x; the cell is inside iff the count of
+      // crossings with x < xc (= xs.length - p) is odd.
+      let p = 0;
       for (let i = 0; i < nx; i++) {
         const x = minX + i * cell;
-        if (!pointInRings(x, y, footRings || [])) continue;
+        while (p < xs.length && !(x < xs[p])) p++;
+        if (((xs.length - p) & 1) === 0) continue;
         const d = dE[j * nx + i];
         if (d > Rin) Rin = d;
       }
     }
     return {
+      // The raw lattice, for the identity test only.
+      grid: { dC, dE, nx, ny, minX, minY, cell },
       L,
       Rin,
       throwAngleDeg,
@@ -3277,7 +3383,7 @@
   // distance field and run the gradient directly against SYNTHETIC, known
   // rings (e.g. a plain rectangle) so the ratio it measures is the mechanism's
   // alone. Read-only, prefixed so it reads as a seam, not API.
-  const __shadowFieldsForTest = (rings, contactSegs) => buildShadowFields(rings, contactSegs || [], []);
+  const __shadowFieldsForTest = (rings, contactSegs, edgeSegs) => buildShadowFields(rings, contactSegs || [], edgeSegs || []);
   const __toneGradientForTest = (lines, fields, tone, depth) => applyShadowToneGradient(lines, fields, tone, depth);
   const __ladderCoverageForTest = (I, tone) => ladderCoverageAt(I, tone);
   // Test seam #4 (fs-z2, shadowToneDepth Stage 1.1). Exercises the SPACING

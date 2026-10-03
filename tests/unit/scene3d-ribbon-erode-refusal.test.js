@@ -125,9 +125,17 @@ describe('SurfaceFill — F1-erode: insetMultiPolygon ladder refusal on a swallo
     expect(stats.erodeEmpty, `${law}: erodeEmpty=${stats.erodeEmpty}`).toBe(0);
   });
 
+  // U2 (fill-style review 2026-10-02): the ribbon erosion no longer goes
+  // through `insetMultiPolygon` at all — `PenFill.erodeLevels` contours both
+  // depths off one distance field, which has no boolean to swallow. The
+  // failure mode this file guards (a swallowed FillBoolean failure leaving a
+  // ribbon empty) is therefore checked as "the ladder is not on the ribbon
+  // path, and nothing that still calls it swallows a failure". `erodeEmpty`
+  // above stays the end-to-end guard.
   test.each(LAWS)('%s — no swallowed FillBoolean failure survives the insetMultiPolygon ladder', (law) => {
-    const { calls, swallowedAndEmpty } = results[law];
-    expect(calls, `${law}: insetMultiPolygon was never called`).toBeGreaterThan(0);
+    const { calls, swallowedAndEmpty, stats } = results[law];
+    expect(calls, `${law}: the ribbon erosion must not run the polygon ladder`).toBe(0);
+    expect(stats.outlines, `${law}: ribbons still get outlines`).toBeGreaterThan(0);
     expect(swallowedAndEmpty, `${law}: swallowedAndEmpty=${swallowedAndEmpty} of ${calls} insetMultiPolygon calls`)
       .toBe(0);
   });
