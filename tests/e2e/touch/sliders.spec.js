@@ -8,6 +8,7 @@ const touch = require('../helpers/touch');
 // (untrusted synthetic gestures do not scroll there); the value assertions run in every engine.
 
 const GESTURE_PROJECTS = ['touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-ipad-landscape', 'webkit-ipad-landscape'];
+const IPHL_PROJECTS = ['touch-iphone-landscape', 'webkit-iphone-landscape'];
 const MOUSE_PROJECTS = ['touch-ipad-landscape', 'webkit-ipad-landscape'];
 const THUMB = 28;
 
@@ -109,6 +110,13 @@ const histLen = (page) => page.evaluate(() => window.app.history.length);
 const scrollTopOf = (page) => page.evaluate(() => document.querySelector('[data-tux043sc]').scrollTop);
 const valueOf = (loc) => loc.evaluate((el) => Number(el.value));
 
+const drawOrderTrackHit = (page) => page.evaluate(() => {
+  const el = document.getElementById('draw-order-input');
+  const r = el.getBoundingClientRect();
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return hit && (hit.id || hit.className);
+});
+
 const trackSetup = async (page, opts) => {
   await boot(page);
   await openLeftPane(page);
@@ -134,9 +142,13 @@ test.describe('TUX-043 sliders: cheap group', () => {
     // Draw-order.
     await showRight(page, 'layers');
     const dro = page.locator('#draw-order-input');
-    await dro.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    // Short viewports (iPhone landscape) get no scrollIntoView rescue: the footer must already
+    // sit clear of the modifier bar. Taller viewports may scroll the pane first.
+    if (await page.evaluate(() => innerHeight > 520)) await dro.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     expect((await geom(dro)).h, 'draw-order input height').toBeGreaterThanOrEqual(44);
     expect((await touch.hitArea(page, dro)).h, 'draw-order hitArea').toBeGreaterThanOrEqual(44);
+    // The track centre must resolve to the input itself, not to the modifier bar or HUD.
+    expect(await drawOrderTrackHit(page), 'elementFromPoint at the draw-order track centre').toBe('draw-order-input');
   });
 
   test('(b) thumb >= 28 px', async ({ page }) => {
@@ -180,16 +192,24 @@ test.describe('TUX-043 sliders: cheap group', () => {
 
     await showRight(page, 'layers');
     const dro = page.locator('#draw-order-input');
-    await dro.evaluate((el) => el.scrollIntoView({ block: 'center' }));
-    const dg = await geom(dro);
-    const dx = dg.thumbX + (dg.thumbX + 40 < dg.left + dg.width - 8 ? 40 : -40);
-    await touch.tap(page, { x: dx, y: dg.cy });
-    await page.waitForTimeout(150);
-    // Tap may start playback (kept: tap-to-play); the handle must not have jumped to the tap point.
-    // Playback only moves forward from the handle, so a sub-100 start value can only grow smoothly.
-    const after = await valueOf(dro);
-    expect(after === dg.value || after > dg.value, 'draw-order: no jump back/forward to the finger').toBe(true);
-    if (dg.value === 100) expect(after).toBe(100);
+    if (await page.evaluate(() => innerHeight > 520)) await dro.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    // Strict: park the handle mid-range (silently), tap 40px to either side of it. A tap may start
+    // playback (kept), which only moves the handle forward from 50 at 35%/s, so the value must stay
+    // within 50 .. 50 + 0.035 * elapsedMs (+3 slack). A jump to the finger lands outside that.
+    for (const side of [-1, 1]) {
+      // Let any playback from the previous tap finish (it ends at 100), then park at 50.
+      await page.waitForFunction(() => Number(document.getElementById('draw-order-input').value) === 100, null, { timeout: 5000 }).catch(() => {});
+      await dro.evaluate((el) => { el.value = '50'; });
+      const dg = await geom(dro);
+      expect(dg.value).toBe(50);
+      const t0 = Date.now();
+      await touch.tap(page, { x: dg.thumbX + 40 * side, y: dg.cy });
+      const after = await valueOf(dro);
+      const bound = 50 + 0.035 * (Date.now() - t0) + 3;
+      const label = `draw-order after tap ${side < 0 ? 'left' : 'right'} of the handle`;
+      expect(after, label).toBeGreaterThanOrEqual(50);
+      expect(after, label).toBeLessThanOrEqual(bound);
+    }
   });
 });
 
@@ -293,6 +313,24 @@ test.describe('TUX-043 sliders: gesture group', () => {
     expect(await valueOf(mn), 'min moves left').toBeLessThan(50);
     expect(await valueOf(mx), 'max stays at 50').toBe(50);
     expect(gm.h).toBeGreaterThanOrEqual(44);
+  });
+});
+
+test.describe('TUX-043 sliders: draw-order on iPhone landscape', () => {
+  test('(k) a thumb drag on the draw-order slider changes its value', async ({ page }, testInfo) => {
+    test.skip(!IPHL_PROJECTS.includes(testInfo.project.name), 'short-viewport footer check runs on iPhone landscape');
+    await boot(page);
+    await showRight(page, 'layers');
+    const dro = page.locator('#draw-order-input');
+    expect(await drawOrderTrackHit(page), 'track centre resolves to the input (no scroll rescue)').toBe('draw-order-input');
+    const g = await geom(dro);
+    expect(g.value).toBe(100);
+    await touch.drag(page, { x: g.thumbX, y: g.cy }, { x: g.thumbX - 72, y: g.cy }, { steps: 10 });
+    await page.waitForTimeout(250);
+    const v = await valueOf(dro);
+    const expected = 100 - (72 / g.track) * 100;
+    expect(v, 'value after the thumb drag').toBeLessThan(100);
+    expect(Math.abs(v - expected), `value ${v} vs ${expected}`).toBeLessThanOrEqual(3);
   });
 });
 

@@ -14033,4 +14033,18 @@ body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: cent
   /* Layout: the row is as tall as its slider; chips stay 44px beside it. */
   .vtp-vslider-wrap { height: auto; min-height: var(--touch-target-min); }
 }
+/* TUX-043 fix round: draw-order footer on short coarse viewports (iPhone landscape).
+ * The pane reserved only 56px for the modifier bar, but the bar is 57px and the HUD strip adds
+ * 27px more (shown above 640px), so the pane ran 28px under the bar and the bar covered the
+ * bottom of the draw-order slider (elementFromPoint at the track centre hit the bar). Reserve
+ * the real chrome, and pin the footer band to the bottom of the scroller so the 44px slider and
+ * its thumb always sit above the bar without scrolling. */
+@media (pointer: coarse) and (min-width: 641px) {
+  body.mobile-layout .pane { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (pointer: coarse) and (max-height: 520px) {
+  [data-ui-skin] #right-pane .draw-order-bar {
+    position: sticky; bottom: 0; z-index: 3;
+  }
+}
 /* === END TUX-043 === */
