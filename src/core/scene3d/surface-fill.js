@@ -7987,6 +7987,10 @@
       // erosion coming back empty, and an erosion returning empty in silence is
       // exactly how the inert-ribbon blocker hid. Counted, never swallowed.
       outlineOnly: 0,
+      // The outline-depth guard of the raster erosion (`PenFill.erodeLevels`):
+      // outline vertices the raster put shallower than pen/2 (pushed back out
+      // to pen/2), and the ones it had to drop. Observability only.
+      guardShallow: 0, guardDropped: 0, outlineOpen: 0,
       noModule: 0, noRegion: 0, atMaxPaths: 0,
       // The 1-to-2-pen WALLS class (see `ribbonize`). `walls` counts stretches
       // that took it, `wallRings` the closed rings it shipped, `wallEmpty` the
@@ -8399,10 +8403,25 @@
         let any = false;
         // OUTLINE — the ribbon eroded by HALF a pen, so a real pen stroking it
         // lands its OUTER edge exactly on the ribbon boundary.
-        const outlineMP = erode(clippedMP, penWidth / 2);
-        // FILL — deeper again, chained off the outline because
-        // erode(R, a+b) === erode(erode(R, a), b) and two shallow cuts are much
-        // cheaper than one deep one.
+        // ONE DISTANCE FIELD, BOTH EROSIONS (fill-style review §2(d), U2).
+        // The two `insetMultiPolygon` band unions (now only the fallback below)
+        // were 42-66 % of every wave/weave ribbon law's frame. A Euclidean SDF
+        // composes —
+        // erode(R, a + b) is the a + b level set of R's own field — so
+        // `PenFill.erodeLevels` rasterizes the clipped ribbon ONCE, in its
+        // principal-axis frame, and contours both depths off it. The outline
+        // level is GUARDED: the raster cannot see a notch narrower than a cell,
+        // so every outline vertex is checked against the exact clipped boundary
+        // and pushed out to pen/2 (or dropped) — containment stays exact, as
+        // the polygon erosion's was. The fill region stays in the frame and is
+        // handed to PenFill as is, so PenFill's own grid is oriented too; its
+        // paths are rotated back. OUTPUT CHANGED vs the polygon erosion (a
+        // raster level, not a boolean): accepted by Jay 2026-10-02, goldens
+        // refreshed deliberately.
+        //
+        // FILL — deeper again. erode(R, a+b) === erode(erode(R, a), b), so the
+        // fill region is the deeper level of the SAME field (the polygon
+        // fallback below still chains it off the outline).
         //
         // THE DEPTH IS A PITCH, NOT A PEN RADIUS. Eroding by a further pen/2 put
         // the fill region's boundary exactly one pen in from the ribbon's, and
@@ -8421,18 +8440,66 @@
         // pass: the next pass then sits one `pitch` (= penWidth · (1 - overlap))
         // further in, exactly like every pass after it, and the seam carries the
         // same 15% overlap as the rest of the fill.
-        const fillMP = outlineMP.length
-          ? erode(outlineMP, penWidth * (0.5 - RIBBON_OVERLAP)) : [];
-        outlineMP.forEach((poly) => {
-          poly.forEach((r) => {
-            const pts = ringPts(r);
-            if (!pts) return;
-            outp.push(tag(closePath(pts, zOfPt), t0, t1));
-            ribbonStat.outlines += 1; any = true;
-          });
+        const ER = (PFm && typeof PFm.erodeLevels === 'function')
+          ? (() => {
+            try {
+              // Even-odd over every ring: shells and holes flattened together.
+              const allRings = [];
+              clippedMP.forEach((poly) => poly.forEach((r) => allRings.push(r)));
+              return PFm.erodeLevels(allRings, [penWidth / 2, penWidth * (1 - RIBBON_OVERLAP)],
+                // The outline is contoured a cell SHALLOW (so a sliver narrower
+                // than a cell — a tapered end just over one pen wide — is still
+                // found) and then SNAPPED to exactly pen/2 off the true clipped
+                // boundary, so the stroke's outer edge lands on the ribbon edge
+                // as the polygon erosion's did. The fill level is contoured at
+                // its depth; its raster error (about a cell) is well inside the
+                // 15 % pen overlap with the outline.
+                { guard: ['snap', false], levelOffset: [-1, 0] });
+            } catch (err) { return null; }
+          })()
+          : undefined;
+        let outlineRings; let fillRegions; let fromFrame = null;
+        if (ER !== undefined) {
+          // erodeLevels answers null only when the ribbon rasterizes to
+          // nothing — the erosion consumed it.
+          // A guarded outline piece may come back OPEN (`open`): the level
+          // pinches out there, and closing it would bridge the pinch.
+          outlineRings = ER ? ER.levels[0].map((l) => {
+            const w = l.map(ER.frame.toWorld);
+            if (l.open) w.open = true;
+            return w;
+          }) : [];
+          fillRegions = (ER && outlineRings.length && ER.levels[1].length) ? [ER.levels[1]] : [];
+          fromFrame = ER ? ER.frame.toWorld : null;
+          if (ER) {
+            ribbonStat.guardShallow += ER.guard.shallow;
+            ribbonStat.guardDropped += ER.guard.dropped;
+          }
+        } else {
+          // No PenFill.erodeLevels (a stripped-down harness): the polygon
+          // erosion, chained exactly as before.
+          const outlineMP = erode(clippedMP, penWidth / 2);
+          const fillMP = outlineMP.length
+            ? erode(outlineMP, penWidth * (0.5 - RIBBON_OVERLAP)) : [];
+          outlineRings = [];
+          outlineMP.forEach((poly) => poly.forEach((r) => outlineRings.push(r)));
+          fillRegions = fillMP.map((poly) => poly.map(ringPts).filter(Boolean)).filter((rs) => rs.length);
+        }
+        outlineRings.forEach((r) => {
+          if (r.open) {
+            const pts = r.filter((q) => Number.isFinite(q.x) && Number.isFinite(q.y));
+            if (pts.length < 2) return;
+            outp.push(tag(pts.map((q) => ({ x: q.x, y: q.y, z: zOfPt(q) })), t0, t1));
+            ribbonStat.outlines += 1; ribbonStat.outlineOpen += 1; any = true;
+            return;
+          }
+          const pts = ringPts(r);
+          if (!pts) return;
+          outp.push(tag(closePath(pts, zOfPt), t0, t1));
+          ribbonStat.outlines += 1; any = true;
         });
-        fillMP.forEach((poly) => {
-          const regionRings = poly.map(ringPts).filter(Boolean);
+        const fillMP = fillRegions;
+        fillMP.forEach((regionRings) => {
           if (!regionRings.length) return;
           let res = null;
           try {
@@ -8443,7 +8510,10 @@
           if (paths.length >= RIBBON_MAX_PATHS) ribbonStat.atMaxPaths += 1;
           paths.forEach((p) => {
             if (!Array.isArray(p) || p.length < 2) return;
-            outp.push(tag(p.map((q) => ({ x: q.x, y: q.y, z: zOfPt(q) })), t0, t1));
+            outp.push(tag(p.map((q0) => {
+              const q = fromFrame ? fromFrame(q0) : q0;
+              return { x: q.x, y: q.y, z: zOfPt(q) };
+            }), t0, t1));
             ribbonStat.fills += 1; any = true;
           });
         });

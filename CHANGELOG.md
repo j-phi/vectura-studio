@@ -77,6 +77,19 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   Contour / Spiral / Stipple fills, or on the ground plane. (W-38, W-38b)
 
 ### Changed
+- **3D Scene · faster fill kernels (fill-style review U2).** Variable-width ribbon laws
+  (weaveDepth, trochoidLoop, onePenDown, nibAngle, taperedEnds and the rest of the ribbon
+  family) now erode each ribbon from ONE distance field in the ribbon's own principal-axis
+  frame (`PenFill.erodeLevels`) instead of two polygon-clipping band unions, and PenFill fills
+  the ribbon on that oriented grid. **Ribbon output changes slightly (accepted):** the outline is
+  snapped to exactly pen/2 off the clipped ribbon edge, with exact convex corners; containment
+  (no outline/fill vertex outside the ribbon or closer than pen/2 to its edge) and ring-fill
+  coverage (within 0.002 of the old numbers) are pinned by tests. No visual golden covers a
+  ribbon law, so none needed a refresh. Bit-identical speed-ups, pinned by golden hashes: the
+  mono streamline spacing grid (quarter-pitch cells, numeric keys), the turingStripe relaxation
+  (hoisted Dv, inlined clamps, no per-iteration allocation), the ground-shadow distance fields
+  (per-block candidate segments + scanline inside test) and a precomputed-trig
+  `Geometry3D.rotatePoint` (new `makeRotator`).
 - **Development toolchain:** Vitest and its V8 coverage provider now move together to 4.1.8,
   and the documented minimum Node runtime is 20.19 to match the current Vite, Playwright,
   ESLint, and jsdom toolchain.

@@ -160,7 +160,7 @@ describe('SurfaceFill — F1-count: fillEmpty production counter (fill-depth bli
   });
 
   describe('3. mutation proof — a forced fill-depth-empty trips fillEmpty and NOT erodeEmpty', () => {
-    test('forcing one FILL-depth insetMultiPolygon call to return [] increments fillEmpty, leaves erodeEmpty untouched', () => {
+    test('forcing one FILL-depth erosion level to come back empty increments fillEmpty, leaves erodeEmpty untouched', () => {
       const GU = V.GeometryUtils;
       const origInset = GU.insetMultiPolygon;
 
@@ -173,26 +173,22 @@ describe('SurfaceFill — F1-count: fillEmpty production counter (fill-depth bli
       expect(before.stats.fillEmpty, `baseline fillEmpty=${before.stats.fillEmpty}`).toBe(0);
       expect(before.stats.erodeEmpty, `baseline erodeEmpty=${before.stats.erodeEmpty}`).toBe(0);
 
-      // The FILL-depth erode() call always insets by `penWidth * (0.5 -
-      // RIBBON_OVERLAP)` (surface-fill.js, RIBBON_OVERLAP = 0.15) chained
-      // off a non-empty `outlineMP` — i.e. penWidth * 0.35. The OUTLINE call
-      // insets by `penWidth / 2` — i.e. penWidth * 0.5. These are always
-      // DIFFERENT magnitudes for the default pen (0.30 mm -> 0.105 mm fill
-      // vs 0.15 mm outline), so the mutant below can target the fill call
-      // specifically by its inset magnitude without touching the outline.
+      // U2 (fill-style review 2026-10-02): both ribbon erosions now come
+      // from ONE `PenFill.erodeLevels` call — levels[0] is the outline
+      // (pen/2), levels[1] the fill region (pen·(1 - overlap)). The mutant
+      // empties the FILL level of the first ribbon that has one, leaving its
+      // outline intact — the same "fill erosion silently returned nothing"
+      // the old insetMultiPolygon mutant forced.
+      const PF = V.PenFill;
+      const origErode = PF.erodeLevels;
       let calls = 0;
       let forced = false;
-      GU.insetMultiPolygon = function mutantInsetMultiPolygon(mp, d, opts) {
+      PF.erodeLevels = function mutantErodeLevels(...args) {
         calls += 1;
-        const res = origInset.call(this, mp, d, opts);
-        // Target the FIRST non-empty result whose inset matches the fill
-        // depth (penWidth * 0.35 for the default 0.30 mm pen = 0.105),
-        // forcing exactly that one call empty — a direct, minimal mutant of
-        // "the fill erosion silently returned nothing" without touching
-        // geometry-utils.js or any other call site.
-        if (!forced && res && res.length && Math.abs(Math.abs(d) - 0.105) < 1e-9) {
+        const res = origErode.apply(this, args);
+        if (!forced && res && res.levels[0].length && res.levels[1].length) {
           forced = true;
-          return [];
+          res.levels[1] = [];
         }
         return res;
       };
@@ -201,11 +197,12 @@ describe('SurfaceFill — F1-count: fillEmpty production counter (fill-depth bli
       try {
         after = buildTorusCell(V, 'contour', 'weaveDepth');
       } finally {
+        PF.erodeLevels = origErode;
         GU.insetMultiPolygon = origInset;
       }
 
-      expect(calls, 'mutant insetMultiPolygon was never called').toBeGreaterThan(0);
-      expect(forced, 'mutant never found a fill-depth (0.105mm) call to force empty — fixture drifted').toBe(true);
+      expect(calls, 'mutant erodeLevels was never called').toBeGreaterThan(0);
+      expect(forced, 'mutant never found a ribbon with a fill level to force empty — fixture drifted').toBe(true);
       expect(after.stats.fillEmpty, `mutated fillEmpty=${after.stats.fillEmpty}`).toBeGreaterThan(0);
       // The blind spot, proven directly: erodeEmpty stays 0 because the
       // OUTLINE for that same stretch still shipped (`any` stayed true) —

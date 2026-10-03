@@ -579,6 +579,14 @@ questions. Do not start these without a decision:
   greyed); Layers-panel Assign pen on object3d rows routes ink. Engine-side follow-ups for U4/U5:
   wire Jitter on curved stipple (then drop its gate), Seed / Stroke Fill plumbing, mark shapes
   and curvature-field hatch need roster entries (not exposed here), xrayHiddenEdges stays unread.
+- **2026-10-02 — Fill-style review U2 (kernel perf), branch `3d-scene/fr-u2`, NOT merged.**
+  Ribbon erosion from one oriented distance field + oriented PenFill (output change accepted by
+  Jay; invariants pinned in `tests/unit/scene3d-ribbon-raster-erode.test.js`); bit-identical
+  mono streamline grid, turingStripe allocations, ground-shadow fields and rotator memo (pinned
+  in `tests/unit/scene3d-u2-kernel-identity.test.js` + `geometry3d-rotator-identity.test.js`);
+  perf ratios in `tests/perf/u2-kernel-perf.test.js`. Follow-up: switch the hot
+  `rotatePoint` / `Scene.applyObjectTransform` callers in scene.js / surface-fill.js `sampleAt`
+  to `Geometry3D.makeRotator` (outside U2's files).
 - **2026-10-02 — Fill Style review U1: pipeline perf (branch `3d-scene/fr-u1`, NOT merged/pushed).**
   B1 draft flag forwarded to scene groups; F5 law-preserving draft tier (ribbon laws as weighted
   centrelines via SurfaceFill `ribbonDraft`, mono laws at pen × 2.5) with adaptive tier choice

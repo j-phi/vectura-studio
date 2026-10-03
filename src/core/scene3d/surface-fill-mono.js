@@ -549,23 +549,36 @@
    * streamline follows the body and stops on the silhouette.
    */
   const streamFamily = (C, dirAt, clearAt) => {
+    // The spacing grid. A QUARTER-pitch cell with NUMERIC keys (fill-style
+    // review NEW-1, U2): `tooClose` was the #1 mono hotspot (26 % self on
+    // etfKang) because a PMAX-wide cell held dozens of 0.34 mm-spaced points and
+    // every probe built template-string Map keys. `tooClose` only answers "is
+    // ANY stored point closer than d", so the cell size and key encoding cannot
+    // change the answer: the scan radius still covers every cell a point within
+    // d can sit in, a key collision (|cell| >= 2^20) only adds candidates that
+    // the exact distance test then rejects, and a NaN/Infinity point fails that
+    // test under either encoding. Output is bit-identical (pinned by
+    // tests/unit/scene3d-u2-kernel-identity.test.js).
     const CELLS = new Map();
-    const GS = C.PMAX;
+    const GS = C.PMAX / 4;
+    const KOFF = 1048576; const KMUL = 2097152;
     const put = (p) => {
-      const k = `${Math.floor(p.x / GS)},${Math.floor(p.y / GS)}`;
-      if (!CELLS.has(k)) CELLS.set(k, []);
-      CELLS.get(k).push(p);
+      const k = (Math.floor(p.x / GS) + KOFF) * KMUL + (Math.floor(p.y / GS) + KOFF);
+      const arr = CELLS.get(k);
+      if (arr) arr.push(p); else CELLS.set(k, [p]);
     };
     const tooClose = (x, y, d) => {
       const g = Math.ceil(d / GS) + 1;
+      const dd = d * d;
       const cx = Math.floor(x / GS); const cy = Math.floor(y / GS);
       for (let j = -g; j <= g; j++) {
+        const ky = cy + j + KOFF;
         for (let i = -g; i <= g; i++) {
-          const arr = CELLS.get(`${cx + i},${cy + j}`);
+          const arr = CELLS.get((cx + i + KOFF) * KMUL + ky);
           if (!arr) continue;
           for (let k = 0; k < arr.length; k++) {
             const dx = arr[k].x - x; const dy = arr[k].y - y;
-            if (dx * dx + dy * dy < d * d) return true;
+            if (dx * dx + dy * dy < dd) return true;
           }
         }
       }
@@ -2503,8 +2516,45 @@
     }
     // Anisotropic activator/inhibitor relaxation. The inhibitor's range is the
     // local wavelength, so the settled stripe pitch tracks the tone.
-    const un = new Float32Array(NX * NY);
-    const vn = new Float32Array(NX * NY);
+    //
+    // ALLOCATION-FREE, BIT-IDENTICAL (fill-style review F7, U2). `Dv` depends
+    // only on `lam[k]` and `dx`, so it is computed ONCE per cell (a Float64Array
+    // holds the exact double the per-iteration expression produced). The two
+    // `clamp` calls are inlined with clamp's own semantics (`x || 0` maps NaN
+    // and -0 to +0 before the range test). The per-iteration `slice()` copies
+    // become ping-pong buffers: the border cells of `un`/`vn` are never written,
+    // so they were always 0 in every copy after the first iteration — zeroing
+    // the borders of the original `u`/`v` once, after iteration 0 has read
+    // them, reproduces that exactly.
+    // `wl` tracks the TONE correctly (small in shadow, large in light —
+    // see `lam` above and the shared `pitchLegible` convention every
+    // sibling law honours). But this activator/inhibitor pair's own
+    // dispersion relation (Murray, critical wavenumber
+    // k_c^2 = 1/(2*Du) - reactionRate/(2*Dv)) means a LARGER Dv drives a
+    // SHORTER settled wavelength, not a longer one — Dv only ever pulls
+    // the pattern toward the short-wave floor set by Du; it is Dv
+    // shrinking toward the Turing threshold that stretches the
+    // wavelength out. Feeding `wl` straight into `Dv = Du*wl^2/9`
+    // therefore inverted the law outright: light cells (large `wl`) got
+    // the driven-toward-dense high-Dv end and shadow cells (small `wl`)
+    // got the driven-toward-sparse low-Dv end — measured and confirmed
+    // both numerically (tests/unit/scene3d-turing-polarity.test.js) and
+    // visually (a dense RD cluster sitting on the lit hemisphere).
+    // Reflecting `wl` within its own clamp range before squaring hands
+    // Dv the value that actually produces the requested wavelength: a
+    // light cell now gets the LOW-Dv (long-wavelength, sparse) end and a
+    // shadow cell gets the HIGH-Dv (short-wavelength, dense) end.
+    const Du = 0.18;
+    const dxSafe = Math.max(1e-6, dx);
+    const DvAt = new Float64Array(NX * NY);
+    for (let k = 0; k < DvAt.length; k++) {
+      if (!mask[k]) continue;
+      const wl = clamp(lam[k] / dxSafe, 2.2, 26);
+      const wlDv = 2.2 + 26 - wl;
+      DvAt[k] = Du * (wlDv * wlDv) / 9;
+    }
+    let un = new Float32Array(NX * NY);
+    let vn = new Float32Array(NX * NY);
     for (let it = 0; it < 170; it++) {
       for (let j = 1; j < NY - 1; j++) {
         for (let i = 1; i < NX - 1; i++) {
@@ -2516,34 +2566,25 @@
           const ax = gx[k]; const ay = gy[k];
           const du = (u[k + 1] - u[k - 1]) / 2; const dv2 = (u[k + NX] - u[k - NX]) / 2;
           const along = ax * du + ay * dv2;
-          const wl = clamp(lam[k] / Math.max(1e-6, dx), 2.2, 26);
-          const Du = 0.18;
-          // `wl` tracks the TONE correctly (small in shadow, large in light —
-          // see `lam` above and the shared `pitchLegible` convention every
-          // sibling law honours). But this activator/inhibitor pair's own
-          // dispersion relation (Murray, critical wavenumber
-          // k_c^2 = 1/(2*Du) - reactionRate/(2*Dv)) means a LARGER Dv drives a
-          // SHORTER settled wavelength, not a longer one — Dv only ever pulls
-          // the pattern toward the short-wave floor set by Du; it is Dv
-          // shrinking toward the Turing threshold that stretches the
-          // wavelength out. Feeding `wl` straight into `Dv = Du*wl^2/9`
-          // therefore inverted the law outright: light cells (large `wl`) got
-          // the driven-toward-dense high-Dv end and shadow cells (small `wl`)
-          // got the driven-toward-sparse low-Dv end — measured and confirmed
-          // both numerically (tests/unit/scene3d-turing-polarity.test.js) and
-          // visually (a dense RD cluster sitting on the lit hemisphere).
-          // Reflecting `wl` within its own clamp range before squaring hands
-          // Dv the value that actually produces the requested wavelength: a
-          // light cell now gets the LOW-Dv (long-wavelength, sparse) end and a
-          // shadow cell gets the HIGH-Dv (short-wavelength, dense) end.
-          const wlDv = 2.2 + 26 - wl;
-          const Dv = Du * (wlDv * wlDv) / 9;
-          un[k] = clamp(u[k] + 0.22 * (Du * lu + 0.9 * along * 0.0 + (u[k] - u[k] * u[k] * u[k]) - v[k]), -2, 2);
-          vn[k] = clamp(v[k] + 0.22 * (Dv * lv * 0.06 + 0.32 * (u[k] - v[k])), -2, 2);
+          const Dv = DvAt[k];
+          let nu = u[k] + 0.22 * (Du * lu + 0.9 * along * 0.0 + (u[k] - u[k] * u[k] * u[k]) - v[k]);
+          nu = nu || 0;
+          un[k] = nu < -2 ? -2 : (nu > 2 ? 2 : nu);
+          let nv = v[k] + 0.22 * (Dv * lv * 0.06 + 0.32 * (u[k] - v[k]));
+          nv = nv || 0;
+          vn[k] = nv < -2 ? -2 : (nv > 2 ? 2 : nv);
         }
       }
-      const tu = u; u = un.slice(); const tv = v; v = vn.slice();
-      void tu; void tv;
+      if (it === 0) {
+        for (let i = 0; i < NX; i++) {
+          u[i] = 0; v[i] = 0; u[(NY - 1) * NX + i] = 0; v[(NY - 1) * NX + i] = 0;
+        }
+        for (let j = 0; j < NY; j++) {
+          u[j * NX] = 0; v[j * NX] = 0; u[j * NX + NX - 1] = 0; v[j * NX + NX - 1] = 0;
+        }
+      }
+      const tu = u; u = un; un = tu;
+      const tv = v; v = vn; vn = tv;
     }
     // Marching squares on u = 0.
     const val = (i, j) => u[j * NX + i];
