@@ -1852,3 +1852,38 @@ test.describe('TUX-019 mouse parity (desktop)', () => {
     expect(after.handle).toBeNull();
   });
 });
+
+// TUX-035 desktop parity (D6): mouse hover still opens the fly-out, mouse click on the
+// parent row still adds the default layer, and picking from the fly-out closes it (orphan fix).
+test.describe('TUX-035 add layer menu (mouse parity)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+  });
+  const count = (page) => page.evaluate(() => window.app.engine.layers.length);
+
+  test('G1: hover opens the fly-out', async ({ page }) => {
+    await page.click('#btn-add-layer');
+    await page.hover('.lvl-add-item[data-add="algo-parent"]');
+    await expect(page.locator('#lvl-algo-submenu')).toBeVisible();
+  });
+
+  test('G2: click on the parent row adds exactly one default layer', async ({ page }) => {
+    const n0 = await count(page);
+    await page.click('#btn-add-layer');
+    await page.click('.lvl-add-item[data-add="algo-parent"]');
+    expect(await count(page)).toBe(n0 + 1);
+    await expect(page.locator('#layer-add-menu')).toBeHidden();
+    await expect(page.locator('#lvl-algo-submenu')).toBeHidden();
+  });
+
+  test('G3: picking a fly-out item adds that type and hides the fly-out', async ({ page }) => {
+    const n0 = await count(page);
+    await page.click('#btn-add-layer');
+    await page.hover('.lvl-add-item[data-add="algo-parent"]');
+    await page.click('#lvl-algo-submenu [data-algo-type="flowfield"]');
+    expect(await count(page)).toBe(n0 + 1);
+    expect(await page.evaluate(() => window.app.engine.getActiveLayer().type)).toBe('flowfield');
+    await expect(page.locator('#lvl-algo-submenu')).toBeHidden();
+  });
+});

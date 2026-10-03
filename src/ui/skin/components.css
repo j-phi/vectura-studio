@@ -13957,3 +13957,37 @@ body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: cent
   .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
 }
 /* === END TUX-034 === */
+
+/* === TUX-035: add-layer touch drill-down === */
+/* Touch taps "Algorithm Layer" and the add menu swaps to the algorithm list (JS: shortcuts.js).
+   Scoped to #layer-add-menu so the shared .lvl-algo-sub-item (context bar, header fly-outs) is untouched. */
+#layer-add-menu .lvl-add-back,
+#layer-add-menu .lvl-add-drill-list { display: none; }
+#layer-add-menu.is-drill > .lvl-add-item:not(.lvl-add-back) { display: none; }
+#layer-add-menu.is-drill > .lvl-add-back {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  border-radius: 6px 6px 0 0;
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-accent);
+}
+#layer-add-menu.is-drill > .lvl-add-drill-list {
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  border-radius: 0 0 6px 6px;
+}
+#layer-add-menu.is-drill .lvl-algo-sub-item {
+  min-height: var(--touch-target-min);
+  padding: 0 12px;
+  box-sizing: border-box;
+}
+@media (pointer: coarse) {
+  #layer-add-menu > .lvl-add-item { min-height: var(--touch-target-min); }
+}
+#layer-add-menu.is-touch > .lvl-add-item { min-height: var(--touch-target-min); }
+/* === /TUX-035 === */
