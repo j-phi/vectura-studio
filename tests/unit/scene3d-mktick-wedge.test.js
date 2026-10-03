@@ -434,22 +434,25 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // (`extendTick`, deferred `mkExtQ` pass) lengthens the rim-facing end of regular ticks; guards: straight
     // (<= 0.5 pen off the tick's own end direction), growth <= 0.6 of own length, never both ends, started from
     // the tick's TRUE hub. Contrast mutation re-derived: it must remove the `mkExtQ` flush as well.
+    // T2-8b-5c — RE-PINNED again, 12 of 12 (Jay: "fix the step first", "no angles/hooks"): neighbour coherence
+    // (strip hold, isolation cap, envelope, taper), a surface-walk reach probe, and a join/segment bend cut change the
+    // extension on every cell. The flush is now `runExtensions()` (plans first, then the coherence pass, then apply).
     // The CONTRAST MUTATION test at the end of this block loads the shipped source
     // with the deferred flush removed and asserts the OLD hash on all 12 (so the
     // re-pin is BC-E and not drift). See `T2-8b-3-impl.md` `## Bars changed`.
     const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': 'ca74cca249a26e3075f73cba32ae25c6ea4112ae51ab9b738b0a48aa5f974504',
-      'test|sphere/contour': '4513d111d6c3b0d85fef1dc234df0686d88795f5b53764ff1ce968d9a3886739',
-      'test|torus/hatch': '71cda56303f80157794ff070248863815b89f541d1c1f165243eafffce17d924',
-      'test|torus/contour': '00e6a30e176ea9f1ca7d4dc3676731d7a031bf1084889e41def5e0ebe82a7126',
-      'test|cone/hatch': '1034844e661eb7580f98606963976af6ae4f0c0fd1a4ceaef0c586f5fbd49470',
-      'test|cone/contour': 'f43967105486e90025b95b60e72628948af54617d9d186f505d8d4de225fb1f6',
-      'create|sphere/hatch': '65d40d0c2fc518a5da9b25c9ec3fb024e8d312950fdaca82c01c12fbe3f9a5c4',
-      'create|sphere/contour': 'ab4269006aa07014696b8d2438cad9943bc6835f57f6a05b116230b3b13f06b1',
-      'create|torus/hatch': 'a297354f0c8016ad9bc2ff39955bef3c42ada746b81c8e2232a12966d6985996',
-      'create|torus/contour': '1ef80a94995154ec912e454c0942f93f35abe85f921bd7065b2e37d7f9350097',
-      'create|cone/hatch': '1411dcd8cb46d13f8c81ae5136d0ae3ec6df2de4466189a77e55726e7f7a25e3',
-      'create|cone/contour': '31b4ef27c580849d33bbafd15f717bb62cfd2b98fb137d01a54c51b6446f6326',
+      'test|sphere/hatch': '57fe9092a37a5ea3cdf5aa20393739c2e0f994e837f22efc6047b46cb697678d',
+      'test|sphere/contour': '22665b454d753e2af51a6b5393fe6cedaf250466bac181758230cf481faeb2a2',
+      'test|torus/hatch': '50b53d5da3e3309dfba4fc09363106d3d17970b255166bb9ec08f6903d561ff4',
+      'test|torus/contour': '3c3f4fd7e2a3d1a531e9fbafeec2ea630e8865149f90e1869b6cd5321e9d9868',
+      'test|cone/hatch': '238cd003a989fad46c35ed317ce54a4e24222ef3e1a2af8e18f6a6be93ec3191',
+      'test|cone/contour': '9e5a82eedabde4851cbdb222124e21f62f75f73f7a923f3b716f9813771e6f06',
+      'create|sphere/hatch': '5d0ee1676702f2a82b8f00c0d9ff257bfdd1e18c6e4810cef4254edd0ba18163',
+      'create|sphere/contour': 'e9d1e0a7f99aaac34a64f2a0cb4e8e58b65c9ed6690751d44198d90a28e33b6e',
+      'create|torus/hatch': '569469202390ef1b4e7e784f084423f6ff81e82bf0f72f57ca713345478a693f',
+      'create|torus/contour': '5c204a071393999329b8caf6cb90da13be94f06b73c63e67cfe72258c1ad98eb',
+      'create|cone/hatch': '755d084361752180db43576edfbc50a4def62ffe526fb388d418d57248433b2a',
+      'create|cone/contour': '14090466cc9b339ec990e42fcab2545956bf6afb756aa06d2dd69c53425c55a1',
     };
     // T2-8b-5b: the rim-strip extension (`mkExtQ`) moves ALL 12 cells off the pre-T2-8b hash, so no cell is
     // asserted equal to it any more; the contrast mutation below removes BOTH deferred flushes instead.
@@ -495,7 +498,7 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
           '',
           'T28B_FLUSH_NEEDLE',
         ),
-        'for (let xi = 0; xi < mkExtQ.length; xi += 1) mkExtQ[xi]();',
+        'runExtensions();',
         '',
         'T28B5_EXT_FLUSH_NEEDLE',
       );
