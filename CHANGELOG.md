@@ -94,6 +94,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   whether this reads correctly is being judged by eye, not by a bar.** (T2-6)
 
 ### Fixed
+- **3D Scene · mkTick dark-side ticks reach the rim evenly.** Regular ticks in shaded areas now
+  extend their rim-facing end to an even 0.6 mm from the outline. Neighbouring ticks extend together,
+  so the rim edge has no isolated steps. An extension that would bend the tick more than 8° is
+  refused, so the extensions add no hooks. On the torus at density 220, generation runs about 1.3×
+  slower than in 1.4.5. (T2-8b-5)
 - **3D Scene · mkTick (Tick) fill reaches the dark corners.** Where a tick band ends at a rim or
   another band, it now carries on at its own spacing and direction. The ticks shorten gradually,
   and every tick end sits an even distance off the outline (0.6 mm) or the next band (0.5 mm).
