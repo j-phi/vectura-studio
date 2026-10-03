@@ -14106,6 +14106,110 @@ body.touch-ui .tool-drawer-view-btn { width: var(--touch-target-min, 44px); heig
 }
 /* === /TUX-036 === */
 
+/* === TUX-043: sliders ===
+ * Finger-sized range inputs on coarse pointers. The <input> box itself is 44px tall (the audit
+ * measures the box; a wrapper band or overlay would read as "covered"). The visible 4px track
+ * (pen: 3px) is the ::-webkit-slider-runnable-track, centred in that box by the UA; the 28px
+ * thumb is re-centred with a logical margin so vertical ranges (writing-mode) work too.
+ * Fill colours come from the inherited --fill / --slider-start / --tux-fill-color vars.
+ * Specificity: [data-ui-skin] input[type=range]:not(.tux-nope) is (0,3,1) and the pseudo rules
+ * (0,3,2), so they beat every per-class slider rule earlier in this file. They tie only with
+ * `.noise-control input[type=range]` and win by coming later. Desktop (mouse) is unchanged.
+ * touch-action: pan-y keeps vertical scrolling native; Vectura.UI.RangeTouch (slider.js)
+ * owns the sideways drag. */
+@media (pointer: coarse) {
+  [data-ui-skin] input[type='range']:not(.tux-nope) {
+    -webkit-appearance: none; appearance: none;
+    box-sizing: border-box;
+    block-size: var(--touch-target-min); min-block-size: var(--touch-target-min);
+    margin-block: 0;
+    padding: 0;
+    touch-action: pan-y;
+    background: transparent;
+    border-radius: 0;
+    --tux-track: var(--touch-slider-track);
+  }
+  [data-ui-skin] input[type='range']:not(.tux-nope)::-webkit-slider-runnable-track {
+    block-size: var(--tux-track);
+    border-radius: 2px;
+    background: linear-gradient(to right,
+      var(--slider-start, var(--tux-fill-color, var(--ui-accent))) 0%,
+      var(--tux-fill-color, var(--ui-accent)) var(--fill, 0%),
+      var(--ui-border) var(--fill, 0%) 100%);
+  }
+  [data-ui-skin] input[type='range']:not(.tux-nope)::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    box-sizing: border-box;
+    inline-size: var(--touch-slider-thumb); block-size: var(--touch-slider-thumb);
+    width: var(--touch-slider-thumb); height: var(--touch-slider-thumb);
+    margin-block-start: calc((var(--tux-track) - var(--touch-slider-thumb)) / 2);
+    margin-top: calc((var(--tux-track) - var(--touch-slider-thumb)) / 2);
+    border-radius: 50%;
+  }
+  [data-ui-skin] input[type='range']:not(.tux-nope)::-moz-range-thumb {
+    box-sizing: border-box; width: var(--touch-slider-thumb); height: var(--touch-slider-thumb); border-radius: 50%;
+  }
+  /* Per-class variants of the visual only. */
+  [data-ui-skin] input.pen-sld[type='range']:not(.tux-nope) { --tux-track: var(--touch-slider-track-pen); }
+  [data-ui-skin] .mp-root input.mp-slider[type='range']:not(.tux-nope) { --tux-fill-color: var(--mp-type-color); }
+  [data-ui-skin] .morph-panel input.morph-slider[type='range']:not(.tux-nope) { --tux-fill-color: var(--morph-accent); }
+  /* Draw-order: gradient reveal track, 6px, white thumb with a tinted halo ring. */
+  [data-ui-skin] input.draw-order-slider[type='range']:not(.tux-nope) { --tux-track: 6px; }
+  [data-ui-skin] input.draw-order-slider[type='range']:not(.tux-nope)::-webkit-slider-runnable-track {
+    border-radius: 6px;
+    background:
+      linear-gradient(var(--ui-border), var(--ui-border)) right center / calc(100% - var(--draw-order-fill, 100%)) 100% no-repeat,
+      linear-gradient(90deg, var(--draw-order-start, #38bdf8) 0%, var(--draw-order-end, #f59e0b) 100%) left center / 100% 100% no-repeat,
+      var(--ui-border);
+  }
+  [data-ui-skin] input.draw-order-slider[type='range']:not(.tux-nope)::-webkit-slider-thumb { border-width: 3px; }
+  [data-ui-skin] input.draw-order-slider.is-progress[type='range']:not(.tux-nope)::-webkit-slider-thumb {
+    border-width: 0; border-radius: 0; margin-block-start: calc((6px - var(--touch-slider-thumb)) / 2);
+  }
+  /* Stacked dual ranges (plot range): the container grows to the 44px box; the shared track
+   * and fill are re-centred; inputs paint nothing themselves. */
+  .harmonograph-plotter-plotrange { height: var(--touch-target-min); }
+  .harmonograph-plotter-plotrange .hp-plotrange-fill { top: calc(50% - 9px); height: 18px; }
+  [data-ui-skin] .harmonograph-plotter-plotrange input[type='range']:not(.tux-nope)::-webkit-slider-runnable-track { background: transparent; }
+  .dual-range { height: var(--touch-target-min); }
+  .dual-range input[type='range'] { top: 0; }
+  /* Vertical range (Text panel max offset): 44px wide, pans sideways, length from its flex row. */
+  [data-ui-skin] input.vtp-vslider-vert[type='range']:not(.tux-nope) {
+    width: var(--touch-target-min); min-width: var(--touch-target-min); touch-action: pan-x;
+  }
+  .vtp-xypad-max { height: 120px; }
+  /* Layout: the row is as tall as its slider; chips stay 44px beside it. */
+  .vtp-vslider-wrap { height: auto; min-height: var(--touch-target-min); }
+}
+/* TUX-043 fix round: draw-order footer on short coarse viewports (iPhone landscape).
+ * The pane reserved only 56px for the modifier bar, but the bar is 57px and the HUD strip adds
+ * 27px more (shown above 640px), so the pane ran 28px under the bar and the bar covered the
+ * bottom of the draw-order slider (elementFromPoint at the track centre hit the bar). Reserve
+ * the real chrome, and on short viewports tighten the Layers tab above the draw-order band so the 44px
+ * slider and its thumb are on screen without scrolling. */
+@media (pointer: coarse) and (min-width: 641px) {
+  body.mobile-layout .pane { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (pointer: coarse) and (max-height: 520px) {
+  /* Pull the 44px slider up above the modifier bar: drop the idle status strip and the head gap.
+   * The 14px top padding keeps the 44px eye/gear hit boxes (TUX-041) off the last layer row:
+   * band top 237, head centre 261, slider 271-315 in the 318px-high scroller. */
+  [data-ui-skin] #right-pane .draw-order-bar { padding-top: 14px; }
+  [data-ui-skin] #right-pane .draw-order-bar .draw-order-head { margin-bottom: 0; }
+  [data-ui-skin] #right-pane #layer-status-bar:has(> .lvl-sb-idle) { min-height: 0; height: 0; padding-block: 0; overflow: hidden; border: 0; }
+}
+/* TUX-043 fix round: the multi-select command strip is wider than the right pane on phones
+ * (8 buttons plus the label), so Delete sat past the pane edge. Let the busy bar pan sideways. */
+@media (pointer: coarse) {
+  [data-ui-skin] #right-pane #layer-status-bar:not(:has(> .lvl-sb-idle)) {
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x;
+  }
+  [data-ui-skin] #right-pane #layer-status-bar::-webkit-scrollbar { display: none; }
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-sb-spacer,
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-sb-total { display: none; }
+}
+/* === END TUX-043 === */
+
 /* === TUX-046: modal sheet ===
  * Contract for the legacy #modal-overlay sheet (Export, Help, info, colour picker).
  * Slots: .vt-sheet (card), .vt-sheet__header, .vt-sheet__body, .vt-sheet__footer.
