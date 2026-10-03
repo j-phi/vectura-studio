@@ -29,6 +29,9 @@
     TOUCH_GESTURE: {
       ARBITRATION_MS: 250,
       ARBITRATION_SLOP_PX: 10,
+      // TUX-019: a one-finger drag moves the object once the finger travels this far (CSS px).
+      // Touch only; mouse and Apple Pencil keep 0 slop. Q4 owner: Jay.
+      touchDragSlopPx: 6,
     },
 
     // Renderer handle/overlay geometry

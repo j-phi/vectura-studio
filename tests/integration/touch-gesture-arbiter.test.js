@@ -76,7 +76,6 @@ describe('TUX-017 gesture arbiter (renderer)', () => {
   // ── fixtures ────────────────────────────────────────────────────────────
   const reset = () => {
     // Hard-clear any state a previous (possibly failed) row left behind.
-    renderer.clearTouchHold?.();
     A.INTERACTION_FLAGS.forEach((f) => { renderer[f] = f.startsWith('is') ? false : null; });
     renderer.tempTransform = null;
     renderer.dragMode = null;
@@ -352,15 +351,17 @@ describe('TUX-017 gesture arbiter (renderer)', () => {
   });
 
   // ── commit row ──────────────────────────────────────────────────────────
-  test('commit: 400 ms hold on the selected object, 40 px move, then a late second finger', async () => {
+  test('commit: 400 ms on the selected object, 40 px move, then a late second finger', async () => {
     const { a } = add2d();
     const layer = engine.layers.find((l) => l.id === a);
     const hist0 = app.history.length;
     const c0 = renderer.getSelectionBounds([layer]).center;
     renderer.down(ev(1, 1000, 60, 60));
-    await new Promise((r) => setTimeout(r, 420)); // touch-hold timer arms the drag
+    // TUX-019: no hold. The 6 px drag slop arms the move; the first 5 px step is still a tap.
+    renderer.move(ev(1, 1400 + 25, 65, 60));
+    expect(renderer.isLayerDrag).toBe(false);
+    for (let i = 2; i <= 8; i += 1) renderer.move(ev(1, 1400 + i * 25, 60 + 5 * i, 60));
     expect(renderer.isLayerDrag).toBe(true);
-    for (let i = 1; i <= 8; i += 1) renderer.move(ev(1, 1400 + i * 25, 60 + 5 * i, 60));
     renderer.down(ev(2, 1700, 160, 100));
     expect(renderer.touchGesture).toBeTruthy();
     expect(app.history.length).toBe(hist0 + 1);
@@ -626,7 +627,7 @@ describe('TUX-017 gesture arbiter (renderer)', () => {
     const re = /^\s*this\.([_A-Za-z0-9]+)\s*=/gm;
     let m;
     while ((m = re.exec(body))) names.add(m[1]);
-    const MATCH = /^_?(is[A-Z]\w*|\w*Drag|\w*Draft|_areaCreate|_typeDrag|touchHoldPending|lightSourcePlacement)$/;
+    const MATCH = /^_?(is[A-Z]\w*|\w*Drag|\w*Draft|_areaCreate|_typeDrag|_touchMovePending|lightSourcePlacement)$/;
     const EXEMPT = {
       penDraft: 'pen draft is restored from the first-down snapshot, not cleared',
       isLayerLocked: 'callback, not interaction state',

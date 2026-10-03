@@ -327,3 +327,275 @@ test.describe('TUX-017 gesture arbiter', () => {
     expect(after.flags).toBeFalsy();
   });
 });
+
+// ── TUX-019: one-finger drag moves objects at once ────────────────────────────
+// Finger-only. No hold, no pan: a drag that starts on an object moves it after a 6 px slop.
+// iPhone landscape cells fail at runtime (blocked-by TUX-007/009, shell) through the shared
+// fixture()/precondition() helpers; test.fail reports an unexpected pass once the shell lands.
+const DRAG = { dx: 60, dy: 30 };
+const SLOP_TOL_PX = 2;
+
+const probe = (page, ids) => page.evaluate((ids) => {
+  const app = window.app;
+  const r = app.renderer;
+  const layers = (ids || [...r.selectedLayerIds]).map((id) => app.engine.layers.find((l) => l.id === id)).filter(Boolean);
+  const b = layers.length ? r.getSelectionBounds(layers) : null;
+  return {
+    cx: b ? b.center.x : null,
+    cy: b ? b.center.y : null,
+    scale: r.scale,
+    offsetX: r.offsetX,
+    offsetY: r.offsetY,
+    hist: app.history.length,
+    sel: [...r.selectedLayerIds].sort(),
+    key: r.keyObjectId,
+    isLayerDrag: !!r.isLayerDrag,
+    isPan: !!r.isPan,
+    slop: !!r.touchSlopCrossed,
+  };
+}, ids || null);
+
+const screenDelta = (before, after) => ({
+  dx: (after.cx - before.cx) * before.scale,
+  dy: (after.cy - before.cy) * before.scale,
+});
+
+test.describe('TUX-019 direct drag', () => {
+  let savedSettings = null;
+  test.beforeEach(async ({ page }, testInfo) => {
+    test.skip(!PRIMARY.includes(testInfo.project.name), 'primary projects only');
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
+    savedSettings = await page.evaluate(() => {
+      const s = window.Vectura.SETTINGS;
+      return { snapGuides: s.snapGuides, showGuides: s.showGuides, snapGrid: s.snapGrid, snapToGrid: s.snapToGrid };
+    });
+  });
+  test.afterEach(async ({ page }) => {
+    if (!savedSettings) return;
+    try {
+      await page.evaluate((s) => Object.assign(window.Vectura.SETTINGS, s), savedSettings);
+    } catch (_err) { /* page may be closed */ }
+  });
+
+  const setup = async (page, testInfo, opts) => {
+    const { id, view } = await fixture(page, testInfo, opts);
+    const pts = await prepare(page, view);
+    await precondition(page, { x: pts.obj.x + DRAG.dx / 2, y: pts.obj.y + DRAG.dy / 2 }, DRAG.dx, testInfo.project.name);
+    return { id, view, pts };
+  };
+  const to = (p) => ({ x: p.x + DRAG.dx, y: p.y + DRAG.dy });
+  // A press on an UNSELECTED object must land on its outline (interior is not a hit target).
+  const topEdge = async (page, pts, testInfo) => {
+    // Top outline, 20 mm RIGHT of centre (the object sits left of the canvas run centre, so the
+    // right side is clear of side panes in iPad portrait), 4 px inside (bounds test is strict).
+    const p = { x: pts.obj.x + 20 * pts.scale, y: pts.obj.y - 35 * pts.scale + 4 };
+    await precondition(page, { x: p.x + DRAG.dx / 2, y: p.y + DRAG.dy / 2 }, DRAG.dx, testInfo.project.name);
+    return p;
+  };
+
+  test('(a) selected object moves with a quick drag', async ({ page }, testInfo) => {
+    const { id, pts } = await setup(page, testInfo, { tool: 'select', selectObject: true });
+    const before = await probe(page);
+    await touch.drag(page, pts.obj, to(pts.obj), { steps: 10, stepDelayMs: 15, holdMs: 0 });
+    await sleep(60);
+    const after = await probe(page, [id]);
+    const d = screenDelta(before, after);
+    expect(d.dx, 'screen dx of the bounds centre').toBeGreaterThanOrEqual(DRAG.dx - SLOP_TOL_PX);
+    expect(d.dx, 'screen dx of the bounds centre').toBeLessThanOrEqual(DRAG.dx + SLOP_TOL_PX);
+    expect(d.dy, 'screen dy of the bounds centre').toBeGreaterThanOrEqual(DRAG.dy - SLOP_TOL_PX);
+    expect(d.dy, 'screen dy of the bounds centre').toBeLessThanOrEqual(DRAG.dy + SLOP_TOL_PX);
+    expect(after.offsetX, 'offsetX (no pan)').toBeCloseTo(before.offsetX, 0);
+    expect(after.offsetY, 'offsetY (no pan)').toBeCloseTo(before.offsetY, 0);
+    expect(after.hist - before.hist, 'history entries').toBe(1);
+  });
+
+  test('(a2) mid-drag shows the mouse drag state and never pans', async ({ page }, testInfo) => {
+    const { pts } = await setup(page, testInfo, { tool: 'select', selectObject: true });
+    const before = await probe(page);
+    const f = { x: pts.obj.x, y: pts.obj.y, id: 0 };
+    const evidenceDir = process.env.TUX_EVIDENCE_DIR_019 || '';
+    if (evidenceDir) {
+      fs.mkdirSync(evidenceDir, { recursive: true });
+      await page.screenshot({ path: path.join(evidenceDir, `${testInfo.project.name}-before.png`) });
+    }
+    await touch.touchPhase(page, 'start', [f]);
+    await sleep(30);
+    // 3 px: still under the 6 px slop, nothing may have started yet.
+    await touch.touchPhase(page, 'move', [{ ...f, x: f.x + 3 }]);
+    const under = await probe(page);
+    expect(under.isLayerDrag, 'no move under the slop').toBe(false);
+    expect(under.isPan, 'never pans').toBe(false);
+    for (let i = 1; i <= 8; i += 1) {
+      await touch.touchPhase(page, 'move', [{ x: f.x + 3 + 7 * i, y: f.y + 3 * i, id: 0 }]);
+      await sleep(15);
+    }
+    const mid = await probe(page);
+    expect(mid.isLayerDrag, 'drag state active').toBe(true);
+    expect(mid.isPan, 'never pans').toBe(false);
+    expect(mid.slop, 'touchSlopCrossed flag').toBe(true);
+    expect(mid.offsetX).toBeCloseTo(before.offsetX, 0);
+    if (evidenceDir) await page.screenshot({ path: path.join(evidenceDir, `${testInfo.project.name}-mid.png`) });
+    await touch.touchPhase(page, 'end', [{ x: f.x + 59, y: f.y + 24, id: 0 }]);
+    await sleep(40);
+    const end = await probe(page);
+    expect(end.slop, 'touchSlopCrossed resets on lift').toBe(false);
+    expect(end.isLayerDrag).toBe(false);
+  });
+
+  test('(b) unselected object is selected and moved', async ({ page }, testInfo) => {
+    const { id, pts } = await setup(page, testInfo, { tool: 'select', selectObject: false });
+    const before = await probe(page, [id]);
+    expect(before.sel).toEqual([]);
+    const edge = await topEdge(page, pts, testInfo);
+    await touch.drag(page, edge, to(edge), { steps: 10, stepDelayMs: 15, holdMs: 0 });
+    await sleep(60);
+    const after = await probe(page, [id]);
+    expect(after.sel, 'selected').toEqual([id]);
+    const d = screenDelta(before, after);
+    expect(Math.abs(d.dx - DRAG.dx), 'dx error px').toBeLessThanOrEqual(SLOP_TOL_PX);
+    expect(Math.abs(d.dy - DRAG.dy), 'dy error px').toBeLessThanOrEqual(SLOP_TOL_PX);
+    expect(after.offsetX, 'offsetX (no pan)').toBeCloseTo(before.offsetX, 0);
+    expect(after.offsetY, 'offsetY (no pan)').toBeCloseTo(before.offsetY, 0);
+    expect(after.hist - before.hist, 'history entries').toBe(1);
+  });
+
+  test('(c) empty-canvas drag draws a marquee, no pan (regression guard)', async ({ page }, testInfo) => {
+    const { id, pts } = await setup(page, testInfo, { tool: 'select', selectObject: false });
+    const before = await probe(page, [id]);
+    // Start on empty canvas just outside the lower-right corner and sweep back over the object.
+    const out = 35 * before.scale + 14;
+    const a = { x: pts.obj.x + out, y: pts.obj.y + out };
+    const b = { x: pts.obj.x, y: pts.obj.y };
+    await precondition(page, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, Math.abs(a.x - b.x), testInfo.project.name);
+    await touch.drag(page, a, b, { steps: 12, stepDelayMs: 10 });
+    await sleep(60);
+    const after = await probe(page, [id]);
+    expect(after.sel, 'marquee selected the layer').toEqual([id]);
+    expect(after.offsetX).toBeCloseTo(before.offsetX, 0);
+    expect(after.offsetY).toBeCloseTo(before.offsetY, 0);
+  });
+
+  test('(d) tap with 3 px drift is a select, not a move', async ({ page }, testInfo) => {
+    const { id, pts } = await setup(page, testInfo, { tool: 'select', selectObject: false });
+    const before = await probe(page, [id]);
+    const edge = await topEdge(page, pts, testInfo);
+    await touch.drag(page, edge, { x: edge.x + 2, y: edge.y + 2 }, { steps: 3, stepDelayMs: 15 });
+    await sleep(60);
+    const after = await probe(page, [id]);
+    expect(after.sel).toEqual([id]);
+    expect(Math.hypot(after.cx - before.cx, after.cy - before.cy) * before.scale, 'moved px').toBeLessThan(0.5);
+    expect(after.hist - before.hist, 'history entries').toBe(0);
+  });
+
+  test('(e) multi-select tap = mouse parity (Key Object)', async ({ page }, testInfo) => {
+    const { id, view } = await fixture(page, testInfo, { tool: 'select', selectObject: true });
+    const second = await page.evaluate(() => {
+      const app = window.app;
+      const rect = (x0, y0, x1, y1) => [[{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 }]];
+      const b = app.engine.addShapeLayer('TUX-019 B', rect(150, 40, 200, 110));
+      const a = [...app.renderer.selectedLayerIds][0];
+      app.renderer.setSelection([a, b], b);
+      app.history = [];
+      app.pushHistory();
+      return b;
+    });
+    const pts = await prepare(page, view);
+    const edge = await topEdge(page, pts, testInfo);
+    const before = await probe(page, [id]);
+    expect(before.sel.length).toBe(2);
+    await touch.drag(page, edge, { x: edge.x + 2, y: edge.y + 1 }, { steps: 3, stepDelayMs: 15 });
+    await sleep(60);
+    const after = await probe(page, [id]);
+    expect(after.key, 'key object is the tapped member').toBe(id);
+    expect(after.sel.length, 'selection stays at 2 ids').toBe(2);
+    expect(after.sel).toContain(second);
+    expect(Math.hypot(after.cx - before.cx, after.cy - before.cy) * before.scale, 'moved px').toBeLessThan(0.5);
+    expect(after.hist - before.hist, 'history entries').toBe(0);
+  });
+
+  test('(pointercancel) a cancelled touch move restores the object and adds no history', async ({ page }, testInfo) => {
+    const { id, pts } = await setup(page, testInfo, { tool: 'select', selectObject: true });
+    const before = await probe(page, [id]);
+    const f = { x: pts.obj.x, y: pts.obj.y, id: 0 };
+    await touch.touchPhase(page, 'start', [f]);
+    for (let i = 1; i <= 8; i += 1) {
+      await touch.touchPhase(page, 'move', [{ x: f.x + 6 * i, y: f.y + 3 * i, id: 0 }]);
+      await sleep(15);
+    }
+    expect((await probe(page, [id])).isLayerDrag, 'move in flight').toBe(true);
+    if (touch.engineSupports(page, 'cdp')) {
+      // CDP touchCancel takes an empty touchPoints list (the shared helper sends the point).
+      const cdp = page.__touchCdp;
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    } else {
+      await touch.touchPhase(page, 'cancel', [{ x: f.x + 48, y: f.y + 24, id: 0 }]);
+    }
+    await sleep(60);
+    const after = await probe(page, [id]);
+    expect(Math.hypot(after.cx - before.cx, after.cy - before.cy) * before.scale, 'moved px').toBeLessThan(0.5);
+    expect(after.hist - before.hist, 'history entries').toBe(0);
+    expect(after.isLayerDrag).toBe(false);
+  });
+
+  // Direct Selection: anchor drag waits for the slop and never pans.
+  const directSetup = async (page, testInfo) => {
+    const { id, view } = await fixture(page, testInfo, { tool: 'direct', selectObject: true });
+    await page.evaluate((id) => {
+      const app = window.app;
+      const layer = app.engine.layers.find((l) => l.id === id);
+      app.renderer.setSelection([id], id);
+      app.renderer.setDirectSelection(layer, 0);
+      app.history = [];
+      app.pushHistory();
+    }, id);
+    const pts = await prepare(page, view);
+    // Top-right corner (143,40): 35 mm right of and 35 mm above the object centre.
+    const s = pts.scale;
+    const anchorAt = { x: pts.obj.x + 35 * s, y: pts.obj.y - 35 * s };
+    const index = await page.evaluate((id) => {
+      const r = window.app.renderer;
+      const layer = window.app.engine.layers.find((l) => l.id === id);
+      let best = 0; let bestV = -Infinity;
+      r.directSelection.anchors.forEach((a, i) => { const w = r.sourceToWorldPoint(layer, a); const v = w.x - w.y; if (v > bestV) { bestV = v; best = i; } });
+      return best;
+    }, id);
+    await precondition(page, { x: anchorAt.x + DRAG.dx / 2, y: anchorAt.y + DRAG.dy / 2 }, DRAG.dx, testInfo.project.name);
+    return { id, anchorAt, index };
+  };
+  const anchorProbe = (page, id, index) => page.evaluate(({ id, index }) => {
+    const app = window.app;
+    const r = app.renderer;
+    const layer = app.engine.layers.find((l) => l.id === id);
+    const ds = r.directSelection;
+    const a = ds && ds.anchors[index];
+    const w = a ? r.sourceToWorldPoint(layer, a) : null;
+    return { x: a ? a.x : null, y: a ? a.y : null, wx: w ? w.x : null, wy: w ? w.y : null, scale: r.scale, offsetX: r.offsetX, offsetY: r.offsetY, hist: app.history.length };
+  }, { id, index });
+
+  test('(f1) Direct: 3 px drift tap on an anchor does not move it', async ({ page }, testInfo) => {
+    const { id, anchorAt, index } = await directSetup(page, testInfo);
+    const before = await anchorProbe(page, id, index);
+    expect(before.x, 'anchor exists').not.toBeNull();
+    await touch.drag(page, anchorAt, { x: anchorAt.x + 3, y: anchorAt.y }, { steps: 3, stepDelayMs: 15 });
+    await sleep(60);
+    const after = await anchorProbe(page, id, index);
+    expect(Math.hypot(after.wx - before.wx, after.wy - before.wy) * before.scale, 'anchor moved px').toBeLessThan(0.5);
+    expect(after.hist - before.hist, 'history entries').toBe(0);
+    expect(after.offsetX).toBeCloseTo(before.offsetX, 0);
+  });
+
+  test('(f2) Direct: 60,30 drag on an anchor moves it and never pans (VERIFY-FIRST)', async ({ page }, testInfo) => {
+    const { id, anchorAt, index } = await directSetup(page, testInfo);
+    const before = await anchorProbe(page, id, index);
+    expect(before.x, 'anchor exists').not.toBeNull();
+    await touch.drag(page, anchorAt, to(anchorAt), { steps: 10, stepDelayMs: 15 });
+    await sleep(60);
+    const after = await anchorProbe(page, id, index);
+    expect(Math.abs((after.wx - before.wx) * before.scale - DRAG.dx), 'dx error px').toBeLessThanOrEqual(SLOP_TOL_PX);
+    expect(Math.abs((after.wy - before.wy) * before.scale - DRAG.dy), 'dy error px').toBeLessThanOrEqual(SLOP_TOL_PX);
+    expect(after.offsetX).toBeCloseTo(before.offsetX, 0);
+    expect(after.offsetY).toBeCloseTo(before.offsetY, 0);
+    expect(after.hist - before.hist, 'history entries').toBe(1);
+  });
+});

@@ -18,12 +18,14 @@
 (() => {
   const Vectura = (window.Vectura = window.Vectura || {});
 
-  const DEFAULT_CONFIG = Object.freeze({ ARBITRATION_MS: 250, ARBITRATION_SLOP_PX: 10 });
+  const DEFAULT_CONFIG = Object.freeze({ ARBITRATION_MS: 250, ARBITRATION_SLOP_PX: 10, touchDragSlopPx: 6 });
   const readConfig = () => {
     const cfg = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.TOUCH_GESTURE) || {};
     const ms = Number(cfg.ARBITRATION_MS);
     const px = Number(cfg.ARBITRATION_SLOP_PX);
+    const drag = Number(cfg.touchDragSlopPx);
     return {
+      touchDragSlopPx: Number.isFinite(drag) && drag >= 0 ? drag : DEFAULT_CONFIG.touchDragSlopPx,
       ARBITRATION_MS: Number.isFinite(ms) ? ms : DEFAULT_CONFIG.ARBITRATION_MS,
       ARBITRATION_SLOP_PX: Number.isFinite(px) ? px : DEFAULT_CONFIG.ARBITRATION_SLOP_PX,
     };
@@ -51,7 +53,7 @@
     'rotation3DDrag',
     'shapeDraft',
     'algoDraft',
-    'touchHoldPending',
+    '_touchMovePending',
     '_areaCreate',
     '_typeDrag',
     '_sceneDrag',
