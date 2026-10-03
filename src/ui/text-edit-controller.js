@@ -151,9 +151,13 @@
      * `opts.refreshPanel === false` skips that rebuild: the caller (the panel's own
      * Text field taking focus) is itself part of that panel, and a synchronous
      * rebuild inside its focus event would detach the field it is focusing.
+     * `opts.keepLayer` skips the blank-created-layer discard for the same caller.
      */
     end(opts) {
       const skipRefresh = !!(opts && opts.refreshPanel === false);
+      // `opts.keepLayer`: the panel's Text field took over editing this layer, so a
+      // blank session-created layer must survive (the field is about to fill it).
+      const keepLayer = !!(opts && opts.keepLayer);
       // Always tear down the timer + window listener, regardless of how the
       // session terminates (Escape, tool-switch, layer removal, undo). end() is
       // idempotent: a second call clears nothing new and re-fires no host hooks.
@@ -188,7 +192,7 @@
       // history push (when no mutation pushed after it) so undo stays consistent.
       // engine.removeLayer re-enters via notifyLayerRemoved, but active is already
       // false by now → that path is a no-op (no reentrancy).
-      if (created && layer && created === layer && isBlank(this._text(layer))) {
+      if (!keepLayer && created && layer && created === layer && isBlank(this._text(layer))) {
         if (typeof this.host.discardCreatedLayer === 'function') {
           this.host.discardCreatedLayer(layer, { unwindHistory: !pushed });
           return; // the host owns the resulting panel/redraw refresh

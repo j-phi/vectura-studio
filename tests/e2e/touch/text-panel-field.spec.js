@@ -124,6 +124,35 @@ const liveSessionFlow = async (page, tapField) => {
   expect((await state(page)).hist - h0).toBe(1);
 };
 
+// Blank session-created layer: a field tap used to run the M6 blank-layer discard.
+const blankSessionFlow = async (page, tapField) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.textEdit));
+  await page.evaluate(() => { document.querySelector('.tool-btn[data-tool="type"]').click(); });
+  let pt = null;
+  for (let i = 0; i < 20 && !pt; i += 1) { pt = await canvasPoint(page); if (!pt) await page.waitForTimeout(150); }
+  expect(pt, 'no reachable canvas point').toBeTruthy();
+  await tapField.canvas(pt);
+  await page.waitForFunction(() => window.app.textEdit.isActive());   // NO insertText
+  await openLeftPane(page);
+  const field = page.locator(FIELD);
+  await field.scrollIntoViewIfNeeded();
+  const handle = await field.elementHandle();
+  await tapField.field(field);
+  await page.keyboard.insertText('Hi');
+  await page.waitForTimeout(300);
+  const info = await page.evaluate((el) => ({
+    layers: window.app.engine.layers.length,
+    connected: el.isConnected,
+    active: document.activeElement === el,
+    text: window.app.engine.getActiveLayer() && window.app.engine.getActiveLayer().params.text,
+  }), handle);
+  expect(info.layers, 'blank session layer was discarded by the field tap').toBe(1);
+  expect(info.connected, 'field detached').toBe(true);
+  expect(info.active, 'field not focused').toBe(true);
+  expect(info.text).toBe('Hi');
+};
+
 test.describe('TUX-029 live canvas Type session + Text field', () => {
   // iPhL-chrome: the canvas stays covered (TUX-007 layout, same cause as the TUX-028
   // iPhL-chrome cells). Remove the mark when TUX-007 merges.
@@ -132,6 +161,12 @@ test.describe('TUX-029 live canvas Type session + Text field', () => {
   });
   test('first tap on the field keeps it focused and typing works', async ({ page }) => {
     await liveSessionFlow(page, {
+      canvas: async (pt) => { await touch.tap(page, pt); },
+      field: async (loc) => { await touch.tap(page, loc); },
+    });
+  });
+  test('first tap on the field in a blank session layer keeps the layer and takes the text', async ({ page }) => {
+    await blankSessionFlow(page, {
       canvas: async (pt) => { await touch.tap(page, pt); },
       field: async (loc) => { await touch.tap(page, loc); },
     });

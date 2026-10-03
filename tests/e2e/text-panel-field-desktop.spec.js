@@ -31,3 +31,28 @@ test('desktop: first click on the Text field keeps it focused during a live Type
   await page.waitForTimeout(200);
   expect((await page.evaluate(() => window.app.history.length)) - h0).toBe(1);
 });
+
+test('desktop: field click in a blank session-created layer keeps the layer and takes the text', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.textEdit));
+  await page.locator('.tool-btn[data-tool="type"]').click();
+  const box = await page.locator('#main-canvas').boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForFunction(() => window.app.textEdit.isActive());   // NO insertText
+  const field = page.locator(FIELD);
+  await field.scrollIntoViewIfNeeded();
+  const handle = await field.elementHandle();
+  await field.click();
+  await page.keyboard.insertText('Hi');
+  await page.waitForTimeout(300);
+  const info = await page.evaluate((el) => ({
+    layers: window.app.engine.layers.length,
+    connected: el.isConnected,
+    active: document.activeElement === el,
+    text: window.app.engine.getActiveLayer() && window.app.engine.getActiveLayer().params.text,
+  }), handle);
+  expect(info.layers, 'blank session layer was discarded by the field tap').toBe(1);
+  expect(info.connected).toBe(true);
+  expect(info.active).toBe(true);
+  expect(info.text).toBe('Hi');
+});

@@ -1066,7 +1066,7 @@
         const te = ui.app && ui.app.textEdit;
         try {
           if (te && typeof te.isActive === 'function' && te.isActive()
-            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) te.end({ refreshPanel: false });
+            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) te.end({ refreshPanel: false, keepLayer: true });
         } catch (_) { /* */ }
         try { refresh(); } catch (_) { /* */ }
         renderSpec();

@@ -152,6 +152,39 @@ describe('Text panel content field (TUX-029)', () => {
     Object.keys(layer.params.kernPairs || {}).forEach((k) => expect(Number(k)).toBeLessThan(2));
   });
 
+  test('T6c field tap in a blank session-created layer keeps the layer and takes the typed text', () => {
+    const { UI, ALGO_DEFAULTS, TextEditController } = window.Vectura;
+    const params = JSON.parse(JSON.stringify(ALGO_DEFAULTS.text));
+    Object.assign(params, { text: '' });
+    const layer = { id: 'text-new', type: 'text', params, glyphs: [] };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const pushHistory = vi.fn();
+    const layers = [layer];
+    const discardCreatedLayer = vi.fn((l) => { layers.splice(layers.indexOf(l), 1); });
+    const ui = { app: { pushHistory, regen: vi.fn() }, storeLayerParams: vi.fn(), updateFormula: vi.fn() };
+    const build = () => { container.innerHTML = ''; UI.TextPanel.build(ui, layer, container); };
+    ui.buildControls = build;
+    const te = new TextEditController({
+      regen: vi.fn(), pushHistory, refreshPanel: build, requestDraw: vi.fn(),
+      createTextLayerAt: () => layer, discardCreatedLayer,
+    });
+    ui.app.textEdit = te;
+    build();
+    expect(te.beginNewAt(0, 0)).toBe(layer);   // Type tool tap, NO insertText
+    const f = field(container);
+    f.focus();
+    expect(discardCreatedLayer).not.toHaveBeenCalled();
+    expect(layers.length).toBe(1);
+    expect(f.isConnected).toBe(true);
+    expect(document.activeElement).toBe(f);
+    f.value = 'Hi';
+    fire(f, 'input');
+    expect(layer.params.text).toBe('Hi');
+    fire(f, 'blur');
+    expect(pushHistory).toHaveBeenCalledTimes(1);   // exactly one field-session entry
+  });
+
   test('T6b undo between inputs starts a new history entry', () => {
     vi.useFakeTimers();
     const { container, layer, pushHistory } = mount({ text: 'Abc' });
