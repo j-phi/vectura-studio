@@ -13558,7 +13558,6 @@ body.touch-ui .tool-btn {
   height: 44px;
 }
 /* === /TUX-006 === */
-=======
 /* === TUX-012: layer rows on coarse pointers ===
  * Replaces the old "2x Layer cards" block (min-width:600px, 18px names, 36px actions).
  * Keyed on the touch row template: layers-panel.js adds .lvl-touch-row only when
@@ -13633,4 +13632,3 @@ body.touch-ui .lvl-grp-exit-zone { margin-left: -16px }
   .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
 }
 body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
->>>>>>> touch/integration
