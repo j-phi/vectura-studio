@@ -13549,6 +13549,22 @@ body.mobile-layout .hud-bar {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
 }
 
+/* === TUX-028: text input proxy === */
+/* Hidden textarea that owns the soft keyboard during touch/pen Type sessions.
+   opacity:0 (never display/visibility/off-screen) so iOS still focuses it and
+   page scroll offsets stay 0; the controller parks it at the caret inside the
+   canvas rect. 16px font prevents iOS focus-zoom. */
+[data-ui-skin] textarea[data-text-proxy].text-input-proxy,
+textarea[data-text-proxy].text-input-proxy {
+  position: fixed; left: 0; top: 0; z-index: 1;
+  width: 1em; height: 1em; min-height: 0; margin: 0; padding: 0; border: 0;
+  font-size: 16px; line-height: 1;
+  opacity: 0; color: transparent; background: transparent; caret-color: transparent;
+  outline: none; box-shadow: none; resize: none; overflow: hidden;
+  pointer-events: none; -webkit-user-select: text; user-select: text;
+}
+/* === /TUX-028 === */
+
 /* === TUX-006: touch sizing keys on pointer type === */
 body.touch-ui .tool-btn {
   width: 44px;
@@ -13869,6 +13885,63 @@ body.tablet-layout #app-header {
   body.tablet-layout #app-header h1 { display: none; }
 }
 /* === /TUX-001 header vs modal === */
+/* === TUX-029: text-content field ===
+   Multi-line "Text" field in the Type tab. Beats the older
+   `[data-ui-skin] #left-panel-content textarea` rule (fixed row height, small
+   font) and keeps >= 16px so iOS never zooms on focus. */
+[data-ui-skin] #left-panel-content .vtp-panel textarea.vtp-text-field,
+[data-ui-skin] .vtp-panel textarea.vtp-text-field,
+.vtp-panel textarea.vtp-text-field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  min-height: calc(3 * 1.35em + 2 * var(--spacing-sm, 8px));
+  padding: var(--spacing-sm, 8px);
+  font-family: var(--font-ui);
+  font-size: max(16px, var(--font-size-sm, 13px));
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  resize: vertical;
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+[data-ui-skin] #left-panel-content .vtp-panel textarea.vtp-text-field:focus,
+[data-ui-skin] .vtp-panel textarea.vtp-text-field:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-accent-2);
+}
+/* === /TUX-029 === */
+
+/* === TUX-032: keyboard inset ===
+ * --kb-inset is written by src/ui/keyboard-inset.js (0 unless an editable has focus).
+ * Scroll containers gain bottom room only while the keyboard is open, so the last fields of a
+ * pane can scroll above it. Sheets and popovers read the same variable: the modal lane
+ * (TUX-046 Sheet / TUX-049) must keep consuming --kb-inset. */
+html.kb-open .pane-body,
+html.kb-open #left-panel-content,
+html.kb-open .export-settings-scroll {
+  padding-bottom: var(--kb-inset);
+  scroll-padding-bottom: calc(var(--kb-inset) + 8px);
+}
+@media (pointer: coarse) {
+  /* Save Preset bottom sheet (rule above uses !important on align-items): lift it by the inset. */
+  html.kb-open .vectura-modal-backdrop { padding-bottom: var(--kb-inset); box-sizing: border-box; }
+  html.kb-open .vectura-modal { max-height: calc(100% - 8px); }
+  /* iOS zooms inputs under 16px on focus, which would zero the inset (page zoom). */
+  .vtp-fp-search input { font-size: 16px; }
+}
+/* Font picker popover: the list scrolls inside the popover cap that positionPop() sets. */
+.vtp-fp-pop .vtp-fp-list { flex: 1 1 auto; min-height: 0; }
+.vtp-fp-pop .vtp-fp-search, .vtp-fp-pop .vtp-fp-tags { flex: none; }
+/* === /TUX-032 === */
 /* === TUX-034: touch hold + context menus ===
    Scoped to .menu-dropdown.is-context-menu and .canvas-ctx-menu. The header menubar shares
    bare .menu-dropdown / .menu-entry: never restyle those here. */
