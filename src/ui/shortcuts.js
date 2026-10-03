@@ -604,30 +604,125 @@
     const _hideAlgoSub = () => {
       _algoSubHideTimer = setTimeout(() => { algoSubmenuEl.style.display = 'none'; }, 80);
     };
-    algoParentItem?.addEventListener('mouseenter', _showAlgoSub);
-    algoParentItem?.addEventListener('mouseleave', _hideAlgoSub);
-    algoSubmenuEl.addEventListener('mouseenter', () => clearTimeout(_algoSubHideTimer));
-    algoSubmenuEl.addEventListener('mouseleave', _hideAlgoSub);
+    // TUX-035: the fly-out is hover-driven for a mouse only. Touch drills down inside the
+    // add menu instead (compat mouseenter would otherwise open it and swallow the tap).
+    const _onlyMouse = (fn) => (e) => { if (e.pointerType === 'mouse') fn(e); };
+    algoParentItem?.addEventListener('pointerenter', _onlyMouse(_showAlgoSub));
+    algoParentItem?.addEventListener('pointerleave', _onlyMouse(_hideAlgoSub));
+    algoSubmenuEl.addEventListener('pointerenter', _onlyMouse(() => clearTimeout(_algoSubHideTimer)));
+    algoSubmenuEl.addEventListener('pointerleave', _onlyMouse(_hideAlgoSub));
 
     // Clicking a submenu item closes the submenu and the add menu
     algoSubmenuEl.addEventListener('click', (e) => {
       const item = e.target.closest('.lvl-algo-sub-item');
       if (!item) return;
-      algoSubmenuEl.style.display = 'none';
+      closeAddMenu();
       _doAddAlgoLayer(item.dataset.algoType || this.getPreferredNewLayerType?.() || 'wavetable');
-      this.layerAddOpen = false;
-      addMenuEl?.classList.add('hidden');
       this.renderLayers();
       this.app.render();
     });
 
     const addMenuEl = document.getElementById('layer-add-menu');
     const addBtn = document.getElementById('btn-add-layer');
+    // TUX-035: touch drill-down inside the add menu (enterDrill / leaveDrill / closeAddMenu).
+    // Branch on the real input type of the last press, never on a media query: a mouse click
+    // keeps the legacy "add default layer" behaviour even on a touch-capable device.
+    let lastAddMenuPointerType = 'mouse';
+    let drillBack = null;
+    let drillList = null;
+    const _isFingerInput = () => lastAddMenuPointerType === 'touch' || lastAddMenuPointerType === 'pen';
+    const _recordPointer = (e) => {
+      lastAddMenuPointerType = e.pointerType || 'mouse';
+      addMenuEl?.classList.toggle('is-touch', _isFingerInput());
+    };
+    addBtn?.addEventListener('pointerdown', _recordPointer, true);
+    addMenuEl?.addEventListener('pointerdown', _recordPointer, true);
+
+    const _fitDrill = () => {
+      if (!addMenuEl || !drillList || !addMenuEl.classList.contains('is-drill')) return;
+      const vv = window.visualViewport;
+      const vw = vv ? vv.width : window.innerWidth;
+      const top = vv ? vv.offsetTop : 0;
+      const left = vv ? vv.offsetLeft : 0;
+      const PAD = 8;
+      let bottom = top + (vv ? vv.height : window.innerHeight) - PAD;
+      let clipTop = top + PAD;
+      // The pane body clips absolutely positioned overflow: fit inside the tightest clipping ancestor.
+      for (let el = addMenuEl.parentElement; el && el !== document.body; el = el.parentElement) {
+        const cs = getComputedStyle(el);
+        if (cs.overflowY === 'visible' && cs.overflowX === 'visible') continue;
+        const r = el.getBoundingClientRect();
+        bottom = Math.min(bottom, r.bottom - PAD);
+        clipTop = Math.max(clipTop, r.top + PAD);
+      }
+      const FLOOR = 132;
+      addMenuEl.style.transform = '';
+      addMenuEl.style.width = vw <= 480 ? `${Math.min(vw - 2 * PAD, 280)}px` : '';
+      drillList.style.maxHeight = '';
+      const backH = drillBack ? drillBack.offsetHeight : 44;
+      const chrome = addMenuEl.offsetHeight - drillList.offsetHeight;
+      const m0 = addMenuEl.getBoundingClientRect();
+      const wanted = Math.max(FLOOR, bottom - m0.top - chrome);
+      let shiftY = 0;
+      let listH = Math.min(drillList.scrollHeight, wanted);
+      if (m0.top + chrome + listH > bottom) {
+        // Not enough room below the button: slide the menu up (never above the viewport top).
+        shiftY = Math.min(m0.top + chrome + listH - bottom, Math.max(0, m0.top - clipTop));
+        listH = Math.min(listH, bottom - (m0.top - shiftY) - chrome);
+      }
+      listH = Math.max(listH, Math.min(FLOOR, backH * 2));
+      drillList.style.maxHeight = `${Math.floor(listH)}px`;
+      let shiftX = 0;
+      if (m0.left < left + PAD) shiftX = left + PAD - m0.left;
+      else if (m0.right > left + vw - PAD) shiftX = left + vw - PAD - m0.right;
+      if (shiftX || shiftY) addMenuEl.style.transform = `translate(${shiftX}px, ${-shiftY}px)`;
+    };
+    const enterDrill = () => {
+      if (!addMenuEl) return;
+      if (!drillBack) {
+        drillBack = document.createElement('div');
+        drillBack.className = 'lvl-add-item lvl-add-back';
+        drillBack.dataset.add = 'algo-back';
+        drillBack.textContent = '\u2039 Algorithm Layer';
+        drillList = document.createElement('div');
+        drillList.className = 'lvl-add-drill-list';
+        drillList.innerHTML = window.Vectura.UI.utils.renderAlgoMenuHTML(_ALGO_LIST, null);
+        drillList.querySelectorAll('.lvl-algo-sub-item').forEach((item) => {
+          const ico = item.querySelector('.lvl-algo-sub-ico');
+          if (ico) ico.style.color = this._algoMenuColor(item.getAttribute('data-algo-type'));
+        });
+        addMenuEl.append(drillBack, drillList);
+      }
+      addMenuEl.classList.add('is-drill');
+      _fitDrill();
+    };
+    const leaveDrill = () => {
+      drillBack?.remove();
+      drillList?.remove();
+      drillBack = null;
+      drillList = null;
+      if (!addMenuEl) return;
+      addMenuEl.classList.remove('is-drill');
+      addMenuEl.style.transform = '';
+      addMenuEl.style.width = '';
+    };
+    // Single close path: add menu, drill-down and the mouse fly-out together.
+    const closeAddMenu = () => {
+      this.layerAddOpen = false;
+      addMenuEl?.classList.add('hidden');
+      leaveDrill();
+      if (algoSubmenuEl.style.display === 'block') algoSubmenuEl.style.display = 'none';
+    };
+    window.visualViewport?.addEventListener('resize', _fitDrill);
+
     if (addBtn) {
       addBtn.onclick = (e) => {
         e.stopPropagation();
-        this.layerAddOpen = !this.layerAddOpen;
-        addMenuEl?.classList.toggle('hidden', !this.layerAddOpen);
+        if (this.layerAddOpen) closeAddMenu();
+        else {
+          this.layerAddOpen = true;
+          addMenuEl?.classList.remove('hidden');
+        }
       };
     }
 
@@ -654,11 +749,24 @@
     };
 
     addMenuEl?.addEventListener('click', (e) => {
+      if (e.target.closest('[data-add="algo-back"]')) {
+        e.stopPropagation();
+        leaveDrill();
+        return;
+      }
       const item = e.target.closest('.lvl-add-item, .lvl-algo-sub-item');
-      if (!item) return;
-      this.layerAddOpen = false;
-      addMenuEl.classList.add('hidden');
+      if (!item) {
+        // Group headers / padding inside the drill list must not fall through to the outside-click close.
+        if (e.target.closest('.lvl-add-drill-list')) e.stopPropagation();
+        return;
+      }
       const t = item.dataset.add;
+      if (t === 'algo-parent' && _isFingerInput()) {
+        e.stopPropagation();
+        enterDrill();
+        return;
+      }
+      closeAddMenu();
       if (t === 'layer') {
         if (this.app.pushHistory) this.app.pushHistory();
         const id = this.app.engine.addEmptyLayer?.();
@@ -666,6 +774,8 @@
         _toast('Added empty layer');
       } else if (t === 'algo') {
         _doAddAlgoLayer(item.dataset.algoType || this.getPreferredNewLayerType?.() || 'wavetable');
+      } else if (!t && item.dataset.algoType) {
+        _doAddAlgoLayer(item.dataset.algoType);
       } else if (t === 'algo-parent') {
         _doAddAlgoLayer(this.getPreferredNewLayerType?.() || 'wavetable');
       } else if (t === 'group') {
@@ -901,11 +1011,7 @@
     // The new LayerFilter menu primitive handles its own outside-click guard;
     // we still need to close the legacy add-menu + algo-submenu below.
     document.addEventListener('click', () => {
-      if (this.layerAddOpen) {
-        this.layerAddOpen = false;
-        addMenuEl?.classList.add('hidden');
-        algoSubmenuEl.style.display = 'none';
-      }
+      if (this.layerAddOpen) closeAddMenu();
     });
   }
 
