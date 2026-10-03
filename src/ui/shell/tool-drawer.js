@@ -373,7 +373,9 @@
   // Visual viewport. Never innerWidth alone: Chromium phone emulation can inflate it past the visible width.
   const readViewport = () => {
     const d = doc();
-    const vv = G.visualViewport;
+    // TUX-032: the visual viewport is read only through KeyboardInset (single source).
+    const KI = G.Vectura && G.Vectura.KeyboardInset;
+    const vv = KI && KI.viewportRect ? KI.viewportRect() : null;
     const el = d && d.documentElement;
     const cw = (el && el.clientWidth) || G.innerWidth || 1024;
     const ch = (el && el.clientHeight) || G.innerHeight || 768;
@@ -457,10 +459,9 @@
     // Keep the drawer glued to the rail when the layout shifts.
     G.addEventListener('resize', () => { if (state.open) positionDrawer(); });
     // TUX-015: the visual viewport shrinks/shifts with the browser toolbars and the keyboard.
-    if (G.visualViewport && G.visualViewport.addEventListener) {
-      const reposition = () => { if (state.open) positionDrawer(); };
-      G.visualViewport.addEventListener('resize', reposition);
-      G.visualViewport.addEventListener('scroll', reposition);
+    const KI = G.Vectura && G.Vectura.KeyboardInset;
+    if (KI && KI.onViewportChange) {
+      KI.onViewportChange(() => { if (state.open) positionDrawer(); }, { scroll: true });
     }
   };
 

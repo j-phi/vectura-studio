@@ -160,9 +160,12 @@
   };
 
   // Subscribe to visual-viewport resizes without reading visualViewport elsewhere.
-  const onViewportChange = (cb) => {
+  // opts.scroll also fires on visual-viewport pans (TUX-015 tools drawer).
+  const onViewportChange = (cb, opts) => {
     const v = vv();
-    if (v && v.addEventListener && typeof cb === 'function') v.addEventListener('resize', cb);
+    if (!v || !v.addEventListener || typeof cb !== 'function') return;
+    v.addEventListener('resize', cb);
+    if (opts && opts.scroll) v.addEventListener('scroll', cb);
   };
 
   Vectura.KeyboardInset = {
