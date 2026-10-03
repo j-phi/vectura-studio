@@ -221,6 +221,7 @@ describe('document-setup panel compile gate', () => {
     const body = collapsedHdr.nextElementSibling;
 
     const maxHeightLog = [];
+    const visibilityLog = [];
     const origOffsetHeight =
       Object.getOwnPropertyDescriptor(dom.window.HTMLElement.prototype, 'offsetHeight') ||
       Object.getOwnPropertyDescriptor(dom.window.Element.prototype, 'offsetHeight');
@@ -228,6 +229,7 @@ describe('document-setup panel compile gate', () => {
       configurable: true,
       get() {
         maxHeightLog.push(body.style.maxHeight);
+        visibilityLog.push(body.style.visibility);
         return origOffsetHeight ? origOffsetHeight.get.call(this) : 0;
       },
     });
@@ -238,6 +240,8 @@ describe('document-setup panel compile gate', () => {
     // measurement (maxHeight=''). Later reads may be reflow anchors (maxHeight='0').
     expect(maxHeightLog.length).toBeGreaterThan(0);
     expect(maxHeightLog[0]).toBe('');
+    // TUX-050: visibility:hidden must be lifted BEFORE the measurement.
+    expect(visibilityLog[0]).toBe('');
 
     delete body.offsetHeight;
   });
@@ -325,5 +329,87 @@ describe('document-setup panel compile gate', () => {
       openColorPickerAnchoredTo: () => {},
     });
     expect(() => DocumentSetup.bindBgColorListeners.call({})).not.toThrow();
+  });
+});
+
+
+// TUX-050: initial section state per pointer type, and visibility:hidden on collapsed bodies.
+describe('document-setup sections (TUX-050)', () => {
+  const fresh = (coarse) => {
+    const dom = loadInJSDOM(['src/ui/modals/document-setup.js']);
+    const w = dom.window;
+    if (coarse !== undefined) {
+      w.matchMedia = (q) => ({ matches: coarse && /pointer:\s*coarse/.test(q), media: q, addEventListener() {}, removeEventListener() {} });
+    }
+    const DS = w.Vectura.UI.Modals.DocumentSetup;
+    DS.bind({ getEl: (id) => w.document.getElementById(id) });
+    DS.mount(w.document.querySelector('main'));
+    DS.bindHandlers.call({});
+    const panel = w.document.getElementById('settings-panel');
+    const hdrOf = (name) => [...panel.querySelectorAll('[data-sect-toggle]')].find((h) => h.textContent.trim() === name);
+    return { dom, w, panel, hdrOf };
+  };
+
+  it('fine pointer: Paper collapsed, Theme open (desktop unchanged)', () => {
+    const { dom, hdrOf } = fresh(false);
+    expect(hdrOf('Paper').getAttribute('aria-expanded')).toBe('false');
+    expect(hdrOf('Theme').getAttribute('aria-expanded')).toBe('true');
+    dom.window.close();
+  });
+
+  it('matchMedia undefined (jsdom): Paper collapsed, Theme open', () => {
+    const { dom, w, hdrOf } = fresh(undefined);
+    expect(w.matchMedia).toBeUndefined();
+    expect(hdrOf('Paper').getAttribute('aria-expanded')).toBe('false');
+    expect(hdrOf('Theme').getAttribute('aria-expanded')).toBe('true');
+    dom.window.close();
+  });
+
+  it('coarse pointer: Paper starts expanded with no collapsed inline styles', () => {
+    const { dom, hdrOf } = fresh(true);
+    const hdr = hdrOf('Paper');
+    const body = hdr.nextElementSibling;
+    expect(hdr.getAttribute('aria-expanded')).toBe('true');
+    expect(hdr.classList.contains('is-open')).toBe(true);
+    expect(hdr.querySelector('.sect-arrow').classList.contains('down')).toBe(true);
+    expect(body.style.maxHeight).toBe('');
+    expect(body.style.overflow).toBe('');
+    expect(body.style.paddingTop).toBe('');
+    expect(body.style.paddingBottom).toBe('');
+    expect(body.style.visibility).toBe('');
+    // Other collapsed sections stay collapsed.
+    expect(hdrOf('Margins').getAttribute('aria-expanded')).toBe('false');
+    dom.window.close();
+  });
+
+  it('collapsed bodies are visibility:hidden at bind time and after the close transition', () => {
+    const { dom, w, panel, hdrOf } = fresh(false);
+    panel.querySelectorAll('[data-sect-toggle][aria-expanded="false"]').forEach((h) => {
+      expect(h.nextElementSibling.style.visibility, h.textContent.trim()).toBe('hidden');
+    });
+    const theme = hdrOf('Theme');
+    const body = theme.nextElementSibling;
+    expect(body.style.visibility).toBe('');
+    theme.click();
+    w.document.body.dispatchEvent(new w.Event('x'));
+    body.dispatchEvent(Object.assign(new w.Event('transitionend', { bubbles: true }), { propertyName: 'padding-top' }));
+    expect(body.style.visibility).not.toBe('hidden'); // padding events are ignored
+    body.dispatchEvent(Object.assign(new w.Event('transitionend', { bubbles: true }), { propertyName: 'max-height' }));
+    expect(body.style.visibility).toBe('hidden');
+    // Reopen clears it.
+    theme.click();
+    expect(body.style.visibility).toBe('');
+    dom.window.close();
+  });
+
+  it('a section reopened before the close transition ends is not hidden', () => {
+    const { dom, w, hdrOf } = fresh(false);
+    const theme = hdrOf('Theme');
+    const body = theme.nextElementSibling;
+    theme.click(); // close
+    theme.click(); // reopen before transitionend
+    body.dispatchEvent(Object.assign(new w.Event('transitionend', { bubbles: true }), { propertyName: 'max-height' }));
+    expect(body.style.visibility).not.toBe('hidden');
+    dom.window.close();
   });
 });

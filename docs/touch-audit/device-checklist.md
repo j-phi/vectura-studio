@@ -14,3 +14,4 @@ Rows below come from TUX-013, TUX-015 and TUX-036. TUX-062 consolidates this fil
 | TUX-036-b | iPhone and iPad | A gallery row selects on the first tap. No hover-only first tap. Status: deferred-by-Jay unless verified. | TUX-036 |
 | TUX-036-c | iPad with trackpad | A finger tap on an inactive layer row never fires a hidden action. Status: deferred-by-Jay unless verified. | TUX-036 |
 | TUX-036-d | iPad with Apple Pencil | Pencil hover reveal leaves no visible-but-inert buttons. Status: deferred-by-Jay unless verified. | TUX-036 |
+| TUX-050-a | iPad and iPhone | The first tap on Paper > Size opens the native iOS picker. The drawer or modal does not jump. Status: deferred-by-Jay unless verified. | TUX-050 |
