@@ -62,6 +62,7 @@
     '_sceneResizeDrag',
     '_sceneFacePullDrag',
     '_sceneLightDrag',
+    '_fillPendingPour',
   ]);
 
   // Scene and layer drags know how to restore their own pre-drag state. Rollback

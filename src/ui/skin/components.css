@@ -14230,3 +14230,34 @@ body.phone-layout #settings-panel {
   z-index: 900;
 }
 /* === END TUX-046 === */
+
+/* === TUX-022: fill scope chips === */
+/* Scope up/down chips in the fill context bar (coarse pointer only, rendered by
+   Vectura.UI.PaintBucketScopeChips). Beats `.ctxbar-btn` (26 px) on specificity. */
+.ctxbar-fill-scope {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ctxbar .ctxbar-btn.ctxbar-fill-scope-btn {
+  min-width: var(--touch-target-min, 44px);
+  min-height: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
+  padding: 0 12px;
+  justify-content: center;
+  font-size: var(--font-size-md, 13px);
+  touch-action: manipulation;
+}
+.ctxbar-fill-scope-readout {
+  min-width: 56px;
+  text-align: center;
+  color: var(--ui-muted, #9a9a9a);
+  font-size: var(--font-size-sm, 11px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The generic phone rule hides .ctxbar at <= 640px; the touch fill chips must stay reachable. */
+@media (max-width: 640px) {
+  .ctxbar.ctxbar--fill { display: flex; }
+}
+/* === END TUX-022 === */

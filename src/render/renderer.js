@@ -673,6 +673,12 @@
       this.paintBucketStack = null;
       this.paintBucketScopeIndex = 0;
       this.paintBucketStackKey = null;
+      // TUX-022: sticky scope offset set by the touch Scope chips (0 for mouse). A new hover
+      // starts at min(offset, stack.length - 1) instead of the innermost region.
+      this.paintBucketScopeOffset = 0;
+      // TUX-022: touch/pen fill pour armed at pointerdown, poured at pointerup.
+      // null | { pointerId, world, scopeIndex, loopId, mode, fillParamsOverride, tool, polygon }.
+      this._fillPendingPour = null;
       this.patternFillPreviewInnerPolygon = null;
       this.lastPourLoopId = null;
       // Refs to the fill records in the "active batch" — the set that panel
@@ -1157,6 +1163,8 @@
       }
       this.updateCursor();
       if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(tool)) {
+        this.paintBucketScopeOffset = 0;
+        this._fillPendingPour = null;
         this.hideFillLoupe?.();
         this.patternFillPreviewPolygon = null;
         this.patternFillPreviewInnerPolygon = null;
@@ -1503,7 +1511,7 @@
       if (this.fillLoupeEl) this.fillLoupeEl.style.display = 'none';
     }
 
-    showFillLoupe(clientX, clientY) {
+    showFillLoupe(clientX, clientY, pointerType) {
       const fillTools = ['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'];
       if (!fillTools.includes(this.activeTool)) {
         this.hideFillLoupe();
@@ -1568,17 +1576,24 @@
       const magW = this.fillLoupeMagEl?.width || 96;
       const magH = this.fillLoupeMagEl?.height || 96;
       const GAP = 18;
+      // TUX-022: a finger covers ~44 px around the contact point, so the touch magnifier sits
+      // above it with a larger gap (or below when there is no room above). Mouse is unchanged.
+      const TOUCH_GAP = 48; // >= the radius of a 44 px fingertip disc
+      const deferred = pointerType === 'touch' || pointerType === 'pen';
       const spaceRight = canvasRect.right - clientX;
       const spaceLeft = clientX - canvasRect.left;
       const spaceBelow = canvasRect.bottom - clientY;
       const spaceAbove = clientY - canvasRect.top;
       const placeRight = spaceRight >= magW + GAP || spaceRight >= spaceLeft;
-      const placeBelow = spaceBelow >= magH + GAP || spaceBelow >= spaceAbove;
+      const placeBelow = deferred
+        ? !(spaceAbove >= magH + TOUCH_GAP)
+        : (spaceBelow >= magH + GAP || spaceBelow >= spaceAbove);
+      const vGap = deferred ? TOUCH_GAP : GAP;
       const magEl = this.fillLoupeMagEl;
       if (magEl) {
         magEl.style.left = placeRight ? `${GAP}px` : `${-magW - GAP}px`;
         magEl.style.right = '';
-        magEl.style.top = placeBelow ? `${GAP}px` : `${-magH - GAP}px`;
+        magEl.style.top = placeBelow ? `${vGap}px` : `${-magH - vGap}px`;
       }
     }
 
@@ -1975,6 +1990,8 @@
       this._sceneMarqueePending = null;
       this._pendingSingleSelect = null;
       this._areaResize = null;
+      // TUX-022: a gesture start / cancel drops the armed fill pour and its preview.
+      this._clearFillDeferred();
     }
 
     // ── TUX-017: second-finger arbitration ────────────────────────────────────
@@ -6987,10 +7004,18 @@
           const poly = this._computeFillPreviewPolygon(world.x, world.y);
           if (poly && this.onPatternFill) {
             const tool = this.activeTool;
-            const applyPattern = () => this.onPatternFill({ tool, polygon: poly, worldX: world.x, worldY: world.y });
-            // Touch: the pour waits for pointerup / a closed arbitration window (TUX-017).
-            if (this.isTouchPointer(e)) this._deferTouch(applyPattern, 'window');
-            else applyPattern();
+            if (this.isDeferredFillPointer(e)) {
+              // TUX-022: touch / pen preview the region and the loupe; the lift pours it.
+              this.patternFillPreviewPolygon = poly;
+              this._fillPendingPour = {
+                pointerId: e.pointerId, world: { x: world.x, y: world.y }, scopeIndex: 0, loopId: null,
+                mode: null, fillParamsOverride: null, tool, polygon: poly,
+              };
+              this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
+              this.draw();
+            } else {
+              this.onPatternFill({ tool, polygon: poly, worldX: world.x, worldY: world.y });
+            }
           }
           if (e.cancelable) e.preventDefault();
           return;
@@ -7020,10 +7045,16 @@
         this._paintBucketHover(world, patternTileParams);
         const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
           ? 'erase' : 'pour';
-        const pour = () => this._paintBucketPour(world, mode, { startBatch: true, fillParamsOverride: patternTileParams });
-        // Touch: the pour waits for pointerup / a closed arbitration window (TUX-017).
-        if (this.isTouchPointer(e)) this._deferTouch(pour, 'window');
-        else pour();
+        if (this.isDeferredFillPointer(e)) {
+          // TUX-022: touch / pen show the region preview and the loupe at once; the lift pours
+          // into the last previewed region. A cancel, a drag off the paper or a second finger
+          // drops the pending pour.
+          this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
+          this._armFillPending(e, world, mode, patternTileParams);
+          this.draw();
+        } else {
+          this._paintBucketPour(world, mode, { startBatch: true, fillParamsOverride: patternTileParams });
+        }
         if (e.cancelable) e.preventDefault();
         return;
       }
@@ -7654,10 +7685,15 @@
         // leaves the canvas. Without this guard the hover would re-find a
         // region under the off-canvas coordinate and re-paint the blue
         // preview overlay we just cleared on pointerleave.
+        // TUX-022: only the finger that owns the fill drives it. A second touch (a chip tap
+        // with the other hand) must not move the preview.
+        if (this.isDeferredFillPointer(e) && this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
+        const fillOwner = this._isFillOwnerMove(e);
         const inside =
           e.clientX >= rect.left && e.clientX <= rect.right &&
           e.clientY >= rect.top && e.clientY <= rect.bottom;
         if (!inside) {
+          if (fillOwner) this._fillPendingPour = null;
           this._paintBucketClearHover();
           return;
         }
@@ -7666,6 +7702,7 @@
         // surrounding canvas margin, drop the blue fill preview and bail
         // before any pour logic — clicks in the margin must not fill.
         if (!this._isWorldInsidePaper(world)) {
+          if (fillOwner) this._fillPendingPour = null;
           this._paintBucketClearHover();
           return;
         }
@@ -7673,7 +7710,11 @@
           ? this.app?.ui?.getPatternTileFillParams?.()
           : null;
         this._paintBucketHover(world, patternTileParams);
-        this.showFillLoupe(e.clientX, e.clientY);
+        this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
+        if (fillOwner) {
+          const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase') ? 'erase' : 'pour';
+          this._armFillPending(e, world, mode, patternTileParams);
+        }
         // Drag-pour: while the primary button AND Shift are held and we
         // cross into a new region's loopId, pour again. lastPourLoopId is
         // reset on up(). Shift gating keeps a plain click from accidentally
@@ -7690,14 +7731,26 @@
       } else if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
         const rect = this.canvas.getBoundingClientRect();
         const world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-        if (!this._isWorldInsidePaper(world)) {
+        if (this.isDeferredFillPointer(e) && this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
+        const patOwner = this._isFillOwnerMove(e);
+        const patInside = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+        if (!patInside || !this._isWorldInsidePaper(world)) {
+          if (patOwner) this._fillPendingPour = null;
           this.patternFillPreviewPolygon = null;
           this.hideFillLoupe?.();
           this.draw();
           return;
         }
         this.patternFillPreviewPolygon = this._computeFillPreviewPolygon(world.x, world.y);
-        this.showFillLoupe(e.clientX, e.clientY);
+        this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
+        if (patOwner && this.patternFillPreviewPolygon && this.onPatternFill) {
+          this._fillPendingPour = {
+            pointerId: e.pointerId, world: { x: world.x, y: world.y }, scopeIndex: 0, loopId: null,
+            mode: null, fillParamsOverride: null, tool: this.activeTool, polygon: this.patternFillPreviewPolygon,
+          };
+        } else if (patOwner) {
+          this._fillPendingPour = null;
+        }
         this.draw();
       }
       if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
@@ -8300,7 +8353,13 @@
         this.updateCursor();
         return;
       }
-      // Touch one-shots deferred at pointerdown (fill pour, plain-marquee clear, pen
+      // TUX-022: touch / pen fill. The lift pours into the last previewed region. A cancel never
+      // pours; the pending record and the preview are always cleared.
+      const fillPend = this._fillPendingPour;
+      if (fillPend && e.pointerId === fillPend.pointerId && this.isDeferredFillPointer(e)) {
+        this._commitFillPending(fillPend, e.type !== 'pointercancel');
+      }
+      // Touch one-shots deferred at pointerdown (plain-marquee clear, pen
       // add/delete anchor) run now, before the normal finalize.
       // Only the finger that owns the deferred action may run it; a second finger that
       // lifts elsewhere must not fire the canvas finger's pour, clear or anchor edit.
@@ -9713,7 +9772,8 @@
       const stackKey = stack.map((e) => e.loopId).join('|');
       if (stackKey !== this.paintBucketStackKey) {
         this.paintBucketStackKey = stackKey;
-        this.paintBucketScopeIndex = 0;
+        // TUX-022: the touch Scope chips keep a sticky offset (0 for mouse).
+        this.paintBucketScopeIndex = Math.min(this.paintBucketScopeOffset || 0, stack.length - 1);
       }
       this.paintBucketStack = stack;
       this.paintBucketScopeIndex = Math.min(this.paintBucketScopeIndex, stack.length - 1);
@@ -9832,6 +9892,96 @@
         ? this.lastPaintedFillRefs.length
         : 0;
       this.app?.paintBucketPanel?.onBatchStateChange?.({ activeCount: count });
+    }
+
+    // TUX-022: touch and pen defer the fill pour to the lift. Mouse pours at once.
+    isDeferredFillPointer(e) {
+      return e?.pointerType === 'touch' || e?.pointerType === 'pen';
+    }
+
+    // True when this move belongs to the deferred pointer that holds the canvas (a pressed
+    // touch / pen). A hovering pen or a mouse never arms a pending pour.
+    _isFillOwnerMove(e) {
+      if (!this.isDeferredFillPointer(e)) return false;
+      if (this.activePointerId === null || e.pointerId !== this.activePointerId) return false;
+      return e.pointerType === 'touch' || e.buttons === undefined || (e.buttons & 1) === 1;
+    }
+
+    // Record the region under the press so the lift pours into it, not where the finger lifts.
+    _armFillPending(e, world, mode, fillParamsOverride) {
+      const entry = Array.isArray(this.paintBucketStack) ? this.paintBucketStack[this.paintBucketScopeIndex] : null;
+      this._fillPendingPour = {
+        pointerId: e.pointerId,
+        world: { x: world.x, y: world.y },
+        scopeIndex: this.paintBucketScopeIndex,
+        loopId: entry ? entry.loopId : null,
+        mode,
+        fillParamsOverride: fillParamsOverride || null,
+        tool: this.activeTool,
+        polygon: null,
+      };
+    }
+
+    // The one place that drops the pending pour, the region preview, the stack and the loupe.
+    // Explicit on purpose: WebKit synthetic events never fire pointerleave.
+    _clearFillDeferred() {
+      this._fillPendingPour = null;
+      if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(this.activeTool)) return;
+      this.paintBucketStack = null;
+      this.paintBucketStackKey = null;
+      this.paintBucketScopeIndex = 0;
+      this.patternFillPreviewPolygon = null;
+      this.patternFillPreviewInnerPolygon = null;
+      this.hideFillLoupe?.();
+      if (this.app?.ui?.setPaintBucketHint) {
+        this.app.ui.setPaintBucketHint('Click to fill · Alt-click to remove · Shift+drag to pour multiple');
+      }
+      this.draw();
+    }
+
+    _commitFillPending(pend, doPour = true) {
+      this._fillPendingPour = null;
+      if (doPour) {
+        if (pend.polygon && this.onPatternFill) {
+          this.onPatternFill({ tool: pend.tool, polygon: pend.polygon, worldX: pend.world.x, worldY: pend.world.y });
+        } else {
+          this.paintBucketScopeIndex = pend.scopeIndex;
+          this._paintBucketPour(pend.world, pend.mode || 'pour', { startBatch: true, fillParamsOverride: pend.fillParamsOverride || undefined });
+        }
+      }
+      this._clearFillDeferred();
+    }
+
+    // TUX-022: touch Scope chips. dir +1 widens (toward the enclosing loop), -1 narrows.
+    // The offset is sticky: the next preview starts at min(offset, stack.length - 1).
+    stepPaintBucketScope(dir) {
+      const stack = this.paintBucketStack;
+      let next = Math.max(0, Math.min(64, (this.paintBucketScopeOffset || 0) + (dir > 0 ? 1 : -1)));
+      const live = Array.isArray(stack) && stack.length > 0;
+      if (live) next = Math.min(next, stack.length - 1);
+      this.paintBucketScopeOffset = next;
+      if (live) {
+        this.paintBucketScopeIndex = next;
+        const entry = stack[next];
+        this.patternFillPreviewPolygon = entry?.polygon || null;
+        this.patternFillPreviewInnerPolygon = entry?.innerPolygon || null;
+        if (this._fillPendingPour && entry) {
+          this._fillPendingPour.scopeIndex = next;
+          this._fillPendingPour.loopId = entry.loopId;
+        }
+        if (this.app?.ui?.setPaintBucketHint && entry) {
+          if (entry.isDocBounds) {
+            this.app.ui.setPaintBucketHint('Scope: document bounds — lift to fill background');
+          } else {
+            this.app.ui.setPaintBucketHint(`Scope ${next + 1}/${stack.length - 1} · Scope ▲▼ to widen`);
+          }
+        }
+        this.draw();
+      }
+      if (typeof document !== 'undefined' && typeof CustomEvent === 'function') {
+        try { document.dispatchEvent(new CustomEvent('vectura:fill-scope', { detail: { offset: next } })); } catch (_e) { /* noop */ }
+      }
+      return next;
     }
 
     _paintBucketClearHover() {

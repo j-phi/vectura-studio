@@ -483,14 +483,15 @@ describe('TUX-017 gesture arbiter (renderer)', () => {
     const fillsBefore = (layer.fills || []).length;
     const histBefore = app.history.length;
     renderer.down(ev(1, 1000, 60, 60));
-    expect(renderer._touchDeferred).toBeTruthy();
+    // TUX-022: the fill pour is a pending record (previewed at down, poured on lift).
+    expect(renderer._fillPendingPour).toBeTruthy();
     // finger 2 never reached the canvas (it landed on a pane), so only its up arrives here
     renderer.up(ev(2, 1500, 600, 600, { buttons: 0 }));
-    expect(renderer._touchDeferred).toBeTruthy();
+    expect(renderer._fillPendingPour).toBeTruthy();
     expect((layer.fills || []).length).toBe(fillsBefore);
     expect(app.history.length).toBe(histBefore);
     renderer.up(ev(1, 1600, 60, 60, { buttons: 0 }));
-    expect(renderer._touchDeferred).toBeFalsy();
+    expect(renderer._fillPendingPour).toBeFalsy();
     expect((layer.fills || []).length + (app.history.length - histBefore)).toBeGreaterThan(0);
   });
 

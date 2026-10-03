@@ -457,5 +457,72 @@
     };
   }
 
+  // TUX-022: Scope up/down chips for touch. Rendered by the context bar (kind 'fill', coarse
+  // pointer only). The buttons step the renderer's sticky scope offset; the live preview and the
+  // pending lift-to-pour follow it. Click (not pointerdown) so the canvas pointers stay untouched.
+  const SCOPE_CHIP_COPY = {
+    up: { label: 'Scope', glyph: '\u25B2', aria: 'Widen fill scope' },
+    down: { label: 'Scope', glyph: '\u25BC', aria: 'Narrow fill scope' },
+  };
+  const scopeReadoutText = (offset) => `Scope +${Math.max(0, Math.round(offset) || 0)}`;
+  const scopeChipsEnabled = (renderer) => {
+    if (!renderer) return false;
+    // The pattern-layer pattern-fill path pours by tile region and has no scope stack.
+    const layer = renderer.engine && renderer.engine.getActiveLayer ? renderer.engine.getActiveLayer() : null;
+    const patternTool = renderer.activeTool === 'fill-pattern' || renderer.activeTool === 'fill-pattern-erase';
+    return !(patternTool && layer && layer.type === 'pattern');
+  };
+  const renderScopeChips = (host, ctx = {}) => {
+    const d = G.document;
+    if (!d || !host) return null;
+    const renderer = ctx.renderer || (G.app && G.app.renderer) || null;
+    const enabled = scopeChipsEnabled(renderer);
+    const wrap = d.createElement('div');
+    wrap.className = 'ctxbar-fill-scope';
+    wrap.setAttribute('role', 'group');
+    wrap.setAttribute('aria-label', 'Fill scope');
+    const mk = (dir) => {
+      const c = SCOPE_CHIP_COPY[dir];
+      const btn = d.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ctxbar-btn ctxbar-btn--labeled ctxbar-fill-scope-btn';
+      btn.setAttribute('data-fill-scope', dir);
+      btn.setAttribute('data-ctxbar-roving', '');
+      btn.setAttribute('tabindex', '-1');
+      btn.setAttribute('aria-label', c.aria);
+      btn.title = c.aria;
+      btn.textContent = `${c.label} ${c.glyph}`;
+      if (!enabled) {
+        btn.disabled = true;
+        btn.classList.add('is-disabled');
+        btn.title = 'Scope does not apply to pattern layers';
+      } else {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const r = (G.app && G.app.renderer) || renderer;
+          if (r && typeof r.stepPaintBucketScope === 'function') r.stepPaintBucketScope(dir === 'up' ? 1 : -1);
+        });
+      }
+      return btn;
+    };
+    const readout = d.createElement('span');
+    readout.className = 'ctxbar-fill-scope-readout';
+    readout.setAttribute('data-fill-scope-readout', '');
+    readout.setAttribute('aria-live', 'polite');
+    readout.textContent = scopeReadoutText(renderer ? renderer.paintBucketScopeOffset : 0);
+    wrap.appendChild(mk('up'));
+    wrap.appendChild(readout);
+    wrap.appendChild(mk('down'));
+    host.appendChild(wrap);
+    return wrap;
+  };
+  if (G.document && typeof G.document.addEventListener === 'function') {
+    G.document.addEventListener('vectura:fill-scope', (e) => {
+      const off = e && e.detail ? e.detail.offset : 0;
+      G.document.querySelectorAll('[data-fill-scope-readout]').forEach((n) => { n.textContent = scopeReadoutText(off); });
+    });
+  }
+  UI.PaintBucketScopeChips = { render: renderScopeChips, readoutText: scopeReadoutText };
+
   UI.PaintBucketPanel = { init };
 })();

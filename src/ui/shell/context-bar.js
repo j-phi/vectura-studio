@@ -589,10 +589,14 @@
     const v = viewportSize();
     const b = barSize();
     const t = cfg().timing || {};
-    const { left, top } = computeAnchor({
-      bounds, barW: b.w, barH: b.h, viewW: v.w, viewH: v.h,
+    const anchored = computeAnchor({
+      bounds: state.kind === 'fill' ? null : bounds, barW: b.w, barH: b.h, viewW: v.w, viewH: v.h,
       offset: t.anchorOffsetPx, pad: t.viewportPadPx, railRect: railRectInViewport(),
     });
+    const { left } = anchored;
+    let { top } = anchored;
+    // TUX-022: the fill bar rides the bottom edge so it never covers the region being previewed.
+    if (state.kind === 'fill') top = Math.max(0, v.h - b.h - (Number.isFinite(t.viewportPadPx) ? t.viewportPadPx : 8));
     els.bar.style.left = `${left}px`;
     els.bar.style.top = `${top}px`;
     refreshMenuDirection();
@@ -628,6 +632,19 @@
     G.addEventListener('pointercancel', end, true);
   };
 
+  // ── TUX-022: touch fill context ───────────────────────────────────────
+  // With a fill tool on a coarse pointer, the bar shows the Scope up/down chips
+  // (Vectura.UI.PaintBucketScopeChips). Desktop (fine pointer) never changes.
+  const FILL_TOOLS = ['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'];
+  const isCoarsePointer = () => {
+    try { return !!(G.matchMedia && G.matchMedia('(pointer: coarse)').matches); } catch (_) { return false; }
+  };
+  const fillChipsActive = (renderer) => !!renderer && FILL_TOOLS.indexOf(renderer.activeTool) >= 0 && isCoarsePointer();
+  const fillSigOf = (renderer) => {
+    const layer = renderer && renderer.engine && renderer.engine.getActiveLayer ? renderer.engine.getActiveLayer() : null;
+    return `${renderer && renderer.activeTool}|${(layer && layer.type) || ''}`;
+  };
+
   // ── context detection ─────────────────────────────────────────────────
   const getContext = () => {
     const app = getApp();
@@ -638,6 +655,9 @@
     const tool = renderer.activeTool || 'select';
     let kind;
     let primary = layers[0] || null;
+    if (fillChipsActive(renderer)) {
+      return { kind: 'fill', layerIds: ids, primaryLayer: primary, app, renderer, fillSig: fillSigOf(renderer) };
+    }
     // 3D Scene Studio (Phase 1C): a live scene selection (CONTRACT D) on a
     // selected scene3d layer morphs the bar into a scene context. Gated on
     // BOTH the selection API and the layer type so plain layer selection is
@@ -2170,9 +2190,16 @@
     if (sceneSelHasObjectDef(sceneSel(ctx))) pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray', ic.sceneXray);
   };
 
+  const renderFill = (ctx) => {
+    const Chips = UI.PaintBucketScopeChips;
+    if (Chips && typeof Chips.render === 'function') Chips.render(els.content, ctx);
+  };
+
   const renderContext = (ctx) => {
     if (!els.content) return;
     els.content.textContent = '';
+    // TUX-022: the fill chips stay visible on phones (the generic phone rule hides the bar).
+    if (els.bar) els.bar.classList.toggle('ctxbar--fill', ctx.kind === 'fill');
     switch (ctx.kind) {
       case 'idle': renderIdle(); break;
       case 'single-text': renderText(ctx); break;
@@ -2182,6 +2209,7 @@
       case 'single-path': renderSingle(ctx); break;
       case 'multi': renderMulti(ctx); break;
       case 'direct': renderDirect(ctx); break;
+      case 'fill': renderFill(ctx); break;
       case 'scene-object': renderSceneObject(ctx); break;
       case 'scene-face':
       case 'scene-edge': renderSceneComponent(ctx); break;
@@ -2976,6 +3004,7 @@
     if (a && a.textEdit && typeof a.textEdit.isActive === 'function' && a.textEdit.isActive()) return false;
     const renderer = getRenderer();
     if (!renderer) return false;
+    if (fillChipsActive(renderer)) return true;
     const size = renderer.selectedLayerIds ? renderer.selectedLayerIds.size : 0;
     if (size > 0) return true;
     // Nothing selected → idle only for the select tool.
@@ -3025,7 +3054,9 @@
     const sceneRenderer = getRenderer();
     const paramSig = ctx.kind === 'single-text'
       ? `${primaryParams.font || ''}|${primaryParams.fontWeight || ''}|${primaryParams.fontSize || ''}`
-      : ctx.kind === 'single-algo'
+      : ctx.kind === 'fill'
+        ? ctx.fillSig
+        : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
         // Scene contexts re-render when the scene selection or the Alt-cycle
         // readout changes within the same kind (renderer-owned signature).
@@ -3088,7 +3119,9 @@
     const rr = getRenderer();
     state.paramSig = ctx.kind === 'single-text'
       ? `${rp.font || ''}|${rp.fontWeight || ''}|${rp.fontSize || ''}`
-      : ctx.kind === 'single-algo'
+      : ctx.kind === 'fill'
+        ? ctx.fillSig
+        : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
         : `${ctx.kind}`.startsWith('scene-') && rr && typeof rr.getSceneSelectionSignature === 'function'
           ? rr.getSceneSelectionSignature()
