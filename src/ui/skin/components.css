@@ -14069,7 +14069,7 @@ body.touch-ui .tool-drawer-view-btn { width: var(--touch-target-min, 44px); heig
  *   max-width: 1100px query below mirrors the existing Export column-layout breakpoint.
  * Z-band: #modal-overlay sits at 900. It must stay in 221-999: above #app-header (220), below
  *   .vectura-modal-backdrop and the drag tooltip (1000+).
- * Safe area: var(--safe-*, env(safe-area-inset-*)). TUX-005 defines --safe-* later.
+ * Safe area: var(--safe-*), defined by TUX-005 in tokens.css.
  * Sheet heights use % of the fixed overlay, never vh (vh includes the iOS toolbar).
  */
 #modal-overlay { z-index: 900; }
@@ -14078,7 +14078,7 @@ body.touch-ui .vt-sheet {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  max-height: calc(100% - 32px - var(--safe-top, env(safe-area-inset-top, 0px)) - var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
+  max-height: calc(100% - 32px - var(--safe-top) - var(--safe-bottom));
 }
 body.touch-ui .vt-sheet__header { flex: none; }
 body.touch-ui .vt-sheet__body {
@@ -14158,10 +14158,10 @@ body.touch-ui .color-modal-actions {
 body.phone-layout #modal-overlay .modal-card,
 body.phone-layout #modal-overlay .modal-card.modal-card--export {
   position: fixed;
-  top: var(--safe-top, env(safe-area-inset-top, 0px));
-  right: var(--safe-right, env(safe-area-inset-right, 0px));
-  bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
-  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  top: var(--safe-top);
+  right: var(--safe-right);
+  bottom: var(--safe-bottom);
+  left: var(--safe-left);
   width: auto;
   height: auto;
   max-width: none;
@@ -14172,7 +14172,7 @@ body.phone-layout #modal-overlay .modal-card.modal-card--export {
 /* Save Preset sheet (.vectura-modal, built by UI.overlays.Modal). Same slots as #modal-overlay.
  * modal.js tags .vt-sheet / __header / __body / __footer. Coarse sizing keys on body.touch-ui. */
 body.touch-ui .vectura-modal.vt-sheet {
-  max-height: calc(100% - var(--safe-top, env(safe-area-inset-top, 0px)) - var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
+  max-height: calc(100% - var(--safe-top) - var(--safe-bottom));
 }
 body.touch-ui .vectura-modal.vt-sheet > .vt-sheet__header { flex: none; }
 body.touch-ui .vectura-modal.vt-sheet > .vt-sheet__body {
@@ -14198,10 +14198,10 @@ body.touch-ui .vectura-modal .vt-sheet__footer button {
  * so Cancel (>= 44px) is the close. The keyboard inset (--kb-inset) keeps the field above the keys. */
 body.phone-layout .vectura-modal-backdrop > .vectura-modal.vt-sheet:has(.preset-save-footer) {
   position: fixed;
-  top: var(--safe-top, env(safe-area-inset-top, 0px));
-  right: var(--safe-right, env(safe-area-inset-right, 0px));
-  bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + var(--kb-inset, 0px));
-  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  top: var(--safe-top);
+  right: var(--safe-right);
+  bottom: calc(var(--safe-bottom) + var(--kb-inset, 0px));
+  left: var(--safe-left);
   width: auto;
   height: auto;
   max-width: none;
@@ -14221,10 +14221,10 @@ body.touch-ui #settings-panel .settings-panel-body {
 }
 body.phone-layout #settings-panel {
   position: fixed;
-  top: var(--safe-top, env(safe-area-inset-top, 0px));
-  right: var(--safe-right, env(safe-area-inset-right, 0px));
-  bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + var(--kb-inset, 0px));
-  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  top: var(--safe-top);
+  right: var(--safe-right);
+  bottom: calc(var(--safe-bottom) + var(--kb-inset, 0px));
+  left: var(--safe-left);
   width: auto;
   height: auto;
   max-width: none;
