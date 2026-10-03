@@ -56,13 +56,41 @@ describe('mobile layout', () => {
     expect(document.body.classList.contains('mobile-layout')).toBe(false);
   });
 
-  test('phone-layout class activates only below 540px', () => {
+  test('fine pointer: phone-layout below 540px, tablet-layout 540-899, desktop at 900', () => {
     setViewport(window, 600);
     expect(document.body.classList.contains('phone-layout')).toBe(false);
     setViewport(window, 539);
     expect(document.body.classList.contains('phone-layout')).toBe(true);
     setViewport(window, 375);
     expect(document.body.classList.contains('phone-layout')).toBe(true);
+    setViewport(window, 540);
+    expect(document.body.classList.contains('phone-layout')).toBe(false);
+    expect(document.body.classList.contains('tablet-layout')).toBe(true);
+    expect(document.body.dataset.layout).toBe('tablet');
+    setViewport(window, 899);
+    expect(document.body.classList.contains('mobile-layout')).toBe(true);
+    setViewport(window, 900);
+    expect(document.body.classList.contains('mobile-layout')).toBe(false);
+    expect(document.body.dataset.layout).toBe('desktop');
+  });
+
+  test('coarse pointer: phone below 600px, tablet at 600, touch-wide without mobile-layout at 900', () => {
+    const original = window.matchMedia;
+    window.matchMedia = (q) => ({ matches: /pointer:\s*coarse/.test(q), addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+    try {
+      setViewport(window, 599);
+      expect(document.body.classList.contains('phone-layout')).toBe(true);
+      expect(document.body.classList.contains('touch-ui')).toBe(true);
+      setViewport(window, 600);
+      expect(document.body.classList.contains('phone-layout')).toBe(false);
+      expect(document.body.classList.contains('tablet-layout')).toBe(true);
+      setViewport(window, 1100);
+      expect(document.body.classList.contains('touch-wide-layout')).toBe(true);
+      expect(document.body.classList.contains('mobile-layout')).toBe(false);
+    } finally {
+      window.matchMedia = original;
+      setViewport(window, 1200);
+    }
   });
 
   test('modifier bar is shown (not hidden) on mobile-layout', () => {
