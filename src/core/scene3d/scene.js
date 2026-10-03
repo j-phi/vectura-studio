@@ -231,15 +231,18 @@
   // I23 — non-uniform scale. Each local axis stretches by its own factor; an
   // absent per-axis key inherits the uniform `t.scale`, so a legacy scale-only
   // transform reproduces the old `mul(pt, scale)` exactly (byte-identical).
+  const objXformAngles = { yaw: 0, pitch: 0, roll: 0 }; // scratch: rotatePoint reads it at once and keeps nothing
   const applyObjectTransform = (pt, t) => {
-    const s = finite(t.scale, 1);
-    const sx = finite(t.sx, s);
-    const sy = finite(t.sy, s);
-    const sz = finite(t.sz, s);
-    return add(
-      rotatePoint(v(pt.x * sx, pt.y * sy, pt.z * sz), { yaw: t.yaw, pitch: t.pitch, roll: t.roll }),
-      v(t.x, t.y, t.z),
-    );
+    // T2-8b-5d (perf, no output change): same values as before, without the per-call temporaries (an angles
+    // object, a translation vector, the `add` result) and with `finite` short-cut for plain numbers.
+    const s = typeof t.scale === 'number' && t.scale - t.scale === 0 ? t.scale : finite(t.scale, 1);
+    const sx = typeof t.sx === 'number' && t.sx - t.sx === 0 ? t.sx : finite(t.sx, s);
+    const sy = typeof t.sy === 'number' && t.sy - t.sy === 0 ? t.sy : finite(t.sy, s);
+    const sz = typeof t.sz === 'number' && t.sz - t.sz === 0 ? t.sz : finite(t.sz, s);
+    objXformAngles.yaw = t.yaw; objXformAngles.pitch = t.pitch; objXformAngles.roll = t.roll;
+    const r = rotatePoint(v(pt.x * sx, pt.y * sy, pt.z * sz), objXformAngles);
+    // (`v(t.x, t.y, t.z)` defaulted an absent coordinate to 0)
+    return v(r.x + (t.x === undefined ? 0 : t.x), r.y + (t.y === undefined ? 0 : t.y), r.z + (t.z === undefined ? 0 : t.z));
   };
 
   const faceRecord = (indices, faceId, objectId, world, camPts, projected, camPos) => {

@@ -139,22 +139,49 @@
     return { x: -1, z: 1 - 2 * f };
   };
 
+  // T2-8b-5d (perf, no output change): the surface-fill samplers evaluate a chart at (a, b), (a+EPS, b) and
+  // (a, b+EPS) back to back, so each axis angle repeats. `trigMemo(angleOf)` keeps the cos/sin of the last
+  // two distinct inputs; the values are exactly what `Math.cos/Math.sin(angleOf(x))` return.
+  const trigMemo = (angleOf) => {
+    let x0 = NaN; let c0 = 0; let s0 = 0; let x1 = NaN; let c1 = 0; let s1 = 0; let flip = false;
+    const out = { c: 0, s: 0 };
+    return (x) => {
+      // 0 / -0 compare equal but give differently signed zeros: never memoised. NaN never equals itself.
+      if (x === 0) { const z = angleOf(x); out.c = Math.cos(z); out.s = Math.sin(z); return out; }
+      if (x === x0) { out.c = c0; out.s = s0; return out; }
+      if (x === x1) { out.c = c1; out.s = s1; return out; }
+      const ang = angleOf(x);
+      const c = Math.cos(ang); const sn = Math.sin(ang);
+      if (flip) { x0 = x; c0 = c; s0 = sn; } else { x1 = x; c1 = c; s1 = sn; }
+      flip = !flip;
+      out.c = c; out.s = sn;
+      return out;
+    };
+  };
+
   const sgnPow = (value, exp) => Math.sign(value) * Math.pow(Math.abs(value), exp);
 
   const topoTorus = ({ sx, sy, sz }) => {
     const major = Math.max(2, sx * 0.75);
     const minor = Math.max(1, Math.min(sy, sz) * 0.28);
+    const ta = trigMemo((u) => u * TAU);
+    const tb = trigMemo((vv) => vv * TAU);
     return (u, vv) => {
-      const a = u * TAU;
-      const b = vv * TAU;
-      return v(Math.cos(a) * (major + Math.cos(b) * minor), Math.sin(b) * minor, Math.sin(a) * (major + Math.cos(b) * minor));
+      const A = ta(u); const ca = A.c; const sa = A.s;
+      const B = tb(vv);
+      // T2-8b-5d (perf, no output change): the ring radius is computed once (it was computed twice, identically).
+      const ringR = major + B.c * minor;
+      return v(ca * ringR, B.s * minor, sa * ringR);
     };
   };
 
-  const topoCone = ({ sx, sy }) => (u, vv) => {
-    const a = vv * TAU;
-    const r = sx * (1 - u);
-    return v(Math.cos(a) * r, (u - 0.5) * sy * 2, Math.sin(a) * r);
+  const topoCone = ({ sx, sy }) => {
+    const tv = trigMemo((vv) => vv * TAU);
+    return (u, vv) => {
+      const T = tv(vv); const ca = T.c; const sa = T.s;
+      const r = sx * (1 - u);
+      return v(ca * r, (u - 0.5) * sy * 2, sa * r);
+    };
   };
 
   // Open tube: u sweeps around, vv runs along the height axis.
@@ -234,13 +261,17 @@
 
   // Sphere (default) / ellipsoid fallback chart — `mode` keeps the ellipsoid's
   // 1.18 / 0.72 axis factors resolved per-sample, exactly as the inline sampler did.
-  const topoSphereEllipsoid = ({ sx, sy, sz }, mode) => (u, vv) => {
-    const lat = (u - 0.5) * Math.PI;
-    const lon = vv * TAU;
+  const topoSphereEllipsoid = ({ sx, sy, sz }, mode) => {
     const rx = mode === 'ellipsoid' ? sx * 1.18 : sx;
     const ry = mode === 'ellipsoid' ? sy * 0.72 : sy;
     const rz = sz;
-    return v(Math.cos(lon) * Math.cos(lat) * rx, Math.sin(lat) * ry, Math.sin(lon) * Math.cos(lat) * rz);
+    const tlat = trigMemo((u) => (u - 0.5) * Math.PI);
+    const tlon = trigMemo((vv) => vv * TAU);
+    return (u, vv) => {
+      const L = tlat(u); const cl = L.c; const sl = L.s;
+      const O = tlon(vv);
+      return v(O.c * cl * rx, sl * ry, O.s * cl * rz);
+    };
   };
 
   const api = {
