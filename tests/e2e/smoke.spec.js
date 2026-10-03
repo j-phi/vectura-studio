@@ -424,8 +424,9 @@ test.describe('Vectura smoke interactions', () => {
     await page.locator('#btn-menu-file').click();
     await page.click('#btn-settings');
     await expect(page.locator('#settings-panel')).toHaveClass(/open/);
-    // TUX-050 desktop parity: with a mouse Paper stays collapsed, Theme stays open.
-    await expect(page.locator('#settings-panel .sect--color-paper [data-sect-toggle]')).toHaveAttribute('aria-expanded', 'false');
+    // TUX-050: with a mouse Paper stays collapsed; on a coarse pointer (tablet-touch-chromium) it opens. Theme stays open.
+    const coarse = await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches);
+    await expect(page.locator('#settings-panel .sect--color-paper [data-sect-toggle]')).toHaveAttribute('aria-expanded', coarse ? 'true' : 'false');
     await expect(page.locator('#settings-panel .sect--color-theme [data-sect-toggle]')).toHaveAttribute('aria-expanded', 'true');
 
     await page.click('#btn-close-settings');
