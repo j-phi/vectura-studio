@@ -262,4 +262,27 @@ test.describe('TUX-028 Type tool soft keyboard', () => {
     expect(s.onProxy).toBe(false);
     expect(s.h).toBe(before - 1);
   });
+
+  test('(l) app chord (Ctrl/Cmd+S) reaches the app and is default-prevented with the proxy focused', async ({ page }) => {
+    await openSession(page);
+    await page.keyboard.insertText('Hi');
+    await page.evaluate((sel) => {
+      window.__chords = [];
+      const orig = window.app.ui.triggerTopMenuAction;
+      window.app.ui.triggerTopMenuAction = function trigger(id) { window.__chords.push(id); return true; };
+      window.__origTrigger = orig;
+      window.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 's') window.__chordPrevented = e.defaultPrevented;
+      }, true);
+      if (!document.activeElement || !document.activeElement.matches(sel)) throw new Error('proxy not focused');
+    }, PROXY);
+    await page.keyboard.press('ControlOrMeta+s');
+    const r = await page.evaluate(() => ({
+      chords: window.__chords, prevented: window.__chordPrevented, active: window.app.textEdit.isActive(),
+      text: window.app.engine.getActiveLayer().params.text,
+    }));
+    expect(r.chords).toEqual(['btn-save-vectura']);
+    expect(r.prevented).toBe(true);
+    expect(r.text).toBe('Hi');
+  });
 });

@@ -956,6 +956,16 @@
         e.stopPropagation();
         return;
       }
+      // App-level Ctrl/Meta chords (Cmd+S/E/O/K/0 ...). shortcuts.js skips TEXTAREA
+      // targets, so with the proxy focused (touch/pen session + hardware keyboard)
+      // they would be dead and the browser default (e.g. Save page) could fire.
+      // Text-editing chords (A/C/V/X; Z/Y handled above) stay native.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !['a', 'c', 'v', 'x'].includes(String(k).toLowerCase())
+        && typeof this.host.handleShortcut === 'function' && this.host.handleShortcut(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       if (this._ownsKey(e)) e.stopPropagation();
     }
 

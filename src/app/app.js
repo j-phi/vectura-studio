@@ -171,6 +171,9 @@
           // Undo/redo chord pressed while the touch proxy (a TEXTAREA) had focus; the
           // global shortcut handler skips TEXTAREA targets, so route via the menu action.
           undoRedo: (kind) => { this.ui?.triggerTopMenuAction?.(kind === 'undo' ? 'btn-undo' : 'btn-redo'); },
+          // App-level accelerators (Cmd/Ctrl+S/E/O...) while the proxy has focus;
+          // shortcuts.js ignores TEXTAREA targets. Returns true when handled.
+          handleShortcut: (e) => !!this.ui?.handleTopMenuShortcut?.(e),
           panCanvasBy: (dx, dy) => {
             if (!this.renderer) return;
             this.renderer.offsetX += dx || 0;

@@ -149,4 +149,26 @@ describe('TextEditController proxy (TUX-028)', () => {
     expect(panCanvasBy).toHaveBeenCalledTimes(1);
     ctrl.end();
   });
+
+  it('forwards app chords (not A/C/V/X) from the proxy to host.handleShortcut', () => {
+    const handleShortcut = vi.fn((e) => e.key === 's');
+    const { layer, ctrl } = setup('abc', { handleShortcut });
+    press('touch');
+    ctrl.begin(layer, 1);
+    const ta = proxyEl();
+    const mk = (key) => {
+      const ev = new win.KeyboardEvent('keydown', { key, ctrlKey: true, bubbles: true, cancelable: true });
+      ta.dispatchEvent(ev);
+      return ev;
+    };
+    const s = mk('s');
+    expect(handleShortcut).toHaveBeenCalledTimes(1);
+    expect(s.defaultPrevented).toBe(true);
+    const o = mk('q'); // host declines: native behaviour stays
+    expect(o.defaultPrevented).toBe(false);
+    handleShortcut.mockClear();
+    ['a', 'c', 'v', 'x'].forEach(mk);
+    expect(handleShortcut).not.toHaveBeenCalled();
+    ctrl.end();
+  });
 });
