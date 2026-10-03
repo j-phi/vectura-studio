@@ -44,6 +44,8 @@ const ENGINE = arg('engine', 'chromium');
 const ONLY = arg('only', '') ? arg('only').split(',') : null;
 const ONLY_STATES = arg('states', '') ? arg('states').split(',') : null;
 const SHOTS = !argv.includes('--no-shots');
+// Same allowlist as the CI ratchet, so the manual tool and CI report the same under44.
+const ALLOW = JSON.parse(fs.readFileSync(path.join(ROOT, 'tests/e2e/touch/target-allowlist.json'), 'utf8'));
 
 // Old CLI viewport ids -> project device names (viewports.js is the single source).
 const VIEWPORT_IDS = {
@@ -75,6 +77,7 @@ async function main() {
     if (!device) throw new Error(`unknown viewport id ${id}; known: ${Object.keys(VIEWPORT_IDS).join(', ')}`);
     const d = DEVICES[device];
     const safe = core.SAFE_BANDS[device];
+    const allowSel = ALLOW.filter((e) => !e.project || e.project === `${ENGINE === 'webkit' ? 'webkit' : 'touch'}-${id}`).map((e) => e.selector);
     const vpOut = { id, width: d.width, height: d.height, dpr: d.dpr, safe, states: [] };
     for (const st of STATES) {
       if (ONLY_STATES && !ONLY_STATES.includes(st.id)) continue;
@@ -92,7 +95,7 @@ async function main() {
         await pollPost(page, st);
         await core.waitLayoutSettled(page);
         await page.waitForTimeout(150);
-        const m = await core.measurePage(page, { W: d.width, H: d.height, safe, allow: [] });
+        const m = await core.measurePage(page, { W: d.width, H: d.height, safe, allow: allowSel });
         Object.assign(rec, m);
         if (st.id === 'layer-selected-handles' || st.id === 'pen-path-anchors') rec.handles = await page.evaluate(core.probeHandles);
         if (SHOTS) {

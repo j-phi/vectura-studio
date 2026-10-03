@@ -52,22 +52,42 @@ function hitAreaInPage(el, opts) {
     cx = (x1 + x2) / 2;
     cy = (y1 + y2) / 2;
   }
+  // Hit testing snaps to whole pixels (a point at x.5 hits the pixel x), so sample on integer
+  // coordinates: the owned samples then count owned pixels exactly.
+  cx = Math.round(cx);
+  cy = Math.round(cy);
   const n = Math.floor(radius / probe);
   const size = 2 * n + 1;
-  const owned = (i, j) => {
-    const t = document.elementFromPoint(cx + i * probe, cy + j * probe);
+  const ownedAt = (dx, dy) => {
+    const t = document.elementFromPoint(cx + dx, cy + dy);
     return !!t && (t === el || el.contains(t) || (t.tagName === 'LABEL' && t.control === el));
   };
+  const owned = (i, j) => ownedAt(i * probe, j * probe);
   if (!owned(0, 0)) return { w: 0, h: 0 };
+  // Fast path (bounded cost): when a 44 px square, asymmetric about the origin so it covers
+  // pixels -22..+21, is owned at its 9 corner/edge-midpoint/centre samples, the target has a
+  // full 44 px hit area. Any partial occlusion of an edge fails a sample and falls to the flood.
+  if (stopAt === 44 && radius >= 22) {
+    let all = true;
+    for (const dx of [-22, 0, 21]) for (const dy of [-22, 0, 21]) { if (all && !ownedAt(dx, dy)) all = false; }
+    if (all) return { w: 44, h: 44 };
+  }
   const seen = new Set();
   const key = (i, j) => (j + n) * size + (i + n);
   const queue = [[0, 0]];
   seen.add(key(0, 0));
   let minI = 0; let maxI = 0; let minJ = 0; let maxJ = 0;
+  // One owned cell on each extreme, used for the 1 px edge refinement below.
+  let eMinI = [0, 0]; let eMaxI = [0, 0]; let eMinJ = [0, 0]; let eMaxJ = [0, 0];
   while (queue.length) {
     const [i, j] = queue.pop();
-    minI = Math.min(minI, i); maxI = Math.max(maxI, i); minJ = Math.min(minJ, j); maxJ = Math.max(maxJ, j);
-    if (stopAt && (maxI - minI + 1) * probe >= stopAt && (maxJ - minJ + 1) * probe >= stopAt) break;
+    if (i < minI) { minI = i; eMinI = [i, j]; }
+    if (i > maxI) { maxI = i; eMaxI = [i, j]; }
+    if (j < minJ) { minJ = j; eMinJ = [i, j]; }
+    if (j > maxJ) { maxJ = j; eMaxJ = [i, j]; }
+    // Conservative span: owned samples are `probe` apart, so the covered pixels are at least
+    // (max - min) * probe + 1. Never the +1 cell the old code added.
+    if (stopAt && (maxI - minI) * probe + 1 >= stopAt && (maxJ - minJ) * probe + 1 >= stopAt) break;
     [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([di, dj]) => {
       const a = i + di;
       const b = j + dj;
@@ -76,7 +96,15 @@ function hitAreaInPage(el, opts) {
       if (owned(a, b)) queue.push([a, b]);
     });
   }
-  return { w: (maxI - minI + 1) * probe, h: (maxJ - minJ + 1) * probe };
+  // Edge refinement at 1 px: each extreme may own up to probe-1 more pixels beyond the last cell.
+  let loX = minI * probe; let hiX = maxI * probe; let loY = minJ * probe; let hiY = maxJ * probe;
+  for (let s = 1; s < probe; s += 1) {
+    if (ownedAt(eMaxI[0] * probe + s, eMaxI[1] * probe)) hiX = maxI * probe + s;
+    if (ownedAt(eMinI[0] * probe - s, eMinI[1] * probe)) loX = minI * probe - s;
+    if (ownedAt(eMaxJ[0] * probe, eMaxJ[1] * probe + s)) hiY = maxJ * probe + s;
+    if (ownedAt(eMinJ[0] * probe, eMinJ[1] * probe - s)) loY = minJ * probe - s;
+  }
+  return { w: hiX - loX + 1, h: hiY - loY + 1 };
 }
 
 // canvasShareInPage({ W, H, selector, cells }) -> percent 0..100
@@ -287,13 +315,13 @@ function measureInPage(cfg, helpers) {
       else { hitState = 'covered'; coveredBy = (hit.id ? `#${hit.id}` : hit.tagName.toLowerCase() + (hit.classList[0] ? '.' + hit.classList[0] : '')); }
     }
     const reach = hitState === 'ok' || hitState === 'ok-ancestor';
-    // Hit dimension. Reachable targets whose bounding rect is already >= 44 on both axes
-    // use the rect (cost rule). Everything else reachable is probed. Unreachable targets
+    // Hit dimension. EVERY reachable target is probed (a rect >= 44 can still be partly
+    // occluded). Cost is bounded by stopAt 44 and the 9-sample fast path in hitAreaInPage. Unreachable targets
     // keep the rect (they are counted by `covered`, not by the size metrics).
     let pw = +r.width.toFixed(1);
     let ph = +r.height.toFixed(1);
     let probed = false;
-    if (hitState === 'ok' && !(r.width >= 44 && r.height >= 44)) {
+    if (hitState === 'ok') {
       const a = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx, cy });
       pw = a.w; ph = a.h; probed = true;
     }

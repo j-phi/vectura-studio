@@ -105,7 +105,7 @@ Metrics (per project and state):
 
 Definitions:
 - The denominator is the project viewport from `viewports.js`, never `innerWidth`. `hOverflow = max(documentElement.scrollWidth, body.scrollWidth, innerWidth) - width`. Chromium grows `innerWidth` on iPhone portrait (`innerWidthExcess`). WebKit grows `scrollWidth`. Both count.
-- Hit sizes are probed. The probe starts at the clipped-rect centre, uses a 2 px grid, flood-fills the cells the target owns (itself, a descendant, or its LABEL), and caps at 24 px each side. A target with a rect of 44 x 44 or more and a clean hit test skips the probe.
+- Hit sizes are probed. The probe starts at the clipped-rect centre, uses a 2 px grid, flood-fills the cells the target owns (itself, a descendant, or its LABEL), and caps at 24 px each side. Every reachable target is probed, including targets with a rect of 44 x 44 or more, because partial occlusion reduces the hit area. Cost stays bounded: the probe stops at 44 px, and a 9-sample check skips the flood when a 44 px square is fully owned. The span is conservative (owned pixels, never a +1 cell): a 43 x 43 target reports under 44 and a 23 x 23 target reports under 24. Synthetic-fixture tests: `tests/e2e/touch/target-audit-probe.spec.js`.
 - Size metrics (`under44`, `under24`, `wcag258Fail`, `iosZoom`) count reachable targets only. A covered target counts in `covered`.
 - `canvasPct` is a 48 x 48 cell grid over the viewport. A hit is the canvas, a descendant or `#viewport-container`.
 - `ghost` counts invisible (opacity 0) targets that still receive the hit test. The `right-pane-layers` state holds two layers so an inactive row exposes `.lvl-acts` (IPAD-004).
@@ -113,7 +113,9 @@ Definitions:
 - `safeUnprotected` follows `var(--name)` when the custom property holds `env(safe-area-inset-<side>)`.
 - The `-chrome` projects run the `default` state only. They gate `canvasPct`, `hOverflow` and `innerWidthExcess`.
 
-Per-state hard failures (every mode): an opener throws, a postcondition times out (10 s), the on-screen item count is below `minItems`, a page error occurs, fonts fail to load.
+Per-state hard failures (every mode): an opener throws, a postcondition times out (10 s), the on-screen item count is below `minItems`, fonts fail to load. `pageErrors` is a ratcheted metric: in ratchet mode a rise fails and a nonzero baseline cell passes. In final mode it must be 0.
+
+The audit spec runs with no retries (`test.describe.configure({ retries: 0 })` and `--retries=0` in `scripts/run-touch-audit.js`), so a flapping count fails instead of passing on a retry.
 
 Update mode:
 - `TOUCH_BASELINE=update` writes the better of the old and the new value for every metric. It never worsens a cell. A cell that got worse still fails the test.

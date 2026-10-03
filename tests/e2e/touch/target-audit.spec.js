@@ -20,6 +20,8 @@ const { STATES } = require('./target-audit-states');
 const { PROJECTS } = require('./viewports');
 
 test.use({ reducedMotion: 'reduce' });
+// No retries: a flapping exact-count cell must fail loudly, never pass on a retry.
+test.describe.configure({ retries: 0 });
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const BASELINE_FILE = path.join(__dirname, 'target-baseline.json');
