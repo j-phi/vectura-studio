@@ -14,10 +14,14 @@ const touchUse = (d) => ({
   isMobile: true,
   userAgent: d.ua,
 });
+// TUX-058: the browser-chrome variants (-c devices) only serve the audit's canvas/overflow row,
+// so they run the `default` state only. Non-default audit states carry @audit-extra in the title.
+const chromeVariantGrep = (name) => (/-chrome$/.test(name) ? { grepInvert: /@audit-extra/ } : {});
 const chromiumTouchProjects = Object.entries(CHROMIUM_PROJECTS).map(([name, dev]) => ({
   name,
   use: { ...devices['Desktop Chrome'], ...touchUse(DEVICES[dev]) },
   testMatch: TOUCH_MATCH,
+  ...chromeVariantGrep(name),
 }));
 const webkitTouchProjects = Object.entries(WEBKIT_PROJECTS).map(([name, dev]) => ({
   name,

@@ -13,6 +13,8 @@
 //                         REDs with it; never add test.skip for WebKit.
 // WebKit synthetic pointers use ids 100+finger. setPointerCapture on those ids is shimmed
 // (real WebKit throws NotFoundError) and later events for the id route to the capture target.
+const core = require('./target-audit-core');
+
 const CAPS = {
   chromium: { trustedMultiTouch: true, cdp: true, maxTouchPoints: true, nativeDefaultActions: true },
   webkit: { trustedMultiTouch: false, cdp: false, maxTouchPoints: false, nativeDefaultActions: false },
@@ -210,62 +212,20 @@ async function twoFingerPan(page, center, { dx = 0, dy = 0, gap = 100, steps = 1
   await touchPhase(page, 'end', at(1));
 }
 
-// canvasShare: percent of a 48x48 CSS px grid over the viewport whose top element
-// is the canvas (or inside the canvas container). selector defaults to the main canvas.
+// canvasShare: percent of a 48x48 CELL grid over the spec viewport whose top element is the
+// canvas, a descendant, or #viewport-container. Delegates to the audit core so the helper and
+// the audit share one definition. selector defaults to the main canvas.
 async function canvasShare(page, selector = '#main-canvas') {
-  return page.evaluate(({ selector, cell }) => {
-    const w = innerWidth;
-    const h = innerHeight;
-    const canvas = document.querySelector(selector);
-    if (!canvas) return 0;
-    let hit = 0;
-    let total = 0;
-    for (let y = cell / 2; y < h; y += cell) {
-      for (let x = cell / 2; x < w; x += cell) {
-        total += 1;
-        const el = document.elementFromPoint(x, y);
-        if (el && (el === canvas || canvas.contains(el))) hit += 1;
-      }
-    }
-    return total ? (hit / total) * 100 : 0;
-  }, { selector, cell: 48 });
+  const vp = page.viewportSize() || await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+  return core.probeCanvasShare(page, { W: vp.width, H: vp.height, selector, cells: 48 });
 }
 
-// hitArea: size of the region around the target centre where elementFromPoint
-// resolves to the target or a descendant (counts ::before extensions).
-// Probes a grid at `probe` CSS px pitch out to `radius` px around the centre, flood-fills
-// the owned cells connected to the centre cell, and returns the bounding { w, h } of that region.
+// hitArea: size of the region around the target's clipped centre where elementFromPoint
+// resolves to the target or a descendant (counts ::before extensions). Delegates to the audit
+// core (2 px grid flood fill, owned = el, descendant, or its LABEL). Returns the bounding { w, h }.
 async function hitArea(page, target, { probe = 2, radius = 48 } = {}) {
   const handle = typeof target === 'string' ? await page.locator(target).first().elementHandle() : await target.elementHandle();
-  return page.evaluate(({ el, probe, radius }) => {
-    const r = el.getBoundingClientRect();
-    const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    const n = Math.floor(radius / probe);
-    const size = 2 * n + 1;
-    const owned = (i, j) => {
-      const t = document.elementFromPoint(cx + i * probe, cy + j * probe);
-      return !!t && (t === el || el.contains(t));
-    };
-    if (!owned(0, 0)) return { w: 0, h: 0 };
-    const seen = new Set();
-    const key = (i, j) => (j + n) * size + (i + n);
-    const queue = [[0, 0]];
-    seen.add(key(0, 0));
-    let minI = 0, maxI = 0, minJ = 0, maxJ = 0;
-    while (queue.length) {
-      const [i, j] = queue.pop();
-      minI = Math.min(minI, i); maxI = Math.max(maxI, i); minJ = Math.min(minJ, j); maxJ = Math.max(maxJ, j);
-      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([di, dj]) => {
-        const a = i + di;
-        const b = j + dj;
-        if (Math.abs(a) > n || Math.abs(b) > n || seen.has(key(a, b))) return;
-        seen.add(key(a, b));
-        if (owned(a, b)) queue.push([a, b]);
-      });
-    }
-    return { w: (maxI - minI + 1) * probe, h: (maxJ - minJ + 1) * probe };
-  }, { el: handle, probe, radius });
+  return core.probeHit(page, handle, { probe, radius });
 }
 
 module.exports = { tap, longPress, drag, pinch, twoFingerPan, canvasShare, hitArea, engineSupports, engineOf, touchPhase };
