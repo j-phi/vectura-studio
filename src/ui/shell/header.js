@@ -198,11 +198,12 @@
       });
       panel.insertBefore(back, panel.firstChild);
     });
-    // Choosing a command closes the whole sheet.
+    // Choosing a command closes the whole sheet. Capture phase: menubar.js stops click
+    // propagation at each panel, so a bubble listener on the bar never ran (TUX-046).
     bar.addEventListener('click', (e) => {
       const item = e.target.closest?.('.top-menu-item');
       if (item && !item.classList.contains('top-menu-back')) setOpen(false);
-    });
+    }, true);
     doc.addEventListener('pointerdown', (e) => {
       if (!body.classList.contains('phone-menu-open')) return;
       if (bar.contains(e.target) || burger.contains(e.target)) return;

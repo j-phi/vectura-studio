@@ -14057,3 +14057,176 @@ body.touch-ui .tool-drawer-view-btn { width: var(--touch-target-min, 44px); heig
 }
 #layer-add-menu.is-touch > .lvl-add-item { min-height: var(--touch-target-min); }
 /* === /TUX-035 === */
+
+/* === TUX-046: modal sheet ===
+ * Contract for the legacy #modal-overlay sheet (Export, Help, info, colour picker).
+ * Slots: .vt-sheet (card), .vt-sheet__header, .vt-sheet__body, .vt-sheet__footer.
+ *   header and footer are flex:none. Only the body scrolls. TUX-026 and TUX-049 reuse the slots.
+ * Keys: body.touch-ui (any coarse pointer, set by TUX-006) for coarse sizing and the pinned
+ *   layout. body.phone-layout for the full-screen sheet. Never key on width alone. The one
+ *   max-width: 1100px query below mirrors the existing Export column-layout breakpoint.
+ * Z-band: #modal-overlay sits at 900. It must stay in 221-999: above #app-header (220), below
+ *   .vectura-modal-backdrop and the drag tooltip (1000+).
+ * Safe area: var(--safe-*, env(safe-area-inset-*)). TUX-005 defines --safe-* later.
+ * Sheet heights use % of the fixed overlay, never vh (vh includes the iOS toolbar).
+ */
+#modal-overlay { z-index: 900; }
+
+body.touch-ui .vt-sheet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: calc(100% - 32px - var(--safe-top, env(safe-area-inset-top, 0px)) - var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
+}
+body.touch-ui .vt-sheet__header { flex: none; }
+body.touch-ui .vt-sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+body.touch-ui .vt-sheet__footer { flex: none; }
+/* The Export body hosts its own panes; the scroll happens inside it (see max-width block). */
+body.touch-ui .modal-card--export .vt-sheet__body { overflow: hidden; }
+
+/* Close: keep the 24px visual, extend the hit area to the touch minimum. */
+body.touch-ui .modal-close { position: relative; flex: none; }
+body.touch-ui .modal-close::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
+  transform: translate(-50%, -50%);
+}
+
+/* Footer buttons and Export nav tabs meet the touch minimum. */
+body.touch-ui .export-modal-footer button,
+body.touch-ui .color-modal-actions button {
+  min-height: var(--touch-target-min, 44px);
+  min-width: var(--touch-target-min, 44px);
+}
+body.touch-ui .export-modal-nav {
+  min-height: var(--touch-target-min, 44px);
+}
+body.touch-ui .export-nav-item { min-height: var(--touch-target-min, 44px); }
+
+/* Colour picker actions stay reachable while the body scrolls. */
+body.touch-ui .color-modal-actions {
+  position: sticky;
+  bottom: 0;
+  background: var(--ui-panel);
+  padding-top: 8px;
+}
+
+/* Export column layout (existing 1100px breakpoint): the pane stack scrolls, the nav keeps its size. */
+@media (max-width: 1100px) {
+  body.touch-ui .export-modal-body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  body.touch-ui .export-modal-body > * { flex-shrink: 0; }
+  /* flex: none lives here only. On wide layouts the nav is a 188px side column and must keep its basis. */
+  body.touch-ui .export-modal-nav {
+    flex: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  body.touch-ui .export-modal-settings {
+    flex: 0 0 auto;
+    max-width: none;
+    width: 100%;
+    min-width: 0;
+  }
+  /* The nav sticks to the top of the scrolling pane stack; the preview gets a fixed height. */
+  body.touch-ui .export-modal-nav {
+    order: -2;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  body.touch-ui .export-modal-preview { flex: 0 0 auto; height: 220px; min-height: 0; }
+}
+
+/* Phone: full-screen sheet inside the safe area, no backdrop. */
+body.phone-layout #modal-overlay .modal-card,
+body.phone-layout #modal-overlay .modal-card.modal-card--export {
+  position: fixed;
+  top: var(--safe-top, env(safe-area-inset-top, 0px));
+  right: var(--safe-right, env(safe-area-inset-right, 0px));
+  bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
+  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+}
+/* Save Preset sheet (.vectura-modal, built by UI.overlays.Modal). Same slots as #modal-overlay.
+ * modal.js tags .vt-sheet / __header / __body / __footer. Coarse sizing keys on body.touch-ui. */
+body.touch-ui .vectura-modal.vt-sheet {
+  max-height: calc(100% - var(--safe-top, env(safe-area-inset-top, 0px)) - var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
+}
+body.touch-ui .vectura-modal.vt-sheet > .vt-sheet__header { flex: none; }
+body.touch-ui .vectura-modal.vt-sheet > .vt-sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+/* The actions row stays in view while the body scrolls (it is ordered first on touch). */
+body.touch-ui .vectura-modal .preset-save-footer.vt-sheet__footer {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex: none;
+  background: var(--ui-panel);
+  padding-bottom: 8px;
+}
+body.touch-ui .vectura-modal .vt-sheet__footer button {
+  min-height: var(--touch-target-min, 44px);
+  min-width: var(--touch-target-min, 44px);
+}
+/* Phone: the Save Preset sheet fills the screen inside the safe area. No backdrop remains to tap,
+ * so Cancel (>= 44px) is the close. The keyboard inset (--kb-inset) keeps the field above the keys. */
+body.phone-layout .vectura-modal-backdrop > .vectura-modal.vt-sheet:has(.preset-save-footer) {
+  position: fixed;
+  top: var(--safe-top, env(safe-area-inset-top, 0px));
+  right: var(--safe-right, env(safe-area-inset-right, 0px));
+  bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + var(--kb-inset, 0px));
+  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+}
+
+/* Document Setup (#settings-panel). A drawer on tablets; on phones a full-screen sheet inside the
+ * safe area with a pinned header (.pane-hdr + close) and a scrolling body. It opens above the
+ * app header, within the 221-999 band. */
+#settings-panel > .pane-hdr { flex: none; }
+body.touch-ui #settings-panel .settings-panel-body {
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+body.phone-layout #settings-panel {
+  position: fixed;
+  top: var(--safe-top, env(safe-area-inset-top, 0px));
+  right: var(--safe-right, env(safe-area-inset-right, 0px));
+  bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + var(--kb-inset, 0px));
+  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  width: auto;
+  height: auto;
+  max-width: none;
+  border: 0;
+  z-index: 900;
+}
+/* === END TUX-046 === */
