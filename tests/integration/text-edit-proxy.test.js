@@ -108,44 +108,44 @@ describe('TextEditController proxy (TUX-028)', () => {
     ctrl.end();
   });
 
-  it('end() blurs the proxy and removes the visualViewport listeners', () => {
-    const listeners = {};
-    const vv = {
-      height: 800, offsetTop: 0,
-      addEventListener: vi.fn((t, f) => { listeners[t] = f; }),
-      removeEventListener: vi.fn((t) => { delete listeners[t]; }),
-    };
-    Object.defineProperty(win, 'visualViewport', { value: vv, configurable: true });
+  it('end() blurs the proxy and removes the vectura:kbinset listener', () => {
+    const added = [];
+    const removed = [];
+    const origAdd = doc.addEventListener.bind(doc);
+    const origRemove = doc.removeEventListener.bind(doc);
+    doc.addEventListener = (t, f, o) => { if (t === 'vectura:kbinset') added.push(f); return origAdd(t, f, o); };
+    doc.removeEventListener = (t, f, o) => { if (t === 'vectura:kbinset') removed.push(f); return origRemove(t, f, o); };
     const { layer, ctrl } = setup('abc');
     press('pen');
     ctrl.begin(layer, 1);
-    expect(Object.keys(listeners).sort()).toEqual(['resize', 'scroll']);
+    expect(added).toHaveLength(1);
     ctrl.end();
     expect(doc.activeElement).not.toBe(proxyEl());
-    expect(Object.keys(listeners)).toEqual([]);
+    expect(removed).toEqual(added);
     expect(proxyEl().value).toBe('');
     ctrl.end(); // idempotent
   });
 
   it('pans the canvas up when the keyboard covers the caret, and not when visible', () => {
-    const listeners = {};
-    const vv = { height: 800, offsetTop: 0, addEventListener: (t, f) => { listeners[t] = f; }, removeEventListener: () => {} };
-    Object.defineProperty(win, 'visualViewport', { value: vv, configurable: true });
+    // Inset comes from Vectura.KeyboardInset (single visualViewport reader, TUX-032).
+    const ki = { inset: 0 };
+    V.KeyboardInset = ki;
+    Object.defineProperty(win, 'innerHeight', { value: 800, configurable: true });
     const panCanvasBy = vi.fn();
     const caret = { x: 100, top: 600, bottom: 640, rect: { left: 0, top: 0, right: 800, bottom: 800 } };
     const { layer, ctrl } = setup('abc', { panCanvasBy, getCaretClientPoint: () => caret });
     press('touch');
     ctrl.begin(layer, 1);
     expect(panCanvasBy).not.toHaveBeenCalled();
-    vv.height = 400; // keyboard opens
-    listeners.resize();
+    ki.inset = 400; // keyboard opens
+    doc.dispatchEvent(new win.CustomEvent('vectura:kbinset', { detail: { inset: 400 } }));
     expect(panCanvasBy).toHaveBeenCalledTimes(1);
     const [dx, dy] = panCanvasBy.mock.calls[0];
     expect(dx).toBe(0);
     expect(dy).toBeLessThan(0);
     expect(dy).toBe(-(640 - (400 - 24)));
     caret.bottom = 200;
-    listeners.resize();
+    doc.dispatchEvent(new win.CustomEvent('vectura:kbinset', { detail: { inset: 400 } }));
     expect(panCanvasBy).toHaveBeenCalledTimes(1);
     ctrl.end();
   });

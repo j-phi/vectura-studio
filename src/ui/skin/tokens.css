@@ -14,6 +14,8 @@
  */
 
 :root {
+  /* TUX-032: on-screen keyboard height; written by src/ui/keyboard-inset.js, 0 unless an editable has focus. */
+  --kb-inset: 0px;
   /* Default color-scheme — overwritten by App.applyTheme via the active skin's
    * manifest.colorScheme. The default lets pre-JS form-control rendering use a
    * dark UA appearance (matches the meridian-dark default skin). */

@@ -855,22 +855,19 @@
       ta.style.top = `${Math.round(y)}px`;
     }
 
-    // Keyboard-inset seam (TUX-032 can absorb this): keep the caret above the
-    // soft keyboard by panning the canvas through the host.
+    // Keep the caret above the soft keyboard by panning the canvas through the host.
+    // The inset comes from Vectura.KeyboardInset (TUX-032), the only module that reads
+    // the visual viewport; this controller only listens for its `vectura:kbinset` event.
     _bindViewport() {
-      const vv = typeof window !== 'undefined' ? window.visualViewport : null;
-      if (this._viewportBound || !vv || typeof vv.addEventListener !== 'function') return;
+      if (this._viewportBound || typeof document === 'undefined') return;
       this._onViewportChange = () => this._ensureCaretAboveKeyboard();
-      vv.addEventListener('resize', this._onViewportChange);
-      vv.addEventListener('scroll', this._onViewportChange);
+      document.addEventListener('vectura:kbinset', this._onViewportChange);
       this._viewportBound = true;
     }
 
     _unbindViewport() {
-      const vv = typeof window !== 'undefined' ? window.visualViewport : null;
-      if (this._viewportBound && vv && typeof vv.removeEventListener === 'function') {
-        vv.removeEventListener('resize', this._onViewportChange);
-        vv.removeEventListener('scroll', this._onViewportChange);
+      if (this._viewportBound && typeof document !== 'undefined') {
+        document.removeEventListener('vectura:kbinset', this._onViewportChange);
       }
       this._viewportBound = false;
       this._onViewportChange = null;
@@ -878,11 +875,11 @@
 
     _ensureCaretAboveKeyboard() {
       if (!this.active || !this._proxyFocused()) return;
-      const vv = typeof window !== 'undefined' ? window.visualViewport : null;
-      if (!vv || typeof this.host.getCaretClientPoint !== 'function' || typeof this.host.panCanvasBy !== 'function') return;
+      const KI = typeof window !== 'undefined' && window.Vectura ? window.Vectura.KeyboardInset : null;
+      if (!KI || typeof this.host.getCaretClientPoint !== 'function' || typeof this.host.panCanvasBy !== 'function') return;
       const p = this.host.getCaretClientPoint();
       if (!p) return;
-      const limit = (vv.offsetTop || 0) + vv.height - 24;
+      const limit = window.innerHeight - (KI.inset || 0) - 24;
       const bottom = Number(p.bottom);
       if (!Number.isFinite(bottom) || bottom <= limit) return;
       this.host.panCanvasBy(0, -(bottom - limit));
