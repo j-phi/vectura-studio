@@ -1764,3 +1764,91 @@ test.describe('HUD hint bar & toast', () => {
     expect(pageErrors).toEqual([]);
   });
 });
+
+// TUX-019 D6 guard: a mouse keeps 0 slop. A 3 px drag on a selected object moves it 3 px
+// and adds exactly one history entry; touch slop (6 px) must not leak into the mouse path.
+test.describe('TUX-019 mouse keeps zero drag slop', () => {
+  test('3 px mouse drag on a selected object moves it 3 px, one history entry', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.engine && window.app.renderer));
+    const setup = await page.evaluate(() => {
+      const app = window.app;
+      const r = app.renderer;
+      const rect = (x0, y0, x1, y1) => [[{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 }]];
+      const id = app.engine.addShapeLayer('TUX-019 mouse', rect(73, 40, 143, 110));
+      window.Vectura.SETTINGS.snapGuides = false;
+      window.Vectura.SETTINGS.showGuides = false;
+      app.ui.setActiveTool('select');
+      r.setSelection([id], id);
+      app.history = [];
+      app.pushHistory();
+      r.draw();
+      const box = r.canvas.getBoundingClientRect();
+      return { id, x: box.left + r.offsetX + 108 * r.scale, y: box.top + r.offsetY + 75 * r.scale, scale: r.scale };
+    });
+    const read = () => page.evaluate((id) => {
+      const app = window.app;
+      const l = app.engine.layers.find((x) => x.id === id);
+      const b = app.renderer.getSelectionBounds([l]);
+      return { cx: b.center.x, hist: app.history.length, ox: app.renderer.offsetX };
+    }, setup.id);
+    const before = await read();
+    await page.mouse.move(setup.x, setup.y);
+    await page.mouse.down();
+    await page.mouse.move(setup.x + 1, setup.y, { steps: 1 });
+    await page.mouse.move(setup.x + 3, setup.y, { steps: 2 });
+    await page.mouse.up();
+    const after = await read();
+    expect((after.cx - before.cx) * setup.scale, 'moved screen px').toBeGreaterThan(2.5);
+    expect((after.cx - before.cx) * setup.scale, 'moved screen px').toBeLessThan(3.5);
+    expect(after.hist - before.hist).toBe(1);
+    expect(after.ox).toBeCloseTo(before.ox, 3);
+  });
+});
+
+// TUX-019 mouse parity: the touch-only thin-object hit radius must not change mouse behaviour.
+// Lives in smoke.spec.js because desktop-chromium only matches this file (gestures.spec.js is touch-only).
+test.describe('TUX-019 mouse parity (desktop)', () => {
+  test('mouse drag from 2 px off a horizontal line keeps strict bounds (0 px hit radius)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
+    const geo = await page.evaluate(() => {
+      const app = window.app;
+      const r = app.renderer;
+      const id = app.engine.addShapeLayer('TUX-019 line', [[{ x: 120, y: 140 }, { x: 180, y: 140 }]]);
+      window.Vectura.SETTINGS.snapGuides = false;
+      window.Vectura.SETTINGS.showGuides = false;
+      r.setSelection([id], id);
+      app.ui.setActiveTool('select');
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      // Zoom so the edge-midpoint (10 px) and corner (28 px) handle zones leave a free stretch.
+      r.scale = Math.max(r.scale, 2.1);
+      r.offsetX = box.width / 2 - 150 * r.scale;
+      r.offsetY = box.height / 2 - 140 * r.scale;
+      app.history = [];
+      app.pushHistory();
+      r.draw();
+      return { id, x: box.left + r.offsetX + 150 * r.scale, y: box.top + r.offsetY + 140 * r.scale, scale: r.scale };
+    });
+    const read = () => page.evaluate((id) => {
+      const app = window.app;
+      const b = app.renderer.getSelectionBounds([app.engine.layers.find((l) => l.id === id)]);
+      return { cx: b.center.x, cy: b.center.y, hist: app.history.length, handle: app.renderer.activeHandle };
+    }, geo.id);
+    const before = await read();
+    // 14 px along the line from its centre (clear of the midpoint resize handle), 2 px off it.
+    const px = geo.x + 14;
+    const py = geo.y + 2;
+    await page.mouse.move(px, py);
+    await page.mouse.down();
+    const mid = await read();
+    expect(mid.handle, 'press must not grab a selection handle').toBeNull();
+    await page.mouse.move(px + 50, py + 25, { steps: 10 });
+    await page.mouse.up();
+    const after = await read();
+    // The strict bounds test fails 2 px off a 0-height line, so the mouse does not move it.
+    expect(Math.hypot(after.cx - before.cx, after.cy - before.cy) * geo.scale, 'moved px').toBeLessThan(0.5);
+    expect(after.hist - before.hist, 'history entries (no resize, no move)').toBe(0);
+    expect(after.handle).toBeNull();
+  });
+});
