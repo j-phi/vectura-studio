@@ -196,4 +196,29 @@ describe('TUX-037 delete -> Undo toast', () => {
     LC._runAction(app.ui, app.engine.getLayerById(b), 'delete');
     expect(undoBtns().length).toBe(1);
   });
+
+  test('9. a lock set after the checkpoint survives an unrelated undo', async () => {
+    await boot();
+    const [a] = addLayers(1);
+    app.pushHistory();
+    app.engine.getLayerById(a).name = 'renamed';
+    app.ui.layerLockedIds.add(a);
+    app.undo();
+    expect(app.ui.layerLockedIds.has(a)).toBe(true);
+  });
+
+  test('10. saveVecturaFile does not write layerLockedIds into the document', async () => {
+    await boot();
+    const [a] = addLayers(1);
+    app.ui.layerLockedIds.add(a);
+    let blob = null;
+    window.URL.createObjectURL = (b) => { blob = b; return 'blob:x'; };
+    window.URL.revokeObjectURL = () => {};
+    app.ui.saveVecturaFile();
+    expect(blob).toBeTruthy();
+    const text = await new Promise((res) => { const r = new window.FileReader(); r.onload = () => res(r.result); r.readAsText(blob); });
+    const payload = JSON.parse(text);
+    expect(payload.state.engine).toBeTruthy();
+    expect('layerLockedIds' in payload.state).toBe(false);
+  });
 });

@@ -138,7 +138,8 @@
     if (this.armedPenId === penId) this.clearArmedPen();
     this.renderPens();
     this.renderLayers();
-    this.app.render();    this.notifyUndoable?.(`Deleted pen "${penName}"`, penToken);
+    this.app.render();
+    this.notifyUndoable?.(`Deleted pen "${penName}"`, penToken);
   }
 
   function initPaletteControls() {

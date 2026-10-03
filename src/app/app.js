@@ -1014,6 +1014,7 @@
       if (this.engine && SETTINGS.paperSize) {
         this.engine.setProfile(SETTINGS.paperSize);
       }
+      const priorLayerIds = new Set((this.engine.layers || []).map((l) => l.id));
       this.engine.importState(state.engine);
       const selectedIds = Array.isArray(state.selectedLayerIds)
         ? state.selectedLayerIds.filter((id) => this.engine.layers.some((layer) => layer.id === id))
@@ -1043,10 +1044,22 @@
         refreshUi: true,
         render: false,
       });
-      // TUX-037: lock state is part of the snapshot (snapshots without it leave locks as is).
+      // TUX-037: a restore brings back lock state only for layers it resurrects
+      // (absent before applyState) or their children. Locks set after the
+      // checkpoint on surviving layers are left alone.
       if (Array.isArray(state.layerLockedIds) && this.ui.layerLockedIds) {
-        this.ui.layerLockedIds.clear();
-        state.layerLockedIds.forEach((id) => this.ui.layerLockedIds.add(id));
+        const snapLayers = Array.isArray(state.engine?.layers) ? state.engine.layers : [];
+        const restored = new Set(snapLayers.filter((l) => !priorLayerIds.has(l.id)).map((l) => l.id));
+        const parentOf = new Map(snapLayers.map((l) => [l.id, l.parentId]));
+        const wasRestored = (id) => {
+          for (let cur = id, n = 0; cur && n < 50; cur = parentOf.get(cur), n += 1) {
+            if (restored.has(cur)) return true;
+          }
+          return false;
+        };
+        state.layerLockedIds.forEach((id) => {
+          if (wasRestored(id)) this.ui.layerLockedIds.add(id);
+        });
       }
       this.ui.renderLayers();
       this.ui.renderPens();

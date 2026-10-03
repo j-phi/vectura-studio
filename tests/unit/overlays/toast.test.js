@@ -114,6 +114,18 @@ describe('UI.overlays.Toast', () => {
       expect(t2.el.parentNode).toBeNull();
     });
 
+    test('pointerup while the mouse still hovers does not restart the timer', async () => {
+      const { t } = mk({ duration: 40 });
+      t.el.dispatchEvent(new runtime.window.MouseEvent('mouseenter'));
+      t.el.dispatchEvent(new runtime.window.Event('pointerdown', { bubbles: true }));
+      t.el.dispatchEvent(new runtime.window.Event('pointerup', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 120));
+      expect(t.el.parentNode).not.toBeNull();
+      t.el.dispatchEvent(new runtime.window.MouseEvent('mouseleave'));
+      await new Promise((r) => setTimeout(r, 120));
+      expect(t.el.parentNode).toBeNull();
+    });
+
     test('disableAction() disables the button', () => {
       const { t } = mk({ duration: 0 });
       t.disableAction();

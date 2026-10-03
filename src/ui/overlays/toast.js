@@ -123,6 +123,10 @@
       if (el.parentNode) el.parentNode.removeChild(el);
     };
 
+    let hovered = false;
+    let focused = false;
+    let pressed = false;
+
     const startAuto = () => {
       if (duration <= 0) return;
       startedAt = Date.now();
@@ -137,20 +141,28 @@
       timer = 0;
     };
     const resume = () => {
+      if (hovered || focused || pressed) return;
       if (timer || remaining <= 0 || dismissed) return;
       startAuto();
     };
+    // Separate hover / focus / press flags: the timer runs only when none is active.
+    const setFlag = (name, on) => {
+      if (name === 'hover') hovered = on;
+      else if (name === 'focus') focused = on;
+      else pressed = on;
+      if (on) pause(); else resume();
+    };
 
-    el.addEventListener('mouseenter', pause);
-    el.addEventListener('mouseleave', resume);
-    el.addEventListener('focus', pause);
-    el.addEventListener('blur', resume);
+    el.addEventListener('mouseenter', () => setFlag('hover', true));
+    el.addEventListener('mouseleave', () => setFlag('hover', false));
+    el.addEventListener('focusin', () => setFlag('focus', true));
+    el.addEventListener('focusout', () => setFlag('focus', false));
+    el.addEventListener('focus', () => setFlag('focus', true));
+    el.addEventListener('blur', () => setFlag('focus', false));
     // A held finger pauses the timer like hover does for a mouse (TUX-037).
-    el.addEventListener('pointerdown', pause);
-    el.addEventListener('pointerup', resume);
-    el.addEventListener('pointercancel', resume);
-    el.addEventListener('focusin', pause);
-    el.addEventListener('focusout', resume);
+    el.addEventListener('pointerdown', () => setFlag('press', true));
+    el.addEventListener('pointerup', () => setFlag('press', false));
+    el.addEventListener('pointercancel', () => setFlag('press', false));
     if (action) {
       actionBtn = ownerDoc.createElement('button');
       actionBtn.type = 'button';

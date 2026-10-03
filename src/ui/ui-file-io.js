@@ -78,11 +78,14 @@
           };
           return acc;
         }, {});
+        // TUX-037: lock ids are an undo-snapshot detail, not part of the .vectura format.
+        const savedState = this.app.captureState();
+        delete savedState.layerLockedIds;
         const payload = {
           type: 'vectura',
           version,
           created: new Date().toISOString(),
-          state: this.app.captureState(),
+          state: savedState,
           images: imagePayload,
         };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
