@@ -205,6 +205,11 @@
   };
 
   // ── TB-2: overflow menu ───────────────────────────────────────────────
+  const selectionMenuAvailable = () => {
+    const ccm = G.Vectura && G.Vectura.UI && G.Vectura.UI.CanvasContextMenu;
+    const renderer = getRenderer();
+    return !!(ccm && ccm.openForSelection && renderer && renderer.selectedLayerIds && renderer.selectedLayerIds.size > 0);
+  };
   const buildMenu = () => {
     const d = G.document;
     const c = cfg();
@@ -221,6 +226,13 @@
     // A sub-mode may prepend exactly one contextual item (e.g. Open Stroke Options).
     if (state.overflowExtra && state.overflowExtra.label) {
       add(state.overflowExtra.label, () => { try { state.overflowExtra.onClick?.(); } catch (_) { /* noop */ } }, true);
+    }
+    // TUX-034a: touch has no right-click. With a selection, the canvas context menu is one tap away.
+    if (selectionMenuAvailable()) {
+      add(items.selectionMenu || 'Selection menu…', () => {
+        const r = els.overflow.getBoundingClientRect();
+        G.Vectura.UI.CanvasContextMenu.openForSelection(r.left, r.bottom);
+      });
     }
     // "Show Properties panel" is a RESTORE affordance: it only appears while
     // the docked panel this context targets is collapsed or narrower than its

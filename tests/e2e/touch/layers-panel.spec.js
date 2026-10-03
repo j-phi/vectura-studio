@@ -362,8 +362,10 @@ test.describe('TUX-012 layers panel on touch', () => {
       }
       const pt = { x: gb.x + gb.width / 2, y: gb.y + gb.height / 2, id: 0 };
       await touch.touchPhase(page, 'start', [pt]);
+      // TUX-034a: the grip arms after TOUCH_HOLD.gripDragPx (4 px) of movement, not on touchstart.
+      await touch.touchPhase(page, 'move', [{ ...pt, y: pt.y + 20 }]);
       const armed = await rowOf(before[0]).evaluate((e) => e.classList.contains('dragging'));
-      await touch.touchPhase(page, 'end', [pt]);
+      await touch.touchPhase(page, 'end', [{ ...pt, y: pt.y + 20 }]);
       expect(armed, 'grip drag armed with no hold').toBe(true);
       expect(await page.locator('.menu-dropdown.open').count()).toBe(0);
       return;
