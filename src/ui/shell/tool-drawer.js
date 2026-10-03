@@ -327,8 +327,12 @@
       if (below >= Math.min(MIN_BELOW, drawerH)) {
         top = rail.bottom + GAP;
         height = Math.min(drawerH, below);
+      } else if ((rail.top - GAP) - minY > below) {
+        // Low horizontal rail (e.g. toolbar docked at the bottom): more room above it than below.
+        height = Math.min(drawerH, (rail.top - GAP) - minY);
+        top = rail.top - GAP - height;
       } else {
-        // No room under the rail: overlay the rail from its top edge (the drawer stacks above the rail
+        // Neither side has room: overlay the rail from its top edge (the drawer stacks above the rail
         // but stays below the app header, which sits above the workspace).
         top = Math.max(minY, rail.top);
         height = Math.min(drawerH, maxY - top);

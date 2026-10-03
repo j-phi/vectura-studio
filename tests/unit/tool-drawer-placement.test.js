@@ -61,4 +61,17 @@ describe('computeDrawerPlacement (TUX-015)', () => {
       vp: { width: 402, height: 800, offsetLeft: 0, offsetTop: 50, inset: { top: 0, right: 0, bottom: 34, left: 0 } } });
     expect(p.top + p.maxHeight).toBeLessThanOrEqual(50 + 800 - 34 - 8);
   });
+  it('opens above a horizontal rail docked near the viewport bottom (desktop bottom dock)', () => {
+    const p = place({ rail: R(296, 885, 1040, 46), btn: R(1280, 888, 34, 34), drawerW: 264, drawerH: 525, vp: { width: 1600, height: 1000 } });
+    expect(p.maxHeight).toBeGreaterThanOrEqual(400);
+    expect(p.top + p.maxHeight).toBeLessThanOrEqual(885); // sits above the rail
+    expect(p.top).toBeGreaterThanOrEqual(8);
+  });
+
+  it('still overlays from the rail top as a last resort when neither side has room', () => {
+    const p = place({ rail: R(0, 200, 874, 52), btn: R(800, 204, 44, 44), drawerW: 264, drawerH: 400, vp: { width: 874, height: 330 } });
+    expect(p.maxHeight).toBeGreaterThan(0);
+    expect(p.top).toBeGreaterThanOrEqual(8);
+    expect(p.top + p.maxHeight).toBeLessThanOrEqual(330 - 8);
+  });
 });

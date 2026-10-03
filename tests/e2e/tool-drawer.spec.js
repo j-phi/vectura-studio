@@ -179,3 +179,48 @@ test.describe('TUX-015 desktop parity', () => {
     await page.screenshot({ path: '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-015/desktop-1600x1000.png' });
   });
 });
+
+// TUX-015 fix round: a toolbar docked at the bottom is a horizontal rail with little room below it.
+test.describe('TUX-015 desktop bottom-docked rail', () => {
+  test('drawer opens above a bottom-docked toolbar, inside the viewport, every item hittable', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui));
+    await page.waitForSelector('#tool-overflow-btn');
+    await page.waitForTimeout(500);
+    // Dock via the real drag-to-edge gesture on the toolbar handle.
+    const handle = page.locator('.toolbar-drag-handle').first();
+    const hb = await handle.boundingBox();
+    const vp = await page.evaluate(() => {
+      const r = document.querySelector('.viewport-container, #viewport-container, .canvas-container')?.getBoundingClientRect();
+      return r ? { left: r.left, right: r.right, bottom: r.bottom } : { left: 0, right: 1600, bottom: 1000 };
+    });
+    await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(hb.x + 300, hb.y + 200, { steps: 5 });
+    await page.mouse.move((vp.left + vp.right) / 2, vp.bottom - 20, { steps: 10 });
+    await page.mouse.up();
+    await expect(page.locator('#tool-bar')).toHaveClass(/toolbar-docked-bottom/);
+    await page.waitForTimeout(300);
+    await page.locator('#tool-overflow-btn').click();
+    await expect(page.locator('#tool-drawer')).toBeVisible();
+    const m = await page.evaluate(() => {
+      const dr = document.getElementById('tool-drawer').getBoundingClientRect();
+      const rail = document.getElementById('tool-bar').getBoundingClientRect();
+      const bad = [];
+      document.querySelectorAll('.tool-drawer-item').forEach((el) => {
+        el.scrollIntoView({ block: 'nearest' });
+        const r = el.getBoundingClientRect();
+        const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        if (!(t && (el === t || el.contains(t)))) bad.push(el.dataset.toolId);
+      });
+      return { l: dr.left, t: dr.top, r: dr.right, b: dr.bottom, h: dr.height, railTop: rail.top, bad };
+    });
+    expect(m.l).toBeGreaterThanOrEqual(0);
+    expect(m.t).toBeGreaterThanOrEqual(0);
+    expect(m.r).toBeLessThanOrEqual(1600);
+    expect(m.b).toBeLessThanOrEqual(1000);
+    expect(m.h).toBeGreaterThanOrEqual(400);
+    expect(m.bad).toEqual([]);
+  });
+});
