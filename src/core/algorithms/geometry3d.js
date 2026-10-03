@@ -11,8 +11,14 @@
   const COLLINEAR_EPS = 1e-6;
 
 
-  const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
-  const finite = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+  // T2-8b-5d (perf, no output change): a number skips the `Number()` coercion; every other input takes the
+  // original path, so the results (including -0 -> 0 in `clamp` and NaN -> fallback in `finite`) are identical.
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, (typeof value === 'number' ? value : Number(value)) || 0));
+  const finite = (value, fallback = 0) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+    if (value === undefined) return fallback; // Number(undefined) is NaN
+    return Number.isFinite(Number(value)) ? Number(value) : fallback;
+  };
   const degToRad = (deg) => (finite(deg) * Math.PI) / 180;
   const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -32,24 +38,40 @@
     return v(a.x / len, a.y / len, a.z / len);
   };
 
+  // T2-8b-5d (perf, no output change): the trig of an angle triple is computed once and reused while the same
+  // raw angles come back (scene3d calls this per surface sample with the same object transform / camera / light
+  // rig). Same arithmetic, same operand order, as the former per-call version; no array-swap allocation.
+  const ROT_CACHE_SIZE = 4;
+  const rotCache = [];
+  const rotTrig = (ry, rp, rr) => {
+    for (let i = 0; i < rotCache.length; i += 1) {
+      const e = rotCache[i];
+      if (e.ry === ry && e.rp === rp && e.rr === rr) return e;
+    }
+    const yaw = degToRad(ry);
+    const pitch = degToRad(rp);
+    const roll = degToRad(rr);
+    const e = {
+      ry, rp, rr, cy: Math.cos(yaw), sy: Math.sin(yaw), cp: Math.cos(pitch), sp: Math.sin(pitch), cr: Math.cos(roll), sr: Math.sin(roll),
+    };
+    if (rotCache.length >= ROT_CACHE_SIZE) rotCache.shift();
+    rotCache.push(e);
+    return e;
+  };
+
   const rotatePoint = (point, angles = {}) => {
-    let { x, y, z } = point;
-    const yaw = degToRad(angles.yaw ?? angles.rotate ?? 0);
-    const pitch = degToRad(angles.pitch ?? angles.tilt ?? 0);
-    const roll = degToRad(angles.roll ?? 0);
-
-    let c = Math.cos(yaw);
-    let s = Math.sin(yaw);
-    [x, z] = [x * c + z * s, -x * s + z * c];
-
-    c = Math.cos(pitch);
-    s = Math.sin(pitch);
-    [y, z] = [y * c - z * s, y * s + z * c];
-
-    c = Math.cos(roll);
-    s = Math.sin(roll);
-    [x, y] = [x * c - y * s, x * s + y * c];
-    return v(x, y, z);
+    const t = rotTrig(angles.yaw ?? angles.rotate ?? 0, angles.pitch ?? angles.tilt ?? 0, angles.roll ?? 0);
+    const x0 = point.x; const y0 = point.y; const z0 = point.z;
+    // yaw
+    const x1 = x0 * t.cy + z0 * t.sy;
+    const z1 = -x0 * t.sy + z0 * t.cy;
+    // pitch
+    const y2 = y0 * t.cp - z1 * t.sp;
+    const z2 = y0 * t.sp + z1 * t.cp;
+    // roll
+    const x3 = x1 * t.cr - y2 * t.sr;
+    const y3 = x1 * t.sr + y2 * t.cr;
+    return v(x3, y3, z2);
   };
 
   // Orthographic by default. When options.focal is a positive number the point
@@ -1249,6 +1271,7 @@
     length,
     normalize,
     rotatePoint,
+    rotTrig,
     projectPoint,
     pathWithMeta,
     cleanPath,

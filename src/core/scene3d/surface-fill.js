@@ -31,6 +31,8 @@
 
   const finite = G3.finite || ((val, f = 0) => (Number.isFinite(Number(val)) ? Number(val) : f));
   const clamp = G3.clamp || ((val, lo, hi) => Math.max(lo, Math.min(hi, Number(val) || 0)));
+  // T2-8b-5d (perf, no output change): clamp(x, 0, 1) for a number (NaN and -0 give +0, as `clamp` does).
+  const clamp01 = (x) => (x > 0 ? (x < 1 ? x : 1) : 0);
   const v = G3.v || ((x, y, z) => ({ x, y, z }));
   const sub = G3.sub || ((a, b) => v(a.x - b.x, a.y - b.y, a.z - b.z));
   const cross = G3.cross || ((a, b) => v(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x));
@@ -112,7 +114,7 @@
     return (a, b) => {
       if (a < lo) { const t = a / lo; const p = raw(0, b); return { x: p.x * t, y: p.y, z: p.z * t }; }
       if (both && a > hi) { const t = (1 - a) / f; const p = raw(1, b); return { x: p.x * t, y: p.y, z: p.z * t }; }
-      return raw(clamp((a - lo) / spanA, 0, 1), b);
+      return raw(clamp01((a - lo) / spanA), b);
     };
   };
 
@@ -1519,6 +1521,11 @@
     const t = opts.transform || { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
     const rot = { yaw: finite(t.yaw, 0), pitch: finite(t.pitch, 0), roll: finite(t.roll, 0) };
     const cam = opts.camAngles || { yaw: 0, pitch: 0, roll: 0 };
+    // T2-8b-5d (perf, no output change): the trig of the object rotation and of the camera, taken once. The
+    // facing helpers below use it to rotate a normal and read only the camera-space z, with the same operations in
+    // the same order as `rotatePoint` (yaw, pitch, roll), and without its temporaries.
+    const rotT = G3.rotTrig ? G3.rotTrig(rot.yaw ?? rot.rotate ?? 0, rot.pitch ?? rot.tilt ?? 0, rot.roll ?? 0) : null;
+    const camT = G3.rotTrig ? G3.rotTrig(cam.yaw ?? cam.rotate ?? 0, cam.pitch ?? cam.tilt ?? 0, cam.roll ?? 0) : null;
     const toneOn = Boolean(opts.toneOn && typeof opts.intensityFn === 'function');
     const intensityFn = opts.intensityFn || null;
     // F7 — self-occlusion gate. `null` for a convex object (scene3d.js never
@@ -2738,7 +2745,7 @@
     // regular ticks). A deferred, NON-SITE pass lengthens the rim-facing end of a regular
     // (non-highlight, I < MK_TICK_BC_HI_I) main tick to EXACTLY c_E from the outline, by the same
     // bisected walk BC-E uses, when the outline is what stops it.
-    //   `MK_TICK_RIM_MAX_MM` — longest extension per end; also bounded so the tick stays <= 2 row pitches.
+    //   `MK_TICK_RIM_MAX_MM` — longest extension per end; also bounded so the tick stays <= 2.05 row pitches.
     //   `MK_TICK_RIM_MIN_MM` — smallest worthwhile extension.
     // The site record (`pieceLen`, tickSites) is captured BEFORE this pass, so the master grid is untouched.
     const MK_TICK_RIM_MAX_MM = 2.0;
@@ -5726,8 +5733,8 @@
 
     // Sample the surface at (a,b) → screen point + front flag + Lambert intensity.
     const sampleAt = (a, b) => {
-      const aa = clamp(a, 0, 1);
-      const bb = clamp(b, 0, 1);
+      const aa = clamp01(a);
+      const bb = clamp01(b);
       const p0 = chart(aa, bb);
       // FORWARD DIFFERENCE, WITH A BACKWARD FALLBACK ON THE DOMAIN EDGE.
       //
@@ -5798,6 +5805,119 @@
       // the silhouette, so it is the exact, projection-correct measure of "how
       // close to the contour is this sample" — used by the limb taper below.
       return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, nz: camN.z, I, S, wN, world, dA, dB };
+    };
+
+    // camera-space z of the unit world normal of the local normal (nx, ny, nz); bit-identical to
+    // `rotatePoint(normalize(rotatePoint(n, rot)), cam).z` (roll never changes z, so it is not applied the second time).
+    const camZOfNormal = (nx, ny, nz) => {
+      if (!rotT || !camT) return rotatePoint(normalize(rotatePoint(v(nx, ny, nz), rot)), cam).z;
+      const x1 = nx * rotT.cy + nz * rotT.sy;
+      const z1 = -nx * rotT.sy + nz * rotT.cy;
+      const y2 = ny * rotT.cp - z1 * rotT.sp;
+      const z2 = ny * rotT.sp + z1 * rotT.cp;
+      const x3 = x1 * rotT.cr - y2 * rotT.sr;
+      const y3 = x1 * rotT.sr + y2 * rotT.cr;
+      // normalize: len = |a| || 1, then divide
+      const len = Math.hypot(x3, y3, z2) || 1;
+      const wx = x3 / len; const wy = y3 / len; const wz = z2 / len;
+      const z1c = -wx * camT.sy + wz * camT.cy;
+      return wy * camT.sp + z1c * camT.cp;
+    };
+
+    // T2-8b-5d (perf, no output change) — `frontAt(a, b)`: the facing of `sampleAt(a, b)` and nothing else.
+    // Returns `true` / `false` for `sampleAt(a, b).front`, and `null` exactly where `sampleAt` returns null.
+    // The outline probes of the rim-strip pass (`edgeClear`, `ringClear`) read ONLY "is there a sample, and does it
+    // face the way the object does", and made up ~60 % of the pass; this skips the two extra screen
+    // derivatives, the tone and the specular terms that `sampleAt` also builds. Every branch that can return
+    // null in `sampleAt` is kept in the same order; the facing is computed with the same operations.
+    const frontAt = (a, b) => {
+      const aa = clamp01(a);
+      const bb = clamp01(b);
+      const p0 = chart(aa, bb);
+      const aFwd = aa + EPS <= 1;
+      const bFwd = bb + EPS <= 1;
+      const sgnA = aFwd ? 1 : -1;
+      const sgnB = bFwd ? 1 : -1;
+      const pa = chart(aFwd ? aa + EPS : aa - EPS, bb);
+      const pb = chart(aa, bFwd ? bb + EPS : bb - EPS);
+      if (!p0 || !pa || !pb) return null;
+      // (scalar form of mul(sub(pa, p0), sgnA) etc.: the same operations in the same order, without the temporaries)
+      let ax = (pa.x - p0.x) * sgnA; let ay = (pa.y - p0.y) * sgnA; let az = (pa.z - p0.z) * sgnA;
+      let bx = (pb.x - p0.x) * sgnB; let by = (pb.y - p0.y) * sgnB; let bz = (pb.z - p0.z) * sgnB;
+      let nx = ay * bz - az * by; let ny = az * bx - ax * bz; let nz = ax * by - ay * bx;
+      let nl = Math.hypot(nx, ny, nz);
+      if (nl < 1e-9) {
+        const ai = clamp(aa, EPS * 2, 1 - EPS * 2);
+        const bi = clamp(bb, EPS * 2, 1 - EPS * 2);
+        const q0 = chart(ai, bi);
+        const qa = chart(clamp(ai + EPS, 0, 1), bi);
+        const qb = chart(ai, clamp(bi + EPS, 0, 1));
+        if (!q0 || !qa || !qb) return null;
+        ax = qa.x - q0.x; ay = qa.y - q0.y; az = qa.z - q0.z;
+        bx = qb.x - q0.x; by = qb.y - q0.y; bz = qb.z - q0.z;
+        nx = ay * bz - az * by; ny = az * bx - ax * bz; nz = ax * by - ay * bx;
+        nl = Math.hypot(nx, ny, nz);
+        if (nl < 1e-9) return null;
+      }
+      const inv = 1 / nl;
+      nx *= inv; ny *= inv; nz *= inv;
+      if (chartOrientation() < 0) { nx *= -1; ny *= -1; nz *= -1; }
+      const world = applyTransform(p0, t);
+      const camZ = camZOfNormal(nx, ny, nz);
+      const scr = projectWorld(world);
+      if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
+      return camZ > 0;
+    };
+
+    // T2-8b-5d (perf, no output change) — `sampleLite(a, b)`: `sampleAt` without the tone (`I`) and specular (`S`)
+    // terms, which the rim-strip pass never reads (its `at` needs the position, the facing and the screen
+    // derivatives `dA`/`dB` that `frameFrom` builds from). Same null conditions and the same values for
+    // the fields it returns (`x`, `y`, `z`, `front`, `dA`, `dB`).
+    const sampleLite = (a, b) => {
+      const aa = clamp01(a);
+      const bb = clamp01(b);
+      const p0 = chart(aa, bb);
+      const aFwd = aa + EPS <= 1;
+      const bFwd = bb + EPS <= 1;
+      const sgnA = aFwd ? 1 : -1;
+      const sgnB = bFwd ? 1 : -1;
+      const pa = chart(aFwd ? aa + EPS : aa - EPS, bb);
+      const pb = chart(aa, bFwd ? bb + EPS : bb - EPS);
+      if (!p0 || !pa || !pb) return null;
+      let ax = (pa.x - p0.x) * sgnA; let ay = (pa.y - p0.y) * sgnA; let az = (pa.z - p0.z) * sgnA;
+      let bx = (pb.x - p0.x) * sgnB; let by = (pb.y - p0.y) * sgnB; let bz = (pb.z - p0.z) * sgnB;
+      let nx = ay * bz - az * by; let ny = az * bx - ax * bz; let nz = ax * by - ay * bx;
+      let nl = Math.hypot(nx, ny, nz);
+      if (nl < 1e-9) {
+        const ai = clamp(aa, EPS * 2, 1 - EPS * 2);
+        const bi = clamp(bb, EPS * 2, 1 - EPS * 2);
+        const q0 = chart(ai, bi);
+        const qa = chart(clamp(ai + EPS, 0, 1), bi);
+        const qb = chart(ai, clamp(bi + EPS, 0, 1));
+        if (!q0 || !qa || !qb) return null;
+        ax = qa.x - q0.x; ay = qa.y - q0.y; az = qa.z - q0.z;
+        bx = qb.x - q0.x; by = qb.y - q0.y; bz = qb.z - q0.z;
+        nx = ay * bz - az * by; ny = az * bx - ax * bz; nz = ax * by - ay * bx;
+        nl = Math.hypot(nx, ny, nz);
+        if (nl < 1e-9) return null;
+      }
+      const inv = 1 / nl;
+      nx *= inv; ny *= inv; nz *= inv;
+      if (chartOrientation() < 0) { nx *= -1; ny *= -1; nz *= -1; }
+      const world = applyTransform(p0, t);
+      const camZ = camZOfNormal(nx, ny, nz);
+      const scr = projectWorld(world);
+      if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
+      let dA = null; let dB = null;
+      if (useLadder) {
+        const sa = projectWorld(applyTransform(pa, t));
+        const sb = projectWorld(applyTransform(pb, t));
+        if (sa && sb && Number.isFinite(sa.x) && Number.isFinite(sb.x)) {
+          dA = { x: ((sa.x - scr.x) / EPS) * sgnA, y: ((sa.y - scr.y) / EPS) * sgnA };
+          dB = { x: ((sb.x - scr.x) / EPS) * sgnB, y: ((sb.y - scr.y) / EPS) * sgnB };
+        }
+      }
+      return { x: scr.x, y: scr.y, z: scr.z, front: camZ > 0, dA, dB };
     };
 
     // PERPENDICULAR screen pitch between adjacent rulings at this sample.
@@ -7431,24 +7551,26 @@
       // T2-8b-5 — the BC-E clearance toolkit (local-frame step `at`, other-row ink query,
       // outline probe, and the bisected end walk `arm`), shared by `bcSide` and the rim-strip
       // extension `extendTick`. `fr0` supplies the frame parameters (ld, st).
-      const bcTools = (fr0) => {
+      const bcTools = (fr0, lite) => {
         const cE = MK_TICK_BC_EDGE_PEN * w; const cB = MK_TICK_BC_BAND_PEN * w; const admitR = MK_TICK_BC_ADMIT_PEN * w;
         const at = (fr, du, dv) => {
           const pp = fr.toParam(du, dv);
           if (!(pp.a >= 0 && pp.a <= 1)) return null;
           let bb = pp.b;
           if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return null; bb = ((bb % 1) + 1) % 1; }
-          const sm = sampleAt(pp.a, bb);
+          const sm = lite ? sampleLite(pp.a, bb) : sampleAt(pp.a, bb);
           if (!sm || sm.front !== wantFront) return null;
           const f = frameFrom(sm, fr0.ld, fr0.st, { a: pp.a, b: bb });
           return f ? { sm, fr: f } : null;
         };
         const nb = Math.max(1, Math.ceil(Math.max(cB, admitR) / mkInkR));
+        const inkPre = wantFront ? '1:' : '0:'; // (same keys as `mkInkKey`, built without the template literal per cell)
         const inkWithin = (x, y, r, anyLi) => {
           const cx = Math.floor(x / mkInkR); const cy = Math.floor(y / mkInkR);
           for (let dx = -nb; dx <= nb; dx += 1) {
+            const colKey = inkPre + (cx + dx) + ',';
             for (let dy = -nb; dy <= nb; dy += 1) {
-              const bucket = mkInk.get(`${wantFront ? 1 : 0}:${cx + dx},${cy + dy}`);
+              const bucket = mkInk.get(colKey + (cy + dy));
               if (!bucket) continue;
               for (let h = 0; h < bucket.length; h += 1) {
                 if ((anyLi || bucket[h].li !== lineIndex) && Math.hypot(bucket[h].x - x, bucket[h].y - y) < r) return true;
@@ -7463,7 +7585,7 @@
             const pp = fr.toParam(Math.cos(th) * cE, Math.sin(th) * cE);
             if (!(pp.a >= 0 && pp.a <= 1)) return false;
             let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
-            const z = sampleAt(pp.a, bb); if (!z || z.front !== wantFront) return false;
+            if (frontAt(pp.a, bb) !== wantFront) return false;
           }
           return true;
         };
@@ -7474,7 +7596,11 @@
           if (inkWithin(h.sm.x, h.sm.y, cB, false)) { why = 'I'; return false; }
           return true;
         };
-        const arm = (h0, sgn, maxLen) => {
+        // `have` (planTick only): the tick's own drawn length on this side. planTick reads an arm ONLY as
+        // "stopped for reason E beyond `have`" (gain = len - have). A stop for any other reason, or an E stop that
+        // lies inside the tick's own length (gain <= 0), is read as "no gain" whatever its length, so those skip the
+        // 6-step bisection (about 100 surface samples). bcSide passes no `have` and still bisects every stop.
+        const arm = (h0, sgn, maxLen, have) => {
           let h = h0; let len = 0; let d0 = null; const pts = [];
           while (len < maxLen - 1e-9) {
             // per-arm step ceiling (`MK_MAX_WALK_STEPS`): a fine pen must not grow the point count
@@ -7490,6 +7616,7 @@
             }
             if (ok && clear(nx)) { h = nx; len += st; pts.push({ x: nx.sm.x, y: nx.sm.y, z: nx.sm.z }); continue; }
             const reason = ok ? why : 'S';
+            if (have !== undefined && (reason !== 'E' || len + st <= have)) return { len, stopped: true, reason, pts };
             let a = 0; let b = st;
             for (let it = 0; it < MK_TICK_BC_BISECT; it += 1) {
               const m = 0.5 * (a + b); const q = at(h.fr, 0, sgn * m); if (q && clear(q)) a = m; else b = m;
@@ -7505,7 +7632,7 @@
       // ── T2-8b-5 — rim-strip extension of a regular tick's outline-facing ends ──
       const planTick = (fr, uO, seg, run, hub) => {
         if (!run || run.length < 3 || !hub) return;
-        const T = bcTools(fr);
+        const T = bcTools(fr, true);
         const RPn = masterPitch / markRowCoverage();
         // the tick's TRUE hub (the walk's own hub, where its two arms started), located in the drawn run.
         // (A nominal one-jump hub `T.at(fr, uO, mid)` is up to ~0.19 mm laterally off on a curved ruling and
@@ -7526,20 +7653,23 @@
         // cheap prefilter: an end whose line is still on the front surface a full reach (extension + c_E)
         // beyond it is nowhere near an outline; skip it before any 16-probe walk (this pass must stay
         // affordable at d=220, where it sees thousands of ticks).
-        const reach = MK_TICK_RIM_MAX_MM + MK_TICK_BC_EDGE_PEN * w + 0.2;
+        // T2-8b-5d: the arm can reach at most `room` past the tick's end, so only an outline within `room` + c_E
+        // (+ 0.2) of it can stop the arm for reason E; the prefilter looks no further (it used the 2.0 mm cap,
+        // about 0.6-0.9 mm more than `room` at d=220).
+        const reach = MK_TICK_RIM_MAX_MM + MK_TICK_BC_EDGE_PEN * w + 0.2; // ring radius (unchanged)
+        const reachLine = room + MK_TICK_BC_EDGE_PEN * w + 0.2;
         const ringClear = (vEnd) => {
           const he = T.at(fr, uO, vEnd); if (!he) return false;
-          // T2-8b-5c: one ring at 0.75 reach, 8 probes (the 4-radius x 12-probe ring cost 6x v1.4.5 at torus d=220; the `lineClear` walk is the primary test). One ring at the full reach missed a rim whose far side wraps onto another
-          // front-facing sheet (create torus/hatch: candidacy stopped at a 1.37 mm gap, not at the 2.0 mm cap),
-          // which cut the rim edge into a step.
-          for (let rr = 1; rr <= 1; rr += 1) {
-            for (let q = 0; q < 8; q += 1) {
-              const th = (2 * Math.PI * q) / 8;
-              const pp = he.fr.toParam(Math.cos(th) * reach * 0.75, Math.sin(th) * reach * 0.75);
-              if (!(pp.a >= 0 && pp.a <= 1)) return false;
-              let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
-              const z = sampleAt(pp.a, bb); if (!z || z.front !== wantFront) return false;
-            }
+          // T2-8b-5c / 5d: four probes (E, N, W, S) on one ring at 0.75 x reach. This is the cheap half of the
+          // prefilter; the `lineClear` walk is the half that sees a rim whose far side wraps onto another
+          // front-facing sheet (create torus/hatch: candidacy stopped at a 1.4 mm gap, not at the 2.0 mm cap).
+          // A wider ring (4 radii x 12 probes) cost 6x v1.4.5 at torus d=220.
+          for (let q = 0; q < 4; q += 1) {
+            const th = (Math.PI * q) / 2;
+            const pp = he.fr.toParam(Math.cos(th) * reach * 0.75, Math.sin(th) * reach * 0.75);
+            if (!(pp.a >= 0 && pp.a <= 1)) return false;
+            let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+            if (frontAt(pp.a, bb) !== wantFront) return false;
           }
           return true;
         };
@@ -7548,7 +7678,7 @@
         // tick's own line outward on the surface (frame re-derived each 0.5 mm, no ink/outline probes, so it
         // is ~1/16 of an `arm` step): if it leaves the front surface within the reach, an outline is near.
         const lineClear = (sgn, have) => {
-          let h = h0; let len = 0; const full = have + MK_TICK_RIM_MAX_MM + MK_TICK_BC_EDGE_PEN * w + 0.2;
+          let h = h0; let len = 0; const full = have + reachLine;
           while (len < full) {
             const st = Math.min(0.75, full - len);
             const nx = T.at(h.fr, 0, sgn * st);
@@ -7557,12 +7687,12 @@
           }
           return true;
         };
-        const nearUp = !(lineClear(1, lenUp) && ringClear(seg[1]));
-        const nearDn = !(lineClear(-1, lenDn) && ringClear(seg[0]));
+        const nearUp = !(ringClear(seg[1]) && lineClear(1, lenUp));
+        const nearDn = !(ringClear(seg[0]) && lineClear(-1, lenDn));
         if (!nearUp && !nearDn) return;
         const none = { len: 0, stopped: false, reason: 'C', pts: [] };
-        const up = nearUp ? T.arm(h0, 1, lenUp + room) : none;
-        const dn = nearDn ? T.arm(h0, -1, lenDn + room) : none;
+        const up = nearUp ? T.arm(h0, 1, lenUp + room, lenUp) : none;
+        const dn = nearDn ? T.arm(h0, -1, lenDn + room, lenDn) : none;
         const gainUp = (up.stopped && up.reason === 'E') ? up.len - lenUp : 0;
         const gainDn = (dn.stopped && dn.reason === 'E') ? dn.len - lenDn : 0;
         // T2-8b-5c COHERENCE. Both factors below are CONTINUOUS functions of the wanted gains, so two
@@ -13290,8 +13420,7 @@
     // Every chain is closed by now, so the deferred ribbons can be built — and
     // they must be built BEFORE the report, or the report describes a build that
     // has not happened yet.
-    // T2-8b-3/3c (BC-E) — the deferred span-end continuations (see `mkEndQ`).
-        // T2-8b-5c — NEIGHBOUR COHERENCE. Plans of one row, in site order. For each end, a RUN is a stretch of
+    // T2-8b-5c — NEIGHBOUR COHERENCE. Plans of one row, in site order. For each end, a RUN is a stretch of
     // consecutive ticks that all want an extension at that end. Inside a run the extension fraction `phi` may
     // change by at most `MK_TICK_RIM_COH` per tick (lower envelope, both directions): an isolated few ticks
     // that could reach the rim beside neighbours that could not are held back together with them, so the
@@ -13361,6 +13490,7 @@
       plans.forEach((pl) => { if (pl.plan) pl.plan.apply(pl.phiUp >= 0 ? pl.phiUp : 1, pl.phiDn >= 0 ? pl.phiDn : 1, pl.li, pl.a, pl.idx); });
     };
     runExtensions();
+    // T2-8b-3/3c (BC-E) — the deferred span-end continuations (see `mkEndQ`).
     for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();
     flushDeferredRibbons();
     publishRibbonStats();
