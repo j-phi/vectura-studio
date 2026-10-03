@@ -14466,3 +14466,49 @@ body.touch-ui .modal-card .color-modal { padding-top: 4px; }
   touch-action: none;
 }
 /* === END TUX-047 === */
+
+/* === TUX-026: Petal Designer touch sizing and phone sheet ===
+ * Selectors carry the [data-ui-skin] prefix plus .petal-designer-window so they beat the skin rule
+ * `[data-ui-skin] .petal-tool-btn, .petal-close, ... { height: 26px; min-width: 26px }` (specificity 0,2,0).
+ * Coarse sizing keys on the pointer type, never on width. The phone sheet keys on the layout classifier
+ * class (TUX-006). Desktop (fine pointer, non-phone) is unchanged. */
+@media (pointer: coarse) {
+  [data-ui-skin] .petal-designer-window .petal-tool-btn,
+  [data-ui-skin] .petal-designer-window .petal-close,
+  [data-ui-skin] .petal-designer-window .petal-popout,
+  [data-ui-skin] .petal-designer-window .petal-popin,
+  [data-ui-skin] .petal-designer-window .petal-copy-btn {
+    min-width: var(--touch-target-min, 44px);
+    min-height: var(--touch-target-min, 44px);
+    height: auto;
+  }
+  [data-ui-skin] .petal-designer-window .petal-designer-actions { gap: 6px; }
+  /* A finger drags the pop-out window by its header (not on the phone sheet, which cannot move). */
+  body:not(.phone-layout) .petal-designer-window:not(.petal-designer-inline) .petal-designer-header {
+    touch-action: none;
+  }
+}
+/* Phone: the pop-out is a full-screen sheet inside the safe area. The header stays pinned; the body scrolls. */
+body.phone-layout #petal-designer-window.petal-designer-window:not(.petal-designer-inline) {
+  position: fixed;
+  top: var(--safe-top, env(safe-area-inset-top, 0px));
+  right: var(--safe-right, env(safe-area-inset-right, 0px));
+  bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
+  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  z-index: var(--z-floating-sheet, 850);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.phone-layout #petal-designer-window .petal-designer-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+/* === END TUX-026 === */
