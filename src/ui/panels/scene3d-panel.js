@@ -981,6 +981,131 @@
     return el;
   };
 
+  // Ground size — Width (X) + Depth (Z) factors on a LOG slider (each notch
+  // doubles), so fine control stays near 1x and the floor reaches 256x in one drag. A
+  // lock links the pair: dragging one scales the other by the same factor, so
+  // the floor keeps its proportions. "Fill frame" asks Scene.groundCoverScale
+  // for the smallest proportional size whose edges leave the artboard.
+  //   g        the ground bag edited in place (sceneGround3d params or a
+  //            monolith's params.ground)
+  //   kit      { commit, liveSlider } bound to the owning layer
+  //   coverCtx () => { params, bounds } — camera + artboard for "Fill frame"
+  const groundSizeControls = (host, comps, g, kit, coverCtx) => {
+    const UI = Vectura.UI;
+    const Pm = P3() || {};
+    const MIN = Number.isFinite(Pm.GROUND_SCALE_MIN) ? Pm.GROUND_SCALE_MIN : 0.25;
+    const MAX = Number.isFinite(Pm.GROUND_SCALE_MAX) ? Pm.GROUND_SCALE_MAX : 256;
+    const clampS = (n) => Math.min(MAX, Math.max(MIN, n));
+    const cur = (key) => (Number.isFinite(g[key]) && g[key] > 0 ? clampS(g[key]) : 1);
+    const toPos = (n) => Math.log2(clampS(n));
+    const fmt = (n) => `${n >= 10 ? n.toFixed(1) : n.toFixed(2)}×`;
+    const locked = () => g.scaleLock !== false;
+    const AXES = [['scaleX', 'Width (X)', 'width'], ['scaleZ', 'Depth (Z)', 'depth']];
+    const sliders = {};
+    const syncSliders = () => {
+      AXES.forEach(([key]) => { if (sliders[key]) sliders[key].setValue(toPos(cur(key)), { silent: true }); });
+    };
+    // Write one axis; with the lock on, scale the partner by the SAME factor.
+    // The factor is clamped so neither axis leaves [MIN, MAX] — otherwise the
+    // pinned axis would silently break the locked ratio.
+    const setAxis = (key, target) => {
+      const other = key === 'scaleX' ? 'scaleZ' : 'scaleX';
+      const a = cur(key);
+      if (!locked()) { g[key] = clampS(target); return; }
+      const b = cur(other);
+      const lo = Math.max(MIN / a, MIN / b);
+      const hi = Math.min(MAX / a, MAX / b);
+      const f = Math.min(hi, Math.max(lo, target / a));
+      g[key] = a * f;
+      g[other] = b * f;
+    };
+
+    subhead(host, 'Size');
+    const wrap = document.createElement('div');
+    wrap.className = 'vs3-linked';
+    host.appendChild(wrap);
+    const rows = document.createElement('div');
+    rows.className = 'vs3-linked-rows';
+    wrap.appendChild(rows);
+    AXES.forEach(([key, label, word]) => {
+      const kitFor = kit.liveSlider((pos) => { setAxis(key, Math.pow(2, pos)); syncSliders(); });
+      const sl = UI.Slider(labeledRow(rows, label), {
+        value: toPos(cur(key)),
+        min: Math.log2(MIN), max: Math.log2(MAX), step: 0.01,
+        // Keep 4 decimals in log space so a typed "3" lands on 3.00x, not 2.99x.
+        precision: 4,
+        defaultValue: 0,
+        ariaLabel: `Ground ${word} scale`,
+        format: (pos) => fmt(Math.pow(2, pos)),
+        // The chip reads/writes the real factor ("4", "4x", "4×"); the slider
+        // runs in log2 space underneath.
+        parse: (txt) => {
+          const n = parseFloat(String(txt).replace(/[x×\s]/gi, ''));
+          return n > 0 ? Math.log2(n) : NaN;
+        },
+        onChange: kitFor.onChange,
+        onCommit: kitFor.onCommit,
+      });
+      sliders[key] = sl;
+      comps.push(sl);
+    });
+
+    const link = document.createElement('div');
+    link.className = 'vs3-link';
+    wrap.appendChild(link);
+    const lockBtn = document.createElement('button');
+    lockBtn.type = 'button';
+    lockBtn.className = 'vs3-link-btn';
+    link.appendChild(lockBtn);
+    const icons = (Vectura.Icons && Vectura.Icons.layer) || {};
+    const paintLock = () => {
+      const on = locked();
+      lockBtn.classList.toggle('is-on', on);
+      lockBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      lockBtn.setAttribute('aria-label', 'Lock ground proportions');
+      lockBtn.title = on
+        ? 'Proportions locked — width and depth scale together. Click to unlock.'
+        : 'Proportions unlocked — width and depth scale separately. Click to lock.';
+      const icon = on ? icons.lock : icons.lockOpen;
+      lockBtn.innerHTML = typeof icon === 'function' ? icon() : (on ? '\u{1F512}' : '\u{1F513}');
+    };
+    paintLock();
+    lockBtn.addEventListener('click', () => {
+      kit.commit(() => { g.scaleLock = !locked(); });
+      paintLock();
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'vs3-row vs3-size-actions';
+    host.appendChild(actions);
+    const mkAction = (text, title, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'vs3-size-action';
+      b.textContent = text;
+      b.title = title;
+      b.addEventListener('click', onClick);
+      actions.appendChild(b);
+      return b;
+    };
+    mkAction('Reset', 'Reset the ground to its default size (1×)', () => {
+      kit.commit(() => { g.scaleX = 1; g.scaleZ = 1; });
+      syncSliders();
+    });
+    const fill = mkAction('Fill frame', 'Size the ground (keeping its proportions) so its edges sit just outside the artboard', () => {
+      const S = Vectura.Scene3D && Vectura.Scene3D.Scene;
+      const ctx = typeof coverCtx === 'function' ? coverCtx() : null;
+      if (!S || typeof S.groundCoverScale !== 'function' || !ctx) return;
+      const r = S.groundCoverScale(ctx.params, ctx.bounds, { max: MAX });
+      if (!r || !Number.isFinite(r.scaleX) || !Number.isFinite(r.scaleZ)) return;
+      // Set the exact fit (grow OR shrink), so the button always answers with
+      // the smallest floor that still hides its edges.
+      kit.commit(() => { g.scaleX = clampS(r.scaleX); g.scaleZ = clampS(r.scaleZ); });
+      syncSliders();
+    });
+    fill.classList.add('is-primary');
+  };
+
   // `inherit` is the scene-level bag: an object that has never been given its
   // own value follows the scene's, so one switch can curve a whole scene.
   const curveControls = (host, comps, bag, kit, inherit) => {
@@ -1889,14 +2014,13 @@
     CURRENT = self;
   };
 
-  // Scene-tree Increment E — compact panel for one sceneGround3d LEAF layer. The
-  // ground currently carries only `enabled`; the row's eye toggle in the Layers
-  // panel already hides/shows it, so the panel is a short explainer + an enable
-  // toggle for parity with the legacy in-panel ground row.
+  // Scene-tree Increment E — compact panel for one sceneGround3d LEAF layer: a
+  // short explainer, an enable toggle (parity with the legacy in-panel ground
+  // row) and the Size group (width / depth + proportion lock + Fill frame).
   const buildGroundPanel = (ui, layer, container) => {
     const UI = Vectura.UI;
     const p = layer.params || (layer.params = {});
-    const { commit } = mkCommitKit(ui, layer);
+    const { commit, liveSlider } = mkCommitKit(ui, layer);
     const comps = [];
     const root = document.createElement('div');
     root.className = 'vs3-panel';
@@ -1914,6 +2038,16 @@
       ariaLabel: 'Ground enabled',
       onChange: (v) => { commit(() => { p.enabled = v === 'on'; }); },
     }));
+    groundSizeControls(host, comps, p, { commit, liveSlider }, () => {
+      const group = sceneGroupOf(ui, layer);
+      const engine = ui.app && ui.app.engine;
+      const Pm = P3();
+      if (!group || !engine || !Pm) return null;
+      return {
+        params: Pm.normalizeParams({ camera: group.params && group.params.camera, ground: p }),
+        bounds: engine.getBounds ? engine.getBounds() : engine.currentProfile,
+      };
+    });
 
     mirrorChildToCanvas(ui, layer, null);
 
@@ -3655,6 +3789,16 @@
         note.className = 'vs3-empty';
         note.textContent = 'Ground plane — style it from the Style tab (pen, hatch, wireframe).';
         inspectorHost.appendChild(note);
+        if (!params.ground || typeof params.ground !== 'object') params.ground = { enabled: true };
+        groundSizeControls(inspectorHost, inspectorComps, params.ground, { commit, liveSlider }, () => {
+          const engine = ui.app && ui.app.engine;
+          const Pm = P3();
+          if (!engine || !Pm) return null;
+          return {
+            params: Pm.normalizeParams({ camera: params.camera, ground: params.ground }),
+            bounds: engine.getBounds ? engine.getBounds() : engine.currentProfile,
+          };
+        });
         return;
       }
       const obj = sel.objectId ? getObject(sel.objectId) : null;

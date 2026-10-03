@@ -22,6 +22,10 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **DONE — 3D Scene ground size controls (2026-10-02, branch `3d-scene/ground-scale`).** Ground
+  leaf + legacy inspector gain Width (X) / Depth (Z) log sliders, proportion lock, Reset, and
+  Fill frame (`Scene.groundCoverScale`). Ground quad is near-plane and artboard clipped in
+  world space. No Y control (flat plane; Jay's call).
 - **DONE — dependency PR consolidation (2026-09-20).** Keep Vitest and
   `@vitest/coverage-v8` paired at 4.1.8 on the Node 20 toolchain; the separate Dependabot PRs
   could not install independently, and Vitest 5 requires Node 22.12+.

@@ -306,13 +306,86 @@
     };
   };
 
+  // Sutherland–Hodgman against ONE camera-space half-space: keep where
+  // keep(camPt) >= 0. `keep` must be linear in camera coords (every caller's
+  // is), so the world-space lerp at the crossing is exact.
+  const clipPolyCam = (verts, camAngles, keep) => {
+    const vals = verts.map((pt) => keep(rotatePoint(pt, camAngles)));
+    if (vals.every((d) => d >= 0)) return verts;
+    const out = [];
+    verts.forEach((a, i) => {
+      const j = (i + 1) % verts.length;
+      const da = vals[i];
+      const db = vals[j];
+      if (da >= 0) out.push(a);
+      if ((da >= 0) !== (db >= 0)) out.push(add(a, mul(sub(verts[j], a), da / (da - db))));
+    });
+    return out;
+  };
+
   // The ground plane: a large world quad at y = 0 (styleable target 'ground',
   // never occludes, double-sided so it stays visible from below the horizon).
-  const buildGroundRecord = (bounds, camAngles, projOpts, camPos) => {
-    const span = Math.max(finite(bounds.width, 200), finite(bounds.height, 200)) * 0.75;
+  // `ground.scaleX` / `ground.scaleZ` stretch its width / depth (normalized by
+  // Params.normalizeGround; absent ⇒ 1, the legacy span).
+  //
+  // The quad is then cut, in world space, to what can be seen:
+  //   • perspective near plane — a big floor runs behind the pinhole, and
+  //     projectPoint collapses any vertex past its near plane onto the
+  //     vanishing point, folding the floor's near edge up into the frame.
+  //   • the artboard (+ a pad) — a floor stretched far past the frame would
+  //     otherwise hatch kilometres of off-paper ink into the plot (travel,
+  //     time estimate, export). The pad keeps the cut edge off the paper.
+  // Each cut is linear in camera coords (x_s - x0 >= 0 ⇔ (cx - x0)·den + k·X
+  // >= 0 with den > 0 after the near cut), so the world-space lerp is exact.
+  // The artboard cut applies only above 1x; opts.frameClip === false skips it
+  // outright (groundCoverScale needs the floor's true edges).
+  const buildGroundRecord = (bounds, camAngles, projOpts, camPos, ground, opts = {}) => {
+    const width = finite(bounds.width, 200);
+    const height = finite(bounds.height, 200);
+    const span = Math.max(width, height) * 0.75;
+    const g = ground || {};
+    const sx = span * Math.max(0, finite(g.scaleX, 1));
+    const sz = span * Math.max(0, finite(g.scaleZ, 1));
+    let vertices = [v(-sx, 0, sz), v(sx, 0, sz), v(sx, 0, -sz), v(-sx, 0, -sz)];
+    const persp = Number.isFinite(projOpts.focal) && projOpts.focal > 0;
+    const focal = persp ? projOpts.focal : 0;
+    const camDist = persp ? finite(projOpts.cameraDist, 0) : 0;
+    if (persp) {
+      const zMax = focal + camDist - focal * 0.1;
+      vertices = clipPolyCam(vertices, camAngles, (c) => zMax - c.z);
+      // Fully behind the camera ⇒ nothing of the floor is visible.
+      if (vertices.length < 3) return null;
+    }
+    // Only an ENLARGED floor is cut: at <= 1x the quad overhangs the paper by a
+    // bounded amount, and leaving it whole keeps every existing scene's render
+    // byte-identical (fill goldens anchor rulings on the uncut quad).
+    const enlarged = Math.max(finite(g.scaleX, 1), finite(g.scaleZ, 1)) > 1;
+    if (opts.frameClip !== false && enlarged) {
+      // A generous pad: the cut edge must stay off the paper even when the
+      // scene layer is nudged on the canvas.
+      const pad = Math.max(width, height) * 0.25;
+      const x0 = -pad; const x1 = width + pad;
+      const y0 = -pad; const y1 = height + pad;
+      const cx = finite(projOpts.centerX, width / 2);
+      const cy = finite(projOpts.centerY, height / 2);
+      const scale = finite(projOpts.scale, 1);
+      const k = persp ? focal * scale : scale;
+      const den = persp ? (c) => focal + camDist - c.z : () => 1;
+      const planes = [
+        (c) => (cx - x0) * den(c) + k * c.x,
+        (c) => (x1 - cx) * den(c) - k * c.x,
+        (c) => (cy - y0) * den(c) - k * c.y,
+        (c) => (y1 - cy) * den(c) + k * c.y,
+      ];
+      for (let i = 0; i < planes.length && vertices.length >= 3; i += 1) {
+        vertices = clipPolyCam(vertices, camAngles, planes[i]);
+      }
+      // The floor lies wholly off the artboard ⇒ draw no ground.
+      if (vertices.length < 3) return null;
+    }
     const meshData = {
-      vertices: [v(-span, 0, span), v(span, 0, span), v(span, 0, -span), v(-span, 0, -span)],
-      faces: [[0, 1, 2, 3]],
+      vertices,
+      faces: [vertices.map((_, i) => i)],
       faceIds: ['face:ground'],
       pretransformed: true,
     };
@@ -393,7 +466,7 @@
     const objects = units.map((u) => buildRecord(
       u.obj, u.meshData, camAngles, projOpts, camPos));
     const ground = p.ground && p.ground.enabled
-      ? buildGroundRecord(bounds, camAngles, projOpts, camPos)
+      ? buildGroundRecord(bounds, camAngles, projOpts, camPos, p.ground)
       : null;
     return {
       params: p, camera: cam, projOpts, objects, ground, width, height,
@@ -402,6 +475,86 @@
       // on a face and foreshorten it correctly.
       projectWorld: (pt) => projectPoint(rotatePoint(pt, camAngles), projOpts),
     };
+  };
+
+  // Smallest PROPORTIONAL ground scale whose floor leaves no edge inside the
+  // artboard (the "Fill frame" action). The X:Z ratio of p.ground is kept; the
+  // result is padded 15% so the edge sits clear of the frame. In perspective a
+  // floor can never pass its own horizon, so an edge lying ON the horizon line
+  // (within `tol`) counts as hidden. Returns { scaleX, scaleZ, covered }.
+  const groundCoverScale = (p, bounds = {}, opts = {}) => {
+    const width = finite(bounds.width, 200);
+    const height = finite(bounds.height, 200);
+    const maxScale = finite(opts.max, 256);
+    const tol = finite(opts.tol, 1.5);
+    const cam = p.camera || {};
+    const projOpts = buildProjOpts(cam, { width, height });
+    const camAngles = { yaw: finite(cam.yaw, 0), pitch: finite(cam.pitch, 0), roll: finite(cam.roll, 0) };
+    const g = p.ground || {};
+    const rx = Math.max(1e-6, finite(g.scaleX, 1));
+    const rz = Math.max(1e-6, finite(g.scaleZ, 1));
+    const big = Math.max(rx, rz);
+    const ax = rx / big;
+    const az = rz / big;
+    const perspective = Number.isFinite(projOpts.focal) && projOpts.focal > 0;
+    // Horizon line: two far, in-front points on the y = 0 plane.
+    let horizon = null;
+    if (perspective) {
+      const far = [];
+      for (let a = 0; a < 360; a += 10) {
+        const r = (a * Math.PI) / 180;
+        const pt = projectPoint(rotatePoint(v(Math.cos(r) * 1e7, 0, Math.sin(r) * 1e7), camAngles), projOpts);
+        if (pt && !pt.behind && Number.isFinite(pt.x) && Number.isFinite(pt.y)) far.push(pt);
+      }
+      let best = 0;
+      far.forEach((a) => far.forEach((b) => {
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d > best) { best = d; horizon = { a, b, len: d }; }
+      }));
+      if (horizon && horizon.len < 1e-6) horizon = null;
+    }
+    const offHorizon = (pt) => {
+      if (!horizon) return Infinity;
+      const { a, b, len } = horizon;
+      return Math.abs((b.x - a.x) * (a.y - pt.y) - (a.x - pt.x) * (b.y - a.y)) / len;
+    };
+    // Liang–Barsky: the part of segment a→b inside the artboard, or null.
+    const clipToFrame = (a, b) => {
+      let t0 = 0; let t1 = 1;
+      const dx = b.x - a.x; const dy = b.y - a.y;
+      const edges = [[-dx, a.x], [dx, width - a.x], [-dy, a.y], [dy, height - a.y]];
+      for (let i = 0; i < edges.length; i += 1) {
+        const [pp, q] = edges[i];
+        if (pp === 0) { if (q < 0) return null; continue; }
+        const r = q / pp;
+        if (pp < 0) { if (r > t1) return null; if (r > t0) t0 = r; }
+        else { if (r < t0) return null; if (r < t1) t1 = r; }
+      }
+      return [
+        { x: a.x + dx * t0, y: a.y + dy * t0 },
+        { x: a.x + dx * t1, y: a.y + dy * t1 },
+      ];
+    };
+    const covers = (k) => {
+      const rec = buildGroundRecord({ width, height }, camAngles, projOpts, null, { scaleX: ax * k, scaleZ: az * k }, { frameClip: false });
+      if (!rec) return false;
+      const poly = rec.projected;
+      for (let i = 0; i < poly.length; i += 1) {
+        const seg = clipToFrame(poly[i], poly[(i + 1) % poly.length]);
+        if (!seg) continue;
+        if (offHorizon(seg[0]) <= tol && offHorizon(seg[1]) <= tol) continue;
+        return false;
+      }
+      return true;
+    };
+    const minK = 0.25;
+    for (let k = minK; k <= maxScale; k *= 1.1) {
+      if (covers(k)) {
+        const out = Math.min(maxScale, k * 1.15);
+        return { scaleX: ax * out, scaleZ: az * out, covered: true };
+      }
+    }
+    return { scaleX: ax * maxScale, scaleZ: az * maxScale, covered: false };
   };
 
   const api = {
@@ -413,6 +566,7 @@
     assembleScene,
     buildProjOpts,
     projectWorldPoint,
+    groundCoverScale,
   };
 
   Vectura.Scene3D = Object.assign(Vectura.Scene3D || {}, { Scene: api });
