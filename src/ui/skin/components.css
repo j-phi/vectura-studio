@@ -7858,30 +7858,6 @@
 [data-ui-skin='light'] .algo-pick-item:hover { background: rgba(0,0,0,.04) }
 [data-ui-skin='light'] .lvl-pen-dot { border-color: rgba(0,0,0,.2) }
 
-/* ── 2× Layer cards on touch tablets (iPad portrait + landscape) ─── */
-@media (pointer: coarse) and (min-width: 600px) {
-  .lvl-r1 { height: 52px; padding-right: 12px; gap: 6px }
-  .lvl-r2 { height: 40px; padding-right: 12px; gap: 6px }
-  .lvl-caret-zone { width: 32px; padding-top: 12px }
-  .lvl-clr-bar { width: 8px; margin: 6px 10px 6px 0 }
-  .lvl-ib { width: 40px; height: 40px }
-  .lvl-ib svg { width: 22px; height: 22px }
-  .lvl-ab { width: 36px; height: 36px }
-  .lvl-ab svg { width: 22px; height: 22px }
-  .lvl-aico { width: 28px; height: 28px }
-  .lvl-aico svg { width: 22px; height: 22px }
-  .lvl-pen-dot { width: 20px; height: 20px }
-  .lvl-name { font-size: 18px }
-  .lvl-algo-label { font-size: 14px }
-  .lvl-grp-hdr { min-height: 60px }
-  .lvl-grp-content { height: 60px; gap: 6px; padding-right: 12px }
-  .lvl-grp-name { font-size: 18px }
-  .lvl-caret { width: 28px; height: 28px }
-  .lvl-caret svg { width: 22px; height: 22px }
-  .lvl-tree-children { padding-left: 24px }
-  .lvl-grp-exit-zone { margin-left: -24px }
-}
-
 /* ── Right-pane title bar: match v8 mockup compact header ─── */
 #right-pane .pane-header {
   height: 36px;
@@ -13595,3 +13571,78 @@ textarea[data-text-proxy].text-input-proxy {
   pointer-events: none; -webkit-user-select: text; user-select: text;
 }
 /* === /TUX-028 === */
+
+/* === TUX-012: layer rows on coarse pointers ===
+ * Replaces the old "2x Layer cards" block (min-width:600px, 18px names, 36px actions).
+ * Keyed on the touch row template: layers-panel.js adds .lvl-touch-row only when
+ * `(pointer: coarse)` matches or body.touch-ui is set, so width never decides.
+ * Row 1 = [grip][name][⋯]; row 2 = [eye][lock][pen dot][icon + label] (cards) or
+ * [caret][eye][lock][icon + label] (group / modifier / scene headers).
+ * Hit areas are 44 px (var(--touch-target-min)); the pane is never widened. */
+@media (pointer: coarse) {
+  .lvl-tree-children { padding-left: 16px }
+  .lvl-grp-exit-zone { margin-left: -16px }
+}
+body.touch-ui .lvl-tree-children { padding-left: 16px }
+body.touch-ui .lvl-grp-exit-zone { margin-left: -16px }
+
+.lvl-touch-row .lvl-clr-bar { width: 6px; margin: 4px 0; align-self: stretch }
+.lvl-touch-row .lvl-card-body { min-width: 0 }
+.lvl-touch-row .lvl-r1 {
+  height: 48px; padding: 0 4px 0 0; gap: 4px; min-width: 0; box-sizing: border-box;
+}
+.lvl-touch-row .lvl-r2 {
+  height: 44px; padding: 0 4px 0 0; gap: 0; min-width: 0; box-sizing: border-box;
+}
+.lvl-card.masked-v2.lvl-touch-row .lvl-r1,
+.lvl-card.masked-v2.lvl-touch-row .lvl-r2 { padding-left: 0 }
+.lvl-touch-row .lvl-grip {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); display: flex; align-items: center; justify-content: center;
+  color: var(--ui-muted); cursor: grab; touch-action: none;
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
+}
+.lvl-touch-row .lvl-grip[aria-disabled='true'] { opacity: .35; cursor: default }
+.lvl-touch-row .lvl-grip svg { width: 20px; height: 20px; pointer-events: none }
+.lvl-touch-row .lvl-ab.lvl-more {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); opacity: 1; border-radius: 6px;
+}
+.lvl-touch-row .lvl-ab.lvl-more svg { width: 22px; height: 22px }
+.lvl-touch-row .lvl-ib {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); border-radius: 6px;
+}
+.lvl-touch-row .lvl-ib svg { width: 22px; height: 22px }
+.lvl-touch-row .lvl-caret-zone {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); padding: 0; align-items: center;
+}
+.lvl-touch-row .lvl-caret { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px) }
+.lvl-touch-row .lvl-caret svg { width: 20px; height: 20px }
+/* Pen dot: 20 px visual, 44 px hit area through ::before; neighbouring hit areas abut, never overlap. */
+.lvl-touch-row .lvl-pen-dot {
+  position: relative; width: 20px; height: 20px; margin: 0 12px; flex: 0 0 20px; box-sizing: border-box;
+}
+.lvl-touch-row .lvl-pen-dot::before {
+  content: ''; position: absolute; inset: -13px; border-radius: 6px;
+}
+.lvl-touch-row .lvl-aico { width: 24px; height: 24px; flex: 0 0 24px; margin: 0 4px 0 0 }
+.lvl-touch-row .lvl-aico svg { width: 20px; height: 20px }
+.lvl-touch-row .lvl-name,
+.lvl-touch-row .lvl-grp-name { font-size: 16px; flex: 1 1 auto; min-width: 0 }
+.lvl-touch-row .lvl-algo-label {
+  font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--ui-muted);
+  flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lvl-grp-hdr.lvl-touch-row { min-height: 0 }
+.lvl-touch-row .lvl-grp-content {
+  flex: 1 1 auto; flex-direction: column; align-items: stretch; gap: 0;
+  height: auto; min-width: 0; padding: 0;
+}
+/* The ⋯ menu must fit the viewport on short screens and give rows finger height. */
+.lvl-ctx-menu { max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); overflow-y: auto; overscroll-behavior: contain }
+@media (pointer: coarse) {
+  .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
+}
+body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
