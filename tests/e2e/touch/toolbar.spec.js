@@ -1,7 +1,7 @@
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
-const { tap, longPress, hitArea, touchPhase, engineSupports } = require('../helpers/touch');
+const { tap, longPress, drag, hitArea, touchPhase, engineSupports } = require('../helpers/touch');
 
 const EVIDENCE_013 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-013';
 
@@ -453,6 +453,7 @@ test.describe('TUX-013 one row', () => {
       await tap(page, page.locator('#tool-overflow-btn'));
       const item = page.locator(`.tool-drawer-item[data-tool-id="${t.id}"]`);
       await expect(item, `drawer lists ${t.id}`).toBeVisible();
+      await item.evaluate((el) => el.scrollIntoView({ block: 'nearest' })); // TUX-015: the drawer body scrolls inside the viewport
       await tap(page, item);
       if (t.tool) {
         await expect.poll(() => page.evaluate(() => window.app.ui.activeTool), `${t.id} activates`).toBe(t.tool);
@@ -542,5 +543,127 @@ test.describe('TUX-013 guards', () => {
     expect(await railOccluders(page), 'rail buttons hittable with slivers').toEqual([]);
     await fs.promises.mkdir(EVIDENCE_013, { recursive: true });
     await page.screenshot({ path: `${EVIDENCE_013}/iPhL${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
+  });
+});
+
+// TUX-015: the All Tools drawer fits inside the visible viewport, sits above the rail/panes and
+// has finger-sized targets. Bounds use page.viewportSize() (never in-page innerWidth: Chromium iPhP
+// inflates it to 544, the proxy trap). The drawer scrolls, so every item is scrolled into view
+// programmatically first (WebKit synthetic touches cannot scroll containers).
+test.describe('TUX-015 all tools drawer', () => {
+  const EVIDENCE_015 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-015';
+  const tapL = (page, t) => tap(page, typeof t === 'string' ? page.locator(t) : t);
+  const openDrawer = async (page) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    await page.waitForSelector('#tool-overflow-btn');
+    await sleep(800);
+    // On iPadP/iPhL the default open panes cover the rail's right end (a rail/pane layout matter owned
+    // by TUX-013/TUX-007). Finger-collapse the panes first, as the TUX-013 spec does, so this block
+    // tests the drawer itself. Only when the overflow button is actually covered.
+    const covered = () => page.evaluate(() => {
+      const r = document.getElementById('tool-overflow-btn').getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const b = document.getElementById('tool-overflow-btn');
+      return !(t && (t === b || b.contains(t)));
+    });
+    if (await covered()) {
+      for (const id of ['#btn-pane-toggle-left', '#btn-pane-toggle-right']) {
+        if (await page.locator(id).isVisible()) await tapL(page, id);
+      }
+      await sleep(600);
+    }
+    await tapL(page, '#tool-overflow-btn');
+    await page.waitForSelector('.tool-drawer:not(.hidden)', { state: 'visible' });
+    await sleep(100);
+  };
+  const inside = (r, b) => r.left >= b.left - 0.5 && r.top >= b.top - 0.5 && r.right <= b.right + 0.5 && r.bottom <= b.bottom + 0.5;
+  const shortName = (name) => PROJECTS[name]?.device || name;
+
+  test('drawer fits the viewport, sits on top, and has 44px targets', async ({ page }, testInfo) => {
+    await openDrawer(page);
+    const V = page.viewportSize();
+    const vb = { left: 0, top: 0, right: V.width, bottom: V.height };
+    const rect = (sel) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; }, sel);
+    const failures = [];
+    const dr = await rect('.tool-drawer');
+    if (!inside(dr, vb)) failures.push(`drawer rect ${JSON.stringify(dr)} outside viewport ${V.width}x${V.height}`);
+
+    for (const view of ['grid', 'list']) {
+      await tapL(page, `.tool-drawer-view-btn[data-view="${view}"]`);
+      await sleep(150);
+      await fs.promises.mkdir(EVIDENCE_015, { recursive: true });
+      const dr2 = await rect('.tool-drawer');
+      if (!inside(dr2, vb)) failures.push(`${view}: drawer rect ${JSON.stringify(dr2)} outside viewport`);
+      const count = await page.locator('.tool-drawer-item').count();
+      const targets = [];
+      for (let i = 0; i < count; i += 1) targets.push({ kind: 'item', i });
+      targets.push({ kind: 'toggle', i: 0 }, { kind: 'toggle', i: 1 });
+      for (const t of targets) {
+        const loc = t.kind === 'item' ? page.locator('.tool-drawer-item').nth(t.i) : page.locator('.tool-drawer-view-btn').nth(t.i);
+        await loc.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+        const info = await loc.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const body = document.querySelector('.tool-drawer-body').getBoundingClientRect();
+          const t2 = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return {
+            id: el.dataset.toolId || el.dataset.view,
+            r: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+            body: { left: body.left, top: body.top, right: body.right, bottom: body.bottom },
+            top: !!t2 && (el === t2 || el.contains(t2)),
+            topIs: t2 ? `${t2.tagName}#${t2.id}.${String(t2.className).slice(0, 40)}` : null,
+          };
+        });
+        if (!inside(info.r, vb)) failures.push(`${view} ${info.id}: outside viewport ${JSON.stringify(info.r)}`);
+        if (t.kind === 'item' && !inside(info.r, info.body)) failures.push(`${view} ${info.id}: outside drawer body`);
+        if (!info.top) failures.push(`${view} ${info.id}: covered by ${info.topIs}`);
+        const hit = await hitArea(page, loc);
+        if (hit.w < 44 || hit.h < 44) failures.push(`${view} ${info.id}: hit area ${hit.w}x${hit.h} < 44`);
+      }
+      if (view === 'list') {
+        const labels = await page.evaluate(() => Array.from(document.querySelectorAll('.tool-drawer-item-label')).map((l) => {
+          const cs = getComputedStyle(l);
+          return { text: (l.textContent || '').trim(), shown: cs.display !== 'none' && cs.visibility !== 'hidden' };
+        }));
+        // Regression assertion: labels already render in list view today (verify-first, TUX-015 req 4).
+        expect(labels.length).toBeGreaterThan(10);
+        expect(labels.filter((l) => !l.text || !l.shown)).toEqual([]);
+      }
+      await page.screenshot({ path: `${EVIDENCE_015}/${shortName(testInfo.project.name)}-${view}${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
+    }
+    expect(failures).toEqual([]);
+  });
+
+  test('tapping an item activates its tool and the drawer stays open', async ({ page }) => {
+    await openDrawer(page);
+    await tapL(page, '.tool-drawer-view-btn[data-view="list"]');
+    const item = page.locator('.tool-drawer-item[data-tool-id="shape-line"]');
+    await item.evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+    expect(await page.evaluate(() => window.app.ui.activeTool)).not.toBe('shape-line');
+    await tapL(page, item);
+    await page.waitForFunction(() => window.app.ui.activeTool === 'shape-line');
+    await expect(page.locator('.tool-drawer')).toBeVisible();
+  });
+
+  test('finger drag scrolls the drawer body, not the page', async ({ page }) => {
+    await openDrawer(page);
+    if (!engineSupports(page, 'nativeDefaultActions')) {
+      // WebKit synthetic touches cannot scroll containers; the layout half is asserted above.
+      expect(await page.locator('.tool-drawer-body').count()).toBe(1);
+      return;
+    }
+    await tapL(page, '.tool-drawer-view-btn[data-view="list"]');
+    const s = await page.evaluate(() => {
+      const b = document.querySelector('.tool-drawer-body');
+      const r = b.getBoundingClientRect();
+      return { scrollable: b.scrollHeight > b.clientHeight + 4, x: r.left + r.width / 2, y1: Math.min(r.bottom - 12, innerHeight - 12), y0: Math.max(r.top + 12, 12), sy: window.scrollY, sx: document.scrollingElement.scrollLeft };
+    });
+    expect(s.scrollable).toBe(true);
+    await drag(page, { x: s.x, y: s.y1 }, { x: s.x, y: s.y0 }, { steps: 12, stepDelayMs: 16 });
+    await sleep(300);
+    const after = await page.evaluate(() => ({ top: document.querySelector('.tool-drawer-body').scrollTop, sy: window.scrollY, sx: document.scrollingElement.scrollLeft }));
+    expect(after.top).toBeGreaterThan(0);
+    expect(after.sy).toBe(s.sy);
+    expect(after.sx).toBe(s.sx);
   });
 });

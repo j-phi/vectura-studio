@@ -132,3 +132,11 @@
   --touch-hold-ring-fill: var(--ui-accent-2, rgba(38, 128, 235, 0.35));
 }
 /* === END TUX-034 tokens === */
+
+/* === TUX-015: all tools drawer stacking === */
+:root {
+  /* Above the force-open pane (70), #tool-bar (60), slivers and the touch modifier bar (55/54); below .modal-overlay (100).
+     TUX-010 folds this into its --z-* scale. */
+  --z-tool-drawer: 80;
+}
+/* === END TUX-015 tokens === */

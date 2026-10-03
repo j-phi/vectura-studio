@@ -153,6 +153,7 @@
 
   const setView = (view, persistChoice = true) => {
     applyView(view);
+    if (state.open && typeof positionDrawer === 'function') positionDrawer(); // list/grid heights differ
     if (persistChoice) {
       settings().toolDrawerView = state.view;
       writeStore({ view: state.view });
@@ -289,34 +290,125 @@
     applyView(state.view);
   };
 
-  // Position the drawer adjacent to the rail, clamped to the viewport.
+  // TUX-015: pure placement. Single home for the drawer's placement + clamp logic so the TUX-014
+  // popover primitive can absorb it. All rects are CSS px in layout-viewport coordinates.
+  //   rail, btn : {left, top, right, bottom} of #tool-bar and #tool-overflow-btn (btn optional)
+  //   drawerW/H : natural (unconstrained) drawer size
+  //   vp        : {width, height, offsetLeft, offsetTop, inset:{top,right,bottom,left}} of the VISUAL viewport
+  // Returns {left, top, width (null = keep), maxHeight}.
+  const computeDrawerPlacement = ({ rail, btn, drawerW, drawerH, vp }) => {
+    const GAP = 8;
+    const PAD = 8;
+    const MIN_BELOW = 240;
+    const inset = Object.assign({ top: 0, right: 0, bottom: 0, left: 0 }, vp.inset || {});
+    const ox = vp.offsetLeft || 0;
+    const oy = vp.offsetTop || 0;
+    const minX = ox + inset.left + PAD;
+    const maxX = ox + vp.width - inset.right - PAD;
+    const minY = oy + inset.top + PAD;
+    const maxY = oy + vp.height - inset.bottom - PAD;
+    const w = Math.max(0, Math.min(drawerW, maxX - minX));
+    const mh = Math.max(0, Math.min(drawerH, maxY - minY));
+    const clampX = (x) => Math.max(minX, Math.min(maxX - w, x));
+    const clampY = (y, h) => Math.max(minY, Math.min(maxY - h, y));
+    const horizontal = (rail.right - rail.left) > (rail.bottom - rail.top);
+    let left;
+    let top;
+    let height = mh;
+    if (!horizontal) {
+      // Vertical rail (desktop, tablet landscape, coarse wide): beside the rail on the roomier side.
+      const spaceRight = (ox + vp.width) - rail.right;
+      const spaceLeft = rail.left - ox;
+      left = (spaceRight >= w + GAP + PAD || spaceRight >= spaceLeft) ? rail.right + GAP : rail.left - GAP - w;
+      top = clampY(rail.top, mh);
+    } else {
+      const below = maxY - (rail.bottom + GAP);
+      left = btn ? btn.left : rail.left;
+      if (below >= Math.min(MIN_BELOW, drawerH)) {
+        top = rail.bottom + GAP;
+        height = Math.min(drawerH, below);
+      } else {
+        // No room under the rail: overlay the rail from its top edge (the drawer stacks above the rail
+        // but stays below the app header, which sits above the workspace).
+        top = Math.max(minY, rail.top);
+        height = Math.min(drawerH, maxY - top);
+        if (btn) {
+          const x0 = clampX(left);
+          if (x0 < btn.right && x0 + w > btn.left && top < btn.bottom) {
+            // Keep the overflow button (the way to close/re-toggle) uncovered when a side has room.
+            if (btn.left - GAP - w >= minX) left = btn.left - GAP - w;
+            else if (btn.right + GAP + w <= maxX) left = btn.right + GAP;
+          }
+        }
+      }
+      top = clampY(top, height);
+    }
+    return { left: clampX(left), top, width: w < drawerW ? w : null, maxHeight: height };
+  };
+
+  // Safe-area insets (notch, home indicator), read once from env() via a probe element.
+  let insetProbe = null;
+  const readInsets = () => {
+    const d = doc();
+    const zero = { top: 0, right: 0, bottom: 0, left: 0 };
+    if (!d || !d.body || typeof G.getComputedStyle !== 'function') return zero;
+    try {
+      if (!insetProbe || !insetProbe.isConnected) {
+        insetProbe = d.createElement('div');
+        insetProbe.setAttribute('aria-hidden', 'true');
+        insetProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;'
+          + 'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);';
+        d.body.appendChild(insetProbe);
+      }
+      const cs = G.getComputedStyle(insetProbe);
+      const n = (v) => parseFloat(v) || 0;
+      return { top: n(cs.paddingTop), right: n(cs.paddingRight), bottom: n(cs.paddingBottom), left: n(cs.paddingLeft) };
+    } catch (_) { return zero; }
+  };
+
+  // Visual viewport. Never innerWidth alone: Chromium phone emulation can inflate it past the visible width.
+  const readViewport = () => {
+    const d = doc();
+    const vv = G.visualViewport;
+    const el = d && d.documentElement;
+    const cw = (el && el.clientWidth) || G.innerWidth || 1024;
+    const ch = (el && el.clientHeight) || G.innerHeight || 768;
+    let width = Math.min(G.innerWidth || cw, cw);
+    let height = Math.min(G.innerHeight || ch, ch);
+    let offsetLeft = 0;
+    let offsetTop = 0;
+    if (vv && vv.width > 0 && vv.height > 0) {
+      width = Math.min(width, vv.width);
+      height = Math.min(height, vv.height);
+      offsetLeft = vv.offsetLeft || 0;
+      offsetTop = vv.offsetTop || 0;
+    }
+    return { width, height, offsetLeft, offsetTop, inset: readInsets() };
+  };
+
+  const toRect = (r) => ({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+
+  // Position the drawer relative to the rail, clamped to the visible viewport.
   const positionDrawer = () => {
     const d = doc();
     const drawer = state.drawer;
     const rail = d && d.getElementById('tool-bar');
     if (!drawer || !rail) return;
-    const GAP = 8;
-    const PAD = 8;
-    const vw = G.innerWidth || 1024;
-    const vh = G.innerHeight || 768;
-    const r = rail.getBoundingClientRect();
-    // Measure while shown.
-    const mw = drawer.offsetWidth || 240;
-    const mh = drawer.offsetHeight || 320;
-    // Prefer the side of the rail with more room; default to the right.
-    const spaceRight = vw - r.right;
-    const spaceLeft = r.left;
-    let left;
-    if (spaceRight >= mw + GAP + PAD || spaceRight >= spaceLeft) {
-      left = r.right + GAP;
-    } else {
-      left = r.left - GAP - mw;
-    }
-    let top = r.top;
-    left = Math.max(PAD, Math.min(vw - mw - PAD, left));
-    top = Math.max(PAD, Math.min(vh - mh - PAD, top));
-    drawer.style.left = `${left}px`;
-    drawer.style.top = `${top}px`;
+    // Measure the natural size while shown (offsetHeight is 0 while hidden).
+    drawer.style.width = '';
+    drawer.style.maxHeight = '';
+    const btn = state.overflowBtn || d.getElementById('tool-overflow-btn');
+    const p = computeDrawerPlacement({
+      rail: toRect(rail.getBoundingClientRect()),
+      btn: btn ? toRect(btn.getBoundingClientRect()) : null,
+      drawerW: drawer.offsetWidth || 264,
+      drawerH: drawer.offsetHeight || 320,
+      vp: readViewport(),
+    });
+    if (p.width != null) drawer.style.width = `${p.width}px`;
+    drawer.style.maxHeight = `${p.maxHeight}px`;
+    drawer.style.left = `${p.left}px`;
+    drawer.style.top = `${p.top}px`;
   };
 
   const open = (ui) => {
@@ -360,6 +452,12 @@
     });
     // Keep the drawer glued to the rail when the layout shifts.
     G.addEventListener('resize', () => { if (state.open) positionDrawer(); });
+    // TUX-015: the visual viewport shrinks/shifts with the browser toolbars and the keyboard.
+    if (G.visualViewport && G.visualViewport.addEventListener) {
+      const reposition = () => { if (state.open) positionDrawer(); };
+      G.visualViewport.addEventListener('resize', reposition);
+      G.visualViewport.addEventListener('scroll', reposition);
+    }
   };
 
   const injectOverflowButton = (ui) => {
@@ -415,6 +513,7 @@
     close,
     toggle,
     setView,
+    computeDrawerPlacement,
     syncRailState,
     isOpen: () => state.open === true,
     getView: () => state.view,

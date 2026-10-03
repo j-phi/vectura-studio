@@ -13761,3 +13761,18 @@ body.phone-layout:not(.auto-collapsed) #tool-bar {
   .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
 }
 /* === END TUX-034 === */
+
+/* === TUX-015: all tools drawer (touch) === */
+/* Stacking applies to every pointer: the drawer is a body-level popover and must sit above the rail and panes. */
+.tool-drawer { z-index: var(--z-tool-drawer, 80); }
+@media (pointer: coarse) {
+  .tool-drawer-body { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .tool-drawer[data-view="grid"] .tool-drawer-item { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+  .tool-drawer[data-view="list"] .tool-drawer-item { min-height: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+  .tool-drawer-view-btn { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+}
+body.touch-ui .tool-drawer-body { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+body.touch-ui .tool-drawer[data-view="grid"] .tool-drawer-item { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+body.touch-ui .tool-drawer[data-view="list"] .tool-drawer-item { min-height: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+body.touch-ui .tool-drawer-view-btn { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+/* === END TUX-015 === */

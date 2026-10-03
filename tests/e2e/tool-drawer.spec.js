@@ -152,3 +152,30 @@ test.describe('TUX-013 desktop parity', () => {
     expect(await page.locator('#tool-overflow-btn').getAttribute('aria-pressed')).toBeNull();
   });
 });
+
+// TUX-015 desktop guard (D6): touch sizing and placement must not change the mouse contract.
+test.describe('TUX-015 desktop parity', () => {
+  test('mouse drawer keeps 34px grid items, 24x22 toggles and opens beside the vertical rail', async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui));
+    await page.waitForSelector('#tool-overflow-btn');
+    await page.waitForTimeout(500);
+    await page.locator('#tool-overflow-btn').click();
+    await expect(page.locator('#tool-drawer')).toBeVisible();
+    await page.locator('.tool-drawer-view-btn[data-view="grid"]').click();
+    const m = await page.evaluate(() => {
+      const dr = document.getElementById('tool-drawer').getBoundingClientRect();
+      const rail = document.getElementById('tool-bar').getBoundingClientRect();
+      const item = document.querySelector('.tool-drawer-item').getBoundingClientRect();
+      const tg = document.querySelector('.tool-drawer-view-btn').getBoundingClientRect();
+      return { dl: dr.left, dt: dr.top, dh: dr.height, rr: rail.right, rt: rail.top, vh: innerHeight,
+        iw: item.width, ih: item.height, tw: tg.width, th: tg.height };
+    });
+    expect([m.iw, m.ih]).toEqual([34, 34]);
+    expect([m.tw, m.th]).toEqual([24, 22]);
+    expect(m.dl).toBeGreaterThanOrEqual(m.rr);
+    expect(Math.abs(m.dt - Math.max(8, Math.min(m.vh - m.dh - 8, m.rt)))).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-015/desktop-1600x1000.png' });
+  });
+});
