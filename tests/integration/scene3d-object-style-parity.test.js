@@ -80,7 +80,7 @@ describe('U3 — Object 3D Style tab parity + honest gating', () => {
 
     test('spiral on a sphere: Angle offset, Eccentricity, Centre, Axis snap, Mode rows exist', () => {
       const { container } = mountLeaf('spiral', {}, 'sphere');
-      expect(labels(container)).toEqual(expect.arrayContaining(['Angle offset', 'Eccentricity', 'Centre', 'Axis snap', 'Mode']));
+      expect(labels(container)).toEqual(expect.arrayContaining(['Angle offset', 'Eccentricity', 'Centre', 'Axis snap', 'Wrap']));
     });
 
     test('stipple: Dot, Dot size and Jitter rows exist; Dot angle only for an asymmetric mark', () => {
@@ -107,7 +107,7 @@ describe('U3 — Object 3D Style tab parity + honest gating', () => {
       const solid = mountLeaf('hatch', {}, 'sphere');
       expect(rowByLabel(solid.container, 'Back faces')).toBeNull();
       const xr = mountLeaf('hatch', {}, 'sphere', { visibility: 'xray' });
-      expect(labels(xr.container)).toEqual(expect.arrayContaining(['Back faces', 'Back density', 'Back line', 'Depth cue', 'Back pen', 'Front']));
+      expect(labels(xr.container)).toEqual(expect.arrayContaining(['Back faces', 'Back density', 'Back line', 'Depth → density', 'Depth → weight', 'Back pen', 'Front line']));
     });
   });
 
@@ -192,7 +192,7 @@ describe('U3 — Object 3D Style tab parity + honest gating', () => {
       const { container } = mountLeaf('hatch', { highlightTreatment: 'burst' }, 'sphere');
       const sel = rowByLabel(container, 'Treatment').querySelector('select');
       const opt = (v) => Array.from(sel.options).find((o) => o.value === v);
-      expect(opt('dashed').disabled).toBe(true);
+      expect(opt('restyle').disabled).toBe(true); // U5: Dashed + Dotted are Restyle line
       expect(opt('altFill').disabled).toBe(false);
       expect(opt('burst').disabled).toBe(false);
       ['Highlight mode', 'Shadow grade', 'HL pen', 'Bands'].forEach((l) => expect(rowByLabel(container, l)).toBeNull());
@@ -200,7 +200,7 @@ describe('U3 — Object 3D Style tab parity + honest gating', () => {
     });
 
     test('Highlight on a box hatch keeps Mode and Shadow grade; band count still not offered', () => {
-      const { container } = mountLeaf('hatch', { highlightTreatment: 'dashed' }, 'box');
+      const { container } = mountLeaf('hatch', { highlightTreatment: 'restyle' }, 'box');
       expect(rowByLabel(container, 'Highlight mode')).toBeTruthy();
       expect(rowByLabel(container, 'Shadow grade')).toBeTruthy();
       expect(rowByLabel(container, 'HL pen')).toBeTruthy();

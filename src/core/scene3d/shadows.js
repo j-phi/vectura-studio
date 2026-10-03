@@ -865,6 +865,38 @@
   // law's own verified-on-the-surface one), so — like isophoteWidth — this is
   // narrowed rather than given fabricated geometry.
   const TONE_LAW_NOT_DISTINGUISHABLE = new Set(['isophoteWidth', 'onePenDown']);
+  // U5 (fill-style review, decision 1 — "keep as many shadow looks as possible
+  // when they are materially different"). The shadow Fill Style row now reaches
+  // EVERY recipe through the survivor's sub-controls, except these. Each draws the
+  // same mark structure as the look named in `like`, differing only by a pitch
+  // multiplier within 0.85-1.15 (+/- 18 %), an angle nudge of at most 3.2 degrees,
+  // or a pass spacing of the same pass count: measured against it on the flat
+  // footprint (tests/unit/scene3d-fr-u5-shadow-reach.test.js: same path count
+  // within 20 %, same ink within 18 %), and judged identical in the contact sheet.
+  // The recipes stay and keep drawing for a saved document that names them; only
+  // the picker stops offering them.
+  const SHADOW_NONMATERIAL = {
+    nibAngle: { like: 'ladder', why: 'angle nudge 2.5-6.5 deg, pitch x1.02' },
+    whiteBand: { like: 'penInterleave', why: '2 passes at 0.5 pitch against 0.45' },
+    weightSmoothstep: { like: 'weightModulated', why: '2 passes at 0.34 pitch against 0.28, 0.6 deg' },
+    fineLadder: { like: 'ladder', why: 'pitch x0.97' },
+    phaseFineLadder: { like: 'ladder', why: 'pitch x0.97, 1.2 deg' },
+    perceptualRamp: { like: 'ladder', why: 'pitch x1.05' },
+    bundleEased: { like: 'bundleCount', why: '3 passes at 0.22 pitch against 0.30' },
+    bundleDither: { like: 'bundleCount', why: '3 passes, 0.15-pitch jitter' },
+    bundleHandoff: { like: 'weightModulated', why: '2 passes at 0.30 pitch, 0.8 deg' },
+    contFieldSigmoid: { like: 'ladder', why: 'pitch x1.08' },
+    contFieldTouch: { like: 'ladder', why: 'pitch x0.85' },
+    contFieldFore: { like: 'ladder', why: '1.6 deg' },
+    contFieldSurface: { like: 'ladder', why: 'pitch x1.12, -1.6 deg' },
+    contFieldQuant: { like: 'ladder', why: 'pitch x0.93' },
+    penPitchMatch: { like: 'ladder', why: 'pitch x1.15' },
+    penFacing: { like: 'ladder', why: '2.4 deg' },
+    trochoidLoop: { like: 'ampSpacing', why: 'wave amplitude x1.1 at 0.55 wavelength (straight at footprint scale)' },
+    amplitudeOnly: { like: 'ampSpacing', why: 'plain sinusoid (straight at footprint scale)' },
+  };
+  const toneLawMaterial = (lawId) => !Object.prototype.hasOwnProperty.call(SHADOW_NONMATERIAL, lawId);
+
   // Exported predicate (see tail of file): lets the UI hide toneLaw options
   // whose mark class does not change shadow geometry, instead of offering a
   // choice that quietly does nothing.
@@ -905,7 +937,7 @@
     return casters.some((l) => !(explicitLayers || l.type === 'area'));
   };
 
-  const CROSS_MARK_DEG = 60;      // avoid a 90° square-grid moiré (mirrors CROSS_B_DEG's reasoning above)
+  const CROSS_MARK_DEG = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.CROSS_MARK_DEG) || 60;      // avoid a 90° square-grid moiré (mirrors CROSS_B_DEG's reasoning above)
   const CROSS_MARK_SPACING_MULT = 1.5; // wider pitch per crossed family so total ink stays comparable to plain hatch
   const DASH_PERIOD_MULT = 6;     // dash period scales with the ruling pitch, not a fixed screen-space stipple
   const DASH_DUTY = 0.5;
@@ -1415,8 +1447,8 @@
   // square grid and beats against the raster).
   const UMBRA_RIN = 0.10;
   const PLOT_FLOOR_MULT = 1.2;   // min spacing for ANY single family, × penWidth
-  const CROSS_B_DEG = 65;
-  const CROSS_C_DEG = 32;
+  const CROSS_B_DEG = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.CROSS_OBJ_DEG) || 65;
+  const CROSS_C_DEG = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.CROSS_TRIPLE_DEG) || 32;
   const Z_CONTACT = 0;
   const Z_UMBRA = 1;
   const Z_PENUMBRA = 2;
@@ -3516,6 +3548,8 @@
       // class instead of a boolean.
       toneLawApplies,
       toneLawMarkClass,
+      toneLawMaterial,
+      SHADOW_NONMATERIAL,
       // fs-q1 — whole-row visibility gate (Layers ON, or any area light,
       // makes the row inert). See the comment above its definition.
       shadowFillStyleApplies,
@@ -3535,7 +3569,7 @@
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-      build, toneLawApplies, toneLawMarkClass, shadowFillStyleApplies, __ladderForTest, __overlapPitchForTest, __collarForTest,
+      build, toneLawApplies, toneLawMarkClass, toneLawMaterial, SHADOW_NONMATERIAL, shadowFillStyleApplies, __ladderForTest, __overlapPitchForTest, __collarForTest,
       __shadowFieldsForTest, __toneGradientForTest, __ladderCoverageForTest, __gradedHatchForTest,
       __buildGradedSpacingForTest, __zoneModelForTest, __zoneAreaShareForTest, __emitShadowRegionForTest,
     };

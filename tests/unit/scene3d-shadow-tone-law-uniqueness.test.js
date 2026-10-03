@@ -155,12 +155,14 @@ describe('Scene3D.Shadows — offered Fill Style options render distinct geometr
     // it further; pinned exactly now instead of re-describing a moving
     // target in prose). Not a widened tolerance: the roster itself shrank
     // by design, same as every prior re-pin in this chain.
-    expect(offered.length).toBe(23);
+    // U5 re-pin: 19 PICKER_IDS + ladder, minus the 4 flow / web survivors = 16 (the merges
+    // moved their other rows into sub-controls; they are swept below as collapse options).
+    expect(offered.length).toBe(16);
     expect(offered).toContain('ladder');
     expect(offered).toContain('none');
     expect(offered).not.toContain('etfKang'); // flow, excluded by mark class
     expect(offered).not.toContain('mazeFill'); // web, excluded by mark class
-    expect(offered).not.toContain('isophoteWidth'); // hatch, excluded per-id (fs-n2 Stage 1)
+    expect(offered).not.toContain('isophoteWidth'); // folded into taperedEnds; excluded per-id (fs-n2 Stage 1)
     expect(offered).not.toContain('onePenDown'); // wave, excluded per-id (fs-t1/U9b) — chart-space-verified bridge, nothing to walk on a flat footprint; ALSO has no recipe of its own (see clampShadowToneLaw's forward-resolve)
   });
 
@@ -175,9 +177,11 @@ describe('Scene3D.Shadows — offered Fill Style options render distinct geometr
     const extra = collapseOptionIds(offered);
     const roster = V.SCENE3D_TONE_LAWS;
     const allAliases = Object.keys(roster.ALIASES);
-    expect(allAliases.length).toBe(18);
-    expect(extra.length).toBe(17);
-    expect(extra.sort()).toEqual(allAliases.filter((id) => id !== 'onePenDown').sort());
+    // U5 re-pin: 28 aliases; the 4 Shadows cannot draw distinctly (onePenDown,
+    // isophoteWidth, defectSplit [flow], deepFillTSP [web]) are not swept.
+    expect(allAliases.length).toBe(28);
+    expect(extra.length).toBe(24);
+    expect(extra.sort()).toEqual(allAliases.filter((id) => V.Scene3D.Shadows.toneLawApplies(id)).sort());
     expect(extra).not.toContain('onePenDown');
     expect(sweepIds().length).toBe(40);
   });
@@ -204,7 +208,7 @@ describe('Scene3D.Shadows — offered Fill Style options render distinct geometr
   // `expect(collisions).toEqual([])`) — only the universe swept grew.
   test('HEADLINE (U9b) — no two ids in the FULL sweep (offered survivors + each one\'s collapse options) render byte-identical shadow geometry', () => {
     const sweep = sweepIds();
-    expect(sweep.length).toBe(40); // 23 offered + 17 collapse options
+    expect(sweep.length).toBe(40); // 16 offered + 24 collapse options
     const seen = new Map();
     sweep.forEach((id) => {
       const paths = buildShadows(id);

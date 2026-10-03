@@ -242,7 +242,7 @@
   // the object stops sitting on the ground). So family A is floored where it
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
-  const PLOT_FLOOR_PEN = 2.2;
+  const PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
   // I5 follow-up — this is the DEFAULT for the master grid's line-count
   // floor (see `floorPen` inside the `STAGE.masterGrid` block below), and
   // remains the ONLY value `floorPitch` (the module-scope plot-safety floor
@@ -1475,6 +1475,15 @@
     // never throw and never silently draw nothing.
     const TONE_LAWS = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
     const askedLaw = typeof opts.toneLaw === 'string' ? opts.toneLaw : '';
+    // U5 (NEW-7) — the crossing-family angles come from ONE place (regions.js),
+    // resolved here per fill so a late-registering Regions is still honoured.
+    const crossDegOf = (name, fallback) => {
+      const RG = Vectura.Scene3D && Vectura.Scene3D.Regions;
+      return (RG && Number.isFinite(RG[name])) ? RG[name] : fallback;
+    };
+    const CROSS_B_DEG = crossDegOf('CROSS_OBJ_DEG', 65);
+    const CROSS_C_DEG = crossDegOf('CROSS_TRIPLE_DEG', 32);
+    const CROSS_MARK_DEG = crossDegOf('CROSS_MARK_DEG', 60);
     const TONE_ALGO = (askedLaw && (!TONE_LAWS || TONE_LAWS.indexOf(askedLaw) !== -1)
       && askedLaw !== 'none') ? askedLaw : TONE_ALGO_DEFAULT;
     // Relocated from module scope (see the comment left at the old site) — this
@@ -4183,9 +4192,9 @@
     // family at div 2 rules at twice the pitch and every pitch-correct quantity
     // downstream follows without being told.
     const PEN_FAMILIES = {
-      penScreen: [{ layer: 1, deg: 60, div: 1 }, { layer: 2, deg: 120, div: 1 }],
+      penScreen: [{ layer: 1, deg: CROSS_MARK_DEG, div: 1 }, { layer: 2, deg: 2 * CROSS_MARK_DEG, div: 1 }],
       penOctaves: [{ layer: 1, deg: 0, div: 2 }, { layer: 2, deg: 0, div: 4 }],
-      penCross: [{ layer: 1, deg: 60, div: 2 }],
+      penCross: [{ layer: 1, deg: CROSS_MARK_DEG, div: 2 }],
       penReserve: [{ layer: 1, deg: 90, div: 1 }],
     };
     // The pen each LAYER of a multi-family law draws with.
@@ -11896,7 +11905,7 @@
       const sy = smp.dA.y * aDir.a + smp.dB.y * aDir.b;
       const L = Math.hypot(sx, sy);
       if (!(L > 1e-9)) return null;
-      const rad = (sense * finite(deg, 65) * Math.PI) / 180;
+      const rad = (sense * finite(deg, CROSS_B_DEG) * Math.PI) / 180;
       const c = Math.cos(rad); const s = Math.sin(rad);
       return pullbackDir(smp, (sx * c - sy * s) / L, (sx * s + sy * c) / L);
     };
@@ -12086,7 +12095,7 @@
     const buildCrossFamily = (baseAngleDeg, deg, count, flow) => {
       const key = `${baseAngleDeg}|${deg}|${count}|${flow || ''}`;
       if (crossFamilyCache.has(key)) return crossFamilyCache.get(key);
-      const nominal = angleFamily(finite(baseAngleDeg, 0) + finite(deg, 65));
+      const nominal = angleFamily(finite(baseAngleDeg, 0) + finite(deg, CROSS_B_DEG));
       const n = Math.max(2, Math.round(count * nominal.span));
       const step = nominal.span / n;
       const nomOff = { a: nominal.na * step, b: nominal.nb * step };
@@ -12535,8 +12544,8 @@
       // as even and as complete as the base one.
       const emitLayeredCross = (count, back) => {
         const base = finite(opts.fillAngle, 0);
-        emitAngledFamily(base + 65, count, back, ['X1', 'X2']);
-        emitAngledFamily(base + 32, count, back, ['X2']);
+        emitAngledFamily(base + CROSS_B_DEG, count, back, ['X1', 'X2']);
+        emitAngledFamily(base + CROSS_C_DEG, count, back, ['X2']);
       };
       // 'crossFade' — layeredCross's three layers with the gates taken OFF.
       //
@@ -12549,8 +12558,8 @@
       // thickening. Family A is layer 0 and was already emitted by the mapper.
       const emitCrossFade = (count, back) => {
         const base = finite(opts.fillAngle, 0);
-        xfLayer = 1; emitAngledFamily(base + 65, count, back);
-        xfLayer = 2; emitAngledFamily(base + 32, count, back);
+        xfLayer = 1; emitAngledFamily(base + CROSS_B_DEG, count, back);
+        xfLayer = 2; emitAngledFamily(base + CROSS_C_DEG, count, back);
         xfLayer = 0;
       };
       const emitTerminatorCross = (count, back) => {
@@ -12593,7 +12602,7 @@
         if (TONE_ALGO === 'weightCrossHandoff') {
           if (toneOn) {
             xfLayer = 1;
-            emitAngledFamily(finite(opts.fillAngle, 0) + 65, count, back);
+            emitAngledFamily(finite(opts.fillAngle, 0) + CROSS_B_DEG, count, back);
             xfLayer = 0;
           }
           return;
@@ -12798,7 +12807,7 @@
         emitSecondary(hatchAngle + crossDelta, countB, back);      // the crossing family
         // §2.3 — the tone-driven third pass goes to +32°, not +45°: with family B
         // already at the user's delta, +45 lands close enough to A or B to beat.
-        if (crossTriple) emitSecondary(hatchAngle + 32, countB, back); // darkest-band third pass
+        if (crossTriple) emitSecondary(hatchAngle + CROSS_C_DEG, countB, back); // darkest-band third pass
         emitTerminatorCross(count, back);
         emitShadowInfill(onMeridianAxis ? meridianAt : angleFamily(hatchAngle).lineAt, count, back);
       } else if (mapper === 'contour') {

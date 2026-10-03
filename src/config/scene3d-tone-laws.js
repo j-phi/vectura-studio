@@ -156,13 +156,13 @@
   },
   "taperedEnds": {
     "id": "taperedEnds",
-    "label": "Tapered Ends",
+    "label": "Width Ribbon",
     "family": "width",
     "singleWeight": false,
     "mechanism": "whiteBand's chassis with no stroke starting or stopping at full width: a geometric smootherstep taper into each run's ends, plus a soft (rather than hard) approach to the minimum pen at the lit end, aimed at the highlight boundary every other width law leaves visible.",
     "strengths": "The most linear of the width laws — off-the-line 5.7% on sphere·hatch, the lowest in the family — and it leads or ties off-the-line on four of five cells across the whole roster.",
     "weaknesses": "Still bound by the single-family floor (darkest L* 53.7 is not a deep shadow), and its highlight falloff is barely better than whiteBand's, because the taper softens stroke ends, not the tone gradient itself.",
-    "chooseWhen": "Default recommendation: choose it whenever the most linear, least banded single-family shading is wanted with no specific reason to pick another, and especially where the highlight boundary is in view.",
+    "chooseWhen": "Default recommendation: choose it whenever the most linear, least banded single-family shading is wanted with no specific reason to pick another, and especially where the highlight boundary is in view. Width from picks Tone, Calligraphic nib angle or Isophotes; Ends picks Tapered or Hard.",
     "caveat": null,
     "simulated": false,
     "tier": "production"
@@ -286,13 +286,13 @@
   },
   "bundleCount": {
     "id": "bundleCount",
-    "label": "Bundle · Count",
+    "label": "Bundle",
     "family": "bundle",
     "singleWeight": true,
     "mechanism": "The adjacent-pass family's baseline: radiance sets how many adjacent passes (1 to 8) a ruling gets, each a full ink width from the last so passes abut and no ink is laid twice. Pass 0 is the ruling itself and always draws; the rest alternate either side so the band grows symmetrically.",
     "strengths": "Better linearity than any width law on four of five cells with no width channel at all, the lowest long-wave moire of any tone-carrying law on two cells, and the best off-the-line in the entire table on cylinder·hatch (5.2%).",
     "weaknesses": "Real free ends (13.3-20.1 mm) where a bundle's outer passes stop, and the pass count is an integer, so the N-to-N+1 boundary is still a visible band, just moved from spacing into the pass channel.",
-    "chooseWhen": "Choose it as the family's default and the right first choice for a single-pen tonal drawing on a hatch mapper — one pen, one nib, and time on the plotter.",
+    "chooseWhen": "Choose it as the family's default and the right first choice for a single-pen tonal drawing on a hatch mapper — one pen, one nib, and time on the plotter. Closest approach picks Touching or Overlapping (a 0.55 ink step, up to 13 passes); Bundle ends picks Square or Lozenge.",
     "caveat": null,
     "simulated": false,
     "tier": "production"
@@ -384,7 +384,7 @@
     "strengths": "Genuine black from spacing alone — darkest L* 4.5 on every cell — against the L* ~76 a single family at the plot floor otherwise saturates at, with 81% monotonic ordering and zero free ends.",
     "weaknesses": "It floods by design and by a lot — 55% of placed rulings on sphere·hatch, 20-60% on other hatch cells — and monotonicity collapses to 31.3% on cylinder·hatch.",
     "chooseWhen": "Choose it on a hatch mapper when a real black is needed without a second family, a swell, or an overdraw; check the flood counter before plotting.",
-    "caveat": "On crosshatch fills, this floor setting floods the whole surface to solid black with no shading left. If your fill looks like a solid dark blob, try a different Field floor option.",
+    "caveat": "On crosshatch fills, this floor setting floods the whole surface to solid black with no shading left. If your fill looks like a solid dark blob, try a different Closest approach option.",
     "simulated": false,
     "tier": "library"
   },
@@ -559,13 +559,13 @@
   },
   "ampSpacing": {
     "id": "ampSpacing",
-    "label": "Amplitude Spacing",
+    "label": "Wave",
     "family": "wave",
     "singleWeight": false,
     "mechanism": "The baseline of ten Round-6 nested-wave laws. A chart-space lateral serpentine wave is drawn in phase between neighbouring rulings; its amplitude never drops below a floor share of the drawn pitch (so waviness survives into the highlight rather than vanishing, which was Round 5's defect) and is additionally bounded in millimetres (0.34-0.80 mm) so the texture keeps one visual scale everywhere. Tone itself is carried by a continuous SPACING FIELD, eased in pitch space from the ordinary L*-linear target; where the spacing closes to the plot floor, stroke weight silently takes over the remainder of the tone.",
     "strengths": "Cuts unintended bare area to 3.3% (from interlockWeave's 34.1%) and keeps the elongation model within 1.5% of the realised polyline length (1.068 modelled vs 1.050 real) — the round's two headline fixes.",
     "weaknesses": "Modest R2 (0.188 on sphere·hatch) and off-the-line 11.7%, and on cylinder·hatch the whole family including this law collapses to R2 near 0 because a cylinder's wide near-constant-radiance band drives spacing to the plot floor everywhere at once and the wave floods it.",
-    "chooseWhen": "Choose it as the default Round-6 wave law when a texture needs to stay visibly wavy across the whole tone range rather than straightening in the highlight.",
+    "chooseWhen": "Choose it as the default Round-6 wave law when a texture needs to stay visibly wavy across the whole tone range rather than straightening in the highlight. Phase picks In-phase or Interlocked; Waveform picks Serpentine, Loop or Zigzag; Pen down picks one stroke per ruling or one per family (in-phase).",
     "caveat": "This line's weight isn't constant along its length — it thickens and thins as it goes. That happens because wherever the wave spacing gets too tight to draw cleanly, weight takes over to keep carrying the shading.",
     "simulated": false,
     "tier": "production"
@@ -579,7 +579,7 @@
     "strengths": "Holds the family's waviness-survives-the-highlight fix (retained amplitude 152% of the shadow mean) while also delivering the family's second-lowest unintended bare area (3.0%) and comparable elongation accuracy (1.028 modelled vs 1.025 real).",
     "weaknesses": "R2 0.185 and off-the-line 18.0% on sphere·hatch — no better than the round's baseline — and, like the rest of the family, collapses on cylinder·hatch where the near-constant radiance band drives the whole spacing field to the plot floor at once.",
     "chooseWhen": "Choose it over ampSpacing when the perpendicular clearance itself, not the raw radiance ramp, is the quantity that should ease smoothly.",
-    "caveat": "Like Single wave row, this line's weight varies along its length rather than staying constant. Choosing Nested rows tightens the spacing further, so weight takes over sooner to keep the shading going.",
+    "caveat": "Like the in-phase wave, this line's weight varies along its length rather than staying constant. Setting Phase to Interlocked with Amplitude: Solved from clearance tightens the spacing further, so weight takes over sooner to keep the shading going.",
     "simulated": false,
     "tier": "production"
   },
@@ -637,13 +637,13 @@
   },
   "etfKang": {
     "id": "etfKang",
-    "label": "ETF Direction Field (Kang)",
+    "label": "Flow Field",
     "family": "mono",
     "singleWeight": true,
     "mechanism": "Builds a genuine direction field over the body rather than picking a fixed or scheduled ruling angle: the initial tangent is perpendicular to the screen gradient of camera depth, then smoothed by Kang's unsigned rule (the neighbour's contribution is signed by phi = sign(t.t') and weighted by wd = |t.t'|), which stops a plain vector diffusion from manufacturing swirl at a degenerate point. Confidence is the field's own anisotropy, so a place with no preferred direction is dominated by its neighbours. Rulings are then placed as the field's own depth isocontours, at an evenly-spaced separation driven by the tone.",
     "strengths": "The first law in the mono roster to construct a genuine direction field rather than a fixed or scheduled angle; on sphere·hatch it posts R2 0.470 with a wide span (33.6), and it reaches its darkest at the plot floor on every cell.",
     "weaknesses": "Confidence weighting can still be dominated by neighbours at a degenerate point; it carries the highest off-the-line deviation of the direction-field group on sphere·hatch (14.0%, against defectSplit’s and mezzoRegion’s 2.1%), and on sphere·crosshatch that rises to 23.1% once a second family is composed on top of the flow.",
-    "chooseWhen": "Choose it when the body's own depth field should visibly steer the ruling curvature — a form where direction itself should read as shape, not just density.",
+    "chooseWhen": "Choose it when the body's own depth field should visibly steer the ruling curvature — a form where direction itself should read as shape, not just density. Direction field picks Follows depth (Kang) or Designed defects.",
     "caveat": null,
     "simulated": false,
     "tier": "production"
@@ -873,13 +873,7 @@
   "none",
   "taperedEnds",
   "weightModulated",
-  "isophoteWidth",
-  "lozengeStipple",
-  "deepFillTSP",
   "bundleCount",
-  "bundleSubNib",
-  "bundleLozenge",
-  "contFieldSigmoid",
   "penInterleave",
   "penReserve",
   "penCross",
@@ -888,13 +882,8 @@
   "mkDashRamp",
   "mkDotScreen",
   "ampSpacing",
-  "interlockWeave",
-  "trochoidLoop",
-  "amplitudeOnly",
   "etfKang",
-  "defectSplit",
   "mezzoRegion",
-  "originSpiral",
   "dutyConst",
   "endShorten",
   "turingStripe",
@@ -920,16 +909,71 @@
       "rungMode": "perceptual"
     }
   },
+  "contFieldFore": {
+    "into": "ladder",
+    "params": {
+      "spacing": "field",
+      "fieldMetric": "foreshortened"
+    }
+  },
+  "contFieldSurface": {
+    "into": "ladder",
+    "params": {
+      "spacing": "field",
+      "fieldMetric": "surface"
+    }
+  },
+  "contFieldQuant": {
+    "into": "ladder",
+    "params": {
+      "spacing": "field",
+      "fieldMetric": "quantised"
+    }
+  },
+  "contFieldTouch": {
+    "into": "ladder",
+    "params": {
+      "spacing": "field",
+      "closestApproach": "touch"
+    }
+  },
+  "contFieldSigmoid": {
+    "into": "ladder",
+    "params": {
+      "spacing": "field"
+    }
+  },
+  "lozengeStipple": {
+    "into": "ladder",
+    "params": {
+      "rungMode": "perceptual",
+      "rungOverlay": "flicks"
+    }
+  },
+  "deepFillTSP": {
+    "into": "ladder",
+    "params": {
+      "rungOverlay": "traverse"
+    }
+  },
   "whiteBand": {
     "into": "taperedEnds",
     "params": {
-      "bandProfile": "hard"
+      "bandEnds": "hard"
     }
   },
   "nibAngle": {
     "into": "taperedEnds",
     "params": {
-      "bandProfile": "nib"
+      "widthFrom": "nibAngle",
+      "bandEnds": "hard"
+    }
+  },
+  "isophoteWidth": {
+    "into": "taperedEnds",
+    "params": {
+      "widthFrom": "isophote",
+      "bandEnds": "hard"
     }
   },
   "weightSmoothstep": {
@@ -956,38 +1000,51 @@
       "bundleMode": "handoff"
     }
   },
-  "contFieldFore": {
-    "into": "contFieldSigmoid",
+  "bundleSubNib": {
+    "into": "bundleCount",
     "params": {
-      "fieldMetric": "foreshortened"
+      "closestApproach": "overlap"
     }
   },
-  "contFieldSurface": {
-    "into": "contFieldSigmoid",
+  "bundleLozenge": {
+    "into": "bundleCount",
     "params": {
-      "fieldMetric": "surface"
+      "bundleEnds": "lozenge"
     }
   },
-  "contFieldQuant": {
-    "into": "contFieldSigmoid",
+  "defectSplit": {
+    "into": "etfKang",
     "params": {
-      "fieldMetric": "quantised"
+      "flowField": "defects"
     }
   },
-  "contFieldTouch": {
-    "into": "contFieldSigmoid",
+  "interlockWeave": {
+    "into": "ampSpacing",
     "params": {
-      "fieldFloor": "touch"
+      "wavePhase": "anti"
     }
   },
   "weaveDepth": {
     "into": "ampSpacing",
     "params": {
-      "nesting": "nested"
+      "wavePhase": "anti",
+      "waveAmp": "solve"
+    }
+  },
+  "trochoidLoop": {
+    "into": "ampSpacing",
+    "params": {
+      "waveForm": "loop"
+    }
+  },
+  "amplitudeOnly": {
+    "into": "ampSpacing",
+    "params": {
+      "waveForm": "zigzag"
     }
   },
   "onePenDown": {
-    "into": "interlockWeave",
+    "into": "ampSpacing",
     "params": {
       "penDown": "continuous"
     }
@@ -1014,9 +1071,27 @@
   const STYLE_PARAMS = {
   "ladder": [
     {
+      "key": "spacing",
+      "label": "Spacing",
+      "default": "rungs",
+      "options": [
+        {
+          "value": "rungs",
+          "label": "Stepped rungs"
+        },
+        {
+          "value": "field",
+          "label": "Continuous field"
+        }
+      ]
+    },
+    {
       "key": "rungMode",
       "label": "Rung detail",
       "default": "coarse",
+      "showWhen": {
+        "spacing": "rungs"
+      },
       "options": [
         {
           "value": "coarse",
@@ -1039,28 +1114,130 @@
           "law": "perceptualRamp"
         }
       ]
+    },
+    {
+      "key": "rungOverlay",
+      "label": "Extra marks",
+      "default": "none",
+      "showWhen": {
+        "spacing": "rungs"
+      },
+      "options": [
+        {
+          "value": "none",
+          "label": "None"
+        },
+        {
+          "value": "flicks",
+          "label": "Flicks (Perceptual)"
+        },
+        {
+          "value": "traverse",
+          "label": "Deep traverse (Coarse)"
+        }
+      ]
+    },
+    {
+      "key": "fieldCurve",
+      "label": "Easing curve",
+      "default": "sigmoid",
+      "showWhen": {
+        "spacing": "field"
+      },
+      "passthrough": true,
+      "options": [
+        {
+          "value": "sigmoid",
+          "label": "Sigmoid (Sterzik)"
+        },
+        {
+          "value": "lstar",
+          "label": "L*-linear"
+        }
+      ]
+    },
+    {
+      "key": "fieldMetric",
+      "label": "Field metric",
+      "default": "screen",
+      "showWhen": {
+        "spacing": "field"
+      },
+      "options": [
+        {
+          "value": "screen",
+          "label": "Screen metric",
+          "law": "contFieldSigmoid"
+        },
+        {
+          "value": "foreshortened",
+          "label": "Foreshortening-corrected",
+          "law": "contFieldFore"
+        },
+        {
+          "value": "surface",
+          "label": "Surface metric",
+          "law": "contFieldSurface"
+        },
+        {
+          "value": "quantised",
+          "label": "Quantised gaps",
+          "law": "contFieldQuant"
+        }
+      ]
+    },
+    {
+      "key": "closestApproach",
+      "label": "Closest approach",
+      "default": "plot",
+      "showWhen": {
+        "spacing": "field"
+      },
+      "options": [
+        {
+          "value": "plot",
+          "label": "Plot floor"
+        },
+        {
+          "value": "touch",
+          "label": "Touching (ink width)",
+          "law": "contFieldTouch"
+        }
+      ]
     }
   ],
   "taperedEnds": [
     {
-      "key": "bandProfile",
-      "label": "Band profile",
-      "default": "taper",
+      "key": "widthFrom",
+      "label": "Width from",
+      "default": "tone",
       "options": [
         {
-          "value": "taper",
-          "label": "Tapered ends",
-          "law": "taperedEnds"
+          "value": "tone",
+          "label": "Tone (grey)"
+        },
+        {
+          "value": "nibAngle",
+          "label": "Calligraphic nib angle"
+        },
+        {
+          "value": "isophote",
+          "label": "Isophotes (shading contours)"
+        }
+      ]
+    },
+    {
+      "key": "bandEnds",
+      "label": "Ends",
+      "default": "tapered",
+      "options": [
+        {
+          "value": "tapered",
+          "label": "Tapered"
         },
         {
           "value": "hard",
-          "label": "Hard ends (white band)",
-          "law": "whiteBand"
-        },
-        {
-          "value": "nib",
-          "label": "Calligraphic nib",
-          "law": "nibAngle"
+          "label": "Hard"
         }
       ]
     }
@@ -1111,74 +1288,94 @@
           "law": "bundleHandoff"
         }
       ]
-    }
-  ],
-  "contFieldSigmoid": [
+    },
     {
-      "key": "fieldMetric",
-      "label": "Field metric",
-      "default": "screen",
+      "key": "closestApproach",
+      "label": "Closest approach",
+      "default": "touch",
       "options": [
         {
-          "value": "screen",
-          "label": "Screen metric",
-          "law": "contFieldSigmoid"
+          "value": "touch",
+          "label": "Touching (1 ink)"
         },
         {
-          "value": "foreshortened",
-          "label": "Foreshortening-corrected",
-          "law": "contFieldFore"
-        },
-        {
-          "value": "surface",
-          "label": "Surface metric",
-          "law": "contFieldSurface"
-        },
-        {
-          "value": "quantised",
-          "label": "Quantised gaps",
-          "law": "contFieldQuant"
+          "value": "overlap",
+          "label": "Overlapping (0.55 ink)",
+          "law": "bundleSubNib"
         }
       ]
     },
     {
-      "key": "fieldFloor",
-      "label": "Field floor",
-      "default": "plot",
+      "key": "bundleEnds",
+      "label": "Bundle ends",
+      "default": "square",
       "options": [
         {
-          "value": "plot",
-          "label": "Plot floor",
-          "law": "contFieldSigmoid"
+          "value": "square",
+          "label": "Square"
         },
         {
-          "value": "touch",
-          "label": "Ink-width floor",
-          "law": "contFieldTouch"
+          "value": "lozenge",
+          "label": "Lozenge (stepped inset)",
+          "law": "bundleLozenge"
+        }
+      ]
+    }
+  ],
+  "etfKang": [
+    {
+      "key": "flowField",
+      "label": "Direction field",
+      "default": "depth",
+      "options": [
+        {
+          "value": "depth",
+          "label": "Follows depth (Kang)",
+          "law": "etfKang"
+        },
+        {
+          "value": "defects",
+          "label": "Designed defects",
+          "law": "defectSplit"
         }
       ]
     }
   ],
   "ampSpacing": [
     {
-      "key": "nesting",
-      "label": "Nesting",
-      "default": "single",
+      "key": "wavePhase",
+      "label": "Phase",
+      "default": "in",
       "options": [
         {
-          "value": "single",
-          "label": "Single wave row",
-          "law": "ampSpacing"
+          "value": "in",
+          "label": "In-phase (crests line up)"
         },
         {
-          "value": "nested",
-          "label": "Nested rows",
-          "law": "weaveDepth"
+          "value": "anti",
+          "label": "Interlocked (anti-phase)"
         }
       ]
-    }
-  ],
-  "interlockWeave": [
+    },
+    {
+      "key": "waveForm",
+      "label": "Waveform",
+      "default": "serpentine",
+      "options": [
+        {
+          "value": "serpentine",
+          "label": "Serpentine"
+        },
+        {
+          "value": "loop",
+          "label": "Loop (trochoid)"
+        },
+        {
+          "value": "zigzag",
+          "label": "Zigzag (amplitude only)"
+        }
+      ]
+    },
     {
       "key": "penDown",
       "label": "Pen down",
@@ -1186,13 +1383,29 @@
       "options": [
         {
           "value": "perRuling",
-          "label": "One stroke per ruling",
-          "law": "interlockWeave"
+          "label": "One stroke per ruling"
         },
         {
           "value": "continuous",
-          "label": "One pen-down per family",
-          "law": "onePenDown"
+          "label": "One per family (in-phase)"
+        }
+      ]
+    },
+    {
+      "key": "waveAmp",
+      "label": "Amplitude",
+      "default": "cap",
+      "showWhen": {
+        "wavePhase": "anti"
+      },
+      "options": [
+        {
+          "value": "cap",
+          "label": "Capped by clearance"
+        },
+        {
+          "value": "solve",
+          "label": "Solved from clearance"
         }
       ]
     }
@@ -1227,6 +1440,473 @@
     }
   ]
 };
+  // U5: the resolver table (entry = when-pattern -> internal law id), the retired
+  // sub-control keys, and the resolver itself (scripts/tone-law-resolver.js).
+  const ENTRIES = {
+  "ladder": [
+    {
+      "when": {},
+      "law": "ladder"
+    },
+    {
+      "when": {
+        "spacing": "rungs",
+        "rungMode": "fine"
+      },
+      "law": "fineLadder"
+    },
+    {
+      "when": {
+        "spacing": "rungs",
+        "rungMode": "finePhase"
+      },
+      "law": "phaseFineLadder"
+    },
+    {
+      "when": {
+        "spacing": "rungs",
+        "rungMode": "perceptual"
+      },
+      "law": "perceptualRamp"
+    },
+    {
+      "when": {
+        "spacing": "field",
+        "fieldMetric": "foreshortened"
+      },
+      "law": "contFieldFore"
+    },
+    {
+      "when": {
+        "spacing": "field",
+        "fieldMetric": "surface"
+      },
+      "law": "contFieldSurface"
+    },
+    {
+      "when": {
+        "spacing": "field",
+        "fieldMetric": "quantised"
+      },
+      "law": "contFieldQuant"
+    },
+    {
+      "when": {
+        "spacing": "field",
+        "closestApproach": "touch"
+      },
+      "law": "contFieldTouch"
+    },
+    {
+      "when": {
+        "spacing": "rungs"
+      },
+      "law": "ladder"
+    },
+    {
+      "when": {
+        "spacing": "field"
+      },
+      "law": "contFieldSigmoid"
+    },
+    {
+      "when": {
+        "spacing": "rungs",
+        "rungMode": "perceptual",
+        "rungOverlay": "flicks"
+      },
+      "law": "lozengeStipple"
+    },
+    {
+      "when": {
+        "spacing": "rungs",
+        "rungOverlay": "traverse"
+      },
+      "law": "deepFillTSP"
+    }
+  ],
+  "taperedEnds": [
+    {
+      "when": {},
+      "law": "taperedEnds"
+    },
+    {
+      "when": {
+        "bandEnds": "hard"
+      },
+      "law": "whiteBand"
+    },
+    {
+      "when": {
+        "widthFrom": "nibAngle",
+        "bandEnds": "hard"
+      },
+      "law": "nibAngle"
+    },
+    {
+      "when": {
+        "widthFrom": "isophote",
+        "bandEnds": "hard"
+      },
+      "law": "isophoteWidth"
+    }
+  ],
+  "weightModulated": [
+    {
+      "when": {},
+      "law": "weightModulated"
+    },
+    {
+      "when": {
+        "weightEase": "smooth"
+      },
+      "law": "weightSmoothstep"
+    }
+  ],
+  "bundleCount": [
+    {
+      "when": {},
+      "law": "bundleCount"
+    },
+    {
+      "when": {
+        "bundleMode": "eased"
+      },
+      "law": "bundleEased"
+    },
+    {
+      "when": {
+        "bundleMode": "dither"
+      },
+      "law": "bundleDither"
+    },
+    {
+      "when": {
+        "bundleMode": "handoff"
+      },
+      "law": "bundleHandoff"
+    },
+    {
+      "when": {
+        "closestApproach": "overlap"
+      },
+      "law": "bundleSubNib"
+    },
+    {
+      "when": {
+        "bundleEnds": "lozenge"
+      },
+      "law": "bundleLozenge"
+    }
+  ],
+  "etfKang": [
+    {
+      "when": {},
+      "law": "etfKang"
+    },
+    {
+      "when": {
+        "flowField": "defects"
+      },
+      "law": "defectSplit"
+    }
+  ],
+  "ampSpacing": [
+    {
+      "when": {},
+      "law": "ampSpacing"
+    },
+    {
+      "when": {
+        "wavePhase": "anti"
+      },
+      "law": "interlockWeave"
+    },
+    {
+      "when": {
+        "wavePhase": "anti",
+        "waveAmp": "solve"
+      },
+      "law": "weaveDepth"
+    },
+    {
+      "when": {
+        "waveForm": "loop"
+      },
+      "law": "trochoidLoop"
+    },
+    {
+      "when": {
+        "waveForm": "zigzag"
+      },
+      "law": "amplitudeOnly"
+    },
+    {
+      "when": {
+        "penDown": "continuous"
+      },
+      "law": "onePenDown"
+    }
+  ],
+  "penInterleave": [
+    {
+      "when": {},
+      "law": "penInterleave"
+    },
+    {
+      "when": {
+        "penMode": "pitchMatch"
+      },
+      "law": "penPitchMatch"
+    },
+    {
+      "when": {
+        "penMode": "facing"
+      },
+      "law": "penFacing"
+    },
+    {
+      "when": {
+        "penMode": "stipple"
+      },
+      "law": "penStipple"
+    }
+  ]
+};
+  const LEGACY = {
+  "taperedEnds": {
+    "keys": [
+      "bandProfile"
+    ],
+    "descriptors": [
+      {
+        "key": "bandProfile",
+        "default": "taper",
+        "options": [
+          {
+            "value": "taper",
+            "law": "taperedEnds"
+          },
+          {
+            "value": "hard",
+            "law": "whiteBand"
+          },
+          {
+            "value": "nib",
+            "law": "nibAngle"
+          }
+        ]
+      }
+    ]
+  },
+  "ampSpacing": {
+    "keys": [
+      "nesting"
+    ],
+    "descriptors": [
+      {
+        "key": "nesting",
+        "default": "single",
+        "options": [
+          {
+            "value": "single",
+            "law": "ampSpacing"
+          },
+          {
+            "value": "nested",
+            "law": "weaveDepth"
+          }
+        ]
+      }
+    ]
+  },
+  "interlockWeave": {
+    "keys": [
+      "penDown"
+    ],
+    "descriptors": [
+      {
+        "key": "penDown",
+        "default": "perRuling",
+        "options": [
+          {
+            "value": "perRuling",
+            "law": "interlockWeave"
+          },
+          {
+            "value": "continuous",
+            "law": "onePenDown"
+          }
+        ]
+      }
+    ]
+  },
+  "contFieldSigmoid": {
+    "keys": [
+      "fieldMetric",
+      "fieldFloor"
+    ],
+    "descriptors": [
+      {
+        "key": "fieldMetric",
+        "default": "screen",
+        "options": [
+          {
+            "value": "screen",
+            "law": "contFieldSigmoid"
+          },
+          {
+            "value": "foreshortened",
+            "law": "contFieldFore"
+          },
+          {
+            "value": "surface",
+            "law": "contFieldSurface"
+          },
+          {
+            "value": "quantised",
+            "law": "contFieldQuant"
+          }
+        ]
+      },
+      {
+        "key": "fieldFloor",
+        "default": "plot",
+        "options": [
+          {
+            "value": "plot",
+            "law": "contFieldSigmoid"
+          },
+          {
+            "value": "touch",
+            "law": "contFieldTouch"
+          }
+        ]
+      }
+    ]
+  }
+};
+  const SHADOW_FORWARD = {
+  "onePenDown": "interlockWeave"
+};
+  // Fill Styles that became a Type setting (see scripts/build-tone-laws.js MOVED).
+  const MOVED = {
+  "originSpiral": {
+    "mapper": "spiral",
+    "from": [
+      "hatch",
+      "crosshatch",
+      "contour"
+    ],
+    "params": {
+      "spiralCenter": "highlight"
+    }
+  }
+};
+  function makeResolver(source) {
+    // `source` is the roster object, or a function returning it (read on every call,
+    // so a test that swaps ENTRIES / STYLE_PARAMS on the live roster is honoured).
+    const roster = () => (typeof source === 'function' ? source() : source) || {};
+    const ENTRIES_ = () => roster().ENTRIES || {};
+    const SP_ = () => roster().STYLE_PARAMS || {};
+    const LEGACY_ = () => roster().LEGACY || {};
+  
+    const filled = (survivor, bag) => {
+      const out = {};
+      (SP_()[survivor] || []).forEach((d) => {
+        const v = bag ? bag[d.key] : undefined;
+        out[d.key] = d.options.some((o) => o.value === v) ? v : d.default;
+      });
+      return out;
+    };
+    const isVisible = (d, f) => !d.showWhen || Object.keys(d.showWhen).every((k) => f[k] === d.showWhen[k]);
+  
+    const analyse = (survivor, bag) => {
+      const es = ENTRIES_()[survivor];
+      if (!es) return { law: survivor, ok: true };
+      const f = filled(survivor, bag);
+      let best = -1;
+      let top = [];
+      es.forEach((e) => {
+        const keys = Object.keys(e.when);
+        if (!keys.every((k) => f[k] === e.when[k])) return;
+        if (keys.length > best) { best = keys.length; top = [e]; } else if (keys.length === best) top.push(e);
+      });
+      const laws = [];
+      top.forEach((e) => { if (laws.indexOf(e.law) === -1) laws.push(e.law); });
+      if (laws.length !== 1) return { law: survivor, ok: false };
+      const win = top[0];
+      let ok = true;
+      (SP_()[survivor] || []).forEach((d) => {
+        if (d.passthrough || !isVisible(d, f)) return;
+        if (f[d.key] !== d.default && !(d.key in win.when)) ok = false;
+      });
+      return { law: win.law, ok, entry: win };
+    };
+  
+    const resolveLaw = (survivor, bag) => analyse(survivor, bag).law;
+  
+    // Descriptors the bag currently shows (showWhen satisfied), with the value each holds.
+    const visibleDescriptors = (survivor, bag) => {
+      const f = filled(survivor, bag);
+      return (SP_()[survivor] || []).filter((d) => isVisible(d, f)).map((d) => ({ descriptor: d, value: f[d.key] }));
+    };
+  
+    // The key/value patch that selects `value` for `key`. When the bare change is not
+    // a real combination, the fewest other visible controls are snapped (to the value
+    // the winning entry names, or to their default) so the result is one engine law.
+    const pickPatch = (survivor, bag, key, value) => {
+      const cur = filled(survivor, bag);
+      const direct = Object.assign({}, bag || {}, { [key]: value });
+      if (analyse(survivor, direct).ok) return { [key]: value };
+      const descs = SP_()[survivor] || [];
+      let best = null;
+      (ENTRIES_()[survivor] || []).forEach((e) => {
+        const patch = { [key]: value };
+        let changes = 0;
+        const cand = Object.assign({}, cur, { [key]: value });
+        descs.forEach((d) => {
+          if (d.key === key) return;
+          if (d.key in e.when) {
+            if (cand[d.key] !== e.when[d.key]) { patch[d.key] = e.when[d.key]; cand[d.key] = e.when[d.key]; changes += 1; }
+          } else if (!d.passthrough && cand[d.key] !== d.default) {
+            patch[d.key] = d.default; cand[d.key] = d.default; changes += 1;
+          }
+        });
+        const res = analyse(survivor, cand);
+        const kd = descs.find((d) => d.key === key);
+        if (!res.ok || res.entry !== e || (kd && !isVisible(kd, cand))) return;
+        if (!best || changes < best.changes) best = { patch, changes };
+      });
+      return best ? best.patch : { [key]: value };
+    };
+  
+    // Retired sub-control keys (renamed in U5). A saved style bag that still carries
+    // one is rewritten from the id the OLD resolver would have drawn.
+    const legacyInternal = (survivor, bag) => {
+      const L = LEGACY_()[survivor];
+      if (!L) return survivor;
+      let law = null;
+      let n = 0;
+      L.descriptors.forEach((d) => {
+        const asked = bag ? bag[d.key] : undefined;
+        const matched = d.options.find((o) => o.value === asked) || d.options.find((o) => o.value === d.default);
+        if (!matched || matched.value === d.default) return;
+        n += 1;
+        law = matched.law;
+      });
+      return n === 1 ? law : survivor;
+    };
+    const upgradeLegacy = (raw, bag) => {
+      const L = LEGACY_()[raw];
+      if (!L || !bag) return null;
+      if (!L.keys.some((k) => bag[k] !== undefined)) return null;
+      return { internal: legacyInternal(raw, bag), dropKeys: L.descriptors.map((d) => d.key) };
+    };
+  
+    return { analyse, resolveLaw, visibleDescriptors, pickPatch, upgradeLegacy, legacyInternal, filled };
+  }
+  const RESOLVER = makeResolver(() => Vectura.SCENE3D_TONE_LAWS);
 
   // [{ group, options: [{ value, label }] }] — for UI.Select. Every family
   // contributes a group (even if, after filtering, it has zero options) so
@@ -1241,7 +1921,7 @@
   }
 
   Vectura.SCENE3D_TONE_LAWS = {
-    VERSION: "168ec57b8e86a88005ee9ecd526545e33b2e9ad6",
+    VERSION: "cfe131fffbf600bdb4f817262438c2bc3dfc3019",
     DEFAULT: 'ladder',
     IDS,
     PRODUCTION,
@@ -1249,6 +1929,15 @@
     PICKER_IDS,
     ALIASES,
     STYLE_PARAMS,
+    ENTRIES,
+    LEGACY,
+    SHADOW_FORWARD,
+    MOVED,
+    analyse: RESOLVER.analyse,
+    resolveLaw: RESOLVER.resolveLaw,
+    visibleDescriptors: RESOLVER.visibleDescriptors,
+    pickPatch: RESOLVER.pickPatch,
+    upgradeLegacy: RESOLVER.upgradeLegacy,
     FAMILIES,
     BY_ID,
     selectGroups,

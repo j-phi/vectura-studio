@@ -341,8 +341,12 @@ describe('Stroke Fill Style — docked 3D Scene panel', () => {
 
   test('the row count does not change between an enabled and a disabled Fill Style', () => {
     // The whole point of disabling rather than hiding: no layout jump.
-    expect(rowLabels(openStyle(BUCKET_B).container).length)
-      .toBe(rowLabels(openStyle(BUCKET_A).container).length);
+    // U5: each survivor shows its OWN sub-controls (Ladder 3, Width Ribbon 2), so those rows are
+    // not part of the "no layout jump" claim; every other row must be there in both.
+    const FS = window.Vectura.SCENE_FILL_STYLES;
+    const subRows = (law) => FS.subControls(FS.resolve(law), FS.displayParams(law, {})).length;
+    expect(rowLabels(openStyle(BUCKET_B).container).length - subRows(BUCKET_B))
+      .toBe(rowLabels(openStyle(BUCKET_A).container).length - subRows(BUCKET_A));
   });
 });
 
@@ -508,8 +512,10 @@ describe('Stroke Fill Style — contextual bar Style flyout', () => {
   });
 
   test('the row count does not change between an enabled and a disabled Fill Style', () => {
-    const b = rowLabels(openStyleFlyout(BUCKET_B).fly).length;
-    const a = rowLabels(openStyleFlyout(BUCKET_A).fly).length;
+    const FS = window.Vectura.SCENE_FILL_STYLES;
+    const subRows = (law) => FS.subControls(FS.resolve(law), FS.displayParams(law, {})).length;
+    const b = rowLabels(openStyleFlyout(BUCKET_B).fly).length - subRows(BUCKET_B);
+    const a = rowLabels(openStyleFlyout(BUCKET_A).fly).length - subRows(BUCKET_A);
     expect(b).toBe(a);
   });
 });

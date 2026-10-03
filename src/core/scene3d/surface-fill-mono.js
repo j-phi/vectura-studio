@@ -3028,7 +3028,7 @@
     // second pass therefore runs only when pass 0 actually READ the angle.
     // The crossing angle keeps its designed 65 deg at the default Cross angle
     // (90) and follows the slider from there, so the default is byte-identical.
-    const crossDeg = 65 + (clamp(finite(o.crossDelta, 90), 10, 170) - 90);
+    const crossDeg = ((Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.CROSS_OBJ_DEG) || 65) + (clamp(finite(o.crossDelta, 90), 10, 170) - 90);
     const passes = o.mapper === 'crosshatch' ? [0, crossDeg] : [0];
     // A law that throws must not take the whole fill with it, and the reason
     // has to survive to the harness — a silently empty cell is the one failure

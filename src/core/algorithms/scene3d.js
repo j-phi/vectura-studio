@@ -1149,6 +1149,12 @@
           style = FALLBACK_STYLE;
         }
       }
+      // U5 M9a — the Spiral Type wound from the specular point (`spiralCenter:
+      // 'highlight'`) IS the Origin Spiral monoline law, which draws under Hatch.
+      // Run it as that, so the fill engine sees exactly the style it always saw.
+      if (style && style.mapper === 'spiral' && style.params && style.params.spiralCenter === 'highlight') {
+        style = { ...style, mapper: 'hatch', params: { ...style.params, toneLaw: 'originSpiral' } };
+      }
       cache.set(key, style);
       return style;
     };
@@ -1286,7 +1292,7 @@
   // independent spacing/floor comparison, so there is no equivalent
   // "already-sub-floor in a saved document" risk to dodge for it the way
   // `minSpacing` has to for the faceted path's `spacing × crossDensityRatio`.
-  const CURVED_FLOOR_PEN_MAX = 2.2; // == surface-fill.js's PLOT_FLOOR_PEN
+  const CURVED_FLOOR_PEN_MAX = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2; // == surface-fill.js's PLOT_FLOOR_PEN
   const CURVED_FLOOR_PEN_MIN = 1.2; // the "ink floods" bound, not the conservative one
   // 200-500 (fs-m1, ceiling raised again): 1.2x pen is ALREADY the point
   // surface-fill.js's own comment names as where real ink floods, so pushing
@@ -1377,6 +1383,21 @@
   const monoDensityScale = (density) => clamp(
     curvedSparseTonePitch(50) / Math.max(1e-6, curvedSparseTonePitch(density)), 0.25, 4,
   );
+
+  // U5 (R3-1) — "Flat vs Surface" is ONE setting, `wrap`: 'surface' (default) wraps the
+  // fill round the form, 'flat' draws it in screen space (a Contour's silhouette inset
+  // rings, a Spiral's clipped Archimedean spiral, a faceted Hatch's screen-space
+  // angle). It replaces contourStyle:'region', spiralMode:'flatClip' and
+  // angleRef:'screen'. The old keys are still honoured for a bag that has not been
+  // through normalizeStyle yet, so an un-migrated bag draws identically.
+  const styleWrapFlat = (sp, mapper) => {
+    const s = sp || {};
+    if (s.wrap === 'flat') return true;
+    if (s.wrap === 'surface') return false;
+    if (mapper === 'contour') return s.contourStyle === 'region';
+    if (mapper === 'spiral') return s.spiralMode === 'flatClip';
+    return s.angleRef === 'screen';
+  };
 
   // The Density a mono law reads from a style bag. A LEGACY document carries
   // `monoDensityLegacyAt` (see Params.pinLegacyMonoDensity): while Density still
@@ -2434,7 +2455,7 @@
       // B); tripleHatch adds a third pass at +45° in the darkest tone band only.
       // §2.3 — object-side crossed families are +65° / +32°, NEVER +90°.
       const CROSS_OBJ_DEG_B = (Regions && Regions.CROSS_OBJ_DEG) || 65;
-      const CROSS_OBJ_DEG_C = 32;
+      const CROSS_OBJ_DEG_C = (Regions && Regions.CROSS_TRIPLE_DEG) || 32;
       // `crossW` is the zone's own `Regions.formInk(zone).cross` — the coverage
       // of the SECOND family in units of the first, so its pitch is spacing /
       // crossW. T spends a full family (1.00), F four tenths of one (0.40), and
@@ -2571,8 +2592,8 @@
         // face plane; 'screen' engraves flat in screen space regardless of the
         // face; 'worldUp' keeps the lines upright (world vertical projected onto
         // the face). 'screen' reuses the cheap screen-space path below.
-        const angleRef = styleParams.angleRef === 'screen' || styleParams.angleRef === 'worldUp'
-          ? styleParams.angleRef : 'face';
+        const angleRef = styleWrapFlat(styleParams, 'hatch') ? 'screen'
+          : (styleParams.angleRef === 'worldUp' ? 'worldUp' : 'face');
         const userAngle = finite(styleParams.fillAngle, 45);
         // Sample point/spot lights at the face's world centroid.
         const worldPoint = faceWorldCentroid(face);
@@ -3134,7 +3155,7 @@
       // interpolates between, so the faceted substrate must hand over the same
       // numbers or the same law would land on a different ramp on the two paths.
       const MONO_INK_SPREAD = 0.12;
-      const MONO_PLOT_FLOOR_PEN = 2.2;
+      const MONO_PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
       const monoLitMaxPitch = () => {
         const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
         const pen = (R && Number.isFinite(R.LIT_MAX_PITCH_PEN)) ? R.LIT_MAX_PITCH_PEN : 12;
@@ -3439,6 +3460,21 @@
       // through the occluded/dashed branch — this is how x-ray back-face FILLS
       // are emitted (the far surface reads as dashed "seen-through" lines), a
       // generalization of the hiddenTreatment==='dash' edge branch to fills.
+      // U5 (R3-7) — Highlight "Burst" and Emissive "halo: burst" are ONE radial-ray
+      // emitter: N rays from radius rIn to rOut about (cx, cy) at depth z, each
+      // clipped against the occluders. The radii stay per-caller constants, so both
+      // callers draw exactly what they drew when each had its own loop.
+      function emitRadialRays(clipperRef, ctx, meta, hiddenTreatment, cx, cy, rIn, rOut, N, z) {
+        for (let k = 0; k < N; k++) {
+          const ang = (k / N) * Math.PI * 2;
+          const c = Math.cos(ang); const s = Math.sin(ang);
+          const p0 = { x: cx + c * rIn, y: cy + s * rIn, z };
+          const p1 = { x: cx + c * rOut, y: cy + s * rOut, z };
+          const clip = clipperRef.clipPath([p0, p1], ctx);
+          emitRuns(clip.runs, meta, hiddenTreatment, null, NO_STROKE_TREATMENT);
+        }
+      }
+
       const emitRuns = (runs, baseMeta, hiddenTreatment, hiddenExtras, tr, opts) => {
         const treat = tr || NO_STROKE_TREATMENT;
         const forceHidden = Boolean(opts && opts.forceHidden);
@@ -3852,14 +3888,24 @@
       const STROKE_LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
       const xrayCfg = (sp) => {
         const s = sp || {};
+        // U5 — Depth cue is two flags (R3-8); a bag that still carries the old
+        // off/density/weight/both enum (not yet normalized) reads as the same flags.
+        const hasFlags = s.xrayCueDensity !== undefined || s.xrayCueWeight !== undefined;
+        const legacyCue = XRAY_DEPTH_CUES.includes(s.xrayDepthCue) ? s.xrayDepthCue : 'off';
+        const cueD = hasFlags ? s.xrayCueDensity === true : (legacyCue === 'density' || legacyCue === 'both');
+        const cueW = hasFlags ? s.xrayCueWeight === true : (legacyCue === 'weight' || legacyCue === 'both');
         return {
           backFaces: s.xrayBackFaces !== false,
           hiddenEdges: s.xrayHiddenEdges !== false,
           backDensity: clamp(finite(s.xrayBackDensity, 0.4), 0.2, 1),
-          backLineType: STROKE_LINE_TYPES.includes(s.xrayBackLineType) ? s.xrayBackLineType : 'dashed',
+          // 'solid' was never a real option: an occluded line is stamped [3,2] when
+          // its own dash is empty, so a stored 'solid' always drew dashed (R3-3).
+          backLineType: (s.xrayBackLineType === 'dotted' || s.xrayBackLineType === 'dashdot') ? s.xrayBackLineType : 'dashed',
           backPenId: (typeof s.xrayBackPenId === 'string' && s.xrayBackPenId) ? s.xrayBackPenId : null,
-          front: s.xrayFront === 'faded' ? 'faded' : 'solid',
-          depthCue: XRAY_DEPTH_CUES.includes(s.xrayDepthCue) ? s.xrayDepthCue : 'off',
+          // R3-2 — "Front: Faded" was lineType:'dotted' on the front fill.
+          frontLineType: STROKE_LINE_TYPES.includes(s.xrayFrontLineType) ? s.xrayFrontLineType
+            : (s.xrayFront === 'faded' ? 'dotted' : 'solid'),
+          depthCue: (cueD && cueW) ? 'both' : (cueD ? 'density' : (cueW ? 'weight' : 'off')),
         };
       };
 
@@ -3909,13 +3955,27 @@
       // 'none' (formerly 'keep') is a TOTAL bypass, not a subtle treatment — see
       // the note on HIGHLIGHT_TREATMENTS in params.js. `keep` is accepted as a
       // silent alias so saved documents render identically.
-      const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
+      // U5 — `restyle` (a line type, `highlightLineType`) replaces dashed + dotted and
+      // `thin` (a granularity, `highlightThinBy`) replaces sparse + stippleOut. The
+      // engine keeps its internal names below (`dashed`/`dotted`, `sparse`/`stippleOut`)
+      // so every branch is untouched; the old stored values read identically.
+      const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'restyle', 'thin', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
       const highlightCfg = (sp) => {
         const s = sp || {};
         const raw = s.highlightTreatment === 'keep' ? 'none' : s.highlightTreatment;
-        const treatment = HIGHLIGHT_TREATMENTS.includes(raw) ? raw : 'blank';
+        let treatment = HIGHLIGHT_TREATMENTS.includes(raw) ? raw : 'blank';
+        let hlLine = 'dashed';
+        if (treatment === 'restyle' || treatment === 'dashed' || treatment === 'dotted') {
+          hlLine = STROKE_LINE_TYPES.includes(s.highlightLineType) ? s.highlightLineType
+            : (treatment === 'dotted' ? 'dotted' : 'dashed');
+          treatment = hlLine === 'dotted' ? 'dotted' : 'dashed';
+        } else if (treatment === 'thin') {
+          treatment = s.highlightThinBy === 'sample' ? 'stippleOut' : 'sparse';
+        }
+        const altRaw = (s.altFillMapper === 'lines') ? (s.altFillLayers === 2 ? 'crosshatch' : 'hatch') : s.altFillMapper;
         return {
           treatment,
+          lineType: hlLine,
           // I8 — light-driven highlight/shadow. mode 'lightDriven' places the
           // highlight by the per-sample specular term; sensitivity/shadowSensitivity
           // are stage counts (1 = binary, N = graded). All default to the no-op.
@@ -3932,7 +3992,7 @@
           // scope here) collapses the two to ONE literal, so they cannot drift
           // apart. See SURFACE_FILL's own comment and the exported
           // `Vectura.Scene3D.SURFACE_FILL_MAPPERS` mirror below.
-          altFillMapper: SURFACE_FILL.has(s.altFillMapper) ? s.altFillMapper : 'stipple',
+          altFillMapper: SURFACE_FILL.has(altRaw) ? altRaw : 'stipple',
           burstCount: clamp(Math.round(finite(s.burstCount, 16)), 6, 48),
           burstCenter: s.burstCenter === 'centroid' ? 'centroid' : 'specular',
         };
@@ -3943,7 +4003,7 @@
       const nBands = (p.tone && Array.isArray(p.tone.ladder) && p.tone.ladder.length) ? p.tone.ladder.length : 3;
       const isHighlightBand = (I, bands) => toneOn && Regions.band(I, p.tone) >= (nBands - clamp(bands, 1, 2));
       // The line type stamped on dashed/dotted highlight runs.
-      const hlLineType = (treatment) => (treatment === 'dotted' ? 'dotted' : 'dashed');
+      const hlLineType = (cfg) => (cfg && cfg.lineType) || 'dashed';
 
       // Mean WORLD position of every vert across a record's faces — the point a
       // co-located emissive light sits at (the object's centroid). null when the
@@ -4422,7 +4482,7 @@
                     emitRuns(clip.runs, baseMetaLD, hiddenTreatment, null, faceTreat);
                   });
                   const hlTreatLD = dashLD
-                    ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL.treatment), wobble: 0, overstroke: false })
+                    ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL), wobble: 0, overstroke: false })
                     : faceTreat;
                   const hlMetaLD = {
                     algorithm: 'scene3d', kind: 'sceneFill',
@@ -4483,7 +4543,7 @@
                 }
                 const dashHL = faceIsHL && (faceHL.treatment === 'dashed' || faceHL.treatment === 'dotted');
                 const emitTreat = dashHL
-                  ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL.treatment), wobble: 0, overstroke: false })
+                  ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL), wobble: 0, overstroke: false })
                   : faceTreat;
                 const fillMeta = {
                   algorithm: 'scene3d',
@@ -4606,12 +4666,12 @@
             // fills the projected silhouette with the SAME clipped Archimedean
             // spiral the faceted path uses; 'surfaceHelix' (default curved) wraps
             // the parametric form. Non-spiral mappers are unaffected.
-            const spiralFlatClip = g.style.mapper === 'spiral' && sp.spiralMode === 'flatClip';
+            const spiralFlatClip = g.style.mapper === 'spiral' && styleWrapFlat(sp, 'spiral');
             // contourStyle 'region' opts a curved prim OUT of the parametric
             // parallels (SurfaceFill) into the flat silhouette inset rings — a
             // structurally different, topographic contour. 'surface' (default)
             // keeps the wrapped parallels. Non-contour mappers are unaffected.
-            const contourRegion = g.style.mapper === 'contour' && sp.contourStyle === 'region';
+            const contourRegion = g.style.mapper === 'contour' && styleWrapFlat(sp, 'contour');
             const chartParams = !draft && SurfaceFill && !spiralFlatClip && !contourRegion
               ? curvedChartParams(objById.get(record.id) || {}) : null;
             // X-ray: ask SurfaceFill for the far surface too (a tagged, sparser
@@ -4846,8 +4906,8 @@
             const groupTreat = strokeTreatment(g.style.params);
             // X-ray front 'faded' reads the near surface as dotted (lighter); the
             // back family is dashed at the back line type, on the back pen.
-            const frontTreat = (grpXray && grpXray.front === 'faded')
-              ? strokeTreatment({ ...sp, lineType: 'dotted' }) : groupTreat;
+            const frontTreat = (grpXray && grpXray.frontLineType !== 'solid')
+              ? strokeTreatment({ ...sp, lineType: grpXray.frontLineType }) : groupTreat;
             const backTreat = grpXray
               ? strokeTreatment({ ...sp, lineType: grpXray.backLineType, wobble: 0, overstroke: false })
               : NO_STROKE_TREATMENT;
@@ -4865,7 +4925,7 @@
             // stippleOut) keep the group's line type too.
             const hlDash = grpHL.treatment === 'dashed' || grpHL.treatment === 'dotted';
             const hlTreat = hlActive
-              ? strokeTreatment({ ...sp, ...(hlDash ? { lineType: hlLineType(grpHL.treatment) } : {}), wobble: 0, overstroke: false })
+              ? strokeTreatment({ ...sp, ...(hlDash ? { lineType: hlLineType(grpHL) } : {}), wobble: 0, overstroke: false })
               : NO_STROKE_TREATMENT;
             const hlMeta = {
               algorithm: 'scene3d',
@@ -5240,15 +5300,7 @@
               };
               const hlCtx = { objectId: record.id, selfObject: true };
               if (hcfg.treatment === 'burst') {
-                const N = hcfg.burstCount;
-                const inner = hs.radius * 0.12;
-                for (let k = 0; k < N; k++) {
-                  const ang = (k / N) * Math.PI * 2;
-                  const p0 = { x: cx + Math.cos(ang) * inner, y: cy + Math.sin(ang) * inner, z: hs.depth };
-                  const p1 = { x: cx + Math.cos(ang) * hs.radius, y: cy + Math.sin(ang) * hs.radius, z: hs.depth };
-                  const clip = clipper.clipPath([p0, p1], hlCtx);
-                  emitRuns(clip.runs, hlMeta, hiddenTreatment, null, NO_STROKE_TREATMENT);
-                }
+                emitRadialRays(clipper, hlCtx, hlMeta, hiddenTreatment, cx, cy, hs.radius * 0.12, hs.radius, hcfg.burstCount, hs.depth);
               } else {
                 // altFill: fill the hotspot disc with the alternate mapper.
                 const SEG = 40;
@@ -5335,14 +5387,7 @@
               const N = clamp(Math.round(finite(emCfg.haloCount, 16)), 4, 48);
               const inner = radius * 0.9;
               const outer = radius * (1.2 + 0.5 * norm);
-              for (let k = 0; k < N; k++) {
-                const ang = (k / N) * Math.PI * 2;
-                const c = Math.cos(ang); const s = Math.sin(ang);
-                const p0 = { x: cx + c * inner, y: cy + s * inner, z: glowZ };
-                const p1 = { x: cx + c * outer, y: cy + s * outer, z: glowZ };
-                const clip = clipper.clipPath([p0, p1], emCtx);
-                emitRuns(clip.runs, emMeta, hiddenTreatment, null, NO_STROKE_TREATMENT);
-              }
+              emitRadialRays(clipper, emCtx, emMeta, hiddenTreatment, cx, cy, inner, outer, N, glowZ);
             } else {
               // ring: concentric circles expanding outward from the silhouette.
               const rings = clamp(Math.round(finite(emCfg.haloRings, 3)), 1, 6);

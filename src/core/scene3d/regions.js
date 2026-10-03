@@ -601,6 +601,16 @@
   // +65°, never +90°: an orthogonal second family reads as a square grid / wire
   // mesh and beats against the raster (§2.3).
   const CROSS_OBJ_DEG = 65;
+  // U5 (NEW-7) — ONE source for the crossing-family angles. The second family's
+  // 65 deg, the third pass's 32 deg and the pen/shadow laws' 60 deg crossing used to
+  // be literals at 13 sites (scene3d.js, surface-fill.js, surface-fill-mono.js,
+  // shadows.js). Everything reads these now; every value is unchanged.
+  const CROSS_TRIPLE_DEG = 32;
+  // U5 (NEW-6) — the plot floor: the closest two neighbouring rulings may sit, in pen
+  // widths. It was copied at three sites (surface-fill PLOT_FLOOR_PEN, scene3d
+  // CURVED_FLOOR_PEN_MAX and MONO_PLOT_FLOOR_PEN); all three read this one now.
+  const PLOT_FLOOR_PEN = 2.2;
+  const CROSS_MARK_DEG = 60;
 
   // ── THE DIHEDRAL GATE (§5.5.2, O22) — ONE DEFINITION ───────────────────────
   //
@@ -810,6 +820,9 @@
     shadowStage,
     FORM_ZONES,
     CROSS_OBJ_DEG,
+    PLOT_FLOOR_PEN,
+    CROSS_TRIPLE_DEG,
+    CROSS_MARK_DEG,
     TERMINATOR_SMOOTH_DEG,
     smoothShadedFaces,
     TERMINATOR_NL,

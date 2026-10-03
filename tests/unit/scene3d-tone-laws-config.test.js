@@ -115,12 +115,20 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
     // U8's 1 + U6's 3: penPitchMatch/penFacing/penStipple). U7/U8 landed out
     // of the plan's literal U6-then-U7-then-U8 order because U6 was blocked
     // on a product decision, not a file collision.
-    const EXPECTED_PICKER_IDS_LENGTH = 30;
+    // U5 (fill-style review merges M1-M6, M2, M3, M4, M5, M6): 20 survivors, 28
+    // aliases — bundleSubNib, bundleLozenge, defectSplit, isophoteWidth,
+    // interlockWeave, trochoidLoop, amplitudeOnly, contFieldSigmoid, lozengeStipple
+    // and deepFillTSP join the 18 earlier folds (the survivor row count 31 -> 21
+    // counting the shipped default).
+    const EXPECTED_PICKER_IDS_LENGTH = 19; // U5 M9a: originSpiral moved to the Spiral Type
+
     const EXPECTED_ALIAS_IDS = [
       'fineLadder', 'phaseFineLadder', 'perceptualRamp', 'whiteBand', 'nibAngle', 'weightSmoothstep',
       'bundleEased', 'bundleDither', 'bundleHandoff', 'contFieldFore', 'contFieldSurface',
       'contFieldQuant', 'contFieldTouch', 'weaveDepth', 'onePenDown',
       'penPitchMatch', 'penFacing', 'penStipple',
+      'bundleSubNib', 'bundleLozenge', 'defectSplit', 'isophoteWidth', 'interlockWeave',
+      'trochoidLoop', 'amplitudeOnly', 'contFieldSigmoid', 'lozengeStipple', 'deepFillTSP',
     ];
 
     expect(Array.isArray(LAWS.PICKER_IDS)).toBe(true);
@@ -143,16 +151,20 @@ describe('Vectura.SCENE3D_TONE_LAWS — the generated tone-law config module', (
       const a = LAWS.ALIASES[id];
       const descriptors = LAWS.STYLE_PARAMS[a.into];
       expect(Array.isArray(descriptors)).toBe(true);
-      const matched = descriptors.some((d) => {
-        const opt = (d.options || []).find((o) => o.law === id);
-        return opt && a.params[d.key] === opt.value;
+      // U5: an alias is a COMBINATION of descriptor values; the roster's resolver
+      // maps it back to exactly this law, and every key is a real descriptor option.
+      expect(LAWS.resolveLaw(a.into, a.params)).toBe(id);
+      expect(LAWS.analyse(a.into, a.params).ok).toBe(true);
+      Object.keys(a.params).forEach((key) => {
+        const d = descriptors.find((x) => x.key === key);
+        expect(d).toBeTruthy();
+        expect(d.options.some((o) => o.value === a.params[key])).toBe(true);
       });
-      expect(matched).toBe(true);
     });
 
     // PICKER_IDS ∪ keys(ALIASES) === IDS exactly (the same invariant the
     // build script's own throw enforces at generation time).
-    const union = new Set(LAWS.PICKER_IDS.concat(aliasIds));
+    const union = new Set(LAWS.PICKER_IDS.concat(aliasIds, Object.keys(LAWS.MOVED || {})));
     expect(union.size).toBe(LAWS.IDS.length);
     LAWS.IDS.forEach((id) => expect(union.has(id)).toBe(true));
   });

@@ -747,8 +747,12 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     // alongside every hatch/crosshatch descriptor default (D_FACETFLOOR,
     // MAPPER_CONTROLS). 3 is byte-identical to today's tone-blind
     // FACET_MIN_RULINGS constant — see scene3d-facet-min-rulings.test.js T1.
+    // STALE ASSERTION UPDATE (U5) — Ladder shows three sub-controls (Spacing, Rung
+    // detail, Extra marks), all seeded at their defaults; `wrap` (Flat vs Surface)
+    // replaces the Contour/Spiral/Hatch trio and is a Hatch descriptor now.
     expect(stored.params).toEqual({
-      fillAngle: 45, fillDensity: 50, toneLaw: 'ladder', rungMode: 'coarse', angleRef: 'face', linkFill: false,
+      fillAngle: 45, fillDensity: 50, toneLaw: 'ladder', spacing: 'rungs', rungMode: 'coarse', rungOverlay: 'none',
+      wrap: 'surface', angleRef: 'face', linkFill: false,
       facetMinRulings: 3,
       lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false,
     });
@@ -779,7 +783,8 @@ describe('Scene3D panel — behavior (vs3-)', () => {
     // STALE ASSERTION UPDATE (U1, fill-roster collapse) — see the identical
     // note on the hatch-mapper test above.
     expect(layer.params.styleTable.byObject['obj-1'].params).toEqual({
-      fillDensity: 50, toneLaw: 'ladder', rungMode: 'coarse', contourStyle: 'surface',
+      // STALE ASSERTION UPDATE (U5) — see the hatch-mapper test above.
+      fillDensity: 50, toneLaw: 'ladder', spacing: 'rungs', rungMode: 'coarse', rungOverlay: 'none', wrap: 'surface',
       lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false,
     });
     // Density control present; Angle control absent for a region mapper.

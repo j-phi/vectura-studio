@@ -595,9 +595,10 @@
   // still pass through for forward compat. Returns `undefined` for keys with no
   // dedicated clamp (the generic finite-guard below then applies).
   const STROKE_LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
-  const SPIRAL_CENTERS = ['centroid', 'bboxCenter'];
+  const SPIRAL_CENTERS = ['centroid', 'bboxCenter', 'highlight']; // 'highlight' = Origin Spiral (U5 M9a)
   const SPIRAL_MODES = ['flatClip', 'surfaceHelix'];
-  const ANGLE_REFS = ['face', 'screen', 'worldUp'];
+  const ANGLE_REFS = ['face', 'worldUp']; // 'screen' is now wrap:'flat' (U5, R3-1)
+  const WRAPS = ['surface', 'flat'];
   const CONTOUR_STYLES = ['region', 'surface'];
   const DOT_SHAPES = ['dot', 'ring', 'cross', 'plus', 'tick'];
   const EDGE_CLASS_KEYS = ['silhouette', 'boundary', 'crease', 'interior'];
@@ -620,13 +621,19 @@
   // coerced, so a document saved with `keep` renders exactly as one saved with
   // `none` — which is what the rename means. Nothing structural changed, so
   // nothing needs versioning.
-  const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
-  const HIGHLIGHT_TREATMENT_ALIASES = { keep: 'none' };
+  // U5 (NEW-2/NEW-3): dashed + dotted are one treatment, `restyle`, with a line type
+  // (`highlightLineType`); sparse + stippleOut are one treatment, `thin`, with a
+  // granularity (`highlightThinBy`). The old values are aliases, and normalizeStyle
+  // writes the sibling key that reproduces them exactly.
+  const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'restyle', 'thin', 'altFill', 'burst'];
+  const HIGHLIGHT_TREATMENT_ALIASES = { keep: 'none', dashed: 'restyle', dotted: 'restyle', sparse: 'thin', stippleOut: 'thin' };
   const normalizeHighlightTreatment = (value) => {
     const aliased = HIGHLIGHT_TREATMENT_ALIASES[value] || value;
     return HIGHLIGHT_TREATMENTS.includes(aliased) ? aliased : 'blank';
   };
   const ALT_FILL_MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
+  // U5 (R3-6): Alt fill hatch + crosshatch are one `lines` option with Layers 1|2.
+  const ALT_FILL_CHOICES = ['lines', 'contour', 'spiral', 'stipple'];
   // fs-e2 (W-02, F-02) — the SAME five mappers as `ALT_FILL_MAPPERS` above,
   // exposed as a Set under its own name because the two lists answer
   // different questions that happen to share a value: `ALT_FILL_MAPPERS`
@@ -698,8 +705,20 @@
       case 'xrayBackFaces': return value !== false;   // render far-surface fills (THE FIX)
       case 'xrayBackDensity': return clamp(finite(value, 0.4), 0.2, 1); // back fill sparser
       case 'xrayBackPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
-      case 'xrayBackLineType': return STROKE_LINE_TYPES.includes(value) ? value : 'dashed';
+      // U5 (R3-3): an occluded line is stamped [3,2] whenever its own dash is empty
+      // (geometry3d markHidden), so 'solid' always drew dashed. The option is gone;
+      // a stored 'solid' is exactly 'dashed'.
+      case 'xrayBackLineType': return (value === 'dashed' || value === 'dotted' || value === 'dashdot') ? value : 'dashed';
       case 'xrayFront': return value === 'faded' ? 'faded' : 'solid';
+      // U5 (R3-2): X-ray "Front: Faded" was lineType:'dotted' on the front fill.
+      case 'xrayFrontLineType': return STROKE_LINE_TYPES.includes(value) ? value : 'solid';
+      // U5 (R3-8): Depth cue's off/density/weight/both are two independent flags.
+      case 'xrayCueDensity': return value === true;
+      case 'xrayCueWeight': return value === true;
+      case 'wrap': return WRAPS.includes(value) ? value : 'surface';
+      case 'highlightLineType': return STROKE_LINE_TYPES.includes(value) ? value : 'dashed';
+      case 'highlightThinBy': return value === 'sample' ? 'sample' : 'ruling';
+      case 'altFillLayers': return value === 2 || value === '2' ? 2 : 1;
       // Quantitative X-ray (interpretation A): modulate the see-through back-fill
       // by how far behind the front surface each sample sits. 'off' (default) is
       // the flat x-ray, byte-identical. 'density'/'weight'/'both' opt in.
@@ -719,7 +738,7 @@
       case 'highlightBands': return clamp(Math.round(finite(value, 1)), 1, 2);
       case 'highlightPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
       case 'highlightDensity': return clamp(finite(value, 25), 1, 100);
-      case 'altFillMapper': return ALT_FILL_MAPPERS.includes(value) ? value : 'stipple';
+      case 'altFillMapper': return (value === 'hatch' || value === 'crosshatch') ? 'lines' : (ALT_FILL_CHOICES.includes(value) ? value : 'stipple');
       // W-38 — "minimum facet rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
       // Per-style floor on the carrier-family grant in `faceHatchLines`
       // (scene3d.js). Range [1,8], integer, default 3 — `FACET_MIN_RULINGS`'s
@@ -836,6 +855,9 @@
     if (Object.prototype.hasOwnProperty.call(ALIASES, raw)) return raw; // rule 2
     const descriptors = (R.STYLE_PARAMS && R.STYLE_PARAMS[raw]) || null;
     if (!descriptors || !descriptors.length) return raw; // no collapse for this id — pass through
+    // U5 — the survivor's ENTRIES table (a pattern of descriptor values -> internal
+    // law id; the most specific entry wins, a tie falls back to the survivor).
+    if (typeof R.resolveLaw === 'function') return R.resolveLaw(raw, bag);
     let activeLaw = null;
     let activeCount = 0;
     descriptors.forEach((d) => {
@@ -846,7 +868,7 @@
       activeCount += 1;
       activeLaw = matched.law;
     });
-    return activeCount === 1 ? activeLaw : raw; // rule 3 (activeCount<=... ) / rule 4
+    return activeCount === 1 ? activeLaw : raw; // pre-U5 rosters: rule 3 / rule 4
   };
 
   const LEGACY_LSTAR_FIELD_IDS = ['contFieldFore', 'contFieldSurface', 'contFieldQuant', 'contFieldTouch'];
@@ -881,9 +903,22 @@
     // this runs, which would otherwise erase the one thing this shim needs —
     // WHICH alias arrived — before it gets to look up which param to seed.
     // Never overwrites a sibling key the bag already carries explicitly.
-    const rawToneLaw = isObject(src.params) ? src.params.toneLaw : undefined;
+    let rawToneLaw = isObject(src.params) ? src.params.toneLaw : undefined;
     const R = Vectura.SCENE3D_TONE_LAWS;
     const ALIASES = (R && R.ALIASES) || null;
+    // U5 — a bag saved with a RETIRED sub-control key (bandProfile, nesting, the old
+    // interlockWeave penDown, fieldFloor, ...) is rewritten through the id the old
+    // resolver drew, then through ALIASES like any folded id: byte-identical, and
+    // the retired keys are dropped.
+    const originalRaw = rawToneLaw;
+    if (R && typeof R.upgradeLegacy === 'function' && isObject(src.params)) {
+      const up = R.upgradeLegacy(rawToneLaw, src.params);
+      if (up) {
+        rawToneLaw = up.internal;
+        up.dropKeys.forEach((k) => { delete params[k]; });
+        params.toneLaw = up.internal;
+      }
+    }
     if (ALIASES && ALIASES[rawToneLaw]) {
       const a = ALIASES[rawToneLaw];
       params.toneLaw = a.into;
@@ -895,13 +930,72 @@
       // U4b item 4: the four retired contField* ids were L*-linear. The
       // survivor's sub-options now keep the Sterzik sigmoid, so a document that
       // arrives through one of these ids is pinned to its original curve.
-      if (LEGACY_LSTAR_FIELD_IDS.indexOf(rawToneLaw) !== -1 && params.fieldCurve === undefined) {
+      if (LEGACY_LSTAR_FIELD_IDS.indexOf(originalRaw) !== -1 && params.fieldCurve === undefined) {
         params.fieldCurve = 'lstar';
+      }
+    } else if (rawToneLaw !== originalRaw) {
+      params.toneLaw = rawToneLaw; // upgraded to a survivor id (no alias)
+    }
+    // U5 M9a — a Fill Style that became a Type setting: Origin Spiral is the Spiral
+    // Type wound from the specular point. Only the Types it actually drew on move
+    // (Hatch / Crosshatch / Contour); on any other Type it was inert and stays as is.
+    let movedMapper = null;
+    {
+      const mv = R && R.MOVED && R.MOVED[rawToneLaw];
+      if (mv && Array.isArray(mv.from) && mv.from.indexOf(src.mapper) !== -1) {
+        movedMapper = mv.mapper;
+        delete params.toneLaw;
+        Object.keys(mv.params || {}).forEach((k) => { params[k] = mv.params[k]; });
+        params.movedFromMapper = src.mapper; // lets the torus write-back restore the old Type
+      }
+    }
+
+    // U5 — sub-setting folds (fill-style review R3 / NEW-2 / NEW-3). Each rewrites a
+    // retired key or value from the RAW bag into its replacement, so a document saved
+    // before the fold keeps its exact look (the engine reads only the new keys, and
+    // its config readers still honour the old ones for a bag that has not been
+    // through here yet). Never overwrites an explicit new key.
+    {
+      const raw = isObject(src.params) ? src.params : {};
+      const mapperName = MAPPERS.includes(src.mapper) ? src.mapper : 'none';
+      // R3-1 — Flat vs Surface: contourStyle:'region', spiralMode:'flatClip' and
+      // angleRef:'screen' are one setting, read for the bag's own Type.
+      if (raw.wrap === undefined) {
+        const flat = (mapperName === 'contour' && raw.contourStyle === 'region')
+          || (mapperName === 'spiral' && raw.spiralMode === 'flatClip')
+          || ((mapperName === 'hatch' || mapperName === 'crosshatch') && raw.angleRef === 'screen');
+        if (flat) params.wrap = 'flat';
+      }
+      delete params.contourStyle;
+      delete params.spiralMode;
+      // R3-2 — X-ray Front: Faded is a dotted front line.
+      if (raw.xrayFront !== undefined) {
+        if (raw.xrayFront === 'faded' && raw.xrayFrontLineType === undefined) params.xrayFrontLineType = 'dotted';
+        delete params.xrayFront;
+      }
+      // R3-8 — Depth cue is two flags.
+      if (raw.xrayDepthCue !== undefined) {
+        if ((raw.xrayDepthCue === 'density' || raw.xrayDepthCue === 'both') && raw.xrayCueDensity === undefined) params.xrayCueDensity = true;
+        if ((raw.xrayDepthCue === 'weight' || raw.xrayDepthCue === 'both') && raw.xrayCueWeight === undefined) params.xrayCueWeight = true;
+        delete params.xrayDepthCue;
+      }
+      // NEW-2 / NEW-3 — highlight treatments.
+      const ht = HIGHLIGHT_TREATMENT_ALIASES[raw.highlightTreatment] || raw.highlightTreatment;
+      if (raw.highlightTreatment === 'dashed' || raw.highlightTreatment === 'dotted') {
+        if (raw.highlightLineType === undefined) params.highlightLineType = raw.highlightTreatment;
+      } else if (raw.highlightTreatment === 'sparse' || raw.highlightTreatment === 'stippleOut') {
+        if (raw.highlightThinBy === undefined) params.highlightThinBy = raw.highlightTreatment === 'stippleOut' ? 'sample' : 'ruling';
+      }
+      if (ht !== undefined && HIGHLIGHT_TREATMENTS.includes(ht)) params.highlightTreatment = ht;
+      // R3-6 — Alt fill Hatch / Crosshatch are Lines with Layers 1|2.
+      if (raw.altFillMapper === 'hatch' || raw.altFillMapper === 'crosshatch') {
+        params.altFillMapper = 'lines';
+        if (raw.altFillLayers === undefined) params.altFillLayers = raw.altFillMapper === 'crosshatch' ? 2 : 1;
       }
     }
     return {
       penId: typeof src.penId === 'string' && src.penId ? src.penId : null,
-      mapper: MAPPERS.includes(src.mapper) ? src.mapper : 'none',
+      mapper: movedMapper || (MAPPERS.includes(src.mapper) ? src.mapper : 'none'),
       params,
     };
   };
@@ -950,6 +1044,23 @@
     if (!FS || typeof FS.writeBackFor !== 'function') return style;
     if (!isObject(style)) return style;
     const id = isObject(style.params) ? style.params.toneLaw : undefined;
+    // U5 M9a — Origin Spiral is now the Spiral Type with Centre: Glint. The torus
+    // wedge defect (W-10d) is the same one, so the same write-back applies to it.
+    if (primitiveMode === 'torus' && style.mapper === 'spiral'
+      && isObject(style.params) && style.params.spiralCenter === 'highlight') {
+      // A document that arrived as Hatch / Crosshatch / Contour + originSpiral goes back
+      // to that Type on Ladder (what the W-10d write-back always did); a style the user
+      // built on Spiral keeps its Type and just loses the glint Centre.
+      const was = style.params.movedFromMapper;
+      const nextParams = { ...style.params };
+      delete nextParams.movedFromMapper;
+      if (was) {
+        delete nextParams.spiralCenter;
+        nextParams.toneLaw = FS.DEFAULT || 'ladder';
+        return { ...style, mapper: was, params: nextParams };
+      }
+      return { ...style, params: { ...nextParams, spiralCenter: 'centroid' } };
+    }
     const target = FS.writeBackFor(id, primitiveMode, style.mapper);
     if (!target || target === id) return style;
     return { ...style, params: { ...style.params, toneLaw: target } };
@@ -1135,11 +1246,19 @@
       // already-exported `Shadows.toneLawApplies` predicate rather than
       // duplicating shadows.js's own exclusion set here, so this stays
       // correct automatically if that set ever changes.
-      const Shadows = Vectura.Scene3D && Vectura.Scene3D.Shadows;
-      const alias = ALIASES[value];
-      if (Shadows && typeof Shadows.toneLawApplies === 'function'
-          && !Shadows.toneLawApplies(value) && alias && typeof alias.into === 'string') {
-        return alias.into;
+      // U5: the forward target is named by the roster (SHADOW_FORWARD: onePenDown ->
+      // interlockWeave). Every other alias passes through raw, exactly as before — an
+      // id with no recipe of its own (isophoteWidth, the flow / web laws) already
+      // draws the plain hatch from shadows.js's own fallback.
+      if (roster.SHADOW_FORWARD && Object.prototype.hasOwnProperty.call(roster.SHADOW_FORWARD, value)) {
+        return roster.SHADOW_FORWARD[value];
+      }
+      // An alias with no shadow recipe of its own (isophoteWidth, defectSplit [flow],
+      // deepFillTSP [web]) draws shadows.js's plain-hatch fallback, which is exactly what
+      // 'ladder' draws. Store that, so the picker shows what the shadow looks like.
+      const ShadowsMod = Vectura.Scene3D && Vectura.Scene3D.Shadows;
+      if (ShadowsMod && typeof ShadowsMod.toneLawApplies === 'function' && !ShadowsMod.toneLawApplies(value)) {
+        return DEF;
       }
       return value;
     }

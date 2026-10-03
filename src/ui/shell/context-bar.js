@@ -1641,20 +1641,31 @@
       // Style row's own write above.
       // `dispParams` (W-10d-3's display seed) is computed above, with the
       // caveat that now shares it.
-      FS.styleParams(law).forEach((d) => {
-        const has = dispParams[d.key] !== undefined && dispParams[d.key] !== null;
-        const dv = has ? dispParams[d.key] : d.default;
+      // U5 — visible sub-controls (showWhen), reachability-gated options, and
+      // snapping to a real combination (see SCENE_FILL_STYLES.subControls).
+      const subControls = FS.subControls
+        ? FS.subControls(law, dispParams, { reach: { primitiveMode, solidType, mapper } })
+        : FS.styleParams(law).map((d) => ({
+          descriptor: d, value: dispParams[d.key] != null ? dispParams[d.key] : d.default,
+          options: d.options.map((opt) => ({ value: opt.value, label: opt.label, patch: { [d.key]: opt.value } })),
+        }));
+      subControls.forEach((sub) => {
+        const d = sub.descriptor;
         const subHost = flyRow(fly, d.label);
         attachSelectArrowStep(selectElOf(flyMixedSelect(subHost, {
-          options: d.options.map((opt) => ({ value: opt.value, label: opt.label })),
-          value: dv,
+          options: sub.options.map((opt) => ({ value: opt.value, label: opt.label, disabled: !!opt.disabled })),
+          value: sub.value,
           ariaLabel: d.label,
           mixed: sceneAgree(sc, (id) => {
             const q = rs(id).params || {};
             const p = FS.displayParams ? FS.displayParams(q.toneLaw, q) : q;
             return (p[d.key] !== undefined && p[d.key] !== null) ? p[d.key] : d.default;
           }).mixed,
-          onChange: (v) => { write({ params: { ...params, [d.key]: v } }); rebuild(); },
+          onChange: (v) => {
+            const picked = sub.options.find((opt) => opt.value === v);
+            write({ params: { ...params, ...(picked && picked.patch ? picked.patch : { [d.key]: v }) } });
+            rebuild();
+          },
         })));
       });
     }
@@ -1929,6 +1940,19 @@
           options: groups, value: law, ariaLabel: C.toneLaw.aria,
           onChange: (v) => setScene('shadow.shadowToneLaw', v),
         });
+        // U5 (decision 1) — see the docked panel: sub-controls reach the shadow
+        // textures the folds had hidden; the stored value is one internal law id.
+        (FS.shadowSubControls ? FS.shadowSubControls(bag.shadowToneLaw, Shadows) : []).forEach((sub) => {
+          UI.Select(flyRow(fly, sub.descriptor.label), {
+            options: sub.options.map((opt) => ({ value: opt.value, label: opt.label })),
+            value: sub.value,
+            ariaLabel: `Shadow ${sub.descriptor.label}`,
+            onChange: (v) => {
+              const picked = sub.options.find((opt) => opt.value === v);
+              if (picked) setScene('shadow.shadowToneLaw', picked.law);
+            },
+          });
+        });
         // fs-y1 Job 1 — "for all fill styles": the shadow tone-law picker is
         // a Fill Style control too.
         //
@@ -2058,19 +2082,42 @@
       mixed: sceneAgree(sc, treatOf).mixed,
       onChange: (v) => { write({ params: { ...params, highlightTreatment: v } }); rebuild(); },
     });
+    // U5 (NEW-2): Restyle line carries a line type; (NEW-3): Thin carries a granularity.
+    if (treatment === 'restyle') {
+      flyMixedSelect(flyRow(fly, C.line.label), {
+        options: SH.LINE_TYPES, value: SH.lineTypeOf(params), ariaLabel: C.line.aria,
+        mixed: sceneAgree(sc, (id) => SH.lineTypeOf(rs(id).params || {})).mixed,
+        onChange: (v) => write({ params: { ...params, highlightTreatment: 'restyle', highlightLineType: v } }),
+      });
+    }
+    if (treatment === 'thin') {
+      flyMixedSelect(flyRow(fly, C.thinBy.label), {
+        options: SH.THIN_BY, value: SH.thinByOf(params), ariaLabel: C.thinBy.aria,
+        mixed: sceneAgree(sc, (id) => SH.thinByOf(rs(id).params || {})).mixed,
+        onChange: (v) => write({ params: { ...params, highlightTreatment: 'thin', highlightThinBy: v } }),
+      });
+    }
     if (treatment === 'altFill') {
       // I7 — pick which mapper renders the alternate fill in the highlight
       // region (consumed by scene3d.js highlight altFill path). Shown only for
       // the altFill treatment, like burst's controls are burst-only.
-      const altMapper = C.altFillMappers.some((o) => o.value === params.altFillMapper) ? params.altFillMapper : 'stipple';
+      // U5 (R3-6): the stored hatch / crosshatch read as Lines with Layers 1 / 2.
+      const altOf = (p) => ((p.altFillMapper === 'hatch' || p.altFillMapper === 'crosshatch') ? 'lines'
+        : (C.altFillMappers.some((o) => o.value === p.altFillMapper) ? p.altFillMapper : 'stipple'));
+      const layersOf = (p) => (p.altFillLayers === 2 || p.altFillMapper === 'crosshatch' ? 2 : 1);
+      const altMapper = altOf(params);
       flyMixedSelect(flyRow(fly, C.altFill.label), {
         options: C.altFillMappers, value: altMapper, ariaLabel: C.altFill.aria,
-        mixed: sceneAgree(sc, (id) => {
-          const p = rs(id).params || {};
-          return C.altFillMappers.some((o) => o.value === p.altFillMapper) ? p.altFillMapper : 'stipple';
-        }).mixed,
-        onChange: (v) => write({ params: { ...params, altFillMapper: v } }),
+        mixed: sceneAgree(sc, (id) => altOf(rs(id).params || {})).mixed,
+        onChange: (v) => write({ params: { ...params, altFillMapper: v, ...(v === 'lines' ? { altFillLayers: layersOf(params) } : {}) } }),
       });
+      if (altMapper === 'lines') {
+        flyMixedSeg(flyRow(fly, C.altFillLayers.label), {
+          options: C.altFillLayers.options, value: layersOf(params), ariaLabel: C.altFillLayers.aria,
+          mixed: sceneAgree(sc, (id) => layersOf(rs(id).params || {})).mixed,
+          onChange: (v) => write({ params: { ...params, altFillMapper: 'lines', altFillLayers: v === 2 ? 2 : 1 } }),
+        });
+      }
     }
     // Strength + Pen configure highlight ink. Under "None" (and "Blank") there
     // is no highlight ink to configure, so the rows are REMOVED, not disabled.
@@ -2143,10 +2190,12 @@
         onCommit: (v) => sc.r.setSceneObjectStyle(sc.layerId, sc.ids, { params: { ...params, xrayBackDensity: v } }),
       },
     });
+    // A stored 'solid' always drew dashed (an occluded line is stamped [3,2]); show it so.
+    const backLineOf = (p) => ((p.xrayBackLineType === 'dotted' || p.xrayBackLineType === 'dashdot') ? p.xrayBackLineType : 'dashed');
     flyMixedSelect(flyRow(fly, C.backLine.label), {
-      options: C.lineOptions, value: (typeof params.xrayBackLineType === 'string' ? params.xrayBackLineType : 'dashed'),
+      options: C.lineOptions, value: backLineOf(params),
       ariaLabel: C.backLine.aria,
-      mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return typeof p.xrayBackLineType === 'string' ? p.xrayBackLineType : 'dashed'; }).mixed,
+      mixed: sceneAgree(sc, (id) => backLineOf(rs(id).params || {})).mixed,
       onChange: (v) => write({ params: { ...params, xrayBackLineType: v } }),
     });
     flyMixedSelect(flyRow(fly, C.pen.label), {

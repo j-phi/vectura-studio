@@ -181,6 +181,22 @@ for (const law of doc.laws) {
   };
 }
 
+// U5 — the merged survivors read as families of looks, not as the one law they
+// are named after. Relabel them, and say in plain words what their sub-controls reach
+// (the (i) popover and the Fill Style note read `chooseWhen`).
+const SURVIVOR_COPY = {
+  ladder: { label: 'Ladder (default)', extra: 'Spacing switches to a continuous field with smooth easing (Sigmoid or L*-linear curve, Screen / Foreshortened / Surface / Quantised metric, Plot-floor or Touching closest approach). Extra marks adds flicks where rungs drop, or a deep-shadow traverse.' },
+  taperedEnds: { label: 'Width Ribbon', extra: 'Width from picks Tone, Calligraphic nib angle or Isophotes; Ends picks Tapered or Hard.' },
+  bundleCount: { label: 'Bundle', extra: 'Closest approach picks Touching or Overlapping (a 0.55 ink step, up to 13 passes); Bundle ends picks Square or Lozenge.' },
+  ampSpacing: { label: 'Wave', extra: 'Phase picks In-phase or Interlocked; Waveform picks Serpentine, Loop or Zigzag; Pen down picks one stroke per ruling or one per family (in-phase).' },
+  etfKang: { label: 'Flow Field', extra: 'Direction field picks Follows depth (Kang) or Designed defects.' },
+};
+Object.keys(SURVIVOR_COPY).forEach((id) => {
+  if (!BY_ID[id]) return;
+  BY_ID[id].label = SURVIVOR_COPY[id].label;
+  BY_ID[id].chooseWhen = `${BY_ID[id].chooseWhen} ${SURVIVOR_COPY[id].extra}`.trim();
+});
+
 const FAMILIES = FAMILY_ORDER.map((fid) => {
   const fam = doc.families[fid];
   if (!fam) throw new Error(`[build-tone-laws] laws.json has no family entry for "${fid}".`);
@@ -233,56 +249,55 @@ if (PRODUCTION.length !== 37 || LIBRARY.length !== 11) {
 // the string `'ladder'` either way — but the §2.1 integrity throw that
 // checks `PICKER_IDS.indexOf(into)` needed one exception for exactly this
 // case (see below); ordinary survivors (U2-U8) never need it.
+// U5 (fill-style review) — the COLLAPSE table now carries MULTI-descriptor
+// survivors. Descriptor fields: `key`, `label`, `default`, `options`
+// ([{ value, label, law? }]), `showWhen` ({ key: value }: the control only
+// shows while those hold) and `passthrough` (the value reaches the engine as a
+// plain param and never picks a law). An option with a `law` becomes the entry
+// `{ when: { ...showWhen, [key]: value }, law }`; `COMBOS[survivor]` adds
+// explicit entries for laws that need two or more keys. The default entry
+// `{ when: {}, law: survivor }` is implicit. scripts/tone-law-resolver.js
+// documents the resolution rules; every alias is verified against it below.
+const closest = (def) => ({
+  key: 'closestApproach', label: 'Closest approach', default: def,
+});
 const COLLAPSE = {
-  ladder: [{                                                        // C-01 (U1, W-22)
-    key: 'rungMode', label: 'Rung detail', default: 'coarse',
-    options: [
-      { value: 'coarse', label: 'Coarse — 4 rungs', law: 'ladder' },
-      { value: 'fine', label: 'Fine rungs', law: 'fineLadder' },
-      { value: 'finePhase', label: 'Fine + phase dither', law: 'phaseFineLadder' },
-      { value: 'perceptual', label: 'Perceptual ramp', law: 'perceptualRamp' },
-    ],
-  }],
-  taperedEnds: [{                                                    // C-02 (U2, W-23)
-    key: 'bandProfile', label: 'Band profile', default: 'taper',
-    options: [
-      { value: 'taper', label: 'Tapered ends', law: 'taperedEnds' },
-      { value: 'hard', label: 'Hard ends (white band)', law: 'whiteBand' },
-      { value: 'nib', label: 'Calligraphic nib', law: 'nibAngle' },
-    ],
-  }],
-  weightModulated: [{                                                 // C-03 (U3, W-22b)
-    key: 'weightEase', label: 'Weight easing', default: 'step',
-    options: [
-      { value: 'step', label: 'Stepped weights', law: 'weightModulated' },
-      { value: 'smooth', label: 'Smoothed weights', law: 'weightSmoothstep' },
-    ],
-  }],
-  bundleCount: [{                                                      // C-04 (U4, W-24)
-    key: 'bundleMode', label: 'Bundle mode', default: 'count',
-    options: [
-      { value: 'count', label: 'Integer pass count', law: 'bundleCount' },
-      { value: 'eased', label: 'Eased pass count', law: 'bundleEased' },
-      { value: 'dither', label: 'Dithered', law: 'bundleDither' },
-      { value: 'handoff', label: 'Region handoff', law: 'bundleHandoff' },
-    ],
-  }],
-  // C-05 (U5, W-24) — the one TWO-descriptor survivor (plan §1 C-05 / §2.2
-  // rule 4). `fieldMetric` selects among screen/foreshortened/surface/
-  // quantised; `fieldFloor` selects the ink-width floor. Only ONE
-  // (fieldMetric:'screen', fieldFloor:'touch') combination has a real
-  // internal law (contFieldTouch); every other non-default pairing of the
-  // two is UNREPRESENTABLE and `resolveToneLaw` falls back to the bare
-  // survivor for it (rule 4 — "more than one active descriptor" — deterministic,
-  // never a throw). The plan's own honesty flag: the audit calls these five
-  // "byte-identical", which is FALSE — ink runs 1459.0 (contFieldSigmoid) to
-  // 2202.0 (contFieldSurface) mm on torus+hatch+med, a 51% spread; they are
-  // a picker-level near-duplicate (dHash-close at plot scale), not a
-  // rendering-level duplicate — corrected in the docs contract (U8's job,
-  // flagged here too).
-  contFieldSigmoid: [
+  // C-01 + M5 + M6. One Ladder: stepped rungs or a continuous spacing field, with
+  // the two overlays (flicks, deep-shadow traverse) as "Extra marks".
+  ladder: [
     {
-      key: 'fieldMetric', label: 'Field metric', default: 'screen',
+      key: 'spacing', label: 'Spacing', default: 'rungs',
+      options: [
+        { value: 'rungs', label: 'Stepped rungs' },
+        { value: 'field', label: 'Continuous field' },
+      ],
+    },
+    {
+      key: 'rungMode', label: 'Rung detail', default: 'coarse', showWhen: { spacing: 'rungs' },
+      options: [
+        { value: 'coarse', label: 'Coarse — 4 rungs', law: 'ladder' },
+        { value: 'fine', label: 'Fine rungs', law: 'fineLadder' },
+        { value: 'finePhase', label: 'Fine + phase dither', law: 'phaseFineLadder' },
+        { value: 'perceptual', label: 'Perceptual ramp', law: 'perceptualRamp' },
+      ],
+    },
+    {
+      key: 'rungOverlay', label: 'Extra marks', default: 'none', showWhen: { spacing: 'rungs' },
+      options: [
+        { value: 'none', label: 'None' },
+        { value: 'flicks', label: 'Flicks (Perceptual)' },
+        { value: 'traverse', label: 'Deep traverse (Coarse)' },
+      ],
+    },
+    {
+      key: 'fieldCurve', label: 'Easing curve', default: 'sigmoid', showWhen: { spacing: 'field' }, passthrough: true,
+      options: [
+        { value: 'sigmoid', label: 'Sigmoid (Sterzik)' },
+        { value: 'lstar', label: 'L*-linear' },
+      ],
+    },
+    {
+      key: 'fieldMetric', label: 'Field metric', default: 'screen', showWhen: { spacing: 'field' },
       options: [
         { value: 'screen', label: 'Screen metric', law: 'contFieldSigmoid' },
         { value: 'foreshortened', label: 'Foreshortening-corrected', law: 'contFieldFore' },
@@ -291,93 +306,106 @@ const COLLAPSE = {
       ],
     },
     {
-      key: 'fieldFloor', label: 'Field floor', default: 'plot',
+      ...closest('plot'), showWhen: { spacing: 'field' },
       options: [
-        { value: 'plot', label: 'Plot floor', law: 'contFieldSigmoid' },
-        { value: 'touch', label: 'Ink-width floor', law: 'contFieldTouch' },
+        { value: 'plot', label: 'Plot floor' },
+        { value: 'touch', label: 'Touching (ink width)', law: 'contFieldTouch' },
       ],
     },
   ],
-  // C-07 (U7) — the one WV6 (wave-family) survivor in this collapse. Ink is
-  // within 0.2% (ampSpacing 3925.9mm / weaveDepth 3917.8mm on
-  // torus+hatch+med) — a genuinely tight pair, per the plan's own §1 C-07
-  // note. `ampSpacing` MUST come out byte-identical: a live ruling on
-  // another lane (F1-placement, docs/3d-audit/STILL-OPEN.md, "condition 4")
-  // depends on `ampSpacing` and the rest of the WV6 family being unaffected
-  // by anything this collapse does — verified in
-  // tests/unit/scene3d-tone-law-collapse.test.js's U7 block across every
-  // TIER_B_PRIMITIVES x DENSITY_VALUES combination the audit's own capture
-  // script sweeps, not just the single torus+hatch+med cell every other
-  // unit in this chain checked.
-  //
-  // Both `ampSpacing` (the survivor) AND `weaveDepth` (the folded id) carry
-  // their OWN real, DIFFERENT measured caveats (both "not single-weight",
-  // see docs/tone-laws/laws.json) — unlike every earlier unit in this chain,
-  // where only the folded id had one. `effectiveLaw`/`resolveToneLaw` must
-  // therefore surface the SURVIVOR's own caveat at the descriptor default
-  // (`nesting:'single'`), not silently show nothing, and swap to
-  // `weaveDepth`'s distinct caveat once `nesting:'nested'` is picked — both
-  // paths verified in the U7 caveat describe block.
-  ampSpacing: [{
-    key: 'nesting', label: 'Nesting', default: 'single',
+  // C-02 + M3. Width source x end treatment. The old `bandProfile` is split.
+  taperedEnds: [
+    {
+      key: 'widthFrom', label: 'Width from', default: 'tone',
+      options: [
+        { value: 'tone', label: 'Tone (grey)' },
+        { value: 'nibAngle', label: 'Calligraphic nib angle' },
+        { value: 'isophote', label: 'Isophotes (shading contours)' },
+      ],
+    },
+    {
+      key: 'bandEnds', label: 'Ends', default: 'tapered',
+      options: [
+        { value: 'tapered', label: 'Tapered' },
+        { value: 'hard', label: 'Hard' },
+      ],
+    },
+  ],
+  weightModulated: [{                                                 // C-03 (U3, W-22b)
+    key: 'weightEase', label: 'Weight easing', default: 'step',
     options: [
-      { value: 'single', label: 'Single wave row', law: 'ampSpacing' },
-      { value: 'nested', label: 'Nested rows', law: 'weaveDepth' },
+      { value: 'step', label: 'Stepped weights', law: 'weightModulated' },
+      { value: 'smooth', label: 'Smoothed weights', law: 'weightSmoothstep' },
     ],
   }],
-  // C-08 (U8) — the other WV6 (wave-family) survivor in this collapse.
-  // perRuling (default, interlockWeave: 198 paths / 3956.2mm) -> continuous
-  // (onePenDown: 106 paths / 4136.2mm) on torus+hatch+med, per the plan's
-  // own §1 C-08 note: "interlockWeave and onePenDown are indistinguishable
-  // ragged spike fills ... at every density"; the pen-down saving (198 ->
-  // 106) is real, the picture is not. `trochoidLoop` (333 / 4422.7mm, 12%
-  // more ink, "polygon shards") is NOT folded -- the plan defers it to
-  // after handoff item A lands; it stays its own row.
-  //
-  // Like C-07 (U7), BOTH `interlockWeave` (survivor) AND `onePenDown`
-  // (folded) carry their own real, DIFFERENT measured caveats (both "not
-  // single-weight", see docs/tone-laws/laws.json) -- per LEDGER.md row 12b
-  // ("carry U7's finding forward"). `effectiveLaw`/`resolveToneLaw` surface
-  // the SURVIVOR's own caveat at the descriptor default (`penDown:
-  // 'perRuling'`), not silently show nothing, and swap to `onePenDown`'s
-  // distinct caveat once `penDown:'continuous'` is picked -- verified in
-  // the U8 caveat describe block.
-  interlockWeave: [{
-    key: 'penDown', label: 'Pen down', default: 'perRuling',
+  // C-04 + M1 + NEW-6. Mode x closest approach x ends.
+  bundleCount: [
+    {
+      key: 'bundleMode', label: 'Bundle mode', default: 'count',
+      options: [
+        { value: 'count', label: 'Integer pass count', law: 'bundleCount' },
+        { value: 'eased', label: 'Eased pass count', law: 'bundleEased' },
+        { value: 'dither', label: 'Dithered', law: 'bundleDither' },
+        { value: 'handoff', label: 'Region handoff', law: 'bundleHandoff' },
+      ],
+    },
+    {
+      ...closest('touch'),
+      options: [
+        { value: 'touch', label: 'Touching (1 ink)' },
+        { value: 'overlap', label: 'Overlapping (0.55 ink)', law: 'bundleSubNib' },
+      ],
+    },
+    {
+      key: 'bundleEnds', label: 'Bundle ends', default: 'square',
+      options: [
+        { value: 'square', label: 'Square' },
+        { value: 'lozenge', label: 'Lozenge (stepped inset)', law: 'bundleLozenge' },
+      ],
+    },
+  ],
+  // M2. One Flow field; mezzoRegion stays its own row (mark class `cross`).
+  etfKang: [{
+    key: 'flowField', label: 'Direction field', default: 'depth',
     options: [
-      { value: 'perRuling', label: 'One stroke per ruling', law: 'interlockWeave' },
-      { value: 'continuous', label: 'One pen-down per family', law: 'onePenDown' },
+      { value: 'depth', label: 'Follows depth (Kang)', law: 'etfKang' },
+      { value: 'defects', label: 'Designed defects', law: 'defectSplit' },
     ],
   }],
-  // C-06 (U6, also W-18's roster half) — the FROZEN-ON-JAY cluster
-  // (LEDGER.md row 11/§4 decision 2), unblocked 2026-09-10: Jay chose
-  // option A — fold `penStipple` INTO this survivor as `penMode:'stipple'`
-  // (lossless: its internal id, and DOT_LAW_RECIPES.penStipple on the shadow
-  // path, are both untouched — only the PICKER stops offering it as its own
-  // row) AND move it from the 'dot' mark class to 'hatch' in
-  // src/config/context-bar.js's FILL_STYLE_MARK_OF, since its own measured
-  // mechanism ("Broad ruled darks, medium hatch through the mids...") is a
-  // hatch, not the drawn dots its old grouping implied — the roster's own
-  // §2.4 "mark class is constant within every cluster" invariant otherwise
-  // corrupts (penInterleave/penPitchMatch/penFacing are all already
-  // 'hatch'). This is a VISIBLE picker re-categorisation (Pen Stipple moves
-  // from "Dots & stipple" to "Parallel hatching") — `docs/tone-laws/
-  // laws.json`'s `penStipple.caveat` was rewritten (U5b-2 plain-language
-  // precedent) to say so, in place of restating the plain
-  // three-pens-are-simulated fact `SIMULATED_NOTE` already auto-prepends
-  // (see context-bar.js `SCENE_FILL_STYLES.note`, `e.simulated`).
-  //
-  // ALL FOUR members carry their own real, non-empty measured caveats
-  // (unlike U7/U8's two-caveat pair, this cluster has four) — though NOT
-  // all four are pairwise distinct: penPitchMatch and penFacing carry the
-  // exact same "three pens are simulated" sentence (measured, not a
-  // reporting error — see the U6 caveat describe block). penInterleave's
-  // own (longer wording) and penStipple's own (the mark-class-move
-  // explanation) are each distinct from every other member.
-  // `effectiveLaw`/`resolveToneLaw` must surface the SPECIFIC member's own
-  // caveat at every one of the four `penMode` states, never silently
-  // collapsing onto the survivor's — verified in the U6 caveat describe
-  // block.
+  // M4 + S4. Phase x Waveform x Pen-down (+ the amplitude rule of the two
+  // interlocked builds). The old `nesting` label was wrong: weaveDepth is anti-phase.
+  ampSpacing: [
+    {
+      key: 'wavePhase', label: 'Phase', default: 'in',
+      options: [
+        { value: 'in', label: 'In-phase (crests line up)' },
+        { value: 'anti', label: 'Interlocked (anti-phase)' },
+      ],
+    },
+    {
+      key: 'waveForm', label: 'Waveform', default: 'serpentine',
+      options: [
+        { value: 'serpentine', label: 'Serpentine' },
+        { value: 'loop', label: 'Loop (trochoid)' },
+        { value: 'zigzag', label: 'Zigzag (amplitude only)' },
+      ],
+    },
+    {
+      key: 'penDown', label: 'Pen down', default: 'perRuling',
+      options: [
+        { value: 'perRuling', label: 'One stroke per ruling' },
+        { value: 'continuous', label: 'One per family (in-phase)' },
+      ],
+    },
+    {
+      key: 'waveAmp', label: 'Amplitude', default: 'cap', showWhen: { wavePhase: 'anti' },
+      options: [
+        { value: 'cap', label: 'Capped by clearance' },
+        { value: 'solve', label: 'Solved from clearance' },
+      ],
+    },
+  ],
+  // C-06 (U6) — penStipple folded into the pen survivor (Jay, 2026-09-10).
   penInterleave: [{
     key: 'penMode', label: 'Pen mode', default: 'interleave',
     options: [
@@ -388,6 +416,64 @@ const COLLAPSE = {
     ],
   }],
 };
+// Explicit entries (laws that need two or more keys, or whose option has no `law`).
+const COMBOS = {
+  ladder: [
+    { when: { spacing: 'rungs' }, law: 'ladder' },
+    { when: { spacing: 'field' }, law: 'contFieldSigmoid' },
+    { when: { spacing: 'rungs', rungMode: 'perceptual', rungOverlay: 'flicks' }, law: 'lozengeStipple' },
+    { when: { spacing: 'rungs', rungOverlay: 'traverse' }, law: 'deepFillTSP' },
+  ],
+  taperedEnds: [
+    { when: { bandEnds: 'hard' }, law: 'whiteBand' },
+    { when: { widthFrom: 'nibAngle', bandEnds: 'hard' }, law: 'nibAngle' },
+    { when: { widthFrom: 'isophote', bandEnds: 'hard' }, law: 'isophoteWidth' },
+  ],
+  ampSpacing: [
+    { when: { wavePhase: 'anti' }, law: 'interlockWeave' },
+    { when: { wavePhase: 'anti', waveAmp: 'solve' }, law: 'weaveDepth' },
+    { when: { waveForm: 'loop' }, law: 'trochoidLoop' },
+    { when: { waveForm: 'zigzag' }, law: 'amplitudeOnly' },
+    { when: { penDown: 'continuous' }, law: 'onePenDown' },
+  ],
+};
+// The pre-U5 sub-controls whose keys were renamed or split. A saved style bag that
+// still carries one of these keys is rewritten through the OLD resolution rule.
+const LEGACY = {
+  taperedEnds: { keys: ['bandProfile'], descriptors: [{
+    key: 'bandProfile', default: 'taper',
+    options: [{ value: 'taper', law: 'taperedEnds' }, { value: 'hard', law: 'whiteBand' }, { value: 'nib', law: 'nibAngle' }],
+  }] },
+  ampSpacing: { keys: ['nesting'], descriptors: [{
+    key: 'nesting', default: 'single',
+    options: [{ value: 'single', law: 'ampSpacing' }, { value: 'nested', law: 'weaveDepth' }],
+  }] },
+  interlockWeave: { keys: ['penDown'], descriptors: [{
+    key: 'penDown', default: 'perRuling',
+    options: [{ value: 'perRuling', law: 'interlockWeave' }, { value: 'continuous', law: 'onePenDown' }],
+  }] },
+  contFieldSigmoid: { keys: ['fieldMetric', 'fieldFloor'], descriptors: [
+    { key: 'fieldMetric', default: 'screen', options: [
+      { value: 'screen', law: 'contFieldSigmoid' }, { value: 'foreshortened', law: 'contFieldFore' },
+      { value: 'surface', law: 'contFieldSurface' }, { value: 'quantised', law: 'contFieldQuant' } ] },
+    { key: 'fieldFloor', default: 'plot', options: [
+      { value: 'plot', law: 'contFieldSigmoid' }, { value: 'touch', law: 'contFieldTouch' } ] },
+  ] },
+};
+
+// ENTRIES: the resolver's table, derived from COLLAPSE + COMBOS.
+const ENTRIES = {};
+Object.keys(COLLAPSE).forEach((survivor) => {
+  const es = [{ when: {}, law: survivor }];
+  COLLAPSE[survivor].forEach((d) => {
+    d.options.forEach((opt) => {
+      if (!opt.law || opt.value === d.default) return;
+      es.push({ when: Object.assign({}, d.showWhen || {}, { [d.key]: opt.value }), law: opt.law });
+    });
+  });
+  (COMBOS[survivor] || []).forEach((e) => es.push(e));
+  ENTRIES[survivor] = es;
+});
 
 // ── 5c. Derive ALIASES + PICKER_IDS + STYLE_PARAMS from COLLAPSE ───────────
 // ALIASES: folded id -> { into: survivor, params: { [descriptor.key]: value } }.
@@ -395,21 +481,33 @@ const COLLAPSE = {
 // both read to turn a legacy/alias id back into (survivor, params) or
 // straight into the internal id it already names.
 const ALIASES = {};
-Object.keys(COLLAPSE).forEach((survivor) => {
-  const descriptors = COLLAPSE[survivor];
-  descriptors.forEach((d) => {
-    d.options.forEach((opt) => {
-      if (opt.value === d.default) return; // the survivor's own bare id, not an alias
-      if (ALIASES[opt.law]) {
-        throw new Error(`[build-tone-laws] "${opt.law}" is aliased twice (descriptor "${d.key}" of survivor "${survivor}").`);
-      }
-      ALIASES[opt.law] = { into: survivor, params: { [d.key]: opt.value } };
+Object.keys(ENTRIES).forEach((survivor) => {
+  ENTRIES[survivor].forEach((e) => {
+    if (e.law === survivor) return; // the survivor's own bare id, not an alias
+    if (ALIASES[e.law]) {
+      throw new Error(`[build-tone-laws] "${e.law}" is aliased twice (survivor "${survivor}").`);
+    }
+    const params = {};
+    Object.keys(e.when).forEach((k) => {
+      const d = COLLAPSE[survivor].find((x) => x.key === k);
+      if (!d) throw new Error(`[build-tone-laws] ENTRIES["${survivor}"] names unknown key "${k}".`);
+      if (e.when[k] !== d.default) params[k] = e.when[k];
     });
+    ALIASES[e.law] = { into: survivor, params };
   });
 });
+// M9a — a Fill Style that is really a Type setting. originSpiral is a spiral wound
+// from the specular point: it is the Spiral Type with Centre: Highlight. It leaves
+// the Fill Style picker and a saved (Hatch / Crosshatch / Contour) style that names it
+// is rewritten to `{ mapper: 'spiral', params: { spiralCenter: 'highlight' } }`
+// (Params.normalizeStyle). The engine runs the same law for that Type + Centre.
+const MOVED = {
+  originSpiral: { mapper: 'spiral', from: ['hatch', 'crosshatch', 'contour'], params: { spiralCenter: 'highlight' } },
+};
 // PICKER_IDS: the flat option list the UI actually offers — IDS minus every
-// folded id. The survivor itself STAYS (it is not its own alias).
-const PICKER_IDS = IDS.filter((id) => !ALIASES[id]);
+// folded id and every id that moved to a Type. The survivor itself STAYS (it is not
+// its own alias).
+const PICKER_IDS = IDS.filter((id) => !ALIASES[id] && !MOVED[id]);
 // STYLE_PARAMS: the COLLAPSE table verbatim — it drives the UI's generic
 // sub-control AND is read back by ALIASES above, so the two can never drift.
 const STYLE_PARAMS = COLLAPSE;
@@ -441,6 +539,7 @@ Object.keys(COLLAPSE).forEach((survivor) => {
       // which is deliberately not a roster id (see DEFAULT_LAW above) — only
       // reachable via the option whose value === the descriptor's own
       // default, i.e. the survivor's own bare id, never a folded alias.
+      if (!opt.law) return;
       if (opt.law === DEFAULT_LAW && opt.value === d.default && survivor === DEFAULT_LAW) return;
       if (IDS.indexOf(opt.law) === -1) {
         throw new Error(`[build-tone-laws] COLLAPSE["${survivor}"] descriptor "${d.key}" option "${opt.value}" law "${opt.law}" is not a roster id.`);
@@ -449,11 +548,27 @@ Object.keys(COLLAPSE).forEach((survivor) => {
   });
 });
 {
-  const union = new Set(PICKER_IDS.concat(Object.keys(ALIASES)));
+  const union = new Set(PICKER_IDS.concat(Object.keys(ALIASES), Object.keys(MOVED)));
   if (union.size !== IDS.length || IDS.some((id) => !union.has(id))) {
     throw new Error('[build-tone-laws] PICKER_IDS ∪ keys(ALIASES) must equal IDS exactly.');
   }
 }
+
+// Resolver self-check (U5): every alias must resolve back to its own law through
+// the same code the browser runs; the survivor's default bag must be the survivor.
+const { makeResolver } = require(path.join(REPO_ROOT, 'scripts/tone-law-resolver.js'));
+const RESOLVER_CHECK = makeResolver({ ENTRIES, STYLE_PARAMS, ALIASES, LEGACY });
+Object.keys(ALIASES).forEach((aliasId) => {
+  const a = ALIASES[aliasId];
+  const res = RESOLVER_CHECK.analyse(a.into, a.params);
+  if (res.law !== aliasId || !res.ok) {
+    throw new Error(`[build-tone-laws] alias "${aliasId}" resolves to "${res.law}" (ok=${res.ok}) through ${a.into} ${JSON.stringify(a.params)}.`);
+  }
+});
+Object.keys(ENTRIES).forEach((survivor) => {
+  const res = RESOLVER_CHECK.analyse(survivor, {});
+  if (res.law !== survivor || !res.ok) throw new Error(`[build-tone-laws] survivor "${survivor}" default bag resolves to "${res.law}".`);
+});
 
 // ── 6. VERSION — the git blob sha of laws.json at generation time, so a
 // drift between the doc and the snapshot is detectable. Falls back to a
@@ -476,6 +591,15 @@ const libraryJson = JSON.stringify(LIBRARY, null, 2);
 const pickerIdsJson = JSON.stringify(PICKER_IDS, null, 2);
 const aliasesJson = JSON.stringify(ALIASES, null, 2);
 const styleParamsJson = JSON.stringify(STYLE_PARAMS, null, 2);
+const entriesJson = JSON.stringify(ENTRIES, null, 2);
+// A raw shadow id with no shadow recipe of its own draws as the law named here (a flat
+// footprint has nothing to bridge a continuous pen-down on). It was the alias's
+// survivor before U5 (interlockWeave); the table keeps that saved look.
+const SHADOW_FORWARD = { onePenDown: 'interlockWeave' };
+const shadowForwardJson = JSON.stringify(SHADOW_FORWARD, null, 2);
+const movedJson = JSON.stringify(MOVED, null, 2);
+const legacyJson = JSON.stringify(LEGACY, null, 2);
+const resolverSrc = makeResolver.toString();
 
 const output = `/**
  * Vectura Studio — Scene 3D tone-law catalog (generated).
@@ -515,6 +639,15 @@ const output = `/**
   const PICKER_IDS = ${pickerIdsJson};
   const ALIASES = ${aliasesJson};
   const STYLE_PARAMS = ${styleParamsJson};
+  // U5: the resolver table (entry = when-pattern -> internal law id), the retired
+  // sub-control keys, and the resolver itself (scripts/tone-law-resolver.js).
+  const ENTRIES = ${entriesJson};
+  const LEGACY = ${legacyJson};
+  const SHADOW_FORWARD = ${shadowForwardJson};
+  // Fill Styles that became a Type setting (see scripts/build-tone-laws.js MOVED).
+  const MOVED = ${movedJson};
+  ${resolverSrc.replace(/\n/g, '\n  ')}
+  const RESOLVER = makeResolver(() => Vectura.SCENE3D_TONE_LAWS);
 
   // [{ group, options: [{ value, label }] }] — for UI.Select. Every family
   // contributes a group (even if, after filtering, it has zero options) so
@@ -537,6 +670,15 @@ const output = `/**
     PICKER_IDS,
     ALIASES,
     STYLE_PARAMS,
+    ENTRIES,
+    LEGACY,
+    SHADOW_FORWARD,
+    MOVED,
+    analyse: RESOLVER.analyse,
+    resolveLaw: RESOLVER.resolveLaw,
+    visibleDescriptors: RESOLVER.visibleDescriptors,
+    pickPatch: RESOLVER.pickPatch,
+    upgradeLegacy: RESOLVER.upgradeLegacy,
     FAMILIES,
     BY_ID,
     selectGroups,

@@ -236,7 +236,7 @@ describe('Scene X-ray — back-face controls need a surface fill', () => {
         notes: Array.from(panelHost.querySelectorAll('.vs3-xray-note')).map((n) => n.textContent),
         backRows: Array.from(panelHost.querySelectorAll('.vs3-lbl'))
           .map((l) => l.textContent)
-          .filter((t) => /^(Back |Front$|Depth cue$)/.test(t)),
+          .filter((t) => /^(Back |Front|Depth )/.test(t)),
       };
     };
 
@@ -246,7 +246,8 @@ describe('Scene X-ray — back-face controls need a surface fill', () => {
       expect(p.notes).toEqual([]);
       // U3 — the fixture is a BOX: Front=Faded is measured dead on faceted
       // shapes (r3 §2b), so the Front row is removed there.
-      expect(p.backRows).toEqual(['Back faces', 'Back density', 'Back line', 'Depth cue', 'Back pen']);
+      // U5 (R3-8): Depth cue is two toggles; (R3-2) Front: Faded is the Front line type.
+      expect(p.backRows).toEqual(['Back faces', 'Back density', 'Back line', 'Depth → density', 'Depth → weight', 'Back pen']);
     });
 
     test('a WIREFRAME mapper keeps the header, drops every row, and says why', () => {

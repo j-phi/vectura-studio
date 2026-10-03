@@ -354,17 +354,51 @@
     { value: 'dotted', label: 'Dotted' },
     { value: 'dashdot', label: 'Dash-dot' },
   ];
+  // U5 (R3-3): the Hidden edge class had two rows for three real states — Occluded
+  // Drop|Dash and Dash Solid|Dashed|Dotted — and Solid drew the same as Dashed (an
+  // occluded line is stamped [3,2] when its own dash is empty). One select now:
+  // Drop / Dashed / Dotted / Dash-dot. It writes the same two stored fields
+  // (hiddenTreatment + dash), so a saved document is untouched.
+  const HIDDEN_EDGE_OPTS = [
+    { value: 'drop', label: 'Drop' }, { value: 'dashed', label: 'Dashed' },
+    { value: 'dotted', label: 'Dotted' }, { value: 'dashdot', label: 'Dash-dot' },
+  ];
+  const HIDDEN_EDGE_DASH = { dashed: [3, 2], dotted: [0.6, 1.6], dashdot: [3, 2, 0.4, 2] };
+  const hiddenEdgeState = (cur) => {
+    if (!cur || cur.hiddenTreatment !== 'dash') return 'drop';
+    const a = cur.dash;
+    if (Array.isArray(a) && a.length >= 4) return 'dashdot';
+    if (Array.isArray(a) && a.length && a[0] <= 1) return 'dotted';
+    return 'dashed';
+  };
+  const hiddenEdgePatch = (v) => (v === 'drop' ? { hiddenTreatment: 'drop' } : { hiddenTreatment: 'dash', dash: (HIDDEN_EDGE_DASH[v] || HIDDEN_EDGE_DASH.dashed).slice() });
   const STROKE_DEFAULTS = { lineType: 'solid', dashScale: 1, wobble: 0, wobbleScale: 6, overstroke: false };
   // Phase 4 — highlight (specular band) treatment options. Shared with the
   // ctxbar Highlight flyout via Vectura.SCENE_HIGHLIGHT (declared in
   // src/config/context-bar.js, which loads first): one option list and one
   // "is this treatment inert?" rule, so the two surfaces cannot drift.
   const SCENE_HIGHLIGHT = () => Vectura.SCENE_HIGHLIGHT;
+  // U5 (R3-6): Hatch + Crosshatch are one `Lines` option with Layers 1 | 2.
   const ALT_FILL_MAPPER_OPTIONS = [
-    { value: 'stipple', label: 'Stipple' }, { value: 'hatch', label: 'Hatch' },
-    { value: 'crosshatch', label: 'Crosshatch' }, { value: 'contour', label: 'Contour' },
-    { value: 'spiral', label: 'Spiral' },
+    { value: 'stipple', label: 'Stipple' }, { value: 'lines', label: 'Lines' },
+    { value: 'contour', label: 'Contour' }, { value: 'spiral', label: 'Spiral' },
   ];
+  const altFillOf = (sp) => {
+    const m = (sp || {}).altFillMapper;
+    if (m === 'hatch' || m === 'crosshatch') return 'lines';
+    return ALT_FILL_MAPPER_OPTIONS.some((opt) => opt.value === m) ? m : 'stipple';
+  };
+  const altFillLayersOf = (sp) => (((sp || {}).altFillLayers === 2 || (sp || {}).altFillMapper === 'crosshatch') ? 2 : 1);
+  // U5 (R3-1): Flat vs Surface is one setting, `wrap`. A bag that has not been
+  // through normalizeStyle yet (an object3d leaf) may still carry the old keys.
+  const isFlatWrap = (sp, mapper) => {
+    const s0 = sp || {};
+    if (s0.wrap === 'flat') return true;
+    if (s0.wrap === 'surface') return false;
+    if (mapper === 'contour') return s0.contourStyle === 'region';
+    if (mapper === 'spiral') return s0.spiralMode === 'flatClip';
+    return s0.angleRef === 'screen';
+  };
 
   // ── MAPPER_CONTROLS (Phase 2) ───────────────────────────────────────────────
   // The single source of truth for each mapper's OWN parameter controls. A
@@ -378,13 +412,15 @@
   // x-ray block stay separate (they apply across mappers / object visibility).
   const ANGLE_REF_OPTS = [
     { value: 'face', label: 'Face' },
-    { value: 'screen', label: 'Screen' },
     { value: 'worldUp', label: 'Up' },
   ];
   const DOT_SHAPE_OPTS = [
     { value: 'dot', label: 'Dot' }, { value: 'ring', label: 'Ring' },
-    { value: 'cross', label: 'Cross' }, { value: 'plus', label: 'Plus' }, { value: 'tick', label: 'Tick' },
+    { value: 'plus', label: 'Plus' }, { value: 'tick', label: 'Tick' },
   ];
+  // U5 (R3-5): a Cross is a Plus turned 45 degrees at 1.41x the size (measured: the
+  // same marks). It is no longer offered; a stored 'cross' still draws and shows here.
+  const DOT_SHAPE_LEGACY = { value: 'cross', label: 'Cross (= Plus at 45°)' };
   const EDGE_CLASS_OPTS = [
     { value: 'silhouette', label: 'Sil' }, { value: 'boundary', label: 'Bound' },
     { value: 'crease', label: 'Crease' }, { value: 'interior', label: 'Interior' },
@@ -397,6 +433,11 @@
   const DENSITY_MAX = 500;
   const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: DENSITY_MAX, step: 1, default: 50 };
   const D_ANGLEREF = { key: 'angleRef', kind: 'seg', label: 'Angle ref', ariaLabel: 'Hatch angle reference', default: 'face', options: ANGLE_REF_OPTS };
+  const D_WRAP = {
+    key: 'wrap', kind: 'seg', label: 'Wrap', ariaLabel: 'Wrap: follow the surface or draw flat in screen space', default: 'surface',
+    options: [{ value: 'surface', label: 'Surface' }, { value: 'flat', label: 'Flat' }],
+    readValue: (sp, ctx) => (isFlatWrap(sp, ctx && ctx.mapper) ? 'flat' : 'surface'),
+  };
   const D_LINKFILL = { key: 'linkFill', kind: 'toggle', label: 'Link fill', ariaLabel: 'Connect scanlines (boustrophedon)', default: false };
   // U9 — the FILL STYLE (tone law). `kind: 'lawpick'` is a Select grouped by
   // MARK CLASS plus a description block; the roster and the taxonomy both come
@@ -416,9 +457,9 @@
     help: 'The fewest rulings a facet may be given when Density asks for less. Lower (1-2) keeps the tone ladder\'s contrast but leaves facets nearly bare; higher (4-8) fills the lit facets at the cost of that contrast. No effect on smooth shapes, on contour/spiral/stipple fills, or on the ground.',
   };
   const MAPPER_CONTROLS = {
-    hatch: [D_ANGLE, D_DENSITY, D_TONELAW, D_ANGLEREF, D_LINKFILL, D_FACETFLOOR],
+    hatch: [D_ANGLE, D_DENSITY, D_TONELAW, D_WRAP, D_ANGLEREF, D_LINKFILL, D_FACETFLOOR],
     crosshatch: [
-      D_ANGLE, D_DENSITY, D_TONELAW, D_ANGLEREF, D_LINKFILL,
+      D_ANGLE, D_DENSITY, D_TONELAW, D_WRAP, D_ANGLEREF, D_LINKFILL,
       { key: 'crossAngleDelta', kind: 'dial', label: 'Cross angle', ariaLabel: 'Crosshatch angle delta', min: 10, max: 170, step: 1, default: 90 },
       { key: 'crossDensityRatio', kind: 'slider', label: 'Cross density', ariaLabel: 'Second family density ratio', min: 0.25, max: 2, step: 0.05, default: 1 },
       { key: 'tripleHatch', kind: 'toggle', label: 'Triple hatch', ariaLabel: 'Triple hatch in darkest band', default: false },
@@ -426,15 +467,15 @@
     ],
     contour: [
       D_DENSITY, D_TONELAW,
-      { key: 'contourStyle', kind: 'seg', label: 'Style', ariaLabel: 'Contour style', default: 'surface', options: [{ value: 'surface', label: 'Surface' }, { value: 'region', label: 'Region' }] },
+      D_WRAP,
     ],
     spiral: [
       D_DENSITY, D_TONELAW,
       { key: 'spiralAngleOffset', kind: 'dial', label: 'Angle offset', ariaLabel: 'Spiral start angle', min: 0, max: 360, step: 1, default: 0 },
       { key: 'spiralEccentricity', kind: 'slider', label: 'Eccentricity', ariaLabel: 'Spiral eccentricity', min: 0.3, max: 3, step: 0.05, default: 1, seed: false },
-      { key: 'spiralCenter', kind: 'seg', label: 'Centre', ariaLabel: 'Spiral centre', default: 'centroid', options: [{ value: 'centroid', label: 'Centroid' }, { value: 'bboxCenter', label: 'Bounds' }] },
+      { key: 'spiralCenter', kind: 'seg', label: 'Centre', ariaLabel: 'Spiral centre', default: 'centroid', options: [{ value: 'centroid', label: 'Centroid' }, { value: 'bboxCenter', label: 'Bounds' }, { value: 'highlight', label: 'Glint' }] },
       { key: 'axisSnap', kind: 'toggle', label: 'Axis snap', ariaLabel: 'Squared spiral', default: false },
-      { key: 'spiralMode', kind: 'seg', label: 'Mode', ariaLabel: 'Spiral mode', default: 'surfaceHelix', options: [{ value: 'surfaceHelix', label: 'Surface' }, { value: 'flatClip', label: 'Flat' }] },
+      D_WRAP,
     ],
     stipple: [
       D_DENSITY, D_TONELAW,
@@ -442,6 +483,15 @@
       { key: 'dotSize', kind: 'slider', label: 'Dot size', ariaLabel: 'Dot size', min: 0.1, max: 3, step: 0.05, default: 0.7, seed: false },
       { key: 'stippleJitter', kind: 'slider', label: 'Jitter', ariaLabel: 'Stipple jitter', min: 0, max: 100, step: 1, default: 40 },
       { key: 'dotAngle', kind: 'dial', label: 'Dot angle', ariaLabel: 'Dot mark angle', min: 0, max: 360, step: 1, default: 0 },
+      // U5 (M9b): Stipple varies the dot COUNT with tone. The Dot Screen fill style (Type
+      // Hatch) varies the dot SIZE on a hex lattice: a different engine, so it stays
+      // its own Fill Style and this row is the way to it from here.
+      {
+        key: 'dotScreenLink', kind: 'action', seed: false, label: 'Dot size by tone', actionLabel: 'Dot Screen fill',
+        ariaLabel: 'Switch to Hatch with the Dot Screen fill style (dots that grow with shade)',
+        help: 'Stipple changes how many dots there are. The Dot Screen fill style keeps the dots on a hex lattice and changes their size instead. Switches Type to Hatch.',
+        run: (o) => o.setMapper && o.setMapper('hatch', { toneLaw: 'mkDotScreen' }),
+      },
     ],
     wireframe: [
       { key: 'edgeClasses', kind: 'multi', label: 'Edges', ariaLabel: 'Wireframe edge classes', options: EDGE_CLASS_OPTS, default: { silhouette: true, boundary: true, crease: true, interior: true } },
@@ -536,7 +586,12 @@
       const SP = R && R.STYLE_PARAMS;
       const descriptors = SP && SP[out.toneLaw];
       if (descriptors) {
-        descriptors.forEach((d) => { out[d.key] = carry(cur, d.key, d.default); });
+        // U5: only the sub-controls the survivor SHOWS (showWhen) and that pick an engine
+        // law are seeded; a hidden or pass-through key (Easing curve, Field metric...) stays
+        // absent until the user reaches it.
+        const shown = (R && typeof R.visibleDescriptors === 'function')
+          ? R.visibleDescriptors(out.toneLaw, cur).map((v) => v.descriptor) : descriptors;
+        shown.forEach((d) => { if (!d.passthrough) out[d.key] = carry(cur, d.key, d.default); });
       }
     }
     if (FILL_MAPPERS.has(mapper)) {
@@ -741,14 +796,26 @@
     // `o.write`/`o.writeStyleParams` against the untouched live bag.
     const styleParamBag = FS.displayParams
       ? FS.displayParams(o.value, o.paramsBag || {}) : (o.paramsBag || {});
-    FS.styleParams(law).forEach((d) => {
-      const has = styleParamBag[d.key] !== undefined && styleParamBag[d.key] !== null;
-      const dv = has ? styleParamBag[d.key] : d.default;
+    // U5 — the visible sub-controls of the survivor (`showWhen` gating, one engine
+    // law per combination). An option that is no-effect on this shape is disabled
+    // (NEW-5b); picking one that is not a real combination with the other
+    // sub-controls snaps those to the nearest one that is (`pickPatch`).
+    const subControls = FS.subControls
+      ? FS.subControls(law, styleParamBag, { reach: { primitiveMode: o.primitiveMode, solidType: o.solidType, mapper: o.mapper, totalFaces: o.totalFaces } })
+      : FS.styleParams(law).map((d) => ({
+        descriptor: d, value: styleParamBag[d.key] != null ? styleParamBag[d.key] : d.default,
+        options: d.options.map((opt) => ({ value: opt.value, label: opt.label, patch: { [d.key]: opt.value } })),
+      }));
+    subControls.forEach((sc) => {
+      const d = sc.descriptor;
       const subSelect = UI.Select(o.row(d.label), {
-        options: d.options.map((opt) => ({ value: opt.value, label: opt.label })),
-        value: dv,
+        options: sc.options.map((opt) => ({ value: opt.value, label: opt.label, disabled: !!opt.disabled })),
+        value: sc.value,
         ariaLabel: d.label,
-        onChange: (v) => { if (typeof o.writeStyleParams === 'function') o.writeStyleParams({ [d.key]: v }); },
+        onChange: (v) => {
+          const picked = sc.options.find((opt) => opt.value === v);
+          if (typeof o.writeStyleParams === 'function') o.writeStyleParams(picked && picked.patch ? picked.patch : { [d.key]: v });
+        },
       });
       comps.push(subSelect);
       attachSelectArrowStep(selectElOf(subSelect));
@@ -1070,8 +1137,7 @@
   // nulls `chartParams` for both), so the row is removed rather than left inert.
   const fillLinesApplyTo = (prim, mapper) => curvesApplyTo(prim) && FILL_LINE_MAPPERS.has(mapper);
   const fillFidelityApplies = (prim, mapper, sp) => fillLinesApplyTo(prim, mapper)
-    && !(mapper === 'contour' && (sp || {}).contourStyle === 'region')
-    && !(mapper === 'spiral' && (sp || {}).spiralMode === 'flatClip');
+    && !((mapper === 'contour' || mapper === 'spiral') && isFlatWrap(sp, mapper));
 
   const FILL_LINE_DEFAULTS = { fillCurves: false, fillSmoothing: 0, fillSimplify: 0, fillFidelity: 1 };
 
@@ -1186,6 +1252,7 @@
     triple: 'Triple hatch adds a third family only to Fill Styles that draw rung families. Ladder, Continuous Field, Deep Fill and the field-driven styles ignore it.',
     eccentricity: 'Eccentricity has no effect on a curved shape under Ladder or Deep Fill.',
     curvedHL: '— no effect on curved shapes',
+    glintSpiral: 'Centre: Glint draws the Origin Spiral law (a spiral wound from the specular point, spacing from tone). The Fill Style and the other spiral controls do not apply.',
   };
   const CONTROL_GATES = {
     facetMinRulings: (c) => (c.cls === 'curved' ? false : (c.cls === 'faceted' && c.mono ? GATE_NOTES.mono : true)),
@@ -1201,18 +1268,26 @@
     tripleHatch: (c) => {
       if (c.cls === 'faceted') return false;
       if (c.mono) return GATE_NOTES.triple;
-      if (c.survivor === 'ladder' || c.survivor === 'contFieldSigmoid' || c.survivor === 'deepFillTSP') return GATE_NOTES.triple;
+      if (c.survivor === 'ladder') return GATE_NOTES.triple;
       return true;
     },
-    contourStyle: (c) => c.cls !== 'faceted',
-    spiralCenter: (c) => c.cls !== 'faceted',
-    spiralMode: (c) => c.cls !== 'faceted',
-    spiralEccentricity: (c) => (c.cls === 'curved' && (c.survivor === 'ladder' || c.survivor === 'deepFillTSP') ? GATE_NOTES.eccentricity : true),
+    // U5 (R3-1): Wrap is live on a curved Contour / Spiral and on a faceted Hatch,
+    // and dead on the other two combinations (measured: each old key was dead on
+    // half the shapes).
+    wrap: (c) => ((c.mapper === 'hatch' || c.mapper === 'crosshatch') ? c.cls !== 'curved'
+      : ((c.mapper === 'spiral' && c.sp.spiralCenter === 'highlight') ? GATE_NOTES.glintSpiral : c.cls !== 'faceted')),
+    // U5 (M9a): Centre: Glint is the Origin Spiral law (it was a Fill Style). It is
+    // live on faceted shapes too, so the Centre row always shows; while it is on, the
+    // controls that shape the other two spirals have nothing to act on.
+    spiralAngleOffset: (c) => (c.sp.spiralCenter === 'highlight' ? GATE_NOTES.glintSpiral : true),
+    axisSnap: (c) => (c.sp.spiralCenter === 'highlight' ? GATE_NOTES.glintSpiral : true),
+    toneLaw: (c) => ((c.mapper === 'spiral' && c.sp.spiralCenter === 'highlight') ? GATE_NOTES.glintSpiral : true),
+    spiralEccentricity: (c) => (c.sp.spiralCenter === 'highlight' ? GATE_NOTES.glintSpiral : (c.cls === 'curved' && c.survivor === 'ladder' ? GATE_NOTES.eccentricity : true)),
     dotAngle: (c) => { const s = c.sp.dotShape || 'dot'; return s !== 'dot' && s !== 'ring'; },
     // Hidden-but-live keys exposed by U3 (r3 §5). Each is shown only where it
     // measurably changes output.
-    spiralPitch: (c) => c.cls !== 'curved' || c.sp.spiralMode === 'flatClip',
-    contourStep: (c) => c.cls !== 'curved' || c.sp.contourStyle === 'region',
+    spiralPitch: (c) => (c.sp.spiralCenter === 'highlight' ? GATE_NOTES.glintSpiral : (c.cls !== 'curved' || isFlatWrap(c.sp, 'spiral'))),
+    contourStep: (c) => c.cls !== 'curved' || isFlatWrap(c.sp, 'contour'),
     toneQuantLevels: (c) => c.law === 'contFieldQuant' && c.cls !== 'faceted',
     wobbleScale: (c) => (Number(c.sp.wobble) > 0) && c.mapper !== 'spiral' && c.mapper !== 'stipple' && c.cls !== 'curved',
   };
@@ -1267,7 +1342,7 @@
     const disabledNote = typeof verdict === 'string' ? verdict : '';
     const sp = o.sp || {};
     const has = sp[d.key] !== undefined && sp[d.key] !== null;
-    const raw = has ? sp[d.key] : d.default;
+    const raw = typeof d.readValue === 'function' ? d.readValue(sp, o.ctx) : (has ? sp[d.key] : d.default);
     const write = (val) => { if (!disabledNote) o.write(d.key, val); };
     const aria = d.ariaLabel || d.label;
     const before = o.host.childElementCount;
@@ -1308,7 +1383,8 @@
         o.comps.push(UI.Slider(host, { value: dv, min: d.min, max: d.max, step: d.step, defaultValue: d.default, ariaLabel: aria, onCommit: (v) => write(v) }));
       }
     } else if (d.kind === 'select') {
-      o.comps.push(UI.Select(o.row(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
+      const selOptions = (d.key === 'dotShape' && raw === DOT_SHAPE_LEGACY.value) ? d.options.concat([DOT_SHAPE_LEGACY]) : d.options;
+      o.comps.push(UI.Select(o.row(d.label), { options: selOptions, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
     } else if (d.kind === 'lawpick') {
       if (typeof o.lawpick === 'function') o.lawpick(d, raw);
     } else if (d.kind === 'seg') {
@@ -1318,6 +1394,16 @@
         options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
         value: raw === true ? 'on' : 'off', ariaLabel: aria, onChange: (v) => write(v === 'on'),
       }));
+    } else if (d.kind === 'action') {
+      const host = o.row(d.label);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'vs3-tree-addbtn';
+      btn.textContent = d.actionLabel || d.label;
+      btn.setAttribute('aria-label', aria);
+      if (d.help) btn.title = d.help;
+      btn.addEventListener('click', () => { if (!disabledNote) d.run(o); });
+      host.appendChild(btn);
     } else if (d.kind === 'multi') {
       const cur = raw && typeof raw === 'object' ? raw : d.default;
       const selected = d.options.filter((opt) => cur[opt.value] !== false).map((opt) => opt.value);
@@ -1474,7 +1560,20 @@
       });
     }
     if (!SH.hasDetailControls(treatment)) return;
-    if (!curved && (treatment === 'sparse' || treatment === 'altFill' || treatment === 'stippleOut')) {
+    // U5 (NEW-2): Restyle line carries a line type. (NEW-3): Thin carries a granularity.
+    if (treatment === 'restyle') {
+      o.comps.push(UI.Select(o.row('Line'), {
+        options: SH.LINE_TYPES, value: SH.lineTypeOf(rp), ariaLabel: 'Highlight line type',
+        onChange: (v) => o.writeMany ? o.writeMany({ highlightTreatment: 'restyle', highlightLineType: v }) : o.write('highlightLineType', v),
+      }));
+    }
+    if (treatment === 'thin') {
+      o.comps.push(UI.SegCtrl(o.row('Thin by'), {
+        options: SH.THIN_BY, value: SH.thinByOf(rp), ariaLabel: 'Highlight thinning granularity',
+        onChange: (v) => o.writeMany ? o.writeMany({ highlightTreatment: 'thin', highlightThinBy: v }) : o.write('highlightThinBy', v),
+      }));
+    }
+    if (!curved && (treatment === 'thin' || treatment === 'altFill')) {
       moduleSliderRow(o.host, o.comps, 'HL density', {
         value: Number.isFinite(rp.highlightDensity) ? rp.highlightDensity : 25,
         min: 1, max: 100, step: 1, defaultValue: 25, ariaLabel: 'Highlight density',
@@ -1484,10 +1583,23 @@
     if (treatment === 'altFill') {
       o.comps.push(UI.Select(o.row('Alt fill'), {
         options: ALT_FILL_MAPPER_OPTIONS,
-        value: ALT_FILL_MAPPER_OPTIONS.some((opt) => opt.value === rp.altFillMapper) ? rp.altFillMapper : 'stipple',
+        value: altFillOf(rp),
         ariaLabel: 'Alternate fill mapper',
-        onChange: (v) => o.write('altFillMapper', v),
+        onChange: (v) => {
+          if (v === 'lines' && o.writeMany) o.writeMany({ altFillMapper: 'lines', altFillLayers: altFillLayersOf(rp) });
+          else o.write('altFillMapper', v);
+        },
       }));
+      if (altFillOf(rp) === 'lines') {
+        o.comps.push(UI.SegCtrl(o.row('Layers'), {
+          options: [{ value: '1', label: '1' }, { value: '2', label: '2' }],
+          value: String(altFillLayersOf(rp)),
+          ariaLabel: 'Alternate fill line layers',
+          onChange: (v) => (o.writeMany
+            ? o.writeMany({ altFillMapper: 'lines', altFillLayers: v === '2' ? 2 : 1 })
+            : o.write('altFillLayers', v === '2' ? 2 : 1)),
+        }));
+      }
     }
     if (treatment === 'burst') {
       moduleSliderRow(o.host, o.comps, 'Burst count', {
@@ -1542,20 +1654,29 @@
       ariaLabel: 'X-ray back-face density',
       onCommit: (v) => o.write('xrayBackDensity', v),
     });
+    // U5 (R3-3): an occluded line is stamped [3,2] when its own dash is empty, so
+    // 'Solid' always drew Dashed. The option is gone; a stored 'solid' shows as Dashed.
     o.comps.push(UI.Select(o.row('Back line'), {
-      options: LINE_TYPE_OPTIONS,
-      value: typeof rp.xrayBackLineType === 'string' ? rp.xrayBackLineType : 'dashed',
+      options: LINE_TYPE_OPTIONS.filter((opt) => opt.value !== 'solid'),
+      value: (rp.xrayBackLineType === 'dotted' || rp.xrayBackLineType === 'dashdot') ? rp.xrayBackLineType : 'dashed',
       ariaLabel: 'X-ray back-face line type',
       onChange: (v) => o.write('xrayBackLineType', v),
     }));
-    o.comps.push(UI.Select(o.row('Depth cue'), {
-      options: [
-        { value: 'off', label: 'Off' }, { value: 'density', label: 'Density' },
-        { value: 'weight', label: 'Weight' }, { value: 'both', label: 'Both' },
-      ],
-      value: ['density', 'weight', 'both'].includes(rp.xrayDepthCue) ? rp.xrayDepthCue : 'off',
-      ariaLabel: 'X-ray depth cue',
-      onChange: (v) => o.write('xrayDepthCue', v),
+    // U5 (R3-8): Depth cue is two flags (the old Off / Density / Weight / Both enum).
+    const legacyCue = rp.xrayDepthCue;
+    const cueDensityOn = (rp.xrayCueDensity !== undefined || rp.xrayCueWeight !== undefined)
+      ? rp.xrayCueDensity === true : (legacyCue === 'density' || legacyCue === 'both');
+    const cueWeightOn = (rp.xrayCueDensity !== undefined || rp.xrayCueWeight !== undefined)
+      ? rp.xrayCueWeight === true : (legacyCue === 'weight' || legacyCue === 'both');
+    o.comps.push(UI.SegCtrl(o.row('Depth → density'), {
+      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: cueDensityOn ? 'on' : 'off', ariaLabel: 'X-ray depth cue drives density',
+      onChange: (v) => (o.writeMany ? o.writeMany({ xrayCueDensity: v === 'on', xrayCueWeight: cueWeightOn, xrayDepthCue: undefined }) : o.write('xrayCueDensity', v === 'on')),
+    }));
+    o.comps.push(UI.SegCtrl(o.row('Depth → weight'), {
+      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: cueWeightOn ? 'on' : 'off', ariaLabel: 'X-ray depth cue drives stroke weight',
+      onChange: (v) => (o.writeMany ? o.writeMany({ xrayCueWeight: v === 'on', xrayCueDensity: cueDensityOn, xrayDepthCue: undefined }) : o.write('xrayCueWeight', v === 'on')),
     }));
     o.comps.push(UI.Select(o.row('Back pen'), {
       options: [{ value: '', label: 'Inherit' }].concat((o.pens || []).map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
@@ -1564,11 +1685,13 @@
       onChange: (v) => o.write('xrayBackPenId', v || null),
     }));
     if (o.ctx.cls !== 'faceted') {
-      o.comps.push(UI.SegCtrl(o.row('Front'), {
-        options: [{ value: 'solid', label: 'Solid' }, { value: 'faded', label: 'Faded' }],
-        value: rp.xrayFront === 'faded' ? 'faded' : 'solid',
-        ariaLabel: 'X-ray near surface',
-        onChange: (v) => o.write('xrayFront', v),
+      // U5 (R3-2): "Front: Faded" was a dotted front line. Same Line types as Back line.
+      o.comps.push(UI.Select(o.row('Front line'), {
+        options: LINE_TYPE_OPTIONS,
+        value: LINE_TYPE_OPTIONS.some((opt) => opt.value === rp.xrayFrontLineType) ? rp.xrayFrontLineType
+          : (rp.xrayFront === 'faded' ? 'dotted' : 'solid'),
+        ariaLabel: 'X-ray near surface line type',
+        onChange: (v) => (o.writeMany ? o.writeMany({ xrayFrontLineType: v, xrayFront: undefined }) : o.write('xrayFrontLineType', v)),
       }));
     }
   };
@@ -1979,6 +2102,12 @@
         pens,
         header: true,
         write: (key, value) => { commit(() => { style.params[key] = value; }); renderStyle(); },
+        // U5 — several keys at once; an `undefined` value removes the (retired) key.
+        writeMany: (patch) => {
+          commit(() => { Object.keys(patch).forEach((k) => { if (patch[k] === undefined) delete style.params[k]; else style.params[k] = patch[k]; }); });
+          renderStyle();
+        },
+        setMapper: (mapper, patch) => { commit(() => { style.mapper = mapper; Object.assign(style.params, patch || {}); }); renderStyle(); },
         remove: (key) => { commit(() => { delete style.params[key]; }); renderStyle(); },
       };
       renderMapperRows(leafShared, LEAF_NATIVE_KEYS);
@@ -2146,18 +2275,19 @@
             params.edgeStyles[key] = { ...c, weightMm: val > 0 ? val : null };
           }),
         });
-        comps.push(UI.Select(labeledRow(host, 'Dash'), {
-          options: OBJ_DASH_OPTS,
-          value: objDashName(cur.dash),
-          ariaLabel: `${label} edge dash`,
-          onChange: (val) => writeEdge(key, { dash: OBJ_DASH_PATTERNS[val] ? OBJ_DASH_PATTERNS[val].slice() : null }),
-        }));
         if (key === 'hidden') {
-          comps.push(UI.SegCtrl(labeledRow(host, 'Occluded'), {
-            options: [{ value: 'drop', label: 'Drop' }, { value: 'dash', label: 'Dash' }],
-            value: cur.hiddenTreatment,
-            ariaLabel: 'Hidden edge treatment',
-            onChange: (val) => writeEdge('hidden', { hiddenTreatment: val === 'dash' ? 'dash' : 'drop' }),
+          comps.push(UI.Select(labeledRow(host, 'Occluded'), {
+            options: HIDDEN_EDGE_OPTS,
+            value: hiddenEdgeState(cur),
+            ariaLabel: 'Hidden edge treatment and line type',
+            onChange: (val) => writeEdge('hidden', hiddenEdgePatch(val)),
+          }));
+        } else {
+          comps.push(UI.Select(labeledRow(host, 'Dash'), {
+            options: OBJ_DASH_OPTS,
+            value: objDashName(cur.dash),
+            ariaLabel: `${label} edge dash`,
+            onChange: (val) => writeEdge(key, { dash: OBJ_DASH_PATTERNS[val] ? OBJ_DASH_PATTERNS[val].slice() : null }),
           }));
         }
       });
@@ -3823,6 +3953,24 @@
           ariaLabel: FS.SHADOW_ARIA,
           onChange: (v) => { commit(() => { ensureShadow().shadowToneLaw = v; }); renderShadow(); },
         }));
+        // U5 (decision 1) — the survivor's sub-controls reach every materially
+        // different shadow texture the earlier folds had made unreachable. The
+        // stored value stays ONE internal law id (every shadows.js recipe is keyed
+        // by it), so saved documents and byte-identity are untouched.
+        (FS.shadowSubControls ? FS.shadowSubControls(s.shadowToneLaw, ShadowsMod) : []).forEach((sub) => {
+          const subSelect = UI.Select(labeledRow(host, sub.descriptor.label), {
+            options: sub.options.map((opt) => ({ value: opt.value, label: opt.label })),
+            value: sub.value,
+            ariaLabel: `Shadow ${sub.descriptor.label}`,
+            onChange: (v) => {
+              const picked = sub.options.find((opt) => opt.value === v);
+              if (!picked) return;
+              commit(() => { ensureShadow().shadowToneLaw = picked.law; });
+              renderShadow();
+            },
+          });
+          comps.push(subSelect);
+        });
         // fs-y1 Job 1 — "for all fill styles": the shadow tone-law picker is
         // a Fill Style control too, so it gets the same click-driven (i) as
         // the Style tab's row, holding this law's mechanism/strengths/
@@ -4017,32 +4165,25 @@
       layHost.className = 'vs3-ctl';
       layRow.appendChild(layHost);
       host.appendChild(layRow);
+      // U5 (R3-9): ONE Off / 2 / 3 / 4 row — the same encoding the context bar and the
+      // Tone Bands row already use — over the two stored keys (shadowLayers on/off +
+      // shadowLayerCount), which are unchanged.
       comps.push(UI.SegCtrl(layHost, {
-        options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
-        value: s.shadowLayers ? 'on' : 'off',
-        ariaLabel: 'Layered penumbra shadow',
-        onChange: (v) => { commit(() => { ensureShadow().shadowLayers = v === 'on'; }); renderShadow(); },
+        options: [{ value: 'off', label: 'Off' }, { value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '4' }],
+        value: s.shadowLayers ? String([2, 3, 4].includes(s.shadowLayerCount) ? s.shadowLayerCount : 3) : 'off',
+        ariaLabel: 'Layered penumbra shadow (Off or layer count)',
+        onChange: (v) => {
+          commit(() => {
+            const sh = ensureShadow();
+            if (v === 'off') sh.shadowLayers = false;
+            else { sh.shadowLayers = true; sh.shadowLayerCount = parseInt(v, 10) || 3; }
+          });
+          renderShadow();
+        },
       }));
 
-      // Layer count + softness only bite when layered — shown then to keep the
-      // inspector focused.
+      // Softness only bites when layered — shown then to keep the inspector focused.
       if (s.shadowLayers) {
-        const lcRow = document.createElement('div');
-        lcRow.className = 'vs3-row';
-        const lcLbl = document.createElement('label');
-        lcLbl.className = 'vs3-lbl';
-        lcLbl.textContent = 'Count';
-        lcRow.appendChild(lcLbl);
-        const lcHost = document.createElement('div');
-        lcHost.className = 'vs3-ctl';
-        lcRow.appendChild(lcHost);
-        host.appendChild(lcRow);
-        comps.push(UI.SegCtrl(lcHost, {
-          options: [{ value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '4' }],
-          value: String([2, 3, 4].includes(s.shadowLayerCount) ? s.shadowLayerCount : 3),
-          ariaLabel: 'Shadow layer count',
-          onChange: (v) => { commit(() => { ensureShadow().shadowLayerCount = parseInt(v, 10) || 3; }); },
-        }));
         // "Softness", not "Falloff". The `shadowFalloff` key began life as a
         // per-layer DENSITY DROP and was repurposed to drive PENUMBRA SOFTNESS
         // (how far the dark umbra core extends down the throw), so the old
@@ -4767,6 +4908,13 @@
         pens,
         header: false,
         write: (key, val) => commitStyle({ params: { ...clone(resolved.params || {}), [key]: val } }),
+        // U5 — several keys at once; an `undefined` value removes the (retired) key.
+        writeMany: (patch) => {
+          const next = { ...clone(resolved.params || {}), ...patch };
+          Object.keys(patch).forEach((k) => { if (patch[k] === undefined) delete next[k]; });
+          commitStyle({ params: next });
+        },
+        setMapper: (mapper, patch) => commitStyle({ mapper, params: { ...clone(resolved.params || {}), ...(patch || {}) } }),
         remove: (key) => {
           const next = clone(resolved.params || {});
           delete next[key];
@@ -4966,19 +5114,19 @@
             onCommit: (v) => writeEdge(key, { weightMm: v > 0 ? v : null }),
           });
 
-          styleComps.push(UI.Select(labeledHost('Dash'), {
-            options: DASH_OPTS,
-            value: dashName(cur.dash),
-            ariaLabel: `${label} edge dash`,
-            onChange: (v) => writeEdge(key, { dash: DASH_PATTERNS[v] ? DASH_PATTERNS[v].slice() : null }),
-          }));
-
           if (key === 'hidden') {
-            styleComps.push(UI.SegCtrl(labeledHost('Occluded'), {
-              options: [{ value: 'drop', label: 'Drop' }, { value: 'dash', label: 'Dash' }],
-              value: cur.hiddenTreatment,
-              ariaLabel: 'Hidden edge treatment',
-              onChange: (v) => writeEdge('hidden', { hiddenTreatment: v === 'dash' ? 'dash' : 'drop' }),
+            styleComps.push(UI.Select(labeledHost('Occluded'), {
+              options: HIDDEN_EDGE_OPTS,
+              value: hiddenEdgeState(cur),
+              ariaLabel: 'Hidden edge treatment and line type',
+              onChange: (v) => writeEdge('hidden', hiddenEdgePatch(v)),
+            }));
+          } else {
+            styleComps.push(UI.Select(labeledHost('Dash'), {
+              options: DASH_OPTS,
+              value: dashName(cur.dash),
+              ariaLabel: `${label} edge dash`,
+              onChange: (v) => writeEdge(key, { dash: DASH_PATTERNS[v] ? DASH_PATTERNS[v].slice() : null }),
             }));
           }
         });

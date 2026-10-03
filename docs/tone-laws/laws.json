@@ -241,7 +241,7 @@
       "strengths": "Genuine black from spacing alone — darkest L* 4.5 on every cell — against the L* ~76 a single family at the plot floor otherwise saturates at, with 81% monotonic ordering and zero free ends.",
       "weaknesses": "It floods by design and by a lot — 55% of placed rulings on sphere·hatch, 20-60% on other hatch cells — and monotonicity collapses to 31.3% on cylinder·hatch.",
       "chooseWhen": "Choose it on a hatch mapper when a real black is needed without a second family, a swell, or an overdraw; check the flood counter before plotting.",
-      "caveat": "On crosshatch fills, this floor setting floods the whole surface to solid black with no shading left. If your fill looks like a solid dark blob, try a different Field floor option."
+      "caveat": "On crosshatch fills, this floor setting floods the whole surface to solid black with no shading left. If your fill looks like a solid dark blob, try a different Closest approach option."
     },
     {
       "id": "contFieldFore",
@@ -427,7 +427,7 @@
       "strengths": "Holds the family's waviness-survives-the-highlight fix (retained amplitude 152% of the shadow mean) while also delivering the family's second-lowest unintended bare area (3.0%) and comparable elongation accuracy (1.028 modelled vs 1.025 real).",
       "weaknesses": "R2 0.185 and off-the-line 18.0% on sphere·hatch — no better than the round's baseline — and, like the rest of the family, collapses on cylinder·hatch where the near-constant radiance band drives the whole spacing field to the plot floor at once.",
       "chooseWhen": "Choose it over ampSpacing when the perpendicular clearance itself, not the raw radiance ramp, is the quantity that should ease smoothly.",
-      "caveat": "Like Single wave row, this line's weight varies along its length rather than staying constant. Choosing Nested rows tightens the spacing further, so weight takes over sooner to keep the shading going.",
+      "caveat": "Like the in-phase wave, this line's weight varies along its length rather than staying constant. Setting Phase to Interlocked with Amplitude: Solved from clearance tightens the spacing further, so weight takes over sooner to keep the shading going.",
       "measured": "Not single-weight: it appears in isWaveLaw()/WEIGHT_LAWS and splits per sample along the line, because stroke weight takes over wherever the spacing field bottoms at the (lowered) plot floor."
     },
     {
