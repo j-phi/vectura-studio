@@ -786,6 +786,10 @@
       // U4b — legacy curve marker for the migrated contField* ids (see
       // normalizeStyle). Any other value drops the key (= the sigmoid default).
       case 'fieldCurve': return value === 'lstar' ? 'lstar' : undefined;
+      // U5 item 0 — load-migration marker: the Density a LEGACY document had when
+      // a monoline law ignored Density. The engine reads it as 50 while
+      // fillDensity still equals it; any edit of Density releases it.
+      case 'monoDensityLegacyAt': return Number.isFinite(Number(value)) ? clamp(Number(value), 1, 500) : undefined;
       // U4b — turingStripe stripe-alignment strength. 0 (default) is today's
       // output. Capped at the measured-good ceiling (r2: 0.9 aligns, 3.0 is noise).
       case 'stripeAlign': return clamp(finite(value, 0), 0, 1.2);
@@ -900,6 +904,38 @@
       mapper: MAPPERS.includes(src.mapper) ? src.mapper : 'none',
       params,
     };
+  };
+
+  // U5 item 0 — legacy monoline Density pin. U4b made Density live on the nine
+  // monoline laws; a document saved before it (no `seedMode:'seeded'`) was drawn
+  // with Density inert, i.e. as if it read 50. Every style bag (scene, per-object,
+  // per-face, an object3d / booleanGroup3d leaf `style` and `faceStyles`) that
+  // names a monoline law at a Density other than 50 gets `monoDensityLegacyAt`
+  // = that Density. The engine treats Density as 50 while the bag still carries
+  // that value, so the saved look is byte-identical; editing Density releases it.
+  // Mutates `params` in place (the importer owns the clone) and returns it.
+  const pinLegacyMonoDensity = (params) => {
+    if (!isObject(params)) return params;
+    const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
+    if (!M || typeof M.isMono !== 'function') return params;
+    const pin = (bag) => {
+      if (!isObject(bag) || !isObject(bag.params)) return;
+      const law = resolveToneLaw(bag.params);
+      if (typeof law !== 'string' || !M.isMono(law)) return;
+      const d = Number(bag.params.fillDensity);
+      if (!Number.isFinite(d) || d === 50) return;
+      if (bag.params.monoDensityLegacyAt === undefined) bag.params.monoDensityLegacyAt = d;
+    };
+    const table = params.styleTable;
+    if (isObject(table)) {
+      pin(table.scene);
+      [table.byObject, table.byFace].forEach((m) => {
+        if (isObject(m)) Object.keys(m).forEach((k) => pin(m[k]));
+      });
+    }
+    pin(params.style);
+    if (isObject(params.faceStyles)) Object.keys(params.faceStyles).forEach((k) => pin(params.faceStyles[k]));
+    return params;
   };
 
   // W-10d-2 (Contract A) — apply the picker's curated unreachable-law
@@ -2026,6 +2062,7 @@
     normalizeStyle,
     normalizeStyleTable,
     resolveToneLaw,
+    pinLegacyMonoDensity,
     styleUsesSeed,
     sceneUsesSeed,
     normalizeObjectLayerParams,

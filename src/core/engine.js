@@ -480,6 +480,10 @@
     if (SEED_MODE_TYPES.has(layerType) && out && typeof out === 'object'
       && out.seedMode !== 'seeded') {
       out.seedMode = 'legacy';
+      // U5 item 0: a legacy document was drawn with Density inert on the monoline
+      // laws (U4b wired it). Pin those style bags so the saved look is unchanged.
+      const SP = window.Vectura?.Scene3D?.Params;
+      if (SP && typeof SP.pinLegacyMonoDensity === 'function') SP.pinLegacyMonoDensity(out);
     }
     return out;
   };

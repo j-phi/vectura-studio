@@ -1378,6 +1378,16 @@
     curvedSparseTonePitch(50) / Math.max(1e-6, curvedSparseTonePitch(density)), 0.25, 4,
   );
 
+  // The Density a mono law reads from a style bag. A LEGACY document carries
+  // `monoDensityLegacyAt` (see Params.pinLegacyMonoDensity): while Density still
+  // equals it, the law reads 50 (what it effectively rendered when Density was
+  // inert); an edit releases the pin.
+  const monoDensityOf = (sp) => {
+    const d = finite(sp && sp.fillDensity, 50);
+    const pin = sp && sp.monoDensityLegacyAt;
+    return (Number.isFinite(pin) && pin === d) ? 50 : d;
+  };
+
   // Strip the geometry-mutating part of a treatment, keeping only the line-type
   // dash. Edges and per-face outlines are DOUBLE-DRAWN (the face outline loop and
   // the silhouette/crease/boundary edge pass both emit the same structural edge);
@@ -3264,7 +3274,7 @@
             minMarkMM: Math.max(MIN_RUN_MM, 2 * penWidth),
             hash: ldHash,
             angleDeg: screenAngleDeg,
-            densityScale: monoDensityScale(styleParams.fillDensity),
+            densityScale: monoDensityScale(monoDensityOf(styleParams)),
             crossDelta: finite(styleParams.crossAngleDelta, 90),
             stripeAlign: styleParams.stripeAlign,
           });
@@ -4670,7 +4680,7 @@
                 // U4b: mono-law Density / turingStripe alignment, and the
                 // legacy marker that keeps a migrated contField* document on
                 // its original L*-linear curve (see cfWantedPitch).
-                densityScale: monoDensityScale(finite(sp.fillDensity, 50)),
+                densityScale: monoDensityScale(monoDensityOf(sp)),
                 stripeAlign: sp.stripeAlign,
                 fieldCurve: sp.fieldCurve,
                 // C4 — how a RIBBON LAW fills its ribbon's interior once the
