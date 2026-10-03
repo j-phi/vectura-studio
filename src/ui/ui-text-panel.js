@@ -1239,20 +1239,36 @@
       rows[idx].classList.add('active');
       rows[idx].scrollIntoView({ block: 'nearest' });
     }
+    // Visible height = layout height minus the on-screen keyboard (Vectura.KeyboardInset, TUX-032).
+    const kbInset = () => { const KI = window.Vectura && window.Vectura.KeyboardInset; return KI ? (KI.inset || 0) : 0; };
     function positionPop() {
       const r = taskbarAnchorRect || fpTrigger.getBoundingClientRect();
+      const inset = kbInset();
+      const vh = window.innerHeight - inset;
       const w = Math.max(r.width, 260);
       pop.style.width = `${w}px`;
-      pop.style.left = `${Math.min(r.left, window.innerWidth - w - 8)}px`;
-      const below = window.innerHeight - r.bottom;
-      if (below < 240 && r.top > below) { pop.style.top = ''; pop.style.bottom = `${window.innerHeight - r.top + 6}px`; }
-      else { pop.style.bottom = ''; pop.style.top = `${r.bottom + 6}px`; }
+      pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+      const spaceBelow = vh - r.bottom - 14;
+      const spaceAbove = r.top - 14;
+      const flip = spaceBelow < 240 && spaceAbove > spaceBelow;
+      // Search box + the first list row must stay above the keyboard: cap the popover to the
+      // room on its side (the list inside scrolls) and never let its far edge pass the inset.
+      const maxH = Math.min(Math.max(150, flip ? spaceAbove : spaceBelow), vh - 16);
+      pop.style.maxHeight = `${maxH}px`;
+      if (flip) {
+        const edge = Math.min(r.top - 6, vh - 8);
+        pop.style.top = ''; pop.style.bottom = `${window.innerHeight - edge}px`;
+      } else {
+        const h = Math.min(pop.offsetHeight || maxH, maxH);
+        pop.style.bottom = ''; pop.style.top = `${Math.max(8, Math.min(r.bottom + 6, vh - h - 8))}px`;
+      }
     }
     const syncClearBtn = () => {
       const has = !!(fpSearch.value || '').length;
       if (fpClear) fpClear.classList.toggle('show', has);
       pop.classList.toggle('has-query', has);
     };
+    let openPointerType = null;   // pointerType of the gesture that opens the picker ('' = keyboard)
     function openPop() {
       if (popOpen) return; popOpen = true;
       // Capture the committed face so a hover preview can be reverted on dismiss.
@@ -1263,6 +1279,12 @@
       // TXT-4: no eager specimen fetch on open — un-cached web faces render in the
       // UI font until hovered (load-on-hover). Only the selected face is loaded
       // (at init) so the trigger + specimen show real letterforms.
+      // A finger or pen open must not raise the keyboard: the list is for browsing, and the search
+      // box takes focus on its own tap. Mouse and keyboard opens keep type-to-filter (TUX-032).
+      const KI = window.Vectura && window.Vectura.KeyboardInset;
+      const pt = openPointerType != null ? openPointerType : (KI && KI.lastPointerType ? KI.lastPointerType() : '');
+      openPointerType = null;
+      if (pt === 'touch' || pt === 'pen') return;
       setTimeout(() => { try { fpSearch.focus(); } catch (_) { /* */ } }, 20);
     }
     function closePop() { if (!popOpen) return; popOpen = false; taskbarAnchorRect = null; clearFontPreview(false); pop.classList.remove('open'); fpTrigger.setAttribute('aria-expanded', 'false'); }
@@ -1283,6 +1305,8 @@
       refresh();
       renderSpec();
     }
+    listen(fpTrigger, 'pointerdown', (e) => { openPointerType = e.pointerType || ''; });
+    listen(fpTrigger, 'keydown', () => { openPointerType = ''; });
     listen(fpTrigger, 'click', () => (popOpen ? closePop() : openPop()));
     listen(fpSearch, 'input', () => { syncClearBtn(); rebuildList(); });
     if (fpClear) {
@@ -1301,6 +1325,7 @@
     listen(document, 'pointerdown', (e) => { if (popOpen && !pop.contains(e.target) && !fpTrigger.contains(e.target)) closePop(); });
     listen(window, 'scroll', () => { if (popOpen) positionPop(); }, true);
     listen(window, 'resize', () => { if (popOpen) positionPop(); });
+    listen(document, 'vectura:kbinset', () => { if (popOpen) positionPop(); });
 
     // Kick the real catalog load; refresh names/list once it lands.
     if (GF.loadCatalog) {
