@@ -8707,22 +8707,24 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
 }
 
 /* Phone-only: drop modifier-button labels, show platform glyphs instead. */
-body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label {
-  display: none;
-}
+@media (max-width: 540px) {
+  body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label {
+    display: none;
+  }
 
-body.phone-layout #touch-modifier-bar .touch-mod-btn::before {
-  font-size: 18px;
-  line-height: 1;
-  font-weight: 600;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', system-ui, sans-serif;
-}
+  body.phone-layout #touch-modifier-bar .touch-mod-btn::before {
+    font-size: 18px;
+    line-height: 1;
+    font-weight: 600;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', system-ui, sans-serif;
+  }
 
-body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="shift"]::before { content: "\21E7"; }
-body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="alt"]::before { content: "\2325"; }
-body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="meta"]::before { content: "\2318"; }
-body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="ctrl"]::before { content: "\2303"; }
-body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="pan"]::before { content: "\270B"; }
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="shift"]::before { content: "\21E7"; }
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="alt"]::before { content: "\2325"; }
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="meta"]::before { content: "\2318"; }
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="ctrl"]::before { content: "\2303"; }
+  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="pan"]::before { content: "\270B"; }
+}
 
 /* Touch-device tap ergonomics — applies on any coarse pointer device. */
 @media (pointer: coarse) {
@@ -13632,245 +13634,6 @@ body.touch-ui .lvl-grp-exit-zone { margin-left: -16px }
 }
 body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
 
-/* === TUX-001: phone header ===
- * Phone layout (body.phone-layout, set by the layout classifier) replaces the inline menubar with
- * a hamburger sheet plus five direct buttons. Every rule that changes the layout is scoped under
- * body.phone-layout, so the desktop and tablet header stay pixel-identical.
- * Markup is created by menubar.js (initPhoneHeader). The six menu panels are the existing
- * [data-top-menu-panel] nodes, re-laid out as sheet levels; nothing is cloned. */
-#btn-menu-hamburger,
-#phone-header-actions,
-#phone-menu-backdrop,
-#phone-menu-sheet,
-.phone-menu-back { display: none; }
-
-.phone-header-btn {
-  box-sizing: border-box;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: var(--touch-target-min, 44px);
-  height: var(--touch-target-min, 44px);
-  min-width: var(--touch-target-min, 44px);
-  padding: 0;
-  border: 1px solid var(--ui-border);
-  border-radius: var(--radius-md, 6px);
-  background: var(--ui-ctrl, var(--ui-panel-alt));
-  color: var(--ui-text-2);
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-.phone-header-btn:disabled,
-.phone-header-btn[aria-disabled="true"] { opacity: 0.4; }
-.phone-header-btn:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px; }
-.phone-header-btn[aria-expanded="true"] { border-color: var(--ui-accent); color: var(--ui-accent); }
-.phone-header-btn .phone-icon { width: 20px; height: 20px; }
-
-[data-ui-skin] body.phone-layout #app-header {
-  height: auto;
-  min-height: 52px;
-  max-width: 100%;
-  overflow-x: clip;
-  padding-left: max(14px, env(safe-area-inset-left, 0px));
-  padding-right: max(14px, env(safe-area-inset-right, 0px));
-}
-[data-ui-skin] body.phone-layout #app-header .header-main {
-  height: 52px;
-  min-height: 52px;
-  gap: 4px;
-  align-items: center;
-  flex-wrap: nowrap;
-}
-[data-ui-skin] body.phone-layout #app-header .header-brand-menu {
-  flex: 0 0 auto;
-  gap: 8px;
-}
-[data-ui-skin] body.phone-layout #app-header .header-brand-menu > div:first-child { flex: 0 0 auto; }
-[data-ui-skin] body.phone-layout #app-header h1,
-[data-ui-skin] body.phone-layout #app-header .header-menu-divider,
-[data-ui-skin] body.phone-layout #app-header .header-status-actions { display: none; }
-body.phone-layout #btn-menu-hamburger { display: inline-flex; }
-body.phone-layout #phone-header-actions {
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-}
-body.phone-layout .phone-header-group { display: flex; align-items: center; gap: 4px; }
-
-/* The inline menubar is the sheet's level container; hidden until a level opens. */
-[data-ui-skin] body.phone-layout #top-menubar { display: none; }
-[data-ui-skin] body.phone-layout.phone-menu-level #top-menubar {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  position: fixed;
-  top: var(--phone-sheet-top, 52px);
-  left: 0;
-  right: auto;
-  width: min(100%, 420px);
-  z-index: 4;
-  margin: 0;
-  gap: 0;
-  max-height: calc(100vh - var(--phone-sheet-top, 52px) - env(safe-area-inset-bottom, 0px) - 8px);
-  max-height: calc(100dvh - var(--phone-sheet-top, 52px) - env(safe-area-inset-bottom, 0px) - 8px);
-  overflow: hidden;
-  white-space: normal;
-  background: var(--ui-panel);
-  border-bottom: 1px solid var(--ui-border-hi, var(--ui-border));
-  box-shadow: var(--shadow-lg, 0 16px 30px rgba(0, 0, 0, 0.45));
-}
-body.phone-layout #top-menubar .top-menu { display: none; }
-body.phone-layout #top-menubar .top-menu.phone-active {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  width: 100%;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-  position: static;
-}
-body.phone-layout #top-menubar .top-menu-trigger { display: none; }
-[data-ui-skin] body.phone-layout #top-menubar .top-menu-panel,
-[data-ui-skin] body.phone-layout #top-menubar .top-menu-panel.open {
-  position: static;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  min-width: 0;
-  flex: 1 1 auto;
-  max-height: 100%;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-  opacity: 1;
-  transform: none;
-  pointer-events: auto;
-  padding: 0 0 env(safe-area-inset-bottom, 0px);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  background: transparent;
-  transition: none;
-}
-[data-ui-skin] body.phone-layout #top-menubar .top-menu-panel:not(.open) { display: none; }
-[data-ui-skin] body.phone-layout #top-menubar .top-menu-item {
-  min-height: var(--touch-target-min, 44px);
-  padding-top: 0;
-  padding-bottom: 0;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
-  font-size: 15px;
-  touch-action: manipulation;
-}
-[data-ui-skin] body.phone-layout #top-menubar .phone-menu-back {
-  display: flex;
-  justify-content: flex-start;
-  gap: 8px;
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--ui-panel);
-  border-bottom: 1px solid var(--ui-border);
-  color: var(--ui-accent);
-}
-body.phone-layout .phone-menu-back .phone-icon { width: 18px; height: 18px; flex: 0 0 auto; }
-body.phone-layout .phone-menu-back-title { margin-left: auto; color: var(--ui-muted); font-size: 12px; }
-
-body.phone-layout #phone-menu-backdrop:not([hidden]) {
-  display: block;
-  position: fixed;
-  top: var(--phone-sheet-top, 52px);
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 1;
-  background: rgba(0, 0, 0, 0.45);
-  touch-action: none;
-}
-body.phone-layout #phone-menu-sheet:not([hidden]) {
-  display: flex;
-  flex-direction: column;
-  position: fixed;
-  top: var(--phone-sheet-top, 52px);
-  left: 0;
-  right: auto;
-  width: min(100%, 420px);
-  z-index: 3;
-  max-height: calc(100vh - var(--phone-sheet-top, 52px) - env(safe-area-inset-bottom, 0px) - 8px);
-  max-height: calc(100dvh - var(--phone-sheet-top, 52px) - env(safe-area-inset-bottom, 0px) - 8px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  background: var(--ui-panel);
-  border-bottom: 1px solid var(--ui-border-hi, var(--ui-border));
-  box-shadow: var(--shadow-lg, 0 16px 30px rgba(0, 0, 0, 0.45));
-}
-body.phone-layout .phone-menu-root { display: flex; flex-direction: column; }
-body.phone-layout .phone-menu-root[hidden] { display: none; }
-body.phone-layout .phone-menu-row {
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  min-height: var(--touch-target-min, 44px);
-  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
-  border: 0;
-  border-bottom: 1px solid var(--ui-border);
-  background: transparent;
-  color: var(--ui-text);
-  font: inherit;
-  font-size: 15px;
-  text-align: left;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-body.phone-layout .phone-menu-row .phone-icon { width: 18px; height: 18px; color: var(--ui-muted); }
-body.phone-layout .phone-menu-theme-value { color: var(--ui-muted); font-size: 12px; }
-body.phone-layout .phone-menu-row:focus-visible,
-body.phone-layout #top-menubar .top-menu-item:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: -2px; }
-@media (hover: none) {
-  [data-ui-skin] body.phone-layout #top-menubar .top-menu-item:hover:not(:disabled) {
-    background: transparent;
-    color: var(--ui-text);
-  }
-  [data-ui-skin] body.phone-layout #top-menubar .phone-menu-back:hover:not(:disabled) { color: var(--ui-accent); }
-}
-body.phone-layout .phone-menu-row:active,
-[data-ui-skin] body.phone-layout #top-menubar .top-menu-item:active:not(:disabled) { background: var(--ui-accent-2); }
-/* Toasts stack at top:16px right:16px (inline style) and cover Undo/Redo/Export. Keep them below the header. */
-body.phone-layout #vectura-toast-host { top: 60px !important; }
-/* Short landscape phones: keep the 44 px targets but trim the header to 48 px so the docked panes keep their height. */
-@media (max-height: 500px) {
-  [data-ui-skin] body.phone-layout #app-header { min-height: 48px; }
-  [data-ui-skin] body.phone-layout #app-header .header-main { height: 48px; min-height: 48px; }
-}
-/* === /TUX-001 === */
-
-/* === TUX-001: header vs modal and narrow tablet fit ===
- * (1) In phone layout the header (z-index 220) sat above #modal-overlay (z-index 100) and
- * stayed tappable behind the modal. While a modal is open the header drops under the overlay
- * and ignores pointers. (2) Tablet layout between the phone threshold and about 620 px must
- * not be wider than the viewport: hide the wordmark and clip. */
-body.phone-layout:has(#modal-overlay.open) #app-header,
-body.phone-layout:has(#export-modal-root) #app-header {
-  z-index: 90;
-  pointer-events: none;
-}
-body.tablet-layout #app-header {
-  max-width: 100%;
-  overflow-x: clip;
-}
-@media (max-width: 620px) {
-  body.tablet-layout #app-header h1 { display: none; }
-}
-/* === /TUX-001 header vs modal === */
 /* === TUX-029: text-content field ===
    Multi-line "Text" field in the Type tab. Beats the older
    `[data-ui-skin] #left-panel-content textarea` rule (fixed row height, small
@@ -14116,6 +13879,51 @@ html.kb-open .export-settings-scroll {
 }
 /* === END TUX-041 === */
 
+/* === TUX-001: phone header, hamburger menu sheet and direct actions === */
+.header-phone-btn, .header-phone-actions { display: none; }
+#app-header { max-width: 100vw; overflow-x: clip; }
+body.phone-layout #app-header .header-phone-actions { display: inline-flex; gap: 2px; align-items: center; }
+body.phone-layout #app-header .header-phone-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; box-sizing: border-box;
+  border: 1px solid var(--ui-border); background: var(--ui-panel-alt); color: var(--ui-text-2);
+}
+body.phone-layout #app-header .header-phone-btn.is-disabled { opacity: 0.4; }
+body.phone-layout #app-header .header-brand-menu { gap: 6px; flex: 1 1 0; min-width: 0; }
+body.phone-layout #app-header .header-brand-menu h1 { font-size: 12px; overflow: hidden; text-overflow: clip; min-width: 0; }
+body.phone-layout #app-header .header-brand-mark,
+body.phone-layout #app-header .header-menu-divider,
+body.phone-layout #app-header #theme-toggle { display: none; }
+body.phone-layout #app-header .header-status-actions { gap: 0; }
+body.phone-layout #top-menubar { display: none; }
+body.phone-layout.phone-menu-open #top-menubar {
+  display: flex; flex-direction: column; align-items: stretch; gap: 0;
+  position: fixed; left: 0; right: 0; top: var(--phone-menu-top, 56px); margin: 0;
+  max-height: calc(100vh - var(--phone-menu-top, 56px)); max-height: calc(100dvh - var(--phone-menu-top, 56px));
+  overflow-y: auto; overscroll-behavior: contain; white-space: normal;
+  padding: 4px max(0px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(0px, env(safe-area-inset-left));
+  background: var(--ui-bg); border-bottom: 1px solid var(--ui-border); box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
+  z-index: 1500;
+}
+body.phone-layout #top-menubar .top-menu { position: static; display: block; width: 100%; }
+body.phone-layout #top-menubar .top-menu-trigger {
+  width: 100%; min-height: 44px; justify-content: flex-start; font-size: 14px; padding: 0 16px;
+  box-sizing: border-box; border-width: 0 0 1px; background: transparent;
+}
+body.phone-layout #top-menubar .top-menu-panel {
+  display: none; position: static; min-width: 0; width: 100%; box-sizing: border-box;
+  box-shadow: none; border: 0; padding: 0; transform: none; transition: none;
+}
+body.phone-layout #top-menubar .top-menu-panel.open { display: flex; opacity: 1; pointer-events: auto; }
+body.phone-layout #top-menubar .top-menu-item { min-height: 44px; font-size: 14px; padding: 0 16px; box-sizing: border-box; }
+/* Drill-down: with a sub-level open, show only that panel. */
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-trigger,
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-theme-row { display: none; }
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu:not(:has(.top-menu-panel.open)) { display: none; }
+body.phone-layout #top-menubar .top-menu-back { font-weight: 600; color: var(--ui-text-2); }
+.top-menu-back { display: none; }
+body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: center; }
+/* === end TUX-001 === */
 /* === TUX-034: touch hold + context menus ===
    Scoped to .menu-dropdown.is-context-menu and .canvas-ctx-menu. The header menubar shares
    bare .menu-dropdown / .menu-entry: never restyle those here. */
@@ -14137,17 +13945,53 @@ html.kb-open .export-settings-scroll {
 .menu-dropdown.is-context-menu { overflow-y: auto; overscroll-behavior: contain; }
 @media (pointer: coarse) {
   .menu-dropdown.is-context-menu {
+    max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
     max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
     overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   }
   .menu-dropdown.is-context-menu .menu-entry { min-height: var(--touch-target-min); }
   .canvas-ctx-menu {
+    max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
     max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
     overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   }
   .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
 }
 /* === END TUX-034 === */
+
+/* === TUX-035: add-layer touch drill-down === */
+/* Touch taps "Algorithm Layer" and the add menu swaps to the algorithm list (JS: shortcuts.js).
+   Scoped to #layer-add-menu so the shared .lvl-algo-sub-item (context bar, header fly-outs) is untouched. */
+#layer-add-menu .lvl-add-back,
+#layer-add-menu .lvl-add-drill-list { display: none; }
+#layer-add-menu.is-drill > .lvl-add-item:not(.lvl-add-back) { display: none; }
+#layer-add-menu.is-drill > .lvl-add-back {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  border-radius: 6px 6px 0 0;
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-accent);
+}
+#layer-add-menu.is-drill > .lvl-add-drill-list {
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  border-radius: 0 0 6px 6px;
+}
+#layer-add-menu.is-drill .lvl-algo-sub-item {
+  min-height: var(--touch-target-min);
+  padding: 0 12px;
+  box-sizing: border-box;
+}
+@media (pointer: coarse) {
+  #layer-add-menu > .lvl-add-item { min-height: var(--touch-target-min); }
+}
+#layer-add-menu.is-touch > .lvl-add-item { min-height: var(--touch-target-min); }
+/* === /TUX-035 === */
 
 /* === TUX-002: fixed, non-scrolling shell ===
  * The app is a fixed-size shell. The page itself must never scroll, rubber-band or pull to refresh.
