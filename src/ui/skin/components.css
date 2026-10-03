@@ -14453,3 +14453,9 @@ body.phone-layout #settings-panel {
   z-index: 900;
 }
 /* === END TUX-046 === */
+
+/* === TUX-047: touch zoom surfaces === */
+.export-preview-canvas-wrap[data-touch-zoom] {
+  touch-action: none;
+}
+/* === END TUX-047 === */
