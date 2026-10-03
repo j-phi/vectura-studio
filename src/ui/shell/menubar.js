@@ -311,6 +311,347 @@
 
     // Wire the P3 Object/Edit/View command items (reuse context-menu verbs).
     try { this.wireTopMenuCommands(); } catch { /* defensive */ }
+    try { this.initPhoneHeader(); } catch (err) { console.warn('Phone header init failed', err); }
+  }
+
+
+  // ─── TUX-001: phone header ───────────────────────────────────────────────────────────────
+  // In phone layout (body.phone-layout, set by the layout classifier) the header shows a
+  // hamburger plus five direct buttons. The six menus stay the existing [data-top-menu] nodes:
+  // CSS lays the open panel out as a full-width sheet level. Nothing is cloned, so every id and
+  // every listener bound by id keeps working.
+  const ICONS = {
+    menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    generator: '<path d="M5 4v6M5 14v6M12 4v2M12 10v10M19 4v10M19 18v2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="8" r="2"/><circle cx="19" cy="16" r="2"/>',
+    layers: '<path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/>',
+    undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/>',
+    redo: '<path d="m15 14 5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/>',
+    export: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+    chevron: '<path d="m9 6 6 6-6 6"/>',
+    back: '<path d="m15 6-6 6 6 6"/>',
+  };
+  const svg = (name) => `<svg class="phone-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${ICONS[name]}</svg>`;
+
+  function initPhoneHeader() {
+    const { getEl } = requireDeps('initPhoneHeader');
+    const ui = this;
+    const header = getEl('app-header', { silent: true });
+    const main = header && header.querySelector('.header-main');
+    const brand = main && main.querySelector('.header-brand-menu');
+    const nav = getEl('top-menubar', { silent: true });
+    if (!main || !brand || !nav || ui._phoneHeader) return;
+    const triggers = Array.isArray(ui.topMenuTriggers) ? ui.topMenuTriggers : [];
+    const body = document.body;
+    const isPhone = () => body.classList.contains('phone-layout');
+
+    const makeButton = (id, cls, label, icon) => {
+      const b = document.createElement('button');
+      b.id = id;
+      b.type = 'button';
+      b.className = `phone-header-btn ${cls}`;
+      b.setAttribute('aria-label', label);
+      b.title = label;
+      b.innerHTML = svg(icon);
+      return b;
+    };
+    const ham = makeButton('btn-menu-hamburger', 'phone-header-menu', 'Menu', 'menu');
+    ham.setAttribute('aria-haspopup', 'menu');
+    ham.setAttribute('aria-expanded', 'false');
+    ham.setAttribute('aria-controls', 'phone-menu-sheet');
+    brand.insertBefore(ham, brand.children[1] || null);
+
+    const bGen = makeButton('btn-header-generator', 'phone-header-action', 'Generator panel', 'generator');
+    const bLayers = makeButton('btn-header-layers', 'phone-header-action', 'Layers panel', 'layers');
+    const bUndo = makeButton('btn-header-undo', 'phone-header-action', 'Undo', 'undo');
+    const bRedo = makeButton('btn-header-redo', 'phone-header-action', 'Redo', 'redo');
+    const bExport = makeButton('btn-header-export', 'phone-header-action', 'Export', 'export');
+    const actions = document.createElement('div');
+    actions.id = 'phone-header-actions';
+    actions.className = 'phone-header-actions';
+    const group = (...btns) => {
+      const g = document.createElement('div');
+      g.className = 'phone-header-group';
+      btns.forEach((b) => g.appendChild(b));
+      return g;
+    };
+    actions.append(group(bGen, bLayers), group(bUndo, bRedo, bExport));
+    brand.after(actions);
+
+    // Sheet: backdrop + root list. The six rows are enumerated from the DOM triggers.
+    const backdrop = document.createElement('div');
+    backdrop.id = 'phone-menu-backdrop';
+    backdrop.className = 'phone-menu-backdrop';
+    backdrop.hidden = true;
+    const sheet = document.createElement('div');
+    sheet.id = 'phone-menu-sheet';
+    sheet.className = 'phone-menu-sheet';
+    sheet.hidden = true;
+    const root = document.createElement('div');
+    root.id = 'phone-menu-root';
+    root.className = 'phone-menu-root';
+    root.setAttribute('role', 'menu');
+    root.setAttribute('aria-label', 'Main menu');
+    triggers.forEach((trigger) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'phone-menu-row';
+      row.setAttribute('role', 'menuitem');
+      row.setAttribute('aria-haspopup', 'menu');
+      row.dataset.menuTarget = trigger.id;
+      const label = document.createElement('span');
+      label.textContent = (trigger.textContent || '').trim();
+      row.append(label);
+      row.insertAdjacentHTML('beforeend', svg('chevron'));
+      root.appendChild(row);
+    });
+    const themeRow = document.createElement('button');
+    themeRow.type = 'button';
+    themeRow.className = 'phone-menu-row phone-menu-theme';
+    themeRow.setAttribute('role', 'menuitem');
+    themeRow.dataset.phoneTheme = '';
+    themeRow.innerHTML = '<span>Theme</span><span class="phone-menu-theme-value"></span>';
+    root.appendChild(themeRow);
+    sheet.appendChild(root);
+    header.append(backdrop, sheet);
+
+    const state = { open: false, level: null, backing: false };
+    const origSetOpen = ui.setTopMenuOpen.bind(ui);
+    const rows = () => Array.from(root.querySelectorAll('.phone-menu-row'));
+    const panelOf = (trigger) => trigger?.parentElement?.querySelector('[data-top-menu-panel]') || null;
+    const menuOf = (trigger) => trigger?.closest('[data-top-menu]') || null;
+
+    const refreshThemeRow = () => {
+      const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
+      const name = `${SETTINGS.uiTheme || 'dark'}`.replace(/-/g, ' ');
+      themeRow.querySelector('.phone-menu-theme-value').textContent = name.charAt(0).toUpperCase() + name.slice(1);
+    };
+
+    const placeSheet = () => {
+      const bottom = Math.max(0, Math.round(header.getBoundingClientRect().bottom));
+      document.documentElement.style.setProperty('--phone-sheet-top', `${bottom}px`);
+    };
+
+    const clearLevel = () => {
+      menuOf(state.level)?.classList.remove('phone-active');
+      state.level = null;
+      body.classList.remove('phone-menu-level');
+      root.hidden = false;
+    };
+
+    const closeSheet = ({ restoreFocus = false } = {}) => {
+      if (!state.open) return;
+      state.open = false;
+      state.backing = true;
+      try { origSetOpen(null, false); } finally { state.backing = false; }
+      clearLevel();
+      sheet.hidden = true;
+      backdrop.hidden = true;
+      body.classList.remove('phone-menu-open');
+      ham.setAttribute('aria-expanded', 'false');
+      if (restoreFocus) ham.focus();
+    };
+
+    const openLevel = (trigger, { focus = true } = {}) => {
+      clearLevel();
+      state.level = trigger;
+      state.backing = true;
+      try { origSetOpen(trigger, true); } finally { state.backing = false; }
+      menuOf(trigger)?.classList.add('phone-active');
+      body.classList.add('phone-menu-level');
+      root.hidden = true;
+      if (focus) {
+        const items = Array.from(panelOf(trigger)?.querySelectorAll('.top-menu-item:not([disabled]):not(.phone-menu-back)') || []);
+        (items[0] || panelOf(trigger)?.querySelector('.phone-menu-back'))?.focus();
+      }
+    };
+
+    const openSheet = () => {
+      if (state.open || !isPhone()) return;
+      state.open = true;
+      try { ui.refreshTopMenuItemStates?.(); } catch { /* defensive */ }
+      refreshThemeRow();
+      placeSheet();
+      backdrop.hidden = false;
+      sheet.hidden = false;
+      root.hidden = false;
+      body.classList.add('phone-menu-open');
+      ham.setAttribute('aria-expanded', 'true');
+      rows()[0]?.focus();
+    };
+
+    const backToRoot = () => {
+      const from = state.level;
+      state.backing = true;
+      try { origSetOpen(null, false); } finally { state.backing = false; }
+      clearLevel();
+      Array.from(root.querySelectorAll('[data-menu-target]')).find((r) => r.dataset.menuTarget === from?.id)?.focus();
+    };
+
+    // Keep the one menu model honest: any code path that opens a panel (tutorial, shortcuts)
+    // shows it as a sheet level; any path that closes it (item click, document click) closes the
+    // sheet while a level is showing.
+    ui.setTopMenuOpen = (trigger = null, open = true) => {
+      const result = origSetOpen(trigger, open);
+      if (state.backing || !isPhone()) return result;
+      if (open && trigger) {
+        if (!state.open) {
+          state.open = true;
+          refreshThemeRow();
+          placeSheet();
+          backdrop.hidden = false;
+          sheet.hidden = false;
+          body.classList.add('phone-menu-open');
+          ham.setAttribute('aria-expanded', 'true');
+        }
+        clearLevel();
+        state.level = trigger;
+        menuOf(trigger)?.classList.add('phone-active');
+        body.classList.add('phone-menu-level');
+        root.hidden = true;
+      } else if (state.level) {
+        closeSheet();
+      }
+      return result;
+    };
+
+    // Back rows exist only in phone layout, so the inline dropdowns keep their original items.
+    const syncPhoneMode = () => {
+      const phone = isPhone();
+      triggers.forEach((trigger) => {
+        const panel = panelOf(trigger);
+        if (!panel) return;
+        const existing = panel.querySelector(':scope > .phone-menu-back');
+        if (phone && !existing) {
+          const back = document.createElement('button');
+          back.type = 'button';
+          back.className = 'top-menu-item phone-menu-back';
+          back.setAttribute('role', 'menuitem');
+          back.setAttribute('aria-label', `Back to main menu from ${(trigger.textContent || '').trim()}`);
+          back.innerHTML = `${svg('back')}<span class="phone-menu-back-label">Back</span><span class="phone-menu-back-title"></span>`;
+          back.querySelector('.phone-menu-back-title').textContent = (trigger.textContent || '').trim();
+          back.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); backToRoot(); });
+          panel.insertBefore(back, panel.firstChild);
+        } else if (!phone && existing) {
+          existing.remove();
+        }
+      });
+      if (!phone && state.open) closeSheet();
+    };
+
+    // Row taps never reach the document click handler (ui.js closes menus on any click).
+    root.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const row = e.target.closest('.phone-menu-row');
+      if (!row) return;
+      if (row.dataset.menuTarget) {
+        const trigger = triggers.find((t) => t.id === row.dataset.menuTarget);
+        if (trigger) openLevel(trigger);
+        return;
+      }
+      if (row.hasAttribute('data-phone-theme')) {
+        getEl('theme-toggle', { silent: true })?.click();
+        refreshThemeRow();
+      }
+    });
+    root.addEventListener('keydown', (e) => {
+      const list = rows();
+      const i = list.indexOf(document.activeElement);
+      const go = (n) => { e.preventDefault(); list[(n + list.length) % list.length]?.focus(); };
+      if (e.key === 'ArrowDown') go(i + 1);
+      else if (e.key === 'ArrowUp') go(i < 0 ? list.length - 1 : i - 1);
+      else if (e.key === 'Home') go(0);
+      else if (e.key === 'End') go(list.length - 1);
+    });
+    sheet.addEventListener('click', (e) => e.stopPropagation());
+    const swallow = (e) => { e.stopPropagation(); e.preventDefault(); };
+    backdrop.addEventListener('pointerdown', (e) => e.stopPropagation());
+    backdrop.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+    backdrop.addEventListener('mousedown', swallow);
+    backdrop.addEventListener('click', (e) => { swallow(e); closeSheet(); });
+
+    ham.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (state.open) closeSheet({ restoreFocus: true });
+      else openSheet();
+    });
+
+    // Escape: level -> root, root -> closed with focus back on the hamburger.
+    window.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !state.open) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (state.level) backToRoot();
+      else closeSheet({ restoreFocus: true });
+    }, true);
+
+    // Rotation or a width change closes the sheet (iOS also fires resize for URL bar changes).
+    let lastWidth = window.innerWidth;
+    window.addEventListener('resize', () => {
+      if (window.innerWidth === lastWidth) return;
+      lastWidth = window.innerWidth;
+      if (state.open) closeSheet();
+    });
+    window.addEventListener('orientationchange', () => { if (state.open) closeSheet(); });
+    try {
+      new MutationObserver(syncPhoneMode).observe(body, { attributes: true, attributeFilter: ['class'] });
+    } catch { /* no MutationObserver */ }
+
+    // Direct actions share the command registry that shortcuts.js uses.
+    const direct = (btn, fn) => btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (btn.disabled) return;
+      if (state.open) closeSheet();
+      fn();
+    });
+    direct(bUndo, () => ui.triggerTopMenuAction('btn-undo'));
+    direct(bRedo, () => ui.triggerTopMenuAction('btn-redo'));
+    direct(bExport, () => ui.triggerTopMenuAction('btn-export'));
+    direct(bGen, () => getEl('btn-mobile-pane-left', { silent: true })?.click());
+    direct(bLayers, () => getEl('btn-mobile-pane-right', { silent: true })?.click());
+
+    // Live enabled state.
+    const setState = (btn, on, why) => {
+      btn.disabled = !on;
+      if (on) { btn.removeAttribute('aria-disabled'); btn.title = btn.getAttribute('aria-label'); }
+      else { btn.setAttribute('aria-disabled', 'true'); btn.title = why; }
+    };
+    const refreshHeaderState = () => {
+      const app = ui.app;
+      if (!app) return;
+      const layers = app.engine?.layers || [];
+      setState(bUndo, (app.history?.length || 0) >= 2, 'Nothing to undo');
+      setState(bRedo, (app.redoStack?.length || 0) > 0, 'Nothing to redo');
+      setState(bExport, layers.some((l) => l && !l.isGroup), 'Add a layer to enable export');
+    };
+    ui.refreshPhoneHeaderState = refreshHeaderState;
+    const app = ui.app;
+    if (app) {
+      // History moves and every render (layer add/remove always re-renders) refresh the state.
+      let queued = false;
+      const queueRefresh = () => {
+        if (queued) return;
+        queued = true;
+        queueMicrotask(() => { queued = false; refreshHeaderState(); });
+      };
+      ['pushHistory', 'undo', 'redo', 'render'].forEach((name) => {
+        const orig = app[name];
+        if (typeof orig !== 'function') return;
+        app[name] = function wrapped(...args) {
+          const out = orig.apply(this, args);
+          queueRefresh();
+          return out;
+        };
+      });
+    }
+    // Safety net for layer edits that never push history (project open, imports).
+    ['pointerup', 'keyup', 'click'].forEach((type) => {
+      document.addEventListener(type, () => setTimeout(refreshHeaderState, 0), true);
+    });
+
+    ui._phoneHeader = { state, openSheet, closeSheet, refresh: refreshHeaderState };
+    syncPhoneMode();
+    refreshHeaderState();
   }
 
   function triggerTopMenuAction(buttonId) {
@@ -338,12 +679,14 @@
     },
     setTopMenuOpen,
     initTopMenuBar,
+    initPhoneHeader,
     triggerTopMenuAction,
     refreshTopMenuItemStates,
     wireTopMenuCommands,
     installOn(proto) {
       proto.setTopMenuOpen = function(trigger = null, open = true) { return setTopMenuOpen.call(this, trigger, open); };
       proto.initTopMenuBar = function() { return initTopMenuBar.call(this); };
+      proto.initPhoneHeader = function() { return initPhoneHeader.call(this); };
       proto.triggerTopMenuAction = function(buttonId) { return triggerTopMenuAction.call(this, buttonId); };
       proto.refreshTopMenuItemStates = function() { return refreshTopMenuItemStates.call(this); };
       proto.wireTopMenuCommands = function() { return wireTopMenuCommands.call(this); };

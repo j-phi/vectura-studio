@@ -271,3 +271,198 @@ test.describe('TUX-006 mobile-layout cascade weight', () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// TUX-001: phone header. A phone-layout header holds a hamburger (menus + theme) and five
+// direct buttons. Finger input only. Phone mode is read from body.phone-layout, never from width.
+// ---------------------------------------------------------------------------------------------
+const PHONE_PROJECTS = [
+  'touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-iphone-landscape',
+  'webkit-iphone-landscape', 'touch-iphone-portrait-chrome', 'touch-iphone-landscape-chrome',
+];
+const NONPHONE_PROJECTS = [
+  'touch-ipad-portrait', 'webkit-ipad-portrait', 'touch-ipad-landscape',
+  'webkit-ipad-landscape', 'touch-coarse-wide',
+];
+const TUX1_EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-001';
+const HEADER_IDS = ['btn-menu-hamburger', 'btn-header-generator', 'btn-header-layers', 'btn-header-undo', 'btn-header-redo', 'btn-header-export'];
+const INLINE_TRIGGERS = ['btn-menu-file', 'btn-menu-edit', 'btn-menu-object', 'btn-menu-view', 'btn-menu-insert', 'btn-menu-help'];
+
+const layerCount = (page) => page.evaluate(() => window.app.engine.layers.length);
+const visibleBox = (page, sel) => page.evaluate((s) => {
+  const el = document.querySelector(s);
+  if (!el) return null;
+  const cs = getComputedStyle(el);
+  const r = el.getBoundingClientRect();
+  if (cs.display === 'none' || cs.visibility === 'hidden' || r.width === 0 || r.height === 0) return null;
+  return { x: r.left, y: r.top, w: r.width, h: r.height, r: r.right, b: r.bottom };
+}, sel);
+
+test.describe('TUX-001 phone header', () => {
+  test.beforeEach(async ({ page }) => { await gotoApp(page); });
+
+  test('A fits and classifies', async ({ page }, testInfo) => {
+    test.skip(!PHONE_PROJECTS.includes(testInfo.project.name), 'phone projects only');
+    const spec = PROJECTS[testInfo.project.name];
+    const iw = await page.evaluate(() => innerWidth);
+    expect(iw, 'window.innerWidth').toBe(spec.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth), 'scrollWidth').toBeLessThanOrEqual(spec.width);
+    expect(await page.evaluate(() => document.body.classList.contains('phone-layout')), 'body.phone-layout').toBe(true);
+    const ox = await page.evaluate(() => getComputedStyle(document.getElementById('app-header')).overflowX);
+    expect(['auto', 'scroll'], `#app-header overflow-x ${ox}`).not.toContain(ox);
+    const vp = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    const regions = [];
+    for (const id of HEADER_IDS) {
+      const sel = `#${id}`;
+      const loc = page.locator(sel);
+      expect(await loc.count(), `${sel} exists`).toBe(1);
+      expect(await loc.isVisible(), `${sel} visible`).toBe(true);
+      const hit = await touch.hitArea(page, loc);
+      expect(hit.w, `${sel} hit width`).toBeGreaterThanOrEqual(43.5);
+      expect(hit.h, `${sel} hit height`).toBeGreaterThanOrEqual(43.5);
+      const b = await visibleBox(page, sel);
+      expect(b.x, `${sel} left`).toBeGreaterThanOrEqual(0);
+      expect(b.y, `${sel} top`).toBeGreaterThanOrEqual(0);
+      expect(b.r, `${sel} right`).toBeLessThanOrEqual(vp.w);
+      expect(b.b, `${sel} bottom`).toBeLessThanOrEqual(vp.h);
+      const owned = await loc.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!t && (t === el || el.contains(t));
+      });
+      expect(owned, `${sel} elementFromPoint(centre)`).toBe(true);
+      regions.push({ id, ...b });
+    }
+    for (let i = 0; i < regions.length; i += 1) {
+      for (let j = i + 1; j < regions.length; j += 1) {
+        const a = regions[i];
+        const c = regions[j];
+        const overlap = a.x < c.r && c.x < a.r && a.y < c.b && c.y < a.b;
+        expect(overlap, `${a.id} overlaps ${c.id}`).toBe(false);
+      }
+    }
+    for (const id of [...INLINE_TRIGGERS, 'theme-toggle']) {
+      expect(await visibleBox(page, `#${id}`), `#${id} must not show in the phone header`).toBeNull();
+    }
+    fs.mkdirSync(TUX1_EVIDENCE, { recursive: true });
+    await page.screenshot({ path: path.join(TUX1_EVIDENCE, `${spec.device}${spec.engine === 'webkit' ? '-webkit' : ''}-closed.png`) });
+  });
+
+  test('B hamburger drill-down', async ({ page }, testInfo) => {
+    test.skip(!PHONE_PROJECTS.includes(testInfo.project.name), 'phone projects only');
+    const spec = PROJECTS[testInfo.project.name];
+    const vp = await page.evaluate(() => ({ w: innerWidth, h: innerHeight }));
+    const inside = (b, what) => {
+      expect(b, `${what} visible`).not.toBeNull();
+      expect(b.x, `${what} left`).toBeGreaterThanOrEqual(0);
+      expect(b.y, `${what} top`).toBeGreaterThanOrEqual(0);
+      expect(b.r, `${what} right`).toBeLessThanOrEqual(vp.w + 0.5);
+      expect(b.b, `${what} bottom`).toBeLessThanOrEqual(vp.h + 0.5);
+    };
+    await touch.tap(page, page.locator('#btn-menu-hamburger'));
+    await expect(page.locator('#phone-menu-sheet')).toBeVisible();
+    inside(await visibleBox(page, '#phone-menu-sheet'), 'sheet');
+    const rows = page.locator('#phone-menu-root [data-menu-target]');
+    expect(await rows.count(), 'root rows').toBe(6);
+    expect(await rows.allTextContents().then((t) => t.map((s) => s.trim()))).toEqual(['File', 'Edit', 'Object', 'View', 'Insert', 'Help']);
+    for (let i = 0; i < 6; i += 1) {
+      const b = await rows.nth(i).boundingBox();
+      expect(b.height, `root row ${i} height`).toBeGreaterThanOrEqual(43.5);
+    }
+    expect(await page.locator('#phone-menu-root [data-phone-theme]').isVisible(), 'theme row').toBe(true);
+    fs.mkdirSync(TUX1_EVIDENCE, { recursive: true });
+    const tag = `${spec.device}${spec.engine === 'webkit' ? '-webkit' : ''}`;
+    await page.screenshot({ path: path.join(TUX1_EVIDENCE, `${tag}-root.png`) });
+
+    await touch.tap(page, page.locator('#phone-menu-root [data-menu-target="btn-menu-insert"]'));
+    const insertItems = page.locator('#btn-insert-mirror-modifier');
+    await expect(insertItems).toBeVisible();
+    inside(await visibleBox(page, '#btn-insert-mirror-modifier'), 'Insert item');
+    expect((await insertItems.boundingBox()).height, 'Insert item height').toBeGreaterThanOrEqual(43.5);
+    const back = page.locator('.phone-menu-back:visible');
+    await expect(back).toHaveCount(1);
+    expect((await back.boundingBox()).height, 'Back height').toBeGreaterThanOrEqual(43.5);
+    await page.screenshot({ path: path.join(TUX1_EVIDENCE, `${tag}-insert.png`) });
+
+    await touch.tap(page, back);
+    await expect(rows).toHaveCount(6);
+    expect(await rows.first().isVisible(), 'root rows back').toBe(true);
+    await touch.tap(page, page.locator('#phone-menu-root [data-menu-target="btn-menu-help"]'));
+    await expect(page.locator('#btn-help')).toBeVisible();
+    inside(await visibleBox(page, '#btn-help'), 'Help item');
+    // every item of the tall levels is reachable (the level scrolls inside the sheet)
+    await touch.tap(page, page.locator('.phone-menu-back:visible'));
+    await touch.tap(page, page.locator('#phone-menu-root [data-menu-target="btn-menu-object"]'));
+    const tall = await page.evaluate(() => {
+      const sheet = document.getElementById('top-menubar');
+      const panel = document.querySelector('.top-menu-panel.open');
+      const cs = getComputedStyle(panel);
+      return { fits: panel.scrollHeight <= panel.clientHeight + 1 || ['auto', 'scroll'].includes(cs.overflowY), sheetB: sheet.getBoundingClientRect().bottom, vh: innerHeight };
+    });
+    expect(tall.fits, 'Object level scrolls when taller than the sheet').toBe(true);
+    expect(tall.sheetB, 'Object level sheet bottom').toBeLessThanOrEqual(tall.vh + 0.5);
+
+    // close, reopen, then tap the canvas: closes without side effects
+    await page.evaluate(() => window.app.ui.setTopMenuOpen(null, false));
+    await page.keyboard.press('Escape').catch(() => {});
+    if (!(await page.locator('#phone-menu-sheet').isVisible())) await touch.tap(page, page.locator('#btn-menu-hamburger'));
+    await expect(page.locator('#phone-menu-sheet')).toBeVisible();
+    const before = await page.evaluate(() => ({ n: window.app.engine.layers.length, sel: [...(window.app.renderer.selectedLayerIds || [])], h: window.app.history.length }));
+    const canvas = await page.locator('#main-canvas').boundingBox();
+    await touch.tap(page, { x: canvas.x + canvas.width / 2, y: Math.min(canvas.y + canvas.height / 2, vp.h - 6) });
+    await expect(page.locator('#phone-menu-sheet')).toBeHidden();
+    const after = await page.evaluate(() => ({ n: window.app.engine.layers.length, sel: [...(window.app.renderer.selectedLayerIds || [])], h: window.app.history.length }));
+    expect(after).toEqual(before);
+  });
+
+  test('C direct actions work', async ({ page }, testInfo) => {
+    test.skip(!PHONE_PROJECTS.includes(testInfo.project.name), 'phone projects only');
+    expect(await layerCount(page), 'fresh load layers').toBe(0);
+    await expect(page.locator('#btn-header-export')).toHaveAttribute('aria-disabled', 'true');
+    await touch.tap(page, page.locator('#btn-header-export'));
+    await expect(page.locator('#export-modal-root')).toHaveCount(0);
+    // Narrowest finger path: Layers drawer from the header, then the add button.
+    // Landscape phones keep the docked Layers pane open by default (TUX-008 owns that); only toggle it when closed.
+    const wasOpen = await page.locator('#btn-add-layer').isVisible();
+    if (!wasOpen) await touch.tap(page, page.locator('#btn-header-layers'));
+    await expect(page.locator('#btn-add-layer')).toBeVisible();
+    // Wait for the drawer slide to finish so the tap lands on the settled button.
+    let prev = null;
+    await expect.poll(async () => {
+      const b = await page.locator('#btn-add-layer').boundingBox();
+      const same = !!prev && !!b && Math.abs(prev.x - b.x) < 0.5 && Math.abs(prev.y - b.y) < 0.5;
+      prev = b;
+      return same;
+    }, { intervals: [120] }).toBe(true);
+    // #btn-add-layer opens the type menu (TUX-035 territory); a finger tap on "Algorithm Layer" adds the default algorithm layer (Empty Layer adds a group, which cannot be exported).
+    await touch.tap(page, page.locator('#btn-add-layer'));
+    await expect(page.locator('#layer-add-menu .lvl-add-item[data-add="algo-parent"]')).toBeVisible();
+    await touch.tap(page, page.locator('#layer-add-menu .lvl-add-item[data-add="algo-parent"]'));
+    await expect.poll(() => layerCount(page)).toBe(1);
+    if (!wasOpen) await touch.tap(page, page.locator('#btn-header-layers')); // close the drawer
+    await expect(page.locator('#btn-header-undo')).toBeEnabled();
+    await expect(page.locator('#btn-header-export')).not.toHaveAttribute('aria-disabled', 'true');
+    await touch.tap(page, page.locator('#btn-header-undo'));
+    await expect.poll(() => layerCount(page)).toBe(0);
+    await expect(page.locator('#btn-header-redo')).toBeEnabled();
+    await touch.tap(page, page.locator('#btn-header-redo'));
+    await expect.poll(() => layerCount(page)).toBe(1);
+    await touch.tap(page, page.locator('#btn-header-export'));
+    await expect(page.locator('#export-modal-root')).toBeVisible();
+  });
+});
+
+test.describe('TUX-001 non-phone keeps the inline menubar', () => {
+  test('D iPad and wide-touch headers stay inline', async ({ page }, testInfo) => {
+    test.skip(!NONPHONE_PROJECTS.includes(testInfo.project.name), 'iPad and wide-touch projects only');
+    const spec = PROJECTS[testInfo.project.name];
+    await gotoApp(page);
+    expect(await visibleBox(page, '#btn-menu-hamburger'), 'no hamburger').toBeNull();
+    for (const id of INLINE_TRIGGERS) expect(await visibleBox(page, `#${id}`), `#${id} inline`).not.toBeNull();
+    const m = await page.evaluate(() => ({ r: document.getElementById('app-header').getBoundingClientRect().right, iw: innerWidth, sw: document.documentElement.scrollWidth }));
+    expect(m.r).toBeLessThanOrEqual(m.iw);
+    expect(m.sw).toBeLessThanOrEqual(m.iw);
+    fs.mkdirSync(TUX1_EVIDENCE, { recursive: true });
+    await page.screenshot({ path: path.join(TUX1_EVIDENCE, `${spec.device}${spec.engine === 'webkit' ? '-webkit' : ''}-closed.png`) });
+  });
+});

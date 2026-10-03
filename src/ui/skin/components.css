@@ -13632,3 +13632,216 @@ body.touch-ui .lvl-grp-exit-zone { margin-left: -16px }
   .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
 }
 body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
+
+/* === TUX-001: phone header ===
+ * Phone layout (body.phone-layout, set by the layout classifier) replaces the inline menubar with
+ * a hamburger sheet plus five direct buttons. Every rule that changes the layout is scoped under
+ * body.phone-layout, so the desktop and tablet header stay pixel-identical.
+ * Markup is created by menubar.js (initPhoneHeader). The six menu panels are the existing
+ * [data-top-menu-panel] nodes, re-laid out as sheet levels; nothing is cloned. */
+#btn-menu-hamburger,
+#phone-header-actions,
+#phone-menu-backdrop,
+#phone-menu-sheet,
+.phone-menu-back { display: none; }
+
+.phone-header-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
+  min-width: var(--touch-target-min, 44px);
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-md, 6px);
+  background: var(--ui-ctrl, var(--ui-panel-alt));
+  color: var(--ui-text-2);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.phone-header-btn:disabled,
+.phone-header-btn[aria-disabled="true"] { opacity: 0.4; }
+.phone-header-btn:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 1px; }
+.phone-header-btn[aria-expanded="true"] { border-color: var(--ui-accent); color: var(--ui-accent); }
+.phone-header-btn .phone-icon { width: 20px; height: 20px; }
+
+[data-ui-skin] body.phone-layout #app-header {
+  height: auto;
+  min-height: 52px;
+  max-width: 100%;
+  overflow-x: clip;
+  padding-left: max(14px, env(safe-area-inset-left, 0px));
+  padding-right: max(14px, env(safe-area-inset-right, 0px));
+}
+[data-ui-skin] body.phone-layout #app-header .header-main {
+  height: 52px;
+  min-height: 52px;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+[data-ui-skin] body.phone-layout #app-header .header-brand-menu {
+  flex: 0 0 auto;
+  gap: 8px;
+}
+[data-ui-skin] body.phone-layout #app-header .header-brand-menu > div:first-child { flex: 0 0 auto; }
+[data-ui-skin] body.phone-layout #app-header h1,
+[data-ui-skin] body.phone-layout #app-header .header-menu-divider,
+[data-ui-skin] body.phone-layout #app-header .header-status-actions { display: none; }
+body.phone-layout #btn-menu-hamburger { display: inline-flex; }
+body.phone-layout #phone-header-actions {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+body.phone-layout .phone-header-group { display: flex; align-items: center; gap: 4px; }
+
+/* The inline menubar is the sheet's level container; hidden until a level opens. */
+[data-ui-skin] body.phone-layout #top-menubar { display: none; }
+[data-ui-skin] body.phone-layout.phone-menu-level #top-menubar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  position: fixed;
+  top: var(--phone-sheet-top, 52px);
+  left: 0;
+  right: auto;
+  width: min(100%, 420px);
+  z-index: 4;
+  margin: 0;
+  gap: 0;
+  max-height: calc(100vh - var(--phone-sheet-top, 52px) - env(safe-area-inset-bottom, 0px) - 8px);
+  max-height: calc(100dvh - var(--phone-sheet-top, 52px) - env(safe-area-inset-bottom, 0px) - 8px);
+  overflow: hidden;
+  white-space: normal;
+  background: var(--ui-panel);
+  border-bottom: 1px solid var(--ui-border-hi, var(--ui-border));
+  box-shadow: var(--shadow-lg, 0 16px 30px rgba(0, 0, 0, 0.45));
+}
+body.phone-layout #top-menubar .top-menu { display: none; }
+body.phone-layout #top-menubar .top-menu.phone-active {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-height: 0;
+  position: static;
+}
+body.phone-layout #top-menubar .top-menu-trigger { display: none; }
+[data-ui-skin] body.phone-layout #top-menubar .top-menu-panel,
+[data-ui-skin] body.phone-layout #top-menubar .top-menu-panel.open {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  max-height: none;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  padding: 0 0 env(safe-area-inset-bottom, 0px);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  transition: none;
+}
+[data-ui-skin] body.phone-layout #top-menubar .top-menu-panel:not(.open) { display: none; }
+[data-ui-skin] body.phone-layout #top-menubar .top-menu-item {
+  min-height: var(--touch-target-min, 44px);
+  padding-top: 0;
+  padding-bottom: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  font-size: 15px;
+  touch-action: manipulation;
+}
+[data-ui-skin] body.phone-layout #top-menubar .phone-menu-back {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--ui-panel);
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-accent);
+}
+body.phone-layout .phone-menu-back .phone-icon { width: 18px; height: 18px; flex: 0 0 auto; }
+body.phone-layout .phone-menu-back-title { margin-left: auto; color: var(--ui-muted); font-size: 12px; }
+
+body.phone-layout #phone-menu-backdrop:not([hidden]) {
+  display: block;
+  position: fixed;
+  top: var(--phone-sheet-top, 52px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
+  background: rgba(0, 0, 0, 0.45);
+  touch-action: none;
+}
+body.phone-layout #phone-menu-sheet:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: var(--phone-sheet-top, 52px);
+  left: 0;
+  right: auto;
+  width: min(100%, 420px);
+  z-index: 3;
+  max-height: calc(100vh - var(--phone-sheet-top, 52px) - env(safe-area-inset-bottom, 0px) - 8px);
+  max-height: calc(100dvh - var(--phone-sheet-top, 52px) - env(safe-area-inset-bottom, 0px) - 8px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--ui-panel);
+  border-bottom: 1px solid var(--ui-border-hi, var(--ui-border));
+  box-shadow: var(--shadow-lg, 0 16px 30px rgba(0, 0, 0, 0.45));
+}
+body.phone-layout .phone-menu-root { display: flex; flex-direction: column; }
+body.phone-layout .phone-menu-root[hidden] { display: none; }
+body.phone-layout .phone-menu-row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: var(--touch-target-min, 44px);
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+  border: 0;
+  border-bottom: 1px solid var(--ui-border);
+  background: transparent;
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+body.phone-layout .phone-menu-row .phone-icon { width: 18px; height: 18px; color: var(--ui-muted); }
+body.phone-layout .phone-menu-theme-value { color: var(--ui-muted); font-size: 12px; }
+body.phone-layout .phone-menu-row:focus-visible,
+body.phone-layout #top-menubar .top-menu-item:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: -2px; }
+@media (hover: none) {
+  [data-ui-skin] body.phone-layout #top-menubar .top-menu-item:hover:not(:disabled) {
+    background: transparent;
+    color: var(--ui-text);
+  }
+  [data-ui-skin] body.phone-layout #top-menubar .phone-menu-back:hover:not(:disabled) { color: var(--ui-accent); }
+}
+body.phone-layout .phone-menu-row:active,
+[data-ui-skin] body.phone-layout #top-menubar .top-menu-item:active:not(:disabled) { background: var(--ui-accent-2); }
+/* Toasts stack at top:16px right:16px (inline style) and cover Undo/Redo/Export. Keep them below the header. */
+body.phone-layout #vectura-toast-host { top: 60px !important; }
+/* === /TUX-001 === */
