@@ -747,11 +747,17 @@
       this.snap = null;
       this.snapAllowed = true;
       this.activePointerId = null;
-      this.touchPointers = new Map();
+      this.activePointerType = null;
+      // TUX-017: the arbiter owns the touch pointer map (live x/y, down time, max travel),
+      // the second-finger decision and the gesture latch. The renderer only executes.
+      this.touchArbiter = window.Vectura.TouchGestureArbiter.create();
+      this.touchPointers = this.touchArbiter.pointers;
       this.touchGesture = null;
-      this.touchHoldTimer = null;
-      this.touchHoldPending = null;
-      this.touchHoldStartClient = null;
+      this._touchSnapshot = null;
+      this._touchDeferred = null;
+      // TUX-019: a touch press on a movable selection waits for the drag slop (no hold).
+      this._touchMovePending = null;
+      this.touchSlopCrossed = false;
       this.exportModalOpen = false;
       this.ready = Boolean(this.canvas && this.ctx);
 
@@ -1871,27 +1877,11 @@
     }
 
     updateTouchPointer(e) {
-      if (!this.isTouchPointer(e)) return;
-      this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      this.touchArbiter.update(e);
     }
 
     removeTouchPointer(e) {
-      if (!this.isTouchPointer(e)) return;
-      this.touchPointers.delete(e.pointerId);
-    }
-
-    canStartTouchGesture() {
-      return !(
-        this.isLayerDrag ||
-        this.isSelecting ||
-        this.isLassoSelecting ||
-        this.isScissor ||
-        this.shapeCornerDrag ||
-        this.directDrag ||
-        this.isDirectMarquee ||
-        this.isPenDragging ||
-        this.isLightDrag
-      );
+      this.touchArbiter.release(e);
     }
 
     getTouchGesturePair() {
@@ -1938,45 +1928,285 @@
       this.updateCursor();
     }
 
-    clearTouchHold() {
-      if (this.touchHoldTimer) {
-        clearTimeout(this.touchHoldTimer);
-        this.touchHoldTimer = null;
-      }
-      this.touchHoldPending = null;
-      this.touchHoldStartClient = null;
+    // TUX-019: touch drag slop in CSS client px (config: UI_CONSTANTS.TOUCH_GESTURE.touchDragSlopPx).
+    _touchDragSlopPx() {
+      return window.Vectura.TouchGestureArbiter.readConfig().touchDragSlopPx;
     }
 
+    // Public interface for the long-press lane (TUX-034): set when a touch drag crosses the
+    // slop, cleared on lift. A pending canvas long-press must cancel when this goes true.
+    _markTouchSlopCrossed() {
+      if (this.touchSlopCrossed) return;
+      this.touchSlopCrossed = true;
+      if (typeof document !== 'undefined' && typeof CustomEvent === 'function') {
+        try { document.dispatchEvent(new CustomEvent('vectura:touch-slop-crossed')); } catch (_e) { /* noop */ }
+      }
+    }
+
+    // Clears every interaction flag (the single list lives in the arbiter) plus the
+    // companion state those interactions leave behind. Does NOT restore document state:
+    // rollback runs the cancel paths and the snapshot restore first.
     cancelActiveInteractionsForTouchGesture() {
-      this.clearTouchHold();
-      this.isPan = false;
-      this.isLayerDrag = false;
+      this.touchSlopCrossed = false;
+      const flags = window.Vectura.TouchGestureArbiter.INTERACTION_FLAGS;
+      flags.forEach((name) => { this[name] = name.startsWith('is') ? false : null; });
       this._clearMorphDrag();
       this.dragMode = null;
       this.activeHandle = null;
       this.tempTransform = null;
       this.snap = null;
       this.guides = null;
-      this.isLightDrag = false;
-      this.isPenDragging = false;
-      this.isPenCloseDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
       this.penDragMirrorLock = null;
-      this.shapeCornerDrag = null;
-      this.freeformCornerDrag = null;
-      this.directDrag = null;
-      this.isScissor = false;
       this.scissorStart = null;
       this.scissorEnd = null;
-      this.isSelecting = false;
       this.selectionRect = null;
       this.selectionStart = null;
-      this.isLassoSelecting = false;
       this.lassoPath = null;
-      this.isDirectMarquee = false;
       this.directMarqueeStart = null;
       this.directMarqueeRect = null;
+      this._marqueeAdditive = false;
+      this._marqueeBaseIds = null;
+      this._sceneMarqueePending = null;
+      this._pendingSingleSelect = null;
+      this._areaResize = null;
+    }
+
+    // ── TUX-017: second-finger arbitration ────────────────────────────────────
+    // Targeted first-touch snapshot. No captureState in the production path.
+    _takeTouchSnapshot() {
+      const app = this.app;
+      const te = app && app.textEdit;
+      const ss = this.sceneSelection;
+      const ds = this.directSelection;
+      const draft = this.penDraft;
+      return {
+        selectedLayerIds: new Set(this.selectedLayerIds),
+        selectedLayerId: this.selectedLayerId,
+        keyObjectId: this.keyObjectId,
+        activeLayerId: this.engine ? this.engine.activeLayerId : null,
+        sceneSelection: ss ? JSON.stringify(ss) : null,
+        directSelection: ds || null,
+        directSelectionAnchors: ds && Array.isArray(ds.anchors) ? this.cloneAnchors(ds.anchors) : null,
+        directSelectionMeta: ds && ds.meta ? { ...ds.meta } : null,
+        directSelectedIndices: ds && ds.selectedIndices ? new Set(ds.selectedIndices) : null,
+        // Multi-path anchor selection: the extra paths live in directAuxSelections.
+        directAux: (this.directAuxSelections || []).map((a) => ({
+          ...a,
+          anchors: Array.isArray(a.anchors) ? this.cloneAnchors(a.anchors) : a.anchors,
+          meta: a.meta ? { ...a.meta } : a.meta,
+          selectedIndices: a.selectedIndices ? new Set(a.selectedIndices) : a.selectedIndices,
+        })),
+        groupEditMode: this.groupEditMode ? { ...this.groupEditMode } : null,
+        activeTool: this.activeTool,
+        penDraft: draft ? JSON.parse(JSON.stringify(draft)) : null,
+        penLastClick: this._penLastClick ? { ...this._penLastClick } : null,
+        historyLen: app && Array.isArray(app.history) ? app.history.length : 0,
+        // Entry identities (not just the length): pushHistory shift()s at maxHistory, so the
+        // length does not change when a first-move push happens at the cap.
+        history: app && Array.isArray(app.history) ? app.history.slice() : null,
+        redoStack: app ? app.redoStack : null,
+        textLayerId: te && te.isActive && te.isActive() && te.getActiveLayer() ? te.getActiveLayer().id : null,
+      };
+    }
+
+    // Defer a destructive one-shot (touch only) so a second finger can still cancel it.
+    //   when 'slop'   run on the first move past the slop, or at pointerup
+    //   when 'window' run when the arbitration window closes (dt AND travel met), or at pointerup
+    _deferTouch(fn, when = 'window') {
+      const ids = [...this.touchPointers.keys()];
+      this._touchDeferred = { fn, when, pointerId: ids.length ? ids[0] : null };
+    }
+
+    _flushTouchDeferred() {
+      const d = this._touchDeferred;
+      if (!d) return;
+      this._touchDeferred = null;
+      d.fn();
+    }
+
+    _maybeFlushTouchDeferred(e) {
+      const d = this._touchDeferred;
+      if (!d || d.pointerId !== e.pointerId) return;
+      const rec = this.touchArbiter.get(e.pointerId);
+      if (!rec) return;
+      const cfg = window.Vectura.TouchGestureArbiter.readConfig();
+      const slopMet = rec.maxTravel >= cfg.ARBITRATION_SLOP_PX;
+      const timeMet = (Number(e.timeStamp) || 0) - rec.downTime >= cfg.ARBITRATION_MS;
+      if (d.when === 'slop' ? slopMet : (slopMet && timeMet)) this._flushTouchDeferred();
+    }
+
+    _cancelRotation3DDrag() {
+      const drag = this.rotation3DDrag;
+      if (!drag) return false;
+      this.rotation3DDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        const restore = drag.type === 'roll' ? { roll: drag.startRoll }
+          : drag.type === 'yaw' ? { yaw: drag.startYaw }
+            : drag.type === 'pitch' ? { pitch: drag.startPitch }
+              : { yaw: drag.startYaw, pitch: drag.startPitch };
+        this._write3DRotation(layer, drag.spec, restore);
+        if (drag.historyPushed && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
+          this.app.history.pop();
+        }
+        this.engine.generate(layer.id);
+        this.app?.ui?.buildControls?.();
+        this.app?.ui?.updateFormula?.();
+      }
+      this.updateCursor();
+      this.draw();
+      return true;
+    }
+
+    _cancelModifierDrag() {
+      const drag = this.modifierDrag;
+      if (!drag) return false;
+      this.modifierDrag = null;
+      const mirror = drag.guide && drag.guide.mirror;
+      if (mirror) {
+        mirror.angle = drag.startAngle;
+        mirror.xShift = drag.startShiftX;
+        mirror.yShift = drag.startShiftY;
+        mirror.centerX = drag.startCenterX;
+        mirror.centerY = drag.startCenterY;
+        mirror.radius = drag.startRadius;
+        mirror.rotation = drag.startRotation;
+        if (this.onComputeDisplayGeometry) this.onComputeDisplayGeometry();
+        else this.engine.computeAllDisplayGeometry();
+      }
+      this.hideDragTooltip();
+      return true;
+    }
+
+    // Roll the first finger's action back completely: no selection change, no edit, no
+    // history entry. Existing cancel paths run first (same priority as the Escape handler),
+    // then the targeted snapshot is restored (only where it differs, to avoid UI cascades).
+    _rollbackFirstTouchAction() {
+      const snap = this._touchSnapshot;
+      this._touchSnapshot = null;
+      this._touchDeferred = null; // deferred one-shots never ran, so there is nothing to undo
+      const Arb = window.Vectura.TouchGestureArbiter;
+      Arb.CANCEL_PATHS.forEach((name) => {
+        if (typeof this[name] === 'function') this[name]();
+      });
+      this._cancelRotation3DDrag();
+      this._cancelModifierDrag();
+      this.cancelActiveInteractionsForTouchGesture();
+      this._paintBucketClearHover();
+      this.patternFillPreviewPolygon = null;
+      this.hideFillLoupe?.();
+      this.hideDragTooltip();
+      this.clearMaskPreview();
+      this.activePointerId = null;
+      this.activePointerType = null;
+      if (snap) this._restoreTouchSnapshot(snap);
+      this.updateCursor();
+      this.draw();
+    }
+
+    _restoreTouchSnapshot(snap) {
+      const app = this.app;
+      // 1. History: an edit that pushed its undo point on first movement (anchor, corner and
+      //    pen-anchor drags) is undone from the earliest entry that was not there before the
+      //    gesture (push-before-change, so it IS the pre-edit state). New entries are found by
+      //    identity because at maxHistory the oldest entry is shifted off and the length stays
+      //    the same. The old entries and the redo stack are then put back as they were.
+      if (app && Array.isArray(app.history) && Array.isArray(snap.history)) {
+        const known = new Set(snap.history);
+        const pushed = app.history.find((h) => !known.has(h));
+        const same = app.history.length === snap.history.length
+          && app.history.every((h, i) => h === snap.history[i]);
+        if (pushed) {
+          app.isRestoring = true;
+          try { app.applyState(pushed); } finally { app.isRestoring = false; }
+        }
+        if (!same) {
+          app.history.length = 0;
+          snap.history.forEach((h) => app.history.push(h));
+        }
+        if (pushed || !same) app.redoStack = snap.redoStack;
+      }
+      // 2. Pen draft and double-click timing.
+      this.penDraft = snap.penDraft;
+      this._penLastClick = snap.penLastClick;
+      // 3. Text edit session started by this gesture.
+      const te = app && app.textEdit;
+      if (te && te.isActive && te.isActive()) {
+        const active = te.getActiveLayer();
+        if (!snap.textLayerId || (active && active.id !== snap.textLayerId)) te.end();
+      }
+      // 4. Tool switched by this gesture (double-tap on text enters Type).
+      if (snap.activeTool && this.activeTool !== snap.activeTool) {
+        if (app && app.ui && typeof app.ui.setActiveTool === 'function') app.ui.setActiveTool(snap.activeTool);
+        else this.setTool(snap.activeTool);
+      }
+      // 5. Isolation mode.
+      if (JSON.stringify(this.groupEditMode) !== JSON.stringify(snap.groupEditMode)) {
+        this.groupEditMode = snap.groupEditMode;
+        this._emitIsolationChanged();
+      }
+      // 6. Layer selection, only if it differs.
+      const sameIds = this.selectedLayerIds.size === snap.selectedLayerIds.size
+        && [...snap.selectedLayerIds].every((id) => this.selectedLayerIds.has(id));
+      if (!sameIds || this.selectedLayerId !== snap.selectedLayerId) {
+        this.setSelection([...snap.selectedLayerIds], snap.selectedLayerId);
+      }
+      this.keyObjectId = snap.keyObjectId;
+      if (this.engine && this.engine.activeLayerId !== snap.activeLayerId) this.engine.activeLayerId = snap.activeLayerId;
+      // 7. Scene sub-selection, only if it differs.
+      const sceneNow = this.sceneSelection ? JSON.stringify(this.sceneSelection) : null;
+      if (sceneNow !== snap.sceneSelection) {
+        this.setSceneSelection(snap.sceneSelection ? JSON.parse(snap.sceneSelection) : null);
+      }
+      // 8. Direct selection (reference + anchors + selected indices).
+      if (snap.directSelection) {
+        this.directSelection = snap.directSelection;
+        if (snap.directSelectionAnchors) this.directSelection.anchors = snap.directSelectionAnchors;
+        if (snap.directSelectionMeta) this.directSelection.meta = snap.directSelectionMeta;
+        if (snap.directSelectedIndices) this.directSelection.selectedIndices = snap.directSelectedIndices;
+      } else if (this.directSelection) {
+        this.directSelection = null;
+        this.directAuxSelections = [];
+      }
+      // 9. Aux paths of a multi-path Direct selection (setSelection / setDirectSelection and
+      //    anchor promotion clear them), restored last so it holds for both branches of step 8.
+      this.directAuxSelections = (snap.directAux || []).map((a) => ({
+        ...a,
+        anchors: Array.isArray(a.anchors) ? this.cloneAnchors(a.anchors) : a.anchors,
+        meta: a.meta ? { ...a.meta } : a.meta,
+        selectedIndices: a.selectedIndices ? new Set(a.selectedIndices) : a.selectedIndices,
+      }));
+    }
+
+    // Commit the first finger's action at its current state. This runs the SAME finalize
+    // code as pointerup (it does not remove the finger from the map), so the action adds
+    // exactly one history entry.
+    _commitFirstTouchAction(firstId) {
+      const rec = this.touchArbiter.get(firstId);
+      this._touchSnapshot = null;
+      this._flushTouchDeferred();
+      const ev = {
+        pointerId: firstId,
+        pointerType: 'touch',
+        clientX: rec ? rec.x : 0,
+        clientY: rec ? rec.y : 0,
+        button: 0,
+        buttons: 0,
+        cancelable: false,
+        preventDefault() {},
+      };
+      this._finishPointerInteraction(ev);
+      this.activePointerId = null;
+      this.activePointerType = null;
     }
 
     snapPenAngle(from, to) {
@@ -4138,6 +4368,47 @@
       return true;
     }
 
+    // One move-start path for mouse (at press) and touch (after the drag slop, TUX-019).
+    // `world` is the original press point so the object does not jump by the slop distance.
+    _beginLayerMove(world, layers, bounds, { alt = false } = {}) {
+      this.isLayerDrag = true;
+      this.snapAllowed = true;
+      this.dragMode = 'move';
+      this.dragStart = world;
+      this.startBounds = bounds;
+      this.startMaskPreviewForSelection(layers);
+      this._startMirrorDrag(layers);
+      this.setCanvasCursor(layers.length > 1 ? 'grabbing' : 'move');
+      this._attachShiftDragListener();
+      if (alt && layers.length) {
+        // SEL-2: Alt/Option-drag duplicates the whole selection (single or
+        // multi) and drags the copies. Never CMD/Ctrl — macOS Chrome
+        // cancels drops on that modifier.
+        this._beginAltDragDuplicate(layers, world, bounds);
+      }
+    }
+
+    // A press on a member of a multi-selection that never became a drag promotes that member
+    // to Key Object (second tap clears it). Shared by the mouse drop path and the touch tap.
+    _resolvePendingSingleSelect() {
+      const pending = this._pendingSingleSelect;
+      if (!pending) return;
+      // Standard semantics: when multi-selected and the user clicks
+      // (without modifiers) on a layer that's already in the selection,
+      // promote it to the Key Object instead of collapsing the selection.
+      // Click again on the same key → unset; click on a different selected
+      // layer → re-promote.
+      if (this.selectedLayerIds.size > 1 && this.selectedLayerIds.has(pending.id)) {
+        if (this.keyObjectId === pending.id) {
+          this.clearKeyObject();
+        } else {
+          this.setKeyObject(pending.id);
+        }
+      } else {
+        this.selectLayer(pending);
+      }
+    }
+
     // Cancel an in-flight layer drag (SEL-2: Escape mid-drag). Restores any
     // live-mutated mirror-drag geometry, removes alt-drag duplicates, restores
     // the pre-drag selection, and pops the pre-duplicate history snapshot when
@@ -4532,6 +4803,9 @@
         index: control.index,
         moved: false,
         historyPushed: modifiers.alt, // already pushed above for alt-dup
+        // TUX-019: touch waits for the drag slop before any anchor/handle edit or history push.
+        touchStartClient: this.isTouchPointer(e) ? { x: e.clientX, y: e.clientY } : null,
+        touchSlopCrossed: false,
         anchorStart: anchor ? { x: anchor.x, y: anchor.y } : null,
         otherStarts,
         mergeTarget: null,
@@ -6443,13 +6717,27 @@
     down(e) {
       if (!this.ready) return;
       if (this.isTouchPointer(e)) {
-        this.updateTouchPointer(e);
-        if (this.touchPointers.size >= 2) {
-          if (!this.touchGesture && this.canStartTouchGesture()) this.startTouchGesture();
-          if (this.touchGesture) {
-            if (e.cancelable) e.preventDefault();
-            return;
-          }
+        // A pen or mouse stroke in flight owns the canvas; a touch is a resting palm.
+        if (this.activePointerId !== null && this.activePointerType && this.activePointerType !== 'touch') {
+          if (e.cancelable) e.preventDefault();
+          return;
+        }
+        // TUX-017: the second pointerdown is arbitrated BEFORE the activePointerId check.
+        // A second finger always starts a pinch/pan with every tool: it either rolls the
+        // first finger's action back or commits it as one history entry.
+        const info = this.touchArbiter.down(e);
+        if (info.role === 'first') {
+          this._touchSnapshot = this._takeTouchSnapshot();
+        } else if (info.role === 'second') {
+          if (info.decision.rollback) this._rollbackFirstTouchAction();
+          else this._commitFirstTouchAction(info.firstId);
+          this.startTouchGesture();
+          if (e.cancelable) e.preventDefault();
+          return;
+        } else {
+          // Third finger, or a finger while the gesture latch is held: ignored.
+          if (e.cancelable) e.preventDefault();
+          return;
         }
       }
 
@@ -6459,6 +6747,7 @@
       }
       if (e.pointerId !== undefined) {
         this.activePointerId = e.pointerId;
+        this.activePointerType = e.pointerType || null;
         if (this.canvas.setPointerCapture) {
           try {
             this.canvas.setPointerCapture(e.pointerId);
@@ -6487,6 +6776,14 @@
       if (e.button !== undefined && e.button !== 0) return;
 
       if (this.lightSourcePlacement) {
+        if (this.isTouchPointer(e)) {
+          // Touch: place on release so a second finger can still cancel it (TUX-017).
+          this._deferTouch(() => {
+            this.setLightSource(world);
+            this.lightSourcePlacement = false;
+          }, 'window');
+          return;
+        }
         this.setLightSource(world);
         this.lightSourcePlacement = false;
         return;
@@ -6588,17 +6885,26 @@
           this.handlePenDown(world, e);
           return;
         }
-        let handled = false;
-        if (this.penMode === 'add') handled = this.insertAnchorFromWorld(world);
-        if (this.penMode === 'delete') handled = this.removeAnchorFromWorld(world);
-        if (this.penMode === 'anchor') handled = this._handlePenAnchorDown(world, e);
-        if (!handled) {
-          const hit = this.findPathHitAtPoint(world);
-          if (hit) {
-            if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
-            this.setDirectSelection(hit.layer, hit.pathIndex);
-            this.draw();
+        const runPenEdit = () => {
+          let handled = false;
+          if (this.penMode === 'add') handled = this.insertAnchorFromWorld(world);
+          if (this.penMode === 'delete') handled = this.removeAnchorFromWorld(world);
+          if (this.penMode === 'anchor') handled = this._handlePenAnchorDown(world, e);
+          if (!handled) {
+            const hit = this.findPathHitAtPoint(world);
+            if (hit) {
+              if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
+              this.setDirectSelection(hit.layer, hit.pathIndex);
+              this.draw();
+            }
           }
+        };
+        // Touch: add/delete-anchor geometry edits run at pointerup so a second finger can
+        // still cancel them (TUX-017). Anchor drags undo through the history restore.
+        if (this.isTouchPointer(e) && (this.penMode === 'add' || this.penMode === 'delete')) {
+          this._deferTouch(runPenEdit, 'window');
+        } else {
+          runPenEdit();
         }
         return;
       }
@@ -6632,7 +6938,11 @@
         if (!patternToolOnNonPatternLayer) {
           const poly = this._computeFillPreviewPolygon(world.x, world.y);
           if (poly && this.onPatternFill) {
-            this.onPatternFill({ tool: this.activeTool, polygon: poly, worldX: world.x, worldY: world.y });
+            const tool = this.activeTool;
+            const applyPattern = () => this.onPatternFill({ tool, polygon: poly, worldX: world.x, worldY: world.y });
+            // Touch: the pour waits for pointerup / a closed arbitration window (TUX-017).
+            if (this.isTouchPointer(e)) this._deferTouch(applyPattern, 'window');
+            else applyPattern();
           }
           if (e.cancelable) e.preventDefault();
           return;
@@ -6662,7 +6972,10 @@
         this._paintBucketHover(world, patternTileParams);
         const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
           ? 'erase' : 'pour';
-        this._paintBucketPour(world, mode, { startBatch: true, fillParamsOverride: patternTileParams });
+        const pour = () => this._paintBucketPour(world, mode, { startBatch: true, fillParamsOverride: patternTileParams });
+        // Touch: the pour waits for pointerup / a closed arbitration window (TUX-017).
+        if (this.isTouchPointer(e)) this._deferTouch(pour, 'window');
+        else pour();
         if (e.cancelable) e.preventDefault();
         return;
       }
@@ -7205,45 +7518,24 @@
         // moves are ground-drags handled by _sceneDownSelect above; a press on
         // empty scene space falls through to the marquee below.
         const sceneBoundsDragSuppressed = updatedSelected.length === 1 && updatedSelected[0].type === 'scene3d';
-        if (bounds && !sceneBoundsDragSuppressed && this.pointInBounds(world, bounds) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
-          if (this.isTouchPointer(e) && !modifiers.alt) {
-            // Touch: hold to lift — defer drag until finger has been held still for 350ms
-            this._pendingSingleSelect = null;
-            this.touchHoldStartClient = { x: e.clientX, y: e.clientY };
-            this.touchHoldPending = { world, updatedSelected, bounds };
-            this.touchHoldTimer = setTimeout(() => {
-              this.touchHoldTimer = null;
-              if (!this.touchHoldPending) return;
-              const { world: w, updatedSelected: layers, bounds: b } = this.touchHoldPending;
-              this.touchHoldPending = null;
-              this.isLayerDrag = true;
-              this.snapAllowed = true;
-              this.dragMode = 'move';
-              this.dragStart = w;
-              this.startBounds = b;
-              this.startMaskPreviewForSelection(layers);
-              this._startMirrorDrag(layers);
-              this.setCanvasCursor(layers.length > 1 ? 'grabbing' : 'move');
-              this._attachShiftDragListener();
-              if (navigator.vibrate) navigator.vibrate(30);
-              this.draw();
-            }, 350);
+        // TUX-019: a finger cannot hit a zero-height line or a 1 px outline exactly, so touch also
+        // arms the move when the press hit (findLayerAtPoint tolerance) a layer in the selection.
+        // Mouse and pen keep the strict bounds test.
+        const touchHitSelected = this.isTouchPointer(e) && !!topLayer && updatedSelected.some(l => l.id === topLayer.id);
+        if (bounds && !sceneBoundsDragSuppressed && (this.pointInBounds(world, bounds) || touchHitSelected) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
+          if (this.isTouchPointer(e)) {
+            // TUX-019: touch waits for the drag slop, not a hold. move() promotes this into
+            // the same state the mouse sets here; a lift under the slop is a tap.
+            this._touchMovePending = {
+              pointerId: e.pointerId,
+              startClient: { x: e.clientX, y: e.clientY },
+              world,
+              updatedSelected,
+              bounds,
+              alt: Boolean(modifiers.alt),
+            };
           } else {
-            this.isLayerDrag = true;
-            this.snapAllowed = true;
-            this.dragMode = 'move';
-            this.dragStart = world;
-            this.startBounds = bounds;
-            this.startMaskPreviewForSelection(updatedSelected);
-            this._startMirrorDrag(updatedSelected);
-            this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
-            this._attachShiftDragListener();
-            if (modifiers.alt && updatedSelected.length) {
-              // SEL-2: Alt/Option-drag duplicates the whole selection (single or
-              // multi) and drags the copies. Never CMD/Ctrl — macOS Chrome
-              // cancels drops on that modifier.
-              this._beginAltDragDuplicate(updatedSelected, world, bounds);
-            }
+            this._beginLayerMove(world, updatedSelected, bounds, { alt: Boolean(modifiers.alt) });
           }
           e.preventDefault();
         } else if (topLayer) {
@@ -7261,7 +7553,12 @@
             // clears first (replace semantics).
             this._marqueeAdditive = !!(modifiers.shift || modifiers.meta || modifiers.ctrl);
             this._marqueeBaseIds = this._marqueeAdditive ? new Set(this.selectedLayerIds) : null;
-            if (!this._marqueeAdditive) this.clearSelection();
+            if (!this._marqueeAdditive) {
+              // Touch: the plain-marquee clear runs on the first move past the slop, or at
+              // pointerup for a tap-to-deselect, so a pinch never loses the selection (TUX-017).
+              if (this.isTouchPointer(e)) this._deferTouch(() => this.clearSelection(), 'slop');
+              else this.clearSelection();
+            }
           }
         }
       }
@@ -7269,6 +7566,20 @@
 
     move(e) {
       if (!this.ready) return;
+      if (this.isTouchPointer(e)) {
+        // TUX-017: track the finger (max travel feeds the arbitration decision), then run
+        // the pinch/pan. While the gesture latch is held, a lone finger starts nothing.
+        this.touchArbiter.update(e);
+        if (this.touchGesture) {
+          if (this.touchPointers.size >= 2) {
+            this.updateTouchGesture();
+            if (e.cancelable) e.preventDefault();
+          }
+          return;
+        }
+        if (this.touchArbiter.gestureActive) return;
+        if (this._touchDeferred) this._maybeFlushTouchDeferred(e);
+      }
       // Type-tool press-drag → live selection (M4). Only while the primary button
       // is held and a drag was armed on down().
       if (this.activeTool === 'type' && this._typeDrag && (e.buttons === undefined || (e.buttons & 1))) {
@@ -7341,29 +7652,18 @@
         this.showFillLoupe(e.clientX, e.clientY);
         this.draw();
       }
-      if (this.isTouchPointer(e)) this.updateTouchPointer(e);
-      if (this.touchGesture) {
-        if (this.touchPointers.size >= 2) {
-          this.updateTouchGesture();
-          if (e.cancelable) e.preventDefault();
-        }
-        return;
-      }
       if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
         return;
       }
       const modifiers = this.getModifierState(e);
-      if (this.touchHoldPending && this.isTouchPointer(e)) {
-        const dx = e.clientX - this.touchHoldStartClient.x;
-        const dy = e.clientY - this.touchHoldStartClient.y;
-        if (Math.hypot(dx, dy) > 12) {
-          this.clearTouchHold();
-          this.isPan = true;
-          this.lastM = { x: e.clientX, y: e.clientY };
-          this.setCanvasCursor('grabbing');
-        } else {
-          return;
-        }
+      if (this._touchMovePending && this.isTouchPointer(e)) {
+        // TUX-019: no move, and never a pan, until the finger travels the touch slop.
+        const pending = this._touchMovePending;
+        const travel = Math.hypot(e.clientX - pending.startClient.x, e.clientY - pending.startClient.y);
+        if (travel < this._touchDragSlopPx()) return;
+        this._touchMovePending = null;
+        this._markTouchSlopCrossed();
+        this._beginLayerMove(pending.world, pending.updatedSelected, pending.bounds, { alt: pending.alt });
       }
       if (this.isPan) {
         this.offsetX += e.clientX - this.lastM.x;
@@ -7451,6 +7751,20 @@
         const sx = e.clientX - rect.left;
         const sy = e.clientY - rect.top;
         const world = this.screenToWorld(sx, sy);
+        const dd = this.directDrag;
+        if (dd.touchStartClient && !dd.touchSlopCrossed) {
+          const travel = Math.hypot(e.clientX - dd.touchStartClient.x, e.clientY - dd.touchStartClient.y);
+          if (travel < this._touchDragSlopPx()) return;
+          dd.touchSlopCrossed = true;
+          this._markTouchSlopCrossed();
+          // Measure the edit from the original press point so the anchor does not jump by the slop.
+          const dLayer = this.getDirectSelectionLayer();
+          if (dd.type === 'anchor' && !dd.grabOffset && dd.anchorStart && dLayer) {
+            const downWorld = this.screenToWorld(dd.touchStartClient.x - rect.left, dd.touchStartClient.y - rect.top);
+            const downSrc = this.worldToSourcePoint(dLayer, downWorld);
+            dd.grabOffset = { x: downSrc.x - dd.anchorStart.x, y: downSrc.y - dd.anchorStart.y };
+          }
+        }
         this.updateDirectDrag(world, e);
         return;
       }
@@ -7902,32 +8216,23 @@
       }
     }
 
+    _releaseActivePointer(e) {
+      if (e.pointerId !== undefined && this.canvas.releasePointerCapture) {
+        try {
+          if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(e.pointerId)) {
+            this.canvas.releasePointerCapture(e.pointerId);
+          }
+        } catch (err) {
+          // Ignore pointer capture release issues.
+        }
+      }
+      this.activePointerId = null;
+      this.activePointerType = null;
+    }
+
     up(e = {}) {
       if (!this.ready || !this.canvas) return;
-      // Commit a Type-tool empty-canvas creation gesture: drag → area frame,
-      // click → point type. Runs before other up() handling and consumes the event.
-      if (this.activeTool === 'type' && this._areaCreate) {
-        this.finishAreaCreate();
-        this.removeTouchPointer(e);
-        this.activePointerId = null;
-        return;
-      }
-      // End any active Type-tool press-drag (the selection is already applied).
-      this._typeDrag = null;
-      this.lastPourLoopId = null;
       this.removeTouchPointer(e);
-      const clearActivePointer = () => {
-        if (e.pointerId !== undefined && this.canvas.releasePointerCapture) {
-          try {
-            if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(e.pointerId)) {
-              this.canvas.releasePointerCapture(e.pointerId);
-            }
-          } catch (err) {
-            // Ignore pointer capture release issues.
-          }
-        }
-        this.activePointerId = null;
-      };
       if (this.touchGesture) {
         if (this.touchPointers.size >= 2) {
           this.updateTouchGesture();
@@ -7935,15 +8240,66 @@
         }
         this.stopTouchGesture();
         if (this.touchPointers.size > 0) {
-          clearActivePointer();
+          this._releaseActivePointer(e);
           return;
         }
       }
+      // TUX-017 latch: after a pinch/pan, a remaining finger starts and ends nothing until
+      // every touch pointer has lifted.
+      if (this.isTouchPointer(e) && this.touchArbiter.gestureActive) {
+        this._releaseActivePointer(e);
+        this.updateCursor();
+        return;
+      }
+      // TUX-019: a cancelled touch (system gesture, palm, OS takeover) must not commit a move.
+      // Restore the start transforms; no history entry was pushed (it is pushed at drop).
+      if (e.type === 'pointercancel' && this.isTouchPointer(e) && (this.isLayerDrag || this._touchMovePending)) {
+        this._touchMovePending = null;
+        this.touchSlopCrossed = false;
+        this._touchSnapshot = null;
+        this._touchDeferred = null;
+        this.cancelLayerDrag();
+        this._pendingSingleSelect = null;
+        this._releaseActivePointer(e);
+        this.updateCursor();
+        this.draw();
+        return;
+      }
+      // Touch one-shots deferred at pointerdown (fill pour, plain-marquee clear, pen
+      // add/delete anchor) run now, before the normal finalize.
+      // Only the finger that owns the deferred action may run it; a second finger that
+      // lifts elsewhere must not fire the canvas finger's pour, clear or anchor edit.
+      if (this.isTouchPointer(e) && this._touchDeferred && this._touchDeferred.pointerId === e.pointerId) {
+        this._flushTouchDeferred();
+      }
+      this._finishPointerInteraction(e);
+    }
+
+    // Pointerup finalize for the active one-finger interaction. The second-finger COMMIT
+    // path calls this same method (TUX-017), so a commit is exactly what a lift would do.
+    _finishPointerInteraction(e = {}) {
+      // Commit a Type-tool empty-canvas creation gesture: drag → area frame,
+      // click → point type. Runs before other up() handling and consumes the event.
+      if (this.activeTool === 'type' && this._areaCreate) {
+        this.finishAreaCreate();
+        this.activePointerId = null;
+        this.activePointerType = null;
+        return;
+      }
+      // End any active Type-tool press-drag (the selection is already applied).
+      this._typeDrag = null;
+      this.lastPourLoopId = null;
+      const clearActivePointer = () => this._releaseActivePointer(e);
       if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
         return;
       }
-      if (this.touchHoldPending) {
-        this.clearTouchHold();
+      this.touchSlopCrossed = false;
+      if (this._touchMovePending) {
+        // TUX-019: lift under the slop is a tap. Same outcome as a mouse click: a member of a
+        // multi-selection becomes the Key Object; nothing moves and no history is added.
+        this._touchMovePending = null;
+        this._resolvePendingSingleSelect();
+        this._pendingSingleSelect = null;
         clearActivePointer();
         this.updateCursor();
         this.draw();
@@ -8133,23 +8489,7 @@
             : primary;
           if (effectivePrimary) this.updateTransformInputs(effectivePrimary);
         }
-        if (!this.tempTransform && this._pendingSingleSelect) {
-          const pending = this._pendingSingleSelect;
-          // Standard semantics: when multi-selected and the user clicks
-          // (without modifiers) on a layer that's already in the selection,
-          // promote it to the Key Object instead of collapsing the selection.
-          // Click again on the same key → unset; click on a different selected
-          // layer → re-promote.
-          if (this.selectedLayerIds.size > 1 && this.selectedLayerIds.has(pending.id)) {
-            if (this.keyObjectId === pending.id) {
-              this.clearKeyObject();
-            } else {
-              this.setKeyObject(pending.id);
-            }
-          } else {
-            this.selectLayer(pending);
-          }
-        }
+        if (!this.tempTransform) this._resolvePendingSingleSelect();
         this.clearMaskPreview();
         this.mirrorDragState = null;
         this.tempTransform = null;
@@ -13134,7 +13474,7 @@
     }
 
     enterGroupEditMode(layer) {
-      this.clearTouchHold();
+      this._touchMovePending = null;
       this.groupEditMode = { groupId: layer.parentId, activeLayerId: layer.id, kind: 'group' };
       this.setSelection([layer.id], layer.id);
       this.draw();
@@ -13155,7 +13495,7 @@
     // isolation is keyed on the container id with kind 'morph'. Escape returns
     // to the container (see exitGroupEditMode), not to the consumed children.
     enterMorphEditMode(child, container) {
-      this.clearTouchHold();
+      this._touchMovePending = null;
       this.groupEditMode = { groupId: container.id, activeLayerId: child.id, kind: 'morph' };
       this.setSelection([child.id], child.id);
       this.draw();
