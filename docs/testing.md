@@ -99,6 +99,8 @@ Metrics (per project and state):
 | `covered` | lower | exact | 0 in `default` |
 | `safeUnprotected` | lower | exact | 0 |
 | `ghost` | lower | exact | 0 |
+| `stranded` | lower | exact | 0 |
+| `reachable` | higher | exact | none (floor only) |
 | `pageErrors` | lower | exact | 0 |
 | `canvasPct` | higher | +/-1.0 pp | iPadP 70; iPadL 45 (two docked panes) / 60 (one) / 75 (none); iPhP 60; iPhL 60; chrome variants 50 |
 | `scaleOk` (`renderer.scale > 0`) | true is better | exact | true |
@@ -109,6 +111,10 @@ Definitions:
 - Size metrics (`under44`, `under24`, `wcag258Fail`, `iosZoom`) count reachable targets only. A covered target counts in `covered`.
 - `canvasPct` is a 48 x 48 cell grid over the viewport. A hit is the canvas, a descendant or `#viewport-container`.
 - `ghost` counts invisible (opacity 0) targets that still receive the hit test. The `right-pane-layers` state holds two layers so an inactive row exposes `.lvl-acts` (IPAD-004).
+- `stranded` counts rendered targets (not `display:none`, not `visibility:hidden`, rect over 1 x 1) whose clipped rect is empty and that nothing can bring into view. A target counts as brought into view when a scrollable on-screen ancestor (overflow `auto` or `scroll`) holds it, or when it lies inside the layout viewport (`innerWidth` x `innerHeight`, which pans on a mobile UA), or inside the root scroll extent when the root can scroll that axis. Targets inside a parked drawer (an absolute or fixed ancestor fully off-canvas, such as a closed pane) are not counted: a separate state opens them. This closes the clipping hole. Hiding the overflow (`html,body{overflow-x:hidden} #app-header{overflow:hidden}`) sets `hOverflow`, `vOverflow` and `innerWidthExcess` to 0 on Chromium iPhone portrait but strands Insert and Help, so `stranded` rises and the run fails.
+- `reachable` counts on-screen targets that pass the hit test. It is higher-better with tolerance 0. Removing or hiding controls (for example `#touch-modifier-bar,.toolbar-footer{display:none}`) lowers every `under*` count and raises `canvasPct`, but `reachable` falls, so the run fails. WebKit iPhone portrait already strands Insert and Help (body `overflow:hidden` keeps the 544 px scroll width unreachable): that is a real finding, recorded in the baseline.
+- Regression fixtures for both guards: `tests/e2e/touch/target-audit-guards.spec.js` injects the CSS hacks into the live app and asserts `compareCell` reports `worse`. The comparator directions are proved in `tests/unit/touch-target-ratchet.test.js`.
+- Item selectors are unique. `cssPath` adds `:nth-of-type` for same-tag siblings and grows to the full chain until the selector matches one element. The audit fails when an allowlist selector matches more than one element in any measured state, and the allowlist test asserts the same in every project. One entry cannot exempt siblings and bypass the 10-entry cap.
 - `pageErrors` counts uncaught page errors and app exceptions the openers caught (`window.__auditErrors`). ResizeObserver loop notices are not counted: WebKit raises them at frame-timing-dependent rates.
 - `safeUnprotected` follows `var(--name)` when the custom property holds `env(safe-area-inset-<side>)`.
 - The `-chrome` projects run the `default` state only. They gate `canvasPct`, `hOverflow` and `innerWidthExcess`.
@@ -120,6 +126,7 @@ The audit spec runs with no retries (`test.describe.configure({ retries: 0 })` a
 Update mode:
 - `TOUCH_BASELINE=update` writes the better of the old and the new value for every metric. It never worsens a cell. A cell that got worse still fails the test.
 - `TOUCH_BASELINE=update-any` writes the measured values as they are. The commit body must contain a `TUX-WAIVER:` line that names the cell and the reason.
+- Removing or hiding controls is a regression. The `reachable` count drops, and only `TOUCH_BASELINE=update-any` plus a `TUX-WAIVER:` line can lower it in the baseline. The same applies to a rise in `stranded`. A product lane that moves controls into a menu (TUX-001) reaches the controls through the new menu and lists the waiver for the cells where the count drops.
 - Keys are sorted. Each `project|state` cell is one line, so merge conflicts stay local. The write is atomic (lock, fresh read, temp file, rename).
 - Baseline conflicts: regenerate on the merged tree. Never merge numbers by hand.
 - The baseline is keyed `baseline[platform][project][state]`. Platform is `darwin` or `linux`. A missing `linux` section is a soft state (annotation `baseline-missing`) so the first Linux CI run can seed it. A missing `darwin` cell on macOS fails.

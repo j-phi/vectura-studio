@@ -168,22 +168,38 @@ function measureInPage(cfg, helpers) {
     return true;
   });
 
-  const cssPath = (el) => {
-    if (el.id) return `#${CSS.escape(el.id)}`;
+  // Selector for an element. Each segment carries :nth-of-type when a same-tag sibling exists,
+  // so sibling buttons (the 5 #touch-modifier-bar buttons) get DISTINCT selectors. The path is
+  // 4 levels deep first; if that does not match exactly one element it grows to the full chain.
+  const segment = (cur) => {
+    let s = cur.tagName.toLowerCase();
+    const cls = Array.from(cur.classList).filter((c) => !/^(hidden|active|open|is-|hover|focus)/.test(c) && !c.includes(':') && !c.includes('[')).slice(0, 2);
+    if (cls.length) s += '.' + cls.map((c) => CSS.escape(c)).join('.');
+    for (const a of ['data-tool', 'data-tab', 'data-add', 'data-action', 'data-cmd', 'name', 'type']) {
+      if (cur.hasAttribute(a) && cur.getAttribute(a).length < 30) { s += `[${a}="${cur.getAttribute(a)}"]`; break; }
+    }
+    const par = cur.parentElement;
+    if (par) {
+      const same = Array.from(par.children).filter((c) => c.tagName === cur.tagName);
+      if (same.length > 1) s += `:nth-of-type(${same.indexOf(cur) + 1})`;
+    }
+    return s;
+  };
+  const buildPath = (el, maxDepth) => {
     const parts = [];
     let cur = el;
-    for (let depth = 0; cur && cur !== document.body && depth < 4; depth++) {
-      let s = cur.tagName.toLowerCase();
+    for (let depth = 0; cur && cur !== document.body && depth < maxDepth; depth++) {
       if (cur.id) { parts.unshift(`#${CSS.escape(cur.id)}`); break; }
-      const cls = Array.from(cur.classList).filter((c) => !/^(hidden|active|open|is-|hover|focus)/.test(c) && !c.includes(':') && !c.includes('[')).slice(0, 2);
-      if (cls.length) s += '.' + cls.map((c) => CSS.escape(c)).join('.');
-      for (const a of ['data-tool', 'data-tab', 'data-add', 'data-action', 'data-cmd', 'name', 'type']) {
-        if (cur.hasAttribute(a) && cur.getAttribute(a).length < 30) { s += `[${a}="${cur.getAttribute(a)}"]`; break; }
-      }
-      parts.unshift(s);
+      parts.unshift(segment(cur));
       cur = cur.parentElement;
     }
     return parts.join(' > ');
+  };
+  const cssPath = (el) => {
+    if (el.id) return `#${CSS.escape(el.id)}`;
+    const short = buildPath(el, 4);
+    try { if (document.querySelectorAll(short).length === 1) return short; } catch (_) { /* fall through */ }
+    return buildPath(el, 64);
   };
   const label = (el) => {
     const t = el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('placeholder')
@@ -251,6 +267,96 @@ function measureInPage(cfg, helpers) {
     const hit = document.elementFromPoint((c.x1 + c.x2) / 2, (c.y1 + c.y2) / 2);
     if (hit && (hit === el || el.contains(hit))) { ghost += 1; if (ghostSel.length < 8) ghostSel.push(cssPath(el)); }
   }
+
+  // Stranded targets: RENDERED interactive targets (not display:none, not visibility:hidden,
+  // rect over 1x1) whose clipped rect is empty and that neither document scrolling nor a
+  // scrollable ancestor container can bring into view. Clipping the overflow away (overflow:hidden
+  // on html/body or a bar) lowers hOverflow but strands these controls; this metric catches it.
+  const rootOv = (axis) => {
+    const h = getComputedStyle(document.documentElement)[axis];
+    return h === 'visible' ? getComputedStyle(document.body)[axis] : h;
+  };
+  const htmlCs = getComputedStyle(document.documentElement);
+  const rootOvPropagated = htmlCs.overflowX === 'visible' && htmlCs.overflowY === 'visible';
+  const rootScrollX = !/^(hidden|clip)$/.test(rootOv('overflowX'));
+  const rootScrollY = !/^(hidden|clip)$/.test(rootOv('overflowY'));
+  const rootW = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
+  const rootH = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+  const rendered = (el) => {
+    if (!el.isConnected) return false;
+    if (el.checkVisibility) { if (!el.checkVisibility({ visibilityProperty: true })) return false; } else {
+      const cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    }
+    const r = el.getBoundingClientRect();
+    return r.width > 1 && r.height > 1;
+  };
+  const isStranded = (el) => {
+    const r = el.getBoundingClientRect();
+    if (clipRect(el).w > 1 && clipRect(el).h > 1) return false;
+    // Clip by ancestors only (not by the viewport). Remember a scrollable ancestor.
+    let x1 = r.left; let y1 = r.top; let x2 = r.right; let y2 = r.bottom;
+    let fixed = false;
+    let ancScroll = false;
+    let hiddenEmpty = false;
+    for (let p = el; p && p !== document.documentElement; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      if (cs.position === 'fixed') fixed = true;
+      if (p === el) continue;
+      // body overflow propagates to the viewport when html is `visible`: body is then no clip box.
+      if (p === document.body && rootOvPropagated) continue;
+      const hx = /^(hidden|clip)$/.test(cs.overflowX); const hy = /^(hidden|clip)$/.test(cs.overflowY);
+      const sx = /^(auto|scroll)$/.test(cs.overflowX); const sy = /^(auto|scroll)$/.test(cs.overflowY);
+      if (!(hx || hy || sx || sy)) continue;
+      const pr = p.getBoundingClientRect();
+      if ((sx || sy) && !hiddenEmpty) {
+        const canScroll = (sx && p.scrollWidth > p.clientWidth + 1) || (sy && p.scrollHeight > p.clientHeight + 1);
+        const onScreen = pr.right > 0 && pr.left < vw && pr.bottom > 0 && pr.top < vh && pr.width > 1 && pr.height > 1;
+        if (canScroll && onScreen && rendered(p)) ancScroll = true;
+      }
+      if (hx || sx) { x1 = Math.max(x1, pr.left); x2 = Math.min(x2, pr.right); }
+      if (hy || sy) { y1 = Math.max(y1, pr.top); y2 = Math.min(y2, pr.bottom); }
+      if ((hx || hy) && !(sx || sy) && (x2 <= x1 || y2 <= y1)) hiddenEmpty = true;
+    }
+    if (hiddenEmpty) return !ancScroll;
+    if (ancScroll) return false;
+    // Clipped only by the viewport. The user can bring it into view by panning when it lies inside
+    // the layout viewport (innerWidth x innerHeight: on a mobile UA this can be wider than the
+    // spec viewport, and the visual viewport pans across it even when the root overflow is
+    // hidden), or, when the root can scroll that axis, inside the scrollable extent.
+    const sxp = fixed ? 0 : window.scrollX; const syp = fixed ? 0 : window.scrollY;
+    const extW = Math.max(window.innerWidth, rootScrollX && !fixed ? rootW : 0);
+    const extH = Math.max(window.innerHeight, rootScrollY && !fixed ? rootH : 0);
+    const needX = r.right <= 0 || r.left >= vw;
+    const needY = r.bottom <= 0 || r.top >= vh;
+    if (needX && !(r.left + sxp >= -1 && r.right + sxp <= extW + 1)) return true;
+    if (needY && !(r.top + syp >= -1 && r.bottom + syp <= extH + 1)) return true;
+    return false;
+  };
+  // A parked drawer is off-canvas BY DESIGN (a closed pane or panel, reached by opening it, which
+  // is a separate audit state): an absolute/fixed ancestor lying fully outside the layout viewport.
+  const parkedDrawer = (el) => {
+    for (let p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      const pos = getComputedStyle(p).position;
+      if (pos !== 'fixed' && pos !== 'absolute') continue;
+      const pr = p.getBoundingClientRect();
+      if (pr.width > 1 && pr.height > 1 && (pr.right <= 0 || pr.left >= window.innerWidth || pr.bottom <= 0 || pr.top >= window.innerHeight)) return true;
+    }
+    return false;
+  };
+  let parked = 0;
+  let stranded = 0;
+  const strandedSel = [];
+  const renderedSet = new Set(Array.from(set).filter(rendered));
+  for (const el of renderedSet) {
+    let nested = false;
+    for (let p = el.parentElement; p; p = p.parentElement) { if (renderedSet.has(p) && p.tagName !== 'LABEL') { nested = true; break; } }
+    if (nested) continue;
+    if (parkedDrawer(el)) { parked += 1; continue; }
+    if (isStranded(el)) { stranded += 1; if (strandedSel.length < 12) strandedSel.push(cssPath(el)); }
+  }
+  const allowCounts = {};
+  for (const s of allowSel) { try { allowCounts[s] = document.querySelectorAll(s).length; } catch (_) { allowCounts[s] = -1; } }
 
   // Safe-area protection (CSSOM scan). Pass 1 collects custom properties whose declared value
   // contains env(safe-area-inset-<side>) (e.g. --safe-top). Pass 2 treats a rule as protecting
@@ -460,7 +566,7 @@ function measureInPage(cfg, helpers) {
     bodyOverscroll: bodyCs.overscrollBehaviorY, htmlOverscroll: getComputedStyle(de).overscrollBehaviorY,
     canvasTouchAction: canvas ? getComputedStyle(canvas).touchAction : null,
     canvasPct, canvasBoxPct, hOverflow, vOverflow, innerWidthExcess, scrollWidthExcess, overflowers, overlays, scrollers,
-    ghost, ghostSel, dockedPanes, scale, scaleOk: typeof scale === 'number' && scale > 0,
+    ghost, ghostSel, stranded, strandedSel, parkedTargets: parked, allowCounts, dockedPanes, scale, scaleOk: typeof scale === 'number' && scale > 0,
     safeSelectors: Object.fromEntries(Object.entries(safeSel).map(([k, v]) => [k, v.length])),
     safeVars: Object.fromEntries(Object.entries(safeVars).map(([k, v]) => [k, Array.from(new Set(v))])),
     probed: true,
@@ -550,7 +656,9 @@ const METRICS = [
   { id: 'covered', dir: 'lower', tol: 0, finalMax: 0, finalStates: ['default'] },
   { id: 'safeUnprotected', dir: 'lower', tol: 0, finalMax: 0, finalStates: null },
   { id: 'ghost', dir: 'lower', tol: 0, finalMax: 0, finalStates: null },
+  { id: 'stranded', dir: 'lower', tol: 0, finalMax: 0, finalStates: null },
   { id: 'pageErrors', dir: 'lower', tol: 0, finalMax: 0, finalStates: null },
+  { id: 'reachable', dir: 'higher', tol: 0 },
   { id: 'canvasPct', dir: 'higher', tol: 1.0 },
   { id: 'scaleOk', dir: 'bool' },
 ];
@@ -589,6 +697,8 @@ function summarizeState(rec) {
     covered: n(items.filter((i) => i.onscreen && i.hitState === 'covered')),
     safeUnprotected: n(items.filter((i) => i.onscreen && i.safeUnprotected && i.safeUnprotected.length)),
     ghost: rec.ghost || 0,
+    stranded: rec.stranded || 0,
+    reachable: n(reach),
     pageErrors,
     canvasPct: rec.canvasPct || 0,
     scaleOk: !!rec.scaleOk,
@@ -817,6 +927,24 @@ async function waitLayoutSettled(page, timeout = 8000) {
   }), null, { timeout, polling: 100 });
 }
 
+// Wait until the geometry of every interactive element is unchanged for 4 consecutive samples
+// (120 ms apart). waitLayoutSettled only sees CSS animations; JS-driven layout (a modal sizing
+// itself, lazily rendered lists) can still be moving. Throws on timeout: a state that never
+// settles is not comparable.
+async function waitGeometryStable(page, timeout = 8000) {
+  await page.waitForFunction(() => {
+    const sel = 'button,a[href],input,select,textarea,summary,[role],[tabindex],[onclick],canvas';
+    const sig = Array.from(document.querySelectorAll(sel)).map((e) => { const r = e.getBoundingClientRect(); return `${Math.round(r.left)},${Math.round(r.top)},${Math.round(r.width)},${Math.round(r.height)}`; }).join('|') + `#${document.scrollingElement ? document.scrollingElement.scrollHeight : 0}`;
+    const st = window.__geomStable = window.__geomStable || { sig: null, n: 0, t: 0 };
+    const now = performance.now();
+    if (now - st.t < 100) return false;
+    st.t = now;
+    if (st.sig === sig) st.n += 1; else { st.sig = sig; st.n = 0; }
+    return st.n >= 4;
+  }, null, { timeout, polling: 50 });
+  await page.evaluate(() => { window.__geomStable = null; });
+}
+
 module.exports = {
   // page section
   measureInPage, hitAreaInPage, canvasShareInPage, probeHandles, measurePage, probeHit, probeCanvasShare,
@@ -824,5 +952,5 @@ module.exports = {
   METRICS, METRIC_IDS, CHROME_METRICS, SAFE_BANDS, THRESHOLDS,
   summarizeState, isBenignPageError, onscreenCount, compareCell, formatCompare, compareFinal, mergeCell, finalCanvasMin,
   serializeBaseline, parseBaseline, readBaseline, updateBaselineCell, updateJsonKey, withLock, summarizeRun,
-  bootApp, waitLayoutSettled,
+  bootApp, waitLayoutSettled, waitGeometryStable,
 };

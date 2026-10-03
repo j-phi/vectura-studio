@@ -52,3 +52,15 @@ test.describe('hitAreaInPage', () => {
     expect(get('c').min24).toBe(true);
   });
 });
+
+test.describe('item selectors', () => {
+  test('sibling buttons get distinct selectors that each match exactly one element', async ({ page }) => {
+    const btns = [0, 1, 2, 3, 4].map((i) => `<button class="b" style="position:absolute;left:${10 + i * 60}px;top:10px;width:50px;height:50px">${i}</button>`).join('');
+    await page.setContent(page_html(`<div id="bar">${btns}</div><div><span><button style="position:absolute;left:10px;top:100px;width:50px;height:50px">x</button><button style="position:absolute;left:70px;top:100px;width:50px;height:50px">y</button></span></div>`));
+    const raw = await core.measurePage(page, { W: 600, H: 400, safe: { top: 0, bottom: 0, left: 0, right: 0 }, allow: [] });
+    const sels = raw.items.map((i) => i.sel);
+    expect(sels.length).toBe(7);
+    expect(new Set(sels).size).toBe(sels.length);
+    for (const sel of sels) expect(await page.locator(sel).count(), sel).toBe(1);
+  });
+});

@@ -11,7 +11,7 @@ const core = require('../e2e/helpers/target-audit-core');
 
 const base = () => ({
   hOverflow: 0, vOverflow: 0, innerWidthExcess: 0, under44: 5, under24: 2, wcag258Fail: 1, iosZoom: 0,
-  covered: 3, safeUnprotected: 4, ghost: 0, pageErrors: 0, canvasPct: 44.5, scaleOk: false,
+  covered: 3, safeUnprotected: 4, ghost: 0, stranded: 0, reachable: 19, pageErrors: 0, canvasPct: 44.5, scaleOk: false,
 });
 
 describe('compareCell (ratchet comparator)', () => {
@@ -61,6 +61,48 @@ describe('compareCell (ratchet comparator)', () => {
   it('a missing baseline metric is reported, never silently passed', () => {
     const b = base(); delete b.ghost;
     expect(core.compareCell(b, base()).worse.map((w) => w.kind)).toEqual(['missing']);
+  });
+});
+
+describe('stranded and reachable guards', () => {
+  it('stranded is lower-better: a rise is worse, a drop is a ratchet down', () => {
+    expect(core.compareCell(base(), { ...base(), stranded: 2 }).worse.map((w) => w.metric)).toEqual(['stranded']);
+    expect(core.formatCompare('p|s', core.compareCell(base(), { ...base(), stranded: 2 }))[0]).toBe('p|s|stranded rose: baseline 0, got 2');
+    expect(core.compareCell({ ...base(), stranded: 2 }, base()).better.map((w) => w.metric)).toEqual(['stranded']);
+  });
+  it('reachable is higher-better with tolerance 0: a drop is worse, a rise is a ratchet down', () => {
+    expect(core.METRICS.find((m) => m.id === 'reachable')).toMatchObject({ dir: 'higher', tol: 0 });
+    const c = core.compareCell(base(), { ...base(), reachable: 16 });
+    expect(c.worse.map((w) => w.metric)).toEqual(['reachable']);
+    expect(core.formatCompare('p|s', c)[0]).toBe('p|s|reachable fell: baseline 19, got 16');
+    expect(core.compareCell(base(), { ...base(), reachable: 20 }).better.map((w) => w.metric)).toEqual(['reachable']);
+    expect(core.compareCell(base(), { ...base(), reachable: 19 }).worse).toEqual([]);
+  });
+  it('removing controls is worse even though every under-N count and the overflow fall', () => {
+    const removed = { ...base(), under44: 2, under24: 0, wcag258Fail: 0, canvasPct: 49.9, reachable: 16 };
+    expect(core.compareCell(base(), removed).worse.map((w) => w.metric)).toEqual(['reachable']);
+  });
+  it('clipping the overflow away is worse even though hOverflow falls to 0', () => {
+    const before = { ...base(), hOverflow: 142, vOverflow: 309, innerWidthExcess: 142 };
+    const clipped = { ...base(), stranded: 2 };
+    expect(core.compareCell(before, clipped).worse.map((w) => w.metric)).toEqual(['stranded']);
+  });
+  it('update mode never lowers reachable and never raises stranded without update-any', () => {
+    const merged = core.mergeCell(base(), { ...base(), reachable: 10, stranded: 4 });
+    expect(merged.reachable).toBe(19);
+    expect(merged.stranded).toBe(0);
+    const waived = core.mergeCell(base(), { ...base(), reachable: 10, stranded: 4 }, undefined, true);
+    expect(waived.reachable).toBe(10);
+    expect(waived.stranded).toBe(4);
+  });
+  it('final mode gates stranded at 0', () => {
+    const z = { ...base(), under44: 0, under24: 0, wcag258Fail: 0, safeUnprotected: 0, covered: 0, scaleOk: true, canvasPct: 99, stranded: 3 };
+    expect(core.compareFinal(z, { device: 'iPhP', state: 'default', dockedPanes: 0 })).toEqual(['final: stranded 3 > 0']);
+  });
+  it('summarizeState derives stranded from the page record and reachable from reachable items', () => {
+    const it = (o) => ({ onscreen: true, reach: true, hitState: 'ok', hig44: true, min24: true, wcag258: true, iosZoom: false, allow: false, safeUnprotected: [], ...o });
+    const s = core.summarizeState({ items: [it(), it(), it({ hitState: 'covered', reach: false }), it({ onscreen: false, hitState: 'offscreen', reach: false })], stranded: 3 });
+    expect(s).toMatchObject({ stranded: 3, reachable: 2 });
   });
 });
 

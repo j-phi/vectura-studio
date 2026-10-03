@@ -61,6 +61,7 @@ for (const st of states) {
     await st.run(page);
     await expect.poll(() => st.post(page), { timeout: 10_000, message: `${project}|${st.id}: postcondition (opener may be stale)` }).toBe(true);
     await core.waitLayoutSettled(page);
+    await core.waitGeometryStable(page);
     await page.waitForTimeout(150); // layout settle only, after the postcondition
 
     const raw = await core.measurePage(page, {
@@ -88,6 +89,7 @@ for (const st of states) {
     // Hard failures (every mode).
     const issues = [];
     if (!chrome && count < st.minItems) issues.push(`${cellId}: only ${count} on-screen items, expected >= ${st.minItems} (the opener may have silently failed)`);
+    Object.entries(raw.allowCounts || {}).filter(([, c]) => c > 1 || c < 0).forEach(([sel, c]) => issues.push(`${cellId}: allowlist selector ${sel} matches ${c} elements (must match at most one)`));
     raw.items.filter((i) => i.allow && i.onscreen && i.reach && !i.min24).forEach((i) => issues.push(`${cellId}: allowlisted target ${i.sel} is under 24 px (${i.pw}x${i.ph})`));
 
     if (FINAL) {
@@ -100,7 +102,7 @@ for (const st of states) {
         const cmp = core.compareCell(cell, measured, undefined, metricIds);
         if (UPDATE) {
           core.updateBaselineCell(BASELINE_FILE, PLATFORM, project, st.id, measured, { metricIds, any: UPDATE_ANY, measuredAt: gitSha() });
-          if (!UPDATE_ANY) issues.push(...core.formatCompare(cellId, { worse: cmp.worse, better: [] }));
+          if (!UPDATE_ANY) issues.push(...core.formatCompare(cellId, { worse: cmp.worse.filter((w) => w.kind !== 'missing'), better: [] })); // missing = new metric, seeded above
         } else {
           issues.push(...core.formatCompare(cellId, cmp));
         }
@@ -128,8 +130,11 @@ test('allowlist is small, justified and every entry is at least 24 px', async ({
   if (!mine.length) return;
   await core.bootApp(page, baseURL);
   for (const e of mine) {
-    const handle = await page.locator(e.selector).first().elementHandle({ timeout: 1000 }).catch(() => null);
-    if (!handle) continue;
+    // One entry must not exempt siblings (it would bypass the 10-entry cap): at most one match.
+    const matches = await page.locator(e.selector).count();
+    expect(matches, `allowlist selector ${e.selector} matches ${matches} elements (must match at most one)`).toBeLessThanOrEqual(1);
+    if (matches === 0) continue;
+    const handle = await page.locator(e.selector).first().elementHandle({ timeout: 1000 });
     const a = await core.probeHit(page, handle, { probe: 2, radius: 24 });
     expect(a.w, `allowlisted ${e.selector} probed width`).toBeGreaterThanOrEqual(24);
     expect(a.h, `allowlisted ${e.selector} probed height`).toBeGreaterThanOrEqual(24);
