@@ -15,3 +15,7 @@ Rows below come from TUX-013, TUX-015 and TUX-036. TUX-062 consolidates this fil
 | TUX-036-b | iPhone and iPad | A gallery row selects on the first tap. No hover-only first tap. Status: deferred-by-Jay unless verified. | TUX-036 |
 | TUX-036-c | iPad with trackpad | A finger tap on an inactive layer row never fires a hidden action. Status: deferred-by-Jay unless verified. | TUX-036 |
 | TUX-036-d | iPad with Apple Pencil | Pencil hover reveal leaves no visible-but-inert buttons. Status: deferred-by-Jay unless verified. | TUX-036 |
+| TUX-022-a | iPhone and iPad | With the Fill tool, press an object. The fill preview and the loupe show above the finger. Lift pours once. Status: pending. | TUX-022 |
+| TUX-022-b | iPhone and iPad | A real two-finger pinch with the Fill tool never pours. Status: pending. | TUX-022 |
+| TUX-022-c | iPhone and iPad | No iOS callout or magnifier shows during a Fill hold. Status: pending. | TUX-022 |
+| TUX-022-d | iPad with Apple Pencil | Pencil press, then lift, pours once. Status: pending. | TUX-022 |
