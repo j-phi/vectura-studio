@@ -212,6 +212,12 @@
         item.addEventListener('click', (e) => {
           e.stopPropagation();
           activateTool(ui, tool.activate);
+          // TUX-013: with the slot hidden on the rail (phone) there is no long-press target,
+          // so the Draw Algorithm item opens the algorithm-type picker itself.
+          if (tool.activate && tool.activate.tool === 'algo-draw') {
+            const slot = d.querySelector(item.dataset.railSelector || '');
+            if (slot && slot.closest('.rail-overflowed')) ui._openAlgoPicker?.(); // centred: never covers the ⋯ button
+          }
           syncActiveEntry();
           // Drawer STAYS open (TLD-1).
         });

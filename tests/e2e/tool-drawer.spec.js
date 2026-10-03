@@ -109,4 +109,46 @@ test.describe('TUX-013 desktop parity', () => {
     expect(s.footerH).toBeGreaterThan(0);
     expect(s.overflowed).toBe(0);
   });
+  // Decision (TUX-013): the phone rail keys on phone-layout, which a narrow FINE-pointer window also gets.
+  // That keeps one phone contract for every 500 px viewport. Pinned here so a change is deliberate.
+  test('500x800 fine-pointer window gets the phone rail contract', async ({ page }) => {
+    await page.setViewportSize({ width: 500, height: 800 });
+    await page.goto('/');
+    await page.waitForSelector('#tool-bar .tool-btn');
+    await page.waitForTimeout(600);
+    const s = await page.evaluate(() => {
+      const rail = document.getElementById('tool-bar');
+      const cl = document.body.classList;
+      const vis = (e) => !!e && e.getBoundingClientRect().width > 0;
+      return { phone: cl.contains('phone-layout'), touchUi: cl.contains('touch-ui'), h: rail.getBoundingClientRect().height,
+        overflowed: rail.querySelectorAll('.rail-overflowed').length, footer: vis(rail.querySelector('.toolbar-footer')),
+        ovBtn: vis(document.getElementById('tool-overflow-btn')), scrollW: rail.scrollWidth, clientW: rail.clientWidth,
+        keep: window.Vectura.TOOL_RAIL.phone.length };
+    });
+    expect(s.phone).toBe(true);
+    expect(s.touchUi).toBe(false);
+    expect(s.h).toBeLessThanOrEqual(52);
+    expect(s.overflowed).toBeGreaterThan(0);
+    expect(s.footer).toBe(false);
+    expect(s.ovBtn).toBe(true);
+    expect(s.scrollW).toBeLessThanOrEqual(s.clientW + 1);
+  });
+
+  test('Reset View (expandPanes) at phone layout clears stale rail overflow state', async ({ page }) => {
+    await page.setViewportSize({ width: 500, height: 800 });
+    await page.goto('/');
+    await page.waitForSelector('#tool-bar .tool-btn');
+    await page.waitForTimeout(600);
+    await page.evaluate(() => window.app.ui.setActiveTool('lasso'));
+    const before = await page.evaluate(() => ({
+      overflowed: document.querySelectorAll('.rail-overflowed').length,
+      pressed: document.getElementById('tool-overflow-btn').getAttribute('aria-pressed'),
+    }));
+    expect(before.overflowed).toBeGreaterThan(0);
+    expect(before.pressed).toBe('true');
+    await page.evaluate(() => window.app.ui.expandPanes());
+    await expect.poll(() => page.evaluate(() => document.querySelectorAll('.rail-overflowed').length)).toBe(0);
+    expect(await page.evaluate(() => document.body.classList.contains('phone-layout'))).toBe(false);
+    expect(await page.locator('#tool-overflow-btn').getAttribute('aria-pressed')).toBeNull();
+  });
 });

@@ -131,6 +131,17 @@ const distanceToRect = (p, r) => {
   return Math.hypot(dx, dy);
 };
 
+// TUX-013: phone layouts keep only some slots on the rail; the rest live in the ⋯ All Tools drawer.
+// A surface whose rail parent is hidden has no finger target here, so it is skipped with a named reason
+// (the drawer routes are covered by the TUX-013 reachability and algorithm-picker tests below).
+const skipIfOffRail = async (page, s) => {
+  const off = await page.evaluate((sel) => {
+    const e = document.querySelector(sel);
+    return !e || e.offsetParent === null || !!e.closest('.rail-overflowed');
+  }, s.parent);
+  test.skip(off, `TUX-013: ${s.name} slot is in the All Tools overflow on this layout (no rail button to touch)`);
+};
+
 test.describe('TUX-014 tool sub-menus (touch)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
@@ -140,6 +151,7 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
 
   for (const s of SURFACES) {
     test(`TUX-014 long-press keeps menu open: ${s.name}`, async ({ page }) => {
+      await skipIfOffRail(page, s);
       const size = page.viewportSize();
       const parent = page.locator(s.parent).first();
       const rows = await resolveRows(page, s);
@@ -188,6 +200,7 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
     });
 
     test(`TUX-014 tap on active tool opens menu: ${s.name}`, async ({ page }) => {
+      await skipIfOffRail(page, s);
       const parent = page.locator(s.parent).first();
       const rows = await resolveRows(page, s);
       await tap(page, parent);
@@ -257,6 +270,7 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
 
   for (const s of SURFACES.filter((x) => ['shape', 'algo-draw'].includes(x.name))) {
     test(`TUX-014 hold cancel: ${s.name}`, async ({ page }) => {
+      await skipIfOffRail(page, s);
       const parent = page.locator(s.parent).first();
       const p = await parent.boundingBox();
       const c = { x: p.x + p.width / 2, y: p.y + p.height / 2, id: 0 };
@@ -281,6 +295,7 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
 
   for (const s of SURFACES.filter((x) => ['shape', 'algo-draw'].includes(x.name))) {
     test(`TUX-014 placement on two docks: ${s.name}`, async ({ page }, testInfo) => {
+      await skipIfOffRail(page, s);
       const size = page.viewportSize();
       const device = PROJECTS[testInfo.project.name]?.device;
       const landscape = size.width > size.height;
@@ -331,6 +346,14 @@ const railMetrics = (page) => page.evaluate(() => {
     vc: document.getElementById('viewport-container').getBoundingClientRect().height,
   };
 });
+// elementFromPoint at the centre of every visible rail button (incl. the overflow button) is the button.
+const railOccluders = (page) => page.evaluate(() => [...document.querySelectorAll('#tool-bar .tool-btn')]
+  .filter((b) => b.offsetParent !== null && !b.classList.contains('hidden'))
+  .map((b) => {
+    const r = b.getBoundingClientRect();
+    const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return t === b || b.contains(t) ? null : `${b.id || b.dataset.tool} <- ${t && (t.id || t.className)}`;
+  }).filter(Boolean));
 const assertOneRow = (m, dev, label) => {
   const base = RAIL_BASE[dev];
   expect(m.h, `${label}: rail height`).toBeLessThanOrEqual(base.max);
@@ -348,12 +371,15 @@ test.describe('TUX-013 one row', () => {
     await page.waitForSelector('#tool-bar .tool-btn');
     await page.waitForFunction(() => !!(window.app && window.app.ui && document.getElementById('tool-overflow-btn')));
     // TUX-008 (pane defaults) owns closing the side panes on tablet. Until it lands the open
-    // panes overlay the rail edges, so close them here (the state TUX-008 produces) to keep
-    // rail occlusion failures attributable to TUX-013 only.
-    await page.evaluate(() => {
-      document.body.classList.add('auto-collapsed');
-      document.querySelectorAll('#left-pane, #right-pane').forEach((p) => p.classList.add('pane-collapsed'));
-    });
+    // panes overlay the rail edges. Close them the way a finger does: tap both pane toggles.
+    // (Narrow phones are .auto-collapsed already; their toggles sit under the lifted rail.)
+    const autoCollapsed = await page.evaluate(() => document.body.classList.contains('auto-collapsed'));
+    if (!autoCollapsed) {
+      await tap(page, page.locator('#btn-pane-toggle-left'));
+      await tap(page, page.locator('#btn-pane-toggle-right'));
+      await page.waitForFunction(() => document.getElementById('left-pane').classList.contains('pane-collapsed')
+        && document.getElementById('right-pane').classList.contains('pane-collapsed'));
+    }
     await sleep(300);
   };
 
@@ -363,6 +389,7 @@ test.describe('TUX-013 one row', () => {
     await load(page);
     const m = await railMetrics(page);
     assertOneRow(m, dev, 'initial');
+    expect(await railOccluders(page), 'no rail button (incl. overflow) is covered after the panes are finger-collapsed').toEqual([]);
     expect(m.footer, 'footer hidden').toBe(false);
     expect(m.handle, 'drag handle hidden').toBe(false);
     expect(m.scrollW, 'no horizontal scroll').toBeLessThanOrEqual(m.clientW + 1);
@@ -442,6 +469,25 @@ test.describe('TUX-013 one row', () => {
     expect(await page.locator('#tool-overflow-btn').getAttribute('aria-pressed')).not.toBe('true');
   });
 
+  test('phone: Draw Algorithm in the All Tools drawer opens the algorithm picker (finger only)', async ({ page }, testInfo) => {
+    const dev = portrait(testInfo);
+    test.skip(dev !== 'iPhP' && dev !== 'iPhP-c', 'phone portrait only (algo-draw is off the phone rail)');
+    await load(page);
+    expect(await page.evaluate(() => !!document.querySelector('.tool-btn[data-tool="algo-draw"]').closest('.rail-overflowed'))).toBe(true);
+    await page.evaluate(() => window.app.ui.setActiveTool('select'));
+    await tap(page, page.locator('#tool-overflow-btn'));
+    await tap(page, page.locator('.tool-drawer-item[data-tool-id="algo-draw"]'));
+    await expect.poll(() => page.evaluate(() => !document.getElementById('algo-draw-picker').classList.contains('hidden')), 'picker opens').toBe(true);
+    const inside = await page.evaluate(() => { const r = document.getElementById('algo-draw-picker').getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; });
+    expect(inside, 'picker inside the viewport').toBe(true);
+    const row = page.locator('.algo-pick-item[data-algo-type="rings"]');
+    await row.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    await sleep(50);
+    await tap(page, row);
+    await expect.poll(() => page.evaluate(() => window.app.renderer.algoDraftType)).toBe('rings');
+    expect(await page.evaluate(() => window.app.ui.activeTool)).toBe('algo-draw');
+  });
+
   test('rail adds no top safe-area inset', async ({ page }, testInfo) => {
     const dev = portrait(testInfo);
     test.skip(!dev || !engineSupports(page, 'cdp'), 'Chromium portrait only');
@@ -459,7 +505,7 @@ test.describe('TUX-013 one row', () => {
 });
 
 test.describe('TUX-013 guards', () => {
-  test('touch-wide keeps the floating rail with pin and home controls', async ({ page }, testInfo) => {
+  test('touch-wide keeps the floating rail and does not overflow tools', async ({ page }, testInfo) => {
     test.skip(PROJECTS[testInfo.project.name]?.device !== 'iPadL', 'iPad landscape only');
     await page.goto('/');
     await page.waitForSelector('#tool-bar .tool-btn');
@@ -471,8 +517,8 @@ test.describe('TUX-013 guards', () => {
         overflowed: rail.querySelectorAll('.rail-overflowed').length };
     });
     expect(g.pos).not.toBe('static');
-    expect(g.home).toBe(true);
-    expect(g.pin).toBe(true);
+    // TUX-013 R4 on touch-wide (pin/home visibility) is deferred to TUX-016, whose Requirement 1
+    // wants them not visible under touch-ui. Only position, label and no overflow are asserted here.
     expect(g.label).toBe('Reset toolbar position');
     expect(g.overflowed).toBe(0);
   });
@@ -486,5 +532,15 @@ test.describe('TUX-013 guards', () => {
     expect(h).toBeLessThanOrEqual(204); // measured pre-fix 874x204
     // The shared phone rule reaches <= 52 here for free; assert it so a regression shows.
     expect(h).toBeLessThanOrEqual(52);
+    // Finger-collapse both panes: the 40 px slivers must not cover Select or the overflow button.
+    await page.waitForFunction(() => !!document.getElementById('tool-overflow-btn'));
+    await tap(page, page.locator('#btn-pane-toggle-left'));
+    await tap(page, page.locator('#btn-pane-toggle-right'));
+    await page.waitForFunction(() => document.getElementById('left-pane').classList.contains('pane-collapsed')
+      && document.getElementById('right-pane').classList.contains('pane-collapsed'));
+    await sleep(500); // pane width transition
+    expect(await railOccluders(page), 'rail buttons hittable with slivers').toEqual([]);
+    await fs.promises.mkdir(EVIDENCE_013, { recursive: true });
+    await page.screenshot({ path: `${EVIDENCE_013}/iPhL${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
   });
 });

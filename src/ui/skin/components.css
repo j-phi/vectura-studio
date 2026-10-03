@@ -13719,4 +13719,13 @@ body.touch-ui.tablet-layout #tool-bar > .tool-divider {
 body.phone-layout #tool-bar > .tool-divider { display: none; }
 body.touch-ui.tablet-layout #tool-bar #tool-overflow-btn,
 body.phone-layout #tool-bar #tool-overflow-btn { margin-left: auto; order: 999; flex: 0 0 auto; }
+/* Collapsed-pane slivers (40 px, z 55) overlay the rail ends once a finger collapses a pane on
+ * tablet and wide-phone layouts (body is not .auto-collapsed there, so the rail stays at z 5).
+ * Inset the rail's inline padding by the sliver width so Select and the overflow button stay
+ * hittable. Narrow phones (.auto-collapsed) already lift the rail to z 60 above the slivers. */
+body.touch-ui.tablet-layout #tool-bar,
+body.phone-layout:not(.auto-collapsed) #tool-bar {
+  padding-left: calc(var(--pane-collapsed-width, 40px) + 4px + env(safe-area-inset-left, 0px));
+  padding-right: calc(var(--pane-collapsed-width, 40px) + 4px + env(safe-area-inset-right, 0px));
+}
 /* === /TUX-013 === */
