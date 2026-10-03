@@ -7,6 +7,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene · Ground size controls.** The Ground panel gains a **Size** group: **Width (X)** and
+  **Depth (Z)** sliders (0.25×–256×, log scale so each notch doubles), a **lock** that scales
+  both together and keeps their proportions, **Reset**, and **Fill frame** — one click sizes
+  the floor (keeping its proportions) so its edges sit just outside the artboard. The ground is
+  a flat plane, so it has no Y size. The same controls appear in a legacy scene's Ground
+  inspector. A floor that runs behind a perspective camera is now cut at the near plane
+  instead of folding its near edge up into the frame, and a floor enlarged past 1× is cut to the
+  artboard (+25 % pad) so it no longer hatches kilometres of off-paper ink into travel, time
+  estimates, and export. **At the default 1× every existing scene renders byte-identically.**
 - **3D Scene · Slices gains an End overlap control.** How far each depth-slice ring is carried
   past (or pulled back from) the object's silhouette, in pen widths (−2…8, step 0.25). **The
   default is 0 and is byte-identical to previous builds** — nothing about an existing scene

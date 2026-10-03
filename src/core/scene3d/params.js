@@ -1240,6 +1240,25 @@
     return !!(isObject(s) && typeof s.mapper === 'string' && s.mapper);
   };
 
+  // Ground plane size factors. scaleX = width, scaleZ = depth, both relative to
+  // the default floor (1.5x the artboard's longer side). The plane has no
+  // thickness, so there is no Y factor. The wide upper bound lets the floor run
+  // far past the artboard so its edges leave the frame.
+  const GROUND_SCALE_MIN = 0.25;
+  const GROUND_SCALE_MAX = 256;
+  const groundScale = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? clamp(n, GROUND_SCALE_MIN, GROUND_SCALE_MAX) : 1;
+  };
+  const normalizeGround = (g) => {
+    const src = isObject(g) ? g : {};
+    return {
+      enabled: isObject(g) ? g.enabled !== false : true,
+      scaleX: groundScale(src.scaleX),
+      scaleZ: groundScale(src.scaleZ),
+    };
+  };
+
   const collectSceneParams = (groupParams, collected) => {
     const gp = isObject(groupParams) ? groupParams : {};
     const items = Array.isArray(collected) ? collected : [];
@@ -1518,7 +1537,7 @@
     out.lights = lights.length || hasLightsKey ? lights : [{ ...DEFAULT_LIGHT }];
     out.tone = normalizeTone(src.tone);
     out.shadow = normalizeShadow(src.shadow);
-    out.ground = { enabled: isObject(src.ground) ? src.ground.enabled !== false : true };
+    out.ground = normalizeGround(src.ground);
     out.backdrop = { enabled: isObject(src.backdrop) ? src.backdrop.enabled === true : false };
     out.camera = normalizeCamera(src.camera);
     out.groups = normalizeGroups(src.groups, new Set(out.objects.map((o) => o.id)));
@@ -1872,6 +1891,9 @@
     collectSceneParams,
     normalizeGroups,
     normalizeParams,
+    normalizeGround,
+    GROUND_SCALE_MIN,
+    GROUND_SCALE_MAX,
     migrateScene,
     sanitizeSceneParams,
     writeBackObjectLayerStyle,
