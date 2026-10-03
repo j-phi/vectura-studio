@@ -105,6 +105,15 @@ describe('TUX-022 paint bucket pointer parity', () => {
     expect(renderer._fillPendingPour).toBe(null);
   });
 
+  test('touch: Shift held across regions pours only once, on the lift', () => {
+    renderer.down(ev('pointerdown', 100, 100, { pointerType: 'touch', shiftKey: true }));
+    renderer.move(ev('pointermove', 65, 100, { pointerType: 'touch', shiftKey: true }));
+    renderer.move(ev('pointermove', 35, 100, { pointerType: 'touch', shiftKey: true }));
+    expect(fills()).toBe(0);
+    renderer.up(ev('pointerup', 35, 100, { pointerType: 'touch', shiftKey: true }));
+    expect(fills()).toBe(1);
+  });
+
   test('touch: a move off the paper drops the pending pour', () => {
     renderer.down(ev('pointerdown', 100, 100, { pointerType: 'touch' }));
     renderer.move(ev('pointermove', 390, 390, { pointerType: 'touch' }));

@@ -263,6 +263,99 @@ test.describe('TUX-022 paint bucket by touch', () => {
     expect((await lastFill(page)).loopId).toBe(stack[0].loopId);
   });
 
+  test('(g2) a second finger taps the Scope chip during a live hold: the preview steps, the lift pours there', async ({ page }) => {
+    const up = page.locator('[data-fill-scope="up"]');
+    await expect(up).toBeVisible();
+    const c = await up.evaluate((el) => { const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
+    const before = await snap(page);
+    await touch.touchPhase(page, 'start', [finger(P)]);
+    await sleep(150);
+    expect((await previewed(page)).idx).toBe(0);
+    // Second finger (id 1) taps the chip while finger 0 keeps holding.
+    await touch.touchPhase(page, 'start', [{ x: c.x, y: c.y, id: 1 }]);
+    await sleep(60);
+    await touch.touchPhase(page, 'end', [{ x: c.x, y: c.y, id: 1 }]);
+    await sleep(150);
+    const stack = await page.evaluate(() => window.app.renderer.paintBucketStack.map((s) => ({ loopId: s.loopId })));
+    const live = await previewed(page);
+    expect(live.idx, 'RED(g2): the live preview scope stepped to 1').toBe(1);
+    expect(await page.evaluate(() => window.app.renderer.paintBucketScopeOffset)).toBe(1);
+    expect((await snap(page)).fills, 'the chip tap never pours').toBe(before.fills);
+    await touch.touchPhase(page, 'end', [finger(P)]);
+    await sleep(150);
+    const after = await snap(page);
+    expect(after.fills).toBe(before.fills + 1);
+    expect((await lastFill(page)).loopId, 'RED(g2): the lift pours at the new scope index').toBe(stack[1].loopId);
+  });
+
+  test('(k) the held pointer runs the hover feedback; nothing lingers after lift or cancel', async ({ page }) => {
+    await page.evaluate(() => {
+      const r = window.app.renderer;
+      window.__hov = { fb: 0, scene: 0 };
+      const f = r._updateHoverFeedback.bind(r);
+      const s = r._updateSceneHoverHint.bind(r);
+      r._updateHoverFeedback = (e) => { window.__hov.fb += 1; return f(e); };
+      r._updateSceneHoverHint = (e) => { window.__hov.scene += 1; return s(e); };
+    });
+    await touch.touchPhase(page, 'start', [finger(P)]);
+    await sleep(100);
+    await touch.touchPhase(page, 'move', [finger(P, 2, 0)]);
+    await sleep(100);
+    const held = await page.evaluate(() => ({ ...window.__hov }));
+    expect(held.fb, 'RED(k): hover feedback ran for the held pointer').toBeGreaterThan(0);
+    expect(held.scene, 'RED(k): scene hover hint ran for the held pointer').toBeGreaterThan(0);
+    await touch.touchPhase(page, 'end', [finger(P, 2, 0)]);
+    await sleep(150);
+    const gone = await page.evaluate(() => {
+      const r = window.app.renderer;
+      return { hl: r.hoverHighlight || null, ro: r.hoverReadout || null, chip: !!r._hoverChipActive, scene: r.sceneHoverPick || null };
+    });
+    expect(gone).toEqual({ hl: null, ro: null, chip: false, scene: null });
+    // Cancel path.
+    await touch.touchPhase(page, 'start', [finger(P)]);
+    await sleep(100);
+    await page.evaluate(() => {
+      const r = window.app.renderer;
+      window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: r.activePointerId, pointerType: 'touch', bubbles: true }));
+    });
+    await sleep(100);
+    const gone2 = await page.evaluate(() => {
+      const r = window.app.renderer;
+      return { hl: r.hoverHighlight || null, ro: r.hoverReadout || null, chip: !!r._hoverChipActive };
+    });
+    expect(gone2).toEqual({ hl: null, ro: null, chip: false });
+    await touch.touchPhase(page, 'end', [finger(P)]).catch(() => {});
+  });
+
+  test('(l) a touch hold with shiftKey across regions pours each region at most once, on lift', async ({ page }) => {
+    const before = await snap(page);
+    const out = await page.evaluate(async ({ P }) => {
+      const r = window.app.renderer;
+      const cv = document.querySelector('#main-canvas');
+      const mk = (type, x, y) => new PointerEvent(type, {
+        pointerId: 77, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true, composed: true,
+        clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' ? 0 : 1, shiftKey: true,
+      });
+      const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+      cv.dispatchEvent(mk('pointerdown', P.x, P.y));
+      await wait(60);
+      const ids = [r.paintBucketStack && r.paintBucketStack[0].loopId];
+      window.dispatchEvent(mk('pointermove', P.x + 6, P.y));
+      await wait(60);
+      ids.push(r.paintBucketStack && r.paintBucketStack[0].loopId);
+      const mid = window.app.engine.layers.reduce((n, l) => n + ((l.fills && l.fills.length) || 0), 0);
+      window.dispatchEvent(mk('pointerup', P.x + 6, P.y));
+      await wait(100);
+      const all = [];
+      window.app.engine.layers.forEach((l) => (l.fills || []).forEach((f) => all.push(f.loopId)));
+      return { ids, mid, all };
+    }, { P });
+    expect(out.ids[0]).not.toBe(out.ids[1]);
+    expect(out.mid, 'RED(l): no pour while the touch is held').toBe(before.fills);
+    expect(out.all.length, 'RED(l): exactly one fill after the lift').toBe(before.fills + 1);
+    expect(new Set(out.all).size, 'no loop filled twice').toBe(out.all.length);
+  });
+
   test('(h) a fill hold is not a context menu', async ({ page }) => {
     await touch.longPress(page, P, 600);
     await sleep(100);
@@ -273,6 +366,7 @@ test.describe('TUX-022 paint bucket by touch', () => {
     }));
     expect(found.progress).toBe(false);
     expect(found.ctx).toBe(false);
+    expect(found.menu, 'no visible [role=menu] during a fill hold').toBe(false);
   });
 
   test('(i) the loupe clears the finger', async ({ page }) => {

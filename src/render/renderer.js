@@ -7714,12 +7714,16 @@
         if (fillOwner) {
           const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase') ? 'erase' : 'pour';
           this._armFillPending(e, world, mode, patternTileParams);
+          // TUX-022 req. 6 / CODE-017: the held pointer gets the same hover feedback a mouse
+          // gets (hover chips, semantic labels, hover highlight, 3D hover hint) before commit.
+          this._updateHoverFeedback(e);
+          this._updateSceneHoverHint(e);
         }
         // Drag-pour: while the primary button AND Shift are held and we
         // cross into a new region's loopId, pour again. lastPourLoopId is
         // reset on up(). Shift gating keeps a plain click from accidentally
         // filling adjacent regions when the mouse jiggles before release.
-        if ((e.buttons & 1) && e.shiftKey && this.paintBucketStack?.length) {
+        if (!this.isDeferredFillPointer(e) && (e.buttons & 1) && e.shiftKey && this.paintBucketStack?.length) {
           const target = this.paintBucketStack[this.paintBucketScopeIndex];
           if (target && target.loopId !== this.lastPourLoopId) {
             const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
@@ -7750,6 +7754,10 @@
           };
         } else if (patOwner) {
           this._fillPendingPour = null;
+        }
+        if (patOwner) {
+          this._updateHoverFeedback(e);
+          this._updateSceneHoverHint(e);
         }
         this.draw();
       }
@@ -9926,6 +9934,18 @@
     // Explicit on purpose: WebKit synthetic events never fire pointerleave.
     _clearFillDeferred() {
       this._fillPendingPour = null;
+      // Hover feedback shown for the held pointer ends with the hold (req. 6).
+      this.hoverHighlight = null;
+      this._hoverHighlightKey = null;
+      this.hoverCenter = null;
+      this._hoverCenterKey = null;
+      this.hoverReadout = null;
+      if (this._hoverChipActive) {
+        this._hoverChipActive = false;
+        this.hideDragTooltip?.();
+      }
+      this.hideAnchorLabel?.();
+      this._clearSceneHoverHint?.();
       if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(this.activeTool)) return;
       this.paintBucketStack = null;
       this.paintBucketStackKey = null;

@@ -25,7 +25,11 @@ test('mouse: Fill pours on down and shows no touch chips', async ({ page }) => {
   await page.waitForTimeout(150);
   expect(await page.locator('[data-fill-scope]').count()).toBe(0);
   expect(await page.evaluate(() => !!document.querySelector('.ctxbar.ctxbar--fill'))).toBe(false);
-  await page.screenshot({ path: '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-022/desktop-fill-hover.png' });
+  if (process.env.TUX_EVIDENCE) {
+    const dir = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-022';
+    require('fs').mkdirSync(dir, { recursive: true });
+    await page.screenshot({ path: `${dir}/desktop-fill-hover.png` });
+  }
   const before = await fills();
   await page.mouse.down();
   expect(await fills()).toBe(before + 1);

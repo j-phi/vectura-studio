@@ -497,10 +497,24 @@
         btn.classList.add('is-disabled');
         btn.title = 'Scope does not apply to pattern layers';
       } else {
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
+        const step = () => {
           const r = (G.app && G.app.renderer) || renderer;
           if (r && typeof r.stepPaintBucketScope === 'function') r.stepPaintBucketScope(dir === 'up' ? 1 : -1);
+        };
+        // A touch / pen tap steps on pointerdown: while another finger holds the canvas the
+        // browser sends no click for a multi-touch tap. The click that may follow is ignored.
+        // Mouse and keyboard step on click.
+        let byPointer = false;
+        btn.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'mouse') return;
+          byPointer = true;
+          setTimeout(() => { byPointer = false; }, 700);
+          step();
+        });
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (byPointer) { byPointer = false; return; }
+          step();
         });
       }
       return btn;
