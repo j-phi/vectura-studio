@@ -1162,26 +1162,68 @@
       state.view.offsetY = mouseY - worldY * nextScale;
       this.renderExportPreview();
     };
+    // Single-finger / mouse drag follows ONE pointerId (state.drag.id). A second finger starts a
+    // pinch (TUX-047): the drag is dropped, and when one finger remains it re-seeds the drag.
     const onPointerDown = (e) => {
       const state = this.exportModalState;
       if (!state?.wrap) return;
-      state.drag = { x: e.clientX, y: e.clientY };
+      if (e.pointerType === 'touch' && pinch && pinch.active()) return;
+      if (state.drag && state.drag.id !== e.pointerId) return;
+      state.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
       state.wrap.classList.add('is-dragging');
     };
     const onPointerMove = (e) => {
       const state = this.exportModalState;
-      if (!state?.drag) return;
+      if (!state?.drag || state.drag.id !== e.pointerId) return;
       state.view.offsetX += e.clientX - state.drag.x;
       state.view.offsetY += e.clientY - state.drag.y;
-      state.drag = { x: e.clientX, y: e.clientY };
+      state.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
       this.renderExportPreview();
     };
-    const onPointerUp = () => {
+    const onPointerUp = (e) => {
       const state = this.exportModalState;
       if (!state?.wrap) return;
+      if (state.drag && e && e.pointerId !== undefined && state.drag.id !== e.pointerId) return;
       state.drag = null;
       state.wrap.classList.remove('is-dragging');
     };
+    let pinchStart = null;
+    const pinchApi = window.Vectura?.UI?.PinchZoom;
+    const pinch = pinchApi && this.exportModalState.wrap
+      ? pinchApi.attach(this.exportModalState.wrap, {
+        onStart: ({ cx, cy }) => {
+          const state = this.exportModalState;
+          if (!state?.wrap) return;
+          state.drag = null;
+          state.wrap.classList.remove('is-dragging');
+          const rect = state.wrap.getBoundingClientRect();
+          pinchStart = { rect, scale: state.view.scale, ox: state.view.offsetX, oy: state.view.offsetY, cx, cy };
+        },
+        onUpdate: ({ ratio, cx, cy }) => {
+          const state = this.exportModalState;
+          if (!state?.wrap || !pinchStart) return;
+          const p = pinchStart;
+          const nextScale = clamp(p.scale * ratio, 0.05, 24);
+          const worldX = (p.cx - p.rect.left - p.ox) / p.scale;
+          const worldY = (p.cy - p.rect.top - p.oy) / p.scale;
+          state.view.scale = nextScale;
+          state.view.offsetX = (cx - p.rect.left) - worldX * nextScale;
+          state.view.offsetY = (cy - p.rect.top) - worldY * nextScale;
+          this.renderExportPreview();
+        },
+        onEnd: ({ remaining }) => {
+          const state = this.exportModalState;
+          pinchStart = null;
+          if (!state?.wrap) return;
+          const f = remaining[0];
+          if (f && remaining.length === 1) {
+            state.drag = { id: f.id, x: f.x, y: f.y };
+            state.wrap.classList.add('is-dragging');
+          }
+        },
+      })
+      : null;
+    this.exportModalState.wrap?.setAttribute('data-touch-zoom', '');
     const resizeObserver =
       typeof ResizeObserver === 'function' ? new ResizeObserver(() => this.resizeExportPreviewCanvas()) : null;
     if (resizeObserver && this.exportModalState.wrap) resizeObserver.observe(this.exportModalState.wrap);
@@ -1286,6 +1328,7 @@
         window.removeEventListener('pointermove', onPointerMove);
         window.removeEventListener('pointerup', onPointerUp);
         window.removeEventListener('pointercancel', onPointerUp);
+        pinch?.detach();
         controls.innerHTML = '';
         stash.appendChild(controls);
         this.exportModalState = null;

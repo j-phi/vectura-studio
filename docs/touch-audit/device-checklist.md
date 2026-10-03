@@ -10,3 +10,5 @@ Rows below come from TUX-013. TUX-062 consolidates this file.
 | TUX-015-a | iPhone, portrait and landscape, Safari toolbar shown and hidden | Open the All Tools drawer. It stays inside the visible area. It clears the notch and the home indicator. Status: deferred-by-Jay unless verified. | TUX-015 |
 | TUX-015-b | iPhone and iPad | Drag inside the drawer body. It scrolls with momentum. The page behind does not scroll. Status: deferred-by-Jay unless verified. | TUX-015 |
 | TUX-015-c | iPad, portrait | The drawer opens below the horizontal rail. Every tool is fully tappable. Status: deferred-by-Jay unless verified. | TUX-015 |
+
+- [ ] [DEVICE] TUX-047 (pending): iPad and iPhone Safari: a pinch on the export preview and on the Pattern Designer zooms only the surface, the page stays at 1x, and a pinch with the fill tool active adds no fill. A two-finger drag pans.

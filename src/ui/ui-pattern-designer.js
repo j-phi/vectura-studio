@@ -1515,6 +1515,96 @@
         pd.view.zoom = newZoom;
         this._renderPatternDesigner(pd);
       };
+      // --- TUX-047: touch pinch/pan + single touch-intent gate -------------------------------
+      // Two fingers always zoom/pan (PinchZoom); one finger keeps the active tool, but a touch
+      // pointerdown is HELD until it is clearly a one-finger action: pointerup, 250 ms, or 10 px of
+      // movement. A second finger inside that window cancels it, so a pinch never pours, selects,
+      // anchors or pushes history. Mouse and pen take the exact original path (no deferral).
+      const aborts = (pd._touchAborts = []);
+      const abortSessions = (commit) => {
+        panState = null;
+        dragSession = null;
+        aborts.forEach((fn) => fn(commit));
+      };
+      let replaying = false;
+      let pending = null;
+      const touchDown = new Set();
+      const dropPending = () => {
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        pending = null;
+      };
+      const flushPending = () => {
+        if (!pending) return;
+        const { init } = pending;
+        dropPending();
+        replaying = true;
+        try { canvas.dispatchEvent(new PointerEvent('pointerdown', init)); } finally { replaying = false; }
+      };
+      // Replay carries the held modifier state unchanged (copy only; no modifier logic here).
+      const copyModifiers = (e) => Object.fromEntries(['alt', 'shift', 'ctrl', 'meta'].map((k) => [`${k}Key`, e[`${k}Key`]]));
+      const onGateDown = (e) => {
+        if (e.pointerType !== 'touch' || replaying) return;
+        touchDown.add(e.pointerId);
+        e.stopImmediatePropagation();
+        if (touchDown.size >= 2) { dropPending(); return; }
+        pending = {
+          id: e.pointerId,
+          sx: e.clientX,
+          sy: e.clientY,
+          timer: setTimeout(flushPending, 250),
+          init: {
+            bubbles: true, cancelable: true, composed: true,
+            pointerId: e.pointerId, pointerType: 'touch', isPrimary: e.isPrimary,
+            clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY,
+            button: 0, buttons: 1, pressure: 0.5,
+            ...copyModifiers(e),
+          },
+        };
+      };
+      const onGateMove = (e) => {
+        if (replaying || !pending || e.pointerId !== pending.id) return;
+        if (Math.hypot(e.clientX - pending.sx, e.clientY - pending.sy) >= 10) flushPending();
+      };
+      const onGateUp = (e) => {
+        if (replaying) return;
+        if (e.type === 'pointercancel') {
+          touchDown.delete(e.pointerId);
+          dropPending();
+          abortSessions(false);
+          return;
+        }
+        if (e.pointerType !== 'touch') return;
+        touchDown.delete(e.pointerId);
+        if (pending && e.pointerId === pending.id) flushPending();
+      };
+      let pz0 = null;
+      const PinchZoom = window.Vectura?.UI?.PinchZoom;
+      const pinch = PinchZoom ? PinchZoom.attach(canvas, {
+        filter: () => !replaying,
+        onStart: ({ cx, cy }) => {
+          dropPending();
+          abortSessions(true);
+          pz0 = { rect: canvas.getBoundingClientRect(), zoom: pd.view.zoom, ox: pd.view.offsetX, oy: pd.view.offsetY, cx, cy };
+        },
+        onUpdate: ({ ratio, cx, cy }) => {
+          if (!pz0) return;
+          const nextZoom = Math.max(0.1, Math.min(200, pz0.zoom * ratio));
+          const wx = (pz0.cx - pz0.rect.left - pz0.ox) / pz0.zoom;
+          const wy = (pz0.cy - pz0.rect.top - pz0.oy) / pz0.zoom;
+          pd.view.zoom = nextZoom;
+          pd.view.offsetX = (cx - pz0.rect.left) - wx * nextZoom;
+          pd.view.offsetY = (cy - pz0.rect.top) - wy * nextZoom;
+          this._renderPatternDesigner(pd);
+        },
+        onEnd: () => { pz0 = null; },
+      }) : null;
+      canvas.setAttribute('data-touch-zoom', '');
+      canvas.addEventListener('pointerdown', onGateDown, true);
+      window.addEventListener('pointermove', onGateMove, true);
+      window.addEventListener('pointerup', onGateUp, true);
+      window.addEventListener('pointercancel', onGateUp, true);
+
       canvas.addEventListener('pointerdown', onDown);
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
@@ -1524,6 +1614,12 @@
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         canvas.removeEventListener('wheel', onWheel);
+        canvas.removeEventListener('pointerdown', onGateDown, true);
+        window.removeEventListener('pointermove', onGateMove, true);
+        window.removeEventListener('pointerup', onGateUp, true);
+        window.removeEventListener('pointercancel', onGateUp, true);
+        dropPending();
+        pinch?.detach();
       };
     },
 
@@ -2640,6 +2736,19 @@
           this._renderPatternDesigner(pd);
         }
       };
+
+      // TUX-047: pinch start / pointercancel end any in-progress touch drag. `commit` keeps an
+      // already-moved direct drag (one history entry); previews that were never committed
+      // (move/select drag, shape drag) are discarded.
+      if (Array.isArray(pd._touchAborts)) {
+        pd._touchAborts.push((commit) => {
+          let changed = false;
+          if (directDrag) { if (commit) endDirectDrag(); else directDrag = null; changed = true; }
+          if (pd.moveDrag) { pd.moveDrag = null; changed = true; }
+          if (pd.dragShape) { pd.dragShape = null; changed = true; }
+          if (changed) this._renderPatternDesigner(pd);
+        });
+      }
 
       // Register — canvas gets the pointer events, window gets keys
       canvas.addEventListener('pointerdown', onEditDown);

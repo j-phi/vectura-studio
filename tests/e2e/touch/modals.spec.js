@@ -483,3 +483,301 @@ test.describe('TUX-046 modal sheet', () => {
     await sleep(0);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// TUX-047: two-finger pinch zoom + pan on the Export preview and the Pattern Designer canvas.
+// A pinch must zoom ONLY the surface (never the page) and must never pour/select/anchor/push
+// history. One finger keeps the active tool. Placement uses the VISIBLE rect (surface rect
+// intersected with the viewport): on iPhP the surfaces overhang the right edge.
+// ---------------------------------------------------------------------------------------------
+const EVIDENCE_047 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-047';
+
+// surface: 'export' | 'pd'. Returns { x, y, w, h, left, top, right, bottom } (visible rect) or null.
+const visibleRect = (page, surface) => page.evaluate((surface) => {
+  const ui = window.app.ui;
+  const el = surface === 'export'
+    ? ui.exportModalState?.wrap
+    : (ui.__pdTarget?.() || ui.patternDesigner || ui.inlinePatternDesigner)?.root?.querySelector('[data-pd-canvas]');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const left = Math.max(0, r.left); const top = Math.max(0, r.top);
+  const right = Math.min(innerWidth, r.right); const bottom = Math.min(innerHeight, r.bottom);
+  return { x: (left + right) / 2, y: (top + bottom) / 2, w: right - left, h: bottom - top, left, top, right, bottom, rawLeft: r.left, rawTop: r.top };
+}, surface);
+
+const pinchSpec = (vr) => {
+  const endDist = Math.min(240, 0.8 * vr.w);
+  return { center: { x: vr.x, y: vr.y }, endDist, startDist: endDist / 3 };
+};
+
+const exportView = (page) => page.evaluate(() => ({ ...window.app.ui.exportModalState.view }));
+
+const openExportPreview = async (page) => {
+  await page.evaluate(() => window.app.ui.openExportModal());
+  await page.waitForSelector('#modal-overlay.open');
+  await raf2(page);
+  await page.waitForTimeout(400);
+  await raf2(page);
+};
+
+// kind: 'window' | 'inline'. Leaves the designer open with `tool` active. Returns nothing; the
+// handle is resolved via ui.__pdTarget (set here) so tests read the live pd object.
+const openPd = async (page, kind) => {
+  await page.evaluate((kind) => {
+    const { engine, ui } = window.app;
+    const id = engine.addLayer('pattern');
+    const L = engine.layers.find((l) => l.id === id) || engine.getActiveLayer?.();
+    engine.activeLayerId = L.id;
+    window.__pdLayer = L;
+    ui.__pdTarget = () => (kind === 'inline' ? ui.inlinePatternDesigner : ui.patternDesigner);
+    if (kind === 'window') ui.openPatternDesigner(L);
+    else { if (ui.renderLayers) ui.renderLayers(); if (ui.buildControls) ui.buildControls(); }
+  }, kind);
+  if (kind === 'inline') {
+    await page.waitForFunction(() => !!window.app.ui.inlinePatternDesigner?.root?.querySelector('[data-pd-canvas]'), null, { timeout: 8000 });
+    await page.evaluate(() => {
+      const c = window.app.ui.inlinePatternDesigner.root;
+      let p = c;
+      while (p && p !== document.body) { if (p.id === 'left-pane') break; p = p.parentElement; }
+    });
+    await openPane(page, 'left-pane');
+    await page.evaluate(() => window.app.ui.inlinePatternDesigner.root.scrollIntoView({ block: 'center' }));
+  } else {
+    await page.waitForFunction(() => !!window.app.ui.patternDesigner?.root?.querySelector('[data-pd-canvas]'));
+  }
+  await raf2(page);
+  await page.waitForTimeout(300);
+  await raf2(page);
+};
+
+const setTool = (page, tool) => page.evaluate((tool) => {
+  const pd = window.app.ui.__pdTarget();
+  pd.tool = tool;
+  pd.selectedPath = null; pd.pendingAnchors = []; pd.dragShape = null; pd.moveDrag = null; pd.directEditState = null;
+  window.app.ui._syncPdToolActive(pd);
+  if (pd.inline) pd.root.querySelector('[data-pd-canvas]').scrollIntoView({ block: 'center' });
+}, tool);
+
+const pdSnap = (page) => page.evaluate(() => {
+  const pd = window.app.ui.__pdTarget();
+  return {
+    fills: pd.fills.length,
+    history: pd.history.length,
+    layerFills: (window.__pdLayer.params.patternFills || []).length,
+    selectedPath: pd.selectedPath,
+    pending: pd.pendingAnchors.length,
+    zoom: pd.view.zoom,
+    ox: pd.view.offsetX,
+    oy: pd.view.offsetY,
+  };
+});
+
+// Client point (inside the visible rect, on the canvas) that has a fill target; nearest the centre.
+// `dx`: the returned point is the LEFT finger of a pinch whose centre is point.x + dx; that
+// centre must stay inside the visible rect (so the first finger lands on a fill target).
+const findFillPoint = (page, dx = 0) => page.evaluate((dx) => {
+  const ui = window.app.ui;
+  const pd = ui.__pdTarget();
+  const canvas = pd.root.querySelector('[data-pd-canvas]');
+  const r = canvas.getBoundingClientRect();
+  const left = Math.max(0, r.left); const top = Math.max(0, r.top);
+  const right = Math.min(innerWidth, r.right); const bottom = Math.min(innerHeight, r.bottom);
+  const cx = (left + right) / 2; const cy = (top + bottom) / 2;
+  const reg = window.Vectura.AlgorithmRegistry;
+  let best = null;
+  for (let y = top + 6; y < bottom - 6; y += 8) {
+    for (let x = left + 6; x < right - 6; x += 8) {
+      if (document.elementFromPoint(x, y) !== canvas) continue;
+      const tx = (x - r.left - pd.view.offsetX) / pd.view.zoom;
+      const ty = (y - r.top - pd.view.offsetY) / pd.view.zoom;
+      const sel = reg.patternGetFillTargetsAtPoint(pd.layer.params.patternId, tx, ty, { cache: true });
+      if (!sel || !sel.smallest) continue;
+      if (pd.fills.some((f) => ui._fillMatchesTarget(f, sel.smallest))) continue;
+      if (x + dx < left + 12 || x + dx > right - 12) continue;
+      const d = Math.hypot(x + dx - cx, y - cy);
+      if (!best || d < best.d) best = { x, y, d };
+    }
+  }
+  return best;
+}, dx);
+
+const pickPinchCenter = (page, startDist, endDist, wantTarget) => page.evaluate(({ startDist, endDist, wantTarget }) => {
+  const ui = window.app.ui;
+  const pd = ui.__pdTarget();
+  const canvas = pd.root.querySelector('[data-pd-canvas]');
+  const r = canvas.getBoundingClientRect();
+  const left = Math.max(0, r.left); const top = Math.max(0, r.top);
+  const right = Math.min(innerWidth, r.right); const bottom = Math.min(innerHeight, r.bottom);
+  const mx = (left + right) / 2; const my = (top + bottom) / 2;
+  const reg = window.Vectura.AlgorithmRegistry;
+  const on = (x, y) => document.elementFromPoint(x, y) === canvas;
+  let best = null;
+  for (let y = top + 4; y < bottom - 4; y += 6) {
+    for (let x = left + endDist / 2; x <= right - endDist / 2; x += 6) {
+      if (!on(x, y) || !on(x - endDist / 2, y) || !on(x + endDist / 2, y)) continue;
+      if (wantTarget) {
+        const fx = x - startDist / 2;
+        const sel = reg.patternGetFillTargetsAtPoint(pd.layer.params.patternId, (fx - r.left - pd.view.offsetX) / pd.view.zoom, (y - r.top - pd.view.offsetY) / pd.view.zoom, { cache: true });
+        if (!sel || !sel.smallest) continue;
+      }
+      const d = Math.hypot(x - mx, y - my);
+      if (!best || d < best.d) best = { x, y, d };
+    }
+  }
+  return best ? { x: best.x, y: best.y } : null;
+}, { startDist, endDist, wantTarget });
+
+test.describe('TUX-047 pinch and two-finger pan', () => {
+  test('A export preview pinch zooms preview, not page', async ({ page }, testInfo) => {
+    await openExportPreview(page);
+    const vr = await visibleRect(page, 'export');
+    expect(vr && vr.w > 120 && vr.h > 60, `export wrap visible ${JSON.stringify(vr)}`).toBeTruthy();
+    const { center, startDist, endDist } = pinchSpec(vr);
+    const v0 = await exportView(page);
+    const W = { x: (center.x - vr.rawLeft - v0.offsetX) / v0.scale, y: (center.y - vr.rawTop - v0.offsetY) / v0.scale };
+    await touch.pinch(page, center, { startDist, endDist, steps: 10, staggerMs: 60 });
+    await raf2(page);
+    const v1 = await exportView(page);
+    const ratio = v1.scale / v0.scale;
+    const msg = `scale ${v0.scale} -> ${v1.scale} (ratio ${ratio.toFixed(3)})`;
+    expect(ratio >= 2.25 && ratio <= 3.75 || v1.scale === 24, msg).toBe(true);
+    const px = vr.rawLeft + v1.offsetX + W.x * v1.scale;
+    const py = vr.rawTop + v1.offsetY + W.y * v1.scale;
+    expect(Math.abs(px - center.x), `focal x ${msg}`).toBeLessThanOrEqual(8);
+    expect(Math.abs(py - center.y), `focal y ${msg}`).toBeLessThanOrEqual(8);
+    const st = await page.evaluate(() => {
+      const wrap = window.app.ui.exportModalState.wrap;
+      return { ta: getComputedStyle(wrap).touchAction, attr: wrap.hasAttribute('data-touch-zoom'), vv: window.visualViewport ? window.visualViewport.scale : 1 };
+    });
+    expect(st.ta, 'wrap touch-action').toBe('none');
+    expect(st.attr, 'wrap data-touch-zoom').toBe(true);
+    if (touch.engineSupports(page, 'trustedMultiTouch')) expect(st.vv, `page zoom (${msg})`).toBe(1);
+    if (process.env.TUX_EVIDENCE === '1' && testInfo.project.name.startsWith('touch-')) {
+      fs.mkdirSync(EVIDENCE_047, { recursive: true });
+      await page.screenshot({ path: path.join(EVIDENCE_047, `${spec(testInfo).device}.png`) });
+    }
+  });
+
+  test('B export preview two-finger pan + one-finger pan unchanged', async ({ page }) => {
+    await openExportPreview(page);
+    const vr = await visibleRect(page, 'export');
+    const c = { x: vr.x, y: vr.y };
+    const v0 = await exportView(page);
+    await touch.twoFingerPan(page, c, { dx: 60, dy: 40, gap: 100 });
+    await raf2(page);
+    const v1 = await exportView(page);
+    expect(Math.abs(v1.offsetX - v0.offsetX - 60), `2f pan dx ${JSON.stringify([v0, v1])}`).toBeLessThanOrEqual(6);
+    expect(Math.abs(v1.offsetY - v0.offsetY - 40), 'dy').toBeLessThanOrEqual(6);
+    expect(Math.abs(v1.scale / v0.scale - 1), 'scale stable').toBeLessThan(0.02);
+    // One-finger drag of 50: offsetX +50, no jumps.
+    const seq = [v1.offsetX];
+    await touch.touchPhase(page, 'start', [{ x: c.x, y: c.y, id: 0 }]);
+    for (let i = 1; i <= 10; i += 1) {
+      await touch.touchPhase(page, 'move', [{ x: c.x + 5 * i, y: c.y, id: 0 }]);
+      seq.push((await exportView(page)).offsetX);
+    }
+    await touch.touchPhase(page, 'end', [{ x: c.x + 50, y: c.y, id: 0 }]);
+    const v2 = await exportView(page);
+    expect(Math.abs(v2.offsetX - v1.offsetX - 50), `1f drag ${JSON.stringify(seq)}`).toBeLessThanOrEqual(6);
+    for (let i = 1; i < seq.length; i += 1) expect(Math.abs(seq[i] - seq[i - 1]), `step ${i} ${JSON.stringify(seq)}`).toBeLessThanOrEqual(10);
+  });
+
+  const PD_CASES = [
+    { kind: 'window', tool: 'fill', stagger: 0 },
+    { kind: 'window', tool: 'fill', stagger: 60 },
+    { kind: 'window', tool: 'select', stagger: 60 },
+    { kind: 'window', tool: 'pen', stagger: 60 },
+    { kind: 'inline', tool: 'fill', stagger: 0 },
+    { kind: 'inline', tool: 'fill', stagger: 60 },
+    { kind: 'inline', tool: 'select', stagger: 60 },
+    { kind: 'inline', tool: 'pen', stagger: 60 },
+  ];
+  PD_CASES.forEach(({ kind, tool, stagger }) => {
+    test(`C Pattern Designer (${kind}) pinch zooms and does not mutate: ${tool}, stagger ${stagger}`, async ({ page }, testInfo) => {
+      const s = spec(testInfo);
+      // Inline variant runs on iPadL and iPhL only (shared binding, saves CPU); not applicable elsewhere.
+      if (kind === 'inline' && !['iPadL', 'iPhL'].includes(s.device)) return;
+      await openPd(page, kind);
+      await setTool(page, tool);
+      const vr = await visibleRect(page, 'pd');
+      expect(vr && vr.w > 120 && vr.h > 60, `pd canvas visible ${JSON.stringify(vr)}`).toBeTruthy();
+      const { startDist, endDist } = pinchSpec(vr);
+      // Both fingers (whole pinch travel) must be on the canvas, not under the header or a bar.
+      // For the fill tool the FIRST finger lands on a fill target, so a pinch that wrongly pours is observable.
+      const center = await pickPinchCenter(page, startDist, endDist, tool === 'fill');
+      expect(center, 'a clear pinch spot exists on the canvas').toBeTruthy();
+      const a = await pdSnap(page);
+      const W = { x: (center.x - vr.rawLeft - a.ox) / a.zoom, y: (center.y - vr.rawTop - a.oy) / a.zoom };
+      await touch.pinch(page, center, { startDist, endDist, steps: 10, staggerMs: stagger });
+      await page.waitForTimeout(350);
+      await raf2(page);
+      const b = await pdSnap(page);
+      const msg = `${kind}/${tool}/${stagger}: fills ${a.fills}->${b.fills} history ${a.history}->${b.history} layerFills ${a.layerFills}->${b.layerFills} zoom ${a.zoom} -> ${b.zoom}`;
+      expect(b.fills, msg).toBe(a.fills);
+      expect(b.history, msg).toBe(a.history);
+      expect(b.layerFills, msg).toBe(a.layerFills);
+      expect(b.selectedPath, msg).toBe(a.selectedPath);
+      expect(b.pending, msg).toBe(a.pending);
+      const ratio = b.zoom / a.zoom;
+      expect(ratio >= 2.25 && ratio <= 3.75 || b.zoom === 200, msg).toBe(true);
+      expect(Math.abs(vr.rawLeft + b.ox + W.x * b.zoom - center.x), `focal x ${msg}`).toBeLessThanOrEqual(8);
+      expect(Math.abs(vr.rawTop + b.oy + W.y * b.zoom - center.y), `focal y ${msg}`).toBeLessThanOrEqual(8);
+      if (process.env.TUX_EVIDENCE === '1' && kind === 'window' && tool === 'fill' && stagger === 60 && testInfo.project.name.startsWith('touch-')) {
+        fs.mkdirSync(EVIDENCE_047, { recursive: true });
+        await page.screenshot({ path: path.join(EVIDENCE_047, `pd-${s.device}.png`) });
+      }
+    });
+  });
+
+  test('D Pattern Designer two-finger pan + cancel safety', async ({ page }) => {
+    await openPd(page, 'window');
+    const vr = await visibleRect(page, 'pd');
+    const c = { x: vr.x, y: vr.y };
+    const a = await pdSnap(page);
+    await touch.twoFingerPan(page, c, { dx: 60, dy: 40, gap: 100 });
+    await page.waitForTimeout(350);
+    const b = await pdSnap(page);
+    expect(Math.abs(b.ox - a.ox - 60), `2f pan dx ${JSON.stringify([a, b])}`).toBeLessThanOrEqual(6);
+    expect(Math.abs(b.oy - a.oy - 40), 'dy').toBeLessThanOrEqual(6);
+    expect([b.fills, b.history, b.layerFills], 'no mutation').toEqual([a.fills, a.history, a.layerFills]);
+    // Cancelled pinch, then a tap with the select tool on an empty corner must not pan.
+    await setTool(page, 'select');
+    const g = 100;
+    await touch.touchPhase(page, 'start', [{ x: c.x - g / 2, y: c.y, id: 0 }, { x: c.x + g / 2, y: c.y, id: 1 }]);
+    await touch.touchPhase(page, 'move', [{ x: c.x - g, y: c.y, id: 0 }, { x: c.x + g, y: c.y, id: 1 }]);
+    // CDP touchCancel must carry NO touch points; the WebKit shim cancels the listed fingers.
+    const fingers = [{ x: c.x - g, y: c.y, id: 0 }, { x: c.x + g, y: c.y, id: 1 }];
+    await touch.touchPhase(page, 'cancel', touch.engineSupports(page, 'cdp') ? [] : fingers);
+    if (page.__touchDown) page.__touchDown.clear();
+    await page.waitForTimeout(100);
+    const afterCancel = await pdSnap(page);
+    await touch.tap(page, { x: vr.left + 8, y: vr.top + 8 });
+    await page.waitForTimeout(350);
+    const afterTap = await pdSnap(page);
+    expect(Math.abs(afterTap.ox - afterCancel.ox), `tap panned x ${JSON.stringify([afterCancel, afterTap])}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(afterTap.oy - afterCancel.oy), 'tap panned y').toBeLessThanOrEqual(1);
+    expect(afterTap.zoom, 'tap zoomed').toBeCloseTo(afterCancel.zoom, 6);
+    // Single-finger tool still works after the cancel: fill pours exactly 1.
+    await setTool(page, 'fill');
+    const pt = await findFillPoint(page);
+    expect(pt, 'a fill target exists in view').toBeTruthy();
+    const before = await pdSnap(page);
+    await touch.tap(page, pt);
+    await page.waitForTimeout(400);
+    const after = await pdSnap(page);
+    expect(after.fills - before.fills, `fill after cancel ${JSON.stringify([before, after])}`).toBe(1);
+  });
+
+  test('E single-finger fill tap still pours', async ({ page }) => {
+    await openPd(page, 'window');
+    await setTool(page, 'fill');
+    const pt = await findFillPoint(page);
+    expect(pt, 'a fill target exists in view').toBeTruthy();
+    const before = await pdSnap(page);
+    await touch.tap(page, pt);
+    await page.waitForTimeout(400);
+    const after = await pdSnap(page);
+    expect(after.fills - before.fills, `fills ${JSON.stringify([before, after])}`).toBe(1);
+    expect(after.history - before.history, 'history').toBe(1);
+  });
+});
