@@ -13851,3 +13851,22 @@ body.phone-layout #vectura-toast-host { top: 60px !important; }
   [data-ui-skin] body.phone-layout #app-header .header-main { height: 48px; min-height: 48px; }
 }
 /* === /TUX-001 === */
+
+/* === TUX-001: header vs modal and narrow tablet fit ===
+ * (1) In phone layout the header (z-index 220) sat above #modal-overlay (z-index 100) and
+ * stayed tappable behind the modal. While a modal is open the header drops under the overlay
+ * and ignores pointers. (2) Tablet layout between the phone threshold and about 620 px must
+ * not be wider than the viewport: hide the wordmark and clip. */
+body.phone-layout:has(#modal-overlay.open) #app-header,
+body.phone-layout:has(#export-modal-root) #app-header {
+  z-index: 90;
+  pointer-events: none;
+}
+body.tablet-layout #app-header {
+  max-width: 100%;
+  overflow-x: clip;
+}
+@media (max-width: 620px) {
+  body.tablet-layout #app-header h1 { display: none; }
+}
+/* === /TUX-001 header vs modal === */

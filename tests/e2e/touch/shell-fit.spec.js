@@ -550,3 +550,42 @@ test.describe('TUX-001 non-phone keeps the inline menubar', () => {
     await page.screenshot({ path: path.join(TUX1_EVIDENCE, `${spec.device}${spec.engine === 'webkit' ? '-webkit' : ''}-closed.png`) });
   });
 });
+
+test.describe('TUX-001 phone header stays under an open modal', () => {
+  test('E header does not cover or answer taps while the Export modal is open', async ({ page }, testInfo) => {
+    test.skip(!PHONE_PROJECTS.includes(testInfo.project.name), 'phone projects only');
+    await gotoApp(page);
+    // Setup shortcut (not under test): one layer so Export is enabled.
+    await page.evaluate(() => { window.app.engine.addLayer('flowfield'); window.app.pushHistory && window.app.pushHistory(); window.app.render(); });
+    await expect.poll(() => layerCount(page)).toBe(1);
+    await expect(page.locator('#btn-header-export')).not.toHaveAttribute('aria-disabled', 'true');
+    await touch.tap(page, page.locator('#btn-header-export'));
+    await expect(page.locator('#export-modal-root')).toBeVisible();
+    await page.waitForTimeout(400);
+    const probe = await page.evaluate(() => {
+      const root = document.getElementById('export-modal-root');
+      const card = root.closest('.modal-card') || root;
+      const r = card.getBoundingClientRect();
+      const inside = (x, y) => { const t = document.elementFromPoint(x, y); return !!t && (card.contains(t) || root.contains(t)); };
+      const close = document.getElementById('export-modal-cancel');
+      const cr = close.getBoundingClientRect();
+      const hdr = document.getElementById('btn-header-undo').getBoundingClientRect();
+      const t = document.elementFromPoint(hdr.left + hdr.width / 2, hdr.top + hdr.height / 2);
+      return {
+        top: inside(r.left + r.width / 2, r.top + 2),
+        close: inside(cr.left + cr.width / 2, cr.top + cr.height / 2),
+        undoPointHitsHeaderButton: !!t && !!t.closest('#app-header'),
+        hdrBottom: document.getElementById('app-header').getBoundingClientRect().bottom,
+        cardTop: r.top,
+      };
+    });
+    expect(probe.top, 'modal top edge resolves inside modal').toBe(true);
+    expect(probe.close, 'close control resolves inside modal').toBe(true);
+    expect(probe.undoPointHitsHeaderButton, 'header undo position must not reach the header').toBe(false);
+    const before = await layerCount(page);
+    const hb = await page.locator('#btn-header-undo').boundingBox();
+    await page.touchscreen.tap(hb.x + hb.width / 2, hb.y + hb.height / 2);
+    await page.waitForTimeout(250);
+    expect(await layerCount(page), 'tap at the Undo position leaves layers unchanged').toBe(before);
+  });
+});

@@ -57,4 +57,20 @@ test.describe('TUX-001 desktop parity', () => {
     await expect(ham).toBeFocused();
     await expect(ham).toHaveAttribute('aria-expanded', 'false');
   });
+
+  test('mouse widths 500-640 px: header and document fit the viewport', async ({ page }) => {
+    await gotoApp(page);
+    const bad = [];
+    for (let w = 500; w <= 640; w += 10) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await page.waitForTimeout(60);
+      const r = await page.evaluate(() => ({
+        sw: document.documentElement.scrollWidth,
+        iw: innerWidth,
+        hr: document.getElementById('app-header').getBoundingClientRect().right,
+      }));
+      if (r.sw > r.iw || r.hr > r.iw + 0.5) bad.push(`${w}: scrollWidth ${r.sw}, header right ${r.hr}`);
+    }
+    expect(bad).toEqual([]);
+  });
 });
