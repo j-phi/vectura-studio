@@ -696,7 +696,7 @@ test.describe('TUX-047 pinch and two-finger pan', () => {
     test(`C Pattern Designer (${kind}) pinch zooms and does not mutate: ${tool}, stagger ${stagger}`, async ({ page }, testInfo) => {
       const s = spec(testInfo);
       // Inline variant runs on iPadL and iPhL only (shared binding, saves CPU); not applicable elsewhere.
-      if (kind === 'inline' && !['iPadL', 'iPhL'].includes(s.device)) return;
+      test.skip(kind === 'inline' && !['iPadL', 'iPhL'].includes(s.device), 'inline PD variant runs on iPadL/iPhL only');
       await openPd(page, kind);
       await setTool(page, tool);
       const vr = await visibleRect(page, 'pd');

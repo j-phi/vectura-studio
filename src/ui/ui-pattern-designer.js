@@ -1569,6 +1569,7 @@
       const onGateUp = (e) => {
         if (replaying) return;
         if (e.type === 'pointercancel') {
+          if (e.pointerType !== 'touch' || (!touchDown.has(e.pointerId) && !(pending && pending.id === e.pointerId))) return;
           touchDown.delete(e.pointerId);
           dropPending();
           abortSessions(false);

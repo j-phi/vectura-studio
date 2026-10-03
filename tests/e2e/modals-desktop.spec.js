@@ -160,4 +160,24 @@ test.describe('TUX-047 zoom surfaces on desktop', () => {
     await page.mouse.up();
     expect(during, 'fill poured on mousedown, before mouseup').toBe(1);
   });
+
+  test('Pattern Designer: a pointercancel from another touch pointer does not kill a mouse drag', async ({ page }) => {
+    await openPd(page);
+    await page.evaluate(() => { const pd = window.app.ui.patternDesigner; pd.tool = 'shape-rect'; window.app.ui._syncPdToolActive?.(pd); });
+    const box = await page.locator('#pattern-designer-window [data-pd-canvas]').boundingBox();
+    const cx = box.x + box.width / 2; const cy = box.y + box.height / 2;
+    const hist = () => page.evaluate(() => window.app.ui.patternDesigner.history.length);
+    const h0 = await hist();
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 40, cy + 30, { steps: 4 });
+    expect(await page.evaluate(() => !!window.app.ui.patternDesigner.dragShape)).toBe(true);
+    // Unrelated touch pointer cancelled elsewhere (e.g. the left panel).
+    await page.evaluate(() => {
+      document.body.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 77, pointerType: 'touch', bubbles: true }));
+    });
+    expect(await page.evaluate(() => !!window.app.ui.patternDesigner.dragShape), 'drag survives foreign pointercancel').toBe(true);
+    await page.mouse.up();
+    expect(await hist(), 'commit adds exactly one history entry').toBe(h0 + 1);
+  });
 });
