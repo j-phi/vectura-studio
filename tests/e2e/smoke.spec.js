@@ -424,6 +424,9 @@ test.describe('Vectura smoke interactions', () => {
     await page.locator('#btn-menu-file').click();
     await page.click('#btn-settings');
     await expect(page.locator('#settings-panel')).toHaveClass(/open/);
+    // TUX-050 desktop parity: with a mouse Paper stays collapsed, Theme stays open.
+    await expect(page.locator('#settings-panel .sect--color-paper [data-sect-toggle]')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('#settings-panel .sect--color-theme [data-sect-toggle]')).toHaveAttribute('aria-expanded', 'true');
 
     await page.click('#btn-close-settings');
     await expect(page.locator('#settings-panel')).not.toHaveClass(/open/);
@@ -444,7 +447,8 @@ test.describe('Vectura smoke interactions', () => {
 
     await page.keyboard.press('ControlOrMeta+K');
     await expect(page.locator('#settings-panel')).toHaveClass(/open/);
-    await expect(page.locator('#set-document-units')).toBeVisible();
+    // TUX-050: Paper is collapsed (visibility:hidden) with a mouse, so assert presence only.
+    await expect(page.locator('#set-document-units')).toBeAttached();
     // The dimensions toggle is wrapped in `.sw-toggle`, which hides the raw
     // checkbox on Meridian-family skins (the default). Assert presence, not
     // visual visibility — the visible UI is the pill, not the input.

@@ -83,6 +83,7 @@ JSON.stringify({w: innerWidth, h: innerHeight, dpr: devicePixelRatio, standalone
 | DEV-32 | iPad trackpad and finger tap on an inactive layer row (from TUX-036) | TUX-036 | iPad L tab with trackpad | A finger tap on an inactive layer row never fires a hidden action. | open |
 | DEV-33 | Apple Pencil hover reveal (from TUX-036) | TUX-036 | iPad L tab with Apple Pencil | Pencil hover reveal leaves no visible-but-inert buttons. | open |
 | DEV-34 | Export preview and Pattern Designer pinch (from TUX-047) | TUX-047 | iPhone P tab, iPad L tab | A pinch zooms only the surface. The page stays at 1x. A pinch with the fill tool active adds no fill. A two-finger drag pans. | open |
+| DEV-35 | Document Setup Paper > Size native picker (from TUX-050) | TUX-050 | iPhone P tab, iPad P tab | The first tap on Paper > Size opens the native iOS picker. The drawer or modal does not jump. | open |
 
 ## Clause index
 
