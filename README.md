@@ -606,6 +606,18 @@ CI lives in `.github/workflows/test.yml`:
   Style ignores are greyed with an (i) reason. The Fill Style picker greys only styles that draw
   exactly like Ladder (measured), so curved Spiral / Stipple offer their full range again.
 - **3D Scene — Layers-panel "Assign pen" on an Object 3D row now routes its ink.**
+- **3D Scene — the Fill Style picker merges to 20 styles; every old look is still one pick away.**
+  *Ladder* now also covers Fine / Perceptual rungs, the Continuous Field laws (Spacing: Continuous
+  field) and the flick and deep-shadow-traverse overlays. *Width Ribbon* (was Tapered Ends) covers White
+  Band, Nib Angle and Isophote Width as Width from + Ends. *Bundle* covers Sub-Nib and Lozenge (Closest
+  approach, Bundle ends). *Wave* (was Amplitude Spacing) covers Interlock Weave, Weave Depth, Trochoid
+  Loop, Amplitude Only and One Pen Down as Phase + Waveform + Pen down. *Flow Field* covers Defect Split.
+  Origin Spiral is now Spiral > Centre: Glint. Saved documents open unchanged. The shadow Fill Style row
+  has the same sub-controls, so the shadow textures the earlier merges hid are reachable again.
+- **3D Scene — one setting per idea.** *Wrap* (Surface / Flat) replaces Contour Style: Region, Spiral
+  Mode: Flat and Hatch Angle ref: Screen. X-ray Front is a line type, Depth cue is two toggles, the
+  hidden-edge style is one select, and highlight Dashed / Dotted and Sparse / Stipple are Restyle line
+  and Thin with their own sub-controls. A legacy monoline document keeps its look when Density went live.
 
 ### 1.4.3
 - **3D Scene — curved-primitive borders now sit on the true silhouette.** A sphere, ellipsoid,

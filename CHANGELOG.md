@@ -6,6 +6,69 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed (U5 Fill Style merges + sub-setting folds + shadow reach, fill-style review)
+- **Legacy monoline documents keep their look.** U4b made Density live on the nine monoline
+  laws. A document saved before it (no `seedMode`) now loads with `monoDensityLegacyAt` on each
+  style that names a monoline law at a Density other than 50. The law reads 50 while Density still
+  equals that value, so the saved picture is byte-identical. Any edit of Density releases it.
+- **The Fill Style picker goes from 31 rows to 20.** Each merged style keeps every old look as a
+  sub-control, and every old id loads through a migration (old id -> survivor + values) that draws
+  byte-identical output. Tests: 79 old ids and retired-key bags are pinned to hashes captured before
+  the merges (`tests/unit/scene3d-fr-u5-fill-style-migration.test.js`).
+  - **Ladder** (M5, M6): *Spacing* = Stepped rungs or Continuous field. Rungs keep *Rung detail*
+    (Coarse / Fine / Fine + phase / Perceptual) and gain *Extra marks* (flicks where rungs drop = Lozenge
+    Stipple; deep-shadow traverse = Deep Fill TSP). Continuous field keeps *Easing curve* (Sigmoid /
+    L*-linear), *Field metric* and *Closest approach* (Plot floor / Touching). Folds Continuous Field.
+  - **Width Ribbon** (M3, was Tapered Ends): *Width from* (Tone / Calligraphic nib angle / Isophotes)
+    and *Ends* (Tapered / Hard). Folds White Band, Nib Angle and Isophote Width. `bandProfile` is split.
+    Picking a width source that needs Hard ends snaps *Ends* to Hard.
+  - **Bundle** (M1, NEW-6): *Closest approach* (Touching / Overlapping = Sub-Nib) and *Bundle ends*
+    (Square / Lozenge) join *Bundle mode*.
+  - **Wave** (M4, was Amplitude Spacing): *Phase* (In-phase / Interlocked), *Waveform* (Serpentine /
+    Loop / Zigzag), *Pen down*, and *Amplitude* for the two interlocked builds. Folds Interlock Weave,
+    Weave Depth, Trochoid Loop, Amplitude Only and One Pen Down. Two labels were wrong: Weave Depth was
+    anti-phase, not "nested"; One Pen Down was in-phase with no clearance cap, not "interlock".
+  - **Flow Field** (M2, was ETF Direction Field): *Direction field* = Follows depth / Designed defects.
+    Mezzotint Region stays its own row: its mark class is Crosshatch, the others are Flow lines.
+  - **Origin Spiral is now Spiral > Centre: Glint** (M9a). A Hatch / Crosshatch / Contour style that
+    named it loads as Type Spiral with that Centre; the output is byte-identical. The torus write-back
+    still returns such a document to its old Type on Ladder.
+  - **Stipple > Dot Screen fill** (M9b): a button under the Stipple controls switches to Hatch with the
+    Dot Screen fill style. Stipple varies the dot count; Dot Screen varies the dot size on a hex lattice.
+    Different engines, so it stays a Fill Style.
+  - Options that do nothing on the selected shape are disabled in every sub-select (they were not).
+  - Retired keys (`bandProfile`, `nesting`, the old `penDown` on Interlock Weave, `fieldFloor`) are
+    rewritten through the id the old resolver drew. `fieldFloor` is now `closestApproach`.
+- **The shadow Fill Style row has the sub-controls too** (decision 1). 17 shadow textures from
+  earlier folds could only be reached through an old document. The row now offers the survivor's
+  sub-controls, limited to the textures that look materially different on a flat footprint. It still
+  stores one internal law id, so saved documents do not change. Restored: Weave Depth (anti-phase
+  wave pair) and Pen Stipple (end-trimmed). Reachable through the merged rows: Bundle Sub-Nib, Bundle
+  Lozenge, Lozenge Stipple, Interlock Weave. Not offered (same mark structure as a look that is
+  offered; pitch x0.85-1.15 or an angle nudge of at most 3.2 deg, same path count within 20 %, same
+  ink within 18 %): Nib Angle, White Band, Weight Smoothstep, Fine Ladder, Phase Fine Ladder,
+  Perceptual Ramp, Bundle Eased, Bundle Dither, Bundle Handoff, the four Continuous Field variants
+  and Continuous Field Sigmoid, Pen Pitch Match, Pen Facing, Trochoid Loop, Amplitude Only. Those
+  recipes still draw for a saved document that names them (`SHADOW_NONMATERIAL`).
+- **Sub-setting folds** (R3 / NEW-2 / NEW-3, each pinned to hashes captured before the fold):
+  - *Wrap* (Surface / Flat) replaces Contour *Style: Region*, Spiral *Mode: Flat* and Hatch *Angle ref:
+    Screen*. It is live on a curved Contour / Spiral and on a faceted Hatch.
+  - X-ray *Front: Faded* is *Front line: Dotted* and gains Dashed / Dashed-dot. X-ray *Back line* has no
+    *Solid* (it always drew Dashed: an occluded line is stamped [3,2] when its own dash is empty).
+    *Depth cue* is two toggles (Depth -> density, Depth -> weight).
+  - The Hidden edge class has one *Occluded* select (Drop / Dashed / Dotted / Dash-dot) instead of two rows.
+  - Highlight *Dashed* + *Dotted* are *Restyle line* with a *Line* type (solid / dashed / dotted /
+    dash-dot); *Sparse* + *Stipple* are *Thin* with *Thin by* Ruling / Sample.
+  - Alt fill *Hatch* + *Crosshatch* are *Lines* with *Layers* 1 / 2.
+  - Cross dots are Plus at 45 deg x 1.41 (the same marks; a stored Cross still draws and shows).
+  - Shadow *Layers* is one Off / 2 / 3 / 4 row in the docked panel (the context bar already had it).
+  - Burst (highlight) and Halo: Burst (emissive) share one radial-ray emitter.
+  - One source for the crossing-family angles (65, 32, 60 deg) and the plot floor (2.2 pen widths):
+    `Regions.CROSS_OBJ_DEG`, `CROSS_TRIPLE_DEG`, `CROSS_MARK_DEG`, `PLOT_FLOOR_PEN`. Values unchanged.
+- **Not done in this unit:** Show hidden (wireframe) keeps its own toggle; it is the same picture as
+  Hidden > Occluded: Dashed (pinned by a test) but is not yet moved into the edge table. Mezzotint Region
+  stays separate (class). Wave `cFlo` stays an internal constant. Alt fill still draws at fixed 45 / 135 deg.
+
 ### Fixed / Changed (U4b engine defects, fill-style review)
 - **Monoline Crosshatch no longer redraws identical lines.** A monoline law that has no
   direction (etfKang, defectSplit, originSpiral, turingStripe, voronoiWeb, mazeFill) ran its

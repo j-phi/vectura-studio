@@ -572,6 +572,22 @@ questions. Do not start these without a decision:
 
 ## Done
 
+- **2026-10-03 — Fill-style review U5: Fill Style merges, sub-setting folds, shadow reach (branch
+  `3d-scene/fr-u5`, NOT pushed).** Item 0: legacy documents keep their look under the monoline laws
+  (`monoDensityLegacyAt`, released by a Density edit). Picker 31 -> 20: Ladder (+ Continuous Field,
+  flicks, traverse), Width Ribbon (+ White Band, Nib Angle, Isophote Width), Bundle (+ Sub-Nib, Lozenge),
+  Wave (+ Interlock, Weave Depth, Trochoid, Amplitude Only, One Pen Down), Flow Field (+ Defect Split);
+  Origin Spiral is Spiral > Centre: Glint; Stipple links to the Dot Screen fill. Multi-key survivors use a
+  pattern table (`ENTRIES`) and a shared resolver (`scripts/tone-law-resolver.js`), so a pick that is not a
+  real combination snaps the other sub-controls. Every old id and retired key (`bandProfile`, `nesting`,
+  `penDown`, `fieldFloor`) loads byte-identical (hash goldens captured before the merges). Shadow Fill Style
+  row has the sub-controls: Weave Depth and Pen Stipple restored, 18 near-duplicate recipes not offered.
+  Sub-setting folds: Wrap, X-ray Front line / Back line / Depth cue toggles, Occluded select, Restyle line,
+  Thin, Alt fill Lines + Layers, shared ray emitter, one source for cross angles and plot floor.
+  Deferred: Mezzotint Region stays separate (mark class); wireframe Show hidden keeps its toggle (same
+  picture as Occluded: Dashed, pinned by a test); Alt fill still draws at fixed 45 / 135 deg; wave `cFlo`
+  stays internal; a faceted port of X-ray Front line (the row is hidden on faceted shapes); the 11
+  sub-setting rows' Playwright coverage rides on the e2e smoke only.
 - **2026-10-03 — Fill-style review U4b: engine defects (branch `3d-scene/fr-u4b`, NOT pushed).**
   Mono Crosshatch duplicate pass removed (about -49 % ink, -43 to -50 % pen-downs on six direction-free laws); mono
   Density live, Angle greyed where the law has no direction, Contour greyed (screen-space laws);
