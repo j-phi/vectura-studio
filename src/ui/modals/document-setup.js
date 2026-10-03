@@ -387,6 +387,13 @@ ${isDevEligible() ? `
     const hideIfStillClosed = () => {
       if (!hdr.classList.contains('is-open')) body.style.visibility = 'hidden';
     };
+    // Drop any pending open-completion hook from an earlier open, so a
+    // quick open-then-close cannot have it fire on the close transition.
+    if (body.__sectOpenEnd) {
+      body.removeEventListener('transitionend', body.__sectOpenEnd);
+      body.__sectOpenEnd = null;
+    }
+    body.__sectCloseToken = null; // cancels a pending collapse frame
     // Drop any pending close-completion hook from an earlier close.
     if (body.__sectCloseEnd) {
       body.removeEventListener('transitionend', body.__sectCloseEnd);
@@ -437,6 +444,8 @@ ${isDevEligible() ? `
       const onOpenEnd = (e) => {
         if (e.propertyName !== 'max-height') return;
         body.removeEventListener('transitionend', onOpenEnd);
+        body.__sectOpenEnd = null;
+        if (!hdr.classList.contains('is-open')) return;
         // Suppress CSS transitions before clearing maxHeight. Without
         // this, clearing from Npx → none re-triggers the transition
         // rule and causes a visible jump (the hitch). With it, the
@@ -448,6 +457,7 @@ ${isDevEligible() ? `
         body.style.overflow = '';
         requestAnimationFrame(() => { body.style.transition = ''; });
       };
+      body.__sectOpenEnd = onOpenEnd;
       body.addEventListener('transitionend', onOpenEnd);
       return;
     }
@@ -461,11 +471,6 @@ ${isDevEligible() ? `
     }
     body.style.maxHeight = body.scrollHeight + 'px';
     body.style.overflow = 'hidden';
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      body.style.maxHeight = '0';
-      body.style.paddingTop = '0';
-      body.style.paddingBottom = '0';
-    }));
     // Hide once the max-height transition ends (padding events ignored).
     const onCloseEnd = (e) => {
       if (e.propertyName !== 'max-height') return;
@@ -487,11 +492,21 @@ ${isDevEligible() ? `
       ms = d.endsWith('ms') ? parseFloat(d) : parseFloat(d) * 1000;
       if (!(ms > 0) || idx < 0) ms = 0;
     } catch (_) { ms = 0; }
-    body.__sectCloseTimer = setTimeout(() => {
-      body.__sectCloseTimer = null;
-      if (body.__sectCloseEnd) { body.removeEventListener('transitionend', body.__sectCloseEnd); body.__sectCloseEnd = null; }
-      hideIfStillClosed();
-    }, ms + 50);
+    // Collapse starts in a double rAF; start the fallback timer there too, so a
+    // delayed frame cannot hide the content before the collapse begins. Skip if
+    // the section was reopened (or closed again) in the meantime.
+    const token = (body.__sectCloseToken = {});
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (body.__sectCloseToken !== token || hdr.classList.contains('is-open')) return;
+      body.style.maxHeight = '0';
+      body.style.paddingTop = '0';
+      body.style.paddingBottom = '0';
+      body.__sectCloseTimer = setTimeout(() => {
+        body.__sectCloseTimer = null;
+        if (body.__sectCloseEnd) { body.removeEventListener('transitionend', body.__sectCloseEnd); body.__sectCloseEnd = null; }
+        hideIfStillClosed();
+      }, ms + 50);
+    }));
   }
 
   /**

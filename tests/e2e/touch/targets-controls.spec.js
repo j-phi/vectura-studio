@@ -67,7 +67,7 @@ const showPane = (page, side) => page.evaluate((s) => {
     // SETUP STEP: open Document Setup and expand every section so all its controls are on screen.
     const sp = document.getElementById('settings-panel');
     sp.classList.add('open');
-    sp.querySelectorAll('[data-sect-body]').forEach((b) => { b.style.maxHeight = 'none'; b.style.overflow = 'visible'; b.style.paddingTop = ''; });
+    sp.querySelectorAll('[data-sect-body]').forEach((b) => { b.style.maxHeight = 'none'; b.style.overflow = 'visible'; b.style.paddingTop = ''; b.style.visibility = ''; });
     return;
   }
   document.getElementById('settings-panel')?.classList.remove('open');
