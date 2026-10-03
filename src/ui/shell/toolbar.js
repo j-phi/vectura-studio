@@ -167,6 +167,7 @@
       }
       if (this.app.renderer?.setTool) this.app.renderer.setTool(tool);
       syncButtons();
+      Vectura.UI.ToolDrawer?.syncRailState?.();
       const isPatternFillTool = (t) => t === 'fill-pattern' || t === 'fill-pattern-erase';
       const isPaintBucketTool = (t) => t === 'fill' || t === 'fill-erase';
       if (isPatternFillTool(tool) || isPatternFillTool(prevTool) ||
@@ -611,11 +612,45 @@
     }
 
     this._updateAllSubmenuDirs = () => updateAllSubmenuDirs(toolbar);
+    initRailPriority.call(this, toolbar);
     initToolBarDock.call(this, toolbar);
     // All Tools drawer (TLD-1/2): overflow "…" affordance + inventory drawer.
     // Self-contained module; optional-chained so a missing/late load no-ops.
     Vectura.UI.ToolDrawer?.attach?.(this);
     requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+  }
+
+  // TUX-013: priority-plus rail. In the static one-row layouts (phone, and tablet on
+  // a coarse pointer) tool slots that are not in Vectura.TOOL_RAIL for the layout class
+  // get `.rail-overflowed` (CSS hides them; DOM stays for shortcuts and the drawer
+  // cross-highlight). Other layouts clear the class. Never touches inline position.
+  function railLayoutKey() {
+    const cl = document.body.classList;
+    if (cl.contains('phone-layout')) return 'phone';
+    if (cl.contains('tablet-layout') && cl.contains('touch-ui')) return 'tablet';
+    return null;
+  }
+
+  function applyRailPriority(toolbar) {
+    const key = railLayoutKey();
+    const rail = (G.Vectura && G.Vectura.TOOL_RAIL) || {};
+    const keep = key && Array.isArray(rail[key]) ? new Set(rail[key]) : null;
+    Array.from(toolbar.children).forEach((child) => {
+      const btn = child.matches('.tool-btn[data-tool]') ? child : child.querySelector(':scope > .tool-btn[data-tool]');
+      if (!btn) return;
+      const off = !!keep && !keep.has(btn.dataset.tool);
+      child.classList.toggle('rail-overflowed', off);
+    });
+    G.Vectura?.UI?.ToolDrawer?.syncRailState?.();
+  }
+
+  function initRailPriority(toolbar) {
+    const run = () => applyRailPriority(toolbar);
+    this._applyRailPriority = run;
+    run();
+    // Run before any mobile-layout early return elsewhere: layout changes arrive here.
+    window.addEventListener('resize', run);
+    window.addEventListener('vectura:layoutchange', run);
   }
 
   const DOCK_CLASSES = ['toolbar-docked-left', 'toolbar-docked-right', 'toolbar-docked-top', 'toolbar-docked-bottom'];

@@ -13678,3 +13678,45 @@ body.phone-layout #top-menubar .top-menu-back { font-weight: 600; color: var(--u
 .top-menu-back { display: none; }
 body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: center; }
 /* === end TUX-001 === */
+
+/* === TUX-013: compact one-row tool rail ===
+ * Static-rail layouts only: phone-layout, and tablet-layout on a coarse pointer.
+ * touch-wide and desktop keep the floating rail, drag handle and footer (TUX-016/041 own their sizing).
+ * Which slots stay on the rail comes from Vectura.TOOL_RAIL (src/config/tool-drawer.js);
+ * toolbar.js marks the rest `.rail-overflowed`. Budget: tablet <= 64 px, phone <= 52 px (border counted).
+ * No env(safe-area-inset-top) here: TUX-005 owns the top inset on #app-header.
+ * TODO(TUX-041): replace the literal 44px with the shared touch-target token once it lands. */
+body.touch-ui.tablet-layout #tool-bar,
+body.phone-layout #tool-bar {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  padding-left: calc(12px + env(safe-area-inset-left, 0px));
+  padding-right: calc(12px + env(safe-area-inset-right, 0px));
+}
+body.phone-layout #tool-bar {
+  padding-top: 4px;
+  padding-bottom: 3px; /* 4 + 44 + 3 + 1 px border = 52 */
+}
+body.touch-ui.tablet-layout #tool-bar { padding-top: 8px; padding-bottom: 8px; }
+body.touch-ui.tablet-layout #tool-bar .toolbar-footer,
+body.touch-ui.tablet-layout #tool-bar .toolbar-drag-handle,
+body.phone-layout #tool-bar .toolbar-footer,
+body.phone-layout #tool-bar .toolbar-drag-handle { display: none; }
+body.touch-ui.tablet-layout #tool-bar .rail-overflowed,
+body.phone-layout #tool-bar .rail-overflowed { display: none; }
+body.touch-ui.tablet-layout #tool-bar .tool-group,
+body.phone-layout #tool-bar .tool-group { flex-direction: row; flex: 0 0 auto; }
+body.touch-ui.tablet-layout #tool-bar > .tool-divider {
+  width: 1px; height: 24px; margin: 0 2px; flex: 0 0 1px; align-self: center;
+}
+body.phone-layout #tool-bar > .tool-divider { display: none; }
+body.touch-ui.tablet-layout #tool-bar #tool-overflow-btn,
+body.phone-layout #tool-bar #tool-overflow-btn { margin-left: auto; order: 999; flex: 0 0 auto; }
+/* === /TUX-013 === */

@@ -1,6 +1,9 @@
+const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
-const { tap, longPress, hitArea, touchPhase } = require('../helpers/touch');
+const { tap, longPress, hitArea, touchPhase, engineSupports } = require('../helpers/touch');
+
+const EVIDENCE_013 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-013';
 
 // TUX-014: tool sub-menus open by tap / long-press and stay open (touch path).
 // TUX-013 and TUX-015 append their toolbar specs to this file later.
@@ -299,4 +302,189 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
       await check();
     });
   }
+});
+
+// ── TUX-013: one-row tool rail with ⋯ overflow ───────────────────────────────
+// Pre-fix values measured on the gated base (touch/integration + TUX-001/006):
+//   rail h: iPadP 204, iPhP 254, iPhP-c 254, iPhL 204. viewport-container h: iPadP 852, iPhP 493, iPhP-c 369.
+// Requirement amendment (adjudicator): tablet-layout rail <= 64 px, phone-layout <= 52 px (border counted);
+// iPhL/iPhL-c belong to TUX-007 and must not get worse (the shared phone rule gives <= 52 there for free).
+const RAIL_BASE = {
+  iPadP: { rail: 204, vc: 852, max: 64 },
+  iPhP: { rail: 254, vc: 493, max: 52 },
+  'iPhP-c': { rail: 254, vc: 369, max: 52 },
+};
+const railMetrics = (page) => page.evaluate(() => {
+  const rail = document.getElementById('tool-bar');
+  const rr = rail.getBoundingClientRect();
+  const visible = [...rail.querySelectorAll('.tool-btn')].filter((b) => b.offsetParent !== null && !b.classList.contains('hidden'));
+  const tops = visible.map((b) => b.getBoundingClientRect().top);
+  const wide = [...rail.children].filter((c) => c.getBoundingClientRect().width > 0 && c.getBoundingClientRect().width > rr.width * 0.5)
+    .map((c) => `${c.className}:${Math.round(c.getBoundingClientRect().width)}`);
+  const vis = (el) => !!el && el.offsetParent !== null && el.getBoundingClientRect().width > 0 && getComputedStyle(el).visibility !== 'hidden';
+  return {
+    h: rr.height, w: rr.width, n: visible.length,
+    topSpread: tops.length ? Math.max(...tops) - Math.min(...tops) : 0,
+    wide,
+    footer: vis(rail.querySelector('.toolbar-footer')), handle: vis(rail.querySelector('.toolbar-drag-handle')),
+    scrollW: rail.scrollWidth, clientW: rail.clientWidth,
+    vc: document.getElementById('viewport-container').getBoundingClientRect().height,
+  };
+});
+const assertOneRow = (m, dev, label) => {
+  const base = RAIL_BASE[dev];
+  expect(m.h, `${label}: rail height`).toBeLessThanOrEqual(base.max);
+  expect(m.topSpread, `${label}: all visible .tool-btn share one row`).toBeLessThanOrEqual(2);
+  expect(m.wide, `${label}: no rail child wider than 50% of the rail`).toEqual([]);
+};
+
+test.describe('TUX-013 one row', () => {
+  const portrait = (testInfo) => {
+    const dev = PROJECTS[testInfo.project.name]?.device;
+    return RAIL_BASE[dev] ? dev : null;
+  };
+  const load = async (page) => {
+    await page.goto('/');
+    await page.waitForSelector('#tool-bar .tool-btn');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && document.getElementById('tool-overflow-btn')));
+    // TUX-008 (pane defaults) owns closing the side panes on tablet. Until it lands the open
+    // panes overlay the rail edges, so close them here (the state TUX-008 produces) to keep
+    // rail occlusion failures attributable to TUX-013 only.
+    await page.evaluate(() => {
+      document.body.classList.add('auto-collapsed');
+      document.querySelectorAll('#left-pane, #right-pane').forEach((p) => p.classList.add('pane-collapsed'));
+    });
+    await sleep(300);
+  };
+
+  test('one row, short rail, no footer or handle, overflow pinned', async ({ page }, testInfo) => {
+    const dev = portrait(testInfo);
+    test.skip(!dev, 'portrait projects only');
+    await load(page);
+    const m = await railMetrics(page);
+    assertOneRow(m, dev, 'initial');
+    expect(m.footer, 'footer hidden').toBe(false);
+    expect(m.handle, 'drag handle hidden').toBe(false);
+    expect(m.scrollW, 'no horizontal scroll').toBeLessThanOrEqual(m.clientW + 1);
+    // every visible tool is a 44 px target
+    for (const sel of await page.locator('#tool-bar .tool-btn:visible').evaluateAll((els) => els.map((e) => (e.id ? `#${e.id}` : `.tool-btn[data-tool="${e.dataset.tool}"]`)))) {
+      const a = await hitArea(page, sel);
+      expect(a.w, `${sel} hit width`).toBeGreaterThanOrEqual(44);
+      expect(a.h, `${sel} hit height`).toBeGreaterThanOrEqual(44);
+    }
+    const ov = await page.evaluate(() => {
+      const b = document.getElementById('tool-overflow-btn');
+      const r = b.getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { l: r.left, r: r.right, ok: t === b || b.contains(t), iw: innerWidth };
+    });
+    expect(ov.l).toBeGreaterThanOrEqual(0);
+    expect(ov.r).toBeLessThanOrEqual(ov.iw);
+    expect(ov.ok, 'overflow button hit-testable').toBe(true);
+    // the canvas region grows by at least 100 px versus the pre-fix value
+    expect(m.vc, 'viewport-container grows').toBeGreaterThan(RAIL_BASE[dev].vc + 100);
+    await fs.promises.mkdir(EVIDENCE_013, { recursive: true });
+    await page.screenshot({ path: `${EVIDENCE_013}/${dev}${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
+  });
+
+  test('a 12th item (light tool) still fits one row', async ({ page }, testInfo) => {
+    const dev = portrait(testInfo);
+    test.skip(!dev, 'portrait projects only');
+    await load(page);
+    await page.evaluate(() => document.getElementById('btn-light-source')?.classList.remove('hidden'));
+    const m = await railMetrics(page);
+    assertOneRow(m, dev, 'with light tool');
+    expect(m.scrollW).toBeLessThanOrEqual(m.clientW + 1);
+  });
+
+  test('every drawer tool is reachable and overflow shows pressed when the active tool is off the rail', async ({ page }, testInfo) => {
+    const dev = portrait(testInfo);
+    test.skip(!dev, 'portrait projects only');
+    await load(page);
+    const tools = await page.evaluate(() => {
+      const defs = window.app.ui.getSharedToolbarDefinitions();
+      return window.Vectura.TOOL_DRAWER.categories.flatMap((c) => c.tools.map((t) => {
+        const slot = t.id === 'light-source' ? '#btn-light-source'
+          : `.tool-btn[data-tool="${(defs[t.id] && defs[t.id].submenuKind) || t.activate.tool || t.id}"]`;
+        return { id: t.id, tool: t.activate.tool || null, slot, cat: c.id };
+      }));
+    });
+    expect(tools.length).toBeGreaterThan(15);
+    let offRail = 0;
+    for (const t of tools) {
+      const onRail = await page.evaluate((slot) => {
+        const el = document.querySelector(slot);
+        if (!el || el.offsetParent === null || el.classList.contains('hidden')) return false;
+        const r = el.getBoundingClientRect();
+        if (r.left < 0 || r.right > innerWidth) return false;
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return top === el || el.contains(top);
+      }, t.slot);
+      if (onRail) continue;
+      offRail += 1;
+      await page.evaluate(() => { window.Vectura.UI.ToolDrawer.close(); window.app.ui.setActiveTool('select'); });
+      await tap(page, page.locator('#tool-overflow-btn'));
+      const item = page.locator(`.tool-drawer-item[data-tool-id="${t.id}"]`);
+      await expect(item, `drawer lists ${t.id}`).toBeVisible();
+      await tap(page, item);
+      if (t.tool) {
+        await expect.poll(() => page.evaluate(() => window.app.ui.activeTool), `${t.id} activates`).toBe(t.tool);
+        const slotHidden = await page.evaluate((slot) => { const el = document.querySelector(slot); return !el || el.offsetParent === null; }, t.slot);
+        if (slotHidden) {
+          await page.evaluate(() => window.Vectura.UI.ToolDrawer.close());
+          expect(await page.locator('#tool-overflow-btn').getAttribute('aria-pressed'), `${t.id}: overflow pressed`).toBe('true');
+        }
+      }
+    }
+    expect(offRail, 'phone layout moves some tools to overflow').toBeGreaterThanOrEqual(dev === 'iPadP' ? 0 : 3);
+    // back on a rail tool: no longer pressed
+    await page.evaluate(() => { window.Vectura.UI.ToolDrawer.close(); window.app.ui.setActiveTool('select'); });
+    expect(await page.locator('#tool-overflow-btn').getAttribute('aria-pressed')).not.toBe('true');
+  });
+
+  test('rail adds no top safe-area inset', async ({ page }, testInfo) => {
+    const dev = portrait(testInfo);
+    test.skip(!dev || !engineSupports(page, 'cdp'), 'Chromium portrait only');
+    await load(page);
+    try {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 62, bottom: 34 } });
+    } catch (e) { /* fall back to the CSSOM check below */ }
+    await sleep(200);
+    const pt = await page.evaluate(() => parseFloat(getComputedStyle(document.getElementById('tool-bar')).paddingTop));
+    expect(pt).toBeLessThanOrEqual(8);
+    const m = await railMetrics(page);
+    expect(m.h).toBeLessThanOrEqual(RAIL_BASE[dev].max);
+  });
+});
+
+test.describe('TUX-013 guards', () => {
+  test('touch-wide keeps the floating rail with pin and home controls', async ({ page }, testInfo) => {
+    test.skip(PROJECTS[testInfo.project.name]?.device !== 'iPadL', 'iPad landscape only');
+    await page.goto('/');
+    await page.waitForSelector('#tool-bar .tool-btn');
+    const g = await page.evaluate(() => {
+      const rail = document.getElementById('tool-bar');
+      const vis = (s) => { const e = rail.querySelector(s); return !!e && e.offsetParent !== null && e.getBoundingClientRect().width > 0; };
+      return { pos: getComputedStyle(rail).position, home: vis('.toolbar-home-btn'), pin: vis('.toolbar-pin-btn'),
+        label: rail.querySelector('.toolbar-home-btn')?.getAttribute('aria-label'),
+        overflowed: rail.querySelectorAll('.rail-overflowed').length };
+    });
+    expect(g.pos).not.toBe('static');
+    expect(g.home).toBe(true);
+    expect(g.pin).toBe(true);
+    expect(g.label).toBe('Reset toolbar position');
+    expect(g.overflowed).toBe(0);
+  });
+
+  test('phone landscape rail does not get worse (TUX-007 owns the stricter budget)', async ({ page }, testInfo) => {
+    test.skip(PROJECTS[testInfo.project.name]?.device !== 'iPhL', 'iPhone landscape only');
+    await page.goto('/');
+    await page.waitForSelector('#tool-bar .tool-btn');
+    await sleep(300);
+    const h = await page.evaluate(() => document.getElementById('tool-bar').getBoundingClientRect().height);
+    expect(h).toBeLessThanOrEqual(204); // measured pre-fix 874x204
+    // The shared phone rule reaches <= 52 here for free; assert it so a regression shows.
+    expect(h).toBeLessThanOrEqual(52);
+  });
 });

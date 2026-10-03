@@ -132,4 +132,14 @@
       },
     ],
   };
+
+  // TUX-013: which rail slots (the `data-tool` of each top-level rail button) stay
+  // on the one-row rail per layout class. Everything else is reachable through the
+  // trailing "..." All Tools overflow. Static per class; never computed from width.
+  // phone: 6 slots + overflow = 7 x 44 + 6 x 6 + 24 padding = 368 px (fits a 375 px iPhone mini).
+  // tablet: every slot (incl. the petalis light tool) fits an 834 px rail in one row.
+  Vectura.TOOL_RAIL = {
+    phone: ['select', 'direct', 'pen', 'shape', 'fill', 'type'],
+    tablet: ['select', 'direct', 'lasso', 'type', 'shape', 'algo-draw', 'hand', 'pen', 'fill', 'scissor', 'light-source'],
+  };
 })();

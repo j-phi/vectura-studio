@@ -73,3 +73,40 @@ test.describe('All Tools drawer', () => {
     expect(pageErrors).toEqual([]);
   });
 });
+
+// TUX-013 desktop guard: the one-row touch rail must not change desktop or fine-pointer windows.
+// Baselines measured on the pre-fix base: 1600x1000 rail 52x477 absolute; 800x900 fine pointer rail 800x174 static.
+test.describe('TUX-013 desktop parity', () => {
+  const railState = (page) => page.evaluate(() => {
+    const rail = document.getElementById('tool-bar');
+    const r = rail.getBoundingClientRect();
+    const f = rail.querySelector('.toolbar-footer').getBoundingClientRect();
+    const h = rail.querySelector('.toolbar-drag-handle').getBoundingClientRect();
+    return { w: r.width, h: r.height, pos: getComputedStyle(rail).position, footerW: f.width, footerH: f.height,
+      handleH: h.height, overflowed: rail.querySelectorAll('.rail-overflowed').length, touchUi: document.body.classList.contains('touch-ui') };
+  });
+  test('1600x1000 vertical rail is unchanged', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#tool-bar .tool-btn');
+    await page.waitForTimeout(600);
+    const s = await railState(page);
+    expect(s.touchUi).toBe(false);
+    expect(Math.round(s.w)).toBe(52);
+    expect(Math.abs(s.h - 477)).toBeLessThanOrEqual(1);
+    expect(s.pos).toBe('absolute');
+    expect(s.footerH).toBeGreaterThan(0);
+    expect(s.handleH).toBeGreaterThan(0);
+    expect(s.overflowed).toBe(0);
+  });
+  test('800x900 fine-pointer window keeps its pre-fix rail', async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.goto('/');
+    await page.waitForSelector('#tool-bar .tool-btn');
+    await page.waitForTimeout(600);
+    const s = await railState(page);
+    expect(s.touchUi).toBe(false);
+    expect(Math.abs(s.h - 174)).toBeLessThanOrEqual(1);
+    expect(s.footerH).toBeGreaterThan(0);
+    expect(s.overflowed).toBe(0);
+  });
+});

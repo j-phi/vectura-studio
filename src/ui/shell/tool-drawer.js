@@ -90,6 +90,27 @@
     return `.tool-btn[data-tool="${railTool}"]`;
   };
 
+  // TUX-013 R5: the rail slot that owns the active tool. When that slot is hidden by
+  // the priority-plus rail, the overflow button shows pressed.
+  const railSlotOf = (tool) => {
+    const t = `${tool || ''}`;
+    if (t.startsWith('shape-') || t === 'shape') return 'shape';
+    if (t === 'fill' || t.startsWith('fill-')) return 'fill';
+    return t;
+  };
+  const syncRailState = () => {
+    const d = doc();
+    const btn = state.overflowBtn || (d && d.getElementById('tool-overflow-btn'));
+    if (!d || !btn) return;
+    const tool = state.ui && state.ui.activeTool;
+    const slot = tool ? d.querySelector(`#tool-bar .tool-btn[data-tool="${railSlotOf(tool)}"]`) : null;
+    const hidden = !!(slot && slot.closest('.rail-overflowed'));
+    state.railActive = hidden;
+    btn.classList.toggle('active', hidden || state.open);
+    if (hidden) btn.setAttribute('aria-pressed', 'true');
+    else btn.removeAttribute('aria-pressed');
+  };
+
   const clearHighlight = () => {
     if (state.highlighted) {
       state.highlighted.classList.remove('tool-drawer-rail-highlight');
@@ -99,7 +120,9 @@
   const applyHighlight = (selector) => {
     clearHighlight();
     const d = doc();
-    const el = d && selector ? d.querySelector(selector) : null;
+    let el = d && selector ? d.querySelector(selector) : null;
+    // TUX-013: a slot moved to overflow has no visible rail button; mark the overflow button instead.
+    if (el && el.closest('.rail-overflowed')) el = state.overflowBtn || null;
     if (el) {
       el.classList.add('tool-drawer-rail-highlight');
       state.highlighted = el;
@@ -312,6 +335,7 @@
     }
     state.overflowBtn?.classList.remove('active');
     state.overflowBtn?.setAttribute('aria-expanded', 'false');
+    syncRailState();
   };
 
   const toggle = (ui) => { if (state.open) close(); else open(ui); };
@@ -372,17 +396,20 @@
         // Re-attach after a toolbar rebuild: re-inject the button + rebuild body.
         injectOverflowButton(ui);
         buildDrawer(ui);
+        syncRailState();
         return;
       }
       injectOverflowButton(ui);
       buildDrawer(ui);
       bindDocHandlers();
       state.attached = true;
+      syncRailState();
     },
     open,
     close,
     toggle,
     setView,
+    syncRailState,
     isOpen: () => state.open === true,
     getView: () => state.view,
     // Test/introspection hook.
