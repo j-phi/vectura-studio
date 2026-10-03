@@ -14577,3 +14577,123 @@ body.phone-layout #settings-panel.open {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s;
 }
 /* === END TUX-005 === */
+
+/* === TUX-007: phone landscape canvas ===
+ * Short coarse-pointer phones (iPhone landscape, 874x402 and 874x330). Every rule is keyed on
+ * body.phone-layout.phone-short (set by Vectura.LayoutClassifier, the only short-height decision).
+ * Two classes plus an id outrank the single-class `body.mobile-layout #...` rules earlier in this
+ * file, and this block sits last, so each override below wins on specificity AND order.
+ * Nothing is hidden: the rail, modifier bar, formula pane and zoom readout stay reachable. */
+body.phone-layout.phone-short {
+  --tux7-rail-h: 52px;
+  --tux7-sliver: var(--pane-collapsed-width, 40px);
+}
+/* Rail: ONE horizontal row <= 52 px. Beats `body.mobile-layout #tool-bar` (static, flex-wrap, full
+ * width) and any persisted vertical/docked class. Overflow scrolls horizontally inside the rail. */
+body.phone-layout.phone-short #tool-bar {
+  position: static;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  /* The rail sits BETWEEN the two pane slivers (and the insets) so the sliver toggles stay tappable. */
+  width: auto;
+  margin-left: calc(var(--safe-left) + var(--tux7-sliver));
+  margin-right: calc(var(--safe-right) + var(--tux7-sliver));
+  max-width: none;
+  height: var(--tux7-rail-h);
+  max-height: var(--tux7-rail-h);
+  box-sizing: border-box;
+  /* 52 px = 4 + 44 + 3 padding + 1 px border: the 44 px buttons land on whole pixels. */
+  padding: 4px 6px 3px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+/* Modifier bar: a slim column on the right edge, left of the right pane sliver. Beats
+ * `body.mobile-layout #touch-modifier-bar` (static, full width, order 4) and the `.hidden` override
+ * that forces display:flex. Behavior and labels are unchanged (TUX-045 owns the redesign). */
+body.phone-layout.phone-short #touch-modifier-bar {
+  position: absolute;
+  top: calc(var(--tux7-rail-h) + 2px);
+  right: calc(var(--safe-right) + var(--tux7-sliver) + 6px);
+  bottom: auto;
+  left: auto;
+  width: 52px;
+  /* 5 x 44 px buttons + padding + border must fit the 286 px shell of the 874x330 device. */
+  max-height: calc(100% - var(--tux7-rail-h) - 4px);
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  overflow-y: auto;
+  scrollbar-width: none;
+  z-index: 45;
+}
+body.phone-layout.phone-short #touch-modifier-bar .touch-mod-btn {
+  flex: 0 0 44px;
+  width: 46px;
+  height: 44px;
+  padding: 0;
+}
+/* Formula pane: no reserved row. Collapsed it is a 48x48 chip over the canvas bottom-left, inside the
+ * left sliver and the inset; expanded it is an overlay sheet. Beats `body.mobile-layout #bottom-pane`
+ * (relative, order 3, 32 px / 38vh height). */
+body.phone-layout.phone-short #bottom-pane {
+  position: absolute;
+  left: calc(var(--safe-left) + var(--tux7-sliver) + 8px);
+  bottom: calc(8px + var(--safe-bottom));
+  z-index: 46;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+}
+body.phone-layout.phone-short #bottom-pane.bottom-pane-collapsed {
+  width: 48px;
+  height: 48px;
+}
+body.phone-layout.phone-short #bottom-pane.bottom-pane-collapsed .bottom-pane-header {
+  position: static;
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+body.phone-layout.phone-short #bottom-pane.bottom-pane-collapsed .pane-toggle-bottom {
+  position: absolute;
+  inset: 0;
+  left: 0;
+  width: 48px;
+  height: 48px;
+  transform: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+body.phone-layout.phone-short #bottom-pane:not(.bottom-pane-collapsed) {
+  left: calc(var(--safe-left) + var(--tux7-sliver) + 8px);
+  right: calc(var(--safe-right) + var(--tux7-sliver) + 8px);
+  width: auto;
+  height: min(60%, 220px);
+}
+/* Status strip: an overlay, not a row. It keeps the hints and the zoom readout (pointer-events none, so it
+ * never intercepts a canvas touch). It sits between the formula chip and the right sliver and, like any
+ * bottom chrome, carries the bottom inset in its own padding (TUX-005 contract). */
+body.phone-layout.phone-short .hud-bar {
+  position: absolute;
+  left: calc(var(--safe-left) + var(--tux7-sliver) + 64px);
+  right: calc(var(--safe-right) + var(--tux7-sliver) + 64px);
+  bottom: 0;
+  min-height: 0;
+  padding: 2px 8px calc(2px + var(--safe-bottom));
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: color-mix(in srgb, var(--ui-panel) 80%, transparent);
+  pointer-events: none;
+  z-index: 44;
+}
+/* === END TUX-007 === */

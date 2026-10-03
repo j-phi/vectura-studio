@@ -112,8 +112,10 @@
         document.body.dataset.layout = layout;
       }
       const isMobileLayout = layout === 'phone' || layout === 'tablet';
-      // TUX-008 owns the auto-collapse threshold; leave as-is here.
-      const shouldAuto = window.innerWidth < 640;
+      // TUX-008 owns the auto-collapse threshold. TUX-007 only adds the short-phone case (874x402
+      // must start with both panes closed); the classifier owns the decision.
+      const shortPhone = document.body.classList.contains('phone-short');
+      const shouldAuto = window.innerWidth < 640 || shortPhone;
       document.body.classList.toggle('auto-collapsed', shouldAuto);
       applyMobBarVisibility(isMobileLayout);
       if (bottomPane && isMobileLayout && !mobileLayoutDefaultApplied) {

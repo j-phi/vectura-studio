@@ -2463,6 +2463,17 @@
     wideMinWidth: 900,
   };
 
+  // TUX-007: canvas view-scale limits. Only Renderer.center() reads minScale today; TUX-020 wires the
+  // pinch (renderer updateTouchGesture) and wheel clamps to the same pair. fitMargin is the paper
+  // margin (px) kept around the fit; fitMarginMaxFraction caps it to a share of each axis so tiny
+  // containers still get a positive scale.
+  window.Vectura.VIEW = {
+    minScale: 0.1,
+    maxScale: 1000,
+    fitMargin: 60,
+    fitMarginMaxFraction: 0.1,
+  };
+
   window.Vectura.SETTINGS = {
     uiTheme: 'dark',
     margin: 20,

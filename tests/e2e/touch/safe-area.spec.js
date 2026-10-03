@@ -57,9 +57,16 @@ const installHelpers = (page) => page.evaluate(() => {
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return !!hit && (hit === el || el.contains(hit));
   };
-  const chrome = () => ['#hud-bar', '#touch-modifier-bar']
-    .map((s) => document.querySelector(s))
-    .filter((e) => e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0 && inFlow(e));
+  // TUX-007: on a short phone (iPhone landscape) every strip is an overlay, so nothing is in flow. The
+  // status strip (#hud-bar) is then the bottom-most chrome and carries the bottom inset itself.
+  const chrome = () => {
+    const shown = ['#hud-bar', '#touch-modifier-bar']
+      .map((s) => document.querySelector(s))
+      .filter((e) => e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0);
+    const flow = shown.filter(inFlow);
+    if (flow.length || !document.body.classList.contains('phone-short')) return flow;
+    return shown.filter((e) => e.id === 'hud-bar');
+  };
   window.__sa = { isShown, rect, inFlow, INTERACTIVE, hits, chrome };
 });
 
