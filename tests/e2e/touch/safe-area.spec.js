@@ -326,6 +326,33 @@ test.describe('TUX-005 safe-area insets', () => {
     expect(m.bandR, 'right inset band is not an opaque pane').toBe(false);
   });
 
+  test('J closed off-canvas drawers do not paint into the side inset band', async ({ page }) => {
+    if (!P.left && !P.right) return;
+    await inject(page, P);
+    const m = await page.evaluate(() => {
+      const vw = innerWidth;
+      const out = [];
+      document.querySelectorAll('.settings-panel:not(.open)').forEach((el) => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        const painted = cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0;
+        const hitsInBand = [];
+        [[10, 0.3], [10, 0.6], [vw - 10, 0.3], [vw - 10, 0.6]].forEach(([x, fy]) => {
+          const h = document.elementFromPoint(x, innerHeight * fy);
+          if (h && el.contains(h)) hitsInBand.push(x);
+        });
+        out.push({ id: el.id, painted, left: r.left, right: r.right, hitsInBand });
+      });
+      return out;
+    });
+    expect(m.length, 'closed drawers found').toBeGreaterThan(0);
+    for (const d of m) {
+      if (!d.painted) continue;
+      expect(d.right, `${d.id} closed drawer right edge must be off-screen (<= 0)`).toBeLessThanOrEqual(0 + TOL);
+      expect(d.hitsInBand, `${d.id} closed drawer must not paint in the inset band`).toEqual([]);
+    }
+  });
+
   test('I bottom inset survives when the modifier bar is hidden (<= 640 px wide)', async ({ page }) => {
     const narrow = await page.evaluate(() => innerWidth <= 640);
     if (!narrow) return;

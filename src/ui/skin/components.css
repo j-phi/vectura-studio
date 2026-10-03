@@ -14340,4 +14340,17 @@ body.phone-layout #app-header .header-main {
     box-sizing: border-box;
   }
 }
+/* TUX-005: the phone Document Setup sheet is position:fixed with left:var(--safe-left), so the base
+ * translateX(-100%) parks it with its right edge at the inset (62 px on iPhone landscape): the closed
+ * drawer and its close button painted in the left band. Shift by the inset too, and hide it. */
+body.phone-layout #settings-panel:not(.open) {
+  transform: translateX(calc(-100% - var(--safe-left)));
+  visibility: hidden;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 0.3s;
+}
+body.phone-layout #settings-panel.open {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s;
+}
 /* === END TUX-005 === */
