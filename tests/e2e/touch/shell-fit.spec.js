@@ -452,6 +452,90 @@ test.describe('TUX-001 phone header', () => {
   });
 });
 
+const LANDSCAPE_PHONES = ['touch-iphone-landscape', 'webkit-iphone-landscape', 'touch-iphone-landscape-chrome'];
+const PORTRAIT_AND_LANDSCAPE_PHONES = [...PHONE_PROJECTS];
+
+test.describe('TUX-001 phone sub-levels fit the viewport', () => {
+  test.beforeEach(async ({ page }) => { await gotoApp(page); });
+
+  for (const level of ['btn-menu-object', 'btn-menu-file']) {
+    test(`E ${level} level scrolls and its last item is reachable by finger`, async ({ page }, testInfo) => {
+      test.skip(!LANDSCAPE_PHONES.includes(testInfo.project.name), 'phone landscape projects only');
+      const spec = PROJECTS[testInfo.project.name];
+      await touch.tap(page, page.locator('#btn-menu-hamburger'));
+      await expect(page.locator('#phone-menu-sheet')).toBeVisible();
+      await touch.tap(page, page.locator(`#phone-menu-root [data-menu-target="${level}"]`));
+      const panel = page.locator('.top-menu-panel.open');
+      await expect(panel).toBeVisible();
+      const m = await page.evaluate(() => {
+        const p = document.querySelector('.top-menu-panel.open');
+        const cs = getComputedStyle(p);
+        const r = p.getBoundingClientRect();
+        return { sh: p.scrollHeight, ch: p.clientHeight, oy: cs.overflowY, bottom: r.bottom, vh: innerHeight, top: r.top };
+      });
+      // The panel itself must be inside the viewport and carry the scroll.
+      expect(m.bottom, `${level} panel bottom ${m.bottom} vs viewport ${m.vh}`).toBeLessThanOrEqual(m.vh + 0.5);
+      expect(m.sh, `${level} scrollHeight ${m.sh} must exceed clientHeight ${m.ch} (panel is the scroller)`).toBeGreaterThan(m.ch);
+      expect(['auto', 'scroll']).toContain(m.oy);
+      const lastSel = async () => page.evaluate(() => {
+        const items = [...document.querySelectorAll('.top-menu-panel.open .top-menu-item')].filter((e) => e.getClientRects().length);
+        const el = items[items.length - 1];
+        const r = el.getBoundingClientRect();
+        const t = document.elementFromPoint(r.left + r.width / 2, Math.min(Math.max(r.top + r.height / 2, 0), innerHeight - 1));
+        // A disabled item (e.g. Transform with no selection) has pointer-events:none; the hit then lands on its panel.
+        const panelEl = document.querySelector('.top-menu-panel.open');
+        return { id: el.id || el.textContent.trim(), top: r.top, bottom: r.bottom, vh: innerHeight, hit: !!t && (t === el || el.contains(t) || (el.disabled && panelEl.contains(t))) };
+      });
+      const before = await lastSel();
+      // Finger scroll (native in Chromium). WebKit synthetic touch does not scroll natively, so
+      // fall back to scrollTop there; the scroller assertions above are the real proof.
+      const box = await panel.boundingBox();
+      const from = { x: box.x + box.width / 2, y: box.y + box.height - 20 };
+      const to = { x: from.x, y: box.y + 20 };
+      for (let i = 0; i < 4; i += 1) {
+        if (touch.engineSupports(page, 'nativeDefaultActions')) await touch.drag(page, from, to, { steps: 8 });
+        else await page.evaluate(() => { const p = document.querySelector('.top-menu-panel.open'); p.scrollTop = p.scrollHeight; });
+      }
+      const after = await lastSel();
+      expect(after.bottom, `${level} last item "${after.id}" bottom ${after.bottom} vs viewport ${after.vh}`).toBeLessThanOrEqual(after.vh + 0.5);
+      expect(after.top, `${level} last item top`).toBeGreaterThanOrEqual(0);
+      expect(after.hit, `${level} last item is hit-testable (tappable)`).toBe(true);
+      fs.mkdirSync(TUX1_EVIDENCE, { recursive: true });
+      await page.screenshot({ path: path.join(TUX1_EVIDENCE, `${spec.device}${spec.engine === 'webkit' ? '-webkit' : ''}-${level.replace('btn-menu-', '')}-scrolled.png`) });
+    });
+  }
+});
+
+test.describe('TUX-001 modifier bar glyphs in phone layout', () => {
+  test('G glyphs replace SHIFT/ALT/CMD/CTRL/PAN labels in portrait and landscape', async ({ page }, testInfo) => {
+    test.skip(!PORTRAIT_AND_LANDSCAPE_PHONES.includes(testInfo.project.name), 'phone projects only');
+    const spec = PROJECTS[testInfo.project.name];
+    await gotoApp(page);
+    expect(await page.evaluate(() => document.body.classList.contains('phone-layout'))).toBe(true);
+    const res = await page.evaluate(() => [...document.querySelectorAll('#touch-modifier-bar .touch-mod-btn')].map((b) => {
+      const label = b.querySelector('.touch-mod-label');
+      return {
+        mod: b.dataset.touchMod,
+        before: getComputedStyle(b, '::before').content,
+        labelDisplay: label ? getComputedStyle(label).display : 'none',
+      };
+    }));
+    expect(res.length, 'modifier buttons').toBeGreaterThan(0);
+    for (const r of res) {
+      expect(r.before, `${r.mod} ::before content`).not.toBe('none');
+      expect(r.before, `${r.mod} ::before content`).not.toBe('normal');
+      expect(r.labelDisplay, `${r.mod} text label hidden`).toBe('none');
+    }
+    fs.mkdirSync(TUX1_EVIDENCE, { recursive: true });
+    const bar = page.locator('#touch-modifier-bar');
+    if (await bar.isVisible().catch(() => false)) {
+      await bar.screenshot({ path: path.join(TUX1_EVIDENCE, `${spec.device}${spec.engine === 'webkit' ? '-webkit' : ''}-modifier-glyphs.png`) });
+    } else {
+      await page.screenshot({ path: path.join(TUX1_EVIDENCE, `${spec.device}${spec.engine === 'webkit' ? '-webkit' : ''}-modifier-glyphs.png`) });
+    }
+  });
+});
+
 test.describe('TUX-001 non-phone keeps the inline menubar', () => {
   test('D iPad and wide-touch headers stay inline', async ({ page }, testInfo) => {
     test.skip(!NONPHONE_PROJECTS.includes(testInfo.project.name), 'iPad and wide-touch projects only');
