@@ -8738,8 +8738,6 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
     user-select: none;
     touch-action: manipulation;
   }
-
-  }
 }
 
 @media (max-width: 640px) {
