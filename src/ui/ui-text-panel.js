@@ -1020,10 +1020,15 @@
       regenPending = false;
       flush();
     };
+    let lastWritten = null;      // text this session last wrote; differs => changed from outside (undo/redo)
     const changeText = (t) => {
       if (t === layer.params.text) return false;
+      // Undo/redo (or the canvas) rewrote params.text while a field held focus: the
+      // earlier session entry no longer covers this edit, so start a new one.
+      if (sessionPushed && lastWritten !== null && layer.params.text !== lastWritten) sessionPushed = false;
       if (!sessionPushed) { pushHist(); sessionPushed = true; }
       applyTextOp(t);
+      lastWritten = layer.params.text;
       try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ }
       regenPending = true;
       if (regenTimer) clearTimeout(regenTimer);
@@ -1031,7 +1036,7 @@
       renderSpec();
       return true;
     };
-    const endTextSession = () => { flushRegen(); sessionPushed = false; };
+    const endTextSession = () => { flushRegen(); sessionPushed = false; lastWritten = null; };
 
     // ── editable specimen (preview; inline-editable on fine pointers only) ──
     specTextEl.textContent = layer.params.text || '';
@@ -1061,8 +1066,9 @@
         const te = ui.app && ui.app.textEdit;
         try {
           if (te && typeof te.isActive === 'function' && te.isActive()
-            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) te.end();
+            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) te.end({ refreshPanel: false });
         } catch (_) { /* */ }
+        try { refresh(); } catch (_) { /* */ }
         renderSpec();
       });
       listen(textField, 'input', () => { changeText(textField.value); });

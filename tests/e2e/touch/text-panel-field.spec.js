@@ -86,6 +86,58 @@ const canvasPoint = (page) => page.evaluate(() => {
   return null;
 });
 
+// Fix round: a canvas Type session still live on the same layer must not eat the
+// first tap. Focusing the field used to end() the session, whose refreshPanel rebuilt
+// the panel synchronously inside the focus event and detached the field.
+const liveSessionFlow = async (page, tapField) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.textEdit));
+  await page.evaluate(() => { document.querySelector('.tool-btn[data-tool="type"]').click(); });
+  let pt = null;
+  for (let i = 0; i < 20 && !pt; i += 1) { pt = await canvasPoint(page); if (!pt) await page.waitForTimeout(150); }
+  expect(pt, 'no reachable canvas point').toBeTruthy();
+  await tapField.canvas(pt);
+  await page.waitForFunction(() => window.app.textEdit.isActive());
+  await page.evaluate(() => window.app.textEdit.insertText('Abc'));   // NO textEdit.end()
+  expect(await page.evaluate(() => window.app.textEdit.isActive())).toBe(true);
+  await openLeftPane(page);
+  const field = page.locator(FIELD);
+  await field.scrollIntoViewIfNeeded();
+  const h0 = (await state(page)).hist;
+  const handle = await field.elementHandle();
+  await tapField.field(field);
+  const info = await page.evaluate((el) => ({
+    same: document.activeElement === el,
+    connected: el.isConnected,
+    text: window.app.engine.getActiveLayer().params.text,
+  }), handle);
+  expect(info.connected, 'field detached by a panel rebuild in its own focus event').toBe(true);
+  expect(info.same, 'field not focused after the first tap').toBe(true);
+  expect(info.text).toBe('Abc');
+  await page.keyboard.insertText(' xyz');
+  await page.waitForTimeout(300);
+  expect((await state(page)).text).toBe('Abc xyz');
+  expect(await page.evaluate((el) => document.activeElement === el && el.isConnected, handle)).toBe(true);
+  // Blur: the field session adds exactly one history entry.
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(200);
+  expect((await state(page)).hist - h0).toBe(1);
+};
+
+test.describe('TUX-029 live canvas Type session + Text field', () => {
+  // iPhL-chrome: the canvas stays covered (TUX-007 layout, same cause as the TUX-028
+  // iPhL-chrome cells). Remove the mark when TUX-007 merges.
+  test.beforeEach(async ({}, testInfo) => {
+    test.fail(testInfo.project.name === 'touch-iphone-landscape-chrome', 'TUX-007: no reachable canvas point on iPhL-chrome');
+  });
+  test('first tap on the field keeps it focused and typing works', async ({ page }) => {
+    await liveSessionFlow(page, {
+      canvas: async (pt) => { await touch.tap(page, pt); },
+      field: async (loc) => { await touch.tap(page, loc); },
+    });
+  });
+});
+
 test.describe('TUX-029 Text panel content field', () => {
   // iPhone cells depend on Phase-1 work that has not merged yet:
   //   TUX-001 / TUX-010 (iPhP: 0x0 pane, innerWidth 544) - observed GREEN on the

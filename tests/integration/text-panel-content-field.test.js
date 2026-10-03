@@ -118,18 +118,52 @@ describe('Text panel content field (TUX-029)', () => {
     expect(f.closest('.vtp-specimen')).toBeNull();
   });
 
-  test('T6 focusing the field ends a concurrent canvas session and prunes kernPairs', () => {
-    const end = vi.fn();
-    const layerRef = { id: 'text-1' };
-    const textEdit = { isActive: () => true, getActiveLayer: () => layerRef, end, getCaretIndex: () => 0 };
-    const { container, layer } = mount({ text: 'Hello World', kernPairs: { 5: 12 } }, { app: { textEdit } });
+  test('T6 focusing the field ends a concurrent canvas session WITHOUT detaching the field', () => {
+    // Real controller + a host whose refreshPanel rebuilds the panel the way
+    // app.js does (ui.buildControls). A rebuild inside the focus event detaches the
+    // field being focused, so the first tap would be lost.
+    const { UI, ALGO_DEFAULTS, TextEditController } = window.Vectura;
+    const params = JSON.parse(JSON.stringify(ALGO_DEFAULTS.text));
+    Object.assign(params, { text: 'Hello World', kernPairs: { 5: 12 } });
+    const layer = { id: 'text-1', type: 'text', params, glyphs: [{ sourceIndex: 0 }] };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const pushHistory = vi.fn();
+    let builds = 0;
+    const ui = { app: { pushHistory, regen: vi.fn() }, storeLayerParams: vi.fn(), updateFormula: vi.fn() };
+    const build = () => { container.innerHTML = ''; builds += 1; UI.TextPanel.build(ui, layer, container); };
+    ui.buildControls = build;
+    const te = new TextEditController({ regen: vi.fn(), pushHistory, refreshPanel: build, requestDraw: vi.fn() });
+    ui.app.textEdit = te;
+    build();
+    expect(te.begin(layer, 5)).toBe(true);
+    expect(te.isActive()).toBe(true);
+    const buildsBefore = builds;
     const f = field(container);
     f.focus();
-    expect(end).toHaveBeenCalledTimes(1);
+    expect(te.isActive()).toBe(false);
+    expect(builds).toBe(buildsBefore);              // no synchronous rebuild
+    expect(f.isConnected).toBe(true);
+    expect(document.activeElement).toBe(f);
+    expect(field(container)).toBe(f);
     f.value = 'Hi';
     fire(f, 'input');
     expect(layer.params.text).toBe('Hi');
     Object.keys(layer.params.kernPairs || {}).forEach((k) => expect(Number(k)).toBeLessThan(2));
+  });
+
+  test('T6b undo between inputs starts a new history entry', () => {
+    vi.useFakeTimers();
+    const { container, layer, pushHistory } = mount({ text: 'Abc' });
+    const f = field(container);
+    f.focus();
+    f.value = 'Abcd';
+    fire(f, 'input');
+    expect(pushHistory).toHaveBeenCalledTimes(1);
+    layer.params.text = 'Abc'; // undo rewrote the text while the field kept focus
+    f.value = 'Abcx';
+    fire(f, 'input');
+    expect(pushHistory).toHaveBeenCalledTimes(2);
   });
 
   test('T7 touch-keyboard attributes', () => {

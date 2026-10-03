@@ -148,8 +148,12 @@
      * specimen is SUPPRESSED during a session (to avoid two editors fighting
      * over `params.text`); `refreshPanel` is called here so it re-syncs to the
      * final text exactly once when editing finishes.
+     * `opts.refreshPanel === false` skips that rebuild: the caller (the panel's own
+     * Text field taking focus) is itself part of that panel, and a synchronous
+     * rebuild inside its focus event would detach the field it is focusing.
      */
-    end() {
+    end(opts) {
+      const skipRefresh = !!(opts && opts.refreshPanel === false);
       // Always tear down the timer + window listener, regardless of how the
       // session terminates (Escape, tool-switch, layer removal, undo). end() is
       // idempotent: a second call clears nothing new and re-fires no host hooks.
@@ -190,7 +194,7 @@
           return; // the host owns the resulting panel/redraw refresh
         }
       }
-      if (typeof this.host.refreshPanel === 'function') this.host.refreshPanel(layer);
+      if (!skipRefresh && typeof this.host.refreshPanel === 'function') this.host.refreshPanel(layer);
       if (typeof this.host.requestDraw === 'function') this.host.requestDraw();
       this._emitCaret();
     }
