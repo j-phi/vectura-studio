@@ -6,6 +6,25 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed / Changed (U4a engine defects + Seed)
+- **Seed and RANDOMIZE now drive every scene3d fill.** Seed feeds all hash, jitter and dither
+  sites (stroke wobble, stipple jitter, shadow feather, light-driven dither, mono-law marks) and
+  the golden-ratio phase walks. A new 3D layer is `seedMode:'seeded'`. A saved document with no
+  `seedMode` loads as `'legacy'` and renders byte-identical to before (nine golden scenes
+  verified against the pre-seed base). A Seed edit or RANDOMIZE switches a legacy layer to
+  seeded. Expanded monolith children and bundled presets stay legacy. Both the group and each
+  object leaf fold their own Seed into the salt.
+- **Stroke Fill works on scene-tree objects.** The leaf panel and context bar wrote the child;
+  the compositor read the group. The child's value now reaches its style bag. A default child
+  never shadows a Stroke Fill an older document set on the group.
+- **Three-pen laws keep their pen tier tag** (`meta.penTier`) on the emitted path, so export can
+  route tiers to real pens.
+- **Fixed non-deterministic compose.** `FillBoolean` latched the last failed op in module state;
+  the shadow overlap lattice read a stale error from an earlier compose and dropped its
+  decomposition once (ground fill 85 vs 169 paths). Shadows now clear the latch at build start.
+- **Hot rotation callers use the precomputed rotator** (`scene.js`, `sampleAt`). Output is
+  bit-identical; the rotator itself runs about 60x faster than the legacy rotate in a micro-bench.
+
 ### Performance
 - **3D Scene · Fill Style drags are interactive (U1 pipeline perf).** Rotating an object with
   the gizmo, orbiting the camera, touch-dragging or dragging an Object-panel Style slider now

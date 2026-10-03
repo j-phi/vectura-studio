@@ -179,6 +179,12 @@ const loadVecturaRuntime = async (options = {}) => {
     vm.runInContext(code, context, { filename: absPath });
   });
 
+  // Scene Seed (U4a): the APP gives every NEW 3D layer seedMode 'seeded' with a
+  // random seed, so two engines never render the same scene. Fixture tests rely
+  // on deterministic output, so the harness defaults new layers to 'legacy'
+  // (seed-inert). Seed tests opt back in with `{ sceneSeedMode: 'seeded' }`.
+  if (window.Vectura) window.Vectura.SCENE_SEED_NEW_LAYER_MODE = options.sceneSeedMode || 'legacy';
+
   return {
     window,
     document: window.document,

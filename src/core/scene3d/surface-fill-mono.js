@@ -38,6 +38,8 @@
   const clamp = (val, lo, hi) => Math.max(lo, Math.min(hi, Number(val) || 0));
   const finite = (val, f = 0) => (Number.isFinite(Number(val)) ? Number(val) : f);
   const GOLDEN = 0.6180339887498949;
+  // Scene Seed (geometry3d.js): phase is 0 for a legacy layer ⇒ `x + 0` is exact.
+  const SEED = (Vectura.Geometry3D && Vectura.Geometry3D.SEED) || { salt: 0, phase: 0, off: 0 };
 
   /* THE WRAP TERM. `sampleAt` already publishes `nz` — the CAMERA-SPACE
    * normal's z component, 1 dead-on to the camera and exactly 0 ON the
@@ -1426,7 +1428,7 @@
       const clear = cnt ? sum / cnt : C.PMAX;
       // THE PHASE DITHER. Amplitude is a fifth of the local clearance, so the
       // family's mean spacing is untouched and its spectrum is whitened.
-      const u = ((li + 1) * GOLDEN) % 1;
+      const u = ((li + 1) * GOLDEN + SEED.phase) % 1;
       const jit = (u - 0.5) * clear * 0.40;
       const pts = probe.map((p) => ({ x: p.x + vx * jit, y: p.y + vy * jit }));
       C.emitScr(pts);
@@ -1481,7 +1483,7 @@
       let pts = [];
       // The mark phase is offset per ruling by the golden ratio, so the mark
       // ends never line up into a cross-grain.
-      const ph0 = ((li * GOLDEN) % 1);
+      const ph0 = ((li * GOLDEN + SEED.phase) % 1);
       for (let k = 0; k <= NS; k++) {
         const t = -half + (2 * half) * (k / NS);
         const x = cx + vx * off + ux * t;
@@ -1550,7 +1552,7 @@
         const lit = clamp(finite(s.I, 0), 0, 1);
         const e = lit * lit * (3 - 2 * lit);
         // Stagger the ends by a low-discrepancy offset per ruling.
-        const st = (((li * GOLDEN) % 1) - 0.5) * P * 2.2;
+        const st = (((li * GOLDEN + SEED.phase) % 1) - 0.5) * P * 2.2;
         return clamp(e * spanMM * 0.42 + st, 0, spanMM * 0.46);
       };
       const a0 = t0 + retract(t0 + spanMM * 0.06);

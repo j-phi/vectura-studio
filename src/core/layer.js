@@ -46,6 +46,10 @@
       this.name = name;
       this.params = factoryParams(type);
       this.params.seed = Math.floor(Math.random() * 99999);
+      // Scene Seed: a NEW 3D layer draws from its Seed. Saved documents never
+      // reach this value — importState replaces params and marks a layer with no
+      // seedMode 'legacy' (see engine.js sanitizeImportedParams).
+      if (type === 'scene3d' || type === 'object3d' || type === 'booleanGroup3d') this.params.seedMode = window.Vectura?.SCENE_SEED_NEW_LAYER_MODE === 'legacy' ? 'legacy' : 'seeded';
       this.params.posX = 0;
       this.params.posY = 0;
       this.params.scaleX = 1;

@@ -16,6 +16,39 @@
   const degToRad = (deg) => (finite(deg) * Math.PI) / 180;
   const lerp = (a, b, t) => a + (b - a) * t;
 
+  // ── Scene Seed (U4a) ───────────────────────────────────────────────────────
+  // ONE shared, module-level seed state for every hash / jitter / dither site in
+  // the scene3d fill stack (geometry3d strokeHash, mappers hash2, mesh hash01,
+  // shadows hash01, surface-fill sfHash, scene3d ldHash and the golden-ratio
+  // phase walks). `scene3d.generate` sets it per compose / per object and ALWAYS
+  // restores it to zero (see `withSeed`), so nothing leaks between composes.
+  //
+  //   salt   int32 XORed into each hash's input BEFORE its avalanche.
+  //   phase  [0,1) added to the golden-ratio / ladder phase walks.
+  //   off    small int added to the sin-based mesh hash.
+  //
+  // ALL THREE ARE 0 FOR A LEGACY LAYER, and every consumer is written so that 0
+  // is an exact identity (x ^ 0, x + 0): a saved document renders bit-for-bit as
+  // it did before the Seed field was wired.
+  const SEED = { salt: 0, phase: 0, off: 0 };
+  const mix32 = (n) => {
+    let h = Math.imul((n | 0) ^ 0x9e3779b9, 0x85ebca6b);
+    h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+    return h | 0;
+  };
+  // `seeds` null/undefined ⇒ legacy (all zero). Otherwise an array of ints folded
+  // into one non-zero salt, so seed 0 is a real seed and differs from legacy.
+  const setSeedState = (seeds) => {
+    if (!Array.isArray(seeds) || !seeds.length) { SEED.salt = 0; SEED.phase = 0; SEED.off = 0; return; }
+    let h = 0x2545f491;
+    for (let i = 0; i < seeds.length; i += 1) h = mix32(h ^ (Math.round(Number(seeds[i]) || 0) | 0));
+    SEED.salt = h || 1;
+    SEED.phase = (mix32(h ^ 0x68e31da4) >>> 0) / 4294967296;
+    SEED.off = ((mix32(h ^ 0x1b873593) >>> 0) % 9973) + 1;
+  };
+  const snapshotSeedState = () => ({ salt: SEED.salt, phase: SEED.phase, off: SEED.off });
+  const restoreSeedState = (snap) => { SEED.salt = snap.salt; SEED.phase = snap.phase; SEED.off = snap.off; };
+
   const v = (x = 0, y = 0, z = 0) => ({ x, y, z });
   const add = (a, b) => v(a.x + b.x, a.y + b.y, a.z + b.z);
   const sub = (a, b) => v(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -238,6 +271,7 @@
   // hash01 so wobble is stable across regenerations).
   const strokeHash = (a, b) => {
     let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+    h ^= SEED.salt; // 0 for a legacy layer ⇒ identity
     h ^= h >>> 13;
     h = Math.imul(h, 1274126177);
     h ^= h >>> 16;
@@ -1313,6 +1347,7 @@
     rotatePoint,
     makeRotator,
     rotatePointReference,
+    SEED, setSeedState, snapshotSeedState, restoreSeedState,
     projectPoint,
     pathWithMeta,
     cleanPath,

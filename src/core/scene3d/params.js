@@ -1141,6 +1141,9 @@
       shadow: normalizeObjectShadow(obj.shadow),
       border: normalizeObjectBorder(obj.border),
       emissive: normalizeObjectEmissive(obj.emissive),
+      // Scene Seed — carried ONLY for a seeded object (a legacy object keeps
+      // its exact pre-seed shape).
+      ...(obj.seedMode === 'seeded' ? { seedMode: 'seeded', seed: finite(obj.seed, 0) } : {}),
     };
   };
 
@@ -1240,6 +1243,30 @@
     return !!(isObject(s) && typeof s.mapper === 'string' && s.mapper);
   };
 
+  // Stroke Fill (U4a item 1). `strokeFillStyle` is a LAYER param: the leaf panel
+  // and the context bar write it on the object3d CHILD (identity contract), but
+  // the compositor reads it through the style cascade (`sp.strokeFillStyle ||
+  // p.strokeFillStyle`, scene3d.js) — i.e. off the GROUP — so a tree object's
+  // choice was dead. Carry the child's value into its style bag.
+  //
+  // A new child is born with the default ('spiral'), so a default child must not
+  // shadow a Stroke Fill an older document set on the scene group: the child
+  // wins only when it names a non-default pattern, or when the group has none.
+  // Returns the SAME style object when nothing applies (byte-identical).
+  const withChildStrokeFill = (style, childParams, groupParams) => {
+    const SFS = Vectura.STROKE_FILL_STYLES;
+    const raw = isObject(childParams) ? childParams.strokeFillStyle : undefined;
+    if (typeof raw !== 'string' || !raw) return style;
+    const id = SFS && typeof SFS.resolve === 'function' ? SFS.resolve(raw) : raw;
+    const groupVal = isObject(groupParams) && typeof groupParams.strokeFillStyle === 'string' && groupParams.strokeFillStyle
+      ? groupParams.strokeFillStyle : null;
+    const DEFAULT_ID = SFS && typeof SFS.resolve === 'function' ? SFS.resolve(undefined) : 'spiral';
+    if (id === (groupVal || DEFAULT_ID)) return style; // nothing to add
+    if (id === DEFAULT_ID && groupVal) return style;   // a default child never shadows the group
+    if (isObject(style.params) && style.params.strokeFillStyle === id) return style;
+    return { ...style, params: { ...style.params, strokeFillStyle: id } };
+  };
+
   const collectSceneParams = (groupParams, collected) => {
     const gp = isObject(groupParams) ? groupParams : {};
     const items = Array.isArray(collected) ? collected : [];
@@ -1291,8 +1318,12 @@
           shadow: n.shadow,
           border: n.border,
           emissive: n.emissive,
+          ...(isObject(item.params) && item.params.seedMode === 'seeded'
+            ? { seedMode: 'seeded', seed: finite(item.params.seed, 0) } : {}),
         });
-        if (declaresStyle(item.params)) byObject[item.id] = n.style;
+        if (declaresStyle(item.params)) {
+          byObject[item.id] = withChildStrokeFill(n.style, item.params, gp);
+        }
         if (n.edgeStyles) edgeStylesByObject[item.id] = n.edgeStyles;
         Object.keys(n.faceStyles || {}).forEach((fid) => {
           const full = fid.indexOf('/') >= 0 ? fid : `${item.id}/${fid}`;

@@ -490,8 +490,9 @@
   // re-evaluates the deformers exactly as the standalone layer would. hash01,
   // applyVertexEffects and renderedFace are byte-for-byte the polyhedron.js
   // originals; polyhedron.js now imports them from here.
+  const SEED = G3.SEED || { salt: 0, phase: 0, off: 0 };
   const hash01 = (n) => {
-    const s = Math.sin(n * 127.1) * 43758.5453123;
+    const s = Math.sin((n + SEED.off) * 127.1) * 43758.5453123; // off = 0 for legacy ⇒ identity
     return s - Math.floor(s);
   };
 

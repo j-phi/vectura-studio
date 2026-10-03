@@ -571,6 +571,8 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+
+- **U4a (fill-review): Seed wired to all scene3d fills (legacy migration), tree Stroke Fill, pen-tier tag, compose determinism (stale FillBoolean latch), makeRotator callers.** Deferred: golden-ratio low-discrepancy walks outside the listed sites stay structural; per-tier pen routing at export is U6.
 - **2026-10-02 — Fill-style review U3: Object 3D panel reach (branch `3d-scene/fr-u3`, NOT
   pushed).** Leaf Style tab parity with the scene Style editor through shared row renderers;
   hidden-but-live keys exposed (wobbleScale, overstroke, spiralPitch, contourStep,

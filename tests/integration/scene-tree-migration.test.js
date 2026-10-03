@@ -166,14 +166,6 @@ describe('Scene-tree Increment F — load-time monolith → tree migration', () 
     const engine = new V.VectorEngine();
     const gid = engine.addSceneTree();
     engine.addObjectToScene(gid, 'sphere');
-    // U1 (NEW-3 compose memo): the scene compositor is HISTORY-DEPENDENT in
-    // this file's runtime — measured on the pre-memo branch, two consecutive
-    // composes of a byte-identical input returned 259 then 343 raw paths
-    // (the ground fill doubles: 85 -> 169). Pre-memo, the last compose won;
-    // with the memo, `computeAllDisplayGeometry` reuses the first. Drop the
-    // memo so both engines are compared at the same point in that history.
-    // Root cause is outside the memo (tracked in the U1 report).
-    engine.invalidateSceneCompose();
     engine.computeAllDisplayGeometry();
     const beforeIds = engine.layers.map((l) => l.id).sort();
     const beforePaths = projectPaths(engine.getRenderablePaths(engine.getLayerById(gid)));

@@ -1493,14 +1493,33 @@
   // disclosed non-fix beats a partial one left in the tree. See the report
   // for the full diagnosis.
 
+  // Scene Seed (U4a). Wraps the compositor so the shared seed state
+  // (Geometry3D.SEED) is ALWAYS restored — a seeded compose can never leak its
+  // salt into the next (legacy) one, including on a throw.
+  const generateWithSeedScope = (params, rng, noise, bounds) => {
+    const snap = G3.snapshotSeedState();
+    try {
+      return window.Vectura.AlgorithmRegistry.scene3d.generateScene(params, rng, noise, bounds);
+    } finally {
+      G3.restoreSeedState(snap);
+    }
+  };
+
   window.Vectura.AlgorithmRegistry.scene3d = {
-    generate: (params = {}, rng, noise, bounds = {}) => {
+    generate: (params = {}, rng, noise, bounds = {}) => generateWithSeedScope(params, rng, noise, bounds),
+    generateScene: (params = {}, rng, noise, bounds = {}) => {
       const Params = Vectura.Scene3D.Params;
       const Scene = Vectura.Scene3D.Scene;
       const Edges = Vectura.Scene3D.Edges;
       const HLR = Vectura.Scene3D.HLR;
 
       const p = Params.normalizeParams(params);
+      // Scene Seed — group-level salt (shadows, ground, anything outside the
+      // per-object loop). A layer WITHOUT seedMode:'seeded' is legacy: all-zero
+      // state, bit-identical to the pre-seed hashes.
+      const groupSeeded = p.seedMode === 'seeded';
+      const groupSeeds = groupSeeded ? [p.seed] : null;
+      G3.setSeedState(groupSeeds);
       const scene = Scene.assembleScene(p, bounds);
       // Per-fragment CSG styling: a combined carve borrows the primary solid's
       // id, so each fragment's source-attributed style (Scene3D.Boolean) is
@@ -2980,6 +2999,7 @@
       // per-sample drop dither. Same quantized point → same value, no RNG.
       const ldHash = (a, b) => {
         let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+        h ^= G3.SEED.salt; // Scene Seed — 0 for a legacy layer ⇒ identity
         h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
         return (h >>> 0) / 4294967296;
       };
@@ -3940,6 +3960,12 @@
       const records = scene.ground ? scene.objects.concat([scene.ground]) : scene.objects;
 
       records.forEach((record) => {
+        // Scene Seed — a seeded object folds its own Seed into the salt (and the
+        // group's, when the group is seeded); otherwise it uses the group's.
+        const seedSrc = record.id === 'ground' ? null : objById.get(record.id);
+        G3.setSeedState(seedSrc && seedSrc.seedMode === 'seeded'
+          ? [groupSeeded ? p.seed : -1, 7919, seedSrc.seed]
+          : groupSeeds);
         // Shade THIS record under the scene lights plus every OTHER object's
         // emissive point light (self excluded). Empty emissive list ⇒ p.lights.
         activeLights = emissiveLights.length
@@ -4866,9 +4892,15 @@
                 // Absent (every other law), the meta is untouched and the output
                 // is byte-identical.
                 const rawW = Number(line.weightScale);
-                const lineMeta = (Number.isFinite(rawW) && rawW !== 1)
+                const lineMeta0 = (Number.isFinite(rawW) && rawW !== 1)
                   ? { ...fillMeta, weightScale: round3(clamp(rawW, 0.1, 6)) }
                   : fillMeta;
+                // Three-pen laws tag each run with its pen TIER (0 fine / 1 medium /
+                // 2 broad). Keep it on the emitted path so export can route tiers
+                // to real pens; absent on every other law ⇒ meta untouched.
+                const lineMeta = Number.isInteger(line.penTier)
+                  ? { ...lineMeta0, penTier: line.penTier }
+                  : lineMeta0;
                 emitRuns(clip.runs, lineMeta, hiddenTreatment, null, frontTreat,
                   line.apex === true ? { apexMin: line.apexMin } : undefined);
               }
@@ -5467,6 +5499,7 @@
       // (CONTRACT L4) — cheap ground projection, no FillBoolean union — while a
       // full frame does the clean class union. Both are y≥0-clipped so a caster
       // straddling the receiver still projects a correct footprint.
+      G3.setSeedState(groupSeeds); // Scene Seed — shadows use the group's salt
       if (Shadows && typeof Shadows.build === 'function' && Lighting) {
         const shadowStyleOf = (objectId) => {
           const st = resolveStyle(objectId, null);

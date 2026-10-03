@@ -28,6 +28,7 @@
   const globalScope = typeof window !== 'undefined' ? window : globalThis;
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const G3 = Vectura.Geometry3D || {};
+  const SEED = G3.SEED || { salt: 0, phase: 0, off: 0 };
 
   const finite = G3.finite || ((val, f = 0) => (Number.isFinite(Number(val)) ? Number(val) : f));
   const clamp = G3.clamp || ((val, lo, hi) => Math.max(lo, Math.min(hi, Number(val) || 0)));
@@ -1519,6 +1520,9 @@
     const t = opts.transform || { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
     const rot = { yaw: finite(t.yaw, 0), pitch: finite(t.pitch, 0), roll: finite(t.roll, 0) };
     const cam = opts.camAngles || { yaw: 0, pitch: 0, roll: 0 };
+    // Rotation trig resolved once per build (bit-identical to rotatePoint).
+    const rotObj = G3.makeRotator ? G3.makeRotator(rot) : (pt) => rotatePoint(pt, rot);
+    const rotCam = G3.makeRotator ? G3.makeRotator(cam) : (pt) => rotatePoint(pt, cam);
     const toneOn = Boolean(opts.toneOn && typeof opts.intensityFn === 'function');
     const intensityFn = opts.intensityFn || null;
     // F7 — self-occlusion gate. `null` for a convex object (scene3d.js never
@@ -3352,7 +3356,7 @@
     const adjThreshold = (k, lineIndex, arc) => {
       const base = k + 0.5;
       if (TONE_ALGO !== 'bundleDither') return base;
-      const ph = (Number(lineIndex) || 0) * 0.6180339887498949
+      const ph = (Number(lineIndex) || 0) * 0.6180339887498949 + SEED.phase
         + (finite(arc, 0) / ADJ_DITHER_MM);
       return base + ADJ_DITHER_AMPL * Math.sin(ph * Math.PI * 2);
     };
@@ -4968,7 +4972,7 @@
     // A quantisation step that lands on the same value for every neighbouring
     // ruling is what reads as a band; one that walks is a texture.
     const wDithered = (w, lineIndex) => {
-      const u = ((Number(lineIndex) || 0) * 0.6180339887498949) % 1;
+      const u = ((Number(lineIndex) || 0) * 0.6180339887498949 + SEED.phase) % 1;
       return clamp(w * (1 + W_DITHER * (u - 0.5) * 2), W_MIN, W_MAX);
     };
     // The per-sample weight the emitter records.
@@ -5731,8 +5735,8 @@
       nLocal = mul(nLocal, 1 / nl);
       if (chartOrientation() < 0) nLocal = mul(nLocal, -1); // outward (see chartOrientation)
       const world = applyTransform(p0, t);
-      const wN = normalize(rotatePoint(nLocal, rot));
-      const camN = rotatePoint(wN, cam);
+      const wN = normalize(rotObj(nLocal));
+      const camN = rotCam(wN);
       const scr = projectWorld(world);
       if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
       // Screen-space derivatives of the parameter square. A wrapped family's
@@ -6006,6 +6010,7 @@
     // Deterministic 2D hash (mirrors geometry3d strokeHash) for stippleOut.
     const sfHash = (a, b) => {
       let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+      h ^= SEED.salt; // Scene Seed — 0 for a legacy layer ⇒ identity
       h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
       return (h >>> 0) / 4294967296;
     };
@@ -6403,7 +6408,7 @@
       const w = inkWidth();
       const PMIN = MK_PMIN();
       const li = Number(lineIndex) || 0;
-      const gold = ((li * GOLDEN_STEP) % 1 + 1) % 1;
+      const gold = ((li * GOLDEN_STEP + SEED.phase) % 1 + 1) % 1;
       const parity = ((li % 2) + 2) % 2;
 
       // W-05b — split into a pure function of (sample, along-dir, step-dir,
@@ -7064,7 +7069,7 @@
           const iP5 = iOf(0.5 * aP); const iM5 = iOf(-0.5 * aM);
           const darkPlus = (iP5 != null && iM5 != null) ? (iP5 < iM5) : true;
           const gg = gutter / n;
-          const uu5 = ((k * 0.6180339887498949) % 1 + 1) % 1;
+          const uu5 = ((k * 0.6180339887498949 + SEED.phase) % 1 + 1) % 1;
           const shift = n > 1 ? (uu5 - 0.5) * 0.5 * gg : 0;
           const wts = []; let wsum = 0;
           for (let j = 0; j < n; j += 1) { const wj = MK_TICK_CHAIN_RHO ** j; wts.push(wj); wsum += wj; }
@@ -7863,7 +7868,7 @@
       if (TONE_ALGO === 'strokesGrow') return growLength(cov, vdc2(lineIndex)) > 0.02;
       const prev = ladderPhase.has(key)
         ? ladderPhase.get(key)
-        : (Number.isFinite(seed) ? seed : LADDER_PHASE0);
+        : (Number.isFinite(seed) ? seed : (LADDER_PHASE0 + SEED.phase) % 1);
       const r = ladderStep(prev, cov);
       ladderPhase.set(key, r.phase);
       return r.keep;
@@ -10320,7 +10325,7 @@
           if (prev < 0) {
             const fr = Number(threshold);
             const key = Number.isFinite(fr) ? Math.round((((fr % 1) + 1) % 1) * 4096) : (Number(lineIndex) || 0);
-            tspPh[s] = (key * GOLDEN_STEP) % 1;
+            tspPh[s] = (key * GOLDEN_STEP + SEED.phase) % 1;
           } else {
             tspPh[s] = tspPh[prev] + (arcMM[s] - arcMM[prev]) / P;
           }
@@ -10450,7 +10455,7 @@
           if (duty[s] < lozStat.dutyMin) lozStat.dutyMin = duty[s];
           if (duty[s] < 0.999) lozStat.dissolved += 1;
         }
-        const phi0 = ((Number(lineIndex) || 0) * GOLDEN_STEP) % 1;
+        const phi0 = ((Number(lineIndex) || 0) * GOLDEN_STEP + SEED.phase) % 1;
         const MARK = (TONE_ALGO === 'lozSwell') ? LZ_SWELL_MM()
           : (TONE_ALGO === 'lozBudget') ? LZ_BUDGET_MM() : LZ_MARK_MM();
         const PERIOD = LZ_PERIOD_MM();
@@ -13024,7 +13029,7 @@
                     ? algoCoverage(smp.I, false, smp, null)
                     : (zone ? zoneCoverage(zone, false) : coverageForSample(smp.I)));
                 if (!ladderKeeps(`stipple|${back ? 'B' : 'F'}|${r}`, clamp(cov, 0, 1),
-                  (r * GOLDEN_STEP) % 1)) continue;
+                  (r * GOLDEN_STEP + SEED.phase) % 1)) continue;
               } else if (STAGE.dither) {
                 const shade = clamp(1 - smp.I, 0, 1);
                 const th = ((r * colsPer + c) % 7) / 7; // scattered dither

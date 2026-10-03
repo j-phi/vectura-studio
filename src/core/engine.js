@@ -471,7 +471,19 @@
     }
     return value;
   };
+  // Scene Seed migration: a saved 3D layer with no `seedMode` predates the wired
+  // Seed field and keeps the legacy hash constants (`seedMode:'legacy'`). Only
+  // an explicit 'seeded' (new layers, a Seed edit, RANDOMIZE) draws from Seed.
+  const SEED_MODE_TYPES = new Set(['scene3d', 'object3d', 'booleanGroup3d']);
   const sanitizeImportedParams = (params, layerType) => {
+    const out = sanitizeImportedParamsCore(params, layerType);
+    if (SEED_MODE_TYPES.has(layerType) && out && typeof out === 'object'
+      && out.seedMode !== 'seeded') {
+      out.seedMode = 'legacy';
+    }
+    return out;
+  };
+  const sanitizeImportedParamsCore = (params, layerType) => {
     if (!params || typeof params !== 'object') return {};
     const defaults = (ALGO_DEFAULTS && ALGO_DEFAULTS[layerType]) || {};
     const sanitized = sanitizeParamTree(params, defaults, { key: null });
@@ -1416,6 +1428,9 @@
         objectLayerIds[obj.id] = cid;
         const child = new Layer(cid, 'object3d', obj.name || `Object ${i + 1}`);
         child.parentId = group.id;
+        // Expansion must not change the look: the child draws from the GROUP's seed
+        // exactly as the monolith did, never its own fresh random one.
+        child.params.seedMode = 'legacy';
         child.params.primitive = obj.primitive || 'box';
         child.params.params = (obj.params && typeof obj.params === 'object') ? { ...obj.params } : {};
         if (obj.transform && typeof obj.transform === 'object') child.params.transform = { ...obj.transform };
@@ -1443,6 +1458,7 @@
         if (!grp || typeof grp !== 'object') return;
         const gid = childIdFor(grp, 'grp', i);
         const bl = new Layer(gid, 'booleanGroup3d', grp.name || `Boolean ${i + 1}`);
+        bl.params.seedMode = 'legacy';
         bl.isGroup = true;
         bl.containerRole = 'boolean';
         bl.groupType = 'boolean';

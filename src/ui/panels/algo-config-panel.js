@@ -4963,7 +4963,11 @@
         } else {
           const parsed = parseFloat(rawValue);
           if (!Number.isFinite(parsed)) return;
-          targets.forEach((layer) => { layer.params[key] = parsed; });
+          targets.forEach((layer) => {
+            layer.params[key] = parsed;
+            // An explicit Seed edit switches a legacy 3D layer to seeded mode.
+            if (key === 'seed' && SEED_MODE_TYPES.has(layer.type)) layer.params.seedMode = 'seeded';
+          });
         }
         // app.regen() only regenerates the active layer's geometry. For multi-
         // selection the other selected layers need an explicit generate() pass
@@ -4996,6 +5000,7 @@
         if (l) {
           if (this.app.pushHistory) this.app.pushHistory();
           l.params.seed = Math.floor(Math.random() * 99999);
+          if (SEED_MODE_TYPES.has(l.type)) l.params.seedMode = 'seeded'; // RANDOMIZE ⇒ seeded
           if (seedInput) seedInput.value = l.params.seed;
           this.app.regen();
           this.recenterLayerIfNeeded(l);
@@ -5009,6 +5014,8 @@
 
   // `toggleSeedControls` reads `getEl` from DEPS (already bound) and
   // identifies seedless algos via the locally-defined SEEDLESS_ALGOS set.
+  // Layer types whose fills draw from Seed only once `params.seedMode === 'seeded'`.
+  const SEED_MODE_TYPES = new Set(['scene3d', 'object3d', 'booleanGroup3d']);
   const SEEDLESS_ALGOS_LIST = ['lissajous', 'harmonograph', 'pendula', 'shape', 'group'];
   function toggleSeedControls(type) {
     const getEl = (DEPS && DEPS.getEl)

@@ -1424,8 +1424,10 @@
 
   // Deterministic [0,1) hash. Feathering must be stable frame to frame or the
   // line ends swim as the camera orbits (same failure the hatch bearing has).
+  const SEED = G3.SEED || { salt: 0, phase: 0, off: 0 };
   const hash01 = (a, b) => {
-    let h = (Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul((b | 0) + 0x9e3779b9, 0x85ebca6b)) >>> 0;
+    // Scene Seed — salt is 0 for a legacy layer, and x ^ 0 is an exact identity.
+    let h = (Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul((b | 0) + 0x9e3779b9, 0x85ebca6b) ^ SEED.salt) >>> 0;
     h ^= h >>> 15; h = Math.imul(h, 0x2545f491) >>> 0; h ^= h >>> 13;
     return (h >>> 0) / 4294967296;
   };
@@ -2774,6 +2776,13 @@
     if (!scene || !scene.ground || !clipper) return out;
     const HLR = Vectura.Scene3D && Vectura.Scene3D.HLR;
     const FillBoolean = Vectura.FillBoolean;
+    // FillBoolean latches the LAST failed op in module state until someone
+    // consumes it. A failure from ANY earlier compose (another scene, a
+    // different engine) would otherwise be read by `boolOk()` below as THIS
+    // build's failure, abandoning the overlap lattice once and then clearing
+    // itself — the same scene composing to 85 paths, then 169 (U4a item 4).
+    // Drop the stale latch so only failures raised inside this build count.
+    if (FillBoolean && typeof FillBoolean.consumeLastOpError === 'function') FillBoolean.consumeLastOpError();
     // build() casts for the ONE light passed in — the caller decides which
     // lights cast (multi-light) and filters out ambient / castShadows:false
     // lights before calling. A positional light supplies opts.lightPosition; a
