@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const touch = require('./helpers/touch');
 
 // Coverage for the smallest commonly-targeted phone viewport (iPhone 13 Mini at
 // 375×812 logical pixels). Validates that the standard toolbar is anchored to
@@ -99,5 +100,14 @@ test.describe('iPhone mini layout — standard toolbar', () => {
       })
     , boxes.map((b) => b.tool));
     expect(occluded, 'tool button centers are not occluded').toEqual([]);
+  });
+
+  test('a finger tap on a tool button activates that tool', async ({ page }) => {
+    const tools = await page.locator('#tool-bar .tool-btn[data-tool]:not(.hidden)').evaluateAll((els) => els.map((e) => e.getAttribute('data-tool')));
+    const current = await page.evaluate(() => window.app.ui.activeTool);
+    const next = tools.find((t) => t !== current && t !== 'select' && !t.startsWith('shape'));
+    expect(next, 'a second tool exists').toBeTruthy();
+    await touch.tap(page, page.locator(`#tool-bar .tool-btn[data-tool="${next}"]`));
+    await expect.poll(() => page.evaluate(() => window.app.ui.activeTool)).toBe(next);
   });
 });

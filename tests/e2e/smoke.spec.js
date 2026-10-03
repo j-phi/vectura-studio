@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const touch = require('./helpers/touch');
 
 const captureActiveLayerGeometry = async (page) =>
   page.evaluate(() => {
@@ -351,32 +352,8 @@ test.describe('Vectura smoke interactions', () => {
       const endX = Math.floor(box.x + box.width * 0.62);
       const endY = Math.floor(box.y + box.height * 0.55);
 
-      await page.dispatchEvent('#main-canvas', 'pointerdown', {
-        pointerType: 'touch',
-        pointerId: 1,
-        isPrimary: true,
-        clientX: startX,
-        clientY: startY,
-        buttons: 1,
-      });
-      // Hold-to-lift: wait for the 350ms hold timer to fire before dragging
-      await page.waitForTimeout(450);
-      await page.dispatchEvent('#main-canvas', 'pointermove', {
-        pointerType: 'touch',
-        pointerId: 1,
-        isPrimary: true,
-        clientX: endX,
-        clientY: endY,
-        buttons: 1,
-      });
-      await page.dispatchEvent('#main-canvas', 'pointerup', {
-        pointerType: 'touch',
-        pointerId: 1,
-        isPrimary: true,
-        clientX: endX,
-        clientY: endY,
-        buttons: 0,
-      });
+      // Hold-to-lift: the 350ms hold timer must fire before the drag moves.
+      await touch.drag(page, { x: startX, y: startY }, { x: endX, y: endY }, { holdMs: 450, steps: 1 });
     } else {
       await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.45);
       await page.mouse.down();

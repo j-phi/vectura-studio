@@ -1,9 +1,21 @@
 // Finger-only touch helpers (TUX-057). Never emits mouse events.
 // Chromium: CDP Input.dispatchTouchEvent (trusted). WebKit: synthetic in-page
 // Touch/Pointer events (proves app logic only; see engineSupports()).
+//
+// Capabilities (engineSupports(page, name)):
+//   trustedMultiTouch     true in Chromium (CDP, isTrusted events); false in WebKit.
+//                         Guard page-zoom / native pinch assertions with it.
+//   cdp                   Chromium only. Helper internal.
+//   maxTouchPoints        true in Chromium; WebKit desktop reports navigator.maxTouchPoints 0.
+//   nativeDefaultActions  true in Chromium; false in WebKit. Untrusted synthetic one-finger
+//                         gestures do not move a range input, scroll a container, or
+//                         synthesize a click in WebKit. Guard slider/scroll/click-from-drag
+//                         REDs with it; never add test.skip for WebKit.
+// WebKit synthetic pointers use ids 100+finger. setPointerCapture on those ids is shimmed
+// (real WebKit throws NotFoundError) and later events for the id route to the capture target.
 const CAPS = {
-  chromium: { trustedMultiTouch: true, cdp: true, maxTouchPoints: true },
-  webkit: { trustedMultiTouch: false, cdp: false, maxTouchPoints: false },
+  chromium: { trustedMultiTouch: true, cdp: true, maxTouchPoints: true, nativeDefaultActions: true },
+  webkit: { trustedMultiTouch: false, cdp: false, maxTouchPoints: false, nativeDefaultActions: false },
 };
 
 const engineOf = (page) => {
@@ -11,8 +23,6 @@ const engineOf = (page) => {
   return name === 'webkit' ? 'webkit' : 'chromium';
 };
 
-// engineSupports(page, 'trustedMultiTouch') -> boolean. Wrap browser-default-action
-// assertions (page zoom, native scroll) in this; never use test.skip for WebKit.
 const engineSupports = (page, capability) => !!CAPS[engineOf(page)][capability];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -29,39 +39,104 @@ const cdpSession = async (page) => {
   return page.__touchCdp;
 };
 
+// Installed in the page (WebKit): synthetic pointer-capture shim. Idempotent.
+const installCaptureShim = () => {
+  if (window.__touchCaptureShim) return;
+  const caps = new Map();
+  window.__touchCaptureShim = { caps };
+  const proto = Element.prototype;
+  const orig = {
+    set: proto.setPointerCapture,
+    release: proto.releasePointerCapture,
+    has: proto.hasPointerCapture,
+  };
+  const synthetic = (id) => id >= 100 && id < 200;
+  const fire = (el, type, id) => queueMicrotask(() => el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: id, pointerType: 'touch' })));
+  proto.setPointerCapture = function setPointerCapture(id) {
+    if (!synthetic(id)) return orig.set.call(this, id);
+    if (!caps.has(id)) throw new DOMException('No active pointer with the given id is found.', 'NotFoundError');
+    caps.set(id, this);
+    fire(this, 'gotpointercapture', id);
+    return undefined;
+  };
+  proto.releasePointerCapture = function releasePointerCapture(id) {
+    if (!synthetic(id)) return orig.release.call(this, id);
+    if (caps.get(id) === this) { caps.set(id, null); fire(this, 'lostpointercapture', id); }
+    return undefined;
+  };
+  proto.hasPointerCapture = function hasPointerCapture(id) {
+    if (!synthetic(id)) return orig.has.call(this, id);
+    return caps.get(id) === this;
+  };
+};
+
+const ensureWebkitShim = async (page) => {
+  if (!page.__touchShim) {
+    page.__touchShim = true;
+    await page.addInitScript(installCaptureShim);
+  }
+  await page.evaluate(installCaptureShim);
+};
+
 // Low-level: dispatch one touch phase for a set of points [{x,y,id}].
-// phase: 'start' | 'move' | 'end' | 'cancel'
+// phase: 'start' | 'move' | 'end' | 'cancel'. 'end'/'cancel' lift ONLY the listed fingers;
+// the others stay down (Chromium: touchPoints = fingers still down).
 const touchPhase = async (page, phase, points) => {
   if (engineSupports(page, 'cdp')) {
     const cdp = await cdpSession(page);
     const type = { start: 'touchStart', move: 'touchMove', end: 'touchEnd', cancel: 'touchCancel' }[phase];
-    await cdp.send('Input.dispatchTouchEvent', {
-      type,
-      touchPoints: phase === 'end' || phase === 'cancel' ? [] : points.map((p) => ({ x: p.x, y: p.y, id: p.id })),
-    });
+    const down = (page.__touchDown = page.__touchDown || new Map());
+    // Measured in Chromium: touchEnd/touchCancel `touchPoints` are the fingers being LIFTED
+    // (listing the survivors lifts them and re-creates the lifted one). touchStart/touchMove
+    // carry every finger that is down.
+    if (phase === 'end' || phase === 'cancel') {
+      points.forEach((p) => down.delete(p.id));
+      await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, id: p.id })) });
+      return;
+    }
+    points.forEach((p) => down.set(p.id, { x: p.x, y: p.y, id: p.id }));
+    await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [...down.values()] });
     return;
   }
+  await ensureWebkitShim(page);
   await page.evaluate(({ phase, points }) => {
     const names = { start: ['pointerdown', 'touchstart'], move: ['pointermove', 'touchmove'], end: ['pointerup', 'touchend'], cancel: ['pointercancel', 'touchcancel'] }[phase];
     const state = (window.__touchHelper = window.__touchHelper || { down: new Map() });
+    const caps = window.__touchCaptureShim.caps;
+    const lifting = phase === 'end' || phase === 'cancel';
     points.forEach((p) => {
+      const pid = 100 + p.id;
       const el = document.elementFromPoint(p.x, p.y) || document.body;
-      const target = phase === 'start' ? el : (state.down.get(p.id) || el);
-      if (phase === 'start') state.down.set(p.id, target);
+      const startTarget = phase === 'start' ? el : (state.down.get(p.id)?.target || el);
+      if (phase === 'start') { state.down.set(p.id, { target: el, x: p.x, y: p.y }); caps.set(pid, null); }
+      else if (state.down.has(p.id)) { const d = state.down.get(p.id); d.x = p.x; d.y = p.y; }
+      const pointerTarget = caps.get(pid) || startTarget;
       const base = { bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, screenX: p.x, screenY: p.y };
-      target.dispatchEvent(new PointerEvent(names[0], {
-        ...base, pointerId: 100 + p.id, pointerType: 'touch', isPrimary: p.id === 0, width: 1, height: 1,
-        pressure: phase === 'end' || phase === 'cancel' ? 0 : 0.5, button: phase === 'move' ? -1 : 0, buttons: phase === 'end' || phase === 'cancel' ? 0 : 1,
+      pointerTarget.dispatchEvent(new PointerEvent(names[0], {
+        ...base, pointerId: pid, pointerType: 'touch', isPrimary: p.id === 0, width: 1, height: 1,
+        pressure: lifting ? 0 : 0.5, button: phase === 'move' ? -1 : 0, buttons: lifting ? 0 : 1,
       }));
-      let touchOk = typeof Touch === 'function' && typeof TouchEvent === 'function';
-      if (touchOk) { try { new Touch({ identifier: 0, target: document.body }); } catch (_) { touchOk = false; } }
-      if (touchOk) {
-        const mk = (q) => new Touch({ identifier: q.id, target: state.down.get(q.id) || target, clientX: q.x, clientY: q.y, screenX: q.x, screenY: q.y, pageX: q.x + scrollX, pageY: q.y + scrollY });
-        const live = phase === 'end' || phase === 'cancel' ? [] : points.map(mk);
-        const changed = [mk(p)];
-        target.dispatchEvent(new TouchEvent(names[1], { ...base, touches: live, targetTouches: live, changedTouches: changed }));
+      // TouchEvent: WebKit has no `new Touch()` (Illegal constructor); use createTouch/createTouchList.
+      const mk = (id, d) => {
+        if (document.createTouch) return document.createTouch(window, d.target, id, d.x + scrollX, d.y + scrollY, d.x, d.y);
+        return new Touch({ identifier: id, target: d.target, clientX: d.x, clientY: d.y, screenX: d.x, screenY: d.y, pageX: d.x + scrollX, pageY: d.y + scrollY });
+      };
+      const list = (arr) => (document.createTouchList ? document.createTouchList(...arr) : arr);
+      const self = { target: startTarget, x: p.x, y: p.y };
+      const live = [...state.down.entries()].filter(([id]) => !(lifting && id === p.id)).map(([id, d]) => mk(id, d));
+      const changed = [mk(p.id, self)];
+      const ev = new TouchEvent(names[1], { bubbles: true, cancelable: true });
+      const own = list(live);
+      Object.defineProperty(ev, 'touches', { value: own });
+      Object.defineProperty(ev, 'targetTouches', { value: list(live.filter((t) => t.target === startTarget)) });
+      Object.defineProperty(ev, 'changedTouches', { value: list(changed) });
+      startTarget.dispatchEvent(ev);
+      if (lifting) {
+        const held = caps.get(pid);
+        state.down.delete(p.id);
+        caps.delete(pid);
+        if (held) held.dispatchEvent(new PointerEvent('lostpointercapture', { bubbles: true, pointerId: pid, pointerType: 'touch' }));
       }
-      if (phase === 'end' || phase === 'cancel') state.down.delete(p.id);
     });
   }, { phase, points });
 };
@@ -151,24 +226,38 @@ async function canvasShare(page, selector = '#main-canvas') {
 
 // hitArea: size of the region around the target centre where elementFromPoint
 // resolves to the target or a descendant (counts ::before extensions).
-// Probes a grid at `probe` CSS px pitch out to `radius` px. Returns { w, h }.
+// Probes a grid at `probe` CSS px pitch out to `radius` px around the centre, flood-fills
+// the owned cells connected to the centre cell, and returns the bounding { w, h } of that region.
 async function hitArea(page, target, { probe = 2, radius = 48 } = {}) {
   const handle = typeof target === 'string' ? await page.locator(target).first().elementHandle() : await target.elementHandle();
   return page.evaluate(({ el, probe, radius }) => {
     const r = el.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
-    const owns = (x, y) => {
-      const t = document.elementFromPoint(x, y);
+    const n = Math.floor(radius / probe);
+    const size = 2 * n + 1;
+    const owned = (i, j) => {
+      const t = document.elementFromPoint(cx + i * probe, cy + j * probe);
       return !!t && (t === el || el.contains(t));
     };
-    const extent = (dx, dy) => {
-      let d = 0;
-      while (d < radius && owns(cx + dx * (d + probe), cy + dy * (d + probe))) d += probe;
-      return d;
-    };
-    if (!owns(cx, cy)) return { w: 0, h: 0 };
-    return { w: extent(-1, 0) + extent(1, 0) + probe, h: extent(0, -1) + extent(0, 1) + probe };
+    if (!owned(0, 0)) return { w: 0, h: 0 };
+    const seen = new Set();
+    const key = (i, j) => (j + n) * size + (i + n);
+    const queue = [[0, 0]];
+    seen.add(key(0, 0));
+    let minI = 0, maxI = 0, minJ = 0, maxJ = 0;
+    while (queue.length) {
+      const [i, j] = queue.pop();
+      minI = Math.min(minI, i); maxI = Math.max(maxI, i); minJ = Math.min(minJ, j); maxJ = Math.max(maxJ, j);
+      [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([di, dj]) => {
+        const a = i + di;
+        const b = j + dj;
+        if (Math.abs(a) > n || Math.abs(b) > n || seen.has(key(a, b))) return;
+        seen.add(key(a, b));
+        if (owned(a, b)) queue.push([a, b]);
+      });
+    }
+    return { w: (maxI - minI + 1) * probe, h: (maxJ - minJ + 1) * probe };
   }, { el: handle, probe, radius });
 }
 
