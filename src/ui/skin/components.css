@@ -13720,7 +13720,7 @@ body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: cent
 #layer-add-menu.is-drill > .lvl-add-back {
   display: flex;
   align-items: center;
-  min-height: 44px;
+  min-height: var(--touch-target-min);
   border-radius: 6px 6px 0 0;
   border-bottom: 1px solid var(--ui-border);
   color: var(--ui-accent);
@@ -13735,12 +13735,12 @@ body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: cent
   border-radius: 0 0 6px 6px;
 }
 #layer-add-menu.is-drill .lvl-algo-sub-item {
-  min-height: 44px;
+  min-height: var(--touch-target-min);
   padding: 0 12px;
   box-sizing: border-box;
 }
 @media (pointer: coarse) {
-  #layer-add-menu > .lvl-add-item { min-height: 44px; }
+  #layer-add-menu > .lvl-add-item { min-height: var(--touch-target-min); }
 }
-#layer-add-menu.is-touch > .lvl-add-item { min-height: 44px; }
+#layer-add-menu.is-touch > .lvl-add-item { min-height: var(--touch-target-min); }
 /* === /TUX-035 === */

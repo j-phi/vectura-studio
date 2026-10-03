@@ -630,6 +630,9 @@
     let lastAddMenuPointerType = 'mouse';
     let drillBack = null;
     let drillList = null;
+    // A finger menu lifts to <body> (position: fixed) so the pane body cannot clip or cover it.
+    const addWrap = addMenuEl ? addMenuEl.parentElement : null;
+    const _dockAddMenu = () => { if (addWrap && addMenuEl.parentElement !== addWrap) addWrap.appendChild(addMenuEl); };
     const _isFingerInput = () => lastAddMenuPointerType === 'touch' || lastAddMenuPointerType === 'pen';
     const _recordPointer = (e) => {
       lastAddMenuPointerType = e.pointerType || 'mouse';
@@ -638,8 +641,11 @@
     addBtn?.addEventListener('pointerdown', _recordPointer, true);
     addMenuEl?.addEventListener('pointerdown', _recordPointer, true);
 
+    // Fit the add menu (parent rows or drill list) inside the visual viewport, the tightest
+    // clipping ancestor and any visible fixed bottom overlay (the touch modifier bar).
     const _fitDrill = () => {
-      if (!addMenuEl || !drillList || !addMenuEl.classList.contains('is-drill')) return;
+      if (!addMenuEl || addMenuEl.classList.contains('hidden')) return;
+      const drilling = addMenuEl.classList.contains('is-drill') && !!drillList;
       const vv = window.visualViewport;
       const vw = vv ? vv.width : window.innerWidth;
       const top = vv ? vv.offsetTop : 0;
@@ -647,31 +653,65 @@
       const PAD = 8;
       let bottom = top + (vv ? vv.height : window.innerHeight) - PAD;
       let clipTop = top + PAD;
-      // The pane body clips absolutely positioned overflow: fit inside the tightest clipping ancestor.
-      for (let el = addMenuEl.parentElement; el && el !== document.body; el = el.parentElement) {
-        const cs = getComputedStyle(el);
-        if (cs.overflowY === 'visible' && cs.overflowX === 'visible') continue;
-        const r = el.getBoundingClientRect();
-        bottom = Math.min(bottom, r.bottom - PAD);
-        clipTop = Math.max(clipTop, r.top + PAD);
+      // The pane body clips absolutely positioned overflow. A finger menu escapes it (position: fixed,
+      // set below); a mouse menu keeps the pane as its limit.
+      const clipLimits = !_isFingerInput();
+      if (clipLimits) {
+        for (let el = addMenuEl.parentElement; el && el !== document.body; el = el.parentElement) {
+          const cs = getComputedStyle(el);
+          if (cs.overflowY === 'visible' && cs.overflowX === 'visible') continue;
+          const r = el.getBoundingClientRect();
+          bottom = Math.min(bottom, r.bottom - PAD);
+          clipTop = Math.max(clipTop, r.top + PAD);
+        }
       }
       const FLOOR = 132;
       addMenuEl.style.transform = '';
+      addMenuEl.style.maxHeight = '';
+      addMenuEl.style.overflowY = '';
+      ['position', 'top', 'left', 'right'].forEach((k) => { addMenuEl.style[k] = ''; });
+      _dockAddMenu();
       addMenuEl.style.width = vw <= 480 ? `${Math.min(vw - 2 * PAD, 280)}px` : '';
-      drillList.style.maxHeight = '';
-      const backH = drillBack ? drillBack.offsetHeight : 44;
-      const chrome = addMenuEl.offsetHeight - drillList.offsetHeight;
-      const m0 = addMenuEl.getBoundingClientRect();
-      const wanted = Math.max(FLOOR, bottom - m0.top - chrome);
-      let shiftY = 0;
-      let listH = Math.min(drillList.scrollHeight, wanted);
-      if (m0.top + chrome + listH > bottom) {
-        // Not enough room below the button: slide the menu up (never above the viewport top).
-        shiftY = Math.min(m0.top + chrome + listH - bottom, Math.max(0, m0.top - clipTop));
-        listH = Math.min(listH, bottom - (m0.top - shiftY) - chrome);
+      if (drilling) drillList.style.maxHeight = '';
+      let m0 = addMenuEl.getBoundingClientRect();
+      if (!clipLimits) {
+        // Anchor where the menu sat, but detach from the clipping pane.
+        document.body.appendChild(addMenuEl);
+        Object.assign(addMenuEl.style, { position: 'fixed', top: `${m0.top}px`, left: `${m0.left}px`, right: 'auto' });
+        m0 = addMenuEl.getBoundingClientRect();
       }
-      listH = Math.max(listH, Math.min(FLOOR, backH * 2));
-      drillList.style.maxHeight = `${Math.floor(listH)}px`;
+      // Fixed bottom overlays (modifier bar) sit above the menu in z-order: treat them as the bottom limit.
+      document.querySelectorAll('.touch-modifier-bar, #touch-modifier-bar').forEach((bar) => {
+        if (bar.classList.contains('hidden')) return;
+        const cs = getComputedStyle(bar);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;
+        const r = bar.getBoundingClientRect();
+        if (r.height > 0 && r.bottom > m0.top && r.top > m0.top) bottom = Math.min(bottom, r.top - PAD);
+      });
+      let shiftY = 0;
+      if (drilling) {
+        const backH = drillBack ? drillBack.offsetHeight : 44;
+        const chrome = addMenuEl.offsetHeight - drillList.offsetHeight;
+        const wanted = Math.max(FLOOR, bottom - m0.top - chrome);
+        let listH = Math.min(drillList.scrollHeight, wanted);
+        if (m0.top + chrome + listH > bottom) {
+          // Not enough room below the button: slide the menu up (never above the viewport top).
+          shiftY = Math.min(m0.top + chrome + listH - bottom, Math.max(0, m0.top - clipTop));
+          listH = Math.min(listH, bottom - (m0.top - shiftY) - chrome);
+        }
+        listH = Math.max(listH, Math.min(FLOOR, backH * 2));
+        drillList.style.maxHeight = `${Math.floor(listH)}px`;
+      } else {
+        const h = addMenuEl.offsetHeight;
+        if (m0.top + h > bottom) {
+          shiftY = Math.min(m0.top + h - bottom, Math.max(0, m0.top - clipTop));
+          const avail = bottom - (m0.top - shiftY);
+          if (h > avail) {
+            addMenuEl.style.maxHeight = `${Math.max(Math.floor(avail), 88)}px`;
+            addMenuEl.style.overflowY = 'auto';
+          }
+        }
+      }
       let shiftX = 0;
       if (m0.left < left + PAD) shiftX = left + PAD - m0.left;
       else if (m0.right > left + vw - PAD) shiftX = left + vw - PAD - m0.right;
@@ -705,12 +745,17 @@
       addMenuEl.classList.remove('is-drill');
       addMenuEl.style.transform = '';
       addMenuEl.style.width = '';
+      addMenuEl.style.maxHeight = '';
+      addMenuEl.style.overflowY = '';
+      ['position', 'top', 'left', 'right'].forEach((k) => { addMenuEl.style[k] = ''; });
+      _fitDrill();
     };
     // Single close path: add menu, drill-down and the mouse fly-out together.
     const closeAddMenu = () => {
       this.layerAddOpen = false;
       addMenuEl?.classList.add('hidden');
       leaveDrill();
+      if (addMenuEl) _dockAddMenu();
       if (algoSubmenuEl.style.display === 'block') algoSubmenuEl.style.display = 'none';
     };
     window.visualViewport?.addEventListener('resize', _fitDrill);
@@ -722,6 +767,7 @@
         else {
           this.layerAddOpen = true;
           addMenuEl?.classList.remove('hidden');
+          _fitDrill();
         }
       };
     }

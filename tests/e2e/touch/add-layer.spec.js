@@ -162,3 +162,52 @@ test('F: no hover-driven DOM change on touch', async ({ page }) => {
   expect(await page.evaluate(() => window.__subMut), 'mutations on #lvl-algo-submenu').toBe(0);
   await expect(page.locator('#lvl-algo-submenu')).toHaveCSS('display', 'none');
 });
+
+// Fix round: every parent row is inside the viewport and nothing covers it; Group adds one group.
+test('G: parent rows fit, are uncovered, and Group adds exactly one group', async ({ page }) => {
+  await openAdd(page);
+  const vp = page.viewportSize();
+  const res = await page.evaluate(({ rows }) => {
+    const out = [];
+    const vvh = window.visualViewport.height;
+    for (const k of rows) {
+      const el = document.querySelector(`#layer-add-menu .lvl-add-item[data-add="${k}"]`);
+      if (!el || el.getClientRects().length === 0) { out.push({ k, missing: true }); continue; }
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      out.push({ k, t: r.top, b: r.bottom, l: r.left, r: r.right, vvh, ok: !!top && (top === el || el.contains(top)), cover: top && (top.id || top.className) });
+    }
+    return out;
+  }, { rows: PARENT_ROWS });
+  for (const r of res) {
+    if (r.missing) continue;
+    expect(r.t, `${r.k} top`).toBeGreaterThanOrEqual(0);
+    expect(r.l, `${r.k} left`).toBeGreaterThanOrEqual(0);
+    expect(r.r, `${r.k} right`).toBeLessThanOrEqual(vp.width);
+    expect(r.b, `${r.k} bottom`).toBeLessThanOrEqual(Math.min(vp.height, r.vvh) + 1);
+    expect(r.ok, `${r.k} covered by ${r.cover}`).toBe(true);
+  }
+  const g0 = await page.evaluate(() => window.app.engine.layers.filter((l) => l.isGroup || l.type === 'group').length);
+  const n0 = await layerCount(page);
+  await touch.tap(page, page.locator('#layer-add-menu .lvl-add-item[data-add="group"]'));
+  expect(await layerCount(page), 'layers after Group tap').toBe(n0 + 1);
+  expect(await page.evaluate(() => window.app.engine.layers.filter((l) => l.isGroup || l.type === 'group').length)).toBe(g0 + 1);
+});
+
+test('H: drill list centre line is uncovered top to bottom', async ({ page }) => {
+  await drill(page);
+  const bad = await page.evaluate(() => {
+    const l = document.querySelector('#layer-add-menu .lvl-add-drill-list');
+    const r = l.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const vvh = window.visualViewport.height;
+    const bad = [];
+    for (let y = Math.ceil(r.top) + 1; y < Math.min(r.bottom, vvh) - 1; y += 2) {
+      const el = document.elementFromPoint(x, y);
+      if (!el || !(el === l || l.contains(el))) bad.push(`${y}:${el && (el.id || el.className)}`);
+    }
+    return { bad: bad.slice(0, 5), bottom: r.bottom, vvh };
+  });
+  expect(bad.bad, `covered points (list bottom ${bad.bottom}, vvh ${bad.vvh})`).toEqual([]);
+  expect(bad.bottom).toBeLessThanOrEqual(bad.vvh + 1);
+});
