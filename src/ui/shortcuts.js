@@ -646,12 +646,15 @@
     const _fitDrill = () => {
       if (!addMenuEl || addMenuEl.classList.contains('hidden')) return;
       const drilling = addMenuEl.classList.contains('is-drill') && !!drillList;
-      const vv = window.visualViewport;
-      const vw = vv ? vv.width : window.innerWidth;
-      const top = vv ? vv.offsetTop : 0;
-      const left = vv ? vv.offsetLeft : 0;
+      const KI = window.Vectura && window.Vectura.KeyboardInset;
+      const vr = KI && KI.viewportRect
+        ? KI.viewportRect()
+        : { width: window.innerWidth, height: window.innerHeight, offsetTop: 0, offsetLeft: 0 };
+      const vw = vr.width;
+      const top = vr.offsetTop;
+      const left = vr.offsetLeft;
       const PAD = 8;
-      let bottom = top + (vv ? vv.height : window.innerHeight) - PAD;
+      let bottom = top + vr.height - PAD;
       let clipTop = top + PAD;
       // The pane body clips absolutely positioned overflow. A finger menu escapes it (position: fixed,
       // set below); a mouse menu keeps the pane as its limit.
@@ -758,7 +761,7 @@
       if (addMenuEl) _dockAddMenu();
       if (algoSubmenuEl.style.display === 'block') algoSubmenuEl.style.display = 'none';
     };
-    window.visualViewport?.addEventListener('resize', _fitDrill);
+    window.Vectura?.KeyboardInset?.onViewportChange?.(_fitDrill);
 
     if (addBtn) {
       addBtn.onclick = (e) => {

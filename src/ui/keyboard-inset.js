@@ -151,9 +151,25 @@
     return v ? { width: v.width, height: v.height } : { width: window.innerWidth, height: window.innerHeight };
   };
 
+  // Visual-viewport rect for placement code that must also honour pan offsets (TUX-035 add menu).
+  const viewportRect = () => {
+    const v = vv();
+    return v
+      ? { width: v.width, height: v.height, offsetTop: v.offsetTop || 0, offsetLeft: v.offsetLeft || 0 }
+      : { width: window.innerWidth, height: window.innerHeight, offsetTop: 0, offsetLeft: 0 };
+  };
+
+  // Subscribe to visual-viewport resizes without reading visualViewport elsewhere.
+  const onViewportChange = (cb) => {
+    const v = vv();
+    if (v && v.addEventListener && typeof cb === 'function') v.addEventListener('resize', cb);
+  };
+
   Vectura.KeyboardInset = {
     get inset() { return inset; },
     viewportSize,
+    viewportRect,
+    onViewportChange,
     ensureVisible,
     recompute,
     computeInset,
