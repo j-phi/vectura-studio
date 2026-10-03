@@ -68,6 +68,65 @@ WebKit simulation does not prove (these belong to the real-device run, requireme
 - Trusted multi-touch (native pinch zoom and scroll).
 - Real performance (GPU, memory, frame rate).
 
+## Touch Target Audit Ratchet (TUX-058)
+`tests/e2e/touch/target-audit.spec.js` measures touch targets and layout in every touch project and compares them to `tests/e2e/touch/target-baseline.json`. The baseline only goes down.
+
+Files:
+- `tests/e2e/helpers/target-audit-core.js` is the one measurement core. `touch.js` (`hitArea`, `canvasShare`), the spec and the CLI use it.
+- `tests/e2e/touch/target-audit-states.js` holds the 26 state openers and their postconditions. Product lanes that rename DOM ids edit the opener in the same commit.
+- `tests/e2e/touch/target-allowlist.json` is an array of `{ selector, reason, project? }`. It holds at most 10 entries. An allowlisted target is excluded from `under44` only. Its probed size must stay at least 24 x 24.
+- `docs/touch-audit/scripts/target-audit.js` is a thin CLI over the core. `--engine chromium|webkit`, `--port`, `--only`, `--states`, `--no-shots`.
+
+Commands:
+
+| Command | Purpose |
+|---|---|
+| `npm run test:e2e:touch:audit` | Fast subset (9 states) in the 11 touch projects. Also part of `test:e2e:touch`. |
+| `npm run test:e2e:touch:audit:full` | All 26 states (`TOUCH_AUDIT_FULL=1`). Runs nightly in CI (`touch-audit-nightly`). |
+| `TOUCH_BASELINE=update npm run test:e2e:touch:audit:full` | Lower the baseline. Never worsens a cell. |
+| `TOUCH_TARGET_MODE=final npm run test:e2e:touch:audit` | Compare to the final targets. Not enabled in CI. |
+
+Metrics (per project and state):
+
+| Metric | Direction | Ratchet tolerance | Final value |
+|---|---|---|---|
+| `hOverflow`, `vOverflow` | lower | exact | 0 |
+| `innerWidthExcess` | lower | exact | 0 |
+| `under44` (probed, not allowlisted) | lower | exact | 0 |
+| `under24` | lower | exact | 0 |
+| `wcag258Fail` | lower | exact | 0 |
+| `iosZoom` | lower | exact | 0 |
+| `covered` | lower | exact | 0 in `default` |
+| `safeUnprotected` | lower | exact | 0 |
+| `ghost` | lower | exact | 0 |
+| `pageErrors` | lower | exact | 0 |
+| `canvasPct` | higher | +/-1.0 pp | iPadP 70; iPadL 45 (two docked panes) / 60 (one) / 75 (none); iPhP 60; iPhL 60; chrome variants 50 |
+| `scaleOk` (`renderer.scale > 0`) | true is better | exact | true |
+
+Definitions:
+- The denominator is the project viewport from `viewports.js`, never `innerWidth`. `hOverflow = max(documentElement.scrollWidth, body.scrollWidth, innerWidth) - width`. Chromium grows `innerWidth` on iPhone portrait (`innerWidthExcess`). WebKit grows `scrollWidth`. Both count.
+- Hit sizes are probed. The probe starts at the clipped-rect centre, uses a 2 px grid, flood-fills the cells the target owns (itself, a descendant, or its LABEL), and caps at 24 px each side. A target with a rect of 44 x 44 or more and a clean hit test skips the probe.
+- Size metrics (`under44`, `under24`, `wcag258Fail`, `iosZoom`) count reachable targets only. A covered target counts in `covered`.
+- `canvasPct` is a 48 x 48 cell grid over the viewport. A hit is the canvas, a descendant or `#viewport-container`.
+- `ghost` counts invisible (opacity 0) targets that still receive the hit test. The `right-pane-layers` state holds two layers so an inactive row exposes `.lvl-acts` (IPAD-004).
+- `pageErrors` counts uncaught page errors and app exceptions the openers caught (`window.__auditErrors`). ResizeObserver loop notices are not counted: WebKit raises them at frame-timing-dependent rates.
+- `safeUnprotected` follows `var(--name)` when the custom property holds `env(safe-area-inset-<side>)`.
+- The `-chrome` projects run the `default` state only. They gate `canvasPct`, `hOverflow` and `innerWidthExcess`.
+
+Per-state hard failures (every mode): an opener throws, a postcondition times out (10 s), the on-screen item count is below `minItems`, a page error occurs, fonts fail to load.
+
+Update mode:
+- `TOUCH_BASELINE=update` writes the better of the old and the new value for every metric. It never worsens a cell. A cell that got worse still fails the test.
+- `TOUCH_BASELINE=update-any` writes the measured values as they are. The commit body must contain a `TUX-WAIVER:` line that names the cell and the reason.
+- Keys are sorted. Each `project|state` cell is one line, so merge conflicts stay local. The write is atomic (lock, fresh read, temp file, rename).
+- Baseline conflicts: regenerate on the merged tree. Never merge numbers by hand.
+- The baseline is keyed `baseline[platform][project][state]`. Platform is `darwin` or `linux`. A missing `linux` section is a soft state (annotation `baseline-missing`) so the first Linux CI run can seed it. A missing `darwin` cell on macOS fails.
+- Seed `linux` from the CI or nightly artifact `test-results/touch-target-measured-<project>.json`.
+
+Branch rules: this ratchet merges before any product lane. After each lane merge the integrator re-runs `TOUCH_BASELINE=update` on the merged tree and commits the lowered cells. A product lane merges `touch/integration` into its branch before its ratchet check. It lowers cells only through `TOUCH_BASELINE=update`.
+
+Unit proof: `tests/unit/touch-target-ratchet.test.js` tests the comparator, the update merge, the final targets and the serializer.
+
 ## Visual Baselines
 - Canonical SVG baselines are stored in `tests/baselines/svg`.
 - Update baselines with:

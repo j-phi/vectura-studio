@@ -66,6 +66,31 @@ jobs:
             test-results
           if-no-files-found: ignore
 
+  # TUX-058: the full 26-state touch target audit on all 11 touch projects. The fast subset
+  # already runs inside e2e-smoke (test:e2e:touch). Uploads the measured JSON so the linux
+  # baseline section can be seeded from test-results/touch-target-measured-*.json.
+  touch-audit-nightly:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:e2e:touch:audit:full
+      - name: Upload touch audit measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: touch-audit-measured
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
+
   visual:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
