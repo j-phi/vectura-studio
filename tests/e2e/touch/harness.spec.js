@@ -240,6 +240,28 @@ test.describe('touch harness', () => {
     expect(after.filter((e) => e.t === 'pointerup').map((e) => e.id)).toContain(id0);
   });
 
+  test('touchPhase cancel yields pointercancel with pointerType touch', async ({ page }) => {
+    await page.evaluate(() => {
+      const d = document.createElement('div');
+      d.id = 'tux-cn';
+      d.style.cssText = 'position:fixed;left:10px;top:10px;width:380px;height:300px;z-index:99999;touch-action:none;background:#ccc';
+      document.body.appendChild(d);
+      window.__cn = [];
+      ['pointerdown', 'pointerup', 'pointercancel'].forEach((t) => {
+        window.addEventListener(t, (e) => window.__cn.push({ t, type: e.pointerType }));
+      });
+    });
+    const f = { x: 120, y: 150, id: 0 };
+    await touch.touchPhase(page, 'start', [f]);
+    await touch.touchPhase(page, 'move', [{ ...f, x: 150 }]);
+    await touch.touchPhase(page, 'cancel', [{ ...f, x: 150 }]);
+    const ev = await page.evaluate(() => window.__cn);
+    const cancels = ev.filter((e) => e.t === 'pointercancel');
+    expect(cancels.length).toBeGreaterThan(0);
+    expect(cancels.every((e) => e.type === 'touch')).toBe(true);
+    expect(ev.some((e) => e.t === 'pointerup')).toBe(false);
+  });
+
   test('nativeDefaultActions capability matches the engine', async ({ page }, testInfo) => {
     expect(touch.engineSupports(page, 'nativeDefaultActions')).toBe(!testInfo.project.name.startsWith('webkit-'));
   });

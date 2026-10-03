@@ -81,7 +81,7 @@ const ensureWebkitShim = async (page) => {
 };
 
 // Low-level: dispatch one touch phase for a set of points [{x,y,id}].
-// phase: 'start' | 'move' | 'end' | 'cancel'. 'end'/'cancel' lift ONLY the listed fingers;
+// phase: 'start' | 'move' | 'end' | 'cancel'. 'end' lifts ONLY the listed fingers; Chromium 'cancel' cancels ALL fingers;
 // the others stay down (Chromium: touchPoints = fingers still down).
 const touchPhase = async (page, phase, points) => {
   if (engineSupports(page, 'cdp')) {
@@ -91,7 +91,15 @@ const touchPhase = async (page, phase, points) => {
     // Measured in Chromium: touchEnd/touchCancel `touchPoints` are the fingers being LIFTED
     // (listing the survivors lifts them and re-creates the lifted one). touchStart/touchMove
     // carry every finger that is down.
-    if (phase === 'end' || phase === 'cancel') {
+    // TUX-018: Chromium rejects a touchCancel that lists points ("TouchCancel must not have any
+    // touch points"). A touch cancel cancels ALL fingers, so the list is empty and every
+    // tracked finger is cleared, whatever `points` names (the WebKit path stays per-finger).
+    if (phase === 'cancel') {
+      down.clear();
+      await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [] });
+      return;
+    }
+    if (phase === 'end') {
       points.forEach((p) => down.delete(p.id));
       await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, id: p.id })) });
       return;
