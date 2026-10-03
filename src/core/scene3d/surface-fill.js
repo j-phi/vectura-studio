@@ -9067,8 +9067,16 @@
           // from the run mean immediately above. They are ribbon laws too, and
           // gating on the split predicate would leave all three at a fat-pen
           // multiplier.
+          // F5 (engine law-draft tier, `opts.ribbonDraft`): a live drag skips
+          // the ribbon build and ships the law's own weighted centrelines —
+          // the pre-ribbon delivery (`splitByWeight` / the run mean), which
+          // the renderer strokes at `weightScale`. Same placement, same width
+          // profile, no erosion/PenFill. Never set on a settled compose.
           const pieces = (isRibbonLaw() && wCnt > 0)
-            ? (deferRibbon() ? [pendRibbon(run, fam)] : ribbonize(run, wPts, ttPts, fam, back))
+            ? (opts.ribbonDraft === true
+              ? (splitsAlongLine() ? splitByWeight(run, wPts, ttPts, fam)
+                : (run.weightScale == null && (run.weightScale = meanW(wPts, 0, run.length - 1)), [run]))
+              : (deferRibbon() ? [pendRibbon(run, fam)] : ribbonize(run, wPts, ttPts, fam, back)))
             : ((splitsAlongLine() && wCnt > 0)
               ? splitByWeight(run, wPts, ttPts, fam)
               : [run]);

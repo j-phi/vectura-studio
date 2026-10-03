@@ -6,6 +6,25 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Performance
+- **3D Scene · Fill Style drags are interactive (U1 pipeline perf).** Rotating an object with
+  the gizmo, orbiting the camera, touch-dragging or dragging an Object-panel Style slider now
+  uses a *draft tier* instead of a full compose per pointer move. Cheap scenes (last settled
+  compose ≤ 40 ms) stay full quality. Slower scenes use the new **law-preserving draft**: the
+  full compose runs, but ribbon laws draw weighted centrelines and mono laws run on a coarser
+  (pen × 2.5) lattice, so the chosen Fill Style stays visible. Measured gizmo drag frames
+  (Chrome): taperedEnds 1151 → 35 ms, trochoidLoop 3933 → 51 ms, weaveDepth 3537 → 70 ms,
+  turingStripe 486 → 145 ms. Only if a law draft exceeds 400 ms does a drag fall back to the
+  flat silhouette hatch. The release still renders at full quality, now **deferred** past the
+  release paint and cancelled by the next drag on the same scene. (B1, F5, B3, NEW-4)
+- **Consumed scene objects no longer render twice.** Editing an object inside a scene ran a
+  standalone one-object render and threw it away before the scene compose. That render is gone;
+  output is identical. Object-panel commits on taperedEnds: 2529 → 1161 ms. (B2)
+- **Scene compose memo.** A full scene compose whose complete input (assembled scene, seed,
+  bounds, pen width, compositor switches) matches the previous one reuses its output. SVG export
+  of an unchanged trochoidLoop scene: 3.9 s → 0.3 s. A draft frame is never reused as final ink.
+  (NEW-3)
+
 ### Added
 - **3D Scene · Slices gains an End overlap control.** How far each depth-slice ring is carried
   past (or pulled back from) the object's silhouette, in pen widths (−2…8, step 0.25). **The

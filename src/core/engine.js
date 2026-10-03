@@ -159,6 +159,80 @@
     });
   };
 
+  const isPreviewRequest = (options) => Boolean(options && (options.preview === true || options.fastPreview === true));
+
+  const nowMs = () => (typeof performance !== 'undefined' && performance && typeof performance.now === 'function'
+    ? performance.now() : Date.now());
+
+  // Deep copy of composed scene ink for the compose memo (NEW-3): every point,
+  // every own non-index property a path carries (meta, fam, weightScale...),
+  // with meta cloned structurally so NaN / undefined survive (JSON would not).
+  const deepCopy = (value) => {
+    if (value == null || typeof value !== 'object') return value;
+    if (typeof structuredClone === 'function') {
+      try { return structuredClone(value); } catch (_) { /* fall through */ }
+    }
+    return JSON.parse(JSON.stringify(value));
+  };
+  const cloneScenePaths = (paths) => (paths || []).map((path) => {
+    if (!Array.isArray(path)) return deepCopy(path);
+    const next = path.map((pt) => (pt && typeof pt === 'object' ? { ...pt } : pt));
+    Object.keys(path).forEach((k) => {
+      if (/^\d+$/.test(k)) return;
+      next[k] = k === 'meta' ? deepCopy(path[k]) : path[k];
+    });
+    return next;
+  });
+
+  // NEW-3 — canonical text of a compose input. Distinguishes what JSON would
+  // conflate (NaN / Infinity / undefined / -0 all differ from null and 0), so a
+  // memo hit can only happen for a genuinely identical input.
+  const stableSceneKey = (value) => JSON.stringify(value, (k, v) => {
+    if (typeof v === 'number') {
+      if (Number.isNaN(v)) return '\u0000NaN';
+      if (!Number.isFinite(v)) return v > 0 ? '\u0000+Inf' : '\u0000-Inf';
+      if (v === 0 && 1 / v < 0) return '\u0000-0';
+      return v;
+    }
+    if (v === undefined) return '\u0000undef';
+    // A function cannot be compared by value: refuse to key this input at all.
+    if (typeof v === 'function') throw new Error('scene compose key: function input');
+    if (typeof v === 'bigint') return `\u0000big:${v}`;
+    if (v instanceof Map) return { '\u0000map': [...v.entries()] };
+    if (v instanceof Set) return { '\u0000set': [...v.values()] };
+    return v;
+  });
+
+  // NEW-3 — identity of every function the compositor can reach through the
+  // namespace (the scene3d algorithm, every Scene3D module, PenFill,
+  // RibbonGeometry, Geometry3D, GeometryUtils). A swapped-in function (a
+  // plug-in patch, a test spy) changes the compose without changing its
+  // params, so it must miss the memo. Identity compare only: cheap.
+  const sceneModuleFingerprint = (algo) => {
+    const V = window.Vectura || {};
+    const out = [algo && algo.generate];
+    const take = (ns) => {
+      if (!ns || typeof ns !== 'object') return;
+      Object.keys(ns).forEach((k) => { if (typeof ns[k] === 'function') out.push(ns[k]); });
+    };
+    const S3 = V.Scene3D || {};
+    Object.keys(S3).forEach((k) => {
+      const m = S3[k];
+      if (typeof m === 'function') out.push(m);
+      else take(m);
+    });
+    take(V.PenFill);
+    take(V.RibbonGeometry);
+    take(V.Geometry3D);
+    take(V.GeometryUtils);
+    return out;
+  };
+  const sameFingerprint = (a, b) => {
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  };
+
   const usesManualSourceGeometry = (layer) => Boolean(layer && !layer.isGroup && layer.type === 'shape');
 
   // On a fitted path the ANCHORS are the geometry — the point array is only a
@@ -793,6 +867,11 @@
       this.profileKey = SETTINGS.paperSize || 'a4';
       this.currentProfile = this.resolveProfile();
       this.onLayerRemoved = null;
+      // NEW-3 — per scene group: { key, fn, paths } of the last FULL compose.
+      // A WeakMap so a removed group (or an undo-restored copy) drops its entry.
+      this._sceneComposeMemo = new WeakMap();
+      // Diagnostics for tests / perf harnesses: real composes vs memo hits.
+      this.sceneComposeStats = { composes: 0, hits: 0, lastTier: null };
     }
 
     // Announce every removed layer id to the host (e.g. the on-canvas text
@@ -2642,6 +2721,66 @@
     // input and runs the shared compositor over the whole set (occlusion /
     // lighting / shadow are cross-object, so one HLR pass owns every path).
     // Mirrors _computeMorphGroups.
+    // ── Scene compose: draft tiers, memo, consumed-child routing ─────────────
+    //
+    // Thresholds (ms) for `_sceneDraftTier`. A scene whose last settled compose
+    // took <= FULL_MS keeps full quality during a drag (no draft/settle pop for
+    // the cheap default laws). Otherwise the law tier runs; if a law-tier frame
+    // itself exceeded FLAT_MS, the rest of the gesture falls back to the flat
+    // silhouette hatch. Overridable through SETTINGS for perf harnesses.
+    _sceneDraftTier(group) {
+      const fullMs = Number.isFinite(SETTINGS.sceneDraftFullMs) ? SETTINGS.sceneDraftFullMs : 40;
+      const flatMs = Number.isFinite(SETTINGS.sceneDraftFlatMs) ? SETTINGS.sceneDraftFlatMs : 400;
+      const forced = SETTINGS.sceneDraftTier;
+      if (forced === 'full' || forced === 'law' || forced === 'flat') return forced;
+      const lastFull = group ? group._sceneLastFullMs : null;
+      if (Number.isFinite(lastFull) && lastFull <= fullMs) return 'full';
+      const lastLaw = group ? group._sceneLastLawDraftMs : null;
+      if (Number.isFinite(lastLaw) && lastLaw > flatMs) return 'flat';
+      return 'law';
+    }
+
+    // NEW-3 — the complete input signature of one FULL scene compose: the
+    // assembled scene (objects, lights, ground, styles, camera, every param),
+    // the group seed (rng + noise), every bounds field, and the module-level
+    // switches the compositor reads outside its params. null ⇒ do not memo.
+    _sceneComposeKey(algo, assembled, bounds, group) {
+      if (SETTINGS.sceneComposeMemo === false) return null;
+      const V = window.Vectura || {};
+      try {
+        return stableSceneKey({
+          assembled,
+          seed: group && group.params ? group.params.seed : undefined,
+          bounds,
+          strokeFillDefault: V.SCENE3D_STROKE_FILL_DEFAULT,
+          silProtoOff: window.__SIL_PROTO_OFF,
+          silProtoTorusOn: window.__SIL_PROTO_TORUS_ON,
+        });
+      } catch (_) {
+        return null;
+      }
+    }
+
+    // Drop every memoized scene compose (e.g. after a module-level switch a
+    // signature cannot see changes). The next compose of each group is real.
+    invalidateSceneCompose(group) {
+      if (group) this._sceneComposeMemo.delete(group);
+      else this._sceneComposeMemo = new WeakMap();
+    }
+
+    // The scene GROUP that consumes this scene-tree child, or null. Requires
+    // BOTH the engine's `_sceneConsumed` marker AND a live scene-group
+    // ancestor, so a child just moved out of its scene (marker not yet cleared)
+    // is never treated as consumed.
+    _sceneOwnerGroup(layer) {
+      if (!layer || layer._sceneConsumed !== true) return null;
+      let g = layer.parentId ? this.layers.find((l) => l && l.id === layer.parentId) : null;
+      while (g && !(g.isGroup && g.type === 'scene3d' && g.containerRole === 'scene')) {
+        g = g.parentId ? this.layers.find((l) => l && l.id === g.parentId) : null;
+      }
+      return g || null;
+    }
+
     _computeSceneGroups() {
       this.layers.forEach((group) => {
         if (!group || !group.isGroup) return;
@@ -2657,7 +2796,7 @@
     // generate ONCE. The composed paths live on group.scenePaths, which
     // getRenderablePaths serves for the group (mirrors group.morphedPaths). The
     // compositor math is untouched — collection only reconstructs its input.
-    _composeSceneGroup(group) {
+    _composeSceneGroup(group, options = {}) {
       const Params = window.Vectura?.Scene3D?.Params;
       const algo = Algorithms && Algorithms.scene3d;
       if (!group || !Params || typeof Params.collectSceneParams !== 'function'
@@ -2712,20 +2851,59 @@
       const pens = Array.isArray(SETTINGS.pens) ? SETTINGS.pens : [];
       const layerPen = pens.find((pn) => pn && pn.id === group.penId) || pens[0];
       const penWidth = Number(layerPen && layerPen.width) > 0 ? Number(layerPen.width) : 0.35;
+      // B1/F5 — a live drag (gizmo, camera orbit, touch, panel slider) asks for
+      // a preview; `_sceneDraftTier` picks how much of the compose it may skip.
+      // 'full' = the settled compose, 'law' = full compose with ribbons drawn
+      // as weighted centrelines and mono laws at a coarser lattice (the Fill
+      // Style stays visible), 'flat' = the legacy fastPreview silhouette hatch.
+      const tier = options && options.preview === true ? this._sceneDraftTier(group) : 'full';
       const bounds = {
         width, height, m, dW: width - m * 2, dH: height - m * 2, penWidth,
-        truncate: SETTINGS.truncate, fastPreview: false, preview3dQuality: SETTINGS.preview3dQuality,
+        truncate: SETTINGS.truncate, fastPreview: tier === 'flat', preview3dQuality: SETTINGS.preview3dQuality,
       };
+      if (tier === 'law') bounds.lawDraft = true;
 
-      const rng = new SeededRNG(group.params.seed);
-      const noise = new SimpleNoise(group.params.seed);
+      // NEW-3 — compose memo. Twenty-odd callers recompose every scene group
+      // through computeAllDisplayGeometry (export, layer reorder, pens panel,
+      // mirror-guide drags...) without touching the scene. A FULL compose whose
+      // complete input signature matches the last one reuses its output; draft
+      // tiers are never cached, so a draft frame can never be served as final.
+      const memoKey = tier === 'full' ? this._sceneComposeKey(algo, assembled, bounds, group) : null;
+      const memo = memoKey ? this._sceneComposeMemo.get(group) : null;
       let paths = [];
-      try {
-        paths = algo.generate(assembled, rng, noise, bounds) || [];
-      } catch (err) {
-        console.error('[Engine] Scene group compose failed:', err);
-        paths = [];
+      this.sceneComposeStats.lastTier = tier;
+      const modules = memoKey ? sceneModuleFingerprint(algo) : null;
+      if (memo && memo.key === memoKey && sameFingerprint(memo.modules, modules)) {
+        paths = cloneScenePaths(memo.paths);
+        this.sceneComposeStats.hits += 1;
+      } else {
+        const rng = new SeededRNG(group.params.seed);
+        const noise = new SimpleNoise(group.params.seed);
+        const t0 = nowMs();
+        let failed = false;
+        try {
+          paths = algo.generate(assembled, rng, noise, bounds) || [];
+        } catch (err) {
+          console.error('[Engine] Scene group compose failed:', err);
+          paths = [];
+          failed = true;
+        }
+        const ms = nowMs() - t0;
+        this.sceneComposeStats.composes += 1;
+        if (tier === 'full') {
+          group._sceneLastFullMs = ms;
+          // A fresh settled measurement re-arms the law tier for the next drag.
+          group._sceneLastLawDraftMs = null;
+          if (memoKey && !failed) {
+            this._sceneComposeMemo.set(group, { key: memoKey, modules, paths: cloneScenePaths(paths) });
+          }
+        } else if (tier === 'law') {
+          group._sceneLastLawDraftMs = ms;
+        }
       }
+      // Provenance (mirrors the leaf `layer._pathsFromDraft`): consumers that
+      // bake the group's ink (expand / flatten) must force a full recompose.
+      group._pathsFromDraft = tier !== 'full';
       // Universal output controls for 3D (Curves / Smoothing / Simplify). Runs
       // BEFORE divisions, so a dashed object dashes along the true curve rather
       // than along the chords it was fitted from (divideChain flattens via the
@@ -3340,7 +3518,23 @@
         // generate() so scene-object drags (which call generate on the owning
         // group) refresh the canvas. Idempotent with computeAllDisplayGeometry's
         // own compose pass; the compositor math is untouched.
-        if (layer.type === 'scene3d' && layer.containerRole === 'scene') this._composeSceneGroup(layer);
+        // B1 — the preview/draft flag is forwarded, so gizmo drags, camera
+        // orbits, touch drags and panel slider drags get a draft tier instead
+        // of a full-quality compose per pointer move.
+        if (layer.type === 'scene3d' && layer.containerRole === 'scene') {
+          this._composeSceneGroup(layer, { preview: isPreviewRequest(options) });
+        }
+        return;
+      }
+      // B2 — a scene-tree child consumed by a scene group emits nothing of its
+      // own (getRenderablePaths returns [] for it); the owning group draws it.
+      // A PREVIEW (panel slider drag) recomposes just that group at its draft
+      // tier. A commit keeps the full pass below (computeAllDisplayGeometry +
+      // optimize), but object3d is told it is consumed so the standalone
+      // one-object render it used to run, then discard, never happens.
+      const sceneOwner = this._sceneOwnerGroup(layer);
+      if (sceneOwner && isPreviewRequest(options)) {
+        this._composeSceneGroup(sceneOwner, { preview: true });
         return;
       }
       if (layer.type === 'compound') {
@@ -3372,6 +3566,7 @@
       const layerPen = pens.find((pn) => pn && pn.id === layer.penId) || pens[0];
       const penWidth = Number(layerPen && layerPen.width) > 0 ? Number(layerPen.width) : 0.35;
       const bounds = { width, height, m, dW, dH, penWidth, truncate: SETTINGS.truncate, fastPreview, preview3dQuality: SETTINGS.preview3dQuality };
+      if (sceneOwner && layer.type === 'object3d') bounds._sceneConsumed = true;
 
       // The layer's geometry BEFORE any of this pass touches it. Captured here
       // because applyShapeAnchorRebuild rewrites a shape layer's sourcePaths in
