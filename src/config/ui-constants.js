@@ -23,6 +23,14 @@
       mirrorExtent: 0.7,
     },
 
+    // TUX-017: second-finger arbitration window (src/render/touch-gesture-arbiter.js).
+    // A second touch within ARBITRATION_MS of the first, OR before the first moved
+    // ARBITRATION_SLOP_PX (CSS client px), rolls the first action back. Otherwise it commits.
+    TOUCH_GESTURE: {
+      ARBITRATION_MS: 250,
+      ARBITRATION_SLOP_PX: 10,
+    },
+
     // Renderer handle/overlay geometry
     SHAPE_CORNER_HANDLE_MIN: 8,
     MASK_PREVIEW_ALPHA: 0.2,
