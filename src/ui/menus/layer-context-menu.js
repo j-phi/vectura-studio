@@ -105,6 +105,155 @@
     return objs.map((o) => o.id);
   };
 
+  // ── TUX-012 — shared row-action list ──────────────────────────────────────
+  // ONE list feeds both the inline `.lvl-acts` / `.lvl-grp-acts` strips in
+  // layers-panel.js (desktop) and the ⋯ menu (touch + right-click). Every run
+  // body here is the body the inline strip used before the list existed.
+  // `masked` rows (masked-v2 cards) never show the mask toggle, as before.
+  const rowActions = (ui, layer, opts = {}) => {
+    const out = [];
+    if (!ui || !layer || !ui.app || !ui.app.engine) return out;
+    const engine = ui.app.engine;
+    const renderer = ui.app.renderer;
+    const I = () => ui._LVL_I || {};
+    const icon = (name, fallback) => () => {
+      const set = I();
+      const fn = set[name] || (fallback && set[fallback]);
+      return typeof fn === 'function' ? fn.call(set) : '';
+    };
+    const add = (key, label, title, cls, iconFn, run) => out.push({ key, label, title, cls, icon: iconFn, run });
+    const rerender = () => { ui.renderLayers(); ui.app.render(); };
+    const select = (id) => { if (id) { renderer?.setSelection?.([id], id); engine.setActiveLayerId?.(id); } };
+    const parent = layer.parentId ? engine.getLayerById?.(layer.parentId) : null;
+    const masked = opts.masked != null
+      ? !!opts.masked
+      : !!(parent && parent.mask && parent.mask.enabled && parent.maskCapabilities && parent.maskCapabilities.canSource);
+
+    if (layer.isGroup) {
+      if (layer.groupType === 'scene' && typeof engine.addObjectToScene === 'function') {
+        add('scene-add-object', 'Add box', 'Add box (right-click for more shapes)', 'lvl-add-object', icon('grpPlus'), () => {
+          if (ui.app.pushHistory) ui.app.pushHistory();
+          const oid = engine.addObjectToScene(layer.id);
+          select(oid);
+          rerender();
+        });
+        if (typeof engine.addLightToScene === 'function') {
+          add('scene-add-light', 'Add light', 'Add light', 'lvl-add-light', icon('sceneLight3d', 'grpPlus'), () => {
+            if (ui.app.pushHistory) ui.app.pushHistory();
+            const lid = engine.addLightToScene(layer.id, 'directional');
+            select(lid);
+            rerender();
+          });
+        }
+        if (typeof engine.addGroundToScene === 'function') {
+          const hasGround = engine.getLayerDescendants?.(layer.id)?.some((l) => l && l.type === 'sceneGround3d');
+          if (!hasGround) {
+            add('scene-add-ground', 'Add ground', 'Add ground', 'lvl-add-ground', icon('sceneGround3d', 'grpPlus'), () => {
+              if (ui.app.pushHistory) ui.app.pushHistory();
+              const gid = engine.addGroundToScene(layer.id);
+              select(gid);
+              rerender();
+            });
+          }
+        }
+      }
+      if (layer.groupType === 'modifier') {
+        add('expand-modifier', 'Expand to folder', 'Expand to folder', '', icon('expand'), () => {
+          if (ui.app.pushHistory) ui.app.pushHistory();
+          engine.expandModifierLayer(layer.id);
+          rerender();
+        });
+      }
+      add('ungroup', 'Ungroup', 'Ungroup (⌘⇧G)', '', icon('ungroup'), () => {
+        if (ui.app.pushHistory) ui.app.pushHistory();
+        ui.unlockMirrorChildrenOnDelete?.(layer.id);
+        const kids = (engine.layers || []).filter((l) => l.parentId === layer.id);
+        kids.forEach((l) => { l.parentId = layer.parentId ?? null; });
+        engine.removeLayer(layer.id);
+        renderer.setSelection(kids.map((l) => l.id), kids[0]?.id);
+        rerender();
+      });
+      add('duplicate', 'Duplicate', 'Duplicate group', '', icon('dup'), () => {
+        if (ui.app.pushHistory) ui.app.pushHistory();
+        engine.duplicateLayer(layer.id);
+        rerender();
+      });
+      add('delete', 'Delete', 'Delete group', 'del', icon('trash'), () => {
+        if (ui.app.pushHistory) ui.app.pushHistory();
+        ui.unlockMirrorChildrenOnDelete?.(layer.id);
+        engine.removeLayer(layer.id);
+        rerender();
+      });
+      return out;
+    }
+
+    if (!masked && layer.maskCapabilities && layer.maskCapabilities.canSource) {
+      const isSrc = !!(layer.mask && layer.mask.enabled);
+      add('mask-toggle', isSrc ? 'Remove clipping mask' : 'Make clipping mask',
+        isSrc ? 'Remove clipping mask (click to deactivate)' : 'Make clipping mask — clips layer below',
+        'mask-btn' + (isSrc ? ' is-src' : ''),
+        icon(isSrc ? 'maskSrcActive' : 'maskSrc'),
+        () => {
+          const allLayers = engine.layers || [];
+          if (ui.app.pushHistory) ui.app.pushHistory();
+          if (isSrc) {
+            const kids = allLayers.filter((c) => c.parentId === layer.id);
+            kids.forEach((c) => { c.parentId = layer.parentId ?? null; });
+            layer.mask.enabled = false;
+          } else {
+            const sibs = allLayers.filter((s) => (s.parentId ?? null) === (layer.parentId ?? null));
+            const idx = sibs.indexOf(layer);
+            if (idx < sibs.length - 1) {
+              ui.assignLayersToParent(layer.id, [sibs[idx + 1]], { captureHistory: false });
+            }
+            layer.mask.enabled = true;
+          }
+          engine.computeAllDisplayGeometry?.();
+          ui.renderLayers();
+          ui.app.render?.();
+        });
+      if (isSrc) {
+        const isHidden = Boolean(layer.mask && layer.mask.hideLayer);
+        add('mask-outline', isHidden ? 'Show mask layer outline' : 'Hide mask layer outline',
+          isHidden ? 'Show mask layer outline' : 'Hide mask layer outline',
+          'mask-outline-btn' + (isHidden ? ' is-hidden' : ''),
+          icon(isHidden ? 'maskOutlineHide' : 'maskOutlineShow'),
+          () => {
+            ui.setLayerMaskHidden(layer, !isHidden, { captureHistory: true });
+            ui.renderLayers();
+            ui.app.render?.();
+          });
+      }
+    }
+    // The thin light/ground scene leaves have no sub-geometry to expand into a group.
+    const isSceneChildLeaf = layer.type === 'sceneLight3d' || layer.type === 'sceneGround3d';
+    if (layer.type !== 'shape' && !isSceneChildLeaf) {
+      add('expand-into-group', 'Expand into group', 'Expand into group', '', icon('expand'), () => ui.expandLayer?.(layer));
+    }
+    if (layer.type === 'shape' && Array.isArray(layer.fills) && layer.fills.length > 0) {
+      const n = layer.fills.length;
+      add('expand-fill', 'Expand Fill', `Expand ${n} fill${n === 1 ? '' : 's'} into a group`, '', icon('expand'),
+        () => ui._lvlExpandFill(layer));
+    }
+    if (layer.type === 'shape' && layer.sourceFillRecord && Array.isArray(layer.paths) && layer.paths.length > 0) {
+      const n = layer.paths.length;
+      add('explode-fill', 'Explode Fill into paths', `Explode fill into ${n} path${n === 1 ? '' : 's'}`, '', icon('expand'),
+        () => ui._lvlExplodeFill(layer));
+    }
+    add('duplicate', 'Duplicate', 'Duplicate (⌘D)', '', icon('dup'), () => {
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      engine.duplicateLayer(layer.id);
+      rerender();
+    });
+    add('delete', 'Delete', 'Delete', 'del', icon('trash'), () => {
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      ui.unlockMirrorChildrenOnDelete?.(layer.id);
+      engine.removeLayer(layer.id);
+      rerender();
+    });
+    return out;
+  };
+
   const _itemsFor = (ui, layer) => {
     const items = [];
     // Scene-tree Increment C — scene / object actions lead the menu when the
@@ -157,7 +306,8 @@
       key: 'toggle-lock',
       label: locked ? 'Unlock' : 'Lock',
     });
-    if (layer && layer.type && layer.type !== 'shape' && !layer.isGroup) {
+    if (layer && layer.type && layer.type !== 'shape' && !layer.isGroup
+      && layer.type !== 'sceneLight3d' && layer.type !== 'sceneGround3d') {
       items.push({ separator: true });
       items.push({ key: 'expand-into-group', label: 'Expand into group' });
     }
@@ -178,6 +328,15 @@
     if (isBakedFill) {
       if (!hasFills) items.push({ separator: true });
       items.push({ key: 'explode-fill', label: 'Explode Fill into paths' });
+    }
+    // TUX-012 — every inline row action must be reachable from the menu. Append the
+    // shared-list keys this menu does not already carry (mask-toggle, mask-outline,
+    // ungroup, expand-modifier).
+    const present = new Set(items.map((i) => i.key).filter(Boolean));
+    const extra = rowActions(ui, layer).filter((a) => !present.has(a.key));
+    if (extra.length) {
+      items.push({ separator: true });
+      extra.forEach((a) => items.push({ key: a.key, label: a.label }));
     }
     return items;
   };
@@ -338,6 +497,9 @@
       ui.app.render && ui.app.render();
       return;
     }
+    // TUX-012 — keys that only exist in the shared row-action list.
+    const act = rowActions(ui, layer).find((a) => a.key === key);
+    if (act) act.run();
   };
 
   const _ensureMenu = () => {
@@ -346,6 +508,7 @@
       throw new Error('LayerContextMenu requires UI.overlays.Menu to be loaded first');
     }
     _menu = UI.overlays.Menu(document.body, { items: [], onSelect: () => {} });
+    if (_menu && _menu.el && _menu.el.classList) _menu.el.classList.add('lvl-ctx-menu');
     return _menu;
   };
 
@@ -371,6 +534,15 @@
     anchor.style.left = `${x}px`;
     if (menu.isOpen && menu.isOpen()) menu.close();
     menu.open(anchor);
+  };
+
+  // TUX-012 — open the row menu from a ⋯ button: anchored to the button rect.
+  const openForLayer = (ui, layer, anchorEl) => {
+    if (!ui || !layer) return;
+    const r = anchorEl && anchorEl.getBoundingClientRect
+      ? anchorEl.getBoundingClientRect()
+      : { left: 0, right: 0, bottom: 0 };
+    _openAt(ui, layer, r.left, r.bottom - 1);
   };
 
   const _onContextMenu = (ui) => (event) => {
@@ -403,6 +575,8 @@
   UI.Menus.LayerContext = {
     bind(deps) { DEPS = deps || {}; },
     attach,
+    openForLayer,
+    rowActions,
     // Test helpers (not for production code paths).
     _itemsFor,
     _runAction,
