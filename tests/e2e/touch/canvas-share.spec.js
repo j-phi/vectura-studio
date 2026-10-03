@@ -349,10 +349,54 @@ test.describe('TUX-007 phone landscape', () => {
         return !!t && (t === el || el.contains(t));
       });
       expect(hit, `Pan centre uncovered at ${h}`).toBe(true);
+      const panState = () => page.evaluate(() => ({
+        active: [...document.querySelectorAll('#touch-modifier-bar .touch-mod-btn')].some((b) => /pan/i.test(b.textContent) && b.classList.contains('active')),
+        setting: !!(window.Vectura.SETTINGS.touchModifiers || {}).pan,
+      }));
+      const before = await panState();
+      expect(before, `Pan starts off at ${h}`).toEqual({ active: false, setting: false });
       await tap(page, pan);
       await sleep(150);
+      expect(await panState(), `tap toggled Pan on at ${h}`).toEqual({ active: true, setting: true });
+      await tap(page, pan);
+      await sleep(150);
+      expect(await panState(), `second tap cleared Pan at ${h}`).toEqual({ active: false, setting: false });
       testInfo.annotations.push({ type: 'TUX-007 A7', description: `${m.W}x${m.H} ${m.btns.length} modifier buttons, max bottom ${Math.max(...m.btns.map((b) => b.b))} <= ${m.H - INS.bottom}` });
     }
+  });
+});
+
+test.describe('TUX-007 reachable-set accounting (TUX-058 baseline lowering)', () => {
+  test.beforeEach(({}, testInfo) => {
+    test.skip(!/iphone-landscape/.test(testInfo.project.name), 'iPhone landscape only');
+  });
+
+  // Targets that left the default reachable set when the baseline went 35 -> 24 must each keep a finger
+  // route: tools via All Tools, header menus via the hamburger, pane contents via the pane toggles.
+  test('A8 every target that left the default set keeps a finger route', async ({ page }) => {
+    await gotoApp(page);
+    await sleep(500);
+    // Tools that left the rail: reachable in All Tools.
+    await tap(page, page.locator('#tool-overflow-btn'));
+    await page.waitForSelector('.tool-drawer:not(.hidden)', { state: 'visible' });
+    const drawerTools = await page.evaluate(() => [...document.querySelectorAll('.tool-drawer-item')].map((b) => b.dataset.tool || b.textContent.trim()));
+    const joined = drawerTools.join('|').toLowerCase();
+    for (const t of ['lasso', 'draw algorithm', 'hand', 'scissor line']) expect(joined, `All Tools lists ${t}: ${drawerTools}`).toContain(t);
+    await page.evaluate(() => window.Vectura.UI.ToolDrawer.close());
+    // Header menus (File/Edit/Object/View/Insert/Help) and the theme toggle (its Theme row): reachable through the hamburger.
+    await tap(page, page.locator('#btn-menu-hamburger'));
+    await sleep(300);
+    const menuIds = await page.evaluate(() => ['#btn-menu-file', '#btn-menu-edit', '#btn-menu-object', '#btn-menu-view', '#btn-menu-insert', '#btn-menu-help', '#top-menubar .top-menu-theme-row']
+      .map((s) => { const el = document.querySelector(s); if (!el) return [s, 'missing']; const r = el.getBoundingClientRect(); const hit = r.width > 1 && r.height > 1 ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null; return [s, !!hit && (hit === el || el.contains(hit))]; }));
+    for (const [s, ok] of menuIds) expect(ok, `${s} reachable after the hamburger opens`).toBe(true);
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => { const h = document.getElementById('btn-menu-hamburger'); if (h && h.getAttribute('aria-expanded') === 'true') h.click(); });
+    // Right pane contents: the pane toggle opens the pane and its controls become reachable.
+    await tap(page, page.locator('#btn-pane-toggle-right'));
+    await sleep(500);
+    const pane = await page.evaluate(() => ['#right-pane-tabs .right-pane-tab[data-tab="layers"]', '#right-pane-tabs .right-pane-tab[data-tab="pens"]', '#layer-search-input', '#layer-filter-btn', '#btn-add-layer']
+      .map((s) => { const el = document.querySelector(s); if (!el) return [s, 'missing']; const r = el.getBoundingClientRect(); const hit = r.width > 1 && r.height > 1 ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null; return [s, !!hit && (hit === el || el.contains(hit))]; }));
+    for (const [s, ok] of pane) expect(ok, `${s} reachable after the right pane opens`).toBe(true);
   });
 });
 void engineSupports;

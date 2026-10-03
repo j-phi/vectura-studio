@@ -85,6 +85,14 @@ async function ensureLayer(page, type = 'wavetable') {
 
 const clickId = (page, id) => page.evaluate((id) => document.getElementById(id).click(), id);
 
+// TUX-001: in phone layout the menubar is a drill-down sheet behind the hamburger. A header menu
+// trigger only opens once the sheet is open, so open the sheet first when the hamburger is shown.
+const clickMenu = (page, id) => page.evaluate((id) => {
+  const burger = document.getElementById('btn-menu-hamburger');
+  if (burger && burger.checkVisibility() && !document.body.classList.contains('phone-menu-open')) burger.click();
+  document.getElementById(id).click();
+}, id);
+
 const menuOpen = (id) => (page) => page.evaluate((id) => {
   const t = document.getElementById(id);
   const panel = t && t.parentElement && t.parentElement.querySelector('.top-menu-panel');
@@ -101,7 +109,7 @@ const modalOpen = (titleRe) => (page) => page.evaluate((src) => {
 }, titleRe.source);
 
 async function fileItem(page, itemId) {
-  await clickId(page, 'btn-menu-file');
+  await clickMenu(page, 'btn-menu-file');
   await page.waitForFunction(() => document.querySelector('#btn-menu-file ~ .top-menu-panel.open'), null, { timeout: 10000 });
   await clickId(page, itemId);
 }
@@ -137,12 +145,12 @@ const STATES = [
       }
     }),
     post: (p) => p.evaluate(() => (document.getElementById('bottom-pane').classList.contains('bottom-pane-collapsed') ? 'bottom pane still collapsed' : true)) },
-  { id: 'menu-file', fast: true, minItems: 17, run: (p) => clickId(p, 'btn-menu-file'), post: menuOpen('btn-menu-file') },
-  { id: 'menu-edit', fast: false, minItems: 16, run: (p) => clickId(p, 'btn-menu-edit'), post: menuOpen('btn-menu-edit') },
-  { id: 'menu-object', fast: false, minItems: 19, run: (p) => clickId(p, 'btn-menu-object'), post: menuOpen('btn-menu-object') },
-  { id: 'menu-view', fast: false, minItems: 15, run: (p) => clickId(p, 'btn-menu-view'), post: menuOpen('btn-menu-view') },
-  { id: 'menu-insert', fast: false, minItems: 13, run: (p) => clickId(p, 'btn-menu-insert'), post: menuOpen('btn-menu-insert') },
-  { id: 'menu-help', fast: false, minItems: 13, run: (p) => clickId(p, 'btn-menu-help'), post: menuOpen('btn-menu-help') },
+  { id: 'menu-file', fast: true, minItems: 17, run: (p) => clickMenu(p, 'btn-menu-file'), post: menuOpen('btn-menu-file') },
+  { id: 'menu-edit', fast: false, minItems: 16, run: (p) => clickMenu(p, 'btn-menu-edit'), post: menuOpen('btn-menu-edit') },
+  { id: 'menu-object', fast: false, minItems: 19, run: (p) => clickMenu(p, 'btn-menu-object'), post: menuOpen('btn-menu-object') },
+  { id: 'menu-view', fast: false, minItems: 15, run: (p) => clickMenu(p, 'btn-menu-view'), post: menuOpen('btn-menu-view') },
+  { id: 'menu-insert', fast: false, minItems: 13, run: (p) => clickMenu(p, 'btn-menu-insert'), post: menuOpen('btn-menu-insert') },
+  { id: 'menu-help', fast: false, minItems: 13, run: (p) => clickMenu(p, 'btn-menu-help'), post: menuOpen('btn-menu-help') },
   { id: 'layer-add-menu', fast: true, minItems: 18,
     run: async (p) => {
       await openPaneSettled(p, 'right');
@@ -164,7 +172,7 @@ const STATES = [
     post: modalOpen(/export/) },
   { id: 'modal-help', fast: true, minItems: 18,
     run: async (p) => {
-      await clickId(p, 'btn-menu-help');
+      await clickMenu(p, 'btn-menu-help');
       await p.waitForFunction(() => document.querySelector('#btn-menu-help ~ .top-menu-panel.open'), null, { timeout: 10000 });
       await clickId(p, 'btn-help');
     },
