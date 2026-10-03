@@ -754,6 +754,8 @@
       this.touchPointers = this.touchArbiter.pointers;
       this.touchGesture = null;
       this._touchSnapshot = null;
+      // TUX-018: state captured at pointerdown; pointercancel restores it.
+      this._gestureMark = null;
       this._touchDeferred = null;
       // TUX-019: a touch press on a movable selection waits for the drag slop (no hold).
       this._touchMovePending = null;
@@ -784,7 +786,9 @@
         this.canvas.addEventListener('pointerdown', (e) => this.down(e));
         window.addEventListener('pointermove', this._boundMove);
         window.addEventListener('pointerup', this._boundUp);
-        window.addEventListener('pointercancel', this._boundUp);
+        // TUX-018: a cancel aborts the edit and restores the pre-gesture state. It never commits.
+        this._boundCancel = (e) => this.onPointerCancel(e);
+        window.addEventListener('pointercancel', this._boundCancel);
       } else {
         this._boundMouseMove = (e) => this.move(e);
         this._boundMouseUp = (e) => this.up(e);
@@ -919,7 +923,7 @@
       if (this._boundMove) {
         window.removeEventListener('pointermove', this._boundMove);
         window.removeEventListener('pointerup', this._boundUp);
-        window.removeEventListener('pointercancel', this._boundUp);
+        if (this._boundCancel) window.removeEventListener('pointercancel', this._boundCancel);
       }
       if (this._boundMouseMove) {
         window.removeEventListener('mousemove', this._boundMouseMove);
@@ -2093,6 +2097,23 @@
     _rollbackFirstTouchAction() {
       const snap = this._touchSnapshot;
       this._touchSnapshot = null;
+      this._abortToSnapshot(snap);
+    }
+
+    // TUX-018: abort the active interaction of ANY pointer type and restore the state that
+    // the pointerdown mark captured. One function for pointercancel; TUX-017's rollback
+    // shares the same body (_abortToSnapshot). Mouse and touch abort the same way. Escape
+    // keeps its own narrower ladder (_onDragCancelKey) so pen and marquee Escape semantics
+    // stay as they were. A cancel never touches the redo stack and never adds a history entry.
+    abortActiveInteraction(reason = 'abort') {
+      const snap = this._gestureMark;
+      this._gestureMark = null;
+      this._touchSnapshot = null;
+      this._abortToSnapshot(snap);
+      return reason;
+    }
+
+    _abortToSnapshot(snap) {
       this._touchDeferred = null; // deferred one-shots never ran, so there is nothing to undo
       const Arb = window.Vectura.TouchGestureArbiter;
       Arb.CANCEL_PATHS.forEach((name) => {
@@ -2111,6 +2132,31 @@
       if (snap) this._restoreTouchSnapshot(snap);
       this.updateCursor();
       this.draw();
+    }
+
+    onPointerCancel(e = {}) {
+      if (!this.ready || !this.canvas) return;
+      const id = e.pointerId;
+      const tracked = this.isTouchPointer(e) && this.touchPointers.has(id);
+      // A cancelled finger of a pinch/pan ends the gesture and keeps the view. The arbiter
+      // latch holds until every touch pointer has gone, so no one-finger action starts.
+      if (tracked && (this.touchGesture || this.touchArbiter.gestureActive)) {
+        this.removeTouchPointer(e);
+        if (this.touchGesture && this.touchPointers.size < 2) this.stopTouchGesture();
+        if (id === this.activePointerId) this._releaseActivePointer(e);
+        this.updateCursor();
+        this.draw();
+        return;
+      }
+      // Foreign cancels (panel controls, other pointers) must not abort the canvas drag.
+      if (id !== this.activePointerId && !tracked) return;
+      if (tracked && this.activePointerId !== null && id !== this.activePointerId) {
+        this.removeTouchPointer(e);
+        return;
+      }
+      this.abortActiveInteraction('pointercancel');
+      this.removeTouchPointer(e);
+      this._releaseActivePointer(e);
     }
 
     _restoreTouchSnapshot(snap) {
@@ -6728,6 +6774,7 @@
         const info = this.touchArbiter.down(e);
         if (info.role === 'first') {
           this._touchSnapshot = this._takeTouchSnapshot();
+          this._gestureMark = this._touchSnapshot;
         } else if (info.role === 'second') {
           if (info.decision.rollback) this._rollbackFirstTouchAction();
           else this._commitFirstTouchAction(info.firstId);
@@ -6745,6 +6792,7 @@
       if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
         return;
       }
+      if (!this.isTouchPointer(e)) this._gestureMark = this._takeTouchSnapshot();
       if (e.pointerId !== undefined) {
         this.activePointerId = e.pointerId;
         this.activePointerType = e.pointerType || null;
@@ -8228,6 +8276,7 @@
       }
       this.activePointerId = null;
       this.activePointerType = null;
+      this._gestureMark = null;
     }
 
     up(e = {}) {
@@ -8249,20 +8298,6 @@
       if (this.isTouchPointer(e) && this.touchArbiter.gestureActive) {
         this._releaseActivePointer(e);
         this.updateCursor();
-        return;
-      }
-      // TUX-019: a cancelled touch (system gesture, palm, OS takeover) must not commit a move.
-      // Restore the start transforms; no history entry was pushed (it is pushed at drop).
-      if (e.type === 'pointercancel' && this.isTouchPointer(e) && (this.isLayerDrag || this._touchMovePending)) {
-        this._touchMovePending = null;
-        this.touchSlopCrossed = false;
-        this._touchSnapshot = null;
-        this._touchDeferred = null;
-        this.cancelLayerDrag();
-        this._pendingSingleSelect = null;
-        this._releaseActivePointer(e);
-        this.updateCursor();
-        this.draw();
         return;
       }
       // Touch one-shots deferred at pointerdown (fill pour, plain-marquee clear, pen

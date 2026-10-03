@@ -1535,6 +1535,8 @@ test.describe('Vectura smoke interactions', () => {
     // Desktop rows keep the inline outline toggle; touch rows (TUX-012) move it into the ⋯ menu.
     const outlineBtn = page.locator('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn');
     if (await outlineBtn.count()) {
+      // TUX-036: the action strip only takes pointer events once the row is hovered (as for a real mouse).
+      await page.locator('[data-layer-id="mask-parent-hidden-ui"]').hover();
       await outlineBtn.click();
     } else {
       await page.locator('[data-layer-id="mask-parent-hidden-ui"] .lvl-more').click();

@@ -174,3 +174,13 @@
   --safe-left: env(safe-area-inset-left, 0px);
 }
 /* === END TUX-005 safe-area tokens === */
+
+/* === TUX-043: slider tokens ===
+ * Consumed by the "TUX-043: sliders" block at the end of components.css (coarse pointers only).
+ * The thumb is 28px; the track stays a 4px (pen: 3px) line drawn inside a 44px input box. */
+:root {
+  --touch-slider-thumb: 28px;
+  --touch-slider-track: 4px;
+  --touch-slider-track-pen: 3px;
+}
+/* === END TUX-043 tokens === */

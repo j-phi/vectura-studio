@@ -14,10 +14,14 @@ const touchUse = (d) => ({
   isMobile: true,
   userAgent: d.ua,
 });
+// TUX-058: the browser-chrome variants (-c devices) only serve the audit's canvas/overflow row,
+// so they run the `default` state only. Non-default audit states carry @audit-extra in the title.
+const chromeVariantGrep = (name) => (/-chrome$/.test(name) ? { grepInvert: /@audit-extra/ } : {});
 const chromiumTouchProjects = Object.entries(CHROMIUM_PROJECTS).map(([name, dev]) => ({
   name,
   use: { ...devices['Desktop Chrome'], ...touchUse(DEVICES[dev]) },
   testMatch: TOUCH_MATCH,
+  ...chromeVariantGrep(name),
 }));
 const webkitTouchProjects = Object.entries(WEBKIT_PROJECTS).map(([name, dev]) => ({
   name,
@@ -61,7 +65,7 @@ module.exports = defineConfig({
         ...(useSystemChrome ? { channel: 'chrome' } : {}),
         viewport: { width: 1600, height: 1000 },
       },
-      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|type-tool-desktop\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|text-panel-field-desktop\.spec\.js$|keyboard-inset-desktop\.spec\.js$|modals-desktop\.spec\.js$/,
+      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|type-tool-desktop\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|text-panel-field-desktop\.spec\.js$|keyboard-inset-desktop\.spec\.js$|modals-desktop\.spec\.js$|hidden-actions-desktop\.spec\.js$|toolbar-handles-desktop\.spec\.js$/,
     },
     {
       name: 'desktop-visual-chromium',

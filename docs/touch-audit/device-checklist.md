@@ -1,6 +1,6 @@
 # Real-device checklist (D8)
 
-Rows below come from TUX-013. TUX-062 consolidates this file.
+Rows below come from TUX-013, TUX-015 and TUX-036. TUX-062 consolidates this file.
 
 | # | Device | Check | Source |
 |---|--------|-------|--------|
@@ -10,3 +10,8 @@ Rows below come from TUX-013. TUX-062 consolidates this file.
 | TUX-015-a | iPhone, portrait and landscape, Safari toolbar shown and hidden | Open the All Tools drawer. It stays inside the visible area. It clears the notch and the home indicator. Status: deferred-by-Jay unless verified. | TUX-015 |
 | TUX-015-b | iPhone and iPad | Drag inside the drawer body. It scrolls with momentum. The page behind does not scroll. Status: deferred-by-Jay unless verified. | TUX-015 |
 | TUX-015-c | iPad, portrait | The drawer opens below the horizontal rail. Every tool is fully tappable. Status: deferred-by-Jay unless verified. | TUX-015 |
+| TUX-016-a | iPad, landscape | Drag the floating toolbar grip and the ctxbar grip 10 times each. Each bar follows the finger with no page bounce, edge-swipe or back gesture, and no later touch moves a bar. Status: pending. | TUX-016 |
+| TUX-036-a | iPhone and iPad | Modifier buttons do not keep an iOS sticky-hover state. Status: deferred-by-Jay unless verified. | TUX-036 |
+| TUX-036-b | iPhone and iPad | A gallery row selects on the first tap. No hover-only first tap. Status: deferred-by-Jay unless verified. | TUX-036 |
+| TUX-036-c | iPad with trackpad | A finger tap on an inactive layer row never fires a hidden action. Status: deferred-by-Jay unless verified. | TUX-036 |
+| TUX-036-d | iPad with Apple Pencil | Pencil hover reveal leaves no visible-but-inert buttons. Status: deferred-by-Jay unless verified. | TUX-036 |
