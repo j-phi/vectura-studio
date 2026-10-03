@@ -1269,12 +1269,15 @@
   font-size: var(--font-size-xs);
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-[data-ui-skin] .touch-modifier-bar button:hover,
-[data-ui-skin] #touch-modifier-bar button:hover {
-  background: var(--ui-ctrl-hov);
-  border-color: var(--ui-border-hi);
-  color: var(--ui-accent);
-}
+/* TUX-036: hover only where a real hover exists; a touch tap leaves :hover stuck. */
+@media (hover: hover) {
+  [data-ui-skin] .touch-modifier-bar button:hover,
+  [data-ui-skin] #touch-modifier-bar button:hover {
+    background: var(--ui-ctrl-hov);
+    border-color: var(--ui-border-hi);
+    color: var(--ui-accent);
+  }
+} /* TUX-036 */
 [data-ui-skin] .touch-modifier-bar button.active,
 [data-ui-skin] #touch-modifier-bar button.active {
   background: var(--ui-accent-2);
@@ -3919,8 +3922,10 @@
   opacity: 0.6;
 }
 .hg-preset-delete svg { width: 10px; height: 10px; display: block; }
-.hg-preset-option:hover .hg-preset-delete { display: flex; }
-.hg-preset-delete:hover { color: var(--ui-accent); opacity: 1; }
+@media (hover: hover) {
+  .hg-preset-option:hover .hg-preset-delete { display: flex; }
+  .hg-preset-delete:hover { color: var(--ui-accent); opacity: 1; }
+} /* TUX-036 */
 
 /* Dev-only inline group reassignment select. Doubles as a visible group label at
    rest (low opacity); brightens on row hover/focus. Sits before the delete X. */
@@ -3933,13 +3938,17 @@
   cursor: pointer; opacity: 0.55;
   transition: opacity 0.08s, color 0.15s, border-color 0.15s;
 }
-.hg-preset-option:hover .hg-preset-group-select,
 .hg-preset-group-select:focus { opacity: 1; }
-.hg-preset-group-select:hover { color: var(--ui-text); border-color: var(--ui-accent); }
+@media (hover: hover) {
+  .hg-preset-option:hover .hg-preset-group-select { opacity: 1; }
+  .hg-preset-group-select:hover { color: var(--ui-text); border-color: var(--ui-accent); }
+} /* TUX-036 */
 
 /* Revert-to-default control: shares the delete button's sizing/hover-reveal but
    reads as a restore (neutral hover), not a destructive action. */
-.hg-preset-revert:hover { color: var(--ui-text); opacity: 1; }
+@media (hover: hover) {
+  .hg-preset-revert:hover { color: var(--ui-text); opacity: 1; }
+} /* TUX-036 */
 
 /* Dev-only "Set as Default" star button. Gold hover signals constructive action. */
 .hg-preset-set-default {
@@ -3949,8 +3958,10 @@
   opacity: 0.6;
 }
 .hg-preset-set-default svg { width: 10px; height: 10px; display: block; }
-.hg-preset-option:hover .hg-preset-set-default { display: flex; }
-.hg-preset-set-default:hover { color: #c8a84b; opacity: 1; }
+@media (hover: hover) {
+  .hg-preset-option:hover .hg-preset-set-default { display: flex; }
+  .hg-preset-set-default:hover { color: #c8a84b; opacity: 1; }
+} /* TUX-036 */
 
 .hg-preset-import {
   display: block; width: 100%; padding: 6px 10px; margin-top: 4px;
@@ -7702,7 +7713,8 @@
 .lvl-ib.lk-anc { color: var(--ui-border-hi); opacity: .7 }
 .lvl-ib.lk-off { color: var(--ui-border-hi) }
 .lvl-acts { display: flex; align-items: center; gap: 1px; opacity: 0; transition: opacity .15s }
-.lvl-card:hover .lvl-acts, .lvl-card.is-active .lvl-acts { opacity: 1 }
+.lvl-card.is-active .lvl-acts { opacity: 1 }
+@media (hover: hover) { .lvl-card:hover .lvl-acts { opacity: 1 } } /* TUX-036 */
 .lvl-ab {
   width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
   border-radius: 3px; border: none; background: none; color: var(--ui-muted);
@@ -7751,7 +7763,8 @@
 .lvl-grp-hdr.modifier .lvl-grp-name { color: var(--lvl-cyan) }
 .lvl-grp-hdr.modifier.mod-off .lvl-grp-name { color: var(--ui-border-hi) }
 .lvl-grp-acts { display: flex; align-items: center; gap: 1px; opacity: 0; transition: opacity .12s }
-.lvl-grp-hdr:hover .lvl-grp-acts, .lvl-grp-hdr.is-active .lvl-grp-acts { opacity: 1 }
+.lvl-grp-hdr.is-active .lvl-grp-acts { opacity: 1 }
+@media (hover: hover) { .lvl-grp-hdr:hover .lvl-grp-acts { opacity: 1 } } /* TUX-036 */
 .lvl-caret {
   display: flex; align-items: center; justify-content: center;
   color: var(--ui-border-hi); transition: transform .15s; width: 14px; height: 14px;
@@ -13991,3 +14004,38 @@ body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: cent
 }
 #layer-add-menu.is-touch > .lvl-add-item { min-height: var(--touch-target-min); }
 /* === /TUX-035 === */
+
+/* === TUX-036: hidden-but-tappable actions === */
+/* Pointer-events follow the opacity:1 states for every input type, so a strip that is
+   transparent can never take a tap (a finger tap lands on the card and selects it). */
+.lvl-acts, .lvl-grp-acts { pointer-events: none; }
+.lvl-card.is-active .lvl-acts,
+.lvl-grp-hdr.is-active .lvl-grp-acts { pointer-events: auto; }
+@media (hover: hover) {
+  .lvl-card:hover .lvl-acts,
+  .lvl-grp-hdr:hover .lvl-grp-acts { pointer-events: auto; }
+}
+/* Locked and multi-select states keep winning (same specificity as the is-active rule above). */
+.lvl-card.is-locked .lvl-acts { pointer-events: none; }
+.lvl-list-multi .lvl-card.is-selected .lvl-acts,
+.lvl-list-multi .lvl-grp-hdr.is-selected .lvl-grp-acts { pointer-events: none; }
+
+/* Requirement 5: keep Delete away from its neighbour. Margin only; sizing belongs to TUX-041. */
+@media (pointer: coarse) {
+  .lvl-acts > .lvl-ab.del,
+  .lvl-grp-acts > .lvl-ab.del { margin-inline-start: 8px; }
+}
+
+/* Preset gallery on devices without hover: row controls are always shown. */
+@media (hover: none) {
+  .hg-preset-delete,
+  .hg-preset-set-default { display: flex; opacity: 1; }
+  .hg-preset-group-select { opacity: 1; }
+}
+/* Two-step touch Delete: the first tap arms the button. */
+.hg-preset-delete.is-armed {
+  width: auto; min-width: 18px; padding: 0 6px;
+  color: #fff; background: rgb(var(--vectura-danger-rgb, 239 68 68)); opacity: 1;
+  font-size: var(--font-size-xs, 11px); line-height: 18px; white-space: nowrap;
+}
+/* === /TUX-036 === */
