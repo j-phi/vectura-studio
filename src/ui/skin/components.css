@@ -13729,7 +13729,6 @@ body.phone-layout:not(.auto-collapsed) #tool-bar {
   padding-right: calc(var(--pane-collapsed-width, 40px) + 4px + env(safe-area-inset-right, 0px));
 }
 /* === /TUX-013 === */
-=======
 /* === TUX-034: touch hold + context menus ===
    Scoped to .menu-dropdown.is-context-menu and .canvas-ctx-menu. The header menubar shares
    bare .menu-dropdown / .menu-entry: never restyle those here. */
@@ -13762,4 +13761,3 @@ body.phone-layout:not(.auto-collapsed) #tool-bar {
   .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
 }
 /* === END TUX-034 === */
->>>>>>> touch/integration
