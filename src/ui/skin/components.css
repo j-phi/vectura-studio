@@ -13729,3 +13729,37 @@ body.phone-layout:not(.auto-collapsed) #tool-bar {
   padding-right: calc(var(--pane-collapsed-width, 40px) + 4px + env(safe-area-inset-right, 0px));
 }
 /* === /TUX-013 === */
+=======
+/* === TUX-034: touch hold + context menus ===
+   Scoped to .menu-dropdown.is-context-menu and .canvas-ctx-menu. The header menubar shares
+   bare .menu-dropdown / .menu-entry: never restyle those here. */
+.touch-hold-ring {
+  position: fixed; z-index: 10000; pointer-events: none;
+  width: var(--touch-hold-ring-size); height: var(--touch-hold-ring-size);
+  margin: calc(var(--touch-hold-ring-size) / -2) 0 0 calc(var(--touch-hold-ring-size) / -2);
+  border: 3px solid var(--touch-hold-ring-color); border-radius: 50%;
+  box-sizing: border-box; overflow: hidden;
+}
+.touch-hold-ring-fill {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: var(--touch-hold-ring-fill); transform-origin: 50% 50%;
+}
+/* A card hold must show no native callout, selection or drag lift (clause 16). */
+.lvl-card, .lvl-grp-hdr {
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
+.menu-dropdown.is-context-menu { overflow-y: auto; overscroll-behavior: contain; }
+@media (pointer: coarse) {
+  .menu-dropdown.is-context-menu {
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .menu-dropdown.is-context-menu .menu-entry { min-height: var(--touch-target-min); }
+  .canvas-ctx-menu {
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
+}
+/* === END TUX-034 === */
+>>>>>>> touch/integration

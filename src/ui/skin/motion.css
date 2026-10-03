@@ -260,6 +260,26 @@
 }
 /* === END TB task-bar motion === */
 
+/* === TUX-034: touch hold ring + pop ===
+   Durations come from Vectura.TOUCH_HOLD via inline custom properties
+   (--th-fill-ms on the ring, --th-pop-ms / --th-pop-scale on the card). */
+@keyframes touch-hold-fill {
+  from { transform: scale(0); }
+  to { transform: scale(1); }
+}
+@keyframes touch-hold-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(var(--th-pop-scale, 1.03)); }
+  100% { transform: scale(1); }
+}
+.touch-hold-ring-fill { animation: touch-hold-fill var(--th-fill-ms, 350ms) linear forwards; }
+.touch-hold-pop { animation: touch-hold-pop var(--th-pop-ms, 120ms) ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .touch-hold-pop { animation: none; }
+  .touch-hold-ring-fill { animation: none; transform: scale(1); }
+}
+/* === END TUX-034 motion === */
+
 /* === Migrated from styles.css (Unit 2.6: reduced-motion fallback, 2026-05-20) === */
 
 /* Accessibility: respect reduced-motion preference */
