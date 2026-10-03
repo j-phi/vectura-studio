@@ -2455,6 +2455,14 @@
     return ordered;
   };
 
+  // TUX-006: layout classifier thresholds (exclusive "<" comparisons). See src/ui/shell/layout-classifier.js.
+  window.Vectura.TOUCH_LAYOUT = {
+    coarsePhoneMaxWidth: 600,
+    coarsePhoneMaxHeight: 500,
+    finePhoneMaxWidth: 540,
+    wideMinWidth: 900,
+  };
+
   window.Vectura.SETTINGS = {
     uiTheme: 'dark',
     margin: 20,

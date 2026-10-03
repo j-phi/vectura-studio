@@ -22,6 +22,9 @@
     layer:    () => layerSvg(`<rect x="1.5" y="3" width="9" height="7.5" rx=".8"/><line x1="3.5" y1="1.5" x2="8.5" y2="1.5"/>`),
     grpPlus:  () => layerSvg(`<path d="M1 4C1 3 1.7 2.5 2.5 2.5H4.5l1 1.5h4C10.3 4 11 4.7 11 5.5V9c0 .8-.7 1.5-1.5 1.5h-7C1.7 10.5 1 9.8 1 9V4z"/><line x1="6" y1="6" x2="6" y2="9"/><line x1="4.5" y1="7.5" x2="7.5" y2="7.5"/>`),
     caret:    () => layerSvg(`<path d="M4.5 3l3 3-3 3"/>`),
+    // TUX-012 touch row affordances: reorder grip (2x3 dots) and the ⋯ more button (3 dots).
+    grip:     () => layerSvg(`<g fill="currentColor" stroke="none"><circle cx="4.2" cy="2.8" r=".9"/><circle cx="7.8" cy="2.8" r=".9"/><circle cx="4.2" cy="6" r=".9"/><circle cx="7.8" cy="6" r=".9"/><circle cx="4.2" cy="9.2" r=".9"/><circle cx="7.8" cy="9.2" r=".9"/></g>`),
+    more:     () => layerSvg(`<g fill="currentColor" stroke="none"><circle cx="2.5" cy="6" r="1"/><circle cx="6" cy="6" r="1"/><circle cx="9.5" cy="6" r="1"/></g>`),
     trash:    () => layerSvg(`<path d="M5 5.5v3M7 5.5v3"/><path d="M9.5 3v7a1 1 0 0 1-1 1H3.5a1 1 0 0 1-1-1V3"/><path d="M1.5 3h9"/><path d="M4 3V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1"/>`),
     dup:      () => layerSvg(`<rect x="4" y="4" width="7" height="7" rx="1"/><path d="M2 8c-.55 0-1-.45-1-1V2c0-.55.45-1 1-1h5c.55 0 1 .45 1 1"/>`),
     expand:   () => layerSvg(`<path d="M2 5c-.55 0-1-.45-1-1V2c0-.55.45-1 1-1h2c.55 0 1 .45 1 1"/><path d="M5 8c-.55 0-1-.45-1-1V5c0-.55.45-1 1-1h2c.55 0 1 .45 1 1"/><rect width="4" height="4" x="7" y="7" rx="1"/>`),
