@@ -88,14 +88,19 @@ const onCanvas = (c, x, y) => ({ x, y, within: L(c, S.canvas) });
 
 // A spot on the canvas where both start fingers of a pinch (cx +- 40) sit on empty canvas:
 // clear of the selected object and of the floating overlays (toolbar, HUD, context bar).
-function emptyPinchSpot(st, avoidBox) {
+// `opts.half` is the largest finger offset from the centre over the whole gesture
+// (max(startDist, endDist) / 2), so the end positions are clear too. `opts.drag` {dx, dy}
+// also clears the end point of a one-finger drag.
+function emptyPinchSpot(st, avoidBox, opts = {}) {
+  const half = opts.half === undefined ? 40 : opts.half;
   const cr = st.canvasRect;
   const pad = 16;
   const rects = [avoidBox, ...st.overlays];
   let best = null;
   for (let y = cr.y + 40; y < cr.y + cr.h - 40; y += 20) {
-    for (let x = cr.x + 110; x <= cr.x + cr.w - 110; x += 20) {
-      const clear = [x - 40, x + 40].every((fx) => rects.every((r) => !(fx > r.minx - pad && fx < r.maxx + pad && y > r.miny - pad && y < r.maxy + pad)));
+    for (let x = cr.x + half + 70; x <= cr.x + cr.w - half - 70; x += 20) {
+      const pts = opts.drag ? [[x, y], [x + opts.drag.dx, y + opts.drag.dy]] : [[x - half, y], [x + half, y]];
+      const clear = pts.every(([fx, fy]) => fx > cr.x && fx < cr.x + cr.w && fy > cr.y && fy < cr.y + cr.h && rects.every((r) => !(fx > r.minx - pad && fx < r.maxx + pad && fy > r.miny - pad && fy < r.maxy + pad)));
       if (!clear) continue;
       const d = Math.hypot(x - (cr.x + cr.w / 2), y - (cr.y + cr.h / 2));
       if (!best || d < best.d) best = { x, y, d };
@@ -406,7 +411,7 @@ JOURNEYS.push({
       expects: 'scale grows; selection kept; history +0; the object params are untouched', jrn: 'JRN-003',
       run: async (c) => {
         const st = await P.readState(c.page);
-        const spot = emptyPinchSpot(st, boxOf(st, c.vars.oval));
+        const spot = emptyPinchSpot(st, boxOf(st, c.vars.oval), { half: 75 });
         if (!spot) throw new Error('no empty canvas spot for the first finger');
         c.vars.scale = st.scale;
         c.vars.params = JSON.stringify(st.activeParams);
@@ -880,7 +885,7 @@ JOURNEYS.push({
         const st = await P.readState(c.page);
         c.vars.cam = st.sceneCamera;
         const scene = layerOfType(st, 'scene3d');
-        const spot = emptyPinchSpot(st, st.boxes[scene.id] ? boxOf(st, scene.id) : { minx: 0, maxx: 0, miny: 0, maxy: 0 });
+        const spot = emptyPinchSpot(st, st.boxes[scene.id] ? boxOf(st, scene.id) : { minx: 0, maxx: 0, miny: 0, maxy: 0 }, { drag: { dx: 70, dy: 30 } });
         if (!spot) throw new Error('no empty canvas spot for the drag');
         await P.fingerDrag(c.page, onCanvas(c, spot.x, spot.y), { dx: 70, dy: 30 }, { steps: 12, stepDelayMs: 8 });
       },
