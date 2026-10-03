@@ -14,6 +14,8 @@
  */
 
 :root {
+  /* TUX-032: on-screen keyboard height; written by src/ui/keyboard-inset.js, 0 unless an editable has focus. */
+  --kb-inset: 0px;
   /* Default color-scheme — overwritten by App.applyTheme via the active skin's
    * manifest.colorScheme. The default lets pre-JS form-control rendering use a
    * dark UA appearance (matches the meridian-dark default skin). */
@@ -132,3 +134,13 @@
   --touch-hold-ring-fill: var(--ui-accent-2, rgba(38, 128, 235, 0.35));
 }
 /* === END TUX-034 tokens === */
+
+/* === TUX-041 / TUX-042: touch tokens (lane C1) ===
+ * Sizes only. Consumed by the coarse-pointer blocks at the end of components.css.
+ * Skin files must not override these. */
+:root {
+  --touch-target-min: 44px;
+  --touch-target-floor: 24px;
+  --input-font-touch: 16px;
+}
+/* === END TUX-041 / TUX-042 tokens === */
