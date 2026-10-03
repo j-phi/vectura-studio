@@ -659,7 +659,10 @@ Conventions used below:
   2. Editing the field must update the layer live.
   3. One editing session (focus to blur) must add one history entry.
   4. The field must have `font-size ≥ 16px`.
-- **RED:** `tests/integration/text-panel-content-field.test.js`: select a text layer; assert the panel contains `textarea[data-text-content]` whose value equals the layer text; set value + dispatch `input`; assert layer text updated; blur; assert history length +1. Fails: field absent.
+- **RED (amended):** the editable specimen `.vtp-spec-text` already writes `params.text`, but it is not a usable touch field. The decision is a dedicated `textarea[data-text-content]` in the Type tab; the specimen stays a preview, inline-editable on fine pointers only; both call one shared session op.
+  - `tests/integration/text-panel-content-field.test.js`: T1 one session = one history entry on the specimen path (focus; text `A`; input; 500 ms; `AB`; input; 500 ms; blur; expect `pushHistory` 1). T2 the field exists, is bound, updates `params.text` at once, regens after the debounce and adds one entry per session. T3 an unchanged session adds none. T4 `jitter=1` keeps plain text. T5 the field survives a collapsed specimen. T6 focusing ends a concurrent canvas session and prunes `kernPairs`. T7 attributes. T8 fine pointer keeps `contenteditable="true"`. T9 coarse pointer makes the specimen a preview that focuses the field.
+  - `tests/e2e/touch/text-panel-field.spec.js` (8 primary projects): create the layer through `_createPointTextLayerAt`, set size 8 through the panel size control (fit-to-frame off), tap the field. Assert focus, font-size >= 16, field not covered, >= 3 lines, a 5-line value scrolls, `insertText` changes text and path count without losing focus, one history entry after a canvas tap, and specimen tap focuses the field.
+  - *Fails on main:* T1 expected 1, received 2. The e2e finds no `textarea[data-text-content]` (specimen `contenteditable="true"`, 10 px).
 - **GREEN:** `src/ui/ui-text-panel.js`.
 - **REFACTOR:** Field and the canvas proxy (TUX-028) share the controller's set-text operation.
 - **DoD:** D1–D9, plus README + Help mention the field.

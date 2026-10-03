@@ -150,6 +150,36 @@
           // Panel specimen is suppressed during a session; rebuild on end so it
           // re-syncs to the final text without two editors fighting params.text.
           refreshPanel: () => { this.ui?.buildControls?.(); },
+          // TUX-028 soft-keyboard proxy hooks (touch/pen sessions only). Caret
+          // position in CLIENT px (+ the canvas rect to clamp inside) so the hidden
+          // textarea sits at the caret, and a canvas pan used to keep the caret above
+          // the on-screen keyboard. Keyboard-inset seam: TUX-032 may absorb panCanvasBy.
+          getCaretClientPoint: () => {
+            const seg = this.textEdit?.getCaretSegment?.();
+            const canvas = this.renderer?.canvas || document.getElementById('main-canvas');
+            if (!seg || !canvas) return null;
+            const r = canvas.getBoundingClientRect();
+            const a = this.renderer.worldToScreen(seg.x0, seg.y0);
+            const b = this.renderer.worldToScreen(seg.x1, seg.y1);
+            return {
+              x: r.left + Math.min(a.x, b.x),
+              top: r.top + Math.min(a.y, b.y),
+              bottom: r.top + Math.max(a.y, b.y),
+              rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+            };
+          },
+          // Undo/redo chord pressed while the touch proxy (a TEXTAREA) had focus; the
+          // global shortcut handler skips TEXTAREA targets, so route via the menu action.
+          undoRedo: (kind) => { this.ui?.triggerTopMenuAction?.(kind === 'undo' ? 'btn-undo' : 'btn-redo'); },
+          // App-level accelerators (Cmd/Ctrl+S/E/O...) while the proxy has focus;
+          // shortcuts.js ignores TEXTAREA targets. Returns true when handled.
+          handleShortcut: (e) => !!this.ui?.handleTopMenuShortcut?.(e),
+          panCanvasBy: (dx, dy) => {
+            if (!this.renderer) return;
+            this.renderer.offsetX += dx || 0;
+            this.renderer.offsetY += dy || 0;
+            this.renderer.draw?.();
+          },
           // Commit / cancel (Cmd/Ctrl+Enter, Esc) returns to the Selection tool
           // via the toolbar API so the button state stays in sync.
           setTool: (tool) => { this.ui?.setActiveTool?.(tool); },
