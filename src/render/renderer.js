@@ -7518,7 +7518,11 @@
         // moves are ground-drags handled by _sceneDownSelect above; a press on
         // empty scene space falls through to the marquee below.
         const sceneBoundsDragSuppressed = updatedSelected.length === 1 && updatedSelected[0].type === 'scene3d';
-        if (bounds && !sceneBoundsDragSuppressed && this.pointInBounds(world, bounds) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
+        // TUX-019: a finger cannot hit a zero-height line or a 1 px outline exactly, so touch also
+        // arms the move when the press hit (findLayerAtPoint tolerance) a layer in the selection.
+        // Mouse and pen keep the strict bounds test.
+        const touchHitSelected = this.isTouchPointer(e) && !!topLayer && updatedSelected.some(l => l.id === topLayer.id);
+        if (bounds && !sceneBoundsDragSuppressed && (this.pointInBounds(world, bounds) || touchHitSelected) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
           if (this.isTouchPointer(e)) {
             // TUX-019: touch waits for the drag slop, not a hold. move() promotes this into
             // the same state the mouse sets here; a lift under the slop is a tap.

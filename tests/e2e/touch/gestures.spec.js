@@ -538,6 +538,92 @@ test.describe('TUX-019 direct drag', () => {
     expect(after.isLayerDrag).toBe(false);
   });
 
+  // Thin / outline-only objects: a finger cannot hit a 0 px line exactly. A press within the hit
+  // tolerance of a selected (or just-selected) object must still arm the move (TUX-019 fix round).
+  const THIN_DRAG = { dx: 50, dy: 25 };
+  const addLine = (page, view, select) => page.evaluate(({ view, select }) => {
+    const app = window.app;
+    const r = app.renderer;
+    const id = app.engine.addShapeLayer('TUX-019 line', [[{ x: 120, y: 140 }, { x: 180, y: 140 }]]);
+    window.Vectura.SETTINGS.snapGuides = false;
+    window.Vectura.SETTINGS.showGuides = false;
+    if (select) r.setSelection([id], id); else r.setSelection([], null);
+    app.history = [];
+    app.pushHistory();
+    r.draw();
+    return id;
+  }, { view, select });
+  // Put world (150,140) (the line centre) at the object screen point.
+  const centreLine = (page, view, pts) => page.evaluate(({ view, pts }) => {
+    const r = window.app.renderer;
+    const cv = document.querySelector('#main-canvas').getBoundingClientRect();
+    // The line is 60 mm long. The selection handles take a press at the edge midpoint (10 px)
+    // and within 28 px of a corner, so the line needs >= 2.1 px/mm for a free stretch to press.
+    r.scale = Math.max(view.scale, 2.1);
+    r.offsetX = (pts.obj.x - cv.left) - 150 * r.scale;
+    r.offsetY = (pts.obj.y - cv.top) - 140 * r.scale;
+    r.draw();
+  }, { view, pts });
+  const thinDrag = async (page, testInfo, kind, selected, dyPress) => {
+    const { id: rectId, view } = await fixture(page, testInfo, { tool: 'select', selectObject: false });
+    const pts = await prepare(page, view);
+    await page.evaluate((o) => { window.__tux019Obj = o; }, pts.obj);
+    let id = rectId;
+    let press;
+    if (kind === 'line') {
+      await page.evaluate((rid) => { window.app.engine.removeLayer ? window.app.engine.removeLayer(rid) : null; }, rectId);
+      id = await addLine(page, view, selected);
+      await centreLine(page, view, pts);
+      // 14 px along the line from the midpoint: clear of the midpoint resize handle.
+      press = { x: pts.obj.x + 14, y: pts.obj.y + dyPress };
+    } else {
+      await page.evaluate(({ id, selected }) => {
+        const r = window.app.renderer;
+        if (selected) r.setSelection([id], id);
+        window.app.history = [];
+        window.app.pushHistory();
+      }, { id, selected });
+      // 3 px outside the rectangle outline's top edge (35 mm above the object centre). Zoom to
+      // >= 2.1 px/mm about the object centre so a selected rectangle's handle zones (10 px edge
+      // midpoint, 28 px outside-corner rotate) leave a free stretch of edge to press.
+      const sc = await page.evaluate((view) => {
+        const r = window.app.renderer;
+        const cv = document.querySelector('#main-canvas').getBoundingClientRect();
+        r.scale = Math.max(view.scale, 2.1);
+        r.offsetX = (window.__tux019Obj.x - cv.left) - 108 * r.scale;
+        r.offsetY = (window.__tux019Obj.y - cv.top) - 75 * r.scale;
+        r.draw();
+        return r.scale;
+      }, view);
+      press = { x: pts.obj.x + 14, y: pts.obj.y - 35 * sc + dyPress };
+    }
+    // Only the press point must hit the canvas: the touch stays captured by it, and the context
+    // bar that opens under a selection may float over the drag path.
+    await precondition(page, press, 0, testInfo.project.name);
+    const before = await probe(page, [id]);
+    await touch.drag(page, press, { x: press.x + THIN_DRAG.dx, y: press.y + THIN_DRAG.dy }, { steps: 10, stepDelayMs: 15, holdMs: 0 });
+    await sleep(60);
+    const after = await probe(page, [id]);
+    expect(after.sel, 'selected').toEqual([id]);
+    const d = screenDelta(before, after);
+    expect(Math.abs(d.dx - THIN_DRAG.dx), `dx error px (press ${dyPress})`).toBeLessThanOrEqual(SLOP_TOL_PX);
+    expect(Math.abs(d.dy - THIN_DRAG.dy), `dy error px (press ${dyPress})`).toBeLessThanOrEqual(SLOP_TOL_PX);
+    expect(after.offsetX, 'offsetX (no pan)').toBeCloseTo(before.offsetX, 0);
+    expect(after.offsetY, 'offsetY (no pan)').toBeCloseTo(before.offsetY, 0);
+    expect(after.hist - before.hist, 'history entries').toBe(1);
+  };
+
+  for (const selected of [false, true]) {
+    for (const dyPress of [-2, 2]) {
+      test(`(thin) horizontal line, ${selected ? 'selected' : 'unselected'}, press ${dyPress} px off moves it`, async ({ page }, testInfo) => {
+        await thinDrag(page, testInfo, 'line', selected, dyPress);
+      });
+    }
+    test(`(thin) rectangle outline, ${selected ? 'selected' : 'unselected'}, press 3 px outside the top edge moves it`, async ({ page }, testInfo) => {
+      await thinDrag(page, testInfo, 'rect', selected, -3);
+    });
+  }
+
   // Direct Selection: anchor drag waits for the slop and never pans.
   const directSetup = async (page, testInfo) => {
     const { id, view } = await fixture(page, testInfo, { tool: 'direct', selectObject: true });
@@ -597,5 +683,43 @@ test.describe('TUX-019 direct drag', () => {
     expect(after.offsetX).toBeCloseTo(before.offsetX, 0);
     expect(after.offsetY).toBeCloseTo(before.offsetY, 0);
     expect(after.hist - before.hist, 'history entries').toBe(1);
+  });
+});
+
+// TUX-019 mouse parity: the thin-object touch hit radius must not change mouse behaviour.
+test.describe('TUX-019 mouse parity (desktop)', () => {
+  test('mouse drag from 2 px off a horizontal line keeps strict bounds (0 px hit radius)', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'desktop-chromium only');
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
+    const geo = await page.evaluate(() => {
+      const app = window.app;
+      const r = app.renderer;
+      const id = app.engine.addShapeLayer('TUX-019 line', [[{ x: 120, y: 140 }, { x: 180, y: 140 }]]);
+      window.Vectura.SETTINGS.snapGuides = false;
+      window.Vectura.SETTINGS.showGuides = false;
+      r.setSelection([id], id);
+      app.ui.setActiveTool('select');
+      app.history = [];
+      app.pushHistory();
+      r.draw();
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      return { id, x: box.left + r.offsetX + 150 * r.scale, y: box.top + r.offsetY + 140 * r.scale, scale: r.scale };
+    });
+    const read = () => page.evaluate((id) => {
+      const app = window.app;
+      const b = app.renderer.getSelectionBounds([app.engine.layers.find((l) => l.id === id)]);
+      return { cx: b.center.x, cy: b.center.y, hist: app.history.length };
+    }, geo.id);
+    const before = await read();
+    await page.mouse.move(geo.x, geo.y + 2);
+    await page.mouse.down();
+    await page.mouse.move(geo.x + 50, geo.y + 27, { steps: 10 });
+    await page.mouse.up();
+    const after = await read();
+    // Behaviour today: the strict bounds test fails 2 px off a 0-height line, so the mouse
+    // does not move it. The touch fix must not change this.
+    expect(Math.hypot(after.cx - before.cx, after.cy - before.cy) * geo.scale, 'moved px').toBeLessThan(0.5);
+    expect(after.hist - before.hist, 'history entries').toBe(0);
   });
 });
