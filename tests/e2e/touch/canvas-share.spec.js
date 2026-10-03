@@ -308,5 +308,51 @@ test.describe('TUX-007 phone landscape', () => {
     expect(desk.dock, 'saved desktop dock restored').toBe('left');
     testInfo.annotations.push({ type: 'TUX-007 A6 desktop', description: JSON.stringify(desk) });
   });
+
+  test('A7 modifier column clears the landscape insets and Pan stays tappable', async ({ page }, testInfo) => {
+    // Playwright WebKit cannot emulate env(safe-area-inset-*), so both engines inject the --safe-* tokens.
+    const INS = { left: 62, right: 62, bottom: 21 };
+    await page.evaluate((v) => {
+      const st = document.documentElement.style;
+      st.setProperty('--safe-left', `${v.left}px`);
+      st.setProperty('--safe-right', `${v.right}px`);
+      st.setProperty('--safe-bottom', `${v.bottom}px`);
+    }, INS);
+    const vp0 = page.viewportSize();
+    const heights = [vp0.height, 330];
+    for (const h of heights) {
+      await page.setViewportSize({ width: vp0.width, height: h });
+      await sleep(600);
+      const m = await page.evaluate(() => {
+        const bar = document.getElementById('touch-modifier-bar');
+        const btns = [...document.querySelectorAll('#touch-modifier-bar .touch-mod-btn')]
+          .filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; })
+          .map((b) => { const r = b.getBoundingClientRect(); return { id: b.dataset.mod || b.id || b.textContent.trim(), l: r.left, r: r.right, t: r.top, b: r.bottom, w: r.width, h: r.height }; });
+        return { W: innerWidth, H: innerHeight, shown: !!bar && getComputedStyle(bar).display !== 'none', btns };
+      });
+      expect(m.shown, `modifier bar shown at ${h}`).toBe(true);
+      expect(m.btns.length, `modifier buttons at ${h}`).toBeGreaterThanOrEqual(5);
+      for (const b of m.btns) {
+        const tag = `${b.id} at ${m.W}x${m.H}`;
+        expect(b.l, `${tag} left`).toBeGreaterThanOrEqual(INS.left - 0.5);
+        expect(b.r, `${tag} right`).toBeLessThanOrEqual(m.W - INS.right + 0.5);
+        expect(b.t, `${tag} top`).toBeGreaterThanOrEqual(0);
+        expect(b.b, `${tag} bottom ${b.b} vs ${m.H - INS.bottom}`).toBeLessThanOrEqual(m.H - INS.bottom + 0.5);
+        expect(b.w >= 44 && b.h >= 44, `${tag} size ${b.w}x${b.h}`).toBe(true);
+      }
+      // Pan reachable by a real finger tap: the centre is uncovered and the tap lands on the button.
+      const pan = page.locator('#touch-modifier-bar .touch-mod-btn').filter({ hasText: /pan/i }).first();
+      await expect(pan).toBeVisible();
+      const hit = await pan.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!t && (t === el || el.contains(t));
+      });
+      expect(hit, `Pan centre uncovered at ${h}`).toBe(true);
+      await tap(page, pan);
+      await sleep(150);
+      testInfo.annotations.push({ type: 'TUX-007 A7', description: `${m.W}x${m.H} ${m.btns.length} modifier buttons, max bottom ${Math.max(...m.btns.map((b) => b.b))} <= ${m.H - INS.bottom}` });
+    }
+  });
 });
 void engineSupports;

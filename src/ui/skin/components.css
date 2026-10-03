@@ -14589,7 +14589,7 @@ body.phone-layout.phone-short {
   --tux7-sliver: var(--pane-collapsed-width, 40px);
 }
 /* Rail: ONE horizontal row <= 52 px. Beats `body.mobile-layout #tool-bar` (static, flex-wrap, full
- * width) and any persisted vertical/docked class. Overflow scrolls horizontally inside the rail. */
+ * width) and any persisted vertical/docked class. Extra tools sit under All Tools (TUX-013). */
 body.phone-layout.phone-short #tool-bar {
   position: static;
   flex-direction: row;
@@ -14606,7 +14606,8 @@ body.phone-layout.phone-short #tool-bar {
   box-sizing: border-box;
   /* 52 px = 4 + 44 + 3 padding + 1 px border: the 44 px buttons land on whole pixels. */
   padding: 4px 6px 3px;
-  overflow-x: auto;
+  /* One overflow model: TUX-013 marks extra tools .rail-overflowed (display:none) and All Tools lists them. */
+  overflow-x: hidden;
   overflow-y: hidden;
   scrollbar-width: none;
 }
@@ -14619,11 +14620,14 @@ body.phone-layout.phone-short #touch-modifier-bar {
   right: calc(var(--safe-right) + var(--tux7-sliver) + 6px);
   bottom: auto;
   left: auto;
-  width: 52px;
-  /* 5 x 44 px buttons + padding + border must fit the 286 px shell of the 874x330 device. */
-  max-height: calc(100% - var(--tux7-rail-h) - 4px);
-  flex-direction: column;
-  flex-wrap: nowrap;
+  /* Two columns x 3 rows of 44 px buttons (138 px): 5 x 44 px in one column is 220 px, more than the
+   * ~211 px free at 874x330, so a single column would push Pan under the home-indicator band. The
+   * max-height also subtracts the bottom inset, so the grid can never reach it. */
+  display: grid;
+  grid-template-columns: repeat(2, 46px);
+  grid-auto-rows: 44px;
+  width: auto;
+  max-height: calc(100% - var(--tux7-rail-h) - 4px - var(--safe-bottom));
   gap: 0;
   padding: 2px;
   border: 1px solid var(--ui-border);
