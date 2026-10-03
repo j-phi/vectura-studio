@@ -364,8 +364,9 @@ function measureInPage(cfg) {
       if (rule.cssRules && !rule.selectorText) { try { if (!rule.media || window.matchMedia(rule.media.mediaText).matches) walk(rule.cssRules); } catch (_) {} continue; }
       if (!rule.style || !rule.selectorText) continue;
       const txt = rule.style.cssText;
-      if (!txt.includes('safe-area-inset')) continue;
-      for (const side of ['top', 'bottom', 'left', 'right']) if (txt.includes(`safe-area-inset-${side}`)) safeSel[side].push(rule.selectorText);
+      if (!txt.includes('safe-area-inset') && !txt.includes('--safe-')) continue;
+      // TUX-005: consumers read var(--safe-<side>); only tokens.css holds the raw env().
+      for (const side of ['top', 'bottom', 'left', 'right']) if (txt.includes(`safe-area-inset-${side}`) || txt.includes(`var(--safe-${side}`)) safeSel[side].push(rule.selectorText);
     }
   };
   for (const ss of document.styleSheets) { try { walk(ss.cssRules); } catch (_) {} }

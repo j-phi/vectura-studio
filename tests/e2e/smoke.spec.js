@@ -1887,3 +1887,27 @@ test.describe('TUX-035 add layer menu (mouse parity)', () => {
     await expect(page.locator('#lvl-algo-submenu')).toBeHidden();
   });
 });
+
+// TUX-005 desktop parity (D6): the safe-area tokens resolve to 0 on a mouse desktop, so the rewritten
+// header/hud rules must reproduce the pre-change boxes. Expected values were captured on the base
+// before the change (1600x1000): header 38px / "0px 14px", toolbar "8px", hud "3px 12px".
+test.describe('TUX-005 desktop parity', () => {
+  test('header, toolbar and hud boxes are unchanged at 1600x1000', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'desktop parity is defined for the desktop-chromium project (1600x1000, mouse)');
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    const boxes = await page.evaluate(() => {
+      const read = (sel) => {
+        const el = document.querySelector(sel);
+        const cs = getComputedStyle(el);
+        return { h: el.getBoundingClientRect().height, padding: `${cs.paddingTop} ${cs.paddingRight} ${cs.paddingBottom} ${cs.paddingLeft}` };
+      };
+      return { header: read('#app-header'), toolbar: read('#tool-bar'), hud: read('#hud-bar') };
+    });
+    expect(boxes.header.h).toBe(38);
+    expect(boxes.header.padding).toBe('0px 14px 0px 14px');
+    expect(boxes.toolbar.padding).toBe('8px 8px 8px 8px');
+    expect(boxes.hud.padding).toBe('3px 12px 3px 12px');
+  });
+});

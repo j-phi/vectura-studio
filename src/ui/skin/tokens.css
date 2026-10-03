@@ -161,3 +161,16 @@
   --input-font-touch: 16px;
 }
 /* === END TUX-041 / TUX-042 tokens === */
+
+/* === TUX-005: safe-area tokens ===
+ * The ONLY place env(safe-area-inset-*) may appear (tests/unit/touch-safe-area-tokens.test.js).
+ * Every consumer reads var(--safe-*). e2e injects these on <html> because Playwright WebKit cannot
+ * emulate env(). The sheet/toast contract (TUX-046, TUX-048): use the tokens and cap height at
+ * calc(var(--app-vh) - var(--safe-top) - var(--safe-bottom)). */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+/* === END TUX-005 safe-area tokens === */

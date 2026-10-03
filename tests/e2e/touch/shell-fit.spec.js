@@ -326,7 +326,7 @@ const TUX3_PROJECTS = ['touch-ipad-landscape', 'webkit-ipad-landscape', 'touch-i
 const TUX4_PROJECTS = [
   ...TUX2_PROJECTS, 'touch-iphone-portrait-chrome', 'touch-iphone-landscape-chrome',
 ];
-const TUX4_EXPECTED_FAIL = { 'touch-iphone-landscape-chrome': 'TUX-007: iPhone landscape chrome layout leaves bottom bars below the viewport' };
+const TUX4_EXPECTED_FAIL = {}; // TUX-007 landed: the touch-iphone-landscape-chrome mark was removed (it reported 'Expected to fail, but passed')
 // Projects where #status-bar is display:none by design (measured: iPhone portrait, all three projects).
 const TUX4_STATUS_BAR_HIDDEN = ['touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-iphone-portrait-chrome'];
 const TUX234_EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after';

@@ -71,6 +71,33 @@
       modBar.classList.toggle('hidden', !showBar);
     };
 
+    // TUX-005: drawers end above the in-flow bottom chrome (#hud-bar, #touch-modifier-bar).
+    // --bottom-chrome-h is the measured sum of their heights. It sits on <html> because the panes
+    // are siblings of .workspace-shell, not descendants. Absent outside mobile-layout (CSS falls back).
+    const syncBottomChrome = () => {
+      const root = document.documentElement;
+      if (!document.body.classList.contains('mobile-layout')) {
+        root.style.removeProperty('--bottom-chrome-h');
+        return;
+      }
+      let total = 0;
+      ['hud-bar', 'touch-modifier-bar'].forEach((id) => {
+        const el = getEl(id);
+        if (!el) return;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed') return;
+        total += el.getBoundingClientRect().height;
+      });
+      root.style.setProperty('--bottom-chrome-h', `${Math.round(total * 100) / 100}px`);
+    };
+    if (typeof ResizeObserver !== 'undefined') {
+      const chromeObserver = new ResizeObserver(() => syncBottomChrome());
+      ['hud-bar', 'touch-modifier-bar'].forEach((id) => {
+        const el = getEl(id);
+        if (el) chromeObserver.observe(el, { box: 'border-box' });
+      });
+    }
+
     const applyAutoCollapse = () => {
       const lc = LC();
       let layout;
@@ -93,6 +120,7 @@
         bottomPane.classList.add('bottom-pane-collapsed');
         mobileLayoutDefaultApplied = true;
       }
+      syncBottomChrome();
     };
 
     const isPaneOpen = (pane) => {

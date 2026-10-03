@@ -8503,7 +8503,7 @@
    * (44px button + 12px padding + safe-area inset). Without this the
    * drawer extends under the modifier bar and the bar's higher z-index
    * intercepts clicks on the bottom of pane content. */
-  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  bottom: var(--bottom-chrome-h, calc(56px + var(--safe-bottom))); /* TUX-005: measured by workspace.js */
   /* Must sit above #bottom-pane (z-index 50 in mobile-layout) so the
    * bottom-pane drawer does not intercept clicks on right-pane content
    * (Pens tab, auto-colorization header, etc.) at tablet-touch widths. */
@@ -8571,9 +8571,9 @@ body.mobile-layout #tool-bar {
   overflow-y: hidden;
   max-height: none;
   padding: 8px 12px;
-  padding-top: calc(8px + env(safe-area-inset-top, 0px));
-  padding-left: calc(12px + env(safe-area-inset-left, 0px));
-  padding-right: calc(12px + env(safe-area-inset-right, 0px));
+  /* TUX-005: no top inset here; #app-header carries it. */
+  padding-left: calc(12px + var(--safe-left));
+  padding-right: calc(12px + var(--safe-right));
   border: none;
   border-radius: 0;
   border-bottom: 1px solid var(--ui-border);
@@ -8654,9 +8654,10 @@ body.mobile-layout #touch-modifier-bar {
   justify-content: stretch;
   gap: 6px;
   padding: 6px 8px;
-  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-  padding-left: calc(8px + env(safe-area-inset-left, 0px));
-  padding-right: calc(8px + env(safe-area-inset-right, 0px));
+  /* TUX-005: the bottom inset goes on the bottom-most chrome only (see the TUX-005 block at the end). */
+  padding-bottom: 6px;
+  padding-left: calc(8px + var(--safe-left));
+  padding-right: calc(8px + var(--safe-right));
   border: none;
   border-radius: 0;
   border-top: 1px solid var(--ui-border);
@@ -13901,7 +13902,7 @@ body.phone-layout.phone-menu-open #top-menubar {
   position: fixed; left: 0; right: 0; top: var(--phone-menu-top, 56px); margin: 0;
   max-height: calc(100vh - var(--phone-menu-top, 56px)); max-height: calc(100dvh - var(--phone-menu-top, 56px));
   overflow-y: auto; overscroll-behavior: contain; white-space: normal;
-  padding: 4px max(0px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(0px, env(safe-area-inset-left));
+  padding: 4px max(0px, var(--safe-right)) max(4px, var(--safe-bottom)) max(0px, var(--safe-left));
   background: var(--ui-bg); border-bottom: 1px solid var(--ui-border); box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
   z-index: 1500;
 }
@@ -13930,7 +13931,7 @@ body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: cent
  * touch-wide and desktop keep the floating rail, drag handle and footer (TUX-016/041 own their sizing).
  * Which slots stay on the rail comes from Vectura.TOOL_RAIL (src/config/tool-drawer.js);
  * toolbar.js marks the rest `.rail-overflowed`. Budget: tablet <= 64 px, phone <= 52 px (border counted).
- * No env(safe-area-inset-top) here: TUX-005 owns the top inset on #app-header.
+ * No var(--safe-top) here: TUX-005 owns the top inset on #app-header.
  * TODO(TUX-041): replace the literal 44px with the shared touch-target token once it lands. */
 body.touch-ui.tablet-layout #tool-bar,
 body.phone-layout #tool-bar {
@@ -13943,8 +13944,8 @@ body.phone-layout #tool-bar {
   overflow-y: hidden;
   box-sizing: border-box;
   padding: 8px 12px;
-  padding-left: calc(12px + env(safe-area-inset-left, 0px));
-  padding-right: calc(12px + env(safe-area-inset-right, 0px));
+  padding-left: calc(12px + var(--safe-left));
+  padding-right: calc(12px + var(--safe-right));
 }
 body.phone-layout #tool-bar {
   padding-top: 4px;
@@ -13971,8 +13972,8 @@ body.phone-layout #tool-bar #tool-overflow-btn { margin-left: auto; order: 999; 
  * hittable. Narrow phones (.auto-collapsed) already lift the rail to z 60 above the slivers. */
 body.touch-ui.tablet-layout #tool-bar,
 body.phone-layout:not(.auto-collapsed) #tool-bar {
-  padding-left: calc(var(--pane-collapsed-width, 40px) + 4px + env(safe-area-inset-left, 0px));
-  padding-right: calc(var(--pane-collapsed-width, 40px) + 4px + env(safe-area-inset-right, 0px));
+  padding-left: calc(var(--pane-collapsed-width, 40px) + 4px + var(--safe-left));
+  padding-right: calc(var(--pane-collapsed-width, 40px) + 4px + var(--safe-right));
 }
 /* === /TUX-013 === */
 /* === TUX-034: touch hold + context menus ===
@@ -13996,14 +13997,14 @@ body.phone-layout:not(.auto-collapsed) #tool-bar {
 .menu-dropdown.is-context-menu { overflow-y: auto; overscroll-behavior: contain; }
 @media (pointer: coarse) {
   .menu-dropdown.is-context-menu {
-    max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
-    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
+    max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 16px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
     overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   }
   .menu-dropdown.is-context-menu .menu-entry { min-height: var(--touch-target-min); }
   .canvas-ctx-menu {
-    max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
-    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
+    max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 16px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
     overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
   }
   .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
@@ -14092,3 +14093,78 @@ body .vtp-size-pop, body .lvl-algo-submenu, body .algo-draw-picker {
 html, body { touch-action: pan-x pan-y; }
 [data-touch-zoom] { touch-action: none; }
 /* === END TUX-003 === */
+
+/* === TUX-005: safe-area insets ===
+ * Outside any width media query: iPad landscape (1210 px) needs the same rules as the phones.
+ * Header: wins over the older #app-header rules. [data-ui-skin] #app-header (1,1,0) at the
+ * "Header & brand" block beats the dead :where(body.mobile-layout) #app-header padding (1,0,0).
+ * The height grows by the inset, otherwise the padding would eat the 38 px content box and
+ * .header-main would overflow onto the toolbar. */
+[data-ui-skin] #app-header {
+  box-sizing: border-box;
+  height: calc(38px + var(--safe-top));
+  padding-top: var(--safe-top);
+  padding-left: calc(14px + var(--safe-left));
+  padding-right: calc(14px + var(--safe-right));
+}
+/* Bottom inset sits on the bottom-most visible in-flow chrome only. #hud-bar is that strip while it
+ * shows (it hides under 640 px wide); below that the modifier bar is the bottom-most strip. */
+.hud-bar {
+  padding-bottom: calc(3px + var(--safe-bottom));
+}
+body.mobile-layout .hud-bar {
+  padding-left: calc(12px + var(--safe-left));
+  padding-right: calc(12px + var(--safe-right));
+}
+@media (max-width: 640px) {
+  body.mobile-layout #touch-modifier-bar {
+    padding-bottom: calc(6px + var(--safe-bottom));
+  }
+}
+/* Drawers in mobile-layout: the pane background reaches the screen edge, its content clears the
+ * side inset. The widths grow by the inset so the open and the collapsed pane keep their sizes. */
+body.mobile-layout .pane-left {
+  padding-left: var(--safe-left);
+  width: calc(var(--pane-left-width) + var(--safe-left));
+}
+body.mobile-layout .pane-right {
+  padding-right: var(--safe-right);
+  width: calc(var(--pane-right-width) + var(--safe-right));
+}
+/* Collapsed slivers keep their 40 px width and shift inward by the inset. The inset band stays
+ * transparent, so the canvas keeps its width and the sliver controls clear the notch. */
+body.mobile-layout .pane-left.pane-collapsed,
+body.mobile-layout.auto-collapsed .pane-left:not(.pane-force-open) {
+  width: var(--pane-collapsed-width);
+  left: var(--safe-left);
+  padding-left: 0;
+}
+body.mobile-layout .pane-right.pane-collapsed,
+body.mobile-layout.auto-collapsed .pane-right:not(.pane-force-open) {
+  width: var(--pane-collapsed-width);
+  right: var(--safe-right);
+  padding-right: 0;
+}
+/* Docked panes (touch-wide / desktop) end at the screen bottom: the scrolling bodies keep the last
+ * row above the home indicator. TUX-032 owns the keyboard-open padding, so it stays untouched. */
+html:not(.kb-open) body:not(.mobile-layout) .right-tab-panel {
+  padding-bottom: var(--safe-bottom);
+}
+/* Phone header: TUX-001 puts 44 px action buttons in the header, which the 38 px base cannot hold
+ * (they overflowed 3 px onto the toolbar). The phone header is 44 px of content plus the inset. */
+body.phone-layout #app-header {
+  height: calc(44px + var(--safe-top));
+}
+body.phone-layout #app-header .header-main {
+  height: 44px;
+  min-height: 44px;
+}
+/* Bottom inset fallback: with the modifier bar hidden (!showBar) and #hud-bar display:none (<= 640 px)
+ * no chrome strip carries the inset. The shell then reserves it itself. */
+@media (max-width: 640px) {
+  body.mobile-layout:has(#touch-modifier-bar.hidden) .workspace-shell {
+    padding-bottom: var(--safe-bottom);
+    box-sizing: border-box;
+  }
+}
+/* === END TUX-005 === */
