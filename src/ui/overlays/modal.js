@@ -84,12 +84,19 @@
     }
 
     const body = ownerDoc.createElement('div');
-    body.className = 'vectura-modal-body';
+    body.className = 'vectura-modal-body vt-sheet__body';
     dialog.appendChild(body);
 
     if (typeof props.render === 'function') {
       try { props.render(body); } catch (_) { /* visible via empty body */ }
     }
+
+    // TUX-046: tag the .vt-sheet slots so the skin can pin the header and the action row.
+    dialog.classList.add('vt-sheet');
+    const sheetHeader = dialog.querySelector(':scope > .vectura-modal-hdr');
+    if (sheetHeader) sheetHeader.classList.add('vt-sheet__header');
+    const sheetFooter = body.querySelector(':scope > footer');
+    if (sheetFooter) sheetFooter.classList.add('vt-sheet__footer');
 
     backdrop.appendChild(dialog);
     (host || ownerDoc.body).appendChild(backdrop);
@@ -153,7 +160,7 @@
           let header = dialog.querySelector('.vectura-modal-hdr h2');
           if (!header) {
             const hdr = ownerDoc.createElement('header');
-            hdr.className = 'vectura-modal-hdr';
+            hdr.className = 'vectura-modal-hdr vt-sheet__header';
             const h2 = ownerDoc.createElement('h2');
             hdr.appendChild(h2);
             dialog.insertBefore(hdr, body);

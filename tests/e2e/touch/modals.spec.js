@@ -5,8 +5,8 @@ const { PROJECTS } = require('./viewports');
 const touch = require('../helpers/touch');
 
 // TUX-046: legacy #modal-overlay scaffold on touch (Export, Help, info, color picker).
-// Document Setup (#settings-panel drawer) and the Save Preset sheet (.vectura-modal) are out of
-// scope. R8 only guards the drawer against regressions.
+// Fix round: Document Setup (#settings-panel, R10) and the Save Preset sheet (.vectura-modal,
+// R11) are part of TUX-046 too.
 const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-046';
 const KINDS = ['export', 'help', 'info', 'color'];
 const CSS_PATH = path.join(__dirname, '..', '..', '..', 'src', 'ui', 'skin', 'components.css');
@@ -186,16 +186,43 @@ test.describe('TUX-046 modal sheet', () => {
     // Help
     await openKind(page, 'help');
     const before = { close: await rectOf(page, '.modal-card .modal-close'), card: await rectOf(page, '.modal-card') };
+    // Swipe the body for real where the engine runs native default actions (Chromium). WebKit's
+    // synthetic touches do not scroll, so there the scroller is driven through scrollTop.
+    // Help is short on tall viewports (iPadL). Where the real content fits, append a spacer so the
+    // test still proves that the body, not the card, is the scroller.
+    const padded = await page.evaluate(() => {
+      const body = document.querySelector('.modal-card .modal-body');
+      if (body.scrollHeight > body.clientHeight + 1) return false;
+      const sp = document.createElement('div');
+      sp.style.cssText = 'height:1600px;flex:none';
+      sp.setAttribute('data-test-spacer', '');
+      body.appendChild(sp);
+      return true;
+    });
+    if (padded) testInfo.annotations.push({ type: 'R3', description: 'help content fits; spacer appended to prove the scroller' });
+    if (padded) { await raf2(page); before.close = await rectOf(page, '.modal-card .modal-close'); before.card = await rectOf(page, '.modal-card'); }
+    const geo = await page.evaluate(() => {
+      const body = document.querySelector('.modal-card .modal-body');
+      const r = body.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y1: r.top + r.height - 12, y2: r.top + 12, scrolls: body.scrollHeight > body.clientHeight + 1 };
+    });
+    if (touch.engineSupports(page, 'nativeDefaultActions')) {
+      await touch.drag(page, { x: geo.x, y: geo.y1 }, { x: geo.x, y: geo.y2 }, { steps: 12 });
+      await page.waitForTimeout(250);
+    } else {
+      await page.evaluate(() => { const b = document.querySelector('.modal-card .modal-body'); b.scrollTop = b.scrollHeight; });
+    }
     const sc = await page.evaluate(() => {
       const body = document.querySelector('.modal-card .modal-body');
       const card = document.querySelector('.modal-card');
-      body.scrollTop = body.scrollHeight;
-      return { overscroll: getComputedStyle(body).overscrollBehaviorY, cardScrolls: card.scrollHeight > card.clientHeight + 1, bodyScrolls: body.scrollHeight > body.clientHeight + 1, top: body.scrollTop };
+      return { overscroll: getComputedStyle(body).overscrollBehaviorY, cardScrolls: card.scrollHeight > card.clientHeight + 1, cardTop: card.scrollTop, bodyScrolls: body.scrollHeight > body.clientHeight + 1, top: body.scrollTop };
     });
     const after = { close: await rectOf(page, '.modal-card .modal-close') };
     if (Math.abs(after.close.t - before.close.t) > 1) fails.push(`help: close moved ${before.close.t} -> ${after.close.t}`);
     if (!inView(after.close)) fails.push(`help: close ${fmt(after.close)} left the viewport`);
-    if (sc.cardScrolls) fails.push('help: the card itself scrolls');
+    if (sc.cardScrolls || sc.cardTop > 0) fails.push('help: the card itself scrolls');
+    if (!sc.bodyScrolls) fails.push('help: the sheet body is not the scroller (no overflow in .modal-body)');
+    if (!(sc.top > 0)) fails.push(`help: body scrollTop ${sc.top} after the swipe (the body did not scroll)`);
     if (sc.overscroll !== 'contain') fails.push(`help: overscroll-behavior-y ${sc.overscroll}`);
     await closeKind(page);
     // Export
@@ -326,6 +353,7 @@ test.describe('TUX-046 modal sheet', () => {
       await touch.tap(page, { x: 5, y: ih - 5 });
       await page.waitForTimeout(300);
       expect(await page.evaluate(() => window.__colorApplied), 'backdrop must cancel, not apply').toBeNull();
+      expect(await page.evaluate(() => !!document.querySelector('#modal-overlay.open')), 'colour picker closed by the backdrop tap').toBe(false);
     }
     await page.evaluate(() => document.getElementById('btn-settings').click());
     await page.waitForTimeout(400);
@@ -333,6 +361,105 @@ test.describe('TUX-046 modal sheet', () => {
     const close = await rectOf(page, '#btn-close-settings');
     expect(inView(panel), `settings panel ${fmt(panel)}`).toBe(true);
     expect(inView(close), `settings close ${fmt(close)}`).toBe(true);
+  });
+
+  // R12: the Export nav keeps its 188px column on wide layouts (> 1100px) with touch-ui on.
+  test('R12 Export nav column keeps its 188px width on wide layouts', async ({ page }, testInfo) => {
+    const s = spec(testInfo);
+    test.skip(s.width <= 1100, 'column layout below 1100px has no side nav');
+    await openKind(page, 'export');
+    const w = await page.evaluate(() => document.getElementById('export-modal-nav').getBoundingClientRect().width);
+    expect(Math.abs(w - 188), `export nav width ${w} (touch-ui on, viewport ${s.width})`).toBeLessThanOrEqual(1);
+  });
+
+  // R10: Document Setup, opened and closed by taps only (hamburger > File > Document Setup).
+  test('R10 Document Setup opens as a sheet by taps and closes by tapping close', async ({ page }, testInfo) => {
+    const s = spec(testInfo);
+    await tapMenuItem(page, 'btn-menu-file', 'btn-settings');
+    await page.waitForSelector('#settings-panel.open', { timeout: 5000 });
+    await page.waitForTimeout(500); // drawer transition
+    const geo = await page.evaluate(() => {
+      const q = (sel) => { const e = document.querySelector(sel); if (!e) return null; const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
+      const close = document.getElementById('btn-close-settings');
+      const cr = close.getBoundingClientRect();
+      const hit = document.elementFromPoint(cr.left + cr.width / 2, cr.top + cr.height / 2);
+      const body = document.querySelector('#settings-panel .settings-panel-body');
+      const menubar = document.getElementById('top-menubar');
+      return {
+        iw: innerWidth, ih: innerHeight, panel: q('#settings-panel'), close: q('#btn-close-settings'), hdr: q('#settings-panel > .pane-hdr'),
+        closeHit: !!hit && (hit === close || close.contains(hit)), hitDesc: hit ? `${hit.tagName}#${hit.id}.${hit.className}` : 'null',
+        bodyScrolls: body.scrollHeight > body.clientHeight + 1, bodyOverflowY: getComputedStyle(body).overflowY,
+        menuOpen: document.body.classList.contains('phone-menu-open'), menubarShown: !!menubar && getComputedStyle(menubar).display !== 'none' && menubar.getBoundingClientRect().height > 0,
+      };
+    });
+    const msg = JSON.stringify(geo);
+    const inVp = (r) => r.l >= -1 && r.t >= -1 && r.r <= geo.iw + 1 && r.b <= geo.ih + 1;
+    expect(inVp(geo.close), `close in viewport ${msg}`).toBe(true);
+    expect(geo.closeHit, `elementFromPoint(close centre) hits ${geo.hitDesc}; menubar open over the sheet? ${msg}`).toBe(true);
+    const hit = await touch.hitArea(page, '#btn-close-settings');
+    expect(hit.w >= 44 && hit.h >= 44, `hitArea ${hit.w}x${hit.h}`).toBe(true);
+    expect(geo.bodyOverflowY, `body scrolls ${msg}`).toMatch(/auto|scroll/);
+    if (isPhone(s)) {
+      const ins = { top: 0, bottom: 0, left: 0, right: 0 };
+      expect(Math.abs(geo.panel.l - ins.left), msg).toBeLessThanOrEqual(1);
+      expect(Math.abs(geo.panel.t - ins.top), msg).toBeLessThanOrEqual(1);
+      expect(Math.abs(geo.panel.r - (geo.iw - ins.right)), `full-width sheet ${msg}`).toBeLessThanOrEqual(1);
+      expect(Math.abs(geo.panel.b - (geo.ih - ins.bottom)), `full-height sheet ${msg}`).toBeLessThanOrEqual(1);
+      expect(geo.menuOpen, `the hamburger menu closed once Document Setup opened ${msg}`).toBe(false);
+      // pinned header: scroll the body, header and close do not move
+      const h0 = await rectOf(page, '#btn-close-settings');
+      await page.evaluate(() => { const b = document.querySelector('#settings-panel .settings-panel-body'); b.scrollTop = b.scrollHeight; });
+      const h1 = await rectOf(page, '#btn-close-settings');
+      expect(Math.abs(h1.t - h0.t), 'header close stays pinned while the body scrolls').toBeLessThanOrEqual(1);
+    } else {
+      expect(inVp(geo.panel), `panel in viewport ${msg}`).toBe(true);
+    }
+    await touch.tap(page, page.locator('#btn-close-settings'));
+    await page.waitForFunction(() => !document.querySelector('#settings-panel.open'), null, { timeout: 4000 });
+  });
+
+  // R11: Save Preset sheet (.vectura-modal) follows the .vt-sheet contract.
+  test('R11 Save Preset sheet: safe-area sheet on phone, pinned footer, closes by Cancel', async ({ page }, testInfo) => {
+    const s = spec(testInfo);
+    await page.evaluate(() => {
+      window.Vectura.UI.PresetSaveModal.open({ layerType: 'spiral', params: {}, suggestedName: 'Test', origin: { kind: 'scratch', preset: null }, onConfirm: () => {} });
+    });
+    await page.waitForSelector('.vectura-modal-backdrop[style*="display: flex"]', { timeout: 5000 });
+    await page.waitForTimeout(400);
+    const m = await page.evaluate(() => {
+      const q = (el) => { const r = el.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.height }; };
+      const card = document.querySelector('.vectura-modal');
+      const body = card.querySelector('.vectura-modal-body');
+      const hdr = card.querySelector('.vectura-modal-hdr');
+      const foot = card.querySelector('.preset-save-footer');
+      const cancel = foot.querySelector('button.hdr-btn');
+      const cr = cancel.getBoundingClientRect();
+      const top = document.elementFromPoint(cr.left + cr.width / 2, cr.top + cr.height / 2);
+      const cardTop = document.elementFromPoint(card.getBoundingClientRect().left + 40, card.getBoundingClientRect().top + 4);
+      return {
+        iw: innerWidth, ih: innerHeight, card: q(card), hdr: q(hdr), foot: q(foot), cancel: q(cancel), cw: cr.width, ch: cr.height,
+        cancelHit: !!top && cancel.contains(top), cardTopHit: !!cardTop && !!cardTop.closest('.vectura-modal'),
+        slots: { card: card.classList.contains('vt-sheet'), hdr: hdr.classList.contains('vt-sheet__header'), body: body.classList.contains('vt-sheet__body'), foot: foot.classList.contains('vt-sheet__footer') },
+        cardScrolls: card.scrollHeight > card.clientHeight + 1,
+      };
+    });
+    const msg = JSON.stringify(m);
+    expect(m.slots, `vt-sheet slots ${msg}`).toEqual({ card: true, hdr: true, body: true, foot: true });
+    expect(m.cardScrolls, `the card itself must not scroll ${msg}`).toBe(false);
+    expect(m.cardTopHit, `nothing covers the sheet top ${msg}`).toBe(true);
+    expect(m.cancelHit, `Cancel is reachable ${msg}`).toBe(true);
+    expect(m.cw >= 44 && m.ch >= 44, `Cancel is at least 44x44 (${m.cw}x${m.ch})`).toBe(true);
+    expect(m.foot.b <= m.ih + 1 && m.foot.t >= -1, `footer inside the viewport ${msg}`).toBe(true);
+    if (isPhone(s)) {
+      expect(Math.abs(m.card.l), msg).toBeLessThanOrEqual(1);
+      expect(Math.abs(m.card.t), msg).toBeLessThanOrEqual(1);
+      expect(Math.abs(m.card.r - m.iw), `full width ${msg}`).toBeLessThanOrEqual(1);
+      expect(Math.abs(m.card.b - m.ih), `full height ${msg}`).toBeLessThanOrEqual(1);
+    } else {
+      expect(m.card.l >= -1 && m.card.r <= m.iw + 1 && m.card.t >= -1 && m.card.b <= m.ih + 1, `card fits ${msg}`).toBe(true);
+    }
+    await touch.tap(page, page.locator('.preset-save-footer button.hdr-btn'));
+    await page.waitForFunction(() => !document.querySelector('.vectura-modal-backdrop'), null, { timeout: 4000 });
   });
 
   test('R9 static: the TUX-046 CSS block uses no vh for sheet height', async () => {
