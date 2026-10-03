@@ -10,3 +10,4 @@ Rows below come from TUX-013. TUX-062 consolidates this file.
 | TUX-015-a | iPhone, portrait and landscape, Safari toolbar shown and hidden | Open the All Tools drawer. It stays inside the visible area. It clears the notch and the home indicator. Status: deferred-by-Jay unless verified. | TUX-015 |
 | TUX-015-b | iPhone and iPad | Drag inside the drawer body. It scrolls with momentum. The page behind does not scroll. Status: deferred-by-Jay unless verified. | TUX-015 |
 | TUX-015-c | iPad, portrait | The drawer opens below the horizontal rail. Every tool is fully tappable. Status: deferred-by-Jay unless verified. | TUX-015 |
+| TUX-016-a | iPad, landscape | Drag the floating toolbar grip and the ctxbar grip 10 times each. Each bar follows the finger with no page bounce, edge-swipe or back gesture, and no later touch moves a bar. Status: pending. | TUX-016 |

@@ -828,6 +828,10 @@
     // the bar off-screen — defer to CSS in mobile-layout. Stay resilient to
     // resizes across the breakpoint by re-clearing in the resize handler.
     const isMobileLayout = () => document.body.classList.contains('mobile-layout');
+    // TUX-016: primary coarse pointer (same signal as body.touch-ui). Not isTouchCapable():
+    // that is true on any touch-screen laptop. On a coarse pointer the pin footer does not
+    // render, so a persisted lock is ignored (the preference itself is kept for desktop).
+    const isCoarse = () => !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
     const clearInlineLayout = () => {
       toolbar.classList.remove(...DOCK_CLASSES);
       ['position', 'transform', 'left', 'top', 'right', 'bottom', 'width', 'height']
@@ -849,7 +853,7 @@
       } else {
         setFloat(SETTINGS.toolbarX, SETTINGS.toolbarY);
       }
-      if (SETTINGS.toolbarLocked) {
+      if (SETTINGS.toolbarLocked && !isCoarse()) {
         toolbar.classList.add('toolbar-locked');
         pinBtn.classList.add('active');
         pinBtn.setAttribute('aria-pressed', 'true');
@@ -859,11 +863,14 @@
     // ── Drag ─────────────────────────────────────────────────────
     const SNAP_THRESHOLD = 48;
     let isDragging = false;
-    let startClientX, startClientY, startLeft, startTop, currentSnap;
+    let startClientX, startClientY, startLeft, startTop, currentSnap, dragPointerId;
 
     handle.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      if (toolbar.classList.contains('toolbar-locked')) return;
+      // Anchored rail (mobile-layout) cannot be dragged: an inline float would push it off-screen.
+      if (isMobileLayout()) return;
+      if (isDragging && e.pointerId !== dragPointerId) return; // a second finger
+      if (toolbar.classList.contains('toolbar-locked') && !isCoarse()) return;
       if (getCurrentDock()) {
         // Float-mode dimensions differ from the docked ones (esp. top/bottom
         // dock, where the bar is horizontal and the handle sits on its left
@@ -892,6 +899,7 @@
         requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
       }
       isDragging    = true;
+      dragPointerId = e.pointerId;
       handle.setPointerCapture(e.pointerId);
       startClientX  = e.clientX;
       startClientY  = e.clientY;
@@ -902,7 +910,7 @@
     });
 
     handle.addEventListener('pointermove', (e) => {
-      if (!isDragging) return;
+      if (!isDragging || e.pointerId !== dragPointerId) return;
       const dx = e.clientX - startClientX;
       const dy = e.clientY - startClientY;
       toolbar.style.left = (startLeft + dx) + 'px';
@@ -920,26 +928,30 @@
       currentSnap = snap;
     });
 
-    handle.addEventListener('pointerup', () => {
+    // One settle path for pointerup, pointercancel and lostpointercapture: a cancelled or
+    // orphaned drag keeps the position reached so far (never a stuck isDragging).
+    const endDrag = (e) => {
       if (!isDragging) return;
+      if (e && e.pointerId !== undefined && e.pointerId !== dragPointerId) return;
       isDragging = false;
       if (currentSnap) {
         dockToolbar(currentSnap);
       } else {
-        SETTINGS.toolbarX = parseFloat(toolbar.style.left) || 0;
-        SETTINGS.toolbarY = parseFloat(toolbar.style.top)  || 0;
+        // The bar cannot get lost off-screen on touch (no Home button): clamp before persisting.
+        const { x: fx, y: fy } = clampFloat(parseFloat(toolbar.style.left) || 0, parseFloat(toolbar.style.top) || 0);
+        toolbar.style.left = fx + 'px';
+        toolbar.style.top  = fy + 'px';
+        SETTINGS.toolbarX = fx;
+        SETTINGS.toolbarY = fy;
         this.app?.persistPreferencesDebounced?.();
         this._updateAllSubmenuDirs?.();
       }
       updateSnapPreview(null);
       currentSnap = null;
-    });
-
-    handle.addEventListener('pointercancel', () => {
-      isDragging = false;
-      updateSnapPreview(null);
-      currentSnap = null;
-    });
+    };
+    handle.addEventListener('pointerup', endDrag);
+    handle.addEventListener('pointercancel', endDrag);
+    handle.addEventListener('lostpointercapture', endDrag);
 
     // ── Lock / home / rotate / pop-out ───────────────────────────
     pinBtn.addEventListener('click', () => {

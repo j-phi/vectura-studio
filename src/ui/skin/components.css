@@ -14057,3 +14057,64 @@ body.touch-ui .tool-drawer-view-btn { width: var(--touch-target-min, 44px); heig
 }
 #layer-add-menu.is-touch > .lvl-add-item { min-height: var(--touch-target-min); }
 /* === /TUX-035 === */
+
+/* === TUX-016: toolbar footer + drag handles touch-safe ===
+ * (A) Anchored rail (body.mobile-layout, position: static): nothing can be dragged, so the
+ *     handle and the footer never render, for every pointer type. TUX-016 owns this rule;
+ *     TUX-013 requirement 4 is satisfied here.
+ * (B) Floating rail on a primary coarse pointer: the 13px footer buttons do not render (undock by
+ *     dragging the handle; pin is ignored by toolbar.js), and both handles are 44px finger targets
+ *     with touch-action: none so a one-finger drag moves the bar and never scrolls or cancels.
+ * Keyed on (pointer: coarse), the same signal as body.touch-ui. Not on any-pointer: a touch-screen
+ * laptop keeps the mouse UI. */
+body.mobile-layout #tool-bar .toolbar-drag-handle,
+body.mobile-layout #tool-bar .toolbar-footer { display: none; }
+
+@media (pointer: coarse) {
+  #tool-bar .toolbar-footer { display: none; }
+
+  .tool-bar .toolbar-drag-handle,
+  .ctxbar .ctxbar-handle { touch-action: none; }
+
+  /* Toolbar grip, vertical rail: full rail width, 44px tall (real box; the rail scrolls and the
+     handle clips overflow, so a ::before extender would be cut off). */
+  .tool-bar .toolbar-drag-handle {
+    box-sizing: border-box;
+    height: var(--touch-target-min, 44px);
+    min-height: var(--touch-target-min, 44px);
+    width: calc(100% + 2 * var(--spacing-sm));
+    margin: calc(-1 * var(--spacing-sm)) calc(-1 * var(--spacing-sm)) 1px;
+  }
+  /* Horizontal variants: a 44px-wide vertical strip at the leading edge. */
+  [data-ui-skin] .toolbar-docked-top .toolbar-drag-handle,
+  [data-ui-skin] .toolbar-docked-bottom .toolbar-drag-handle,
+  [data-ui-skin] .tool-bar.toolbar-floating-horizontal:not([class*="toolbar-docked"]) .toolbar-drag-handle {
+    width: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
+    height: auto;
+    min-height: var(--touch-target-min, 44px);
+    margin: 0 4px 0 0;
+  }
+  /* A persisted lock must never hide the grip or make it inert on touch. */
+  .tool-bar.toolbar-locked:not([class*="toolbar-docked"]) .toolbar-drag-handle {
+    height: var(--touch-target-min, 44px);
+    margin: calc(-1 * var(--spacing-sm)) calc(-1 * var(--spacing-sm)) 1px;
+    opacity: 0.45;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  /* Context bar grip: 44px wide real box, 44px tall hit area via a transparent extender. */
+  .ctxbar .ctxbar-handle {
+    position: relative;
+    width: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
+  }
+  .ctxbar .ctxbar-handle::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0;
+    top: -12px; bottom: -12px;
+  }
+}
+/* === END TUX-016 === */

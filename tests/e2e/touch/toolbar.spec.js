@@ -667,3 +667,190 @@ test.describe('TUX-015 all tools drawer', () => {
     expect(after.sx).toBe(s.sx);
   });
 });
+
+// TUX-016: toolbar footer and drag handles are touch-safe.
+// Anchored rail (mobile-layout): no handle, no footer. Floating rail on a coarse pointer
+// (iPadL, coarseWide): no footer, handles are 44px, touch-action none, and a finger drag
+// follows 1:1 and is never cancelled.
+test.describe('TUX-016 footer and handles', () => {
+  const EVIDENCE_016 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-016';
+  const ANCHORED = ['touch-ipad-portrait', 'webkit-ipad-portrait', 'touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-iphone-landscape', 'webkit-iphone-landscape', 'touch-iphone-portrait-chrome', 'touch-iphone-landscape-chrome'];
+  const FLOATING = ['touch-ipad-landscape', 'webkit-ipad-landscape', 'touch-coarse-wide'];
+  const CTX = ['touch-ipad-landscape', 'webkit-ipad-landscape', 'touch-iphone-landscape', 'webkit-iphone-landscape', 'touch-coarse-wide'];
+  const FOOTER_BTNS = ['.toolbar-pin-btn', '.toolbar-home-btn', '.toolbar-rotate-btn', '.toolbar-popout-btn'];
+  const short = (testInfo) => `${PROJECTS[testInfo.project.name]?.device || testInfo.project.name}${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}`;
+  const shot = async (page, testInfo, tag) => {
+    await fs.promises.mkdir(EVIDENCE_016, { recursive: true });
+    await page.screenshot({ path: `${EVIDENCE_016}/${short(testInfo)}${tag ? `-${tag}` : ''}.png` });
+  };
+  const load = async (page) => {
+    await page.goto('/');
+    await page.waitForSelector('#tool-bar .tool-btn');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    await sleep(500);
+  };
+  // iPhone landscape opens the side panes over the ctxbar until TUX-008 closes them by default.
+  // Fold them with a finger, as the TUX-013 spec does, so the ctxbar handle is reachable.
+  const foldPanes = async (page) => {
+    for (const [btn, pane] of [['#btn-pane-toggle-left', '#left-pane'], ['#btn-pane-toggle-right', '#right-pane']]) {
+      const open = await page.evaluate((p) => { const el = document.querySelector(p); return !!el && !el.classList.contains('pane-collapsed'); }, pane);
+      if (open && await page.locator(btn).isVisible()) await tap(page, page.locator(btn));
+    }
+    await sleep(600);
+  };
+  const rectOf = (page, sel) => page.evaluate((s) => {
+    const r = document.querySelector(s).getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  }, sel);
+  const centre = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+
+  test('anchored rail renders no handle or footer', async ({ page }, testInfo) => {
+    test.skip(!ANCHORED.includes(testInfo.project.name), 'floating-rail project');
+    await load(page);
+    expect(await page.evaluate(() => document.body.classList.contains('mobile-layout'))).toBe(true);
+    await expect(page.locator('#tool-bar .toolbar-drag-handle')).toBeHidden();
+    await expect(page.locator('#tool-bar .toolbar-footer')).toBeHidden();
+    const bad = await page.evaluate(() => {
+      const out = [];
+      const sels = ['#tool-bar .tool-btn', '#btn-pane-toggle-left', '#btn-pane-toggle-right'];
+      sels.forEach((s) => document.querySelectorAll(s).forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height || getComputedStyle(el).visibility === 'hidden') return;
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return;
+        const t = document.elementFromPoint(x, y);
+        // Pane/rail overlap is owned by TUX-007/008; this test only forbids the handle or footer on top.
+        if (t && t.closest('.toolbar-drag-handle, .toolbar-footer')) out.push(`${s}:${el.dataset.tool || el.id} covered by handle/footer`);
+      }));
+      return out;
+    });
+    expect(bad).toEqual([]);
+    await shot(page, testInfo, 'anchored');
+  });
+
+  test('floating rail: footer gone, handles touch-safe', async ({ page }, testInfo) => {
+    test.skip(!FLOATING.includes(testInfo.project.name), 'anchored-rail project');
+    await load(page);
+    expect(await page.evaluate(() => document.body.classList.contains('mobile-layout'))).toBe(false);
+    for (const b of FOOTER_BTNS) await expect(page.locator(`#tool-bar ${b}`), b).toBeHidden();
+    await expect(page.locator('.ctxbar.is-visible')).toBeVisible();
+    for (const sel of ['.toolbar-drag-handle', '.ctxbar-handle']) {
+      expect(await page.locator(sel).first().evaluate((el) => getComputedStyle(el).touchAction), `${sel} touch-action`).toBe('none');
+    }
+    const th = await hitArea(page, '.tool-bar .toolbar-drag-handle');
+    const ch = await hitArea(page, '.ctxbar .ctxbar-handle');
+    expect(th.w, `toolbar handle hit ${th.w}x${th.h}`).toBeGreaterThanOrEqual(44);
+    expect(th.h, `toolbar handle hit ${th.w}x${th.h}`).toBeGreaterThanOrEqual(44);
+    expect(ch.w, `ctxbar handle hit ${ch.w}x${ch.h}`).toBeGreaterThanOrEqual(44);
+    expect(ch.h, `ctxbar handle hit ${ch.w}x${ch.h}`).toBeGreaterThanOrEqual(44);
+    const neighbours = await page.evaluate(() => {
+      const wins = (el) => {
+        const r = el.getBoundingClientRect();
+        const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!t && (t === el || el.contains(t));
+      };
+      return { tool: wins(document.querySelector('#tool-bar .tool-btn')), ctx: wins(document.querySelector('.ctxbar .ctxbar-btn')) };
+    });
+    expect(neighbours).toEqual({ tool: true, ctx: true });
+    // Popout stays hidden after docking by a finger drag of the handle to the left edge.
+    const vp = await rectOf(page, '#viewport-container');
+    const hc = centre(await rectOf(page, '#tool-bar .toolbar-drag-handle'));
+    await drag(page, hc, { x: vp.left + 20, y: hc.y }, { steps: 8 });
+    await sleep(300);
+    expect(await page.evaluate(() => document.getElementById('tool-bar').className)).toMatch(/toolbar-docked-/);
+    for (const b of FOOTER_BTNS) await expect(page.locator(`#tool-bar ${b}`), `${b} docked`).toBeHidden();
+    await shot(page, testInfo, 'floating-docked');
+  });
+
+  const floatToCentre = async (page) => {
+    await page.evaluate(() => {
+      const tb = document.getElementById('tool-bar');
+      const vp = document.getElementById('viewport-container').getBoundingClientRect();
+      const sh = tb.offsetParent.getBoundingClientRect();
+      const w = tb.offsetWidth;
+      const h = tb.offsetHeight;
+      // Right side of the canvas: the touch modifier bar sits over the top-centre of the canvas.
+      // Right gap 130 keeps the +80 drag outside the 48px snap zone.
+      tb.style.left = `${vp.left - sh.left + vp.width - w - 130}px`;
+      // The rail is nearly as tall as the canvas on iPadL: balance the gaps so neither the start
+      // nor the end of the +40 drag lands inside the 48px dock snap zone.
+      tb.style.top = `${vp.top - sh.top + (vp.height - h - 40) / 2}px`;
+    });
+    expect(await page.evaluate(() => /toolbar-docked/.test(document.getElementById('tool-bar').className))).toBe(false);
+  };
+  const countEvents = (page, sel) => page.evaluate((s) => {
+    const c = (window.__tux016 = { cancel: 0, up: 0 });
+    const h = document.querySelector(s);
+    h.addEventListener('pointercancel', () => { c.cancel += 1; });
+    window.addEventListener('pointercancel', () => { c.cancel += 1; }, true);
+    window.addEventListener('pointerup', () => { c.up += 1; }, true);
+  }, sel);
+
+  test('toolbar drag follows the finger', async ({ page }, testInfo) => {
+    test.skip(!FLOATING.includes(testInfo.project.name), 'anchored-rail project');
+    await load(page);
+    await floatToCentre(page);
+    await countEvents(page, '#tool-bar .toolbar-drag-handle');
+    const before = await rectOf(page, '#tool-bar');
+    const hc = centre(await rectOf(page, '#tool-bar .toolbar-drag-handle'));
+    await drag(page, hc, { x: hc.x + 80, y: hc.y + 40 }, { steps: 10 });
+    await sleep(200);
+    const after = await rectOf(page, '#tool-bar');
+    const ev = await page.evaluate(() => window.__tux016);
+    expect(Math.abs(after.left - before.left - 80), `dx ${after.left - before.left}`).toBeLessThanOrEqual(4);
+    expect(Math.abs(after.top - before.top - 40), `dy ${after.top - before.top}`).toBeLessThanOrEqual(4);
+    expect(await page.evaluate(() => /toolbar-docked/.test(document.getElementById('tool-bar').className))).toBe(false);
+    expect(ev.up).toBeGreaterThanOrEqual(1);
+    if (engineSupports(page, 'trustedMultiTouch')) expect(ev.cancel, 'pointercancel count').toBe(0);
+    await shot(page, testInfo, 'floating-after-drag');
+  });
+
+  test('ctxbar handle drag follows the finger and never sticks', async ({ page }, testInfo) => {
+    test.skip(!CTX.includes(testInfo.project.name), 'ctxbar hidden or not applicable');
+    await load(page);
+    if (/iphone/.test(testInfo.project.name)) await foldPanes(page);
+    await expect(page.locator('.ctxbar.is-visible')).toBeVisible();
+    await countEvents(page, '.ctxbar .ctxbar-handle');
+    const iph = /iphone/.test(testInfo.project.name);
+    const before = await rectOf(page, '.ctxbar');
+    const host = await page.evaluate(() => { const b = document.querySelector('.ctxbar'); const h = b.offsetParent || document.body; const r = h.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; });
+    // Pick a vertical direction that fits (the clamp would absorb a delta near an edge).
+    const dy0 = iph ? 20 : 40;
+    const fitsDown = before.top + before.height + dy0 + 12 < host.bottom;
+    const delta = { x: iph ? 60 : 80, y: fitsDown ? dy0 : -dy0 };
+    expect(before.left + before.width + delta.x + 12, 'target fits host').toBeLessThan(host.right);
+    expect(fitsDown || before.top + delta.y - 12 > host.top, 'target fits host vertically').toBe(true);
+    const hc = centre(await rectOf(page, '.ctxbar .ctxbar-handle'));
+    await drag(page, hc, { x: hc.x + delta.x, y: hc.y + delta.y }, { steps: 10 });
+    await sleep(200);
+    const after = await rectOf(page, '.ctxbar');
+    const ev = await page.evaluate(() => window.__tux016);
+    expect(Math.abs(after.left - before.left - delta.x), `dx ${after.left - before.left}`).toBeLessThanOrEqual(4);
+    expect(Math.abs(after.top - before.top - delta.y), `dy ${after.top - before.top}`).toBeLessThanOrEqual(4);
+    if (engineSupports(page, 'trustedMultiTouch')) expect(ev.cancel, 'pointercancel count').toBe(0);
+    await shot(page, testInfo, 'ctxbar-after-drag');
+
+    // Stuck-state regression: a cancelled handle drag must not capture later touches.
+    const h2 = centre(await rectOf(page, '.ctxbar .ctxbar-handle'));
+    await touchPhase(page, 'start', [{ ...h2, id: 0 }]);
+    await touchPhase(page, 'move', [{ x: h2.x + 5, y: h2.y + 5, id: 0 }]);
+    await touchPhase(page, 'move', [{ x: h2.x + 10, y: h2.y + 8, id: 0 }]);
+    if (engineSupports(page, 'cdp')) {
+      // CDP rejects touchCancel with touch points; the helper's cancel lists them.
+      await page.__touchCdp.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+      page.__touchDown.clear();
+    } else {
+      await touchPhase(page, 'cancel', [{ x: h2.x + 10, y: h2.y + 8, id: 0 }]);
+    }
+    await sleep(100);
+    const rested = await rectOf(page, '.ctxbar');
+    const vp = await rectOf(page, '#viewport-container');
+    const from = { x: vp.left + vp.width * 0.5, y: vp.top + vp.height * 0.6 };
+    await drag(page, from, { x: from.x + 120, y: from.y - 120 }, { steps: 8 });
+    await sleep(150);
+    const final = await rectOf(page, '.ctxbar');
+    expect(Math.abs(final.left - rested.left), `stuck dx ${final.left - rested.left}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(final.top - rested.top), `stuck dy ${final.top - rested.top}`).toBeLessThanOrEqual(1);
+  });
+});
