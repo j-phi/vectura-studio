@@ -1532,7 +1532,14 @@ test.describe('Vectura smoke interactions', () => {
       app.updateStats();
     });
 
-    await page.locator('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn').click();
+    // Desktop rows keep the inline outline toggle; touch rows (TUX-012) move it into the ⋯ menu.
+    const outlineBtn = page.locator('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn');
+    if (await outlineBtn.count()) {
+      await outlineBtn.click();
+    } else {
+      await page.locator('[data-layer-id="mask-parent-hidden-ui"] .lvl-more').click();
+      await page.locator('.menu-dropdown.open .menu-entry[data-key="mask-outline"]').click();
+    }
 
     const state = await page.evaluate(() => {
       const app = window.app;
@@ -1549,7 +1556,11 @@ test.describe('Vectura smoke interactions', () => {
         hideLayer: Boolean(parent.mask?.hideLayer),
         parentRenderableCount: app.engine.getRenderablePaths(parent).length,
         childOutsideCount: outsideCount,
-        outlineButtonHidden: document.querySelector('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn')?.classList.contains('is-hidden') || false,
+        // Touch rows have no inline outline button (TUX-012): the mask state is the contract there.
+        outlineButtonHidden: (() => {
+          const btn = document.querySelector('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn');
+          return btn ? btn.classList.contains('is-hidden') : Boolean(parent.mask?.hideLayer);
+        })(),
       };
     });
 
