@@ -512,15 +512,96 @@
     return _menu;
   };
 
+  const TH = () => Vectura.TOUCH_HOLD || {};
+  const edgeGap = () => {
+    const g = Vectura.CONTEXT_MENU && Vectura.CONTEXT_MENU.edgeGapPx;
+    return Number.isFinite(g) ? g : 8;
+  };
+
+  // Safe-area insets in px (env() cannot be read directly: measure through a probe).
+  let _safeProbe = null;
+  const _safeInsets = () => {
+    if (!_safeProbe) {
+      _safeProbe = document.createElement('div');
+      _safeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;'
+        + 'padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+      document.body.appendChild(_safeProbe);
+    }
+    const cs = getComputedStyle(_safeProbe);
+    const n = (v) => parseFloat(v) || 0;
+    return { t: n(cs.paddingTop), r: n(cs.paddingRight), b: n(cs.paddingBottom), l: n(cs.paddingLeft) };
+  };
+
+  // Touch placement: keep the whole menu clear of the finger (no row under it) and inside the
+  // visual viewport. Prefer beside the contact point, then above or below; cap the height so
+  // the menu scrolls inside instead of leaving the screen.
+  const _placeForTouch = (menu, x, y) => {
+    const el = menu.el;
+    const vv = window.visualViewport;
+    const sa = _safeInsets();
+    const gap = edgeGap();
+    const clear = TH().fingerClearPx || 0;
+    const minX = sa.l + gap;
+    const minY = sa.t + gap;
+    const maxX = (vv ? vv.width : window.innerWidth) - sa.r - gap;
+    const maxY = (vv ? vv.height : window.innerHeight) - sa.b - gap;
+    el.style.maxHeight = `${Math.max(0, maxY - minY)}px`;
+    el.style.left = '0px';
+    el.style.top = '0px';
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    let left;
+    let top;
+    if (x + clear + w <= maxX) left = x + clear;
+    else if (x - clear - w >= minX) left = x - clear - w;
+    if (left !== undefined) {
+      top = Math.min(Math.max(y - h / 2, minY), Math.max(minY, maxY - h));
+    } else {
+      // No room beside the finger: stack above or below it, whichever has more room.
+      const roomAbove = y - clear - minY;
+      const roomBelow = maxY - (y + clear);
+      const below = roomBelow >= Math.min(h, roomAbove);
+      const room = below ? roomBelow : roomAbove;
+      if (h > room) el.style.maxHeight = `${Math.max(0, room)}px`;
+      const hh = Math.min(h, Math.max(0, room));
+      top = below ? y + clear : y - clear - hh;
+      left = Math.min(Math.max(x - w / 2, minX), Math.max(minX, maxX - w));
+    }
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
+  };
+
+  let _expandedAnchor = null;
+  let _expandObserver = null;
+  const _setExpanded = (btn, menu) => {
+    if (_expandObserver) { _expandObserver.disconnect(); _expandObserver = null; }
+    if (_expandedAnchor && _expandedAnchor !== btn) _expandedAnchor.setAttribute('aria-expanded', 'false');
+    _expandedAnchor = btn || null;
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', 'true');
+    if (typeof MutationObserver !== 'function') return;
+    _expandObserver = new MutationObserver(() => {
+      if (menu.isOpen && menu.isOpen()) return;
+      btn.setAttribute('aria-expanded', 'false');
+      _expandObserver.disconnect();
+      _expandObserver = null;
+    });
+    _expandObserver.observe(menu.el, { attributes: true, attributeFilter: ['class', 'style'] });
+  };
+
   // Position the singleton menu at an arbitrary {x, y} (ignoring anchor logic
   // that the primitive uses for buttons). We synthesize a 1×1 anchor.
-  const _openAt = (ui, layer, x, y) => {
+  // source 'touch' places the menu clear of the finger and adds `.is-touch`.
+  const _openAt = (ui, layer, x, y, { source = 'mouse', expandedBtn = null } = {}) => {
     const menu = _ensureMenu();
     const items = _itemsFor(ui, layer);
     menu.update({
       items,
       onSelect: (key) => _runAction(ui, layer, key),
     });
+    menu.el.classList.add('is-context-menu');
+    menu.el.classList.toggle('is-touch', source === 'touch');
+    if (source !== 'touch') menu.el.style.maxHeight = '';
     // Synthesize a tiny zero-size element at (x, y) so the primitive's
     // viewport-aware positionAgainst() + clickOutside guard work cleanly.
     let anchor = document.getElementById('vectura-layer-ctx-anchor');
@@ -534,15 +615,29 @@
     anchor.style.left = `${x}px`;
     if (menu.isOpen && menu.isOpen()) menu.close();
     menu.open(anchor);
+    if (source === 'touch') _placeForTouch(menu, x, y);
+    _setExpanded(expandedBtn, menu);
   };
 
-  // TUX-012 — open the row menu from a ⋯ button: anchored to the button rect.
-  const openForLayer = (ui, layer, anchorEl) => {
+  // Open the row menu. Arguments after `layer`:
+  //   an element (the ⋯ button): anchored to it; or numbers x, y (viewport px);
+  //   opts.source 'touch' | 'mouse' (default: 'mouse' for numbers, 'touch' for a button on touch rows).
+  const openForLayer = (ui, layer, xOrEl, yOrOpts, maybeOpts) => {
     if (!ui || !layer) return;
-    const r = anchorEl && anchorEl.getBoundingClientRect
-      ? anchorEl.getBoundingClientRect()
-      : { left: 0, right: 0, bottom: 0 };
-    _openAt(ui, layer, r.left, r.bottom - 1);
+    if (typeof xOrEl === 'number') {
+      const opts = maybeOpts || {};
+      _openAt(ui, layer, xOrEl, yOrOpts, { source: opts.source || 'mouse' });
+      return;
+    }
+    const opts = (yOrOpts && typeof yOrOpts === 'object') ? yOrOpts : {};
+    const r = xOrEl && xOrEl.getBoundingClientRect
+      ? xOrEl.getBoundingClientRect()
+      : { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
+    if (opts.source === 'touch') {
+      _openAt(ui, layer, r.left + r.width / 2, r.top + r.height / 2, { source: 'touch', expandedBtn: xOrEl });
+      return;
+    }
+    _openAt(ui, layer, r.left, r.bottom - 1, { source: 'mouse', expandedBtn: xOrEl });
   };
 
   const _onContextMenu = (ui) => (event) => {
@@ -553,6 +648,9 @@
     const layer = _findLayer(ui, id);
     if (!layer) return;
     event.preventDefault();
+    // A native long-press contextmenu right after a TouchHold fire would open a second menu.
+    const TouchHold = UI.TouchHold;
+    if (TouchHold && TouchHold.isSuppressingContextMenu && TouchHold.isSuppressingContextMenu()) return;
     _openAt(ui, layer, event.clientX, event.clientY);
   };
 

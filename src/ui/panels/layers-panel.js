@@ -294,21 +294,21 @@
         this.renderLayers(); this.app.render?.();
       };
 
-      // `handle` (default: the card) is the element the touch listeners live on. With
-      // `immediate` (TUX-012 grip) the drag starts on touchstart — no hold — and the
-      // card's own hold-to-reorder ignores touches that start inside `.lvl-grip`.
+      // _bindCardTouchDrag: touch reorder. TUX-044's PointerReorder builds on this function.
+      // TUX-034a removed the 350 ms card hold: a hold on the card body now opens the layer
+      // menu (TouchHold). Reorder starts only from the `.lvl-grip` handle (`immediate`), after
+      // about `gripDragPx` of movement. A plain card touch never reorders.
+      // `handle` (default: the card) is the element the touch listeners live on.
       const _bindCardTouchDrag = (el, layer, { immediate = false, handle = el } = {}) => {
-        let holdTimer = null;
+        if (!immediate) return; // card body: TouchHold owns the hold; nothing to bind here.
         let isDragging = false;
         let startTouchId = null;
+        let startX = 0;
         let startY = 0;
         let lastTargetId = null;
         let lastPos = null;
 
-        const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
-
         const finishDrag = (commit) => {
-          cancelHold();
           el.draggable = true;
           if (isDragging) {
             if (commit && lastTargetId && lastPos) {
@@ -357,32 +357,28 @@
           isDragging = true;
           _lvlDRAG.id = layer.id;
           el.classList.add('dragging');
-          if (navigator.vibrate) navigator.vibrate(30);
         };
 
         handle.addEventListener('touchstart', (e) => {
-          // Card hold timer must not also arm for touches that start on the grip.
-          if (!immediate && e.target && e.target.closest && e.target.closest('.lvl-grip')) return;
           if (e.touches.length !== 1) { finishDrag(false); return; }
-          // Disable native drag immediately so the browser (Safari, Brave, Chrome)
-          // does not intercept the touch as an element drag gesture.
+          // Disable native drag immediately so the browser does not intercept the touch
+          // as an element drag gesture.
           el.draggable = false;
           const t = e.touches[0];
           startTouchId = t.identifier;
+          startX = t.clientX;
           startY = t.clientY;
-          if (immediate) { beginDrag(); return; }
-          holdTimer = setTimeout(() => {
-            holdTimer = null;
-            beginDrag();
-          }, 350);
         }, { passive: true });
 
         handle.addEventListener('touchmove', (e) => {
           const t = Array.from(e.touches).find((tt) => tt.identifier === startTouchId);
           if (!t) return;
           if (!isDragging) {
-            if (Math.abs(t.clientY - startY) > 12) cancelHold();
-            return;
+            // The grip owns its touch (touch-action: none): never let the list scroll from it.
+            if (e.cancelable) e.preventDefault();
+            const slop = (G.Vectura?.TOUCH_HOLD?.gripDragPx);
+            if (Math.hypot(t.clientX - startX, t.clientY - startY) < slop) return;
+            beginDrag();
           }
           e.preventDefault();
           el.style.pointerEvents = 'none';
@@ -512,7 +508,6 @@
           _lvlClrAllDrop();
           setHint(null);
         });
-        _bindCardTouchDrag(el, layer);
       };
 
       const addCardDropZone = (el, layer) => {
@@ -1152,10 +1147,12 @@
         const b = document.createElement('button');
         b.className = 'lvl-ab lvl-more'; b.type = 'button';
         b.setAttribute('aria-label', `More actions for ${layer.name}`);
+        b.setAttribute('aria-haspopup', 'menu');
+        b.setAttribute('aria-expanded', 'false');
         b.innerHTML = this._LVL_I.more?.() ?? '';
         b.addEventListener('click', (e) => {
           e.stopPropagation();
-          LayerContextMenu()?.openForLayer?.(this, layer, b);
+          LayerContextMenu()?.openForLayer?.(this, layer, b, { source: 'touch' });
         });
         return b;
       };
@@ -2776,8 +2773,31 @@
   // context menu after each render. Was previously inlined as the legacy
   // `class UI` `renderLayers` method (which wrapped LayersPanel.renderLayers).
   // Now installed on UI.prototype as `renderLayers` so legacy is methodless.
+  // TUX-034a: one delegated TouchHold on #layer-list. A hold on a card body opens the
+  // layer menu beside the finger. Idempotent per list element; survives every renderLayers().
+  const _lvlBindTouchHold = (ui) => {
+    const TH = G.Vectura?.UI?.TouchHold;
+    const list = document.getElementById('layer-list');
+    if (!TH || !list || list._vecturaTouchHold) return;
+    list._vecturaTouchHold = TH.bind(list, {
+      selector: '[data-layer-id]',
+      pointerTypes: ['touch', 'pen'],
+      // Grip drags, row buttons and the rename field keep their own touch behaviour.
+      resolve: (t, e) => {
+        if (e && e.target && e.target.closest && e.target.closest('.lvl-grip, .lvl-more, .lvl-ib, button, input, textarea, [contenteditable]')) return null;
+        const id = t.getAttribute('data-layer-id');
+        return id ? { key: id, anchorEl: t } : null;
+      },
+      onFire: ({ x, y, key }) => {
+        const layer = ui.app?.engine?.getLayerById?.(key);
+        if (layer) G.Vectura?.UI?.Menus?.LayerContext?.openForLayer?.(ui, layer, x, y, { source: 'touch' });
+      },
+    });
+  };
+
   function renderLayersWithContextMenu() {
     const result = renderLayers.call(this);
+    try { _lvlBindTouchHold(this); } catch (_) { /* non-fatal */ }
     try {
       if (G.Vectura?.UI?.Menus?.LayerContext?.attach) {
         G.Vectura.UI.Menus.LayerContext.attach(this);
