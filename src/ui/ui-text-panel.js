@@ -15,7 +15,9 @@
  *     pushHistory(); layer.params[k]=v; storeLayerParams(layer); regen();
  *     updateFormula(); — fired ONCE on release; live drag updates the DOM only.
  *
- * The editable specimen IS the text field (writes layer.params.text). Specimen
+ * The Text field (textarea[data-text-content]) and the specimen preview both write
+ * layer.params.text through one session helper (TUX-029); the specimen stays
+ * inline-editable on fine pointers only. Specimen
  * rendering is owned by window.Vectura.UI.TextSpecimen (this panel only builds
  * the DOM + view prefs and calls spec.render(layer, view)). Every bespoke class
  * is prefixed `vtp-` and styled by the components.css "VECTURA TEXT PANEL" block.
@@ -195,7 +197,9 @@
     let favs = lsGet(LS.favs, []);
     let recent = lsGet(LS.recent, []);
     let activeTab = 'type';
-    let textTimer = null;
+    let regenTimer = null;       // live-update debounce (regen + formula)
+    let regenPending = false;
+    let sessionPushed = false;   // one text-editing session = ONE history entry
     // Active scrub gesture's abort handle — lets destroy() tear down a drag that
     // is still in flight (e.g. async font-load → regen → rebuild mid-scrub) so no
     // detached-DOM/window listener survives to fire flush() on a dead instance.
@@ -266,6 +270,7 @@
 
     // ── specimen controller ─────────────────────────────────────────────────
     const specTextEl = ref('specText');
+    const textField = ref('textField');
     const refs = {
       stage: ref('stage'),
       specText: specTextEl,
@@ -284,6 +289,11 @@
     });
     function renderSpec() {
       try { if (spec && spec.render) spec.render(layer, currentView()); } catch (_) { /* never throw */ }
+      // Mirror external text changes (undo, canvas edit) into the field, but never
+      // write it while it has focus - that would jump the caret.
+      if (textField && document.activeElement !== textField && textField.value !== String(layer.params.text || '')) {
+        textField.value = String(layer.params.text || '');
+      }
       updateCaption();
       updateLegend();
     }
@@ -991,18 +1001,73 @@
     const guidePick = ref('guidePick');
     if (guidePick) { guidePick.value = viewPrefs.guides; listen(guidePick, 'change', (e) => { viewPrefs.guides = e.target.value; lsSet(LS.guides, viewPrefs.guides); renderSpec(); }); }
 
-    // ── editable specimen (the single text source) ─────────────────────────
-    specTextEl.textContent = layer.params.text || '';
-    const readSpec = () => { const raw = specTextEl.innerText; const s = (typeof raw === 'string' ? raw : specTextEl.textContent) || ''; return s.replace(/ /g, ' ').replace(/\n$/, ''); };
-    const commitText = () => {
-      if (textTimer) { clearTimeout(textTimer); textTimer = null; }
-      const t = readSpec();
-      if (t === layer.params.text) return;
-      pushHist(); layer.params.text = t; flush();
+    // ── text content: ONE session helper shared by the Text field and the specimen ─
+    // First real change in a session pushes history once; every change goes through
+    // the shared TextEditController.applyText op; regen/formula run on a short
+    // debounce (the live update) and blur flushes a pending one without pushing.
+    const REGEN_MS = 120;
+    const applyTextOp = (t) => {
+      const TC = Vectura.TextEditController;
+      const te = ui.app && ui.app.textEdit;
+      if (TC && typeof TC.applyText === 'function') return TC.applyText(layer, t, te);
+      if (t === layer.params.text) return false;
+      layer.params.text = t;
+      return true;
     };
-    listen(specTextEl, 'focus', () => renderSpec());
-    listen(specTextEl, 'input', () => { if (textTimer) clearTimeout(textTimer); textTimer = setTimeout(commitText, 400); renderSpec(); });
-    listen(specTextEl, 'blur', () => commitText());
+    const flushRegen = () => {
+      if (regenTimer) { clearTimeout(regenTimer); regenTimer = null; }
+      if (!regenPending) return;
+      regenPending = false;
+      flush();
+    };
+    const changeText = (t) => {
+      if (t === layer.params.text) return false;
+      if (!sessionPushed) { pushHist(); sessionPushed = true; }
+      applyTextOp(t);
+      try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ }
+      regenPending = true;
+      if (regenTimer) clearTimeout(regenTimer);
+      regenTimer = setTimeout(() => { regenTimer = null; flushRegen(); }, REGEN_MS);
+      renderSpec();
+      return true;
+    };
+    const endTextSession = () => { flushRegen(); sessionPushed = false; };
+
+    // ── editable specimen (preview; inline-editable on fine pointers only) ──
+    specTextEl.textContent = layer.params.text || '';
+    const readSpec = () => { const raw = specTextEl.innerText; const s = (typeof raw === 'string' ? raw : specTextEl.textContent) || ''; return s.replace(/\u00a0/g, ' ').replace(/\n$/, ''); };
+    const coarsePointer = (() => { try { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (_) { return false; } })();
+    if (coarsePointer) {
+      // Touch: a contenteditable this small is not a usable field (sub-16px focus
+      // zoom, one-line stage, per-char jitter spans). The Text field owns typing;
+      // tapping the preview hands focus to it.
+      specTextEl.setAttribute('contenteditable', 'false');
+      specTextEl.removeAttribute('role');
+      specTextEl.setAttribute('aria-label', 'Specimen preview - tap to edit text');
+      specTextEl.title = 'Tap to edit text';
+      // Focus must happen inside the gesture (iOS opens the keyboard only then).
+      listen(specTextEl, 'click', () => { if (textField) textField.focus(); });
+    } else {
+      listen(specTextEl, 'focus', () => renderSpec());
+      listen(specTextEl, 'input', () => { changeText(readSpec()); });
+      listen(specTextEl, 'blur', () => endTextSession());
+    }
+
+    // ── Text content field (touch-first; also usable with a mouse) ─────────
+    if (textField) {
+      textField.value = String(layer.params.text || '');
+      listen(textField, 'focus', () => {
+        // A canvas Type session on this layer would fight over params.text.
+        const te = ui.app && ui.app.textEdit;
+        try {
+          if (te && typeof te.isActive === 'function' && te.isActive()
+            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) te.end();
+        } catch (_) { /* */ }
+        renderSpec();
+      });
+      listen(textField, 'input', () => { changeText(textField.value); });
+      listen(textField, 'blur', () => { endTextSession(); renderSpec(); });
+    }
 
     // ── font picker popover (body-level) ───────────────────────────────────
     let pop = document.createElement('div');
@@ -1286,9 +1351,9 @@
       // Abort any in-flight scrub gesture so its window 'blur' + origin pointer
       // listeners are removed (they live outside the tracked `listeners` array).
       if (activeFinish) { try { activeFinish(); } catch (_) { /* */ } activeFinish = null; }
-      // Flush a pending debounced specimen edit before tearing down — otherwise
-      // the most recent keystrokes (within the 400ms window, pre-blur) are lost.
-      if (textTimer) { try { commitText(); } catch (_) { /* */ } textTimer = null; }
+      // Flush a pending debounced text edit before tearing down — otherwise the
+      // most recent keystrokes (inside the live-update window, pre-blur) are lost.
+      try { endTextSession(); } catch (_) { /* */ }
       // Revert an un-committed font hover-preview so tearing the panel down (e.g.
       // a layer switch) never leaves a previewed face applied without a history
       // step. The size preset menu reverts itself via its `dials` entry below.
@@ -1387,6 +1452,11 @@
 
     <section class="vtp-page active" data-page="type" role="tabpanel">
       <div class="vtp-tab-heading"><svg viewBox="0 0 24 24" aria-hidden="true">${tabSvg.type}</svg>Type — Character<span class="vtp-h-sub">face · size · metrics</span></div>
+
+      <div class="vtp-field-block vtp-text-content">
+        <div class="vtp-field-cap"><label>Text</label></div>
+        <textarea class="vtp-text-field" data-ref="textField" data-text-content rows="3" autocapitalize="sentences" autocorrect="on" autocomplete="off" inputmode="text" spellcheck="true" aria-label="Text" placeholder="Type your text"></textarea>
+      </div>
 
       <div class="vtp-field-block">
         <div class="vtp-field-cap"><label>Font source &amp; face</label></div>

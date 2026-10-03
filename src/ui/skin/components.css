@@ -13646,3 +13646,38 @@ body.touch-ui .lvl-grp-exit-zone { margin-left: -16px }
   .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
 }
 body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
+
+/* === TUX-029: text-content field ===
+   Multi-line "Text" field in the Type tab. Beats the older
+   `[data-ui-skin] #left-panel-content textarea` rule (fixed row height, small
+   font) and keeps >= 16px so iOS never zooms on focus. */
+[data-ui-skin] #left-panel-content .vtp-panel textarea.vtp-text-field,
+[data-ui-skin] .vtp-panel textarea.vtp-text-field,
+.vtp-panel textarea.vtp-text-field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  min-height: calc(3 * 1.35em + 2 * var(--spacing-sm, 8px));
+  padding: var(--spacing-sm, 8px);
+  font-family: var(--font-ui);
+  font-size: max(16px, var(--font-size-sm, 13px));
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  resize: vertical;
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+[data-ui-skin] #left-panel-content .vtp-panel textarea.vtp-text-field:focus,
+[data-ui-skin] .vtp-panel textarea.vtp-text-field:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-accent-2);
+}
+/* === /TUX-029 === */

@@ -999,5 +999,29 @@
     }
   }
 
+  /**
+   * TUX-029: the ONE text-mutation op for whole-string edits that do not come from
+   * the canvas caret (the Text panel's content field and its specimen preview).
+   * Sets layer.params.text, prunes kerning keys that no longer point between two
+   * characters, and clamps the caret of an active canvas session on this layer.
+   * It never pushes history and never regenerates: the caller owns both.
+   * Returns true when the text changed.
+   */
+  TextEditController.applyText = (layer, text, controller = null) => {
+    if (!layer || !layer.params) return false;
+    const next = text == null ? '' : String(text);
+    if (next === layer.params.text) return false;
+    layer.params.text = next;
+    const kp = layer.params.kernPairs;
+    if (kp && typeof kp === 'object') {
+      Object.keys(kp).forEach((k) => { if (Number(k) >= next.length) delete kp[k]; });
+    }
+    if (controller && controller.active && controller.layer === layer) {
+      controller.caretIndex = clamp(controller.caretIndex, 0, next.length);
+      controller.anchorIndex = clamp(controller.anchorIndex, 0, next.length);
+    }
+    return true;
+  };
+
   Vectura.TextEditController = TextEditController;
 })();
