@@ -8491,33 +8491,35 @@
   }
 }
 
-/* TUX-006: keyed on the JS layout class (phone/tablet), not viewport width. */
-:root:has(body.mobile-layout) {
+/* TUX-006: keyed on the JS layout class (phone/tablet), not viewport width.
+ * Bare selectors are wrapped in :where() so they keep the cascade weight of the
+ * deleted @media (max-width: 900px) block (e.g. #id = 1,0,0; .x = 0,1,0). */
+:root:where(:has(body.mobile-layout)) {
   --pane-left-width: min(88vw, 340px);
   --pane-right-width: min(88vw, 340px);
   --pane-collapsed-width: 40px;
 }
 
-body.mobile-layout #app-header {
+:where(body.mobile-layout) #app-header {
   padding-left: 10px;
   padding-right: 10px;
 }
 
-body.mobile-layout .header-main {
+:where(body.mobile-layout) .header-main {
   align-items: flex-start;
 }
 
-body.mobile-layout .top-menubar {
+:where(body.mobile-layout) .top-menubar {
   gap: 10px;
   padding-top: 0;
 }
 
-body.mobile-layout .pane-resizer,
-body.mobile-layout .bottom-resizer {
+:where(body.mobile-layout) .pane-resizer,
+:where(body.mobile-layout) .bottom-resizer {
   display: none;
 }
 
-body.mobile-layout .mobile-pane-handle {
+:where(body.mobile-layout) .mobile-pane-handle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -8714,7 +8716,7 @@ body.mobile-layout #btn-mobile-pane-bottom {
 }
 
 /* Drawer backdrop — visible only when a pane drawer is open in mobile-layout. */
-body.mobile-layout .mobile-pane-backdrop {
+:where(body.mobile-layout) .mobile-pane-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.5);

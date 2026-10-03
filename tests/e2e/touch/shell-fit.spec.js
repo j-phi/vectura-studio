@@ -190,8 +190,83 @@ test.describe('TUX-006 coarse landscape phone >= 900 px', () => {
           return b.offsetParent !== null && !b.classList.contains('hidden') && r.width > 0 && r.height > 0;
         }).map((b) => { const r = b.getBoundingClientRect(); return { id: b.id || b.dataset.tool || b.title, w: Math.round(r.width), h: Math.round(r.height), bottom: Math.round(r.bottom) }; }));
         const bad = rail.filter((b) => b.w < 44 || b.h < 44);
+        // elementFromPoint: every visible rail button that is in view is hit-testable.
+        const occluded = await page.evaluate(() => [...document.querySelectorAll('#tool-bar .tool-btn')].filter((b) => {
+          const r = b.getBoundingClientRect();
+          return b.offsetParent !== null && !b.classList.contains('hidden') && r.width > 0 && r.height > 0
+            && r.right <= innerWidth && r.bottom <= innerHeight;
+        }).map((b) => {
+          const r = b.getBoundingClientRect();
+          const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return {
+            id: b.id || b.dataset.tool || b.title,
+            by: t && (t.id || String(t.className).slice(0, 40)),
+            inPane: !!(t && t.closest && t.closest('.pane')),
+            ok: !!t && (t === b || b.contains(t)),
+          };
+        }).filter((x) => !x.ok));
+        // TUX-008 HAND-OFF: the default-open left drawer (welcome intro) still covers the first
+        // rail button on a coarse landscape phone >= 900 px. TUX-008 owns pane default state.
+        // Only a pane overlay is tolerated here; any other occluder fails.
+        const unexpected = occluded.filter((x) => !x.inPane);
+        expect(unexpected, `rail buttons covered by something other than a pane at ${w}x${h}`).toEqual([]);
+        testInfo.annotations.push({ type: 'TUX-008 hand-off: pane-covered rail buttons', description: JSON.stringify(occluded) });
         expect(bad, `tool buttons under 44x44: ${JSON.stringify(bad)}`).toEqual([]);
         testInfo.annotations.push({ type: 'rail', description: JSON.stringify({ vh: h, n: rail.length, maxBottom: Math.max(...rail.map((b) => b.bottom)) }) });
+      } finally { await ctx.close(); }
+    });
+  }
+});
+
+// TUX-006 fix round 2: converting the deleted @media (max-width: 900px) block to class gates
+// must not change cascade weight. The pane handles are display:none in every mobile-layout
+// viewport (the base .mobile-pane-handle {display:none} wins), and header spacing keeps the
+// base values. Regression for 2fd199a5, where body.mobile-layout rules out-weighed them.
+test.describe('TUX-006 mobile-layout cascade weight', () => {
+  const CASES = [
+    { name: 'iPadP 834x1210 coarse', w: 834, h: 1210, coarse: true, ua: PROJECTS['touch-ipad-portrait'].ua },
+    { name: 'iPhP 402x874 coarse', w: 402, h: 874, coarse: true, ua: PROJECTS['touch-iphone-portrait'].ua },
+    { name: 'iPhL 874x402 coarse', w: 874, h: 402, coarse: true, ua: PROJECTS['touch-iphone-landscape'].ua },
+    { name: '800x900 fine', w: 800, h: 900, coarse: false, ua: undefined },
+  ];
+  for (const c of CASES) {
+    test(`handles hidden, header spacing at base values, nothing covers layer actions: ${c.name}`, async ({ browser }, testInfo) => {
+      test.skip(!/^(touch-ipad-landscape|webkit-ipad-landscape)$/.test(testInfo.project.name), 'one Chromium + one WebKit project');
+      const ctx = await browser.newContext({
+        viewport: { width: c.w, height: c.h }, deviceScaleFactor: 2, hasTouch: c.coarse, isMobile: c.coarse,
+        ...(c.ua ? { userAgent: c.ua } : {}),
+        baseURL: testInfo.project.use.baseURL,
+      });
+      const page = await ctx.newPage();
+      try {
+        await gotoApp(page);
+        const s = await page.evaluate(() => {
+          const cs = (sel) => getComputedStyle(document.querySelector(sel));
+          return {
+            mobile: document.body.classList.contains('mobile-layout'),
+            left: cs('#btn-mobile-pane-left').display,
+            right: cs('#btn-mobile-pane-right').display,
+            gap: cs('.top-menubar').columnGap,
+            align: cs('.header-main').alignItems,
+            padL: cs('#app-header').paddingLeft,
+          };
+        });
+        expect(s.mobile, 'mobile-layout active').toBe(true);
+        expect(s.left, '#btn-mobile-pane-left display').toBe('none');
+        expect(s.right, '#btn-mobile-pane-right display').toBe('none');
+        expect(s.gap, '.top-menubar gap').toBe('1px');
+        expect(s.align, '.header-main align-items').toBe('center');
+        expect(s.padL, '#app-header padding-left').toBe('14px');
+        // No visible layer-card action button is covered by a pane handle.
+        const covered = await page.evaluate(() => [...document.querySelectorAll('.layer-item .layer-act')].filter((b) => {
+          const r = b.getBoundingClientRect();
+          return b.offsetParent !== null && r.width > 0 && r.height > 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+        }).map((b) => {
+          const r = b.getBoundingClientRect();
+          const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return { ok: !!t && (t === b || b.contains(t)), by: t && (t.id || t.className) };
+        }).filter((x) => !x.ok && /mobile-pane-handle/.test(String(x.by))));
+        expect(covered, 'layer actions covered by a pane handle').toEqual([]);
       } finally { await ctx.close(); }
     });
   }
