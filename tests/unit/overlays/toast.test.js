@@ -54,4 +54,71 @@ describe('UI.overlays.Toast', () => {
     expect(log).toEqual([1]);
     expect(t.el.parentNode).toBeNull();
   });
+
+  describe('TUX-037 action toast', () => {
+    const mk = (extra = {}) => {
+      const log = [];
+      const t = Toast.show({ message: 'Deleted "A"', action: { label: 'Undo', onAction: () => log.push('act') }, ...extra });
+      return { t, log };
+    };
+
+    test('action renders a <button data-action="undo">', () => {
+      const { t } = mk({ duration: 0 });
+      const b = t.el.querySelector('button[data-action="undo"]');
+      expect(b).toBeTruthy();
+      expect(b.textContent).toBe('Undo');
+      expect(b.type).toBe('button');
+      t.dismiss();
+    });
+
+    test('a click on the toast body does not call onAction or dismiss', () => {
+      const { t, log } = mk({ duration: 0 });
+      t.el.dispatchEvent(new runtime.window.MouseEvent('click', { bubbles: true }));
+      expect(log).toEqual([]);
+      expect(t.el.parentNode).not.toBeNull();
+      t.dismiss();
+    });
+
+    test('the button calls onAction, then dismisses', () => {
+      const { t, log } = mk({ duration: 0 });
+      t.el.querySelector('button').dispatchEvent(new runtime.window.MouseEvent('click', { bubbles: true }));
+      expect(log).toEqual(['act']);
+      expect(t.el.parentNode).toBeNull();
+    });
+
+    test('default duration with an action is at least 5000 ms', () => {
+      const spy = vi.spyOn(globalThis, 'setTimeout');
+      try {
+        const { t } = mk();
+        const ms = spy.mock.calls.map((c) => c[1]);
+        expect(ms.some((n) => n >= 5000)).toBe(true);
+        t.dismiss();
+      } finally { spy.mockRestore(); }
+    });
+
+    test('pointerdown pauses the timer; pointerup and pointercancel resume it', async () => {
+      const { t } = mk({ duration: 40 });
+      t.el.dispatchEvent(new runtime.window.Event('pointerdown', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 90));
+      expect(t.el.parentNode).not.toBeNull();
+      t.el.dispatchEvent(new runtime.window.Event('pointerup', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 90));
+      expect(t.el.parentNode).toBeNull();
+
+      const { t: t2 } = mk({ duration: 40 });
+      t2.el.dispatchEvent(new runtime.window.Event('pointerdown', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 90));
+      expect(t2.el.parentNode).not.toBeNull();
+      t2.el.dispatchEvent(new runtime.window.Event('pointercancel', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 90));
+      expect(t2.el.parentNode).toBeNull();
+    });
+
+    test('disableAction() disables the button', () => {
+      const { t } = mk({ duration: 0 });
+      t.disableAction();
+      expect(t.el.querySelector('button').disabled).toBe(true);
+      t.dismiss();
+    });
+  });
 });

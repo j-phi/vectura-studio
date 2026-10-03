@@ -925,6 +925,7 @@
         },
         selectedLayerId: this.renderer.selectedLayerId,
         selectedLayerIds,
+        layerLockedIds: Array.from(this.ui?.layerLockedIds || []),
       };
     }
 
@@ -1042,6 +1043,11 @@
         refreshUi: true,
         render: false,
       });
+      // TUX-037: lock state is part of the snapshot (snapshots without it leave locks as is).
+      if (Array.isArray(state.layerLockedIds) && this.ui.layerLockedIds) {
+        this.ui.layerLockedIds.clear();
+        state.layerLockedIds.forEach((id) => this.ui.layerLockedIds.add(id));
+      }
       this.ui.renderLayers();
       this.ui.renderPens();
       this.ui.buildControls();

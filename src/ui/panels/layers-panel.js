@@ -1774,13 +1774,18 @@
 
     function _lvlDelSel() {
       if (this.app.pushHistory) this.app.pushHistory();
+      const token = this.app.history?.[this.app.history.length - 1];
       const ids = [...(this.app.renderer?.selectedLayerIds || [])];
+      const label = ids.length === 1
+        ? `Deleted "${this.app.engine.getLayerById?.(ids[0])?.name ?? 'layer'}"`
+        : `Deleted ${ids.length} layers`;
       [...ids].reverse().forEach((id) => {
         this.unlockMirrorChildrenOnDelete(id);
         this.app.engine.removeLayer(id);
       });
       this.renderLayers();
       this.app.render();
+      this.notifyUndoable(label, token);
     }
 
     function _lvlDupSel() {
@@ -2182,6 +2187,14 @@
       });
     };
     cascade(layerId);
+  }
+
+  // TUX-037: one entry point for the "Deleted X — Undo" toast. `token` is the history
+  // snapshot the delete pushed (`this.app.history[last]` read right after pushHistory).
+  function notifyUndoable(label, token) {
+    const Toast = G.Vectura?.UI?.overlays?.Toast;
+    if (!Toast || typeof Toast.undoable !== 'function') return null;
+    return Toast.undoable({ app: this.app, label, token });
   }
 
   function shouldLeaveParentScope(layer, prevId, nextId, selectedIds = new Set()) {
@@ -2829,6 +2842,7 @@
     getModifierState,
     assignLayersToParent,
     unlockMirrorChildrenOnDelete,
+    notifyUndoable,
     shouldLeaveParentScope,
     isDescendant,
     sceneNestContainerFor,
@@ -2868,6 +2882,7 @@
       proto.getModifierState = function(layer) { return getModifierState.call(this, layer); };
       proto.assignLayersToParent = function(...args) { return assignLayersToParent.apply(this, args); };
       proto.unlockMirrorChildrenOnDelete = function(layerId) { return unlockMirrorChildrenOnDelete.call(this, layerId); };
+      proto.notifyUndoable = function(label, token) { return notifyUndoable.call(this, label, token); };
       proto.shouldLeaveParentScope = function(...args) { return shouldLeaveParentScope.apply(this, args); };
       proto.isDescendant = function(targetId, ancestorId) { return isDescendant.call(this, targetId, ancestorId); };
       proto.sceneNestContainerFor = function(tgt) { return sceneNestContainerFor.call(this, tgt); };

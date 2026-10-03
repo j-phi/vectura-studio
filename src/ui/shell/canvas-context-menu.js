@@ -90,11 +90,15 @@
     const app = getApp(); const renderer = getRenderer(); const engine = getEngine(); const ui = getUi();
     if (!app || !renderer || !engine) return;
     app.pushHistory?.();
+    const token = Array.isArray(app.history) ? app.history[app.history.length - 1] : null;
+    const names = s.ids.map((id) => engine.getLayerById?.(id)?.name).filter(Boolean);
+    const label = s.ids.length === 1 ? `Deleted "${names[0] || 'layer'}"` : `Deleted ${s.ids.length} layers`;
     s.ids.forEach((id) => { ui && ui.unlockMirrorChildrenOnDelete?.(id); engine.removeLayer(id); });
     const nextId = engine.activeLayerId;
     renderer.setSelection(nextId ? [nextId] : [], nextId);
     ui && ui.renderLayers?.();
     app.render?.();
+    ui && ui.notifyUndoable?.(label, token);
   };
   const cmdUndo = () => { const ui = getUi(); if (ui && ui.triggerTopMenuAction) ui.triggerTopMenuAction('btn-undo'); else getApp()?.undo?.(); };
   const cmdRedo = () => { const ui = getUi(); if (ui && ui.triggerTopMenuAction) ui.triggerTopMenuAction('btn-redo'); else getApp()?.redo?.(); };
