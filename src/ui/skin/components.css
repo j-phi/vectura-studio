@@ -14118,3 +14118,13 @@ body.mobile-layout #tool-bar .toolbar-footer { display: none; }
   }
 }
 /* === END TUX-016 === */
+
+/* === TUX-016 (fix round): touch modifier bar clears a top-docked toolbar ===
+ * Finger-docking the rail at the top is reachable now that the drag is not cancelled. The floating
+ * modifier bar (top: 58-66px of the shell) then sat on the docked bar and swallowed taps on every
+ * tool. toolbar.js publishes the docked height as --toolbar-dock-top-h on the shell. The anchored
+ * layout (mobile-layout) keeps its static, ordered bar. */
+body:not(.mobile-layout) .workspace-shell:has(> #tool-bar.toolbar-docked-top) > #touch-modifier-bar {
+  top: calc(var(--toolbar-dock-top-h, 56px) + 8px);
+}
+/* === END TUX-016 fix round === */

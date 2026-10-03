@@ -703,6 +703,11 @@ test.describe('TUX-016 footer and handles', () => {
     return { left: r.left, top: r.top, width: r.width, height: r.height };
   }, sel);
   const centre = (r) => ({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+  const expectNoPageScroll = async (page) => {
+    const sc = await page.evaluate(() => ({ y: window.scrollY, top: document.scrollingElement.scrollTop }));
+    expect(sc.y, 'window.scrollY').toBe(0);
+    expect(sc.top, 'scrollingElement.scrollTop').toBe(0);
+  };
 
   test('anchored rail renders no handle or footer', async ({ page }, testInfo) => {
     test.skip(!ANCHORED.includes(testInfo.project.name), 'floating-rail project');
@@ -803,7 +808,38 @@ test.describe('TUX-016 footer and handles', () => {
     expect(await page.evaluate(() => /toolbar-docked/.test(document.getElementById('tool-bar').className))).toBe(false);
     expect(ev.up).toBeGreaterThanOrEqual(1);
     if (engineSupports(page, 'trustedMultiTouch')) expect(ev.cancel, 'pointercancel count').toBe(0);
+    await expectNoPageScroll(page);
     await shot(page, testInfo, 'floating-after-drag');
+  });
+
+  // Fix round: a finger drag that docks the bar at the top must leave every rail tool reachable
+  // (the touch modifier bar used to sit on top of the docked bar and swallow the taps).
+  test('top-docked rail tools are not covered', async ({ page }, testInfo) => {
+    test.skip(!FLOATING.includes(testInfo.project.name), 'anchored-rail project');
+    await load(page);
+    const vp = await rectOf(page, '#viewport-container');
+    const hc = centre(await rectOf(page, '#tool-bar .toolbar-drag-handle'));
+    await drag(page, hc, { x: vp.left + vp.width / 2, y: vp.top + 12 }, { steps: 12 });
+    await sleep(500);
+    expect(await page.evaluate(() => document.getElementById('tool-bar').className)).toMatch(/toolbar-docked-top/);
+    const covered = await page.evaluate(() => {
+      const out = [];
+      let seen = 0;
+      document.querySelectorAll('#tool-bar .tool-btn').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (!r.width || !r.height || getComputedStyle(el).visibility === 'hidden') return;
+        const x = r.left + r.width / 2;
+        const y = r.top + r.height / 2;
+        if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return;
+        seen += 1;
+        const t = document.elementFromPoint(x, y);
+        if (!t || !(t === el || el.contains(t))) out.push(`${el.dataset.tool}: ${t ? (t.id || t.className) : 'null'}`);
+      });
+      return { out, seen };
+    });
+    expect(covered.seen, 'visible rail tools').toBeGreaterThanOrEqual(6);
+    expect(covered.out).toEqual([]);
+    await shot(page, testInfo, 'docked-top');
   });
 
   test('ctxbar handle drag follows the finger and never sticks', async ({ page }, testInfo) => {
@@ -852,5 +888,6 @@ test.describe('TUX-016 footer and handles', () => {
     const final = await rectOf(page, '.ctxbar');
     expect(Math.abs(final.left - rested.left), `stuck dx ${final.left - rested.left}`).toBeLessThanOrEqual(1);
     expect(Math.abs(final.top - rested.top), `stuck dy ${final.top - rested.top}`).toBeLessThanOrEqual(1);
+    await expectNoPageScroll(page);
   });
 });

@@ -743,6 +743,7 @@
 
     const clearDockPadding = () => {
       ['Left', 'Right', 'Top', 'Bottom'].forEach((s) => { viewport.style['padding' + s] = ''; });
+      shell.style.removeProperty('--toolbar-dock-top-h');
     };
 
     const applyDockPadding = (side) => {
@@ -751,6 +752,7 @@
       if (side === 'left')   viewport.style.paddingLeft   = r.width  + 'px';
       if (side === 'right')  viewport.style.paddingRight  = r.width  + 'px';
       if (side === 'top')    viewport.style.paddingTop    = r.height + 'px';
+      if (side === 'top')    shell.style.setProperty('--toolbar-dock-top-h', r.height + 'px');
       if (side === 'bottom') viewport.style.paddingBottom = r.height + 'px';
     };
 
