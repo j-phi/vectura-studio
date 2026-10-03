@@ -13924,6 +13924,57 @@ body.phone-layout #top-menubar .top-menu-back { font-weight: 600; color: var(--u
 .top-menu-back { display: none; }
 body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: center; }
 /* === end TUX-001 === */
+
+/* === TUX-013: compact one-row tool rail ===
+ * Static-rail layouts only: phone-layout, and tablet-layout on a coarse pointer.
+ * touch-wide and desktop keep the floating rail, drag handle and footer (TUX-016/041 own their sizing).
+ * Which slots stay on the rail comes from Vectura.TOOL_RAIL (src/config/tool-drawer.js);
+ * toolbar.js marks the rest `.rail-overflowed`. Budget: tablet <= 64 px, phone <= 52 px (border counted).
+ * No env(safe-area-inset-top) here: TUX-005 owns the top inset on #app-header.
+ * TODO(TUX-041): replace the literal 44px with the shared touch-target token once it lands. */
+body.touch-ui.tablet-layout #tool-bar,
+body.phone-layout #tool-bar {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  padding-left: calc(12px + env(safe-area-inset-left, 0px));
+  padding-right: calc(12px + env(safe-area-inset-right, 0px));
+}
+body.phone-layout #tool-bar {
+  padding-top: 4px;
+  padding-bottom: 3px; /* 4 + 44 + 3 + 1 px border = 52 */
+}
+body.touch-ui.tablet-layout #tool-bar { padding-top: 8px; padding-bottom: 8px; }
+body.touch-ui.tablet-layout #tool-bar .toolbar-footer,
+body.touch-ui.tablet-layout #tool-bar .toolbar-drag-handle,
+body.phone-layout #tool-bar .toolbar-footer,
+body.phone-layout #tool-bar .toolbar-drag-handle { display: none; }
+body.touch-ui.tablet-layout #tool-bar .rail-overflowed,
+body.phone-layout #tool-bar .rail-overflowed { display: none; }
+body.touch-ui.tablet-layout #tool-bar .tool-group,
+body.phone-layout #tool-bar .tool-group { flex-direction: row; flex: 0 0 auto; }
+body.touch-ui.tablet-layout #tool-bar > .tool-divider {
+  width: 1px; height: 24px; margin: 0 2px; flex: 0 0 1px; align-self: center;
+}
+body.phone-layout #tool-bar > .tool-divider { display: none; }
+body.touch-ui.tablet-layout #tool-bar #tool-overflow-btn,
+body.phone-layout #tool-bar #tool-overflow-btn { margin-left: auto; order: 999; flex: 0 0 auto; }
+/* Collapsed-pane slivers (40 px, z 55) overlay the rail ends once a finger collapses a pane on
+ * tablet and wide-phone layouts (body is not .auto-collapsed there, so the rail stays at z 5).
+ * Inset the rail's inline padding by the sliver width so Select and the overflow button stay
+ * hittable. Narrow phones (.auto-collapsed) already lift the rail to z 60 above the slivers. */
+body.touch-ui.tablet-layout #tool-bar,
+body.phone-layout:not(.auto-collapsed) #tool-bar {
+  padding-left: calc(var(--pane-collapsed-width, 40px) + 4px + env(safe-area-inset-left, 0px));
+  padding-right: calc(var(--pane-collapsed-width, 40px) + 4px + env(safe-area-inset-right, 0px));
+}
+/* === /TUX-013 === */
 /* === TUX-034: touch hold + context menus ===
    Scoped to .menu-dropdown.is-context-menu and .canvas-ctx-menu. The header menubar shares
    bare .menu-dropdown / .menu-entry: never restyle those here. */
@@ -13958,6 +14009,21 @@ body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: cent
   .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
 }
 /* === END TUX-034 === */
+
+/* === TUX-015: all tools drawer (touch) === */
+/* Stacking applies to every pointer: the drawer is a body-level popover and must sit above the rail and panes. */
+.tool-drawer { z-index: var(--z-tool-drawer, 80); }
+@media (pointer: coarse) {
+  .tool-drawer-body { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .tool-drawer[data-view="grid"] .tool-drawer-item { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+  .tool-drawer[data-view="list"] .tool-drawer-item { min-height: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+  .tool-drawer-view-btn { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+}
+body.touch-ui .tool-drawer-body { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+body.touch-ui .tool-drawer[data-view="grid"] .tool-drawer-item { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+body.touch-ui .tool-drawer[data-view="list"] .tool-drawer-item { min-height: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+body.touch-ui .tool-drawer-view-btn { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+/* === END TUX-015 === */
 
 /* === TUX-035: add-layer touch drill-down === */
 /* Touch taps "Algorithm Layer" and the add menu swaps to the algorithm list (JS: shortcuts.js).

@@ -419,7 +419,8 @@
       phases: [
         {
           title: 'Press & Hold the Algorithm Tool',
-          target: '.tool-btn[data-tool="algo-draw"]',
+          // TUX-013: phones keep this slot in the ⋯ overflow; point at ⋯ when the slot is hidden.
+          target: '.tool-btn[data-tool="algo-draw"]:not(.rail-overflowed):not(.rail-overflowed *), #tool-overflow-btn',
           placement: 'right',
           body: 'Buttons with a tiny <b>▸</b> corner mark hide a family of related tools. <b>Press and hold</b> the algorithm button.',
           circleAll: '.tool-btn[data-has-submenu]',

@@ -167,6 +167,7 @@
       }
       if (this.app.renderer?.setTool) this.app.renderer.setTool(tool);
       syncButtons();
+      Vectura.UI.ToolDrawer?.syncRailState?.();
       const isPatternFillTool = (t) => t === 'fill-pattern' || t === 'fill-pattern-erase';
       const isPaintBucketTool = (t) => t === 'fill' || t === 'fill-erase';
       if (isPatternFillTool(tool) || isPatternFillTool(prevTool) ||
@@ -567,28 +568,34 @@
           if (v) icon.setAttribute(attr, v);
         }
       };
+      // Shared by the long-press on the rail slot and the All Tools drawer (TUX-013: the slot is
+      // hidden on phones, so the drawer item opens the picker). `anchor` positions the popup;
+      // no anchor (the drawer route) or a box-less one centres it in the viewport, clear of the rail.
+      const showAlgoPicker = (anchor) => {
+        const popup = _buildAlgoPickerPopup();
+        const r = anchor ? anchor.getBoundingClientRect() : { width: 0, height: 0 };
+        const hasBox = r.width > 0 && r.height > 0;
+        const dir = hasBox ? computeMenuDir(anchor) : 'center';
+        if (anchor === algoDrawBtn) algoDrawBtn.dataset.submenuDir = dir;
+        // Measure while hidden, then position, then reveal.
+        popup.style.visibility = 'hidden';
+        popup.classList.remove('hidden');
+        const mw = popup.offsetWidth, mh = popup.offsetHeight;
+        const GAP = 6, PAD = 8;
+        const vw = window.innerWidth, vh = window.innerHeight;
+        let left = Math.round((vw - mw) / 2), top = Math.round((vh - mh) / 2);
+        if (dir === 'right')  { left = r.right + GAP;      top = r.top; }
+        if (dir === 'left')   { left = r.left - GAP - mw;  top = r.top; }
+        if (dir === 'below')  { left = r.left;              top = r.bottom + GAP; }
+        if (dir === 'above')  { left = r.left;              top = r.top - GAP - mh; }
+        popup.style.left = `${Math.max(PAD, Math.min(vw - mw - PAD, left))}px`;
+        popup.style.top  = `${Math.max(PAD, Math.min(vh - mh - PAD, top))}px`;
+        popup.style.visibility = '';
+      };
+      this._openAlgoPicker = showAlgoPicker;
       algoDrawBtn.addEventListener('pointerdown', (e) => {
         algoDrawBtn.setPointerCapture?.(e.pointerId);
-        _algoPickerTimer = setTimeout(() => {
-          const popup = _buildAlgoPickerPopup();
-          const dir = computeMenuDir(algoDrawBtn);
-          algoDrawBtn.dataset.submenuDir = dir;
-          // Measure while hidden, then position, then reveal.
-          popup.style.visibility = 'hidden';
-          popup.classList.remove('hidden');
-          const mw = popup.offsetWidth, mh = popup.offsetHeight;
-          const r = algoDrawBtn.getBoundingClientRect();
-          const GAP = 6, PAD = 8;
-          const vw = window.innerWidth, vh = window.innerHeight;
-          let left, top;
-          if (dir === 'right')  { left = r.right + GAP;      top = r.top; }
-          if (dir === 'left')   { left = r.left - GAP - mw;  top = r.top; }
-          if (dir === 'below')  { left = r.left;              top = r.bottom + GAP; }
-          if (dir === 'above')  { left = r.left;              top = r.top - GAP - mh; }
-          popup.style.left = `${Math.max(PAD, Math.min(vw - mw - PAD, left))}px`;
-          popup.style.top  = `${Math.max(PAD, Math.min(vh - mh - PAD, top))}px`;
-          popup.style.visibility = '';
-        }, 400);
+        _algoPickerTimer = setTimeout(() => showAlgoPicker(algoDrawBtn), 400);
       });
       algoDrawBtn.addEventListener('pointerup', (e) => {
         clearTimeout(_algoPickerTimer);
@@ -611,11 +618,55 @@
     }
 
     this._updateAllSubmenuDirs = () => updateAllSubmenuDirs(toolbar);
+    initRailPriority.call(this, toolbar);
     initToolBarDock.call(this, toolbar);
     // All Tools drawer (TLD-1/2): overflow "…" affordance + inventory drawer.
     // Self-contained module; optional-chained so a missing/late load no-ops.
     Vectura.UI.ToolDrawer?.attach?.(this);
     requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+  }
+
+  // TUX-013: priority-plus rail. In the static one-row layouts (phone, and tablet on
+  // a coarse pointer) tool slots that are not in Vectura.TOOL_RAIL for the layout class
+  // get `.rail-overflowed` (CSS hides them; DOM stays for shortcuts and the drawer
+  // cross-highlight). Other layouts clear the class. Never touches inline position.
+  function railLayoutKey() {
+    const cl = document.body.classList;
+    if (cl.contains('phone-layout')) return 'phone';
+    if (cl.contains('tablet-layout') && cl.contains('touch-ui')) return 'tablet';
+    return null;
+  }
+
+  function applyRailPriority(toolbar) {
+    const key = railLayoutKey();
+    const rail = (G.Vectura && G.Vectura.TOOL_RAIL) || {};
+    const keep = key && Array.isArray(rail[key]) ? new Set(rail[key]) : null;
+    Array.from(toolbar.children).forEach((child) => {
+      const btn = child.matches('.tool-btn[data-tool]') ? child : child.querySelector(':scope > .tool-btn[data-tool]');
+      if (!btn) return;
+      const off = !!keep && !keep.has(btn.dataset.tool);
+      child.classList.toggle('rail-overflowed', off);
+    });
+    G.Vectura?.UI?.ToolDrawer?.syncRailState?.();
+  }
+
+  function initRailPriority(toolbar) {
+    const run = () => applyRailPriority(toolbar);
+    this._applyRailPriority = run;
+    run();
+    // Run before any mobile-layout early return elsewhere: layout changes arrive here.
+    window.addEventListener('resize', run);
+    window.addEventListener('vectura:layoutchange', run);
+    // workspace.expandPanes (Reset View on a fine pointer) strips the layout classes without
+    // firing layoutchange; re-evaluate whenever the body class list changes.
+    if (typeof MutationObserver === 'function') {
+      let last = document.body.className;
+      new MutationObserver(() => {
+        if (document.body.className === last) return;
+        last = document.body.className;
+        run();
+      }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    }
   }
 
   const DOCK_CLASSES = ['toolbar-docked-left', 'toolbar-docked-right', 'toolbar-docked-top', 'toolbar-docked-bottom'];
