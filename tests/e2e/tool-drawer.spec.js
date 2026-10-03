@@ -98,6 +98,9 @@ test.describe('TUX-013 desktop parity', () => {
     expect(s.handleH).toBeGreaterThan(0);
     expect(s.overflowed).toBe(0);
   });
+  // TUX-016 (stale by design): in mobile-layout the rail is position: static, so the drag handle and the
+  // pin/home/rotate footer did nothing there. They no longer render for any pointer type; the rail
+  // loses their 21 px (174 -> 153). Everything else about the rail is unchanged.
   test('800x900 fine-pointer window keeps its pre-fix rail', async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 900 });
     await page.goto('/');
@@ -105,8 +108,9 @@ test.describe('TUX-013 desktop parity', () => {
     await page.waitForTimeout(600);
     const s = await railState(page);
     expect(s.touchUi).toBe(false);
-    expect(Math.abs(s.h - 174)).toBeLessThanOrEqual(1);
-    expect(s.footerH).toBeGreaterThan(0);
+    expect(Math.abs(s.h - 153)).toBeLessThanOrEqual(1);
+    expect(s.footerH).toBe(0);
+    expect(s.handleH).toBe(0);
     expect(s.overflowed).toBe(0);
   });
   // Decision (TUX-013): the phone rail keys on phone-layout, which a narrow FINE-pointer window also gets.

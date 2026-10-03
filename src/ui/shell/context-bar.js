@@ -458,18 +458,27 @@
   };
 
   // ── TB-2: handle drag → move + implies Pin ────────────────────────────
+  // TODO(TUX-018): replace with Vectura.UI.bindPointerDrag once the shared helper lands.
   const bindHandleDrag = () => {
-    const onDown = (e) => {
+    // Events from another finger are ignored (pointerId is absent in some test doubles).
+    const mine = (e) => !state.handleDrag || state.handleDrag.pointerId === undefined
+      || e.pointerId === undefined || e.pointerId === state.handleDrag.pointerId;
+    const begin = (e) => {
+      if (state.handleDrag) return; // a drag is already running (second finger)
       if (e.button !== undefined && e.button !== 0) return;
       e.preventDefault();
       const left = parseFloat(els.bar.style.left) || 0;
       const top = parseFloat(els.bar.style.top) || 0;
-      state.handleDrag = { startX: e.clientX, startY: e.clientY, baseX: left, baseY: top, moved: false };
+      state.handleDrag = { startX: e.clientX, startY: e.clientY, baseX: left, baseY: top, moved: false, pointerId: e.pointerId };
+      // Capture keeps a touch drag attached to the handle even when the finger leaves it.
+      try { if (e.pointerId !== undefined) els.handle.setPointerCapture?.(e.pointerId); } catch (_) { /* synthetic ids */ }
       G.addEventListener('pointermove', onMove, true);
-      G.addEventListener('pointerup', onUp, true);
+      G.addEventListener('pointerup', end, true);
+      G.addEventListener('pointercancel', end, true);
+      els.handle.addEventListener('lostpointercapture', end);
     };
     const onMove = (e) => {
-      if (!state.handleDrag) return;
+      if (!state.handleDrag || !mine(e)) return;
       const dx = e.clientX - state.handleDrag.startX;
       const dy = e.clientY - state.handleDrag.startY;
       const thr = (cfg().timing && cfg().timing.dragPinThresholdPx) || 3;
@@ -481,12 +490,18 @@
       els.bar.style.top = `${ny}px`;
       // Deliberately NOT re-evaluating menu direction here: flipping the arrows
       // every frame the bar crosses the midline reads as thrash. The pivot
-      // settles once, on release (see onUp).
+      // settles once, on release (see end).
     };
-    const onUp = () => {
+    // Single teardown for pointerup, pointercancel and lostpointercapture. A cancel keeps the
+    // position reached so far, so a cancelled drag can never leave listeners that move the bar later.
+    const end = (e) => {
+      if (!state.handleDrag) return;
+      if (e && !mine(e)) return;
       G.removeEventListener('pointermove', onMove, true);
-      G.removeEventListener('pointerup', onUp, true);
-      if (state.handleDrag && state.handleDrag.moved) {
+      G.removeEventListener('pointerup', end, true);
+      G.removeEventListener('pointercancel', end, true);
+      els.handle.removeEventListener('lostpointercapture', end);
+      if (state.handleDrag.moved) {
         // A manual drag implies Pin (bar stays where the user left it).
         const p = prefs();
         p.pinned = true;
@@ -499,7 +514,7 @@
       // when dropped low, and up→down when dropped back near the top.
       refreshMenuDirection();
     };
-    els.handle.addEventListener('pointerdown', onDown);
+    els.handle.addEventListener('pointerdown', begin);
   };
 
   const viewportSize = () => {

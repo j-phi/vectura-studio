@@ -280,4 +280,236 @@
   };
 
   UI.Slider = create;
+
+  /*
+   * RangeTouch (TUX-043) — one delegated, document-level touch controller for EVERY
+   * <input type="range"> (UI.Slider, bare sites in other panels, #draw-order-input).
+   *
+   * Policy: pointerType 'touch' and 'pen' are controlled; 'mouse' is never touched, so native
+   * track-jump and the slider's dblclick reset keep working (also on an iPad trackpad).
+   *   idle -> undecided (pointerdown) -> 'scroll' (mostly vertical past 8px, or pointercancel)
+   *                                    -> 'drag'   (mostly sideways past 8px)
+   * 'drag' moves the value RELATIVELY (start value + finger delta / track length), dispatches a
+   * bubbling `input` per move and exactly one `change` on release. A tap or a scroll changes
+   * nothing and dispatches nothing. Native (trusted) input/change events from the browser's own
+   * range handling are restored and swallowed at window capture while a touch gesture is active
+   * and for GUARD_MS after it (the native tap/click lands after pointerup). Pointer events are
+   * never stopped or prevented, and touchstart is never cancelled (native momentum scroll and
+   * the draw-order tap-to-play in shortcuts.js keep working).
+   * Vertical ranges (writing-mode) swap axes. CSS: touch-action pan-y (pan-x vertical).
+   */
+  const RangeTouch = (() => {
+    const LOCK_PX = 8;
+    const GUARD_MS = 500;
+    const state = { gesture: null };
+    const held = new Map(); // range input -> { value, until }
+    let selfDispatch = false;
+
+    const isRange = (el) => !!el && el.tagName === 'INPUT' && el.type === 'range' && !el.disabled
+      && !(el.closest && el.closest('[data-range-touch="off"]'));
+
+    const groupOf = (el) => {
+      if (!el.classList.contains('is-dual-min') && !el.classList.contains('is-dual-max')) return [el];
+      const host = el.parentElement;
+      const mn = host && host.querySelector('.is-dual-min');
+      const mx = host && host.querySelector('.is-dual-max');
+      return mn && mx ? [mn, mx] : [el];
+    };
+
+    const axisInfo = (el) => {
+      const cs = getComputedStyle(el);
+      const vertical = /^(vertical|sideways)/.test(cs.writingMode || '');
+      const rtl = cs.direction === 'rtl';
+      // The ::-webkit-slider-thumb computed width is unreliable (it can echo the input width), so the
+      // CSS token drives the geometry. Outside the coarse block the legacy thumbs are ~14px.
+      let thumb = parseFloat(cs.getPropertyValue('--touch-slider-thumb'));
+      const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      if (!Number.isFinite(thumb) || thumb <= 0 || !coarse) thumb = coarse ? 28 : 14;
+      const r = el.getBoundingClientRect();
+      const len = Math.max(1, (vertical ? r.height : r.width) - thumb);
+      return { vertical, rtl, thumb, len, rect: r };
+    };
+
+    const numeric = (el) => {
+      const min = Number(el.min) || 0;
+      const max = el.max === '' ? 100 : Number(el.max);
+      const step = Number(el.step);
+      return { min, max, step: Number.isFinite(step) && step > 0 ? step : 0 };
+    };
+
+    // Screen coordinate (along the primary axis) of an input's thumb centre.
+    const thumbCoord = (el, info) => {
+      const { min, max } = numeric(el);
+      const frac = max === min ? 0 : (Number(el.value) - min) / (max - min);
+      const f = info.rtl ? 1 - frac : frac;
+      const origin = info.vertical ? info.rect.top : info.rect.left;
+      return origin + info.thumb / 2 + f * info.len;
+    };
+
+    const snap = (el, raw) => {
+      const { min, max, step } = numeric(el);
+      let v = Math.min(max, Math.max(min, raw));
+      if (step) {
+        v = min + Math.round((v - min) / step) * step;
+        const dot = String(step).indexOf('.');
+        v = Number(v.toFixed(dot < 0 ? 0 : String(step).length - dot - 1));
+        v = Math.min(max, Math.max(min, v));
+      }
+      return v;
+    };
+
+    const emit = (el, type) => {
+      selfDispatch = true;
+      try { el.dispatchEvent(new Event(type, { bubbles: true })); } finally { selfDispatch = false; }
+    };
+
+    const hold = (el, value, until) => { held.set(el, { value: String(value), until }); };
+    const restore = (el) => {
+      const h = held.get(el);
+      if (h && el.value !== h.value) el.value = h.value;
+    };
+
+    // After release the hold stays for GUARD_MS: the browser's own tap/click handling lands after
+    // pointerup. Nothing is restored on a timer, so a programmatic value set (undo, setValue)
+    // right after a gesture is never clobbered; only trusted native events are intercepted.
+    const releaseLater = (g) => {
+      const until = performance.now() + GUARD_MS;
+      g.group.forEach((el) => { const h = held.get(el); if (h) h.until = until; });
+      setTimeout(() => {
+        g.group.forEach((el) => {
+          const h = held.get(el);
+          if (h && performance.now() >= h.until) held.delete(el);
+        });
+      }, GUARD_MS + 40);
+    };
+
+    const onDown = (e) => {
+      if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+      const el = e.target;
+      if (!isRange(el)) return;
+      if (state.gesture && state.gesture.id !== e.pointerId) return; // second finger: ignore
+      releasePending();
+      const group = groupOf(el);
+      const g = {
+        id: e.pointerId, origin: el, group, mode: 'undecided',
+        x0: e.clientX, y0: e.clientY, info: axisInfo(el),
+        chosen: null, startValue: 0, last: null, changed: false,
+      };
+      state.gesture = g;
+      group.forEach((r) => hold(r, r.value, Infinity));
+    };
+
+    const lock = (g, e) => {
+      const dx = e.clientX - g.x0;
+      const dy = e.clientY - g.y0;
+      if (Math.hypot(dx, dy) <= LOCK_PX) return;
+      const along = Math.abs(g.info.vertical ? dy : dx);
+      const across = Math.abs(g.info.vertical ? dx : dy);
+      if (along < across) { g.mode = 'scroll'; return; }
+      g.mode = 'drag';
+      let chosen = g.origin;
+      if (g.group.length === 2) {
+        const [mn, mx] = g.group;
+        const p0 = g.info.vertical ? g.y0 : g.x0;
+        const dMin = Math.abs(thumbCoord(mn, g.info) - p0);
+        const dMax = Math.abs(thumbCoord(mx, g.info) - p0);
+        if (Math.abs(dMin - dMax) < 4) {
+          const delta = (g.info.vertical ? dy : dx) * (g.info.rtl ? -1 : 1);
+          chosen = delta >= 0 ? mx : mn;
+        } else {
+          chosen = dMin < dMax ? mn : mx;
+        }
+      }
+      g.chosen = chosen;
+      g.startValue = Number(chosen.value);
+      g.last = g.startValue;
+      try { g.origin.setPointerCapture(e.pointerId); } catch (_) { /* synthetic pointer ids may not be capturable */ }
+    };
+
+    const onMove = (e) => {
+      const g = state.gesture;
+      if (!g || e.pointerId !== g.id) return;
+      if (g.mode === 'undecided') lock(g, e);
+      if (g.mode !== 'drag') return;
+      const info = g.info;
+      const d = (info.vertical ? e.clientY - g.y0 : e.clientX - g.x0) * (info.rtl ? -1 : 1);
+      const { min, max } = numeric(g.chosen);
+      let v = snap(g.chosen, g.startValue + (d / info.len) * (max - min));
+      if (g.group.length === 2) {
+        const other = g.group[0] === g.chosen ? g.group[1] : g.group[0];
+        const o = Number(other.value);
+        v = g.chosen === g.group[0] ? Math.min(v, o) : Math.max(v, o);
+      }
+      if (v === g.last) return;
+      g.last = v;
+      g.chosen.value = String(v);
+      hold(g.chosen, v, Infinity);
+      emit(g.chosen, 'input');
+    };
+
+    // A cancelled sequence (the browser took the gesture to scroll) keeps its hold until the touch
+    // sequence really ends: the trusted native `change` lands at touchend, after a long scroll,
+    // far later than GUARD_MS. `pendingEnd` is released by touchend/touchcancel or the next
+    // pointerdown; a long fallback timer stops a missed touchend from holding forever.
+    const pendingEnd = new Set();
+    const FALLBACK_MS = 8000;
+    const releasePending = () => {
+      pendingEnd.forEach((g) => releaseLater(g));
+      pendingEnd.clear();
+    };
+
+    const finish = (e, cancelled) => {
+      const g = state.gesture;
+      if (!g || e.pointerId !== g.id) return;
+      state.gesture = null;
+      if (cancelled) {
+        // Restore the pre-gesture value; the app only ever saw `input` events, so emit one input
+        // with the restored value (none if it never left startValue) and NO change.
+        if (g.mode === 'drag' && g.chosen) {
+          const moved = g.last !== g.startValue;
+          g.chosen.value = String(g.startValue);
+          hold(g.chosen, g.startValue, Infinity);
+          if (moved) emit(g.chosen, 'input');
+        }
+        g.group.forEach((r) => { restore(r); });
+        const until = performance.now() + FALLBACK_MS;
+        g.group.forEach((r) => { const h = held.get(r); if (h) h.until = until; });
+        pendingEnd.add(g);
+        try { g.origin.releasePointerCapture(e.pointerId); } catch (_) { /* not captured */ }
+        return;
+      }
+      if (g.mode === 'drag' && g.last !== g.startValue) {
+        g.chosen.value = String(g.last);
+        hold(g.chosen, g.last, Infinity);
+        emit(g.chosen, 'change');
+      } else {
+        g.group.forEach((r) => { if (r.value !== held.get(r)?.value) restore(r); });
+      }
+      releaseLater(g);
+      try { g.origin.releasePointerCapture(e.pointerId); } catch (_) { /* not captured */ }
+    };
+
+    // Window capture runs before every per-element listener (slider.js and bare sites), so app
+    // code never sees a value the controller did not produce.
+    const guard = (e) => {
+      if (selfDispatch || !e.isTrusted) return;
+      const el = e.target;
+      const h = held.get(el);
+      if (!h || performance.now() > h.until) return;
+      if (el.value !== h.value) el.value = h.value;
+      e.stopImmediatePropagation();
+    };
+
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('pointermove', onMove, true);
+    document.addEventListener('pointerup', (e) => finish(e, false), true);
+    document.addEventListener('pointercancel', (e) => finish(e, true), true);
+    document.addEventListener('touchend', releasePending, true);
+    document.addEventListener('touchcancel', releasePending, true);
+    window.addEventListener('input', guard, true);
+    window.addEventListener('change', guard, true);
+
+    return { state, held, LOCK_PX, GUARD_MS };
+  })();
+  UI.RangeTouch = RangeTouch;
 })();
