@@ -350,6 +350,126 @@ describe('TUX-017 gesture arbiter (renderer)', () => {
     expect(app.history.length).toBe(hist0 + 1);
   });
 
+  // ── rollback at the undo cap (pushHistory shift()s, so the length does not change) ──
+  const fillHistoryToCap = () => {
+    app.history = [];
+    app.redoStack = [];
+    for (let i = 0; i < app.maxHistory + 3; i += 1) app.pushHistory();
+    expect(app.history.length).toBe(app.maxHistory);
+    app.redoStack = [{ marker: 'redo-before' }];
+  };
+  const layerGeometry = (id) => JSON.stringify(engine.layers.find((l) => l.id === id).paths);
+
+  const capRow = (name, setup) => {
+    test(`rollback at maxHistory: ${name}`, () => {
+      const { a } = add2d();
+      const fx = setup(a);
+      fillHistoryToCap();
+      const histBefore = app.history.slice();
+      const redoBefore = app.redoStack;
+      const geoBefore = layerGeometry(a);
+      const stateBefore = JSON.stringify(app.captureState());
+      renderer.down(ev(1, 1000, fx.p1.x, fx.p1.y));
+      renderer.move(ev(1, 1030, fx.p1.x + fx.d.dx, fx.p1.y + fx.d.dy));
+      renderer.move(ev(1, 1050, fx.p1.x + 2 * fx.d.dx, fx.p1.y + 2 * fx.d.dy));
+      // the drag really edited the document and pushed an undo entry (otherwise the row proves nothing)
+      expect(layerGeometry(a)).not.toBe(geoBefore);
+      expect(app.history.length).toBe(app.maxHistory);
+      expect(app.history[app.history.length - 1]).not.toBe(histBefore[histBefore.length - 1]);
+      renderer.down(ev(2, 1060, fx.p1.x + 90, fx.p1.y + 40));
+      expect(renderer.touchGesture).toBeTruthy();
+      expect(layerGeometry(a)).toBe(geoBefore);
+      expect(app.history.length).toBe(histBefore.length);
+      expect(app.history.every((h, i) => h === histBefore[i])).toBe(true); // no new, no lost oldest
+      expect(app.redoStack).toBe(redoBefore);
+      expect(JSON.stringify(app.captureState())).toBe(stateBefore);
+      if (fx.directCheck) {
+        const layer = engine.layers.find((l) => l.id === a);
+        fx.directCheck(layer);
+      }
+      expect(stuckFlags()).toEqual([]);
+      liftAll();
+    });
+  };
+  capRow('Direct anchor drag', (a) => {
+    app.ui.setActiveTool('direct');
+    const layer = engine.layers.find((l) => l.id === a);
+    renderer.setDirectSelection(layer, 0);
+    return {
+      p1: { x: 40, y: 40 },
+      d: { dx: 14, dy: 9 },
+      directCheck: () => {
+        // the selected anchor handles must sit on the restored geometry, not the dragged one
+        const ds = renderer.directSelection;
+        expect(ds).toBeTruthy();
+        expect(Math.hypot(ds.anchors[0].x - 40, ds.anchors[0].y - 40)).toBeLessThan(1e-6);
+      },
+    };
+  });
+  capRow('Direct: second anchor drag (corner anchor, same first-move push)', (a) => {
+    app.ui.setActiveTool('direct');
+    const layer = engine.layers.find((l) => l.id === a);
+    renderer.setDirectSelection(layer, 2);
+    return { p1: { x: 80, y: 80 }, d: { dx: -12, dy: 11 } };
+  });
+
+  test('rollback at maxHistory: shape corner drag (parametric rect, shapeCornerDrag first-move push)', () => {
+    add2d();
+    const shape = { type: 'rect', x1: 100, y1: 100, x2: 200, y2: 200, cornerRadii: [0, 0, 0, 0] };
+    const layer = new window.Vectura.Layer('lc-rect', 'shape', 'Rect');
+    layer.sourcePaths = [renderer.buildShapePath(shape)];
+    layer.params = { curves: false, smoothing: 0, simplify: 0, posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+    engine.layers.push(layer);
+    engine.generate(layer.id);
+    renderer.setSelection([layer.id], layer.id);
+    app.ui.setActiveTool('direct');
+    renderer.setDirectSelection(layer, 0);
+    fillHistoryToCap();
+    const histBefore = app.history.slice();
+    const redoBefore = app.redoStack;
+    const radiiBefore = JSON.stringify(renderer.getShapeMetaForLayer(layer, 0).shape.cornerRadii);
+    const stateBefore = JSON.stringify(app.captureState());
+    const handles = renderer.getShapeCornerHandles(layer, 0);
+    expect(handles.length).toBeGreaterThan(0);
+    const v = handles[0].vertex;
+    renderer.down(ev(1, 1000, 300, 300)); // lands on empty canvas; the corner drag is armed below
+    expect(renderer.beginShapeCornerDrag(layer, 0, handles[0], 'single', null, { x: v.x, y: v.y })).toBe(true);
+    renderer.move(ev(1, 1030, 308, 308));
+    renderer.move(ev(1, 1050, 320, 320));
+    expect(JSON.stringify(renderer.getShapeMetaForLayer(layer, 0).shape.cornerRadii)).not.toBe(radiiBefore);
+    expect(app.history[app.history.length - 1]).not.toBe(histBefore[histBefore.length - 1]);
+    renderer.down(ev(2, 1060, 390, 340));
+    expect(renderer.touchGesture).toBeTruthy();
+    // applyState rebuilds every Layer object, so look the layer up again
+    expect(JSON.stringify(renderer.getShapeMetaForLayer(engine.layers.find((l) => l.id === 'lc-rect'), 0).shape.cornerRadii)).toBe(radiiBefore);
+    expect(app.history.length).toBe(histBefore.length);
+    expect(app.history.every((h, i) => h === histBefore[i])).toBe(true);
+    expect(app.redoStack).toBe(redoBefore);
+    expect(JSON.stringify(app.captureState())).toBe(stateBefore);
+    expect(renderer.shapeCornerDrag).toBeFalsy();
+    // the selection's own working copy must also be back at the pre-drag shape
+    expect(JSON.stringify(renderer.directSelection.meta.shape.cornerRadii)).toBe(radiiBefore);
+    liftAll();
+  });
+
+  test('deferred pour: finger 2 lifting off the canvas does not run finger 1 deferred fill', () => {
+    const { a } = add2d();
+    app.ui.setActiveTool('fill');
+    const layer = engine.layers.find((l) => l.id === a);
+    const fillsBefore = (layer.fills || []).length;
+    const histBefore = app.history.length;
+    renderer.down(ev(1, 1000, 60, 60));
+    expect(renderer._touchDeferred).toBeTruthy();
+    // finger 2 never reached the canvas (it landed on a pane), so only its up arrives here
+    renderer.up(ev(2, 1500, 600, 600, { buttons: 0 }));
+    expect(renderer._touchDeferred).toBeTruthy();
+    expect((layer.fills || []).length).toBe(fillsBefore);
+    expect(app.history.length).toBe(histBefore);
+    renderer.up(ev(1, 1600, 60, 60, { buttons: 0 }));
+    expect(renderer._touchDeferred).toBeFalsy();
+    expect((layer.fills || []).length + (app.history.length - histBefore)).toBeGreaterThan(0);
+  });
+
   // ── latch ───────────────────────────────────────────────────────────────
   test('latch: after the pinch, one remaining finger starts nothing until all lift', () => {
     add2d();

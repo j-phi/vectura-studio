@@ -1983,12 +1983,16 @@
         sceneSelection: ss ? JSON.stringify(ss) : null,
         directSelection: ds || null,
         directSelectionAnchors: ds && Array.isArray(ds.anchors) ? this.cloneAnchors(ds.anchors) : null,
+        directSelectionMeta: ds && ds.meta ? { ...ds.meta } : null,
         directSelectedIndices: ds && ds.selectedIndices ? new Set(ds.selectedIndices) : null,
         groupEditMode: this.groupEditMode ? { ...this.groupEditMode } : null,
         activeTool: this.activeTool,
         penDraft: draft ? JSON.parse(JSON.stringify(draft)) : null,
         penLastClick: this._penLastClick ? { ...this._penLastClick } : null,
         historyLen: app && Array.isArray(app.history) ? app.history.length : 0,
+        // Entry identities (not just the length): pushHistory shift()s at maxHistory, so the
+        // length does not change when a first-move push happens at the cap.
+        history: app && Array.isArray(app.history) ? app.history.slice() : null,
         redoStack: app ? app.redoStack : null,
         textLayerId: te && te.isActive && te.isActive() && te.getActiveLayer() ? te.getActiveLayer().id : null,
       };
@@ -2099,15 +2103,24 @@
     _restoreTouchSnapshot(snap) {
       const app = this.app;
       // 1. History: an edit that pushed its undo point on first movement (anchor, corner and
-      //    pen-anchor drags) is undone from that entry; the redo stack survives.
-      if (app && Array.isArray(app.history) && app.history.length > snap.historyLen && snap.historyLen > 0) {
-        const checkpoint = app.history[snap.historyLen];
-        app.isRestoring = true;
-        try { app.applyState(checkpoint); } finally { app.isRestoring = false; }
-        app.history.length = snap.historyLen;
-        app.redoStack = snap.redoStack;
-      } else if (app && snap.redoStack && app.redoStack !== snap.redoStack && app.history.length === snap.historyLen) {
-        app.redoStack = snap.redoStack;
+      //    pen-anchor drags) is undone from the earliest entry that was not there before the
+      //    gesture (push-before-change, so it IS the pre-edit state). New entries are found by
+      //    identity because at maxHistory the oldest entry is shifted off and the length stays
+      //    the same. The old entries and the redo stack are then put back as they were.
+      if (app && Array.isArray(app.history) && Array.isArray(snap.history)) {
+        const known = new Set(snap.history);
+        const pushed = app.history.find((h) => !known.has(h));
+        const same = app.history.length === snap.history.length
+          && app.history.every((h, i) => h === snap.history[i]);
+        if (pushed) {
+          app.isRestoring = true;
+          try { app.applyState(pushed); } finally { app.isRestoring = false; }
+        }
+        if (!same) {
+          app.history.length = 0;
+          snap.history.forEach((h) => app.history.push(h));
+        }
+        if (pushed || !same) app.redoStack = snap.redoStack;
       }
       // 2. Pen draft and double-click timing.
       this.penDraft = snap.penDraft;
@@ -2145,6 +2158,7 @@
       if (snap.directSelection) {
         this.directSelection = snap.directSelection;
         if (snap.directSelectionAnchors) this.directSelection.anchors = snap.directSelectionAnchors;
+        if (snap.directSelectionMeta) this.directSelection.meta = snap.directSelectionMeta;
         if (snap.directSelectedIndices) this.directSelection.selectedIndices = snap.directSelectedIndices;
       } else if (this.directSelection) {
         this.directSelection = null;
@@ -8184,7 +8198,11 @@
       }
       // Touch one-shots deferred at pointerdown (fill pour, plain-marquee clear, pen
       // add/delete anchor) run now, before the normal finalize.
-      if (this.isTouchPointer(e)) this._flushTouchDeferred();
+      // Only the finger that owns the deferred action may run it; a second finger that
+      // lifts elsewhere must not fire the canvas finger's pour, clear or anchor edit.
+      if (this.isTouchPointer(e) && this._touchDeferred && this._touchDeferred.pointerId === e.pointerId) {
+        this._flushTouchDeferred();
+      }
       this._finishPointerInteraction(e);
     }
 
