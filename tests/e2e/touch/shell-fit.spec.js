@@ -601,9 +601,13 @@ const TUX2_PROJECTS = [
 ];
 const TUX2_PROJECTS_ALL = [...TUX2_PROJECTS, 'touch-iphone-portrait-chrome'];
 const TUX3_PROJECTS = ['touch-ipad-landscape', 'webkit-ipad-landscape', 'touch-iphone-portrait', 'webkit-iphone-portrait'];
+// iPhone landscape with browser chrome (874x330) is in scope but is an EXPECTED FAIL owned by TUX-007:
+// the 204 px toolbar plus modifier bar plus HUD exceed the 281 px workspace and the canvas collapses to
+// 0 px. test.fail() flips to a hard failure when TUX-007 lands, which is the cue to drop the mark.
 const TUX4_PROJECTS = [
-  ...TUX2_PROJECTS, 'touch-iphone-portrait-chrome',
+  ...TUX2_PROJECTS, 'touch-iphone-portrait-chrome', 'touch-iphone-landscape-chrome',
 ];
+const TUX4_EXPECTED_FAIL = { 'touch-iphone-landscape-chrome': 'TUX-007: iPhone landscape chrome layout leaves bottom bars below the viewport' };
 const TUX234_EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after';
 
 const openLeftPane = (page) => page.evaluate(() => {
@@ -613,6 +617,18 @@ const openLeftPane = (page) => page.evaluate(() => {
   const b = document.getElementById('btn-mobile-pane-left');
   const vis = (el) => el && el.getBoundingClientRect().width > 0;
   (vis(b) ? b : document.getElementById('btn-pane-toggle-left')).click();
+});
+
+// Layer rows live in the right pane. Opened by script as setup only; opening by finger is TUX-010.
+const openRightPane = (page) => page.evaluate(() => {
+  const pane = document.getElementById('right-pane');
+  const r = pane && pane.getBoundingClientRect();
+  if (r && r.width > 100 && r.right > 0 && r.left < innerWidth && getComputedStyle(pane).visibility !== 'hidden') return;
+  const b = document.getElementById('btn-mobile-pane-right');
+  const vis = (el) => el && el.getBoundingClientRect().width > 0;
+  if (vis(b)) { b.click(); return; }
+  if (document.body.classList.contains('auto-collapsed')) pane.classList.add('pane-force-open');
+  else pane.classList.remove('pane-collapsed');
 });
 
 const SCROLLERS = ['#left-panel-content', '#export-settings-scroll', '.modal-card--help', '#petal-designer-window'];
@@ -683,16 +699,17 @@ test.describe('TUX-002 shell does not scroll under swipes', () => {
         { id: '#tool-bar', dir: 'up' },
         { id: '#app-header', dir: 'side' },
         { id: '#touch-modifier-bar', dir: 'up' },
-        { id: '#layer-list .layer-item, #layer-list > *', dir: 'hold', pane: true },
+        { id: '#layer-list .layer-item, #layer-list > *', dir: 'hold', pane: 'right' },
       ];
       for (const g of gestures) {
         await gotoFresh(page);
-        if (g.pane) await openLeftPane(page);
+        if (g.pane === 'right') await openRightPane(page);
         await page.waitForTimeout(300);
         const loc = page.locator(g.id).first();
-        if (!(await loc.count()) || !(await loc.isVisible())) continue;
+        expect(await loc.count(), `${g.id} must exist (no silent skip)`).toBeGreaterThan(0);
+        expect(await loc.isVisible(), `${g.id} must be visible (no silent skip)`).toBe(true);
         const box = await loc.boundingBox();
-        if (!box || box.width < 4 || box.height < 4) continue;
+        expect(box && box.width >= 4 && box.height >= 4, `${g.id} must be at least 4 px (no silent skip)`).toBe(true);
         const cx = box.x + box.width / 2;
         const from = { x: cx, y: Math.min(box.y + box.height - 4, box.y + box.height * 0.8) };
         const to = g.dir === 'side' ? { x: Math.max(2, cx - 150), y: from.y } : { x: cx, y: Math.max(1, from.y - 220) };
@@ -810,6 +827,7 @@ test.describe('TUX-004 bottom chrome on screen (regression guard, passes before 
   test('bottom bars inside the visible viewport', async ({ page }, testInfo) => {
       const name = testInfo.project.name;
       test.skip(!TUX4_PROJECTS.includes(name), 'project not in scope');
+      test.fail(!!TUX4_EXPECTED_FAIL[name], TUX4_EXPECTED_FAIL[name] || '');
       const spec = PROJECTS[name];
       await gotoFresh(page);
       await page.waitForTimeout(300);
@@ -830,4 +848,22 @@ test.describe('TUX-004 bottom chrome on screen (regression guard, passes before 
         await fs.promises.mkdir(`${TUX234_EVIDENCE}/TUX-004`, { recursive: true });
       }
     });
+  test('Export modal footer buttons inside the visible viewport', async ({ page }, testInfo) => {
+    const name = testInfo.project.name;
+    test.skip(!TUX4_PROJECTS.includes(name), 'project not in scope');
+    const spec = PROJECTS[name];
+    await gotoFresh(page);
+    await page.evaluate(() => window.app.ui.openExportModal());
+    await page.waitForSelector('#export-modal-submit', { state: 'visible' });
+    await page.waitForTimeout(400);
+    const r = await page.evaluate(() => {
+      const b = (id) => { const rc = document.getElementById(id).getBoundingClientRect(); return { top: rc.top, bottom: rc.bottom, h: rc.height }; };
+      return { vv: visualViewport.height, ih: innerHeight, cancel: b('export-modal-cancel'), submit: b('export-modal-submit') };
+    });
+    const limit = Math.min(spec.height, r.vv, r.ih) + 0.5;
+    expect(r.cancel.h, 'Cancel button has height').toBeGreaterThan(0);
+    expect(r.submit.h, 'primary button has height').toBeGreaterThan(0);
+    expect(r.cancel.bottom, `Cancel bottom vs ${limit}`).toBeLessThanOrEqual(limit);
+    expect(r.submit.bottom, `primary bottom vs ${limit}`).toBeLessThanOrEqual(limit);
+  });
 });
