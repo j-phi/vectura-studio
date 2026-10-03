@@ -123,3 +123,12 @@
   --iso-bc-height: 30px;
 }
 /* === END ISO tokens === */
+
+/* === TUX-034: touch hold + context menus tokens === */
+:root {
+  --touch-target-min: 44px;
+  --touch-hold-ring-size: 64px;
+  --touch-hold-ring-color: var(--ui-accent, #2680eb);
+  --touch-hold-ring-fill: var(--ui-accent-2, rgba(38, 128, 235, 0.35));
+}
+/* === END TUX-034 tokens === */
