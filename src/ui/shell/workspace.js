@@ -52,7 +52,9 @@
       this.app?.persistPreferencesDebounced?.();
     };
 
-    const isMobileViewport = () => window.innerWidth < 900;
+    // TUX-006: layout class comes from Vectura.LayoutClassifier (phone/tablet = mobile-layout).
+    const LC = () => (G.Vectura && G.Vectura.LayoutClassifier) || null;
+    const isMobileViewport = () => document.body.classList.contains('mobile-layout');
 
     const isCollapsed = (pane) => {
       const auto = document.body.classList.contains('auto-collapsed') && !pane.classList.contains('pane-force-open');
@@ -70,13 +72,12 @@
     };
 
     const applyAutoCollapse = () => {
-      const viewportWidth = window.innerWidth;
-      const shouldAuto = viewportWidth < 640;
-      const isMobileLayout = viewportWidth < 900;
-      const isPhoneLayout = viewportWidth < 540;
+      const lc = LC();
+      const layout = lc ? lc.apply(document) : (window.innerWidth < 900 ? 'tablet' : 'desktop');
+      const isMobileLayout = layout === 'phone' || layout === 'tablet';
+      // TUX-008 owns the auto-collapse threshold; leave as-is here.
+      const shouldAuto = window.innerWidth < 640;
       document.body.classList.toggle('auto-collapsed', shouldAuto);
-      document.body.classList.toggle('mobile-layout', isMobileLayout);
-      document.body.classList.toggle('phone-layout', isPhoneLayout);
       applyMobBarVisibility(isMobileLayout);
       if (bottomPane && isMobileLayout && !mobileLayoutDefaultApplied) {
         bottomPane.classList.add('bottom-pane-collapsed');
@@ -145,17 +146,34 @@
     if (mobileLeftBtn) mobileLeftBtn.addEventListener('click', () => togglePane(leftPane));
     if (mobileRightBtn) mobileRightBtn.addEventListener('click', () => togglePane(rightPane));
     window.addEventListener('resize', () => { applyAutoCollapse(); syncBackdrop(); });
+    try {
+      const coarseMq = window.matchMedia && window.matchMedia('(pointer: coarse)');
+      if (coarseMq) {
+        const onPointerChange = () => { applyAutoCollapse(); syncBackdrop(); };
+        if (coarseMq.addEventListener) coarseMq.addEventListener('change', onPointerChange);
+        else if (coarseMq.addListener) coarseMq.addListener(onPointerChange);
+      }
+    } catch (e) { /* matchMedia unavailable */ }
     applyAutoCollapse();
     syncBackdrop();
 
     this.expandPanes = () => {
       leftPane.classList.remove('pane-collapsed', 'pane-force-open');
       rightPane.classList.remove('pane-collapsed', 'pane-force-open');
-      document.body.classList.remove('auto-collapsed', 'mobile-layout', 'phone-layout');
+      document.body.classList.remove('auto-collapsed');
+      // TUX-006: fine pointer -> desktop Reset View strips every layout class.
+      // Coarse pointer keeps the classifier's classes (TUX-009 finalizes touch Reset View).
+      const lc = LC();
+      const coarse = lc ? lc.readInput().coarsePointer : false;
+      if (!coarse) {
+        document.body.classList.remove('mobile-layout', 'phone-layout', 'tablet-layout', 'touch-wide-layout');
+        document.body.dataset.layout = 'desktop';
+      }
       document.documentElement.style.setProperty('--pane-left-width', '335px');
       document.documentElement.style.setProperty('--pane-right-width', '335px');
       document.documentElement.style.setProperty('--bottom-pane-height', '180px');
       if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
+      if (coarse && lc) lc.apply(document);
     };
   }
 

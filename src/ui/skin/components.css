@@ -8491,7 +8491,7 @@
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 899.98px) {
   :root {
     --pane-left-width: min(88vw, 340px);
     --pane-right-width: min(88vw, 340px);
@@ -8774,11 +8774,6 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
   select,
   textarea {
     font-size: max(16px, 1em);
-  }
-
-  body.mobile-layout .tool-btn {
-    width: 44px;
-    height: 44px;
   }
 }
 
@@ -13579,3 +13574,10 @@ body.mobile-layout .hud-bar {
 .ctxbar-divisions-host {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
 }
+
+/* === TUX-006: touch sizing keys on pointer type === */
+body.touch-ui .tool-btn {
+  width: 44px;
+  height: 44px;
+}
+/* === /TUX-006 === */
