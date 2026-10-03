@@ -1116,7 +1116,7 @@
           </div>
         </div>
       </div>
-      <div class="export-modal-footer" id="export-modal-footer">
+      <div class="export-modal-footer vt-sheet__footer" id="export-modal-footer">
         <button type="button" id="export-modal-cancel">Close</button>
         <button type="button" id="export-modal-submit" class="export-primary">Export SVG</button>
       </div>

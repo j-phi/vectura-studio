@@ -61,7 +61,7 @@ module.exports = defineConfig({
         ...(useSystemChrome ? { channel: 'chrome' } : {}),
         viewport: { width: 1600, height: 1000 },
       },
-      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$/,
+      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|modals-desktop\.spec\.js$/,
     },
     {
       name: 'desktop-visual-chromium',

@@ -202,12 +202,12 @@
     overlay.id = 'modal-overlay';
     overlay.className = 'modal-overlay';
     overlay.innerHTML = `
-      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <div class="modal-header">
+      <div class="modal-card vt-sheet" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header vt-sheet__header">
           <div class="modal-title" id="modal-title"></div>
           <button class="modal-close" type="button" aria-label="Close modal">✕</button>
         </div>
-        <div class="modal-body"></div>
+        <div class="modal-body vt-sheet__body"></div>
       </div>
     `;
     document.body.appendChild(overlay);
@@ -338,7 +338,7 @@
 
     this.modal.titleEl.textContent = title;
     const card = this.modal.overlay.querySelector('.modal-card');
-    card?.setAttribute('class', `modal-card ${cardClass}`.trim());
+    card?.setAttribute('class', `modal-card vt-sheet ${cardClass}`.trim());
     this.modal.bodyEl.innerHTML = '';
     if (body instanceof Node) {
       this.modal.bodyEl.appendChild(body);
@@ -378,19 +378,31 @@
       const focusables = card ? card.querySelectorAll('button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])') : [];
       // Prefer the first non-close-button focusable so the user lands inside
       // the content (the close X is always present in the scaffold).
+      // TUX-046: on touch, focusing a text-entry control raises the keyboard and scrolls the
+      // sheet, so skip them. Fall back to a button/select, then to the card itself.
+      const touchPrimary = (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches)
+        || document.body.classList.contains('touch-ui');
+      const isTextEntry = (el) => {
+        const tag = el.tagName;
+        if (tag === 'TEXTAREA' || el.isContentEditable) return true;
+        if (tag !== 'INPUT') return false;
+        const type = (el.getAttribute('type') || '').toLowerCase();
+        return !['button', 'checkbox', 'radio', 'range', 'color', 'file', 'submit', 'reset', 'image'].includes(type);
+      };
       let target = null;
       for (const el of focusables) {
         if (el.classList && el.classList.contains('modal-close')) continue;
+        if (touchPrimary && isTextEntry(el)) continue;
         target = el;
         break;
       }
-      if (!target) target = focusables[0] || null;
+      if (!target && !touchPrimary) target = focusables[0] || null;
       if (target) {
-        target.focus();
+        target.focus(touchPrimary ? { preventScroll: true } : undefined);
       } else if (card) {
-        // No focusables in the modal — pin focus on the card itself.
+        // No suitable focusable in the modal — pin focus on the card itself.
         if (!card.hasAttribute('tabindex')) card.setAttribute('tabindex', '-1');
-        card.focus();
+        card.focus({ preventScroll: true });
       }
     };
     if (typeof requestAnimationFrame === 'function') {
@@ -403,7 +415,7 @@
   function closeModal() {
     requireDeps('closeModal');
     this.modal.overlay.classList.remove('open');
-    this.modal.overlay.querySelector('.modal-card')?.setAttribute('class', 'modal-card');
+    this.modal.overlay.querySelector('.modal-card')?.setAttribute('class', 'modal-card vt-sheet');
     if (typeof this._modalReleaseTrap === 'function') {
       this._modalReleaseTrap();
       this._modalReleaseTrap = null;
