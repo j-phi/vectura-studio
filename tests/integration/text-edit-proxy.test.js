@@ -1,0 +1,152 @@
+/*
+ * TUX-028: soft-keyboard proxy + the shared replaceRange mutation path.
+ * Drives the controller directly with a fake host and the jsdom document.
+ */
+const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+
+describe('TextEditController proxy (TUX-028)', () => {
+  let runtime, V, win, doc;
+  beforeEach(async () => {
+    runtime = await loadVecturaRuntime();
+    V = runtime.window.Vectura;
+    win = runtime.window;
+    doc = runtime.document;
+  });
+  afterEach(() => runtime.cleanup());
+
+  const setup = (text = '', hostOver = {}, extra = {}) => {
+    const engine = new V.VectorEngine();
+    const id = engine.addLayer('text');
+    const layer = engine.layers.find((l) => l.id === id);
+    Object.assign(layer.params, { text, font: 'sans', fitToFrame: false, fontSize: 40, jitter: 0 }, extra);
+    engine.generate(id);
+    const host = {
+      regen: (l) => { if (l) engine.generate(l.id); },
+      pushHistory: vi.fn(),
+      requestDraw: vi.fn(),
+      refreshPanel: vi.fn(),
+      ...hostOver,
+    };
+    const ctrl = new V.TextEditController(host);
+    return { engine, layer, host, ctrl };
+  };
+  const press = (type) => {
+    const ev = new win.Event('pointerdown', { bubbles: true });
+    Object.defineProperty(ev, 'pointerType', { value: type });
+    doc.body.dispatchEvent(ev);
+  };
+  const proxyEl = () => doc.querySelector('[data-text-proxy]');
+  const fireInput = (ta, value, caret = value.length) => {
+    ta.value = value;
+    ta.setSelectionRange(caret, caret);
+    ta.dispatchEvent(new win.Event('input', { bubbles: true }));
+  };
+
+  it('replaceRange inserts, deletes, replaces a selection and pushes history once per run', () => {
+    const { layer, host, ctrl } = setup('abc');
+    ctrl.begin(layer, 3);
+    expect(ctrl.replaceRange(3, 3, 'd')).toBe(true);
+    expect(layer.params.text).toBe('abcd');
+    expect(ctrl.getCaretIndex()).toBe(4);
+    expect(ctrl.replaceRange(0, 1, '')).toBe(true);
+    expect(layer.params.text).toBe('bcd');
+    expect(ctrl.replaceRange(1, 3, 'XY')).toBe(true);
+    expect(layer.params.text).toBe('bXY');
+    expect(ctrl.getCaretIndex()).toBe(3);
+    expect(host.pushHistory).toHaveBeenCalledTimes(1);
+    expect(ctrl.replaceRange(1, 1, '')).toBe(false);
+    ctrl.end();
+  });
+
+  it('replaceRange is rejected on a gated layer', () => {
+    const { layer, ctrl } = setup('abc', {}, { font: 'sans', textMode: 'point', hyphenate: true, wrapWidth: 50 });
+    ctrl.begin(layer, 3);
+    expect(ctrl.replaceRange(0, 0, 'Z')).toBe(false);
+    expect(layer.params.text).toBe('abc');
+    ctrl.end();
+  });
+
+  it('a mouse session never creates or focuses the proxy', () => {
+    const { layer, ctrl } = setup('abc');
+    press('mouse');
+    ctrl.begin(layer, 1);
+    expect(proxyEl()).toBeNull();
+    ctrl.end();
+  });
+
+  it('a touch session mirrors text/selection and diffs input through replaceRange', () => {
+    const { layer, ctrl } = setup('teh');
+    press('touch');
+    ctrl.begin(layer, 3);
+    const ta = proxyEl();
+    expect(ta).toBeTruthy();
+    expect(ta.value).toBe('teh');
+    expect([ta.selectionStart, ta.selectionEnd]).toEqual([3, 3]);
+    expect(doc.activeElement).toBe(ta);
+    // insertReplacementText: whole word swapped
+    fireInput(ta, 'the');
+    expect(layer.params.text).toBe('the');
+    // deleteContentBackward
+    fireInput(ta, 'th', 2);
+    expect(layer.params.text).toBe('th');
+    expect(ctrl.getCaretIndex()).toBe(2);
+    // repeated characters diff at the caret
+    fireInput(ta, 'tth', 1);
+    expect(layer.params.text).toBe('tth');
+    expect(ctrl.getCaretIndex()).toBe(1);
+    ctrl.end();
+  });
+
+  it('rejected input resyncs the proxy from the layer text', () => {
+    const { layer, ctrl } = setup('abc', {}, { font: 'sans', hyphenate: true, wrapWidth: 50 });
+    press('touch');
+    ctrl.begin(layer, 3);
+    const ta = proxyEl();
+    fireInput(ta, 'abcQ');
+    expect(layer.params.text).toBe('abc');
+    expect(ta.value).toBe('abc');
+    ctrl.end();
+  });
+
+  it('end() blurs the proxy and removes the visualViewport listeners', () => {
+    const listeners = {};
+    const vv = {
+      height: 800, offsetTop: 0,
+      addEventListener: vi.fn((t, f) => { listeners[t] = f; }),
+      removeEventListener: vi.fn((t) => { delete listeners[t]; }),
+    };
+    Object.defineProperty(win, 'visualViewport', { value: vv, configurable: true });
+    const { layer, ctrl } = setup('abc');
+    press('pen');
+    ctrl.begin(layer, 1);
+    expect(Object.keys(listeners).sort()).toEqual(['resize', 'scroll']);
+    ctrl.end();
+    expect(doc.activeElement).not.toBe(proxyEl());
+    expect(Object.keys(listeners)).toEqual([]);
+    expect(proxyEl().value).toBe('');
+    ctrl.end(); // idempotent
+  });
+
+  it('pans the canvas up when the keyboard covers the caret, and not when visible', () => {
+    const listeners = {};
+    const vv = { height: 800, offsetTop: 0, addEventListener: (t, f) => { listeners[t] = f; }, removeEventListener: () => {} };
+    Object.defineProperty(win, 'visualViewport', { value: vv, configurable: true });
+    const panCanvasBy = vi.fn();
+    const caret = { x: 100, top: 600, bottom: 640, rect: { left: 0, top: 0, right: 800, bottom: 800 } };
+    const { layer, ctrl } = setup('abc', { panCanvasBy, getCaretClientPoint: () => caret });
+    press('touch');
+    ctrl.begin(layer, 1);
+    expect(panCanvasBy).not.toHaveBeenCalled();
+    vv.height = 400; // keyboard opens
+    listeners.resize();
+    expect(panCanvasBy).toHaveBeenCalledTimes(1);
+    const [dx, dy] = panCanvasBy.mock.calls[0];
+    expect(dx).toBe(0);
+    expect(dy).toBeLessThan(0);
+    expect(dy).toBe(-(640 - (400 - 24)));
+    caret.bottom = 200;
+    listeners.resize();
+    expect(panCanvasBy).toHaveBeenCalledTimes(1);
+    ctrl.end();
+  });
+});

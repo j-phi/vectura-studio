@@ -13579,3 +13579,19 @@ body.mobile-layout .hud-bar {
 .ctxbar-divisions-host {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
 }
+
+/* === TUX-028: text input proxy === */
+/* Hidden textarea that owns the soft keyboard during touch/pen Type sessions.
+   opacity:0 (never display/visibility/off-screen) so iOS still focuses it and
+   page scroll offsets stay 0; the controller parks it at the caret inside the
+   canvas rect. 16px font prevents iOS focus-zoom. */
+[data-ui-skin] textarea[data-text-proxy].text-input-proxy,
+textarea[data-text-proxy].text-input-proxy {
+  position: fixed; left: 0; top: 0; z-index: 1;
+  width: 1em; height: 1em; min-height: 0; margin: 0; padding: 0; border: 0;
+  font-size: 16px; line-height: 1;
+  opacity: 0; color: transparent; background: transparent; caret-color: transparent;
+  outline: none; box-shadow: none; resize: none; overflow: hidden;
+  pointer-events: none; -webkit-user-select: text; user-select: text;
+}
+/* === /TUX-028 === */

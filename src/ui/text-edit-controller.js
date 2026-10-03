@@ -59,6 +59,13 @@
       // this session, and whether any mutation pushed history since creation.
       this._createdLayer = null;
       this._pushedHistoryThisSession = false;
+      // TUX-028: soft-keyboard proxy. Only touch/pen sessions use it (see
+      // _focusProxyIfTouch); mouse sessions keep the window-keydown path as is.
+      this._proxy = null;
+      this._composing = false;
+      this._lastPointerType = null;
+      this._viewportBound = false;
+      this._installPointerTypeTracking();
     }
 
     // ── Session lifecycle ──────────────────────────────────────────────────
@@ -86,6 +93,12 @@
       layer._edit = { active: true, caretIndex: ci, anchorIndex: ci, focusIndex: ci };
       this._startBlink();
       this._attachKeys();
+      // In-gesture focus: begin() is reached synchronously from the pointer
+      // handler (pointerdown for existing text / Select double-tap, pointerup for
+      // a new layer), and regen above is synchronous, so focusing here stays
+      // inside the user gesture. Never move this after an await. A session that
+      // starts from pointercancel is not expected to open the keyboard.
+      this._focusProxyIfTouch();
       this._requestDraw();
       this._emitCaret();
       return true;
@@ -143,6 +156,7 @@
       const wasActive = this.active;
       this._stopBlink();
       this._detachKeys();
+      this._teardownProxy();
       const layer = this.layer;
       const created = this._createdLayer;
       const pushed = this._pushedHistoryThisSession;
@@ -292,6 +306,7 @@
       this.caretIndex = clamp(focus | 0, 0, len);
       this._runDirty = false;
       this._syncEditState();
+      this._syncProxy();
       this._requestDraw();
       return true;
     }
@@ -326,12 +341,16 @@
     // (caretIndex) drives drag/shift-extend.
     selectWordAtWorld(wx, wy) {
       const si = this._sourceIndexAtWorld(wx, wy);
-      return si == null ? false : this.selectWordAt(si);
+      const ok = si == null ? false : this.selectWordAt(si);
+      if (ok) this._focusProxyIfTouch();
+      return ok;
     }
 
     selectParagraphAtWorld(wx, wy) {
       const si = this._sourceIndexAtWorld(wx, wy);
-      return si == null ? false : this.selectParagraphAt(si);
+      const ok = si == null ? false : this.selectParagraphAt(si);
+      if (ok) this._focusProxyIfTouch();
+      return ok;
     }
 
     extendSelectionToWorld(wx, wy) {
@@ -445,72 +464,59 @@
     }
 
     // ── Editing — mutations ────────────────────────────────────────────────
-    insertText(str) {
-      if (!this.active || !str) return false;
+    /**
+     * THE one mutation path: replace source range [start, end) with `str` and put
+     * the caret after it. insertText/deleteBackward/deleteForward/_deleteSelection
+     * (desktop keydown), the touch proxy `input` diff and TUX-029's panel field
+     * all end here. Honours canMutate, history-once-per-run and _afterMutation.
+     */
+    replaceRange(start, end, str = '') {
+      if (!this.active) return false;
       const layer = this.layer;
       if (!this.canMutate(layer)) return false;
-      this._pushHistoryOncePerRun();
       const t = this._text(layer);
-      let i;
-      if (this.hasSelection()) {
-        // Replace the selection: delete the range, then insert at its start.
-        const { start, end } = this.getSelection();
-        const cut = t.slice(0, start) + t.slice(end);
-        i = start;
-        layer.params.text = cut.slice(0, i) + str + cut.slice(i);
-      } else {
-        i = clamp(this.caretIndex, 0, t.length);
-        layer.params.text = t.slice(0, i) + str + t.slice(i);
-      }
-      this.caretIndex = i + str.length;
+      const s0 = clamp(start | 0, 0, t.length);
+      const e0 = clamp(end | 0, s0, t.length);
+      str = str == null ? '' : String(str);
+      if (s0 === e0 && !str) return false;
+      this._pushHistoryOncePerRun();
+      layer.params.text = t.slice(0, s0) + str + t.slice(e0);
+      this.caretIndex = s0 + str.length;
       this._afterMutation();
       return true;
+    }
+
+    getText() { return this.active ? this._text(this.layer) : ''; }
+
+    insertText(str) {
+      if (!this.active || !str) return false;
+      // A selection is replaced; otherwise insert at the caret.
+      const r = this.getSelection();
+      return this.replaceRange(r.start, r.end, str);
     }
 
     insertNewline() { return this.insertText('\n'); }
 
     deleteBackward() {
       if (!this.active) return false;
-      const layer = this.layer;
-      if (!this.canMutate(layer)) return false;
+      if (!this.canMutate(this.layer)) return false;
       if (this.hasSelection()) return this._deleteSelection();
-      const t = this._text(layer);
-      const i = clamp(this.caretIndex, 0, t.length);
-      if (i <= 0) return false;
-      this._pushHistoryOncePerRun();
-      layer.params.text = t.slice(0, i - 1) + t.slice(i);
-      this.caretIndex = i - 1;
-      this._afterMutation();
-      return true;
+      const i = clamp(this.caretIndex, 0, this._text(this.layer).length);
+      return i > 0 ? this.replaceRange(i - 1, i, '') : false;
     }
 
     deleteForward() {
       if (!this.active) return false;
-      const layer = this.layer;
-      if (!this.canMutate(layer)) return false;
+      if (!this.canMutate(this.layer)) return false;
       if (this.hasSelection()) return this._deleteSelection();
-      const t = this._text(layer);
-      const i = clamp(this.caretIndex, 0, t.length);
-      if (i >= t.length) return false;
-      this._pushHistoryOncePerRun();
-      layer.params.text = t.slice(0, i) + t.slice(i + 1);
-      this.caretIndex = i;
-      this._afterMutation();
-      return true;
+      const i = clamp(this.caretIndex, 0, this._text(this.layer).length);
+      return this.replaceRange(i, i + 1, '');
     }
 
     // Delete the current non-empty selection, collapsing the caret to its start.
     _deleteSelection() {
-      const layer = this.layer;
-      if (!this.canMutate(layer)) return false;
       const { start, end } = this.getSelection();
-      if (start === end) return false;
-      this._pushHistoryOncePerRun();
-      const t = this._text(layer);
-      layer.params.text = t.slice(0, start) + t.slice(end);
-      this.caretIndex = start;
-      this._afterMutation();
-      return true;
+      return start === end ? false : this.replaceRange(start, end, '');
     }
 
     // ── Editing — navigation (never records history) ───────────────────────
@@ -630,6 +636,7 @@
       // Every mutation collapses the selection to a caret at the edit point.
       this.anchorIndex = this.caretIndex;
       this._syncEditState();
+      this._syncProxy();
       if (typeof this.host.refreshPanel === 'function') this.host.refreshPanel(this.layer);
       this._requestDraw();
       this._emitCaret();
@@ -643,6 +650,7 @@
       if (!keepAnchor) this.anchorIndex = idx;
       this._runDirty = false;
       this._syncEditState();
+      this._syncProxy();
       this._requestDraw();
       this._emitCaret();
     }
@@ -752,6 +760,205 @@
       return typeof e.key === 'string' && e.key.length === 1 && !e.altKey;
     }
 
+    // ── Soft-keyboard proxy (TUX-028) ──────────────────────────────────────
+    // Touch/pen sessions focus a hidden <textarea> so the OS keyboard opens. The
+    // textarea MIRRORS the layer text and the controller selection; native input
+    // events are diffed against the layer text and applied through replaceRange,
+    // the same operation the desktop keydown path ends in.
+
+    // Remember the pointer type of the last press (capture, so it runs before the
+    // renderer's own handlers). touchstart also records 'touch' for engines whose
+    // synthetic taps do not report pointerType 'touch'. Never use UA/matchMedia.
+    _installPointerTypeTracking() {
+      if (!this.bindKeys || typeof window === 'undefined' || !window.addEventListener) return;
+      window.addEventListener('pointerdown', (e) => { this._lastPointerType = e && e.pointerType ? e.pointerType : null; }, true);
+      window.addEventListener('touchstart', () => { this._lastPointerType = 'touch'; }, true);
+    }
+
+    _isTouchSession() { return this._lastPointerType === 'touch' || this._lastPointerType === 'pen'; }
+
+    _ensureProxy() {
+      if (this._proxy) return this._proxy;
+      if (typeof document === 'undefined' || !document.body) return null;
+      const ta = document.createElement('textarea');
+      ta.setAttribute('data-text-proxy', '');
+      ta.className = 'text-input-proxy';
+      ta.setAttribute('aria-label', 'Text input');
+      ta.setAttribute('autocapitalize', 'off');
+      ta.setAttribute('autocorrect', 'off');
+      ta.setAttribute('autocomplete', 'off');
+      ta.setAttribute('spellcheck', 'false');
+      ta.setAttribute('inputmode', 'text');
+      ta.setAttribute('enterkeyhint', 'enter');
+      ta.setAttribute('tabindex', '-1');
+      ta.addEventListener('beforeinput', (e) => this._onProxyBeforeInput(e));
+      ta.addEventListener('input', (e) => this._onProxyInput(e));
+      ta.addEventListener('compositionstart', () => { this._composing = true; });
+      // Safari fires compositionend BEFORE the final input event, so apply the
+      // proxy's value now (idempotent if input already ran), then resync.
+      ta.addEventListener('compositionend', () => { this._composing = false; this._onProxyInput(); this._syncProxy(true); });
+      ta.addEventListener('select', () => this._onProxySelect());
+      document.body.appendChild(ta);
+      this._proxy = ta;
+      return ta;
+    }
+
+    _focusProxyIfTouch() {
+      if (!this.active || !this._isTouchSession()) return false;
+      const ta = this._ensureProxy();
+      if (!ta) return false;
+      this._syncProxy(true);
+      try { ta.focus({ preventScroll: true }); } catch (_) { return false; }
+      this._bindViewport();
+      this._ensureCaretAboveKeyboard();
+      return true;
+    }
+
+    _proxyFocused() {
+      return !!(this._proxy && typeof document !== 'undefined' && document.activeElement === this._proxy);
+    }
+
+    // Mirror layer text + selection into the proxy. `force` rewrites the value
+    // even mid-composition (used after compositionend / rejected input).
+    _syncProxy(force = false) {
+      const ta = this._proxy;
+      if (!ta || !this.active || !this.layer) return;
+      if (this._composing && !force) return;
+      const t = this._text(this.layer);
+      if (ta.value !== t) ta.value = t;
+      const r = this.getSelection();
+      const backward = this.caretIndex < this.anchorIndex;
+      try { ta.setSelectionRange(r.start, r.end, backward ? 'backward' : 'forward'); } catch (_) { /* detached */ }
+      this._placeProxy();
+      if (this._proxyFocused()) this._ensureCaretAboveKeyboard();
+    }
+
+    // Park the proxy at the caret, clamped inside the visible canvas rect, so the
+    // OS never scrolls the page to reveal it (scroll offsets must stay 0).
+    _placeProxy() {
+      const ta = this._proxy;
+      if (!ta || typeof this.host.getCaretClientPoint !== 'function') return;
+      const p = this.host.getCaretClientPoint();
+      if (!p || !p.rect) return;
+      const size = 16;
+      const x = clamp(Number(p.x) || 0, p.rect.left, Math.max(p.rect.left, p.rect.right - size));
+      const y = clamp(Number(p.top) || 0, p.rect.top, Math.max(p.rect.top, p.rect.bottom - size));
+      ta.style.left = `${Math.round(x)}px`;
+      ta.style.top = `${Math.round(y)}px`;
+    }
+
+    // Keyboard-inset seam (TUX-032 can absorb this): keep the caret above the
+    // soft keyboard by panning the canvas through the host.
+    _bindViewport() {
+      const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+      if (this._viewportBound || !vv || typeof vv.addEventListener !== 'function') return;
+      this._onViewportChange = () => this._ensureCaretAboveKeyboard();
+      vv.addEventListener('resize', this._onViewportChange);
+      vv.addEventListener('scroll', this._onViewportChange);
+      this._viewportBound = true;
+    }
+
+    _unbindViewport() {
+      const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+      if (this._viewportBound && vv && typeof vv.removeEventListener === 'function') {
+        vv.removeEventListener('resize', this._onViewportChange);
+        vv.removeEventListener('scroll', this._onViewportChange);
+      }
+      this._viewportBound = false;
+      this._onViewportChange = null;
+    }
+
+    _ensureCaretAboveKeyboard() {
+      if (!this.active || !this._proxyFocused()) return;
+      const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+      if (!vv || typeof this.host.getCaretClientPoint !== 'function' || typeof this.host.panCanvasBy !== 'function') return;
+      const p = this.host.getCaretClientPoint();
+      if (!p) return;
+      const limit = (vv.offsetTop || 0) + vv.height - 24;
+      const bottom = Number(p.bottom);
+      if (!Number.isFinite(bottom) || bottom <= limit) return;
+      this.host.panCanvasBy(0, -(bottom - limit));
+      this._placeProxy();
+    }
+
+    _teardownProxy() {
+      this._unbindViewport();
+      this._composing = false;
+      const ta = this._proxy;
+      if (!ta) return;
+      if (typeof document !== 'undefined' && document.activeElement === ta) ta.blur();
+      ta.value = '';
+    }
+
+    _onProxyBeforeInput(e) {
+      if (!this.active || !this.layer) return;
+      // Detect rejection early only; the mutation itself happens in 'input'.
+      if (!this.canMutate(this.layer) && e.cancelable) e.preventDefault();
+    }
+
+    _onProxyInput() {
+      const ta = this._proxy;
+      if (!this.active || !this.layer || !ta) return;
+      const prev = this._text(this.layer);
+      const next = ta.value;
+      let applied = true;
+      if (prev !== next) {
+        // Pin the unchanged tail at the caret so repeated characters diff right.
+        const c = clamp(ta.selectionEnd == null ? next.length : ta.selectionEnd, 0, next.length);
+        let suffix = 0;
+        const tail = next.slice(c);
+        if (prev.endsWith(tail)) suffix = tail.length;
+        else { while (suffix < prev.length && suffix < next.length && prev[prev.length - 1 - suffix] === next[next.length - 1 - suffix]) suffix += 1; }
+        let prefix = 0;
+        const maxPrefix = Math.min(prev.length, next.length) - Math.min(suffix, Math.min(prev.length, next.length));
+        while (prefix < maxPrefix && prev[prefix] === next[prefix]) prefix += 1;
+        applied = this.replaceRange(prefix, prev.length - suffix, next.slice(prefix, next.length - suffix));
+      }
+      // Rejected (gated layer) or clamped: the layer text is the truth.
+      if (!applied || this._text(this.layer) !== ta.value) this._syncProxy(true);
+    }
+
+    _onProxySelect() {
+      const ta = this._proxy;
+      if (!ta || !this.active || this._composing) return;
+      const a = ta.selectionDirection === 'backward' ? ta.selectionEnd : ta.selectionStart;
+      const f = ta.selectionDirection === 'backward' ? ta.selectionStart : ta.selectionEnd;
+      if (a === this.anchorIndex && f === this.caretIndex) return;
+      const r = this.getSelection();
+      if (ta.selectionStart === r.start && ta.selectionEnd === r.end) return;
+      this.selectRange(a, f);
+    }
+
+    // Keydown whose target is the proxy. Printable keys, Backspace, Delete and
+    // plain Enter are NOT preventDefault'ed: the native edit fires 'input', which
+    // mutates the layer (handling them here too would double every character).
+    // stopPropagation keeps global shortcuts from seeing them. Navigation, Escape
+    // and Cmd/Ctrl+Enter are handled here exactly as in the mouse path.
+    _onProxyKeydown(e) {
+      if (this._isUndoRedoChord(e)) {
+        // Commit-and-exit like the mouse path, but shortcuts.js ignores keydowns
+        // whose target is a TEXTAREA, so the chord would never reach global undo.
+        // Run it through the host once and swallow the event (no native undo).
+        this.end();
+        const k = String(e.key).toLowerCase();
+        if (typeof this.host.undoRedo === 'function') this.host.undoRedo(k === 'z' && !e.shiftKey ? 'undo' : 'redo');
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.isComposing || e.keyCode === 229) { e.stopPropagation(); return; }
+      const k = e.key;
+      const nav = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'Escape'].includes(k)
+        || (k === 'Enter' && (e.metaKey || e.ctrlKey));
+      if (nav) {
+        this.handleKey(e);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (this._ownsKey(e)) e.stopPropagation();
+    }
+
     // ── Window keyboard capture ────────────────────────────────────────────
     // A capture-phase listener intercepts keystrokes BEFORE the global shortcut
     // handler (which is bubble-phase on window), so typing 'v' inserts a 'v'
@@ -762,6 +969,7 @@
       if (!this.bindKeys || this._keyHandler || typeof window === 'undefined' || !window.addEventListener) return;
       this._keyHandler = (e) => {
         if (!this.active) return;
+        if (this._proxy && e && e.target === this._proxy) { this._onProxyKeydown(e); return; }
         // Undo/redo exits the field, then propagates to the global handler.
         if (this._isUndoRedoChord(e)) { this.end(); return; }
         const handled = this.handleKey(e);
