@@ -390,7 +390,12 @@
     { value: 'crease', label: 'Crease' }, { value: 'interior', label: 'Interior' },
   ];
   const D_ANGLE = { key: 'fillAngle', kind: 'dial', label: 'Angle', ariaLabel: 'Hatch angle', min: 0, max: 360, step: 1, default: 45 };
-  const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: 220, step: 1, default: 50 };
+  // U3 — the Density ceiling is the engine's own clamp (scene3d.js
+  // hatchSpacing / spiral / stipple: clamp(density, 0, 500)). Above ~220 it is
+  // a path-count / plot-time knob more than a visible-tone knob (scene3d.js
+  // :1168), but the owner asked for the full engine range on every surface.
+  const DENSITY_MAX = 500;
+  const D_DENSITY = { key: 'fillDensity', kind: 'slider', label: 'Density', ariaLabel: 'Fill density', min: 1, max: DENSITY_MAX, step: 1, default: 50 };
   const D_ANGLEREF = { key: 'angleRef', kind: 'seg', label: 'Angle ref', ariaLabel: 'Hatch angle reference', default: 'face', options: ANGLE_REF_OPTS };
   const D_LINKFILL = { key: 'linkFill', kind: 'toggle', label: 'Link fill', ariaLabel: 'Connect scanlines (boustrophedon)', default: false };
   // U9 — the FILL STYLE (tone law). `kind: 'lawpick'` is a Select grouped by
@@ -701,8 +706,15 @@
     // inside `ctl` — `.vs3-row` is already `display:flex`, so this sits
     // compactly beside the picker instead of stacking under a block-level
     // select.
+    // U3 — a degraded-but-live pick on a curved Spiral/Stipple fill (the
+    // picker no longer greys these; see CURVED_SPIRAL_STIPPLE_INERT).
+    const sinkText = FS.curvedSinkNote
+      ? FS.curvedSinkNote(o.primitiveMode, o.mapper,
+        FS.effectiveLaw ? FS.effectiveLaw(law, FS.displayParams ? FS.displayParams(o.value, o.paramsBag || {}) : (o.paramsBag || {})) : law)
+      : '';
     buildLawInfoAffordance(ctl.parentNode || ctl, [
       { text: facetedText, kind: 'faceted' },
+      { text: sinkText, kind: 'faceted' },
       { text: note.text },
       { text: entry.mechanism ? `How: ${entry.mechanism}` : '' },
       { text: entry.strengths ? `Strengths: ${entry.strengths}` : '' },
@@ -1072,6 +1084,442 @@
     }
   };
 
+  // ════════════════════════════════════════════════════════════════════════
+  // U3 (fill-style review r3) — SHARED style rows + MEASURED reachability.
+  //
+  // Two surfaces edit a fill style: the scene group's Style editor (scene /
+  // object / face scope) and the focused Object 3D LEAF panel. In a scene
+  // TREE only the leaf reaches an object (r3 headline 1: every object3d child
+  // declares its own style, and whole-style-wins makes a scene/object-scope
+  // edit restyle only the ground). So every row the scene editor offers is
+  // rendered here ONCE and mounted by BOTH surfaces; each surface supplies
+  // only its own write path (`o.write` / `o.remove`).
+  //
+  // `gateVerdict` is the honesty rule, one place for both surfaces. It
+  // returns true (show), false (remove the row — the control cannot apply to
+  // this shape/Type at all) or a string (show the row DISABLED, with the
+  // string as its (i) note — the control is structurally valid but the
+  // current Fill Style ignores it; disabling rather than hiding keeps rows
+  // from jumping while a user arrows through Fill Styles). Every rule below
+  // is a measured dead cell from docs/3d-audit/fill-style-review/r3-artistic.md
+  // §2 (live hash compare across sphere / cylinder / box and 25 sample laws).
+  // An unknown primitive (scene scope, mixed selection) fails OPEN on the
+  // primitive half of a rule.
+  // ════════════════════════════════════════════════════════════════════════
+  const isMonoLaw = (law) => {
+    const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
+    return Boolean(law && M && typeof M.isMono === 'function' && M.isMono(law));
+  };
+  const primClassOf = (prim) => {
+    if (!prim) return null;
+    const FS = Vectura.SCENE_FILL_STYLES;
+    if (FS && typeof FS.isFaceted === 'function' && FS.isFaceted(prim)) return 'faceted';
+    return curvesApplyTo(prim) ? 'curved' : null;
+  };
+  // Survivor id (what the picker shows) + effective engine id (after the
+  // collapse sub-control) for a style params bag.
+  const lawsOf = (sp) => {
+    const FS = Vectura.SCENE_FILL_STYLES;
+    const bag = sp || {};
+    if (!FS) return { survivor: bag.toneLaw || 'ladder', law: bag.toneLaw || 'ladder' };
+    const survivor = FS.resolve(bag.toneLaw);
+    const shown = FS.displayParams ? FS.displayParams(bag.toneLaw, bag) : bag;
+    const law = FS.effectiveLaw ? FS.effectiveLaw(survivor, shown) : survivor;
+    return { survivor, law };
+  };
+  const styleGateCtx = (primitive, mapper, sp) => {
+    const { survivor, law } = lawsOf(sp);
+    return { cls: primClassOf(primitive), primitive, mapper, sp: sp || {}, survivor, law, mono: isMonoLaw(law) };
+  };
+  const GATE_NOTES = {
+    mono: 'This Fill Style draws its own marks and ignores this control.',
+    triple: 'Triple hatch adds a third family only to Fill Styles that draw rung families. Ladder, Continuous Field, Deep Fill and the field-driven styles ignore it.',
+    eccentricity: 'Eccentricity has no effect on a curved shape under Ladder or Deep Fill.',
+    jitter: 'Jitter has no effect on a curved shape yet.',
+    curvedHL: '— no effect on curved shapes',
+  };
+  const CONTROL_GATES = {
+    facetMinRulings: (c) => (c.cls === 'curved' ? false : (c.cls === 'faceted' && c.mono ? GATE_NOTES.mono : true)),
+    angleRef: (c) => (c.cls === 'curved' ? false : (c.mono ? GATE_NOTES.mono : true)),
+    linkFill: (c) => (c.cls === 'curved' ? false : (c.mono ? GATE_NOTES.mono : true)),
+    crossAngleDelta: (c) => (c.mono ? GATE_NOTES.mono : true),
+    crossDensityRatio: (c) => (c.mono ? GATE_NOTES.mono : true),
+    tripleHatch: (c) => {
+      if (c.cls === 'faceted') return false;
+      if (c.mono) return GATE_NOTES.triple;
+      if (c.survivor === 'ladder' || c.survivor === 'contFieldSigmoid' || c.survivor === 'deepFillTSP') return GATE_NOTES.triple;
+      return true;
+    },
+    contourStyle: (c) => c.cls !== 'faceted',
+    spiralCenter: (c) => c.cls !== 'faceted',
+    spiralMode: (c) => c.cls !== 'faceted',
+    spiralEccentricity: (c) => (c.cls === 'curved' && (c.survivor === 'ladder' || c.survivor === 'deepFillTSP') ? GATE_NOTES.eccentricity : true),
+    dotAngle: (c) => { const s = c.sp.dotShape || 'dot'; return s !== 'dot' && s !== 'ring'; },
+    stippleJitter: (c) => (c.cls === 'curved' ? GATE_NOTES.jitter : true),
+    // Hidden-but-live keys exposed by U3 (r3 §5). Each is shown only where it
+    // measurably changes output.
+    spiralPitch: (c) => c.cls !== 'curved' || c.sp.spiralMode === 'flatClip',
+    contourStep: (c) => c.cls !== 'curved' || c.sp.contourStyle === 'region',
+    toneQuantLevels: (c) => c.law === 'contFieldQuant' && c.cls !== 'faceted',
+    wobbleScale: (c) => (Number(c.sp.wobble) > 0) && c.mapper !== 'spiral' && c.mapper !== 'stipple' && c.cls !== 'curved',
+  };
+  const gateVerdict = (key, ctx) => {
+    const g = CONTROL_GATES[key];
+    if (!g || !ctx) return true;
+    try { return g(ctx); } catch (_) { return true; }
+  };
+  // Disable a rendered row with its reason: greyed, not focusable, the
+  // reason in its tooltip AND in a click-driven (i) (the Fill Style row's
+  // affordance), so it is not hover-only.
+  const markRowDisabled = (rowEl, note) => {
+    if (!rowEl || !rowEl.classList) return;
+    rowEl.classList.add('is-disabled');
+    rowEl.setAttribute('aria-disabled', 'true');
+    rowEl.setAttribute('title', note);
+    const ctl = rowEl.querySelector('.vs3-ctl');
+    if (ctl) { ctl.inert = true; ctl.setAttribute('inert', ''); }
+    const lbl = rowEl.querySelector('.vs3-lbl');
+    buildLawInfoAffordance(rowEl, [{ text: note }], `Why ${(lbl && lbl.textContent) || 'this control'} has no effect`);
+  };
+
+  // U3 — keys exposed for the first time (engine-read, no UI before; r3 §5).
+  // Not part of MAPPER_CONTROLS: none of them is seeded by `mapperDefaults`
+  // (an absent key is today's output), so they never ride along a Type swap.
+  const D_SPIRAL_PITCH = { key: 'spiralPitch', kind: 'auto-slider', label: 'Pitch', ariaLabel: 'Spiral pitch (mm)', min: 0.5, max: 20, step: 0.05, autoFrom: (sp) => Math.max(0.5, Math.min(14, 14 - 0.136 * Math.min(100, Math.max(0, Number.isFinite(sp.fillDensity) ? sp.fillDensity : 50)))), help: 'Spacing between spiral turns, in mm. Auto follows Density. Applies to faceted shapes and to Flat mode.' };
+  const D_CONTOUR_STEP = { key: 'contourStep', kind: 'auto-slider', label: 'Step', ariaLabel: 'Contour step (mm)', min: 0.5, max: 40, step: 0.05, autoFrom: () => 3, help: 'Spacing between contour rings, in mm. Auto follows Density. Applies to faceted shapes and to Region contours.' };
+  const D_TONE_QUANT = { key: 'toneQuantLevels', kind: 'slider', label: 'Levels', ariaLabel: 'Quantised field levels', min: 4, max: 256, step: 1, default: 128, help: 'How many tone levels the quantised field snaps to. Fewer levels give stronger banding.' };
+  const EXTRA_MAPPER_ROWS = {
+    contour: [D_CONTOUR_STEP],
+    spiral: [D_SPIRAL_PITCH],
+  };
+  // Keys the leaf panel renders with its own hand-built rows (live-drag
+  // sliders, the +90 angle-dial conversion), so the shared renderer skips them
+  // there. The scene editor renders every descriptor through the shared path.
+  const LEAF_NATIVE_KEYS = new Set(['fillDensity', 'fillAngle', 'toneLaw', 'facetMinRulings',
+    'sliceCount', 'sliceVisibility', 'sliceRotate', 'sliceTilt', 'sliceEndOverlap']);
+
+  const moduleSliderRow = (host, comps, label, props) => {
+    const ctl = labeledRow(host, label);
+    comps.push(Vectura.UI.Slider(ctl, props));
+    return ctl.parentNode;
+  };
+
+  // Render ONE descriptor row. `o` = { host, comps, row(label)->ctl host,
+  // sp (resolved params, read-only), write(key, value), remove(key),
+  // ctx (styleGateCtx), lawpick(d, raw)? }. Returns the row element (or null).
+  const renderDescriptorRow = (d, o) => {
+    const UI = Vectura.UI;
+    const verdict = gateVerdict(d.key, o.ctx);
+    if (verdict === false) return null;
+    const disabledNote = typeof verdict === 'string' ? verdict : '';
+    const sp = o.sp || {};
+    const has = sp[d.key] !== undefined && sp[d.key] !== null;
+    const raw = has ? sp[d.key] : d.default;
+    const write = (val) => { if (!disabledNote) o.write(d.key, val); };
+    const aria = d.ariaLabel || d.label;
+    const before = o.host.childElementCount;
+    if (d.kind === 'slider') {
+      moduleSliderRow(o.host, o.comps, d.label, {
+        value: Number.isFinite(raw) ? raw : d.default,
+        min: d.min, max: d.max, step: d.step, defaultValue: d.default, ariaLabel: aria,
+        onCommit: (v) => write(v),
+      });
+    } else if (d.kind === 'auto-slider') {
+      // Absent key = AUTO (derived from Density). "Set" writes the current
+      // derived value, so switching it on never jumps the drawing.
+      const auto = !Number.isFinite(sp[d.key]);
+      o.comps.push(UI.SegCtrl(o.row(d.label), {
+        options: [{ value: 'auto', label: 'Auto' }, { value: 'set', label: 'Set' }],
+        value: auto ? 'auto' : 'set',
+        ariaLabel: `${aria} mode`,
+        onChange: (v) => {
+          if (disabledNote) return;
+          if (v === 'auto') o.remove(d.key);
+          else o.write(d.key, Math.round(d.autoFrom(sp) * 100) / 100);
+        },
+      }));
+      if (!auto) {
+        moduleSliderRow(o.host, o.comps, '', {
+          value: sp[d.key], min: d.min, max: d.max, step: d.step,
+          defaultValue: Math.round(d.autoFrom(sp) * 100) / 100, ariaLabel: aria,
+          onCommit: (v) => write(v),
+        });
+      }
+    } else if (d.kind === 'dial') {
+      const host = o.row(d.label);
+      const dv = Number.isFinite(raw) ? raw : d.default;
+      const clampV = (v) => Math.min(d.max, Math.max(d.min, v));
+      if (UI.AngleDial) {
+        o.comps.push(UI.AngleDial(host, { value: dv, ariaLabel: aria, defaultValue: d.default, onCommit: (v) => write(clampV(v)) }));
+      } else {
+        o.comps.push(UI.Slider(host, { value: dv, min: d.min, max: d.max, step: d.step, defaultValue: d.default, ariaLabel: aria, onCommit: (v) => write(v) }));
+      }
+    } else if (d.kind === 'select') {
+      o.comps.push(UI.Select(o.row(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
+    } else if (d.kind === 'lawpick') {
+      if (typeof o.lawpick === 'function') o.lawpick(d, raw);
+    } else if (d.kind === 'seg') {
+      o.comps.push(UI.SegCtrl(o.row(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
+    } else if (d.kind === 'toggle') {
+      o.comps.push(UI.SegCtrl(o.row(d.label), {
+        options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+        value: raw === true ? 'on' : 'off', ariaLabel: aria, onChange: (v) => write(v === 'on'),
+      }));
+    } else if (d.kind === 'multi') {
+      const cur = raw && typeof raw === 'object' ? raw : d.default;
+      const selected = d.options.filter((opt) => cur[opt.value] !== false).map((opt) => opt.value);
+      o.comps.push(UI.TogGrp(o.row(d.label), {
+        options: d.options, multiple: true, value: selected, ariaLabel: aria,
+        onChange: (arr) => {
+          const next = {};
+          d.options.forEach((opt) => { next[opt.value] = arr.indexOf(opt.value) !== -1; });
+          write(next);
+        },
+      }));
+    }
+    let firstRow = null;
+    for (let i = before; i < o.host.childElementCount; i += 1) {
+      const el = o.host.children[i];
+      if (!el || !el.classList || !el.classList.contains('vs3-row')) continue;
+      if (!firstRow) firstRow = el;
+      if (d.help && !disabledNote) el.setAttribute('title', d.help);
+      if (disabledNote) markRowDisabled(el, disabledNote);
+    }
+    return firstRow;
+  };
+
+  // The mapper's own rows (MAPPER_CONTROLS + the U3 extras). `skip` is a Set
+  // of keys the calling surface already rendered itself.
+  const renderMapperRows = (o, skip) => {
+    const descs = (MAPPER_CONTROLS[o.ctx.mapper] || []).concat(EXTRA_MAPPER_ROWS[o.ctx.mapper] || []);
+    descs.forEach((d) => { if (!skip || !skip.has(d.key)) renderDescriptorRow(d, o); });
+    if (FILL_MAPPERS.has(o.ctx.mapper)) renderDescriptorRow(D_TONE_QUANT, o);
+  };
+
+  // U3 — which fills READ the scene Tone section (measured, r3 §2c, object-
+  // only hash). Bands / Thresholds / Coverage shape Ladder on curved hatch /
+  // contour, every curved Spiral/Stipple, and faceted Hatch/Crosshatch under
+  // a non-field style; everything else sets its own tone. Specular is drawn
+  // only on faceted Hatch/Crosshatch (PRH-027 keeps the curved specular stage
+  // off in the engine — this gates the UI only).
+  const toneLiveFor = (c) => {
+    if (!c || !FILL_MAPPERS.has(c.mapper) || c.law === 'none') return false;
+    if (c.cls === 'faceted') return (c.mapper === 'hatch' || c.mapper === 'crosshatch') && !c.mono;
+    if (c.cls === 'curved') return c.mapper === 'spiral' || c.mapper === 'stipple' || c.survivor === 'ladder';
+    return true;
+  };
+  const specularLiveFor = (c) => Boolean(c && c.cls === 'faceted'
+    && (c.mapper === 'hatch' || c.mapper === 'crosshatch') && c.law !== 'none' && !c.mono);
+  const TONE_NOTES = {
+    bands: 'Bands, Thresholds and Coverage shape Ladder fills, Spiral and Stipple on curved shapes, and Hatch on faceted shapes. Other Fill Styles set their own tone. These rows also shape the ground and the cast shadows.',
+    bandsNone: 'No object in this scene uses a Fill Style that reads these bands. They still shape the ground and the cast shadows.',
+    specular: 'Specular is drawn only on faceted shapes (box, plane, solid) with Hatch or Crosshatch. Curved shapes do not draw it (PRH-027).',
+  };
+
+  const sectionHeader = (host, text) => {
+    const hdr = document.createElement('div');
+    hdr.className = 'vs3-hl-hdr';
+    hdr.textContent = text;
+    host.appendChild(hdr);
+    return hdr;
+  };
+
+  // ── Line treatment (Phase 1.1) — line type / dash length / hand wobble,
+  // plus the U3 additions Wobble scale and Overstroke (both engine-read,
+  // geometry3d.js strokeTreatment, never offered before). Every fill mapper.
+  const renderLineRows = (o) => {
+    const UI = Vectura.UI;
+    if (!FILL_MAPPERS.has(o.ctx.mapper)) return;
+    const rp = o.sp || {};
+    if (o.header) sectionHeader(o.host, 'Stroke');
+    o.comps.push(UI.Select(o.row('Line'), {
+      options: LINE_TYPE_OPTIONS,
+      value: typeof rp.lineType === 'string' ? rp.lineType : 'solid',
+      ariaLabel: 'Line type',
+      onChange: (v) => o.write('lineType', v),
+    }));
+    // Dash length (I15) — only meaningful when the line dashes.
+    const lt = typeof rp.lineType === 'string' ? rp.lineType : 'solid';
+    if (lt === 'dashed' || lt === 'dashdot' || lt === 'dotted') {
+      moduleSliderRow(o.host, o.comps, 'Dash length', {
+        value: Number.isFinite(rp.dashScale) ? rp.dashScale : STROKE_DEFAULTS.dashScale,
+        min: 0.25, max: 4, step: 0.05, defaultValue: STROKE_DEFAULTS.dashScale,
+        ariaLabel: 'Dash length',
+        onCommit: (v) => o.write('dashScale', v),
+      });
+    }
+    moduleSliderRow(o.host, o.comps, 'Wobble', {
+      value: Number.isFinite(rp.wobble) ? rp.wobble : STROKE_DEFAULTS.wobble,
+      min: 0, max: 100, step: 1, defaultValue: STROKE_DEFAULTS.wobble,
+      ariaLabel: 'Hand wobble',
+      onCommit: (v) => o.write('wobble', v),
+    });
+    // Wobble scale — the waver's wavelength (mm). It resamples only segments
+    // LONGER than the scale, so it is measured dead on curved fills (their
+    // lines are already finely sampled) and on Spiral/Stipple everywhere.
+    if (gateVerdict('wobbleScale', o.ctx) === true) {
+      const row = moduleSliderRow(o.host, o.comps, 'Wobble scale', {
+        value: Number.isFinite(rp.wobbleScale) ? rp.wobbleScale : STROKE_DEFAULTS.wobbleScale,
+        min: 1, max: 30, step: 0.5, defaultValue: STROKE_DEFAULTS.wobbleScale,
+        ariaLabel: 'Wobble scale (mm)',
+        onCommit: (v) => o.write('wobbleScale', v),
+      });
+      if (row) row.setAttribute('title', 'Wavelength of the hand wobble, in mm. Larger values give a slower waver.');
+    }
+    const osCtl = o.row('Overstroke');
+    o.comps.push(UI.SegCtrl(osCtl, {
+      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: rp.overstroke === true ? 'on' : 'off',
+      ariaLabel: 'Overstroke (draw each fill line twice)',
+      onChange: (v) => o.write('overstroke', v === 'on'),
+    }));
+    if (osCtl.parentNode) osCtl.parentNode.setAttribute('title', 'Draws every fill line a second time, for a denser, wetter line.');
+  };
+
+  // ── Highlight treatment (Phase 4). PRH-027 keeps the curved highlight
+  // stages OFF in the engine (HL_STAGE.treatment/specular), so on a curved
+  // shape only Blank / Alt fill / Burst change anything: the other treatments
+  // are disabled in the list, and Mode / Sensitivity / Shadow grade / HL
+  // density / HL pen are removed. Highlight band count is dead in every
+  // context measured (r3 §2b) and is not offered.
+  const renderHighlightRows = (o) => {
+    const UI = Vectura.UI;
+    if (!FILL_MAPPERS.has(o.ctx.mapper)) return;
+    const SH = SCENE_HIGHLIGHT();
+    if (!SH) return;
+    const rp = o.sp || {};
+    const curved = o.ctx.cls === 'curved';
+    const facetedNonHatch = o.ctx.cls === 'faceted' && o.ctx.mapper !== 'hatch' && o.ctx.mapper !== 'crosshatch';
+    const treatment = SH.resolve(rp.highlightTreatment);
+    sectionHeader(o.host, 'Highlight');
+    const CURVED_LIVE = ['blank', 'altFill', 'burst'];
+    const options = SH.TREATMENTS.map((opt) => {
+      const dead = curved && CURVED_LIVE.indexOf(opt.value) === -1 && opt.value !== treatment;
+      return dead ? { value: opt.value, label: opt.label + GATE_NOTES.curvedHL, disabled: true } : opt;
+    });
+    o.comps.push(UI.Select(o.row('Treatment'), {
+      options, value: treatment, ariaLabel: 'Highlight treatment',
+      onChange: (v) => o.write('highlightTreatment', v),
+    }));
+    if (!curved && !facetedNonHatch) {
+      const hlMode = rp.highlightMode === 'lightDriven' ? 'lightDriven' : 'perFace';
+      o.comps.push(UI.SegCtrl(o.row('Highlight mode'), {
+        options: [{ value: 'perFace', label: 'Per-face' }, { value: 'lightDriven', label: 'Light' }],
+        value: hlMode, ariaLabel: 'Highlight mode',
+        onChange: (v) => o.write('highlightMode', v),
+      }));
+      const stageOf = (val) => Math.min(6, Math.max(1, Math.round(Number.isFinite(val) ? val : 1)));
+      if (hlMode === 'lightDriven') {
+        moduleSliderRow(o.host, o.comps, 'Sensitivity', {
+          value: stageOf(rp.highlightSensitivity), min: 1, max: 6, step: 1, defaultValue: 1, ariaLabel: 'Highlight sensitivity',
+          onCommit: (v) => o.write('highlightSensitivity', Math.round(v)),
+        });
+      }
+      moduleSliderRow(o.host, o.comps, 'Shadow grade', {
+        value: stageOf(rp.shadowSensitivity), min: 1, max: 6, step: 1, defaultValue: 1, ariaLabel: 'Shadow sensitivity',
+        onCommit: (v) => o.write('shadowSensitivity', Math.round(v)),
+      });
+    }
+    if (!SH.hasDetailControls(treatment)) return;
+    if (!curved && (treatment === 'sparse' || treatment === 'altFill' || treatment === 'stippleOut')) {
+      moduleSliderRow(o.host, o.comps, 'HL density', {
+        value: Number.isFinite(rp.highlightDensity) ? rp.highlightDensity : 25,
+        min: 1, max: 100, step: 1, defaultValue: 25, ariaLabel: 'Highlight density',
+        onCommit: (v) => o.write('highlightDensity', v),
+      });
+    }
+    if (treatment === 'altFill') {
+      o.comps.push(UI.Select(o.row('Alt fill'), {
+        options: ALT_FILL_MAPPER_OPTIONS,
+        value: ALT_FILL_MAPPER_OPTIONS.some((opt) => opt.value === rp.altFillMapper) ? rp.altFillMapper : 'stipple',
+        ariaLabel: 'Alternate fill mapper',
+        onChange: (v) => o.write('altFillMapper', v),
+      }));
+    }
+    if (treatment === 'burst') {
+      moduleSliderRow(o.host, o.comps, 'Burst count', {
+        value: Number.isFinite(rp.burstCount) ? rp.burstCount : 16,
+        min: 6, max: 48, step: 1, defaultValue: 16, ariaLabel: 'Burst ray count',
+        onCommit: (v) => o.write('burstCount', v),
+      });
+      o.comps.push(UI.SegCtrl(o.row('Burst centre'), {
+        options: [{ value: 'specular', label: 'Glint' }, { value: 'centroid', label: 'Centre' }],
+        value: rp.burstCenter === 'centroid' ? 'centroid' : 'specular',
+        ariaLabel: 'Burst centre',
+        onChange: (v) => o.write('burstCenter', v),
+      }));
+    }
+    if (!curved) {
+      o.comps.push(UI.Select(o.row('HL pen'), {
+        options: [{ value: '', label: 'Inherit' }].concat((o.pens || []).map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
+        value: rp.highlightPenId || '',
+        ariaLabel: 'Highlight pen',
+        onChange: (v) => o.write('highlightPenId', v || null),
+      }));
+    }
+  };
+
+  // ── X-ray (Phase 6) — only for an object whose visibility is 'xray'.
+  // Front=Faded is dead on faceted shapes (r3 §2b), so that row is removed
+  // there. (r3 also listed Back line as dead; scene-xray-needs-fill.test.js
+  // measures it live on a capsule in a scene tree, so it stays.)
+  const renderXrayRows = (o) => {
+    const UI = Vectura.UI;
+    const hdr = document.createElement('div');
+    hdr.className = 'vs3-xray-hdr';
+    hdr.textContent = 'X-ray';
+    o.host.appendChild(hdr);
+    if (!FILL_MAPPERS.has(o.ctx.mapper)) {
+      const note = document.createElement('div');
+      note.className = 'vs3-xray-note';
+      note.textContent = 'Back faces need a surface fill — set Fill above.';
+      o.host.appendChild(note);
+      return;
+    }
+    const rp = o.sp || {};
+    o.comps.push(UI.SegCtrl(o.row('Back faces'), {
+      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: rp.xrayBackFaces !== false ? 'on' : 'off',
+      ariaLabel: 'X-ray back-face fills',
+      onChange: (v) => o.write('xrayBackFaces', v === 'on'),
+    }));
+    moduleSliderRow(o.host, o.comps, 'Back density', {
+      value: Number.isFinite(rp.xrayBackDensity) ? rp.xrayBackDensity : 0.4,
+      min: 0.2, max: 1, step: 0.05, defaultValue: 0.4,
+      ariaLabel: 'X-ray back-face density',
+      onCommit: (v) => o.write('xrayBackDensity', v),
+    });
+    o.comps.push(UI.Select(o.row('Back line'), {
+      options: LINE_TYPE_OPTIONS,
+      value: typeof rp.xrayBackLineType === 'string' ? rp.xrayBackLineType : 'dashed',
+      ariaLabel: 'X-ray back-face line type',
+      onChange: (v) => o.write('xrayBackLineType', v),
+    }));
+    o.comps.push(UI.Select(o.row('Depth cue'), {
+      options: [
+        { value: 'off', label: 'Off' }, { value: 'density', label: 'Density' },
+        { value: 'weight', label: 'Weight' }, { value: 'both', label: 'Both' },
+      ],
+      value: ['density', 'weight', 'both'].includes(rp.xrayDepthCue) ? rp.xrayDepthCue : 'off',
+      ariaLabel: 'X-ray depth cue',
+      onChange: (v) => o.write('xrayDepthCue', v),
+    }));
+    o.comps.push(UI.Select(o.row('Back pen'), {
+      options: [{ value: '', label: 'Inherit' }].concat((o.pens || []).map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
+      value: rp.xrayBackPenId || '',
+      ariaLabel: 'X-ray back-face pen',
+      onChange: (v) => o.write('xrayBackPenId', v || null),
+    }));
+    if (o.ctx.cls !== 'faceted') {
+      o.comps.push(UI.SegCtrl(o.row('Front'), {
+        options: [{ value: 'solid', label: 'Solid' }, { value: 'faded', label: 'Faded' }],
+        value: rp.xrayFront === 'faded' ? 'faded' : 'solid',
+        ariaLabel: 'X-ray near surface',
+        onChange: (v) => o.write('xrayFront', v),
+      }));
+    }
+  };
+
   // Compact panel for one object3d LEAF layer — Inspector (dims / transform /
   // fidelity / visibility / role) + Style, re-keyed to layer.params.
   const buildObjectPanel = (ui, layer, container) => {
@@ -1343,7 +1791,20 @@
         options: [{ value: '', label: 'Layer pen' }].concat(pens.map((p) => ({ value: p.id, label: p.name || p.id }))),
         value: style.penId || '',
         ariaLabel: 'Style pen',
-        onChange: (v) => { commit(() => { style.penId = v || null; }); },
+        // U3 — keep the Layers-panel pen pill in step with the pen that
+        // actually routes this object's ink (style.penId). "Layer pen" falls
+        // back to the owning scene group's pen, which is what the engine draws
+        // an unpenned style with.
+        onChange: (v) => {
+          commit(() => {
+            style.penId = v || null;
+            const grp = sceneGroupOf(ui, layer);
+            const penId = v || (grp && grp.penId) || null;
+            const pen = penId ? pens.find((pn) => pn.id === penId) : null;
+            if (pen) { layer.penId = pen.id; layer.color = pen.color; layer.strokeWidth = pen.width; }
+          });
+          try { ui.renderLayers && ui.renderLayers(); } catch (_) { /* non-DOM */ }
+        },
       }));
       const leafTypeSelect = UI.Select(labeledRow(host, 'Type'), {
         options: MAPPERS,
@@ -1377,7 +1838,7 @@
       if (FILL_MAPPERS.has(style.mapper)) {
         if (!style.params || typeof style.params !== 'object') style.params = {};
         slider(host, 'Density', {
-          value: Number.isFinite(style.params.fillDensity) ? style.params.fillDensity : 50, min: 1, max: 220, step: 1, defaultValue: 50,
+          value: Number.isFinite(style.params.fillDensity) ? style.params.fillDensity : 50, min: 1, max: DENSITY_MAX, step: 1, defaultValue: 50,
           ariaLabel: 'Fill density',
           ...liveSlider((v) => { style.params.fillDensity = Math.round(v); }),
         });
@@ -1405,13 +1866,15 @@
         }));
         // W-38 — "minimum facet rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
         // hatch/crosshatch only, matching D_FACETFLOOR's MAPPER_CONTROLS entry.
-        if (style.mapper === 'hatch' || style.mapper === 'crosshatch') {
+        const minRulingsVerdict = gateVerdict('facetMinRulings', styleGateCtx(params.primitive, style.mapper, style.params));
+        if ((style.mapper === 'hatch' || style.mapper === 'crosshatch') && minRulingsVerdict !== false) {
           slider(host, 'Min rulings', {
             value: Number.isFinite(style.params.facetMinRulings) ? style.params.facetMinRulings : 3,
             min: 1, max: 8, step: 1, defaultValue: 3,
             ariaLabel: 'Minimum facet rulings',
-            ...liveSlider((v) => { style.params.facetMinRulings = Math.round(v); }),
+            ...liveSlider((v) => { if (typeof minRulingsVerdict === 'string') return; style.params.facetMinRulings = Math.round(v); }),
           });
+          if (typeof minRulingsVerdict === 'string') markRowDisabled(host.lastElementChild, minRulingsVerdict);
         }
       }
       // CtS I5 — depth-slice ('contourSlice') controls on a converted/native
@@ -1447,6 +1910,24 @@
         });
       }
 
+      // ── U3 — Object 3D parity with the scene Style editor (r3 headline 1).
+      // In a scene TREE this leaf is the ONLY surface that reaches the object
+      // (its own style wins the whole-style cascade), so every row the scene
+      // editor offers is mounted here through the SAME shared renderers, minus
+      // the rows this panel already builds by hand above (LEAF_NATIVE_KEYS).
+      const leafShared = {
+        host,
+        comps,
+        row: (lbl) => labeledRow(host, lbl),
+        sp: style.params,
+        ctx: styleGateCtx(params.primitive, style.mapper, style.params),
+        pens,
+        header: true,
+        write: (key, value) => { commit(() => { style.params[key] = value; }); renderStyle(); },
+        remove: (key) => { commit(() => { delete style.params[key]; }); renderStyle(); },
+      };
+      renderMapperRows(leafShared, LEAF_NATIVE_KEYS);
+
       // ── Fill lines — this object's INTERNAL fill output. The Object tab's
       // Border lines group is the other half of the split; neither reaches the
       // other's ink. Writes straight to this leaf's own style.params (a leaf
@@ -1458,6 +1939,11 @@
         params: style.params,
         write: (key, value) => { commit(() => { style.params[key] = value; }); },
       });
+
+      // ── Line / Highlight / X-ray — shared with the scene Style editor.
+      renderLineRows(leafShared);
+      renderHighlightRows(leafShared);
+      if (params.visibility === 'xray') renderXrayRows(leafShared);
 
       // ── Border (fs-c3-panel Job 3a) — per-object silhouette outline. Mirrors
       // the scene/object/face style editor's Border group (same obj.border.*
@@ -3276,7 +3762,7 @@
           options: groups,
           value: law,
           ariaLabel: FS.SHADOW_ARIA,
-          onChange: (v) => { commit(() => { ensureShadow().shadowToneLaw = v; }); },
+          onChange: (v) => { commit(() => { ensureShadow().shadowToneLaw = v; }); renderShadow(); },
         }));
         // fs-y1 Job 1 — "for all fill styles": the shadow tone-law picker is
         // a Fill Style control too, so it gets the same click-driven (i) as
@@ -3409,6 +3895,21 @@
         ariaLabel: 'Shadow density',
         ...liveSlider((v) => { ensureShadow().shadowDensity = Math.round(v); }),
       });
+
+      // U3 — Tone depth (shadowToneDepth, engine-read since fs-z2 but never
+      // offered): how strongly the flat shadow darkens toward the contact
+      // point, borrowing the object's tone ladder (0 = even shadow). Only the
+      // flat build reads it — removed under Layers / an area light (the same
+      // gate as the Fill Style row above) and under No Tone (forced to 0).
+      if (toneLawIsLive && s.shadowToneLaw !== 'none') {
+        const tdRow = sliderRow(host, comps, 'Tone depth', {
+          value: Number.isFinite(s.shadowToneDepth) ? s.shadowToneDepth : 0.75,
+          min: 0, max: 1, step: 0.05, defaultValue: 0.75,
+          ariaLabel: 'Shadow tone depth',
+          ...liveSlider((v) => { ensureShadow().shadowToneDepth = Math.round(v * 100) / 100; }),
+        });
+        if (tdRow) tdRow.setAttribute('title', 'How much darker the shadow gets near the object. 0 draws an even shadow.');
+      }
 
       // Pen (Inherit = the caster's pen).
       const penRow = document.createElement('div');
@@ -4192,54 +4693,33 @@
         styleHost.appendChild(row);
         return host;
       };
-      // A descriptor may carry `help` — one sentence of plain-language help
-      // copy, rendered as the row's own tooltip. This is the documentation
-      // surface for 3D params: the in-app Help Guide has no 3D Scene section,
-      // and the (i) popover is the Fill Style picker's alone.
-      const renderControl = (d) => {
-        const startIdx = styleHost.childElementCount;
-        renderControlBase(d);
-        if (!d.help) return;
-        for (let i = startIdx; i < styleHost.childElementCount; i += 1) {
-          const el = styleHost.children[i];
-          if (el && el.classList && el.classList.contains('vs3-row')) el.setAttribute('title', d.help);
-        }
-      };
-      const renderControlBase = (d) => {
-        const rp = resolved.params || {};
-        const has = rp[d.key] !== undefined && rp[d.key] !== null;
-        const raw = has ? rp[d.key] : d.default;
-        const write = (val) => commitStyle({ params: { ...clone(resolved.params || {}), [d.key]: val } });
-        const aria = d.ariaLabel || d.label;
-        if (d.kind === 'slider') {
-          sliderRow(styleHost, styleComps, d.label, {
-            value: Number.isFinite(raw) ? raw : d.default,
-            min: d.min, max: d.max, step: d.step, defaultValue: d.default, ariaLabel: aria,
-            onCommit: (v) => write(v),
-          });
-        } else if (d.kind === 'dial') {
-          const host = labeledHost(d.label);
-          const dv = Number.isFinite(raw) ? raw : d.default;
-          const clampV = (v) => Math.min(d.max, Math.max(d.min, v));
-          if (UI.AngleDial) {
-            styleComps.push(UI.AngleDial(host, { value: dv, ariaLabel: aria, defaultValue: d.default, onCommit: (v) => write(clampV(v)) }));
-          } else {
-            styleComps.push(UI.Slider(host, { value: dv, min: d.min, max: d.max, step: d.step, defaultValue: d.default, ariaLabel: aria, onCommit: (v) => write(v) }));
-          }
-        } else if (d.kind === 'select') {
-          styleComps.push(UI.Select(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
-        } else if (d.kind === 'lawpick') {
-          // U9 — the Fill Style (tone law) picker. Options grouped by MARK
-          // CLASS, then a description block so this descriptive surface says
-          // what the law actually does and — for the 11 demoted library laws —
-          // why it is demoted. `write` routes through commitStyle, which is a
-          // whole-style write AT THE CURRENT SCOPE (scene / object / face), so
-          // editing a face override edits the face and not the object it
-          // belongs to.
+      // U3 — every mapper row, the Line block and the Highlight / X-ray
+      // blocks render through the SHARED module-level renderers (also mounted
+      // by the Object 3D leaf panel), wired here to the whole-style commit at
+      // the CURRENT scope (CONTRACT C, one undo per gesture). `gate` carries
+      // the measured reachability rules (CONTROL_GATES).
+      const gate = styleGateCtx(scopePrimitiveMode(scope), resolved.mapper, resolved.params || {});
+      const shared = {
+        host: styleHost,
+        comps: styleComps,
+        row: labeledHost,
+        sp: resolved.params || {},
+        ctx: gate,
+        pens,
+        header: false,
+        write: (key, val) => commitStyle({ params: { ...clone(resolved.params || {}), [key]: val } }),
+        remove: (key) => {
+          const next = clone(resolved.params || {});
+          delete next[key];
+          commitStyle({ params: next });
+        },
+        // U9 — the Fill Style (tone law) picker. `write` routes through
+        // commitStyle, a whole-style write AT THE CURRENT SCOPE.
+        lawpick: (d, raw) => {
           fillStyleControls(styleHost, styleComps, {
             row: labeledHost,
             value: typeof raw === 'string' ? raw : d.default,
-            write: (v) => write(v),
+            write: (v) => commitStyle({ params: { ...clone(resolved.params || {}), toneLaw: v } }),
             writeStyleParams: (patch) => commitStyle({ params: { ...clone(resolved.params || {}), ...patch } }),
             paramsBag: resolved.params || {},
             rerender: renderStyle,
@@ -4250,77 +4730,12 @@
             totalFaces: scopeTotalFaces(scope),
             mapper: resolved.mapper,
           });
-        } else if (d.kind === 'seg') {
-          styleComps.push(UI.SegCtrl(labeledHost(d.label), { options: d.options, value: typeof raw === 'string' ? raw : d.default, ariaLabel: aria, onChange: (v) => write(v) }));
-        } else if (d.kind === 'toggle') {
-          styleComps.push(UI.SegCtrl(labeledHost(d.label), {
-            options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
-            value: raw === true ? 'on' : 'off', ariaLabel: aria, onChange: (v) => write(v === 'on'),
-          }));
-        } else if (d.kind === 'multi') {
-          const cur = raw && typeof raw === 'object' ? raw : d.default;
-          const selected = d.options.filter((o) => cur[o.value] !== false).map((o) => o.value);
-          styleComps.push(UI.TogGrp(labeledHost(d.label), {
-            options: d.options, multiple: true, value: selected, ariaLabel: aria,
-            onChange: (arr) => {
-              const next = {};
-              d.options.forEach((o) => { next[o.value] = arr.indexOf(o.value) !== -1; });
-              write(next);
-            },
-          }));
-        }
+        },
       };
-      (MAPPER_CONTROLS[resolved.mapper] || []).forEach(renderControl);
+      renderMapperRows(shared, null);
 
-      // ── Shared line treatment (Phase 1.1) — every fill mapper. Writes the
-      // stroke params honored at the scene3d emit chokepoint (line type / dash
-      // scale / hand wobble). One-undo-per-gesture via liveSlider on the sliders.
-      if (FILL_MAPPERS.has(resolved.mapper)) {
-        const sp = () => clone(resolved.params || {});
-        const rp = resolved.params || {};
-
-        const lineTypeRow = document.createElement('div');
-        lineTypeRow.className = 'vs3-row';
-        const ltLbl = document.createElement('label');
-        ltLbl.className = 'vs3-lbl';
-        ltLbl.textContent = 'Line';
-        lineTypeRow.appendChild(ltLbl);
-        const ltHost = document.createElement('div');
-        ltHost.className = 'vs3-ctl';
-        lineTypeRow.appendChild(ltHost);
-        styleHost.appendChild(lineTypeRow);
-        styleComps.push(UI.Select(ltHost, {
-          options: LINE_TYPE_OPTIONS,
-          value: typeof rp.lineType === 'string' ? rp.lineType : 'solid',
-          ariaLabel: 'Line type',
-          onChange: (v) => commitStyle({ params: { ...sp(), lineType: v } }),
-        }));
-
-        // Dash length (I15) — scales the dash pattern length. Only meaningful
-        // when the line dashes, so it's hidden for a solid line and shown for
-        // dashed / dash-dot / dotted. The lineType Select re-renders via
-        // commitStyle, so the row appears/disappears on the toggle. Style writes
-        // route through commitStyle (CONTRACT C whole-style write) = one
-        // undo/gesture, preview on release — same pattern as Density / Angle.
-        const lt = typeof rp.lineType === 'string' ? rp.lineType : 'solid';
-        if (lt === 'dashed' || lt === 'dashdot' || lt === 'dotted') {
-          sliderRow(styleHost, styleComps, 'Dash length', {
-            value: Number.isFinite(rp.dashScale) ? rp.dashScale : STROKE_DEFAULTS.dashScale,
-            min: 0.25, max: 4, step: 0.05,
-            defaultValue: STROKE_DEFAULTS.dashScale,
-            ariaLabel: 'Dash length',
-            onCommit: (v) => commitStyle({ params: { ...sp(), dashScale: v } }),
-          });
-        }
-
-        sliderRow(styleHost, styleComps, 'Wobble', {
-          value: Number.isFinite(rp.wobble) ? rp.wobble : STROKE_DEFAULTS.wobble,
-          min: 0, max: 100, step: 1,
-          defaultValue: STROKE_DEFAULTS.wobble,
-          ariaLabel: 'Hand wobble',
-          onCommit: (v) => commitStyle({ params: { ...sp(), wobble: v } }),
-        });
-      }
+      // ── Shared line treatment (Phase 1.1) — every fill mapper.
+      renderLineRows(shared);
 
       // ── Fill lines — the INTERNAL fill output of curved geometry (Curves /
       // Smoothing / Simplify / Fidelity). The other half of the split: the
@@ -4411,233 +4826,17 @@
         }
       }
 
-      // ── Highlight treatment (Phase 4) — every fill mapper. Selects what the
-      // top tone band(s) render as instead of always dropping to bare paper
-      // (blank = the legacy look). Sub-controls (band count / density / alt-fill
-      // mapper / burst) appear per treatment. Writes style.params; scene3d reads
-      // them. Reads-with-default (like the x-ray block) — no forced seeding, so a
-      // 'blank' scene stays byte-identical.
-      if (FILL_MAPPERS.has(resolved.mapper)) {
-        const sp = () => clone(resolved.params || {});
-        const rp = resolved.params || {};
-        const SH = SCENE_HIGHLIGHT();
-        const treatment = SH.resolve(rp.highlightTreatment);
-
-        const hlHdr = document.createElement('div');
-        hlHdr.className = 'vs3-hl-hdr';
-        hlHdr.textContent = 'Highlight';
-        styleHost.appendChild(hlHdr);
-
-        styleComps.push(UI.Select(labeledHost('Treatment'), {
-          options: SH.TREATMENTS,
-          value: treatment,
-          ariaLabel: 'Highlight treatment',
-          onChange: (v) => commitStyle({ params: { ...sp(), highlightTreatment: v } }),
-        }));
-
-        // I8 — highlight MODE: 'perFace' (the legacy per-face/per-band highlight)
-        // vs 'lightDriven' (the highlight is placed by the ACTUAL per-sample
-        // specular — a localized glint that spans the faces a nearby point light
-        // lights). lightDriven adds a Sensitivity slider (1 = binary difference,
-        // N = a graded gradient). Shadow grade mirrors it on the dark end.
-        const hlMode = rp.highlightMode === 'lightDriven' ? 'lightDriven' : 'perFace';
-        styleComps.push(UI.SegCtrl(labeledHost('Highlight mode'), {
-          options: [{ value: 'perFace', label: 'Per-face' }, { value: 'lightDriven', label: 'Light' }],
-          value: hlMode,
-          ariaLabel: 'Highlight mode',
-          onChange: (v) => commitStyle({ params: { ...sp(), highlightMode: v } }),
-        }));
-        const stageOf = (val) => Math.min(6, Math.max(1, Math.round(Number.isFinite(val) ? val : 1)));
-        if (hlMode === 'lightDriven') {
-          sliderRow(styleHost, styleComps, 'Sensitivity', {
-            value: stageOf(rp.highlightSensitivity),
-            min: 1, max: 6, step: 1, defaultValue: 1, ariaLabel: 'Highlight sensitivity',
-            onCommit: (v) => commitStyle({ params: { ...sp(), highlightSensitivity: Math.round(v) } }),
-          });
-        }
-        // Shadow grade (dark-side sensitivity) applies in BOTH modes — default 1
-        // is the byte-identical no-op.
-        sliderRow(styleHost, styleComps, 'Shadow grade', {
-          value: stageOf(rp.shadowSensitivity),
-          min: 1, max: 6, step: 1, defaultValue: 1, ariaLabel: 'Shadow sensitivity',
-          onCommit: (v) => commitStyle({ params: { ...sp(), shadowSensitivity: Math.round(v) } }),
-        });
-
-        // Bands / HL density / Alt fill / Burst / HL pen all configure highlight
-        // ink. Under "None" (and "Blank") there is none to configure, so the
-        // rows are REMOVED, not disabled — same rule as the ctxbar flyout.
-        if (SH.hasDetailControls(treatment)) {
-          const bands = Math.min(2, Math.max(1, Math.round(Number.isFinite(rp.highlightBands) ? rp.highlightBands : 1)));
-          styleComps.push(UI.SegCtrl(labeledHost('Bands'), {
-            options: [{ value: '1', label: '1' }, { value: '2', label: '2' }],
-            value: String(bands),
-            ariaLabel: 'Highlight band count',
-            onChange: (v) => commitStyle({ params: { ...sp(), highlightBands: parseInt(v, 10) } }),
-          }));
-
-          if (treatment === 'sparse' || treatment === 'altFill' || treatment === 'stippleOut') {
-            sliderRow(styleHost, styleComps, 'HL density', {
-              value: Number.isFinite(rp.highlightDensity) ? rp.highlightDensity : 25,
-              min: 1, max: 100, step: 1, defaultValue: 25, ariaLabel: 'Highlight density',
-              onCommit: (v) => commitStyle({ params: { ...sp(), highlightDensity: v } }),
-            });
-          }
-          if (treatment === 'altFill') {
-            styleComps.push(UI.Select(labeledHost('Alt fill'), {
-              options: ALT_FILL_MAPPER_OPTIONS,
-              value: ALT_FILL_MAPPER_OPTIONS.some((o) => o.value === rp.altFillMapper) ? rp.altFillMapper : 'stipple',
-              ariaLabel: 'Alternate fill mapper',
-              onChange: (v) => commitStyle({ params: { ...sp(), altFillMapper: v } }),
-            }));
-          }
-          if (treatment === 'burst') {
-            sliderRow(styleHost, styleComps, 'Burst count', {
-              value: Number.isFinite(rp.burstCount) ? rp.burstCount : 16,
-              min: 6, max: 48, step: 1, defaultValue: 16, ariaLabel: 'Burst ray count',
-              onCommit: (v) => commitStyle({ params: { ...sp(), burstCount: v } }),
-            });
-            styleComps.push(UI.SegCtrl(labeledHost('Burst centre'), {
-              options: [{ value: 'specular', label: 'Glint' }, { value: 'centroid', label: 'Centre' }],
-              value: rp.burstCenter === 'centroid' ? 'centroid' : 'specular',
-              ariaLabel: 'Burst centre',
-              onChange: (v) => commitStyle({ params: { ...sp(), burstCenter: v } }),
-            }));
-          }
-          // Highlight pen (inherit unless overridden).
-          styleComps.push(UI.Select(labeledHost('HL pen'), {
-            options: [{ value: '', label: 'Inherit' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
-            value: rp.highlightPenId || '',
-            ariaLabel: 'Highlight pen',
-            onChange: (v) => commitStyle({ params: { ...sp(), highlightPenId: v || null } }),
-          }));
-        }
-      }
+      // ── Highlight treatment (Phase 4) — every fill mapper (shared renderer;
+      // PRH-027 gating for curved shapes lives in renderHighlightRows).
+      renderHighlightRows(shared);
 
       // ── X-ray controls (Phase 6) — shown only when the selected OBJECT is set
-      // to visibility:'xray' (the tree eye toggle is the on/off). These shape how
-      // the far surface shows through: back-face fills (THE FIX), their density /
-      // line / pen, the dashed hidden edges, and the near-surface fade.
+      // to visibility:'xray' (the tree eye toggle is the on/off). Rendered by
+      // the shared renderXrayRows (also mounted by the leaf panel). Under a
+      // non-fill Type the header shows with a "needs a surface fill" note,
+      // rows removed (mirrors the ctxbar X-ray flyout's needsFillHint).
       const xrayObj = getObject(scope.target.objectId);
-      // X-ray shows the FAR SURFACE through the near one, so every control in
-      // this group is FILL ink: scene3d.js emits the back-face family only for a
-      // SURFACE-FILL mapper (the faceted path bails on
-      // `!SURFACE_FILL.has(style.mapper)`; the curved path only tags `line.back`
-      // inside SurfaceFill). Under None / Wireframe / Contour slice the object
-      // has no surface to see through and x-ray output is byte-identical to
-      // solid — the six rows below would all be dead. Show the header and say
-      // why instead, mirroring the ctxbar X-ray flyout's needsFillHint and
-      // Shadow ▸ Angle under Follow light. Rows removed, never disabled.
-      const xrayOnHere = Boolean(xrayObj && xrayObj.visibility === 'xray');
-      const xrayHasFill = FILL_MAPPERS.has(resolved.mapper);
-      if (xrayOnHere && !xrayHasFill) {
-        const hdr = document.createElement('div');
-        hdr.className = 'vs3-xray-hdr';
-        hdr.textContent = 'X-ray';
-        styleHost.appendChild(hdr);
-        const note = document.createElement('div');
-        note.className = 'vs3-xray-note';
-        note.textContent = 'Back faces need a surface fill — set Fill above.';
-        styleHost.appendChild(note);
-      }
-      if (xrayOnHere && xrayHasFill) {
-        const sp = () => clone(resolved.params || {});
-        const rp = resolved.params || {};
-
-        const hdr = document.createElement('div');
-        hdr.className = 'vs3-xray-hdr';
-        hdr.textContent = 'X-ray';
-        styleHost.appendChild(hdr);
-
-        const toggleRow = (label, aria, on, onChange) => {
-          const row = document.createElement('div');
-          row.className = 'vs3-row';
-          const lbl = document.createElement('label');
-          lbl.className = 'vs3-lbl';
-          lbl.textContent = label;
-          row.appendChild(lbl);
-          const host = document.createElement('div');
-          host.className = 'vs3-ctl';
-          row.appendChild(host);
-          styleHost.appendChild(row);
-          styleComps.push(UI.SegCtrl(host, {
-            options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
-            value: on ? 'on' : 'off',
-            ariaLabel: aria,
-            onChange: (v) => onChange(v === 'on'),
-          }));
-        };
-        const selectRow = (label, aria, options, value, onChange) => {
-          const row = document.createElement('div');
-          row.className = 'vs3-row';
-          const lbl = document.createElement('label');
-          lbl.className = 'vs3-lbl';
-          lbl.textContent = label;
-          row.appendChild(lbl);
-          const host = document.createElement('div');
-          host.className = 'vs3-ctl';
-          row.appendChild(host);
-          styleHost.appendChild(row);
-          styleComps.push(UI.Select(host, { options, value, ariaLabel: aria, onChange }));
-        };
-
-        // Back-face fills (the fix) — default ON.
-        toggleRow('Back faces', 'X-ray back-face fills', rp.xrayBackFaces !== false,
-          (on) => commitStyle({ params: { ...sp(), xrayBackFaces: on } }));
-
-        // Back density (0.2–1) — far surface sparser than the near one.
-        sliderRow(styleHost, styleComps, 'Back density', {
-          value: Number.isFinite(rp.xrayBackDensity) ? rp.xrayBackDensity : 0.4,
-          min: 0.2, max: 1, step: 0.05,
-          defaultValue: 0.4,
-          ariaLabel: 'X-ray back-face density',
-          onCommit: (v) => commitStyle({ params: { ...sp(), xrayBackDensity: v } }),
-        });
-
-        // Back line type — default dashed (the see-through read).
-        selectRow('Back line', 'X-ray back-face line type', LINE_TYPE_OPTIONS,
-          typeof rp.xrayBackLineType === 'string' ? rp.xrayBackLineType : 'dashed',
-          (v) => commitStyle({ params: { ...sp(), xrayBackLineType: v } }));
-
-        // Depth cue (Quantitative X-ray) — modulate the see-through back-fill by
-        // how far behind the front surface each sample sits: faint→heavy = near→far.
-        // Off (default) is the flat x-ray.
-        selectRow('Depth cue', 'X-ray depth cue', [
-          { value: 'off', label: 'Off' },
-          { value: 'density', label: 'Density' },
-          { value: 'weight', label: 'Weight' },
-          { value: 'both', label: 'Both' },
-        ], ['density', 'weight', 'both'].includes(rp.xrayDepthCue) ? rp.xrayDepthCue : 'off',
-          (v) => commitStyle({ params: { ...sp(), xrayDepthCue: v } }));
-
-        // Back pen — inherit the object pen unless overridden.
-        selectRow('Back pen', 'X-ray back-face pen',
-          [{ value: '', label: 'Inherit' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
-          rp.xrayBackPenId || '',
-          (v) => commitStyle({ params: { ...sp(), xrayBackPenId: v || null } }));
-
-        // X-RAY FOLD: hidden EDGES are no longer an x-ray control — the per-object
-        // Edge Styles → Hidden → Drop|Dash owns them. The X-ray group is fills-only
-        // now (Back faces / density / line / pen / Front). The xrayHiddenEdges param
-        // stays inert (still serialized for back/forward-compat, just unread).
-
-        // Near surface: solid or faded (dotted).
-        const frontRow = document.createElement('div');
-        frontRow.className = 'vs3-row';
-        const frontLbl = document.createElement('label');
-        frontLbl.className = 'vs3-lbl';
-        frontLbl.textContent = 'Front';
-        frontRow.appendChild(frontLbl);
-        const frontHost = document.createElement('div');
-        frontHost.className = 'vs3-ctl';
-        frontRow.appendChild(frontHost);
-        styleHost.appendChild(frontRow);
-        styleComps.push(UI.SegCtrl(frontHost, {
-          options: [{ value: 'solid', label: 'Solid' }, { value: 'faded', label: 'Faded' }],
-          value: rp.xrayFront === 'faded' ? 'faded' : 'solid',
-          ariaLabel: 'X-ray near surface',
-          onChange: (v) => commitStyle({ params: { ...sp(), xrayFront: v } }),
-        }));
-      }
+      if (xrayObj && xrayObj.visibility === 'xray') renderXrayRows(shared);
 
       // ── Edge Styles (C-06) — SCENE-WIDE per-edge-class styling. Mounts on the
       // scene group (scope 'scene'). Each class carries its own pen / weight /
@@ -4738,11 +4937,27 @@
       { value: '3', label: '3' },
       { value: '4', label: '4' },
     ];
+    // U3 — every object fill in this scene, as a gate context (primitive /
+    // Type / effective Fill Style). Reads the assembled tree when the engine
+    // has composed it (a scene TREE keeps its objects on child layers), else
+    // the monolith's own objects.
+    const toneConsumers = () => {
+      const assembled = layer._sceneAssembled;
+      const objs = (assembled && Array.isArray(assembled.objects) && assembled.objects.length)
+        ? assembled.objects : (Array.isArray(params.objects) ? params.objects : []);
+      const table = (assembled && assembled.styleTable) || params.styleTable;
+      if (!SC) return [];
+      return objs.filter((o) => o && o.id).map((o) => {
+        const r = SC.resolve(table, { objectId: o.id });
+        return styleGateCtx(o.primitive, r.mapper, r.params || {});
+      });
+    };
     const renderTone = () => {
       if (!toneHost) return;
       destroyComps(toneComps);
       toneHost.textContent = '';
       const tone = ensureTone();
+      const consumers = toneConsumers();
 
       const bandRow = document.createElement('div');
       bandRow.className = 'vs3-row';
@@ -4754,6 +4969,10 @@
       bandCtl.className = 'vs3-ctl';
       bandRow.appendChild(bandCtl);
       toneHost.appendChild(bandRow);
+      buildLawInfoAffordance(bandRow, [
+        { text: consumers.length && !consumers.some(toneLiveFor) ? TONE_NOTES.bandsNone : '', kind: 'faceted' },
+        { text: TONE_NOTES.bands },
+      ], 'Which fills read the tone bands');
       toneComps.push(UI.SegCtrl(bandCtl, {
         options: BAND_OPTIONS,
         value: tone.enabled === false ? 'flat' : String(tone.bands),
@@ -4829,16 +5048,22 @@
       specCtl.className = 'vs3-ctl';
       specRow.appendChild(specCtl);
       toneHost.appendChild(specRow);
+      // U3 — disabled (with its reason) when no object in the scene draws a
+      // specular: PRH-027 keeps the curved specular stage off in the engine.
+      // An empty / unknown object list fails open.
+      const specularDead = consumers.length > 0 && !consumers.some(specularLiveFor);
       toneComps.push(UI.SegCtrl(specCtl, {
         options: [{ value: 'on', label: 'On' }, { value: 'off', label: 'Off' }],
         value: tone.specular.enabled === false ? 'off' : 'on',
         ariaLabel: 'Specular highlight',
         onChange: (v) => {
+          if (specularDead) return;
           commit(() => { ensureTone().specular.enabled = v === 'on'; });
           renderTone();
         },
       }));
-      if (tone.specular.enabled !== false) {
+      if (specularDead) markRowDisabled(specRow, TONE_NOTES.specular);
+      if (tone.specular.enabled !== false && !specularDead) {
         sliderRow(toneHost, toneComps, 'Highlight size', {
           value: Number.isFinite(tone.specular.size) ? tone.specular.size : 1,
           min: 0.2, max: 3, step: 0.1,

@@ -7,6 +7,43 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **3D Scene — the Object 3D Style tab reaches every style control.** In a scene tree each object
+  keeps its own style, so the scene group's Style editor only ever restyled the ground. The
+  Object 3D panel now offers every row that editor has: Cross angle / Cross density / Triple
+  hatch, Angle ref, Link fill, contour Style, the five spiral rows, the four dot rows, wireframe
+  Edges / Show hidden, a **Stroke** group (Line, Dash length, Wobble), a **Highlight** group and,
+  for an x-ray object, the **X-ray** group. Both surfaces render from one shared set of rows.
+- **3D Scene — engine controls that had no UI.** *Wobble scale* (shown once Wobble is on, on
+  faceted fills), *Overstroke* (every fill), spiral *Pitch* and contour *Step* (Auto follows
+  Density; Set fixes the spacing in mm — faceted shapes, Flat spirals, Region contours),
+  quantised-field *Levels* (Continuous Field ▸ Quantised, curved shapes) and the shadow's
+  *Tone depth* (flat shadows). Each is offered only where it measurably changes output.
+  **Defaults reproduce previous output** — opening the panel writes nothing.
+
+### Changed
+- **3D Scene — Density reaches 500** (was 220) on the Object 3D panel, the scene Style editor and
+  the context-bar Style flyout, matching the engine's own clamp.
+- **3D Scene — honest controls.** Rows that cannot apply to the shape are removed (Min rulings,
+  Angle ref and Link fill on curved shapes; Triple hatch, contour Style and spiral Centre / Mode
+  on faceted shapes; Dot angle for a round dot; x-ray Front on faceted shapes). Rows the current
+  Fill Style ignores are greyed with an (i) reason (Triple hatch under Ladder, Continuous Field,
+  Deep Fill and the field-driven styles; Cross angle / density, Angle ref and Link fill under
+  field-driven styles; Eccentricity under Ladder on curved shapes; Jitter on curved shapes). On
+  curved shapes the Highlight list disables the treatments that draw nothing there (PRH-027) and
+  drops Mode / Sensitivity / Shadow grade / HL density / HL pen. The Highlight band count is no
+  longer offered (it changed nothing anywhere). Tone ▸ Specular is greyed when no object in the
+  scene draws one; Tone ▸ Bands gains an (i) naming the fills that read it.
+- **3D Scene — the Fill Style picker no longer greys live styles on curved Spiral / Stipple.**
+  It greyed 45 of 48 styles as "no effect here"; measured against the engine, only Deep Fill
+  (and Fine Ladder on a pyramid + Stipple) draws exactly like Ladder. The rest are offered again;
+  width-based styles carry an (i) note that they draw centrelines only on these fills.
+
+### Fixed
+- **3D Scene — "Assign pen" on an Object 3D row in the Layers panel now routes that object's
+  ink.** It used to recolour the row only. It now sets the object's style pen and recomposes the
+  scene; the Style tab's Pen row keeps the row's pen dot in step.
+
+### Added
 - **3D Scene · Slices gains an End overlap control.** How far each depth-slice ring is carried
   past (or pulled back from) the object's silhouette, in pen widths (−2…8, step 0.25). **The
   default is 0 and is byte-identical to previous builds** — nothing about an existing scene

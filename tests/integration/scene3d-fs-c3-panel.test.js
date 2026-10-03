@@ -172,24 +172,26 @@ describe('fs-c3-panel — left-hand 3D panel: angle dial / density domain / leaf
   // 350 vs 500 are visually indistinguishable — so the slider stops where the
   // output stops changing, not where the engine happens to still accept a
   // number). This only asserts the declared UI domain.
-  describe('Job 2 — fillDensity UI max is 220 (consistent min) everywhere declared', () => {
-    test('shared scene/object/face style editor (D_DENSITY) declares min 1 / max 220', () => {
+  // U3 (fill-style review, owner decision 2026-10-02) — raised 220 -> 500,
+  // the engine's own clamp, on every surface.
+  describe('Job 2 — fillDensity UI max is 500 (consistent min) everywhere declared', () => {
+    test('shared scene/object/face style editor (D_DENSITY) declares min 1 / max 500', () => {
       const { container } = mountGroupObjectScope();
       clickTab(container, 'style');
       setHatchMapper(container);
       const density = container.querySelector('input.ctrl-slider[aria-label="Fill density"]');
       expect(density).toBeTruthy();
       expect(density.min).toBe('1');
-      expect(density.max).toBe('220');
+      expect(density.max).toBe('500');
     });
 
-    test('leaf panel Density slider declares min 1 / max 220 (was min 5 / max 100)', () => {
+    test('leaf panel Density slider declares min 1 / max 500 (was min 5 / max 100)', () => {
       const { container } = mountLeaf('hatch');
       clickTab(container, 'style');
       const density = container.querySelector('input.ctrl-slider[aria-label="Fill density"]');
       expect(density).toBeTruthy();
       expect(density.min).toBe('1');
-      expect(density.max).toBe('220');
+      expect(density.max).toBe('500');
     });
   });
 

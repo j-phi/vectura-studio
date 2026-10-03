@@ -1745,8 +1745,9 @@
       flyMixedSlider(flyRow(fly, C.density.label), {
         mixed: sceneAgree(sc, (id) => { const p = rs(id).params || {}; return Number.isFinite(p.fillDensity) ? p.fillDensity : 50; }).mixed,
         props: {
-          // Max raised 200 → 220 (context-bar side only, fs-m2 Job 3).
-          value: dv, min: 1, max: 220, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
+          // Max raised 200 → 220 (fs-m2 Job 3) → 500 (U3: the engine's own
+          // clamp, matching the 3D panel's DENSITY_MAX).
+          value: dv, min: 1, max: 500, step: 1, defaultValue: 50, ariaLabel: C.density.aria,
           onChange: (v) => write({ params: { ...params, fillDensity: v } }, { gesture: true, preview: true }),
           onCommit: (v) => write({ params: { ...params, fillDensity: v } }),
         },

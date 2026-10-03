@@ -597,6 +597,16 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.4.6
+- **3D Scene — the Object 3D Style tab reaches every style control.** In a scene tree the scene
+  Style editor only styles the ground; the Object 3D panel now offers all of its rows (cross,
+  spiral, dot, wireframe, Stroke, Highlight, X-ray), plus Wobble scale, Overstroke, spiral Pitch,
+  contour Step, quantised-field Levels and the shadow's Tone depth. Density reaches 500.
+- **3D Scene — honest controls.** Rows that cannot apply to the shape are removed; rows the Fill
+  Style ignores are greyed with an (i) reason. The Fill Style picker greys only styles that draw
+  exactly like Ladder (measured), so curved Spiral / Stipple offer their full range again.
+- **3D Scene — Layers-panel "Assign pen" on an Object 3D row now routes its ink.**
+
 ### 1.4.3
 - **3D Scene — curved-primitive borders now sit on the true silhouette.** A sphere, ellipsoid,
   cone, cylinder, or capsule's drawn outline used to fall up to 0.72 pen short of the real edge

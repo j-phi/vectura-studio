@@ -610,6 +610,8 @@
       layer.strokeWidth = pen.width;
       if (!layer.lineCap) layer.lineCap = 'round';
     });
+    // U3 — an Object 3D row routes ink through its style pen (layers-panel.js).
+    if (typeof UI.syncObject3dPen === 'function') UI.syncObject3dPen(this.app, layers, pen);
     this.clearArmedPen();
     this.renderLayers();
     this.app.render();

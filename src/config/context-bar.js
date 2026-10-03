@@ -525,48 +525,30 @@
       && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
     return (solidType || dflt) === dflt;
   };
-  // fs-e1 judge's ruling, item 5, EXTENDED by W-03 (F-03, clusters C-09..
-  // C-13) — this list is now INERT-OR-BARE-CENTRELINE, not just "byte-
-  // identical to Ladder". The original 9 (etfKang..mazeFill) are true
-  // no-ops: a mono law with no planar dispatch on the curved/spiral-stipple
-  // path at all. The other 36 are a DIFFERENT, later-measured failure: the
-  // spiral sink never calls `noteW` and stipple pushes dot rings with no
-  // run, so `wCnt === 0` and every width-modulated law's `ribbonize` step is
-  // skipped — the law still "runs", but every stretch degrades to its bare
-  // centreline (12 ribbon laws) or to plain rung-skipping indistinguishable
-  // from a handful of sibling laws (bundle x6, contField x5, pen x6, mk x4,
-  // and the remaining named laws below) — 18-19 distinct pictures across 39
-  // laws measured, 432 `bareCentrelinesOnly` shots. Keeping only `none` /
-  // `ladder` / `fineLadder` / `phaseFineLadder` reachable here is keeping
-  // exactly the "honest" rung-skipping options — the ones whose whole
-  // mechanism IS which rungs are drawn, so degrading to that is not a
-  // degradation at all. Nothing else in the curved arm is gated by this
-  // list — see the paired negative in `scene3d-fill-style-picker.test.js`
-  // "curved (sphere) + hatch/crosshatch is unaffected by the spiral/stipple
-  // gate". W-13 (future work) wires a real width profile into the spiral
-  // sink; when it lands, the 12 ribbon laws move back out of this list —
-  // see `SurfaceFill.lastRibbonStats` (ribbonLaw && wallRings === 0 on a
-  // sphere+spiral+taperedEnds build today) as the characterization proof
-  // that justifies the hide and the RED this list's shrink will satisfy.
-  const CURVED_SPIRAL_STIPPLE_INERT = [
-    // The original 9 — true no-ops, no planar dispatch at all.
-    'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
-    'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
-    // C-09 — bare centrelines (ribbon laws with no width profile on this path).
-    'nibAngle', 'taperedEnds', 'isophoteWidth', 'whiteBand',
-    // C-12 — bare centrelines / rung-skipping (ribbon + wave laws).
-    'weightModulated', 'weightSmoothstep', 'interlockWeave', 'trochoidLoop',
-    'onePenDown', 'penInterleave', 'penReserve', 'penPitchMatch',
-    // C-13 — rung-skipping, indistinguishable from Ladder/Fine Ladder here.
-    'perceptualRamp', 'lozengeStipple', 'deepFillTSP', 'ampSpacing',
-    'weaveDepth', 'amplitudeOnly', 'penCross', 'penFacing',
-    // C-10 — bundle (6) + contField (5) + penStipple: every rung drawn, ~ No Tone.
-    'bundleCount', 'bundleSubNib', 'bundleEased', 'bundleDither',
-    'bundleLozenge', 'bundleHandoff', 'contFieldSigmoid', 'contFieldTouch',
-    'contFieldFore', 'contFieldSurface', 'contFieldQuant', 'penStipple',
-    // C-11 — the mark emitter is never reached.
-    'mkScribble', 'mkTick', 'mkDashRamp', 'mkDotScreen',
-  ];
+  // U3 (fill-style review, r3 headline 4 / r2 NEW-5) — the curved
+  // Spiral/Stipple gate is now MEASURED, not inferred. The W-03 list this
+  // replaces greyed 45 of 48 ids as "drawing like Ladder", but the running
+  // engine gives 14-17 distinct pictures across the 48 ids on every curved
+  // primitive (sphere, ellipsoid, cylinder, cone, torus, torusKnot, capsule,
+  // superellipsoid, pyramid), and every greyed id except the ones below
+  // draws differently from Ladder. Many of those pictures are degraded (the
+  // spiral/stipple sinks publish no width profile, so a ribbon law draws its
+  // bare centrelines — `CURVED_SPIRAL_STIPPLE_DEGRADED_NOTE`), but a
+  // different picture is not "no effect", so they are offered again with that
+  // note in the (i) popover instead of being greyed.
+  //
+  // What stays here is exactly the ids whose object fill hash equals Ladder's
+  // (sceneFill paths of the object, every point to 3 dp plus path meta),
+  // measured on all nine curved primitives under both mappers:
+  //   deepFillTSP — identical to Ladder everywhere.
+  // Per-primitive extras are pinned below beside their own rule (pyramid +
+  // stipple: fineLadder; torus: originSpiral, gated for every mapper).
+  // `tests/integration/scene3d-fill-style-reach-measured.test.js` re-measures
+  // this against the engine and fails if the list and the engine disagree.
+  const CURVED_SPIRAL_STIPPLE_INERT = ['deepFillTSP'];
+  // Ribbon (variable-width) and three-pen laws: live but degraded on the
+  // curved Spiral/Stipple sinks. Read by `curvedSinkNote` for the (i) popover.
+  SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_DEGRADED_NOTE = 'On a curved shape, Spiral and Stipple carry no stroke width, so this style draws its centrelines only (or skips rungs). It still differs from Ladder.';
   SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_INERT = CURVED_SPIRAL_STIPPLE_INERT;
   // Never lies in either direction: with no shape context (mixed/scene-scope
   // selection, or a build missing either source above) it FAILS OPEN and
@@ -621,12 +603,11 @@
     // Curved (chart-wrapped) primitive.
     if (mapper === 'spiral' || mapper === 'stipple') {
       if (CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) !== -1) return false;
-      // Measured: on `pyramid` specifically, `none` is ALSO byte-identical to
-      // a large cluster under spiral/stipple — unlike the other eight curved
-      // primitives, where `none` still differs. Pinned, not derived: no live
-      // source exposes this the way SurfaceFillMono/CURVED_FILL_PRIMITIVES do
-      // for the rest of this predicate.
-      if (primitiveMode === 'pyramid' && id === 'none') return false;
+      // U3 — measured: on `pyramid` + Stipple, `fineLadder` is ALSO
+      // byte-identical to Ladder (live on pyramid + Spiral). The earlier
+      // pyramid `none` pin is gone: `none` differs from Ladder on pyramid
+      // under both mappers (it matched a cluster of other laws, not Ladder).
+      if (primitiveMode === 'pyramid' && mapper === 'stipple' && id === 'fineLadder') return false;
     }
     // Measured: `fineLadder` is inert on pyramid+hatch only — it is live on
     // pyramid crosshatch AND contour (over-gating guard: do not gate those).
@@ -687,6 +668,17 @@
     if (mapper && mapper !== 'hatch' && mapper !== 'crosshatch') return SCENE_FILL_STYLES.FACETED_OFF_AXIS_NOTE;
     if (SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType, totalFaces)) return SCENE_FILL_STYLES.FACETED_CAP_NOTE;
     return SCENE_FILL_STYLES.FACETED_NOTE;
+  };
+  // U3 — the (i) line for a degraded-but-live pick on a curved Spiral/Stipple
+  // fill (see CURVED_SPIRAL_STIPPLE_INERT). '' when it does not apply.
+  SCENE_FILL_STYLES.curvedSinkNote = (primitiveMode, mapper, lawId) => {
+    if (mapper !== 'spiral' && mapper !== 'stipple') return '';
+    const P = Vectura.Scene3D && Vectura.Scene3D.Params;
+    const curved = P && P.CURVED_FILL_PRIMITIVES;
+    if (!primitiveMode || !curved || typeof curved.has !== 'function' || !curved.has(primitiveMode)) return '';
+    const SFS = Vectura.STROKE_FILL_STYLES;
+    const widthLaw = SFS && ((SFS.RIBBON_LAWS || []).indexOf(lawId) !== -1 || (SFS.PEN_LAWS || []).indexOf(lawId) !== -1);
+    return widthLaw ? SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_DEGRADED_NOTE : '';
   };
   Vectura.SCENE_FILL_STYLES = SCENE_FILL_STYLES;
 

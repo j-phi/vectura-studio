@@ -547,8 +547,12 @@ describe('Fill Style — the shared mark-class config', () => {
     // top-level const: `R` is populated by the outer `beforeAll`, which has
     // not run yet when this describe body itself executes at collection
     // time (same reason `ALL_IDS` above is a function, not a value).
-    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
-    const curvedSpiralStippleInert = () => R.IDS.filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id));
+    // U3 — STALE CONTRACT UPDATE (fill-style review r3 headline 4 / r2
+    // NEW-5): the gate is now the MEASURED Ladder-identical set (see
+    // scene3d-fill-style-reach-measured.test.js, which re-renders every id
+    // against the engine). Only deepFillTSP draws exactly like Ladder on a
+    // curved Spiral/Stipple; every other id draws a different picture.
+    const curvedSpiralStippleInert = () => ['deepFillTSP'];
 
     // ── Item 1 — faceted + non-hatch/crosshatch disables EVERYTHING ─────────
     test('faceted (box) + Contour/Spiral/Stipple disables every option, including None and Ladder', () => {
@@ -605,7 +609,7 @@ describe('Fill Style — the shared mark-class config', () => {
     // original 9 true no-ops PLUS 36 bare-centreline/rung-skipping laws,
     // F-03 / C-09..C-13) is disabled — STALE ASSERTION UPDATE: this used to
     // pin exactly the 9 mono laws; W-03 deliberately widened the gate.
-    test('curved (sphere) + spiral disables all but none/ladder/fineLadder/phaseFineLadder (W-03)', () => {
+    test('curved (sphere) + spiral disables only the measured Ladder-identical set (U3)', () => {
       const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
         const expected = inert.indexOf(id) === -1;
@@ -615,13 +619,13 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.isReachableOn('none', 'sphere', undefined, 'spiral')).toBe(true);
       expect(F.isReachableOn('fineLadder', 'sphere', undefined, 'spiral')).toBe(true);
       expect(F.isReachableOn('phaseFineLadder', 'sphere', undefined, 'spiral')).toBe(true);
-      // The exact count W-03 measured: 45 of 48 roster laws gated (+ the 3
-      // kept: none/fineLadder/phaseFineLadder = 48; 'ladder' is the 49th
-      // total option and is not part of the roster's 48).
-      expect(inert.length).toBe(45);
+      // U3: 1 of 48 measured identical to Ladder (was 45 inferred under W-03).
+      expect(inert.length).toBe(1);
+      expect(F.isReachableOn('taperedEnds', 'sphere', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('mazeFill', 'sphere', undefined, 'spiral')).toBe(true);
     });
 
-    test('curved (sphere) + stipple disables the SAME set as spiral (W-03)', () => {
+    test('curved (sphere) + stipple disables the SAME set as spiral (U3)', () => {
       const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
         const expected = inert.indexOf(id) === -1;
@@ -675,15 +679,11 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.isReachableOn('fineLadder', 'pyramid', undefined, 'contour')).toBe(true);
     });
 
-    test('pyramid: None is ALSO gated on spiral/stipple (byte-identical to a large cluster there)', () => {
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'spiral')).toBe(false);
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'stipple')).toBe(false);
-      // ...but not elsewhere — None still differs on pyramid hatch/crosshatch/contour.
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'hatch')).toBe(true);
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'crosshatch')).toBe(true);
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'contour')).toBe(true);
-      // And None is untouched on a NON-pyramid curved primitive under spiral.
-      expect(F.isReachableOn('none', 'sphere', undefined, 'spiral')).toBe(true);
+    test('pyramid: None is NOT gated on spiral/stipple (U3: measured distinct from Ladder); fineLadder IS gated on pyramid + stipple', () => {
+      expect(F.isReachableOn('none', 'pyramid', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('none', 'pyramid', undefined, 'stipple')).toBe(true);
+      expect(F.isReachableOn('fineLadder', 'pyramid', undefined, 'stipple')).toBe(false);
+      expect(F.isReachableOn('fineLadder', 'pyramid', undefined, 'spiral')).toBe(true);
     });
 
     // ── Item 3 — facetedNote is mapper-aware ─────────────────────────────────
@@ -1307,14 +1307,14 @@ describe('Fill Style — context-bar Style flyout', () => {
   // STALE ASSERTION UPDATE (U1) — fineLadder/phaseFineLadder are folded into
   // ladder's rungMode sub-control and no longer appear as their own row; see
   // the in-test comment below.
-  test('item 5 — a sphere selection with Type=Spiral disables all but none/ladder (still reachable through ladder\'s own sub-control) (W-03)', () => {
+  test('item 5 — a sphere selection with Type=Spiral disables only the measured Ladder-identical ids (U3)', () => {
     const SPHERE = { id: 'obj-1', name: 'Sphere', primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 16 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
     const { fly } = openStyle({ objects: [SPHERE], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'spiral', params: {} } }) });
     const R = window.Vectura.SCENE3D_TONE_LAWS;
     const roster = R.IDS;
-    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
+    // U3 — measured Ladder-identical set (scene3d-fill-style-reach-measured.test.js).
     const CURVED_SPIRAL_STIPPLE_INERT = roster
-      .filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id))
+      .filter((id) => id === 'deepFillTSP')
       // Fill-roster collapse — a folded id (e.g. perceptualRamp, U1) is no
       // longer its OWN <option> at all (it is reachable only through its
       // survivor's sub-control), so it cannot appear in the rendered

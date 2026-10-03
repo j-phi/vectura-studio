@@ -478,10 +478,12 @@ describe('Scene3D panel — behavior (vs3-)', () => {
       return s.options[s.selectedIndex].textContent;
     };
 
-    // A real treatment shows the detail rows (Tone Bands + Highlight Bands = 2)…
+    // A real treatment shows the detail rows. U3: the Highlight band count is
+    // no longer offered (measured dead in every context, r3 §2b), so only the
+    // Tone section's Bands row remains.
     expect(labels()).toContain('HL density');
     expect(labels()).toContain('HL pen');
-    expect(bandsRows()).toBe(2);
+    expect(bandsRows()).toBe(1);
     // …and the option list spells the no-highlight choice "None", never "Keep".
     const optLabels = Array.from(rowByLabel('Treatment').querySelectorAll('option')).map((o) => o.textContent);
     expect(optLabels).toContain('None');

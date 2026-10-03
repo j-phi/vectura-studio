@@ -571,6 +571,14 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **2026-10-02 — Fill-style review U3: Object 3D panel reach (branch `3d-scene/fr-u3`, NOT
+  pushed).** Leaf Style tab parity with the scene Style editor through shared row renderers;
+  hidden-but-live keys exposed (wobbleScale, overstroke, spiralPitch, contourStep,
+  toneQuantLevels, shadowToneDepth); Density cap 500; measured gating (CONTROL_GATES) for
+  rows that do nothing in context; Fill Style curved Spiral/Stipple gate re-measured (45 → 1
+  greyed); Layers-panel Assign pen on object3d rows routes ink. Engine-side follow-ups for U4/U5:
+  wire Jitter on curved stipple (then drop its gate), Seed / Stroke Fill plumbing, mark shapes
+  and curvature-field hatch need roster entries (not exposed here), xrayHiddenEdges stays unread.
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
   (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
   Merged `3d-scene/handoff-c2` → `3d-scene/fill-collapse-2` → `3d-scene/fill-audit-2` →

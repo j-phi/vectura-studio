@@ -28,6 +28,38 @@
 
   let DEPS = null;
 
+  // U3 (fill-style review r3 headline 3) — an Object 3D row's pen. The scene
+  // compositor routes an object's ink by its STYLE pen (style.penId, or the
+  // scene group's pen when that is null); the layer's own penId only colours
+  // the row. So assigning a pen to an object3d row also writes its style pen,
+  // then recomposes the owning scene group so the canvas and export follow.
+  // Returns true when any target was an object3d (the caller then skips its
+  // render-only refresh in favour of this regen). Shared with pens-panel.js
+  // (armed-pen click) through UI.syncObject3dPen.
+  const syncObject3dPen = (app, targets, pen) => {
+    if (!pen || !Array.isArray(targets)) return false;
+    const engine = app && app.engine;
+    const groups = new Set();
+    targets.forEach((t) => {
+      if (!t || t.type !== 'object3d') return;
+      if (!t.params || typeof t.params !== 'object') return;
+      if (!t.params.style || typeof t.params.style !== 'object') t.params.style = { penId: null, mapper: 'wireframe', params: {} };
+      t.params.style.penId = pen.id;
+      // Walk to the owning scene group (object3d may sit inside a boolean).
+      let p = t;
+      const seen = new Set();
+      while (p && p.parentId && engine && engine.getLayerById && !seen.has(p.id)) {
+        seen.add(p.id);
+        p = engine.getLayerById(p.parentId);
+        if (p && p.type === 'scene3d' && p.isGroup) { groups.add(p.id); break; }
+      }
+    });
+    if (!groups.size && !targets.some((t) => t && t.type === 'object3d')) return false;
+    groups.forEach((gid) => { try { engine.generate(gid); } catch (_) { /* keep UI alive */ } });
+    return true;
+  };
+  UI.syncObject3dPen = syncObject3dPen;
+
   const requireDeps = (name) => {
     if (!DEPS) {
       throw new Error(`LayersPanel.${name} invoked before LayersPanel.bind(deps) — load order broken`);
@@ -67,6 +99,11 @@
               target.strokeWidth = pen.width;
               target.lineCap = target.lineCap || owner.lineCap || 'round';
             });
+            // U3 — an Object 3D row routes ink through its style pen.
+            if (syncObject3dPen(this.app, targets, pen)) {
+              try { this.storeLayerParams && targets.forEach((t) => this.storeLayerParams(t)); } catch (_) { /* */ }
+              try { if (this.buildControls) this.buildControls(); } catch (_) { /* */ }
+            }
           }
           penIcon.style.background = pen.color;
           penIcon.style.color = pen.color;
