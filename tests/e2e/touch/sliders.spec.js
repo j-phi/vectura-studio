@@ -335,6 +335,75 @@ test.describe('TUX-043 sliders: draw-order on iPhone landscape', () => {
   });
 });
 
+const CANCEL_PROJECTS = ['touch-iphone-portrait', 'touch-ipad-landscape'];
+
+test.describe('TUX-043 sliders: pointercancel after a sideways start', () => {
+  test('(m) 8px sideways then 200px straight up: no value change when the panel scrolls; history grows by at most 1', async ({ page }, testInfo) => {
+    test.skip(!CANCEL_PROJECTS.includes(testInfo.project.name), 'CDP touch (Chromium) only');
+    const loc = await trackSetup(page, { lowish: true });
+    await loc.evaluate((el) => { el.value = String((Number(el.min) + Number(el.max)) / 2); });
+    const g = await geom(loc);
+    const h0 = await histLen(page);
+    const st0 = await scrollTopOf(page);
+    const dir = g.thumbX + 8 < g.left + g.width - 8 ? 1 : -1;
+    const x0 = g.thumbX;
+    await touch.touchPhase(page, 'start', [{ x: x0, y: g.cy, id: 0 }]);
+    await touch.touchPhase(page, 'move', [{ x: x0 + 8 * dir, y: g.cy - 4, id: 0 }]);
+    const y1 = Math.max(10, g.cy - 204);
+    for (let i = 1; i <= 12; i += 1) {
+      await touch.touchPhase(page, 'move', [{ x: x0 + 8 * dir, y: (g.cy - 4) + ((y1 - (g.cy - 4)) * i) / 12, id: 0 }]);
+      await page.waitForTimeout(16);
+    }
+    await touch.touchPhase(page, 'end', [{ x: x0 + 8 * dir, y: y1, id: 0 }]);
+    await page.waitForTimeout(900);
+    const scrolled = (await scrollTopOf(page)) !== st0;
+    const v = await valueOf(loc);
+    const h1 = await histLen(page);
+    expect(h1 - h0, 'history growth for one gesture').toBeLessThanOrEqual(1);
+    if (scrolled) {
+      expect(v, 'value unchanged when the panel scrolled').toBe(g.value);
+      expect(h1, 'history unchanged when the panel scrolled').toBe(h0);
+    }
+  });
+});
+
+test.describe('TUX-043 sliders: multi-select strip on short landscape', () => {
+  test('(l) with 2 layers selected the status strip and the mask button stay visible and tappable', async ({ page }, testInfo) => {
+    test.skip(!IPHL_PROJECTS.includes(testInfo.project.name), 'short-viewport check runs on iPhone landscape');
+    await boot(page);
+    await page.evaluate(() => {
+      const e = window.app.engine;
+      const a = e.addLayer('wavetable'); const b = e.addLayer('wavetable');
+      window.app.renderer.selectedLayerIds = new Set([a, b]);
+      window.app.ui.renderLayers();
+    });
+    await showRight(page, 'layers');
+    await page.waitForTimeout(400);
+    const r = await page.evaluate(() => {
+      const bar = document.getElementById('layer-status-bar');
+      const pane = document.getElementById('right-pane');
+      const mod = document.getElementById('touch-modifier-bar');
+      const btn = bar.querySelector('.mask-btn');
+      const b = bar.getBoundingClientRect(); const p = pane.getBoundingClientRect();
+      const m = mod ? mod.getBoundingClientRect() : null;
+      const br = btn ? btn.getBoundingClientRect() : null;
+      const hit = br ? document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2) : null;
+      return {
+        barH: b.height, barTop: b.top, barBottom: b.bottom, paneTop: p.top, paneBottom: p.bottom,
+        modTop: m ? m.top : null, hasBtn: !!btn, hitIsBtn: !!(hit && btn && (hit === btn || btn.contains(hit))),
+        label: (bar.querySelector('.lvl-sb-sel-label') || {}).textContent || '',
+      };
+    });
+    expect(r.barH, 'status bar height').toBeGreaterThan(0);
+    expect(r.barTop).toBeGreaterThanOrEqual(r.paneTop - 1);
+    expect(r.barBottom).toBeLessThanOrEqual(r.paneBottom + 1);
+    if (r.modTop !== null) expect(r.barBottom, 'bar above the modifier bar').toBeLessThanOrEqual(r.modTop + 1);
+    expect(r.hasBtn, 'mask button present').toBe(true);
+    expect(r.hitIsBtn, 'elementFromPoint at the mask button centre returns the button').toBe(true);
+    expect(r.label).toMatch(/2 layers selected/);
+  });
+});
+
 test.describe('TUX-043 sliders: mouse parity', () => {
   test('(j) mouse click jumps the value; dblclick resets a UI.Slider default', async ({ page }, testInfo) => {
     test.skip(!MOUSE_PROJECTS.includes(testInfo.project.name), 'mouse parity runs on iPad landscape');

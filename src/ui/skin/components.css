@@ -14048,6 +14048,16 @@ body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: cent
    * band top 237, head centre 261, slider 271-315 in the 318px-high scroller. */
   [data-ui-skin] #right-pane .draw-order-bar { padding-top: 14px; }
   [data-ui-skin] #right-pane .draw-order-bar .draw-order-head { margin-bottom: 0; }
-  [data-ui-skin] #right-pane #layer-status-bar { min-height: 0; height: 0; padding-block: 0; overflow: hidden; border: 0; }
+  [data-ui-skin] #right-pane #layer-status-bar:has(> .lvl-sb-idle) { min-height: 0; height: 0; padding-block: 0; overflow: hidden; border: 0; }
+}
+/* TUX-043 fix round: the multi-select command strip is wider than the right pane on phones
+ * (8 buttons plus the label), so Delete sat past the pane edge. Let the busy bar pan sideways. */
+@media (pointer: coarse) {
+  [data-ui-skin] #right-pane #layer-status-bar:not(:has(> .lvl-sb-idle)) {
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x;
+  }
+  [data-ui-skin] #right-pane #layer-status-bar::-webkit-scrollbar { display: none; }
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-sb-spacer,
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-sb-total { display: none; }
 }
 /* === END TUX-043 === */

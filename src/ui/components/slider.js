@@ -388,6 +388,7 @@
       const el = e.target;
       if (!isRange(el)) return;
       if (state.gesture && state.gesture.id !== e.pointerId) return; // second finger: ignore
+      releasePending();
       const group = groupOf(el);
       const g = {
         id: e.pointerId, origin: el, group, mode: 'undecided',
@@ -446,10 +447,37 @@
       emit(g.chosen, 'input');
     };
 
+    // A cancelled sequence (the browser took the gesture to scroll) keeps its hold until the touch
+    // sequence really ends: the trusted native `change` lands at touchend, after a long scroll,
+    // far later than GUARD_MS. `pendingEnd` is released by touchend/touchcancel or the next
+    // pointerdown; a long fallback timer stops a missed touchend from holding forever.
+    const pendingEnd = new Set();
+    const FALLBACK_MS = 8000;
+    const releasePending = () => {
+      pendingEnd.forEach((g) => releaseLater(g));
+      pendingEnd.clear();
+    };
+
     const finish = (e, cancelled) => {
       const g = state.gesture;
       if (!g || e.pointerId !== g.id) return;
       state.gesture = null;
+      if (cancelled) {
+        // Restore the pre-gesture value; the app only ever saw `input` events, so emit one input
+        // with the restored value (none if it never left startValue) and NO change.
+        if (g.mode === 'drag' && g.chosen) {
+          const moved = g.last !== g.startValue;
+          g.chosen.value = String(g.startValue);
+          hold(g.chosen, g.startValue, Infinity);
+          if (moved) emit(g.chosen, 'input');
+        }
+        g.group.forEach((r) => { restore(r); });
+        const until = performance.now() + FALLBACK_MS;
+        g.group.forEach((r) => { const h = held.get(r); if (h) h.until = until; });
+        pendingEnd.add(g);
+        try { g.origin.releasePointerCapture(e.pointerId); } catch (_) { /* not captured */ }
+        return;
+      }
       if (g.mode === 'drag' && g.last !== g.startValue) {
         g.chosen.value = String(g.last);
         hold(g.chosen, g.last, Infinity);
@@ -459,7 +487,6 @@
       }
       releaseLater(g);
       try { g.origin.releasePointerCapture(e.pointerId); } catch (_) { /* not captured */ }
-      return cancelled;
     };
 
     // Window capture runs before every per-element listener (slider.js and bare sites), so app
@@ -477,6 +504,8 @@
     document.addEventListener('pointermove', onMove, true);
     document.addEventListener('pointerup', (e) => finish(e, false), true);
     document.addEventListener('pointercancel', (e) => finish(e, true), true);
+    document.addEventListener('touchend', releasePending, true);
+    document.addEventListener('touchcancel', releasePending, true);
     window.addEventListener('input', guard, true);
     window.addEventListener('change', guard, true);
 
