@@ -7858,30 +7858,6 @@
 [data-ui-skin='light'] .algo-pick-item:hover { background: rgba(0,0,0,.04) }
 [data-ui-skin='light'] .lvl-pen-dot { border-color: rgba(0,0,0,.2) }
 
-/* ── 2× Layer cards on touch tablets (iPad portrait + landscape) ─── */
-@media (pointer: coarse) and (min-width: 600px) {
-  .lvl-r1 { height: 52px; padding-right: 12px; gap: 6px }
-  .lvl-r2 { height: 40px; padding-right: 12px; gap: 6px }
-  .lvl-caret-zone { width: 32px; padding-top: 12px }
-  .lvl-clr-bar { width: 8px; margin: 6px 10px 6px 0 }
-  .lvl-ib { width: 40px; height: 40px }
-  .lvl-ib svg { width: 22px; height: 22px }
-  .lvl-ab { width: 36px; height: 36px }
-  .lvl-ab svg { width: 22px; height: 22px }
-  .lvl-aico { width: 28px; height: 28px }
-  .lvl-aico svg { width: 22px; height: 22px }
-  .lvl-pen-dot { width: 20px; height: 20px }
-  .lvl-name { font-size: 18px }
-  .lvl-algo-label { font-size: 14px }
-  .lvl-grp-hdr { min-height: 60px }
-  .lvl-grp-content { height: 60px; gap: 6px; padding-right: 12px }
-  .lvl-grp-name { font-size: 18px }
-  .lvl-caret { width: 28px; height: 28px }
-  .lvl-caret svg { width: 22px; height: 22px }
-  .lvl-tree-children { padding-left: 24px }
-  .lvl-grp-exit-zone { margin-left: -24px }
-}
-
 /* ── Right-pane title bar: match v8 mockup compact header ─── */
 #right-pane .pane-header {
   height: 36px;
@@ -8491,243 +8467,244 @@
   }
 }
 
-@media (max-width: 900px) {
-  :root {
-    --pane-left-width: min(88vw, 340px);
-    --pane-right-width: min(88vw, 340px);
-    --pane-collapsed-width: 40px;
-  }
+/* TUX-006: keyed on the JS layout class (phone/tablet), not viewport width.
+ * Bare selectors are wrapped in :where() so they keep the cascade weight of the
+ * deleted @media (max-width: 900px) block (e.g. #id = 1,0,0; .x = 0,1,0). */
+:root:where(:has(body.mobile-layout)) {
+  --pane-left-width: min(88vw, 340px);
+  --pane-right-width: min(88vw, 340px);
+  --pane-collapsed-width: 40px;
+}
 
-  #app-header {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
+:where(body.mobile-layout) #app-header {
+  padding-left: 10px;
+  padding-right: 10px;
+}
 
-  .header-main {
-    align-items: flex-start;
-  }
+:where(body.mobile-layout) .header-main {
+  align-items: flex-start;
+}
 
-  .top-menubar {
-    gap: 10px;
-    padding-top: 0;
-  }
+:where(body.mobile-layout) .top-menubar {
+  gap: 10px;
+  padding-top: 0;
+}
 
-  .pane-resizer,
-  .bottom-resizer {
-    display: none;
-  }
+:where(body.mobile-layout) .pane-resizer,
+:where(body.mobile-layout) .bottom-resizer {
+  display: none;
+}
 
-  .mobile-pane-handle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
+:where(body.mobile-layout) .mobile-pane-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
-  .mobile-layout .pane {
-    position: absolute;
-    top: 0;
-    /* Reserve room for the pinned modifier bar at the viewport bottom
-     * (44px button + 12px padding + safe-area inset). Without this the
-     * drawer extends under the modifier bar and the bar's higher z-index
-     * intercepts clicks on the bottom of pane content. */
-    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-    /* Must sit above #bottom-pane (z-index 50 in mobile-layout) so the
-     * bottom-pane drawer does not intercept clicks on right-pane content
-     * (Pens tab, auto-colorization header, etc.) at tablet-touch widths. */
-    z-index: 55;
-    max-width: calc(100vw - 18px);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-  }
+.mobile-layout .pane {
+  position: absolute;
+  top: 0;
+  /* Reserve room for the pinned modifier bar at the viewport bottom
+   * (44px button + 12px padding + safe-area inset). Without this the
+   * drawer extends under the modifier bar and the bar's higher z-index
+   * intercepts clicks on the bottom of pane content. */
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  /* Must sit above #bottom-pane (z-index 50 in mobile-layout) so the
+   * bottom-pane drawer does not intercept clicks on right-pane content
+   * (Pens tab, auto-colorization header, etc.) at tablet-touch widths. */
+  z-index: 55;
+  max-width: calc(100vw - 18px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
 
-  .mobile-layout .pane-left {
-    left: 0;
-    border-right-width: 1px;
-  }
+.mobile-layout .pane-left {
+  left: 0;
+  border-right-width: 1px;
+}
 
-  .mobile-layout .pane-right {
-    right: 0;
-    border-left-width: 1px;
-  }
+.mobile-layout .pane-right {
+  right: 0;
+  border-left-width: 1px;
+}
 
-  .mobile-layout .right-panel-section-scroll {
-    max-height: min(22vh, 180px);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
+.mobile-layout .right-panel-section-scroll {
+  max-height: min(22vh, 180px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
-  .mobile-layout .right-panel-section-primary {
-    max-height: min(42vh, 320px);
-  }
+.mobile-layout .right-panel-section-primary {
+  max-height: min(42vh, 320px);
+}
 
-  .mobile-layout #pens-section,
-  .mobile-layout #auto-colorization-wrap {
-    max-height: none;
-  }
+.mobile-layout #pens-section,
+.mobile-layout #auto-colorization-wrap {
+  max-height: none;
+}
 
-  .mobile-layout .auto-collapsed .pane:not(.pane-force-open),
-  .mobile-layout .pane.pane-collapsed {
-    width: var(--pane-collapsed-width);
-    box-shadow: none;
-  }
+.mobile-layout .auto-collapsed .pane:not(.pane-force-open),
+.mobile-layout .pane.pane-collapsed {
+  width: var(--pane-collapsed-width);
+  box-shadow: none;
+}
 
-  /* ─────────────────────────────────────────────────────────────
-     Mobile shell layout: top app bar → canvas → bottom pane → modifier bar.
-     Modifier bar is pinned to viewport bottom and always reachable;
-     bottom pane sits above it (does not cover it).
-     ───────────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────
+   Mobile shell layout: top app bar → canvas → bottom pane → modifier bar.
+   Modifier bar is pinned to viewport bottom and always reachable;
+   bottom pane sits above it (does not cover it).
+   ───────────────────────────────────────────────────────────── */
 
-  body.mobile-layout #tool-bar {
-    position: static;
-    top: auto;
-    left: auto;
-    right: auto;
-    bottom: auto;
-    transform: none;
-    order: 1;
-    width: 100%;
-    max-width: none;
-    flex-direction: row;
-    /* Wrap onto a second row at iPhone-mini widths instead of horizontally
-       scrolling — keeps every primary tool reachable in one tap. */
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    row-gap: 6px;
-    column-gap: 6px;
-    overflow-x: visible;
-    overflow-y: hidden;
-    max-height: none;
-    padding: 8px 12px;
-    padding-top: calc(8px + env(safe-area-inset-top, 0px));
-    padding-left: calc(12px + env(safe-area-inset-left, 0px));
-    padding-right: calc(12px + env(safe-area-inset-right, 0px));
-    border: none;
-    border-radius: 0;
-    border-bottom: 1px solid var(--ui-border);
-    background: var(--ui-panel);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-    flex-shrink: 0;
-  }
+body.mobile-layout #tool-bar {
+  position: static;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  order: 1;
+  width: 100%;
+  max-width: none;
+  flex-direction: row;
+  /* Wrap onto a second row at iPhone-mini widths instead of horizontally
+     scrolling — keeps every primary tool reachable in one tap. */
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  row-gap: 6px;
+  column-gap: 6px;
+  overflow-x: visible;
+  overflow-y: hidden;
+  max-height: none;
+  padding: 8px 12px;
+  padding-top: calc(8px + env(safe-area-inset-top, 0px));
+  padding-left: calc(12px + env(safe-area-inset-left, 0px));
+  padding-right: calc(12px + env(safe-area-inset-right, 0px));
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-panel);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
 
-  /* Phone widths (auto-collapsed, < 640px): panes shrink to drawer slivers
-     (z:55). Bump the toolbar above the slivers so the leftmost/rightmost
-     tool buttons aren't occluded by the pane edges. At tablet widths
-     (640–900px) the panes are fully shown, not slivers, so the toolbar
-     must stay below them or it will paint over right-pane content like
-     the Add Layer button. */
-  body.mobile-layout.auto-collapsed #tool-bar {
-    z-index: 60;
-  }
+/* Phone widths (auto-collapsed, < 640px): panes shrink to drawer slivers
+   (z:55). Bump the toolbar above the slivers so the leftmost/rightmost
+   tool buttons aren't occluded by the pane edges. At tablet widths
+   (640–900px) the panes are fully shown, not slivers, so the toolbar
+   must stay below them or it will paint over right-pane content like
+   the Add Layer button. */
+body.mobile-layout.auto-collapsed #tool-bar {
+  z-index: 60;
+}
 
-  /* When a side pane is force-opened (full drawer), it should cover the
-     toolbar — the user is interacting with the pane, not the bar. */
-  body.mobile-layout.auto-collapsed .pane.pane-force-open {
-    z-index: 70;
-  }
+/* When a side pane is force-opened (full drawer), it should cover the
+   toolbar — the user is interacting with the pane, not the bar. */
+body.mobile-layout.auto-collapsed .pane.pane-force-open {
+  z-index: 70;
+}
 
-  /* Lock standard tool buttons to a 44×44 hit target — never shrink to fit. */
-  body.mobile-layout #tool-bar > .tool-btn,
-  body.mobile-layout #tool-bar > .tool-group > .tool-btn {
-    flex-shrink: 0;
-  }
+/* Lock standard tool buttons to a 44×44 hit target — never shrink to fit. */
+body.mobile-layout #tool-bar > .tool-btn,
+body.mobile-layout #tool-bar > .tool-group > .tool-btn {
+  flex-shrink: 0;
+}
 
-  body.mobile-layout #viewport-container {
-    order: 2;
-    flex: 1 1 auto;
-    min-height: 0;
-  }
+body.mobile-layout #viewport-container {
+  order: 2;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 
-  body.mobile-layout #bottom-pane {
-    order: 3;
-    position: relative;
-    z-index: 50;
-    padding-bottom: 0;
-    flex-shrink: 0;
-  }
+body.mobile-layout #bottom-pane {
+  order: 3;
+  position: relative;
+  z-index: 50;
+  padding-bottom: 0;
+  flex-shrink: 0;
+}
 
-  body.mobile-layout #bottom-pane .bottom-pane-header {
-    height: 32px;
-    min-height: 32px;
-    padding: 0 12px;
-    flex-shrink: 0;
-  }
+body.mobile-layout #bottom-pane .bottom-pane-header {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
 
-  body.mobile-layout #bottom-pane .bottom-pane-header > span {
-    display: none;
-  }
+body.mobile-layout #bottom-pane .bottom-pane-header > span {
+  display: none;
+}
 
-  body.mobile-layout #bottom-pane.bottom-pane-collapsed {
-    height: 32px;
-  }
+body.mobile-layout #bottom-pane.bottom-pane-collapsed {
+  height: 32px;
+}
 
-  body.mobile-layout #bottom-pane:not(.bottom-pane-collapsed) {
-    height: min(38vh, 280px);
-  }
+body.mobile-layout #bottom-pane:not(.bottom-pane-collapsed) {
+  height: min(38vh, 280px);
+}
 
-  body.mobile-layout #touch-modifier-bar {
-    position: static;
-    left: auto;
-    top: auto;
-    right: auto;
-    bottom: auto;
-    transform: none;
-    order: 4;
-    width: 100%;
-    max-width: none;
-    box-sizing: border-box;
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    justify-content: stretch;
-    gap: 6px;
-    padding: 6px 8px;
-    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-    padding-left: calc(8px + env(safe-area-inset-left, 0px));
-    padding-right: calc(8px + env(safe-area-inset-right, 0px));
-    border: none;
-    border-radius: 0;
-    border-top: 1px solid var(--ui-border);
-    background: var(--ui-panel);
-    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.25);
-    flex-shrink: 0;
-    z-index: 60;
-  }
+body.mobile-layout #touch-modifier-bar {
+  position: static;
+  left: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  order: 4;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 6px;
+  padding: 6px 8px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(8px + env(safe-area-inset-left, 0px));
+  padding-right: calc(8px + env(safe-area-inset-right, 0px));
+  border: none;
+  border-radius: 0;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-panel);
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+  z-index: 60;
+}
 
-  body.mobile-layout #touch-modifier-bar.hidden {
-    display: flex;
-  }
+body.mobile-layout #touch-modifier-bar.hidden {
+  display: flex;
+}
 
-  body.mobile-layout #touch-modifier-bar .touch-mod-btn {
-    flex: 1 1 0;
-    min-width: 0;
-    height: 44px;
-    padding: 0 8px;
-    font-size: 12px;
-    border-radius: 10px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
+body.mobile-layout #touch-modifier-bar .touch-mod-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 44px;
+  padding: 0 8px;
+  font-size: 12px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
-  body.mobile-layout #btn-mobile-pane-bottom {
-    display: none;
-  }
+body.mobile-layout #btn-mobile-pane-bottom {
+  display: none;
+}
 
-  /* Drawer backdrop — visible only when a pane drawer is open in mobile-layout. */
-  .mobile-pane-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 54;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 180ms ease;
-  }
+/* Drawer backdrop — visible only when a pane drawer is open in mobile-layout. */
+:where(body.mobile-layout) .mobile-pane-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 54;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
 
-  body.mobile-layout .mobile-pane-backdrop.visible {
-    opacity: 1;
-    pointer-events: auto;
-  }
+body.mobile-layout .mobile-pane-backdrop.visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 body:not(.mobile-layout) .mobile-pane-backdrop {
@@ -8774,11 +8751,6 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
   select,
   textarea {
     font-size: max(16px, 1em);
-  }
-
-  body.mobile-layout .tool-btn {
-    width: 44px;
-    height: 44px;
   }
 }
 
@@ -13579,3 +13551,84 @@ body.mobile-layout .hud-bar {
 .ctxbar-divisions-host {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
 }
+
+/* === TUX-006: touch sizing keys on pointer type === */
+body.touch-ui .tool-btn {
+  width: 44px;
+  height: 44px;
+}
+/* === /TUX-006 === */
+/* === TUX-012: layer rows on coarse pointers ===
+ * Replaces the old "2x Layer cards" block (min-width:600px, 18px names, 36px actions).
+ * Keyed on the touch row template: layers-panel.js adds .lvl-touch-row only when
+ * `(pointer: coarse)` matches or body.touch-ui is set, so width never decides.
+ * Row 1 = [grip][name][⋯]; row 2 = [eye][lock][pen dot][icon + label] (cards) or
+ * [caret][eye][lock][icon + label] (group / modifier / scene headers).
+ * Hit areas are 44 px (var(--touch-target-min)); the pane is never widened. */
+@media (pointer: coarse) {
+  .lvl-tree-children { padding-left: 16px }
+  .lvl-grp-exit-zone { margin-left: -16px }
+}
+body.touch-ui .lvl-tree-children { padding-left: 16px }
+body.touch-ui .lvl-grp-exit-zone { margin-left: -16px }
+
+.lvl-touch-row .lvl-clr-bar { width: 6px; margin: 4px 0; align-self: stretch }
+.lvl-touch-row .lvl-card-body { min-width: 0 }
+.lvl-touch-row .lvl-r1 {
+  height: 48px; padding: 0 4px 0 0; gap: 4px; min-width: 0; box-sizing: border-box;
+}
+.lvl-touch-row .lvl-r2 {
+  height: 44px; padding: 0 4px 0 0; gap: 0; min-width: 0; box-sizing: border-box;
+}
+.lvl-card.masked-v2.lvl-touch-row .lvl-r1,
+.lvl-card.masked-v2.lvl-touch-row .lvl-r2 { padding-left: 0 }
+.lvl-touch-row .lvl-grip {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); display: flex; align-items: center; justify-content: center;
+  color: var(--ui-muted); cursor: grab; touch-action: none;
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
+}
+.lvl-touch-row .lvl-grip[aria-disabled='true'] { opacity: .35; cursor: default }
+.lvl-touch-row .lvl-grip svg { width: 20px; height: 20px; pointer-events: none }
+.lvl-touch-row .lvl-ab.lvl-more {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); opacity: 1; border-radius: 6px;
+}
+.lvl-touch-row .lvl-ab.lvl-more svg { width: 22px; height: 22px }
+.lvl-touch-row .lvl-ib {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); border-radius: 6px;
+}
+.lvl-touch-row .lvl-ib svg { width: 22px; height: 22px }
+.lvl-touch-row .lvl-caret-zone {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); padding: 0; align-items: center;
+}
+.lvl-touch-row .lvl-caret { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px) }
+.lvl-touch-row .lvl-caret svg { width: 20px; height: 20px }
+/* Pen dot: 20 px visual, 44 px hit area through ::before; neighbouring hit areas abut, never overlap. */
+.lvl-touch-row .lvl-pen-dot {
+  position: relative; width: 20px; height: 20px; margin: 0 12px; flex: 0 0 20px; box-sizing: border-box;
+}
+.lvl-touch-row .lvl-pen-dot::before {
+  content: ''; position: absolute; inset: -13px; border-radius: 6px;
+}
+.lvl-touch-row .lvl-aico { width: 24px; height: 24px; flex: 0 0 24px; margin: 0 4px 0 0 }
+.lvl-touch-row .lvl-aico svg { width: 20px; height: 20px }
+.lvl-touch-row .lvl-name,
+.lvl-touch-row .lvl-grp-name { font-size: 16px; flex: 1 1 auto; min-width: 0 }
+.lvl-touch-row .lvl-algo-label {
+  font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--ui-muted);
+  flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lvl-grp-hdr.lvl-touch-row { min-height: 0 }
+.lvl-touch-row .lvl-grp-content {
+  flex: 1 1 auto; flex-direction: column; align-items: stretch; gap: 0;
+  height: auto; min-width: 0; padding: 0;
+}
+/* The ⋯ menu must fit the viewport on short screens and give rows finger height. */
+.lvl-ctx-menu { max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); overflow-y: auto; overscroll-behavior: contain }
+@media (pointer: coarse) {
+  .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
+}
+body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
