@@ -3980,10 +3980,6 @@
 .hg-preset-save-pip:hover { opacity: 0.88; }
 .hg-preset-save-pip:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 .hg-preset-save-pip[hidden] { display: none; }
-@media (pointer: coarse) {
-  .hg-preset-save-pip { width: 36px; height: 36px; }
-  .hg-preset-save-pip svg { width: 18px; height: 18px; }
-}
 
 .preset-save-body { display: flex; flex-direction: column; gap: 12px; min-width: 280px; }
 .preset-save-preview { display: flex; justify-content: center; }
@@ -8741,16 +8737,6 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
     -webkit-user-select: none;
     user-select: none;
     touch-action: manipulation;
-  }
-
-  input[type="text"],
-  input[type="number"],
-  input[type="email"],
-  input[type="search"],
-  input[type="password"],
-  select,
-  textarea {
-    font-size: max(16px, 1em);
   }
 }
 
@@ -13552,6 +13538,22 @@ body.mobile-layout .hud-bar {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
 }
 
+/* === TUX-028: text input proxy === */
+/* Hidden textarea that owns the soft keyboard during touch/pen Type sessions.
+   opacity:0 (never display/visibility/off-screen) so iOS still focuses it and
+   page scroll offsets stay 0; the controller parks it at the caret inside the
+   canvas rect. 16px font prevents iOS focus-zoom. */
+[data-ui-skin] textarea[data-text-proxy].text-input-proxy,
+textarea[data-text-proxy].text-input-proxy {
+  position: fixed; left: 0; top: 0; z-index: 1;
+  width: 1em; height: 1em; min-height: 0; margin: 0; padding: 0; border: 0;
+  font-size: 16px; line-height: 1;
+  opacity: 0; color: transparent; background: transparent; caret-color: transparent;
+  outline: none; box-shadow: none; resize: none; overflow: hidden;
+  pointer-events: none; -webkit-user-select: text; user-select: text;
+}
+/* === /TUX-028 === */
+
 /* === TUX-006: touch sizing keys on pointer type === */
 body.touch-ui .tool-btn {
   width: 44px;
@@ -13632,3 +13634,326 @@ body.touch-ui .lvl-grp-exit-zone { margin-left: -16px }
   .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
 }
 body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
+
+/* === TUX-029: text-content field ===
+   Multi-line "Text" field in the Type tab. Beats the older
+   `[data-ui-skin] #left-panel-content textarea` rule (fixed row height, small
+   font) and keeps >= 16px so iOS never zooms on focus. */
+[data-ui-skin] #left-panel-content .vtp-panel textarea.vtp-text-field,
+[data-ui-skin] .vtp-panel textarea.vtp-text-field,
+.vtp-panel textarea.vtp-text-field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  min-height: calc(3 * 1.35em + 2 * var(--spacing-sm, 8px));
+  padding: var(--spacing-sm, 8px);
+  font-family: var(--font-ui);
+  font-size: max(16px, var(--font-size-sm, 13px));
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  resize: vertical;
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+[data-ui-skin] #left-panel-content .vtp-panel textarea.vtp-text-field:focus,
+[data-ui-skin] .vtp-panel textarea.vtp-text-field:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-accent-2);
+}
+/* === /TUX-029 === */
+
+/* === TUX-032: keyboard inset ===
+ * --kb-inset is written by src/ui/keyboard-inset.js (0 unless an editable has focus).
+ * Scroll containers gain bottom room only while the keyboard is open, so the last fields of a
+ * pane can scroll above it. Sheets and popovers read the same variable: the modal lane
+ * (TUX-046 Sheet / TUX-049) must keep consuming --kb-inset. */
+html.kb-open .pane-body,
+html.kb-open #left-panel-content,
+html.kb-open .export-settings-scroll {
+  padding-bottom: var(--kb-inset);
+  scroll-padding-bottom: calc(var(--kb-inset) + 8px);
+}
+@media (pointer: coarse) {
+  /* Save Preset bottom sheet (rule above uses !important on align-items): lift it by the inset. */
+  html.kb-open .vectura-modal-backdrop { padding-bottom: var(--kb-inset); box-sizing: border-box; }
+  html.kb-open .vectura-modal { max-height: calc(100% - 8px); }
+  /* iOS zooms inputs under 16px on focus, which would zero the inset (page zoom). */
+  .vtp-fp-search input { font-size: 16px; }
+}
+/* Font picker popover: the list scrolls inside the popover cap that positionPop() sets. */
+.vtp-fp-pop .vtp-fp-list { flex: 1 1 auto; min-height: 0; }
+.vtp-fp-pop .vtp-fp-search, .vtp-fp-pop .vtp-fp-tags { flex: none; }
+/* === /TUX-032 === */
+/* === TUX-042: text-entry >= 16px on coarse pointers ===
+ * iOS Safari zooms the page when a focused field computes below 16px. !important is the only
+ * way to beat the inline font-size:10px on the Text panel selects (ui-text-panel.js) and the
+ * skin rules at (0,2,0)-(0,3,0) in one place. [contenteditable] is deliberately NOT listed:
+ * the .vtp-spec-text specimen is 34px by design. Keyed on the pointer, never on width. */
+@media (pointer: coarse) {
+  :is(input:not([type]), input[type="text"], input[type="number"], input[type="search"],
+      input[type="email"], input[type="password"], input[type="url"], input[type="tel"],
+      select, textarea) {
+    font-size: max(var(--input-font-touch), 1em) !important;
+  }
+}
+/* === END TUX-042 === */
+
+/* === TUX-041: touch target token (owned surfaces: layers pane, left pane, pens rows, modifier bar) ===
+ * Every rule is keyed on (pointer: coarse); desktop is unchanged. Sizes only (no !important):
+ * min-width/min-height where the visual may grow, a centred ::before extension where the
+ * visual must stay small. Selectors carry [data-ui-skin] + a pane id to beat the skin rules.
+ * Remaining slices (menus, header, toolbar, ctxbar, Text panel, modals, sliders) are open
+ * ratchet work; see docs/touch-audit/changelog-fragments/TUX-041.md. */
+@media (pointer: coarse) {
+  /* Rows and boxes that can simply grow. */
+  [data-ui-skin] #left-pane :is(.left-panel-section-header, .global-section-header, .hg-preset-trigger,
+    #generator-module-trigger, select:not(.sr-only), button.w-full, input.w-full, .noise-add,
+    .noise-reset, .noise-rand, .slider-val, .slider-val-inp, .angle-inp-wrap, .paint-bucket-select) {
+    min-height: var(--touch-target-min);
+    box-sizing: border-box;
+  }
+  /* WebKit ignores min-height on some native selects, so selects also get an explicit height. */
+  [data-ui-skin] #left-pane select:not(.sr-only) { height: var(--touch-target-min); }
+  [data-ui-skin] .touch-mod-btn { min-height: var(--touch-target-min); }
+  [data-ui-skin] #right-pane .right-pane-tab { min-height: var(--touch-target-min); }
+  [data-ui-skin] #right-pane .lvl-search-wrap { min-height: var(--touch-target-min); height: auto; }
+  [data-ui-skin] #right-pane .lvl-search-bar .lvl-search-input,
+  [data-ui-skin] #right-pane .lvl-filter-btn,
+  [data-ui-skin] #right-pane .lvl-add-btn {
+    min-height: var(--touch-target-min);
+  }
+  [data-ui-skin] #right-pane .lvl-filter-btn { min-width: var(--touch-target-min); }
+  [data-ui-skin] #right-pane .lvl-add-btn { min-width: var(--touch-target-min); }
+  /* Draw-order icons keep their 18px visual (the bar must stay short on landscape phones); a
+   * 44px ::before owns the touch and 26px gaps keep neighbouring hit areas abutting. */
+  [data-ui-skin] #right-pane .draw-order-head-right { gap: 26px; }
+  [data-ui-skin] #right-pane :is(.draw-order-settings, .draw-order-overlay-toggle) { position: relative; }
+  [data-ui-skin] #right-pane :is(.draw-order-settings, .draw-order-overlay-toggle)::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+  }
+  .hg-preset-save-pip { width: var(--touch-target-min); height: var(--touch-target-min); }
+  .hg-preset-save-pip svg { width: 18px; height: 18px; }
+
+  /* Value chips: self-contained boxes sized for 16px mono text ("0.125" fits). TUX-043 puts the
+   * 44px slider band beside them. */
+  [data-ui-skin] #left-pane :is(.slider-val, .slider-val-inp),
+  [data-ui-skin] #left-pane .slider-row .value-chip {
+    width: calc(6ch + 2 * var(--spacing-sm, 8px));
+    min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
+    max-width: none;
+    flex: 0 0 auto;
+    padding: 0 var(--spacing-sm, 8px);
+    text-align: right;
+  }
+
+  /* WebKit number spinners eat the chip's digits; touch has no use for them. */
+  [data-ui-skin] :is(#left-pane, .settings-panel) input.slider-val-inp { -webkit-appearance: textfield; appearance: textfield; -moz-appearance: textfield; }
+  [data-ui-skin] :is(#left-pane, .settings-panel) input.slider-val-inp::-webkit-inner-spin-button,
+  [data-ui-skin] :is(#left-pane, .settings-panel) input.slider-val-inp::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; display: none; }
+
+  /* Small visuals keep their size; a centred 44px ::before owns the touch. */
+  [data-ui-skin] #left-pane :is(.info-btn, .noise-grip) {
+    position: relative;
+  }
+  [data-ui-skin] #left-pane :is(.info-btn, .noise-grip)::before,
+  [data-ui-skin] #left-pane .sw-toggle::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: var(--touch-target-min); height: var(--touch-target-min);
+    transform: translate(-50%, -50%);
+  }
+  /* The label row that holds an info button is one finger tall so the extension never reaches
+   * the control below. */
+  [data-ui-skin] #left-pane :has(> .info-btn) {
+    display: flex; min-height: var(--touch-target-min); align-items: center;
+  }
+  /* A justify-between row whose left child holds the label + info button: centre the value tag
+   * on the same line as the label instead of letting it float to the top of the 44px row. */
+  [data-ui-skin] #left-pane :is(.flex, [class*="justify-between"]):has(> * > .info-btn) { align-items: center; }
+  /* The angle chip is the wrapper (border + degree sign); the input inside stays borderless. */
+  [data-ui-skin] #left-pane .angle-inp-wrap { min-height: var(--touch-target-min); box-sizing: border-box; }
+  [data-ui-skin] #left-pane .angle-inp-wrap .angle-inp { width: 48px; min-height: var(--touch-target-min); height: 100%; padding: 0; border: 0; background: transparent; box-shadow: none; }
+  [data-ui-skin] #left-pane .noise-actions { gap: 0; }
+  [data-ui-skin] #left-pane .noise-actions .sw-toggle { margin: 0 7px; }
+  [data-ui-skin] #left-pane .noise-delete {
+    min-width: var(--touch-target-min); min-height: var(--touch-target-min);
+  }
+  [data-ui-skin] #left-pane .angle-ctrl .angle-dial,
+  [data-ui-skin] #left-pane .angle-dial {
+    width: var(--touch-target-min); height: var(--touch-target-min);
+  }
+  [data-ui-skin] #left-pane .sw-toggle { position: relative; }
+
+  /* On short coarse viewports (landscape phones) the header, search bar and draw-order bar used
+   * to squeeze the list to a sliver. The list keeps room for two finger-tall rows and the tab
+   * panel scrolls instead. */
+  [data-ui-skin] #right-pane .right-tab-panel { overflow-y: auto; }
+  [data-ui-skin] #right-pane #layer-list { flex-shrink: 0; min-height: calc(2 * var(--touch-target-min) + 12px); }
+
+  /* Touch scrolls by drag and iOS overlays its scrollbars; a classic 4-6px bar would steal the
+   * right edge of the row's last (44px) button. */
+  [data-ui-skin] #right-pane #layer-list { scrollbar-width: none; }
+  [data-ui-skin] #right-pane #layer-list::-webkit-scrollbar { display: none; }
+
+  /* Pens tab: its sections stack at natural height and the tab panel scrolls, so short landscape
+   * phones never squeeze the pen rows to a sliver. */
+  [data-ui-skin] #right-pane .right-tab-panel:not(.hidden)#right-tab-panel-pens { display: block; }
+  [data-ui-skin] #right-pane #pen-list { overflow: visible; }
+
+  /* The modifier bar overlays the bottom of the pane; leave room so the last control scrolls clear. */
+  [data-ui-skin] #left-panel-content { padding-bottom: 72px; }
+
+  /* Settings panel (Document Setup and canvas settings): same chip and row sizing. */
+  /* The 24px close icon keeps its visual; a centred 44px ::before owns the touch. */
+  [data-ui-skin] .settings-panel > .pane-hdr { min-height: calc(var(--touch-target-min) + 10px); box-sizing: border-box; }
+  [data-ui-skin] .settings-panel .settings-panel-close { position: relative; }
+  [data-ui-skin] .settings-panel .settings-panel-close::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+  }
+  [data-ui-skin] .settings-panel :is(.slider-val-inp, select.ctrl-sel, .sect-hdr) {
+    min-height: var(--touch-target-min); box-sizing: border-box;
+  }
+  /* 16px "Balanced" overflowed the 120px inline-width select wrap; min-width beats the inline width. */
+  [data-ui-skin] .settings-panel .ctrl-sel-wrap { min-width: 160px; }
+  [data-ui-skin] .settings-panel .slider-val-inp {
+    width: calc(6ch + 2 * var(--spacing-sm, 8px)); min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
+  }
+
+  /* Pens rows: two finger-tall lines. Line 1 = [grip][name][remove], line 2 = [swatch][weight]
+   * [value]. The two flex groups dissolve (display: contents) and order places the items; the
+   * ::after forces the line break. The round .pen-icon is hidden (the swatch carries the colour). */
+  [data-ui-skin] .pen-item {
+    flex-wrap: wrap; align-items: center; gap: 0; padding: 0 var(--spacing-sm, 8px); flex-shrink: 0;
+  }
+  [data-ui-skin] .pen-item::after { content: ''; flex: 0 0 100%; height: 0; order: 3; }
+  [data-ui-skin] .pen-item :is(.pen-row-a, .pen-row-b) { display: contents; }
+  [data-ui-skin] .pen-item .pen-icon { display: none; }
+  [data-ui-skin] .pen-item .pen-grip {
+    order: 1; flex: 0 0 var(--touch-target-min); width: var(--touch-target-min);
+    height: var(--touch-target-min); place-content: center; margin: 0;
+  }
+  [data-ui-skin] .pen-item .pen-name-input {
+    order: 2; flex: 1 1 0; min-width: 0; width: auto; min-height: var(--touch-target-min);
+  }
+  [data-ui-skin] .pen-item .pen-remove {
+    order: 3; position: relative; margin: 13px; flex: 0 0 18px;
+  }
+  [data-ui-skin] .pen-item .pen-remove::before {
+    content: ""; position: absolute; inset: -14px;
+  }
+  [data-ui-skin] .pen-item .pen-swatch {
+    order: 4; position: relative; flex: 0 0 var(--touch-target-min);
+    width: var(--touch-target-min); height: var(--touch-target-min);
+    margin: 0; border: 0; border-radius: 0; overflow: visible;
+  }
+  [data-ui-skin] .pen-item .pen-swatch::before {
+    content: ''; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px;
+    transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
+    background: var(--pen-color, currentColor); border: 1px solid var(--ui-border-hi);
+  }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color {
+    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+  }
+  [data-ui-skin] .pen-item .pen-width { order: 5; flex: 1 1 0; min-width: 0; width: auto; margin: 0 var(--spacing-sm, 8px); }
+  [data-ui-skin] .pen-item .pen-width-value {
+    order: 6; flex: 0 0 auto; width: auto; min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
+    min-height: var(--touch-target-min); padding: 0 var(--spacing-sm, 8px);
+  }
+  /* One shared row background: the name input and value chip drop their own fill (the skin gives
+   * inputs a lighter panel colour that read as a patchwork) and keep a hairline underline. */
+  [data-ui-skin] .pen-item :is(.pen-name-input, .pen-width-value) {
+    background: transparent; border: 0; border-bottom: 1px solid var(--ui-border); border-radius: 0;
+  }
+  /* WebKit draws native number spinners that eat the chip's digits; touch has no use for them. */
+  [data-ui-skin] .pen-item .pen-width-value { -webkit-appearance: textfield; appearance: textfield; -moz-appearance: textfield; }
+  [data-ui-skin] .pen-item .pen-width-value::-webkit-inner-spin-button,
+  [data-ui-skin] .pen-item .pen-width-value::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; display: none; }
+}
+/* === END TUX-041 === */
+
+/* === TUX-001: phone header, hamburger menu sheet and direct actions === */
+.header-phone-btn, .header-phone-actions { display: none; }
+#app-header { max-width: 100vw; overflow-x: clip; }
+body.phone-layout #app-header .header-phone-actions { display: inline-flex; gap: 2px; align-items: center; }
+body.phone-layout #app-header .header-phone-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; box-sizing: border-box;
+  border: 1px solid var(--ui-border); background: var(--ui-panel-alt); color: var(--ui-text-2);
+}
+body.phone-layout #app-header .header-phone-btn.is-disabled { opacity: 0.4; }
+body.phone-layout #app-header .header-brand-menu { gap: 6px; flex: 1 1 0; min-width: 0; }
+body.phone-layout #app-header .header-brand-menu h1 { font-size: 12px; overflow: hidden; text-overflow: clip; min-width: 0; }
+body.phone-layout #app-header .header-brand-mark,
+body.phone-layout #app-header .header-menu-divider,
+body.phone-layout #app-header #theme-toggle { display: none; }
+body.phone-layout #app-header .header-status-actions { gap: 0; }
+body.phone-layout #top-menubar { display: none; }
+body.phone-layout.phone-menu-open #top-menubar {
+  display: flex; flex-direction: column; align-items: stretch; gap: 0;
+  position: fixed; left: 0; right: 0; top: var(--phone-menu-top, 56px); margin: 0;
+  max-height: calc(100vh - var(--phone-menu-top, 56px)); max-height: calc(100dvh - var(--phone-menu-top, 56px));
+  overflow-y: auto; overscroll-behavior: contain; white-space: normal;
+  padding: 4px max(0px, env(safe-area-inset-right)) max(4px, env(safe-area-inset-bottom)) max(0px, env(safe-area-inset-left));
+  background: var(--ui-bg); border-bottom: 1px solid var(--ui-border); box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
+  z-index: 1500;
+}
+body.phone-layout #top-menubar .top-menu { position: static; display: block; width: 100%; }
+body.phone-layout #top-menubar .top-menu-trigger {
+  width: 100%; min-height: 44px; justify-content: flex-start; font-size: 14px; padding: 0 16px;
+  box-sizing: border-box; border-width: 0 0 1px; background: transparent;
+}
+body.phone-layout #top-menubar .top-menu-panel {
+  display: none; position: static; min-width: 0; width: 100%; box-sizing: border-box;
+  box-shadow: none; border: 0; padding: 0; transform: none; transition: none;
+}
+body.phone-layout #top-menubar .top-menu-panel.open { display: flex; opacity: 1; pointer-events: auto; }
+body.phone-layout #top-menubar .top-menu-item { min-height: 44px; font-size: 14px; padding: 0 16px; box-sizing: border-box; }
+/* Drill-down: with a sub-level open, show only that panel. */
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-trigger,
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-theme-row { display: none; }
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu:not(:has(.top-menu-panel.open)) { display: none; }
+body.phone-layout #top-menubar .top-menu-back { font-weight: 600; color: var(--ui-text-2); }
+.top-menu-back { display: none; }
+body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: center; }
+/* === end TUX-001 === */
+/* === TUX-034: touch hold + context menus ===
+   Scoped to .menu-dropdown.is-context-menu and .canvas-ctx-menu. The header menubar shares
+   bare .menu-dropdown / .menu-entry: never restyle those here. */
+.touch-hold-ring {
+  position: fixed; z-index: 10000; pointer-events: none;
+  width: var(--touch-hold-ring-size); height: var(--touch-hold-ring-size);
+  margin: calc(var(--touch-hold-ring-size) / -2) 0 0 calc(var(--touch-hold-ring-size) / -2);
+  border: 3px solid var(--touch-hold-ring-color); border-radius: 50%;
+  box-sizing: border-box; overflow: hidden;
+}
+.touch-hold-ring-fill {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: var(--touch-hold-ring-fill); transform-origin: 50% 50%;
+}
+/* A card hold must show no native callout, selection or drag lift (clause 16). */
+.lvl-card, .lvl-grp-hdr {
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
+.menu-dropdown.is-context-menu { overflow-y: auto; overscroll-behavior: contain; }
+@media (pointer: coarse) {
+  .menu-dropdown.is-context-menu {
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .menu-dropdown.is-context-menu .menu-entry { min-height: var(--touch-target-min); }
+  .canvas-ctx-menu {
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px);
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
+}
+/* === END TUX-034 === */

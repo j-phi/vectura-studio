@@ -101,6 +101,20 @@ test.describe('touch harness', () => {
     expect(new Set(ev.filter((e) => e.t === 'pointerdown').map((e) => e.id)).size).toBe(2);
   });
 
+  test('staggered pinch fires exactly 2 pointerdowns', async ({ page }) => {
+    await page.evaluate(() => {
+      window.__downs = [];
+      // Capture at window level: in iPhone landscape the canvas can be covered (shell lane), but
+      // every touch pointerdown still passes through the window capture phase.
+      window.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch') window.__downs.push(e.pointerId);
+      }, true);
+    });
+    const box = await page.locator('#main-canvas').boundingBox();
+    await touch.pinch(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 }, { startDist: 100, endDist: 200, staggerMs: 60 });
+    expect(await page.evaluate(() => window.__downs.length)).toBe(2);
+  });
+
   test('canvasShare and hitArea measure the live layout', async ({ page }) => {
     const share = await touch.canvasShare(page);
     expect(share).toBeGreaterThanOrEqual(0);

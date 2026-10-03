@@ -51,7 +51,10 @@
   <header id="app-header" class="border-b border-vectura-border bg-vectura-panel px-4 py-2 relative overflow-visible z-50">
     <div class="header-main flex items-center justify-between gap-3">
       <div class="header-brand-menu flex items-center gap-3 min-w-0">
-        <div class="w-4 h-4 bg-vectura-accent"></div>
+        <button id="btn-menu-hamburger" class="header-phone-btn header-hamburger" type="button" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="top-menubar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+        <div class="w-4 h-4 bg-vectura-accent header-brand-mark"></div>
         <h1 class="font-bold tracking-widest text-vectura-accent whitespace-nowrap">
           VECTURA<span class="font-light text-vectura-muted">.STUDIO</span>
         </h1>
@@ -217,6 +220,11 @@
         </nav>
       </div>
       <div class="header-status-actions flex items-center gap-3 shrink-0">
+        <div class="header-phone-actions" role="group" aria-label="Quick actions">
+          <button id="btn-header-undo" class="header-phone-btn" type="button" aria-label="Undo" title="Undo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+          <button id="btn-header-redo" class="header-phone-btn" type="button" aria-label="Redo" title="Redo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+          <button id="btn-header-export" class="header-phone-btn" type="button" aria-label="Export" title="Export"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
+        </div>
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Switch to light theme" aria-pressed="false"
           title="Switch theme">
           <span class="theme-toggle-icon theme-toggle-icon--light" aria-hidden="true">
@@ -1058,6 +1066,7 @@
   <script src="./src/core/align-ops.js?v=1.4.6" defer></script>
   <!-- Tools Parity Phase 1 Lane E: text-to-outline ops (after align-ops). -->
   <script src="./src/core/text-outline-ops.js?v=1.4.6" defer></script>
+  <script src="./src/render/touch-gesture-arbiter.js?v=1.4.6" defer></script>
   <script src="./src/render/renderer.js?v=1.4.6" defer></script>
   <!-- Skin SDK: tokens.js exposes window.Vectura.UI.tokens.get for renderer/UI lookups;
        skin-manager.js owns the active <link id="active-skin"> swap and dispatches the
@@ -1073,6 +1082,7 @@
   <script src="./src/ui/utils.js?v=1.4.6" defer></script>
   <script src="./src/ui/randomization-utils.js?v=1.4.6" defer></script>
   <script src="./src/ui/ui-touch.js?v=1.4.6" defer></script>
+  <script src="./src/ui/keyboard-inset.js?v=1.4.6" defer></script>
   <script src="./src/ui/ui-document-units.js?v=1.4.6" defer></script>
   <script src="./src/ui/ui-randomization.js?v=1.4.6" defer></script>
   <script src="./src/ui/ui-fill-panel.js?v=1.4.6" defer></script>
@@ -1128,6 +1138,7 @@
   <script src="./src/ui/panels/auto-colorize-panel.js?v=1.4.6" defer></script>
   <script src="./src/ui/panels/noise-rack-panel.js?v=1.4.6" defer></script>
   <script src="./src/ui/panels/transform-panel.js?v=1.4.6" defer></script>
+  <script src="./src/ui/touch/touch-hold.js?v=1.4.6" defer></script>
   <script src="./src/ui/panels/layers-panel.js?v=1.4.6" defer></script>
   <script src="./src/ui/panels/pens-panel.js?v=1.4.6" defer></script>
   <script src="./src/ui/panels/modifiers-panel.js?v=1.4.6" defer></script>

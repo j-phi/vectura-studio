@@ -108,6 +108,13 @@ const touchPhase = async (page, phase, points) => {
     const lifting = phase === 'end' || phase === 'cancel';
     points.forEach((p) => {
       const pid = 100 + p.id;
+      // A 'start' for a finger that is already down (pinch staggerMs calls start([f0]) then
+      // start([f0, f1])) must not re-dispatch pointerdown/touchstart for it (TUX-057 fix).
+      if (phase === 'start' && state.down.has(p.id)) {
+        const held = state.down.get(p.id);
+        held.x = p.x; held.y = p.y;
+        return;
+      }
       const el = document.elementFromPoint(p.x, p.y) || document.body;
       const startTarget = phase === 'start' ? el : (state.down.get(p.id)?.target || el);
       if (phase === 'start') { state.down.set(p.id, { target: el, x: p.x, y: p.y }); caps.set(pid, null); }

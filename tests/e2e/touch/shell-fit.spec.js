@@ -271,3 +271,39 @@ test.describe('TUX-006 mobile-layout cascade weight', () => {
     });
   }
 });
+
+// TUX-001: phone header. Hamburger + direct Undo/Redo/Export, no viewport inflation.
+test.describe('TUX-001 phone header', () => {
+  test('header fits, hamburger drills down, direct actions work', async ({ page }, testInfo) => {
+    const dev = PROJECTS[testInfo.project.name];
+    test.skip(!dev || dev.device === 'iPadP' || dev.device === 'iPadL' || dev.device === 'coarseWide', 'phone projects only');
+    await gotoApp(page);
+    const st = await page.evaluate(() => ({ iw: innerWidth, sw: document.documentElement.scrollWidth, phone: document.body.classList.contains('phone-layout'),
+      ox: getComputedStyle(document.getElementById('app-header')).overflowX }));
+    expect(st.iw).toBe(dev.width);
+    expect(st.sw).toBeLessThanOrEqual(dev.width);
+    expect(st.phone).toBe(true);
+    expect(['auto', 'scroll']).not.toContain(st.ox);
+    const ids = ['btn-menu-hamburger', 'btn-header-undo', 'btn-header-redo', 'btn-header-export'];
+    const rects = [];
+    for (const id of ids) {
+      const r = await page.evaluate((i) => { const b = document.getElementById(i).getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; }, id);
+      expect(r.w).toBeGreaterThanOrEqual(44);
+      expect(r.h).toBeGreaterThanOrEqual(44);
+      expect(r.x + r.w).toBeLessThanOrEqual(dev.width);
+      rects.push(r);
+    }
+    for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+      const a = rects[i], b = rects[j];
+      expect(a.x + a.w <= b.x + 0.5 || b.x + b.w <= a.x + 0.5 || a.y + a.h <= b.y + 0.5 || b.y + b.h <= a.y + 0.5).toBe(true);
+    }
+    await touch.tap(page, page.locator('#btn-menu-hamburger'));
+    await touch.tap(page, page.locator('#btn-menu-insert'));
+    const inside = await page.evaluate(() => [...document.querySelectorAll('.top-menu-panel.open .top-menu-item')].map((e) => { const r = e.getBoundingClientRect(); return r.height >= 44 && r.right <= innerWidth && r.bottom <= innerHeight; }));
+    expect(inside.length).toBeGreaterThan(1);
+    expect(inside.every(Boolean)).toBe(true);
+    await touch.tap(page, page.locator('.top-menu-panel.open .top-menu-back'));
+    await touch.tap(page, page.locator('#btn-menu-help'));
+    await expect(page.locator('#btn-menu-help ~ .top-menu-panel.open')).toBeVisible();
+  });
+});

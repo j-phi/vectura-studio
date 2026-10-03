@@ -425,7 +425,15 @@
 
     state.onDocDown = (e) => { if (state.menu && !state.menu.contains(e.target)) close(); };
     state.onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
-    state.onScroll = () => close();
+    // A finger scroll INSIDE the menu (a long list on a short screen) must not close it.
+    // Resize and blur still close it; so does a scroll anywhere else.
+    state.onScroll = (e) => {
+      // Only the WINDOW losing focus closes the menu. An element blur (the context-bar item that
+      // just opened this menu is hidden and blurs) bubbles to a capture listener on window.
+      if (e && e.type === 'blur' && e.target !== G) return;
+      if (e && e.type === 'scroll' && state.menu && e.target && e.target.nodeType === 1 && state.menu.contains(e.target)) return;
+      close();
+    };
     // Defer the outside-pointer binding so the opening event doesn't self-close.
     if (typeof G.requestAnimationFrame === 'function') {
       G.requestAnimationFrame(() => { if (state.menu === menu) d.addEventListener('pointerdown', state.onDocDown, true); });
@@ -511,9 +519,14 @@
     return map;
   };
 
+  // TUX-034a: open the selection menu without a right-click (touch context-bar ⋯).
+  // Same items as the right-click menu for the current selection; no scene hit.
+  const openForSelection = (x, y) => openAt(x, y, null);
+
   UI.CanvasContextMenu = {
     mount,
     openAt,
+    openForSelection,
     close,
     buildItems,
     runCommand,
