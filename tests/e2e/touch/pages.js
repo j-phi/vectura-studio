@@ -85,7 +85,12 @@ const SELECTORS = {
 };
 
 const STEP_BUDGET_MS = 5000;
+// Boot (page load, app init, fixture deserialise) has its own budget: a heavy fixture must not make a slow
+// machine fail `boot` or move a pinned failure. The 5 s per-step budget starts after boot.
+const BOOT_BUDGET_MS = 45000;
 const LOCATE_MS = 3500;
+// ResizeObserver 'loop completed with undelivered notifications' is benign browser noise: it is dropped from
+// console errors AND page errors, so no cell is pinned on it.
 const ERROR_NOISE = /Failed to load resource|favicon|net::ERR_|Download the React DevTools|ResizeObserver loop/i;
 
 // ---------------------------------------------------------------------------------------------
@@ -96,7 +101,10 @@ function bindJourney(page, projectName) {
   if (!spec) throw new Error(`unknown project ${projectName}`);
   const j = { project: projectName, dev: spec, errors: [], stepId: 'boot' };
   page.__j = j;
-  page.on('pageerror', (e) => j.errors.push(`pageerror: ${String((e && e.message) || e).slice(0, 160)}`));
+  page.on('pageerror', (e) => {
+    const msg = String((e && e.message) || e);
+    if (!ERROR_NOISE.test(msg)) j.errors.push(`pageerror: ${msg.slice(0, 160)}`);
+  });
   page.on('console', (m) => {
     if (m.type() === 'error' && !ERROR_NOISE.test(m.text())) j.errors.push(`console.error: ${m.text().slice(0, 160)}`);
   });
@@ -147,9 +155,9 @@ async function stableBox(page, handle) {
 }
 
 // The on-screen guard. Returns null when the touch may land, else a deterministic reason.
-async function guardTarget(page, handle, pt) {
+async function guardTarget(page, handle, pt, onScreenOnly = false) {
   const dev = jOf(page).dev;
-  return page.evaluate(([el, x, y, d]) => {
+  return page.evaluate(([el, x, y, d, screenOnly]) => {
     const vv = window.visualViewport;
     const left = vv ? vv.offsetLeft : 0;
     const top = vv ? vv.offsetTop : 0;
@@ -162,6 +170,7 @@ async function guardTarget(page, handle, pt) {
     if (!(x >= left && x < left + d.width && y >= top && y < top + d.height)) {
       return `off-screen: (${Math.round(x)},${Math.round(y)}) is outside the ${d.width}x${d.height} device screen`;
     }
+    if (screenOnly) return null;
     const hit = document.elementFromPoint(x, y);
     if (!hit || !(hit === el || el.contains(hit))) return `covered by ${name(hit)} (target ${name(el)})`;
     for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
@@ -170,7 +179,7 @@ async function guardTarget(page, handle, pt) {
       if (parseFloat(cs.opacity) === 0) return `invisible: opacity 0 on ${name(n)}`;
     }
     return null;
-  }, [handle, pt.x, pt.y, { width: dev.width, height: dev.height }]);
+  }, [handle, pt.x, pt.y, { width: dev.width, height: dev.height }, onScreenOnly]);
 }
 
 // target: Locator, or { x, y, within: Locator } for a point inside an element (the canvas).
@@ -221,29 +230,40 @@ async function fingerDrag(page, from, to, opts = {}) {
   const r = await resolveTarget(page, from, opts);
   await assertLands(page, r.handle, r.pt, r.what);
   const end = typeof to.dx === 'number' ? { x: r.pt.x + to.dx, y: r.pt.y + (to.dy || 0) } : to;
+  // The end point must lie on the device screen: a finger cannot lift off beyond the glass.
+  const endWhy = await guardTarget(page, r.handle, end, true);
+  if (endWhy) throw new Error(`drag end: ${endWhy}`);
   await touch.drag(page, r.pt, end, { steps: opts.steps || 10, holdMs: opts.holdMs || 0, stepDelayMs: opts.stepDelayMs || 0 });
   return { from: r.pt, to: end };
 }
 
 // Two fingers around `center` (a point inside `center.within`). Guards BOTH start points.
-async function guardPair(page, center, startDist) {
+async function guardPair(page, center, startDist, end = {}) {
   const handle = await handleOf(page, center.within, 'gesture container');
   for (const sign of [-1, 1]) {
     const pt = { x: center.x + sign * startDist / 2, y: center.y };
     const reason = await guardTarget(page, handle, pt);
     if (reason) throw new Error(`finger ${sign < 0 ? 1 : 2}: ${reason}`);
   }
+  // End points: on the device screen and still over the gesture container (not slid under an overlay).
+  const endDist = end.dist === undefined ? startDist : end.dist;
+  for (const sign of [-1, 1]) {
+    const pt = { x: center.x + (end.dx || 0) + sign * endDist / 2, y: center.y + (end.dy || 0) };
+    const reason = await guardTarget(page, handle, pt);
+    if (reason) throw new Error(`finger ${sign < 0 ? 1 : 2} end: ${reason}`);
+  }
 }
 
 async function fingerPinch(page, center, opts = {}) {
   const startDist = opts.startDist || 80;
-  await guardPair(page, center, startDist);
-  await touch.pinch(page, { x: center.x, y: center.y }, { startDist, endDist: opts.endDist || 240, steps: opts.steps || 10, staggerMs: opts.staggerMs || 0 });
+  const endDist = opts.endDist || 240;
+  await guardPair(page, center, startDist, { dist: endDist });
+  await touch.pinch(page, { x: center.x, y: center.y }, { startDist, endDist, steps: opts.steps || 10, staggerMs: opts.staggerMs || 0 });
 }
 
 async function fingerPan(page, center, opts = {}) {
   const gap = opts.gap || 100;
-  await guardPair(page, center, gap);
+  await guardPair(page, center, gap, { dx: opts.dx || 0, dy: opts.dy || 0 });
   await touch.twoFingerPan(page, { x: center.x, y: center.y }, { dx: opts.dx || 0, dy: opts.dy || 0, gap, steps: opts.steps || 10 });
 }
 
@@ -318,10 +338,14 @@ async function readState(page) {
     };
     const active = eng.getActiveLayer ? eng.getActiveLayer() : null;
     const boxes = {};
+    const worldBoxes = {};
     eng.layers.forEach((l) => {
       try {
         const b = r.getLayerBounds(l);
         if (!b || !b.corners) return;
+        const wc = {};
+        Object.entries(b.corners).forEach(([k, p]) => { wc[k] = [p.x, p.y]; });
+        worldBoxes[l.id] = wc;
         const c = {};
         Object.entries(b.corners).forEach(([k, p]) => {
           const s = r.worldToScreen(p.x, p.y);
@@ -379,6 +403,7 @@ async function readState(page) {
       offsetY: r.offsetY,
       activeTool: app.ui.activeTool,
       boxes,
+      worldBoxes,
       canvasRect: { x: cr.left, y: cr.top, w: cr.width, h: cr.height },
       ghosts,
       overlays,
@@ -397,7 +422,7 @@ async function loadFixture(page, name) {
   await page.evaluate(([body, fname]) => {
     window.app.ui.openVecturaFile(new File([body], fname, { type: 'application/json' }));
   }, [text, `${name}.vectura`]);
-  await page.waitForFunction((n) => window.app.engine.layers.length === n && !window.app.isRestoring, expected, { timeout: LOCATE_MS });
+  await page.waitForFunction((n) => window.app.engine.layers.length === n && !window.app.isRestoring, expected, { timeout: BOOT_BUDGET_MS });
   takeErrors(page);
 }
 
@@ -407,7 +432,7 @@ async function raiseUndoLimit(page) {
 }
 
 async function waitAppReady(page) {
-  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer), null, { timeout: 15000 });
+  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer), null, { timeout: BOOT_BUDGET_MS });
 }
 
 // Poll readState until pred(state) returns true (or a string reason keeps it pending).
@@ -557,6 +582,7 @@ async function fingerSlider(page, slider, fraction) {
 module.exports = {
   SELECTORS,
   STEP_BUDGET_MS,
+  BOOT_BUDGET_MS,
   bindJourney,
   takeErrors,
   jOf,

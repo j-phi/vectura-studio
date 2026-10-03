@@ -21,7 +21,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const P = require('./pages');
 const { PROJECTS } = require('./viewports');
-const { JOURNEYS } = require('./journey-defs');
+const { JOURNEYS, moveChecks } = require('./journey-defs');
 
 test.describe.configure({ retries: 0 });
 
@@ -71,19 +71,22 @@ async function runStep(c, step) {
   P.takeErrors(page);
   page.__j.stepId = step.id;
   const pre = await P.readState(page);
-  await withBudget(Promise.resolve(step.run(c)), P.STEP_BUDGET_MS, step.id);
+  const budget = step.budget || c.stepBudget || P.STEP_BUDGET_MS;
+  await withBudget(Promise.resolve(step.run(c)), budget, step.id);
   const t0 = Date.now();
   let last = null;
   for (;;) {
     try {
       const now = await P.readState(page);
-      verify(step, pre, now);
+      // The step's own postcondition first: it names the real defect (the object did not move) before the
+      // generic side-effect checks (history delta) can attribute it to something else.
       if (step.post) await step.post(c, pre, now);
+      verify(step, pre, now);
       last = null;
       break;
     } catch (e) {
       last = e;
-      if (Date.now() - t0 > P.STEP_BUDGET_MS) break;
+      if (Date.now() - t0 > budget) break;
       await P.sleep(100);
     }
   }
@@ -129,7 +132,8 @@ const bootStep = (J) => ({
   run: async (c) => {
     await c.page.goto('/');
     await P.waitAppReady(c.page);
-    if (J.fixture) await P.loadFixture(c.page, J.fixture);
+    const fixture = c.project.startsWith('webkit-') && J.fixtureWebkit ? J.fixtureWebkit : J.fixture;
+    if (fixture) await P.loadFixture(c.page, fixture);
     await P.raiseUndoLimit(c.page);
     c.preBoot = true;
   },
@@ -145,7 +149,7 @@ async function runBoot(c, J) {
   const step = bootStep(J);
   page.__j.stepId = 'boot';
   try {
-    await withBudget(step.run(c), P.STEP_BUDGET_MS, 'boot');
+    await withBudget(step.run(c), P.BOOT_BUDGET_MS, 'boot');
     const t0 = Date.now();
     let last = null;
     for (;;) {
@@ -157,7 +161,7 @@ async function runBoot(c, J) {
         break;
       } catch (e) {
         last = e;
-        if (Date.now() - t0 > P.STEP_BUDGET_MS) break;
+        if (Date.now() - t0 > P.BOOT_BUDGET_MS) break;
         await P.sleep(100);
       }
     }
@@ -179,12 +183,12 @@ const reasonOf = (r) => `${r.jrn ? `${r.jrn} ` : ''}${r.message}`.slice(0, 170);
 test.describe('finger-only journeys', () => {
   for (const J of JOURNEYS) {
     test(J.id, async ({ page }, testInfo) => {
-      test.setTimeout(150000);
+      test.setTimeout(240000);
       const project = testInfo.project.name;
       const dev = PROJECTS[project];
       expect(dev, `unknown project ${project}`).toBeTruthy();
       P.bindJourney(page, project);
-      const ctx = { page, dev, vars: {} };
+      const ctx = { page, dev, project, stepBudget: J.stepBudget, vars: {} };
 
       let result = await runBoot(ctx, J);
       if (!result) result = await runSteps(ctx, J.steps);
@@ -247,6 +251,47 @@ test.describe('harness self-test', () => {
       document.body.appendChild(o);
     });
     await expect(P.fingerTap(page, page.locator('#probe'))).rejects.toThrow(/covered/);
+  });
+
+  // (v) the end points of a drag, pinch and pan must lie on the device screen too.
+  const probeBand = (page, dev) => page.evaluate((w) => { // journey-eval-ok
+    const d = document.createElement('div');
+    d.id = 'probe-band';
+    d.style.cssText = `position:fixed;top:120px;left:0;width:${w}px;height:300px;z-index:99999;background:#0a0`;
+    document.body.appendChild(d);
+  }, dev.width);
+
+  test('(v) fingerDrag, fingerPinch and fingerPan reject an end point beyond the device width', async ({ page }, testInfo) => {
+    const dev = PROJECTS[testInfo.project.name];
+    await probeBand(page, dev);
+    const band = page.locator('#probe-band');
+    await expect(P.fingerDrag(page, { x: 30, y: 200, within: band }, { x: dev.width + 40, y: 200 })).rejects.toThrow(/drag end: off-screen/);
+    await expect(P.fingerPinch(page, { x: dev.width - 30, y: 250, within: band }, { startDist: 40, endDist: 200 })).rejects.toThrow(/end: off-screen/);
+    await expect(P.fingerPan(page, { x: dev.width - 60, y: 250, within: band }, { dx: 80, dy: 0, gap: 40 })).rejects.toThrow(/end: off-screen/);
+  });
+
+  test('(v) an end point on the screen is accepted', async ({ page }, testInfo) => {
+    const dev = PROJECTS[testInfo.project.name];
+    await probeBand(page, dev);
+    const r = await P.fingerDrag(page, { x: 30, y: 200, within: page.locator('#probe-band') }, { x: 90, y: 260 });
+    expect(r.to.x).toBe(90);
+    void dev;
+  });
+
+  // (vi) the move check is world-space: a drag that only PANS the view must fail it, even with history pushed.
+  test('(vi) the object-move check rejects a pan-only drag and accepts a real move', async () => {
+    const box = (dx, dy) => ({ nw: [10 + dx, 10 + dy], ne: [30 + dx, 10 + dy], se: [30 + dx, 30 + dy], sw: [10 + dx, 30 + dy] });
+    const st = (o) => ({ worldBoxes: { A: box(o.wx || 0, o.wy || 0) }, offsetX: o.ox || 0, offsetY: o.oy || 0, scale: 2, activeParams: { posX: o.wx || 0, posY: o.wy || 0 }, historyLen: o.h || 0 });
+    const c = { vars: {} };
+    moveChecks.rememberObject(c, st({}), 'A');
+    // observed today: view offset +58,+33, params unchanged, history pushed
+    expect(() => moveChecks.assertObjectMoved(c, st({ ox: 58, oy: 33, h: 1 }), 'A', 70, 40)).toThrow(/the view panned/);
+    // object params and world bounds unchanged, view held: not a move either
+    expect(() => moveChecks.assertObjectMoved(c, st({ h: 1 }), 'A', 70, 40)).toThrow(/world centre moved/);
+    // a real move: world centre +40,+25 at scale 2 = 80,50 px
+    expect(() => moveChecks.assertObjectMoved(c, st({ wx: 40, wy: 25, h: 1 }), 'A', 70, 40)).not.toThrow();
+    expect(() => moveChecks.assertObjectBack(c, st({}), 'A')).not.toThrow();
+    expect(() => moveChecks.assertObjectBack(c, st({ wx: 40, wy: 25 }), 'A')).toThrow(/not back/);
   });
 
   const fakeSteps = (failAt) => ['s1', 's2'].map((id) => ({

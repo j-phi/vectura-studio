@@ -47,6 +47,43 @@ function visibleCenter(st, box) {
   return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
 }
 
+// World-space move checks (a screen box also moves when the VIEW pans, so it proves nothing about the object).
+// A one-finger drag on a selected object that only pans the canvas changes renderer.offsetX/offsetY and leaves the
+// object's world bounds and params alone: both checks below must reject that.
+function worldCenter(st, id) {
+  const b = st.worldBoxes[id];
+  if (!b) throw new Error(`no world box for layer ${String(id).slice(0, 6)}`);
+  const xs = Object.values(b).map((p) => p[0]);
+  const ys = Object.values(b).map((p) => p[1]);
+  return { x: (Math.min(...xs) + Math.max(...xs)) / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 };
+}
+
+// Records the object's world centre, params and the view offset before the move.
+function rememberObject(c, st, id) {
+  c.vars.wc = worldCenter(st, id);
+  c.vars.off = { x: st.offsetX, y: st.offsetY };
+  c.vars.oparams = JSON.stringify(st.activeParams);
+}
+
+const viewHeld = (c, now) => near(now.offsetX, c.vars.off.x, 0.5) && near(now.offsetY, c.vars.off.y, 0.5);
+
+// The object moved by about (dx, dy) screen px in WORLD space and the view did not pan.
+function assertObjectMoved(c, now, id, dx, dy) {
+  if (!viewHeld(c, now)) throw new Error(`the view panned (${Math.round(now.offsetX - c.vars.off.x)},${Math.round(now.offsetY - c.vars.off.y)}) instead of the object moving`);
+  const wc = worldCenter(now, id);
+  const mx = (wc.x - c.vars.wc.x) * now.scale;
+  const my = (wc.y - c.vars.wc.y) * now.scale;
+  if (!(mx > dx * 0.55 && my > dy * 0.55)) throw new Error(`object world centre moved (${Math.round(mx)},${Math.round(my)}) px, want about (${dx},${dy})`);
+  if (JSON.stringify(now.activeParams) === c.vars.oparams && now.activeParams.posX !== undefined) throw new Error('the object params did not change');
+}
+
+// The object is back at its recorded world position and the view held.
+function assertObjectBack(c, now, id) {
+  if (!viewHeld(c, now)) throw new Error('the view changed during the undo');
+  const wc = worldCenter(now, id);
+  if (Math.hypot(wc.x - c.vars.wc.x, wc.y - c.vars.wc.y) * now.scale > 8) throw new Error('the object is not back at its original world position');
+}
+
 const onCanvas = (c, x, y) => ({ x, y, within: L(c, S.canvas) });
 
 // A spot on the canvas where both start fingers of a pinch (cx +- 40) sit on empty canvas:
@@ -135,6 +172,10 @@ const stepCanvasReady = (j, what) => ({
   post: () => {},
 });
 
+// J2 rename-open: latency threshold (margin over a fast machine) and the generous wait for the input to appear.
+const RENAME_MAX_MS = 1500;
+const RENAME_WAIT_MS = 6000;
+
 // ---- the journeys ----------------------------------------------------------------------------
 const JOURNEYS = [];
 
@@ -191,6 +232,13 @@ JOURNEYS.push({
 // J2 ------------------------------------------------------------------------------------------
 JOURNEYS.push({
   id: 'J2', title: 'Add, rename (heavy document), reorder, hide/show, delete a layer', fixture: 'journey-heavy',
+  // WebKit-desktop runs the same document about 20x faster than Chromium device emulation (a layer tap blocks the main
+  // thread 40-90 ms against 900-1800 ms), so it would sit under the 350 ms double-tap window and flip with machine
+  // load. The WebKit projects load a document with 16x the flowfield density (a flowfield tap blocks about 0.8-0.9 s idle against
+  // the 0.46 s needed; more load only lengthens the block, so the failure holds under load) so the JRN-010 trigger holds deterministically in both engines.
+  fixtureWebkit: 'journey-heavy-webkit',
+  // Every step on a heavy document is slow by design (JRN-010): a 5 s budget would pin cells on machine load, so J2 steps get 20 s.
+  stepBudget: 20000,
   steps: [
     stepOpenLayers('j2'),
     stepAddMenu('j2'),
@@ -203,13 +251,26 @@ JOURNEYS.push({
     },
     {
       id: 'j2.rename-open', action: 'doubleTap', route: 'double-tap the name of a heavy layer (timestamp-based, TUX-038)', selector: 'SELECTORS.cardName',
-      expects: 'rename input appears and holds focus; layers +0', jrn: 'JRN-010', expect: { selected: 'any' },
+      expects: `rename input appears within ${RENAME_MAX_MS} ms of the double-tap and holds focus; layers +0`, jrn: 'JRN-010', expect: { selected: 'any' },
+      // Own budget: the step waits up to RENAME_WAIT_MS for the input and MEASURES the latency. The pin is
+      // deterministic: the input must show within RENAME_MAX_MS (margin over a fast machine), or it never shows
+      // within RENAME_WAIT_MS. It is NOT pinned on exceeding the 5000 ms step budget.
+      budget: RENAME_WAIT_MS + 40000,
       run: async (c) => {
         const st = await P.readState(c.page);
         c.vars.target = st.layers.find((l) => l.type === 'flowfield').id;
         await P.fingerDoubleTap(c.page, L(c, `${S.layerCard(c.vars.target)} ${S.cardName}`));
+        const t0 = Date.now();
+        c.vars.renameMs = null;
+        while (Date.now() - t0 < RENAME_WAIT_MS) {
+          if (await L(c, S.renameInput).count()) { c.vars.renameMs = Date.now() - t0; break; }
+          await P.sleep(50);
+        }
       },
-      post: async (c) => { if (!(await L(c, S.renameInput).count())) throw new Error('the rename input never appeared'); },
+      post: (c) => {
+        if (c.vars.renameMs === null) throw new Error(`the rename input never appeared within ${RENAME_WAIT_MS} ms of the double-tap`);
+        if (c.vars.renameMs > RENAME_MAX_MS) throw new Error(`the rename input took ${c.vars.renameMs} ms, over the ${RENAME_MAX_MS} ms threshold`);
+      },
     },
     {
       id: 'j2.rename-type', action: 'softType', route: 'type the new name with the soft keyboard', selector: 'focused rename input',
@@ -292,17 +353,15 @@ JOURNEYS.push({
     selectOval('j3'),
     {
       id: 'j3.move', action: 'drag', route: 'quick drag on the selected object (Q4, 6 px slop, no hold)', selector: 'canvas point at the object centre',
-      expects: 'object moved by about the drag vector; history +1', jrn: 'NEW-TOUCH-MOVE-HISTORY', expect: { history: 1 },
+      expects: 'object WORLD position moved by about the drag vector; view offset unchanged; history +1', jrn: 'JRN-003', expect: { history: 1 },
       run: async (c) => {
         const st = await P.readState(c.page);
         const o = boxOf(st, c.vars.oval);
         c.vars.box = o;
+        rememberObject(c, st, c.vars.oval);
         await P.fingerDrag(c.page, onCanvas(c, o.cx, o.cy), { dx: 70, dy: 40 }, { steps: 12, stepDelayMs: 8 });
       },
-      post: (c, pre, now) => {
-        const o = boxOf(now, c.vars.oval);
-        if (!(o.cx - c.vars.box.cx > 40 && o.cy - c.vars.box.cy > 20)) throw new Error(`object centre moved (${Math.round(o.cx - c.vars.box.cx)},${Math.round(o.cy - c.vars.box.cy)}), want about (70,40)`);
-      },
+      post: (c, pre, now) => assertObjectMoved(c, now, c.vars.oval, 70, 40),
     },
     {
       id: 'j3.scale', action: 'drag', route: 'drag the south-east resize handle outward', selector: 'canvas point at the SE corner',
@@ -404,26 +463,27 @@ JOURNEYS.push({
     },
     {
       id: 'j4.move', action: 'drag', route: 'quick drag the selected object', selector: 'canvas point at the object centre',
-      expects: 'object moved; history +1', expect: { history: 1 },
+      expects: 'object WORLD position moved; view offset unchanged; history +1', jrn: 'JRN-003', expect: { history: 1 },
       run: async (c) => {
         const st = await P.readState(c.page);
         const o = boxOf(st, c.vars.oval);
         c.vars.box = o;
+        rememberObject(c, st, c.vars.oval);
         await P.fingerDrag(c.page, onCanvas(c, o.cx, o.cy), { dx: 50, dy: 30 }, { steps: 10, stepDelayMs: 8 });
       },
-      post: (c, pre, now) => { if (!(boxOf(now, c.vars.oval).cx - c.vars.box.cx > 25)) throw new Error('the object did not move'); },
+      post: (c, pre, now) => assertObjectMoved(c, now, c.vars.oval, 50, 30),
     },
     {
       id: 'j4.undo', action: 'tap', route: 'tap the direct Undo button (TUX-020)', selector: 'SELECTORS.headerUndo',
-      expects: 'history -1; redo +1; the object is back', expect: { history: -1, redo: 1, selected: 'any' },
+      expects: 'history -1; redo +1; the object is back at its original world position', expect: { history: -1, redo: 1, selected: 'any' },
       run: (c) => P.undo(c.page),
-      post: (c, pre, now) => { if (boxOf(now, c.vars.oval).cx - c.vars.box.cx > 12) throw new Error('the object stayed at the moved position'); },
+      post: (c, pre, now) => assertObjectBack(c, now, c.vars.oval),
     },
     {
       id: 'j4.redo', action: 'tap', route: 'tap the direct Redo button (TUX-020)', selector: 'SELECTORS.headerRedo',
-      expects: 'history +1; redo -1; the object is moved again', expect: { history: 1, redo: -1, selected: 'any' },
+      expects: 'history +1; redo -1; the object is at its moved world position again', expect: { history: 1, redo: -1, selected: 'any' },
       run: (c) => P.redo(c.page),
-      post: (c, pre, now) => { if (!(boxOf(now, c.vars.oval).cx - c.vars.box.cx > 25)) throw new Error('the redo did not move the object again'); },
+      post: (c, pre, now) => assertObjectMoved(c, now, c.vars.oval, 50, 30),
     },
   ],
 });
@@ -452,7 +512,7 @@ JOURNEYS.push({
     },
     {
       id: 'j5.close-path', action: 'tap', route: 'tap the first anchor to close the path', selector: 'canvas point at the first anchor',
-      expects: 'layers +1; history +1', expect: { layers: 1, history: 'any', selected: 'any' },
+      expects: 'layers +1; history +1', expect: { layers: 1, history: 1, selected: 'any' },
       run: (c) => P.fingerTap(c.page, onCanvas(c, c.vars.pts[0].x, c.vars.pts[0].y)),
       post: () => {},
     },
@@ -618,7 +678,7 @@ JOURNEYS.push({
     },
     {
       id: 'j7.size-type', action: 'softType', route: 'type 72', selector: 'focused size field',
-      expects: 'font size param = 72; history +1', expect: { history: 'any' },
+      expects: 'font size param = 72; history not asserted (the field commits on blur; the commit path is not measurable until the step is reachable)', expect: { history: 'any' },
       run: async (c) => {
         await P.softType(c.page, '72');
         // the field commits on blur: a tap on a neutral heading ends the edit
@@ -889,4 +949,4 @@ JOURNEYS.push({
   ],
 });
 
-module.exports = { JOURNEYS };
+module.exports = { JOURNEYS, moveChecks: { rememberObject, assertObjectMoved, assertObjectBack } };

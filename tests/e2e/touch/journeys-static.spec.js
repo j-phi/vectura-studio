@@ -126,6 +126,25 @@ test.describe('journey static guard', () => {
     }
   });
 
+  test('each step\'s expects text agrees with its expect.history and with the step table', () => {
+    const doc = fs.readFileSync(DOC, 'utf8');
+    const fmt = (h) => (h === 'any' ? 'any' : `${h >= 0 ? '+' : ''}${h}`);
+    for (const J of JOURNEYS) {
+      const sec = doc.split(/^## /m).find((x) => x.startsWith(`${J.id} `));
+      for (const s of J.steps) {
+        const h = s.expect && s.expect.history !== undefined ? s.expect.history : 0;
+        const said = /history ([+-]\d+)/.exec(s.expects);
+        if (h === 'any') expect(said, `${s.id}: expects says "history ${said && said[1]}" but expect.history is 'any'`).toBeNull();
+        else if (said) expect(Number(said[1]), `${s.id}: expects says history ${said[1]}, expect.history is ${h}`).toBe(h);
+        else expect(h, `${s.id}: expect.history ${h} is not stated in the expects text`).toBe(0);
+        const row = sec.split('\n').find((l) => l.startsWith(`| \`${s.id}\` |`));
+        expect(row, `${s.id} row`).toBeTruthy();
+        const m = /historyLen (any|[+-]\d+)/.exec(row);
+        expect(m && m[1], `${s.id}: journey-scripts.md historyLen column`).toBe(fmt(h));
+      }
+    }
+  });
+
   test('the ledger names real cells and real steps, sorted', () => {
     const ledger = JSON.parse(fs.readFileSync(path.join(DIR, 'journey-status.json'), 'utf8'));
     expect(ledger.projects.length).toBe(8);
