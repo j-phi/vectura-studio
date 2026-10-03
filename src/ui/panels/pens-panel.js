@@ -236,7 +236,7 @@
       el.className = 'pen-item flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2';
       el.dataset.penId = pen.id;
       el.innerHTML = `
-        <div class="flex items-center gap-2 flex-1 overflow-hidden">
+        <div class="pen-row-a flex items-center gap-2 flex-1 overflow-hidden">
           <button class="pen-grip" type="button" aria-label="Reorder pen">
             <span class="dot"></span><span class="dot"></span>
             <span class="dot"></span><span class="dot"></span>
@@ -244,12 +244,13 @@
           </button>
           <div class="pen-icon"></div>
           <input
+            type="text"
             class="pen-name-input w-full bg-transparent text-xs text-vectura-text focus:outline-none"
             value="${escapeHtml(pen.name)}"
           />
         </div>
-        <div class="flex items-center gap-2">
-          <div class="relative w-4 h-4 overflow-hidden rounded-full border border-vectura-border">
+        <div class="pen-row-b flex items-center gap-2">
+          <div class="pen-swatch relative w-4 h-4 overflow-hidden rounded-full border border-vectura-border">
             <input type="color" class="pen-color" value="${pen.color}" aria-label="Pen color">
           </div>
           <input type="range" min="0.05" max="2" step="0.05" value="${pen.width}" class="pen-width">
@@ -260,6 +261,7 @@
         </div>
       `;
       const icon = el.querySelector('.pen-icon');
+      const swatch = el.querySelector('.pen-swatch');
       const grip = el.querySelector('.pen-grip');
       const nameInput = el.querySelector('.pen-name-input');
       const colorInput = el.querySelector('.pen-color');
@@ -272,6 +274,8 @@
         icon.style.background = pen.color;
         icon.style.color = pen.color;
         icon.style.setProperty('--pen-width', pen.width);
+        // The coarse-pointer swatch (TUX-041) draws the colour from this variable.
+        if (swatch) swatch.style.setProperty('--pen-color', pen.color);
       };
       applyIcon();
 

@@ -3,7 +3,8 @@
 const { PROJECTS } = require('../touch/viewports');
 
 // On-screen keyboard heights (CSS px) per device, §1.2 of docs/touch-ux-requirements.md.
-const KEYBOARD = { iPadL: 400, iPadP: 310, iPhP: 340, iPhL: 210 };
+// Chromium-only variants reuse their base device's keyboard (coarseWide = iPad landscape).
+const KEYBOARD = { iPadL: 400, iPadP: 310, iPhP: 340, iPhL: 210, 'iPhP-c': 340, 'iPhL-c': 210, coarseWide: 400 };
 const keyboardFor = (testInfo) => {
   const p = PROJECTS[testInfo.project.name];
   return p ? KEYBOARD[p.device] : 300;

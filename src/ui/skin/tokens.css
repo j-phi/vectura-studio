@@ -144,3 +144,12 @@
   :root { --app-vh: 100dvh; }
 }
 /* === END TUX-004 app viewport height === */
+/* === TUX-041 / TUX-042: touch tokens (lane C1) ===
+ * Sizes only. Consumed by the coarse-pointer blocks at the end of components.css.
+ * Skin files must not override these. */
+:root {
+  --touch-target-min: 44px;
+  --touch-target-floor: 24px;
+  --input-font-touch: 16px;
+}
+/* === END TUX-041 / TUX-042 tokens === */

@@ -144,8 +144,16 @@
     recompute();
   };
 
+  // Visual-viewport size for placement code (TUX-034 touch menus), so no other module
+  // reads visualViewport. Falls back to the layout viewport.
+  const viewportSize = () => {
+    const v = vv();
+    return v ? { width: v.width, height: v.height } : { width: window.innerWidth, height: window.innerHeight };
+  };
+
   Vectura.KeyboardInset = {
     get inset() { return inset; },
+    viewportSize,
     ensureVisible,
     recompute,
     computeInset,
