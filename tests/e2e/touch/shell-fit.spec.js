@@ -150,3 +150,49 @@ test.describe('TUX-006 shell layout', () => {
     await page.screenshot({ path: path.join(EVIDENCE, `${testInfo.project.name}-after-rotation.png`) });
   });
 });
+
+// TUX-006 fix round: a coarse landscape phone at >= 900 px wide classifies as phone, so the
+// drawer structure CSS must apply (keyed on the layout class, not on viewport width).
+test.describe('TUX-006 coarse landscape phone >= 900 px', () => {
+  const SIZES = [[956, 440], [932, 430]];
+  for (const [w, h] of SIZES) {
+    test(`drawer structure at ${w}x${h}`, async ({ browser }, testInfo) => {
+      test.skip(!/^(touch-ipad-landscape|webkit-ipad-landscape)$/.test(testInfo.project.name), 'one Chromium + one WebKit project');
+      const ctx = await browser.newContext({
+        viewport: { width: w, height: h }, deviceScaleFactor: 3, hasTouch: true, isMobile: true,
+        userAgent: PROJECTS['touch-iphone-landscape'].ua,
+        baseURL: testInfo.project.use.baseURL,
+      });
+      const page = await ctx.newPage();
+      try {
+        await gotoApp(page);
+        const s = await page.evaluate(() => {
+          const pos = (id) => getComputedStyle(document.getElementById(id)).position;
+          const rect = (sel) => { const r = document.querySelector(sel).getBoundingClientRect(); return { l: r.left, r: r.right, w: r.width }; };
+          return {
+            coarse: matchMedia('(pointer: coarse)').matches,
+            phone: document.body.classList.contains('phone-layout'),
+            left: pos('left-pane'), right: pos('right-pane'),
+            collapsed: getComputedStyle(document.documentElement).getPropertyValue('--pane-collapsed-width').trim(),
+            vp: rect('#viewport-container'), iw: innerWidth,
+          };
+        });
+        expect(s.coarse, 'coarse pointer').toBe(true);
+        expect(s.phone, `phone-layout at ${s.iw}`).toBe(true);
+        expect(s.left, '.pane-left position').not.toBe('relative');
+        expect(s.right, '.pane-right position').not.toBe('relative');
+        expect(s.collapsed, '--pane-collapsed-width').toBe('40px');
+        // Panes are overlay drawers: the canvas container spans (nearly) the full width.
+        expect(s.vp.w, 'canvas container is not split by docked panes').toBeGreaterThan(s.iw * 0.8);
+        // Re-probe the tool rail: no clipped or 44x30 buttons.
+        const rail = await page.evaluate(() => [...document.querySelectorAll('#tool-bar .tool-btn')].filter((b) => {
+          const r = b.getBoundingClientRect();
+          return b.offsetParent !== null && !b.classList.contains('hidden') && r.width > 0 && r.height > 0;
+        }).map((b) => { const r = b.getBoundingClientRect(); return { id: b.id || b.dataset.tool || b.title, w: Math.round(r.width), h: Math.round(r.height), bottom: Math.round(r.bottom) }; }));
+        const bad = rail.filter((b) => b.w < 44 || b.h < 44);
+        expect(bad, `tool buttons under 44x44: ${JSON.stringify(bad)}`).toEqual([]);
+        testInfo.annotations.push({ type: 'rail', description: JSON.stringify({ vh: h, n: rail.length, maxBottom: Math.max(...rail.map((b) => b.bottom)) }) });
+      } finally { await ctx.close(); }
+    });
+  }
+});

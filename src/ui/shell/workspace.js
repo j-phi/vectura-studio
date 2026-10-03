@@ -73,7 +73,17 @@
 
     const applyAutoCollapse = () => {
       const lc = LC();
-      const layout = lc ? lc.apply(document) : (window.innerWidth < 900 ? 'tablet' : 'desktop');
+      let layout;
+      if (lc) layout = lc.apply(document);
+      else {
+        // Fallback when the classifier script is absent: keep the body classes coherent.
+        layout = window.innerWidth < 540 ? 'phone' : (window.innerWidth < 900 ? 'tablet' : 'desktop');
+        const cl = document.body.classList;
+        cl.toggle('mobile-layout', layout !== 'desktop');
+        cl.toggle('phone-layout', layout === 'phone');
+        cl.toggle('tablet-layout', layout === 'tablet');
+        document.body.dataset.layout = layout;
+      }
       const isMobileLayout = layout === 'phone' || layout === 'tablet';
       // TUX-008 owns the auto-collapse threshold; leave as-is here.
       const shouldAuto = window.innerWidth < 640;
