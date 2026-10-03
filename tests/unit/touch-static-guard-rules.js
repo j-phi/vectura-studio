@@ -17,7 +17,8 @@
  *   (a) is named getModifierState,
  *   (b) is registered for keydown/keyup/keypress (inline, or by a name that resolves
  *       to a function declared in the same file), or
- *   (c) itself reads .key, .code, .keyCode or .which (nested functions not included).
+ *   (c) itself reads .key, .code, .keyCode or .which on its event object (its first parameter,
+ *       or e/ev/evt/event). Reads such as hit.which do not count (nested functions not included).
  *   Every read in src/ui/input-modifiers.js is excluded. Assignments are writes, not reads.
  */
 const espree = require('espree');
@@ -70,7 +71,7 @@ const isTrailing = (lines, startLine, startCol) => (lines[startLine - 1] || '').
 
 // ---------------------------------------------------------------- JS
 function parseJs(text, rel) {
-  const base = { ecmaVersion: 'latest', comment: true, loc: true };
+  const base = { ecmaVersion: 'latest', comment: true, loc: true, range: true };
   try {
     return espree.parse(text, { ...base, sourceType: 'script' });
   } catch (scriptErr) {
@@ -155,7 +156,7 @@ function analyzeJs(text, rel) {
       case 'MemberExpression': {
         const name = propName(node);
         if (name === 'TouchHold') info.touchHold = true;
-        if (name && KEY_PROPS.has(name)) {
+        if (name && KEY_PROPS.has(name) && isEventObject(node.object, nearestFn(anc))) {
           const fn = nearestFn(anc);
           if (fn) info.keyReadFns.add(fn);
         }
@@ -171,7 +172,7 @@ function analyzeJs(text, rel) {
         if (!name) break;
         const line = node.loc.start.line;
         if (name.startsWith('on') && name.length > 2) {
-          info.regs.push({ event: name.slice(2), line, handler: node.right, how: 'prop', anc: anc.slice() });
+          info.regs.push({ event: name.slice(2), line, handler: node.right, how: 'prop', anc: anc.slice(), target: srcOf(text, node.left.object) });
           if (KEY_EVENTS.has(name.slice(2))) markKeyHandler(info, node.right);
         }
         if (name === 'draggable' && ((node.right.type === 'Literal' && (node.right.value === true || node.right.value === 'true')))) info.draggable.push(line);
@@ -191,11 +192,11 @@ function analyzeJs(text, rel) {
         if (name === 'addEventListener' && node.arguments.length >= 2) {
           const ev = strValue(node.arguments[0]);
           if (ev != null) {
-            info.regs.push({ event: ev, line, handler: node.arguments[1], how: 'add', anc: anc.slice() });
+            info.regs.push({ event: ev, line, handler: node.arguments[1], how: 'add', anc: anc.slice(), target: srcOf(text, node.callee.object) });
             if (KEY_EVENTS.has(ev)) markKeyHandler(info, node.arguments[1]);
             if (ev === 'dragstart') info.dragstart.push(line);
           } else if (node.arguments[0].type === 'Identifier') {
-            info.pendingAdds.push({ name: node.arguments[0].name, line, handler: node.arguments[1], anc: anc.slice() });
+            info.pendingAdds.push({ name: node.arguments[0].name, line, handler: node.arguments[1], anc: anc.slice(), target: srcOf(text, node.callee.object) });
           }
         } else if (name === 'setAttribute' && node.arguments.length >= 2) {
           const a = strValue(node.arguments[0]);
@@ -220,12 +221,22 @@ function analyzeJs(text, rel) {
   // resolve array / forEach event names for addEventListener(ev, fn)
   info.pendingAdds.forEach((p) => {
     resolveLoopEvents(p, info).forEach((ev) => {
-      info.regs.push({ event: ev, line: p.line, handler: p.handler, how: 'add', anc: p.anc });
+      info.regs.push({ event: ev, line: p.line, handler: p.handler, how: 'add', anc: p.anc, target: p.target });
       if (KEY_EVENTS.has(ev)) markKeyHandler(info, p.handler);
       if (ev === 'dragstart') info.dragstart.push(p.line);
     });
   });
   return info;
+}
+
+const srcOf = (text, node) => (node && node.range ? text.slice(node.range[0], node.range[1]) : null);
+const EVENT_IDENTS = new Set(['e', 'ev', 'evt', 'event']);
+// R10 (c): a key read counts only on the handler's event object (first parameter or a known event identifier).
+function isEventObject(obj, fn) {
+  if (!obj || obj.type !== 'Identifier') return false;
+  if (EVENT_IDENTS.has(obj.name)) return true;
+  const first = fn && fn.params && fn.params[0];
+  return !!first && first.type === 'Identifier' && first.name === obj.name;
 }
 
 function nearestFn(anc) {
@@ -319,8 +330,14 @@ function jsHits(info, rel) {
     });
   }
   // R2
-  const hasPress = regs.some((r) => r.event === 'click' || r.event === 'pointerup' || r.event === 'pointerdown');
-  if (!hasPress) evs(['mouseenter', 'mouseover']).forEach((r) => add('R2', r.line));
+  // Paired by target: a mouseenter/mouseover is compliant only when click/pointerup/pointerdown
+  // is registered on the same target (same source text), or a touch-alt marker sits near it.
+  const pressTargets = new Set(regs.filter((r) => r.event === 'click' || r.event === 'pointerup' || r.event === 'pointerdown').map((r) => r.target));
+  evs(['mouseenter', 'mouseover']).forEach((r) => {
+    if (r.target != null && pressTargets.has(r.target)) return;
+    if (altNear(r.line)) return;
+    add('R2', r.line);
+  });
   // R3
   evs(['mousedown']).forEach((r) => add('R3', r.line));
   // R4 (touch-ok removal is applied before counting, see filter below)

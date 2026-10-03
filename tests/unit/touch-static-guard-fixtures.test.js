@@ -42,8 +42,16 @@ describe('R2 mouseenter-only open', () => {
   });
   test('click, pointerup or pointerdown in the same file satisfies it', () => {
     expect(count(rule, "a.addEventListener('mouseenter', open); a.addEventListener('click', open);")).toBe(0);
-    expect(count(rule, "a.onmouseover = open; b.addEventListener('pointerdown', go);")).toBe(0);
-    expect(count(rule, "a.addEventListener('mouseenter', open); b.onpointerup = go;")).toBe(0);
+    expect(count(rule, "a.onmouseover = open; a.addEventListener('pointerdown', go);")).toBe(0);
+    expect(count(rule, "a.addEventListener('mouseenter', open); a.onpointerup = go;")).toBe(0);
+  });
+  test('pairs by target, not by file', () => {
+    expect(count(rule, "a.addEventListener('mouseenter', open); b.addEventListener('click', x);")).toBe(1);
+    expect(count(rule, "a.addEventListener('mouseenter', open); a.addEventListener('click', x);")).toBe(0);
+    expect(count(rule, "x.algoParentItem.onmouseover = open; x.other.onpointerdown = go;")).toBe(1);
+  });
+  test('a touch-alt marker near the registration satisfies it', () => {
+    expect(count(rule, "// touch-alt: TUX-035 tap opens it\na.addEventListener('mouseenter', open);")).toBe(0);
   });
   test('comments and strings never count', () => {
     expect(count(rule, "// a.addEventListener('mouseenter', open)")).toBe(0);
@@ -249,6 +257,11 @@ describe('R10 raw modifier flags outside the helper', () => {
     expect(count(rule, 'function h(e) { if (e.key === "a" && e.ctrlKey) go(); }')).toBe(0);
     expect(count(rule, "w.addEventListener('keydown', onKey); function onKey(e) { return e.metaKey; }")).toBe(0);
     expect(count(rule, "window.addEventListener('keydown', (e) => { [1].some(() => e.ctrlKey); });")).toBe(0);
+  });
+  test('key reads on a non-event object do not make a pointer handler a keyboard handler', () => {
+    expect(count(rule, "el.addEventListener('pointerdown', (e) => { const k = hit.which; if (e.shiftKey) go(k); });")).toBe(1);
+    expect(count(rule, 'function drag(e, hit) { if (hit.which) go(); return e.altKey; }')).toBe(1);
+    expect(count(rule, 'function h(ev) { if (ev.keyCode === 13 && ev.ctrlKey) go(); }')).toBe(0);
   });
   test('getModifierState and the helper module are excluded', () => {
     expect(count(rule, 'function getModifierState(e) { return { ctrl: e.ctrlKey, shift: e.shiftKey }; }')).toBe(0);
