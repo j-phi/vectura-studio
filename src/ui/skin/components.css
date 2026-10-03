@@ -14037,14 +14037,17 @@ body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: cent
  * The pane reserved only 56px for the modifier bar, but the bar is 57px and the HUD strip adds
  * 27px more (shown above 640px), so the pane ran 28px under the bar and the bar covered the
  * bottom of the draw-order slider (elementFromPoint at the track centre hit the bar). Reserve
- * the real chrome, and pin the footer band to the bottom of the scroller so the 44px slider and
- * its thumb always sit above the bar without scrolling. */
+ * the real chrome, and on short viewports tighten the Layers tab above the draw-order band so the 44px
+ * slider and its thumb are on screen without scrolling. */
 @media (pointer: coarse) and (min-width: 641px) {
   body.mobile-layout .pane { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
 }
 @media (pointer: coarse) and (max-height: 520px) {
-  [data-ui-skin] #right-pane .draw-order-bar {
-    position: sticky; bottom: 0; z-index: 3;
-  }
+  /* Pull the 44px slider up above the modifier bar: drop the idle status strip and the head gap.
+   * The 14px top padding keeps the 44px eye/gear hit boxes (TUX-041) off the last layer row:
+   * band top 237, head centre 261, slider 271-315 in the 318px-high scroller. */
+  [data-ui-skin] #right-pane .draw-order-bar { padding-top: 14px; }
+  [data-ui-skin] #right-pane .draw-order-bar .draw-order-head { margin-bottom: 0; }
+  [data-ui-skin] #right-pane #layer-status-bar { min-height: 0; height: 0; padding-block: 0; overflow: hidden; border: 0; }
 }
 /* === END TUX-043 === */

@@ -142,9 +142,10 @@ test.describe('TUX-043 sliders: cheap group', () => {
     // Draw-order.
     await showRight(page, 'layers');
     const dro = page.locator('#draw-order-input');
-    // Short viewports (iPhone landscape) get no scrollIntoView rescue: the footer must already
-    // sit clear of the modifier bar. Taller viewports may scroll the pane first.
-    if (await page.evaluate(() => innerHeight > 520)) await dro.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    // iPhone landscape (380-520px tall) gets no scrollIntoView rescue: the footer must already sit
+    // clear of the modifier bar. Taller viewports, and iPhone landscape with browser chrome
+    // (330px: the pane scroller is 172px, less than the list plus the 44px slider), scroll first.
+    if (await page.evaluate(() => innerHeight > 520 || innerHeight < 380)) await dro.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     expect((await geom(dro)).h, 'draw-order input height').toBeGreaterThanOrEqual(44);
     expect((await touch.hitArea(page, dro)).h, 'draw-order hitArea').toBeGreaterThanOrEqual(44);
     // The track centre must resolve to the input itself, not to the modifier bar or HUD.
@@ -192,7 +193,7 @@ test.describe('TUX-043 sliders: cheap group', () => {
 
     await showRight(page, 'layers');
     const dro = page.locator('#draw-order-input');
-    if (await page.evaluate(() => innerHeight > 520)) await dro.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+    if (await page.evaluate(() => innerHeight > 520 || innerHeight < 380)) await dro.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     // Strict: park the handle mid-range (silently), tap 40px to either side of it. A tap may start
     // playback (kept), which only moves the handle forward from 50 at 35%/s, so the value must stay
     // within 50 .. 50 + 0.035 * elapsedMs (+3 slack). A jump to the finger lands outside that.
