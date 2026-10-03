@@ -88,32 +88,45 @@ test.describe('TUX-042 text-entry font size', () => {
     expect(await page.evaluate(() => (window.visualViewport ? window.visualViewport.scale : 1))).toBe(1);
   });
 
-  // GREEN guard: passes before the change; keeps 16px text from clipping inside its chip.
+  // Guard: keeps 16px text from clipping inside its chip. Covers the left-pane/pens chips, every
+  // select.ctrl-sel (longest option) and the Document Setup .slider-val-inp with the panel open.
   test('value chips do not clip', async ({ page }) => {
     await boot(page);
     await addLayerAndSelect(page, 'flowfield');
+    // SETUP STEP: open Document Setup programmatically and expand every section (phones have no
+    // reachable menu path here until TUX-010/001 land).
+    await page.evaluate(() => {
+      const sp = document.getElementById('settings-panel');
+      sp.classList.add('open');
+      sp.querySelectorAll('[data-sect-body]').forEach((b) => { b.style.maxHeight = 'none'; b.style.overflow = 'visible'; });
+    });
     await page.evaluate(() => {
       document.querySelector('.right-pane-tab[data-tab=pens]')?.click();
     });
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(300);
     const clipped = await page.evaluate(() => {
       const out = [];
-      document.querySelectorAll('.slider-val-inp, .slider-val, .pen-name-input, .pen-width-value').forEach((el) => {
+      const ctx = document.createElement('canvas').getContext('2d');
+      const textW = (cs, val) => { ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`; return ctx.measureText(val).width; };
+      document.querySelectorAll('.slider-val-inp, .slider-val, .pen-name-input, .pen-width-value, select.ctrl-sel').forEach((el) => {
         const cs = getComputedStyle(el);
         const r = el.getBoundingClientRect();
-        if (!r.width || cs.visibility === 'hidden') return;
+        if (!r.width || cs.visibility === 'hidden' || el.closest('.hidden, [hidden]')) return;
         // Input scrollWidth is unreliable (editor padding quirks), so compare the measured
-        // text width against the content box.
-        const val = el.classList.contains('pen-name-input') ? 'Pen 12 Blue' : '0.125';
-        const ctx = document.createElement('canvas').getContext('2d');
-        ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-        const text = ctx.measureText(val).width;
+        // text width against the content box. Selects: the longest option text.
+        let val = el.classList.contains('pen-name-input') ? 'Pen 12 Blue' : '0.125';
+        if (el.tagName === 'SELECT') val = [...el.options].map((o) => o.text).sort((x, y) => y.length - x.length)[0] || '';
+        const text = textW(cs, val);
         const box = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-        if (text > box + 1) out.push({ cls: el.className, text: Math.round(text), box: Math.round(box) });
+        // Native selects reserve the arrow inside the padding, so only compare against the box.
+        if (text > box + 1) out.push({ id: el.id, cls: el.className, text: Math.round(text), box: Math.round(box), val });
       });
       return out;
     });
     expect(clipped).toEqual([]);
+    // The settings panel must actually have been measured (selector must not silently match nothing).
+    expect(await page.locator('.settings-panel select.ctrl-sel').count()).toBeGreaterThan(0);
+    expect(await page.locator('.settings-panel .slider-val-inp').count()).toBeGreaterThan(0);
   });
 });
 

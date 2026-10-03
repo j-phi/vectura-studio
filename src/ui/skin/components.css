@@ -13643,7 +13643,7 @@ body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44
   /* Rows and boxes that can simply grow. */
   [data-ui-skin] #left-pane :is(.left-panel-section-header, .global-section-header, .hg-preset-trigger,
     #generator-module-trigger, select:not(.sr-only), button.w-full, input.w-full, .noise-add,
-    .noise-reset, .noise-rand, .slider-val, .slider-val-inp, .angle-inp, .paint-bucket-select) {
+    .noise-reset, .noise-rand, .slider-val, .slider-val-inp, .angle-inp-wrap, .paint-bucket-select) {
     min-height: var(--touch-target-min);
     box-sizing: border-box;
   }
@@ -13672,7 +13672,7 @@ body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44
 
   /* Value chips: self-contained boxes sized for 16px mono text ("0.125" fits). TUX-043 puts the
    * 44px slider band beside them. */
-  [data-ui-skin] #left-pane :is(.slider-val, .slider-val-inp, .angle-inp),
+  [data-ui-skin] #left-pane :is(.slider-val, .slider-val-inp),
   [data-ui-skin] #left-pane .slider-row .value-chip {
     width: calc(6ch + 2 * var(--spacing-sm, 8px));
     min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
@@ -13681,6 +13681,11 @@ body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44
     padding: 0 var(--spacing-sm, 8px);
     text-align: right;
   }
+
+  /* WebKit number spinners eat the chip's digits; touch has no use for them. */
+  [data-ui-skin] :is(#left-pane, .settings-panel) input.slider-val-inp { -webkit-appearance: textfield; appearance: textfield; -moz-appearance: textfield; }
+  [data-ui-skin] :is(#left-pane, .settings-panel) input.slider-val-inp::-webkit-inner-spin-button,
+  [data-ui-skin] :is(#left-pane, .settings-panel) input.slider-val-inp::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; display: none; }
 
   /* Small visuals keep their size; a centred 44px ::before owns the touch. */
   [data-ui-skin] #left-pane :is(.info-btn, .noise-grip) {
@@ -13695,8 +13700,14 @@ body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44
   /* The label row that holds an info button is one finger tall so the extension never reaches
    * the control below. */
   [data-ui-skin] #left-pane :has(> .info-btn) {
-    min-height: var(--touch-target-min); align-items: center;
+    display: flex; min-height: var(--touch-target-min); align-items: center;
   }
+  /* A justify-between row whose left child holds the label + info button: centre the value tag
+   * on the same line as the label instead of letting it float to the top of the 44px row. */
+  [data-ui-skin] #left-pane :is(.flex, [class*="justify-between"]):has(> * > .info-btn) { align-items: center; }
+  /* The angle chip is the wrapper (border + degree sign); the input inside stays borderless. */
+  [data-ui-skin] #left-pane .angle-inp-wrap { min-height: var(--touch-target-min); box-sizing: border-box; }
+  [data-ui-skin] #left-pane .angle-inp-wrap .angle-inp { width: 48px; min-height: var(--touch-target-min); height: 100%; padding: 0; border: 0; background: transparent; box-shadow: none; }
   [data-ui-skin] #left-pane .noise-actions { gap: 0; }
   [data-ui-skin] #left-pane .noise-actions .sw-toggle { margin: 0 7px; }
   [data-ui-skin] #left-pane .noise-delete {
@@ -13728,9 +13739,18 @@ body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44
   [data-ui-skin] #left-panel-content { padding-bottom: 72px; }
 
   /* Settings panel (Document Setup and canvas settings): same chip and row sizing. */
+  /* The 24px close icon keeps its visual; a centred 44px ::before owns the touch. */
+  [data-ui-skin] .settings-panel > .pane-hdr { min-height: calc(var(--touch-target-min) + 10px); box-sizing: border-box; }
+  [data-ui-skin] .settings-panel .settings-panel-close { position: relative; }
+  [data-ui-skin] .settings-panel .settings-panel-close::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+  }
   [data-ui-skin] .settings-panel :is(.slider-val-inp, select.ctrl-sel, .sect-hdr) {
     min-height: var(--touch-target-min); box-sizing: border-box;
   }
+  /* 16px "Balanced" overflowed the 120px inline-width select wrap; min-width beats the inline width. */
+  [data-ui-skin] .settings-panel .ctrl-sel-wrap { min-width: 160px; }
   [data-ui-skin] .settings-panel .slider-val-inp {
     width: calc(6ch + 2 * var(--spacing-sm, 8px)); min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
   }
@@ -13775,6 +13795,15 @@ body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44
     order: 6; flex: 0 0 auto; width: auto; min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
     min-height: var(--touch-target-min); padding: 0 var(--spacing-sm, 8px);
   }
+  /* One shared row background: the name input and value chip drop their own fill (the skin gives
+   * inputs a lighter panel colour that read as a patchwork) and keep a hairline underline. */
+  [data-ui-skin] .pen-item :is(.pen-name-input, .pen-width-value) {
+    background: transparent; border: 0; border-bottom: 1px solid var(--ui-border); border-radius: 0;
+  }
+  /* WebKit draws native number spinners that eat the chip's digits; touch has no use for them. */
+  [data-ui-skin] .pen-item .pen-width-value { -webkit-appearance: textfield; appearance: textfield; -moz-appearance: textfield; }
+  [data-ui-skin] .pen-item .pen-width-value::-webkit-inner-spin-button,
+  [data-ui-skin] .pen-item .pen-width-value::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; display: none; }
 }
 /* === END TUX-041 === */
 

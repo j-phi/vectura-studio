@@ -36,30 +36,41 @@ const SURFACES = {
   'left: other controls': '#left-pane button.w-full, #left-pane input.w-full, #left-pane .angle-dial',
   'pens rows': '.pen-grip, .pen-item .pen-color, .pen-name-input, .pen-width-value, .pen-remove',
   'modifier bar': '#touch-modifier-bar .touch-mod-btn',
+  // Document Setup panel (opened by the SETUP STEP below). Its modal chrome stays lane X's; only
+  // the controls that TUX-041 sizes are measured.
+  'settings panel': '.settings-panel .sect-hdr, .settings-panel select.ctrl-sel, .settings-panel .slider-val-inp, #btn-close-settings',
 };
-const GROUP_PANE = (g) => (g.startsWith('layers') || g.startsWith('pens') ? 'right' : g.startsWith('left') ? 'left' : 'none');
+const GROUP_PANE = (g) => (g.startsWith('layers') || g.startsWith('pens') ? 'right' : g.startsWith('left') ? 'left' : g.startsWith('settings') ? 'settings' : 'none');
 
-// Hard-coded RED values for fit non-regression (measured on the pre-fix tree, default state).
-// share = canvasShare() %, overflow = scrollWidth - innerWidth. iPhL / iPhL-c measure 0 share on
-// the pre-fix tree (the default phone-landscape layout covers the canvas), so they only pin overflow.
-// webkit-iphone-portrait overflow 142 is the known TUX-001 defect, not C1's.
+// Hard-coded baseline for fit non-regression: measured on the touch/integration tree (TUX-001/006
+// shell work included) in the default state, WITHOUT the C1 rules. share = canvasShare() %,
+// overflow = scrollWidth - innerWidth. The first C1 attempt pinned pre-shell numbers; the shell
+// units changed iPadL/iPhP/coarseWide shares, so these were re-measured after the merge.
 const FIT_RED = {
   'touch-ipad-portrait': { overflow: 0, share: 24.0 },
-  'touch-ipad-landscape': { overflow: 0, share: 46.12 },
-  'touch-iphone-portrait': { overflow: 0, share: 25.45 },
+  'touch-ipad-landscape': { overflow: 0, share: 42.12 },
+  'touch-iphone-portrait': { overflow: 0, share: 48.61 },
   'touch-iphone-landscape': { overflow: 0, share: 0 },
-  'touch-iphone-portrait-chrome': { overflow: 0, share: 24.24 },
+  'touch-iphone-portrait-chrome': { overflow: 0, share: 43.75 },
   'touch-iphone-landscape-chrome': { overflow: 0, share: 0 },
-  'touch-coarse-wide': { overflow: 0, share: 52.38 },
+  'touch-coarse-wide': { overflow: 0, share: 49.66 },
   'webkit-ipad-portrait': { overflow: 0, share: 24.0 },
-  'webkit-ipad-landscape': { overflow: 0, share: 46.12 },
-  'webkit-iphone-portrait': { overflow: 142, share: 48.61 },
+  'webkit-ipad-landscape': { overflow: 0, share: 42.12 },
+  'webkit-iphone-portrait': { overflow: 0, share: 48.61 },
   'webkit-iphone-landscape': { overflow: 0, share: 0 },
 };
 
 // SETUP STEP (not a journey step): phone panes start closed and TUX-010 has not landed, so the
 // spec opens one pane programmatically. Remove once TUX-010 lands.
 const showPane = (page, side) => page.evaluate((s) => {
+  if (s === 'settings') {
+    // SETUP STEP: open Document Setup and expand every section so all its controls are on screen.
+    const sp = document.getElementById('settings-panel');
+    sp.classList.add('open');
+    sp.querySelectorAll('[data-sect-body]').forEach((b) => { b.style.maxHeight = 'none'; b.style.overflow = 'visible'; b.style.paddingTop = ''; });
+    return;
+  }
+  document.getElementById('settings-panel')?.classList.remove('open');
   const l = document.getElementById('left-pane');
   const r = document.getElementById('right-pane');
   l.classList.toggle('pane-force-open', s === 'left');
@@ -195,5 +206,24 @@ test.describe('TUX-041 owned-surface touch targets', () => {
     const spill = await page.evaluate(() => [...document.querySelectorAll('#right-pane .lvl-card, #right-pane .lvl-grp-hdr')]
       .filter((c) => c.scrollWidth > c.clientWidth + 1).map((c) => ({ cls: c.className, sw: c.scrollWidth, cw: c.clientWidth })));
     expect(spill).toEqual([]);
+  });
+
+  // Layout regressions of the first attempt: label rows and the angle chip.
+  test('label rows share one centre line; angle chip is one 44px box', async ({ page }) => {
+    await boot(page);
+    await showPane(page, 'left');
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      const cy = (e) => { const b = e.getBoundingClientRect(); return b.top + b.height / 2; };
+      const rows = [...document.querySelectorAll('#left-pane .flex.justify-between')]
+        .filter((row) => row.querySelector(':scope > * > .info-btn') && row.children.length > 1 && row.getBoundingClientRect().height);
+      const off = rows.map((row) => ({ cls: row.className, dy: Math.abs(cy(row.children[0]) - cy(row.children[1])) })).filter((o) => o.dy > 2);
+      const wrap = document.querySelector('#left-pane .angle-inp-wrap');
+      return { rows: rows.length, off, wrapH: wrap ? wrap.getBoundingClientRect().height : null,
+        innerBorder: wrap ? getComputedStyle(wrap.querySelector('.angle-inp')).borderTopWidth : null };
+    });
+    expect(r.rows, 'label rows with a value tag must exist').toBeGreaterThan(0);
+    expect(r.off).toEqual([]);
+    if (r.wrapH !== null) { expect(r.wrapH).toBeGreaterThanOrEqual(44); expect(r.innerBorder).toBe('0px'); }
   });
 });
