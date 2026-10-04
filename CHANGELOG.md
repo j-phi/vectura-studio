@@ -6,6 +6,38 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added (U6 artistic controls + pen routing, fill-style review)
+Every control below is absent from a saved style until you move it, and every default reproduces the
+previous output byte for byte (40 sphere and box fills pinned before and after, paths and pen metadata).
+Ranges and defaults live in `src/config/scene3d-fill-controls.js`. The controls sit in the Object 3D
+Style tab and in the scene Style editor.
+- **Tone shaping: Gamma and Contrast.** One curve in the tone pipeline (`Regions.shapeTone`, applied where
+  the scene wraps `combinedIntensity`), so every Fill Style reads the shaped tone. Gamma above 1 darkens the
+  mid-tones. Contrast steepens or flattens the curve about mid-grey. Both ends stay fixed. Per object.
+- **Depth fade.** Far surfaces draw lighter: On / Off, *Fade strength*, *Fade starts* and *Fade full*
+  (fractions of the scene depth, nearest to farthest). Same single point as Gamma and Contrast, so it
+  reaches every Fill Style.
+- **Wave: Wavelength and Crest phase.** *Wavelength* (4 to 20 pen widths, default 7.3) scales every wave
+  build; a shorter wave adds samples so the crests stay round. *Crest phase* (From Phase, Aligned,
+  Alternating, Alternating + jitter, Drifting) reaches the four phases the engine already had.
+- **Width Ribbon: Nib angle and Nib contrast** (live when Width from = Calligraphic nib angle and Ends =
+  Hard), **Taper length, Tip width and Softness** (live when Ends = Tapered). The other group greys out
+  with an (i) reason.
+- **Turing Stripe: Maturity and Stripe scale** join Stripe align. Maturity is the relaxation step count
+  (40 to 400, default 170). Scale multiplies the stripe wavelength (0.5 to 3).
+- **Hatch Angle ref: Light.** Angle 0 hatches along the sun projected on the face, so the drawing turns with
+  the light. Faceted shapes (box, plane, solid) only. A flat (Wrap: Flat) hatch uses the sun's bearing on paper.
+- **Tier pens.** The six three-pen Fill Styles can draw tier 1, 2 and 3 with pens 1, 2 and 3 of the palette
+  (*Tier pens: Pens 1-3*). Each path carries its tier's pen, so the SVG export puts the tiers in separate pen
+  groups. Off by default. Curved shapes only (a box draws the plain ladder for these styles).
+- **Maze: Chain walls.** Joins maze walls that touch into polylines. No point moves, so the ink is the same
+  and the pen lifts drop (measured below). Off by default. Voronoi Web is not chained: its edges stop short
+  of the junctions, so a join would change the picture.
+
+### Changed (U6)
+- The Style tab label column is 74 px wide (was 58), so "Cross density" is no longer cut to "Cross den…".
+  Every label also carries its full text as a tooltip.
+
 ### Changed (U5 Fill Style merges + sub-setting folds + shadow reach, fill-style review)
 - **Legacy monoline documents keep their look.** U4b made Density live on the nine monoline
   laws. A document saved before it (no `seedMode`) now loads with `monoDensityLegacyAt` on each

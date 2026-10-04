@@ -572,6 +572,18 @@ questions. Do not start these without a decision:
 
 ## Done
 
+- **2026-10-04 — Fill-style review U6: artistic controls + pen routing (branch `3d-scene/fr-u6`, NOT
+  pushed).** New table `src/config/scene3d-fill-controls.js` (ranges + defaults). Tone **Gamma / Contrast**
+  and **Depth fade** at one point (`Regions.shapeTone`, wrapped around `combinedIntensity` in scene3d.js),
+  so every Fill Style reads them. Wave **Wavelength / Crest phase**; Width Ribbon **Nib angle / contrast**
+  and **Taper length / Tip width / Softness**; Turing **Maturity / Stripe scale**; hatch **Angle ref: Light**
+  (faceted); three-pen laws **Tier pens** (tier k -> pen k, `meta.penId` + `meta.penTier`, SVG groups by
+  pen); Maze **Chain walls**. All defaults byte-identical (40 fills pinned). Style-tab label column 58 -> 74 px.
+  Deferred: tone bands (N bands) -> pens for non-three-pen fills (no per-ruling band tag yet); Voronoi Web
+  chaining (edges stop 0.3-0.6 mm short of junctions, needs a change inside the law, before the inset);
+  Light-relative hatch on curved shapes (the curved angle is in the chart frame); Crest phase on the
+  legacy loop / zigzag waves changes the phase only (their clearance model is unchanged); a scene-level
+  (not per-object) Tone shaping group; a per-tier pen picker (today: pens 1-3 of the palette).
 - **2026-10-03 — Fill-style review U5: Fill Style merges, sub-setting folds, shadow reach (branch
   `3d-scene/fr-u5`, NOT pushed).** Item 0: legacy documents keep their look under the monoline laws
   (`monoDensityLegacyAt`, released by a Density edit). Picker 31 -> 20: Ladder (+ Continuous Field,
