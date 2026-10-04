@@ -1853,6 +1853,7 @@
         // Touch fine drag state (per dial element; never keyed on the param name).
         let touchDrag = null;
         const dialMode = () => (dial.dataset.dialMode || 'compass');
+        const fineBounds = () => (dialMode() === 'range' ? dialRangeMeta(dial) : { min: 0, max: 360 });
         dial.addEventListener('pointerdown', (e) => {
           if (slider.disabled) return;
           e.preventDefault();
@@ -1871,7 +1872,7 @@
           if (e.pointerId !== activePointerId) return;
           if (!touchDrag) { apply(e); return; }
           if (slider.disabled) return;
-          const { min, max } = dialMode() === 'range' ? dialRangeMeta(dial) : { min: 0, max: 360 };
+          const { min, max } = fineBounds();
           const v = touchDialValue(touchDrag.v0, e.clientX - touchDrag.x0, dialMode(), min, max);
           if (+slider.value === v) return;
           touchDrag.moved = true;
@@ -1901,6 +1902,71 @@
           slider.dispatchEvent(new Event('input', { bubbles: true }));
           slider.dispatchEvent(new Event('change', { bubbles: true }));
         });
+
+        // The row's own range slider uses the same fine rule for finger/pen drags (it is 120 px
+        // wide, so the generic RangeTouch gain would turn 40 px into ~150 deg). The generic
+        // controller is switched off for this input; mouse stays native (never intercepted here).
+        // Direction lock matches TUX-043: past 8 px, mostly vertical = scroll (value untouched).
+        slider.setAttribute('data-range-touch', 'off');
+        let sg = null;
+        let sHeld = null; // { value, until } while a finger gesture (and its native tail) is guarded
+        const LOCK_PX = 8;
+        const GUARD_MS = 500;
+        slider.addEventListener('pointerdown', (e) => {
+          if (e.pointerType === 'mouse' || slider.disabled || (sg && sg.id !== e.pointerId)) return;
+          sg = { id: e.pointerId, x0: e.clientX, y0: e.clientY, v0: +slider.value, mode: 'undecided', moved: false };
+          sHeld = { value: slider.value, until: Infinity };
+        });
+        slider.addEventListener('pointermove', (e) => {
+          if (!sg || e.pointerId !== sg.id) return;
+          const dx = e.clientX - sg.x0;
+          if (sg.mode === 'undecided') {
+            const dy = e.clientY - sg.y0;
+            if (Math.hypot(dx, dy) <= LOCK_PX) return;
+            sg.mode = Math.abs(dx) < Math.abs(dy) ? 'scroll' : 'drag';
+            if (sg.mode === 'drag') { try { slider.setPointerCapture(e.pointerId); } catch (_) {} }
+          }
+          if (sg.mode !== 'drag') return;
+          const { min, max } = fineBounds();
+          const v = touchDialValue(sg.v0, dx, dialMode(), min, max);
+          if (+slider.value === v) return;
+          sg.moved = true;
+          slider.value = v;
+          sHeld.value = slider.value;
+          slider.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        const sEnd = (e) => {
+          if (!sg || e.pointerId !== sg.id) return;
+          const g = sg;
+          sg = null;
+          try { slider.releasePointerCapture(e.pointerId); } catch (_) {}
+          if (e.type === 'pointercancel') {
+            if (g.moved) {
+              slider.value = g.v0;
+              slider.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            sHeld = { value: String(g.v0), until: performance.now() + GUARD_MS };
+            return;
+          }
+          sHeld.until = performance.now() + GUARD_MS;
+          if (g.moved) slider.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        slider.addEventListener('pointerup', sEnd);
+        slider.addEventListener('pointercancel', sEnd);
+        // Native (trusted) input/change from the browser's own range handling would set an absolute
+        // value; swallow them while a gesture runs and for GUARD_MS after (the native tap lands late).
+        const sGuard = (e) => {
+          if (!slider.isConnected) {
+            window.removeEventListener('input', sGuard, true);
+            window.removeEventListener('change', sGuard, true);
+            return;
+          }
+          if (e.target !== slider || !e.isTrusted || !sHeld || performance.now() > sHeld.until) return;
+          if (slider.value !== sHeld.value) slider.value = sHeld.value;
+          e.stopImmediatePropagation();
+        };
+        window.addEventListener('input', sGuard, true);
+        window.addEventListener('change', sGuard, true);
       });
 
       // Info popovers

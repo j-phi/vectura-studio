@@ -39,3 +39,25 @@ test('mirror dial: mouse click is absolute, Shift-drag snaps to 15 deg', async (
   expect(a % 15).toBe(0);
   expect(a).toBe(15);
 });
+
+test('mirror Angle-row slider: mouse keeps native absolute behaviour (not the touch fine gain)', async ({ page }) => {
+  await boot(page);
+  const slider = page.locator('.mp-root .mp-dial-row input.ctrl-slider[data-param="angle"]').first();
+  await slider.scrollIntoViewIfNeeded();
+  const b = await slider.boundingBox();
+  const y = b.y + b.height / 2;
+  // Click near 75% of the track: the native range jumps to about 270 (absolute).
+  await page.mouse.click(b.x + b.width * 0.75, y);
+  const a1 = await angle(page);
+  expect(a1).toBeGreaterThan(240);
+  expect(a1).toBeLessThan(300);
+  // A 40 px mouse drag keeps the coarse native gain (a 120 px range spans 360 deg), far above the
+  // touch rule of 20 deg per 40 px.
+  const x = b.x + b.width * 0.5;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  const mid = await angle(page);
+  await page.mouse.move(x + 40, y, { steps: 6 });
+  await page.mouse.up();
+  expect(Math.abs((await angle(page)) - mid)).toBeGreaterThan(60);
+});

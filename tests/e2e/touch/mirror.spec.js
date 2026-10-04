@@ -170,4 +170,41 @@ test.describe('TUX-027 mirror dial and row actions', () => {
     const nameW = await page.locator('.mp-root .mp-row-name-text').first().evaluate((el) => el.clientWidth);
     expect(nameW).toBeGreaterThanOrEqual(NAME_MIN);
   });
+
+  // Fix round: JRN-013 measured the Angle ROW's range slider (not the dial) at a coarse gain.
+  const sliderThumb = async (page, param = 'angle') => {
+    const loc = page.locator(`.mp-root .mp-dial-row input.ctrl-slider[data-param="${param}"]`).first();
+    await loc.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(150);
+    const b = await loc.boundingBox();
+    const v = await loc.evaluate((el) => ({ v: +el.value, min: +el.min, max: +el.max }));
+    const thumb = 28;
+    const frac = (v.v - v.min) / (v.max - v.min);
+    return { x: b.x + thumb / 2 + frac * (b.width - thumb), y: b.y + b.height / 2 };
+  };
+
+  test('T7 Angle-row range slider: finger drag is fine (<= 20 deg per 40 px)', async ({ page }) => {
+    await setMirror(page, { angle: 90 });
+    const h0 = await histLen(page);
+    const t = await sliderThumb(page);
+    await touch.drag(page, t, { x: t.x + 40, y: t.y }, { steps: 10 });
+    await page.waitForTimeout(250);
+    const delta = (await getAngle(page)) - 90;
+    expect(Math.abs(delta), `slider delta ${delta}`).toBeLessThanOrEqual(20);
+    expect(delta).toBeGreaterThan(0);
+    expect(await histLen(page)).toBe(h0 + 1);
+    if (process.env.TUX_EVIDENCE_DIR) {
+      await page.screenshot({ path: `${process.env.TUX_EVIDENCE_DIR}/${test.info().project.name}.png` });
+    }
+  });
+
+  test('T8 Angle-row range slider: a mostly vertical gesture changes nothing', async ({ page }) => {
+    await setMirror(page, { angle: 90 });
+    const h0 = await histLen(page);
+    const t = await sliderThumb(page);
+    await touch.drag(page, t, { x: t.x + 6, y: t.y + 60 }, { steps: 10 });
+    await page.waitForTimeout(250);
+    expect(await getAngle(page)).toBe(90);
+    expect(await histLen(page)).toBe(h0);
+  });
 });
