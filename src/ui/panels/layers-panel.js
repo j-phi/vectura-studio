@@ -1774,13 +1774,18 @@
 
     function _lvlDelSel() {
       if (this.app.pushHistory) this.app.pushHistory();
+      const token = this.app.history?.[this.app.history.length - 1];
       const ids = [...(this.app.renderer?.selectedLayerIds || [])];
+      const label = ids.length === 1
+        ? `Deleted "${this.app.engine.getLayerById?.(ids[0])?.name ?? 'layer'}"`
+        : `Deleted ${ids.length} layers`;
       [...ids].reverse().forEach((id) => {
         this.unlockMirrorChildrenOnDelete(id);
         this.app.engine.removeLayer(id);
       });
       this.renderLayers();
       this.app.render();
+      this.notifyUndoable(label, token);
     }
 
     function _lvlDupSel() {
@@ -2184,6 +2189,14 @@
     cascade(layerId);
   }
 
+  // TUX-037: one entry point for the "Deleted X — Undo" toast. `token` is the history
+  // snapshot the delete pushed (`this.app.history[last]` read right after pushHistory).
+  function notifyUndoable(label, token) {
+    const Toast = G.Vectura?.UI?.overlays?.Toast;
+    if (!Toast || typeof Toast.undoable !== 'function') return null;
+    return Toast.undoable({ app: this.app, label, token });
+  }
+
   function shouldLeaveParentScope(layer, prevId, nextId, selectedIds = new Set()) {
     if (!layer?.parentId || selectedIds.has(layer.parentId)) return false;
     const prevLayer = prevId ? this.getLayerById(prevId) : null;
@@ -2301,6 +2314,16 @@
       window.requestAnimationFrame(() => this.scrollLayerToTop(scrollTargetId));
     }
     return true;
+  }
+
+  // TUX-031: the one Arrange verb. The Cmd/Ctrl+[ ] shortcuts and the Object menu both call it.
+  // where: 'forward' | 'backward' | 'top' | 'bottom'. Returns true when the order changed.
+  function arrangeSelection(where) {
+    const direction = { forward: 'up', backward: 'down', top: 'top', bottom: 'bottom' }[where];
+    if (!direction) return false;
+    const changed = this.moveSelectedLayers(direction);
+    if (changed && this.app.pushHistory) this.app.pushHistory();
+    return changed;
   }
 
   function duplicateLayers(targetLayers, options = {}) {
@@ -2829,11 +2852,13 @@
     getModifierState,
     assignLayersToParent,
     unlockMirrorChildrenOnDelete,
+    notifyUndoable,
     shouldLeaveParentScope,
     isDescendant,
     sceneNestContainerFor,
     normalizeGroupOrder,
     moveSelectedLayers,
+    arrangeSelection,
     duplicateLayers,
     getLayerChildren,
     getLayerDescendants,
@@ -2868,11 +2893,13 @@
       proto.getModifierState = function(layer) { return getModifierState.call(this, layer); };
       proto.assignLayersToParent = function(...args) { return assignLayersToParent.apply(this, args); };
       proto.unlockMirrorChildrenOnDelete = function(layerId) { return unlockMirrorChildrenOnDelete.call(this, layerId); };
+      proto.notifyUndoable = function(label, token) { return notifyUndoable.call(this, label, token); };
       proto.shouldLeaveParentScope = function(...args) { return shouldLeaveParentScope.apply(this, args); };
       proto.isDescendant = function(targetId, ancestorId) { return isDescendant.call(this, targetId, ancestorId); };
       proto.sceneNestContainerFor = function(tgt) { return sceneNestContainerFor.call(this, tgt); };
       proto.normalizeGroupOrder = function() { return normalizeGroupOrder.call(this); };
       proto.moveSelectedLayers = function(direction) { return moveSelectedLayers.call(this, direction); };
+      proto.arrangeSelection = function(where) { return arrangeSelection.call(this, where); };
       proto.duplicateLayers = function(targetLayers, options) { return duplicateLayers.call(this, targetLayers, options); };
       proto.getLayerChildren = function(layerId) { return getLayerChildren.call(this, layerId); };
       proto.getLayerDescendants = function(layerId) { return getLayerDescendants.call(this, layerId); };

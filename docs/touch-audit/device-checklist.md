@@ -87,6 +87,9 @@ JSON.stringify({w: innerWidth, h: innerHeight, dpr: devicePixelRatio, standalone
 | DEV-36 | Pinch on inline and pop-out designer canvas zooms only the canvas, never the page (from TUX-026) | TUX-026 | iPhone P tab, iPad L tab | A pinch zooms the designer canvas. The page stays at 1x. | open |
 | DEV-37 | Focus a designer field in the phone sheet: no page zoom, field stays visible above keyboard (from TUX-026) | TUX-026 | iPhone P tab | No page zoom. The field stays visible above the keyboard. | open |
 | DEV-38 | Document Setup Paper > Size native picker (from TUX-050) | TUX-050 | iPhone P tab, iPad P tab | The first tap on Paper > Size opens the native iOS picker. The drawer or modal does not jump. | open |
+| DEV-39 | Mirror dial fine rotate (from TUX-027). Real touch drag on the line, radial, arc and tile-angle dials. | TUX-027 | iPhone P tab, iPad L tab | A sideways drag across a dial turns it at about 0.5 degrees per px. No page scroll steals the drag. No pointercancel. A tap on the dial changes nothing. | open |
+| DEV-40 | Mirror angle chip commit (from TUX-027) | TUX-027 | iPhone P tab, iPad L tab | Tap the Angle value. The decimal keypad opens. The value commits through the keypad Done key or by a tap elsewhere (blur). | open |
+| DEV-41 | Signed Shift X/Y chips on the iPhone decimal keypad (cross-reference TUX-038; from TUX-027) | TUX-027, TUX-038 | iPhone P tab | The decimal keypad has no minus key. Record whether a negative Shift X or Shift Y value can be entered. If not, the Follow-up names a new TUX id. | open |
 
 ## Clause index
 
@@ -123,3 +126,14 @@ One line per cell. Add lines only after a real device run. Do not enter results 
 
 | Row | Device | iOS | Mode | Orientation | Result | Date | Build | Note | Follow-up |
 |---|---|---|---|---|---|---|---|---|---|
+
+## TUX-054 device rows (downloads and share sheet)
+
+| Row | Check |
+|---|---|
+| TUX-054#1 | Save .vectura, then Save to Files. The name stays `vectura-YYYY-MM-DD.vectura`, not `.json`. Reopen it (TUX-053 round trip). |
+| TUX-054#2 | Export SVG opens as a vector file in Files. |
+| TUX-054#3 | Cancel the share sheet. No file and no toast appear. A second attempt works. |
+| TUX-054#4 | Animated SVG, preset bundle and one designer export each work. |
+| TUX-054#5 | A heavy export (dense scene, build time over 1 s) still opens the share sheet or falls back to a download. This checks the activation lifetime. |
+| TUX-054#6 | Record whether a synchronous revoke failed before the fix. This tests the audit's unverified claim. |

@@ -439,14 +439,8 @@
       if ((e.metaKey || e.ctrlKey) && (e.key === '[' || e.key === ']' || e.key === '{' || e.key === '}')) {
         e.preventDefault();
         const isRight = e.key === ']' || e.key === '}';
-        const direction = isRight ? 'up' : 'down';
-        let changed = false;
-        if (e.shiftKey || e.key === '{' || e.key === '}') {
-          changed = this.moveSelectedLayers(isRight ? 'top' : 'bottom');
-        } else {
-          changed = this.moveSelectedLayers(direction);
-        }
-        if (changed && this.app.pushHistory) this.app.pushHistory();
+        if (e.shiftKey || e.key === '{' || e.key === '}') this.arrangeSelection(isRight ? 'top' : 'bottom');
+        else this.arrangeSelection(isRight ? 'forward' : 'backward');
         return;
       }
 
@@ -463,7 +457,11 @@
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         if (this.app.pushHistory) this.app.pushHistory();
+        const token = this.app.history?.[this.app.history.length - 1];
         const ids = Array.from(this.app.renderer?.selectedLayerIds || []);
+        const label = ids.length === 1
+          ? `Deleted "${this.app.engine.getLayerById?.(ids[0])?.name ?? 'layer'}"`
+          : `Deleted ${ids.length} layers`;
         ids.forEach((id) => {
           this.unlockMirrorChildrenOnDelete?.(id);
           this.app.engine.removeLayer(id);
@@ -474,6 +472,7 @@
         }
         this.renderLayers();
         this.app.render();
+        this.notifyUndoable?.(label, token);
         return;
       }
       const step = (e.metaKey || e.ctrlKey) ? 10 : 1;
