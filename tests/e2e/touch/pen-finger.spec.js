@@ -38,7 +38,7 @@ const findCentre = (page) => page.evaluate((probes) => {
   return hit ? { x: hit.x, y: hit.y } : null;
 }, PROBES);
 
-const setupPen = async (page) => {
+const setupPen = async (page, testInfo) => {
   await page.evaluate(() => {
     const app = window.app;
     app.engine.layers.slice().forEach((l) => { try { app.engine.removeLayer(l.id); } catch (_) { /* noop */ } });
@@ -60,6 +60,9 @@ const setupPen = async (page) => {
   });
   await page.waitForTimeout(300);
   const c = await findCentre(page);
+  // LAY-002 / TUX-007 (shell lane): the iPhone landscape canvas is ~124 px tall and the toolbar covers it,
+  // so no clear tap area exists. Same dependency TUX-030 pen.spec.js records. Not a TUX-024 defect.
+  test.fail(c === null && !!testInfo && testInfo.project.name === 'touch-iphone-landscape-chrome', 'LAY-002/TUX-007 dependency: no clear canvas area');
   expect(c).not.toBeNull();
   return c;
 };
@@ -85,7 +88,7 @@ const threeAnchors = async (page, c) => {
 
 test.describe('TUX-024 pen and anchors by finger', () => {
   let errors;
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page }, testInfo) => {
     errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     await page.goto('/');
@@ -96,7 +99,7 @@ test.describe('TUX-024 pen and anchors by finger', () => {
 
   for (const d of [10, 20]) {
     test(`close by near tap: ${d} px from the start`, async ({ page }, testInfo) => {
-      const c = await setupPen(page);
+      const c = await setupPen(page, testInfo);
       await threeAnchors(page, c);
       expect(await draft(page)).toEqual({ n: 3, closed: false });
       const shot = SHOT_NAMES[testInfo.project.name];
@@ -114,8 +117,8 @@ test.describe('TUX-024 pen and anchors by finger', () => {
     });
   }
 
-  test('far tap does not close: 30 px from the start', async ({ page }) => {
-    const c = await setupPen(page);
+  test('far tap does not close: 30 px from the start', async ({ page }, testInfo) => {
+    const c = await setupPen(page, testInfo);
     await threeAnchors(page, c);
     await touch.tap(page, at(c, { x: A1.x - 30, y: A1.y }));
     await gap(page, 300);
@@ -124,8 +127,8 @@ test.describe('TUX-024 pen and anchors by finger', () => {
   });
 
   for (const drift of [12, 22]) {
-    test(`double-tap with ${drift} px drift finishes with no extra anchor`, async ({ page }) => {
-      const c = await setupPen(page);
+    test(`double-tap with ${drift} px drift finishes with no extra anchor`, async ({ page }, testInfo) => {
+      const c = await setupPen(page, testInfo);
       await touch.tap(page, at(c, A1));
       await gap(page);
       await touch.tap(page, at(c, A2));
@@ -139,8 +142,8 @@ test.describe('TUX-024 pen and anchors by finger', () => {
     });
   }
 
-  test('fast taps far apart do not finish', async ({ page }) => {
-    const c = await setupPen(page);
+  test('fast taps far apart do not finish', async ({ page }, testInfo) => {
+    const c = await setupPen(page, testInfo);
     await touch.tap(page, at(c, A1));
     await gap(page);
     await touch.tap(page, at(c, A2));
@@ -153,7 +156,7 @@ test.describe('TUX-024 pen and anchors by finger', () => {
   });
 
   test('anchor grab by finger from 15 px off', async ({ page }, testInfo) => {
-    const c = await setupPen(page);
+    const c = await setupPen(page, testInfo);
     // Draw the path with the pen, finish with a double-tap, then edit it with the Direct tool.
     await touch.tap(page, at(c, A1));
     await gap(page);

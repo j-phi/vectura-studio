@@ -192,6 +192,50 @@ describe('TUX-024: touch hit targets through the real renderer', () => {
     });
   });
 
+  describe('(d2) Select tool: corner widget vs resize handle', () => {
+    const selectSetup = () => {
+      const { Layer } = runtime.window.Vectura;
+      const { renderer, engine } = makeRenderer();
+      const shape = { type: 'rect', x1: 100, y1: 100, x2: 400, y2: 400, cornerRadii: [0, 0, 0, 0] };
+      const layer = new Layer('rect-s', 'shape', 'Rect');
+      layer.sourcePaths = [renderer.buildShapePath(shape)];
+      layer.params = { curves: false, smoothing: 0, simplify: 0, posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0 };
+      engine.layers.push(layer);
+      engine.generate(layer.id);
+      renderer.setSelection([layer.id], layer.id);
+      renderer.setTool('select');
+      return { renderer, layer };
+    };
+    const pressSelect = (renderer, x, y, pointerType) => {
+      renderer.shapeCornerDrag = null;
+      renderer.dragMode = null;
+      renderer.down(evt(x, y, pointerType, 500));
+      const out = renderer.shapeCornerDrag ? 'corner' : (renderer.activeHandle || renderer.resizeHandle || (renderer.dragState && renderer.dragState.handle) || 'other');
+      renderer.up(evt(x, y, pointerType, 540));
+      return out;
+    };
+
+    test('a finger 15 px from the Select-tool corner widget grabs the widget', () => {
+      const { renderer, layer } = selectSetup();
+      const w = renderer.getShapeCornerHandles(layer, 0)[0].point;
+      // 15 px further inward (away from the vertex), where no resize centre is nearer.
+      const v = renderer.getShapeCornerHandles(layer, 0)[0].vertex;
+      const dx = w.x - v.x; const dy = w.y - v.y; const len = Math.hypot(dx, dy) || 1;
+      expect(pressSelect(renderer, w.x + (dx / len) * 15, w.y + (dy / len) * 15, 'touch')).toBe('corner');
+    });
+    test('a finger on the resize handle still resizes, not the widget', () => {
+      const { renderer, layer } = selectSetup();
+      const v = renderer.getShapeCornerHandles(layer, 0)[0].vertex;
+      expect(pressSelect(renderer, v.x - 2, v.y - 2, 'touch')).toBe('nw');
+    });
+    test('mouse keeps the 7 px widget radius: 15 px off the widget grabs nothing of it', () => {
+      const { renderer, layer } = selectSetup();
+      const h = renderer.getShapeCornerHandles(layer, 0)[0];
+      const dx = h.point.x - h.vertex.x; const dy = h.point.y - h.vertex.y; const len = Math.hypot(dx, dy) || 1;
+      expect(pressSelect(renderer, h.point.x + (dx / len) * 15, h.point.y + (dy / len) * 15, 'mouse')).not.toBe('corner');
+    });
+  });
+
   describe('(e) light source vs anchor', () => {
     const tri = [{ x: 200, y: 200 }, { x: 400, y: 200 }, { x: 400, y: 400 }];
     test('touch 4 px from an anchor and 11 px from the light picks the anchor', () => {

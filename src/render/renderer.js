@@ -7344,10 +7344,15 @@
         if (this.activeTool === 'select' && selectedLayers.length === 1 && !this.isLayerLocked?.(selectedLayers[0].id)) {
           const shapeLayer = this.getSelectedShapeLayer();
           if (shapeLayer) {
-            // Select tool keeps the mouse widget radius for every pointer: the widget sits inside the
-            // finger-sized resize zone (TUX-023), and the resize handle must win there. Follow-up:
-            // push the touch widget offset past the touch radius, then widen this too.
-            const shapeCorner = this.hitShapeCornerHandle(world, shapeLayer, 0);
+            // Touch: the widget gets the finger radius (22 px) but shares the corner with the resize
+            // zone, so the nearer of the two centres wins (a tie goes to the widget). Mouse/pen keep
+            // the exact mouse radius and order.
+            let shapeCorner = this.hitShapeCornerHandle(world, shapeLayer, 0, e.pointerType);
+            if (shapeCorner && e.pointerType === 'touch' && selectionBounds) {
+              const wp = this.worldToScreen(shapeCorner.point.x, shapeCorner.point.y);
+              const widgetD = Math.hypot(sx - wp.x, sy - wp.y);
+              if (this._nearestResizeCentreDistance(sx, sy, selectionBounds) < widgetD) shapeCorner = null;
+            }
             if (shapeCorner) {
               // Option/Alt+click switches the corner style for every corner
               // (Select-tool scope is always the whole shape).
@@ -15897,6 +15902,19 @@
     getRotateAffordance(bounds) {
       if (!this.isCoarseHandles()) return null;
       return this._computeRotateAffordance(bounds, 'touch');
+    }
+
+    // Screen distance from (sx, sy) to the nearest touch resize centre (nudged hit points and
+    // the true corners). Used to arbitrate the corner widget against the resize zone.
+    _nearestResizeCentreDistance(sx, sy, bounds) {
+      let best = Infinity;
+      const consider = (pt) => {
+        const sc = this.worldToScreen(pt.x, pt.y);
+        best = Math.min(best, Math.hypot(sx - sc.x, sy - sc.y));
+      };
+      this.getHandleHitPoints(bounds, 'touch').forEach(consider);
+      ['nw', 'ne', 'se', 'sw'].forEach((k) => consider(bounds.corners[k]));
+      return best;
     }
 
     hitHandle(sx, sy, bounds, { pointerType = 'mouse' } = {}) {
