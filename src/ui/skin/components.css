@@ -15037,3 +15037,119 @@ body.tablet-layout #touch-modifier-bar {
 }
 
 /* === END TUX-008 === */
+
+/* === TUX-010/011: pane controls, drawers, slivers ===
+ * Older rules these beat (grep before changing): :8520 .mobile-layout .pane (z 55), :8568-8619 slivers and
+ * backdrop z 54, :8717-8735 backdrop, :9565-9600 unscoped .mobile-pane-handle, TUX-008 block above.
+ * Visibility keys on a layout class; sizes key on body.touch-ui, so desktop and fine-pointer narrow windows keep
+ * today's 24/28 px chevrons. */
+
+/* Phone header openers: Generator and Layers. Same 44 px box as the other header buttons (TUX-001). */
+body.phone-layout #app-header .header-pane-btn[aria-expanded="true"] {
+  color: var(--ui-accent, currentColor);
+  border-color: var(--ui-accent, var(--ui-border-hi));
+}
+/* An open phone drawer: the header stays above the backdrop so both openers keep working (one-tap swap). */
+body.phone-layout:has(.pane.pane-force-open) #app-header {
+  z-index: var(--z-phone-header);
+}
+
+/* Backdrop: a tap target for iOS Safari (cursor:pointer), above the tool rail, below the open drawer. */
+body.mobile-layout .mobile-pane-backdrop {
+  z-index: var(--z-backdrop);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+body.mobile-layout .pane.pane-force-open,
+body.tablet-layout.touch-ui .pane.pane-drawer-open {
+  z-index: var(--z-drawer);
+}
+
+/* Closed phone pane on a touch device: no 40 px sliver. Off screen, not hit-testable, not visible.
+ * (transform + visibility, never display:none, so a later transition stays possible.) The header
+ * buttons are the only open targets. A fine-pointer narrow window keeps its sliver. */
+body.phone-layout.touch-ui.auto-collapsed .pane:not(.pane-force-open) {
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: none;
+}
+body.phone-layout.touch-ui.auto-collapsed .pane-left:not(.pane-force-open) {
+  transform: translateX(calc(-100% - var(--safe-left, 0px) - 2px));
+}
+body.phone-layout.touch-ui.auto-collapsed .pane-right:not(.pane-force-open) {
+  transform: translateX(calc(100% + var(--safe-right, 0px) + 2px));
+}
+
+/* Tablet edge handles: 48 wide, header-band tall, glyph plus accessible label (aria-label). The TUX-008 ::after
+ * extender gives the 45 px tall finger target. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left,
+body.tablet-layout.touch-ui .mobile-pane-handle-right {
+  box-sizing: border-box;
+  width: calc(var(--touch-target-min, 44px) + 4px); /* 48: the 2 px hit probe grid reads a 44 px box as 43 */
+  height: 38px; /* the header band: a taller box would leave the header. The TUX-008 ::after below grows the hit area to 45 px. */
+  top: var(--safe-top, 0px);
+  z-index: var(--z-pane-opener);
+}
+/* The modifier bar (Shift/Alt latches) stays tappable above the backdrop on phone and tablet; the drawer ends above it. */
+body.mobile-layout #touch-modifier-bar {
+  z-index: calc(var(--z-backdrop) + 1);
+}
+/* Header buttons never shrink below 44 px when the two pane buttons join the phone action group. */
+body.phone-layout #app-header .header-phone-btn { flex: 0 0 auto; }
+/* Finger target: 48 x 45. The header sits at the top edge, so the extender grows downward only (into the rail's
+ * 8 px top padding, which holds no tool button). The TUX-008 inset of -3px at the top is clipped by the screen. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left::after,
+body.tablet-layout.touch-ui .mobile-pane-handle-right::after {
+  inset: 0 0 -7px;
+}
+/* The bottom handle belongs to TUX-051 and stays hidden in every layout. */
+body #btn-mobile-pane-bottom,
+body.mobile-layout #btn-mobile-pane-bottom {
+  display: none;
+}
+
+/* Close / collapse chevrons: 44 x 44 on every touch layout. */
+body.touch-ui .pane-toggle-left,
+body.touch-ui .pane-toggle-right {
+  width: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
+}
+body.touch-ui .pane-toggle-left { right: 4px; }
+body.touch-ui .pane-toggle-right { left: 4px; }
+body.touch-ui .pane-header-right .pane-title { margin-left: 52px; }
+/* The header must be as tall as the chevron, or the pane body paints over its bottom edge. */
+body.touch-ui .pane-header,
+body.touch-ui #left-pane .pane-header,
+body.touch-ui #right-pane .pane-header {
+  height: calc(var(--touch-target-min, 44px) + 4px);
+  min-height: calc(var(--touch-target-min, 44px) + 4px);
+  box-sizing: border-box;
+}
+
+/* touch-wide collapsed rail (36 px, TUX-008). The button fills the rail and its ::before reaches 10 px
+ * past the rail edge onto the canvas, so the finger target is 44 px wide without a wider rail (a 44 px
+ * rail would push the canvas share under the 75 % floor). The glyph rotates, not the button, so the
+ * extension keeps pointing at the canvas. */
+body.touch-wide-layout.touch-ui .pane.pane-collapsed {
+  overflow: visible;
+  z-index: var(--z-pane);
+}
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle {
+  width: var(--pane-collapsed-width, 36px);
+  height: var(--touch-target-min, 44px);
+  left: 0;
+  right: 0;
+  border-radius: 0;
+  transform: translateY(-50%);
+}
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+body.touch-wide-layout.touch-ui .pane-left.pane-collapsed .pane-toggle::before { left: 0; right: -10px; }
+body.touch-wide-layout.touch-ui .pane-right.pane-collapsed .pane-toggle::before { right: 0; left: -10px; }
+body.touch-wide-layout.touch-ui .pane-toggle svg { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle svg { transform: rotate(180deg); }
+/* === END TUX-010/011 === */

@@ -36,6 +36,9 @@
     const rightBtn = getEl('btn-pane-toggle-right');
     const mobileLeftBtn = getEl('btn-mobile-pane-left');
     const mobileRightBtn = getEl('btn-mobile-pane-right');
+    // TUX-010: phone header openers (index.html, inside .header-phone-actions).
+    const headerLeftBtn = getEl('btn-header-pane-left');
+    const headerRightBtn = getEl('btn-header-pane-right');
     if (!leftPane || !rightPane || !leftBtn || !rightBtn) return;
 
     if (bottomPane && SETTINGS.bottomPaneCollapsed === true) bottomPane.classList.add('bottom-pane-collapsed');
@@ -127,6 +130,9 @@
       backdrop.id = 'mobile-pane-backdrop';
       backdrop.className = 'mobile-pane-backdrop';
       backdrop.setAttribute('aria-hidden', 'true');
+      // TUX-011: role=presentation + cursor:pointer (CSS) make iOS Safari deliver the click to a
+      // non-interactive div. The backdrop closes on click ONLY, so no ghost click reaches the canvas.
+      backdrop.setAttribute('role', 'presentation');
       backdrop.addEventListener('click', () => { if (controller) controller.closeAll(); });
       document.body.appendChild(backdrop);
       return backdrop;
@@ -150,6 +156,60 @@
       });
       const anyOpen = controller.isDrawer() && (controller.isOpen('left') || controller.isOpen('right'));
       ensureBackdrop().classList.toggle('visible', anyOpen);
+      syncAria(layout);
+    };
+
+    // TUX-010/011: every control for a pane carries aria-expanded + aria-controls. On a touch drawer
+    // layout a closed pane is inert (no focus, no hit, no AT), and focus follows the drawer:
+    // open -> its close control, close -> the control that opened it.
+    const CONTROLS = {
+      left: [leftBtn, mobileLeftBtn, headerLeftBtn],
+      right: [rightBtn, mobileRightBtn, headerRightBtn],
+    };
+    const PANES = { left: leftPane, right: rightPane };
+    // Some callers (test setup, legacy code) force a drawer open by adding the open class directly. An
+    // inert pane would then swallow every tap, so an open class always lifts `inert`.
+    if (typeof MutationObserver !== 'undefined') {
+      const lift = (pane) => {
+        const c = pane.classList;
+        const tablet = document.body.classList.contains('tablet-layout');
+        const open = c.contains('pane-force-open') || c.contains('pane-drawer-open') || (tablet && !c.contains('pane-collapsed'));
+        if (open && pane.hasAttribute('inert')) pane.removeAttribute('inert');
+      };
+      [leftPane, rightPane].forEach((pane) => {
+        new MutationObserver(() => lift(pane)).observe(pane, { attributes: true, attributeFilter: ['class'] });
+      });
+    }
+    const wasOpen = { left: null, right: null };
+    let lastTrigger = { left: null, right: null };
+    const syncAria = (layout) => {
+      const touchDrawer = (layout === 'phone' || layout === 'tablet') && document.body.classList.contains('touch-ui');
+      ['left', 'right'].forEach((side) => {
+        const open = controller.isOpen(side);
+        const pane = PANES[side];
+        CONTROLS[side].forEach((btn) => {
+          if (!btn) return;
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          btn.setAttribute('aria-controls', pane.id);
+        });
+        if (touchDrawer && !open) pane.setAttribute('inert', '');
+        else pane.removeAttribute('inert');
+        const prev = wasOpen[side];
+        wasOpen[side] = open;
+        if (prev === null || prev === open || !touchDrawer) return;
+        try {
+          if (open) {
+            CONTROLS[side][0].focus({ preventScroll: true });
+          } else {
+            const active = document.activeElement;
+            const trigger = lastTrigger[side];
+            if (trigger && trigger.isConnected && (!active || active === document.body || pane.contains(active))) {
+              const cs = getComputedStyle(trigger);
+              if (cs.display !== 'none' && cs.visibility !== 'hidden') trigger.focus({ preventScroll: true });
+            }
+          }
+        } catch (e) { /* focus unavailable */ }
+      });
     };
 
     const applyLayout = () => {
@@ -194,10 +254,22 @@
       syncBottomChrome();
     };
 
-    leftBtn.addEventListener('click', () => controller && controller.toggle('left'));
-    rightBtn.addEventListener('click', () => controller && controller.toggle('right'));
-    if (mobileLeftBtn) mobileLeftBtn.addEventListener('click', () => controller && controller.toggle('left'));
-    if (mobileRightBtn) mobileRightBtn.addEventListener('click', () => controller && controller.toggle('right'));
+    // One handler per control. Plain click serves mouse and touch (never branch on pointerType).
+    // The close chevron lives inside the pane, so it never becomes the focus-return trigger.
+    const wire = (btn, side, isOpener) => {
+      if (!btn) return;
+      btn.addEventListener('click', () => {
+        if (!controller) return;
+        if (isOpener && !controller.isOpen(side)) lastTrigger[side] = btn;
+        controller.toggle(side);
+      });
+    };
+    wire(leftBtn, 'left', false);
+    wire(rightBtn, 'right', false);
+    wire(mobileLeftBtn, 'left', true);
+    wire(mobileRightBtn, 'right', true);
+    wire(headerLeftBtn, 'left', true);
+    wire(headerRightBtn, 'right', true);
     window.addEventListener('resize', applyLayout);
     try {
       const coarseMq = window.matchMedia && window.matchMedia('(pointer: coarse)');

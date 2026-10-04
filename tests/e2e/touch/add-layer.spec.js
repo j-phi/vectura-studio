@@ -28,7 +28,7 @@ test.beforeEach(async ({ page }, testInfo) => {
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
   await page.waitForTimeout(300);
   if (!(await reachable(page))) {
-    for (const id of ['btn-pane-toggle-right', 'btn-mobile-pane-right']) {
+    for (const id of ['btn-header-pane-right', 'btn-pane-toggle-right', 'btn-mobile-pane-right']) {
       const btn = page.locator(`#${id}`);
       if (await btn.isVisible().catch(() => false)) {
         await touch.tap(page, btn);
@@ -37,8 +37,7 @@ test.beforeEach(async ({ page }, testInfo) => {
       }
     }
   }
-  test.fixme(IPHP.includes(testInfo.project.name) && !(await reachable(page)), 'blocked on TUX-010: Layers pane unreachable by finger');
-  expect(await reachable(page), '#btn-add-layer reachable by finger').toBe(true);
+    expect(await reachable(page), '#btn-add-layer reachable by finger').toBe(true);
 });
 
 const openAdd = async (page) => { await touch.tap(page, page.locator('#btn-add-layer')); await expect(page.locator('#layer-add-menu')).toBeVisible(); };

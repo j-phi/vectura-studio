@@ -238,6 +238,9 @@
       </div>
       <div class="header-status-actions flex items-center gap-3 shrink-0">
         <div class="header-phone-actions" role="group" aria-label="Quick actions">
+          <!-- TUX-010: phone drawer openers. Same togglePane path as the tablet edge handles. -->
+          <button id="btn-header-pane-left" class="header-phone-btn header-pane-btn" type="button" aria-label="Generator panel" title="Generator" aria-expanded="false" aria-controls="left-pane"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="M5.5 9h1.5M5.5 12h1.5M5.5 15h1.5" stroke-width="1.5"/></svg></button>
+          <button id="btn-header-pane-right" class="header-phone-btn header-pane-btn" type="button" aria-label="Layers panel" title="Layers" aria-expanded="false" aria-controls="right-pane"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></svg></button>
           <button id="btn-header-undo" class="header-phone-btn" type="button" aria-label="Undo" title="Undo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
           <button id="btn-header-redo" class="header-phone-btn" type="button" aria-label="Redo" title="Redo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
           <button id="btn-header-export" class="header-phone-btn" type="button" aria-label="Export" title="Export"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></button>
@@ -306,11 +309,11 @@
     <!-- TUX-008: interim tablet pane openers. They live in the header so they stack with it (z 50)
          and never sit over the canvas. TUX-010 restyles and labels them. -->
     <button id="btn-mobile-pane-left" class="mobile-pane-handle mobile-pane-handle-left" type="button"
-      aria-label="Toggle generator panel">
+      aria-label="Generator panel" aria-expanded="false" aria-controls="left-pane">
       Generator
     </button>
     <button id="btn-mobile-pane-right" class="mobile-pane-handle mobile-pane-handle-right" type="button"
-      aria-label="Toggle layers panel">
+      aria-label="Layers panel" aria-expanded="false" aria-controls="right-pane">
       Layers
     </button>
   </header>
@@ -328,7 +331,7 @@
         <span class="pane-meta text-[11px] text-vectura-muted">V.1.4.6</span>
 
         <button id="btn-pane-toggle-left" class="pane-toggle pane-toggle-left" type="button"
-          aria-label="Toggle left pane">
+          aria-label="Toggle left pane" aria-expanded="true" aria-controls="left-pane">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
         </button>
       </div>
@@ -726,7 +729,7 @@
       <div
         class="pane-header pane-header-right border-b border-vectura-border flex items-center bg-vectura-panel z-20">
         <button id="btn-pane-toggle-right" class="pane-toggle pane-toggle-right" type="button"
-          aria-label="Toggle right pane" title="Toggle layers panel">
+          aria-label="Toggle right pane" title="Toggle layers panel" aria-expanded="true" aria-controls="right-pane">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
         </button>
         <div id="right-pane-tabs" class="right-pane-tabs" role="tablist" aria-label="Layers panel tabs">
