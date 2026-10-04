@@ -1534,7 +1534,12 @@ ${isDevEligible() ? `
       const n = Bundle.countAll();
       if (!n) { toast('No custom presets to export yet.', 'info'); return; }
       const stamp = new Date().toISOString().slice(0, 10);
-      if (Bundle.download(stamp)) toast(`Exported ${n} preset${n === 1 ? '' : 's'}.`, 'success');
+      // TUX-054: toast only after the file was shared or downloaded, never on a cancelled share sheet.
+      Bundle.download(stamp, {
+        onResult: (result) => {
+          if (result === 'shared' || result === 'downloaded') toast(`Exported ${n} preset${n === 1 ? '' : 's'}.`, 'success');
+        },
+      });
     };
     const importBtn = host.querySelector('#btn-preset-import');
     if (importBtn) importBtn.onclick = () => {
