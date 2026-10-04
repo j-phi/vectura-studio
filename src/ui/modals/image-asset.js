@@ -23,11 +23,17 @@
  *          dropLabel }`. On file select, calls `this.loadNoiseImageFile`
  *       with the same idKey/nameKey, then closes.
  *   - loadNoiseImageFile(file, layer, nameEl, idKey, nameKey, target, previewKey)
- *       Reads the file as a data URL, decodes it into a canvas, snapshots
+ *       Reads the file as a data URL, decodes it into a canvas capped at
+ *       Vectura.ImageSource.MAX_IMPORT_SIDE (2048 px, TUX-055; the cap, sizing
+ *       and canvas helpers live in image-source-util.js), snapshots
  *       the ImageData into `window.Vectura.NOISE_IMAGES[id]`, mutates the
  *       layer params (or `target` if provided — used by the noise rack so
  *       the per-stack noise descriptor receives the id, not the layer
- *       params), pushes history, regenerates + renders + rebuilds controls.
+ *       params). A scaled import re-encodes previewKey from the capped canvas
+ *       (PNG for png/gif/webp, else JPEG 0.92); an unscaled one keeps the
+ *       original data URL. Any decode failure (reader/image error, null
+ *       context, getImageData throw) shows a danger toast and changes
+ *       nothing. On success it pushes history, regenerates + renders + rebuilds controls.
  *
  * The legacy UI prototype delegates both methods to this module via 1-line
  * pass-throughs. Compose pattern: this module composes `this.openModal`
@@ -73,18 +79,46 @@
   ) {
     requireDeps('loadNoiseImageFile');
     if (!file || !layer) return;
+    const IS = window.Vectura && window.Vectura.ImageSource;
+    // One failure path for every decode step: toast, then leave history, store and params untouched.
+    const fail = () => {
+      const T = window.Vectura?.UI?.overlays?.Toast;
+      if (T && typeof T.show === 'function') {
+        try { T.show({ message: "Couldn't load that image. Try a smaller JPG or PNG.", variant: 'danger', duration: 5000 }); } catch (_) { /* noop */ }
+      }
+    };
     const reader = new FileReader();
+    reader.onerror = fail;
     reader.onload = () => {
-      const preview = reader.result;
+      const raw = reader.result;
       const img = new Image();
+      img.onerror = fail;
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth || img.width;
-        canvas.height = img.naturalHeight || img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.drawImage(img, 0, 0);
-        const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        let r;
+        let data;
+        let preview = raw;
+        try {
+          r = IS.rasterizeCapped(img, IS.MAX_IMPORT_SIDE);
+          if (!r) { fail(); return; }
+          data = r.ctx.getImageData(0, 0, r.w, r.h);
+          if (r.scaled && previewKey) {
+            // Never persist the raw oversized URL; re-encode from the capped canvas.
+            const keepAlpha = /^image\/(png|gif|webp)$/i.test(file.type || '');
+            try {
+              preview = keepAlpha ? r.canvas.toDataURL('image/png') : r.canvas.toDataURL('image/jpeg', 0.92);
+            } catch (e) {
+              console.warn('Vectura: could not re-encode capped image preview', e);
+              preview = '';
+            }
+          }
+        } catch (e) {
+          fail();
+          return;
+        } finally {
+          img.onload = null;
+          img.onerror = null;
+          img.src = '';
+        }
         const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
         const id = `noise-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
         store[id] = { width: data.width, height: data.height, data: data.data };
@@ -100,7 +134,7 @@
           owner.shiftX = owner.shiftX ?? 0;
           owner.shiftY = owner.shiftY ?? 0;
         }
-        if (previewKey) owner[previewKey] = preview;
+        if (previewKey && preview) owner[previewKey] = preview;
         if (nameEl) nameEl.textContent = file.name;
         this.storeLayerParams(layer);
         this.app.regen();
@@ -108,7 +142,7 @@
         this.buildControls();
         this.updateFormula();
       };
-      img.src = reader.result;
+      img.src = raw;
     };
     reader.readAsDataURL(file);
   }
