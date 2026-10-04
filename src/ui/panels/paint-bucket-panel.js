@@ -459,7 +459,8 @@
 
   // TUX-022: Scope up/down chips for touch. Rendered by the context bar (kind 'fill', coarse
   // pointer only). The buttons step the renderer's sticky scope offset; the live preview and the
-  // pending lift-to-pour follow it. Click (not pointerdown) so the canvas pointers stay untouched.
+  // pending lift-to-pour follow it. Touch and pen step on pointerdown (no click arrives for a
+  // second-finger tap); mouse and keyboard step on click. Canvas pointers stay untouched.
   const SCOPE_CHIP_COPY = {
     up: { label: 'Scope', glyph: '\u25B2', aria: 'Widen fill scope' },
     down: { label: 'Scope', glyph: '\u25BC', aria: 'Narrow fill scope' },
@@ -504,13 +505,15 @@
         // A touch / pen tap steps on pointerdown: while another finger holds the canvas the
         // browser sends no click for a multi-touch tap. The click that may follow is ignored.
         // Mouse and keyboard step on click.
+        // A press that stepped on pointerdown swallows the click that follows it, however long
+        // the press lasted. The flag clears on that click, on a mouse press or on a key press.
         let byPointer = false;
         btn.addEventListener('pointerdown', (e) => {
-          if (e.pointerType === 'mouse') return;
+          if (e.pointerType === 'mouse') { byPointer = false; return; }
           byPointer = true;
-          setTimeout(() => { byPointer = false; }, 700);
           step();
         });
+        btn.addEventListener('keydown', () => { byPointer = false; });
         btn.addEventListener('click', (e) => {
           e.preventDefault();
           if (byPointer) { byPointer = false; return; }

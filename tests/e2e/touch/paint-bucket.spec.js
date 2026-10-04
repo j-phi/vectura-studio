@@ -288,6 +288,37 @@ test.describe('TUX-022 paint bucket by touch', () => {
     expect((await lastFill(page)).loopId, 'RED(g2): the lift pours at the new scope index').toBe(stack[1].loopId);
   });
 
+  test('(m) one long press (>= 900 ms) on Scope up steps the offset exactly once', async ({ page }) => {
+    const up = page.locator('[data-fill-scope="up"]');
+    await expect(up).toBeVisible();
+    expect(await page.evaluate(() => window.app.renderer.paintBucketScopeOffset)).toBe(0);
+    // RED(m): expected offset 1, got 2 (pointerdown stepped, the 700 ms guard expired, the click stepped again).
+    await touch.longPress(page, up, 900);
+    await sleep(200);
+    expect(await page.evaluate(() => window.app.renderer.paintBucketScopeOffset)).toBe(1);
+  });
+
+  test('(n) a late second finger after a held preview never pours; the pinch zooms', async ({ page }) => {
+    // Ruling (see fragment): for Fill, the hold is only a preview, so nothing commits when a
+    // second finger joins late. Q11 "commit the first action" does not apply to a preview.
+    const before = await snap(page);
+    await touch.touchPhase(page, 'start', [finger(P)]);
+    await sleep(500);
+    expect((await snap(page)).stackLen).toBeGreaterThan(0);
+    const a = { x: P.x, y: P.y, id: 0 };
+    const b0 = { x: P.x + 100, y: P.y, id: 1 };
+    await touch.touchPhase(page, 'start', [a, b0]);
+    for (let i = 1; i <= 10; i += 1) {
+      await touch.touchPhase(page, 'move', [a, { x: P.x + 100 + (180 * i) / 10, y: P.y, id: 1 }]);
+    }
+    await touch.touchPhase(page, 'end', [a, { x: P.x + 280, y: P.y, id: 1 }]);
+    await sleep(200);
+    const after = await snap(page);
+    expect(after.fills).toBe(before.fills);
+    expect(after.hist).toBe(before.hist);
+    expect(after.scale).toBeGreaterThanOrEqual(before.scale * 1.5);
+  });
+
   test('(k) the held pointer runs the hover feedback; nothing lingers after lift or cancel', async ({ page }) => {
     await page.evaluate(() => {
       const r = window.app.renderer;
