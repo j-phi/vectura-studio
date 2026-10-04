@@ -536,6 +536,8 @@
         toolbarHorizontal: SETTINGS.toolbarHorizontal === true,
         leftPaneCollapsed: SETTINGS.leftPaneCollapsed === true,
         rightPaneCollapsed: SETTINGS.rightPaneCollapsed === true,
+        touchWideLeftPaneCollapsed: SETTINGS.touchWideLeftPaneCollapsed === true,
+        touchWideRightPaneCollapsed: SETTINGS.touchWideRightPaneCollapsed === true,
         bottomPaneCollapsed: SETTINGS.bottomPaneCollapsed === true,
         bottomPaneHeight: typeof SETTINGS.bottomPaneHeight === 'number' ? SETTINGS.bottomPaneHeight : null,
       };
@@ -788,6 +790,8 @@
       SETTINGS.toolbarHorizontal = snapshot.toolbarHorizontal === true;
       SETTINGS.leftPaneCollapsed = snapshot.leftPaneCollapsed === true;
       SETTINGS.rightPaneCollapsed = snapshot.rightPaneCollapsed === true;
+      SETTINGS.touchWideLeftPaneCollapsed = snapshot.touchWideLeftPaneCollapsed === true;
+      SETTINGS.touchWideRightPaneCollapsed = snapshot.touchWideRightPaneCollapsed === true;
       SETTINGS.bottomPaneCollapsed = snapshot.bottomPaneCollapsed === true;
       if (typeof snapshot.bottomPaneHeight === 'number') {
         const bottomPaneHeight = V && V.finiteInRange(snapshot.bottomPaneHeight, 50, 10000);

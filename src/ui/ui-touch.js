@@ -5,11 +5,38 @@
   const getEl = (id) => document.getElementById(id);
 
   const Vectura = (window.Vectura = window.Vectura || {});
+  // TUX-003: surfaces that own a pinch (the canvas, designers) opt in with this attribute. CSS
+  // (touch-action:none) and installGestureZoomGuard() both read this one selector.
+  const TOUCH_ZOOM_SELECTOR = '[data-touch-zoom]';
+  Vectura.TOUCH_ZOOM_SELECTOR = TOUCH_ZOOM_SELECTOR;
+
   window.Vectura._UITouchMixin = {
     isTouchCapable() {
       if (typeof window === 'undefined') return false;
       if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return true;
       return (navigator?.maxTouchPoints || 0) > 0;
+    },
+
+    // TUX-003: iOS Safari ignores touch-action:pan-x pan-y for page pinch and fires gesture*
+    // events instead. Cancel them everywhere except inside a data-touch-zoom surface. Registered
+    // only on touch-capable devices, so desktop Safari trackpad page zoom is untouched. The
+    // `ontouchstart` term covers Playwright WebKit, which can report maxTouchPoints 0. No UA sniffing
+    // (iPadOS reports a Mac UA). Self-contained: do not fold into other touch init.
+    installGestureZoomGuard() {
+      if (typeof window === 'undefined' || window.__vecturaGestureZoomGuard) return false;
+      if (!(this.isTouchCapable() || 'ontouchstart' in window)) return false;
+      window.__vecturaGestureZoomGuard = true;
+      const guard = (e) => {
+        const t = e.target;
+        if (t && t.closest && t.closest(TOUCH_ZOOM_SELECTOR)) return;
+        e.preventDefault();
+      };
+      ['gesturestart', 'gesturechange', 'gestureend'].forEach((type) => {
+        document.addEventListener(type, guard, { capture: true, passive: false });
+      });
+      const canvas = getEl('main-canvas');
+      if (canvas) canvas.setAttribute('data-touch-zoom', '');
+      return true;
     },
 
     setTouchModifier(key, active) {

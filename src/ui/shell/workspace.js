@@ -38,28 +38,33 @@
     const mobileRightBtn = getEl('btn-mobile-pane-right');
     if (!leftPane || !rightPane || !leftBtn || !rightBtn) return;
 
-    // Restore persisted desktop collapsed state. Only the static `pane-collapsed`
-    // class is saved — `pane-force-open` is the mobile drawer override and is
-    // always reset on boot. Phone breakpoints set `auto-collapsed` later in
-    // applyAutoCollapse(), which masks this on small viewports.
-    if (SETTINGS.leftPaneCollapsed === true) leftPane.classList.add('pane-collapsed');
-    if (SETTINGS.rightPaneCollapsed === true) rightPane.classList.add('pane-collapsed');
     if (bottomPane && SETTINGS.bottomPaneCollapsed === true) bottomPane.classList.add('bottom-pane-collapsed');
-
-    const persistPaneCollapse = () => {
-      SETTINGS.leftPaneCollapsed = leftPane.classList.contains('pane-collapsed');
-      SETTINGS.rightPaneCollapsed = rightPane.classList.contains('pane-collapsed');
-      this.app?.persistPreferencesDebounced?.();
-    };
 
     // TUX-006: layout class comes from Vectura.LayoutClassifier (phone/tablet = mobile-layout).
     const LC = () => (G.Vectura && G.Vectura.LayoutClassifier) || null;
-    const isMobileViewport = () => document.body.classList.contains('mobile-layout');
+    const PS = () => (UI.PaneState) || null;
 
-    const isCollapsed = (pane) => {
-      const auto = document.body.classList.contains('auto-collapsed') && !pane.classList.contains('pane-force-open');
-      return auto || pane.classList.contains('pane-collapsed');
+    // TUX-008: the docked pane width never grows past TOUCH_LAYOUT.maxDockedPaneWidth on touch-wide.
+    // CSS applies the clamp (min(var(--pane-*-width), var(--touch-wide-pane-max))), so a saved desktop
+    // width is never rewritten. Pushed here so config stays the only place that holds the number.
+    // Effective docked caps for the current width (see TOUCH_LAYOUT in defaults.js).
+    const dockCaps = () => {
+      const TL = G.Vectura.TOUCH_LAYOUT || {};
+      const num = (v) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
+      if (num(TL.roomyMinWidth) && window.innerWidth >= TL.roomyMinWidth && num(TL.maxDockedRoomyPaneWidth)) {
+        return { left: Number(TL.maxDockedRoomyPaneWidth), right: Number(TL.maxDockedRoomyPaneWidth) };
+      }
+      const left = num(TL.maxDockedPaneWidth);
+      if (!left) return null;
+      return { left, right: Math.min(left, num(TL.maxDockedRightPaneWidth) || left) };
     };
+    const applyDockCaps = () => {
+      const caps = dockCaps();
+      if (!caps) return;
+      document.documentElement.style.setProperty('--touch-wide-pane-max', `${caps.left}px`);
+      document.documentElement.style.setProperty('--touch-wide-pane-max-right', `${caps.right}px`);
+    };
+    applyDockCaps();
 
     const modBar = getEl('touch-modifier-bar');
     let mobileLayoutDefaultApplied = false;
@@ -71,7 +76,84 @@
       modBar.classList.toggle('hidden', !showBar);
     };
 
-    const applyAutoCollapse = () => {
+    // TUX-005: drawers end above the in-flow bottom chrome (#hud-bar, #touch-modifier-bar).
+    // --bottom-chrome-h is the measured sum of their heights. It sits on <html> because the panes
+    // are siblings of .workspace-shell, not descendants. Absent outside mobile-layout (CSS falls back).
+    const syncBottomChrome = () => {
+      const root = document.documentElement;
+      if (!document.body.classList.contains('mobile-layout')) {
+        root.style.removeProperty('--bottom-chrome-h');
+        return;
+      }
+      let total = 0;
+      ['hud-bar', 'touch-modifier-bar'].forEach((id) => {
+        const el = getEl(id);
+        if (!el) return;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none' || cs.position === 'absolute' || cs.position === 'fixed') return;
+        total += el.getBoundingClientRect().height;
+      });
+      root.style.setProperty('--bottom-chrome-h', `${Math.round(total * 100) / 100}px`);
+    };
+    if (typeof ResizeObserver !== 'undefined') {
+      const chromeObserver = new ResizeObserver(() => syncBottomChrome());
+      ['hud-bar', 'touch-modifier-bar'].forEach((id) => {
+        const el = getEl(id);
+        if (el) chromeObserver.observe(el, { box: 'border-box' });
+      });
+    }
+
+    // TUX-008: one controller owns the pane state (src/ui/shell/pane-state.js). It is pure; this file
+    // reads the layout, feeds it in and writes the classes, the backdrop and the aria state.
+    //   Model layout: touch pointer -> the classifier class (phone | tablet | touch-wide).
+    //   Fine pointer -> 'phone' below 640 px (drawers, as before), else 'desktop' (docked, overlays
+    //   between 540 and 900 px). A fine pointer keeps today's behaviour at every width.
+    let controller = null;
+    let backdrop = null;
+
+    const readModel = () => {
+      const lc = LC();
+      const input = lc ? lc.readInput() : { width: window.innerWidth, height: window.innerHeight, coarsePointer: false };
+      const cls = lc ? lc.classify(input) : (input.width < 540 ? 'phone' : (input.width < 900 ? 'tablet' : 'desktop'));
+      let layout;
+      if (input.coarsePointer) layout = cls;
+      else layout = input.width < 640 ? 'phone' : 'desktop';
+      return { layout, overlay: !input.coarsePointer && cls !== 'desktop' && layout === 'desktop' };
+    };
+
+    const ensureBackdrop = () => {
+      if (backdrop) return backdrop;
+      backdrop = document.createElement('div');
+      backdrop.id = 'mobile-pane-backdrop';
+      backdrop.className = 'mobile-pane-backdrop';
+      backdrop.setAttribute('aria-hidden', 'true');
+      backdrop.addEventListener('click', () => { if (controller) controller.closeAll(); });
+      document.body.appendChild(backdrop);
+      return backdrop;
+    };
+
+    // Write the controller state to the DOM. Classes:
+    //   docked  open: none            closed: pane-collapsed
+    //   phone   open: pane-force-open closed: no class (auto-collapsed on <body> keeps the sliver)
+    //   tablet  open: pane-drawer-open closed: pane-collapsed (zero footprint, see TUX-008 CSS)
+    const render = () => {
+      if (!controller) return;
+      const layout = controller.layout();
+      document.body.classList.toggle('auto-collapsed', layout === 'phone');
+      [['left', leftPane], ['right', rightPane]].forEach(([side, pane]) => {
+        const open = controller.isOpen(side);
+        pane.classList.toggle('pane-force-open', open && layout === 'phone');
+        pane.classList.toggle('pane-drawer-open', open && layout === 'tablet');
+        // Phone keeps the legacy model: closed = no class (body.auto-collapsed draws the sliver), so
+        // callers that force a drawer open with `pane-force-open` alone still work.
+        pane.classList.toggle('pane-collapsed', layout === 'phone' ? false : !open);
+      });
+      const anyOpen = controller.isDrawer() && (controller.isOpen('left') || controller.isOpen('right'));
+      ensureBackdrop().classList.toggle('visible', anyOpen);
+    };
+
+    const applyLayout = () => {
+      applyDockCaps();
       const lc = LC();
       let layout;
       if (lc) layout = lc.apply(document);
@@ -85,91 +167,70 @@
         document.body.dataset.layout = layout;
       }
       const isMobileLayout = layout === 'phone' || layout === 'tablet';
-      // TUX-008 owns the auto-collapse threshold; leave as-is here.
-      const shouldAuto = window.innerWidth < 640;
-      document.body.classList.toggle('auto-collapsed', shouldAuto);
+      const model = readModel();
+      const PaneState = PS();
+      if (PaneState) {
+        if (!controller) {
+          controller = PaneState.create({
+            layout: model.layout,
+            overlay: model.overlay,
+            prefs: SETTINGS,
+            persist: (key, collapsed) => {
+              SETTINGS[key] = collapsed;
+              this.app?.persistPreferencesDebounced?.();
+            },
+            onChange: () => render(),
+          });
+        } else {
+          controller.setLayout(model.layout, { overlay: model.overlay });
+        }
+      }
+      render();
       applyMobBarVisibility(isMobileLayout);
       if (bottomPane && isMobileLayout && !mobileLayoutDefaultApplied) {
         bottomPane.classList.add('bottom-pane-collapsed');
         mobileLayoutDefaultApplied = true;
       }
+      syncBottomChrome();
     };
 
-    const isPaneOpen = (pane) => {
-      if (document.body.classList.contains('auto-collapsed')) {
-        return pane.classList.contains('pane-force-open');
-      }
-      return !pane.classList.contains('pane-collapsed');
-    };
-
-    let backdrop = null;
-    const closeAllPanes = () => {
-      const auto = document.body.classList.contains('auto-collapsed');
-      [leftPane, rightPane].forEach((pane) => {
-        if (auto) pane.classList.remove('pane-force-open');
-        else pane.classList.add('pane-collapsed');
-      });
-      syncBackdrop();
-    };
-    const ensureBackdrop = () => {
-      if (backdrop) return backdrop;
-      backdrop = document.createElement('div');
-      backdrop.id = 'mobile-pane-backdrop';
-      backdrop.className = 'mobile-pane-backdrop';
-      backdrop.setAttribute('aria-hidden', 'true');
-      backdrop.addEventListener('click', closeAllPanes);
-      document.body.appendChild(backdrop);
-      return backdrop;
-    };
-    const syncBackdrop = () => {
-      const el = ensureBackdrop();
-      // Backdrop is for the auto-collapsed (phone) drawer pattern, where the
-      // user *explicitly* opens a side pane via pane-force-open. At tablet
-      // widths (640–900) panes are drawer-styled but visible by default —
-      // showing a backdrop there would block clicks on the canvas, the
-      // bottom-pane chevron, and other workspace UI on initial load.
-      const isAutoCollapsed = document.body.classList.contains('auto-collapsed');
-      const anyOpen = isAutoCollapsed && (isPaneOpen(leftPane) || isPaneOpen(rightPane));
-      el.classList.toggle('visible', anyOpen);
-    };
-
-    const togglePane = (pane) => {
-      const auto = document.body.classList.contains('auto-collapsed');
-      const willOpen = auto ? !pane.classList.contains('pane-force-open') : pane.classList.contains('pane-collapsed');
-      if (willOpen && isMobileViewport()) {
-        const sibling = pane === leftPane ? rightPane : leftPane;
-        sibling.classList.remove('pane-force-open');
-        sibling.classList.add('pane-collapsed');
-      }
-      if (auto) {
-        pane.classList.remove('pane-collapsed');
-        pane.classList.toggle('pane-force-open');
-      } else {
-        pane.classList.toggle('pane-collapsed');
-        persistPaneCollapse();
-      }
-      syncBackdrop();
-    };
-
-    leftBtn.addEventListener('click', () => togglePane(leftPane));
-    rightBtn.addEventListener('click', () => togglePane(rightPane));
-    if (mobileLeftBtn) mobileLeftBtn.addEventListener('click', () => togglePane(leftPane));
-    if (mobileRightBtn) mobileRightBtn.addEventListener('click', () => togglePane(rightPane));
-    window.addEventListener('resize', () => { applyAutoCollapse(); syncBackdrop(); });
+    leftBtn.addEventListener('click', () => controller && controller.toggle('left'));
+    rightBtn.addEventListener('click', () => controller && controller.toggle('right'));
+    if (mobileLeftBtn) mobileLeftBtn.addEventListener('click', () => controller && controller.toggle('left'));
+    if (mobileRightBtn) mobileRightBtn.addEventListener('click', () => controller && controller.toggle('right'));
+    window.addEventListener('resize', applyLayout);
     try {
       const coarseMq = window.matchMedia && window.matchMedia('(pointer: coarse)');
       if (coarseMq) {
-        const onPointerChange = () => { applyAutoCollapse(); syncBackdrop(); };
-        if (coarseMq.addEventListener) coarseMq.addEventListener('change', onPointerChange);
-        else if (coarseMq.addListener) coarseMq.addListener(onPointerChange);
+        if (coarseMq.addEventListener) coarseMq.addEventListener('change', applyLayout);
+        else if (coarseMq.addListener) coarseMq.addListener(applyLayout);
       }
     } catch (e) { /* matchMedia unavailable */ }
-    applyAutoCollapse();
-    syncBackdrop();
+    applyLayout();
 
+    // The one public pane API (TUX-008). context-bar.js, ui.js and TUX-009/010/011 call this.
+    const bound = (fn) => (...args) => (controller ? fn(...args) : undefined);
+    UI.Workspace.paneState = {
+      open: bound((side) => controller.open(side)),
+      close: bound((side) => controller.close(side)),
+      toggle: bound((side) => controller.toggle(side)),
+      isOpen: (side) => (controller ? controller.isOpen(side) : false),
+      closeAll: bound(() => controller.closeAll()),
+      resetForLayout: bound(() => controller.resetForLayout()),
+      layout: () => (controller ? controller.layout() : null),
+    };
+
+    // Reset View. The controller owns the pane state, so route through it first: DOM and state stay
+    // in sync and a later resize does not re-collapse a pane the DOM shows open. Overlay panes
+    // (fine pointer, 540-900 px) show one pane only, as the legacy shell did.
     this.expandPanes = () => {
-      leftPane.classList.remove('pane-collapsed', 'pane-force-open');
-      rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      if (controller) {
+        controller.resetForLayout();
+        if (controller.snapshot().overlay) controller.open('left');
+      } else {
+        leftPane.classList.remove('pane-collapsed', 'pane-force-open');
+        rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      }
       document.body.classList.remove('auto-collapsed');
       // TUX-006: fine pointer -> desktop Reset View strips every layout class.
       // Coarse pointer keeps the classifier's classes (TUX-009 finalizes touch Reset View).
@@ -208,19 +269,35 @@
       const startRight = rightPane.getBoundingClientRect().width;
       const resizer = side === 'left' ? leftResizer : rightResizer;
       resizer.classList.add('active');
-      document.body.classList.remove('auto-collapsed');
-      leftPane.classList.remove('pane-collapsed');
-      rightPane.classList.remove('pane-collapsed');
+      // Dragging a resizer shows both panes (docked layouts only; the resizers are hidden on drawers).
+      const ps = UI.Workspace.paneState;
+      if (ps && ps.layout()) {
+        ps.open('left');
+        ps.open('right');
+      } else {
+        document.body.classList.remove('auto-collapsed');
+        leftPane.classList.remove('pane-collapsed');
+        rightPane.classList.remove('pane-collapsed');
+      }
+      // TUX-008: touch-wide docked panes stay inside TOUCH_LAYOUT.maxDockedPaneWidth.
+      const wide = document.body.classList.contains('touch-wide-layout');
+      const rootCs = getComputedStyle(document.documentElement);
+      const caps = wide ? {
+        left: parseFloat(rootCs.getPropertyValue('--touch-wide-pane-max')),
+        right: parseFloat(rootCs.getPropertyValue('--touch-wide-pane-max-right')),
+      } : null;
+      const capLeft = caps && Number.isFinite(caps.left) ? Math.min(maxLeft, caps.left) : maxLeft;
+      const capRight = caps && Number.isFinite(caps.right) ? Math.min(maxRight, caps.right) : maxRight;
       let lastWidth = side === 'left' ? startLeft : startRight;
 
       const onMove = (ev) => {
         const dx = ev.clientX - startX;
         if (side === 'left') {
-          const next = Math.max(minLeft, Math.min(maxLeft, startLeft + dx));
+          const next = Math.max(minLeft, Math.min(capLeft, startLeft + dx));
           document.documentElement.style.setProperty('--pane-left-width', `${next}px`);
           lastWidth = next;
         } else {
-          const next = Math.max(minRight, Math.min(maxRight, startRight - dx));
+          const next = Math.max(minRight, Math.min(capRight, startRight - dx));
           document.documentElement.style.setProperty('--pane-right-width', `${next}px`);
           lastWidth = next;
         }

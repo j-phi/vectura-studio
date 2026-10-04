@@ -47,7 +47,7 @@
   </script>
 </head>
 
-<body class="font-mono text-sm antialiased h-screen flex flex-col bg-vectura-bg text-vectura-text overflow-hidden">
+<body class="font-mono text-sm antialiased flex flex-col bg-vectura-bg text-vectura-text overflow-hidden">
   <header id="app-header" class="border-b border-vectura-border bg-vectura-panel px-4 py-2 relative overflow-visible z-50">
     <div class="header-main flex items-center justify-between gap-3">
       <div class="header-brand-menu flex items-center gap-3 min-w-0">
@@ -303,6 +303,16 @@
         </button>
       </div>
     </div>
+    <!-- TUX-008: interim tablet pane openers. They live in the header so they stack with it (z 50)
+         and never sit over the canvas. TUX-010 restyles and labels them. -->
+    <button id="btn-mobile-pane-left" class="mobile-pane-handle mobile-pane-handle-left" type="button"
+      aria-label="Toggle generator panel">
+      Generator
+    </button>
+    <button id="btn-mobile-pane-right" class="mobile-pane-handle mobile-pane-handle-right" type="button"
+      aria-label="Toggle layers panel">
+      Layers
+    </button>
   </header>
   <input id="file-open-vectura" type="file" accept=".vectura,application/json" class="hidden" />
   <input id="file-import-svg" type="file" accept=".svg,image/svg+xml" class="hidden" />
@@ -628,16 +638,6 @@
     </aside>
 
     <div id="left-resizer" class="pane-resizer" aria-hidden="true"></div>
-
-    <button id="btn-mobile-pane-left" class="mobile-pane-handle mobile-pane-handle-left" type="button"
-      aria-label="Toggle generator panel">
-      Generator
-    </button>
-
-    <button id="btn-mobile-pane-right" class="mobile-pane-handle mobile-pane-handle-right" type="button"
-      aria-label="Toggle layers panel">
-      Layers
-    </button>
 
     <button id="btn-mobile-pane-bottom" class="mobile-pane-handle mobile-pane-handle-bottom" type="button"
       aria-label="Toggle mathematical model panel">
@@ -1137,6 +1137,7 @@
   <script src="./src/ui/shell/pane-left.js?v=1.4.6" defer></script>
   <script src="./src/ui/shell/pane-right.js?v=1.4.6" defer></script>
   <script src="./src/ui/shell/layout-classifier.js?v=1.4.6" defer></script>
+  <script src="./src/ui/shell/pane-state.js?v=1.4.6" defer></script>
   <script src="./src/ui/shell/workspace.js?v=1.4.6" defer></script>
   <script src="./src/ui/shell/bottom-pane.js?v=1.4.6" defer></script>
   <script src="./src/ui/shell/toolbar.js?v=1.4.6" defer></script>

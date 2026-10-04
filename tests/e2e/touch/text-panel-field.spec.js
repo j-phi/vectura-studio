@@ -154,11 +154,7 @@ const blankSessionFlow = async (page, tapField) => {
 };
 
 test.describe('TUX-029 live canvas Type session + Text field', () => {
-  // iPhL-chrome: the canvas stays covered (TUX-007 layout, same cause as the TUX-028
-  // iPhL-chrome cells). Remove the mark when TUX-007 merges.
-  test.beforeEach(async ({}, testInfo) => {
-    test.fail(testInfo.project.name === 'touch-iphone-landscape-chrome', 'TUX-007: no reachable canvas point on iPhL-chrome');
-  });
+  // TUX-007 landed: the iPhL-chrome expected-fail mark (covered canvas) is gone.
   test('first tap on the field keeps it focused and typing works', async ({ page }) => {
     await liveSessionFlow(page, {
       canvas: async (pt) => { await touch.tap(page, pt); },
@@ -177,12 +173,8 @@ test.describe('TUX-029 Text panel content field', () => {
   // iPhone cells depend on Phase-1 work that has not merged yet:
   //   TUX-001 / TUX-010 (iPhP: 0x0 pane, innerWidth 544) - observed GREEN on the
   //     iPhP cells anyway, so they carry no mark and must stay green.
-  //   TUX-007 (iPhL: IndexSizeError in drawTextModeWidget) - the canvas redraw that
-  //     follows layer creation throws, so the iPhL cells are marked expected-fail.
-  // Remove the iPhL marks (test.fail) when TUX-007 merges; the run then fails with
-  // "unexpectedly passed" to remind you.
-  test.beforeEach(async ({ page }, testInfo) => {
-    test.fail(/iphone-landscape/.test(testInfo.project.name), 'TUX-007: IndexSizeError in drawTextModeWidget on iPhL');
+  //   TUX-007 (iPhL: IndexSizeError in drawTextModeWidget) landed; the iPhL expected-fail marks are gone.
+  test.beforeEach(async ({ page }) => {
     await setup(page);
   });
 
@@ -236,7 +228,15 @@ test.describe('TUX-029 Text panel content field', () => {
     expect(scroll.sh).toBeGreaterThan(scroll.ch);
 
     // Tap the canvas to blur: the whole session is exactly one history entry.
-    const pt = await canvasPoint(page);
+    let pt = await canvasPoint(page);
+    if (!pt) {
+      // TUX-007: iPhone landscape panes are drawers over a backdrop; the backdrop covers the canvas
+      // while the drawer is open. A finger tap on the backdrop dismisses the drawer and blurs the field.
+      const backdrop = page.locator('.mobile-pane-backdrop');
+      if (await backdrop.count()) await touch.tap(page, { x: 700, y: 300 });
+      await page.waitForTimeout(400);
+      pt = await canvasPoint(page);
+    }
     expect(pt, 'no reachable canvas point').toBeTruthy();
     await touch.tap(page, pt);
     await page.waitForTimeout(250);

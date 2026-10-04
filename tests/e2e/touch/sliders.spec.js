@@ -385,7 +385,8 @@ test.describe('TUX-043 sliders: multi-select strip on short landscape', () => {
       const mod = document.getElementById('touch-modifier-bar');
       const btn = bar.querySelector('.mask-btn');
       const b = bar.getBoundingClientRect(); const p = pane.getBoundingClientRect();
-      const m = mod ? mod.getBoundingClientRect() : null;
+      // TUX-007: on a short phone the modifier bar is an absolute side column, not a bottom strip.
+      const m = mod && getComputedStyle(mod).position === 'static' ? mod.getBoundingClientRect() : null;
       const br = btn ? btn.getBoundingClientRect() : null;
       const hit = br ? document.elementFromPoint(br.left + br.width / 2, br.top + br.height / 2) : null;
       return {

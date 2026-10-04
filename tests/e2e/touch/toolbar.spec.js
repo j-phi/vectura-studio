@@ -533,13 +533,11 @@ test.describe('TUX-013 guards', () => {
     expect(h).toBeLessThanOrEqual(204); // measured pre-fix 874x204
     // The shared phone rule reaches <= 52 here for free; assert it so a regression shows.
     expect(h).toBeLessThanOrEqual(52);
-    // Finger-collapse both panes: the 40 px slivers must not cover Select or the overflow button.
+    // TUX-007: both panes start closed on iPhone landscape (40 px slivers). The slivers must not cover
+    // Select or the overflow button, and the sliver toggles must stay tappable beside the rail.
     await page.waitForFunction(() => !!document.getElementById('tool-overflow-btn'));
-    await tap(page, page.locator('#btn-pane-toggle-left'));
-    await tap(page, page.locator('#btn-pane-toggle-right'));
-    await page.waitForFunction(() => document.getElementById('left-pane').classList.contains('pane-collapsed')
-      && document.getElementById('right-pane').classList.contains('pane-collapsed'));
-    await sleep(500); // pane width transition
+    await page.waitForFunction(() => document.body.classList.contains('auto-collapsed'));
+    await sleep(500);
     expect(await railOccluders(page), 'rail buttons hittable with slivers').toEqual([]);
     await fs.promises.mkdir(EVIDENCE_013, { recursive: true });
     await page.screenshot({ path: `${EVIDENCE_013}/iPhL${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
