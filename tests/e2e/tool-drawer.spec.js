@@ -138,7 +138,7 @@ test.describe('TUX-013 desktop parity', () => {
     expect(s.scrollW).toBeLessThanOrEqual(s.clientW + 1);
   });
 
-  test('Reset View (expandPanes) at phone layout clears stale rail overflow state', async ({ page }) => {
+  test('Reset View (expandPanes) at phone layout keeps the layout and rail overflow state', async ({ page }) => {
     await page.setViewportSize({ width: 500, height: 800 });
     await page.goto('/');
     await page.waitForSelector('#tool-bar .tool-btn');
@@ -150,10 +150,13 @@ test.describe('TUX-013 desktop parity', () => {
     }));
     expect(before.overflowed).toBeGreaterThan(0);
     expect(before.pressed).toBe('true');
+    // TUX-009: expandPanes is a no-op outside the desktop layout. The classifier owns the layout
+    // classes, so the phone layout and its rail overflow state stay intact.
     await page.evaluate(() => window.app.ui.expandPanes());
-    await expect.poll(() => page.evaluate(() => document.querySelectorAll('.rail-overflowed').length)).toBe(0);
-    expect(await page.evaluate(() => document.body.classList.contains('phone-layout'))).toBe(false);
-    expect(await page.locator('#tool-overflow-btn').getAttribute('aria-pressed')).toBeNull();
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => document.body.classList.contains('phone-layout'))).toBe(true);
+    expect(await page.evaluate(() => document.querySelectorAll('.rail-overflowed').length)).toBe(before.overflowed);
+    expect(await page.locator('#tool-overflow-btn').getAttribute('aria-pressed')).toBe('true');
   });
 });
 

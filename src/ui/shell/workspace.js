@@ -223,7 +223,13 @@
     // Reset View. The controller owns the pane state, so route through it first: DOM and state stay
     // in sync and a later resize does not re-collapse a pane the DOM shows open. Overlay panes
     // (fine pointer, 540-900 px) show one pane only, as the legacy shell did.
+    // TUX-009: only the desktop layout (fine pointer, >= 900 px) expands panes. Every other layout
+    // keeps its pane state: touch drawers, touch-wide docks and fine-pointer mobile layouts stay as
+    // the user left them. The classifier is the only writer of layout classes.
     this.expandPanes = () => {
+      const lc = LC();
+      const layout = lc ? lc.classify(lc.readInput()) : (controller ? controller.layout() : 'desktop');
+      if (layout !== 'desktop') return false;
       if (controller) {
         if (controller.snapshot().overlay) controller.resetOverlay('left');
         else controller.resetForLayout();
@@ -232,19 +238,11 @@
         rightPane.classList.remove('pane-collapsed', 'pane-force-open');
       }
       document.body.classList.remove('auto-collapsed');
-      // TUX-006: fine pointer -> desktop Reset View strips every layout class.
-      // Coarse pointer keeps the classifier's classes (TUX-009 finalizes touch Reset View).
-      const lc = LC();
-      const coarse = lc ? lc.readInput().coarsePointer : false;
-      if (!coarse) {
-        document.body.classList.remove('mobile-layout', 'phone-layout', 'tablet-layout', 'touch-wide-layout');
-        document.body.dataset.layout = 'desktop';
-      }
       document.documentElement.style.setProperty('--pane-left-width', '335px');
       document.documentElement.style.setProperty('--pane-right-width', '335px');
       document.documentElement.style.setProperty('--bottom-pane-height', '180px');
       if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
-      if (coarse && lc) lc.apply(document);
+      return true;
     };
   }
 

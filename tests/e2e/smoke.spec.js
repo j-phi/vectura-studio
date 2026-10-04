@@ -2065,7 +2065,7 @@ test.describe('TUX-008 overlay-band Reset View does not persist a collapse', () 
     await page.setViewportSize({ width: 1600, height: 1000 });
     await page.waitForTimeout(600);
     const s = await state();
-    expect(s.saved, 'no right-pane collapse persisted').toEqual([false, false]);
+    expect(s.saved.map(Boolean), 'no right-pane collapse persisted').toEqual([false, false]);
     expect(s.l && s.r, 'both panes open at 1600').toBe(true);
     expect(s.lw).toBeGreaterThan(250);
     expect(s.rw).toBeGreaterThan(250);
