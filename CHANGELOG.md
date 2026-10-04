@@ -65,6 +65,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   - Burst (highlight) and Halo: Burst (emissive) share one radial-ray emitter.
   - One source for the crossing-family angles (65, 32, 60 deg) and the plot floor (2.2 pen widths):
     `Regions.CROSS_OBJ_DEG`, `CROSS_TRIPLE_DEG`, `CROSS_MARK_DEG`, `PLOT_FLOOR_PEN`. Values unchanged.
+- **Review fixes.** The legacy monoline Density pin fires on the first legacy load only (undo/redo and
+  save/reopen no longer re-pin). A shadow alias with no recipe keeps its own id in the document (the row
+  shows Ladder). The shadow row is one plain-language *Look* select per style (Triple lines, Braided double
+  wave, Looping wave...). Looping Wave, Triple lines (uneven) and Triple lines (tight) are offered again; a
+  seeded layer samples the looping wave finely enough for the loop to form, a legacy layer keeps the old
+  step. *Extra marks* labels now say they set Rung detail.
 - **Not done in this unit:** Show hidden (wireframe) keeps its own toggle; it is the same picture as
   Hidden > Occluded: Dashed (pinned by a test) but is not yet moved into the edge table. Mezzotint Region
   stays separate (class). Wave `cFlo` stays an internal constant. Alt fill still draws at fixed 45 / 135 deg.

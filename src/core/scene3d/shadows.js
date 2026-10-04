@@ -869,8 +869,8 @@
   // when they are materially different"). The shadow Fill Style row now reaches
   // EVERY recipe through the survivor's sub-controls, except these. Each draws the
   // same mark structure as the look named in `like`, differing only by a pitch
-  // multiplier within 0.85-1.15 (+/- 18 %), an angle nudge of at most 3.2 degrees,
-  // or a pass spacing of the same pass count: measured against it on the flat
+  // multiplier within 0.85-1.15 (+/- 18 %), an angle nudge of at most 6.5 degrees,
+  // or a pass spacing of the same pass count (whiteBand, weightSmoothstep, bundleHandoff): measured against it on the flat
   // footprint (tests/unit/scene3d-fr-u5-shadow-reach.test.js: same path count
   // within 20 %, same ink within 18 %), and judged identical in the contact sheet.
   // The recipes stay and keep drawing for a saved document that names them; only
@@ -882,8 +882,6 @@
     fineLadder: { like: 'ladder', why: 'pitch x0.97' },
     phaseFineLadder: { like: 'ladder', why: 'pitch x0.97, 1.2 deg' },
     perceptualRamp: { like: 'ladder', why: 'pitch x1.05' },
-    bundleEased: { like: 'bundleCount', why: '3 passes at 0.22 pitch against 0.30' },
-    bundleDither: { like: 'bundleCount', why: '3 passes, 0.15-pitch jitter' },
     bundleHandoff: { like: 'weightModulated', why: '2 passes at 0.30 pitch, 0.8 deg' },
     contFieldSigmoid: { like: 'ladder', why: 'pitch x1.08' },
     contFieldTouch: { like: 'ladder', why: 'pitch x0.85' },
@@ -892,7 +890,6 @@
     contFieldQuant: { like: 'ladder', why: 'pitch x0.93' },
     penPitchMatch: { like: 'ladder', why: 'pitch x1.15' },
     penFacing: { like: 'ladder', why: '2.4 deg' },
-    trochoidLoop: { like: 'ampSpacing', why: 'wave amplitude x1.1 at 0.55 wavelength (straight at footprint scale)' },
     amplitudeOnly: { like: 'ampSpacing', why: 'plain sinusoid (straight at footprint scale)' },
   };
   const toneLawMaterial = (lawId) => !Object.prototype.hasOwnProperty.call(SHADOW_NONMATERIAL, lawId);
@@ -943,6 +940,10 @@
   const DASH_DUTY = 0.5;
   const DOT_FLICK_LEN_MULT = 2.5; // a "dot" is drawn as a short flick — a bare vertex would fail MIN_RUN_MM below
   const WAVE_STEP_MM = 2.5;
+  // Seeded layers sample the trochoid shadow finely enough for its loop to form (its 3.85 mm
+  // wavelength is under 2 samples per cycle at WAVE_STEP_MM). Legacy layers keep the coarse step so
+  // a saved document draws exactly what it always drew. Set at the top of build().
+  let TROCHOID_FINE = false;
   const WAVE_WAVELEN_MM = 7;
 
   // dash: break one ruling segment into fixed-duty dashes.
@@ -976,7 +977,8 @@
     const amp = clamp((o.ampMult || 1) * 0.3 * spacing, 0.15, 2.2);
     const wavelen = Math.max(2, WAVE_WAVELEN_MM * (o.wavelenMult || 1));
     const phase = o.phase || 0;
-    const n = Math.max(2, Math.ceil(len / WAVE_STEP_MM));
+    const step = (o.fineStep && TROCHOID_FINE) ? Math.min(WAVE_STEP_MM, wavelen / 10) : WAVE_STEP_MM;
+    const n = Math.max(2, Math.ceil(len / step));
     const pts = [];
     for (let i = 0; i <= n; i++) {
       const s = (i / n) * len;
@@ -1250,7 +1252,7 @@
     interlockWeave: (rings, angleDeg, spacing) => hatchRingsEvenOdd(rings, angleDeg, spacing)
       .map(([a, b], i) => waveSegment(a, b, numericHint(spacing), { ampMult: 0.75, wavelenMult: 0.9, phase: (i % 2) ? Math.PI : 0 }))
       .filter(Boolean),
-    trochoidLoop: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, { ampMult: 1.1, wavelenMult: 0.55, secondHarmonic: true }),
+    trochoidLoop: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, { ampMult: 1.1, wavelenMult: 0.55, secondHarmonic: true, fineStep: true }),
     mkScribble: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, { ampMult: 1.2, wavelenMult: 0.7, triangle: true }),
   };
 
@@ -2805,6 +2807,7 @@
   // 'castShadow'). Empty when there is no ground, no caster, or grazing light.
   const build = (scene, params, bounds = {}, clipper, lightDir, opts = {}) => {
     const out = [];
+    TROCHOID_FINE = Boolean(params && params.seedMode === 'seeded');
     if (!scene || !scene.ground || !clipper) return out;
     const HLR = Vectura.Scene3D && Vectura.Scene3D.HLR;
     const FillBoolean = Vectura.FillBoolean;

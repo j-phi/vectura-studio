@@ -476,6 +476,9 @@
   // an explicit 'seeded' (new layers, a Seed edit, RANDOMIZE) draws from Seed.
   const SEED_MODE_TYPES = new Set(['scene3d', 'object3d', 'booleanGroup3d']);
   const sanitizeImportedParams = (params, layerType) => {
+    // Only a layer that arrives with NO seedMode at all is a first legacy load. Undo/redo and
+    // save/reopen re-import layers that already carry seedMode:'legacy'; those must not pin again.
+    const hadSeedMode = Boolean(params && typeof params === 'object' && params.seedMode !== undefined);
     const out = sanitizeImportedParamsCore(params, layerType);
     if (SEED_MODE_TYPES.has(layerType) && out && typeof out === 'object'
       && out.seedMode !== 'seeded') {
@@ -483,7 +486,7 @@
       // U5 item 0: a legacy document was drawn with Density inert on the monoline
       // laws (U4b wired it). Pin those style bags so the saved look is unchanged.
       const SP = window.Vectura?.Scene3D?.Params;
-      if (SP && typeof SP.pinLegacyMonoDensity === 'function') SP.pinLegacyMonoDensity(out);
+      if (!hadSeedMode && SP && typeof SP.pinLegacyMonoDensity === 'function') SP.pinLegacyMonoDensity(out);
     }
     return out;
   };

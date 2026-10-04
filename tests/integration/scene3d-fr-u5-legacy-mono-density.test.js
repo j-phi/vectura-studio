@@ -68,6 +68,27 @@ describe('legacy documents keep their look under a monoline law (Density pin)', 
     expect(edited).toBe(ref.hash);
   }, 120000);
 
+  test('the pin fires on the FIRST legacy load only: save/reopen and undo/redo (layers already marked legacy) never re-pin', () => {
+    // A legacy document on Ladder at Density 70 (nothing to pin), loaded once.
+    const s = build('sphere', 'ladder', 70);
+    const first = reload(s, { legacy: true });
+    const child = first.e2.getLayerById(s.oid);
+    expect(child.params.seedMode).toBe('legacy');
+    // The user switches it to a monoline law: Density 70 is live for it now.
+    child.params.style.params.toneLaw = 'etfKang';
+    first.e2.invalidateSceneCompose();
+    first.e2.computeAllDisplayGeometry();
+    const live = hashPaths(first.e2.getRenderablePaths(first.g2));
+    // Save and reopen (the same import path undo/redo uses): layers now carry seedMode:'legacy'.
+    const e3 = new V.VectorEngine();
+    e3.importState(JSON.parse(JSON.stringify(first.e2.exportState())));
+    const again = e3.getLayerById(s.oid);
+    expect(again.params.style.params.monoDensityLegacyAt).toBeUndefined();
+    e3.invalidateSceneCompose();
+    e3.computeAllDisplayGeometry();
+    expect(hashPaths(e3.getRenderablePaths(e3.getLayerById(s.gid)))).toBe(live);
+  }, 240000);
+
   test('a non-mono law is never pinned', () => {
     const s = build('sphere', 'ladder', 85);
     const a = reload(s, { legacy: true });

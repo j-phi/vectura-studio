@@ -56,28 +56,15 @@ describe('U5 — shadow Fill Style reach (decision 1)', () => {
   // dot recipe in shadows.js), i.e. every id the shadow clamp keeps raw.
   const recipeIds = () => ['ladder'].concat(R.IDS).filter((id) => Shadows.toneLawApplies(id));
 
-  // Walk the picker: from the survivor's default state, pick sub-control options until the
-  // stored law equals `target`. Returns the picked sequence, or null.
+  // The shadow row is ONE plain-language "Look" select per survivor. A law is reachable when it is one of
+  // that select's options (a single pick). Returns ['look=<law>'] or null.
   const reach = (target) => {
     const survivor = FS.resolve(target);
     if (!Shadows.toneLawApplies(survivor)) return null;
-    let bag = FS.displayParams(survivor, {});
-    const seen = new Set();
-    const queue = [{ bag, picks: [] }];
-    while (queue.length) {
-      const { bag: cur, picks } = queue.shift();
-      const law = FS.lawFor(survivor, cur);
-      if (law === target) return picks;
-      const key = JSON.stringify(cur);
-      if (seen.has(key) || picks.length > 4) continue;
-      seen.add(key);
-      FS.subControls(survivor, cur, { shadow: Shadows }).forEach((sub) => {
-        sub.options.forEach((opt) => {
-          queue.push({ bag: { ...cur, ...opt.patch }, picks: picks.concat(`${sub.descriptor.key}=${opt.value}`) });
-        });
-      });
-    }
-    return null;
+    const subs = FS.shadowSubControls(survivor, Shadows);
+    if (target === survivor) return [];
+    const look = subs.find((sub) => sub.descriptor.key === 'shadowLook');
+    return look && look.options.some((o) => o.law === target) ? [`look=${target}`] : null;
   };
 
   test('(a) every shadow recipe that is materially different is reachable through the picker', () => {
@@ -90,13 +77,19 @@ describe('U5 — shadow Fill Style reach (decision 1)', () => {
   });
 
   test('(a) the two textures earlier folds had hidden are reachable again: weaveDepth, penStipple', () => {
-    expect(reach('weaveDepth')).toEqual(expect.arrayContaining(['waveAmp=solve']));
-    expect(reach('penStipple')).toEqual(['penMode=stipple']);
-    // ...and so are the ones this unit folds (their shadow rows would otherwise vanish).
-    expect(reach('bundleSubNib')).toEqual(['closestApproach=overlap']);
-    expect(reach('bundleLozenge')).toEqual(['bundleEnds=lozenge']);
-    expect(reach('lozengeStipple')).not.toBeNull();
-    expect(reach('interlockWeave')).toEqual(['wavePhase=anti']);
+    // Single picks from one plain-language Look select (review B/UX: weaveDepth was two hops).
+    expect(reach('weaveDepth')).toEqual(['look=weaveDepth']);
+    expect(reach('penStipple')).toEqual(['look=penStipple']);
+    expect(reach('bundleSubNib')).toEqual(['look=bundleSubNib']);
+    expect(reach('bundleLozenge')).toEqual(['look=bundleLozenge']);
+    expect(reach('bundleDither')).toEqual(['look=bundleDither']);
+    expect(reach('bundleEased')).toEqual(['look=bundleEased']);
+    expect(reach('trochoidLoop')).toEqual(['look=trochoidLoop']);
+    expect(reach('lozengeStipple')).toEqual(['look=lozengeStipple']);
+    expect(reach('interlockWeave')).toEqual(['look=interlockWeave']);
+    // Labels are plain words, not mechanism jargon.
+    const waveLook = FS.shadowSubControls('ampSpacing', Shadows)[0];
+    expect(waveLook.options.map((o) => o.label)).toEqual(expect.arrayContaining(['Braided double wave', 'Looping wave']));
   });
 
   test('(a) the picker never offers a dropped texture (it still draws for a saved document)', () => {
@@ -125,12 +118,37 @@ describe('U5 — shadow Fill Style reach (decision 1)', () => {
 
   test('(c) every pick stores a plain internal id the shadow clamp keeps', () => {
     ['bundleCount', 'ampSpacing', 'penInterleave', 'ladder', 'taperedEnds'].forEach((survivor) => {
-      FS.subControls(survivor, FS.displayParams(survivor, {}), { shadow: Shadows }).forEach((sub) => {
+      FS.shadowSubControls(survivor, Shadows).forEach((sub) => {
         sub.options.forEach((opt) => {
           expect(R.IDS.concat(['ladder'])).toContain(opt.law);
           expect(V.Scene3D.Params.normalizeShadow({ shadowToneLaw: opt.law }).shadowToneLaw).toBe(opt.law);
         });
       });
     });
+  });
+
+  test('trochoidLoop draws a real loop on a seeded layer and the old coarse polyline on a legacy one', () => {
+    const run = (seedMode) => {
+      const p = V.Scene3D.Params.normalizeParams({
+        ...clone(V.ALGO_DEFAULTS.scene3d),
+        objects: [{ id: 'obj-1', name: 'b', primitive: 'box', params: { sx: 40, sy: 40, sz: 40 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' }],
+        ground: { enabled: true },
+        lights: [{ id: 'sun', type: 'directional', castShadows: true, azimuth: 160, elevation: 45 }],
+        camera: { projection: 'orthographic', yaw: 0, pitch: 55, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 },
+        shadow: { shadowToneLaw: 'trochoidLoop' },
+      });
+      p.seedMode = seedMode;
+      const scene = V.Scene3D.Scene.assembleScene(p, BOUNDS);
+      const clipper = V.Scene3D.HLR.createClipper([], { bias: 0.05 });
+      const dir = V.Scene3D.Lighting.lightWorldDir(p.lights[0]);
+      const out = Shadows.build(scene, p, BOUNDS, clipper, dir, { shadow: p.shadow })
+        .filter((pp) => pp.meta && pp.meta.sceneTarget && pp.meta.sceneTarget.regionClass === 'castShadow');
+      return { paths: out.length, pts: out.reduce((n, pp) => n + pp.length, 0) };
+    };
+    const legacy = run('legacy');
+    const seeded = run('seeded');
+    expect(seeded.paths).toBe(legacy.paths);
+    expect(seeded.pts).toBeGreaterThan(legacy.pts * 3); // >= 3x the samples per cycle
+    expect(run('legacy')).toEqual(legacy); // deterministic
   });
 });
