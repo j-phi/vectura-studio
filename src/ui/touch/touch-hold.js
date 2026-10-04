@@ -7,7 +7,10 @@
  *
  * API (window.Vectura.UI.TouchHold):
  *   bind(rootEl, { selector, resolve(target) -> {key, anchorEl} | null,
- *                  onFire({x, y, key, target}), pointerTypes: ['touch','pen'] }) -> unbind()
+ *                  onFire({x, y, key, target}), pointerTypes: ['touch','pen'],
+ *                  capture: false }) -> unbind()
+ *   capture:true listens in the capture phase (TUX-039: an icon-button owner on <body> must
+ *   start before a card owner that sits deeper in the tree).
  *   isSuppressingContextMenu() -> boolean
  *
  * Events on document (detail.t = ms since pointerdown, from performance.now()):
@@ -209,10 +212,11 @@
       e.stopImmediatePropagation();
     };
 
-    rootEl.addEventListener('pointerdown', onDown);
+    const cap = !!opts.capture;
+    rootEl.addEventListener('pointerdown', onDown, cap);
     rootEl.addEventListener('contextmenu', onContext, true);
     return () => {
-      rootEl.removeEventListener('pointerdown', onDown);
+      rootEl.removeEventListener('pointerdown', onDown, cap);
       rootEl.removeEventListener('contextmenu', onContext, true);
       if (active) endActive('unbind', active);
     };

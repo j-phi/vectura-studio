@@ -16,6 +16,7 @@
  *   maxWidth        — px; default 240.
  *   delayShow       — ms hover delay before showing. Default 200.
  *   delayHide       — ms after pointerleave before hiding. Default 80.
+ *   margin          — px gap between target and tip. Default 6.
  *
  * The overlay is a single root element that gets reused across show()/hide()
  * pairs. It positions relative to viewport using getBoundingClientRect() and
@@ -27,7 +28,7 @@
   const UI = (Vectura.UI = Vectura.UI || {});
   UI.overlays = UI.overlays || {};
 
-  const DEFAULTS = { placement: 'top', maxWidth: 240, delayShow: 200, delayHide: 80 };
+  const DEFAULTS = { placement: 'top', maxWidth: 240, delayShow: 200, delayHide: 80, margin: 6 };
 
   const create = (host, initialProps = {}) => {
     let props = Object.assign({}, DEFAULTS, initialProps);
@@ -67,7 +68,7 @@
       const win = ownerDoc.defaultView || window;
       const vw = win.innerWidth || ownerDoc.documentElement.clientWidth || 1024;
       const vh = win.innerHeight || ownerDoc.documentElement.clientHeight || 768;
-      const margin = 6;
+      const margin = Number.isFinite(props.margin) ? props.margin : 6;
 
       let placement = props.placement;
       let top = 0;
@@ -100,6 +101,8 @@
       if (left < margin) left = margin;
       if (left + tipRect.width > vw - margin) left = vw - margin - tipRect.width;
       if (top < margin) top = margin;
+      // TUX-039: a tip placed below a bottom-edge target must not run off the bottom.
+      if (top + tipRect.height > vh - margin) top = vh - margin - tipRect.height;
 
       el.style.top = top + 'px';
       el.style.left = left + 'px';
@@ -159,4 +162,99 @@
   };
 
   UI.overlays.Tooltip = create;
+
+  // ── TUX-039: touch tooltip ─────────────────────────────────────────────────────────────
+  // A 500 ms touch hold on an icon-only button shows its aria-label next to it. The hold
+  // itself (timer, ring, pop, haptic, click swallow, native contextmenu guard) is the shared
+  // TouchHold recogniser: this module owns no timer for it. Mouse and pen never reach it.
+  // One shared Tooltip instance. The name comes from aria-label, never title.
+  const TIP_ID = 'vectura-touch-tip';
+  const HIDE_AFTER_LIFT_MS = 1500;
+  const EXCLUDE = [
+    '[data-has-submenu]',          // variant tools own a hold menu (TUX-014)
+    '[data-tool="algo-draw"]',     // owns a picker hold
+    '.toolbar-drag-handle',
+    '.lvl-grip',                   // reorder handle: the drag must stay live
+    '[data-no-hold-tip]',
+    '.num-step',
+    '[data-repeat]',
+    '[disabled]',
+  ].join(',');
+
+  const TouchTooltip = (() => {
+    let tip = null;
+    let held = null;
+    let hideTimer = 0;
+    let installed = false;
+
+    const stripShortcut = (label) => String(label || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+
+    const isIconOnly = (btn) => !/\p{L}/u.test(btn.textContent || '');
+
+    const resolve = (btn) => {
+      if (!btn.getAttribute('aria-label') || btn.matches(EXCLUDE) || !isIconOnly(btn)) return null;
+      return { key: btn.getAttribute('aria-label'), anchorEl: btn };
+    };
+
+    const placementFor = (btn) => {
+      const r = btn.getBoundingClientRect();
+      if (r.left + r.width / 2 < window.innerWidth / 3) return 'right';
+      return 'top';
+    };
+
+    const hideNow = () => {
+      clearTimeout(hideTimer);
+      hideTimer = 0;
+      if (held) { held.removeAttribute('aria-describedby'); held = null; }
+      if (tip) tip.hide({ delay: 0 });
+    };
+
+    const scheduleHide = () => {
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(hideNow, HIDE_AFTER_LIFT_MS);
+    };
+
+    const show = (btn) => {
+      if (!tip) {
+        tip = create(document.body, { delayShow: 0, margin: 10, maxWidth: 220 });
+        tip.el.id = TIP_ID;
+      }
+      hideNow();
+      held = btn;
+      btn.setAttribute('aria-describedby', TIP_ID);
+      tip.update({ placement: placementFor(btn) });
+      tip.show(btn, { delay: 0, text: stripShortcut(btn.getAttribute('aria-label')) });
+      // Lift or cancel: keep the tip a moment. Any new pointerdown hides it at once.
+      const onEnd = () => {
+        document.removeEventListener('pointerup', onEnd, true);
+        document.removeEventListener('pointercancel', onEnd, true);
+        scheduleHide();
+      };
+      document.addEventListener('pointerup', onEnd, true);
+      document.addEventListener('pointercancel', onEnd, true);
+    };
+
+    const install = () => {
+      if (installed) return;
+      const TH = UI.TouchHold;
+      if (!TH || typeof TH.bind !== 'function' || !document.body) return;
+      installed = true;
+      TH.bind(document.body, {
+        selector: 'button[aria-label]',
+        pointerTypes: ['touch'],
+        capture: true,
+        resolve,
+        onFire: ({ target }) => show(target),
+      });
+      document.addEventListener('pointerdown', () => { if (held) hideNow(); }, true);
+    };
+
+    return { install, stripShortcut, _resolve: resolve };
+  })();
+
+  UI.overlays.TouchTooltip = TouchTooltip;
+  if (typeof window !== 'undefined') {
+    if (document.readyState === 'complete') TouchTooltip.install();
+    else window.addEventListener('load', () => TouchTooltip.install());
+  }
 })();

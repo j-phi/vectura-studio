@@ -88,6 +88,8 @@
     if (_attached) return;
     const filterBtn = document.getElementById('layer-filter-btn');
     if (!filterBtn) return;
+    // TUX-039: an icon-only button needs a name (the title is the source).
+    if (!filterBtn.getAttribute('aria-label')) filterBtn.setAttribute('aria-label', filterBtn.getAttribute('title') || 'Filter by type');
     filterBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       const menu = _ensureMenu();
