@@ -449,7 +449,7 @@
     "strengths": "Best off-the-line in the whole 47-law table on sphere·crosshatch (18.0%), second-best tier seam of the family (9.9 L*), and the fewest paths of the tonally-useful pen laws on the hatch cells.",
     "weaknesses": "Real free ends (2.46-3.08 mm) — short and deliberate, a stipple flick is a free end, but still counted — and R2 0.001 on cylinder·hatch.",
     "chooseWhen": "Choose it when the drawing has a large soft highlight that needs to fade to nothing and short stipple flicks are acceptable — the family's best answer on crosshatch.",
-    "caveat": "Pen Stipple moved from \"Dots & stipple\" to \"Parallel hatching\": it has never drawn dots — its highlight fade comes from shortening the fine nib's hatch marks, the same ruled-darks mechanism as the other Pen options. If you want an actual dot pattern, this option won't give you one.",
+    "caveat": "Pen Stipple sits under Parallel hatching because it does not draw dots: its highlight fade comes from shortening the fine nib's hatch marks, the same ruled-darks mechanism as the other Pen options. If you want an actual dot pattern, use Dot Screen.",
     "simulated": true,
     "tier": "library"
   },
@@ -1129,11 +1129,11 @@
         },
         {
           "value": "flicks",
-          "label": "Flicks (Perceptual)"
+          "label": "Flicks (sets Perceptual)"
         },
         {
           "value": "traverse",
-          "label": "Deep traverse (Coarse)"
+          "label": "Deep traverse (sets Coarse)"
         }
       ]
     },
@@ -1921,7 +1921,7 @@
   }
 
   Vectura.SCENE3D_TONE_LAWS = {
-    VERSION: "cfe131fffbf600bdb4f817262438c2bc3dfc3019",
+    VERSION: "762f0d7ec46dfb949065d2e34f8cac7da95ed35d",
     DEFAULT: 'ladder',
     IDS,
     PRODUCTION,

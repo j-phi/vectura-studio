@@ -231,7 +231,9 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
     Object.keys(Rn.ALIASES).forEach((rawId) => {
       const survivorLaw = FS.resolve(rawId);
       const viaShadowDisplay = FS.shadowDisplayLaw(rawId, survivorLaw);
-      const viaRender = Paramsn.normalizeShadow({ shadowToneLaw: rawId }).shadowToneLaw;
+      const stored = Paramsn.normalizeShadow({ shadowToneLaw: rawId }).shadowToneLaw;
+      // The document keeps the id; with no shadow recipe it DRAWS as Ladder, and the row shows that.
+      const viaRender = runtime.window.Vectura.Scene3D.Shadows.toneLawApplies(stored) ? stored : 'ladder';
       expect(viaShadowDisplay, rawId).toBe(viaRender);
       checked += 1;
     });

@@ -414,8 +414,39 @@
   // sub-controls filtered to the options that draw a distinct, materially different
   // shadow. Returns `[{ descriptor, value, options: [{ value, label, law }] }]`;
   // `law` is the id to store when that option is picked.
+  // Plain-language names for what each shadow texture looks like (the shadow row is ONE "Look"
+  // select; the object-surface sub-controls describe mechanisms a flat footprint does not show).
+  SCENE_FILL_STYLES.SHADOW_LOOK_LABELS = {
+    ladder: 'Plain hatch', lozengeStipple: 'Dots (flicks)',
+    taperedEnds: 'Hatch, tapered ends',
+    bundleCount: 'Triple lines', bundleSubNib: 'Quad lines, overlapping', bundleLozenge: 'Triple lines, trimmed ends',
+    bundleEased: 'Triple lines, tight', bundleDither: 'Triple lines, uneven',
+    ampSpacing: 'Gentle wave', interlockWeave: 'Alternating wave', weaveDepth: 'Braided double wave', trochoidLoop: 'Looping wave',
+    penInterleave: 'Paired lines', penStipple: 'Hatch, short marks',
+  };
   SCENE_FILL_STYLES.shadowSubControls = (rawShadowLaw, Shadows) => {
     const R = fillStyleRoster();
+    if (R && R.ENTRIES) {
+      const stored0 = (R.SHADOW_FORWARD && R.SHADOW_FORWARD[rawShadowLaw]) || rawShadowLaw;
+      const survivor0 = SCENE_FILL_STYLES.resolve(stored0);
+      const entries = R.ENTRIES[survivor0];
+      const current = (typeof stored0 === 'string' && Shadows && Shadows.toneLawApplies(stored0)) ? stored0 : survivor0;
+      if (entries) {
+        const laws = [];
+        entries.forEach((e) => { if (laws.indexOf(e.law) === -1) laws.push(e.law); });
+        const offered = laws.filter((l) => (l === current || (Shadows.toneLawApplies(l)
+          && (typeof Shadows.toneLawMaterial !== 'function' || Shadows.toneLawMaterial(l)))));
+        if (offered.length > 1) {
+          const labels = SCENE_FILL_STYLES.SHADOW_LOOK_LABELS;
+          return [{
+            descriptor: { key: 'shadowLook', label: 'Look' },
+            value: current,
+            options: offered.map((l) => ({ value: l, label: labels[l] || (R.BY_ID[l] && R.BY_ID[l].label) || l, law: l })),
+          }];
+        }
+        return [];
+      }
+    }
     // An id with no shadow recipe draws as its SHADOW_FORWARD law (onePenDown).
     const stored = (R && R.SHADOW_FORWARD && R.SHADOW_FORWARD[rawShadowLaw]) || rawShadowLaw;
     const survivor = SCENE_FILL_STYLES.resolve(stored);

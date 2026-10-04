@@ -213,46 +213,26 @@ describe('U9b-2 — onePenDown shadow write-back (the ONE undisclosed exception,
     });
   });
 
-  // ── (d) the exceptions, enumerated + mutation-proven ─────────────────────
-  // U5: two kinds of alias do not pass through raw — onePenDown (a roster SHADOW_FORWARD to
-  // interlockWeave: its chart-space bridge has nothing to walk on a flat footprint) and the aliases
-  // that have no shadow recipe at all (isophoteWidth, defectSplit [flow], deepFillTSP [web]), which
-  // draw shadows.js's plain-hatch fallback = Ladder, so the shadow stores 'ladder' (same picture).
-  describe('(d) only SHADOW_FORWARD ids and recipe-less aliases are rewritten by the shadow bag (every other id: raw pass-through)', () => {
-    const expectedExceptions = () => {
-      const LAWS = V.SCENE3D_TONE_LAWS;
-      const Shadows = V.Scene3D.Shadows;
-      return Object.keys(LAWS.ALIASES).filter((id) => !Shadows.toneLawApplies(id))
-        .map((id) => ({ id, out: (LAWS.SHADOW_FORWARD && LAWS.SHADOW_FORWARD[id]) || 'ladder' }));
-    };
+  // ── (d) the exceptions, enumerated ──────────────────────────────────────
+  // Only a roster SHADOW_FORWARD id (onePenDown -> interlockWeave: its chart-space bridge has nothing to
+  // walk on a flat footprint) is rewritten by the shadow bag. Every other alias keeps its own id in the
+  // document, including the ones with no shadow recipe (isophoteWidth, defectSplit, deepFillTSP): shadows.js
+  // draws its plain-hatch fallback (= Ladder) for them at render time and the picker displays Ladder.
+  describe('(d) only SHADOW_FORWARD ids are rewritten by the shadow bag (every other id: raw pass-through)', () => {
     const sweep = () => {
       const Params = V.Scene3D.Params;
       return Object.keys(V.SCENE3D_TONE_LAWS.ALIASES).map((id) => ({ id, out: Params.normalizeShadow({ shadowToneLaw: id }).shadowToneLaw }));
     };
-
-    test('sweep: every ALIASES id passes through raw, bar onePenDown (-> interlockWeave) and the recipe-less ones (-> ladder)', () => {
+    test('sweep: every ALIASES id passes through raw, bar onePenDown (-> interlockWeave)', () => {
       const exceptions = sweep().filter(({ id, out }) => out !== id);
-      expect(exceptions.sort((a, b) => a.id.localeCompare(b.id))).toEqual(expectedExceptions().sort((a, b) => a.id.localeCompare(b.id)));
-      expect(exceptions.map((e) => e.id).sort()).toEqual(['deepFillTSP', 'defectSplit', 'isophoteWidth', 'onePenDown']);
-      expect(exceptions.find((e) => e.id === 'onePenDown').out).toBe('interlockWeave');
+      expect(exceptions).toEqual([{ id: 'onePenDown', out: 'interlockWeave' }]);
     });
-
-    test('mutation: if another alias becomes shadow-indistinguishable (Shadows.toneLawApplies -> false) it joins the rewritten set', () => {
-      const Shadows = V.Scene3D.Shadows;
-      const secondId = Object.keys(V.SCENE3D_TONE_LAWS.ALIASES).find((id) => Shadows.toneLawApplies(id) === true);
-      expect(secondId).toBeTruthy();
-      const base = sweep().filter(({ id, out }) => out !== id).map((e) => e.id);
-      expect(base).not.toContain(secondId);
-      const original = Shadows.toneLawApplies;
-      try {
-        Shadows.toneLawApplies = (id) => (id === secondId ? false : original(id));
-        const mutated = sweep().filter(({ id, out }) => out !== id).map((e) => e.id);
-        expect(mutated).toContain(secondId);
-        expect(mutated.length).toBe(base.length + 1);
-      } finally {
-        Shadows.toneLawApplies = original;
-      }
-      expect(sweep().filter(({ id, out }) => out !== id).map((e) => e.id)).toEqual(base);
+    test('the recipe-less aliases keep their id and the picker shows Ladder for them', () => {
+      const FS = V.SCENE_FILL_STYLES;
+      ['isophoteWidth', 'defectSplit', 'deepFillTSP'].forEach((id) => {
+        expect(V.Scene3D.Params.normalizeShadow({ shadowToneLaw: id }).shadowToneLaw).toBe(id);
+        expect(FS.shadowDisplayLaw(id, FS.resolve(id))).toBe('ladder');
+      });
     });
   });
 });

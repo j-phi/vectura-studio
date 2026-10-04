@@ -1259,13 +1259,9 @@
       if (roster.SHADOW_FORWARD && Object.prototype.hasOwnProperty.call(roster.SHADOW_FORWARD, value)) {
         return roster.SHADOW_FORWARD[value];
       }
-      // An alias with no shadow recipe of its own (isophoteWidth, defectSplit [flow],
-      // deepFillTSP [web]) draws shadows.js's plain-hatch fallback, which is exactly what
-      // 'ladder' draws. Store that, so the picker shows what the shadow looks like.
-      const ShadowsMod = Vectura.Scene3D && Vectura.Scene3D.Shadows;
-      if (ShadowsMod && typeof ShadowsMod.toneLawApplies === 'function' && !ShadowsMod.toneLawApplies(value)) {
-        return DEF;
-      }
+      // Any other alias (including one with no shadow recipe: isophoteWidth, defectSplit,
+      // deepFillTSP) keeps its own id in the document. shadows.js draws its plain-hatch
+      // fallback for those at render time, and the picker displays it as Ladder.
       return value;
     }
     if (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) return value;

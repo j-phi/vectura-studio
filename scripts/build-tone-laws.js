@@ -285,8 +285,8 @@ const COLLAPSE = {
       key: 'rungOverlay', label: 'Extra marks', default: 'none', showWhen: { spacing: 'rungs' },
       options: [
         { value: 'none', label: 'None' },
-        { value: 'flicks', label: 'Flicks (Perceptual)' },
-        { value: 'traverse', label: 'Deep traverse (Coarse)' },
+        { value: 'flicks', label: 'Flicks (sets Perceptual)' },
+        { value: 'traverse', label: 'Deep traverse (sets Coarse)' },
       ],
     },
     {

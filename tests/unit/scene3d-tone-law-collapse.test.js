@@ -788,7 +788,7 @@ function describeComboCluster(label, {
       try {
         folded.forEach(({ id }) => {
           const Sh = runtime.window.Vectura.Scene3D.Shadows;
-          const expected = (roster().SHADOW_FORWARD || {})[id] || (Sh.toneLawApplies(id) ? id : 'ladder');
+          const expected = (roster().SHADOW_FORWARD || {})[id] || id;
           expect(Params.normalizeShadow({ shadowToneLaw: id }).shadowToneLaw, id).toBe(expected);
         });
         expect(warnSpy).not.toHaveBeenCalled();
@@ -2112,10 +2112,10 @@ describe('U9b-2 — shadowResolvesToSurvivor coupling (test-side literal vs. pro
       // ...and it forwards to a law that DOES have a recipe.
       expect(Shadows.toneLawApplies(LAWS.SHADOW_FORWARD[id])).toBe(true);
     });
-    // The other aliases Shadows cannot distinguish (isophoteWidth, the flow / web laws) draw the plain
-    // hatch fallback, which is exactly Ladder's picture, so the shadow stores 'ladder' for them.
+    // The other aliases Shadows cannot distinguish (isophoteWidth, the flow / web laws) keep their own
+    // id in the document; shadows.js draws the plain-hatch fallback (= Ladder) for them at render time.
     Object.keys(LAWS.ALIASES).filter((id) => !Shadows.toneLawApplies(id) && forwarded.indexOf(id) === -1).forEach((id) => {
-      expect(V.Scene3D.Params.normalizeShadow({ shadowToneLaw: id }).shadowToneLaw, id).toBe('ladder');
+      expect(V.Scene3D.Params.normalizeShadow({ shadowToneLaw: id }).shadowToneLaw, id).toBe(id);
     });
     expect([...new Set(RECORDED_SHADOW_RESOLVES_TO_SURVIVOR)].sort().filter((id) => forwarded.indexOf(id) === -1)).toEqual([]);
   });

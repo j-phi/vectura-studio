@@ -2287,7 +2287,7 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
     const row = rowCtl(fly, 'Fill Style').parentNode;
     // U5: interlockWeave is Wave > Phase: Interlocked (survivor ampSpacing).
     expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('ampSpacing');
-    expect(rowCtl(fly, 'Phase').querySelector('select').value).toBe('anti');
+    expect(rowCtl(fly, 'Look').querySelector('select').value).toBe('interlockWeave');
     const btn = row.querySelector('.vs3-lawinfo-btn');
     fire(btn, 'click');
     const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
@@ -2454,7 +2454,7 @@ describe('Shadow Fill Style — docked 3D Scene panel', () => {
     const row = rowCtl(host2, 'Fill Style').parentNode;
     // U5: interlockWeave is Wave > Phase: Interlocked (survivor ampSpacing).
     expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('ampSpacing');
-    expect(rowCtl(host2, 'Phase').querySelector('select').value).toBe('anti');
+    expect(rowCtl(host2, 'Look').querySelector('select').value).toBe('interlockWeave');
     const btn = row.querySelector('.vs3-lawinfo-btn');
     btn.dispatchEvent(new window.Event('click', { bubbles: true }));
     const box = host2.querySelector(`#${btn.getAttribute('aria-describedby')}`);
