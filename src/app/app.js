@@ -934,6 +934,9 @@
       // Undo/redo/open rebuild every Layer object via importState; end any active
       // edit session first so the controller can't keep an orphaned layer ref.
       this.textEdit?.notifyDocumentReplaced?.();
+      // TUX-030: a Pen draft refers to the document being replaced. Drop it here so the tool
+      // restore below cannot commit it as a layer in the restored document.
+      if (this.renderer?.penDraft) this.renderer.cancelPenPath?.();
       const s = state.settings || {};
       SETTINGS.margin = s.margin ?? SETTINGS.margin;
       SETTINGS.speedDown = s.speedDown ?? SETTINGS.speedDown;

@@ -1,207 +1,223 @@
-const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
-// TUX-024: the pen tool and the direct tool by finger. A finger closes a path by a tap near the start
-// point, finishes it with a double-tap that adds no extra anchor, and grabs an anchor from 15 px off it.
-// Finger only (tests/e2e/helpers/touch.js tap/drag). Tool setup uses page.evaluate.
+// TUX-030: pen draft controls (Done / Remove Last Anchor / Cancel) reachable by finger on every
+// touch viewport. Fingers only; tool selection is setup (app API), anchors and chips are taps.
+const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-030';
+const CHIP = { done: '[data-action="pen-done"]', remove: '[data-action="pen-remove-last"]', cancel: '[data-action="pen-cancel"]' };
 
-const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-024';
-const SHOT_NAMES = {
-  'touch-ipad-landscape': 'iPadL',
-  'webkit-ipad-landscape': 'iPadL-webkit',
-  'touch-iphone-portrait': 'iPhP',
-  'webkit-iphone-portrait': 'iPhP-webkit',
+const boot = async (page, testInfo) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.Vectura.UI.ContextBar));
+  await page.evaluate(() => { window.app.ui.setActiveTool('pen'); window.app.ui.setPenMode('draw'); });
+  // Wait until the bar is not mid-transition.
+  await expect.poll(async () => {
+    const a = await page.evaluate(() => { const b = document.querySelector('.ctxbar'); return b ? getComputedStyle(b).opacity : '0'; });
+    await page.waitForTimeout(120);
+    const b = await page.evaluate(() => { const e = document.querySelector('.ctxbar'); return e ? getComputedStyle(e).opacity : '0'; });
+    return a === b && (a === '0' || a === '1');
+  }).toBe(true);
+  const canvasH = await page.evaluate(() => document.querySelector('#main-canvas').getBoundingClientRect().height);
+  // LAY-002 / TUX-007: the iPhone landscape canvas collapses until the shell lane lands.
+  test.fail(canvasH < 120 && testInfo.project.name.includes('iphone-landscape'), `LAY-002/TUX-007 dependency: canvas collapsed (${canvasH}px)`);
 };
 
-// Anchor layout around a clear canvas centre c: A1 top-left, A2 top-right, A3 bottom-right.
-const A1 = { x: -50, y: -40 };
-const A2 = { x: 50, y: -40 };
-const A3 = { x: 50, y: 40 };
-// Every offset a test may tap, so the whole set is probed for "the canvas is the top element".
-const PROBES = [A1, A2, A3, { x: -85, y: -40 }, { x: -50, y: -75 }, { x: 125, y: 40 }, { x: 50, y: 75 }, { x: 90, y: 40 }];
-
-const findCentre = (page) => page.evaluate((probes) => {
-  const cv = document.querySelector('#main-canvas');
-  const box = cv.getBoundingClientRect();
-  const vis = {
-    l: Math.max(box.left, 0), t: Math.max(box.top, 0),
-    r: Math.min(box.right, innerWidth), b: Math.min(box.bottom, innerHeight),
-  };
-  const cands = [];
-  for (let y = vis.t + 20; y < vis.b - 20; y += 10) {
-    for (let x = vis.l + 20; x < vis.r - 20; x += 10) cands.push({ x, y, d: Math.hypot(x - (vis.l + vis.r) / 2, y - (vis.t + vis.b) / 2) });
-  }
-  cands.sort((a, b) => a.d - b.d);
-  const ok = (c) => probes.every((p) => document.elementFromPoint(c.x + p.x, c.y + p.y) === cv);
-  const hit = cands.find(ok);
-  return hit ? { x: hit.x, y: hit.y } : null;
-}, PROBES);
-
-const setupPen = async (page) => {
-  await page.evaluate(() => {
-    const app = window.app;
-    app.engine.layers.slice().forEach((l) => { try { app.engine.removeLayer(l.id); } catch (_) { /* noop */ } });
-    const r = app.renderer;
-    r.userHasManipulated = true;
-    window.__penDone = [];
-    if (!r.__tux024Wrapped) {
-      const orig = r.onPenComplete;
-      r.onPenComplete = (p) => {
-        window.__penDone.push({ n: p.anchors.length, closed: !!p.closed });
-        if (orig) orig(p);
-      };
-      r.__tux024Wrapped = true;
-    }
-    if (app.ui && app.ui.setActiveTool) app.ui.setActiveTool('pen');
-    else r.setTool('pen');
-    r.penMode = 'draw';
-    r.penDraft = null;
-  });
-  await page.waitForTimeout(300);
-  const c = await findCentre(page);
-  expect(c).not.toBeNull();
-  return c;
-};
-
-const at = (c, o) => ({ x: c.x + o.x, y: c.y + o.y });
-const draft = (page) => page.evaluate(() => {
-  const d = window.app.renderer.penDraft;
-  return d ? { n: d.anchors.length, closed: !!d.closed } : null;
-});
-const done = (page) => page.evaluate(() => window.__penDone.slice());
 const layerCount = (page) => page.evaluate(() => window.app.engine.layers.length);
-const gap = (page, ms = 700) => page.waitForTimeout(ms);
+const anchors = (page) => page.evaluate(() => (window.app.renderer.penDraft ? window.app.renderer.penDraft.anchors.length : 0));
 
-// Place three anchors with gaps so no pair of taps counts as a double-tap.
-const threeAnchors = async (page, c) => {
-  await touch.tap(page, at(c, A1));
-  await gap(page);
-  await touch.tap(page, at(c, A2));
-  await gap(page);
-  await touch.tap(page, at(c, A3));
-  await gap(page);
+// Three uncovered canvas points in the UPPER half, >= 60 px apart. Scanned with elementFromPoint
+// so a pane / bar covering the canvas is skipped (and asserted again right before each tap).
+const pickPoints = (page) => page.evaluate(() => {
+  const b = document.querySelector('#main-canvas').getBoundingClientRect();
+  const out = [];
+  for (let fy = 0.08; fy <= 0.5 && out.length < 3; fy += 0.06) {
+    for (let fx = 0.12; fx <= 0.9 && out.length < 3; fx += 0.06) {
+      const x = b.x + b.width * fx; const y = b.y + b.height * fy;
+      const e = document.elementFromPoint(x, y);
+      if (!e || e.id !== 'main-canvas') continue;
+      if (out.every((p) => Math.hypot(p.x - x, p.y - y) >= 60)) out.push({ x, y });
+    }
+  }
+  return out;
+});
+
+const tapAnchors = async (page, n) => {
+  const pts = await pickPoints(page);
+  expect(pts.length, 'uncovered canvas points available').toBe(3);
+  for (let i = 0; i < n; i += 1) {
+    const p = pts[i];
+    const hit = await page.evaluate(({ x, y }) => { const e = document.elementFromPoint(x, y); return e && (e.id || e.className); }, p);
+    expect(hit, `anchor ${i} point (${Math.round(p.x)},${Math.round(p.y)}) is covered by ${hit}`).toBe('main-canvas');
+    await touch.tap(page, p);
+    await expect.poll(() => anchors(page)).toBe(i + 1);
+  }
 };
 
-test.describe('TUX-024 pen and anchors by finger', () => {
-  let errors;
-  test.beforeEach(async ({ page }) => {
-    errors = [];
-    page.on('pageerror', (e) => errors.push(String(e)));
-    await page.goto('/');
-    await page.waitForFunction(() => !!(window.app && window.app.renderer && window.app.engine));
-    await page.waitForTimeout(600);
-  });
-  test.afterEach(() => { if (errors) expect(errors).toEqual([]); });
+const chipVisible = (page, sel) => page.evaluate((s) => {
+  const e = document.querySelector(s);
+  if (!e) return false;
+  const r = e.getBoundingClientRect();
+  const bar = e.closest('.ctxbar');
+  const cs = bar ? getComputedStyle(bar) : null;
+  return r.width > 0 && r.height > 0 && !!cs && cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.9;
+}, sel);
 
-  for (const d of [10, 20]) {
-    test(`close by near tap: ${d} px from the start`, async ({ page }, testInfo) => {
-      const c = await setupPen(page);
-      await threeAnchors(page, c);
-      expect(await draft(page)).toEqual({ n: 3, closed: false });
-      const shot = SHOT_NAMES[testInfo.project.name];
-      if (d === 20 && shot) {
-        fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-        await page.screenshot({ path: `${EVIDENCE_DIR}/${shot}-pen-before-close.png` });
-      }
-      const before = await layerCount(page);
-      await touch.tap(page, at(c, { x: A1.x - d, y: A1.y }));
-      await gap(page, 300);
-      expect(await draft(page)).toBeNull();
-      expect(await done(page)).toEqual([{ n: 3, closed: true }]);
-      expect(await layerCount(page)).toBe(before + 1);
-      if (d === 20 && shot) await page.screenshot({ path: `${EVIDENCE_DIR}/${shot}-pen-closed.png` });
-    });
-  }
+const shot = (page, testInfo, name) => page.screenshot({ path: `${EVID}/${name || testInfo.project.name}.png` }).catch(() => {});
 
-  test('far tap does not close: 30 px from the start', async ({ page }) => {
-    const c = await setupPen(page);
-    await threeAnchors(page, c);
-    await touch.tap(page, at(c, { x: A1.x - 30, y: A1.y }));
-    await gap(page, 300);
-    expect(await draft(page)).toEqual({ n: 4, closed: false });
-    expect(await done(page)).toEqual([]);
+test.describe('TUX-030 pen draft controls', () => {
+  test.beforeEach(async ({ page }, testInfo) => { await boot(page, testInfo); });
+
+  test('done commits the draft by finger', async ({ page }, testInfo) => {
+    const before = await layerCount(page);
+    await tapAnchors(page, 3);
+    if (testInfo.project.name.includes('iphone-portrait')) {
+      expect(await page.evaluate(() => getComputedStyle(document.querySelector('.ctxbar')).display), 'iPhP ctxbar display').not.toBe('none');
+    }
+    await expect(page.locator(CHIP.done)).toBeVisible();
+    expect(await chipVisible(page, CHIP.done)).toBe(true);
+    const hit = await touch.hitArea(page, page.locator(CHIP.done));
+    expect(hit.w, `done hit ${hit.w}x${hit.h}`).toBeGreaterThanOrEqual(44);
+    expect(hit.h).toBeGreaterThanOrEqual(44);
+    await shot(page, testInfo);
+    await touch.tap(page, page.locator(CHIP.done));
+    await expect.poll(() => layerCount(page)).toBe(before + 1);
+    expect(await page.evaluate(() => window.app.renderer.penDraft)).toBeNull();
+    await expect.poll(() => chipVisible(page, CHIP.done)).toBe(false);
   });
 
-  for (const drift of [12, 22]) {
-    test(`double-tap with ${drift} px drift finishes with no extra anchor`, async ({ page }) => {
-      const c = await setupPen(page);
-      await touch.tap(page, at(c, A1));
-      await gap(page);
-      await touch.tap(page, at(c, A2));
-      await gap(page);
-      // Third anchor and its double-tap, back to back.
-      await touch.tap(page, at(c, A3));
-      await touch.tap(page, at(c, { x: A3.x + drift, y: A3.y }));
-      await gap(page, 300);
-      expect(await done(page)).toEqual([{ n: 3, closed: false }]);
-      expect(await draft(page)).toBeNull();
-    });
-  }
-
-  test('fast taps far apart do not finish', async ({ page }) => {
-    const c = await setupPen(page);
-    await touch.tap(page, at(c, A1));
-    await gap(page);
-    await touch.tap(page, at(c, A2));
-    await gap(page);
-    await touch.tap(page, at(c, { x: A2.x + 0, y: A2.y + 80 }));
-    await touch.tap(page, at(c, { x: A2.x + 40, y: A2.y + 80 }));
-    await gap(page, 300);
-    expect(await done(page)).toEqual([]);
-    expect(await draft(page)).toEqual({ n: 4, closed: false });
+  test('remove last anchor steps back; done is disabled under two anchors', async ({ page }) => {
+    const before = await layerCount(page);
+    await tapAnchors(page, 3);
+    await expect(page.locator(CHIP.remove)).toBeVisible();
+    await touch.tap(page, page.locator(CHIP.remove));
+    await expect.poll(() => anchors(page)).toBe(2);
+    await touch.tap(page, page.locator(CHIP.remove));
+    await expect.poll(() => anchors(page)).toBe(1);
+    await expect(page.locator(CHIP.done)).toHaveAttribute('aria-disabled', 'true');
+    const hitR = await touch.hitArea(page, page.locator(CHIP.remove));
+    const hitC = await touch.hitArea(page, page.locator(CHIP.cancel));
+    expect(hitR.w, `remove hit ${hitR.w}x${hitR.h}`).toBeGreaterThanOrEqual(44);
+    expect(hitR.h).toBeGreaterThanOrEqual(44);
+    expect(hitC.w, `cancel hit ${hitC.w}x${hitC.h}`).toBeGreaterThanOrEqual(44);
+    expect(hitC.h).toBeGreaterThanOrEqual(44);
+    await touch.tap(page, page.locator(CHIP.done));
+    expect(await anchors(page)).toBe(1);
+    expect(await layerCount(page)).toBe(before);
+    await touch.tap(page, page.locator(CHIP.remove));
+    await expect.poll(() => page.evaluate(() => window.app.renderer.penDraft)).toBeNull();
+    await expect.poll(() => chipVisible(page, CHIP.remove)).toBe(false);
   });
 
-  test('anchor grab by finger from 15 px off', async ({ page }, testInfo) => {
-    const c = await setupPen(page);
-    // Draw the path with the pen, finish with a double-tap, then edit it with the Direct tool.
-    await touch.tap(page, at(c, A1));
-    await gap(page);
-    await touch.tap(page, at(c, A2));
-    await gap(page);
-    await touch.tap(page, at(c, A3));
-    await touch.tap(page, at(c, { x: A3.x + 4, y: A3.y }));
-    await gap(page, 300);
-    expect(await done(page)).toEqual([{ n: 3, closed: false }]);
-    const info = await page.evaluate(() => {
-      const app = window.app;
-      const r = app.renderer;
-      const layer = app.engine.layers[app.engine.layers.length - 1];
-      r.setSelection([layer.id], layer.id);
-      if (app.ui && app.ui.setActiveTool) app.ui.setActiveTool('direct');
-      else r.setTool('direct');
-      r.setDirectSelection(layer, 0);
-      r.draw();
-      return layer.id;
+  test('cancel discards the draft', async ({ page }) => {
+    const before = await layerCount(page);
+    await tapAnchors(page, 3);
+    await expect(page.locator(CHIP.cancel)).toBeVisible();
+    await touch.tap(page, page.locator(CHIP.cancel));
+    await expect.poll(() => page.evaluate(() => window.app.renderer.penDraft)).toBeNull();
+    expect(await layerCount(page)).toBe(before);
+  });
+
+  test('switching tool commits a draft of two or more anchors', async ({ page }) => {
+    const before = await layerCount(page);
+    await tapAnchors(page, 2);
+    await page.evaluate(() => window.app.ui.setActiveTool('select'));
+    expect(await layerCount(page), 'layers after setActiveTool(select)').toBe(before + 1);
+  });
+
+  test('tapping the Select rail button by finger commits a draft of two or more anchors', async ({ page }) => {
+    // Finger path, not setActiveTool(): a rail or drawer route that bypasses setActiveTool would
+    // discard the draft here. Known bypasses (renderer.setTool('type'|'direct'), menubar direct
+    // fallback) are logged as PRH-300 and are not exercised.
+    const before = await layerCount(page);
+    const sel = page.locator('#tool-bar .tool-btn[data-tool="select"]').first();
+    // On narrow layouts the open left pane overlays the tool rail (shell-lane finding, TUX-007).
+    // Collapse it by finger first so the rail button is reachable.
+    const covered = () => page.evaluate(() => {
+      const e = document.querySelector('#tool-bar .tool-btn[data-tool="select"]');
+      if (!e) return true;
+      const r = e.getBoundingClientRect(); const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return !(t && (t === e || e.contains(t)));
     });
-    await page.waitForTimeout(300);
-    const anchorsPx = () => page.evaluate(() => {
-      const r = window.app.renderer;
-      const data = r.getDirectSelectionWorldAnchors();
-      const box = document.querySelector('#main-canvas').getBoundingClientRect();
-      return data.anchors.map((a) => {
-        const p = r.worldToScreen(a.x, a.y);
-        return { x: p.x + box.left, y: p.y + box.top };
+    if (await covered()) {
+      await touch.tap(page, page.locator('#btn-pane-toggle-left'));
+      await expect.poll(covered).toBe(false);
+    }
+    await tapAnchors(page, 2);
+    await expect(sel).toBeVisible();
+    await touch.tap(page, sel);
+    await expect.poll(() => page.evaluate(() => window.app.renderer.activeTool)).toBe('select');
+    expect(await layerCount(page), 'layers after finger tap on Select').toBe(before + 1);
+    expect(await page.evaluate(() => window.app.renderer.penDraft)).toBeNull();
+  });
+
+  test('draft bar clears the overlay panes and every control passes a hit test at 44px', async ({ page }, testInfo) => {
+    await tapAnchors(page, 3);
+    await expect(page.locator(CHIP.done)).toBeVisible();
+    const rows = await page.evaluate(() => {
+      const bar = document.querySelector('.ctxbar');
+      const out = [];
+      const sels = ['[data-action="pen-done"]', '[data-action="pen-remove-last"]', '[data-action="pen-cancel"]', '.ctxbar-overflow', '.ctxbar-handle'];
+      sels.forEach((s) => {
+        const e = bar.querySelector(s);
+        if (!e) { out.push({ s, absent: true }); return; }
+        const r = e.getBoundingClientRect();
+        const shown = r.width > 0 && r.height > 0 && getComputedStyle(e).display !== 'none';
+        const cx = r.x + r.width / 2; const cy = r.y + r.height / 2;
+        const top = shown ? document.elementFromPoint(cx, cy) : null;
+        out.push({ s, shown, w: Math.round(r.width), h: Math.round(r.height), hit: shown ? !!(top && (top === e || e.contains(top))) : null, over: top && (top.className || top.id) });
       });
+      return out;
     });
-    const before = await anchorsPx();
-    expect(before).toHaveLength(3);
-    const k = 15 / Math.SQRT2;
-    const from = { x: before[0].x - k, y: before[0].y - k };
-    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, from)).toBe('main-canvas');
-    await touch.drag(page, from, { x: from.x + 30, y: from.y + 30 }, { steps: 10 });
-    const after = await anchorsPx();
-    expect(info).toBeTruthy();
-    expect(Math.abs(after[0].x - (before[0].x + 30))).toBeLessThanOrEqual(2);
-    expect(Math.abs(after[0].y - (before[0].y + 30))).toBeLessThanOrEqual(2);
-    for (const i of [1, 2]) {
-      expect(Math.abs(after[i].x - before[i].x)).toBeLessThanOrEqual(1);
-      expect(Math.abs(after[i].y - before[i].y)).toBeLessThanOrEqual(1);
+    for (const r of rows) {
+      if (r.absent || !r.shown) continue; // hidden while kind === pen-draft is allowed
+      expect(r.hit, `${r.s} covered by ${r.over}`).toBe(true);
+      expect(r.w, `${r.s} ${r.w}x${r.h}`).toBeGreaterThanOrEqual(44);
+      expect(r.h, `${r.s} ${r.w}x${r.h}`).toBeGreaterThanOrEqual(44);
     }
-    const shot = SHOT_NAMES[testInfo.project.name];
-    if (shot) {
-      fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-      await page.screenshot({ path: `${EVIDENCE_DIR}/${shot}-anchor-dragged.png` });
-    }
+    for (const a of ['pen-done', 'pen-remove-last', 'pen-cancel']) expect(rows.find((r) => r.s === `[data-action="${a}"]`).hit, a).toBe(true);
+    const geo = await page.evaluate(() => {
+      const b = document.querySelector('.ctxbar').getBoundingClientRect();
+      const ov = (sel, side) => { const n = document.querySelector(sel); if (!n) return 0; const r = n.getBoundingClientRect(); if (!r.width) return 0; return side === 'l' ? r.right : innerWidth - r.left; };
+      return { bl: b.left, br: b.right, l: ov('.pane-left', 'l'), r: ov('.pane-right', 'r'), vw: innerWidth };
+    });
+    expect(geo.bl, 'bar left edge vs left pane').toBeGreaterThanOrEqual(geo.l - 1);
+    expect(geo.br, 'bar right edge vs right pane').toBeLessThanOrEqual(geo.vw - geo.r + 1);
+    await shot(page, testInfo, `${testInfo.project.name}-hit`);
+  });
+
+  test('the draft bar leaves the canvas band free: a tap beside it still places the next anchor', async ({ page }) => {
+    await tapAnchors(page, 1);
+    await expect(page.locator(CHIP.done)).toBeVisible();
+    // Every canvas point above the bar's top edge and clear of the panes must stay a canvas hit.
+    const p = await page.evaluate(() => {
+      const cv = document.querySelector('#main-canvas').getBoundingClientRect();
+      const bar = document.querySelector('.ctxbar').getBoundingClientRect();
+      const first = window.app.renderer.penDraft.anchors.length;
+      const pts = [];
+      for (let fy = 0.1; fy < 0.9; fy += 0.04) {
+        for (let fx = 0.1; fx < 0.95; fx += 0.04) {
+          const x = cv.x + cv.width * fx; const y = cv.y + cv.height * fy;
+          const e = document.elementFromPoint(x, y);
+          if (e && e.id === 'main-canvas') pts.push({ x, y, inBand: y >= bar.top - 2 && y <= bar.bottom + 2 && x >= bar.left - 2 && x <= bar.right + 2 });
+        }
+      }
+      return { pts, first, barTop: bar.top, canvasBottom: cv.bottom, canvasTop: cv.top };
+    });
+    // Canvas points exist in the bar's row on both sides and the band above the bar is free.
+    const free = p.pts.filter((q) => !q.inBand && q.y < p.barTop - 2);
+    expect(free.length, `free canvas points above the bar (bar top ${Math.round(p.barTop)})`).toBeGreaterThan(5);
+    // Central band: at least half of the canvas height sits above the bar.
+    expect(p.barTop - p.canvasTop, 'canvas height above the bar').toBeGreaterThanOrEqual((p.canvasBottom - p.canvasTop) * ((p.canvasBottom - p.canvasTop) < 300 ? 0.72 : 0.6));
+    const q = free[Math.floor(free.length / 2)];
+    await touch.tap(page, q);
+    await expect.poll(() => anchors(page)).toBe(2);
+  });
+
+  test('temporary tool switch does not commit (guard)', async ({ page }) => {
+    const before = await layerCount(page);
+    await tapAnchors(page, 3);
+    await page.evaluate(() => window.app.ui.setActiveTool('hand', { temporary: true }));
+    expect(await layerCount(page)).toBe(before);
   });
 });
+

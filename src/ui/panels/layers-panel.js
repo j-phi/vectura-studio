@@ -2316,6 +2316,16 @@
     return true;
   }
 
+  // TUX-031: the one Arrange verb. The Cmd/Ctrl+[ ] shortcuts and the Object menu both call it.
+  // where: 'forward' | 'backward' | 'top' | 'bottom'. Returns true when the order changed.
+  function arrangeSelection(where) {
+    const direction = { forward: 'up', backward: 'down', top: 'top', bottom: 'bottom' }[where];
+    if (!direction) return false;
+    const changed = this.moveSelectedLayers(direction);
+    if (changed && this.app.pushHistory) this.app.pushHistory();
+    return changed;
+  }
+
   function duplicateLayers(targetLayers, options = {}) {
     const { select = true } = options;
     const targets = targetLayers || [];
@@ -2848,6 +2858,7 @@
     sceneNestContainerFor,
     normalizeGroupOrder,
     moveSelectedLayers,
+    arrangeSelection,
     duplicateLayers,
     getLayerChildren,
     getLayerDescendants,
@@ -2888,6 +2899,7 @@
       proto.sceneNestContainerFor = function(tgt) { return sceneNestContainerFor.call(this, tgt); };
       proto.normalizeGroupOrder = function() { return normalizeGroupOrder.call(this); };
       proto.moveSelectedLayers = function(direction) { return moveSelectedLayers.call(this, direction); };
+      proto.arrangeSelection = function(where) { return arrangeSelection.call(this, where); };
       proto.duplicateLayers = function(targetLayers, options) { return duplicateLayers.call(this, targetLayers, options); };
       proto.getLayerChildren = function(layerId) { return getLayerChildren.call(this, layerId); };
       proto.getLayerDescendants = function(layerId) { return getLayerDescendants.call(this, layerId); };
