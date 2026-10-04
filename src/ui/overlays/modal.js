@@ -381,6 +381,8 @@
     // Move initial focus inside the modal. Defer to next frame so the body
     // has been laid out (some callers populate after openModal returns).
     const focusOnce = () => {
+      // Deferred callback: the document may be gone (teardown) by the time it fires.
+      if (typeof document === 'undefined' || !document || !document.body) return;
       if (!this.modal.overlay.classList.contains('open')) return;
       const focusables = card ? card.querySelectorAll('button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])') : [];
       // Prefer the first non-close-button focusable so the user lands inside
