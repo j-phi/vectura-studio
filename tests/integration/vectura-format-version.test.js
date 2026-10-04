@@ -31,7 +31,7 @@ describe('.vectura newer-format warning on open (AUD-02)', () => {
     runtime = null;
   });
 
-  const openPayload = (payload) => {
+  const openPayload = async (payload) => {
     const realFileReader = window.FileReader;
     const text = JSON.stringify(payload);
     window.FileReader = class {
@@ -42,31 +42,33 @@ describe('.vectura newer-format warning on open (AUD-02)', () => {
     };
     try {
       app.ui.openVecturaFile(new window.Blob([text], { type: 'application/json' }));
+      // TUX-053: open is now sniff (async) then read; keep the stub until both ran.
+      await new Promise((r) => setTimeout(r, 0));
     } finally {
       window.FileReader = realFileReader;
     }
   };
 
-  const withToastSpy = (fn) => {
+  const withToastSpy = async (fn) => {
     const overlays = (window.Vectura.UI.overlays = window.Vectura.UI.overlays || {});
     const realToast = overlays.Toast;
     const calls = [];
     overlays.Toast = { show: (opts) => calls.push(opts) };
     try {
-      fn();
+      await fn();
     } finally {
       overlays.Toast = realToast;
     }
     return calls;
   };
 
-  test('formatVersion 999 loads best-effort and fires the newer-version warning', () => {
+  test('formatVersion 999 loads best-effort and fires the newer-version warning', async () => {
     const id = app.engine.addLayer('wavetable');
     app.engine.generate(id);
     const state = app.captureState();
     state.engine.formatVersion = 999;
 
-    const calls = withToastSpy(() => openPayload({ state, images: {} }));
+    const calls = await withToastSpy(() => openPayload({ state, images: {} }));
 
     // Best-effort load: the wavetable layer arrived.
     expect(app.engine.layers.some((l) => l.type === 'wavetable')).toBe(true);
@@ -76,12 +78,12 @@ describe('.vectura newer-format warning on open (AUD-02)', () => {
     expect(warning.variant).toBe('warning');
   });
 
-  test('a current-format file opens with no newer-version warning', () => {
+  test('a current-format file opens with no newer-version warning', async () => {
     const id = app.engine.addLayer('wavetable');
     app.engine.generate(id);
     const state = app.captureState();
 
-    const calls = withToastSpy(() => openPayload({ state, images: {} }));
+    const calls = await withToastSpy(() => openPayload({ state, images: {} }));
 
     expect(app.engine.layers.some((l) => l.type === 'wavetable')).toBe(true);
     expect(calls.some((c) => /newer version/i.test(c?.message || ''))).toBe(false);

@@ -89,7 +89,7 @@ describe('Phase 3 closure — toast wire-ups', () => {
     expect(last.classList.contains('vectura-toast-success')).toBe(true);
   });
 
-  test('openVecturaFile() emits a danger toast on invalid JSON', () => {
+  test('openVecturaFile() emits a danger toast on invalid JSON', async () => {
     let onloadCb = null;
     class FakeReader {
       constructor() { this.result = ''; }
@@ -105,6 +105,7 @@ describe('Phase 3 closure — toast wire-ups', () => {
     window.FileReader = FakeReader;
     try {
       window.app.ui.openVecturaFile(new window.Blob(['{}']));
+      await new Promise((r) => setTimeout(r, 0)); // TUX-053: sniff then read
     } finally {
       window.FileReader = origReader;
     }
@@ -119,7 +120,7 @@ describe('Phase 3 closure — toast wire-ups', () => {
   // AUD-09: openVecturaFile's catch collapsed every failure mode into one
   // opaque modal and never logged the real error, making the actual parse
   // failure unrecoverable from the console.
-  test('openVecturaFile() console.errors the real parse error on invalid JSON', () => {
+  test('openVecturaFile() console.errors the real parse error on invalid JSON', async () => {
     class FakeReader {
       constructor() { this.result = ''; }
       readAsText(_blob) {
@@ -132,6 +133,7 @@ describe('Phase 3 closure — toast wire-ups', () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       window.app.ui.openVecturaFile(new window.Blob(['{}']));
+      await new Promise((r) => setTimeout(r, 0)); // TUX-053: sniff then read
     } finally {
       window.FileReader = origReader;
     }
