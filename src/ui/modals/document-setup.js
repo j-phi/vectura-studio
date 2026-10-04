@@ -71,9 +71,10 @@
   // section collapse + num-step ± wiring needed by the new primitives.
   //
   // Sections are arranged top-to-bottom in roughly descending edit-frequency
-  // order. All sections default to open (`.is-open` on `.sect-hdr`) so this
-  // change is a pure visual refactor — no controls move out of the user's
-  // sight on first open.
+  // order. Only Theme starts open (`.is-open` on `.sect-hdr`); the rest start
+  // collapsed (max-height:0 + visibility:hidden so their controls cannot be
+  // hit or focused). Paper additionally starts open on coarse pointers
+  // (TUX-050, `data-sect-open-on-touch`).
   const numStep = ({ id, value, min = '', max = '', step = '', cls = '' }) => `
     <div class="num-step ${cls}" data-num-step>
       <button type="button" class="num-step-btn" data-num-step-dec aria-label="Decrement">−</button>
@@ -117,11 +118,11 @@
         </div>
 
         <div class="sect sect--color-paper">
-          <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
+          <button type="button" class="sect-hdr" data-sect-toggle data-sect-open-on-touch aria-expanded="false">
             Paper
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             <div class="ctrl-grp">
               <span class="ctrl-sub-lbl">Orientation</span>
               <div id="orientation-toggle" class="seg-ctrl" role="radiogroup" aria-label="Orientation">
@@ -165,7 +166,7 @@
             Margins
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             ${swToggle('set-margin-line', 'Show margin outline')}
             <div class="line-style-control">
               <div class="style-field">
@@ -213,7 +214,7 @@
             Guides &amp; Display
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             ${swToggle('set-show-guides', 'Show guides')}
             ${swToggle('set-snap-guides', 'Snap to guides')}
             ${swToggle('set-coordinate-readout', 'Coordinate readout', 'true')}
@@ -238,7 +239,7 @@
             Background &amp; Selection
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             <div class="ctrl-row">
               <label class="ctrl-lbl" for="bg-color-pill">Background</label>
               <span class="ctrl-row-trail">
@@ -278,7 +279,7 @@
             Plotter Physics
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             <div class="ctrl-grp">
               <span class="ctrl-sub-lbl">Draw mm/s</span>
               ${numStep({ id: 'set-speed-down', value: '' })}
@@ -295,7 +296,7 @@
             UI Color Palette
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             <div class="palette-picker-wrap">
               <div id="layer-bar-palette-trigger" class="palette-picker-trigger" role="button" tabindex="0">
                 <span id="layer-bar-palette-name">Prism</span>
@@ -312,7 +313,7 @@
             History &amp; Preferences
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             <div class="ctrl-row">
               <label class="ctrl-lbl" for="set-undo">Undo steps</label>
               ${numStep({ id: 'set-undo', value: '', min: '1', max: '200', cls: 'num-step--narrow' })}
@@ -329,7 +330,7 @@
             Preset Storage
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             <p class="ctrl-hint">Custom presets always save in this browser. Sync to a folder to keep a live copy on disk — every preset you save mirrors there automatically, across sessions. Or export a bundle to move them between machines.</p>
             <div id="preset-storage-body"><!-- rendered dynamically by renderPresetStorageUi() --></div>
           </div>
@@ -340,7 +341,7 @@ ${isDevEligible() ? `
             Contributor / Presets
             <span class="sect-arrow"></span>
           </button>
-          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0">
+          <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
             ${swToggle('set-dev-mode', 'Developer mode')}
             <p class="ctrl-hint">When on, the preset Save dialog can download a bundler-ready .vectura into the project's user-presets/ workflow.</p>
           </div>
@@ -371,6 +372,141 @@ ${isDevEligible() ? `
     const panel = tpl.content.firstElementChild;
     if (panel) host.appendChild(panel);
     return panel;
+  }
+
+  // Single path for opening/closing a collapsible section (TUX-050).
+  // A fully collapsed body is also visibility:hidden so its controls cannot
+  // be hit-tested or focused (max-height + visibility, never display:none).
+  function setSectionOpen(hdr, open, { animate = true } = {}) {
+    hdr.classList.toggle('is-open', open);
+    hdr.setAttribute('aria-expanded', String(open));
+    const arrow = hdr.querySelector('.sect-arrow');
+    if (arrow) arrow.classList.toggle('down', open);
+    const body = hdr.nextElementSibling;
+    if (!body || !body.matches('[data-sect-body]')) return;
+    const hideIfStillClosed = () => {
+      if (!hdr.classList.contains('is-open')) body.style.visibility = 'hidden';
+    };
+    // Drop any pending open-completion hook from an earlier open, so a
+    // quick open-then-close cannot have it fire on the close transition.
+    if (body.__sectOpenEnd) {
+      body.removeEventListener('transitionend', body.__sectOpenEnd);
+      body.__sectOpenEnd = null;
+    }
+    body.__sectCloseToken = null; // cancels a pending collapse frame
+    // Drop any pending close-completion hook from an earlier close.
+    if (body.__sectCloseEnd) {
+      body.removeEventListener('transitionend', body.__sectCloseEnd);
+      body.__sectCloseEnd = null;
+    }
+    if (body.__sectCloseTimer) {
+      clearTimeout(body.__sectCloseTimer);
+      body.__sectCloseTimer = null;
+    }
+    if (open) {
+      // Visible before measuring so offsetHeight is accurate.
+      body.style.visibility = '';
+      if (!animate) {
+        body.style.maxHeight = '';
+        body.style.overflow = '';
+        body.style.paddingTop = '';
+        body.style.paddingBottom = '';
+        return;
+      }
+      // Suppress the CSS transition before lifting inline zeroes so
+      // that clearing paddingTop/Bottom doesn't start a 0→CSS
+      // transition mid-measurement. Without this, offsetHeight captures
+      // t=0 of the transition (padding still 0), undercounting by
+      // padding-top + padding-bottom and causing a jump at open-end.
+      body.style.transition = 'none';
+      body.style.maxHeight = '';
+      body.style.overflow = '';
+      body.style.paddingTop = '';
+      body.style.paddingBottom = '';
+      void body.offsetHeight; // flush transition:none so CSS applies fully
+      const naturalHeight = body.offsetHeight;
+      // Snap back to the collapsed start state before any paint.
+      body.style.maxHeight = '0';
+      body.style.paddingTop = '0';
+      body.style.paddingBottom = '0';
+      body.style.overflow = 'hidden';
+      // Restore CSS transition, then force reflow to anchor the
+      // collapsed state as the animation origin.
+      body.style.transition = '';
+      void body.offsetHeight;
+      // Animate to the measured natural height; restore padding simultaneously.
+      body.style.maxHeight = naturalHeight + 'px';
+      body.style.paddingTop = '';
+      body.style.paddingBottom = '';
+      // Filter on max-height specifically — padding-top and
+      // padding-bottom also fire transitionend and would clear
+      // maxHeight mid-flight if caught by a generic { once: true }.
+      const onOpenEnd = (e) => {
+        if (e.propertyName !== 'max-height') return;
+        body.removeEventListener('transitionend', onOpenEnd);
+        body.__sectOpenEnd = null;
+        if (!hdr.classList.contains('is-open')) return;
+        // Suppress CSS transitions before clearing maxHeight. Without
+        // this, clearing from Npx → none re-triggers the transition
+        // rule and causes a visible jump (the hitch). With it, the
+        // property snaps instantly and the transition is restored one
+        // frame later so future close/open animations still work.
+        body.style.transition = 'none';
+        void body.offsetHeight; // flush transition:none before the change
+        body.style.maxHeight = '';
+        body.style.overflow = '';
+        requestAnimationFrame(() => { body.style.transition = ''; });
+      };
+      body.__sectOpenEnd = onOpenEnd;
+      body.addEventListener('transitionend', onOpenEnd);
+      return;
+    }
+    if (!animate) {
+      body.style.maxHeight = '0';
+      body.style.overflow = 'hidden';
+      body.style.paddingTop = '0';
+      body.style.paddingBottom = '0';
+      body.style.visibility = 'hidden';
+      return;
+    }
+    body.style.maxHeight = body.scrollHeight + 'px';
+    body.style.overflow = 'hidden';
+    // Hide once the max-height transition ends (padding events ignored).
+    const onCloseEnd = (e) => {
+      if (e.propertyName !== 'max-height') return;
+      body.removeEventListener('transitionend', onCloseEnd);
+      body.__sectCloseEnd = null;
+      if (body.__sectCloseTimer) { clearTimeout(body.__sectCloseTimer); body.__sectCloseTimer = null; }
+      hideIfStillClosed();
+    };
+    body.__sectCloseEnd = onCloseEnd;
+    body.addEventListener('transitionend', onCloseEnd);
+    // Fallback when no transitionend will arrive (reduced motion, zero duration).
+    let ms = 0;
+    try {
+      const cs = window.getComputedStyle(body);
+      const props = String(cs.transitionProperty || '').split(',').map((x) => x.trim());
+      const durs = String(cs.transitionDuration || '').split(',').map((x) => x.trim());
+      const idx = props.findIndex((x) => x === 'max-height' || x === 'all');
+      const d = durs[idx >= 0 ? idx % durs.length : 0] || '0s';
+      ms = d.endsWith('ms') ? parseFloat(d) : parseFloat(d) * 1000;
+      if (!(ms > 0) || idx < 0) ms = 0;
+    } catch (_) { ms = 0; }
+    // Collapse starts in a double rAF; start the fallback timer there too, so a
+    // delayed frame cannot hide the content before the collapse begins. Skip if
+    // the section was reopened (or closed again) in the meantime.
+    const token = (body.__sectCloseToken = {});
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (body.__sectCloseToken !== token || hdr.classList.contains('is-open')) return;
+      body.style.maxHeight = '0';
+      body.style.paddingTop = '0';
+      body.style.paddingBottom = '0';
+      body.__sectCloseTimer = setTimeout(() => {
+        body.__sectCloseTimer = null;
+        if (body.__sectCloseEnd) { body.removeEventListener('transitionend', body.__sectCloseEnd); body.__sectCloseEnd = null; }
+        hideIfStillClosed();
+      }, ms + 50);
+    }));
   }
 
   /**
@@ -429,70 +565,20 @@ ${isDevEligible() ? `
       // header (rotates the chevron) and animates the matching `.sect-body`
       // open/closed via a max-height transition.
       settingsPanelEl.querySelectorAll('[data-sect-toggle]').forEach((hdr) => {
-        hdr.addEventListener('click', () => {
-          const open = !hdr.classList.contains('is-open');
-          hdr.classList.toggle('is-open', open);
-          hdr.setAttribute('aria-expanded', String(open));
-          const arrow = hdr.querySelector('.sect-arrow');
-          if (arrow) arrow.classList.toggle('down', open);
-          const body = hdr.nextElementSibling;
-          if (body && body.matches('[data-sect-body]')) {
-            if (open) {
-              // Suppress the CSS transition before lifting inline zeroes so
-              // that clearing paddingTop/Bottom doesn't start a 0→CSS
-              // transition mid-measurement. Without this, offsetHeight captures
-              // t=0 of the transition (padding still 0), undercounting by
-              // padding-top + padding-bottom and causing a jump at open-end.
-              body.style.transition = 'none';
-              body.style.maxHeight = '';
-              body.style.overflow = '';
-              body.style.paddingTop = '';
-              body.style.paddingBottom = '';
-              void body.offsetHeight; // flush transition:none so CSS applies fully
-              const naturalHeight = body.offsetHeight;
-              // Snap back to the collapsed start state before any paint.
-              body.style.maxHeight = '0';
-              body.style.paddingTop = '0';
-              body.style.paddingBottom = '0';
-              body.style.overflow = 'hidden';
-              // Restore CSS transition, then force reflow to anchor the
-              // collapsed state as the animation origin.
-              body.style.transition = '';
-              void body.offsetHeight;
-              // Animate to the measured natural height; restore padding simultaneously.
-              body.style.maxHeight = naturalHeight + 'px';
-              body.style.paddingTop = '';
-              body.style.paddingBottom = '';
-              // Filter on max-height specifically — padding-top and
-              // padding-bottom also fire transitionend and would clear
-              // maxHeight mid-flight if caught by a generic { once: true }.
-              const onOpenEnd = (e) => {
-                if (e.propertyName !== 'max-height') return;
-                body.removeEventListener('transitionend', onOpenEnd);
-                // Suppress CSS transitions before clearing maxHeight. Without
-                // this, clearing from Npx → none re-triggers the transition
-                // rule and causes a visible jump (the hitch). With it, the
-                // property snaps instantly and the transition is restored one
-                // frame later so future close/open animations still work.
-                body.style.transition = 'none';
-                void body.offsetHeight; // flush transition:none before the change
-                body.style.maxHeight = '';
-                body.style.overflow = '';
-                requestAnimationFrame(() => { body.style.transition = ''; });
-              };
-              body.addEventListener('transitionend', onOpenEnd);
-            } else {
-              body.style.maxHeight = body.scrollHeight + 'px';
-              body.style.overflow = 'hidden';
-              requestAnimationFrame(() => requestAnimationFrame(() => {
-                body.style.maxHeight = '0';
-                body.style.paddingTop = '0';
-                body.style.paddingBottom = '0';
-              }));
-            }
-          }
-        });
+        hdr.addEventListener('click', () => setSectionOpen(hdr, !hdr.classList.contains('is-open')));
       });
+
+      // TUX-050: on a coarse pointer, sections that hold the primary control
+      // (Paper) start expanded. Evaluated once at bind time, never on each
+      // panel open, so a user's own collapse is not undone. animate:false so
+      // there is no open animation on first view.
+      // TODO(TUX-006): switch to the layout classifier (body.touch-ui) once it lands.
+      const coarse = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+      if (coarse) {
+        settingsPanelEl.querySelectorAll('[data-sect-open-on-touch]').forEach((hdr) => {
+          setSectionOpen(hdr, true, { animate: false });
+        });
+      }
 
       // Number-stepper ± buttons — find the sibling <input>, bump by `step`
       // (default 1), clamp to min/max, and dispatch `input` + `change` so

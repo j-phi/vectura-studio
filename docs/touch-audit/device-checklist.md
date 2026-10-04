@@ -86,6 +86,7 @@ JSON.stringify({w: innerWidth, h: innerHeight, dpr: devicePixelRatio, standalone
 | DEV-35 | Petal Designer sheet/window fits with Safari toolbar shown and collapsed (from TUX-026) | TUX-026 | iPhone P tab, iPhone L tab, iPad P tab, iPad L tab | The window or sheet stays inside the visible area with the toolbar shown and collapsed. It clears the notch and the home indicator. | open |
 | DEV-36 | Pinch on inline and pop-out designer canvas zooms only the canvas, never the page (from TUX-026) | TUX-026 | iPhone P tab, iPad L tab | A pinch zooms the designer canvas. The page stays at 1x. | open |
 | DEV-37 | Focus a designer field in the phone sheet: no page zoom, field stays visible above keyboard (from TUX-026) | TUX-026 | iPhone P tab | No page zoom. The field stays visible above the keyboard. | open |
+| DEV-38 | Document Setup Paper > Size native picker (from TUX-050) | TUX-050 | iPhone P tab, iPad P tab | The first tap on Paper > Size opens the native iOS picker. The drawer or modal does not jump. | open |
 
 ## Clause index
 
