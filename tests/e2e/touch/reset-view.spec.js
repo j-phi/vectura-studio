@@ -143,7 +143,11 @@ test.describe('TUX-009 Reset View', () => {
               x0 = Math.min(x0, pt.x); x1 = Math.max(x1, pt.x); y0 = Math.min(y0, pt.y); y1 = Math.max(y1, pt.y);
             }
           })));
-          return { w: (x1 - x0) * r.scale, h: (y1 - y0) * r.scale };
+          return {
+            x0: r.offsetX + x0 * r.scale, y0: r.offsetY + y0 * r.scale,
+            x1: r.offsetX + x1 * r.scale, y1: r.offsetY + y1 * r.scale,
+            w: (x1 - x0) * r.scale, h: (y1 - y0) * r.scale,
+          };
         })(),
       };
     });
@@ -160,6 +164,11 @@ test.describe('TUX-009 Reset View', () => {
     expect(fit.layers, 'layers').toBeGreaterThanOrEqual(1);
     expect(fit.bbox.w, 'layer screen bbox width').toBeGreaterThan(0);
     expect(fit.bbox.h, 'layer screen bbox height').toBeGreaterThan(0);
+    // Screen position: offset + world * scale, relative to the canvas rect. It must sit inside the canvas.
+    expect(fit.bbox.x0, 'layer bbox left').toBeGreaterThanOrEqual(-1);
+    expect(fit.bbox.y0, 'layer bbox top').toBeGreaterThanOrEqual(-1);
+    expect(fit.bbox.x1, 'layer bbox right').toBeLessThanOrEqual(fit.cw + 1);
+    expect(fit.bbox.y1, 'layer bbox bottom').toBeLessThanOrEqual(fit.ch + 1);
     expect(errors, 'pageerror').toEqual([]);
 
     fs.mkdirSync(EVIDENCE, { recursive: true });

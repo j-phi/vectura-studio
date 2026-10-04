@@ -59,15 +59,23 @@ test.describe('TUX-009 desktop Reset View', () => {
     expect(f.manip).toBe(false);
   });
 
-  test('800x700 fine pointer keeps its layout and fits', async ({ page }) => {
+  test('800x700 fine pointer keeps the pre-TUX-009 overlay Reset View', async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 700 });
     await boot(page);
     await zoomIn(page);
     const before = await fitState(page);
     expect(before.body).toContain('mobile-layout');
+    // A fine pointer is not a touch UI: expandPanes still runs (returns true) and sets the 335 px vars.
+    const ran = await page.evaluate(() => window.app.ui.expandPanes());
+    expect(ran, 'expandPanes runs for a fine pointer at 800 px').toBe(true);
+    const vars = await page.evaluate(() => ({
+      l: document.documentElement.style.getPropertyValue('--pane-left-width'),
+      r: document.documentElement.style.getPropertyValue('--pane-right-width'),
+    }));
+    expect(vars).toEqual({ l: '335px', r: '335px' });
     await resetByMouse(page);
     const f = await fitState(page);
-    expect(f.body, 'body classes unchanged').toEqual(before.body);
+    expect(f.body, 'layout classes stripped as before TUX-009').not.toContain('mobile-layout');
     expect(f.cw).toBeGreaterThan(0);
     expect(f.ch).toBeGreaterThan(0);
     expect(f.scale).toBeGreaterThan(0);
