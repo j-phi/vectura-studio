@@ -22,6 +22,12 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **DONE — shared local test queue (2026-10-04, branch `chore/test-queue`).** All heavy
+  `npm run test:*` scripts route through `scripts/test-queue.js` (machine-wide lock, FIFO
+  waiters, PID + start-time identity, safe stale recovery, subprocess-tree cleanup, nested
+  pass-through, CI bypass). Covered by `tests/unit/test-queue.test.js`. Follow-up idea, not
+  built: a PreToolUse hook that blocks direct `npx vitest` / `npx playwright test` in agent Bash
+  calls.
 - **DONE — 3D Scene ground size controls (2026-10-02, branch `3d-scene/ground-scale`).** Ground
   leaf + legacy inspector gain Width (X) / Depth (Z) log sliders, proportion lock, Reset, and
   Fill frame (`Scene.groundCoverScale`). Ground quad is near-plane and artboard clipped in
@@ -1928,6 +1934,10 @@ questions. Do not start these without a decision:
   shipped as **v1.2.0**. See `CHANGELOG.md` for the consolidated notes.
 
 ## Decisions
+- **One machine-wide local test lock (2026-10-04).** Local test runs serialize through
+  `scripts/test-queue.js` with its lock outside every worktree (`~/.cache/vectura-studio/test-queue`),
+  not per worktree: the contention is for this machine's CPU and the Playwright port, not for a
+  checkout. CI is excluded on purpose (`CI` set = no lock), so CI job concurrency is unchanged.
 - **Coverage ratchet re-pinned for Vitest 4 (2026-09-25, Jay).** `vitest.config.mjs` thresholds moved
   83/83/77/69 → statements 74 / lines 76 / functions 74 / branches 62. Vitest 4's AST-based v8 remapping
   measures the same 729 test files ~6–11 points lower than Vitest 3 did (lines 86.95 → 77.44). This is a

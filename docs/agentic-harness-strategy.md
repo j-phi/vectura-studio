@@ -106,6 +106,13 @@ Reference:
 - The harness currently assumes Node 20.19+ and a matched Vitest 4 / V8 coverage-provider pair;
   version-specific pool configuration is documented in `docs/testing.md`.
 - Local Playwright compatibility notes also live in `docs/testing.md`; local browser fallbacks must stay documented there and in `AGENTS.md` whenever the e2e runtime contract changes.
+- **Shared local test queue.** Local test runs go through `scripts/test-queue.js`, one
+  machine-wide lock shared by every worktree and agent session. Agents run tests only through
+  the `npm run test:*` entrypoints (single files: `npm run test:vitest -- run <file>`,
+  `npm run test:playwright -- <spec>`), never `npx vitest` or `npx playwright test` directly.
+  Any new heavy test script in `package.json` must route through the queue; an aggregate script
+  wraps its whole chain once. CI bypasses the queue (`CI` set). Contract: `docs/testing.md` →
+  "Shared Local Test Queue".
 
 ## 6) Documentation Synchronization Matrix
 

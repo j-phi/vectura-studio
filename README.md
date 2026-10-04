@@ -425,6 +425,11 @@ Click `Export SVG` to download.
 | `npm run test:perf` | Stress/performance checks for generation and optimization |
 | `npm run test:ci` | PR-gating suite: unit + integration + e2e + visual + perf |
 | `npm run test:update` | Regenerates visual SVG baselines (review before commit) |
+| `npm run test:vitest -- <args>` | Vitest with any arguments, e.g. one file: `npm run test:vitest -- run tests/unit/foo.test.js` |
+| `npm run test:playwright -- <args>` | `playwright test` with any arguments, e.g. one spec |
+| `npm run test:queue:status` | Shows who holds the shared local test lock and who is waiting |
+
+All test commands run through a **shared local test queue** (`scripts/test-queue.js`): one heavy run at a time across every worktree and session on the machine; other runs wait and say who holds the lock. Do not call `npx vitest` / `npx playwright test` directly. CI bypasses the queue. Details: `docs/testing.md` → "Shared Local Test Queue".
 
 Vitest config: `vitest.config.mjs` · Playwright config: `playwright.config.js`
 
