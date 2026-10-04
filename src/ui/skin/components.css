@@ -4032,7 +4032,6 @@
 @media (pointer: coarse) {
   .vectura-modal-backdrop { align-items: flex-end !important; }
   .vectura-modal { width: 100%; max-width: 100%; border-radius: 12px 12px 0 0; }
-  .preset-save-footer { order: -1; flex-direction: row-reverse; }
 }
 
 /* ── Snapping feedback (auto-changed chips + transient line) ───────────────── */
@@ -14512,3 +14511,31 @@ body.phone-layout #petal-designer-window .petal-designer-header {
   z-index: 2;
 }
 /* === END TUX-026 === */
+
+/* === TUX-049: Save Preset sheet touch sizing + keyboard lift ===
+ * 046 owns the sheet frame and the lift (html.kb-open pads the backdrop by --kb-inset). This block
+ * only sizes the controls and keeps the actions row BELOW the name field, pinned to the bottom of the
+ * scrolling body (the old order:-1 rule is deleted). Cancel stays first in the DOM, Save is last. */
+@media (pointer: coarse) {
+  body.touch-ui .vectura-modal .preset-save-footer.vt-sheet__footer {
+    order: 0;
+    flex-direction: row;
+    justify-content: flex-end;
+    top: auto;
+    bottom: 0;
+    padding: 8px 0 0;
+  }
+  .preset-save-footer button { min-height: 44px; min-width: 44px; padding-inline: 16px; }
+  /* Children keep their size and the body scrolls (flex-shrink squeezed the mode buttons to 33px). */
+  .preset-save-body { scroll-padding-bottom: 64px; }
+  .preset-save-body > * { flex-shrink: 0; }
+  .preset-save-input { height: 44px; font-size: 16px; }
+  .preset-save-seg .seg-opt { min-height: 44px; }
+  .preset-save-body select.ctrl-sel { min-height: 44px; font-size: 16px; }
+  /* The Overwrite confirmation Dialog shares these buttons. */
+  .vectura-dialog-footer button { min-height: 44px; min-width: 44px; }
+  /* iPhone landscape with the keyboard open: only the name field, mode and actions stay. */
+  .preset-save-sheet.is-kb-short .preset-save-preview,
+  .preset-save-sheet.is-kb-short .preset-save-note { display: none; }
+}
+/* === END TUX-049 === */
