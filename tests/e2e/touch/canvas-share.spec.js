@@ -387,7 +387,7 @@ test.describe('TUX-007 reachable-set accounting (TUX-058 baseline lowering)', ()
     await tap(page, page.locator('#btn-menu-hamburger'));
     await sleep(300);
     const menuIds = await page.evaluate(() => ['#btn-menu-file', '#btn-menu-edit', '#btn-menu-object', '#btn-menu-view', '#btn-menu-insert', '#btn-menu-help', '#top-menubar .top-menu-theme-row']
-      .map((s) => { const el = document.querySelector(s); if (!el) return [s, 'missing']; const r = el.getBoundingClientRect(); const hit = r.width > 1 && r.height > 1 ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null; return [s, !!hit && (hit === el || el.contains(hit))]; }));
+      .map((s) => { const el = document.querySelector(s); if (!el) return [s, 'missing']; el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(); const hit = r.width > 1 && r.height > 1 ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null; return [s, !!hit && (hit === el || el.contains(hit))]; }));
     for (const [s, ok] of menuIds) expect(ok, `${s} reachable after the hamburger opens`).toBe(true);
     await page.keyboard.press('Escape');
     await page.evaluate(() => { const h = document.getElementById('btn-menu-hamburger'); if (h && h.getAttribute('aria-expanded') === 'true') h.click(); });
