@@ -700,6 +700,7 @@
       this.penDragStart = null;
       this.penDragMirrorLock = null;
       this._penLastClick = null;
+      this._penJustCommitted = null;
       this.penSnapToOrigin = false;
       this.groupEditMode = null;
       this._selectLastClick = null;
@@ -1225,9 +1226,9 @@
       this.draw();
     }
 
-    hitLightSource(world) {
+    hitLightSource(world, pointerType) {
       if (!this.lightSource || !world) return false;
-      const r = 6 / this.scale;
+      const r = window.Vectura.hitTolerance('light', pointerType) / this.scale;
       const dx = world.x - this.lightSource.x;
       const dy = world.y - this.lightSource.y;
       return dx * dx + dy * dy <= r * r;
@@ -1393,7 +1394,7 @@
         const settingsRef = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
         let overControlOrHandle = false;
         if (tool === 'direct' || (tool === 'pen' && this.penMode !== 'draw')) {
-          const control = this.hitDirectControl(world);
+          const control = this.hitDirectControl(world, e && e.pointerType);
           if (control) {
             overControlOrHandle = true;
             const data = control.auxIdx >= 0
@@ -2202,6 +2203,7 @@
       // 2. Pen draft and double-click timing.
       this.penDraft = snap.penDraft;
       this._penLastClick = snap.penLastClick;
+      this._penJustCommitted = null;
       // 3. Text edit session started by this gesture.
       const te = app && app.textEdit;
       if (te && te.isActive && te.isActive()) {
@@ -2371,17 +2373,24 @@
     handlePenDown(world, e) {
       if (!world) return;
       const modifiers = this.getModifierState(e);
-      const closeTol = 12 / this.scale;
+      // TUX-024: radii are screen px per pointer type. Only a finger gets the coarse ones.
+      const tolFn = window.Vectura.hitTolerance;
+      const closeTol = tolFn('penCloseDouble', e.pointerType) / this.scale;
+
+      // A finger that double-taps the tap that just closed or finished a path must not start a
+      // new one-anchor draft. The swallow is touch only and one shot.
+      const justDone = this._penJustCommitted;
+      this._penJustCommitted = null;
+      if (!this.penDraft && justDone && e.pointerType === 'touch' && justDone.pointerType === 'touch'
+        && this._isDoubleTap(justDone, e).isDouble) {
+        this._penLastClick = null;
+        return;
+      }
 
       // Manual double-click detection — pointerdown does not reliably carry e.detail > 1
-      const now = performance.now();
-      const prev = this._penLastClick;
-      const screenX = e.clientX ?? 0;
-      const screenY = e.clientY ?? 0;
-      const isDoubleClick = prev &&
-        (now - prev.time) < 400 &&
-        Math.hypot(screenX - prev.x, screenY - prev.y) < 8;
-      this._penLastClick = { time: now, x: screenX, y: screenY };
+      const tap = this._isDoubleTap(this._penLastClick, e);
+      const isDoubleClick = tap.isDouble;
+      this._penLastClick = tap.record;
 
       if (!this.penDraft) {
         this.penDraft = { anchors: [this.createAnchor(this.snapPointToGrid(world))], closed: false };
@@ -2412,7 +2421,7 @@
       let next = this.snapPointToGrid({ x: world.x, y: world.y });
       if (modifiers.shift) next = this.snapPenAngle(lastAnchor, next);
       const distToStart = Math.hypot(next.x - first.x, next.y - first.y);
-      const snapTol = 5 / this.scale;
+      const snapTol = tolFn('penClose', e.pointerType) / this.scale;
       const isSnapClose = !modifiers.meta && anchors.length >= 2 &&
         Math.hypot(world.x - first.x, world.y - first.y) <= snapTol;
 
@@ -2436,6 +2445,15 @@
         this.draw();
         return;
       }
+      if (isDoubleClick) {
+        // The first click of the pair already placed the last anchor. Finish with the path as it
+        // is; adding the second click would leave a duplicate anchor on top of it.
+        this.isPenDragging = false;
+        this.penDragAnchor = null;
+        this.penDragStart = null;
+        this.commitPenPath(e);
+        return;
+      }
       const anchor = this.createAnchor(next);
       anchors.push(anchor);
       this.penDraft.anchors = anchors;
@@ -2443,14 +2461,12 @@
       this.penDragAnchor = anchors.length - 1;
       this.penDragStart = next;
       this.penDragMirrorLock = null;
-      if (isDoubleClick) {
-        this.commitPenPath();
-        return;
-      }
       this.draw();
     }
 
-    commitPenPath() {
+    // `e` (optional) is the pointer event that ended the path. A touch end is remembered so the
+    // finger's own follow-up tap does not start a new draft (see handlePenDown).
+    commitPenPath(e) {
       const anchors = this.penDraft?.anchors || [];
       if (!this.penDraft || anchors.length < 2) {
         this.cancelPenPath();
@@ -2488,6 +2504,9 @@
       this.penDragStart = null;
       this.penDragMirrorLock = null;
       this._penLastClick = null;
+      this._penJustCommitted = e && e.pointerType === 'touch'
+        ? this._isDoubleTap(null, e).record
+        : null;
       this.penSnapToOrigin = false;
       this.draw();
     }
@@ -2501,6 +2520,7 @@
       this.penDragStart = null;
       this.penDragMirrorLock = null;
       this._penLastClick = null;
+      this._penJustCommitted = null;
       this.penSnapToOrigin = false;
       this.penPurpose = 'draw';
       this.draw();
@@ -2761,13 +2781,20 @@
       }));
     }
 
-    hitShapeCornerHandle(world, layer, pathIndex = 0) {
+    hitShapeCornerHandle(world, layer, pathIndex = 0, pointerType) {
       const handles = this.getShapeCornerHandles(layer, pathIndex);
-      const tolSq = Math.pow(7 / this.scale, 2);
+      const tolSq = Math.pow(window.Vectura.hitTolerance('cornerWidget', pointerType) / this.scale, 2);
+      const touch = pointerType === 'touch';
+      let best = null;
+      let bestSq = Infinity;
       for (let i = 0; i < handles.length; i++) {
-        if (this.distanceToPointSq(world, handles[i].point) <= tolSq) return handles[i];
+        const dSq = this.distanceToPointSq(world, handles[i].point);
+        if (dSq > tolSq) continue;
+        // Mouse and pen keep first-match. A finger's wide radius needs the nearest widget.
+        if (!touch) return handles[i];
+        if (dSq < bestSq) { bestSq = dSq; best = handles[i]; }
       }
-      return null;
+      return best;
     }
 
     // Vertex indices whose corner is part of the current direct multi-selection.
@@ -3029,14 +3056,37 @@
     // reliably carry e.detail > 1 (same rationale as the pen tool's detector).
     // Keyed per-widget so two quick clicks on different corners don't count.
     _isCornerWidgetDoubleClick(e, key) {
-      const now = performance.now();
       const prev = this._cornerWidgetLastClick;
-      const x = e.clientX ?? 0;
-      const y = e.clientY ?? 0;
-      const isDouble = Boolean(prev && prev.key === key &&
-        (now - prev.time) < 400 && Math.hypot(x - prev.x, y - prev.y) < 8);
-      this._cornerWidgetLastClick = isDouble ? null : { key, time: now, x, y };
-      return isDouble;
+      const tap = this._isDoubleTap(prev && prev.key === key ? prev : null, e);
+      this._cornerWidgetLastClick = tap.isDouble ? null : { ...tap.record, key };
+      return tap.isDouble;
+    }
+
+    // TUX-024: one double-click / double-tap detector. pointerdown does not reliably carry
+    // e.detail > 1, so each tool keeps its previous tap record and asks here.
+    //  - touch: e.timeStamp (the event time, not the handler time), window and distance inclusive.
+    //  - mouse, pen and anything else: performance.now(), exclusive, the exact pre-TUX-024 semantics.
+    // The record carries the pointer class, so a touch tap never pairs with a mouse click.
+    // Returns { isDouble, record }; the caller stores `record` as its next `prev`.
+    _isDoubleTap(prev, e) {
+      const touch = Boolean(e) && e.pointerType === 'touch';
+      const tol = window.Vectura.hitTolerance;
+      const kind = touch ? 'touch' : 'mouse';
+      const time = touch && typeof e.timeStamp === 'number' ? e.timeStamp : performance.now();
+      const x = (e && e.clientX) ?? 0;
+      const y = (e && e.clientY) ?? 0;
+      const record = { time, x, y, pointerType: touch ? 'touch' : 'pointer' };
+      let isDouble = false;
+      if (prev && prev.pointerType === record.pointerType) {
+        const dt = time - prev.time;
+        const dist = Math.hypot(x - prev.x, y - prev.y);
+        const maxMs = tol('doubleTapMs', kind);
+        const maxDist = tol('doubleTapDist', kind);
+        isDouble = touch
+          ? dt >= 0 && dt <= maxMs && dist <= maxDist
+          : dt < maxMs && dist < maxDist;
+      }
+      return { isDouble, record };
     }
 
     // Corner indices a Live Corner edit applies to, mirroring drag scoping:
@@ -3366,14 +3416,20 @@
       return result;
     }
 
-    hitFreeformCornerHandle(world) {
+    hitFreeformCornerHandle(world, pointerType) {
       const handles = this._getFreeformCornerHandles();
-      const tolSq = Math.pow(7 / this.scale, 2);
+      const tolSq = Math.pow(window.Vectura.hitTolerance('cornerWidget', pointerType) / this.scale, 2);
+      const touch = pointerType === 'touch';
+      let best = null;
+      let bestSq = Infinity;
       for (const h of handles) {
         const dx = world.x - h.worldPoint.x, dy = world.y - h.worldPoint.y;
-        if (dx * dx + dy * dy <= tolSq) return h;
+        const dSq = dx * dx + dy * dy;
+        if (dSq > tolSq) continue;
+        if (!touch) return h;
+        if (dSq < bestSq) { bestSq = dSq; best = h; }
       }
-      return null;
+      return best;
     }
 
     // Fold a baked live-corner pair (start at `i`, end at `i+1`) back into its
@@ -4614,9 +4670,32 @@
       return { layer, anchors };
     }
 
-    _hitControlInAnchors(world, anchors) {
-      const handleTol = 5 / this.scale;
+    _hitControlInAnchors(world, anchors, pointerType) {
+      const tolFn = window.Vectura.hitTolerance;
+      const handleTol = tolFn('bezierHandle', pointerType) / this.scale;
       const handleTolSq = handleTol * handleTol;
+      const anchorTol = tolFn('anchor', pointerType) / this.scale;
+      const anchorTolSq = anchorTol * anchorTol;
+      if (pointerType === 'touch') {
+        // A finger covers several targets at once. Take the nearest; on a tie the anchor wins.
+        let best = null;
+        let bestSq = Infinity;
+        const consider = (type, index, dSq, sqLimit) => {
+          if (dSq > sqLimit) return;
+          if (dSq < bestSq || (dSq === bestSq && type === 'anchor' && best.type !== 'anchor')) {
+            bestSq = dSq;
+            best = { type, index };
+          }
+        };
+        for (let i = 0; i < anchors.length; i++) {
+          const anchor = anchors[i];
+          consider('anchor', i, (world.x - anchor.x) ** 2 + (world.y - anchor.y) ** 2, anchorTolSq);
+          if (anchor.in) consider('in', i, (world.x - anchor.in.x) ** 2 + (world.y - anchor.in.y) ** 2, handleTolSq);
+          if (anchor.out) consider('out', i, (world.x - anchor.out.x) ** 2 + (world.y - anchor.out.y) ** 2, handleTolSq);
+        }
+        if (best) best.distSq = bestSq;
+        return best;
+      }
       for (let i = 0; i < anchors.length; i++) {
         const anchor = anchors[i];
         if (anchor.in) {
@@ -4628,8 +4707,6 @@
           if (dx * dx + dy * dy <= handleTolSq) return { type: 'out', index: i };
         }
       }
-      const anchorTol = 6 / this.scale;
-      const anchorTolSq = anchorTol * anchorTol;
       for (let i = 0; i < anchors.length; i++) {
         const anchor = anchors[i];
         const dx = world.x - anchor.x; const dy = world.y - anchor.y;
@@ -4657,21 +4734,54 @@
       return { seg, nextSeg };
     }
 
-    hitDirectControl(world) {
+    // TUX-024 nearest-wins, touch only. The Direct tool has up to four finger-sized targets that can
+    // overlap: anchor, handle, corner widget and the light. Returns { kind, distSq } for the nearest;
+    // ties go anchor, then handle, then corner widget. Mouse and pen never call this.
+    _touchDirectPick(world) {
+      const cands = [];
+      const control = this.hitDirectControl(world, 'touch');
+      if (control) cands.push({ kind: 'control', rank: control.type === 'anchor' ? 0 : 1, distSq: control.distSq });
+      const shape = this.getSelectedShapeLayer();
+      if (shape) {
+        const h = this.hitShapeCornerHandle(world, shape, 0, 'touch');
+        if (h) cands.push({ kind: 'corner', rank: 2, distSq: this.distanceToPointSq(world, h.point) });
+      } else if (this.directSelection && !this.directSelection.meta?.shape) {
+        const h = this.hitFreeformCornerHandle(world, 'touch');
+        if (h) cands.push({ kind: 'corner', rank: 2, distSq: (world.x - h.worldPoint.x) ** 2 + (world.y - h.worldPoint.y) ** 2 });
+      }
+      cands.sort((a, b) => (a.distSq - b.distSq) || (a.rank - b.rank));
+      return cands[0] || null;
+    }
+
+    // True when a finger on the Direct tool is nearer an anchor, handle or corner widget than the light.
+    _touchDirectBeatsLight(world, e) {
+      if (e.pointerType !== 'touch' || this.activeTool !== 'direct' || !this.lightSource) return false;
+      const pick = this._touchDirectPick(world);
+      if (!pick) return false;
+      const lightSq = (world.x - this.lightSource.x) ** 2 + (world.y - this.lightSource.y) ** 2;
+      return pick.distSq <= lightSq;
+    }
+
+    hitDirectControl(world, pointerType) {
+      const touch = pointerType === 'touch';
+      let bestTouch = null;
       const mainData = this.getDirectSelectionWorldAnchors();
       if (mainData) {
-        const hit = this._hitControlInAnchors(world, mainData.anchors);
-        if (hit) return { ...hit, auxIdx: -1 };
+        const hit = this._hitControlInAnchors(world, mainData.anchors, pointerType);
+        if (hit && !touch) return { ...hit, auxIdx: -1 };
+        if (hit) bestTouch = { ...hit, auxIdx: -1 };
       }
       const auxSels = this.directAuxSelections || [];
       for (let ai = 0; ai < auxSels.length; ai++) {
         const data = this._selectionWorldAnchors(auxSels[ai]);
         if (data) {
-          const hit = this._hitControlInAnchors(world, data.anchors);
-          if (hit) return { ...hit, auxIdx: ai };
+          const hit = this._hitControlInAnchors(world, data.anchors, pointerType);
+          if (hit && !touch) return { ...hit, auxIdx: ai };
+          // Touch: the nearest control across every selected path wins; a tie keeps the earlier path.
+          if (hit && (!bestTouch || hit.distSq < bestTouch.distSq)) bestTouch = { ...hit, auxIdx: ai };
         }
       }
-      return null;
+      return bestTouch;
     }
 
     _applySelectionPath(sel) {
@@ -5127,14 +5237,14 @@
       return true;
     }
 
-    removeAnchorFromWorld(world) {
+    removeAnchorFromWorld(world, pointerType) {
       if (!this.directSelection) {
         const hitPath = this.findPathHitAtPoint(world);
         if (!hitPath) return false;
         this.selectLayer(hitPath.layer);
         if (!this.setDirectSelection(hitPath.layer, hitPath.pathIndex)) return false;
       }
-      const hit = this.hitDirectControl(world);
+      const hit = this.hitDirectControl(world, pointerType);
       if (!hit || hit.type !== 'anchor') return false;
       if (this.directSelection.anchors.length <= 2) return false;
       if (this.onDirectEditStart) this.onDirectEditStart();
@@ -5149,14 +5259,14 @@
       return true;
     }
 
-    toggleAnchorFromWorld(world) {
+    toggleAnchorFromWorld(world, pointerType) {
       if (!this.directSelection) {
         const hit = this.findPathHitAtPoint(world);
         if (!hit) return false;
         this.selectLayer(hit.layer);
         if (!this.setDirectSelection(hit.layer, hit.pathIndex)) return false;
       }
-      let control = this.hitDirectControl(world);
+      let control = this.hitDirectControl(world, pointerType);
       if (!control || control.type !== 'anchor') {
         const hitPath = this.findPathHitAtPoint(world, {
           restrictToLayerId: this.directSelection?.layerId || null,
@@ -5199,7 +5309,7 @@
         }
         return true;
       }
-      const control = this.hitDirectControl(world);
+      const control = this.hitDirectControl(world, e && e.pointerType);
       if (control) {
         if (control.type === 'in' || control.type === 'out') {
           this.startDirectDrag(control, e);
@@ -5210,7 +5320,7 @@
           return true;
         }
       }
-      return this.toggleAnchorFromWorld(world);
+      return this.toggleAnchorFromWorld(world, e && e.pointerType);
     }
 
     resize() {
@@ -6857,7 +6967,7 @@
         return;
       }
 
-      if (this.hitLightSource(world)) {
+      if (this.hitLightSource(world, e.pointerType) && !this._touchDirectBeatsLight(world, e)) {
         this.lightSourceSelected = true;
         this.isLightDrag = true;
         this.lightDragOffset = { x: world.x - this.lightSource.x, y: world.y - this.lightSource.y };
@@ -6956,7 +7066,7 @@
         const runPenEdit = () => {
           let handled = false;
           if (this.penMode === 'add') handled = this.insertAnchorFromWorld(world);
-          if (this.penMode === 'delete') handled = this.removeAnchorFromWorld(world);
+          if (this.penMode === 'delete') handled = this.removeAnchorFromWorld(world, e.pointerType);
           if (this.penMode === 'anchor') handled = this._handlePenAnchorDown(world, e);
           if (!handled) {
             const hit = this.findPathHitAtPoint(world);
@@ -7075,8 +7185,10 @@
             return;
           }
           const selectedShape = this.getSelectedShapeLayer();
-          if (selectedShape) {
-            const shapeCorner = this.hitShapeCornerHandle(world, selectedShape, 0);
+          // Touch: when an anchor or handle is nearer than a corner widget, the corner branches are skipped.
+          const controlOverCorner = e.pointerType === 'touch' && this._touchDirectPick(world)?.kind === 'control';
+          if (selectedShape && !controlOverCorner) {
+            const shapeCorner = this.hitShapeCornerHandle(world, selectedShape, 0, e.pointerType);
             if (shapeCorner) {
               // Multi-corner round: if 2+ corners are selected and the grabbed
               // handle is one of them, round the whole set together; else single.
@@ -7111,8 +7223,8 @@
               if (this.beginShapeCornerDrag(selectedShape, 0, shapeCorner, scope, cornerSet, world)) return;
             }
           }
-          if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape) {
-            const freeformCorner = this.hitFreeformCornerHandle(world);
+          if (!selectedShape && !controlOverCorner && this.directSelection && !this.directSelection.meta?.shape) {
+            const freeformCorner = this.hitFreeformCornerHandle(world, e.pointerType);
             if (freeformCorner) {
               if (this.getModifierState(e).alt) {
                 this.cycleFreeformCornerType(freeformCorner);
@@ -7138,7 +7250,7 @@
               if (this.beginFreeformCornerDrag(freeformCorner, world)) return;
             }
           }
-          const directControl = this.hitDirectControl(world);
+          const directControl = this.hitDirectControl(world, e.pointerType);
           if (directControl) {
             this.startDirectDrag(directControl, e);
             return;
@@ -7170,7 +7282,7 @@
               : this.setDirectSelection(hit.layer, hit.pathIndex);
             if (selection && selection.anchors.length) {
               const worldAnchors = this.getDirectSelectionWorldAnchors();
-              const anchorTol = 6 / this.scale;
+              const anchorTol = window.Vectura.hitTolerance('anchor', e.pointerType) / this.scale;
               const anchorTolSq = anchorTol * anchorTol;
               let nearestIdx = -1;
               let nearestDistSq = Infinity;
@@ -7232,6 +7344,9 @@
         if (this.activeTool === 'select' && selectedLayers.length === 1 && !this.isLayerLocked?.(selectedLayers[0].id)) {
           const shapeLayer = this.getSelectedShapeLayer();
           if (shapeLayer) {
+            // Select tool keeps the mouse widget radius for every pointer: the widget sits inside the
+            // finger-sized resize zone (TUX-023), and the resize handle must win there. Follow-up:
+            // push the touch widget offset past the touch radius, then widen this too.
             const shapeCorner = this.hitShapeCornerHandle(world, shapeLayer, 0);
             if (shapeCorner) {
               // Option/Alt+click switches the corner style for every corner
@@ -7407,12 +7522,9 @@
         // tool doesn't run the select branch below, so maintain its own dbl-click
         // timing here; the select branch keeps its own `_selectLastClick`.
         if ((this.activeTool === 'select' || this.activeTool === 'direct') && this.app && this.app.textEdit) {
-          const nowT = performance.now();
-          const prevT = this._selectLastClick;
-          const sXT = e.clientX ?? 0;
-          const sYT = e.clientY ?? 0;
-          const isDblText = !!(prevT && (nowT - prevT.time) < 400 && Math.hypot(sXT - prevT.x, sYT - prevT.y) < 8);
-          if (this.activeTool === 'direct') this._selectLastClick = { time: nowT, x: sXT, y: sYT };
+          const tapT = this._isDoubleTap(this._selectLastClick, e);
+          const isDblText = tapT.isDouble;
+          if (this.activeTool === 'direct') this._selectLastClick = tapT.record;
           // Clicking the point↔area conversion dot toggles the mode. It sits
           // OUTSIDE the layer bounds, so a double-click's first click would
           // deselect (hiding the widget) — a SINGLE click is used, and it runs
@@ -7439,12 +7551,9 @@
         // Group-aware selection: group move and sublayer edit mode
         let _groupHandled = false;
         if (this.activeTool === 'select') {
-          const now = performance.now();
-          const prev = this._selectLastClick;
-          const sX = e.clientX ?? 0;
-          const sY = e.clientY ?? 0;
-          const isDoubleClick = prev && (now - prev.time) < 400 && Math.hypot(sX - prev.x, sY - prev.y) < 8;
-          this._selectLastClick = { time: now, x: sX, y: sY };
+          const tapS = this._isDoubleTap(this._selectLastClick, e);
+          const isDoubleClick = tapS.isDouble;
+          this._selectLastClick = tapS.record;
 
           if (this.groupEditMode) {
             if (this.groupEditMode.kind === 'morph') {
@@ -7842,7 +7951,7 @@
           const modifiers = this.getModifierState(e);
           const anchorWorld = this.sourceToWorldPoint(layer, anchor);
           const distWorld = Math.hypot(world.x - anchorWorld.x, world.y - anchorWorld.y);
-          const minDist = 2 / this.scale;
+          const minDist = window.Vectura.hitTolerance('penCurveSlop', e.pointerType) / this.scale;
           if (distWorld <= minDist) {
             anchor.out = null;
             anchor.in = null;
@@ -8183,7 +8292,8 @@
           if (anchor) {
             const target = modifiers.shift ? this.snapPenAngle(anchor, next) : next;
             const dist = Math.hypot(target.x - anchor.x, target.y - anchor.y);
-            const minDist = 2 / this.scale;
+            // A finger jitters a few px while it taps. Under the slop it makes no Bezier handles.
+            const minDist = window.Vectura.hitTolerance('penCurveSlop', e.pointerType) / this.scale;
             if (this.isPenCloseDragging) {
               // Only update anchor[0].in — controls the incoming curve of the closing segment.
               // Do not touch anchor[0].out (set when the path was started).
@@ -8225,7 +8335,7 @@
           const snapped = this.snapPointToGrid(next);
           let preview = modifiers.shift && last ? this.snapPenAngle(last, snapped) : snapped;
           const first = anchors[0];
-          const snapTol = 5 / this.scale;
+          const snapTol = window.Vectura.hitTolerance('penClose', e.pointerType) / this.scale;
           if (!modifiers.meta && anchors.length >= 2 && first &&
               Math.hypot(next.x - first.x, next.y - first.y) <= snapTol) {
             preview = { x: first.x, y: first.y };
@@ -8428,7 +8538,7 @@
         this.penDragStart = null;
         this.penDragMirrorLock = null;
         if (wasCloseDrag) {
-          this.commitPenPath();
+          this.commitPenPath(e);
           clearActivePointer();
           return;
         }
@@ -16325,7 +16435,7 @@
       if (this.activeTool === 'direct') {
         const selectedShape = this.getSelectedShapeLayer();
         if (selectedShape) {
-          const cornerHit = this.hitShapeCornerHandle(world, selectedShape, 0);
+          const cornerHit = this.hitShapeCornerHandle(world, selectedShape, 0, e && e.pointerType);
           if (cornerHit) {
             // Style-specific corner cursor only — the radius label is shown
             // while dragging, never on hover.
@@ -16334,13 +16444,13 @@
           }
         }
         if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape) {
-          const freeHit = this.hitFreeformCornerHandle(world);
+          const freeHit = this.hitFreeformCornerHandle(world, e && e.pointerType);
           if (freeHit) {
             this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer', freeHit.cornerType));
             return;
           }
         }
-        const control = this.hitDirectControl(world);
+        const control = this.hitDirectControl(world, e && e.pointerType);
         if (control) {
           this.setCanvasCursor(control.type === 'anchor' ? 'move' : 'pointer');
           return;
@@ -16354,7 +16464,7 @@
         return;
       }
       if (this.activeTool === 'pen' && this.penMode !== 'draw' && !modifiers.meta) {
-        const control = this.hitDirectControl(world);
+        const control = this.hitDirectControl(world, e && e.pointerType);
         if (control) {
           this.setCanvasCursor(this.penMode === 'delete' ? 'not-allowed' : 'pointer');
           return;
@@ -16365,7 +16475,7 @@
         this.setCanvasCursor('crosshair');
         return;
       }
-      if (this.hitLightSource(world)) {
+      if (this.hitLightSource(world, e && e.pointerType)) {
         this.setCanvasCursor(this.isLightDrag ? 'grabbing' : 'move');
         return;
       }

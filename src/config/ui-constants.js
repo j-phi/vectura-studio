@@ -52,6 +52,21 @@
       // A touch selection narrower than this many resize radii gets its corners nudged
       // outward and loses its edge handles, so a finger can still move it from the centre.
       smallSelectionFactor: 3,
+      // TUX-024: pen, direct-select and double-tap radii (CSS px; callers divide by the view scale).
+      // The mouse and pen columns are the literals the renderer used before. Only 'touch' is coarse.
+      anchor: { mouse: 6, pen: 6, touch: 22 },
+      bezierHandle: { mouse: 5, pen: 5, touch: 22 },
+      cornerWidget: { mouse: 7, pen: 7, touch: 22 },
+      light: { mouse: 6, pen: 6, touch: 22 },
+      // Single-tap snap-close of a pen draft on its first anchor (and its hover preview).
+      penClose: { mouse: 5, pen: 5, touch: 22 },
+      // Close by double-click or double-tap on the first anchor.
+      penCloseDouble: { mouse: 12, pen: 12, touch: 24 },
+      // Double-tap window. Mouse compares with '<', touch with '<=' (see Renderer._isDoubleTap).
+      doubleTapDist: { mouse: 8, pen: 8, touch: 24 },
+      doubleTapMs: { mouse: 400, pen: 400, touch: 400 },
+      // A pen drag shorter than this makes no Bezier handles (finger jitter).
+      penCurveSlop: { mouse: 2, pen: 2, touch: 6 },
     },
 
     // TUX-026: Petal Designer control grab radius in CSS px. A mouse keeps 10 px. A finger gets 22 px to
