@@ -14484,3 +14484,16 @@ body.phone-layout #settings-panel {
   .ctxbar.ctxbar--fill { display: flex; }
 }
 /* === END TUX-022 === */
+
+/* === TUX-046 (integration fix): colour modal clears the close hit area ===
+   The close ::before is 44px around a 24px button, so it reaches 10px below the header.
+   The positioned .color-sv-wrapper started 8px below and won the hit test for 2px.
+   Pad the colour body so the picker starts outside the close target. */
+body.touch-ui .modal-card .color-modal { padding-top: 4px; }
+/* === END TUX-046 (integration fix) === */
+
+/* === TUX-047: touch zoom surfaces === */
+.export-preview-canvas-wrap[data-touch-zoom] {
+  touch-action: none;
+}
+/* === END TUX-047 === */
