@@ -14552,3 +14552,57 @@ body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
   .preset-save-sheet.is-kb-short .preset-save-note { display: none; }
 }
 /* === END TUX-049 === */
+
+/* === TUX-037: undo toast === */
+/* Host placement moved out of inline styles. Default = today's desktop values. */
+#vectura-toast-host {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9000;
+  pointer-events: none;
+}
+.vectura-toast-action {
+  flex: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ui-accent, #4e9ee1);
+  background: transparent;
+  border: 1px solid var(--ui-border, #333);
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.vectura-toast-action:focus-visible {
+  outline: 2px solid var(--ui-accent, #4e9ee1);
+  outline-offset: 2px;
+}
+.vectura-toast-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#vectura-toast-host .vectura-toast {
+  max-width: 320px;
+}
+@media (pointer: coarse) {
+  /* Only the Undo toast itself anchors bottom-center (fixed, out of the host's flow), so a plain
+     toast firing at the same time stays top-right and never covers sheets/inputs. */
+  #vectura-toast-host .vectura-toast:has(.vectura-toast-action) {
+    position: fixed;
+    top: auto;
+    right: auto;
+    left: 50%;
+    bottom: calc(var(--tux-toast-gap) + var(--tux-safe-bottom) + var(--tux-modbar-clear, 0px));
+    transform: translateX(-50%);
+    box-sizing: border-box;
+    max-width: calc(100vw - 32px - var(--tux-safe-left) - var(--tux-safe-right));
+  }
+  .vectura-toast-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+/* === END TUX-037 === */

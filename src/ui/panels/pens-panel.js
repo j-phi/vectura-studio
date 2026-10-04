@@ -124,6 +124,8 @@
     const idx = pens.findIndex((pen) => pen.id === penId);
     if (idx === -1) return;
     if (this.app.pushHistory) this.app.pushHistory();
+    const penToken = this.app.history?.[this.app.history.length - 1];
+    const penName = pens[idx].name || 'pen';
     const fallback = pens[idx - 1] || pens[idx + 1];
     pens.splice(idx, 1);
     this.app.engine.layers.forEach((layer) => {
@@ -137,6 +139,7 @@
     this.renderPens();
     this.renderLayers();
     this.app.render();
+    this.notifyUndoable?.(`Deleted pen "${penName}"`, penToken);
   }
 
   function initPaletteControls() {

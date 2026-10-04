@@ -463,7 +463,11 @@
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         if (this.app.pushHistory) this.app.pushHistory();
+        const token = this.app.history?.[this.app.history.length - 1];
         const ids = Array.from(this.app.renderer?.selectedLayerIds || []);
+        const label = ids.length === 1
+          ? `Deleted "${this.app.engine.getLayerById?.(ids[0])?.name ?? 'layer'}"`
+          : `Deleted ${ids.length} layers`;
         ids.forEach((id) => {
           this.unlockMirrorChildrenOnDelete?.(id);
           this.app.engine.removeLayer(id);
@@ -474,6 +478,7 @@
         }
         this.renderLayers();
         this.app.render();
+        this.notifyUndoable?.(label, token);
         return;
       }
       const step = (e.metaKey || e.ctrlKey) ? 10 : 1;
