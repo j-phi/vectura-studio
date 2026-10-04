@@ -1338,6 +1338,7 @@
     toneNone: 'This Fill Style has no tone to shape. It draws every ruling the same.',
     toneOff: 'Tone is off for this scene, so there is no shading to shape. Turn Tone on in the Scene tab.',
     needsTiers: 'Tier pens apply to the three-pen Fill Styles only.',
+    bandsThreePen: 'The three-pen Fill Styles draw their own tiers. Use Tier pens to choose their pens.',
   };
   const artRound = (key, v) => {
     const st = FILL_CTL().CONTROLS[key].step;
@@ -1437,7 +1438,30 @@
         ctl.parentNode.setAttribute('title', pens.length < 2
           ? 'Add pens to the palette first. Tier k draws with pen k of the palette.'
           : 'Tier 1 (fine), 2 (medium) and 3 (broad) draw with pens 1, 2 and 3 of the palette. Each pen carries its own width.');
+        // U7: choose which pen each tier uses.
+        if (on) penPickerRows(host, comps, bag, write, 3, 'Tier');
       }
+    }
+  };
+  // U7 — one pen Select per tier / tone band. Writes `tierPens[k]`; a row left on
+  // "Object pen" keeps that band on the object's own pen.
+  const penPickerRows = (host, comps, bag, write, count, noun) => {
+    const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+    const cur = Array.isArray(bag.tierPens) ? bag.tierPens : [];
+    for (let k = 0; k < count; k += 1) {
+      const ctl = labeledRow(host, `${noun} ${k + 1} pen`);
+      comps.push(Vectura.UI.Select(ctl, {
+        options: [{ value: '', label: 'Object pen' }].concat(pens.map((pn) => ({ value: pn.id, label: pn.name || pn.id }))),
+        value: cur[k] || '',
+        ariaLabel: `${noun} ${k + 1} pen`,
+        onChange: (v) => {
+          const next = [];
+          for (let i = 0; i < count; i += 1) next.push(i === k ? (v || null) : (cur[i] || null));
+          write('tierPens', next.some(Boolean) ? next : null);
+        },
+      }));
+      ctl.parentNode.dataset.art = '1';
+      ctl.parentNode.setAttribute('title', `${noun} ${k + 1} draws with this pen. ${k === 0 ? 'Lightest' : (k === count - 1 ? 'Darkest' : 'Next darker')} ${noun.toLowerCase()}.`);
     }
   };
   const FS_PEN_LAWS = () => ((Vectura.STROKE_FILL_STYLES && Vectura.STROKE_FILL_STYLES.PEN_LAWS)
@@ -1462,6 +1486,28 @@
       artSliderRow(o.host, o.comps, bag, 'depthFadeNear', o.write, noTone);
       artSliderRow(o.host, o.comps, bag, 'depthFadeFar', o.write, noTone);
     }
+    // U7: split any Fill Style into 2-4 tone bands, one pen each.
+    const threePen = FS_PEN_LAWS().indexOf(o.ctx.law) !== -1;
+    const bandsNote = threePen ? ART_NOTES.bandsThreePen : (o.toneOff ? ART_NOTES.toneOff : (noTone || ''));
+    const nBands = Math.round(Number(bag.toneBands)) >= 2 ? Math.min(4, Math.round(Number(bag.toneBands))) : 0;
+    const bctl = labeledRow(o.host, 'Tone bands');
+    o.comps.push(Vectura.UI.SegCtrl(bctl, {
+      options: [{ value: '0', label: 'Off' }, { value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '4' }],
+      value: String(nBands), ariaLabel: 'Split the drawing into tone bands, one pen each',
+      onChange: (v) => {
+        if (bandsNote) return;
+        const n = Number(v);
+        const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+        // Start each band on pen k of the palette; the rows below change that.
+        const patch = { toneBands: n, tierPens: n >= 2 ? pens.slice(0, n).map((pn) => pn.id) : null };
+        if (typeof o.writeMany === 'function') o.writeMany(patch);
+        else { o.write('toneBands', n); o.write('tierPens', patch.tierPens); }
+      },
+    }));
+    bctl.parentNode.dataset.art = '1';
+    if (bandsNote) markRowDisabled(bctl.parentNode, bandsNote);
+    else bctl.parentNode.setAttribute('title', FC.CONTROLS.toneBands.help);
+    if (nBands && !bandsNote) penPickerRows(o.host, o.comps, bag, o.write, nBands, 'Band');
   };
 
   const moduleSliderRow = (host, comps, label, props) => {

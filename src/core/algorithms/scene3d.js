@@ -1917,6 +1917,118 @@
         return c ? { x: x / c, y: y / c, z: z / c } : null;
       };
 
+      // ── U7 tone bands → pens (every Fill Style) ────────────────────────────────
+      // `toneBands` N (2..4) splits an object's output by the tone under each mark
+      // and sends band k (0 = lightest) to pen tierPens[k]. Off (absent / 0 / 1) is
+      // never read: the emission code below is byte-identical. The tone is the
+      // face tone the scene already computes (`intensityFn`), normalised to the
+      // object's own tone range so every band holds ink.
+      const bandRanges = new Map();
+      const outBandCount = (sp) => {
+        const n = Math.round(Number(sp && sp.toneBands));
+        return (n >= 2 && intensityFn) ? Math.min(4, n) : 0;
+      };
+      const toneBandRange = (record, faceIdxs) => {
+        let lo = Infinity; let hi = -Infinity;
+        const vals = new Map();
+        faceIdxs.forEach((fi) => {
+          const f = record.faces[fi];
+          if (!f || !f.front) return;
+          const I = clamp(finite(intensityFn(f.normalWorld, faceWorldCentroid(f)), 0), 0, 1);
+          vals.set(fi, I);
+          if (I < lo) lo = I;
+          if (I > hi) hi = I;
+        });
+        return vals.size ? { vals, lo, hi } : null;
+      };
+      const toneBandIndex = (I, range, N) => {
+        const span = range.hi - range.lo;
+        if (!(span > 1e-6)) return 0;
+        return Math.min(N - 1, Math.max(0, Math.floor(((range.hi - I) / span) * N)));
+      };
+      const toneBandPen = (sp, band) => {
+        const pen = Array.isArray(sp.tierPens) ? sp.tierPens[band] : null;
+        return typeof pen === 'string' && pen ? pen : null;
+      };
+      // Curved shapes: a screen-space face lookup. Returns band(x, y), or -1.
+      const makeToneBandSampler = (record, faceIdxs, N) => {
+        const range = toneBandRange(record, faceIdxs);
+        if (!range) return null;
+        const CELL = 6;
+        const cells = new Map();
+        range.vals.forEach((I, fi) => {
+          const poly = record.faces[fi].polygon;
+          if (!Array.isArray(poly) || poly.length < 3) return;
+          let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+          poly.forEach((q) => { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); });
+          const it = { poly, x0, y0, x1, y1, band: toneBandIndex(I, range, N), cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+          for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx += 1) {
+            for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy += 1) {
+              const k = `${cx},${cy}`;
+              if (!cells.has(k)) cells.set(k, []);
+              cells.get(k).push(it);
+            }
+          }
+        });
+        const inside = (poly, x, y) => {
+          let c = false;
+          for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+            const a = poly[i]; const b = poly[j];
+            if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c;
+          }
+          return c;
+        };
+        return (x, y) => {
+          const cx = Math.floor(x / CELL); const cy = Math.floor(y / CELL);
+          const here = cells.get(`${cx},${cy}`) || [];
+          for (let i = 0; i < here.length; i += 1) {
+            const it = here[i];
+            if (x >= it.x0 && x <= it.x1 && y >= it.y0 && y <= it.y1 && inside(it.poly, x, y)) return it.band;
+          }
+          let best = -1; let bd = Infinity;
+          for (let dx = -1; dx <= 1; dx += 1) {
+            for (let dy = -1; dy <= 1; dy += 1) {
+              (cells.get(`${cx + dx},${cy + dy}`) || []).forEach((it) => {
+                const d = (it.cx - x) * (it.cx - x) + (it.cy - y) * (it.cy - y);
+                if (d < bd) { bd = d; best = it.band; }
+              });
+            }
+          }
+          return best;
+        };
+      };
+      // Split each plain front line where its band changes. A piece under three
+      // points folds into its neighbour so no stub is lost to the emission floor.
+      const splitLinesByBand = (lines, sampler) => {
+        const out = [];
+        lines.forEach((line) => {
+          if (line.back === true || line.highlight === true || Number.isInteger(line.penTier) || line.length < 2) {
+            out.push(line);
+            return;
+          }
+          const bands = line.map((pt) => sampler(pt.x, pt.y));
+          const fix = bands.findIndex((b) => b >= 0);
+          if (fix < 0) { out.push(line); return; }
+          for (let i = 0; i < bands.length; i += 1) if (bands[i] < 0) bands[i] = i ? bands[i - 1] : bands[fix];
+          const pieces = [];
+          let start = 0;
+          for (let i = 1; i <= bands.length; i += 1) {
+            if (i === bands.length || bands[i] !== bands[start]) { pieces.push({ s: start, e: i, band: bands[start] }); start = i; }
+          }
+          for (let k = 1; k < pieces.length;) {
+            if (pieces[k].e - pieces[k].s < 3) { pieces[k - 1].e = pieces[k].e; pieces.splice(k, 1); } else k += 1;
+          }
+          pieces.forEach((pc, k) => {
+            const sub = line.slice(pc.s, Math.min(line.length, pc.e + (k < pieces.length - 1 ? 1 : 0)));
+            if (sub.length < 2) return;
+            ['apex', 'apexMin', 'weightScale'].forEach((key) => { if (line[key] !== undefined) sub[key] = line[key]; });
+            sub.penBand = pc.band;
+            out.push(sub);
+          });
+        });
+        return out;
+      };
+
       // The object's own FOOTING — world-Y floor and height — for the reflected
       // (bounce) term of §5.2. Bounce comes up off the ground and dies over
       // roughly one object height, so a floating object must not collect light
@@ -4619,6 +4731,19 @@
                   // highlight face now carries the highlight pen.
                   ...(faceIsHL && faceHL.penId ? { penId: faceHL.penId } : (style.penId ? { penId: style.penId } : {})),
                 };
+                // U7 `toneBands`: this face's band picks the pen (faceted shapes tone per face).
+                let fillMetaB = fillMeta;
+                const faceBandN = outBandCount(styleParams);
+                if (faceBandN && !faceIsHL) {
+                  if (!bandRanges.has(record)) bandRanges.set(record, toneBandRange(record, record.faces.map((_, i) => i)));
+                  const br = bandRanges.get(record);
+                  const fi = record.faces.indexOf(face);
+                  if (br && br.vals.has(fi)) {
+                    const band = toneBandIndex(br.vals.get(fi), br, faceBandN);
+                    const bp = toneBandPen(styleParams, band);
+                    fillMetaB = { ...fillMeta, toneBand: band, ...(bp ? { penId: bp } : {}) };
+                  }
+                }
                 lines.forEach((line) => {
                   const pts = line.map((pt) => ({
                     x: pt.x,
@@ -4626,7 +4751,7 @@
                     z: plane.A * pt.x + plane.B * pt.y + plane.C,
                   }));
                   const fillClip = clipper.clipPath(pts, segCtx);
-                  emitRuns(fillClip.runs, fillMeta, hiddenTreatment, null, emitTreat);
+                  emitRuns(fillClip.runs, fillMetaB, hiddenTreatment, null, emitTreat);
                 });
               }
             }
@@ -5006,6 +5131,10 @@
               sceneTarget: { ...sceneTargetMeta(record.id, null, null, nearZ, false), highlight: true },
               ...(grpHL.penId ? { penId: grpHL.penId } : (g.style.penId ? { penId: g.style.penId } : {})),
             };
+            // U7 `toneBands`: split plain front lines by the tone under them.
+            const bandN = outBandCount(sp);
+            const bandSampler = bandN ? makeToneBandSampler(record, g.faces, bandN) : null;
+            if (bandSampler) lines = splitLinesByBand(lines, bandSampler);
             let backLineIdx = 0;
             // PAINT-ORDER FIX (fs-b2): TWO passes over `lines`, back family
             // first, front/highlight second — `lines` interleaves back/front
@@ -5066,9 +5195,12 @@
                 // modelled weightScale drops to 1. Off (null) = today's output.
                 const tierPen = (Number.isInteger(line.penTier) && Array.isArray(sp.tierPens))
                   ? sp.tierPens[line.penTier] : null;
+                const bandPen = Number.isInteger(line.penBand) ? toneBandPen(sp, line.penBand) : null;
                 const lineMeta = Number.isInteger(line.penTier)
                   ? { ...lineMeta0, penTier: line.penTier, ...(tierPen ? { penId: tierPen, weightScale: 1 } : {}) }
-                  : lineMeta0;
+                  : (Number.isInteger(line.penBand)
+                    ? { ...lineMeta0, toneBand: line.penBand, ...(bandPen ? { penId: bandPen } : {}) }
+                    : lineMeta0);
                 emitRuns(clip.runs, lineMeta, hiddenTreatment, null, frontTreat,
                   line.apex === true ? { apexMin: line.apexMin } : undefined);
               }

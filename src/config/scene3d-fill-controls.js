@@ -53,6 +53,8 @@
     chainMarks: { kind: 'bool', default: false, group: 'chain', label: 'Chain marks' },
     // Tone tier -> real pen.
     tierPens: { kind: 'pens', default: null, group: 'pens', label: 'Tiers to pens' },
+    // U7: split ANY Fill Style's output into N tone bands (0 = off). Band k draws with tierPens[k].
+    toneBands: { ...NUM(0, 4, 1, 0), group: 'pens', label: 'Tone bands', help: 'Splits the drawing into 2 to 4 tone bands, light to dark, and draws each band with its own pen.' },
   };
 
   // Engine-side tone curve constants.
