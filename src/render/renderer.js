@@ -1411,7 +1411,7 @@
             ? this.getSelectionBounds(activeLayers, this.tempTransform)
             : null;
           if (bounds && !activeLayers.some((l) => this.isLayerLocked?.(l.id))) {
-            const handle = this.hitHandle(sx, sy, bounds);
+            const handle = this.hitHandle(sx, sy, bounds, { pointerType: e.pointerType || this.lastPointerType });
             if (handle && !handle.startsWith('rotate')) {
               overControlOrHandle = true;
               chipPoint = this.getHandlePoint(handle, bounds);
@@ -6779,6 +6779,7 @@
 
     down(e) {
       if (!this.ready) return;
+      if (e && e.pointerType) this.lastPointerType = e.pointerType;
       if (this.isTouchPointer(e)) {
         // A pen or mouse stroke in flight owns the canvas; a touch is a resting palm.
         if (this.activePointerId !== null && this.activePointerType && this.activePointerType !== 'touch') {
@@ -7351,7 +7352,7 @@
           && (selectedLayers[0].type === 'scene3d' || selectedLayers[0].type === 'object3d'
             || selectedLayers[0].type === 'booleanGroup3d');
         if (selectionBounds && !soleSceneSelected && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
-          const handle = this.hitHandle(sx, sy, selectionBounds);
+          const handle = this.hitHandle(sx, sy, selectionBounds, { pointerType: e.pointerType });
           if (handle) {
             this.isLayerDrag = true;
             this.snapAllowed = true;
@@ -7645,6 +7646,7 @@
 
     move(e) {
       if (!this.ready) return;
+      if (e && e.pointerType) this.lastPointerType = e.pointerType;
       if (this.isTouchPointer(e)) {
         // TUX-017: track the finger (max travel feeds the arbitration decision), then run
         // the pinch/pan. While the gesture latch is held, a lone finger starts nothing.
@@ -14822,7 +14824,10 @@
 
     drawSelection(bounds, options = {}) {
       const { showHandles = true } = options;
-      const handleSize = 6 / this.scale;
+      // TUX-023: handle size and centres come from the same pointer-type source as hitHandle.
+      const coarse = this.isCoarseHandles();
+      const pointerType = coarse ? 'touch' : 'mouse';
+      const handleSize = window.Vectura.hitTolerance('handleDraw', pointerType) / this.scale;
       const { nw, ne, se, sw } = bounds.corners;
       this.ctx.save();
       this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
@@ -14839,15 +14844,54 @@
       this.ctx.fillStyle = getThemeToken('--render-selection-handle-fill', '#111827');
       this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
       if (showHandles) {
-        const handles = this.getHandlePoints(bounds);
+        const handles = this.getHandleHitPoints(bounds, pointerType);
         handles.forEach((pt) => {
           this.ctx.beginPath();
           this.ctx.rect(pt.x - handleSize / 2, pt.y - handleSize / 2, handleSize, handleSize);
           this.ctx.fill();
           this.ctx.stroke();
         });
+        const aff = coarse ? this._computeRotateAffordance(bounds, 'touch') : null;
+        if (aff) this._drawRotateAffordance(aff);
       }
       this.ctx.restore();
+    }
+
+    // TUX-023: round touch rotate handle (filled disc + arc-and-arrowhead glyph).
+    _drawRotateAffordance(aff) {
+      const ctx = this.ctx;
+      const c = this.screenToWorld(aff.x, aff.y);
+      const u = 1 / this.scale;
+      const r = 12 * u;
+      const g = 5.5 * u;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 1 * u;
+      ctx.stroke();
+      ctx.lineWidth = 1.6 * u;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, g, Math.PI * 0.15, Math.PI * 1.55);
+      ctx.stroke();
+      // Arrowhead at the arc end, pointing along the clockwise tangent.
+      const a = Math.PI * 1.55;
+      const tx = c.x + Math.cos(a) * g;
+      const ty = c.y + Math.sin(a) * g;
+      const dx = -Math.sin(a);
+      const dy = Math.cos(a);
+      const nx = Math.cos(a);
+      const ny = Math.sin(a);
+      const len = 3.2 * u;
+      ctx.beginPath();
+      ctx.moveTo(tx + dx * len, ty + dy * len);
+      ctx.lineTo(tx + nx * len * 0.9, ty + ny * len * 0.9);
+      ctx.lineTo(tx - nx * len * 0.9, ty - ny * len * 0.9);
+      ctx.closePath();
+      ctx.fillStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      ctx.fill();
+      ctx.restore();
     }
 
     get3DRotationSpec(layer) {
@@ -15592,35 +15636,133 @@
       return changed;
     }
 
-    hitHandle(sx, sy, bounds) {
-      const RESIZE_R = 10;
-      const ROTATE_R = 28;
-      const corners = [
-        { key: 'nw', ...bounds.corners.nw },
-        { key: 'ne', ...bounds.corners.ne },
-        { key: 'se', ...bounds.corners.se },
-        { key: 'sw', ...bounds.corners.sw },
+    // TUX-023: pointer-type aware handle geometry. One tolerance source: UI_CONSTANTS.HIT_TOLERANCE
+    // via Vectura.hitTolerance(). Only pointerType 'touch' is coarse; pen equals mouse.
+    // getHandlePoint/getHandlePoints/getResizeAnchor keep the TRUE corners.
+    isCoarseHandles() {
+      if (this.lastPointerType) return this.lastPointerType === 'touch';
+      return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    }
+
+    // Draw and hit centres. Mouse/pen: exactly getHandlePoints. Touch: a selection narrower
+    // than 3 resize radii has its corners nudged outward along its own axes (so the four
+    // zones do not crowd the centre) and loses the edge handles of that axis.
+    getHandleHitPoints(bounds, pointerType = 'mouse') {
+      if (pointerType !== 'touch') return this.getHandlePoints(bounds);
+      const tol = window.Vectura.hitTolerance;
+      const span = tol('resize', 'touch') * window.Vectura.UI_CONSTANTS.HIT_TOLERANCE.smallSelectionFactor;
+      const { nw, ne, sw } = bounds.corners;
+      const scale = this.scale || 1;
+      const wWorld = Math.hypot(ne.x - nw.x, ne.y - nw.y);
+      const hWorld = Math.hypot(sw.x - nw.x, sw.y - nw.y);
+      const ux = wWorld ? (ne.x - nw.x) / wWorld : 1;
+      const uy = wWorld ? (ne.y - nw.y) / wWorld : 0;
+      const vx = hWorld ? (sw.x - nw.x) / hWorld : 0;
+      const vy = hWorld ? (sw.y - nw.y) / hWorld : 1;
+      const nu = Math.max(0, (span - wWorld * scale) / 2) / scale;
+      const nv = Math.max(0, (span - hWorld * scale) / 2) / scale;
+      const nudge = (pt, su, sv) => ({
+        x: pt.x + su * nu * ux + sv * nv * vx,
+        y: pt.y + su * nu * uy + sv * nv * vy,
+      });
+      const c = bounds.corners;
+      const out = [
+        { key: 'nw', ...nudge(c.nw, -1, -1) },
+        { key: 'ne', ...nudge(c.ne, 1, -1) },
+        { key: 'se', ...nudge(c.se, 1, 1) },
+        { key: 'sw', ...nudge(c.sw, -1, 1) },
       ];
+      const wide = wWorld * scale >= span;
+      const tall = hWorld * scale >= span;
+      if (wide) {
+        out.push({ key: 'n', ...this._edgeMidpoint(bounds, 'n') });
+        out.push({ key: 's', ...this._edgeMidpoint(bounds, 's') });
+      }
+      if (tall) {
+        out.push({ key: 'e', ...this._edgeMidpoint(bounds, 'e') });
+        out.push({ key: 'w', ...this._edgeMidpoint(bounds, 'w') });
+      }
+      return out;
+    }
+
+    // Screen-px centre {x, y, r} of the visible touch rotate handle, or null (non-touch).
+    // 34 px beyond the NE hit centre (mid-band: outside the 22 px resize zone, inside the
+    // 48 px band). Flips to NW, SE, SW when NE would sit off the canvas.
+    _computeRotateAffordance(bounds, pointerType) {
+      if (pointerType !== 'touch') return null;
+      const tol = window.Vectura.hitTolerance;
+      const margin = tol('rotateAffordance', 'touch');
+      const hits = this.getHandleHitPoints(bounds, 'touch');
+      const center = this.worldToScreen(bounds.center.x, bounds.center.y);
+      const cw = this.canvas && this.canvas.clientWidth;
+      const ch = this.canvas && this.canvas.clientHeight;
+      const measured = !!(cw && ch);
+      let first = null;
+      for (const key of ['ne', 'nw', 'se', 'sw']) {
+        const hp = hits.find((h) => h.key === key);
+        if (!hp) continue;
+        const sc = this.worldToScreen(hp.x, hp.y);
+        const vx = sc.x - center.x;
+        const vy = sc.y - center.y;
+        const len = Math.hypot(vx, vy) || 1;
+        const pt = { x: sc.x + (vx / len) * 34, y: sc.y + (vy / len) * 34, r: margin };
+        if (!first) first = pt;
+        if (!measured) return pt;
+        if (pt.x >= margin && pt.y >= margin && pt.x <= cw - margin && pt.y <= ch - margin) return pt;
+      }
+      return first;
+    }
+
+    getRotateAffordance(bounds) {
+      if (!this.isCoarseHandles()) return null;
+      return this._computeRotateAffordance(bounds, 'touch');
+    }
+
+    hitHandle(sx, sy, bounds, { pointerType = 'mouse' } = {}) {
+      const tol = window.Vectura.hitTolerance;
+      const touch = pointerType === 'touch';
+      const RESIZE_R = tol('resize', pointerType);
+      const ROTATE_R = tol('rotate', pointerType);
+      const hits = this.getHandleHitPoints(bounds, pointerType);
+      const corners = hits.filter((h) => h.key.length === 2);
       // Corners win over edge midpoints when the zones overlap (small boxes).
       for (const c of corners) {
         const sc = this.worldToScreen(c.x, c.y);
         if (Math.hypot(sx - sc.x, sy - sc.y) <= RESIZE_R) return c.key;
       }
-      // SEL-1: edge-midpoint resize zones.
-      for (const edge of ['n', 'e', 's', 'w']) {
-        const pt = this._edgeMidpoint(bounds, edge);
-        const sc = this.worldToScreen(pt.x, pt.y);
-        if (Math.hypot(sx - sc.x, sy - sc.y) <= RESIZE_R) return edge;
-      }
-      let world = null;
-      for (const c of corners) {
-        const sc = this.worldToScreen(c.x, c.y);
-        if (Math.hypot(sx - sc.x, sy - sc.y) <= ROTATE_R) {
-          if (!world) world = this.screenToWorld(sx, sy);
-          if (!this.pointInBounds(world, bounds)) return `rotate-${c.key}`;
+      if (touch) {
+        // A nudged corner zone must still grab the true corner.
+        const trueR = tol('resize', 'mouse');
+        for (const key of ['nw', 'ne', 'se', 'sw']) {
+          const sc = this.worldToScreen(bounds.corners[key].x, bounds.corners[key].y);
+          if (Math.hypot(sx - sc.x, sy - sc.y) <= trueR) return key;
         }
       }
-      return null;
+      // SEL-1: edge-midpoint resize zones.
+      for (const h of hits) {
+        if (h.key.length !== 1) continue;
+        const sc = this.worldToScreen(h.x, h.y);
+        if (Math.hypot(sx - sc.x, sy - sc.y) <= RESIZE_R) return h.key;
+      }
+      if (touch) {
+        const aff = this._computeRotateAffordance(bounds, 'touch');
+        if (aff && Math.hypot(sx - aff.x, sy - aff.y) <= tol('rotateAffordance', 'touch')) return 'rotate';
+      }
+      let world = null;
+      let best = null;
+      let bestD = Infinity;
+      for (const c of corners) {
+        const sc = this.worldToScreen(c.x, c.y);
+        const d = Math.hypot(sx - sc.x, sy - sc.y);
+        if (d <= ROTATE_R) {
+          if (!world) world = this.screenToWorld(sx, sy);
+          if (!this.pointInBounds(world, bounds)) {
+            if (!touch) return `rotate-${c.key}`;
+            if (d < bestD) { bestD = d; best = c.key; }
+          }
+        }
+      }
+      return best ? `rotate-${best}` : null;
     }
 
     hit3DRotationControl(sx, sy, layer = null, bounds = null) {
@@ -16211,7 +16353,7 @@
         }
         return;
       }
-      const handle = this.hitHandle(sx, sy, bounds);
+      const handle = this.hitHandle(sx, sy, bounds, { pointerType: this.lastPointerType });
       if (handle) {
         const mode = handle.startsWith('rotate') ? 'rotate' : 'resize';
         this.setCanvasCursor(this.handleCursor(handle, bounds), mode);

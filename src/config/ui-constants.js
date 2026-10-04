@@ -34,6 +34,22 @@
       touchDragSlopPx: 6,
     },
 
+    // TUX-023: transform-handle sizes by pointer type (CSS px). Pen equals mouse by rule:
+    // only pointerType 'touch' gets the coarse values. Read these through hitTolerance().
+    // TUX-024, 025 and 026 reuse this table; do not add literal radii in the renderer.
+    HIT_TOLERANCE: {
+      resize: { mouse: 10, pen: 10, touch: 22 },
+      // Outer radius of the rotate band, measured from the handle hit centre.
+      rotate: { mouse: 28, pen: 28, touch: 48 },
+      // Hit radius of the visible touch rotate handle (0 = no handle).
+      rotateAffordance: { mouse: 0, pen: 0, touch: 22 },
+      // Drawn handle square side.
+      handleDraw: { mouse: 6, pen: 6, touch: 12 },
+      // A touch selection narrower than this many resize radii gets its corners nudged
+      // outward and loses its edge handles, so a finger can still move it from the centre.
+      smallSelectionFactor: 3,
+    },
+
     // Renderer handle/overlay geometry
     SHAPE_CORNER_HANDLE_MIN: 8,
     MASK_PREVIEW_ALPHA: 0.2,
@@ -76,5 +92,13 @@
       LOUPE_OFFSET_PX: 16,
     },
     // === end COL ===
+  };
+
+  // TUX-023: pure lookup. 'touch' maps to touch values; 'pen', 'mouse', undefined and
+  // anything else map to mouse values (pen equals mouse).
+  Vectura.hitTolerance = (kind, pointerType) => {
+    const row = window.Vectura.UI_CONSTANTS.HIT_TOLERANCE[kind];
+    if (!row) return 0;
+    return pointerType === 'touch' ? row.touch : row.mouse;
   };
 })();

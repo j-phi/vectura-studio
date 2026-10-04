@@ -536,11 +536,12 @@ describe('TUX-017 gesture arbiter (renderer)', () => {
 
   test('one finger: a marquee drag past the slop clears, then selects the layer it covers', () => {
     const { b } = add2d();
-    renderer.down(ev(1, 1000, 120, 20));
-    renderer.move(ev(1, 1050, 140, 30));
+    // TUX-023: start clear of the touch rotate band and rotate handle of the selected layer A.
+    renderer.down(ev(1, 1000, 190, 10));
+    renderer.move(ev(1, 1050, 180, 30));
     expect(renderer.selectedLayerIds.size).toBe(0); // cleared once the finger moved past the slop
-    renderer.move(ev(1, 1100, 200, 100));
-    renderer.up(ev(1, 1150, 200, 100, { buttons: 0 }));
+    renderer.move(ev(1, 1100, 130, 100));
+    renderer.up(ev(1, 1150, 130, 100, { buttons: 0 }));
     expect([...renderer.selectedLayerIds]).toEqual([b]);
   });
 

@@ -501,7 +501,10 @@ test.describe('TUX-019 direct drag', () => {
       return b;
     });
     const pts = await prepare(page, view);
-    const edge = await topEdge(page, pts, testInfo);
+    // TUX-023: the union selection (A + B) has its top-edge midpoint 12 mm right of A's centre, and a
+    // touch press within 22 px of it is a resize handle. Press A's top outline 12 mm LEFT of centre (clear of the NW corner zone too).
+    const edge = { x: pts.obj.x - 12 * pts.scale, y: pts.obj.y - 35 * pts.scale + 4 };
+    await precondition(page, { x: edge.x + DRAG.dx / 2, y: edge.y + DRAG.dy / 2 }, DRAG.dx, testInfo.project.name);
     const before = await probe(page, [id]);
     expect(before.sel.length).toBe(2);
     await touch.drag(page, edge, { x: edge.x + 2, y: edge.y + 1 }, { steps: 3, stepDelayMs: 15 });
@@ -557,9 +560,10 @@ test.describe('TUX-019 direct drag', () => {
   const centreLine = (page, view, pts) => page.evaluate(({ view, pts }) => {
     const r = window.app.renderer;
     const cv = document.querySelector('#main-canvas').getBoundingClientRect();
-    // The line is 60 mm long. The selection handles take a press at the edge midpoint (10 px)
-    // and within 28 px of a corner, so the line needs >= 2.1 px/mm for a free stretch to press.
-    r.scale = Math.max(view.scale, 2.1);
+    // The line is 60 mm long. TUX-023: a touch press is a handle within 22 px of the edge midpoint
+    // and within 48 px (rotate band) of a corner, so the line needs >= 2.6 px/mm (half length
+    // 78 px) for a free stretch (22..30 px from the midpoint) to press.
+    r.scale = Math.max(view.scale, 2.6);
     r.offsetX = (pts.obj.x - cv.left) - 150 * r.scale;
     r.offsetY = (pts.obj.y - cv.top) - 140 * r.scale;
     r.draw();
@@ -574,8 +578,9 @@ test.describe('TUX-019 direct drag', () => {
       await page.evaluate((rid) => { window.app.engine.removeLayer ? window.app.engine.removeLayer(rid) : null; }, rectId);
       id = await addLine(page, view, selected);
       await centreLine(page, view, pts);
-      // 14 px along the line from the midpoint: clear of the midpoint resize handle.
-      press = { x: pts.obj.x + 14, y: pts.obj.y + dyPress };
+      // 26 px along the line from the midpoint: clear of the 22 px midpoint resize zone and of
+      // the 48 px corner rotate band (TUX-023).
+      press = { x: pts.obj.x + 26, y: pts.obj.y + dyPress };
     } else {
       await page.evaluate(({ id, selected }) => {
         const r = window.app.renderer;
@@ -584,18 +589,19 @@ test.describe('TUX-019 direct drag', () => {
         window.app.pushHistory();
       }, { id, selected });
       // 3 px outside the rectangle outline's top edge (35 mm above the object centre). Zoom to
-      // >= 2.1 px/mm about the object centre so a selected rectangle's handle zones (10 px edge
-      // midpoint, 28 px outside-corner rotate) leave a free stretch of edge to press.
+      // >= 2.6 px/mm about the object centre so a selected rectangle's touch handle zones
+      // (22 px edge midpoint, 48 px outside-corner rotate band; TUX-023) leave a free stretch
+      // of edge to press.
       const sc = await page.evaluate((view) => {
         const r = window.app.renderer;
         const cv = document.querySelector('#main-canvas').getBoundingClientRect();
-        r.scale = Math.max(view.scale, 2.1);
+        r.scale = Math.max(view.scale, 2.6);
         r.offsetX = (window.__tux019Obj.x - cv.left) - 108 * r.scale;
         r.offsetY = (window.__tux019Obj.y - cv.top) - 75 * r.scale;
         r.draw();
         return r.scale;
       }, view);
-      press = { x: pts.obj.x + 14, y: pts.obj.y - 35 * sc + dyPress };
+      press = { x: pts.obj.x + 30, y: pts.obj.y - 35 * sc + dyPress };
     }
     // Only the press point must hit the canvas: the touch stays captured by it, and the context
     // bar that opens under a selection may float over the drag path.
