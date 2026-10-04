@@ -2493,19 +2493,18 @@
     }
     const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx || typeof ctx.getImageData !== 'function') {
-        if (done) done(null);
-        return;
-      }
-      ctx.drawImage(img, 0, 0);
-      const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const store = noiseStore();
-      const id = 'imgsrc-load-' + hashStr(dataUrl).slice(0, 8) + '-' + (dataUrl.length % 99999).toString(36);
-      store[id] = { width: data.width, height: data.height, data: data.data };
+      // Legacy saves may carry an imageSrc above the import cap; resample on decode (TUX-055).
+      let id = null;
+      try {
+        const IS = window.Vectura && window.Vectura.ImageSource;
+        const r = IS && IS.rasterizeCapped ? IS.rasterizeCapped(img, IS.MAX_IMPORT_SIDE) : null;
+        if (r && r.ctx && typeof r.ctx.getImageData === 'function') {
+          const data = r.ctx.getImageData(0, 0, r.w, r.h);
+          const store = noiseStore();
+          id = 'imgsrc-load-' + hashStr(dataUrl).slice(0, 8) + '-' + (dataUrl.length % 99999).toString(36);
+          store[id] = { width: data.width, height: data.height, data: data.data };
+        }
+      } catch (e) { id = null; }
       if (done) done(id);
     };
     img.onerror = () => { if (done) done(null); };
