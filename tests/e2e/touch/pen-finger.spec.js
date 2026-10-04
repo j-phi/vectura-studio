@@ -117,6 +117,25 @@ test.describe('TUX-024 pen and anchors by finger', () => {
     });
   }
 
+  for (const d of [10, 18, 20]) {
+    test(`jittered close tap ${d} px from the start closes with no in-handle`, async ({ page }, testInfo) => {
+      const c = await setupPen(page, testInfo);
+      await threeAnchors(page, c);
+      const from = at(c, { x: A1.x - d, y: A1.y });
+      // A finger jitters a few px between down and up.
+      await touch.drag(page, from, { x: from.x + 2, y: from.y }, { steps: 1 });
+      await gap(page, 300);
+      expect(await draft(page)).toBeNull();
+      expect(await done(page)).toEqual([{ n: 3, closed: true }]);
+      const a0in = await page.evaluate(() => {
+        const l = window.app.engine.layers[window.app.engine.layers.length - 1];
+        const m = l.sourcePaths && l.sourcePaths[0] && l.sourcePaths[0].meta;
+        return m && m.anchors ? m.anchors[0].in : 'no-meta';
+      });
+      expect(a0in).toBeNull();
+    });
+  }
+
   test('far tap does not close: 30 px from the start', async ({ page }, testInfo) => {
     const c = await setupPen(page, testInfo);
     await threeAnchors(page, c);

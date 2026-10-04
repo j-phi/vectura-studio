@@ -455,4 +455,40 @@ describe('TUX-024: touch hit targets through the real renderer', () => {
       expect(s.renderer.penDraft).not.toBeNull();
     });
   });
+
+  describe('(k) close-drag slop is measured from touch-down, not from the start anchor', () => {
+    const closeWithMove = (pointerType, downX, moveX) => {
+      const s = penSetup();
+      tap(s.renderer, 100, 100, pointerType, 1000);
+      tap(s.renderer, 300, 100, pointerType, 3000);
+      tap(s.renderer, 300, 300, pointerType, 5000);
+      clock = 8000;
+      s.renderer.down(evt(downX, 100, pointerType, 8000));
+      s.renderer.move(evt(moveX, 100, pointerType, 8010));
+      clock = 8040;
+      s.renderer.up(evt(moveX, 100, pointerType, 8040));
+      return s;
+    };
+    test('touch: a 2 px jitter on an 18 px close tap leaves no in-handle', () => {
+      const s = closeWithMove('touch', 82, 84);
+      expect(s.done).toHaveLength(1);
+      expect(s.done[0].closed).toBe(true);
+      expect(s.done[0].anchors).toHaveLength(3);
+      expect(s.done[0].anchors[0].in).toBeNull();
+    });
+    test('touch: a real close drag past the slop still curves the closing segment', () => {
+      const s = closeWithMove('touch', 82, 62);
+      expect(s.done[0].anchors[0].in).not.toBeNull();
+    });
+    test('mouse: a close drag past 2 px still creates the in-handle', () => {
+      const s = closeWithMove('mouse', 102, 112);
+      expect(s.done).toHaveLength(1);
+      expect(s.done[0].closed).toBe(true);
+      expect(s.done[0].anchors[0].in).not.toBeNull();
+    });
+    test('mouse: a 1 px move under the slop makes no handle', () => {
+      const s = closeWithMove('mouse', 102, 103);
+      expect(s.done[0].anchors[0].in).toBeNull();
+    });
+  });
 });

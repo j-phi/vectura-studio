@@ -2441,6 +2441,9 @@
         this.isPenCloseDragging = true;
         this.penDragAnchor = 0;
         this.penDragStart = { x: first.x, y: first.y };
+        // Close-drag slop and handle are measured from where the pointer touched down, not from the
+        // start anchor: a close tap lands up to 20 px (touch) from it.
+        this.penCloseDownWorld = { x: world.x, y: world.y };
         this.penDragMirrorLock = null;
         this.draw();
         return;
@@ -8302,11 +8305,12 @@
             if (this.isPenCloseDragging) {
               // Only update anchor[0].in — controls the incoming curve of the closing segment.
               // Do not touch anchor[0].out (set when the path was started).
-              if (dist <= minDist) {
+              const origin = this.penCloseDownWorld || anchor;
+              const cvec = { x: target.x - origin.x, y: target.y - origin.y };
+              if (Math.hypot(cvec.x, cvec.y) <= minDist) {
                 anchor.in = null;
               } else {
-                const vec = { x: target.x - anchor.x, y: target.y - anchor.y };
-                anchor.in = { x: anchor.x - vec.x, y: anchor.y - vec.y };
+                anchor.in = { x: anchor.x - cvec.x, y: anchor.y - cvec.y };
               }
             } else {
               if (dist <= minDist) {
@@ -8537,6 +8541,7 @@
       }
       if (this.isPenDragging) {
         const wasCloseDrag = this.isPenCloseDragging;
+        this.penCloseDownWorld = null;
         this.isPenDragging = false;
         this.isPenCloseDragging = false;
         this.penDragAnchor = null;
