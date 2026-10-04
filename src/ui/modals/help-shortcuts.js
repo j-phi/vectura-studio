@@ -279,10 +279,10 @@
     const layerStackRows = `
       <table class="help-kbd-table">
         <tbody>
-          ${row(CMD + k('['),         'Move down one')}
-          ${row(CMD + k(']'),         'Move up one')}
-          ${row(CMD + SHF + k('['),   'Send to back')}
-          ${row(CMD + SHF + k(']'),   'Send to front')}
+          ${row(CMD + k('['),         'Send Backward')}
+          ${row(CMD + k(']'),         'Bring Forward')}
+          ${row(CMD + SHF + k('['),   'Send to Back')}
+          ${row(CMD + SHF + k(']'),   'Bring to Front')}
         </tbody>
       </table>`;
     const wallpaperRows = `

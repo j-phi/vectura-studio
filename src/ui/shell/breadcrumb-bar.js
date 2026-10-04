@@ -110,6 +110,7 @@
       back.type = 'button';
       back.className = 'iso-bc-back';
       back.setAttribute('aria-label', c.ariaBack || 'Exit isolation level');
+      back.setAttribute('data-action', 'exit-group-edit');
       back.appendChild(backArrowSvg(d));
 
       const trail = d.createElement('ol');
@@ -262,6 +263,26 @@
     }
   };
 
+  // TUX-031: on narrow layouts the side panes overlay the canvas viewport, which buries the left-hand
+  // exit control. Publish how far each visible pane overlaps the bar's container as CSS custom
+  // properties; the skin insets the bar by them on a coarse pointer.
+  const syncPaneInsets = () => {
+    const bar = state.els && state.els.bar;
+    const host = bar && bar.parentElement;
+    const d = doc();
+    if (!host || !d || typeof host.getBoundingClientRect !== 'function') return;
+    const hr = host.getBoundingClientRect();
+    const overlap = (sel, side) => {
+      const n = d.querySelector(sel);
+      if (!n) return 0;
+      const r = n.getBoundingClientRect();
+      if (!r.width || !r.height || r.bottom <= hr.top || r.top >= hr.bottom) return 0;
+      return side === 'left' ? Math.max(0, Math.min(r.right, hr.right) - hr.left) : Math.max(0, hr.right - Math.max(r.left, hr.left));
+    };
+    bar.style.setProperty('--iso-bc-inset-l', `${Math.round(overlap('.pane-left', 'left'))}px`);
+    bar.style.setProperty('--iso-bc-inset-r', `${Math.round(overlap('.pane-right', 'right'))}px`);
+  };
+
   // ── sync pass (diffed) ────────────────────────────────────────────────
   const sync = () => {
     if (!ensureDom()) return;
@@ -273,6 +294,7 @@
     state.els.bar.classList.toggle('is-visible', active);
     state.els.bar.setAttribute('aria-hidden', active ? 'false' : 'true');
     state.els.edge.classList.toggle('is-visible', active);
+    if (active) syncPaneInsets();
     if (sig === state.sig) return;
     state.sig = sig;
     if (active) renderTrail(trail);
