@@ -14,7 +14,7 @@ Style tab and in the scene Style editor.
 - **Tone shaping: Gamma and Contrast.** One curve in the tone pipeline (`Regions.shapeTone`, applied where
   the scene wraps `combinedIntensity`), so every Fill Style reads the shaped tone. Gamma above 1 darkens the
   mid-tones. Contrast steepens or flattens the curve about mid-grey. Both ends stay fixed. Per object.
-- **Depth fade.** Far surfaces draw lighter: On / Off, *Fade strength*, *Fade starts* and *Fade full*
+- **Depth fade** (row: Fade by depth). Far surfaces draw lighter: On / Off, *Fade strength*, *Fade starts* and *Fade full*
   (fractions of the scene depth, nearest to farthest). Same single point as Gamma and Contrast, so it
   reaches every Fill Style.
 - **Wave: Wavelength and Crest phase.** *Wavelength* (4 to 20 pen widths, default 7.3) scales every wave

@@ -266,7 +266,9 @@ describe('Stroke Fill Style — docked 3D Scene panel', () => {
 
   const stylePage = (c) => c.querySelector('.vs3-page[data-page="style"]');
   const rows = (c) => Array.from(stylePage(c).querySelectorAll('.vs3-row'));
-  const rowLabels = (c) => rows(c).map((r) => (r.querySelector('.vs3-lbl') || {}).textContent);
+  // U6: the artistic rows (nib, taper, wave, tone shaping...) carry data-art and are
+  // extra to the layout this suite pins, so they are left out of the label list.
+  const rowLabels = (c) => rows(c).filter((r) => !r.dataset.art).map((r) => (r.querySelector('.vs3-lbl') || {}).textContent);
   const row = (c, label) => rows(c).find((r) => r.querySelector('.vs3-lbl') && r.querySelector('.vs3-lbl').textContent === label);
 
   // STALE ASSERTION UPDATE (U2, fill-roster collapse) — BUCKET_B

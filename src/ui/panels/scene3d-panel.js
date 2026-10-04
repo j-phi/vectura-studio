@@ -1352,6 +1352,7 @@
       min: d.min, max: d.max, step: d.step, defaultValue: d.default, ariaLabel: d.aria || d.label,
       onCommit: (v) => { if (!note) write(key, artRound(key, v)); },
     });
+    row.dataset.art = '1';
     if (d.help && !note) row.setAttribute('title', d.help);
     if (note) markRowDisabled(row, note);
     return row;
@@ -1364,6 +1365,7 @@
       options: d.options, value: typeof bag[key] === 'string' ? bag[key] : d.default, ariaLabel: d.label,
       onChange: (v) => { if (!note) write(key, v); },
     }));
+    ctl.parentNode.dataset.art = '1';
     if (note) markRowDisabled(ctl.parentNode, note);
     return ctl.parentNode;
   };
@@ -1375,6 +1377,7 @@
       value: bag[key] === true ? 'on' : 'off', ariaLabel: aria || label,
       onChange: (v) => write(key, v === 'on'),
     }));
+    ctl.parentNode.dataset.art = '1';
     return ctl.parentNode;
   };
 
@@ -1428,6 +1431,7 @@
           else write('tierPens', null);
         },
       }));
+      ctl.parentNode.dataset.art = '1';
       if (faceted) markRowDisabled(ctl.parentNode, ART_NOTES.needsCurved);
       else {
         ctl.parentNode.setAttribute('title', pens.length < 2
@@ -1451,7 +1455,7 @@
       ? ART_NOTES.rankGraded : '';
     artSliderRow(o.host, o.comps, bag, 'toneGamma', o.write, noTone || rankOnly);
     artSliderRow(o.host, o.comps, bag, 'toneContrast', o.write, noTone || rankOnly);
-    const fade = artToggleRow(o.host, o.comps, bag, 'depthFade', o.write, 'Depth fade', 'Depth fade: far surfaces draw lighter');
+    const fade = artToggleRow(o.host, o.comps, bag, 'depthFade', o.write, 'Fade by depth', 'Fade by depth: far surfaces draw lighter');
     if (noTone) markRowDisabled(fade, noTone);
     if (bag.depthFade === true) {
       artSliderRow(o.host, o.comps, bag, 'depthFadeStrength', o.write, noTone);

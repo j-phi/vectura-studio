@@ -22,7 +22,7 @@
     toneGamma: { ...NUM(0.4, 2.5, 0.05, 1), group: 'tone', label: 'Gamma', help: 'Bends the mid-tones before any Fill Style reads them. Above 1 darkens (more ink); below 1 lightens. 1 = unchanged.' },
     toneContrast: { ...NUM(-1, 1, 0.05, 0), group: 'tone', label: 'Contrast', help: 'Steepens (positive) or flattens (negative) the tone curve about mid-grey. The lightest and darkest tones stay put. 0 = unchanged.' },
     // Depth fade (same point).
-    depthFade: { kind: 'bool', default: false, group: 'depth', label: 'Depth fade' },
+    depthFade: { kind: 'bool', default: false, group: 'depth', label: 'Fade by depth' },
     depthFadeStrength: { ...NUM(0, 1, 0.05, 0.6), group: 'depth', label: 'Fade strength', help: 'How much the farthest surfaces lighten. 1 fades them to bare paper.' },
     depthFadeNear: { ...NUM(0, 1, 0.05, 0), group: 'depth', label: 'Fade starts', help: 'How far into the scene depth the fade begins. 0 = at the nearest surface.' },
     depthFadeFar: { ...NUM(0, 1, 0.05, 1), group: 'depth', label: 'Fade full', help: 'How far into the scene depth the fade reaches full strength. 1 = at the farthest surface.' },
@@ -46,7 +46,7 @@
     taperTipWidth: { ...NUM(0, 1, 0.01, 0.42), group: 'taper', label: 'Tip width', help: 'Width at the very end of a tapered stroke, as a share of its full width.' },
     taperSoftness: { ...NUM(0, 0.25, 0.01, 0.09), group: 'taper', label: 'Softness', help: 'Highlight softness: how gently the lightest strokes thin out. Low = a hard knee. High = a long, soft fade.' },
     // Turing stripe (stripeAlign is the U4b key, kept for grouping).
-    stripeAlign: { ...NUM(0, 1.2, 0.05, 0), group: 'turing', label: 'Stripe align', help: 'Combs the stripes along the form instead of a random labyrinth. 0 = off.' },
+    stripeAlign: { ...NUM(0, 1.2, 0.05, 0), group: 'turing', label: 'Stripe align', aria: 'Stripe alignment', help: 'Combs the stripes along the form instead of a random labyrinth. 0 = off.' },
     patternMaturity: { ...NUM(40, 400, 10, 170), group: 'turing', label: 'Maturity', help: 'How long the pattern relaxes. Low = young, broken stripes. High = settled stripes.' },
     stripeScale: { ...NUM(0.5, 3, 0.05, 1), group: 'turing', label: 'Stripe scale', help: 'Stripe wavelength multiplier. Below 1 = finer stripes. Above 1 = broader stripes.' },
     // Mark chaining (maze).
