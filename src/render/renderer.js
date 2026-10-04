@@ -1905,13 +1905,58 @@
       this.touchArbiter.update(e);
     }
 
+    // Returns the arbiter's multi-finger tap classification on the last lift, else null.
     removeTouchPointer(e) {
-      this.touchArbiter.release(e);
+      return this.touchArbiter.release(e);
+    }
+
+    // TUX-020: the single view-scale clamp. Pinch, wheel and the HUD buttons all use it.
+    clampViewScale(next) {
+      const view = (window.Vectura && window.Vectura.VIEW) || {};
+      const lo = Number.isFinite(view.minScale) && view.minScale > 0 ? view.minScale : 0.1;
+      const hi = Number.isFinite(view.maxScale) && view.maxScale > lo ? view.maxScale : 1000;
+      const n = Number(next);
+      if (!Number.isFinite(n)) return lo;
+      return Math.max(lo, Math.min(n, hi));
+    }
+
+    // Zoom about a canvas-local point (default: the canvas centre). A user zoom: the view is no
+    // longer "auto", so a later resize keeps it.
+    zoomBy(factor, anchor) {
+      if (!this.ready || !this.canvas) return false;
+      const rect = this.canvas.getBoundingClientRect();
+      const ax = anchor && Number.isFinite(anchor.x) ? anchor.x : rect.width / 2;
+      const ay = anchor && Number.isFinite(anchor.y) ? anchor.y : rect.height / 2;
+      const wx = (ax - this.offsetX) / this.scale;
+      const wy = (ay - this.offsetY) / this.scale;
+      const next = this.clampViewScale(this.scale * factor);
+      this.offsetX = ax - wx * next;
+      this.offsetY = ay - wy * next;
+      this.scale = next;
+      this.userHasManipulated = true;
+      this.draw();
+      return true;
+    }
+
+    // Fit the artboard to the canvas. This is the "auto" state (userHasManipulated false).
+    fitToView() {
+      if (!this.ready || !this.canvas) return false;
+      this.center();
+      this.userHasManipulated = false;
+      this.draw();
+      return true;
     }
 
     getTouchGesturePair() {
       if (this.touchPointers.size < 2) return null;
       const points = Array.from(this.touchPointers.values());
+      const g = this.touchGesture;
+      if (g && g.ids) {
+        // The pinch belongs to the two fingers that started it; a third finger never joins.
+        const a = this.touchPointers.get(g.ids[0]);
+        const b = this.touchPointers.get(g.ids[1]);
+        return a && b ? [a, b] : null;
+      }
       return [points[0], points[1]];
     }
 
@@ -1923,6 +1968,10 @@
       const distance = Math.max(8, Math.hypot(b.x - a.x, b.y - a.y));
       this.cancelActiveInteractionsForTouchGesture();
       this.touchGesture = {
+        ids: [a.id, b.id],
+        startCenter: center,
+        // TUX-020: nothing moves until the span or centroid change passes the tap slop.
+        live: false,
         startDistance: distance,
         startScale: this.scale,
         worldCenter: {
@@ -1939,11 +1988,20 @@
       const [a, b] = pair;
       const center = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
       const distance = Math.max(8, Math.hypot(b.x - a.x, b.y - a.y));
-      const ratio = distance / Math.max(1e-6, this.touchGesture.startDistance);
-      const nextScale = Math.max(0.1, Math.min(this.touchGesture.startScale * ratio, 20));
+      const g = this.touchGesture;
+      if (!g.live) {
+        const slop = window.Vectura.TouchGestureArbiter.readConfig().TAP_SLOP_PX;
+        const spanMoved = Math.abs(distance - g.startDistance);
+        const centreMoved = Math.hypot(center.x - g.startCenter.x, center.y - g.startCenter.y);
+        if (spanMoved < slop && centreMoved < slop) return false;
+        g.live = true;
+      }
+      const ratio = distance / Math.max(1e-6, g.startDistance);
+      const nextScale = this.clampViewScale(g.startScale * ratio);
       this.scale = nextScale;
-      this.offsetX = center.x - this.touchGesture.worldCenter.x * nextScale;
-      this.offsetY = center.y - this.touchGesture.worldCenter.y * nextScale;
+      this.offsetX = center.x - g.worldCenter.x * nextScale;
+      this.offsetY = center.y - g.worldCenter.y * nextScale;
+      this.userHasManipulated = true;
       this.draw();
       return true;
     }
@@ -2084,6 +2142,7 @@
         this._write3DRotation(layer, drag.spec, restore);
         if (drag.historyPushed && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
           this.app.history.pop();
+          this.app._notifyHistory?.();
         }
         this.engine.generate(layer.id);
         this.app?.ui?.buildControls?.();
@@ -2203,6 +2262,7 @@
           snap.history.forEach((h) => app.history.push(h));
         }
         if (pushed || !same) app.redoStack = snap.redoStack;
+        app._notifyHistory?.();
       }
       // 2. Pen draft and double-click timing.
       this.penDraft = snap.penDraft;
@@ -4564,6 +4624,7 @@
         if (this.app?.history && this._altDupHistoryLen != null
             && this.app.history.length === this._altDupHistoryLen + 1) {
           this.app.history.pop();
+          this.app._notifyHistory?.();
         }
       }
       this._altDragDup = null;
@@ -6898,7 +6959,7 @@
       const wx = (mx - this.offsetX) / this.scale;
       const wy = (my - this.offsetY) / this.scale;
       const zoom = e.deltaY > 0 ? 0.9 : 1.1;
-      const nextScale = Math.max(0.1, Math.min(this.scale * zoom, 1000));
+      const nextScale = this.clampViewScale(this.scale * zoom);
       this.offsetX = mx - wx * nextScale;
       this.offsetY = my - wy * nextScale;
       this.scale = nextScale;
@@ -6920,6 +6981,8 @@
         // first finger's action back or commits it as one history entry.
         const info = this.touchArbiter.down(e);
         if (info.role === 'first') {
+          // TUX-020: exact view numbers; a multi-finger tap restores them untouched.
+          this._tapViewSnap = { scale: this.scale, offsetX: this.offsetX, offsetY: this.offsetY, userHasManipulated: this.userHasManipulated };
           this._touchSnapshot = this._takeTouchSnapshot();
           this._gestureMark = this._touchSnapshot;
         } else if (info.role === 'second') {
@@ -8482,9 +8545,33 @@
       this._gestureMark = null;
     }
 
+    // TUX-020: a two-finger tap undoes, a three-finger tap redoes. The view is put back to the
+    // exact numbers seen at the first touch-down, and no tool sees the lift.
+    _finishMultiTap(e, tap) {
+      const snap = this._tapViewSnap;
+      this._tapViewSnap = null;
+      if (this.touchGesture) this.stopTouchGesture();
+      this.cancelActiveInteractionsForTouchGesture();
+      if (snap) {
+        this.scale = snap.scale;
+        this.offsetX = snap.offsetX;
+        this.offsetY = snap.offsetY;
+        this.userHasManipulated = snap.userHasManipulated;
+      }
+      this._releaseActivePointer(e);
+      this.updateCursor();
+      this.draw();
+      const hud = window.Vectura && window.Vectura.CanvasHud;
+      if (hud && typeof hud.runHistory === 'function') hud.runHistory(tap.count === 3 ? 'redo' : 'undo');
+    }
+
     up(e = {}) {
       if (!this.ready || !this.canvas) return;
-      this.removeTouchPointer(e);
+      const tapResult = this.removeTouchPointer(e);
+      if (tapResult && tapResult.tap) {
+        this._finishMultiTap(e, tapResult);
+        return;
+      }
       if (this.touchGesture) {
         if (this.touchPointers.size >= 2) {
           this.updateTouchGesture();

@@ -15062,3 +15062,60 @@ body.touch-wide-layout:has(#right-pane.pane-collapsed) #right-resizer {
   display: none;
 }
 /* === END TUX-008 === */
+
+/* === TUX-020: canvas HUD ===
+ * Undo / Redo / Zoom Out / Zoom In / Fit for fingers (src/render/canvas-hud.js), mounted bottom-right
+ * in #viewport-container. Only under body.touch-ui; never on a fine pointer. The container ignores
+ * pointers so the canvas stays reachable around it; the buttons take them. 44 px targets.
+ * Phone layout: Undo / Redo live in the header (TUX-001), so only the view buttons show here.
+ * Stays below the modifier column (61), panes (70) and modals (900). */
+.canvas-hud { display: none; }
+body.touch-ui .canvas-hud {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  position: absolute;
+  right: calc(var(--safe-right, 0px) + 8px);
+  bottom: calc(var(--safe-bottom, 0px) + 8px);
+  padding: 2px;
+  background: var(--ui-panel, #252525);
+  border: 1px solid var(--ui-border, #363636);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 40;
+  pointer-events: none;
+}
+.canvas-hud .canvas-hud-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  /* 46 px: the hit-area probe measures 2 px steps, so a 44 px box can read 43. */
+  min-width: 46px;
+  min-height: 46px;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ui-text, #e6e6e6);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.canvas-hud .canvas-hud-btn:active { background: var(--ui-hover, rgba(255, 255, 255, 0.12)); }
+.canvas-hud .canvas-hud-btn:disabled { opacity: 0.4; }
+.canvas-hud .canvas-hud-sep {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: 6px 2px;
+  background: var(--ui-border, #363636);
+}
+/* Phone panes collapse to slivers that overlay the canvas edges; the HUD clears the right one. */
+body.phone-layout.touch-ui .canvas-hud {
+  right: calc(var(--safe-right, 0px) + var(--pane-collapsed-width, 40px) + 8px);
+}
+body.phone-layout .canvas-hud .canvas-hud-history,
+body.phone-layout .canvas-hud .canvas-hud-sep { display: none; }
+/* === END TUX-020 === */

@@ -32,6 +32,11 @@
       // TUX-019: a one-finger drag moves the object once the finger travels this far (CSS px).
       // Touch only; mouse and Apple Pencil keep 0 slop. Q4 owner: Jay.
       touchDragSlopPx: 6,
+      // TUX-020: two-finger tap = undo, three-finger tap = redo. skew = last finger down minus first
+      // finger down; duration = first down to last up; slop = per-finger drift and span change (CSS px).
+      TAP_MAX_SKEW_MS: 150,
+      TAP_MAX_DURATION_MS: 350,
+      TAP_SLOP_PX: 10,
     },
 
     // TUX-023: transform-handle sizes by pointer type (CSS px). Pen equals mouse by rule:

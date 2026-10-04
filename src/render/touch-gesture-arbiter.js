@@ -18,13 +18,24 @@
 (() => {
   const Vectura = (window.Vectura = window.Vectura || {});
 
-  const DEFAULT_CONFIG = Object.freeze({ ARBITRATION_MS: 250, ARBITRATION_SLOP_PX: 10, touchDragSlopPx: 6 });
+  const DEFAULT_CONFIG = Object.freeze({
+    ARBITRATION_MS: 250,
+    ARBITRATION_SLOP_PX: 10,
+    touchDragSlopPx: 6,
+    TAP_MAX_SKEW_MS: 150,
+    TAP_MAX_DURATION_MS: 350,
+    TAP_SLOP_PX: 10,
+  });
   const readConfig = () => {
     const cfg = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.TOUCH_GESTURE) || {};
     const ms = Number(cfg.ARBITRATION_MS);
     const px = Number(cfg.ARBITRATION_SLOP_PX);
     const drag = Number(cfg.touchDragSlopPx);
+    const num = (key) => (Number.isFinite(Number(cfg[key])) && Number(cfg[key]) >= 0 ? Number(cfg[key]) : DEFAULT_CONFIG[key]);
     return {
+      TAP_MAX_SKEW_MS: num('TAP_MAX_SKEW_MS'),
+      TAP_MAX_DURATION_MS: num('TAP_MAX_DURATION_MS'),
+      TAP_SLOP_PX: num('TAP_SLOP_PX'),
       touchDragSlopPx: Number.isFinite(drag) && drag >= 0 ? drag : DEFAULT_CONFIG.touchDragSlopPx,
       ARBITRATION_MS: Number.isFinite(ms) ? ms : DEFAULT_CONFIG.ARBITRATION_MS,
       ARBITRATION_SLOP_PX: Number.isFinite(px) ? px : DEFAULT_CONFIG.ARBITRATION_SLOP_PX,
@@ -85,8 +96,38 @@
     return { rollback: insideWindow, commitFirst: !insideWindow, start: 'pinch' };
   };
 
+  // TUX-020: pure multi-finger tap classifier. Input is the summary the arbiter keeps while
+  // fingers are down. Boundaries are INSIDE the window: skew <= max, duration <= max,
+  // drift < slop and span change < slop. Two fingers = undo, three fingers = redo.
+  const classifyTap = (rec, config) => {
+    const cfg = config || readConfig();
+    const r = rec || {};
+    const no = (reason) => ({ tap: false, reason, count: r.count || 0 });
+    if (r.onlyTouch === false) return no('pointer-type');
+    if (!(r.count === 2 || r.count === 3)) return no('count');
+    if (r.foreign) return no('foreign');
+    if (r.earlyLift) return no('early-lift');
+    if (r.cancelled) return no('cancelled');
+    if (!(r.skewMs <= cfg.TAP_MAX_SKEW_MS)) return no('skew');
+    if (!(r.durationMs <= cfg.TAP_MAX_DURATION_MS)) return no('duration');
+    if (!(r.maxDrift < cfg.TAP_SLOP_PX)) return no('drift');
+    if (!(r.spanDelta < cfg.TAP_SLOP_PX)) return no('span');
+    return { tap: true, reason: 'ok', count: r.count };
+  };
+
   const create = () => {
     const pointers = new Map();
+    const foreign = new Set();
+    // Per-gesture tap summary; exists from the first finger down until the last finger lifts.
+    let tap = null;
+    const span = () => {
+      const pts = [...pointers.values()];
+      let best = 0;
+      for (let i = 0; i < pts.length; i += 1) {
+        for (let j = i + 1; j < pts.length; j += 1) best = Math.max(best, Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y));
+      }
+      return best;
+    };
     const secondFingerListeners = [];
     let gestureActive = false;
 
@@ -106,6 +147,19 @@
         const rec = { id, x, y, downX: x, downY: y, downTime: Number(e.timeStamp) || 0, maxTravel: 0 };
         const before = pointers.size;
         pointers.set(id, rec);
+        if (before === 0) {
+          tap = {
+            firstDown: rec.downTime, lastDown: rec.downTime, lastUp: rec.downTime, maxCount: 1, ups: 0,
+            earlyLift: false, foreign: foreign.size > 0, cancelled: false, spanBase: 0, spanDelta: 0, fingers: new Map([[id, rec]]),
+          };
+        } else if (tap) {
+          // A finger that lands after another already lifted is two single taps, not one gesture.
+          if (tap.ups > 0) tap.earlyLift = true;
+          tap.lastDown = rec.downTime;
+          tap.maxCount = Math.max(tap.maxCount, pointers.size);
+          tap.fingers.set(id, rec);
+          tap.spanBase = span();
+        }
         if (before === 0) return { role: 'first', count: 1 };
         if (before === 1 && !gestureActive) {
           const first = [...pointers.values()].find((p) => p.id !== id);
@@ -128,15 +182,43 @@
         rec.y = e.clientY ?? rec.y;
         const travel = Math.hypot(rec.x - rec.downX, rec.y - rec.downY);
         if (travel > rec.maxTravel) rec.maxTravel = travel;
+        if (tap && pointers.size >= 2) tap.spanDelta = Math.max(tap.spanDelta, Math.abs(span() - tap.spanBase));
         return rec;
       },
 
       // Remove a touch pointer. The latch clears only when the map is empty.
+      // Returns the tap classification on the LAST lift of a multi-finger gesture
+      // ({ tap, reason, count }), else null. The renderer acts on { tap: true }.
       release(e) {
-        if (!isTouch(e)) return;
+        if (!isTouch(e)) return null;
+        const rec = pointers.get(e.pointerId);
+        if (tap && rec) {
+          tap.ups += 1;
+          tap.lastUp = Number(e.timeStamp) || tap.lastUp;
+          if (e.type === 'pointercancel') tap.cancelled = true;
+        }
         pointers.delete(e.pointerId);
-        if (pointers.size === 0) gestureActive = false;
+        if (pointers.size > 0) return null;
+        gestureActive = false;
+        const done = tap;
+        tap = null;
+        if (!done || done.maxCount < 2) return null;
+        let maxDrift = 0;
+        done.fingers.forEach((f) => { maxDrift = Math.max(maxDrift, f.maxTravel); });
+        return classifyTap({
+          count: done.maxCount, skewMs: done.lastDown - done.firstDown, durationMs: done.lastUp - done.firstDown,
+          maxDrift, spanDelta: done.spanDelta, earlyLift: done.earlyLift, foreign: done.foreign,
+          cancelled: done.cancelled, onlyTouch: true,
+        });
       },
+
+      // TUX-020: fingers that landed outside the canvas (HUD, chrome) taint the gesture. The
+      // HUD reports them here; a tap that includes or overlaps a foreign finger never fires.
+      foreignDown(id) {
+        foreign.add(id);
+        if (tap) tap.foreign = true;
+      },
+      foreignUp(id) { foreign.delete(id); },
 
       get(id) { return pointers.get(id) || null; },
 
@@ -146,6 +228,8 @@
       // Drop all state (interface for TUX-018 pointercancel handling).
       abort() {
         pointers.clear();
+        foreign.clear();
+        tap = null;
         gestureActive = false;
       },
 
@@ -162,5 +246,5 @@
     return arbiter;
   };
 
-  Vectura.TouchGestureArbiter = { DEFAULT_CONFIG, INTERACTION_FLAGS, CANCEL_PATHS, readConfig, decide, create };
+  Vectura.TouchGestureArbiter = { DEFAULT_CONFIG, INTERACTION_FLAGS, CANCEL_PATHS, readConfig, decide, classifyTap, create };
 })();
