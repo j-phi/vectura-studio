@@ -1426,7 +1426,7 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
     test('roster shape', () => { expect(mappers).toHaveLength(8); expect(laws).toHaveLength(37); });
     test('72 cells md5 identical', () => {
       mappers.forEach((mapper) => MARK.concat(nonMk).forEach((law) => expect(md5Of('ship', mapper, law)).toBe(md5Of('off', mapper, law))));
-    });
+    }, 900000); // budget only (took 254 s and failed the 180 s pre-push hook under load); same population, same assertion
     test('MUTATION nogate (gate AND segs backstop dropped) changes an mkDashRamp cell; the gate alone is backstopped (vacuous)', async () => {
       const rt = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildBcSource('nogate') } });
       try {
