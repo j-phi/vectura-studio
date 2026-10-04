@@ -454,7 +454,7 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
         byFace: {},
       },
     });
-    expect(sanitized.sceneVersion).toBe(4); // no SCENE_VERSION bump — see plan §2.3
+    expect(sanitized.sceneVersion).toBe(5); // no SCENE_VERSION bump — see plan §2.3
     const migrated = sanitized.styleTable.byObject['obj-1'].params;
     expect(migrated.toneLaw).toBe('ladder');
     expect(migrated.rungMode).toBe('fine');
@@ -667,7 +667,7 @@ function describeSingleParamCluster(label, {
           byFace: {},
         },
       });
-      expect(sanitized.sceneVersion).toBe(4);
+      expect(sanitized.sceneVersion).toBe(5);
       const migrated = sanitized.styleTable.byObject['obj-1'].params;
       expect(migrated.toneLaw).toBe(survivor);
       expect(migrated[key]).toBe(first.value);

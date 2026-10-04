@@ -572,6 +572,20 @@ questions. Do not start these without a decision:
 
 ## Done
 
+- **2026-10-04 — Fill-style review U7: deferred items (branch `3d-scene/fr-u7`, NOT pushed).** (1) **Tone bands**
+  (`toneBands` 2-4, `tierPens`) route any Fill Style's marks to pens by the tone under each mark (curved: face lookup
+  under each point, lines split at band edges; faceted: per-face tone); (2) *Band N pen* / *Tier N pen* pickers (shared
+  `UI.Select`); (3) **Voronoi Web chaining** at emit within one pen width + nearest-end ordering (sphere r45: 3885 ->
+  2401 paths, travel 70404 -> 5342 mm, ink +2.5 %); Maze uses the same ordering; (4) **light-relative hatch angle on
+  curved shapes: NOT done.** The curved hatch angle lives in each chart's own tangent frame (poles, seams). Adding the sun's
+  screen bearing rotates the whole grid and the lines do not follow the sun (tested). The hidden gate stays. A real
+  version needs a per-sample flow field along the projected sun, which is a new Fill Style, not an angle ref;
+  (5) **Stipple Simplify** exposed (Dot only); **Smoothing stays hidden** because it changes nothing on any mark
+  (measured: dot, ring, plus, tick, cross, all unchanged); (6) wireframe **Show hidden folded** into Hidden edges: Dashed
+  with `SCENE_MIGRATIONS[4]` (SCENE_VERSION 5), **Alt fill angle** wired to `altFillAngle` + shared Cross angle, **X-ray
+  Front line** shown greyed on faceted shapes (measured dead there); (7) Help Guide **3D Scene** accordion. Tests:
+  `tests/unit/scene3d-fr-u7-deferred.test.js`, `tests/integration/scene3d-fr-u7-panel.test.js`. Open: a `toneBands`
+  UI note when Tone is off; face-level `showHidden` keeps the old key.
 - **2026-10-04 — Fill-style review U6: artistic controls + pen routing (branch `3d-scene/fr-u6`, NOT
   pushed).** New table `src/config/scene3d-fill-controls.js` (ranges + defaults). Tone **Gamma / Contrast**
   and **Depth fade** at one point (`Regions.shapeTone`, wrapped around `combinedIntensity` in scene3d.js),

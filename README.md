@@ -598,6 +598,14 @@ CI lives in `.github/workflows/test.yml`:
 ## Release Notes
 
 ### 1.4.6
+- **3D Scene — pen routing, chaining and cleanups (U7).** **Tone bands** (2 to 4) split any Fill Style by
+  the tone under each mark and draw band 1 to N with the pens you pick in the *Band pen* rows; the
+  three-pen styles get *Tier N pen* pickers in the same way. The SVG export puts each pen in its own
+  group. **Voronoi Web** gains **Chain edges** (path count and pen travel drop sharply). **Stipple**
+  shows **Simplify** where it changes the dots. **Alt fill** lines gain **Alt angle** and cross at the
+  shared Cross angle. The wireframe *Show hidden* switch is folded into *Edge Styles > Hidden > Occluded*
+  (old documents load unchanged). X-ray *Front line* stays visible on box, plane and solid, greyed with a
+  reason. The Help Guide has a **3D Scene** section (Algorithms tab). Every default is unchanged.
 - **3D Scene — new artistic controls in the Style tab (U6).** *Tone shaping* adds **Gamma** and **Contrast**
   (one curve every Fill Style reads) and **Depth fade** (far surfaces draw lighter: strength, start, full).
   **Wave** gains *Wavelength* and *Crest phase*. **Width Ribbon** gains *Nib angle / Nib contrast* and

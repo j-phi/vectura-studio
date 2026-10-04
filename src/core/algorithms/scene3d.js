@@ -4163,6 +4163,10 @@
           altFillMapper: SURFACE_FILL.has(altRaw) ? altRaw : 'stipple',
           burstCount: clamp(Math.round(finite(s.burstCount, 16)), 6, 48),
           burstCenter: s.burstCenter === 'centroid' ? 'centroid' : 'specular',
+          // U7: Alt fill lines turn with `altFillAngle` and cross at the shared
+          // Cross angle. Absent = the legacy fixed 45 / 135, byte-identical.
+          altAngle: Number.isFinite(s.altFillAngle) ? clamp(s.altFillAngle, 0, 180) : null,
+          altCross: clamp(finite(s.crossAngleDelta, 90), 10, 170),
         };
       };
       // Total tone-band count (ladder length is authoritative) and the highlight
@@ -5532,9 +5536,10 @@
                 } else {
                   const edges = [];
                   for (let k = 0; k < SEG; k++) edges.push([circle[k], circle[(k + 1) % SEG]]);
-                  alines = hatchSegments(edges, 45, spacing);
+                  const altA = hcfg.altAngle != null ? hcfg.altAngle : 45;
+                  alines = hatchSegments(edges, altA, spacing);
                   if (hcfg.altFillMapper === 'crosshatch') {
-                    hatchSegments(edges, 135, spacing).forEach((l) => alines.push(l));
+                    hatchSegments(edges, hcfg.altAngle != null ? altA + hcfg.altCross : 135, spacing).forEach((l) => alines.push(l));
                   }
                 }
                 alines.forEach((line) => {

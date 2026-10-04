@@ -421,8 +421,8 @@ describe('Fill-style review U6 — artistic controls', () => {
       });
     });
 
-    it('does nothing to a law that is not a maze', () => {
-      expect(gen('sphere', 'hatch', 'voronoiWeb', { chainMarks: true }).hash).toBe(BASE['sphere/hatch/voronoiWeb']);
+    it('does nothing to a law that does not chain', () => {
+      expect(gen('sphere', 'hatch', 'turingStripe', { chainMarks: true }).hash).toBe(BASE['sphere/hatch/turingStripe']);
     });
   });
 });

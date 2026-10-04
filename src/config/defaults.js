@@ -2073,7 +2073,7 @@
       //        circumradius (it used to come out 13.1% small). Only OLD (pre-v4)
       //        saved scenes get their stored radius scaled back down to match.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
-      sceneVersion: 4,
+      sceneVersion: 5,
       // sf-w4/C4 — Stroke Fill Style. A variable-width fill style draws its
       // ruling as a real ribbon OUTLINE stroked with the real pen, then fills
       // that outline with a pen-width-pitched continuous stroke; this picks the
@@ -2197,7 +2197,7 @@
       // sanitizeParamTree only walks keys the saved payload actually has, so an
       // old leaf still arrives without a sceneVersion and still migrates.
       // Keep in lockstep with Scene3D.Params.SCENE_VERSION.
-      sceneVersion: 4,
+      sceneVersion: 5,
       // sf-w4/C4 — kept in lockstep with ALGO_DEFAULTS.scene3d above: a
       // standalone object3d leaf delegates to the same scene3d pipeline, so it
       // must resolve the same Stroke Fill Style. Vocabulary + the bucket gate

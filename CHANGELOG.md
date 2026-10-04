@@ -6,6 +6,35 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added (U7 deferred items, fill-style review)
+Defaults reproduce the previous output byte for byte (21 fills pinned before and after; saved documents
+with the old wireframe *Show hidden* load to the same drawing).
+- **Tone bands to pens, for every Fill Style** (`toneBands` 2 to 4, `tierPens` = the pen of each band).
+  Each mark takes the tone of the surface under it (face tone, scaled to the object's own range), band 1 is the
+  lightest. A line that crosses a band edge splits there. Curved shapes look up the face under each point;
+  box, plane and solid use the face tone. The three-pen styles keep their own tiers. Off by default.
+- **Pen pickers.** *Band N pen* rows (Tone bands) and *Tier N pen* rows (Tier pens) choose the pen of each band or
+  tier from the palette. A row left on *Object pen* keeps the object's pen. The SVG export puts each pen in its own group.
+- **Voronoi Web: Chain edges.** Joins edges that meet within one pen width, then orders the polylines by nearest
+  end. Maze Fill uses the same ordering. Sphere r45: 3885 -> 2401 paths, pen-up travel 70404 -> 5342 mm, ink +2.5 %
+  (the joins). Off by default.
+- **Stipple: Simplify.** Shown on a curved shape when Dot is *Dot* (18453 -> 5703 points on a sphere);
+  greyed with a reason for Ring, Plus and Tick. Smoothing stays hidden: it changes nothing on any mark.
+- **Alt fill: Alt angle.** The Alt fill lines turn with `altFillAngle` (default 45). A second layer crosses at the
+  shared `crossAngleDelta` (default 90, so 45 / 135). An absent key keeps the fixed 45 / 135.
+- **Help Guide: 3D Scene** accordion in the Algorithms tab (Type, Fill Style families, Seed, Shadow look, pen
+  routing, artistic controls).
+
+### Changed (U7)
+- **Wireframe *Show hidden* is folded into *Hidden edges: Dashed*.** Both drew the same dashed occluded edges.
+  `SCENE_VERSION` 5: a wireframe style's `showHidden: true` becomes `edgeStyles.hidden.hiddenTreatment: 'dash'`
+  (scene, per object, or on the leaf) and the key is removed. A face-level style keeps the old key.
+- **X-ray *Front line* is visible on a faceted shape**, greyed with a reason (the face path has one line type).
+
+### Not changed (U7)
+- **Light-relative hatch angle on curved shapes** stays hidden. A curved hatch angle turns inside the surface's own
+  grid; adding the sun's bearing tilts the whole grid and does not make the lines follow the sun (tested on a sphere).
+
 ### Added (U6 artistic controls + pen routing, fill-style review)
 Every control below is absent from a saved style until you move it, and every default reproduces the
 previous output byte for byte (40 sphere and box fills pinned before and after, paths and pen metadata).

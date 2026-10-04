@@ -43,7 +43,7 @@
   // ~15.1% on open. SCENE_MIGRATIONS[3] multiplies a pre-v4 buckyball's stored
   // radius by that same measured factor, so it renders BYTE-IDENTICALLY; new
   // buckyballs get the true radius.
-  const SCENE_VERSION = 4;
+  const SCENE_VERSION = 5;
   // Keyed by SOURCE version: SCENE_MIGRATIONS[n] upgrades an n payload to n+1.
   const SCENE_MIGRATIONS = {};
 
@@ -1993,6 +1993,74 @@
     return src;
   };
   SCENE_MIGRATIONS[3] = migrateBuckyballRadius;
+
+  // ── SCENE_MIGRATIONS[4] — wireframe "Show hidden" folds into Hidden edges: Dash (v4 → v5).
+  // Fill-style review U7. A wireframe style's `showHidden: true` and the Edge
+  // Styles `hidden.hiddenTreatment: 'dash'` drew the same dashed occluded edges
+  // (scene3d.js: `thisEdgeHidden = wfShowHidden ? 'dash' : sceneHidden`). There is one
+  // owner now. This step turns a wireframe style's `showHidden: true` into
+  // `edgeStyles.hidden.hiddenTreatment: 'dash'` and removes the key:
+  //   • scene style, every object inherits it -> the scene `edgeStyles.hidden`;
+  //   • scene style, some objects have their own style -> `edgeStylesByObject[id]`
+  //     for each object that inherits it (the others keep dropping hidden edges);
+  //   • an object style (`byObject[id]`) -> `edgeStylesByObject[id]`;
+  //   • an object3d LEAF -> its own `edgeStyles.hidden`.
+  // A face style (byFace) is left alone: the engine still reads `showHidden` there.
+  // Version-gated, so it runs once. Asserted byte-identical by test.
+  const isWfShowHidden = (st) => isObject(st) && st.mapper === 'wireframe'
+    && isObject(st.params) && st.params.showHidden === true;
+  const stripShowHidden = (st) => {
+    const params = { ...st.params };
+    delete params.showHidden;
+    return { ...st, params };
+  };
+  const withHiddenDash = (existing) => {
+    const cur = isObject(existing) ? existing : {};
+    return {
+      ...cur,
+      hidden: { pen: null, weightMm: null, dash: null, ...(isObject(cur.hidden) ? cur.hidden : {}), hiddenTreatment: 'dash' },
+    };
+  };
+  const migrateWireframeShowHidden = (params) => {
+    const src = isObject(params) ? params : {};
+    if (Array.isArray(src.objects)) {
+      const t = isObject(src.styleTable) ? src.styleTable : null;
+      if (!t) return src;
+      const byObj = isObject(t.byObject) ? t.byObject : {};
+      const ids = src.objects.map((o) => (isObject(o) && typeof o.id === 'string' ? o.id : null)).filter(Boolean);
+      const sceneWf = isWfShowHidden(t.scene);
+      const objWf = ids.filter((id) => isWfShowHidden(byObj[id]));
+      if (!sceneWf && !objWf.length) return src;
+      const edgeByObj = { ...(isObject(src.edgeStylesByObject) ? src.edgeStylesByObject : {}) };
+      const out = { ...src };
+      const table = { ...t };
+      if (objWf.length) {
+        const nextBy = { ...byObj };
+        objWf.forEach((id) => {
+          edgeByObj[id] = withHiddenDash(edgeByObj[id]);
+          nextBy[id] = stripShowHidden(byObj[id]);
+        });
+        table.byObject = nextBy;
+      }
+      if (sceneWf) {
+        const inheriting = ids.filter((id) => !isObject(byObj[id]));
+        if (inheriting.length === ids.length) out.edgeStyles = withHiddenDash(src.edgeStyles);
+        else {
+          // The ground record reads the scene style too, so it needs its own entry.
+          inheriting.concat(isObject(byObj.ground) ? [] : ['ground']).forEach((id) => { edgeByObj[id] = withHiddenDash(edgeByObj[id]); });
+        }
+        table.scene = stripShowHidden(t.scene);
+      }
+      out.styleTable = table;
+      if (Object.keys(edgeByObj).length) out.edgeStylesByObject = edgeByObj;
+      return out;
+    }
+    if (isObject(src.style) && isWfShowHidden(src.style)) {
+      return { ...src, style: stripShowHidden(src.style), edgeStyles: withHiddenDash(src.edgeStyles) };
+    }
+    return src;
+  };
+  SCENE_MIGRATIONS[4] = migrateWireframeShowHidden;
 
   // Scene migration chain (keyed on params.sceneVersion), then normalization.
   // Payloads NEWER than SCENE_VERSION load as-is (best-effort forward compat).

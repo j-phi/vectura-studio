@@ -496,7 +496,6 @@
     ],
     wireframe: [
       { key: 'edgeClasses', kind: 'multi', label: 'Edges', ariaLabel: 'Wireframe edge classes', options: EDGE_CLASS_OPTS, default: { silhouette: true, boundary: true, crease: true, interior: true } },
-      { key: 'showHidden', kind: 'toggle', label: 'Show hidden', ariaLabel: 'Dashed occluded edges', default: false },
     ],
     // CtS I5 — depth-slice ('contourSlice') controls: how many cross-section
     // planes, their orientation, and whether back-facing rings are dropped.
@@ -1150,6 +1149,29 @@
   const fillLineControls = (host, comps, opts) => {
     const UI = Vectura.UI;
     const { primitive, mapper, params, write, mkRow } = opts;
+    // U7: a Stipple Dot is a small closed polyline, and the engine already simplifies it on
+    // curved shapes (measured on a sphere: Simplify 1 cuts 18460 points to 5705). Smoothing
+    // changes nothing on any mark (a dot has no sharp corner) and Curves / Fidelity are
+    // dead on Stipple, so only Simplify is offered. Ring, Plus and Tick draw the same
+    // at every Simplify, so the row greys with a reason.
+    if (mapper === 'stipple' && curvesApplyTo(primitive)) {
+      const spS = params || {};
+      const rowS = mkRow || ((label) => labeledRow(host, label));
+      const hdrS = document.createElement('div');
+      hdrS.className = 'vs3-hl-hdr';
+      hdrS.textContent = 'Fill lines';
+      host.appendChild(hdrS);
+      const shape = spS.dotShape || 'dot';
+      const dead = shape !== 'dot';
+      const note = 'Simplify thins the points of a Dot. A ' + shape + ' mark has too few points to thin. Set Dot to Dot.';
+      const ctl = rowS('Simplify');
+      comps.push(UI.Slider(ctl, {
+        value: Number.isFinite(spS.fillSimplify) ? spS.fillSimplify : 0, min: 0, max: 1, step: 0.05, defaultValue: 0,
+        ariaLabel: 'Simplify the stipple dots (reduce points)', onCommit: (v) => { if (!dead) write('fillSimplify', v); },
+      }));
+      if (dead && ctl.parentNode) markRowDisabled(ctl.parentNode, note);
+      return;
+    }
     if (!fillLinesApplyTo(primitive, mapper)) return;
     const sp = params || {};
     const num = (k) => (Number.isFinite(sp[k]) ? sp[k] : FILL_LINE_DEFAULTS[k]);
@@ -1400,6 +1422,11 @@
     if (eff === 'mazeFill') {
       const row = artToggleRow(host, comps, bag, 'chainMarks', write, 'Chain walls', 'Chain maze walls into polylines');
       row.setAttribute('title', 'Joins maze walls that touch into longer polylines. The ink is the same. The pen lifts far less.');
+    }
+    // Voronoi Web: join edges that meet within one pen width (U7).
+    if (eff === 'voronoiWeb') {
+      const row = artToggleRow(host, comps, bag, 'chainMarks', write, 'Chain edges', 'Chain Voronoi edges into polylines');
+      row.setAttribute('title', 'Joins web edges that meet within one pen width into longer polylines, and orders them to cut pen travel. The picture is the same.');
     }
     // Width Ribbon family: nib + taper.
     if (law === 'taperedEnds') {
@@ -1776,6 +1803,8 @@
         },
       }));
       if (altFillOf(rp) === 'lines') {
+        // U7: the lines turn with Alt angle; a second layer crosses at the Cross angle.
+        artSliderRow(o.host, o.comps, rp, 'altFillAngle', o.write, '');
         o.comps.push(UI.SegCtrl(o.row('Layers'), {
           options: [{ value: '1', label: '1' }, { value: '2', label: '2' }],
           value: String(altFillLayersOf(rp)),
@@ -1869,15 +1898,25 @@
       ariaLabel: 'X-ray back-face pen',
       onChange: (v) => o.write('xrayBackPenId', v || null),
     }));
-    if (o.ctx.cls !== 'faceted') {
+    {
       // U5 (R3-2): "Front: Faded" was a dotted front line. Same Line types as Back line.
-      o.comps.push(UI.Select(o.row('Front line'), {
+      // U7: a box, plane or solid draws its near fill through the face path, which never
+      // reads this, so the row stays visible and says why (it used to vanish).
+      const frontNote = o.ctx.cls === 'faceted'
+        ? 'A box, plane or solid draws its near surface through the face path, which has one line type. Use Line type in the Line section. This control shapes the near surface of a curved shape.'
+        : '';
+      const frontCtl = o.row('Front line');
+      o.comps.push(UI.Select(frontCtl, {
         options: LINE_TYPE_OPTIONS,
         value: LINE_TYPE_OPTIONS.some((opt) => opt.value === rp.xrayFrontLineType) ? rp.xrayFrontLineType
           : (rp.xrayFront === 'faded' ? 'dotted' : 'solid'),
         ariaLabel: 'X-ray near surface line type',
-        onChange: (v) => (o.writeMany ? o.writeMany({ xrayFrontLineType: v, xrayFront: undefined }) : o.write('xrayFrontLineType', v)),
+        onChange: (v) => {
+          if (frontNote) return;
+          return (o.writeMany ? o.writeMany({ xrayFrontLineType: v, xrayFront: undefined }) : o.write('xrayFrontLineType', v));
+        },
       }));
+      if (frontNote && frontCtl && frontCtl.parentNode) markRowDisabled(frontCtl.parentNode, frontNote);
     }
   };
 

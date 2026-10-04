@@ -91,9 +91,10 @@ describe('U3 — Object 3D Style tab parity + honest gating', () => {
       expect(rowByLabel(cross.container, 'Dot angle')).toBeTruthy();
     });
 
-    test('wireframe: Edges and Show hidden rows exist', () => {
+    test('wireframe: Edges row exists; Show hidden is folded into Hidden edges (U7)', () => {
       const { container } = mountLeaf('wireframe', {}, 'box');
-      expect(labels(container)).toEqual(expect.arrayContaining(['Edges', 'Show hidden']));
+      expect(labels(container)).toContain('Edges');
+      expect(labels(container)).not.toContain('Show hidden');
     });
 
     test('a fill Type gets the Stroke block (Line / Wobble / Overstroke) and the Highlight block', () => {

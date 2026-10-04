@@ -254,7 +254,7 @@ describe('3D panel — Border lines (Object tab) vs Fill lines (Style tab)', () 
     expect(styleLabels(container)).not.toContain('Fidelity');
   });
 
-  test('stipple draws dots, not lines — the whole group is absent', () => {
+  test('stipple draws dots, not lines — only Simplify is offered (U7), never Curves or Fidelity', () => {
     const { container } = mount({
       objects: [obj(1, 'capsule', CAPSULE)],
       styleTable: {
@@ -265,7 +265,11 @@ describe('3D panel — Border lines (Object tab) vs Fill lines (Style tab)', () 
     });
     selectObject(container, 'obj-1');
     clickTab(container, 'style');
-    expect(styleHeadings(container)).not.toContain('Fill lines');
+    expect(styleHeadings(container)).toContain('Fill lines');
+    const lbls = Array.from(container.querySelectorAll('.vs3-page[data-page="style"] .vs3-row .vs3-lbl')).map((l) => l.textContent);
+    expect(lbls).toContain('Simplify');
+    expect(lbls).not.toContain('Curves');
+    expect(lbls).not.toContain('Fidelity');
   });
 
   test('a REGION contour keeps Curves/Smoothing/Simplify but drops Fidelity (no chart sampling)', () => {

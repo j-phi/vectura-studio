@@ -3086,6 +3086,29 @@
     return out;
   };
 
+  /* Order joined runs so each starts near where the last one ended (greedy nearest
+   * end, reversing a run when its far end is closer). Same ink, shorter pen-up
+   * travel. Only used when `chainMarks` is on. Deterministic: ties keep input order. */
+  const orderRuns = (items) => {
+    if (items.length < 3) return items;
+    const left = items.slice();
+    const out = [left.shift()];
+    while (left.length) {
+      const tail = out[out.length - 1].run[out[out.length - 1].run.length - 1];
+      let bi = 0; let bd = Infinity; let brev = false;
+      for (let i = 0; i < left.length; i++) {
+        const r = left[i].run;
+        const d0 = (r[0].x - tail.x) ** 2 + (r[0].y - tail.y) ** 2;
+        const d1 = (r[r.length - 1].x - tail.x) ** 2 + (r[r.length - 1].y - tail.y) ** 2;
+        if (d0 < bd) { bd = d0; bi = i; brev = false; }
+        if (d1 < bd) { bd = d1; bi = i; brev = true; }
+      }
+      const pick = left.splice(bi, 1)[0];
+      out.push(brev ? { ...pick, run: pick.run.slice().reverse() } : pick);
+    }
+    return out;
+  };
+
   const emit = (o) => {
     const fn = RUN[o.algo];
     if (!fn) return false;
@@ -3111,8 +3134,8 @@
     // U6 `chainMarks`: a maze is a graph of short wall segments that touch at
     // their ends. Collect the runs and join those that share an endpoint into
     // polylines. No point moves, so the ink is the same and only the pen-lifts
-    // change. Voronoi edges stop short of their junctions and are not chained.
-    const chain = (o.chainMarks === true && o.algo === 'mazeFill') ? { runs: [] } : null;
+    // change. A Voronoi web chains too (U7), within one pen width.
+    const chain = (o.chainMarks === true && (o.algo === 'mazeFill' || o.algo === 'voronoiWeb')) ? { runs: [] } : null;
     const realPush = o.pushRun;
     if (chain) o.pushRun = (run, back, idx) => { chain.runs.push({ run, back, idx }); };
     for (let pi = 0; pi < passes.length; pi++) {
@@ -3127,7 +3150,14 @@
     }
     if (chain) {
       o.pushRun = realPush;
-      const joined = chainRuns(chain.runs, (Vectura.SCENE_FILL_CONTROLS || {}).CHAIN_JOIN_MM || 0.01);
+      // A maze wall meets the next at the very same point (0.01 mm). A Voronoi
+      // edge ends where `inv` set the vertex on the surface, up to a pen width
+      // from its neighbour's end, so the web joins within one pen width: the
+      // connector is under the stroke and adds no visible ink (U7).
+      const tol = o.algo === 'voronoiWeb'
+        ? Math.max((Vectura.SCENE_FILL_CONTROLS || {}).CHAIN_JOIN_MM || 0.01, C.PEN)
+        : ((Vectura.SCENE_FILL_CONTROLS || {}).CHAIN_JOIN_MM || 0.01);
+      const joined = orderRuns(chainRuns(chain.runs, tol));
       diag.chained = { before: chain.runs.length, after: joined.length };
       joined.forEach((j) => realPush(j.run, j.back, j.idx));
     }
