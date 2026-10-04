@@ -413,6 +413,7 @@
   const ANGLE_REF_OPTS = [
     { value: 'face', label: 'Face' },
     { value: 'worldUp', label: 'Up' },
+    { value: 'light', label: 'Light' },
   ];
   const DOT_SHAPE_OPTS = [
     { value: 'dot', label: 'Dot' }, { value: 'ring', label: 'Ring' },
@@ -829,13 +830,8 @@
     const writeLawKey = (key, v) => {
       if (typeof o.writeStyleParams === 'function') o.writeStyleParams({ [key]: v });
     };
-    if (lawDialLaw === 'turingStripe') {
-      moduleSliderRow(host, comps, 'Stripe align', {
-        value: Number.isFinite(styleParamBag.stripeAlign) ? styleParamBag.stripeAlign : 0,
-        min: 0, max: 1.2, step: 0.05, defaultValue: 0, ariaLabel: 'Stripe alignment',
-        onCommit: (v) => writeLawKey('stripeAlign', Math.round(v * 100) / 100),
-      });
-    }
+    // U6 — the artistic rows of this Fill Style (nib, taper, wave, Turing, maze, tier pens).
+    renderLawArtRows(host, comps, o, styleParamBag, law, lawDialLaw, writeLawKey);
     if (lawDialLaw === 'mkDotScreen' && (o.mapper === 'hatch' || o.mapper === 'crosshatch' || o.mapper === 'contour')) {
       moduleSliderRow(host, comps, 'Dot size', {
         value: Number.isFinite(styleParamBag.dotSize) ? styleParamBag.dotSize : 0.7,
@@ -1001,6 +997,7 @@
     const lbl = document.createElement('label');
     lbl.className = 'vs3-lbl';
     lbl.textContent = label;
+    lbl.title = label; // full text on hover when a long label is clipped
     row.appendChild(lbl);
     const ctl = document.createElement('div');
     ctl.className = 'vs3-ctl';
@@ -1326,6 +1323,143 @@
   const LEAF_NATIVE_KEYS = new Set(['fillDensity', 'fillAngle', 'toneLaw', 'facetMinRulings',
     'sliceCount', 'sliceVisibility', 'sliceRotate', 'sliceTilt', 'sliceEndOverlap']);
 
+  // ── U6 — artistic controls ─────────────────────────────────────────────────
+  // Ranges and defaults come from Vectura.SCENE_FILL_CONTROLS (src/config/
+  // scene3d-fill-controls.js). A row writes its key only when the user moves it,
+  // so an untouched style stays byte-identical. A row that cannot change the
+  // drawing here is greyed with the (i) reason; a row of a Fill Style that is not
+  // selected is not drawn at all.
+  const FILL_CTL = () => Vectura.SCENE_FILL_CONTROLS;
+  const ART_NOTES = {
+    needsCurved: 'This control shapes the ribbon of a curved shape. A box, plane or solid uses a different engine and ignores it.',
+    needsNib: 'Nib angle and contrast shape the Calligraphic nib width. Set Width from to Calligraphic nib angle and Ends to Hard.',
+    needsTaper: 'Taper controls shape tapered ends. Set Ends to Tapered.',
+    rankGraded: 'A box, plane or solid in Ladder grades each face by its rank among the faces. A curve that keeps the order cannot change that. Use a curved shape or another Fill Style.',
+    toneNone: 'This Fill Style has no tone to shape. It draws every ruling the same.',
+    toneOff: 'Tone is off for this scene, so there is no shading to shape. Turn Tone on in the Scene tab.',
+    needsTiers: 'Tier pens apply to the three-pen Fill Styles only.',
+  };
+  const artRound = (key, v) => {
+    const st = FILL_CTL().CONTROLS[key].step;
+    const inv = st >= 1 ? 1 : Math.round(1 / st);
+    return Math.round(v * inv) / inv;
+  };
+  // One slider row bound to a fill-control key. `bag` is the live style params.
+  const artSliderRow = (host, comps, bag, key, write, note, label) => {
+    const d = FILL_CTL().CONTROLS[key];
+    const row = moduleSliderRow(host, comps, label || d.label, {
+      value: Number.isFinite(bag[key]) ? bag[key] : d.default,
+      min: d.min, max: d.max, step: d.step, defaultValue: d.default, ariaLabel: d.aria || d.label,
+      onCommit: (v) => { if (!note) write(key, artRound(key, v)); },
+    });
+    if (d.help && !note) row.setAttribute('title', d.help);
+    if (note) markRowDisabled(row, note);
+    return row;
+  };
+  const artSelectRow = (host, comps, bag, key, write, note) => {
+    const UI = Vectura.UI;
+    const d = FILL_CTL().CONTROLS[key];
+    const ctl = labeledRow(host, d.label);
+    comps.push(UI.Select(ctl, {
+      options: d.options, value: typeof bag[key] === 'string' ? bag[key] : d.default, ariaLabel: d.label,
+      onChange: (v) => { if (!note) write(key, v); },
+    }));
+    if (note) markRowDisabled(ctl.parentNode, note);
+    return ctl.parentNode;
+  };
+  const artToggleRow = (host, comps, bag, key, write, label, aria) => {
+    const UI = Vectura.UI;
+    const ctl = labeledRow(host, label);
+    comps.push(UI.SegCtrl(ctl, {
+      options: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
+      value: bag[key] === true ? 'on' : 'off', ariaLabel: aria || label,
+      onChange: (v) => write(key, v === 'on'),
+    }));
+    return ctl.parentNode;
+  };
+
+  // Rows that belong to one Fill Style. `law` is the survivor id, `eff` the engine
+  // id after the sub-controls. `write(key, value)` commits one key.
+  const renderLawArtRows = (host, comps, o, bag, law, eff, write) => {
+    const FC = FILL_CTL();
+    if (!FC) return;
+    const prim = o.primitiveMode;
+    const cls = primClassOf(prim);
+    const faceted = cls === 'faceted';
+    // Turing stripes: alignment, maturity, scale (mono, any shape).
+    if (eff === 'turingStripe') {
+      artSliderRow(host, comps, bag, 'stripeAlign', write, '');
+      artSliderRow(host, comps, bag, 'patternMaturity', write, '');
+      artSliderRow(host, comps, bag, 'stripeScale', write, '');
+    }
+    // Maze: join touching walls into polylines.
+    if (eff === 'mazeFill') {
+      const row = artToggleRow(host, comps, bag, 'chainMarks', write, 'Chain walls', 'Chain maze walls into polylines');
+      row.setAttribute('title', 'Joins maze walls that touch into longer polylines. The ink is the same. The pen lifts far less.');
+    }
+    // Width Ribbon family: nib + taper.
+    if (law === 'taperedEnds') {
+      const nibLive = eff === 'nibAngle';
+      const taperLive = eff === 'taperedEnds';
+      const gate = faceted ? ART_NOTES.needsCurved : '';
+      artSliderRow(host, comps, bag, 'nibAngleDeg', write, gate || (nibLive ? '' : ART_NOTES.needsNib));
+      artSliderRow(host, comps, bag, 'nibContrast', write, gate || (nibLive ? '' : ART_NOTES.needsNib));
+      artSliderRow(host, comps, bag, 'taperLength', write, gate || (taperLive ? '' : ART_NOTES.needsTaper));
+      artSliderRow(host, comps, bag, 'taperTipWidth', write, gate || (taperLive ? '' : ART_NOTES.needsTaper));
+      artSliderRow(host, comps, bag, 'taperSoftness', write, gate || (taperLive ? '' : ART_NOTES.needsTaper));
+    }
+    // Wave family.
+    if (law === 'ampSpacing') {
+      const gate = faceted ? ART_NOTES.needsCurved : '';
+      artSliderRow(host, comps, bag, 'waveLength', write, gate);
+      artSelectRow(host, comps, bag, 'waveCrest', write, gate);
+    }
+    // Three-pen laws: send tier k to pen k of this document's palette.
+    if (FS_PEN_LAWS().indexOf(eff) !== -1) {
+      const pens = (Vectura.SETTINGS && Array.isArray(Vectura.SETTINGS.pens)) ? Vectura.SETTINGS.pens : [];
+      const on = Array.isArray(bag.tierPens) && bag.tierPens.some((v) => v);
+      const ctl = labeledRow(host, 'Tier pens');
+      comps.push(Vectura.UI.SegCtrl(ctl, {
+        options: [{ value: 'off', label: 'One pen' }, { value: 'on', label: 'Pens 1-3' }],
+        value: on ? 'on' : 'off', ariaLabel: 'Draw tone tiers with pens 1 to 3 of the palette',
+        onChange: (v) => {
+          if (faceted) return;
+          if (v === 'on') write('tierPens', pens.slice(0, 3).map((pn) => pn.id));
+          else write('tierPens', null);
+        },
+      }));
+      if (faceted) markRowDisabled(ctl.parentNode, ART_NOTES.needsCurved);
+      else {
+        ctl.parentNode.setAttribute('title', pens.length < 2
+          ? 'Add pens to the palette first. Tier k draws with pen k of the palette.'
+          : 'Tier 1 (fine), 2 (medium) and 3 (broad) draw with pens 1, 2 and 3 of the palette. Each pen carries its own width.');
+      }
+    }
+  };
+  const FS_PEN_LAWS = () => ((Vectura.STROKE_FILL_STYLES && Vectura.STROKE_FILL_STYLES.PEN_LAWS)
+    || ['penInterleave', 'penStipple', 'penReserve', 'penCross', 'penPitchMatch', 'penFacing']);
+
+  // Tone shaping + depth fade for every Fill Style (Style tab, below the mapper rows).
+  const renderArtisticRows = (o) => {
+    const FC = FILL_CTL();
+    if (!FC || !FILL_MAPPERS.has(o.ctx.mapper)) return;
+    const bag = o.sp || {};
+    const noTone = o.ctx.law === 'none' ? ART_NOTES.toneNone : '';
+    if (o.header) sectionHeader(o.host, 'Tone shaping');
+    // A faceted Ladder hatch grades each face by RANK, so a monotone curve cannot change it.
+    const rankOnly = (o.ctx.cls === 'faceted' && !o.ctx.mono && o.ctx.survivor === 'ladder')
+      ? ART_NOTES.rankGraded : '';
+    artSliderRow(o.host, o.comps, bag, 'toneGamma', o.write, noTone || rankOnly);
+    artSliderRow(o.host, o.comps, bag, 'toneContrast', o.write, noTone || rankOnly);
+    const fade = artToggleRow(o.host, o.comps, bag, 'depthFade', o.write, 'Depth fade', 'Depth fade: far surfaces draw lighter');
+    if (noTone) markRowDisabled(fade, noTone);
+    if (bag.depthFade === true) {
+      artSliderRow(o.host, o.comps, bag, 'depthFadeStrength', o.write, noTone);
+      artSliderRow(o.host, o.comps, bag, 'depthFadeNear', o.write, noTone);
+      artSliderRow(o.host, o.comps, bag, 'depthFadeFar', o.write, noTone);
+    }
+  };
+
   const moduleSliderRow = (host, comps, label, props) => {
     const ctl = labeledRow(host, label);
     comps.push(Vectura.UI.Slider(ctl, props));
@@ -1433,6 +1567,7 @@
     const descs = (MAPPER_CONTROLS[o.ctx.mapper] || []).concat(EXTRA_MAPPER_ROWS[o.ctx.mapper] || []);
     descs.forEach((d) => { if (!skip || !skip.has(d.key)) renderDescriptorRow(d, o); });
     if (FILL_MAPPERS.has(o.ctx.mapper)) renderDescriptorRow(D_TONE_QUANT, o);
+    renderArtisticRows(o);
   };
 
   // U3 — which fills READ the scene Tone section (measured, r3 §2c, object-
