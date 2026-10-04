@@ -25,6 +25,10 @@
  *   onCommit(value) — fires on release (change/pointerup/blur).
  *   defaultValue — optional; double-click on the track resets to it
  *               (fires onChange + onCommit). Dual mode takes {min, max}.
+ *               On touch, a long-press on the control's label opens "Reset to default"
+ *               (TUX-038, UI.attachResetHold). The label is `labelEl`, or the host's only
+ *               `.control-label`.
+ *   labelEl   — optional element; the long-press reset target.
  *   format(v) — optional chip-text override (e.g. unit suffixes).
  *   parse(text) — optional chip-edit parser paired with format.
  *
@@ -45,6 +49,11 @@
     const dot = txt.indexOf('.');
     return dot < 0 ? 0 : txt.length - dot - 1;
   };
+
+  // TUX-038: the iOS decimal pad has no minus key. A negative-capable chip (min < 0) and a dual chip
+  // (its text holds a dash and two numbers) use the full keyboard. The legacy rangeDual editor in
+  // algo-config-panel.js applies the same rule per input (see attachValueEditor there).
+  const chipInputMode = (p) => ((p.dual || (Number.isFinite(p.min) && p.min < 0)) ? 'text' : 'decimal');
 
   const create = (host, initialProps = {}) => {
     let props = Object.assign({
@@ -71,7 +80,8 @@
     if (props.showChip) {
       chip = document.createElement('input');
       chip.type = 'text';
-      chip.inputMode = 'decimal';
+      chip.inputMode = chipInputMode(props);
+      chip.enterKeyHint = 'done';
       chip.className = props.variant === 'pen' ? 'pen-w' : 'slider-val';
       chip.setAttribute('aria-label', `${props.ariaLabel || 'Value'}: numeric`);
       el.appendChild(chip);
@@ -188,9 +198,9 @@
       fire('onCommit', value);
     };
 
-    const onResetDblClick = (event) => {
+    // One reset for the mouse (dblclick) and for touch (label long-press menu, TUX-038).
+    const doReset = () => {
       if (props.defaultValue == null) return;
-      event.preventDefault();
       setValue(props.defaultValue);
       if (props.dual) {
         if (motion.triggerThumbRelease) motion.triggerThumbRelease(sliderMax);
@@ -199,6 +209,11 @@
       }
       if (motion.triggerSliderPulse) motion.triggerSliderPulse(wrap);
       fire('onCommit', props.dual ? { min: value.min, max: value.max } : value);
+    };
+    const onResetDblClick = (event) => {
+      if (props.defaultValue == null) return;
+      event.preventDefault();
+      doReset();
     };
 
     const offs = [];
@@ -212,12 +227,24 @@
       bind(sliderMax, 'input', onDualInput);
       bind(sliderMin, 'change', onDualChange(sliderMin));
       bind(sliderMax, 'change', onDualChange(sliderMax));
+      // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
       bind(sliderMin, 'dblclick', onResetDblClick);
       bind(sliderMax, 'dblclick', onResetDblClick);
     } else {
       bind(slider, 'input', onSingleInput);
       bind(slider, 'change', onSingleChange);
+      // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
       bind(slider, 'dblclick', onResetDblClick);
+    }
+    if (typeof UI.attachResetHold === 'function') {
+      const labelEl = UI.findResetLabel ? UI.findResetLabel(host, props.labelEl) : props.labelEl;
+      if (labelEl) {
+        offs.push(UI.attachResetHold(labelEl, {
+          getDefault: () => props.defaultValue,
+          reset: doReset,
+          label: props.ariaLabel,
+        }));
+      }
     }
     if (chip) {
       bind(chip, 'keydown', onChipKey);
@@ -256,6 +283,7 @@
           merged.precision = inferPrecision(newProps.step);
         }
         // Re-attach inputs' min/max/step if changed.
+        if (chip && newProps && newProps.min != null) chip.inputMode = chipInputMode(merged);
         if (newProps && (newProps.min != null || newProps.max != null || newProps.step != null)) {
           const list = props.dual ? [sliderMin, sliderMax] : [slider];
           list.forEach((s) => {

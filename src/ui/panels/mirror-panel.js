@@ -1730,6 +1730,8 @@
           value: Number.isFinite(cur) ? cur : (typeDefaults[param] ?? min),
           min, max, step,
           ariaLabel: host.dataset.label || param,
+          // TUX-038: the row's label is the touch reset target (long-press).
+          labelEl: host.closest('.mp-ctrl-grp')?.querySelector('.mp-ctrl-lbl') || undefined,
           defaultValue: param in typeDefaults ? typeDefaults[param] : undefined,
           format: fmt ? fmt.format : undefined,
           parse: fmt ? fmt.parse : undefined,
@@ -1893,6 +1895,7 @@
         };
         dial.addEventListener('pointerup', end);
         dial.addEventListener('pointercancel', end);
+        // touch-alt: TUX-038 the row's label long-press resets the same param (UI.Slider labelEl)
         dial.addEventListener('dblclick', (e) => {
           e.preventDefault();
           if (!slider || slider.disabled) return;

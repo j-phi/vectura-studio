@@ -1645,8 +1645,7 @@
             if (def.key === 'type') this.buildControls();
             else maybeRebuildNoiseControls();
           };
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
+          const resetSelect = () => {
             const defaultVal = getNoiseDefault(idx, def.key);
             const fallback = def.options?.[0]?.value;
             const next = defaultVal !== undefined ? defaultVal : fallback;
@@ -1673,7 +1672,10 @@
             this.updateFormula();
             if (def.key === 'type') this.buildControls();
             else maybeRebuildNoiseControls();
-          });
+          };
+          // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
+          input.addEventListener('dblclick', (e) => { e.preventDefault(); resetSelect(); });
+          if (UI.attachResetHold) UI.attachResetHold(control.querySelector('.control-label'), { reset: resetSelect, label: getDisplayLabel(def) });
         }
         return control;
       };
@@ -1776,6 +1778,7 @@
         // the noise card is off, matching the old behavior.)
         const cbInput = toggle.el.querySelector('input[type="checkbox"]');
         if (cbInput) {
+          // touch-ok: TUX-038 two-state toggle, a tap is the reset
           cbInput.addEventListener('dblclick', (e) => {
             e.preventDefault();
             if (cbInput.disabled) return;

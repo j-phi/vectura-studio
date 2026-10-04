@@ -404,6 +404,7 @@
       return;
     }
     if (key === 'rename') {
+      if (typeof ui.startLayerRename === 'function' && ui.startLayerRename(layer.id)) return;
       const card = document.querySelector(`[data-layer-id="${layer.id}"] .lvl-name, [data-lvl-id="${layer.id}"] .lvl-name`);
       if (card && typeof card.focus === 'function') {
         card.focus();
@@ -677,6 +678,7 @@
     bind(deps) { DEPS = deps || {}; },
     attach,
     openForLayer,
+    placeForTouch: _placeForTouch, // TUX-038: shared by the reset-hold menu
     rowActions,
     // Test helpers (not for production code paths).
     _itemsFor,

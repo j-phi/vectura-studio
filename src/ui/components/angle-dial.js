@@ -18,7 +18,9 @@
  *   onChange(v) — fires on every drag step.
  *   onCommit(v) — fires on pointerup / Enter.
  *   allowOverflow — boolean. Default false (wraps).
- *   defaultValue — optional; double-click on the dial resets to it.
+ *   defaultValue — optional; double-click on the dial resets to it. On touch, a long-press on
+ *                 the row's label opens "Reset to default" (TUX-038, UI.attachResetHold).
+ *   labelEl     — optional; the long-press target. Default: the host's only `.control-label`.
  *
  * The dial SVG itself is keyboard-operable: arrows nudge (Shift ×10),
  * Home returns to 0°.
@@ -263,12 +265,16 @@
       }
     };
 
-    const onDialDblClick = (event) => {
+    const doReset = () => {
       if (props.defaultValue == null) return;
-      event.preventDefault();
       setValue(props.defaultValue);
       triggerWave();
       fire('onCommit', value);
+    };
+    const onDialDblClick = (event) => {
+      if (props.defaultValue == null) return;
+      event.preventDefault();
+      doReset();
     };
 
     const offs = [];
@@ -281,7 +287,18 @@
     bind(svg, 'pointerup', onPointerUp);
     bind(svg, 'pointercancel', onPointerUp);
     bind(svg, 'keydown', onDialKey);
+    // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
     bind(svg, 'dblclick', onDialDblClick);
+    if (typeof UI.attachResetHold === 'function') {
+      const labelEl = UI.findResetLabel ? UI.findResetLabel(host, props.labelEl) : props.labelEl;
+      if (labelEl) {
+        offs.push(UI.attachResetHold(labelEl, {
+          getDefault: () => props.defaultValue,
+          reset: doReset,
+          label: props.ariaLabel,
+        }));
+      }
+    }
     bind(input, 'keydown', onInputKey);
     bind(input, 'blur', onInputBlur);
 
