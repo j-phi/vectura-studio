@@ -14260,7 +14260,7 @@ body:not(.mobile-layout) .workspace-shell:has(> #tool-bar.toolbar-docked-top) > 
  * the real chrome, and on short viewports tighten the Layers tab above the draw-order band so the 44px
  * slider and its thumb are on screen without scrolling. */
 @media (pointer: coarse) and (min-width: 641px) {
-  body.mobile-layout .pane { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+  body.mobile-layout .pane { bottom: calc(84px + var(--safe-bottom, 0px)); }
 }
 @media (pointer: coarse) and (max-height: 520px) {
   /* Pull the 44px slider up above the modifier bar: drop the idle status strip and the head gap.
@@ -14754,10 +14754,10 @@ body.touch-ui .modal-card .color-modal { padding-top: 4px; }
 /* Phone: the pop-out is a full-screen sheet inside the safe area. The header stays pinned; the body scrolls. */
 body.phone-layout #petal-designer-window.petal-designer-window:not(.petal-designer-inline) {
   position: fixed;
-  top: var(--safe-top, env(safe-area-inset-top, 0px));
-  right: var(--safe-right, env(safe-area-inset-right, 0px));
-  bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
-  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  top: var(--safe-top, 0px);
+  right: var(--safe-right, 0px);
+  bottom: var(--safe-bottom, 0px);
+  left: var(--safe-left, 0px);
   width: auto;
   height: auto;
   max-width: none;

@@ -291,6 +291,13 @@ test.describe('TUX-039 touch tooltips', () => {
     expect(sel.link, '#tk-link exists').toBe(true);
     expect(sel.linkLabel, '#tk-link aria-label (also when hidden)').toBeTruthy();
     if (!sel.chip) return;
+    // Tablet drawer layouts (shell lane, TUX-008) put a modal backdrop over the canvas and the
+    // context bar while a pane is open. Close the drawer the way a user would before holding the chip.
+    await page.evaluate(() => {
+      const b = document.getElementById('mobile-pane-backdrop');
+      if (b && b.classList.contains('visible')) b.click();
+    });
+    await sleep(400);
     const cc = await page.evaluate(() => {
       const c = document.querySelector('[data-test-chip="1"]');
       const r = c.getBoundingClientRect();

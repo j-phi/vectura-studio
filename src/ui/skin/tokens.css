@@ -144,7 +144,7 @@
  * 100vh is the LARGE viewport on iOS Safari (URL bar collapsed), so bottom chrome sized from it
  * can sit under the toolbar. --app-vh is the dynamic viewport where supported. Use it for every
  * full-height calc; never write a bare 100vh in the skin (tests/unit/touch-shell-vh.test.js). */
-:root { --app-vh: 100vh; }
+:root { --app-vh: 100vh; /* touch-ok: TUX-004 no-dvh fallback; @supports below redefines it as 100dvh */ }
 @supports (height: 100dvh) {
   :root { --app-vh: 100dvh; }
 }
