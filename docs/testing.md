@@ -66,7 +66,10 @@ WebKit simulation does not prove (these belong to the real-device run, requireme
 - System callouts (text selection, image and link menus).
 - `contextmenu` and `dblclick` synthesis from real touches.
 - Trusted multi-touch (native pinch zoom and scroll).
+- Native one-finger default actions (tap to click, container scroll, range drag) — Blink-only proof.
 - Real performance (GPU, memory, frame rate).
+
+The real-device run and the release gate are in `docs/touch-audit/device-checklist.md`. `tests/unit/touch-device-checklist.test.js` checks that file.
 
 ## Touch Target Audit Ratchet (TUX-058)
 `tests/e2e/touch/target-audit.spec.js` measures touch targets and layout in every touch project and compares them to `tests/e2e/touch/target-baseline.json`. The baseline only goes down.

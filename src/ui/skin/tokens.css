@@ -184,3 +184,11 @@
   --touch-slider-track-pen: 3px;
 }
 /* === END TUX-043 tokens === */
+
+/* === TUX-026: floating sheet stacking ===
+ * The phone Petal Designer sheet sits above the mobile drawer, its backdrop, #touch-modifier-bar and
+ * .header-main (z 200-220) and below #modal-overlay (900) and .vectura-modal-backdrop (1000). */
+:root {
+  --z-floating-sheet: 850;
+}
+/* === END TUX-026 tokens === */

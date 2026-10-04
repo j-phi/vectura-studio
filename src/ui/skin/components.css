@@ -4031,7 +4031,6 @@
 @media (pointer: coarse) {
   .vectura-modal-backdrop { align-items: flex-end !important; }
   .vectura-modal { width: 100%; max-width: 100%; border-radius: 12px 12px 0 0; }
-  .preset-save-footer { order: -1; flex-direction: row-reverse; }
 }
 
 /* ── Snapping feedback (auto-changed chips + transient line) ───────────────── */
@@ -14456,6 +14455,7 @@ body.phone-layout #settings-panel {
 }
 /* === END TUX-046 === */
 
+<<<<<<< HEAD
 /* === TUX-002: fixed, non-scrolling shell ===
  * The app is a fixed-size shell. The page itself must never scroll, rubber-band or pull to refresh.
  * body IS the app wrapper (the Tailwind h-screen class was removed from index.html). Height comes
@@ -14718,3 +14718,91 @@ body.phone-layout.phone-short .pane.pane-force-open {
   bottom: calc(var(--safe-bottom, 0px) + var(--tux7-hud-h));
 }
 /* === END TUX-007 === */
+=======
+/* === TUX-046 (integration fix): colour modal clears the close hit area ===
+   The close ::before is 44px around a 24px button, so it reaches 10px below the header.
+   The positioned .color-sv-wrapper started 8px below and won the hit test for 2px.
+   Pad the colour body so the picker starts outside the close target. */
+body.touch-ui .modal-card .color-modal { padding-top: 4px; }
+/* === END TUX-046 (integration fix) === */
+
+/* === TUX-047: touch zoom surfaces === */
+.export-preview-canvas-wrap[data-touch-zoom] {
+  touch-action: none;
+}
+/* === END TUX-047 === */
+
+/* === TUX-026: Petal Designer touch sizing and phone sheet ===
+ * Selectors carry the [data-ui-skin] prefix plus .petal-designer-window so they beat the skin rule
+ * `[data-ui-skin] .petal-tool-btn, .petal-close, ... { height: 26px; min-width: 26px }` (specificity 0,2,0).
+ * Coarse sizing keys on the pointer type, never on width. The phone sheet keys on the layout classifier
+ * class (TUX-006). Desktop (fine pointer, non-phone) is unchanged. */
+@media (pointer: coarse) {
+  [data-ui-skin] .petal-designer-window .petal-tool-btn,
+  [data-ui-skin] .petal-designer-window .petal-close,
+  [data-ui-skin] .petal-designer-window .petal-popout,
+  [data-ui-skin] .petal-designer-window .petal-popin,
+  [data-ui-skin] .petal-designer-window .petal-copy-btn {
+    min-width: var(--touch-target-min, 44px);
+    min-height: var(--touch-target-min, 44px);
+    height: auto;
+  }
+  [data-ui-skin] .petal-designer-window .petal-designer-actions { gap: 6px; }
+  /* A finger drags the pop-out window by its header (not on the phone sheet, which cannot move). */
+  body:not(.phone-layout) .petal-designer-window:not(.petal-designer-inline) .petal-designer-header {
+    touch-action: none;
+  }
+}
+/* Phone: the pop-out is a full-screen sheet inside the safe area. The header stays pinned; the body scrolls. */
+body.phone-layout #petal-designer-window.petal-designer-window:not(.petal-designer-inline) {
+  position: fixed;
+  top: var(--safe-top, env(safe-area-inset-top, 0px));
+  right: var(--safe-right, env(safe-area-inset-right, 0px));
+  bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
+  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  z-index: var(--z-floating-sheet, 850);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.phone-layout #petal-designer-window .petal-designer-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+/* === END TUX-026 === */
+
+/* === TUX-049: Save Preset sheet touch sizing + keyboard lift ===
+ * 046 owns the sheet frame and the lift (html.kb-open pads the backdrop by --kb-inset). This block
+ * only sizes the controls and keeps the actions row BELOW the name field, pinned to the bottom of the
+ * scrolling body (the old order:-1 rule is deleted). Cancel stays first in the DOM, Save is last. */
+@media (pointer: coarse) {
+  body.touch-ui .vectura-modal .preset-save-footer.vt-sheet__footer {
+    order: 0;
+    flex-direction: row;
+    justify-content: flex-end;
+    top: auto;
+    bottom: 0;
+    padding: 8px 0 0;
+  }
+  .preset-save-footer button { min-height: 44px; min-width: 44px; padding-inline: 16px; }
+  /* Children keep their size and the body scrolls (flex-shrink squeezed the mode buttons to 33px). */
+  .preset-save-body { scroll-padding-bottom: 64px; }
+  .preset-save-body > * { flex-shrink: 0; }
+  .preset-save-input { height: 44px; font-size: 16px; }
+  .preset-save-seg .seg-opt { min-height: 44px; }
+  .preset-save-body select.ctrl-sel { min-height: 44px; font-size: 16px; }
+  /* The Overwrite confirmation Dialog shares these buttons. */
+  .vectura-dialog-footer button { min-height: 44px; min-width: 44px; }
+  /* iPhone landscape with the keyboard open: only the name field, mode and actions stay. */
+  .preset-save-sheet.is-kb-short .preset-save-preview,
+  .preset-save-sheet.is-kb-short .preset-save-note { display: none; }
+}
+/* === END TUX-049 === */
+>>>>>>> touch/integration

@@ -98,7 +98,7 @@ test.describe('TUX-042 text-entry font size', () => {
     await page.evaluate(() => {
       const sp = document.getElementById('settings-panel');
       sp.classList.add('open');
-      sp.querySelectorAll('[data-sect-body]').forEach((b) => { b.style.maxHeight = 'none'; b.style.overflow = 'visible'; });
+      sp.querySelectorAll('[data-sect-body]').forEach((b) => { b.style.maxHeight = 'none'; b.style.overflow = 'visible'; b.style.visibility = ''; });
     });
     await page.evaluate(() => {
       document.querySelector('.right-pane-tab[data-tab=pens]')?.click();

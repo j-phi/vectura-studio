@@ -78,7 +78,18 @@
     return moved;
   };
 
-  const editableFocused = () => isEditable(document.activeElement);
+  // iOS keeps the keyboard up when a finger taps a button, but engines that move focus to the
+  // button (and the keyboard-less case) would read "no editable focused" and drop the inset in the
+  // middle of the tap, sliding a sheet out from under the finger (TUX-049). A control inside the
+  // same dialog as the field that just lost focus keeps the inset until focus leaves the dialog.
+  let lastEditable = null;
+  const dialogOf = (el) => (el && el.closest ? el.closest('.vectura-modal') : null);
+  const editableFocused = () => {
+    const a = document.activeElement;
+    if (isEditable(a)) { lastEditable = a; return true; }
+    const d = dialogOf(a);
+    return !!(d && lastEditable && lastEditable.isConnected && dialogOf(lastEditable) === d);
+  };
 
   const recompute = () => {
     const v = vv();
@@ -163,9 +174,14 @@
   // opts.scroll also fires on visual-viewport pans (TUX-015 tools drawer).
   const onViewportChange = (cb, opts) => {
     const v = vv();
-    if (!v || !v.addEventListener || typeof cb !== 'function') return;
+    if (!v || !v.addEventListener || typeof cb !== 'function') return () => {};
     v.addEventListener('resize', cb);
     if (opts && opts.scroll) v.addEventListener('scroll', cb);
+    // Returns an unsubscribe so a floating window can stop listening when it closes (TUX-026).
+    return () => {
+      v.removeEventListener('resize', cb);
+      if (opts && opts.scroll) v.removeEventListener('scroll', cb);
+    };
   };
 
   Vectura.KeyboardInset = {

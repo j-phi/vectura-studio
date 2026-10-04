@@ -41,7 +41,7 @@ Each requirement's DoD = **D1–D9 below** + the requirement-specific items list
 - [ ] **D5 Live verification.** The change was observed in the running app at each named viewport with finger input (Playwright touch emulation; chrome-devtools MCP only if no other session owns it). Screenshots are saved to `docs/touch-audit/evidence/after/TUX-###/<viewport>.png`. If you could not verify, the report starts with "NOT visually verified".
 - [ ] **D6 Desktop parity.** `desktop-chromium` and `desktop-visual-chromium` pass. A 1600×1000 mouse screenshot of the touched surface shows no change, unless the requirement says otherwise. Each `pointerType`-branched change has a test that proves mouse behavior is unchanged.
 - [ ] **D7 Docs.** `CHANGELOG.md` (Unreleased), `plans.md` and the README release notes are updated. User-visible gestures or controls also update `README.md` feature text, the in-app Help guide and the shortcut list (`CLAUDE.md` Documentation Contracts). The patch version is bumped by the commit hook.
-- [ ] **D8 Device items.** Every `[DEVICE]` clause of the requirement is listed in `docs/touch-audit/device-checklist.md` (TUX-062) with its status: `pass`, `fail`, or `deferred-by-Jay`.
+- [ ] **D8 Device items.** Every `[DEVICE]` clause of the requirement is listed in `docs/touch-audit/device-checklist.md` (TUX-062) with its status: `open`, `pass`, `fail`, or `deferred-by-Jay` (`open` = pending device).
 - [ ] **D9 Simulated device run.** The simulated device run (§4.1) is green: every Chromium and WebKit touch project, the target audit fast subset and the journey spec. Jay's real-device rows (§4.2) are checked only after D9.
 
 ---
@@ -1225,7 +1225,7 @@ The run is green only when every project passes, no ratchet rose, and the ledger
 
 ### 4.2 Real-device checklist for Jay
 
-Only items that Chromium and WebKit simulation cannot prove. Devices: iPad Pro 11" (or Air 11") and iPhone Pro, latest iOS, Safari tab mode unless noted. Record results in `docs/touch-audit/device-checklist.md` (TUX-062).
+Only items that Chromium and WebKit simulation cannot prove. Devices: iPad Pro 11" (or Air 11") and iPhone Pro, latest iOS, Safari tab mode unless noted. Record results in `docs/touch-audit/device-checklist.md` (TUX-062). The canonical table, the per-cell results and the extra rows DEV-23 and up live in that checklist.
 
 | # | Check | TUX | Where | Pass when |
 |---|---|---|---|---|
