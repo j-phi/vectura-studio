@@ -44,6 +44,8 @@
     mounted: false,
     busy: false,               // a Lane H sub-mode owns the content host
     kind: null,                // last-rendered context kind
+    penAnchor: null,           // TUX-030: stable { left, top, key } while kind === 'pen-draft'
+    penSync: null,             // TUX-030: refreshes the Done chip's disabled state
     lastAnchor: null,          // last selection screen rect used for anchoring
     drag: { engaged: false, active: false, x: 0, y: 0 },
     canvasDragBound: false,
@@ -584,6 +586,21 @@
     return { left: rr.left - hr.left, right: rr.right - hr.left, top: rr.top - hr.top, bottom: rr.bottom - hr.top };
   };
 
+  // Bottom safe-area inset in px (env() is not readable from script; measure a probe).
+  const safeBottomPx = () => {
+    const d = G.document;
+    if (!d || !d.body) return 0;
+    let probe = state.safeProbe;
+    if (!probe || !probe.isConnected) {
+      probe = d.createElement('div');
+      probe.setAttribute('aria-hidden', 'true');
+      probe.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:var(--tux-safe-bottom, env(safe-area-inset-bottom, 0px));visibility:hidden;pointer-events:none';
+      d.body.appendChild(probe);
+      state.safeProbe = probe;
+    }
+    return probe.getBoundingClientRect().height || 0;
+  };
+
   const reanchor = () => {
     if (!els.bar) return;
     // While the user is dragging the bar by its grip, the pointermove handler
@@ -598,6 +615,32 @@
       refreshMenuDirection();
       return;
     }
+    if (state.kind === 'pen-draft') {
+      // TUX-030: stable bottom-centre spot, computed once per draft (and again only if the
+      // viewport changes). The bar never chases the selection while a draft is in progress.
+      const pv = viewportSize();
+      const key = `${pv.w}x${pv.h}`;
+      if (!state.penAnchor || state.penAnchor.key !== key) {
+        const pb = barSize();
+        const pad = Number((cfg().timing || {}).viewportPadPx) || 8;
+        const hostRect = els.host ? els.host.getBoundingClientRect() : null;
+        let bottom = pv.h - pad - safeBottomPx();
+        const mod = G.document.querySelector('#touch-modifier-bar:not(.hidden)');
+        const mr = mod && hostRect ? mod.getBoundingClientRect() : null;
+        // Only a modifier bar docked in the lower half pushes the bar up (it floats at the top on iPad).
+        if (mr && mr.width && mr.height && (mr.top - hostRect.top) > pv.h / 2) bottom = Math.min(bottom, mr.top - hostRect.top - pad);
+        state.penAnchor = {
+          key,
+          left: Math.max(pad, (pv.w - pb.w) / 2),
+          top: Math.max(pad, bottom - pb.h),
+        };
+      }
+      els.bar.style.left = `${state.penAnchor.left}px`;
+      els.bar.style.top = `${state.penAnchor.top}px`;
+      refreshMenuDirection();
+      return;
+    }
+    state.penAnchor = null;
     const renderer = getRenderer();
     const bounds = renderer && renderer.getSelectionScreenBounds ? renderer.getSelectionScreenBounds() : null;
     state.lastAnchor = bounds;
@@ -644,6 +687,16 @@
   };
 
   // ── context detection ─────────────────────────────────────────────────
+  // TUX-030: true only while a DRAW-purpose Pen draft exists (not the pen-as-lasso purpose, not
+  // the add/delete/convert pen modes).
+  const penDraftActive = (app, renderer) => Boolean(
+    renderer && renderer.activeTool === 'pen' && renderer.penDraft
+    && renderer.penPurpose === 'draw'
+    && (app && app.ui && app.ui.penMode) === 'draw',
+  );
+  const isCoarsePointer = () => {
+    try { return Boolean(G.matchMedia && G.matchMedia('(pointer: coarse)').matches); } catch (_) { return false; }
+  };
   const getContext = () => {
     const app = getApp();
     const renderer = getRenderer();
@@ -653,6 +706,10 @@
     const tool = renderer.activeTool || 'select';
     let kind;
     let primary = layers[0] || null;
+    // TUX-030: an in-progress Pen draft owns the bar (Done / Remove Last / Cancel).
+    if (penDraftActive(app, renderer)) {
+      return { kind: 'pen-draft', layerIds: ids, primaryLayer: primary, app, renderer };
+    }
     // 3D Scene Studio (Phase 1C): a live scene selection (CONTRACT D) on a
     // selected scene3d layer morphs the bar into a scene context. Gated on
     // BOTH the selection API and the layer type so plain layer selection is
@@ -2185,10 +2242,45 @@
     if (sceneSelHasObjectDef(sceneSel(ctx))) pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray', ic.sceneXray);
   };
 
+  // TUX-030: pen draft chips. They call the same renderer methods as Enter / Backspace / Escape.
+  const renderPenDraft = (ctx) => {
+    const r = ctx.renderer;
+    const n = () => ((r && r.penDraft && r.penDraft.anchors) || []).length;
+    const chip = (action, label, tooltip, fn) => {
+      const btn = makeBtn({ label, tooltip, extraClass: 'ctxbar-pen-chip', onClick: fn });
+      btn.setAttribute('data-action', action);
+      return btn;
+    };
+    const done = chip('pen-done', 'Done', 'Finish the path', () => {
+      if (n() < 2) return; // commitPenPath would silently discard a one-anchor draft
+      r.commitPenPath();
+      refresh();
+    });
+    const sync = () => {
+      const off = n() < 2;
+      if (off) done.setAttribute('aria-disabled', 'true'); else done.removeAttribute('aria-disabled');
+      done.classList.toggle('is-disabled', off);
+    };
+    sync();
+    state.penSync = sync;
+    els.content.appendChild(done);
+    els.content.appendChild(chip('pen-remove-last', 'Remove Last Anchor', 'Remove the last anchor', () => {
+      r.undoPenPoint();
+      refresh();
+    }));
+    els.content.appendChild(chip('pen-cancel', 'Cancel', 'Discard the path', () => {
+      r.cancelPenPath();
+      refresh();
+    }));
+  };
+
   const renderContext = (ctx) => {
     if (!els.content) return;
     els.content.textContent = '';
+    state.penSync = null;
+    if (els.bar) els.bar.classList.toggle('ctxbar--pen-draft', ctx.kind === 'pen-draft');
     switch (ctx.kind) {
+      case 'pen-draft': renderPenDraft(ctx); break;
       case 'idle': renderIdle(); break;
       case 'single-text': renderText(ctx); break;
       case 'group': renderGroup(ctx); break;
@@ -2985,12 +3077,18 @@
 
   // ── visibility + show/hide ────────────────────────────────────────────
   const shouldShow = () => {
-    if (!isEnabled()) return false;
     if (state.drag.active) return false;
+    // TUX-030: the pen-draft controls are the only way to finish a draft by finger, so on a coarse
+    // pointer they show even when the Contextual Task Bar preference is off. A fine pointer
+    // respects the preference.
+    if (!isEnabled()) {
+      return isCoarsePointer() && penDraftActive(getApp(), getRenderer());
+    }
     const a = getApp();
     if (a && a.textEdit && typeof a.textEdit.isActive === 'function' && a.textEdit.isActive()) return false;
     const renderer = getRenderer();
     if (!renderer) return false;
+    if (penDraftActive(a, renderer)) return true;
     const size = renderer.selectedLayerIds ? renderer.selectedLayerIds.size : 0;
     if (size > 0) return true;
     // Nothing selected → idle only for the select tool.
@@ -3025,7 +3123,11 @@
     bindCanvasDrag();
     const vis = shouldShow();
     setVisible(vis);
-    if (!vis) return;
+    if (!vis) {
+      // TUX-030: a finished/cancelled draft must not leave its chips or anchor behind.
+      if (state.kind === 'pen-draft') { state.kind = null; state.penAnchor = null; }
+      return;
+    }
     const ctx = getContext();
     // Re-render on kind change OR when the PRIMARY layer changes within the same
     // kind (e.g. selecting a different text layer) — otherwise the controls stay
@@ -3074,6 +3176,7 @@
       state.anchorSig = anchorSig;
       renderContext(ctx);
     }
+    if (ctx.kind === 'pen-draft' && state.penSync) state.penSync();
     reanchor();
   };
 

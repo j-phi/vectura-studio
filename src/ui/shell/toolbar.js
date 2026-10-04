@@ -165,6 +165,13 @@
         this.fillMode = fillModeFromTool(tool);
         updateToolIcon('fill', this.fillMode);
       }
+      // TUX-030: a real (non-temporary) tool change commits a draw-purpose Pen draft of 2+ anchors
+      // instead of discarding it (Illustrator parity). Space-pan / Alt switches are temporary and
+      // must not commit.
+      if (!temporary && tool !== 'pen') {
+        const pr = this.app.renderer;
+        if (pr && pr.penDraft && pr.penPurpose === 'draw' && (pr.penDraft.anchors || []).length >= 2) pr.commitPenPath();
+      }
       if (this.app.renderer?.setTool) this.app.renderer.setTool(tool);
       syncButtons();
       Vectura.UI.ToolDrawer?.syncRailState?.();

@@ -439,14 +439,8 @@
       if ((e.metaKey || e.ctrlKey) && (e.key === '[' || e.key === ']' || e.key === '{' || e.key === '}')) {
         e.preventDefault();
         const isRight = e.key === ']' || e.key === '}';
-        const direction = isRight ? 'up' : 'down';
-        let changed = false;
-        if (e.shiftKey || e.key === '{' || e.key === '}') {
-          changed = this.moveSelectedLayers(isRight ? 'top' : 'bottom');
-        } else {
-          changed = this.moveSelectedLayers(direction);
-        }
-        if (changed && this.app.pushHistory) this.app.pushHistory();
+        if (e.shiftKey || e.key === '{' || e.key === '}') this.arrangeSelection(isRight ? 'top' : 'bottom');
+        else this.arrangeSelection(isRight ? 'forward' : 'backward');
         return;
       }
 

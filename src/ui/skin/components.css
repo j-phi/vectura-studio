@@ -14606,3 +14606,38 @@ body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
   }
 }
 /* === END TUX-037 === */
+
+/* === TUX-030: pen draft chips ===
+ * The pen-draft state of the context bar (Done / Remove Last Anchor / Cancel). The phone rule above
+ * hides the whole bar at <=640px; a draft still needs its controls there, so this block (later, and
+ * (0,2,0) against (0,1,0)) shows it. Chips get a 44px finger target on a coarse pointer. */
+@media (max-width: 640px) {
+  .ctxbar.ctxbar--pen-draft { display: flex; }
+}
+.ctxbar-btn.ctxbar-pen-chip[aria-disabled="true"] { opacity: 0.45; }
+@media (pointer: coarse) {
+  .ctxbar .ctxbar-btn.ctxbar-pen-chip {
+    min-height: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
+    padding: 0 12px;
+    font-size: 14px;
+  }
+}
+/* === END TUX-030 === */
+
+/* === TUX-031: isolation exit + arrange ===
+ * The isolation back arrow is the touch equivalent of Escape. A real 44px box on a coarse pointer
+ * (a ::before extender would be clipped by the viewport at the top edge). */
+@media (pointer: coarse) {
+  .iso-breadcrumb .iso-bc-back {
+    width: var(--touch-target-min, 44px);
+    height: var(--touch-target-min, 44px);
+  }
+  .iso-breadcrumb .iso-bc-back .iso-bc-back-svg { width: 22px; height: 22px; }
+  /* Panes that overlay the viewport (portrait) must not bury the control. */
+  .iso-breadcrumb {
+    left: var(--iso-bc-inset-l, 0px);
+    right: var(--iso-bc-inset-r, 0px);
+  }
+}
+/* === END TUX-031 === */
