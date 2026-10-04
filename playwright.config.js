@@ -65,7 +65,7 @@ module.exports = defineConfig({
         ...(useSystemChrome ? { channel: 'chrome' } : {}),
         viewport: { width: 1600, height: 1000 },
       },
-      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|type-tool-desktop\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|text-panel-field-desktop\.spec\.js$|keyboard-inset-desktop\.spec\.js$|modals-desktop\.spec\.js$|hidden-actions-desktop\.spec\.js$|toolbar-handles-desktop\.spec\.js$|mirror-dial-mouse\.spec\.js$|delete-undo-desktop\.spec\.js$|file-open-desktop\.spec\.js$/,
+      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|type-tool-desktop\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|text-panel-field-desktop\.spec\.js$|keyboard-inset-desktop\.spec\.js$|modals-desktop\.spec\.js$|hidden-actions-desktop\.spec\.js$|toolbar-handles-desktop\.spec\.js$|mirror-dial-mouse\.spec\.js$|delete-undo-desktop\.spec\.js$|file-open-desktop\.spec\.js$|reset-view-desktop\.spec\.js$/,
     },
     {
       name: 'desktop-visual-chromium',

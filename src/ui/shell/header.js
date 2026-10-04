@@ -249,9 +249,15 @@
     }
     if (btnResetView) {
       btnResetView.onclick = () => {
-        this.app.renderer.center();
+        // TUX-009: expandPanes is a no-op outside the desktop layout. Fit after it, then again once
+        // the layout has settled, so the fit uses the final canvas size.
         if (this.expandPanes) this.expandPanes();
+        this.app.renderer.center();
         this.app.render();
+        requestAnimationFrame(() => {
+          this.app.renderer.center();
+          this.app.render();
+        });
       };
     }
     const tourHandler = (e) => {
