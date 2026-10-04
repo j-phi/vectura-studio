@@ -34,6 +34,10 @@
       touchDragSlopPx: 6,
     },
 
+    // TUX-055: image import cap. 2048, not 4096: a 4096x3072 raster makes saveVecturaFile build a string
+    // past V8's ~536.87M-char limit (about 11-13 chars per byte). Read by Vectura.ImageSource.
+    IMAGE_IMPORT: { MAX_SIDE: 2048 },
+
     // TUX-026: Petal Designer control grab radius in CSS px. A mouse keeps 10 px. A finger gets 22 px to
     // grab an anchor; a handle the finger is within touchHandle px of wins over its anchor.
     // Follow-up: fold into hitTolerance(kind, pointerType) when TUX-023 lands.

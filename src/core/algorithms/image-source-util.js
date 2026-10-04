@@ -15,8 +15,8 @@
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
   const MAX_DECODE = 600; // cap decoded raster's longest side (sampling speed)
-  // Import cap (TUX-055). 2048, not 4096: a 4096x3072 raster makes saveVecturaFile build a string past V8's ~536.87M-char limit (about 11-13 chars per byte).
-  const MAX_IMPORT_SIDE = 2048;
+  // Import cap (TUX-055), configured in src/config/ui-constants.js (IMAGE_IMPORT.MAX_SIDE; 2048 is the fallback).
+  const MAX_IMPORT_SIDE = Number(Vectura.UI_CONSTANTS?.IMAGE_IMPORT?.MAX_SIDE) || 2048;
 
   // Pure sizing: fit (w,h) inside maxSide on the long side, keep aspect, min 1px. scale=1 when it already fits.
   const cappedSize = (w, h, maxSide = MAX_IMPORT_SIDE) => {

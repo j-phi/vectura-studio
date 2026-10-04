@@ -16,7 +16,7 @@ const FULL_STACK = {
 
 describe('image import failure branches (TUX-055)', () => {
   let runtime, window, document, app;
-  let origImage, origGetContext, origFileReader;
+  let origImage, origGetContext, origFileReader, origToDataURL;
 
   beforeAll(async () => {
     runtime = await loadVecturaRuntime(FULL_STACK);
@@ -33,6 +33,7 @@ describe('image import failure branches (TUX-055)', () => {
   beforeEach(() => {
     origImage = window.Image;
     origGetContext = window.HTMLCanvasElement.prototype.getContext;
+    origToDataURL = window.HTMLCanvasElement.prototype.toDataURL;
     origFileReader = window.FileReader;
     document.querySelectorAll('.vectura-toast').forEach((n) => n.remove());
   });
@@ -41,6 +42,7 @@ describe('image import failure branches (TUX-055)', () => {
     window.Image = origImage;
     window.HTMLCanvasElement.prototype.getContext = origGetContext;
     window.FileReader = origFileReader;
+    window.HTMLCanvasElement.prototype.toDataURL = origToDataURL;
   });
 
   const stubImage = ({ fail = false } = {}) => {
@@ -57,14 +59,14 @@ describe('image import failure branches (TUX-055)', () => {
   };
 
   const run = async (setup) => {
-    const layer = { params: { silhouetteId: 'keep-id', silhouetteName: 'keep.png' } };
+    const layer = { params: { silhouetteId: 'keep-id', silhouetteName: 'keep.png', imageSrc: 'data:old' } };
     const keysBefore = Object.keys(window.Vectura.NOISE_IMAGES || {});
     let pushes = 0;
     const origPush = app.pushHistory;
     app.pushHistory = (...a) => { pushes += 1; return origPush && origPush.apply(app, a); };
     setup();
     const file = new window.File([new Uint8Array([1, 2, 3])], 'photo.jpg', { type: 'image/jpeg' });
-    app.ui.loadNoiseImageFile(file, layer, null, 'silhouetteId', 'silhouetteName');
+    app.ui.loadNoiseImageFile(file, layer, null, 'silhouetteId', 'silhouetteName', null, 'imageSrc');
     const toastSel = '.vectura-toast-danger';
     for (let i = 0; i < 60 && !document.querySelector(toastSel); i += 1) {
       await new Promise((r) => setTimeout(r, 10));
@@ -78,6 +80,8 @@ describe('image import failure branches (TUX-055)', () => {
     expect(pushes).toBe(0);
     expect(layer.params.silhouetteId).toBe('keep-id');
     expect(layer.params.silhouetteName).toBe('keep.png');
+    // A failed import must never leave the previous picture's preview paired with a new raster.
+    expect(layer.params.imageSrc).toBe('data:old');
     expect(Object.keys(window.Vectura.NOISE_IMAGES || {})).toEqual(keysBefore);
   };
 
@@ -99,6 +103,17 @@ describe('image import failure branches (TUX-055)', () => {
         drawImage() {},
         getImageData() { throw new Error('SecurityError'); },
       });
+    });
+  });
+
+  test('preview re-encode throwing on a scaled import fails the whole import', async () => {
+    await run(() => {
+      stubImage();
+      window.HTMLCanvasElement.prototype.getContext = () => ({
+        drawImage() {},
+        getImageData: (x, y, w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(4) }),
+      });
+      window.HTMLCanvasElement.prototype.toDataURL = () => { throw new Error('toDataURL failed'); };
     });
   });
 

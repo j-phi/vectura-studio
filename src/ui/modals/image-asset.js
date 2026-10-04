@@ -104,14 +104,11 @@
           if (r.scaled && previewKey) {
             // Never persist the raw oversized URL; re-encode from the capped canvas.
             const keepAlpha = /^image\/(png|gif|webp)$/i.test(file.type || '');
-            try {
-              preview = keepAlpha ? r.canvas.toDataURL('image/png') : r.canvas.toDataURL('image/jpeg', 0.92);
-            } catch (e) {
-              console.warn('Vectura: could not re-encode capped image preview', e);
-              preview = '';
-            }
+            // A throw here fails the whole import: a skipped preview would leave the previous picture's preview paired with the new raster.
+            preview = keepAlpha ? r.canvas.toDataURL('image/png') : r.canvas.toDataURL('image/jpeg', 0.92);
           }
         } catch (e) {
+          console.warn('Vectura: image import failed', e);
           fail();
           return;
         } finally {
