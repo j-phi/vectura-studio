@@ -16,11 +16,13 @@
  * clipPath call volume — and therefore HLR occluder-scan cost — matches a real
  * filled drag frame.
  *
- * Absolute milliseconds are NOT asserted (this machine sees load averages in
- * the 10s-100s under parallel agents) — only cross-scaling RATIOS, which are
- * far more load-stable when measured within one process run.
+ * No wall-clock RATIOS are asserted (this machine sees load averages in the
+ * 10s-100s under parallel agents; timing ratios flaked). The scaling guards
+ * count deterministic work (occluder candidate tests) and compare output;
+ * only the generous 2000 ms frame budget remains a clock check.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { installOccluderScanCounter } = require('../helpers/occluder-scan-counter');
 
 // Build `count` boxes on a compact grid so their SCREEN-SPACE silhouettes
 // genuinely overlap (real occlusion, not just a big bounding box) — the HLR
@@ -81,38 +83,29 @@ const timeDraftGen = (engine, layerId, n = 8) => {
   return samples[Math.floor(samples.length / 2)];
 };
 
-// Isolate the cost actually under test: cumulative wall time spent INSIDE
-// HLR.createClipper's clipPath, across one full draft regen. This is the
-// metric the profiler's own report measured (hlr.clipPath = 153/173ms of a
-// 12-object draft frame) — engine.generate() as a whole also pays for scene
-// assembly, style resolution, edge classification, etc., which scale close
-// to linearly and dilute a whole-frame ratio. Patches
-// Vectura.Scene3D.HLR.createClipper for the duration of one generate() call
-// and restores it unconditionally (even on throw).
-const measureClipPathMs = (runtime, engine, layerId) => {
+// Isolate the work actually under test: the number of occluder CANDIDATES
+// examined by HLR's hiddenAt() across one full draft regen. Deterministic
+// (no clock), so it is independent of machine load. See
+// tests/helpers/occluder-scan-counter.js for how the count is taken.
+const measureOccluderTests = (runtime, engine, layerId) => {
   const HLR = runtime.window.Vectura.Scene3D.HLR;
-  const origCreateClipper = HLR.createClipper;
-  let totalMs = 0;
-  HLR.createClipper = (...args) => {
-    const clipper = origCreateClipper.apply(HLR, args);
-    const origClipPath = clipper.clipPath;
-    clipper.clipPath = (...cpArgs) => {
-      const t0 = performance.now();
-      const result = origClipPath.apply(clipper, cpArgs);
-      totalMs += performance.now() - t0;
-      return result;
-    };
-    return clipper;
-  };
+  const counter = installOccluderScanCounter(HLR);
   try {
     engine.generate(layerId, { preview: true }); // warm-up
-    totalMs = 0;
+    counter.reset();
     engine.generate(layerId, { preview: true }); // measured pass
   } finally {
-    HLR.createClipper = origCreateClipper;
+    counter.restore();
   }
-  return totalMs;
+  return counter.count();
 };
+
+// Measured (deterministic): indexed n6=73,431 n24=436,657 ratio 5.95;
+// forced linear scan n6=5,045,402 n24=49,093,110 ratio 9.73 (112x more work
+// at n=24). The absolute n24 bound is the sharp discriminator (10x margin
+// each side); the ratio bound (between 5.95 and 9.73) is the sub-quadratic guard.
+const RATIO_MAX = 8;
+const N24_MAX_CANDIDATE_TESTS = 4000000;
 
 describe('scene3d drag performance', () => {
   let runtime;
@@ -141,62 +134,62 @@ describe('scene3d drag performance', () => {
     60000,
   );
 
+  const scanCounts = () => {
+    const out = {};
+    for (const n of [6, 12, 24]) {
+      const engine = new VectorEngine();
+      const layer = buildLayer(runtime, engine, n);
+      out[n] = measureOccluderTests(runtime, engine, layer.id);
+    }
+    return out;
+  };
+
   test(
-    'HLR occluder-scan cost (clipPath) scales sub-quadratically with object count (spatial index)',
+    'HLR occluder-scan work (candidate tests) scales sub-quadratically with object count (spatial index)',
     () => {
-      const engine6 = new VectorEngine();
-      const layer6 = buildLayer(runtime, engine6, 6);
-      const hlr6 = measureClipPathMs(runtime, engine6, layer6.id);
-
-      const engine12 = new VectorEngine();
-      const layer12 = buildLayer(runtime, engine12, 12);
-      const hlr12 = measureClipPathMs(runtime, engine12, layer12.id);
-
-      const engine24 = new VectorEngine();
-      const layer24 = buildLayer(runtime, engine24, 24);
-      const hlr24 = measureClipPathMs(runtime, engine24, layer24.id);
-
-      const ratio = hlr24 / Math.max(hlr6, 0.001);
+      const c = scanCounts();
+      const ratio = c[24] / Math.max(c[6], 1);
       // eslint-disable-next-line no-console
-      console.log('[perf] scene3d HLR clipPath scaling hlr6=%sms hlr12=%sms hlr24=%sms ratio(24/6)=%s loadavg=%s',
-        hlr6.toFixed(2), hlr12.toFixed(2), hlr24.toFixed(2), ratio.toFixed(2), require('os').loadavg());
-      // 4x the objects → ~4x the occluders AND ~4x the paths/samples. A
-      // linear-scan occluder lookup (today) is therefore quadratic in object
-      // count — the profiler measured ~8.2x here. A spatial index makes
-      // per-sample lookup ~O(1) amortized, so total clipPath cost should
-      // scale close to linearly (a modest constant over 4x is allowed for
-      // index-build overhead and more occluders per index cell as density
-      // rises with count in this fixture).
-      expect(ratio).toBeLessThan(6);
+      console.log('[perf] scene3d HLR occluder candidate tests n6=%s n12=%s n24=%s ratio(24/6)=%s',
+        c[6], c[12], c[24], ratio.toFixed(2));
+      // Deterministic work count (no clock). 4x the objects → ~4x the paths
+      // AND ~4x the occluders, so a linear-scan lookup is quadratic (~16x);
+      // the spatial index keeps it near-linear. Thresholds below sit between the two.
+      expect(ratio).toBeLessThan(RATIO_MAX);
+      expect(c[24]).toBeLessThan(N24_MAX_CANDIDATE_TESTS);
     },
     60000,
   );
 
   test(
-    'draft mode: an expensive tone law (turingStripe) costs about the same as a cheap one (ladder)',
+    'draft mode: toneLaw is never read (turingStripe and ladder give identical draft output)',
     () => {
       // In draft, toneOn is false (the tone apparatus is skipped entirely —
-      // see scene3d.js:469), so a shadow/fill toneLaw choice must not change
-      // draft cost. This guards against a regression that starts reading
-      // toneLaw during draft generation.
-      const engineLadder = new VectorEngine();
-      const layerLadder = buildLayer(runtime, engineLadder, 12, {
-        styleTable: { scene: { mapper: 'hatch', params: { fillDensity: 55, toneLaw: 'ladder' } } },
-      });
-      const tLadder = timeDraftGen(engineLadder, layerLadder.id, 6);
-
-      const engineStripe = new VectorEngine();
-      const layerStripe = buildLayer(runtime, engineStripe, 12, {
-        styleTable: { scene: { mapper: 'hatch', params: { fillDensity: 55, toneLaw: 'turingStripe' } } },
-      });
-      const tStripe = timeDraftGen(engineStripe, layerStripe.id, 6);
-
-      const ratio = tStripe / Math.max(tLadder, 0.001);
-      // eslint-disable-next-line no-console
-      console.log('[perf] draft toneLaw cost ladder=%sms turingStripe=%sms ratio=%s',
-        tLadder.toFixed(2), tStripe.toFixed(2), ratio.toFixed(2));
-      expect(ratio).toBeLessThan(1.5);
-      expect(1 / ratio).toBeLessThan(1.5);
+      // see scene3d.js toneOn = !draft && ...), so a toneLaw choice must not
+      // change draft generation. Deterministic check: identical path output.
+      const RG = runtime.window.Vectura.Scene3D.Regions;
+      const origCI = RG.combinedIntensity;
+      let intensityCalls = 0;
+      RG.combinedIntensity = (...a) => { intensityCalls++; return origCI.apply(RG, a); };
+      const sig = (law) => {
+        const engine = new VectorEngine();
+        const layer = buildLayer(runtime, engine, 12, {
+          styleTable: { scene: { mapper: 'hatch', params: { fillDensity: 55, toneLaw: law } } },
+        });
+        engine.generate(layer.id, { preview: true });
+        return JSON.stringify(layer.paths || layer.displayPaths || []);
+      };
+      let ladder; let stripe;
+      try {
+        ladder = sig('ladder');
+        stripe = sig('turingStripe');
+      } finally {
+        RG.combinedIntensity = origCI;
+      }
+      // The tone apparatus (intensity field) must never be evaluated in draft.
+      expect(intensityCalls).toBe(0);
+      expect(ladder.length).toBeGreaterThan(1000); // non-trivial output
+      expect(stripe).toBe(ladder);
     },
     60000,
   );
