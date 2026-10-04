@@ -592,6 +592,8 @@ JOURNEYS.push({
       },
       post: (c) => { if (c.vars.slider.before === c.vars.slider.after) throw new Error('the angle value did not change'); },
     },
+    // Only one drawer is open at a time (TUX-008): the Generator drawer replaced Layers, so reopen Layers by finger.
+    { ...stepOpenLayers('j6'), id: 'j6.reopen-layers' },
     {
       id: 'j6.select-source', action: 'tap', route: 'tap the oval row (mask source)', selector: 'SELECTORS.cardName',
       expects: 'selected = [oval]', expect: { selected: (now) => now.selectedIds.length === 1 && now.layers.find((l) => l.id === now.selectedIds[0]).type === 'shape' },

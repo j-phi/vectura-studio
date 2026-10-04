@@ -14923,4 +14923,10 @@ body.touch-wide-layout:has(#left-pane.pane-collapsed) #left-resizer,
 body.touch-wide-layout:has(#right-pane.pane-collapsed) #right-resizer {
   display: none;
 }
+/* The modifier bar (Shift/Alt/Pan latches) stays tappable while a tablet drawer is open: multi-select
+   in the Layers drawer needs the Shift latch. Above the backdrop, below the drawer. */
+body.tablet-layout #touch-modifier-bar {
+  z-index: calc(var(--z-backdrop) + 1);
+}
+
 /* === END TUX-008 === */

@@ -225,8 +225,8 @@
     // (fine pointer, 540-900 px) show one pane only, as the legacy shell did.
     this.expandPanes = () => {
       if (controller) {
-        controller.resetForLayout();
-        if (controller.snapshot().overlay) controller.open('left');
+        if (controller.snapshot().overlay) controller.resetOverlay('left');
+        else controller.resetForLayout();
       } else {
         leftPane.classList.remove('pane-collapsed', 'pane-force-open');
         rightPane.classList.remove('pane-collapsed', 'pane-force-open');

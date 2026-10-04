@@ -1988,8 +1988,13 @@ test.describe('TUX-008 desktop parity', () => {
     expect(s.backdropBlocks).toBe(false);
     expect(s.touchUi).toBe(false);
     expect(s.touchWide).toBe(false);
-    await require('fs').promises.mkdir('/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-008', { recursive: true });
-    await page.screenshot({ path: '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-008/desktop-1600x1000.png' });
+    // Evidence screenshot: only when TUX_EVIDENCE_DIR is set, and never able to fail the test (CI has no such path).
+    if (process.env.TUX_EVIDENCE_DIR) {
+      try {
+        await require('fs').promises.mkdir(process.env.TUX_EVIDENCE_DIR, { recursive: true });
+        await page.screenshot({ path: require('path').join(process.env.TUX_EVIDENCE_DIR, 'desktop-1600x1000.png') });
+      } catch (e) { /* evidence only */ }
+    }
     await page.setViewportSize({ width: 800, height: 900 });
     await page.waitForTimeout(500);
     s = await read();
@@ -2036,5 +2041,33 @@ test.describe('TUX-008 desktop Reset View keeps controller and DOM in sync', () 
     s = await left();
     expect(s.open, 'one toggle collapses').toBe(false);
     expect(s.w, 'one toggle collapses (width)').toBeLessThan(100);
+  });
+});
+
+// TUX-008 fix round 2: in the fine-pointer overlay band (540-900 px) Reset View shows one pane. It
+// must not persist a right-pane collapse into the shared desktop key.
+test.describe('TUX-008 overlay-band Reset View does not persist a collapse', () => {
+  test('800x900 Reset View then 1600x1000: both panes docked open', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'desktop fine-pointer project only');
+    const state = () => page.evaluate(() => ({
+      l: window.Vectura.UI.Workspace.paneState.isOpen('left'),
+      r: window.Vectura.UI.Workspace.paneState.isOpen('right'),
+      lw: Math.round(document.getElementById('left-pane').getBoundingClientRect().width),
+      rw: Math.round(document.getElementById('right-pane').getBoundingClientRect().width),
+      saved: [window.Vectura.SETTINGS.leftPaneCollapsed, window.Vectura.SETTINGS.rightPaneCollapsed],
+    }));
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    await page.locator('#btn-menu-view').click();
+    await page.locator('#btn-reset-view').click();
+    await page.waitForTimeout(400);
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.waitForTimeout(600);
+    const s = await state();
+    expect(s.saved, 'no right-pane collapse persisted').toEqual([false, false]);
+    expect(s.l && s.r, 'both panes open at 1600').toBe(true);
+    expect(s.lw).toBeGreaterThan(250);
+    expect(s.rw).toBeGreaterThan(250);
   });
 });

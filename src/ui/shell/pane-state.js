@@ -53,6 +53,9 @@
       };
     });
     const drawer = { tablet: null, phone: null };
+    // Overlay Reset View shows one pane without persisting: the hidden side is only held shut while
+    // the overlay band lasts. Leaving the band, or any explicit open/close, releases the hold.
+    let held = null;
 
     const snapshot = () => ({
       layout,
@@ -68,6 +71,7 @@
     }
 
     const setDocked = (side, open) => {
+      held = null;
       docked[layout][side] = open;
       persist(KEYS[layout][side], !open);
     };
@@ -111,6 +115,16 @@
       changed();
     };
 
+    // Reset View in the overlay band: both panes reset to open and persist, then one overlay pane
+    // shows. The other pane is held shut in memory only, so no collapse reaches the saved prefs.
+    const resetOverlay = (side) => {
+      resetForLayout();
+      if (isDrawerLayout(layout) || !overlay || !SIDES.includes(side)) return;
+      docked[layout][other(side)] = false;
+      held = { layout, side: other(side) };
+      changed();
+    };
+
     /**
      * Feed the current layout. Returns true when the layout class changed.
      * Entering a drawer layout closes both drawers. Entering a docked layout shows its stored state.
@@ -118,7 +132,13 @@
      */
     const setLayout = (next, flags = {}) => {
       const to = normalize(next);
+      const wasOverlay = overlay;
       if (typeof flags.overlay === 'boolean') overlay = flags.overlay;
+      if (held && (to !== layout || (wasOverlay && !overlay))) {
+        if (docked[held.layout]) docked[held.layout][held.side] = true;
+        held = null;
+        if (to === layout) { changed(); return false; }
+      }
       if (to === layout) return false;
       layout = to;
       if (isDrawerLayout(to)) drawer[to] = null;
@@ -135,6 +155,7 @@
       toggle,
       closeAll,
       resetForLayout,
+      resetOverlay,
       setLayout,
       snapshot,
     };

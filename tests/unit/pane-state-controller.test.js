@@ -143,4 +143,15 @@ describe('pane-state controller (TUX-008)', () => {
     expect(calls[0].left).toBe(true);
     expect(calls[1].left).toBe(false);
   });
+
+  test('resetOverlay shows one pane without persisting a collapse; leaving the band restores both', () => {
+    const persisted = [];
+    const c = PaneState.create({ layout: 'desktop', overlay: true, persist: (k, v) => persisted.push([k, v]) });
+    c.resetOverlay('left');
+    expect(c.isOpen('left')).toBe(true);
+    expect(c.isOpen('right')).toBe(false);
+    expect(persisted.some(([, collapsed]) => collapsed === true)).toBe(false);
+    c.setLayout('desktop', { overlay: false });
+    expect(c.isOpen('left') && c.isOpen('right')).toBe(true);
+  });
 });
