@@ -102,6 +102,23 @@ describe('TouchHold', () => {
     expect(dom.window.document.querySelector('[data-touch-hold-progress]')).toBeNull();
   });
 
+  it('TUX-039 capture:true still fires when a deeper bubble handler stops propagation', () => {
+    const bubble = bind();
+    const cap = [];
+    TH.bind(root, {
+      selector: '.card',
+      capture: true,
+      resolve: (t) => ({ key: t.dataset.layerId, anchorEl: t }),
+      onFire: (d) => cap.push(d),
+    });
+    const { c, inner } = card('a');
+    c.addEventListener('pointerdown', (e) => e.stopPropagation()); // a deeper owner eats the bubble
+    inner.dispatchEvent(pe('pointerdown'));
+    advance(520);
+    expect(bubble.fired, 'bubble-phase owner never sees the stopped event').toHaveLength(0);
+    expect(cap, 'capture owner fires').toHaveLength(1);
+  });
+
   it('ignores mouse pointers', () => {
     const { fired } = bind();
     const { inner } = card('a');

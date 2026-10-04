@@ -175,6 +175,12 @@
     '[data-tool="algo-draw"]',     // owns a picker hold
     '.toolbar-drag-handle',
     '.lvl-grip',                   // reorder handle: the drag must stay live
+    '.layer-grip',
+    '.pen-grip',
+    '.noise-grip',
+    '.optimization-grip',
+    '.ctxbar-handle',
+    '.mobile-pane-handle',
     '[data-no-hold-tip]',
     '.num-step',
     '[data-repeat]',
@@ -189,7 +195,10 @@
 
     const stripShortcut = (label) => String(label || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
 
-    const isIconOnly = (btn) => !/\p{L}/u.test(btn.textContent || '');
+    // Rendered text, not textContent: on phones a hidden label span still sits in textContent
+    // while the button shows only a glyph. innerText skips display:none descendants.
+    const renderedText = (btn) => (typeof btn.innerText === 'string' ? btn.innerText : btn.textContent) || '';
+    const isIconOnly = (btn) => !/\p{L}/u.test(renderedText(btn));
 
     const resolve = (btn) => {
       if (!btn.getAttribute('aria-label') || btn.matches(EXCLUDE) || !isIconOnly(btn)) return null;

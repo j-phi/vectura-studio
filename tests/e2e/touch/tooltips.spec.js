@@ -242,7 +242,14 @@ test.describe('TUX-039 touch tooltips', () => {
     expect(await hist(), 'undo history unchanged').toBe(h0);
   });
 
-  test('(g) clause 1 runtime ratchet: icon-only controls have names', async ({ page }) => {
+  test('(g) clause 1 runtime ratchet: icon-only controls have names (layer + modifier rows present)', async ({ page }) => {
+    await page.evaluate(() => {
+      window.app.engine.addLayer('flowfield');
+      window.app.engine.addModifierLayer('mirror');
+      window.app.ui.renderLayers();
+    });
+    await openLayersPane(page);
+    await page.evaluate(() => window.app.ui.renderLayers());
     const r = await page.evaluate(() => {
       const subs = document.querySelectorAll('.tool-sub-btn:not([aria-label])').length;
       const vis = (e) => { const b = e.getBoundingClientRect(); const cs = getComputedStyle(e); return b.width > 0 && b.height > 0 && cs.visibility !== 'hidden'; };
@@ -251,10 +258,55 @@ test.describe('TUX-039 touch tooltips', () => {
         const hasText = [...b.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
         return !hasText && !b.hasAttribute('aria-label') && !b.hasAttribute('aria-labelledby');
       }).map((b) => b.id || b.className);
-      return { subs, unlabeled };
+      return { subs, unlabeled, lvlIb: document.querySelectorAll('.lvl-ib').length };
     });
+    expect(r.lvlIb, 'layer rows with eye/lock buttons are present').toBeGreaterThan(1);
     expect(r.subs, '.tool-sub-btn without aria-label').toBe(0);
     expect(r.unlabeled, `unlabeled visible icon buttons: ${r.unlabeled.join(',')}`).toEqual([]);
+  });
+
+  test('(i) hold on a layer eye button names it and does not toggle visibility', async ({ page }) => {
+    await page.evaluate(() => { window.app.engine.addLayer('flowfield'); window.app.ui.renderLayers(); });
+    await openLayersPane(page);
+    await page.evaluate(() => window.app.ui.renderLayers());
+    const id = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('.lvl-card .lvl-ib')].find((e) => e.getAttribute('aria-label') === 'Hide');
+      if (!b) return null;
+      b.setAttribute('data-test-hold', '1');
+      return window.app.engine.layers.find((l) => l.visible && !l.isGroup)?.id;
+    });
+    expect(id, 'a visible layer row with a Hide button (aria-label)').not.toBeNull();
+    await longPress(page, await centre(page, '[data-test-hold="1"]'), 600);
+    await compatClick(page, '[data-test-hold="1"]');
+    await sleep(100);
+    const tip = await tipFor(page, '[data-test-hold="1"]');
+    expect(tip, 'tooltip on the eye button').not.toBeNull();
+    expect(tip.text).toContain('Hide');
+    expect(await page.evaluate((i) => window.app.engine.layers.find((l) => l.id === i).visible, id), 'layer.visible unchanged').toBe(true);
+  });
+
+  test('(j) phone modifier buttons (glyph only) tip; labelled modifier buttons do not', async ({ page }) => {
+    const info = await page.evaluate(() => {
+      const b = document.querySelector('.touch-mod-btn[data-touch-mod="shift"]');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      const label = b.querySelector('.touch-mod-label');
+      return { shown: r.width > 0, labelShown: !!label && getComputedStyle(label).display !== 'none' };
+    });
+    expect(info && info.shown, 'modifier bar is visible').toBe(true);
+    expect(info.labelShown, 'label hidden exactly on phone-width viewports').toBe(page.viewportSize().width > 540);
+    const sel = '.touch-mod-btn[data-touch-mod="shift"]';
+    await longPress(page, await centre(page, sel), 600);
+    await compatClick(page, sel);
+    await sleep(100);
+    const tip = await tipFor(page, sel);
+    if (info.labelShown) {
+      expect(tip, 'visible text label: no tooltip').toBeNull();
+    } else {
+      expect(tip, 'glyph-only button: tooltip').not.toBeNull();
+      expect(tip.text).toContain('Shift');
+      expect(await page.evaluate(() => window.Vectura.SETTINGS.touchModifiers.shift), 'hold must not toggle the modifier').toBe(false);
+    }
   });
 
   test('(h) desktop parity: a mouse hold never tips and the swallow does not eat mouse clicks', async ({ page }) => {

@@ -21,6 +21,13 @@ const load = () => {
     <button id="opt" aria-label="No tip" data-no-hold-tip><svg></svg></button>
     <button id="handle" class="toolbar-drag-handle" aria-label="Move toolbar"><svg></svg></button>
     <button id="text" aria-label="Save">Save</button>
+    <button id="g1" class="ctxbar-handle" aria-label="Move bar"><svg></svg></button>
+    <button id="g2" class="pen-grip" aria-label="Reorder pen"><svg></svg></button>
+    <button id="g3" class="noise-grip" aria-label="Reorder noise"><svg></svg></button>
+    <button id="g4" class="optimization-grip" aria-label="Reorder optimization"><svg></svg></button>
+    <button id="g5" class="mobile-pane-handle" aria-label="Resize pane"><svg></svg></button>
+    <button id="g6" class="layer-grip" aria-label="Reorder layer"><svg></svg></button>
+    <button id="g7" class="lvl-grip" aria-label="Reorder"><svg></svg></button>
   </body>`, { url: 'http://localhost/', pretendToBeVisual: true });
   global.window = dom.window;
   global.document = dom.window.document;
@@ -110,5 +117,24 @@ describe('TouchTooltip', () => {
     advance(700);
     expect(tipShown()).toBe(false);
     expect($(id).hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it.each(['g1', 'g2', 'g3', 'g4', 'g5', 'g6', 'g7'])('resolve() returns null for drag handle %s', (id) => {
+    expect(dom.window.Vectura.UI.overlays.TouchTooltip._resolve($(id))).toBeNull();
+    $(id).dispatchEvent(pe('pointerdown'));
+    advance(700);
+    expect(tipShown()).toBe(false);
+  });
+
+  it('a button whose visible text is hidden counts as icon-only (rendered text, not textContent)', () => {
+    const b = dom.window.document.createElement('button');
+    b.setAttribute('aria-label', 'Shift modifier');
+    b.innerHTML = '<span>Shift</span>';
+    dom.window.document.body.appendChild(b);
+    // jsdom has no innerText; emulate a browser that hides the span (phone layout)
+    Object.defineProperty(b, 'innerText', { value: '', configurable: true });
+    expect(dom.window.Vectura.UI.overlays.TouchTooltip._resolve(b)).not.toBeNull();
+    Object.defineProperty(b, 'innerText', { value: 'Shift', configurable: true });
+    expect(dom.window.Vectura.UI.overlays.TouchTooltip._resolve(b)).toBeNull();
   });
 });
