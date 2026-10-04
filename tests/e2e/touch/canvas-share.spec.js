@@ -400,3 +400,371 @@ test.describe('TUX-007 reachable-set accounting (TUX-058 baseline lowering)', ()
   });
 });
 void engineSupports;
+
+// ---------------------------------------------------------------------------------------------
+// TUX-008: pane defaults per layout class. Finger-only (tap()); setup through the app API is
+// fixture state only (adding and selecting a layer).
+// ---------------------------------------------------------------------------------------------
+const EVIDENCE_008 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-008';
+const shot008 = async (page, name) => {
+  await fs.promises.mkdir(EVIDENCE_008, { recursive: true });
+  await page.screenshot({ path: `${EVIDENCE_008}/${name}.png` });
+};
+
+// Both sides: open per the controller API (geometry fallback), rect width, and docked.
+const paneState = (page) => page.evaluate(() => {
+  const ps = window.Vectura && window.Vectura.UI && window.Vectura.UI.Workspace && window.Vectura.UI.Workspace.paneState;
+  const one = (side) => {
+    const el = document.getElementById(`${side}-pane`);
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    const geom = r.width > 60 && cs.visibility !== 'hidden' && r.right > 0 && r.left < innerWidth;
+    return {
+      open: ps && typeof ps.isOpen === 'function' ? ps.isOpen(side) : geom,
+      api: !!(ps && typeof ps.isOpen === 'function'),
+      width: r.width,
+      left: r.left,
+      right: r.right,
+      visibility: cs.visibility,
+      docked: cs.position !== 'absolute' && cs.position !== 'fixed',
+      force: el.classList.contains('pane-force-open'),
+      cls: el.className,
+    };
+  };
+  return { left: one('left'), right: one('right') };
+});
+
+const backdropVisible = (page) => page.evaluate(() => {
+  const b = document.getElementById('mobile-pane-backdrop');
+  return !!b && b.classList.contains('visible');
+});
+
+// The topmost element at (x, y) as a short label, plus whether it is the canvas or its container.
+const topAt = (page, x, y) => page.evaluate(({ x, y }) => {
+  const t = document.elementFromPoint(x, y);
+  const vc = document.getElementById('viewport-container');
+  return {
+    id: t && (t.id || t.className || t.tagName),
+    canvas: !!t && (t.id === 'main-canvas' || (!!vc && vc.contains(t))),
+    inPane: !!t && !!t.closest('#left-pane, #right-pane'),
+  };
+}, { x, y });
+
+// Fixture: one layer, selected, so the context bar is populated. Returns the screen centre of its bbox.
+const addAndSelectLayer = (page) => page.evaluate(() => {
+  const app = window.app;
+  const id = app.engine.addLayer('lissajous');
+  const rn = app.renderer;
+  rn.setSelection([id], id);
+  rn.activeTool = 'select';
+  rn.draw();
+  const layer = app.engine.layers.find((l) => l.id === id);
+  const b = rn.getSelectionBounds([layer]);
+  const c = rn.canvas.getBoundingClientRect();
+  if (!b) return null;
+  const x0 = b.minX ?? b.x; const y0 = b.minY ?? b.y;
+  const x1 = b.maxX ?? (b.x + b.width); const y1 = b.maxY ?? (b.y + b.height);
+  const p = rn.worldToScreen((x0 + x1) / 2, (y0 + y1) / 2);
+  return { x: c.left + p.x, y: c.top + p.y };
+});
+
+// Visible tool-rail and ctxbar buttons whose centre is on screen and not scrolled out of a clipping rail.
+const coverReport = (page) => page.evaluate(() => {
+  const out = [];
+  document.querySelectorAll('#tool-bar .tool-btn, .ctxbar button').forEach((b) => {
+    const r = b.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return;
+    const cs = getComputedStyle(b);
+    if (cs.visibility === 'hidden' || cs.display === 'none') return;
+    const cx = r.left + r.width / 2; const cy = r.top + r.height / 2;
+    let p = b.parentElement; let clipped = false;
+    while (p && p !== document.body) {
+      const pcs = getComputedStyle(p);
+      if (pcs.display === 'none' || pcs.visibility === 'hidden') { clipped = true; break; }
+      const pr = p.getBoundingClientRect();
+      if (/(auto|scroll|hidden)/.test(pcs.overflowX) && (cx < pr.left || cx > pr.right)) { clipped = true; break; }
+      p = p.parentElement;
+    }
+    if (clipped || cx < 0 || cy < 0 || cx > innerWidth || cy > innerHeight) return;
+    const t = document.elementFromPoint(cx, cy);
+    out.push({
+      label: b.dataset.tool || b.getAttribute('aria-label') || b.className,
+      ok: !!t && (t === b || b.contains(t)),
+      inPane: !!t && !!t.closest('#left-pane, #right-pane'),
+      top: t && (t.id || t.className || t.tagName),
+    });
+  });
+  return out;
+});
+
+const gotoFresh = async (page) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
+  await sleep(800);
+};
+
+const devOf = (testInfo) => PROJECTS[testInfo.project.name].device;
+
+test.describe('pane defaults (TUX-008)', () => {
+  test('A starts closed on tablet and phone', async ({ page }, testInfo) => {
+    const dev = devOf(testInfo);
+    test.skip(!['iPadP', 'iPhP', 'iPhL', 'iPhP-c', 'iPhL-c'].includes(dev), 'drawer layouts only');
+    await gotoFresh(page);
+    const s = await paneState(page);
+    expect(s.left.api && s.right.api, 'Workspace.paneState.isOpen exists').toBe(true);
+    expect(s.left.force, 'left pane-force-open').toBe(false);
+    expect(s.right.force, 'right pane-force-open').toBe(false);
+    expect(s.left.open, 'left isOpen').toBe(false);
+    expect(s.right.open, 'right isOpen').toBe(false);
+    expect(await backdropVisible(page), 'backdrop hidden').toBe(false);
+    if (dev === 'iPadP') {
+      const vp = page.viewportSize();
+      const share = await canvasShare(page);
+      testInfo.annotations.push({ type: 'TUX-008 A share', description: `${dev} ${testInfo.project.name} canvasShare ${share}%` });
+      expect(share, `iPadP canvasShare ${share}`).toBeGreaterThanOrEqual(70);
+      for (const side of ['left', 'right']) {
+        const p = s[side];
+        const gone = p.width === 0 || p.visibility === 'hidden' || p.right <= 0 || p.left >= vp.width;
+        expect(gone, `${side} closed pane has no footprint (width ${p.width}, ${p.visibility}, ${p.left}..${p.right})`).toBe(true);
+      }
+      for (const x of [2, 20, 38, vp.width - 38, vp.width - 20, vp.width - 2]) {
+        const t = await topAt(page, x, vp.height / 2);
+        expect(t.canvas, `x=${x} mid-height is canvas, got ${t.id}`).toBe(true);
+      }
+      await shot008(page, `iPadP-${/webkit/.test(testInfo.project.name) ? 'webkit' : 'chromium'}-closed`);
+    }
+    // Phone canvas share is owned by TUX-007 (iPhL >= 60, iPhL-c >= 50) and TUX-001/013 (iPhP);
+    // tracked by the TUX-058 ratchet.
+    if (dev === 'iPhP' || dev === 'iPhL') await shot008(page, `${dev}-${/webkit/.test(testInfo.project.name) ? 'webkit' : 'chromium'}`);
+  });
+
+  for (const stage of ['on load', 'with a layer selected']) {
+    test(`B no pane covers tools or ctxbar (${stage})`, async ({ page }, testInfo) => {
+      const dev = devOf(testInfo);
+      const phone = /^iPh/.test(dev);
+      await gotoFresh(page);
+      let bbox = null;
+      if (stage !== 'on load') {
+        bbox = await addAndSelectLayer(page);
+        await sleep(500);
+      }
+      const rep = await coverReport(page);
+      expect(rep.length, 'some tool buttons are checked').toBeGreaterThan(0);
+      if (phone) {
+        const hit = rep.filter((r) => r.inPane).map((r) => `${r.label}<-${r.top}`);
+        expect(hit, 'phone: tools/ctxbar under a pane').toEqual([]);
+      } else {
+        const bad = rep.filter((r) => !r.ok).map((r) => `${r.label}<-${r.top}`);
+        expect(bad, 'covered tool/ctxbar buttons').toEqual([]);
+        if (bbox && (dev === 'iPadP' || dev === 'iPadL')) {
+          const t = await topAt(page, bbox.x, bbox.y);
+          expect(t.inPane, `JRN-011 selected layer centre (${Math.round(bbox.x)},${Math.round(bbox.y)}) sits under a pane`).toBe(false);
+        }
+      }
+    });
+  }
+
+  test('C touch-wide docks and collapses by tap', async ({ page }, testInfo) => {
+    const dev = devOf(testInfo);
+    test.skip(!['iPadL', 'coarseWide'].includes(dev), 'touch-wide only');
+    // VERIFY-FIRST: the share clauses already passed before TUX-008 (46.1 / 61.4 / 75.5); this is a regression test.
+    await gotoFresh(page);
+    // Effective caps for this width: narrow caps below roomyMinWidth, roomy caps above (TOUCH_LAYOUT).
+    const caps = await page.evaluate(() => {
+      const TL = window.Vectura.TOUCH_LAYOUT;
+      const roomy = innerWidth >= TL.roomyMinWidth;
+      return roomy ? { left: TL.maxDockedRoomyPaneWidth, right: TL.maxDockedRoomyPaneWidth } : { left: TL.maxDockedPaneWidth, right: Math.min(TL.maxDockedPaneWidth, TL.maxDockedRightPaneWidth) };
+    });
+    const max = caps.left;
+    const maxRight = caps.right;
+    expect(max, 'TOUCH_LAYOUT.maxDockedPaneWidth').toBeGreaterThan(0);
+    let s = await paneState(page);
+    for (const side of ['left', 'right']) {
+      expect(s[side].docked, `${side} docked`).toBe(true);
+      expect(s[side].open, `${side} open`).toBe(true);
+      expect(s[side].width, `${side} width <= max`).toBeLessThanOrEqual((side === 'right' ? maxRight : max) + 0.5);
+    }
+    const vp = page.viewportSize();
+    const area = await page.evaluate(() => { const r = document.getElementById('viewport-container').getBoundingClientRect(); return r.width * r.height; });
+    expect(100 * area / (vp.width * vp.height), 'container area share').toBeGreaterThanOrEqual(45);
+    const s0 = await canvasShare(page);
+    expect(s0, `share ${s0}`).toBeGreaterThanOrEqual(45);
+    await shot008(page, `${dev}-docked`);
+    const prefBefore = await page.evaluate(() => ({ l: window.Vectura.SETTINGS.leftPaneCollapsed, r: window.Vectura.SETTINGS.rightPaneCollapsed }));
+    await tap(page, page.locator('#btn-pane-toggle-left'));
+    await sleep(400);
+    const s1 = await canvasShare(page);
+    expect(s1, `left collapsed share ${s1}`).toBeGreaterThanOrEqual(60);
+    await tap(page, page.locator('#btn-pane-toggle-right'));
+    await sleep(400);
+    const s2 = await canvasShare(page);
+    expect(s2, `both collapsed share ${s2}`).toBeGreaterThanOrEqual(75);
+    await shot008(page, `${dev}-collapsed`);
+    // touch-wide persists to its own keys; the desktop keys stay put.
+    const prefAfter = await page.evaluate(() => {
+      const S = window.Vectura.SETTINGS;
+      return { l: S.leftPaneCollapsed, r: S.rightPaneCollapsed, tl: S.touchWideLeftPaneCollapsed, tr: S.touchWideRightPaneCollapsed };
+    });
+    expect(prefAfter.tl, 'touch-wide left key').toBe(true);
+    expect(prefAfter.tr, 'touch-wide right key').toBe(true);
+    expect(prefAfter.l, 'desktop left key unchanged').toBe(prefBefore.l);
+    expect(prefAfter.r, 'desktop right key unchanged').toBe(prefBefore.r);
+    await tap(page, page.locator('#btn-pane-toggle-left'));
+    await tap(page, page.locator('#btn-pane-toggle-right'));
+    await sleep(400);
+    s = await paneState(page);
+    for (const side of ['left', 'right']) {
+      expect(s[side].docked, `${side} docked again`).toBe(true);
+      expect(s[side].open, `${side} open again`).toBe(true);
+    }
+  });
+
+  test('C persisted desktop widths are clamped on touch-wide', async ({ page }, testInfo) => {
+    const dev = devOf(testInfo);
+    test.skip(!['iPadL', 'coarseWide'].includes(dev), 'touch-wide only');
+    await page.addInitScript(() => {
+      try {
+        localStorage.setItem('vectura_prefs', JSON.stringify({ version: 1, data: { uiTheme: 'dark', paneLeftWidth: 520, paneRightWidth: 520 } }));
+      } catch (e) { /* storage unavailable */ }
+    });
+    await gotoFresh(page);
+    const seeded = await page.evaluate(() => window.Vectura.SETTINGS.paneLeftWidth);
+    expect(seeded, 'preferences seeded').toBe(520);
+    const caps = await page.evaluate(() => {
+      const TL = window.Vectura.TOUCH_LAYOUT;
+      const roomy = innerWidth >= TL.roomyMinWidth;
+      return roomy ? { left: TL.maxDockedRoomyPaneWidth, right: TL.maxDockedRoomyPaneWidth } : { left: TL.maxDockedPaneWidth, right: Math.min(TL.maxDockedPaneWidth, TL.maxDockedRightPaneWidth) };
+    });
+    const max = caps.left;
+    expect(max, 'TOUCH_LAYOUT.maxDockedPaneWidth').toBeGreaterThan(0);
+    const s = await paneState(page);
+    expect(s.left.width, 'left width clamped').toBeLessThanOrEqual(max + 0.5);
+    const maxRight = caps.right;
+    expect(s.right.width, 'right width clamped').toBeLessThanOrEqual(maxRight + 0.5);
+    const share = await canvasShare(page);
+    expect(share, `share ${share}`).toBeGreaterThanOrEqual(45);
+    expect(await page.evaluate(() => window.Vectura.SETTINGS.paneLeftWidth), 'clamp is not written back').toBe(520);
+  });
+
+  test('D tablet drawer model', async ({ page }, testInfo) => {
+    const dev = devOf(testInfo);
+    test.skip(!['iPadP', 'iPhP', 'iPhL'].includes(dev), 'drawer layouts only');
+    await gotoFresh(page);
+    const vp = page.viewportSize();
+    // Phone openers arrive with TUX-010; until then a phone uses the pane's own toggle when a finger can reach it.
+    const opener = async (side) => {
+      if (dev === 'iPadP') return page.locator(`#btn-mobile-pane-${side}`);
+      const loc = page.locator(`#btn-pane-toggle-${side}`);
+      const box = await loc.boundingBox();
+      if (!box) return null;
+      const t = await page.evaluate(({ x, y, id }) => { const e = document.elementFromPoint(x, y); const b = document.getElementById(id); return !!e && (e === b || b.contains(e)); }, { x: box.x + box.width / 2, y: box.y + box.height / 2, id: `btn-pane-toggle-${side}` });
+      return t ? loc : null;
+    };
+    const left = await opener('left');
+    const right = await opener('right');
+    if (!left || !right) {
+      test.skip(true, 'no finger-reachable phone opener until TUX-010');
+      return;
+    }
+    const prefBefore = await page.evaluate(() => window.Vectura.SETTINGS.leftPaneCollapsed);
+    await tap(page, left);
+    await sleep(400);
+    let s = await paneState(page);
+    expect(s.left.open, 'left open').toBe(true);
+    expect(await backdropVisible(page), 'backdrop visible').toBe(true);
+    const z = await page.evaluate(() => {
+      const zi = (el) => { const v = parseInt(getComputedStyle(el).zIndex, 10); return Number.isFinite(v) ? v : 0; };
+      return { backdrop: zi(document.getElementById('mobile-pane-backdrop')), tool: zi(document.getElementById('tool-bar')), drawer: zi(document.getElementById('left-pane')) };
+    });
+    expect(z.backdrop, 'backdrop above tool rail').toBeGreaterThan(z.tool);
+    expect(z.drawer, 'drawer above backdrop').toBeGreaterThan(z.backdrop);
+    const intro = await page.evaluate(() => {
+      const e = document.getElementById('left-welcome-intro');
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      return { w: r.width, h: r.height, l: r.left, t: r.top, r: r.right, b: r.bottom, W: innerWidth, H: innerHeight, vis: getComputedStyle(e).visibility };
+    });
+    if (intro) {
+      expect(intro.w > 0 && intro.h > 0 && intro.vis !== 'hidden', 'welcome intro visible').toBe(true);
+      // A short phone drawer (402 px tall) scrolls its body: the intro must start inside the viewport.
+      // Tablet fits whole.
+      const bottomOk = dev === 'iPadP' ? intro.b <= intro.H : intro.t < intro.H;
+      expect(intro.l >= 0 && intro.t >= 0 && intro.r <= intro.W && bottomOk, `welcome intro inside the viewport ${JSON.stringify(intro)}`).toBe(true);
+    }
+    if (dev === 'iPadP') await shot008(page, `iPadP-${/webkit/.test(testInfo.project.name) ? 'webkit' : 'chromium'}-drawer-open`);
+    if (dev !== 'iPadP') {
+      // On a phone the backdrop (z 65) covers the other pane's sliver, so the swap is two taps:
+      // the first closes the drawer through the backdrop.
+      await tap(page, { x: vp.width - 20, y: vp.height / 2 });
+      await sleep(400);
+    }
+    await tap(page, right);
+    await sleep(400);
+    s = await paneState(page);
+    expect(s.right.open, 'right open').toBe(true);
+    expect(s.left.open, 'left closed when right opens').toBe(false);
+    // Tap the backdrop outside the drawer (the right drawer sits on the right edge).
+    await tap(page, { x: 20, y: vp.height / 2 });
+    await sleep(400);
+    s = await paneState(page);
+    expect(s.left.open || s.right.open, 'backdrop tap closes the drawer').toBe(false);
+    expect(await backdropVisible(page), 'backdrop hidden after close').toBe(false);
+    await tap(page, left);
+    await sleep(400);
+    await tap(page, { x: vp.width - 20, y: vp.height / 2 });
+    await sleep(400);
+    s = await paneState(page);
+    expect(s.left.open || s.right.open, 'backdrop tap closes the left drawer').toBe(false);
+    if (dev !== 'iPadP') return;
+    // Context bar > Show Properties panel restores through the controller, with the backdrop.
+    await addAndSelectLayer(page);
+    await sleep(500);
+    await tap(page, page.locator('.ctxbar-overflow'));
+    await sleep(300);
+    await tap(page, page.locator('.ctxbar-menu-item', { hasText: 'Show Properties panel' }));
+    await sleep(500);
+    s = await paneState(page);
+    expect(s.left.open || s.right.open, 'Show Properties opens a drawer').toBe(true);
+    expect(await backdropVisible(page), 'Show Properties drawer has the backdrop').toBe(true);
+    await page.evaluate(() => window.Vectura.UI.Workspace.paneState.closeAll());
+    expect(await page.evaluate(() => window.Vectura.SETTINGS.leftPaneCollapsed), 'tablet never writes the desktop key').toBe(prefBefore);
+    expect(await page.evaluate(() => window.Vectura.SETTINGS.rightPaneCollapsed), 'tablet never writes the desktop right key').not.toBe(true);
+  });
+
+  test('E rotation', async ({ page }, testInfo) => {
+    const dev = devOf(testInfo);
+    test.skip(dev !== 'iPadL', 'iPad landscape projects start at iPadL');
+    await gotoFresh(page);
+    await tap(page, page.locator('#btn-pane-toggle-right'));
+    await sleep(400);
+    for (let cycle = 1; cycle <= 2; cycle += 1) {
+      const tag = `cycle ${cycle}`;
+      let s = await paneState(page);
+      expect(s.left.open && s.left.docked, `${tag} iPadL left docked open`).toBe(true);
+      expect(s.right.open, `${tag} iPadL right collapsed`).toBe(false);
+      await page.setViewportSize({ width: 834, height: 1210 });
+      await sleep(700);
+      s = await paneState(page);
+      expect(s.left.open, `${tag} portrait left closed`).toBe(false);
+      expect(s.right.open, `${tag} portrait right closed`).toBe(false);
+      expect(await backdropVisible(page), `${tag} portrait no backdrop`).toBe(false);
+      await tap(page, page.locator('#btn-mobile-pane-left'));
+      await sleep(400);
+      expect((await paneState(page)).left.open, `${tag} drawer open`).toBe(true);
+      await page.setViewportSize({ width: 820, height: 1180 });
+      await sleep(700);
+      expect((await paneState(page)).left.open, `${tag} same-class resize keeps the drawer`).toBe(true);
+      for (let i = 0; i < 4; i += 1) {
+        await page.setViewportSize({ width: 820 + (i % 2) * 6, height: 1180 });
+        await sleep(60);
+      }
+      expect((await paneState(page)).left.open, `${tag} resize burst keeps the drawer`).toBe(true);
+      await page.setViewportSize({ width: 1210, height: 834 });
+      await sleep(700);
+      s = await paneState(page);
+      expect(s.left.open && s.left.docked, `${tag} back to landscape: left docked open`).toBe(true);
+      expect(s.right.open, `${tag} back to landscape: right still collapsed`).toBe(false);
+      expect(await backdropVisible(page), `${tag} landscape no backdrop`).toBe(false);
+    }
+  });
+});

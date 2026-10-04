@@ -252,8 +252,10 @@ test.describe('TUX-006 mobile-layout cascade weight', () => {
           };
         });
         expect(s.mobile, 'mobile-layout active').toBe(true);
-        expect(s.left, '#btn-mobile-pane-left display').toBe('none');
-        expect(s.right, '#btn-mobile-pane-right display').toBe('none');
+        // TUX-008: a touch tablet (iPadP) shows the two interim openers in the header; every other case hides them.
+        const wantHandle = c.name.startsWith('iPadP');
+        expect(s.left === 'none', '#btn-mobile-pane-left hidden').toBe(!wantHandle);
+        expect(s.right === 'none', '#btn-mobile-pane-right hidden').toBe(!wantHandle);
         expect(s.gap, '.top-menubar gap').toBe('1px');
         expect(s.align, '.header-main align-items').toBe('center');
         expect(s.padL, '#app-header padding-left').toBe('14px');

@@ -2461,6 +2461,17 @@
     coarsePhoneMaxHeight: 500,
     finePhoneMaxWidth: 540,
     wideMinWidth: 900,
+    // TUX-008: docked pane caps (px) on a touch-wide layout, so a docked pane never squeezes the canvas.
+    // Below roomyMinWidth (iPad landscape, 1180-1210 px) the 45 % canvas floor needs narrow panes: 290 / 258
+    // measured 37.9 %. The generator pane keeps 260 so a slider track stays long enough for a finger
+    // (250 broke the TUX-043 drag tests); the layers pane takes 200 (the resizer minimum). 260 / 200
+    // measures 46.7 % on the 48-cell grid with the context bar shown. From roomyMinWidth up (13-inch iPad,
+    // 1366 px, already above 45 %) both panes may use up to maxDockedRoomyPaneWidth. Caps also bound a
+    // 520 px width saved on desktop. CSS reads them through --touch-wide-pane-max(-right).
+    maxDockedPaneWidth: 260,
+    maxDockedRightPaneWidth: 200,
+    roomyMinWidth: 1280,
+    maxDockedRoomyPaneWidth: 335,
   };
 
   // TUX-007: canvas view-scale limits. Only Renderer.center() reads minScale today; TUX-020 wires the
@@ -2586,6 +2597,10 @@
     wallpaperPanelMode: 'styles',
     paneLeftWidth: 335,
     paneRightWidth: 335,
+    // TUX-008: touch-wide (coarse pointer, >= 900 px) keeps its own collapsed flags. Desktop keeps
+    // leftPaneCollapsed / rightPaneCollapsed. Tablet and phone drawers persist nothing.
+    touchWideLeftPaneCollapsed: false,
+    touchWideRightPaneCollapsed: false,
     lightSource: null,
     optimizationDefaults: {
       bypassAll: false,

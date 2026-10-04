@@ -353,11 +353,19 @@
     const side = paneSideFor(node);
     const s = settings();
     if (paneIsCollapsed(node)) {
-      node.classList.remove('pane-collapsed');
-      const body = G.document && G.document.body;
-      if (body && body.classList.contains('auto-collapsed')) node.classList.add('pane-force-open');
-      if (side === 'left') s.leftPaneCollapsed = false;
-      else if (side === 'right') s.rightPaneCollapsed = false;
+      // TUX-008: the pane-state controller is the single writer (classes, backdrop, per-layout
+      // persistence). The fallback keeps jsdom, where the shell never bound the controller.
+      const ws = G.Vectura && G.Vectura.UI && G.Vectura.UI.Workspace;
+      const ps = ws && ws.paneState;
+      if (ps && side && ps.layout()) {
+        ps.open(side);
+      } else {
+        node.classList.remove('pane-collapsed');
+        const body = G.document && G.document.body;
+        if (body && body.classList.contains('auto-collapsed')) node.classList.add('pane-force-open');
+        if (side === 'left') s.leftPaneCollapsed = false;
+        else if (side === 'right') s.rightPaneCollapsed = false;
+      }
     }
     if (side && paneIsShrunk(node, side)) {
       const w = paneDefaultWidth(side);

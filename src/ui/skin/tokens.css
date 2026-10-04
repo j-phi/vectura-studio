@@ -192,3 +192,15 @@
   --z-floating-sheet: 850;
 }
 /* === END TUX-026 tokens === */
+
+/* === TUX-008: pane stacking ===
+ * Drawer order, bottom to top: pane/sliver 55, tool rail 60 (phone), backdrop 65, open drawer 70. The interim
+ * tablet openers live in #app-header and sit above its menubar (300). TUX-010 extends this scale. */
+:root {
+  --z-pane: 55;
+  --z-toolbar: 60;
+  --z-backdrop: 65;
+  --z-drawer: 70;
+  --z-pane-opener: 300; /* inside #app-header, above .top-menubar (260), which spans the header width */
+}
+/* === END TUX-008 tokens === */

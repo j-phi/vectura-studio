@@ -22,6 +22,9 @@ const boot = async (page) => {
   await page.evaluate(() => {
     document.getElementById('left-pane').classList.add('pane-force-open');
     document.getElementById('right-pane').classList.add('pane-force-open');
+    // TUX-008: a touch tablet shows one drawer at a time (the controller owns it). Every test here reads the right pane.
+    const b = document.body;
+    if (b.classList.contains('tablet-layout') && b.classList.contains('touch-ui')) window.Vectura.UI.Workspace.paneState.open('right');
   });
 };
 

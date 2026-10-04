@@ -151,7 +151,28 @@ const captureRepresentativePatternIds = async (page) =>
   });
 
 
+// TUX-008: on a touch tablet (body.tablet-layout.touch-ui) both panes start closed and at most one
+// drawer is open, so a test that touches a pane control opens that pane first. Desktop and touch-wide
+// dock the panes, so the helper does nothing there. It uses the controller API (fixture, not the
+// behaviour under test); tests/e2e/touch/canvas-share.spec.js drives the real taps.
+const ensurePaneOpen = async (page, side) => {
+  await page.waitForFunction(() => !!(window.Vectura && window.Vectura.UI && window.Vectura.UI.Workspace && window.Vectura.UI.Workspace.paneState));
+  await page.evaluate((s) => {
+    const b = document.body;
+    if (!b.classList.contains('tablet-layout') || !b.classList.contains('touch-ui')) return;
+    window.Vectura.UI.Workspace.paneState.open(s);
+  }, side);
+};
+const closeDrawers = async (page) => {
+  await page.evaluate(() => {
+    const ps = window.Vectura && window.Vectura.UI && window.Vectura.UI.Workspace && window.Vectura.UI.Workspace.paneState;
+    const b = document.body;
+    if (ps && b.classList.contains('tablet-layout') && b.classList.contains('touch-ui')) ps.closeAll();
+  });
+};
+
 const addAlgoLayer = async (page) => {
+  await ensurePaneOpen(page, 'right');
   await page.click('#btn-add-layer');
   await page.click('.lvl-add-item[data-add="algo-parent"]');
 };
@@ -286,6 +307,8 @@ test.describe('Vectura smoke interactions', () => {
     await page.goto('/');
     const inMobileLayout = await page.evaluate(() => document.body.classList.contains('mobile-layout'));
     test.skip(!inMobileLayout, 'mobile-layout regression — only meaningful at < 900px viewport');
+    // TUX-008: the right pane is a closed drawer on a touch tablet; open it, then keep the occlusion check.
+    await ensurePaneOpen(page, 'right');
 
     const btn = page.locator('#btn-add-layer');
     await expect(btn).toBeVisible();
@@ -308,8 +331,11 @@ test.describe('Vectura smoke interactions', () => {
     await addAlgoLayer(page);
 
     await expect(page.locator('#status-bar')).toBeVisible();
+    await ensurePaneOpen(page, 'left');
     await expect(page.locator('#generator-module')).toBeVisible();
+    await ensurePaneOpen(page, 'right');
     await expect(page.locator('#layer-list [data-lvl-id]').first()).toBeVisible();
+    await closeDrawers(page);
     await page.locator('#btn-pane-toggle-bottom').click();
     await expect
       .poll(async () => (await page.locator('#formula-display').innerText()).trim().length)
@@ -324,6 +350,7 @@ test.describe('Vectura smoke interactions', () => {
 
     const initialGeometry = await captureActiveLayerGeometry(page);
     const nextType = initialGeometry.type === 'topo' ? 'lissajous' : 'topo';
+    await ensurePaneOpen(page, 'left');
     await page.selectOption('#generator-module', nextType);
     await expect.poll(async () => (await captureActiveLayerGeometry(page)).type).toBe(nextType);
     await expect.poll(async () => (await captureActiveLayerGeometry(page)).signature).not.toBe(initialGeometry.signature);
@@ -376,6 +403,7 @@ test.describe('Vectura smoke interactions', () => {
       await addAlgoLayer(page);
     }
 
+    await ensurePaneOpen(page, 'right');
     await page.click('.right-pane-tab[data-tab="pens"]');
     await page.click('#auto-colorization-header');
 
@@ -868,6 +896,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.click('#btn-insert-mirror-modifier');
 
     await expect(page.locator('#layer-list [data-lvl-id]')).toHaveCount(initialLayers + 1);
+    await ensurePaneOpen(page, 'left');
     await expect(page.locator('#left-section-primary-title')).toHaveText('Modifier');
     await expect(page.locator('#left-section-secondary-title')).toHaveText('Modifier Configuration');
     await expect(page.locator('#generator-module')).toHaveValue('mirror');
@@ -899,6 +928,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.goto('/');
     await addAlgoLayer(page);
 
+    await ensurePaneOpen(page, 'left');
     await page.selectOption('#generator-module', 'rings');
     await page.locator('#btn-menu-insert').click();
     await page.click('#btn-insert-mirror-modifier');
@@ -1544,6 +1574,7 @@ test.describe('Vectura smoke interactions', () => {
       await page.locator('[data-layer-id="mask-parent-hidden-ui"]').hover();
       await outlineBtn.click();
     } else {
+      await ensurePaneOpen(page, 'right');
       await page.locator('[data-layer-id="mask-parent-hidden-ui"] .lvl-more').click();
       await page.locator('.menu-dropdown.open .menu-entry[data-key="mask-outline"]').click();
     }
@@ -1589,6 +1620,7 @@ test.describe('Vectura smoke interactions', () => {
       window.app.ui.renderLayers();
       window.app.ui.buildControls();
     });
+    await ensurePaneOpen(page, 'left');
 
     await page.evaluate(() => {
       document.getElementById('left-panel-content').scrollTop = 600;
@@ -1866,6 +1898,7 @@ test.describe('TUX-035 add layer menu (mouse parity)', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    await ensurePaneOpen(page, 'right');
   });
   const count = (page) => page.evaluate(() => window.app.engine.layers.length);
 
@@ -1916,5 +1949,56 @@ test.describe('TUX-005 desktop parity', () => {
     expect(boxes.header.padding).toBe('0px 14px 0px 14px');
     expect(boxes.toolbar.padding).toBe('8px 8px 8px 8px');
     expect(boxes.hud.padding).toBe('3px 12px 3px 12px');
+  });
+});
+
+// TUX-008 desktop parity (D6): a fine pointer keeps today's pane behaviour at every width.
+// Deviation from the brief: the TUX-006 classifier labels a fine pointer at 540-900 px "tablet" (it adds
+// tablet-layout). The pane controller keys on the pointer too, so a fine pointer must still show open
+// overlay panes and no backdrop. The assertion is on the behaviour, not the class.
+test.describe('TUX-008 desktop parity', () => {
+  test('fine pointer: docked open at 1600x1000, open overlays and no backdrop at 800x900', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'desktop parity is defined for the desktop-chromium project (1600x1000, mouse)');
+    const read = () => page.evaluate(() => {
+      const one = (id) => {
+        const el = document.getElementById(id);
+        const r = el.getBoundingClientRect();
+        return { w: r.width, pos: getComputedStyle(el).position, collapsed: el.classList.contains('pane-collapsed'), force: el.classList.contains('pane-force-open') };
+      };
+      const b = document.getElementById('mobile-pane-backdrop');
+      const bd = b ? getComputedStyle(b) : null;
+      return {
+        left: one('left-pane'),
+        right: one('right-pane'),
+        backdropShown: !!b && b.classList.contains('visible'),
+        backdropBlocks: !!bd && bd.display !== 'none' && bd.pointerEvents !== 'none',
+        touchUi: document.body.classList.contains('touch-ui'),
+        touchWide: document.body.classList.contains('touch-wide-layout'),
+      };
+    });
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    let s = await read();
+    expect(s.left.collapsed || s.right.collapsed).toBe(false);
+    expect(s.left.pos).not.toBe('absolute');
+    expect(s.right.pos).not.toBe('absolute');
+    expect(s.left.w).toBeGreaterThan(200);
+    expect(s.right.w).toBeGreaterThan(200);
+    expect(s.backdropBlocks).toBe(false);
+    expect(s.touchUi).toBe(false);
+    expect(s.touchWide).toBe(false);
+    await require('fs').promises.mkdir('/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-008', { recursive: true });
+    await page.screenshot({ path: '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-008/desktop-1600x1000.png' });
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.waitForTimeout(500);
+    s = await read();
+    expect(s.left.collapsed || s.right.collapsed, 'both panes open at 800x900').toBe(false);
+    expect(s.left.pos).toBe('absolute');
+    expect(s.right.pos).toBe('absolute');
+    expect(s.left.force || s.right.force).toBe(false);
+    expect(s.backdropShown).toBe(false);
+    expect(s.backdropBlocks).toBe(false);
+    expect(s.touchUi).toBe(false);
   });
 });

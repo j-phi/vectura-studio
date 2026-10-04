@@ -14455,7 +14455,6 @@ body.phone-layout #settings-panel {
 }
 /* === END TUX-046 === */
 
-<<<<<<< HEAD
 /* === TUX-002: fixed, non-scrolling shell ===
  * The app is a fixed-size shell. The page itself must never scroll, rubber-band or pull to refresh.
  * body IS the app wrapper (the Tailwind h-screen class was removed from index.html). Height comes
@@ -14718,7 +14717,6 @@ body.phone-layout.phone-short .pane.pane-force-open {
   bottom: calc(var(--safe-bottom, 0px) + var(--tux7-hud-h));
 }
 /* === END TUX-007 === */
-=======
 /* === TUX-046 (integration fix): colour modal clears the close hit area ===
    The close ::before is 44px around a 24px button, so it reaches 10px below the header.
    The positioned .color-sv-wrapper started 8px below and won the hit test for 2px.
@@ -14805,4 +14803,124 @@ body.phone-layout #petal-designer-window .petal-designer-header {
   .preset-save-sheet.is-kb-short .preset-save-note { display: none; }
 }
 /* === END TUX-049 === */
->>>>>>> touch/integration
+
+/* === TUX-008: tablet drawers + closed panes ===
+ * One model (src/ui/shell/pane-state.js, applied by workspace.js):
+ *   touch-wide  docked, open by default, width capped at TOUCH_LAYOUT.maxDockedPaneWidth.
+ *   tablet      drawer. Closed = .pane-collapsed with ZERO canvas footprint. Open = .pane-drawer-open.
+ *   phone       unchanged: .auto-collapsed slivers (TUX-011 owns the sliver) and .pane-force-open.
+ * Tablet rules need body.touch-ui: a fine pointer at 540-900 px keeps the old overlay panes.
+ * The old rules to beat: body.mobile-layout .pane-left.pane-collapsed (0,3,1), .mobile-layout .pane (0,2,0),
+ * and the unscoped .mobile-pane-handle { display: none } at the end of the legacy block. */
+
+/* Backdrop sits above the tool rail (z 60) and the modifier bar, below the open drawer. */
+body.mobile-layout .mobile-pane-backdrop {
+  z-index: var(--z-backdrop);
+}
+
+/* Closed tablet pane: nothing to see, nothing to hit, no canvas lost. */
+body.tablet-layout.touch-ui .pane.pane-collapsed {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+/* Open tablet drawer: above the backdrop. The width comes from the .mobile-layout rules. */
+body.tablet-layout.touch-ui .pane.pane-drawer-open {
+  z-index: var(--z-drawer);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Interim openers (TUX-010 restyles and labels them). 44 px wide, header-band tall plus a 44 px hit area, never over the
+ * canvas or a tool button. Every pane control inside a closed pane is unreachable, so these are the
+ * only finger path to the Generator and Layers panels on a tablet. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left,
+body.tablet-layout.touch-ui .mobile-pane-handle-right {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  top: var(--safe-top, 0px);
+  bottom: auto;
+  width: 44px;
+  height: 38px; /* the header band; the ::after below grows the finger target to 44 px tall */
+  padding: 0;
+  transform: none;
+  writing-mode: horizontal-tb;
+  font-size: 0;
+  line-height: 0;
+  letter-spacing: 0;
+  border: 1px solid var(--ui-border-hi);
+  border-radius: 10px;
+  z-index: var(--z-pane-opener);
+}
+body.tablet-layout.touch-ui .mobile-pane-handle-left {
+  left: auto;
+  right: calc(100px + var(--safe-right, 0px));
+}
+body.tablet-layout.touch-ui .mobile-pane-handle-right {
+  right: calc(52px + var(--safe-right, 0px));
+}
+/* A panel glyph: an outlined box with the drawer side filled. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left::before,
+body.tablet-layout.touch-ui .mobile-pane-handle-right::before {
+  content: '';
+  display: block;
+  width: 22px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+}
+body.tablet-layout.touch-ui .mobile-pane-handle-left::before {
+  background: linear-gradient(to right, currentColor 0 38%, transparent 38%);
+}
+body.tablet-layout.touch-ui .mobile-pane-handle-right::before {
+  background: linear-gradient(to left, currentColor 0 38%, transparent 38%);
+}
+/* Hit area: 44 x 45, extending past the header into the rail's top padding (no tool button there). */
+body.tablet-layout.touch-ui .mobile-pane-handle-left::after,
+body.tablet-layout.touch-ui .mobile-pane-handle-right::after {
+  content: '';
+  position: absolute;
+  inset: -3px 0 -4px;
+}
+body.tablet-layout.touch-ui:has(#left-pane.pane-drawer-open) .mobile-pane-handle-left,
+body.tablet-layout.touch-ui:has(#right-pane.pane-drawer-open) .mobile-pane-handle-right {
+  color: var(--ui-accent, currentColor);
+  border-color: var(--ui-accent, var(--ui-border-hi));
+}
+
+/* While a tablet drawer is open the header (menus and the two openers) stays above the backdrop, so the
+ * other opener swaps drawers in one tap. The drawer starts below the header, so nothing overlaps. */
+body.tablet-layout.touch-ui:has(.pane-drawer-open) #app-header {
+  z-index: calc(var(--z-backdrop) + 1);
+}
+
+/* touch-wide: docked panes never exceed the cap, even when a desktop session saved 520 px.
+ * --touch-wide-pane-max / --touch-wide-pane-max-right are pushed from TOUCH_LAYOUT by workspace.js; the saved
+ * width is never rewritten. A collapsed pane keeps its rail width. */
+body.touch-wide-layout .pane-left:not(.pane-collapsed) {
+  width: min(var(--pane-left-width), var(--touch-wide-pane-max, 260px));
+}
+body.touch-wide-layout .pane-right:not(.pane-collapsed) {
+  width: min(var(--pane-right-width), var(--touch-wide-pane-max-right, 200px));
+}
+/* touch-wide collapsed rail: 36 px instead of the 56 px desktop rail, and no 6 px resizer strip beside it
+ * (the strip is a mouse drag handle and eats canvas). Measured on the 48-cell grid at 1210 px: rail
+ * 56 -> 72.1 %, 44 -> 72.5 %, 40 -> 74.0 %, 36 -> 77.6 %. The floor is 75 %. The 28 px toggle fits the
+ * rail; TUX-010 grows its hit area past the rail edge, not the rail. */
+:root:has(body.touch-wide-layout) {
+  --pane-collapsed-width: 36px;
+}
+body.touch-wide-layout:has(#left-pane.pane-collapsed) #left-resizer,
+body.touch-wide-layout:has(#right-pane.pane-collapsed) #right-resizer {
+  display: none;
+}
+/* === END TUX-008 === */
