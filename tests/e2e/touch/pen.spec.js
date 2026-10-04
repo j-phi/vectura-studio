@@ -124,6 +124,95 @@ test.describe('TUX-030 pen draft controls', () => {
     expect(await layerCount(page), 'layers after setActiveTool(select)').toBe(before + 1);
   });
 
+  test('tapping the Select rail button by finger commits a draft of two or more anchors', async ({ page }) => {
+    // Finger path, not setActiveTool(): a rail or drawer route that bypasses setActiveTool would
+    // discard the draft here. Known bypasses (renderer.setTool('type'|'direct'), menubar direct
+    // fallback) are logged as PRH-300 and are not exercised.
+    const before = await layerCount(page);
+    const sel = page.locator('#tool-bar .tool-btn[data-tool="select"]').first();
+    // On narrow layouts the open left pane overlays the tool rail (shell-lane finding, TUX-007).
+    // Collapse it by finger first so the rail button is reachable.
+    const covered = () => page.evaluate(() => {
+      const e = document.querySelector('#tool-bar .tool-btn[data-tool="select"]');
+      if (!e) return true;
+      const r = e.getBoundingClientRect(); const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return !(t && (t === e || e.contains(t)));
+    });
+    if (await covered()) {
+      await touch.tap(page, page.locator('#btn-pane-toggle-left'));
+      await expect.poll(covered).toBe(false);
+    }
+    await tapAnchors(page, 2);
+    await expect(sel).toBeVisible();
+    await touch.tap(page, sel);
+    await expect.poll(() => page.evaluate(() => window.app.renderer.activeTool)).toBe('select');
+    expect(await layerCount(page), 'layers after finger tap on Select').toBe(before + 1);
+    expect(await page.evaluate(() => window.app.renderer.penDraft)).toBeNull();
+  });
+
+  test('draft bar clears the overlay panes and every control passes a hit test at 44px', async ({ page }, testInfo) => {
+    await tapAnchors(page, 3);
+    await expect(page.locator(CHIP.done)).toBeVisible();
+    const rows = await page.evaluate(() => {
+      const bar = document.querySelector('.ctxbar');
+      const out = [];
+      const sels = ['[data-action="pen-done"]', '[data-action="pen-remove-last"]', '[data-action="pen-cancel"]', '.ctxbar-overflow', '.ctxbar-handle'];
+      sels.forEach((s) => {
+        const e = bar.querySelector(s);
+        if (!e) { out.push({ s, absent: true }); return; }
+        const r = e.getBoundingClientRect();
+        const shown = r.width > 0 && r.height > 0 && getComputedStyle(e).display !== 'none';
+        const cx = r.x + r.width / 2; const cy = r.y + r.height / 2;
+        const top = shown ? document.elementFromPoint(cx, cy) : null;
+        out.push({ s, shown, w: Math.round(r.width), h: Math.round(r.height), hit: shown ? !!(top && (top === e || e.contains(top))) : null, over: top && (top.className || top.id) });
+      });
+      return out;
+    });
+    for (const r of rows) {
+      if (r.absent || !r.shown) continue; // hidden while kind === pen-draft is allowed
+      expect(r.hit, `${r.s} covered by ${r.over}`).toBe(true);
+      expect(r.w, `${r.s} ${r.w}x${r.h}`).toBeGreaterThanOrEqual(44);
+      expect(r.h, `${r.s} ${r.w}x${r.h}`).toBeGreaterThanOrEqual(44);
+    }
+    for (const a of ['pen-done', 'pen-remove-last', 'pen-cancel']) expect(rows.find((r) => r.s === `[data-action="${a}"]`).hit, a).toBe(true);
+    const geo = await page.evaluate(() => {
+      const b = document.querySelector('.ctxbar').getBoundingClientRect();
+      const ov = (sel, side) => { const n = document.querySelector(sel); if (!n) return 0; const r = n.getBoundingClientRect(); if (!r.width) return 0; return side === 'l' ? r.right : innerWidth - r.left; };
+      return { bl: b.left, br: b.right, l: ov('.pane-left', 'l'), r: ov('.pane-right', 'r'), vw: innerWidth };
+    });
+    expect(geo.bl, 'bar left edge vs left pane').toBeGreaterThanOrEqual(geo.l - 1);
+    expect(geo.br, 'bar right edge vs right pane').toBeLessThanOrEqual(geo.vw - geo.r + 1);
+    await shot(page, testInfo, `${testInfo.project.name}-hit`);
+  });
+
+  test('the draft bar leaves the canvas band free: a tap beside it still places the next anchor', async ({ page }) => {
+    await tapAnchors(page, 1);
+    await expect(page.locator(CHIP.done)).toBeVisible();
+    // Every canvas point above the bar's top edge and clear of the panes must stay a canvas hit.
+    const p = await page.evaluate(() => {
+      const cv = document.querySelector('#main-canvas').getBoundingClientRect();
+      const bar = document.querySelector('.ctxbar').getBoundingClientRect();
+      const first = window.app.renderer.penDraft.anchors.length;
+      const pts = [];
+      for (let fy = 0.1; fy < 0.9; fy += 0.04) {
+        for (let fx = 0.1; fx < 0.95; fx += 0.04) {
+          const x = cv.x + cv.width * fx; const y = cv.y + cv.height * fy;
+          const e = document.elementFromPoint(x, y);
+          if (e && e.id === 'main-canvas') pts.push({ x, y, inBand: y >= bar.top - 2 && y <= bar.bottom + 2 && x >= bar.left - 2 && x <= bar.right + 2 });
+        }
+      }
+      return { pts, first, barTop: bar.top, canvasBottom: cv.bottom, canvasTop: cv.top };
+    });
+    // Canvas points exist in the bar's row on both sides and the band above the bar is free.
+    const free = p.pts.filter((q) => !q.inBand && q.y < p.barTop - 2);
+    expect(free.length, `free canvas points above the bar (bar top ${Math.round(p.barTop)})`).toBeGreaterThan(5);
+    // Central band: at least half of the canvas height sits above the bar.
+    expect(p.barTop - p.canvasTop, 'canvas height above the bar').toBeGreaterThanOrEqual((p.canvasBottom - p.canvasTop) * ((p.canvasBottom - p.canvasTop) < 300 ? 0.72 : 0.6));
+    const q = free[Math.floor(free.length / 2)];
+    await touch.tap(page, q);
+    await expect.poll(() => anchors(page)).toBe(2);
+  });
+
   test('temporary tool switch does not commit (guard)', async ({ page }) => {
     const before = await layerCount(page);
     await tapAnchors(page, 3);

@@ -619,11 +619,27 @@
       // TUX-030: stable bottom-centre spot, computed once per draft (and again only if the
       // viewport changes). The bar never chases the selection while a draft is in progress.
       const pv = viewportSize();
-      const key = `${pv.w}x${pv.h}`;
+      // Side panes overlay the canvas viewport on narrow layouts (iPad portrait, phone landscape).
+      // Inset the bar by their overlap, as the isolation breadcrumb does, so no chip is buried.
+      const hostRect = els.host ? els.host.getBoundingClientRect() : null;
+      const overlap = (sel, side) => {
+        const n = G.document.querySelector(sel);
+        if (!n || !hostRect) return 0;
+        const r = n.getBoundingClientRect();
+        if (!r.width || !r.height || r.bottom <= hostRect.top || r.top >= hostRect.bottom) return 0;
+        return side === 'left'
+          ? Math.max(0, Math.min(r.right, hostRect.right) - hostRect.left)
+          : Math.max(0, hostRect.right - Math.max(r.left, hostRect.left));
+      };
+      const insetL = Math.round(overlap('.pane-left', 'left'));
+      const insetR = Math.round(overlap('.pane-right', 'right'));
+      const key = `${pv.w}x${pv.h}:${insetL}:${insetR}`;
       if (!state.penAnchor || state.penAnchor.key !== key) {
+        const pad = 4; // tight to the edge: a short canvas (phone landscape) keeps its central band free
+        const span = Math.max(120, pv.w - insetL - insetR - 2 * pad);
+        els.bar.style.maxWidth = `${span}px`; // chips wrap inside the uncovered span
+        els.bar.style.left = `${insetL + pad}px`; // measure from the span's edge, not the previous spot
         const pb = barSize();
-        const pad = Number((cfg().timing || {}).viewportPadPx) || 8;
-        const hostRect = els.host ? els.host.getBoundingClientRect() : null;
         let bottom = pv.h - pad - safeBottomPx();
         const mod = G.document.querySelector('#touch-modifier-bar:not(.hidden)');
         const mr = mod && hostRect ? mod.getBoundingClientRect() : null;
@@ -631,7 +647,7 @@
         if (mr && mr.width && mr.height && (mr.top - hostRect.top) > pv.h / 2) bottom = Math.min(bottom, mr.top - hostRect.top - pad);
         state.penAnchor = {
           key,
-          left: Math.max(pad, (pv.w - pb.w) / 2),
+          left: insetL + pad + Math.max(0, (span - pb.w) / 2),
           top: Math.max(pad, bottom - pb.h),
         };
       }
@@ -640,7 +656,7 @@
       refreshMenuDirection();
       return;
     }
-    state.penAnchor = null;
+    if (state.penAnchor) { state.penAnchor = null; els.bar.style.maxWidth = ''; }
     const renderer = getRenderer();
     const bounds = renderer && renderer.getSelectionScreenBounds ? renderer.getSelectionScreenBounds() : null;
     state.lastAnchor = bounds;
@@ -3125,7 +3141,7 @@
     setVisible(vis);
     if (!vis) {
       // TUX-030: a finished/cancelled draft must not leave its chips or anchor behind.
-      if (state.kind === 'pen-draft') { state.kind = null; state.penAnchor = null; }
+      if (state.kind === 'pen-draft') { state.kind = null; state.penAnchor = null; if (els.bar) els.bar.style.maxWidth = ''; }
       return;
     }
     const ctx = getContext();

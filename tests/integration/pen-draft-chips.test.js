@@ -74,6 +74,48 @@ describe('TUX-030 pen draft controls (wiring)', () => {
     expect(layers()).toBe(base + 1);
   });
 
+  test('undo, redo and a document load never commit an open draft', async () => {
+    // The checkpoint was captured under the Select tool, so applyState switches back to Select
+    // while the draft is open. That switch must not turn the draft into a layer.
+    const startPenDraft = (n) => {
+      app.ui.setActiveTool('pen');
+      app.ui.setPenMode('draw');
+      draft(n);
+    };
+    await reset();
+    app.ui.setActiveTool('select');
+    app.pushHistory();
+    const base = layers();
+    startPenDraft(3);
+    app.undo();
+    expect(layers()).toBe(base);
+    expect(app.renderer.penDraft).toBeNull();
+
+    await reset();
+    app.ui.setActiveTool('select');
+    app.pushHistory();
+    app.pushHistory();
+    app.engine.addLayer('spiral');
+    app.pushHistory();
+    app.undo();
+    expect(app.redoStack.length).toBeGreaterThan(0);
+    app.ui.setActiveTool('select');
+    startPenDraft(3);
+    const redoTarget = app.redoStack[app.redoStack.length - 1].engine.layers.length;
+    app.redo(); // redo state was captured under Select as well
+    expect(layers()).toBe(redoTarget);
+    expect(app.renderer.penDraft).toBeNull();
+
+    await reset();
+    app.ui.setActiveTool('select');
+    const state = app.captureState();
+    const loaded = layers();
+    startPenDraft(2);
+    app.applyState(state);
+    expect(layers()).toBe(loaded);
+    expect(app.renderer.penDraft).toBeNull();
+  });
+
   test('pen-draft context only for a draw-purpose draft in draw mode', async () => {
     await reset();
     expect(CB.getContext().kind).not.toBe('pen-draft');

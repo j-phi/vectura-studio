@@ -14615,6 +14615,12 @@ body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
   .ctxbar.ctxbar--pen-draft { display: flex; }
 }
 .ctxbar-btn.ctxbar-pen-chip[aria-disabled="true"] { opacity: 0.45; }
+/* The draft bar holds only the three chips: no drag grip (it never chases the selection) and no
+ * overflow menu (neither is a finger-sized control, and a draft has nothing to overflow). */
+.ctxbar.ctxbar--pen-draft .ctxbar-handle,
+.ctxbar.ctxbar--pen-draft .ctxbar-overflow-wrap { display: none; }
+.ctxbar.ctxbar--pen-draft { padding: 0; flex-wrap: wrap; justify-content: center; }
+.ctxbar.ctxbar--pen-draft .ctxbar-content { flex-wrap: wrap; justify-content: center; gap: 2px; }
 @media (pointer: coarse) {
   .ctxbar .ctxbar-btn.ctxbar-pen-chip {
     min-height: var(--touch-target-min, 44px);
