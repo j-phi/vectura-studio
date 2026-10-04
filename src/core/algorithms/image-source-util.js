@@ -15,6 +15,39 @@
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
   const MAX_DECODE = 600; // cap decoded raster's longest side (sampling speed)
+  // Import cap (TUX-055), configured in src/config/ui-constants.js (IMAGE_IMPORT.MAX_SIDE; 2048 is the fallback).
+  const MAX_IMPORT_SIDE = Number(Vectura.UI_CONSTANTS?.IMAGE_IMPORT?.MAX_SIDE) || 2048;
+
+  // Pure sizing: fit (w,h) inside maxSide on the long side, keep aspect, min 1px. scale=1 when it already fits.
+  const cappedSize = (w, h, maxSide = MAX_IMPORT_SIDE) => {
+    const sw = Math.max(1, Number(w) || 1);
+    const sh = Math.max(1, Number(h) || 1);
+    const long = Math.max(sw, sh);
+    if (long <= maxSide) return { w: sw, h: sh, scale: 1 };
+    const scale = maxSide / long;
+    return { w: Math.max(1, Math.round(sw * scale)), h: Math.max(1, Math.round(sh * scale)), scale };
+  };
+
+  // Draw a decoded image into a new canvas no larger than maxSide. Images that already fit
+  // are drawn with drawImage(img, 0, 0) so small imports stay byte-identical.
+  // Returns {canvas, ctx, w, h, scaled}, or null when no 2D context is available.
+  const rasterizeCapped = (img, maxSide = MAX_IMPORT_SIDE) => {
+    const size = cappedSize(img.naturalWidth || img.width, img.naturalHeight || img.height, maxSide);
+    const canvas = document.createElement('canvas');
+    canvas.width = size.w;
+    canvas.height = size.h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const scaled = size.scale < 1;
+    if (scaled) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, size.w, size.h);
+    } else {
+      ctx.drawImage(img, 0, 0);
+    }
+    return { canvas, ctx, w: size.w, h: size.h, scaled };
+  };
 
   const hashStr = (s) => {
     let h = 2166136261 >>> 0;
@@ -167,5 +200,8 @@
     resolveLuma,
     decode,
     ensure,
+    MAX_IMPORT_SIDE,
+    cappedSize,
+    rasterizeCapped,
   };
 })();
