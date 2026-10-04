@@ -263,6 +263,46 @@ test.describe('TUX-039 touch tooltips', () => {
     expect(r.lvlIb, 'layer rows with eye/lock buttons are present').toBeGreaterThan(1);
     expect(r.subs, '.tool-sub-btn without aria-label').toBe(0);
     expect(r.unlabeled, `unlabeled visible icon buttons: ${r.unlabeled.join(',')}`).toEqual([]);
+
+    // Selected-layer surfaces: context-bar pen chip + the Transform W/H link button (closed section by default).
+    await page.evaluate(() => {
+      const l = window.app.engine.layers.find((x) => !x.isGroup && !x.isModifier && x.type === 'flowfield') || window.app.engine.layers.find((x) => !x.isGroup);
+      window.app.renderer.selectLayer(l.id);
+      const h = document.getElementById('algorithm-transform-header');
+      if (h && h.getAttribute('aria-expanded') !== 'true') h.click();
+    });
+    await sleep(500);
+    const sel = await page.evaluate(() => {
+      const vis = (e) => { const b = e.getBoundingClientRect(); const cs = getComputedStyle(e); return b.width > 0 && b.height > 0 && cs.visibility !== 'hidden'; };
+      const chip = [...document.querySelectorAll('.pen-chip')].find(vis) || null;
+      if (chip) chip.setAttribute('data-test-chip', '1');
+      const unlabeled = [...document.querySelectorAll('button')].filter((b) => {
+        if (!vis(b)) return false;
+        const hasText = [...b.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
+        return !hasText && !b.hasAttribute('aria-label') && !b.hasAttribute('aria-labelledby');
+      }).map((b) => b.id || b.className);
+      const link = document.getElementById('tk-link');
+      return { chip: !!chip, link: !!link, linkVisible: !!link && vis(link), linkLabel: link && link.getAttribute('aria-label'), unlabeled };
+    });
+    const tablet = page.viewportSize().width >= 768;
+    // Phones keep the pen chip inside the collapsed context bar; tablets must show it.
+    if (tablet) expect(sel.chip, 'a visible .pen-chip with a layer selected').toBe(true);
+    expect(sel.unlabeled, `unlabeled visible icon buttons with a layer selected: ${sel.unlabeled.join(',')}`).toEqual([]);
+    expect(sel.link, '#tk-link exists').toBe(true);
+    expect(sel.linkLabel, '#tk-link aria-label (also when hidden)').toBeTruthy();
+    if (!sel.chip) return;
+    const cc = await page.evaluate(() => {
+      const c = document.querySelector('[data-test-chip="1"]');
+      const r = c.getBoundingClientRect();
+      const h = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2, top: !!h && (h === c || c.contains(h)) };
+    });
+    expect(cc.top, 'pen chip is the top element at its centre').toBe(true);
+    await longPress(page, { x: cc.x, y: cc.y }, 600);
+    await compatClick(page, '[data-test-chip="1"]');
+    await sleep(100);
+    const tip = await tipFor(page, '[data-test-chip="1"]');
+    expect(tip, 'hold on .pen-chip shows a tooltip').not.toBeNull();
   });
 
   test('(i) hold on a layer eye button names it and does not toggle visibility', async ({ page }) => {

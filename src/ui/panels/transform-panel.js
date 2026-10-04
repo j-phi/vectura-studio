@@ -159,7 +159,7 @@
         <div class="grid grid-cols-[1fr_auto_1fr] gap-1 mb-2 items-end" data-tk-row="wh">
           <div><label class="${labelCls}" data-tk-label="width"></label>
             <input type="number" id="tk-w" class="${inputCls}" title="${T.width || ''}" /></div>
-          <button type="button" id="tk-link" class="tk-link-btn" aria-pressed="false"></button>
+          <button type="button" id="tk-link" class="tk-link-btn" aria-pressed="false" aria-label="${T.linkOff || 'Link width and height'}"></button>
           <div><label class="${labelCls}" data-tk-label="height"></label>
             <input type="number" id="tk-h" class="${inputCls}" title="${T.height || ''}" /></div>
         </div>
@@ -317,6 +317,7 @@
         els.link.innerHTML = this.linked ? (I.linkOn || '∞') : (I.linkOff || '×');
         els.link.setAttribute('aria-pressed', this.linked ? 'true' : 'false');
         els.link.title = this.linked ? (T.linkOn || '') : (T.linkOff || '');
+        els.link.setAttribute('aria-label', els.link.title || 'Link width and height');
         this._lastLinked = this.linked;
       }
 

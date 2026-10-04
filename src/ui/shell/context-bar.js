@@ -1208,8 +1208,8 @@
     const paint = () => {
       const penId = scenePenIdOf(wc);
       const pen = pens.find((p) => p && p.id === penId) || null;
-      if (pen) { icon.style.background = pen.color || 'transparent'; chip.title = `Pen — ${pen.name || pen.id}`; }
-      else { icon.style.background = 'transparent'; chip.title = 'Pen — inherits layer pen'; }
+      if (pen) { icon.style.background = pen.color || 'transparent'; chip.title = `Pen — ${pen.name || pen.id}`; chip.setAttribute('aria-label', chip.title); }
+      else { icon.style.background = 'transparent'; chip.title = 'Pen — inherits layer pen'; chip.setAttribute('aria-label', chip.title); }
     };
     paint();
     const wrap = el('span', 'ctxbar-align-wrap ctxbar-scene-menu-wrap ctxbar-scene-pen-wrap');
