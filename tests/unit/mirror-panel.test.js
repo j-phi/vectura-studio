@@ -103,6 +103,34 @@ describe('MirrorPanel — pure helpers (would fail against legacy UI)', () => {
     expect(out % 15).toBe(0);
   });
 
+  test('touchDialValue: 0.5 deg per px, zero travel keeps the start value (TUX-027)', () => {
+    expect(MirrorPanel.TOUCH_DIAL_DEG_PER_PX).toBe(0.5);
+    expect(MirrorPanel.touchDialValue(90, 0, 'compass', 0, 360)).toBe(90);
+    expect(MirrorPanel.touchDialValue(90, 40, 'compass', 0, 360)).toBe(110);
+    expect(MirrorPanel.touchDialValue(90, -40, 'compass', 0, 360)).toBe(70);
+  });
+
+  test('touchDialValue: compass wraps to 0..359 and rounds to whole degrees', () => {
+    expect(MirrorPanel.touchDialValue(350, 40, 'compass', 0, 360)).toBe(10);
+    expect(MirrorPanel.touchDialValue(5, -40, 'compass', 0, 360)).toBe(345);
+    expect(MirrorPanel.touchDialValue(359, 2, 'compass', 0, 360)).toBe(0);
+    expect(MirrorPanel.touchDialValue(90, 3, 'compass', 0, 360)).toBe(92); // 91.5 rounds up
+    expect(MirrorPanel.touchDialValue(0, -1, 'compass', 0, 360)).toBe(0); // -0.5 rounds to -0 -> 0
+    for (let dx = -2000; dx <= 2000; dx += 37) {
+      const v = MirrorPanel.touchDialValue(123, dx, 'compass', 0, 360);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(360);
+      expect(Number.isInteger(v)).toBe(true);
+    }
+  });
+
+  test('touchDialValue: range mode clamps to [min, max] with no wrap', () => {
+    expect(MirrorPanel.touchDialValue(90, 40, 'range', 45, 135)).toBe(110);
+    expect(MirrorPanel.touchDialValue(90, 400, 'range', 45, 135)).toBe(135);
+    expect(MirrorPanel.touchDialValue(90, -400, 'range', 45, 135)).toBe(45);
+    expect(MirrorPanel.touchDialValue(130, 7, 'range', 45, 135)).toBe(134); // 133.5 -> 134
+  });
+
 });
 
 describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {

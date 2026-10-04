@@ -4032,7 +4032,6 @@
 @media (pointer: coarse) {
   .vectura-modal-backdrop { align-items: flex-end !important; }
   .vectura-modal { width: 100%; max-width: 100%; border-radius: 12px 12px 0 0; }
-  .preset-save-footer { order: -1; flex-direction: row-reverse; }
 }
 
 /* ── Snapping feedback (auto-changed chips + transient line) ───────────────── */
@@ -14497,3 +14496,144 @@ body.touch-ui .modal-card .color-modal { padding-top: 4px; }
   touch-action: none;
 }
 /* === END TUX-047 === */
+
+/* === TUX-026: Petal Designer touch sizing and phone sheet ===
+ * Selectors carry the [data-ui-skin] prefix plus .petal-designer-window so they beat the skin rule
+ * `[data-ui-skin] .petal-tool-btn, .petal-close, ... { height: 26px; min-width: 26px }` (specificity 0,2,0).
+ * Coarse sizing keys on the pointer type, never on width. The phone sheet keys on the layout classifier
+ * class (TUX-006). Desktop (fine pointer, non-phone) is unchanged. */
+@media (pointer: coarse) {
+  [data-ui-skin] .petal-designer-window .petal-tool-btn,
+  [data-ui-skin] .petal-designer-window .petal-close,
+  [data-ui-skin] .petal-designer-window .petal-popout,
+  [data-ui-skin] .petal-designer-window .petal-popin,
+  [data-ui-skin] .petal-designer-window .petal-copy-btn {
+    min-width: var(--touch-target-min, 44px);
+    min-height: var(--touch-target-min, 44px);
+    height: auto;
+  }
+  [data-ui-skin] .petal-designer-window .petal-designer-actions { gap: 6px; }
+  /* A finger drags the pop-out window by its header (not on the phone sheet, which cannot move). */
+  body:not(.phone-layout) .petal-designer-window:not(.petal-designer-inline) .petal-designer-header {
+    touch-action: none;
+  }
+}
+/* Phone: the pop-out is a full-screen sheet inside the safe area. The header stays pinned; the body scrolls. */
+body.phone-layout #petal-designer-window.petal-designer-window:not(.petal-designer-inline) {
+  position: fixed;
+  top: var(--safe-top, env(safe-area-inset-top, 0px));
+  right: var(--safe-right, env(safe-area-inset-right, 0px));
+  bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
+  left: var(--safe-left, env(safe-area-inset-left, 0px));
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  z-index: var(--z-floating-sheet, 850);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.phone-layout #petal-designer-window .petal-designer-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+/* === END TUX-026 === */
+/* === TUX-027: mirror row actions (touch) ===
+ * Disable / Lock / Delete get a >= 44px hit box on touch-ui. Specificity (0,4,1) beats the
+ * (0,2,0) `.mp-root .mp-icon-btn` 22px rule above. The gap keeps the hit rects apart. */
+/* Three 44px buttons beside the thumb leave the name ~52px wide in a 290px pane. The actions drop
+ * to their own right-aligned line so the name keeps >= 96px (no viewport media query, Q1). */
+body.touch-ui .mp-root .mp-row { grid-template-columns: 36px minmax(0, 1fr); }
+body.touch-ui .mp-root .mp-row-name-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+body.touch-ui .mp-root .mp-row-actions { grid-column: 1 / -1; justify-content: flex-end; gap: 2px; }
+body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
+  width: var(--touch-target-min); height: var(--touch-target-min);
+  min-width: var(--touch-target-min); min-height: var(--touch-target-min);
+}
+/* === END TUX-027 === */
+
+/* === TUX-049: Save Preset sheet touch sizing + keyboard lift ===
+ * 046 owns the sheet frame and the lift (html.kb-open pads the backdrop by --kb-inset). This block
+ * only sizes the controls and keeps the actions row BELOW the name field, pinned to the bottom of the
+ * scrolling body (the old order:-1 rule is deleted). Cancel stays first in the DOM, Save is last. */
+@media (pointer: coarse) {
+  body.touch-ui .vectura-modal .preset-save-footer.vt-sheet__footer {
+    order: 0;
+    flex-direction: row;
+    justify-content: flex-end;
+    top: auto;
+    bottom: 0;
+    padding: 8px 0 0;
+  }
+  .preset-save-footer button { min-height: 44px; min-width: 44px; padding-inline: 16px; }
+  /* Children keep their size and the body scrolls (flex-shrink squeezed the mode buttons to 33px). */
+  .preset-save-body { scroll-padding-bottom: 64px; }
+  .preset-save-body > * { flex-shrink: 0; }
+  .preset-save-input { height: 44px; font-size: 16px; }
+  .preset-save-seg .seg-opt { min-height: 44px; }
+  .preset-save-body select.ctrl-sel { min-height: 44px; font-size: 16px; }
+  /* The Overwrite confirmation Dialog shares these buttons. */
+  .vectura-dialog-footer button { min-height: 44px; min-width: 44px; }
+  /* iPhone landscape with the keyboard open: only the name field, mode and actions stay. */
+  .preset-save-sheet.is-kb-short .preset-save-preview,
+  .preset-save-sheet.is-kb-short .preset-save-note { display: none; }
+}
+/* === END TUX-049 === */
+
+/* === TUX-037: undo toast === */
+/* Host placement moved out of inline styles. Default = today's desktop values. */
+#vectura-toast-host {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9000;
+  pointer-events: none;
+}
+.vectura-toast-action {
+  flex: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ui-accent, #4e9ee1);
+  background: transparent;
+  border: 1px solid var(--ui-border, #333);
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.vectura-toast-action:focus-visible {
+  outline: 2px solid var(--ui-accent, #4e9ee1);
+  outline-offset: 2px;
+}
+.vectura-toast-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+#vectura-toast-host .vectura-toast {
+  max-width: 320px;
+}
+@media (pointer: coarse) {
+  /* Only the Undo toast itself anchors bottom-center (fixed, out of the host's flow), so a plain
+     toast firing at the same time stays top-right and never covers sheets/inputs. */
+  #vectura-toast-host .vectura-toast:has(.vectura-toast-action) {
+    position: fixed;
+    top: auto;
+    right: auto;
+    left: 50%;
+    bottom: calc(var(--tux-toast-gap) + var(--tux-safe-bottom) + var(--tux-modbar-clear, 0px));
+    transform: translateX(-50%);
+    box-sizing: border-box;
+    max-width: calc(100vw - 32px - var(--tux-safe-left) - var(--tux-safe-right));
+  }
+  .vectura-toast-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+/* === END TUX-037 === */

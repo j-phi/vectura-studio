@@ -16,6 +16,11 @@
 :root {
   /* TUX-032: on-screen keyboard height; written by src/ui/keyboard-inset.js, 0 unless an editable has focus. */
   --kb-inset: 0px;
+  /* TUX-037: safe-area + toast tokens (Playwright reports env() as 0; tests override the --tux-safe-* tokens). */
+  --tux-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tux-safe-left: env(safe-area-inset-left, 0px);
+  --tux-safe-right: env(safe-area-inset-right, 0px);
+  --tux-toast-gap: 12px;
   /* Default color-scheme — overwritten by App.applyTheme via the active skin's
    * manifest.colorScheme. The default lets pre-JS form-control rendering use a
    * dark UA appearance (matches the meridian-dark default skin). */
@@ -162,3 +167,11 @@
   --touch-slider-track-pen: 3px;
 }
 /* === END TUX-043 tokens === */
+
+/* === TUX-026: floating sheet stacking ===
+ * The phone Petal Designer sheet sits above the mobile drawer, its backdrop, #touch-modifier-bar and
+ * .header-main (z 200-220) and below #modal-overlay (900) and .vectura-modal-backdrop (1000). */
+:root {
+  --z-floating-sheet: 850;
+}
+/* === END TUX-026 tokens === */

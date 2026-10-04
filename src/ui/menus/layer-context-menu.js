@@ -105,6 +105,21 @@
     return objs.map((o) => o.id);
   };
 
+  // TUX-037 — the one delete path for the row strip, group strip and ⋯ / right-click
+  // menu. Name is captured BEFORE removal; the token is the history snapshot this delete
+  // pushed, so the Undo toast can refuse to run once a later edit sits above it.
+  const _deleteLayerWithUndo = (ui, layer) => {
+    const app = ui.app;
+    const name = layer.name || 'layer';
+    if (app.pushHistory) app.pushHistory();
+    const token = app.history ? app.history[app.history.length - 1] : null;
+    ui.unlockMirrorChildrenOnDelete?.(layer.id);
+    app.engine.removeLayer(layer.id);
+    ui.renderLayers && ui.renderLayers();
+    app.render && app.render();
+    ui.notifyUndoable?.(`Deleted "${name}"`, token);
+  };
+
   // ── TUX-012 — shared row-action list ──────────────────────────────────────
   // ONE list feeds both the inline `.lvl-acts` / `.lvl-grp-acts` strips in
   // layers-panel.js (desktop) and the ⋯ menu (touch + right-click). Every run
@@ -178,12 +193,7 @@
         engine.duplicateLayer(layer.id);
         rerender();
       });
-      add('delete', 'Delete', 'Delete group', 'del', icon('trash'), () => {
-        if (ui.app.pushHistory) ui.app.pushHistory();
-        ui.unlockMirrorChildrenOnDelete?.(layer.id);
-        engine.removeLayer(layer.id);
-        rerender();
-      });
+      add('delete', 'Delete', 'Delete group', 'del', icon('trash'), () => _deleteLayerWithUndo(ui, layer));
       return out;
     }
 
@@ -245,12 +255,7 @@
       engine.duplicateLayer(layer.id);
       rerender();
     });
-    add('delete', 'Delete', 'Delete', 'del', icon('trash'), () => {
-      if (ui.app.pushHistory) ui.app.pushHistory();
-      ui.unlockMirrorChildrenOnDelete?.(layer.id);
-      engine.removeLayer(layer.id);
-      rerender();
-    });
+    add('delete', 'Delete', 'Delete', 'del', icon('trash'), () => _deleteLayerWithUndo(ui, layer));
     return out;
   };
 
@@ -416,11 +421,7 @@
       return;
     }
     if (key === 'delete') {
-      if (ui.app.pushHistory) ui.app.pushHistory();
-      ui.unlockMirrorChildrenOnDelete?.(layer.id);
-      engine.removeLayer(layer.id);
-      ui.renderLayers && ui.renderLayers();
-      ui.app.render && ui.app.render();
+      _deleteLayerWithUndo(ui, layer);
       return;
     }
     if (key === 'toggle-visibility') {

@@ -54,6 +54,11 @@
       smallSelectionFactor: 3,
     },
 
+    // TUX-026: Petal Designer control grab radius in CSS px. A mouse keeps 10 px. A finger gets 22 px to
+    // grab an anchor; a handle the finger is within touchHandle px of wins over its anchor.
+    // Follow-up: fold into hitTolerance(kind, pointerType) when TUX-023 lands.
+    PETAL_DESIGNER_HIT_RADIUS: { mouse: 10, touch: 22, touchHandle: 12 },
+
     // Renderer handle/overlay geometry
     SHAPE_CORNER_HANDLE_MIN: 8,
     MASK_PREVIEW_ALPHA: 0.2,

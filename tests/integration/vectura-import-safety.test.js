@@ -55,7 +55,7 @@ describe('.vectura import safety (Bugs-8 + Bugs-9)', () => {
 
   // --- Bugs-9: transactional import ---
 
-  test('failed import rolls back engine + SETTINGS to pre-import state', () => {
+  test('failed import rolls back engine + SETTINGS to pre-import state', async () => {
     const { baseline } = captureKnownGood();
     const beforeLayers = layerSummary();
     const beforeMargin = window.Vectura.SETTINGS.margin;
@@ -81,6 +81,7 @@ describe('.vectura import safety (Bugs-8 + Bugs-9)', () => {
 
     try {
       app.ui.openVecturaFile(new window.Blob([fakeText], { type: 'application/json' }));
+      await new Promise((r) => setTimeout(r, 0)); // TUX-053: sniff then read
     } finally {
       window.FileReader = realFileReader;
     }
@@ -92,7 +93,7 @@ describe('.vectura import safety (Bugs-8 + Bugs-9)', () => {
     expect(window.Vectura.SETTINGS.margin).toBe(beforeMargin);
   });
 
-  test('failed import does NOT clear the undo history', () => {
+  test('failed import does NOT clear the undo history', async () => {
     // pushHistory + a known-good snapshot so we can detect erasure.
     app.history = [];
     app.pushHistory();
@@ -112,6 +113,7 @@ describe('.vectura import safety (Bugs-8 + Bugs-9)', () => {
 
     try {
       app.ui.openVecturaFile(new window.Blob([corrupt]));
+      await new Promise((r) => setTimeout(r, 0)); // TUX-053: sniff then read
     } finally {
       window.FileReader = realFileReader;
     }

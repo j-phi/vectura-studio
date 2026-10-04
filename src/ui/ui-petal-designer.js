@@ -2792,22 +2792,41 @@
       this.renderPetalDesigner(pd);
     },
 
+    // Window placement goes only through the shared Sheet clamp (UI.overlays.Sheet). On a phone layout
+    // the window is a full-screen sheet owned by the stylesheet: no inline box, no header drag.
+    placePetalDesignerWindow(pd = this.petalDesigner) {
+      const Sheet = window.Vectura?.UI?.overlays?.Sheet;
+      if (!pd?.root || !Sheet) return;
+      const phone = Sheet.isPhone();
+      pd.root.classList.toggle('petal-designer-sheet', phone);
+      if (phone) {
+        Sheet.clearFloating(pd.root);
+        return;
+      }
+      // Keep the window below the app header: it is a workspace window, not a modal.
+      const minTop = document.getElementById('viewport-container')?.getBoundingClientRect().top;
+      Sheet.clampFloating(pd.root, { ...(pd.windowPos || {}), minTop });
+      const rect = pd.root.getBoundingClientRect();
+      pd.windowPos = { left: rect.left, top: rect.top };
+    },
+
     bindPetalDesignerDrag(pd = this.petalDesigner) {
       if (!pd?.root) return;
       const header = pd.root.querySelector('.petal-designer-header');
       if (!header) return;
+      const Sheet = window.Vectura?.UI?.overlays?.Sheet;
       const startDrag = (e) => {
+        if (Sheet?.isPhone()) return;
         if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
         const rect = pd.root.getBoundingClientRect();
-        pd.windowDrag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+        pd.windowDrag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top, pointerId: e.pointerId };
         pd.root.classList.add('dragging');
       };
       const move = (e) => {
         if (!pd.windowDrag) return;
-        const left = Math.max(12, e.clientX - pd.windowDrag.dx);
-        const top = Math.max(12, e.clientY - pd.windowDrag.dy);
-        pd.root.style.left = `${left}px`;
-        pd.root.style.top = `${top}px`;
+        if (pd.windowDrag.pointerId !== undefined && e.pointerId !== undefined && pd.windowDrag.pointerId !== e.pointerId) return;
+        pd.windowPos = { left: e.clientX - pd.windowDrag.dx, top: e.clientY - pd.windowDrag.dy };
+        this.placePetalDesignerWindow(pd);
       };
       const end = () => {
         pd.windowDrag = null;
@@ -2816,16 +2835,35 @@
       header.addEventListener('pointerdown', startDrag);
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+      const stopWatch = Sheet ? Sheet.watch(() => this.placePetalDesignerWindow(pd)) : null;
+      // Content grows after open (profile gallery, accordions): keep the whole box on screen.
+      let growFrame = 0;
+      const grow = typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => {
+          if (growFrame) return;
+          growFrame = requestAnimationFrame(() => {
+            growFrame = 0;
+            if (pd.root?.isConnected) this.placePetalDesignerWindow(pd);
+          });
+        })
+        : null;
+      if (grow) grow.observe(pd.root);
       pd.cleanupDrag = () => {
+        if (grow) grow.disconnect();
+        if (growFrame) cancelAnimationFrame(growFrame);
         header.removeEventListener('pointerdown', startDrag);
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        if (stopWatch) stopWatch();
       };
       const viewport = document.getElementById('viewport-container')?.getBoundingClientRect();
-      const fallbackLeft = viewport ? viewport.left + 24 : 120;
-      const fallbackTop = viewport ? viewport.top + 24 : 120;
-      pd.root.style.left = `${fallbackLeft}px`;
-      pd.root.style.top = `${fallbackTop}px`;
+      pd.windowPos = {
+        left: viewport ? viewport.left + 24 : 120,
+        top: viewport ? viewport.top + 24 : 120,
+      };
+      this.placePetalDesignerWindow(pd);
     },
 
     bindPetalDesignerShortcuts(pd = this.petalDesigner, options = {}) {
@@ -2972,7 +3010,7 @@
         let bodySide = null;
         if (shape && e && Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
           const pos = this.getDesignerCanvasPoint(canvas, e);
-          hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
+          hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry, { pointerType: e.pointerType });
           bodySide =
             role === 'overlay'
               ? this.pickPetalDesignerShapeAtPoint(pd, canvas, pos)
@@ -3071,7 +3109,14 @@
           e.preventDefault();
           const side = getSideForCanvas(canvas);
           const pos = this.getDesignerCanvasPoint(canvas, e);
-          const selectedSide = role === 'overlay' ? this.pickPetalDesignerShapeAtPoint(pd, canvas, pos) : side;
+          // A finger's wide grab radius can reach an active-side control that lies outside the active
+          // silhouette. Test the active side first so the side-pick below cannot swallow the tap (touch only).
+          const activeFirst = e.pointerType === 'touch' && role === 'overlay' && pd.state[side]
+            && this.hitDesignerShapeControl(
+              pd.state[side], canvas, pos, getViewForCanvas(canvas, side),
+              this.getPetalDesignerSymmetryForSide(pd.state, side), { pointerType: 'touch' }
+            );
+          const selectedSide = activeFirst ? side : (role === 'overlay' ? this.pickPetalDesignerShapeAtPoint(pd, canvas, pos) : side);
           if (selectedSide && selectedSide !== side) {
             pd.state.target = selectedSide;
             pd.state.activeTarget = selectedSide;
@@ -3085,7 +3130,7 @@
           const shape = pd.state[activeSide];
           const view = getViewForCanvas(canvas, activeSide);
           const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, activeSide);
-          const hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
+          const hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry, { pointerType: e.pointerType });
           const modifiers = readModifiers(e);
           if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
             if (hit) {
@@ -3178,7 +3223,7 @@
               const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
               if (shape) {
                 const pos = this.getDesignerCanvasPoint(canvas, e);
-                pd.canvasHover[hoverKey] = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
+                pd.canvasHover[hoverKey] = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry, { pointerType: e.pointerType });
               } else {
                 pd.canvasHover[hoverKey] = null;
               }
@@ -3234,9 +3279,18 @@
           setCursor(canvas);
         };
         const onResize = () => this.renderPetalDesigner(pd);
+        // Redraw on the next frame: drawing inside the observer callback resizes the canvas and makes WebKit
+        // report "ResizeObserver loop completed with undelivered notifications".
+        let resizeFrame = 0;
         const resizeObserver =
           typeof ResizeObserver === 'function'
-            ? new ResizeObserver(() => this.renderPetalDesigner(pd))
+            ? new ResizeObserver(() => {
+              if (resizeFrame) return;
+              resizeFrame = requestAnimationFrame(() => {
+                resizeFrame = 0;
+                this.renderPetalDesigner(pd);
+              });
+            })
             : null;
         if (resizeObserver) resizeObserver.observe(canvas);
         canvas.addEventListener('pointerdown', onDown);
@@ -3255,6 +3309,7 @@
           window.removeEventListener('pointercancel', onUp);
           window.removeEventListener('resize', onResize);
           if (resizeObserver) resizeObserver.disconnect();
+          if (resizeFrame) cancelAnimationFrame(resizeFrame);
         });
         this.syncDesignerCanvasResolution(canvas);
         setCursor(canvas);
@@ -3915,20 +3970,34 @@
       return out;
     },
 
-    hitDesignerShapeControl(shape, canvas, pos, view = null, symmetry = 'none') {
+    // pointerType 'touch' widens the grab radius (TUX-026). Mouse, pen and unset keep the nearest control
+    // inside the mouse radius. For a finger: a handle within touchHandle px that is nearer than the
+    // nearest anchor wins; else an anchor within the touch radius; else a handle within the touch radius.
+    hitDesignerShapeControl(shape, canvas, pos, view = null, symmetry = 'none', { pointerType = 'mouse' } = {}) {
+      const radius = UI_CONSTANTS.PETAL_DESIGNER_HIT_RADIUS;
       const controls = this.sampleDesignerControls(shape, canvas, view, symmetry);
-      let best = null;
-      let bestDist = Infinity;
-      controls.forEach((control) => {
-        const dx = pos.x - control.point.x;
-        const dy = pos.y - control.point.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = control;
-        }
-      });
-      return bestDist <= 10 ? best : null;
+      const nearest = (list) => {
+        let best = null;
+        let bestDist = Infinity;
+        list.forEach((control) => {
+          const dist = Math.hypot(pos.x - control.point.x, pos.y - control.point.y);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = control;
+          }
+        });
+        return { best, dist: bestDist };
+      };
+      if (pointerType !== 'touch') {
+        const { best, dist } = nearest(controls);
+        return dist <= radius.mouse ? best : null;
+      }
+      const h = nearest(controls.filter((c) => c.kind === 'handle'));
+      const a = nearest(controls.filter((c) => c.kind === 'anchor'));
+      if (h.best && h.dist <= radius.touchHandle && h.dist < a.dist) return h.best;
+      if (a.best && a.dist <= radius.touch) return a.best;
+      if (h.best && h.dist <= radius.touch) return h.best;
+      return null;
     },
 
     toggleDesignerAnchor(shape, index, which = null) {

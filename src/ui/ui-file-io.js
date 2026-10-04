@@ -55,6 +55,42 @@
   const isMaskLayerGeometryHidden = (layer) => Boolean(layer?.mask?.enabled && layer?.mask?.hideLayer);
 
   const Vectura = (window.Vectura = window.Vectura || {});
+
+  // === TUX-053: file picker ===
+  // iOS Files greys out a .vectura unless the accept list maps to a type iOS knows,
+  // so iOS adds application/octet-stream. Detection is platform-based and runs at
+  // call time: iPadOS in desktop mode reports a Macintosh UA with touch points.
+  const isIOSPicker = () => {
+    const nav = window.navigator || {};
+    return /iPhone|iPad|iPod/.test(nav.userAgent || '')
+      || (nav.platform === 'MacIntel' && (nav.maxTouchPoints || 0) > 1);
+  };
+  const acceptFor = (kind) => {
+    if (isIOSPicker()) return '.vectura,application/json,application/octet-stream';
+    return kind === 'vectura-preset' ? '.vectura' : '.vectura,application/json';
+  };
+  // Compute accept at open time, then open the picker. Returns the input.
+  const pickFile = ({ kind, input } = {}) => {
+    const el = input || document.createElement('input');
+    el.type = 'file';
+    el.accept = acceptFor(kind);
+    el.click();
+    return el;
+  };
+  // Cheap content check on the first 256 bytes: a Vectura document is a JSON object.
+  const sniffJsonHead = (file) => new Promise((resolve) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const head = String(reader.result || '').replace(/^\uFEFF/, '').trimStart();
+        resolve(head.charAt(0) === '{');
+      };
+      reader.onerror = () => resolve(false);
+      reader.readAsText(file.slice(0, 256));
+    } catch (_) { resolve(false); }
+  });
+  Vectura.FilePicker = { isIOSPicker, acceptFor, pickFile, sniffJsonHead };
+  // === /TUX-053 ===
   window.Vectura._UIFileIOMixin = {
     getAppVersion() {
       const runtimeVersion = window.Vectura?.APP_VERSION;
@@ -78,11 +114,14 @@
           };
           return acc;
         }, {});
+        // TUX-037: lock ids are an undo-snapshot detail, not part of the .vectura format.
+        const savedState = this.app.captureState();
+        delete savedState.layerLockedIds;
         const payload = {
           type: 'vectura',
           version,
           created: new Date().toISOString(),
-          state: this.app.captureState(),
+          state: savedState,
           images: imagePayload,
         };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -106,6 +145,21 @@
 
     openVecturaFile(file) {
       if (!file) return;
+      const rejectInvalid = () => {
+        toast('Invalid .vectura file', 'danger');
+        const errBody = document.createElement('p');
+        errBody.className = 'modal-text';
+        errBody.textContent = 'That file could not be loaded as a .vectura document.';
+        this.openModal({ title: 'Invalid File', body: errBody });
+      };
+      // TUX-053: reject a non-JSON file from its first bytes before the full read.
+      sniffJsonHead(file).then((ok) => {
+        if (!ok) { rejectInvalid(); return; }
+        this._readVecturaFile(file);
+      });
+    },
+
+    _readVecturaFile(file) {
       const reader = new FileReader();
       reader.onload = () => {
         // Snapshot BEFORE any mutation. If parse/apply throws mid-flight we
@@ -986,7 +1040,7 @@
       btnSaveVectura.onclick = () => this.saveVecturaFile();
     }
     if (btnOpenVectura && fileOpenVectura) {
-      btnOpenVectura.onclick = () => fileOpenVectura.click();
+      btnOpenVectura.onclick = () => Vectura.FilePicker.pickFile({ kind: 'vectura', input: fileOpenVectura });
       fileOpenVectura.onchange = () => {
         const file = fileOpenVectura.files?.[0];
         if (file) this.openVecturaFile(file);
