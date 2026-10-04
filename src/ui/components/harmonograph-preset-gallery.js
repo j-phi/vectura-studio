@@ -774,46 +774,54 @@
         importBtn.className = 'hg-preset-import';
         importBtn.textContent = 'Import from .vectura…';
         importBtn.addEventListener('click', () => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = '.vectura';
+          // TUX-053: shared picker computes accept at open time (iOS adds octet-stream).
+          const FP = window.Vectura && window.Vectura.FilePicker;
+          const input = FP ? FP.pickFile({ kind: 'vectura-preset' }) : document.createElement('input');
+          if (!FP) { input.type = 'file'; input.accept = '.vectura'; }
           input.addEventListener('change', () => {
             const file = input.files && input.files[0];
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-              let doc;
-              try { doc = JSON.parse(reader.result); } catch (_) {
+            const sniff = FP && FP.sniffJsonHead ? FP.sniffJsonHead(file) : Promise.resolve(true);
+            sniff.then((ok) => {
+              if (!ok) {
                 toast('Could not read .vectura file — invalid JSON.', 'danger');
                 return;
               }
-              const layers = Array.isArray(doc.layers) ? doc.layers : [];
-              const matchLayer = layers.find((l) => l.type === system);
-              if (!matchLayer) {
-                toast(`No ${system} layer found in this .vectura file.`, 'danger');
-                return;
-              }
-              const stem = file.name.replace(/\.vectura$/i, '');
-              const defaultName = stem.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-              // Async prompt dialog: the save moves into the resolution path.
-              // Cancel/Esc now aborts the import (the native prompt's null
-              // silently fell through to defaultName); confirming an empty
-              // field still falls back to the filename-derived default.
-              promptText({ title: 'Import Preset', message: 'Preset name:', value: defaultName })
-                .then((entered) => {
-                  if (entered === null) return;
-                  const name = `${entered}`.trim() || defaultName;
-                  const params = stripParams(matchLayer.params);
-                  const id = `user-${system}-${Date.now()}`;
-                  const newPreset = { id, name, preset_system: system, group: 'User', params };
-                  const updated = [...loadUserPresets(system), newPreset];
-                  saveUserPresets(system, updated);
-                  rebuildPopover();
-                });
-            };
-            reader.readAsText(file);
+              const reader = new FileReader();
+              reader.onload = () => {
+                let doc;
+                try { doc = JSON.parse(reader.result); } catch (_) {
+                  toast('Could not read .vectura file — invalid JSON.', 'danger');
+                  return;
+                }
+                const layers = Array.isArray(doc.layers) ? doc.layers : [];
+                const matchLayer = layers.find((l) => l.type === system);
+                if (!matchLayer) {
+                  toast(`No ${system} layer found in this .vectura file.`, 'danger');
+                  return;
+                }
+                const stem = file.name.replace(/\.vectura$/i, '');
+                const defaultName = stem.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+                // Async prompt dialog: the save moves into the resolution path.
+                // Cancel/Esc now aborts the import (the native prompt's null
+                // silently fell through to defaultName); confirming an empty
+                // field still falls back to the filename-derived default.
+                promptText({ title: 'Import Preset', message: 'Preset name:', value: defaultName })
+                  .then((entered) => {
+                    if (entered === null) return;
+                    const name = `${entered}`.trim() || defaultName;
+                    const params = stripParams(matchLayer.params);
+                    const id = `user-${system}-${Date.now()}`;
+                    const newPreset = { id, name, preset_system: system, group: 'User', params };
+                    const updated = [...loadUserPresets(system), newPreset];
+                    saveUserPresets(system, updated);
+                    rebuildPopover();
+                  });
+              };
+              reader.readAsText(file);
+            });
           });
-          input.click();
+          if (!FP) input.click();
         });
         popover.appendChild(importBtn);
       }
