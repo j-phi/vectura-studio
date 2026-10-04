@@ -75,6 +75,9 @@ const showPane = (page, side) => page.evaluate((s) => {
   const r = document.getElementById('right-pane');
   l.classList.toggle('pane-force-open', s === 'left');
   r.classList.toggle('pane-force-open', s === 'right');
+  // TUX-008: a touch tablet drawer is owned by the pane-state controller.
+  const b = document.body;
+  if ((s === 'left' || s === 'right') && b.classList.contains('tablet-layout') && b.classList.contains('touch-ui')) window.Vectura.UI.Workspace.paneState.open(s);
 }, side);
 
 const boot = async (page) => {

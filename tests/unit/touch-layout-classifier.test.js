@@ -45,6 +45,50 @@ describe('LayoutClassifier.classify', () => {
   });
 });
 
+// TUX-007: short-phone hook. Coarse pointer AND height < TOUCH_LAYOUT.coarsePhoneMaxHeight (500).
+const SHORT_ROWS = [
+  [874, 402, true, true],
+  [874, 330, true, true],
+  [874, 499, true, true],
+  [874, 500, true, false], // 500 is not short: tablet per TUX-006 rule 4
+  [402, 874, true, false],
+  [874, 402, false, false], // fine pointer keeps today's mobile-layout, no short class
+  [1210, 499, true, true],
+  [1600, 1000, false, false],
+];
+
+describe('LayoutClassifier.isShort (TUX-007)', () => {
+  let C, dom;
+  beforeAll(() => { ({ mod: C, dom } = loadClassifier()); });
+  afterAll(() => { dom.window.close(); delete global.window; });
+
+  test.each(SHORT_ROWS)('%ix%i coarse=%s -> short=%s', (width, height, coarsePointer, expected) => {
+    expect(C.isShort({ width, height, coarsePointer })).toBe(expected);
+  });
+
+  test('apply() toggles phone-short in the same call as phone-layout', () => {
+    const doc = dom.window.document;
+    const set = (w, h, coarse) => {
+      Object.defineProperty(dom.window, 'innerWidth', { configurable: true, value: w });
+      Object.defineProperty(dom.window, 'innerHeight', { configurable: true, value: h });
+      dom.window.matchMedia = () => ({ matches: coarse });
+    };
+    const cls = () => [...doc.body.classList].sort();
+    set(874, 402, true);
+    C.apply(doc);
+    expect(cls()).toEqual(['mobile-layout', 'phone-layout', 'phone-short', 'touch-ui']);
+    set(874, 500, true);
+    C.apply(doc);
+    expect(cls()).toEqual(['mobile-layout', 'tablet-layout', 'touch-ui']);
+    set(874, 402, false);
+    C.apply(doc);
+    expect(cls()).toEqual(['mobile-layout', 'tablet-layout']);
+    set(402, 874, true);
+    C.apply(doc);
+    expect(cls()).toEqual(['mobile-layout', 'phone-layout', 'touch-ui']);
+  });
+});
+
 describe('LayoutClassifier.apply', () => {
   let C, dom, doc;
   beforeEach(() => {

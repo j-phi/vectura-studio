@@ -1414,8 +1414,13 @@
       const leftPane = document.getElementById('left-pane');
       const rightPane = document.getElementById('right-pane');
       const bottomPane = document.getElementById('bottom-pane');
-      if (leftPane) leftPane.classList.remove('pane-collapsed', 'pane-force-open');
-      if (rightPane) rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      // TUX-008: the pane-state controller resets per layout (drawers closed, docked panes open).
+      const ps = window.Vectura?.UI?.Workspace?.paneState;
+      if (ps && ps.layout()) ps.resetForLayout();
+      else {
+        if (leftPane) leftPane.classList.remove('pane-collapsed', 'pane-force-open');
+        if (rightPane) rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      }
       if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
     }
   }
@@ -1529,6 +1534,7 @@
     this.initAlgorithmTransformSection();
     this.initTouchModifierBar();
     this.initTouchMouseBridge();
+    this.installGestureZoomGuard();
     this.initTopMenuBar();
     document.addEventListener('click', () => {
       if (this.openPenMenu) {
