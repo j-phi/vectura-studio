@@ -197,7 +197,7 @@ describe('TUX-037 delete -> Undo toast', () => {
     expect(undoBtns().length).toBe(1);
   });
 
-  test('9. a lock set after the checkpoint survives an unrelated undo', async () => {
+  test('10. a lock set after the checkpoint survives an unrelated undo', async () => {
     await boot();
     const [a] = addLayers(1);
     app.pushHistory();
@@ -207,7 +207,7 @@ describe('TUX-037 delete -> Undo toast', () => {
     expect(app.ui.layerLockedIds.has(a)).toBe(true);
   });
 
-  test('10. saveVecturaFile does not write layerLockedIds into the document', async () => {
+  test('11. saveVecturaFile does not write layerLockedIds into the document', async () => {
     await boot();
     const [a] = addLayers(1);
     app.ui.layerLockedIds.add(a);

@@ -132,5 +132,26 @@ describe('UI.overlays.Toast', () => {
       expect(t.el.querySelector('button').disabled).toBe(true);
       t.dismiss();
     });
+    test('touch tap: compat mouseenter without mouseleave does not stop auto-dismiss', async () => {
+      const W = runtime.window;
+      const t = Toast.show({ message: 'x', duration: 60 });
+      const pe = (type, pointerType) => { const e = new W.Event(type, { bubbles: true }); e.pointerType = pointerType; return e; };
+      t.el.dispatchEvent(pe('pointerdown', 'touch'));
+      t.el.dispatchEvent(pe('pointerup', 'touch'));
+      t.el.dispatchEvent(new W.MouseEvent('mouseenter'));
+      await new Promise((r) => setTimeout(r, 160));
+      expect(t.el.parentNode).toBeNull();
+    });
+
+    test('a press released off the toast still resumes the timer', async () => {
+      const W = runtime.window;
+      const t = Toast.show({ message: 'x', duration: 60 });
+      t.el.dispatchEvent(new W.Event('pointerdown', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(t.el.parentNode).not.toBeNull();
+      runtime.document.body.dispatchEvent(new W.Event('pointerup', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 160));
+      expect(t.el.parentNode).toBeNull();
+    });
   });
 });

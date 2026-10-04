@@ -81,7 +81,7 @@
     el.style.cssText = [
       'pointer-events: auto',
       'padding: 8px 14px',
-      'min-width: 200px', 'max-width: 320px',
+      'min-width: 200px',
       'background: var(--ui-panel, #252525)',
       'color: var(--ui-text, #e0e0e0)',
       'border: 1px solid var(--ui-border, #333)',
@@ -120,6 +120,8 @@
       if (dismissed) return;
       dismissed = true;
       if (timer) clearTimeout(timer);
+      ownerDoc.removeEventListener('pointerup', endPress, true);
+      ownerDoc.removeEventListener('pointercancel', endPress, true);
       if (el.parentNode) el.parentNode.removeChild(el);
     };
 
@@ -153,16 +155,32 @@
       if (on) pause(); else resume();
     };
 
-    el.addEventListener('mouseenter', () => setFlag('hover', true));
+    // Hover pause is for a real mouse only. A touch tap fires compat mouseenter with
+    // no mouseleave, which would freeze the timer forever, so those are ignored.
+    let touched = false;
+    el.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') touched = false; });
+    el.addEventListener('mouseenter', () => { if (!touched) setFlag('hover', true); });
     el.addEventListener('mouseleave', () => setFlag('hover', false));
     el.addEventListener('focusin', () => setFlag('focus', true));
     el.addEventListener('focusout', () => setFlag('focus', false));
     el.addEventListener('focus', () => setFlag('focus', true));
     el.addEventListener('blur', () => setFlag('focus', false));
-    // A held finger pauses the timer like hover does for a mouse (TUX-037).
-    el.addEventListener('pointerdown', () => setFlag('press', true));
-    el.addEventListener('pointerup', () => setFlag('press', false));
-    el.addEventListener('pointercancel', () => setFlag('press', false));
+    // A held finger pauses the timer like hover does for a mouse (TUX-037). The release
+    // may land off the toast, so listen on the document until it ends.
+    const endPress = () => {
+      ownerDoc.removeEventListener('pointerup', endPress, true);
+      ownerDoc.removeEventListener('pointercancel', endPress, true);
+      setFlag('press', false);
+    };
+    el.addEventListener('pointerdown', (e) => {
+      touched = !!e.pointerType && e.pointerType !== 'mouse';
+      if (touched) { hovered = false; }
+      ownerDoc.addEventListener('pointerup', endPress, true);
+      ownerDoc.addEventListener('pointercancel', endPress, true);
+      setFlag('press', true);
+    });
+    el.addEventListener('pointerup', endPress);
+    el.addEventListener('pointercancel', endPress);
     if (action) {
       actionBtn = ownerDoc.createElement('button');
       actionBtn.type = 'button';

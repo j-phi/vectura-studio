@@ -110,3 +110,43 @@ test('safe-area simulation moves the toast up by the safe inset', async ({ page 
   const after = (await toastRect(page)).bottom;
   expect(before - after).toBeGreaterThanOrEqual(34);
 });
+
+test('a plain toast stays top-right beside an Undo toast and never covers the save field', async ({ page }) => {
+  await boot(page);
+  await page.evaluate(() => window.Vectura.UI.CanvasContextMenu.runCommand('delete'));
+  await expect(page.locator('#vectura-toast-host [data-action="undo"]')).toBeVisible();
+  await page.evaluate(() => window.Vectura.UI.overlays.Toast.show({ message: 'Preset saved', duration: 0 }));
+  const geo = await page.evaluate(() => {
+    const toasts = [...document.querySelectorAll('#vectura-toast-host .vectura-toast')];
+    const plain = toasts.find((t) => !t.querySelector('.vectura-toast-action'));
+    const undo = toasts.find((t) => t.querySelector('.vectura-toast-action'));
+    const pr = plain.getBoundingClientRect();
+    const ur = undo.getBoundingClientRect();
+    const f = document.querySelector('#preset-save-name');
+    const fr = f && f.getBoundingClientRect();
+    const hit = (a, b) => !(a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top);
+    return {
+      vw: innerWidth, plain: { top: pr.top, right: pr.right, left: pr.left },
+      undoMid: (ur.left + ur.right) / 2, undoTop: ur.top, plainBottom: pr.bottom,
+      field: fr && fr.width > 0 ? hit(pr, fr) : false,
+      maxW: getComputedStyle(undo).maxWidth,
+    };
+  });
+  expect(geo.plain.top).toBeLessThan(40);
+  expect(geo.plain.right).toBeGreaterThan(geo.vw - 40);
+  expect(geo.plainBottom).toBeLessThan(geo.undoTop);
+  expect(Math.abs(geo.undoMid - geo.vw / 2)).toBeLessThan(2);
+  expect(geo.field).toBe(false);
+  expect(parseFloat(geo.maxW)).toBeLessThanOrEqual(geo.vw - 32 + 0.5);
+});
+
+test('a finger tap on the Undo toast body does not stop auto-dismiss', async ({ page }, testInfo) => {
+  test.skip(!/^(touch|webkit)-ipad-landscape$/.test(testInfo.project.name), 'timing case runs on iPad landscape');
+  test.setTimeout(30000);
+  await boot(page);
+  await page.evaluate(() => window.Vectura.UI.CanvasContextMenu.runCommand('delete'));
+  const msg = page.locator('#vectura-toast-host .vectura-toast-msg');
+  await expect(msg).toBeVisible();
+  await touch.tap(page, msg);
+  await expect(page.locator('#vectura-toast-host .vectura-toast')).toHaveCount(0, { timeout: 7000 });
+});

@@ -32,3 +32,16 @@ test('desktop: row Delete shows the toast top-right; mouse Undo restores', async
   const after = await page.evaluate(() => window.app.engine.layers.map((l) => l.id));
   expect(after).toEqual(ids.order);
 });
+
+test('desktop: a press released off the toast does not freeze its auto-dismiss', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.app && window.app.ui));
+  await page.evaluate(() => window.Vectura.UI.overlays.Toast.show({ message: 'plain', duration: 800 }));
+  const toast = page.locator('#vectura-toast-host .vectura-toast');
+  const box = await toast.boundingBox();
+  await page.mouse.move(box.x + 10, box.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(600, 600);
+  await page.mouse.up();
+  await expect(toast).toHaveCount(0, { timeout: 2500 });
+});

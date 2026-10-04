@@ -14485,19 +14485,21 @@ body.phone-layout #settings-panel {
   opacity: 0.5;
   cursor: default;
 }
+#vectura-toast-host .vectura-toast {
+  max-width: 320px;
+}
 @media (pointer: coarse) {
-  /* Only action (Undo) toasts anchor bottom-center; plain toasts stay top-right so they never cover sheets/inputs. */
-  #vectura-toast-host:has(.vectura-toast-action) {
+  /* Only the Undo toast itself anchors bottom-center (fixed, out of the host's flow), so a plain
+     toast firing at the same time stays top-right and never covers sheets/inputs. */
+  #vectura-toast-host .vectura-toast:has(.vectura-toast-action) {
+    position: fixed;
     top: auto;
     right: auto;
     left: 50%;
     bottom: calc(var(--tux-toast-gap) + var(--tux-safe-bottom) + var(--tux-modbar-clear, 0px));
     transform: translateX(-50%);
-    align-items: center;
+    box-sizing: border-box;
     max-width: calc(100vw - 32px - var(--tux-safe-left) - var(--tux-safe-right));
-  }
-  #vectura-toast-host .vectura-toast {
-    max-width: 100%;
   }
   .vectura-toast-action {
     min-width: 44px;
