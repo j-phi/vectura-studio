@@ -14466,3 +14466,17 @@ body.touch-ui .modal-card .color-modal { padding-top: 4px; }
   touch-action: none;
 }
 /* === END TUX-047 === */
+
+/* === TUX-027: mirror row actions (touch) ===
+ * Disable / Lock / Delete get a >= 44px hit box on touch-ui. Specificity (0,4,1) beats the
+ * (0,2,0) `.mp-root .mp-icon-btn` 22px rule above. The gap keeps the hit rects apart. */
+/* Three 44px buttons beside the thumb leave the name ~52px wide in a 290px pane. The actions drop
+ * to their own right-aligned line so the name keeps >= 96px (no viewport media query, Q1). */
+body.touch-ui .mp-root .mp-row { grid-template-columns: 36px minmax(0, 1fr); }
+body.touch-ui .mp-root .mp-row-name-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+body.touch-ui .mp-root .mp-row-actions { grid-column: 1 / -1; justify-content: flex-end; gap: 2px; }
+body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
+  width: var(--touch-target-min); height: var(--touch-target-min);
+  min-width: var(--touch-target-min); min-height: var(--touch-target-min);
+}
+/* === END TUX-027 === */

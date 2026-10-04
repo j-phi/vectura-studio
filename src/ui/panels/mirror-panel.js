@@ -781,6 +781,17 @@
     return deg % 360;
   }
 
+  // TUX-027: touch fine drag for the mirror dials. A finger moves the value RELATIVE to where the
+  // drag started: exactly TOUCH_DIAL_DEG_PER_PX degrees per px of horizontal travel. A tap never
+  // changes the value. Compass dials round to whole degrees and wrap to 0..359; range-gauge dials
+  // round and clamp to [min, max]. Pure, so the unit test and every dial share one rule.
+  const TOUCH_DIAL_DEG_PER_PX = 0.5;
+  function touchDialValue(start, dx, mode, min, max) {
+    const v = Math.round(start + dx * TOUCH_DIAL_DEG_PER_PX);
+    if (mode === 'range') return Math.max(min, Math.min(max, v));
+    return ((v % 360) + 360) % 360;
+  }
+
   // ── Tile-angle dial uses a "range gauge" mapping instead of the full 0–360°
   // compass: the TOP semicircle spans the slider's [min,max], so upright =
   // the range center (90° = a square/upright cell) and a left/right tilt of the
@@ -1839,22 +1850,43 @@
           slider.value = v;
           slider.dispatchEvent(new Event('input', { bubbles: true }));
         };
+        // Touch fine drag state (per dial element; never keyed on the param name).
+        let touchDrag = null;
+        const dialMode = () => (dial.dataset.dialMode || 'compass');
         dial.addEventListener('pointerdown', (e) => {
           if (slider.disabled) return;
           e.preventDefault();
           activePointerId = e.pointerId;
           try { dial.setPointerCapture(e.pointerId); } catch (_) {}
           dial.classList.add('is-dragging');
+          if (e.pointerType === 'touch') {
+            // Relative drag: no apply() on pointerdown, so a pure tap changes nothing.
+            touchDrag = { x0: e.clientX, v0: +slider.value, moved: false };
+            return;
+          }
+          touchDrag = null;
           apply(e);
         });
         dial.addEventListener('pointermove', (e) => {
-          if (e.pointerId === activePointerId) apply(e);
+          if (e.pointerId !== activePointerId) return;
+          if (!touchDrag) { apply(e); return; }
+          if (slider.disabled) return;
+          const { min, max } = dialMode() === 'range' ? dialRangeMeta(dial) : { min: 0, max: 360 };
+          const v = touchDialValue(touchDrag.v0, e.clientX - touchDrag.x0, dialMode(), min, max);
+          if (+slider.value === v) return;
+          touchDrag.moved = true;
+          slider.value = v;
+          slider.dispatchEvent(new Event('input', { bubbles: true }));
         });
         const end = (e) => {
           if (e.pointerId !== activePointerId) return;
           activePointerId = null;
           dial.classList.remove('is-dragging');
           try { dial.releasePointerCapture(e.pointerId); } catch (_) {}
+          const wasTouch = !!touchDrag;
+          const moved = !wasTouch || touchDrag.moved;
+          touchDrag = null;
+          if (!moved) return; // a touch tap pushes no history
           slider.dispatchEvent(new Event('change', { bubbles: true }));
           fireDialBlip(dial);
         };
@@ -2156,6 +2188,8 @@
     nameFor,
     summaryFor,
     pointToAngleDeg,
+    touchDialValue,
+    TOUCH_DIAL_DEG_PER_PX,
     TYPES,
     WALL_GROUPS,
     INFO_TOPICS,

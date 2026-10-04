@@ -84,6 +84,9 @@ JSON.stringify({w: innerWidth, h: innerHeight, dpr: devicePixelRatio, standalone
 | DEV-33 | Apple Pencil hover reveal (from TUX-036) | TUX-036 | iPad L tab with Apple Pencil | Pencil hover reveal leaves no visible-but-inert buttons. | open |
 | DEV-34 | Export preview and Pattern Designer pinch (from TUX-047) | TUX-047 | iPhone P tab, iPad L tab | A pinch zooms only the surface. The page stays at 1x. A pinch with the fill tool active adds no fill. A two-finger drag pans. | open |
 | DEV-35 | Document Setup Paper > Size native picker (from TUX-050) | TUX-050 | iPhone P tab, iPad P tab | The first tap on Paper > Size opens the native iOS picker. The drawer or modal does not jump. | open |
+| DEV-36 | Mirror dial fine rotate (from TUX-027). Real touch drag on the line, radial, arc and tile-angle dials. | TUX-027 | iPhone P tab, iPad L tab | A sideways drag across a dial turns it at about 0.5 degrees per px. No page scroll steals the drag. No pointercancel. A tap on the dial changes nothing. | open |
+| DEV-37 | Mirror angle chip commit (from TUX-027) | TUX-027 | iPhone P tab, iPad L tab | Tap the Angle value. The decimal keypad opens. The value commits through the keypad Done key or by a tap elsewhere (blur). | open |
+| DEV-38 | Signed Shift X/Y chips on the iPhone decimal keypad (cross-reference TUX-038; from TUX-027) | TUX-027, TUX-038 | iPhone P tab | The decimal keypad has no minus key. Record whether a negative Shift X or Shift Y value can be entered. If not, the Follow-up names a new TUX id. | open |
 
 ## Clause index
 
