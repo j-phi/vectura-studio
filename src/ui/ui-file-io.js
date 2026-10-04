@@ -125,16 +125,16 @@
           images: imagePayload,
         };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
         const date = new Date().toISOString().slice(0, 10);
-        a.href = url;
-        a.download = `vectura-${date}.vectura`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        toast(`Saved vectura-${date}.vectura`, 'success');
+        const filename = `vectura-${date}.vectura`;
+        // TUX-054: no await before saveBlob — the share sheet needs the tap's user activation.
+        window.Vectura.Download.saveBlob(blob, filename).then((result) => {
+          if (result === 'cancelled') return;
+          toast(`Saved ${filename}`, 'success');
+        }).catch((err) => {
+          console.error('saveVecturaFile failed', err);
+          toast('Could not save the project — see console for details', 'danger');
+        });
       } catch (err) {
         console.error('saveVecturaFile failed', err);
         toast('Could not save the project — see console for details', 'danger');
@@ -924,18 +924,18 @@
 
       if (useSvgMarginClip) svg += `</g>`;
       svg += `</svg>`;
-      const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'vectura.svg';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
       // Delight moment: the snapshot's groups are already in hand, so the
       // path count comes for free — "Exported vectura.svg — 1,165 paths".
       const pathCount = groups.reduce((n, group) => n + (group.items?.length || 0), 0);
-      toast(`Exported ${a.download} — ${pathCount.toLocaleString()} path${pathCount === 1 ? '' : 's'}`, 'success');
+      const filename = 'vectura.svg';
+      // TUX-054: no await before saveBlob — the share sheet needs the tap's user activation.
+      window.Vectura.Download.saveBlob(new Blob([svg], { type: 'image/svg+xml' }), filename).then((result) => {
+        if (result === 'cancelled') return;
+        toast(`Exported ${filename} — ${pathCount.toLocaleString()} path${pathCount === 1 ? '' : 's'}`, 'success');
+      }).catch((err) => {
+        console.error('exportSVG failed', err);
+        toast('Could not export the SVG — see console for details', 'danger');
+      });
       } finally {
         progress.done();
       }
@@ -998,15 +998,15 @@
           background: SETTINGS.bgColor || null,
         });
 
-        const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'vectura-animated.svg';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
-        toast(`Exported ${a.download} — ${polylines.length.toLocaleString()} path${polylines.length === 1 ? '' : 's'}`, 'success');
+        const filename = 'vectura-animated.svg';
+        const pathCount = polylines.length;
+        window.Vectura.Download.saveBlob(new Blob([svg], { type: 'image/svg+xml' }), filename).then((result) => {
+          if (result === 'cancelled') return;
+          toast(`Exported ${filename} — ${pathCount.toLocaleString()} path${pathCount === 1 ? '' : 's'}`, 'success');
+        }).catch((err) => {
+          console.error('exportAnimatedSVG failed', err);
+          toast('Could not export the animated SVG — see console for details', 'danger');
+        });
       } finally {
         progress.done();
       }

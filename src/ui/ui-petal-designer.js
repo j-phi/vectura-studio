@@ -598,14 +598,7 @@
 
     downloadJsonPayload(payload, filename = 'profile.json') {
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      return window.Vectura.Download.saveBlob(blob, filename);
     },
 
     async importPetalDesignerProfileFile(file, side, state) {
