@@ -84,6 +84,7 @@ JSON.stringify({w: innerWidth, h: innerHeight, dpr: devicePixelRatio, standalone
 | DEV-33 | Apple Pencil hover reveal (from TUX-036) | TUX-036 | iPad L tab with Apple Pencil | Pencil hover reveal leaves no visible-but-inert buttons. | open |
 | DEV-34 | Export preview and Pattern Designer pinch (from TUX-047) | TUX-047 | iPhone P tab, iPad L tab | A pinch zooms only the surface. The page stays at 1x. A pinch with the fill tool active adds no fill. A two-finger drag pans. | open |
 | DEV-35 | Document Setup Paper > Size native picker (from TUX-050) | TUX-050 | iPhone P tab, iPad P tab | The first tap on Paper > Size opens the native iOS picker. The drawer or modal does not jump. | open |
+| DEV-36 | Canvas transform handles by finger. Grab each of the 4 corners and the rotate affordance first try, 10/10, on a 20 mm and a 100 mm object. A small object moves when dragged from its centre. Apple Pencil shows mouse-sized handles. | TUX-023 | iPad L tab, iPhone P tab | 10 of 10 first-try grabs per corner and for the rotate handle. Small object moves from its centre. Pencil handles are 6 px. Status is pending the device run. | open |
 
 ## Clause index
 

@@ -163,3 +163,72 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(Math.abs(after.widthPx - before.widthPx) / before.widthPx).toBeLessThanOrEqual(0.02);
   });
 });
+
+// Rotate affordance must not sit under docked chrome (ctxbar, rails, panes). Default layout, finger tap select.
+const IPHL = ['touch-iphone-landscape', 'webkit-iphone-landscape'];
+test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', () => {
+  test('affordance centre is the canvas after a finger tap select', async ({ page }, testInfo) => {
+    test.skip(!IPHL.includes(testInfo.project.name), 'TUX-023 chrome-overlap check runs on iPhone landscape');
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.renderer && window.app.engine));
+    await page.waitForTimeout(800);
+    // Default layout: add a rings layer, leave the view as the app fits it, select by finger tap.
+    await page.evaluate(() => {
+      const e = window.app.engine;
+      const id = e.addLayer('rings');
+      e.generate?.(id);
+      window.app.computeDisplayGeometry?.();
+      window.app.renderer.setTool('select');
+      window.app.renderer.draw();
+    });
+    await page.waitForTimeout(600);
+    const target = await page.evaluate(() => {
+      const r = window.app.renderer;
+      const layer = window.app.engine.layers[0];
+      const b = r.getSelectionBounds([layer]);
+      const c = r.worldToScreen(b.center.x, b.center.y);
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      return { x: c.x + box.left, y: c.y + box.top };
+    });
+    await touch.tap(page, target);
+    await page.waitForTimeout(500);
+    const res = await page.evaluate(() => {
+      const r = window.app.renderer;
+      const ids = Array.from(r.selectedLayerIds || []);
+      const layer = window.app.engine.layers.find((l) => l.id === ids[0]);
+      if (!layer) return { selected: ids.length };
+      const a = r.getRotateAffordance(r.getSelectionBounds([layer]));
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      const x = a.x + box.left;
+      const y = a.y + box.top;
+      const el = document.elementFromPoint(x, y);
+      return { selected: ids.length, id: el && el.id, cls: el && el.className, x, y, r: a.r };
+    });
+    expect(res.selected).toBe(1);
+    expect(res.id).toBe('main-canvas');
+    // Deterministic overlap: the ctxbar docks at different spots per layout pass, so also cover the
+    // current affordance spot with a stand-in chrome element. The affordance must move off it.
+    const moved = await page.evaluate(({ x, y }) => {
+      const r = window.app.renderer;
+      const layer = window.app.engine.layers[0];
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      const cover = document.createElement('div');
+      cover.id = 'zz-chrome-cover';
+      cover.style.cssText = `position:fixed;left:${x - 40}px;top:${y - 40}px;width:80px;height:80px;z-index:99999;background:rgba(255,0,0,.3)`;
+      document.body.appendChild(cover);
+      const a = r.getRotateAffordance(r.getSelectionBounds([layer]));
+      const cx = a.x + box.left;
+      const cy = a.y + box.top;
+      const probes = [[0, 0], [a.r, 0], [-a.r, 0], [0, a.r], [0, -a.r]];
+      return {
+        dist: Math.hypot(cx - x, cy - y),
+        topIds: probes.map(([dx, dy]) => (document.elementFromPoint(cx + dx, cy + dy) || {}).id),
+      };
+    }, { x: res.x, y: res.y });
+    expect(moved.dist).toBeGreaterThan(20);
+    moved.topIds.forEach((id) => expect(id).toBe('main-canvas'));
+    expect(errors).toEqual([]);
+  });
+});

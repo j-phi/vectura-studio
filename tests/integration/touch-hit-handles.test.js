@@ -121,6 +121,43 @@ describe('TUX-023: touch transform-handle hit targets', () => {
     });
   });
 
+  describe('drawn size follows the pointer type (requirement 2)', () => {
+    test('a mouse move after a touch requests a redraw; a repeat does not', () => {
+      const renderer = makeRenderer([boxLayer('box', 100, 300)]);
+      renderer.ready = true;
+      renderer.lastPointerType = 'touch';
+      const draw = vi.spyOn(renderer, 'draw').mockImplementation(() => {});
+      try { renderer.move({ pointerType: 'mouse', clientX: 5, clientY: 5, pointerId: 1 }); } catch (_) { /* downstream jsdom limits */ }
+      expect(renderer.lastPointerType).toBe('mouse');
+      expect(draw).toHaveBeenCalled();
+      draw.mockClear();
+      try { renderer.move({ pointerType: 'mouse', clientX: 6, clientY: 6, pointerId: 1 }); } catch (_) { /* noop */ }
+      expect(draw).not.toHaveBeenCalled();
+    });
+    test('a touch down after a mouse requests a redraw', () => {
+      const renderer = makeRenderer([boxLayer('box', 100, 300)]);
+      renderer.ready = true;
+      renderer.lastPointerType = 'mouse';
+      const draw = vi.spyOn(renderer, 'draw').mockImplementation(() => {});
+      renderer._notePointerType({ pointerType: 'touch' });
+      expect(draw).toHaveBeenCalled();
+    });
+  });
+
+  describe('one tolerance source', () => {
+    test('_computeRotateAffordance and hitHandle hold no numeric radius or offset literals', () => {
+      const src = require('fs').readFileSync(require('path').join(__dirname, '../../src/render/renderer.js'), 'utf8');
+      const grab = (name) => {
+        const i = src.indexOf(`    ${name}(`);
+        return src.slice(i, src.indexOf('\n    }\n', i));
+      };
+      ['_computeRotateAffordance', 'hitHandle', '_drawRotateAffordance'].forEach((fn) => {
+        const body = grab(fn).replace(/\/\/.*$/gm, '');
+        expect(body, fn).not.toMatch(/\*\s*(34|12|28|48|22)\b|\b(34|28|48)\b/);
+      });
+    });
+  });
+
   describe('hitTolerance', () => {
     test('maps touch to coarse values and everything else to mouse values', () => {
       const { hitTolerance } = runtime.window.Vectura;

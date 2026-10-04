@@ -43,6 +43,10 @@
       rotate: { mouse: 28, pen: 28, touch: 48 },
       // Hit radius of the visible touch rotate handle (0 = no handle).
       rotateAffordance: { mouse: 0, pen: 0, touch: 22 },
+      // Distance from the nudged NE hit centre to the visible rotate handle centre (mid-band).
+      rotateAffordanceOffset: { mouse: 0, pen: 0, touch: 34 },
+      // Drawn radius of the visible rotate handle disc.
+      rotateAffordanceDraw: { mouse: 0, pen: 0, touch: 12 },
       // Drawn handle square side.
       handleDraw: { mouse: 6, pen: 6, touch: 12 },
       // A touch selection narrower than this many resize radii gets its corners nudged

@@ -6779,7 +6779,7 @@
 
     down(e) {
       if (!this.ready) return;
-      if (e && e.pointerType) this.lastPointerType = e.pointerType;
+      this._notePointerType(e);
       if (this.isTouchPointer(e)) {
         // A pen or mouse stroke in flight owns the canvas; a touch is a resting palm.
         if (this.activePointerId !== null && this.activePointerType && this.activePointerType !== 'touch') {
@@ -7646,7 +7646,7 @@
 
     move(e) {
       if (!this.ready) return;
-      if (e && e.pointerType) this.lastPointerType = e.pointerType;
+      this._notePointerType(e);
       if (this.isTouchPointer(e)) {
         // TUX-017: track the finger (max travel feeds the arbitration decision), then run
         // the pinch/pan. While the gesture latch is held, a lone finger starts nothing.
@@ -14862,8 +14862,8 @@
       const ctx = this.ctx;
       const c = this.screenToWorld(aff.x, aff.y);
       const u = 1 / this.scale;
-      const r = 12 * u;
-      const g = 5.5 * u;
+      const r = window.Vectura.hitTolerance('rotateAffordanceDraw', 'touch') * u;
+      const g = r * 0.46;
       ctx.save();
       ctx.beginPath();
       ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
@@ -14883,7 +14883,7 @@
       const dy = Math.cos(a);
       const nx = Math.cos(a);
       const ny = Math.sin(a);
-      const len = 3.2 * u;
+      const len = r * 0.27;
       ctx.beginPath();
       ctx.moveTo(tx + dx * len, ty + dy * len);
       ctx.lineTo(tx + nx * len * 0.9, ty + ny * len * 0.9);
@@ -15692,6 +15692,7 @@
       if (pointerType !== 'touch') return null;
       const tol = window.Vectura.hitTolerance;
       const margin = tol('rotateAffordance', 'touch');
+      const offset = tol('rotateAffordanceOffset', 'touch');
       const hits = this.getHandleHitPoints(bounds, 'touch');
       const center = this.worldToScreen(bounds.center.x, bounds.center.y);
       const cw = this.canvas && this.canvas.clientWidth;
@@ -15705,12 +15706,35 @@
         const vx = sc.x - center.x;
         const vy = sc.y - center.y;
         const len = Math.hypot(vx, vy) || 1;
-        const pt = { x: sc.x + (vx / len) * 34, y: sc.y + (vy / len) * 34, r: margin };
+        const pt = { x: sc.x + (vx / len) * offset, y: sc.y + (vy / len) * offset, r: margin };
         if (!first) first = pt;
         if (!measured) return pt;
-        if (pt.x >= margin && pt.y >= margin && pt.x <= cw - margin && pt.y <= ch - margin) return pt;
+        if (pt.x >= margin && pt.y >= margin && pt.x <= cw - margin && pt.y <= ch - margin
+          && this._isCanvasTopAt(pt, margin)) return pt;
       }
       return first;
+    }
+
+    // True when the canvas is the topmost element at the disc centre and at +/- r on each
+    // axis. Docked chrome (ctxbar, rails, panes) can overlay the canvas element. Skipped
+    // when the layout cannot be measured (jsdom has no elementFromPoint hit testing).
+    _isCanvasTopAt(pt, r) {
+      if (typeof document === 'undefined' || typeof document.elementFromPoint !== 'function') return true;
+      const rect = this.canvas.getBoundingClientRect();
+      const probes = [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]];
+      return probes.every(([dx, dy]) => {
+        const el = document.elementFromPoint(rect.left + pt.x + dx, rect.top + pt.y + dy);
+        return el === this.canvas;
+      });
+    }
+
+    // Track the pointer type. When it flips handles between coarse (touch) and fine
+    // (mouse/pen), redraw so the drawn handle size follows what hitHandle will use.
+    _notePointerType(e) {
+      if (!e || !e.pointerType) return;
+      const before = this.isCoarseHandles();
+      this.lastPointerType = e.pointerType;
+      if (this.isCoarseHandles() !== before) this.draw();
     }
 
     getRotateAffordance(bounds) {

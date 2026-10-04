@@ -390,7 +390,8 @@ JOURNEYS.push({
         const o = boxOf(st, c.vars.oval);
         c.vars.rot = st.activeParams.rotation;
         const ne = o.corners.ne;
-        const start = { x: ne[0] + 14, y: ne[1] - 14 };
+        // 24,-24 is 34 px from the NE corner: inside the 22..48 px touch rotate band, outside the 22 px resize zone.
+        const start = { x: ne[0] + 24, y: ne[1] - 24 };
         const v = { x: start.x - o.cx, y: start.y - o.cy };
         const a = (35 * Math.PI) / 180;
         const end = { x: o.cx + v.x * Math.cos(a) - v.y * Math.sin(a), y: o.cy + v.x * Math.sin(a) + v.y * Math.cos(a) };
