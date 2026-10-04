@@ -2002,3 +2002,39 @@ test.describe('TUX-008 desktop parity', () => {
     expect(s.touchUi).toBe(false);
   });
 });
+
+// TUX-008 fix round: Reset View must go through the pane controller. Before the fix it stripped the
+// classes only, so paneState.isOpen('left') stayed false and the next resize re-collapsed the pane.
+test.describe('TUX-008 desktop Reset View keeps controller and DOM in sync', () => {
+  test('collapse left, Reset View, resize: left stays open; one toggle click collapses it', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'desktop fine-pointer project only');
+    const left = () => page.evaluate(() => ({
+      w: Math.round(document.getElementById('left-pane').getBoundingClientRect().width),
+      open: window.Vectura.UI.Workspace.paneState.isOpen('left'),
+    }));
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    await page.locator('#btn-pane-toggle-left').click();
+    await page.waitForTimeout(400);
+    let s = await left();
+    expect(s.open, 'collapsed: controller closed').toBe(false);
+    expect(s.w, 'collapsed width').toBeLessThan(100);
+    await page.locator('#btn-menu-view').click();
+    await page.locator('#btn-reset-view').click();
+    await page.waitForTimeout(400);
+    s = await left();
+    expect(s.open, 'Reset View: controller open').toBe(true);
+    expect(s.w, 'Reset View: pane expanded').toBeGreaterThan(200);
+    await page.setViewportSize({ width: 1500, height: 1000 });
+    await page.waitForTimeout(500);
+    s = await left();
+    expect(s.open, 'after resize: controller still open').toBe(true);
+    expect(s.w, 'after resize: pane still expanded').toBeGreaterThan(200);
+    await page.locator('#btn-pane-toggle-left').click();
+    await page.waitForTimeout(400);
+    s = await left();
+    expect(s.open, 'one toggle collapses').toBe(false);
+    expect(s.w, 'one toggle collapses (width)').toBeLessThan(100);
+  });
+});

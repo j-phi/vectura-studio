@@ -567,7 +567,8 @@ test.describe('pane defaults (TUX-008)', () => {
   test('C touch-wide docks and collapses by tap', async ({ page }, testInfo) => {
     const dev = devOf(testInfo);
     test.skip(!['iPadL', 'coarseWide'].includes(dev), 'touch-wide only');
-    // VERIFY-FIRST: the share clauses already passed before TUX-008 (46.1 / 61.4 / 75.5); this is a regression test.
+    // Real RED/GREEN test. Measured RED on iPadL before TUX-008: 37.9 % docked (panes were unclamped), so the
+    // >= 45 floor failed. After the dock caps: 46.1 docked / 61.4 left collapsed / 75.5 both collapsed.
     await gotoFresh(page);
     // Effective caps for this width: narrow caps below roomyMinWidth, roomy caps above (TOUCH_LAYOUT).
     const caps = await page.evaluate(() => {

@@ -220,10 +220,17 @@
       layout: () => (controller ? controller.layout() : null),
     };
 
-    // TUX-009: Reset View still mutates classes directly. TUX-009 moves it onto paneState.resetForLayout().
+    // Reset View. The controller owns the pane state, so route through it first: DOM and state stay
+    // in sync and a later resize does not re-collapse a pane the DOM shows open. Overlay panes
+    // (fine pointer, 540-900 px) show one pane only, as the legacy shell did.
     this.expandPanes = () => {
-      leftPane.classList.remove('pane-collapsed', 'pane-force-open');
-      rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      if (controller) {
+        controller.resetForLayout();
+        if (controller.snapshot().overlay) controller.open('left');
+      } else {
+        leftPane.classList.remove('pane-collapsed', 'pane-force-open');
+        rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      }
       document.body.classList.remove('auto-collapsed');
       // TUX-006: fine pointer -> desktop Reset View strips every layout class.
       // Coarse pointer keeps the classifier's classes (TUX-009 finalizes touch Reset View).

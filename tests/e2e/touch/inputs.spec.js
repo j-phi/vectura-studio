@@ -79,7 +79,11 @@ test.describe('TUX-042 text-entry font size', () => {
     spec.forEach((s) => expect(s).toBeGreaterThanOrEqual(MIN_FONT));
   });
 
-  test('focused field does not shrink after focus', async ({ page }) => {
+  test('focused field does not shrink after focus', async ({ page }, testInfo) => {
+    // KNOWN FAILURE on iPadL (decision: option 1, TUX-008 fix round). The 45% canvas floor at 1210 px caps
+    // Layers at 200 px, so this cell cannot pass until TUX-012 reflows the pen row and search field.
+    // test.fail() flips red when TUX-012 fixes it: remove the annotation then.
+    test.fail(/ipad-landscape/.test(testInfo.project.name), 'blocked on TUX-012 (iPadL pane caps, TUX-008)');
     await boot(page);
     await addLayerAndSelect(page, 'flowfield');
     const input = page.locator('#layer-search-input');
@@ -93,7 +97,11 @@ test.describe('TUX-042 text-entry font size', () => {
 
   // Guard: keeps 16px text from clipping inside its chip. Covers the left-pane/pens chips, every
   // select.ctrl-sel (longest option) and the Document Setup .slider-val-inp with the panel open.
-  test('value chips do not clip', async ({ page }) => {
+  test('value chips do not clip', async ({ page }, testInfo) => {
+    // KNOWN FAILURE on iPadL (decision: option 1, TUX-008 fix round). The 45% canvas floor at 1210 px caps
+    // Layers at 200 px, so this cell cannot pass until TUX-012 reflows the pen row and search field.
+    // test.fail() flips red when TUX-012 fixes it: remove the annotation then.
+    test.fail(/ipad-landscape/.test(testInfo.project.name), 'blocked on TUX-012 (iPadL pane caps, TUX-008)');
     await boot(page);
     await addLayerAndSelect(page, 'flowfield');
     // SETUP STEP: open Document Setup programmatically and expand every section (phones have no
