@@ -44,6 +44,11 @@
   // k = 3.0 breaks the pattern into noise (paths 297 -> 621, ink +28 %). The
   // ceiling sits just above the measured-good value.
   const STRIPE_ALIGN_MAX = 1.2;
+  // U6: the clamped value of a fill-control key, or undefined when absent.
+  const fcRead = (o, key) => {
+    const FC = Vectura.SCENE_FILL_CONTROLS;
+    return FC ? FC.read(o, key) : undefined;
+  };
   // Scene Seed (geometry3d.js): phase is 0 for a legacy layer ⇒ `x + 0` is exact.
   const SEED = (Vectura.Geometry3D && Vectura.Geometry3D.SEED) || { salt: 0, phase: 0, off: 0 };
 
@@ -560,6 +565,10 @@
       hiA, hiB, hiX, hiY, faceA, faceB, faceX, faceY,
       targetArea: o.targetArea, back: o.back, mapper: o.mapper,
       stripeAlign: clamp(finite(o.stripeAlign, 0), 0, STRIPE_ALIGN_MAX),
+      // U6: Turing maturity (relaxation steps) and stripe scale (wavelength multiplier).
+      // An absent key keeps today's 170 steps and x1 scale.
+      turingIters: (() => { const v = fcRead(o, 'patternMaturity'); return v === undefined ? 170 : Math.round(v); })(),
+      stripeScale: (() => { const v = fcRead(o, 'stripeScale'); return v === undefined ? 1 : v; })(),
       get rot() { this.rotRead = true; return this.rotVal; },
       set rot(v) { this.rotVal = v; },
       rotVal: 0,
@@ -2522,8 +2531,8 @@
       return sample.length > 1 ? lo / (sample.length - 1) : 0.5;
     };
     for (let k = 0; k < mask.length; k++) {
-      if (!mask[k]) { lam[k] = C.PMAX * 2; continue; }
-      lam[k] = C.pitchLegible(rankOf(rawI[k])) * 2;   // full wavelength = 2 x clearance
+      if (!mask[k]) { lam[k] = C.PMAX * 2 * C.stripeScale; continue; }
+      lam[k] = C.pitchLegible(rankOf(rawI[k])) * 2 * C.stripeScale;   // full wavelength = 2 x clearance (U6 scale)
     }
     // The direction the stripes should run: perpendicular to the tone gradient.
     for (let j = 1; j < NY - 1; j++) for (let i = 1; i < NX - 1; i++) {
@@ -2582,7 +2591,7 @@
     }
     let un = new Float32Array(NX * NY);
     let vn = new Float32Array(NX * NY);
-    for (let it = 0; it < 170; it++) {
+    for (let it = 0; it < C.turingIters; it++) {
       for (let j = 1; j < NY - 1; j++) {
         for (let i = 1; i < NX - 1; i++) {
           const k = j * NX + i;
@@ -3012,6 +3021,71 @@
     hachureSlope: lawHachure,
   };
 
+  /* Join runs that share an endpoint into longer polylines (U6 `chainMarks`).
+   * A greedy walk: start at the first unused run, then keep taking an unused run
+   * that begins or ends at the current tail, reversing it when needed. A point
+   * where several runs meet is a junction the walk crosses once per visit, so a
+   * graph with junctions still leaves a few chains. Deterministic: runs are
+   * visited in input order and the first match in a bucket wins. Runs with a
+   * different `back` flag never join. */
+  const chainRuns = (items, tol) => {
+    const cell = Math.max(1e-6, tol);
+    const key = (pt) => `${Math.round(pt.x / cell)},${Math.round(pt.y / cell)}`;
+    const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) <= tol;
+    // Only a coincident point is dropped at a join; a gap under `tol` keeps both points.
+    const exact = (a, b) => a.x === b.x && a.y === b.y;
+    const buckets = new Map();
+    const add = (pt, ref) => {
+      const k = key(pt);
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(ref);
+    };
+    items.forEach((it, i) => {
+      add(it.run[0], { i, end: 0 });
+      add(it.run[it.run.length - 1], { i, end: 1 });
+    });
+    const used = new Array(items.length).fill(false);
+    const find = (pt, back) => {
+      const kx = Math.round(pt.x / cell); const ky = Math.round(pt.y / cell);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const list = buckets.get(`${kx + dx},${ky + dy}`);
+        if (!list) continue;
+        for (let n = 0; n < list.length; n++) {
+          const ref = list[n];
+          if (used[ref.i] || items[ref.i].back !== back) continue;
+          const r = items[ref.i].run;
+          if (near(pt, ref.end === 0 ? r[0] : r[r.length - 1])) return ref;
+        }
+      }
+      return null;
+    };
+    const out = [];
+    for (let i = 0; i < items.length; i++) {
+      if (used[i]) continue;
+      used[i] = true;
+      let run = items[i].run.slice();
+      const back = items[i].back;
+      for (;;) {
+        const ref = find(run[run.length - 1], back);
+        if (!ref) break;
+        used[ref.i] = true;
+        const r = items[ref.i].run;
+        const seg = ref.end === 0 ? r : r.slice().reverse();
+        run = run.concat(seg.slice(exact(run[run.length - 1], seg[0]) ? 1 : 0));
+      }
+      for (;;) {
+        const ref = find(run[0], back);
+        if (!ref) break;
+        used[ref.i] = true;
+        const r = items[ref.i].run;
+        const seg = ref.end === 1 ? r : r.slice().reverse();
+        run = seg.slice(0, exact(seg[seg.length - 1], run[0]) ? -1 : undefined).concat(run);
+      }
+      out.push({ run, back, idx: out.length });
+    }
+    return out;
+  };
+
   const emit = (o) => {
     const fn = RUN[o.algo];
     if (!fn) return false;
@@ -3034,6 +3108,13 @@
     // has to survive to the harness — a silently empty cell is the one failure
     // mode this rig cannot tell apart from a law that draws nothing.
     const diag = { algo: o.algo, lat: C.lat.length, ok: C.ok, R: C.R, emitted: 0, cut: 0, error: null, readsAngle: false };
+    // U6 `chainMarks`: a maze is a graph of short wall segments that touch at
+    // their ends. Collect the runs and join those that share an endpoint into
+    // polylines. No point moves, so the ink is the same and only the pen-lifts
+    // change. Voronoi edges stop short of their junctions and are not chained.
+    const chain = (o.chainMarks === true && o.algo === 'mazeFill') ? { runs: [] } : null;
+    const realPush = o.pushRun;
+    if (chain) o.pushRun = (run, back, idx) => { chain.runs.push({ run, back, idx }); };
     for (let pi = 0; pi < passes.length; pi++) {
       const deg = passes[pi];
       C.rot = o.angleDeg + deg;
@@ -3043,6 +3124,12 @@
         diag.readsAngle = C.rotRead;
         if (!C.rotRead) break;
       }
+    }
+    if (chain) {
+      o.pushRun = realPush;
+      const joined = chainRuns(chain.runs, (Vectura.SCENE_FILL_CONTROLS || {}).CHAIN_JOIN_MM || 0.01);
+      diag.chained = { before: chain.runs.length, after: joined.length };
+      joined.forEach((j) => realPush(j.run, j.back, j.idx));
     }
     diag.emitted = C.emittedCount();
     diag.cut = C.cutCount();

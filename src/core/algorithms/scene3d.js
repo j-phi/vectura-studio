@@ -1724,7 +1724,33 @@
       const shadowFn = shadowOccluders
         ? (wp, lt) => ShadowReceive.pointInShadow(wp, lt, shadowOccluders, { excludeObjectId: currentReceiverObjectId })
         : null;
-      const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, activeLights, shadowFn) : null;
+      // U6 — the ONE tone-shaping point (gamma, contrast, depth fade). It is
+      // reassigned per record from that object's own style; null is the
+      // identity, so an untouched style is byte-identical (Regions.toneShapeOf).
+      let activeToneShape = null;
+      let sceneDepth = null;
+      const depthContext = () => {
+        if (sceneDepth) return sceneDepth;
+        let zMax = -Infinity; let zMin = Infinity;
+        scene.objects.forEach((rec) => {
+          (rec.camPts || []).forEach((pt) => {
+            if (pt && Number.isFinite(pt.z)) { zMax = Math.max(zMax, pt.z); zMin = Math.min(zMin, pt.z); }
+          });
+        });
+        sceneDepth = {
+          zNear: Number.isFinite(zMax) ? zMax : 0,
+          zFar: Number.isFinite(zMin) ? zMin : 0,
+          zOf: (wp) => {
+            const P = wp && scene.projectWorld ? scene.projectWorld(wp) : null;
+            return P ? P.z : NaN;
+          },
+        };
+        return sceneDepth;
+      };
+      const shapeIntensity = (I, wp) => (activeToneShape ? Regions.shapeTone(I, wp, activeToneShape) : I);
+      const intensityFn = toneOn
+        ? (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp)
+        : null;
 
       // ── Unit D judge follow-up v2 — FLAT-face footprint clip ────────────────
       // (faceHatchLines, below, is the consumer.) "Parametrize the plane rather
@@ -2296,7 +2322,7 @@
         const hlOff = styleParams.highlightTreatment === 'none' || styleParams.highlightTreatment === 'keep';
         const I = noShadowBaseline
           ? clamp(finite(Regions && typeof Regions.combinedIntensity === 'function'
-            ? Regions.combinedIntensity(normalWorld, worldPoint, activeLights) : 0, 0), 0, 1)
+            ? shapeIntensity(Regions.combinedIntensity(normalWorld, worldPoint, activeLights), worldPoint) : 0, 0), 0, 1)
           : intensityFn(normalWorld, worldPoint);
         // O20 — the object's own rank grade when the thresholds under-use the
         // ladder, the plain threshold band otherwise (and always, for a caller
@@ -2428,6 +2454,30 @@
         if (Math.hypot(ua, va) < 1e-4) return 0;
         return Math.atan2(va, ua) * 180 / Math.PI;
       };
+
+      // LIGHT-relative hatch reference (U6 `angleRef:'light'`): the in-plane angle
+      // whose lines run along the sun's direction projected onto the face plane,
+      // so Angle 0 hatches parallel to the light and the drawing turns with it.
+      // Returns 0 when the light is (near) normal to the face.
+      const lightAngleInUV = (scaf) => {
+        if (!scaf || !scaf.U || !scaf.V || !lightDir) return 0;
+        const la = dot(lightDir, scaf.U);
+        const va = dot(lightDir, scaf.V);
+        if (Math.hypot(la, va) < 1e-4) return 0;
+        return Math.atan2(va, la) * 180 / Math.PI;
+      };
+      // The same bearing on paper, for a flat (screen-space) hatch.
+      const lightScreenAngle = () => {
+        if (!lightDir || !scene.projectWorld) return 0;
+        const p0 = scene.projectWorld({ x: 0, y: 0, z: 0 });
+        const p1 = scene.projectWorld({ x: lightDir.x * 100, y: lightDir.y * 100, z: lightDir.z * 100 });
+        if (!p0 || !p1 || !Number.isFinite(p0.x) || !Number.isFinite(p1.x)) return 0;
+        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) < 1e-4) return 0;
+        return Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+      };
+      // Base in-plane angle for a face scaffold under the style's angleRef.
+      const refAngleInUV = (ref, scaf) => (ref === 'worldUp' ? worldUpAngleInUV(scaf)
+        : (ref === 'light' ? lightAngleInUV(scaf) : 0));
 
       // Boustrophedon linking (Phase 2 `linkFill`): chain disjoint scanline
       // segments into one continuous pen path, joining each segment to the nearest
@@ -2593,8 +2643,11 @@
         // face; 'worldUp' keeps the lines upright (world vertical projected onto
         // the face). 'screen' reuses the cheap screen-space path below.
         const angleRef = styleWrapFlat(styleParams, 'hatch') ? 'screen'
-          : (styleParams.angleRef === 'worldUp' ? 'worldUp' : 'face');
-        const userAngle = finite(styleParams.fillAngle, 45);
+          : (styleParams.angleRef === 'worldUp' ? 'worldUp' : (styleParams.angleRef === 'light' ? 'light' : 'face'));
+        // U6: 'light' measures the angle from the sun; on a flat (screen) hatch the
+        // reference is the sun's bearing on paper.
+        const userAngle = finite(styleParams.fillAngle, 45)
+          + (angleRef === 'screen' && styleParams.angleRef === 'light' ? lightScreenAngle() : 0);
         // Sample point/spot lights at the face's world centroid.
         const worldPoint = faceWorldCentroid(face);
         const scaf = angleRef === 'screen' ? null : faceUVScaffold(face, normalWorld);
@@ -2612,7 +2665,7 @@
         const { spacing, zone, glint } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
         // worldUp rotates the in-plane base angle so the lines follow world
         // vertical; 'face' leaves the user angle measured in the face frame.
-        const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
+        const baseAngle = (angleRef === 'worldUp' || angleRef === 'light') ? refAngleInUV(angleRef, scaf) + userAngle : userAngle;
         const uvLines = [];
         // ── FORESHORTENING COMPENSATION (O20, and half of C15) ─────────────────
         //
@@ -3258,7 +3311,7 @@
         // direction every other family on that face uses. Project the in-plane
         // direction and measure it where it lands.
         const userAngle = finite(styleParams.fillAngle, 45);
-        const baseAngle = (styleParams.angleRef === 'worldUp' ? worldUpAngleInUV(scaf) : 0) + userAngle;
+        const baseAngle = refAngleInUV(styleParams.angleRef, scaf) + userAngle;
         const screenAngleDeg = (() => {
           const r = baseAngle * Math.PI / 180;
           const L = Math.max(uSpan, vSpan) * 0.2;
@@ -3298,6 +3351,9 @@
             densityScale: monoDensityScale(monoDensityOf(styleParams)),
             crossDelta: finite(styleParams.crossAngleDelta, 90),
             stripeAlign: styleParams.stripeAlign,
+            chainMarks: styleParams.chainMarks,
+            patternMaturity: styleParams.patternMaturity,
+            stripeScale: styleParams.stripeScale,
           });
         } catch (e) {
           return null; // a law that throws must not take the facet with it
@@ -3320,13 +3376,13 @@
       // caller uses the plain faceHatchLines path). Deterministic.
       const faceLightDrivenLines = (face, styleParams, normalWorld, crossPass, hlCfg) => {
         if (draft || !specularFn) return null;
-        const angleRef = styleParams.angleRef === 'worldUp' ? 'worldUp' : 'face';
+        const angleRef = styleParams.angleRef === 'worldUp' ? 'worldUp' : (styleParams.angleRef === 'light' ? 'light' : 'face');
         const scaf = faceUVScaffold(face, normalWorld);
         if (!scaf) return null;
         const worldPoint = faceWorldCentroid(face);
         const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
         const userAngle = finite(styleParams.fillAngle, 45);
-        const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
+        const baseAngle = refAngleInUV(angleRef, scaf) + userAngle;
         const uvLines = [];
         // lightDriven places the glint per SAMPLE, so it has no face zone to
         // read; the darkest band buys the same whole second family T does.
@@ -4056,6 +4112,12 @@
         // Unit D — see shadowFn above: THIS record is the current receiver,
         // so its own faces are excluded from its own occluder test.
         currentReceiverObjectId = record.id;
+        // U6 — this object's tone curve + depth fade (null = identity).
+        {
+          const toneSp = (resolveStyle(record.id, null) || {}).params;
+          activeToneShape = toneOn
+            ? Regions.toneShapeOf(toneSp, toneSp && toneSp.depthFade === true ? depthContext() : null) : null;
+        }
         // Emissive self-render config for this object (never the ground).
         const emSrc = objById.get(record.id);
         const emCfg = (emSrc && emSrc.emissive && emSrc.emissive.enabled && record.id !== 'ground')
@@ -4743,6 +4805,17 @@
                 densityScale: monoDensityScale(monoDensityOf(sp)),
                 stripeAlign: sp.stripeAlign,
                 fieldCurve: sp.fieldCurve,
+                // U6: artistic controls. Absent keys keep every engine literal.
+                chainMarks: sp.chainMarks,
+                patternMaturity: sp.patternMaturity,
+                stripeScale: sp.stripeScale,
+                nibAngleDeg: sp.nibAngleDeg,
+                nibContrast: sp.nibContrast,
+                taperLength: sp.taperLength,
+                taperTipWidth: sp.taperTipWidth,
+                taperSoftness: sp.taperSoftness,
+                waveLength: sp.waveLength,
+                waveCrest: sp.waveCrest,
                 // C4 — how a RIBBON LAW fills its ribbon's interior once the
                 // outline is drawn ('spiral' | 'concentric' | 'serpentine' |
                 // 'contourParallel'). Forwarded verbatim, for exactly the
@@ -4988,8 +5061,13 @@
                 // Three-pen laws tag each run with its pen TIER (0 fine / 1 medium /
                 // 2 broad). Keep it on the emitted path so export can route tiers
                 // to real pens; absent on every other law ⇒ meta untouched.
+                // U6 `tierPens`: tier k is drawn with pen tierPens[k] (the object's
+                // own pen palette). The real nib carries the width, so the
+                // modelled weightScale drops to 1. Off (null) = today's output.
+                const tierPen = (Number.isInteger(line.penTier) && Array.isArray(sp.tierPens))
+                  ? sp.tierPens[line.penTier] : null;
                 const lineMeta = Number.isInteger(line.penTier)
-                  ? { ...lineMeta0, penTier: line.penTier }
+                  ? { ...lineMeta0, penTier: line.penTier, ...(tierPen ? { penId: tierPen, weightScale: 1 } : {}) }
                   : lineMeta0;
                 emitRuns(clip.runs, lineMeta, hiddenTreatment, null, frontTreat,
                   line.apex === true ? { apexMin: line.apexMin } : undefined);

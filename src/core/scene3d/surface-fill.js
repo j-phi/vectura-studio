@@ -1499,6 +1499,13 @@
     // enforces on the way in, re-asserted here because `buildObject` is a
     // public boundary a test (or a future caller) can hit directly.
     const CF_LEVELS = clamp(Math.round(finite(opts.toneQuantLevels, CF_LEVELS_DEFAULT)), 4, 256);
+    // U6 — the artistic controls (src/config/scene3d-fill-controls.js). `fcNum`
+    // is the clamped style value, or undefined when the key is ABSENT; every
+    // consumer falls back to its own literal, so an absent key is today's output.
+    const FILL_CTL = Vectura.SCENE_FILL_CONTROLS || null;
+    const fcNum = (key) => (FILL_CTL ? FILL_CTL.read(opts, key) : undefined);
+    const WAVE_CREST_ASKED = (opts.waveCrest === 'in' || opts.waveCrest === 'anti'
+      || opts.waveCrest === 'jit' || opts.waveCrest === 'walk') ? opts.waveCrest : null;
     // Per-call `contourFlow` streamline family. `opts.toneFlowMode` anything
     // other than the literal 'grad' degrades to `FLOW_MODE_DEFAULT` ('iso') —
     // same rule `params.js` uses.
@@ -3473,8 +3480,9 @@
     // whiteBand's and makes the difference between them purely directional. An
     // un-normalised nib would just be whiteBand a third lighter, which measures
     // as a worse whiteBand and says nothing about direction.
-    const NIB_DEG = 45;          // the nib axis, in SCREEN space (the calligraphic 45°)
-    const NIB_FLOOR = 0.35;      // the nib's corner: the narrowest mark it can make
+    // U6: `nibAngleDeg` / `nibContrast` (contrast = 1 - floor) override the two literals.
+    const NIB_DEG = fcNum('nibAngleDeg') ?? 45;          // the nib axis, in SCREEN space (the calligraphic 45°)
+    const NIB_FLOOR = fcNum('nibContrast') !== undefined ? 1 - fcNum('nibContrast') : 0.35;      // the nib's corner: the narrowest mark it can make
     const NIB_MEAN = NIB_FLOOR + (1 - NIB_FLOOR) * (2 / Math.PI);
     const nibFactor = (theta) => {
       if (!Number.isFinite(theta)) return 1;
@@ -3503,9 +3511,10 @@
     //
     // Nothing is dropped and no run is shortened: a taper is a width, so the
     // ruling still runs end to end and the free-end count stays at zero.
-    const TAPER_MM = 3.5;        // how far in from a run's own end the taper reaches
-    const TAPER_FLOOR = 0.42;    // width at the very end, as a share of the tone's ask
-    const TAPER_SOFT = 0.09;     // softness of the light-end clamp, in grey units
+    // U6: `taperLength` / `taperTipWidth` / `taperSoftness` override the three literals.
+    const TAPER_MM = fcNum('taperLength') ?? 3.5;        // how far in from a run's own end the taper reaches
+    const TAPER_FLOOR = fcNum('taperTipWidth') ?? 0.42;    // width at the very end, as a share of the tone's ask
+    const TAPER_SOFT = fcNum('taperSoftness') ?? 0.09;     // softness of the light-end clamp, in grey units
     const softClamp = (v, lo, hi) => {
       // Smooth max then smooth min, both by the log-sum-exp softening. k is in
       // grey units, so the corner is rounded over TAPER_SOFT of the range.
@@ -4336,7 +4345,7 @@
     // own end, so the wave dies BEFORE the silhouette rather than at it.
     const WV_PITCH_PEN = 10;      // reserved pitch, in pen widths (whiteBand: 7.06)
     const WV_DARK_AREA = 0.92;    // the core shadow's delivered ink area
-    const WV_LAMBDA_PEN = 7.3;    // wavelength, in pen widths (2.2 mm at 0.3)
+    const WV_LAMBDA_PEN = fcNum('waveLength') ?? 7.3;    // wavelength, in pen widths (2.2 mm at 0.3); U6 `waveLength`
     const WV_AMAX = 0.42;         // peak amplitude, as a share of the reserved pitch
     const WV_I0 = 0.62;           // radiance above which the family is a plain ruling
     const WV_TAPER_MM = 2.0;      // the wave eases to nothing this far from a run end
@@ -4435,7 +4444,11 @@
     const isWv6 = () => WV6[TONE_ALGO] != null;
     // 'jit' is anti-phase with a walk ON TOP, so its closest approach is still
     // governed by the crest-into-trough geometry. Stated once, read everywhere.
-    const wv6Anti = () => { const c = wv6(); return !!c && (c.ph === 'anti' || c.ph === 'jit'); };
+    const wv6Anti = () => {
+      const c = wv6();
+      const k = WAVE_CREST_ASKED || (c && c.ph);
+      return !!c && (k === 'anti' || k === 'jit');
+    };
     const wvOctaveLaw = () => TONE_ALGO === 'hilbertDepth' || TONE_ALGO === 'nestedOctaves'
       || (isWv6() && wv6().dep === 1);
     // 'onePenDown' does NOT split along the line — a chain of abutting sub-paths
@@ -4603,18 +4616,20 @@
     const wvLinePhase = (lineIndex) => {
       const ord = Math.round((Number(lineIndex) || 0) * wvFlatCov());
       const c6 = wv6();
-      if (c6) {
-        if (c6.ph === 'anti') return Math.PI * ord;
+      // U6: `waveCrest` overrides the phase the law was built with (absent = the law's own).
+      const phk = WAVE_CREST_ASKED || (c6 ? c6.ph : null);
+      if (c6 || WAVE_CREST_ASKED) {
+        if (phk === 'anti') return Math.PI * ord;
         // 'weaveJitter' — anti-phase PLUS a bounded golden walk. Strict
         // alternation makes the crest rows PERIODIC, and a periodic crest row
         // is a periodic white lozenge between it and its neighbour: the eye
         // finds a lattice even where no single gap is wide. The walk is capped
         // at WV6_JIT of a period so the interlock survives it.
-        if (c6.ph === 'jit') return Math.PI * ord + 2 * Math.PI * WV6_JIT * ((ord * GOLDEN_STEP) % 1);
+        if (phk === 'jit') return Math.PI * ord + 2 * Math.PI * WV6_JIT * ((ord * GOLDEN_STEP) % 1);
         // 'ampPhaseWalk' — no alternation at all, only decorrelation. Every
         // ruling starts somewhere else in the period, so neighbouring crests
         // are never in register and the residual white cannot line up.
-        if (c6.ph === 'walk') return 2 * Math.PI * ((ord * GOLDEN_STEP) % 1);
+        if (phk === 'walk') return 2 * Math.PI * ((ord * GOLDEN_STEP) % 1);
         return 0;
       }
       if (TONE_ALGO === 'interlockWeave') return Math.PI * ord;
@@ -9371,8 +9386,13 @@
       // law's realised elongation (1.13x) fell a third short of the 1.8x its pen
       // had already been divided by. Any law that shortens its wavelength or
       // adds an octave states a bigger `steps` in the WV6 table and pays for it.
+      // U6: a wavelength under the default 7.3 pens needs proportionally more samples
+      // or the polyline corner-cuts the crests (see the WV6 `steps` note above).
+      const waveSteps = (toneOn && isWaveLaw())
+        ? (isWv6() ? Math.max(MAX_LINE_STEPS, wv6().steps) : MAX_LINE_STEPS) : 0;
       const nSteps = (toneOn && isWaveLaw())
-        ? (isWv6() ? Math.max(MAX_LINE_STEPS, wv6().steps) : MAX_LINE_STEPS)
+        ? (WV_LAMBDA_PEN < 7.3 && FILL_CTL
+          ? Math.min(FILL_CTL.WAVE_MAX_STEPS, Math.ceil(waveSteps * 7.3 / WV_LAMBDA_PEN)) : waveSteps)
         : Math.max(2, Math.min(MAX_LINE_STEPS,
           Number.isFinite(paramAt.steps) ? Math.round(paramAt.steps) : steps));
 
@@ -12745,6 +12765,9 @@
           densityScale: opts.densityScale,
           crossDelta: crossDelta,
           stripeAlign: opts.stripeAlign,
+          chainMarks: opts.chainMarks,
+          patternMaturity: opts.patternMaturity,
+          stripeScale: opts.stripeScale,
         });
       } else if (contMapper) {
         // W-36c: crosshatch's family A now also reads the per-family budget

@@ -801,9 +801,77 @@
     return { inRegion: true, stage, boost };
   };
 
+  // ── TONE SHAPER (fill-style review U6) ──────────────────────────────────────
+  //
+  // ONE point in the tone pipeline where an object's gamma, contrast and depth
+  // fade are applied. scene3d.js wraps `combinedIntensity` once; every Fill
+  // Style (faceted, curved, mono, marks) reads intensity through that wrapper,
+  // so no law has its own copy of the curve.
+  //
+  //   gamma     I' = I^gamma           gamma > 1 darkens the mid-tones (more ink)
+  //   contrast  c > 0 blends toward a smoothstep S-curve about the 0.5 pivot;
+  //             c < 0 blends away from it (a flatter, inverse S). Both keep 0 and 1 fixed.
+  //   fade      I'' = I' + (1 - I') * strength * t   t = 0 (near) .. 1 (far)
+  //
+  // `toneShapeOf` returns null when every control is at its default, so an
+  // untouched style takes the identity path and stays byte-identical.
+  const toneCurve = (I, gamma, contrast) => {
+    let x = clamp(finite(I, 0), 0, 1);
+    if (gamma !== 1) x = Math.pow(x, gamma);
+    if (contrast !== 0) {
+      const s = x * x * (3 - 2 * x);
+      x += contrast * (s - x);
+    }
+    return clamp(x, 0, 1);
+  };
+  // depth: { zNear, zFar, zOf(worldPoint) } — camera z, larger z is nearer.
+  const toneShapeOf = (sp, depth) => {
+    const FC = Vectura.SCENE_FILL_CONTROLS;
+    if (!FC || !sp) return null;
+    const gamma = FC.read(sp, 'toneGamma');
+    const contrast = FC.read(sp, 'toneContrast');
+    const g = gamma === undefined ? 1 : gamma;
+    const c = contrast === undefined ? 0 : contrast;
+    const fadeOn = sp.depthFade === true && depth && typeof depth.zOf === 'function';
+    let fade = null;
+    if (fadeOn) {
+      const strength = FC.read(sp, 'depthFadeStrength');
+      const near = FC.read(sp, 'depthFadeNear');
+      const far = FC.read(sp, 'depthFadeFar');
+      const st = strength === undefined ? FC.CONTROLS.depthFadeStrength.default : strength;
+      const n0 = near === undefined ? FC.CONTROLS.depthFadeNear.default : near;
+      const f0 = far === undefined ? FC.CONTROLS.depthFadeFar.default : far;
+      if (st > 0) fade = { strength: st, near: n0, far: Math.max(f0, n0 + 1e-3), depth };
+    }
+    if (g === 1 && c === 0 && !fade) return null;
+    return { gamma: g, contrast: c, fade };
+  };
+  // Depth fraction: 0 at the nearest scene surface, 1 at the farthest.
+  const depthFraction = (depth, worldPoint) => {
+    const span = depth.zNear - depth.zFar;
+    if (!(span > 1e-6)) return 0;
+    const z = depth.zOf(worldPoint);
+    if (!Number.isFinite(z)) return 0;
+    return clamp((depth.zNear - z) / span, 0, 1);
+  };
+  const shapeTone = (I, worldPoint, shape) => {
+    if (!shape) return I;
+    let x = toneCurve(I, shape.gamma, shape.contrast);
+    if (shape.fade) {
+      const f = shape.fade;
+      const t = clamp((depthFraction(f.depth, worldPoint) - f.near) / (f.far - f.near), 0, 1);
+      x += (1 - x) * f.strength * t;
+    }
+    return clamp(x, 0, 1);
+  };
+
   const Regions = {
     intensity,
     combinedIntensity,
+    toneCurve,
+    toneShapeOf,
+    shapeTone,
+    depthFraction,
     band,
     rankBands,
     RANK_MIN_SPREAD,

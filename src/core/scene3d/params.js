@@ -597,7 +597,7 @@
   const STROKE_LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
   const SPIRAL_CENTERS = ['centroid', 'bboxCenter', 'highlight']; // 'highlight' = Origin Spiral (U5 M9a)
   const SPIRAL_MODES = ['flatClip', 'surfaceHelix'];
-  const ANGLE_REFS = ['face', 'worldUp']; // 'screen' is now wrap:'flat' (U5, R3-1)
+  const ANGLE_REFS = ['face', 'worldUp', 'light']; // 'screen' is now wrap:'flat' (U5, R3-1)
   const WRAPS = ['surface', 'flat'];
   const CONTOUR_STYLES = ['region', 'surface'];
   const DOT_SHAPES = ['dot', 'ring', 'cross', 'plus', 'tick'];
@@ -812,7 +812,13 @@
       // U4b — turingStripe stripe-alignment strength. 0 (default) is today's
       // output. Capped at the measured-good ceiling (r2: 0.9 aligns, 3.0 is noise).
       case 'stripeAlign': return clamp(finite(value, 0), 0, 1.2);
-      default: return undefined;
+      // U6 — the artistic controls (tone gamma/contrast, depth fade, wave, nib,
+      // taper, Turing maturity/scale, chaining, tier pens). Ranges live in
+      // src/config/scene3d-fill-controls.js; an unknown key returns undefined.
+      default: {
+        const FC = Vectura.SCENE_FILL_CONTROLS;
+        return FC ? FC.clampStyle(key, value) : undefined;
+      }
     }
   };
 
