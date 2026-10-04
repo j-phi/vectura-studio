@@ -202,6 +202,10 @@
     if (typeof document === 'undefined' || !document.documentElement) return '';
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   };
+  // TUX-007: canvas arc() throws IndexSizeError for a negative radius. Handle radii are k / scale, so a
+  // non-positive scale produced one. Used at the selection, text-widget, direct-select and pen sites.
+  const safeArcR = (r) => (Number.isFinite(r) && r > 0 ? r : 0);
+
   const getThemeToken = (name, fallback = '') => {
     if (typeof document === 'undefined' || !document.documentElement) return fallback;
     // Synchronously invalidate when skin id changes. applyTheme sets data-ui-skin
@@ -5350,9 +5354,19 @@
       this.userHasManipulated = false;
       const p = this.engine.currentProfile;
       const r = this.canvas.getBoundingClientRect();
-      const sx = (r.width - 60) / p.width;
-      const sy = (r.height - 60) / p.height;
-      this.scale = Math.min(sx, sy);
+      // TUX-007: the margin shrinks with the container (60 px at normal sizes, so desktop fit is
+      // unchanged) and the scale never drops below VIEW.minScale, so a collapsed container cannot
+      // yield a zero or negative scale (negative arc radius in the handle code).
+      const view = (window.Vectura && window.Vectura.VIEW) || {};
+      const minScale = Number.isFinite(view.minScale) && view.minScale > 0 ? view.minScale : 0.1;
+      const marginPx = Number.isFinite(view.fitMargin) ? view.fitMargin : 60;
+      const marginFrac = Number.isFinite(view.fitMarginMaxFraction) ? view.fitMarginMaxFraction : 0.1;
+      const mx = Math.min(marginPx, marginFrac * r.width);
+      const my = Math.min(marginPx, marginFrac * r.height);
+      const sx = (r.width - mx) / (p.width || 1);
+      const sy = (r.height - my) / (p.height || 1);
+      const fit = Math.min(sx, sy);
+      this.scale = Math.max(minScale, Number.isFinite(fit) ? fit : minScale);
       this.offsetX = (r.width - p.width * this.scale) / 2;
       this.offsetY = (r.height - p.height * this.scale) / 2;
     }
@@ -6538,7 +6552,7 @@
     drawTextModeWidget() {
       const info = this._textModeWidgetInfo();
       if (!info) return;
-      const r = 5 / this.scale;
+      const r = safeArcR(5 / this.scale);
       const { x, y } = info.point;
       this.ctx.save();
       const stroke = getThemeToken('--render-selection-handle-stroke', '#60a5fa');
@@ -15340,8 +15354,8 @@
       this.ctx.stroke();
       this.ctx.setLineDash([]);
 
-      const anchorR = 3.2 / this.scale;
-      const handleR = 2.2 / this.scale;
+      const anchorR = safeArcR(3.2 / this.scale);
+      const handleR = safeArcR(2.2 / this.scale);
       const selectedSet = sel.selectedIndices || new Set();
       worldAnchors.forEach((anchor, i) => {
         const isSelected = selectedSet.has(i);
@@ -15391,7 +15405,7 @@
         if (this.directDrag?.mergeTarget != null && data) {
           const wa = data.anchors[this.directDrag.mergeTarget];
           if (wa) {
-            const r = 3.2 / this.scale;
+            const r = safeArcR(3.2 / this.scale);
             this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
             this.ctx.lineWidth = 1.1 / this.scale;
             this.ctx.setLineDash([]);
@@ -15402,7 +15416,7 @@
         }
         if (this.directDrag?.endpointSnapTarget) {
           const sw = this.directDrag.endpointSnapTarget.world;
-          const r = 3.2 / this.scale;
+          const r = safeArcR(3.2 / this.scale);
           this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
           this.ctx.lineWidth = 1.1 / this.scale;
           this.ctx.setLineDash([3 / this.scale, 3 / this.scale]);
@@ -15429,7 +15443,7 @@
           this.ctx.strokeStyle = strokeColor;
           this.ctx.fillStyle = fillColor;
           this.ctx.lineWidth = 1 / this.scale;
-          const r = 3.2 / this.scale;
+          const r = safeArcR(3.2 / this.scale);
           const rd = r * 0.38;
           freeHandles.forEach((h) => {
             // Bullseye outer ring
@@ -15493,7 +15507,7 @@
       const fillColor = getThemeToken('--render-direct-handle-fill', '#0f172a');
       this.ctx.strokeStyle = strokeColor;
       this.ctx.fillStyle = fillColor;
-      const r = 3.2 / this.scale;
+      const r = safeArcR(3.2 / this.scale);
       const rd = r * 0.38;
       handles.forEach((handle) => {
         // Bullseye outer ring
@@ -15545,7 +15559,7 @@
       this.ctx.setLineDash([]);
       this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
       this.ctx.strokeStyle = '#38bdf8';
-      const r = 3 / this.scale;
+      const r = safeArcR(3 / this.scale);
       anchors.forEach((anchor, idx) => {
         if (anchor.in) {
           this.ctx.beginPath();

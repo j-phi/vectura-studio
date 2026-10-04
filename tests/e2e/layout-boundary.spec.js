@@ -22,6 +22,23 @@ test.describe('layout boundary (desktop fine pointer)', () => {
     expect(s).toEqual({ touchUi: false, mobile: false, layout: 'desktop', w: 34, h: 34 });
   });
 
+  // TUX-007: a short desktop window with a FINE pointer keeps today's mobile-layout and gets no
+  // phone-short class; only the renderer scale clamp applies there.
+  test('874x402 fine pointer: no phone-short, mobile-layout kept, scale > 0', async ({ page }) => {
+    await page.setViewportSize({ width: 874, height: 402 });
+    await page.waitForTimeout(300);
+    const s = await page.evaluate(() => ({
+      short: document.body.classList.contains('phone-short'),
+      mobile: document.body.classList.contains('mobile-layout'),
+      touchUi: document.body.classList.contains('touch-ui'),
+      scale: window.app.renderer.scale,
+    }));
+    expect(s.short).toBe(false);
+    expect(s.mobile).toBe(true);
+    expect(s.touchUi).toBe(false);
+    expect(Number.isFinite(s.scale) && s.scale > 0).toBe(true);
+  });
+
   for (const w of [899, 900, 901]) {
     test(`${w}px: JS mobile-layout agrees with CSS --pane-collapsed-width`, async ({ page }) => {
       await page.setViewportSize({ width: w, height: 700 });

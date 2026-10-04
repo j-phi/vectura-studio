@@ -43,8 +43,17 @@ test('guard: clipping overflow away is reported as worse via stranded @audit-ext
   const hacked = await measure(page, spec, project);
   const cmp = core.compareCell(clean.m, hacked.m);
   const names = cmp.worse.map((w) => w.metric);
-  expect(names, `worse metrics: ${JSON.stringify(cmp.worse)} (strandedSel ${JSON.stringify(hacked.raw.strandedSel)})`).toContain('stranded');
-  expect(hacked.m.stranded).toBeGreaterThan(clean.m.stranded);
+  const note = `worse metrics: ${JSON.stringify(cmp.worse)} (strandedSel ${JSON.stringify(hacked.raw.strandedSel)})`;
+  if (clean.m.hOverflow === 0 && clean.m.innerWidthExcess === 0 && !clean.raw.items.some((i) => i.onscreen && i.clipped)) {
+    // TUX-007: the iPhone-landscape header now fits (nothing overflows), so the hack has nothing
+    // to strand. It must still read as worse: which metric moves (reachable, under44, covered)
+    // depends on which header controls the 120 px clip catches, so accept any worse metric.
+    expect(names.length, note).toBeGreaterThan(0);
+    expect(hacked.m.stranded).toBeGreaterThanOrEqual(clean.m.stranded);
+  } else {
+    expect(names, note).toContain('stranded');
+    expect(hacked.m.stranded).toBeGreaterThan(clean.m.stranded);
+  }
   // The overflow metrics alone would have called this a win (never worse).
   expect(hacked.m.hOverflow).toBeLessThanOrEqual(clean.m.hOverflow);
   expect(hacked.m.innerWidthExcess).toBeLessThanOrEqual(clean.m.innerWidthExcess);

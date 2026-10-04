@@ -470,6 +470,11 @@ async function paneOpen(page, side) {
 
 async function openPane(page, side) {
   if (await paneOpen(page, side)) return;
+  // TUX-008: at most one drawer is open, and the backdrop covers the other pane's control. Close the
+  // other drawer first, as a person does. A toast (top right, z 9000) can also sit over a header
+  // opener for a few seconds: wait it out.
+  await page.waitForFunction(() => !document.querySelector('.vectura-toast'), null, { timeout: 8000 }).catch(() => {});
+  await dismissDrawers(page);
   const ctl = await rendered(page, SELECTORS.paneToggle[side]);
   await fingerTap(page, ctl);
   const t0 = Date.now();
