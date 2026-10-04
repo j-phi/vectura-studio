@@ -127,3 +127,14 @@ One line per cell. Add lines only after a real device run. Do not enter results 
 
 | Row | Device | iOS | Mode | Orientation | Result | Date | Build | Note | Follow-up |
 |---|---|---|---|---|---|---|---|---|---|
+
+## TUX-054 device rows (downloads and share sheet)
+
+| Row | Check |
+|---|---|
+| TUX-054#1 | Save .vectura, then Save to Files. The name stays `vectura-YYYY-MM-DD.vectura`, not `.json`. Reopen it (TUX-053 round trip). |
+| TUX-054#2 | Export SVG opens as a vector file in Files. |
+| TUX-054#3 | Cancel the share sheet. No file and no toast appear. A second attempt works. |
+| TUX-054#4 | Animated SVG, preset bundle and one designer export each work. |
+| TUX-054#5 | A heavy export (dense scene, build time over 1 s) still opens the share sheet or falls back to a download. This checks the activation lifetime. |
+| TUX-054#6 | Record whether a synchronous revoke failed before the fix. This tests the audit's unverified claim. |

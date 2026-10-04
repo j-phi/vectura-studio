@@ -592,13 +592,7 @@
               layers: [{ type: system, params }],
             };
             const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${_stem}.vectura`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(a.href);
+            window.Vectura.Download.saveBlob(blob, `${_stem}.vectura`).catch(() => { /* dev-only, best-effort */ });
           });
           opt.appendChild(setDefaultBtn);
         }
@@ -945,14 +939,7 @@
               meta: { presetId: preset.id, group: preset.group || 'User', system, savedAt: preset.savedAt || 0 },
               layers: [{ type: system, params: { ...preset.params } }] };
         const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${slugify(preset.name) || system}.vectura`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        window.Vectura.Download.saveBlob(blob, `${slugify(preset.name) || system}.vectura`).catch(() => { /* download blocked */ });
       } catch (_) { /* download blocked */ }
     };
 

@@ -40,7 +40,7 @@ describe('Phase 3 closure — toast wire-ups', () => {
     expect(typeof window.Vectura?.UI?.overlays?.Toast?.show).toBe('function');
   });
 
-  test('saveVecturaFile() fires a success toast', () => {
+  test('saveVecturaFile() fires a success toast', async () => {
     // Stub createObjectURL and revokeObjectURL because JSDOM lacks them.
     if (!window.URL.createObjectURL) window.URL.createObjectURL = () => 'blob:test';
     if (!window.URL.revokeObjectURL) window.URL.revokeObjectURL = () => {};
@@ -55,6 +55,8 @@ describe('Phase 3 closure — toast wire-ups', () => {
     window.app.ui.saveVecturaFile();
 
     document.createElement = origCreate;
+    // TUX-054: the toast follows the async saveBlob result ('shared' | 'downloaded').
+    await new Promise((resolve) => setImmediate(resolve));
     const host = document.getElementById('vectura-toast-host');
     expect(host).toBeTruthy();
     const toasts = host.querySelectorAll('.vectura-toast');
@@ -64,7 +66,7 @@ describe('Phase 3 closure — toast wire-ups', () => {
     expect(last.classList.contains('vectura-toast-success')).toBe(true);
   });
 
-  test('exportSVG() fires a success toast naming the file and its path count', () => {
+  test('exportSVG() fires a success toast naming the file and its path count', async () => {
     if (!window.URL.createObjectURL) window.URL.createObjectURL = () => 'blob:test';
     if (!window.URL.revokeObjectURL) window.URL.revokeObjectURL = () => {};
     const origCreate = document.createElement.bind(document);
@@ -78,6 +80,7 @@ describe('Phase 3 closure — toast wire-ups', () => {
     window.app.ui.exportSVG();
 
     document.createElement = origCreate;
+    await new Promise((resolve) => setImmediate(resolve));
     const host = document.getElementById('vectura-toast-host');
     expect(host).toBeTruthy();
     const toasts = host.querySelectorAll('.vectura-toast');

@@ -969,20 +969,6 @@
       };
     },
 
-    saveVecturaFile() {
-      const payload = this._serializeVecturaPayload();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const date = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `vectura-${date}.vectura`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    },
-
     _applyVecturaPayload(data) {
       const registry = getPatternRegistry();
       const state = data?.state || data;
@@ -2154,14 +2140,8 @@
       if (!svg) return;
       try {
         const blob = new Blob([svg], { type: 'image/svg+xml' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${name || 'pattern'}.svg`.replace(/[^a-z0-9_\-. ]/gi, '_');
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        const filename = `${name || 'pattern'}.svg`.replace(/[^a-z0-9_\-. ]/gi, '_');
+        window.Vectura.Download.saveBlob(blob, filename).catch(() => { /* best-effort */ });
       } catch (err) {
         // Download is best-effort.
       }
