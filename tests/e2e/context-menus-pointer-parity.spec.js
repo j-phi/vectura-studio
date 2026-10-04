@@ -61,3 +61,34 @@ test.describe('context menus: mouse parity (TUX-034a)', () => {
     await page.screenshot({ path: `${dir}/desktop-1600.png` });
   });
 });
+
+// TUX-040: desktop parity for outside-dismiss of the layer filter menu.
+test.describe('layer filter menu outside dismiss: mouse parity (TUX-040)', () => {
+  const open = async (page) => {
+    await setup(page);
+    await page.locator('#layer-filter-btn').click();
+    await expect(page.locator('.menu-dropdown.open')).toBeVisible();
+  };
+  test('a mouse click on the canvas closes the menu', async ({ page }) => {
+    await open(page);
+    await page.mouse.click(900, 600);
+    await expect(page.locator('.menu-dropdown.open')).toHaveCount(0);
+  });
+  test('a mouse drag on the canvas closes the menu', async ({ page }) => {
+    await open(page);
+    await page.mouse.move(900, 600);
+    await page.mouse.down();
+    await page.mouse.move(960, 640, { steps: 8 });
+    await page.mouse.up();
+    await expect(page.locator('.menu-dropdown.open')).toHaveCount(0);
+  });
+  test('mouse down on a menu entry does not close it before selection', async ({ page }) => {
+    await open(page);
+    const box = await page.locator('.menu-dropdown.open .menu-entry[data-key="spiral"]').boundingBox();
+    await page.mouse.move(box.x + 10, box.y + 5);
+    await page.mouse.down();
+    await expect(page.locator('.menu-dropdown.open')).toBeVisible();
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.app.ui.layerFilterType)).toBe('spiral');
+  });
+});
