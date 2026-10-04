@@ -14486,7 +14486,8 @@ body.phone-layout #settings-panel {
   cursor: default;
 }
 @media (pointer: coarse) {
-  #vectura-toast-host {
+  /* Only action (Undo) toasts anchor bottom-center; plain toasts stay top-right so they never cover sheets/inputs. */
+  #vectura-toast-host:has(.vectura-toast-action) {
     top: auto;
     right: auto;
     left: 50%;
