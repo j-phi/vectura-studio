@@ -70,7 +70,7 @@ const setup = async (page, wantPx) => {
     const se = r.worldToScreen(b.corners.se.x, b.corners.se.y);
     const sx = se.x + box.left;
     const sy = se.y + box.top;
-    const probes = [[0, 0], [60, 60], [10, 10], [-px / 2, -py / 2], [40, -py - 40]];
+    const probes = [[0, 0], [60, 60], [10, 10], [17, 17], [26, 26], [-17, 17], [-26, 26], [-px / 2, -py / 2], [40, -py - 40]];
     if (Math.abs(sx - (c.x + px / 2)) > 2 || Math.abs(sy - (c.y + py / 2)) > 2) continue;
     if (!probes.every(([dx, dy]) => hit(sx + dx, sy + dy))) continue;
     r.draw();
@@ -128,6 +128,26 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(Math.abs(after.widthPx - before.widthPx)).toBeLessThanOrEqual(1);
     expect(Math.abs(after.rotation - before.rotation)).toBeLessThan(1e-3);
     expect(Math.hypot(after.center.x - before.center.x, after.center.y - before.center.y)).toBeGreaterThanOrEqual(15);
+  });
+
+  test('nudged corner resize is relative to the grab point (no jump)', async ({ page }) => {
+    const s = await setup(page, 32);
+    const hit = await page.evaluate((lid) => {
+      const r = window.app.renderer;
+      const layer = window.app.engine.layers.find((l) => l.id === lid);
+      const se = r.getHandleHitPoints(r.getSelectionBounds([layer]), 'touch').find((h) => h.key === 'se');
+      const p = r.worldToScreen(se.x, se.y);
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      return { x: p.x + box.left, y: p.y + box.top };
+    }, s.id);
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, hit)).toBe('main-canvas');
+    const before = await state(page, s.id);
+    expect(before.widthPx).toBeLessThanOrEqual(44);
+    await touch.drag(page, hit, { x: hit.x + 8, y: hit.y + 8 }, { steps: 8 });
+    const after = await state(page, s.id);
+    const grew = after.widthPx - before.widthPx;
+    expect(grew).toBeGreaterThanOrEqual(6);
+    expect(grew).toBeLessThanOrEqual(10);
   });
 
   test('rotate affordance is reachable and rotates', async ({ page }, testInfo) => {
@@ -218,6 +238,7 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
       cover.id = 'zz-chrome-cover';
       cover.style.cssText = `position:fixed;left:${x - 40}px;top:${y - 40}px;width:80px;height:80px;z-index:99999;background:rgba(255,0,0,.3)`;
       document.body.appendChild(cover);
+      r._rotAffCache = null; // the affordance is cached ~120 ms per geometry; chrome moves invalidate it by age
       const a = r.getRotateAffordance(r.getSelectionBounds([layer]));
       const cx = a.x + box.left;
       const cy = a.y + box.top;
@@ -231,4 +252,76 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
     moved.topIds.forEach((id) => expect(id).toBe('main-canvas'));
     expect(errors).toEqual([]);
   });
+});
+
+// Bottom corner touch zones must not sit under the docked ctxbar. DEFAULT layout: no view sliding.
+test.describe('TUX-023 bottom-corner zones clear of the ctxbar (default layout)', () => {
+  for (const wantPx of [0, 20]) {
+    test(`canvas is topmost at the bottom corner zones (${wantPx ? 'nudged 20 px selection' : 'normal selection'})`, async ({ page }, testInfo) => {
+      test.skip(!['touch-ipad-landscape', 'webkit-ipad-landscape'].includes(testInfo.project.name), 'TUX-023 ctxbar-dock check runs on iPad landscape');
+      const errors = [];
+      page.on('pageerror', (e) => errors.push(String(e)));
+      await page.goto('/');
+      await page.waitForFunction(() => !!(window.app && window.app.renderer && window.app.engine));
+      await page.waitForTimeout(800);
+      await page.evaluate((want) => {
+        const e = window.app.engine;
+        const id = e.addLayer('rings');
+        e.generate?.(id);
+        window.app.computeDisplayGeometry?.();
+        const r = window.app.renderer;
+        r.setTool('select');
+        if (want) {
+          const b = r.getSelectionBounds([e.layers.find((l) => l.id === id)]);
+          const w = Math.hypot(b.corners.ne.x - b.corners.nw.x, b.corners.ne.y - b.corners.nw.y);
+          r.userHasManipulated = true;
+          r.scale = want / w;
+          r.offsetX = r.canvas.clientWidth / 2 - b.center.x * r.scale;
+          r.offsetY = r.canvas.clientHeight / 2 - b.center.y * r.scale;
+        }
+        r.draw();
+      }, wantPx);
+      await page.waitForTimeout(600);
+      const c = await page.evaluate(() => {
+        const r = window.app.renderer;
+        const layer = window.app.engine.layers[0];
+        // Tap ON a stroke (a ring centre can be empty canvas): the middle point of the first path.
+        const path = layer.paths.find((q) => Array.isArray(q) && q.length > 2);
+        const pt = path[Math.floor(path.length / 2)];
+        const p = r.worldToScreen(pt.x, pt.y);
+        const box = document.querySelector('#main-canvas').getBoundingClientRect();
+        return { x: p.x + box.left, y: p.y + box.top };
+      });
+      // A finger tap selects; retry once or twice if the first tap only settled the layout.
+      for (let i = 0; i < 3; i += 1) {
+        await touch.tap(page, c);
+        await page.waitForTimeout(700);
+        if (await page.evaluate(() => window.app.renderer.selectedLayerIds.size === 1)) break;
+      }
+      const res = await page.evaluate(() => {
+        const r = window.app.renderer;
+        const layer = window.app.engine.layers[0];
+        const b = r.getSelectionBounds([layer]);
+        const box = document.querySelector('#main-canvas').getBoundingClientRect();
+        const top = (x, y) => { const el = document.elementFromPoint(box.left + x, box.top + y); return el ? (el.id || el.className) : null; };
+        const pts = [];
+        const sw = r.worldToScreen(b.corners.sw.x, b.corners.sw.y);
+        const se = r.worldToScreen(b.corners.se.x, b.corners.se.y);
+        pts.push(['SE+14', se.x + 14, se.y + 14], ['SW-14', sw.x - 14, sw.y + 14]);
+        r.lastPointerType = 'touch';
+        for (const h of r.getHandleHitPoints(b, 'touch')) {
+          if (h.key !== 'se' && h.key !== 'sw') continue;
+          const p = r.worldToScreen(h.x, h.y);
+          pts.push([`hit-${h.key}`, p.x, p.y], [`hit-${h.key}+r`, p.x, p.y + 21]);
+        }
+        return { selected: r.selectedLayerIds ? r.selectedLayerIds.size : 0, rows: pts.map(([k, x, y]) => ({ k, id: top(x, y), x, y })), ch: box.height };
+      });
+      expect(res.selected).toBe(1);
+      for (const row of res.rows) {
+        if (row.y > res.ch) continue; // off the canvas bottom: nothing to hit
+        expect(row.id, `${row.k} at (${Math.round(row.x)},${Math.round(row.y)})`).toBe('main-canvas');
+      }
+      expect(errors).toEqual([]);
+    });
+  }
 });

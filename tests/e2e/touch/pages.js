@@ -579,8 +579,20 @@ async function fingerSlider(page, slider, fraction) {
   return { before, after, dir };
 }
 
+// TUX-023: client-space centre of the visible touch rotate affordance for a layer (null if none). State read.
+async function readRotateAffordance(page, layerId) {
+  return page.evaluate((id) => {
+    const r = window.app.renderer;
+    const layer = window.app.engine.layers.find((l) => l.id === id);
+    const a = layer && r.getRotateAffordance(r.getSelectionBounds([layer]));
+    const cr = document.querySelector('#main-canvas').getBoundingClientRect();
+    return a ? { x: a.x + cr.left, y: a.y + cr.top } : null;
+  }, layerId);
+}
+
 module.exports = {
   SELECTORS,
+  readRotateAffordance,
   STEP_BUDGET_MS,
   BOOT_BUDGET_MS,
   bindJourney,

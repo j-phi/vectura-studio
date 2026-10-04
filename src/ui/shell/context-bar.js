@@ -584,6 +584,9 @@
     return { left: rr.left - hr.left, right: rr.right - hr.left, top: rr.top - hr.top, bottom: rr.bottom - hr.top };
   };
 
+  // The touch grip's ::before hit extender reaches this far above the bar (components.css, TUX-016).
+  const GRIP_EXTENDER_PX = 12;
+
   const reanchor = () => {
     if (!els.bar) return;
     // While the user is dragging the bar by its grip, the pointermove handler
@@ -606,7 +609,10 @@
     const t = cfg().timing || {};
     const anchored = computeAnchor({
       bounds: state.kind === 'fill' ? null : bounds, barW: b.w, barH: b.h, viewW: v.w, viewH: v.h,
-      offset: t.anchorOffsetPx, pad: t.viewportPadPx, railRect: railRectInViewport(),
+      // TUX-023: on touch, dock clear of the (nudged) resize zones so the bar never covers a corner.
+      offset: Math.max(Number.isFinite(t.anchorOffsetPx) ? t.anchorOffsetPx : 12,
+        renderer && renderer.getHandleClearancePx ? (renderer.getHandleClearancePx() ? renderer.getHandleClearancePx() + GRIP_EXTENDER_PX : 0) : 0),
+      pad: t.viewportPadPx, railRect: railRectInViewport(),
     });
     const { left } = anchored;
     let { top } = anchored;

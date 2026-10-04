@@ -210,4 +210,36 @@ describe('TUX-023: touch transform-handle hit targets', () => {
       expect(arcs).toHaveLength(0);
     });
   });
+  describe('rotate affordance fallback and cache', () => {
+    const sized = (min, max, cw, ch) => {
+      const { renderer, bounds } = setup(min, max);
+      Object.defineProperty(renderer.canvas, 'clientWidth', { value: cw, configurable: true });
+      Object.defineProperty(renderer.canvas, 'clientHeight', { value: ch, configurable: true });
+      renderer.lastPointerType = 'touch';
+      return { renderer, bounds };
+    };
+
+    test('a selection larger than the canvas clamps the affordance inside the canvas', () => {
+      const { renderer, bounds } = sized(-500, 1500, 300, 300);
+      const a = renderer.getRotateAffordance(bounds);
+      expect(a).not.toBeNull();
+      expect(a.x).toBeGreaterThanOrEqual(a.r);
+      expect(a.x).toBeLessThanOrEqual(300 - a.r);
+      expect(a.y).toBeGreaterThanOrEqual(a.r);
+      expect(a.y).toBeLessThanOrEqual(300 - a.r);
+    });
+
+    test('the affordance is computed once per geometry within a frame window', () => {
+      const { renderer, bounds } = sized(100, 300, 600, 600);
+      const spy = vi.spyOn(renderer, '_computeRotateAffordanceUncached');
+      const first = renderer.getRotateAffordance(bounds);
+      renderer.getRotateAffordance(bounds);
+      renderer.hitHandle(10, 10, bounds, { pointerType: 'touch' });
+      expect(spy).toHaveBeenCalledTimes(1);
+      renderer.scale = 2;
+      const moved = renderer.getRotateAffordance(bounds);
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(moved).not.toEqual(first);
+    });
+  });
 });

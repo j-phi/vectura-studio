@@ -606,6 +606,7 @@
       this.activeHandle = null;
       this.dragStart = { x: 0, y: 0 };
       this.startBounds = null;
+      this.handleGrabOffset = null;
       this.tempTransform = null;
       this.rotateOrigin = null;
       this.rotateStartAngle = 0;
@@ -4514,6 +4515,7 @@
       this.tempTransform = null;
       this.rotateOrigin = null;
       this.startBounds = null;
+      this.handleGrabOffset = null;
       this.lastDragWorld = null;
       this._areaResize = null;
       this._skipCommitHistory = false;
@@ -7374,6 +7376,10 @@
               this.setCanvasCursor('grabbing');
             } else {
               this.dragMode = 'resize';
+              // TUX-023: scale is measured from where the finger grabbed, not from the true handle
+              // point. A nudged touch zone (or any off-centre grab) must not jump on first move.
+              const gp = this.getHandlePoint(handle, selectionBounds);
+              this.handleGrabOffset = gp ? { x: world.x - gp.x, y: world.y - gp.y } : null;
               // Area-type text resizes its FRAME (reflow), not its glyphs. Capture
               // the start frame dims so the move handler can scale them by the
               // handle drag and re-wrap live instead of scaling the letterforms.
@@ -8087,7 +8093,8 @@
           const origin = fromCenter ? this.getBoundsCenter(this.startBounds) : this.getResizeAnchor(this.activeHandle, this.startBounds);
           const handlePoint = this.getHandlePoint(this.activeHandle, this.startBounds);
           const startVec = { x: handlePoint.x - origin.x, y: handlePoint.y - origin.y };
-          const currVec = { x: world.x - origin.x, y: world.y - origin.y };
+          const grab = this.handleGrabOffset || { x: 0, y: 0 };
+          const currVec = { x: world.x - grab.x - origin.x, y: world.y - grab.y - origin.y };
           const rot = -(this.startBounds.rotation || 0);
           const cosR = Math.cos(rot);
           const sinR = Math.sin(rot);
@@ -15690,6 +15697,20 @@
     // 48 px band). Flips to NW, SE, SW when NE would sit off the canvas.
     _computeRotateAffordance(bounds, pointerType) {
       if (pointerType !== 'touch') return null;
+      // Cache per geometry for a short window: drawSelection and hitHandle both call this every
+      // frame/move, and the clear-canvas check runs elementFromPoint up to 20 times.
+      const c = bounds.corners;
+      const key = [this.scale, this.offsetX, this.offsetY, this.canvas && this.canvas.clientWidth,
+        this.canvas && this.canvas.clientHeight, c.nw.x, c.nw.y, c.ne.x, c.ne.y, c.sw.x, c.sw.y].join('|');
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const hit = this._rotAffCache;
+      if (hit && hit.key === key && now - hit.at < 120) return hit.value;
+      const value = this._computeRotateAffordanceUncached(bounds);
+      this._rotAffCache = { key, at: now, value };
+      return value;
+    }
+
+    _computeRotateAffordanceUncached(bounds) {
       const tol = window.Vectura.hitTolerance;
       const margin = tol('rotateAffordance', 'touch');
       const offset = tol('rotateAffordanceOffset', 'touch');
@@ -15711,6 +15732,14 @@
         if (!measured) return pt;
         if (pt.x >= margin && pt.y >= margin && pt.x <= cw - margin && pt.y <= ch - margin
           && this._isCanvasTopAt(pt, margin)) return pt;
+      }
+      // No clear candidate: never return an off-screen point. Clamp the first inside the canvas.
+      if (first && measured) {
+        return {
+          x: Math.min(Math.max(first.x, margin), Math.max(margin, cw - margin)),
+          y: Math.min(Math.max(first.y, margin), Math.max(margin, ch - margin)),
+          r: first.r,
+        };
       }
       return first;
     }
@@ -15735,6 +15764,24 @@
       const before = this.isCoarseHandles();
       this.lastPointerType = e.pointerType;
       if (this.isCoarseHandles() !== before) this.draw();
+    }
+
+    // Screen px a docked bar must clear below (or above) the selection so it never covers a
+    // touch resize zone: the farthest nudged hit centre beyond the selection edge plus the touch
+    // resize radius. 0 for mouse/pen. The context bar adds this to its anchor offset.
+    getHandleClearancePx() {
+      if (!this.isCoarseHandles()) return 0;
+      const layers = this.getSelectedLayers();
+      if (!layers.length) return 0;
+      const bounds = this.getSelectionBounds(layers, this.tempTransform);
+      const sb = this.getSelectionScreenBounds();
+      if (!bounds || !bounds.corners || !sb) return 0;
+      let beyond = 0;
+      this.getHandleHitPoints(bounds, 'touch').forEach((h) => {
+        const p = this.worldToScreen(h.x, h.y);
+        beyond = Math.max(beyond, p.y - sb.maxY, sb.minY - p.y);
+      });
+      return beyond + window.Vectura.hitTolerance('resize', 'touch');
     }
 
     getRotateAffordance(bounds) {
