@@ -88,6 +88,18 @@
     target.removeEventListener(event, handler, options);
   };
 
+  /**
+   * TUX-040: outside-press dismissal for floating surfaces. Registers a
+   * capture-phase `pointerdown` listener on `doc` and calls `cb(event)` when
+   * `isInside(event.target)` is false. Pointer events fire for touch drags and
+   * scrolls (which never synthesize a compat `mousedown`), and the capture phase
+   * survives handlers that stopPropagation. It never prevents default or stops
+   * propagation, so the outside gesture proceeds normally. Returns an unsubscribe.
+   */
+  const onOutsidePointer = (doc, isInside, cb) => on(doc, 'pointerdown', (event) => {
+    if (!isInside(event.target)) cb(event);
+  }, { capture: true });
+
   const getDrawableAlgorithmOptions = () => {
     const defaults = (window.Vectura && window.Vectura.ALGO_DEFAULTS) || {};
     return Object.keys(defaults)
@@ -193,6 +205,7 @@
     uid,
     on,
     off,
+    onOutsidePointer,
     escapeHtml,
   };
 })();

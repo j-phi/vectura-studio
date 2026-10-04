@@ -749,6 +749,9 @@
     const icon = btn.querySelector('.pen-icon');
     const mixedBadge = btn.querySelector('.pen-chip-mixed');
 
+    // Icon-only control: the accessible name tracks the title (touch tooltip reads aria-label).
+    const setChipTitle = (text) => { btn.title = text; btn.setAttribute('aria-label', text); };
+    setChipTitle(labels.CHIP_TITLE);
     const chipApp = () => app || G.app || null;
     const chipTargets = () => {
       const ids = typeof getTargetLayerIds === 'function' ? getTargetLayerIds() : null;
@@ -776,12 +779,12 @@
       btn.classList.toggle('mixed', sel.mixed);
       if (sel.pen) {
         paintPenIcon(icon, sel.pen);
-        btn.title = `${labels.CHIP_TITLE} — ${penTooltip(sel.pen)}`;
+        setChipTitle(`${labels.CHIP_TITLE} — ${penTooltip(sel.pen)}`);
       } else {
         icon.style.background = 'transparent';
         icon.style.color = 'transparent';
         icon.style.removeProperty('--pen-width');
-        btn.title = sel.mixed ? labels.CHIP_MIXED_TITLE : labels.CHIP_TITLE;
+        setChipTitle(sel.mixed ? labels.CHIP_MIXED_TITLE : labels.CHIP_TITLE);
       }
       mixedBadge.textContent = sel.mixed ? labels.MIXED_BADGE : '';
       return sel;

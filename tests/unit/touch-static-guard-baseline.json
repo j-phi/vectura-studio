@@ -25,7 +25,6 @@
   "R1|src/ui/shell/canvas-context-menu.js": 1,
   "R2|src/ui/ui-pattern-designer.js": 1,
   "R3|src/render/renderer.js": 1,
-  "R3|src/ui/overlays/menu.js": 1,
   "R3|src/ui/panels/algo-config-panel.js": 4,
   "R3|src/ui/panels/layers-panel.js": 1,
   "R3|src/ui/panels/noise-rack-panel.js": 2,
@@ -56,5 +55,5 @@
   "R7|index.html": 1,
   "R7|src/ui/skin/components.css": 7,
   "R8|src/ui/skin/components.css": 23,
-  "R9|index.html": 4
+  "R9|index.html": 1
 }

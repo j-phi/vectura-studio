@@ -1068,6 +1068,7 @@
           b.innerHTML = on ? this._LVL_I.eye() : this._LVL_I.eyeOff();
           const modLabel = `${layer.modifier?.type === 'morph' ? 'morph' : 'mirror'} modifier`;
           b.title = (on ? 'Disable ' : 'Enable ') + modLabel;
+          b.setAttribute('aria-label', b.title);
           b.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.app.pushHistory) this.app.pushHistory();
@@ -1079,6 +1080,7 @@
           b.className = 'lvl-ib' + (layer.visible ? '' : ' vis-off');
           b.innerHTML = layer.visible ? this._LVL_I.eye() : this._LVL_I.eyeOff();
           b.title = layer.visible ? 'Hide' : 'Show';
+          b.setAttribute('aria-label', b.title);
           b.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.app.pushHistory) this.app.pushHistory();
@@ -1102,11 +1104,13 @@
         if (ancLk) {
           b.className = 'lvl-ib lk-anc'; b.innerHTML = this._LVL_I.lock();
           b.title = 'Locked by parent';
+          b.setAttribute('aria-label', b.title);
           b.addEventListener('click', (e) => e.stopPropagation());
         } else {
           b.className = 'lvl-ib ' + (selfLk ? 'lk-on' : 'lk-off');
           b.innerHTML = selfLk ? this._LVL_I.lock() : this._LVL_I.lockOpen();
           b.title = selfLk ? 'Unlock' : 'Lock';
+          b.setAttribute('aria-label', b.title);
           b.addEventListener('click', (e) => {
             e.stopPropagation();
             selfLk ? this.layerLockedIds.delete(layer.id) : this.layerLockedIds.add(layer.id);

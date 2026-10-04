@@ -1102,7 +1102,8 @@
         const mainAttr = !isSubtool && value !== null && value !== undefined ? ` ${buttonAttr}="${value}"` : '';
         const subAttr = isSubtool && def.submenuKind ? ` data-${def.submenuKind}="${def.submenuValue}"` : '';
         const ariaPressed = includePressed && !isSubtool ? ' aria-pressed="false"' : '';
-        const ariaLabel = def.ariaLabel && !isSubtool ? ` aria-label="${def.ariaLabel}"` : '';
+        const ariaName = isSubtool ? (def.ariaLabel || def.label || '') : (def.ariaLabel || '');
+        const ariaLabel = ariaName ? ` aria-label="${String(ariaName).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"` : '';
         const idAttr = def.id ? ` id="${def.id}"` : '';
         return `<button class="${classes}"${idAttr}${mainAttr}${subAttr} type="button"${ariaPressed}${ariaLabel} title="${title}">${renderIcon(def)}</button>`;
       };
