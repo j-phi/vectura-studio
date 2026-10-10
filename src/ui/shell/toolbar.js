@@ -69,7 +69,9 @@
   };
 
   const visibleBounds = () => {
-    const vv = window.visualViewport;
+    // TUX-032: the visual viewport is read only through KeyboardInset.
+    const KI = G.Vectura && G.Vectura.KeyboardInset;
+    const vv = KI && typeof KI.viewportRect === 'function' ? KI.viewportRect() : null;
     if (vv && vv.width > 0 && vv.height > 0) {
       return { l: vv.offsetLeft, t: vv.offsetTop, r: vv.offsetLeft + vv.width, b: vv.offsetTop + vv.height };
     }
