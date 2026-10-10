@@ -8719,25 +8719,23 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
   display: none;
 }
 
-/* Phone-only: drop modifier-button labels, show platform glyphs instead. */
-@media (max-width: 540px) {
-  body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label {
-    display: none;
-  }
-
-  body.phone-layout #touch-modifier-bar .touch-mod-btn::before {
-    font-size: 18px;
-    line-height: 1;
-    font-weight: 600;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', system-ui, sans-serif;
-  }
-
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="shift"]::before { content: "\21E7"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="alt"]::before { content: "\2325"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="meta"]::before { content: "\2318"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="ctrl"]::before { content: "\2303"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="pan"]::before { content: "\270B"; }
+/* Phone-only (TUX-001: keyed on body.phone-layout, not width, so iPhone landscape gets glyphs too). */
+body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label {
+  display: none;
 }
+
+body.phone-layout #touch-modifier-bar .touch-mod-btn::before {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', system-ui, sans-serif;
+}
+
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="shift"]::before { content: "\21E7"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="alt"]::before { content: "\2325"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="meta"]::before { content: "\2318"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="ctrl"]::before { content: "\2303"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="pan"]::before { content: "\270B"; }
 
 /* Touch-device tap ergonomics — applies on any coarse pointer device. */
 @media (pointer: coarse) {
@@ -13894,7 +13892,9 @@ html.kb-open .export-settings-scroll {
 
 /* === TUX-001: phone header, hamburger menu sheet and direct actions === */
 .header-phone-btn, .header-phone-actions { display: none; }
-#app-header { max-width: 100vw; overflow-x: clip; }
+body.phone-layout #app-header { max-width: 100%; overflow-x: clip; }
+.top-menu-theme-row { display: none; }
+body.phone-layout .top-menu-theme-row { display: flex; }
 body.phone-layout #app-header .header-phone-actions { display: inline-flex; gap: 2px; align-items: center; }
 body.phone-layout #app-header .header-phone-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -14900,6 +14900,8 @@ body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
     min-height: 44px;
   }
 }
+/* Phone: keep the toast host below the header so header actions stay tappable. */
+body.phone-layout #vectura-toast-host { top: calc(44px + var(--safe-top) + 8px); }
 /* === END TUX-037 === */
 
 /* === TUX-030: pen draft chips ===
@@ -15069,6 +15071,130 @@ body.tablet-layout #touch-modifier-bar {
 
 /* === END TUX-008 === */
 
+/* === TUX-010/011: pane controls, drawers, slivers ===
+ * Older rules these beat (grep before changing): :8520 .mobile-layout .pane (z 55), :8568-8619 slivers and
+ * backdrop z 54, :8717-8735 backdrop, :9565-9600 unscoped .mobile-pane-handle, TUX-008 block above.
+ * Visibility keys on a layout class; sizes key on body.touch-ui, so desktop and fine-pointer narrow windows keep
+ * today's 24/28 px chevrons. */
+
+/* Phone header openers: Generator and Layers. Same 44 px box as the other header buttons (TUX-001). */
+body.phone-layout #app-header .header-pane-btn[aria-expanded="true"] {
+  color: var(--ui-accent, currentColor);
+  border-color: var(--ui-accent, var(--ui-border-hi));
+}
+/* An open phone drawer: the header stays above the backdrop so both openers keep working (one-tap swap). */
+body.phone-layout:has(.pane.pane-force-open) #app-header {
+  z-index: var(--z-phone-header);
+}
+
+/* Backdrop: a tap target for iOS Safari (cursor:pointer), above the tool rail, below the open drawer. */
+body.mobile-layout .mobile-pane-backdrop {
+  z-index: var(--z-backdrop);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+body.mobile-layout .pane.pane-force-open,
+body.tablet-layout.touch-ui .pane.pane-drawer-open {
+  z-index: var(--z-drawer);
+}
+
+/* Closed phone pane on a touch device: no 40 px sliver. Off screen, not hit-testable, not visible.
+ * (transform + visibility, never display:none, so a later transition stays possible.) The header
+ * buttons are the only open targets. A fine-pointer narrow window keeps its sliver. */
+body.phone-layout.touch-ui.auto-collapsed .pane:not(.pane-force-open) {
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: none;
+}
+body.phone-layout.touch-ui.auto-collapsed .pane-left:not(.pane-force-open) {
+  transform: translateX(calc(-100% - var(--safe-left, 0px) - 2px));
+}
+body.phone-layout.touch-ui.auto-collapsed .pane-right:not(.pane-force-open) {
+  transform: translateX(calc(100% + var(--safe-right, 0px) + 2px));
+}
+
+/* Tablet edge handles: 48 wide, header-band tall, glyph plus accessible label (aria-label). The TUX-008 ::after
+ * extender gives the 45 px tall finger target. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left,
+body.tablet-layout.touch-ui .mobile-pane-handle-right {
+  box-sizing: border-box;
+  width: calc(var(--touch-target-min, 44px) + 4px); /* 48: the 2 px hit probe grid reads a 44 px box as 43 */
+  height: 38px; /* the header band: a taller box would leave the header. The TUX-008 ::after below grows the hit area to 45 px. */
+  top: var(--safe-top, 0px);
+  z-index: var(--z-pane-opener);
+}
+/* The modifier bar (Shift/Alt latches) stays tappable above the backdrop on phone and tablet; the drawer ends above it. */
+body.mobile-layout #touch-modifier-bar {
+  z-index: calc(var(--z-backdrop) + 1);
+}
+/* Header buttons never shrink below 44 px when the two pane buttons join the phone action group. */
+body.phone-layout #app-header .header-phone-btn { flex: 0 0 auto; }
+/* Finger target: 48 x 45. The header sits at the top edge, so the extender grows downward only (into the rail's
+ * 8 px top padding, which holds no tool button). The TUX-008 inset of -3px at the top is clipped by the screen. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left::after,
+body.tablet-layout.touch-ui .mobile-pane-handle-right::after {
+  inset: 0 0 -7px;
+}
+/* The bottom handle belongs to TUX-051 and stays hidden in every layout. */
+body #btn-mobile-pane-bottom,
+body.mobile-layout #btn-mobile-pane-bottom {
+  display: none;
+}
+
+/* Close / collapse chevrons: 44 x 44 on every touch layout. */
+body.touch-ui .pane-toggle-left,
+body.touch-ui .pane-toggle-right {
+  width: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
+}
+body.touch-ui .pane-toggle-left { right: 4px; }
+body.touch-ui .pane-toggle-right { left: 4px; }
+body.touch-ui .pane-header-right .pane-title { margin-left: 52px; }
+/* The header must be as tall as the chevron, or the pane body paints over its bottom edge. */
+body.touch-ui .pane-header,
+body.touch-ui #left-pane .pane-header,
+body.touch-ui #right-pane .pane-header {
+  height: calc(var(--touch-target-min, 44px) + 4px);
+  min-height: calc(var(--touch-target-min, 44px) + 4px);
+  box-sizing: border-box;
+}
+
+/* touch-wide collapsed rail (36 px, TUX-008). The button fills the rail and its ::before reaches 10 px
+ * past the rail edge onto the canvas, so the finger target is 44 px wide without a wider rail (a 44 px
+ * rail would push the canvas share under the 75 % floor). The glyph rotates, not the button, so the
+ * extension keeps pointing at the canvas. */
+body.touch-wide-layout.touch-ui .pane.pane-collapsed {
+  overflow: visible;
+  z-index: var(--z-pane);
+}
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle {
+  width: var(--pane-collapsed-width, 36px);
+  height: var(--touch-target-min, 44px);
+  left: 0;
+  right: 0;
+  border-radius: 0;
+  transform: translateY(-50%);
+}
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+body.touch-wide-layout.touch-ui .pane-left.pane-collapsed .pane-toggle::before { left: 0; right: -10px; }
+body.touch-wide-layout.touch-ui .pane-right.pane-collapsed .pane-toggle::before { right: 0; left: -10px; }
+body.touch-wide-layout.touch-ui .pane-toggle svg { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle svg { transform: rotate(180deg); }
+/* === END TUX-010/011 === */
+
+/* === TUX-010: tab strip clear of the 44 px right chevron ===
+ * The right pane chevron sits at left:4px and is 44 px wide (to x=48 of the pane). The tab strip used to start
+ * at ~x=44, so a tap on the left edge of the first tab hit the chevron and collapsed the pane. */
+body.touch-ui #right-pane .right-pane-tabs {
+  margin-left: calc(var(--touch-target-min, 44px) + 8px);
+}
+/* === END TUX-010 tabs === */
+
 /* === TUX-014: touch tool sub-menus === */
 /* Menus are portaled to <body>, so selectors target .tool-submenu / .tool-sub-btn directly. */
 .tool-sub-label { display: none; }
@@ -15192,6 +15318,17 @@ body.touch-ui #viewport-container:has(.ctxbar.ctxbar--fill) .canvas-hud {
   bottom: calc(var(--safe-bottom, 0px) + 8px + 52px + 8px);
 }
 /* === END TUX-022 === */
+/* === TUX-001: narrow mouse windows (500-640 px) keep every header control on-screen === */
+@media (max-width: 640px) {
+  body:not(.phone-layout) #app-header .header-brand-menu h1,
+  body:not(.phone-layout) #app-header .header-menu-divider { display: none; }
+  body:not(.phone-layout) #app-header .header-brand-menu { gap: 4px; }
+  body:not(.phone-layout) #app-header .top-menubar { gap: 0; }
+  body:not(.phone-layout) #app-header .top-menu-trigger { padding-left: 6px; padding-right: 6px; }
+  body:not(.phone-layout) #app-header .header-right { gap: 4px; }
+}
+/* === END TUX-001 === */
+
 /* === TUX-038: value entry + reset hold + motion points ===
  * Older rules checked: .value-chip (9837, transparent button), .inline-value-input (absolute, single field),
  * .motion-drawn-canvas (5353, already touch-action:none), .menu-dropdown.is-context-menu (44 px rows on coarse).

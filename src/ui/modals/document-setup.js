@@ -649,6 +649,12 @@ ${isDevEligible() ? `
   const MODAL_CARD_CLASS = 'modal-card--document-setup';
 
   function isDesktopViewport() {
+    // TUX-006: the layout classifier decides; desktop = not mobile-layout (phone/tablet).
+    const LC = typeof window !== 'undefined' && window.Vectura && window.Vectura.LayoutClassifier;
+    if (LC && typeof LC.classify === 'function') {
+      const layout = LC.classify(LC.readInput());
+      return layout !== 'phone' && layout !== 'tablet';
+    }
     return typeof window !== 'undefined' && window.innerWidth >= DESKTOP_BREAKPOINT;
   }
 

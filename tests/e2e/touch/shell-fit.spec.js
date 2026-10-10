@@ -87,7 +87,9 @@ test.describe('TUX-006 shell layout', () => {
         continue;
       }
       const hit = await touch.hitArea(page, loc);
-      if (hit.w < 43.5 || hit.h < 43.5 || !covered.self) bad.push(`${name}: ${box.width}x${box.height} hit ${hit.w}x${hit.h} ok=${covered.self}`);
+      // hitArea floods a 2 px grid, so it can under-read a 44 px box by one step. The box itself
+      // is held to 43.5 above; the hit area gets one grid step of tolerance.
+      if (box.width < 43.5 || box.height < 43.5 || hit.w < 41.5 || hit.h < 41.5 || !covered.self) bad.push(`${name}: ${box.width}x${box.height} hit ${hit.w}x${hit.h} ok=${covered.self}`);
     }
     expect(bad, `undersized/occluded on ${spec.device}`).toEqual([]);
   });
@@ -216,6 +218,40 @@ test.describe('TUX-006 coarse landscape phone >= 900 px', () => {
       } finally { await ctx.close(); }
     });
   }
+});
+
+// TUX-006 fix round 3: the tutorial popover and Document Setup read the classifier, not
+// innerWidth. At a coarse 956x440 the classifier says phone, so both use the mobile path.
+test.describe('TUX-006 classifier readers at coarse 956x440', () => {
+  test('tutorial centers and Document Setup is not desktop', async ({ browser }, testInfo) => {
+    test.skip(!/^(touch-ipad-landscape|webkit-ipad-landscape)$/.test(testInfo.project.name), 'one Chromium + one WebKit project');
+    const ctx = await browser.newContext({
+      viewport: { width: 956, height: 440 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true,
+      userAgent: PROJECTS['touch-iphone-landscape'].ua,
+      baseURL: testInfo.project.use.baseURL,
+    });
+    const page = await ctx.newPage();
+    try {
+      await gotoApp(page);
+      const s = await page.evaluate(() => {
+        const T = window.Vectura.Tutorial;
+        const pop = T.popover;
+        pop.init();
+        pop.positionAt('#viewport-container', 'right');
+        const el = document.getElementById('tutorial-popover');
+        const pw = el.offsetWidth || 270;
+        return {
+          layout: document.body.dataset.layout,
+          desktop: window.Vectura.UI.Modals.DocumentSetup.isDesktopViewport(),
+          left: parseInt(el.style.left, 10),
+          centered: Math.round(Math.max(8, (window.innerWidth - pw) / 2)),
+        };
+      });
+      expect(s.layout).toBe('phone');
+      expect(s.desktop, 'Document Setup desktop viewport').toBe(false);
+      expect(s.left, 'tutorial popover placement').toBe(s.centered);
+    } finally { await ctx.close(); }
+  });
 });
 
 // TUX-006 fix round 2: converting the deleted @media (max-width: 900px) block to class gates
@@ -395,6 +431,14 @@ const gotoFresh = async (page) => {
 };
 
 test.describe('TUX-002 shell does not scroll under swipes', () => {
+  test('screenshot evidence', async ({ page }, testInfo) => {
+    const name = testInfo.project.name;
+    test.skip(!TUX2_PROJECTS_ALL.includes(name), 'project not in scope');
+    await gotoFresh(page);
+    await page.waitForTimeout(300);
+    fs.mkdirSync(`${TUX234_EVIDENCE}/TUX-002`, { recursive: true });
+    await page.screenshot({ path: `${TUX234_EVIDENCE}/TUX-002/${name}.png` });
+  });
   test('computed shell styles', async ({ page }, testInfo) => {
       const name = testInfo.project.name;
       test.skip(!TUX2_PROJECTS_ALL.includes(name), 'project not in scope');
@@ -478,10 +522,18 @@ test.describe('TUX-002 every scroll container contains overscroll', () => {
 });
 
 test.describe('TUX-003 pinch on chrome does not page-zoom', () => {
+  test('screenshot evidence', async ({ page }, testInfo) => {
+    const name = testInfo.project.name;
+    test.skip(!TUX3_PROJECTS.includes(name), 'project not in scope');
+    await gotoFresh(page);
+    await page.waitForTimeout(300);
+    fs.mkdirSync(`${TUX234_EVIDENCE}/TUX-003`, { recursive: true });
+    await page.screenshot({ path: `${TUX234_EVIDENCE}/TUX-003/${name}.png` });
+  });
   test('pinch scale stays 1', async ({ page }, testInfo) => {
       const name = testInfo.project.name;
       test.skip(!TUX3_PROJECTS.includes(name), 'project not in scope');
-      if (!touch.engineSupports(page, 'trustedMultiTouch')) { expect(true).toBe(true); return; }
+      test.skip(!touch.engineSupports(page, 'trustedMultiTouch'), 'engine cannot dispatch trusted multi-touch; the synthetic gesture-event test covers it');
       const targets = [
         { id: '#left-panel-content', pane: true },
         { id: '#tool-bar' },
@@ -547,6 +599,14 @@ test.describe('TUX-003 pinch on chrome does not page-zoom', () => {
 });
 
 test.describe('TUX-004 bottom chrome on screen (regression guard, passes before the fix)', () => {
+  test('screenshot evidence', async ({ page }, testInfo) => {
+    const name = testInfo.project.name;
+    test.skip(!TUX4_PROJECTS.includes(name), 'project not in scope');
+    await gotoFresh(page);
+    await page.waitForTimeout(300);
+    fs.mkdirSync(`${TUX234_EVIDENCE}/TUX-004`, { recursive: true });
+    await page.screenshot({ path: `${TUX234_EVIDENCE}/TUX-004/${name}.png` });
+  });
   test('bottom bars inside the visible viewport', async ({ page }, testInfo) => {
       const name = testInfo.project.name;
       test.skip(!TUX4_PROJECTS.includes(name), 'project not in scope');
@@ -573,9 +633,6 @@ test.describe('TUX-004 bottom chrome on screen (regression guard, passes before 
       } else {
         expect(r['status-bar'], '#status-bar must be present and visible').not.toBeNull();
         expect(r['status-bar'], `#status-bar bottom vs ${limit}`).toBeLessThanOrEqual(limit);
-      }
-      if (name === 'touch-iphone-portrait') {
-        await fs.promises.mkdir(`${TUX234_EVIDENCE}/TUX-004`, { recursive: true });
       }
     });
   test('Export modal footer buttons inside the visible viewport', async ({ page }, testInfo) => {

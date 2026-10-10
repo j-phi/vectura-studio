@@ -392,7 +392,8 @@ test.describe('TUX-007 reachable-set accounting (TUX-058 baseline lowering)', ()
     await page.keyboard.press('Escape');
     await page.evaluate(() => { const h = document.getElementById('btn-menu-hamburger'); if (h && h.getAttribute('aria-expanded') === 'true') h.click(); });
     // Right pane contents: the pane toggle opens the pane and its controls become reachable.
-    await tap(page, page.locator('#btn-pane-toggle-right'));
+    // TUX-010: a phone opens the Layers drawer from the header button; the closed sliver toggle is gone.
+    await tap(page, page.locator('#btn-header-pane-right:visible, #btn-pane-toggle-right:visible').first());
     await sleep(500);
     const pane = await page.evaluate(() => ['#right-pane-tabs .right-pane-tab[data-tab="layers"]', '#right-pane-tabs .right-pane-tab[data-tab="pens"]', '#layer-search-input', '#layer-filter-btn', '#btn-add-layer']
       .map((s) => { const el = document.querySelector(s); if (!el) return [s, 'missing']; const r = el.getBoundingClientRect(); const hit = r.width > 1 && r.height > 1 ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null; return [s, !!hit && (hit === el || el.contains(hit))]; }));

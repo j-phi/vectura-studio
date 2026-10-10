@@ -77,7 +77,7 @@ const openPane = async (page, side, testInfo) => {
   const width = () => page.evaluate((s) => document.getElementById(`${s}-pane`).getBoundingClientRect().width, side);
   if ((await width()) >= 150) return;
   let tapped = false;
-  for (const sel of [`#btn-mobile-pane-${side}`, `#btn-pane-toggle-${side}`]) {
+  for (const sel of [`#btn-header-pane-${side}`, `#btn-mobile-pane-${side}`, `#btn-pane-toggle-${side}`]) {
     const ok = await page.evaluate((s) => {
       const el = document.querySelector(s);
       if (!el) return false;
@@ -194,8 +194,9 @@ test.describe('TUX-005 safe-area insets', () => {
     await inject(page, P);
     await openPane(page, 'right', testInfo);
     const inside = async (sel, what) => {
-      const r = await page.evaluate((s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, w: b.width }; }, sel);
-      if (!r || r.w === 0) return;
+      const r = await page.evaluate((s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { l: b.left, r: b.right, w: b.width, hidden: getComputedStyle(e).visibility === 'hidden' }; }, sel);
+      // TUX-011: a control inside a closed touch drawer is off screen and hidden; only visible controls need the safe rect.
+      if (!r || r.w === 0 || r.hidden) return;
       expect(r.l, `${what} left`).toBeGreaterThanOrEqual(P.left - TOL);
       const vw = await page.evaluate(() => innerWidth);
       expect(r.r, `${what} right`).toBeLessThanOrEqual(vw - P.right + TOL);
@@ -312,6 +313,18 @@ test.describe('TUX-005 safe-area insets', () => {
         await page.evaluate((s) => document.getElementById(`btn-pane-toggle-${s}`).click(), side);
         await page.waitForTimeout(500);
       }
+    }
+    // TUX-011: on a touch phone a closed pane has no sliver. It is hidden and fully off screen, so the inset
+    // band cannot be covered by it. Fine-pointer narrow windows keep the sliver contract below.
+    const gone = await page.evaluate(() => ['left', 'right'].every((s) => {
+      const el = document.getElementById(`${s}-pane`);
+      const r = el.getBoundingClientRect();
+      return getComputedStyle(el).visibility === 'hidden' && (s === 'left' ? r.right <= 0 : r.left >= innerWidth);
+    }));
+    if (gone) {
+      const bands = await page.evaluate(() => { const l = document.elementFromPoint(5, innerHeight / 2); const r = document.elementFromPoint(innerWidth - 5, innerHeight / 2); return [!!(l && l.closest('.pane')), !!(r && r.closest('.pane'))]; });
+      expect(bands, 'inset bands are not covered by a pane').toEqual([false, false]);
+      return;
     }
     const [lw, rw] = await widths();
     expect(lw, 'left sliver width').toBeLessThanOrEqual(40 + TOL);

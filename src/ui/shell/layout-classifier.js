@@ -84,7 +84,25 @@
     return layout;
   };
 
-  const LayoutClassifier = { classify, isShort, readInput, apply, current: () => last };
+  // Reset View on a fine pointer forces the desktop layout; keep last/event coherent.
+  const force = (layout, doc) => {
+    const d = doc || G.document;
+    const input = readInput();
+    const body = d && d.body;
+    if (body) {
+      const want = classesFor(layout);
+      LAYOUT_CLASSES.forEach((c) => body.classList.toggle(c, want.includes(c)));
+      body.dataset.layout = layout;
+    }
+    const from = last;
+    last = layout;
+    if (from !== layout && typeof G.CustomEvent === 'function' && G.dispatchEvent) {
+      G.dispatchEvent(new G.CustomEvent('vectura:layoutchange', { detail: { from, to: layout, coarsePointer: input.coarsePointer } }));
+    }
+    return layout;
+  };
+
+  const LayoutClassifier = { classify, isShort, readInput, apply, force, current: () => last };
   Vectura.LayoutClassifier = LayoutClassifier;
   if (typeof module !== 'undefined' && module.exports) module.exports = LayoutClassifier;
 })();

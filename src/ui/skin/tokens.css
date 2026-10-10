@@ -209,3 +209,19 @@
   --z-pane-opener: 300; /* inside #app-header, above .top-menubar (260), which spans the header width */
 }
 /* === END TUX-008 tokens === */
+
+/* === TUX-010: z scale ===
+ * Order, bottom to top: canvas < pane/sliver < tool rail < backdrop < open drawer < phone header < modal.
+ * --z-pane, --z-toolbar, --z-backdrop and --z-drawer are defined above (TUX-008). The TUX-010/011 block at
+ * the end of components.css reads every pane-shell z from this scale.
+ * --z-drawer-handle: tablet edge handles. They sit in the header band (inside #app-header, see
+ * --z-pane-opener), so a tap on the open drawer's own handle closes it and the other handle swaps drawers.
+ * --touch-target-min (44 px) is defined above (TUX-034/041). TUX-010 owns the size of #btn-pane-toggle-*,
+ * .mobile-pane-handle and the header drawer buttons; lane C must not resize them. */
+:root {
+  --z-canvas: 0;
+  --z-drawer-handle: 68;
+  --z-phone-header: 75;
+  --z-modal: 1000;
+}
+/* === END TUX-010 tokens === */
