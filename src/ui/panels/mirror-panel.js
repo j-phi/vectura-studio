@@ -1471,8 +1471,16 @@
           (m.enabled === false ? ' is-disabled' : '');
         row.style.setProperty('--mp-row-color', t.hueRaw);
         row.dataset.mirrorId = m.id;
-        row.setAttribute('draggable', 'true');
+        // TUX-044: native row DnD stays for a desktop mouse. Under coarse input it is off so a row
+        // long-press never lifts natively; the grip reorders by pointer events instead.
+        const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+        row.setAttribute('draggable', coarse ? 'false' : 'true');
         row.innerHTML = `
+          <button class="mp-row-grip" type="button" aria-label="Reorder mirror">
+            <span class="dot"></span><span class="dot"></span>
+            <span class="dot"></span><span class="dot"></span>
+            <span class="dot"></span><span class="dot"></span>
+          </button>
           <button class="mp-row-thumb" type="button" aria-label="Select mirror" tabindex="-1">
             <svg><use href="#${t.preview}"/></svg>
           </button>
@@ -1495,6 +1503,26 @@
 
         // Drag-to-reorder. Native HTML5 DnD so we don't ship custom mouse
         // bookkeeping; a dashed drop indicator slides between rows.
+        row.addEventListener('pointerdown', (e) => {
+          if (e.pointerType !== 'mouse') row.setAttribute('draggable', 'false');
+        });
+        if (window.Vectura.UI.PointerReorder) {
+          window.Vectura.UI.PointerReorder.bind(row.querySelector('.mp-row-grip'), {
+            container: list,
+            itemSelector: '.mp-row',
+            dragEl: row,
+            indicatorClass: 'mp-drop-indicator',
+            onCommit: (newIndex) => {
+              commit(() => {
+                const order = mirrors.map((x) => x.id).filter((id) => id !== m.id);
+                order.splice(newIndex, 0, m.id);
+                const map = new Map(mirrors.map((x) => [x.id, x]));
+                modifier.mirrors = order.map((id) => map.get(id)).filter(Boolean);
+              });
+              renderAll();
+            },
+          });
+        }
         row.addEventListener('dragstart', (e) => {
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData('text/plain', m.id);
@@ -1531,6 +1559,7 @@
         });
 
         row.addEventListener('click', (e) => {
+          if (e.target.closest('.mp-row-grip')) return;
           const act = e.target.closest('[data-act]');
           if (act) {
             e.stopPropagation();

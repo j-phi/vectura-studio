@@ -477,55 +477,21 @@
       }
 
       if (grip) {
-        grip.onmousedown = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const dragEl = el;
-          dragEl.classList.add('dragging');
-          const indicator = document.createElement('div');
-          indicator.className = 'layer-drop-indicator';
-          container.insertBefore(indicator, dragEl);
-          const currentOrder = pens.map((p) => p.id);
-          const startIndex = currentOrder.indexOf(pen.id);
-
-          const onMove = (ev) => {
-            const y = ev.clientY;
-            const items = Array.from(container.querySelectorAll('.pen-item')).filter((item) => item !== dragEl);
-            let inserted = false;
-            for (const item of items) {
-              const rect = item.getBoundingClientRect();
-              if (y < rect.top + rect.height / 2) {
-                container.insertBefore(indicator, item);
-                inserted = true;
-                break;
-              }
-            }
-            if (!inserted) container.appendChild(indicator);
-          };
-
-          const onUp = () => {
-            dragEl.classList.remove('dragging');
-            const siblings = Array.from(container.children);
-            const indicatorIndex = siblings.indexOf(indicator);
-            const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('pen-item'));
-            const newIndex = before.length;
-            indicator.remove();
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-
-            if (newIndex !== startIndex) {
-              const nextOrder = currentOrder.filter((id) => id !== pen.id);
-              nextOrder.splice(newIndex, 0, pen.id);
-              const map = new Map(pens.map((p) => [p.id, p]));
-              SETTINGS.pens = nextOrder.map((id) => map.get(id)).filter(Boolean);
-              this.renderPens();
-              this.renderLayers();
-            }
-          };
-
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
-        };
+        window.Vectura.UI.PointerReorder.bind(grip, {
+          container: container,
+          itemSelector: '.pen-item',
+          dragEl: el,
+          indicatorClass: 'layer-drop-indicator',
+          onCommit: (newIndex, startIndex) => {
+            const currentOrder = pens.map((p) => p.id);
+            const nextOrder = currentOrder.filter((id) => id !== pen.id);
+            nextOrder.splice(newIndex, 0, pen.id);
+            const map = new Map(pens.map((p) => [p.id, p]));
+            SETTINGS.pens = nextOrder.map((id) => map.get(id)).filter(Boolean);
+            this.renderPens();
+            this.renderLayers();
+          },
+        });
       }
 
       container.appendChild(el);
