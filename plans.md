@@ -22,6 +22,10 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **DONE — 3D Scene ground size controls (2026-10-02, branch `3d-scene/ground-scale`).** Ground
+  leaf + legacy inspector gain Width (X) / Depth (Z) log sliders, proportion lock, Reset, and
+  Fill frame (`Scene.groundCoverScale`). Ground quad is near-plane and artboard clipped in
+  world space. No Y control (flat plane; Jay's call).
 - **DONE — dependency PR consolidation (2026-09-20).** Keep Vitest and
   `@vitest/coverage-v8` paired at 4.1.8 on the Node 20 toolchain; the separate Dependabot PRs
   could not install independently, and Vitest 5 requires Node 22.12+.
@@ -233,6 +237,11 @@ or completes.
   unwire moves past Stage 1.
 
 ## Next
+- **3D fill audit — mkTick follow-ups (2026-10-03).** (1) Sphere pole hooks in REGULAR mkTick ticks
+  (create sphere/hatch: 39/689 ticks bend >30°, worst 134°, near the top pole) violate Jay's no-hooks rule;
+  Jay ruled "later". (2) T2-8b-5 rim extension fades with density (sphere rim candidates 29 at d=50 → 2 at
+  d=220); all bars are d=50 only. (3) Thin mutation margins (nostraight 0.01 mm; nocoh/nocohstrip trip on 1
+  cell). (4) Sphere d=220 runtime 1.32–1.44× of 1.4.5. See docs/3d-audit/lane-reports/T2-8b-5-review.md.
 - **3D Scene: parentKey/pathKey quantization coherence (before the Phase 4A divisions
   UI ships).** `StrokeDivide.parentKeyOf` quantizes at a fixed 0.001mm while export/engine
   `pathKey` quantizes at `max(0.001, plotterOptimize)` — at any tolerance above 0.001 a

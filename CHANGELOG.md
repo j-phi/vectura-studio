@@ -263,6 +263,15 @@ Style tab and in the scene Style editor.
   scene; the Style tab's Pen row keeps the row's pen dot in step.
 
 ### Added
+- **3D Scene · Ground size controls.** The Ground panel gains a **Size** group: **Width (X)** and
+  **Depth (Z)** sliders (0.25×–256×, log scale so each notch doubles), a **lock** that scales
+  both together and keeps their proportions, **Reset**, and **Fill frame** — one click sizes
+  the floor (keeping its proportions) so its edges sit just outside the artboard. The ground is
+  a flat plane, so it has no Y size. The same controls appear in a legacy scene's Ground
+  inspector. A floor that runs behind a perspective camera is now cut at the near plane
+  instead of folding its near edge up into the frame, and a floor enlarged past 1× is cut to the
+  artboard (+25 % pad) so it no longer hatches kilometres of off-paper ink into travel, time
+  estimates, and export. **At the default 1× every existing scene renders byte-identically.**
 - **3D Scene · Slices gains an End overlap control.** How far each depth-slice ring is carried
   past (or pulled back from) the object's silhouette, in pen widths (−2…8, step 0.25). **The
   default is 0 and is byte-identical to previous builds** — nothing about an existing scene
@@ -354,6 +363,11 @@ Style tab and in the scene Style editor.
   whether this reads correctly is being judged by eye, not by a bar.** (T2-6)
 
 ### Fixed
+- **3D Scene · mkTick dark-side ticks reach the rim evenly.** Regular ticks in shaded areas now
+  extend their rim-facing end to an even 0.6 mm from the outline. Neighbouring ticks extend together,
+  so the rim edge has no isolated steps. An extension that would bend the tick more than 8° is
+  refused, so the extensions add no hooks. On the torus at density 220, generation runs about 1.3×
+  slower than in 1.4.5. (T2-8b-5)
 - **3D Scene · mkTick (Tick) fill reaches the dark corners.** Where a tick band ends at a rim or
   another band, it now carries on at its own spacing and direction. The ticks shorten gradually,
   and every tick end sits an even distance off the outline (0.6 mm) or the next band (0.5 mm).

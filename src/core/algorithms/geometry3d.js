@@ -11,8 +11,14 @@
   const COLLINEAR_EPS = 1e-6;
 
 
-  const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
-  const finite = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+  // T2-8b-5d (perf, no output change): a number skips the `Number()` coercion; every other input takes the
+  // original path, so the results (including -0 -> 0 in `clamp` and NaN -> fallback in `finite`) are identical.
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, (typeof value === 'number' ? value : Number(value)) || 0));
+  const finite = (value, fallback = 0) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+    if (value === undefined) return fallback; // Number(undefined) is NaN
+    return Number.isFinite(Number(value)) ? Number(value) : fallback;
+  };
   const degToRad = (deg) => (finite(deg) * Math.PI) / 180;
   const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -106,25 +112,37 @@
   for (let i = 0; i < 4; i += 1) ROT_MEMO.push({ a: undefined, b: undefined, c: undefined, used: false, e: null });
   let rotMemoNext = 0;
   const isKey = (a) => typeof a === 'number' || typeof a === 'string';
-  const rotatePoint = (point, angles = {}) => {
-    const ay = angles.yaw ?? angles.rotate ?? 0;
-    const ap = angles.pitch ?? angles.tilt ?? 0;
-    const ar = angles.roll ?? 0;
+  // `memoTrig` is the single trig cache. `rotatePoint` and `rotTrig` (T2-8b-5d,
+  // main) both read it, so a scene that mixes the two pays for each angle
+  // triple once. The returned trig object is fresh per miss and never mutated,
+  // so a caller may hold it across later evictions.
+  const memoTrig = (ay, ap, ar) => {
     // Only primitives are memoised: an object angle could coerce differently
     // between calls (valueOf), so it always recomputes.
     if (isKey(ay) && isKey(ap) && isKey(ar)) {
       for (let i = 0; i < 4; i += 1) {
         const m = ROT_MEMO[i];
-        if (m.used && Object.is(m.a, ay) && Object.is(m.b, ap) && Object.is(m.c, ar)) return rotateWithTrig(point, m.e);
+        if (m.used && Object.is(m.a, ay) && Object.is(m.b, ap) && Object.is(m.c, ar)) return m.e;
       }
       const m = ROT_MEMO[rotMemoNext];
       rotMemoNext = (rotMemoNext + 1) & 3;
       m.a = ay; m.b = ap; m.c = ar; m.used = true;
       m.e = rotationTrig({ yaw: ay, pitch: ap, roll: ar });
-      return rotateWithTrig(point, m.e);
+      m.e.ry = ay; m.e.rp = ap; m.e.rr = ar;
+      return m.e;
     }
-    return rotateWithTrig(point, rotationTrig({ yaw: ay, pitch: ap, roll: ar }));
+    const e = rotationTrig({ yaw: ay, pitch: ap, roll: ar });
+    e.ry = ay; e.rp = ap; e.rr = ar;
+    return e;
   };
+  // T2-8b-5d API (main): trig of a RAW angle triple `{ ry, rp, rr, cy, sy, cp,
+  // sp, cr, sr }`. Callers pass the already-resolved yaw / pitch / roll.
+  const rotTrig = (ry, rp, rr) => memoTrig(ry, rp, rr);
+  const rotatePoint = (point, angles = {}) => rotateWithTrig(point, memoTrig(
+    angles.yaw ?? angles.rotate ?? 0,
+    angles.pitch ?? angles.tilt ?? 0,
+    angles.roll ?? 0,
+  ));
   // The legacy implementation, kept verbatim as the identity reference for the
   // property test only — production code calls `rotatePoint` / `makeRotator`.
   const rotatePointReference = (point, angles = {}) => {
@@ -1348,6 +1366,7 @@
     makeRotator,
     rotatePointReference,
     SEED, setSeedState, snapshotSeedState, restoreSeedState,
+    rotTrig,
     projectPoint,
     pathWithMeta,
     cleanPath,
