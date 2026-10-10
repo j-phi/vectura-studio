@@ -130,6 +130,19 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(Math.hypot(after.center.x - before.center.x, after.center.y - before.center.y)).toBeGreaterThanOrEqual(15);
   });
 
+  test('tiny (about 10 px) object moves from its centre, never resizes', async ({ page }) => {
+    const s = await setup(page, 10);
+    const before = await state(page, s.id);
+    expect(before.widthPx).toBeLessThanOrEqual(14);
+    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
+    const after = await state(page, s.id);
+    expect(Math.abs(after.widthPx - before.widthPx)).toBeLessThanOrEqual(1);
+    expect(after.center.x - before.center.x).toBeGreaterThan(24);
+    expect(after.center.x - before.center.x).toBeLessThan(36);
+    expect(after.center.y - before.center.y).toBeGreaterThan(14);
+    expect(after.center.y - before.center.y).toBeLessThan(26);
+  });
+
   test('nudged corner resize is relative to the grab point (no jump)', async ({ page }) => {
     const s = await setup(page, 32);
     const hit = await page.evaluate((lid) => {
@@ -228,6 +241,17 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
     });
     expect(res.selected).toBe(1);
     expect(res.id).toBe('main-canvas');
+    // The affordance that was actually PAINTED (not a fresh compute) must also be clear of chrome.
+    await page.waitForTimeout(1000);
+    const drawn = await page.evaluate(() => {
+      const a = window.app.renderer._rotAffDrawn;
+      if (!a) return null;
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      const el = document.elementFromPoint(a.x + box.left, a.y + box.top);
+      return { id: el && (el.id || el.className), x: a.x, y: a.y };
+    });
+    expect(drawn, 'a rotate affordance was drawn').not.toBeNull();
+    expect(drawn.id, `drawn affordance at (${Math.round(drawn.x)},${Math.round(drawn.y)})`).toBe('main-canvas');
     // Deterministic overlap: the ctxbar docks at different spots per layout pass, so also cover the
     // current affordance spot with a stand-in chrome element. The affordance must move off it.
     const moved = await page.evaluate(({ x, y }) => {

@@ -15080,6 +15080,7 @@
           this.ctx.stroke();
         });
         const aff = coarse ? this._computeRotateAffordance(bounds, 'touch') : null;
+        this._rotAffDrawn = aff || null; // what the last frame actually painted (read by e2e)
         if (aff) this._drawRotateAffordance(aff);
       }
       this.ctx.restore();
@@ -16005,6 +16006,12 @@
       return beyond + window.Vectura.hitTolerance('resize', 'touch');
     }
 
+    // Drop the cached affordance and repaint (touch only) after docked chrome moved.
+    refreshRotateAffordance() {
+      this._rotAffCache = null;
+      if (this.isCoarseHandles() && this.getSelectedLayers && this.getSelectedLayers().length) this.draw();
+    }
+
     getRotateAffordance(bounds) {
       if (!this.isCoarseHandles()) return null;
       return this._computeRotateAffordance(bounds, 'touch');
@@ -16037,8 +16044,14 @@
       }
       if (touch) {
         // A nudged corner zone must still grab the true corner.
+        // Skipped when the true-corner zones overlap (side < 2 * trueR): tiny selections must
+        // move from the centre, and the nudged handles already give them a grab target.
         const trueR = tol('resize', 'mouse');
-        for (const key of ['nw', 'ne', 'se', 'sw']) {
+        const tl = this.worldToScreen(bounds.corners.nw.x, bounds.corners.nw.y);
+        const tr = this.worldToScreen(bounds.corners.ne.x, bounds.corners.ne.y);
+        const bl = this.worldToScreen(bounds.corners.sw.x, bounds.corners.sw.y);
+        const roomy = Math.min(Math.hypot(tr.x - tl.x, tr.y - tl.y), Math.hypot(bl.x - tl.x, bl.y - tl.y)) >= 2 * trueR;
+        for (const key of roomy ? ['nw', 'ne', 'se', 'sw'] : []) {
           const sc = this.worldToScreen(bounds.corners[key].x, bounds.corners[key].y);
           if (Math.hypot(sx - sc.x, sy - sc.y) <= trueR) return key;
         }

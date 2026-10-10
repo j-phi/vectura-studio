@@ -121,6 +121,16 @@ describe('TUX-023: touch transform-handle hit targets', () => {
     });
   });
 
+  describe('tiny selections move from the centre (TUX-023 round 3)', () => {
+    [4, 8, 10, 12, 14].forEach((side) => {
+      test(`touch press at the centre of a ${side}px square is a move (null)`, () => {
+        const { renderer, bounds } = setup(100, 100 + side);
+        const c = 100 + side / 2;
+        expect(renderer.hitHandle(c, c, bounds, { pointerType: 'touch' })).toBeNull();
+      });
+    });
+  });
+
   describe('drawn size follows the pointer type (requirement 2)', () => {
     test('a mouse move after a touch requests a redraw; a repeat does not', () => {
       const renderer = makeRenderer([boxLayer('box', 100, 300)]);
