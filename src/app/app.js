@@ -174,6 +174,8 @@
           // App-level accelerators (Cmd/Ctrl+S/E/O...) while the proxy has focus;
           // shortcuts.js ignores TEXTAREA targets. Returns true when handled.
           handleShortcut: (e) => !!this.ui?.handleTopMenuShortcut?.(e),
+          // Single source of truth for the modal guard (shared with shortcuts.js).
+          isModalOpen: () => !!this.ui?.isModalOverlayOpen?.(),
           panCanvasBy: (dx, dy) => {
             if (!this.renderer) return;
             this.renderer.offsetX += dx || 0;

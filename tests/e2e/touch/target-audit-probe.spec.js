@@ -53,6 +53,33 @@ test.describe('hitAreaInPage', () => {
   });
 });
 
+test.describe('rounded targets (TUX-058 fix round 4)', () => {
+  test('rounded 44x44 buttons (radius 8, 10, 12, 22) report >= 44 on both axes; 43x43 still < 44', async ({ page }) => {
+    const radii = [8, 10, 12, 22];
+    await page.setContent(page_html(
+      radii.map((r, i) => box(`r${r}`, 20 + i * 60, 20, 44, 44, `border-radius:${r}px;`)).join('')
+      + box('r22b', 20, 100, 44, 44, 'border-radius:50%;')
+      + box('s43', 100, 100, 43, 43, 'border-radius:10px;')));
+    for (const id of ['r8', 'r10', 'r12', 'r22', 'r22b']) {
+      const r = await probe(page, id);
+      expect(r.w, `${id} w`).toBeGreaterThanOrEqual(44);
+      expect(r.h, `${id} h`).toBeGreaterThanOrEqual(44);
+    }
+    const s = await probe(page, 's43');
+    expect(s.w).toBeLessThan(44);
+    expect(s.h).toBeLessThan(44);
+  });
+
+  test('rounded 44x44 at an odd centre inside a clipped scrolling pane reports >= 44', async ({ page }) => {
+    await page.setContent(page_html(
+      '<div style="position:absolute;left:11px;top:13px;width:200px;height:120px;overflow:auto">'
+      + box('q', 37, 25, 44, 44, 'border-radius:12px;') + '<div style="height:400px"></div></div>'));
+    const r = await probe(page, 'q');
+    expect(r.w).toBeGreaterThanOrEqual(44);
+    expect(r.h).toBeGreaterThanOrEqual(44);
+  });
+});
+
 test.describe('item selectors', () => {
   test('sibling buttons get distinct selectors that each match exactly one element', async ({ page }) => {
     const btns = [0, 1, 2, 3, 4].map((i) => `<button class="b" style="position:absolute;left:${10 + i * 60}px;top:10px;width:50px;height:50px">${i}</button>`).join('');
@@ -62,5 +89,34 @@ test.describe('item selectors', () => {
     expect(sels.length).toBe(7);
     expect(new Set(sels).size).toBe(sels.length);
     for (const sel of sels) expect(await page.locator(sel).count(), sel).toBe(1);
+  });
+});
+
+test.describe('nested controls and closed disclosures (TUX-058 round 3)', () => {
+  const cfg = { W: 600, H: 400, safe: { top: 0, bottom: 0, left: 0, right: 0 }, allow: [] };
+  test('a 20x20 button inside a cursor:pointer row is its own item and counts as under 44', async ({ page }) => {
+    await page.setContent(page_html(
+      '<div id="row" style="position:absolute;left:10px;top:10px;width:300px;height:60px;cursor:pointer;background:#eee">'
+      + '<button class="lvl-ib" style="position:absolute;left:250px;top:20px;width:20px;height:20px;padding:0"></button></div>'));
+    const raw = await core.measurePage(page, cfg);
+    const btn = raw.items.find((i) => i.sel.includes('lvl-ib'));
+    expect(btn, 'nested button measured').toBeTruthy();
+    expect(btn.hig44).toBe(false);
+    expect(raw.items.find((i) => i.sel === '#row'), 'row itself still measured').toBeTruthy();
+  });
+
+  test('a control inside a closed disclosure (0-height overflow:hidden) is not stranded', async ({ page }) => {
+    await page.setContent(page_html(
+      '<div style="height:0;overflow:hidden"><button style="width:50px;height:50px">hidden</button></div>'
+      + '<div aria-hidden="true" style="position:absolute;left:-900px;top:0"><button style="width:50px;height:50px">aria</button></div>'));
+    const raw = await core.measurePage(page, cfg);
+    expect(raw.stranded).toBe(0);
+  });
+
+  test('a control clipped away by overflow:hidden with no disclosure semantics is still stranded', async ({ page }) => {
+    await page.setContent(page_html(
+      '<div style="position:absolute;left:0;top:0;width:100px;height:40px;overflow:hidden"><button style="position:absolute;left:300px;top:0;width:50px;height:50px">x</button></div>'));
+    const raw = await core.measurePage(page, cfg);
+    expect(raw.stranded).toBe(1);
   });
 });
