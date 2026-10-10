@@ -66,6 +66,9 @@
         MIXED_BADGE: '?',
         CHIP_TITLE: 'Pen — click to change',
         CHIP_MIXED_TITLE: 'Mixed pens — click to unify',
+        CHIP_NAME: 'Pen. Change pen',
+        CHIP_MIXED_NAME: 'Mixed pens. Unify pens',
+        CHIP_ACTION: 'Change pen',
         EYEDROPPER_TITLE: 'Sample a pen from a canvas layer',
       },
       // Width field mirrors the Pens panel width slider range/step (mm).

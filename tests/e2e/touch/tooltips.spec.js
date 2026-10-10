@@ -310,6 +310,15 @@ test.describe('TUX-039 touch tooltips', () => {
     await sleep(100);
     const tip = await tipFor(page, '[data-test-chip="1"]');
     expect(tip, 'hold on .pen-chip shows a tooltip').not.toBeNull();
+    expect(tip.text, 'pen chip tip has touch wording').not.toMatch(/click/i);
+    expect(tip.text.length, 'pen chip tip is short').toBeLessThanOrEqual(40);
+    const picker = await page.evaluate(() => {
+      const pop = document.querySelector('.pen-pick-pop');
+      if (!pop) return false;
+      const r = pop.getBoundingClientRect();
+      return getComputedStyle(pop).visibility !== 'hidden' && !pop.classList.contains('hidden') && r.width > 0;
+    });
+    expect(picker, 'pen picker stays closed after the hold').toBe(false);
   });
 
   test('(i) hold on a layer eye button names it and does not toggle visibility', async ({ page }) => {
@@ -377,4 +386,37 @@ test.describe('TUX-039 touch tooltips', () => {
     await sleep(100);
     expect(await activeTool(page), 'mouse click right after a touch hold is not swallowed').toBe(other.tool);
   });
+});
+
+// TUX-039 clauses 2 and 3 on variant tools. Needs the TUX-014 sub-menu rework in toolbar.js
+// (menu stays open after lift, rows show visible names). Owned by the TUX-014 lane.
+test.describe('TUX-039 variant tool hold (needs TUX-014)', () => {
+  for (const tool of ['shape', 'pen', 'fill']) {
+    test(`hold ${tool} keeps a labelled sub-menu open and leaves the tool unchanged`, async ({ page }) => {
+      // Expected red until TUX-014 lands in toolbar.js. Remove this line then (Playwright
+      // reports "expected to fail but passed" the moment TUX-014 makes it green).
+      test.fail(true, 'blocked on TUX-014: sub-menu closes on lift, rows are icon-only');
+      await setup(page);
+      const sel = `.tool-btn[data-tool="${tool}"]`;
+      const box = await page.evaluate((s) => {
+        const b = document.querySelector(s);
+        if (!b) return null;
+        const r = b.getBoundingClientRect();
+        const h = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return r.width > 0 && h && (h === b || b.contains(h)) ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+      }, sel);
+      test.skip(!box, `${tool} is not reachable on the rail at this viewport`);
+      await longPress(page, box, 600);
+      await sleep(150);
+      const st = await page.evaluate(() => {
+        const m = [...document.querySelectorAll('.tool-submenu.open')][0];
+        const labels = m ? [...m.querySelectorAll('.tool-sub-btn')].map((b) => (b.innerText || '').trim()).filter(Boolean) : [];
+        return { open: !!m, labels, active: window.app.ui.activeTool };
+      });
+      expect(st.open, 'sub-menu stays open after lift').toBe(true);
+      expect(st.labels.length, 'rows show visible text labels').toBeGreaterThan(0);
+      if (tool === 'shape') expect(st.labels.join('|')).toMatch(/Rectangle/);
+      expect(st.active, 'tool unchanged after lift').toBe('select');
+    });
+  }
 });
