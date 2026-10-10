@@ -143,6 +143,48 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(after.center.y - before.center.y).toBeLessThan(26);
   });
 
+  test('flat (about 140x30) selection moves from its centre and keeps its height', async ({ page }) => {
+    const s = await setup(page, 140);
+    // Flatten through the layer's own Y scale (a real regenerate, so the move commit keeps it flat):
+    // about 30 px tall on screen, so the n/s edge zones would cover the centre unless nudged outward.
+    await page.evaluate((lid) => {
+      const app = window.app;
+      const r = app.renderer;
+      const layer = app.engine.layers.find((l) => l.id === lid);
+      const b = r.getSelectionBounds([layer]);
+      const hPx = Math.hypot(b.corners.sw.x - b.corners.nw.x, b.corners.sw.y - b.corners.nw.y) * r.scale;
+      layer.params.scaleY = (layer.params.scaleY || 1) * (30 / hPx);
+      app.engine.generate(lid);
+      app.computeDisplayGeometry?.();
+      r.lastPointerType = 'touch';
+      r.draw();
+    }, s.id);
+    const measure = () => page.evaluate((lid) => {
+      const r = window.app.renderer;
+      const layer = window.app.engine.layers.find((l) => l.id === lid);
+      const b = r.getSelectionBounds([layer]);
+      const c = r.worldToScreen(b.center.x, b.center.y);
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      return {
+        wPx: Math.hypot(b.corners.ne.x - b.corners.nw.x, b.corners.ne.y - b.corners.nw.y) * r.scale,
+        hPx: Math.hypot(b.corners.sw.x - b.corners.nw.x, b.corners.sw.y - b.corners.nw.y) * r.scale,
+        center: { x: c.x + box.left, y: c.y + box.top },
+      };
+    }, s.id);
+    const before = await measure();
+    expect(before.hPx).toBeGreaterThan(24);
+    expect(before.hPx).toBeLessThan(36);
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, before.center)).toBe('main-canvas');
+    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
+    const after = await measure();
+    expect(Math.abs(after.hPx - before.hPx)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.wPx - before.wPx)).toBeLessThanOrEqual(1);
+    expect(after.center.x - before.center.x).toBeGreaterThan(24);
+    expect(after.center.y - before.center.y).toBeGreaterThan(14);
+    require('fs').mkdirSync(EVIDENCE_DIR, { recursive: true });
+    await page.screenshot({ path: `${EVIDENCE_DIR}/flat-centre-drag-${NAMED[test.info().project.name]}.png` });
+  });
+
   test('nudged corner resize is relative to the grab point (no jump)', async ({ page }) => {
     const s = await setup(page, 32);
     const hit = await page.evaluate((lid) => {

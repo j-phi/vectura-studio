@@ -3242,13 +3242,24 @@
   const syncRotateAffordance = () => {
     const r = getRenderer();
     if (!r || typeof r.refreshRotateAffordance !== 'function' || !els.bar) return;
+    // Desktop (mouse/pen) has no touch affordance: skip the layout reads and timers entirely.
+    if (typeof r.isCoarseHandles === 'function' && !r.isCoarseHandles()) { state.rotAffSig = null; return; }
     const bar = els.bar;
     const sig = `${state.visible ? 1 : 0}|${Math.round(parseFloat(bar.style.left) || 0)}|${Math.round(parseFloat(bar.style.top) || 0)}|${bar.offsetWidth}|${bar.offsetHeight}`;
     if (sig === state.rotAffSig) return;
     state.rotAffSig = sig;
+    // Coalesced by the renderer: invalidates the cache and repaints on the next frame only if
+    // no draw (pan/zoom/drag) already happened.
     r.refreshRotateAffordance();
-    // The show/hide transition may still be running; re-check once it has settled.
-    if (typeof setTimeout === 'function') setTimeout(() => { const rr = getRenderer(); if (rr && rr.refreshRotateAffordance) rr.refreshRotateAffordance(); }, 350);
+    // The show/hide transition may still be running; re-check once it has settled. One timer.
+    if (typeof setTimeout === 'function') {
+      if (state.rotAffTimer) clearTimeout(state.rotAffTimer);
+      state.rotAffTimer = setTimeout(() => {
+        state.rotAffTimer = null;
+        const rr = getRenderer();
+        if (rr && rr.refreshRotateAffordance) rr.refreshRotateAffordance();
+      }, 350);
+    }
   };
 
   const tick = () => {

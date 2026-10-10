@@ -5433,7 +5433,9 @@
     }
 
     draw() {
+      this._drawSeq = (this._drawSeq || 0) + 1; // lets coalesced repaint requests see an intervening frame
       if (!this.ready || !this.canvas || !this.ctx) return;
+      this._rotAffDrawn = null; // drawSelection re-sets it; a deselect or mouse frame leaves it cleared
       const w = this.canvas.width / window.devicePixelRatio;
       const h = this.canvas.height / window.devicePixelRatio;
       this.ctx.clearRect(0, 0, w, h);
@@ -15903,13 +15905,19 @@
       ];
       const wide = wWorld * scale >= span;
       const tall = hWorld * scale >= span;
+      // Edge midpoints move outward along their normal when that side is under the span, so
+      // their zones never cover the centre of a thin selection (a centre drag must move it).
+      const edge = (key, su, sv) => {
+        const m = this._edgeMidpoint(bounds, key);
+        return { key, x: m.x + su * nu * ux + sv * nv * vx, y: m.y + su * nu * uy + sv * nv * vy };
+      };
       if (wide) {
-        out.push({ key: 'n', ...this._edgeMidpoint(bounds, 'n') });
-        out.push({ key: 's', ...this._edgeMidpoint(bounds, 's') });
+        out.push(edge('n', 0, -1));
+        out.push(edge('s', 0, 1));
       }
       if (tall) {
-        out.push({ key: 'e', ...this._edgeMidpoint(bounds, 'e') });
-        out.push({ key: 'w', ...this._edgeMidpoint(bounds, 'w') });
+        out.push(edge('e', 1, 0));
+        out.push(edge('w', -1, 0));
       }
       return out;
     }
@@ -16007,9 +16015,27 @@
     }
 
     // Drop the cached affordance and repaint (touch only) after docked chrome moved.
+    // Invalidates the cache and requests one repaint on the next animation frame. A draw that
+    // already happened since the request (pan, zoom, drag) absorbs it, so no extra frame is forced.
     refreshRotateAffordance() {
       this._rotAffCache = null;
-      if (this.isCoarseHandles() && this.getSelectedLayers && this.getSelectedLayers().length) this.draw();
+      const active = this.isCoarseHandles() && this.getSelectedLayers && this.getSelectedLayers().length;
+      if (!active) {
+        this._rotAffDrawn = null; // nothing is painted any more; never leave a stale value
+        return;
+      }
+      if (this._rotAffPending) return;
+      this._rotAffPending = true;
+      const seq = this._drawSeq || 0;
+      const schedule = (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function')
+        ? window.requestAnimationFrame.bind(window)
+        : (cb) => setTimeout(cb, 16);
+      schedule(() => {
+        this._rotAffPending = false;
+        if ((this._drawSeq || 0) !== seq) return;
+        this._rotAffCache = null;
+        if (this.isCoarseHandles() && this.getSelectedLayers().length) this.draw();
+      });
     }
 
     getRotateAffordance(bounds) {
@@ -16051,9 +16077,13 @@
         const tr = this.worldToScreen(bounds.corners.ne.x, bounds.corners.ne.y);
         const bl = this.worldToScreen(bounds.corners.sw.x, bounds.corners.sw.y);
         const roomy = Math.min(Math.hypot(tr.x - tl.x, tr.y - tl.y), Math.hypot(bl.x - tl.x, bl.y - tl.y)) >= 2 * trueR;
-        for (const key of roomy ? ['nw', 'ne', 'se', 'sw'] : []) {
+        // A corner far from the centre (long thin selection) stays grabbable even when the
+        // short side is small: its zone cannot reach the centre.
+        const mid = this.worldToScreen(bounds.center.x, bounds.center.y);
+        for (const key of ['nw', 'ne', 'se', 'sw']) {
           const sc = this.worldToScreen(bounds.corners[key].x, bounds.corners[key].y);
-          if (Math.hypot(sx - sc.x, sy - sc.y) <= trueR) return key;
+          const far = Math.hypot(mid.x - sc.x, mid.y - sc.y) >= 2 * trueR;
+          if ((roomy || far) && Math.hypot(sx - sc.x, sy - sc.y) <= trueR) return key;
         }
       }
       // SEL-1: edge-midpoint resize zones.
