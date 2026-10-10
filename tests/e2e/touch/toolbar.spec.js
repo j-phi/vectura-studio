@@ -698,6 +698,25 @@ test.describe('TUX-015 all tools drawer', () => {
     expect(failures).toEqual([]);
   });
 
+  // TUX-013 round 3: the open drawer must never cover its own trigger (finger-only, panes finger-closed).
+  test('open drawer leaves #tool-overflow-btn tappable; second tap closes it', async ({ page }) => {
+    await openDrawer(page);
+    const probe = () => page.evaluate(() => {
+      const b = document.getElementById('tool-overflow-btn');
+      const r = b.getBoundingClientRect();
+      const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { hit: !!t && (t === b || b.contains(t)), by: t ? `${t.tagName}.${String(t.className).slice(0, 40)}` : null, active: b.classList.contains('active'), exp: b.getAttribute('aria-expanded') };
+    });
+    const open = await probe();
+    expect(open.hit, `trigger covered by ${open.by}`).toBe(true);
+    expect(open.active).toBe(true);
+    expect(open.exp).toBe('true');
+    await tapL(page, '#tool-overflow-btn');
+    await sleep(200);
+    await expect(page.locator('.tool-drawer')).toBeHidden();
+    expect(await page.locator('#tool-overflow-btn').getAttribute('aria-expanded')).toBe('false');
+  });
+
   test('tapping an item activates its tool and the drawer stays open', async ({ page }) => {
     await openDrawer(page);
     await tapL(page, '.tool-drawer-view-btn[data-view="list"]');
