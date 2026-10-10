@@ -121,6 +121,48 @@ describe('TUX-023: touch transform-handle hit targets', () => {
     });
   });
 
+  describe('tiny selections move from the centre (TUX-023 round 3)', () => {
+    [4, 8, 10, 12, 14].forEach((side) => {
+      test(`touch press at the centre of a ${side}px square is a move (null)`, () => {
+        const { renderer, bounds } = setup(100, 100 + side);
+        const c = 100 + side / 2;
+        expect(renderer.hitHandle(c, c, bounds, { pointerType: 'touch' })).toBeNull();
+      });
+    });
+  });
+
+  describe('thin selections: edge handles are nudged off the centre (TUX-023 round 5)', () => {
+    const rectLayer = (x0, y0, x1, y1) => ({
+      ...boxLayer('rect', 0, 1),
+      paths: [[{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 }]],
+    });
+    const setupRect = (x0, y0, x1, y1) => {
+      const renderer = makeRenderer([rectLayer(x0, y0, x1, y1)]);
+      return { renderer, bounds: renderer.getSelectionBounds([renderer.engine.layers[0]]) };
+    };
+    [[200, 2], [200, 8], [200, 30], [200, 36], [200, 44], [2, 200], [8, 200], [30, 200], [44, 200]].forEach(([w, h]) => {
+      test(`touch press at the centre of a ${w}x${h} selection is a move (null)`, () => {
+        const { renderer, bounds } = setupRect(100, 100, 100 + w, 100 + h);
+        expect(renderer.hitHandle(100 + w / 2, 100 + h / 2, bounds, { pointerType: 'touch' })).toBeNull();
+      });
+    });
+    test('mouse results on a 200x30 selection are unchanged (n zone covers the centre)', () => {
+      const { renderer, bounds } = setupRect(100, 100, 300, 130);
+      expect(renderer.hitHandle(200, 115, bounds, { pointerType: 'mouse' })).toBeNull();
+      expect(renderer.getHandleHitPoints(bounds, 'mouse')).toEqual(renderer.getHandlePoints(bounds));
+    });
+    test('a nudged n handle is still grabbable on a 200x30 selection', () => {
+      const { renderer, bounds } = setupRect(100, 100, 300, 130);
+      const n = renderer.getHandleHitPoints(bounds, 'touch').find((h) => h.key === 'n');
+      expect(n.y).toBeLessThan(100);
+      expect(renderer.hitHandle(n.x, n.y, bounds, { pointerType: 'touch' })).toBe('n');
+    });
+    test('a 300x8 selection stays grabbable at its true end corner (touch)', () => {
+      const { renderer, bounds } = setupRect(100, 100, 400, 108);
+      expect(renderer.hitHandle(400, 100, bounds, { pointerType: 'touch' })).toBe('ne');
+    });
+  });
+
   describe('drawn size follows the pointer type (requirement 2)', () => {
     test('a mouse move after a touch requests a redraw; a repeat does not', () => {
       const renderer = makeRenderer([boxLayer('box', 100, 300)]);
@@ -141,6 +183,72 @@ describe('TUX-023: touch transform-handle hit targets', () => {
       const draw = vi.spyOn(renderer, 'draw').mockImplementation(() => {});
       renderer._notePointerType({ pointerType: 'touch' });
       expect(draw).toHaveBeenCalled();
+    });
+  });
+
+  describe('rotate-affordance refresh is coalesced (TUX-023 round 5)', () => {
+    const setupTouch = () => {
+      const renderer = makeRenderer([boxLayer('box', 100, 300)]);
+      renderer.lastPointerType = 'touch';
+      renderer.getSelectedLayers = () => [renderer.engine.layers[0]];
+      let draws = 0;
+      const orig = renderer.draw.bind(renderer);
+      renderer.draw = (...a) => { draws += 1; return orig(...a); };
+      return { renderer, count: () => draws };
+    };
+    const withFakeRaf = (fn) => {
+      const w = runtime.window;
+      const saved = w.requestAnimationFrame;
+      let queue = [];
+      w.requestAnimationFrame = (cb) => { queue.push(cb); return queue.length; };
+      const flush = () => { const q = queue; queue = []; q.forEach((cb) => cb()); };
+      try { fn(flush); } finally { w.requestAnimationFrame = saved; }
+    };
+
+    test('30 pan frames with the bar re-anchoring each frame draw at most frames + 1 times', () => {
+      const { renderer, count } = setupTouch();
+      withFakeRaf((flush) => {
+        const frames = 30;
+        for (let i = 0; i < frames; i += 1) {
+          // Frame order: input events (the pan redraw) run before rAF callbacks.
+          renderer.offsetX += 3;
+          renderer.draw();
+          flush(); // rAF: the previous frame's coalesced request, then the ctxbar tick
+          renderer.refreshRotateAffordance(); // ctxbar re-anchored this frame
+        }
+        flush();
+        expect(count()).toBeLessThanOrEqual(frames + 1);
+      });
+    });
+
+    test('an isolated refresh still repaints once on the next frame', () => {
+      const { renderer, count } = setupTouch();
+      withFakeRaf((flush) => {
+        renderer.refreshRotateAffordance();
+        renderer.refreshRotateAffordance();
+        expect(count()).toBe(0);
+        flush();
+        expect(count()).toBe(1);
+        flush();
+        expect(count()).toBe(1);
+      });
+    });
+
+    test('refresh does nothing and clears the painted record when not coarse or nothing selected', () => {
+      const { renderer, count } = setupTouch();
+      renderer._rotAffDrawn = { x: 1, y: 1, r: 1 };
+      renderer.lastPointerType = 'mouse';
+      withFakeRaf((flush) => {
+        renderer.refreshRotateAffordance();
+        flush();
+        expect(count()).toBe(0);
+      });
+      expect(renderer._rotAffDrawn).toBeNull();
+      renderer.lastPointerType = 'touch';
+      renderer._rotAffDrawn = { x: 1, y: 1, r: 1 };
+      renderer.getSelectedLayers = () => [];
+      renderer.refreshRotateAffordance();
+      expect(renderer._rotAffDrawn).toBeNull();
     });
   });
 

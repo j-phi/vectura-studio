@@ -130,6 +130,61 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(Math.hypot(after.center.x - before.center.x, after.center.y - before.center.y)).toBeGreaterThanOrEqual(15);
   });
 
+  test('tiny (about 10 px) object moves from its centre, never resizes', async ({ page }) => {
+    const s = await setup(page, 10);
+    const before = await state(page, s.id);
+    expect(before.widthPx).toBeLessThanOrEqual(14);
+    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
+    const after = await state(page, s.id);
+    expect(Math.abs(after.widthPx - before.widthPx)).toBeLessThanOrEqual(1);
+    expect(after.center.x - before.center.x).toBeGreaterThan(24);
+    expect(after.center.x - before.center.x).toBeLessThan(36);
+    expect(after.center.y - before.center.y).toBeGreaterThan(14);
+    expect(after.center.y - before.center.y).toBeLessThan(26);
+  });
+
+  test('flat (about 140x30) selection moves from its centre and keeps its height', async ({ page }) => {
+    const s = await setup(page, 140);
+    // Flatten through the layer's own Y scale (a real regenerate, so the move commit keeps it flat):
+    // about 30 px tall on screen, so the n/s edge zones would cover the centre unless nudged outward.
+    await page.evaluate((lid) => {
+      const app = window.app;
+      const r = app.renderer;
+      const layer = app.engine.layers.find((l) => l.id === lid);
+      const b = r.getSelectionBounds([layer]);
+      const hPx = Math.hypot(b.corners.sw.x - b.corners.nw.x, b.corners.sw.y - b.corners.nw.y) * r.scale;
+      layer.params.scaleY = (layer.params.scaleY || 1) * (30 / hPx);
+      app.engine.generate(lid);
+      app.computeDisplayGeometry?.();
+      r.lastPointerType = 'touch';
+      r.draw();
+    }, s.id);
+    const measure = () => page.evaluate((lid) => {
+      const r = window.app.renderer;
+      const layer = window.app.engine.layers.find((l) => l.id === lid);
+      const b = r.getSelectionBounds([layer]);
+      const c = r.worldToScreen(b.center.x, b.center.y);
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      return {
+        wPx: Math.hypot(b.corners.ne.x - b.corners.nw.x, b.corners.ne.y - b.corners.nw.y) * r.scale,
+        hPx: Math.hypot(b.corners.sw.x - b.corners.nw.x, b.corners.sw.y - b.corners.nw.y) * r.scale,
+        center: { x: c.x + box.left, y: c.y + box.top },
+      };
+    }, s.id);
+    const before = await measure();
+    expect(before.hPx).toBeGreaterThan(24);
+    expect(before.hPx).toBeLessThan(36);
+    expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, before.center)).toBe('main-canvas');
+    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
+    const after = await measure();
+    expect(Math.abs(after.hPx - before.hPx)).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.wPx - before.wPx)).toBeLessThanOrEqual(1);
+    expect(after.center.x - before.center.x).toBeGreaterThan(24);
+    expect(after.center.y - before.center.y).toBeGreaterThan(14);
+    require('fs').mkdirSync(EVIDENCE_DIR, { recursive: true });
+    await page.screenshot({ path: `${EVIDENCE_DIR}/flat-centre-drag-${NAMED[test.info().project.name]}.png` });
+  });
+
   test('nudged corner resize is relative to the grab point (no jump)', async ({ page }) => {
     const s = await setup(page, 32);
     const hit = await page.evaluate((lid) => {
@@ -213,6 +268,9 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
       return { x: c.x + box.left, y: c.y + box.top };
     });
     await touch.tap(page, target);
+    // Under load the first tap can land before the layout settles; retry once if nothing selected.
+    const picked = () => page.waitForFunction(() => (window.app.renderer.selectedLayerIds || new Set()).size === 1, null, { timeout: 2500 }).then(() => true, () => false);
+    if (!(await picked())) { await touch.tap(page, target); await picked(); }
     await page.waitForTimeout(500);
     const res = await page.evaluate(() => {
       const r = window.app.renderer;
@@ -228,6 +286,19 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
     });
     expect(res.selected).toBe(1);
     expect(res.id).toBe('main-canvas');
+    // The affordance that was actually PAINTED (not a fresh compute) must also be clear of chrome.
+    await page.waitForTimeout(1000);
+    const drawn = await page.evaluate(() => {
+      const a = window.app.renderer._rotAffDrawn;
+      if (!a) return null;
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      const el = document.elementFromPoint(a.x + box.left, a.y + box.top);
+      return { id: el && (el.id || el.className), x: a.x, y: a.y };
+    });
+    expect(drawn, 'a rotate affordance was drawn').not.toBeNull();
+    expect(drawn.id, `drawn affordance at (${Math.round(drawn.x)},${Math.round(drawn.y)})`).toBe('main-canvas');
+    require('fs').mkdirSync(EVIDENCE_DIR, { recursive: true });
+    await page.screenshot({ path: `${EVIDENCE_DIR}/iPhL-tap-select-${testInfo.project.name}.png` });
     // Deterministic overlap: the ctxbar docks at different spots per layout pass, so also cover the
     // current affordance spot with a stand-in chrome element. The affordance must move off it.
     const moved = await page.evaluate(({ x, y }) => {
@@ -324,4 +395,67 @@ test.describe('TUX-023 bottom-corner zones clear of the ctxbar (default layout)'
       expect(errors).toEqual([]);
     });
   }
+});
+
+// Req. 4 after an ordinary corner resize: the PAINTED rotate disc must still be on clear canvas
+// (iPhone landscape, default layout, no view slide), and must still be hit-testable as rotate.
+test.describe('TUX-023 rotate affordance clear of chrome after a corner resize (iPhone landscape)', () => {
+  test('drawn disc stays on the canvas and hitHandle returns rotate', async ({ page }, testInfo) => {
+    test.skip(!IPHL.includes(testInfo.project.name), 'TUX-023 resize-then-rotate check runs on iPhone landscape');
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.renderer && window.app.engine));
+    await page.waitForTimeout(800);
+    await page.evaluate(() => {
+      const e = window.app.engine;
+      e.layers.slice().forEach((l) => { try { e.removeLayer(l.id); } catch (_) { /* noop */ } });
+      const id = e.addLayer('rings');
+      e.generate?.(id);
+      window.app.computeDisplayGeometry?.();
+      window.app.renderer.setTool('select');
+      window.app.renderer.draw();
+    });
+    await page.waitForTimeout(600);
+    const centre = await page.evaluate(() => {
+      const r = window.app.renderer;
+      const b = r.getSelectionBounds([window.app.engine.layers[0]]);
+      const c = r.worldToScreen(b.center.x, b.center.y);
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      return { x: c.x + box.left, y: c.y + box.top };
+    });
+    await touch.tap(page, centre);
+    const picked = () => page.waitForFunction(() => (window.app.renderer.selectedLayerIds || new Set()).size === 1, null, { timeout: 2500 }).then(() => true, () => false);
+    if (!(await picked())) { await touch.tap(page, centre); await picked(); }
+    await page.waitForTimeout(500);
+    const se = await page.evaluate(() => {
+      const r = window.app.renderer;
+      const b = r.getSelectionBounds([window.app.engine.layers[0]]);
+      const p = r.worldToScreen(b.corners.se.x, b.corners.se.y);
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      return { x: p.x + box.left + 10, y: p.y + box.top + 10 };
+    });
+    await touch.drag(page, se, { x: se.x + 30, y: se.y + 30 });
+    await page.waitForTimeout(500);
+    const res = await page.evaluate(() => {
+      const r = window.app.renderer;
+      const a = r._rotAffDrawn;
+      if (!a) return null;
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      const probes = [[0, 0], [a.r, 0], [-a.r, 0], [0, a.r], [0, -a.r]];
+      const tops = probes.map(([dx, dy]) => {
+        const el = document.elementFromPoint(a.x + box.left + dx, a.y + box.top + dy);
+        return el && (el.id || el.className);
+      });
+      const b = r.getSelectionBounds([window.app.engine.layers[0]]);
+      const hit = r.hitHandle(a.x, a.y, b, { pointerType: 'touch' });
+      return { x: a.x, y: a.y, tops, hit: hit && (hit.key || hit.type || hit) };
+    });
+    expect(res, 'a rotate affordance was drawn').not.toBeNull();
+    res.tops.forEach((id) => expect(id, `drawn disc at (${Math.round(res.x)},${Math.round(res.y)})`).toBe('main-canvas'));
+    expect(String(res.hit)).toMatch(/rotate/);
+    require('fs').mkdirSync(EVIDENCE_DIR, { recursive: true });
+    await page.screenshot({ path: `${EVIDENCE_DIR}/iPhL-resized-${testInfo.project.name}.png` });
+    expect(errors).toEqual([]);
+  });
 });

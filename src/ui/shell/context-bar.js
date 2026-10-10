@@ -3237,8 +3237,34 @@
     reanchor();
   };
 
+  // TUX-023: the touch rotate affordance avoids chrome, so it must be recomputed when the bar
+  // shows, hides or re-anchors (the renderer only redraws on its own events).
+  const syncRotateAffordance = () => {
+    const r = getRenderer();
+    if (!r || typeof r.refreshRotateAffordance !== 'function' || !els.bar) return;
+    // Desktop (mouse/pen) has no touch affordance: skip the layout reads and timers entirely.
+    if (typeof r.isCoarseHandles === 'function' && !r.isCoarseHandles()) { state.rotAffSig = null; return; }
+    const bar = els.bar;
+    const sig = `${state.visible ? 1 : 0}|${Math.round(parseFloat(bar.style.left) || 0)}|${Math.round(parseFloat(bar.style.top) || 0)}|${bar.offsetWidth}|${bar.offsetHeight}`;
+    if (sig === state.rotAffSig) return;
+    state.rotAffSig = sig;
+    // Coalesced by the renderer: invalidates the cache and repaints on the next frame only if
+    // no draw (pan/zoom/drag) already happened.
+    r.refreshRotateAffordance();
+    // The show/hide transition may still be running; re-check once it has settled. One timer.
+    if (typeof setTimeout === 'function') {
+      if (state.rotAffTimer) clearTimeout(state.rotAffTimer);
+      state.rotAffTimer = setTimeout(() => {
+        state.rotAffTimer = null;
+        const rr = getRenderer();
+        if (rr && rr.refreshRotateAffordance) rr.refreshRotateAffordance();
+      }, 350);
+    }
+  };
+
   const tick = () => {
     refresh();
+    syncRotateAffordance();
     state.raf = typeof G.requestAnimationFrame === 'function'
       ? G.requestAnimationFrame(tick)
       : setTimeout(tick, 100);
