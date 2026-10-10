@@ -34,6 +34,19 @@
       touchDragSlopPx: 6,
     },
 
+    // TUX-014: rail tool sub-menus (shape / pen / fill / scissor / algo-draw picker).
+    // HOLD_MS (280) and ALGO_HOLD_MS (400) are a documented exception to the 500 ms context-menu hold:
+    // a rail flyout opens faster than a context menu. TAP_SLOP_PX cancels a pending hold or a row tap.
+    TOOL_SUBMENU: {
+      HOLD_MS: 280,
+      ALGO_HOLD_MS: 400,
+      TAP_SLOP_PX: 10,
+      GAP_PX: 8,
+      PAD_PX: 8,
+      PRESS_CLEARANCE_PX: 24,
+      CLICK_SWALLOW_MS: 700,
+    },
+
     // TUX-055: image import cap. 2048, not 4096: a 4096x3072 raster makes saveVecturaFile build a string
     // past V8's ~536.87M-char limit (about 11-13 chars per byte). Read by Vectura.ImageSource.
     IMAGE_IMPORT: { MAX_SIDE: 2048 },

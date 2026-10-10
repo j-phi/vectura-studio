@@ -15037,3 +15037,51 @@ body.tablet-layout #touch-modifier-bar {
 }
 
 /* === END TUX-008 === */
+
+/* === TUX-014: touch tool sub-menus === */
+/* Menus are portaled to <body>, so selectors target .tool-submenu / .tool-sub-btn directly. */
+.tool-sub-label { display: none; }
+
+@media (pointer: coarse) {
+  .tool-submenu {
+    flex-direction: column;
+    gap: 4px;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-submenu .tool-sub-btn {
+    min-width: 44px;
+    min-height: 44px;
+    width: auto;
+    height: auto;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 12px;
+    white-space: nowrap;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-submenu .tool-sub-btn .tool-sub-label {
+    display: inline;
+    font-size: var(--font-size-sm, 12px);
+    font-weight: 500;
+    pointer-events: none;
+  }
+  .tool-submenu .tool-sub-btn svg { flex: none; pointer-events: none; }
+  [data-ui-skin] .algo-draw-picker .algo-pick-item,
+  .algo-draw-picker .algo-pick-item {
+    min-height: 44px;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-btn[data-has-submenu] {
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .algo-draw-picker { touch-action: pan-y; }
+}
+/* === END TUX-014 === */

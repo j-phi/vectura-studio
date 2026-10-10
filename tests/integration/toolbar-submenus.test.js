@@ -308,6 +308,118 @@ describe('toolbar subtool submenus', () => {
 
   // ── top menu bar DOM completeness ─────────────────────────────────────────
 
+  // ── TUX-014: touch path (pointerType recorded at pointerdown) ──────────────
+
+  describe('touch path (TUX-014)', () => {
+    const getBtn  = () => document.querySelector('.tool-btn[data-tool="shape"]');
+    const getMenu = () => document.querySelector('.tool-submenu[data-menu="shape"]');
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    // JSDOM has no PointerEvent: a MouseEvent with pointerType / pointerId defined on it.
+    const ptr = (type, target, { x = 0, y = 0, id = 7, pointerType = 'touch' } = {}) => {
+      const ev = new window.MouseEvent(type, { button: 0, bubbles: true, cancelable: true, clientX: x, clientY: y });
+      Object.defineProperty(ev, 'pointerType', { value: pointerType });
+      Object.defineProperty(ev, 'pointerId', { value: id });
+      target.dispatchEvent(ev);
+      return ev;
+    };
+    beforeEach(async () => {
+      app.ui.setActiveTool('select');
+      // let any one-shot click swallower from a previous test expire
+      await sleep(10);
+    });
+
+    test('hold then release in place keeps the menu open and does not change the tool', async () => {
+      ptr('pointerdown', getBtn(), { x: 10, y: 10 });
+      await sleep(310);
+      expect(getMenu().classList.contains('open')).toBe(true);
+      ptr('pointerup', getBtn(), { x: 10, y: 10 });
+      expect(getMenu().classList.contains('open')).toBe(true);
+      expect(app.ui.activeTool).toBe('select');
+    });
+
+    test('tap on an inactive group activates it and leaves the menu closed', () => {
+      ptr('pointerdown', getBtn(), { x: 10, y: 10 });
+      ptr('pointerup', getBtn(), { x: 10, y: 10 });
+      expect(String(app.ui.activeTool).startsWith('shape')).toBe(true);
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+
+    test('tap on the active group opens the menu; a tap on the parent while open closes it', () => {
+      ptr('pointerdown', getBtn(), { x: 10, y: 10 });
+      ptr('pointerup', getBtn(), { x: 10, y: 10 });
+      const tool = app.ui.activeTool;
+      ptr('pointerdown', getBtn(), { x: 10, y: 10 });
+      ptr('pointerup', getBtn(), { x: 10, y: 10 });
+      expect(getMenu().classList.contains('open')).toBe(true);
+      expect(app.ui.activeTool).toBe(tool);
+      ptr('pointerdown', getBtn(), { x: 10, y: 10 });
+      ptr('pointerup', getBtn(), { x: 10, y: 10 });
+      expect(getMenu().classList.contains('open')).toBe(false);
+      expect(app.ui.activeTool).toBe(tool);
+    });
+
+    test('moving 10 px or more before the timer cancels the hold: no menu, no activation', async () => {
+      ptr('pointerdown', getBtn(), { x: 10, y: 10 });
+      ptr('pointermove', getBtn(), { x: 10, y: 22 });
+      await sleep(310);
+      expect(getMenu().classList.contains('open')).toBe(false);
+      ptr('pointerup', getBtn(), { x: 10, y: 22 });
+      expect(getMenu().classList.contains('open')).toBe(false);
+      expect(app.ui.activeTool).toBe('select');
+    });
+
+    test('pointercancel cancels the pending hold', async () => {
+      ptr('pointerdown', getBtn(), { x: 10, y: 10 });
+      ptr('pointercancel', getBtn(), { x: 10, y: 10 });
+      await sleep(310);
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+
+    test('a touch tap on a row selects it and closes the menu', async () => {
+      ptr('pointerdown', getBtn(), { x: 10, y: 10 });
+      await sleep(310);
+      ptr('pointerup', getBtn(), { x: 10, y: 10 });
+      const row = document.querySelector('.tool-sub-btn[data-shape="polygon"]');
+      const orig = document.elementFromPoint;
+      document.elementFromPoint = () => row;
+      ptr('pointerdown', row, { x: 50, y: 50, id: 8 });
+      ptr('pointerup', row, { x: 50, y: 50, id: 8 });
+      document.elementFromPoint = orig;
+      expect(app.ui.activeTool).toBe('shape-polygon');
+      expect(getMenu().classList.contains('open')).toBe(false);
+    });
+
+    test('an outside touch tap closes the menu and is consumed (does not reach the document)', async () => {
+      ptr('pointerdown', getBtn(), { x: 10, y: 10 });
+      await sleep(310);
+      ptr('pointerup', getBtn(), { x: 10, y: 10 });
+      expect(getMenu().classList.contains('open')).toBe(true);
+      let reached = 0;
+      const spy = () => { reached += 1; };
+      document.body.addEventListener('pointerdown', spy);
+      ptr('pointerdown', document.body, { x: 300, y: 300, id: 9 });
+      document.body.removeEventListener('pointerdown', spy);
+      expect(getMenu().classList.contains('open')).toBe(false);
+      expect(reached).toBe(0);
+    });
+
+    test('mouse path is unchanged: hold then release in place closes the menu, tool unchanged', async () => {
+      getBtn().dispatchEvent(new window.MouseEvent('pointerdown', { button: 0, bubbles: true }));
+      await sleep(310);
+      expect(getMenu().classList.contains('open')).toBe(true);
+      document.dispatchEvent(new window.Event('pointerup'));
+      expect(getMenu().classList.contains('open')).toBe(false);
+      expect(app.ui.activeTool).toBe('select');
+    });
+
+    test('rows carry a text label and an aria-label', () => {
+      document.querySelectorAll('.tool-submenu[data-menu="shape"] .tool-sub-btn').forEach((row) => {
+        expect(row.querySelector('.tool-sub-label').textContent.trim().length).toBeGreaterThan(0);
+        expect(row.getAttribute('aria-label')).toBeTruthy();
+      });
+    });
+  });
+
   describe('top menu bar — all expected button IDs exist in the bootstrapped DOM', () => {
     const expected = [
       // File menu
