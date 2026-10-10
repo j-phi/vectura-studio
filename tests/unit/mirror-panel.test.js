@@ -523,6 +523,47 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     expect(layer.modifier.mirrors.map((m) => m.id)).toEqual([ids[1], ids[0], ids[2]]);
   });
 
+  test('TUX-044: the mirror grip reorders by pointer events and pointercancel leaves the order', () => {
+    const mk = () => mkLayer([
+      Modifiers.createMirrorLine(0),
+      Modifiers.createRadialMirror(1),
+      Modifiers.createArcMirror(2),
+    ]);
+    const stubRows = (container) => Array.from(container.querySelectorAll('.mp-row')).forEach((row, i) => {
+      row.getBoundingClientRect = () => ({ top: i * 100, height: 100, bottom: i * 100 + 100, left: 0, right: 100, width: 100 });
+    });
+    const fire = (target, type, y) => {
+      const ev = new runtime.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: 5, clientY: y, button: 0 });
+      Object.defineProperty(ev, 'pointerId', { value: 1 });
+      Object.defineProperty(ev, 'pointerType', { value: 'touch' });
+      target.dispatchEvent(ev);
+    };
+    // commit
+    const layer = mk();
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container);
+    const ids = layer.modifier.mirrors.map((m) => m.id);
+    stubRows(container);
+    expect(container.querySelectorAll('.mp-row-grip')).toHaveLength(3);
+    fire(container.querySelectorAll('.mp-row-grip')[2], 'pointerdown', 250);
+    fire(runtime.window, 'pointermove', 20);
+    fire(runtime.window, 'pointerup', 20);
+    expect(layer.modifier.mirrors.map((m) => m.id)).toEqual([ids[2], ids[0], ids[1]]);
+    // cancel
+    const layer2 = mk();
+    const container2 = document.createElement('div');
+    const ctx2 = mkCtx();
+    MirrorPanel.build(ctx2, layer2, container2);
+    const ids2 = layer2.modifier.mirrors.map((m) => m.id);
+    stubRows(container2);
+    const before = ctx2._calls.pushHistory;
+    fire(container2.querySelectorAll('.mp-row-grip')[2], 'pointerdown', 250);
+    fire(runtime.window, 'pointermove', 20);
+    fire(runtime.window, 'pointercancel', 20);
+    expect(layer2.modifier.mirrors.map((m) => m.id)).toEqual(ids2);
+    expect(ctx2._calls.pushHistory).toBe(before);
+  });
+
   test('defaultParamsFor stays aligned with Modifiers.create* factory defaults', () => {
     // If a factory default drifts, the picker-new path will silently emit
     // a different param set than the helper. Pin them together.

@@ -15388,3 +15388,36 @@ body.touch-ui #viewport-container:has(.ctxbar.ctxbar--fill) .canvas-hud {
   }
 }
 /* === END TUX-038 === */
+
+/* === TUX-044: reorder grips + angle dial ===
+ * The grips and the dial own their finger drag: touch-action none keeps the browser from
+ * panning the pane. Unscoped (0,1,0) beats the `button` rules. Hit boxes extend with a ::before
+ * so the 14x20 visual stays. The extension goes left and up/down only, away from the title,
+ * toggle and delete buttons. */
+.noise-grip, .pen-grip, .optimization-grip, .mp-row-grip, .angle-dial { touch-action: none; }
+.mp-root .mp-row-grip {
+  background: transparent; border: none; padding: 2px; cursor: grab;
+  display: grid; grid-template-columns: repeat(2, 4px); gap: 2px; place-content: center;
+  align-self: center; justify-self: start; position: relative;
+}
+.mp-root .mp-row-grip .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--ui-muted); }
+.mp-root .mp-row-grip:active { cursor: grabbing; }
+.mp-root .mp-row { grid-template-columns: auto 36px 1fr auto; }
+.mp-root .mp-row.dragging { opacity: 0.6; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); transform: scale(1.01); }
+.noise-card.dragging, .image-effect-card.dragging, .optimization-card.dragging { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); }
+@media (pointer: coarse) {
+  .optimization-grip, .mp-row-grip { position: relative; }
+  .optimization-grip::before, .mp-root .mp-row-grip::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: var(--touch-target-min); height: var(--touch-target-min);
+    transform: translate(-50%, -50%);
+  }
+}
+body.touch-ui .mp-root .mp-row { grid-template-columns: auto 36px minmax(0, 1fr); }
+body.touch-ui .optimization-grip, body.touch-ui .mp-root .mp-row-grip { position: relative; }
+body.touch-ui .optimization-grip::before, body.touch-ui .mp-root .mp-row-grip::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min);
+  transform: translate(-50%, -50%);
+}
+/* === END TUX-044 === */
