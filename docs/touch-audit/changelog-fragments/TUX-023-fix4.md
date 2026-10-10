@@ -1,0 +1,1 @@
+TUX-023: the touch rotate handle now stays on clear canvas after a corner resize on iPhone landscape. When no corner position is clear of docked chrome, the renderer tries edge-midpoint positions, clamped positions, and points stepped along the selection edge.

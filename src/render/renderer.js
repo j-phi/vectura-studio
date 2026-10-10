@@ -15949,29 +15949,66 @@
       const cw = this.canvas && this.canvas.clientWidth;
       const ch = this.canvas && this.canvas.clientHeight;
       const measured = !!(cw && ch);
-      let first = null;
-      for (const key of ['ne', 'nw', 'se', 'sw']) {
-        const hp = hits.find((h) => h.key === key);
-        if (!hp) continue;
+      const inCanvas = (pt) => pt.x >= margin && pt.y >= margin && pt.x <= cw - margin && pt.y <= ch - margin;
+      const clamp = (pt) => ({
+        x: Math.min(Math.max(pt.x, margin), Math.max(margin, cw - margin)),
+        y: Math.min(Math.max(pt.y, margin), Math.max(margin, ch - margin)),
+        r: pt.r,
+      });
+      const at = (hp) => {
         const sc = this.worldToScreen(hp.x, hp.y);
         const vx = sc.x - center.x;
         const vy = sc.y - center.y;
         const len = Math.hypot(vx, vy) || 1;
-        const pt = { x: sc.x + (vx / len) * offset, y: sc.y + (vy / len) * offset, r: margin };
+        return { x: sc.x + (vx / len) * offset, y: sc.y + (vy / len) * offset, r: margin };
+      };
+      this._rotAffOccluded = false;
+      let first = null;
+      // Pass 1: the four corner diagonals, unmodified.
+      const cands = [];
+      for (const key of ['ne', 'nw', 'se', 'sw']) {
+        const hp = hits.find((h) => h.key === key);
+        if (!hp) continue;
+        const pt = at(hp);
         if (!first) first = pt;
         if (!measured) return pt;
-        if (pt.x >= margin && pt.y >= margin && pt.x <= cw - margin && pt.y <= ch - margin
-          && this._isCanvasTopAt(pt, margin)) return pt;
+        if (inCanvas(pt) && this._isCanvasTopAt(pt, margin)) return pt;
+        cands.push(pt);
       }
-      // No clear candidate: never return an off-screen point. Clamp the first inside the canvas.
-      if (first && measured) {
-        return {
-          x: Math.min(Math.max(first.x, margin), Math.max(margin, cw - margin)),
-          y: Math.min(Math.max(first.y, margin), Math.max(margin, ch - margin)),
-          r: first.r,
-        };
+      if (!measured) return first;
+      // Pass 2: edge-midpoint normals at the same offset (e, w, n, s), then every candidate
+      // clamped into the canvas rect and re-checked against docked chrome.
+      const corners = bounds.corners;
+      const mid = (a, b2) => ({ x: (a.x + b2.x) / 2, y: (a.y + b2.y) / 2 });
+      const edges = [['e', corners.ne, corners.se], ['n', corners.nw, corners.ne],
+        ['w', corners.nw, corners.sw], ['s', corners.sw, corners.se]];
+      const edgePts = edges.map(([, p1, p2]) => at(mid(p1, p2)));
+      for (const pt of edgePts) {
+        if (inCanvas(pt) && this._isCanvasTopAt(pt, margin)) return pt;
       }
-      return first;
+      const all = cands.concat(edgePts);
+      for (const pt of all) {
+        const cp = clamp(pt);
+        if (this._isCanvasTopAt(cp, margin)) return cp;
+      }
+      // Pass 3: step along each selection edge (outside by the offset) until a spot is clear.
+      for (const [, p1, p2] of edges) {
+        const s1 = this.worldToScreen(p1.x, p1.y);
+        const s2 = this.worldToScreen(p2.x, p2.y);
+        for (let i = 0; i <= 12; i += 1) {
+          const t = i / 12;
+          const ex = s1.x + (s2.x - s1.x) * t;
+          const ey = s1.y + (s2.y - s1.y) * t;
+          const vx = ex - center.x;
+          const vy = ey - center.y;
+          const len = Math.hypot(vx, vy) || 1;
+          const cp = clamp({ x: ex + (vx / len) * offset, y: ey + (vy / len) * offset, r: margin });
+          if (this._isCanvasTopAt(cp, margin)) return cp;
+        }
+      }
+      // Nothing is clear: return the clamped first candidate and record the occluded state.
+      this._rotAffOccluded = true;
+      return clamp(first);
     }
 
     // True when the canvas is the topmost element at the disc centre and at +/- r on each
