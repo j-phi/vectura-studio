@@ -86,20 +86,20 @@ function assertObjectBack(c, now, id) {
 
 const onCanvas = (c, x, y) => ({ x, y, within: L(c, S.canvas) });
 
-// A spot on the canvas where both start fingers of a pinch (cx +- 40) sit on empty canvas:
+// A spot on the canvas where the fingers of a pinch sit on empty canvas at the start AND at the end:
 // clear of the selected object and of the floating overlays (toolbar, HUD, context bar).
-// `opts.half` is the largest finger offset from the centre over the whole gesture
-// (max(startDist, endDist) / 2), so the end positions are clear too. `opts.drag` {dx, dy}
-// also clears the end point of a one-finger drag.
+// `opts.halves` lists the finger offsets from the centre to clear (startDist / 2 and endDist / 2).
+// `opts.drag` {dx, dy} clears the start and end point of a one-finger drag.
 function emptyPinchSpot(st, avoidBox, opts = {}) {
-  const half = opts.half === undefined ? 40 : opts.half;
+  const halves = opts.halves || [40];
+  const half = Math.max(...halves);
   const cr = st.canvasRect;
   const pad = 16;
   const rects = [avoidBox, ...st.overlays];
   let best = null;
   for (let y = cr.y + 40; y < cr.y + cr.h - 40; y += 20) {
     for (let x = cr.x + half + 70; x <= cr.x + cr.w - half - 70; x += 20) {
-      const pts = opts.drag ? [[x, y], [x + opts.drag.dx, y + opts.drag.dy]] : [[x - half, y], [x + half, y]];
+      const pts = opts.drag ? [[x, y], [x + opts.drag.dx, y + opts.drag.dy]] : halves.flatMap((h) => [[x - h, y], [x + h, y]]);
       const clear = pts.every(([fx, fy]) => fx > cr.x && fx < cr.x + cr.w && fy > cr.y && fy < cr.y + cr.h && rects.every((r) => !(fx > r.minx - pad && fx < r.maxx + pad && fy > r.miny - pad && fy < r.maxy + pad)));
       if (!clear) continue;
       const d = Math.hypot(x - (cr.x + cr.w / 2), y - (cr.y + cr.h / 2));
@@ -411,7 +411,7 @@ JOURNEYS.push({
       expects: 'scale grows; selection kept; history +0; the object params are untouched', jrn: 'JRN-003',
       run: async (c) => {
         const st = await P.readState(c.page);
-        const spot = emptyPinchSpot(st, boxOf(st, c.vars.oval), { half: 75 });
+        const spot = emptyPinchSpot(st, boxOf(st, c.vars.oval), { halves: [40, 75] });
         if (!spot) throw new Error('no empty canvas spot for the first finger');
         c.vars.scale = st.scale;
         c.vars.params = JSON.stringify(st.activeParams);
@@ -458,7 +458,13 @@ JOURNEYS.push({
         const st = await P.readState(c.page);
         c.vars.view = { x: st.offsetX, y: st.offsetY, s: st.scale };
         c.vars.panes = await paneStates(c);
-        await P.fingerTap(c.page, await P.rendered(c.page, S.hudFit.map(P.visible)));
+        // The canvas HUD Fit (TUX-020) is not on every build yet: View > Reset View is the same action.
+        const hud = await P.rendered(c.page, S.hudFit.map(P.visible));
+        if (await hud.count() && await hud.boundingBox()) await P.fingerTap(c.page, hud);
+        else {
+          await P.openMenu(c.page, 'view');
+          await P.fingerTap(c.page, L(c, '#btn-reset-view'));
+        }
       },
       post: async (c, pre, now) => {
         if (near(now.scale, c.vars.view.s, 0.001) && near(now.offsetX, c.vars.view.x, 1)) throw new Error('the view did not change');
@@ -709,13 +715,17 @@ JOURNEYS.push({
     },
     {
       id: 'j8.fill-tap', action: 'tap', route: 'tap inside the oval', selector: 'canvas point at the oval centre',
-      expects: 'a fill was committed (history +1, no stray draw)', jrn: 'JRN-005', expect: { layers: 'any', history: 1, selected: 'any' },
+      expects: 'a fill was committed (history +1, no stray draw)', jrn: 'JRN-005', expect: { layers: 0, history: 1, selected: 'any' },
       run: async (c) => {
         const st = await P.readState(c.page);
         const o = boxOf(st, layerOfType(st, 'shape').id);
         await P.fingerTap(c.page, onCanvas(c, o.cx, o.cy));
       },
-      post: () => {},
+      post: (c, pre, now) => {
+        // No stray draw: the same layers (ids and types) before and after; the fill rides on history +1.
+        const sig = (st) => st.layers.map((l) => `${l.id}:${l.type}`).join('|');
+        if (now.layerCount !== pre.layerCount || sig(now) !== sig(pre)) throw new Error(`the fill tap changed the layer set (${pre.layerCount} -> ${now.layerCount})`);
+      },
     },
   ],
 });
@@ -757,7 +767,11 @@ JOURNEYS.push({
       id: 'j9.preset-confirm', action: 'tap', route: 'tap Save in the sheet', selector: '#modal-overlay Save button',
       expects: 'the sheet closes; the preset list names the new preset', expect: { history: 'any' },
       run: (c) => P.fingerTap(c.page, L(c, '.preset-save-confirm')),
-      post: async (c, pre, now) => { if (now.modalOpen) throw new Error('the save sheet is still open'); },
+      post: async (c, pre, now) => {
+        if (now.modalOpen) throw new Error('the save sheet is still open');
+        const names = await P.readSavedPresetNames(c.page);
+        if (!names.some((n) => /Touch59/.test(n))) throw new Error(`the preset list does not name the new preset (${names.length} saved)`);
+      },
     },
     {
       id: 'j9.menu-file', action: 'tap', route: 'File menu (phones: ☰ > File)', selector: 'SELECTORS.menuTrigger(\'file\') | SELECTORS.hamburger',
@@ -806,11 +820,7 @@ JOURNEYS.push({
       id: 'j10.export-download', action: 'tap', route: 'tap Export SVG in the modal footer (it must lie on the screen)', selector: 'SELECTORS.exportSubmit',
       expects: 'an .svg download starts', jrn: 'JRN-006',
       run: async (c) => {
-        const dl = c.page.waitForEvent('download', { timeout: 4000 });
-        dl.catch(() => {});
-        await P.fingerTap(c.page, L(c, S.exportSubmit));
-        const file = await dl;
-        c.vars.file = file.suggestedFilename();
+        c.vars.file = await P.captureFile(c.page, () => P.fingerTap(c.page, L(c, S.exportSubmit)));
       },
       post: (c) => { if (!/\.svg$/i.test(c.vars.file || '')) throw new Error(`download is ${c.vars.file}`); },
     },
@@ -837,10 +847,7 @@ JOURNEYS.push({
       id: 'j10.save-vectura', action: 'tap', route: 'File > Save .vectura', selector: 'SELECTORS.btnSaveVectura',
       expects: 'a .vectura download starts',
       run: async (c) => {
-        const dl = c.page.waitForEvent('download', { timeout: 4000 });
-        dl.catch(() => {});
-        await P.fingerTap(c.page, L(c, S.btnSaveVectura));
-        c.vars.file = (await dl).suggestedFilename();
+        c.vars.file = await P.captureFile(c.page, () => P.fingerTap(c.page, L(c, S.btnSaveVectura)));
       },
       post: (c) => { if (!/\.vectura$/i.test(c.vars.file || '')) throw new Error(`download is ${c.vars.file}`); },
     },
@@ -949,7 +956,9 @@ JOURNEYS.push({
         const st = await P.readState(c.page);
         c.vars.scale = st.scale;
         const cr = st.canvasRect;
-        await P.fingerMultiTap(c.page, onCanvas(c, cr.x + cr.w / 2, cr.y + cr.h / 2), 2);
+        // A spot clear of the floating overlays (context bar, toolbar, HUD), else the canvas centre.
+        const spot = emptyPinchSpot(st, { minx: 0, maxx: 0, miny: 0, maxy: 0 }, { halves: [30] }) || { x: cr.x + cr.w / 2, y: cr.y + cr.h / 2 };
+        await P.fingerMultiTap(c.page, onCanvas(c, spot.x, spot.y), 2);
       },
       post: (c, pre, now) => { if (!near(now.scale, c.vars.scale, c.vars.scale * 0.01)) throw new Error('the tap changed the zoom'); },
     },

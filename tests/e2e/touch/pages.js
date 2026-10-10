@@ -39,7 +39,8 @@ const SELECTORS = {
   },
   // Header (TUX-001 / TUX-020): PROPOSED ids. HUD twins serve tablet and touch-wide layouts.
   hamburger: '#btn-menu-hamburger',
-  hamburgerRow: (name) => `[data-menu-row="${name}"]`,
+  // TUX-001 shipped rows as '#top-menubar #btn-menu-<name>'; [data-menu-row] stays as the proposed id.
+  hamburgerRow: (name) => `[data-menu-row="${name}"], #top-menubar #btn-menu-${name}`,
   headerUndo: ['#btn-header-undo', '#btn-hud-undo'],
   headerRedo: ['#btn-header-redo', '#btn-hud-redo'],
   headerExport: '#btn-header-export',
@@ -423,6 +424,7 @@ async function loadFixture(page, name) {
     window.app.ui.openVecturaFile(new File([body], fname, { type: 'application/json' }));
   }, [text, `${name}.vectura`]);
   await page.waitForFunction((n) => window.app.engine.layers.length === n && !window.app.isRestoring, expected, { timeout: BOOT_BUDGET_MS });
+  await waitNoToast(page);
   takeErrors(page);
 }
 
@@ -471,6 +473,37 @@ async function paneOpen(page, side) {
 // Read-only DOM wait (no input): lets a toast over a header control expire.
 async function waitNoToast(page) {
   await page.waitForFunction(() => !document.querySelector('.vectura-toast'), null, { timeout: 8000 }).catch(() => {});
+}
+
+// Setup: where the engine has navigator.share (WebKit), record the shared file names and skip the
+// native sheet. The export then ends in a share, not an anchor download (see downloads.spec.js).
+async function spyShare(page) {
+  return page.evaluate(() => {
+    if (typeof navigator.share !== 'function') return false;
+    window.__sharedFiles = [];
+    navigator.share = async (d) => { (d && d.files ? d.files : []).forEach((f) => window.__sharedFiles.push(f.name)); };
+    return true;
+  });
+}
+
+async function sharedFiles(page) {
+  return page.evaluate(() => window.__sharedFiles || []);
+}
+
+// Names of the presets saved in this browser (read-only state read).
+async function readSavedPresetNames(page) {
+  return page.evaluate(() => {
+    const names = [];
+    try {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const k = localStorage.key(i);
+        if (!/preset/i.test(k) || /deleted/i.test(k)) continue;
+        const v = JSON.parse(localStorage.getItem(k) || '[]');
+        (Array.isArray(v) ? v : []).forEach((p) => p && p.name && names.push(p.name));
+      }
+    } catch (e) { /* storage unavailable */ }
+    return names;
+  });
 }
 
 async function openPane(page, side) {
@@ -523,8 +556,28 @@ async function openMenu(page, name) {
   }
 }
 
-async function undo(page) { await fingerTap(page, await rendered(page, SELECTORS.headerUndo.map(visible))); }
-async function redo(page) { await fingerTap(page, await rendered(page, SELECTORS.headerRedo.map(visible))); }
+// Direct Undo/Redo (TUX-020) where a build renders one; else Edit menu > Undo/Redo (the same action).
+async function historyTap(page, list, menuId) {
+  const direct = await rendered(page, list.map(visible));
+  if (await direct.count() && await direct.boundingBox()) { await fingerTap(page, direct); return; }
+  await openMenu(page, 'edit');
+  await fingerTap(page, page.locator(menuId));
+}
+async function undo(page) { await historyTap(page, SELECTORS.headerUndo, '#btn-undo'); }
+async function redo(page) { await historyTap(page, SELECTORS.headerRedo, '#btn-redo'); }
+
+// Taps via `tapFn` and returns the saved file name: an anchor download, or (WebKit) the share-sheet file.
+async function captureFile(page, tapFn) {
+  const shares = await spyShare(page);
+  const dl = page.waitForEvent('download', { timeout: 4000 });
+  dl.catch(() => {});
+  await tapFn();
+  if (!shares) return (await dl).suggestedFilename();
+  const t0 = Date.now();
+  let names = [];
+  while (Date.now() - t0 < 4000 && !names.length) { names = await sharedFiles(page); if (!names.length) await sleep(100); }
+  return names[0];
+}
 
 async function addAlgorithmLayer(page, type) {
   await openLayers(page);
@@ -591,6 +644,8 @@ async function fingerSlider(page, slider, fraction) {
 
 module.exports = {
   SELECTORS,
+  readSavedPresetNames,
+  captureFile,
   STEP_BUDGET_MS,
   BOOT_BUDGET_MS,
   bindJourney,

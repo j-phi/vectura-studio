@@ -116,9 +116,17 @@ async function runSteps(c, steps) {
 }
 
 // Compares a run with the ledger entry for the cell.
+// A reason class: digits and element ids/classes vary run to run, so they are blanked.
+const reasonClass = (r) => String(r || '').replace(/^JRN-\d+ /, '').replace(/[0-9.,-]+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 50);
+
 function judge({ entry, failedStep, message }) {
   if (entry) {
-    if (failedStep === entry.failsAt) return { ok: true, note: `expected failure at ${entry.failsAt}` };
+    if (failedStep === entry.failsAt) {
+      if (entry.reason && reasonClass(message) !== reasonClass(entry.reason)) {
+        return { ok: false, note: `failure reason changed at ${entry.failsAt}: ledger "${entry.reason}", now "${message}"` };
+      }
+      return { ok: true, note: `expected failure at ${entry.failsAt}` };
+    }
     if (failedStep) return { ok: false, note: `failure moved from ${entry.failsAt} to ${failedStep} (${message})` };
     return { ok: false, note: `unexpectedly passed: remove ledger entry ${entry.project}|${entry.journey} (failsAt ${entry.failsAt})` };
   }

@@ -16,7 +16,7 @@ const DOC = path.join(DIR, '..', '..', '..', 'docs', 'touch-audit', 'journey-scr
 
 // Functions that may call page.evaluate and friends (state reads, setup, guard internals).
 const EVAL_ALLOWED = new Set([
-  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'waitAppReady', 'waitNoToast',
+  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'waitAppReady', 'waitNoToast', 'readSavedPresetNames', 'spyShare', 'sharedFiles', 'captureFile',
 ]);
 const EVAL_MARKER_CAP = 4;
 
@@ -142,6 +142,16 @@ test.describe('journey static guard', () => {
         const m = /historyLen (any|[+-]\d+)/.exec(row);
         expect(m && m[1], `${s.id}: journey-scripts.md historyLen column`).toBe(fmt(h));
       }
+    }
+  });
+
+  test('no ledger reason is a harness-guard or precondition message', () => {
+    const ledger = JSON.parse(fs.readFileSync(path.join(DIR, 'journey-status.json'), 'utf8'));
+    const bad = /end: covered|drag end: off-screen|end: off-screen|no empty canvas spot|^(?:JRN-\d+ )?not found/;
+    for (const e of ledger.entries) {
+      expect(typeof e.reason, `${e.project}|${e.journey} needs a reason`).toBe('string');
+      expect(e.reason.length, `${e.project}|${e.journey} reason is empty`).toBeGreaterThan(0);
+      expect(bad.test(e.reason), `${e.project}|${e.journey} is pinned on a harness message: ${e.reason}`).toBe(false);
     }
   });
 
