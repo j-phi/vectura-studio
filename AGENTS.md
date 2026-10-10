@@ -31,6 +31,7 @@
 ## Testing Guidelines
 - Automated tests are configured and required where applicable: Vitest (`test:unit`, `test:integration`, `test:visual`, `test:perf`) and Playwright (`test:e2e`).
 - Use `docs/testing.md` for test command details and CI policy.
+- **Shared local test queue (mandatory).** All heavy test commands go through `scripts/test-queue.js`, one machine-wide lock shared by every worktree and agent session. Run tests only through the npm entrypoints (`npm run test:*`; for a single file use `npm run test:vitest -- run <file>` or `npm run test:playwright -- <spec>`). Do not run `npx vitest`, `npx playwright test`, or the `node_modules/.bin` binaries directly. A waiting run prints the lock holder; check it with `npm run test:queue:status`. Do not delete the lock or kill its holder. CI runs bypass the queue. Full contract in `docs/testing.md` → "Shared Local Test Queue".
 - Local Playwright runs may fall back to an installed Chrome when managed browser assets are unavailable; CI remains the authoritative environment for Playwright artifact capture.
 - When touching rendering or UI, verify: generation runs, canvas draws, controls update, and stats refresh.
 - Pre-push hook: run `npm run hooks:install` once after cloning. It installs a `pre-push` hook that runs `npm run test:fast` (~12s — unit + integration + visual + perf) before every push. E2E is intentionally gated only by CI to avoid local slowdowns on busy machines. Bypass with `SKIP_PREPUSH=1 git push` only when intentional.

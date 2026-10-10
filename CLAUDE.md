@@ -74,8 +74,12 @@ Vectura Studio is a **no-build, browser-native** physics-inspired vector generat
 python -m http.server          # serve at http://localhost:8000
 # OR open index.html directly in a browser
 
-# Tests: npm run test:{unit,integration,e2e,visual,perf,ci,update}
+# Tests: npm run test:{unit,integration,e2e,visual,perf,ci,fast,update}
 # — suite purposes and CI policy in docs/testing.md; pick suites via the Testing Matrix below
+# Single files / custom flags (queued — never call npx vitest / npx playwright test directly):
+npm run test:vitest -- run tests/unit/foo.test.js
+npm run test:playwright -- tests/e2e/foo.spec.js --reporter=line
+npm run test:queue:status      # who holds the shared test lock, who is waiting
 
 # Maintenance
 npm run version:sync           # sync package.json version → src/config/version.js + index.html badge
@@ -96,6 +100,15 @@ Node 20.19+ required. `package.json` is the canonical version source — run `ve
 | Rendering output or baselines | `test:visual` (+ `test:perf` for heavy paths) |
 | Docs-only | Link/path sanity review only |
 | Any PR / full confidence | `test:ci` (unit + integration + e2e + visual + perf) |
+
+## Shared Local Test Queue
+
+Every heavy test command runs through `scripts/test-queue.js`, a machine-wide lock shared by **all** worktrees, clones, and Claude sessions (lock dir `~/.cache/vectura-studio/test-queue`). Only one Vitest/Playwright run executes at a time; the others wait and print who holds the lock.
+
+- **Always use the npm entrypoints** (`npm run test:unit`, `test:integration`, `test:e2e`, `test:visual`, `test:perf`, `test:ci`, `test:fast`, `test:coverage`, `test:update`, `test:vitest`, `test:playwright`). **Never run `npx vitest`, `npx playwright test`, or `node_modules/.bin/{vitest,playwright}` directly** — that bypasses the queue and starves the other sessions. Env-var prefixes still work: `VECTURA_PRE_X=1 npm run test:vitest -- run tests/unit/x.test.js`.
+- A "Waiting for the test lock held by PID …" line is normal. Do not kill the holder, delete the lock, or set `VECTURA_TEST_QUEUE_DISABLE=1` to skip the line. Check `npm run test:queue:status`. Stale locks (dead or reused PID) are recovered automatically.
+- Aggregates (`test:ci`, `test:fast`, `test`) hold the lock once for the whole chain; their nested `npm run test:*` calls pass straight through. Do not wrap a queued command in another queued command by hand.
+- CI is unaffected: with `CI` set, the wrapper runs the command directly with no lock. Details in `docs/testing.md` → "Shared Local Test Queue".
 
 ## Testing & Pre-Commit Validation (Red–Green–Refactor)
 
