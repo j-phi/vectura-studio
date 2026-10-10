@@ -123,8 +123,18 @@ test.describe('TUX-001 desktop and narrow mouse windows', () => {
       await page.setViewportSize({ width: w, height: 900 });
       await page.goto('/');
       await page.waitForFunction(() => !!(window.app && window.app.ui));
-      const m = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, iw: innerWidth }));
+      const m = await page.evaluate(() => {
+        const bad = [];
+        const hdr = document.getElementById('app-header');
+        hdr.querySelectorAll('button, a, select, input').forEach((e) => {
+          const r = e.getBoundingClientRect();
+          if (r.width <= 0 || r.height <= 0) return;
+          if (r.left < -0.5 || r.right > innerWidth + 0.5) bad.push(`${e.id || e.className || e.textContent.trim()}@${Math.round(r.left)}-${Math.round(r.right)}`);
+        });
+        return { sw: document.documentElement.scrollWidth, iw: innerWidth, bad };
+      });
       expect(m.sw, `width ${w}`).toBeLessThanOrEqual(m.iw);
+      expect(m.bad, `off-screen header controls at ${w}`).toEqual([]);
     }
   });
   test('desktop header has no hamburger and no Theme row', async ({ page }, testInfo) => {
@@ -139,5 +149,21 @@ test.describe('TUX-001 desktop and narrow mouse windows', () => {
     expect(m.burger).toBe(0);
     expect(m.theme).toBe(false);
     expect(m.triggers).not.toContain('Theme');
+  });
+});
+
+test.describe('TUX-001 toast vs header actions', () => {
+  test('header undo/redo/export stay hit-testable while a toast shows', async ({ page }, testInfo) => {
+    phoneOnly(testInfo);
+    await gotoApp(page);
+    await page.evaluate(() => window.Vectura.UI.overlays.Toast.show({ message: 'Hello toast', duration: 8000 }));
+    await page.waitForSelector('.vectura-toast');
+    const hits = await page.evaluate(() => ['btn-header-undo', 'btn-header-redo', 'btn-header-export'].map((id) => {
+      const el = document.getElementById(id);
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { id, ok: !!top && (top === el || el.contains(top)), cls: top && top.className };
+    }));
+    for (const h of hits) expect(h.ok, `${h.id} covered by ${h.cls}`).toBe(true);
   });
 });

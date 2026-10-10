@@ -13892,7 +13892,9 @@ html.kb-open .export-settings-scroll {
 
 /* === TUX-001: phone header, hamburger menu sheet and direct actions === */
 .header-phone-btn, .header-phone-actions { display: none; }
-#app-header { max-width: 100vw; overflow-x: clip; }
+body.phone-layout #app-header { max-width: 100%; overflow-x: clip; }
+.top-menu-theme-row { display: none; }
+body.phone-layout .top-menu-theme-row { display: flex; }
 body.phone-layout #app-header .header-phone-actions { display: inline-flex; gap: 2px; align-items: center; }
 body.phone-layout #app-header .header-phone-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -14898,6 +14900,8 @@ body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
     min-height: 44px;
   }
 }
+/* Phone: keep the toast host below the header so header actions stay tappable. */
+body.phone-layout #vectura-toast-host { top: calc(var(--tux-safe-top, 0px) + 64px); }
 /* === END TUX-037 === */
 
 /* === TUX-030: pen draft chips ===
@@ -15263,3 +15267,14 @@ body.touch-ui #viewport-container:has(.ctxbar.ctxbar--fill) .canvas-hud {
   bottom: calc(var(--safe-bottom, 0px) + 8px + 52px + 8px);
 }
 /* === END TUX-022 === */
+
+/* === TUX-001: narrow mouse windows (500-640 px) keep every header control on-screen === */
+@media (max-width: 640px) {
+  body:not(.phone-layout) #app-header .header-brand-menu h1,
+  body:not(.phone-layout) #app-header .header-menu-divider { display: none; }
+  body:not(.phone-layout) #app-header .header-brand-menu { gap: 4px; }
+  body:not(.phone-layout) #app-header .top-menubar { gap: 0; }
+  body:not(.phone-layout) #app-header .top-menu-trigger { padding-left: 6px; padding-right: 6px; }
+  body:not(.phone-layout) #app-header .header-right { gap: 4px; }
+}
+/* === END TUX-001 === */
