@@ -157,8 +157,9 @@ describe('TUX-018a: pointercancel aborts the active interaction', () => {
     renderer.setSelection([A.id], A.id);
     const n = app.history.length;
     const refs = app.history.slice();
-    down(120, 20, T);
-    move(200, 100, T);
+    // TUX-023: start clear of the touch rotate band and rotate handle of the selected layer A.
+    down(190, 10, T);
+    move(130, 100, T);
     expect(renderer.isSelecting).toBe(true);
     cancel(T);
     expect([...renderer.selectedLayerIds]).toEqual([A.id]);

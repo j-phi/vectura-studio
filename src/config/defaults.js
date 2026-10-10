@@ -2481,6 +2481,8 @@
   window.Vectura.VIEW = {
     minScale: 0.1,
     maxScale: 1000,
+    // TUX-020: one HUD Zoom In / Zoom Out press multiplies the scale by this factor.
+    zoomStep: 1.25,
     fitMargin: 60,
     fitMarginMaxFraction: 0.1,
   };

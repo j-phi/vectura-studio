@@ -32,6 +32,46 @@
       // TUX-019: a one-finger drag moves the object once the finger travels this far (CSS px).
       // Touch only; mouse and Apple Pencil keep 0 slop. Q4 owner: Jay.
       touchDragSlopPx: 6,
+      // TUX-020: two-finger tap = undo, three-finger tap = redo. skew = last finger down minus first
+      // finger down; duration = first down to last up; slop = per-finger drift and span change (CSS px).
+      TAP_MAX_SKEW_MS: 250,
+      TAP_MAX_DURATION_MS: 250,
+      TAP_SLOP_PX: 10,
+    },
+
+    // TUX-023: transform-handle sizes by pointer type (CSS px). Pen equals mouse by rule:
+    // only pointerType 'touch' gets the coarse values. Read these through hitTolerance().
+    // TUX-024, 025 and 026 reuse this table; do not add literal radii in the renderer.
+    HIT_TOLERANCE: {
+      resize: { mouse: 10, pen: 10, touch: 22 },
+      // Outer radius of the rotate band, measured from the handle hit centre.
+      rotate: { mouse: 28, pen: 28, touch: 48 },
+      // Hit radius of the visible touch rotate handle (0 = no handle).
+      rotateAffordance: { mouse: 0, pen: 0, touch: 22 },
+      // Distance from the nudged NE hit centre to the visible rotate handle centre (mid-band).
+      rotateAffordanceOffset: { mouse: 0, pen: 0, touch: 34 },
+      // Drawn radius of the visible rotate handle disc.
+      rotateAffordanceDraw: { mouse: 0, pen: 0, touch: 12 },
+      // Drawn handle square side.
+      handleDraw: { mouse: 6, pen: 6, touch: 12 },
+      // A touch selection narrower than this many resize radii gets its corners nudged
+      // outward and loses its edge handles, so a finger can still move it from the centre.
+      smallSelectionFactor: 3,
+      // TUX-024: pen, direct-select and double-tap radii (CSS px; callers divide by the view scale).
+      // The mouse and pen columns are the literals the renderer used before. Only 'touch' is coarse.
+      anchor: { mouse: 6, pen: 6, touch: 22 },
+      bezierHandle: { mouse: 5, pen: 5, touch: 22 },
+      cornerWidget: { mouse: 7, pen: 7, touch: 22 },
+      light: { mouse: 6, pen: 6, touch: 22 },
+      // Single-tap snap-close of a pen draft on its first anchor (and its hover preview).
+      penClose: { mouse: 5, pen: 5, touch: 22 },
+      // Close by double-click or double-tap on the first anchor.
+      penCloseDouble: { mouse: 12, pen: 12, touch: 24 },
+      // Double-tap window. Mouse compares with '<', touch with '<=' (see Renderer._isDoubleTap).
+      doubleTapDist: { mouse: 8, pen: 8, touch: 24 },
+      doubleTapMs: { mouse: 400, pen: 400, touch: 400 },
+      // A pen drag shorter than this makes no Bezier handles (finger jitter).
+      penCurveSlop: { mouse: 2, pen: 2, touch: 6 },
     },
 
     // TUX-055: image import cap. 2048, not 4096: a 4096x3072 raster makes saveVecturaFile build a string
@@ -85,5 +125,13 @@
       LOUPE_OFFSET_PX: 16,
     },
     // === end COL ===
+  };
+
+  // TUX-023: pure lookup. 'touch' maps to touch values; 'pen', 'mouse', undefined and
+  // anything else map to mouse values (pen equals mouse).
+  Vectura.hitTolerance = (kind, pointerType) => {
+    const row = window.Vectura.UI_CONSTANTS.HIT_TOLERANCE[kind];
+    if (!row) return 0;
+    return pointerType === 'touch' ? row.touch : row.mouse;
   };
 })();

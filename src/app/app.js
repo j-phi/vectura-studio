@@ -174,6 +174,8 @@
           // App-level accelerators (Cmd/Ctrl+S/E/O...) while the proxy has focus;
           // shortcuts.js ignores TEXTAREA targets. Returns true when handled.
           handleShortcut: (e) => !!this.ui?.handleTopMenuShortcut?.(e),
+          // Single source of truth for the modal guard (shared with shortcuts.js).
+          isModalOpen: () => !!this.ui?.isModalOverlayOpen?.(),
           panCanvasBy: (dx, dy) => {
             if (!this.renderer) return;
             this.renderer.offsetX += dx || 0;
@@ -196,6 +198,7 @@
             if (opts.unwindHistory && this.history.length
               && this.history.length === this._textCreateHistoryLen) {
               this.history.pop();
+              this._notifyHistory();
             }
             this._textCreateHistoryLen = null;
             this.renderer?.setSelection?.([], null);
@@ -279,6 +282,7 @@
       this.maxHistory = SETTINGS.undoSteps ?? 20;
       this.isRestoring = false;
       this.pushHistory();
+      this._notifyHistory();
 
       this.render();
       this.persistPreferencesDebounced(0);
@@ -1214,6 +1218,19 @@
       return getThemeFamily(SETTINGS.uiTheme);
     }
 
+    // TUX-020: tell the HUD and the phone header whether Undo / Redo can act. canUndo needs two
+    // entries: the newest is the live state's own checkpoint. Call after every history mutation.
+    _notifyHistory() {
+      try {
+        if (typeof window === 'undefined' || typeof window.CustomEvent !== 'function') return;
+        const history = Array.isArray(this.history) ? this.history : [];
+        const redo = Array.isArray(this.redoStack) ? this.redoStack : [];
+        window.dispatchEvent(new window.CustomEvent('vectura:history', {
+          detail: { canUndo: history.length >= 2, canRedo: redo.length > 0 },
+        }));
+      } catch (_err) { /* never block history on a notify failure */ }
+    }
+
     pushHistory() {
       if (this.isRestoring) return;
       const snapshot = this.captureState();
@@ -1222,6 +1239,7 @@
         this.history.shift();
       }
       this.redoStack = [];
+      this._notifyHistory();
     }
 
     undo() {
@@ -1234,6 +1252,7 @@
       const checkpoint = this.history.pop();
       this.applyState(checkpoint);
       this.isRestoring = false;
+      this._notifyHistory();
     }
 
     redo() {
@@ -1247,6 +1266,7 @@
       }
       this.applyState(next);
       this.isRestoring = false;
+      this._notifyHistory();
     }
 
     setUndoLimit(next) {
@@ -1254,6 +1274,7 @@
       while (this.history.length > this.maxHistory) {
         this.history.shift();
       }
+      this._notifyHistory();
     }
 
     // Bug-12 fix (v1.1.10 audit): regen() never pushed history, which meant

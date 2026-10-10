@@ -594,6 +594,8 @@
     return { left: rr.left - hr.left, right: rr.right - hr.left, top: rr.top - hr.top, bottom: rr.bottom - hr.top };
   };
 
+  // The touch grip's ::before hit extender reaches this far above the bar (components.css, TUX-016).
+  const GRIP_EXTENDER_PX = 12;
   // Bottom safe-area inset in px (env() is not readable from script; measure a probe).
   const safeBottomPx = () => {
     const d = G.document;
@@ -671,10 +673,17 @@
     const v = viewportSize();
     const b = barSize();
     const t = cfg().timing || {};
-    const { left, top } = computeAnchor({
-      bounds, barW: b.w, barH: b.h, viewW: v.w, viewH: v.h,
-      offset: t.anchorOffsetPx, pad: t.viewportPadPx, railRect: railRectInViewport(),
+    const anchored = computeAnchor({
+      bounds: state.kind === 'fill' ? null : bounds, barW: b.w, barH: b.h, viewW: v.w, viewH: v.h,
+      // TUX-023: on touch, dock clear of the (nudged) resize zones so the bar never covers a corner.
+      offset: Math.max(Number.isFinite(t.anchorOffsetPx) ? t.anchorOffsetPx : 12,
+        renderer && renderer.getHandleClearancePx ? (renderer.getHandleClearancePx() ? renderer.getHandleClearancePx() + GRIP_EXTENDER_PX : 0) : 0),
+      pad: t.viewportPadPx, railRect: railRectInViewport(),
     });
+    const { left } = anchored;
+    let { top } = anchored;
+    // TUX-022: the fill bar rides the bottom edge so it never covers the region being previewed.
+    if (state.kind === 'fill') top = Math.max(0, v.h - b.h - (Number.isFinite(t.viewportPadPx) ? t.viewportPadPx : 8));
     els.bar.style.left = `${left}px`;
     els.bar.style.top = `${top}px`;
     refreshMenuDirection();
@@ -710,6 +719,19 @@
     G.addEventListener('pointercancel', end, true);
   };
 
+  // ── TUX-022: touch fill context ───────────────────────────────────────
+  // With a fill tool on a coarse pointer, the bar shows the Scope up/down chips
+  // (Vectura.UI.PaintBucketScopeChips). Desktop (fine pointer) never changes.
+  const FILL_TOOLS = ['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'];
+  const isCoarsePointer = () => {
+    try { return !!(G.matchMedia && G.matchMedia('(pointer: coarse)').matches); } catch (_) { return false; }
+  };
+  const fillChipsActive = (renderer) => !!renderer && FILL_TOOLS.indexOf(renderer.activeTool) >= 0 && isCoarsePointer();
+  const fillSigOf = (renderer) => {
+    const layer = renderer && renderer.engine && renderer.engine.getActiveLayer ? renderer.engine.getActiveLayer() : null;
+    return `${renderer && renderer.activeTool}|${(layer && layer.type) || ''}`;
+  };
+
   // ── context detection ─────────────────────────────────────────────────
   // TUX-030: true only while a DRAW-purpose Pen draft exists (not the pen-as-lasso purpose, not
   // the add/delete/convert pen modes).
@@ -718,9 +740,6 @@
     && renderer.penPurpose === 'draw'
     && (app && app.ui && app.ui.penMode) === 'draw',
   );
-  const isCoarsePointer = () => {
-    try { return Boolean(G.matchMedia && G.matchMedia('(pointer: coarse)').matches); } catch (_) { return false; }
-  };
   const getContext = () => {
     const app = getApp();
     const renderer = getRenderer();
@@ -730,6 +749,9 @@
     const tool = renderer.activeTool || 'select';
     let kind;
     let primary = layers[0] || null;
+    if (fillChipsActive(renderer)) {
+      return { kind: 'fill', layerIds: ids, primaryLayer: primary, app, renderer, fillSig: fillSigOf(renderer) };
+    }
     // TUX-030: an in-progress Pen draft owns the bar (Done / Remove Last / Cancel).
     if (penDraftActive(app, renderer)) {
       return { kind: 'pen-draft', layerIds: ids, primaryLayer: primary, app, renderer };
@@ -2266,6 +2288,11 @@
     if (sceneSelHasObjectDef(sceneSel(ctx))) pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray', ic.sceneXray);
   };
 
+  const renderFill = (ctx) => {
+    const Chips = UI.PaintBucketScopeChips;
+    if (Chips && typeof Chips.render === 'function') Chips.render(els.content, ctx);
+  };
+
   // TUX-030: pen draft chips. They call the same renderer methods as Enter / Backspace / Escape.
   const renderPenDraft = (ctx) => {
     const r = ctx.renderer;
@@ -2301,6 +2328,8 @@
   const renderContext = (ctx) => {
     if (!els.content) return;
     els.content.textContent = '';
+    // TUX-022: the fill chips stay visible on phones (the generic phone rule hides the bar).
+    if (els.bar) els.bar.classList.toggle('ctxbar--fill', ctx.kind === 'fill');
     state.penSync = null;
     if (els.bar) els.bar.classList.toggle('ctxbar--pen-draft', ctx.kind === 'pen-draft');
     switch (ctx.kind) {
@@ -2313,6 +2342,7 @@
       case 'single-path': renderSingle(ctx); break;
       case 'multi': renderMulti(ctx); break;
       case 'direct': renderDirect(ctx); break;
+      case 'fill': renderFill(ctx); break;
       case 'scene-object': renderSceneObject(ctx); break;
       case 'scene-face':
       case 'scene-edge': renderSceneComponent(ctx); break;
@@ -3112,6 +3142,7 @@
     if (a && a.textEdit && typeof a.textEdit.isActive === 'function' && a.textEdit.isActive()) return false;
     const renderer = getRenderer();
     if (!renderer) return false;
+    if (fillChipsActive(renderer)) return true;
     if (penDraftActive(a, renderer)) return true;
     const size = renderer.selectedLayerIds ? renderer.selectedLayerIds.size : 0;
     if (size > 0) return true;
@@ -3166,7 +3197,9 @@
     const sceneRenderer = getRenderer();
     const paramSig = ctx.kind === 'single-text'
       ? `${primaryParams.font || ''}|${primaryParams.fontWeight || ''}|${primaryParams.fontSize || ''}`
-      : ctx.kind === 'single-algo'
+      : ctx.kind === 'fill'
+        ? ctx.fillSig
+        : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
         // Scene contexts re-render when the scene selection or the Alt-cycle
         // readout changes within the same kind (renderer-owned signature).
@@ -3230,7 +3263,9 @@
     const rr = getRenderer();
     state.paramSig = ctx.kind === 'single-text'
       ? `${rp.font || ''}|${rp.fontWeight || ''}|${rp.fontSize || ''}`
-      : ctx.kind === 'single-algo'
+      : ctx.kind === 'fill'
+        ? ctx.fillSig
+        : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
         : `${ctx.kind}`.startsWith('scene-') && rr && typeof rr.getSceneSelectionSignature === 'function'
           ? rr.getSceneSelectionSignature()
