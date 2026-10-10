@@ -111,10 +111,10 @@
       highlightIdx = idx;
     };
 
-    const handleClickOutside = (event) => {
-      if (!isOpen) return;
-      if (!el.contains(event.target) && (!anchor || !anchor.contains(event.target))) close();
-    };
+    // TUX-040: capture-phase pointerdown (see utils.onOutsidePointer); the anchor stays excluded
+    // so its own click handler can toggle without close-then-reopen.
+    const isInsideMenu = (target) => el.contains(target) || !!(anchor && anchor.contains(target));
+    const handleOutside = () => { if (isOpen) close(); };
 
     const handleKey = (event) => {
       if (!isOpen) return;
@@ -165,7 +165,13 @@
 
     const offClick = utils.on ? utils.on(el, 'click', handleEntryClick) : (el.addEventListener('click', handleEntryClick), () => el.removeEventListener('click', handleEntryClick));
     const offKey = utils.on ? utils.on(ownerDoc, 'keydown', handleKey) : (ownerDoc.addEventListener('keydown', handleKey), () => ownerDoc.removeEventListener('keydown', handleKey));
-    const offOutside = utils.on ? utils.on(ownerDoc, 'mousedown', handleClickOutside) : (ownerDoc.addEventListener('mousedown', handleClickOutside), () => ownerDoc.removeEventListener('mousedown', handleClickOutside));
+    const offOutside = utils.onOutsidePointer
+      ? utils.onOutsidePointer(ownerDoc, isInsideMenu, handleOutside)
+      : (() => {
+        const h = (event) => { if (!isInsideMenu(event.target)) handleOutside(); };
+        ownerDoc.addEventListener('pointerdown', h, { capture: true });
+        return () => ownerDoc.removeEventListener('pointerdown', h, { capture: true });
+      })();
 
     buildItems();
     (host || ownerDoc.body).appendChild(el);

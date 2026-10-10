@@ -356,6 +356,14 @@
         }, 280);
       });
 
+      // A cancelled touch (system gesture, palm rejection) must not open the menu later.
+      button.addEventListener('pointercancel', () => {
+        if (holdTimer) {
+          window.clearTimeout(holdTimer);
+          holdTimer = null;
+        }
+      });
+
       document.addEventListener('pointermove', (e) => {
         if (!menuOpen) return;
         const target = document.elementFromPoint(e.clientX, e.clientY);
