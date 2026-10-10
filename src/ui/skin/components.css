@@ -15044,6 +15044,8 @@ body.tablet-layout #touch-modifier-bar {
 
 @media (pointer: coarse) {
   .tool-submenu {
+    /* Above the collapsed right-pane sliver (z 55) so rows stay hittable edge to edge. */
+    z-index: 60;
     flex-direction: column;
     gap: 4px;
     -webkit-touch-callout: none;

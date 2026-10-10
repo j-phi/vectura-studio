@@ -227,6 +227,38 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
     });
   }
 
+  // Fix round: open menus must not run under the collapsed right-pane sliver (z-index 55).
+  for (const s of SURFACES.filter((x) => !x.algo)) {
+    test(`TUX-014 rows are hittable across their full width: ${s.name}`, async ({ page }) => {
+      await skipIfOffRail(page, s);
+      const rows = await resolveRows(page, s);
+      await longPress(page, page.locator(s.parent).first(), 600);
+      expect(await isOpen(page, s)).toBe(true);
+      const bad = await page.evaluate(({ menu, rowSel }) => {
+        const m = document.querySelector(menu);
+        const out = [];
+        m.querySelectorAll(rowSel).forEach((row) => {
+          const r = row.getBoundingClientRect();
+          if (r.width === 0) return;
+          const y = r.top + r.height / 2;
+          for (let i = 0; i <= 10; i += 1) {
+            const x = r.left + 1 + ((r.width - 2) * i) / 10;
+            const hit = document.elementFromPoint(x, y);
+            if (!hit || !m.contains(hit)) out.push({ x: Math.round(x), y: Math.round(y), hit: hit ? (hit.id || hit.className || hit.tagName) : null });
+          }
+        });
+        return out;
+      }, { menu: s.menu, rowSel: s.rowSel });
+      expect(bad, 'elementFromPoint across row width must stay inside the menu').toEqual([]);
+      // Finger tap near the visible right end of the target row.
+      const target = page.locator(`${s.menu} ${rows.tapR}`).first();
+      await target.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+      const b = await target.boundingBox();
+      await page.touchscreen.tap(b.x + b.width - 15, b.y + b.height / 2);
+      await expectState(page, rows.tapExpect);
+    });
+  }
+
   test('TUX-014 dismiss: tap parent closes; outside tap is consumed', async ({ page }) => {
     // One canvas listener for the whole test (registered once, counts every pointerdown).
     await page.evaluate(() => {
