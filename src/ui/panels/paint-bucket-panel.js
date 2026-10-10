@@ -498,25 +498,38 @@
         btn.classList.add('is-disabled');
         btn.title = 'Scope does not apply to pattern layers';
       } else {
-        const step = () => {
+        const step = (delta) => {
           const r = (G.app && G.app.renderer) || renderer;
-          if (r && typeof r.stepPaintBucketScope === 'function') r.stepPaintBucketScope(dir === 'up' ? 1 : -1);
+          if (r && typeof r.stepPaintBucketScope === 'function') r.stepPaintBucketScope(delta === undefined ? (dir === 'up' ? 1 : -1) : delta);
         };
         // A touch / pen tap steps on pointerdown: while another finger holds the canvas the
-        // browser sends no click for a multi-touch tap. The click that may follow is ignored.
-        // Mouse and keyboard step on click.
-        // A press that stepped on pointerdown swallows the click that follows it, however long
-        // the press lasted. The flag clears on that click, on a mouse press or on a key press.
+        // browser sends no click for a multi-touch tap. Mouse and keyboard step on click.
+        // The click that follows a stepped press is swallowed, however long the press lasted.
+        // The browser sends that click right after pointerup, so the guard expires a moment
+        // after pointerup. A press that never gets a click (second finger, cancel) leaves no
+        // guard behind, and a cancelled press steps back.
         let byPointer = false;
+        let guardTimer = 0;
+        const clearGuard = () => { byPointer = false; if (guardTimer) { clearTimeout(guardTimer); guardTimer = 0; } };
         btn.addEventListener('pointerdown', (e) => {
-          if (e.pointerType === 'mouse') { byPointer = false; return; }
+          clearGuard();
+          if (e.pointerType === 'mouse') return;
           byPointer = true;
           step();
         });
-        btn.addEventListener('keydown', () => { byPointer = false; });
+        btn.addEventListener('pointerup', () => {
+          if (!byPointer) return;
+          guardTimer = setTimeout(clearGuard, 120);
+        });
+        btn.addEventListener('pointercancel', () => {
+          if (!byPointer) return;
+          clearGuard();
+          step(dir === 'up' ? -1 : 1);
+        });
+        btn.addEventListener('keydown', clearGuard);
         btn.addEventListener('click', (e) => {
           e.preventDefault();
-          if (byPointer) { byPointer = false; return; }
+          if (byPointer) { clearGuard(); return; }
           step();
         });
       }

@@ -298,6 +298,40 @@ test.describe('TUX-022 paint bucket by touch', () => {
     expect(await page.evaluate(() => window.app.renderer.paintBucketScopeOffset)).toBe(1);
   });
 
+  test('(o) a cancelled touch press on Scope up leaves the offset at 0; a later click steps exactly once', async ({ page }) => {
+    const up = page.locator('[data-fill-scope="up"]');
+    await expect(up).toBeVisible();
+    await up.evaluate((el) => {
+      const o = { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 7, isPrimary: true };
+      el.dispatchEvent(new PointerEvent('pointerdown', o));
+      el.dispatchEvent(new PointerEvent('pointercancel', o));
+    });
+    await sleep(250);
+    // RED(o): expected 0, got 1 (the cancelled press still stepped).
+    expect(await page.evaluate(() => window.app.renderer.paintBucketScopeOffset)).toBe(0);
+    await up.evaluate((el) => el.click());
+    // RED(o): expected 1, got 0 or 1 then swallowed (the guard leaked into the next click).
+    expect(await page.evaluate(() => window.app.renderer.paintBucketScopeOffset)).toBe(1);
+  });
+
+  test('(p) a two-handed chip tap (no click) does not swallow the next click', async ({ page }) => {
+    const up = page.locator('[data-fill-scope="up"]');
+    await expect(up).toBeVisible();
+    const c = await up.evaluate((el) => { const b = el.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
+    await touch.touchPhase(page, 'start', [finger(P)]);
+    await sleep(150);
+    await touch.touchPhase(page, 'start', [{ x: c.x, y: c.y, id: 1 }]);
+    await sleep(60);
+    await touch.touchPhase(page, 'end', [{ x: c.x, y: c.y, id: 1 }]);
+    await sleep(250);
+    await touch.touchPhase(page, 'end', [finger(P)]);
+    await sleep(150);
+    const stepped = await page.evaluate(() => window.app.renderer.paintBucketScopeOffset);
+    await up.evaluate((el) => el.click());
+    // RED(p): the next click was swallowed (offset did not move).
+    expect(await page.evaluate(() => window.app.renderer.paintBucketScopeOffset)).toBe(stepped + 1);
+  });
+
   test('(n) a late second finger after a held preview never pours; the pinch zooms', async ({ page }) => {
     // Ruling (see fragment): for Fill, the hold is only a preview, so nothing commits when a
     // second finger joins late. Q11 "commit the first action" does not apply to a preview.
