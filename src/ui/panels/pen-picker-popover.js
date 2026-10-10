@@ -61,6 +61,9 @@
     MIXED_BADGE: '?',
     CHIP_TITLE: 'Pen — click to change',
     CHIP_MIXED_TITLE: 'Mixed pens — click to unify',
+    CHIP_NAME: 'Pen. Change pen',
+    CHIP_MIXED_NAME: 'Mixed pens. Unify pens',
+    CHIP_ACTION: 'Change pen',
     EYEDROPPER_TITLE: 'Sample a pen from a canvas layer',
   };
 
@@ -750,8 +753,9 @@
     const mixedBadge = btn.querySelector('.pen-chip-mixed');
 
     // Icon-only control: the accessible name tracks the title (touch tooltip reads aria-label).
-    const setChipTitle = (text) => { btn.title = text; btn.setAttribute('aria-label', text); };
-    setChipTitle(labels.CHIP_TITLE);
+    // Mouse wording stays in the title. The accessible name (and the touch tip) says no "click".
+    const setChipTitle = (text, name) => { btn.title = text; btn.setAttribute('aria-label', name || text); };
+    setChipTitle(labels.CHIP_TITLE, labels.CHIP_NAME);
     const chipApp = () => app || G.app || null;
     const chipTargets = () => {
       const ids = typeof getTargetLayerIds === 'function' ? getTargetLayerIds() : null;
@@ -779,12 +783,12 @@
       btn.classList.toggle('mixed', sel.mixed);
       if (sel.pen) {
         paintPenIcon(icon, sel.pen);
-        setChipTitle(`${labels.CHIP_TITLE} — ${penTooltip(sel.pen)}`);
+        setChipTitle(`${labels.CHIP_TITLE} — ${penTooltip(sel.pen)}`, `${sel.pen.name}, ${formatPenWidth(sel.pen.width)}. ${labels.CHIP_ACTION}`);
       } else {
         icon.style.background = 'transparent';
         icon.style.color = 'transparent';
         icon.style.removeProperty('--pen-width');
-        setChipTitle(sel.mixed ? labels.CHIP_MIXED_TITLE : labels.CHIP_TITLE);
+        setChipTitle(sel.mixed ? labels.CHIP_MIXED_TITLE : labels.CHIP_TITLE, sel.mixed ? labels.CHIP_MIXED_NAME : labels.CHIP_NAME);
       }
       mixedBadge.textContent = sel.mixed ? labels.MIXED_BADGE : '';
       return sel;

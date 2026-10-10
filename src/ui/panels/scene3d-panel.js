@@ -2688,7 +2688,10 @@
         const name = document.createElement('span');
         name.className = 'vs3-tree-name';
         name.textContent = obj.name || obj.id;
-        name.title = 'Double-click to rename';
+        // TUX-038: the hint promises a double-click, so a touch screen does not get it. Touch renames through
+        // the selected object's Name field (.vs3-name-input), which every object row selects on tap.
+        if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) name.title = 'Double-click to rename';
+        // touch-alt: TUX-038 the selected object's Name field (.vs3-name-input) renames on touch
         name.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(name, obj); });
         row.appendChild(name);
 

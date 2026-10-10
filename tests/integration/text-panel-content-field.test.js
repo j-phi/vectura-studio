@@ -185,6 +185,60 @@ describe('Text panel content field (TUX-029)', () => {
     expect(pushHistory).toHaveBeenCalledTimes(1);   // exactly one field-session entry
   });
 
+  test('T6d field tap then blur with no typing discards the handed-over blank layer', () => {
+    const { UI, ALGO_DEFAULTS, TextEditController } = window.Vectura;
+    const params = JSON.parse(JSON.stringify(ALGO_DEFAULTS.text));
+    Object.assign(params, { text: '' });
+    const layer = { id: 'text-new', type: 'text', params, glyphs: [] };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const layers = [layer];
+    const discardCreatedLayer = vi.fn((l) => { layers.splice(layers.indexOf(l), 1); });
+    const ui = { app: { pushHistory: vi.fn(), regen: vi.fn() }, storeLayerParams: vi.fn(), updateFormula: vi.fn() };
+    const build = () => { container.innerHTML = ''; UI.TextPanel.build(ui, layer, container); };
+    ui.buildControls = build;
+    const te = new TextEditController({
+      regen: vi.fn(), pushHistory: vi.fn(), refreshPanel: build, requestDraw: vi.fn(),
+      createTextLayerAt: () => layer, discardCreatedLayer,
+    });
+    ui.app.textEdit = te;
+    build();
+    te.beginNewAt(0, 0);
+    const f = field(container);
+    f.focus();
+    expect(discardCreatedLayer).not.toHaveBeenCalled();
+    fire(f, 'blur');
+    expect(discardCreatedLayer).toHaveBeenCalledTimes(1);
+    expect(discardCreatedLayer.mock.calls[0][1]).toEqual({ unwindHistory: true });
+    expect(layers.length).toBe(0);
+  });
+
+  test('T6e typed text clears the handed-over flag so blur keeps the layer', () => {
+    const { UI, ALGO_DEFAULTS, TextEditController } = window.Vectura;
+    const params = JSON.parse(JSON.stringify(ALGO_DEFAULTS.text));
+    Object.assign(params, { text: '' });
+    const layer = { id: 'text-new', type: 'text', params, glyphs: [] };
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const discardCreatedLayer = vi.fn();
+    const ui = { app: { pushHistory: vi.fn(), regen: vi.fn() }, storeLayerParams: vi.fn(), updateFormula: vi.fn() };
+    const build = () => { container.innerHTML = ''; UI.TextPanel.build(ui, layer, container); };
+    ui.buildControls = build;
+    const te = new TextEditController({
+      regen: vi.fn(), pushHistory: vi.fn(), refreshPanel: build, requestDraw: vi.fn(),
+      createTextLayerAt: () => layer, discardCreatedLayer,
+    });
+    ui.app.textEdit = te;
+    build();
+    te.beginNewAt(0, 0);
+    const f = field(container);
+    f.focus();
+    f.value = 'Hi';
+    fire(f, 'input');
+    fire(f, 'blur');
+    expect(discardCreatedLayer).not.toHaveBeenCalled();
+  });
+
   test('T6b undo between inputs starts a new history entry', () => {
     vi.useFakeTimers();
     const { container, layer, pushHistory } = mount({ text: 'Abc' });

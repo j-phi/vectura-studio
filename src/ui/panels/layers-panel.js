@@ -76,6 +76,17 @@
       const list = document.getElementById('layer-list');
       if (!list) return;
       list.innerHTML = '';
+      // TUX-038: the double-tap interval is the gap between two pointerdown event timeStamps
+      // (the browser stamps them when it queues them). Date.now() at handler run time drifts when the
+      // main thread is busy, so a real double-tap read as two slow taps. One delegated listener, once.
+      if (!list._vecturaPdStamp) {
+        list._vecturaPdStamp = true;
+        list.addEventListener('pointerdown', (ev) => {
+          const row = ev.target?.closest?.('[data-lvl-id]');
+          this._lvlPdId = row ? row.dataset.lvlId : null;
+          this._lvlPdStamp = ev.timeStamp;
+        }, true);
+      }
 
       const engine = this.app.engine;
       const allLayers = engine.layers || [];
@@ -1008,12 +1019,25 @@
         inp.addEventListener('mousedown', (e4) => e4.stopPropagation());
       };
 
+      // TUX-038: the ⋯ / long-press menu "Rename" opens the same inline editor a double-tap opens.
+      // (It used to focus the .lvl-name span, which is not focusable, so nothing happened.)
+      this.startLayerRename = (id) => {
+        const el = document.querySelector(
+          `[data-lvl-id="${id}"] .lvl-name,[data-lvl-id="${id}"] .lvl-grp-name`);
+        const live = engine.getLayerById?.(id);
+        if (!el || !live) return false;
+        _lvlTriggerRename(el, live);
+        return true;
+      };
+
       const _lvlDoSel = (e, id) => {
-        const now = Date.now();
+        // Event time only. Never mix it with Date.now() or performance.now() (different clocks).
+        const now = (this._lvlPdId === String(id) && Number.isFinite(this._lvlPdStamp)) ? this._lvlPdStamp : e.timeStamp;
         const onName = e.target?.closest?.('.lvl-name,.lvl-grp-name');
         if (onName && !e.metaKey && !e.ctrlKey && !e.shiftKey
-            && now - this._lvlDblTime < 350 && this._lvlDblId === id) {
-          this._lvlDblTime = 0; this._lvlDblId = null;
+            && Number.isFinite(this._lvlDblTime) && now - this._lvlDblTime < 350 && now >= this._lvlDblTime
+            && this._lvlDblId === id) {
+          this._lvlDblTime = null; this._lvlDblId = null;
           // Double-click selects the target first so the panel/controls reflect
           // it — this matters for a child nested inside a group/modifier whose
           // single-click may not have left it active. Then enter rename. Use a
