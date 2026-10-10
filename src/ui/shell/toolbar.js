@@ -179,8 +179,8 @@
       clearTimer();
       st = null;
       if (s.opened) {
-        swallowNextClick([button, getMenu()]);
         const row = rowAt(e);
+        swallowNextClick(row ? null : [button, getMenu()]);
         if (row) { selectRow(row); close(); }
         hover(null);
         return;
@@ -233,7 +233,9 @@
         if (!s.row || s.moved || s.scrolled) return;
         const row = rowAt(e);
         if (row !== s.row) return;
-        swallowNextClick([menu]);
+        // The menu hides on this pointerup, so the follow-up click lands on whatever was beneath it
+        // (e.g. an All Tools drawer item under the centred algorithm picker). Eat it anywhere.
+        swallowNextClick(null);
         selectRow(row);
         close();
       });
