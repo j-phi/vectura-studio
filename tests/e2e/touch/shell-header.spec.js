@@ -67,7 +67,7 @@ test.describe('TUX-001 closing round', () => {
   test('header stays below a modal and live again after the modal closes', async ({ page }, testInfo) => {
     phoneOnly(testInfo);
     await gotoApp(page);
-    await page.evaluate(() => { window.app.engine.addLayer('spiral'); window.app.pushHistory(); window.app.engine.addLayer('rings'); window.app.pushHistory(); window.app.render(); });
+    await page.evaluate(() => { window.app.pushHistory(); window.app.engine.addLayer('spiral'); window.app.pushHistory(); window.app.engine.addLayer('rings'); window.app.render(); });
     await page.waitForFunction(() => !document.getElementById('btn-header-export').classList.contains('is-disabled'));
     await touch.tap(page, page.locator('#btn-header-export'));
     await page.waitForSelector('#export-modal-root', { state: 'attached' });
@@ -90,7 +90,7 @@ test.describe('TUX-001 closing round', () => {
     await touch.tap(page, page.locator('#btn-header-undo'));
     await expect.poll(() => page.evaluate(() => window.__undoCalls)).toBe(1);
     const after = await page.evaluate(() => window.app.engine.layers.length);
-    expect(after, `layers ${before} -> ${after}`).toBeLessThanOrEqual(before);
+    expect(after, `layers ${before} -> ${after}`).toBeLessThan(before);
     await touch.tap(page, page.locator('#btn-menu-hamburger'));
     await expect(page.locator('body.phone-menu-open')).toHaveCount(1);
   });
@@ -165,5 +165,26 @@ test.describe('TUX-001 toast vs header actions', () => {
       return { id, ok: !!top && (top === el || el.contains(top)), cls: top && top.className };
     }));
     for (const h of hits) expect(h.ok, `${h.id} covered by ${h.cls}`).toBe(true);
+  });
+
+  test('toast clears the header when the safe-area top inset is non-zero', async ({ page }, testInfo) => {
+    phoneOnly(testInfo);
+    await gotoApp(page);
+    await page.evaluate(() => document.documentElement.style.setProperty('--safe-top', '62px'));
+    await page.evaluate(() => window.Vectura.UI.overlays.Toast.show({ message: 'Hello toast', duration: 8000 }));
+    await page.waitForSelector('.vectura-toast');
+    const m = await page.evaluate(() => {
+      const hb = document.getElementById('app-header').getBoundingClientRect().bottom;
+      const tt = document.getElementById('vectura-toast-host').getBoundingClientRect().top;
+      const hits = ['btn-header-undo', 'btn-header-redo', 'btn-header-export'].map((id) => {
+        const el = document.getElementById(id);
+        const r = el.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return { id, ok: !!top && (top === el || el.contains(top)), cls: top && top.className };
+      });
+      return { hb, tt, hits };
+    });
+    expect(m.tt, `toast top ${m.tt} vs header bottom ${m.hb}`).toBeGreaterThanOrEqual(m.hb);
+    for (const h of m.hits) expect(h.ok, `${h.id} covered by ${h.cls}`).toBe(true);
   });
 });

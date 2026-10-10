@@ -14901,7 +14901,7 @@ body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
   }
 }
 /* Phone: keep the toast host below the header so header actions stay tappable. */
-body.phone-layout #vectura-toast-host { top: calc(var(--tux-safe-top, 0px) + 64px); }
+body.phone-layout #vectura-toast-host { top: calc(44px + var(--safe-top) + 8px); }
 /* === END TUX-037 === */
 
 /* === TUX-030: pen draft chips ===
