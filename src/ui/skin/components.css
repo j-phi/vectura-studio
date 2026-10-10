@@ -8719,25 +8719,23 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
   display: none;
 }
 
-/* Phone-only: drop modifier-button labels, show platform glyphs instead. */
-@media (max-width: 540px) {
-  body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label {
-    display: none;
-  }
-
-  body.phone-layout #touch-modifier-bar .touch-mod-btn::before {
-    font-size: 18px;
-    line-height: 1;
-    font-weight: 600;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', system-ui, sans-serif;
-  }
-
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="shift"]::before { content: "\21E7"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="alt"]::before { content: "\2325"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="meta"]::before { content: "\2318"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="ctrl"]::before { content: "\2303"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="pan"]::before { content: "\270B"; }
+/* Phone-only (TUX-001: keyed on body.phone-layout, not width, so iPhone landscape gets glyphs too). */
+body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label {
+  display: none;
 }
+
+body.phone-layout #touch-modifier-bar .touch-mod-btn::before {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', system-ui, sans-serif;
+}
+
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="shift"]::before { content: "\21E7"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="alt"]::before { content: "\2325"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="meta"]::before { content: "\2318"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="ctrl"]::before { content: "\2303"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="pan"]::before { content: "\270B"; }
 
 /* Touch-device tap ergonomics — applies on any coarse pointer device. */
 @media (pointer: coarse) {
