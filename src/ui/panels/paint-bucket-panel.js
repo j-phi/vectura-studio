@@ -510,12 +510,17 @@
         // guard behind, and a cancelled press steps back.
         let byPointer = false;
         let guardTimer = 0;
-        const clearGuard = () => { byPointer = false; if (guardTimer) { clearTimeout(guardTimer); guardTimer = 0; } };
+        let stepped = false;
+        const clearGuard = () => { byPointer = false; stepped = false; if (guardTimer) { clearTimeout(guardTimer); guardTimer = 0; } };
         btn.addEventListener('pointerdown', (e) => {
           clearGuard();
           if (e.pointerType === 'mouse') return;
           byPointer = true;
+          const r = (G.app && G.app.renderer) || renderer;
+          const was = r ? (r.paintBucketScopeOffset || 0) : 0;
           step();
+          // A clamped step changes nothing, so a cancel has nothing to undo.
+          stepped = !!r && (r.paintBucketScopeOffset || 0) !== was;
         });
         btn.addEventListener('pointerup', () => {
           if (!byPointer) return;
@@ -523,8 +528,9 @@
         });
         btn.addEventListener('pointercancel', () => {
           if (!byPointer) return;
+          const undo = stepped;
           clearGuard();
-          step(dir === 'up' ? -1 : 1);
+          if (undo) step(dir === 'up' ? -1 : 1);
         });
         btn.addEventListener('keydown', clearGuard);
         btn.addEventListener('click', (e) => {

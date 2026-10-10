@@ -15134,3 +15134,11 @@ body.phone-layout.phone-short .hud-bar {
   right: calc(var(--safe-right, 0px) + var(--pane-collapsed-width, 40px) + 8px + 156px);
 }
 /* === END TUX-020 (strip) === */
+
+/* === TUX-022: fill bar clears the canvas HUD ===
+ * The HUD (z 40) sat on top of the fill bar (z 35) and covered the Scope chip on iPhone portrait
+ * (Zoom In over Scope ▼). While the fill bar is mounted the HUD rides above it. */
+body.touch-ui #viewport-container:has(.ctxbar.ctxbar--fill) .canvas-hud {
+  bottom: calc(var(--safe-bottom, 0px) + 8px + 52px + 8px);
+}
+/* === END TUX-022 === */
