@@ -60,7 +60,7 @@ describe('TouchGestureArbiter.decide (truth table)', () => {
   it('reads the window from UI_CONSTANTS.TOUCH_GESTURE; overriding it changes the result', () => {
     const w = load();
     const Arb = w.Vectura.TouchGestureArbiter;
-    expect(w.Vectura.UI_CONSTANTS.TOUCH_GESTURE).toEqual({ ARBITRATION_MS: 250, ARBITRATION_SLOP_PX: 10, touchDragSlopPx: 6, TAP_MAX_SKEW_MS: 150, TAP_MAX_DURATION_MS: 350, TAP_SLOP_PX: 10 });
+    expect(w.Vectura.UI_CONSTANTS.TOUCH_GESTURE).toEqual({ ARBITRATION_MS: 250, ARBITRATION_SLOP_PX: 10, touchDragSlopPx: 6, TAP_MAX_SKEW_MS: 250, TAP_MAX_DURATION_MS: 250, TAP_SLOP_PX: 10 });
     expect(Arb.decide({ dtMs: 400, travelPx: 40 }).commitFirst).toBe(true);
     w.Vectura.UI_CONSTANTS.TOUCH_GESTURE = { ARBITRATION_MS: 500, ARBITRATION_SLOP_PX: 60 };
     expect(Arb.decide({ dtMs: 400, travelPx: 40 }).rollback).toBe(true);

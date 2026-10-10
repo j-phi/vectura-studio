@@ -34,8 +34,8 @@
       touchDragSlopPx: 6,
       // TUX-020: two-finger tap = undo, three-finger tap = redo. skew = last finger down minus first
       // finger down; duration = first down to last up; slop = per-finger drift and span change (CSS px).
-      TAP_MAX_SKEW_MS: 150,
-      TAP_MAX_DURATION_MS: 350,
+      TAP_MAX_SKEW_MS: 250,
+      TAP_MAX_DURATION_MS: 250,
       TAP_SLOP_PX: 10,
     },
 

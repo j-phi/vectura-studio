@@ -22,8 +22,8 @@
     ARBITRATION_MS: 250,
     ARBITRATION_SLOP_PX: 10,
     touchDragSlopPx: 6,
-    TAP_MAX_SKEW_MS: 150,
-    TAP_MAX_DURATION_MS: 350,
+    TAP_MAX_SKEW_MS: 250,
+    TAP_MAX_DURATION_MS: 250,
     TAP_SLOP_PX: 10,
   });
   const readConfig = () => {

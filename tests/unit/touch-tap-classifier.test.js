@@ -1,7 +1,7 @@
 /*
  * TUX-020 - multi-finger tap classifier (pure function + arbiter integration).
  * Two-finger tap = undo, three-finger tap = redo. The window comes from
- * UI_CONSTANTS.TOUCH_GESTURE: TAP_MAX_SKEW_MS 150, TAP_MAX_DURATION_MS 350, TAP_SLOP_PX 10.
+ * UI_CONSTANTS.TOUCH_GESTURE: TAP_MAX_SKEW_MS 250, TAP_MAX_DURATION_MS 250, TAP_SLOP_PX 10.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,8 +32,8 @@ describe('TouchGestureArbiter tap classifier (TUX-020)', () => {
   });
 
   it('config carries the tap window', () => {
-    expect(cfg.TAP_MAX_SKEW_MS).toBe(150);
-    expect(cfg.TAP_MAX_DURATION_MS).toBe(350);
+    expect(cfg.TAP_MAX_SKEW_MS).toBe(250);
+    expect(cfg.TAP_MAX_DURATION_MS).toBe(250);
     expect(cfg.TAP_SLOP_PX).toBe(10);
   });
 
@@ -64,13 +64,18 @@ describe('TouchGestureArbiter tap classifier (TUX-020)', () => {
   });
 
   it('rejects when the landing skew is too large', () => {
-    const r = run([['down', ev(1, 0, 100, 100)], ['down', ev(2, 151, 200, 100)], ['up', ev(1, 200, 100, 100)], ['up', ev(2, 210, 200, 100)]]);
+    const r = run([['down', ev(1, 0, 100, 100)], ['down', ev(2, 251, 200, 100)], ['up', ev(1, 260, 100, 100)], ['up', ev(2, 270, 200, 100)]]);
     expect(r).toMatchObject({ tap: false, reason: 'skew' });
   });
 
   it('rejects when the whole gesture lasts too long', () => {
-    const r = run([['down', ev(1, 0, 100, 100)], ['down', ev(2, 40, 200, 100)], ['up', ev(1, 340, 100, 100)], ['up', ev(2, 351, 200, 100)]]);
+    const r = run([['down', ev(1, 0, 100, 100)], ['down', ev(2, 40, 200, 100)], ['up', ev(1, 240, 100, 100)], ['up', ev(2, 251, 200, 100)]]);
     expect(r).toMatchObject({ tap: false, reason: 'duration' });
+  });
+
+  it('accepts a tap that ends exactly 250 ms after the first finger (requirement 4 window)', () => {
+    const r = run([['down', ev(1, 0, 100, 100)], ['down', ev(2, 120, 200, 100)], ['up', ev(1, 240, 100, 100)], ['up', ev(2, 250, 200, 100)]]);
+    expect(r).toMatchObject({ tap: true, count: 2 });
   });
 
   it('rejects an early lift (first finger leaves before the second lands)', () => {
@@ -117,10 +122,10 @@ describe('TouchGestureArbiter tap classifier (TUX-020)', () => {
   });
 
   it('pure classifyTap boundary values', () => {
-    const base = { count: 2, skewMs: 150, durationMs: 350, maxDrift: 9.99, spanDelta: 9.99, earlyLift: false, foreign: false, onlyTouch: true };
+    const base = { count: 2, skewMs: 250, durationMs: 250, maxDrift: 9.99, spanDelta: 9.99, earlyLift: false, foreign: false, onlyTouch: true };
     expect(A.classifyTap(base, cfg).tap).toBe(true);
-    expect(A.classifyTap({ ...base, skewMs: 150.5 }, cfg).tap).toBe(false);
-    expect(A.classifyTap({ ...base, durationMs: 351 }, cfg).tap).toBe(false);
+    expect(A.classifyTap({ ...base, skewMs: 250.5 }, cfg).tap).toBe(false);
+    expect(A.classifyTap({ ...base, durationMs: 251 }, cfg).tap).toBe(false);
     expect(A.classifyTap({ ...base, maxDrift: 10 }, cfg).tap).toBe(false);
     expect(A.classifyTap({ ...base, spanDelta: 10 }, cfg).tap).toBe(false);
     expect(A.classifyTap({ ...base, count: 4 }, cfg).tap).toBe(false);

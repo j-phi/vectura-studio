@@ -61,6 +61,8 @@
   };
 
   const applyState = () => {
+    // A late timer can fire after a test runtime tears the document down.
+    if (typeof document === 'undefined' || !document) return;
     setDisabled(document.getElementById('btn-hud-undo'), !state.canUndo);
     setDisabled(document.getElementById('btn-hud-redo'), !state.canRedo);
     setDisabled(document.getElementById('btn-header-undo'), !state.canUndo);

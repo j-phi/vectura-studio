@@ -15119,3 +15119,12 @@ body.phone-layout.touch-ui .canvas-hud {
 body.phone-layout .canvas-hud .canvas-hud-history,
 body.phone-layout .canvas-hud .canvas-hud-sep { display: none; }
 /* === END TUX-020 === */
+
+/* === TUX-020: phone-short status strip clears the HUD ===
+ * On phone landscape the status strip (#hud-bar) is an overlay at the bottom edge and reached under the
+ * canvas HUD, so the zoom and rotation readouts drew inside the HUD box. The strip now ends left of the HUD:
+ * HUD right offset + three 46 px buttons + padding (about 148 px) + an 8 px gap. */
+body.phone-layout.phone-short .hud-bar {
+  right: calc(var(--safe-right, 0px) + var(--pane-collapsed-width, 40px) + 8px + 156px);
+}
+/* === END TUX-020 (strip) === */

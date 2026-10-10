@@ -81,17 +81,38 @@ const canvasPoints = (page) => page.evaluate(() => {
   return hit ? offs.map((o) => ({ x: hit.x + o, y: hit.y })) : null;
 });
 
-// Staggered touchstarts, a few px of drift per finger, a hold, then all fingers lift.
-async function multiTap(page, pts, { skewMs = 40, holdMs = 40, driftPx = 4, ids } = {}) {
+// A multi-finger tap. Positive taps (skewMs 0) must not let harness latency reach e.timeStamp, because the
+// classifier measures skew and duration from event time stamps. So: every finger lands in ONE touchstart
+// batch, lifts in ONE touchend batch, and the three phases are queued back to back (no await, no sleep
+// between them) so the browser runs them in order with no harness round trip in the gaps.
+// skewMs > 0 staggers the touchstarts on purpose and is only used by negative tests.
+async function multiTap(page, pts, { skewMs = 0, holdMs = 0, driftPx = 4, ids } = {}) {
   const fingers = pts.map((p, i) => ({ ...p, id: ids ? ids[i] : i }));
-  for (let i = 0; i < fingers.length; i += 1) {
-    await touch.touchPhase(page, 'start', fingers.slice(0, i + 1));
-    if (i < fingers.length - 1 && skewMs) await sleep(skewMs / (fingers.length - 1));
+  const moved = (k) => fingers.map((f) => ({ ...f, x: f.x + driftPx * k, y: f.y }));
+  if (skewMs) {
+    for (let i = 0; i < fingers.length; i += 1) {
+      await touch.touchPhase(page, 'start', fingers.slice(0, i + 1));
+      if (i < fingers.length - 1) await sleep(skewMs / (fingers.length - 1));
+    }
+    await touch.touchPhase(page, 'move', moved(1));
+    if (holdMs) await sleep(holdMs);
+    await touch.touchPhase(page, 'end', moved(1));
+    return;
   }
-  await touch.touchPhase(page, 'move', fingers.map((f) => ({ ...f, x: f.x + driftPx * 0.5, y: f.y + driftPx * 0.5 })));
-  await touch.touchPhase(page, 'move', fingers.map((f) => ({ ...f, x: f.x + driftPx, y: f.y })));
-  if (holdMs) await sleep(holdMs);
-  await touch.touchPhase(page, 'end', fingers.map((f) => ({ ...f, x: f.x + driftPx, y: f.y })));
+  if (holdMs) {
+    await touch.touchPhase(page, 'start', fingers);
+    await touch.touchPhase(page, 'move', moved(1));
+    await sleep(holdMs);
+    await touch.touchPhase(page, 'end', moved(1));
+    return;
+  }
+  // Warm the CDP session / WebKit shim first (the first call awaits setup and would reorder the queue).
+  await touch.touchPhase(page, 'end', []).catch(() => {});
+  await Promise.all([
+    touch.touchPhase(page, 'start', fingers),
+    touch.touchPhase(page, 'move', moved(1)),
+    touch.touchPhase(page, 'end', moved(1)),
+  ]);
 }
 
 const stateWithHistory = async (page, tool) => {
@@ -151,37 +172,65 @@ test.describe('TUX-020 R-a availability and one-tap history controls', () => {
   });
 });
 
+// Two layers, so the undo target is not the only layer and the surviving layer's transform can be checked.
+const twoLayers = async (page, tool) => {
+  await stateWithHistory(page, tool);
+  await addLayerThroughHistory(page);
+  const s = await state(page);
+  expect(s.layers).toBe(2);
+  return s;
+};
+
+// The tap must do exactly what the app's own undo/redo does, and nothing else (req 6): same selection,
+// same transforms as app.undo() / app.redo() produce when the tap is not involved.
+const viaApi = async (page, steps) => {
+  for (const step of steps) await page.evaluate((k) => window.app[k](), step);
+  return state(page);
+};
+
 for (const tool of ['select', 'hand']) {
   test.describe(`TUX-020 R-b multi-finger taps (${tool} tool)`, () => {
     test('two-finger tap undoes once and leaves the view exactly alone', async ({ page }) => {
-      const before = await stateWithHistory(page, tool);
+      const before = await twoLayers(page, tool);
       const pts = await canvasPoints(page);
       expect(pts, 'a clear canvas row').toBeTruthy();
       await multiTap(page, pts.slice(0, 2));
       await page.waitForTimeout(150);
       const after = await state(page);
-      expect(after.layers, 'one undo').toBe(0);
+      expect(after.layers, 'one undo').toBe(1);
       expect(after.history).toBe(before.history - 1);
       expect(after.scale === before.scale, `scale ${before.scale} -> ${after.scale}`).toBe(true);
       expect(after.offsetX === before.offsetX, `offsetX ${before.offsetX} -> ${after.offsetX}`).toBe(true);
       expect(after.offsetY === before.offsetY, `offsetY ${before.offsetY} -> ${after.offsetY}`).toBe(true);
+      // Oracle: redo then undo through the app API gives the state a plain undo produces.
+      const oracle = await viaApi(page, ['redo', 'undo']);
+      expect(after.sel, 'selection equals a plain undo').toBe(oracle.sel);
+      expect(after.xf, 'layer transforms equal a plain undo').toEqual(oracle.xf);
+      // The surviving layer keeps its transform from before the tap.
+      const keep = before.xf.find((row) => row[0] === after.xf[0][0]);
+      expect(after.xf[0], 'surviving layer transform').toEqual(keep);
     });
 
     test('three-finger tap redoes once and leaves the view exactly alone', async ({ page }) => {
-      await stateWithHistory(page, tool);
+      await twoLayers(page, tool);
       await page.evaluate(() => window.app.undo());
       const before = await state(page);
-      expect(before.layers).toBe(0);
+      expect(before.layers).toBe(1);
       expect(before.redo).toBe(1);
       const pts = await canvasPoints(page);
       await multiTap(page, pts);
       await page.waitForTimeout(150);
       const after = await state(page);
-      expect(after.layers, 'one redo').toBe(1);
+      expect(after.layers, 'one redo').toBe(2);
       expect(after.redo).toBe(0);
       expect(after.scale === before.scale).toBe(true);
       expect(after.offsetX === before.offsetX).toBe(true);
       expect(after.offsetY === before.offsetY).toBe(true);
+      const oracle = await viaApi(page, ['undo', 'redo']);
+      expect(after.sel, 'selection equals a plain redo').toBe(oracle.sel);
+      expect(after.xf, 'layer transforms equal a plain redo').toEqual(oracle.xf);
+      const keep = before.xf.find((row) => row[0] === after.xf[0][0]);
+      expect(after.xf[0], 'first layer transform').toEqual(keep);
     });
   });
 }
@@ -252,12 +301,25 @@ test.describe('TUX-020 R-d zoom controls', () => {
       return { wx: (mx - r.offsetX) / r.scale, wy: (my - r.offsetY) / r.scale, mx, my, scale: r.scale, ox: r.offsetX, oy: r.offsetY };
     });
     const c0 = await centre();
+    const readout0 = await page.evaluate(() => {
+      const el = document.getElementById('hud-zoom');
+      return el && el.getBoundingClientRect().width > 0 ? el.textContent : null;
+    });
     await touch.tap(page, ctl(page, ZIN));
     const c1 = await centre();
     expect(Math.abs(c1.scale - c0.scale * cfg.zoomStep)).toBeLessThan(1e-9);
     expect(Math.abs(c1.ox + c0.wx * c1.scale - c0.mx)).toBeLessThanOrEqual(1);
     expect(Math.abs(c1.oy + c0.wy * c1.scale - c0.my)).toBeLessThanOrEqual(1);
-    await expect(page.locator('#hud-zoom')).toHaveText(/\d+%/).catch(() => {});
+    // The status-bar zoom readout (where the strip shows) follows the real scale: percent text, changed by the step.
+    const zoomText = () => page.evaluate(() => {
+      const el = document.getElementById('hud-zoom');
+      return el && el.getBoundingClientRect().width > 0 ? el.textContent : null;
+    });
+    if (readout0 !== null) {
+      expect(readout0).toMatch(/^\d+%$/);
+      await expect.poll(zoomText, { message: '#hud-zoom updates after Zoom In' }).not.toBe(readout0);
+      expect(await zoomText()).toMatch(/^\d+%$/);
+    }
     // Drive to the ceiling with taps on the real button (batched via the page click handler after the first tap).
     await page.evaluate((max) => { window.app.renderer.scale = max / 1.2; window.app.renderer.draw(); }, cfg.maxScale);
     await touch.tap(page, ctl(page, ZIN));
@@ -339,18 +401,39 @@ test.describe('TUX-020 R-g live draft and modal', () => {
     expect(errors).toEqual([]);
   });
 
-  test('HUD buttons do nothing while a modal is open', async ({ page }) => {
+  test('HUD buttons and two-finger taps do nothing while a modal is open', async ({ page }) => {
     await boot(page);
     await addLayerThroughHistory(page);
+    const pts = await canvasPoints(page);
+    const undoBtn = ctl(page, UNDO);
+    await expect(undoBtn).toBeEnabled();
     const before = await state(page);
-    await page.evaluate(() => window.app.ui.openModal ? window.app.ui.openModal({ title: 'Probe', body: '<p>x</p>' }) : document.getElementById('modal-overlay').classList.add('open'));
-    await page.evaluate(() => {
-      const h = window.Vectura.CanvasHud;
-      h.runHistory('undo');
-    });
-    const after = await state(page);
-    expect(after.layers).toBe(before.layers);
-    expect(after.history).toBe(before.history);
+    const box = await undoBtn.boundingBox();
+    // The backdrop dismisses on a tap, so each gesture gets a freshly opened modal.
+    const openProbe = async () => {
+      await page.evaluate(() => window.app.ui.openModal({ title: 'Probe', body: '<p>probe</p>' }));
+      expect(await page.evaluate(() => window.Vectura.CanvasHud.isModalOverlayOpen()), 'modal is open').toBe(true);
+    };
+    const expectSame = async (why) => {
+      await page.waitForTimeout(200);
+      const now = await state(page);
+      expect(now.layers, `${why}: layers`).toBe(before.layers);
+      expect(now.history, `${why}: history`).toBe(before.history);
+      expect(now.redo, `${why}: redo`).toBe(before.redo);
+    };
+    // A real finger tap where the Undo button sits, then a real two-finger tap over the canvas.
+    await openProbe();
+    await touch.tap(page, { x: box.x + box.width / 2, y: box.y + box.height / 2 });
+    await expectSame('finger tap on the HUD Undo position');
+    if (!(await page.evaluate(() => window.Vectura.CanvasHud.isModalOverlayOpen()))) await openProbe();
+    await multiTap(page, pts.slice(0, 2));
+    await expectSame('two-finger canvas tap');
+    // Control: with the modal closed the very same gesture does undo, so the test above can fail.
+    await page.evaluate(() => window.app.ui.closeModal());
+    expect(await page.evaluate(() => window.Vectura.CanvasHud.isModalOverlayOpen()), 'modal closed').toBe(false);
+    await multiTap(page, pts.slice(0, 2));
+    await page.waitForTimeout(200);
+    expect((await state(page)).layers, 'two-finger tap undoes once the modal is closed').toBe(0);
   });
 });
 
@@ -361,7 +444,7 @@ test.describe('TUX-020 R-h layout', () => {
     const rects = await page.evaluate(() => {
       const r = (el) => { const b = el.getBoundingClientRect(); return b.width && b.height ? { l: b.left, t: b.top, r: b.right, b: b.bottom, id: el.id || el.className } : null; };
       const hud = [...document.querySelectorAll('#canvas-hud button')].filter((b) => b.getBoundingClientRect().width).map(r);
-      const others = ['#touch-modifier-bar:not(.hidden)', '#tool-bar', '.ctxbar', '.vectura-toast', '#app-header'].flatMap((s) => [...document.querySelectorAll(s)].map(r).filter(Boolean));
+      const others = ['#touch-modifier-bar:not(.hidden)', '#tool-bar', '.ctxbar', '.vectura-toast', '#app-header', '#hud-zoom', '#hud-rotation', '#hud-bar'].flatMap((s) => [...document.querySelectorAll(s)].map(r).filter(Boolean));
       return { hud, others, vw: innerWidth, vh: innerHeight };
     });
     expect(rects.hud.length).toBeGreaterThanOrEqual(3);
@@ -378,8 +461,9 @@ test.describe('TUX-020 R-h layout', () => {
     if (SHOT[testInfo.project.name]) await page.screenshot({ path: `${EVID}/${SHOT[testInfo.project.name]}.png` }).catch(() => {});
   });
 
-  test('phone header Undo and Redo sit fully inside the viewport', async ({ page }) => {
+  test('phone header Undo and Redo sit fully inside the viewport', async ({ page }, testInfo) => {
     await boot(page);
+    if (/iphone/.test(testInfo.project.name)) expect(await isPhone(page), 'iPhone projects use the phone layout').toBe(true);
     if (!(await isPhone(page))) return;
     const vp = page.viewportSize();
     for (const name of [UNDO, REDO]) {
