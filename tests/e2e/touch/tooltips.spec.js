@@ -404,11 +404,10 @@ test.describe('TUX-039 touch tooltips', () => {
   });
 });
 
-// TUX-039 clauses 2 and 3 on variant tools. Needs the TUX-014 sub-menu rework in toolbar.js
-// (menu stays open after lift, rows show visible names). Owned by the TUX-014 lane.
-// Ratchet: every precondition is asserted BEFORE test.fail(), so only the clause-2/3
-// assertions (open after lift, visible labels, tool unchanged) can be the expected failure.
-test.describe('TUX-039 variant tool hold (needs TUX-014)', () => {
+// TUX-039 clauses 2 and 3 on variant tools. Uses the TUX-014 sub-menu rework in toolbar.js
+// (menu stays open after lift, rows show visible names). The test.fail ratchet was removed
+// at integration, when TUX-014 and TUX-039 met and these tests went green.
+test.describe('TUX-039 variant tool hold', () => {
   for (const tool of ['shape', 'pen', 'fill']) {
     test(`hold ${tool} keeps a labelled sub-menu open and leaves the tool unchanged`, async ({ page }) => {
       await setup(page);
@@ -435,9 +434,6 @@ test.describe('TUX-039 variant tool hold (needs TUX-014)', () => {
       // Precondition 3: the menu opens during the hold (finger still down).
       const hold = await longPressOpen(page, box);
       expect(hold.openDuringHold, 'sub-menu opens during the hold').toBe(true);
-      // Only the clause-2/3 assertions below may fail until TUX-014 lands. Remove this line then
-      // (Playwright reports "expected to fail but passed" once TUX-014 makes it green).
-      test.fail(true, 'blocked on TUX-014: sub-menu closes on lift, rows are icon-only');
       await sleep(150);
       const st = await page.evaluate(() => {
         const m = [...document.querySelectorAll('.tool-submenu.open')][0];
