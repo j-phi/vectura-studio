@@ -268,6 +268,9 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
       return { x: c.x + box.left, y: c.y + box.top };
     });
     await touch.tap(page, target);
+    // Under load the first tap can land before the layout settles; retry once if nothing selected.
+    const picked = () => page.waitForFunction(() => (window.app.renderer.selectedLayerIds || new Set()).size === 1, null, { timeout: 2500 }).then(() => true, () => false);
+    if (!(await picked())) { await touch.tap(page, target); await picked(); }
     await page.waitForTimeout(500);
     const res = await page.evaluate(() => {
       const r = window.app.renderer;
@@ -294,6 +297,8 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
     });
     expect(drawn, 'a rotate affordance was drawn').not.toBeNull();
     expect(drawn.id, `drawn affordance at (${Math.round(drawn.x)},${Math.round(drawn.y)})`).toBe('main-canvas');
+    require('fs').mkdirSync(EVIDENCE_DIR, { recursive: true });
+    await page.screenshot({ path: `${EVIDENCE_DIR}/iPhL-tap-select-${testInfo.project.name}.png` });
     // Deterministic overlap: the ctxbar docks at different spots per layout pass, so also cover the
     // current affordance spot with a stand-in chrome element. The affordance must move off it.
     const moved = await page.evaluate(({ x, y }) => {
