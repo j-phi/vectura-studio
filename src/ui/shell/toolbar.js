@@ -39,6 +39,228 @@
     btn.classList.toggle('hidden', !show);
   }
 
+  // ── TUX-014: touch sub-menu primitives ───────────────────────────────────────
+  // ToolPopover (place + bindTouchDismiss) is the frozen interface TUX-015 / TUX-034 may adopt.
+  const TSM_DEFAULTS = { HOLD_MS: 280, ALGO_HOLD_MS: 400, TAP_SLOP_PX: 10, GAP_PX: 8, PAD_PX: 8, PRESS_CLEARANCE_PX: 24, CLICK_SWALLOW_MS: 700 };
+  const tsm = () => Object.assign({}, TSM_DEFAULTS, (G.Vectura && G.Vectura.UI_CONSTANTS && G.Vectura.UI_CONSTANTS.TOOL_SUBMENU) || {});
+  // 'touch' and 'pen' take the finger path. 'mouse', '' and undefined keep today's mouse path.
+  const isFinger = (e) => !!e && (e.pointerType === 'touch' || e.pointerType === 'pen');
+
+  // One-shot capture listener that eats the next click (WebKit fires none; Chromium and iOS do).
+  // `containers` limits it to clicks inside those elements; null eats the next click anywhere.
+  const swallowNextClick = (containers) => {
+    let done = false;
+    let timer = null;
+    const stop = () => {
+      if (done) return;
+      done = true;
+      window.clearTimeout(timer);
+      window.removeEventListener('click', onClick, true);
+    };
+    const onClick = (ev) => {
+      if (containers && !containers.some((c) => c && c.contains(ev.target))) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      stop();
+    };
+    timer = window.setTimeout(stop, tsm().CLICK_SWALLOW_MS);
+    window.addEventListener('click', onClick, true);
+    return stop;
+  };
+
+  const visibleBounds = () => {
+    // TUX-032: the visual viewport is read only through KeyboardInset.
+    const KI = G.Vectura && G.Vectura.KeyboardInset;
+    const vv = KI && typeof KI.viewportRect === 'function' ? KI.viewportRect() : null;
+    if (vv && vv.width > 0 && vv.height > 0) {
+      return { l: vv.offsetLeft, t: vv.offsetTop, r: vv.offsetLeft + vv.width, b: vv.offsetTop + vv.height };
+    }
+    const de = document.documentElement;
+    return { l: 0, t: 0, r: de.clientWidth, b: de.clientHeight };
+  };
+
+  // Positions `menu` (already laid out, visibility hidden is fine) next to `anchor`.
+  // opts: { dir: 'right'|'left'|'below'|'above'|'center', touch, rect }.
+  // touch=false keeps the legacy numbers (6 px gap, innerWidth clamp). touch=true clamps to the visual
+  // viewport, flips a side that does not fit, and scrolls inside the menu when it is taller than the space.
+  const placeToolPopover = (menu, anchor, opts = {}) => {
+    const c = tsm();
+    const touch = !!opts.touch;
+    const dir = opts.dir || 'right';
+    const r = opts.rect || (anchor ? anchor.getBoundingClientRect() : { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 });
+    const gap = touch ? c.GAP_PX : 6;
+    const pad = touch ? c.PAD_PX : 8;
+    const b = touch ? visibleBounds() : { l: 0, t: 0, r: window.innerWidth, b: window.innerHeight };
+    menu.style.maxHeight = '';
+    menu.style.overflowY = '';
+    menu.style.touchAction = '';
+    menu.style.overscrollBehavior = '';
+    const mw = menu.offsetWidth;
+    let mh = menu.offsetHeight;
+    let side = dir;
+    if (touch && dir !== 'center') {
+      const space = {
+        right: b.r - r.right - gap - pad, left: r.left - gap - pad - b.l,
+        below: b.b - r.bottom - gap - pad, above: r.top - gap - pad - b.t,
+      };
+      const opposite = { right: 'left', left: 'right', below: 'above', above: 'below' }[dir];
+      const need = (dir === 'right' || dir === 'left') ? mw : mh;
+      if (space[dir] < need) {
+        if (space[opposite] >= need || space[opposite] > space[dir]) side = opposite;
+      }
+      if ((side === 'above' || side === 'below') && mh > space[side]) {
+        mh = Math.max(88, space[side]);
+        menu.style.maxHeight = `${Math.floor(mh)}px`;
+        menu.style.overflowY = 'auto';
+        menu.style.touchAction = 'pan-y';
+        menu.style.overscrollBehavior = 'contain';
+      }
+    }
+    if (touch) {
+      const avail = (b.b - b.t) - 2 * pad;
+      if (mh > avail) {
+        mh = avail;
+        menu.style.maxHeight = `${Math.floor(avail)}px`;
+        menu.style.overflowY = 'auto';
+        menu.style.touchAction = 'pan-y';
+        menu.style.overscrollBehavior = 'contain';
+      }
+    }
+    let left = Math.round((b.l + b.r - mw) / 2);
+    let top = Math.round((b.t + b.b - mh) / 2);
+    if (side === 'right') { left = r.right + gap; top = r.top; }
+    if (side === 'left') { left = r.left - gap - mw; top = r.top; }
+    if (side === 'below') { left = r.left; top = r.bottom + gap; }
+    if (side === 'above') { left = r.left; top = r.top - gap - mh; }
+    menu.style.left = `${Math.max(b.l + pad, Math.min(b.r - mw - pad, left))}px`;
+    menu.style.top = `${Math.max(b.t + pad, Math.min(b.b - mh - pad, top))}px`;
+  };
+
+  // Touch/pen state machine shared by every rail sub-menu and the algorithm picker.
+  // cfg: { button, getMenu, rowSel, holdMs, isGroupActive, isOpen, open, close, onActivate, selectRow, hover }
+  // Returns { bindMenu(menuEl) }. The mouse path stays in the callers.
+  const bindTouchMenu = (cfg) => {
+    const { button, getMenu, rowSel, holdMs, isGroupActive, isOpen, open, close, onActivate, selectRow } = cfg;
+    const hover = cfg.hover || (() => {});
+    const rowAt = (e) => {
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      const m = getMenu();
+      const row = hit && hit.closest ? hit.closest(rowSel) : null;
+      return row && m && m.contains(row) ? row : null;
+    };
+    const dist = (e, s) => Math.hypot(e.clientX - s.x, e.clientY - s.y);
+    let st = null;
+    const clearTimer = () => { if (st && st.timer) { window.clearTimeout(st.timer); st.timer = null; } };
+
+    button.addEventListener('pointerdown', (e) => {
+      if (!isFinger(e) || (e.button || 0) !== 0) return;
+      clearTimer();
+      st = { id: e.pointerId, x: e.clientX, y: e.clientY, wasActive: isGroupActive(), wasOpen: isOpen(), opened: false, moved: false, timer: null };
+      if (!st.wasOpen) {
+        const mine = st;
+        st.timer = window.setTimeout(() => {
+          mine.timer = null;
+          if (st !== mine) return;
+          mine.opened = true;
+          open(mine);
+          hover(null);
+        }, holdMs);
+      }
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!st || e.pointerId !== st.id) return;
+      if (dist(e, st) >= tsm().TAP_SLOP_PX) {
+        st.moved = true;
+        if (!st.opened) clearTimer();
+      }
+      if (st.opened) hover(rowAt(e));
+    });
+    window.addEventListener('pointerup', (e) => {
+      if (!st || e.pointerId !== st.id) return;
+      const s = st;
+      clearTimer();
+      st = null;
+      if (s.opened) {
+        const row = rowAt(e);
+        swallowNextClick(row ? null : [button, getMenu()]);
+        if (row) { selectRow(row); close(); }
+        hover(null);
+        return;
+      }
+      if (s.moved) return;
+      swallowNextClick([button, getMenu()]);
+      if (s.wasOpen) close();
+      else if (s.wasActive) open(s);
+      else onActivate();
+    });
+    const cancel = (e) => {
+      if (!st || (e && e.pointerId !== undefined && e.pointerId !== st.id)) return;
+      clearTimer();
+      st = null;
+    };
+    window.addEventListener('pointercancel', cancel);
+    button.addEventListener('lostpointercapture', cancel);
+
+    // Tap outside while open: close and consume (no canvas drawing, selection or tool change).
+    window.addEventListener('pointerdown', (ev) => {
+      if (!isFinger(ev) || !isOpen()) return;
+      const m = getMenu();
+      if ((m && m.contains(ev.target)) || button.contains(ev.target)) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      swallowNextClick(null);
+      close();
+    }, true);
+
+    // Row tap decided on pointerup: same row, no slop, no scroll in between.
+    const bound = new WeakSet();
+    const bindMenu = (menu) => {
+      if (!menu || bound.has(menu)) return;
+      bound.add(menu);
+      let rt = null;
+      menu.addEventListener('pointerdown', (e) => {
+        if (!isFinger(e)) return;
+        const row = e.target.closest ? e.target.closest(rowSel) : null;
+        rt = { id: e.pointerId, row, x: e.clientX, y: e.clientY, moved: false, scrolled: false };
+      });
+      menu.addEventListener('scroll', () => { if (rt) rt.scrolled = true; });
+      window.addEventListener('pointermove', (e) => {
+        if (rt && e.pointerId === rt.id && dist(e, rt) >= tsm().TAP_SLOP_PX) rt.moved = true;
+      });
+      window.addEventListener('pointercancel', (e) => { if (rt && e.pointerId === rt.id) rt = null; });
+      window.addEventListener('pointerup', (e) => {
+        if (!rt || e.pointerId !== rt.id) return;
+        const s = rt;
+        rt = null;
+        if (!s.row || s.moved || s.scrolled) return;
+        const row = rowAt(e);
+        if (row !== s.row) return;
+        // The menu hides on this pointerup, so the follow-up click lands on whatever was beneath it
+        // (e.g. an All Tools drawer item under the centred algorithm picker). Eat it anywhere.
+        swallowNextClick(null);
+        selectRow(row);
+        close();
+      });
+    };
+    return { bindMenu };
+  };
+
+  UI.ToolPopover = {
+    place: placeToolPopover,
+    bindTouchDismiss({ menu, anchor, isOpen, close }) {
+      const h = (ev) => {
+        if (!isFinger(ev) || !isOpen()) return;
+        if ((menu && menu.contains(ev.target)) || (anchor && anchor.contains(ev.target))) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        swallowNextClick(null);
+        close();
+      };
+      window.addEventListener('pointerdown', h, true);
+      return () => window.removeEventListener('pointerdown', h, true);
+    },
+  };
+
   function initToolBar() {
     const { getEl } = requireDeps('initToolBar');
     const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
@@ -283,23 +505,13 @@
       return tr.left > window.innerWidth / 2 ? 'left' : 'right';
     };
 
-    // Positions a portal menu next to its button, clamped to the viewport.
-    const positionMenu = (menu, button, dir) => {
-      const r = button.getBoundingClientRect();
-      const GAP = 6, PAD = 8;
-      const vw = window.innerWidth, vh = window.innerHeight;
+    // Positions a portal menu next to its button, clamped to the viewport (shared ToolPopover.place).
+    const positionMenu = (menu, button, dir, opts = {}) => {
       menu.style.visibility = 'hidden';
       menu.classList.add('open');
-      const mw = menu.offsetWidth, mh = menu.offsetHeight;
-      menu.classList.remove('open');
+      placeToolPopover(menu, button, { dir, touch: !!opts.touch });
+      if (!opts.touch) menu.classList.remove('open');
       menu.style.visibility = '';
-      let left, top;
-      if (dir === 'right')  { left = r.right + GAP;      top = r.top; }
-      if (dir === 'left')   { left = r.left - GAP - mw;  top = r.top; }
-      if (dir === 'below')  { left = r.left;              top = r.bottom + GAP; }
-      if (dir === 'above')  { left = r.left;              top = r.top - GAP - mh; }
-      menu.style.left = `${Math.max(PAD, Math.min(vw - mw - PAD, left))}px`;
-      menu.style.top  = `${Math.max(PAD, Math.min(vh - mh - PAD, top))}px`;
     };
 
     // Syncs the data-submenu-dir attribute on every submenu button in the
@@ -311,7 +523,7 @@
     };
 
     const initSubtoolMenu = (config) => {
-      const { button, menu, buttons, onActivate, onSelect } = config;
+      const { button, menu, buttons, onActivate, onSelect, isGroupActive } = config;
       if (!button || !menu) return;
       let holdTimer = null;
       let menuOpen = false;
@@ -322,16 +534,30 @@
       menu.style.position = 'fixed';
       document.body.appendChild(menu);
 
+      // TUX-014: rows get a visible text label (shown on coarse pointers only, by CSS) built from
+      // the row title, plus an aria-label when missing. The markup builder is not ours to edit.
+      buttons.forEach((sub) => {
+        const name = (sub.getAttribute('title') || sub.getAttribute('aria-label') || '').trim();
+        if (!name) return;
+        if (!sub.getAttribute('aria-label')) sub.setAttribute('aria-label', name);
+        if (!sub.querySelector('.tool-sub-label')) {
+          const label = document.createElement('span');
+          label.className = 'tool-sub-label';
+          label.textContent = name;
+          sub.appendChild(label);
+        }
+      });
+
       const setHover = (btn) => {
         if (hoverBtn === btn) return;
         hoverBtn = btn || null;
         buttons.forEach((sub) => sub.classList.toggle('hover', sub === hoverBtn));
       };
-      const openMenu = (e) => {
+      const openMenu = (e, opts = {}) => {
         menuOpen = true;
         const dir = computeMenuDir(button);
         button.dataset.submenuDir = dir;
-        positionMenu(menu, button, dir);
+        positionMenu(menu, button, dir, opts);
         menu.classList.add('open');
         setHover(null);
         if (e) {
@@ -347,13 +573,14 @@
       };
 
       button.addEventListener('pointerdown', (e) => {
+        if (isFinger(e)) return; // touch / pen: bindTouchMenu below
         if (e.button !== 0) return;
         e.preventDefault();
         if (holdTimer) window.clearTimeout(holdTimer);
         holdTimer = window.setTimeout(() => {
           holdTimer = null;
           openMenu(e);
-        }, 280);
+        }, tsm().HOLD_MS);
       });
 
       // A cancelled touch (system gesture, palm rejection) must not open the menu later.
@@ -372,6 +599,7 @@
       });
 
       document.addEventListener('pointerup', (e) => {
+        if (isFinger(e)) return;
         if (holdTimer) {
           window.clearTimeout(holdTimer);
           holdTimer = null;
@@ -390,12 +618,28 @@
         if (menu.contains(e.target) || button.contains(e.target)) return;
         closeMenu();
       });
+
+      const touchCtl = bindTouchMenu({
+        button,
+        getMenu: () => menu,
+        rowSel: '.tool-sub-btn',
+        holdMs: tsm().HOLD_MS,
+        isGroupActive: () => (isGroupActive ? !!isGroupActive() : false),
+        isOpen: () => menu.classList.contains('open'),
+        open: (s) => openMenu(null, { touch: true, press: s }),
+        close: closeMenu,
+        onActivate: () => { if (onActivate) onActivate(); },
+        selectRow: (btn) => { if (onSelect) onSelect(btn); },
+        hover: setHover,
+      });
+      touchCtl.bindMenu(menu);
     };
 
     initSubtoolMenu({
       button: scissorButton,
       menu: scissorMenu,
       buttons: scissorButtons,
+      isGroupActive: () => this.activeTool === 'scissor',
       onActivate: () => this.setActiveTool('scissor'),
       onSelect: (btn) => {
         const mode = btn.dataset.scissor;
@@ -408,6 +652,7 @@
       button: penButton,
       menu: penMenu,
       buttons: penButtons,
+      isGroupActive: () => this.activeTool === 'pen',
       onActivate: () => this.setActiveTool('pen'),
       onSelect: (btn) => {
         const mode = btn.dataset.pen;
@@ -422,6 +667,7 @@
       buttons: fillButtons,
       // Short click re-invokes the last-picked fill variant (defaults to solid
       // fill before any child is chosen, and after the F shortcut resets it).
+      isGroupActive: () => String(this.activeTool).startsWith('fill'),
       onActivate: () => this.setActiveTool(fillToolFromMode(this.fillMode)),
       onSelect: (btn) => {
         if (btn.dataset.fill === 'erase')         this.setActiveTool('fill-erase');
@@ -434,6 +680,7 @@
       button: shapeButton,
       menu: shapeMenu,
       buttons: shapeButtons,
+      isGroupActive: () => String(this.activeTool).startsWith('shape'),
       onActivate: () => this.setActiveTool(shapeToolFromMode(this.shapeMode)),
       onSelect: (btn) => {
         const mode = btn.dataset.shape;
@@ -523,6 +770,18 @@
           .sort((a, b) => a.label.localeCompare(b.label));
       })();
       let _algoPickerTimer = null;
+      let algoTouch = null;
+      const hideAlgoPicker = () => {
+        const el = document.getElementById('algo-draw-picker');
+        if (el) el.classList.add('hidden');
+      };
+      const pickAlgo = (t) => {
+        if (this.app.renderer) this.app.renderer.algoDraftType = t;
+        updateAlgoDrawIcon(t);
+        algoDrawBtn.title = `Draw Algorithm: ${t}`;
+        hideAlgoPicker();
+        this.setActiveTool?.('algo-draw');
+      };
       const _buildAlgoPickerPopup = () => {
         let el = document.getElementById('algo-draw-picker');
         if (!el) {
@@ -552,20 +811,16 @@
           el.addEventListener('click', (ev) => {
             const picked = ev.target.closest('.algo-pick-item');
             if (!picked) return;
-            const t = picked.dataset.algoType;
-            if (this.app.renderer) this.app.renderer.algoDraftType = t;
-            updateAlgoDrawIcon(t);
-            algoDrawBtn.title = `Draw Algorithm: ${t}`;
-            el.classList.add('hidden');
-            this.setActiveTool?.('algo-draw');
+            pickAlgo(picked.dataset.algoType);
           });
           document.addEventListener('click', (ev) => {
-            if (!el.classList.contains('hidden') && !el.contains(ev.target) && ev.target !== algoDrawBtn) {
+            if (!el.classList.contains('hidden') && !el.contains(ev.target) && !algoDrawBtn.contains(ev.target)) {
               el.classList.add('hidden');
             }
           }, true);
           document.body.appendChild(el);
         }
+        algoTouch?.bindMenu(el);
         return el;
       };
       const updateAlgoDrawIcon = (type) => {
@@ -586,49 +841,51 @@
       // Shared by the long-press on the rail slot and the All Tools drawer (TUX-013: the slot is
       // hidden on phones, so the drawer item opens the picker). `anchor` positions the popup;
       // no anchor (the drawer route) or a box-less one centres it in the viewport, clear of the rail.
-      const showAlgoPicker = (anchor) => {
+      const showAlgoPicker = (anchor, opts = {}) => {
         const popup = _buildAlgoPickerPopup();
         const r = anchor ? anchor.getBoundingClientRect() : { width: 0, height: 0 };
         const hasBox = r.width > 0 && r.height > 0;
         const dir = hasBox ? computeMenuDir(anchor) : 'center';
         if (anchor === algoDrawBtn) algoDrawBtn.dataset.submenuDir = dir;
+        const touch = opts.touch ?? !!(G.matchMedia && G.matchMedia('(pointer: coarse)').matches);
         // Measure while hidden, then position, then reveal.
         popup.style.visibility = 'hidden';
         popup.classList.remove('hidden');
-        const mw = popup.offsetWidth, mh = popup.offsetHeight;
-        const GAP = 6, PAD = 8;
-        const vw = window.innerWidth, vh = window.innerHeight;
-        let left = Math.round((vw - mw) / 2), top = Math.round((vh - mh) / 2);
-        if (dir === 'right')  { left = r.right + GAP;      top = r.top; }
-        if (dir === 'left')   { left = r.left - GAP - mw;  top = r.top; }
-        if (dir === 'below')  { left = r.left;              top = r.bottom + GAP; }
-        if (dir === 'above')  { left = r.left;              top = r.top - GAP - mh; }
-        popup.style.left = `${Math.max(PAD, Math.min(vw - mw - PAD, left))}px`;
-        popup.style.top  = `${Math.max(PAD, Math.min(vh - mh - PAD, top))}px`;
+        placeToolPopover(popup, hasBox ? anchor : null, { dir, touch });
         popup.style.visibility = '';
       };
       this._openAlgoPicker = showAlgoPicker;
       algoDrawBtn.addEventListener('pointerdown', (e) => {
+        if (isFinger(e)) return; // touch / pen: algoTouch below
         algoDrawBtn.setPointerCapture?.(e.pointerId);
-        _algoPickerTimer = setTimeout(() => showAlgoPicker(algoDrawBtn), 400);
+        _algoPickerTimer = setTimeout(() => showAlgoPicker(algoDrawBtn, { touch: false }), tsm().ALGO_HOLD_MS);
       });
       algoDrawBtn.addEventListener('pointerup', (e) => {
+        if (isFinger(e)) return;
         clearTimeout(_algoPickerTimer);
         const popup = document.getElementById('algo-draw-picker');
         if (popup && !popup.classList.contains('hidden')) {
           const hit = document.elementFromPoint(e.clientX, e.clientY);
           const picked = hit?.closest('.algo-pick-item');
-          if (picked) {
-            const t = picked.dataset.algoType;
-            if (this.app.renderer) this.app.renderer.algoDraftType = t;
-            updateAlgoDrawIcon(t);
-            algoDrawBtn.title = `Draw Algorithm: ${t}`;
-            popup.classList.add('hidden');
-            this.setActiveTool?.('algo-draw');
-          }
+          if (picked) pickAlgo(picked.dataset.algoType);
         }
       });
       algoDrawBtn.addEventListener('pointercancel', () => clearTimeout(_algoPickerTimer));
+      algoTouch = bindTouchMenu({
+        button: algoDrawBtn,
+        getMenu: () => document.getElementById('algo-draw-picker'),
+        rowSel: '.algo-pick-item',
+        holdMs: tsm().ALGO_HOLD_MS,
+        isGroupActive: () => this.activeTool === 'algo-draw',
+        isOpen: () => {
+          const el = document.getElementById('algo-draw-picker');
+          return !!el && !el.classList.contains('hidden');
+        },
+        open: () => showAlgoPicker(algoDrawBtn, { touch: true }),
+        close: hideAlgoPicker,
+        onActivate: () => this.setActiveTool?.('algo-draw'),
+        selectRow: (row) => pickAlgo(row.dataset.algoType),
+      });
       updateAlgoDrawIcon('wavetable');
     }
 
@@ -823,6 +1080,13 @@
       SETTINGS.toolbarDock = side;
       this.app?.persistPreferencesDebounced?.();
       requestAnimationFrame(() => this._updateAllSubmenuDirs?.());
+    };
+
+    // TUX-014: public re-dock entry (used by tests and the placement check); keeps the chevrons in sync.
+    this.setToolbarDock = (side) => {
+      if (!DOCK_CLASSES.includes('toolbar-docked-' + side)) return;
+      dockToolbar(side);
+      this._updateAllSubmenuDirs?.();
     };
 
     const undockToFloat = () => {
