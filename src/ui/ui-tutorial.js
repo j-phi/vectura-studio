@@ -1,6 +1,15 @@
 (() => {
   'use strict';
   const ns = (window.Vectura = window.Vectura || {});
+  // TUX-006: layout mode comes from the classifier (phone/tablet = mobile layout).
+  const tutorialIsMobileLayout = () => {
+    const LC = ns.LayoutClassifier;
+    if (LC && typeof LC.classify === 'function') {
+      const l = LC.classify(LC.readInput());
+      return l === 'phone' || l === 'tablet';
+    }
+    return document.body.classList.contains('mobile-layout');
+  };
 
   // ─────────────────────────────────────────────────────────────────
   //  Vectura Studio — onboarding tour engine
@@ -336,7 +345,7 @@
     positionAt(targetSel, placement, offsetX = 0, offsetY = 0) {
       if (!this._el) return;
       if (this._userMoved) return;
-      const isMobile = window.innerWidth < 900;
+      const isMobile = tutorialIsMobileLayout();
 
       if (placement === 'center' || isMobile) {
         const pw = this._el.offsetWidth  || 270;
@@ -912,7 +921,7 @@
       if (phaseIndex === 0) this.popover.resetUserMoved();
       this.popover.setMovable(!!step.movable);
 
-      const placement = window.innerWidth < 900 ? 'center' : (phase.placement || 'right');
+      const placement = tutorialIsMobileLayout() ? 'center' : (phase.placement || 'right');
 
       if (step.sideQuest) {
         // Side quest: show "Detour: Title (phase/total)" instead of main step counter
@@ -1061,7 +1070,7 @@
         const step  = STEPS[this._stepIndex];
         const phase = step?.phases?.[this._phaseIndex];
         if (!phase) return;
-        const placement = window.innerWidth < 900 ? 'center' : (phase.placement || 'right');
+        const placement = tutorialIsMobileLayout() ? 'center' : (phase.placement || 'right');
         this.popover.positionAt(phase.target, placement, phase.offsetX || 0, phase.offsetY || 0);
         this.highlight.reflow();
         this.circles.reflow();

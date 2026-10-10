@@ -139,6 +139,22 @@ describe('LayoutClassifier.apply', () => {
     expect(events[1]).toMatchObject({ from: 'touch-wide', to: 'tablet' });
   });
 
+  test('force() updates current(), body classes and fires one event', () => {
+    const events = [];
+    dom.window.addEventListener('vectura:layoutchange', (e) => events.push(e.detail));
+    setEnv(800, 900, false);
+    C.apply(doc);
+    events.length = 0;
+    expect(C.force('desktop', doc)).toBe('desktop');
+    expect(C.current()).toBe('desktop');
+    expect(doc.body.dataset.layout).toBe('desktop');
+    expect(doc.body.classList.contains('mobile-layout')).toBe(false);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ from: 'tablet', to: 'desktop' });
+    C.force('desktop', doc);
+    expect(events).toHaveLength(1);
+  });
+
   test('missing matchMedia defaults to fine pointer and does not throw', () => {
     Object.defineProperty(dom.window, 'innerWidth', { configurable: true, value: 1000 });
     Object.defineProperty(dom.window, 'innerHeight', { configurable: true, value: 800 });

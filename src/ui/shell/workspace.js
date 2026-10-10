@@ -311,8 +311,11 @@
       }
       document.body.classList.remove('auto-collapsed');
       // TUX-006: fine pointer -> Reset View strips every layout class.
-      document.body.classList.remove('mobile-layout', 'phone-layout', 'tablet-layout', 'touch-wide-layout');
-      document.body.dataset.layout = 'desktop';
+      if (lc && lc.force) lc.force('desktop', document);
+      else {
+        document.body.classList.remove('mobile-layout', 'phone-layout', 'tablet-layout', 'touch-wide-layout');
+        document.body.dataset.layout = 'desktop';
+      }
       document.documentElement.style.setProperty('--pane-left-width', '335px');
       document.documentElement.style.setProperty('--pane-right-width', '335px');
       document.documentElement.style.setProperty('--bottom-pane-height', '180px');
