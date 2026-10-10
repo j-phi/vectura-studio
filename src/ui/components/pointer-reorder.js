@@ -64,9 +64,11 @@
 
     const visibleRect = (scroller) => {
       const r = scroller.getBoundingClientRect();
-      const vv = window.visualViewport;
-      const top = Math.max(r.top, vv ? vv.offsetTop : 0);
-      const bottom = Math.min(r.bottom, vv ? vv.offsetTop + vv.height : window.innerHeight);
+      // Visual-viewport bounds come from KeyboardInset, the single reader (TUX-032).
+      const ki = Vectura.KeyboardInset;
+      const vr = ki && ki.viewportRect ? ki.viewportRect() : null;
+      const top = Math.max(r.top, vr ? vr.offsetTop : 0);
+      const bottom = Math.min(r.bottom, vr ? vr.offsetTop + vr.height : window.innerHeight);
       return { top, bottom };
     };
 
