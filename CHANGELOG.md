@@ -94,6 +94,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   whether this reads correctly is being judged by eye, not by a bar.** (T2-6)
 
 ### Fixed
+- **Vitest worker cleanup.** Supervise test process groups through exit, cancellation, wrapper death, and a configurable deadline (30 minutes locally / three hours in CI); remove surviving workers before retrying. Visual/perf commands now use the wrapper too. Added Node process-lifecycle regressions to the unit entrypoint. macOS/Linux supported; native Windows requires WSL.
 - **3D Scene · mkTick dark-side ticks reach the rim evenly.** Regular ticks in shaded areas now
   extend their rim-facing end to an even 0.6 mm from the outline. Neighbouring ticks extend together,
   so the rim edge has no isolated steps. An extension that would bend the tick more than 8° is

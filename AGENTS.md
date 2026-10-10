@@ -31,6 +31,7 @@
 ## Testing Guidelines
 - Automated tests are configured and required where applicable: Vitest (`test:unit`, `test:integration`, `test:visual`, `test:perf`) and Playwright (`test:e2e`).
 - Use `docs/testing.md` for test command details and CI policy.
+- Run Vitest through npm scripts or `node scripts/run-vitest.js run <test-path>` so owned workers are cleaned up on exit/cancellation. The default per-attempt deadline is 30 minutes locally / three hours in CI (`VECTURA_TEST_TIMEOUT_MS`); lifecycle tests run via `npm run test:runner` and before unit tests. Use WSL on Windows.
 - Local Playwright runs may fall back to an installed Chrome when managed browser assets are unavailable; CI remains the authoritative environment for Playwright artifact capture.
 - When touching rendering or UI, verify: generation runs, canvas draws, controls update, and stats refresh.
 - Pre-push hook: run `npm run hooks:install` once after cloning. It installs a `pre-push` hook that runs `npm run test:fast` (~12s — unit + integration + visual + perf) before every push. E2E is intentionally gated only by CI to avoid local slowdowns on busy machines. Bypass with `SKIP_PREPUSH=1 git push` only when intentional.

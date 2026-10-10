@@ -107,6 +107,26 @@ Reference:
   version-specific pool configuration is documented in `docs/testing.md`.
 - Local Playwright compatibility notes also live in `docs/testing.md`; local browser fallbacks must stay documented there and in `AGENTS.md` whenever the e2e runtime contract changes.
 
+### Vitest lifecycle ownership
+
+All repository Vitest entrypoints use `scripts/run-vitest.js`, which launches a
+separate supervisor and owned process group. Cleanup runs independently of model
+availability, before retries and after completion, cancellation, wrapper death, or
+the configurable per-attempt deadline (30 minutes locally / three hours in CI). Deadline/cancellation/cleanup errors
+remain failures. Use `npm run test:runner` plus the wrapper-policy unit tests when
+changing this lifecycle. These checks are also part of the unit entrypoint.
+POSIX/WSL requirements and protection limits are documented in `docs/testing.md`.
+This does not introduce cross-worktree queuing or change Playwright ownership.
+
+```mermaid
+flowchart LR
+  W[Vitest wrapper] -->|IPC liveness and cancellation| S[Detached supervisor]
+  S -->|launch and deadline| G[Owned Vitest process group]
+  G --> V[Vitest runner]
+  G --> F[Fork workers]
+  S -->|TERM then KILL on cleanup| G
+```
+
 ## 6) Documentation Synchronization Matrix
 
 | Change category | Required documentation updates |

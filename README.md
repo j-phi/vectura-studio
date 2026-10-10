@@ -417,6 +417,7 @@ Click `Export SVG` to download.
 
 | Command | Purpose |
 |---|---|
+| `npm run test:runner` | Process cleanup and cancellation regression checks |
 | `npm run test:unit` | Deterministic unit coverage for RNG/noise, algorithms, and utility helpers |
 | `npm run test:integration` | Engine workflow, layer lifecycle, optimization pipeline, state roundtrip, export, UI bootstrap |
 | `npm run test:e2e` | Playwright smoke tests on desktop + tablet-touch Chromium |
@@ -425,6 +426,10 @@ Click `Export SVG` to download.
 | `npm run test:perf` | Stress/performance checks for generation and optimization |
 | `npm run test:ci` | PR-gating suite: unit + integration + e2e + visual + perf |
 | `npm run test:update` | Regenerates visual SVG baselines (review before commit) |
+
+Vitest scripts clean up owned workers on completion/cancellation and enforce a
+30-minute local per-attempt deadline (three hours in CI), even if the launching wrapper dies. Use
+`VECTURA_TEST_TIMEOUT_MS` to override it; see [cleanup behavior and platform limits](docs/testing.md#vitest-process-cleanup).
 
 Vitest config: `vitest.config.mjs` · Playwright config: `playwright.config.js`
 

@@ -580,6 +580,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Vitest process cleanup (2026-10-04).** Added independent supervision, per-attempt deadlines, owned-group cleanup, and process-level regression coverage; preserved the narrow RPC retry policy. Shared queuing remains separate.
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
   (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
   Merged `3d-scene/handoff-c2` → `3d-scene/fill-collapse-2` → `3d-scene/fill-audit-2` →
@@ -1928,6 +1929,7 @@ questions. Do not start these without a decision:
   shipped as **v1.2.0**. See `CHANGELOG.md` for the consolidated notes.
 
 ## Decisions
+- **2026-10-04 — Vitest cleanup belongs to a supervisor, not model follow-up.** POSIX process groups isolate each attempt; a configurable deadline (30 minutes locally / three hours in CI) bounds unattended runs. Playwright and shared scheduling are outside this change.
 - **Coverage ratchet re-pinned for Vitest 4 (2026-09-25, Jay).** `vitest.config.mjs` thresholds moved
   83/83/77/69 → statements 74 / lines 76 / functions 74 / branches 62. Vitest 4's AST-based v8 remapping
   measures the same 729 test files ~6–11 points lower than Vitest 3 did (lines 86.95 → 77.44). This is a
