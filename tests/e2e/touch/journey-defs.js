@@ -37,16 +37,6 @@ function boxOf(st, id) {
   return { minx, maxx, miny, maxy, cx: (minx + maxx) / 2, cy: (miny + maxy) / 2, w: maxx - minx, h: maxy - miny, corners: b };
 }
 
-// The part of a box that lies on the canvas (inset), as a centre point.
-function visibleCenter(st, box) {
-  const cr = st.canvasRect;
-  const x0 = Math.max(box.minx, cr.x + 24);
-  const x1 = Math.min(box.maxx, cr.x + cr.w - 24);
-  const y0 = Math.max(box.miny, cr.y + 24);
-  const y1 = Math.min(box.maxy, cr.y + cr.h - 24);
-  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
-}
-
 // World-space move checks (a screen box also moves when the VIEW pans, so it proves nothing about the object).
 // A one-finger drag on a selected object that only pans the canvas changes renderer.offsetX/offsetY and leaves the
 // object's world bounds and params alone: both checks below must reject that.
@@ -99,11 +89,43 @@ function emptyPinchSpot(st, avoidBox, opts = {}) {
   let best = null;
   for (let y = cr.y + 40; y < cr.y + cr.h - 40; y += 20) {
     for (let x = cr.x + half + 70; x <= cr.x + cr.w - half - 70; x += 20) {
-      const pts = opts.drag ? [[x, y], [x + opts.drag.dx, y + opts.drag.dy]] : halves.flatMap((h) => [[x - h, y], [x + h, y]]);
+      // drag + halves (a two-finger pan): clear both fingers at the start and at the end of the move.
+      const dd = opts.drag;
+      const pts = dd && !opts.halves ? [[x, y], [x + dd.dx, y + dd.dy]]
+        : halves.flatMap((h) => [[x - h, y], [x + h, y], ...(dd ? [[x - h + dd.dx, y + dd.dy], [x + h + dd.dx, y + dd.dy]] : [])]);
       const clear = pts.every(([fx, fy]) => fx > cr.x && fx < cr.x + cr.w && fy > cr.y && fy < cr.y + cr.h && rects.every((r) => !(fx > r.minx - pad && fx < r.maxx + pad && fy > r.miny - pad && fy < r.maxy + pad)));
       if (!clear) continue;
-      const d = Math.hypot(x - (cr.x + cr.w / 2), y - (cr.y + cr.h / 2));
+      // opts.keepBox + opts.zoom: pick the pivot after which the zoomed object centre lies closest to the canvas centre, so the
+      // pinch does not throw the object off the canvas (the next step pinches on it).
+      let d = Math.hypot(x - (cr.x + cr.w / 2), y - (cr.y + cr.h / 2));
+      if (opts.keepBox) {
+        const k = opts.zoom || 1.8;
+        d = Math.hypot(x + k * (opts.keepBox.cx - x) - (cr.x + cr.w / 2), y + k * (opts.keepBox.cy - y) - (cr.y + cr.h / 2));
+      }
       if (!best || d < best.d) best = { x, y, d };
+    }
+  }
+  return best;
+}
+
+// A pinch centre where finger 1 (the left start point) lies on the visible part of the object and no start or end finger of
+// either hand is under a floating overlay. Returns null when no such spot exists (the caller then fails with a message the
+// ledger rejects, never a product reason).
+function objectPinchSpot(st, box, startDist, endDist) {
+  const cr = st.canvasRect;
+  const pad = 16;
+  const hs = startDist / 2;
+  const he = endDist / 2;
+  const free = (x, y) => x > cr.x && x < cr.x + cr.w && y > cr.y && y < cr.y + cr.h
+    && st.overlays.every((r) => !(x > r.minx - pad && x < r.maxx + pad && y > r.miny - pad && y < r.maxy + pad));
+  let best = null;
+  for (let y = Math.max(box.miny, cr.y); y <= Math.min(box.maxy, cr.y + cr.h); y += 12) {
+    for (let fx = Math.max(box.minx, cr.x); fx <= Math.min(box.maxx, cr.x + cr.w); fx += 12) {
+      const cx = fx + hs; // finger 1 starts at fx, on the object
+      const pts = [[fx, y], [cx + hs, y], [cx - he, y], [cx + he, y]];
+      if (!pts.every(([px, py]) => free(px, py))) continue;
+      const d = Math.hypot(fx - box.cx, y - box.cy);
+      if (!best || d < best.d) best = { x: cx, y, d };
     }
   }
   return best;
@@ -414,7 +436,7 @@ JOURNEYS.push({
       expects: 'scale grows; selection kept; history +0; the object params are untouched', jrn: 'JRN-003',
       run: async (c) => {
         const st = await P.readState(c.page);
-        const spot = emptyPinchSpot(st, boxOf(st, c.vars.oval), { halves: [40, 75] });
+        const spot = emptyPinchSpot(st, boxOf(st, c.vars.oval), { halves: [40, 75], keepBox: boxOf(st, c.vars.oval), zoom: 150 / 80 });
         if (!spot) throw new Error('no empty canvas spot for the first finger');
         c.vars.scale = st.scale;
         c.vars.params = JSON.stringify(st.activeParams);
@@ -430,10 +452,12 @@ JOURNEYS.push({
       expects: 'scale grows; selection kept; the object is not moved or resized', jrn: 'JRN-003',
       run: async (c) => {
         const st = await P.readState(c.page);
-        const v = visibleCenter(st, boxOf(st, c.vars.oval));
+        const spot = objectPinchSpot(st, boxOf(st, c.vars.oval), 100, 150);
+        if (!spot) console.log('GEOM', JSON.stringify({ box: boxOf(st, c.vars.oval), cr: st.canvasRect, ov: st.overlays }));
+        if (!spot) throw new Error('no uncovered on-object spot: the oval has no visible part clear of the overlays for a two-finger pinch');
         c.vars.scale = st.scale;
         c.vars.params = JSON.stringify(st.activeParams);
-        await P.fingerPinch(c.page, onCanvas(c, v.x + 50, v.y), { startDist: 100, endDist: 150, staggerMs: 40 });
+        await P.fingerPinch(c.page, onCanvas(c, spot.x, spot.y), { startDist: 100, endDist: 150, staggerMs: 40 });
       },
       post: (c, pre, now) => {
         if (!(now.scale > c.vars.scale * 1.1)) throw new Error(`scale ${c.vars.scale.toFixed(2)} -> ${now.scale.toFixed(2)}, want a zoom in`);
@@ -446,8 +470,10 @@ JOURNEYS.push({
       run: async (c) => {
         const st = await P.readState(c.page);
         c.vars.view = { x: st.offsetX, y: st.offsetY, s: st.scale };
-        const cr = st.canvasRect;
-        await P.fingerPan(c.page, onCanvas(c, cr.x + cr.w / 2, cr.y + cr.h / 2), { dx: -80, dy: 0, gap: 100 });
+        const nowhere = { minx: 1e9, maxx: 1e9, miny: 1e9, maxy: 1e9 };
+        const spot = emptyPinchSpot(st, nowhere, { halves: [50], drag: { dx: -80, dy: 0 } });
+        if (!spot) throw new Error('no empty canvas spot for the two-finger pan');
+        await P.fingerPan(c.page, onCanvas(c, spot.x, spot.y), { dx: -80, dy: 0, gap: 100 });
       },
       post: (c, pre, now) => {
         if (Math.abs(now.offsetX - c.vars.view.x) < 30) throw new Error(`view offset moved ${Math.round(now.offsetX - c.vars.view.x)} px, want about 80`);
@@ -794,10 +820,20 @@ JOURNEYS.push({
       post: async (c) => { if (!(await L(c, S.settingsPanel).isVisible())) throw new Error('Document Setup did not open'); },
     },
     {
-      id: 'j9.paper-section', action: 'tap', route: 'tap the Paper section header once; it expands', selector: '#settings-panel .sect-hdr Paper',
-      expects: 'paper size select visible', jrn: 'JRN-019',
-      run: (c) => P.fingerTap(c.page, L(c, '#settings-panel .sect-hdr').filter({ hasText: /Paper/ })),
-      post: async (c) => { if (!(await L(c, '#machine-profile').isVisible())) throw new Error('the paper section did not expand'); },
+      id: 'j9.paper-section', action: 'tap', route: 'tap the Paper section header only when it is collapsed (it may open on touch)', selector: '#settings-panel .sect-hdr Paper',
+      expects: 'Paper section expanded (aria-expanded true); the Size select is the topmost element at its centre', jrn: 'JRN-019',
+      run: async (c) => {
+        const hdr = L(c, '#settings-panel .sect-hdr').filter({ hasText: /Paper/ });
+        // A tap toggles: tapping an already-open header would collapse it. Read the state first.
+        if ((await hdr.first().getAttribute('aria-expanded')) !== 'true') await P.fingerTap(c.page, hdr);
+      },
+      post: async (c) => {
+        const hdr = L(c, '#settings-panel .sect-hdr').filter({ hasText: /Paper/ });
+        const open = await hdr.first().getAttribute('aria-expanded');
+        if (open !== 'true') throw new Error(`the Paper section is not expanded (aria-expanded=${open})`);
+        const blocker = await P.hitAtCenter(c.page, L(c, '#machine-profile'));
+        if (blocker) throw new Error(`the Size select is covered by ${blocker}`);
+      },
     },
     {
       id: 'j9.paper-size', action: 'pickOption', route: 'tap the Size select and choose A4', selector: '#machine-profile',

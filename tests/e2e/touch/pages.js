@@ -602,7 +602,31 @@ async function swipeStart(page, container) {
   }, container);
 }
 
+// State read: does the element at the centre of `loc` resolve to `loc` itself (or a child)? Returns null when yes, else the blocker's name.
+async function hitAtCenter(page, loc) {
+  const handle = await handleOf(page, loc);
+  return page.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (hit && (hit === el || el.contains(hit))) return null;
+    return hit ? `${hit.tagName.toLowerCase()}${hit.id ? `#${hit.id}` : ''}` : 'nothing';
+  }, handle);
+}
+
+// SANCTIONED PROGRAMMATIC SCROLL (WebKit only). WebKit does not run native default actions (scrolling) for synthetic
+// touches (helpers/touch.js: nativeDefaultActions=false), so a finger drag cannot scroll a pane there. This only brings the
+// target into view; every tap after it stays a guarded finger tap. The finger-scroll proof lives in the Chromium twins.
+async function webkitProgrammaticScroll(page, target) {
+  const handle = await handleOf(page, target, 'scroll target');
+  await page.evaluate((el) => el.scrollIntoView({ block: 'center' }), handle);
+  await sleep(120);
+}
+
 async function fingerScrollInto(page, target, container) {
+  if (!touch.engineSupports(page, 'nativeDefaultActions')) {
+    await webkitProgrammaticScroll(page, target);
+    return;
+  }
   const cHandle = await handleOf(page, container, 'scroll container');
   let lastY = null;
   for (let i = 0; i < 8; i += 1) {
@@ -680,6 +704,7 @@ module.exports = {
   fingerPan,
   fingerMultiTap,
   fingerScrollInto,
+  hitAtCenter,
   fingerSlider,
   pickOption,
   softType,
