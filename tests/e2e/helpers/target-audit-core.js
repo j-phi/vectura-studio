@@ -162,7 +162,16 @@ function measureInPage(cfg, helpers) {
     if (el.closest(INTERACTIVE)) continue; // inside an already-counted control
     set.add(el);
   }
+  // A semantic control nested in a cursor:pointer row is its own target (the row's eye/lock/delete
+  // buttons are real, separately tappable controls). Only cursor:pointer proxies nested in another
+  // candidate are folded into the ancestor.
+  const SEMANTIC = [
+    'button', 'a[href]', 'input:not([type=hidden])', 'select', 'textarea', 'summary',
+    '[role=button]', '[role=slider]', '[role=tab]', '[role=menuitem]', '[role=menuitemradio]',
+    '[role=menuitemcheckbox]', '[role=option]', '[role=checkbox]', '[role=switch]', '[role=radio]',
+  ].join(',');
   const cands = Array.from(set).filter(visible).filter((el) => {
+    if (el.matches(SEMANTIC)) return true;
     let p = el.parentElement;
     while (p) { if (set.has(p) && visible(p) && p.tagName !== 'LABEL') return false; p = p.parentElement; }
     return true;
@@ -294,6 +303,8 @@ function measureInPage(cfg, helpers) {
   const isStranded = (el) => {
     const r = el.getBoundingClientRect();
     if (clipRect(el).w > 1 && clipRect(el).h > 1) return false;
+    // Closed by design: aria-hidden / inert subtree is not offered to the user.
+    if (el.closest('[aria-hidden="true"],[inert]')) return false;
     // Clip by ancestors only (not by the viewport). Remember a scrollable ancestor.
     let x1 = r.left; let y1 = r.top; let x2 = r.right; let y2 = r.bottom;
     let fixed = false;
@@ -309,6 +320,9 @@ function measureInPage(cfg, helpers) {
       const sx = /^(auto|scroll)$/.test(cs.overflowX); const sy = /^(auto|scroll)$/.test(cs.overflowY);
       if (!(hx || hy || sx || sy)) continue;
       const pr = p.getBoundingClientRect();
+      // A collapsed disclosure (clip box with a zero-size axis, e.g. .vtp-reveal-inner at height 0)
+      // is closed by design, not a stranded control.
+      if ((hx || hy) && !(sx || sy) && (pr.width <= 1 || pr.height <= 1)) return false;
       if ((sx || sy) && !hiddenEmpty) {
         const canScroll = (sx && p.scrollWidth > p.clientWidth + 1) || (sy && p.scrollHeight > p.clientHeight + 1);
         const onScreen = pr.right > 0 && pr.left < vw && pr.bottom > 0 && pr.top < vh && pr.width > 1 && pr.height > 1;
