@@ -590,6 +590,100 @@ describe('TUX-017 gesture arbiter (renderer)', () => {
     expect(renderer.touchPointers.size).toBe(0);
   });
 
+  // D6: every touch-only deferral keeps its immediate (at pointerdown) mouse behavior.
+  const mouseIdle = () => {
+    expect(renderer.touchArbiter.pointers.size).toBe(0);
+    expect(renderer._touchDeferred).toBeNull();
+  };
+  const anchorCount = (id) => engine.layers.find((l) => l.id === id).paths.reduce((n, p) => n + (p?.length || 0), 0);
+
+  test('mouse parity: fill tool pours at pointerdown', () => {
+    const { a } = add2d();
+    app.ui.setActiveTool('fill');
+    const layer = engine.layers.find((l) => l.id === a);
+    const fillsBefore = (layer.fills || []).length;
+    const histBefore = app.history.length;
+    renderer.down(mouseEv(60, 60));
+    expect((layer.fills || []).length + (app.history.length - histBefore)).toBeGreaterThan(0);
+    mouseIdle();
+    renderer.up(mouseEv(60, 60, { buttons: 0 }));
+    expect((layer.fills || []).length).toBeGreaterThanOrEqual(fillsBefore);
+    mouseIdle();
+  });
+
+  test('mouse parity: pattern fill on a Pattern layer calls onPatternFill at pointerdown', () => {
+    add2d();
+    app.ui.setActiveTool('fill-pattern');
+    const origActive = engine.getActiveLayer;
+    const origPoly = renderer._computeFillPreviewPolygon;
+    const origIn = renderer._isWorldInsidePaper;
+    const calls = [];
+    engine.getActiveLayer = () => ({ type: 'pattern', id: 'pat' });
+    renderer._computeFillPreviewPolygon = () => [[0, 0], [10, 0], [10, 10]];
+    renderer._isWorldInsidePaper = () => true;
+    renderer.onPatternFill = (p) => calls.push(p);
+    try {
+      renderer.down(mouseEv(60, 60));
+      expect(calls.length).toBe(1);
+      mouseIdle();
+      renderer.up(mouseEv(60, 60, { buttons: 0 }));
+      expect(calls.length).toBe(1);
+      mouseIdle();
+    } finally {
+      engine.getActiveLayer = origActive;
+      renderer._computeFillPreviewPolygon = origPoly;
+      renderer._isWorldInsidePaper = origIn;
+      renderer.onPatternFill = null;
+    }
+  });
+
+  ['add', 'delete'].forEach((mode) => {
+    test(`mouse parity: pen ${mode} anchor runs at pointerdown`, () => {
+      const { a } = add2d();
+      app.ui.setActiveTool('pen');
+      renderer.setPenMode(mode);
+      const name = mode === 'add' ? 'insertAnchorFromWorld' : 'removeAnchorFromWorld';
+      const orig = renderer[name];
+      let calls = 0;
+      renderer[name] = function (...args) { calls += 1; const r = orig.apply(this, args); return r; };
+      const before = anchorCount(a);
+      try {
+        const pt = mode === 'add' ? { x: 60, y: 40 } : { x: 80, y: 80 }; // edge midpoint (add) / corner anchor (delete)
+        if (mode === 'delete') renderer.setDirectSelection(engine.layers.find((l) => l.id === a), 0);
+        renderer.down(mouseEv(pt.x, pt.y));
+        expect(calls).toBe(1);
+        expect(anchorCount(a)).not.toBe(before);
+        mouseIdle();
+        renderer.up(mouseEv(pt.x, pt.y, { buttons: 0 }));
+        expect(calls).toBe(1);
+        mouseIdle();
+      } finally {
+        renderer[name] = orig;
+        renderer.setPenMode('draw');
+      }
+    });
+  });
+
+  test('mouse parity: light-source placement sets the light at pointerdown', () => {
+    add2d();
+    const calls = [];
+    const orig = renderer.setLightSource;
+    renderer.setLightSource = (w) => calls.push(w);
+    renderer.lightSourcePlacement = true;
+    try {
+      renderer.down(mouseEv(100, 100));
+      expect(calls.length).toBe(1);
+      expect(renderer.lightSourcePlacement).toBe(false);
+      mouseIdle();
+      renderer.up(mouseEv(100, 100, { buttons: 0 }));
+      expect(calls.length).toBe(1);
+      mouseIdle();
+    } finally {
+      renderer.setLightSource = orig;
+      renderer.lightSourcePlacement = false;
+    }
+  });
+
   test('pen pointer: a pen stroke in flight is not rolled back by two touches', () => {
     const { a } = add2d();
     const layer = engine.layers.find((l) => l.id === a);
