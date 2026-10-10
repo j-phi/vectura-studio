@@ -16,7 +16,7 @@ const DOC = path.join(DIR, '..', '..', '..', 'docs', 'touch-audit', 'journey-scr
 
 // Functions that may call page.evaluate and friends (state reads, setup, guard internals).
 const EVAL_ALLOWED = new Set([
-  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'waitAppReady', 'waitNoToast', 'readSavedPresetNames', 'spyShare', 'sharedFiles', 'captureFile',
+  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'waitAppReady', 'waitNoToast', 'readSavedPresetNames', 'spyShare', 'sharedFiles', 'captureFile', 'readRotateAffordance',
 ]);
 const EVAL_MARKER_CAP = 4;
 
@@ -147,7 +147,7 @@ test.describe('journey static guard', () => {
 
   test('no ledger reason is a harness-guard or precondition message', () => {
     const ledger = JSON.parse(fs.readFileSync(path.join(DIR, 'journey-status.json'), 'utf8'));
-    const bad = /end: covered|drag end: off-screen|end: off-screen|no empty canvas spot|^(?:JRN-\d+ )?not found/;
+    const bad = /end: covered|drag end: off-screen|end: off-screen|no empty canvas spot|^(?:JRN-\d+ )?not found|^(?:JRN-\d+ )?off-screen:|exceeded the .* step budget/;
     for (const e of ledger.entries) {
       expect(typeof e.reason, `${e.project}|${e.journey} needs a reason`).toBe('string');
       expect(e.reason.length, `${e.project}|${e.journey} reason is empty`).toBeGreaterThan(0);

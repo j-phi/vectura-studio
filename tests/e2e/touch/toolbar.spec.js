@@ -3,6 +3,7 @@ const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
 const { tap, longPress, drag, hitArea, touchPhase, engineSupports } = require('../helpers/touch');
 
+const EVIDENCE_014 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-014';
 const EVIDENCE_013 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-013';
 
 // TUX-014: tool sub-menus open by tap / long-press and stay open (touch path).
@@ -150,7 +151,7 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
   });
 
   for (const s of SURFACES) {
-    test(`TUX-014 long-press keeps menu open: ${s.name}`, async ({ page }) => {
+    test(`TUX-014 long-press keeps menu open: ${s.name}`, async ({ page }, testInfo) => {
       await skipIfOffRail(page, s);
       const size = page.viewportSize();
       const parent = page.locator(s.parent).first();
@@ -159,11 +160,18 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
       expect(await isOpen(page, s), `expected ${s.menu} visible after longPress(600), was hidden; activeTool ${(await readState(page)).tool}`).toBe(true);
       expect((await readState(page)).tool).toBe('select');
       expectInside(await menuGeometry(page, s), size);
+      if (s.name === 'shape' || s.algo) {
+        await fs.promises.mkdir(EVIDENCE_014, { recursive: true });
+        const proj = testInfo.project.name.replace(/^touch-/, '');
+        await page.screenshot({ path: `${EVIDENCE_014}/${s.name}-${proj}.png` });
+      }
 
       // Every row fully inside the visible menu area.
-      const rowHandles = await page.locator(`${s.menu} ${s.rowSel}`).elementHandles();
+      const rowLoc = page.locator(`${s.menu} ${s.rowSel}`);
+      const rowCount = await rowLoc.count();
       let checked = 0;
-      for (const h of rowHandles) {
+      for (let ri = 0; ri < rowCount; ri += 1) {
+        const h = rowLoc.nth(ri);
         const info = await h.evaluate((el, menu) => {
           const m = document.querySelector(menu).getBoundingClientRect();
           const r = el.getBoundingClientRect();
@@ -219,9 +227,46 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
     });
   }
 
+  // Fix round: open menus must not run under the collapsed right-pane sliver (z-index 55).
+  for (const s of SURFACES.filter((x) => !x.algo)) {
+    test(`TUX-014 rows are hittable across their full width: ${s.name}`, async ({ page }) => {
+      await skipIfOffRail(page, s);
+      const rows = await resolveRows(page, s);
+      await longPress(page, page.locator(s.parent).first(), 600);
+      expect(await isOpen(page, s)).toBe(true);
+      const bad = await page.evaluate(({ menu, rowSel }) => {
+        const m = document.querySelector(menu);
+        const out = [];
+        m.querySelectorAll(rowSel).forEach((row) => {
+          const r = row.getBoundingClientRect();
+          if (r.width === 0) return;
+          const y = r.top + r.height / 2;
+          for (let i = 0; i <= 10; i += 1) {
+            const x = r.left + 1 + ((r.width - 2) * i) / 10;
+            const hit = document.elementFromPoint(x, y);
+            if (!hit || !m.contains(hit)) out.push({ x: Math.round(x), y: Math.round(y), hit: hit ? (hit.id || hit.className || hit.tagName) : null });
+          }
+        });
+        return out;
+      }, { menu: s.menu, rowSel: s.rowSel });
+      expect(bad, 'elementFromPoint across row width must stay inside the menu').toEqual([]);
+      // Finger tap near the visible right end of the target row.
+      const target = page.locator(`${s.menu} ${rows.tapR}`).first();
+      await target.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+      const b = await target.boundingBox();
+      await page.touchscreen.tap(b.x + b.width - 15, b.y + b.height / 2);
+      await expectState(page, rows.tapExpect);
+    });
+  }
+
   test('TUX-014 dismiss: tap parent closes; outside tap is consumed', async ({ page }) => {
+    // One canvas listener for the whole test (registered once, counts every pointerdown).
+    await page.evaluate(() => {
+      window.__canvasDowns = 0;
+      document.querySelector('#main-canvas').addEventListener('pointerdown', () => { window.__canvasDowns += 1; });
+    });
     for (const s of SURFACES.filter((x) => ['shape', 'pen'].includes(x.name))) {
-      await page.evaluate(() => app.ui.setActiveTool('select'));
+      await page.evaluate(() => { app.ui.setActiveTool('select'); window.__canvasDowns = 0; });
       const parent = page.locator(s.parent).first();
       await longPress(page, parent, 600);
       expect(await isOpen(page, s), `${s.name} open`).toBe(true);
@@ -238,10 +283,7 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
       }
       await tap(page, parent);
       expect(await isOpen(page, s), `${s.name} reopened`).toBe(true);
-      await page.evaluate(() => {
-        window.__canvasDowns = 0;
-        document.querySelector('#main-canvas').addEventListener('pointerdown', () => { window.__canvasDowns += 1; });
-      });
+      await page.evaluate(() => { window.__canvasDowns = 0; });
       const before = await page.evaluate(() => ({
         layers: app.engine.layers.length,
         sel: Array.from(app.renderer.selectedLayerIds || []).join(','),
@@ -274,22 +316,44 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
       const parent = page.locator(s.parent).first();
       const p = await parent.boundingBox();
       const c = { x: p.x + p.width / 2, y: p.y + p.height / 2, id: 0 };
-      // Movement of 15 px before the timer fires cancels the hold.
-      await touchPhase(page, 'start', [c]);
-      for (let i = 1; i <= 5; i += 1) {
-        await touchPhase(page, 'move', [{ ...c, y: c.y + 3 * i }]);
-        await sleep(30);
+      // Movement past the 10 px slop before the timer fires cancels the hold (no sleeps between moves,
+      // so a loaded CPU cannot let the 280 ms timer win).
+      if (engineSupports(page, 'cdp')) {
+        await touchPhase(page, 'start', [c]);
+        await touchPhase(page, 'move', [{ ...c, y: c.y + 14 }]); // one jump past slop, right after the press
+        await touchPhase(page, 'move', [{ ...c, y: c.y + 24 }]);
+        await sleep(500);
+        await touchPhase(page, 'end', [{ ...c, y: c.y + 24 }]);
+      } else {
+        // WebKit synthetic touches: press and move in ONE in-page task so test-runner latency under load
+        // cannot let the 280 ms hold timer win before the slop check sees the move.
+        await page.evaluate(({ x, y }) => {
+          const el = document.elementFromPoint(x, y);
+          const mk = (type, yy) => new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: yy, pointerId: 321, pointerType: 'touch', isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1 });
+          el.dispatchEvent(mk('pointerdown', y));
+          el.dispatchEvent(mk('pointermove', y + 14));
+          el.dispatchEvent(mk('pointermove', y + 24));
+        }, { x: c.x, y: c.y });
+        await sleep(500);
+        await page.evaluate(({ x, y }) => {
+          document.elementFromPoint(x, y).dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y + 24, pointerId: 321, pointerType: 'touch', isPrimary: true, button: 0, buttons: 0 }));
+        }, { x: c.x, y: c.y });
       }
-      await sleep(500);
-      await touchPhase(page, 'end', [{ ...c, y: c.y + 15 }]);
       expect(await isOpen(page, s), 'no menu after a moved hold').toBe(false);
       expect((await readState(page)).tool).toBe('select');
-      // pointercancel cancels the hold.
+      // pointercancel cancels the hold. Non-vacuous: a pointercancel really reached the page.
+      await page.evaluate(() => {
+        window.__cancels = 0;
+        window.addEventListener('pointercancel', () => { window.__cancels += 1; }, true);
+        window.addEventListener('touchcancel', () => { window.__cancels += 1; }, true);
+      });
       await touchPhase(page, 'start', [c]);
       await sleep(100);
       await touchPhase(page, 'cancel', [c]);
       await sleep(400);
+      expect(await page.evaluate(() => window.__cancels), 'a pointercancel / touchcancel reached the page').toBeGreaterThan(0);
       expect(await isOpen(page, s), 'no menu after pointercancel').toBe(false);
+      expect((await readState(page)).tool).toBe('select');
     });
   }
 
@@ -312,7 +376,7 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
         await tap(page, parent); // close
       };
       await check();
-      await page.evaluate((side) => { app.ui.setToolbarDock(side); app.ui._updateAllSubmenuDirs(); }, landscape ? 'left' : 'bottom');
+      await page.evaluate((side) => { app.ui.setToolbarDock(side); }, landscape ? 'left' : 'bottom');
       await sleep(250);
       await check();
     });
@@ -449,7 +513,9 @@ test.describe('TUX-013 one row', () => {
       }, t.slot);
       if (onRail) continue;
       offRail += 1;
-      await page.evaluate(() => { window.Vectura.UI.ToolDrawer.close(); window.app.ui.setActiveTool('select'); });
+      // TUX-014: a tap outside an open picker is consumed (closes it only), so close the picker the
+      // previous drawer item opened before reaching for the overflow button.
+      await page.evaluate(() => { window.Vectura.UI.ToolDrawer.close(); document.getElementById('algo-draw-picker')?.classList.add('hidden'); window.app.ui.setActiveTool('select'); });
       await tap(page, page.locator('#tool-overflow-btn'));
       const item = page.locator(`.tool-drawer-item[data-tool-id="${t.id}"]`);
       await expect(item, `drawer lists ${t.id}`).toBeVisible();

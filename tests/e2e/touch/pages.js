@@ -556,15 +556,14 @@ async function openMenu(page, name) {
   }
 }
 
-// Direct Undo/Redo (TUX-020) where a build renders one; else Edit menu > Undo/Redo (the same action).
-async function historyTap(page, list, menuId) {
+// Direct Undo/Redo (TUX-020). No Edit-menu fallback: journey-scripts.md 'Forbidden routes'.
+async function historyTap(page, list) {
   const direct = await rendered(page, list.map(visible));
-  if (await direct.count() && await direct.boundingBox()) { await fingerTap(page, direct); return; }
-  await openMenu(page, 'edit');
-  await fingerTap(page, page.locator(menuId));
+  if (!(await direct.count() && await direct.boundingBox())) throw new Error(`TUX-020 missing direct control: ${list.join(' | ')}`);
+  await fingerTap(page, direct);
 }
-async function undo(page) { await historyTap(page, SELECTORS.headerUndo, '#btn-undo'); }
-async function redo(page) { await historyTap(page, SELECTORS.headerRedo, '#btn-redo'); }
+async function undo(page) { await historyTap(page, SELECTORS.headerUndo); }
+async function redo(page) { await historyTap(page, SELECTORS.headerRedo); }
 
 // Taps via `tapFn` and returns the saved file name: an anchor download, or (WebKit) the share-sheet file.
 async function captureFile(page, tapFn) {
@@ -605,19 +604,23 @@ async function swipeStart(page, container) {
 
 async function fingerScrollInto(page, target, container) {
   const cHandle = await handleOf(page, container, 'scroll container');
-  for (let i = 0; i < 10; i += 1) {
+  let lastY = null;
+  for (let i = 0; i < 8; i += 1) {
     const tb = await target.first().boundingBox();
     const cb = await cHandle.boundingBox();
     const dev = jOf(page).dev;
     if (tb && cb) {
-      const top = Math.max(cb.y, 0) + 4;
+      const top = Math.max(cb.y, 0) + Math.min(48, cb.height * 0.15); // clear of a sticky pane header
       const bottom = Math.min(cb.y + cb.height, dev.height) - 4;
       if (tb.y >= top && tb.y + tb.height <= bottom) return;
     }
     if (!tb) throw new Error(`not found: ${String(target)}`);
+    // No progress after a full finger drag is a deterministic stop: fail with the real reason, not the 5000 ms step budget.
+    if (lastY !== null && Math.abs(tb.y - lastY) < 1) throw new Error(`the finger scroll never brought the target into view (it stayed at y=${Math.round(tb.y)}; container y=${Math.round(cb.y)} h=${Math.round(cb.height)})`);
+    lastY = tb.y;
     const start = await swipeStart(page, cHandle);
     const dir = tb.y > (cb.y + cb.height / 2) ? -1 : 1;
-    const span = Math.min(cb.height * 0.6, 260);
+    const span = Math.min(cb.height * 0.8, 520);
     await fingerDrag(page, { x: start.x, y: start.y + (dir < 0 ? span / 2 : -span / 2), within: container }, { dx: 0, dy: dir * span }, { steps: 12, stepDelayMs: 12 });
     await sleep(120);
   }
@@ -642,10 +645,22 @@ async function fingerSlider(page, slider, fraction) {
   return { before, after, dir };
 }
 
+// TUX-023: client-space centre of the visible touch rotate affordance for a layer (null if none). State read.
+async function readRotateAffordance(page, layerId) {
+  return page.evaluate((id) => {
+    const r = window.app.renderer;
+    const layer = window.app.engine.layers.find((l) => l.id === id);
+    const a = layer && r.getRotateAffordance(r.getSelectionBounds([layer]));
+    const cr = document.querySelector('#main-canvas').getBoundingClientRect();
+    return a ? { x: a.x + cr.left, y: a.y + cr.top } : null;
+  }, layerId);
+}
+
 module.exports = {
   SELECTORS,
   readSavedPresetNames,
   captureFile,
+  readRotateAffordance,
   STEP_BUDGET_MS,
   BOOT_BUDGET_MS,
   bindJourney,

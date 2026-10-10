@@ -390,7 +390,10 @@ JOURNEYS.push({
         const o = boxOf(st, c.vars.oval);
         c.vars.rot = st.activeParams.rotation;
         const ne = o.corners.ne;
-        const start = { x: ne[0] + 14, y: ne[1] - 14 };
+        // Start on the VISIBLE rotate affordance (it flips corner when chrome or the canvas edge covers NE).
+        // Fallback: 24,-24 is 34 px from the NE corner, inside the 22..48 px touch rotate band.
+        const aff = await P.readRotateAffordance(c.page, c.vars.oval);
+        const start = aff || { x: ne[0] + 24, y: ne[1] - 24 };
         const v = { x: start.x - o.cx, y: start.y - o.cy };
         const a = (35 * Math.PI) / 180;
         const end = { x: o.cx + v.x * Math.cos(a) - v.y * Math.sin(a), y: o.cy + v.x * Math.sin(a) + v.y * Math.cos(a) };
@@ -458,13 +461,10 @@ JOURNEYS.push({
         const st = await P.readState(c.page);
         c.vars.view = { x: st.offsetX, y: st.offsetY, s: st.scale };
         c.vars.panes = await paneStates(c);
-        // The canvas HUD Fit (TUX-020) is not on every build yet: View > Reset View is the same action.
+        // No View > Reset View fallback (journey-scripts.md 'Forbidden routes'): a missing HUD Fit fails the step.
         const hud = await P.rendered(c.page, S.hudFit.map(P.visible));
-        if (await hud.count() && await hud.boundingBox()) await P.fingerTap(c.page, hud);
-        else {
-          await P.openMenu(c.page, 'view');
-          await P.fingerTap(c.page, L(c, '#btn-reset-view'));
-        }
+        if (!(await hud.count() && await hud.boundingBox())) throw new Error(`TUX-020 missing direct control: ${S.hudFit.join(' | ')}`);
+        await P.fingerTap(c.page, hud);
       },
       post: async (c, pre, now) => {
         if (near(now.scale, c.vars.view.s, 0.001) && near(now.offsetX, c.vars.view.x, 1)) throw new Error('the view did not change');
@@ -676,7 +676,14 @@ JOURNEYS.push({
     {
       id: 'j7.font-pick', action: 'tap', route: 'tap another font', selector: '.vtp-fp-opt:not(.sel)',
       expects: 'font param changed; history +1', expect: { history: 1 },
-      run: (c) => P.fingerTap(c.page, L(c, '.vtp-fp-opt:not(.sel)').first()),
+      run: async (c) => {
+        // On short screens the list opens below the fold or under the trigger: try each other option; none tappable is a product layout result.
+        let landed = false;
+        for (const o of await L(c, '.vtp-fp-opt:not(.sel)').all()) {
+          try { await P.fingerTap(c.page, o); landed = true; break; } catch (e) { /* covered or off-screen: try the next option */ }
+        }
+        if (!landed) throw new Error('font list: no option can be tapped (all covered or off-screen)');
+      },
       post: (c, pre, now) => { if (now.activeParams.font === pre.activeParams.font) throw new Error('the font did not change'); },
     },
     {
@@ -695,7 +702,8 @@ JOURNEYS.push({
       run: async (c) => {
         await P.softType(c.page, '72');
         // the field commits on blur: a tap on a neutral heading ends the edit
-        await P.fingerTap(c.page, L(c, '#left-pane .vtp-tab-heading').first());
+        // The finger scroll in j7.size-focus moves every heading off-screen: the sticky pane title is always on-screen and not focusable.
+        await P.fingerTap(c.page, L(c, '#left-pane .pane-header-left .pane-title'));
       },
       post: (c, pre, now) => { if (now.activeParams.fontSize !== 72) throw new Error(`font size is ${now.activeParams.fontSize}, want 72`); },
     },

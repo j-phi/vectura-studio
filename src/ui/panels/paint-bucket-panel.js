@@ -457,5 +457,108 @@
     };
   }
 
+  // TUX-022: Scope up/down chips for touch. Rendered by the context bar (kind 'fill', coarse
+  // pointer only). The buttons step the renderer's sticky scope offset; the live preview and the
+  // pending lift-to-pour follow it. Touch and pen step on pointerdown (no click arrives for a
+  // second-finger tap); mouse and keyboard step on click. Canvas pointers stay untouched.
+  const SCOPE_CHIP_COPY = {
+    up: { label: 'Scope', glyph: '\u25B2', aria: 'Widen fill scope' },
+    down: { label: 'Scope', glyph: '\u25BC', aria: 'Narrow fill scope' },
+  };
+  const scopeReadoutText = (offset) => `Scope +${Math.max(0, Math.round(offset) || 0)}`;
+  const scopeChipsEnabled = (renderer) => {
+    if (!renderer) return false;
+    // The pattern-layer pattern-fill path pours by tile region and has no scope stack.
+    const layer = renderer.engine && renderer.engine.getActiveLayer ? renderer.engine.getActiveLayer() : null;
+    const patternTool = renderer.activeTool === 'fill-pattern' || renderer.activeTool === 'fill-pattern-erase';
+    return !(patternTool && layer && layer.type === 'pattern');
+  };
+  const renderScopeChips = (host, ctx = {}) => {
+    const d = G.document;
+    if (!d || !host) return null;
+    const renderer = ctx.renderer || (G.app && G.app.renderer) || null;
+    const enabled = scopeChipsEnabled(renderer);
+    const wrap = d.createElement('div');
+    wrap.className = 'ctxbar-fill-scope';
+    wrap.setAttribute('role', 'group');
+    wrap.setAttribute('aria-label', 'Fill scope');
+    const mk = (dir) => {
+      const c = SCOPE_CHIP_COPY[dir];
+      const btn = d.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ctxbar-btn ctxbar-btn--labeled ctxbar-fill-scope-btn';
+      btn.setAttribute('data-fill-scope', dir);
+      btn.setAttribute('data-ctxbar-roving', '');
+      btn.setAttribute('tabindex', '-1');
+      btn.setAttribute('aria-label', c.aria);
+      btn.title = c.aria;
+      btn.textContent = `${c.label} ${c.glyph}`;
+      if (!enabled) {
+        btn.disabled = true;
+        btn.classList.add('is-disabled');
+        btn.title = 'Scope does not apply to pattern layers';
+      } else {
+        const step = (delta) => {
+          const r = (G.app && G.app.renderer) || renderer;
+          if (r && typeof r.stepPaintBucketScope === 'function') r.stepPaintBucketScope(delta === undefined ? (dir === 'up' ? 1 : -1) : delta);
+        };
+        // A touch / pen tap steps on pointerdown: while another finger holds the canvas the
+        // browser sends no click for a multi-touch tap. Mouse and keyboard step on click.
+        // The click that follows a stepped press is swallowed, however long the press lasted.
+        // The browser sends that click right after pointerup, so the guard expires a moment
+        // after pointerup. A press that never gets a click (second finger, cancel) leaves no
+        // guard behind, and a cancelled press steps back.
+        let byPointer = false;
+        let guardTimer = 0;
+        let stepped = false;
+        const clearGuard = () => { byPointer = false; stepped = false; if (guardTimer) { clearTimeout(guardTimer); guardTimer = 0; } };
+        btn.addEventListener('pointerdown', (e) => {
+          clearGuard();
+          if (e.pointerType === 'mouse') return;
+          byPointer = true;
+          const r = (G.app && G.app.renderer) || renderer;
+          const was = r ? (r.paintBucketScopeOffset || 0) : 0;
+          step();
+          // A clamped step changes nothing, so a cancel has nothing to undo.
+          stepped = !!r && (r.paintBucketScopeOffset || 0) !== was;
+        });
+        btn.addEventListener('pointerup', () => {
+          if (!byPointer) return;
+          guardTimer = setTimeout(clearGuard, 120);
+        });
+        btn.addEventListener('pointercancel', () => {
+          if (!byPointer) return;
+          const undo = stepped;
+          clearGuard();
+          if (undo) step(dir === 'up' ? -1 : 1);
+        });
+        btn.addEventListener('keydown', clearGuard);
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (byPointer) { clearGuard(); return; }
+          step();
+        });
+      }
+      return btn;
+    };
+    const readout = d.createElement('span');
+    readout.className = 'ctxbar-fill-scope-readout';
+    readout.setAttribute('data-fill-scope-readout', '');
+    readout.setAttribute('aria-live', 'polite');
+    readout.textContent = scopeReadoutText(renderer ? renderer.paintBucketScopeOffset : 0);
+    wrap.appendChild(mk('up'));
+    wrap.appendChild(readout);
+    wrap.appendChild(mk('down'));
+    host.appendChild(wrap);
+    return wrap;
+  };
+  if (G.document && typeof G.document.addEventListener === 'function') {
+    G.document.addEventListener('vectura:fill-scope', (e) => {
+      const off = e && e.detail ? e.detail.offset : 0;
+      G.document.querySelectorAll('[data-fill-scope-readout]').forEach((n) => { n.textContent = scopeReadoutText(off); });
+    });
+  }
+  UI.PaintBucketScopeChips = { render: renderScopeChips, readoutText: scopeReadoutText };
+
   UI.PaintBucketPanel = { init };
 })();

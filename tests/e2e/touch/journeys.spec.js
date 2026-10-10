@@ -327,4 +327,13 @@ test.describe('harness self-test', () => {
     expect(v.note).toMatch(/unexpectedly passed/);
     expect(judge({ entry: null, failedStep: 's1', message: 'x' }).ok).toBe(false);
   });
+
+  test('(v) the ledger reason is judged: same class passes, a different class is reported', async () => {
+    const entry = { project: 'p', journey: 'JX', failsAt: 's1', reason: 'JRN-003 scale 2.11 -> 2.11, want a zoom in' };
+    const same = judge({ entry, failedStep: 's1', message: 'scale 1.23 -> 1.23, want a zoom in' });
+    expect(same.ok).toBe(true);
+    const changed = judge({ entry, failedStep: 's1', message: 'covered by div.ctxbar-overflow-wrap (target #main-canvas)' });
+    expect(changed.ok).toBe(false);
+    expect(changed.note).toMatch(/failure reason changed/);
+  });
 });

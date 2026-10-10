@@ -14455,6 +14455,37 @@ body.phone-layout #settings-panel {
 }
 /* === END TUX-046 === */
 
+/* === TUX-022: fill scope chips === */
+/* Scope up/down chips in the fill context bar (coarse pointer only, rendered by
+   Vectura.UI.PaintBucketScopeChips). Beats `.ctxbar-btn` (26 px) on specificity. */
+.ctxbar-fill-scope {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ctxbar .ctxbar-btn.ctxbar-fill-scope-btn {
+  min-width: var(--touch-target-min, 44px);
+  min-height: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
+  padding: 0 12px;
+  justify-content: center;
+  font-size: var(--font-size-md, 13px);
+  touch-action: manipulation;
+}
+.ctxbar-fill-scope-readout {
+  min-width: 56px;
+  text-align: center;
+  color: var(--ui-muted, #9a9a9a);
+  font-size: var(--font-size-sm, 11px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The generic phone rule hides .ctxbar at <= 640px; the touch fill chips must stay reachable. */
+@media (max-width: 640px) {
+  .ctxbar.ctxbar--fill { display: flex; }
+}
+/* === END TUX-022 === */
+
 /* === TUX-002: fixed, non-scrolling shell ===
  * The app is a fixed-size shell. The page itself must never scroll, rubber-band or pull to refresh.
  * body IS the app wrapper (the Tailwind h-screen class was removed from index.html). Height comes
@@ -15037,3 +15068,127 @@ body.tablet-layout #touch-modifier-bar {
 }
 
 /* === END TUX-008 === */
+
+/* === TUX-014: touch tool sub-menus === */
+/* Menus are portaled to <body>, so selectors target .tool-submenu / .tool-sub-btn directly. */
+.tool-sub-label { display: none; }
+
+@media (pointer: coarse) {
+  .tool-submenu {
+    /* Above the collapsed right-pane sliver (z 55) so rows stay hittable edge to edge. */
+    z-index: 60;
+    flex-direction: column;
+    gap: 4px;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-submenu .tool-sub-btn {
+    min-width: 44px;
+    min-height: 44px;
+    width: auto;
+    height: auto;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 12px;
+    white-space: nowrap;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-submenu .tool-sub-btn .tool-sub-label {
+    display: inline;
+    font-size: var(--font-size-sm, 12px);
+    font-weight: 500;
+    pointer-events: none;
+  }
+  .tool-submenu .tool-sub-btn svg { flex: none; pointer-events: none; }
+  [data-ui-skin] .algo-draw-picker .algo-pick-item,
+  .algo-draw-picker .algo-pick-item {
+    min-height: 44px;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-btn[data-has-submenu] {
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .algo-draw-picker { touch-action: pan-y; }
+}
+/* === END TUX-014 === */
+
+/* === TUX-020: canvas HUD ===
+ * Undo / Redo / Zoom Out / Zoom In / Fit for fingers (src/render/canvas-hud.js), mounted bottom-right
+ * in #viewport-container. Only under body.touch-ui; never on a fine pointer. The container ignores
+ * pointers so the canvas stays reachable around it; the buttons take them. 44 px targets.
+ * Phone layout: Undo / Redo live in the header (TUX-001), so only the view buttons show here.
+ * Stays below the modifier column (61), panes (70) and modals (900). */
+.canvas-hud { display: none; }
+body.touch-ui .canvas-hud {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  position: absolute;
+  right: calc(var(--safe-right, 0px) + 8px);
+  bottom: calc(var(--safe-bottom, 0px) + 8px);
+  padding: 2px;
+  background: var(--ui-panel, #252525);
+  border: 1px solid var(--ui-border, #363636);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 40;
+  pointer-events: none;
+}
+.canvas-hud .canvas-hud-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  /* 46 px: the hit-area probe measures 2 px steps, so a 44 px box can read 43. */
+  min-width: 46px;
+  min-height: 46px;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ui-text, #e6e6e6);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.canvas-hud .canvas-hud-btn:active { background: var(--ui-hover, rgba(255, 255, 255, 0.12)); }
+.canvas-hud .canvas-hud-btn:disabled { opacity: 0.4; }
+.canvas-hud .canvas-hud-sep {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: 6px 2px;
+  background: var(--ui-border, #363636);
+}
+/* Phone panes collapse to slivers that overlay the canvas edges; the HUD clears the right one. */
+body.phone-layout.touch-ui .canvas-hud {
+  right: calc(var(--safe-right, 0px) + var(--pane-collapsed-width, 40px) + 8px);
+}
+body.phone-layout .canvas-hud .canvas-hud-history,
+body.phone-layout .canvas-hud .canvas-hud-sep { display: none; }
+/* === END TUX-020 === */
+
+/* === TUX-020: phone-short status strip clears the HUD ===
+ * On phone landscape the status strip (#hud-bar) is an overlay at the bottom edge and reached under the
+ * canvas HUD, so the zoom and rotation readouts drew inside the HUD box. The strip now ends left of the HUD:
+ * HUD right offset + three 46 px buttons + padding (about 148 px) + an 8 px gap. */
+body.phone-layout.phone-short .hud-bar {
+  right: calc(var(--safe-right, 0px) + var(--pane-collapsed-width, 40px) + 8px + 156px);
+}
+/* === END TUX-020 (strip) === */
+
+/* === TUX-022: fill bar clears the canvas HUD ===
+ * The HUD (z 40) sat on top of the fill bar (z 35) and covered the Scope chip on iPhone portrait
+ * (Zoom In over Scope ▼). While the fill bar is mounted the HUD rides above it. */
+body.touch-ui #viewport-container:has(.ctxbar.ctxbar--fill) .canvas-hud {
+  bottom: calc(var(--safe-bottom, 0px) + 8px + 52px + 8px);
+}
+/* === END TUX-022 === */
