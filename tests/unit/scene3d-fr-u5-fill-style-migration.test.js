@@ -47,7 +47,10 @@ const GOLDEN = {
   "sphere|hatch|penPitchMatch": "121:a0e5c23979d3",
   "sphere|hatch|penFacing": "169:f4b9513734b8",
   "sphere|hatch|mkScribble": "69:b1053b52245c",
-  "sphere|hatch|mkTick": "520:220a251ccc70",
+  // Re-pinned (was "520:220a251ccc70") after merging main's T2-8b-5 mkTick rim-strip
+  // extension (d7037935, v1.4.7). It equals main c7be39f1's render of this same old
+  // document; HEAD with MK_TICK_RIM_MAX_MM = 0 reproduces the old 520:220a251ccc70.
+  "sphere|hatch|mkTick": "514:ad9ecc68a862",
   "sphere|hatch|mkDashRamp": "216:f96e12411405",
   "sphere|hatch|mkDotScreen": "103:8139cc2bc339",
   "sphere|hatch|ampSpacing": "256:ee5943989443",
