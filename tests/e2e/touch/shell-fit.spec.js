@@ -431,6 +431,14 @@ const gotoFresh = async (page) => {
 };
 
 test.describe('TUX-002 shell does not scroll under swipes', () => {
+  test('screenshot evidence', async ({ page }, testInfo) => {
+    const name = testInfo.project.name;
+    test.skip(!TUX2_PROJECTS_ALL.includes(name), 'project not in scope');
+    await gotoFresh(page);
+    await page.waitForTimeout(300);
+    fs.mkdirSync(`${TUX234_EVIDENCE}/TUX-002`, { recursive: true });
+    await page.screenshot({ path: `${TUX234_EVIDENCE}/TUX-002/${name}.png` });
+  });
   test('computed shell styles', async ({ page }, testInfo) => {
       const name = testInfo.project.name;
       test.skip(!TUX2_PROJECTS_ALL.includes(name), 'project not in scope');
@@ -514,10 +522,18 @@ test.describe('TUX-002 every scroll container contains overscroll', () => {
 });
 
 test.describe('TUX-003 pinch on chrome does not page-zoom', () => {
+  test('screenshot evidence', async ({ page }, testInfo) => {
+    const name = testInfo.project.name;
+    test.skip(!TUX3_PROJECTS.includes(name), 'project not in scope');
+    await gotoFresh(page);
+    await page.waitForTimeout(300);
+    fs.mkdirSync(`${TUX234_EVIDENCE}/TUX-003`, { recursive: true });
+    await page.screenshot({ path: `${TUX234_EVIDENCE}/TUX-003/${name}.png` });
+  });
   test('pinch scale stays 1', async ({ page }, testInfo) => {
       const name = testInfo.project.name;
       test.skip(!TUX3_PROJECTS.includes(name), 'project not in scope');
-      if (!touch.engineSupports(page, 'trustedMultiTouch')) { expect(true).toBe(true); return; }
+      test.skip(!touch.engineSupports(page, 'trustedMultiTouch'), 'engine cannot dispatch trusted multi-touch; the synthetic gesture-event test covers it');
       const targets = [
         { id: '#left-panel-content', pane: true },
         { id: '#tool-bar' },
@@ -583,6 +599,14 @@ test.describe('TUX-003 pinch on chrome does not page-zoom', () => {
 });
 
 test.describe('TUX-004 bottom chrome on screen (regression guard, passes before the fix)', () => {
+  test('screenshot evidence', async ({ page }, testInfo) => {
+    const name = testInfo.project.name;
+    test.skip(!TUX4_PROJECTS.includes(name), 'project not in scope');
+    await gotoFresh(page);
+    await page.waitForTimeout(300);
+    fs.mkdirSync(`${TUX234_EVIDENCE}/TUX-004`, { recursive: true });
+    await page.screenshot({ path: `${TUX234_EVIDENCE}/TUX-004/${name}.png` });
+  });
   test('bottom bars inside the visible viewport', async ({ page }, testInfo) => {
       const name = testInfo.project.name;
       test.skip(!TUX4_PROJECTS.includes(name), 'project not in scope');
@@ -609,9 +633,6 @@ test.describe('TUX-004 bottom chrome on screen (regression guard, passes before 
       } else {
         expect(r['status-bar'], '#status-bar must be present and visible').not.toBeNull();
         expect(r['status-bar'], `#status-bar bottom vs ${limit}`).toBeLessThanOrEqual(limit);
-      }
-      if (name === 'touch-iphone-portrait') {
-        await fs.promises.mkdir(`${TUX234_EVIDENCE}/TUX-004`, { recursive: true });
       }
     });
   test('Export modal footer buttons inside the visible viewport', async ({ page }, testInfo) => {
