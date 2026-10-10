@@ -56,3 +56,43 @@ test('desktop: field click in a blank session-created layer keeps the layer and 
   expect(info.active).toBe(true);
   expect(info.text).toBe('Hi');
 });
+
+test('desktop: field click then blur without typing discards the blank layer and unwinds history', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.textEdit));
+  const before = await page.evaluate(() => ({ l: window.app.engine.layers.length, h: window.app.history.length }));
+  await page.locator('.tool-btn[data-tool="type"]').click();
+  const box = await page.locator('#main-canvas').boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForFunction(() => window.app.textEdit.isActive());
+  const field = page.locator(FIELD);
+  await field.scrollIntoViewIfNeeded();
+  await field.click();
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(300);
+  const after = await page.evaluate(() => ({ l: window.app.engine.layers.length, h: window.app.history.length }));
+  expect(after).toEqual(before);
+});
+
+test('desktop: typed field session undoes in two steps (text, then layer)', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.textEdit));
+  const l0 = await page.evaluate(() => window.app.engine.layers.length);
+  await page.locator('.tool-btn[data-tool="type"]').click();
+  const box = await page.locator('#main-canvas').boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await page.waitForFunction(() => window.app.textEdit.isActive());
+  const field = page.locator(FIELD);
+  await field.scrollIntoViewIfNeeded();
+  await field.click();
+  await page.keyboard.insertText('Hi');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(200);
+  await page.evaluate(() => window.app.undo());
+  await page.waitForTimeout(150);
+  expect(await page.evaluate((n) => { const l = window.app.engine.layers; return l.length === n + 1 && l[l.length - 1].params.text; }, l0)).toBe('');
+  await page.evaluate(() => window.app.undo());
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => window.app.engine.layers.length)).toBe(l0);
+});
