@@ -15153,3 +15153,11 @@ body.touch-wide-layout.touch-ui .pane-right.pane-collapsed .pane-toggle::before 
 body.touch-wide-layout.touch-ui .pane-toggle svg { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
 body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle svg { transform: rotate(180deg); }
 /* === END TUX-010/011 === */
+
+/* === TUX-010: tab strip clear of the 44 px right chevron ===
+ * The right pane chevron sits at left:4px and is 44 px wide (to x=48 of the pane). The tab strip used to start
+ * at ~x=44, so a tap on the left edge of the first tab hit the chevron and collapsed the pane. */
+body.touch-ui #right-pane .right-pane-tabs {
+  margin-left: calc(var(--touch-target-min, 44px) + 8px);
+}
+/* === END TUX-010 tabs === */

@@ -140,6 +140,23 @@ test.describe('TUX-010 pane controls', () => {
     }
   });
 
+  test('right pane: chevron does not overlap the first tab (tablet drawer and touch-wide)', async ({ page }) => {
+    const layout = await layoutOf(page);
+    test.skip(layout !== 'tablet' && layout !== 'touch-wide', 'tablet and touch-wide only');
+    if (layout === 'tablet') {
+      await touch.tap(page, page.locator(SIDE.right.handle));
+      await page.waitForTimeout(450);
+    }
+    const g = await page.evaluate(() => {
+      const c = document.querySelector('#btn-pane-toggle-right').getBoundingClientRect();
+      const t = document.querySelector('#right-pane-tabs .right-pane-tab, #right-pane .right-pane-tab').getBoundingClientRect();
+      const probe = document.elementFromPoint(t.left + 2, t.top + t.height / 2);
+      return { chevronRight: c.right, tabLeft: t.left, probe: probe && (probe.closest('.right-pane-tab') ? 'tab' : (probe.id || probe.className)) };
+    });
+    expect(g.chevronRight, 'chevron.right <= first tab left').toBeLessThanOrEqual(g.tabLeft);
+    expect(g.probe, 'left edge of first tab hits the tab').toBe('tab');
+  });
+
   for (const side of ['left', 'right']) {
     test(`open by tap and close by the close control: ${side}`, async ({ page }) => {
       const layout = await layoutOf(page);
@@ -223,6 +240,9 @@ test.describe('TUX-010 pane controls', () => {
     if (layout === 'phone') { await touch.tap(page, page.locator('#btn-menu-hamburger')); taps += 1; await page.waitForTimeout(200); }
     await touch.tap(page, page.locator('#btn-menu-file')); taps += 1;
     await page.waitForTimeout(250);
+    // The phone File sheet scrolls (874x330 puts Document Setup below the fold). Scrolling is not a tap.
+    await page.locator('#btn-settings').scrollIntoViewIfNeeded();
+    await page.waitForTimeout(150);
     await touch.tap(page, page.locator('#btn-settings')); taps += 1;
     await page.waitForSelector('#settings-panel.open', { timeout: 5000 });
     expect(taps).toBeLessThanOrEqual(layout === 'phone' ? 3 : 2);
