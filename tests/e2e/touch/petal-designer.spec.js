@@ -12,9 +12,9 @@ const touch = require('../helpers/touch');
 //   re-clamp          the window stays inside the viewport after a resize and a header drag
 //   pinch             two fingers zoom the inline canvas (regression conversion, green before and after)
 // Finger input only (tests/e2e/helpers/touch.js). The window is opened by tapping the inline pop-out
-// button. On phone layouts the inline designer is 0x0 until TUX-010 lands, so the window is opened with
-// ui.openPetalDesigner() as a SETUP shim there (annotated 'shim'). The iPhP inline anchor test waits
-// for TUX-010 (annotated fixme).
+// button. If the inline pop-out is not hittable (not expected once TUX-010 is merged), the window is opened
+// with ui.openPetalDesigner() as an annotated 'shim'. deviceIsReady() asserts the inline canvas has a size
+// on every device, so the finger tests can never pass silently.
 
 const spec = (testInfo) => PROJECTS[testInfo.project.name];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -213,10 +213,7 @@ const deviceIsReady = async (page, testInfo, which) => {
     const c = pd && [...pd.root.querySelectorAll('canvas[data-petal-canvas]')].find((x) => x.getBoundingClientRect().width > 0);
     return !!c;
   }, which);
-  if (!w) {
-    // iPhP: the inline designer is 0x0 until TUX-010 puts the left pane on screen.
-    test.fixme(s.device === 'iPhP', 'TUX-010: inline designer has no size on iPhP; assertion deferred');
-  }
+  expect(w, `${which} designer canvas has no size on ${s.device}`).toBe(true);
   return w;
 };
 
