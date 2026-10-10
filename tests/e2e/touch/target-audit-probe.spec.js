@@ -53,6 +53,33 @@ test.describe('hitAreaInPage', () => {
   });
 });
 
+test.describe('rounded targets (TUX-058 fix round 4)', () => {
+  test('rounded 44x44 buttons (radius 8, 10, 12, 22) report >= 44 on both axes; 43x43 still < 44', async ({ page }) => {
+    const radii = [8, 10, 12, 22];
+    await page.setContent(page_html(
+      radii.map((r, i) => box(`r${r}`, 20 + i * 60, 20, 44, 44, `border-radius:${r}px;`)).join('')
+      + box('r22b', 20, 100, 44, 44, 'border-radius:50%;')
+      + box('s43', 100, 100, 43, 43, 'border-radius:10px;')));
+    for (const id of ['r8', 'r10', 'r12', 'r22', 'r22b']) {
+      const r = await probe(page, id);
+      expect(r.w, `${id} w`).toBeGreaterThanOrEqual(44);
+      expect(r.h, `${id} h`).toBeGreaterThanOrEqual(44);
+    }
+    const s = await probe(page, 's43');
+    expect(s.w).toBeLessThan(44);
+    expect(s.h).toBeLessThan(44);
+  });
+
+  test('rounded 44x44 at an odd centre inside a clipped scrolling pane reports >= 44', async ({ page }) => {
+    await page.setContent(page_html(
+      '<div style="position:absolute;left:11px;top:13px;width:200px;height:120px;overflow:auto">'
+      + box('q', 37, 25, 44, 44, 'border-radius:12px;') + '<div style="height:400px"></div></div>'));
+    const r = await probe(page, 'q');
+    expect(r.w).toBeGreaterThanOrEqual(44);
+    expect(r.h).toBeGreaterThanOrEqual(44);
+  });
+});
+
 test.describe('item selectors', () => {
   test('sibling buttons get distinct selectors that each match exactly one element', async ({ page }) => {
     const btns = [0, 1, 2, 3, 4].map((i) => `<button class="b" style="position:absolute;left:${10 + i * 60}px;top:10px;width:50px;height:50px">${i}</button>`).join('');

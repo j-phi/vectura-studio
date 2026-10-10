@@ -56,55 +56,26 @@ function hitAreaInPage(el, opts) {
   // coordinates: the owned samples then count owned pixels exactly.
   cx = Math.round(cx);
   cy = Math.round(cy);
-  const n = Math.floor(radius / probe);
-  const size = 2 * n + 1;
   const ownedAt = (dx, dy) => {
     const t = document.elementFromPoint(cx + dx, cy + dy);
     return !!t && (t === el || el.contains(t) || (t.tagName === 'LABEL' && t.control === el));
   };
-  const owned = (i, j) => ownedAt(i * probe, j * probe);
-  if (!owned(0, 0)) return { w: 0, h: 0 };
-  // Fast path (bounded cost): when a 44 px square, asymmetric about the origin so it covers
-  // pixels -22..+21, is owned at its 9 corner/edge-midpoint/centre samples, the target has a
-  // full 44 px hit area. Any partial occlusion of an edge fails a sample and falls to the flood.
+  if (!ownedAt(0, 0)) return { w: 0, h: 0 };
+  // Fast path (bounded cost): a 44 px span, asymmetric about the origin so it covers pixels
+  // -22..+21, owned at the four EDGE MIDPOINTS and the centre has a full 44 px hit area on both
+  // axes. Corners are NOT sampled: a rounded 44x44 target does not own its corner pixels.
   if (stopAt === 44 && radius >= 22) {
-    let all = true;
-    for (const dx of [-22, 0, 21]) for (const dy of [-22, 0, 21]) { if (all && !ownedAt(dx, dy)) all = false; }
-    if (all) return { w: 44, h: 44 };
+    if (ownedAt(-22, 0) && ownedAt(21, 0) && ownedAt(0, -22) && ownedAt(0, 21)) return { w: 44, h: 44 };
   }
-  const seen = new Set();
-  const key = (i, j) => (j + n) * size + (i + n);
-  const queue = [[0, 0]];
-  seen.add(key(0, 0));
-  let minI = 0; let maxI = 0; let minJ = 0; let maxJ = 0;
-  // One owned cell on each extreme, used for the 1 px edge refinement below.
-  let eMinI = [0, 0]; let eMaxI = [0, 0]; let eMinJ = [0, 0]; let eMaxJ = [0, 0];
-  while (queue.length) {
-    const [i, j] = queue.pop();
-    if (i < minI) { minI = i; eMinI = [i, j]; }
-    if (i > maxI) { maxI = i; eMaxI = [i, j]; }
-    if (j < minJ) { minJ = j; eMinJ = [i, j]; }
-    if (j > maxJ) { maxJ = j; eMaxJ = [i, j]; }
-    // Conservative span: owned samples are `probe` apart, so the covered pixels are at least
-    // (max - min) * probe + 1. Never the +1 cell the old code added.
-    if (stopAt && (maxI - minI) * probe + 1 >= stopAt && (maxJ - minJ) * probe + 1 >= stopAt) break;
-    [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([di, dj]) => {
-      const a = i + di;
-      const b = j + dj;
-      if (Math.abs(a) > n || Math.abs(b) > n || seen.has(key(a, b))) return;
-      seen.add(key(a, b));
-      if (owned(a, b)) queue.push([a, b]);
-    });
-  }
-  // Edge refinement at 1 px: each extreme may own up to probe-1 more pixels beyond the last cell.
-  let loX = minI * probe; let hiX = maxI * probe; let loY = minJ * probe; let hiY = maxJ * probe;
-  for (let s = 1; s < probe; s += 1) {
-    if (ownedAt(eMaxI[0] * probe + s, eMaxI[1] * probe)) hiX = maxI * probe + s;
-    if (ownedAt(eMinI[0] * probe - s, eMinI[1] * probe)) loX = minI * probe - s;
-    if (ownedAt(eMaxJ[0] * probe, eMaxJ[1] * probe + s)) hiY = maxJ * probe + s;
-    if (ownedAt(eMinJ[0] * probe, eMinJ[1] * probe - s)) loY = minJ * probe - s;
-  }
-  return { w: hiX - loX + 1, h: hiY - loY + 1 };
+  // Slow path: width = contiguous owned run along the CENTRE ROW, height = along the CENTRE
+  // COLUMN, stepped at 1 px outward from the origin. Rounded corners cannot shorten either run.
+  const run = (ux, uy) => {
+    let pos = 0; let neg = 0;
+    while (pos < radius && ownedAt(ux * (pos + 1), uy * (pos + 1))) pos += 1;
+    while (neg < radius && ownedAt(-ux * (neg + 1), -uy * (neg + 1))) neg += 1;
+    return pos + neg + 1;
+  };
+  return { w: run(1, 0), h: run(0, 1) };
 }
 
 // canvasShareInPage({ W, H, selector, cells }) -> percent 0..100
