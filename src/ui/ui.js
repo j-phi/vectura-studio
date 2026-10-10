@@ -1448,7 +1448,7 @@
     this.layerFilterOpen = false;
     this.layerAddOpen    = false;
     this._lvlDblId       = null;
-    this._lvlDblTime     = 0;
+    this._lvlDblTime     = null;
     if (typeof this._bindDocumentSetupHandlers === 'function') {
       this._bindDocumentSetupHandlers();
     }

@@ -413,6 +413,12 @@
     return [{ x: x1, y: y1 }, { x: x2, y: y2 }];
   }
 
+  // TUX-038: "double-click" is a mouse word. A touch screen gets "double-tap".
+  const tapWord = () => {
+    const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    return coarse ? 'double-tap' : 'double-click';
+  };
+
   const STEPS = [
     {
       title: 'Pick the Rings Algorithm',
@@ -456,7 +462,10 @@
           target: '#viewport-container',
           highlight: [],
           placement: 'top',
-          body: 'Now <b>double-click</b> the canvas to fill it, or <b>drag</b> a region to draw rings there.',
+          // TUX-038: a finger double-taps. The text reads the pointer type each time the step shows.
+          get body() {
+            return `Now <b>${tapWord()}</b> the canvas to fill it, or <b>drag</b> a region to draw rings there.`;
+          },
           hideNext: true,
           completion: When.layerOfType('rings'),
         },
@@ -1221,4 +1230,5 @@
   }
 
   ns.Tutorial = new TutorialManager();
+  ns.Tutorial.getSteps = () => STEPS; // read-only access for tests
 })();

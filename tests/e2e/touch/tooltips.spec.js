@@ -76,6 +76,22 @@ const compatClick = async (page, sel) => {
   await page.evaluate((s) => document.querySelector(s).click(), sel);
 };
 
+// Holds a touch on the button for 600 ms, samples whether a sub-menu is open while the
+// finger is still down, then lifts. Returns { openDuringHold }.
+const longPressOpen = async (page, p) => {
+  let openDuringHold = false;
+  await Promise.all([
+    longPress(page, p, 600),
+    (async () => {
+      for (let t = 0; t < 1500 && !openDuringHold; t += 60) {
+        await sleep(60);
+        openDuringHold = await page.evaluate(() => !!document.querySelector('.tool-submenu.open'));
+      }
+    })(),
+  ]);
+  return { openDuringHold };
+};
+
 const paneOpen = (page) => page.evaluate(() => {
   const p = document.getElementById('right-pane');
   if (!p) return false;
@@ -310,6 +326,15 @@ test.describe('TUX-039 touch tooltips', () => {
     await sleep(100);
     const tip = await tipFor(page, '[data-test-chip="1"]');
     expect(tip, 'hold on .pen-chip shows a tooltip').not.toBeNull();
+    expect(tip.text, 'pen chip tip has touch wording').not.toMatch(/click/i);
+    expect(tip.text.length, 'pen chip tip is short').toBeLessThanOrEqual(40);
+    const picker = await page.evaluate(() => {
+      const pop = document.querySelector('.pen-pick-pop');
+      if (!pop) return false;
+      const r = pop.getBoundingClientRect();
+      return getComputedStyle(pop).visibility !== 'hidden' && !pop.classList.contains('hidden') && r.width > 0;
+    });
+    expect(picker, 'pen picker stays closed after the hold').toBe(false);
   });
 
   test('(i) hold on a layer eye button names it and does not toggle visibility', async ({ page }) => {
@@ -377,4 +402,52 @@ test.describe('TUX-039 touch tooltips', () => {
     await sleep(100);
     expect(await activeTool(page), 'mouse click right after a touch hold is not swallowed').toBe(other.tool);
   });
+});
+
+// TUX-039 clauses 2 and 3 on variant tools. Needs the TUX-014 sub-menu rework in toolbar.js
+// (menu stays open after lift, rows show visible names). Owned by the TUX-014 lane.
+// Ratchet: every precondition is asserted BEFORE test.fail(), so only the clause-2/3
+// assertions (open after lift, visible labels, tool unchanged) can be the expected failure.
+test.describe('TUX-039 variant tool hold (needs TUX-014)', () => {
+  for (const tool of ['shape', 'pen', 'fill']) {
+    test(`hold ${tool} keeps a labelled sub-menu open and leaves the tool unchanged`, async ({ page }) => {
+      await setup(page);
+      const sel = `.tool-btn[data-tool="${tool}"]`;
+      const probe = () => page.evaluate((s) => {
+        const b = document.querySelector(s);
+        if (!b) return null;
+        const r = b.getBoundingClientRect();
+        const h = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+        return r.width > 0 && h && (h === b || b.contains(h)) ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+      }, sel);
+      // Precondition 1: the button exists and is reachable. A pane may cover the rail
+      // (iPadP / iPhL / phones); collapse it first, as reachableTools does. No skip.
+      expect(await page.locator(sel).count(), `${tool} button exists`).toBe(1);
+      let box = await probe();
+      if (!box) {
+        await page.evaluate(() => { const b = document.getElementById('btn-pane-toggle-left'); if (b) b.click(); });
+        await sleep(800);
+        box = await probe();
+      }
+      expect(box, `${tool} reachable on the rail at this viewport`).not.toBeNull();
+      // Precondition 2: baseline tool is select.
+      expect(await activeTool(page), 'baseline activeTool').toBe('select');
+      // Precondition 3: the menu opens during the hold (finger still down).
+      const hold = await longPressOpen(page, box);
+      expect(hold.openDuringHold, 'sub-menu opens during the hold').toBe(true);
+      // Only the clause-2/3 assertions below may fail until TUX-014 lands. Remove this line then
+      // (Playwright reports "expected to fail but passed" once TUX-014 makes it green).
+      test.fail(true, 'blocked on TUX-014: sub-menu closes on lift, rows are icon-only');
+      await sleep(150);
+      const st = await page.evaluate(() => {
+        const m = [...document.querySelectorAll('.tool-submenu.open')][0];
+        const labels = m ? [...m.querySelectorAll('.tool-sub-btn')].map((b) => (b.innerText || '').trim()).filter(Boolean) : [];
+        return { open: !!m, labels, active: window.app.ui.activeTool };
+      });
+      expect(st.open, 'sub-menu stays open after lift').toBe(true);
+      expect(st.labels.length, 'rows show visible text labels').toBeGreaterThan(0);
+      if (tool === 'shape') expect(st.labels.join('|')).toMatch(/Rectangle/);
+      expect(st.active, 'tool unchanged after lift').toBe('select');
+    });
+  }
 });
