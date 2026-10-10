@@ -192,6 +192,9 @@
       // history push (when no mutation pushed after it) so undo stays consistent.
       // engine.removeLayer re-enters via notifyLayerRemoved, but active is already
       // false by now → that path is a no-op (no reentrancy).
+      // A keepLayer hand-over is recorded so the panel field can restore this discard
+      // when it ends its own session without any real text (see discardHandedOver).
+      this._handedOverLayer = (keepLayer && created && layer && created === layer) ? layer : null;
       if (!keepLayer && created && layer && created === layer && isBlank(this._text(layer))) {
         if (typeof this.host.discardCreatedLayer === 'function') {
           this.host.discardCreatedLayer(layer, { unwindHistory: !pushed });
@@ -201,6 +204,17 @@
       if (!skipRefresh && typeof this.host.refreshPanel === 'function') this.host.refreshPanel(layer);
       if (typeof this.host.requestDraw === 'function') this.host.requestDraw();
       this._emitCaret();
+    }
+
+    /** The layer whose blank session-created status was handed to the panel field (or null). */
+    takeHandedOver() { const l = this._handedOverLayer || null; this._handedOverLayer = null; return l; }
+
+    /** Restore the M6 blank-layer discard for a handed-over layer that stayed blank. */
+    discardHandedOver(layer) {
+      if (!layer || !isBlank(this._text(layer))) return false;
+      if (!this.host || typeof this.host.discardCreatedLayer !== 'function') return false;
+      this.host.discardCreatedLayer(layer, { unwindHistory: true });
+      return true;
     }
 
     // Commit (Cmd/Ctrl+Enter) / cancel (Esc): end the session and return the

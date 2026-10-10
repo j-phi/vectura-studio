@@ -1029,6 +1029,7 @@
       if (!sessionPushed) { pushHist(); sessionPushed = true; }
       applyTextOp(t);
       lastWritten = layer.params.text;
+      if (String(layer.params.text || '').trim() !== '') handedOverBlank = null;
       try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ }
       regenPending = true;
       if (regenTimer) clearTimeout(regenTimer);
@@ -1036,7 +1037,17 @@
       renderSpec();
       return true;
     };
-    const endTextSession = () => { flushRegen(); sessionPushed = false; lastWritten = null; };
+    let handedOverBlank = null;  // blank layer a canvas Type session created and handed to the field
+    const endTextSession = () => {
+      flushRegen(); sessionPushed = false; lastWritten = null;
+      // M6: a handed-over layer that never got real text is discarded (with its creation history entry).
+      const l = handedOverBlank;
+      handedOverBlank = null;
+      if (l && String(l.params.text || '').trim() === '') {
+        const te = ui.app && ui.app.textEdit;
+        try { if (te && te.discardHandedOver) te.discardHandedOver(l); } catch (_) { /* */ }
+      }
+    };
 
     // ── editable specimen (preview; inline-editable on fine pointers only) ──
     specTextEl.textContent = layer.params.text || '';
@@ -1066,7 +1077,10 @@
         const te = ui.app && ui.app.textEdit;
         try {
           if (te && typeof te.isActive === 'function' && te.isActive()
-            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) te.end({ refreshPanel: false, keepLayer: true });
+            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) {
+            te.end({ refreshPanel: false, keepLayer: true });
+            handedOverBlank = te.takeHandedOver ? te.takeHandedOver() : null;
+          }
         } catch (_) { /* */ }
         try { refresh(); } catch (_) { /* */ }
         renderSpec();
