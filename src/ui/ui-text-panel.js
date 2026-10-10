@@ -131,7 +131,7 @@
       + `<div class="vtp-scrub" data-field="${field}" data-param="${cfg.param}" data-min="${cfg.min}" data-max="${cfg.max}" data-step="${cfg.step}" data-dec="${cfg.dec}" data-perpx="${cfg.perpx}">`
         + `<div class="vtp-scrub-handle" tabindex="0" role="slider" aria-label="${cfg.label}" aria-valuemin="${cfg.min}" aria-valuemax="${cfg.max}">${gicon}</div>`
         + steppers
-        + `<input type="text" inputmode="decimal" aria-label="${cfg.label} value">`
+        + `<input type="text" inputmode="${cfg.min < 0 ? 'text' : 'decimal'}" enterkeyhint="done" aria-label="${cfg.label} value">`
         + unit + preset
       + '</div>';
   }
@@ -478,6 +478,7 @@
 
       if (handle) {
         listen(handle, 'pointerdown', (e) => beginDrag(e, handle));
+        // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
         listen(handle, 'dblclick', (e) => { e.preventDefault(); commit(defVal); });
         listen(handle, 'keydown', (e) => {
           const c = e.shiftKey ? 10 : 1;
@@ -489,7 +490,10 @@
       }
       if (nameEl) {
         listen(nameEl, 'pointerdown', (e) => beginDrag(e, nameEl));
+        // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
         listen(nameEl, 'dblclick', (e) => { e.preventDefault(); commit(defVal); });
+        // The kerning scrub has no param default of its own: it resets to 0 (defVal) like the dblclick.
+        if (Vectura.UI.attachResetHold) Vectura.UI.attachResetHold(nameEl, { reset: () => commit(defVal), label: cfg.label });
       }
       listen(input, 'change', () => commit(num(input.value, readVal())));
       listen(input, 'keydown', (e) => {
@@ -854,7 +858,17 @@
         const up = () => { pad.removeEventListener('pointermove', mv); pad.removeEventListener('pointerup', up); pad.removeEventListener('pointercancel', up); flush(); };
         pad.addEventListener('pointermove', mv); pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
       });
+      // Reset the whole field: offset to the centre and the max radius to its default.
+      const resetOffsetField = () => {
+        pushHist();
+        if (maxSlider) layer.params.fillOffsetMax = (DEF.fillOffsetMax != null ? DEF.fillOffsetMax : 20);
+        if (maxSlider) { maxSlider.value = padMax(); if (maxChip) maxChip.textContent = String(Math.round(padMax())); }
+        padApply(0, 0, false);
+        flush();
+      };
+      // touch-alt: TUX-038 the field label long-press opens "Reset to default" (resets offset and max)
       listen(pad, 'dblclick', () => { pushHist(); padApply(0, 0, false); flush(); });
+      if (Vectura.UI.attachResetHold) Vectura.UI.attachResetHold(pad.closest('.vtp-field-block')?.querySelector('.vtp-field-cap label'), { reset: resetOffsetField, label: 'Fill offset' });
       listen(pad, 'keydown', (e) => {
         const s = e.shiftKey ? 2 : 0.5; const x = layer.params.fillOffsetX || 0; const y = layer.params.fillOffsetY || 0; let hit = true;
         if (e.key === 'ArrowLeft') { pushHist(); padApply(x - s, y, false); flush(); }
@@ -877,6 +891,7 @@
           padApply(layer.params.fillOffsetX || 0, layer.params.fillOffsetY || 0, true);
         });
         listen(maxSlider, 'change', () => flush());
+        // touch-alt: TUX-038 the field label long-press resets the max radius with the offset
         listen(maxSlider, 'dblclick', (e) => {
           e.preventDefault(); pushHist();
           layer.params.fillOffsetMax = (DEF.fillOffsetMax != null ? DEF.fillOffsetMax : 20);
@@ -929,7 +944,16 @@
         const up = () => { cPad.removeEventListener('pointermove', mv); cPad.removeEventListener('pointerup', up); cPad.removeEventListener('pointercancel', up); flush(); };
         cPad.addEventListener('pointermove', mv); cPad.addEventListener('pointerup', up); cPad.addEventListener('pointercancel', up);
       });
+      const resetCenterField = () => {
+        pushHist();
+        if (cMaxSlider) layer.params.fillShiftMax = (DEF.fillShiftMax != null ? DEF.fillShiftMax : 20);
+        if (cMaxSlider) { cMaxSlider.value = cMax(); if (cMaxChip) cMaxChip.textContent = String(Math.round(cMax())); }
+        cApply(0, 0, false);
+        flush();
+      };
+      // touch-alt: TUX-038 the field label long-press opens "Reset to default" (resets centre and max)
       listen(cPad, 'dblclick', () => { pushHist(); cApply(0, 0, false); flush(); });
+      if (Vectura.UI.attachResetHold) Vectura.UI.attachResetHold(cPad.closest('.vtp-field-block')?.querySelector('.vtp-field-cap label'), { reset: resetCenterField, label: 'Centerpoint' });
       listen(cPad, 'keydown', (e) => {
         const s = e.shiftKey ? 2 : 0.5; const x = layer.params.fillShiftX || 0; const y = layer.params.fillShiftY || 0; let hit = true;
         if (e.key === 'ArrowLeft') { pushHist(); cApply(x - s, y, false); flush(); }
@@ -949,6 +973,7 @@
           cApply(layer.params.fillShiftX || 0, layer.params.fillShiftY || 0, true);
         });
         listen(cMaxSlider, 'change', () => flush());
+        // touch-alt: TUX-038 the field label long-press resets the max radius with the centre
         listen(cMaxSlider, 'dblclick', (e) => {
           e.preventDefault(); pushHist();
           layer.params.fillShiftMax = (DEF.fillShiftMax != null ? DEF.fillShiftMax : 20);
@@ -1029,6 +1054,7 @@
       if (!sessionPushed) { pushHist(); sessionPushed = true; }
       applyTextOp(t);
       lastWritten = layer.params.text;
+      if (String(layer.params.text || '').trim() !== '') handedOverBlank = null;
       try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ }
       regenPending = true;
       if (regenTimer) clearTimeout(regenTimer);
@@ -1036,7 +1062,17 @@
       renderSpec();
       return true;
     };
-    const endTextSession = () => { flushRegen(); sessionPushed = false; lastWritten = null; };
+    let handedOverBlank = null;  // blank layer a canvas Type session created and handed to the field
+    const endTextSession = () => {
+      flushRegen(); sessionPushed = false; lastWritten = null;
+      // M6: a handed-over layer that never got real text is discarded (with its creation history entry).
+      const l = handedOverBlank;
+      handedOverBlank = null;
+      if (l && String(l.params.text || '').trim() === '') {
+        const te = ui.app && ui.app.textEdit;
+        try { if (te && te.discardHandedOver) te.discardHandedOver(l); } catch (_) { /* */ }
+      }
+    };
 
     // ── editable specimen (preview; inline-editable on fine pointers only) ──
     specTextEl.textContent = layer.params.text || '';
@@ -1066,7 +1102,10 @@
         const te = ui.app && ui.app.textEdit;
         try {
           if (te && typeof te.isActive === 'function' && te.isActive()
-            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) te.end({ refreshPanel: false, keepLayer: true });
+            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) {
+            te.end({ refreshPanel: false, keepLayer: true });
+            handedOverBlank = te.takeHandedOver ? te.takeHandedOver() : null;
+          }
         } catch (_) { /* */ }
         try { refresh(); } catch (_) { /* */ }
         renderSpec();
@@ -1700,7 +1739,7 @@
               <div class="vtp-angle-mount" data-ref="fillAngleMount"></div>
             </div>
             <div class="vtp-field-block" style="margin-top:11px;">
-              <div class="vtp-field-cap"><label>Fill Offset <span class="vtp-drag-hint">drag · dbl-click resets</span></label></div>
+              <div class="vtp-field-cap"><label>Fill Offset <span class="vtp-drag-hint">drag · dbl-click or hold label resets</span></label></div>
               <div class="vtp-xypad-row">
                 <div class="vtp-xypad" data-ref="fillOffsetPad" role="slider" aria-label="Fill offset" aria-valuetext="centred" tabindex="0">
                   <div class="vtp-xypad-cross"></div>
@@ -1719,7 +1758,7 @@
                  but drags the radial fill's origin (fillShiftX/Y) instead of the
                  whole fill window. Shown only when the radial fill type is active. -->
             <div class="vtp-field-block" data-ref="fillCenterField" style="margin-top:11px; display:none;">
-              <div class="vtp-field-cap"><label>Centerpoint <span class="vtp-drag-hint">drag · dbl-click resets</span></label></div>
+              <div class="vtp-field-cap"><label>Centerpoint <span class="vtp-drag-hint">drag · dbl-click or hold label resets</span></label></div>
               <div class="vtp-xypad-row">
                 <div class="vtp-xypad" data-ref="fillCenterPad" role="slider" aria-label="Radial centerpoint offset" aria-valuetext="centred" tabindex="0">
                   <div class="vtp-xypad-cross"></div>

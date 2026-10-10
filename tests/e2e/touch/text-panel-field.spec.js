@@ -125,13 +125,20 @@ const liveSessionFlow = async (page, tapField) => {
 };
 
 // Blank session-created layer: a field tap used to run the M6 blank-layer discard.
-const blankSessionFlow = async (page, tapField) => {
+// iPhone portrait: the pane is a drawer, and opening it (a toolbar tap) ends the Type
+// session, so a blank session layer is discarded before the field is reachable. That
+// is the correct M6 behaviour, not a field defect; the flow is unreachable there.
+const blankFlowUnreachable = (testInfo) => /iphone-portrait/.test(testInfo.project.name);
+const blankSessionFlow = async (page, tapField, opts = {}) => {
+  const typed = opts.typed !== false;
   await page.goto('/');
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.textEdit));
   await page.evaluate(() => { document.querySelector('.tool-btn[data-tool="type"]').click(); });
   let pt = null;
   for (let i = 0; i < 20 && !pt; i += 1) { pt = await canvasPoint(page); if (!pt) await page.waitForTimeout(150); }
   expect(pt, 'no reachable canvas point').toBeTruthy();
+  const hist0 = (await state(page)).hist;
+  const layers0 = await page.evaluate(() => window.app.engine.layers.length);
   await tapField.canvas(pt);
   await page.waitForFunction(() => window.app.textEdit.isActive());   // NO insertText
   await openLeftPane(page);
@@ -139,6 +146,15 @@ const blankSessionFlow = async (page, tapField) => {
   await field.scrollIntoViewIfNeeded();
   const handle = await field.elementHandle();
   await tapField.field(field);
+  if (!typed) {
+    // Blur without typing: the M6 blank-layer discard is restored for the handed-over layer.
+    await page.evaluate(() => document.activeElement.blur());
+    await page.waitForTimeout(300);
+    const after = await page.evaluate(() => ({ layers: window.app.engine.layers.length }));
+    expect(after.layers, 'blank handed-over layer survived the blur').toBe(layers0);
+    expect((await state(page)).hist, 'creation history entry not unwound').toBe(hist0);
+    return;
+  }
   await page.keyboard.insertText('Hi');
   await page.waitForTimeout(300);
   const info = await page.evaluate((el) => ({
@@ -151,6 +167,15 @@ const blankSessionFlow = async (page, tapField) => {
   expect(info.connected, 'field detached').toBe(true);
   expect(info.active, 'field not focused').toBe(true);
   expect(info.text).toBe('Hi');
+  // Two-step undo: typed text first, then the layer.
+  await page.evaluate(() => document.activeElement.blur());
+  await page.waitForTimeout(200);
+  await page.evaluate(() => window.app.undo());
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => { const l = window.app.engine.layers; return l.length === 1 && l[0].params.text; }), 'first undo reverts text').toBe('');
+  await page.evaluate(() => window.app.undo());
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => window.app.engine.layers.length), 'second undo removes the layer').toBe(layers0);
 };
 
 test.describe('TUX-029 live canvas Type session + Text field', () => {
@@ -161,11 +186,22 @@ test.describe('TUX-029 live canvas Type session + Text field', () => {
       field: async (loc) => { await touch.tap(page, loc); },
     });
   });
-  test('first tap on the field in a blank session layer keeps the layer and takes the text', async ({ page }) => {
+  test('first tap on the field in a blank session layer keeps the layer and takes the text', async ({ page }, testInfo) => {
+    test.skip(blankFlowUnreachable(testInfo), 'iPhP drawer open ends the Type session (M6 discards the blank layer first)');
     await blankSessionFlow(page, {
       canvas: async (pt) => { await touch.tap(page, pt); },
       field: async (loc) => { await touch.tap(page, loc); },
     });
+  });
+});
+
+test.describe('TUX-029 blank handed-over layer', () => {
+  test('field tap then blur without typing discards the blank layer and unwinds history', async ({ page }, testInfo) => {
+    test.skip(blankFlowUnreachable(testInfo), 'iPhP drawer open ends the Type session (M6 discards the blank layer first)');
+    await blankSessionFlow(page, {
+      canvas: async (pt) => { await touch.tap(page, pt); },
+      field: async (loc) => { await touch.tap(page, loc); },
+    }, { typed: false });
   });
 });
 

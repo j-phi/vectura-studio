@@ -454,6 +454,7 @@
           e.stopPropagation();
           this.setArmedPen(this.armedPenId === pen.id ? null : pen.id);
         });
+        // touch-alt: TUX-038 a finger arms the pen on pointerdown (above); tapping a layer then applies it
         icon.ondblclick = (e) => {
           e.preventDefault();
           e.stopPropagation();

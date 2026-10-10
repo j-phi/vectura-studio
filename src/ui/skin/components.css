@@ -15192,3 +15192,62 @@ body.touch-ui #viewport-container:has(.ctxbar.ctxbar--fill) .canvas-hud {
   bottom: calc(var(--safe-bottom, 0px) + 8px + 52px + 8px);
 }
 /* === END TUX-022 === */
+/* === TUX-038: value entry + reset hold + motion points ===
+ * Older rules checked: .value-chip (9837, transparent button), .inline-value-input (absolute, single field),
+ * .motion-drawn-canvas (5353, already touch-action:none), .menu-dropdown.is-context-menu (44 px rows on coarse).
+ * Touch sizing is gated on (pointer: coarse), so the 1600 x 1000 desktop view does not change. */
+
+/* Dual value editor (min / max) that replaces the comma-parsed field on the legacy rangeDual chip. */
+.dual-value-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dual-value-input {
+  width: 5.5em;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--ui-panel-alt);
+  border: 1px solid var(--ui-border);
+  color: var(--ui-text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  text-align: right;
+  border-radius: 4px;
+}
+.dual-value-dash { color: var(--ui-muted); }
+
+/* Drawn-curve point buttons: shown by the rack only while a point is selected on a coarse pointer. */
+.motion-point-actions { display: flex; gap: 8px; margin-top: 6px; }
+.motion-point-actions[hidden] { display: none; }
+.motion-point-actions button {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-panel-alt);
+  color: var(--ui-text);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.motion-point-actions button:disabled { opacity: 0.4; }
+
+@media (pointer: coarse) {
+  .dual-value-input { min-height: var(--touch-target-min, 44px); font-size: 16px; } /* 16 px: no iOS focus zoom */
+  .motion-point-actions button {
+    min-width: var(--touch-target-min, 44px);
+    min-height: var(--touch-target-min, 44px);
+    flex: 1 1 0;
+    font-size: 14px;
+  }
+  /* The reset hold target: no iOS text-selection loupe or callout on a long-press of a label. */
+  .control-label,
+  .mp-ctrl-lbl,
+  .vtp-scrub-name,
+  .vtp-field-cap label,
+  [data-reset-hold] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+/* === END TUX-038 === */
