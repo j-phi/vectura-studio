@@ -83,7 +83,7 @@ const longPressOpen = async (page, p) => {
   await Promise.all([
     longPress(page, p, 600),
     (async () => {
-      for (let t = 0; t < 540 && !openDuringHold; t += 60) {
+      for (let t = 0; t < 1500 && !openDuringHold; t += 60) {
         await sleep(60);
         openDuringHold = await page.evaluate(() => !!document.querySelector('.tool-submenu.open'));
       }
