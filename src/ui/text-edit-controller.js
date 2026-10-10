@@ -940,6 +940,12 @@
     // stopPropagation keeps global shortcuts from seeing them. Navigation, Escape
     // and Cmd/Ctrl+Enter are handled here exactly as in the mouse path.
     _onProxyKeydown(e) {
+      // Same guard as shortcuts.js: with a modal open, app-level chords (undo/redo,
+      // Cmd+S...) must not act on the layer a pending dialog closure references.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && typeof this.host.isModalOpen === 'function' && this.host.isModalOpen()) {
+        const ck = String(e.key).toLowerCase();
+        if (!['a', 'c', 'v', 'x'].includes(ck)) { e.preventDefault(); e.stopPropagation(); return; }
+      }
       if (this._isUndoRedoChord(e)) {
         // Commit-and-exit like the mouse path, but shortcuts.js ignores keydowns
         // whose target is a TEXTAREA, so the chord would never reach global undo.

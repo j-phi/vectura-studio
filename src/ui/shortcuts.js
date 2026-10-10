@@ -1073,9 +1073,11 @@
     },
     bindShortcuts,
     handleTopMenuShortcut,
+    isModalOverlayOpen,
     installOn(proto) {
       proto.bindShortcuts = function() { return bindShortcuts.call(this); };
       proto.handleTopMenuShortcut = function(e) { return handleTopMenuShortcut.call(this, e); };
+      proto.isModalOverlayOpen = function() { return isModalOverlayOpen(); };
     },
   };
 })();

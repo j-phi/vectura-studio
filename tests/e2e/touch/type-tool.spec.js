@@ -209,9 +209,28 @@ test.describe('TUX-028 Type tool soft keyboard', () => {
     // Wider double-tap drift tolerance is TUX-023; 5 px apart here.
     await touch.tap(page, g);
     // The first tap selects the layer and the context bar may then float over it.
-    const covered = await page.evaluate(({ x, y }) => document.elementFromPoint(x + 5, y) !== document.getElementById('main-canvas'), g);
-    if (covered) throw new Error('second tap point covered after selection (TUX-007/TUX-030 layout dependency)');
-    await touch.tap(page, { x: g.x + 5, y: g.y });
+    // The second tap must still hit the TEXT layer (the glyph can end within 5 px
+    // of the first point on some fonts/engines), so pick a drift that does.
+    const second = await page.evaluate(({ x, y }) => {
+      const c = document.getElementById('main-canvas');
+      const r = c.getBoundingClientRect();
+      const lid = window.app.engine.getActiveLayer().id;
+      // Offsets within the 8 px double-tap drift gate, nearest-first.
+      const offs = [];
+      for (let ox = -6; ox <= 6; ox += 1) for (let oy = -6; oy <= 6; oy += 1) if (Math.hypot(ox, oy) < 7) offs.push([ox, oy]);
+      offs.sort((p, q) => Math.hypot(...p) - Math.hypot(...q));
+      for (const [ox, oy] of offs) {
+        // Touch coordinates reach the app rounded to whole pixels; probe the same.
+        const px = Math.round(x) + ox;
+        const py = Math.round(y) + oy;
+        const w = window.app.renderer.screenToWorld(px - r.left, py - r.top);
+        const hit = window.app.renderer.findLayerAtPoint(w);
+        if (hit && hit.id === lid && document.elementFromPoint(px, py) === c) return { x: px, y: py };
+      }
+      return null;
+    }, g);
+    if (!second) throw new Error('second tap point covered after selection (TUX-007/TUX-030 layout dependency)');
+    await touch.tap(page, second);
     const s = await page.evaluate((sel) => ({
       onProxy: !!(document.activeElement && document.activeElement.matches(sel)),
       active: window.app.textEdit.isActive(),
@@ -284,6 +303,35 @@ test.describe('TUX-028 Type tool soft keyboard', () => {
     }));
     expect(r.chords).toEqual(['btn-save-vectura']);
     expect(r.prevented).toBe(true);
+    expect(r.text).toBe('Hi');
+  });
+
+  test('(m) modal open + proxy focused: Ctrl+Z and Ctrl+S do nothing (no undo behind a dialog)', async ({ page }) => {
+    await openSession(page);
+    await page.keyboard.insertText('Hi');
+    await page.evaluate(() => {
+      window.__chords = [];
+      window.app.ui.triggerTopMenuAction = function trigger(id) { window.__chords.push(id); return true; };
+      window.app.ui.openModal({ title: 'Guard', body: '<p>x</p>' });
+    });
+    // Later modal work may move focus into the dialog; force the hazard state
+    // (proxy focused behind an open modal) so the guard itself is what is tested.
+    const open = await page.evaluate((sel) => {
+      document.querySelector(sel).focus();
+      return {
+        open: !!document.getElementById('modal-overlay')?.classList.contains('open'),
+        onProxy: document.activeElement.matches(sel),
+      };
+    }, PROXY);
+    expect(open).toEqual({ open: true, onProxy: true });
+    const before = await page.evaluate(() => window.app.history.length);
+    await page.keyboard.press('Control+z');
+    await page.keyboard.press('ControlOrMeta+s');
+    const r = await page.evaluate(() => ({
+      chords: window.__chords, h: window.app.history.length, text: window.app.engine.getActiveLayer().params.text,
+    }));
+    expect(r.chords).toEqual([]);
+    expect(r.h).toBe(before);
     expect(r.text).toBe('Hi');
   });
 });
