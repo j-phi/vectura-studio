@@ -1,26 +1,23 @@
 /**
  * U2 kernel perf (fill-style review 2026-10-02) — speed-up guards.
  *
- * Absolute milliseconds are NOT asserted (this machine runs at load averages
- * of 10-100 under parallel agents). Each check times the NEW kernel against
- * the OLD one inside one process, interleaved, best of N, and asserts a
- * conservative ratio well under the one measured:
- *   - ribbon erosion: PenFill.erodeLevels (one oriented SDF, both depths) vs
- *     the chained GeometryUtils.insetMultiPolygon pair it replaced;
- *   - ground-shadow fields: the segment-grid build vs the brute-force
- *     O(cells x segments) distance it replaced;
- *   - Geometry3D.rotatePoint (memoised trig) vs the verbatim legacy rotator.
+ * NO wall-clock ratios: this machine runs at load averages of 10-100 under
+ * parallel agents, and a ratio of two timings flips under that load (the
+ * erosion one measured 1.72 against a >2 bar and failed). Each guard instead
+ * COUNTS the expensive primitive the old kernel leaned on, which is
+ * independent of machine load (same pattern as occluder-scan-counter.js):
+ *   - ribbon erosion: PenFill.erodeLevels (one oriented SDF) must make ZERO
+ *     polygon-clipping boolean ops / GeometryUtils.insetMultiPolygon calls and
+ *     stay under a fixed raster-cell ceiling; the chained inset pair it
+ *     replaced is run as the measured baseline;
+ *   - ground-shadow fields: the segment-grid build must evaluate far fewer
+ *     point-segment distances than the brute-force O(cells x segments) one
+ *     (counted by reads of each segment's endpoint slot);
+ *   - Geometry3D.rotatePoint (memoised trig) must make ZERO Math.sin/cos calls
+ *     in steady state; the legacy rotator pays 6 per call.
+ * One generous absolute wall-clock smoke ceiling per test remains.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-
-const bestOf = (n, fnA, fnB) => {
-  let a = Infinity; let b = Infinity;
-  for (let i = 0; i < n; i++) {
-    let t0 = performance.now(); fnA(); a = Math.min(a, performance.now() - t0);
-    t0 = performance.now(); fnB(); b = Math.min(b, performance.now() - t0);
-  }
-  return { a, b };
-};
 
 describe('U2 kernel perf — new kernels beat the ones they replaced', () => {
   let runtime;
@@ -33,7 +30,7 @@ describe('U2 kernel perf — new kernels beat the ones they replaced', () => {
 
   afterAll(() => runtime && runtime.cleanup());
 
-  test('ribbon erosion: one oriented distance field is >= 2x faster than two polygon insets', () => {
+  test('ribbon erosion: one oriented distance field makes zero polygon boolean/inset calls', () => {
     const RG = V.RibbonGeometry;
     const GU = V.GeometryUtils;
     const PF = V.PenFill;
@@ -51,18 +48,51 @@ describe('U2 kernel perf — new kernels beat the ones they replaced', () => {
     const ringsMP = mp.map((poly) => poly.map((r) => r.map((q) => (Array.isArray(q) ? q : [q.x, q.y]))));
     const flat = []; ringsMP.forEach((poly) => poly.forEach((r) => flat.push(r)));
     const pen = 0.3;
-    let rasterOut = null;
-    const { a: raster, b: poly } = bestOf(3,
-      () => { rasterOut = PF.erodeLevels(flat, [pen / 2, pen * 0.85], { guard: [true, false] }); },
-      () => {
-        const o = GU.insetMultiPolygon(ringsMP, pen / 2, { minArea: 0 });
-        if (o && o.length) GU.insetMultiPolygon(o, pen * 0.35, { minArea: 0 });
-      });
+    const FB = V.FillBoolean;
+    // Count every polygon-clipping boolean op and every inset call (the
+    // expensive primitive of the old kernel).
+    const counts = { bool: 0, inset: 0 };
+    const restores = [];
+    ['union', 'difference', 'xor', 'intersection'].forEach((name) => {
+      const orig = FB[name];
+      if (typeof orig !== 'function') return;
+      FB[name] = (...args) => { counts.bool += 1; return orig.apply(FB, args); };
+      restores.push(() => { FB[name] = orig; });
+    });
+    const origInset = GU.insetMultiPolygon;
+    GU.insetMultiPolygon = (...args) => { counts.inset += 1; return origInset.apply(GU, args); };
+    restores.push(() => { GU.insetMultiPolygon = origInset; });
+    let rasterOut = null; let oldBool = 0; let oldInset = 0;
+    const t0 = performance.now();
+    try {
+      rasterOut = PF.erodeLevels(flat, [pen / 2, pen * 0.85], { guard: [true, false] });
+      const newBool = counts.bool; const newInset = counts.inset;
+      // Baseline: the chained polygon-inset pair erodeLevels replaced.
+      counts.bool = 0; counts.inset = 0;
+      const o = GU.insetMultiPolygon(ringsMP, pen / 2, { minArea: 0 });
+      if (o && o.length) GU.insetMultiPolygon(o, pen * 0.35, { minArea: 0 });
+      oldBool = counts.bool; oldInset = counts.inset;
+      // New path: no polygon booleans, no insets.
+      expect(newBool).toBe(0);
+      expect(newInset).toBe(0);
+    } finally { restores.forEach((r) => r()); }
+    const elapsed = performance.now() - t0;
     expect(rasterOut && rasterOut.levels[0].length).toBeGreaterThan(0);
-    expect(poly / raster).toBeGreaterThan(2);
+    // The spies are live: the old path really does pay for booleans.
+    expect(oldInset).toBe(2);
+    expect(oldBool).toBeGreaterThanOrEqual(6);
+    // Raster work ceiling: one oriented field of ~542k cells (measured), well
+    // under the module's 1.4M cell cap; a finer grid would blow past it.
+    const xs = []; const ys = [];
+    flat.forEach((r) => r.forEach((q) => { const f = rasterOut.frame.toFrame({ x: q[0], y: q[1] }); xs.push(f.x); ys.push(f.y); }));
+    const cells = ((Math.max(...xs) - Math.min(...xs)) / rasterOut.cs + 7)
+      * ((Math.max(...ys) - Math.min(...ys)) / rasterOut.cs + 7);
+    expect(cells).toBeLessThan(800000);
+    // Generous absolute smoke ceiling only (not a ratio).
+    expect(elapsed).toBeLessThan(30000);
   }, 120000);
 
-  test('ground-shadow fields: segment grid is >= 3x faster than the brute force', () => {
+  test('ground-shadow fields: segment grid evaluates >= 3x fewer point-segment distances than the brute force', () => {
     const Shadows = V.Scene3D.Shadows;
     // Fixture AND reference are built inside the runtime's own realm: objects
     // made in the test realm are slow to read from the runtime's (a cross-realm
@@ -74,7 +104,15 @@ describe('U2 kernel perf — new kernels beat the ones they replaced', () => {
         const r = 40 + 6 * Math.sin(t * 7);
         ring.push({ x: 60 + Math.cos(t) * r * 1.6, y: 50 + Math.sin(t) * r });
       }
-      const edge = ring.map((p, i) => [ring[(i + ring.length - 1) % ring.length], p]);
+      // Every distance evaluation reads a segment's slot 0 exactly once, in
+      // both the grid build and the brute reference, so reads == evaluations.
+      const ctr = { reads: 0 };
+      const counted = (a, b) => {
+        const seg = [a, b];
+        Object.defineProperty(seg, 0, { get() { ctr.reads++; return a; } });
+        return seg;
+      };
+      const edge = ring.map((p, i) => counted(ring[(i + ring.length - 1) % ring.length], p));
       const contact = edge.slice(0, 120);
       const d = (px, py, segs) => {
         let best = Infinity;
@@ -125,27 +163,56 @@ describe('U2 kernel perf — new kernels beat the ones they replaced', () => {
         }
         return acc + Rin;
       };
-      return { rings: [ring], edge, contact, brute };
+      return { rings: [ring], edge, contact, brute, ctr };
     })()`);
     const g = Shadows.__shadowFieldsForTest(fx.rings, fx.contact, fx.edge).grid;
     expect(g.nx * g.ny).toBeGreaterThan(10000);
-    const { a: grid, b: old } = bestOf(3,
-      () => Shadows.__shadowFieldsForTest(fx.rings, fx.contact, fx.edge),
-      () => fx.brute(g));
-    expect(old / grid).toBeGreaterThan(3);
+    fx.ctr.reads = 0;
+    const t0 = performance.now();
+    Shadows.__shadowFieldsForTest(fx.rings, fx.contact, fx.edge);
+    const elapsed = performance.now() - t0;
+    const gridWork = fx.ctr.reads;
+    fx.ctr.reads = 0;
+    fx.brute(g);
+    const bruteWork = fx.ctr.reads;
+    // Brute force is cells x (contact + edge) evaluations; the spy must see it.
+    expect(bruteWork).toBeGreaterThanOrEqual(g.nx * g.ny * (fx.contact.length + fx.edge.length));
+    // The segment grid must stay >= 3x under that (measured far better).
+    expect(gridWork * 3).toBeLessThan(bruteWork);
+    // Generous absolute smoke ceiling only (not a ratio).
+    expect(elapsed).toBeLessThan(30000);
   }, 120000);
 
-  test('rotatePoint with memoised trig is >= 2x faster than the legacy rotator', () => {
+  test('rotatePoint with memoised trig makes no trig calls in steady state', () => {
     const G3 = V.Geometry3D;
+    const M = runtime.window.Math; // the runtime realm's own Math
     const pts = [];
-    for (let i = 0; i < 200000; i++) pts.push({ x: Math.sin(i), y: Math.cos(i * 1.3), z: Math.sin(i * 0.7) });
+    for (let i = 0; i < 2000; i++) pts.push({ x: Math.sin(i), y: Math.cos(i * 1.3), z: Math.sin(i * 0.7) });
     const obj = { yaw: 33, pitch: -12, roll: 5 };
     const cam = { yaw: -20, pitch: 30 };
-    let s = 0;
-    const { a: fast, b: slow } = bestOf(3,
-      () => { for (const p of pts) { s += G3.rotatePoint(G3.rotatePoint(p, obj), cam).x; } },
-      () => { for (const p of pts) { s += G3.rotatePointReference(G3.rotatePointReference(p, obj), cam).x; } });
+    let trig = 0;
+    const oSin = M.sin; const oCos = M.cos;
+    M.sin = (x) => { trig += 1; return oSin(x); };
+    M.cos = (x) => { trig += 1; return oCos(x); };
+    let s = 0; let fast = 0; let slow = 0; let elapsed = 0;
+    try {
+      // Warm the memo (object + camera angle triples), then count.
+      G3.rotatePoint(G3.rotatePoint(pts[0], obj), cam);
+      trig = 0;
+      const t0 = performance.now();
+      for (const p of pts) { s += G3.rotatePoint(G3.rotatePoint(p, obj), cam).x; }
+      elapsed = performance.now() - t0;
+      fast = trig;
+      trig = 0;
+      for (const p of pts) { s += G3.rotatePointReference(G3.rotatePointReference(p, obj), cam).x; }
+      slow = trig;
+    } finally { M.sin = oSin; M.cos = oCos; }
     expect(Number.isFinite(s)).toBe(true);
-    expect(slow / fast).toBeGreaterThan(2);
+    // Legacy rotator: 3 angles x (sin + cos) per call, two calls per point.
+    expect(slow).toBeGreaterThanOrEqual(pts.length * 12);
+    // Memoised: the 2 alternating angle triples stay cached -> zero trig.
+    expect(fast).toBe(0);
+    // Generous absolute smoke ceiling only (not a ratio).
+    expect(elapsed).toBeLessThan(5000);
   }, 120000);
 });
