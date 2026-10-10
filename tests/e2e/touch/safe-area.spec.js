@@ -347,29 +347,59 @@ test.describe('TUX-005 safe-area insets', () => {
   });
 
   test('J closed off-canvas drawers do not paint into the side inset band', async ({ page }) => {
-    if (!P.left && !P.right) return;
+    test.skip(!P.left && !P.right, 'no side inset on this profile');
     await inject(page, P);
     const m = await page.evaluate(() => {
-      const vw = innerWidth;
       const out = [];
       document.querySelectorAll('.settings-panel:not(.open)').forEach((el) => {
         const cs = getComputedStyle(el);
         const r = el.getBoundingClientRect();
-        const painted = cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0;
-        const hitsInBand = [];
-        [[10, 0.3], [10, 0.6], [vw - 10, 0.3], [vw - 10, 0.6]].forEach(([x, fy]) => {
-          const h = document.elementFromPoint(x, innerHeight * fy);
-          if (h && el.contains(h)) hitsInBand.push(x);
-        });
-        out.push({ id: el.id, painted, left: r.left, right: r.right, hitsInBand });
+        out.push({ id: el.id, visibility: cs.visibility, display: cs.display, transform: cs.transform, left: r.left, right: r.right });
       });
       return out;
     });
     expect(m.length, 'closed drawers found').toBeGreaterThan(0);
+    // Geometry check, independent of visibility: a closed drawer sits fully left of x=0, so the
+    // transform half of the fix is falsifiable even when the panel is also visibility:hidden.
     for (const d of m) {
-      if (!d.painted) continue;
-      expect(d.right, `${d.id} closed drawer right edge must be off-screen (<= 0)`).toBeLessThanOrEqual(0 + TOL);
-      expect(d.hitsInBand, `${d.id} closed drawer must not paint in the inset band`).toEqual([]);
+      expect(d.right, `${d.id} closed drawer right edge must be off-screen (<= 0), got ${JSON.stringify(d)}`).toBeLessThanOrEqual(0 + TOL);
+    }
+  });
+
+  test('K floating tool rail stays inside the viewport and its footer is reachable (iPad landscape, t24/b20)', async ({ page }) => {
+    test.skip(device !== 'iPadL', 'iPad landscape only');
+    for (const [w, h, home] of [[1210, 834, false], [1210, 834, true], [1180, 820, false], [1180, 820, true]]) {
+      await page.setViewportSize({ width: w, height: h });
+      await inject(page, P);
+      if (home) await page.evaluate(() => document.querySelector('.toolbar-home-btn')?.click());
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => {
+        const bar = document.getElementById('tool-bar');
+        const vp = document.getElementById('viewport-container').getBoundingClientRect();
+        const b = bar.getBoundingClientRect();
+        // The footer is display:none under (pointer: coarse) (TUX-016: the handle drags, pin is ignored), so the
+        // reachability probe covers the bottom-most visible rail control instead; footer buttons join when shown.
+        const ctl = [...bar.querySelectorAll('.tool-btn, .toolbar-footer button')].filter((e) => e.getBoundingClientRect().width > 0);
+        const foot = ctl.slice(-2).map((e) => {
+          const r = e.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return { cls: e.className, ok: !!hit && (hit === e || e.contains(hit)) };
+        });
+        return { top: b.top, bottom: b.bottom, vpTop: vp.top, vpBottom: vp.bottom, foot };
+      });
+      const tag = `${w}x${h}${home ? ' home' : ' initial'} ${JSON.stringify(m)}`;
+      expect(m.bottom, `rail bottom <= viewport bottom ${tag}`).toBeLessThanOrEqual(m.vpBottom + TOL);
+      expect(m.top, `rail top >= viewport top ${tag}`).toBeGreaterThanOrEqual(m.vpTop - TOL);
+      expect(m.foot.length).toBeGreaterThan(0);
+      for (const f of m.foot) expect(f.ok, `bottom rail control ${f.cls} hit-tests to itself ${tag}`).toBe(true);
+      const pin = page.locator('#tool-bar .toolbar-pin-btn');
+      if (await pin.isVisible()) {
+        const before = await pin.getAttribute('aria-pressed');
+        await tap(page, pin);
+        await page.waitForTimeout(150);
+        expect(await pin.getAttribute('aria-pressed'), `pin tap toggles ${tag}`).not.toBe(before);
+        await tap(page, pin);
+      }
     }
   });
 

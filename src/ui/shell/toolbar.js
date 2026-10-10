@@ -1028,13 +1028,27 @@
       if (side === 'bottom') viewport.style.paddingBottom = r.height + 'px';
     };
 
+    // TUX-005: the floating rail lives in shell coordinates but must stay inside #viewport-container, so
+    // taller touch chrome (header, bottom pane header, safe-area insets) never lets it overlap them.
+    const floatBounds = () => {
+      const sr = shell.getBoundingClientRect();
+      const vr = viewport.getBoundingClientRect();
+      if (!(vr.height > 0)) return { minX: 0, minY: 0, maxX: sr.width, maxY: sr.height };
+      return {
+        minX: 0,
+        minY: Math.max(0, vr.top - sr.top),
+        maxX: sr.width,
+        maxY: Math.min(sr.height, vr.bottom - sr.top),
+      };
+    };
+
     const clampFloat = (x, y) => {
       const tw = toolbar.offsetWidth  || 46;
       const th = toolbar.offsetHeight || 100;
-      const sr = shell.getBoundingClientRect();
+      const b = floatBounds();
       return {
-        x: Math.max(0, Math.min(sr.width  - tw, x)),
-        y: Math.max(0, Math.min(sr.height - th, y)),
+        x: Math.max(b.minX, Math.min(b.maxX - tw, x)),
+        y: Math.max(b.minY, Math.min(b.maxY - th, y)),
       };
     };
 
@@ -1052,9 +1066,9 @@
       toolbar.classList.remove(...DOCK_CLASSES);
       ['position', 'transform', 'left', 'top', 'right', 'bottom', 'width', 'height']
         .forEach((p) => { toolbar.style[p] = ''; });
-      const sr = shell.getBoundingClientRect();
       const defaultX = 10;
-      const defaultY = Math.round(sr.height / 2 - (toolbar.offsetHeight || 150) / 2);
+      const fb = floatBounds();
+      const defaultY = Math.round((fb.minY + fb.maxY) / 2 - (toolbar.offsetHeight || 150) / 2);
       const { x, y } = clampFloat(rawX ?? defaultX, rawY ?? defaultY);
       toolbar.style.position  = 'absolute';
       toolbar.style.transform = 'none';
