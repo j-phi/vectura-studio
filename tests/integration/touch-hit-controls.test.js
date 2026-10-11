@@ -486,6 +486,22 @@ describe('TUX-024: touch hit targets through the real renderer', () => {
       expect(s.done[0].closed).toBe(true);
       expect(s.done[0].anchors[0].in).not.toBeNull();
     });
+    test('mouse: Shift close drag from an off-anchor press keeps the in-handle on a 45 degree step', () => {
+      const s = penSetup();
+      tap(s.renderer, 100, 100, 'mouse', 1000);
+      tap(s.renderer, 300, 100, 'mouse', 3000);
+      tap(s.renderer, 300, 300, 'mouse', 5000);
+      clock = 8000;
+      s.renderer.down(evt(104, 100, 'mouse', 8000));
+      s.renderer.move({ ...evt(104 + 69, 100 + 40, 'mouse', 8010), shiftKey: true });
+      clock = 8040;
+      s.renderer.up({ ...evt(104 + 69, 100 + 40, 'mouse', 8040), shiftKey: true });
+      const a = s.done[0].anchors[0];
+      expect(a.in).not.toBeNull();
+      const deg = (Math.atan2(a.y - a.in.y, a.x - a.in.x) * 180) / Math.PI;
+      const off = Math.abs(deg - Math.round(deg / 45) * 45);
+      expect(off).toBeLessThan(0.5);
+    });
     test('mouse: a 1 px move under the slop makes no handle', () => {
       const s = closeWithMove('mouse', 102, 103);
       expect(s.done[0].anchors[0].in).toBeNull();
