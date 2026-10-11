@@ -368,12 +368,12 @@
           ${row(t('Tap'),                          'Select an object or layer')}
           ${row(t('Drag'),                         'Move the selected object')}
           ${row(t('Pinch') + ' · ' + t('Two-finger drag'), 'Zoom · pan the canvas')}
-          ${row(t('Undo / Redo buttons'),          'Undo and redo from the header', 'Two-finger tap = undo · Three-finger tap = redo · Zoom In, Zoom Out and Fit buttons set the view')}
+          ${row(t('Undo / Redo buttons'),          'Undo and redo the last change', 'Two-finger tap = undo · Three-finger tap = redo · Zoom In, Zoom Out and Fit buttons set the view')}
           ${row(t('Done chip') + ' · ' + t('Double-tap'), 'Finish a pen path')}
-          ${row(t('Modifier bar'),                 'Multi-select, Constrain and Duplicate apply to the next gesture', 'Double-tap a modifier to lock it')}
+          ${row(t('Modifier bar'),                 'Multi-select, Constrain, Duplicate and Pan apply to the next gesture', 'Double-tap a modifier to lock it')}
           ${row(t('Hold a layer row') + ' · ' + t('Tap ⋯'), 'Open the layer menu', '&ldquo;Selection menu&hellip;&rdquo; in the context bar')}
           ${row(t('Drag a grip'),                  'Reorder layers and panels')}
-          ${row(t('Tap a value chip'),             'Type a value', 'Hold a slider label to reset it')}
+          ${row(t('Tap a value chip'),             'Type a value', 'Hold a slider label to open its Reset to default menu')}
           ${row(t('Hold a button marked ▸'),       'Open its sub-menu (on touch, tap it again when it is active)')}
         </tbody>
       </table>`;
@@ -471,6 +471,17 @@
     const initial = focusShortcuts ? 'tools'
       : (this._helpPlatform === 'touch' && !this._lastHelpTab ? 'touch' : (this._lastHelpTab || 'quickstart'));
     switchTab(initial);
+    // TUX-052: the modal focuses its first control (Quick Start) after open, on a timer. Redirect that
+    // initial focus to the active tab so a focus ring never makes an inactive tab look selected.
+    const redirect = (e) => {
+      const t = e.target;
+      if (!t || !t.classList || !t.classList.contains('help-tab-btn') || t.classList.contains('active')) return;
+      const activeBtn = wrap.querySelector('.help-tab-btn.active');
+      wrap.removeEventListener('focusin', redirect);
+      if (activeBtn) activeBtn.focus({ preventScroll: true });
+    };
+    wrap.addEventListener('focusin', redirect);
+    window.setTimeout(() => wrap.removeEventListener('focusin', redirect), 400);
   }
 
   Modals.HelpShortcuts = {

@@ -104,4 +104,26 @@ describe('TUX-052 touch copy', () => {
     const all = document.querySelector('#modal-overlay .help-wrap').textContent;
     expect(all).not.toMatch(/tap\s*\(touch\)\s*any toolbar button|Tap a button marked/i);
   });
+
+  test('T7: touch copy is accurate on every layout', () => {
+    document.body.classList.add('touch-ui');
+    window.app.ui.openHelp(false);
+    const panel = document.querySelector('#modal-overlay [data-panel="touch"]');
+    expect(panel.textContent).not.toMatch(/from the header/i);
+    expect(panel.textContent).toMatch(/Reset to default/);
+    expect(panel.textContent).not.toMatch(/slider label to reset it/);
+    expect(panel.textContent).toMatch(/Pan/);
+    const oval = window.Vectura.HINTS.touchTools['shape-oval'].hint.map((s) => `${s.key} ${s.text}`).join('|');
+    expect(oval).toMatch(/draw an oval/);
+    expect(oval).not.toMatch(/a oval/);
+  });
+
+  test('T8: Help does not leave focus on an inactive tab', async () => {
+    document.body.classList.add('touch-ui');
+    await new Promise((r) => setTimeout(r, 20)); // flush focus timers left by earlier tests
+    window.app.ui.openHelp(false);
+    await new Promise((r) => setTimeout(r, 20));
+    const f = document.activeElement;
+    if (f && f.classList.contains('help-tab-btn')) expect(f.classList.contains('active')).toBe(true);
+  });
 });

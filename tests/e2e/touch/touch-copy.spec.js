@@ -21,6 +21,10 @@ test('touch tap switches hints to touch words and Help opens on the Touch page',
   await expect(page.locator('body')).toHaveAttribute('data-last-input', 'touch');
   const hint = await page.locator('#status-bar').textContent();
   expect(hint, 'status hint after a touch tap').not.toMatch(BANNED);
+  if (process.env.TUX_EVIDENCE === '1') {
+    fs.mkdirSync(EVIDENCE, { recursive: true });
+    await page.screenshot({ path: `${EVIDENCE}/hint-${testInfo.project.name}.png` });
+  }
 
   if (await phoneLayout(page)) {
     await touch.tap(page, page.locator('#btn-menu-hamburger'));
@@ -39,6 +43,11 @@ test('touch tap switches hints to touch words and Help opens on the Touch page',
   await expect(page.locator('.help-platform-btn[data-platform="touch"]')).toHaveClass(/active/);
   const panel = page.locator('.help-panel[data-panel="touch"]');
   await expect(panel).toBeVisible();
+  const focusState = await page.evaluate(() => {
+    const f = document.activeElement;
+    return f && f.classList.contains('help-tab-btn') ? f.classList.contains('active') : true;
+  });
+  expect(focusState, 'focus never rests on an inactive Help tab').toBe(true);
   const inView = await panel.evaluate((el) => {
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.right > 0 && r.left < innerWidth && r.top < innerHeight;

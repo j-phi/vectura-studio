@@ -29,7 +29,7 @@
   // Modifier names come from touch-modifiers.js. A mouse segment with no proven
   // touch path is omitted, never reworded into an invented gesture.
   const touchShapeHint = (shape, constrained) => [
-    seg('Drag', `to draw a ${shape}`),
+    seg('Drag', `to draw ${/^[aeiou]/i.test(shape) ? 'an' : 'a'} ${shape}`),
     seg('Constrain + Drag', `to draw a ${constrained}`),
   ];
   const touchTools = {
