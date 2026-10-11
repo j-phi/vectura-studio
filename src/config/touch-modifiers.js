@@ -13,7 +13,7 @@
     // A second tap within this many ms of latching locks the task.
     lockMs: 300,
     // Pointer-down inside one of these starts a consuming gesture (touch and pen only).
-    consumeSurfaces: ['#main-canvas', '#petal-designer-window canvas', '.petal-designer-inline canvas', '#pattern-designer-window canvas', '.pattern-designer-inline canvas'],
+    consumeSurfaces: ['#main-canvas', '#layer-list', '#petal-designer-window canvas', '.petal-designer-inline canvas', '#pattern-designer-window canvas', '.pattern-designer-inline canvas'],
     tasks: [
       {
         id: 'multiSelect',

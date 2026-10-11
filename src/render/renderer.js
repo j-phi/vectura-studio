@@ -7278,7 +7278,9 @@
         // CMD/Ctrl+click on an existing fill adopts it as the active batch so
         // the user can tweak its params via the panel. Only meaningful in
         // pour mode; in erase mode CMD acts like a plain click.
-        if (this.activeTool === 'fill' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        // TUX-033: Cmd/Ctrl on desktop, the Multi-select task on touch.
+        const sampleMods = this.getModifierState(e);
+        if (this.activeTool === 'fill' && (sampleMods.meta || sampleMods.multiSelect) && !sampleMods.alt) {
           // CMD/Ctrl is a sample gesture, not a pour. If there is no fill
           // under the cursor (empty shape or empty canvas) leave the shape
           // empty rather than falling through to a normal pour.
@@ -7999,7 +8001,7 @@
         // cross into a new region's loopId, pour again. lastPourLoopId is
         // reset on up(). Shift gating keeps a plain click from accidentally
         // filling adjacent regions when the mouse jiggles before release.
-        if (!this.isDeferredFillPointer(e) && (e.buttons & 1) && e.shiftKey && this.paintBucketStack?.length) {
+        if (!this.isDeferredFillPointer(e) && (e.buttons & 1) && this.getModifierState(e).shift && this.paintBucketStack?.length) {
           const target = this.paintBucketStack[this.paintBucketScopeIndex];
           if (target && target.loopId !== this.lastPourLoopId) {
             const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
@@ -8964,7 +8966,7 @@
           clearActivePointer();
         };
         if (sceneLayer && bigEnough) {
-          const includeOccluded = Boolean(pending.alt || e.altKey);
+          const includeOccluded = Boolean(pending.alt || this.getModifierState(e).alt);
           if (pending.mode === 'object') {
             const ids = this._sceneObjectsInRect(sceneLayer, rect, { includeOccluded });
             if (ids.length) {
