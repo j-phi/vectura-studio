@@ -160,14 +160,75 @@ describe('TUX-033 panels and renderer honour touch modifiers', () => {
     expect(adopted).toBe(2);
   });
 
-  test('B2 the renderer reads shift and alt through the shared reader', () => {
+  // Drag-pour rig: three regions side by side (loopId = floor(x / 100)); the real _paintBucketPour
+  // runs, only the region lookup and the fill write are stubbed. The batch is lastPaintedFillRefs.
+  const dragRig = () => {
     const r = win.app.renderer;
-    latch('constrain'); latch('duplicate');
-    const t = r.getModifierState({ pointerType: 'touch' });
-    expect(t.shift).toBe(true);
-    expect(t.alt).toBe(true);
-    const m = r.getModifierState({ pointerType: 'mouse' });
-    expect(m.shift).toBe(false);
-    expect(m.alt).toBe(false);
+    const PBO = win.Vectura.PaintBucketOps;
+    const origApply = PBO.applyFillAtPoint;
+    let n = 0;
+    PBO.applyFillAtPoint = (_e, _a, x) => {
+      n += 1;
+      return { loopId: Math.floor(x / 100), fillId: `f${n}`, layerId: 'L' };
+    };
+    r.activeTool = 'fill';
+    r._isWorldInsidePaper = () => true;
+    r.screenToWorld = (x, y) => ({ x, y });
+    r._paintBucketHover = (world) => {
+      r.paintBucketStack = [{ loopId: Math.floor(world.x / 100), polygon: null }];
+      r.paintBucketScopeIndex = 0;
+    };
+    const c = doc.getElementById('main-canvas');
+    c.getBoundingClientRect = () => ({ left: 0, top: 0, right: 1000, bottom: 1000, width: 1000, height: 1000 });
+    const ev = (type, target, o) => target.dispatchEvent(pe(type, { clientY: 10, ...o }));
+    return {
+      batch: () => (r.lastPaintedFillRefs || []).length,
+      restore: () => { PBO.applyFillAtPoint = origApply; },
+      drag: (o, xs, pointerId = 21) => {
+        ev('pointerdown', c, { clientX: xs[0], pointerId, buttons: 1, ...o });
+        xs.slice(1).forEach((x) => ev('pointermove', win, { clientX: x, pointerId, buttons: 1, ...o }));
+        ev('pointerup', win, { clientX: xs[xs.length - 1], pointerId, buttons: 0, ...o });
+      },
+    };
+  };
+  const REGIONS = [50, 150, 250];
+
+  test('B2 a touch drag with the Constrain task pours into each region it crosses', () => {
+    const rig = dragRig();
+    try {
+      latch('constrain');
+      rig.drag({ pointerType: 'touch' }, REGIONS);
+      expect(rig.batch()).toBe(3);
+    } finally { rig.restore(); }
+  });
+
+  test('B2b without the task a touch drag pours once, on the lift (TUX-022)', () => {
+    const rig = dragRig();
+    try {
+      rig.drag({ pointerType: 'touch' }, REGIONS);
+      expect(rig.batch()).toBe(1);
+    } finally { rig.restore(); }
+  });
+
+  test('B2c a cancelled plain touch press pours nothing', () => {
+    const rig = dragRig();
+    try {
+      const c = doc.getElementById('main-canvas');
+      c.dispatchEvent(pe('pointerdown', { clientX: 50, clientY: 10, pointerType: 'touch', pointerId: 22, buttons: 1 }));
+      win.dispatchEvent(pe('pointercancel', { clientX: 50, clientY: 10, pointerType: 'touch', pointerId: 22 }));
+      expect(rig.batch()).toBe(0);
+    } finally { rig.restore(); }
+  });
+
+  test('B3 mouse parity: the Constrain task never drag-pours a mouse, a real Shift does', () => {
+    const rig = dragRig();
+    try {
+      latch('constrain');
+      rig.drag({ pointerType: 'mouse' }, REGIONS, 23);
+      expect(rig.batch()).toBe(1);
+      IM.clearAll();
+      rig.drag({ pointerType: 'mouse', shiftKey: true }, REGIONS, 24);
+      expect(rig.batch()).toBe(3);
+    } finally { rig.restore(); }
   });
 });

@@ -7294,7 +7294,12 @@
         this._paintBucketHover(world, patternTileParams);
         const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
           ? 'erase' : 'pour';
-        if (this.isDeferredFillPointer(e)) {
+        // TUX-033: a touch / pen press that carries the Constrain (Shift) task is a drag-pour,
+        // exactly like a Shift-drag with a mouse: pour now, then pour into each new region.
+        // Only the Constrain task counts; a real Shift on a touch event keeps the TUX-022 deferred pour.
+        const touchDragPour = this.isDeferredFillPointer(e) && !e.shiftKey && this.getModifierState(e).shift;
+        this._touchDragPourId = touchDragPour ? e.pointerId : null;
+        if (this.isDeferredFillPointer(e) && !touchDragPour) {
           // TUX-022: touch / pen show the region preview and the loupe at once; the lift pours
           // into the last previewed region. A cancel, a drag off the paper or a second finger
           // drops the pending pour.
@@ -7989,7 +7994,8 @@
           : null;
         this._paintBucketHover(world, patternTileParams);
         this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
-        if (fillOwner) {
+        const touchDragPourMove = this._touchDragPourId !== null && this._touchDragPourId !== undefined && e.pointerId === this._touchDragPourId;
+        if (fillOwner && !touchDragPourMove) {
           const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase') ? 'erase' : 'pour';
           this._armFillPending(e, world, mode, patternTileParams);
           // TUX-022 req. 6 / CODE-017: the held pointer gets the same hover feedback a mouse
@@ -8001,7 +8007,7 @@
         // cross into a new region's loopId, pour again. lastPourLoopId is
         // reset on up(). Shift gating keeps a plain click from accidentally
         // filling adjacent regions when the mouse jiggles before release.
-        if (!this.isDeferredFillPointer(e) && (e.buttons & 1) && this.getModifierState(e).shift && this.paintBucketStack?.length) {
+        if (((!this.isDeferredFillPointer(e) && (e.buttons & 1) && this.getModifierState(e).shift) || touchDragPourMove) && this.paintBucketStack?.length) {
           const target = this.paintBucketStack[this.paintBucketScopeIndex];
           if (target && target.loopId !== this.lastPourLoopId) {
             const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
@@ -8673,6 +8679,7 @@
       }
       // TUX-022: touch / pen fill. The lift pours into the last previewed region. A cancel never
       // pours; the pending record and the preview are always cleared.
+      if (this._touchDragPourId === e.pointerId) this._touchDragPourId = null;
       const fillPend = this._fillPendingPour;
       if (fillPend && e.pointerId === fillPend.pointerId && this.isDeferredFillPointer(e)) {
         this._commitFillPending(fillPend, e.type !== 'pointercancel');
