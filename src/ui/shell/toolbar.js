@@ -702,14 +702,9 @@
       this.app.renderer.onPenComplete = (payload) => this.createManualLayerFromPath(payload);
       this.app.renderer.onShapeComplete = (payload) => this.createManualLayerFromPath(payload);
       this.app.renderer.onScissor = (payload) => this.applyScissor(payload);
+      // TUX-045: a completed or cancelled shape ends one-shot latches only; a locked task stays on.
       this.app.renderer.onClearTransientModifiers = () => {
-        const mods = (window.Vectura.SETTINGS || {}).touchModifiers;
-        if (!mods) return;
-        mods.shift = false;
-        mods.alt = false;
-        mods.meta = false;
-        mods.ctrl = false;
-        this.refreshTouchModifierButtons?.();
+        window.Vectura.InputModifiers?.consumeOneShot();
       };
       this.app.renderer.onAlgoDrawComplete = ({ algoType, rect }) => {
         if (this.app.pushHistory) this.app.pushHistory();

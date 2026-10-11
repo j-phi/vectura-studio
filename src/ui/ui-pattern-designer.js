@@ -1419,7 +1419,7 @@
         if (this.app.pushHistory) this.app.pushHistory();
       };
       const applyPourAt = (tx, ty, e, session) => {
-        const effectiveTool = pd.tool === 'fill' && (e.altKey || window.Vectura.SETTINGS?.touchModifiers?.alt)
+        const effectiveTool = pd.tool === 'fill' && window.Vectura.InputModifiers.readModifiers(e).alt
           ? 'fill-erase'
           : pd.tool;
         const targets = getSelection(tx, ty, Boolean(e.shiftKey));

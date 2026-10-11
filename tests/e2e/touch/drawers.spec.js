@@ -331,6 +331,12 @@ test.describe('TUX-011 dismiss and slivers', () => {
       const layout = await skipUnlessDrawer(page);
       await ensureClosed(page);
       const before = await snap(page);
+      // Real ghost-click detector: any pointer/click event that reaches the canvas after the backdrop tap.
+      await page.evaluate(() => {
+        window.__canvasHits = 0;
+        const c = document.getElementById('main-canvas');
+        ['pointerdown', 'mousedown', 'click'].forEach((t) => c.addEventListener(t, () => { window.__canvasHits += 1; }, true));
+      });
       await touch.tap(page, page.locator(openerFor(layout, side)));
       await page.waitForTimeout(400);
       expect(await isOpen(page, side)).toBe(true);
@@ -344,6 +350,7 @@ test.describe('TUX-011 dismiss and slivers', () => {
       expect(await isOpen(page, side), `${side} closed`).toBe(false);
       expect(await isOpen(page, side === 'left' ? 'right' : 'left')).toBe(false);
       expect(await snap(page), 'no ghost click').toEqual(before);
+      expect(await page.evaluate(() => window.__canvasHits), 'no event reached the canvas').toBe(0);
     });
   }
 
@@ -370,6 +377,36 @@ test.describe('TUX-011 dismiss and slivers', () => {
     expect(topId, 'element over a tool button').toBe('mobile-pane-backdrop');
     expect(await uncovered(page, openerFor(layout, 'right')), 'Layers opener stays live').toBe(true);
     expect(await uncovered(page, openerFor(layout, 'left')), 'Generator opener stays live').toBe(true);
+  });
+});
+
+test.describe('TUX-010 toast never covers pane controls', () => {
+  test.beforeEach(async ({ page }) => { await boot(page); });
+
+  test('a plain toast leaves every visible drawer handle and pane chevron tappable', async ({ page }) => {
+    const layout = await layoutOf(page);
+    await page.evaluate(() => {
+      const T = window.Vectura.UI.overlays.Toast;
+      T.show({ message: 'Copied 3 layers to clipboard and pasted them into the document, then selected the pasted layers on the canvas', duration: 20000 });
+      T.show({ message: 'Added flowfield layer and moved it to the top of the stack', duration: 20000 });
+    });
+    await page.waitForTimeout(300);
+    const toastH = await page.evaluate(() => [...document.querySelectorAll('.vectura-toast')].map((e) => e.getBoundingClientRect().height));
+    expect(toastH.length, 'two stacked toasts').toBeGreaterThanOrEqual(2);
+    expect(Math.max(...toastH), 'a toast wraps to at least two lines').toBeGreaterThan(40);
+    const sels = ['#btn-mobile-pane-left', '#btn-mobile-pane-right', '#btn-header-pane-left', '#btn-header-pane-right',
+      '#btn-pane-toggle-left', '#btn-pane-toggle-right'];
+    for (const sel of sels) {
+      const r = await rectOf(page, sel);
+      const vis = await page.evaluate((s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).visibility !== 'hidden' && e.getClientRects().length > 0; }, sel);
+      if (!r || !vis || r.w < 1 || r.h < 1) continue;
+      expect(await uncovered(page, sel), `${layout}: ${sel} uncovered while a toast shows`).toBe(true);
+    }
+    if (layout === 'tablet') {
+      await page.touchscreen.tap(...(await page.evaluate(() => { const r = document.querySelector('#btn-mobile-pane-left').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })));
+      await sleep(600);
+      expect(await isOpen(page, 'left'), 'tap on left handle opens the drawer under a toast').toBe(true);
+    }
   });
 });
 

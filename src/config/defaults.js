@@ -2548,13 +2548,6 @@
       pathfinder: true,
     },
     aboutVisible: true,
-    touchModifiers: {
-      shift: false,
-      alt: false,
-      meta: false,
-      ctrl: false,
-      pan: false,
-    },
     documentUnits: 'metric',
     // Live X/Y coordinate readout chip shown while hovering/dragging anchors and
     // handles (Settings ▸ Guides & Display ▸ "Coordinate readout"). Default ON.

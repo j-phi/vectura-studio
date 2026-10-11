@@ -2979,15 +2979,7 @@
         });
       };
       if (!pd.canvasHover || typeof pd.canvasHover !== 'object') pd.canvasHover = {};
-      const readModifiers = (e) => {
-        const mods = SETTINGS.touchModifiers || {};
-        const isTouch = e?.pointerType === 'touch';
-        return {
-          shift: Boolean(e?.shiftKey || (isTouch && mods.shift)),
-          alt: Boolean(e?.altKey || (isTouch && mods.alt)),
-          meta: Boolean(e?.metaKey || e?.ctrlKey || (isTouch && mods.meta)),
-        };
-      };
+      const readModifiers = (e) => window.Vectura.InputModifiers.readModifiers(e || {});
       const setCursor = (canvas, e = null) => {
         if (!canvas) return;
         const role = getCanvasRole(canvas);
@@ -4072,7 +4064,7 @@
         return;
       }
       anchor.out = { t: nextT, w: nextW };
-      const breakHandle = Boolean(e?.altKey || SETTINGS.touchModifiers?.alt);
+      const breakHandle = window.Vectura.InputModifiers.readModifiers(e || {}).alt;
       if (!breakHandle) {
         const dt = anchor.t - nextT;
         const dw = anchor.w - nextW;
@@ -4110,7 +4102,7 @@
           t: controlPoint.t,
           w: controlPoint.w,
         };
-        const breakHandle = Boolean(e.altKey || SETTINGS.touchModifiers?.alt);
+        const breakHandle = window.Vectura.InputModifiers.readModifiers(e).alt;
         if (!breakHandle) {
           const dt = anchor.t - anchor[which].t;
           const dw = anchor.w - anchor[which].w;

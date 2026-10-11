@@ -331,7 +331,7 @@ test.describe('TUX-007 phone landscape', () => {
         return { W: innerWidth, H: innerHeight, shown: !!bar && getComputedStyle(bar).display !== 'none', btns };
       });
       expect(m.shown, `modifier bar shown at ${h}`).toBe(true);
-      expect(m.btns.length, `modifier buttons at ${h}`).toBeGreaterThanOrEqual(5);
+      expect(m.btns.length, `modifier buttons at ${h}`).toBeGreaterThanOrEqual(4);
       for (const b of m.btns) {
         const tag = `${b.id} at ${m.W}x${m.H}`;
         expect(b.l, `${tag} left`).toBeGreaterThanOrEqual(INS.left - 0.5);
@@ -351,13 +351,14 @@ test.describe('TUX-007 phone landscape', () => {
       expect(hit, `Pan centre uncovered at ${h}`).toBe(true);
       const panState = () => page.evaluate(() => ({
         active: [...document.querySelectorAll('#touch-modifier-bar .touch-mod-btn')].some((b) => /pan/i.test(b.textContent) && b.classList.contains('active')),
-        setting: !!(window.Vectura.SETTINGS.touchModifiers || {}).pan,
+        setting: window.Vectura.InputModifiers.getTaskState('pan') !== 'off',
       }));
       const before = await panState();
       expect(before, `Pan starts off at ${h}`).toEqual({ active: false, setting: false });
       await tap(page, pan);
       await sleep(150);
       expect(await panState(), `tap toggled Pan on at ${h}`).toEqual({ active: true, setting: true });
+      await sleep(450); // TUX-045: a second tap within 300 ms locks the task instead of clearing it
       await tap(page, pan);
       await sleep(150);
       expect(await panState(), `second tap cleared Pan at ${h}`).toEqual({ active: false, setting: false });

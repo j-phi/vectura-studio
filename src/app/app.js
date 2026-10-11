@@ -504,7 +504,6 @@
         undoSteps: SETTINGS.undoSteps,
         uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
         aboutVisible: SETTINGS.aboutVisible !== false,
-        touchModifiers: SETTINGS.touchModifiers ? clone(SETTINGS.touchModifiers) : null,
         documentUnits: normalizeDocumentUnits(SETTINGS.documentUnits),
         paperSize: SETTINGS.paperSize,
         paperWidth: SETTINGS.paperWidth,
@@ -688,12 +687,7 @@
         SETTINGS.uiSections = clone(snapshot.uiSections);
       }
       if (snapshot.aboutVisible !== undefined) SETTINGS.aboutVisible = snapshot.aboutVisible !== false;
-      if (snapshot.touchModifiers && typeof snapshot.touchModifiers === 'object' && !Array.isArray(snapshot.touchModifiers)) {
-        SETTINGS.touchModifiers = {
-          ...(SETTINGS.touchModifiers || {}),
-          ...snapshot.touchModifiers,
-        };
-      }
+      // TUX-045: legacy touchModifiers is ignored; modifier tasks are runtime-only.
       SETTINGS.documentUnits = normalizeDocumentUnits(snapshot.documentUnits ?? SETTINGS.documentUnits);
       SETTINGS.paperSize = takeSafeString('paperSize', SETTINGS.paperSize, 64);
       SETTINGS.paperWidth = takeNumber('paperWidth', SETTINGS.paperWidth, 1, 100000);
@@ -902,7 +896,6 @@
           gridOverlay: SETTINGS.gridOverlay,
           uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
           aboutVisible: SETTINGS.aboutVisible !== false,
-          touchModifiers: SETTINGS.touchModifiers ? clone(SETTINGS.touchModifiers) : null,
           documentUnits: normalizeDocumentUnits(SETTINGS.documentUnits),
           paperSize: SETTINGS.paperSize,
           paperWidth: SETTINGS.paperWidth,
@@ -977,12 +970,6 @@
         SETTINGS.uiSections = clone(s.uiSections);
       }
       if (s.aboutVisible !== undefined) SETTINGS.aboutVisible = s.aboutVisible !== false;
-      if (s.touchModifiers && typeof s.touchModifiers === 'object') {
-        SETTINGS.touchModifiers = {
-          ...(SETTINGS.touchModifiers || {}),
-          ...s.touchModifiers,
-        };
-      }
       SETTINGS.documentUnits = normalizeDocumentUnits(s.documentUnits ?? SETTINGS.documentUnits);
       SETTINGS.paperSize = s.paperSize ?? SETTINGS.paperSize;
       SETTINGS.paperWidth = s.paperWidth ?? SETTINGS.paperWidth;
