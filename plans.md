@@ -593,6 +593,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **U2 golden Node-major gate (2026-10-11).** mezzoRegion hash failed on Node 25 arm64 (V8 ULP drift, verified on base 383d7610); hashes now enforced on Node 20 only, counts everywhere; `.nvmrc` added.
 
 - **2026-10-04 — Fill-style review U7: deferred items (branch `3d-scene/fr-u7`, NOT pushed).** (1) **Tone bands**
   (`toneBands` 2-4, `tierPens`) route any Fill Style's marks to pens by the tone under each mark (curved: face lookup

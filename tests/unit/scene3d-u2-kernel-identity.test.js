@@ -53,6 +53,16 @@ const hashPaths = (paths) => {
 // Regenerate x64 on a Mac: download node-v<ver>-darwin-x64 and run the same
 // scene through `arch -x86_64 <x64 node>`; the result matches CI exactly.
 const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
+// WHY THE NODE MAJOR. The same ULP argument holds ACROSS V8 versions on one
+// arch: on arm64, Node 25 rounds a Math result differently from Node 20 and
+// the mezzoRegion scene hashes '8ee322d6' instead of 'c9eba689' — on the
+// pre-U2 base 383d7610 itself too (measured 2026-10-11), so nothing moved.
+// The hashes were captured on Node 20 (CI's pinned major, see .nvmrc), so
+// they are enforced only there. On any other major, the path and point
+// counts must still match exactly; only the float-string hash is waived.
+const GOLDEN_NODE_MAJOR = 20;
+const NODE_MAJOR = Number(process.versions.node.split('.')[0]);
+const HASH_ENFORCED = NODE_MAJOR === GOLDEN_NODE_MAJOR;
 const GOLDENS = [
   { prim: 'sphere', mapper: 'hatch', law: 'ladder', hash: { arm64: 'b8de834e', x64: 'f51e7a34' }, paths: 112, pts: 1589 },
   { prim: 'sphere', mapper: 'hatch', law: 'etfKang', hash: { arm64: '458964db', x64: 'b2689b20' }, paths: 285, pts: 13885 },
@@ -130,6 +140,11 @@ describe('U2 kernel perf — bit-identity', () => {
     });
   });
 
+  // CI must run the golden Node major, or the hash proof is waived there too.
+  test('CI enforces the byte-exact hashes (runs the goldens\' Node major)', () => {
+    if (process.env.CI) expect(NODE_MAJOR).toBe(GOLDEN_NODE_MAJOR);
+  });
+
   test.each(GOLDENS)('scene golden — $prim / $mapper / $law is byte-identical to pre-U2', (g) => {
     const engine = new V.VectorEngine();
     const gid = engine.addLayer('scene3d');
@@ -143,7 +158,9 @@ describe('U2 kernel perf — bit-identity', () => {
     child.params.transform.pitch = 0;
     child.params.transform.roll = 0;
     engine.computeAllDisplayGeometry();
-    expect(hashPaths(group.scenePaths)).toEqual({ hash: g.hash[ARCH], paths: g.paths, pts: g.pts });
+    const got = hashPaths(group.scenePaths);
+    expect({ paths: got.paths, pts: got.pts }).toEqual({ paths: g.paths, pts: g.pts });
+    if (HASH_ENFORCED) expect(got.hash).toBe(g.hash[ARCH]);
   }, 180000);
 
   test('shadow fields — segment-grid distance and scanline inside test match the brute force exactly', () => {
