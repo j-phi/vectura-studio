@@ -71,6 +71,8 @@
     }
 
     const setDocked = (side, open) => {
+      // A Reset View hold is memory-only: restore the held side before dropping it, unless this call targets it.
+      if (held && docked[held.layout] && held.side !== side) docked[held.layout][held.side] = true;
       held = null;
       docked[layout][side] = open;
       persist(KEYS[layout][side], !open);
