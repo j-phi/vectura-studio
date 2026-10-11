@@ -331,6 +331,12 @@ test.describe('TUX-011 dismiss and slivers', () => {
       const layout = await skipUnlessDrawer(page);
       await ensureClosed(page);
       const before = await snap(page);
+      // Real ghost-click detector: any pointer/click event that reaches the canvas after the backdrop tap.
+      await page.evaluate(() => {
+        window.__canvasHits = 0;
+        const c = document.getElementById('main-canvas');
+        ['pointerdown', 'mousedown', 'click'].forEach((t) => c.addEventListener(t, () => { window.__canvasHits += 1; }, true));
+      });
       await touch.tap(page, page.locator(openerFor(layout, side)));
       await page.waitForTimeout(400);
       expect(await isOpen(page, side)).toBe(true);
@@ -344,6 +350,7 @@ test.describe('TUX-011 dismiss and slivers', () => {
       expect(await isOpen(page, side), `${side} closed`).toBe(false);
       expect(await isOpen(page, side === 'left' ? 'right' : 'left')).toBe(false);
       expect(await snap(page), 'no ghost click').toEqual(before);
+      expect(await page.evaluate(() => window.__canvasHits), 'no event reached the canvas').toBe(0);
     });
   }
 
