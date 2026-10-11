@@ -465,7 +465,9 @@ const acquire = async (ctx) => {
         const ahead = tickets.findIndex((t) => t.mine);
         if (ahead <= 0) {
           if (createExclusive(ctx.paths.lock, ctx.record)) {
-            if (lastPrinted) log(`Test lock acquired after ${formatDuration(Date.now() - waitStart)}.`);
+            ctx.queueWaitMs = Date.now() - waitStart;
+            if (lastPrinted) log(`Test lock acquired after ${formatDuration(ctx.queueWaitMs)}.`);
+            log(`event=lock-acquired queue_wait_ms=${ctx.queueWaitMs}`);
             return 'acquired';
           }
           continue;
@@ -542,7 +544,7 @@ const runDirect = async (spec, env) => {
 };
 
 const runHeld = async (ctx, spec) => {
-  const env = { ...process.env, [TOKEN_ENV]: ctx.token };
+  const env = { ...process.env, [TOKEN_ENV]: ctx.token, VECTURA_TEST_QUEUE_WAIT_MS: String(ctx.queueWaitMs || 0) };
   const child = spawnCommand(spec, env);
   ctx.child = child;
   const tracked = new Map();

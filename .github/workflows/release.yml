@@ -8,6 +8,7 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     permissions:
       contents: write
     steps:
@@ -31,8 +32,10 @@ jobs:
 
       - run: npm install --no-audit --no-fund --loglevel=error
 
-      - name: Run tests
-        run: npm run test:unit && npm run test:integration
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run release candidate audit and coverage
+        run: npm run test:lane -- audit
 
       - name: Build distributable zip
         run: |

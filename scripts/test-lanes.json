@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "selection": "shadow",
+  "always": [
+    "tests/unit/lane-routing.test.js",
+    "tests/e2e/feedback.spec.js"
+  ],
+  "rules": [
+    { "id": "scene3d", "paths": ["^src/core/scene3d/", "^src/core/algorithms/scene3d\\.js$", "^src/config/scene3d-tone-laws\\.js$", "^src/render/renderer\\.js$", "^tests/(audit|unit|visual|helpers|fixtures|baselines)/.*scene3d"], "risk": "high", "lanes": ["core", "browser", "audit"] },
+    { "id": "core-algorithms", "paths": ["^src/core/algorithms/", "^src/core/(engine|layer|rng|noise-rack|geometry-utils|path-boolean|masking)\\.js$"], "risk": "high", "lanes": ["core", "browser"] },
+    { "id": "defaults-and-config", "paths": ["^src/config/", "^user-presets/", "^src/config/user-presets\\.js$"], "risk": "high", "lanes": ["core", "browser", "audit"] },
+    { "id": "rendering", "paths": ["^src/render/", "^src/ui/skin/"], "risk": "high", "lanes": ["core", "browser"] },
+    { "id": "ui", "paths": ["^src/ui/", "^src/app/"], "risk": "medium", "lanes": ["core", "browser"] },
+    { "id": "export-and-io", "paths": ["^src/.*(export|import|serialize|file|project).*\\.js$", "^src/core/(optimization-utils|modifiers)\\.js$"], "risk": "high", "lanes": ["core", "browser"] },
+    { "id": "shared-harness-docs", "paths": ["^(AGENTS|CLAUDE)\\.md$", "^docs/(testing|agentic-harness-strategy)\\.md$"], "risk": "shared", "lanes": ["core", "browser", "audit"] },
+    { "id": "shared-test-contract", "paths": ["^tests/", "^scripts/(test-|run-vitest|vitest-supervisor)", "^vitest\\.config\\.mjs$", "^playwright\\.config\\.js$", "^package\\.json$", "^package-lock\\.json$", "^\\.github/workflows/"], "risk": "shared", "lanes": ["core", "browser", "audit"] },
+    { "id": "docs-only", "paths": ["^(README|CHANGELOG|plans|CLAUDE|AGENTS)\\.md$", "^docs/"], "risk": "low", "lanes": [] }
+  ],
+  "fallback": { "risk": "unknown", "lanes": ["core", "browser", "audit"], "reason": "unclassified path or unavailable git comparison" },
+  "lanes": {
+    "feedback": { "command": "npm run test:feedback:run", "maxSeconds": 60 },
+    "core": { "command": "npm run test:unit && npm run test:integration", "maxSeconds": 7200 },
+    "browser": { "command": "npm run test:e2e:all", "maxSeconds": 3600 },
+    "audit": { "command": "npm run test:audit", "maxSeconds": 18000 },
+    "measure": { "command": "npm run test:lane:measure", "maxSeconds": 300 }
+  },
+  "promotion": {
+    "requiredConsecutiveGreenRuns": 20,
+    "requireRepresentatives": ["scene3d", "core-algorithms", "defaults-and-config", "rendering", "ui", "export-and-io", "unknown"],
+    "requireAuditEvidenceForHead": true,
+    "defaultGateUntilVerified": "full"
+  }
+}

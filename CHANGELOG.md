@@ -6,6 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Testing workflow
+- **Bounded feedback and retained audits.** Add isolated runtime profiles and immutable
+  script caching, an explicit critical-feedback roster, a single complete browser invocation,
+  a physical exhaustive-proof audit lane, and fail-closed shadow routing/promotion evidence.
+  Pre-push runs bounded feedback; broad GitHub jobs and full coverage thresholds remain.
+  Local worker limits bound memory. Independent review repairs and verification limits live
+  in `docs/test-suite-acceleration-punchlist.md`; hosted speed targets are not yet certified.
+
+
 ### Fixed (tests)
 - **Scene3D byte-identity goldens are pinned per CPU architecture.** The U2 kernel goldens and the Seed
   legacy golden passed on arm64 Macs but failed on the x86_64 CI runner. V8's `Math.sin/cos/exp/atan2/...`

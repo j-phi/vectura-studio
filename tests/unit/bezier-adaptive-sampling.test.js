@@ -10,7 +10,7 @@ describe('GeometryUtils.sampleCubicBezier — adaptive subdivision', () => {
   let sampleCubicBezier;
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadVecturaRuntime({ profile: 'feature', files: ['src/core/geometry-utils.js'] });
     sampleCubicBezier = runtime.window.Vectura.GeometryUtils.sampleCubicBezier;
   });
 

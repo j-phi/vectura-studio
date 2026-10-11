@@ -6,7 +6,7 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - Node 20.19 or newer is required.
 - Unit/Integration/Visual/Perf: Vitest 4 (`vitest.config.mjs`); keep `vitest` and
   `@vitest/coverage-v8` on matching versions. Worker limits use Vitest 4's top-level
-  `maxWorkers` option with the `forks` pool.
+  `maxWorkers` option with the `forks` pool. Local ordinary runs and CI use at most two workers; full local coverage uses one to bound retained audit memory. CLI worker overrides are explicit experiments, not the default.
 - E2E smoke: Playwright (`playwright.config.js`)
 - Runtime loader for browser IIFE modules: `tests/helpers/load-vectura-runtime.js`
 - E2E smoke projects run on Chromium for both desktop and touch-tablet coverage (tablet uses touch/mobile emulation).
@@ -18,19 +18,24 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - `npm run test:runner` runs process-lifecycle regression tests with Node's test runner.
 - `npm run test:unit` runs those lifecycle checks, then deterministic unit tests.
 - `npm run test:integration` runs engine integration tests, including app bootstrap integrity assertions for Layers/Mathematical Model/About population.
-- `npm run test:e2e` runs Playwright smoke tests.
+- `npm run test:e2e` runs the complete Playwright spec roster in one invocation, including mask-shift-drag.
 - `npm run test:visual` runs SVG baseline regression checks.
 - `npm run test:visual:screenshots` runs optional Playwright screenshot snapshots.
 - `npm run test:perf` runs stress/performance checks.
 - `npm run test:ci` runs the PR-gating test suite (unit + integration + e2e + visual + perf).
-- `npm run test:fast` runs the e2e-free subset (~12s — unit + integration + visual + perf) used by the pre-push hook.
-- `npm run test:coverage` runs the whole Vitest suite under V8 coverage.
+- `npm run test:fast` runs bounded local feedback used by the pre-push hook.
+- `npm run test:feedback` runs critical contracts and one minimal real browser journey with a 60-second execution deadline. Queue wait is separate; timeout fails.
+- `npm run test:lane -- <feedback|core|browser|audit|measure>` executes an explicit queued lane. Its execution deadline starts after lock acquisition; queue wait is recorded separately.
+- `npm run test:route -- --base <sha> --head <sha> --json` previews versioned risk routing. Unknown/shared/harness paths select broad verification.
+- `npm run test:lane:promote -- --head <sha> --ledger <jsonl>` validates shadow evidence before policy promotion.
+- `npm run test:coverage` runs the whole Vitest suite, including `tests/audit/`, under V8 coverage with `VECTURA_TEST_COVERAGE=1` to disable compiled-script caching.
+- `npm run test:audit` holds one queue slot for lifecycle checks, full coverage once, and the complete browser roster once.
 - `npm run test:vitest -- <vitest args>` runs Vitest with any arguments (for example `npm run test:vitest -- run tests/unit/foo.test.js`).
 - `npm run test:playwright -- <playwright test args>` runs `playwright test` with any arguments (for example `npm run test:playwright -- tests/e2e/foo.spec.js --reporter=line`).
 - `npm run test:queue:status` shows the shared test-lock holder and the waiting runs.
 - `npm run hooks:install` installs the local git hooks. **Run this once after cloning.**
   - `pre-commit` — refreshes the graphify knowledge graph and stages output.
-  - `pre-push` — runs `test:fast` (~12s, through the shared test queue) before every push. E2E is intentionally gated only by CI to avoid local slowdowns on busy machines. Bypass with `SKIP_PREPUSH=1 git push` (CI still gates).
+  - `pre-push` — runs `test:feedback` (bounded feedback through the shared test queue) before every push. A minimal browser journey runs locally; the full browser roster remains in CI. Bypass with `SKIP_PREPUSH=1 git push` (CI still gates).
 
 ## Shared Local Test Queue
 Several worktrees and agent sessions run tests on the same machine. Concurrent Vitest and
@@ -117,7 +122,7 @@ runs gain protection. Already-running jobs are not adopted.
 Run `npm run test:runner` to exercise real child processes: success/failure cleanup,
 stubborn descendants, SIGINT/SIGTERM/SIGHUP, wrapper SIGKILL, deadlines, spawn failure,
 unrelated-process isolation, and retry-policy preservation. These checks run before
-unit tests inside the same queue slot, so they are included in `test:fast` and `test:ci`.
+unit tests inside the same queue slot, and are also explicitly included in the feedback lane.
 The lightweight standalone `test:runner` checks do not acquire the machine-wide lock.
 
 ## Visual Baselines
@@ -129,12 +134,27 @@ The lightweight standalone `test:runner` checks do not acquire the machine-wide 
 ## CI Policy
 - `.github/workflows/test.yml` enforces:
   - Pull requests and `main`: all five suites (`test:unit`, `test:integration`, `test:e2e`, `test:visual`, `test:perf`)
-  - Nightly schedule: same
+  - Nightly schedule: visual/perf plus a complete audit/coverage run.
 - `.github/workflows/dependency-review.yml` reviews dependency diffs on pull requests.
 - `.github/workflows/codeql.yml` runs GitHub code scanning on `main`, pull requests to `main`, and a weekly schedule.
 - Playwright artifacts are uploaded from CI on every `e2e-smoke` run.
+
+## Acceleration rollout
+
+The existing broad GitHub jobs and full-scope coverage ratchet remain during shadow evaluation.
+Routing/feedback and current-revision roster validation add evidence; passing focused checks alone
+does not promote a change. See [the acceleration contract](test-suite-acceleration.md) for the
+under-one-minute local and under-five-minute ordinary PR targets, promotion evidence, and audit
+failure policy. These are targets, not observed whole-suite or hosted-PR results.
+
+Use `core`/`feature` loader profiles for explicit pure IIFE dependencies, `component` for minimal
+DOM markup and explicit scripts, and legacy/full profiles for app-shell checks. Each runtime is
+fresh and must be closed. Keep exhaustive geometry/history/mutation matrices in `tests/audit/`;
+retain routine guards for shipped failure mechanisms and verify their defect sensitivity.
 
 ## Writing New Tests
 - Prefer deterministic seeds and explicit parameter overrides.
 - Keep baseline scenarios small enough for fast CI but representative enough to catch regressions.
 - For visual coverage, prefer SVG output checks; use screenshot snapshots only when SVG baselines cannot capture the regression.
+
+The critical feedback roster is `tests/helpers/feedback-roster.json`. It includes live seed-zero, state/export, preset/default-origin, mask/undo, curved/faceted, compact ribbon placement/width, and import-sanitization checks. Known-fault seed/ribbon witnesses execute fresh isolated source variants; exhaustive ribbon proofs remain in broad verification. Runtime budgets fail visibly when exceeded. Conservative broad-job deadlines remain until completed measurements support lowering them.

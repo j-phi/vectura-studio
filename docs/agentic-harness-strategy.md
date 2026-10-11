@@ -114,6 +114,18 @@ Reference:
   wraps its whole chain once. CI bypasses the queue (`CI` set). Contract: `docs/testing.md` →
   "Shared Local Test Queue".
 
+### Accelerated feedback and promotion
+
+Bounded `test:feedback` supplies local iteration and the pre-push gate; it does not certify
+full-suite coverage. Explicit path routing must fail broadly for unknown/shared/harness changes.
+Fresh VM/DOM profiles isolate mutable state, while only immutable compiled scripts may be cached.
+Local ordinary runs default to two workers, full local coverage to one, and CI retains two.
+Exhaustive rendering proofs remain in `tests/audit/`, and full coverage scope/thresholds remain
+unchanged. Existing GitHub gates stay required during shadow evaluation. Promotion needs a
+validated evidence ledger, exact-revision audit evidence and operational audit-failure ownership.
+Local execution, queue wait, hosted queue/setup and total runner-minutes must be reported separately.
+See `test-suite-acceleration.md` for targets and `test-suite-acceleration-punchlist.md` for findings.
+
 ### Vitest lifecycle ownership
 
 All repository Vitest entrypoints use `scripts/run-vitest.js`, which launches a

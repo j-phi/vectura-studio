@@ -9,9 +9,55 @@ on:
     - cron: '0 8 * * *'
 
 jobs:
+  lane-plan:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      plan: ${{ steps.route.outputs.plan }}
+      lanes: ${{ steps.route.outputs.lanes }}
+      risk: ${{ steps.route.outputs.risk }}
+      classes: ${{ steps.route.outputs.classes }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Resolve explicit risk plan
+        id: route
+        run: node scripts/test-lane-router.js --base "${{ github.event.pull_request.base.sha || github.event.before }}" --head "$GITHUB_SHA" --json
+
+  feedback:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    needs: [lane-plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-metrics.jsonl
+      VECTURA_RISK_CLASSES: ${{ needs.lane-plan.outputs.classes }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - name: Start setup timing
+        run: echo "VECTURA_SETUP_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npx playwright install --with-deps chromium
+      - name: Record setup timing
+        run: echo "VECTURA_SETUP_MS=$(( $(date +%s%3N) - VECTURA_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
+      - run: npm run test:feedback
+      - name: Upload lane timing and queue metrics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: feedback-lane-metrics
+          path: ${{ runner.temp }}/lane-metrics.jsonl
+          if-no-files-found: ignore
+
   unit:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       # fetch-depth: 0 (full history) — several tests/unit/*.test.js RGR
       # proofs read a historical revision of a file via `git show <sha>:path`
@@ -33,6 +79,7 @@ jobs:
   integration:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -45,6 +92,7 @@ jobs:
   e2e-smoke:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -68,6 +116,7 @@ jobs:
   visual:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -89,6 +138,7 @@ jobs:
   perf:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -101,6 +151,7 @@ jobs:
   coverage:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
       # fetch-depth: 0 — see the `unit` job's checkout step above; this job
       # runs the exact same tests/unit/*.test.js RGR-history proofs (via
@@ -126,4 +177,52 @@ jobs:
           name: coverage-report
           path: coverage
           retention-days: 7
+          if-no-files-found: ignore
+
+  scheduled-audit:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:audit
+
+  lane-gate:
+    if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+    needs: [lane-plan, feedback, unit, integration, e2e-smoke, visual, perf, coverage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-roster-metrics.jsonl
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Require expected lanes for this SHA
+        env:
+          VECTURA_LANE_PLAN: ${{ needs.lane-plan.outputs.plan }}
+          SHA: ${{ github.sha }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          BROWSER_RESULT: ${{ needs.e2e-smoke.result }}
+          VISUAL_RESULT: ${{ needs.visual.result }}
+          PERF_RESULT: ${{ needs.perf.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          FEEDBACK_RESULT: ${{ needs.feedback.result }}
+        run: node scripts/test-lane-aggregate.js --sha "$SHA" --job=unit="$UNIT_RESULT" --job=integration="$INTEGRATION_RESULT" --job=e2e-smoke="$BROWSER_RESULT" --job=visual="$VISUAL_RESULT" --job=perf="$PERF_RESULT" --job=coverage="$COVERAGE_RESULT" --job=feedback="$FEEDBACK_RESULT"
+      - name: Upload expected-roster evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: expected-roster-metrics
+          path: ${{ runner.temp }}/lane-roster-metrics.jsonl
           if-no-files-found: ignore
