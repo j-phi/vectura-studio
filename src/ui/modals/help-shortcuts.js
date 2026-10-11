@@ -113,7 +113,7 @@
         <li class="help-step"><span class="help-step-body"><strong>Add modifiers</strong> — drag a layer into a Mirror Modifier to reflect it symmetrically, or enable Mask on a parent to clip children.</span></li>
         <li class="help-step"><span class="help-step-body"><strong>Export</strong> with ${CMD}${SHF}${k('E')} — choose optimize, crop, and sort options for clean, plotter-ready SVG output.</span></li>
       </ol>
-      ${callout('Press and hold any toolbar button marked <b>▸</b> to reveal extra algorithm and tool options. Double-click a parameter value to edit it inline; double-click a control to reset it to its default.')}`;
+      ${callout('Press and hold (mouse) or tap (touch) any toolbar button marked <b>▸</b> to reveal extra algorithm and tool options. Double-click a parameter value to edit it inline; double-click a control to reset it to its default (on touch: tap the value chip, or hold the label).')}`;
 
     /* -- Algorithms -- */
     const algorithms = `
@@ -204,7 +204,7 @@
     const touchRows = `
       <table class="help-kbd-table">
         <tbody>
-          ${row(mouse('1 finger'),   'Tool input')}
+          ${row(mouse('1 finger'),   'Tap selects; drag moves a selected object', 'See the Touch tab')}
           ${row(mouse('2 fingers'),  'Pan / pinch-zoom')}
         </tbody>
       </table>`;
@@ -360,6 +360,27 @@
       `)}
       ${callout('<strong>Export Animated SVG…</strong> is a separate File action for the harmonograph/Pendula family — it emits a self-contained, looping <em>draw-on</em> SVG (the strokes draw themselves on repeat) for sharing the figure drawing itself. The canonical Export SVG stays clean and static.')}`;
 
+    /* -- Touch -- */
+    const t = (name) => `<strong>${name}</strong>`;
+    const touchPageRows = `
+      <table class="help-kbd-table">
+        <tbody>
+          ${row(t('Tap'),                          'Select an object or layer')}
+          ${row(t('Drag'),                         'Move the selected object')}
+          ${row(t('Pinch') + ' · ' + t('Two-finger drag'), 'Zoom · pan the canvas')}
+          ${row(t('Undo / Redo buttons'),          'Undo and redo from the header', 'Two-finger tap = undo · Three-finger tap = redo · Zoom In, Zoom Out and Fit buttons set the view')}
+          ${row(t('Done chip') + ' · ' + t('Double-tap'), 'Finish a pen path')}
+          ${row(t('Modifier bar'),                 'Multi-select, Constrain and Duplicate apply to the next gesture', 'Double-tap a modifier to lock it')}
+          ${row(t('Hold a layer row') + ' · ' + t('Tap ⋯'), 'Open the layer menu', '&ldquo;Selection menu&hellip;&rdquo; in the context bar')}
+          ${row(t('Drag a grip'),                  'Reorder layers and panels')}
+          ${row(t('Tap a value chip'),             'Type a value', 'Hold a slider label to reset it')}
+          ${row(t('Tap a button marked ▸'),        'Open its sub-menu')}
+        </tbody>
+      </table>`;
+    const touch = `
+      ${callout('Touch and Apple Pencil input use the same tools as the mouse. The modifier bar replaces the Shift, Option and Cmd keys.')}
+      ${touchPageRows}`;
+
     return `
       <div class="help-wrap">
         <div class="help-toolbar">
@@ -371,10 +392,12 @@
             <button class="help-tab-btn" data-tab="layers"      type="button">Layers</button>
             <button class="help-tab-btn" data-tab="pen"         type="button">Pen</button>
             <button class="help-tab-btn" data-tab="fileexport"  type="button">File &amp; Export</button>
+            <button class="help-tab-btn" data-tab="touch"       type="button">Touch</button>
           </div>
           <div class="help-platform-toggle">
             <button class="help-platform-btn" data-platform="mac" type="button">⌘ Mac</button>
             <button class="help-platform-btn" data-platform="win" type="button">Ctrl Win</button>
+            <button class="help-platform-btn" data-platform="touch" type="button">Touch</button>
           </div>
         </div>
         <div class="help-panels">
@@ -385,14 +408,23 @@
           <div class="help-panel" data-panel="layers"     >${layers}</div>
           <div class="help-panel" data-panel="pen"        >${pen}</div>
           <div class="help-panel" data-panel="fileexport" >${fileExport}</div>
+          <div class="help-panel" data-panel="touch"      >${touch}</div>
         </div>
       </div>`;
   }
 
   function _applyHelpPlatform(root, platform) {
     requireDeps('_applyHelpPlatform');
+    // Touch is not a third key set: kbd text stays on the mac/win value.
+    let keys = platform;
+    if (platform === 'touch') {
+      keys = (this && this._helpKeyPlatform)
+        || (/Mac|iPod|iPhone|iPad/.test(navigator.platform) ? 'mac' : 'win');
+    } else if (this) {
+      this._helpKeyPlatform = platform;
+    }
     root.querySelectorAll('[data-mac]').forEach(el => {
-      el.textContent = platform === 'mac' ? el.dataset.mac : el.dataset.win;
+      el.textContent = keys === 'mac' ? el.dataset.mac : el.dataset.win;
     });
     root.querySelectorAll('.help-platform-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.platform === platform);
@@ -407,13 +439,19 @@
     if (!wrap) return;
 
     const isMac = /Mac|iPod|iPhone|iPad/.test(navigator.platform);
-    if (!this._helpPlatform) this._helpPlatform = isMac ? 'mac' : 'win';
+    if (!this._helpPlatform) {
+      // TUX-052: body.touch-ui (never maxTouchPoints) picks the Touch page by default.
+      const touchUi = !!(document.body && document.body.classList.contains('touch-ui'));
+      this._helpKeyPlatform = isMac ? 'mac' : 'win';
+      this._helpPlatform = touchUi ? 'touch' : this._helpKeyPlatform;
+    }
     this._applyHelpPlatform(wrap, this._helpPlatform);
 
     wrap.querySelectorAll('.help-platform-btn').forEach(btn => {
       btn.onclick = () => {
         this._helpPlatform = btn.dataset.platform;
         this._applyHelpPlatform(wrap, this._helpPlatform);
+        if (this._helpPlatform === 'touch') switchTab('touch');
       };
     });
 
@@ -430,7 +468,8 @@
       btn.onclick = () => switchTab(btn.dataset.tab);
     });
 
-    const initial = focusShortcuts ? 'tools' : (this._lastHelpTab || 'quickstart');
+    const initial = focusShortcuts ? 'tools'
+      : (this._helpPlatform === 'touch' && !this._lastHelpTab ? 'touch' : (this._lastHelpTab || 'quickstart'));
     switchTab(initial);
   }
 

@@ -15602,3 +15602,17 @@ body.touch-ui #vectura-toast-host .vectura-toast {
 }
 body.touch-ui #vectura-toast-host .vectura-toast:not(.is-actionable) { pointer-events: none; }
 /* === END TUX-048 === */
+
+/* === TUX-052 === Help Touch page: stack the gesture rows on narrow screens */
+@media (max-width: 700px) {
+  .help-panel[data-panel="touch"] .help-kbd-table,
+  .help-panel[data-panel="touch"] .help-kbd-table tbody { display: block; }
+  .help-panel[data-panel="touch"] .help-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--help-border, rgba(255, 255, 255, 0.08));
+  }
+  .help-panel[data-panel="touch"] .help-row td { display: block; width: auto; text-align: left; padding: 0; white-space: normal; }
+}
