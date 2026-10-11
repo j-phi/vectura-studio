@@ -165,3 +165,68 @@ describe('TouchGestureArbiter pointer map and latch', () => {
     expect(A.CANCEL_PATHS[A.CANCEL_PATHS.length - 1]).toBe('cancelLayerDrag');
   });
 });
+
+describe('TUX-021: Apple Pencil pointer preempts touch (pen-preempts-touch policy)', () => {
+  let arb;
+  const pen = (id, extra = {}) => ({ pointerId: id, pointerType: 'pen', buttons: 1, pressure: 0.5, timeStamp: 0, clientX: 0, clientY: 0, ...extra });
+  beforeEach(() => { arb = load().Vectura.TouchGestureArbiter.create(); });
+
+  it('touch then pen: roll the touch back and start the pen', () => {
+    arb.down(ev(1, 0, 10, 10));
+    const d = arb.penDown(pen(2), { touchActive: true });
+    expect(d).toMatchObject({ preempt: true, rollback: 'touch', stopGesture: false, restoreView: false, start: 'pen', ignoredIds: [1] });
+    expect(arb.pointers.size).toBe(0);
+  });
+
+  it('a pinch then pen: stop the gesture and restore the view', () => {
+    arb.down(ev(1, 0, 10, 10));
+    arb.down(ev(3, 50, 40, 10));
+    const d = arb.penDown(pen(2), { touchActive: false, touchGesture: true });
+    expect(d).toMatchObject({ preempt: true, rollback: null, stopGesture: true, restoreView: true, start: 'pen' });
+    expect(d.ignoredIds.sort()).toEqual([1, 3]);
+    expect(arb.gestureActive).toBe(false);
+  });
+
+  it('pen then touch: the touches are ignored and start no pinch', () => {
+    arb.penDown(pen(2), {});
+    expect(arb.touchPolicy(ev(1, 0, 5, 5)).ignore).toBe(true);
+    expect(arb.touchPolicy(ev(3, 10, 9, 9)).ignore).toBe(true);
+    expect(arb.pointers.size).toBe(0);
+    expect(arb.isIgnoredTouch(ev(1, 0, 0, 0))).toBe(true);
+  });
+
+  it('ignored touches stay ignored after the pen lifts, until they lift', () => {
+    arb.penDown(pen(2), {});
+    arb.touchPolicy(ev(1, 0, 5, 5));
+    arb.penRelease(pen(2));
+    expect(arb.penActive).toBe(false);
+    expect(arb.touchPolicy(ev(1, 0, 5, 5)).ignore).toBe(true);
+    expect(arb.releaseIgnored(ev(1, 0, 0, 0))).toBe(true);
+    expect(arb.touchPolicy(ev(1, 0, 5, 5)).ignore).toBe(false);
+  });
+
+  it('a touch cancel of a preempted palm is reported as ignored (never aborts the pen)', () => {
+    arb.down(ev(1, 0, 10, 10));
+    arb.penDown(pen(2), { touchActive: true });
+    expect(arb.releaseIgnored({ pointerId: 1, pointerType: 'touch', type: 'pointercancel' })).toBe(true);
+    expect(arb.penActive).toBe(true);
+  });
+
+  it('pen hover (buttons 0, pressure 0) makes no transition', () => {
+    arb.down(ev(1, 0, 10, 10));
+    expect(arb.penDown(pen(2, { buttons: 0, pressure: 0 }), { touchActive: true })).toBeNull();
+    expect(arb.pointers.size).toBe(1);
+    expect(arb.penActive).toBe(false);
+  });
+
+  it('a pen pointerdown without buttons and pressure counts as contact', () => {
+    expect(arb.penDown({ pointerId: 2, pointerType: 'pen' }, {})).toMatchObject({ start: 'pen' });
+  });
+
+  it('mouse is unchanged: no pen decision, touches still tracked', () => {
+    arb.down(ev(1, 0, 10, 10));
+    expect(arb.penDown({ pointerId: 9, pointerType: 'mouse', buttons: 1 }, { touchActive: true })).toBeNull();
+    expect(arb.pointers.size).toBe(1);
+    expect(arb.touchPolicy(ev(4, 0, 1, 1)).ignore).toBe(false);
+  });
+});
