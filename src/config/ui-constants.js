@@ -5,6 +5,10 @@
 (() => {
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.UI_CONSTANTS = {
+    // TUX-056: max backing-store DPR for the main canvas on coarse pointers (phones/tablets).
+    // DPR 3 phones would allocate 2.25x the pixels of DPR 2; fine pointers are never capped.
+    TOUCH_CANVAS_MAX_DPR: 2,
+
     // Minimum pixels of space above a trigger before a popover flips upward.
     COLOR_PICKER_POPOVER_THRESHOLD_PX: 220,
 
@@ -72,6 +76,32 @@
       doubleTapMs: { mouse: 400, pen: 400, touch: 400 },
       // A pen drag shorter than this makes no Bezier handles (finger jitter).
       penCurveSlop: { mouse: 2, pen: 2, touch: 6 },
+      // TUX-025: 3D rotation gizmo (orbit pad, yaw, pitch, roll). Mouse/pen values are the old literals.
+      'gizmo3d-marker': { mouse: 9, pen: 9, touch: 22 },
+      'gizmo3d-centre': { mouse: 5, pen: 5, touch: 10 },
+      'gizmo3d-ring-band': { mouse: 5, pen: 5, touch: 10 },
+      // Extra reach past the orbit pad edge that still arms orbit (the old literal 7 px).
+      'gizmo3d-pad-slack': { mouse: 7, pen: 7, touch: 7 },
+    },
+
+    // TUX-025: touch layout of the 3D rotation gizmo (screen px; the renderer multiplies by 1/scale).
+    // Used when body.touch-ui or a coarse pointer is active. Markers stay >= 28 px apart in every state:
+    // the pitch track sits outside the roll ring so it cannot collide with the yaw marker.
+    GIZMO_3D_TOUCH: {
+      padRadius: 36,
+      yawRadiusX: 30,
+      yawRadiusY: 28,
+      ringRadius: 68,
+      pitchTrackX: 98,
+      pitchTrackHeight: 56,
+      // Clearance rule: anchorOffset > ringRadius + ring band + resize radius (68 + 10 + 22 = 100), so no
+      // gizmo target or ring band reaches the NE corner handle zone.
+      anchorOffset: 106,
+      markerDraw: 9,
+      edgeInset: 8,
+      reachPad: 22,
+      // Floating chrome the touch gizmo footprint must clear (TUX-025).
+      occluders: ['#touch-modifier-bar', '.ctxbar', '#canvas-hud'],
     },
 
     // TUX-014: rail tool sub-menus (shape / pen / fill / scissor / algo-draw picker).
