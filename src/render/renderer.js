@@ -8377,7 +8377,9 @@
         if (this.isPenDragging && this.penDragAnchor !== null) {
           const anchor = anchors[this.penDragAnchor];
           if (anchor) {
-            const target = modifiers.shift ? this.snapPenAngle(anchor, next) : next;
+            // The close-drag handle is the drag delta from the press point, so Shift snaps about that point.
+            const snapFrom = this.isPenCloseDragging ? (this.penCloseDownWorld || anchor) : anchor;
+            const target = modifiers.shift ? this.snapPenAngle(snapFrom, next) : next;
             const dist = Math.hypot(target.x - anchor.x, target.y - anchor.y);
             // A finger jitters a few px while it taps. Under the slop it makes no Bezier handles.
             const minDist = window.Vectura.hitTolerance('penCurveSlop', e.pointerType) / this.scale;
