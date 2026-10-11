@@ -15616,3 +15616,14 @@ body.touch-ui #vectura-toast-host .vectura-toast:not(.is-actionable) { pointer-e
   }
   .help-panel[data-panel="touch"] .help-row td { display: block; width: auto; text-align: left; padding: 0; white-space: normal; }
 }
+
+/* === TUX-052b === Help tab/platform buttons meet the 44px touch target */
+body.touch-ui .help-tab-btn,
+body.touch-ui .help-platform-btn {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* === END TUX-052b === */

@@ -101,5 +101,7 @@ describe('TUX-052 touch copy', () => {
     for (const entry of Object.values(touchTools)) {
       for (const s of entry.hint || []) expect(`${s.key} ${s.text}`).not.toMatch(BANNED);
     }
+    const all = document.querySelector('#modal-overlay .help-wrap').textContent;
+    expect(all).not.toMatch(/tap\s*\(touch\)\s*any toolbar button|Tap a button marked/i);
   });
 });

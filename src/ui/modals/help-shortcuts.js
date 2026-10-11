@@ -113,7 +113,7 @@
         <li class="help-step"><span class="help-step-body"><strong>Add modifiers</strong> — drag a layer into a Mirror Modifier to reflect it symmetrically, or enable Mask on a parent to clip children.</span></li>
         <li class="help-step"><span class="help-step-body"><strong>Export</strong> with ${CMD}${SHF}${k('E')} — choose optimize, crop, and sort options for clean, plotter-ready SVG output.</span></li>
       </ol>
-      ${callout('Press and hold (mouse) or tap (touch) any toolbar button marked <b>▸</b> to reveal extra algorithm and tool options. Double-click a parameter value to edit it inline; double-click a control to reset it to its default (on touch: tap the value chip, or hold the label).')}`;
+      ${callout('Press and hold (mouse or touch) any toolbar button marked <b>▸</b> to reveal extra algorithm and tool options. Double-click a parameter value to edit it inline; double-click a control to reset it to its default (on touch: tap the value chip, or hold the label).')}`;
 
     /* -- Algorithms -- */
     const algorithms = `
@@ -374,7 +374,7 @@
           ${row(t('Hold a layer row') + ' · ' + t('Tap ⋯'), 'Open the layer menu', '&ldquo;Selection menu&hellip;&rdquo; in the context bar')}
           ${row(t('Drag a grip'),                  'Reorder layers and panels')}
           ${row(t('Tap a value chip'),             'Type a value', 'Hold a slider label to reset it')}
-          ${row(t('Tap a button marked ▸'),        'Open its sub-menu')}
+          ${row(t('Hold a button marked ▸'),       'Open its sub-menu (on touch, tap it again when it is active)')}
         </tbody>
       </table>`;
     const touch = `
