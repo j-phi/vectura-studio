@@ -664,6 +664,30 @@ test.describe('pane defaults (TUX-008)', () => {
     }
   });
 
+  test('C layers pane controls stay usable and inside the pane (touch-wide fix round 3)', async ({ page }, testInfo) => {
+    const dev = devOf(testInfo);
+    test.skip(!['iPadL', 'coarseWide'].includes(dev), 'touch-wide only');
+    await gotoFresh(page);
+    await addAndSelectLayer(page);
+    await sleep(500);
+    const m = await page.evaluate(() => {
+      const pane = document.getElementById('right-pane').getBoundingClientRect();
+      const clipped = [...document.querySelectorAll('#right-pane button')].filter((b) => {
+        const r = b.getBoundingClientRect();
+        if (!r.width || !r.height || getComputedStyle(b).visibility === 'hidden') return false;
+        if (!b.offsetParent && getComputedStyle(b).position !== 'fixed') return false;
+        return r.right > pane.right + 0.5 || r.left < pane.left - 0.5 || r.right > window.innerWidth + 0.5;
+      }).map((b) => b.id || b.className);
+      return { clipped, inputW: document.getElementById('layer-search-input').getBoundingClientRect().width };
+    });
+    testInfo.annotations.push({ type: 'measured', description: JSON.stringify(m) });
+    expect(m.clipped, `clipped #right-pane buttons ${JSON.stringify(m)}`).toEqual([]);
+    expect(m.inputW, 'layer search input width').toBeGreaterThanOrEqual(44);
+    await tap(page, page.locator('.lvl-search-wrap'));
+    expect(await page.evaluate(() => document.activeElement && document.activeElement.id)).toBe('layer-search-input');
+    await shot008(page, `${dev}-layers-search`);
+  });
+
   test('C persisted desktop widths are clamped on touch-wide', async ({ page }, testInfo) => {
     const dev = devOf(testInfo);
     test.skip(!['iPadL', 'coarseWide'].includes(dev), 'touch-wide only');

@@ -15072,6 +15072,15 @@ body.tablet-layout #touch-modifier-bar {
   z-index: calc(var(--z-backdrop) + 1);
 }
 
+/* touch-wide, Layers pane capped at ~200 px (45 % canvas floor): the search field takes its own row so the
+ * input stays >= 44 px wide and finger-focusable; filter and Add Layer share the row below (TUX-008 fix round 3). */
+body.touch-wide-layout #right-pane .lvl-search-bar { flex-wrap: wrap; }
+body.touch-wide-layout #right-pane .lvl-search-bar .lvl-search-wrap { flex: 1 0 100%; min-width: 0; }
+body.touch-wide-layout #right-pane .lvl-search-bar .lvl-search-input { min-width: 0; flex: 1 1 auto; width: 100%; }
+body.touch-wide-layout #right-pane .lvl-search-bar .lvl-add-wrap { flex: 1 1 0; min-width: 0; margin-left: 0; }
+/* Draw Order header: the 44 px-pitch button group moves to its own row so no control passes the pane edge. */
+body.touch-wide-layout #right-pane .draw-order-head { flex-wrap: wrap; row-gap: 14px; }
+body.touch-wide-layout #right-pane .draw-order-head-right { flex: 1 0 100%; justify-content: space-between; gap: 0; padding: 0 4px; }
 /* === END TUX-008 === */
 
 /* === TUX-010/011: pane controls, drawers, slivers ===

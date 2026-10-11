@@ -154,4 +154,12 @@ describe('pane-state controller (TUX-008)', () => {
     c.setLayout('desktop', { overlay: false });
     expect(c.isOpen('left') && c.isOpen('right')).toBe(true);
   });
+
+  test('setDocked while a Reset View hold is active restores the held side (TUX-008)', () => {
+    const c = PaneState.create({ layout: 'desktop', overlay: true, persist: () => {} });
+    c.resetOverlay('left');
+    c.close('left');
+    c.setLayout('desktop', { overlay: false });
+    expect(c.isOpen('right')).toBe(true);
+  });
 });
