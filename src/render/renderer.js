@@ -2176,6 +2176,31 @@
     // Roll the first finger's action back completely: no selection change, no edit, no
     // history entry. Existing cancel paths run first (same priority as the Escape handler),
     // then the targeted snapshot is restored (only where it differs, to avoid UI cascades).
+    // TUX-021: executes the arbiter's pen-preempts-touch decision. Rolls every palm side effect
+    // back by snapshot (no history), stops a palm pinch/pan and restores the pre-gesture view
+    // (delegated default: Jay may override), and frees the canvas for the pen pointerdown.
+    _preemptTouchForPen(decision) {
+      const palmId = this.activePointerId;
+      if (decision.stopGesture) {
+        this.stopTouchGesture();
+        const snap = this._tapViewSnap;
+        if (decision.restoreView && snap) {
+          this.scale = snap.scale;
+          this.offsetX = snap.offsetX;
+          this.offsetY = snap.offsetY;
+          this.userHasManipulated = snap.userHasManipulated;
+        }
+      }
+      this._tapViewSnap = null;
+      if (palmId !== null && this.canvas && this.canvas.releasePointerCapture) {
+        try {
+          if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(palmId)) this.canvas.releasePointerCapture(palmId);
+        } catch (err) { /* capture already gone */ }
+      }
+      this._rollbackFirstTouchAction();
+      this.touchSlopCrossed = false;
+    }
+
     _rollbackFirstTouchAction() {
       const snap = this._touchSnapshot;
       this._touchSnapshot = null;
@@ -2219,6 +2244,9 @@
     onPointerCancel(e = {}) {
       if (!this.ready || !this.canvas) return;
       const id = e.pointerId;
+      // TUX-021: a cancel of an ignored palm must not abort the pen interaction.
+      if (this.touchArbiter.releaseIgnored(e)) return;
+      this.touchArbiter.penRelease(e);
       const tracked = this.isTouchPointer(e) && this.touchPointers.has(id);
       // A cancelled finger of a pinch/pan ends the gesture and keeps the view. The arbiter
       // latch holds until every touch pointer has gone, so no one-finger action starts.
@@ -6972,7 +7000,20 @@
     down(e) {
       if (!this.ready) return;
       this._notePointerType(e);
+      // TUX-021: an Apple Pencil pointer with contact preempts any touch interaction.
+      if (e.pointerType === 'pen') {
+        const decision = this.touchArbiter.penDown(e, {
+          touchActive: this.activePointerId !== null && this.activePointerType === 'touch',
+          touchGesture: !!this.touchGesture,
+        });
+        if (decision && decision.preempt) this._preemptTouchForPen(decision);
+      }
       if (this.isTouchPointer(e)) {
+        // TUX-021: a palm that lands while an Apple Pencil pointer is down starts nothing.
+        if (this.touchArbiter.touchPolicy(e).ignore) {
+          if (e.cancelable) e.preventDefault();
+          return;
+        }
         // A pen or mouse stroke in flight owns the canvas; a touch is a resting palm.
         if (this.activePointerId !== null && this.activePointerType && this.activePointerType !== 'touch') {
           if (e.cancelable) e.preventDefault();
@@ -7849,6 +7890,11 @@
     move(e) {
       if (!this.ready) return;
       this._notePointerType(e);
+      // TUX-021: a palm the pen preempted (or that landed under the pen) never drives anything.
+      if (this.touchArbiter.isIgnoredTouch(e)) {
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
       if (this.isTouchPointer(e)) {
         // TUX-017: track the finger (max travel feeds the arbitration decision), then run
         // the pinch/pan. While the gesture latch is held, a lone finger starts nothing.
@@ -8571,6 +8617,9 @@
 
     up(e = {}) {
       if (!this.ready || !this.canvas) return;
+      // TUX-021: an ignored palm's lift ends only its own ignored status.
+      if (this.touchArbiter.releaseIgnored(e)) return;
+      this.touchArbiter.penRelease(e);
       const tapResult = this.removeTouchPointer(e);
       if (tapResult && tapResult.tap) {
         this._finishMultiTap(e, tapResult);

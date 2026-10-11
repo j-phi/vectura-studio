@@ -90,6 +90,17 @@
 
   const isTouch = (e) => !!e && e.pointerType === 'touch';
 
+  // TUX-021: an Apple Pencil pointer (pointerType 'pen') pointerdown with contact. A hover
+  // sends buttons 0 and pressure 0 and never counts. A missing buttons/pressure counts as
+  // contact (some synthetic and older events omit both fields).
+  const isPenContact = (e) => {
+    if (!e || e.pointerType !== 'pen') return false;
+    const hasButtons = typeof e.buttons === 'number';
+    const hasPressure = typeof e.pressure === 'number';
+    if (!hasButtons && !hasPressure) return true;
+    return (hasButtons && (e.buttons & 1) === 1) || (hasPressure && e.pressure > 0);
+  };
+
   const decide = ({ dtMs, travelPx, config } = {}) => {
     const cfg = config || readConfig();
     const insideWindow = !(Number(dtMs) >= cfg.ARBITRATION_MS && Number(travelPx) >= cfg.ARBITRATION_SLOP_PX);
@@ -130,6 +141,10 @@
     };
     const secondFingerListeners = [];
     let gestureActive = false;
+    // TUX-021: touch ids that must start and end nothing (palm preempted by, or landed on top
+    // of, an Apple Pencil pointer). They stay ignored until they lift, even after the pen lifts.
+    const ignored = new Set();
+    let penId = null;
 
     const arbiter = {
       pointers,
@@ -222,6 +237,54 @@
 
       get(id) { return pointers.get(id) || null; },
 
+      // TUX-021: pen-preempts-touch policy. Call on EVERY canvas pointerdown of type 'pen'.
+      //   ctx = { touchActive: a touch owns the canvas interaction, touchGesture: a pinch/pan runs }
+      // Returns null unless the pointerdown has pen contact. Otherwise the decision:
+      //   { preempt, rollback: 'touch' | null, stopGesture, restoreView, start: 'pen', ignoredIds }
+      // Side effects: every tracked touch pointer moves to the ignored set and the touch map and
+      // latch are cleared, so nothing a palm does afterwards can reach the pen interaction.
+      penDown(e, ctx = {}) {
+        if (!isPenContact(e)) return null;
+        const ids = [...pointers.keys()];
+        ids.forEach((id) => ignored.add(id));
+        const preempt = ids.length > 0 || !!ctx.touchActive || !!ctx.touchGesture;
+        pointers.clear();
+        tap = null;
+        gestureActive = false;
+        penId = e.pointerId;
+        return {
+          preempt,
+          rollback: preempt && !ctx.touchGesture ? 'touch' : null,
+          stopGesture: !!ctx.touchGesture,
+          restoreView: !!ctx.touchGesture,
+          start: 'pen',
+          ignoredIds: ids,
+        };
+      },
+
+      // The pen pointer lifted or was cancelled: later touches act normally again.
+      penRelease(e) {
+        if (e && e.pointerType === 'pen' && (penId === null || e.pointerId === penId)) penId = null;
+      },
+
+      get penActive() { return penId !== null; },
+
+      // TUX-021: policy for a touch pointerdown. { ignore: true } while a pen is down, while any
+      // preempted palm still rests (ignored set not empty), or when the id is already ignored. The id is then ignored for the rest of its life.
+      touchPolicy(e) {
+        if (!isTouch(e)) return { ignore: false };
+        if (ignored.has(e.pointerId)) return { ignore: true };
+        if (penId !== null || ignored.size > 0) {
+          ignored.add(e.pointerId);
+          return { ignore: true };
+        }
+        return { ignore: false };
+      },
+
+      isIgnoredTouch(e) { return isTouch(e) && ignored.has(e.pointerId); },
+      // A lift or cancel of an ignored touch ends its ignored status. Returns true when it was ignored.
+      releaseIgnored(e) { return isTouch(e) && ignored.delete(e.pointerId); },
+
       // Put a record back (commit path runs the normal "up" code, which removes it).
       restore(rec) { if (rec) pointers.set(rec.id, rec); },
 
@@ -231,6 +294,8 @@
         foreign.clear();
         tap = null;
         gestureActive = false;
+        penId = null;
+        ignored.clear();
       },
 
       // Interface for lane M (TUX-034 long-press): listeners run when a second finger
@@ -246,5 +311,5 @@
     return arbiter;
   };
 
-  Vectura.TouchGestureArbiter = { DEFAULT_CONFIG, INTERACTION_FLAGS, CANCEL_PATHS, readConfig, decide, classifyTap, create };
+  Vectura.TouchGestureArbiter = { DEFAULT_CONFIG, INTERACTION_FLAGS, CANCEL_PATHS, readConfig, decide, classifyTap, isPenContact, create };
 })();
