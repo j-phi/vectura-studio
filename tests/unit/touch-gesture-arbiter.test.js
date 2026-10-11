@@ -229,4 +229,22 @@ describe('TUX-021: Apple Pencil pointer preempts touch (pen-preempts-touch polic
     expect(arb.pointers.size).toBe(1);
     expect(arb.touchPolicy(ev(4, 0, 1, 1)).ignore).toBe(false);
   });
+
+  it('a new touch stays ignored while a preempted palm still rests, even after the pen lifts', () => {
+    arb.down(ev(1, 0, 10, 10));
+    arb.penDown(pen(2), { touchActive: true });
+    arb.penRelease(pen(2));
+    expect(arb.touchPolicy(ev(3, 0, 5, 5)).ignore).toBe(true);
+    arb.releaseIgnored(ev(1, 0, 0, 0));
+    arb.releaseIgnored(ev(3, 0, 0, 0));
+    expect(arb.touchPolicy(ev(4, 0, 5, 5)).ignore).toBe(false);
+  });
+
+  it('abort clears the ignored set so a lost lift cannot leave ids ignored', () => {
+    arb.down(ev(1, 0, 10, 10));
+    arb.penDown(pen(2), { touchActive: true });
+    arb.abort();
+    expect(arb.isIgnoredTouch(ev(1, 0, 0, 0))).toBe(false);
+    expect(arb.touchPolicy(ev(5, 0, 5, 5)).ignore).toBe(false);
+  });
 });

@@ -150,11 +150,27 @@ describe('TUX-021: Apple Pencil pointer takes priority over a resting palm', () 
     renderer.setSelection([A.id], A.id);
     const tA = JSON.stringify(A.params); const tB = JSON.stringify(B.params);
     down(160, 60, PALM);
+    expect(renderer.activePointerId).toBe(11);
     down(60, 60, PEN);
+    expect(renderer.activePointerId).toBe(201);
     expect(ids()).toEqual([A.id]);
     up(60, 60, PEN);
     expect(JSON.stringify(A.params)).toBe(tA);
     expect(JSON.stringify(B.params)).toBe(tB);
+  });
+
+  test('pen tool: a second palm contact while the first palm still rests and the pen is lifted adds no anchor', async () => {
+    await setup();
+    renderer.setTool('pen');
+    down(100, 150, PALM);
+    down(220, 140, PEN);
+    up(220, 140, PEN);
+    expect(renderer.penDraft.anchors.length).toBe(1);
+    down(300, 160, PALM2);
+    up(300, 160, PALM2);
+    expect(renderer.penDraft.anchors.length).toBe(1);
+    expect(renderer.penDraft.anchors[0].x).toBeCloseTo(220, 0);
+    up(100, 150, PALM);
   });
 
   test('two palm contacts pinch, then the pen: gesture stops, view restored, pen starts', async () => {

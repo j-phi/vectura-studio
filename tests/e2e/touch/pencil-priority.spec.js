@@ -85,6 +85,20 @@ test.describe('TUX-021 Apple Pencil priority over a resting palm', () => {
     if (EVIDENCE_DIR) await page.screenshot({ path: `${EVIDENCE_DIR}/${testInfo.project.name}-2.png` });
   });
 
+  test('2b. Pen tool: a second palm contact while the first palm rests and the pen is lifted adds no anchor', async ({ page }) => {
+    await page.evaluate(() => window.app.ui.setActiveTool('pen'));
+    const { x0, y0 } = await page.evaluate(() => window.__p);
+    await send(page, 'pointerdown', 101, 'touch', x0, y0 + 20);
+    await send(page, 'pointerdown', 201, 'pen', x0 + 160, y0 + 40);
+    await send(page, 'pointerup', 201, 'pen', x0 + 160, y0 + 40);
+    await send(page, 'pointerdown', 102, 'touch', x0 + 240, y0 + 60);
+    await send(page, 'pointerup', 102, 'touch', x0 + 240, y0 + 60);
+    const s = await state(page);
+    expect(s.anchors.length).toBe(1);
+    expect(Math.abs(s.anchors[0].x - (x0 + 160))).toBeLessThan(1);
+    await send(page, 'pointerup', 101, 'touch', x0, y0 + 20);
+  });
+
   test('4. two palm contacts pinch, then the pen: view restored, pen starts', async ({ page }) => {
     await page.evaluate(() => window.app.ui.setActiveTool('pen'));
     const { x0, y0 } = await page.evaluate(() => window.__p);

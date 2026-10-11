@@ -269,12 +269,12 @@
 
       get penActive() { return penId !== null; },
 
-      // TUX-021: policy for a touch pointerdown. { ignore: true } while a pen is down or when
-      // the id is already ignored. The id is then ignored for the rest of its life.
+      // TUX-021: policy for a touch pointerdown. { ignore: true } while a pen is down, while any
+      // preempted palm still rests (ignored set not empty), or when the id is already ignored. The id is then ignored for the rest of its life.
       touchPolicy(e) {
         if (!isTouch(e)) return { ignore: false };
         if (ignored.has(e.pointerId)) return { ignore: true };
-        if (penId !== null) {
+        if (penId !== null || ignored.size > 0) {
           ignored.add(e.pointerId);
           return { ignore: true };
         }
@@ -295,6 +295,7 @@
         tap = null;
         gestureActive = false;
         penId = null;
+        ignored.clear();
       },
 
       // Interface for lane M (TUX-034 long-press): listeners run when a second finger
