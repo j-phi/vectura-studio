@@ -357,28 +357,23 @@ test.describe('TUX-039 touch tooltips', () => {
     expect(await page.evaluate((i) => window.app.engine.layers.find((l) => l.id === i).visible, id), 'layer.visible unchanged').toBe(true);
   });
 
-  test('(j) phone modifier buttons (glyph only) tip; labelled modifier buttons do not', async ({ page }) => {
-    const info = await page.evaluate(() => {
-      const b = document.querySelector('.touch-mod-btn[data-touch-mod="shift"]');
+  // TUX-045 replaced the Shift/Alt keys with tasks (Multi-select, Constrain, Duplicate, Pan) and gives every
+  // layout a visible text label (full name, or the short label on phone and touch-wide). No button is
+  // glyph-only any more, so a hold shows no tooltip (the labelled branch never asserted on the latch state).
+  test('(j) modifier task buttons carry a visible text label, so a hold shows no tooltip', async ({ page }) => {
+    const sel = '.touch-mod-btn[data-touch-mod="multiSelect"]';
+    const info = await page.evaluate((s) => {
+      const b = document.querySelector(s);
       if (!b) return null;
       const r = b.getBoundingClientRect();
-      const label = b.querySelector('.touch-mod-label');
-      return { shown: r.width > 0, labelShown: !!label && getComputedStyle(label).display !== 'none' };
-    });
+      const shown = (c) => { const e = b.querySelector(c); return !!e && getComputedStyle(e).display !== 'none' && e.textContent.trim().length > 0; };
+      return { shown: r.width > 0, textShown: shown('.touch-mod-label') || shown('.touch-mod-short') };
+    }, sel);
     expect(info && info.shown, 'modifier bar is visible').toBe(true);
-    expect(info.labelShown, 'label hidden exactly on phone-width viewports').toBe(page.viewportSize().width > 540);
-    const sel = '.touch-mod-btn[data-touch-mod="shift"]';
+    expect(info.textShown, 'a text label (full or short) is visible in every layout').toBe(true);
     await longPress(page, await centre(page, sel), 600);
-    await compatClick(page, sel);
     await sleep(100);
-    const tip = await tipFor(page, sel);
-    if (info.labelShown) {
-      expect(tip, 'visible text label: no tooltip').toBeNull();
-    } else {
-      expect(tip, 'glyph-only button: tooltip').not.toBeNull();
-      expect(tip.text).toContain('Shift');
-      expect(await page.evaluate(() => window.Vectura.SETTINGS.touchModifiers.shift), 'hold must not toggle the modifier').toBe(false);
-    }
+    expect(await tipFor(page, sel), 'visible text label: no tooltip').toBeNull();
   });
 
   test('(h) desktop parity: a mouse hold never tips and the swallow does not eat mouse clicks', async ({ page }) => {

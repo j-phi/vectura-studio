@@ -17,6 +17,8 @@ const DOC = path.join(DIR, '..', '..', '..', 'docs', 'touch-audit', 'journey-scr
 // Functions that may call page.evaluate and friends (state reads, setup, guard internals).
 const EVAL_ALLOWED = new Set([
   'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'waitAppReady', 'readRotateAffordance', 'waitNoToast',
+  // TUX-054: read-only save instrumentation (records navigator.share calls; the finger tap stays in the caller).
+  'savedFileName',
 ]);
 const EVAL_MARKER_CAP = 4;
 

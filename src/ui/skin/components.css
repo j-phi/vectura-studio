@@ -15602,3 +15602,36 @@ body.touch-ui #vectura-toast-host .vectura-toast {
 }
 body.touch-ui #vectura-toast-host .vectura-toast:not(.is-actionable) { pointer-events: none; }
 /* === END TUX-048 === */
+
+/* === TUX-041 / TUX-043: draw-order head clears the 44 px slider (integration fix) ===
+ * TUX-041 gives the 18 px eye and gear icons a 44 px ::before (13 px past the icon on each side);
+ * TUX-043 makes the draw-order slider a 44 px band. With the 5 px head margin the icon hit boxes
+ * covered the top 7 px of the slider, and the gear box (centre 21 px from the pane edge) was clipped
+ * to 43 px. The margin applies on every touch layout (touch-wide wraps the head but kept the 5 px margin);
+ * the 4 px inset only off touch-wide, which has its own. Short viewports (max-height: 520px) set the head
+ * margin to 0 above; this later rule (higher specificity) restores the clearance. */
+@media (pointer: coarse) {
+  body.touch-ui #right-pane .draw-order-bar .draw-order-head { margin-bottom: 14px; }
+  body.touch-ui:not(.touch-wide-layout) #right-pane .draw-order-head-right { padding-right: 4px; }
+}
+/* === END TUX-041 / TUX-043 draw-order head === */
+
+/* === TUX-020 / TUX-030: pen draft bar clears the canvas HUD (integration fix) ===
+ * The pen-draft context bar (Done / Remove Last Anchor / Cancel, 46 px tall at bottom 4 px) is centred
+ * and ran under the bottom-right HUD (z 40): Cancel resolved to the HUD history or view buttons on
+ * iPad landscape, iPhone portrait and touch-coarse-wide. Same treatment as the TUX-022 fill bar: while
+ * the draft bar is mounted the HUD rides above it. */
+body.touch-ui #viewport-container:has(.ctxbar.ctxbar--pen-draft) .canvas-hud {
+  bottom: calc(var(--safe-bottom, 0px) + 8px + 52px + 8px);
+}
+/* === END TUX-020 / TUX-030 === */
+
+/* === TUX-045 / TUX-020: very short phone landscape keeps two modifier columns (integration fix) ===
+ * TUX-045 moved the iPhone-landscape modifier bar to one 46 px column (4 x 44 px + gaps = about 188 px).
+ * At 874 x 330 (Safari with browser chrome) that column ran down into the bottom-right canvas HUD
+ * (Fit hit area 33 px, HUD overlapped the bar). TUX-007 sized this layout as two columns for that reason.
+ * Below 361 px tall the four tasks sit in a 2 x 2 grid (about 96 px tall), clear of the HUD. */
+@media (max-height: 360px) {
+  body.phone-layout.phone-short #touch-modifier-bar { grid-template-columns: repeat(2, 46px); column-gap: 2px; }
+}
+/* === END TUX-045 / TUX-020 === */

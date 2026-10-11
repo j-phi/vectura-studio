@@ -503,7 +503,18 @@ test.describe('TUX-019 direct drag', () => {
     const pts = await prepare(page, view);
     // TUX-023: the union selection (A + B) has its top-edge midpoint 12 mm right of A's centre, and a
     // touch press within 22 px of it is a resize handle. Press A's top outline 12 mm LEFT of centre (clear of the NW corner zone too).
-    const edge = { x: pts.obj.x - 12 * pts.scale, y: pts.obj.y - 35 * pts.scale + 4 };
+    const edgeOf = () => ({ x: pts.obj.x - 12 * pts.scale, y: pts.obj.y - 35 * pts.scale + 4 });
+    // TUX-045: on touch-wide the modifier bar overlays the top of the canvas, and A's top outline can land
+    // under it. Move the view down (both layers move together) until the press path is on the canvas.
+    for (let i = 0; i < 8; i += 1) {
+      const e = edgeOf();
+      const clear = await page.evaluate(([a, b]) => [a, b].every((p) => document.elementFromPoint(p.x, p.y) === document.querySelector('#main-canvas')),
+        [{ x: e.x, y: e.y }, { x: e.x + DRAG.dx, y: e.y + DRAG.dy }]);
+      if (clear) break;
+      await page.evaluate(() => { const r = window.app.renderer; r.offsetY += 40; r.draw(); });
+      pts.obj.y += 40;
+    }
+    const edge = edgeOf();
     await precondition(page, { x: edge.x + DRAG.dx / 2, y: edge.y + DRAG.dy / 2 }, DRAG.dx, testInfo.project.name);
     const before = await probe(page, [id]);
     expect(before.sel.length).toBe(2);

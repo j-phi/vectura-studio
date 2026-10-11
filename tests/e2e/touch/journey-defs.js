@@ -17,6 +17,7 @@
 
 const P = require('./pages');
 
+
 const S = P.SELECTORS;
 const L = (c, sel) => c.page.locator(sel);
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
@@ -775,9 +776,14 @@ JOURNEYS.push({
       post: async (c) => { if (!(await L(c, S.settingsPanel).isVisible())) throw new Error('Document Setup did not open'); },
     },
     {
-      id: 'j9.paper-section', action: 'tap', route: 'tap the Paper section header once; it expands', selector: '#settings-panel .sect-hdr Paper',
+      // TUX-050 req 3: Paper starts expanded on touch, so a tap on an open header would collapse it.
+      // The finger taps the header only while it is collapsed.
+      id: 'j9.paper-section', action: 'tap', route: 'Paper is open on touch (TUX-050); if collapsed, tap its header once', selector: '#settings-panel .sect-hdr Paper',
       expects: 'paper size select visible', jrn: 'JRN-019',
-      run: (c) => P.fingerTap(c.page, L(c, '#settings-panel .sect-hdr').filter({ hasText: /Paper/ })),
+      run: async (c) => {
+        const hdr = L(c, '#settings-panel .sect-hdr').filter({ hasText: /Paper/ });
+        if ((await hdr.getAttribute('aria-expanded')) !== 'true') await P.fingerTap(c.page, hdr);
+      },
       post: async (c) => { if (!(await L(c, '#machine-profile').isVisible())) throw new Error('the paper section did not expand'); },
     },
     {
@@ -807,13 +813,9 @@ JOURNEYS.push({
     },
     {
       id: 'j10.export-download', action: 'tap', route: 'tap Export SVG in the modal footer (it must lie on the screen)', selector: 'SELECTORS.exportSubmit',
-      expects: 'an .svg download starts', jrn: 'JRN-006',
+      expects: 'an .svg download starts (share sheet on WebKit, TUX-054)', jrn: 'JRN-006',
       run: async (c) => {
-        const dl = c.page.waitForEvent('download', { timeout: 4000 });
-        dl.catch(() => {});
-        await P.fingerTap(c.page, L(c, S.exportSubmit));
-        const file = await dl;
-        c.vars.file = file.suggestedFilename();
+        c.vars.file = await P.savedFileName(c.page, () => P.fingerTap(c.page, L(c, S.exportSubmit)));
       },
       post: (c) => { if (!/\.svg$/i.test(c.vars.file || '')) throw new Error(`download is ${c.vars.file}`); },
     },
@@ -838,12 +840,9 @@ JOURNEYS.push({
     },
     {
       id: 'j10.save-vectura', action: 'tap', route: 'File > Save .vectura', selector: 'SELECTORS.btnSaveVectura',
-      expects: 'a .vectura download starts',
+      expects: 'a .vectura download starts (share sheet on WebKit, TUX-054)',
       run: async (c) => {
-        const dl = c.page.waitForEvent('download', { timeout: 4000 });
-        dl.catch(() => {});
-        await P.fingerTap(c.page, L(c, S.btnSaveVectura));
-        c.vars.file = (await dl).suggestedFilename();
+        c.vars.file = await P.savedFileName(c.page, () => P.fingerTap(c.page, L(c, S.btnSaveVectura)));
       },
       post: (c) => { if (!/\.vectura$/i.test(c.vars.file || '')) throw new Error(`download is ${c.vars.file}`); },
     },

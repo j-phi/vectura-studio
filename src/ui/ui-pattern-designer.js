@@ -640,6 +640,27 @@
       const canvas = pd.root.querySelector('[data-pd-canvas]');
       if (!canvas) return;
       const wrap = canvas.parentElement;
+      // TUX-008 integration fix: on phones the Generator pane starts closed, so an inline designer can be
+      // built inside a 0 x 0 wrap. It then sized itself to the 460 x 320 fallback and overflowed the pane
+      // once it opened. Re-fit once, after the wrap gets a real size and the pane's open transition settles.
+      if ((!wrap.clientWidth || !wrap.clientHeight) && typeof ResizeObserver === 'function') {
+        if (pd.__pdSizeWatch) pd.__pdSizeWatch.disconnect();
+        let settle = null;
+        const watch = new ResizeObserver(() => {
+          clearTimeout(settle);
+          if (!wrap.clientWidth || !wrap.clientHeight) return;
+          settle = setTimeout(() => {
+            if (!wrap.clientWidth || !wrap.clientHeight) return;
+            watch.disconnect();
+            if (pd.__pdSizeWatch === watch) pd.__pdSizeWatch = null;
+            if (!canvas.isConnected) return;
+            this._initPatternDesignerView(pd);
+            this._renderPatternDesigner(pd);
+          }, 250);
+        });
+        pd.__pdSizeWatch = watch;
+        watch.observe(wrap);
+      }
       const wrapW = wrap.clientWidth || 460;
       const wrapH = wrap.clientHeight || 320;
       canvas.width = wrapW;

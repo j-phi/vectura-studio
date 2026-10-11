@@ -163,6 +163,9 @@ const checkHitAreas = async (page, id) => {
   const bad = [];
   const row = page.locator(`#layer-list [data-lvl-id="${id}"]`).first();
   await row.scrollIntoViewIfNeeded();
+  // Centre the row in the list: "if needed" can stop at a fractional scroll offset that leaves the
+  // last row 0.5 px under the list edge (pane layout after TUX-051), which reads as a 43 px hit area.
+  await row.evaluate((e) => e.scrollIntoView({ block: 'center' }));
   for (const sel of HIT_TARGETS) {
     const els = row.locator(sel);
     const n = await els.count();

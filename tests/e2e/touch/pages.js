@@ -491,6 +491,28 @@ async function openPane(page, side) {
 }
 
 async function openLayers(page) { return openPane(page, 'right'); }
+// TUX-054: on a coarse pointer with navigator.share + canShare (WebKit), Save and Export open the share
+// sheet instead of a download. Record share calls without a sheet and accept either path; returns the file name.
+async function savedFileName(page, tap) {
+  await page.evaluate(() => {
+    if (window.__jrnShare || typeof navigator.share !== 'function') return;
+    window.__jrnShare = [];
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      writable: true,
+      value: (d) => { const f = d && d.files && d.files[0]; window.__jrnShare.push(f ? f.name : null); return Promise.resolve(); },
+    });
+  });
+  const before = await page.evaluate(() => (window.__jrnShare ? window.__jrnShare.length : 0));
+  const dl = page.waitForEvent('download', { timeout: 4000 }).then((d) => d.suggestedFilename());
+  dl.catch(() => {});
+  const shared = page.waitForFunction((n) => window.__jrnShare && window.__jrnShare.length > n, before, { timeout: 4000 })
+    .then(() => page.evaluate(() => window.__jrnShare[window.__jrnShare.length - 1]));
+  shared.catch(() => {});
+  await tap();
+  return Promise.any([dl, shared]).catch(() => { throw new Error('neither a download nor a share sheet within 4000 ms'); });
+}
+
 async function openGenerator(page) { return openPane(page, 'left'); }
 
 // A drawer that overlays the canvas is closed with the same control (TUX-010). Docked panes stay.
@@ -642,4 +664,5 @@ module.exports = {
   undo,
   redo,
   addAlgorithmLayer,
+  savedFileName,
 };
