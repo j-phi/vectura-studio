@@ -417,6 +417,7 @@ Click `Export SVG` to download.
 
 | Command | Purpose |
 |---|---|
+| `npm run test:runner` | Process cleanup and cancellation regression checks |
 | `npm run test:unit` | Deterministic unit coverage for RNG/noise, algorithms, and utility helpers |
 | `npm run test:integration` | Engine workflow, layer lifecycle, optimization pipeline, state roundtrip, export, UI bootstrap |
 | `npm run test:e2e` | Playwright smoke tests on desktop + tablet-touch Chromium |
@@ -430,6 +431,10 @@ Click `Export SVG` to download.
 | `npm run test:queue:status` | Shows who holds the shared local test lock and who is waiting |
 
 All test commands run through a **shared local test queue** (`scripts/test-queue.js`): one heavy run at a time across every worktree and session on the machine; other runs wait and say who holds the lock. Do not call `npx vitest` / `npx playwright test` directly. CI bypasses the queue. Details: `docs/testing.md` → "Shared Local Test Queue".
+
+Vitest scripts clean up owned workers on completion/cancellation and enforce a
+30-minute local per-attempt deadline (three hours in CI), even if the launching wrapper dies. Use
+`VECTURA_TEST_TIMEOUT_MS` to override it; see [cleanup behavior and platform limits](docs/testing.md#vitest-process-cleanup).
 
 Vitest config: `vitest.config.mjs` · Playwright config: `playwright.config.js`
 

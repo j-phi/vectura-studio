@@ -248,6 +248,12 @@ or completes.
   Jay ruled "later". (2) T2-8b-5 rim extension fades with density (sphere rim candidates 29 at d=50 → 2 at
   d=220); all bars are d=50 only. (3) Thin mutation margins (nostraight 0.01 mm; nocoh/nocohstrip trip on 1
   cell). (4) Sphere d=220 runtime 1.32–1.44× of 1.4.5. See docs/3d-audit/lane-reports/T2-8b-5-review.md.
+  (5) T2-7 picture leftovers still open: G1 (partial), G3 (short horizontal bar below the cone apex),
+  G6 (highlight, tone-limited), and the two named T4 exceptions (create torus/hatch, create cone/hatch).
+  (6) Test-rig cone/hatch W_L residual 1.89 mm² bare ≥0.5 mm after T2-8b-5 (between bands / at the length
+  cap; extension cannot close it). (7) T2-3e row-lattice pattern — pre-existing, measured, filed unbuilt.
+  (8) Sphere G5 rim triangle: effectively closed by T2-8b-3's envelope rule (create bare ≥0.5 mm
+  1.44 → 0.06 mm²); test rig unchanged (1.95). Confirm with Jay's eye before closing.
 - **3D Scene: parentKey/pathKey quantization coherence (before the Phase 4A divisions
   UI ships).** `StrokeDivide.parentKeyOf` quantizes at a fixed 0.001mm while export/engine
   `pathKey` quantizes at `max(0.001, plotterOptimize)` — at any tolerance above 0.001 a
@@ -664,6 +670,7 @@ questions. Do not start these without a decision:
   render and child previews route to the owning group; B3 deferred + cancellable release settle;
   NEW-3 full-compose memo keyed on the complete input signature. Open: mono laws still pay a
   ~130–250 ms fixed cost per draft frame (field set-up inside surface-fill-mono.js, U2 scope).
+- **Vitest process cleanup (2026-10-04).** Added independent supervision, per-attempt deadlines, owned-group cleanup, and process-level regression coverage; preserved the narrow RPC retry policy. Integrated inside the shared test queue.
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
   (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
   Merged `3d-scene/handoff-c2` → `3d-scene/fill-collapse-2` → `3d-scene/fill-audit-2` →
@@ -2012,6 +2019,7 @@ questions. Do not start these without a decision:
   shipped as **v1.2.0**. See `CHANGELOG.md` for the consolidated notes.
 
 ## Decisions
+- **2026-10-04 — Vitest cleanup belongs to a supervisor, not model follow-up.** POSIX process groups isolate each attempt; a configurable deadline (30 minutes locally / three hours in CI) bounds unattended runs. Vitest supervision runs inside the shared queue; Playwright retains queue ownership.
 - **One machine-wide local test lock (2026-10-04).** Local test runs serialize through
   `scripts/test-queue.js` with its lock outside every worktree (`~/.cache/vectura-studio/test-queue`),
   not per worktree: the contention is for this machine's CPU and the Playwright port, not for a

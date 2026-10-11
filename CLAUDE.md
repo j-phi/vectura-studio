@@ -86,6 +86,11 @@ npm run version:sync           # sync package.json version → src/config/versio
 npm run profiles:bundle        # rebuild Petal profile library from JSON
 ```
 
+Use npm test scripts (`npm run test:vitest -- run <test-path>` for focused checks) for Vitest; direct
+`npx vitest` bypasses worker cleanup. A detached supervisor enforces the per-attempt
+deadline even while model usage is paused. See `docs/testing.md` for cancellation,
+`VECTURA_TEST_TIMEOUT_MS`, and platform limitations.
+
 Node 20.19+ required. `package.json` is the canonical version source — run `version:sync` whenever the version changes.
 
 **Versioning:** Use plain semver patch increments — `0.8.9` → `0.8.10` → `0.8.11`. Never reset the patch digit after 9; the third number is unbounded (no rollover to a new minor).

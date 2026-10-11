@@ -36,7 +36,8 @@
  * blanket-ignores every unhandled error including real ones.
  */
 
-const { spawn } = require('child_process');
+const path = require('node:path');
+const { runManaged } = require('./vitest-supervisor');
 
 const RPC_TIMEOUT_RE = /\[vitest-worker\]: Timeout calling "onTaskUpdate"/;
 
@@ -51,18 +52,22 @@ const CAUGHT_COUNT_RE = /Vitest caught (\d+) unhandled error/;
 
 const stripAnsi = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
 
-const runVitest = (args) =>
-  new Promise((resolve) => {
-    // Stream straight through to the terminal/CI log AND capture a copy. spawnSync
-    // could not do both: it buffers everything until exit (nothing appears live) and
-    // its 1MB default maxBuffer SIGTERMs the child on overflow.
-    const child = spawn('npx', ['vitest', ...args], { env: process.env, stdio: ['inherit', 'pipe', 'pipe'] });
-    let output = '';
-    child.stdout.on('data', (d) => { output += d; process.stdout.write(d); });
-    child.stderr.on('data', (d) => { output += d; process.stderr.write(d); });
-    child.on('error', (error) => resolve({ status: 1, output, error }));
-    child.on('close', (code, signal) => resolve({ status: code ?? 1, output, signal }));
+const getRunTimeoutMs = (env = process.env) =>
+  Number(env.VECTURA_TEST_TIMEOUT_MS ?? (env.CI ? 10800000 : 1800000));
+
+const runVitest = async (args) => {
+  let output = '';
+  const timeoutMs = getRunTimeoutMs();
+  const entry = path.join(path.dirname(require.resolve('vitest/package.json')), 'vitest.mjs');
+  const result = await runManaged(process.execPath, [entry, ...args], {
+    timeoutMs,
+    onOutput(data, stream) {
+      output += data;
+      process[stream].write(data);
+    },
   });
+  return { ...result, output };
+};
 
 // True only when vitest printed at least one real summary line, every one of them
 // reports passing files, and none reports a failure. An all-skipped run is not a
@@ -92,8 +97,8 @@ const onlyErrorIsRpcTimeout = (output) => {
 const isBenignRpcTimeout = (status, output) =>
   status !== 0 && everyTestPassed(output) && onlyErrorIsRpcTimeout(output);
 
-const reportSpawnTrouble = ({ error, signal }) => {
-  if (error) console.error(`\n[run-vitest] failed to launch vitest: ${error.message}`);
+const reportRunTrouble = ({ error, signal }) => {
+  if (error) console.error(`\n[run-vitest] ${error.message || error}`);
   else if (signal) console.error(`\n[run-vitest] vitest was killed by signal ${signal}`);
 };
 
@@ -102,9 +107,9 @@ const main = async () => {
 
   let result = await runVitest(args);
   if (result.status === 0) return 0;
-  reportSpawnTrouble(result);
+  reportRunTrouble(result);
 
-  if (!isBenignRpcTimeout(result.status, result.output)) return result.status;
+  if (result.error || result.cancelled || result.signal || !isBenignRpcTimeout(result.status, result.output)) return result.status;
 
   console.warn(
     '\n[run-vitest] All tests passed, but the run exited non-zero on vitest\'s\n' +
@@ -114,9 +119,9 @@ const main = async () => {
 
   result = await runVitest(args);
   if (result.status === 0) return 0;
-  reportSpawnTrouble(result);
+  reportRunTrouble(result);
 
-  if (isBenignRpcTimeout(result.status, result.output)) {
+  if (!result.error && !result.cancelled && !result.signal && isBenignRpcTimeout(result.status, result.output)) {
     console.warn(
       '\n[run-vitest] The retry hit the same RPC timeout with every test still\n' +
       '[run-vitest] passing. Treating as a pass: no test failed and that timeout is\n' +
@@ -128,11 +133,14 @@ const main = async () => {
   return result.status;
 };
 
-module.exports = { isBenignRpcTimeout, everyTestPassed, onlyErrorIsRpcTimeout };
+module.exports = { isBenignRpcTimeout, everyTestPassed, onlyErrorIsRpcTimeout, getRunTimeoutMs };
 
 if (require.main === module) {
   // Set exitCode rather than calling process.exit(): process.exit() discards
   // whatever is still queued on stdout when it is a pipe (as it is under CI), which
   // silently truncated the log — the summary lines are at the very end.
-  main().then((code) => { process.exitCode = code; });
+  main().then((code) => { process.exitCode = code; }).catch((error) => {
+    console.error(`[run-vitest] ${error.message}`);
+    process.exitCode = 1;
+  });
 }
