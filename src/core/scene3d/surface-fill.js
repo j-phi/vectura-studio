@@ -118,6 +118,42 @@
     };
   };
 
+  // ── A CAPSULE'S CAP SEAM IS PLACED BY ARC LENGTH ──────────────────────────
+  //
+  // Live defect (Jay, 2026-10-10): an angled hatch on a capsule bent at each
+  // barrel/cap seam — "the lines suddenly angle and get closer together at the
+  // end of each cap". `Charts.topoCapsule` splits its along-axis coordinate by
+  // HEIGHT: a cap's quarter arc (r·π/2) gets the parameter share a straight run
+  // of length r would get, so the meridian speed jumps by π/2 at the seam and a
+  // helix (constant da/db) changes slope and pitch there. Meridians (angle 0)
+  // are straight and hid it until the curved Angle dial went live.
+  //
+  // This re-parameterises `a` so equal steps are equal arc length along the
+  // whole meridian, then maps back onto the raw chart's own split. Same
+  // placement as `cappedChart`, and for the same reason it lives HERE: the
+  // MESH calls `Charts.topoCapsule` directly, so mesh baselines are untouched.
+  const capsuleArcChart = (norm, sizes) => {
+    const sx = finite(sizes && sizes.sx, 1);
+    const sy = finite(sizes && sizes.sy, 1);
+    const sz = finite(sizes && sizes.sz, 1);
+    // Mirror topoCapsule's own radius / half-length / split.
+    const r = Math.max(1, Math.min(sx, sz));
+    const half = Math.max(r, sy);
+    const cylHalf = Math.max(0, half - r);
+    const rawCylFrac = cylHalf / half;
+    const capArc = r * Math.PI / 2;
+    const halfLen = cylHalf + capArc;
+    return (a, b) => {
+      const t = clamp01(a) * 2 - 1;              // -1..1, arc-uniform
+      const s = Math.abs(t) * halfLen;           // arc from the waist
+      const rawAbs = s <= cylHalf
+        ? s / half
+        : rawCylFrac + ((s - cylHalf) / capArc) * (1 - rawCylFrac);
+      const rawT = (t < 0 ? -1 : 1) * Math.min(1, rawAbs);
+      return norm((rawT + 1) / 2, b);
+    };
+  };
+
   // Shoelace on an implicitly closed {x,y} ring. The SIGN is load-bearing (see
   // `resolveFoldRings`), so this never takes an absolute value.
   const ringSignedArea = (ring) => {
@@ -192,6 +228,7 @@
     }
     if (typeof raw !== 'function') return null;
     const norm = AROUND_IS_U.has(mode) ? (a, b) => raw(b, a) : raw;
+    if (mode === 'capsule') return capsuleArcChart(norm, sizes);
     return (mode === 'cylinder' || mode === 'cone') ? cappedChart(norm, sizes, mode) : norm;
   };
 

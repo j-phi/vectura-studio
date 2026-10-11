@@ -106,6 +106,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   whether this reads correctly is being judged by eye, not by a bar.** (T2-6)
 
 ### Fixed
+- **3D Scene · Capsule hatch no longer bends at the cap seams.** An angled hatch (the 45° default
+  for new curved objects) wrapped the capsule as a helix that suddenly changed slope and pitch
+  where the barrel meets each cap. The fill's capsule chart split its length by height, so each
+  cap's quarter-arc got 1/1.57 of the parameter share it needed. The fill now places the seam by
+  arc length, so helices, tone rows, and contour rings stay evenly spaced from pole to pole. The
+  capsule mesh is unchanged.
 - **3D Scene · mkTick dark-side ticks reach the rim evenly.** Regular ticks in shaded areas now
   extend their rim-facing end to an even 0.6 mm from the outline. Neighbouring ticks extend together,
   so the rim edge has no isolated steps. An extension that would bend the tick more than 8° is

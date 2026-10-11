@@ -592,6 +592,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Capsule cap-seam hatch bend (2026-10-11).** SurfaceFill's capsule chart is now arc-length parameterised (`capsuleArcChart`); angled hatch no longer kinks at the barrel/cap seam. Shadow-anatomy band-order clause re-pinned as a near-tie.
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
   (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
   Merged `3d-scene/handoff-c2` → `3d-scene/fill-collapse-2` → `3d-scene/fill-audit-2` →
