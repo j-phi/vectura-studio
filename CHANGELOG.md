@@ -110,6 +110,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   whether this reads correctly is being judged by eye, not by a bar.** (T2-6)
 
 ### Fixed
+- **3D Scene · Capsule hatch no longer bends at the cap seams.** An angled hatch (the 45° default
+  for new curved objects) wrapped the capsule as a helix that suddenly changed slope and pitch
+  where the barrel meets each cap. The fill's capsule chart split its length by height, so each
+  cap's quarter-arc got 1/1.57 of the parameter share it needed. The fill now places the seam by
+  arc length, so helices, tone rows, and contour rings stay evenly spaced from pole to pole. The
+  capsule mesh is unchanged.
 - **Vitest worker cleanup.** Supervise test process groups through exit, cancellation, wrapper death, and a configurable deadline (30 minutes locally / three hours in CI); remove surviving workers before retrying. Visual/perf commands now use the wrapper too. Added Node process-lifecycle regressions to the unit entrypoint. macOS/Linux supported; native Windows requires WSL.
 - **3D Scene · mkTick dark-side ticks reach the rim evenly.** Regular ticks in shaded areas now
   extend their rim-facing end to an even 0.6 mm from the outline. Neighbouring ticks extend together,
