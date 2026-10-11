@@ -92,6 +92,8 @@
       markerDraw: 9,
       edgeInset: 8,
       reachPad: 22,
+      // Floating chrome the touch gizmo footprint must clear (TUX-025).
+      occluders: ['#touch-modifier-bar', '.ctxbar', '#canvas-hud'],
     },
 
     // TUX-014: rail tool sub-menus (shape / pen / fill / scissor / algo-draw picker).

@@ -48,11 +48,55 @@ const setup = async (page, { nearEdge = false } = {}) => {
   await page.waitForTimeout(150);
 };
 
+// Non-scene pseudo-3D fixture: a polyhedron selected by a REAL finger tap, so the floating layer
+// context bar is on screen. Shares the rotation control with the scene.
+const setupPoly = async (page, { nearEdge = false } = {}) => {
+  await page.evaluate(() => {
+    const app = window.app;
+    const e = app.engine;
+    e.layers.slice().forEach((l) => { try { e.removeLayer(l.id); } catch (_) { /* noop */ } });
+    const id = e.addLayer('polyhedron');
+    e.computeAllDisplayGeometry?.();
+    const r = app.renderer;
+    r.setTool?.('select');
+    r.setSelection([], null);
+    window.__gid = id;
+  });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { const r = window.app.renderer; r.userHasManipulated = true; r.fitToView?.(); r.draw(); });
+  await page.waitForTimeout(150);
+  const centre = await page.evaluate(() => {
+    const r = window.app.renderer;
+    const layer = window.app.engine.getLayerById(window.__gid);
+    const b = r.getSelectionBounds([layer]);
+    const c = b.center || r.getBoundsCenter(b);
+    const s = r.worldToScreen(c.x, c.y);
+    const box = r.canvas.getBoundingClientRect();
+    return { x: s.x + box.left, y: s.y + box.top };
+  });
+  await touch.tap(page, centre);
+  await page.waitForFunction(() => window.app.renderer.getSelectedLayers().some((l) => l.id === window.__gid), null, { timeout: 4000 });
+  await page.waitForTimeout(400);
+  if (nearEdge) {
+    await page.evaluate(() => {
+      const r = window.app.renderer;
+      const layer = window.app.engine.getLayerById(window.__gid);
+      const c = r.get3DRotationControl(layer, r.getSelectionBounds([layer]));
+      const s = r.worldToScreen(c.center.x, c.center.y);
+      const box = r.canvas.getBoundingClientRect();
+      r.offsetX += box.width - 6 - s.x;
+      r.offsetY += 4 - s.y;
+      r.draw();
+    });
+    await page.waitForTimeout(150);
+  }
+};
+
 // Client-space marker positions plus the drag-relevant constants.
 const geometry = (page) => page.evaluate(() => {
   const r = window.app.renderer;
   const layer = window.app.engine.getLayerById(window.__gid);
-  const c = r.get3DRotationControl(layer, null);
+  const c = r.get3DRotationControl(layer, layer.type === 'scene3d' ? null : r.getSelectionBounds([layer]));
   const box = r.canvas.getBoundingClientRect();
   const toClient = (p) => { const s = r.worldToScreen(p.x, p.y); return { x: s.x + box.left, y: s.y + box.top }; };
   const spec = r.get3DRotationSpec(layer);
@@ -69,6 +113,7 @@ const geometry = (page) => page.evaluate(() => {
       const q = toClient(p);
       return document.elementFromPoint(q.x, q.y) === r.canvas;
     }),
+    ctxbar: (() => { const b = document.querySelector('.ctxbar'); const q = b && b.getBoundingClientRect(); return q && q.width > 0 ? [q.left, q.top, q.right, q.bottom].map(Math.round) : null; })(),
     topEls: [c.center, c.yawMarker, c.pitchMarker, c.rollHandle].filter(Boolean).map((p) => {
       const q = toClient(p);
       const el = document.elementFromPoint(q.x, q.y);
@@ -125,27 +170,45 @@ test.describe('TUX-025 3D rotation gizmo by finger', () => {
   });
   test.afterEach(() => { if (errors) expect(errors).toEqual([]); });
 
-  for (const nearEdge of [false, true]) {
-    test(`markers are reachable and on the canvas${nearEdge ? ' (object near the top-right edge)' : ''}`, async ({ page }, testInfo) => {
-      await setup(page, { nearEdge });
-      await setRot(page, { yaw: 270, pitch: undefined });
-      const g = await geometry(page);
-      expect(g.touchLayout).toBe(true);
-      const inside = (p, m) => p.x - m >= 0 && p.x + m <= g.vw && p.y - m >= 0 && p.y + m <= g.vh;
-      for (const k of ['C', 'Y', 'P', 'R']) {
-        if (!g[k]) continue;
-        expect(inside(g[k], 22), `${k} +/- 22 px inside the viewport`).toBe(true);
-      }
-      expect(g.topIsCanvas.every(Boolean), `markers sit on the main canvas: ${g.topEls.join(' | ')} canvas ${g.canvasBox} vp ${g.vw}x${g.vh}`).toBe(true);
-      if (!nearEdge) await page.screenshot({ path: `${EVIDENCE_DIR}/${NAMED[testInfo.project.name]}.png` });
-    });
+  for (const kind of ['scene', 'polyhedron']) {
+    for (const nearEdge of [false, true]) {
+      test(`${kind}: markers are reachable and on the canvas${nearEdge ? ' (object near the top-right edge)' : ''}`, async ({ page }, testInfo) => {
+        if (kind === 'scene') {
+          await setup(page, { nearEdge });
+          await setRot(page, { yaw: 270, pitch: undefined });
+        } else {
+          await setupPoly(page, { nearEdge });
+        }
+        // Every yaw: the roll handle (or yaw marker) walks round the ring.
+        for (const yaw of kind === 'scene' ? [270] : [0, 90, 180, 270]) {
+          if (kind !== 'scene') await setRot(page, { yaw });
+          const g = await geometry(page);
+          expect(g.touchLayout).toBe(true);
+          const inside = (p, m) => p.x - m >= 0 && p.x + m <= g.vw && p.y - m >= 0 && p.y + m <= g.vh;
+          for (const k of ['C', 'Y', 'P', 'R']) {
+            if (!g[k]) continue;
+            expect(inside(g[k], 22), `${k} +/- 22 px inside the viewport`).toBe(true);
+          }
+          expect(g.topIsCanvas.every(Boolean), `${kind} yaw=${yaw} markers sit on the main canvas: ${g.topEls.join(' | ')} canvas ${g.canvasBox} ctxbar ${g.ctxbar} vp ${g.vw}x${g.vh}`).toBe(true);
+          // The skin hides the context bar on portrait phones (components.css), so only require it elsewhere.
+          if (kind === 'polyhedron' && !/iphone-portrait/.test(testInfo.project.name)) expect(g.ctxbar, 'the layer context bar must be on screen for this fixture').not.toBeNull();
+        }
+        if (!nearEdge) await page.screenshot({ path: `${EVIDENCE_DIR}/${NAMED[testInfo.project.name]}${kind === 'scene' ? '' : '-poly'}.png` });
+      });
+    }
   }
 
   test('yaw: an 18 px off-marker grab drags without a jump', async ({ page }) => {
     await setup(page);
     await setRot(page, { yaw: 270 });
     const g = await geometry(page);
-    const start = away(g.Y, g.C, 18);
+    // 18 px TANGENTIAL to the ring at the marker (perpendicular to C->Y): an absolute mapping would
+    // jump here, an offset-preserving drag does not. Take the side farther from the other targets.
+    const rx = g.Y.x - g.C.x; const ry = g.Y.y - g.C.y; const rl = Math.hypot(rx, ry) || 1;
+    const cands = [1, -1].map((sg) => ({ x: g.Y.x + sg * 18 * (-ry / rl), y: g.Y.y + sg * 18 * (rx / rl) }));
+    const others = [g.P, g.R].filter(Boolean);
+    const clear = (c) => Math.min(...others.map((o) => Math.hypot(c.x - o.x, c.y - o.y)));
+    const start = clear(cands[0]) >= clear(cands[1]) ? cands[0] : cands[1];
     const before = await rotation(page);
     const ang0 = Math.atan2((start.x - g.C.x) / g.yawRx, (start.y - g.C.y) / g.yawRy);
     const pts = [start];
@@ -172,8 +235,9 @@ test.describe('TUX-025 3D rotation gizmo by finger', () => {
     const g0 = await geometry(page);
     await setRot(page, { yaw: 0, pitch: g0.pitchMid });
     const g = await geometry(page);
-    const side = g.P.x >= g.C.x ? 1 : -1;
-    const start = { x: g.P.x + side * 18, y: g.P.y };
+    // 18 px VERTICALLY off the marker (along the track): an absolute mapping would jump by 18/track*span.
+    const dirY = g.P.y - 18 - 22 >= 0 ? -1 : 1;
+    const start = { x: g.P.x, y: g.P.y + dirY * 18 };
     const before = await rotation(page);
     const pts = [];
     for (let i = 0; i <= 10; i += 1) pts.push({ x: start.x, y: start.y - (20 * i) / 10 });

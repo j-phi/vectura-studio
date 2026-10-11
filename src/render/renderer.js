@@ -15268,6 +15268,28 @@
       return false;
     }
 
+    // TUX-025: visible floating chrome over the canvas (canvas-local rects), from UI_CONSTANTS.GIZMO_3D_TOUCH.occluders.
+    _touchGizmoOccluders(canvasRect) {
+      const out = [];
+      try {
+        if (typeof document === 'undefined') return out;
+        const sels = window.Vectura.UI_CONSTANTS.GIZMO_3D_TOUCH.occluders || [];
+        sels.forEach((sel) => {
+          document.querySelectorAll(sel).forEach((node) => {
+            const r = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+            if (!r || r.width <= 0 || r.height <= 0) return;
+            const l = r.left - canvasRect.left;
+            const t = r.top - canvasRect.top;
+            const rr = r.right - canvasRect.left;
+            const bb = r.bottom - canvasRect.top;
+            if (rr <= 0 || bb <= 0 || l >= canvasRect.width || t >= canvasRect.height) return;
+            out.push({ l, t, r: rr, b: bb });
+          });
+        });
+      } catch (err) { /* no DOM */ }
+      return out;
+    }
+
     get3DRotationControl(layer, bounds) {
       // BUG 3 — the gizmo lives on the scene group even when a scene descendant
       // is the active layer. The incoming bounds only needs its corners (the
@@ -15319,33 +15341,41 @@
         // Keep the whole footprint plus a finger of reach inside the canvas: shift the centre and,
         // when the right side would clip, mirror the pitch track to the left.
         const rect = this.canvas && this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : null;
-        let W = rect ? rect.width : 0;
+        const W = rect ? rect.width : 0;
         const H = rect ? rect.height : 0;
-        let minX = 0;
-        if (W > 0 && H > 0) {
-          // The on-canvas modifier bar covers a strip of the canvas: keep the gizmo clear of it.
-          const bar = typeof document !== 'undefined' ? document.getElementById('touch-modifier-bar') : null;
-          const br = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect() : null;
-          if (br && br.width > 0 && br.height > 0 && br.right > rect.left && br.left < rect.right) {
-            if (br.left - rect.left > W / 2) W = Math.max(0, br.left - rect.left);
-            else if (br.right - rect.left < W / 2) minX = br.right - rect.left;
-          }
-        }
         if (W > 0 && H > 0) {
           const inset = T3.edgeInset;
           const reach = T3.reachPad;
           const sideExt = T3.pitchTrackX + reach;
           const ringExt = T3.ringRadius + reach;
           const cs = this.worldToScreen(controlCenter.x, controlCenter.y);
-          if (cs.x + sideExt > W - inset && cs.x - sideExt >= minX + inset) pitchSide = -1;
+          if (cs.x + sideExt > W - inset && cs.x - sideExt >= inset) pitchSide = -1;
           const left = pitchSide < 0 ? sideExt : ringExt;
           const right = pitchSide > 0 ? sideExt : ringExt;
-          const loX = minX + inset + left;
+          const loX = inset + left;
           const hiX = W - inset - right;
           const loY = inset + ringExt;
           const hiY = H - inset - ringExt;
-          const nx = loX > hiX ? (loX + hiX) / 2 : clamp(cs.x, loX, hiX);
-          const ny = loY > hiY ? (loY + hiY) / 2 : clamp(cs.y, loY, hiY);
+          let nx = loX > hiX ? (loX + hiX) / 2 : clamp(cs.x, loX, hiX);
+          let ny = loY > hiY ? (loY + hiY) / 2 : clamp(cs.y, loY, hiY);
+          // Floating canvas chrome (context bar, modifier bar, HUD) covers part of the canvas: move
+          // the whole footprint (plus finger reach) to the nearest spot that clears it.
+          const occ = this._touchGizmoOccluders(rect);
+          if (occ.length) {
+            const hits = (x, y) => occ.some((o) => x + right > o.l && x - left < o.r && y + ringExt > o.t && y - ringExt < o.b);
+            if (hits(nx, ny)) {
+              const xs = [nx];
+              const ys = [ny];
+              occ.forEach((o) => { xs.push(o.l - right, o.r + left); ys.push(o.t - ringExt, o.b + ringExt); });
+              let best = null;
+              xs.forEach((x) => ys.forEach((y) => {
+                if (x < loX || x > hiX || y < loY || y > hiY || hits(x, y)) return;
+                const d = Math.hypot(x - cs.x, y - cs.y);
+                if (!best || d < best.d) best = { x, y, d };
+              }));
+              if (best) { nx = best.x; ny = best.y; }
+            }
+          }
           if (nx !== cs.x || ny !== cs.y) {
             const w = this.screenToWorld(nx, ny);
             controlCenter.x = w.x;

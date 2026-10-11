@@ -138,6 +138,73 @@ describe('TUX-025: 3D rotation gizmo touch geometry and hit radii', () => {
       }
     });
 
+    test('g) G5: touch yaw grab 18 px TANGENTIAL off the marker does not jump', () => {
+      setTouch(true);
+      const f = build();
+      const r = f.renderer;
+      const ev = (p, extra = {}) => ({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {}, ...extra });
+      const rot = () => r._read3DRotation(f.layer, r.get3DRotationSpec(f.layer));
+      const wrapD = (d) => (((d % 360) + 540) % 360) - 180;
+      let armedYaw = 0;
+      // Yaw: perpendicular to the radial direction C->Y, at several yaw states.
+      for (const yaw of [0, 90, 180, 270]) {
+        setRot(f, { yaw });
+        const t = targets(f);
+        const rx = t.Y.x - t.C.x; const ry = t.Y.y - t.C.y; const rl = Math.hypot(rx, ry) || 1;
+        for (const sgn of [1, -1]) {
+          setRot(f, { yaw });
+          const start = { x: t.Y.x + sgn * 18 * (-ry / rl), y: t.Y.y + sgn * 18 * (rx / rl) };
+          const h = hitAt(f, start, 'touch');
+          if (!h || h.type !== 'yaw') continue; // grab lands on another target: not a yaw grab
+          armedYaw += 1;
+          r.rotation3DDrag = null;
+          r.setSelection([f.layer.id], f.layer.id);
+          const before = rot().yaw;
+          r.down(ev(start));
+          expect(r.rotation3DDrag && r.rotation3DDrag.type, `yaw armed at yaw=${yaw}`).toBe('yaw');
+          r.move(ev({ x: start.x + 3, y: start.y }));
+          const jump = Math.abs(wrapD(rot().yaw - before));
+          r.up(ev({ x: start.x + 3, y: start.y }));
+          expect(jump, `yaw first-step jump at yaw=${yaw} sgn=${sgn}: ${jump.toFixed(1)} deg`).toBeLessThanOrEqual(12);
+        }
+      }
+      expect(armedYaw, 'tangential yaw grabs exercised').toBeGreaterThanOrEqual(4);
+    });
+
+    test('h) G5: touch pitch grab 18 px VERTICAL off the marker does not jump', () => {
+      setTouch(true);
+      const f = build();
+      const r = f.renderer;
+      const ev = (p, extra = {}) => ({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {}, ...extra });
+      const rot = () => r._read3DRotation(f.layer, r.get3DRotationSpec(f.layer));
+      let armedPitch = 0;
+      // Pitch: straight up or down from the marker (whichever stays a pitch hit).
+      const spec0 = r.get3DRotationSpec(f.layer);
+      for (const pitch of [spec0.pitchMin + 20, (spec0.pitchMin + spec0.pitchMax) / 2, spec0.pitchMax - 20]) {
+        for (const dy of [18, -18]) {
+          setRot(f, { yaw: 270, pitch });
+          const t = targets(f);
+          const start = { x: t.P.x, y: t.P.y + dy };
+          const h = hitAt(f, start, 'touch');
+          if (!h || h.type !== 'pitch' || start.y < 0) continue; // off-canvas start is not a reachable grab
+          armedPitch += 1;
+          r.rotation3DDrag = null;
+          r.setSelection([f.layer.id], f.layer.id);
+          const before = rot().pitch;
+          r.down(ev(start));
+          expect(r.rotation3DDrag && r.rotation3DDrag.type, `pitch armed at pitch=${pitch}`).toBe('pitch');
+          r.move(ev({ x: start.x, y: start.y - 3 }));
+          const jump = Math.abs(rot().pitch - before);
+          r.up(ev({ x: start.x, y: start.y - 3 }));
+          const span = spec0.pitchMax - spec0.pitchMin;
+          const track = control(f).pitchTrackHeight * r.scale;
+          // A 3 px finger move may change pitch by 3/track*span (+ slack); an 18 px offset would add 18/track*span.
+          expect(jump, `pitch first-step jump at pitch=${pitch} dy=${dy}: ${jump.toFixed(1)} deg`).toBeLessThanOrEqual((3 / track) * span + 2);
+        }
+      }
+      expect(armedPitch, 'vertical pitch grabs exercised').toBeGreaterThanOrEqual(1);
+    });
+
     test('f) mouse and pen keep the old geometry and 9 px radius', () => {
       setTouch(false);
       const f = build();
