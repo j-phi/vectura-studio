@@ -38,6 +38,19 @@
   const clamp = (val, lo, hi) => Math.max(lo, Math.min(hi, Number(val) || 0));
   const finite = (val, f = 0) => (Number.isFinite(Number(val)) ? Number(val) : f);
   const GOLDEN = 0.6180339887498949;
+  // turingStripe's stripe-alignment strength (fill-style review U4b). The
+  // advective term `k * along` pulls the stripes across the form's shading.
+  // MEASURED (r2): k = 0.9 aligns the stripes in the lit zone at -1 % ink;
+  // k = 3.0 breaks the pattern into noise (paths 297 -> 621, ink +28 %). The
+  // ceiling sits just above the measured-good value.
+  const STRIPE_ALIGN_MAX = 1.2;
+  // U6: the clamped value of a fill-control key, or undefined when absent.
+  const fcRead = (o, key) => {
+    const FC = Vectura.SCENE_FILL_CONTROLS;
+    return FC ? FC.read(o, key) : undefined;
+  };
+  // Scene Seed (geometry3d.js): phase is 0 for a legacy layer ⇒ `x + 0` is exact.
+  const SEED = (Vectura.Geometry3D && Vectura.Geometry3D.SEED) || { salt: 0, phase: 0, off: 0 };
 
   /* THE WRAP TERM. `sampleAt` already publishes `nz` — the CAMERA-SPACE
    * normal's z component, 1 dead-on to the camera and exactly 0 ON the
@@ -104,7 +117,16 @@
     const PEN = o.penWidth;
     const INK = o.inkWidth;
     const FLOOR = o.floorPitch;
-    const PMAX = Math.max(FLOOR * 1.6, o.litMaxPitch);
+    // DENSITY (fill-style review U4b). `densityScale` is 1 at Density 50 (the
+    // shipped default) and rises/falls with the Density slider; every law that
+    // reads `pitchFor` / `pitchLegible` / `areaFor` follows it (see `pitchFor`).
+    // Laws whose clearance is a fixed multiple of the plot floor use `SPARSE`
+    // instead: they already sit AT the floor, so a denser setting cannot tighten
+    // them and a sparser one widens them. Absent => exactly 1, byte-identical.
+    const DS = clamp(finite(o.densityScale, 1), 0.25, 4);
+    const PMAX0 = Math.max(FLOOR * 1.6, o.litMaxPitch);
+    const PMAX = Math.max(FLOOR * 1.6, o.litMaxPitch / DS);
+    const SPARSE = Math.max(1, 1 / DS);
     const MINMARK = o.minMarkMM;
     const hash = o.hash;
     const wrapB = (b) => ((b % 1) + 1) % 1;
@@ -504,7 +526,7 @@
      * reports it. */
     const Lstar = (Y) => (Y > 0.008856 ? 116 * Math.pow(Y, 1 / 3) - 16 : 903.3 * Y);
     const invL = (Lv) => (Lv > 8 ? Math.pow((Lv + 16) / 116, 3) : Lv / 903.3);
-    const A_LIGHT = clamp(INK / PMAX, 0.02, 0.5);
+    const A_LIGHT = clamp(INK / PMAX0, 0.02, 0.5);
     const L_LIGHT = Lstar(1 - A_LIGHT);
     // The dark end is capped at 0.90 rather than at 1.0. At one pen width the
     // apparent-tone curve is brutal — area 0.5 is L* 76 and area 0.9 is L* 33 —
@@ -521,7 +543,12 @@
     const areaFor = (I) => clamp(
       1 - invL(L_DARK + (L_LIGHT - L_DARK) * clamp(finite(I, 0), 0, 1)), 0.02, A_DARK,
     );
-    const pitchFor = (I) => clamp(INK / areaFor(I), INK / A_DARK, PMAX);
+    // Density scales EVERY clearance (denser -> smaller pitch), floored at the
+    // darkest legal pitch and capped at the (scaled) sparse end. At the default
+    // (DS = 1) this is the unscaled map, byte for byte. A denser setting pushes
+    // more of the form to the plot floor, so tone RANGE narrows as ink rises: that
+    // is what Density means once a law is already at the floor.
+    const pitchFor = (I) => clamp(INK / areaFor(I) / DS, INK / A_DARK, PMAX);
     // The same map with the plot floor honoured, for the laws whose identity is
     // that they never crowd past legibility.
     const pitchLegible = (I) => Math.max(FLOOR, pitchFor(I));
@@ -529,7 +556,7 @@
     const shadeAt = (x, y) => { const s = inv(x, y); return s ? clamp(1 - finite(s.I, 0), 0, 1) : null; };
 
     return {
-      WF, PEN, INK, FLOOR, PMAX, MINMARK, hash, wrapB, at, solve, stepTo, frame,
+      WF, PEN, INK, FLOOR, PMAX, DS, SPARSE, MINMARK, hash, wrapB, at, solve, stepTo, frame,
       edgeBetween, emitPts, trace, gradOf, inv, emitScr, pitchFor, pitchLegible,
       areaFor, shadeAt,
       emittedCount: () => famIdx,
@@ -537,7 +564,15 @@
       lat, ok, minX, minY, maxX, maxY, W, H: Hh, R,
       hiA, hiB, hiX, hiY, faceA, faceB, faceX, faceY,
       targetArea: o.targetArea, back: o.back, mapper: o.mapper,
-      rot: 0,
+      stripeAlign: clamp(finite(o.stripeAlign, 0), 0, STRIPE_ALIGN_MAX),
+      // U6: Turing maturity (relaxation steps) and stripe scale (wavelength multiplier).
+      // An absent key keeps today's 170 steps and x1 scale.
+      turingIters: (() => { const v = fcRead(o, 'patternMaturity'); return v === undefined ? 170 : Math.round(v); })(),
+      stripeScale: (() => { const v = fcRead(o, 'stripeScale'); return v === undefined ? 1 : v; })(),
+      get rot() { this.rotRead = true; return this.rotVal; },
+      set rot(v) { this.rotVal = v; },
+      rotVal: 0,
+      rotRead: false,
     };
   };
 
@@ -549,23 +584,36 @@
    * streamline follows the body and stops on the silhouette.
    */
   const streamFamily = (C, dirAt, clearAt) => {
+    // The spacing grid. A QUARTER-pitch cell with NUMERIC keys (fill-style
+    // review NEW-1, U2): `tooClose` was the #1 mono hotspot (26 % self on
+    // etfKang) because a PMAX-wide cell held dozens of 0.34 mm-spaced points and
+    // every probe built template-string Map keys. `tooClose` only answers "is
+    // ANY stored point closer than d", so the cell size and key encoding cannot
+    // change the answer: the scan radius still covers every cell a point within
+    // d can sit in, a key collision (|cell| >= 2^20) only adds candidates that
+    // the exact distance test then rejects, and a NaN/Infinity point fails that
+    // test under either encoding. Output is bit-identical (pinned by
+    // tests/unit/scene3d-u2-kernel-identity.test.js).
     const CELLS = new Map();
-    const GS = C.PMAX;
+    const GS = C.PMAX / 4;
+    const KOFF = 1048576; const KMUL = 2097152;
     const put = (p) => {
-      const k = `${Math.floor(p.x / GS)},${Math.floor(p.y / GS)}`;
-      if (!CELLS.has(k)) CELLS.set(k, []);
-      CELLS.get(k).push(p);
+      const k = (Math.floor(p.x / GS) + KOFF) * KMUL + (Math.floor(p.y / GS) + KOFF);
+      const arr = CELLS.get(k);
+      if (arr) arr.push(p); else CELLS.set(k, [p]);
     };
     const tooClose = (x, y, d) => {
       const g = Math.ceil(d / GS) + 1;
+      const dd = d * d;
       const cx = Math.floor(x / GS); const cy = Math.floor(y / GS);
       for (let j = -g; j <= g; j++) {
+        const ky = cy + j + KOFF;
         for (let i = -g; i <= g; i++) {
-          const arr = CELLS.get(`${cx + i},${cy + j}`);
+          const arr = CELLS.get((cx + i + KOFF) * KMUL + ky);
           if (!arr) continue;
           for (let k = 0; k < arr.length; k++) {
             const dx = arr[k].x - x; const dy = arr[k].y - y;
-            if (dx * dx + dy * dy < d * d) return true;
+            if (dx * dx + dy * dy < dd) return true;
           }
         }
       }
@@ -1413,7 +1461,7 @@
       const clear = cnt ? sum / cnt : C.PMAX;
       // THE PHASE DITHER. Amplitude is a fifth of the local clearance, so the
       // family's mean spacing is untouched and its spectrum is whitened.
-      const u = ((li + 1) * GOLDEN) % 1;
+      const u = ((li + 1) * GOLDEN + SEED.phase) % 1;
       const jit = (u - 0.5) * clear * 0.40;
       const pts = probe.map((p) => ({ x: p.x + vx * jit, y: p.y + vy * jit }));
       C.emitScr(pts);
@@ -1443,7 +1491,7 @@
     const vx = -uy; const vy = ux;
     const cx = (C.minX + C.maxX) / 2; const cy = (C.minY + C.maxY) / 2;
     const half = Math.hypot(C.W, C.H) / 2;
-    const P = C.FLOOR * 1.05;             // ONE fixed clearance, everywhere
+    const P = C.FLOOR * 1.05 * C.SPARSE;  // ONE fixed clearance, everywhere (Density < 50 widens it)
     const PERIOD = C.FLOOR * 2.0;         // ONE fixed mark period
     const nLines = Math.ceil((2 * half) / P);
     const NS = Math.max(70, Math.round((2 * half) / 0.24));
@@ -1468,7 +1516,7 @@
       let pts = [];
       // The mark phase is offset per ruling by the golden ratio, so the mark
       // ends never line up into a cross-grain.
-      const ph0 = ((li * GOLDEN) % 1);
+      const ph0 = ((li * GOLDEN + SEED.phase) % 1);
       for (let k = 0; k <= NS; k++) {
         const t = -half + (2 * half) * (k / NS);
         const x = cx + vx * off + ux * t;
@@ -1511,7 +1559,7 @@
     const vx = -uy; const vy = ux;
     const cx = (C.minX + C.maxX) / 2; const cy = (C.minY + C.maxY) / 2;
     const half = Math.hypot(C.W, C.H) / 2;
-    const P = C.FLOOR * 1.15;
+    const P = C.FLOOR * 1.15 * C.SPARSE;  // Density < 50 widens the ruling pitch
     const nLines = Math.ceil((2 * half) / P);
     const NS = Math.max(70, Math.round((2 * half) / 0.26));
     for (let li = 0; li <= nLines; li++) {
@@ -1537,7 +1585,7 @@
         const lit = clamp(finite(s.I, 0), 0, 1);
         const e = lit * lit * (3 - 2 * lit);
         // Stagger the ends by a low-discrepancy offset per ruling.
-        const st = (((li * GOLDEN) % 1) - 0.5) * P * 2.2;
+        const st = (((li * GOLDEN + SEED.phase) % 1) - 0.5) * P * 2.2;
         return clamp(e * spanMM * 0.42 + st, 0, spanMM * 0.46);
       };
       const a0 = t0 + retract(t0 + spanMM * 0.06);
@@ -2483,8 +2531,8 @@
       return sample.length > 1 ? lo / (sample.length - 1) : 0.5;
     };
     for (let k = 0; k < mask.length; k++) {
-      if (!mask[k]) { lam[k] = C.PMAX * 2; continue; }
-      lam[k] = C.pitchLegible(rankOf(rawI[k])) * 2;   // full wavelength = 2 x clearance
+      if (!mask[k]) { lam[k] = C.PMAX * 2 * C.stripeScale; continue; }
+      lam[k] = C.pitchLegible(rankOf(rawI[k])) * 2 * C.stripeScale;   // full wavelength = 2 x clearance (U6 scale)
     }
     // The direction the stripes should run: perpendicular to the tone gradient.
     for (let j = 1; j < NY - 1; j++) for (let i = 1; i < NX - 1; i++) {
@@ -2503,9 +2551,47 @@
     }
     // Anisotropic activator/inhibitor relaxation. The inhibitor's range is the
     // local wavelength, so the settled stripe pitch tracks the tone.
-    const un = new Float32Array(NX * NY);
-    const vn = new Float32Array(NX * NY);
-    for (let it = 0; it < 170; it++) {
+    //
+    // ALLOCATION-FREE, BIT-IDENTICAL (fill-style review F7, U2). `Dv` depends
+    // only on `lam[k]` and `dx`, so it is computed ONCE per cell (a Float64Array
+    // holds the exact double the per-iteration expression produced). The two
+    // `clamp` calls are inlined with clamp's own semantics (`x || 0` maps NaN
+    // and -0 to +0 before the range test). The per-iteration `slice()` copies
+    // become ping-pong buffers: the border cells of `un`/`vn` are never written,
+    // so they were always 0 in every copy after the first iteration — zeroing
+    // the borders of the original `u`/`v` once, after iteration 0 has read
+    // them, reproduces that exactly.
+    // `wl` tracks the TONE correctly (small in shadow, large in light —
+    // see `lam` above and the shared `pitchLegible` convention every
+    // sibling law honours). But this activator/inhibitor pair's own
+    // dispersion relation (Murray, critical wavenumber
+    // k_c^2 = 1/(2*Du) - reactionRate/(2*Dv)) means a LARGER Dv drives a
+    // SHORTER settled wavelength, not a longer one — Dv only ever pulls
+    // the pattern toward the short-wave floor set by Du; it is Dv
+    // shrinking toward the Turing threshold that stretches the
+    // wavelength out. Feeding `wl` straight into `Dv = Du*wl^2/9`
+    // therefore inverted the law outright: light cells (large `wl`) got
+    // the driven-toward-dense high-Dv end and shadow cells (small `wl`)
+    // got the driven-toward-sparse low-Dv end — measured and confirmed
+    // both numerically (tests/unit/scene3d-turing-polarity.test.js) and
+    // visually (a dense RD cluster sitting on the lit hemisphere).
+    // Reflecting `wl` within its own clamp range before squaring hands
+    // Dv the value that actually produces the requested wavelength: a
+    // light cell now gets the LOW-Dv (long-wavelength, sparse) end and a
+    // shadow cell gets the HIGH-Dv (short-wavelength, dense) end.
+    const Du = 0.18;
+    const ALIGN = C.stripeAlign;
+    const dxSafe = Math.max(1e-6, dx);
+    const DvAt = new Float64Array(NX * NY);
+    for (let k = 0; k < DvAt.length; k++) {
+      if (!mask[k]) continue;
+      const wl = clamp(lam[k] / dxSafe, 2.2, 26);
+      const wlDv = 2.2 + 26 - wl;
+      DvAt[k] = Du * (wlDv * wlDv) / 9;
+    }
+    let un = new Float32Array(NX * NY);
+    let vn = new Float32Array(NX * NY);
+    for (let it = 0; it < C.turingIters; it++) {
       for (let j = 1; j < NY - 1; j++) {
         for (let i = 1; i < NX - 1; i++) {
           const k = j * NX + i;
@@ -2516,34 +2602,25 @@
           const ax = gx[k]; const ay = gy[k];
           const du = (u[k + 1] - u[k - 1]) / 2; const dv2 = (u[k + NX] - u[k - NX]) / 2;
           const along = ax * du + ay * dv2;
-          const wl = clamp(lam[k] / Math.max(1e-6, dx), 2.2, 26);
-          const Du = 0.18;
-          // `wl` tracks the TONE correctly (small in shadow, large in light —
-          // see `lam` above and the shared `pitchLegible` convention every
-          // sibling law honours). But this activator/inhibitor pair's own
-          // dispersion relation (Murray, critical wavenumber
-          // k_c^2 = 1/(2*Du) - reactionRate/(2*Dv)) means a LARGER Dv drives a
-          // SHORTER settled wavelength, not a longer one — Dv only ever pulls
-          // the pattern toward the short-wave floor set by Du; it is Dv
-          // shrinking toward the Turing threshold that stretches the
-          // wavelength out. Feeding `wl` straight into `Dv = Du*wl^2/9`
-          // therefore inverted the law outright: light cells (large `wl`) got
-          // the driven-toward-dense high-Dv end and shadow cells (small `wl`)
-          // got the driven-toward-sparse low-Dv end — measured and confirmed
-          // both numerically (tests/unit/scene3d-turing-polarity.test.js) and
-          // visually (a dense RD cluster sitting on the lit hemisphere).
-          // Reflecting `wl` within its own clamp range before squaring hands
-          // Dv the value that actually produces the requested wavelength: a
-          // light cell now gets the LOW-Dv (long-wavelength, sparse) end and a
-          // shadow cell gets the HIGH-Dv (short-wavelength, dense) end.
-          const wlDv = 2.2 + 26 - wl;
-          const Dv = Du * (wlDv * wlDv) / 9;
-          un[k] = clamp(u[k] + 0.22 * (Du * lu + 0.9 * along * 0.0 + (u[k] - u[k] * u[k] * u[k]) - v[k]), -2, 2);
-          vn[k] = clamp(v[k] + 0.22 * (Dv * lv * 0.06 + 0.32 * (u[k] - v[k])), -2, 2);
+          const Dv = DvAt[k];
+          let nu = u[k] + 0.22 * (Du * lu + 0.9 * along * ALIGN + (u[k] - u[k] * u[k] * u[k]) - v[k]);
+          nu = nu || 0;
+          un[k] = nu < -2 ? -2 : (nu > 2 ? 2 : nu);
+          let nv = v[k] + 0.22 * (Dv * lv * 0.06 + 0.32 * (u[k] - v[k]));
+          nv = nv || 0;
+          vn[k] = nv < -2 ? -2 : (nv > 2 ? 2 : nv);
         }
       }
-      const tu = u; u = un.slice(); const tv = v; v = vn.slice();
-      void tu; void tv;
+      if (it === 0) {
+        for (let i = 0; i < NX; i++) {
+          u[i] = 0; v[i] = 0; u[(NY - 1) * NX + i] = 0; v[(NY - 1) * NX + i] = 0;
+        }
+        for (let j = 0; j < NY; j++) {
+          u[j * NX] = 0; v[j * NX] = 0; u[j * NX + NX - 1] = 0; v[j * NX + NX - 1] = 0;
+        }
+      }
+      const tu = u; u = un; un = tu;
+      const tv = v; v = vn; vn = tv;
     }
     // Marching squares on u = 0.
     const val = (i, j) => u[j * NX + i];
@@ -2944,6 +3021,94 @@
     hachureSlope: lawHachure,
   };
 
+  /* Join runs that share an endpoint into longer polylines (U6 `chainMarks`).
+   * A greedy walk: start at the first unused run, then keep taking an unused run
+   * that begins or ends at the current tail, reversing it when needed. A point
+   * where several runs meet is a junction the walk crosses once per visit, so a
+   * graph with junctions still leaves a few chains. Deterministic: runs are
+   * visited in input order and the first match in a bucket wins. Runs with a
+   * different `back` flag never join. */
+  const chainRuns = (items, tol) => {
+    const cell = Math.max(1e-6, tol);
+    const key = (pt) => `${Math.round(pt.x / cell)},${Math.round(pt.y / cell)}`;
+    const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) <= tol;
+    // Only a coincident point is dropped at a join; a gap under `tol` keeps both points.
+    const exact = (a, b) => a.x === b.x && a.y === b.y;
+    const buckets = new Map();
+    const add = (pt, ref) => {
+      const k = key(pt);
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(ref);
+    };
+    items.forEach((it, i) => {
+      add(it.run[0], { i, end: 0 });
+      add(it.run[it.run.length - 1], { i, end: 1 });
+    });
+    const used = new Array(items.length).fill(false);
+    const find = (pt, back) => {
+      const kx = Math.round(pt.x / cell); const ky = Math.round(pt.y / cell);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const list = buckets.get(`${kx + dx},${ky + dy}`);
+        if (!list) continue;
+        for (let n = 0; n < list.length; n++) {
+          const ref = list[n];
+          if (used[ref.i] || items[ref.i].back !== back) continue;
+          const r = items[ref.i].run;
+          if (near(pt, ref.end === 0 ? r[0] : r[r.length - 1])) return ref;
+        }
+      }
+      return null;
+    };
+    const out = [];
+    for (let i = 0; i < items.length; i++) {
+      if (used[i]) continue;
+      used[i] = true;
+      let run = items[i].run.slice();
+      const back = items[i].back;
+      for (;;) {
+        const ref = find(run[run.length - 1], back);
+        if (!ref) break;
+        used[ref.i] = true;
+        const r = items[ref.i].run;
+        const seg = ref.end === 0 ? r : r.slice().reverse();
+        run = run.concat(seg.slice(exact(run[run.length - 1], seg[0]) ? 1 : 0));
+      }
+      for (;;) {
+        const ref = find(run[0], back);
+        if (!ref) break;
+        used[ref.i] = true;
+        const r = items[ref.i].run;
+        const seg = ref.end === 1 ? r : r.slice().reverse();
+        run = seg.slice(0, exact(seg[seg.length - 1], run[0]) ? -1 : undefined).concat(run);
+      }
+      out.push({ run, back, idx: out.length });
+    }
+    return out;
+  };
+
+  /* Order joined runs so each starts near where the last one ended (greedy nearest
+   * end, reversing a run when its far end is closer). Same ink, shorter pen-up
+   * travel. Only used when `chainMarks` is on. Deterministic: ties keep input order. */
+  const orderRuns = (items) => {
+    if (items.length < 3) return items;
+    const left = items.slice();
+    const out = [left.shift()];
+    while (left.length) {
+      const tail = out[out.length - 1].run[out[out.length - 1].run.length - 1];
+      let bi = 0; let bd = Infinity; let brev = false;
+      for (let i = 0; i < left.length; i++) {
+        const r = left[i].run;
+        const d0 = (r[0].x - tail.x) ** 2 + (r[0].y - tail.y) ** 2;
+        const d1 = (r[r.length - 1].x - tail.x) ** 2 + (r[r.length - 1].y - tail.y) ** 2;
+        if (d0 < bd) { bd = d0; bi = i; brev = false; }
+        if (d1 < bd) { bd = d1; bi = i; brev = true; }
+      }
+      const pick = left.splice(bi, 1)[0];
+      out.push(brev ? { ...pick, run: pick.run.slice().reverse() } : pick);
+    }
+    return out;
+  };
+
   const emit = (o) => {
     const fn = RUN[o.algo];
     if (!fn) return false;
@@ -2952,16 +3117,50 @@
     attachFields(C);
     // The crosshatch mapper is a crossed pair by definition, so a law that owns
     // family A there owns family B too: the same construction, rotated by the
-    // file's own second-direction angle. Every other mapper runs one pass.
-    const passes = o.mapper === 'crosshatch' ? [0, 65] : [0];
+    // crossing angle. That only means something for a law that HAS a direction.
+    // A direction-free law (a Voronoi web, a maze, a reaction-diffusion field,
+    // concentric rings...) never reads `C.rot`, so a second pass at another
+    // angle redraws the identical geometry on top of the first (U4b item 1,
+    // measured: +50-65 % ink and +66-98 % pen-downs for zero new marks). The
+    // second pass therefore runs only when pass 0 actually READ the angle.
+    // The crossing angle keeps its designed 65 deg at the default Cross angle
+    // (90) and follows the slider from there, so the default is byte-identical.
+    const crossDeg = ((Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.CROSS_OBJ_DEG) || 65) + (clamp(finite(o.crossDelta, 90), 10, 170) - 90);
+    const passes = o.mapper === 'crosshatch' ? [0, crossDeg] : [0];
     // A law that throws must not take the whole fill with it, and the reason
     // has to survive to the harness — a silently empty cell is the one failure
     // mode this rig cannot tell apart from a law that draws nothing.
-    const diag = { algo: o.algo, lat: C.lat.length, ok: C.ok, R: C.R, emitted: 0, cut: 0, error: null };
-    passes.forEach((deg) => {
+    const diag = { algo: o.algo, lat: C.lat.length, ok: C.ok, R: C.R, emitted: 0, cut: 0, error: null, readsAngle: false };
+    // U6 `chainMarks`: a maze is a graph of short wall segments that touch at
+    // their ends. Collect the runs and join those that share an endpoint into
+    // polylines. No point moves, so the ink is the same and only the pen-lifts
+    // change. A Voronoi web chains too (U7), within one pen width.
+    const chain = (o.chainMarks === true && (o.algo === 'mazeFill' || o.algo === 'voronoiWeb')) ? { runs: [] } : null;
+    const realPush = o.pushRun;
+    if (chain) o.pushRun = (run, back, idx) => { chain.runs.push({ run, back, idx }); };
+    for (let pi = 0; pi < passes.length; pi++) {
+      const deg = passes[pi];
       C.rot = o.angleDeg + deg;
+      C.rotRead = false;
       try { fn(C); } catch (e) { diag.error = String(e && e.message ? e.message : e); }
-    });
+      if (pi === 0) {
+        diag.readsAngle = C.rotRead;
+        if (!C.rotRead) break;
+      }
+    }
+    if (chain) {
+      o.pushRun = realPush;
+      // A maze wall meets the next at the very same point (0.01 mm). A Voronoi
+      // edge ends where `inv` set the vertex on the surface, up to a pen width
+      // from its neighbour's end, so the web joins within one pen width: the
+      // connector is under the stroke and adds no visible ink (U7).
+      const tol = o.algo === 'voronoiWeb'
+        ? Math.max((Vectura.SCENE_FILL_CONTROLS || {}).CHAIN_JOIN_MM || 0.01, C.PEN)
+        : ((Vectura.SCENE_FILL_CONTROLS || {}).CHAIN_JOIN_MM || 0.01);
+      const joined = orderRuns(chainRuns(chain.runs, tol));
+      diag.chained = { before: chain.runs.length, after: joined.length };
+      joined.forEach((j) => realPush(j.run, j.back, j.idx));
+    }
     diag.emitted = C.emittedCount();
     diag.cut = C.cutCount();
     // A law may publish its own numbers. `voronoiWeb`'s clamps are a claim
@@ -2978,5 +3177,11 @@
     return true;
   };
 
-  Scene3D.SurfaceFillMono = { LAWS, isMono, emit };
+  // The laws that read the Angle (screen direction) at all. Measured by
+  // `diag.readsAngle` and pinned against this list by a unit test. The panel
+  // greys the Angle control for every other mono law.
+  const ANGLE_LAWS = ['mezzoRegion', 'dutyConst', 'endShorten', 'creviceAO', 'transReserveMono',
+    'jitterOverdraw', 'mergeLadder', 'shearClear', 'phaseBlue', 'fiboQuasi'];
+  const readsAngle = (algo) => ANGLE_LAWS.indexOf(String(algo)) !== -1;
+  Scene3D.SurfaceFillMono = { LAWS, isMono, emit, readsAngle, STRIPE_ALIGN_MAX };
 }());

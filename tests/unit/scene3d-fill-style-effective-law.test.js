@@ -100,7 +100,8 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
   // this file was built to catch mechanically instead of by inspection.
   test('U7: weaveDepth\'s caveat survives the fold through effectiveLaw, and is distinct from ampSpacing\'s own — both resolvers agree', () => {
     const R = runtime.window.Vectura.SCENE3D_TONE_LAWS;
-    expect(R.ALIASES.weaveDepth).toEqual({ into: 'ampSpacing', params: { nesting: 'nested' } });
+    // U5: Wave > Phase: Interlocked, Amplitude: Solved from clearance.
+    expect(R.ALIASES.weaveDepth).toEqual({ into: 'ampSpacing', params: { wavePhase: 'anti', waveAmp: 'solve' } });
     expect(R.BY_ID.ampSpacing.caveat.length).toBeGreaterThan(0);
     expect(R.BY_ID.weaveDepth.caveat.length).toBeGreaterThan(0);
     expect(R.BY_ID.ampSpacing.caveat).not.toBe(R.BY_ID.weaveDepth.caveat);
@@ -113,9 +114,10 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
 
     // nesting:'nested' -> weaveDepth's DISTINCT caveat, agreed by both
     // resolvers, and it must not silently fall back to ampSpacing's own.
-    expect(FS.effectiveLaw('ampSpacing', { nesting: 'nested' })).toBe('weaveDepth');
-    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', nesting: 'nested' })).toBe('weaveDepth');
-    const foldedCaveat = FS.note(FS.effectiveLaw('ampSpacing', { nesting: 'nested' })).caveat;
+    const nested = { wavePhase: 'anti', waveAmp: 'solve' };
+    expect(FS.effectiveLaw('ampSpacing', nested)).toBe('weaveDepth');
+    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', ...nested })).toBe('weaveDepth');
+    const foldedCaveat = FS.note(FS.effectiveLaw('ampSpacing', nested)).caveat;
     expect(foldedCaveat).toBe(R.BY_ID.weaveDepth.caveat);
     expect(foldedCaveat).not.toBe(R.BY_ID.ampSpacing.caveat);
   });
@@ -129,22 +131,26 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
   // from `resolveToneLaw`/`effectiveLaw`.
   test('U8: onePenDown\'s caveat survives the fold through effectiveLaw, and is distinct from interlockWeave\'s own — both resolvers agree', () => {
     const R2 = runtime.window.Vectura.SCENE3D_TONE_LAWS;
-    expect(R2.ALIASES.onePenDown).toEqual({ into: 'interlockWeave', params: { penDown: 'continuous' } });
+    // U5: Wave > Pen down: one per family (in-phase). interlockWeave is now Wave > Phase: Interlocked.
+    expect(R2.ALIASES.onePenDown).toEqual({ into: 'ampSpacing', params: { penDown: 'continuous' } });
+    expect(R2.ALIASES.interlockWeave).toEqual({ into: 'ampSpacing', params: { wavePhase: 'anti' } });
     expect(R2.BY_ID.interlockWeave.caveat.length).toBeGreaterThan(0);
     expect(R2.BY_ID.onePenDown.caveat.length).toBeGreaterThan(0);
     expect(R2.BY_ID.interlockWeave.caveat).not.toBe(R2.BY_ID.onePenDown.caveat);
 
     // Default (penDown:'perRuling', or omitted) -> interlockWeave's OWN
     // caveat, not empty.
-    expect(FS.effectiveLaw('interlockWeave', {})).toBe('interlockWeave');
-    expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave' })).toBe('interlockWeave');
-    expect(FS.note(FS.effectiveLaw('interlockWeave', {})).caveat).toBe(R2.BY_ID.interlockWeave.caveat);
+    expect(FS.effectiveLaw('ampSpacing', { wavePhase: 'anti' })).toBe('interlockWeave');
+    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', wavePhase: 'anti' })).toBe('interlockWeave');
+    expect(FS.note(FS.effectiveLaw('ampSpacing', { wavePhase: 'anti' })).caveat).toBe(R2.BY_ID.interlockWeave.caveat);
 
     // penDown:'continuous' -> onePenDown's DISTINCT caveat, agreed by both
     // resolvers, and it must not silently fall back to interlockWeave's own.
-    expect(FS.effectiveLaw('interlockWeave', { penDown: 'continuous' })).toBe('onePenDown');
-    expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave', penDown: 'continuous' })).toBe('onePenDown');
-    const foldedCaveat2 = FS.note(FS.effectiveLaw('interlockWeave', { penDown: 'continuous' })).caveat;
+    expect(FS.effectiveLaw('ampSpacing', { penDown: 'continuous' })).toBe('onePenDown');
+    expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', penDown: 'continuous' })).toBe('onePenDown');
+    // The pre-U5 spelling (the survivor was interlockWeave) still means the same law.
+    expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave', penDown: 'continuous' })).toBe('interlockWeave');
+    const foldedCaveat2 = FS.note(FS.effectiveLaw('ampSpacing', { penDown: 'continuous' })).caveat;
     expect(foldedCaveat2).toBe(R2.BY_ID.onePenDown.caveat);
     expect(foldedCaveat2).not.toBe(R2.BY_ID.interlockWeave.caveat);
   });
@@ -225,7 +231,9 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
     Object.keys(Rn.ALIASES).forEach((rawId) => {
       const survivorLaw = FS.resolve(rawId);
       const viaShadowDisplay = FS.shadowDisplayLaw(rawId, survivorLaw);
-      const viaRender = Paramsn.normalizeShadow({ shadowToneLaw: rawId }).shadowToneLaw;
+      const stored = Paramsn.normalizeShadow({ shadowToneLaw: rawId }).shadowToneLaw;
+      // The document keeps the id; with no shadow recipe it DRAWS as Ladder, and the row shows that.
+      const viaRender = runtime.window.Vectura.Scene3D.Shadows.toneLawApplies(stored) ? stored : 'ladder';
       expect(viaShadowDisplay, rawId).toBe(viaRender);
       checked += 1;
     });
@@ -253,14 +261,18 @@ describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effective
   // (see the params.js `clampShadowToneLaw` comment).
   test('U9b: onePenDown is the one ALIASES id shadowDisplayLaw resolves to its SURVIVOR, not itself', () => {
     const survivorLaw = FS.resolve('onePenDown');
-    expect(survivorLaw).toBe('interlockWeave');
+    expect(survivorLaw).toBe('ampSpacing'); // U5: the merged Wave style
+    // ...and it draws as the id the roster's SHADOW_FORWARD names (interlockWeave).
     expect(FS.shadowDisplayLaw('onePenDown', survivorLaw)).toBe('interlockWeave');
-    // Every OTHER ALIASES id resolves to ITSELF (its own distinguishable
-    // shadows.js recipe), not its survivor.
+    // Every OTHER ALIASES id that has a shadow recipe resolves to ITSELF (its own
+    // distinguishable shadows.js recipe), not its survivor; an id with none
+    // (flow / web / isophoteWidth) shows Ladder.
     const R4 = runtime.window.Vectura.SCENE3D_TONE_LAWS;
+    const ShadowsMod = runtime.window.Vectura.Scene3D.Shadows;
     Object.keys(R4.ALIASES).filter((id) => id !== 'onePenDown').forEach((id) => {
       const sv = FS.resolve(id);
-      expect(FS.shadowDisplayLaw(id, sv), id).toBe(id);
+      // ...and an id with none draws the plain hatch, i.e. Ladder.
+      expect(FS.shadowDisplayLaw(id, sv), id).toBe(ShadowsMod.toneLawApplies(id) ? id : 'ladder');
     });
   });
 });

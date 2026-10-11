@@ -13339,7 +13339,8 @@ body.mobile-layout .hud-bar {
   min-width: 0;
 }
 .vs3-lbl {
-  flex: 0 0 58px;
+  /* 74px, not 58: "Cross density" and "Band profile" were cut to "Cross den…" (U6). */
+  flex: 0 0 74px;
   font-size: 10px;
   color: var(--ui-text-2, var(--ui-muted, #9a9a9a));
   overflow: hidden;
@@ -13642,3 +13643,9 @@ body.mobile-layout .hud-bar {
 .ctxbar-divisions-host {
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--ui-border, #34363b);
 }
+
+/* U4b — Seed greyed when no fill in the scene draws from it. The (i) beside the
+   "No effect for this style" line holds the reason (click-driven popover). */
+#seed-controls.is-seed-inert #inp-seed,
+#seed-controls.is-seed-inert #btn-rand-seed { opacity: .45; cursor: not-allowed; }
+#seed-controls .seed-inert-info { position: relative; }

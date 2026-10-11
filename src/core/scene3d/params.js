@@ -43,7 +43,7 @@
   // ~15.1% on open. SCENE_MIGRATIONS[3] multiplies a pre-v4 buckyball's stored
   // radius by that same measured factor, so it renders BYTE-IDENTICALLY; new
   // buckyballs get the true radius.
-  const SCENE_VERSION = 4;
+  const SCENE_VERSION = 5;
   // Keyed by SOURCE version: SCENE_MIGRATIONS[n] upgrades an n payload to n+1.
   const SCENE_MIGRATIONS = {};
 
@@ -595,9 +595,10 @@
   // still pass through for forward compat. Returns `undefined` for keys with no
   // dedicated clamp (the generic finite-guard below then applies).
   const STROKE_LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
-  const SPIRAL_CENTERS = ['centroid', 'bboxCenter'];
+  const SPIRAL_CENTERS = ['centroid', 'bboxCenter', 'highlight']; // 'highlight' = Origin Spiral (U5 M9a)
   const SPIRAL_MODES = ['flatClip', 'surfaceHelix'];
-  const ANGLE_REFS = ['face', 'screen', 'worldUp'];
+  const ANGLE_REFS = ['face', 'worldUp', 'light']; // 'screen' is now wrap:'flat' (U5, R3-1)
+  const WRAPS = ['surface', 'flat'];
   const CONTOUR_STYLES = ['region', 'surface'];
   const DOT_SHAPES = ['dot', 'ring', 'cross', 'plus', 'tick'];
   const EDGE_CLASS_KEYS = ['silhouette', 'boundary', 'crease', 'interior'];
@@ -620,13 +621,19 @@
   // coerced, so a document saved with `keep` renders exactly as one saved with
   // `none` — which is what the rename means. Nothing structural changed, so
   // nothing needs versioning.
-  const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
-  const HIGHLIGHT_TREATMENT_ALIASES = { keep: 'none' };
+  // U5 (NEW-2/NEW-3): dashed + dotted are one treatment, `restyle`, with a line type
+  // (`highlightLineType`); sparse + stippleOut are one treatment, `thin`, with a
+  // granularity (`highlightThinBy`). The old values are aliases, and normalizeStyle
+  // writes the sibling key that reproduces them exactly.
+  const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'restyle', 'thin', 'altFill', 'burst'];
+  const HIGHLIGHT_TREATMENT_ALIASES = { keep: 'none', dashed: 'restyle', dotted: 'restyle', sparse: 'thin', stippleOut: 'thin' };
   const normalizeHighlightTreatment = (value) => {
     const aliased = HIGHLIGHT_TREATMENT_ALIASES[value] || value;
     return HIGHLIGHT_TREATMENTS.includes(aliased) ? aliased : 'blank';
   };
   const ALT_FILL_MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
+  // U5 (R3-6): Alt fill hatch + crosshatch are one `lines` option with Layers 1|2.
+  const ALT_FILL_CHOICES = ['lines', 'contour', 'spiral', 'stipple'];
   // fs-e2 (W-02, F-02) — the SAME five mappers as `ALT_FILL_MAPPERS` above,
   // exposed as a Set under its own name because the two lists answer
   // different questions that happen to share a value: `ALT_FILL_MAPPERS`
@@ -698,8 +705,20 @@
       case 'xrayBackFaces': return value !== false;   // render far-surface fills (THE FIX)
       case 'xrayBackDensity': return clamp(finite(value, 0.4), 0.2, 1); // back fill sparser
       case 'xrayBackPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
-      case 'xrayBackLineType': return STROKE_LINE_TYPES.includes(value) ? value : 'dashed';
+      // U5 (R3-3): an occluded line is stamped [3,2] whenever its own dash is empty
+      // (geometry3d markHidden), so 'solid' always drew dashed. The option is gone;
+      // a stored 'solid' is exactly 'dashed'.
+      case 'xrayBackLineType': return (value === 'dashed' || value === 'dotted' || value === 'dashdot') ? value : 'dashed';
       case 'xrayFront': return value === 'faded' ? 'faded' : 'solid';
+      // U5 (R3-2): X-ray "Front: Faded" was lineType:'dotted' on the front fill.
+      case 'xrayFrontLineType': return STROKE_LINE_TYPES.includes(value) ? value : 'solid';
+      // U5 (R3-8): Depth cue's off/density/weight/both are two independent flags.
+      case 'xrayCueDensity': return value === true;
+      case 'xrayCueWeight': return value === true;
+      case 'wrap': return WRAPS.includes(value) ? value : 'surface';
+      case 'highlightLineType': return STROKE_LINE_TYPES.includes(value) ? value : 'dashed';
+      case 'highlightThinBy': return value === 'sample' ? 'sample' : 'ruling';
+      case 'altFillLayers': return value === 2 || value === '2' ? 2 : 1;
       // Quantitative X-ray (interpretation A): modulate the see-through back-fill
       // by how far behind the front surface each sample sits. 'off' (default) is
       // the flat x-ray, byte-identical. 'density'/'weight'/'both' opt in.
@@ -719,7 +738,7 @@
       case 'highlightBands': return clamp(Math.round(finite(value, 1)), 1, 2);
       case 'highlightPenId': return (typeof value === 'string' && value) ? value : null; // inherit when null
       case 'highlightDensity': return clamp(finite(value, 25), 1, 100);
-      case 'altFillMapper': return ALT_FILL_MAPPERS.includes(value) ? value : 'stipple';
+      case 'altFillMapper': return (value === 'hatch' || value === 'crosshatch') ? 'lines' : (ALT_FILL_CHOICES.includes(value) ? value : 'stipple');
       // W-38 — "minimum facet rulings" (docs/3d-audit/lane-reports/W-38-plan.md).
       // Per-style floor on the carrier-family grant in `faceHatchLines`
       // (scene3d.js). Range [1,8], integer, default 3 — `FACET_MIN_RULINGS`'s
@@ -783,7 +802,23 @@
       case 'toneQuantLevels': return clamp(Math.round(finite(value, 128)), 4, 256);
       // 'contourFlow' only — which streamline family the rulings follow.
       case 'toneFlowMode': return value === 'grad' ? 'grad' : 'iso';
-      default: return undefined;
+      // U4b — legacy curve marker for the migrated contField* ids (see
+      // normalizeStyle). Any other value drops the key (= the sigmoid default).
+      case 'fieldCurve': return value === 'lstar' ? 'lstar' : undefined;
+      // U5 item 0 — load-migration marker: the Density a LEGACY document had when
+      // a monoline law ignored Density. The engine reads it as 50 while
+      // fillDensity still equals it; any edit of Density releases it.
+      case 'monoDensityLegacyAt': return Number.isFinite(Number(value)) ? clamp(Number(value), 1, 500) : undefined;
+      // U4b — turingStripe stripe-alignment strength. 0 (default) is today's
+      // output. Capped at the measured-good ceiling (r2: 0.9 aligns, 3.0 is noise).
+      case 'stripeAlign': return clamp(finite(value, 0), 0, 1.2);
+      // U6 — the artistic controls (tone gamma/contrast, depth fade, wave, nib,
+      // taper, Turing maturity/scale, chaining, tier pens). Ranges live in
+      // src/config/scene3d-fill-controls.js; an unknown key returns undefined.
+      default: {
+        const FC = Vectura.SCENE_FILL_CONTROLS;
+        return FC ? FC.clampStyle(key, value) : undefined;
+      }
     }
   };
 
@@ -826,6 +861,9 @@
     if (Object.prototype.hasOwnProperty.call(ALIASES, raw)) return raw; // rule 2
     const descriptors = (R.STYLE_PARAMS && R.STYLE_PARAMS[raw]) || null;
     if (!descriptors || !descriptors.length) return raw; // no collapse for this id — pass through
+    // U5 — the survivor's ENTRIES table (a pattern of descriptor values -> internal
+    // law id; the most specific entry wins, a tie falls back to the survivor).
+    if (typeof R.resolveLaw === 'function') return R.resolveLaw(raw, bag);
     let activeLaw = null;
     let activeCount = 0;
     descriptors.forEach((d) => {
@@ -836,8 +874,10 @@
       activeCount += 1;
       activeLaw = matched.law;
     });
-    return activeCount === 1 ? activeLaw : raw; // rule 3 (activeCount<=... ) / rule 4
+    return activeCount === 1 ? activeLaw : raw; // pre-U5 rosters: rule 3 / rule 4
   };
+
+  const LEGACY_LSTAR_FIELD_IDS = ['contFieldFore', 'contFieldSurface', 'contFieldQuant', 'contFieldTouch'];
 
   const normalizeStyle = (style) => {
     const src = isObject(style) ? style : {};
@@ -869,9 +909,22 @@
     // this runs, which would otherwise erase the one thing this shim needs —
     // WHICH alias arrived — before it gets to look up which param to seed.
     // Never overwrites a sibling key the bag already carries explicitly.
-    const rawToneLaw = isObject(src.params) ? src.params.toneLaw : undefined;
+    let rawToneLaw = isObject(src.params) ? src.params.toneLaw : undefined;
     const R = Vectura.SCENE3D_TONE_LAWS;
     const ALIASES = (R && R.ALIASES) || null;
+    // U5 — a bag saved with a RETIRED sub-control key (bandProfile, nesting, the old
+    // interlockWeave penDown, fieldFloor, ...) is rewritten through the id the old
+    // resolver drew, then through ALIASES like any folded id: byte-identical, and
+    // the retired keys are dropped.
+    const originalRaw = rawToneLaw;
+    if (R && typeof R.upgradeLegacy === 'function' && isObject(src.params)) {
+      const up = R.upgradeLegacy(rawToneLaw, src.params);
+      if (up) {
+        rawToneLaw = up.internal;
+        up.dropKeys.forEach((k) => { delete params[k]; });
+        params.toneLaw = up.internal;
+      }
+    }
     if (ALIASES && ALIASES[rawToneLaw]) {
       const a = ALIASES[rawToneLaw];
       params.toneLaw = a.into;
@@ -880,12 +933,109 @@
           if (params[k] === undefined) params[k] = a.params[k];
         });
       }
+      // U4b item 4: the four retired contField* ids were L*-linear. The
+      // survivor's sub-options now keep the Sterzik sigmoid, so a document that
+      // arrives through one of these ids is pinned to its original curve.
+      if (LEGACY_LSTAR_FIELD_IDS.indexOf(originalRaw) !== -1 && params.fieldCurve === undefined) {
+        params.fieldCurve = 'lstar';
+      }
+    } else if (rawToneLaw !== originalRaw) {
+      params.toneLaw = rawToneLaw; // upgraded to a survivor id (no alias)
+    }
+    // U5 M9a — a Fill Style that became a Type setting: Origin Spiral is the Spiral
+    // Type wound from the specular point. Only the Types it actually drew on move
+    // (Hatch / Crosshatch / Contour); on any other Type it was inert and stays as is.
+    let movedMapper = null;
+    {
+      const mv = R && R.MOVED && R.MOVED[rawToneLaw];
+      if (mv && Array.isArray(mv.from) && mv.from.indexOf(src.mapper) !== -1) {
+        movedMapper = mv.mapper;
+        delete params.toneLaw;
+        Object.keys(mv.params || {}).forEach((k) => { params[k] = mv.params[k]; });
+        params.movedFromMapper = src.mapper; // lets the torus write-back restore the old Type
+      }
+    }
+
+    // U5 — sub-setting folds (fill-style review R3 / NEW-2 / NEW-3). Each rewrites a
+    // retired key or value from the RAW bag into its replacement, so a document saved
+    // before the fold keeps its exact look (the engine reads only the new keys, and
+    // its config readers still honour the old ones for a bag that has not been
+    // through here yet). Never overwrites an explicit new key.
+    {
+      const raw = isObject(src.params) ? src.params : {};
+      const mapperName = MAPPERS.includes(src.mapper) ? src.mapper : 'none';
+      // R3-1 — Flat vs Surface: contourStyle:'region', spiralMode:'flatClip' and
+      // angleRef:'screen' are one setting, read for the bag's own Type.
+      if (raw.wrap === undefined) {
+        const flat = (mapperName === 'contour' && raw.contourStyle === 'region')
+          || (mapperName === 'spiral' && raw.spiralMode === 'flatClip')
+          || ((mapperName === 'hatch' || mapperName === 'crosshatch') && raw.angleRef === 'screen');
+        if (flat) params.wrap = 'flat';
+      }
+      delete params.contourStyle;
+      delete params.spiralMode;
+      // R3-2 — X-ray Front: Faded is a dotted front line.
+      if (raw.xrayFront !== undefined) {
+        if (raw.xrayFront === 'faded' && raw.xrayFrontLineType === undefined) params.xrayFrontLineType = 'dotted';
+        delete params.xrayFront;
+      }
+      // R3-8 — Depth cue is two flags.
+      if (raw.xrayDepthCue !== undefined) {
+        if ((raw.xrayDepthCue === 'density' || raw.xrayDepthCue === 'both') && raw.xrayCueDensity === undefined) params.xrayCueDensity = true;
+        if ((raw.xrayDepthCue === 'weight' || raw.xrayDepthCue === 'both') && raw.xrayCueWeight === undefined) params.xrayCueWeight = true;
+        delete params.xrayDepthCue;
+      }
+      // NEW-2 / NEW-3 — highlight treatments.
+      const ht = HIGHLIGHT_TREATMENT_ALIASES[raw.highlightTreatment] || raw.highlightTreatment;
+      if (raw.highlightTreatment === 'dashed' || raw.highlightTreatment === 'dotted') {
+        if (raw.highlightLineType === undefined) params.highlightLineType = raw.highlightTreatment;
+      } else if (raw.highlightTreatment === 'sparse' || raw.highlightTreatment === 'stippleOut') {
+        if (raw.highlightThinBy === undefined) params.highlightThinBy = raw.highlightTreatment === 'stippleOut' ? 'sample' : 'ruling';
+      }
+      if (ht !== undefined && HIGHLIGHT_TREATMENTS.includes(ht)) params.highlightTreatment = ht;
+      // R3-6 — Alt fill Hatch / Crosshatch are Lines with Layers 1|2.
+      if (raw.altFillMapper === 'hatch' || raw.altFillMapper === 'crosshatch') {
+        params.altFillMapper = 'lines';
+        if (raw.altFillLayers === undefined) params.altFillLayers = raw.altFillMapper === 'crosshatch' ? 2 : 1;
+      }
     }
     return {
       penId: typeof src.penId === 'string' && src.penId ? src.penId : null,
-      mapper: MAPPERS.includes(src.mapper) ? src.mapper : 'none',
+      mapper: movedMapper || (MAPPERS.includes(src.mapper) ? src.mapper : 'none'),
       params,
     };
+  };
+
+  // U5 item 0 — legacy monoline Density pin. U4b made Density live on the nine
+  // monoline laws; a document saved before it (no `seedMode:'seeded'`) was drawn
+  // with Density inert, i.e. as if it read 50. Every style bag (scene, per-object,
+  // per-face, an object3d / booleanGroup3d leaf `style` and `faceStyles`) that
+  // names a monoline law at a Density other than 50 gets `monoDensityLegacyAt`
+  // = that Density. The engine treats Density as 50 while the bag still carries
+  // that value, so the saved look is byte-identical; editing Density releases it.
+  // Mutates `params` in place (the importer owns the clone) and returns it.
+  const pinLegacyMonoDensity = (params) => {
+    if (!isObject(params)) return params;
+    const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
+    if (!M || typeof M.isMono !== 'function') return params;
+    const pin = (bag) => {
+      if (!isObject(bag) || !isObject(bag.params)) return;
+      const law = resolveToneLaw(bag.params);
+      if (typeof law !== 'string' || !M.isMono(law)) return;
+      const d = Number(bag.params.fillDensity);
+      if (!Number.isFinite(d) || d === 50) return;
+      if (bag.params.monoDensityLegacyAt === undefined) bag.params.monoDensityLegacyAt = d;
+    };
+    const table = params.styleTable;
+    if (isObject(table)) {
+      pin(table.scene);
+      [table.byObject, table.byFace].forEach((m) => {
+        if (isObject(m)) Object.keys(m).forEach((k) => pin(m[k]));
+      });
+    }
+    pin(params.style);
+    if (isObject(params.faceStyles)) Object.keys(params.faceStyles).forEach((k) => pin(params.faceStyles[k]));
+    return params;
   };
 
   // W-10d-2 (Contract A) — apply the picker's curated unreachable-law
@@ -900,6 +1050,23 @@
     if (!FS || typeof FS.writeBackFor !== 'function') return style;
     if (!isObject(style)) return style;
     const id = isObject(style.params) ? style.params.toneLaw : undefined;
+    // U5 M9a — Origin Spiral is now the Spiral Type with Centre: Glint. The torus
+    // wedge defect (W-10d) is the same one, so the same write-back applies to it.
+    if (primitiveMode === 'torus' && style.mapper === 'spiral'
+      && isObject(style.params) && style.params.spiralCenter === 'highlight') {
+      // A document that arrived as Hatch / Crosshatch / Contour + originSpiral goes back
+      // to that Type on Ladder (what the W-10d write-back always did); a style the user
+      // built on Spiral keeps its Type and just loses the glint Centre.
+      const was = style.params.movedFromMapper;
+      const nextParams = { ...style.params };
+      delete nextParams.movedFromMapper;
+      if (was) {
+        delete nextParams.spiralCenter;
+        nextParams.toneLaw = FS.DEFAULT || 'ladder';
+        return { ...style, mapper: was, params: nextParams };
+      }
+      return { ...style, params: { ...nextParams, spiralCenter: 'centroid' } };
+    }
     const target = FS.writeBackFor(id, primitiveMode, style.mapper);
     if (!target || target === id) return style;
     return { ...style, params: { ...style.params, toneLaw: target } };
@@ -1085,12 +1252,16 @@
       // already-exported `Shadows.toneLawApplies` predicate rather than
       // duplicating shadows.js's own exclusion set here, so this stays
       // correct automatically if that set ever changes.
-      const Shadows = Vectura.Scene3D && Vectura.Scene3D.Shadows;
-      const alias = ALIASES[value];
-      if (Shadows && typeof Shadows.toneLawApplies === 'function'
-          && !Shadows.toneLawApplies(value) && alias && typeof alias.into === 'string') {
-        return alias.into;
+      // U5: the forward target is named by the roster (SHADOW_FORWARD: onePenDown ->
+      // interlockWeave). Every other alias passes through raw, exactly as before — an
+      // id with no recipe of its own (isophoteWidth, the flow / web laws) already
+      // draws the plain hatch from shadows.js's own fallback.
+      if (roster.SHADOW_FORWARD && Object.prototype.hasOwnProperty.call(roster.SHADOW_FORWARD, value)) {
+        return roster.SHADOW_FORWARD[value];
       }
+      // Any other alias (including one with no shadow recipe: isophoteWidth, defectSplit,
+      // deepFillTSP) keeps its own id in the document. shadows.js draws its plain-hatch
+      // fallback for those at render time, and the picker displays it as Ladder.
       return value;
     }
     if (typeof value === 'string' && (!R || R.indexOf(value) !== -1)) return value;
@@ -1141,6 +1312,9 @@
       shadow: normalizeObjectShadow(obj.shadow),
       border: normalizeObjectBorder(obj.border),
       emissive: normalizeObjectEmissive(obj.emissive),
+      // Scene Seed — carried ONLY for a seeded object (a legacy object keeps
+      // its exact pre-seed shape).
+      ...(obj.seedMode === 'seeded' ? { seedMode: 'seeded', seed: finite(obj.seed, 0) } : {}),
     };
   };
 
@@ -1240,6 +1414,30 @@
     return !!(isObject(s) && typeof s.mapper === 'string' && s.mapper);
   };
 
+  // Stroke Fill (U4a item 1). `strokeFillStyle` is a LAYER param: the leaf panel
+  // and the context bar write it on the object3d CHILD (identity contract), but
+  // the compositor reads it through the style cascade (`sp.strokeFillStyle ||
+  // p.strokeFillStyle`, scene3d.js) — i.e. off the GROUP — so a tree object's
+  // choice was dead. Carry the child's value into its style bag.
+  //
+  // A new child is born with the default ('spiral'), so a default child must not
+  // shadow a Stroke Fill an older document set on the scene group: the child
+  // wins only when it names a non-default pattern, or when the group has none.
+  // Returns the SAME style object when nothing applies (byte-identical).
+  const withChildStrokeFill = (style, childParams, groupParams) => {
+    const SFS = Vectura.STROKE_FILL_STYLES;
+    const raw = isObject(childParams) ? childParams.strokeFillStyle : undefined;
+    if (typeof raw !== 'string' || !raw) return style;
+    const id = SFS && typeof SFS.resolve === 'function' ? SFS.resolve(raw) : raw;
+    const groupVal = isObject(groupParams) && typeof groupParams.strokeFillStyle === 'string' && groupParams.strokeFillStyle
+      ? groupParams.strokeFillStyle : null;
+    const DEFAULT_ID = SFS && typeof SFS.resolve === 'function' ? SFS.resolve(undefined) : 'spiral';
+    if (id === (groupVal || DEFAULT_ID)) return style; // nothing to add
+    if (id === DEFAULT_ID && groupVal) return style;   // a default child never shadows the group
+    if (isObject(style.params) && style.params.strokeFillStyle === id) return style;
+    return { ...style, params: { ...style.params, strokeFillStyle: id } };
+  };
+
   // Ground plane size factors. scaleX = width, scaleZ = depth, both relative to
   // the default floor (1.5x the artboard's longer side). The plane has no
   // thickness, so there is no Y factor. The wide upper bound lets the floor run
@@ -1310,8 +1508,12 @@
           shadow: n.shadow,
           border: n.border,
           emissive: n.emissive,
+          ...(isObject(item.params) && item.params.seedMode === 'seeded'
+            ? { seedMode: 'seeded', seed: finite(item.params.seed, 0) } : {}),
         });
-        if (declaresStyle(item.params)) byObject[item.id] = n.style;
+        if (declaresStyle(item.params)) {
+          byObject[item.id] = withChildStrokeFill(n.style, item.params, gp);
+        }
         if (n.edgeStyles) edgeStylesByObject[item.id] = n.edgeStyles;
         Object.keys(n.faceStyles || {}).forEach((fid) => {
           const full = fid.indexOf('/') >= 0 ? fid : `${item.id}/${fid}`;
@@ -1811,6 +2013,74 @@
   };
   SCENE_MIGRATIONS[3] = migrateBuckyballRadius;
 
+  // ── SCENE_MIGRATIONS[4] — wireframe "Show hidden" folds into Hidden edges: Dash (v4 → v5).
+  // Fill-style review U7. A wireframe style's `showHidden: true` and the Edge
+  // Styles `hidden.hiddenTreatment: 'dash'` drew the same dashed occluded edges
+  // (scene3d.js: `thisEdgeHidden = wfShowHidden ? 'dash' : sceneHidden`). There is one
+  // owner now. This step turns a wireframe style's `showHidden: true` into
+  // `edgeStyles.hidden.hiddenTreatment: 'dash'` and removes the key:
+  //   • scene style, every object inherits it -> the scene `edgeStyles.hidden`;
+  //   • scene style, some objects have their own style -> `edgeStylesByObject[id]`
+  //     for each object that inherits it (the others keep dropping hidden edges);
+  //   • an object style (`byObject[id]`) -> `edgeStylesByObject[id]`;
+  //   • an object3d LEAF -> its own `edgeStyles.hidden`.
+  // A face style (byFace) is left alone: the engine still reads `showHidden` there.
+  // Version-gated, so it runs once. Asserted byte-identical by test.
+  const isWfShowHidden = (st) => isObject(st) && st.mapper === 'wireframe'
+    && isObject(st.params) && st.params.showHidden === true;
+  const stripShowHidden = (st) => {
+    const params = { ...st.params };
+    delete params.showHidden;
+    return { ...st, params };
+  };
+  const withHiddenDash = (existing) => {
+    const cur = isObject(existing) ? existing : {};
+    return {
+      ...cur,
+      hidden: { pen: null, weightMm: null, dash: null, ...(isObject(cur.hidden) ? cur.hidden : {}), hiddenTreatment: 'dash' },
+    };
+  };
+  const migrateWireframeShowHidden = (params) => {
+    const src = isObject(params) ? params : {};
+    if (Array.isArray(src.objects)) {
+      const t = isObject(src.styleTable) ? src.styleTable : null;
+      if (!t) return src;
+      const byObj = isObject(t.byObject) ? t.byObject : {};
+      const ids = src.objects.map((o) => (isObject(o) && typeof o.id === 'string' ? o.id : null)).filter(Boolean);
+      const sceneWf = isWfShowHidden(t.scene);
+      const objWf = ids.filter((id) => isWfShowHidden(byObj[id]));
+      if (!sceneWf && !objWf.length) return src;
+      const edgeByObj = { ...(isObject(src.edgeStylesByObject) ? src.edgeStylesByObject : {}) };
+      const out = { ...src };
+      const table = { ...t };
+      if (objWf.length) {
+        const nextBy = { ...byObj };
+        objWf.forEach((id) => {
+          edgeByObj[id] = withHiddenDash(edgeByObj[id]);
+          nextBy[id] = stripShowHidden(byObj[id]);
+        });
+        table.byObject = nextBy;
+      }
+      if (sceneWf) {
+        const inheriting = ids.filter((id) => !isObject(byObj[id]));
+        if (inheriting.length === ids.length) out.edgeStyles = withHiddenDash(src.edgeStyles);
+        else {
+          // The ground record reads the scene style too, so it needs its own entry.
+          inheriting.concat(isObject(byObj.ground) ? [] : ['ground']).forEach((id) => { edgeByObj[id] = withHiddenDash(edgeByObj[id]); });
+        }
+        table.scene = stripShowHidden(t.scene);
+      }
+      out.styleTable = table;
+      if (Object.keys(edgeByObj).length) out.edgeStylesByObject = edgeByObj;
+      return out;
+    }
+    if (isObject(src.style) && isWfShowHidden(src.style)) {
+      return { ...src, style: stripShowHidden(src.style), edgeStyles: withHiddenDash(src.edgeStyles) };
+    }
+    return src;
+  };
+  SCENE_MIGRATIONS[4] = migrateWireframeShowHidden;
+
   // Scene migration chain (keyed on params.sceneVersion), then normalization.
   // Payloads NEWER than SCENE_VERSION load as-is (best-effort forward compat).
   const migrateScene = (params) => {
@@ -1843,6 +2113,119 @@
     const style = applyLawWriteBack(src.style, src.primitive);
     if (style === src.style) return src;
     return { ...src, style };
+  };
+
+
+  // ── SEED REACH (fill-style review U4b, item 9) ──────────────────────────────
+  // The Seed field and RANDOMIZE sit in every 3D layer's Transform section, but
+  // a fill only draws from the seed where it has a random site (a hashed phase,
+  // jitter, or dither). Most Fill Styles on most shapes have none, so RANDOMIZE
+  // on a default hatch sphere changes nothing. These tables record, MEASURED on
+  // a seeded layer (seed 11 vs 7777, every roster id x every Type x a curved and
+  // a faceted shape — see tests/unit/scene3d-seed-reach.test.js), which
+  // combinations ignore the seed. `styleUsesSeed` answers true for anything it
+  // cannot prove dead, so the panel greys the field only when it is certain.
+  //
+  // Curved shapes: the laws whose picture does NOT change with the seed, per Type.
+  const SEED_CURVED_BASE = [
+    'bundleCount', 'bundleEased', 'bundleHandoff', 'bundleLozenge', 'bundleSubNib',
+    'contFieldFore', 'contFieldQuant', 'contFieldSigmoid', 'contFieldSurface', 'contFieldTouch', 'none',
+  ];
+  // The ladder family is dead on every line Type but scatters its dots on Stipple.
+  const SEED_LADDER_FAMILY = ['fineLadder', 'ladder', 'perceptualRamp', 'phaseFineLadder'];
+  const SEED_CURVED_LINE_DEAD = SEED_CURVED_BASE.concat(SEED_LADDER_FAMILY);
+  const SEED_CURVED_DEAD = {
+    hatch: SEED_CURVED_LINE_DEAD.concat(['defectSplit', 'etfKang', 'originSpiral']),
+    crosshatch: SEED_CURVED_LINE_DEAD.concat(['defectSplit', 'etfKang', 'originSpiral']),
+    contour: SEED_CURVED_LINE_DEAD.concat(['defectSplit', 'etfKang', 'originSpiral']),
+    spiral: SEED_CURVED_LINE_DEAD.concat(['bundleDither', 'deepFillTSP', 'penInterleave', 'penPitchMatch',
+      'penReserve', 'penStipple', 'weaveDepth']),
+    stipple: SEED_CURVED_BASE.concat(['bundleDither', 'penInterleave', 'penPitchMatch', 'penReserve',
+      'penStipple', 'weaveDepth']),
+  };
+  // Faceted shapes (box, plane): only these draw from the seed; every other law
+  // is dead on every Type except Stipple (whose lattice jitter is always seeded).
+  const SEED_FACETED_LIVE = {
+    hatch: ['endShorten', 'mazeFill', 'mezzoRegion', 'turingStripe', 'voronoiWeb'],
+    crosshatch: ['dutyConst', 'endShorten', 'mazeFill', 'mezzoRegion', 'turingStripe', 'voronoiWeb'],
+    contour: [],
+    spiral: [],
+  };
+  const SEED_FILL_MAPPERS = ['hatch', 'crosshatch', 'contour', 'spiral', 'stipple'];
+  // Marks that draw from the seed whatever the Fill Style is: a wobbled or
+  // overstruck stroke, and the alternate-fill highlight. Anything else unusual
+  // (other highlight treatments or modes) is not measured here, so it counts as live.
+  const styleParamsUseSeed = (sp) => {
+    const q = isObject(sp) ? sp : {};
+    if (finite(q.wobble, 0) > 0 || q.overstroke === true) return true;
+    const ht = q.highlightTreatment;
+    if (ht !== undefined && ht !== null && ht !== '' && ht !== 'blank' && ht !== 'none') return true;
+    if (q.highlightMode === 'lightDriven') return true;
+    return false;
+  };
+  const seedClassOf = (primitive) => {
+    if (primitive === 'box' || primitive === 'plane') return 'faceted';
+    if (CURVED_FILL_PRIMITIVES.has(primitive) && !FLAT_FACED_CHART_PRIMITIVES.has(primitive)) return 'curved';
+    return null;
+  };
+  // True when a fill style ({ mapper, params }) on `primitive` can draw from the
+  // seed. Fails toward true: unknown shape, unknown Type or unknown law is live.
+  const styleUsesSeed = (primitive, style) => {
+    const st = isObject(style) ? style : {};
+    const mapper = typeof st.mapper === 'string' ? st.mapper : 'none';
+    const sp = isObject(st.params) ? st.params : {};
+    if (styleParamsUseSeed(sp)) return true;
+    // No fill at all: nothing random to draw (a wobble above is the exception).
+    if (mapper === 'none' || mapper === 'wireframe' || mapper === 'contourSlice') return false;
+    if (SEED_FILL_MAPPERS.indexOf(mapper) === -1) return true;
+    const cls = seedClassOf(primitive);
+    if (!cls) return true;
+    const FS = Vectura.SCENE_FILL_STYLES;
+    let law = 'ladder';
+    if (typeof sp.toneLaw === 'string' && sp.toneLaw) {
+      law = sp.toneLaw;
+      if (FS && typeof FS.resolve === 'function' && typeof FS.effectiveLaw === 'function') {
+        const survivor = FS.resolve(sp.toneLaw);
+        const shown = typeof FS.displayParams === 'function' ? FS.displayParams(sp.toneLaw, sp) : sp;
+        law = FS.effectiveLaw(survivor, shown) || survivor;
+      }
+    }
+    const R = Vectura.SCENE3D_TONE_LAWS;
+    const known = law === 'ladder' || !R || !Array.isArray(R.IDS) || R.IDS.indexOf(law) !== -1;
+    if (!known) return true;
+    if (cls === 'curved') return SEED_CURVED_DEAD[mapper].indexOf(law) === -1;
+    if (mapper === 'stipple') return true;
+    return (SEED_FACETED_LIVE[mapper] || []).indexOf(law) !== -1;
+  };
+  // True when ANY object style in a scene can draw from the seed, or the scene's
+  // shadows might. `scene` = { objects:[{id,primitive}], styleTable, lights, ground,
+  // shadow }. Empty or unreadable input is live.
+  const sceneUsesSeed = (scene) => {
+    const sc = isObject(scene) ? scene : {};
+    const objects = Array.isArray(sc.objects) ? sc.objects.filter((o) => isObject(o) && o.id) : [];
+    if (!objects.length) return true;
+    const lights = Array.isArray(sc.lights) ? sc.lights : [];
+    const casts = lights.some((l) => isObject(l) && l.castShadows !== false && l.type !== 'ambient');
+    if (casts && isObject(sc.ground) && sc.ground.enabled) {
+      const sh = isObject(sc.shadow) ? sc.shadow : {};
+      if (sh.shadowLayers === true) return true;
+      if (typeof sh.shadowToneLaw === 'string' && sh.shadowToneLaw && sh.shadowToneLaw !== 'ladder') return true;
+    }
+    const Cascade = Vectura.Scene3D && Vectura.Scene3D.StyleCascade;
+    if (!Cascade || typeof Cascade.resolve !== 'function') return true;
+    const table = isObject(sc.styleTable) ? sc.styleTable : {};
+    for (let i = 0; i < objects.length; i++) {
+      const o = objects[i];
+      if (styleUsesSeed(o.primitive, Cascade.resolve(table, { objectId: o.id }))) return true;
+      const byFace = isObject(table.byFace) ? table.byFace : {};
+      const prefix = `${o.id}/`;
+      const faceKeys = Object.keys(byFace).filter((k) => k.indexOf(prefix) === 0);
+      for (let f = 0; f < faceKeys.length; f++) {
+        const faceId = faceKeys[f].slice(prefix.length);
+        if (styleUsesSeed(o.primitive, Cascade.resolve(table, { objectId: o.id, faceId }))) return true;
+      }
+    }
+    return false;
   };
 
   const api = {
@@ -1887,6 +2270,9 @@
     normalizeStyle,
     normalizeStyleTable,
     resolveToneLaw,
+    pinLegacyMonoDensity,
+    styleUsesSeed,
+    sceneUsesSeed,
     normalizeObjectLayerParams,
     collectSceneParams,
     normalizeGroups,

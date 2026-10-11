@@ -29,6 +29,15 @@
   // to the edge's own depth there). The depth-buffer fallback floors this to
   // 0.5 internally (quantized cells need the headroom).
   const HLR_BIAS = 0.05;
+  // F5 law-draft tier: pen scale for the mono (single-pen lattice) laws, whose
+  // every pitch, grid cell and seed spacing derives from the pen. 2.5 cuts
+  // their marks ~4x during a drag while keeping the same structure (measured
+  // in Chrome: turingStripe 458 -> 135 ms, mezzoRegion 386 -> 211 ms).
+  const MONO_DRAFT_PEN_SCALE = 2.5;
+  const isMonoToneLaw = (law) => {
+    const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
+    return Boolean(M && typeof M.isMono === 'function' && M.isMono(law));
+  };
   // Emission floor (document mm): visibility crumbs shorter than this draw as
   // dots at best on a plotter and are usually corner-transition artifacts.
   const MIN_RUN_MM = 0.6;
@@ -1140,6 +1149,12 @@
           style = FALLBACK_STYLE;
         }
       }
+      // U5 M9a — the Spiral Type wound from the specular point (`spiralCenter:
+      // 'highlight'`) IS the Origin Spiral monoline law, which draws under Hatch.
+      // Run it as that, so the fill engine sees exactly the style it always saw.
+      if (style && style.mapper === 'spiral' && style.params && style.params.spiralCenter === 'highlight') {
+        style = { ...style, mapper: 'hatch', params: { ...style.params, toneLaw: 'originSpiral' } };
+      }
       cache.set(key, style);
       return style;
     };
@@ -1277,7 +1292,7 @@
   // independent spacing/floor comparison, so there is no equivalent
   // "already-sub-floor in a saved document" risk to dodge for it the way
   // `minSpacing` has to for the faceted path's `spacing × crossDensityRatio`.
-  const CURVED_FLOOR_PEN_MAX = 2.2; // == surface-fill.js's PLOT_FLOOR_PEN
+  const CURVED_FLOOR_PEN_MAX = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2; // == surface-fill.js's PLOT_FLOOR_PEN
   const CURVED_FLOOR_PEN_MIN = 1.2; // the "ink floods" bound, not the conservative one
   // 200-500 (fs-m1, ceiling raised again): 1.2x pen is ALREADY the point
   // surface-fill.js's own comment names as where real ink floods, so pushing
@@ -1358,6 +1373,40 @@
     const t = (clamp(d, 1, 50) - 1) / 49; // 0 at d=1 -> 1 at d=50
     const boost = CURVED_SPARSE_PITCH_BOOST ** (1 - t);
     return hatchSpacing(50) * boost;
+  };
+
+  // Density -> the mono laws' clearance scale (fill-style review U4b). Exactly 1
+  // at the shipped default Density (50), > 1 denser, < 1 sparser. The mono laws
+  // ignored Density entirely before this (their `makeCtx` never read
+  // `masterPitch`). Built from the same curve the curved ladder already uses, so
+  // the slider means the same thing on every Fill Style.
+  const monoDensityScale = (density) => clamp(
+    curvedSparseTonePitch(50) / Math.max(1e-6, curvedSparseTonePitch(density)), 0.25, 4,
+  );
+
+  // U5 (R3-1) — "Flat vs Surface" is ONE setting, `wrap`: 'surface' (default) wraps the
+  // fill round the form, 'flat' draws it in screen space (a Contour's silhouette inset
+  // rings, a Spiral's clipped Archimedean spiral, a faceted Hatch's screen-space
+  // angle). It replaces contourStyle:'region', spiralMode:'flatClip' and
+  // angleRef:'screen'. The old keys are still honoured for a bag that has not been
+  // through normalizeStyle yet, so an un-migrated bag draws identically.
+  const styleWrapFlat = (sp, mapper) => {
+    const s = sp || {};
+    if (s.wrap === 'flat') return true;
+    if (s.wrap === 'surface') return false;
+    if (mapper === 'contour') return s.contourStyle === 'region';
+    if (mapper === 'spiral') return s.spiralMode === 'flatClip';
+    return s.angleRef === 'screen';
+  };
+
+  // The Density a mono law reads from a style bag. A LEGACY document carries
+  // `monoDensityLegacyAt` (see Params.pinLegacyMonoDensity): while Density still
+  // equals it, the law reads 50 (what it effectively rendered when Density was
+  // inert); an edit releases the pin.
+  const monoDensityOf = (sp) => {
+    const d = finite(sp && sp.fillDensity, 50);
+    const pin = sp && sp.monoDensityLegacyAt;
+    return (Number.isFinite(pin) && pin === d) ? 50 : d;
   };
 
   // Strip the geometry-mutating part of a treatment, keeping only the line-type
@@ -1484,14 +1533,33 @@
   // disclosed non-fix beats a partial one left in the tree. See the report
   // for the full diagnosis.
 
+  // Scene Seed (U4a). Wraps the compositor so the shared seed state
+  // (Geometry3D.SEED) is ALWAYS restored — a seeded compose can never leak its
+  // salt into the next (legacy) one, including on a throw.
+  const generateWithSeedScope = (params, rng, noise, bounds) => {
+    const snap = G3.snapshotSeedState();
+    try {
+      return window.Vectura.AlgorithmRegistry.scene3d.generateScene(params, rng, noise, bounds);
+    } finally {
+      G3.restoreSeedState(snap);
+    }
+  };
+
   window.Vectura.AlgorithmRegistry.scene3d = {
-    generate: (params = {}, rng, noise, bounds = {}) => {
+    generate: (params = {}, rng, noise, bounds = {}) => generateWithSeedScope(params, rng, noise, bounds),
+    generateScene: (params = {}, rng, noise, bounds = {}) => {
       const Params = Vectura.Scene3D.Params;
       const Scene = Vectura.Scene3D.Scene;
       const Edges = Vectura.Scene3D.Edges;
       const HLR = Vectura.Scene3D.HLR;
 
       const p = Params.normalizeParams(params);
+      // Scene Seed — group-level salt (shadows, ground, anything outside the
+      // per-object loop). A layer WITHOUT seedMode:'seeded' is legacy: all-zero
+      // state, bit-identical to the pre-seed hashes.
+      const groupSeeded = p.seedMode === 'seeded';
+      const groupSeeds = groupSeeded ? [p.seed] : null;
+      G3.setSeedState(groupSeeds);
       const scene = Scene.assembleScene(p, bounds);
       // Per-fragment CSG styling: a combined carve borrows the primary solid's
       // id, so each fragment's source-attributed style (Scene3D.Boolean) is
@@ -1616,6 +1684,14 @@
       // truth for "this is a live-drag preview frame" — reused here rather
       // than recomputed so the two draft-gated behaviors can't drift apart.)
       const draft = draftHLR;
+      // F5 — the LAW-PRESERVING draft tier (engine `_sceneDraftTier` 'law').
+      // Unlike `draft` it keeps the full compose (tone, the law's ruling
+      // placement, chart wrap, HLR, shadows) so a drag shows the chosen Fill
+      // Style. Only the two costs that do not change the picture at drag
+      // speed are cut: ribbon laws emit their rulings as weighted centrelines
+      // instead of pen-filled ribbons (SurfaceFill `ribbonDraft`), and the
+      // mono (single-pen lattice) laws run at a coarser pitch.
+      const lawDraft = !draft && Boolean(bounds && bounds.lawDraft);
       const toneOn = Boolean(!draft && p.tone && p.tone.enabled && Regions && lightDir);
       // Multi-light shading: intensity at a world normal + world POINT is
       // ambient + every directional Lambert term + every positional (point/spot)
@@ -1648,7 +1724,33 @@
       const shadowFn = shadowOccluders
         ? (wp, lt) => ShadowReceive.pointInShadow(wp, lt, shadowOccluders, { excludeObjectId: currentReceiverObjectId })
         : null;
-      const intensityFn = toneOn ? (nw, wp) => Regions.combinedIntensity(nw, wp, activeLights, shadowFn) : null;
+      // U6 — the ONE tone-shaping point (gamma, contrast, depth fade). It is
+      // reassigned per record from that object's own style; null is the
+      // identity, so an untouched style is byte-identical (Regions.toneShapeOf).
+      let activeToneShape = null;
+      let sceneDepth = null;
+      const depthContext = () => {
+        if (sceneDepth) return sceneDepth;
+        let zMax = -Infinity; let zMin = Infinity;
+        scene.objects.forEach((rec) => {
+          (rec.camPts || []).forEach((pt) => {
+            if (pt && Number.isFinite(pt.z)) { zMax = Math.max(zMax, pt.z); zMin = Math.min(zMin, pt.z); }
+          });
+        });
+        sceneDepth = {
+          zNear: Number.isFinite(zMax) ? zMax : 0,
+          zFar: Number.isFinite(zMin) ? zMin : 0,
+          zOf: (wp) => {
+            const P = wp && scene.projectWorld ? scene.projectWorld(wp) : null;
+            return P ? P.z : NaN;
+          },
+        };
+        return sceneDepth;
+      };
+      const shapeIntensity = (I, wp) => (activeToneShape ? Regions.shapeTone(I, wp, activeToneShape) : I);
+      const intensityFn = toneOn
+        ? (nw, wp) => shapeIntensity(Regions.combinedIntensity(nw, wp, activeLights, shadowFn), wp)
+        : null;
 
       // ── Unit D judge follow-up v2 — FLAT-face footprint clip ────────────────
       // (faceHatchLines, below, is the consumer.) "Parametrize the plane rather
@@ -1813,6 +1915,118 @@
           }
         }
         return c ? { x: x / c, y: y / c, z: z / c } : null;
+      };
+
+      // ── U7 tone bands → pens (every Fill Style) ────────────────────────────────
+      // `toneBands` N (2..4) splits an object's output by the tone under each mark
+      // and sends band k (0 = lightest) to pen tierPens[k]. Off (absent / 0 / 1) is
+      // never read: the emission code below is byte-identical. The tone is the
+      // face tone the scene already computes (`intensityFn`), normalised to the
+      // object's own tone range so every band holds ink.
+      const bandRanges = new Map();
+      const outBandCount = (sp) => {
+        const n = Math.round(Number(sp && sp.toneBands));
+        return (n >= 2 && intensityFn) ? Math.min(4, n) : 0;
+      };
+      const toneBandRange = (record, faceIdxs) => {
+        let lo = Infinity; let hi = -Infinity;
+        const vals = new Map();
+        faceIdxs.forEach((fi) => {
+          const f = record.faces[fi];
+          if (!f || !f.front) return;
+          const I = clamp(finite(intensityFn(f.normalWorld, faceWorldCentroid(f)), 0), 0, 1);
+          vals.set(fi, I);
+          if (I < lo) lo = I;
+          if (I > hi) hi = I;
+        });
+        return vals.size ? { vals, lo, hi } : null;
+      };
+      const toneBandIndex = (I, range, N) => {
+        const span = range.hi - range.lo;
+        if (!(span > 1e-6)) return 0;
+        return Math.min(N - 1, Math.max(0, Math.floor(((range.hi - I) / span) * N)));
+      };
+      const toneBandPen = (sp, band) => {
+        const pen = Array.isArray(sp.tierPens) ? sp.tierPens[band] : null;
+        return typeof pen === 'string' && pen ? pen : null;
+      };
+      // Curved shapes: a screen-space face lookup. Returns band(x, y), or -1.
+      const makeToneBandSampler = (record, faceIdxs, N) => {
+        const range = toneBandRange(record, faceIdxs);
+        if (!range) return null;
+        const CELL = 6;
+        const cells = new Map();
+        range.vals.forEach((I, fi) => {
+          const poly = record.faces[fi].polygon;
+          if (!Array.isArray(poly) || poly.length < 3) return;
+          let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+          poly.forEach((q) => { x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); });
+          const it = { poly, x0, y0, x1, y1, band: toneBandIndex(I, range, N), cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+          for (let cx = Math.floor(x0 / CELL); cx <= Math.floor(x1 / CELL); cx += 1) {
+            for (let cy = Math.floor(y0 / CELL); cy <= Math.floor(y1 / CELL); cy += 1) {
+              const k = `${cx},${cy}`;
+              if (!cells.has(k)) cells.set(k, []);
+              cells.get(k).push(it);
+            }
+          }
+        });
+        const inside = (poly, x, y) => {
+          let c = false;
+          for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+            const a = poly[i]; const b = poly[j];
+            if ((a.y > y) !== (b.y > y) && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) c = !c;
+          }
+          return c;
+        };
+        return (x, y) => {
+          const cx = Math.floor(x / CELL); const cy = Math.floor(y / CELL);
+          const here = cells.get(`${cx},${cy}`) || [];
+          for (let i = 0; i < here.length; i += 1) {
+            const it = here[i];
+            if (x >= it.x0 && x <= it.x1 && y >= it.y0 && y <= it.y1 && inside(it.poly, x, y)) return it.band;
+          }
+          let best = -1; let bd = Infinity;
+          for (let dx = -1; dx <= 1; dx += 1) {
+            for (let dy = -1; dy <= 1; dy += 1) {
+              (cells.get(`${cx + dx},${cy + dy}`) || []).forEach((it) => {
+                const d = (it.cx - x) * (it.cx - x) + (it.cy - y) * (it.cy - y);
+                if (d < bd) { bd = d; best = it.band; }
+              });
+            }
+          }
+          return best;
+        };
+      };
+      // Split each plain front line where its band changes. A piece under three
+      // points folds into its neighbour so no stub is lost to the emission floor.
+      const splitLinesByBand = (lines, sampler) => {
+        const out = [];
+        lines.forEach((line) => {
+          if (line.back === true || line.highlight === true || Number.isInteger(line.penTier) || line.length < 2) {
+            out.push(line);
+            return;
+          }
+          const bands = line.map((pt) => sampler(pt.x, pt.y));
+          const fix = bands.findIndex((b) => b >= 0);
+          if (fix < 0) { out.push(line); return; }
+          for (let i = 0; i < bands.length; i += 1) if (bands[i] < 0) bands[i] = i ? bands[i - 1] : bands[fix];
+          const pieces = [];
+          let start = 0;
+          for (let i = 1; i <= bands.length; i += 1) {
+            if (i === bands.length || bands[i] !== bands[start]) { pieces.push({ s: start, e: i, band: bands[start] }); start = i; }
+          }
+          for (let k = 1; k < pieces.length;) {
+            if (pieces[k].e - pieces[k].s < 3) { pieces[k - 1].e = pieces[k].e; pieces.splice(k, 1); } else k += 1;
+          }
+          pieces.forEach((pc, k) => {
+            const sub = line.slice(pc.s, Math.min(line.length, pc.e + (k < pieces.length - 1 ? 1 : 0)));
+            if (sub.length < 2) return;
+            ['apex', 'apexMin', 'weightScale'].forEach((key) => { if (line[key] !== undefined) sub[key] = line[key]; });
+            sub.penBand = pc.band;
+            out.push(sub);
+          });
+        });
+        return out;
       };
 
       // The object's own FOOTING — world-Y floor and height — for the reflected
@@ -2220,7 +2434,7 @@
         const hlOff = styleParams.highlightTreatment === 'none' || styleParams.highlightTreatment === 'keep';
         const I = noShadowBaseline
           ? clamp(finite(Regions && typeof Regions.combinedIntensity === 'function'
-            ? Regions.combinedIntensity(normalWorld, worldPoint, activeLights) : 0, 0), 0, 1)
+            ? shapeIntensity(Regions.combinedIntensity(normalWorld, worldPoint, activeLights), worldPoint) : 0, 0), 0, 1)
           : intensityFn(normalWorld, worldPoint);
         // O20 — the object's own rank grade when the thresholds under-use the
         // ladder, the plain threshold band otherwise (and always, for a caller
@@ -2353,6 +2567,30 @@
         return Math.atan2(va, ua) * 180 / Math.PI;
       };
 
+      // LIGHT-relative hatch reference (U6 `angleRef:'light'`): the in-plane angle
+      // whose lines run along the sun's direction projected onto the face plane,
+      // so Angle 0 hatches parallel to the light and the drawing turns with it.
+      // Returns 0 when the light is (near) normal to the face.
+      const lightAngleInUV = (scaf) => {
+        if (!scaf || !scaf.U || !scaf.V || !lightDir) return 0;
+        const la = dot(lightDir, scaf.U);
+        const va = dot(lightDir, scaf.V);
+        if (Math.hypot(la, va) < 1e-4) return 0;
+        return Math.atan2(va, la) * 180 / Math.PI;
+      };
+      // The same bearing on paper, for a flat (screen-space) hatch.
+      const lightScreenAngle = () => {
+        if (!lightDir || !scene.projectWorld) return 0;
+        const p0 = scene.projectWorld({ x: 0, y: 0, z: 0 });
+        const p1 = scene.projectWorld({ x: lightDir.x * 100, y: lightDir.y * 100, z: lightDir.z * 100 });
+        if (!p0 || !p1 || !Number.isFinite(p0.x) || !Number.isFinite(p1.x)) return 0;
+        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) < 1e-4) return 0;
+        return Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+      };
+      // Base in-plane angle for a face scaffold under the style's angleRef.
+      const refAngleInUV = (ref, scaf) => (ref === 'worldUp' ? worldUpAngleInUV(scaf)
+        : (ref === 'light' ? lightAngleInUV(scaf) : 0));
+
       // Boustrophedon linking (Phase 2 `linkFill`): chain disjoint scanline
       // segments into one continuous pen path, joining each segment to the nearest
       // end of the previous one (so the connectors are short). Fewer, longer
@@ -2379,7 +2617,7 @@
       // B); tripleHatch adds a third pass at +45° in the darkest tone band only.
       // §2.3 — object-side crossed families are +65° / +32°, NEVER +90°.
       const CROSS_OBJ_DEG_B = (Regions && Regions.CROSS_OBJ_DEG) || 65;
-      const CROSS_OBJ_DEG_C = 32;
+      const CROSS_OBJ_DEG_C = (Regions && Regions.CROSS_TRIPLE_DEG) || 32;
       // `crossW` is the zone's own `Regions.formInk(zone).cross` — the coverage
       // of the SECOND family in units of the first, so its pitch is spacing /
       // crossW. T spends a full family (1.00), F four tenths of one (0.40), and
@@ -2516,9 +2754,12 @@
         // face plane; 'screen' engraves flat in screen space regardless of the
         // face; 'worldUp' keeps the lines upright (world vertical projected onto
         // the face). 'screen' reuses the cheap screen-space path below.
-        const angleRef = styleParams.angleRef === 'screen' || styleParams.angleRef === 'worldUp'
-          ? styleParams.angleRef : 'face';
-        const userAngle = finite(styleParams.fillAngle, 45);
+        const angleRef = styleWrapFlat(styleParams, 'hatch') ? 'screen'
+          : (styleParams.angleRef === 'worldUp' ? 'worldUp' : (styleParams.angleRef === 'light' ? 'light' : 'face'));
+        // U6: 'light' measures the angle from the sun; on a flat (screen) hatch the
+        // reference is the sun's bearing on paper.
+        const userAngle = finite(styleParams.fillAngle, 45)
+          + (angleRef === 'screen' && styleParams.angleRef === 'light' ? lightScreenAngle() : 0);
         // Sample point/spot lights at the face's world centroid.
         const worldPoint = faceWorldCentroid(face);
         const scaf = angleRef === 'screen' ? null : faceUVScaffold(face, normalWorld);
@@ -2536,7 +2777,7 @@
         const { spacing, zone, glint } = spacingBand(normalWorld, styleParams, worldPoint, face, record, hlOpts);
         // worldUp rotates the in-plane base angle so the lines follow world
         // vertical; 'face' leaves the user angle measured in the face frame.
-        const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
+        const baseAngle = (angleRef === 'worldUp' || angleRef === 'light') ? refAngleInUV(angleRef, scaf) + userAngle : userAngle;
         const uvLines = [];
         // ── FORESHORTENING COMPENSATION (O20, and half of C15) ─────────────────
         //
@@ -2963,6 +3204,7 @@
       // per-sample drop dither. Same quantized point → same value, no RNG.
       const ldHash = (a, b) => {
         let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+        h ^= G3.SEED.salt; // Scene Seed — 0 for a legacy layer ⇒ identity
         h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
         return (h >>> 0) / 4294967296;
       };
@@ -3078,7 +3320,7 @@
       // interpolates between, so the faceted substrate must hand over the same
       // numbers or the same law would land on a different ramp on the two paths.
       const MONO_INK_SPREAD = 0.12;
-      const MONO_PLOT_FLOOR_PEN = 2.2;
+      const MONO_PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
       const monoLitMaxPitch = () => {
         const R = Vectura.Scene3D && Vectura.Scene3D.Regions;
         const pen = (R && Number.isFinite(R.LIT_MAX_PITCH_PEN)) ? R.LIT_MAX_PITCH_PEN : 12;
@@ -3181,7 +3423,7 @@
         // direction every other family on that face uses. Project the in-plane
         // direction and measure it where it lands.
         const userAngle = finite(styleParams.fillAngle, 45);
-        const baseAngle = (styleParams.angleRef === 'worldUp' ? worldUpAngleInUV(scaf) : 0) + userAngle;
+        const baseAngle = refAngleInUV(styleParams.angleRef, scaf) + userAngle;
         const screenAngleDeg = (() => {
           const r = baseAngle * Math.PI / 180;
           const L = Math.max(uSpan, vSpan) * 0.2;
@@ -3218,6 +3460,12 @@
             minMarkMM: Math.max(MIN_RUN_MM, 2 * penWidth),
             hash: ldHash,
             angleDeg: screenAngleDeg,
+            densityScale: monoDensityScale(monoDensityOf(styleParams)),
+            crossDelta: finite(styleParams.crossAngleDelta, 90),
+            stripeAlign: styleParams.stripeAlign,
+            chainMarks: styleParams.chainMarks,
+            patternMaturity: styleParams.patternMaturity,
+            stripeScale: styleParams.stripeScale,
           });
         } catch (e) {
           return null; // a law that throws must not take the facet with it
@@ -3240,13 +3488,13 @@
       // caller uses the plain faceHatchLines path). Deterministic.
       const faceLightDrivenLines = (face, styleParams, normalWorld, crossPass, hlCfg) => {
         if (draft || !specularFn) return null;
-        const angleRef = styleParams.angleRef === 'worldUp' ? 'worldUp' : 'face';
+        const angleRef = styleParams.angleRef === 'worldUp' ? 'worldUp' : (styleParams.angleRef === 'light' ? 'light' : 'face');
         const scaf = faceUVScaffold(face, normalWorld);
         if (!scaf) return null;
         const worldPoint = faceWorldCentroid(face);
         const { spacing, bandIdx } = spacingBand(normalWorld, styleParams, worldPoint);
         const userAngle = finite(styleParams.fillAngle, 45);
-        const baseAngle = angleRef === 'worldUp' ? worldUpAngleInUV(scaf) + userAngle : userAngle;
+        const baseAngle = refAngleInUV(angleRef, scaf) + userAngle;
         const uvLines = [];
         // lightDriven places the glint per SAMPLE, so it has no face zone to
         // read; the darkest band buys the same whole second family T does.
@@ -3380,6 +3628,21 @@
       // through the occluded/dashed branch — this is how x-ray back-face FILLS
       // are emitted (the far surface reads as dashed "seen-through" lines), a
       // generalization of the hiddenTreatment==='dash' edge branch to fills.
+      // U5 (R3-7) — Highlight "Burst" and Emissive "halo: burst" are ONE radial-ray
+      // emitter: N rays from radius rIn to rOut about (cx, cy) at depth z, each
+      // clipped against the occluders. The radii stay per-caller constants, so both
+      // callers draw exactly what they drew when each had its own loop.
+      function emitRadialRays(clipperRef, ctx, meta, hiddenTreatment, cx, cy, rIn, rOut, N, z) {
+        for (let k = 0; k < N; k++) {
+          const ang = (k / N) * Math.PI * 2;
+          const c = Math.cos(ang); const s = Math.sin(ang);
+          const p0 = { x: cx + c * rIn, y: cy + s * rIn, z };
+          const p1 = { x: cx + c * rOut, y: cy + s * rOut, z };
+          const clip = clipperRef.clipPath([p0, p1], ctx);
+          emitRuns(clip.runs, meta, hiddenTreatment, null, NO_STROKE_TREATMENT);
+        }
+      }
+
       const emitRuns = (runs, baseMeta, hiddenTreatment, hiddenExtras, tr, opts) => {
         const treat = tr || NO_STROKE_TREATMENT;
         const forceHidden = Boolean(opts && opts.forceHidden);
@@ -3793,14 +4056,24 @@
       const STROKE_LINE_TYPES = ['solid', 'dashed', 'dotted', 'dashdot'];
       const xrayCfg = (sp) => {
         const s = sp || {};
+        // U5 — Depth cue is two flags (R3-8); a bag that still carries the old
+        // off/density/weight/both enum (not yet normalized) reads as the same flags.
+        const hasFlags = s.xrayCueDensity !== undefined || s.xrayCueWeight !== undefined;
+        const legacyCue = XRAY_DEPTH_CUES.includes(s.xrayDepthCue) ? s.xrayDepthCue : 'off';
+        const cueD = hasFlags ? s.xrayCueDensity === true : (legacyCue === 'density' || legacyCue === 'both');
+        const cueW = hasFlags ? s.xrayCueWeight === true : (legacyCue === 'weight' || legacyCue === 'both');
         return {
           backFaces: s.xrayBackFaces !== false,
           hiddenEdges: s.xrayHiddenEdges !== false,
           backDensity: clamp(finite(s.xrayBackDensity, 0.4), 0.2, 1),
-          backLineType: STROKE_LINE_TYPES.includes(s.xrayBackLineType) ? s.xrayBackLineType : 'dashed',
+          // 'solid' was never a real option: an occluded line is stamped [3,2] when
+          // its own dash is empty, so a stored 'solid' always drew dashed (R3-3).
+          backLineType: (s.xrayBackLineType === 'dotted' || s.xrayBackLineType === 'dashdot') ? s.xrayBackLineType : 'dashed',
           backPenId: (typeof s.xrayBackPenId === 'string' && s.xrayBackPenId) ? s.xrayBackPenId : null,
-          front: s.xrayFront === 'faded' ? 'faded' : 'solid',
-          depthCue: XRAY_DEPTH_CUES.includes(s.xrayDepthCue) ? s.xrayDepthCue : 'off',
+          // R3-2 — "Front: Faded" was lineType:'dotted' on the front fill.
+          frontLineType: STROKE_LINE_TYPES.includes(s.xrayFrontLineType) ? s.xrayFrontLineType
+            : (s.xrayFront === 'faded' ? 'dotted' : 'solid'),
+          depthCue: (cueD && cueW) ? 'both' : (cueD ? 'density' : (cueW ? 'weight' : 'off')),
         };
       };
 
@@ -3850,13 +4123,27 @@
       // 'none' (formerly 'keep') is a TOTAL bypass, not a subtle treatment — see
       // the note on HIGHLIGHT_TREATMENTS in params.js. `keep` is accepted as a
       // silent alias so saved documents render identically.
-      const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
+      // U5 — `restyle` (a line type, `highlightLineType`) replaces dashed + dotted and
+      // `thin` (a granularity, `highlightThinBy`) replaces sparse + stippleOut. The
+      // engine keeps its internal names below (`dashed`/`dotted`, `sparse`/`stippleOut`)
+      // so every branch is untouched; the old stored values read identically.
+      const HIGHLIGHT_TREATMENTS = ['blank', 'none', 'restyle', 'thin', 'dashed', 'dotted', 'sparse', 'altFill', 'burst', 'stippleOut'];
       const highlightCfg = (sp) => {
         const s = sp || {};
         const raw = s.highlightTreatment === 'keep' ? 'none' : s.highlightTreatment;
-        const treatment = HIGHLIGHT_TREATMENTS.includes(raw) ? raw : 'blank';
+        let treatment = HIGHLIGHT_TREATMENTS.includes(raw) ? raw : 'blank';
+        let hlLine = 'dashed';
+        if (treatment === 'restyle' || treatment === 'dashed' || treatment === 'dotted') {
+          hlLine = STROKE_LINE_TYPES.includes(s.highlightLineType) ? s.highlightLineType
+            : (treatment === 'dotted' ? 'dotted' : 'dashed');
+          treatment = hlLine === 'dotted' ? 'dotted' : 'dashed';
+        } else if (treatment === 'thin') {
+          treatment = s.highlightThinBy === 'sample' ? 'stippleOut' : 'sparse';
+        }
+        const altRaw = (s.altFillMapper === 'lines') ? (s.altFillLayers === 2 ? 'crosshatch' : 'hatch') : s.altFillMapper;
         return {
           treatment,
+          lineType: hlLine,
           // I8 — light-driven highlight/shadow. mode 'lightDriven' places the
           // highlight by the per-sample specular term; sensitivity/shadowSensitivity
           // are stage counts (1 = binary, N = graded). All default to the no-op.
@@ -3873,9 +4160,13 @@
           // scope here) collapses the two to ONE literal, so they cannot drift
           // apart. See SURFACE_FILL's own comment and the exported
           // `Vectura.Scene3D.SURFACE_FILL_MAPPERS` mirror below.
-          altFillMapper: SURFACE_FILL.has(s.altFillMapper) ? s.altFillMapper : 'stipple',
+          altFillMapper: SURFACE_FILL.has(altRaw) ? altRaw : 'stipple',
           burstCount: clamp(Math.round(finite(s.burstCount, 16)), 6, 48),
           burstCenter: s.burstCenter === 'centroid' ? 'centroid' : 'specular',
+          // U7: Alt fill lines turn with `altFillAngle` and cross at the shared
+          // Cross angle. Absent = the legacy fixed 45 / 135, byte-identical.
+          altAngle: Number.isFinite(s.altFillAngle) ? clamp(s.altFillAngle, 0, 180) : null,
+          altCross: clamp(finite(s.crossAngleDelta, 90), 10, 170),
         };
       };
       // Total tone-band count (ladder length is authoritative) and the highlight
@@ -3884,7 +4175,7 @@
       const nBands = (p.tone && Array.isArray(p.tone.ladder) && p.tone.ladder.length) ? p.tone.ladder.length : 3;
       const isHighlightBand = (I, bands) => toneOn && Regions.band(I, p.tone) >= (nBands - clamp(bands, 1, 2));
       // The line type stamped on dashed/dotted highlight runs.
-      const hlLineType = (treatment) => (treatment === 'dotted' ? 'dotted' : 'dashed');
+      const hlLineType = (cfg) => (cfg && cfg.lineType) || 'dashed';
 
       // Mean WORLD position of every vert across a record's faces — the point a
       // co-located emissive light sits at (the object's centroid). null when the
@@ -3923,6 +4214,12 @@
       const records = scene.ground ? scene.objects.concat([scene.ground]) : scene.objects;
 
       records.forEach((record) => {
+        // Scene Seed — a seeded object folds its own Seed into the salt (and the
+        // group's, when the group is seeded); otherwise it uses the group's.
+        const seedSrc = record.id === 'ground' ? null : objById.get(record.id);
+        G3.setSeedState(seedSrc && seedSrc.seedMode === 'seeded'
+          ? [groupSeeded ? p.seed : -1, 7919, seedSrc.seed]
+          : groupSeeds);
         // Shade THIS record under the scene lights plus every OTHER object's
         // emissive point light (self excluded). Empty emissive list ⇒ p.lights.
         activeLights = emissiveLights.length
@@ -3931,6 +4228,12 @@
         // Unit D — see shadowFn above: THIS record is the current receiver,
         // so its own faces are excluded from its own occluder test.
         currentReceiverObjectId = record.id;
+        // U6 — this object's tone curve + depth fade (null = identity).
+        {
+          const toneSp = (resolveStyle(record.id, null) || {}).params;
+          activeToneShape = toneOn
+            ? Regions.toneShapeOf(toneSp, toneSp && toneSp.depthFade === true ? depthContext() : null) : null;
+        }
         // Emissive self-render config for this object (never the ground).
         const emSrc = objById.get(record.id);
         const emCfg = (emSrc && emSrc.emissive && emSrc.emissive.enabled && record.id !== 'ground')
@@ -4357,7 +4660,7 @@
                     emitRuns(clip.runs, baseMetaLD, hiddenTreatment, null, faceTreat);
                   });
                   const hlTreatLD = dashLD
-                    ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL.treatment), wobble: 0, overstroke: false })
+                    ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL), wobble: 0, overstroke: false })
                     : faceTreat;
                   const hlMetaLD = {
                     algorithm: 'scene3d', kind: 'sceneFill',
@@ -4418,7 +4721,7 @@
                 }
                 const dashHL = faceIsHL && (faceHL.treatment === 'dashed' || faceHL.treatment === 'dotted');
                 const emitTreat = dashHL
-                  ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL.treatment), wobble: 0, overstroke: false })
+                  ? strokeTreatment({ ...styleParams, lineType: hlLineType(faceHL), wobble: 0, overstroke: false })
                   : faceTreat;
                 const fillMeta = {
                   algorithm: 'scene3d',
@@ -4432,6 +4735,19 @@
                   // highlight face now carries the highlight pen.
                   ...(faceIsHL && faceHL.penId ? { penId: faceHL.penId } : (style.penId ? { penId: style.penId } : {})),
                 };
+                // U7 `toneBands`: this face's band picks the pen (faceted shapes tone per face).
+                let fillMetaB = fillMeta;
+                const faceBandN = outBandCount(styleParams);
+                if (faceBandN && !faceIsHL) {
+                  if (!bandRanges.has(record)) bandRanges.set(record, toneBandRange(record, record.faces.map((_, i) => i)));
+                  const br = bandRanges.get(record);
+                  const fi = record.faces.indexOf(face);
+                  if (br && br.vals.has(fi)) {
+                    const band = toneBandIndex(br.vals.get(fi), br, faceBandN);
+                    const bp = toneBandPen(styleParams, band);
+                    fillMetaB = { ...fillMeta, toneBand: band, ...(bp ? { penId: bp } : {}) };
+                  }
+                }
                 lines.forEach((line) => {
                   const pts = line.map((pt) => ({
                     x: pt.x,
@@ -4439,7 +4755,7 @@
                     z: plane.A * pt.x + plane.B * pt.y + plane.C,
                   }));
                   const fillClip = clipper.clipPath(pts, segCtx);
-                  emitRuns(fillClip.runs, fillMeta, hiddenTreatment, null, emitTreat);
+                  emitRuns(fillClip.runs, fillMetaB, hiddenTreatment, null, emitTreat);
                 });
               }
             }
@@ -4541,12 +4857,12 @@
             // fills the projected silhouette with the SAME clipped Archimedean
             // spiral the faceted path uses; 'surfaceHelix' (default curved) wraps
             // the parametric form. Non-spiral mappers are unaffected.
-            const spiralFlatClip = g.style.mapper === 'spiral' && sp.spiralMode === 'flatClip';
+            const spiralFlatClip = g.style.mapper === 'spiral' && styleWrapFlat(sp, 'spiral');
             // contourStyle 'region' opts a curved prim OUT of the parametric
             // parallels (SurfaceFill) into the flat silhouette inset rings — a
             // structurally different, topographic contour. 'surface' (default)
             // keeps the wrapped parallels. Non-contour mappers are unaffected.
-            const contourRegion = g.style.mapper === 'contour' && sp.contourStyle === 'region';
+            const contourRegion = g.style.mapper === 'contour' && styleWrapFlat(sp, 'contour');
             const chartParams = !draft && SurfaceFill && !spiralFlatClip && !contourRegion
               ? curvedChartParams(objById.get(record.id) || {}) : null;
             // X-ray: ask SurfaceFill for the far surface too (a tagged, sparser
@@ -4612,6 +4928,23 @@
                 toneLaw: Params.resolveToneLaw(sp),
                 toneQuantLevels: sp.toneQuantLevels,
                 toneFlowMode: sp.toneFlowMode,
+                // U4b: mono-law Density / turingStripe alignment, and the
+                // legacy marker that keeps a migrated contField* document on
+                // its original L*-linear curve (see cfWantedPitch).
+                densityScale: monoDensityScale(monoDensityOf(sp)),
+                stripeAlign: sp.stripeAlign,
+                fieldCurve: sp.fieldCurve,
+                // U6: artistic controls. Absent keys keep every engine literal.
+                chainMarks: sp.chainMarks,
+                patternMaturity: sp.patternMaturity,
+                stripeScale: sp.stripeScale,
+                nibAngleDeg: sp.nibAngleDeg,
+                nibContrast: sp.nibContrast,
+                taperLength: sp.taperLength,
+                taperTipWidth: sp.taperTipWidth,
+                taperSoftness: sp.taperSoftness,
+                waveLength: sp.waveLength,
+                waveCrest: sp.waveCrest,
                 // C4 — how a RIBBON LAW fills its ribbon's interior once the
                 // outline is drawn ('spiral' | 'concentric' | 'serpentine' |
                 // 'contourParallel'). Forwarded verbatim, for exactly the
@@ -4655,6 +4988,8 @@
                 dotShape: sp.dotShape,
                 dotAngle: finite(sp.dotAngle, 0),
                 dotSize: Number.isFinite(sp.dotSize) ? clamp(sp.dotSize, 0.1, 3) : undefined,
+                // U4b item 7: curved stipple honours Jitter (absent = lattice).
+                stippleJitter: Number.isFinite(sp.stippleJitter) ? clamp(sp.stippleJitter, 0, 100) : undefined,
                 toneOn,
                 intensityFn,
                 // Pass the tone LADDER so SurfaceFill quantizes each sample into
@@ -4672,7 +5007,13 @@
                 // The line budget is floored off the pen so the ladder has a grid
                 // to stand on (§5.4 #1); without a pen width it stays exactly
                 // `lineCountFor(density)`.
-                penWidth,
+                // F5 law draft: a mono law's whole lattice (pitch, spacing grid,
+                // reaction-diffusion cells, seeds) is pen-derived, so a scaled
+                // pen coarsens it uniformly and keeps its character.
+                penWidth: lawDraft && isMonoToneLaw(Params.resolveToneLaw(sp))
+                  ? penWidth * MONO_DRAFT_PEN_SCALE : penWidth,
+                // F5 law draft: ribbon laws emit weighted centrelines.
+                ribbonDraft: lawDraft,
                 // Density: `hatchSpacing` UNCHANGED at d>=50 (the O27 parity
                 // direction: same dial, same monotone sense as the faceted
                 // path). Below 50, `curvedSparseTonePitch` widens the same
@@ -4767,8 +5108,8 @@
             const groupTreat = strokeTreatment(g.style.params);
             // X-ray front 'faded' reads the near surface as dotted (lighter); the
             // back family is dashed at the back line type, on the back pen.
-            const frontTreat = (grpXray && grpXray.front === 'faded')
-              ? strokeTreatment({ ...sp, lineType: 'dotted' }) : groupTreat;
+            const frontTreat = (grpXray && grpXray.frontLineType !== 'solid')
+              ? strokeTreatment({ ...sp, lineType: grpXray.frontLineType }) : groupTreat;
             const backTreat = grpXray
               ? strokeTreatment({ ...sp, lineType: grpXray.backLineType, wobble: 0, overstroke: false })
               : NO_STROKE_TREATMENT;
@@ -4786,7 +5127,7 @@
             // stippleOut) keep the group's line type too.
             const hlDash = grpHL.treatment === 'dashed' || grpHL.treatment === 'dotted';
             const hlTreat = hlActive
-              ? strokeTreatment({ ...sp, ...(hlDash ? { lineType: hlLineType(grpHL.treatment) } : {}), wobble: 0, overstroke: false })
+              ? strokeTreatment({ ...sp, ...(hlDash ? { lineType: hlLineType(grpHL) } : {}), wobble: 0, overstroke: false })
               : NO_STROKE_TREATMENT;
             const hlMeta = {
               algorithm: 'scene3d',
@@ -4794,6 +5135,10 @@
               sceneTarget: { ...sceneTargetMeta(record.id, null, null, nearZ, false), highlight: true },
               ...(grpHL.penId ? { penId: grpHL.penId } : (g.style.penId ? { penId: g.style.penId } : {})),
             };
+            // U7 `toneBands`: split plain front lines by the tone under them.
+            const bandN = outBandCount(sp);
+            const bandSampler = bandN ? makeToneBandSampler(record, g.faces, bandN) : null;
+            if (bandSampler) lines = splitLinesByBand(lines, bandSampler);
             let backLineIdx = 0;
             // PAINT-ORDER FIX (fs-b2): TWO passes over `lines`, back family
             // first, front/highlight second — `lines` interleaves back/front
@@ -4843,9 +5188,23 @@
                 // Absent (every other law), the meta is untouched and the output
                 // is byte-identical.
                 const rawW = Number(line.weightScale);
-                const lineMeta = (Number.isFinite(rawW) && rawW !== 1)
+                const lineMeta0 = (Number.isFinite(rawW) && rawW !== 1)
                   ? { ...fillMeta, weightScale: round3(clamp(rawW, 0.1, 6)) }
                   : fillMeta;
+                // Three-pen laws tag each run with its pen TIER (0 fine / 1 medium /
+                // 2 broad). Keep it on the emitted path so export can route tiers
+                // to real pens; absent on every other law ⇒ meta untouched.
+                // U6 `tierPens`: tier k is drawn with pen tierPens[k] (the object's
+                // own pen palette). The real nib carries the width, so the
+                // modelled weightScale drops to 1. Off (null) = today's output.
+                const tierPen = (Number.isInteger(line.penTier) && Array.isArray(sp.tierPens))
+                  ? sp.tierPens[line.penTier] : null;
+                const bandPen = Number.isInteger(line.penBand) ? toneBandPen(sp, line.penBand) : null;
+                const lineMeta = Number.isInteger(line.penTier)
+                  ? { ...lineMeta0, penTier: line.penTier, ...(tierPen ? { penId: tierPen, weightScale: 1 } : {}) }
+                  : (Number.isInteger(line.penBand)
+                    ? { ...lineMeta0, toneBand: line.penBand, ...(bandPen ? { penId: bandPen } : {}) }
+                    : lineMeta0);
                 emitRuns(clip.runs, lineMeta, hiddenTreatment, null, frontTreat,
                   line.apex === true ? { apexMin: line.apexMin } : undefined);
               }
@@ -5155,15 +5514,7 @@
               };
               const hlCtx = { objectId: record.id, selfObject: true };
               if (hcfg.treatment === 'burst') {
-                const N = hcfg.burstCount;
-                const inner = hs.radius * 0.12;
-                for (let k = 0; k < N; k++) {
-                  const ang = (k / N) * Math.PI * 2;
-                  const p0 = { x: cx + Math.cos(ang) * inner, y: cy + Math.sin(ang) * inner, z: hs.depth };
-                  const p1 = { x: cx + Math.cos(ang) * hs.radius, y: cy + Math.sin(ang) * hs.radius, z: hs.depth };
-                  const clip = clipper.clipPath([p0, p1], hlCtx);
-                  emitRuns(clip.runs, hlMeta, hiddenTreatment, null, NO_STROKE_TREATMENT);
-                }
+                emitRadialRays(clipper, hlCtx, hlMeta, hiddenTreatment, cx, cy, hs.radius * 0.12, hs.radius, hcfg.burstCount, hs.depth);
               } else {
                 // altFill: fill the hotspot disc with the alternate mapper.
                 const SEG = 40;
@@ -5185,9 +5536,10 @@
                 } else {
                   const edges = [];
                   for (let k = 0; k < SEG; k++) edges.push([circle[k], circle[(k + 1) % SEG]]);
-                  alines = hatchSegments(edges, 45, spacing);
+                  const altA = hcfg.altAngle != null ? hcfg.altAngle : 45;
+                  alines = hatchSegments(edges, altA, spacing);
                   if (hcfg.altFillMapper === 'crosshatch') {
-                    hatchSegments(edges, 135, spacing).forEach((l) => alines.push(l));
+                    hatchSegments(edges, hcfg.altAngle != null ? altA + hcfg.altCross : 135, spacing).forEach((l) => alines.push(l));
                   }
                 }
                 alines.forEach((line) => {
@@ -5250,14 +5602,7 @@
               const N = clamp(Math.round(finite(emCfg.haloCount, 16)), 4, 48);
               const inner = radius * 0.9;
               const outer = radius * (1.2 + 0.5 * norm);
-              for (let k = 0; k < N; k++) {
-                const ang = (k / N) * Math.PI * 2;
-                const c = Math.cos(ang); const s = Math.sin(ang);
-                const p0 = { x: cx + c * inner, y: cy + s * inner, z: glowZ };
-                const p1 = { x: cx + c * outer, y: cy + s * outer, z: glowZ };
-                const clip = clipper.clipPath([p0, p1], emCtx);
-                emitRuns(clip.runs, emMeta, hiddenTreatment, null, NO_STROKE_TREATMENT);
-              }
+              emitRadialRays(clipper, emCtx, emMeta, hiddenTreatment, cx, cy, inner, outer, N, glowZ);
             } else {
               // ring: concentric circles expanding outward from the silhouette.
               const rings = clamp(Math.round(finite(emCfg.haloRings, 3)), 1, 6);
@@ -5444,6 +5789,7 @@
       // (CONTRACT L4) — cheap ground projection, no FillBoolean union — while a
       // full frame does the clean class union. Both are y≥0-clipped so a caster
       // straddling the receiver still projects a correct footprint.
+      G3.setSeedState(groupSeeds); // Scene Seed — shadows use the group's salt
       if (Shadows && typeof Shadows.build === 'function' && Lighting) {
         const shadowStyleOf = (objectId) => {
           const st = resolveStyle(objectId, null);

@@ -88,7 +88,7 @@ describe('Scene3D.Params — toneLaw whitelist', () => {
       styleTable: { scene: { mapper: 'hatch', params: { toneLaw: 'etfKang' } }, byObject: {}, byFace: {} },
     });
     expect(out.sceneVersion).toBe(Params.SCENE_VERSION);
-    expect(out.sceneVersion).toBe(4);
+    expect(out.sceneVersion).toBe(5);
   });
 
   test('toneQuantLevels clamps to [4, 256] and defaults to 128', () => {

@@ -593,6 +593,84 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+
+- **2026-10-04 — Fill-style review U7: deferred items (branch `3d-scene/fr-u7`, NOT pushed).** (1) **Tone bands**
+  (`toneBands` 2-4, `tierPens`) route any Fill Style's marks to pens by the tone under each mark (curved: face lookup
+  under each point, lines split at band edges; faceted: per-face tone); (2) *Band N pen* / *Tier N pen* pickers (shared
+  `UI.Select`); (3) **Voronoi Web chaining** at emit within one pen width + nearest-end ordering (sphere r45: 3885 ->
+  2401 paths, travel 70404 -> 5342 mm, ink +2.5 %); Maze uses the same ordering; (4) **light-relative hatch angle on
+  curved shapes: NOT done.** The curved hatch angle lives in each chart's own tangent frame (poles, seams). Adding the sun's
+  screen bearing rotates the whole grid and the lines do not follow the sun (tested). The hidden gate stays. A real
+  version needs a per-sample flow field along the projected sun, which is a new Fill Style, not an angle ref;
+  (5) **Stipple Simplify** exposed (Dot only); **Smoothing stays hidden** because it changes nothing on any mark
+  (measured: dot, ring, plus, tick, cross, all unchanged); (6) wireframe **Show hidden folded** into Hidden edges: Dashed
+  with `SCENE_MIGRATIONS[4]` (SCENE_VERSION 5), **Alt fill angle** wired to `altFillAngle` + shared Cross angle, **X-ray
+  Front line** shown greyed on faceted shapes (measured dead there); (7) Help Guide **3D Scene** accordion. Tests:
+  `tests/unit/scene3d-fr-u7-deferred.test.js`, `tests/integration/scene3d-fr-u7-panel.test.js`. Open: a `toneBands`
+  UI note when Tone is off; face-level `showHidden` keeps the old key.
+- **2026-10-04 — Fill-style review U6: artistic controls + pen routing (branch `3d-scene/fr-u6`, NOT
+  pushed).** New table `src/config/scene3d-fill-controls.js` (ranges + defaults). Tone **Gamma / Contrast**
+  and **Depth fade** at one point (`Regions.shapeTone`, wrapped around `combinedIntensity` in scene3d.js),
+  so every Fill Style reads them. Wave **Wavelength / Crest phase**; Width Ribbon **Nib angle / contrast**
+  and **Taper length / Tip width / Softness**; Turing **Maturity / Stripe scale**; hatch **Angle ref: Light**
+  (faceted); three-pen laws **Tier pens** (tier k -> pen k, `meta.penId` + `meta.penTier`, SVG groups by
+  pen); Maze **Chain walls**. All defaults byte-identical (40 fills pinned). Style-tab label column 58 -> 74 px.
+  Deferred: tone bands (N bands) -> pens for non-three-pen fills (no per-ruling band tag yet); Voronoi Web
+  chaining (edges stop 0.3-0.6 mm short of junctions, needs a change inside the law, before the inset);
+  Light-relative hatch on curved shapes (the curved angle is in the chart frame); Crest phase on the
+  legacy loop / zigzag waves changes the phase only (their clearance model is unchanged); a scene-level
+  (not per-object) Tone shaping group; a per-tier pen picker (today: pens 1-3 of the palette).
+- **2026-10-03 — Fill-style review U5: Fill Style merges, sub-setting folds, shadow reach (branch
+  `3d-scene/fr-u5`, NOT pushed).** Item 0: legacy documents keep their look under the monoline laws
+  (`monoDensityLegacyAt`, released by a Density edit). Picker 31 -> 20: Ladder (+ Continuous Field,
+  flicks, traverse), Width Ribbon (+ White Band, Nib Angle, Isophote Width), Bundle (+ Sub-Nib, Lozenge),
+  Wave (+ Interlock, Weave Depth, Trochoid, Amplitude Only, One Pen Down), Flow Field (+ Defect Split);
+  Origin Spiral is Spiral > Centre: Glint; Stipple links to the Dot Screen fill. Multi-key survivors use a
+  pattern table (`ENTRIES`) and a shared resolver (`scripts/tone-law-resolver.js`), so a pick that is not a
+  real combination snaps the other sub-controls. Every old id and retired key (`bandProfile`, `nesting`,
+  `penDown`, `fieldFloor`) loads byte-identical (hash goldens captured before the merges). Shadow Fill Style
+  row has the sub-controls: Weave Depth and Pen Stipple restored, 18 near-duplicate recipes not offered.
+  Sub-setting folds: Wrap, X-ray Front line / Back line / Depth cue toggles, Occluded select, Restyle line,
+  Thin, Alt fill Lines + Layers, shared ray emitter, one source for cross angles and plot floor.
+  Deferred: Mezzotint Region stays separate (mark class); wireframe Show hidden keeps its toggle (same
+  picture as Occluded: Dashed, pinned by a test); Alt fill still draws at fixed 45 / 135 deg; wave `cFlo`
+  stays internal; a faceted port of X-ray Front line (the row is hidden on faceted shapes); the 11
+  sub-setting rows' Playwright coverage rides on the e2e smoke only.
+- **2026-10-03 — Fill-style review U4b: engine defects (branch `3d-scene/fr-u4b`, NOT pushed).**
+  Mono Crosshatch duplicate pass removed (about -49 % ink, -43 to -50 % pen-downs on six direction-free laws); mono
+  Density live, Angle greyed where the law has no direction, Contour greyed (screen-space laws);
+  fieldMetric keeps the sigmoid (legacy ids pinned `fieldCurve:'lstar'`); Perceptual ramp on the
+  W-26 engine; `stripeAlign` param + row; curved Stipple Jitter wired; penCross / mkDotScreen read
+  their keys; Seed greys with an (i) from a measured reach table (`Params.styleUsesSeed`).
+  Dead keys: `highlightBands` (stage off, no control) and `xrayHiddenEdges` (live, no control).
+  Deferred: Density above 50 cannot tighten `dutyConst` / `endShorten` (already at the plot floor);
+  U6 owns the remaining turingStripe controls; the seed-reach table covers curved shapes by
+  sphere only (other curved shapes are assumed to share the generic engine) and is a fixed
+  table, so a new Fill Style needs its row.
+- **U4a (fill-review): Seed wired to all scene3d fills (legacy migration), tree Stroke Fill, pen-tier tag, compose determinism (stale FillBoolean latch), makeRotator callers.** Deferred: golden-ratio low-discrepancy walks outside the listed sites stay structural; per-tier pen routing at export is U6.
+- **2026-10-02 — Fill-style review U3: Object 3D panel reach (branch `3d-scene/fr-u3`, NOT
+  pushed).** Leaf Style tab parity with the scene Style editor through shared row renderers;
+  hidden-but-live keys exposed (wobbleScale, overstroke, spiralPitch, contourStep,
+  toneQuantLevels, shadowToneDepth); Density cap 500; measured gating (CONTROL_GATES) for
+  rows that do nothing in context; Fill Style curved Spiral/Stipple gate re-measured (45 → 1
+  greyed); Layers-panel Assign pen on object3d rows routes ink. Engine-side follow-ups for U4/U5:
+  wire Jitter on curved stipple (then drop its gate), Seed / Stroke Fill plumbing, mark shapes
+  and curvature-field hatch need roster entries (not exposed here), xrayHiddenEdges stays unread.
+- **2026-10-02 — Fill-style review U2 (kernel perf), branch `3d-scene/fr-u2`, NOT merged.**
+  Ribbon erosion from one oriented distance field + oriented PenFill (output change accepted by
+  Jay; invariants pinned in `tests/unit/scene3d-ribbon-raster-erode.test.js`); bit-identical
+  mono streamline grid, turingStripe allocations, ground-shadow fields and rotator memo (pinned
+  in `tests/unit/scene3d-u2-kernel-identity.test.js` + `geometry3d-rotator-identity.test.js`);
+  perf ratios in `tests/perf/u2-kernel-perf.test.js`. Follow-up: switch the hot
+  `rotatePoint` / `Scene.applyObjectTransform` callers in scene.js / surface-fill.js `sampleAt`
+  to `Geometry3D.makeRotator` (outside U2's files).
+- **2026-10-02 — Fill Style review U1: pipeline perf (branch `3d-scene/fr-u1`, NOT merged/pushed).**
+  B1 draft flag forwarded to scene groups; F5 law-preserving draft tier (ribbon laws as weighted
+  centrelines via SurfaceFill `ribbonDraft`, mono laws at pen × 2.5) with adaptive tier choice
+  (full ≤ 40 ms settled, flat if a law draft > 400 ms); B2 consumed object3d skips its standalone
+  render and child previews route to the owning group; B3 deferred + cancellable release settle;
+  NEW-3 full-compose memo keyed on the complete input signature. Open: mono laws still pay a
+  ~130–250 ms fixed cost per draft frame (field set-up inside surface-fill-mono.js, U2 scope).
 - **Capsule cap-seam hatch bend (2026-10-11).** SurfaceFill's capsule chart is now arc-length parameterised (`capsuleArcChart`); angled hatch no longer kinks at the barrel/cap seam. Shadow-anatomy band-order clause re-pinned as a near-tie.
 - **Vitest process cleanup (2026-10-04).** Added independent supervision, per-attempt deadlines, owned-group cleanup, and process-level regression coverage; preserved the narrow RPC retry policy. Integrated inside the shared test queue.
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1

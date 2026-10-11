@@ -193,7 +193,9 @@ describe('Fill Style — the shared mark-class config', () => {
     expect((flowGroup ? flowGroup.options.map((o) => o.value) : [])).not.toContain('turingStripe');
     // mazeFill / voronoiWeb are its new groupmates, exactly as the audit named.
     expect(webGroup.options.map((o) => o.value)).toEqual(
-      expect.arrayContaining(['mazeFill', 'voronoiWeb', 'originSpiral', 'deepFillTSP']),
+      // U5: deepFillTSP is now Ladder > Extra marks > Deep-shadow traverse.
+      // originSpiral is now the Spiral Type's Glint Centre (U5 M9a).
+      expect.arrayContaining(['mazeFill', 'voronoiWeb']),
     );
   });
 
@@ -254,19 +256,15 @@ describe('Fill Style — the shared mark-class config', () => {
     // the option stays in the <select>, greyed and suffixed, never removed —
     // see the "groups(mode) disables the dead options" test above and
     // fill-audit-handoff's W-02 note on the same convention).
-    test('groups("torus") marks originSpiral disabled + suffixed; groups("cone"/"sphere") leaves it live (W-10d)', () => {
+    test('originSpiral is no longer a Fill Style row (U5 M9a: Spiral > Centre: Glint); the raw id still answers entry()/resolve()', () => {
       const optionsFor = (mode) => F.groups(mode).reduce((a, g) => a.concat(g.options), []);
-      const torusEntry = optionsFor('torus').find((o) => o.value === 'originSpiral');
-      expect(torusEntry).toBeTruthy();
-      expect(torusEntry.disabled).toBe(true);
-      expect(torusEntry.label).toContain(F.NO_EFFECT_SUFFIX);
-
-      ['cone', 'sphere'].forEach((mode) => {
-        const entry = optionsFor(mode).find((o) => o.value === 'originSpiral');
-        expect(entry).toBeTruthy();
-        expect(entry.disabled).toBeFalsy();
-        expect(entry.label).not.toContain(F.NO_EFFECT_SUFFIX);
+      ['torus', 'cone', 'sphere'].forEach((mode) => {
+        expect(optionsFor(mode).find((o) => o.value === 'originSpiral')).toBeUndefined();
       });
+      expect(window.Vectura.SCENE3D_TONE_LAWS.MOVED.originSpiral).toEqual({
+        mapper: 'spiral', from: ['hatch', 'crosshatch', 'contour'], params: { spiralCenter: 'highlight' },
+      });
+      expect(F.entry('originSpiral')).toBeTruthy();
     });
 
     // ── W-10d deserialization — the gate is picker-presentation ONLY at the
@@ -291,10 +289,13 @@ describe('Fill Style — the shared mark-class config', () => {
     // file).
     test('a torus layer saved with toneLaw "originSpiral": normalizeStyle alone is context-blind (unchanged); the full sanitizer migrates it (W-10d / W-10d-2)', () => {
       const P = window.Vectura.Scene3D.Params;
+      // U5 (M9a): normalizeStyle moves it to the Spiral Type with Centre: Glint (still context-blind).
       const style = P.normalizeStyle({ mapper: 'hatch', params: { toneLaw: 'originSpiral' } });
-      expect(style.params.toneLaw).toBe('originSpiral');
+      expect(style.mapper).toBe('spiral');
+      expect(style.params.spiralCenter).toBe('highlight');
+      expect(style.params.toneLaw).toBeUndefined();
       expect(F.resolve('originSpiral')).toBe('originSpiral');
-      expect(F.isReachableOn(F.resolve(style.params.toneLaw), 'torus')).toBe(false);
+      expect(F.isReachableOn('originSpiral', 'torus')).toBe(false);
       // Round-trip through the full scene sanitizer: a torus object carrying
       // this style in styleTable.byObject must not throw, and (W-10d-2,
       // Contract A) IS migrated to the picker's own fallback.
@@ -472,8 +473,10 @@ describe('Fill Style — the shared mark-class config', () => {
       // total - 11 = 20. Re-measured directly (not assumed): `groups('box')`
       // now offers 31 options (30 PICKER_IDS + 'ladder'), confirmed failing
       // at 23 (`expected 20 to be 23`) before this edit, passing at 20 after.
-      expect(alive.length).toBe(11);
-      expect(dead.length).toBe(20);
+      // U5: 21 options (20 PICKER_IDS + ladder); defectSplit is now a Flow Field
+      // sub-option, so 10 are alive (none, ladder, 8 mono) and 11 dead.
+      expect(alive.length).toBe(9);
+      expect(dead.length).toBe(11);
       // Group STRUCTURE (count, membership) is unaffected — only reachability.
       expect(g.length).toBe(F.groups('sphere').length);
     });
@@ -547,8 +550,12 @@ describe('Fill Style — the shared mark-class config', () => {
     // top-level const: `R` is populated by the outer `beforeAll`, which has
     // not run yet when this describe body itself executes at collection
     // time (same reason `ALL_IDS` above is a function, not a value).
-    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
-    const curvedSpiralStippleInert = () => R.IDS.filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id));
+    // U3 — STALE CONTRACT UPDATE (fill-style review r3 headline 4 / r2
+    // NEW-5): the gate is now the MEASURED Ladder-identical set (see
+    // scene3d-fill-style-reach-measured.test.js, which re-renders every id
+    // against the engine). Only deepFillTSP draws exactly like Ladder on a
+    // curved Spiral/Stipple; every other id draws a different picture.
+    const curvedSpiralStippleInert = () => ['deepFillTSP'];
 
     // ── Item 1 — faceted + non-hatch/crosshatch disables EVERYTHING ─────────
     test('faceted (box) + Contour/Spiral/Stipple disables every option, including None and Ladder', () => {
@@ -605,7 +612,7 @@ describe('Fill Style — the shared mark-class config', () => {
     // original 9 true no-ops PLUS 36 bare-centreline/rung-skipping laws,
     // F-03 / C-09..C-13) is disabled — STALE ASSERTION UPDATE: this used to
     // pin exactly the 9 mono laws; W-03 deliberately widened the gate.
-    test('curved (sphere) + spiral disables all but none/ladder/fineLadder/phaseFineLadder (W-03)', () => {
+    test('curved (sphere) + spiral disables only the measured Ladder-identical set (U3)', () => {
       const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
         const expected = inert.indexOf(id) === -1;
@@ -615,13 +622,13 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.isReachableOn('none', 'sphere', undefined, 'spiral')).toBe(true);
       expect(F.isReachableOn('fineLadder', 'sphere', undefined, 'spiral')).toBe(true);
       expect(F.isReachableOn('phaseFineLadder', 'sphere', undefined, 'spiral')).toBe(true);
-      // The exact count W-03 measured: 45 of 48 roster laws gated (+ the 3
-      // kept: none/fineLadder/phaseFineLadder = 48; 'ladder' is the 49th
-      // total option and is not part of the roster's 48).
-      expect(inert.length).toBe(45);
+      // U3: 1 of 48 measured identical to Ladder (was 45 inferred under W-03).
+      expect(inert.length).toBe(1);
+      expect(F.isReachableOn('taperedEnds', 'sphere', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('mazeFill', 'sphere', undefined, 'spiral')).toBe(true);
     });
 
-    test('curved (sphere) + stipple disables the SAME set as spiral (W-03)', () => {
+    test('curved (sphere) + stipple disables the SAME set as spiral (U3)', () => {
       const inert = curvedSpiralStippleInert();
       R.IDS.forEach((id) => {
         const expected = inert.indexOf(id) === -1;
@@ -675,15 +682,11 @@ describe('Fill Style — the shared mark-class config', () => {
       expect(F.isReachableOn('fineLadder', 'pyramid', undefined, 'contour')).toBe(true);
     });
 
-    test('pyramid: None is ALSO gated on spiral/stipple (byte-identical to a large cluster there)', () => {
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'spiral')).toBe(false);
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'stipple')).toBe(false);
-      // ...but not elsewhere — None still differs on pyramid hatch/crosshatch/contour.
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'hatch')).toBe(true);
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'crosshatch')).toBe(true);
-      expect(F.isReachableOn('none', 'pyramid', undefined, 'contour')).toBe(true);
-      // And None is untouched on a NON-pyramid curved primitive under spiral.
-      expect(F.isReachableOn('none', 'sphere', undefined, 'spiral')).toBe(true);
+    test('pyramid: None is NOT gated on spiral/stipple (U3: measured distinct from Ladder); fineLadder IS gated on pyramid + stipple', () => {
+      expect(F.isReachableOn('none', 'pyramid', undefined, 'spiral')).toBe(true);
+      expect(F.isReachableOn('none', 'pyramid', undefined, 'stipple')).toBe(true);
+      expect(F.isReachableOn('fineLadder', 'pyramid', undefined, 'stipple')).toBe(false);
+      expect(F.isReachableOn('fineLadder', 'pyramid', undefined, 'spiral')).toBe(true);
     });
 
     // ── Item 3 — facetedNote is mapper-aware ─────────────────────────────────
@@ -1159,17 +1162,19 @@ describe('Fill Style — context-bar Style flyout', () => {
     const { fly } = openStyle({
       styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldTouch' } } }),
     });
-    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('contFieldSigmoid');
-    expect(rowCtl(fly, 'Field floor').querySelector('select').value).toBe('touch');
+    // U5: contFieldSigmoid folded into Ladder (Spacing: Continuous field).
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('ladder');
+    expect(rowCtl(fly, 'Spacing').querySelector('select').value).toBe('field');
+    expect(rowCtl(fly, 'Closest approach').querySelector('select').value).toBe('touch');
     expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeTruthy();
   });
 
   test('U5b — picking a folded sub-control value (Field floor: Ink-width floor) surfaces contFieldTouch\'s own caveat in the ctxbar flyout', () => {
     const { fly } = openStyle({
-      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldSigmoid' } } }),
+      styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'hatch', params: { toneLaw: 'ladder', spacing: 'field' } } }),
     });
     expect(openFly().querySelector('.ctxbar-fly-note.is-caveat')).toBeNull();
-    const fieldFloorSel = rowCtl(fly, 'Field floor').querySelector('select');
+    const fieldFloorSel = rowCtl(fly, 'Closest approach').querySelector('select');
     fieldFloorSel.value = 'touch';
     fire(fieldFloorSel, 'change');
     const caveat = openFly().querySelector('.ctxbar-fly-note.is-caveat');
@@ -1307,14 +1312,14 @@ describe('Fill Style — context-bar Style flyout', () => {
   // STALE ASSERTION UPDATE (U1) — fineLadder/phaseFineLadder are folded into
   // ladder's rungMode sub-control and no longer appear as their own row; see
   // the in-test comment below.
-  test('item 5 — a sphere selection with Type=Spiral disables all but none/ladder (still reachable through ladder\'s own sub-control) (W-03)', () => {
+  test('item 5 — a sphere selection with Type=Spiral disables only the measured Ladder-identical ids (U3)', () => {
     const SPHERE = { id: 'obj-1', name: 'Sphere', primitive: 'sphere', params: { sx: 40, sy: 40, sz: 40, detail: 16 }, transform: { x: 0, y: 20, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid' };
     const { fly } = openStyle({ objects: [SPHERE], styleTable: styleTable({ 'obj-1': { penId: null, mapper: 'spiral', params: {} } }) });
     const R = window.Vectura.SCENE3D_TONE_LAWS;
     const roster = R.IDS;
-    const CURVED_SPIRAL_STIPPLE_LIVE = new Set(['none', 'fineLadder', 'phaseFineLadder']);
+    // U3 — measured Ladder-identical set (scene3d-fill-style-reach-measured.test.js).
     const CURVED_SPIRAL_STIPPLE_INERT = roster
-      .filter((id) => !CURVED_SPIRAL_STIPPLE_LIVE.has(id))
+      .filter((id) => id === 'deepFillTSP')
       // Fill-roster collapse — a folded id (e.g. perceptualRamp, U1) is no
       // longer its OWN <option> at all (it is reachable only through its
       // survivor's sub-control), so it cannot appear in the rendered
@@ -1413,11 +1418,11 @@ describe('Fill Style — context-bar Style flyout', () => {
       return { group, objChild };
     };
 
-    test('R3 — ctxbar flyout, real tree child, raw contFieldTouch: Field floor shows touch, not the plot default', () => {
+    test('R3 — ctxbar flyout, real tree child, raw contFieldTouch: Closest approach shows touch, not the plot default', () => {
       buildTreeWithStyle({ penId: null, mapper: 'hatch', params: { toneLaw: 'contFieldTouch' } });
       pillByLabel('Style').click();
       const fly = openFly();
-      expect(rowCtl(fly, 'Field floor').querySelector('select').value).toBe('touch');
+      expect(rowCtl(fly, 'Closest approach').querySelector('select').value).toBe('touch');
     });
 
     test('R3g — over-fix guard: Field metric (the OTHER descriptor on the same law) is untouched', () => {
@@ -1574,9 +1579,9 @@ describe('Fill Style — docked 3D Scene panel', () => {
   });
 
   test('U5b — picking a folded sub-control value (Field floor: Ink-width floor) surfaces contFieldTouch\'s own caveat, not the survivor\'s (none)', () => {
-    const { container } = openStyle(hatchOn({ toneLaw: 'contFieldSigmoid' }));
+    const { container } = openStyle(hatchOn({ toneLaw: 'ladder', spacing: 'field' }));
     expect(stylePage(container).querySelector('.vs3-lawnote.is-caveat')).toBeNull();
-    const fieldFloorSel = styleRow(container, 'Field floor').querySelector('select');
+    const fieldFloorSel = styleRow(container, 'Closest approach').querySelector('select');
     fieldFloorSel.value = 'touch';
     fire(fieldFloorSel, 'change');
     const caveat = stylePage(container).querySelector('.vs3-lawnote.is-caveat');
@@ -1588,10 +1593,12 @@ describe('Fill Style — docked 3D Scene panel', () => {
   // panel; it now lives behind a compact (i) info affordance revealed on
   // hover OR keyboard focus, while the caveat (a genuinely useful warning)
   // stays OUTSIDE the popover, always visible — relocated, not lost.
+  // U4b: scoped to the Fill Style row — a greyed Angle row (monoline law with no
+  // direction) now carries its own (i), and it comes first in the page.
   describe('fs-m2 Job 2 — Fill Style description behind an (i) info popover', () => {
     test('an (i) button exists, aria-describedby-linked to a popover holding mechanism/strengths', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       expect(btn).toBeTruthy();
       expect(btn.tagName).toBe('BUTTON');
       expect(btn.getAttribute('aria-label')).toMatch(/\S/);
@@ -1608,7 +1615,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
 
     test('focusing the (i) button opens the popover (keyboard-reachable, not hover-only); blur closes it', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       expect(pop.classList.contains('is-open')).toBe(false);
       expect(btn.getAttribute('aria-expanded')).toBe('false');
@@ -1639,7 +1646,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
   describe('fs-y1 Job 1 — the (i) is CLICK-driven, not hover-only', () => {
     test('clicking the (i) opens the popover even with no prior hover/focus', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       expect(pop.classList.contains('is-open')).toBe(false);
       fire(btn, 'click');
@@ -1649,7 +1656,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
 
     test('a click-opened popover stays open after mouseleave/blur (pinned), then a second click closes it', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       fire(btn, 'click');
       expect(pop.classList.contains('is-open')).toBe(true);
@@ -1662,7 +1669,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
 
     test('a click outside the popover closes a pinned-open one', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       fire(btn, 'click');
       expect(pop.classList.contains('is-open')).toBe(true);
@@ -1672,7 +1679,7 @@ describe('Fill Style — docked 3D Scene panel', () => {
 
     test('Escape un-pins and closes a click-opened popover', () => {
       const { container } = openStyle(hatchOn({ toneLaw: 'voronoiWeb' }));
-      const btn = stylePage(container).querySelector('.vs3-lawinfo-btn');
+      const btn = styleRow(container, 'Fill Style').querySelector('.vs3-lawinfo-btn');
       const pop = stylePage(container).querySelector(`#${btn.getAttribute('aria-describedby')}`);
       fire(btn, 'click');
       expect(pop.classList.contains('is-open')).toBe(true);
@@ -1831,9 +1838,9 @@ describe('Fill Style — docked 3D Scene panel', () => {
   test('the LEAF write lands on the leaf bag — the object-scope write, and the only one that reaches it', () => {
     const { container, layer } = mountLeaf('object3d', { penId: null, mapper: 'hatch', params: { fillCurves: true } });
     const sel = leafRow(container, 'Fill Style').querySelector('select');
-    sel.value = 'trochoidLoop';
+    sel.value = 'weightModulated';
     fire(sel, 'change');
-    expect(layer.params.style.params.toneLaw).toBe('trochoidLoop');
+    expect(layer.params.style.params.toneLaw).toBe('weightModulated');
     expect(layer.params.style.params.fillCurves).toBe(true);
   });
 
@@ -2111,10 +2118,11 @@ describe('Shadow Fill Style — the shared toneLawApplies filter', () => {
     expect(full).toBe(R.PICKER_IDS.length + 1);
     const allIds = F.groups(null, null, null).reduce((acc, g) => acc.concat(g.options.map((o) => o.value)), []);
     // Flow/web is a fact about the roster's own mark-class assignment
-    // (independent of shadows.js) — fixed today at 7 ids, verified against
-    // the live predicate rather than asserted by name.
+    // (independent of shadows.js) — fixed today at 4 ids (U5: defectSplit, deepFillTSP
+    // and originSpiral left the picker), verified against the live predicate rather
+    // than asserted by name.
     const markClassExcluded = allIds.filter((id) => ['flow', 'web'].includes(F.markClass(id)));
-    expect(markClassExcluded.length).toBe(7);
+    expect(markClassExcluded.length).toBe(4);
     markClassExcluded.forEach((id) => expect(Shadows.toneLawApplies(id)).toBe(false));
     // Everything else the predicate excludes is per-id narrowing on top of an
     // otherwise-applicable class (isophoteWidth, onePenDown, and whatever
@@ -2277,7 +2285,9 @@ describe('Shadow Fill Style — context-bar Shadow flyout', () => {
   test('U9b — a raw legacy shadowToneLaw (onePenDown): both the select AND the (i) popover show Interlock Weave (byte-identical duplicate, not its own entry)', () => {
     const { fly } = openShadow(['obj-1'], { shadow: { shadowToneLaw: 'onePenDown' } });
     const row = rowCtl(fly, 'Fill Style').parentNode;
-    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('interlockWeave');
+    // U5: interlockWeave is Wave > Phase: Interlocked (survivor ampSpacing).
+    expect(rowCtl(fly, 'Fill Style').querySelector('select').value).toBe('ampSpacing');
+    expect(rowCtl(fly, 'Look').querySelector('select').value).toBe('interlockWeave');
     const btn = row.querySelector('.vs3-lawinfo-btn');
     fire(btn, 'click');
     const box = fly.querySelector(`#${btn.getAttribute('aria-describedby')}`);
@@ -2442,7 +2452,9 @@ describe('Shadow Fill Style — docked 3D Scene panel', () => {
     const { container } = mount({ shadow: { shadowToneLaw: 'onePenDown' } });
     const host2 = shadowHost(container);
     const row = rowCtl(host2, 'Fill Style').parentNode;
-    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('interlockWeave');
+    // U5: interlockWeave is Wave > Phase: Interlocked (survivor ampSpacing).
+    expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('ampSpacing');
+    expect(rowCtl(host2, 'Look').querySelector('select').value).toBe('interlockWeave');
     const btn = row.querySelector('.vs3-lawinfo-btn');
     btn.dispatchEvent(new window.Event('click', { bubbles: true }));
     const box = host2.querySelector(`#${btn.getAttribute('aria-describedby')}`);
@@ -2772,7 +2784,7 @@ describe('Shadow Fill Style — hidden whenever inert (docked 3D Scene panel)', 
     expect(rowCtl(host2, 'Fill Style').querySelector('select').value).toBe('mkScribble');
 
     const layersCtl = rowCtl(host2, 'Layers');
-    const onBtn = Array.from(layersCtl.querySelectorAll('button')).find((b) => /^on$/i.test((b.textContent || '').trim()));
+    const onBtn = Array.from(layersCtl.querySelectorAll('button')).find((b) => /^3$/.test((b.textContent || '').trim()));
     expect(onBtn).toBeTruthy();
     fire(onBtn, 'click');
     host2 = shadowHost(container);
@@ -3096,11 +3108,14 @@ describe('W-10d-2 — curated unreachable toneLaw write-back (Contract A)', () =
     const gid = e1.addLayer('scene3d');
     const group = e1.layers.find((l) => l.id === gid);
     const obj = e1.getLayerDescendants(gid).find((l) => l.type === 'object3d');
-    // Reachable to start (sphere+hatch+originSpiral is a live, distinct picture).
+    // Reachable to start (sphere+hatch+originSpiral is a live, distinct picture). U5 (M9a):
+    // Origin Spiral is the Spiral Type with Centre: Glint, so the composed style says so.
     obj.params.primitive = 'sphere';
     obj.params.style = { penId: null, mapper: 'hatch', params: { toneLaw: 'originSpiral' } };
     e1.computeAllDisplayGeometry();
-    expect(V.Scene3D.Params.resolveToneLaw(group._sceneAssembled.styleTable.byObject[obj.id].params)).toBe('originSpiral');
+    const composed = group._sceneAssembled.styleTable.byObject[obj.id];
+    expect(composed.mapper).toBe('spiral');
+    expect(composed.params.spiralCenter).toBe('highlight');
     // Live edit makes it unreachable.
     obj.params.primitive = 'torus';
     e1.computeAllDisplayGeometry(); // compose #1

@@ -34,6 +34,7 @@
     dot,
     normalize,
     rotatePoint,
+    makeRotator,
     projectPoint,
     resolveProjection,
     faceNormal,
@@ -245,6 +246,18 @@
     return v(r.x + (t.x === undefined ? 0 : t.x), r.y + (t.y === undefined ? 0 : t.y), r.z + (t.z === undefined ? 0 : t.z));
   };
 
+  // Same transform with the rotation trig resolved ONCE (Geometry3D.makeRotator,
+  // bit-identical to rotatePoint). For per-vertex loops over one object.
+  const makeObjectTransform = (t) => {
+    const s = finite(t.scale, 1);
+    const sx = finite(t.sx, s);
+    const sy = finite(t.sy, s);
+    const sz = finite(t.sz, s);
+    const rot = makeRotator({ yaw: t.yaw, pitch: t.pitch, roll: t.roll });
+    const off = v(t.x, t.y, t.z);
+    return (pt) => add(rot(v(pt.x * sx, pt.y * sy, pt.z * sz)), off);
+  };
+
   const faceRecord = (indices, faceId, objectId, world, camPts, projected, camPos) => {
     const worldVerts = indices.map((i) => world[i]);
     const camVerts = indices.map((i) => camPts[i]);
@@ -273,10 +286,10 @@
   };
 
   const buildRecord = (obj, meshData, camAngles, projOpts, camPos) => {
-    const world = meshData.vertices.map((pt) => (meshData.pretransformed
-      ? pt
-      : applyObjectTransform(pt, obj.transform)));
-    const camPts = world.map((pt) => rotatePoint(pt, camAngles));
+    const xform = meshData.pretransformed ? null : makeObjectTransform(obj.transform);
+    const world = meshData.vertices.map((pt) => (xform ? xform(pt) : pt));
+    const camRot = makeRotator(camAngles);
+    const camPts = world.map((pt) => camRot(pt));
     const projected = camPts.map((pt) => projectPoint(pt, projOpts));
     const faces = meshData.faces.map((indices, index) => faceRecord(
       indices, meshData.faceIds[index], obj.id, world, camPts, projected, camPos));
@@ -471,12 +484,13 @@
     const ground = p.ground && p.ground.enabled
       ? buildGroundRecord(bounds, camAngles, projOpts, camPos, p.ground)
       : null;
+    const camRotator = makeRotator(camAngles);
     return {
       params: p, camera: cam, projOpts, objects, ground, width, height,
       // Project an arbitrary WORLD point to screen through the same camera —
       // lets downstream stages (e.g. in-plane surface hatch) place new geometry
       // on a face and foreshorten it correctly.
-      projectWorld: (pt) => projectPoint(rotatePoint(pt, camAngles), projOpts),
+      projectWorld: (pt) => projectPoint(camRotator(pt), projOpts),
     };
   };
 

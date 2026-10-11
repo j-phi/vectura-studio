@@ -210,6 +210,12 @@
 
   // ── Signed distance field over the region ────────────────────────────────
   const buildField = (rings, cs) => {
+    const f = insideMask(rings, cs);
+    return f ? finishField(f) : null;
+  };
+
+  /** Scanline inside mask of a ring set on a `cs` grid (padded 3 cells). */
+  const insideMask = (rings, cs) => {
     const b = regionBounds(rings);
     if (!isNum(b.minX)) return null;
     const pad = 3 * cs;
@@ -242,7 +248,7 @@
         for (let i = i0; i <= i1; i += 1) inside[j * nx + i] = 1;
       }
     }
-    return finishField({ nx, ny, ox, oy, cs, inside });
+    return { nx, ny, ox, oy, cs, inside };
   };
 
   /** Attach the signed distance to an inside mask (shared by region + repair blobs). */
@@ -1390,6 +1396,383 @@
     return pieces;
   };
 
+  // ── Raster erosion in an oriented frame (fill-style review §2(d), U2) ─────
+  //
+  // `erodeLevels(region, depths, opts)` erodes ONE region to several depths
+  // from ONE signed distance field. A Euclidean SDF composes —
+  // erode(R, a + b) is just the a + b level set of R's own field — so a caller
+  // that needs erode(R, a) AND erode(erode(R, a), b) (SurfaceFill's ribbon
+  // outline + fill region) pays for one raster instead of two polygon-clipping
+  // band unions. The field is built in the ring set's PRINCIPAL-AXIS frame: a
+  // long thin ribbon on a diagonal then rasterizes as a long thin grid instead
+  // of a mostly-empty square one. Every level comes back in that frame;
+  // `frame.toWorld` maps a point back, and a caller can hand the frame-space
+  // loops straight to `fillRegion` so PenFill's own grid is oriented too.
+  //
+  // opts:
+  //   cellSize     — field cell (default: smallest depth / 4)
+  //   levelOffset  — extra depth, in cells, added to a level (a number for
+  //                  all, or one per depth; default 1): the raster SDF is only
+  //                  good to about half a cell, and the offset keeps an
+  //                  unguarded level inside the exact erosion.
+  //   simplify     — contour simplification tolerance, in cells (default 0.25)
+  //   guard        — per level: false | true | 'snap'. A guarded level gets an
+  //                  EXACT check:
+  //                  every vertex is measured against the input boundary, and
+  //                  one that is shallower than its depth (or outside the
+  //                  region) is pushed out to the depth, radially from its
+  //                  nearest boundary point, or dropped if that fails. The
+  //                  raster cannot see a notch or slit narrower than a cell,
+  //                  and a contour vertex beside one sits too close to it.
+  //                  'snap' also pulls every too-deep vertex back to exactly
+  //                  the depth (see `guardLoops`).
+  // returns null, or { levels: [loops per depth, in the frame], frame, cs,
+  //                    guard: { shallow, moved, dropped, snapped } }
+  const principalFrame = (rings) => {
+    let n = 0; let mx = 0; let my = 0;
+    for (const r of rings) for (const q of r) { mx += q.x; my += q.y; n += 1; }
+    mx /= n; my /= n;
+    let sxx = 0; let syy = 0; let sxy = 0;
+    for (const r of rings) {
+      for (const q of r) {
+        const dx = q.x - mx; const dy = q.y - my;
+        sxx += dx * dx; syy += dy * dy; sxy += dx * dy;
+      }
+    }
+    const th = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    const c = Math.cos(th); const s = Math.sin(th);
+    return {
+      angle: th,
+      toFrame: (q) => { const x = q.x - mx; const y = q.y - my; return { x: x * c + y * s, y: -x * s + y * c }; },
+      toWorld: (q) => ({ x: mx + q.x * c - q.y * s, y: my + q.x * s + q.y * c }),
+    };
+  };
+
+  /** Nearest point on a ring set's boundary, through a uniform segment grid. */
+  const makeBoundaryIndex = (rings) => {
+    const ax = []; const ay = []; const bx = []; const by = [];
+    let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+    for (const r of rings) {
+      for (let i = 0; i < r.length; i += 1) {
+        const a = r[i]; const b = r[(i + 1) % r.length];
+        ax.push(a.x); ay.push(a.y); bx.push(b.x); by.push(b.y);
+        if (a.x < minX) minX = a.x;
+        if (a.x > maxX) maxX = a.x;
+        if (a.y < minY) minY = a.y;
+        if (a.y > maxY) maxY = a.y;
+      }
+    }
+    const n = ax.length;
+    const W = Math.max(1e-9, maxX - minX); const H = Math.max(1e-9, maxY - minY);
+    let G = Math.sqrt((W * H) / Math.max(16, n));
+    G = Math.max(G, W / 512, H / 512, 1e-9);
+    const gx = Math.ceil(W / G) + 1; const gy = Math.ceil(H / G) + 1;
+    const cells = new Array(gx * gy);
+    const cx = (x) => { const i = Math.floor((x - minX) / G); return i < 0 ? 0 : (i >= gx ? gx - 1 : i); };
+    const cy = (y) => { const j = Math.floor((y - minY) / G); return j < 0 ? 0 : (j >= gy ? gy - 1 : j); };
+    for (let s = 0; s < n; s += 1) {
+      const i0 = cx(Math.min(ax[s], bx[s])); const i1 = cx(Math.max(ax[s], bx[s]));
+      const j0 = cy(Math.min(ay[s], by[s])); const j1 = cy(Math.max(ay[s], by[s]));
+      for (let j = j0; j <= j1; j += 1) {
+        for (let i = i0; i <= i1; i += 1) {
+          const k = j * gx + i;
+          if (cells[k]) cells[k].push(s); else cells[k] = [s];
+        }
+      }
+    }
+    const stamp = new Int32Array(n);
+    let q = 0;
+    const maxRing = Math.max(gx, gy);
+    const query = (px, py) => {
+      q += 1;
+      const ci = cx(px); const cj = cy(py);
+      let best = Infinity; let qx = px; let qy = py; let bs = -1; let bt = 0;
+      for (let r = 0; r <= maxRing; r += 1) {
+        // Rings < r are done; anything on ring >= r is >= (r - 1)·G away.
+        if (r >= 3) { const lb = (r - 2) * G; if (best <= lb * lb) break; }
+        for (let j = cj - r; j <= cj + r; j += 1) {
+          if (j < 0 || j >= gy) continue;
+          const edge = j === cj - r || j === cj + r;
+          for (let i = ci - r; i <= ci + r; i += (edge ? 1 : (2 * r) || 1)) {
+            if (i < 0 || i >= gx) continue;
+            const list = cells[j * gx + i];
+            if (!list) continue;
+            for (let m = 0; m < list.length; m += 1) {
+              const s = list[m];
+              if (stamp[s] === q) continue;
+              stamp[s] = q;
+              const vx = bx[s] - ax[s]; const vy = by[s] - ay[s];
+              const vv = vx * vx + vy * vy;
+              let t = vv > 0 ? ((px - ax[s]) * vx + (py - ay[s]) * vy) / vv : 0;
+              if (t < 0) t = 0; else if (t > 1) t = 1;
+              const ex = ax[s] + vx * t; const ey = ay[s] + vy * t;
+              const d = (px - ex) * (px - ex) + (py - ey) * (py - ey);
+              if (d < best) { best = d; qx = ex; qy = ey; bs = s; bt = t; }
+            }
+          }
+        }
+      }
+      return { d: Math.sqrt(best), x: qx, y: qy, s: bs, t: bt };
+    };
+    // The segment's own line, for corner reconstruction.
+    query.seg = (k) => ({ ax: ax[k], ay: ay[k], bx: bx[k], by: by[k] });
+    return query;
+  };
+
+  const GUARD_EPS = 1e-6;
+  // How many push-out steps a shallow vertex gets (each moves it straight away
+  // from its current nearest boundary point; at a reflex corner the next
+  // nearest point is the neighbouring edge, so it takes a few).
+  const PUSH_ITERS = 10;
+  // How close to its depth a snapped level's edge midpoint must sit, in cells.
+  const SNAP_TOL_CELLS = 0.02;
+  // `snap`: also pull every vertex the raster put DEEPER than `depth` back to
+  // exactly `depth`, along the segment to its nearest boundary point. That move
+  // is always valid without a re-check: the open disk of radius e around the
+  // vertex holds no boundary, the moved point sits on that segment at distance
+  // `depth` from its end, and its own disk of radius `depth` lies inside the
+  // first — so it is inside the region and exactly `depth` from the boundary.
+  // With it a guarded level reproduces the exact erosion's boundary vertex for
+  // vertex, instead of riding up to a cell deeper (a lengthwise strip of bare
+  // paper along every ribbon edge).
+  const guardLoops = (loops, rings, depth, nearest, stat, snap, snapTol) => {
+    const out = [];
+    for (const loop of loops) {
+      // `slots[i]` is the guarded vertex i, or null where it had to be dropped.
+      const slots = [];
+      for (const p of loop) {
+        let cur = p;
+        let ok = false;
+        for (let it = 0; it < PUSH_ITERS; it += 1) {
+          const nb = nearest(cur.x, cur.y);
+          // A vertex the raster put >= depth from every edge cannot be outside:
+          // an outside pocket that wide would have been rasterized. Only a
+          // shallow one pays for the inside test.
+          if (nb.d >= depth - GUARD_EPS && (it === 0 || pointInRegion(cur.x, cur.y, rings))) {
+            if (snap && it === 0 && nb.d > depth + GUARD_EPS) {
+              const f = depth / nb.d;
+              cur = { x: nb.x + (cur.x - nb.x) * f, y: nb.y + (cur.y - nb.y) * f };
+              stat.snapped += 1;
+            }
+            ok = true;
+            break;
+          }
+          if (it === 0) stat.shallow += 1;
+          if (!(nb.d > 1e-12) || !pointInRegion(cur.x, cur.y, rings)) break;
+          // Push straight away from the nearest boundary point, a hair past the
+          // depth so the re-check is not decided by the last ulp.
+          const f = (depth + 2 * GUARD_EPS) / nb.d;
+          cur = { x: nb.x + (cur.x - nb.x) * f, y: nb.y + (cur.y - nb.y) * f };
+        }
+        if (ok) { if (cur !== p) stat.moved += 1; slots.push(cur); } else { stat.dropped += 1; slots.push(null); }
+      }
+      // A dropped vertex (one that could not be brought to the depth) is
+      // simply left out; the edge that now spans it is checked by
+      // `refineEdges` like any other, which CUTS the loop open wherever that
+      // edge runs shallower than the depth and cannot be pushed out (a true
+      // pinch, where the exact erosion splits).
+      const kept = slots.filter(Boolean);
+      if (kept.length < 3) continue;
+      const pieces = snap ? refineEdges(kept, rings, depth, nearest, stat, snapTol, true) : [kept];
+      pieces.forEach((pc) => out.push(pc));
+    }
+    return out;
+  };
+
+  // Between two snapped vertices the loop is a CHORD, and the true erosion
+  // boundary there is a curve: where it bows toward the ribbon edge the chord
+  // runs deeper (a sliver of bare paper), where it bows away the chord runs
+  // shallower (the stroke would graze past the edge). Bisect each edge until
+  // its midpoint is within `tol` of the depth, snapping (always valid) or
+  // pushing out (checked) the midpoint like a vertex. At most 2^MAX - 1 points
+  // per edge.
+  const REFINE_MAX = 4;
+  // Returns the refined piece(s): one closed loop, or — where an edge cannot
+  // be brought to the depth (its midpoint is shallow and cannot be pushed out)
+  // — open runs split at that edge. Open runs carry `open = true`.
+  const refineEdges = (loop, rings, depth, nearest, stat, tol, closed) => {
+    let outPts = [];
+    const pieces = [];
+    let broke = false;
+    const cut = () => { broke = true; if (outPts.length >= 2) pieces.push(outPts); outPts = []; };
+    const fixMid = (m) => {
+      const nb = nearest(m.x, m.y);
+      if (Math.abs(nb.d - depth) <= tol) return null;
+      if (!(nb.d > 1e-12)) return false;
+      if (nb.d > depth) {
+        const f = depth / nb.d;
+        return { x: nb.x + (m.x - nb.x) * f, y: nb.y + (m.y - nb.y) * f };
+      }
+      if (!pointInRegion(m.x, m.y, rings)) return false;
+      const f = (depth + 2 * GUARD_EPS) / nb.d;
+      const q = { x: nb.x + (m.x - nb.x) * f, y: nb.y + (m.y - nb.y) * f };
+      const nq = nearest(q.x, q.y);
+      return (nq.d >= depth - GUARD_EPS && pointInRegion(q.x, q.y, rings)) ? q : false;
+    };
+    // The exact erosion's CONVEX CORNER: where the two ends of an edge sit on
+    // offset lines of two different boundary segments, the true boundary is
+    // the two offset lines meeting at their intersection — a corner the
+    // rounded raster contour (and any bisection) only approaches. Rebuild it
+    // directly and keep it when it is a genuine, depth-checked point near the
+    // edge; a bisection midpoint snapped onto one line would cut it off.
+    const offsetLine = (pt) => {
+      const nb = nearest(pt.x, pt.y);
+      if (nb.s < 0 || !(nb.t > 1e-9 && nb.t < 1 - 1e-9)) return null;
+      const g = nearest.seg(nb.s);
+      const ux = g.bx - g.ax; const uy = g.by - g.ay;
+      const L = Math.hypot(ux, uy);
+      if (!(L > 1e-12) || !(nb.d > 1e-12)) return null;
+      const nx = (pt.x - nb.x) / nb.d; const ny = (pt.y - nb.y) / nb.d;
+      return { s: nb.s, px: nb.x + nx * depth, py: nb.y + ny * depth, ux: ux / L, uy: uy / L };
+    };
+    const corner = (a, b) => {
+      const la = offsetLine(a); const lb = offsetLine(b);
+      if (!la || !lb || la.s === lb.s) return null;
+      const den = la.ux * lb.uy - la.uy * lb.ux;
+      if (Math.abs(den) < 1e-6) return null;
+      const t = ((lb.px - la.px) * lb.uy - (lb.py - la.py) * lb.ux) / den;
+      const X = { x: la.px + la.ux * t, y: la.py + la.uy * t };
+      const ab = Math.hypot(b.x - a.x, b.y - a.y);
+      // Must lie beside the edge, not off past either end.
+      if (Math.hypot(X.x - a.x, X.y - a.y) > ab * 1.5 || Math.hypot(X.x - b.x, X.y - b.y) > ab * 1.5) return null;
+      const nx = nearest(X.x, X.y);
+      if (nx.d < depth - GUARD_EPS || nx.d > depth + tol || !pointInRegion(X.x, X.y, rings)) return null;
+      return X;
+    };
+    const rec = (a, b, lvl) => {
+      if (lvl >= REFINE_MAX) return;
+      const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const mb = nearest(m.x, m.y);
+      if (Math.abs(mb.d - depth) <= tol) return;
+      if (mb.d > depth) {
+        const X = corner(a, b);
+        if (X) {
+          stat.corners += 1;
+          rec(a, X, lvl + 1);
+          outPts.push(X);
+          rec(X, b, lvl + 1);
+          return;
+        }
+      }
+      const q = fixMid(m);
+      if (q === null) return;
+      if (q === false) {
+        stat.refineFail += 1;
+        // Shallow and unfixable: the chord would carry the stroke past the
+        // ribbon edge. Cut the piece here.
+        if (mb.d < depth - tol) cut();
+        return;
+      }
+      stat.refined += 1;
+      rec(a, q, lvl + 1);
+      outPts.push(q);
+      rec(q, b, lvl + 1);
+    };
+    const nEdges = closed ? loop.length : loop.length - 1;
+    for (let i = 0; i < loop.length; i += 1) {
+      outPts.push(loop[i]);
+      if (i < nEdges) rec(loop[i], loop[(i + 1) % loop.length], 0);
+    }
+    if (!broke) {
+      if (!closed) outPts.open = true;
+      return outPts.length >= (closed ? 3 : 2) ? [outPts] : [];
+    }
+    // A closed loop that was cut: its last run continues into its first.
+    if (closed && pieces.length && pieces[0][0] === loop[0]) {
+      if (outPts.length && Math.hypot(outPts[outPts.length - 1].x - loop[0].x, outPts[outPts.length - 1].y - loop[0].y) < 1e-12) outPts.pop();
+      pieces[0] = outPts.concat(pieces[0]);
+    } else if (outPts.length >= 2) pieces.push(outPts);
+    pieces.forEach((pc) => { pc.open = true; });
+    return pieces.filter((pc) => pc.length >= 2);
+  };
+
+  // The erosion field: distance from each inside cell to the BOUNDARY, seeded
+  // on every cell the boundary passes through rather than on outside cell
+  // centres. `finishField`'s seeds are blind to a notch or slit narrower than a
+  // cell (it holds no outside centre), and a level contoured off that field
+  // runs straight across the slit — a ribbon's loop crossings are full of
+  // them. Seeding on the boundary itself sees every edge, so the field is good
+  // to about one cell EVERYWHERE; the guard then makes the outline exact.
+  // Only the inside half is needed (levels are > 0), so this is one EDT, not
+  // two.
+  const erosionField = (rings, cs) => {
+    const f = insideMask(rings, cs);
+    if (!f) return null;
+    const { nx, ny, ox, oy, inside } = f;
+    const seed = new Uint8Array(nx * ny);
+    for (let k = 0; k < seed.length; k += 1) seed[k] = inside[k];
+    const mark = (x, y) => {
+      const i = Math.round((x - ox) / cs);
+      const j = Math.round((y - oy) / cs);
+      if (i >= 0 && j >= 0 && i < nx && j < ny) seed[j * nx + i] = 0;
+    };
+    for (const ring of rings) {
+      for (let r = 0; r < ring.length; r += 1) {
+        const a = ring[r]; const b = ring[(r + 1) % ring.length];
+        const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (cs * 0.5)));
+        for (let t = 0; t <= n; t += 1) mark(a.x + ((b.x - a.x) * t) / n, a.y + ((b.y - a.y) * t) / n);
+      }
+    }
+    const dIn = edt(seed, nx, ny, 0);
+    const sdf = new Float32Array(nx * ny);
+    for (let k = 0; k < sdf.length; k += 1) sdf[k] = seed[k] ? dIn[k] * cs : (inside[k] ? 0 : -cs);
+    f.sdf = sdf;
+    return f;
+  };
+
+  const erodeLevels = (region, depths, opts = {}) => {
+    const rings = normalizeRegion(region);
+    if (!rings.length || !Array.isArray(depths) || !depths.length) return null;
+    const ds = depths.map((d) => Math.abs(Number(d)));
+    if (!ds.every((d) => isNum(d))) return null;
+    const pos = ds.filter((d) => d > 0);
+    const frame = principalFrame(rings);
+    const rr = rings.map((r) => r.map(frame.toFrame));
+    let cs = isNum(Number(opts.cellSize)) && Number(opts.cellSize) > 0
+      ? Number(opts.cellSize) : (pos.length ? Math.min(...pos) / 4 : 0);
+    if (!(cs > 0)) return null;
+    const b = regionBounds(rr);
+    if (!isNum(b.minX)) return null;
+    const cells = (Math.max(cs, b.maxX - b.minX) / cs + 7) * (Math.max(cs, b.maxY - b.minY) / cs + 7);
+    if (cells > MAX_CELLS) cs *= Math.sqrt(cells / MAX_CELLS);
+    const field = erosionField(rr, cs);
+    if (!field) return null;
+    const offAt = (idx) => {
+      const o = Array.isArray(opts.levelOffset) ? opts.levelOffset[idx] : opts.levelOffset;
+      return isNum(Number(o)) && o !== null && o !== undefined ? Number(o) : 1;
+    };
+    const simp = isNum(Number(opts.simplify)) ? Number(opts.simplify) : 0.25;
+    const guard = Array.isArray(opts.guard) ? opts.guard : [];
+    const stat = { shallow: 0, moved: 0, dropped: 0, snapped: 0, refined: 0, refineFail: 0, corners: 0 };
+    let nearest = null;
+    const levels = ds.map((d, idx) => {
+      // A guarded level is contoured UNSIMPLIFIED (a vertex every cell): the
+      // guard may have to drop a vertex, and a dropped vertex in a simplified
+      // loop can leave a chord that spans a whole corner. The exact, guarded
+      // loop is simplified afterwards instead.
+      let loops = contourLoops(field, d + cs * offAt(idx), null, -1, guard[idx] ? 0 : cs * simp)
+        .filter((l) => l.length >= 3);
+      if (guard[idx] && loops.length) {
+        if (!nearest) nearest = makeBoundaryIndex(rr);
+        loops = guardLoops(loops, rr, d, nearest, stat, guard[idx] === 'snap', cs * SNAP_TOL_CELLS)
+          .map((l) => {
+            if (!(simp > 0) || l.length < 5) return l;
+            const closedRun = l.open ? l : l.concat([l[0]]);
+            // The exact loop is simplified at the SNAP tolerance, not the
+            // contour's: an RDP chord may sit up to `tol` deeper than the
+            // vertices it replaced, and at the contour's cs/4 that was a
+            // measurable strip of bare paper along every ribbon edge.
+            const out = simplifyRing(closedRun, cs * SNAP_TOL_CELLS);
+            if (!l.open) out.pop();
+            if (l.open) out.open = true;
+            return out.length >= (l.open ? 2 : 3) ? out : l;
+          });
+      }
+      return loops;
+    });
+    return { levels, frame, cs: field.cs, guard: stat };
+  };
+
   // ── Public entry point ───────────────────────────────────────────────────
   const fillRegion = (region, penWidth, style, opts = {}) => {
     const empty = { paths: [], coverage: 0, components: 0 };
@@ -1533,7 +1916,7 @@
     return { paths: out, coverage, components: live.length };
   };
 
-  const api = { fillRegion, DEFAULT_OVERLAP, STYLES };
+  const api = { fillRegion, erodeLevels, DEFAULT_OVERLAP, STYLES };
 
   if (typeof window !== 'undefined') {
     const Vectura = (window.Vectura = window.Vectura || {});

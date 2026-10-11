@@ -59,23 +59,43 @@
     // (Strength / Pen / Bands / Alt fill / Burst) is inert for these, so those
     // rows are REMOVED — never shown disabled.
     INERT: ['blank', 'none', 'keep'],
+    // U5 (NEW-2 / NEW-3): Dashed + Dotted are one `Restyle` treatment with a Line
+    // type; Sparse + Stipple are one `Thin` treatment with a Thin-by granularity.
     TREATMENTS: [
       { value: 'blank', label: 'Blank' },
       { value: 'keep', label: 'None' },
-      { value: 'dashed', label: 'Dashed' },
-      { value: 'dotted', label: 'Dotted' },
-      { value: 'sparse', label: 'Sparse' },
+      { value: 'restyle', label: 'Restyle line' },
+      { value: 'thin', label: 'Thin' },
       { value: 'altFill', label: 'Alt fill' },
       { value: 'burst', label: 'Burst' },
-      { value: 'stippleOut', label: 'Stipple' },
     ],
+    // Stored values from before the fold read as the treatment that replaced them.
+    ALIASES: { dashed: 'restyle', dotted: 'restyle', sparse: 'thin', stippleOut: 'thin' },
+    LINE_TYPES: [
+      { value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' },
+      { value: 'dotted', label: 'Dotted' }, { value: 'dashdot', label: 'Dash-dot' },
+    ],
+    THIN_BY: [{ value: 'ruling', label: 'Ruling' }, { value: 'sample', label: 'Sample' }],
+  };
+  // The line type / granularity a stored bag means (an unmigrated 'dashed' / 'dotted' /
+  // 'sparse' / 'stippleOut' value included).
+  SCENE_HIGHLIGHT.lineTypeOf = (bag) => {
+    const b = bag || {};
+    if (['solid', 'dashed', 'dotted', 'dashdot'].indexOf(b.highlightLineType) !== -1) return b.highlightLineType;
+    return b.highlightTreatment === 'dotted' ? 'dotted' : 'dashed';
+  };
+  SCENE_HIGHLIGHT.thinByOf = (bag) => {
+    const b = bag || {};
+    if (b.highlightThinBy === 'sample' || b.highlightThinBy === 'ruling') return b.highlightThinBy;
+    return b.highlightTreatment === 'stippleOut' ? 'sample' : 'ruling';
   };
   // Map a stored value onto the option this UI actually offers: any None
   // spelling collapses onto NONE_VALUE, anything unknown falls back to 'blank'
   // (matching the engine's own clamp).
   SCENE_HIGHLIGHT.resolve = (value) => {
     if (SCENE_HIGHLIGHT.NONE_ALIASES.indexOf(value) !== -1) return SCENE_HIGHLIGHT.NONE_VALUE;
-    return SCENE_HIGHLIGHT.TREATMENTS.some((o) => o.value === value) ? value : 'blank';
+    const v = SCENE_HIGHLIGHT.ALIASES[value] || value;
+    return SCENE_HIGHLIGHT.TREATMENTS.some((o) => o.value === v) ? v : 'blank';
   };
   SCENE_HIGHLIGHT.hasDetailControls = (value) =>
     SCENE_HIGHLIGHT.INERT.indexOf(SCENE_HIGHLIGHT.resolve(value)) === -1;
@@ -182,7 +202,7 @@
     mechanism: 'The shipped default: rulings are selected from a small set of discrete coverage rungs at one constant pen weight, so tone is carried by which rulings are drawn.',
     strengths: 'The measured baseline every other fill style is judged against.',
     weaknesses: 'One draw/skip verdict per ruling, so its coverage steps are visible and it cannot reach a deep shadow.',
-    chooseWhen: 'The default. Pick Fine Ladder for the same mechanism with the step pushed below the visible threshold.',
+    chooseWhen: 'The default. Rung detail (Fine) pushes the step below the visible threshold. Spacing switches to a continuous field with smooth easing (Sigmoid or L*-linear curve, Screen / Foreshortened / Surface / Quantised metric, Plot-floor or Touching closest approach). Extra marks adds flicks where rungs drop, or a deep-shadow traverse.',
     caveat: null,
     simulated: false,
     tier: 'production',
@@ -291,6 +311,10 @@
     const bag = paramsBag && typeof paramsBag === 'object' ? paramsBag : {};
     const descriptors = SCENE_FILL_STYLES.styleParams(survivorId);
     if (!descriptors.length) return survivorId;
+    // U5 — the roster's ENTRIES resolver (pattern -> internal law id; a tie
+    // between two laws falls back to the survivor).
+    const R = fillStyleRoster();
+    if (R && typeof R.resolveLaw === 'function') return R.resolveLaw(survivorId, bag);
     let activeLaw = null;
     let activeCount = 0;
     descriptors.forEach((d) => {
@@ -324,12 +348,115 @@
     const raw = (typeof rawValue === 'string' && rawValue)
       ? rawValue : (typeof bag.toneLaw === 'string' ? bag.toneLaw : '');
     const R = fillStyleRoster();
-    const alias = raw && R && R.ALIASES && R.ALIASES[raw];
+    // U5 — a bag still carrying a RETIRED sub-control key (bandProfile, nesting,
+    // the old interlockWeave penDown, fieldFloor, ...) is shown as the id the old
+    // resolver drew. Display only; the compositor does the same at normalize time.
+    const up = (raw && R && typeof R.upgradeLegacy === 'function') ? R.upgradeLegacy(raw, bag) : null;
+    let base = bag;
+    let seedKey = raw;
+    if (up) {
+      base = { ...bag };
+      up.dropKeys.forEach((k) => { delete base[k]; });
+      seedKey = up.internal;
+    }
+    const alias = seedKey && R && R.ALIASES && R.ALIASES[seedKey];
     const seed = alias && alias.params;
-    if (!seed) return bag;
-    const out = { ...bag };
-    Object.keys(seed).forEach((k) => { if (out[k] === undefined) out[k] = seed[k]; });
+    const lstar = !up && raw && ['contFieldFore', 'contFieldSurface', 'contFieldQuant', 'contFieldTouch'].indexOf(raw) !== -1;
+    if (!seed && base === bag && !lstar) return bag;
+    const out = { ...base };
+    if (seed) Object.keys(seed).forEach((k) => { if (out[k] === undefined) out[k] = seed[k]; });
+    if (lstar && out.fieldCurve === undefined) out.fieldCurve = 'lstar';
     return out;
+  };
+  // U5 — the sub-controls a survivor shows for a (display) bag. Returns
+  // `[{ descriptor, value, options: [{ value, label, law, patch, disabled, title }] }]`
+  // for the descriptors whose `showWhen` holds. `law` is the internal law the option
+  // selects (its patch may snap other sub-controls to a real combination).
+  // `ctx.reach` ({ primitiveMode, solidType, mapper, totalFaces }) disables an option
+  // whose law is no-effect on that shape (NEW-5b: the fold sub-selects were not
+  // reachability-gated). `ctx.shadow` (Shadows module) offers only the options whose
+  // law draws a distinct, materially different shadow, always keeping the current one.
+  SCENE_FILL_STYLES.subControls = (survivorId, bag, ctx) => {
+    const R = fillStyleRoster();
+    const c = ctx || {};
+    const FS = SCENE_FILL_STYLES;
+    if (!R || typeof R.visibleDescriptors !== 'function' || !FS.styleParams(survivorId).length) return [];
+    const current = R.resolveLaw(survivorId, bag);
+    const out = [];
+    R.visibleDescriptors(survivorId, bag).forEach(({ descriptor, value }) => {
+      const options = [];
+      descriptor.options.forEach((opt) => {
+        const patch = R.pickPatch(survivorId, bag, descriptor.key, opt.value);
+        const law = R.resolveLaw(survivorId, { ...bag, ...patch });
+        const isCurrent = opt.value === value;
+        let disabled = false;
+        let title = '';
+        if (!descriptor.passthrough && c.shadow) {
+          const Sh = c.shadow;
+          const live = typeof Sh.toneLawApplies === 'function' ? Sh.toneLawApplies(law) : true;
+          const material = typeof Sh.toneLawMaterial === 'function' ? Sh.toneLawMaterial(law) : true;
+          if (!isCurrent && (!live || !material)) return; // not offered on a shadow
+        }
+        if (!descriptor.passthrough && c.reach && !isCurrent
+          && !FS.isReachableOn(law, c.reach.primitiveMode, c.reach.solidType, c.reach.mapper, c.reach.totalFaces)) {
+          disabled = true;
+          title = 'No effect on this shape.';
+        }
+        options.push({ value: opt.value, label: opt.label + (disabled ? FS.NO_EFFECT_SUFFIX : ''), law, patch, disabled, title });
+      });
+      if (options.length > 1 || (options.length === 1 && !c.shadow)) out.push({ descriptor, value, options });
+    });
+    return out;
+  };
+  // U5 (decision 1) — the shadow Fill Style row's sub-controls. A shadow stores ONE
+  // internal law id in `shadowToneLaw` (every recipe in shadows.js is keyed by it),
+  // so the row shows the survivor of the stored id, plus the survivor's
+  // sub-controls filtered to the options that draw a distinct, materially different
+  // shadow. Returns `[{ descriptor, value, options: [{ value, label, law }] }]`;
+  // `law` is the id to store when that option is picked.
+  // Plain-language names for what each shadow texture looks like (the shadow row is ONE "Look"
+  // select; the object-surface sub-controls describe mechanisms a flat footprint does not show).
+  SCENE_FILL_STYLES.SHADOW_LOOK_LABELS = {
+    ladder: 'Plain hatch', lozengeStipple: 'Dots (flicks)',
+    taperedEnds: 'Hatch, tapered ends',
+    bundleCount: 'Triple lines', bundleSubNib: 'Quad lines, overlapping', bundleLozenge: 'Triple lines, trimmed ends',
+    bundleEased: 'Triple lines, tight', bundleDither: 'Triple lines, uneven',
+    ampSpacing: 'Gentle wave', interlockWeave: 'Alternating wave', weaveDepth: 'Braided double wave', trochoidLoop: 'Looping wave',
+    penInterleave: 'Paired lines', penStipple: 'Hatch, short marks',
+  };
+  SCENE_FILL_STYLES.shadowSubControls = (rawShadowLaw, Shadows) => {
+    const R = fillStyleRoster();
+    if (R && R.ENTRIES) {
+      const stored0 = (R.SHADOW_FORWARD && R.SHADOW_FORWARD[rawShadowLaw]) || rawShadowLaw;
+      const survivor0 = SCENE_FILL_STYLES.resolve(stored0);
+      const entries = R.ENTRIES[survivor0];
+      const current = (typeof stored0 === 'string' && Shadows && Shadows.toneLawApplies(stored0)) ? stored0 : survivor0;
+      if (entries) {
+        const laws = [];
+        entries.forEach((e) => { if (laws.indexOf(e.law) === -1) laws.push(e.law); });
+        const offered = laws.filter((l) => (l === current || (Shadows.toneLawApplies(l)
+          && (typeof Shadows.toneLawMaterial !== 'function' || Shadows.toneLawMaterial(l)))));
+        if (offered.length > 1) {
+          const labels = SCENE_FILL_STYLES.SHADOW_LOOK_LABELS;
+          return [{
+            descriptor: { key: 'shadowLook', label: 'Look' },
+            value: current,
+            options: offered.map((l) => ({ value: l, label: labels[l] || (R.BY_ID[l] && R.BY_ID[l].label) || l, law: l })),
+          }];
+        }
+        return [];
+      }
+    }
+    // An id with no shadow recipe draws as its SHADOW_FORWARD law (onePenDown).
+    const stored = (R && R.SHADOW_FORWARD && R.SHADOW_FORWARD[rawShadowLaw]) || rawShadowLaw;
+    const survivor = SCENE_FILL_STYLES.resolve(stored);
+    const bag = SCENE_FILL_STYLES.displayParams(stored, {});
+    return SCENE_FILL_STYLES.subControls(survivor, bag, { shadow: Shadows });
+  };
+  // The internal law (and so the style bag keys) a picker selection stands for.
+  SCENE_FILL_STYLES.lawFor = (survivorId, bag) => {
+    const R = fillStyleRoster();
+    return R && typeof R.resolveLaw === 'function' ? R.resolveLaw(survivorId, bag || {}) : survivorId;
   };
   // U9b / W-10d-3b — the shadow row's ONE-KEY-bag analog of `displayParams`
   // above. `shadow.shadowToneLaw` has no sub-control field at all (U9's own
@@ -357,12 +484,19 @@
   // own entry/caveat for a legacy `onePenDown` document is correct, not a
   // lie: the shadow render is now byte-identical to `interlockWeave`'s.
   // Never writes anything — display only, exactly like `displayParams`.
-  SCENE_FILL_STYLES.shadowDisplayLaw = (rawValue, survivorLaw) => {
+  SCENE_FILL_STYLES.shadowDisplayLaw = (rawValueIn, survivorLaw) => {
     const Shadows = Vectura.Scene3D && Vectura.Scene3D.Shadows;
+    const RF = fillStyleRoster();
+    const rawValue = (RF && RF.SHADOW_FORWARD && RF.SHADOW_FORWARD[rawValueIn]) || rawValueIn;
     if (typeof rawValue === 'string' && rawValue && Shadows
         && typeof Shadows.toneLawApplies === 'function'
         && SCENE_FILL_STYLES.entry(rawValue) && Shadows.toneLawApplies(rawValue)) {
       return rawValue;
+    }
+    // An alias with no shadow recipe of its own draws the plain hatch, i.e. Ladder.
+    if (typeof rawValue === 'string' && RF && RF.ALIASES && RF.ALIASES[rawValue] && Shadows
+        && typeof Shadows.toneLawApplies === 'function' && !Shadows.toneLawApplies(rawValue)) {
+      return FILL_STYLE_DEFAULT;
     }
     return survivorLaw;
   };
@@ -525,48 +659,30 @@
       && P.PRIMITIVE_PARAM_DEFAULTS.solid.solidType) || 'buckyball';
     return (solidType || dflt) === dflt;
   };
-  // fs-e1 judge's ruling, item 5, EXTENDED by W-03 (F-03, clusters C-09..
-  // C-13) — this list is now INERT-OR-BARE-CENTRELINE, not just "byte-
-  // identical to Ladder". The original 9 (etfKang..mazeFill) are true
-  // no-ops: a mono law with no planar dispatch on the curved/spiral-stipple
-  // path at all. The other 36 are a DIFFERENT, later-measured failure: the
-  // spiral sink never calls `noteW` and stipple pushes dot rings with no
-  // run, so `wCnt === 0` and every width-modulated law's `ribbonize` step is
-  // skipped — the law still "runs", but every stretch degrades to its bare
-  // centreline (12 ribbon laws) or to plain rung-skipping indistinguishable
-  // from a handful of sibling laws (bundle x6, contField x5, pen x6, mk x4,
-  // and the remaining named laws below) — 18-19 distinct pictures across 39
-  // laws measured, 432 `bareCentrelinesOnly` shots. Keeping only `none` /
-  // `ladder` / `fineLadder` / `phaseFineLadder` reachable here is keeping
-  // exactly the "honest" rung-skipping options — the ones whose whole
-  // mechanism IS which rungs are drawn, so degrading to that is not a
-  // degradation at all. Nothing else in the curved arm is gated by this
-  // list — see the paired negative in `scene3d-fill-style-picker.test.js`
-  // "curved (sphere) + hatch/crosshatch is unaffected by the spiral/stipple
-  // gate". W-13 (future work) wires a real width profile into the spiral
-  // sink; when it lands, the 12 ribbon laws move back out of this list —
-  // see `SurfaceFill.lastRibbonStats` (ribbonLaw && wallRings === 0 on a
-  // sphere+spiral+taperedEnds build today) as the characterization proof
-  // that justifies the hide and the RED this list's shrink will satisfy.
-  const CURVED_SPIRAL_STIPPLE_INERT = [
-    // The original 9 — true no-ops, no planar dispatch at all.
-    'etfKang', 'defectSplit', 'mezzoRegion', 'originSpiral', 'dutyConst',
-    'endShorten', 'turingStripe', 'voronoiWeb', 'mazeFill',
-    // C-09 — bare centrelines (ribbon laws with no width profile on this path).
-    'nibAngle', 'taperedEnds', 'isophoteWidth', 'whiteBand',
-    // C-12 — bare centrelines / rung-skipping (ribbon + wave laws).
-    'weightModulated', 'weightSmoothstep', 'interlockWeave', 'trochoidLoop',
-    'onePenDown', 'penInterleave', 'penReserve', 'penPitchMatch',
-    // C-13 — rung-skipping, indistinguishable from Ladder/Fine Ladder here.
-    'perceptualRamp', 'lozengeStipple', 'deepFillTSP', 'ampSpacing',
-    'weaveDepth', 'amplitudeOnly', 'penCross', 'penFacing',
-    // C-10 — bundle (6) + contField (5) + penStipple: every rung drawn, ~ No Tone.
-    'bundleCount', 'bundleSubNib', 'bundleEased', 'bundleDither',
-    'bundleLozenge', 'bundleHandoff', 'contFieldSigmoid', 'contFieldTouch',
-    'contFieldFore', 'contFieldSurface', 'contFieldQuant', 'penStipple',
-    // C-11 — the mark emitter is never reached.
-    'mkScribble', 'mkTick', 'mkDashRamp', 'mkDotScreen',
-  ];
+  // U3 (fill-style review, r3 headline 4 / r2 NEW-5) — the curved
+  // Spiral/Stipple gate is now MEASURED, not inferred. The W-03 list this
+  // replaces greyed 45 of 48 ids as "drawing like Ladder", but the running
+  // engine gives 14-17 distinct pictures across the 48 ids on every curved
+  // primitive (sphere, ellipsoid, cylinder, cone, torus, torusKnot, capsule,
+  // superellipsoid, pyramid), and every greyed id except the ones below
+  // draws differently from Ladder. Many of those pictures are degraded (the
+  // spiral/stipple sinks publish no width profile, so a ribbon law draws its
+  // bare centrelines — `CURVED_SPIRAL_STIPPLE_DEGRADED_NOTE`), but a
+  // different picture is not "no effect", so they are offered again with that
+  // note in the (i) popover instead of being greyed.
+  //
+  // What stays here is exactly the ids whose object fill hash equals Ladder's
+  // (sceneFill paths of the object, every point to 3 dp plus path meta),
+  // measured on all nine curved primitives under both mappers:
+  //   deepFillTSP — identical to Ladder everywhere.
+  // Per-primitive extras are pinned below beside their own rule (pyramid +
+  // stipple: fineLadder; torus: originSpiral, gated for every mapper).
+  // `tests/integration/scene3d-fill-style-reach-measured.test.js` re-measures
+  // this against the engine and fails if the list and the engine disagree.
+  const CURVED_SPIRAL_STIPPLE_INERT = ['deepFillTSP'];
+  // Ribbon (variable-width) and three-pen laws: live but degraded on the
+  // curved Spiral/Stipple sinks. Read by `curvedSinkNote` for the (i) popover.
+  SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_DEGRADED_NOTE = 'On a curved shape, Spiral and Stipple carry no stroke width, so this style draws its centrelines only (or skips rungs). It still differs from Ladder.';
   SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_INERT = CURVED_SPIRAL_STIPPLE_INERT;
   // Never lies in either direction: with no shape context (mixed/scene-scope
   // selection, or a build missing either source above) it FAILS OPEN and
@@ -621,12 +737,11 @@
     // Curved (chart-wrapped) primitive.
     if (mapper === 'spiral' || mapper === 'stipple') {
       if (CURVED_SPIRAL_STIPPLE_INERT.indexOf(id) !== -1) return false;
-      // Measured: on `pyramid` specifically, `none` is ALSO byte-identical to
-      // a large cluster under spiral/stipple — unlike the other eight curved
-      // primitives, where `none` still differs. Pinned, not derived: no live
-      // source exposes this the way SurfaceFillMono/CURVED_FILL_PRIMITIVES do
-      // for the rest of this predicate.
-      if (primitiveMode === 'pyramid' && id === 'none') return false;
+      // U3 — measured: on `pyramid` + Stipple, `fineLadder` is ALSO
+      // byte-identical to Ladder (live on pyramid + Spiral). The earlier
+      // pyramid `none` pin is gone: `none` differs from Ladder on pyramid
+      // under both mappers (it matched a cluster of other laws, not Ladder).
+      if (primitiveMode === 'pyramid' && mapper === 'stipple' && id === 'fineLadder') return false;
     }
     // Measured: `fineLadder` is inert on pyramid+hatch only — it is live on
     // pyramid crosshatch AND contour (over-gating guard: do not gate those).
@@ -674,6 +789,31 @@
     return hit ? FILL_STYLE_DEFAULT : null;
   };
   SCENE_FILL_STYLES.NO_EFFECT_SUFFIX = ' — no effect here';
+  // U4b — the monoline laws (Voronoi web, maze, Turing stripes, ...) draw in
+  // SCREEN space. Measured on all nine reachable laws: Contour draws byte-for-
+  // byte what Hatch draws (they never read the mapper), and a law that has no
+  // direction (it follows the light or grows its own pattern) also ignores
+  // Angle, Cross angle and, in Crosshatch, draws the same picture as Hatch. The
+  // Type list and the Angle row grey these out instead of offering a control
+  // that moves nothing.
+  SCENE_FILL_STYLES.monoGate = (law) => {
+    const M = Vectura.Scene3D && Vectura.Scene3D.SurfaceFillMono;
+    const mono = Boolean(law && M && typeof M.isMono === 'function' && M.isMono(law));
+    const readsAngle = mono && typeof M.readsAngle === 'function' ? M.readsAngle(law) : true;
+    return { mono, contourDead: mono, angleDead: mono && !readsAngle };
+  };
+  SCENE_FILL_STYLES.MONO_CONTOUR_SUFFIX = ' — same as Hatch';
+  SCENE_FILL_STYLES.MONO_CONTOUR_NOTE = 'This Fill Style draws in screen space, so Contour draws the same picture as Hatch. Contour is greyed in the Type list.';
+  SCENE_FILL_STYLES.MONO_ANGLE_NOTE = 'This Fill Style has no direction to turn. It follows the light or grows its own pattern, so Angle changes nothing.';
+  SCENE_FILL_STYLES.MONO_CROSS_NOTE = 'This Fill Style has no direction to cross. Crosshatch draws the same picture as Hatch, so Cross angle and Cross density change nothing.';
+  // The Type list for a style bag: Contour is disabled (kept, never removed)
+  // while a monoline law is the Fill Style.
+  SCENE_FILL_STYLES.typeOptions = (options, law) => {
+    const g = SCENE_FILL_STYLES.monoGate(law);
+    if (!g.contourDead || !Array.isArray(options)) return options;
+    return options.map((opt) => (opt && opt.value === 'contour'
+      ? { ...opt, label: opt.label + SCENE_FILL_STYLES.MONO_CONTOUR_SUFFIX, disabled: true } : opt));
+  };
   SCENE_FILL_STYLES.FACETED_NOTE = 'This shape is faceted: fill styles greyed out above draw exactly like Ladder here, whichever one is picked.';
   SCENE_FILL_STYLES.FACETED_CAP_NOTE = 'This solid has no planar fill support, and its body exceeds the fill engine’s per-object face budget — so even the styles that work on a box/plane fall back to Ladder here. Only NO TONE still differs. A simpler solid (fewer faces) can restore the rest.';
   // fs-e1 item 3 — the cap note's "Only NO TONE still differs" is FALSE for a
@@ -687,6 +827,17 @@
     if (mapper && mapper !== 'hatch' && mapper !== 'crosshatch') return SCENE_FILL_STYLES.FACETED_OFF_AXIS_NOTE;
     if (SCENE_FILL_STYLES.isCapLimited(primitiveMode, solidType, totalFaces)) return SCENE_FILL_STYLES.FACETED_CAP_NOTE;
     return SCENE_FILL_STYLES.FACETED_NOTE;
+  };
+  // U3 — the (i) line for a degraded-but-live pick on a curved Spiral/Stipple
+  // fill (see CURVED_SPIRAL_STIPPLE_INERT). '' when it does not apply.
+  SCENE_FILL_STYLES.curvedSinkNote = (primitiveMode, mapper, lawId) => {
+    if (mapper !== 'spiral' && mapper !== 'stipple') return '';
+    const P = Vectura.Scene3D && Vectura.Scene3D.Params;
+    const curved = P && P.CURVED_FILL_PRIMITIVES;
+    if (!primitiveMode || !curved || typeof curved.has !== 'function' || !curved.has(primitiveMode)) return '';
+    const SFS = Vectura.STROKE_FILL_STYLES;
+    const widthLaw = SFS && ((SFS.RIBBON_LAWS || []).indexOf(lawId) !== -1 || (SFS.PEN_LAWS || []).indexOf(lawId) !== -1);
+    return widthLaw ? SCENE_FILL_STYLES.CURVED_SPIRAL_STIPPLE_DEGRADED_NOTE : '';
   };
   Vectura.SCENE_FILL_STYLES = SCENE_FILL_STYLES;
 
@@ -1015,13 +1166,16 @@
         // the alternate fill drawn in the highlight region is configurable (not a
         // fixed default). Mirrors params.js ALT_FILL_MAPPERS.
         altFill: { label: 'Alt fill', aria: 'Alternate fill mapper' },
+        // U5 (R3-6): Hatch + Crosshatch are one `Lines` option with Layers 1 | 2.
         altFillMappers: [
-          { value: 'hatch', label: 'Hatch' },
-          { value: 'crosshatch', label: 'Crosshatch' },
+          { value: 'lines', label: 'Lines' },
           { value: 'contour', label: 'Contour' },
           { value: 'spiral', label: 'Spiral' },
           { value: 'stipple', label: 'Stipple' },
         ],
+        altFillLayers: { label: 'Layers', aria: 'Alternate fill line layers', options: [{ value: 1, label: '1' }, { value: 2, label: '2' }] },
+        line: { label: 'Line', aria: 'Highlight line type' },
+        thinBy: { label: 'Thin by', aria: 'Highlight thinning granularity' },
       },
       xray: {
         mode: { label: 'X-ray', aria: 'Object visibility' },
@@ -1030,9 +1184,9 @@
         backDensity: { label: 'Back density', aria: 'Far-surface density' },
         backLine: { label: 'Back line', aria: 'Far-surface line style' },
         pen: { label: 'Back pen', aria: 'Far-surface pen', inherit: 'Object pen' },
+        // U5 (R3-3): no 'Solid' — an occluded line always drew dashed.
         lineOptions: [
-          { value: 'solid', label: 'Solid' }, { value: 'dashed', label: 'Dashed' },
-          { value: 'dotted', label: 'Dotted' }, { value: 'dashdot', label: 'Dash-dot' },
+          { value: 'dashed', label: 'Dashed' }, { value: 'dotted', label: 'Dotted' }, { value: 'dashdot', label: 'Dash-dot' },
         ],
         onOff: [{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }],
         disabledHint: 'Set X-ray on to edit',

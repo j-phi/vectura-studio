@@ -142,10 +142,10 @@ Select an object and a **Contextual Task Bar** floats just below it with the act
 
 - 19+ algorithm families: flowfield, boids, attractors, hyphae, lissajous, harmonograph, pendula, wavetable, rings, topo, grid, rainfall, phylla, petalis, spiral, shapepack, terrain, horizon, pattern, svgdistort, plus a 3D family — spirograph, spiralizer, polyhedron, topoform, raster-plane, and the multi-object **3D Scene Studio**
 - **3D suite:** the mesh-rendering algorithms (Topoform, Polyhedron) import binary or ASCII **`.stl` meshes** and render them as wireframes, depth-plane contours, or face/edge/vertex art with hidden-line removal; Topoform ships 10 primitives (sphere, torus, cube, cone, ellipsoid, cylinder, capsule, pyramid, superellipsoid, torus knot) with detail up to 100. All four 3D algorithms support **orthographic or perspective projection**, full **Rotate X/Y/Z** view control via sliders or the on-canvas three-ring rotation gizmo (amber X, violet Y, cyan Z — drawn ring-only, with no backing disc over the artwork), and contour/line smoothing produces true bezier curves on screen and in export. The live preview fidelity while dragging a 3D shape is tunable in **Document Setup → Guides & Display → 3D move preview** (Draft / Balanced / High)
-- **3D Scene Studio:** a multi-object scene builder — assemble box · sphere · cylinder · cone · torus · torus-knot · capsule · superellipsoid · pyramid · plane · solids on a shared camera, select and move/rotate/scale objects (or push-pull box faces) with on-canvas gizmos, and light them with a **multi-light rig** (directional · ambient · point · spot, each draggable via a 3-axis gizmo). Surfaces render *light-made tone* through per-object/per-face **fill mappers** (hatch, crosshatch, contour, spiral, stipple, wireframe — each with its own control inventory), controllable **cast shadows** (angle / density / pen / line type / **Softness**, a **Layers** control — Off / 2 / 3 / 4 — that builds contact, umbra and penumbra zones in stages, and an **inverse** mode that thins a patterned ground for dark-paper plots), selectable **highlight treatments**, **x-ray** see-through back-face fills, a per-object **border** drawn as one contiguous silhouette outline, and a shared **stroke treatment** (line type, hand-drawn wobble, overstroke). Line output splits by role: the Object tab's **Border lines** (Curves / Smoothing / Simplify) govern the silhouette, creases and face outlines, while the Style tab's **Fill lines** (Curves / Smoothing / Simplify / Fidelity) govern the internal fill. Per-class **Edge Styles** give silhouette / crease / boundary / interior / hidden edges each their own pen, weight, and dash, with hidden edges drawn or dropped scene-wide. Slices gains **End overlap** — how far each depth-slice ring is carried past (or pulled back from) the silhouette, in pen widths; default 0 = unchanged. Per-object Style / Shadow / Highlight / X-ray flyouts live on the contextual task bar. The ground has **Width / Depth** size controls with a proportion lock and a one-click **Fill frame** that pushes its edges off the artboard. Each scene is a **layer tree** — one object per layer, with boolean (CSG) groups, lights, and the ground as their own rows — so you build it object-by-object, click the canvas or the tree to select and edit a single object, and older saved scenes upgrade to the tree automatically
+- **3D Scene Studio:** a multi-object scene builder — assemble box · sphere · cylinder · cone · torus · torus-knot · capsule · superellipsoid · pyramid · plane · solids on a shared camera, select and move/rotate/scale objects (or push-pull box faces) with on-canvas gizmos, and light them with a **multi-light rig** (directional · ambient · point · spot, each draggable via a 3-axis gizmo). Surfaces render *light-made tone* through per-object/per-face **fill mappers** (hatch, crosshatch, contour, spiral, stipple, wireframe — each with its own control inventory), controllable **cast shadows** (angle / density / pen / line type / **Softness**, a **Layers** control — Off / 2 / 3 / 4 — that builds contact, umbra and penumbra zones in stages, and an **inverse** mode that thins a patterned ground for dark-paper plots), selectable **highlight treatments**, **x-ray** see-through back-face fills, a per-object **border** drawn as one contiguous silhouette outline, and a shared **stroke treatment** (line type, hand-drawn wobble, overstroke). Line output splits by role: the Object tab's **Border lines** (Curves / Smoothing / Simplify) govern the silhouette, creases and face outlines, while the Style tab's **Fill lines** (Curves / Smoothing / Simplify / Fidelity) govern the internal fill. Per-class **Edge Styles** give silhouette / crease / boundary / interior / hidden edges each their own pen, weight, and dash, with hidden edges drawn or dropped scene-wide. The Style tab's **Tone shaping** group (Gamma, Contrast, Depth fade) shapes the tone every Fill Style reads, and the Fill Style rows add law-specific dials (wave length and crest phase, nib angle and contrast, taper, Turing maturity and scale, light-relative hatch, tier pens, maze chaining). Slices gains **End overlap** — how far each depth-slice ring is carried past (or pulled back from) the silhouette, in pen widths; default 0 = unchanged. Per-object Style / Shadow / Highlight / X-ray flyouts live on the contextual task bar. The ground has **Width / Depth** size controls with a proportion lock and a one-click **Fill frame** that pushes its edges off the artboard. Each scene is a **layer tree** — one object per layer, with boolean (CSG) groups, lights, and the ground as their own rows — so you build it object-by-object, click the canvas or the tree to select and edit a single object, and older saved scenes upgrade to the tree automatically
 - Universal **Noise Rack** with per-layer engine selection, blend modes, offsets, octave shaping — shared across flowfield, grid, phylla, rings, topo, wavetable, and petalis
 - Polygon Noise Rack layers now use intuitive zoom semantics: larger `Noise Zoom` / `Noise Scale` values create a larger polygon footprint, and vertical line-displacement systems treat positive amplitudes as upward motion
-- Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation
+- Seeded, repeatable generation; the `Transform & Seed` sub-panel (collapsed by default) exposes seed, position, scale, and rotation. On 3D Scene layers the seed (and RANDOMIZE) now drives every stipple, jitter, dither and wobble site; documents saved before this load as *legacy* and keep their exact look until you edit the seed or press RANDOMIZE. The Seed and RANDOMIZE grey out with a "No effect for this style" note when no fill in the scene draws random marks (a plain Hatch or Ladder sphere, for example)
 - Parameter randomization with algorithm-aware bias profiles for Shape Pack, Petalis, Rainfall, and Lissajous (strong defaults with occasional outliers)
 - Live formula display and estimated pen distance/time
 - `Reset to Defaults` restores full algorithm defaults including transform values
@@ -606,6 +606,44 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### 1.4.6
+- **3D Scene — pen routing, chaining and cleanups (U7).** **Tone bands** (2 to 4) split any Fill Style by
+  the tone under each mark and draw band 1 to N with the pens you pick in the *Band pen* rows; the
+  three-pen styles get *Tier N pen* pickers in the same way. The SVG export puts each pen in its own
+  group. **Voronoi Web** gains **Chain edges** (path count and pen travel drop sharply). **Stipple**
+  shows **Simplify** where it changes the dots. **Alt fill** lines gain **Alt angle** and cross at the
+  shared Cross angle. The wireframe *Show hidden* switch is folded into *Edge Styles > Hidden > Occluded*
+  (old documents load unchanged). X-ray *Front line* stays visible on box, plane and solid, greyed with a
+  reason. The Help Guide has a **3D Scene** section (Algorithms tab). Every default is unchanged.
+- **3D Scene — new artistic controls in the Style tab (U6).** *Tone shaping* adds **Gamma** and **Contrast**
+  (one curve every Fill Style reads) and **Depth fade** (far surfaces draw lighter: strength, start, full).
+  **Wave** gains *Wavelength* and *Crest phase*. **Width Ribbon** gains *Nib angle / Nib contrast* and
+  *Taper length / Tip width / Softness*. **Turing Stripe** gains *Maturity* and *Stripe scale*. Hatch
+  *Angle ref* gains **Light** (the hatch turns with the sun, faceted shapes). The three-pen Fill Styles
+  gain **Tier pens** (tier 1 to 3 draw with pens 1 to 3 of the palette; the SVG export groups them by pen).
+  **Maze** gains **Chain walls** (touching walls join into polylines: far fewer pen lifts, same ink).
+  Every default is unchanged; a control writes nothing until you move it.
+- **3D Scene — the Object 3D Style tab reaches every style control.** In a scene tree the scene
+  Style editor only styles the ground; the Object 3D panel now offers all of its rows (cross,
+  spiral, dot, wireframe, Stroke, Highlight, X-ray), plus Wobble scale, Overstroke, spiral Pitch,
+  contour Step, quantised-field Levels and the shadow's Tone depth. Density reaches 500.
+- **3D Scene — honest controls.** Rows that cannot apply to the shape are removed; rows the Fill
+  Style ignores are greyed with an (i) reason. The Fill Style picker greys only styles that draw
+  exactly like Ladder (measured), so curved Spiral / Stipple offer their full range again.
+- **3D Scene — Layers-panel "Assign pen" on an Object 3D row now routes its ink.**
+- **3D Scene — the Fill Style picker merges to 20 styles; every old look is still one pick away.**
+  *Ladder* now also covers Fine / Perceptual rungs, the Continuous Field laws (Spacing: Continuous
+  field) and the flick and deep-shadow-traverse overlays. *Width Ribbon* (was Tapered Ends) covers White
+  Band, Nib Angle and Isophote Width as Width from + Ends. *Bundle* covers Sub-Nib and Lozenge (Closest
+  approach, Bundle ends). *Wave* (was Amplitude Spacing) covers Interlock Weave, Weave Depth, Trochoid
+  Loop, Amplitude Only and One Pen Down as Phase + Waveform + Pen down. *Flow Field* covers Defect Split.
+  Origin Spiral is now Spiral > Centre: Glint. Saved documents open unchanged. The shadow Fill Style row
+  has the same sub-controls, so the shadow textures the earlier merges hid are reachable again.
+- **3D Scene — one setting per idea.** *Wrap* (Surface / Flat) replaces Contour Style: Region, Spiral
+  Mode: Flat and Hatch Angle ref: Screen. X-ray Front is a line type, Depth cue is two toggles, the
+  hidden-edge style is one select, and highlight Dashed / Dotted and Sparse / Stipple are Restyle line
+  and Thin with their own sub-controls. A legacy monoline document keeps its look when Density went live.
 
 ### 1.4.3
 - **3D Scene — curved-primitive borders now sit on the true silhouette.** A sphere, ellipsoid,

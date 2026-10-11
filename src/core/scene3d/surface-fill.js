@@ -28,6 +28,7 @@
   const globalScope = typeof window !== 'undefined' ? window : globalThis;
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const G3 = Vectura.Geometry3D || {};
+  const SEED = G3.SEED || { salt: 0, phase: 0, off: 0 };
 
   const finite = G3.finite || ((val, f = 0) => (Number.isFinite(Number(val)) ? Number(val) : f));
   const clamp = G3.clamp || ((val, lo, hi) => Math.max(lo, Math.min(hi, Number(val) || 0)));
@@ -280,7 +281,7 @@
   // the object stops sitting on the ground). So family A is floored where it
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
-  const PLOT_FLOOR_PEN = 2.2;
+  const PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
   // I5 follow-up — this is the DEFAULT for the master grid's line-count
   // floor (see `floorPen` inside the `STAGE.masterGrid` block below), and
   // remains the ONLY value `floorPitch` (the module-scope plot-safety floor
@@ -1513,6 +1514,15 @@
     // never throw and never silently draw nothing.
     const TONE_LAWS = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
     const askedLaw = typeof opts.toneLaw === 'string' ? opts.toneLaw : '';
+    // U5 (NEW-7) — the crossing-family angles come from ONE place (regions.js),
+    // resolved here per fill so a late-registering Regions is still honoured.
+    const crossDegOf = (name, fallback) => {
+      const RG = Vectura.Scene3D && Vectura.Scene3D.Regions;
+      return (RG && Number.isFinite(RG[name])) ? RG[name] : fallback;
+    };
+    const CROSS_B_DEG = crossDegOf('CROSS_OBJ_DEG', 65);
+    const CROSS_C_DEG = crossDegOf('CROSS_TRIPLE_DEG', 32);
+    const CROSS_MARK_DEG = crossDegOf('CROSS_MARK_DEG', 60);
     const TONE_ALGO = (askedLaw && (!TONE_LAWS || TONE_LAWS.indexOf(askedLaw) !== -1)
       && askedLaw !== 'none') ? askedLaw : TONE_ALGO_DEFAULT;
     // Relocated from module scope (see the comment left at the old site) — this
@@ -1528,6 +1538,13 @@
     // enforces on the way in, re-asserted here because `buildObject` is a
     // public boundary a test (or a future caller) can hit directly.
     const CF_LEVELS = clamp(Math.round(finite(opts.toneQuantLevels, CF_LEVELS_DEFAULT)), 4, 256);
+    // U6 — the artistic controls (src/config/scene3d-fill-controls.js). `fcNum`
+    // is the clamped style value, or undefined when the key is ABSENT; every
+    // consumer falls back to its own literal, so an absent key is today's output.
+    const FILL_CTL = Vectura.SCENE_FILL_CONTROLS || null;
+    const fcNum = (key) => (FILL_CTL ? FILL_CTL.read(opts, key) : undefined);
+    const WAVE_CREST_ASKED = (opts.waveCrest === 'in' || opts.waveCrest === 'anti'
+      || opts.waveCrest === 'jit' || opts.waveCrest === 'walk') ? opts.waveCrest : null;
     // Per-call `contourFlow` streamline family. `opts.toneFlowMode` anything
     // other than the literal 'grad' degrades to `FLOW_MODE_DEFAULT` ('iso') —
     // same rule `params.js` uses.
@@ -1558,6 +1575,9 @@
     const t = opts.transform || { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
     const rot = { yaw: finite(t.yaw, 0), pitch: finite(t.pitch, 0), roll: finite(t.roll, 0) };
     const cam = opts.camAngles || { yaw: 0, pitch: 0, roll: 0 };
+    // Rotation trig resolved once per build (bit-identical to rotatePoint).
+    const rotObj = G3.makeRotator ? G3.makeRotator(rot) : (pt) => rotatePoint(pt, rot);
+    const rotCam = G3.makeRotator ? G3.makeRotator(cam) : (pt) => rotatePoint(pt, cam);
     // T2-8b-5d (perf, no output change): the trig of the object rotation and of the camera, taken once. The
     // facing helpers below use it to rotate a normal and read only the camera-space z, with the same operations in
     // the same order as `rotatePoint` (yaw, pitch, roll), and without its temporaries.
@@ -3080,9 +3100,17 @@
     // with a 38 L*/mm highlight falloff, which is that bug and nothing else.) So
     // each shape states its capacity, the tone solve clamps to it, and a law that
     // saturates saturates honestly — visibly, in the numbers — instead of lying.
+    // U4b item 8: the Dot size / Dot angle keys reach the dot screen's disc.
+    // Both are ABSENT/0 by default, which is today's output exactly: the disc
+    // radius is 0.58 of its cell, and Dot size (an absolute radius, default 0.7)
+    // scales that share around its own default; Dot angle winds the spiral's
+    // start. A disc past ~1.0 of its cell would overlap its neighbours, so the
+    // scale is capped.
+    const dotScreenScale = () => (Number.isFinite(opts.dotSize) ? clamp(opts.dotSize / 0.7, 0.25, 1.5) : 1);
+    const DOT_SCREEN_TWIST = (finite(opts.dotAngle, 0) * Math.PI) / 180;
     const mkCap = (kind, R, w) => {
       const nCap = Math.max(1, Math.floor((0.98 * R) / w));
-      if (kind === 'disc') { const r = 0.58 * R; return (Math.PI * r * r) / w; }
+      if (kind === 'disc') { const r = 0.58 * R * dotScreenScale(); return (Math.PI * r * r) / w; }
       if (kind === 'lozenge') {
         const k = 0.42; const A = (0.50 * R) / k; const per = 4 * Math.sqrt(1 + k * k);
         let acc = 0;
@@ -3115,7 +3143,7 @@
         // FILLS. Length of the spiral to angle φ is w·φ²/(4π), so the radius the
         // tone asks for inverts in closed form; the cap is half the row pitch,
         // at which point neighbouring discs touch and the field is solid.
-        const rMax = 0.58 * R;
+        const rMax = 0.58 * R * dotScreenScale();
         let phi = Math.sqrt((4 * Math.PI * Math.max(0, L)) / w);
         if ((w * phi) / (2 * Math.PI) > rMax) phi = (2 * Math.PI * rMax) / w;
         if (phi < Math.PI) return [[[-L / 2, 0], [L / 2, 0]]];   // a dot, not a disc
@@ -3123,7 +3151,7 @@
         const dphi = Math.PI / 7;
         for (let t = 0; t <= phi; t += dphi) {
           const r = (w * t) / (2 * Math.PI);
-          pts.push([r * Math.cos(t), r * Math.sin(t)]);
+          pts.push([r * Math.cos(t + DOT_SCREEN_TWIST), r * Math.sin(t + DOT_SCREEN_TWIST)]);
         }
         return [pts];
       }
@@ -3436,7 +3464,7 @@
     const adjThreshold = (k, lineIndex, arc) => {
       const base = k + 0.5;
       if (TONE_ALGO !== 'bundleDither') return base;
-      const ph = (Number(lineIndex) || 0) * 0.6180339887498949
+      const ph = (Number(lineIndex) || 0) * 0.6180339887498949 + SEED.phase
         + (finite(arc, 0) / ADJ_DITHER_MM);
       return base + ADJ_DITHER_AMPL * Math.sin(ph * Math.PI * 2);
     };
@@ -3536,8 +3564,9 @@
     // whiteBand's and makes the difference between them purely directional. An
     // un-normalised nib would just be whiteBand a third lighter, which measures
     // as a worse whiteBand and says nothing about direction.
-    const NIB_DEG = 45;          // the nib axis, in SCREEN space (the calligraphic 45°)
-    const NIB_FLOOR = 0.35;      // the nib's corner: the narrowest mark it can make
+    // U6: `nibAngleDeg` / `nibContrast` (contrast = 1 - floor) override the two literals.
+    const NIB_DEG = fcNum('nibAngleDeg') ?? 45;          // the nib axis, in SCREEN space (the calligraphic 45°)
+    const NIB_FLOOR = fcNum('nibContrast') !== undefined ? 1 - fcNum('nibContrast') : 0.35;      // the nib's corner: the narrowest mark it can make
     const NIB_MEAN = NIB_FLOOR + (1 - NIB_FLOOR) * (2 / Math.PI);
     const nibFactor = (theta) => {
       if (!Number.isFinite(theta)) return 1;
@@ -3566,9 +3595,10 @@
     //
     // Nothing is dropped and no run is shortened: a taper is a width, so the
     // ruling still runs end to end and the free-end count stays at zero.
-    const TAPER_MM = 3.5;        // how far in from a run's own end the taper reaches
-    const TAPER_FLOOR = 0.42;    // width at the very end, as a share of the tone's ask
-    const TAPER_SOFT = 0.09;     // softness of the light-end clamp, in grey units
+    // U6: `taperLength` / `taperTipWidth` / `taperSoftness` override the three literals.
+    const TAPER_MM = fcNum('taperLength') ?? 3.5;        // how far in from a run's own end the taper reaches
+    const TAPER_FLOOR = fcNum('taperTipWidth') ?? 0.42;    // width at the very end, as a share of the tone's ask
+    const TAPER_SOFT = fcNum('taperSoftness') ?? 0.09;     // softness of the light-end clamp, in grey units
     const softClamp = (v, lo, hi) => {
       // Smooth max then smooth min, both by the log-sum-exp softening. k is in
       // grey units, so the corner is rounded over TAPER_SOFT of the range.
@@ -4255,9 +4285,9 @@
     // family at div 2 rules at twice the pitch and every pitch-correct quantity
     // downstream follows without being told.
     const PEN_FAMILIES = {
-      penScreen: [{ layer: 1, deg: 60, div: 1 }, { layer: 2, deg: 120, div: 1 }],
+      penScreen: [{ layer: 1, deg: CROSS_MARK_DEG, div: 1 }, { layer: 2, deg: 2 * CROSS_MARK_DEG, div: 1 }],
       penOctaves: [{ layer: 1, deg: 0, div: 2 }, { layer: 2, deg: 0, div: 4 }],
-      penCross: [{ layer: 1, deg: 60, div: 2 }],
+      penCross: [{ layer: 1, deg: CROSS_MARK_DEG, div: 2 }],
       penReserve: [{ layer: 1, deg: 90, div: 1 }],
     };
     // The pen each LAYER of a multi-family law draws with.
@@ -4399,7 +4429,7 @@
     // own end, so the wave dies BEFORE the silhouette rather than at it.
     const WV_PITCH_PEN = 10;      // reserved pitch, in pen widths (whiteBand: 7.06)
     const WV_DARK_AREA = 0.92;    // the core shadow's delivered ink area
-    const WV_LAMBDA_PEN = 7.3;    // wavelength, in pen widths (2.2 mm at 0.3)
+    const WV_LAMBDA_PEN = fcNum('waveLength') ?? 7.3;    // wavelength, in pen widths (2.2 mm at 0.3); U6 `waveLength`
     const WV_AMAX = 0.42;         // peak amplitude, as a share of the reserved pitch
     const WV_I0 = 0.62;           // radiance above which the family is a plain ruling
     const WV_TAPER_MM = 2.0;      // the wave eases to nothing this far from a run end
@@ -4498,7 +4528,11 @@
     const isWv6 = () => WV6[TONE_ALGO] != null;
     // 'jit' is anti-phase with a walk ON TOP, so its closest approach is still
     // governed by the crest-into-trough geometry. Stated once, read everywhere.
-    const wv6Anti = () => { const c = wv6(); return !!c && (c.ph === 'anti' || c.ph === 'jit'); };
+    const wv6Anti = () => {
+      const c = wv6();
+      const k = WAVE_CREST_ASKED || (c && c.ph);
+      return !!c && (k === 'anti' || k === 'jit');
+    };
     const wvOctaveLaw = () => TONE_ALGO === 'hilbertDepth' || TONE_ALGO === 'nestedOctaves'
       || (isWv6() && wv6().dep === 1);
     // 'onePenDown' does NOT split along the line — a chain of abutting sub-paths
@@ -4666,18 +4700,20 @@
     const wvLinePhase = (lineIndex) => {
       const ord = Math.round((Number(lineIndex) || 0) * wvFlatCov());
       const c6 = wv6();
-      if (c6) {
-        if (c6.ph === 'anti') return Math.PI * ord;
+      // U6: `waveCrest` overrides the phase the law was built with (absent = the law's own).
+      const phk = WAVE_CREST_ASKED || (c6 ? c6.ph : null);
+      if (c6 || WAVE_CREST_ASKED) {
+        if (phk === 'anti') return Math.PI * ord;
         // 'weaveJitter' — anti-phase PLUS a bounded golden walk. Strict
         // alternation makes the crest rows PERIODIC, and a periodic crest row
         // is a periodic white lozenge between it and its neighbour: the eye
         // finds a lattice even where no single gap is wide. The walk is capped
         // at WV6_JIT of a period so the interlock survives it.
-        if (c6.ph === 'jit') return Math.PI * ord + 2 * Math.PI * WV6_JIT * ((ord * GOLDEN_STEP) % 1);
+        if (phk === 'jit') return Math.PI * ord + 2 * Math.PI * WV6_JIT * ((ord * GOLDEN_STEP) % 1);
         // 'ampPhaseWalk' — no alternation at all, only decorrelation. Every
         // ruling starts somewhere else in the period, so neighbouring crests
         // are never in register and the residual white cannot line up.
-        if (c6.ph === 'walk') return 2 * Math.PI * ((ord * GOLDEN_STEP) % 1);
+        if (phk === 'walk') return 2 * Math.PI * ((ord * GOLDEN_STEP) % 1);
         return 0;
       }
       if (TONE_ALGO === 'interlockWeave') return Math.PI * ord;
@@ -5052,7 +5088,7 @@
     // A quantisation step that lands on the same value for every neighbouring
     // ruling is what reads as a band; one that walks is a texture.
     const wDithered = (w, lineIndex) => {
-      const u = ((Number(lineIndex) || 0) * 0.6180339887498949) % 1;
+      const u = ((Number(lineIndex) || 0) * 0.6180339887498949 + SEED.phase) % 1;
       return clamp(w * (1 + W_DITHER * (u - 0.5) * 2), W_MIN, W_MAX);
     };
     // The per-sample weight the emitter records.
@@ -5204,12 +5240,25 @@
     // THE FIELD ITSELF: radiance → wanted clearance, in millimetres of screen.
     // Continuous everywhere, monotone in I by construction (every branch is a
     // monotone map of a monotone map), and it is the ONLY place tone is decided.
+    const CF_SIGMOID_VARIANTS = {
+      contFieldFore: 1, contFieldSurface: 1, contFieldQuant: 1, contFieldTouch: 1,
+    };
     const cfWantedPitch = (I) => {
       const pMin = cfTightPitch();
       const pMax = cfOpenPitch();
       const x = clamp(finite(I, 0), 0, 1);
       if (TONE_ALGO === 'contFieldEase') return pMin + (pMax - pMin) * ease(x);
-      if (TONE_ALGO === 'contFieldSigmoid') return pMin + (pMax - pMin) * sterzik(x);
+      // U4b item 4: the Sterzik curve is the survivor's OWN curve. Choosing a
+      // Field metric / Field floor sub-option resolves to contFieldFore /
+      // Surface / Quant / Touch, and those used to fall through to L*-linear —
+      // silently changing the curve as well as the metric. They keep the
+      // sigmoid now. A document migrated from the retired ids carries
+      // `fieldCurve:'lstar'` (params.js alias shim) and keeps its original
+      // L*-linear look.
+      if (TONE_ALGO === 'contFieldSigmoid'
+        || (CF_SIGMOID_VARIANTS[TONE_ALGO] === 1 && opts.fieldCurve !== 'lstar')) {
+        return pMin + (pMax - pMin) * sterzik(x);
+      }
       const a = cfAreaForTone(x, inkWidth() / pMin, inkWidth() / pMax);
       return clamp(inkWidth() / Math.max(1e-6, a), pMin, pMax);
     };
@@ -5228,8 +5277,14 @@
     // span-verdict a flat 1 for these three (see below) and nothing
     // downstream ever drops a ruling again — only WHERE the next one lands
     // moves.
+    // U4b item 5: `perceptualRamp` (Ladder > Rung detail > Perceptual ramp) joins
+    // the family. It used to return its coverage into the DISCRETE rung verdict,
+    // which reintroduced exactly the 1-and-2-pitch gaps W-26 removed. Only its
+    // tone TARGET (`perceptualCov`) survives; the placement is the continuous
+    // walk, like its three siblings.
     const isEvenLadder = () => TONE_ALGO === 'ladder' || TONE_ALGO === 'fineLadder'
-      || TONE_ALGO === 'phaseFineLadder' || TONE_ALGO === 'deepFillTSP';
+      || TONE_ALGO === 'phaseFineLadder' || TONE_ALGO === 'deepFillTSP'
+      || TONE_ALGO === 'perceptualRamp';
     // The tone TARGET is exactly what each law computed before this round —
     // ONLY the placement changes. `phaseFineLadder`'s `nestedCov` wants the
     // per-sample DRAWN pitch as its second argument, so a family already
@@ -5247,6 +5302,7 @@
       let cov;
       if (TONE_ALGO === 'fineLadder') cov = fineLadderCov(x);
       else if (TONE_ALGO === 'phaseFineLadder') cov = nestedCov(x, masterPitch);
+      else if (TONE_ALGO === 'perceptualRamp') cov = perceptualCov(x, masterPitch);
       else cov = coverageForSample(x);
       // THE SAME O6 SPARSE-END BAR the discrete ladder's own per-span
       // verdict charges (`litSpanFloor`, in `emitLineOnce`), applied to the
@@ -5815,8 +5871,8 @@
       nLocal = mul(nLocal, 1 / nl);
       if (chartOrientation() < 0) nLocal = mul(nLocal, -1); // outward (see chartOrientation)
       const world = applyTransform(p0, t);
-      const wN = normalize(rotatePoint(nLocal, rot));
-      const camN = rotatePoint(wN, cam);
+      const wN = normalize(rotObj(nLocal));
+      const camN = rotCam(wN);
       const scr = projectWorld(world);
       if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
       // Screen-space derivatives of the parameter square. A wrapped family's
@@ -6203,6 +6259,7 @@
     // Deterministic 2D hash (mirrors geometry3d strokeHash) for stippleOut.
     const sfHash = (a, b) => {
       let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+      h ^= SEED.salt; // Scene Seed — 0 for a legacy layer ⇒ identity
       h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
       return (h >>> 0) / 4294967296;
     };
@@ -6600,7 +6657,7 @@
       const w = inkWidth();
       const PMIN = MK_PMIN();
       const li = Number(lineIndex) || 0;
-      const gold = ((li * GOLDEN_STEP) % 1 + 1) % 1;
+      const gold = ((li * GOLDEN_STEP + SEED.phase) % 1 + 1) % 1;
       const parity = ((li % 2) + 2) % 2;
 
       // W-05b — split into a pure function of (sample, along-dir, step-dir,
@@ -7265,7 +7322,7 @@
           const iP5 = iOf(0.5 * aP); const iM5 = iOf(-0.5 * aM);
           const darkPlus = (iP5 != null && iM5 != null) ? (iP5 < iM5) : true;
           const gg = gutter / n;
-          const uu5 = ((k * 0.6180339887498949) % 1 + 1) % 1;
+          const uu5 = ((k * 0.6180339887498949 + SEED.phase) % 1 + 1) % 1;
           const shift = n > 1 ? (uu5 - 0.5) * 0.5 * gg : 0;
           const wts = []; let wsum = 0;
           for (let j = 0; j < n; j += 1) { const wj = MK_TICK_CHAIN_RHO ** j; wts.push(wj); wsum += wj; }
@@ -8264,7 +8321,7 @@
       if (TONE_ALGO === 'strokesGrow') return growLength(cov, vdc2(lineIndex)) > 0.02;
       const prev = ladderPhase.has(key)
         ? ladderPhase.get(key)
-        : (Number.isFinite(seed) ? seed : LADDER_PHASE0);
+        : (Number.isFinite(seed) ? seed : (LADDER_PHASE0 + SEED.phase) % 1);
       const r = ladderStep(prev, cov);
       ladderPhase.set(key, r.phase);
       return r.keep;
@@ -8388,6 +8445,10 @@
       // erosion coming back empty, and an erosion returning empty in silence is
       // exactly how the inert-ribbon blocker hid. Counted, never swallowed.
       outlineOnly: 0,
+      // The outline-depth guard of the raster erosion (`PenFill.erodeLevels`):
+      // outline vertices the raster put shallower than pen/2 (pushed back out
+      // to pen/2), and the ones it had to drop. Observability only.
+      guardShallow: 0, guardDropped: 0, outlineOpen: 0,
       noModule: 0, noRegion: 0, atMaxPaths: 0,
       // The 1-to-2-pen WALLS class (see `ribbonize`). `walls` counts stretches
       // that took it, `wallRings` the closed rings it shipped, `wallEmpty` the
@@ -8800,10 +8861,25 @@
         let any = false;
         // OUTLINE — the ribbon eroded by HALF a pen, so a real pen stroking it
         // lands its OUTER edge exactly on the ribbon boundary.
-        const outlineMP = erode(clippedMP, penWidth / 2);
-        // FILL — deeper again, chained off the outline because
-        // erode(R, a+b) === erode(erode(R, a), b) and two shallow cuts are much
-        // cheaper than one deep one.
+        // ONE DISTANCE FIELD, BOTH EROSIONS (fill-style review §2(d), U2).
+        // The two `insetMultiPolygon` band unions (now only the fallback below)
+        // were 42-66 % of every wave/weave ribbon law's frame. A Euclidean SDF
+        // composes —
+        // erode(R, a + b) is the a + b level set of R's own field — so
+        // `PenFill.erodeLevels` rasterizes the clipped ribbon ONCE, in its
+        // principal-axis frame, and contours both depths off it. The outline
+        // level is GUARDED: the raster cannot see a notch narrower than a cell,
+        // so every outline vertex is checked against the exact clipped boundary
+        // and pushed out to pen/2 (or dropped) — containment stays exact, as
+        // the polygon erosion's was. The fill region stays in the frame and is
+        // handed to PenFill as is, so PenFill's own grid is oriented too; its
+        // paths are rotated back. OUTPUT CHANGED vs the polygon erosion (a
+        // raster level, not a boolean): accepted by Jay 2026-10-02, goldens
+        // refreshed deliberately.
+        //
+        // FILL — deeper again. erode(R, a+b) === erode(erode(R, a), b), so the
+        // fill region is the deeper level of the SAME field (the polygon
+        // fallback below still chains it off the outline).
         //
         // THE DEPTH IS A PITCH, NOT A PEN RADIUS. Eroding by a further pen/2 put
         // the fill region's boundary exactly one pen in from the ribbon's, and
@@ -8822,18 +8898,66 @@
         // pass: the next pass then sits one `pitch` (= penWidth · (1 - overlap))
         // further in, exactly like every pass after it, and the seam carries the
         // same 15% overlap as the rest of the fill.
-        const fillMP = outlineMP.length
-          ? erode(outlineMP, penWidth * (0.5 - RIBBON_OVERLAP)) : [];
-        outlineMP.forEach((poly) => {
-          poly.forEach((r) => {
-            const pts = ringPts(r);
-            if (!pts) return;
-            outp.push(tag(closePath(pts, zOfPt), t0, t1));
-            ribbonStat.outlines += 1; any = true;
-          });
+        const ER = (PFm && typeof PFm.erodeLevels === 'function')
+          ? (() => {
+            try {
+              // Even-odd over every ring: shells and holes flattened together.
+              const allRings = [];
+              clippedMP.forEach((poly) => poly.forEach((r) => allRings.push(r)));
+              return PFm.erodeLevels(allRings, [penWidth / 2, penWidth * (1 - RIBBON_OVERLAP)],
+                // The outline is contoured a cell SHALLOW (so a sliver narrower
+                // than a cell — a tapered end just over one pen wide — is still
+                // found) and then SNAPPED to exactly pen/2 off the true clipped
+                // boundary, so the stroke's outer edge lands on the ribbon edge
+                // as the polygon erosion's did. The fill level is contoured at
+                // its depth; its raster error (about a cell) is well inside the
+                // 15 % pen overlap with the outline.
+                { guard: ['snap', false], levelOffset: [-1, 0] });
+            } catch (err) { return null; }
+          })()
+          : undefined;
+        let outlineRings; let fillRegions; let fromFrame = null;
+        if (ER !== undefined) {
+          // erodeLevels answers null only when the ribbon rasterizes to
+          // nothing — the erosion consumed it.
+          // A guarded outline piece may come back OPEN (`open`): the level
+          // pinches out there, and closing it would bridge the pinch.
+          outlineRings = ER ? ER.levels[0].map((l) => {
+            const w = l.map(ER.frame.toWorld);
+            if (l.open) w.open = true;
+            return w;
+          }) : [];
+          fillRegions = (ER && outlineRings.length && ER.levels[1].length) ? [ER.levels[1]] : [];
+          fromFrame = ER ? ER.frame.toWorld : null;
+          if (ER) {
+            ribbonStat.guardShallow += ER.guard.shallow;
+            ribbonStat.guardDropped += ER.guard.dropped;
+          }
+        } else {
+          // No PenFill.erodeLevels (a stripped-down harness): the polygon
+          // erosion, chained exactly as before.
+          const outlineMP = erode(clippedMP, penWidth / 2);
+          const fillMP = outlineMP.length
+            ? erode(outlineMP, penWidth * (0.5 - RIBBON_OVERLAP)) : [];
+          outlineRings = [];
+          outlineMP.forEach((poly) => poly.forEach((r) => outlineRings.push(r)));
+          fillRegions = fillMP.map((poly) => poly.map(ringPts).filter(Boolean)).filter((rs) => rs.length);
+        }
+        outlineRings.forEach((r) => {
+          if (r.open) {
+            const pts = r.filter((q) => Number.isFinite(q.x) && Number.isFinite(q.y));
+            if (pts.length < 2) return;
+            outp.push(tag(pts.map((q) => ({ x: q.x, y: q.y, z: zOfPt(q) })), t0, t1));
+            ribbonStat.outlines += 1; ribbonStat.outlineOpen += 1; any = true;
+            return;
+          }
+          const pts = ringPts(r);
+          if (!pts) return;
+          outp.push(tag(closePath(pts, zOfPt), t0, t1));
+          ribbonStat.outlines += 1; any = true;
         });
-        fillMP.forEach((poly) => {
-          const regionRings = poly.map(ringPts).filter(Boolean);
+        const fillMP = fillRegions;
+        fillMP.forEach((regionRings) => {
           if (!regionRings.length) return;
           let res = null;
           try {
@@ -8844,7 +8968,10 @@
           if (paths.length >= RIBBON_MAX_PATHS) ribbonStat.atMaxPaths += 1;
           paths.forEach((p) => {
             if (!Array.isArray(p) || p.length < 2) return;
-            outp.push(tag(p.map((q) => ({ x: q.x, y: q.y, z: zOfPt(q) })), t0, t1));
+            outp.push(tag(p.map((q0) => {
+              const q = fromFrame ? fromFrame(q0) : q0;
+              return { x: q.x, y: q.y, z: zOfPt(q) };
+            }), t0, t1));
             ribbonStat.fills += 1; any = true;
           });
         });
@@ -9398,8 +9525,16 @@
           // from the run mean immediately above. They are ribbon laws too, and
           // gating on the split predicate would leave all three at a fat-pen
           // multiplier.
+          // F5 (engine law-draft tier, `opts.ribbonDraft`): a live drag skips
+          // the ribbon build and ships the law's own weighted centrelines —
+          // the pre-ribbon delivery (`splitByWeight` / the run mean), which
+          // the renderer strokes at `weightScale`. Same placement, same width
+          // profile, no erosion/PenFill. Never set on a settled compose.
           const pieces = (isRibbonLaw() && wCnt > 0)
-            ? (deferRibbon() ? [pendRibbon(run, fam)] : ribbonize(run, wPts, ttPts, fam, back))
+            ? (opts.ribbonDraft === true
+              ? (splitsAlongLine() ? splitByWeight(run, wPts, ttPts, fam)
+                : (run.weightScale == null && (run.weightScale = meanW(wPts, 0, run.length - 1)), [run]))
+              : (deferRibbon() ? [pendRibbon(run, fam)] : ribbonize(run, wPts, ttPts, fam, back)))
             : ((splitsAlongLine() && wCnt > 0)
               ? splitByWeight(run, wPts, ttPts, fam)
               : [run]);
@@ -9652,8 +9787,13 @@
       // law's realised elongation (1.13x) fell a third short of the 1.8x its pen
       // had already been divided by. Any law that shortens its wavelength or
       // adds an octave states a bigger `steps` in the WV6 table and pays for it.
+      // U6: a wavelength under the default 7.3 pens needs proportionally more samples
+      // or the polyline corner-cuts the crests (see the WV6 `steps` note above).
+      const waveSteps = (toneOn && isWaveLaw())
+        ? (isWv6() ? Math.max(MAX_LINE_STEPS, wv6().steps) : MAX_LINE_STEPS) : 0;
       const nSteps = (toneOn && isWaveLaw())
-        ? (isWv6() ? Math.max(MAX_LINE_STEPS, wv6().steps) : MAX_LINE_STEPS)
+        ? (WV_LAMBDA_PEN < 7.3 && FILL_CTL
+          ? Math.min(FILL_CTL.WAVE_MAX_STEPS, Math.ceil(waveSteps * 7.3 / WV_LAMBDA_PEN)) : waveSteps)
         : Math.max(2, Math.min(MAX_LINE_STEPS,
           Number.isFinite(paramAt.steps) ? Math.round(paramAt.steps) : steps));
 
@@ -10643,7 +10783,7 @@
           if (prev < 0) {
             const fr = Number(threshold);
             const key = Number.isFinite(fr) ? Math.round((((fr % 1) + 1) % 1) * 4096) : (Number(lineIndex) || 0);
-            tspPh[s] = (key * GOLDEN_STEP) % 1;
+            tspPh[s] = (key * GOLDEN_STEP + SEED.phase) % 1;
           } else {
             tspPh[s] = tspPh[prev] + (arcMM[s] - arcMM[prev]) / P;
           }
@@ -10773,7 +10913,7 @@
           if (duty[s] < lozStat.dutyMin) lozStat.dutyMin = duty[s];
           if (duty[s] < 0.999) lozStat.dissolved += 1;
         }
-        const phi0 = ((Number(lineIndex) || 0) * GOLDEN_STEP) % 1;
+        const phi0 = ((Number(lineIndex) || 0) * GOLDEN_STEP + SEED.phase) % 1;
         const MARK = (TONE_ALGO === 'lozSwell') ? LZ_SWELL_MM()
           : (TONE_ALGO === 'lozBudget') ? LZ_BUDGET_MM() : LZ_MARK_MM();
         const PERIOD = LZ_PERIOD_MM();
@@ -12186,7 +12326,7 @@
       const sy = smp.dA.y * aDir.a + smp.dB.y * aDir.b;
       const L = Math.hypot(sx, sy);
       if (!(L > 1e-9)) return null;
-      const rad = (sense * finite(deg, 65) * Math.PI) / 180;
+      const rad = (sense * finite(deg, CROSS_B_DEG) * Math.PI) / 180;
       const c = Math.cos(rad); const s = Math.sin(rad);
       return pullbackDir(smp, (sx * c - sy * s) / L, (sx * s + sy * c) / L);
     };
@@ -12376,7 +12516,7 @@
     const buildCrossFamily = (baseAngleDeg, deg, count, flow) => {
       const key = `${baseAngleDeg}|${deg}|${count}|${flow || ''}`;
       if (crossFamilyCache.has(key)) return crossFamilyCache.get(key);
-      const nominal = angleFamily(finite(baseAngleDeg, 0) + finite(deg, 65));
+      const nominal = angleFamily(finite(baseAngleDeg, 0) + finite(deg, CROSS_B_DEG));
       const n = Math.max(2, Math.round(count * nominal.span));
       const step = nominal.span / n;
       const nomOff = { a: nominal.na * step, b: nominal.nb * step };
@@ -12825,8 +12965,8 @@
       // as even and as complete as the base one.
       const emitLayeredCross = (count, back) => {
         const base = finite(opts.fillAngle, 0);
-        emitAngledFamily(base + 65, count, back, ['X1', 'X2']);
-        emitAngledFamily(base + 32, count, back, ['X2']);
+        emitAngledFamily(base + CROSS_B_DEG, count, back, ['X1', 'X2']);
+        emitAngledFamily(base + CROSS_C_DEG, count, back, ['X2']);
       };
       // 'crossFade' — layeredCross's three layers with the gates taken OFF.
       //
@@ -12839,8 +12979,8 @@
       // thickening. Family A is layer 0 and was already emitted by the mapper.
       const emitCrossFade = (count, back) => {
         const base = finite(opts.fillAngle, 0);
-        xfLayer = 1; emitAngledFamily(base + 65, count, back);
-        xfLayer = 2; emitAngledFamily(base + 32, count, back);
+        xfLayer = 1; emitAngledFamily(base + CROSS_B_DEG, count, back);
+        xfLayer = 2; emitAngledFamily(base + CROSS_C_DEG, count, back);
         xfLayer = 0;
       };
       const emitTerminatorCross = (count, back) => {
@@ -12856,9 +12996,16 @@
           if (toneOn && plan) {
             const base = finite(opts.fillAngle, 0);
             plan.forEach((f) => {
-              const n = Math.max(2, Math.round(count / Math.max(1, f.div)));
+              // U4b item 8: penCross's own crossing family follows the Cross
+              // angle / Cross density dials (crosshatch Type). Its designed
+              // 60 deg / half density is the DEFAULT (Cross angle 90, density 1),
+              // so the shift is zero there and the default is byte-identical.
+              const isCrossDial = TONE_ALGO === 'penCross';
+              const deg = isCrossDial && f.deg ? f.deg + (crossDelta - 90) : f.deg;
+              const div = isCrossDial ? f.div * crossRatio : f.div;
+              const n = Math.max(2, Math.round(count / Math.max(1, div)));
               xfLayer = clamp(Math.round(f.layer), 0, 2);
-              if (f.deg) { emitAngledFamily(base + f.deg, n, back); return; }
+              if (deg) { emitAngledFamily(base + deg, n, back); return; }
               if (mapper === 'contour') emitFamily('a', n, back);
               else if (onMeridianAxis) emitFamily('b', n, back);
               else emitAngledFamily(hatchAngle, n, back);
@@ -12876,7 +13023,7 @@
         if (TONE_ALGO === 'weightCrossHandoff') {
           if (toneOn) {
             xfLayer = 1;
-            emitAngledFamily(finite(opts.fillAngle, 0) + 65, count, back);
+            emitAngledFamily(finite(opts.fillAngle, 0) + CROSS_B_DEG, count, back);
             xfLayer = 0;
           }
           return;
@@ -13016,6 +13163,12 @@
           minMarkMM: MIN_MARK_MM,
           hash: sfHash,
           angleDeg: finite(opts.fillAngle, 0),
+          densityScale: opts.densityScale,
+          crossDelta: crossDelta,
+          stripeAlign: opts.stripeAlign,
+          chainMarks: opts.chainMarks,
+          patternMaturity: opts.patternMaturity,
+          stripeScale: opts.stripeScale,
         });
       } else if (contMapper) {
         // W-36c: crosshatch's family A now also reads the per-family budget
@@ -13078,7 +13231,7 @@
         emitSecondary(hatchAngle + crossDelta, countB, back);      // the crossing family
         // §2.3 — the tone-driven third pass goes to +32°, not +45°: with family B
         // already at the user's delta, +45 lands close enough to A or B to beat.
-        if (crossTriple) emitSecondary(hatchAngle + 32, countB, back); // darkest-band third pass
+        if (crossTriple) emitSecondary(hatchAngle + CROSS_C_DEG, countB, back); // darkest-band third pass
         emitTerminatorCross(count, back);
         emitShadowInfill(onMeridianAxis ? meridianAt : angleFamily(hatchAngle).lineAt, count, back);
       } else if (mapper === 'contour') {
@@ -13310,12 +13463,23 @@
         const SEG = 6;
         const dotShape = typeof opts.dotShape === 'string' ? opts.dotShape : 'dot';
         const dotAngle = finite(opts.dotAngle, 0);
+        // U4b item 7: Jitter now reaches the curved lattice. The scale is the
+        // faceted one (Mappers.jitterFracFor: 0-100 -> 0-1.75 cells peak to
+        // peak). An ABSENT key stays an exact lattice, which is today's output.
+        const jitFrac = Number.isFinite(opts.stippleJitter)
+          ? (clamp(opts.stippleJitter, 0, 100) * 1.75) / 100 : 0;
         const legacy = dotShape === 'dot' && !Number.isFinite(opts.dotSize);
         const R = Number.isFinite(opts.dotSize) ? clamp(opts.dotSize, 0.1, 3) : legacyR;
         const Marks = Vectura.Scene3D && Vectura.Scene3D.Mappers;
         for (let r = 0; r < rows; r++) {
           for (let c = 0; c < colsPer; c++) {
-            const smp = sampleAt((r + 0.5) / rows, (c + 0.5) / colsPer);
+            let sa = (r + 0.5) / rows; let sb = (c + 0.5) / colsPer;
+            if (jitFrac > 0) {
+              sa = clamp(sa + ((sfHash(r * 977 + 41, c) - 0.5) * jitFrac) / rows, 0, 1);
+              sb = sb + ((sfHash(r * 977 + 43, c + 7919) - 0.5) * jitFrac) / colsPer;
+              sb -= Math.floor(sb);
+            }
+            const smp = sampleAt(sa, sb);
             if (!smp || smp.front !== wantFront) continue;
             if (toneOn) {
               // O18 — stipple used a hardcoded `(…%7)/7` dither and never read
@@ -13347,7 +13511,7 @@
                     ? algoCoverage(smp.I, false, smp, null)
                     : (zone ? zoneCoverage(zone, false) : coverageForSample(smp.I)));
                 if (!ladderKeeps(`stipple|${back ? 'B' : 'F'}|${r}`, clamp(cov, 0, 1),
-                  (r * GOLDEN_STEP) % 1)) continue;
+                  (r * GOLDEN_STEP + SEED.phase) % 1)) continue;
               } else if (STAGE.dither) {
                 const shade = clamp(1 - smp.I, 0, 1);
                 const th = ((r * colsPer + c) % 7) / 7; // scattered dither

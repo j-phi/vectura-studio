@@ -10538,7 +10538,59 @@
     // regen time on populated scenes (12-object gate: ~130ms at balanced vs
     // ~33ms at draft), so per-move synchronous regens stall the drag. At most
     // one draft-quality regen per animation frame; release does the full one.
+    // B3 — deferred full-quality "settle" render after a scene drag release.
+    // rAF then a macrotask: the release frame paints first, then the full
+    // compose runs. One pending settle at a time; `after(layer)` runs once the
+    // settled ink is in (panel rebuild / formula refresh).
+    _scheduleSceneSettleRegen(layerId, after) {
+      const pending = this._sceneSettle;
+      if (pending && pending.layerId !== layerId) this.flushSceneSettleRegen();
+      else this._cancelSceneSettleRegen(layerId);
+      const token = { layerId, after, raf: null, timer: null };
+      const raf = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (fn) => setTimeout(fn, 16);
+      token.raf = raf(() => {
+        token.raf = null;
+        token.timer = setTimeout(() => {
+          token.timer = null;
+          if (this._sceneSettle === token) this.flushSceneSettleRegen();
+        }, 0);
+      });
+      this._sceneSettle = token;
+    }
+
+    // Cancel a pending settle (only for `layerId` when given). True if one was.
+    _cancelSceneSettleRegen(layerId) {
+      const token = this._sceneSettle;
+      if (!token) return false;
+      if (layerId != null && token.layerId !== layerId) return false;
+      if (token.raf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(token.raf);
+      }
+      if (token.timer != null) clearTimeout(token.timer);
+      this._sceneSettle = null;
+      return true;
+    }
+
+    // Run a pending settle now (export paths, tests). True if one ran.
+    flushSceneSettleRegen() {
+      const token = this._sceneSettle;
+      if (!token) return false;
+      this._cancelSceneSettleRegen();
+      const layer = this.engine.layers.find((l) => l.id === token.layerId);
+      if (!layer) return false;
+      this.engine.generate(layer.id);
+      if (typeof token.after === 'function') token.after(layer);
+      if (this.app?.render) this.app.render(); else this.draw();
+      return true;
+    }
+
     _scheduleSceneDragRegen(layerId) {
+      // B3 — a new drag on a scene whose previous release settle is still
+      // pending supersedes it: that settle would only be redrawn over.
+      this._cancelSceneSettleRegen(layerId);
       this._sceneDragRegenLayerId = layerId;
       if (this._sceneDragRegenRaf != null) return;
       const raf = typeof requestAnimationFrame === 'function'
@@ -11574,9 +11626,14 @@
             else obj.transform.roll = wrap360(obj.transform.roll);
           }
         }
-        this.engine.generate(layer.id);
-        this.app?.ui?.updateFormula?.();
-        this.app?.ui?.buildControls?.(layer);
+        // B3 — the release render is the gesture's ONLY full-quality compose
+        // (drag frames are draft tiers). Deferred past the release paint and
+        // cancelled by the next drag on this scene, so rapid nudges do not
+        // stack seconds of settle freezes.
+        this._scheduleSceneSettleRegen(layer.id, (settled) => {
+          this.app?.ui?.updateFormula?.();
+          this.app?.ui?.buildControls?.(settled);
+        });
       }
       this.updateCursor();
     }
@@ -15263,10 +15320,18 @@
       this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (layer && drag.historyPushed) {
-        this.engine.generate(layer.id);
-        this.app?.ui?.buildControls?.();
-        this.app?.ui?.updateFormula?.();
-        this.app?.ui?._activePresetGalleryRefresh?.();
+        const settle = () => {
+          this.app?.ui?.buildControls?.();
+          this.app?.ui?.updateFormula?.();
+          this.app?.ui?._activePresetGalleryRefresh?.();
+        };
+        if (layer.type === 'scene3d') {
+          // B3 — a scene's orbit drew draft tiers; settle once, deferred.
+          this._scheduleSceneSettleRegen(layer.id, settle);
+        } else {
+          this.engine.generate(layer.id);
+          settle();
+        }
       }
       this.updateCursor();
       this.draw();

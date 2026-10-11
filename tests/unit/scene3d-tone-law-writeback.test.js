@@ -40,7 +40,9 @@ describe('W-10d-2 — UNREACHABLE_WRITEBACK / writeBackFor (Contract A)', () => 
     const hitRows = [];
     PRIMITIVES.forEach((primitive) => {
       MAPPERS.forEach((mapper) => {
-        LAWS.PICKER_IDS.forEach((id) => {
+        // U5: originSpiral left the picker (it is the Spiral Type's Glint Centre); the
+        // write-back still keys on the raw id a saved document can carry.
+        LAWS.IDS.forEach((id) => {
           const target = F.writeBackFor(id, primitive, mapper);
           if (target !== null) {
             hits += 1;
