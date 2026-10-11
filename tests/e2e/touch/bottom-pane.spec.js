@@ -97,7 +97,9 @@ test.describe('TUX-051 B: toggle geometry', () => {
     expect(hit.w, `${dev} hit w`).toBeGreaterThanOrEqual(44);
     expect(hit.h, `${dev} hit h`).toBeGreaterThanOrEqual(44);
     if (s.resizerVisible) {
-      expect(rect.top, 'toggle top >= canvas bottom + 8').toBeGreaterThanOrEqual(rect.c.bottom + 8);
+      // Fix round: the iPadL 75 % both-collapsed floor (section 1.2) leaves no room for 8 px of slack
+      // under a 6 px resizer plus a 44 px toggle. The toggle sits wholly below the 6 px resizer strip.
+      expect(rect.top, 'toggle top >= canvas bottom + 6 (below the resizer strip)').toBeGreaterThanOrEqual(rect.c.bottom + 6);
     } else if (await page.evaluate(() => document.body.classList.contains('phone-short'))) {
       // phone-short: the collapsed pane is a 48 px floating button over the canvas corner (TUX-007 design).
       expect(rect.bottom, 'FAB inside the viewport').toBeLessThanOrEqual(page.viewportSize().height);

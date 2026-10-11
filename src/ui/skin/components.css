@@ -15545,24 +15545,25 @@ body.touch-wide-layout #touch-modifier-bar { padding: 4px; gap: 4px; }
 /* === END TUX-045 badge === */
 
 /* === TUX-051: bottom pane touch toggle === */
-/* Coarse pointers: the collapsed bottom pane grows to 52 px so the chevron is a 44 x 44 target
+/* Coarse pointers: the collapsed bottom pane grows to 45 px (44 px + 1 px border) so the chevron is a 44 x 44 target
  * (overflow:hidden on the pane clips any ::after extension, so the box itself must be 44 px).
  * The phone-short FAB (48 x 48, body.phone-layout.phone-short) has higher specificity and is untouched. */
 @media (pointer: coarse) {
   body #bottom-pane.bottom-pane-collapsed,
   body.mobile-layout #bottom-pane.bottom-pane-collapsed {
-    height: calc(var(--touch-bottom-collapsed-h, 52px) + env(safe-area-inset-bottom, 0px));
+    height: calc(var(--touch-bottom-collapsed-h, 44px) + env(safe-area-inset-bottom, 0px));
     box-sizing: border-box;
+    border-top-width: 0;
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   body #bottom-pane.bottom-pane-collapsed .bottom-pane-header,
   body.mobile-layout #bottom-pane.bottom-pane-collapsed .bottom-pane-header {
-    height: var(--touch-bottom-collapsed-h, 52px);
-    min-height: var(--touch-bottom-collapsed-h, 52px);
+    height: var(--touch-bottom-collapsed-h, 44px);
+    min-height: var(--touch-bottom-collapsed-h, 44px);
   }
   body #bottom-pane.bottom-pane-collapsed .pane-toggle-bottom,
   body.mobile-layout #bottom-pane.bottom-pane-collapsed .pane-toggle-bottom {
-    top: 4px;
+    top: 0;
     width: var(--touch-target-min, 44px);
     height: var(--touch-target-min, 44px);
     transform: translateX(-50%) rotate(180deg);
