@@ -1330,6 +1330,17 @@
         toolbar.style.top  = cy + 'px';
       }
     });
+
+    // TUX-051: the bottom pane collapsing/expanding (or growing to its 44 px coarse height) resizes the viewport
+    // without a window resize, so a floating rail would keep a stale position and overhang the pane. Re-clamp it.
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(() => {
+        if (isMobileLayout() || getCurrentDock() || (!toolbar.style.left && !toolbar.style.top)) return;
+        const { x: cx, y: cy } = clampFloat(parseFloat(toolbar.style.left) || 0, parseFloat(toolbar.style.top) || 0);
+        toolbar.style.left = cx + 'px';
+        toolbar.style.top  = cy + 'px';
+      }).observe(viewport);
+    }
   }
 
   // `startLightSourcePlacement` — composes `this.app.renderer` and

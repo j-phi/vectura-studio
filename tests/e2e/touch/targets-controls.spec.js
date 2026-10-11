@@ -53,7 +53,7 @@ const FIT_RED = {
   'touch-iphone-landscape': { overflow: 0, share: 0 },
   'touch-iphone-portrait-chrome': { overflow: 0, share: 43.75 },
   'touch-iphone-landscape-chrome': { overflow: 0, share: 0 },
-  'touch-coarse-wide': { overflow: 0, share: 49.66 },
+  'touch-coarse-wide': { overflow: 0, share: 47.7 }, // TUX-051: 44 px collapsed bottom pane (was 49.66)
   'webkit-ipad-portrait': { overflow: 0, share: 24.0 },
   'webkit-ipad-landscape': { overflow: 0, share: 42.12 },
   'webkit-iphone-portrait': { overflow: 0, share: 48.61 },
