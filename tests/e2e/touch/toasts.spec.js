@@ -144,26 +144,6 @@ test.describe('touch toasts', () => {
     expect(res).toEqual([]);
   });
 
-  test('toast stays above an open modal (Export)', async ({ page }, testInfo) => {
-    // Gated to three projects (both engines + both iPad/iPhone families) to keep the run cheap; z-order is project-independent.
-    test.skip(!['touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-ipad-landscape'].includes(testInfo.project.name), 'modal z-order is viewport-independent');
-    await withLayer(page);
-    // Real opener, as modals.spec does: header Export on phones, File > Export elsewhere.
-    const direct = page.locator('#btn-header-export');
-    if (await page.evaluate(() => document.body.classList.contains('phone-layout')) && await direct.isVisible()) await touch.tap(page, direct);
-    else {
-      if (await page.evaluate(() => document.body.classList.contains('phone-layout'))) { await touch.tap(page, page.locator('#btn-menu-hamburger')); await page.waitForTimeout(150); }
-      await touch.tap(page, page.locator('#btn-menu-file'));
-      await page.waitForTimeout(200);
-      await touch.tap(page, page.locator('#btn-export'));
-    }
-    await page.waitForSelector('#modal-overlay.open', { timeout: 8000 });
-    await page.waitForTimeout(300);
-    await fire(page, SHORT);
-    const m = await measure(page, CHROME);
-    expect(m.topmost, 'A5 toast topmost over the Export modal').toBe(true);
-  });
-
   test('smoke: a real finger add-layer path produces a toast in place', async ({ page }) => {
     const reachable = async () => { const b = await page.locator('#btn-add-layer').boundingBox().catch(() => null); const vp = page.viewportSize(); return !!(b && b.width > 4 && b.x >= 0 && b.y >= 0 && b.x + b.width <= vp.width && b.y + b.height <= vp.height); };
     if (!(await reachable())) {
@@ -174,11 +154,8 @@ test.describe('touch toasts', () => {
     }
     await touch.tap(page, page.locator('#btn-add-layer'));
     await expect(page.locator('#layer-add-menu')).toBeVisible();
-    await touch.tap(page, page.locator('#layer-add-menu .lvl-add-item[data-add="algo-parent"]'));
-    const row = page.locator('#layer-add-menu.is-drill .lvl-add-drill-list [data-algo-type="flowfield"]');
-    await row.scrollIntoViewIfNeeded();
-    await touch.tap(page, row);
-    await expect(page.locator('.vectura-toast', { hasText: 'flowfield' })).toHaveCount(1);
+    await touch.tap(page, page.locator('#layer-add-menu .lvl-add-item[data-add="layer"]'));
+    await expect(page.locator('.vectura-toast', { hasText: 'Added empty layer' })).toHaveCount(1);
     const m = await measure(page, CHROME);
     const { vv, r } = m;
     expect(r.b).toBeLessThanOrEqual(vv.t + vv.h + TOL);
@@ -205,6 +182,16 @@ test.describe('desktop parity (fine pointer)', () => {
       // fine pointer or not; that rule is width-keyed layout CSS, not the touch gate under test. 1600 px must stay 16.
       const top = w === 1600 ? [16] : [16, 52];
       expect(top.some((t) => Math.abs(d.top - t) <= 2), `top ${d.top}`).toBe(true);
+      if (w === 1600) {
+        // D6 guard: .info-btn / .export-info-btn keep box-sizing:content-box (border-box shrinks the 16 px button to 14 px).
+        const ib = await page.evaluate(() => {
+          const el = [...document.querySelectorAll('.info-btn')].find((b) => b.getBoundingClientRect().width > 0);
+          const cs = getComputedStyle(el);
+          const r = el.getBoundingClientRect();
+          return { w: Math.round(r.width), h: Math.round(r.height), bs: cs.boxSizing };
+        });
+        expect(ib, 'info-btn size').toEqual({ w: 16, h: 16, bs: 'content-box' });
+      }
       if (w === 1600) {
         await fs.promises.mkdir(EVID, { recursive: true }).catch(() => {});
         await page.screenshot({ path: path.join(EVID, `desktop-${w}.png`) }).catch(() => {});

@@ -6485,6 +6485,7 @@
   cursor: pointer;
   vertical-align: middle;
   padding: 0;
+  box-sizing: content-box;
   flex-shrink: 0;
   transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
@@ -7516,6 +7517,7 @@
   cursor: pointer;
   vertical-align: middle;
   padding: 4px;
+  box-sizing: content-box;
 }
 
 .info-btn:hover {
@@ -15593,7 +15595,6 @@ body.touch-ui #vectura-toast-host {
   max-width: calc(100% - 2 * var(--toast-edge) - var(--safe-left) - var(--safe-right));
   align-items: center;
   flex-direction: column-reverse;
-  z-index: var(--z-toast-touch);
 }
 body.touch-ui #vectura-toast-host .vectura-toast {
   max-width: 100%;

@@ -170,7 +170,6 @@
 /* === TUX-048: toast tokens === */
 :root {
   --z-toast: 9000;
-  --z-toast-touch: 10010; /* above the modal layers (max 10001) */
   --toast-chrome-gap: 8px;
   --toast-edge: 16px;
 }
