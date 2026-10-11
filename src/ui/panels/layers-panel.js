@@ -1037,7 +1037,7 @@
         const mods = window.Vectura?.InputModifiers?.readModifiers(e) || {};
         const toggleSel = mods.meta || mods.multiSelect;
         const onName = e.target?.closest?.('.lvl-name,.lvl-grp-name');
-        if (onName && !toggleSel && !mods.rawShift
+        if (onName && !toggleSel && !mods.shift
             && Number.isFinite(this._lvlDblTime) && now - this._lvlDblTime < 350 && now >= this._lvlDblTime
             && this._lvlDblId === id) {
           this._lvlDblTime = null; this._lvlDblId = null;
@@ -1069,7 +1069,8 @@
           const ids = new Set(renderer?.selectedLayerIds || []);
           ids.has(id) ? ids.delete(id) : ids.add(id);
           renderer.setSelection([...ids], id);
-        } else if (mods.rawShift && this.lastLayerClickId) {
+        } else if (mods.shift && this.lastLayerClickId) {
+          // TUX-033: mods.shift = real Shift OR the touch Constrain task, so a finger gets range select.
           const ord = _lvlFlatOrder();
           const a = ord.indexOf(this.lastLayerClickId), b = ord.indexOf(id);
           const lo = Math.min(a, b), hi = Math.max(a, b);

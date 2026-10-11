@@ -6,18 +6,18 @@ const { waitLayoutSettled } = require('../helpers/target-audit-core');
 
 // TUX-033: the Multi-select task works in the layer list with real finger taps in both engines.
 // WebKit reports pointerType "mouse" on the click that follows a tap, so a pointerType-only gate fails there.
-// iPhone projects are not in this spec: they need the layers pane reachable by finger (TUX-010 pane work),
-// which is covered by the Phase 2 pane lane. Run with the iPad projects.
+// iPhone projects open the layers pane by finger through #btn-header-pane-right.
 const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-033';
 
-test.describe('TUX-033 layer list honours touch modifiers', () => {
+test.describe('TUX-033 layer list honours touch modifiers @needs-tall-pane', () => {
   test.beforeEach(async ({ page }, testInfo) => {
-    test.skip(!/ipad/.test(testInfo.project.name), 'iPad projects only (iPhone pane reach is the pane lane)');
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.Vectura.InputModifiers));
     for (let i = 0; i < 4; i += 1) await addLayer(page, 'wavetable');
     await page.evaluate(() => { window.app.renderer.setSelection([], null); window.app.ui.lastLayerClickId = null; window.app.ui.renderLayers(); });
-    await openPane(page, 'right');
+    const hdr = page.locator('#btn-header-pane-right');
+    if (await hdr.isVisible().catch(() => false)) await touch.tap(page, hdr);
+    else await openPane(page, 'right');
     await page.waitForFunction(() => document.getElementById('right-pane').getBoundingClientRect().width > 100);
     await waitLayoutSettled(page);
   });
@@ -65,11 +65,7 @@ test.describe('TUX-033 layer list honours touch modifiers', () => {
 });
 
 // Constrain latch + Fill tool: a finger drag across three ring bands pours into each (drag-pour parity).
-test.describe('TUX-033 Constrain drag-pour with a finger', () => {
-  test.beforeEach(({}, testInfo) => {
-    test.skip(!/ipad/.test(testInfo.project.name), 'iPad projects only');
-  });
-
+test.describe('TUX-033 Constrain drag-pour with a finger @needs-tall-pane', () => {
   test('Constrain then a finger drag across 3 ring bands gives 3 fills', async ({ page }, testInfo) => {
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.engine && window.Vectura.InputModifiers));

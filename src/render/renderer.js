@@ -2017,6 +2017,7 @@
     // companion state those interactions leave behind. Does NOT restore document state:
     // rollback runs the cancel paths and the snapshot restore first.
     cancelActiveInteractionsForTouchGesture() {
+      this._touchDragPourId = null;
       this.touchSlopCrossed = false;
       const flags = window.Vectura.TouchGestureArbiter.INTERACTION_FLAGS;
       flags.forEach((name) => { this[name] = name.startsWith('is') ? false : null; });
@@ -2208,6 +2209,7 @@
     }
 
     _abortToSnapshot(snap) {
+      this._touchDragPourId = null;
       this._touchDeferred = null; // deferred one-shots never ran, so there is nothing to undo
       const Arb = window.Vectura.TouchGestureArbiter;
       Arb.CANCEL_PATHS.forEach((name) => {
@@ -7297,7 +7299,8 @@
         // TUX-033: a touch / pen press that carries the Constrain (Shift) task is a drag-pour,
         // exactly like a Shift-drag with a mouse: pour now, then pour into each new region.
         // Only the Constrain task counts; a real Shift on a touch event keeps the TUX-022 deferred pour.
-        const touchDragPour = this.isDeferredFillPointer(e) && !e.shiftKey && this.getModifierState(e).shift;
+        const dragMods = this.getModifierState(e);
+        const touchDragPour = this.isDeferredFillPointer(e) && !dragMods.rawShift && dragMods.shift;
         this._touchDragPourId = touchDragPour ? e.pointerId : null;
         if (this.isDeferredFillPointer(e) && !touchDragPour) {
           // TUX-022: touch / pen show the region preview and the loupe at once; the lift pours
@@ -8673,13 +8676,14 @@
       // TUX-017 latch: after a pinch/pan, a remaining finger starts and ends nothing until
       // every touch pointer has lifted.
       if (this.isTouchPointer(e) && this.touchArbiter.gestureActive) {
+        this._touchDragPourId = null;
         this._releaseActivePointer(e);
         this.updateCursor();
         return;
       }
       // TUX-022: touch / pen fill. The lift pours into the last previewed region. A cancel never
       // pours; the pending record and the preview are always cleared.
-      if (this._touchDragPourId === e.pointerId) this._touchDragPourId = null;
+      if (this._touchDragPourId === e.pointerId || e.type === 'pointercancel') this._touchDragPourId = null;
       const fillPend = this._fillPendingPour;
       if (fillPend && e.pointerId === fillPend.pointerId && this.isDeferredFillPointer(e)) {
         this._commitFillPending(fillPend, e.type !== 'pointercancel');

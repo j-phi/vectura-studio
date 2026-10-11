@@ -16,7 +16,14 @@ const touchUse = (d) => ({
 });
 // TUX-058: the browser-chrome variants (-c devices) only serve the audit's canvas/overflow row,
 // so they run the `default` state only. Non-default audit states carry @audit-extra in the title.
-const chromeVariantGrep = (name) => (/-chrome$/.test(name) ? { grepInvert: /@audit-extra/ } : {});
+// TUX-033: iPhone landscape shows about one layer row, so row-tap and ring-drag specs tagged
+// @needs-tall-pane run on the other projects only (a project filter, not a runtime skip).
+const chromeVariantGrep = (name) => {
+  const parts = [];
+  if (/-chrome$/.test(name)) parts.push('@audit-extra');
+  if (/iphone-landscape/.test(name)) parts.push('@needs-tall-pane');
+  return parts.length ? { grepInvert: new RegExp(parts.join('|')) } : {};
+};
 const chromiumTouchProjects = Object.entries(CHROMIUM_PROJECTS).map(([name, dev]) => ({
   name,
   use: { ...devices['Desktop Chrome'], ...touchUse(DEVICES[dev]) },
@@ -27,6 +34,7 @@ const webkitTouchProjects = Object.entries(WEBKIT_PROJECTS).map(([name, dev]) =>
   name,
   use: { ...devices['Desktop Safari'], ...touchUse(DEVICES[dev]) },
   testMatch: TOUCH_MATCH,
+  ...chromeVariantGrep(name),
 }));
 
 const systemChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';

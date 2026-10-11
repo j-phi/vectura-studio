@@ -67,6 +67,15 @@ describe('TUX-033 panels and renderer honour touch modifiers', () => {
     expect(sel().sort()).toEqual([ids[0], ids[2]].sort());
   });
 
+  test('A1r Constrain latch then rows 1 and 3 selects the range of 3 (range by touch)', () => {
+    latch('constrain');
+    touchTap(card(0).querySelector('.lvl-card-body') || card(0));
+    latch('constrain');
+    touchTap(card(2).querySelector('.lvl-card-body') || card(2));
+    expect(sel().length).toBe(3);
+  });
+
+  // NOTE (TUX-033 decision): Multi-select = toggle (Cmd); range by touch = Constrain task (Shift).
   test('A2b locked Multi-select toggles off a selected row', async () => {
     latch('multiSelect'); latch('multiSelect');
     expect(IM.getTaskState('multiSelect')).toBe('locked');
@@ -207,6 +216,18 @@ describe('TUX-033 panels and renderer honour touch modifiers', () => {
     try {
       rig.drag({ pointerType: 'touch' }, REGIONS);
       expect(rig.batch()).toBe(1);
+    } finally { rig.restore(); }
+  });
+
+  test('B2d latched drag-pour then pointercancel clears the drag-pour id', () => {
+    const rig = dragRig();
+    try {
+      latch('constrain');
+      const c = doc.getElementById('main-canvas');
+      c.dispatchEvent(pe('pointerdown', { clientX: 50, clientY: 10, pointerType: 'touch', pointerId: 23, buttons: 1 }));
+      expect(win.app.renderer._touchDragPourId).toBe(23);
+      win.dispatchEvent(pe('pointercancel', { clientX: 50, clientY: 10, pointerType: 'touch', pointerId: 23 }));
+      expect(win.app.renderer._touchDragPourId).toBe(null);
     } finally { rig.restore(); }
   });
 
