@@ -385,8 +385,15 @@ test.describe('TUX-010 toast never covers pane controls', () => {
 
   test('a plain toast leaves every visible drawer handle and pane chevron tappable', async ({ page }) => {
     const layout = await layoutOf(page);
-    await page.evaluate(() => window.Vectura.UI.overlays.Toast.show({ message: 'Added flowfield layer' }));
+    await page.evaluate(() => {
+      const T = window.Vectura.UI.overlays.Toast;
+      T.show({ message: 'Copied 3 layers to clipboard and pasted them into the document, then selected the pasted layers on the canvas', duration: 20000 });
+      T.show({ message: 'Added flowfield layer and moved it to the top of the stack', duration: 20000 });
+    });
     await page.waitForTimeout(300);
+    const toastH = await page.evaluate(() => [...document.querySelectorAll('.vectura-toast')].map((e) => e.getBoundingClientRect().height));
+    expect(toastH.length, 'two stacked toasts').toBeGreaterThanOrEqual(2);
+    expect(Math.max(...toastH), 'a toast wraps to at least two lines').toBeGreaterThan(40);
     const sels = ['#btn-mobile-pane-left', '#btn-mobile-pane-right', '#btn-header-pane-left', '#btn-header-pane-right',
       '#btn-pane-toggle-left', '#btn-pane-toggle-right'];
     for (const sel of sels) {
