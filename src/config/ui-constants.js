@@ -76,6 +76,8 @@
       'gizmo3d-marker': { mouse: 9, pen: 9, touch: 22 },
       'gizmo3d-centre': { mouse: 5, pen: 5, touch: 10 },
       'gizmo3d-ring-band': { mouse: 5, pen: 5, touch: 10 },
+      // Extra reach past the orbit pad edge that still arms orbit (the old literal 7 px).
+      'gizmo3d-pad-slack': { mouse: 7, pen: 7, touch: 7 },
     },
 
     // TUX-025: touch layout of the 3D rotation gizmo (screen px; the renderer multiplies by 1/scale).
@@ -88,7 +90,9 @@
       ringRadius: 68,
       pitchTrackX: 98,
       pitchTrackHeight: 56,
-      anchorOffset: 72,
+      // Clearance rule: anchorOffset > ringRadius + ring band + resize radius (68 + 10 + 22 = 100), so no
+      // gizmo target or ring band reaches the NE corner handle zone.
+      anchorOffset: 106,
       markerDraw: 9,
       edgeInset: 8,
       reachPad: 22,

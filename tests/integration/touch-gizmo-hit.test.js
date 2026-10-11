@@ -53,9 +53,53 @@ describe('TUX-025: 3D rotation gizmo touch geometry and hit radii', () => {
     return { engine, renderer, layer, bounds: renderer.getSelectionBounds([layer]) };
   };
 
+  const buildPseudo = (type) => () => {
+    const engine = new V.VectorEngine();
+    engine.layers = [];
+    const id = engine.addLayer(type);
+    const renderer = new V.Renderer('main-canvas', engine);
+    renderer.app = { pushHistory: () => {}, render: () => {}, history: [{}, {}] };
+    renderer.activeTool = 'select';
+    renderer.ready = true;
+    renderer.setSelection([id], id);
+    const layer = engine.layers.find((l) => l.id === id);
+    return { engine, renderer, layer, bounds: renderer.getSelectionBounds([layer]) };
+  };
+
   const fixtures = [['scene3d', buildScene], ['polyhedron', buildPoly]];
 
-  const control = (f) => f.renderer.get3DRotationControl(f.layer, f.bounds);
+  describe.each([['polyhedron'], ['terrain']])('%s: the 2D NE resize handle beats the 3D gizmo for a finger', (type) => {
+    test('h2) a touch tap on bounds.corners.ne arms the ne resize, not a rotation', () => {
+      setTouch(true);
+      const f = buildPseudo(type)();
+      const r = f.renderer;
+      const ne = f.renderer.worldToScreen(f.bounds.corners.ne.x, f.bounds.corners.ne.y);
+      const ev = { clientX: ne.x, clientY: ne.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {} };
+      r.down(ev);
+      expect({ handle: r.activeHandle, rot: r.rotation3DDrag }).toEqual({ handle: 'ne', rot: null });
+      r.up({ ...ev });
+    });
+
+    test('h3) no gizmo target sits within a finger of the NE corner in the touch layout', () => {
+      setTouch(true);
+      const f = buildPseudo(type)();
+      const ne = f.renderer.worldToScreen(f.bounds.corners.ne.x, f.bounds.corners.ne.y);
+      const tol = V.hitTolerance;
+      const need = tol('resize', 'touch');
+      for (const s of grid(f)) {
+        setRot(f, { yaw: s.yaw, pitch: s.pitch, roll: s.roll });
+        const c = control(f);
+        const ring = Math.abs(dist(scr(f, c.center), ne) - c.ringRadius * f.renderer.scale);
+        if (c.rollHandle) expect(ring, `ring band vs NE yaw=${s.yaw}`).toBeGreaterThan(tol('gizmo3d-ring-band', 'touch') + need);
+        for (const [k, p] of Object.entries(targets(f))) {
+          if (k === 'C') continue;
+          expect(dist(p, ne), `${k} vs NE`).toBeGreaterThan(tol('gizmo3d-marker', 'touch') + need - 22 + 1);
+        }
+      }
+    });
+  });
+
+  const control = (f) => f.renderer.get3DRotationControl(f.layer, f.renderer.getSelectionBounds([f.layer]) || f.bounds);
   const scr = (f, p) => f.renderer.worldToScreen(p.x, p.y);
   const targets = (f) => {
     const c = control(f);
@@ -69,7 +113,7 @@ describe('TUX-025: 3D rotation gizmo touch geometry and hit radii', () => {
     f.renderer._write3DRotation(f.layer, spec, patch);
     return spec;
   };
-  const hitAt = (f, p, pointerType) => f.renderer.hit3DRotationControl(p.x, p.y, f.layer, f.bounds, pointerType);
+  const hitAt = (f, p, pointerType) => f.renderer.hit3DRotationControl(p.x, p.y, f.layer, f.renderer.getSelectionBounds([f.layer]) || f.bounds, pointerType);
 
   const grid = (f) => {
     const spec = f.renderer.get3DRotationSpec(f.layer);
@@ -177,6 +221,8 @@ describe('TUX-025: 3D rotation gizmo touch geometry and hit radii', () => {
       const r = f.renderer;
       const ev = (p, extra = {}) => ({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {}, ...extra });
       const rot = () => r._read3DRotation(f.layer, r.get3DRotationSpec(f.layer));
+      // jsdom has no canvas rect to clamp the gizmo against: pan the view so the 106 px offset stays on screen.
+      r.offsetY += 200;
       let armedPitch = 0;
       // Pitch: straight up or down from the marker (whichever stays a pitch hit).
       const spec0 = r.get3DRotationSpec(f.layer);
@@ -249,15 +295,23 @@ describe('TUX-025: 3D rotation gizmo touch geometry and hit radii', () => {
     expect(pts.length).toBeGreaterThan(0);
     pts.sort((a, b) => dist(a, t.C) - dist(b, t.C));
     let armedGizmo = null;
+    const armedTypes = [];
     for (const p of pts.slice(0, 6)) {
       const hit = renderer.hitSceneObjectGizmo(p.x, p.y, layer);
       if (!hit) continue;
       renderer.rotation3DDrag = null;
+      renderer._sceneObjectGizmoDrag = null;
+      renderer.setSelection([layer.id], layer.id);
+      renderer.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds: [child.id] });
       renderer.down({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {} });
       armedGizmo = { type: renderer.rotation3DDrag && renderer.rotation3DDrag.type };
+      armedTypes.push(renderer._sceneObjectGizmoDrag && renderer._sceneObjectGizmoDrag.type);
       expect(renderer.rotation3DDrag, `object gizmo point (${p.x.toFixed(0)},${p.y.toFixed(0)}) must beat orbit`).toBeNull();
       renderer.up && renderer.up({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', preventDefault() {} });
     }
     expect(armedGizmo).toBeTruthy();
+    expect(armedTypes.length).toBeGreaterThan(0);
+    
+    expect(armedTypes.some((t) => t === 'move' || t === 'scale'), `object gizmo armed types ${armedTypes}`).toBe(true);
   });
 });

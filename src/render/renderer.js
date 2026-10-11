@@ -7586,6 +7586,13 @@
             return;
           }
         }
+        // TUX-025: a finger-enlarged gizmo hit also yields to the 2D transform handles of a non-scene layer.
+        // Only a RESIZE zone wins; the wide touch rotate band must not swallow gizmo markers.
+        if (deferredRotation3DHit && selectionBounds && !this._sceneRotationOwner(selectedLayers[0])
+          && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
+          const yieldHandle = this.hitHandle(sx, sy, selectionBounds, { pointerType: e.pointerType });
+          if (yieldHandle && !String(yieldHandle).startsWith('rotate')) deferredRotation3DHit = null;
+        }
         if (deferredRotation3DHit && this.begin3DRotationDrag(deferredRotation3DHit, e)) {
           e.preventDefault();
           return;
@@ -16346,7 +16353,7 @@
         if (control.rollHandle && Math.abs(centerDist - control.ringRadius) <= tol('gizmo3d-ring-band', 'touch') * unit) {
           return { type: 'roll', layer: hitLayer, spec: control.spec, control, distance: Math.abs(centerDist - control.ringRadius) / unit, enlarged: true };
         }
-        if (centerDist <= control.padRadius + 7 * unit) {
+        if (centerDist <= control.padRadius + tol('gizmo3d-pad-slack', 'touch') * unit) {
           return { type: 'orbit', layer: hitLayer, spec: control.spec, control, distance: centerDist / unit, enlarged: true };
         }
         return null;
@@ -16373,7 +16380,7 @@
           return { type: 'roll', layer: hitLayer, spec: control.spec, control };
         }
       }
-      if (centerDist <= control.padRadius + 7 * unit) {
+      if (centerDist <= control.padRadius + tol('gizmo3d-pad-slack', pointerType) * unit) {
         return { type: 'orbit', layer: hitLayer, spec: control.spec, control };
       }
       return null;

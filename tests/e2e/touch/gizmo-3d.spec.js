@@ -281,4 +281,28 @@ test.describe('TUX-025 3D rotation gizmo by finger', () => {
     const sel = await page.evaluate(() => window.app.renderer.getSelectedLayers().map((l) => l.id));
     expect(sel).toEqual([await page.evaluate(() => window.__gid)]);
   });
+
+  test('polyhedron: a finger drag from the NE corner resizes the bounds and leaves yaw, pitch and roll unchanged', async ({ page }, testInfo) => {
+    test.skip(!/ipad/.test(testInfo.project.name), 'NE-corner arbitration is exercised on the iPad viewports');
+    await setupPoly(page);
+    const info = await page.evaluate(() => {
+      const r = window.app.renderer;
+      const layer = window.app.engine.getLayerById(window.__gid);
+      const b = r.getSelectionBounds([layer]);
+      const s = r.worldToScreen(b.corners.ne.x, b.corners.ne.y);
+      const box = r.canvas.getBoundingClientRect();
+      return { ne: { x: s.x + box.left, y: s.y + box.top }, w: b.maxX - b.minX, h: b.maxY - b.minY, onCanvas: s.x > 0 && s.y > 0 && s.x < box.width && s.y < box.height };
+    });
+    test.skip(!info.onCanvas, 'NE corner not on the canvas at this viewport');
+    const before = await rotation(page);
+    await fingerPath(page, [info.ne, { x: info.ne.x - 10, y: info.ne.y + 14 }, { x: info.ne.x - 22, y: info.ne.y + 30 }], 1);
+    const after = await rotation(page);
+    const size = await page.evaluate(() => {
+      const r = window.app.renderer;
+      const b = r.getSelectionBounds([window.app.engine.getLayerById(window.__gid)]);
+      return { w: b.maxX - b.minX, h: b.maxY - b.minY };
+    });
+    expect(after).toEqual(before);
+    expect(Math.abs(size.w - info.w) + Math.abs(size.h - info.h), 'the bounds must resize').toBeGreaterThan(1);
+  });
 });
