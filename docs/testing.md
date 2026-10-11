@@ -15,7 +15,8 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 ## Local Commands
 - `npm run test` runs `test:unit` and `test:integration`.
 - `npm run version:sync` syncs the runtime/app badge version from `package.json`.
-- `npm run test:unit` runs deterministic unit tests.
+- `npm run test:runner` runs process-lifecycle regression tests with Node's test runner.
+- `npm run test:unit` runs those lifecycle checks, then deterministic unit tests.
 - `npm run test:integration` runs engine integration tests, including app bootstrap integrity assertions for Layers/Mathematical Model/About population.
 - `npm run test:e2e` runs Playwright smoke tests.
 - `npm run test:visual` runs SVG baseline regression checks.
@@ -81,6 +82,43 @@ Tuning variables (milliseconds; used mainly by `tests/unit/test-queue.test.js`):
 `VECTURA_TEST_QUEUE_POLL_MS` (1000), `_STATUS_MS` (30000), `_TRACK_MS` (1000),
 `_KILL_GRACE_MS` (10000), `_LINGER_MS` (3000), `_TERM_GRACE_MS` (3000),
 `_CORRUPT_GRACE_MS` (10000).
+
+## Vitest process cleanup
+
+Use the npm test scripts or `npm run test:vitest -- run <test-path>`, rather than
+invoking `npx vitest` directly. Unit, integration, visual, perf, coverage, and baseline
+update commands use the supervised wrapper inside the shared queue. Playwright retains
+the queue's process tracking. The Vitest deadline starts after queue acquisition;
+waiting for another run does not consume it.
+
+Each attempt has a 30-minute local wall-clock deadline (three hours when `CI` is set), independent of model tokens or
+Vitest's per-test timers. Override it with a positive integer in milliseconds, e.g.
+`VECTURA_TEST_TIMEOUT_MS=3600000 npm run test:coverage`. Zero, malformed values, and
+values above 2147483647 are rejected. The deadline restarts
+for the existing single RPC-timeout retry. CI gets a longer default because the last
+successful coverage job took 102 minutes (unit tests took 42 minutes). Timeout exits 124; SIGINT/SIGTERM/SIGHUP
+exit 130/143/129. Cancellation, signals, deadline, spawn, and cleanup failures cannot
+enter the RPC-timeout tolerance path.
+
+The wrapper launches the local Vitest entrypoint directly with the current Node
+executable. A detached supervisor owns a separate Vitest process group. On runner
+exit (including success), wrapper cancellation, or wrapper death/IPC disconnect,
+it sends SIGTERM to that group, waits up to two seconds, then sends SIGKILL to
+survivors and verifies group exit. Cleanup completes before any retry. It never
+scans for or kills processes by name, and does not signal other test runs.
+
+This uses POSIX process groups (macOS/Linux); native Windows runs fail with a WSL
+instruction. Killing the supervisor itself with SIGKILL, deliberately escaping the
+owned process group, or an OS-level uninterruptible process is outside this guarantee.
+A model usage pause is not process death: tests may finish normally, with the deadline
+bounding a stalled run. Existing worktrees need this implementation before their test
+runs gain protection. Already-running jobs are not adopted.
+
+Run `npm run test:runner` to exercise real child processes: success/failure cleanup,
+stubborn descendants, SIGINT/SIGTERM/SIGHUP, wrapper SIGKILL, deadlines, spawn failure,
+unrelated-process isolation, and retry-policy preservation. These checks run before
+unit tests inside the same queue slot, so they are included in `test:fast` and `test:ci`.
+The lightweight standalone `test:runner` checks do not acquire the machine-wide lock.
 
 ## Visual Baselines
 - Canonical SVG baselines are stored in `tests/baselines/svg`.

@@ -112,6 +112,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   cap's quarter-arc got 1/1.57 of the parameter share it needed. The fill now places the seam by
   arc length, so helices, tone rows, and contour rings stay evenly spaced from pole to pole. The
   capsule mesh is unchanged.
+- **Vitest worker cleanup.** Supervise test process groups through exit, cancellation, wrapper death, and a configurable deadline (30 minutes locally / three hours in CI); remove surviving workers before retrying. Visual/perf commands now use the wrapper too. Added Node process-lifecycle regressions to the unit entrypoint. macOS/Linux supported; native Windows requires WSL.
 - **3D Scene · mkTick dark-side ticks reach the rim evenly.** Regular ticks in shaded areas now
   extend their rim-facing end to an even 0.6 mm from the outline. Neighbouring ticks extend together,
   so the rim edge has no isolated steps. An extension that would bend the tick more than 8° is

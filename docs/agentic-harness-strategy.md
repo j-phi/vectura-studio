@@ -114,6 +114,28 @@ Reference:
   wraps its whole chain once. CI bypasses the queue (`CI` set). Contract: `docs/testing.md` →
   "Shared Local Test Queue".
 
+### Vitest lifecycle ownership
+
+All repository Vitest entrypoints use `scripts/run-vitest.js`, which launches a
+separate supervisor and owned process group. Cleanup runs independently of model
+availability, before retries and after completion, cancellation, wrapper death, or
+the configurable per-attempt deadline (30 minutes locally / three hours in CI). Deadline/cancellation/cleanup errors
+remain failures. Use `npm run test:runner` plus the wrapper-policy unit tests when
+changing this lifecycle. These checks are also part of the unit entrypoint.
+POSIX/WSL requirements and protection limits are documented in `docs/testing.md`.
+The shared queue owns the outer run; the Vitest supervisor handles each inner attempt.
+Waiting for the queue does not start the Vitest deadline. Playwright retains queue ownership.
+
+```mermaid
+flowchart LR
+  Q[Shared test queue] --> W[Vitest wrapper]
+  W -->|IPC liveness and cancellation| S[Detached supervisor]
+  S -->|launch and deadline| G[Owned Vitest process group]
+  G --> V[Vitest runner]
+  G --> F[Fork workers]
+  S -->|TERM then KILL on cleanup| G
+```
+
 ## 6) Documentation Synchronization Matrix
 
 | Change category | Required documentation updates |

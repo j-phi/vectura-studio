@@ -593,6 +593,7 @@ questions. Do not start these without a decision:
 
 ## Done
 - **Capsule cap-seam hatch bend (2026-10-11).** SurfaceFill's capsule chart is now arc-length parameterised (`capsuleArcChart`); angled hatch no longer kinks at the barrel/cap seam. Shadow-anatomy band-order clause re-pinned as a near-tie.
+- **Vitest process cleanup (2026-10-04).** Added independent supervision, per-attempt deadlines, owned-group cleanup, and process-level regression coverage; preserved the narrow RPC retry policy. Integrated inside the shared test queue.
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
   (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
   Merged `3d-scene/handoff-c2` → `3d-scene/fill-collapse-2` → `3d-scene/fill-audit-2` →
@@ -1941,6 +1942,7 @@ questions. Do not start these without a decision:
   shipped as **v1.2.0**. See `CHANGELOG.md` for the consolidated notes.
 
 ## Decisions
+- **2026-10-04 — Vitest cleanup belongs to a supervisor, not model follow-up.** POSIX process groups isolate each attempt; a configurable deadline (30 minutes locally / three hours in CI) bounds unattended runs. Vitest supervision runs inside the shared queue; Playwright retains queue ownership.
 - **One machine-wide local test lock (2026-10-04).** Local test runs serialize through
   `scripts/test-queue.js` with its lock outside every worktree (`~/.cache/vectura-studio/test-queue`),
   not per worktree: the contention is for this machine's CPU and the Playwright port, not for a
