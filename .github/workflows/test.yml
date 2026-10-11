@@ -31,7 +31,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-metrics.jsonl
       VECTURA_RISK_CLASSES: ${{ needs.lane-plan.outputs.classes }}
     steps:
       - uses: actions/checkout@v7
@@ -46,6 +45,8 @@ jobs:
       - name: Record setup timing
         run: echo "VECTURA_SETUP_MS=$(( $(date +%s%3N) - VECTURA_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
       - run: npm run test:feedback
+        env:
+          VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-metrics.jsonl
       - name: Upload lane timing and queue metrics
         if: always()
         uses: actions/upload-artifact@v7
@@ -200,8 +201,6 @@ jobs:
     needs: [lane-plan, feedback, unit, integration, e2e-smoke, visual, perf, coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-roster-metrics.jsonl
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -209,6 +208,7 @@ jobs:
           node-version: 20
       - name: Require expected lanes for this SHA
         env:
+          VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-roster-metrics.jsonl
           VECTURA_LANE_PLAN: ${{ needs.lane-plan.outputs.plan }}
           SHA: ${{ github.sha }}
           UNIT_RESULT: ${{ needs.unit.result }}

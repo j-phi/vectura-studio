@@ -71,3 +71,6 @@ No GitHub branch rules were changed, and no push, release, or merge was performe
 Complete E2E roster verified locally under the180s bound:67passed,15 existing optional/project-specific skips,84.45s shell elapsed. The previously omitted programmatic mask test runs and passes; its pre-existing disabled real-mouse counterpart remains disabled.
 
 Queue and wrapper policy contracts:32passed in8.39s after restoring the compatible human-readable acquisition message alongside the structured wait event.
+
+## Publication workflow correction
+GitHub rejected the first workflow before creating jobs because `runner.temp` was used in job-level `env`. Timing paths now live in step-level `env`, where the runner context is available. YAML parsing and whitespace checks passed; hosted validation must confirm the correction. The complete local test:ci result above remains applicable because no test or product code changed.
