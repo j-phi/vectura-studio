@@ -32,7 +32,7 @@ test.describe('TUX-045 desktop parity', () => {
         renderer: window.app.renderer.getModifierState({ pointerType: 'mouse', shiftKey: true, altKey: true }),
       };
     });
-    expect(r.mouse).toEqual({ shift: false, alt: false, meta: false, ctrl: false, pan: false, additive: false });
+    expect(r.mouse).toEqual({ shift: false, alt: false, meta: false, ctrl: false, pan: false, additive: false, rawShift: false, multiSelect: false });
     expect(r.shift.additive).toBe(true);
     expect(r.shift.shift).toBe(true);
     expect(r.meta.meta).toBe(true);

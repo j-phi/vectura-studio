@@ -126,7 +126,7 @@ describe('TUX-045 touch modifier latches', () => {
     expect(c.shift).toBe(true);
     // Desktop result is unchanged: keyboard modifiers pass through bit-identically.
     const d = IM.readModifiers({ pointerType: 'mouse', shiftKey: true, ctrlKey: true });
-    expect(d).toEqual({ shift: true, alt: false, meta: true, ctrl: true, pan: false, additive: true });
+    expect(d).toEqual({ shift: true, alt: false, meta: true, ctrl: true, pan: false, additive: true, rawShift: true, multiSelect: false });
   });
 
   describe('(g) renderer', () => {
@@ -172,6 +172,29 @@ describe('TUX-045 touch modifier latches', () => {
       IM.tap('multiSelect', 0);
       await tapAt(140, 60);
       expect([...renderer.selectedLayerIds].sort()).toEqual([A.id, B.id].sort());
+    });
+
+    describe('Direct tool anchor multi-select follows Multi-select only', () => {
+      const prime = async () => {
+        renderer.setTool('direct');
+        renderer.setDirectSelection(A, 0);
+        await tapAt(40, 40); // plain touch tap selects anchor 0
+        expect([...renderer.directSelection.selectedIndices]).toEqual([0]);
+      };
+
+      test('Multi-select latched: a touch tap on a second anchor selects 2 anchors', async () => {
+        await prime();
+        IM.tap('multiSelect', 0);
+        await tapAt(80, 80);
+        expect([...renderer.directSelection.selectedIndices].sort()).toEqual([0, 2]);
+      });
+
+      test('Constrain latched only: a touch tap on a second anchor replaces the selection', async () => {
+        await prime();
+        IM.tap('constrain', 0);
+        await tapAt(80, 80);
+        expect([...renderer.directSelection.selectedIndices]).toEqual([2]);
+      });
     });
 
     test('Multi-select latched: a diagonal touch drag is not axis-locked', async () => {

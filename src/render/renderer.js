@@ -4999,7 +4999,7 @@
       if (control.type === 'anchor') {
         if (control.preserveSelection) {
           // Drag started inside an existing multi-selection — keep all selected anchors as-is
-        } else if (modifiers.shift) {
+        } else if (modifiers.rawShift || modifiers.multiSelect) {
           // Multi-select: shift+click toggles anchor in/out of selection
           if (sel.selectedIndices.has(control.index)) sel.selectedIndices.delete(control.index);
           else sel.selectedIndices.add(control.index);
@@ -7346,7 +7346,7 @@
                 precomputedSeg = s;
               }
             }
-            const selection = (segInSelection || (modifiers.shift && alreadySamePath))
+            const selection = (segInSelection || ((modifiers.rawShift || modifiers.multiSelect) && alreadySamePath))
               ? this.directSelection
               : this.setDirectSelection(hit.layer, hit.pathIndex);
             if (selection && selection.anchors.length) {
@@ -7365,7 +7365,7 @@
               }
               if (nearestIdx >= 0 && nearestDistSq <= anchorTolSq) {
                 // Near an endpoint — select just that anchor (shift toggle handled in startDirectDrag)
-                if (!modifiers.shift) selection.selectedIndices = new Set([nearestIdx]);
+                if (!(modifiers.rawShift || modifiers.multiSelect)) selection.selectedIndices = new Set([nearestIdx]);
                 this.startDirectDrag({ type: 'anchor', index: nearestIdx }, e);
               } else {
                 // On segment body
@@ -7376,7 +7376,7 @@
                   this.startDirectDrag({ type: 'anchor', index: seg, preserveSelection: true }, e);
                 } else {
                   // Clicked on an unselected segment — select both endpoints
-                  ({ seg } = this._selectSegmentAnchors(selection, hit.segmentIndex ?? 0, modifiers.shift));
+                  ({ seg } = this._selectSegmentAnchors(selection, hit.segmentIndex ?? 0, (modifiers.rawShift || modifiers.multiSelect)));
                   this.startDirectDrag({ type: 'anchor', index: seg }, e);
                 }
                 // grabOffset: drag tracks from the click point, not the anchor corner

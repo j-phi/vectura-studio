@@ -25,13 +25,17 @@
       meta: Boolean(ev.metaKey || ev.ctrlKey),
       ctrl: Boolean(ev.ctrlKey),
       pan: false,
+      // Task-only flags: a hardware Shift counts for rawShift, never a Constrain latch.
+      rawShift: Boolean(ev.shiftKey),
+      multiSelect: false,
       additive: Boolean(ev.shiftKey || ev.metaKey || ev.ctrlKey),
     };
     if (!isApplied(ev.pointerType)) return base;
     base.shift = base.shift || on('constrain');
     base.alt = base.alt || on('duplicate');
     base.pan = on('pan');
-    base.additive = base.additive || on('multiSelect');
+    base.multiSelect = on('multiSelect');
+    base.additive = base.additive || base.multiSelect;
     return base;
   };
 
