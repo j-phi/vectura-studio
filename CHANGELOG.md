@@ -6,6 +6,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed (tests)
+- **Scene3D byte-identity goldens are pinned per CPU architecture.** The U2 kernel goldens and the Seed
+  legacy golden passed on arm64 Macs but failed on the x86_64 CI runner. V8's `Math.sin/cos/exp/atan2/...`
+  round the last ULP differently on arm64 and x86_64, so a full-precision hash holds on one arch only. Both
+  columns were regenerated on the original base commits (x64 under Rosetta matches CI exactly). No output changed.
+
 ### Added (U7 deferred items, fill-style review)
 Defaults reproduce the previous output byte for byte (21 fills pinned before and after; saved documents
 with the old wireframe *Show hidden* load to the same drawing).

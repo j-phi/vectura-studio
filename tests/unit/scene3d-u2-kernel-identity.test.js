@@ -38,14 +38,28 @@ const hashPaths = (paths) => {
   return { hash: h1.toString(16), paths: n, pts };
 };
 
-// Captured on 383d7610 (pre-U2).
+// Captured on 383d7610 (pre-U2), once per CPU architecture.
+//
+// WHY TWO HASHES. The hash covers full-precision float strings, and V8's
+// Math.sin/cos/tan/exp/log/atan2/pow (its C++ fdlibm port) round the last
+// ULP differently on arm64 (FMA-contracted build) and x86_64. A probe of 20k
+// random inputs per function differs on ~0.5% of results. So one byte-exact
+// golden can only hold on one architecture: the arm64 hashes (dev Macs) fail
+// on GitHub's ubuntu x86_64 runner even though nothing moved. Both columns
+// were regenerated on the pre-U2 base 383d7610 itself (arm64 node and x64
+// node 20.20.2 under Rosetta), so each one is a true pre-U2 identity on its
+// own arch, not a re-pin of current output. Coordinate drift between the two
+// columns is <= 1.7e-10 with identical path/point counts.
+// Regenerate x64 on a Mac: download node-v<ver>-darwin-x64 and run the same
+// scene through `arch -x86_64 <x64 node>`; the result matches CI exactly.
+const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
 const GOLDENS = [
-  { prim: 'sphere', mapper: 'hatch', law: 'ladder', hash: 'b8de834e', paths: 112, pts: 1589 },
-  { prim: 'sphere', mapper: 'hatch', law: 'etfKang', hash: '458964db', paths: 285, pts: 13885 },
-  { prim: 'sphere', mapper: 'hatch', law: 'turingStripe', hash: '72b834ca', paths: 299, pts: 18773 },
-  { prim: 'sphere', mapper: 'hatch', law: 'mezzoRegion', hash: 'c9eba689', paths: 534, pts: 17788 },
-  { prim: 'box', mapper: 'hatch', law: 'etfKang', hash: '7fa7bd11', paths: 249, pts: 14053 },
-  { prim: 'torus', mapper: 'crosshatch', law: 'ladder', hash: '7b731dab', paths: 150, pts: 1430 },
+  { prim: 'sphere', mapper: 'hatch', law: 'ladder', hash: { arm64: 'b8de834e', x64: 'f51e7a34' }, paths: 112, pts: 1589 },
+  { prim: 'sphere', mapper: 'hatch', law: 'etfKang', hash: { arm64: '458964db', x64: 'b2689b20' }, paths: 285, pts: 13885 },
+  { prim: 'sphere', mapper: 'hatch', law: 'turingStripe', hash: { arm64: '72b834ca', x64: 'ca0ee727' }, paths: 299, pts: 18773 },
+  { prim: 'sphere', mapper: 'hatch', law: 'mezzoRegion', hash: { arm64: 'c9eba689', x64: 'a3a7eb6f' }, paths: 534, pts: 17788 },
+  { prim: 'box', mapper: 'hatch', law: 'etfKang', hash: { arm64: '7fa7bd11', x64: '7fa7bd11' }, paths: 249, pts: 14053 },
+  { prim: 'torus', mapper: 'crosshatch', law: 'ladder', hash: { arm64: '7b731dab', x64: '3d709a7b' }, paths: 150, pts: 1430 },
 ];
 
 // ── Legacy shadows.js primitives, VERBATIM (the identity reference) ─────────
@@ -106,6 +120,16 @@ describe('U2 kernel perf — bit-identity', () => {
 
   afterAll(() => runtime && runtime.cleanup());
 
+  // Regression guard (PR #87 CI): a golden pinned on one architecture only
+  // passes locally and fails CI. Every row must carry both columns.
+  test('every scene golden is pinned for both arm64 and x64', () => {
+    GOLDENS.forEach((g) => {
+      expect(Object.keys(g.hash).sort()).toEqual(['arm64', 'x64']);
+      expect(g.hash.arm64).toMatch(/^[0-9a-f]{1,8}$/);
+      expect(g.hash.x64).toMatch(/^[0-9a-f]{1,8}$/);
+    });
+  });
+
   test.each(GOLDENS)('scene golden — $prim / $mapper / $law is byte-identical to pre-U2', (g) => {
     const engine = new V.VectorEngine();
     const gid = engine.addLayer('scene3d');
@@ -119,7 +143,7 @@ describe('U2 kernel perf — bit-identity', () => {
     child.params.transform.pitch = 0;
     child.params.transform.roll = 0;
     engine.computeAllDisplayGeometry();
-    expect(hashPaths(group.scenePaths)).toEqual({ hash: g.hash, paths: g.paths, pts: g.pts });
+    expect(hashPaths(group.scenePaths)).toEqual({ hash: g.hash[ARCH], paths: g.paths, pts: g.pts });
   }, 180000);
 
   test('shadow fields — segment-grid distance and scanline inside test match the brute force exactly', () => {

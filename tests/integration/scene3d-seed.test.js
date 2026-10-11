@@ -113,11 +113,22 @@ describe('scene3d Seed', () => {
 
   // (a) GOLDEN: hashes captured on the pre-seed base (3d-scene/fill-review
   // d66ece3f) for legacy layers with seeds 42/43. They must never move.
+  //
+  // Per-architecture entries: V8's Math.sin/cos/exp/atan2/... (C++ fdlibm)
+  // round the last ULP differently on arm64 and x86_64. The etfKang scene
+  // amplifies that drift to ~1e-5 over its streamline passes, so the 1e-3
+  // rounding below still flips a few coordinates and the hash differs by
+  // arch. Both values were regenerated on d66ece3f itself (arm64 node and
+  // x64 node 20.20.2 under Rosetta; x64 matches GitHub CI exactly), so each
+  // one is the true pre-seed identity on its own arch. An entry given as an
+  // object must carry both keys.
+  const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
+  const wantFor = (want) => (typeof want === 'string' ? want : want[ARCH]);
   test('(a) legacy layers render byte-identical to the pre-seed base', () => {
     const GOLD = [
       ['box', 'stipple', {}, '289:35a54559'],
       ['sphere', 'stipple', {}, '582:44be2fb8'],
-      ['sphere', 'hatch', { toneLaw: 'etfKang' }, '323:7bd63c97'],
+      ['sphere', 'hatch', { toneLaw: 'etfKang' }, { arm64: '323:7bd63c97', x64: '323:85bf278' }],
       ['sphere', 'hatch', { toneLaw: 'taperedEnds' }, '267:e54fdc54'],
       ['cylinder', 'crosshatch', {}, '305:1240fe8b'],
       ['torus', 'hatch', { toneLaw: 'ladder' }, '363:78f59093'],
@@ -126,10 +137,12 @@ describe('scene3d Seed', () => {
       ['sphere', 'hatch', { toneLaw: 'penStipple' }, '231:f6e3c3f1'],
     ];
     GOLD.forEach(([prim, mapper, params, want]) => {
+      // Regression guard (PR #87 CI): an arch-split golden needs both arches.
+      if (typeof want !== 'string') expect(Object.keys(want).sort()).toEqual(['arm64', 'x64']);
       const s = scene(prim, mapper, params);
       s.group.params.seedMode = 'legacy'; s.child.params.seedMode = 'legacy';
       s.group.params.seed = 42; s.child.params.seed = 43;
-      expect(render(s)).toBe(want);
+      expect(render(s)).toBe(wantFor(want));
     });
   }, 300000);
 });
