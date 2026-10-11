@@ -98,6 +98,7 @@ JSON.stringify({w: innerWidth, h: innerHeight, dpr: devicePixelRatio, standalone
 | DEV-47 | Layer double-tap rename under main-thread load (event.timeStamp semantics on iOS WebKit; from TUX-038). | TUX-038 | iPhone P tab, iPad P tab | Add a heavy layer and double-tap a layer name while it regenerates. The rename field opens. `pointerdown` event.timeStamp is on the same clock for both taps. | open |
 | DEV-48 | No text-selection loupe or callout on a label long-press (from TUX-038). | TUX-038 | iPhone P tab, iPad L tab | Hold a control label for 0.5 s. The "Reset to default" menu opens. No loupe, no selection handles, no callout. Lifting the finger resets nothing. | open |
 | DEV-49 | Reset hold, then pick the menu item with the finger (from TUX-038). | TUX-038 | iPhone P tab, iPad L tab | Hold a label, lift, tap "Reset to default". The value returns to its default exactly once. The tap within 0.8 s of the lift is not swallowed. | open |
+| DEV-50 | Bottom pane stray tap and divider drag (from TUX-051). | TUX-051 | iPad L tab | Tap 2, 8 and 16 px below the canvas bottom edge, 10 times each. The pane never expands. The chevron expands it on the first tap. A vertical divider drag resizes. | open |
 
 ## Clause index
 
@@ -145,3 +146,4 @@ One line per cell. Add lines only after a real device run. Do not enter results 
 | TUX-054#4 | Animated SVG, preset bundle and one designer export each work. |
 | TUX-054#5 | A heavy export (dense scene, build time over 1 s) still opens the share sheet or falls back to a download. This checks the activation lifetime. |
 | TUX-054#6 | Record whether a synchronous revoke failed before the fix. This tests the audit's unverified claim. |
+| TUX-051#1 | iPad landscape Safari: stray taps below the canvas never expand the bottom pane; chevron and divider drag work. | DEV-50 |
