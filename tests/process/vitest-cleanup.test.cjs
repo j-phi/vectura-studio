@@ -13,8 +13,9 @@ async function until(predicate) {
   assert.fail('condition did not become true within 5 seconds');
 }
 
-for (const mode of ['success', 'failure', 'timeout', 'SIGINT', 'SIGTERM', 'SIGHUP', 'SIGKILL']) {
-  test(`cleans stubborn descendants after ${mode}`, { timeout: 15000 }, async (t) => {
+for (const scenario of ['success', 'failure', 'timeout', 'SIGINT', 'SIGTERM', 'SIGHUP', 'SIGKILL', 'queued-SIGTERM']) {
+  const mode = scenario.replace('queued-', '');
+  test(`cleans stubborn descendants after ${scenario}`, { timeout: 15000 }, async (t) => {
     const dir = mkdtempSync(path.join(tmpdir(), 'vectura-cleanup-'));
     const marker = path.join(dir, 'pids.json');
     const worker = `process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000);`;
@@ -32,7 +33,20 @@ for (const mode of ['success', 'failure', 'timeout', 'SIGINT', 'SIGTERM', 'SIGHU
         timeoutMs: ${mode === 'timeout' ? 1200 : 10000}, graceMs: 100
       }).then(result => { console.log(JSON.stringify(result)); process.exitCode = result.status; });
     `;
-    const parent = spawn(process.execPath, ['-e', launcher], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const env = { ...process.env };
+    const queued = scenario.startsWith('queued-');
+    if (queued) {
+      delete env.CI;
+      for (const key of Object.keys(env)) if (key.startsWith('VECTURA_TEST_QUEUE_')) delete env[key];
+      env.VECTURA_TEST_QUEUE_DIR = path.join(dir, 'queue');
+      env.VECTURA_TEST_QUEUE_POLL_MS = '40';
+      env.VECTURA_TEST_QUEUE_TRACK_MS = '40';
+      env.VECTURA_TEST_QUEUE_LINGER_MS = '100';
+    }
+    const args = queued
+      ? [path.resolve(__dirname, '../../scripts/test-queue.js'), process.execPath, '-e', launcher]
+      : ['-e', launcher];
+    const parent = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
     const exited = once(parent, 'exit');
     let output = '';
     parent.stdout.on('data', (d) => { output += d; });
@@ -48,6 +62,7 @@ for (const mode of ['success', 'failure', 'timeout', 'SIGINT', 'SIGTERM', 'SIGHU
     if (mode.startsWith('SIG')) parent.kill(mode);
     const [code, signal] = await exited;
     await until(() => pids.every((pid) => !alive(pid)));
+    if (queued) assert.equal(existsSync(path.join(dir, 'queue/lock.json')), false);
     if (mode === 'SIGKILL') assert.equal(signal, mode);
     else assert.equal(code, { success: 0, failure: 7, timeout: 124, SIGINT: 130, SIGTERM: 143, SIGHUP: 129 }[mode], output);
   });

@@ -7,6 +7,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Added
+- **Tooling · shared local test queue.** Every heavy test command (`test:unit`, `test:integration`,
+  `test:e2e`, `test:visual`, `test:perf`, `test:coverage`, `test:update`, and the `test`,
+  `test:fast`, `test:ci` aggregates) now runs through `scripts/test-queue.js`: one machine-wide
+  lock in `~/.cache/vectura-studio/test-queue`, shared by every worktree and session. Other runs
+  wait in FIFO order and print the holder's PID, age, working directory, and command. The lock
+  is taken atomically (hard link), owners are identified by PID **and** process start time, and
+  stale locks (dead or reused PID) are recovered safely. The holder terminates its whole
+  subprocess tree on completion or cancellation before it releases the lock; a SIGKILLed
+  holder's orphans are terminated by the next run. Aggregates hold the lock once, and their
+  nested calls pass through without deadlock. New entrypoints: `test:vitest`, `test:playwright`,
+  `test:queue:status`. CI behavior is unchanged (`CI` set = no lock). `CLAUDE.md`, `AGENTS.md`,
+  and `docs/testing.md` now forbid direct `npx vitest` / `npx playwright test`.
 - **3D Scene · Ground size controls.** The Ground panel gains a **Size** group: **Width (X)** and
   **Depth (Z)** sliders (0.25×–256×, log scale so each notch doubles), a **lock** that scales
   both together and keeps their proportions, **Reset**, and **Fill frame** — one click sizes
