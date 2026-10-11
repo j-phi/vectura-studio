@@ -15433,3 +15433,8 @@ body.touch-ui .optimization-grip::before, body.touch-ui .mp-root .mp-row-grip::b
   transform: translate(-50%, -50%);
 }
 /* === END TUX-044 === */
+
+/* === TUX-010: toast clear of the tablet header band ===
+   The tablet drawer handles sit in the top-right band. A plain toast must not cover them (req 4). */
+body.tablet-layout #vectura-toast-host { top: calc(44px + var(--safe-top, 0px) + 8px); }
+/* === END TUX-010 toast === */

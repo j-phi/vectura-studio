@@ -380,6 +380,29 @@ test.describe('TUX-011 dismiss and slivers', () => {
   });
 });
 
+test.describe('TUX-010 toast never covers pane controls', () => {
+  test.beforeEach(async ({ page }) => { await boot(page); });
+
+  test('a plain toast leaves every visible drawer handle and pane chevron tappable', async ({ page }) => {
+    const layout = await layoutOf(page);
+    await page.evaluate(() => window.Vectura.UI.overlays.Toast.show({ message: 'Added flowfield layer' }));
+    await page.waitForTimeout(300);
+    const sels = ['#btn-mobile-pane-left', '#btn-mobile-pane-right', '#btn-header-pane-left', '#btn-header-pane-right',
+      '#btn-pane-toggle-left', '#btn-pane-toggle-right'];
+    for (const sel of sels) {
+      const r = await rectOf(page, sel);
+      const vis = await page.evaluate((s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).visibility !== 'hidden' && e.getClientRects().length > 0; }, sel);
+      if (!r || !vis || r.w < 1 || r.h < 1) continue;
+      expect(await uncovered(page, sel), `${layout}: ${sel} uncovered while a toast shows`).toBe(true);
+    }
+    if (layout === 'tablet') {
+      await page.touchscreen.tap(...(await page.evaluate(() => { const r = document.querySelector('#btn-mobile-pane-left').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })));
+      await sleep(600);
+      expect(await isOpen(page, 'left'), 'tap on left handle opens the drawer under a toast').toBe(true);
+    }
+  });
+});
+
 test.describe('desktop parity', () => {
   test.beforeEach(async ({}, testInfo) => {
     test.skip(testInfo.project.name !== 'touch-ipad-landscape', 'desktop parity runs once, in the Chromium iPad landscape project');
