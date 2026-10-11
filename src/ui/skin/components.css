@@ -14853,16 +14853,6 @@ body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
 
 /* === TUX-037: undo toast === */
 /* Host placement moved out of inline styles. Default = today's desktop values. */
-#vectura-toast-host {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 9000;
-  pointer-events: none;
-}
 .vectura-toast-action {
   flex: none;
   font: inherit;
@@ -14882,22 +14872,7 @@ body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
   opacity: 0.5;
   cursor: default;
 }
-#vectura-toast-host .vectura-toast {
-  max-width: 320px;
-}
 @media (pointer: coarse) {
-  /* Only the Undo toast itself anchors bottom-center (fixed, out of the host's flow), so a plain
-     toast firing at the same time stays top-right and never covers sheets/inputs. */
-  #vectura-toast-host .vectura-toast:has(.vectura-toast-action) {
-    position: fixed;
-    top: auto;
-    right: auto;
-    left: 50%;
-    bottom: calc(var(--tux-toast-gap) + var(--tux-safe-bottom) + var(--tux-modbar-clear, 0px));
-    transform: translateX(-50%);
-    box-sizing: border-box;
-    max-width: calc(100vw - 32px - var(--tux-safe-left) - var(--tux-safe-right));
-  }
   .vectura-toast-action {
     min-width: 44px;
     min-height: 44px;
@@ -15570,3 +15545,60 @@ body.touch-wide-layout #touch-modifier-bar { padding: 4px; gap: 4px; }
   }
 }
 /* === END TUX-051 === */
+
+/* === TUX-048: toast placement ===
+ * Desktop (default) keeps the former inline look and the top-right anchor (pixel-identical).
+ * body.touch-ui (TUX-006) docks the host bottom-centre, inside the safe area, above the bottom chrome
+ * (toast.js sets --toast-bottom from the measured chrome) and above every modal layer (max 10001).
+ * Gate = body.touch-ui only: never width, mobile-layout or (pointer: coarse) (WebKit desktop reports no touch points).
+ * Beats TUX-037/TUX-010 `body.*-layout #vectura-toast-host { top }` (same specificity, later in the file). */
+#vectura-toast-host {
+  position: fixed;
+  top: var(--toast-edge);
+  right: var(--toast-edge);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+#vectura-toast-host .vectura-toast {
+  pointer-events: auto;
+  padding: 8px 14px;
+  min-width: 200px;
+  max-width: 320px;
+  background: var(--ui-panel, #252525);
+  color: var(--ui-text, #e0e0e0);
+  border: 1px solid var(--ui-border, #333);
+  border-left: 3px solid var(--ui-accent, #4e9ee1);
+  border-radius: var(--radius-sm, 4px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--font-size-sm, 11px);
+  line-height: 1.4;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+#vectura-toast-host .vectura-toast.has-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: default;
+}
+#vectura-toast-host .vectura-toast-msg { flex: 1 1 auto; }
+body.touch-ui #vectura-toast-host {
+  top: auto;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--toast-bottom, 0px) + var(--toast-chrome-gap) + var(--safe-bottom));
+  width: max-content;
+  max-width: calc(100% - 2 * var(--toast-edge) - var(--safe-left) - var(--safe-right));
+  align-items: center;
+  flex-direction: column-reverse;
+}
+body.touch-ui #vectura-toast-host .vectura-toast {
+  max-width: 100%;
+  min-width: 0;
+}
+body.touch-ui #vectura-toast-host .vectura-toast:not(.is-actionable) { pointer-events: none; }
+/* === END TUX-048 === */

@@ -43,27 +43,39 @@
     host.id = 'vectura-toast-host';
     host.setAttribute('role', 'region');
     host.setAttribute('aria-label', 'Notifications');
-    // TUX-037: positional rules live in skin CSS (components.css, `#vectura-toast-host`)
-    // so a coarse pointer can anchor the host bottom-center above the safe area.
-    host.setAttribute('data-toast-host', '');
+    // TUX-037/048: every visual and positional rule lives in skin CSS (components.css, TUX-048 block).
+    host.className = 'vectura-toast-host';
     ownerDoc.body.appendChild(host);
     return host;
   };
 
-  // TUX-037: clear the touch modifier bar when it sits in the lower half of the viewport.
-  // Measured (not hard-coded) because its bottom offset differs per layout. Only the
-  // coarse-pointer CSS reads --tux-modbar-clear; on desktop it has no effect.
-  const syncModbarClear = (host, ownerDoc) => {
+  // TUX-048: bottom-docked chrome the touch toast must clear. Same list as tests/e2e/touch/toasts.spec.js.
+  // Measured (not hard-coded) because the modifier bar moves per layout (bottom on phones, floating top on iPad landscape).
+  const BOTTOM_CHROME = '#tool-bar, #touch-modifier-bar, #status-bar, #bottom-pane:not(.bottom-pane-collapsed)';
+  const positionHost = (host) => {
+    const ownerDoc = host.ownerDocument;
+    const view = ownerDoc.defaultView;
+    if (!ownerDoc.body.classList.contains('touch-ui') || !view) return;
     let clear = 0;
     try {
-      const bar = ownerDoc.getElementById('touch-modifier-bar');
-      const view = ownerDoc.defaultView;
-      if (bar && !bar.classList.contains('hidden') && view) {
-        const r = bar.getBoundingClientRect();
-        if (r.width > 0 && r.height > 0 && r.top > view.innerHeight / 2) clear = Math.max(0, view.innerHeight - r.top);
-      }
+      const KI = Vectura.KeyboardInset;
+      const vr = KI && KI.viewportRect ? KI.viewportRect() : { height: view.innerHeight, offsetTop: 0 };
+      const midY = vr.offsetTop + vr.height / 2;
+      ownerDoc.querySelectorAll(BOTTOM_CHROME).forEach((e) => {
+        const cs = view.getComputedStyle(e);
+        const r = e.getBoundingClientRect();
+        if (cs.display === 'none' || cs.visibility === 'hidden' || r.width <= 0 || r.height <= 0) return;
+        if (r.top > midY) clear = Math.max(clear, view.innerHeight - r.top);
+      });
     } catch (_) { /* layout probe is best effort */ }
-    host.style.setProperty('--tux-modbar-clear', `${Math.round(clear)}px`);
+    host.style.setProperty('--toast-bottom', `${Math.max(0, Math.round(clear))}px`);
+  };
+  let vvBound = false;
+  const bindViewport = (host) => {
+    const KI = Vectura.KeyboardInset;
+    if (vvBound || !KI || !KI.onViewportChange) return;
+    vvBound = true;
+    KI.onViewportChange(() => { if (host.childElementCount) positionHost(host); }, { scroll: true });
   };
 
   const show = (props) => {
@@ -72,37 +84,20 @@
     const action = props && props.action && typeof props.action.onAction === 'function' ? props.action : null;
     const duration = props && Number.isFinite(props.duration) ? props.duration : (action ? 6000 : 4000);
     const host = ensureContainer(ownerDoc);
-    syncModbarClear(host, ownerDoc);
+    positionHost(host);
+    bindViewport(host);
 
     const el = ownerDoc.createElement('div');
     el.className = `vectura-toast vectura-toast-${variant}`;
     el.setAttribute('role', ROLE[variant] || 'status');
     el.setAttribute('aria-live', variant === 'danger' || variant === 'warning' ? 'assertive' : 'polite');
-    el.style.cssText = [
-      'pointer-events: auto',
-      'padding: 8px 14px',
-      'min-width: 200px',
-      'background: var(--ui-panel, #252525)',
-      'color: var(--ui-text, #e0e0e0)',
-      'border: 1px solid var(--ui-border, #333)',
-      'border-left: 3px solid var(--ui-accent, #4e9ee1)',
-      'border-radius: var(--radius-sm, 4px)',
-      'font-family: var(--font-ui, system-ui, sans-serif)',
-      'font-size: var(--font-size-sm, 11px)',
-      'line-height: 1.4',
-      'box-shadow: 0 6px 24px rgba(0,0,0,0.35)',
-      'cursor: pointer',
-    ].join(';');
+    if (action || (props && typeof props.onClick === 'function')) el.classList.add('is-actionable');
     let msgEl = null;
     let actionBtn = null;
     if (action) {
-      el.style.cursor = 'default';
-      el.style.display = 'flex';
-      el.style.alignItems = 'center';
-      el.style.gap = '12px';
+      el.classList.add('has-action');
       msgEl = ownerDoc.createElement('span');
       msgEl.className = 'vectura-toast-msg';
-      msgEl.style.flex = '1 1 auto';
       msgEl.textContent = (props && props.message) || '';
       el.appendChild(msgEl);
     } else {
