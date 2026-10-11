@@ -5,6 +5,10 @@
 (() => {
   const Vectura = (window.Vectura = window.Vectura || {});
   window.Vectura.UI_CONSTANTS = {
+    // TUX-056: max backing-store DPR for the main canvas on coarse pointers (phones/tablets).
+    // DPR 3 phones would allocate 2.25x the pixels of DPR 2; fine pointers are never capped.
+    TOUCH_CANVAS_MAX_DPR: 2,
+
     // Minimum pixels of space above a trigger before a popover flips upward.
     COLOR_PICKER_POPOVER_THRESHOLD_PX: 220,
 

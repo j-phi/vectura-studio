@@ -5406,14 +5406,38 @@
       return this.toggleAnchorFromWorld(world, e && e.pointerType);
     }
 
+    // TUX-056: one backing-DPR source for the main canvas. Coarse pointers (phones/tablets) cap at
+    // UI_CONSTANTS.TOUCH_CANVAS_MAX_DPR; fine pointers keep the raw device ratio (desktop parity).
+    _computeBackingDpr() {
+      const raw = window.devicePixelRatio || 1;
+      let coarse = false;
+      try { coarse = window.matchMedia?.('(pointer: coarse)')?.matches === true; } catch (err) { coarse = false; }
+      if (!coarse) return raw;
+      const cap = window.Vectura?.UI_CONSTANTS?.TOUCH_CANVAS_MAX_DPR ?? 2;
+      return Math.min(raw, cap);
+    }
+
+    getBackingDpr() {
+      return this.backingDpr || this._computeBackingDpr();
+    }
+
     resize() {
       if (!this.ready || !this.canvas || !this.ctx) return;
       const p = this.canvas.parentElement.getBoundingClientRect();
-      this.canvas.width = p.width * window.devicePixelRatio;
-      this.canvas.height = p.height * window.devicePixelRatio;
+      const dpr = this._computeBackingDpr();
+      this.backingDpr = dpr;
+      const bw = Math.round(p.width * dpr);
+      const bh = Math.round(p.height * dpr);
+      if (
+        bw === this.canvas.width && bh === this.canvas.height && dpr === this._allocDpr
+        && this._lastCanvasW === p.width && this._lastCanvasH === p.height
+      ) return;
+      this.canvas.width = bw;
+      this.canvas.height = bh;
       this.canvas.style.width = `${p.width}px`;
       this.canvas.style.height = `${p.height}px`;
-      this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this._allocDpr = dpr;
       // Auto-fit only when the canvas pixel dimensions actually changed (e.g. window
       // resize, pane toggle). ResizeObserver also fires for content-layout shifts that
       // don't change canvas size (layers panel content height, etc.); those must not
@@ -5451,8 +5475,8 @@
       this._drawSeq = (this._drawSeq || 0) + 1; // lets coalesced repaint requests see an intervening frame
       if (!this.ready || !this.canvas || !this.ctx) return;
       this._rotAffDrawn = null; // drawSelection re-sets it; a deselect or mouse frame leaves it cleared
-      const w = this.canvas.width / window.devicePixelRatio;
-      const h = this.canvas.height / window.devicePixelRatio;
+      const w = this.canvas.width / this.getBackingDpr();
+      const h = this.canvas.height / this.getBackingDpr();
       this.ctx.clearRect(0, 0, w, h);
       this.ctx.fillStyle = getThemeToken('--render-canvas', '#121214');
       this.ctx.fillRect(0, 0, w, h);
@@ -6203,17 +6227,17 @@
       if (fillToolActive) {
         const cw = this.canvas.width;
         const ch = this.canvas.height;
-        const dpr = window.devicePixelRatio;
+        const dpr = this.getBackingDpr();
         if (!this._loupeCleanCanvas) {
           this._loupeCleanCanvas = document.createElement('canvas');
           this._loupeCleanCanvas.width = cw;
           this._loupeCleanCanvas.height = ch;
           this._loupeCleanCtx = this._loupeCleanCanvas.getContext('2d');
-          this._loupeCleanCtx.scale(dpr, dpr);
+          this._loupeCleanCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
         } else if (this._loupeCleanCanvas.width !== cw || this._loupeCleanCanvas.height !== ch) {
           this._loupeCleanCanvas.width = cw;
           this._loupeCleanCanvas.height = ch;
-          this._loupeCleanCtx.scale(dpr, dpr);
+          this._loupeCleanCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
         const mainCtx = this.ctx;
         this.ctx = this._loupeCleanCtx;
@@ -9338,9 +9362,9 @@
       const fontPx = cfg?.labelFontPx ?? 10;
       const family = cfg?.labelFontFamily ?? 'system-ui, sans-serif';
       // worldToScreen yields CSS pixels; the canvas base transform is
-      // scale(dpr,dpr). Reset to the dpr base (NOT identity) so labels land at
+      // scale(dpr,dpr) with the backing dpr base. Reset to the dpr base (NOT identity) so labels land at
       // the correct CSS position on HiDPI displays and stay zoom-invariant.
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = this.getBackingDpr();
       hints.chips.forEach((chip) => {
         const screen = this.worldToScreen(chip.x, chip.y);
         this.ctx.save();
@@ -9559,7 +9583,7 @@
       // worldToScreen yields CSS pixels; reset to the dpr base transform (NOT
       // identity) so the label lands at the correct CSS position on HiDPI
       // displays instead of drifting to half-position toward the top-left.
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = this.getBackingDpr();
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.font = `${fontPx}px ${family}`;
