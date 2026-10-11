@@ -243,6 +243,7 @@ or completes.
   unwire moves past Stage 1.
 
 ## Next
+- **3D fill audit — T2-9 / T2-9R REJECTED (2026-10-11).** Jay judged v1.4.7 mkTick better than the band-rule redesign; `main` keeps v1.4.7. Work is parked on `3d-scene/fill-audit-a11` (tag `t2-9r-rejected-2026-10-11`). Do not restart a T2-9-style rewrite without a whole-object prototype review with Jay first. See `docs/3d-audit/fill-audit-handoff.md`.
 - **3D fill audit — mkTick follow-ups (2026-10-03).** (1) Sphere pole hooks in REGULAR mkTick ticks
   (create sphere/hatch: 39/689 ticks bend >30°, worst 134°, near the top pole) violate Jay's no-hooks rule;
   Jay ruled "later". (2) T2-8b-5 rim extension fades with density (sphere rim candidates 29 at d=50 → 2 at
@@ -592,6 +593,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Capsule cap-seam hatch bend (2026-10-11).** SurfaceFill's capsule chart is now arc-length parameterised (`capsuleArcChart`); angled hatch no longer kinks at the barrel/cap seam. Shadow-anatomy band-order clause re-pinned as a near-tie.
 - **Vitest process cleanup (2026-10-04).** Added independent supervision, per-attempt deadlines, owned-group cleanup, and process-level regression coverage; preserved the narrow RPC retry policy. Integrated inside the shared test queue.
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
   (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
