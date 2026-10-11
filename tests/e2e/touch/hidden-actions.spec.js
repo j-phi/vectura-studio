@@ -214,7 +214,7 @@ for (const mode of ['natural', 'hybrid']) {
 
 test('D: modifier bar leaves no sticky :hover colour after a tap', async ({ page }) => {
   await boot(page);
-  const btn = page.locator('#touch-modifier-bar [data-touch-mod="shift"]');
+  const btn = page.locator('#touch-modifier-bar [data-touch-mod="constrain"]');
   await expect(btn).toBeVisible();
   const read = () => btn.evaluate((el) => {
     const cs = getComputedStyle(el);

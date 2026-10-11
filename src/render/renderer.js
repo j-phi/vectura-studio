@@ -1877,20 +1877,7 @@
     }
 
     getModifierState(e = {}) {
-      const mods = SETTINGS.touchModifiers || {};
-      const isTouchPointer = e.pointerType && e.pointerType !== 'mouse';
-      const touchShift = isTouchPointer && Boolean(mods.shift);
-      const touchAlt = isTouchPointer && Boolean(mods.alt);
-      const touchMeta = isTouchPointer && Boolean(mods.meta);
-      const touchCtrl = isTouchPointer && Boolean(mods.ctrl);
-      const touchPan = isTouchPointer && Boolean(mods.pan);
-      return {
-        shift: Boolean(e.shiftKey || touchShift),
-        alt: Boolean(e.altKey || touchAlt),
-        meta: Boolean(e.metaKey || e.ctrlKey || touchMeta || touchCtrl),
-        ctrl: Boolean(e.ctrlKey || touchCtrl),
-        pan: Boolean(touchPan),
-      };
+      return window.Vectura.InputModifiers.readModifiers(e);
     }
 
     wantsPan(e, modifiers = this.getModifierState(e)) {
@@ -7672,7 +7659,7 @@
               // immediate child of the isolated group.
               const member = this._findIsolatedMemberAtPoint(world);
               if (member) {
-                const additiveInGroup = modifiers.shift || modifiers.meta || modifiers.ctrl;
+                const additiveInGroup = modifiers.additive;
                 this.groupEditMode.activeLayerId = member.id;
                 if (additiveInGroup) {
                   // Shift/Cmd-click extends the multi-selection WITHIN the
@@ -7693,7 +7680,7 @@
               }
             }
           }
-          if (!_groupHandled && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
+          if (!_groupHandled && !modifiers.additive) {
             // A morph's blended output is only reachable when no normal layer is
             // under the cursor (children consumed, container skipped by
             // findLayerAtPoint), so probe it only when topLayer is null.
@@ -7766,7 +7753,7 @@
         }
 
         if (!_groupHandled) {
-          const additive = modifiers.shift || modifiers.meta || modifiers.ctrl;
+          const additive = modifiers.additive;
           if (additive && topLayer) {
             // SEL: Shift/Cmd-click toggles the clicked object in or out of the
             // multi-selection. This is a DISCRETE action —
@@ -7790,7 +7777,7 @@
                 this.selectLayer(topLayer);
               }
             }
-          } else if (topLayer && this.selectedLayerIds.size > 1 && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
+          } else if (topLayer && this.selectedLayerIds.size > 1 && !modifiers.additive) {
             this._pendingSingleSelect = topLayer;
           }
         }
@@ -7833,7 +7820,7 @@
             // SEL: a Shift/Cmd marquee is additive — preserve the existing
             // selection and union the marquee hits on commit. A plain marquee
             // clears first (replace semantics).
-            this._marqueeAdditive = !!(modifiers.shift || modifiers.meta || modifiers.ctrl);
+            this._marqueeAdditive = !!modifiers.additive;
             this._marqueeBaseIds = this._marqueeAdditive ? new Set(this.selectedLayerIds) : null;
             if (!this._marqueeAdditive) {
               // Touch: the plain-marquee clear runs on the first move past the slop, or at
@@ -11040,7 +11027,7 @@
         .filter((c) => this._isSceneLayerEditable(c.layer));
       const sceneLayer = stack.length ? stack[0].layer : this.getSceneShortcutLayer();
       if (!sceneLayer || !this._isSceneLayerEditable(sceneLayer)) return false;
-      const additive = Boolean(modifiers.shift || modifiers.meta || modifiers.ctrl);
+      const additive = Boolean(modifiers.additive);
       if (!stack.length) {
         // Empty scene click: a plain click clears the scene selection; the
         // normal empty-click flow below owns the marquee. Stash the scene
@@ -11115,7 +11102,7 @@
       const mode = this.sceneComponentMode === 'edge' ? 'edge' : 'face';
       const stack = this._sceneCandidatesAtPoint(world, mode)
         .filter((c) => this._isSceneLayerEditable(c.layer));
-      const additive = Boolean(modifiers.shift || modifiers.meta || modifiers.ctrl);
+      const additive = Boolean(modifiers.additive);
       if (!stack.length) {
         const sceneLayer = this.getSceneShortcutLayer();
         if (!sceneLayer || !this._isSceneLayerEditable(sceneLayer)) return false;

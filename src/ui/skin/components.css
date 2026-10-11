@@ -15443,3 +15443,103 @@ body.tablet-layout #vectura-toast-host { top: calc(44px + var(--safe-top, 0px) +
    The pane chevrons sit at y 40-84 in the top-right. A wrapping toast must start below them (req 4). */
 body.touch-wide-layout #vectura-toast-host { top: calc(84px + var(--safe-top, 0px) + 8px); }
 /* === END TUX-010 toast touch-wide === */
+
+/* === TUX-045: touch modifier tasks (Multi-select, Constrain, Duplicate, Pan) ===
+   The bar is built by ui-touch.js from Vectura.TOUCH_MODIFIERS. A button is icon + full name; on a
+   phone it is icon + short label. latched = pressed for the next gesture, locked = lock glyph. */
+[data-ui-skin] .touch-mod-btn,
+.touch-mod-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.touch-mod-btn .touch-mod-icon { display: inline-flex; flex: 0 0 auto; }
+.touch-mod-btn .touch-mod-short { display: none; }
+.touch-mod-btn .touch-mod-lock {
+  display: none;
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  line-height: 0;
+  color: var(--ui-accent);
+}
+.touch-mod-btn[data-state="locked"] .touch-mod-lock { display: inline-flex; }
+[data-ui-skin] #touch-modifier-bar .touch-mod-btn[data-state="latched"],
+[data-ui-skin] #touch-modifier-bar .touch-mod-btn[data-state="locked"] {
+  background: var(--ui-accent-2);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+[data-ui-skin] #touch-modifier-bar .touch-mod-btn[data-state="locked"] {
+  box-shadow: inset 0 0 0 2px var(--ui-accent);
+}
+/* Phone: icon over a short label. The old keyboard-glyph ::before rules no longer apply. */
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod]::before { content: none; display: none; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn {
+  flex-direction: column;
+  gap: 1px;
+  font-size: 10px;
+  padding: 0 2px;
+}
+body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label { display: none; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-short { display: block; line-height: 1; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-icon svg { width: 18px; height: 18px; }
+/* iPhone landscape: one trailing column (TUX-007 placement kept; four tasks fit one 46 px column). */
+body.phone-layout.phone-short #touch-modifier-bar {
+  grid-template-columns: 46px;
+  row-gap: 2px;
+  max-height: calc(100% - var(--tux7-rail-h) - 4px - var(--safe-bottom));
+}
+/* The bar is for touch-capable devices. A mouse-only narrow window hides it (beats the forced flex). */
+body.mobile-layout #touch-modifier-bar.hidden,
+body.phone-layout.phone-short #touch-modifier-bar.hidden,
+body.tablet-layout #touch-modifier-bar.hidden { display: none; }
+
+.touch-mod-badge {
+  position: absolute;
+  top: var(--touch-mod-badge-top);
+  left: var(--touch-mod-badge-left);
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: calc(100% - var(--touch-mod-badge-left) - 8px - 160px);
+  pointer-events: none;
+}
+.touch-mod-badge[hidden] { display: none; }
+.touch-mod-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-accent);
+  background: var(--ui-panel);
+  color: var(--ui-accent);
+  font: 600 11px/1.2 var(--font-ui);
+}
+.touch-mod-chip[data-state="locked"] {
+  background: var(--ui-accent);
+  color: var(--ui-panel);
+}
+/* === END TUX-045 === */
+
+/* === TUX-045: badge placement on touch-wide ===
+   The bar floats top-left of the canvas there (absolute, left 76 px). The badge sits below it, right of the rail. */
+body.touch-wide-layout .touch-mod-badge {
+  top: calc(var(--touch-mod-badge-top) + 82px + var(--toolbar-dock-top-h, 0px));
+  left: calc(var(--touch-mod-badge-left) + 76px);
+}
+/* The floating touch-wide bar covers canvas: short labels keep its footprint at or below the old five-key bar. */
+body.touch-wide-layout #touch-modifier-bar .touch-mod-btn { padding: 0 8px; gap: 4px; }
+body.touch-wide-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label { display: none; }
+body.touch-wide-layout #touch-modifier-bar .touch-mod-btn .touch-mod-short { display: block; }
+body.touch-wide-layout #touch-modifier-bar { padding: 4px; gap: 4px; }
+/* === END TUX-045 badge === */
