@@ -14713,14 +14713,17 @@ body.phone-layout.phone-short #bottom-pane.bottom-pane-collapsed .pane-toggle-bo
   left: 0;
   width: 48px;
   height: 48px;
-  transform: none;
+  /* Keep the collapsed rotation (down chevron turned up = expand); base rule's translate is dropped. */
+  transform: rotate(180deg);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 body.phone-layout.phone-short #bottom-pane:not(.bottom-pane-collapsed) {
   left: calc(var(--safe-left) + var(--tux7-sliver) + 8px);
-  right: calc(var(--safe-right) + var(--tux7-sliver) + 8px);
+  /* End left of the modifier column (2 x 46 px + gap/padding = 98 px, 6 px from the sliver) so the
+   * column never covers the sheet's stats. */
+  right: calc(var(--safe-right) + var(--tux7-sliver) + 6px + 98px + 8px);
   width: auto;
   height: min(60%, 220px);
 }

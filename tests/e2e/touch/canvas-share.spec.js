@@ -364,6 +364,49 @@ test.describe('TUX-007 phone landscape', () => {
       testInfo.annotations.push({ type: 'TUX-007 A7', description: `${m.W}x${m.H} ${m.btns.length} modifier buttons, max bottom ${Math.max(...m.btns.map((b) => b.b))} <= ${m.H - INS.bottom}` });
     }
   });
+
+  test('A9 formula chip chevron and expanded sheet clear the modifier column', async ({ page }, testInfo) => {
+    const vp0 = page.viewportSize();
+    for (const h of [vp0.height, 330]) {
+      await page.setViewportSize({ width: vp0.width, height: h });
+      await sleep(600);
+      const rot = () => page.evaluate(() => {
+        const t = document.querySelector('#bottom-pane .pane-toggle-bottom');
+        const m = new DOMMatrix(getComputedStyle(t).transform === 'none' ? 'matrix(1,0,0,1,0,0)' : getComputedStyle(t).transform);
+        return { collapsed: document.getElementById('bottom-pane').classList.contains('bottom-pane-collapsed'), deg: Math.round(Math.atan2(m.b, m.a) * 180 / Math.PI) };
+      });
+      let r = await rot();
+      if (!r.collapsed) { await page.evaluate(() => document.getElementById('btn-pane-toggle-bottom').click()); await sleep(400); r = await rot(); }
+      expect(r.collapsed, `chip collapsed at ${h}`).toBe(true);
+      expect(Math.abs(r.deg), `collapsed chevron rotated 180 at ${h}`).toBe(180);
+      await tap(page, page.locator('#btn-pane-toggle-bottom'));
+      await sleep(500);
+      r = await rot();
+      expect(r.collapsed, `sheet expanded at ${h}`).toBe(false);
+      expect(r.deg, `expanded chevron not rotated at ${h}`).toBe(0);
+      const bad = await page.evaluate(() => {
+        const out = [];
+        const pane = document.getElementById('bottom-pane');
+        const leaves = [...pane.querySelectorAll('*')].filter((e) => !e.children.length && e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height > 0 && getComputedStyle(e).visibility !== 'hidden');
+        for (const e of leaves) {
+          const b = e.getBoundingClientRect();
+          const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+          if (!t || !pane.contains(t)) out.push(`pane:${e.id || e.className || e.tagName}`);
+        }
+        for (const e of document.querySelectorAll('#touch-modifier-bar .touch-mod-btn')) {
+          const b = e.getBoundingClientRect();
+          if (!b.width) continue;
+          const t = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+          if (!t || !(t === e || e.contains(t))) out.push(`mod:${e.textContent.trim()}`);
+        }
+        return out;
+      });
+      expect(bad, `covered elements with sheet open at ${h}`).toEqual([]);
+      await tap(page, page.locator('#btn-pane-toggle-bottom'));
+      await sleep(400);
+      testInfo.annotations.push({ type: 'TUX-007 A9', description: `${vp0.width}x${h} ok` });
+    }
+  });
 });
 
 test.describe('TUX-007 reachable-set accounting (TUX-058 baseline lowering)', () => {
