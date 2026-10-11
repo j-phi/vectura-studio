@@ -150,3 +150,4 @@ One line per cell. Add lines only after a real device run. Do not enter results 
 | TUX-054#5 | A heavy export (dense scene, build time over 1 s) still opens the share sheet or falls back to a download. This checks the activation lifetime. |
 | TUX-054#6 | Record whether a synchronous revoke failed before the fix. This tests the audit's unverified claim. |
 | TUX-051#1 | iPad landscape Safari: stray taps below the canvas never expand the bottom pane; chevron and divider drag work. | DEV-53 |
+| TUX-048#1 | iPhone home-screen standalone, portrait + landscape: toast clear of the home indicator and the Dynamic Island side. iPhone Safari with the toolbar shown or minimised: toast above the modifier bar. | DEV-54 |
