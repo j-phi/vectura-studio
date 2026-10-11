@@ -210,7 +210,20 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    `npm run test:ci`, reconcile intentionally-red tests, bump version + `version:sync`, CHANGELOG/plans/
    README, commit, STOP.
 
-## ROUND 6 PAUSE POINT (2026-10-10) — READ THIS FIRST
+## T2-9R REJECTED — v1.4.7 KEPT (2026-10-11) — READ THIS FIRST
+
+**Jay viewed the final T2-9R crops against v1.4.7 and ruled: "Honestly 1.4.7 was better than T2-9R. Let's restore to that."**
+
+- The T2-9 redo (T2-9R, units U-R0…U-R5d) is **REJECTED and not merged**. `main` keeps the v1.4.7 mkTick code. Nothing was reverted on `main`, because T2-9R never landed there.
+- The work is parked on branch `3d-scene/fill-audit-a11`, tag `t2-9r-rejected-2026-10-11`. The plan, unit reports and pictures are in that branch under `docs/3d-audit/lane-reports/T2-9R-*.md` and `docs/3d-audit/fill-audit/after/T2-9R/`. The first attempt (`3d-scene/fill-audit-a10`) is also parked.
+- **Kept:** the test-only I1 budget fix (the "72 cells md5 identical" test gets an explicit 900 s timeout), cherry-picked onto `main`.
+- **Do not start another T2-9-style rewrite of the mkTick band logic.** If pole or rim work resumes, first show Jay a whole-object before/after on a prototype, before any units are built.
+- **Lessons:**
+  - Bars that pass unit by unit can still hide a worse overall picture.
+  - Measure perf cumulatively against the release, not against each unit's parent. T2-9R reached about 2× v1.4.7 that way.
+- The ROUND 6 PAUSE POINT block below is **SUPERSEDED** for the T2-9 item. Its other queued items (§d) are still open.
+
+## ROUND 6 PAUSE POINT (2026-10-10) — superseded for T2-9 by the block above
 
 **Context was high; Jay asked for a handoff. Nothing is mid-flight. Every agent has finished.**
 

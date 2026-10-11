@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed
+- **Tests · I1 identity budget.** The scene3d mkTick "72 cells md5 identical" test now has an explicit 900 s timeout, so it no longer times out the pre-push hook under machine load. Test-only.
+- **Docs · 3D fill audit.** Recorded that the T2-9 / T2-9R mkTick band-rule redesign was rejected and v1.4.7 kept (handoff + `plans.md`).
+
 ### Added
 - **Tooling · shared local test queue.** Every heavy test command (`test:unit`, `test:integration`,
   `test:e2e`, `test:visual`, `test:perf`, `test:coverage`, `test:update`, and the `test`,
