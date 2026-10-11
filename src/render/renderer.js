@@ -7515,6 +7515,7 @@
         // gizmo "teleported" off-canvas, and the next click deselected the
         // scene. get3DRotationControl still returns null for a NON-scene layer
         // without bounds.corners, so 2D layers stay byte-identical.
+        let deferredRotation3DHit = null;
         const rotationBoundsOptional = selectedLayers.length === 1
           && !!this._sceneRotationOwner(selectedLayers[0]);
         if (
@@ -7523,11 +7524,14 @@
           selectedLayers.length === 1 &&
           !this.isLayerLocked?.(selectedLayers[0].id)
         ) {
-          const rotation3DHit = this.hit3DRotationControl(sx, sy, selectedLayers[0], selectionBounds);
-          if (rotation3DHit && this.begin3DRotationDrag(rotation3DHit, e)) {
+          const rotation3DHit = this.hit3DRotationControl(sx, sy, selectedLayers[0], selectionBounds, e.pointerType);
+          // TUX-025: a touch hit that exists only because of the larger finger radius yields to the
+          // scene handles (light, shadow, object gizmo, resize, face-pull) at their own tolerances.
+          if (rotation3DHit && !rotation3DHit.enlarged && this.begin3DRotationDrag(rotation3DHit, e)) {
             e.preventDefault();
             return;
           }
+          deferredRotation3DHit = rotation3DHit && rotation3DHit.enlarged ? rotation3DHit : null;
         }
         // 3D Scene Studio (Phase 2): the sun widget + shadow handle win over
         // object selection so the light can be dragged where it overlaps art.
@@ -7581,6 +7585,10 @@
             if (e.cancelable) e.preventDefault();
             return;
           }
+        }
+        if (deferredRotation3DHit && this.begin3DRotationDrag(deferredRotation3DHit, e)) {
+          e.preventDefault();
+          return;
         }
         // 3D Scene Studio (§5.1 V / object mode): scene object picks +
         // ground-drag arming run after the gizmo (orbit wins) but before the
@@ -15248,6 +15256,18 @@
       if (patch.roll !== undefined && spec.rollParam) layer.params[spec.rollParam] = patch.roll;
     }
 
+    // TUX-025: geometry gate for the 3D rotation gizmo. Never keyed on pointerType or width.
+    _touchGizmoLayout() {
+      try {
+        if (typeof document !== 'undefined' && document.body && document.body.classList.contains('touch-ui')) return true;
+        if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+          const m = window.matchMedia('(pointer: coarse)');
+          return !!(m && m.matches);
+        }
+      } catch (err) { /* no media query support */ }
+      return false;
+    }
+
     get3DRotationControl(layer, bounds) {
       // BUG 3 — the gizmo lives on the scene group even when a scene descendant
       // is the active layer. The incoming bounds only needs its corners (the
@@ -15281,15 +15301,58 @@
       const len = Math.hypot(vx, vy) || 1;
       const ux = vx / len;
       const uy = vy / len;
-      const padRadius = 17 * unit;
-      const ringRadius = 28 * unit;
-      const yawRadiusX = padRadius * 0.72;
-      const yawRadiusY = padRadius * 0.48;
+      // TUX-025: touch layout (body.touch-ui or a coarse pointer). Draw and hit share this one geometry.
+      const touchLayout = this._touchGizmoLayout();
+      const T3 = window.Vectura.UI_CONSTANTS.GIZMO_3D_TOUCH;
+      const padRadius = (touchLayout ? T3.padRadius : 17) * unit;
+      const ringRadius = (touchLayout ? T3.ringRadius : 28) * unit;
+      const yawRadiusX = touchLayout ? T3.yawRadiusX * unit : padRadius * 0.72;
+      const yawRadiusY = touchLayout ? T3.yawRadiusY * unit : padRadius * 0.48;
       const pitchRadiusX = padRadius * 0.62;
+      const anchorOffset = (touchLayout ? T3.anchorOffset : 35) * unit;
       const controlCenter = {
-        x: target.x + ux * 35 * unit,
-        y: target.y + uy * 35 * unit,
+        x: target.x + ux * anchorOffset,
+        y: target.y + uy * anchorOffset,
       };
+      let pitchSide = 1;
+      if (touchLayout) {
+        // Keep the whole footprint plus a finger of reach inside the canvas: shift the centre and,
+        // when the right side would clip, mirror the pitch track to the left.
+        const rect = this.canvas && this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : null;
+        let W = rect ? rect.width : 0;
+        const H = rect ? rect.height : 0;
+        let minX = 0;
+        if (W > 0 && H > 0) {
+          // The on-canvas modifier bar covers a strip of the canvas: keep the gizmo clear of it.
+          const bar = typeof document !== 'undefined' ? document.getElementById('touch-modifier-bar') : null;
+          const br = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect() : null;
+          if (br && br.width > 0 && br.height > 0 && br.right > rect.left && br.left < rect.right) {
+            if (br.left - rect.left > W / 2) W = Math.max(0, br.left - rect.left);
+            else if (br.right - rect.left < W / 2) minX = br.right - rect.left;
+          }
+        }
+        if (W > 0 && H > 0) {
+          const inset = T3.edgeInset;
+          const reach = T3.reachPad;
+          const sideExt = T3.pitchTrackX + reach;
+          const ringExt = T3.ringRadius + reach;
+          const cs = this.worldToScreen(controlCenter.x, controlCenter.y);
+          if (cs.x + sideExt > W - inset && cs.x - sideExt >= minX + inset) pitchSide = -1;
+          const left = pitchSide < 0 ? sideExt : ringExt;
+          const right = pitchSide > 0 ? sideExt : ringExt;
+          const loX = minX + inset + left;
+          const hiX = W - inset - right;
+          const loY = inset + ringExt;
+          const hiY = H - inset - ringExt;
+          const nx = loX > hiX ? (loX + hiX) / 2 : clamp(cs.x, loX, hiX);
+          const ny = loY > hiY ? (loY + hiY) / 2 : clamp(cs.y, loY, hiY);
+          if (nx !== cs.x || ny !== cs.y) {
+            const w = this.screenToWorld(nx, ny);
+            controlCenter.x = w.x;
+            controlCenter.y = w.y;
+          }
+        }
+      }
       const rot = this._read3DRotation(layer, spec);
       const yaw = normalizeDegrees(rot.yaw);
       const pitch = clamp(
@@ -15304,9 +15367,11 @@
         x: controlCenter.x + Math.sin(yawRad) * yawRadiusX,
         y: controlCenter.y + Math.cos(yawRad) * yawRadiusY,
       };
+      const pitchTrackHeight = touchLayout ? T3.pitchTrackHeight * unit : padRadius * 1.28;
+      const pitchTrackX = touchLayout ? pitchSide * T3.pitchTrackX * unit : -pitchRadiusX;
       const pitchMarker = {
-        x: controlCenter.x - pitchRadiusX,
-        y: controlCenter.y + (0.5 - pitchT) * padRadius * 1.28,
+        x: controlCenter.x + pitchTrackX,
+        y: controlCenter.y + (0.5 - pitchT) * pitchTrackHeight,
       };
       const roll = rot.hasRoll
         ? normalizeDegrees(rot.roll)
@@ -15327,7 +15392,9 @@
         yawRadiusX,
         yawRadiusY,
         pitchRadiusX,
-        pitchTrackHeight: padRadius * 1.28,
+        pitchTrackHeight,
+        pitchTrackX,
+        touch: touchLayout,
         yawMarker,
         pitchMarker,
         rollHandle,
@@ -15353,7 +15420,9 @@
       this.ctx.lineCap = 'round';
       this.ctx.lineJoin = 'round';
 
-      this.ctx.lineWidth = 1.1 * unit;
+      const touchDraw = !!control.touch;
+      const ms = touchDraw ? window.Vectura.UI_CONSTANTS.GIZMO_3D_TOUCH.markerDraw / 3.4 : 1;
+      this.ctx.lineWidth = (touchDraw ? 1.6 : 1.1) * unit;
       this.ctx.globalAlpha = 0.78;
       this.ctx.strokeStyle = axisY;
       this.ctx.beginPath();
@@ -15361,7 +15430,14 @@
       this.ctx.stroke();
       this.ctx.strokeStyle = axisX;
       this.ctx.beginPath();
-      this.ctx.ellipse(center.x, center.y, pitchRadiusX, padRadius, 0, 0, TAU);
+      if (touchDraw) {
+        // Pitch is a vertical track outside the ring, not an ellipse through the yaw marker.
+        const half = (control.pitchTrackHeight / 2) + 6 * unit;
+        this.ctx.moveTo(center.x + control.pitchTrackX, center.y - half);
+        this.ctx.lineTo(center.x + control.pitchTrackX, center.y + half);
+      } else {
+        this.ctx.ellipse(center.x, center.y, pitchRadiusX, padRadius, 0, 0, TAU);
+      }
       this.ctx.stroke();
 
       this.ctx.globalAlpha = 0.92;
@@ -15374,26 +15450,26 @@
       this.ctx.strokeStyle = axisY;
       this.ctx.lineWidth = 1 * unit;
       this.ctx.beginPath();
-      this.ctx.arc(yawMarker.x, yawMarker.y, 3.4 * unit, 0, TAU);
+      this.ctx.arc(yawMarker.x, yawMarker.y, 3.4 * ms * unit, 0, TAU);
       this.ctx.fill();
       this.ctx.stroke();
       this.ctx.beginPath();
-      this.ctx.moveTo(yawMarker.x - 4.6 * unit, yawMarker.y);
-      this.ctx.lineTo(yawMarker.x - 7.2 * unit, yawMarker.y);
-      this.ctx.moveTo(yawMarker.x + 4.6 * unit, yawMarker.y);
-      this.ctx.lineTo(yawMarker.x + 7.2 * unit, yawMarker.y);
+      this.ctx.moveTo(yawMarker.x - 4.6 * ms * unit, yawMarker.y);
+      this.ctx.lineTo(yawMarker.x - 7.2 * ms * unit, yawMarker.y);
+      this.ctx.moveTo(yawMarker.x + 4.6 * ms * unit, yawMarker.y);
+      this.ctx.lineTo(yawMarker.x + 7.2 * ms * unit, yawMarker.y);
       this.ctx.stroke();
 
       this.ctx.strokeStyle = axisX;
       this.ctx.beginPath();
-      this.ctx.arc(pitchMarker.x, pitchMarker.y, 3.4 * unit, 0, TAU);
+      this.ctx.arc(pitchMarker.x, pitchMarker.y, 3.4 * ms * unit, 0, TAU);
       this.ctx.fill();
       this.ctx.stroke();
       this.ctx.beginPath();
-      this.ctx.moveTo(pitchMarker.x, pitchMarker.y - 4.6 * unit);
-      this.ctx.lineTo(pitchMarker.x, pitchMarker.y - 7.2 * unit);
-      this.ctx.moveTo(pitchMarker.x, pitchMarker.y + 4.6 * unit);
-      this.ctx.lineTo(pitchMarker.x, pitchMarker.y + 7.2 * unit);
+      this.ctx.moveTo(pitchMarker.x, pitchMarker.y - 4.6 * ms * unit);
+      this.ctx.lineTo(pitchMarker.x, pitchMarker.y - 7.2 * ms * unit);
+      this.ctx.moveTo(pitchMarker.x, pitchMarker.y + 4.6 * ms * unit);
+      this.ctx.lineTo(pitchMarker.x, pitchMarker.y + 7.2 * ms * unit);
       this.ctx.stroke();
 
       if (rollHandle) {
@@ -15407,7 +15483,7 @@
         this.ctx.globalAlpha = 1;
         this.ctx.fillStyle = fill;
         this.ctx.beginPath();
-        this.ctx.arc(rollHandle.x, rollHandle.y, 4.4 * unit, 0, TAU);
+        this.ctx.arc(rollHandle.x, rollHandle.y, 4.4 * ms * unit, 0, TAU);
         this.ctx.fill();
         this.ctx.stroke();
       }
@@ -16201,7 +16277,7 @@
       return best ? `rotate-${best}` : null;
     }
 
-    hit3DRotationControl(sx, sy, layer = null, bounds = null) {
+    hit3DRotationControl(sx, sy, layer = null, bounds = null, pointerType = 'mouse') {
       const targetLayer = layer || this.getSelectedLayer();
       const targetBounds = bounds || (targetLayer ? this.getSelectionBounds([targetLayer]) : null);
       const control = this.get3DRotationControl(targetLayer, targetBounds);
@@ -16213,24 +16289,57 @@
       const unit = 1 / Math.max(this.scale || 1, 0.001);
       const world = this.screenToWorld(sx, sy);
       const centerDist = Math.hypot(world.x - control.center.x, world.y - control.center.y);
-      if (centerDist <= 5 * unit) {
+      const tol = window.Vectura.hitTolerance;
+      if (pointerType === 'touch') {
+        // TUX-025: one nearest-wins arbitration over the point targets, then the ring band, then
+        // the pad fallback. Radii are screen px from the tolerance table (pen equals mouse).
+        const dist = (p) => Math.hypot(world.x - p.x, world.y - p.y);
+        const markerR = tol('gizmo3d-marker', 'touch') * unit;
+        const mouseMarkerR = tol('gizmo3d-marker', 'mouse') * unit;
+        const centreR = tol('gizmo3d-centre', 'touch') * unit;
+        const mouseCentreR = tol('gizmo3d-centre', 'mouse') * unit;
+        const cands = [];
+        if (centerDist <= centreR) cands.push({ type: 'orbit', distance: centerDist, enlarged: centerDist > mouseCentreR });
+        const yd = dist(control.yawMarker);
+        if (yd <= markerR) cands.push({ type: 'yaw', distance: yd, enlarged: yd > mouseMarkerR });
+        const pd = dist(control.pitchMarker);
+        if (pd <= markerR) cands.push({ type: 'pitch', distance: pd, enlarged: pd > mouseMarkerR });
+        if (control.rollHandle) {
+          const rd = dist(control.rollHandle);
+          if (rd <= markerR) cands.push({ type: 'roll', distance: rd, enlarged: rd > mouseMarkerR });
+        }
+        if (cands.length) {
+          cands.sort((a, b) => a.distance - b.distance);
+          const w = cands[0];
+          return { type: w.type, layer: hitLayer, spec: control.spec, control, distance: w.distance / unit, enlarged: w.enlarged };
+        }
+        if (control.rollHandle && Math.abs(centerDist - control.ringRadius) <= tol('gizmo3d-ring-band', 'touch') * unit) {
+          return { type: 'roll', layer: hitLayer, spec: control.spec, control, distance: Math.abs(centerDist - control.ringRadius) / unit, enlarged: true };
+        }
+        if (centerDist <= control.padRadius + 7 * unit) {
+          return { type: 'orbit', layer: hitLayer, spec: control.spec, control, distance: centerDist / unit, enlarged: true };
+        }
+        return null;
+      }
+      if (centerDist <= tol('gizmo3d-centre', pointerType) * unit) {
         return { type: 'orbit', layer: hitLayer, spec: control.spec, control };
       }
       const yawDist = Math.hypot(world.x - control.yawMarker.x, world.y - control.yawMarker.y);
       const pitchDist = Math.hypot(world.x - control.pitchMarker.x, world.y - control.pitchMarker.y);
+      const markerR = tol('gizmo3d-marker', pointerType) * unit;
       const markerHits = [];
-      if (yawDist <= 9 * unit) markerHits.push({ distance: yawDist, type: 'yaw' });
-      if (pitchDist <= 9 * unit) markerHits.push({ distance: pitchDist, type: 'pitch' });
+      if (yawDist <= markerR) markerHits.push({ distance: yawDist, type: 'yaw' });
+      if (pitchDist <= markerR) markerHits.push({ distance: pitchDist, type: 'pitch' });
       if (markerHits.length) {
         markerHits.sort((a, b) => a.distance - b.distance);
         return { type: markerHits[0].type, layer: hitLayer, spec: control.spec, control };
       }
       if (control.rollHandle) {
         const rollDist = Math.hypot(world.x - control.rollHandle.x, world.y - control.rollHandle.y);
-        if (rollDist <= 9 * unit) {
+        if (rollDist <= markerR) {
           return { type: 'roll', layer: hitLayer, spec: control.spec, control };
         }
-        if (Math.abs(centerDist - control.ringRadius) <= 5 * unit) {
+        if (Math.abs(centerDist - control.ringRadius) <= tol('gizmo3d-ring-band', pointerType) * unit) {
           return { type: 'roll', layer: hitLayer, spec: control.spec, control };
         }
       }
@@ -16267,11 +16376,31 @@
         ),
         startRoll: startRot.hasRoll ? normalizeDegrees(startRot.roll) : 0,
         startRollAngle: rollAngle,
+        pointerType: event?.pointerType || 'mouse',
+        fingerYaw0: 0,
+        fingerPitchT0: 0,
         historyPushed: false,
         moved: false,
       };
+      // TUX-025: a finger grabs up to 22 px off the marker, so touch drags are offset-preserving.
+      // Mouse and pen keep the absolute mapping.
+      if (this.rotation3DDrag.pointerType === 'touch') {
+        const d = this.rotation3DDrag;
+        d.fingerYaw0 = this._fingerYawDeg(d, startWorld);
+        d.fingerPitchT0 = this._fingerPitchT(d, startWorld);
+      }
       this.setCanvasCursor('grabbing', 'rotate-3d');
       return true;
+    }
+
+    _fingerYawDeg(drag, world) {
+      const nx = (world.x - drag.center.x) / Math.max(1e-6, drag.yawRadiusX || 1);
+      const ny = (world.y - drag.center.y) / Math.max(1e-6, drag.yawRadiusY || 1);
+      return normalizeDegrees((Math.atan2(nx, ny) * 180) / Math.PI);
+    }
+
+    _fingerPitchT(drag, world) {
+      return 0.5 - ((world.y - drag.center.y) / Math.max(1e-6, drag.pitchTrackHeight || 1));
     }
 
     apply3DRotationDrag(event = {}) {
@@ -16304,9 +16433,8 @@
         const sx = (event.clientX ?? drag.startClient.x) - rect.left;
         const sy = (event.clientY ?? drag.startClient.y) - rect.top;
         const world = this.screenToWorld(sx, sy);
-        const nx = (world.x - drag.center.x) / Math.max(1e-6, drag.yawRadiusX || 1);
-        const ny = (world.y - drag.center.y) / Math.max(1e-6, drag.yawRadiusY || 1);
-        let nextYaw = normalizeDegrees((Math.atan2(nx, ny) * 180) / Math.PI);
+        let nextYaw = this._fingerYawDeg(drag, world);
+        if (drag.pointerType === 'touch') nextYaw = normalizeDegrees(drag.startYaw + ((((nextYaw - drag.fingerYaw0) % 360) + 540) % 360) - 180);
         if (modifiers.shift) nextYaw = Math.round(nextYaw / 15) * 15;
         this._write3DRotation(layer, drag.spec, { yaw: tidyDegrees(normalizeDegrees(nextYaw)) });
       } else if (drag.type === 'pitch') {
@@ -16314,8 +16442,13 @@
         const sy = (event.clientY ?? drag.startClient.y) - rect.top;
         const world = this.screenToWorld(0, sy);
         const pitchSpan = Math.max(1, drag.spec.pitchMax - drag.spec.pitchMin);
-        const pitchT = clamp(0.5 - ((world.y - drag.center.y) / Math.max(1e-6, drag.pitchTrackHeight || 1)), 0, 1);
-        let nextPitch = drag.spec.pitchMin + pitchT * pitchSpan;
+        let nextPitch;
+        if (drag.pointerType === 'touch') {
+          nextPitch = drag.startPitch + (this._fingerPitchT(drag, world) - drag.fingerPitchT0) * pitchSpan;
+        } else {
+          const pitchT = clamp(this._fingerPitchT(drag, world), 0, 1);
+          nextPitch = drag.spec.pitchMin + pitchT * pitchSpan;
+        }
         if (modifiers.shift) nextPitch = Math.round(nextPitch / 15) * 15;
         this._write3DRotation(layer, drag.spec, { pitch: tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax)) });
       } else {

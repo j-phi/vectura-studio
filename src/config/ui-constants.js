@@ -72,6 +72,26 @@
       doubleTapMs: { mouse: 400, pen: 400, touch: 400 },
       // A pen drag shorter than this makes no Bezier handles (finger jitter).
       penCurveSlop: { mouse: 2, pen: 2, touch: 6 },
+      // TUX-025: 3D rotation gizmo (orbit pad, yaw, pitch, roll). Mouse/pen values are the old literals.
+      'gizmo3d-marker': { mouse: 9, pen: 9, touch: 22 },
+      'gizmo3d-centre': { mouse: 5, pen: 5, touch: 10 },
+      'gizmo3d-ring-band': { mouse: 5, pen: 5, touch: 10 },
+    },
+
+    // TUX-025: touch layout of the 3D rotation gizmo (screen px; the renderer multiplies by 1/scale).
+    // Used when body.touch-ui or a coarse pointer is active. Markers stay >= 28 px apart in every state:
+    // the pitch track sits outside the roll ring so it cannot collide with the yaw marker.
+    GIZMO_3D_TOUCH: {
+      padRadius: 36,
+      yawRadiusX: 30,
+      yawRadiusY: 28,
+      ringRadius: 68,
+      pitchTrackX: 98,
+      pitchTrackHeight: 56,
+      anchorOffset: 72,
+      markerDraw: 9,
+      edgeInset: 8,
+      reachPad: 22,
     },
 
     // TUX-014: rail tool sub-menus (shape / pen / fill / scissor / algo-draw picker).

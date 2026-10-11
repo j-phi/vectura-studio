@@ -98,7 +98,9 @@ JSON.stringify({w: innerWidth, h: innerHeight, dpr: devicePixelRatio, standalone
 | DEV-47 | Layer double-tap rename under main-thread load (event.timeStamp semantics on iOS WebKit; from TUX-038). | TUX-038 | iPhone P tab, iPad P tab | Add a heavy layer and double-tap a layer name while it regenerates. The rename field opens. `pointerdown` event.timeStamp is on the same clock for both taps. | open |
 | DEV-48 | No text-selection loupe or callout on a label long-press (from TUX-038). | TUX-038 | iPhone P tab, iPad L tab | Hold a control label for 0.5 s. The "Reset to default" menu opens. No loupe, no selection handles, no callout. Lifting the finger resets nothing. | open |
 | DEV-49 | Reset hold, then pick the menu item with the finger (from TUX-038). | TUX-038 | iPhone P tab, iPad L tab | Hold a label, lift, tap "Reset to default". The value returns to its default exactly once. The tap within 0.8 s of the lift is not swallowed. | open |
-
+| DEV-50 | [DEVICE] 3D rotation gizmo: a fingertip grabs yaw, pitch and roll on the first try with no value jump (from TUX-025). | TUX-025 | iPad P/L tab, iPhone P/L tab | Add a 3D Scene. Grab each marker with a fingertip, 15 px off the centre of the marker. The value does not jump on first move. The pitch slider sits outside the ring. | open |
+| DEV-51 | [DEVICE] The gizmo marker stays visible beside the finger while dragging (from TUX-025). | TUX-025 | iPad P/L tab, iPhone P/L tab | Drag yaw, pitch and roll. The marker and the ring stay inside the canvas and are not hidden by the modifier bar. | open |
+| DEV-52 | [DEVICE] Apple Pencil keeps the mouse-precision radii on the 3D gizmo (from TUX-025). | TUX-025 | iPad L tab | A Pencil tap 14 px from a marker does not grab it. A tap on the marker does. | open |
 ## Clause index
 
 Each `[DEVICE]` clause in `docs/touch-ux-requirements.md` maps to at least one row. The clause id is the TUX id plus the clause number inside that section.
