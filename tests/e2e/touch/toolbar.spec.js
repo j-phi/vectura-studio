@@ -878,6 +878,10 @@ test.describe('TUX-016 footer and handles', () => {
   test('toolbar drag follows the finger', async ({ page }, testInfo) => {
     test.skip(!FLOATING.includes(testInfo.project.name), 'anchored-rail project');
     await load(page);
+    // TUX-051: the 44 px collapsed bottom pane leaves the iPad-landscape canvas 719 px tall. The full-height rail
+    // (588 px) then has less than 2 x 48 px of slack, so every end position is inside a dock snap zone. This test
+    // checks finger tracking, not rail height, so shorten the (scrolling) rail first.
+    await page.evaluate(() => { document.getElementById('tool-bar').style.maxHeight = '420px'; });
     await floatToCentre(page);
     await countEvents(page, '#tool-bar .toolbar-drag-handle');
     const before = await rectOf(page, '#tool-bar');

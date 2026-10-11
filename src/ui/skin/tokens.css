@@ -219,6 +219,8 @@
  * --touch-target-min (44 px) is defined above (TUX-034/041). TUX-010 owns the size of #btn-pane-toggle-*,
  * .mobile-pane-handle and the header drawer buttons; lane C must not resize them. */
 :root {
+  /* TUX-051: collapsed bottom pane height on coarse pointers (44 px chevron + 1 px pane border; the 6 px resizer above it stays clear of the canvas share grid). */
+  --touch-bottom-collapsed-h: 44px;
   --z-canvas: 0;
   --z-drawer-handle: 68;
   --z-phone-header: 75;
