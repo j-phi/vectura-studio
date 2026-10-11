@@ -225,3 +225,10 @@
   --z-modal: 1000;
 }
 /* === END TUX-010 tokens === */
+
+/* TUX-045: canvas badge that names active modifier tasks. Top-left of #viewport-container, inside the
+ * safe-area insets. The toast host and #notification-area sit top-right, the rail and bar outside. */
+:root {
+  --touch-mod-badge-top: calc(var(--safe-top, 0px) + 8px);
+  --touch-mod-badge-left: calc(var(--safe-left, 0px) + 8px);
+}

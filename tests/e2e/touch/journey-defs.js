@@ -609,11 +609,11 @@ JOURNEYS.push({
       post: () => {},
     },
     {
-      id: 'j6.multi-latch', action: 'tap', route: 'tap the Multi-select modifier (one-shot latch, TUX-045)', selector: 'SELECTORS.modifier(\'shift\')',
+      id: 'j6.multi-latch', action: 'tap', route: 'tap the Multi-select modifier (one-shot latch, TUX-045)', selector: 'SELECTORS.modifier(\'multiSelect\')',
       expects: 'the modifier shows as latched', jrn: 'JRN-016',
-      run: (c) => P.fingerTap(c.page, L(c, S.modifier('shift'))),
+      run: (c) => P.fingerTap(c.page, L(c, S.modifier('multiSelect'))),
       post: async (c) => {
-        const el = L(c, S.modifier('shift'));
+        const el = L(c, S.modifier('multiSelect'));
         const cls = (await el.getAttribute('class')) || '';
         if (!(/active|latched|on\b/.test(cls) || (await el.getAttribute('aria-pressed')) === 'true')) throw new Error('the modifier does not show as latched');
       },

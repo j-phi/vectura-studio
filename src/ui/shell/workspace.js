@@ -74,8 +74,8 @@
 
     const applyMobBarVisibility = (isMobileLayout) => {
       if (!modBar) return;
-      const showBar = isMobileLayout
-        || (typeof this.isTouchCapable === 'function' && this.isTouchCapable());
+      // TUX-045: touch-capable devices only. A narrow mouse window (mobile-layout) hides the bar.
+      const showBar = typeof this.isTouchCapable === 'function' && this.isTouchCapable();
       modBar.classList.toggle('hidden', !showBar);
     };
 

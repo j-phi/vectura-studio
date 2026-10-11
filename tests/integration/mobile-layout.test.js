@@ -4,7 +4,7 @@
  * bottom and always reachable. Modifier bar is no longer reparented into
  * #bottom-pane.
  *
- * Also covers the new Ctrl modifier and the phone-layout (<540px) class.
+ * Also covers the TUX-045 task modifier bar and the phone-layout (<540px) class.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -93,28 +93,33 @@ describe('mobile layout', () => {
     }
   });
 
-  test('modifier bar is shown (not hidden) on mobile-layout', () => {
+  test('modifier bar is shown on a touch-capable mobile-layout and hidden for a mouse-only narrow window', () => {
     setViewport(window, 375);
     const modBar = document.getElementById('touch-modifier-bar');
-    expect(modBar.classList.contains('hidden')).toBe(false);
+    expect(modBar.classList.contains('hidden')).toBe(true);
+    const original = window.matchMedia;
+    window.matchMedia = (q) => ({ matches: /pointer:\s*coarse/.test(q), addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+    try {
+      setViewport(window, 376);
+      expect(modBar.classList.contains('hidden')).toBe(false);
+    } finally {
+      window.matchMedia = original;
+      setViewport(window, 375);
+    }
   });
 
-  test('Ctrl modifier button exists and toggles state in SETTINGS.touchModifiers', () => {
-    setViewport(window, 375);
-    const ctrlBtn = document.querySelector('.touch-mod-btn[data-touch-mod="ctrl"]');
-    expect(ctrlBtn).toBeTruthy();
-
-    const SETTINGS = window.Vectura.SETTINGS;
-    expect(SETTINGS.touchModifiers).toHaveProperty('ctrl');
-    expect(Boolean(SETTINGS.touchModifiers.ctrl)).toBe(false);
-
-    ctrlBtn.click();
-    expect(SETTINGS.touchModifiers.ctrl).toBe(true);
-    expect(ctrlBtn.classList.contains('active')).toBe(true);
-
-    ctrlBtn.click();
-    expect(SETTINGS.touchModifiers.ctrl).toBe(false);
-    expect(ctrlBtn.classList.contains('active')).toBe(false);
+  test('TUX-045: four task buttons (Multi-select, Constrain, Duplicate, Pan); no Cmd/Ctrl/Shift/Alt', () => {
+    const btns = [...document.querySelectorAll('#touch-modifier-bar .touch-mod-btn')];
+    expect(btns.map((b) => b.getAttribute('aria-label'))).toEqual(['Multi-select', 'Constrain', 'Duplicate', 'Pan']);
+    expect(document.querySelector('.touch-mod-btn[data-touch-mod="ctrl"]')).toBeNull();
+    const pan = document.querySelector('.touch-mod-btn[data-touch-mod="pan"]');
+    expect(pan).toBeTruthy();
+    expect(window.Vectura.SETTINGS.touchModifiers).toBeUndefined();
+    pan.click();
+    expect(window.Vectura.InputModifiers.getTaskState('pan')).toBe('latched');
+    expect(pan.classList.contains('active')).toBe(true);
+    window.Vectura.InputModifiers.clearAll();
+    expect(pan.classList.contains('active')).toBe(false);
   });
 
   test('Space modifier button does NOT exist (was dropped from the design)', () => {

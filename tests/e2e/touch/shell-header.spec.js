@@ -47,19 +47,22 @@ test.describe('TUX-001 closing round', () => {
     }
   });
 
-  test('modifier glyph CSS applies in every phone viewport', async ({ page }, testInfo) => {
+  test('modifier bar phone presentation is icon plus short label (TUX-045)', async ({ page }, testInfo) => {
     phoneOnly(testInfo);
     await gotoApp(page);
     const r = await page.evaluate(() => {
       const bar = document.getElementById('touch-modifier-bar');
       return [...bar.querySelectorAll('.touch-mod-btn')].map((b) => {
         const lab = b.querySelector('.touch-mod-label');
-        return { mod: b.dataset.touchMod, content: getComputedStyle(b, '::before').content, labelDisplay: lab ? getComputedStyle(lab).display : 'none' };
+        const ico = b.querySelector('.touch-mod-icon');
+        const short = b.querySelector('.touch-mod-short');
+        return { mod: b.dataset.touchMod, content: ico ? getComputedStyle(ico).display : 'none', short: short ? getComputedStyle(short).display : 'none', labelDisplay: lab ? getComputedStyle(lab).display : 'none' };
       });
     });
-    expect(r.length).toBeGreaterThan(3);
+    expect(r.length).toBe(4);
     for (const b of r) {
-      expect(b.content, b.mod).not.toMatch(/^(none|normal)$/);
+      expect(b.content, b.mod).not.toBe('none');
+      expect(b.short, b.mod).not.toBe('none');
       expect(b.labelDisplay, b.mod).toBe('none');
     }
   });
