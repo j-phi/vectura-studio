@@ -1015,6 +1015,9 @@
 
       const _lvlNameEl = (layer, cls) => {
         const sp = document.createElement('span'); sp.className = cls;
+        // TUX-012 (Jay, 2026-10-12): the docked 200 px pane may truncate a name. The name tooltip shows it in full
+        // (a touch long-press opens the row menu, which carries the full name as its header).
+        sp.title = layer.name;
         const q = this.layerSearchQ || '';
         if (!q) { sp.textContent = layer.name; return sp; }
         const lo = layer.name.toLowerCase(), idx = lo.indexOf(q.toLowerCase());

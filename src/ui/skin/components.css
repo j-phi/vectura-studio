@@ -15671,3 +15671,13 @@ body.tablet-layout.touch-ui:has(#right-pane.pane-drawer-open) .canvas-hud {
   left: calc(var(--safe-left, 0px) + 8px);
 }
 /* === END TUX-020 / TUX-011 HUD step-aside === */
+
+/* === TUX-012: the touch row menu shows the full layer name (Jay, 2026-10-12) ===
+ * The header wraps instead of truncating, so a long name stays readable in full. */
+.lvl-ctx-menu.is-touch .menu-cat {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: min(320px, calc(100vw - 24px));
+  text-transform: none;
+}
+/* === END TUX-012 === */

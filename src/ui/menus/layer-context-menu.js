@@ -598,7 +598,9 @@
   // source 'touch' places the menu clear of the finger and adds `.is-touch`.
   const _openAt = (ui, layer, x, y, { source = 'mouse', expandedBtn = null } = {}) => {
     const menu = _ensureMenu();
-    const items = _itemsFor(ui, layer);
+    const baseItems = _itemsFor(ui, layer);
+    // TUX-012 (Jay, 2026-10-12): a row long-press reveals the full layer name, which the docked 200 px pane can truncate.
+    const items = (source === 'touch' && layer.name) ? [{ category: layer.name }, ...baseItems] : baseItems;
     menu.update({
       items,
       onSelect: (key) => _runAction(ui, layer, key),

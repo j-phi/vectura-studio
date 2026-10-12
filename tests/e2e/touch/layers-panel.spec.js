@@ -10,6 +10,7 @@ const touch = require('../helpers/touch');
 // and the layout viewport may be wider than the device viewport.
 const FIXTURE = path.join(__dirname, '..', '..', 'fixtures', 'touch', 'layers-mixed.vectura');
 const NAME_MIN = 96;
+const NAME_MIN_DOCKED = 48; // iPad landscape docked 200 px pane (Jay, 2026-10-12)
 const HIT_MIN = 44;
 
 const loadFixture = async (page) => {
@@ -208,7 +209,10 @@ test.describe('TUX-012 layers panel on touch', () => {
     const depths = new Set(inactive.map((r) => r.depth));
     [0, 1, 2].forEach((d) => expect(depths.has(d), `fixture renders depth ${d}`).toBe(true));
     const fail = [];
-    const names = (rows) => rows.filter((r) => r.nameW < NAME_MIN || r.nameFont < 14 || !r.nameHit || r.overflow.length);
+    // Jay, 2026-10-12 (TUX-012 vs TUX-008): the iPad landscape docked pane stays 200 px, so names may be narrower there.
+    // The full name is then revealed by the name tooltip or a row long-press (test below).
+    const nameMin = /ipad-landscape/.test(testInfo.project.name) ? NAME_MIN_DOCKED : NAME_MIN;
+    const names = (rows) => rows.filter((r) => r.nameW < nameMin || r.nameFont < 14 || !r.nameHit || r.overflow.length);
     fail.push(...summarize(names(inactive), () => true));
 
     // Active pass: each row active in turn.
@@ -226,6 +230,19 @@ test.describe('TUX-012 layers panel on touch', () => {
       expect(r.hasMore, `${r.name} has .lvl-more`).toBe(true);
     }
     expect(badHit, `hit area < 44:\n${badHit.join('\n')}`).toEqual([]);
+  });
+
+  test('full layer name is revealed by the tooltip and by a long-press', async ({ page }, testInfo) => {
+    await setup(page, testInfo);
+    await prepViewport(page, testInfo);
+    const full = await page.evaluate(() => window.app.engine.layers.find((l) => (l.name || '').length === 40).name);
+    const row = page.locator('#layer-list [data-lvl-id]').filter({ has: page.locator('.lvl-name', { hasText: full }) }).first();
+    await row.evaluate((e) => e.scrollIntoView({ block: 'center' }));
+    expect(await row.locator('.lvl-name').first().getAttribute('title'), 'name tooltip holds the full name').toBe(full);
+    const box = await row.locator('.lvl-name').first().boundingBox();
+    await touch.longPress(page, { x: box.x + Math.min(box.width / 2, 30), y: box.y + box.height / 2 }, 700);
+    const header = page.locator('.lvl-ctx-menu .menu-cat').first();
+    await expect(header, 'the row menu names the layer in full').toHaveText(full);
   });
 
   test('narrow pane', async ({ page }, testInfo) => {
