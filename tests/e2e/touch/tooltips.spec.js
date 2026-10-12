@@ -202,6 +202,15 @@ test.describe('TUX-039 touch tooltips', () => {
     expect(open, `${v.tool} variant menu visible during the hold`).toBe(true);
     expect(await anyTip(page), 'no touch tooltip on a variant tool').toBe(0);
     await touchPhase(page, 'end', [{ ...p, id: 0 }]);
+    // TUX-014 requirement 2: release in place leaves the sub-menu open, and the hold does not activate the tool.
+    await sleep(150);
+    const after = await page.evaluate(() => ({
+      open: [...document.querySelectorAll('.tool-submenu.open')].some((m) => m.getBoundingClientRect().width > 0),
+      active: window.app.ui.activeTool,
+    }));
+    expect(after.open, `${v.tool} sub-menu stays open after lift (TUX-014)`).toBe(true);
+    expect(after.active, 'a fired hold never activates the tool on lift').toBe('select');
+    expect(await anyTip(page), 'still no touch tooltip after lift').toBe(0);
   });
 
   test('(f) non-toolbar icon buttons tip; innermost owner wins; history unchanged', async ({ page }) => {
