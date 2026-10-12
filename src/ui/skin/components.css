@@ -14667,9 +14667,9 @@ body.phone-layout.phone-short #touch-modifier-bar {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   overflow-y: auto;
   scrollbar-width: none;
-  /* Above the pane backdrop (54) and below the open pane (70), like the rail (60): the modifier keys
-   * stay tappable while a pane is open (TUX-041 expects them uncovered). */
-  z-index: 61;
+  /* Above the pane backdrop (--z-backdrop, 65) and below the open pane (--z-drawer, 70): the modifier keys
+   * stay tappable while a pane is open (TUX-041, TUX-045 req 2: latch Multi-select, then tap a row). */
+  z-index: calc(var(--z-backdrop) + 1);
 }
 /* An open right pane (.pane-force-open, 258 px wide) would sit on the column, so the column hops to the
  * left edge, clear of the collapsed left sliver. Only one pane opens at a time on a phone. */
