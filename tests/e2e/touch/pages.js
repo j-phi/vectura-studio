@@ -39,7 +39,8 @@ const SELECTORS = {
   },
   // Header (TUX-001 / TUX-020): PROPOSED ids. HUD twins serve tablet and touch-wide layouts.
   hamburger: '#btn-menu-hamburger',
-  hamburgerRow: (name) => `[data-menu-row="${name}"]`,
+  // TUX-001 shipped rows as '#top-menubar #btn-menu-<name>'; [data-menu-row] stays as the proposed id.
+  hamburgerRow: (name) => `[data-menu-row="${name}"], #top-menubar #btn-menu-${name}`,
   headerUndo: ['#btn-header-undo', '#btn-hud-undo'],
   headerRedo: ['#btn-header-redo', '#btn-hud-redo'],
   headerExport: '#btn-header-export',
@@ -423,6 +424,7 @@ async function loadFixture(page, name) {
     window.app.ui.openVecturaFile(new File([body], fname, { type: 'application/json' }));
   }, [text, `${name}.vectura`]);
   await page.waitForFunction((n) => window.app.engine.layers.length === n && !window.app.isRestoring, expected, { timeout: BOOT_BUDGET_MS });
+  await waitNoToast(page);
   takeErrors(page);
 }
 
@@ -471,6 +473,37 @@ async function paneOpen(page, side) {
 // Read-only DOM wait (no input): lets a toast over a header control expire.
 async function waitNoToast(page) {
   await page.waitForFunction(() => !document.querySelector('.vectura-toast'), null, { timeout: 8000 }).catch(() => {});
+}
+
+// Setup: where the engine has navigator.share (WebKit), record the shared file names and skip the
+// native sheet. The export then ends in a share, not an anchor download (see downloads.spec.js).
+async function spyShare(page) {
+  return page.evaluate(() => {
+    if (typeof navigator.share !== 'function') return false;
+    window.__sharedFiles = [];
+    navigator.share = async (d) => { (d && d.files ? d.files : []).forEach((f) => window.__sharedFiles.push(f.name)); };
+    return true;
+  });
+}
+
+async function sharedFiles(page) {
+  return page.evaluate(() => window.__sharedFiles || []);
+}
+
+// Names of the presets saved in this browser (read-only state read).
+async function readSavedPresetNames(page) {
+  return page.evaluate(() => {
+    const names = [];
+    try {
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const k = localStorage.key(i);
+        if (!/preset/i.test(k) || /deleted/i.test(k)) continue;
+        const v = JSON.parse(localStorage.getItem(k) || '[]');
+        (Array.isArray(v) ? v : []).forEach((p) => p && p.name && names.push(p.name));
+      }
+    } catch (e) { /* storage unavailable */ }
+    return names;
+  });
 }
 
 async function openPane(page, side) {
@@ -545,8 +578,27 @@ async function openMenu(page, name) {
   }
 }
 
-async function undo(page) { await fingerTap(page, await rendered(page, SELECTORS.headerUndo.map(visible))); }
-async function redo(page) { await fingerTap(page, await rendered(page, SELECTORS.headerRedo.map(visible))); }
+// Direct Undo/Redo (TUX-020). No Edit-menu fallback: journey-scripts.md 'Forbidden routes'.
+async function historyTap(page, list) {
+  const direct = await rendered(page, list.map(visible));
+  if (!(await direct.count() && await direct.boundingBox())) throw new Error(`TUX-020 missing direct control: ${list.join(' | ')}`);
+  await fingerTap(page, direct);
+}
+async function undo(page) { await historyTap(page, SELECTORS.headerUndo); }
+async function redo(page) { await historyTap(page, SELECTORS.headerRedo); }
+
+// Taps via `tapFn` and returns the saved file name: an anchor download, or (WebKit) the share-sheet file.
+async function captureFile(page, tapFn) {
+  const shares = await spyShare(page);
+  const dl = page.waitForEvent('download', { timeout: 4000 });
+  dl.catch(() => {});
+  await tapFn();
+  if (!shares) return (await dl).suggestedFilename();
+  const t0 = Date.now();
+  let names = [];
+  while (Date.now() - t0 < 4000 && !names.length) { names = await sharedFiles(page); if (!names.length) await sleep(100); }
+  return names[0];
+}
 
 async function addAlgorithmLayer(page, type) {
   await openLayers(page);
@@ -572,21 +624,49 @@ async function swipeStart(page, container) {
   }, container);
 }
 
+// State read: does the element at the centre of `loc` resolve to `loc` itself (or a child)? Returns null when yes, else the blocker's name.
+async function hitAtCenter(page, loc) {
+  const handle = await handleOf(page, loc);
+  return page.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (hit && (hit === el || el.contains(hit))) return null;
+    return hit ? `${hit.tagName.toLowerCase()}${hit.id ? `#${hit.id}` : ''}` : 'nothing';
+  }, handle);
+}
+
+// SANCTIONED PROGRAMMATIC SCROLL (WebKit only). WebKit does not run native default actions (scrolling) for synthetic
+// touches (helpers/touch.js: nativeDefaultActions=false), so a finger drag cannot scroll a pane there. This only brings the
+// target into view; every tap after it stays a guarded finger tap. The finger-scroll proof lives in the Chromium twins.
+async function webkitProgrammaticScroll(page, target) {
+  const handle = await handleOf(page, target, 'scroll target');
+  await page.evaluate((el) => el.scrollIntoView({ block: 'center' }), handle);
+  await sleep(120);
+}
+
 async function fingerScrollInto(page, target, container) {
+  if (!touch.engineSupports(page, 'nativeDefaultActions')) {
+    await webkitProgrammaticScroll(page, target);
+    return;
+  }
   const cHandle = await handleOf(page, container, 'scroll container');
-  for (let i = 0; i < 10; i += 1) {
+  let lastY = null;
+  for (let i = 0; i < 8; i += 1) {
     const tb = await target.first().boundingBox();
     const cb = await cHandle.boundingBox();
     const dev = jOf(page).dev;
     if (tb && cb) {
-      const top = Math.max(cb.y, 0) + 4;
+      const top = Math.max(cb.y, 0) + Math.min(48, cb.height * 0.15); // clear of a sticky pane header
       const bottom = Math.min(cb.y + cb.height, dev.height) - 4;
       if (tb.y >= top && tb.y + tb.height <= bottom) return;
     }
     if (!tb) throw new Error(`not found: ${String(target)}`);
+    // No progress after a full finger drag is a deterministic stop: fail with the real reason, not the 5000 ms step budget.
+    if (lastY !== null && Math.abs(tb.y - lastY) < 1) throw new Error(`the finger scroll never brought the target into view (it stayed at y=${Math.round(tb.y)}; container y=${Math.round(cb.y)} h=${Math.round(cb.height)})`);
+    lastY = tb.y;
     const start = await swipeStart(page, cHandle);
     const dir = tb.y > (cb.y + cb.height / 2) ? -1 : 1;
-    const span = Math.min(cb.height * 0.6, 260);
+    const span = Math.min(cb.height * 0.8, 520);
     await fingerDrag(page, { x: start.x, y: start.y + (dir < 0 ? span / 2 : -span / 2), within: container }, { dx: 0, dy: dir * span }, { steps: 12, stepDelayMs: 12 });
     await sleep(120);
   }
@@ -624,6 +704,8 @@ async function readRotateAffordance(page, layerId) {
 
 module.exports = {
   SELECTORS,
+  readSavedPresetNames,
+  captureFile,
   readRotateAffordance,
   STEP_BUDGET_MS,
   BOOT_BUDGET_MS,
@@ -644,6 +726,7 @@ module.exports = {
   fingerPan,
   fingerMultiTap,
   fingerScrollInto,
+  hitAtCenter,
   fingerSlider,
   pickOption,
   softType,

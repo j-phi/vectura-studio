@@ -175,7 +175,7 @@ Fixture: `journey-basic`.
 | `j9.preset-confirm` | tap | tap Save in the sheet | `#modal-overlay Save button` | the sheet closes; the preset list names the new preset. layerCount +0; historyLen any; redoLen +0; selectedIds same |  |
 | `j9.menu-file` | tap | File menu (phones: ☰ > File) | `SELECTORS.menuTrigger('file') \| SELECTORS.hamburger` | File menu panel open. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-006 |
 | `j9.doc-setup` | tap | File > Document Setup | `SELECTORS.btnSettings` | Document Setup panel visible. layerCount +0; historyLen +0; redoLen +0; selectedIds same |  |
-| `j9.paper-section` | tap | tap the Paper section header once; it expands | `#settings-panel .sect-hdr Paper` | paper size select visible. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-019 |
+| `j9.paper-section` | tap | tap the Paper section header only when `aria-expanded` is not true | `#settings-panel .sect-hdr Paper` | Paper section expanded (aria-expanded true); the Size select is the topmost element at its centre. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-019 |
 | `j9.paper-size` | pickOption | tap the Size select and choose A4 | `#machine-profile` | document paper size = a4. layerCount +0; historyLen any; redoLen +0; selectedIds same |  |
 
 ## J10 Export SVG; save the .vectura project

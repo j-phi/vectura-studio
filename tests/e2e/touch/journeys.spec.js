@@ -116,9 +116,17 @@ async function runSteps(c, steps) {
 }
 
 // Compares a run with the ledger entry for the cell.
+// A reason class: digits and element ids/classes vary run to run, so they are blanked.
+const reasonClass = (r) => String(r || '').replace(/^JRN-\d+ /, '').replace(/[0-9.,-]+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 50);
+
 function judge({ entry, failedStep, message }) {
   if (entry) {
-    if (failedStep === entry.failsAt) return { ok: true, note: `expected failure at ${entry.failsAt}` };
+    if (failedStep === entry.failsAt) {
+      if (entry.reason && reasonClass(message) !== reasonClass(entry.reason)) {
+        return { ok: false, note: `failure reason changed at ${entry.failsAt}: ledger "${entry.reason}", now "${message}"` };
+      }
+      return { ok: true, note: `expected failure at ${entry.failsAt}` };
+    }
     if (failedStep) return { ok: false, note: `failure moved from ${entry.failsAt} to ${failedStep} (${message})` };
     return { ok: false, note: `unexpectedly passed: remove ledger entry ${entry.project}|${entry.journey} (failsAt ${entry.failsAt})` };
   }
@@ -318,5 +326,14 @@ test.describe('harness self-test', () => {
     expect(v.ok).toBe(false);
     expect(v.note).toMatch(/unexpectedly passed/);
     expect(judge({ entry: null, failedStep: 's1', message: 'x' }).ok).toBe(false);
+  });
+
+  test('(v) the ledger reason is judged: same class passes, a different class is reported', async () => {
+    const entry = { project: 'p', journey: 'JX', failsAt: 's1', reason: 'JRN-003 scale 2.11 -> 2.11, want a zoom in' };
+    const same = judge({ entry, failedStep: 's1', message: 'scale 1.23 -> 1.23, want a zoom in' });
+    expect(same.ok).toBe(true);
+    const changed = judge({ entry, failedStep: 's1', message: 'covered by div.ctxbar-overflow-wrap (target #main-canvas)' });
+    expect(changed.ok).toBe(false);
+    expect(changed.note).toMatch(/failure reason changed/);
   });
 });

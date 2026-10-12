@@ -16,7 +16,7 @@ const DOC = path.join(DIR, '..', '..', '..', 'docs', 'touch-audit', 'journey-scr
 
 // Functions that may call page.evaluate and friends (state reads, setup, guard internals).
 const EVAL_ALLOWED = new Set([
-  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'waitAppReady', 'readRotateAffordance', 'waitNoToast',
+  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'webkitProgrammaticScroll', 'hitAtCenter', 'waitAppReady', 'waitNoToast', 'readSavedPresetNames', 'spyShare', 'sharedFiles', 'captureFile', 'readRotateAffordance',
   // TUX-054: read-only save instrumentation (records navigator.share calls; the finger tap stays in the caller).
   'savedFileName',
 ]);
@@ -35,9 +35,9 @@ const FORBIDDEN = [
   [/keyboard\.type\b/, 'keyboard.type'],
   [/keyboard\.press\b/, 'keyboard.press'],
   [/dispatchEvent/, 'dispatchEvent'],
-  [/scrollIntoView/, 'scrollIntoView'],
+  [/scrollIntoView/, 'scrollIntoView', ['webkitProgrammaticScroll']],
   [/\.skip\(|test\.skip|\.only\(|test\.only|test\.fail\(|test\.fixme/, '.skip/.only/test.fail'],
-  [/engineSupports/, 'engineSupports guard'],
+  [/engineSupports/, 'engineSupports guard', ['fingerScrollInto']],
 ];
 
 // Blank out comments, keep line numbers.
@@ -69,8 +69,10 @@ test.describe('journey static guard', () => {
   for (const f of FILES) {
     test(`${f}: no forbidden API`, () => {
       const code = stripComments(read(f));
-      for (const [re, label] of FORBIDDEN) {
-        const hit = code.split('\n').findIndex((l) => re.test(l));
+      const lines = code.split('\n');
+      for (const [re, label, allowedIn] of FORBIDDEN) {
+        // allowedIn: the one sanctioned function (WebKit has no native scroll for synthetic touches, see TUX-059).
+        const hit = lines.findIndex((l, i) => re.test(l) && !(allowedIn && allowedIn.includes(enclosing(lines, i))));
         expect(hit, `${f}:${hit + 1} uses ${label}`).toBe(-1);
       }
     });
@@ -144,6 +146,16 @@ test.describe('journey static guard', () => {
         const m = /historyLen (any|[+-]\d+)/.exec(row);
         expect(m && m[1], `${s.id}: journey-scripts.md historyLen column`).toBe(fmt(h));
       }
+    }
+  });
+
+  test('no ledger reason is a harness-guard or precondition message', () => {
+    const ledger = JSON.parse(fs.readFileSync(path.join(DIR, 'journey-status.json'), 'utf8'));
+    const bad = /end: covered|drag end: off-screen|end: off-screen|no empty canvas spot|no uncovered on-object spot|^(?:JRN-\d+ )?not found|^(?:JRN-\d+ )?off-screen:|exceeded the .* step budget|^(?:JRN-\d+ )?finger \d+: covered|the finger scroll never brought the target into view|covered by button\.sect-hdr \(target #machine-profile\)/;
+    for (const e of ledger.entries) {
+      expect(typeof e.reason, `${e.project}|${e.journey} needs a reason`).toBe('string');
+      expect(e.reason.length, `${e.project}|${e.journey} reason is empty`).toBeGreaterThan(0);
+      expect(bad.test(e.reason), `${e.project}|${e.journey} is pinned on a harness message: ${e.reason}`).toBe(false);
     }
   });
 
