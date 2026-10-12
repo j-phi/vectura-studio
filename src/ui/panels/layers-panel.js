@@ -1033,8 +1033,11 @@
       const _lvlDoSel = (e, id) => {
         // Event time only. Never mix it with Date.now() or performance.now() (different clocks).
         const now = (this._lvlPdId === String(id) && Number.isFinite(this._lvlPdStamp)) ? this._lvlPdStamp : e.timeStamp;
+        // TUX-033: read modifiers through the shared reader so a Multi-select latch works by touch.
+        const mods = window.Vectura?.InputModifiers?.readModifiers(e) || {};
+        const toggleSel = mods.meta || mods.multiSelect;
         const onName = e.target?.closest?.('.lvl-name,.lvl-grp-name');
-        if (onName && !e.metaKey && !e.ctrlKey && !e.shiftKey
+        if (onName && !toggleSel && !mods.shift
             && Number.isFinite(this._lvlDblTime) && now - this._lvlDblTime < 350 && now >= this._lvlDblTime
             && this._lvlDblId === id) {
           this._lvlDblTime = null; this._lvlDblId = null;
@@ -1062,11 +1065,12 @@
           return;
         }
         this._lvlDblTime = now; this._lvlDblId = id;
-        if (e.metaKey || e.ctrlKey) {
+        if (toggleSel) {
           const ids = new Set(renderer?.selectedLayerIds || []);
           ids.has(id) ? ids.delete(id) : ids.add(id);
           renderer.setSelection([...ids], id);
-        } else if (e.shiftKey && this.lastLayerClickId) {
+        } else if (mods.shift && this.lastLayerClickId) {
+          // TUX-033: mods.shift = real Shift OR the touch Constrain task, so a finger gets range select.
           const ord = _lvlFlatOrder();
           const a = ord.indexOf(this.lastLayerClickId), b = ord.indexOf(id);
           const lo = Math.min(a, b), hi = Math.max(a, b);
