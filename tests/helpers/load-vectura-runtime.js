@@ -1,7 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { JSDOM } = require('jsdom');
+const crypto = require('crypto');
+const { PROFILES } = require('./runtime-profiles');
+
+const COMPILED_CACHE_LIMIT = 256;
+const compiledCache = new Map();
 
 const LOCAL_SRC_RE = /<script[^>]*src="([^"]+)"[^>]*><\/script>/g;
 
@@ -18,6 +22,58 @@ const parseLocalScripts = (html) => {
     scripts.push(src);
   }
   return scripts;
+};
+
+const normalizedScriptPath = (src) => src.replace(/^\.\//, '').replace(/\?.*$/, '');
+
+const isCoverageRun = (argv = process.argv, env = process.env) =>
+  argv.some((arg) => /^(--coverage|--coverage\.)/.test(arg)) ||
+  Boolean(env.NODE_V8_COVERAGE || env.VITEST_COVERAGE || env.VECTURA_TEST_COVERAGE === '1');
+
+const getProfileScripts = (profile, indexScripts, options) => {
+  const definition = PROFILES[profile];
+  if (!definition) throw new Error(`Unknown Vectura runtime profile: ${profile}`);
+  if (profile === 'core') return getExplicitScripts(profile, definition.files, indexScripts, options);
+  if (profile === 'feature' || profile === 'component') {
+    if (!Array.isArray(options.files) || options.files.length === 0) {
+      throw new Error(`Runtime profile "${profile}" requires a non-empty files manifest`);
+    }
+    return getExplicitScripts(profile, options.files, indexScripts, options);
+  }
+  if (profile === 'full') return indexScripts;
+  return indexScripts.filter((src) => !shouldSkipScript(src, options));
+};
+
+const getExplicitScripts = (profile, files, indexScripts, options) => {
+  if (files) {
+    const listed = new Set(indexScripts.map(normalizedScriptPath));
+    const missing = files.filter((file) => !listed.has(file));
+    if (missing.length) throw new Error(`Runtime profile "${profile}" has dependencies missing from index.html: ${missing.join(', ')}`);
+    for (const file of files) {
+      if (!fs.existsSync(path.join(options.rootDir, file)) && options.scriptOverrides?.[file] === undefined) {
+        throw new Error(`Runtime profile "${profile}" dependency is missing on disk: ${file}`);
+      }
+    }
+    const selected = new Set(files);
+    return indexScripts.filter((src) => selected.has(normalizedScriptPath(src)));
+  }
+  return [];
+};
+
+const getCompiledScript = (source, filename, identity, cacheEnabled) => {
+  if (!cacheEnabled) return new vm.Script(source, { filename });
+  const digest = crypto.createHash('sha256').update(source).digest('hex');
+  const key = `${identity}\0${filename}\0${digest}`;
+  if (compiledCache.has(key)) {
+    const hit = compiledCache.get(key);
+    compiledCache.delete(key);
+    compiledCache.set(key, hit);
+    return hit;
+  }
+  const script = new vm.Script(source, { filename });
+  compiledCache.set(key, script);
+  if (compiledCache.size > COMPILED_CACHE_LIMIT) compiledCache.delete(compiledCache.keys().next().value);
+  return script;
 };
 
 const shouldSkipScript = (src, options) => {
@@ -95,66 +151,106 @@ const loadVecturaRuntime = async (options = {}) => {
   const rootDir = options.rootDir || path.resolve(__dirname, '../..');
   const indexPath = path.join(rootDir, 'index.html');
   const indexHtml = fs.readFileSync(indexPath, 'utf8');
-  const scriptSources = parseLocalScripts(indexHtml).filter((src) => !shouldSkipScript(src, options));
-  const html = options.useIndexHtml
-    ? indexHtml
-    : '<!doctype html><html><body><canvas id="main-canvas"></canvas></body></html>';
-
-  const dom = new JSDOM(html, {
-    url: 'http://localhost/',
-    pretendToBeVisual: true,
-    runScripts: 'outside-only',
-  });
-
-  const { window } = dom;
-  window.console = console;
-  window.requestAnimationFrame = (cb) => setTimeout(() => cb(Date.now()), 16);
-  window.cancelAnimationFrame = (id) => clearTimeout(id);
-  window.matchMedia =
-    window.matchMedia ||
-    (() => ({
-      matches: false,
-      addListener() {},
-      removeListener() {},
-      addEventListener() {},
-      removeEventListener() {},
-      dispatchEvent() {
-        return false;
-      },
+  const profile = options.profile || 'legacy';
+  const normalizedOptions = { ...options, rootDir };
+  const profileOptions = profile === 'full'
+    ? { includeRenderer: true, includeUi: true, includeApp: true, includeMain: true }
+    : {};
+  const effectiveOptions = { ...profileOptions, ...options };
+  const allIndexScripts = parseLocalScripts(indexHtml);
+  const scriptSources = getProfileScripts(profile, allIndexScripts, normalizedOptions);
+  const domMode = PROFILES[profile].dom;
+  let dom = null;
+  let context;
+  let window;
+  const animationTimers = new Set();
+  const timeoutTimers = new Set();
+  const intervalTimers = new Set();
+  if (domMode === 'minimal' || domMode === 'component' || domMode === 'full') {
+    const { JSDOM } = require('jsdom');
+    const html = domMode === 'full' || (profile === 'legacy' && options.useIndexHtml)
+      ? indexHtml
+      : domMode === 'component'
+        ? (options.html || '<!doctype html><html><body></body></html>')
+        : '<!doctype html><html><body><canvas id="main-canvas"></canvas></body></html>';
+    dom = new JSDOM(html, { url: 'http://localhost/', pretendToBeVisual: true, runScripts: 'outside-only' });
+    window = dom.window;
+    window.console = console;
+    window.requestAnimationFrame = (cb) => {
+      const id = setTimeout(() => { animationTimers.delete(id); cb(Date.now()); }, 16);
+      animationTimers.add(id);
+      return id;
+    };
+    window.cancelAnimationFrame = (id) => { animationTimers.delete(id); clearTimeout(id); };
+    window.matchMedia = window.matchMedia || (() => ({
+      matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; },
     }));
-
-  if (window.HTMLCanvasElement && window.HTMLCanvasElement.prototype) {
-    window.HTMLCanvasElement.prototype.getContext = () => create2DContextStub();
-    // Export needs stubbing too, not just drawing. jsdom has no canvas backend, so its
-    // real toDataURL/toBlob emit a "Not implemented" jsdomError that the default virtual
-    // console forwards to console.error with a full stack trace — ~2,344 times across the
-    // suite. Vitest's worker ships every console call to the parent over birpc, and the
-    // flood starved the parent's event loop until it missed a worker's `onTaskUpdate` ack
-    // past birpc's hard-coded 60s RPC timeout, failing CI with all tests green.
-    window.HTMLCanvasElement.prototype.toDataURL = () => EMPTY_PNG_DATA_URL;
-    window.HTMLCanvasElement.prototype.toBlob = (callback) => {
-      if (typeof callback === 'function') callback(null);
+    if (window.HTMLCanvasElement && window.HTMLCanvasElement.prototype) {
+      window.HTMLCanvasElement.prototype.getContext = () => create2DContextStub();
+      window.HTMLCanvasElement.prototype.toDataURL = () => EMPTY_PNG_DATA_URL;
+      window.HTMLCanvasElement.prototype.toBlob = (callback) => { if (typeof callback === 'function') callback(null); };
+    }
+    if (!window.ResizeObserver) window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+    context = dom.getInternalVMContext();
+    context.document = window.document;
+  } else {
+    context = {};
+    window = context;
+    context.setTimeout = (callback, delay, ...args) => {
+      let id;
+      id = setTimeout(() => { timeoutTimers.delete(id); callback(...args); }, delay);
+      timeoutTimers.add(id);
+      return id;
     };
-  }
-
-  if (!window.ResizeObserver) {
-    window.ResizeObserver = class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+    context.clearTimeout = (id) => { timeoutTimers.delete(id); clearTimeout(id); };
+    context.setInterval = (callback, delay, ...args) => {
+      const id = setInterval(callback, delay, ...args);
+      intervalTimers.add(id);
+      return id;
     };
+    context.clearInterval = (id) => { intervalTimers.delete(id); clearInterval(id); };
+    context.requestAnimationFrame = (callback) => {
+      let id;
+      id = setTimeout(() => { animationTimers.delete(id); callback(Date.now()); }, 16);
+      animationTimers.add(id);
+      return id;
+    };
+    context.cancelAnimationFrame = (id) => { animationTimers.delete(id); clearTimeout(id); };
+    context.console = console;
   }
-
-  const context = dom.getInternalVMContext();
   context.window = window;
-  context.document = window.document;
+  context.self = window;
   context.global = context;
   context.globalThis = context;
+  const vmContext = dom ? context : vm.createContext(context);
 
-  scriptSources.forEach((src) => {
+  const coverageRun = isCoverageRun();
+  const cacheEnabled = options.cacheScripts !== false && !coverageRun;
+  const compileOptionsIdentity = JSON.stringify({
+    profile,
+    includeRenderer: effectiveOptions.includeRenderer === true,
+    includeUi: effectiveOptions.includeUi === true,
+    includeApp: effectiveOptions.includeApp === true,
+    includeMain: effectiveOptions.includeMain === true,
+    useIndexHtml: options.useIndexHtml === true,
+    files: options.files || null,
+    htmlDigest: options.html ? crypto.createHash('sha256').update(options.html).digest('hex') : null,
+  });
+  const cleanup = () => {
+    for (const timer of [...animationTimers, ...timeoutTimers, ...intervalTimers]) {
+      clearTimeout(timer);
+      clearInterval(timer);
+    }
+    animationTimers.clear();
+    timeoutTimers.clear();
+    intervalTimers.clear();
+    dom?.window.close();
+  };
+  try {
+    scriptSources.forEach((src) => {
     // Strip the ?v=<version> cache-busting query (stamped by version:sync) before
     // resolving to a disk path — it's a browser cache key, not part of the filename.
-    const normalized = src.replace(/^\.\//, '').replace(/\?.*$/, '');
+    const normalized = normalizedScriptPath(src);
     const absPath = path.join(rootDir, normalized);
     // A script LISTED in index.html but not on disk is what a browser sees as a
     // 404: it skips that file and keeps going. The harness has to behave the
@@ -171,13 +267,19 @@ const loadVecturaRuntime = async (options = {}) => {
     // proof) without checking out another commit in a shared worktree.
     const override = options.scriptOverrides && options.scriptOverrides[normalized];
     if (override !== undefined) {
-      vm.runInContext(override, context, { filename: `${absPath} (override)` });
+      const script = getCompiledScript(override, `${absPath} (override)`, `${rootDir}|${normalized}|${compileOptionsIdentity}|override`, cacheEnabled);
+      script.runInContext(vmContext);
       return;
     }
     if (!fs.existsSync(absPath)) return;
     const code = fs.readFileSync(absPath, 'utf8');
-    vm.runInContext(code, context, { filename: absPath });
-  });
+    const script = getCompiledScript(code, absPath, `${rootDir}|${normalized}|${compileOptionsIdentity}|disk`, cacheEnabled);
+    script.runInContext(vmContext);
+    });
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
 
   // Scene Seed (U4a): the APP gives every NEW 3D layer seedMode 'seeded' with a
   // random seed, so two engines never render the same scene. Fixture tests rely
@@ -189,11 +291,17 @@ const loadVecturaRuntime = async (options = {}) => {
     window,
     document: window.document,
     scripts: scriptSources,
-    cleanup: () => dom.window.close(),
+    cleanup,
   };
 };
+
+const clearCompiledScriptCache = () => compiledCache.clear();
+const getCompiledScriptCacheSize = () => compiledCache.size;
 
 module.exports = {
   loadVecturaRuntime,
   parseLocalScripts,
+  clearCompiledScriptCache,
+  getCompiledScriptCacheSize,
+  isCoverageRun,
 };

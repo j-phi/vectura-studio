@@ -12,8 +12,8 @@ module.exports = defineConfig({
   },
   fullyParallel: false,
   // Match CI locally so `npm run test:ci` is a faithful pre-push gate.
-  // The dev server is a single-threaded `python3 -m http.server`; >2 workers
-  // saturates it and causes petalis-profile JSON requests to time out.
+  // Keep browser concurrency bounded while the Node static server serves
+  // presets and geometry assets; raising this needs measured resource evidence.
   retries: 1,
   workers: 2,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
@@ -37,7 +37,7 @@ module.exports = defineConfig({
         ...(useSystemChrome ? { channel: 'chrome' } : {}),
         viewport: { width: 1600, height: 1000 },
       },
-      testMatch: /smoke\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|ground-size\.spec\.js$|wavetable-image-noise\.spec\.js$/,
+      testMatch: /feedback\.spec\.js$|smoke\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|ground-size\.spec\.js$|wavetable-image-noise\.spec\.js$/,
     },
     {
       name: 'desktop-visual-chromium',

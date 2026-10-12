@@ -360,6 +360,7 @@ describe('scene3d tone goldens', () => {
   ) || [];
 
   const scenarioById = (id) => SCENARIOS.find((s) => s.id === id);
+  const summaryCache = new Map();
 
   // Generate THREE times and require identical summaries before anything else
   // looks at the numbers. scene3d has no RNG, so any drift here is a real bug.
@@ -369,7 +370,13 @@ describe('scene3d tone goldens', () => {
     expect(runs[2]).toBe(runs[0]);
     return JSON.parse(runs[0]);
   };
-  const summaryFor = (id) => stableSummary(scenarioById(id).build);
+  // Each scenario is executed three fresh times exactly once. Reuse only the
+  // immutable aggregate inside this test fixture; mutation sensitivity below
+  // still constructs and runs fresh source.
+  const summaryFor = (id) => {
+    if (!summaryCache.has(id)) summaryCache.set(id, stableSummary(scenarioById(id).build));
+    return summaryCache.get(id);
+  };
 
   const compare = (id, actual) => {
     const file = path.join(BASELINE_DIR, `${id}.json`);
@@ -396,7 +403,7 @@ describe('scene3d tone goldens', () => {
     SCENARIOS.forEach(({ id, build }) => {
       const t = DORMANT_GOLDEN_IDS.has(id) ? whenZones : test;
       t(`${id} matches its golden (and regenerates identically 3x)`, () => {
-        const summary = stableSummary(build);
+        const summary = summaryFor(id);
         expect(summary.totals.paths).toBeGreaterThan(0);
         compare(id, summary);
       });
@@ -605,7 +612,7 @@ describe('scene3d tone goldens', () => {
 
     test('a flipped ladder read moves the FACETED golden (scene3d.js coverageGain)', () => {
       const before = summaryFor('box-bands-3');
-      const after = withFlippedLadder(() => summaryFor('box-bands-3'));
+      const after = withFlippedLadder(() => stableSummary(scenarioById('box-bands-3').build));
       expect(after).not.toEqual(before);
       expect(after.fillPathsByFace).not.toEqual(before.fillPathsByFace);
     });

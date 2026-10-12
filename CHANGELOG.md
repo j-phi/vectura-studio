@@ -6,6 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Testing workflow
+- **Bounded feedback and retained audits.** Add isolated runtime profiles and immutable
+  script caching, an explicit critical-feedback roster, a single complete browser invocation,
+  a physical exhaustive-proof audit lane, and fail-closed shadow routing/promotion evidence.
+  Pre-push runs bounded feedback; broad GitHub jobs and full coverage thresholds remain.
+  Local worker limits bound memory. Independent review repairs and verification limits live
+  in `docs/test-suite-acceleration-punchlist.md`; hosted speed targets are not yet certified.
+
+
 ### Fixed (tests)
 - **Legacy mono Density test no longer passes or fails on random seeds.** Each build drew new
   `Math.random()` layer seeds, so "Density 85 differs from 50" passed on the seed difference alone. For

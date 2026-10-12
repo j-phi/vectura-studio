@@ -28,13 +28,13 @@ python -m http.server
 **For tests:**
 ```bash
 npm install
-npm run hooks:install   # one-time: installs pre-commit + pre-push (test:fast) hooks
+npm run hooks:install   # one-time: installs pre-commit + pre-push (test:feedback) hooks
 npm run test:ci
 ```
 
 Node 20.19 or newer is required for the development and test toolchain.
 
-> The `pre-push` hook runs `test:fast` (~12s — unit + integration + visual + perf) before every push. E2E is gated only by CI to keep local pushes snappy. Bypass with `SKIP_PREPUSH=1 git push`.
+> The `pre-push` hook runs `test:feedback` (bounded local feedback) before every push. A minimal browser journey runs locally; CI retains the full browser roster. Bypass with `SKIP_PREPUSH=1 git push`.
 
 ---
 
@@ -417,6 +417,9 @@ Click `Export SVG` to download.
 
 | Command | Purpose |
 |---|---|
+| `npm run test:feedback` | Bounded local feedback: critical contracts and one real browser journey |
+| `npm run test:route -- --base <sha> --head <sha> --json` | Inspect explicit risk routing; unknown changes fall back broadly |
+| `npm run test:lane -- audit` | Exhaustive rendering proofs retained outside routine feedback |
 | `npm run test:runner` | Process cleanup and cancellation regression checks |
 | `npm run test:unit` | Deterministic unit coverage for RNG/noise, algorithms, and utility helpers |
 | `npm run test:integration` | Engine workflow, layer lifecycle, optimization pipeline, state roundtrip, export, UI bootstrap |
@@ -435,6 +438,8 @@ All test commands run through a **shared local test queue** (`scripts/test-queue
 Vitest scripts clean up owned workers on completion/cancellation and enforce a
 30-minute local per-attempt deadline (three hours in CI), even if the launching wrapper dies. Use
 `VECTURA_TEST_TIMEOUT_MS` to override it; see [cleanup behavior and platform limits](docs/testing.md#vitest-process-cleanup).
+
+Acceleration policy, evidence requirements and rollout limits: [test-suite acceleration](docs/test-suite-acceleration.md). Timing targets remain unproven until measured on the current revision.
 
 Vitest config: `vitest.config.mjs` · Playwright config: `playwright.config.js`
 

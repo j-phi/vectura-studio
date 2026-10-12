@@ -266,3 +266,7 @@ Rules:
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - The pre-commit hook (`scripts/hooks/pre-commit`) auto-runs graphify AST update and stages output before every commit — no manual `graphify update .` needed
 - **Exclude graphify-out from routine git output** — its generated churn is noise. Use `git status -- . ':!graphify-out'` and `git diff [--cached] -- . ':!graphify-out'` for habitual checks; only look at it when diagnosing the graphify hooks themselves
+
+### Test acceleration lanes
+
+Use `npm run test:feedback` for bounded local feedback and `npm run test:route -- --base <sha> --head <sha> --json` to inspect explicit risk routing. Focused feedback does not replace retained full CI gates. Exhaustive proofs live in `tests/audit/`; use `npm run test:lane -- audit`. Promotion requires recorded shadow evidence, not a local timing estimate. See `docs/testing.md` and `docs/test-suite-acceleration.md`.
