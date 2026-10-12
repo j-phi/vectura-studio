@@ -473,3 +473,52 @@ test.describe('TUX-020 R-h layout', () => {
     }
   });
 });
+
+// Integration gate run 4: the HUD (TUX-020) sat under the TUX-011 drawer backdrop and under modals
+// as five live-looking but untappable buttons (the backdrop or modal takes the tap; history is
+// already a no-op under a modal). It now steps aside while either is up and comes back after.
+test.describe('TUX-020 R-i the HUD steps aside under a drawer backdrop or a modal', () => {
+  const hudState = (page) => page.evaluate(() => {
+    const btns = [...document.querySelectorAll('#canvas-hud button')];
+    const shown = btns.filter((b) => b.checkVisibility({ visibilityProperty: true, opacityProperty: true }));
+    const live = shown.filter((b) => {
+      const r = b.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return hit && b.contains(hit);
+    });
+    const bd = document.getElementById('mobile-pane-backdrop');
+    return { total: btns.length, shown: shown.length, live: live.length, backdrop: !!(bd && bd.classList.contains('visible')) };
+  });
+
+  test('hidden while the drawer backdrop is up, back when it closes', async ({ page }) => {
+    await boot(page);
+    await addLayerThroughHistory(page);
+    const base = await hudState(page);
+    expect(base.live, 'HUD buttons are live on load').toBeGreaterThanOrEqual(3);
+    // Setup: open the left pane through its own opener.
+    await page.evaluate(() => {
+      const mob = document.getElementById('btn-mobile-pane-left');
+      const btn = (mob && mob.offsetParent) ? mob : document.getElementById('btn-pane-toggle-left');
+      btn.click();
+    });
+    await page.waitForTimeout(300);
+    const open = await hudState(page);
+    test.skip(!open.backdrop, 'docked layout: no drawer backdrop');
+    expect(open.shown, 'no HUD button is shown under the backdrop').toBe(0);
+    // Under test: a finger tap on the backdrop closes the drawer and brings the HUD back.
+    const vp = page.viewportSize();
+    await touch.tap(page, { x: vp.width - 24, y: Math.round(vp.height / 2) });
+    await expect.poll(async () => (await hudState(page)).backdrop).toBe(false);
+    await expect.poll(async () => (await hudState(page)).live).toBe(base.live);
+  });
+
+  test('hidden while a modal is open, back when it closes', async ({ page }) => {
+    await boot(page);
+    const base = await hudState(page);
+    expect(base.live, 'HUD buttons are live on load').toBeGreaterThanOrEqual(3);
+    await page.evaluate(() => window.app.ui.openModal({ title: 'Probe', body: '<p>probe</p>' }));
+    await expect.poll(async () => (await hudState(page)).shown, { message: 'no HUD button is shown under a modal' }).toBe(0);
+    await page.evaluate(() => window.app.ui.closeModal());
+    await expect.poll(async () => (await hudState(page)).live).toBe(base.live);
+  });
+});

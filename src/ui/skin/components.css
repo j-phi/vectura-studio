@@ -15645,3 +15645,19 @@ body.touch-ui #viewport-container:has(.ctxbar.ctxbar--pen-draft) .canvas-hud {
  * then inherit `visible`. No direct `.pane-body` child relies on `visibility: hidden` (they use display). */
 body.tablet-layout.touch-ui .pane.pane-drawer-open .pane-body > * { visibility: visible; }
 /* === END TUX-008 / TUX-011 WebKit drawer content restyle === */
+
+/* === TUX-020 / TUX-011: the canvas HUD steps aside under a drawer backdrop or a modal (integration fix) ===
+ * Under the open-drawer backdrop (TUX-011) or a modal the HUD buttons cannot take a tap (the backdrop
+ * or the modal does; history is a no-op under a modal), so they must not show as live controls there.
+ * visibility (not display) keeps the HUD's box, so nothing reflows when it returns. */
+body.touch-ui:has(#mobile-pane-backdrop.visible) .canvas-hud,
+body.touch-ui:has(#modal-overlay.open) .canvas-hud,
+body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud {
+  visibility: hidden;
+}
+body.touch-ui:has(#mobile-pane-backdrop.visible) .canvas-hud .canvas-hud-btn,
+body.touch-ui:has(#modal-overlay.open) .canvas-hud .canvas-hud-btn,
+body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud .canvas-hud-btn {
+  pointer-events: none;
+}
+/* === END TUX-020 / TUX-011 HUD step-aside === */

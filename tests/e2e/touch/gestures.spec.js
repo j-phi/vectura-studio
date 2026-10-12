@@ -56,7 +56,10 @@ const installFixture = (page, { tool, scene, selectObject, penDraft }) => page.e
 // View reset + client-space target points. Recomputed before EVERY gesture.
 // The canvas can be partly covered by panes (shell lane): the object and the empty-canvas
 // target are placed inside the longest run of canvas that is actually hit-testable.
-const prepare = (page, view) => page.evaluate((view) => {
+// The context bar follows the selection on the next animation frames, so the empty-canvas
+// target is measured again after the view move has settled (on iPhone landscape the bar
+// lands on the first estimate and both fingers hit it).
+const prepare = (page, view) => page.evaluate(async (view) => {
   const app = window.app;
   const r = app.renderer;
   r.scale = view.scale;
@@ -90,7 +93,6 @@ const prepare = (page, view) => page.evaluate((view) => {
     const run = longestRun(Math.max(0, box.left), Math.min(innerWidth - 1, box.right), (x) => hit(x, y));
     return (run.a + run.b) / 2;
   };
-  const emptyX = rowCenter(emptyY);
   // The pinch centre sits 50 px right of the object centre, so the object goes 50 px left of the run centre.
   const objX = rowCenter(objY) - 50;
   const objWorld = { x: 108, y: 75 };
@@ -109,6 +111,8 @@ const prepare = (page, view) => page.evaluate((view) => {
   r.offsetX = (objX - box.left) - objWorld.x * r.scale;
   r.offsetY = (objY - box.top) - objWorld.y * r.scale;
   r.draw();
+  for (let i = 0; i < 3; i += 1) await new Promise((res) => requestAnimationFrame(() => res()));
+  const emptyX = rowCenter(emptyY);
   return {
     canvasH: box.height,
     canvasW: box.width,
