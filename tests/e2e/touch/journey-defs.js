@@ -350,6 +350,8 @@ JOURNEYS.push({
       expects: 'that layer is hidden', expect: { history: 'any', selected: 'any' },
       run: async (c) => {
         c.vars.id = (await L(c, S.layerCards).first().getAttribute('data-lvl-id'));
+        // After the reorder the list rests scrolled to its bottom edge (auto-scroll): finger-scroll the row back first.
+        await rowIntoView(c, L(c, `${S.layerCard(c.vars.id)} .lvl-ib[title="Hide"]`));
         await P.fingerTap(c.page, L(c, `${S.layerCard(c.vars.id)} .lvl-ib[title="Hide"]`));
       },
       post: (c, pre, now) => { if (now.layers.find((l) => l.id === c.vars.id).visible) throw new Error('the layer is still visible'); },
@@ -365,6 +367,7 @@ JOURNEYS.push({
       expects: 'layer menu visible; layers +0', expect: { selected: 'any' },
       run: async (c) => {
         c.vars.id = await L(c, S.layerCards).first().getAttribute('data-lvl-id');
+        await rowIntoView(c, L(c, `${S.layerCard(c.vars.id)} ${S.cardMore}`));
         await P.fingerTap(c.page, L(c, `${S.layerCard(c.vars.id)} ${S.cardMore}`));
       },
       post: async (c) => { if (!(await L(c, S.layerMenuEntry).first().isVisible())) throw new Error('the layer menu did not open'); },

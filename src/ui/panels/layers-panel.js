@@ -320,6 +320,7 @@
         let lastPos = null;
 
         const finishDrag = (commit) => {
+          stopEdgeScroll();
           el.draggable = true;
           if (isDragging) {
             if (commit && lastTargetId && lastPos) {
@@ -381,19 +382,40 @@
           startY = t.clientY;
         }, { passive: true });
 
-        handle.addEventListener('touchmove', (e) => {
-          const t = Array.from(e.touches).find((tt) => tt.identifier === startTouchId);
-          if (!t) return;
-          if (!isDragging) {
-            // The grip owns its touch (touch-action: none): never let the list scroll from it.
-            if (e.cancelable) e.preventDefault();
-            const slop = (G.Vectura?.TOUCH_HOLD?.gripDragPx);
-            if (Math.hypot(t.clientX - startX, t.clientY - startY) < slop) return;
-            beginDrag();
-          }
-          e.preventDefault();
+        // TUX-044 req 5: a finger that rests near the list's top or bottom edge fires no touchmove, so a
+        // frame loop scrolls the list and re-targets the drop row under the resting finger.
+        let dragPoint = null;
+        let edgeRaf = 0;
+        const stopEdgeScroll = () => { if (edgeRaf) cancelAnimationFrame(edgeRaf); edgeRaf = 0; dragPoint = null; };
+        const startEdgeScroll = () => {
+          if (edgeRaf) return;
+          const tick = () => {
+            edgeRaf = 0;
+            if (!isDragging || !dragPoint) return;
+            const r = list.getBoundingClientRect();
+            const zone = Math.min(48, r.height / 3);
+            const maxStep = 14;
+            let dy = 0;
+            if (dragPoint.clientY < r.top + zone) dy = -Math.ceil(maxStep * Math.min(1, (r.top + zone - dragPoint.clientY) / zone));
+            else if (dragPoint.clientY > r.bottom - zone) dy = Math.ceil(maxStep * Math.min(1, (dragPoint.clientY - (r.bottom - zone)) / zone));
+            if (dy) {
+              const before = list.scrollTop;
+              list.scrollTop = before + dy;
+              if (list.scrollTop !== before) track(dragPoint);
+            }
+            edgeRaf = requestAnimationFrame(tick);
+          };
+          edgeRaf = requestAnimationFrame(tick);
+        };
+        const track = (t) => {
           el.style.pointerEvents = 'none';
-          const below = document.elementFromPoint(t.clientX, t.clientY);
+          let below = document.elementFromPoint(t.clientX, t.clientY);
+          // A group-exit strip only counts for a row inside that group. Elsewhere, the row just above it takes the
+          // drop, so a finger resting at the list's bottom edge still reaches the last row (TUX-044 req 5).
+          const rawExit = below?.closest('[data-lvl-exit-group]');
+          if (rawExit && engine.getLayerById?.(_lvlDRAG.id)?.parentId !== rawExit.dataset.lvlExitGroup) {
+            below = document.elementFromPoint(t.clientX, rawExit.getBoundingClientRect().top - 2);
+          }
           el.style.pointerEvents = '';
           _lvlClrAllDrop();
           lastTargetId = null;
@@ -478,6 +500,22 @@
               }
             }
           }
+        };
+
+        handle.addEventListener('touchmove', (e) => {
+          const t = Array.from(e.touches).find((tt) => tt.identifier === startTouchId);
+          if (!t) return;
+          if (!isDragging) {
+            // The grip owns its touch (touch-action: none): never let the list scroll from it.
+            if (e.cancelable) e.preventDefault();
+            const slop = (G.Vectura?.TOUCH_HOLD?.gripDragPx);
+            if (Math.hypot(t.clientX - startX, t.clientY - startY) < slop) return;
+            beginDrag();
+          }
+          e.preventDefault();
+          dragPoint = { clientX: t.clientX, clientY: t.clientY };
+          track(dragPoint);
+          startEdgeScroll();
         }, { passive: false });
 
         handle.addEventListener('touchend', () => finishDrag(true));

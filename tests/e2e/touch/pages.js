@@ -621,8 +621,11 @@ async function swipeStart(page, container) {
   return page.evaluate((el) => {
     const r = el.getBoundingClientRect();
     const x0 = r.left + 4;
-    const interactive = (n) => !!n.closest('input,button,select,textarea,canvas,a,[role="button"],[role="slider"],.ctrl-slider');
-    for (let fx = 0.04; fx < 0.96; fx += 0.04) {
+    const interactive = (n) => !!n.closest('input,button,select,textarea,canvas,a,[role="button"],[role="slider"],.ctrl-slider,.lvl-grip');
+    // Mid-width first: a swipe that starts in a row's left margin (next to the reorder grip) does not scroll in Chromium.
+    const fxs = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8];
+    for (let fx = 0.04; fx < 0.96; fx += 0.04) fxs.push(fx);
+    for (const fx of fxs) {
       const x = r.left + r.width * fx;
       const y = r.top + r.height * 0.5;
       const hit = document.elementFromPoint(x, y);

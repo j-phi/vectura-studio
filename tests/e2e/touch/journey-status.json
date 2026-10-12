@@ -1,7 +1,5 @@
 {
   "projects": ["touch-ipad-landscape","touch-ipad-portrait","touch-iphone-landscape","touch-iphone-portrait","webkit-ipad-landscape","webkit-ipad-portrait","webkit-iphone-landscape","webkit-iphone-portrait"],
   "entries": [
-    {"project":"touch-iphone-landscape","journey":"J2","failsAt":"j2.reorder","reason":"the layer order did not change","tux":"TUX-044 req 5: the 100 px layer list does not auto-scroll when a dragged row rests at its bottom edge (no auto-scroll in layers-panel.js _bindCardTouchDrag:313), so row 1 cannot reach below row 2"},
-    {"project":"webkit-iphone-landscape","journey":"J2","failsAt":"j2.reorder","reason":"the layer order did not change","tux":"TUX-044 req 5: the 100 px layer list does not auto-scroll when a dragged row rests at its bottom edge (no auto-scroll in layers-panel.js _bindCardTouchDrag:313), so row 1 cannot reach below row 2"}
   ]
 }
