@@ -151,8 +151,6 @@ async function visibleInside(c, sel) {
 // The layer list scrolls inside itself; on short screens (iPhone landscape: a 100 px list) a row can sit below its
 // fold, under the draw-order bar. A finger scrolls the list first. No-op when the row is already in view.
 
-const stripIntoView = (c, btn) => P.fingerPanStripIntoView(c.page, btn, L(c, '#right-pane'), L(c, '#layer-status-bar'));
-
 const rowIntoView = (c, row) => P.fingerScrollInto(c.page, row, L(c, '#layer-list'), { topInset: 0 });
 
 // ---- reusable step builders ------------------------------------------------------------------
@@ -665,7 +663,6 @@ JOURNEYS.push({
       id: 'j6.apply-mask', action: 'tap', route: 'tap the visible mask control in the layer status bar', selector: 'SELECTORS.maskButton',
       expects: 'the spiral is a child of the oval; history +1', jrn: 'JRN-006', expect: { history: 1, selected: 'any' },
       run: async (c) => {
-        await stripIntoView(c, L(c, S.maskButton));
         await P.fingerTap(c.page, L(c, S.maskButton));
       },
       post: (c, pre, now) => { if (now.layers.find((l) => l.id === c.vars.child).parentId !== c.vars.src) throw new Error('the mask was not applied'); },

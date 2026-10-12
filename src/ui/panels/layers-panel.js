@@ -1564,28 +1564,62 @@
           const anyVisible = selectedLayers.some((l) => l.visible);
           const anyLocked = selIds.some((id) => this.layerLockedIds.has(id));
           const hasCollapsedGroup = selectedLayers.some((l) => l.isGroup && l.groupCollapsed);
-          cmds.appendChild(mkCb('',
-            () => anyVisible ? this._LVL_I.eyeOff() : this._LVL_I.eye(),
-            anyVisible ? 'Hide selected' : 'Show selected',
-            () => this._lvlToggleVisibilitySel(anyVisible)));
-          cmds.appendChild(mkCb('',
-            () => anyLocked ? this._LVL_I.lockOpen() : this._LVL_I.lock(),
-            anyLocked ? 'Unlock selected' : 'Lock selected',
-            () => this._lvlToggleLockSel(!anyLocked)));
-          cmds.appendChild(mkCb('', () => this._LVL_I.grpPlus(), 'Group selected (⌘G)', () => this._lvlGroupSel()));
-          if (hasGrp || hasGroupedChildren) cmds.appendChild(mkCb('', () => this._LVL_I.ungroup(),
-            hasGrp ? 'Ungroup selected (⌘⇧G)' : 'Move out of group (⌘⇧G)',
-            () => this._lvlUngroupSel()));
-          cmds.appendChild(mkCb('mask-btn' + (maskOk ? '' : ' ineligible'), () => this._LVL_I.maskSrc(),
+          const explain = (msg) => () => {
+            const T = window.Vectura?.UI?.overlays?.Toast;
+            if (T && typeof T.show === 'function') T.show({ message: msg, variant: 'info' });
+          };
+          const hideLabel = anyVisible ? 'Hide selected' : 'Show selected';
+          const lockLabel = anyLocked ? 'Unlock selected' : 'Lock selected';
+          const hideFn = () => this._lvlToggleVisibilitySel(anyVisible);
+          const lockFn = () => this._lvlToggleLockSel(!anyLocked);
+          const ungroupLabel = hasGrp ? 'Ungroup selected (⌘⇧G)' : 'Move out of group (⌘⇧G)';
+          // An unavailable action stays tappable and answers with a toast (TUX-036): `title` and `disabled`
+          // are silent for a finger, so the reason would never show.
+          const maskBtn = () => mkCb('mask-btn' + (maskOk ? '' : ' ineligible'), () => this._LVL_I.maskSrc(),
             maskOk ? 'Create clipping mask group' : 'Top layer must be a clip-eligible layer',
-            maskOk ? () => this._lvlMaskSelGroup() : () => {}));
-          const expBtn = mkCb('', () => this._LVL_I.expand(),
-            hasCollapsedGroup ? 'Expand selected groups' : 'No collapsed groups in selection',
-            () => this._lvlExpandSel());
-          if (!hasCollapsedGroup) expBtn.disabled = true;
-          cmds.appendChild(expBtn);
-          cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected (⌘D)', () => this._lvlDupSel()));
-          cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected (⌫)', () => this._lvlDelSel()));
+            maskOk ? () => this._lvlMaskSelGroup() : explain('The top layer must be a clip-eligible layer to make a clipping mask.'));
+          if (document.body.classList.contains('touch-ui')) {
+            // TUX-036 / TUX-041: eight 44 px buttons do not fit the 200 px pane. Mask, Duplicate and Delete stay
+            // one tap away; the rest sit in a ⋯ menu (a disabled row names its reason).
+            const more = mkCb('lvl-sb-more', () => this._LVL_I.more?.() ?? '', 'More actions for the selection', () => {});
+            more.setAttribute('aria-haspopup', 'menu');
+            more.setAttribute('aria-label', 'More actions for the selection');
+            const items = [
+              { key: 'hide', label: hideLabel },
+              { key: 'lock', label: lockLabel },
+              { key: 'group', label: 'Group selected' },
+            ];
+            if (hasGrp || hasGroupedChildren) items.push({ key: 'ungroup', label: ungroupLabel.replace(/ \(.*\)$/, '') });
+            items.push({ key: 'expand', label: hasCollapsedGroup ? 'Expand selected groups' : 'Expand groups (none collapsed)', disabled: !hasCollapsedGroup });
+            const run = { hide: hideFn, lock: lockFn, group: () => this._lvlGroupSel(), ungroup: () => this._lvlUngroupSel(), expand: () => this._lvlExpandSel() };
+            more.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const Menu = window.Vectura?.UI?.overlays?.Menu;
+              if (!Menu) return;
+              if (!this._lvlStripMenu) this._lvlStripMenu = Menu(document.body, { items: [], onSelect: () => {} });
+              const m = this._lvlStripMenu;
+              if (m.isOpen && m.isOpen()) { m.close(); return; }
+              m.update({ items, onSelect: (key) => { m.close(); run[key]?.(); } });
+              m.open(more);
+            });
+            cmds.appendChild(more);
+            cmds.appendChild(maskBtn());
+            cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected', () => this._lvlDupSel()));
+            cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected', () => this._lvlDelSel()));
+          } else {
+            cmds.appendChild(mkCb('', () => anyVisible ? this._LVL_I.eyeOff() : this._LVL_I.eye(), hideLabel, hideFn));
+            cmds.appendChild(mkCb('', () => anyLocked ? this._LVL_I.lockOpen() : this._LVL_I.lock(), lockLabel, lockFn));
+            cmds.appendChild(mkCb('', () => this._LVL_I.grpPlus(), 'Group selected (⌘G)', () => this._lvlGroupSel()));
+            if (hasGrp || hasGroupedChildren) cmds.appendChild(mkCb('', () => this._LVL_I.ungroup(), ungroupLabel, () => this._lvlUngroupSel()));
+            cmds.appendChild(maskBtn());
+            const expBtn = mkCb('', () => this._LVL_I.expand(),
+              hasCollapsedGroup ? 'Expand selected groups' : 'No collapsed groups in selection',
+              hasCollapsedGroup ? () => this._lvlExpandSel() : explain('No collapsed groups in the selection.'));
+            if (!hasCollapsedGroup) { expBtn.classList.add('unavailable'); expBtn.setAttribute('aria-disabled', 'true'); }
+            cmds.appendChild(expBtn);
+            cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected (⌘D)', () => this._lvlDupSel()));
+            cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected (⌫)', () => this._lvlDelSel()));
+          }
           bar.appendChild(cmds);
           const sp = document.createElement('div'); sp.className = 'lvl-sb-spacer'; bar.appendChild(sp);
           const tot = document.createElement('span'); tot.className = 'lvl-sb-total';

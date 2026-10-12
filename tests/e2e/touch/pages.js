@@ -677,18 +677,6 @@ async function fingerScrollInto(page, target, container, opts = {}) {
     await webkitProgrammaticScroll(page, target);
     return;
   }
-  if (opts.axis === 'x') {
-    const dev = jOf(page).dev;
-    for (let i = 0; i < 6; i += 1) {
-      const b = await target.boundingBox();
-      const pb = await opts.pane.boundingBox();
-      if (b && b.x >= pb.x && b.x + b.width <= Math.min(pb.x + pb.width, dev.width) - 2) return;
-      const bb = await container.boundingBox();
-      await fingerDrag(page, { x: bb.x + bb.width * 0.75, y: bb.y + bb.height / 2, within: container }, { dx: -Math.min(120, bb.width * 0.5), dy: 0 }, { steps: 10, stepDelayMs: 12 });
-      await sleep(300);
-    }
-    throw new Error('the finger pan never brought the strip button into view');
-  }
   const cHandle = await handleOf(page, container, 'scroll container');
   let lastY = null;
   for (let i = 0; i < 8; i += 1) {
@@ -714,13 +702,6 @@ async function fingerScrollInto(page, target, container, opts = {}) {
     await settleScroll(target);
   }
   throw new Error('the finger scroll never brought the target into view');
-}
-
-// The multi-select command strip pans sideways when it is wider than the pane (TUX-043: the docked 200 px iPad landscape
-// pane, phones). A finger pans it until the button is on screen; WebKit takes the sanctioned programmatic scroll
-// inside fingerScrollInto. Every tap after it stays a guarded finger tap.
-async function fingerPanStripIntoView(page, btn, pane, bar) {
-  await fingerScrollInto(page, btn, bar, { axis: 'x', pane });
 }
 
 // Drag a native range slider's thumb by a fraction of its track. Returns { before, after }.
@@ -776,7 +757,6 @@ module.exports = {
   fingerPan,
   fingerMultiTap,
   fingerScrollInto,
-  fingerPanStripIntoView,
   hitAtCenter,
   fingerSlider,
   pickOption,
