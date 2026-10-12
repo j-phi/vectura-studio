@@ -7,6 +7,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Fixed (tests)
+- **U2 byte-identity hashes are enforced on Node 20 only.** On an arm64 Mac running Node 25, the
+  sphere/hatch/mezzoRegion golden hashed `8ee322d6` instead of `c9eba689` and blocked every push. The
+  pre-U2 base `383d7610` gives the same `8ee322d6` on Node 25, so nothing moved: a newer V8 rounds a
+  Math result differently. The hashes were captured on Node 20 (CI's pinned major), so they are now
+  checked only there. On other majors, path and point counts must still match exactly. A guard fails
+  if CI ever runs another major. `.nvmrc` pins 20.20.2.
 - **Scene3D byte-identity goldens are pinned per CPU architecture.** The U2 kernel goldens and the Seed
   legacy golden passed on arm64 Macs but failed on the x86_64 CI runner. V8's `Math.sin/cos/exp/atan2/...`
   round the last ULP differently on arm64 and x86_64, so a full-precision hash holds on one arch only. Both

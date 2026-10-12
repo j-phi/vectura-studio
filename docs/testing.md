@@ -3,7 +3,9 @@
 Workflow governance and documentation synchronization rules live in `docs/agentic-harness-strategy.md`.
 
 ## Toolchain
-- Node 20.19 or newer is required.
+- Node 20.19 or newer is required. `.nvmrc` pins 20.20.2, the major CI runs (`nvm use`). Byte-exact
+  float-hash goldens (for example `scene3d-u2-kernel-identity`) are enforced only on Node 20; other
+  majors check path/point counts only, because V8 versions round Math results differently.
 - Unit/Integration/Visual/Perf: Vitest 4 (`vitest.config.mjs`); keep `vitest` and
   `@vitest/coverage-v8` on matching versions. Worker limits use Vitest 4's top-level
   `maxWorkers` option with the `forks` pool.
