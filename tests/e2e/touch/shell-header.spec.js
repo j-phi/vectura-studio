@@ -86,6 +86,31 @@ test.describe('TUX-001 closing round', () => {
     await expect.poll(() => page.evaluate(() => (window.app.renderer.penDraft ? window.app.renderer.penDraft.anchors.length : 0))).toBe(1);
   });
 
+  test('TUX-001 a real tap within 150 ms of the closing outside tap still fires (no time window)', async ({ page }, testInfo) => {
+    phoneOnly(testInfo);
+    await gotoApp(page);
+    await page.evaluate(() => { window.app.pushHistory(); window.app.engine.addLayer('spiral'); window.app.render(); window.app.ui.renderLayers(); });
+    const wordmark = () => page.evaluate(() => { const r = document.querySelector('#app-header h1').getBoundingClientRect(); return { x: r.x + 4, y: r.y + r.height / 2 }; });
+    const closeByOutsideTap = async () => {
+      await touch.tap(page, page.locator('#btn-menu-hamburger'));
+      await expect(page.locator('body.phone-menu-open')).toHaveCount(1);
+      await touch.tap(page, await wordmark());
+      return Date.now();
+    };
+    // (a) header Undo right after the closing tap
+    const layers0 = await page.evaluate(() => window.app.engine.layers.length);
+    let t0 = await closeByOutsideTap();
+    await touch.tap(page, page.locator('#btn-header-undo'));
+    const gapUndo = Date.now() - t0;
+    expect(await page.evaluate(() => window.app.engine.layers.length), `Undo fired ${gapUndo} ms after the closing tap`).toBe(layers0 - 1);
+    // (b) hamburger re-tap right after the closing tap reopens the sheet
+    t0 = await closeByOutsideTap();
+    await touch.tap(page, page.locator('#btn-menu-hamburger'));
+    const gapBurger = Date.now() - t0;
+    await expect(page.locator('body.phone-menu-open'), `hamburger reopened ${gapBurger} ms after the closing tap`).toHaveCount(1);
+    expect(Math.max(gapUndo, gapBurger), 'the taps landed inside the 150 ms bound the contract names').toBeLessThanOrEqual(150);
+  });
+
   test('modifier bar phone presentation is icon plus short label (TUX-045)', async ({ page }, testInfo) => {
     phoneOnly(testInfo);
     await gotoApp(page);

@@ -205,31 +205,52 @@
       if (item && !item.classList.contains('top-menu-back')) setOpen(false);
     }, true);
     // An outside tap only closes the sheet: it is swallowed so it never reaches the canvas
-    // (a Pen tap would add an anchor). The rest of that gesture (move/up/click) is swallowed too.
+    // (a Pen tap would add an anchor). Only events tied to that gesture are swallowed: its pointerId,
+    // its touch identifiers, and the single click that follows its pointerup on the same target.
+    // There is no time window, so a real tap right after the closing tap (Undo, the hamburger) still fires.
     let swallowId = null;
-    let swallowUntil = 0; // compat mouse/click events that follow the swallowed pointerup
+    const swallowTouches = new Set();
+    let clickTarget = null; // set at the swallowed pointerup; consumed by the one click that follows
     const stop = (e) => { e.stopImmediatePropagation(); e.stopPropagation(); if (e.cancelable) e.preventDefault(); };
     doc.addEventListener('pointerdown', (e) => {
+      clickTarget = null; // a new gesture starts: no click from the old one is coming
       if (!body.classList.contains('phone-menu-open')) return;
       if (bar.contains(e.target) || burger.contains(e.target)) return;
       setOpen(false);
       swallowId = e.pointerId;
-      swallowUntil = Date.now() + 700;
+      swallowTouches.clear();
+      swallowDownTarget = e.target;
       stop(e);
     }, true);
+    let swallowDownTarget = null;
     ['pointermove', 'pointerup', 'pointercancel'].forEach((type) => {
       doc.addEventListener(type, (e) => {
         if (swallowId === null || e.pointerId !== swallowId) return;
-        if (type !== 'pointermove') { swallowId = null; swallowUntil = Date.now() + 500; }
+        if (type !== 'pointermove') {
+          swallowId = null;
+          clickTarget = type === 'pointerup' ? swallowDownTarget : null;
+        }
         stop(e);
       }, true);
     });
-    ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'click'].forEach((type) => {
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach((type) => {
       doc.addEventListener(type, (e) => {
-        if (swallowId === null && Date.now() > swallowUntil) return;
+        const ids = Array.from(e.changedTouches || [], (t) => t.identifier);
+        if (type === 'touchstart') {
+          // The touchstart of the swallowed gesture follows its pointerdown at once.
+          if (swallowId === null || swallowTouches.size) return;
+          ids.forEach((id) => swallowTouches.add(id));
+        } else if (!ids.some((id) => swallowTouches.has(id))) return;
+        if (type === 'touchend' || type === 'touchcancel') ids.forEach((id) => swallowTouches.delete(id));
         stop(e);
       }, { capture: true, passive: false });
     });
+    doc.addEventListener('click', (e) => {
+      if (!clickTarget) return;
+      const t = clickTarget;
+      clickTarget = null;
+      if (t.isConnected && (t.contains(e.target) || e.target.contains(t))) stop(e);
+    }, { capture: true, passive: false });
     doc.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && body.classList.contains('phone-menu-open') && !ui.openTopMenuTrigger) setOpen(false);
     });
