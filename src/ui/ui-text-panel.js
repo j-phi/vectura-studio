@@ -1297,6 +1297,9 @@
       // room for a usable list. Pin the popover to the visible viewport instead (it may cover the trigger;
       // an outside tap or Escape closes it) so the search and several rows stay on screen.
       const pinned = Math.max(spaceBelow, spaceAbove) < POP_MIN_ROOM;
+      // Compact header while pinned with the keyboard up: the category chips go away and the search and rows tighten, so
+      // the list keeps its rows in the little room that is left (TUX-032 follow-up).
+      pop.classList.toggle('kb-compact', pinned && inset > 0);
       const maxH = pinned ? vh - 16 : Math.min(Math.max(150, flip ? spaceAbove : spaceBelow), vh - 16);
       pop.style.maxHeight = `${maxH}px`;
       if (pinned) {

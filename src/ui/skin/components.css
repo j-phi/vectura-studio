@@ -13701,7 +13701,14 @@ html.kb-open .export-settings-scroll {
 /* Font picker popover: the list scrolls inside the popover cap that positionPop() sets. */
 .vtp-fp-pop .vtp-fp-list { flex: 1 1 auto; min-height: 0; }
 .vtp-fp-pop .vtp-fp-search, .vtp-fp-pop .vtp-fp-tags { flex: none; }
-/* === /TUX-032 === */
+/* Pinned popover with the keyboard open (landscape): compact header so the list keeps >= 3 rows where they fit. */
+.vtp-fp-pop.kb-compact .vtp-fp-tags { display: none; }
+.vtp-fp-pop.kb-compact .vtp-fp-search { padding: 2px 8px; }
+.vtp-fp-pop.kb-compact .vtp-fp-search input { padding-block: 2px; min-height: 0; }
+.vtp-fp-pop.kb-compact .vtp-fp-list { padding: 2px; }
+.vtp-fp-pop.kb-compact .vtp-fp-opt { padding: 1px 8px; min-height: 0; }
+.vtp-fp-pop.kb-compact .vtp-fp-sec { padding-block: 2px; }
+/* === /TUX-032 ===
 /* === TUX-042: text-entry >= 16px on coarse pointers ===
  * iOS Safari zooms the page when a focused field computes below 16px. !important is the only
  * way to beat the inline font-size:10px on the Text panel selects (ui-text-panel.js) and the
