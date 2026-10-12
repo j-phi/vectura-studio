@@ -4,7 +4,7 @@ describe('Seeded RNG and Noise determinism', () => {
   let runtime;
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadVecturaRuntime({ profile: 'core' });
   });
 
   afterAll(() => {

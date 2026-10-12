@@ -22,6 +22,15 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **IN PROGRESS — test-suite acceleration (2026-10-11, `codex/test-suite-acceleration`).**
+  Implement focused isolated runtime profiles, split exhaustive rendering/history/mutation audits
+  from live regressions, add explicit risk-based queued lanes and bounded GitHub verification,
+  Independent Sol adversarial review/adjudication and the second Luna remediation batch are complete.
+  Source and targeted verification are complete: warm feedback23s, full browser roster84.45s.
+  Full audit/coverage certification and hosted promotion evidence remain tracked in
+  `docs/test-suite-acceleration-punchlist.md`; the five-minute audit experiment timed out.
+  Preserve regression sensitivity, process ownership and full-scope coverage thresholds.
+  Runtime goals are hypotheses until measured; promotion evidence must not be invented.
 - **DONE — shared local test queue (2026-10-04, branch `chore/test-queue`).** All heavy
   `npm run test:*` scripts route through `scripts/test-queue.js` (machine-wide lock, FIFO
   waiters, PID + start-time identity, safe stale recovery, subprocess-tree cleanup, nested
@@ -2090,3 +2099,5 @@ questions. Do not start these without a decision:
     10 ms over 500 paths; the stock flowfield has 1,165), and a rung *index* is incoherent for a
     scalar serialized into `.vectura` files and presets — reseed the layer and rung 7 means something
     else, or nothing.
+
+- Test acceleration publication:PR#90 is open. Complete local test:ci and hosted unit/integration/browser/feedback/visual/perf passed. Fixed the exhaustive dispatch audit missing its cached ladder reference;2 focused audit files/8 tests passed102.33s. Waiting for corrected full coverage and aggregate gate before merge. Full PR runtime remains far above target.

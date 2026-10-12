@@ -6,6 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Testing workflow
+- **Bounded feedback and retained audits.** Add isolated runtime profiles and immutable
+  script caching, an explicit critical-feedback roster, a single complete browser invocation,
+  a physical exhaustive-proof audit lane, and fail-closed shadow routing/promotion evidence.
+  Pre-push runs bounded feedback; broad GitHub jobs and full coverage thresholds remain.
+  Local worker limits bound memory. Independent review repairs and verification limits live
+  in `docs/test-suite-acceleration-punchlist.md`; hosted speed targets are not yet certified.
+
+
 ### Fixed (tests)
 - **U2 byte-identity hashes are enforced on Node 20 only.** On an arm64 Mac running Node 25, the
   sphere/hatch/mezzoRegion golden hashed `8ee322d6` instead of `c9eba689` and blocked every push. The
