@@ -16215,15 +16215,35 @@
       if (!this.isCoarseHandles()) return 0;
       const layers = this.getSelectedLayers();
       if (!layers.length) return 0;
+      // The context bar asks on every animation frame. A selection-bounds walk on a heavy document costs
+      // tens of ms, so cache until a draw, the view, the selection or the temp transform changes.
+      const ids = layers.map((l) => l.id).join(',');
+      const c = this._clearanceCache;
+      if (c && c.seq === (this._drawSeq || 0) && c.ids === ids && c.scale === this.scale
+        && c.ox === this.offsetX && c.oy === this.offsetY && c.temp === this.tempTransform) return c.value;
       const bounds = this.getSelectionBounds(layers, this.tempTransform);
-      const sb = this.getSelectionScreenBounds();
-      if (!bounds || !bounds.corners || !sb) return 0;
-      let beyond = 0;
-      this.getHandleHitPoints(bounds, 'touch').forEach((h) => {
-        const p = this.worldToScreen(h.x, h.y);
-        beyond = Math.max(beyond, p.y - sb.maxY, sb.minY - p.y);
-      });
-      return beyond + window.Vectura.hitTolerance('resize', 'touch');
+      let value = 0;
+      if (bounds && bounds.corners) {
+        // Screen bounds of the same corners (as getSelectionScreenBounds computes), without a second walk.
+        let minY = Infinity;
+        let maxY = -Infinity;
+        Object.values(bounds.corners).forEach((pt) => {
+          const s = this.worldToScreen(pt.x, pt.y);
+          minY = Math.min(minY, s.y); maxY = Math.max(maxY, s.y);
+        });
+        if (Number.isFinite(minY)) {
+          let beyond = 0;
+          this.getHandleHitPoints(bounds, 'touch').forEach((h) => {
+            const p = this.worldToScreen(h.x, h.y);
+            beyond = Math.max(beyond, p.y - maxY, minY - p.y);
+          });
+          value = beyond + window.Vectura.hitTolerance('resize', 'touch');
+        }
+      }
+      this._clearanceCache = {
+        seq: this._drawSeq || 0, ids, scale: this.scale, ox: this.offsetX, oy: this.offsetY, temp: this.tempTransform, value,
+      };
+      return value;
     }
 
     // Drop the cached affordance and repaint (touch only) after docked chrome moved.

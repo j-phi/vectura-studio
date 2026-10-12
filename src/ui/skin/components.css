@@ -15635,3 +15635,13 @@ body.touch-ui #viewport-container:has(.ctxbar.ctxbar--pen-draft) .canvas-hud {
   body.phone-layout.phone-short #touch-modifier-bar { grid-template-columns: repeat(2, 46px); column-gap: 2px; }
 }
 /* === END TUX-045 / TUX-020 === */
+
+/* === TUX-008 / TUX-011: WebKit drawer content restyle (integration fix) ===
+ * A closed tablet pane is `visibility: hidden` (TUX-011) and its content inherits that. When the drawer
+ * opens, WebKit does not always re-resolve the inherited value on children whose style was computed while
+ * the pane was hidden (for example the Generator sections rebuilt after a layer load): getComputedStyle
+ * keeps `hidden` on `.left-panel-sections` and most `.left-panel-section` rows of an open drawer. This
+ * rule names the open drawer's direct body children, so the class change re-resolves them. Grandchildren
+ * then inherit `visible`. No direct `.pane-body` child relies on `visibility: hidden` (they use display). */
+body.tablet-layout.touch-ui .pane.pane-drawer-open .pane-body > * { visibility: visible; }
+/* === END TUX-008 / TUX-011 WebKit drawer content restyle === */

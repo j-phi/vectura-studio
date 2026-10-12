@@ -53,7 +53,7 @@
     {"project":"webkit-iphone-landscape","journey":"J10","failsAt":"j10.menu-file","reason":"JRN-006 not found: locator('[data-menu-row=\"file\"]')"},
     {"project":"webkit-iphone-landscape","journey":"J11","failsAt":"j11.algo-drill","reason":"JRN-007 algorithm submenu: not visible"},
     {"project":"webkit-iphone-portrait","journey":"J1","failsAt":"j1.algo-drill","reason":"JRN-007 algorithm submenu: not visible"},
-    {"project":"webkit-iphone-portrait","journey":"J2","failsAt":"j2.open-layers","reason":"JRN-001 j2.open-layers: exceeded the 20000 ms step budget"},
+    {"project":"webkit-iphone-portrait","journey":"J2","failsAt":"j2.rename-open","reason":"JRN-010 the rename input never appeared within 6000 ms of the double-tap"},
     {"project":"webkit-iphone-portrait","journey":"J5","failsAt":"j5.shape-menu","reason":"JRN-008 the shape variant menu closed or never opened"},
     {"project":"webkit-iphone-portrait","journey":"J6","failsAt":"j6.select-second","reason":"selection does not match (1 ids)"},
     {"project":"webkit-iphone-portrait","journey":"J7","failsAt":"j7.font-open","reason":"j7.font-open: exceeded the 5000 ms step budget"},
