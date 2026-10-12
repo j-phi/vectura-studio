@@ -193,6 +193,28 @@ const checkHitAreas = async (page, id) => {
 
 const summarize = (rows, pick) => rows.filter(pick).map((r) => `${r.name}[d${r.depth} ${r.kind}${r.active ? ' active' : ''}] w=${r.nameW} font=${r.nameFont} hit=${r.nameHit} ovf=${JSON.stringify(r.overflow)}`);
 
+// TUX-012: a menu taller than the viewport (330 px iPhone landscape in browser chrome) scrolls inside itself.
+// A finger swipes the menu until the entry sits inside it, then taps. Fails when the menu does not scroll.
+const tapMenuEntry = async (page, key) => {
+  const entry = page.locator(`.menu-dropdown.open .menu-entry[data-key="${key}"]`);
+  await entry.waitFor({ timeout: 5000 });
+  for (let i = 0; i < 6; i += 1) {
+    const g = await page.evaluate((k) => {
+      const m = document.querySelector('.menu-dropdown.open'); const e = m.querySelector(`.menu-entry[data-key="${k}"]`);
+      const mr = m.getBoundingClientRect(); const er = e.getBoundingClientRect();
+      return { mt: mr.top, mb: mr.bottom, ml: mr.left, mw: mr.width, et: er.top, eb: er.bottom, oy: getComputedStyle(m).overflowY, sh: m.scrollHeight, ch: m.clientHeight };
+    }, key);
+    if (g.et >= g.mt - 0.5 && g.eb <= g.mb + 0.5) break;
+    expect(['auto', 'scroll'], 'a menu taller than the screen must scroll inside itself').toContain(g.oy);
+    expect(g.sh, 'the menu has scrollable overflow').toBeGreaterThan(g.ch);
+    const x = g.ml + g.mw / 2;
+    const down = g.et > g.mb;
+    await touch.drag(page, { x, y: down ? g.mb - 20 : g.mt + 20 }, { x, y: down ? g.mt + 20 : g.mb - 20 }, { steps: 8, stepDelayMs: 12 });
+    await page.waitForTimeout(250);
+  }
+  await touch.tap(page, entry);
+};
+
 test.describe('TUX-012 layers panel on touch', () => {
   test('names and actions fit', async ({ page }, testInfo) => {
     await setup(page, testInfo);
@@ -325,8 +347,7 @@ test.describe('TUX-012 layers panel on touch', () => {
     const grpMore = page.locator(`#layer-list [data-lvl-id="${grp.id}"] .lvl-more`).first();
     await grpMore.scrollIntoViewIfNeeded();
     await touch.tap(page, grpMore);
-    await page.locator('.menu-dropdown.open .menu-entry[data-key="ungroup"]').waitFor({ timeout: 5000 });
-    await touch.tap(page, page.locator('.menu-dropdown.open .menu-entry[data-key="ungroup"]'));
+    await tapMenuEntry(page, 'ungroup');
     await page.waitForTimeout(120);
     const after = await page.evaluate((g) => ({
       gone: !window.app.engine.getLayerById(g.id),
@@ -344,8 +365,7 @@ test.describe('TUX-012 layers panel on touch', () => {
     const tgtMore = page.locator(`#layer-list [data-lvl-id="${target.id}"] .lvl-more`).first();
     await tgtMore.scrollIntoViewIfNeeded();
     await touch.tap(page, tgtMore);
-    await page.locator('.menu-dropdown.open .menu-entry[data-key="mask-toggle"]').waitFor({ timeout: 5000 });
-    await touch.tap(page, page.locator('.menu-dropdown.open .menu-entry[data-key="mask-toggle"]'));
+    await tapMenuEntry(page, 'mask-toggle');
     await page.waitForTimeout(120);
     expect(await page.evaluate((id) => window.app.engine.getLayerById(id).mask.enabled, target.id)).toBe(true);
   });
