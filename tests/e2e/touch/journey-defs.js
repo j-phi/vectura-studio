@@ -733,12 +733,8 @@ JOURNEYS.push({
       id: 'j7.font-pick', action: 'tap', route: 'tap another font', selector: '.vtp-fp-opt:not(.sel)',
       expects: 'font param changed; history +1', expect: { history: 1 },
       run: async (c) => {
-        // On short screens the list opens below the fold or under the trigger: try each other option; none tappable is a product layout result.
-        let landed = false;
-        for (const o of await L(c, '.vtp-fp-opt:not(.sel)').all()) {
-          try { await P.fingerTap(c.page, o); landed = true; break; } catch (e) { /* covered or off-screen: try the next option */ }
-        }
-        if (!landed) throw new Error('font list: no option can be tapped (all covered or off-screen)');
+        // The intended font is the first unselected option. The popover keeps it on screen on every viewport (TUX-032).
+        await P.fingerTap(c.page, L(c, '.vtp-fp-opt:not(.sel)').first());
       },
       post: (c, pre, now) => { if (now.activeParams.font === pre.activeParams.font) throw new Error('the font did not change'); },
     },

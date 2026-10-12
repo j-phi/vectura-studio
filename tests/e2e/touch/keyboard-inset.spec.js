@@ -1,5 +1,8 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
 const touch = require('../helpers/touch');
+const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch2/TUX-032';
 const h = require('../helpers/text-panel-setup');
 
 // TUX-032: fields and sheets stay above the on-screen keyboard; the font search does not
@@ -38,6 +41,36 @@ test.describe('TUX-032 keyboard inset', () => {
     }, SEARCH);
     expect(m.searchBottom, `search bottom ${m.searchBottom} vs visible line ${m.ih - K}`).toBeLessThanOrEqual(m.ih - K);
     expect(m.optTop, `first row top ${m.optTop} vs visible line ${m.ih - K}`).toBeLessThan(m.ih - K);
+  });
+
+  // TUX-032 batch 2 (review finding): the font popover must stay fully on screen and its options must be
+  // tappable on every touch viewport, with no keyboard open (iPhone landscape 874x402 was the failing one).
+  test('(g) font popover stays on screen and its first option is tappable', async ({ page }, testInfo) => {
+    await h.addDefaultTextLayer(page, touch);
+    const trigger = page.locator('.vtp-fontpick-trigger');
+    await trigger.scrollIntoViewIfNeeded();
+    await touch.tap(page, trigger);
+    await page.waitForSelector('.vtp-fp-pop.open .vtp-fp-opt', { state: 'attached' });
+    await page.waitForTimeout(250);
+    const m = await page.evaluate(() => {
+      const pop = document.querySelector('.vtp-fp-pop');
+      const r = pop.getBoundingClientRect();
+      const list = pop.querySelector('.vtp-fp-list').getBoundingClientRect();
+      const opts = [...pop.querySelectorAll('.vtp-fp-opt')];
+      const vis = opts.filter((o) => { const b = o.getBoundingClientRect(); return b.bottom <= list.bottom + 1 && b.top >= list.top - 1 && b.height > 0; });
+      const unsel = opts.find((o) => !o.classList.contains('sel') && vis.includes(o));
+      let hit = null;
+      if (unsel) { const b = unsel.getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); hit = !!e && unsel.contains(e); }
+      return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, listH: list.height, visibleOpts: vis.length, hit };
+    });
+    expect(m.l, `popover rect ${JSON.stringify(m)}`).toBeGreaterThanOrEqual(0);
+    expect(m.t, `popover top ${m.t}`).toBeGreaterThanOrEqual(0);
+    expect(m.r, `popover right ${m.r} vs ${m.w}`).toBeLessThanOrEqual(m.w);
+    expect(m.b, `popover bottom ${m.b} vs ${m.h}`).toBeLessThanOrEqual(m.h);
+    expect(m.visibleOpts, `at least 2 option rows visible in the list (list height ${m.listH})`).toBeGreaterThanOrEqual(2);
+    expect(m.hit, 'an unselected option is the hit target at its centre').toBe(true);
+    await fs.promises.mkdir(EVID, { recursive: true }).catch(() => {});
+    await page.screenshot({ path: path.join(EVID, `font-popover-${testInfo.project.name}.png`) }).catch(() => {});
   });
 
   test('(b) lower-pane numeric field rises above the keyboard', async ({ page }) => {

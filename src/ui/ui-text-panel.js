@@ -1280,6 +1280,7 @@
     }
     // Visible height = layout height minus the on-screen keyboard (Vectura.KeyboardInset, TUX-032).
     const kbInset = () => { const KI = window.Vectura && window.Vectura.KeyboardInset; return KI ? (KI.inset || 0) : 0; };
+    const POP_MIN_ROOM = 240;   // px of list-side room below which positionPop() pins the popover to the viewport
     function positionPop() {
       const r = taskbarAnchorRect || fpTrigger.getBoundingClientRect();
       const inset = kbInset();
@@ -1292,9 +1293,15 @@
       const flip = spaceBelow < 240 && spaceAbove > spaceBelow;
       // Search box + the first list row must stay above the keyboard: cap the popover to the
       // room on its side (the list inside scrolls) and never let its far edge pass the inset.
-      const maxH = Math.min(Math.max(150, flip ? spaceAbove : spaceBelow), vh - 16);
+      // TUX-032 (batch 2): on a short viewport (iPhone landscape, 402/330 px) neither side of the trigger has
+      // room for a usable list. Pin the popover to the visible viewport instead (it may cover the trigger;
+      // an outside tap or Escape closes it) so the search and several rows stay on screen.
+      const pinned = Math.max(spaceBelow, spaceAbove) < POP_MIN_ROOM;
+      const maxH = pinned ? vh - 16 : Math.min(Math.max(150, flip ? spaceAbove : spaceBelow), vh - 16);
       pop.style.maxHeight = `${maxH}px`;
-      if (flip) {
+      if (pinned) {
+        pop.style.bottom = ''; pop.style.top = '8px';
+      } else if (flip) {
         const edge = Math.min(r.top - 6, vh - 8);
         pop.style.top = ''; pop.style.bottom = `${window.innerHeight - edge}px`;
       } else {
