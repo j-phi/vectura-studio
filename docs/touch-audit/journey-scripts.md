@@ -123,15 +123,14 @@ Fixture: `journey-basic`.
 |---|---|---|---|---|---|
 | `boot` | none | open the app, load the fixture | none | app ready; scale > 0; 0 page errors; invariants hold | |
 | `j6.open-layers` | tap | tap the Layers drawer control (docked on touch-wide: nothing to tap) | `SELECTORS.paneToggle.right` | right pane open; no data change. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-001 |
+| `j6.select-source` | tap | tap the oval row (mask source) | `SELECTORS.cardName` | selected = [oval]. layerCount +0; historyLen +0; redoLen +0; selectedIds checked |  |
+| `j6.multi-latch` | tap | tap the Multi-select modifier (one-shot latch, TUX-045) | `SELECTORS.modifier('multiSelect')` | the modifier shows as latched. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-016 |
+| `j6.select-second` | tap | tap the spiral row | `SELECTORS.cardName` | selected = oval and spiral. layerCount +0; historyLen +0; redoLen +0; selectedIds checked |  |
+| `j6.apply-mask` | tap | tap the visible mask control in the layer status bar | `SELECTORS.maskButton` | the spiral is a child of the oval; history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds any | JRN-006 |
 | `j6.add-menu` | tap | Layers pane > Add Layer (+) | `SELECTORS.addLayer` | add menu visible; layers +0; history +0. layerCount +0; historyLen +0; redoLen +0; selectedIds same |  |
 | `j6.add-mirror` | tap | Add Layer > Mirror Modifier Group | `SELECTORS.addItem('mirror')` | layers +1 (the modifier group); history +1; selected = the group. layerCount +1; historyLen +1; redoLen +0; selectedIds checked | JRN-006 |
 | `j6.open-generator` | tap | tap the Generator drawer control (docked on touch-wide: nothing to tap) | `SELECTORS.paneToggle.left` | left pane open; generator trigger visible. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-001 |
 | `j6.angle` | drag | drag the mirror Angle slider thumb | `SELECTORS.slider nth(0)` | angle slider value changed; history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds same | JRN-013 |
-| `j6.reopen-layers` | tap | tap the Layers drawer control (docked on touch-wide: nothing to tap) | `SELECTORS.paneToggle.right` | right pane open; no data change. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-001 |
-| `j6.select-source` | tap | tap the oval row (mask source) | `SELECTORS.cardName` | selected = [oval]. layerCount +0; historyLen +0; redoLen +0; selectedIds checked |  |
-| `j6.multi-latch` | tap | tap the Multi-select modifier (one-shot latch, TUX-045) | `SELECTORS.modifier('shift')` | the modifier shows as latched. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-016 |
-| `j6.select-second` | tap | tap the spiral row | `SELECTORS.cardName` | selected = oval and spiral. layerCount +0; historyLen +0; redoLen +0; selectedIds checked |  |
-| `j6.apply-mask` | tap | tap the visible mask control in the layer status bar | `SELECTORS.maskButton` | the spiral is a child of the oval; history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds any | JRN-006 |
 
 ## J7 Add text, type a word with the soft keyboard, change font and size
 
