@@ -9,6 +9,7 @@ const touch = require('../helpers/touch');
 // Desktop (fine pointer, any width) keeps the top-right placement. #canvas-toast is out of scope.
 const CHROME = ['#app-header', '#tool-bar', '#touch-modifier-bar', '#status-bar', '#bottom-pane:not(.bottom-pane-collapsed)'];
 const EVID = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-048';
+const BATCH2_EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch2/TUX-010';
 const SHORT = 'Added Spiral layer';
 const LONG = 'Added a Flowfield layer to the document with the default preset and the current pen assignment';
 const TOL = 0.5;
@@ -163,6 +164,68 @@ test.describe('touch toasts', () => {
     expect(r.t).toBeGreaterThanOrEqual(vv.t + 0.5 * vv.h - TOL);
     for (const c of m.chrome) if (c.l < r.r && c.r > r.l) expect(c.t < r.b && c.b > r.t, `overlaps ${c.id}`).toBe(false);
   });
+});
+
+// TUX-010/011 + TUX-037/048 (batch 2): a plain toast never covers a primary control. Contract recorded in
+// docs/touch-audit/changelog-fragments/TUX-037.md: the TUX-037 "plain toast stays top-right" rule is superseded on
+// touch by TUX-048 (bottom-centre above measured bottom chrome); fine pointers keep top-right (desktop parity below).
+test.describe('plain toast vs primary controls', () => {
+  const CONTROLS = ['#btn-add-layer', '#layer-search-input', '#layer-filter-btn', '.tool-btn[data-tool="scissor"]', '#tool-overflow-btn'];
+  test.beforeEach(async ({ page }) => { await boot(page); });
+  const PANE_OPENERS = ['#btn-header-pane-right', '#btn-pane-toggle-right', '#btn-mobile-pane-right'];
+
+  const probe = (page) => page.evaluate((sels) => {
+    const t = document.querySelector('#vectura-toast-host .vectura-toast').getBoundingClientRect();
+    const vp = { w: window.innerWidth, h: window.innerHeight };
+    const out = [];
+    for (const s of sels) {
+      const e = document.querySelector(s);
+      if (!e) continue;
+      const cs = getComputedStyle(e);
+      const r = e.getBoundingClientRect();
+      const onScreen = cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 4 && r.height > 4
+        && r.left >= 0 && r.top >= 0 && r.right <= vp.w + 1 && r.bottom <= vp.h + 1 && !e.closest('.rail-overflowed, [inert]');
+      if (!onScreen) continue;
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const toastEl = document.querySelector('#vectura-toast-host .vectura-toast');
+      out.push({
+        sel: s,
+        overlap: t.left < r.right && t.right > r.left && t.top < r.bottom && t.bottom > r.top,
+        underToast: !!hit && toastEl.contains(hit),
+        toast: { l: Math.round(t.left), t: Math.round(t.top), r: Math.round(t.right), b: Math.round(t.bottom) },
+        rect: { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom) },
+      });
+    }
+    return out;
+  }, CONTROLS);
+
+  for (const [name, msg] of [['short', SHORT], ['long', LONG]]) {
+    test(`controls stay uncovered (${name}, panes as launched and with the Layers pane revealed)`, async ({ page }, testInfo) => {
+      await withLayer(page);
+      const seen = new Set();
+      const check = async (label) => {
+        await clear(page);
+        await fire(page, msg, { onClick: undefined });
+        const rows = await probe(page);
+        for (const r of rows) {
+          seen.add(r.sel);
+          expect(r.overlap, `${label}: ${r.sel} ${JSON.stringify(r.rect)} overlaps toast ${JSON.stringify(r.toast)}`).toBe(false);
+          expect(r.underToast, `${label}: toast is the hit target over ${r.sel}`).toBe(false);
+        }
+      };
+      await check('launch');
+      for (const id of PANE_OPENERS) {
+        const btn = page.locator(id);
+        if (await btn.isVisible().catch(() => false)) { await touch.tap(page, btn); await page.waitForTimeout(450); break; }
+      }
+      await check('layers pane revealed');
+      expect(seen.has('#btn-add-layer') || seen.has('#layer-search-input'), 'Layers pane controls were measured at least once').toBe(true);
+      if (name === 'short') {
+        await fs.promises.mkdir(BATCH2_EVID, { recursive: true }).catch(() => {});
+        await page.screenshot({ path: path.join(BATCH2_EVID, `${testInfo.project.name}-toast-controls.png`) }).catch(() => {});
+      }
+    });
+  }
 });
 
 test.describe('desktop parity (fine pointer)', () => {
