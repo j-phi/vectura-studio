@@ -622,27 +622,8 @@ JOURNEYS.push({
   id: 'J6', title: 'Mirror modifier: add, change angle, apply a mask', fixture: 'journey-basic',
   steps: [
     stepOpenLayers('j6'),
-    stepAddMenu('j6'),
-    {
-      id: 'j6.add-mirror', action: 'tap', route: 'Add Layer > Mirror Modifier Group', selector: 'SELECTORS.addItem(\'mirror\')',
-      expects: 'layers +1 (the modifier group); history +1; selected = the group', jrn: 'JRN-006',
-      expect: { layers: 1, history: 1, selected: (now, pre) => newIds(pre, now).length === 1 && sameSet(now.selectedIds, newIds(pre, now)) },
-      run: (c) => P.fingerTap(c.page, L(c, S.addItem('mirror'))),
-      post: (c, pre, now) => { if (now.activeType !== 'group') throw new Error(`active layer type is ${now.activeType}`); },
-    },
-    stepOpenGenerator('j6'),
-    {
-      id: 'j6.angle', action: 'drag', route: 'drag the mirror Angle slider thumb', selector: 'SELECTORS.slider nth(0)',
-      expects: 'angle slider value changed; history +1', jrn: 'JRN-013', expect: { history: 1 },
-      run: async (c) => {
-        const sl = L(c, S.slider).first();
-        await P.fingerScrollInto(c.page, sl, L(c, '#left-panel-content'));
-        c.vars.slider = await P.fingerSlider(c.page, sl, 0.25);
-      },
-      post: (c) => { if (c.vars.slider.before === c.vars.slider.after) throw new Error('the angle value did not change'); },
-    },
-    // Only one drawer is open at a time (TUX-008): the Generator drawer replaced Layers, so reopen Layers by finger.
-    { ...stepOpenLayers('j6'), id: 'j6.reopen-layers' },
+    // The mask source is the TOP row of the selection (Layers status bar), so the mask is applied first, while the oval is above the spiral.
+    // The Mirror modifier then wraps the active layer (TUX-045 journey order).
     {
       id: 'j6.select-source', action: 'tap', route: 'tap the oval row (mask source)', selector: 'SELECTORS.cardName',
       expects: 'selected = [oval]', expect: { selected: (now) => now.selectedIds.length === 1 && now.layers.find((l) => l.id === now.selectedIds[0]).type === 'shape' },
@@ -679,6 +660,25 @@ JOURNEYS.push({
       expects: 'the spiral is a child of the oval; history +1', jrn: 'JRN-006', expect: { history: 1, selected: 'any' },
       run: (c) => P.fingerTap(c.page, L(c, S.maskButton)),
       post: (c, pre, now) => { if (now.layers.find((l) => l.id === c.vars.child).parentId !== c.vars.src) throw new Error('the mask was not applied'); },
+    },
+    stepAddMenu('j6'),
+    {
+      id: 'j6.add-mirror', action: 'tap', route: 'Add Layer > Mirror Modifier Group', selector: 'SELECTORS.addItem(\'mirror\')',
+      expects: 'layers +1 (the modifier group); history +1; selected = the group', jrn: 'JRN-006',
+      expect: { layers: 1, history: 1, selected: (now, pre) => newIds(pre, now).length === 1 && sameSet(now.selectedIds, newIds(pre, now)) },
+      run: (c) => P.fingerTap(c.page, L(c, S.addItem('mirror'))),
+      post: (c, pre, now) => { if (now.activeType !== 'group') throw new Error(`active layer type is ${now.activeType}`); },
+    },
+    stepOpenGenerator('j6'),
+    {
+      id: 'j6.angle', action: 'drag', route: 'drag the mirror Angle slider thumb', selector: 'SELECTORS.slider nth(0)',
+      expects: 'angle slider value changed; history +1', jrn: 'JRN-013', expect: { history: 1 },
+      run: async (c) => {
+        const sl = L(c, S.slider).first();
+        await P.fingerScrollInto(c.page, sl, L(c, '#left-panel-content'));
+        c.vars.slider = await P.fingerSlider(c.page, sl, 0.25);
+      },
+      post: (c) => { if (c.vars.slider.before === c.vars.slider.after) throw new Error('the angle value did not change'); },
     },
   ],
 });
