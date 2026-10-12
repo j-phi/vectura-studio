@@ -16,7 +16,6 @@
 'use strict';
 
 const P = require('./pages');
-const touchHelper = require('../helpers/touch');
 
 
 const S = P.SELECTORS;
@@ -152,25 +151,7 @@ async function visibleInside(c, sel) {
 // The layer list scrolls inside itself; on short screens (iPhone landscape: a 100 px list) a row can sit below its
 // fold, under the draw-order bar. A finger scrolls the list first. No-op when the row is already in view.
 
-// The multi-select command strip pans sideways when it is wider than the pane (TUX-043: the docked 200 px iPad landscape
-// pane, phones). A finger pans it until the button is on screen. WebKit has no native pan for synthetic touches, so
-// there it uses the sanctioned programmatic scroll; every tap after it stays a guarded finger tap.
-const stripIntoView = async (c, btn) => {
-  const page = c.page;
-  const onScreen = async () => {
-    const b = await btn.boundingBox();
-    const pane = await L(c, '#right-pane').boundingBox();
-    return !!b && b.x >= pane.x && b.x + b.width <= Math.min(pane.x + pane.width, c.dev.width) - 2;
-  };
-  for (let i = 0; i < 6 && !(await onScreen()); i += 1) {
-    if (!touchHelper.engineSupports(page, 'nativeDefaultActions')) { await btn.evaluate((el) => el.scrollIntoView({ inline: 'center', block: 'nearest' })); await P.sleep(150); continue; }
-    const bar = L(c, '#layer-status-bar');
-    const bb = await bar.boundingBox();
-    const y = bb.y + bb.height / 2;
-    await P.fingerDrag(page, { x: bb.x + bb.width * 0.75, y, within: bar }, { dx: -Math.min(120, bb.width * 0.5), dy: 0 }, { steps: 10, stepDelayMs: 12 });
-    await P.sleep(300);
-  }
-};
+const stripIntoView = (c, btn) => P.fingerPanStripIntoView(c.page, btn, L(c, '#right-pane'), L(c, '#layer-status-bar'));
 
 const rowIntoView = (c, row) => P.fingerScrollInto(c.page, row, L(c, '#layer-list'), { topInset: 0 });
 
