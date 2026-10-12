@@ -22,11 +22,17 @@ describe('legacy documents keep their look under a monoline law (Density pin)', 
   beforeAll(async () => { runtime = await loadVecturaRuntime({ sceneSeedMode: 'seeded' }); V = runtime.window.Vectura; });
   afterAll(() => runtime.cleanup());
 
+  // Seeds are PINNED. A new layer draws `Math.random()` seeds and a seeded doc
+  // reads them, so two unpinned builds differ by seed alone: a "Density 85 vs 50"
+  // comparison then passes on the seed difference even where Density is inert,
+  // and fails when two seeds happen to render alike (~0.4% per dutyConst pair).
   const build = (prim, toneLaw, density) => {
     const engine = new V.VectorEngine();
     const gid = engine.addSceneTree();
     const oid = engine.addObjectToScene(gid, prim);
+    engine.getLayerById(gid).params.seed = 4242;
     const child = engine.getLayerById(oid);
+    child.params.seed = 1717;
     child.params.style = { penId: null, mapper: 'hatch', params: { toneLaw, fillDensity: density } };
     return { engine, gid, oid };
   };
@@ -41,18 +47,22 @@ describe('legacy documents keep their look under a monoline law (Density pin)', 
     return { e2, g2, hash: hashPaths(e2.getRenderablePaths(g2)) };
   };
 
-  const CASES = [['sphere', 'etfKang'], ['sphere', 'mazeFill'], ['box', 'turingStripe'], ['sphere', 'dutyConst']];
+  // Each case carries a Density the law is LIVE at for this primitive. Laws that
+  // already sit at the plot floor here (turingStripe on the box, dutyConst's
+  // floor-pitched clearance) cannot get denser, so 85 renders exactly as 50 —
+  // by design (U4b); only a sparser setting moves them.
+  const CASES = [['sphere', 'etfKang', 85], ['sphere', 'mazeFill', 85], ['box', 'turingStripe', 20], ['sphere', 'dutyConst', 20]];
 
-  test.each(CASES)('%s + %s: a legacy doc at Density 85 renders as Density 50', (prim, law) => {
-    const at85 = reload(build(prim, law, 85), { legacy: true });
+  test.each(CASES)('%s + %s: a legacy doc at Density %i renders as Density 50', (prim, law, d) => {
+    const atD = reload(build(prim, law, d), { legacy: true });
     const at50 = reload(build(prim, law, 50), { legacy: true });
-    expect(at85.hash).toBe(at50.hash);
+    expect(atD.hash).toBe(at50.hash);
   }, 120000);
 
-  test.each(CASES)('%s + %s: a NEW (seeded) doc at Density 85 still uses Density', (prim, law) => {
-    const at85 = reload(build(prim, law, 85), { legacy: false });
+  test.each(CASES)('%s + %s: a NEW (seeded) doc at Density %i still uses Density', (prim, law, d) => {
+    const atD = reload(build(prim, law, d), { legacy: false });
     const at50 = reload(build(prim, law, 50), { legacy: false });
-    expect(at85.hash).not.toBe(at50.hash);
+    expect(atD.hash).not.toBe(at50.hash);
   }, 120000);
 
   test('editing Density on a migrated legacy bag releases the pin', () => {
