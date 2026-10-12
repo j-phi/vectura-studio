@@ -204,11 +204,32 @@
       const item = e.target.closest?.('.top-menu-item');
       if (item && !item.classList.contains('top-menu-back')) setOpen(false);
     }, true);
+    // An outside tap only closes the sheet: it is swallowed so it never reaches the canvas
+    // (a Pen tap would add an anchor). The rest of that gesture (move/up/click) is swallowed too.
+    let swallowId = null;
+    let swallowUntil = 0; // compat mouse/click events that follow the swallowed pointerup
+    const stop = (e) => { e.stopImmediatePropagation(); e.stopPropagation(); if (e.cancelable) e.preventDefault(); };
     doc.addEventListener('pointerdown', (e) => {
       if (!body.classList.contains('phone-menu-open')) return;
       if (bar.contains(e.target) || burger.contains(e.target)) return;
       setOpen(false);
+      swallowId = e.pointerId;
+      swallowUntil = Date.now() + 700;
+      stop(e);
     }, true);
+    ['pointermove', 'pointerup', 'pointercancel'].forEach((type) => {
+      doc.addEventListener(type, (e) => {
+        if (swallowId === null || e.pointerId !== swallowId) return;
+        if (type !== 'pointermove') { swallowId = null; swallowUntil = Date.now() + 500; }
+        stop(e);
+      }, true);
+    });
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'mousedown', 'mouseup', 'click'].forEach((type) => {
+      doc.addEventListener(type, (e) => {
+        if (swallowId === null && Date.now() > swallowUntil) return;
+        stop(e);
+      }, { capture: true, passive: false });
+    });
     doc.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && body.classList.contains('phone-menu-open') && !ui.openTopMenuTrigger) setOpen(false);
     });

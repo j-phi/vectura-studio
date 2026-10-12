@@ -47,6 +47,45 @@ test.describe('TUX-001 closing round', () => {
     }
   });
 
+  test('TUX-001 outside tap closes the sheet and never reaches the canvas (Pen anchor)', async ({ page }, testInfo) => {
+    phoneOnly(testInfo);
+    await gotoApp(page);
+    await page.evaluate(() => {
+      window.app.pushHistory(); window.app.engine.addLayer('spiral'); window.app.render();
+      window.app.ui.setActiveTool('pen'); window.app.ui.setPenMode('draw');
+    });
+    const sel0 = await page.evaluate(() => JSON.stringify([window.app.renderer.selectedLayerId, [...(window.app.renderer.selectedLayerIds || [])]]));
+    await touch.tap(page, page.locator('#btn-menu-hamburger'));
+    await expect(page.locator('body.phone-menu-open')).toHaveCount(1);
+    // a canvas point NOT covered by the open sheet
+    const pt = await page.evaluate(() => {
+      const b = document.querySelector('#main-canvas').getBoundingClientRect();
+      const bar = document.getElementById('top-menubar').getBoundingClientRect();
+      for (let fy = 0.95; fy > 0.05; fy -= 0.05) {
+        for (let fx = 0.1; fx < 0.95; fx += 0.1) {
+          const x = b.x + b.width * fx; const y = b.y + b.height * fy;
+          if (y <= bar.bottom + 4) continue;
+          const e = document.elementFromPoint(x, y);
+          if (e && e.id === 'main-canvas') return { x, y, barBottom: bar.bottom };
+        }
+      }
+      return null;
+    });
+    // iPhL-c (874x330): the sheet fills the viewport, so the only outside surface is the header wordmark.
+    const target = pt || await page.evaluate(() => { const r = document.querySelector('#app-header h1').getBoundingClientRect(); return { x: r.x + 4, y: r.y + r.height / 2 }; });
+    await touch.tap(page, target);
+    await expect(page.locator('body.phone-menu-open')).toHaveCount(0);
+    const st = await page.evaluate(() => ({
+      draft: window.app.renderer.penDraft, sel: JSON.stringify([window.app.renderer.selectedLayerId, [...(window.app.renderer.selectedLayerIds || [])]]),
+    }));
+    expect(st.draft, 'penDraft after the closing tap').toBeNull();
+    expect(st.sel).toBe(sel0);
+    if (!pt) return;
+    // the next tap, with the sheet closed, does reach the canvas (the swallow is one-shot)
+    await touch.tap(page, pt);
+    await expect.poll(() => page.evaluate(() => (window.app.renderer.penDraft ? window.app.renderer.penDraft.anchors.length : 0))).toBe(1);
+  });
+
   test('modifier bar phone presentation is icon plus short label (TUX-045)', async ({ page }, testInfo) => {
     phoneOnly(testInfo);
     await gotoApp(page);
