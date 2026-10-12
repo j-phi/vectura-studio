@@ -680,7 +680,8 @@ function summarizeState(rec) {
     wcag258Fail: n(reach.filter((i) => i.wcag258 === false)),
     iosZoom: n(reach.filter((i) => i.iosZoom)),
     covered: n(items.filter((i) => i.onscreen && i.hitState === 'covered')),
-    safeUnprotected: n(items.filter((i) => i.onscreen && i.safeUnprotected && i.safeUnprotected.length)),
+    // An allowlisted target (Jay 2026-10-12: the drawer backdrop only dismisses) is exempt from safe-area protection.
+    safeUnprotected: n(items.filter((i) => i.onscreen && !i.allow && i.safeUnprotected && i.safeUnprotected.length)),
     ghost: rec.ghost || 0,
     stranded: rec.stranded || 0,
     reachable: n(reach),

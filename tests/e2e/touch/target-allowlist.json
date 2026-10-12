@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "selector": "#mobile-pane-backdrop",
+    "reason": "Jay 2026-10-12: backdrop only dismisses",
+    "stateOnly": true
+  }
+]
