@@ -224,7 +224,7 @@
         stop(e);
       }, true);
     });
-    ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'mousedown', 'mouseup', 'click'].forEach((type) => {
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel', 'click'].forEach((type) => {
       doc.addEventListener(type, (e) => {
         if (swallowId === null && Date.now() > swallowUntil) return;
         stop(e);
