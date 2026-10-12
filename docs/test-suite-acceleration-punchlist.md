@@ -74,3 +74,6 @@ Queue and wrapper policy contracts:32passed in8.39s after restoring the compatib
 
 ## Publication workflow correction
 GitHub rejected the first workflow before creating jobs because `runner.temp` was used in job-level `env`. Timing paths now live in step-level `env`, where the runner context is available. YAML parsing and whitespace checks passed; hosted validation must confirm the correction. The complete local test:ci result above remains applicable because no test or product code changed.
+
+## Hosted audit repair
+First full hosted run:8860 tests passed and2 dispatch-audit assertions failed because the cached law roster omitted the ladder baseline. The cache now explicitly measures ladder; baseline geometry remains valid through the tests and is released during teardown. Both affected audits, including the known-defect mutation witness, passed locally:2 files/8 tests,102.33s. Coverage thresholds and the complete hosted gate remain unchanged; the new revision must pass hosted coverage before merge. Hosted feedback46s execution/102s with cold setup; unit39m02s and integration21m49s passed. The failed coverage job took99m50s; whole-PR latency goals are not achieved.

@@ -86,6 +86,8 @@ describe('Scene3D.SurfaceFill — per-call TONE_ALGO dispatch (46-way matrix)', 
   let hatchOpts; let hatchOptsAltLight; let crossOpts;
   let lawSamples;
   let crossSamples;
+  let baselineOutput;
+  const SAMPLE_LAWS = ['ladder', ...ALL_LAWS];
 
   // Captures the REAL opts bag `scene3d.js` builds for a chart-wrapped
   // primitive, by wrapping buildObject during one real `algo.generate` pass —
@@ -139,14 +141,19 @@ describe('Scene3D.SurfaceFill — per-call TONE_ALGO dispatch (46-way matrix)', 
     // scalar signatures and a path-presence bit, then release the result
     // immediately instead of walking the roster in three render loops.
     lawSamples = new Map();
-    ALL_LAWS.forEach((law) => {
+    SAMPLE_LAWS.forEach((law) => {
       const out = run(hatchOpts, law);
+      if (law === 'ladder') baselineOutput = out;
       lawSamples.set(law, { hasRealPath: (out || []).some((path) => path && path.length >= 2), signature: signature(out) });
     });
+    expect(lawSamples.get('ladder').hasRealPath).toBe(true);
     crossSamples = new Map();
     ['ladder', ...MONO_LAWS].forEach((law) => crossSamples.set(law, signature(run(crossOpts, law))));
   }, SLOW);
-  afterAll(() => runtime.cleanup());
+  afterAll(() => {
+    baselineOutput = null;
+    return runtime.cleanup();
+  });
 
   const run = (opts, toneLaw) => SF.buildObject(toneLaw === undefined ? opts : { ...opts, toneLaw });
   const totalPts = (paths) => (paths || []).reduce((acc, pp) => acc + (pp ? pp.length : 0), 0);
@@ -159,12 +166,10 @@ describe('Scene3D.SurfaceFill — per-call TONE_ALGO dispatch (46-way matrix)', 
   const signature = (paths) => ({ count: (paths || []).length, pts: totalPts(paths), len: Math.round(totalLen(paths) * 1000) / 1000 });
   const same = (a, b) => a.count === b.count && a.pts === b.pts && a.len === b.len;
 
-  test('1. baseline identity: unset, "ladder" and an unknown law all resolve to the same committed default', () => {
-    const a = run(hatchOpts);
-    const b = run(hatchOpts, 'ladder');
-    const c = run(hatchOpts, 'bogusName');
-    expect(a).toEqual(b);
-    expect(a).toEqual(c);
+  test('1. baseline identity: unset and unknown laws resolve to the cached committed default', () => {
+    expect(baselineOutput).toBeTruthy();
+    expect(run(hatchOpts)).toEqual(baselineOutput);
+    expect(run(hatchOpts, 'bogusName')).toEqual(baselineOutput);
   });
 
   test('2. every one of the 46 laws draws (non-null, at least one path with >= 2 points)', () => {

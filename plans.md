@@ -2098,3 +2098,5 @@ questions. Do not start these without a decision:
     10 ms over 500 paths; the stock flowfield has 1,165), and a rung *index* is incoherent for a
     scalar serialized into `.vectura` files and presets — reseed the layer and rung 7 means something
     else, or nothing.
+
+- Test acceleration publication:PR#90 is open. Complete local test:ci and hosted unit/integration/browser/feedback/visual/perf passed. Fixed the exhaustive dispatch audit missing its cached ladder reference;2 focused audit files/8 tests passed102.33s. Waiting for corrected full coverage and aggregate gate before merge. Full PR runtime remains far above target.
