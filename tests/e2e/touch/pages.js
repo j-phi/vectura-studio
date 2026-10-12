@@ -9,7 +9,8 @@
 //         iPhone portrait (544), WebKit does not (402), and elementFromPoint still resolves
 //         targets that sit off the screen.
 //     (b) document.elementFromPoint(centre) is the target or one of its descendants.
-//     (c) the target and its ancestors are visible (opacity > 0, visibility not hidden).
+//     (c) the target's OWN computed visibility is 'visible' (visibility inherits and a descendant may
+//         re-show itself, so a hidden ancestor proves nothing) and no ancestor has opacity 0.
 //
 // `readState` is the ONLY read the journeys may use. `loadFixture` is SETUP ONLY. The static scan
 // in journeys-static.spec.js enforces both (and every other forbidden API) by reading this file as text.
@@ -51,8 +52,10 @@ const SELECTORS = {
   addMenu: '#layer-add-menu',
   addItem: (kind) => `#layer-add-menu .lvl-add-item[data-add="${kind}"]`,
   algoParent: '#layer-add-menu .lvl-add-has-sub[data-add="algo-parent"]',
-  algoSubmenu: '#lvl-algo-submenu',
-  algoItem: (type) => `#lvl-algo-submenu .lvl-algo-sub-item[data-algo-type="${type}"]`,
+  // TUX-035: on touch the Algorithm Layer row drills down INSIDE the add menu (shortcuts.js enterDrill);
+  // #lvl-algo-submenu is the mouse-only hover fly-out and never opens for a finger.
+  algoSubmenu: '#layer-add-menu.is-drill .lvl-add-drill-list',
+  algoItem: (type) => `#layer-add-menu.is-drill .lvl-add-drill-list .lvl-algo-sub-item[data-algo-type="${type}"]`,
   layerCards: '#layer-list .lvl-card',
   layerCard: (id) => `#layer-list .lvl-card[data-lvl-id="${id}"]`,
   cardName: '.lvl-name',
@@ -62,12 +65,15 @@ const SELECTORS = {
   renameInput: '#layer-list .lvl-ren-inp',
   layerMenuEntry: '.lvl-ctx-menu.open .menu-entry',
   layerStatusBar: '#layer-status-bar',
+  layersTab: '#right-pane .right-pane-tab[data-tab="layers"]',
   maskButton: '#layer-status-bar .lvl-cb.mask-btn',
   // Touch modifier bar. TUX-045 relabels the buttons; the data attribute is the contract.
   modifier: (name) => `#touch-modifier-bar [data-touch-mod="${name}"]`,
   // Toolbar
   tool: (id) => `#tool-bar .tool-btn[data-tool="${id}"]`,
-  shapeVariant: (v) => `#tool-bar .tool-submenu[data-menu="shape"] .tool-sub-btn[data-shape="${v}"]`,
+  // toolbar.js initSubtoolMenu portals every tool sub-menu to <body> (position: fixed), so it is not under #tool-bar.
+  shapeMenu: '.tool-submenu[data-menu="shape"]',
+  shapeVariant: (v) => `.tool-submenu[data-menu="shape"] .tool-sub-btn[data-shape="${v}"]`,
   // Generator pane
   generatorTrigger: '#generator-module-trigger',
   slider: '#left-pane .ctrl-slider',
@@ -174,10 +180,12 @@ async function guardTarget(page, handle, pt, onScreenOnly = false) {
     if (screenOnly) return null;
     const hit = document.elementFromPoint(x, y);
     if (!hit || !(hit === el || el.contains(hit))) return `covered by ${name(hit)} (target ${name(el)})`;
+    // Visibility inherits, and a descendant can set visibility:visible again, so only the target's OWN
+    // computed value counts (the hit test above already rejects what the finger cannot reach).
+    if (getComputedStyle(el).visibility !== 'visible') return `invisible: visibility hidden on ${name(el)}`;
+    // Opacity does not inherit but composes: an ancestor at opacity 0 hides every descendant.
     for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
-      const cs = getComputedStyle(n);
-      if (cs.visibility === 'hidden') return `invisible: visibility hidden on ${name(n)}`;
-      if (parseFloat(cs.opacity) === 0) return `invisible: opacity 0 on ${name(n)}`;
+      if (parseFloat(getComputedStyle(n).opacity) === 0) return `invisible: opacity 0 on ${name(n)}`;
     }
     return null;
   }, [handle, pt.x, pt.y, { width: dev.width, height: dev.height }, onScreenOnly]);
@@ -209,13 +217,13 @@ async function fingerTap(page, target, opts = {}) {
   return r.pt;
 }
 
-// Two taps ~110 ms apart on the same point (the real double-tap path).
+// Two taps ~110 ms apart on the same point (the real double-tap path). Chromium stamps each touch with its
+// hardware time (helpers/touch.js doubleTap): CDP waits for the page to handle the first tap before it sends the
+// second, so without the stamp a busy main thread would read as a slow pair of taps that no real finger makes.
 async function fingerDoubleTap(page, target, opts = {}) {
   const r = await resolveTarget(page, target, opts);
   await assertLands(page, r.handle, r.pt, r.what);
-  await touch.tap(page, r.pt);
-  await sleep(opts.gapMs || 110);
-  await touch.tap(page, r.pt);
+  await touch.doubleTap(page, r.pt, { gapMs: opts.gapMs || 110 });
   return r.pt;
 }
 
@@ -234,7 +242,7 @@ async function fingerDrag(page, from, to, opts = {}) {
   // The end point must lie on the device screen: a finger cannot lift off beyond the glass.
   const endWhy = await guardTarget(page, r.handle, end, true);
   if (endWhy) throw new Error(`drag end: ${endWhy}`);
-  await touch.drag(page, r.pt, end, { steps: opts.steps || 10, holdMs: opts.holdMs || 0, stepDelayMs: opts.stepDelayMs || 0 });
+  await touch.drag(page, r.pt, end, { steps: opts.steps || 10, holdMs: opts.holdMs || 0, stepDelayMs: opts.stepDelayMs || 0, endHoldMs: opts.endHoldMs || 0 });
   return { from: r.pt, to: end };
 }
 
@@ -644,7 +652,24 @@ async function webkitProgrammaticScroll(page, target) {
   await sleep(120);
 }
 
-async function fingerScrollInto(page, target, container) {
+// A finger fling keeps scrolling after the finger lifts (momentum). Measure only once the target has held still
+// for 2 polls, or a judgement made mid-fling goes stale (the target slides away before the tap).
+async function settleScroll(target) {
+  let prev = null;
+  let still = 0;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 1500 && still < 2) {
+    await sleep(50);
+    const b = await target.first().boundingBox();
+    const y = b ? Math.round(b.y) : null;
+    still = y !== null && y === prev ? still + 1 : 0;
+    prev = y;
+  }
+}
+
+// opts.topInset: px at the container top that a sticky header may cover (default min(48, 15 % of its height));
+// pass 0 for a list with no sticky header (#layer-list), or its first row never counts as in view.
+async function fingerScrollInto(page, target, container, opts = {}) {
   if (!touch.engineSupports(page, 'nativeDefaultActions')) {
     await webkitProgrammaticScroll(page, target);
     return;
@@ -656,7 +681,7 @@ async function fingerScrollInto(page, target, container) {
     const cb = await cHandle.boundingBox();
     const dev = jOf(page).dev;
     if (tb && cb) {
-      const top = Math.max(cb.y, 0) + Math.min(48, cb.height * 0.15); // clear of a sticky pane header
+      const top = Math.max(cb.y, 0) + (typeof opts.topInset === 'number' ? opts.topInset : Math.min(48, cb.height * 0.15)); // clear of a sticky pane header
       const bottom = Math.min(cb.y + cb.height, dev.height) - 4;
       if (tb.y >= top && tb.y + tb.height <= bottom) return;
     }
@@ -666,9 +691,12 @@ async function fingerScrollInto(page, target, container) {
     lastY = tb.y;
     const start = await swipeStart(page, cHandle);
     const dir = tb.y > (cb.y + cb.height / 2) ? -1 : 1;
-    const span = Math.min(cb.height * 0.8, 520);
+    // Drag about the distance still to go (a fling adds ~30 %), never more than 80 % of the container: a fixed long
+    // drag overshoots a short pane (iPhone landscape: 286 px) and the target oscillates past the window.
+    const need = Math.abs((tb.y + tb.height / 2) - (cb.y + cb.height / 2));
+    const span = Math.max(40, Math.min(cb.height * 0.8, 520, need * 0.75));
     await fingerDrag(page, { x: start.x, y: start.y + (dir < 0 ? span / 2 : -span / 2), within: container }, { dx: 0, dy: dir * span }, { steps: 12, stepDelayMs: 12 });
-    await sleep(120);
+    await settleScroll(target);
   }
   throw new Error('the finger scroll never brought the target into view');
 }

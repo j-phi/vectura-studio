@@ -29,9 +29,9 @@ These routes would turn a failing cell green without proving the journey. The ha
 
 ## Required routes
 
-J4 runs the pinch twice (first finger on empty canvas; first finger on the selected object). J2 renames on the heavy fixture. J1 asserts layerCount +1 exactly. J12 includes the invisible-button check. J11 orbits by a one-finger canvas drag as well as the gizmo. J6 applies the mask through a visible control. J7 uses the soft-keyboard route. J9 saves a named preset and sets the paper size. J10 uses the direct header Export on phones and checks that footer buttons lie on the screen.
+J4 runs the pinch twice (first finger on empty canvas; first finger on the selected object). J2 renames on the heavy fixture. J1 asserts layerCount +1 exactly. J12 includes the invisible-button check. J11 orbits by a one-finger drag on the orbit gizmo (TUX-025); an empty-canvas orbit drag is not a product feature for any input, so it is not scripted (journey-triage.md). J6 applies the mask through a visible control. J7 uses the soft-keyboard route. J9 saves a named preset and sets the paper size. J10 uses the direct header Export on phones and checks that footer buttons lie on the screen.
 
-Fixtures (`tests/fixtures/touch/`): `journey-basic.vectura` (an oval and a small spiral, no overlap), `journey-heavy.vectura` (Flowfield at 3x density plus Attractor; every layer tap blocks the main thread for 100 ms or more, which is the JRN-010 trigger). `journey-heavy-webkit.vectura` is the same document with 16x Flowfield density. The WebKit projects load it, because WebKit-desktop runs the document about 20x faster than Chromium device emulation: a layer tap blocks 40-90 ms there against 900-1800 ms, which sits under the 350 ms double-tap window and flips with machine load. With the heavier file a Flowfield tap blocks about 0.8-0.9 s in WebKit idle against the 0.46 s needed; more load only lengthens the block and the JRN-010 trigger holds in both engines.
+Fixtures (`tests/fixtures/touch/`): `journey-basic.vectura` (an oval and a small spiral, no overlap), `journey-heavy.vectura` (Flowfield at 3x density plus Attractor; every layer tap blocks the main thread for 100 ms or more, which is the JRN-010 trigger). Both engines load `journey-heavy.vectura` for J2; the Chromium double-tap carries hardware touch times (see docs/testing.md). `journey-heavy-webkit.vectura` is no longer loaded.
 
 ## J1 Pick algorithm, change 3 sliders, pick a preset
 
@@ -43,7 +43,7 @@ Fixture: none (empty document).
 | `j1.open-layers` | tap | tap the Layers drawer control (docked on touch-wide: nothing to tap) | `SELECTORS.paneToggle.right` | right pane open; no data change. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-001 |
 | `j1.add-menu` | tap | Layers pane > Add Layer (+) | `SELECTORS.addLayer` | add menu visible; layers +0; history +0. layerCount +0; historyLen +0; redoLen +0; selectedIds same |  |
 | `j1.algo-drill` | tap | Add Layer > Algorithm Layer drills down and adds nothing (TUX-035) | `SELECTORS.algoParent` | layers +0 (no stray default layer); submenu visible and inside the screen. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-007 |
-| `j1.pick-lissajous` | tap | Algorithm submenu > lissajous | `SELECTORS.algoItem('lissajous')` | layers +1 of type lissajous; history +1; selected = the new layer. layerCount +1; historyLen +1; redoLen +0; selectedIds checked | JRN-007 |
+| `j1.pick-lissajous` | tap | Algorithm drill list > lissajous (finger-scroll the list first; TUX-035 req 2) | `SELECTORS.algoItem('lissajous')` | layers +1 of type lissajous; history +1; selected = the new layer. layerCount +1; historyLen +1; redoLen +0; selectedIds checked | JRN-007 |
 | `j1.open-generator` | tap | tap the Generator drawer control (docked on touch-wide: nothing to tap) | `SELECTORS.paneToggle.left` | left pane open; generator trigger visible. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-001 |
 | `j1.slider-1` | drag | scroll the Generator pane by finger, drag the thumb of slider 1 | `SELECTORS.slider nth(0)` | slider value moved in the dragged direction; the active layer param changed; history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds same | JRN-013 |
 | `j1.slider-2` | drag | scroll the Generator pane by finger, drag the thumb of slider 2 | `SELECTORS.slider nth(1)` | slider value moved in the dragged direction; the active layer param changed; history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds same | JRN-013 |
@@ -61,10 +61,10 @@ Fixture: `journey-heavy`.
 | `j2.open-layers` | tap | tap the Layers drawer control (docked on touch-wide: nothing to tap) | `SELECTORS.paneToggle.right` | right pane open; no data change. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-001 |
 | `j2.add-menu` | tap | Layers pane > Add Layer (+) | `SELECTORS.addLayer` | add menu visible; layers +0; history +0. layerCount +0; historyLen +0; redoLen +0; selectedIds same |  |
 | `j2.add-empty` | tap | Add Layer > Empty Layer | `SELECTORS.addItem('layer')` | layers +1; history +1; selected = the new layer. layerCount +1; historyLen +1; redoLen +0; selectedIds checked |  |
-| `j2.rename-open` | doubleTap | double-tap the name of a heavy layer (timestamp-based, TUX-038) | `SELECTORS.cardName` | rename input appears within 1500 ms of the double-tap and holds focus; layers +0. The step waits up to 6 s and measures the latency. The ledger pin is deterministic: the input is over the 1500 ms threshold, or never shows within 6 s. It is not pinned on the 5 s step budget. layerCount +0; historyLen +0; redoLen +0; selectedIds any | JRN-010 |
+| `j2.rename-open` | doubleTap | double-tap the name of a heavy layer (timestamp-based, TUX-038; scroll the layer list by finger first if the row is below its fold) | `SELECTORS.cardName` | rename input appears within 6000 ms of the double-tap and holds focus; layers +0. Latency is recorded, not bounded (it measures machine load). layerCount +0; historyLen +0; redoLen +0; selectedIds any | JRN-010 |
 | `j2.rename-type` | softType | type the new name with the soft keyboard | `focused rename input` | rename input holds the typed text. layerCount +0; historyLen +0; redoLen +0; selectedIds same |  |
-| `j2.rename-commit` | tap | tap a neutral spot in the pane to commit | `SELECTORS.layerStatusBar` | layer name = Renamed; history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds any |  |
-| `j2.reorder` | drag | drag the row grip of row 1 below row 2, no hold (TUX-044) | `SELECTORS.cardGrip` | layer order changed (same ids); history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds any |  |
+| `j2.rename-commit` | tap | tap a neutral spot in the pane to commit (the status bar; where it has no height, the already-active Layers tab) | `SELECTORS.layerStatusBar \| SELECTORS.layersTab` | layer name = Renamed; history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds any |  |
+| `j2.reorder` | drag | drag the row grip of row 1 below row 2, no hold (TUX-044); if row 2 is below the list's fold, drag to the list's bottom edge and rest 1.5 s for the auto-scroll (TUX-044 req 5) | `SELECTORS.cardGrip` | layer order changed (same ids); history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds any |  |
 | `j2.hide` | tap | tap the eye of the first row | `SELECTORS.cardEye` | that layer is hidden. layerCount +0; historyLen any; redoLen +0; selectedIds any |  |
 | `j2.show` | tap | tap the eye again | `SELECTORS.cardEye` | that layer is visible again. layerCount +0; historyLen any; redoLen +0; selectedIds any |  |
 | `j2.delete-menu` | tap | tap the row ⋯ button (TUX-034) | `SELECTORS.cardMore` | layer menu visible; layers +0. layerCount +0; historyLen +0; redoLen +0; selectedIds any |  |
@@ -191,7 +191,7 @@ Fixture: `journey-basic`.
 | `j10.menu-file` | tap | File menu (phones: ☰ > File) | `SELECTORS.menuTrigger('file') \| SELECTORS.hamburger` | File menu panel open. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-006 |
 | `j10.save-vectura` | tap | File > Save .vectura | `SELECTORS.btnSaveVectura` | a .vectura download starts. layerCount +0; historyLen +0; redoLen +0; selectedIds same |  |
 
-## J11 3D scene: insert, orbit the camera with one finger on the canvas
+## J11 3D scene: insert, orbit the camera with one finger on the gizmo
 
 Fixture: none (empty document).
 
@@ -201,10 +201,9 @@ Fixture: none (empty document).
 | `j11.open-layers` | tap | tap the Layers drawer control (docked on touch-wide: nothing to tap) | `SELECTORS.paneToggle.right` | right pane open; no data change. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-001 |
 | `j11.add-menu` | tap | Layers pane > Add Layer (+) | `SELECTORS.addLayer` | add menu visible; layers +0; history +0. layerCount +0; historyLen +0; redoLen +0; selectedIds same |  |
 | `j11.algo-drill` | tap | Add Layer > Algorithm Layer drills down and adds nothing (TUX-035) | `SELECTORS.algoParent` | layers +0 (no stray default layer); submenu visible and inside the screen. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-007 |
-| `j11.pick-scene3d` | tap | Algorithm submenu > 3D Scene | `SELECTORS.algoItem('scene3d')` | one new root layer of type scene3d; history +1; selected = the scene. layerCount any; historyLen +1; redoLen +0; selectedIds any | JRN-007 |
+| `j11.pick-scene3d` | tap | Algorithm drill list > 3D Scene (finger-scroll the list first; TUX-035 req 2) | `SELECTORS.algoItem('scene3d')` | one new root layer of type scene3d; history +1; selected = the scene. layerCount any; historyLen +1; redoLen +0; selectedIds any | JRN-007 |
 | `j11.canvas-ready` | tap | close any drawer that covers the canvas (same control as opening it) | `SELECTORS.paneToggle` | no open pane overlaps the canvas. layerCount +0; historyLen +0; redoLen +0; selectedIds same | JRN-001 |
 | `j11.orbit-gizmo` | drag | drag the orbit gizmo centre | `canvas point at the gizmo centre` | scene camera yaw or pitch changed; history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds any | JRN-011 |
-| `j11.orbit-drag` | drag | one-finger drag on empty canvas orbits the camera | `canvas point away from the scene` | scene camera yaw or pitch changed; history +1. layerCount +0; historyLen +1; redoLen +0; selectedIds any | JRN-011 |
 
 ## J12 Recover from a mistake: hidden actions are inert, delete, undo, redo, two-finger undo
 

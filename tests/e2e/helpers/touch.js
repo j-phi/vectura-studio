@@ -83,10 +83,13 @@ const ensureWebkitShim = async (page) => {
 // Low-level: dispatch one touch phase for a set of points [{x,y,id}].
 // phase: 'start' | 'move' | 'end' | 'cancel'. 'end' lifts ONLY the listed fingers; Chromium 'cancel' cancels ALL fingers;
 // the others stay down (Chromium: touchPoints = fingers still down).
-const touchPhase = async (page, phase, points) => {
+// opts.timestamp (Chromium only): the hardware time of the touch, in seconds since the epoch. A real device stamps a
+// touch when the finger lands, not when a busy main thread gets to it; CDP otherwise stamps it at dispatch.
+const touchPhase = async (page, phase, points, opts = {}) => {
   if (engineSupports(page, 'cdp')) {
     const cdp = await cdpSession(page);
     const type = { start: 'touchStart', move: 'touchMove', end: 'touchEnd', cancel: 'touchCancel' }[phase];
+    const ts = opts.timestamp ? { timestamp: opts.timestamp } : {};
     const down = (page.__touchDown = page.__touchDown || new Map());
     // Measured in Chromium: touchEnd/touchCancel `touchPoints` are the fingers being LIFTED
     // (listing the survivors lifts them and re-creates the lifted one). touchStart/touchMove
@@ -101,11 +104,11 @@ const touchPhase = async (page, phase, points) => {
     }
     if (phase === 'end') {
       points.forEach((p) => down.delete(p.id));
-      await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, id: p.id })) });
+      await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, id: p.id })), ...ts });
       return;
     }
     points.forEach((p) => down.set(p.id, { x: p.x, y: p.y, id: p.id }));
-    await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [...down.values()] });
+    await cdp.send('Input.dispatchTouchEvent', { type, touchPoints: [...down.values()], ...ts });
     return;
   }
   await ensureWebkitShim(page);
@@ -166,6 +169,33 @@ async function tap(page, target) {
   await page.touchscreen.tap(p.x, p.y);
 }
 
+// doubleTap: two taps `gapMs` apart on one point. Chromium: each touch carries its hardware time (the second lands
+// gapMs after the first, as a real finger does), so a main thread busy with the first tap cannot stretch the
+// interval the page reads from event.timeStamp (TUX-038 req 5). WebKit cannot stamp a trusted touch: two
+// plain taps, the second gapMs after the first lands (or at once when the round trip already took longer).
+async function doubleTap(page, target, { gapMs = 110, holdMs = 40 } = {}) {
+  const p = await toPoint(target);
+  if (!engineSupports(page, 'cdp')) {
+    // The gap counts from the first finger-down, as on a device: the tap round trip is part of it.
+    const t = Date.now();
+    await page.touchscreen.tap(p.x, p.y);
+    const wait = t + gapMs - Date.now();
+    if (wait > 0) await sleep(wait);
+    await page.touchscreen.tap(p.x, p.y);
+    return;
+  }
+  const t0 = Date.now() / 1000;
+  const pt = [{ ...p, id: 0 }];
+  const at = async (sec) => { const wait = sec * 1000 - Date.now(); if (wait > 0) await sleep(wait); };
+  await touchPhase(page, 'start', pt, { timestamp: t0 });
+  await at(t0 + holdMs / 1000);
+  await touchPhase(page, 'end', pt, { timestamp: t0 + holdMs / 1000 });
+  await at(t0 + gapMs / 1000);
+  await touchPhase(page, 'start', pt, { timestamp: t0 + gapMs / 1000 });
+  await at(t0 + (gapMs + holdMs) / 1000);
+  await touchPhase(page, 'end', pt, { timestamp: t0 + (gapMs + holdMs) / 1000 });
+}
+
 // longPress: hold a finger down for ms (default 600), then lift.
 async function longPress(page, target, ms = 600) {
   const p = await toPoint(target);
@@ -175,7 +205,9 @@ async function longPress(page, target, ms = 600) {
 }
 
 // drag: optional holdMs before moving (long-press-drag), `steps` intermediate moves.
-async function drag(page, from, to, { holdMs = 0, steps = 10, stepDelayMs = 0 } = {}) {
+// endHoldMs: rest the finger at the end point (1 px tremor every 60 ms, as a real finger) before lifting, e.g. at a
+// list edge so the list can auto-scroll under it (TUX-044 req 5).
+async function drag(page, from, to, { holdMs = 0, steps = 10, stepDelayMs = 0, endHoldMs = 0 } = {}) {
   const a = await toPoint(from);
   const b = await toPoint(to);
   await touchPhase(page, 'start', [{ ...a, id: 0 }]);
@@ -183,6 +215,10 @@ async function drag(page, from, to, { holdMs = 0, steps = 10, stepDelayMs = 0 } 
   for (let i = 1; i <= steps; i += 1) {
     await touchPhase(page, 'move', [{ ...lerp(a, b, i / steps), id: 0 }]);
     if (stepDelayMs) await sleep(stepDelayMs);
+  }
+  for (let t = 0; t < endHoldMs; t += 60) {
+    await touchPhase(page, 'move', [{ x: b.x, y: b.y + ((t / 60) % 2), id: 0 }]);
+    await sleep(60);
   }
   await touchPhase(page, 'end', [{ ...b, id: 0 }]);
 }
@@ -236,4 +272,4 @@ async function hitArea(page, target, { probe = 2, radius = 48 } = {}) {
   return core.probeHit(page, handle, { probe, radius });
 }
 
-module.exports = { tap, longPress, drag, pinch, twoFingerPan, canvasShare, hitArea, engineSupports, engineOf, touchPhase };
+module.exports = { tap, doubleTap, longPress, drag, pinch, twoFingerPan, canvasShare, hitArea, engineSupports, engineOf, touchPhase };

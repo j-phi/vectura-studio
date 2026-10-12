@@ -38,6 +38,7 @@ const FORBIDDEN = [
   [/scrollIntoView/, 'scrollIntoView', ['webkitProgrammaticScroll']],
   [/\.skip\(|test\.skip|\.only\(|test\.only|test\.fail\(|test\.fixme/, '.skip/.only/test.fail'],
   [/engineSupports/, 'engineSupports guard', ['fingerScrollInto']],
+  [/console\.(log|debug|info)\(/, 'debug console output'],
 ];
 
 // Blank out comments, keep line numbers.
@@ -156,6 +157,16 @@ test.describe('journey static guard', () => {
       expect(typeof e.reason, `${e.project}|${e.journey} needs a reason`).toBe('string');
       expect(e.reason.length, `${e.project}|${e.journey} reason is empty`).toBeGreaterThan(0);
       expect(bad.test(e.reason), `${e.project}|${e.journey} is pinned on a harness message: ${e.reason}`).toBe(false);
+    }
+  });
+
+  // An expected failure is a confirmed PRODUCT defect only (journey-triage.md): each entry names its owning TUX and
+  // the defect. A harness failure is fixed in the journey, never pinned.
+  test('every ledger entry is a triaged product defect with an owning TUX', () => {
+    const ledger = JSON.parse(fs.readFileSync(path.join(DIR, 'journey-status.json'), 'utf8'));
+    for (const e of ledger.entries) {
+      expect(typeof e.tux, `${e.project}|${e.journey} has no tux triage`).toBe('string');
+      expect(/^TUX-0\d\d\b.{12,}/.test(e.tux), `${e.project}|${e.journey} tux must start with the owning TUX id and name the defect: ${e.tux}`).toBe(true);
     }
   });
 

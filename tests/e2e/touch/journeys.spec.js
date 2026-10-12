@@ -261,6 +261,30 @@ test.describe('harness self-test', () => {
     await expect(P.fingerTap(page, page.locator('#probe'))).rejects.toThrow(/covered/);
   });
 
+  // (ii-b) visibility inherits but a descendant can set visibility:visible again: the guard must read the
+  // target's OWN computed visibility (plus the hit test), never reject on a hidden ancestor.
+  const probeInHidden = (page, childCss) => page.evaluate((css) => { // journey-eval-ok
+    const wrap = document.createElement('div');
+    wrap.id = 'probe-wrap';
+    wrap.style.cssText = 'visibility:hidden;position:fixed;top:120px;left:40px;width:120px;height:80px;z-index:99999';
+    const b = document.createElement('button');
+    b.id = 'probe';
+    b.textContent = 'probe';
+    b.style.cssText = `position:absolute;top:10px;left:10px;width:80px;height:50px;${css}`;
+    wrap.appendChild(b);
+    document.body.appendChild(wrap);
+  }, childCss);
+
+  test('(ii-b) fingerTap accepts a visible target under a visibility:hidden ancestor', async ({ page }) => {
+    await probeInHidden(page, 'visibility:visible');
+    expect(await P.fingerTap(page, page.locator('#probe'))).toBeTruthy();
+  });
+
+  test('(ii-b) fingerTap rejects a target that is itself hidden', async ({ page }) => {
+    await probeInHidden(page, '');
+    await expect(P.fingerTap(page, page.locator('#probe'))).rejects.toThrow(/invisible|covered/);
+  });
+
   // (v) the end points of a drag, pinch and pan must lie on the device screen too.
   const probeBand = (page, dev) => page.evaluate((w) => { // journey-eval-ok
     const d = document.createElement('div');
