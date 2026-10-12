@@ -504,12 +504,34 @@ test.describe('TUX-020 R-i the HUD steps aside under a drawer backdrop or a moda
     await page.waitForTimeout(300);
     const open = await hudState(page);
     test.skip(!open.backdrop, 'docked layout: no drawer backdrop');
-    expect(open.shown, 'no HUD button is shown under the backdrop').toBe(0);
+    // R-i intent: no covered live-looking button. Phone hides the HUD; tablet raises it clear of the drawer (all shown are live).
+    expect(open.shown, 'every HUD button shown under the backdrop takes a finger').toBe(open.live);
     // Under test: a finger tap on the backdrop closes the drawer and brings the HUD back.
     const vp = page.viewportSize();
     await touch.tap(page, { x: vp.width - 24, y: Math.round(vp.height / 2) });
     await expect.poll(async () => (await hudState(page)).backdrop).toBe(false);
     await expect.poll(async () => (await hudState(page)).live).toBe(base.live);
+  });
+
+  // Batch 1 (journey J12): on a tablet there is no header Undo, so a hidden HUD left no Undo on screen
+  // while a drawer was open. The HUD now rides above the backdrop and clear of the open drawer.
+  test('tablet: Undo stays reachable by finger under an open drawer', async ({ page }) => {
+    await boot(page);
+    const isTablet = await page.evaluate(() => document.body.classList.contains('tablet-layout'));
+    test.skip(!isTablet, 'only the tablet layout has no header Undo');
+    await addLayerThroughHistory(page);
+    await page.evaluate(() => {
+      const mob = document.getElementById('btn-mobile-pane-right');
+      const btn = (mob && mob.offsetParent) ? mob : document.getElementById('btn-pane-toggle-right');
+      btn.click();
+    });
+    await page.waitForTimeout(300);
+    const open = await hudState(page);
+    test.skip(!open.backdrop, 'docked layout: no drawer backdrop');
+    expect(open.live, 'Undo and Redo take a finger under the drawer backdrop').toBeGreaterThanOrEqual(2);
+    const before = await state(page);
+    await touch.tap(page, page.locator('#btn-hud-undo'));
+    await expect.poll(async () => (await state(page)).layers, { message: 'Undo ran' }).toBe(before.layers - 1);
   });
 
   test('hidden while a modal is open, back when it closes', async ({ page }) => {

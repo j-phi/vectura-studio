@@ -15650,14 +15650,24 @@ body.tablet-layout.touch-ui .pane.pane-drawer-open .pane-body > * { visibility: 
  * Under the open-drawer backdrop (TUX-011) or a modal the HUD buttons cannot take a tap (the backdrop
  * or the modal does; history is a no-op under a modal), so they must not show as live controls there.
  * visibility (not display) keeps the HUD's box, so nothing reflows when it returns. */
-body.touch-ui:has(#mobile-pane-backdrop.visible) .canvas-hud,
+body.touch-ui:not(.tablet-layout):has(#mobile-pane-backdrop.visible) .canvas-hud,
 body.touch-ui:has(#modal-overlay.open) .canvas-hud,
 body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud {
   visibility: hidden;
 }
-body.touch-ui:has(#mobile-pane-backdrop.visible) .canvas-hud .canvas-hud-btn,
+body.touch-ui:not(.tablet-layout):has(#mobile-pane-backdrop.visible) .canvas-hud .canvas-hud-btn,
 body.touch-ui:has(#modal-overlay.open) .canvas-hud .canvas-hud-btn,
 body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud .canvas-hud-btn {
   pointer-events: none;
+}
+/* Tablet (no header Undo): the HUD stays reachable under an open drawer (batch 1, journey J12). It rides above the
+ * backdrop (the modifier bar does the same) and hops to the left edge when the right drawer would cover it. A
+ * modal still hides it (rule above). */
+body.tablet-layout.touch-ui:has(#mobile-pane-backdrop.visible) .canvas-hud {
+  z-index: calc(var(--z-backdrop) + 1);
+}
+body.tablet-layout.touch-ui:has(#right-pane.pane-drawer-open) .canvas-hud {
+  right: auto;
+  left: calc(var(--safe-left, 0px) + 8px);
 }
 /* === END TUX-020 / TUX-011 HUD step-aside === */
