@@ -7,7 +7,7 @@ const touch = require('../helpers/touch');
 // TUX-048: UI.overlays.Toast sits bottom-centre on touch (body.touch-ui), inside the safe area, clear of
 // the bottom-docked chrome, above modals. Measured against window.visualViewport + DEVICES, never innerWidth.
 // Desktop (fine pointer, any width) keeps the top-right placement. #canvas-toast is out of scope.
-const CHROME = ['#app-header', '#tool-bar', '#touch-modifier-bar', '#status-bar', '#bottom-pane:not(.bottom-pane-collapsed)'];
+const CHROME = ['#app-header', '#tool-bar', '#touch-modifier-bar', '#status-bar', '#bottom-pane', '#btn-pane-toggle-bottom'];
 const EVID = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-048';
 const BATCH2_EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch2/TUX-010';
 const SHORT = 'Added Spiral layer';
@@ -170,7 +170,7 @@ test.describe('touch toasts', () => {
 // docs/touch-audit/changelog-fragments/TUX-037.md: the TUX-037 "plain toast stays top-right" rule is superseded on
 // touch by TUX-048 (bottom-centre above measured bottom chrome); fine pointers keep top-right (desktop parity below).
 test.describe('plain toast vs primary controls', () => {
-  const CONTROLS = ['#btn-add-layer', '#layer-search-input', '#layer-filter-btn', '.tool-btn[data-tool="scissor"]', '#tool-overflow-btn'];
+  const CONTROLS = ['#btn-add-layer', '#layer-search-input', '#layer-filter-btn', '.tool-btn[data-tool="scissor"]', '#tool-overflow-btn', '#btn-pane-toggle-bottom'];
   test.beforeEach(async ({ page }) => { await boot(page); });
   const PANE_OPENERS = ['#btn-header-pane-right', '#btn-pane-toggle-right', '#btn-mobile-pane-right'];
 
