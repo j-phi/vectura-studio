@@ -210,9 +210,10 @@ const stepCanvasReady = (j, what) => ({
 });
 
 // J2 rename-open: the input must show within RENAME_MAX_MS of the double-tap, or the step fails. The old 1500 ms bound
-// is below the measured Chromium device-emulation latency on the heavy document (iPad: 1583, 1615, 1728 ms in 4 runs;
-// iPhone landscape 658-667 ms; iPhone portrait 18-20 ms; WebKit 12-36 ms). 2500 ms keeps about 45 % headroom over the
-// slowest measured run and still fails a rename that never opens (the clock defect, JRN-010, shows as "never").
+// is below the measured headless latency on the heavy document (iPad: 1583, 1615, 1728 ms in 4 runs; iPhone landscape
+// 658-667 ms; iPhone portrait 18-20 ms; WebKit 12-36 ms). That time is the headless software-canvas raster in
+// FinalizeFrame, not device emulation: a headed run with the GPU takes 79 ms. 2500 ms keeps about 45 % headroom over the
+// slowest measured headless run and still fails a rename that never opens (the clock defect, JRN-010, shows as "never").
 const RENAME_WAIT_MS = 6000;
 const RENAME_MAX_MS = 2500;
 
@@ -272,10 +273,9 @@ JOURNEYS.push({
 // J2 ------------------------------------------------------------------------------------------
 JOURNEYS.push({
   id: 'J2', title: 'Add, rename (heavy document), reorder, hide/show, delete a layer', fixture: 'journey-heavy',
-  // WebKit keeps the light fixture: Playwright WebKit queues the second tap behind the busy main thread (measured on the heavier
-  // journey-heavy-webkit document: second pointerdown 1085 ms after the first although sent at 110 ms), so no real double tap can
-  // be made there. The TUX-038 clock path on WebKit is proven by rename-paths.spec.js with stamped events instead.
-  // Both engines load the same heavy document. JRN-010 was a clock defect (rename timed by handler time, not by
+  // Both engines load the same heavy document (an earlier light WebKit fixture is gone). Playwright WebKit once queued the
+  // second tap behind the busy main thread on a heavier document; the TUX-038 clock path on WebKit is also proven by
+  // rename-paths.spec.js with stamped events. JRN-010 was a clock defect (rename timed by handler time, not by
   // event.timeStamp); TUX-038 req 5 fixed it, so a heavy document must still rename on a real double-tap.
   // The Chromium double-tap carries hardware touch times (helpers/touch.js doubleTap); WebKit cannot stamp a
   // touch, but runs this document ~20x faster, so its tap round trip stays inside the 350 ms window.

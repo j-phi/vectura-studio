@@ -162,4 +162,7 @@ One line per cell. Add lines only after a real device run. Do not enter results 
 | TUX-033#4 | Mac with a mouse: Cmd-click and Shift-click in the layer list are unchanged. Touch laptop with a task latched: a mouse click is unchanged. |
 
 ## WebKit finger scroll (TUX-059 review)
-- [ ] On a real iPad and iPhone, scroll the Layers list, the Generator pane and the algorithm drill list with one finger. Playwright WebKit cannot run a trusted touch scroll, so the WebKit journey cells that use the programmatic scroll are labelled "WebKit finger-scroll unproven" in `tests/e2e/touch/journey-status.json` (`unproven`).
+
+| ID | Check | TUX | Cells required | Pass when | Status |
+|---|---|---|---|---|---|
+| DEV-55 | WebKit finger scroll. Scroll the Layers list, the Generator pane and the algorithm drill list with one finger. Playwright WebKit cannot run a trusted touch scroll, so the WebKit journey cells that use the programmatic scroll are labelled "WebKit finger-scroll unproven" in `tests/e2e/touch/journey-status.json` (`unproven`). | TUX-059 | iPad P/L tab, iPhone P/L tab | Each list scrolls smoothly with one finger and stops at the end. No tap fires during the scroll. | open |
