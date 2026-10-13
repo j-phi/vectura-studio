@@ -1,7 +1,7 @@
 # TUX integration, batch R (real audit regressions)
 
 ## CHANGELOG bullet
-- Touch: the on-canvas Undo / Redo / Zoom / Fit buttons step aside under the Petal Designer window, the phone Document Setup sheet and the phone menu sheet. The phone header buttons step aside under a full-screen modal. The iPhone landscape formula sheet ends left of the HUD. The fill bar clears the bottom safe area. On iPad landscape and wide touch windows the collapsed formula-pane row is 36 px (its 44 px chevron overhangs the status strip). The Scene3D light and visibility controls are finger sized.
+- Touch: an on-canvas Undo / Redo / Zoom / Fit button hides while another layer (the Petal Designer window, the formula sheet) covers it, and the HUD hides under the phone Document Setup sheet. The phone header buttons step aside under a full-screen modal. The iPhone landscape formula sheet ends left of the HUD. The fill bar clears the bottom safe area. On iPad landscape and wide touch windows the collapsed formula-pane row is 40 px (its 44 px chevron overhangs the status strip). The iPhone landscape HUD buttons are 44 px with no gap. The Scene3D light and visibility controls have a 24 px hit area.
 
 ## plans.md line
 - [x] TUX-058 batch R: full-audit `covered`, `canvasPct`, Scene3D `wcag258Fail` and iPhone landscape `safeUnprotected` regressions fixed in the product; Q14 narrowed to the phone sheet, Q15 hardened, Q16 (TUX-032 24 px keyboard rows) recorded.
@@ -16,4 +16,4 @@
 - Q14 applies on the phone sheet only (`body.phone-menu-open`). Q15 needs a visible scroller whose range reaches the row. Q16 allowlist entry for the TUX-032 24 px keyboard rows. 19 hand-lowered `reachable` / `under44` cells restored.
 
 ## Open items
-- iPadP `bottom-pane-open` and `pen-path-anchors` `canvasPct` stay at the grid-sampling edge of the ratchet (see the commit body).
+- `canvasPct` still fails in 5 cells: iPadP (Chromium and WebKit) bottom-pane-open 59.4 vs 60.6 and pen-path-anchors 78.4 vs 80, and WebKit iPadL bottom-pane-open 38.6 vs 39.7. The HUD and the context bar fall on a different row of the 48-row sample grid than at the baseline; trimming 4 to 8 px of chrome did not move them.

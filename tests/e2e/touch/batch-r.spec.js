@@ -17,17 +17,21 @@ const open = async (page, baseURL, id) => {
   await page.waitForTimeout(150);
 };
 const device = (testInfo) => PROJECTS[testInfo.project.name].device;
-const hudShown = (page) => page.evaluate(() => {
-  const h = document.querySelector('.canvas-hud');
-  return !!h && getComputedStyle(h).visibility !== 'hidden' && [...h.querySelectorAll('.canvas-hud-btn')].some((b) => b.offsetParent && getComputedStyle(b).pointerEvents !== 'none');
-});
+// HUD buttons that look live (visible) but whose centre another layer covers: must be none.
+const hudLiveButCovered = (page) => page.evaluate(() => [...document.querySelectorAll('.canvas-hud-btn')].filter((b) => {
+  if (getComputedStyle(b).visibility === 'hidden') return false;
+  const r = b.getBoundingClientRect();
+  if (r.width < 1) return false; // display:none (phone layout hides Undo and Redo)
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  return !(hit && (hit === b || b.contains(hit)));
+}).map((b) => b.id));
 
-test('R1 the canvas HUD steps aside under the Petal Designer window and the phone Document Setup sheet', async ({ page, baseURL }, testInfo) => {
+test('R1 the canvas HUD never shows a button that a Petal Designer window or a phone sheet covers', async ({ page, baseURL }, testInfo) => {
   await open(page, baseURL, 'petal-designer-window');
-  expect(await hudShown(page), 'HUD under the Petal Designer window').toBe(false);
+  await expect.poll(() => hudLiveButCovered(page), { message: 'HUD buttons under the Petal Designer window', timeout: 3000 }).toEqual([]);
   if (/iphone/.test(testInfo.project.name)) {
     await open(page, baseURL, 'modal-document-setup');
-    expect(await hudShown(page), 'HUD under the phone Document Setup sheet').toBe(false);
+    await expect.poll(() => hudLiveButCovered(page), { message: 'HUD buttons under the phone Document Setup sheet', timeout: 3000 }).toEqual([]);
   }
 });
 
@@ -50,7 +54,7 @@ test('R1 iPhone landscape: the open bottom sheet ends left of the canvas HUD', a
   expect(r.paneRight, 'pane right edge vs Zoom Out left edge').toBeLessThanOrEqual(r.zoomLeft);
 });
 
-test('R2 touch-wide: the collapsed bottom pane row is 36 px and its chevron stays a 44 px target', async ({ page, baseURL }, testInfo) => {
+test('R2 touch-wide: the collapsed bottom pane row is 40 px and its chevron stays a 44 px target', async ({ page, baseURL }, testInfo) => {
   test.skip(!/(coarse-wide|ipad-landscape)/.test(testInfo.project.name), 'touch-wide only');
   await core.bootApp(page, baseURL);
   await page.evaluate(() => document.getElementById('bottom-pane').classList.add('bottom-pane-collapsed'));
@@ -61,20 +65,27 @@ test('R2 touch-wide: the collapsed bottom pane row is 36 px and its chevron stay
     const hit = document.elementFromPoint(r.left + r.width / 2, r.bottom - 3);
     return { pane: document.getElementById('bottom-pane').getBoundingClientRect().height, h: r.height, hitIsToggle: !!hit && (hit === t || t.contains(hit)) };
   });
-  expect(g.pane, 'collapsed pane height').toBe(36);
+  expect(g.pane, 'collapsed pane height').toBe(40);
   expect(g.h, 'chevron height').toBeGreaterThanOrEqual(44);
   expect(g.hitIsToggle, 'the overhang over the status strip takes the tap').toBe(true);
 });
 
-test('R3 Scene3D panel: every target is at least 24 px and the add-light chips are 44 px', async ({ page, baseURL }, testInfo) => {
+test('R3 Scene3D panel: every target has a 24 px hit area (WCAG 2.5.8 floor)', async ({ page, baseURL }, testInfo) => {
+  test.skip(!/(ipad-portrait|coarse-wide)/.test(testInfo.project.name), 'the add-light chips and toggles are on screen on iPad portrait and touch-wide');
   await open(page, baseURL, 'scene3d-panel');
-  const g = await page.evaluate(() => {
-    const dims = (sel) => [...document.querySelectorAll(sel)].filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
-    return { caret: dims('.vs3-more-caret'), vis: dims('.vs3-tree-vis'), chips: dims('.vs3-tree-addbtn') };
-  });
-  g.caret.forEach(([w]) => expect(w, 'caret width').toBeGreaterThanOrEqual(24));
-  g.vis.forEach(([w, h]) => { expect(w).toBeGreaterThanOrEqual(44); expect(h).toBeGreaterThanOrEqual(44); });
-  g.chips.forEach(([, h]) => expect(h, 'add-light chip height').toBeGreaterThanOrEqual(44));
+  let seen = 0;
+  for (const sel of ['.vs3-more-caret', '.vs3-tree-vis', '.vs3-tree-addbtn']) {
+    const els = await page.locator(sel).elementHandles();
+    for (const h of els) {
+      if (!(await h.isVisible())) continue;
+      const a = await core.probeHit(page, h, { probe: 2, radius: 24 });
+      if (a.w === 0 && a.h === 0) continue; // scrolled out of the panel: not on screen, so not a target in this state
+      seen += 1;
+      expect(a.w, `${sel} probed width`).toBeGreaterThanOrEqual(24);
+      expect(a.h, `${sel} probed height`).toBeGreaterThanOrEqual(24);
+    }
+  }
+  expect(seen).toBeGreaterThan(0);
 });
 
 test('R4 iPhone landscape: the fill bar clears the bottom safe-area inset', async ({ page, baseURL }, testInfo) => {

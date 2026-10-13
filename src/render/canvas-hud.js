@@ -119,6 +119,50 @@
     applyState();
   };
 
+  // Batch R: a HUD button that another layer covers at its centre (the pop-out Petal Designer window, a pane or sheet over the
+  // HUD, the formula sheet) cannot take a tap but would show as a live control. Mark it `data-covered` (CSS hides it); a button
+  // the layer leaves clear stays. Each pass clears the mark first, so a layer that goes away restores the button.
+  const stepAsideCovered = () => {
+    const hud = document.getElementById('canvas-hud');
+    if (!hud || getComputedStyle(hud).display === 'none') return;
+    const host = document.getElementById('viewport-container');
+    const hudHidden = getComputedStyle(hud).visibility === 'hidden';
+    hud.querySelectorAll('.canvas-hud-btn').forEach((b) => {
+      if (hudHidden) { b.removeAttribute('data-covered'); return; } // a hidden HUD needs no mark, and its buttons must not be touched
+      // Measure the button as if shown: a visibility transition would otherwise leave it hidden (and so un-hittable) for a moment.
+      b.removeAttribute('data-covered');
+      const hadVis = b.style.visibility; const hadTr = b.style.transition;
+      b.style.transition = 'none';
+      b.style.visibility = 'visible';
+      const r = b.getBoundingClientRect();
+      let covered = false;
+      if (r.width >= 1 && r.height >= 1) {
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        covered = !!hit && hit !== b && !b.contains(hit) && !hud.contains(hit) && !(host && host.contains(hit));
+      }
+      b.style.visibility = hadVis; b.style.transition = hadTr;
+      if (covered) b.setAttribute('data-covered', '1');
+    });
+  };
+  const scheduleStepAside = (() => {
+    let queued = false;
+    return () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => { queued = false; stepAsideCovered(); });
+    };
+  })();
+  const watchCovers = () => {
+    if (typeof MutationObserver !== 'function') return;
+    const host = document.getElementById('viewport-container');
+    new MutationObserver((records) => {
+      if (records.some((m) => !(host && m.target && m.target.nodeType === 1 && host.contains(m.target)))) scheduleStepAside();
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+    window.addEventListener('resize', scheduleStepAside);
+    document.addEventListener('transitionend', scheduleStepAside, true);
+    scheduleStepAside();
+  };
+
   const bindForeignFingers = () => {
     // Fingers that land outside the canvas (HUD, chrome) must not combine with canvas fingers
     // into a tap. Report them to the arbiter; capture phase sees them before any handler.
@@ -152,11 +196,12 @@
     document.addEventListener('pointercancel', resync, true);
     document.addEventListener('keyup', () => requestAnimationFrame(readFromApp), true);
     bindForeignFingers();
+    watchCovers();
     readFromApp();
     applyState();
   };
 
-  Vectura.CanvasHud = { runHistory, isModalOverlayOpen, syncFromApp: readFromApp, init, BUTTONS };
+  Vectura.CanvasHud = { runHistory, isModalOverlayOpen, syncFromApp: readFromApp, stepAsideCovered, init, BUTTONS };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
