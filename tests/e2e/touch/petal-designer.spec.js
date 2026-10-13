@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
 const touch = require('../helpers/touch');
+const P = require('./pages');
 
 // TUX-026: the Petal Designer works by finger.
 //   window fit        the pop-out window lies fully inside the viewport (every touch project)
@@ -368,35 +369,81 @@ test('two-finger pinch zooms the inline designer canvas', async ({ page }, testI
   if (touch.engineSupports(page, 'trustedMultiTouch')) expect(after.scale).toBe(1);
 });
 
-// ---- Undo while the pop-out window is open (TUX-020 follow-up, batch R2) -----------------------
-// The window covers the canvas HUD and the phone header, so it carries its own Undo / Redo. The edit is
-// set up through the history API (the window itself does not push history); the Undo is a real finger.
+// ---- Undo while the pop-out window is open (TUX-020 / TUX-026, batches R2 and R3) ---------------
+// The window covers the canvas HUD and the phone header, so it carries its own Undo / Redo. Batch R3: the
+// edits are real finger edits INSIDE the window (an anchor drag, then a slider). Each gesture must push
+// ONE history step, the window Undo must be enabled by it, and a finger tap on it must revert exactly
+// that edit (no earlier, unrelated work) and refresh the window's own designer state.
 const UNDO_IN_WINDOW = ['iPadP', 'iPadL', 'iPhP', 'iPhL'];
-test('Undo and Redo in the pop-out window header revert and restore an edit by finger', async ({ page }, testInfo) => {
+test('a finger edit in the pop-out window is undone and redone by a finger on the window Undo / Redo', async ({ page }, testInfo) => {
   test.skip(!UNDO_IN_WINDOW.includes(spec(testInfo).device), 'iPad and iPhone projects only');
   await openWindow(page, testInfo);
-  const profile = () => page.evaluate(() => window.app.engine.layers.find((l) => l.type === 'petalisDesigner').params.petalProfile);
-  const before = await profile();
-  await page.evaluate(() => {
-    const { app } = window;
-    app.pushHistory();
-    app.engine.layers.find((l) => l.type === 'petalisDesigner').params.petalProfile = 'edited-by-test';
-  });
-  await page.waitForTimeout(150);
-  expect(await profile()).toBe('edited-by-test');
   const undo = page.locator('#petal-designer-window .petal-undo');
   const redo = page.locator('#petal-designer-window .petal-redo');
-  await expect(undo).toBeEnabled();
-  const box = await undo.boundingBox();
-  expect(box.width, 'undo width').toBeGreaterThanOrEqual(43.99);
-  expect(box.height, 'undo height').toBeGreaterThanOrEqual(43.99);
-  const top = await undo.evaluate((b) => { const r = b.getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!el && (el === b || b.contains(el)); });
-  expect(top, 'Undo is the top element at its centre').toBe(true);
-  await touch.tap(page, undo);
-  await sleep(250);
-  expect(await profile()).toBe(before);
+  const probe = () => page.evaluate(() => {
+    const { app } = window;
+    const pd = app.ui.petalDesigner;
+    const layer = app.engine.layers.find((l) => l.type === 'petalisDesigner');
+    const side = pd.state.activeTarget === 'outer' ? 'outer' : 'inner';
+    return {
+      history: app.history.length,
+      layers: app.engine.layers.length,
+      innerCount: layer.params.innerCount,
+      stateInnerCount: pd.state.innerCount,
+      stateAnchors: JSON.stringify(pd.state[side].anchors),
+      layerInner: JSON.stringify(layer.params.designerInner),
+      layerOuter: JSON.stringify(layer.params.designerOuter),
+    };
+  });
+  const tapUndo = async () => {
+    await expect(undo).toBeEnabled();
+    const box = await undo.boundingBox();
+    expect(box.width, 'undo width').toBeGreaterThanOrEqual(43.99);
+    expect(box.height, 'undo height').toBeGreaterThanOrEqual(43.99);
+    const top = await undo.evaluate((b) => { const r = b.getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!el && (el === b || b.contains(el)); });
+    expect(top, 'Undo is the top element at its centre').toBe(true);
+    await touch.tap(page, undo);
+    await sleep(250);
+  };
+
+  // 1. anchor drag in the window
+  const start = await probe();
+  const plan = await planGrab(page, 'window', 'anchor');
+  expect(plan, 'no tap point 15 px from an anchor in the window').not.toBeNull();
+  await touch.drag(page, plan.start, { x: plan.start.x + 20, y: plan.start.y }, { steps: 8 });
+  await sleep(150);
+  const dragged = await probe();
+  expect(dragged.stateAnchors, 'the anchor moved').not.toBe(start.stateAnchors);
+  expect(dragged.history, 'one history step for the whole drag').toBe(start.history + 1);
+  await tapUndo();
+  const afterAnchorUndo = await probe();
+  expect(afterAnchorUndo.history, 'Undo took the drag step only').toBe(start.history);
+  expect(afterAnchorUndo.layers, 'no other work undone').toBe(start.layers);
+  expect(afterAnchorUndo.layerInner).toBe(start.layerInner);
+  expect(afterAnchorUndo.layerOuter).toBe(start.layerOuter);
+  expect(afterAnchorUndo.stateAnchors, 'the window shows the restored anchors').toBe(start.stateAnchors);
   await expect(redo).toBeEnabled();
   await touch.tap(page, redo);
   await sleep(250);
-  expect(await profile()).toBe('edited-by-test');
+  expect((await probe()).stateAnchors, 'Redo restores the dragged anchor').toBe(dragged.stateAnchors);
+  await tapUndo();
+
+  // 2. slider in the window
+  const slider = page.locator('#petal-designer-window [data-petal-inner-count]');
+  await slider.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await sleep(150);
+  const before = await probe();
+  P.bindJourney(page, testInfo.project.name);
+  const moved = await P.fingerSlider(page, slider, 0.25);
+  await sleep(250);
+  const slid = await probe();
+  expect(moved.after, 'the slider moved').not.toBe(moved.before);
+  expect(slid.innerCount, 'the layer follows the slider').not.toBe(before.innerCount);
+  expect(slid.history, 'one history step for the slider gesture').toBe(before.history + 1);
+  await tapUndo();
+  const afterSliderUndo = await probe();
+  expect(afterSliderUndo.innerCount).toBe(before.innerCount);
+  expect(afterSliderUndo.stateInnerCount, 'the window state follows the undo').toBe(before.innerCount);
+  expect(afterSliderUndo.history).toBe(before.history);
+  expect(afterSliderUndo.layers).toBe(before.layers);
 });
