@@ -68,7 +68,12 @@ test.describe('TUX-051 A: stray taps', () => {
     test.skip(!WIDE.includes(testInfo.project.name), 'wide only');
     await gotoApp(page);
     await collapse(page);
+    // Q17: the divider has no use while the pane is collapsed, so it is hidden then. The chevron expands the pane first.
+    expect(await page.locator('#bottom-resizer').isVisible(), 'divider hidden while collapsed').toBe(false);
+    await tap(page, page.locator('#btn-pane-toggle-bottom'));
+    await sleep(300);
     const before = await state(page);
+    expect(before.collapsed).toBe(false);
     const box = await page.locator('#bottom-resizer').boundingBox();
     const from = { x: box.x + box.width * 0.2, y: box.y + box.height / 2 };
     await drag(page, from, { x: from.x, y: from.y - 40 });

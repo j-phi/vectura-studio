@@ -15814,6 +15814,8 @@ body.touch-wide-layout.touch-ui .hud-bar {
   height: 26px;
   min-height: 0;
   margin-top: -26px;
+  /* ends left of the canvas HUD (251 px wide, 8 px from the canvas edge) */
+  margin-right: calc(var(--safe-right, 0px) + 8px + var(--canvas-hud-w-wide, 251px) + 8px);
   padding: 3px 12px;
   border-top: 0;
   background: color-mix(in srgb, var(--ui-panel) 78%, transparent);

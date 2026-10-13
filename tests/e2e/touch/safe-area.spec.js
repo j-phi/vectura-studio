@@ -60,7 +60,9 @@ const installHelpers = (page) => page.evaluate(() => {
   // TUX-007: on a short phone (iPhone landscape) every strip is an overlay, so nothing is in flow. The
   // status strip (#hud-bar) is then the bottom-most chrome and carries the bottom inset itself.
   const chrome = () => {
-    const shown = ['#hud-bar', '#touch-modifier-bar']
+    // Q17: on touch-wide the status strip is an overlay on the canvas; the collapsed bottom pane is the bottom-most strip.
+    const touchWide = document.body.classList.contains('touch-wide-layout');
+    const shown = (touchWide ? ['#bottom-pane', '#touch-modifier-bar'] : ['#hud-bar', '#touch-modifier-bar'])
       .map((s) => document.querySelector(s))
       .filter((e) => e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0);
     const flow = shown.filter(inFlow);

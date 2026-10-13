@@ -70,7 +70,7 @@ test('R5 iPhone landscape: the open sheet and the status strip derive their righ
   expect(r.hudLeft - r.barRight, 'status strip to HUD gap').toBeLessThanOrEqual(9);
 });
 
-test('R2 touch-wide: the collapsed bottom pane row is 40 px and its chevron stays a 44 px target', async ({ page, baseURL }, testInfo) => {
+test('R2 touch-wide: the collapsed bottom pane row is 44 px (Q17: the status strip no longer sits under it) and its chevron is a 44 px target', async ({ page, baseURL }, testInfo) => {
   test.skip(!/(coarse-wide|ipad-landscape)/.test(testInfo.project.name), 'touch-wide only');
   await core.bootApp(page, baseURL);
   await page.evaluate(() => document.getElementById('bottom-pane').classList.add('bottom-pane-collapsed'));
@@ -81,9 +81,9 @@ test('R2 touch-wide: the collapsed bottom pane row is 40 px and its chevron stay
     const hit = document.elementFromPoint(r.left + r.width / 2, r.bottom - 3);
     return { pane: document.getElementById('bottom-pane').getBoundingClientRect().height, h: r.height, hitIsToggle: !!hit && (hit === t || t.contains(hit)) };
   });
-  expect(g.pane, 'collapsed pane height').toBe(40);
+  expect(g.pane, 'collapsed pane height').toBe(44);
   expect(g.h, 'chevron height').toBeGreaterThanOrEqual(44);
-  expect(g.hitIsToggle, 'the overhang over the status strip takes the tap').toBe(true);
+  expect(g.hitIsToggle, 'the chevron takes the tap at its bottom edge').toBe(true);
 });
 
 test('R3 Scene3D panel: every target has a 24 px hit area (WCAG 2.5.8 floor)', async ({ page, baseURL }, testInfo) => {

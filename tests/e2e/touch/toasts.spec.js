@@ -45,6 +45,8 @@ const measure = (page, chromeSel) => page.evaluate((sel) => {
   const chrome = [];
   document.querySelectorAll(sel.join(',')).forEach((e) => {
     if (!shown(e)) return;
+    const strip = e.closest('.hud-bar');
+    if (strip && getComputedStyle(strip).pointerEvents === 'none') return; // Q17 overlay strip: a toast may cover it
     const b = e.getBoundingClientRect();
     chrome.push({ id: e.id, l: b.left, r: b.right, t: b.top, b: b.bottom });
   });
