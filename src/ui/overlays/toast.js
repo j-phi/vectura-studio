@@ -70,9 +70,9 @@
         const cs = view.getComputedStyle(e);
         const r = e.getBoundingClientRect();
         if (cs.display === 'none' || cs.visibility === 'hidden' || r.width <= 0 || r.height <= 0) return;
-        // The touch-wide status strip is a non-interactive overlay on the canvas (Q17); a toast may cover it.
+        // On touch-wide the status strip is a non-interactive overlay on the canvas (Q17); a toast may cover it.
         const strip = e.closest ? e.closest('.hud-bar') : null;
-        if (strip && view.getComputedStyle(strip).pointerEvents === 'none') return;
+        if (strip && ownerDoc.body.classList.contains('touch-wide-layout') && view.getComputedStyle(strip).pointerEvents === 'none') return;
         if (e.matches(COLLAPSED_CHROME) && (r.right < cx - TOAST_HALF_SPAN || r.left > cx + TOAST_HALF_SPAN)) return;
         if (r.top > midY) clear = Math.max(clear, view.innerHeight - r.top);
       });
