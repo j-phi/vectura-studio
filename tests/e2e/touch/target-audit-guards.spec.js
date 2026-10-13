@@ -95,3 +95,26 @@ test('guard: removing controls (display:none) is reported as worse via reachable
   expect(cmp.worse.map((w) => w.metric), `clean reachable ${clean.m.reachable}, hacked ${hacked.m.reachable}`).toContain('reachable');
   expect(hacked.m.reachable).toBeLessThan(clean.m.reachable);
 });
+
+// TUX-058 batch 3: a target under an OPEN MENU is inert for that state (popup-covered), not `covered`; the same target
+// under any other overlay still counts as `covered`. Both halves, so the exemption cannot swallow real occlusion.
+test('guard: popup-covered is exempt only for an open menu @audit-extra', async ({ page, baseURL }, testInfo) => {
+  test.setTimeout(90_000);
+  const spec = PROJECTS[testInfo.project.name];
+  test.skip(spec.width < 1000, 'the File panel only reaches the tools on iPad landscape width');
+  await core.bootApp(page, baseURL);
+  const st = STATES.find((s) => s.id === 'menu-file');
+  await st.run(page);
+  await expect.poll(() => st.post(page), { timeout: 10_000 }).toBe(true);
+  await core.waitLayoutSettled(page);
+  await page.waitForTimeout(300);
+  const menu = await measure(page, spec, testInfo.project.name);
+  const popup = menu.raw.items.filter((i) => i.hitState === 'popup-covered');
+  expect(popup.length, 'targets under the open File menu are classed popup-covered').toBeGreaterThan(0);
+  expect(menu.raw.items.filter((i) => i.hitState === 'covered' && /open menu/.test(i.coveredBy || '')).length).toBe(0);
+  // A non-menu overlay over the same targets is still `covered`.
+  await page.evaluate(() => { const d = document.createElement('div'); d.id = 'zz-cover'; d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:transparent'; document.body.appendChild(d); document.querySelectorAll('.top-menu-panel.open').forEach((p) => p.classList.remove('open')); });
+  await page.waitForTimeout(150);
+  const hacked = await measure(page, spec, testInfo.project.name);
+  expect(hacked.m.covered, 'a plain overlay still raises covered').toBeGreaterThan(menu.m.covered);
+});

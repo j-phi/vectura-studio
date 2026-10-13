@@ -15702,3 +15702,19 @@ body.tablet-layout.touch-ui:has(#right-pane.pane-drawer-open) .canvas-hud {
   text-transform: none;
 }
 /* === END TUX-012 === */
+
+/* === TUX-058 batch 3: text panel specimen head and docked-pane safe band ===
+ * The specimen header toggle and the outline pill were 14-21 px tall (WCAG 2.5.8 fail on iPad portrait). They keep their look and
+ * take a 44 px hit area through ::before (TUX-041 req 3). On a docked iPad landscape pane the pane reaches the screen edge, so its bottom band
+ * (the home-indicator strip) holds content that an unprotected select straddled: the pane now pads by the inset. */
+body.touch-ui .vtp-spec-head-btn,
+body.touch-ui .vtp-spec-pill-head { position: relative; }
+body.touch-ui .vtp-spec-head-btn::before,
+body.touch-ui .vtp-spec-pill-head::before {
+  content: ''; position: absolute; left: -4px; right: -4px; top: 50%; height: var(--touch-target-min); transform: translateY(-50%);
+}
+@media (pointer: coarse) {
+  body.touch-wide-layout #left-pane,
+  body.touch-wide-layout #right-pane { padding-bottom: var(--safe-bottom, 0px); }
+}
+/* === END TUX-058 batch 3 === */

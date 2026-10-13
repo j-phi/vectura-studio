@@ -403,6 +403,10 @@ function measureInPage(cfg, helpers) {
       if (!hit) hitState = 'none';
       else if (hit === el || el.contains(hit) || (hit.tagName === 'LABEL' && hit.control === el)) hitState = 'ok';
       else if (hit.contains(el)) hitState = 'ok-ancestor';
+      // An open dropdown menu, and the visible drawer backdrop (Jay 2026-10-12 Q13: it only dismisses), are transient
+      // dismiss-on-outside-tap layers: they sit over the tools by design (TUX-001, TUX-011). A target under one is inert
+      // for that state (not `reach`, not `covered`). Any other overlay still counts as `covered`.
+      else if (hit.closest && hit.closest('.top-menu-panel.open, .menu-dropdown.open, #mobile-pane-backdrop.visible')) { hitState = 'popup-covered'; coveredBy = 'open menu'; }
       else { hitState = 'covered'; coveredBy = (hit.id ? `#${hit.id}` : hit.tagName.toLowerCase() + (hit.classList[0] ? '.' + hit.classList[0] : '')); }
     }
     const reach = hitState === 'ok' || hitState === 'ok-ancestor';
