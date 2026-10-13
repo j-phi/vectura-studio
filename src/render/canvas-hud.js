@@ -67,6 +67,9 @@
     setDisabled(document.getElementById('btn-hud-redo'), !state.canRedo);
     setDisabled(document.getElementById('btn-header-undo'), !state.canUndo);
     setDisabled(document.getElementById('btn-header-redo'), !state.canRedo);
+    // The pop-out Petal Designer window carries its own pair (it covers the HUD and the phone header).
+    document.querySelectorAll('.petal-hist.petal-undo').forEach((el) => setDisabled(el, !state.canUndo));
+    document.querySelectorAll('.petal-hist.petal-redo').forEach((el) => setDisabled(el, !state.canRedo));
   };
 
   const readFromApp = () => {

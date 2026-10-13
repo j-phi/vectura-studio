@@ -1063,6 +1063,7 @@
 [data-ui-skin] .petal-close,
 [data-ui-skin] .petal-popout,
 [data-ui-skin] .petal-popin,
+[data-ui-skin] .petal-hist,
 [data-ui-skin] .petal-copy-btn {
   border: 1px solid var(--ui-border);
   background: var(--ui-ctrl);
@@ -1079,6 +1080,7 @@
 [data-ui-skin] .petal-close:hover,
 [data-ui-skin] .petal-popout:hover,
 [data-ui-skin] .petal-popin:hover,
+[data-ui-skin] .petal-hist:hover,
 [data-ui-skin] .petal-copy-btn:hover {
   background: var(--ui-ctrl-hov);
   border-color: var(--ui-border-hi);
@@ -7037,6 +7039,7 @@
 .petal-close,
 .petal-popout,
 .petal-popin,
+.petal-hist,
 .petal-copy-btn {
   border: 1px solid var(--ui-border-hi);
   background: var(--ui-panel-alt);
@@ -7054,6 +7057,7 @@
 .petal-close:hover,
 .petal-popout:hover,
 .petal-popin:hover,
+.petal-hist:hover,
 .petal-copy-btn:hover {
   border-color: #67e8f9;
   color: #cffafe;
@@ -14821,6 +14825,7 @@ body.touch-ui .modal-card .color-modal { padding-top: 4px; }
   [data-ui-skin] .petal-designer-window .petal-close,
   [data-ui-skin] .petal-designer-window .petal-popout,
   [data-ui-skin] .petal-designer-window .petal-popin,
+  [data-ui-skin] .petal-designer-window .petal-hist,
   [data-ui-skin] .petal-designer-window .petal-copy-btn {
     min-width: var(--touch-target-min, 44px);
     min-height: var(--touch-target-min, 44px);
@@ -14855,6 +14860,11 @@ body.phone-layout #petal-designer-window .petal-designer-header {
   top: 0;
   z-index: 2;
 }
+/* Batch R2 / TUX-020: Undo / Redo in the pop-out window header. The window covers the canvas HUD and the phone header, so this
+ * pair is the finger-reachable history control while it is open. Touch only; a mouse keeps Cmd+Z and the menus. */
+.petal-designer-window .petal-hist { display: none; }
+body.touch-ui .petal-designer-window:not(.petal-designer-inline) .petal-hist { display: inline-flex; align-items: center; justify-content: center; }
+.petal-designer-window .petal-hist:disabled { opacity: 0.4; }
 /* === END TUX-026 === */
 /* === TUX-027: mirror row actions (touch) ===
  * Disable / Lock / Delete get a >= 44px hit box on touch-ui. Specificity (0,4,1) beats the

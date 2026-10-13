@@ -367,3 +367,36 @@ test('two-finger pinch zooms the inline designer canvas', async ({ page }, testI
   expect(after.anchors).toEqual(info.anchors);
   if (touch.engineSupports(page, 'trustedMultiTouch')) expect(after.scale).toBe(1);
 });
+
+// ---- Undo while the pop-out window is open (TUX-020 follow-up, batch R2) -----------------------
+// The window covers the canvas HUD and the phone header, so it carries its own Undo / Redo. The edit is
+// set up through the history API (the window itself does not push history); the Undo is a real finger.
+const UNDO_IN_WINDOW = ['iPadP', 'iPadL', 'iPhP', 'iPhL'];
+test('Undo and Redo in the pop-out window header revert and restore an edit by finger', async ({ page }, testInfo) => {
+  test.skip(!UNDO_IN_WINDOW.includes(spec(testInfo).device), 'iPad and iPhone projects only');
+  await openWindow(page, testInfo);
+  const profile = () => page.evaluate(() => window.app.engine.layers.find((l) => l.type === 'petalisDesigner').params.petalProfile);
+  const before = await profile();
+  await page.evaluate(() => {
+    const { app } = window;
+    app.pushHistory();
+    app.engine.layers.find((l) => l.type === 'petalisDesigner').params.petalProfile = 'edited-by-test';
+  });
+  await page.waitForTimeout(150);
+  expect(await profile()).toBe('edited-by-test');
+  const undo = page.locator('#petal-designer-window .petal-undo');
+  const redo = page.locator('#petal-designer-window .petal-redo');
+  await expect(undo).toBeEnabled();
+  const box = await undo.boundingBox();
+  expect(box.width, 'undo width').toBeGreaterThanOrEqual(43.99);
+  expect(box.height, 'undo height').toBeGreaterThanOrEqual(43.99);
+  const top = await undo.evaluate((b) => { const r = b.getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!el && (el === b || b.contains(el)); });
+  expect(top, 'Undo is the top element at its centre').toBe(true);
+  await touch.tap(page, undo);
+  await sleep(250);
+  expect(await profile()).toBe(before);
+  await expect(redo).toBeEnabled();
+  await touch.tap(page, redo);
+  await sleep(250);
+  expect(await profile()).toBe('edited-by-test');
+});

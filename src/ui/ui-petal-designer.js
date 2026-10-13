@@ -1209,6 +1209,7 @@
         <div class="petal-designer-header">
           <div class="petal-designer-title">Petal Designer</div>
           <div class="petal-designer-actions">
+            ${showPopIn ? '<button type="button" class="petal-hist petal-undo" aria-label="Undo" title="Undo">↶</button><button type="button" class="petal-hist petal-redo" aria-label="Redo" title="Redo">↷</button>' : ''}
             ${showPopOut ? '<button type="button" class="petal-popout" aria-label="Pop Out Petal Designer" title="Pop Out">⧉</button>' : ''}
             ${showPopIn ? '<button type="button" class="petal-popin" aria-label="Pop In Petal Designer" title="Pop In">↩</button>' : ''}
             ${showClose ? '<button type="button" class="petal-close" aria-label="Close Petal Designer">✕</button>' : ''}
@@ -2435,6 +2436,14 @@
       if (popOutBtn) popOutBtn.onclick = () => this.popOutInlinePetalDesigner();
       const popInBtn = pd.root.querySelector('.petal-popin');
       if (popInBtn) popInBtn.onclick = () => this.popInPetalDesigner();
+      // Batch R2 / TUX-020: the pop-out window covers the canvas HUD and the phone header, so it carries its own Undo / Redo
+      // (touch-ui only, CSS). They run the HUD's single history path; canvas-hud.js keeps their disabled state.
+      const histRun = (kind) => { const hud = window.Vectura && window.Vectura.CanvasHud; if (hud && hud.runHistory) hud.runHistory(kind); };
+      const undoBtn = pd.root.querySelector('.petal-undo');
+      if (undoBtn) undoBtn.onclick = () => histRun('undo');
+      const redoBtn = pd.root.querySelector('.petal-redo');
+      if (redoBtn) redoBtn.onclick = () => histRun('redo');
+      if ((undoBtn || redoBtn) && window.Vectura && window.Vectura.CanvasHud && window.Vectura.CanvasHud.syncFromApp) window.Vectura.CanvasHud.syncFromApp();
       this.renderPetalDesignerShadingStack(pd, applyChanges);
       this.renderPetalDesignerModifierStack(pd, applyChanges);
       this.renderPetalDesignerRandomnessPanel(pd, applyChanges);
