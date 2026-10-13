@@ -172,3 +172,40 @@ test('guard: a menu item covered by an element inside its own menu still counts 
   expect(own.length, 'items hidden inside their own menu are covered, not popup-covered').toBeGreaterThan(0);
   expect(hacked.m.covered).toBeGreaterThan(clean.m.covered);
 });
+
+// TUX-058 batch 3b (orchestrator decisions 2026-10-12, Jay may override; requirements §7).
+// (a) a control PARTLY covered by an open menu is popup-covered (not reachable) while the menu is open.
+test('guard: a control partly covered by an open menu is popup-covered @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  await page.evaluate(() => {
+    const b = document.createElement('button'); b.id = 'zz-btn'; b.textContent = 'zz';
+    b.style.cssText = 'position:fixed;left:100px;top:300px;width:100px;height:44px;z-index:50;padding:0';
+    document.body.appendChild(b);
+    const m = document.createElement('div'); m.className = 'menu-dropdown open'; m.id = 'zz-menu';
+    m.style.cssText = 'position:fixed;left:0;top:300px;width:130px;min-width:0;height:60px;z-index:60;display:block;background:#222';
+    document.body.appendChild(m);
+  });
+  const r = await measure(page, spec, testInfo.project.name);
+  const it = r.raw.items.find((i) => /zz-btn/.test(i.sel));
+  expect(it, 'the probe button is listed').toBeTruthy();
+  expect(it.hitState, `centre is clear of the menu but its left 30 px is covered (${JSON.stringify(it)})`).toBe('popup-covered');
+  expect(it.reach).toBe(false);
+});
+
+// (b) a row cut by its own scroll container is measured at full size on the cut axis.
+test('guard: a row clipped by its own scroll container is measured at full size @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  await page.evaluate(() => {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:100px;top:300px;width:200px;height:80px;overflow-y:auto;z-index:50;background:#222';
+    box.innerHTML = '<div style="height:60px"></div><button id="zz-row" style="display:block;width:150px;height:40px;padding:0">row</button><div style="height:200px"></div>';
+    document.body.appendChild(box);
+  });
+  const r = await measure(page, spec, testInfo.project.name);
+  const it = r.raw.items.find((i) => /zz-row/.test(i.sel));
+  expect(it, 'the probe row is listed').toBeTruthy();
+  expect(it.clipped, 'the row is cut by its scroller').toBe(true);
+  expect(it.ph, `row height probed at ${it.ph} px, CSS box is 40 px`).toBeGreaterThanOrEqual(40);
+});

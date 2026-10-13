@@ -329,6 +329,18 @@ function measureInPage(cfg, helpers) {
     }
     return false;
   };
+  const openMenus = Array.from(document.querySelectorAll('.top-menu-panel.open, .menu-dropdown.open')).filter(visible);
+  const scrollCut = (el, r) => {
+    const cut = { x: false, y: false };
+    for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      const pr = p.getBoundingClientRect();
+      if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1 && (r.top < pr.top - 0.5 || r.bottom > pr.bottom + 0.5)) cut.y = true;
+      if (/(auto|scroll)/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1 && (r.left < pr.left - 0.5 || r.right > pr.right + 0.5)) cut.x = true;
+      if (cs.position === 'fixed') break;
+    }
+    return cut;
+  };
   let parked = 0;
   let stranded = 0;
   const strandedSel = [];
@@ -410,6 +422,16 @@ function measureInPage(cfg, helpers) {
       else if (hit.closest && hit.closest('.top-menu-panel.open, .menu-dropdown.open, #mobile-pane-backdrop.visible') && !hit.closest('.top-menu-panel.open, .menu-dropdown.open, #mobile-pane-backdrop.visible').contains(el)) { hitState = 'popup-covered'; coveredBy = 'open menu'; }
       else { hitState = 'covered'; coveredBy = (hit.id ? `#${hit.id}` : hit.tagName.toLowerCase() + (hit.classList[0] ? '.' + hit.classList[0] : '')); }
     }
+    // Orchestrator decision 2026-10-12 (a): a control PARTLY covered by an open menu panel is not reachable while the menu
+    // is open (the menu dismisses on an outside tap), the same as a control covered at its centre. Menu panels only: the
+    // drawer backdrop sits behind its own drawer, so it stays a centre-point test.
+    if (onscreen && (hitState === 'ok' || hitState === 'ok-ancestor')) {
+      for (const m of openMenus) {
+        if (m.contains(el)) continue;
+        const mr = m.getBoundingClientRect();
+        if (mr.left < c.x2 && mr.right > c.x1 && mr.top < c.y2 && mr.bottom > c.y1) { hitState = 'popup-covered'; coveredBy = 'open menu (part)'; break; }
+      }
+    }
     const reach = hitState === 'ok' || hitState === 'ok-ancestor';
     // Hit dimension. EVERY reachable target is probed (a rect >= 44 can still be partly
     // occluded). Cost is bounded by stopAt 44 and the 9-sample fast path in hitAreaInPage. Unreachable targets
@@ -420,6 +442,13 @@ function measureInPage(cfg, helpers) {
     if (hitState === 'ok') {
       const a = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx, cy });
       pw = a.w; ph = a.h; probed = true;
+    }
+    // Orchestrator decision 2026-10-12 (b): a row cut by its OWN scroll container (overflow auto/scroll) is measured at its
+    // full size on the cut axis. Its probed size would otherwise depend on the scroll position, not on the CSS.
+    if (probed) {
+      const cut = scrollCut(el, r);
+      if (cut.y && ph < 49) ph = Math.max(ph, Math.min(49, Math.round(r.height)));
+      if (cut.x && pw < 49) pw = Math.max(pw, Math.min(49, Math.round(r.width)));
     }
     const clipped = onscreen && (c.w + 1 < r.width || c.h + 1 < r.height);
     const isTextEntry = (tag === 'input' && TEXT_TYPES.has(type)) || tag === 'textarea' || tag === 'select' || el.isContentEditable;
