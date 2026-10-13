@@ -14773,10 +14773,12 @@ body.phone-layout.phone-short #bottom-pane:not(.bottom-pane-collapsed) {
   width: auto;
   height: min(60%, 220px);
 }
-/* Batch R: the canvas HUD (3 view buttons, about 156 px, right offset = sliver + 8 px) sits on the bottom row, so the
- * open sheet also ends left of it. Without this the sheet covered Zoom Out (iPhone landscape, 46x46 under the sheet). */
+/* Batch R: the canvas HUD (3 view buttons, right offset = sliver + 8 px) sits on the bottom row, so the
+ * open sheet also ends left of it. Without this the sheet covered Zoom Out (iPhone landscape, 46x46 under the sheet).
+ * Batch R2: the HUD width is one token (3 x 44 px buttons, no gap, no padding, 1 px border = 134 px); the sheet and the status strip derive from it. */
+body.phone-layout.phone-short.touch-ui { --canvas-hud-w: 134px; }
 body.phone-layout.phone-short.touch-ui #bottom-pane:not(.bottom-pane-collapsed) {
-  right: calc(var(--safe-right) + var(--pane-collapsed-width, 40px) + 8px + 156px + 8px);
+  right: calc(var(--safe-right) + var(--pane-collapsed-width, 40px) + 8px + var(--canvas-hud-w, 134px) + 8px);
 }
 /* Status strip: an overlay, not a row. It keeps the hints and the zoom readout (pointer-events none, so it
  * never intercepts a canvas touch). It sits between the formula chip and the right sliver and, like any
@@ -15353,9 +15355,9 @@ body.phone-layout.phone-short.touch-ui .canvas-hud { gap: 0; padding: 0; border-
 /* === TUX-020: phone-short status strip clears the HUD ===
  * On phone landscape the status strip (#hud-bar) is an overlay at the bottom edge and reached under the
  * canvas HUD, so the zoom and rotation readouts drew inside the HUD box. The strip now ends left of the HUD:
- * HUD right offset + three 46 px buttons + padding (about 148 px) + an 8 px gap. */
+ * HUD right offset + the HUD width token (--canvas-hud-w, 134 px) + an 8 px gap. */
 body.phone-layout.phone-short .hud-bar {
-  right: calc(var(--safe-right, 0px) + var(--pane-collapsed-width, 40px) + 8px + 156px);
+  right: calc(var(--safe-right, 0px) + var(--pane-collapsed-width, 40px) + 8px + var(--canvas-hud-w, 134px) + 8px);
 }
 /* === END TUX-020 (strip) === */
 

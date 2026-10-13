@@ -54,6 +54,22 @@ test('R1 iPhone landscape: the open bottom sheet ends left of the canvas HUD', a
   expect(r.paneRight, 'pane right edge vs Zoom Out left edge').toBeLessThanOrEqual(r.zoomLeft);
 });
 
+test('R5 iPhone landscape: the open sheet and the status strip derive their right offset from the real HUD width (8 px gap)', async ({ page, baseURL }, testInfo) => {
+  test.skip(!/iphone-landscape/.test(testInfo.project.name) || /chrome/.test(testInfo.project.name), 'phone-short only');
+  await open(page, baseURL, 'bottom-pane-open');
+  const r = await page.evaluate(() => {
+    const p = document.getElementById('bottom-pane').getBoundingClientRect();
+    const h = document.getElementById('canvas-hud').getBoundingClientRect();
+    const bar = document.querySelector('.hud-bar').getBoundingClientRect();
+    return { paneRight: p.right, hudLeft: h.left, hudW: h.width, barRight: bar.right, token: parseFloat(getComputedStyle(document.body).getPropertyValue('--canvas-hud-w')) };
+  });
+  expect(r.token, 'token equals the HUD box width').toBeCloseTo(r.hudW, 0);
+  expect(r.hudLeft - r.paneRight, 'sheet to HUD gap').toBeGreaterThanOrEqual(7);
+  expect(r.hudLeft - r.paneRight, 'sheet to HUD gap').toBeLessThanOrEqual(9);
+  expect(r.hudLeft - r.barRight, 'status strip to HUD gap').toBeGreaterThanOrEqual(7);
+  expect(r.hudLeft - r.barRight, 'status strip to HUD gap').toBeLessThanOrEqual(9);
+});
+
 test('R2 touch-wide: the collapsed bottom pane row is 40 px and its chevron stays a 44 px target', async ({ page, baseURL }, testInfo) => {
   test.skip(!/(coarse-wide|ipad-landscape)/.test(testInfo.project.name), 'touch-wide only');
   await core.bootApp(page, baseURL);
