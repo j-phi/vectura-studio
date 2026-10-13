@@ -264,6 +264,11 @@ describe('canvasShareExactInPage (TUX-058 exact canvas area)', () => {
       (x, y) => x >= 370 && x < 530 && y >= 370 && y < 530);
     expect(exactOf(env)).toBeCloseTo(97.44, 1); // border box alone reads 99.0
   });
+  it('a pointer-events:none overlay of >= 50 % opacity is not canvas (TUX-058 R3b)', () => {
+    // the strip is hit-through (canvas on top for elementFromPoint) but hides 8 % of the artwork
+    const env = shape([{ left: 0, right: 1000, top: 920, bottom: 1000, overlay: true }], () => false);
+    expect(exactOf(env)).toBe(92);
+  });
   it('overflowing content outside the box is counted', () => {
     const env = shape([{ left: 100, right: 300, top: 100, bottom: 150, grow: { l: 0, t: 0, r: 0, b: 80 } }],
       (x, y) => x >= 100 && x < 300 && y >= 100 && y < 230);

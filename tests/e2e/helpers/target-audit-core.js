@@ -117,6 +117,30 @@ function canvasShareExactInPage(args, env) {
   const q = (v) => Math.round(v * 4) / 4; // quarter-pixel snap: hit testing is whole-pixel anyway
   const isCanvas = (h) => !!h && (h === canvas || canvas.contains(h) || (useContainer && h.id === 'viewport-container'));
   const hit = env ? env.hit : (x, y) => document.elementFromPoint(x, y);
+  // Overlays: pointer-events:none boxes whose paint is >= 50 % opaque (own background alpha x opacity chain)
+  // hide the artwork under them, so that area is not canvas (an honest share). Border boxes only.
+  const overlays = [];
+  if (env) { for (const r of env.rects) if (r.overlay) overlays.push(r); }
+  else {
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el === canvas || canvas.contains(el) || el.contains(canvas)) continue;
+      const cs = getComputedStyle(el);
+      if (cs.pointerEvents !== 'none' || cs.visibility === 'hidden' || cs.display === 'none') continue;
+      const bg = cs.backgroundColor || '';
+      let a = 0;
+      const slash = bg.match(/\/\s*([\d.]+%?)\s*\)$/);
+      const rgba = bg.match(/^rgba\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*([\d.]+)\s*\)$/);
+      if (slash) a = slash[1].endsWith('%') ? parseFloat(slash[1]) / 100 : parseFloat(slash[1]);
+      else if (rgba) a = parseFloat(rgba[1]);
+      else if (/^(rgb|color|oklab|oklch|lab|lch|hsl)\(/.test(bg)) a = 1;
+      if (!(a > 0)) continue;
+      for (let n = el; n && n !== document.documentElement; n = n.parentElement) a *= parseFloat(getComputedStyle(n).opacity);
+      if (a < 0.5) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0 || r.right <= L || r.left >= R || r.bottom <= T || r.top >= B) continue;
+      overlays.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+    }
+  }
   // Candidate rects. Each carries an optional `grow` {l,t,r,b}: how far the real hit area can extend past
   // the border box (a ::before/::after hit area, or overflowing content). The lattice only seeds the
   // sampling; the exact edge is found by adaptive subdivision, so a generous grow is harmless.
@@ -142,7 +166,7 @@ function canvasShareExactInPage(args, env) {
     }
   }
   const cand = [];
-  for (const r of rects) {
+  for (const r of [...rects.filter((x) => !x.overlay), ...overlays]) {
     const gr = r.grow || { l: 0, t: 0, r: 0, b: 0 };
     const c = { l: q(Math.max(L, r.left - gr.l)), r: q(Math.min(R, r.right + gr.r)), t: q(Math.max(T, r.top - gr.t)), b: q(Math.min(B, r.bottom + gr.b)) };
     // the border-box edges stay lattice lines too, so a plain box is still resolved without subdividing
@@ -157,7 +181,11 @@ function canvasShareExactInPage(args, env) {
   // Adaptive cell area: hit-test the centre and four corners (inset); uniform -> the whole cell, mixed
   // -> split down to 1 px, then the centre decides. A budget caps pathological pages.
   let budget = 400000;
-  const probe = (x, y) => { budget -= 1; return isCanvas(hit(x, y)) ? 1 : 0; };
+  const probe = (x, y) => {
+    budget -= 1;
+    if (overlays.some((o) => x >= o.left && x < o.right && y >= o.top && y < o.bottom)) return 0;
+    return isCanvas(hit(x, y)) ? 1 : 0;
+  };
   const cellArea = (x0, y0, x1, y1) => {
     const w = x1 - x0; const h = y1 - y0;
     if (w <= 0 || h <= 0) return 0;
