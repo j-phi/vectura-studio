@@ -330,13 +330,26 @@ function measureInPage(cfg, helpers) {
     return false;
   };
   const openMenus = Array.from(document.querySelectorAll('.top-menu-panel.open, .menu-dropdown.open')).filter(visible);
+  // Q15 (hardened): a row counts as cut by its own scroller only when the scroller is visible, the row fits inside it, and the
+  // scroll range really reaches the hidden part (the row can scroll fully into view). Anything else is a real clip.
   const scrollCut = (el, r) => {
     const cut = { x: false, y: false };
     for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
       const cs = getComputedStyle(p);
       const pr = p.getBoundingClientRect();
-      if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1 && (r.top < pr.top - 0.5 || r.bottom > pr.bottom + 0.5)) cut.y = true;
-      if (/(auto|scroll)/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1 && (r.left < pr.left - 0.5 || r.right > pr.right + 0.5)) cut.x = true;
+      if (/(auto|scroll)/.test(cs.overflowY) || /(auto|scroll)/.test(cs.overflowX)) {
+        if (!visible(p) || cs.visibility === 'hidden' || pr.width < 1 || pr.height < 1) continue;
+      }
+      if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1 && r.height <= p.clientHeight + 0.5) {
+        const above = pr.top - r.top; const below = r.bottom - pr.bottom;
+        const roomDown = p.scrollHeight - p.clientHeight - p.scrollTop;
+        if ((above > 0.5 && above <= p.scrollTop + 0.5) || (below > 0.5 && below <= roomDown + 0.5)) cut.y = true;
+      }
+      if (/(auto|scroll)/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1 && r.width <= p.clientWidth + 0.5) {
+        const left = pr.left - r.left; const right = r.right - pr.right;
+        const roomRight = p.scrollWidth - p.clientWidth - p.scrollLeft;
+        if ((left > 0.5 && left <= p.scrollLeft + 0.5) || (right > 0.5 && right <= roomRight + 0.5)) cut.x = true;
+      }
       if (cs.position === 'fixed') break;
     }
     return cut;
@@ -422,11 +435,13 @@ function measureInPage(cfg, helpers) {
       else if (hit.closest && hit.closest('.top-menu-panel.open, .menu-dropdown.open, #mobile-pane-backdrop.visible') && !hit.closest('.top-menu-panel.open, .menu-dropdown.open, #mobile-pane-backdrop.visible').contains(el)) { hitState = 'popup-covered'; coveredBy = 'open menu'; }
       else { hitState = 'covered'; coveredBy = (hit.id ? `#${hit.id}` : hit.tagName.toLowerCase() + (hit.classList[0] ? '.' + hit.classList[0] : '')); }
     }
-    // Orchestrator decision 2026-10-12 (a): a control PARTLY covered by an open menu panel is not reachable while the menu
+    // Orchestrator decision 2026-10-12 (a), narrowed 2026-10-13 to the phone sheet (body.phone-menu-open): a control PARTLY covered by an open menu panel is not reachable while the menu
     // is open (the menu dismisses on an outside tap), the same as a control covered at its centre. Menu panels only: the
     // drawer backdrop sits behind its own drawer, so it stays a centre-point test.
     if (onscreen && (hitState === 'ok' || hitState === 'ok-ancestor')) {
-      for (const m of openMenus) {
+      // Q14 applies to the phone menu sheet only (it swallows the outside tap). On iPad and touch-wide a tap on the uncovered
+      // part of a part-covered control activates it, so it stays reachable at its probed size (orchestrator review 2026-10-13).
+      for (const m of (document.body.classList.contains('phone-menu-open') ? openMenus : [])) {
         if (m.contains(el)) continue;
         const mr = m.getBoundingClientRect();
         if (mr.left < c.x2 && mr.right > c.x1 && mr.top < c.y2 && mr.bottom > c.y1) { hitState = 'popup-covered'; coveredBy = 'open menu (part)'; break; }

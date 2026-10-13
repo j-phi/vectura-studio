@@ -174,23 +174,39 @@ test('guard: a menu item covered by an element inside its own menu still counts 
 });
 
 // TUX-058 batch 3b (orchestrator decisions 2026-10-12, Jay may override; requirements §7).
-// (a) a control PARTLY covered by an open menu is popup-covered (not reachable) while the menu is open.
-test('guard: a control partly covered by an open menu is popup-covered @audit-extra', async ({ page, baseURL }, testInfo) => {
+// (a) Q14 applies to the phone menu sheet only (body.phone-menu-open). Elsewhere a tap on the uncovered part activates it.
+const partCovered = async (page) => page.evaluate(() => {
+  const b = document.createElement('button'); b.id = 'zz-btn'; b.textContent = 'zz';
+  b.style.cssText = 'position:fixed;left:100px;top:300px;width:100px;height:44px;z-index:50;padding:0';
+  document.body.appendChild(b);
+  const m = document.createElement('div'); m.className = 'menu-dropdown open'; m.id = 'zz-menu';
+  m.style.cssText = 'position:fixed;left:0;top:300px;width:130px;min-width:0;height:60px;z-index:60;display:block;background:#222';
+  document.body.appendChild(m);
+});
+test('guard: a control partly covered by an open menu is popup-covered on the phone sheet only @audit-extra', async ({ page, baseURL }, testInfo) => {
   const spec = PROJECTS[testInfo.project.name];
+  test.skip(!/iphone/.test(testInfo.project.name), 'the phone menu sheet exists on phone layouts only');
   await boot(page, baseURL);
-  await page.evaluate(() => {
-    const b = document.createElement('button'); b.id = 'zz-btn'; b.textContent = 'zz';
-    b.style.cssText = 'position:fixed;left:100px;top:300px;width:100px;height:44px;z-index:50;padding:0';
-    document.body.appendChild(b);
-    const m = document.createElement('div'); m.className = 'menu-dropdown open'; m.id = 'zz-menu';
-    m.style.cssText = 'position:fixed;left:0;top:300px;width:130px;min-width:0;height:60px;z-index:60;display:block;background:#222';
-    document.body.appendChild(m);
-  });
+  await partCovered(page);
+  // The layout classifier rewrites body classes on settle; pin the phone-sheet class for the measurement.
+  await page.evaluate(() => { document.body.classList.add('phone-menu-open'); window.__zzPin = setInterval(() => document.body.classList.add('phone-menu-open'), 5); });
   const r = await measure(page, spec, testInfo.project.name);
   const it = r.raw.items.find((i) => /zz-btn/.test(i.sel));
   expect(it, 'the probe button is listed').toBeTruthy();
-  expect(it.hitState, `centre is clear of the menu but its left 30 px is covered (${JSON.stringify(it)})`).toBe('popup-covered');
+  // On a phone the open sheet itself can also cover the probe at its centre ('covered'); either way it is not reachable.
+  expect(['popup-covered', 'covered'], `phone sheet: ${JSON.stringify(it)}`).toContain(it.hitState);
   expect(it.reach).toBe(false);
+});
+test('guard: a control partly covered by an open menu stays reachable off the phone sheet @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  await partCovered(page);
+  await page.evaluate(() => document.body.classList.remove('phone-menu-open'));
+  const r = await measure(page, spec, testInfo.project.name);
+  const it = r.raw.items.find((i) => /zz-btn/.test(i.sel));
+  expect(it, 'the probe button is listed').toBeTruthy();
+  expect(it.reach, `no phone sheet: a finger tap on the uncovered part activates it (${JSON.stringify(it)})`).toBe(true);
+  expect(it.pw, 'probed at the uncovered width, not the CSS width').toBeLessThan(100);
 });
 
 // (b) a row cut by its own scroll container is measured at full size on the cut axis.
@@ -208,4 +224,20 @@ test('guard: a row clipped by its own scroll container is measured at full size 
   expect(it, 'the probe row is listed').toBeTruthy();
   expect(it.clipped, 'the row is cut by its scroller').toBe(true);
   expect(it.ph, `row height probed at ${it.ph} px, CSS box is 40 px`).toBeGreaterThanOrEqual(40);
+});
+
+// Q15 hardening: a row taller than its scroller can never scroll fully into view, so it keeps its probed (clipped) size.
+test('guard: a row taller than its scroll container is not measured at full size @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  await page.evaluate(() => {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:100px;top:300px;width:200px;height:30px;overflow-y:auto;z-index:50;background:#222';
+    box.innerHTML = '<button id="zz-tall" style="display:block;width:150px;height:44px;padding:0">row</button><div style="height:200px"></div>';
+    document.body.appendChild(box);
+  });
+  const r = await measure(page, spec, testInfo.project.name);
+  const it = r.raw.items.find((i) => /zz-tall/.test(i.sel));
+  expect(it, 'the probe row is listed').toBeTruthy();
+  expect(it.ph, `row probed at ${it.ph} px: the 30 px scroller never shows all 44 px`).toBeLessThan(40);
 });
