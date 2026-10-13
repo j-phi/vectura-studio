@@ -126,6 +126,8 @@
   // HUD, the formula sheet) cannot take a tap but would show as a live control. Mark it `data-covered` (CSS hides it); a button
   // the layer leaves clear stays. Each pass clears the mark first, so a layer that goes away restores the button.
   const stepAsideCovered = () => {
+    // A queued frame can fire after a test runtime tears the document down (same guard as applyState).
+    if (typeof document === 'undefined' || !document) return;
     const hud = document.getElementById('canvas-hud');
     if (!hud || getComputedStyle(hud).display === 'none') return;
     const host = document.getElementById('viewport-container');
