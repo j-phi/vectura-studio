@@ -15627,7 +15627,6 @@ body.touch-wide-layout #touch-modifier-bar { padding: 4px; gap: 4px; }
  * The pane row itself is 40 px, so the canvas keeps the share it had before TUX-051 (coarseWide 49.7 -> 47.7 with a 44 px row). */
 @media (pointer: coarse) {
   body.touch-wide-layout.touch-ui #bottom-pane.bottom-pane-collapsed {
-    --touch-bottom-collapsed-h: 40px;
     overflow: visible;
     position: relative;
     z-index: 6;
@@ -15800,3 +15799,28 @@ body.touch-ui .vtp-spec-pill-head::before {
   body.touch-wide-layout #right-pane { padding-bottom: var(--safe-bottom, 0px); }
 }
 /* === END TUX-058 batch 3 === */
+
+/* === TUX-058 batch R3 (Q17): iPad landscape canvas share ===
+ * With both panes collapsed the bottom stack took 73 px of the canvas (6 px #bottom-resizer, 40 px collapsed formula row, 27 px status
+ * strip), which left the canvas at 73.6 % against the 75 % of section 1.5. On touch-wide the status strip becomes a non-interactive
+ * overlay on the bottom edge of the canvas (as on phone landscape): it keeps the hints and the readouts, takes no row, and has a
+ * translucent background so the text stays legible over the paper. It sits right after the viewport in the flex column (order 1; the
+ * resizer and the pane move to order 2) and pulls itself up by its own height. Nothing in the strip is interactive (hint text and
+ * three readouts). The resizer has no use while the bottom pane is collapsed, so touch-ui hides it then. */
+body.touch-wide-layout.touch-ui .hud-bar {
+  order: 1;
+  position: relative;
+  box-sizing: border-box;
+  height: 26px;
+  min-height: 0;
+  margin-top: -26px;
+  padding: 3px 12px;
+  border-top: 0;
+  background: color-mix(in srgb, var(--ui-panel) 78%, transparent);
+  pointer-events: none;
+  z-index: 5;
+}
+body.touch-wide-layout.touch-ui #bottom-resizer,
+body.touch-wide-layout.touch-ui #bottom-pane { order: 2; }
+body.touch-ui #bottom-resizer:has(+ #bottom-pane.bottom-pane-collapsed) { display: none; }
+/* === END TUX-058 batch R3 === */
