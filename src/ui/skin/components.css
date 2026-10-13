@@ -14769,6 +14769,11 @@ body.phone-layout.phone-short #bottom-pane:not(.bottom-pane-collapsed) {
   width: auto;
   height: min(60%, 220px);
 }
+/* Batch R: the canvas HUD (3 view buttons, about 156 px, right offset = sliver + 8 px) sits on the bottom row, so the
+ * open sheet also ends left of it. Without this the sheet covered Zoom Out (iPhone landscape, 46x46 under the sheet). */
+body.phone-layout.phone-short.touch-ui #bottom-pane:not(.bottom-pane-collapsed) {
+  right: calc(var(--safe-right) + var(--pane-collapsed-width, 40px) + 8px + 156px + 8px);
+}
 /* Status strip: an overlay, not a row. It keeps the hints and the zoom readout (pointer-events none, so it
  * never intercepts a canvas touch). It sits between the formula chip and the right sliver and, like any
  * bottom chrome, carries the bottom inset in its own padding (TUX-005 contract). */
@@ -15346,6 +15351,19 @@ body.phone-layout.phone-short .hud-bar {
 body.touch-ui #viewport-container:has(.ctxbar.ctxbar--fill) .canvas-hud {
   bottom: calc(var(--safe-bottom, 0px) + 8px + 52px + 8px);
 }
+/* Batch R: the fill bar rides the bottom edge (context-bar.js, top = viewport height - bar - pad) and ignored the bottom
+ * safe-area inset, so on iPhone landscape (21 px home-indicator band) it sat inside the band. Lift it by the inset. */
+body.touch-ui .ctxbar.ctxbar--fill { margin-top: calc(-1 * var(--safe-bottom, 0px)); }
+/* === Batch R: Scene3D panel finger targets (wcag258Fail 1 -> 7 on iPad portrait) ===
+ * The caret (16 px wide), the visibility / delete toggles (20x20) and the add-light chips (22 px tall, 6 px apart)
+ * were under the 24 px floor with no spacing exception. On a coarse pointer the chips and toggles grow to 44 px
+ * boxes and the caret to the floor width (a split-button caret next to a full-size button, TUX-041 D5). */
+@media (pointer: coarse) {
+  .vs3-more-caret { width: var(--touch-target-floor, 24px); }
+  .vs3-tree-vis, .vs3-tree-del { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+  .vs3-tree-addbtn { min-height: var(--touch-target-min, 44px); padding: 0 12px; }
+  .vs3-tree-addlight { gap: 8px; }
+}
 /* === END TUX-022 === */
 /* === TUX-001: narrow mouse windows (500-640 px) keep every header control on-screen === */
 @media (max-width: 640px) {
@@ -15586,6 +15604,18 @@ body.touch-wide-layout #touch-modifier-bar { padding: 4px; gap: 4px; }
     transform: translateX(-50%) rotate(180deg);
   }
 }
+/* Batch R: touch-wide only (iPad landscape, wide coarse windows). The status strip sits right under the pane there; on a phone it is
+ * hidden, and on iPad portrait the modifier bar (z 60) sits under the pane, so those keep the 44 px row.
+ * The 44 px chevron overhangs the 36 px pane by 8 px and sits over the status strip's top edge (z above the strip's 5).
+ * The pane row itself is 36 px, so the canvas keeps the share it had before TUX-051 (coarseWide 49.7 -> 47.7 with a 44 px row). */
+@media (pointer: coarse) {
+  body.touch-wide-layout.touch-ui #bottom-pane.bottom-pane-collapsed {
+    --touch-bottom-collapsed-h: 36px;
+    overflow: visible;
+    position: relative;
+    z-index: 6;
+  }
+}
 /* === END TUX-051 === */
 
 /* === TUX-048: toast placement ===
@@ -15694,12 +15724,14 @@ body.tablet-layout.touch-ui .pane.pane-drawer-open .pane-body > * { visibility: 
  * visibility (not display) keeps the HUD's box, so nothing reflows when it returns. */
 body.touch-ui:not(.tablet-layout):has(#mobile-pane-backdrop.visible) .canvas-hud,
 body.touch-ui:has(#modal-overlay.open) .canvas-hud,
-body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud {
+body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud,
+body.touch-ui:has(#petal-designer-window) .canvas-hud {
   visibility: hidden;
 }
 body.touch-ui:not(.tablet-layout):has(#mobile-pane-backdrop.visible) .canvas-hud .canvas-hud-btn,
 body.touch-ui:has(#modal-overlay.open) .canvas-hud .canvas-hud-btn,
-body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud .canvas-hud-btn {
+body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud .canvas-hud-btn,
+body.touch-ui:has(#petal-designer-window) .canvas-hud .canvas-hud-btn {
   pointer-events: none;
 }
 /* Tablet (no header Undo): the HUD stays reachable under an open drawer (batch 1, journey J12). It rides above the
@@ -15711,6 +15743,23 @@ body.tablet-layout.touch-ui:has(#mobile-pane-backdrop.visible) .canvas-hud {
 body.tablet-layout.touch-ui:has(#right-pane.pane-drawer-open) .canvas-hud {
   right: auto;
   left: calc(var(--safe-left, 0px) + 8px);
+}
+/* Batch R: phone sheets (the Document Setup panel, a #modal-overlay card) fill the screen inside the safe area. The HUD and
+ * the header action buttons under them are covered and cannot take a tap, so they step aside the same way. The header band
+ * keeps its box (visibility), so nothing reflows when the sheet closes. */
+body.phone-layout.touch-ui:has(#settings-panel.open) .canvas-hud,
+body.phone-layout.touch-ui:has(#settings-panel.open) .canvas-hud .canvas-hud-btn {
+  visibility: hidden;
+  pointer-events: none;
+}
+body.phone-layout.touch-ui.phone-menu-open .canvas-hud,
+body.phone-layout.touch-ui.phone-menu-open .canvas-hud .canvas-hud-btn {
+  visibility: hidden;
+  pointer-events: none;
+}
+body.phone-layout.touch-ui:has(#modal-overlay.open) #app-header button,
+body.phone-layout.touch-ui:has(#settings-panel.open) #app-header button {
+  visibility: hidden;
 }
 /* === END TUX-020 / TUX-011 HUD step-aside === */
 
