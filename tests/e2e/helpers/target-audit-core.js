@@ -101,9 +101,9 @@ function canvasShareInPage(args) {
 // Exact visible canvas area: the canvas rect clipped to the spec viewport (W x H), minus the exact
 // union of every covering rect. Candidate rects are the pointer-hittable elements that intersect
 // the clipped canvas. Their edges cut the canvas into a coordinate-compressed lattice; each lattice
-// cell is hit-tested once at its centre and counts by its exact area. The lattice is built per
-// row band, so the hit-test count stays near the number of distinct chrome pieces. No fixed sample
-// grid is involved, so there is no aliasing. `env` ({canvas, rects, hit}) is a test seam.
+// cell is hit-tested at its centre and four corners; a mixed cell is subdivided adaptively down to
+// 1 px (rotated, rounded and pseudo-element/overflow hit areas). The lattice is built per row band,
+// so the hit-test count stays near the number of distinct chrome pieces. `env` ({canvas, rects, hit}) is a test seam.
 function canvasShareExactInPage(args, env) {
   const { W, H, selector } = args;
   const sel = selector || '#main-canvas';
@@ -117,35 +117,72 @@ function canvasShareExactInPage(args, env) {
   const q = (v) => Math.round(v * 4) / 4; // quarter-pixel snap: hit testing is whole-pixel anyway
   const isCanvas = (h) => !!h && (h === canvas || canvas.contains(h) || (useContainer && h.id === 'viewport-container'));
   const hit = env ? env.hit : (x, y) => document.elementFromPoint(x, y);
+  // Candidate rects. Each carries an optional `grow` {l,t,r,b}: how far the real hit area can extend past
+  // the border box (a ::before/::after hit area, or overflowing content). The lattice only seeds the
+  // sampling; the exact edge is found by adaptive subdivision, so a generous grow is harmless.
   let rects = [];
   if (env) rects = env.rects;
   else {
     for (const el of document.body.querySelectorAll('*')) {
       if (el === canvas || canvas.contains(el) || el.contains(canvas)) continue;
+      const cs = getComputedStyle(el);
+      if (cs.pointerEvents === 'none') continue;
       const r = el.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0 || r.right <= L || r.left >= R || r.bottom <= T || r.top >= B) continue;
-      if (getComputedStyle(el).pointerEvents === 'none') continue;
-      rects.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+      let g = 0;
+      for (const pe of ['::before', '::after']) {
+        const pc = getComputedStyle(el, pe);
+        if (pc.content !== 'none' && pc.content !== 'normal' && pc.pointerEvents !== 'none') g = 48;
+      }
+      const ovR = Math.max(0, el.scrollWidth - el.clientWidth);
+      const ovB = Math.max(0, el.scrollHeight - el.clientHeight);
+      const grow = { l: g, t: g, r: Math.max(g, ovR), b: Math.max(g, ovB) };
+      if (r.width <= 0 && r.height <= 0 && !g) continue;
+      if (r.right + grow.r <= L || r.left - grow.l >= R || r.bottom + grow.b <= T || r.top - grow.t >= B) continue;
+      rects.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom, grow });
     }
   }
   const cand = [];
   for (const r of rects) {
-    const c = { l: q(Math.max(L, r.left)), r: q(Math.min(R, r.right)), t: q(Math.max(T, r.top)), b: q(Math.min(B, r.bottom)) };
-    if (c.r > c.l && c.b > c.t) cand.push(c);
+    const gr = r.grow || { l: 0, t: 0, r: 0, b: 0 };
+    const c = { l: q(Math.max(L, r.left - gr.l)), r: q(Math.min(R, r.right + gr.r)), t: q(Math.max(T, r.top - gr.t)), b: q(Math.min(B, r.bottom + gr.b)) };
+    // the border-box edges stay lattice lines too, so a plain box is still resolved without subdividing
+    const e = [q(Math.max(L, r.left)), q(Math.min(R, r.right)), q(Math.max(T, r.top)), q(Math.min(B, r.bottom))];
+    if (c.r > c.l && c.b > c.t) cand.push({ l: c.l, r: c.r, t: c.t, b: c.b, e });
   }
-  const ys = [...new Set([q(T), q(B), ...cand.flatMap((c) => [c.t, c.b])])].sort((a, b) => a - b);
+  // coarse seed lines catch a hit area no rect predicted
+  const seedX = []; const seedY = [];
+  for (let x = Math.ceil(L / 32) * 32; x < R; x += 32) seedX.push(x);
+  for (let y = Math.ceil(T / 32) * 32; y < B; y += 32) seedY.push(y);
+  const ys = [...new Set([q(T), q(B), ...seedY, ...cand.flatMap((c) => [c.t, c.b, c.e[2], c.e[3]])])].sort((a, b) => a - b);
+  // Adaptive cell area: hit-test the centre and four corners (inset); uniform -> the whole cell, mixed
+  // -> split down to 1 px, then the centre decides. A budget caps pathological pages.
+  let budget = 400000;
+  const probe = (x, y) => { budget -= 1; return isCanvas(hit(x, y)) ? 1 : 0; };
+  const cellArea = (x0, y0, x1, y1) => {
+    const w = x1 - x0; const h = y1 - y0;
+    if (w <= 0 || h <= 0) return 0;
+    const cx = (x0 + x1) / 2; const cy = (y0 + y1) / 2;
+    const c = probe(cx, cy);
+    if (w <= 1 && h <= 1) return c * w * h;
+    if (budget <= 0) return c * w * h;
+    const ix = Math.min(0.5, w / 4); const iy = Math.min(0.5, h / 4);
+    const s = c + probe(x0 + ix, y0 + iy) + probe(x1 - ix, y0 + iy) + probe(x0 + ix, y1 - iy) + probe(x1 - ix, y1 - iy);
+    if (s === 0 || s === 5) return (s === 5 ? 1 : 0) * w * h;
+    const sx = w > 1; const sy = h > 1;
+    const xm = sx ? cx : x1; const ym = sy ? cy : y1;
+    let a = cellArea(x0, y0, xm, ym);
+    if (sx) a += cellArea(xm, y0, x1, ym);
+    if (sy) a += cellArea(x0, ym, xm, y1);
+    if (sx && sy) a += cellArea(xm, ym, x1, y1);
+    return a;
+  };
   let area = 0;
   for (let i = 0; i + 1 < ys.length; i += 1) {
     const y0 = ys[i]; const y1 = ys[i + 1];
     if (y1 <= y0) continue;
-    const cy = (y0 + y1) / 2;
     const band = cand.filter((c) => c.t < y1 && c.b > y0);
-    const xs = [...new Set([q(L), q(R), ...band.flatMap((c) => [c.l, c.r])])].sort((a, b) => a - b);
-    for (let j = 0; j + 1 < xs.length; j += 1) {
-      const x0 = xs[j]; const x1 = xs[j + 1];
-      if (x1 <= x0) continue;
-      if (isCanvas(hit((x0 + x1) / 2, cy))) area += (x1 - x0) * (y1 - y0);
-    }
+    const xs = [...new Set([q(L), q(R), ...seedX, ...band.flatMap((c) => [c.l, c.r, c.e[0], c.e[1]])])].sort((a, b) => a - b);
+    for (let j = 0; j + 1 < xs.length; j += 1) area += cellArea(xs[j], y0, xs[j + 1], y1);
   }
   return +(100 * area / (W * H)).toFixed(1);
 }

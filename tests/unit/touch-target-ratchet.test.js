@@ -237,4 +237,36 @@ describe('canvasShareExactInPage (TUX-058 exact canvas area)', () => {
     // canvas clipped to x 0..1000 (full width); extra block adds x 0..500, y 114..300 = 9.3 %
     expect(core.canvasShareExactInPage({ W: 1000, H: 1000 }, env)).toBe(67.9);
   });
+
+  // TUX-058 R3: non-rectangular and out-of-box hit areas. `rects` are the border boxes the DOM reports;
+  // `hit` is the true hit shape.
+  const shape = (rects, inside) => {
+    const chrome = { id: 'chrome', contains: () => false };
+    return { canvas, canvasRect: { left: 0, right: 1000, top: 0, bottom: 1000 }, rects, hit: (x, y) => (inside(x, y) ? chrome : canvas) };
+  };
+  const exactOf = (env) => core.canvasShareExactInPage({ W: 1000, H: 1000 }, env);
+  it('rotated element: counts the rotated area, not its bounding box', () => {
+    const h = 100 * Math.SQRT2; // 200 x 200 square turned 45 deg: half diagonal 141.42
+    const env = shape([{ left: 500 - h, right: 500 + h, top: 500 - h, bottom: 500 + h }], (x, y) => Math.abs(x - 500) + Math.abs(y - 500) < h);
+    expect(exactOf(env)).toBeCloseTo(96.0, 1); // bounding box alone reads 92.0
+  });
+  it('rounded corners: counts the rounded area', () => {
+    const inside = (x, y) => {
+      if (x < 100 || x > 500 || y < 100 || y > 500) return false;
+      const cx = Math.min(Math.max(x, 200), 400); const cy = Math.min(Math.max(y, 200), 400);
+      return (x - cx) ** 2 + (y - cy) ** 2 <= 100 * 100;
+    };
+    const env = shape([{ left: 100, right: 500, top: 100, bottom: 500 }], inside);
+    expect(exactOf(env)).toBeCloseTo(84.86, 1); // bounding box alone reads 84.0
+  });
+  it('pseudo-element hit area outside the box is counted', () => {
+    const env = shape([{ left: 400, right: 500, top: 400, bottom: 500, grow: { l: 30, t: 30, r: 30, b: 30 } }],
+      (x, y) => x >= 370 && x < 530 && y >= 370 && y < 530);
+    expect(exactOf(env)).toBeCloseTo(97.44, 1); // border box alone reads 99.0
+  });
+  it('overflowing content outside the box is counted', () => {
+    const env = shape([{ left: 100, right: 300, top: 100, bottom: 150, grow: { l: 0, t: 0, r: 0, b: 80 } }],
+      (x, y) => x >= 100 && x < 300 && y >= 100 && y < 230);
+    expect(exactOf(env)).toBeCloseTo(97.4, 1); // border box alone reads 99.5
+  });
 });
