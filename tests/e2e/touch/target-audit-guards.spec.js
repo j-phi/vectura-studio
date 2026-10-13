@@ -118,3 +118,57 @@ test('guard: popup-covered is exempt only for an open menu @audit-extra', async 
   const hacked = await measure(page, spec, testInfo.project.name);
   expect(hacked.m.covered, 'a plain overlay still raises covered').toBeGreaterThan(menu.m.covered);
 });
+
+// TUX-058 batch 3b (review of 5a2bce44): the exemption applies only when the target is OUTSIDE the covering layer.
+// (1) the visible drawer backdrop is exempt like an open menu; a plain overlay in its place is not.
+test('guard: popup-covered covers the drawer backdrop, and a plain overlay still counts @audit-extra', async ({ page, baseURL }, testInfo) => {
+  test.setTimeout(90_000);
+  const spec = PROJECTS[testInfo.project.name];
+  await core.bootApp(page, baseURL);
+  const st = STATES.find((s) => s.id === 'left-pane-open');
+  await st.run(page);
+  await expect.poll(() => st.post(page), { timeout: 10_000 }).toBe(true);
+  await core.waitLayoutSettled(page);
+  await page.waitForTimeout(400);
+  const hasBackdrop = await page.evaluate(() => !!document.querySelector('#mobile-pane-backdrop.visible'));
+  test.skip(!hasBackdrop, 'no drawer backdrop in this layout (docked pane)');
+  const withBackdrop = await measure(page, spec, testInfo.project.name);
+  const popup = withBackdrop.raw.items.filter((i) => i.hitState === 'popup-covered');
+  expect(popup.length, 'targets under the drawer backdrop are classed popup-covered').toBeGreaterThan(0);
+  await page.evaluate(() => {
+    document.querySelector('#mobile-pane-backdrop').classList.remove('visible');
+    const d = document.createElement('div'); d.id = 'zz-cover';
+    d.style.cssText = 'position:fixed;inset:0;z-index:99999;background:transparent'; document.body.appendChild(d);
+  });
+  await page.waitForTimeout(150);
+  const plain = await measure(page, spec, testInfo.project.name);
+  expect(plain.m.covered, 'a plain overlay over the same targets raises covered').toBeGreaterThan(withBackdrop.m.covered);
+});
+
+// (2) a menu item hidden inside its OWN menu is still covered (the hit is inside the layer, so no exemption).
+test('guard: a menu item covered by an element inside its own menu still counts as covered @audit-extra', async ({ page, baseURL }, testInfo) => {
+  test.setTimeout(90_000);
+  const spec = PROJECTS[testInfo.project.name];
+  test.skip(spec.width < 600, 'the menubar dropdown is the phone sheet here');
+  await core.bootApp(page, baseURL);
+  const st = STATES.find((s) => s.id === 'menu-file');
+  await st.run(page);
+  await expect.poll(() => st.post(page), { timeout: 10_000 }).toBe(true);
+  await core.waitLayoutSettled(page);
+  await page.waitForTimeout(300);
+  const clean = await measure(page, spec, testInfo.project.name);
+  const injected = await page.evaluate(() => {
+    const panel = document.querySelector('.top-menu-panel.open, .menu-dropdown.open');
+    if (!panel) return false;
+    const d = document.createElement('div'); d.id = 'zz-inner';
+    d.style.cssText = 'position:absolute;inset:0;z-index:99999;background:transparent';
+    panel.appendChild(d);
+    return true;
+  });
+  expect(injected, 'an open menu panel exists').toBe(true);
+  await page.waitForTimeout(150);
+  const hacked = await measure(page, spec, testInfo.project.name);
+  const own = hacked.raw.items.filter((i) => i.hitState === 'covered' && !/open menu/.test(i.coveredBy || ''));
+  expect(own.length, 'items hidden inside their own menu are covered, not popup-covered').toBeGreaterThan(0);
+  expect(hacked.m.covered).toBeGreaterThan(clean.m.covered);
+});
