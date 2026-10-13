@@ -192,7 +192,33 @@
     return parts.join('');
   };
 
+  // TUX-012 review: a scrolling menu marks which edge still hides rows (data-scroll-cue="above below"); CSS draws a fade
+  // there. iOS overlay scrollbars are hidden, so without the fade a row below the fold has no cue. Idempotent per element.
+  const scrollCue = (() => {
+    const refresh = (el) => {
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
+      const parts = [];
+      if (max > 1 && el.scrollTop > 1) parts.push('above');
+      if (max > 1 && el.scrollTop < max - 1) parts.push('below');
+      if (parts.length) el.dataset.scrollCue = parts.join(' ');
+      else delete el.dataset.scrollCue;
+    };
+    const bind = (el) => {
+      if (!el) return;
+      if (!el.__scrollCueBound) {
+        el.__scrollCueBound = true;
+        el.addEventListener('scroll', () => refresh(el), { passive: true });
+        if (typeof ResizeObserver === 'function') new ResizeObserver(() => refresh(el)).observe(el);
+      }
+      refresh(el);
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => refresh(el));
+    };
+    return { bind, refresh };
+  })();
+
   UI.utils = {
+    scrollCue,
     clamp,
     formatNumber,
     tabularNum,

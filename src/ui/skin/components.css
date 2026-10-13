@@ -14034,6 +14034,21 @@ body.phone-layout:not(.auto-collapsed) #tool-bar {
   }
   .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
 }
+/* TUX-012 review: scroll-edge fades on a scrolling context menu. data-scroll-cue (utils.scrollCue) lists the edges that
+ * still hide rows, so a menu that fits shows nothing. Sticky pseudo-elements overlay the first/last rows; they take no taps. */
+.menu-dropdown.is-context-menu::before, .menu-dropdown.is-context-menu::after,
+.canvas-ctx-menu::before, .canvas-ctx-menu::after {
+  content: ''; display: block; position: sticky; height: 28px; pointer-events: none; z-index: 2;
+  opacity: 0; transition: opacity 120ms ease;
+}
+.menu-dropdown.is-context-menu::before, .canvas-ctx-menu::before {
+  top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent);
+}
+.menu-dropdown.is-context-menu::after, .canvas-ctx-menu::after {
+  bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent);
+}
+.menu-dropdown.is-context-menu[data-scroll-cue~="above"]::before, .canvas-ctx-menu[data-scroll-cue~="above"]::before,
+.menu-dropdown.is-context-menu[data-scroll-cue~="below"]::after, .canvas-ctx-menu[data-scroll-cue~="below"]::after { opacity: 1; }
 /* === END TUX-034 === */
 
 /* === TUX-015: all tools drawer (touch) === */

@@ -183,6 +183,7 @@
       el.classList.add('open');
       isOpen = true;
       positionAgainst(anchor);
+      if (utils.scrollCue) utils.scrollCue.bind(el);
       const enabled = entries.filter((e) => !e.item.disabled);
       if (enabled.length) setHighlight(entries.indexOf(enabled[0]));
     }
