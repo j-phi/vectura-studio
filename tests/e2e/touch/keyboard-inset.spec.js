@@ -92,12 +92,36 @@ test.describe('TUX-032 keyboard inset', () => {
       const list = listEl.getBoundingClientRect();
       const line = innerHeight - k;
       const vis = [...pop.querySelectorAll('.vtp-fp-opt')].filter((o) => { const b = o.getBoundingClientRect(); return b.height > 0 && b.top >= list.top - 1 && b.bottom <= Math.min(list.bottom, line) + 1; });
-      return { popT: r.top, popB: r.bottom, line, listH: list.height, rows: vis.length, rowH: vis[0] ? vis[0].getBoundingClientRect().height : 0 };
+      const si = pop.querySelector('.vtp-fp-search input').getBoundingClientRect();
+      return { popT: r.top, popB: r.bottom, line, listH: list.height, rows: vis.length, rowH: vis[0] ? vis[0].getBoundingClientRect().height : 0, searchH: si.height };
     }, K);
+    // §1.5 absolute floor: no target under 24 px, even in the typing-mode compact header (TUX-032 review).
+    expect(m.rowH, `compact option row height (${JSON.stringify(m)})`).toBeGreaterThanOrEqual(24);
+    expect(m.searchH, `compact search field height (${JSON.stringify(m)})`).toBeGreaterThanOrEqual(24);
     expect(m.popB, `popover bottom ${m.popB} above the keyboard line ${m.line}`).toBeLessThanOrEqual(m.line + 1);
     expect(m.rows, `option rows fully visible above the keyboard (list ${m.listH} px, row ${m.rowH} px, ${JSON.stringify(m)})`).toBeGreaterThanOrEqual(3);
     await fs.promises.mkdir(EVID, { recursive: true }).catch(() => {});
     await page.screenshot({ path: path.join('/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch3', `font-popover-keyboard-${testInfo.project.name}.png`) }).catch(() => {});
+  });
+
+  // TUX-032 review: with no keyboard the popover rows are finger targets (44 px on a coarse pointer).
+  test('(h2) font popover rows are at least 44 px with no keyboard', async ({ page }, testInfo) => {
+    await h.addDefaultTextLayer(page, touch);
+    const trigger = page.locator('.vtp-fontpick-trigger');
+    await trigger.scrollIntoViewIfNeeded();
+    await touch.tap(page, trigger);
+    await page.waitForSelector('.vtp-fp-pop.open .vtp-fp-opt', { state: 'attached' });
+    await page.waitForTimeout(250);
+    const m = await page.evaluate(() => {
+      const pop = document.querySelector('.vtp-fp-pop');
+      const hs = [...pop.querySelectorAll('.vtp-fp-opt')].slice(0, 12).map((o) => o.getBoundingClientRect().height);
+      return { compact: pop.classList.contains('kb-compact'), min: Math.min(...hs), n: hs.length, search: pop.querySelector('.vtp-fp-search input').getBoundingClientRect().height };
+    });
+    expect(m.compact).toBe(false);
+    expect(m.min, `smallest option row ${m.min} px (${JSON.stringify(m)})`).toBeGreaterThanOrEqual(43.5);
+    expect(m.search, `search field ${m.search} px`).toBeGreaterThanOrEqual(43.5);
+    await fs.promises.mkdir('/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch3b', { recursive: true }).catch(() => {});
+    await page.screenshot({ path: path.join('/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch3b', `font-popover-rows-${testInfo.project.name}.png`) }).catch(() => {});
   });
 
   test('(b) lower-pane numeric field rises above the keyboard', async ({ page }) => {

@@ -13703,12 +13703,18 @@ html.kb-open .export-settings-scroll {
 .vtp-fp-pop .vtp-fp-search, .vtp-fp-pop .vtp-fp-tags { flex: none; }
 /* Pinned popover with the keyboard open (landscape): compact header so the list keeps >= 3 rows where they fit. */
 .vtp-fp-pop.kb-compact .vtp-fp-tags { display: none; }
-.vtp-fp-pop.kb-compact .vtp-fp-search { padding: 2px 8px; }
-.vtp-fp-pop.kb-compact .vtp-fp-search input { padding-block: 2px; min-height: 0; }
-.vtp-fp-pop.kb-compact .vtp-fp-list { padding: 2px; }
-.vtp-fp-pop.kb-compact .vtp-fp-opt { padding: 1px 8px; min-height: 0; }
+.vtp-fp-pop.kb-compact .vtp-fp-search { padding: 0 8px; }
+.vtp-fp-pop.kb-compact .vtp-fp-search input { padding-block: 0; min-height: 24px; height: 24px; box-sizing: border-box; }
+.vtp-fp-pop.kb-compact .vtp-fp-list { padding: 0 2px; }
+.vtp-fp-pop.kb-compact .vtp-fp-opt { padding: 0 8px; min-height: 24px; }
 .vtp-fp-pop.kb-compact .vtp-fp-sec { padding-block: 2px; }
-/* === /TUX-032 ===
+/* TUX-032 review: the compact typing header keeps the 24 px absolute floor (3 rows still fit at 874x330); without the
+ * keyboard the rows and the search field are 44 px finger targets on a coarse pointer. */
+@media (pointer: coarse) {
+  .vtp-fp-pop:not(.kb-compact) .vtp-fp-opt { min-height: var(--touch-target-min); box-sizing: border-box; }
+  .vtp-fp-pop:not(.kb-compact) .vtp-fp-search input { min-height: var(--touch-target-min); box-sizing: border-box; }
+}
+/* === /TUX-032 === */
 /* === TUX-042: text-entry >= 16px on coarse pointers ===
  * iOS Safari zooms the page when a focused field computes below 16px. !important is the only
  * way to beat the inline font-size:10px on the Text panel selects (ui-text-panel.js) and the
