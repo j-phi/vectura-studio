@@ -1597,6 +1597,8 @@
               const Menu = window.Vectura?.UI?.overlays?.Menu;
               if (!Menu) return;
               if (!this._lvlStripMenu) this._lvlStripMenu = Menu(document.body, { items: [], onSelect: () => {} });
+              // TUX-036 review: the coarse 44 px row rule is keyed on .is-context-menu (rows were 30 px without it).
+              this._lvlStripMenu.el.classList.add('is-context-menu');
               const m = this._lvlStripMenu;
               if (m.isOpen && m.isOpen()) { m.close(); return; }
               m.update({ items, onSelect: (key) => { m.close(); run[key]?.(); } });

@@ -99,6 +99,17 @@ test.describe('TUX-036/041 multi-select strip', () => {
     expect(await page.evaluate(() => window.app.engine.layers.filter((l) => l.isGroup).length), 'Group ran').toBe(before + 1);
   });
 
+  test('every ⋯ menu row (Hide, Lock, Group, Expand) is at least 44 px', async ({ page }, testInfo) => {
+    await boot(page);
+    await touch.tap(page, page.locator('#layer-status-bar .lvl-sb-more'));
+    await expect(page.locator('.menu-dropdown.open')).toBeVisible();
+    const rows = await page.evaluate(() => [...document.querySelectorAll('.menu-dropdown.open .menu-entry')].map((e) => ({ t: e.textContent.trim(), h: e.getBoundingClientRect().height })));
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    expect(rows.filter((r) => r.h < MIN - 0.5), `rows under ${MIN} px: ${JSON.stringify(rows)}`).toEqual([]);
+    fs.mkdirSync('/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch3b', { recursive: true });
+    await page.screenshot({ path: `/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch3b/strip-menu-${testInfo.project.name}.png` });
+  });
+
   test('a tap on an ineligible strip button explains itself with a toast', async ({ page }) => {
     // A modifier group on top is not a clip source; find a top layer type that is ineligible.
     await boot(page, ['wavetable', 'wavetable']);
