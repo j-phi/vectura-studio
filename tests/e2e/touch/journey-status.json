@@ -1,5 +1,31 @@
 {
   "projects": ["touch-ipad-landscape","touch-ipad-portrait","touch-iphone-landscape","touch-iphone-portrait","webkit-ipad-landscape","webkit-ipad-portrait","webkit-iphone-landscape","webkit-iphone-portrait"],
   "entries": [
+  ],
+  "unproven": [
+    {"project":"webkit-ipad-landscape","journey":"J1","label":"WebKit finger-scroll unproven","steps":["j1.pick-lissajous","j1.slider-1","j1.slider-2","j1.slider-3","j1.preset-open"]},
+    {"project":"webkit-ipad-landscape","journey":"J2","label":"WebKit finger-scroll unproven","steps":["j2.rename-open","j2.hide","j2.delete-menu"]},
+    {"project":"webkit-ipad-landscape","journey":"J6","label":"WebKit finger-scroll unproven","steps":["j6.select-source","j6.select-second","j6.angle"]},
+    {"project":"webkit-ipad-landscape","journey":"J7","label":"WebKit finger-scroll unproven","steps":["j7.font-open","j7.size-focus"]},
+    {"project":"webkit-ipad-landscape","journey":"J9","label":"WebKit finger-scroll unproven","steps":["j9.select-layer","j9.preset-save-open"]},
+    {"project":"webkit-ipad-landscape","journey":"J11","label":"WebKit finger-scroll unproven","steps":["j11.pick-scene3d"]},
+    {"project":"webkit-ipad-portrait","journey":"J1","label":"WebKit finger-scroll unproven","steps":["j1.pick-lissajous","j1.slider-1","j1.slider-2","j1.slider-3","j1.preset-open"]},
+    {"project":"webkit-ipad-portrait","journey":"J2","label":"WebKit finger-scroll unproven","steps":["j2.rename-open","j2.hide","j2.delete-menu"]},
+    {"project":"webkit-ipad-portrait","journey":"J6","label":"WebKit finger-scroll unproven","steps":["j6.select-source","j6.select-second","j6.angle"]},
+    {"project":"webkit-ipad-portrait","journey":"J7","label":"WebKit finger-scroll unproven","steps":["j7.font-open","j7.size-focus"]},
+    {"project":"webkit-ipad-portrait","journey":"J9","label":"WebKit finger-scroll unproven","steps":["j9.select-layer","j9.preset-save-open"]},
+    {"project":"webkit-ipad-portrait","journey":"J11","label":"WebKit finger-scroll unproven","steps":["j11.pick-scene3d"]},
+    {"project":"webkit-iphone-landscape","journey":"J1","label":"WebKit finger-scroll unproven","steps":["j1.pick-lissajous","j1.slider-1","j1.slider-2","j1.slider-3","j1.preset-open"]},
+    {"project":"webkit-iphone-landscape","journey":"J2","label":"WebKit finger-scroll unproven","steps":["j2.rename-open","j2.hide","j2.delete-menu"]},
+    {"project":"webkit-iphone-landscape","journey":"J6","label":"WebKit finger-scroll unproven","steps":["j6.select-source","j6.select-second","j6.angle"]},
+    {"project":"webkit-iphone-landscape","journey":"J7","label":"WebKit finger-scroll unproven","steps":["j7.font-open","j7.size-focus"]},
+    {"project":"webkit-iphone-landscape","journey":"J9","label":"WebKit finger-scroll unproven","steps":["j9.select-layer","j9.preset-save-open"]},
+    {"project":"webkit-iphone-landscape","journey":"J11","label":"WebKit finger-scroll unproven","steps":["j11.pick-scene3d"]},
+    {"project":"webkit-iphone-portrait","journey":"J1","label":"WebKit finger-scroll unproven","steps":["j1.pick-lissajous","j1.slider-1","j1.slider-2","j1.slider-3","j1.preset-open"]},
+    {"project":"webkit-iphone-portrait","journey":"J2","label":"WebKit finger-scroll unproven","steps":["j2.rename-open","j2.hide","j2.delete-menu"]},
+    {"project":"webkit-iphone-portrait","journey":"J6","label":"WebKit finger-scroll unproven","steps":["j6.select-source","j6.select-second","j6.angle"]},
+    {"project":"webkit-iphone-portrait","journey":"J7","label":"WebKit finger-scroll unproven","steps":["j7.font-open","j7.size-focus"]},
+    {"project":"webkit-iphone-portrait","journey":"J9","label":"WebKit finger-scroll unproven","steps":["j9.select-layer","j9.preset-save-open"]},
+    {"project":"webkit-iphone-portrait","journey":"J11","label":"WebKit finger-scroll unproven","steps":["j11.pick-scene3d"]}
   ]
 }
