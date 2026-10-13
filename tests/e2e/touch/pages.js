@@ -595,19 +595,6 @@ async function historyTap(page, list) {
 async function undo(page) { await historyTap(page, SELECTORS.headerUndo); }
 async function redo(page) { await historyTap(page, SELECTORS.headerRedo); }
 
-// Taps via `tapFn` and returns the saved file name: an anchor download, or (WebKit) the share-sheet file.
-async function captureFile(page, tapFn) {
-  const shares = await spyShare(page);
-  const dl = page.waitForEvent('download', { timeout: 4000 });
-  dl.catch(() => {});
-  await tapFn();
-  if (!shares) return (await dl).suggestedFilename();
-  const t0 = Date.now();
-  let names = [];
-  while (Date.now() - t0 < 4000 && !names.length) { names = await sharedFiles(page); if (!names.length) await sleep(100); }
-  return names[0];
-}
-
 async function addAlgorithmLayer(page, type) {
   await openLayers(page);
   await fingerTap(page, page.locator(SELECTORS.addLayer));
@@ -651,6 +638,9 @@ async function hitAtCenter(page, loc) {
 // target into view; every tap after it stays a guarded finger tap. The finger-scroll proof lives in the Chromium twins.
 async function webkitProgrammaticScroll(page, target) {
   const handle = await handleOf(page, target, 'scroll target');
+  // Recorded per cell: the ledger labels these as "WebKit finger-scroll unproven" (a finger never moved the pane).
+  const j = jOf(page);
+  (j.programmaticScrolls = j.programmaticScrolls || []).push(j.stepId);
   await page.evaluate((el) => el.scrollIntoView({ block: 'center' }), handle);
   await sleep(120);
 }
@@ -736,7 +726,6 @@ async function readRotateAffordance(page, layerId) {
 module.exports = {
   SELECTORS,
   readSavedPresetNames,
-  captureFile,
   readRotateAffordance,
   STEP_BUDGET_MS,
   BOOT_BUDGET_MS,

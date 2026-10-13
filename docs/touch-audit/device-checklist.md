@@ -160,3 +160,6 @@ One line per cell. Add lines only after a real device run. Do not enter results 
 | TUX-033#2 | Fill tool, Multi-select latched, tap an existing fill. The fill is sampled. Constrain latched, drag a finger across 3 regions. 3 fills pour. |
 | TUX-033#3 | Apple Pencil: repeat TUX-033#1 with the Pencil. |
 | TUX-033#4 | Mac with a mouse: Cmd-click and Shift-click in the layer list are unchanged. Touch laptop with a task latched: a mouse click is unchanged. |
+
+## WebKit finger scroll (TUX-059 review)
+- [ ] On a real iPad and iPhone, scroll the Layers list, the Generator pane and the algorithm drill list with one finger. Playwright WebKit cannot run a trusted touch scroll, so the WebKit journey cells that use the programmatic scroll are labelled "WebKit finger-scroll unproven" in `tests/e2e/touch/journey-status.json` (`unproven`).

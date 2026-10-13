@@ -209,10 +209,12 @@ const stepCanvasReady = (j, what) => ({
   post: () => {},
 });
 
-// J2 rename-open: the generous wait for the input to appear. The latency is not bounded: on the heavy document every
-// layer tap costs the main thread 1-2 s in Chromium device emulation (more under machine load), so a latency bound
-// would measure machine load, not the double-tap contract (TUX-038 req 5). No TUX sets a tap-latency limit.
+// J2 rename-open: the input must show within RENAME_MAX_MS of the double-tap, or the step fails. The old 1500 ms bound
+// is below the measured Chromium device-emulation latency on the heavy document (iPad: 1583, 1615, 1728 ms in 4 runs;
+// iPhone landscape 658-667 ms; iPhone portrait 18-20 ms; WebKit 12-36 ms). 2500 ms keeps about 45 % headroom over the
+// slowest measured run and still fails a rename that never opens (the clock defect, JRN-010, shows as "never").
 const RENAME_WAIT_MS = 6000;
+const RENAME_MAX_MS = 2500;
 
 // ---- the journeys ----------------------------------------------------------------------------
 const JOURNEYS = [];
@@ -270,6 +272,9 @@ JOURNEYS.push({
 // J2 ------------------------------------------------------------------------------------------
 JOURNEYS.push({
   id: 'J2', title: 'Add, rename (heavy document), reorder, hide/show, delete a layer', fixture: 'journey-heavy',
+  // WebKit keeps the light fixture: Playwright WebKit queues the second tap behind the busy main thread (measured on the heavier
+  // journey-heavy-webkit document: second pointerdown 1085 ms after the first although sent at 110 ms), so no real double tap can
+  // be made there. The TUX-038 clock path on WebKit is proven by rename-paths.spec.js with stamped events instead.
   // Both engines load the same heavy document. JRN-010 was a clock defect (rename timed by handler time, not by
   // event.timeStamp); TUX-038 req 5 fixed it, so a heavy document must still rename on a real double-tap.
   // The Chromium double-tap carries hardware touch times (helpers/touch.js doubleTap); WebKit cannot stamp a
@@ -288,9 +293,9 @@ JOURNEYS.push({
     },
     {
       id: 'j2.rename-open', action: 'doubleTap', route: 'double-tap the name of a heavy layer (timestamp-based, TUX-038)', selector: 'SELECTORS.cardName',
-      expects: `rename input appears within ${RENAME_WAIT_MS} ms of the double-tap and holds focus; layers +0`, jrn: 'JRN-010', expect: { selected: 'any' },
+      expects: `rename input appears within ${RENAME_MAX_MS} ms of the double-tap and holds focus; layers +0`, jrn: 'JRN-010', expect: { selected: 'any' },
       // Own budget: the step waits up to RENAME_WAIT_MS for the input (the latency is recorded in c.vars.renameMs).
-      // It is NOT pinned on exceeding the 5000 ms step budget.
+      // The pin is deterministic: RENAME_MAX_MS, or never within RENAME_WAIT_MS. It is not pinned on the 5000 ms step budget.
       budget: RENAME_WAIT_MS + 40000,
       run: async (c) => {
         const st = await P.readState(c.page);
@@ -306,6 +311,7 @@ JOURNEYS.push({
       },
       post: (c) => {
         if (c.vars.renameMs === null) throw new Error(`the rename input never appeared within ${RENAME_WAIT_MS} ms of the double-tap`);
+        if (c.vars.renameMs > RENAME_MAX_MS) throw new Error(`the rename input took ${c.vars.renameMs} ms, over the ${RENAME_MAX_MS} ms threshold`);
       },
     },
     {

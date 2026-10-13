@@ -16,7 +16,7 @@ const DOC = path.join(DIR, '..', '..', '..', 'docs', 'touch-audit', 'journey-scr
 
 // Functions that may call page.evaluate and friends (state reads, setup, guard internals).
 const EVAL_ALLOWED = new Set([
-  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'webkitProgrammaticScroll', 'hitAtCenter', 'waitAppReady', 'waitNoToast', 'readSavedPresetNames', 'spyShare', 'sharedFiles', 'captureFile', 'readRotateAffordance',
+  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'webkitProgrammaticScroll', 'hitAtCenter', 'waitAppReady', 'waitNoToast', 'readSavedPresetNames', 'spyShare', 'sharedFiles', 'readRotateAffordance',
   // TUX-054: read-only save instrumentation (records navigator.share calls; the finger tap stays in the caller).
   'savedFileName',
 ]);
@@ -184,4 +184,10 @@ test.describe('journey static guard', () => {
       prev = key;
     }
   });
+});
+
+// The programmatic scroll is recorded per cell so the ledger can label it "WebKit finger-scroll unproven".
+test('the sanctioned programmatic scroll records itself for the ledger label', () => {
+  expect(stripComments(read('pages.js'))).toMatch(/programmaticScrolls/);
+  expect(read('merge-ledger.js')).toMatch(/WebKit finger-scroll unproven/);
 });

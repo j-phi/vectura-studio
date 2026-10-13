@@ -209,6 +209,7 @@ test.describe('finger-only journeys', () => {
         fs.mkdirSync(RESULTS_DIR, { recursive: true });
         fs.writeFileSync(path.join(RESULTS_DIR, `${project}__${J.id}.json`), JSON.stringify({
           project, journey: J.id, failsAt: result.failedStep, reason: result.failedStep ? reasonOf(result) : '', reached: result.passed.length, all: result.all,
+          renameMs: ctx.vars.renameMs ?? null, programmaticScrolls: P.jOf(page).programmaticScrolls || [],
         }));
       }
 
