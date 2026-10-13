@@ -7,10 +7,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Testing workflow
+- **Phase-two PR validation acceleration (local certification complete; hosted checks pending).** Full-scope coverage owns non-E2E correctness while preserving required-check compatibility, lifecycle/browser checks and uninstrumented performance. The queued local `test:ci`-equivalent decomposition passed with strict 765-file inventory; measured local coverage took 39m39.8s on two workers. Hosted speed targets remain provisional, and the full-scope shard workflow remains manual-only until a successful post-merge pilot justifies a separate promotion.
 - **Bounded feedback and retained audits.** Add isolated runtime profiles and immutable
   script caching, an explicit critical-feedback roster, a single complete browser invocation,
   a physical exhaustive-proof audit lane, and fail-closed shadow routing/promotion evidence.
-  Pre-push runs bounded feedback; broad GitHub jobs and full coverage thresholds remain.
+  Pre-push runs bounded feedback; full correctness scope and coverage thresholds remain (phase two deduplicates the hosted executions).
   Local worker limits bound memory. Independent review repairs and verification limits live
   in `docs/test-suite-acceleration-punchlist.md`; hosted speed targets are not yet certified.
 

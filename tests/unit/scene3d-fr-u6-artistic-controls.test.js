@@ -12,9 +12,16 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
+const freezeDeep = (value, seen = new WeakSet()) => {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  Object.values(value).forEach((child) => freezeDeep(child, seen));
+  return Object.freeze(value);
+};
 const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3 };
 const SUN = { id: 'sun', type: 'directional', azimuth: 200, elevation: 55, castShadows: false };
 const md5 = (o) => crypto.createHash('md5').update(JSON.stringify(o)).digest('hex').slice(0, 10);
+const sha256 = (o) => crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
 const lenOf = (p) => {
   let s = 0;
   for (let i = 1; i < p.length; i += 1) s += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
@@ -65,7 +72,16 @@ describe('Fill-style review U6 — artistic controls', () => {
     trochoidLoop: { toneLaw: 'ampSpacing', waveForm: 'loop' },
     interlockWeave: { toneLaw: 'ampSpacing', wavePhase: 'anti' },
   };
+  // Default fixtures recur across controls. Keep only the most recent
+  // immutable summary; nondefault renders invalidate it. Full-output SHA-256
+  // digests retain compact parity witnesses for each exact default scene.
+  const defaultSceneCache = new Map();
+  const defaultSceneSnapshots = new Map();
   const gen = (prim, mapper, law, extra = {}, opt = {}) => {
+    const isDefaultScene = Object.keys(extra).length === 0 && Object.keys(opt).length === 0;
+    const cacheKey = JSON.stringify([prim, mapper, law]);
+    if (isDefaultScene && defaultSceneCache.has(cacheKey)) return defaultSceneCache.get(cacheKey);
+    if (!isDefaultScene) defaultSceneCache.clear();
     const p = clone(defaults);
     p.objects = [{
       id: 'o1', name: 's', primitive: prim,
@@ -92,10 +108,22 @@ describe('Fill-style review U6 — artistic controls', () => {
     if (opt.mut) opt.mut(p);
     const out = algo.generate(p, null, null, BOUNDS) || [];
     const paths = out.map((pth) => (pth.points || pth).map((q) => [Math.round(q.x * 1000) / 1000, Math.round(q.y * 1000) / 1000]));
-    return {
+    const result = {
       paths, hash: md5(paths), n: paths.length, ink: inkOf(paths), out,
       pens: Array.from(new Set(out.map((pth) => (pth.meta && pth.meta.penId) || ''))).sort(),
     };
+    if (isDefaultScene) {
+      const outputDigest = sha256({ paths, out });
+      if (defaultSceneSnapshots.has(cacheKey)) {
+        expect(outputDigest).toBe(defaultSceneSnapshots.get(cacheKey));
+      } else {
+        defaultSceneSnapshots.set(cacheKey, outputDigest);
+      }
+      const cachedResult = freezeDeep({ ...result, out: clone(out) });
+      defaultSceneCache.clear();
+      defaultSceneCache.set(cacheKey, cachedResult);
+    }
+    return result;
   };
 
   describe('defaults reproduce the output of the tree this unit started from', () => {
@@ -204,6 +232,16 @@ describe('Fill-style review U6 — artistic controls', () => {
       const b = p({ toneGamma: 1.8 });
       expect(b.hash).not.toBe(a.hash);
     });
+  });
+
+  it('a fresh default scene stays byte-identical after gamma and wave controls render', () => {
+    const before = gen('sphere', 'hatch', 'ampSpacing');
+    gen('sphere', 'hatch', 'ampSpacing', { toneGamma: 1.8 });
+    const afterGamma = gen('sphere', 'hatch', 'ampSpacing');
+    expect(JSON.stringify(afterGamma.out)).toBe(JSON.stringify(before.out));
+    gen('sphere', 'hatch', 'ampSpacing', { waveLength: 4, waveCrest: 'walk' });
+    const afterWave = gen('sphere', 'hatch', 'ampSpacing');
+    expect(JSON.stringify(afterWave.out)).toBe(JSON.stringify(before.out));
   });
 
   // ── 7. depth fade ───────────────────────────────────────────────────────────

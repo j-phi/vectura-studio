@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: '0 8 * * *'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lane-plan:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
@@ -55,40 +59,27 @@ jobs:
           path: ${{ runner.temp }}/lane-metrics.jsonl
           if-no-files-found: ignore
 
+  # Compatibility check name for existing branch protection. The full Vitest
+  # inventory (including unit tests) is executed once by `coverage`.
   unit:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+    needs: [coverage]
     runs-on: ubuntu-latest
-    timeout-minutes: 120
     steps:
-      # fetch-depth: 0 (full history) — several tests/unit/*.test.js RGR
-      # proofs read a historical revision of a file via `git show <sha>:path`
-      # (the pinned commit is always an ancestor of the checked-out ref, never
-      # a foreign branch) to prove a fix's guard trips against the real
-      # pre-fix tree. actions/checkout's default depth: 1 makes that sha
-      # unreachable and those tests fail with a git error, not a real
-      # regression (docs/3d-audit/lane-reports/CI-5-impl.md).
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run test:unit
+      - name: Preserve the required check after full-scope coverage
+        env:
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+        run: test "$COVERAGE_RESULT" = success
 
   integration:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main')
+    needs: [coverage]
     runs-on: ubuntu-latest
-    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run test:integration
+      - name: Preserve the required check after full-scope coverage
+        env:
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+        run: test "$COVERAGE_RESULT" = success
 
   e2e-smoke:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
@@ -115,17 +106,31 @@ jobs:
           if-no-files-found: ignore
 
   visual:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: always() && (github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'schedule')
+    needs: [coverage]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - name: Preserve the required check after full-scope coverage
+        if: github.event_name != 'schedule'
+        env:
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+        run: test "$COVERAGE_RESULT" = success
+      - name: Check out scheduled visual suite
+        if: github.event_name == 'schedule'
+        uses: actions/checkout@v7
+      - name: Set up Node for scheduled visual suite
+        if: github.event_name == 'schedule'
+        uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run test:visual
+      - name: Install dependencies for scheduled visual suite
+        if: github.event_name == 'schedule'
+        run: npm install --no-audit --no-fund --loglevel=error
+      - name: Run scheduled visual suite
+        if: github.event_name == 'schedule'
+        run: npm run test:visual
       - name: Upload Visual Artifacts
         if: failure()
         uses: actions/upload-artifact@v7
@@ -164,13 +169,29 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - name: Start coverage setup timing
+        run: echo "VECTURA_SETUP_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: npm install --no-audit --no-fund --loglevel=error
+      - name: Record coverage setup timing
+        run: echo "VECTURA_SETUP_MS=$(( $(date +%s%3N) - VECTURA_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
       # Runs through scripts/run-vitest.js, which tolerates vitest's birpc
       # "Timeout calling onTaskUpdate" RPC timeout — and ONLY that, and only when
       # zero tests failed. See the header of that script for why nothing else
       # (fork count, console volume, sharding, coverage scope, the threads pool)
       # eliminates it. A real failure still fails the job.
-      - run: npm run test:coverage
+      - name: Run authoritative full-scope coverage and save per-file timings
+        run: |
+          set -o pipefail
+          echo "VECTURA_COVERAGE_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+          npm run test:coverage -- --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/fullscope-vitest-results.json" 2>&1 | tee "$RUNNER_TEMP/fullscope-vitest.log"
+      - name: Build inventory and timing profile
+        if: always()
+        run: |
+          test -s "$RUNNER_TEMP/fullscope-vitest.log"
+          test -s "$RUNNER_TEMP/fullscope-vitest-results.json"
+          execution_ms=$(( $(date +%s%3N) - VECTURA_COVERAGE_STARTED_MS ))
+          node scripts/test-profile.js --strict --log "$RUNNER_TEMP/fullscope-vitest.log" --results "$RUNNER_TEMP/fullscope-vitest-results.json" --output "$RUNNER_TEMP/fullscope-profile.json" \
+            --runner "${{ runner.os }}-${{ runner.arch }}" --workers 2 --setup-ms "$VECTURA_SETUP_MS" --execution-ms "$execution_ms"
       - name: Upload Coverage Report
         if: always()
         uses: actions/upload-artifact@v7
@@ -178,6 +199,14 @@ jobs:
           name: coverage-report
           path: coverage
           retention-days: 7
+          if-no-files-found: ignore
+      - name: Upload full-scope timing summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fullscope-vitest-profile
+          path: ${{ runner.temp }}/fullscope-profile.json
+          retention-days: 30
           if-no-files-found: ignore
 
   scheduled-audit:

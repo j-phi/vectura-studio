@@ -104,7 +104,7 @@ Node 20.19+ required. `package.json` is the canonical version source — run `ve
 | UI interaction behavior | `test:integration` + `test:e2e` |
 | Rendering output or baselines | `test:visual` (+ `test:perf` for heavy paths) |
 | Docs-only | Link/path sanity review only |
-| Any PR / full confidence | `test:ci` (unit + integration + e2e + visual + perf) |
+| Any PR / full confidence | `test:ci` (lifecycle + full-scope Vitest coverage + browser roster + uninstrumented perf) |
 
 ## Shared Local Test Queue
 

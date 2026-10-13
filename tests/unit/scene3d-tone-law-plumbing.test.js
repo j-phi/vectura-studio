@@ -20,6 +20,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
+const { SCENE3D_FILES } = require('../helpers/runtime-profiles');
 const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3 };
 const SPHERE = { radius: 40, detail: 20 };
 
@@ -27,7 +28,7 @@ describe('Scene3D — toneLaw plumbed from style to SurfaceFill.buildObject', ()
   let runtime; let V; let algo; let defaults; let SurfaceFill;
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadVecturaRuntime({ profile: 'feature', files: SCENE3D_FILES });
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;

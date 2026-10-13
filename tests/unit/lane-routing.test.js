@@ -40,6 +40,26 @@ beforeAll(() => {
 afterAll(() => fs.rmSync(repo, { recursive: true, force: true }));
 
 describe('versioned risk routing', () => {
+  it('keeps shadow routing and assigns every CI guarantee to one recorded owner', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.resolve('scripts/test-lanes.json'), 'utf8'));
+    const workflow = fs.readFileSync(path.resolve('.github/workflows/test.yml'), 'utf8');
+    const scripts = require('../../package.json').scripts;
+    expect(manifest.selection).toBe('shadow');
+    expect(Object.keys(manifest.ciRoster.owners).sort()).toEqual([...manifest.ciRoster.expectedJobs].sort());
+    expect(manifest.ciRoster.owners.feedback).toContain('lifecycle');
+    expect(scripts['test:feedback:run']).toContain('test:runner');
+    for (const command of ['test:runner', 'test:coverage', 'test:e2e', 'test:perf']) {
+      expect(scripts['test:ci']).toContain(command);
+    }
+    expect(scripts['test:ci']).not.toContain('test:unit');
+    expect(scripts['test:ci']).not.toContain('test:integration');
+    expect(scripts['test:ci']).not.toContain('test:visual');
+    expect(workflow).toContain('npm run test:coverage');
+    expect(workflow).toContain('npm run test:perf');
+    expect(workflow).toContain('npm run test:e2e');
+    expect(workflow).toContain('needs: [coverage]');
+  });
+
   it('selects core and browser for core changes and resolves a merge base', () => {
     write('src/core/engine.js', 'changed\n');
     git('add', '.');
@@ -146,7 +166,7 @@ describe('lane timing and promotion evidence', () => {
       const sha = run.toString(16).padStart(40, '0');
       const runClasses = [classes[(run - 1) % classes.length]];
       for (const job of jobs) rows.push({
-        schemaVersion: 2, source: 'github-actions', sha, job, expectedJobs: jobs, result: 'success', complete: true,
+        schemaVersion: 3, source: 'github-actions', sha, job, owner: manifest.ciRoster.owners[job], expectedJobs: jobs, compatibilityJobs: ['unit', 'integration', 'visual'], result: 'success', complete: true,
         latestHead: true, classes: runClasses, runId: `run-${run}`, runNumber: run,
         collectedAt: new Date(Date.UTC(2026, 0, run)).toISOString(),
         provenance: { workflow: 'Tests', event: 'pull_request', attempt: 1 },
@@ -171,6 +191,26 @@ describe('lane timing and promotion evidence', () => {
     expect(result.stdout).toContain('Complete promotion evidence');
   });
 
+  it('continues to read complete legacy schema-two ledgers', () => {
+    const legacy = promotionFixture().map(({ compatibilityJobs, owner, ...row }) => ({ ...row, schemaVersion: 2 }));
+    const result = runPromotion(legacy, legacy[legacy.length - 1].sha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('consecutive complete green SHAs');
+  });
+
+  it('requires twenty consecutive schema-three rows for new-topology promotion', () => {
+    const mixed = promotionFixture();
+    const firstSha = mixed[0].sha;
+    for (const row of mixed.filter((entry) => entry.sha === firstSha)) {
+      row.schemaVersion = 2;
+      delete row.owner;
+      delete row.compatibilityJobs;
+    }
+    const result = runPromotion(mixed, mixed[mixed.length - 1].sha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('found 19');
+  });
+
   it('rejects stale heads, duplicate or conflicting jobs, and missing or failed jobs', () => {
     const complete = promotionFixture();
     const latest = complete[complete.length - 1].sha;
@@ -180,6 +220,9 @@ describe('lane timing and promotion evidence', () => {
 
     const duplicate = [...complete, { ...complete[complete.length - 1] }];
     expect(runPromotion(duplicate, latest).status).toBe(1);
+
+    const invalidAliases = complete.map((row) => row.sha === latest ? { ...row, compatibilityJobs: ['unit'] } : row);
+    expect(runPromotion(invalidAliases, latest).status).toBe(1);
 
     const conflicting = [...complete, { ...complete.find((row) => row.sha === latest && row.job === 'coverage'), result: 'failure' }];
     expect(runPromotion(conflicting, latest).status).toBe(1);

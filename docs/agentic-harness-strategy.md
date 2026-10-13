@@ -126,6 +126,23 @@ validated evidence ledger, exact-revision audit evidence and operational audit-f
 Local execution, queue wait, hosted queue/setup and total runner-minutes must be reported separately.
 See `test-suite-acceleration.md` for targets and `test-suite-acceleration-punchlist.md` for findings.
 
+### Full PR correctness ownership (phase two)
+
+Full-scope coverage owns non-E2E Vitest correctness, including unit, integration, visual,
+performance and exhaustive audit files. Historical unit/integration/visual required checks
+may be compatibility aliases only when they depend on a successful authoritative coverage
+job; aliases are never independent test evidence. Lifecycle checks, uninstrumented
+performance and the complete configured browser roster retain explicit owners.
+`test:ci` mirrors these guarantees locally within one shared queue slot. `test:fast` is
+a bounded-feedback alias and cannot certify the full suite. Coverage thresholds remain
+unchanged. This is execution deduplication, not selective test-routing promotion.
+
+Changes to topology must synchronize the aggregate gate, versioned evidence roster and
+branch-protection compatibility. Engine/pool or sharding candidates require measured
+compatibility, source attribution and cleanup checks before promotion. Missing shards or
+coverage reports fail closed; never average per-shard coverage percentages. See
+`test-suite-phase2.md` for baseline, implementation evidence and remaining targets.
+
 ### Vitest lifecycle ownership
 
 All repository Vitest entrypoints use `scripts/run-vitest.js`, which launches a
