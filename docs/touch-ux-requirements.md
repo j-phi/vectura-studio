@@ -104,7 +104,7 @@ All projects use `hasTouch: true`, `isMobile: true` and an iOS Safari user agent
 | Absolute floor | 0 targets with a hit dimension < 24 px | TUX-058 |
 | iOS focus zoom | 0 text-entry controls with computed `font-size` < 16 px | TUX-058 |
 | Covered targets | 0 targets covered at their centre in the default state | TUX-058 |
-| Canvas share (grid-sampled) | iPad portrait ≥ 70 % (panes closed); iPad landscape ≥ 45 % with both panes docked, ≥ 60 % with one, ≥ 75 % with none; iPhone portrait ≥ 60 %; iPhone landscape ≥ 60 %; chrome variants ≥ 50 % | TUX-058, TUX-008 |
+| Canvas share (exact visible area) | iPad portrait ≥ 70 % (panes closed); iPad landscape ≥ 45 % with both panes docked, ≥ 60 % with one, ≥ 75 % with none; iPhone portrait ≥ 60 %; iPhone landscape ≥ 60 %; chrome variants ≥ 50 % | TUX-058, TUX-008 |
 | Renderer scale | `renderer.scale > 0` in every state; 0 page errors | TUX-058 |
 | Static guard | 0 new violations (ratchet to 0 by end of Phase 4) | TUX-060 |
 | Simulated device run | Green in all Chromium and WebKit touch projects | §4.1, TUX-061 |

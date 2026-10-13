@@ -206,3 +206,35 @@ describe('serializeBaseline', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe('canvasShareExactInPage (TUX-058 exact canvas area)', () => {
+  const canvas = { id: 'main-canvas', contains: (h) => h === canvas };
+  const mk = (strips, canvasRect) => {
+    const chrome = { id: 'chrome', contains: () => false };
+    const hit = (x, y) => (strips.some((s) => x >= s.left && x < s.right && y >= s.top && y < s.bottom) ? chrome : canvas);
+    return { canvas, canvasRect: canvasRect || { left: 0, right: 1000, top: 0, bottom: 1000 }, rects: strips, hit };
+  };
+  // Two 114 px strips on a 1000 px viewport: exact chrome = 22.8 %. A 48-row grid samples the
+  // rows at 93.75 / 114.6 and counts only 5 + 5 rows (20.8 %): 2 pp too much canvas.
+  const strips = [
+    { left: 0, right: 1000, top: 0, bottom: 114 },
+    { left: 0, right: 1000, top: 886, bottom: 1000 },
+  ];
+  const grid = (env, N = 48) => {
+    let hits = 0;
+    for (let gx = 0; gx < N; gx += 1) for (let gy = 0; gy < N; gy += 1) if (env.hit((gx + 0.5) * 1000 / N, (gy + 0.5) * 1000 / N) === canvas) hits += 1;
+    return +(100 * hits / (N * N)).toFixed(1);
+  };
+  it('differs from the 48-cell grid by more than 1 pp and returns the exact value', () => {
+    const env = mk(strips);
+    expect(grid(env)).toBeCloseTo(79.2, 1);
+    const exact = core.canvasShareExactInPage({ W: 1000, H: 1000 }, env);
+    expect(exact).toBe(77.2);
+    expect(Math.abs(grid(env) - exact)).toBeGreaterThan(1);
+  });
+  it('takes the union of overlapping covers and clips to the viewport', () => {
+    const env = mk([...strips, { left: 0, right: 500, top: 50, bottom: 300 }], { left: -100, right: 1000, top: 0, bottom: 1000 });
+    // canvas clipped to x 0..1000 (full width); extra block adds x 0..500, y 114..300 = 9.3 %
+    expect(core.canvasShareExactInPage({ W: 1000, H: 1000 }, env)).toBe(67.9);
+  });
+});

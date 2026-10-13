@@ -256,8 +256,8 @@ async function twoFingerPan(page, center, { dx = 0, dy = 0, gap = 100, steps = 1
   await touchPhase(page, 'end', at(1));
 }
 
-// canvasShare: percent of a 48x48 CELL grid over the spec viewport whose top element is the
-// canvas, a descendant, or #viewport-container. Delegates to the audit core so the helper and
+// canvasShare: EXACT percent of the spec viewport whose top element is the canvas, a descendant,
+// or #viewport-container (TUX-058: no sample grid, so no aliasing). Delegates to the audit core so the helper and
 // the audit share one definition. selector defaults to the main canvas.
 async function canvasShare(page, selector = '#main-canvas') {
   const vp = page.viewportSize() || await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));

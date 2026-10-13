@@ -97,8 +97,61 @@ function canvasShareInPage(args) {
   return +(100 * hits / (N * N)).toFixed(1);
 }
 
+// canvasShareExactInPage({ W, H, selector }, env?) -> percent 0..100 (TUX-058, exact)
+// Exact visible canvas area: the canvas rect clipped to the spec viewport (W x H), minus the exact
+// union of every covering rect. Candidate rects are the pointer-hittable elements that intersect
+// the clipped canvas. Their edges cut the canvas into a coordinate-compressed lattice; each lattice
+// cell is hit-tested once at its centre and counts by its exact area. The lattice is built per
+// row band, so the hit-test count stays near the number of distinct chrome pieces. No fixed sample
+// grid is involved, so there is no aliasing. `env` ({canvas, rects, hit}) is a test seam.
+function canvasShareExactInPage(args, env) {
+  const { W, H, selector } = args;
+  const sel = selector || '#main-canvas';
+  const useContainer = !selector || selector === '#main-canvas';
+  const canvas = env ? env.canvas : document.querySelector(sel);
+  if (!canvas) return 0;
+  const cr = env ? env.canvasRect : canvas.getBoundingClientRect();
+  const L = Math.max(0, cr.left); const R = Math.min(W, cr.right);
+  const T = Math.max(0, cr.top); const B = Math.min(H, cr.bottom);
+  if (R <= L || B <= T) return 0;
+  const q = (v) => Math.round(v * 4) / 4; // quarter-pixel snap: hit testing is whole-pixel anyway
+  const isCanvas = (h) => !!h && (h === canvas || canvas.contains(h) || (useContainer && h.id === 'viewport-container'));
+  const hit = env ? env.hit : (x, y) => document.elementFromPoint(x, y);
+  let rects = [];
+  if (env) rects = env.rects;
+  else {
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el === canvas || canvas.contains(el) || el.contains(canvas)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0 || r.right <= L || r.left >= R || r.bottom <= T || r.top >= B) continue;
+      if (getComputedStyle(el).pointerEvents === 'none') continue;
+      rects.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+    }
+  }
+  const cand = [];
+  for (const r of rects) {
+    const c = { l: q(Math.max(L, r.left)), r: q(Math.min(R, r.right)), t: q(Math.max(T, r.top)), b: q(Math.min(B, r.bottom)) };
+    if (c.r > c.l && c.b > c.t) cand.push(c);
+  }
+  const ys = [...new Set([q(T), q(B), ...cand.flatMap((c) => [c.t, c.b])])].sort((a, b) => a - b);
+  let area = 0;
+  for (let i = 0; i + 1 < ys.length; i += 1) {
+    const y0 = ys[i]; const y1 = ys[i + 1];
+    if (y1 <= y0) continue;
+    const cy = (y0 + y1) / 2;
+    const band = cand.filter((c) => c.t < y1 && c.b > y0);
+    const xs = [...new Set([q(L), q(R), ...band.flatMap((c) => [c.l, c.r])])].sort((a, b) => a - b);
+    for (let j = 0; j + 1 < xs.length; j += 1) {
+      const x0 = xs[j]; const x1 = xs[j + 1];
+      if (x1 <= x0) continue;
+      if (isCanvas(hit((x0 + x1) / 2, cy))) area += (x1 - x0) * (y1 - y0);
+    }
+  }
+  return +(100 * area / (W * H)).toFixed(1);
+}
+
 // measureInPage(cfg, helpers) -> raw record. cfg: { W, H, safe, allow: [selector] }.
-// helpers: { hitAreaInPage, canvasShareInPage } (injected by measurePage).
+// helpers: { hitAreaInPage, canvasShareInPage, canvasShareExactInPage } (injected by measurePage).
 function measureInPage(cfg, helpers) {
   const { W, H, safe } = cfg;
   const allowSel = cfg.allow || [];
@@ -512,15 +565,16 @@ function measureInPage(cfg, helpers) {
   }
   items.forEach((i) => { delete i.el; });
 
-  // Canvas fitness: 48x48 cell grid over the spec viewport.
+  // Canvas fitness: exact visible area (canvasPct); the old 48x48 grid reading is kept as canvasGridPct for comparison only.
   const canvas = document.getElementById('main-canvas');
-  let canvasPct = 0; let canvasBoxPct = 0;
+  let canvasPct = 0; let canvasBoxPct = 0; let canvasGridPct = 0;
   if (canvas) {
     const cr = canvas.getBoundingClientRect();
     const ix = Math.max(0, Math.min(cr.right, vw) - Math.max(cr.left, 0));
     const iy = Math.max(0, Math.min(cr.bottom, vh) - Math.max(cr.top, 0));
     canvasBoxPct = +(100 * ix * iy / (vw * vh)).toFixed(1);
-    canvasPct = helpers.canvasShareInPage({ W: vw, H: vh, selector: '#main-canvas', cells: 48 });
+    canvasPct = helpers.canvasShareExactInPage({ W: vw, H: vh, selector: '#main-canvas' });
+    canvasGridPct = helpers.canvasShareInPage({ W: vw, H: vh, selector: '#main-canvas', cells: 48 });
   }
 
   // Overflow. Denominator is the project constant (spec W x H), never innerWidth/clientWidth.
@@ -599,7 +653,7 @@ function measureInPage(cfg, helpers) {
     coarse: matchMedia('(pointer: coarse)').matches, hover: matchMedia('(hover: hover)').matches,
     bodyOverscroll: bodyCs.overscrollBehaviorY, htmlOverscroll: getComputedStyle(de).overscrollBehaviorY,
     canvasTouchAction: canvas ? getComputedStyle(canvas).touchAction : null,
-    canvasPct, canvasBoxPct, hOverflow, vOverflow, innerWidthExcess, scrollWidthExcess, overflowers, overlays, scrollers,
+    canvasPct, canvasGridPct, canvasBoxPct, hOverflow, vOverflow, innerWidthExcess, scrollWidthExcess, overflowers, overlays, scrollers,
     ghost, ghostSel, stranded, strandedSel, parkedTargets: parked, allowCounts, dockedPanes, scale, scaleOk: typeof scale === 'number' && scale > 0,
     safeSelectors: Object.fromEntries(Object.entries(safeSel).map(([k, v]) => [k, v.length])),
     safeVars: Object.fromEntries(Object.entries(safeVars).map(([k, v]) => [k, Array.from(new Set(v))])),
@@ -640,7 +694,7 @@ function probeHandles() {
 
 // Run the page-side functions from Node. The expressions inline the helper sources so the
 // functions stay self-contained when Playwright serialises them.
-const measureExpr = () => `(cfg) => (${measureInPage.toString()})(cfg, { hitAreaInPage: ${hitAreaInPage.toString()}, canvasShareInPage: ${canvasShareInPage.toString()} })`;
+const measureExpr = () => `(cfg) => (${measureInPage.toString()})(cfg, { hitAreaInPage: ${hitAreaInPage.toString()}, canvasShareInPage: ${canvasShareInPage.toString()}, canvasShareExactInPage: ${canvasShareExactInPage.toString()} })`;
 
 // Playwright does not call a function given as a string, so evaluate the source in-page and
 // invoke it. (The app ships no CSP.) Arguments may include ElementHandles.
@@ -653,6 +707,9 @@ async function probeHit(page, handle, opts) {
   return page.evaluate(({ src, el, opts }) => (new Function(`return (${src})`))()(el, opts), { src: hitAreaInPage.toString(), el: handle, opts });
 }
 async function probeCanvasShare(page, args) {
+  return evalSource(page, canvasShareExactInPage.toString(), args);
+}
+async function probeCanvasShareGrid(page, args) {
   return evalSource(page, canvasShareInPage.toString(), args);
 }
 
@@ -982,7 +1039,7 @@ async function waitGeometryStable(page, timeout = 8000) {
 
 module.exports = {
   // page section
-  measureInPage, hitAreaInPage, canvasShareInPage, probeHandles, measurePage, probeHit, probeCanvasShare,
+  measureInPage, hitAreaInPage, canvasShareInPage, canvasShareExactInPage, probeCanvasShareGrid, probeHandles, measurePage, probeHit, probeCanvasShare,
   // node section
   METRICS, METRIC_IDS, CHROME_METRICS, SAFE_BANDS, THRESHOLDS,
   summarizeState, isBenignPageError, onscreenCount, compareCell, formatCompare, compareFinal, mergeCell, finalCanvasMin,
