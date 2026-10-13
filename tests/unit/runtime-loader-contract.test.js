@@ -4,10 +4,12 @@ const path = require('path');
 const Module = require('module');
 const {
   loadVecturaRuntime,
+  parseLocalScripts,
   clearCompiledScriptCache,
   getCompiledScriptCacheSize,
   isCoverageRun,
 } = require('../helpers/load-vectura-runtime');
+const { SCENE3D_FILES } = require('../helpers/runtime-profiles');
 
 const makeRoot = () => fs.mkdtempSync(path.join(os.tmpdir(), 'vectura-loader-'));
 const write = (root, relative, contents) => {
@@ -18,6 +20,19 @@ const write = (root, relative, contents) => {
 
 describe('runtime loader contracts', () => {
   afterEach(() => clearCompiledScriptCache());
+
+  test('the Scene3D feature manifest is immutable, explicit, and ordered by index.html', () => {
+    const root = path.resolve(__dirname, '../..');
+    const index = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+    const ordered = parseLocalScripts(index).map((src) => src.replace(/^\.\//, '').replace(/\?.*$/, ''));
+    const selected = ordered.filter((src) => SCENE3D_FILES.includes(src));
+    expect(Object.isFrozen(SCENE3D_FILES)).toBe(true);
+    expect(SCENE3D_FILES.length).toBeGreaterThan(0);
+    expect(new Set(SCENE3D_FILES).size).toBe(SCENE3D_FILES.length);
+    expect(SCENE3D_FILES.every((src) => ordered.includes(src))).toBe(true);
+    expect(selected).toEqual(SCENE3D_FILES);
+    expect(SCENE3D_FILES.some((src) => /\/(ui|app)\//.test(src))).toBe(false);
+  });
 
   test('coverage cache bypass recognizes the explicit queued-run marker and Vitest flags', () => {
     expect(isCoverageRun([], {})).toBe(false);
@@ -66,6 +81,11 @@ describe('runtime loader contracts', () => {
       }
       expect(first.window.Vectura.order).toEqual(['rng', 'noise']);
       expect(second.window.Vectura.order).toEqual(['rng', 'noise']);
+      expect(typeof first.window.crypto.randomUUID).toBe('function');
+      expect(typeof second.window.crypto.randomUUID).toBe('function');
+      expect(first.window.crypto).not.toBe(second.window.crypto);
+      expect(() => { first.window.crypto.marker = 'first-runtime'; }).toThrow(TypeError);
+      expect(second.window.crypto.marker).toBeUndefined();
       expect(first.window).not.toBe(second.window);
       expect(first.document).toBeUndefined();
       expect(first.window.document).toBeUndefined();

@@ -1,6 +1,6 @@
 # Test-suite acceleration punchlist
 
-Status: source implementation and targeted verification complete, 2026-10-11; full audit/coverage and hosted promotion evidence remain open. Checkmarks below describe implemented source, not certification of the full audit or hosted latency targets.
+Status update, 2026-10-12: PR #90 merged after completed run38282702522 passed full-scope coverage (762 passing files,1 skipped;8,863 passing tests,57 skipped) and all required jobs on `ae1de017`. Coverage96m32s; whole-PR speed targets remain unmet. Phase two is tracked in `test-suite-phase2.md`. Earlier measurements below are historical snapshots.
 
 ## Implementation batch
 - [x] Fresh focused runtime profiles and immutable compiled-script caching.
@@ -61,12 +61,12 @@ No review blocker is marked resolved until the integrated source and applicable 
 
 ## Outstanding evidence (must not be silently checked off)
 - [x] Complete corrected feedback/browser run:16 lifecycle +52 Vitest +1 browser,23s execution. Final review-fix selection22passed in1.20s.
-- [ ] A completed full preserved audit and full-scope coverage run. The bounded audit attempt exited124 after300s; no audit pass is claimed.
+- [x] Completed hosted full-scope Vitest coverage, including preserved exhaustive audit files, and browser/lifecycle guarantees on PR90 head `ae1de017` (run38282702522). The earlier bounded local audit timeout remains a failed historical experiment.
 - [x] Instrumented source-attribution diagnostic:14passed in430ms; real `src/core/rng.js` attributed with10/11 statements and4/5 functions hit. This selected scope is not full-suite coverage.
-- [ ] Real hosted PR setup/queue/all-required-status timing and runner-minute evidence.
+- [x] Hosted PR job/test-step timing captured for run38282702522; queue and process-level CPU/RSS are not measured by these timestamps. See phase-two profile and baseline.
 - [ ] Twenty representative complete shadow changes and minimum30 comparable observations for each published p95 class before promotion.
 
-No GitHub branch rules were changed, and no push, release, or merge was performed.
+No GitHub branch rules were changed. Publication later completed through PR #90; the earlier no-publication statement applied only to the initial local snapshot.
 
 Complete E2E roster verified locally under the180s bound:67passed,15 existing optional/project-specific skips,84.45s shell elapsed. The previously omitted programmatic mask test runs and passes; its pre-existing disabled real-mouse counterpart remains disabled.
 

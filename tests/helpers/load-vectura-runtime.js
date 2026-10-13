@@ -7,6 +7,11 @@ const { PROFILES } = require('./runtime-profiles');
 const COMPILED_CACHE_LIMIT = 256;
 const compiledCache = new Map();
 
+const createCryptoFacade = () => Object.freeze({
+  randomUUID: () => crypto.randomUUID(),
+  getRandomValues: (array) => crypto.webcrypto.getRandomValues(array),
+});
+
 const LOCAL_SRC_RE = /<script[^>]*src="([^"]+)"[^>]*><\/script>/g;
 
 // 1x1 transparent PNG — what the stubbed canvas "exports".
@@ -196,6 +201,10 @@ const loadVecturaRuntime = async (options = {}) => {
   } else {
     context = {};
     window = context;
+    // Browser code uses crypto.randomUUID() to create engine/layer IDs. The
+    // minimal VM deliberately has no DOM, but it still needs this browser
+    // primitive for the same feature paths that run under JSDOM.
+    context.crypto = createCryptoFacade();
     context.setTimeout = (callback, delay, ...args) => {
       let id;
       id = setTimeout(() => { timeoutTimers.delete(id); callback(...args); }, delay);

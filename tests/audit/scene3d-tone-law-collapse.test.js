@@ -29,6 +29,38 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
+const freezeDeep = (value, seen = new WeakSet()) => {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  Object.values(value).forEach((child) => freezeDeep(child, seen));
+  return Object.freeze(value);
+};
+const cloneFixture = (value) => {
+  if (Array.isArray(value)) return value.map(cloneFixture);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, cloneFixture(child)]));
+};
+const createCapturedOptionsCache = () => {
+  // Reuse only an immutable captured-options fixture from the exact scene,
+  // bounds, and generator implementation. Return a fresh copy so each test
+  // retains its own options bag for mutation and render assertions.
+  const byGenerator = new WeakMap();
+  return (generate, buildObject, scene, bounds, capture) => {
+    let byBuilder = byGenerator.get(generate);
+    if (!byBuilder) {
+      byBuilder = new WeakMap();
+      byGenerator.set(generate, byBuilder);
+    }
+    let fixtures = byBuilder.get(buildObject);
+    if (!fixtures) {
+      fixtures = new Map();
+      byBuilder.set(buildObject, fixtures);
+    }
+    const key = JSON.stringify({ scene, bounds });
+    if (!fixtures.has(key)) fixtures.set(key, freezeDeep(cloneFixture(capture())));
+    return cloneFixture(fixtures.get(key));
+  };
+};
 const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3 };
 const SUN = { id: 'sun', type: 'directional', azimuth: 200, elevation: 55, castShadows: false };
 const SLOW = 600000;
@@ -1285,7 +1317,7 @@ describe('Scene3D tone-law collapse — U7 caveat: BOTH the survivor (ampSpacing
   });
 });
 
-describe('Scene3D tone-law collapse — U7 multi-primitive x multi-density: ampSpacing byte-identity (F1-placement ruled condition 4)', () => {
+describe('Scene3D tone-law collapse — U7 multi-primitive x multi-density: ampSpacing resolution and draws (F1-placement ruled condition 4)', () => {
   // NOT the single-cell captureOpts every earlier unit in this file uses —
   // parametrized on BOTH primitive and fillDensity so the sweep below can
   // cover every (primitive, density) pair the audit's own gallery capture
@@ -1299,8 +1331,9 @@ describe('Scene3D tone-law collapse — U7 multi-primitive x multi-density: ampS
   let runtime; let V; let algo; let defaults; let SF; let Params; let PPD;
   const PRIMITIVES = ['sphere', 'torus', 'cone'];
   const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
+  const capturedOptions = createCapturedOptionsCache();
 
-  const captureOpts = (primitive, densityValue) => {
+  const captureOpts = (primitive, densityValue, fresh = false) => {
     const p = clone(defaults);
     p.objects = [{
       id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
@@ -1313,23 +1346,26 @@ describe('Scene3D tone-law collapse — U7 multi-primitive x multi-density: ampS
     p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
     p.tone = { ...clone(defaults).tone, enabled: true };
     p.lights = [SUN];
-    const calls = [];
-    const orig = SF.buildObject;
-    SF.buildObject = function wrapped(opts) {
-      const result = orig.call(this, opts);
-      calls.push({ opts, result });
-      return result;
+    const capture = () => {
+      const calls = [];
+      const orig = SF.buildObject;
+      SF.buildObject = function wrapped(opts) {
+        const result = orig.call(this, opts);
+        calls.push({ opts, result });
+        return result;
+      };
+      try {
+        algo.generate(p, null, null, BOUNDS);
+      } finally {
+        SF.buildObject = orig;
+      }
+      let best = calls[0];
+      for (const c of calls) {
+        if ((c.result || []).length > (best.result || []).length) best = c;
+      }
+      return best.opts;
     };
-    try {
-      algo.generate(p, null, null, BOUNDS);
-    } finally {
-      SF.buildObject = orig;
-    }
-    let best = calls[0];
-    for (const c of calls) {
-      if ((c.result || []).length > (best.result || []).length) best = c;
-    }
-    return best.opts;
+    return fresh ? capture() : capturedOptions(algo.generate, SF.buildObject, p, BOUNDS, capture);
   };
 
   beforeAll(async () => {
@@ -1343,12 +1379,12 @@ describe('Scene3D tone-law collapse — U7 multi-primitive x multi-density: ampS
   }, SLOW);
   afterAll(() => runtime.cleanup());
 
-  // Condition (b): the FOLD is correct (ampSpacing+nesting:'nested' renders
-  // byte-identically to the legacy weaveDepth id) across all 9
-  // (primitive, density) pairs — not just the single torus+hatch+med cell
-  // the plan's own §1 table cites. This is IN-TREE evidence (both paths run
-  // in the same process, same tree); the cross-tree "did adding the
-  // COLLAPSE row perturb ampSpacing's OWN bare rendering at all" proof
+  // Condition (b): resolution reaches the exact legacy weaveDepth id across
+  // all 9 (primitive, density) pairs — not just the single torus+hatch+med
+  // cell the plan's own §1 table cites. Historical picture parity is covered
+  // by the cross-tree audit report; the fresh-run test below checks
+  // determinism across representative geometry and density boundaries. The
+  // cross-tree "did adding the COLLAPSE row perturb ampSpacing's OWN bare rendering at all" proof
   // (git HEAD blob vs working tree, 9/9 identical) is evidence-only —
   // reported in docs/3d-audit/fill-audit/after/U7/report.json, not
   // repeated here as a permanent test, because within one process
@@ -1356,35 +1392,54 @@ describe('Scene3D tone-law collapse — U7 multi-primitive x multi-density: ampS
   // STYLE_PARAMS/ALIASES (only `resolveToneLaw` does, and this test calls
   // that explicitly) — there is no in-tree way to "un-fold" ampSpacing's
   // own dispatch to compare against, only a cross-tree one.
-  test('the fold (ampSpacing+Interlocked/Solved === legacy weaveDepth) is byte-identical across every reachable primitive x density pair', () => {
+  test('the fold resolves to legacy weaveDepth at every reachable primitive x density pair', () => {
     const offenders = [];
     PRIMITIVES.forEach((primitive) => {
       Object.keys(DENSITY_VALUES).forEach((densityKey) => {
         const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
         const resolved = Params.resolveToneLaw({ toneLaw: 'ampSpacing', wavePhase: 'anti', waveAmp: 'solve' });
         if (resolved !== 'weaveDepth') { offenders.push(`${primitive}__${densityKey}: resolved to "${resolved}", not weaveDepth`); return; }
-        const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
-        const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'weaveDepth' }));
-        if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy weaveDepth`);
+        const canonicalDraw = SF.buildObject({ ...opts, toneLaw: resolved });
+        if (canonicalDraw.length === 0) offenders.push(`${primitive}__${densityKey}: weaveDepth produced no paths`);
       });
     });
     expect(offenders, offenders.join('; ')).toEqual([]);
   }, SLOW);
 
-  // The bare survivor (nesting at its own default, or the key entirely
-  // absent) is untouched across every combination too — the same invariant
-  // describeSingleParamCluster's own "byte-identity" test asserts on one
-  // cell, extended here to all 9.
-  test('the bare survivor (Phase: In-phase, or omitted) resolves to itself, unaffected by geometry or density', () => {
+  // The bare survivor is still resolved at every cell and drawn once. Its
+  // render's fresh-run determinism is checked at the three representative
+  // geometry/density boundaries below.
+  test('the bare survivor resolves to itself at every primitive x density pair', () => {
     PRIMITIVES.forEach((primitive) => {
       Object.keys(DENSITY_VALUES).forEach((densityKey) => {
         const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
         expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing' })).toBe('ampSpacing');
         expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', wavePhase: 'in' })).toBe('ampSpacing');
-        const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'ampSpacing' }));
-        const resolved = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: 'ampSpacing' }) }));
-        expect(resolved).toBe(direct);
+        const canonicalDraw = SF.buildObject({ ...opts, toneLaw: 'ampSpacing' });
+        expect(canonicalDraw.length).toBeGreaterThan(0);
       });
+    });
+  }, SLOW);
+
+  test('fresh production runs are deterministic for folded and bare wave laws at the geometry and density boundaries', () => {
+    const cases = [
+      { primitive: 'sphere', density: DENSITY_VALUES.low },
+      { primitive: 'torus', density: DENSITY_VALUES.med },
+      { primitive: 'cone', density: DENSITY_VALUES.max },
+    ];
+    cases.forEach(({ primitive, density }) => {
+      const firstOpts = captureOpts(primitive, density, true);
+      const secondOpts = captureOpts(primitive, density, true);
+      const compareFreshRuns = (law) => {
+        const first = SF.buildObject({ ...firstOpts, toneLaw: law });
+        const second = SF.buildObject({ ...secondOpts, toneLaw: law });
+        expect(first.length).toBeGreaterThan(0);
+        expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+      };
+      expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', wavePhase: 'anti', waveAmp: 'solve' })).toBe('weaveDepth');
+      compareFreshRuns('weaveDepth');
+      expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing' })).toBe('ampSpacing');
+      compareFreshRuns('ampSpacing');
     });
   }, SLOW);
 });
@@ -1485,15 +1540,16 @@ describe('Scene3D tone-law collapse — U8 caveat: BOTH the survivor (interlockW
   });
 });
 
-describe('Scene3D tone-law collapse — U8 multi-primitive x multi-density: interlockWeave byte-identity', () => {
+describe('Scene3D tone-law collapse — U8 multi-primitive x multi-density: interlockWeave resolution and draws', () => {
   // Same shape as U7's own multi-primitive x multi-density sweep (both
   // clusters are wave-family, both unreachable on box per
   // manifest.B.unreachable.jsonl). TIER_B_PRIMITIVES minus `box`.
   let runtime; let V; let algo; let defaults; let SF; let Params; let PPD;
   const PRIMITIVES = ['sphere', 'torus', 'cone'];
   const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
+  const capturedOptions = createCapturedOptionsCache();
 
-  const captureOpts = (primitive, densityValue) => {
+  const captureOpts = (primitive, densityValue, fresh = false) => {
     const p = clone(defaults);
     p.objects = [{
       id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
@@ -1506,23 +1562,26 @@ describe('Scene3D tone-law collapse — U8 multi-primitive x multi-density: inte
     p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
     p.tone = { ...clone(defaults).tone, enabled: true };
     p.lights = [SUN];
-    const calls = [];
-    const orig = SF.buildObject;
-    SF.buildObject = function wrapped(opts) {
-      const result = orig.call(this, opts);
-      calls.push({ opts, result });
-      return result;
+    const capture = () => {
+      const calls = [];
+      const orig = SF.buildObject;
+      SF.buildObject = function wrapped(opts) {
+        const result = orig.call(this, opts);
+        calls.push({ opts, result });
+        return result;
+      };
+      try {
+        algo.generate(p, null, null, BOUNDS);
+      } finally {
+        SF.buildObject = orig;
+      }
+      let best = calls[0];
+      for (const c of calls) {
+        if ((c.result || []).length > (best.result || []).length) best = c;
+      }
+      return best.opts;
     };
-    try {
-      algo.generate(p, null, null, BOUNDS);
-    } finally {
-      SF.buildObject = orig;
-    }
-    let best = calls[0];
-    for (const c of calls) {
-      if ((c.result || []).length > (best.result || []).length) best = c;
-    }
-    return best.opts;
+    return fresh ? capture() : capturedOptions(algo.generate, SF.buildObject, p, BOUNDS, capture);
   };
 
   beforeAll(async () => {
@@ -1536,31 +1595,51 @@ describe('Scene3D tone-law collapse — U8 multi-primitive x multi-density: inte
   }, SLOW);
   afterAll(() => runtime.cleanup());
 
-  test('the fold (interlockWeave+penDown:continuous === legacy onePenDown) is byte-identical across every reachable primitive x density pair', () => {
+  test('the fold resolves to legacy onePenDown at every reachable primitive x density pair', () => {
     const offenders = [];
     PRIMITIVES.forEach((primitive) => {
       Object.keys(DENSITY_VALUES).forEach((densityKey) => {
         const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
         const resolved = Params.resolveToneLaw({ toneLaw: 'ampSpacing', penDown: 'continuous' });
         if (resolved !== 'onePenDown') { offenders.push(`${primitive}__${densityKey}: resolved to "${resolved}", not onePenDown`); return; }
-        const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
-        const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'onePenDown' }));
-        if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy onePenDown`);
+        const canonicalDraw = SF.buildObject({ ...opts, toneLaw: resolved });
+        if (canonicalDraw.length === 0) offenders.push(`${primitive}__${densityKey}: onePenDown produced no paths`);
       });
     });
     expect(offenders, offenders.join('; ')).toEqual([]);
   }, SLOW);
 
-  test('the bare survivor (penDown:perRuling, or omitted) resolves to itself, unaffected by geometry or density', () => {
+  test('the bare survivor resolves to itself at every primitive x density pair', () => {
     PRIMITIVES.forEach((primitive) => {
       Object.keys(DENSITY_VALUES).forEach((densityKey) => {
         const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
         expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave' })).toBe('interlockWeave');
         expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave', penDown: 'perRuling' })).toBe('interlockWeave');
-        const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'interlockWeave' }));
-        const resolved = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: 'interlockWeave' }) }));
-        expect(resolved).toBe(direct);
+        const canonicalDraw = SF.buildObject({ ...opts, toneLaw: 'interlockWeave' });
+        expect(canonicalDraw.length).toBeGreaterThan(0);
       });
+    });
+  }, SLOW);
+
+  test('fresh production runs are deterministic for folded and bare wave laws at the geometry and density boundaries', () => {
+    const cases = [
+      { primitive: 'sphere', density: DENSITY_VALUES.low },
+      { primitive: 'torus', density: DENSITY_VALUES.med },
+      { primitive: 'cone', density: DENSITY_VALUES.max },
+    ];
+    cases.forEach(({ primitive, density }) => {
+      const firstOpts = captureOpts(primitive, density, true);
+      const secondOpts = captureOpts(primitive, density, true);
+      const compareFreshRuns = (law) => {
+        const first = SF.buildObject({ ...firstOpts, toneLaw: law });
+        const second = SF.buildObject({ ...secondOpts, toneLaw: law });
+        expect(first.length).toBeGreaterThan(0);
+        expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+      };
+      expect(Params.resolveToneLaw({ toneLaw: 'ampSpacing', penDown: 'continuous' })).toBe('onePenDown');
+      compareFreshRuns('onePenDown');
+      expect(Params.resolveToneLaw({ toneLaw: 'interlockWeave' })).toBe('interlockWeave');
+      compareFreshRuns('interlockWeave');
     });
   }, SLOW);
 });
@@ -1732,7 +1811,7 @@ describe('Scene3D tone-law collapse — U6 caveat: all FOUR members (penInterlea
   });
 });
 
-describe('Scene3D tone-law collapse — U6 multi-primitive x multi-density: penInterleave/penPitchMatch/penFacing/penStipple byte-identity', () => {
+describe('Scene3D tone-law collapse — U6 multi-primitive x multi-density: pen-mode resolution and draws', () => {
   // Same shape as U7's/U8's own multi-primitive x multi-density sweep.
   // Unlike U7/U8 (wave-family, unreachable on box for every mapper), this
   // cluster's threePen family is unreachable on box even at the 'hatch'
@@ -1742,13 +1821,14 @@ describe('Scene3D tone-law collapse — U6 multi-primitive x multi-density: penI
   let runtime; let V; let algo; let defaults; let SF; let Params; let PPD;
   const PRIMITIVES = ['sphere', 'torus', 'cone'];
   const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
+  const capturedOptions = createCapturedOptionsCache();
   const FOLDED = [
     { id: 'penPitchMatch', penMode: 'pitchMatch' },
     { id: 'penFacing', penMode: 'facing' },
     { id: 'penStipple', penMode: 'stipple' },
   ];
 
-  const captureOpts = (primitive, densityValue) => {
+  const captureOpts = (primitive, densityValue, fresh = false) => {
     const p = clone(defaults);
     p.objects = [{
       id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
@@ -1761,23 +1841,26 @@ describe('Scene3D tone-law collapse — U6 multi-primitive x multi-density: penI
     p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
     p.tone = { ...clone(defaults).tone, enabled: true };
     p.lights = [SUN];
-    const calls = [];
-    const orig = SF.buildObject;
-    SF.buildObject = function wrapped(opts) {
-      const result = orig.call(this, opts);
-      calls.push({ opts, result });
-      return result;
+    const capture = () => {
+      const calls = [];
+      const orig = SF.buildObject;
+      SF.buildObject = function wrapped(opts) {
+        const result = orig.call(this, opts);
+        calls.push({ opts, result });
+        return result;
+      };
+      try {
+        algo.generate(p, null, null, BOUNDS);
+      } finally {
+        SF.buildObject = orig;
+      }
+      let best = calls[0];
+      for (const c of calls) {
+        if ((c.result || []).length > (best.result || []).length) best = c;
+      }
+      return best.opts;
     };
-    try {
-      algo.generate(p, null, null, BOUNDS);
-    } finally {
-      SF.buildObject = orig;
-    }
-    let best = calls[0];
-    for (const c of calls) {
-      if ((c.result || []).length > (best.result || []).length) best = c;
-    }
-    return best.opts;
+    return fresh ? capture() : capturedOptions(algo.generate, SF.buildObject, p, BOUNDS, capture);
   };
 
   beforeAll(async () => {
@@ -1791,7 +1874,7 @@ describe('Scene3D tone-law collapse — U6 multi-primitive x multi-density: penI
   }, SLOW);
   afterAll(() => runtime.cleanup());
 
-  test('every fold (survivor+penMode === legacy folded id) is byte-identical across every reachable primitive x density pair', () => {
+  test('every penMode resolves to its legacy id at every reachable primitive x density pair', () => {
     const offenders = [];
     PRIMITIVES.forEach((primitive) => {
       Object.keys(DENSITY_VALUES).forEach((densityKey) => {
@@ -1799,25 +1882,46 @@ describe('Scene3D tone-law collapse — U6 multi-primitive x multi-density: penI
         FOLDED.forEach(({ id, penMode }) => {
           const resolved = Params.resolveToneLaw({ toneLaw: 'penInterleave', penMode });
           if (resolved !== id) { offenders.push(`${primitive}__${densityKey}__${penMode}: resolved to "${resolved}", not ${id}`); return; }
-          const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
-          const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: id }));
-          if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy ${id}`);
+          const canonicalDraw = SF.buildObject({ ...opts, toneLaw: resolved });
+          if (canonicalDraw.length === 0) offenders.push(`${primitive}__${densityKey}__${penMode}: ${id} produced no paths`);
         });
       });
     });
     expect(offenders, offenders.join('; ')).toEqual([]);
   }, SLOW);
 
-  test('the bare survivor (penMode:interleave, or omitted) resolves to itself, unaffected by geometry or density', () => {
+  test('the bare survivor resolves to itself at every primitive x density pair', () => {
     PRIMITIVES.forEach((primitive) => {
       Object.keys(DENSITY_VALUES).forEach((densityKey) => {
         const opts = captureOpts(primitive, DENSITY_VALUES[densityKey]);
         expect(Params.resolveToneLaw({ toneLaw: 'penInterleave' })).toBe('penInterleave');
         expect(Params.resolveToneLaw({ toneLaw: 'penInterleave', penMode: 'interleave' })).toBe('penInterleave');
-        const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: 'penInterleave' }));
-        const resolved = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: 'penInterleave' }) }));
-        expect(resolved).toBe(direct);
+        const canonicalDraw = SF.buildObject({ ...opts, toneLaw: 'penInterleave' });
+        expect(canonicalDraw.length).toBeGreaterThan(0);
       });
+    });
+  }, SLOW);
+
+  test('fresh production runs are deterministic for a folded and bare pen law at the geometry and density boundaries', () => {
+    const cases = [
+      { primitive: 'sphere', density: DENSITY_VALUES.low },
+      { primitive: 'torus', density: DENSITY_VALUES.med },
+      { primitive: 'cone', density: DENSITY_VALUES.max },
+    ];
+    cases.forEach(({ primitive, density }) => {
+      const firstOpts = captureOpts(primitive, density, true);
+      const secondOpts = captureOpts(primitive, density, true);
+      const compareFreshRuns = (law) => {
+        const first = SF.buildObject({ ...firstOpts, toneLaw: law });
+        const second = SF.buildObject({ ...secondOpts, toneLaw: law });
+        expect(first.length).toBeGreaterThan(0);
+        expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+      };
+      const folded = FOLDED.find((entry) => entry.id === 'penStipple');
+      expect(Params.resolveToneLaw({ toneLaw: 'penInterleave', penMode: folded.penMode })).toBe(folded.id);
+      compareFreshRuns(folded.id);
+      expect(Params.resolveToneLaw({ toneLaw: 'penInterleave' })).toBe('penInterleave');
+      compareFreshRuns('penInterleave');
     });
   }, SLOW);
 });
@@ -1837,13 +1941,11 @@ describe('Scene3D tone-law collapse — U6 multi-primitive x multi-density: penI
  * same three densities.
  *
  * HONEST SCOPE, so nobody over-reads it. In-process, `resolveToneLaw(survivor
- * + folded params)` returns the folded id itself, so the fold leg's two
- * `SF.buildObject` calls receive an identical argument — that leg proves the
- * RESOLUTION is correct at every (primitive, density) pair and that the render
- * is deterministic, exactly as U7's and U8's own fold legs do. The leg that
- * carries real geometric weight is the BARE-SURVIVOR one: the survivor with
- * its sub-control at the default (and with the key absent entirely) must
- * render byte-identically to the pre-collapse survivor across all nine pairs.
+ * + folded params)` returns the folded id itself. This sweep asserts that
+ * resolution at every (primitive, density) pair and draws that resolved law
+ * once. Fresh-run determinism is checked separately on representative cells.
+ * Each bare survivor likewise gets one canonical draw at every cell; these
+ * in-tree calls cannot reproduce the pre-collapse survivor implementation.
  * `box`/`plane`/`solid` are excluded for the same reason U7 excludes them
  * (no parametric chart; see U7's block).
  */
@@ -1852,11 +1954,9 @@ describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (
   const PRIMITIVES = ['sphere', 'torus', 'cone'];
   const DENSITY_VALUES = { low: 1, med: 50, max: 220 };
   const SURVIVORS = ['ladder', 'taperedEnds', 'weightModulated', 'bundleCount'];
-  const optsCache = new Map();
+  const capturedOptions = createCapturedOptionsCache();
 
-  const captureOpts = (primitive, densityValue) => {
-    const ck = `${primitive}__${densityValue}`;
-    if (optsCache.has(ck)) return optsCache.get(ck);
+  const captureOpts = (primitive, densityValue, fresh = false) => {
     const p = clone(defaults);
     p.objects = [{
       id: 'o1', name: 's', primitive, params: { ...(PPD[primitive] || {}) },
@@ -1869,24 +1969,26 @@ describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (
     p.styleTable = { scene: { penId: null, mapper: 'hatch', params: { fillAngle: 45, fillDensity: densityValue } }, byObject: {}, byFace: {} };
     p.tone = { ...clone(defaults).tone, enabled: true };
     p.lights = [SUN];
-    const calls = [];
-    const orig = SF.buildObject;
-    SF.buildObject = function wrapped(opts) {
-      const result = orig.call(this, opts);
-      calls.push({ opts, result });
-      return result;
+    const capture = () => {
+      const calls = [];
+      const orig = SF.buildObject;
+      SF.buildObject = function wrapped(opts) {
+        const result = orig.call(this, opts);
+        calls.push({ opts, result });
+        return result;
+      };
+      try {
+        algo.generate(p, null, null, BOUNDS);
+      } finally {
+        SF.buildObject = orig;
+      }
+      let best = calls[0];
+      for (const c of calls) {
+        if ((c.result || []).length > (best.result || []).length) best = c;
+      }
+      return best.opts;
     };
-    try {
-      algo.generate(p, null, null, BOUNDS);
-    } finally {
-      SF.buildObject = orig;
-    }
-    let best = calls[0];
-    for (const c of calls) {
-      if ((c.result || []).length > (best.result || []).length) best = c;
-    }
-    optsCache.set(ck, best.opts);
-    return best.opts;
+    return fresh ? capture() : capturedOptions(algo.generate, SF.buildObject, p, BOUNDS, capture);
   };
 
   beforeAll(async () => {
@@ -1901,7 +2003,7 @@ describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (
   }, SLOW);
   afterAll(() => runtime.cleanup());
 
-  test('every U1..U5 fold resolves to its own legacy id, and renders identically to it, at every reachable primitive x density pair', () => {
+  test('every U1..U5 fold resolves to its own legacy id and draws at every reachable primitive x density pair', () => {
     const offenders = [];
     const folds = Object.keys(R.ALIASES)
       .map((id) => ({ id, into: R.ALIASES[id].into, params: R.ALIASES[id].params }))
@@ -1921,16 +2023,15 @@ describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (
             offenders.push(`${primitive}__${densityKey}__${f.into}+${JSON.stringify(f.params)}: resolved to "${resolved}", not ${f.id}`);
             return;
           }
-          const viaSurvivor = JSON.stringify(SF.buildObject({ ...opts, toneLaw: resolved }));
-          const viaLegacy = JSON.stringify(SF.buildObject({ ...opts, toneLaw: f.id }));
-          if (viaSurvivor !== viaLegacy) offenders.push(`${primitive}__${densityKey}: fold diverged from legacy ${f.id}`);
+          const canonicalDraw = SF.buildObject({ ...opts, toneLaw: resolved });
+          if (canonicalDraw.length === 0) offenders.push(`${primitive}__${densityKey}: ${f.id} produced no paths`);
         });
       });
     });
     expect(offenders, offenders.join('; ')).toEqual([]);
   }, SLOW);
 
-  test('every U1..U5 bare survivor (sub-control at its default, or omitted) resolves to itself and renders identically, unaffected by geometry or density', () => {
+  test('every U1..U5 bare survivor resolves to itself and draws across geometry and density', () => {
     const offenders = [];
     PRIMITIVES.forEach((primitive) => {
       Object.keys(DENSITY_VALUES).forEach((densityKey) => {
@@ -1942,13 +2043,40 @@ describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (
           descriptors.forEach((d) => { defaultsBag[d.key] = d.default; });
           if (Params.resolveToneLaw({ toneLaw: survivor }) !== survivor) offenders.push(`${primitive}__${densityKey}__${survivor}: bare id did not resolve to itself`);
           if (Params.resolveToneLaw({ toneLaw: survivor, ...defaultsBag }) !== survivor) offenders.push(`${primitive}__${densityKey}__${survivor}: explicit defaults did not resolve to itself`);
-          const direct = JSON.stringify(SF.buildObject({ ...opts, toneLaw: survivor }));
-          const viaResolve = JSON.stringify(SF.buildObject({ ...opts, toneLaw: Params.resolveToneLaw({ toneLaw: survivor, ...defaultsBag }) }));
-          if (direct !== viaResolve) offenders.push(`${primitive}__${densityKey}__${survivor}: bare survivor render moved`);
+          const canonicalDraw = SF.buildObject({ ...opts, toneLaw: survivor });
+          if (canonicalDraw.length === 0) offenders.push(`${primitive}__${densityKey}__${survivor}: produced no paths`);
         });
       });
     });
     expect(offenders, offenders.join('; ')).toEqual([]);
+  }, SLOW);
+
+  test('fresh runs are deterministic for every U1..U5 survivor family at representative geometry and density boundaries', () => {
+    const cases = [
+      { primitive: 'sphere', density: DENSITY_VALUES.low },
+      { primitive: 'torus', density: DENSITY_VALUES.med },
+      { primitive: 'cone', density: DENSITY_VALUES.max },
+    ];
+    const representativeFolds = SURVIVORS.map((survivor) => {
+      const fold = Object.keys(R.ALIASES)
+        .map((id) => ({ id, into: R.ALIASES[id].into, params: R.ALIASES[id].params }))
+        .find((entry) => entry.into === survivor);
+      expect(fold).toBeDefined();
+      expect(Params.resolveToneLaw({ toneLaw: fold.into, ...fold.params })).toBe(fold.id);
+      return fold;
+    });
+    cases.forEach(({ primitive, density }) => {
+      const firstOpts = captureOpts(primitive, density, true);
+      const secondOpts = captureOpts(primitive, density, true);
+      const compareFreshRuns = (law) => {
+        const first = SF.buildObject({ ...firstOpts, toneLaw: law });
+        const second = SF.buildObject({ ...secondOpts, toneLaw: law });
+        expect(first.length).toBeGreaterThan(0);
+        expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+      };
+      representativeFolds.forEach((fold) => compareFreshRuns(fold.id));
+      SURVIVORS.forEach((survivor) => compareFreshRuns(survivor));
+    });
   }, SLOW);
 });
 

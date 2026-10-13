@@ -427,7 +427,7 @@ Click `Export SVG` to download.
 | `npm run test:visual` | SVG baseline regression checks against `tests/baselines/svg` |
 | `npm run test:visual:screenshots` | Optional Playwright screenshot snapshot checks for high-risk UI shells |
 | `npm run test:perf` | Stress/performance checks for generation and optimization |
-| `npm run test:ci` | PR-gating suite: unit + integration + e2e + visual + perf |
+| `npm run test:ci` | Full certification: lifecycle + full Vitest coverage + browser roster + uninstrumented perf |
 | `npm run test:update` | Regenerates visual SVG baselines (review before commit) |
 | `npm run test:vitest -- <args>` | Vitest with any arguments, e.g. one file: `npm run test:vitest -- run tests/unit/foo.test.js` |
 | `npm run test:playwright -- <args>` | `playwright test` with any arguments, e.g. one spec |

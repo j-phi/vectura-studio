@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { SCENE3D_FILES } = require('../helpers/runtime-profiles');
 
 /*
  * ═══════════════════════════════════════════════════════════════════════
@@ -32,7 +33,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 describe('Scene3D tone-law collapse — U5b-3 (generative cross-check: effectiveLaw ≡ resolveToneLaw)', () => {
   let runtime; let FS; let Params; let R;
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadVecturaRuntime({ profile: 'feature', files: SCENE3D_FILES });
     FS = runtime.window.Vectura.SCENE_FILL_STYLES;
     Params = runtime.window.Vectura.Scene3D.Params;
     R = runtime.window.Vectura.SCENE3D_TONE_LAWS;
