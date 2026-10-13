@@ -111,6 +111,22 @@ test.describe('TUX-001 closing round', () => {
     expect(Math.max(gapUndo, gapBurger), 'the taps landed inside the 150 ms bound the contract names').toBeLessThanOrEqual(150);
   });
 
+  // TUX-001 review (batch 3b): a tap on a visible header ACTION while the sheet is open closes the sheet AND runs the action.
+  // Only taps on non-action areas (canvas, wordmark) are swallowed.
+  test('TUX-001 a tap on header Undo with the sheet open closes the sheet and undoes', async ({ page }, testInfo) => {
+    phoneOnly(testInfo);
+    await gotoApp(page);
+    await page.evaluate(() => { window.app.pushHistory(); window.app.engine.addLayer('spiral'); window.app.render(); window.app.ui.renderLayers(); });
+    const layers0 = await page.evaluate(() => window.app.engine.layers.length);
+    await touch.tap(page, page.locator('#btn-menu-hamburger'));
+    await expect(page.locator('body.phone-menu-open')).toHaveCount(1);
+    const hit = await page.evaluate(() => { const r = document.getElementById('btn-header-undo').getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!e && !!e.closest('#btn-header-undo'); });
+    expect(hit, 'header Undo is visible and hit-testable with the sheet open').toBe(true);
+    await touch.tap(page, page.locator('#btn-header-undo'));
+    await expect(page.locator('body.phone-menu-open'), 'the sheet closed').toHaveCount(0);
+    expect(await page.evaluate(() => window.app.engine.layers.length), 'Undo ran on the same tap').toBe(layers0 - 1);
+  });
+
   test('modifier bar phone presentation is icon plus short label (TUX-045)', async ({ page }, testInfo) => {
     phoneOnly(testInfo);
     await gotoApp(page);

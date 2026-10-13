@@ -204,7 +204,7 @@
       const item = e.target.closest?.('.top-menu-item');
       if (item && !item.classList.contains('top-menu-back')) setOpen(false);
     }, true);
-    // An outside tap only closes the sheet: it is swallowed so it never reaches the canvas
+    // An outside tap on a non-action area only closes the sheet: it is swallowed so it never reaches the canvas
     // (a Pen tap would add an anchor). Only events tied to that gesture are swallowed: its pointerId,
     // its touch identifiers, and the single click that follows its pointerup on the same target.
     // There is no time window, so a real tap right after the closing tap (Undo, the hamburger) still fires.
@@ -217,6 +217,8 @@
       if (!body.classList.contains('phone-menu-open')) return;
       if (bar.contains(e.target) || burger.contains(e.target)) return;
       setOpen(false);
+      // A visible header action (Undo, Redo, Export) closes the sheet AND runs: only non-action areas are swallowed.
+      if (e.target.closest?.('#app-header button, #app-header [role="button"]')) return;
       swallowId = e.pointerId;
       swallowTouches.clear();
       swallowDownTarget = e.target;
