@@ -15811,12 +15811,12 @@ body.touch-wide-layout.touch-ui .hud-bar {
   order: 1;
   position: relative;
   box-sizing: border-box;
-  height: 22px;
+  height: 18px; /* Q18 (Jay, 2026-10-14): 18 px, was 22 px */
   min-height: 0;
-  margin-top: -22px;
+  margin-top: -18px;
   /* ends left of the canvas HUD (251 px wide, 8 px from the canvas edge) */
   margin-right: calc(var(--safe-right, 0px) + 8px + var(--canvas-hud-w-wide, 251px) + 8px);
-  padding: 2px 12px;
+  padding: 1px 12px;
   border-top: 0;
   background: color-mix(in srgb, var(--ui-panel) 78%, transparent);
   pointer-events: none;
@@ -15834,16 +15834,18 @@ body.touch-ui #bottom-resizer:has(+ #bottom-pane.bottom-pane-collapsed) { displa
  * area stays 44 px and the strip loses nothing (it is not interactive). The strip is 22 px (was 26): its 11 px text still fits. */
 @media (pointer: coarse) {
   body.touch-wide-layout.touch-ui #bottom-pane.bottom-pane-collapsed {
-    height: calc(var(--touch-wide-bottom-collapsed-h, 40px) + var(--safe-bottom, 0px));
+    height: calc(var(--touch-wide-bottom-collapsed-h, 36px) + var(--safe-bottom, 0px));
   }
   body.touch-wide-layout.touch-ui #bottom-pane.bottom-pane-collapsed .bottom-pane-header {
-    height: var(--touch-wide-bottom-collapsed-h, 40px);
-    min-height: var(--touch-wide-bottom-collapsed-h, 40px);
+    height: var(--touch-wide-bottom-collapsed-h, 36px);
+    min-height: var(--touch-wide-bottom-collapsed-h, 36px);
   }
   body.touch-wide-layout.touch-ui #bottom-pane.bottom-pane-collapsed .pane-toggle-bottom {
-    top: calc(var(--touch-wide-bottom-collapsed-h, 40px) - var(--touch-target-min, 44px));
+    top: calc(var(--touch-wide-bottom-collapsed-h, 36px) - var(--touch-target-min, 44px));
   }
 }
+/* Q18 (Jay, 2026-10-14) supersedes the numbers above: the header grows 38 -> 44 px, so the collapsed formula row is 36 px (the
+ * 44 px chevron overhangs it by 8 px into the strip) and the status strip is 18 px. Touch-wide only. */
 /* === END TUX-058 batch R3b === */
 
 /* === TUX-041 slice B1: header ===
