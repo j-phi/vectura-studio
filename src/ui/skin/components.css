@@ -15026,7 +15026,7 @@ body.tablet-layout.touch-ui .mobile-pane-handle-right {
   top: var(--safe-top, 0px);
   bottom: auto;
   width: 44px;
-  height: 38px; /* the header band; the ::after below grows the finger target to 44 px tall */
+  height: var(--touch-target-min, 44px); /* the header band (Q18: 44 px on touch-ui tablets) */
   padding: 0;
   transform: none;
   writing-mode: horizontal-tb;
@@ -15165,7 +15165,7 @@ body.tablet-layout.touch-ui .mobile-pane-handle-left,
 body.tablet-layout.touch-ui .mobile-pane-handle-right {
   box-sizing: border-box;
   width: calc(var(--touch-target-min, 44px) + 4px); /* 48: the 2 px hit probe grid reads a 44 px box as 43 */
-  height: 38px; /* the header band: a taller box would leave the header. The TUX-008 ::after below grows the hit area to 45 px. */
+  height: var(--touch-target-min, 44px); /* the header band is 44 px (Q18), so the box is the finger target */
   top: var(--safe-top, 0px);
   z-index: var(--z-pane-opener);
 }
@@ -15179,7 +15179,7 @@ body.phone-layout #app-header .header-phone-btn { flex: 0 0 auto; }
  * 8 px top padding, which holds no tool button). The TUX-008 inset of -3px at the top is clipped by the screen. */
 body.tablet-layout.touch-ui .mobile-pane-handle-left::after,
 body.tablet-layout.touch-ui .mobile-pane-handle-right::after {
-  inset: 0 0 -7px;
+  inset: 0 0 -2px; /* Q18: the box is 44 px; 2 px of slack for the 2 px hit-probe grid */
 }
 /* The bottom handle belongs to TUX-051 and stays hidden in every layout. */
 body #btn-mobile-pane-bottom,
@@ -15845,3 +15845,42 @@ body.touch-ui #bottom-resizer:has(+ #bottom-pane.bottom-pane-collapsed) { displa
   }
 }
 /* === END TUX-058 batch R3b === */
+
+/* === TUX-041 slice B1: header ===
+ * Q18 (Jay, 2026-10-14): the tablet and touch-wide header band is 44 px (phones already are). Every header control and every
+ * header menu item has a 44 x 44 hit area on touch. The triggers and the theme toggle keep their 26 px pill: an invisible ::before
+ * (the accent underline already owns ::after) widens the hit area to the token. The triggers touch side by side, so the
+ * expansion is vertical only. The theme toggle's 44 px box ends 3 px clear of the pane opener beside it.
+ * Gate: body.touch-ui (the pointer: coarse signal) and not a phone. Desktop keeps the 38 px header. */
+body.touch-ui:not(.phone-layout) #app-header {
+  height: calc(var(--touch-target-min) + var(--safe-top));
+}
+body.touch-ui:not(.phone-layout) #app-header .header-main {
+  height: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+body.touch-ui:not(.phone-layout) #top-menubar .top-menu-trigger {
+  position: relative;
+}
+body.touch-ui:not(.phone-layout) #top-menubar .top-menu-trigger::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--touch-target-min);
+  transform: translateY(-50%);
+}
+body.touch-ui:not(.phone-layout) #app-header .theme-toggle {
+  position: relative;
+}
+body.touch-ui:not(.phone-layout) #app-header .theme-toggle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  transform: translate(-50%, -50%);
+}
+/* === END TUX-041 slice B1 === */
