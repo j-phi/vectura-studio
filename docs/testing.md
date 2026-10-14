@@ -35,7 +35,7 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - `npm run test:vitest -- <vitest args>` runs Vitest with any arguments (for example `npm run test:vitest -- run tests/unit/foo.test.js`).
 - `npm run test:playwright -- <playwright test args>` runs `playwright test` with any arguments (for example `npm run test:playwright -- tests/e2e/foo.spec.js --reporter=line`).
 - `npm run test:profile -- --results <vitest-json> --strict --output <summary-json>` reconciles full Vitest inventory/approved skips; add `--log <saved-log>` for console timings. Diagnostic profiling without strict mode can inspect partial/historical runs.
-- `npm run test:coverage:probe` runs the bounded three-file/two-source coverage merge feasibility check; it does not certify full coverage.
+- `npm run test:coverage:probe` runs the bounded three-file/two-source coverage merge feasibility check through the real pilot config, sequencer, queued shard/merge entrypoints and provenance validator; it does not certify full coverage or change production inventory/thresholds.
 - `npm run test:engine:pilot -- --roster all --pool both --workers 1 --repetitions 5 --warmups 1` compares compatible pool candidates on fixed small rosters within a ten-minute budget. All trials retain queue/supervisor ownership.
 - `test:coverage:shard` and `test:coverage:merge` are queued building blocks for the opt-in full-scope shard pilot; zero thresholds are permitted only on partial shard results and global ratchets apply after merge.
 - The `Full-scope coverage shard pilot` GitHub workflow is manual-only on main with explicit opt-in. It does not replace default PR coverage until its complete inventory/coverage/provenance and latency/cost results justify a separate promotion change.

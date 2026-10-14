@@ -140,6 +140,7 @@ unchanged. This is execution deduplication, not selective test-routing promotion
 The opt-in shard workflow uses `npm run test:coverage:shard`, which already enables
 coverage; that invocation supplies config, shard, and report options, while the merge
 invocation supplies its own `--coverage` flag.
+The custom duration sequencer is ESM so Vite can load `vitest/node` without rewriting a CommonJS import to an invalid file-URL `require`; the bounded probe exercises the real config path.
 
 Changes to topology must synchronize the aggregate gate, versioned evidence roster and
 branch-protection compatibility. Engine/pool or sharding candidates require measured

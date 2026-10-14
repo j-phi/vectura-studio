@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { buildPlan, validateReport } = require('./test-shard-plan');
 
 const ROOT = path.resolve(__dirname, '..');
 const TESTS = [
@@ -16,6 +17,11 @@ const TESTS = [
   'tests/unit/runtime-loader-contract.test.js',
 ];
 const SOURCES = ['src/core/rng.js', 'src/core/noise.js'];
+const CONFIG = 'vitest.shard-pilot.config.mjs';
+const PLAN_BUILDER = path.join(ROOT, 'scripts/test-shard-plan.js');
+const WEIGHTS = JSON.parse(fs.readFileSync(path.join(__dirname, 'test-shard-weights.json'), 'utf8'));
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+
 const canonical = (value) => {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
@@ -23,7 +29,7 @@ const canonical = (value) => {
 };
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 
-function validateResults(reportPath, label, { exactInventory = true } = {}) {
+function validateResults(reportPath, label, expectedFiles = TESTS) {
   const report = readJson(reportPath);
   if (report.success !== true || !Array.isArray(report.testResults)) throw new Error(`${label}: Vitest JSON result is missing or unsuccessful`);
   const seen = new Map();
@@ -33,30 +39,38 @@ function validateResults(reportPath, label, { exactInventory = true } = {}) {
     if (result.status !== 'passed') throw new Error(`${label}: ${relative} did not pass (${result.status || 'unknown'})`);
     if (!Array.isArray(result.assertionResults) || !result.assertionResults.length || result.assertionResults.some((assertion) => assertion.status !== 'passed')) throw new Error(`${label}: ${relative} has no assertions or contains a non-passing assertion`);
   }
-  const missing = exactInventory ? TESTS.filter((file) => seen.get(file) !== 1) : [];
-  const extra = [...seen.keys()].filter((file) => !TESTS.includes(file));
+  const missing = expectedFiles.filter((file) => seen.get(file) !== 1);
+  const extra = [...seen.keys()].filter((file) => !expectedFiles.includes(file));
   const duplicate = [...seen].filter(([, count]) => count !== 1).map(([file]) => file);
   if (missing.length || extra.length || duplicate.length) throw new Error(`${label}: test inventory mismatch; mismatches ${[...missing, ...extra, ...duplicate].join(', ')}`);
   return [...seen.keys()];
 }
 
-function runVitest(label, args, env = {}) {
+function runNpm(label, script, args, env = {}) {
   process.stdout.write(`[coverage-probe] ${label}\n`);
-  const result = spawnSync(process.execPath, [path.join(ROOT, 'scripts/run-vitest.js'), ...args], {
+  const result = spawnSync(npmCommand, ['run', script, '--', ...args], {
     cwd: ROOT,
-    env: { ...process.env, VECTURA_TEST_COVERAGE: '1', VECTURA_TEST_TIMEOUT_MS: '120000', ...env },
+    env: { ...process.env, VECTURA_TEST_TIMEOUT_MS: '120000', ...env },
     encoding: 'utf8',
     maxBuffer: 8 * 1024 * 1024,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {
-    const tail = `${result.stdout || ''}${result.stderr || ''}`.slice(-2500);
+    const tail = `${result.stdout || ''}${result.stderr || ''}`.slice(-3000);
     throw new Error(`${label} exited ${result.status ?? result.signal}: ${tail}`);
   }
+  return `${result.stdout || ''}${result.stderr || ''}`;
+}
+
+function runNode(args, label) {
+  const result = spawnSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error(`${label} exited ${result.status ?? result.signal}: ${(result.stdout || '') + (result.stderr || '')}`);
+  return `${result.stdout || ''}${result.stderr || ''}`;
 }
 
 function coverageArgs(directory, { zeroThresholds = false } = {}) {
-  const args = ['--coverage'];
+  const args = [];
   for (const source of SOURCES) args.push(`--coverage.include=${source}`);
   args.push(`--coverage.reportsDirectory=${directory}`, '--coverage.reporter=json');
   if (zeroThresholds) for (const metric of ['statements', 'branches', 'functions', 'lines']) args.push(`--coverage.thresholds.${metric}=0`);
@@ -87,52 +101,63 @@ function coverageMap(directory, label) {
 function main() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'vectura-coverage-shard-probe-'));
   try {
+    const sha = process.env.GITHUB_SHA || runNode(['-e', "process.stdout.write(require('node:child_process').execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim())"], 'read current SHA').trim();
+    if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error('probe requires a 40-character GITHUB_SHA or Git HEAD');
+    const runId = `local-probe-${process.pid}`;
+    const attempt = '1';
+    const plan = buildPlan({ files: TESTS, weights: WEIGHTS, sha, shardCount: 2 });
+    const planFile = path.join(temp, 'coverage-shard-plan.json');
+    fs.writeFileSync(planFile, `${JSON.stringify(plan, null, 2)}\n`);
+    const env = { VECTURA_SHARD_PLAN_FILE: planFile, GITHUB_SHA: sha, GITHUB_RUN_ID: runId, GITHUB_RUN_ATTEMPT: attempt };
+
     const unshardedJson = path.join(temp, 'unsharded-results.json');
     const unshardedCoverage = path.join(temp, 'unsharded-coverage');
-    runVitest('unsharded baseline', [
-      'run', ...TESTS, ...coverageArgs(unshardedCoverage), '--reporter=json', `--outputFile.json=${unshardedJson}`,
-    ]);
+    runNpm('unsharded baseline through configured pilot sequencer', 'test:coverage', [
+      '--config', CONFIG, ...TESTS, ...coverageArgs(unshardedCoverage, { zeroThresholds: true }),
+      '--reporter=json', `--outputFile.json=${unshardedJson}`,
+    ], env);
     const unshardedFiles = validateResults(unshardedJson, 'unsharded baseline');
     const unshardedMap = coverageMap(unshardedCoverage, 'unsharded baseline');
 
+    const artifacts = path.join(temp, 'artifacts');
     const blobDirectory = path.join(temp, 'blobs');
+    fs.mkdirSync(artifacts);
     fs.mkdirSync(blobDirectory);
-    const shardReports = [];
     const shardInventory = [];
-    for (const shard of ['1/2', '2/2']) {
-      const [index] = shard.split('/');
-      const blob = path.join(blobDirectory, `shard-${index}.json`);
+    for (const shard of plan.shards) {
+      const index = String(shard.index);
+      const artifact = path.join(artifacts, `coverage-shard-${index}`);
+      fs.mkdirSync(artifact);
+      const blob = path.join(artifact, 'blob.json');
       const json = path.join(temp, `shard-${index}-results.json`);
       const coverage = path.join(temp, `shard-${index}-coverage`);
-      runVitest(`shard ${shard}`, [
-        'run', ...TESTS, ...coverageArgs(coverage, { zeroThresholds: true }), `--shard=${shard}`,
+      const metadata = path.join(artifact, 'metadata.json');
+      runNode([PLAN_BUILDER, '--plan', planFile, '--metadata-out', metadata, '--shard', index, '--sha', sha, '--run-id', runId, '--attempt', attempt], `write shard ${index} provenance`);
+      runNpm(`actual queued shard entrypoint ${index}/2`, 'test:coverage:shard', [
+        ...TESTS, '--config', CONFIG, `--shard=${index}/2`, ...coverageArgs(coverage, { zeroThresholds: true }),
         '--reporter=blob', '--reporter=json', `--outputFile.blob=${blob}`, `--outputFile.json=${json}`,
-      ]);
-      const shardFiles = validateResults(json, `shard ${shard}`, { exactInventory: false });
-      if (!shardFiles.length) throw new Error(`shard ${shard} received no test files`);
-      shardInventory.push(...shardFiles);
-      shardReports.push(blob);
+      ], env);
+      shardInventory.push(...validateReport(json, plan, shard.index));
+      if (!fs.existsSync(blob)) throw new Error(`shard ${index} did not produce a blob report`);
     }
     if (shardInventory.length !== TESTS.length || new Set(shardInventory).size !== TESTS.length || TESTS.some((file) => !shardInventory.includes(file))) {
       throw new Error(`two-shard partition mismatch; received ${shardInventory.join(', ')}`);
     }
-    if (shardReports.some((file) => !fs.existsSync(file))) throw new Error('one or more shard blob reports were not produced');
 
+    runNode([PLAN_BUILDER, '--plan', planFile, '--stage-blobs', '--artifacts', artifacts, '--blob-dir', blobDirectory, '--sha', sha, '--run-id', runId, '--attempt', attempt], 'stage same-run provenance-verified blobs');
     const mergedJson = path.join(temp, 'merged-results.json');
     const mergedCoverage = path.join(temp, 'merged-coverage');
-    // No threshold overrides here: Vitest applies the repository's configured
-    // global thresholds only after merging both shard blobs.
-    runVitest('merged shard reports', [
-      `--merge-reports=${blobDirectory}`, '--reporter=json', `--outputFile.json=${mergedJson}`,
-      ...coverageArgs(mergedCoverage),
-    ]);
+    runNpm('actual queued merge entrypoint with the pilot config', 'test:coverage:merge', [
+      '--config', CONFIG, `--merge-reports=${blobDirectory}`, '--coverage', ...coverageArgs(mergedCoverage, { zeroThresholds: true }),
+      '--reporter=json', `--outputFile.json=${mergedJson}`,
+    ], env);
     const mergedFiles = validateResults(mergedJson, 'merged reports');
     const mergedMap = coverageMap(mergedCoverage, 'merged reports');
     if (JSON.stringify(canonical(unshardedMap)) !== JSON.stringify(canonical(mergedMap))) {
       throw new Error('merged coverage attribution/count maps differ from the unsharded baseline');
     }
     if (JSON.stringify([...mergedFiles].sort()) !== JSON.stringify([...unshardedFiles].sort())) throw new Error('merged test file inventory differs from unsharded baseline');
-    process.stdout.write(`${JSON.stringify({ schemaVersion: 1, testFiles: TESTS, sourceFiles: SOURCES, unshardedFiles: unshardedFiles.length, mergedFiles: mergedFiles.length, shardPartition: shardInventory.length, sourceAttributionAndCountsMatch: true, thresholdPolicy: 'shards use zero thresholds; merged run uses unchanged repository thresholds', tempDirectory: temp }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ schemaVersion: 2, mode: 'bounded-real-pilot-config-probe', sha, testFiles: TESTS, sourceFiles: SOURCES, unshardedFiles: unshardedFiles.length, mergedFiles: mergedFiles.length, shardPartition: shardInventory.length, provenanceVerified: true, sourceAttributionAndCountsMatch: true, productionInventoryAndThresholdsChanged: false }, null, 2)}\n`);
   } catch (error) {
     process.stderr.write(`[coverage-probe] ${error.message}\n[coverage-probe] Diagnostic files retained at ${temp}\n`);
     process.exitCode = 1;
