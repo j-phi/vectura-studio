@@ -25,7 +25,7 @@
     "measure": { "command": "npm run test:lane:measure", "maxSeconds": 300 }
   },
   "ciRoster": {
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "testInventory": {
       "expectedSkippedAssertions": 57,
       "fullySkippedFiles": {

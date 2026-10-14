@@ -166,7 +166,7 @@ describe('lane timing and promotion evidence', () => {
       const sha = run.toString(16).padStart(40, '0');
       const runClasses = [classes[(run - 1) % classes.length]];
       for (const job of jobs) rows.push({
-        schemaVersion: 3, source: 'github-actions', sha, job, owner: manifest.ciRoster.owners[job], expectedJobs: jobs, compatibilityJobs: ['unit', 'integration', 'visual'], result: 'success', complete: true,
+        schemaVersion: manifest.ciRoster.schemaVersion, source: 'github-actions', sha, job, owner: manifest.ciRoster.owners[job], expectedJobs: jobs, compatibilityJobs: manifest.ciRoster.compatibilityJobs, result: 'success', complete: true,
         latestHead: true, classes: runClasses, runId: `run-${run}`, runNumber: run,
         collectedAt: new Date(Date.UTC(2026, 0, run)).toISOString(),
         provenance: { workflow: 'Tests', event: 'pull_request', attempt: 1 },
@@ -198,7 +198,7 @@ describe('lane timing and promotion evidence', () => {
     expect(result.stderr).toContain('consecutive complete green SHAs');
   });
 
-  it('requires twenty consecutive schema-three rows for new-topology promotion', () => {
+  it('requires twenty consecutive current-schema rows for new-topology promotion', () => {
     const mixed = promotionFixture();
     const firstSha = mixed[0].sha;
     for (const row of mixed.filter((entry) => entry.sha === firstSha)) {
@@ -209,6 +209,64 @@ describe('lane timing and promotion evidence', () => {
     const result = runPromotion(mixed, mixed[mixed.length - 1].sha);
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('found 19');
+  });
+
+  it('accepts valid schema-three history before twenty complete current-schema green runs', () => {
+    const historical = promotionFixture().slice(0, 49).map((row, index) => ({
+      ...row,
+      sha: `e${Math.floor(index / 7) + 1}`.padEnd(40, '0'),
+      schemaVersion: 3,
+      expectedJobs: ['unit', 'integration', 'e2e-smoke', 'visual', 'perf', 'coverage', 'feedback'],
+      compatibilityJobs: ['unit', 'integration', 'visual'],
+      owner: {
+        unit: 'coverage (compatibility check name)',
+        integration: 'coverage (compatibility check name)',
+        'e2e-smoke': 'tests/e2e smoke projects',
+        visual: 'coverage (compatibility check name; scheduled visual suite remains independent)',
+        perf: 'un-instrumented tests/perf suite',
+        coverage: 'all tests/**/*.test.js and global coverage thresholds',
+        feedback: 'feedback Vitest/browser journey and Node process lifecycle tests',
+      }[row.job],
+    }));
+    const current = promotionFixture().map((row) => ({ ...row, runId: `current-${row.runId}`, runNumber: row.runNumber + 7 }));
+    const combined = [...historical, ...current];
+    const result = runPromotion(combined, current[current.length - 1].sha);
+    expect(result.status, result.stderr).toBe(0);
+  });
+
+  it('does not count valid historical schema-three runs toward the current-schema streak', () => {
+    const rows = promotionFixture();
+    for (const row of rows.filter((entry) => entry.sha === rows[0].sha)) {
+      row.schemaVersion = 3;
+      row.expectedJobs = ['unit', 'integration', 'e2e-smoke', 'visual', 'perf', 'coverage', 'feedback'];
+      row.compatibilityJobs = ['unit', 'integration', 'visual'];
+      row.owner = {
+        unit: 'coverage (compatibility check name)',
+        integration: 'coverage (compatibility check name)',
+        'e2e-smoke': 'tests/e2e smoke projects',
+        visual: 'coverage (compatibility check name; scheduled visual suite remains independent)',
+        perf: 'un-instrumented tests/perf suite',
+        coverage: 'all tests/**/*.test.js and global coverage thresholds',
+        feedback: 'feedback Vitest/browser journey and Node process lifecycle tests',
+      }[row.job];
+    }
+    const result = runPromotion(rows, rows[rows.length - 1].sha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('found 19');
+  });
+
+  it('rejects malformed historical schema-three metadata', () => {
+    const rows = promotionFixture();
+    const historicalSha = rows[0].sha;
+    for (const row of rows.filter((entry) => entry.sha === historicalSha)) {
+      row.schemaVersion = 3;
+      row.expectedJobs = ['unit', 'integration', 'e2e-smoke', 'visual', 'perf', 'coverage', 'feedback'];
+      row.compatibilityJobs = ['unit', 'integration', 'visual'];
+      row.owner = 'incorrect owner';
+    }
+    const result = runPromotion(rows, rows[rows.length - 1].sha);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('lack valid GitHub workflow provenance or roster metadata');
   });
 
   it('rejects stale heads, duplicate or conflicting jobs, and missing or failed jobs', () => {

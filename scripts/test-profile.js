@@ -89,7 +89,7 @@ function inspectJsonResults(results, { root = process.cwd(), inventory, testInve
   return { passed: failures.length === 0, failures, reported, skippedAssertions, fullySkippedFiles };
 }
 
-function buildProfile({ logText, results = null, strict = false, root = process.cwd(), sha = process.env.GITHUB_SHA || null, runner = null, workers = null, setupMs = null, executionMs = null }) {
+function buildProfile({ logText, results = null, strict = false, root = process.cwd(), sha = process.env.GITHUB_SHA || null, runner = null, workers = null, setupMs = null, executionMs = null, executionStartMs = null, executionScope = null, nowMs = null }) {
   const inventory = walkTests(path.join(root, 'tests'), root).sort();
   const entries = parseDurationLog(logText);
   if (!entries.length && results && Array.isArray(results.testResults)) {
@@ -133,7 +133,8 @@ function buildProfile({ logText, results = null, strict = false, root = process.
       runner,
       workers: workers == null ? null : Number(workers),
       setupMs: setupMs == null ? null : Number(setupMs),
-      executionMs: executionMs == null ? null : Number(executionMs),
+      executionMs: executionStartMs == null ? (executionMs == null ? null : Number(executionMs)) : Math.max(0, Number(nowMs == null ? Date.now() : nowMs) - Number(executionStartMs)),
+      executionScope: executionScope || null,
     },
     source: 'Vitest ANSI per-file timings or JSON reporter file durations; file wall times overlap across workers',
     inventory: {
@@ -178,6 +179,8 @@ function main() {
       workers: argument('--workers') || null,
       setupMs: argument('--setup-ms') || null,
       executionMs: argument('--execution-ms') || null,
+      executionStartMs: argument('--execution-start-ms') || null,
+      executionScope: argument('--execution-scope') || null,
     });
   } catch (error) {
     process.stderr.write(`[test-profile] Could not read profile inputs: ${error.message}\n`);

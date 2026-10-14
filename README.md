@@ -34,6 +34,13 @@ npm run test:ci
 
 Node 20.19 or newer is required for the development and test toolchain.
 
+The full local coverage route has measured 39m40s with two workers, while the default
+per-attempt deadline is 30 minutes; a plain `npm run test:ci` invocation is not guaranteed
+to finish that route. PR #97 proposes conditional two-shard hosted coverage with strict
+same-SHA inventory and the existing global thresholds. Main remains unsharded until hosted
+validation, review, and screen pass. Details and current evidence: [testing guide](docs/testing.md)
+and [phase-two rollout](docs/test-suite-phase2.md).
+
 > The `pre-push` hook runs `test:feedback` (bounded local feedback) before every push. A minimal browser journey runs locally; CI retains the full browser roster. Bypass with `SKIP_PREPUSH=1 git push`.
 
 ---

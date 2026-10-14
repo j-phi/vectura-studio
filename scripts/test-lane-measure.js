@@ -37,7 +37,26 @@ if (!/^[0-9a-f]{40}$/i.test(head || '')) {
   process.stderr.write('[test-lane-measure] Promotion requires --head with the exact 40-character latest SHA.\n'); process.exit(2);
 }
 const legacyRoster = ['unit', 'integration', 'e2e-smoke', 'visual', 'perf', 'coverage', 'feedback'];
-const rosters = new Map([[2, legacyRoster], [manifest.ciRoster.schemaVersion, manifest.ciRoster.expectedJobs]]);
+// Schema 3 is historical evidence for the roster before conditional 2-shard CI.
+// Keep its contract frozen so old rows remain readable after the current roster changes.
+const schemaThreeRoster = {
+  expectedJobs: ['unit', 'integration', 'e2e-smoke', 'visual', 'perf', 'coverage', 'feedback'],
+  compatibilityJobs: ['unit', 'integration', 'visual'],
+  owners: {
+    unit: 'coverage (compatibility check name)',
+    integration: 'coverage (compatibility check name)',
+    'e2e-smoke': 'tests/e2e smoke projects',
+    visual: 'coverage (compatibility check name; scheduled visual suite remains independent)',
+    perf: 'un-instrumented tests/perf suite',
+    coverage: 'all tests/**/*.test.js and global coverage thresholds',
+    feedback: 'feedback Vitest/browser journey and Node process lifecycle tests',
+  },
+};
+const rosters = new Map([
+  [2, legacyRoster],
+  [3, schemaThreeRoster.expectedJobs],
+  [manifest.ciRoster.schemaVersion, manifest.ciRoster.expectedJobs],
+]);
 const knownClasses = new Set([...manifest.rules.map((rule) => rule.id), 'unknown']);
 const sameSet = (left, right) => {
   if (!Array.isArray(left) || left.length !== right.length || new Set(left).size !== left.length) return false;
@@ -54,6 +73,8 @@ const valid = (row) => {
       new Set(row.classes).size !== row.classes.length || !row.classes.every((name) => knownClasses.has(name)) || !rosters.get(row.schemaVersion).includes(row.job) ||
       !['success', 'failure', 'cancelled', 'skipped', 'missing'].includes(row.result) ||
       row.complete !== true || typeof row.latestHead !== 'boolean') return false;
+  if (row.schemaVersion === 3 &&
+      (!sameSet(row.compatibilityJobs, schemaThreeRoster.compatibilityJobs) || row.owner !== schemaThreeRoster.owners[row.job])) return false;
   if (row.schemaVersion === manifest.ciRoster.schemaVersion &&
       (!sameSet(row.compatibilityJobs, manifest.ciRoster.compatibilityJobs) || row.owner !== manifest.ciRoster.owners[row.job])) return false;
   return true;
