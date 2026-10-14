@@ -113,9 +113,11 @@ test.describe('TUX-051 B: toggle geometry', () => {
         // Q17/Q18: the 44 px chevron overhangs the 36 px row by 8 px into the pointer-events:none status strip, which overlays the canvas.
         const over = rect.c.bottom - rect.top;
         expect(over, 'overhang into the overlay strip is at most 8 px').toBeLessThanOrEqual(8.5);
-        const strip = await page.evaluate(() => { const b = document.querySelector('.hud-bar').getBoundingClientRect(); return { top: b.top, ptr: getComputedStyle(document.querySelector('.hud-bar')).pointerEvents }; });
+        const strip = await page.evaluate(() => { const b = document.querySelector('.hud-bar').getBoundingClientRect(); return { top: b.top, left: b.left, right: b.right, ptr: getComputedStyle(document.querySelector('.hud-bar')).pointerEvents }; });
         expect(strip.ptr, 'the strip under the overhang takes no pointer events').toBe('none');
         expect(rect.top, 'the overhang stays inside the strip').toBeGreaterThanOrEqual(strip.top - 0.5);
+        expect(rect.left, 'the toggle starts inside the strip (left)').toBeGreaterThanOrEqual(strip.left - 0.5);
+        expect(rect.right, 'the toggle ends inside the strip (right)').toBeLessThanOrEqual(strip.right + 0.5);
       } else {
       const inter = rect.left < rect.c.right && rect.right > rect.c.left && rect.top < rect.c.bottom && rect.bottom > rect.c.top;
       expect(inter, 'toggle does not intersect the canvas').toBe(false);

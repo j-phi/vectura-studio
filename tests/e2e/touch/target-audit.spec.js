@@ -99,9 +99,10 @@ for (const st of states) {
       const cell = base ? base[st.id] : undefined;
       const platformKnown = !!core.readBaseline(BASELINE_FILE)[PLATFORM];
       if (cell) {
-        const cmp = core.compareCell(cell, measured, undefined, metricIds);
+        const recordOnly = core.recordOnlyMetrics(st.id);
+        const cmp = core.compareCell(cell, measured, undefined, metricIds, recordOnly);
         if (UPDATE) {
-          core.updateBaselineCell(BASELINE_FILE, PLATFORM, project, st.id, measured, { metricIds, any: UPDATE_ANY, measuredAt: gitSha() });
+          core.updateBaselineCell(BASELINE_FILE, PLATFORM, project, st.id, measured, { metricIds, any: UPDATE_ANY, measuredAt: gitSha(), recordOnly });
           if (!UPDATE_ANY) issues.push(...core.formatCompare(cellId, { worse: cmp.worse.filter((w) => w.kind !== 'missing'), better: [] })); // missing = new metric, seeded above
         } else {
           issues.push(...core.formatCompare(cellId, cmp));

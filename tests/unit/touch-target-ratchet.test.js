@@ -106,6 +106,31 @@ describe('stranded and reachable guards', () => {
   });
 });
 
+describe('Q21: menu-* canvasPct is record-only', () => {
+  it('recordOnlyMetrics names canvasPct for menu-* states only', () => {
+    expect(core.recordOnlyMetrics('menu-edit')).toEqual(['canvasPct']);
+    expect(core.recordOnlyMetrics('menu-help')).toEqual(['canvasPct']);
+    expect(core.recordOnlyMetrics('default')).toEqual([]);
+    expect(core.recordOnlyMetrics('bottom-pane-open')).toEqual([]);
+  });
+
+  it('a canvasPct fall or rise cannot fail or ratchet a menu state, but other metrics still can', () => {
+    const ro = core.recordOnlyMetrics('menu-view');
+    const low = { ...base(), canvasPct: 10 };
+    expect(core.compareCell(base(), low, undefined, undefined, ro)).toEqual({ worse: [], better: [] });
+    expect(core.compareCell(base(), { ...base(), canvasPct: 90 }, undefined, undefined, ro)).toEqual({ worse: [], better: [] });
+    expect(core.compareCell(base(), low, undefined, undefined, []).worse.map((w) => w.metric)).toEqual(['canvasPct']);
+    expect(core.compareCell(base(), { ...low, under44: 99 }, undefined, undefined, ro).worse.map((w) => w.metric)).toEqual(['under44']);
+  });
+
+  it('update mode still records the measured canvasPct for a menu state (even when higher or lower)', () => {
+    const ro = core.recordOnlyMetrics('menu-view');
+    expect(core.mergeCell(base(), { ...base(), canvasPct: 10 }, undefined, false, ro).canvasPct).toBe(10);
+    expect(core.mergeCell(base(), { ...base(), canvasPct: 70 }, undefined, false, ro).canvasPct).toBe(70);
+    expect(core.mergeCell(base(), { ...base(), canvasPct: 10 }, undefined, false, []).canvasPct).toBe(44.5);
+  });
+});
+
 describe('mergeCell (update mode never worsens)', () => {
   it('keeps the better value per metric', () => {
     const merged = core.mergeCell(base(), { ...base(), under44: 9, under24: 0, canvasPct: 30, scaleOk: true });

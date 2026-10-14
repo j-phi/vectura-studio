@@ -580,8 +580,22 @@ function measureInPage(cfg, helpers) {
     // full size on the cut axis. Its probed size would otherwise depend on the scroll position, not on the CSS.
     if (probed) {
       const cut = scrollCut(el, r);
-      if (cut.y && ph < 49) ph = Math.max(ph, Math.min(49, Math.round(r.height)));
-      if (cut.x && pw < 49) pw = Math.max(pw, Math.min(49, Math.round(r.width)));
+      // Effective hit size = own box united with any ::before/::after expansion (an invisible hit area counts, Q15 rescue).
+      let effW = r.width; let effH = r.height;
+      for (const pe of ['::before', '::after']) {
+        const pc = getComputedStyle(el, pe);
+        if (pc.content === 'none' || pc.content === 'normal' || pc.pointerEvents === 'none' || pc.position !== 'absolute') continue;
+        const num = (v) => (v === 'auto' ? null : parseFloat(v));
+        const pwid = parseFloat(pc.width); const phei = parseFloat(pc.height);
+        if (!(pwid > 0) || !(phei > 0)) continue;
+        const t0 = num(pc.top); const b0 = num(pc.bottom); const l0 = num(pc.left); const r0 = num(pc.right);
+        const top = t0 !== null ? t0 : (b0 !== null ? el.clientHeight - b0 - phei : 0);
+        const left = l0 !== null ? l0 : (r0 !== null ? el.clientWidth - r0 - pwid : 0);
+        effH = Math.max(effH, Math.max(r.height, top + phei) - Math.min(0, top));
+        effW = Math.max(effW, Math.max(r.width, left + pwid) - Math.min(0, left));
+      }
+      if (cut.y && ph < 49) ph = Math.max(ph, Math.min(49, Math.round(effH)));
+      if (cut.x && pw < 49) pw = Math.max(pw, Math.min(49, Math.round(effW)));
     }
     const clipped = onscreen && (c.w + 1 < r.width || c.h + 1 < r.height);
     const isTextEntry = (tag === 'input' && TEXT_TYPES.has(type)) || tag === 'textarea' || tag === 'select' || el.isContentEditable;
@@ -819,6 +833,9 @@ const METRICS = [
   { id: 'scaleOk', dir: 'bool' },
 ];
 const METRIC_IDS = METRICS.map((m) => m.id);
+// Q21 (orchestrator decision 2026-10-14, Jay may override): an open-menu state records canvasPct but never ratchets it.
+// The section 1.5 thresholds cover pane configurations; a transient menu closes on an outside tap (TUX-040).
+const recordOnlyMetrics = (stateId) => (/^menu-/.test(String(stateId)) ? ['canvasPct'] : []);
 // -c (browser chrome) projects only serve section 1.5's chrome-variants row.
 const CHROME_METRICS = ['canvasPct', 'hOverflow', 'innerWidthExcess'];
 
@@ -871,11 +888,12 @@ const onscreenCount = (rec) => (rec.items || []).filter((i) => i.onscreen).lengt
 
 // Pure comparator. baseline/measured are metric records. Returns { worse, better } message parts.
 // metricIds limits the comparison (chrome variants).
-function compareCell(baseline, measured, metrics, metricIds) {
+function compareCell(baseline, measured, metrics, metricIds, recordOnly) {
   const worse = [];
   const better = [];
   (metrics || METRICS).forEach((m) => {
     if (metricIds && !metricIds.includes(m.id)) return;
+    if (recordOnly && recordOnly.includes(m.id)) return; // Q21: recorded, never ratcheted
     const b = baseline ? baseline[m.id] : undefined;
     const g = measured[m.id];
     if (b === undefined) { worse.push({ metric: m.id, base: b, got: g, kind: 'missing' }); return; }
@@ -929,13 +947,13 @@ function compareFinal(measured, ctx) {
 
 // Update-mode merge: per metric take the BETTER of existing and measured (never worsen).
 // `any` = true writes the measured values as-is (TOUCH_BASELINE=update-any).
-function mergeCell(existing, measured, metricIds, any) {
+function mergeCell(existing, measured, metricIds, any, recordOnly) {
   const out = {};
   METRICS.forEach((m) => {
     if (metricIds && !metricIds.includes(m.id)) return;
     const g = measured[m.id];
     const b = existing ? existing[m.id] : undefined;
-    if (any || b === undefined) { out[m.id] = g; return; }
+    if (any || b === undefined || (recordOnly && recordOnly.includes(m.id))) { out[m.id] = g; return; }
     if (m.dir === 'bool') out[m.id] = b || g;
     else if (m.dir === 'lower') out[m.id] = Math.min(b, g);
     else out[m.id] = Math.max(b, g);
@@ -1013,11 +1031,11 @@ const writeAtomic = (file, text) => {
 };
 
 // Merge one cell into the baseline file. Atomic: lock, fresh read, temp file, rename.
-function updateBaselineCell(file, platform, project, state, measured, { metricIds, any, measuredAt } = {}) {
+function updateBaselineCell(file, platform, project, state, measured, { metricIds, any, measuredAt, recordOnly } = {}) {
   withLock(file, () => {
     const base = readBaseline(file);
     const cell = ((base[platform] || {})[project] || {})[state];
-    ((base[platform] = base[platform] || {})[project] = base[platform][project] || {})[state] = mergeCell(cell, measured, metricIds, any);
+    ((base[platform] = base[platform] || {})[project] = base[platform][project] || {})[state] = mergeCell(cell, measured, metricIds, any, recordOnly);
     if (measuredAt) base._measuredAt = measuredAt;
     writeAtomic(file, serializeBaseline(base));
   });
@@ -1104,7 +1122,7 @@ async function waitGeometryStable(page, timeout = 8000) {
 
 module.exports = {
   // page section
-  measureInPage, hitAreaInPage, canvasShareInPage, canvasShareExactInPage, probeCanvasShareGrid, probeHandles, measurePage, probeHit, probeCanvasShare,
+  measureInPage, hitAreaInPage, canvasShareInPage, canvasShareExactInPage, probeCanvasShareGrid, probeHandles, measurePage, recordOnlyMetrics, probeHit, probeCanvasShare,
   // node section
   METRICS, METRIC_IDS, CHROME_METRICS, SAFE_BANDS, THRESHOLDS,
   summarizeState, isBenignPageError, onscreenCount, compareCell, formatCompare, compareFinal, mergeCell, finalCanvasMin,

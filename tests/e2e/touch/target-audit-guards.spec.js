@@ -226,6 +226,28 @@ test('guard: a row clipped by its own scroll container is measured at full size 
   expect(it.ph, `row height probed at ${it.ph} px, CSS box is 40 px`).toBeGreaterThanOrEqual(40);
 });
 
+// Q15 rescue uses the EFFECTIVE hit height (own box plus any ::before/::after expansion), not the bare box height.
+// A 16 px button with a 44 px ::before expansion, cut by its scroller, is a 44 px target once scrolled into view.
+test('guard: Q15 rescue counts a ::before hit expansion @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  await page.evaluate(() => {
+    const st = document.createElement('style');
+    st.textContent = '#zz-exp{position:relative;display:block;width:150px;height:16px;padding:0;border:0}#zz-exp::before{content:"";position:absolute;left:0;right:0;top:-14px;height:44px}';
+    document.head.appendChild(st);
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:100px;top:300px;width:200px;height:80px;overflow-y:auto;z-index:50;background:#222';
+    box.innerHTML = '<div style="height:74px"></div><button id="zz-exp">row</button><div style="height:200px"></div>';
+    document.body.appendChild(box);
+  });
+  const r = await measure(page, spec, testInfo.project.name);
+  const it = r.raw.items.find((i) => /zz-exp/.test(i.sel));
+  expect(it, 'the probe button is listed').toBeTruthy();
+  expect(it.clipped, 'the button is cut by its scroller').toBe(true);
+  expect(it.min24, `probed ${it.pw}x${it.ph}: the ::before makes the hit area 44 px once scrolled into view`).toBe(true);
+  expect(it.ph, 'effective height 44').toBeGreaterThanOrEqual(44);
+});
+
 // Q15 hardening: a row taller than its scroller can never scroll fully into view, so it keeps its probed (clipped) size.
 test('guard: a row taller than its scroll container is not measured at full size @audit-extra', async ({ page, baseURL }, testInfo) => {
   const spec = PROJECTS[testInfo.project.name];
