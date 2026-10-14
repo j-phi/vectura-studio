@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 
@@ -14,6 +15,55 @@ afterEach(() => {
 });
 
 describe('deterministic coverage shard plan', () => {
+  it('stages pilot artifacts when the YAML literal block runs in bash', () => {
+    const workflow = fs.readFileSync(path.resolve('.github/workflows/test-shard-pilot.yml'), 'utf8');
+    const runBlock = workflow.match(/      - name: Verify provenance and stage exactly two Vitest blob files\n        run: \|\n((?:          .*\n?)+)/);
+    expect(runBlock).not.toBeNull();
+    const mergeScript = runBlock[1].replace(/^ {10}/gm, '').trimEnd();
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vectura-shard-workflow-'));
+    roots.push(root);
+    const sha = 'd'.repeat(40);
+    const runId = 'fixture-run';
+    const plan = buildPlan({
+      files: ['tests/unit/a.test.js', 'tests/unit/b.test.js'],
+      weights: { source: { description: 'fixture', unknownFileWeightSeconds: 1 }, weightsSeconds: {} },
+      sha,
+    });
+    fs.writeFileSync(path.join(root, 'coverage-shard-plan.json'), JSON.stringify(plan));
+    const artifacts = path.join(root, 'coverage-shard-artifacts');
+    for (const shard of plan.shards) {
+      const directory = path.join(artifacts, `coverage-shard-${shard.index}`);
+      fs.mkdirSync(directory, { recursive: true });
+      fs.writeFileSync(path.join(directory, 'metadata.json'), JSON.stringify({
+        schemaVersion: 1,
+        sha,
+        runId,
+        attempt: 1,
+        shard: shard.index,
+        shardCount: plan.shardCount,
+        planHash: plan.hash,
+        expectedFiles: shard.files,
+      }));
+      fs.writeFileSync(path.join(directory, 'blob.json'), '{}');
+    }
+
+    const result = spawnSync('bash', ['-c', mergeScript], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        RUNNER_TEMP: root,
+        GITHUB_SHA: sha,
+        GITHUB_RUN_ID: runId,
+        GITHUB_RUN_ATTEMPT: '1',
+      },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('staged 2 provenance-verified blob reports');
+    expect(fs.readdirSync(path.join(root, 'vitest-blobs')).sort()).toEqual(['shard-1.json', 'shard-2.json']);
+  });
+
   it('balances known durations and gives unprofiled files a conservative nonzero weight', () => {
     const files = ['tests/unit/a.test.js', 'tests/unit/b.test.js', 'tests/unit/c.test.js', 'tests/unit/d.test.js', 'tests/unit/new.test.js'];
     const fakeWeights = {

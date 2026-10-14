@@ -126,7 +126,8 @@ jobs:
           path: ${{ runner.temp }}/coverage-shard-artifacts
           merge-multiple: false
       - name: Verify provenance and stage exactly two Vitest blob files
-        run: node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --stage-blobs \
+        run: |
+          node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --stage-blobs \
           --artifacts "$RUNNER_TEMP/coverage-shard-artifacts" --blob-dir "$RUNNER_TEMP/vitest-blobs" \
           --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
       - name: Merge blob reports and enforce global coverage thresholds once

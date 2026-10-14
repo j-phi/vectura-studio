@@ -7,6 +7,7 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Testing workflow
+- **Full-scope shard pilot staging.** Keep multiline GitHub Actions shell commands with backslash continuations in literal YAML blocks so artifact and provenance arguments remain separate; a regression executes the workflow command against two fixture artifacts.
 - **Phase-two PR validation acceleration.** Full-scope coverage owns non-E2E correctness while preserving required-check compatibility, lifecycle/browser checks and uninstrumented performance. The queued local `test:ci`-equivalent decomposition passed with strict 765-file inventory; measured local coverage took 39m39.8s on two workers. PR #93 and the follow-up CLI correction passed required hosted checks; the manual full-scope pilot remains opt-in pending a successful run and measured comparison.
 - **Repair the coverage-pilot config loader and probe.** Load the custom duration sequencer as ESM so Vite can resolve `vitest/node` when bundling the pilot config. Expand the bounded three-file probe to cover the real config, queued shard and merge entrypoints, provenance validation and merged coverage-map parity; run it after hosted feedback as a separate CI step. It does not certify full-suite inventory or thresholds, and the local fast/pre-push lane remains unchanged.
 - **Bounded feedback and retained audits.** Add isolated runtime profiles and immutable
