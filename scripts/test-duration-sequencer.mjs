@@ -1,17 +1,17 @@
-'use strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { BaseSequencer } from 'vitest/node';
+import shardPlan from './test-shard-plan.js';
 
-const fs = require('node:fs');
-const path = require('node:path');
-const { fileURLToPath } = require('node:url');
-const { BaseSequencer } = require('vitest/node');
-const { readPlan, planHash } = require('./test-shard-plan');
+const { readPlan, planHash } = shardPlan;
 
 function filePath(moduleId, root) {
   const absolute = moduleId.startsWith('file:') ? fileURLToPath(moduleId) : path.resolve(root, moduleId);
   return path.relative(root, absolute).split(path.sep).join('/');
 }
 
-class DurationBalancedSequencer extends BaseSequencer {
+export default class DurationBalancedSequencer extends BaseSequencer {
   loadPlan() {
     const planPath = process.env.VECTURA_SHARD_PLAN_FILE;
     if (!planPath || !fs.existsSync(planPath)) throw new Error('VECTURA_SHARD_PLAN_FILE must point to the validated current-SHA pilot plan');
@@ -44,5 +44,3 @@ class DurationBalancedSequencer extends BaseSequencer {
     });
   }
 }
-
-module.exports = DurationBalancedSequencer;
