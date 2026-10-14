@@ -17,7 +17,7 @@ const PROFILES = {
 const ZERO = { top: 0, bottom: 0, left: 0, right: 0 };
 const TOL = 0.5;
 // Desktop/tablet base 38 px. The phone header holds 44 px TUX-001 buttons, so its base is 44 px.
-const baseHeaderH = (device) => (device === 'iPhP' || device === 'iPhL' ? 44 : 38);
+const baseHeaderH = () => 44 /* Q18: 44 px on every touch layout (tablet and touch-wide grew from 38) */;
 // Repo-relative by default (the worktree sits under <repo>/.claude/worktrees/<lane>); TUX_EVIDENCE_DIR overrides.
 const EVIDENCE = process.env.TUX_EVIDENCE_DIR || path.resolve(__dirname, '../../../docs/touch-audit/evidence/after/TUX-005');
 
