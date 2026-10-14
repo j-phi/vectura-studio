@@ -51,6 +51,9 @@ jobs:
       - run: npm run test:feedback
         env:
           VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-metrics.jsonl
+      - name: Verify bounded coverage shard and merge plumbing
+        run: npm run test:coverage:probe
+        timeout-minutes: 5
       - name: Upload lane timing and queue metrics
         if: always()
         uses: actions/upload-artifact@v7
