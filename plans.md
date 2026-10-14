@@ -595,6 +595,8 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Pre-push Rosetta hang (2026-10-14).** Intel `/usr/local/bin/git` ran the hook as x86_64 → x64 Chromium hung the feedback e2e; hook re-enters arm64 via `arch -arm64` when `sysctl.proc_translated` is 1.
+- **Mono Density test seed flake (2026-10-12).** `scene3d-fr-u5-legacy-mono-density` relied on random layer seeds; seeds pinned, dutyConst/turingStripe cases moved to Density 20 (85 is inert at the plot floor by design).
 - **U2 golden Node-major gate (2026-10-11).** mezzoRegion hash failed on Node 25 arm64 (V8 ULP drift, verified on base 383d7610); hashes now enforced on Node 20 only, counts everywhere; `.nvmrc` added.
 
 - **2026-10-04 — Fill-style review U7: deferred items (branch `3d-scene/fr-u7`, NOT pushed).** (1) **Tone bands**

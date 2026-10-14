@@ -43,7 +43,7 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - `npm run test:queue:status` shows the shared test-lock holder and the waiting runs.
 - `npm run hooks:install` installs the local git hooks. **Run this once after cloning.**
   - `pre-commit` — refreshes the graphify knowledge graph and stages output.
-  - `pre-push` — runs `test:feedback` (bounded feedback through the shared test queue) before every push. A minimal browser journey runs locally; the full browser roster remains in CI. Bypass with `SKIP_PREPUSH=1 git push` (CI still gates).
+  - `pre-push` — runs `test:feedback` (bounded feedback through the shared test queue) before every push. A minimal browser journey runs locally; the full browser roster remains in CI. Bypass with `SKIP_PREPUSH=1 git push` (CI still gates). When an Intel (x86_64) git runs the hook under Rosetta on an Apple-silicon Mac, the hook re-enters native arm64 for the lane; under Rosetta, Playwright's Chromium starts as x64 and the browser journey hangs.
 
 ## Shared Local Test Queue
 Several worktrees and agent sessions run tests on the same machine. Concurrent Vitest and

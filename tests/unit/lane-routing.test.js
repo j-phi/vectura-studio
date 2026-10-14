@@ -324,6 +324,36 @@ describe('pre-push feedback contract', () => {
     expect(fs.readFileSync(log, 'utf8')).not.toContain('test:lane');
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  // An Intel git on an Apple-silicon Mac runs the hook under Rosetta; the lane's
+  // Chromium then starts as x64 and the browser journey hangs past the deadline.
+  // uname / sysctl / arch are stubbed on PATH so both branches run on any OS.
+  const runHookAs = (translated) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vectura-hook-'));
+    const bin = path.join(dir, 'bin'); fs.mkdirSync(bin);
+    const log = path.join(dir, 'calls.log');
+    const stub = (name, body) => { fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`); fs.chmodSync(path.join(bin, name), 0o755); };
+    stub('uname', 'echo Darwin');
+    stub('sysctl', `echo ${translated}`);
+    stub('arch', `printf 'arch %s\\n' "$1" >> "${log}"; shift; exec "$@"`);
+    stub('npm', `printf '%s\\n' "$*" >> "${log}"; exit 0`);
+    const hook = spawnSync('sh', [path.resolve('scripts/hooks/pre-push')], { cwd: repo, encoding: 'utf8', input: `refs/heads/topic ${'a'.repeat(40)} refs/heads/topic ${'0'.repeat(40)}\n`, env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    const calls = fs.readFileSync(log, 'utf8').trim().split('\n');
+    fs.rmSync(dir, { recursive: true, force: true });
+    return { hook, calls };
+  };
+
+  it('re-enters native arm64 for feedback when git runs the hook under Rosetta', () => {
+    const { hook, calls } = runHookAs(1);
+    expect(hook.status, hook.stderr).toBe(0);
+    expect(calls).toEqual(['arch -arm64', 'run test:feedback']);
+  });
+
+  it('runs feedback directly when the hook is not translated', () => {
+    const { hook, calls } = runHookAs(0);
+    expect(hook.status, hook.stderr).toBe(0);
+    expect(calls).toEqual(['run test:feedback']);
+  });
 });
 
 

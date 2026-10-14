@@ -20,6 +20,16 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 
 ### Fixed (tests)
+- **Pre-push feedback lane no longer hangs under an Intel git on Apple silicon.** An x86_64 git runs
+  hooks under Rosetta, so Playwright's Chromium started as x64 and the browser journey timed out at the
+  60 s lane deadline on every push. The hook now detects a translated process and runs the lane with
+  `arch -arm64`.
+- **Legacy mono Density test no longer passes or fails on random seeds.** Each build drew new
+  `Math.random()` layer seeds, so "Density 85 differs from 50" passed on the seed difference alone. For
+  dutyConst, two random seeds render alike about 0.4% of the time (3 matches in 40 pairs), which failed
+  CI coverage once. With the seeds pinned, dutyConst (sphere) and turingStripe (box) render 85 exactly as
+  50: both sit at the plot floor, so only a sparser Density moves them (by design, U4b). Those two cases
+  now test at Density 20. No product code changed.
 - **U2 byte-identity hashes are enforced on Node 20 only.** On an arm64 Mac running Node 25, the
   sphere/hatch/mezzoRegion golden hashed `8ee322d6` instead of `c9eba689` and blocked every push. The
   pre-U2 base `383d7610` gives the same `8ee322d6` on Node 25, so nothing moved: a newer V8 rounds a

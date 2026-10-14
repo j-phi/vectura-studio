@@ -18,8 +18,19 @@ if [ "$has_push" = "0" ]; then
   exit 0
 fi
 
+# An Intel (x86_64) git on an Apple-silicon Mac runs this hook under Rosetta, and
+# every universal binary it launches (Playwright's Chromium) starts as x64 too: the
+# browser journey then hangs past the lane deadline. Re-enter native arm64.
+run_feedback() {
+  if [ "$(uname -s)" = "Darwin" ] && [ "$(sysctl -in sysctl.proc_translated 2>/dev/null)" = "1" ]; then
+    arch -arm64 /bin/sh -c 'npm run test:feedback'
+  else
+    npm run test:feedback
+  fi
+}
+
 echo "[pre-push] Running bounded critical feedback lane…"
-if ! npm run test:feedback; then
+if ! run_feedback; then
   echo "[pre-push] ❌ test:feedback failed. Push aborted."
   echo "[pre-push]    Fix the failures, or rerun with SKIP_PREPUSH=1 git push if intentional."
   exit 1
