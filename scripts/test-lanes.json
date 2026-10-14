@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "selection": "shadow",
   "always": [
     "tests/unit/lane-routing.test.js",
@@ -23,6 +23,26 @@
     "browser": { "command": "npm run test:e2e:all", "maxSeconds": 3600 },
     "audit": { "command": "npm run test:audit", "maxSeconds": 18000 },
     "measure": { "command": "npm run test:lane:measure", "maxSeconds": 300 }
+  },
+  "ciRoster": {
+    "schemaVersion": 4,
+    "testInventory": {
+      "expectedSkippedAssertions": 57,
+      "fullySkippedFiles": {
+        "tests/unit/scene3d-cross-frame.test.js": 5
+      }
+    },
+    "expectedJobs": ["unit", "integration", "e2e-smoke", "visual", "perf", "coverage", "feedback"],
+    "compatibilityJobs": ["unit", "integration", "visual"],
+    "owners": {
+      "unit": "coverage (compatibility check name)",
+      "integration": "coverage (compatibility check name)",
+      "e2e-smoke": "tests/e2e smoke projects",
+      "visual": "coverage (compatibility check name; scheduled visual suite remains independent)",
+      "perf": "un-instrumented tests/perf suite",
+      "coverage": "all tests/**/*.test.js and global coverage thresholds",
+      "feedback": "feedback Vitest/browser journey and Node process lifecycle tests"
+    }
   },
   "promotion": {
     "requiredConsecutiveGreenRuns": 20,

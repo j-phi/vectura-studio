@@ -24,8 +24,8 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - `npm run test:visual` runs SVG baseline regression checks.
 - `npm run test:visual:screenshots` runs optional Playwright screenshot snapshots.
 - `npm run test:perf` runs stress/performance checks.
-- `npm run test:ci` runs the PR-gating test suite (unit + integration + e2e + visual + perf).
-- `npm run test:fast` runs bounded local feedback used by the pre-push hook.
+- `npm run test:ci` holds one queue slot for lifecycle checks, full-scope Vitest coverage (unit + integration + visual + perf + audit), the complete configured Playwright roster, and uninstrumented performance checks. Each correctness suite runs once; the saved `coverage/vitest-full.json` must pass strict inventory and skip reconciliation before browser/perf execute. Parsed timings persist in `coverage/full-profile.json`. The default local per-attempt deadline is 30 minutes; a measured two-worker full-coverage route took 39m40s, so do not assume an ordinary `test:ci` invocation completes that measured route. Performance also runs without coverage because instrumentation changes timing.
+- `npm run test:fast` is an alias for bounded `test:feedback`; use `test:ci` for complete certification.
 - `npm run test:feedback` runs critical contracts and one minimal real browser journey with a 60-second execution deadline. Queue wait is separate; timeout fails.
 - `npm run test:lane -- <feedback|core|browser|audit|measure>` executes an explicit queued lane. Its execution deadline starts after lock acquisition; queue wait is recorded separately.
 - `npm run test:route -- --base <sha> --head <sha> --json` previews versioned risk routing. Unknown/shared/harness paths select broad verification.
@@ -34,6 +34,12 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - `npm run test:audit` holds one queue slot for lifecycle checks, full coverage once, and the complete browser roster once.
 - `npm run test:vitest -- <vitest args>` runs Vitest with any arguments (for example `npm run test:vitest -- run tests/unit/foo.test.js`).
 - `npm run test:playwright -- <playwright test args>` runs `playwright test` with any arguments (for example `npm run test:playwright -- tests/e2e/foo.spec.js --reporter=line`).
+- `npm run test:profile -- --results <vitest-json> --strict --output <summary-json>` reconciles full Vitest inventory/approved skips; add `--log <saved-log>` for console timings. Diagnostic profiling without strict mode can inspect partial/historical runs.
+- `npm run test:coverage:probe` runs the bounded three-file/two-source coverage merge feasibility check through the real pilot config, sequencer, queued shard/merge entrypoints and provenance validator; CI runs it after hosted feedback. It does not certify full coverage or change production inventory/thresholds, and its separate step is outside feedback-lane timing metrics.
+- `npm run test:engine:pilot -- --roster all --pool both --workers 1 --repetitions 5 --warmups 1` compares compatible pool candidates on fixed small rosters within a ten-minute budget. All trials retain queue/supervisor ownership.
+- `test:coverage:shard` and `test:coverage:merge` are queued building blocks for full-scope sharding. Shards zero thresholds and the canonical merged report applies global ratchets; the bounded plumbing probe also uses zero thresholds on its three-file merge and does not certify full coverage.
+- PR #97 proposes conditional two-shard full-Vitest coverage on PRs and pushes to main. A plan/guard records the exact SHA and timestamp and creates two disjoint duration-weighted partitions. The canonical required coverage job always runs for those events and fails closed if planning, either shard, provenance, or merge validation fails. Shards must come from the same run and SHA; each assigned roster is checked before upload, and the merged JSON is then reconciled against the strict all-file inventory and 57-skip baseline before the run is accepted. V8 data is merged and canonical global ratchets are applied (statements 74%, branches 62%, functions 74%, lines 76%). Main remains unsharded until the rollout's hosted CI, review, and screen pass; the PR graph itself is the validation trial. Nightly schedule runs the dedicated audit, then separate visual and uninstrumented performance suites, without duplicating the PR/main coverage graph. Keep lifecycle, bounded feedback, browser roster, uninstrumented perf, feedback probe, and lane-gate checks as distinct preserved guarantees.
+- The measured full local coverage route took 39m40s using two workers. This is evidence about that route, not a claim that default `npm run test:ci` completes under its 30-minute attempt cap. Local fast/queue defaults and coverage worker policy remain unchanged.
 - `npm run test:queue:status` shows the shared test-lock holder and the waiting runs.
 - `npm run hooks:install` installs the local git hooks. **Run this once after cloning.**
   - `pre-commit` — refreshes the graphify knowledge graph and stages output.
@@ -135,7 +141,7 @@ The lightweight standalone `test:runner` checks do not acquire the machine-wide 
 
 ## CI Policy
 - `.github/workflows/test.yml` enforces:
-  - Pull requests and `main`: all five suites (`test:unit`, `test:integration`, `test:e2e`, `test:visual`, `test:perf`)
+  - Pull requests and `main`: full-scope `test:coverage` owns all Vitest correctness; historical unit/integration/visual check names depend on its success. `test:e2e`, uninstrumented `test:perf`, and lifecycle plus bounded feedback remain distinct executions. Coverage inventory reconciliation is a required check; a missing file is not a pass.
   - Nightly schedule: visual/perf plus a complete audit/coverage run.
 - `.github/workflows/dependency-review.yml` reviews dependency diffs on pull requests.
 - `.github/workflows/codeql.yml` runs GitHub code scanning on `main`, pull requests to `main`, and a weekly schedule.
@@ -143,11 +149,11 @@ The lightweight standalone `test:runner` checks do not acquire the machine-wide 
 
 ## Acceleration rollout
 
-The existing broad GitHub jobs and full-scope coverage ratchet remain during shadow evaluation.
+Full Vitest scope, browser scope and the coverage ratchet remain during shadow evaluation. Phase two deduplicates execution: unit/integration/visual check names are coverage-dependent compatibility aliases, not independent suite runs.
 Routing/feedback and current-revision roster validation add evidence; passing focused checks alone
 does not promote a change. See [the acceleration contract](test-suite-acceleration.md) for the
-under-one-minute local and under-five-minute ordinary PR targets, promotion evidence, and audit
-failure policy. These are targets, not observed whole-suite or hosted-PR results.
+under-one-minute local and initial ordinary PR targets, promotion evidence, and audit
+failure policy. Phase-two full-PR checkpoints and evidence are tracked in `test-suite-phase2.md`; these are targets, not observed hosted speedups.
 
 Use `core`/`feature` loader profiles for explicit pure IIFE dependencies, `component` for minimal
 DOM markup and explicit scripts, and legacy/full profiles for app-shell checks. Each runtime is

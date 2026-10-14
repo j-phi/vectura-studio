@@ -22,15 +22,8 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
-- **IN PROGRESS — test-suite acceleration (2026-10-11, `codex/test-suite-acceleration`).**
-  Implement focused isolated runtime profiles, split exhaustive rendering/history/mutation audits
-  from live regressions, add explicit risk-based queued lanes and bounded GitHub verification,
-  Independent Sol adversarial review/adjudication and the second Luna remediation batch are complete.
-  Source and targeted verification are complete: warm feedback23s, full browser roster84.45s.
-  Full audit/coverage certification and hosted promotion evidence remain tracked in
-  `docs/test-suite-acceleration-punchlist.md`; the five-minute audit experiment timed out.
-  Preserve regression sensitivity, process ownership and full-scope coverage thresholds.
-  Runtime goals are hypotheses until measured; promotion evidence must not be invented.
+- **IN PROGRESS — phase-two full PR validation acceleration (2026-10-14, PR #97).** PR #97 proposes conditional two-shard full-Vitest validation with exact-SHA planning, fail-closed canonical coverage, same-run artifact checks, strict full inventory/57-skip reconciliation, and unchanged global ratchets. Main remains unsharded pending hosted CI, review, and screen validation. Main's unsharded producer run 38516174360 took 101m23s; pilot shards took 38m49s and 49m31s but hosted aggregation failed. Raw-blob audit and Mac replay passed inventory/ratchet checks, though root-specific task IDs leave hosted strict acceptance pending. The two-worker full local route took 39m40s; ordinary local `test:ci` retains its 30-minute attempt cap. No controlled whole-chain speedup or cost claim is established. Promotion requires strict evidence and review, at least 30% less whole-chain latency, and at most about 15% extra runner time. See `docs/test-suite-phase2.md`.
+- **DONE — first-phase test-suite acceleration (2026-10-11, PR #90).** Focused isolated runtimes, exhaustive-proof separation, bounded feedback and fail-closed shadow routing merged. Completed PR run38282702522 passed full-scope coverage (8,863 tests;57 existing skips) and all required checks on `ae1de017`; coverage still took96m32s. Shadow routing is not promoted and hosted latency targets remain unmet; phase two above owns further acceleration.
 - **DONE — shared local test queue (2026-10-04, branch `chore/test-queue`).** All heavy
   `npm run test:*` scripts route through `scripts/test-queue.js` (machine-wide lock, FIFO
   waiters, PID + start-time identity, safe stale recovery, subprocess-tree cleanup, nested
@@ -2102,4 +2095,4 @@ questions. Do not start these without a decision:
     scalar serialized into `.vectura` files and presets — reseed the layer and rung 7 means something
     else, or nothing.
 
-- Test acceleration publication:PR#90 is open. Complete local test:ci and hosted unit/integration/browser/feedback/visual/perf passed. Fixed the exhaustive dispatch audit missing its cached ladder reference;2 focused audit files/8 tests passed102.33s. Waiting for corrected full coverage and aggregate gate before merge. Full PR runtime remains far above target.
+- Test acceleration publication: PR #90 merged after completed run38282702522 passed corrected full coverage and the aggregate gate. The exhaustive dispatch audit repair retained its ladder reference and known-defect witness. Full PR runtime remains far above target; phase two owns additional acceleration.

@@ -81,7 +81,7 @@ complete dependency map. Every changed path must be explicitly classified or sel
 fallback. Handle deleted/renamed files, absent merge bases, shared source, defaults, presets,
 fixtures, tests, router/config and loader changes. Critical canaries always execute.
 
-Required browser and core jobs should start concurrently. During shadow evaluation, the result aggregator expects every retained full PR job plus feedback for the current commit; unexpected skipped/missing/cancelled jobs fail.
+Required browser and core jobs should start concurrently. During shadow evaluation, the result aggregator expects every retained PR guarantee plus feedback for the current commit; unexpected skipped/missing/cancelled jobs fail. Phase two makes full-scope coverage the authoritative Vitest execution and preserves unit/integration/visual check names as coverage-dependent aliases, not independent evidence. Lifecycle, uninstrumented perf and the browser roster retain explicit owners.
 A docs-only omission is an explicit validated routing result. Preserve required status names
 or transition branch rules with the workflow rollout.
 
@@ -90,7 +90,7 @@ functions74, branches62). Selected-test coverage percentages are not comparable 
 ratchet. Moving full coverage out of routine PRs deliberately increases detection latency,
 so the implementation includes a shadow/promotion guard instead of claiming equivalent policy.
 
-Promotion validates complete per-job GitHub run provenance, exact/latest revision, consistent route classes, and the terminal sequence of twenty green changes. Sparse or synthetic roster summaries cannot promote policy. Twenty representative shadow changes are initial validation, not p95 certification. Include
+Promotion validates complete per-job GitHub run provenance, exact/latest revision, consistent route classes, and the terminal sequence of twenty green changes under the current versioned job topology. Historical legacy rows remain readable but do not certify the new topology. Sparse or synthetic roster summaries cannot promote policy. Twenty representative shadow changes are initial validation, not p95 certification. Include
 shared/harness/fixture changes, slow3D, ordinary UI/core, docs-only and cold caches. Require
 known defect sensitivity, complete routing and runner-minute evidence. Gather at least30
 comparable observations per reported class before displaying an empirical p95, with sample

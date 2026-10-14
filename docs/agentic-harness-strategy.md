@@ -126,6 +126,45 @@ validated evidence ledger, exact-revision audit evidence and operational audit-f
 Local execution, queue wait, hosted queue/setup and total runner-minutes must be reported separately.
 See `test-suite-acceleration.md` for targets and `test-suite-acceleration-punchlist.md` for findings.
 
+### Full PR correctness ownership (phase two)
+
+Full-scope coverage owns non-E2E Vitest correctness, including unit, integration, visual,
+performance and exhaustive audit files. Historical unit/integration/visual required checks
+may be compatibility aliases only when they depend on a successful authoritative coverage
+job; aliases are never independent test evidence. Lifecycle checks, uninstrumented
+performance and the complete configured browser roster retain explicit owners.
+`test:ci` mirrors these guarantees locally within one shared queue slot. `test:fast` is
+a bounded-feedback alias and cannot certify the full suite. Coverage thresholds remain
+unchanged. This is execution deduplication, not selective test-routing promotion.
+
+PR #97 proposes conditional full-Vitest sharding: a plan/guard binds the exact source SHA
+and timestamp to two disjoint duration-weighted partitions on pull requests and pushes to
+main, and a canonical required coverage job always runs for those events. It fails closed
+on a failed plan, guard, or shard; verifies same-run/same-SHA report provenance; checks
+each shard roster, merges V8 data, then strictly checks every file and the 57-skip baseline
+before acceptance; it applies the canonical statements 74%, branches
+62%, functions 74%, and lines 76% ratchets. Existing bounded feedback, probe, browser,
+performance, and lane-gate checks remain in place. The scheduled audit runs separately,
+followed by the uninstrumented visual and performance suites. Main stays unsharded until
+hosted CI, review, and screen validation pass. The PR #97 hosted graph is the validation trial.
+
+Local `test:ci`, queue behavior, worker defaults, and the 30-minute per-attempt deadline
+are unchanged. A separately measured two-worker full-coverage route took 39m40s, so that
+measurement does not establish that a plain local `npm run test:ci` invocation finishes.
+Historical schema 2/3 roster data remains readable but cannot qualify the new schema 4
+topology; promotion requires 20 genuine schema 4 observations. The local fast/pre-push lane
+remains unchanged.
+The custom duration sequencer is ESM so Vite can load `vitest/node` without rewriting a CommonJS import to an invalid file-URL `require`; the bounded probe exercises the real config path. Hosted feedback runs this small probe afterward as a separate step, outside feedback-lane timing metrics and the full-coverage critical path; the local fast/pre-push lane remains unchanged.
+For GitHub Actions shell commands with backslash-newline continuations, use a literal YAML block (`run: |`); a folded plain scalar turns the newline into a space and can corrupt CLI arguments.
+
+Changes to topology must synchronize the aggregate gate, versioned evidence roster and
+branch-protection compatibility. Engine/pool or sharding candidates require measured
+compatibility, source attribution and cleanup checks before promotion. Missing shards or
+coverage reports fail closed; never average per-shard coverage percentages. Promotion
+also requires strict current-topology evidence, review, at least 30% lower whole-chain
+latency and no more than about 15% extra allocated runner time. No speedup is claimed yet. See
+`test-suite-phase2.md` for baseline, implementation evidence and remaining targets.
+
 ### Vitest lifecycle ownership
 
 All repository Vitest entrypoints use `scripts/run-vitest.js`, which launches a

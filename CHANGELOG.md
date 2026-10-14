@@ -7,10 +7,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ## Unreleased
 
 ### Testing workflow
+- **Conditional two-shard PR validation proposal (PR #97).** Plan and guard bind two disjoint duration-weighted full-Vitest shards to an exact SHA and timestamp; the canonical coverage gate always runs and fails closed, verifies same-run provenance and strict inventory/57-skip reconciliation, merges V8 reports, then enforces unchanged global ratchets. Main remains unsharded pending hosted validation, review, and screen pass. This PR is the hosted validation trial; no speedup is claimed. Local `test:ci`, queue/worker defaults, fast feedback, browser/perf/probe/lane-gate checks remain unchanged. Full local two-worker coverage measured 39m40s, beyond the unchanged 30-minute default attempt cap.
+- **Full-scope shard pilot staging.** Keep multiline GitHub Actions shell commands with backslash continuations in literal YAML blocks so artifact and provenance arguments remain separate; a regression executes the workflow command against two fixture artifacts.
+- **Phase-two PR validation acceleration.** Full-scope coverage owns non-E2E correctness while preserving required-check compatibility, lifecycle/browser checks and uninstrumented performance. The queued local `test:ci`-equivalent decomposition passed with strict 765-file inventory; measured local coverage took 39m39.8s on two workers. PR #93 and the follow-up CLI correction passed required hosted checks; the manual full-scope pilot remains opt-in pending a successful run and measured comparison.
+- **Repair the coverage-pilot config loader and probe.** Load the custom duration sequencer as ESM so Vite can resolve `vitest/node` when bundling the pilot config. Expand the bounded three-file probe to cover the real config, queued shard and merge entrypoints, provenance validation and merged coverage-map parity; run it after hosted feedback as a separate CI step. It does not certify full-suite inventory or thresholds, and the local fast/pre-push lane remains unchanged.
 - **Bounded feedback and retained audits.** Add isolated runtime profiles and immutable
   script caching, an explicit critical-feedback roster, a single complete browser invocation,
   a physical exhaustive-proof audit lane, and fail-closed shadow routing/promotion evidence.
-  Pre-push runs bounded feedback; broad GitHub jobs and full coverage thresholds remain.
+  Pre-push runs bounded feedback; full correctness scope and coverage thresholds remain (phase two deduplicates the hosted executions).
   Local worker limits bound memory. Independent review repairs and verification limits live
   in `docs/test-suite-acceleration-punchlist.md`; hosted speed targets are not yet certified.
 
