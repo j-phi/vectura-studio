@@ -66,7 +66,7 @@ jobs:
         run: |
           set -o pipefail
           echo "VECTURA_SHARD_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
-          npm run test:coverage:shard -- --config vitest.shard-pilot.config.mjs --coverage --shard="$SHARD_INDEX/2" \
+          npm run test:coverage:shard -- --config vitest.shard-pilot.config.mjs --shard="$SHARD_INDEX/2" \
             --coverage.thresholds.statements=0 --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 \
             --reporter=blob --reporter=json --outputFile.blob="$RUNNER_TEMP/pilot-artifact/blob.json" \
             --outputFile.json="$RUNNER_TEMP/pilot-shard-results.json" 2>&1 | tee "$RUNNER_TEMP/pilot-shard-console.log"

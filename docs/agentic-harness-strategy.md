@@ -137,6 +137,10 @@ performance and the complete configured browser roster retain explicit owners.
 a bounded-feedback alias and cannot certify the full suite. Coverage thresholds remain
 unchanged. This is execution deduplication, not selective test-routing promotion.
 
+The opt-in shard workflow uses `npm run test:coverage:shard`, which already enables
+coverage; that invocation supplies config, shard, and report options, while the merge
+invocation supplies its own `--coverage` flag.
+
 Changes to topology must synchronize the aggregate gate, versioned evidence roster and
 branch-protection compatibility. Engine/pool or sharding candidates require measured
 compatibility, source attribution and cleanup checks before promotion. Missing shards or
