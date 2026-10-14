@@ -15,6 +15,57 @@ afterEach(() => {
 });
 
 describe('deterministic coverage shard plan', () => {
+  it('keeps the full-coverage check as a fail-closed two-shard merge gate', () => {
+    const workflow = fs.readFileSync(path.resolve('.github/workflows/test.yml'), 'utf8');
+    const job = (name) => workflow.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z0-9-]+:\\n|(?![\\s\\S]))`, 'm'))?.[1] || '';
+    const coverage = job('coverage');
+    const shard = job('coverage-shard');
+
+    const prOrMainPush = 'github.event_name == \'pull_request\' || (github.event_name == \'push\' && github.ref == \'refs/heads/main\')';
+    const alwaysPrOrMainPush = `always() && (${prOrMainPush})`;
+    for (const name of ['lane-plan', 'feedback', 'e2e-smoke', 'perf', 'coverage-plan', 'coverage-shard']) {
+      expect(job(name)).toContain(`if: ${prOrMainPush}`);
+    }
+    expect(job('coverage-plan')).toContain('started_ms=$(date +%s%3N)');
+    expect(shard).toContain('matrix:\n        shard: [1, 2]');
+    expect(shard).toContain('--shard="$SHARD_INDEX/2"');
+    expect(coverage).toContain(`if: ${alwaysPrOrMainPush}`);
+    expect(coverage).toContain('needs: [coverage-plan, coverage-shard]');
+    expect(coverage).toContain('test "$GUARD_RESULT" = success');
+    expect(coverage).toContain('test "$SHARDS_RESULT" = success');
+    expect(coverage).toContain('npm run test:coverage:merge');
+    expect(coverage).toContain('--coverage.reporter=lcov');
+    expect(coverage).toContain('--coverage.reporter=json');
+    expect(coverage).toContain('--strict --log');
+    expect(coverage).toContain('--execution-start-ms "$COVERAGE_CHAIN_STARTED_MS"');
+
+    for (const alias of ['unit', 'integration', 'e2e-smoke', 'visual', 'perf', 'feedback', 'lane-gate']) {
+      expect(job(alias), `missing compatibility or required job ${alias}`).not.toBe('');
+    }
+    for (const alias of ['unit', 'integration']) {
+      expect(job(alias)).toContain(`if: ${alwaysPrOrMainPush}`);
+      expect(job(alias)).toContain('needs: [coverage]');
+      expect(job(alias)).toContain('test "$COVERAGE_RESULT" = success');
+    }
+    expect(job('visual')).toContain(`if: ${alwaysPrOrMainPush}`);
+    expect(job('visual')).toContain('needs: [coverage]');
+    expect(job('lane-gate')).toContain('coverage');
+    expect(job('lane-gate')).toContain(`if: ${alwaysPrOrMainPush}`);
+
+    const shouldRunRegularGraph = ({ event, ref }) => event === 'pull_request' || (event === 'push' && ref === 'refs/heads/main');
+    expect([
+      shouldRunRegularGraph({ event: 'pull_request', ref: 'refs/pull/97/merge' }),
+      shouldRunRegularGraph({ event: 'push', ref: 'refs/heads/main' }),
+      shouldRunRegularGraph({ event: 'push', ref: 'refs/heads/feature' }),
+      shouldRunRegularGraph({ event: 'schedule', ref: 'refs/heads/main' }),
+    ]).toEqual([true, true, false, false]);
+    expect(job('scheduled-audit')).toContain('if: github.event_name == \'schedule\'');
+    const scheduledSteps = job('scheduled-audit');
+    expect(scheduledSteps.indexOf('run: npm run test:audit')).toBeLessThan(scheduledSteps.indexOf('run: npm run test:visual'));
+    expect(scheduledSteps.indexOf('run: npm run test:visual')).toBeLessThan(scheduledSteps.indexOf('run: npm run test:perf'));
+    expect(scheduledSteps.match(/if: always\(\) && steps\.dependencies\.outcome == 'success'/g)).toHaveLength(2);
+  });
+
   it('stages pilot artifacts when the YAML literal block runs in bash', () => {
     const workflow = fs.readFileSync(path.resolve('.github/workflows/test-shard-pilot.yml'), 'utf8');
     const runBlock = workflow.match(/      - name: Verify provenance and stage exactly two Vitest blob files\n        run: \|\n((?:          .*\n?)+)/);

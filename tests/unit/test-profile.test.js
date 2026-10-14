@@ -73,6 +73,25 @@ describe('saved Vitest timing profile', () => {
     ]);
   });
 
+  it('records an explicit end-to-end workflow timing scope from an external start marker', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vectura-profile-workflow-time-'));
+    roots.push(root);
+    fs.mkdirSync(path.join(root, 'tests', 'unit'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'tests', 'unit', 'a.test.js'), '');
+    const profile = buildProfile({
+      root,
+      logText: '✓ tests/unit/a.test.js (1 test) 2ms',
+      executionStartMs: 1_000,
+      executionScope: 'coverage-orchestration-critical-path',
+      nowMs: 5_250,
+    });
+
+    expect(profile.runtime).toMatchObject({
+      executionMs: 4_250,
+      executionScope: 'coverage-orchestration-critical-path',
+    });
+  });
+
   it('fails strict inventory on missing, duplicate, unexpected, failed, or changed skip results', () => {
     const inventory = ['tests/unit/a.test.js', 'tests/unit/b.test.js'];
     const testInventory = { expectedSkippedAssertions: 1, fullySkippedFiles: { 'tests/unit/b.test.js': 1 } };
