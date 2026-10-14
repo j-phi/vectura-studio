@@ -16,6 +16,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 
 ### Fixed (tests)
+- **Pre-push feedback lane no longer hangs under an Intel git on Apple silicon.** An x86_64 git runs
+  hooks under Rosetta, so Playwright's Chromium started as x64 and the browser journey timed out at the
+  60 s lane deadline on every push. The hook now detects a translated process and runs the lane with
+  `arch -arm64`.
 - **Legacy mono Density test no longer passes or fails on random seeds.** Each build drew new
   `Math.random()` layer seeds, so "Density 85 differs from 50" passed on the seed difference alone. For
   dutyConst, two random seeds render alike about 0.4% of the time (3 matches in 40 pairs), which failed
