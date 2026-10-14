@@ -15883,4 +15883,24 @@ body.touch-ui:not(.phone-layout) #app-header .theme-toggle::before {
   height: var(--touch-target-min);
   transform: translate(-50%, -50%);
 }
+/* The panel hangs from the bottom of the (26 px) trigger: 9 px puts its top edge on the 44 px header band's bottom edge. */
+body.touch-ui:not(.phone-layout) #top-menubar .top-menu-panel {
+  top: calc(100% + 9px);
+  max-height: calc(var(--app-vh) - var(--touch-target-min) - var(--safe-top) - var(--safe-bottom) - 8px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.touch-ui:not(.phone-layout) #top-menubar .top-menu-item {
+  min-height: var(--touch-target-min);
+  box-sizing: border-box;
+}
+/* Welcome pane CTA: the gradient wrap follows the button (1 px ring). The wrap is not a control, so it keeps the default cursor. */
+@media (pointer: coarse) {
+  [data-ui-skin] .welcome-tour-btn-wrap { cursor: auto; }
+  [data-ui-skin] .welcome-tour-btn {
+    min-height: var(--touch-target-min);
+    box-sizing: border-box;
+    justify-content: center;
+  }
+}
 /* === END TUX-041 slice B1 === */
