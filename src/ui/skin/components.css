@@ -15942,7 +15942,9 @@ body.touch-ui .ctxbar .pen-chip {
 body.touch-ui .ctxbar .ctxbar-slider { min-height: var(--touch-target-min); }
 /* The More menu has six 44 px rows: on a short phone landscape it scrolls instead of running off the screen. */
 body.touch-ui .ctxbar .ctxbar-menu {
-  max-height: calc(var(--app-vh) * 0.6);
+  /* Folds the bar's published --ctxbar-menu-space clamp into the cap (a bare 60 % rule outranked it and let the menu run
+     off a 330 px screen). */
+  max-height: min(calc(var(--app-vh) * 0.6), var(--ctxbar-menu-space, var(--app-vh)));
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -15965,3 +15967,16 @@ body.touch-wide-layout.touch-ui .ctxbar {
   box-shadow: 0 0 0 1px var(--ui-border, #363636), 0 6px 20px rgba(0, 0, 0, 0.30);
 }
 /* === END TUX-041 slice B2b === */
+
+/* === TUX-012 follow-up: scroll cue on the context bar More menu ===
+ * data-scroll-cue (utils.scrollCue, bound when the menu opens) lists the edges that still hide rows. The fades are sticky,
+ * take no taps, and show nothing when the menu fits. */
+.ctxbar-menu::before, .ctxbar-menu::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 2;
+  opacity: 0; transition: opacity 120ms ease;
+}
+.ctxbar-menu::before { top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent); }
+.ctxbar-menu::after { bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent); }
+.ctxbar-menu[data-scroll-cue~="above"]::before,
+.ctxbar-menu[data-scroll-cue~="below"]::after { opacity: 1; }
+/* === END TUX-012 follow-up === */

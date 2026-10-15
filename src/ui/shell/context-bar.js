@@ -253,6 +253,8 @@
     els.menu.classList.add('is-open');
     els.menu.setAttribute('aria-hidden', 'false');
     els.overflow.setAttribute('aria-expanded', 'true');
+    const cue = G.Vectura && G.Vectura.UI && G.Vectura.UI.utils && G.Vectura.UI.utils.scrollCue;
+    if (cue) cue.bind(els.menu);
   };
   const closeMenu = () => {
     if (!els.menu) return;
