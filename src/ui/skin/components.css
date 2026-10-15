@@ -15952,3 +15952,16 @@ body.touch-ui .ctxbar .ctxbar-add-layer-item {
   min-height: var(--touch-target-min);
 }
 /* === END TUX-041 slice B2 === */
+
+/* === TUX-041 slice B2b: touch-wide context bar is 44 px tall (Q19b) ===
+ * Q19 allows UP TO 52 px. On touch-wide (iPad landscape, both panes collapsed) the 52 px bar left only 74.7 % honest canvas
+ * share against the 75 % gate (TUX-008, TUX-010). Here the bar drops its 3 px vertical padding and its 1 px border, so the 44 px
+ * controls fill it edge to edge (44 px tall). The border becomes a 1 px ring drawn with box-shadow, which takes no layout
+ * space. Every control keeps its 44 x 44 box; gaps between controls stay 2 px, so no hit areas touch or overlap.
+ * Other layouts (iPad portrait, phones, desktop) keep the 52 px bar. */
+body.touch-wide-layout.touch-ui .ctxbar {
+  padding: 0 2px;
+  border-width: 0;
+  box-shadow: 0 0 0 1px var(--ui-border, #363636), 0 6px 20px rgba(0, 0, 0, 0.30);
+}
+/* === END TUX-041 slice B2b === */

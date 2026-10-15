@@ -96,4 +96,37 @@ test.describe('TUX-041 B2 context bar', () => {
       await page.screenshot({ path: path.join(dir, `${name}-more-open.png`), scale: 'css' });
     }
   });
+  // Q19b: on touch-wide the bar is 44 px tall (controls fill it). No control may overlap a neighbour or leave the bar.
+  test('touch-wide: the 44 px bar keeps 44 x 44 controls that do not overlap each other or the canvas bar edge', async ({ page, baseURL }) => {
+    await openState(page, baseURL, 'layer-selected-handles');
+    const r = await page.evaluate(() => {
+      if (!document.body.classList.contains('touch-wide-layout')) return null;
+      const bar = document.querySelector('.ctxbar.is-visible');
+      if (!bar || !bar.checkVisibility()) return null;
+      const b = bar.getBoundingClientRect();
+      const els = [...bar.querySelectorAll('.ctxbar-btn, .ctxbar-handle, .ctxbar-overflow, .pen-chip, .ctxbar-stepper, .ctxbar-field')].filter((e) => e.checkVisibility());
+      const rects = els.map((e) => ({ n: String(e.className).slice(0, 40), r: e.getBoundingClientRect() }));
+      const overlaps = []; const outside = []; const small = [];
+      rects.forEach((a, i) => {
+        if (a.r.width < 44 - 0.5 || a.r.height < 44 - 0.5) small.push(`${a.n} ${a.r.width.toFixed(1)}x${a.r.height.toFixed(1)}`);
+        if (a.r.left < b.left - 0.5 || a.r.right > b.right + 0.5 || a.r.top < b.top - 0.5 || a.r.bottom > b.bottom + 0.5) outside.push(a.n);
+        rects.slice(i + 1).forEach((c) => {
+          if (a.r.left < c.r.right - 0.5 && c.r.left < a.r.right - 0.5 && a.r.top < c.r.bottom - 0.5 && c.r.top < a.r.bottom - 0.5) {
+            const pa = els[i]; const pc = els[rects.indexOf(c)];
+            if (!pa.contains(pc) && !pc.contains(pa)) overlaps.push(`${a.n} / ${c.n}`);
+          }
+        });
+      });
+      // elementFromPoint at each control centre must belong to that control.
+      const stolen = els.filter((e) => { const q = e.getBoundingClientRect(); const t = document.elementFromPoint(q.x + q.width / 2, q.y + q.height / 2); return !(t && (t === e || e.contains(t))); }).map((e) => String(e.className).slice(0, 40));
+      return { h: b.height, overlaps, outside, small, stolen, n: els.length };
+    });
+    test.skip(!r, 'touch-wide only');
+    expect(r.n, 'controls probed').toBeGreaterThan(0);
+    expect(r.h, 'bar height').toBeLessThanOrEqual(52);
+    expect(r.small, 'controls under 44').toEqual([]);
+    expect(r.overlaps, 'overlapping controls').toEqual([]);
+    expect(r.outside, 'controls outside the bar').toEqual([]);
+    expect(r.stolen, 'controls whose centre belongs to another element').toEqual([]);
+  });
 });
