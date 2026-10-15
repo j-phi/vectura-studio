@@ -248,6 +248,29 @@ test('guard: Q15 rescue counts a ::before hit expansion @audit-extra', async ({ 
   expect(it.ph, 'effective height 44').toBeGreaterThanOrEqual(44);
 });
 
+// Q15 rescue must measure the real hit area once the row is scrolled into view: stacked 16 px rows whose ::before reaches
+// 44 px are covered by the next row, so elementFromPoint finds only 16 px. The CSS box alone would say 44.
+test('guard: Q15 rescue reports the true 16 px for stacked rows with overlapping ::before @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  await page.evaluate(() => {
+    const st = document.createElement('style');
+    st.textContent = '.zz-ov{position:relative;display:block;width:150px;height:16px;padding:0;border:0;margin:0}.zz-ov::before{content:"";position:absolute;left:0;right:0;top:0;height:44px}';
+    document.head.appendChild(st);
+    const box = document.createElement('div');
+    box.id = 'zz-ov-box';
+    box.style.cssText = 'position:fixed;left:100px;top:300px;width:200px;height:80px;overflow-y:auto;z-index:50;background:#222';
+    box.innerHTML = '<div style="height:74px"></div>' + [1, 2, 3, 4, 5, 6].map((n) => `<button class="zz-ov" id="zz-ov${n}">r${n}</button>`).join('') + '<div style="height:200px"></div>';
+    document.body.appendChild(box);
+  });
+  const r = await measure(page, spec, testInfo.project.name);
+  const it = r.raw.items.find((i) => /zz-ov1/.test(i.sel));
+  expect(it, 'the first stacked row is listed').toBeTruthy();
+  expect(it.clipped, 'the row is cut by its scroller').toBe(true);
+  expect(it.ph, `stacked row probed at ${it.ph} px: the next row covers the ::before, the true hit height is 16`).toBeLessThanOrEqual(17);
+  expect(await page.evaluate(() => document.getElementById('zz-ov-box').scrollTop), 'scrollTop restored').toBe(0);
+});
+
 // Q15 hardening: a row taller than its scroller can never scroll fully into view, so it keeps its probed (clipped) size.
 test('guard: a row taller than its scroll container is not measured at full size @audit-extra', async ({ page, baseURL }, testInfo) => {
   const spec = PROJECTS[testInfo.project.name];

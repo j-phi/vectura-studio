@@ -451,7 +451,7 @@ function measureInPage(cfg, helpers) {
   // Q15 (hardened): a row counts as cut by its own scroller only when the scroller is visible, the row fits inside it, and the
   // scroll range really reaches the hidden part (the row can scroll fully into view). Anything else is a real clip.
   const scrollCut = (el, r) => {
-    const cut = { x: false, y: false };
+    const cut = { x: false, y: false, py: null, px: null };
     for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
       const cs = getComputedStyle(p);
       const pr = p.getBoundingClientRect();
@@ -461,12 +461,12 @@ function measureInPage(cfg, helpers) {
       if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1 && r.height <= p.clientHeight + 0.5) {
         const above = pr.top - r.top; const below = r.bottom - pr.bottom;
         const roomDown = p.scrollHeight - p.clientHeight - p.scrollTop;
-        if ((above > 0.5 && above <= p.scrollTop + 0.5) || (below > 0.5 && below <= roomDown + 0.5)) cut.y = true;
+        if ((above > 0.5 && above <= p.scrollTop + 0.5) || (below > 0.5 && below <= roomDown + 0.5)) { cut.y = true; if (!cut.py) cut.py = p; }
       }
       if (/(auto|scroll)/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1 && r.width <= p.clientWidth + 0.5) {
         const left = pr.left - r.left; const right = r.right - pr.right;
         const roomRight = p.scrollWidth - p.clientWidth - p.scrollLeft;
-        if ((left > 0.5 && left <= p.scrollLeft + 0.5) || (right > 0.5 && right <= roomRight + 0.5)) cut.x = true;
+        if ((left > 0.5 && left <= p.scrollLeft + 0.5) || (right > 0.5 && right <= roomRight + 0.5)) { cut.x = true; if (!cut.px) cut.px = p; }
       }
       if (cs.position === 'fixed') break;
     }
@@ -580,22 +580,27 @@ function measureInPage(cfg, helpers) {
     // full size on the cut axis. Its probed size would otherwise depend on the scroll position, not on the CSS.
     if (probed) {
       const cut = scrollCut(el, r);
-      // Effective hit size = own box united with any ::before/::after expansion (an invisible hit area counts, Q15 rescue).
-      let effW = r.width; let effH = r.height;
-      for (const pe of ['::before', '::after']) {
-        const pc = getComputedStyle(el, pe);
-        if (pc.content === 'none' || pc.content === 'normal' || pc.pointerEvents === 'none' || pc.position !== 'absolute') continue;
-        const num = (v) => (v === 'auto' ? null : parseFloat(v));
-        const pwid = parseFloat(pc.width); const phei = parseFloat(pc.height);
-        if (!(pwid > 0) || !(phei > 0)) continue;
-        const t0 = num(pc.top); const b0 = num(pc.bottom); const l0 = num(pc.left); const r0 = num(pc.right);
-        const top = t0 !== null ? t0 : (b0 !== null ? el.clientHeight - b0 - phei : 0);
-        const left = l0 !== null ? l0 : (r0 !== null ? el.clientWidth - r0 - pwid : 0);
-        effH = Math.max(effH, Math.max(r.height, top + phei) - Math.min(0, top));
-        effW = Math.max(effW, Math.max(r.width, left + pwid) - Math.min(0, left));
+      // Q15 rescue measures the REAL hit area once the row is scrolled fully into view: scroll the cutting scroller(s) so the
+      // row is inside them, run the same elementFromPoint probe, then restore the scroll position. A ::before that a
+      // neighbouring row covers therefore does not count (the CSS box alone would overstate the hit area).
+      if ((cut.y && ph < 49) || (cut.x && pw < 49)) {
+        const saved = [];
+        const keep = (p) => { if (p && !saved.some((q) => q.p === p)) saved.push({ p, top: p.scrollTop, left: p.scrollLeft }); };
+        keep(cut.py); keep(cut.px);
+        if (cut.py) {
+          const pr = cut.py.getBoundingClientRect(); const rr = el.getBoundingClientRect();
+          cut.py.scrollTop += (rr.top + rr.bottom) / 2 - (pr.top + pr.bottom) / 2; // centre the row: its expansion has room on both sides
+        }
+        if (cut.px) {
+          const pr = cut.px.getBoundingClientRect(); const rr = el.getBoundingClientRect();
+          cut.px.scrollLeft += (rr.left + rr.right) / 2 - (pr.left + pr.right) / 2;
+        }
+        const r2 = el.getBoundingClientRect();
+        const a2 = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx: (r2.left + r2.right) / 2, cy: (r2.top + r2.bottom) / 2 });
+        for (const q of saved) { q.p.scrollTop = q.top; q.p.scrollLeft = q.left; }
+        if (cut.y && ph < 49) ph = Math.max(ph, a2.h);
+        if (cut.x && pw < 49) pw = Math.max(pw, a2.w);
       }
-      if (cut.y && ph < 49) ph = Math.max(ph, Math.min(49, Math.round(effH)));
-      if (cut.x && pw < 49) pw = Math.max(pw, Math.min(49, Math.round(effW)));
     }
     const clipped = onscreen && (c.w + 1 < r.width || c.h + 1 < r.height);
     const isTextEntry = (tag === 'input' && TEXT_TYPES.has(type)) || tag === 'textarea' || tag === 'select' || el.isContentEditable;
