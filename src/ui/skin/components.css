@@ -15942,7 +15942,7 @@ body.touch-ui .ctxbar .pen-chip {
 body.touch-ui .ctxbar .ctxbar-slider { min-height: var(--touch-target-min); }
 /* The More menu has six 44 px rows: on a short phone landscape it scrolls instead of running off the screen. */
 body.touch-ui .ctxbar .ctxbar-menu {
-  max-height: calc(var(--app-vh, 100vh) * 0.6);
+  max-height: calc(var(--app-vh) * 0.6);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
