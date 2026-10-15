@@ -863,7 +863,7 @@ JOURNEYS.push({
         if (open !== 'true') throw new Error(`the Paper section is not expanded (aria-expanded=${open})`);
         // The preset-save toast from the previous step is transient and bottom-centre. With 44 px rows (TUX-041 B3) the Size select
         // sits under it on a short landscape phone, so wait for the toast to go before testing what covers the select.
-        await c.page.waitForFunction(() => !document.querySelector('.vectura-toast'), null, { timeout: 12000 }).catch(() => {});
+        await L(c, '.vectura-toast').first().waitFor({ state: 'detached', timeout: 12000 }).catch(() => {});
         const blocker = await P.hitAtCenter(c.page, L(c, '#machine-profile'));
         if (blocker) throw new Error(`the Size select is covered by ${blocker}`);
       },
