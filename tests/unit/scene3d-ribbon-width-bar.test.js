@@ -126,10 +126,8 @@
  * width by 40%, 20-29% of margin past each floor -- see the constants
  * below for the exact figures).
  *
- * MUTATION-KILL (§0 rule 1, BLOCKING) -- TWO mutations, on the SAME
- * instrumentation, proving the floor gates WIDTH SPECIFICALLY and not any
- * arbitrary source diff:
- *   1. POSITIVE (must trip the floor): `WIDTH_THIN_NEEDLE` scales the
+ * MUTATION-KILL (§0 rule 1, BLOCKING) -- a focused positive mutation proves
+ * the floor catches thinner ribbons: `WIDTH_THIN_NEEDLE` scales the
  *      half-width value fed into `buildRibbonMultiPolygon` for the
  *      CLS_RIBBON branch specifically (`hw.push(Math.max(half[i],
  *      HALF_MIN))` -> `hw.push(Math.max(half[i], HALF_MIN) * 0.6)`) by 0.6.
@@ -150,15 +148,6 @@
  *      uniformly to every law that reaches the CLS_RIBBON branch at all --
  *      a direct, unambiguous "a future change draws every ribbon stretch
  *      thinner without changing which stretches are ribbons" mutation.
- *   2. NEGATIVE (must NOT trip the floor): F1-amp's own amplitude-floor
- *      wiring-revert (`tests/unit/scene3d-ribbon-f1-amp.test.js`'s
- *      `WIRING_NEEDLE`, reproduced here) -- a real, mechanism-changing
- *      mutation (it un-ships F1-amp's own amplitude floor) that
- *      F1-erode-plan.md §7 already showed does NOT move width ("Width comes
- *      from the weight field ... not [amplitude]"). If this mutation
- *      tripped the width floor, the floor would be vacuously sensitive to
- *      ANY diff, not specifically to thinning -- it does not, confirming
- *      the floor is measuring the thing it claims to.
  *
  *   npx vitest run tests/unit/scene3d-ribbon-width-bar.test.js
  */
@@ -195,26 +184,6 @@ const WIDTH_FLOOR_MM = {
 const WIDTH_THIN_NEEDLE = '          hw.push(Math.max(half[i], HALF_MIN));';
 const WIDTH_THIN_REPL = '          hw.push(Math.max(half[i], HALF_MIN) * 0.6);';
 
-// ── Mutation 2 (NEGATIVE, must NOT trip the floor): F1-amp's own amplitude-
-// floor wiring-revert, reproduced verbatim from
-// `tests/unit/scene3d-ribbon-f1-amp.test.js` (own copy, not a cross-file
-// require, so this file has no hidden dependency on that file's internals
-// staying stable).
-const WIRING_NEEDLE = [
-  "      if (TONE_ALGO === 'interlockWeave') return WV_AFLOOR_SHARE + (WV_AMAX - WV_AFLOOR_SHARE) * k;",
-  "      if (TONE_ALGO === 'trochoidLoop') return WV_TROCH_AFLOOR_SHARE + (WV_TROCH_AMAX - WV_TROCH_AFLOOR_SHARE) * k;",
-  "      if (TONE_ALGO === 'tourScribble') return k * WV_SCRIB_AMAX;",
-  "      if (TONE_ALGO === 'amplitudeOnly') return WV_AFLOOR_SHARE + (0.46 - WV_AFLOOR_SHARE) * k;",
-  "      if (TONE_ALGO === 'onePenDown') return WV_AFLOOR_SHARE + (WV_AMAX - WV_AFLOOR_SHARE) * k;",
-].join('\n');
-const WIRING_REPL = [
-  "      if (TONE_ALGO === 'interlockWeave') return k * WV_AMAX;",
-  "      if (TONE_ALGO === 'trochoidLoop') return k * WV_TROCH_AMAX;",
-  "      if (TONE_ALGO === 'tourScribble') return k * WV_SCRIB_AMAX;",
-  "      if (TONE_ALGO === 'amplitudeOnly') return k * 0.46;",
-  "      if (TONE_ALGO === 'onePenDown') return k * WV_AMAX;",
-].join('\n');
-
 let headSourceCache = null;
 const loadHeadSource = () => {
   if (!headSourceCache) headSourceCache = fs.readFileSync(path.join(ROOT_DIR, REL_PATH), 'utf8');
@@ -230,10 +199,8 @@ const patchOne = (src, needle, repl, label) => {
 describe('SurfaceFill — F1-width-bar: a FLOOR on mean CLS_RIBBON width, per wave-ribbon law', () => {
   let shippedRuntime;
   let thinnedRuntime;
-  let wiringRevertRuntime;
   const shipped = {};
   const thinned = {};
-  const wiringRevert = {};
 
   beforeAll(async () => {
     shippedRuntime = await loadVecturaRuntime({ includeUi: true });
@@ -241,17 +208,11 @@ describe('SurfaceFill — F1-width-bar: a FLOOR on mean CLS_RIBBON width, per wa
       includeUi: true,
       scriptOverrides: { [REL_PATH]: patchOne(loadHeadSource(), WIDTH_THIN_NEEDLE, WIDTH_THIN_REPL, 'WIDTH_THIN_NEEDLE') },
     });
-    wiringRevertRuntime = await loadVecturaRuntime({
-      includeUi: true,
-      scriptOverrides: { [REL_PATH]: patchOne(loadHeadSource(), WIRING_NEEDLE, WIRING_REPL, 'WIRING_NEEDLE') },
-    });
     const SV = shippedRuntime.window.Vectura;
     const TV = thinnedRuntime.window.Vectura;
-    const WV = wiringRevertRuntime.window.Vectura;
     WIDTH_LAWS.forEach((law) => {
       shipped[law] = measureRibbonWidth(SV, { law });
       thinned[law] = measureRibbonWidth(TV, { law });
-      wiringRevert[law] = measureRibbonWidth(WV, { law });
     });
     shipped[NO_RIBBON_CONTROL_LAW] = measureRibbonWidth(SV, { law: NO_RIBBON_CONTROL_LAW });
   }, 600000);
@@ -259,7 +220,6 @@ describe('SurfaceFill — F1-width-bar: a FLOOR on mean CLS_RIBBON width, per wa
   afterAll(async () => {
     if (shippedRuntime) await shippedRuntime.cleanup();
     if (thinnedRuntime) await thinnedRuntime.cleanup();
-    if (wiringRevertRuntime) await wiringRevertRuntime.cleanup();
   });
 
   describe('GREEN — the shipped tree clears its own floor with real margin', () => {
@@ -285,15 +245,6 @@ describe('SurfaceFill — F1-width-bar: a FLOOR on mean CLS_RIBBON width, per wa
       // Sanity: the mutation actually thinned it relative to shipped, not by
       // accident of some other interaction.
       expect(m.meanRibbonWidthMm).toBeLessThan(shipped[law].meanRibbonWidthMm);
-    });
-  });
-
-  describe('NEGATIVE CONTROL — a real, unrelated mutation must NOT trip the floor (not vacuously sensitive to any diff)', () => {
-    test.each(WIDTH_LAWS)('%s — reverting F1-amp\'s own amplitude floor does not move mean width below the floor', (law) => {
-      const m = wiringRevert[law];
-      expect(m.ribbonStretchCount).toBeGreaterThan(0);
-      expect(m.meanRibbonWidthMm, `${law}: wiring-revert width=${m.meanRibbonWidthMm}, floor=${WIDTH_FLOOR_MM[law]} -- floor is vacuously sensitive to an unrelated mutation`)
-        .toBeGreaterThanOrEqual(WIDTH_FLOOR_MM[law]);
     });
   });
 

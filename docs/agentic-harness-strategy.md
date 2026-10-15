@@ -137,7 +137,7 @@ performance and the complete configured browser roster retain explicit owners.
 a bounded-feedback alias and cannot certify the full suite. Coverage thresholds remain
 unchanged. This is execution deduplication, not selective test-routing promotion.
 
-PR #97 proposes conditional full-Vitest sharding: a plan/guard binds the exact source SHA
+PR #97 enabled full-Vitest sharding after hosted validation and independent review: a plan/guard binds the exact source SHA
 and timestamp to two disjoint duration-weighted partitions on pull requests and pushes to
 main, and a canonical required coverage job always runs for those events. It fails closed
 on a failed plan, guard, or shard; verifies same-run/same-SHA report provenance; checks
@@ -145,8 +145,18 @@ each shard roster, merges V8 data, then strictly checks every file and the 57-sk
 before acceptance; it applies the canonical statements 74%, branches
 62%, functions 74%, and lines 76% ratchets. Existing bounded feedback, probe, browser,
 performance, and lane-gate checks remain in place. The scheduled audit runs separately,
-followed by the uninstrumented visual and performance suites. Main stays unsharded until
-hosted CI, review, and screen validation pass. The PR #97 hosted graph is the validation trial.
+followed by the uninstrumented visual and performance suites. The first complete main graph
+passed on run 38601029835: coverage 52m59s, all required checks 53m32s. Compared with the
+101m23s unsharded coverage-job baseline, its coverage subtree used 92m59s allocated job
+time. This equivalent-application, cross-SHA observation is not a controlled benchmark.
+
+Render-test sampling decisions live in `docs/render-test-reductions.md`. Retiring an
+internal diagnostic oracle or named parameter sample requires recording the accepted loss;
+a unique assertion is not automatically a durable product contract. Preserve real-output
+regression witnesses, boundary cases, state isolation and raw/composed seam distinctions.
+Validate the combined remaining suite, since individually proposed deletions can depend
+on one another. Keep inventory strict and thresholds unchanged; do not convert retirement
+into skipped tests or fabricate speedup estimates from render counts.
 
 Local `test:ci`, queue behavior, worker defaults, and the 30-minute per-attempt deadline
 are unchanged. A separately measured two-worker full-coverage route took 39m40s, so that
@@ -162,7 +172,7 @@ branch-protection compatibility. Engine/pool or sharding candidates require meas
 compatibility, source attribution and cleanup checks before promotion. Missing shards or
 coverage reports fail closed; never average per-shard coverage percentages. Promotion
 also requires strict current-topology evidence, review, at least 30% lower whole-chain
-latency and no more than about 15% extra allocated runner time. No speedup is claimed yet. See
+latency and no more than about 15% extra allocated runner time. Record each measured comparison and its scope. See
 `test-suite-phase2.md` for baseline, implementation evidence and remaining targets.
 
 ### Vitest lifecycle ownership

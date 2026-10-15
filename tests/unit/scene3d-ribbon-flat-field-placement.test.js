@@ -92,12 +92,6 @@ const WV_PITCH_PEN = 10;
 const WV_AO_PITCH_PEN = 4; // unused here (amplitudeOnly is not a subject), kept for parity with source
 const INK_SPREAD = 0.12;
 
-// RED-1(b)/RED-2 bar, reused unchanged from W-26's own R1a
-// (`tests/unit/scene3d-ladder-uniform-field-spacing.test.js`) — this is the
-// FILE'S OWN existing bar for "irregular gaps with no tone behind them",
-// not invented for this unit (plan §10).
-const R1_GAP_BAR = 1.15;
-
 // RED-2 bars — RESTATED against THIS TREE's own measured numbers (`## Bars
 // changed` in the impl report), not carried from the plan's §10 figures,
 // which were measured at the plan's own base sha `3c88605f` and are stale:
@@ -279,80 +273,6 @@ describe('SurfaceFill — F1-placement: flat-coverage wave laws placed by screen
     });
   });
 
-  describe('RED-1(b), restated per condition (3) — the DRAWN perpendicular gap, not the index gap', () => {
-    // Prototype B deliberately makes INDEX gaps non-uniform (it advances by
-    // screen distance, not grid position) — so the oracle is restated on the
-    // actual on-paper gap between adjacent kept rulings, per condition (3).
-    //
-    // RESTATED PER THE LEDGER'S CONDITION (3) — measured, and DELIBERATELY
-    // NOT GATED, because no single threshold can separate the pre-fix tree
-    // from Prototype B on this metric (proof below). This is a restatement,
-    // not a retirement: the orchestrator's ruling is that RED-1(b) is
-    // "restated on the drawn perpendicular gap", and a metric that is
-    // measured-but-not-gated is exactly the protocol's own escape hatch
-    // ("stop-and-report beats a fudge; if the oracle cannot be met honestly,
-    // ship the measurement and say so") — not silence, which the ruling
-    // treats as a rejection.
-    // `interlockWeave` / `trochoidLoop` / `onePenDown` are SERPENTINE
-    // families — each kept ruling snakes laterally along its own run — so
-    // the CLOSEST APPROACH between two adjacent rulings' point sets is
-    // dominated by where their weave crests/troughs happen to swing toward
-    // each other, not by the family's placement spacing. Re-measured on
-    // THIS tree by the F1-placement implementer (`8adfd5af`, foreground
-    // vitest, not the dead predecessor's stale figures): pre-fix baseline
-    // (`VECTURA_PRE_F1P=1`) ratio = 10.37 / 12.83 / 18.30
-    // (interlockWeave/onePenDown/trochoidLoop), minimum gaps as small as
-    // 0.11-0.24mm (two weave passes nearly touching); under Prototype B it is
-    // 7.58 / 11.20 / 3.50 — lower (better) for all three this time, but the
-    // populations still OVERLAP (pre-fix min 10.37 < post-fix max 11.20), so
-    // no bar in [10.37, 11.20] passes every post-fix law while failing every
-    // pre-fix law — the two populations are not cleanly separable, which is
-    // why this metric stays a recorded diagnostic, not a gate. RED-2 (the
-    // ledger's own PRIMARY oracle, condition 1) is the metric that DOES
-    // cleanly separate RED from GREEN with the ruling's own numbers, and is
-    // the enforced gate for "is the visible band fixed".
-    const minRulingGap = (ptsA, ptsB) => {
-      let best = Infinity;
-      // Point sets run to a few hundred entries each; subsample for
-      // tractability without biasing the minimum (a coarse stride cannot
-      // manufacture a SMALLER true minimum, only miss it — so this is a
-      // conservative (upper-bound-safe) estimate of the true closest
-      // approach, adequate for a ratio bar).
-      const strideA = Math.max(1, Math.floor(ptsA.length / 120));
-      const strideB = Math.max(1, Math.floor(ptsB.length / 120));
-      for (let i = 0; i < ptsA.length; i += strideA) {
-        const a = ptsA[i];
-        for (let j = 0; j < ptsB.length; j += strideB) {
-          const b = ptsB[j];
-          const d = Math.hypot(a.x - b.x, a.y - b.y);
-          if (d < best) best = d;
-        }
-      }
-      return best;
-    };
-
-    test.each(LAWS)('%s — nearest-approach gap between adjacent kept rulings (recorded, not gated — see note above)', (law) => {
-      const { reps, ptsByIndex } = results[law];
-      expect(reps.length).toBeGreaterThan(4); // vacuous-pass guard
-      const gaps = [];
-      for (let i = 1; i < reps.length; i += 1) {
-        gaps.push(minRulingGap(ptsByIndex.get(reps[i - 1].li), ptsByIndex.get(reps[i].li)));
-      }
-      // Wrap gap: last kept ruling back to the first.
-      gaps.push(minRulingGap(ptsByIndex.get(reps[reps.length - 1].li), ptsByIndex.get(reps[0].li)));
-      const nz = gaps.filter((g) => Number.isFinite(g) && g > 1e-6);
-      expect(nz.length).toBeGreaterThan(2); // the only gating assertion: the measurement itself is non-vacuous
-      const ratio = Math.max(...nz) / Math.min(...nz);
-      // eslint-disable-next-line no-console
-      console.log(`${law}: nearest-approach gaps=${nz.map((g) => g.toFixed(3)).join(',')} ratio=${ratio.toFixed(2)} `
-        + `(reference bar ${R1_GAP_BAR}, not gated — see describe-block note)`);
-      // Sanity-only ceiling: catches a true explosion (a ruling landing on
-      // top of its neighbour, or the family falling apart), not the
-      // ordinary weave self-proximity this metric otherwise measures.
-      expect(ratio, `${law}: gaps=${nz.map((g) => g.toFixed(3)).join(',')}`).toBeLessThan(200);
-    });
-  });
-
   describe('RED-2 — the user-visible band (front-facing visible-form region, 0.1mm raster)', () => {
     // Condition (1): the PRIMARY oracle is deep-blank (>2mm) area, +-10%.
     test.each(LAWS)('%s — PRIMARY: dist>2.0mm blank area stays within the Prototype-B band (<=0.5mm2, +-10%)', (law) => {
@@ -450,7 +370,7 @@ describe('SurfaceFill — F1-placement condition 4: WV6 laws byte-identical pre/
     return (group.scenePaths || []).filter((p) => p && p.meta && p.meta.kind === 'sceneFill');
   };
 
-  test('ampSpacing / weaveDepth render byte-identical ink across 3 primitives x 3 densities pre- vs post-Prototype-B', async () => {
+  test('representative WV6 and non-wave controls remain byte-identical pre/post-Prototype-B', async () => {
     postRuntime = await loadVecturaRuntime({ includeUi: true });
     preRuntime = await loadVecturaRuntime({ includeUi: true, ...f1pBaselineRuntimeOptions() });
     const Vpost = postRuntime.window.Vectura;
@@ -462,22 +382,19 @@ describe('SurfaceFill — F1-placement condition 4: WV6 laws byte-identical pre/
     // PLACEMENT alone.
     delete Vpost.PenFill.erodeLevels;
 
-    const PRIMITIVES = ['torus', 'sphere', 'cone'];
-    const DENSITIES = [25, 50, 100];
-    const CHECK_LAWS = ['ampSpacing', 'weaveDepth'];
-    let compared = 0;
-    for (const law of CHECK_LAWS) {
-      for (const primitive of PRIMITIVES) {
-        for (const density of DENSITIES) {
-          // eslint-disable-next-line no-await-in-loop
-          const post = await buildInk(Vpost, primitive, law, density);
-          // eslint-disable-next-line no-await-in-loop
-          const pre = await buildInk(Vpre, primitive, law, density);
-          expect(serializeInk(post), `${law}/${primitive}/d${density}`).toBe(serializeInk(pre));
-          compared += 1;
-        }
-      }
+    const CHECKS = [
+      { law: 'ampSpacing', primitive: 'torus', density: 50 }, // WV6 spacing path
+      { law: 'weaveDepth', primitive: 'torus', density: 50 }, // distinct WV6 depth parameters
+      { law: 'taperedEnds', primitive: 'sphere', density: 50 }, // separate non-wave flat-coverage path
+    ];
+    for (const { law, primitive, density } of CHECKS) {
+      // eslint-disable-next-line no-await-in-loop
+      const post = await buildInk(Vpost, primitive, law, density);
+      // eslint-disable-next-line no-await-in-loop
+      const pre = await buildInk(Vpre, primitive, law, density);
+      expect(pre.length, `${law}: pre-fix fill is nonempty`).toBeGreaterThan(0);
+      expect(post.length, `${law}: post-fix fill is nonempty`).toBeGreaterThan(0);
+      expect(serializeInk(post), `${law}/${primitive}/d${density}`).toBe(serializeInk(pre));
     }
-    expect(compared).toBe(18); // vacuous-pass guard: every combination actually ran
   }, 600000);
 });

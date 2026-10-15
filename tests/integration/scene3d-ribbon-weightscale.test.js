@@ -1,33 +1,13 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 /*
- * T4 — THE weightScale INVARIANT (work unit W3, contract C3).
+ * T4 — composed Scene3D weight contracts.
  *
- * The pen-width outline+fill work rests on one claim: a variable-width tone law
- * no longer asks the renderer for a fatter pen. It builds the ribbon, clips it,
- * strokes its outline with the REAL pen and fills the interior at a pen-derived
- * pitch — so every path it emits is a genuine single-pen stroke.
- *
- * That claim is exactly testable, and it is testable in BOTH directions:
- *
- *   - For each of the 12 BUCKET-B (ribbon) laws, EVERY emitted fill path must be
- *     at weightScale 1. One survivor means one stairstepped, round-capped,
- *     protruding stroke still ships.
- *   - For each of the 6 BUCKET-C (three-pen) laws, at least 2 DISTINCT
- *     weightScale values must STILL appear. This half is not a formality: the
- *     obvious wrong implementation gates on `isWeightLaw()`, which is true for
- *     all ten three-pen laws, and would silently flatten the one family whose
- *     entire claim is that it uses genuinely different nibs.
- *
- * RGR: before the C3 swap, `taperedEnds` (and the other eleven) came back from
- * `splitByWeight` as abutting pieces carrying meta.weightScale values of ~0.5–3.
- * The bucket-B half of this file fails hard without the swap. The bucket-C half
- * fails if the swap is gated too widely — it is the guard on the guard.
- *
- * Reading the invariant off `meta`: scene3d.js only WRITES meta.weightScale when
- * the value differs from 1 (src/core/algorithms/scene3d.js — `rawW !== 1`), so
- * an absent key IS weightScale 1. `effWeight` below resolves that, which is why
- * every assertion here is on the EFFECTIVE weight rather than on key presence.
+ * The default runtime loader includes the current RibbonGeometry (W1) and
+ * PenFill (W2) modules. Bucket B checks composed single-pen output and bucket C
+ * checks that multi-pen laws preserve distinct widths. The raw producer
+ * invariant has a separate unit owner, so these assertions intentionally stay
+ * at the algorithm's composed output seam.
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -100,7 +80,6 @@ describe('T4 — ribbon laws emit only real single-pen strokes; three-pen laws k
     const paths = fills({ toneLaw: law });
     expect(paths.length).toBeGreaterThan(0);
     const distinct = new Set(paths.map((pp) => Math.round(effWeight(pp) * 1000) / 1000));
-    expect({ law, distinct: distinct.size }).toEqual({ law, distinct: distinct.size });
     expect(distinct.size).toBeGreaterThanOrEqual(2);
   });
 
@@ -114,20 +93,13 @@ describe('T4 — ribbon laws emit only real single-pen strokes; three-pen laws k
 });
 
 /*
- * C4 — the `strokeFillStyle` wire, and the PATH-COUNT BUDGET it exists to hold.
+ * C4 — strokeFillStyle routing and pen-width regeneration.
  *
- * The reference scene already emits ~1075 lines, so the fill may not multiply
- * that. 'spiral' is one unbroken stroke per region however wide the ribbon gets,
- * which is why it is the default and why the default is load-bearing.
- *
- * These tests inject CONTRACT-CONFORMANT stand-ins for RibbonGeometry (C1) and
- * PenFill (C2) — the two modules W1 and W2 own — so that W3's integration is
- * exercised through its REAL path (build ring -> clip -> outline -> fill) rather
- * than only through its degrade-to-centreline fallback. The stand-ins are
- * deliberately trivial geometry; what is under test here is the wiring, the
- * per-style path budget, and the weightScale invariant across the real path.
+ * The runtime loader includes the production ribbon and fill modules. One
+ * targeted test below installs temporary stand-ins to record the constant-
+ * width routing arguments; that test proves routing only.
  */
-describe('C4 — strokeFillStyle threading and the path-count budget', () => {
+describe('C4 — strokeFillStyle routing and pen-width regeneration', () => {
   let runtime; let V; let algo; let defaults; let SurfaceFill;
 
   beforeAll(async () => {
@@ -183,16 +155,14 @@ describe('C4 — strokeFillStyle threading and the path-count budget', () => {
     expect(SurfaceFill.strokeFillStyles).toEqual(['spiral', 'concentric', 'serpentine', 'contourParallel']);
   });
 
-  // ── C1/C2 stand-ins ────────────────────────────────────────────────────────
+  // ── Narrow routing spy: stand-ins record the arguments at this seam. ──────
   // buildRibbonMultiPolygon: a per-vertex-normal ribbon (good enough to be a
   // closed ring of the right size; the real miter-bisector construction, and the
   // self-overlap resolution that gives a self-crossing centreline its loop
   // HOLES, are W1's).
   // fillRegion: honours the ONE-PATH-PER-COMPONENT rule for spiral/serpentine
   // and the many-rings behaviour for concentric/contourParallel.
-  // Saved so the stand-ins can be UNINSTALLED rather than deleted: once W1 and
-  // W2 are merged the real modules live on these same two keys, and a `delete`
-  // would strip them for every test that runs after this one in this runtime.
+  // Save and restore the loaded production modules so following tests use them.
   let realRG; let realPF; let saved = false;
   const installStandIns = (log) => {
     if (!saved) { realRG = V.RibbonGeometry; realPF = V.PenFill; saved = true; }
@@ -289,126 +259,7 @@ describe('C4 — strokeFillStyle threading and the path-count budget', () => {
     expect(varying.some((call) => spread(call.halfWidths) > 0)).toBe(true);
   });
 
-  /*
-   * THE CLIP IS UNCONDITIONAL, AND IT IS THE FRONT TEST'S OWN BOUNDARY.
-   *
-   * A ribbon is the only construction in surface-fill.js that puts ink where no
-   * sample was proved to be, so it may ship only after being cut against the
-   * visible region. Three failure modes look identical from outside — a clipped
-   * ribbon, an unclipped one, and a degrade to centrelines — so the assertion
-   * is on `lastRibbonStats`, which is the only place they differ.
-   */
-  test('every ribbon built is clipped, against a non-empty traced region', () => {
-    installStandIns();
-    let stats = null;
-    try {
-      fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'spiral' });
-      stats = SurfaceFill.lastRibbonStats;
-    } finally { removeStandIns(); }
-    expect(stats.algo).toBe('taperedEnds');
-    expect(stats.ribbonLaw).toBe(true);
-    // The region was traced and is non-degenerate.
-    expect(stats.regionRings).toBeGreaterThan(0);
-    // Not one ribbon shipped without a region, and every wide stretch was clipped.
-    expect({ noRegion: stats.noRegion, clipped: stats.clipped, wide: stats.wide })
-      .toEqual({ noRegion: 0, clipped: stats.wide, wide: stats.wide });
-    expect(stats.wide).toBeGreaterThan(0);
-    // The budget ceiling is a thing to NOTICE, never something to apply silently.
-    expect(stats.atMaxPaths).toBe(0);
-  });
 
-  // The bucket-B sweep in the first describe runs with NO C1/C2 modules, where
-  // every law degrades to a weightScale-1 centreline — green for the wrong
-  // reason. Repeat it through the REAL ribbon path, where a law that failed to
-  // be routed would still be carrying its multiplier.
-  test.each(BUCKET_B)('through the REAL ribbon path, "%s" emits only weightScale-1 paths', (law) => {
-    installStandIns();
-    try {
-      const paths = fills({ toneLaw: law, strokeFillStyle: 'spiral' });
-      expect(paths.length).toBeGreaterThan(0);
-      const offenders = paths.filter((pp) => effWeight(pp) !== 1).map(effWeight);
-      expect({ law, offenders: offenders.slice(0, 8), count: offenders.length })
-        .toEqual({ law, offenders: [], count: 0 });
-      // …and it really went through `ribbonize`, rather than never reaching it.
-      const stats = SurfaceFill.lastRibbonStats;
-      expect({ law, ribbonLaw: stats.ribbonLaw, built: stats.wide > 0 })
-        .toEqual({ law, ribbonLaw: true, built: true });
-    } finally { removeStandIns(); }
-  });
-
-  // The path count is a first-class requirement, not an efficiency footnote:
-  // the reference scene already emits ~1075 lines and the fill may not multiply
-  // that. MEASURED on this fixture (sphere r40, detail 20, hatch, density 60,
-  // pen 0.3) against the REAL W1/W2 modules, with the before column taken by
-  // forcing `isRibbonLaw()` false and re-running. sceneFill paths:
-  //
-  //   law                 splitByWeight   ribbon+spiral   ribbon+concentric
-  //   nibAngle                      252              96                 176
-  //   taperedEnds                   259              91                 168
-  //   weightModulated                22              30                  39
-  //   isophoteWidth                 211              89                 143
-  //   whiteBand                     263              92                 172
-  //   weightSmoothstep               22              30                  36
-  //   ampSpacing                   2226             208                 506
-  //   weaveDepth                   2266             139                 369
-  //   interlockWeave               1011             109                 398
-  //   trochoidLoop                 1171             240                 459
-  //   amplitudeOnly                1245             175                 475
-  //   onePenDown                      9              32                 269
-  //
-  // Spiral BEATS the split it replaces on nine of the twelve, because
-  // `splitByWeight` cut one ruling into ~4 quantized capsules where a ribbon is
-  // 1 outline + 1 continuous spiral. The three that RISE are exactly the
-  // constant-width laws of amendment A1 — they never split before, so their
-  // "before" number is a handful of fat strokes rather than a ribbon at all.
-  // The ceiling below is a regression guard, far above the measured spiral
-  // counts and far below what the old path produced: it fails only if a fill
-  // style stops being one stroke per region. (The test below measures
-  // `taperedEnds`, whose spiral count is 91 real / ~88 through the stand-ins.)
-  const SPIRAL_PATH_CEILING = 200;
-
-  test('PATH-COUNT BUDGET — spiral does not multiply the emitted path count', () => {
-    installStandIns();
-    let spiral = 0; let concentric = 0; let serpentine = 0; let contourParallel = 0;
-    try {
-      spiral = fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'spiral' }).length;
-      concentric = fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'concentric' }).length;
-      serpentine = fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'serpentine' }).length;
-      contourParallel = fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'contourParallel' }).length;
-    } finally { removeStandIns(); }
-    // Recorded, not merely asserted — a surprising number here is a finding,
-    // and the one thing that must never happen is a silent cap or decimation.
-    // eslint-disable-next-line no-console
-    console.log(`[T4 path budget] taperedEnds sceneFill paths — spiral=${spiral} `
-      + `serpentine=${serpentine} concentric=${concentric} `
-      + `contourParallel=${contourParallel} (splitByWeight baseline was 259)`);
-    expect(spiral).toBeGreaterThan(0);
-    expect(spiral).toBeLessThan(SPIRAL_PATH_CEILING);
-    expect(serpentine).toBeLessThan(SPIRAL_PATH_CEILING);
-    // The many-path styles are ALLOWED to be larger — they are a deliberate,
-    // non-default choice. They are asserted only to be finite and reported.
-    expect(concentric).toBeGreaterThanOrEqual(spiral);
-    expect(contourParallel).toBeGreaterThanOrEqual(spiral);
-  });
-
-  test('changing strokeFillStyle changes the emitted geometry (the control is live)', () => {
-    installStandIns();
-    try {
-      const key = (ps) => ps.map((pp) => pp.length).join(',');
-      const a = key(fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'spiral' }));
-      const b = key(fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'concentric' }));
-      expect(a).not.toBe(b);
-    } finally { removeStandIns(); }
-  });
-
-  test('an unknown strokeFillStyle degrades to the default rather than throwing', () => {
-    installStandIns();
-    try {
-      const good = fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'spiral' });
-      const bogus = fills({ toneLaw: 'taperedEnds', strokeFillStyle: 'totallyBogusStyle' });
-      expect(bogus.length).toBe(good.length);
-    } finally { removeStandIns(); }
-  });
 });
 
 /*

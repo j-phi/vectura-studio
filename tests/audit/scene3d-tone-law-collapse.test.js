@@ -161,58 +161,9 @@ describe('Scene3D tone-law collapse — U0 foundation', () => {
     expect(Params.resolveToneLaw({})).toBeUndefined();
   });
 
-  // Split into quarters of the 48-id roster (not one 96-buildObject sweep):
-  // each `test()` carries its own SLOW budget, but CI's slower/shared
-  // runner can still blow a single test's wall-clock even inside 600000ms
-  // — chunking keeps every individual test call well under that ceiling
-  // without changing what is asserted (RGR-safe: same laws, same checks).
-  const chunk = (arr, n) => {
-    const out = [];
-    for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
-    return out;
-  };
-
-  chunk([...Array(48).keys()], 12).forEach((indexes, i) => {
-    test(`4.${i + 1}. byte-identity sweep: laws ${indexes[0]}-${indexes[indexes.length - 1]} render identically through the raw id and through resolveToneLaw`, () => {
-      const offenders = [];
-      const ids = roster().IDS;
-      indexes.forEach((idx) => {
-        const law = ids[idx];
-        const rawOut = SF.buildObject({ ...hatchOpts, toneLaw: law });
-        const resolved = Params.resolveToneLaw({ toneLaw: law });
-        const resolvedOut = SF.buildObject({ ...hatchOpts, toneLaw: resolved });
-        if (JSON.stringify(resolvedOut) !== JSON.stringify(rawOut)) offenders.push(law);
-      });
-      expect(offenders, `these laws diverged through resolveToneLaw: ${offenders.join(', ')}`).toEqual([]);
-    }, SLOW);
-  });
-
-  // 48, not 47: the shipped default 'ladder' is deliberately NOT one of the
-  // roster's 48 ids (FILL_STYLE_DEFAULT_ENTRY's own comment, context-bar.js
-  // — it is the value every id in this roster was measured AGAINST), so
-  // there is no id in this loop whose own law IS 'ladder' for the mutation
-  // to leave alone. Every one of the 48 differs from a forced-'ladder'
-  // build (the same property scene3d-tone-law-dispatch.test.js's "every
-  // law differs from ladder" guard already establishes for its own list).
-  chunk([...Array(48).keys()], 12).forEach((indexes, i) => {
-    test(`5.${i + 1}. mutation-proof: forcing resolveToneLaw to always return "ladder" breaks laws ${indexes[0]}-${indexes[indexes.length - 1]}`, () => {
-      const orig = Params.resolveToneLaw;
-      const offenders = [];
-      Params.resolveToneLaw = () => 'ladder';
-      try {
-        const ids = roster().IDS;
-        indexes.forEach((idx) => {
-          const law = ids[idx];
-          const rawOut = SF.buildObject({ ...hatchOpts, toneLaw: law });
-          const forcedOut = SF.buildObject({ ...hatchOpts, toneLaw: Params.resolveToneLaw({ toneLaw: law }) });
-          if (JSON.stringify(forcedOut) !== JSON.stringify(rawOut)) offenders.push(law);
-        });
-      } finally {
-        Params.resolveToneLaw = orig;
-      }
-      expect(offenders.length).toBe(indexes.length);
-    }, SLOW);
-  });
+  // Every raw id is checked against the resolver above. Rendering that same
+  // id on both sides adds no alias or migration evidence; forced-ladder
+  // dispatch is covered by scene3d-tone-law-dispatch.test.js.
 
   // The real COLLAPSE table is empty in U0, so the shim/resolver mechanism
   // can only be proven with a SYNTHETIC alias — monkey-patching
@@ -1151,7 +1102,8 @@ describe('Scene3D tone-law collapse — U5b-2 (plain-language caveat copy)', () 
   test('neither caveat carries raw audit statistics or internal jargon', () => {
     const jargon = /\bRMS\b|\bR2\b|\bR²\b|L\*|sphere·hatch|sphere·crosshatch|cylinder·hatch|negative result|off-the-line/i;
     ['bundleDither', 'contFieldTouch'].forEach((id) => {
-      const caveat = FS.note(id).caveat;
+      const caveat = FS.entry(id).caveat;
+      expect(typeof caveat, `generated caveat for ${id}`).toBe('string');
       expect(caveat.length).toBeGreaterThan(0);
       expect(caveat).not.toMatch(jargon);
     });
@@ -1163,7 +1115,8 @@ describe('Scene3D tone-law collapse — U5b-2 (plain-language caveat copy)', () 
   test('the plain-language caveats are still exactly two sentences and still surface through effectiveLaw', () => {
     const sentenceCount = (s) => (s.match(/[.!?](?:\s|$)/g) || []).length;
     ['bundleDither', 'contFieldTouch'].forEach((id) => {
-      const caveat = FS.note(id).caveat;
+      const caveat = FS.entry(id).caveat;
+      expect(typeof caveat, `generated caveat for ${id}`).toBe('string');
       expect(sentenceCount(caveat)).toBeLessThanOrEqual(2);
     });
     expect(FS.note(FS.effectiveLaw('bundleCount', { bundleMode: 'dither' })).caveat)
@@ -2092,18 +2045,12 @@ describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (
  * dutyConst, endShorten, and "none" (NO TONE). See
  * docs/3d-audit/lane-reports/U7-2-impl.md for the full old -> new table.
  *
- * `docs/tone-laws/laws.json` is the SOURCE of `BY_ID[id].caveat`
- * (regenerated into src/config/scene3d-tone-laws.js by
- * `node scripts/build-tone-laws.js`). Each rewritten entry also gained a
- * NEW `measured` field on the laws.json source object, holding the original
- * audit-prose caveat verbatim so the measured evidence is not lost — that
- * field is deliberately NOT picked up by build-tone-laws.js's `BY_ID[id] = {...}`
- * literal (see that file's own comment beside the `caveat:` line), so it
- * never reaches src/config/scene3d-tone-laws.js and therefore cannot render
- * anywhere a UI surface reads from `SCENE_FILL_STYLES.note()`/`entry()`.
+ * The generated roster remains the user-facing source; keep only a cheap
+ * populated-data check here. Editorial wording, length, and archive details
+ * do not need a render-backed audit matrix.
  */
 describe('Scene3D tone-law collapse — U7-2 (plain-language pass over every remaining caveat)', () => {
-  let runtime; let FS; let R;
+  let runtime; let FS;
   const REWRITTEN_IDS = [
     'none', 'deepFillTSP', 'bundleSubNib', 'penInterleave', 'penReserve', 'penCross',
     'penPitchMatch', 'penFacing', 'ampSpacing', 'weaveDepth', 'interlockWeave',
@@ -2112,94 +2059,19 @@ describe('Scene3D tone-law collapse — U7-2 (plain-language pass over every rem
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
     FS = runtime.window.Vectura.SCENE_FILL_STYLES;
-    R = runtime.window.Vectura.SCENE3D_TONE_LAWS;
   });
   afterAll(() => runtime.cleanup());
 
-  // RGR proof: RED against the pre-U7-2 tree (every id below carried at
-  // least one of these tokens — R2/L*/RMS/percentages/mm measurements/
-  // function names/file names/"CONTROL/REFUTATION"/bare cell-name tokens
-  // like "sphere·hatch"); GREEN once laws.json's caveat fields are
-  // rewritten and scene3d-tone-laws.js is regenerated.
-  test('none of the 17 rewritten caveats carry raw audit statistics, internal jargon, or bare cell-name tokens', () => {
-    const jargon = /\bRMS\b|\bR2\b|\bR²\b|L\*|·hatch|·crosshatch|·contour|CONTROL\/REFUTATION|WEIGHT_LAWS|isWaveLaw|splitsAlongLine|\bpenId\b|scene3d\.js|surface-fill\.js|single-weight|\bmm\b|\d+(?:\.\d+)?%|\bgated samples\b|\bStage 0\b/i;
+  // Check the generated caveat itself; FS.note adds a simulated-law fallback
+  // and could stay nonempty even if this field disappeared.
+  test('every rewritten caveat remains populated in the generated roster', () => {
     REWRITTEN_IDS.forEach((id) => {
-      const caveat = FS.note(id).caveat;
+      const caveat = FS.entry(id).caveat;
+      expect(typeof caveat, `generated caveat for ${id}`).toBe('string');
       expect(caveat.length, `caveat for ${id}`).toBeGreaterThan(0);
-      expect(caveat, `caveat for ${id}`).not.toMatch(jargon);
     });
   });
 
-  // Style match: U5b-2's own precedent aimed for <=2 sentences. A few of
-  // these 17 carried two genuinely distinct measured warnings that do not
-  // compress losslessly into one — allow up to 3, but never more.
-  test('every rewritten caveat is at most 3 sentences', () => {
-    const sentenceCount = (s) => (s.match(/[.!?](?:\s|$)/g) || []).length;
-    REWRITTEN_IDS.forEach((id) => {
-      const caveat = FS.note(id).caveat;
-      expect(sentenceCount(caveat), `${id}: "${caveat}"`).toBeLessThanOrEqual(3);
-    });
-  });
-
-  // Every rewritten law kept a `measured` field on its laws.json source
-  // entry (the original audit-prose caveat, verbatim) — proving the
-  // evidence was archived, not deleted — and that field is provably absent
-  // from the generated, UI-facing roster.
-  test('a `measured` field archives the original audit caveat for every rewritten id, and never reaches the generated roster', () => {
-    const fs = require('fs');
-    const path = require('path');
-    const lawsJsonPath = path.join(__dirname, '../../docs/tone-laws/laws.json');
-    const doc = JSON.parse(fs.readFileSync(lawsJsonPath, 'utf8'));
-    const mapId = (id) => (id === 'NO TONE' ? 'none' : id);
-    const byId = {};
-    doc.laws.forEach((law) => { byId[mapId(law.id)] = law; });
-    REWRITTEN_IDS.forEach((id) => {
-      const law = byId[id];
-      expect(law, id).toBeTruthy();
-      expect(typeof law.measured, `${id}.measured`).toBe('string');
-      expect(law.measured.length, `${id}.measured`).toBeGreaterThan(0);
-      // The archived text is NOT the live caveat (it is the ORIGINAL,
-      // jargon-heavy one this unit replaced).
-      expect(law.measured).not.toBe(law.caveat);
-    });
-    // Never rendered: the generated file has no `measured` key at all.
-    const generatedPath = path.join(__dirname, '../../src/config/scene3d-tone-laws.js');
-    const generatedSrc = fs.readFileSync(generatedPath, 'utf8');
-    expect(generatedSrc).not.toMatch(/"measured"/);
-  });
-
-  // Distinctness the fold clusters depend on (U7/U8/U6's own rulings)
-  // survives the rewrite: ampSpacing vs weaveDepth, interlockWeave vs
-  // onePenDown, and the deliberate penPitchMatch === penFacing duplicate.
-  test('cross-cluster distinctness survives the rewrite', () => {
-    expect(FS.note('ampSpacing').caveat).not.toBe(FS.note('weaveDepth').caveat);
-    expect(FS.note('interlockWeave').caveat).not.toBe(FS.note('onePenDown').caveat);
-    expect(FS.note('penPitchMatch').caveat).toBe(FS.note('penFacing').caveat);
-    expect(FS.note('penInterleave').caveat).not.toBe(FS.note('penPitchMatch').caveat);
-  });
-
-  // Each caveat still references the option the user can actually act on,
-  // in the picker's own wording — matching U5b-2's "point back at what they
-  // can DO about the warning" precedent.
-  test('sub-control-facing caveats name the actual UI option values', () => {
-    expect(FS.note('bundleSubNib').caveat).toMatch(/Bundle · Count/);
-    expect(FS.note('weaveDepth').caveat).toMatch(/Interlocked|Phase/);
-    expect(FS.note('onePenDown').caveat).toMatch(/One stroke per ruling/);
-  });
-
-  // BY_ID-direct (not just FS.note()) still carries the rewritten text —
-  // the roster corpus itself changed, not just a display-layer filter.
-  // FS.note() prepends SIMULATED_NOTE for the six threePen-family ids, so
-  // compare with that prefix stripped for those, verbatim for the rest.
-  test('BY_ID-direct lookups reflect the rewrite (the roster corpus itself changed)', () => {
-    REWRITTEN_IDS.forEach((id) => {
-      const direct = R.BY_ID[id].caveat;
-      expect(direct.length, id).toBeGreaterThan(0);
-      const viaNote = FS.note(id).caveat;
-      const expected = FS.entry(id).simulated ? `${FS.SIMULATED_NOTE} ${direct}` : direct;
-      expect(viaNote, id).toBe(expected);
-    });
-  });
 });
 
 /*

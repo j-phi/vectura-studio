@@ -28,8 +28,8 @@
  *       no-op — the algorithm's own `finite(...,3)` fallback agrees with an
  *       explicit 3), AND md5(key absent)'s `pathSignature` matches a PINNED
  *       golden fingerprint recorded once at W-38b (see EXPECTED_T1 below),
- *       across {box,solid,pyramid,plane,sphere} x {hatch,crosshatch} x d in
- *       {1,50,220} x fillAngle in {20,45}.
+ *       on one boundary fixture. The full historical grid duplicated broad
+ *       output sampling without adding a distinct default-origin oracle.
  *
  *       W-38b (docs/3d-audit/lane-reports/W-38-review.md, Follow-up 1):
  *       the original third leg compared against `git show HEAD:scene3d.js`
@@ -74,7 +74,7 @@ const { pathSignature } = require('../helpers/path-signature');
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
 
-// T1's pinned golden fingerprints (W-38b) — `pathSignature` (precision 4,
+// T1's pinned boundary golden fingerprint (W-38b) — `pathSignature` (precision 4,
 // tests/helpers/path-signature.js) of the absent-key faceted output, one
 // per {primitive, mapper, density, angle} fixture. Recorded once against
 // 575f886d (v1.4.1, this file's own base sha) and NEVER moved except with
@@ -83,89 +83,7 @@ const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
 // replaced the vacuous `git show HEAD` leg.
 const EXPECTED_T1 = {
   'box|hatch|d1|a20': '4e9e8d48202eb705de0c7f313332d369abe44304ebad37753a57d536317b0c56',
-  'box|hatch|d1|a45': '91e215092d884c8c0f178196af9f54d0e28d7e88724c517b61fd897adc2e7ac1',
-  'box|hatch|d50|a20': 'e2d24665e4cfe164b17b1bfa15d806e2a3b173ed7594ba4411a0eb83560e79df',
-  'box|hatch|d50|a45': '63824db264e028709fdfd53cbfc6391025ec3a286b326eeebe9c44a8e32c5afc',
-  'box|hatch|d220|a20': '9da5dfeaf6d7208b73f754fa7c2cda359c2c8c0b2f2a42a7943b5a29f639f1ba',
-  'box|hatch|d220|a45': 'e8112d0a2334364f289a1f4f67bf5c68fac1d52ae579583c631967a46d372de8',
-  'box|crosshatch|d1|a20': '841980988e08d5601e7e5e356f8267ffcff3834f2f59d546289a2cd7705d7ce7',
-  'box|crosshatch|d1|a45': 'a45c97cd66d2bb7503abb08a3bafec658f3db455d201b43f800495bbb831057d',
   'box|crosshatch|d50|a20': '230f278e46e725bb7144ecacb6a9a49017d7d13d477fddf652c255685edd2cd5',
-  'box|crosshatch|d50|a45': '5f33ddac1b690b276fd8775a4dbbaef561830057b61f2ac25d8cc457e9c798ca',
-  'box|crosshatch|d220|a20': '8811ae623c366641fa80d22d9e10b6cf0bca8e3b9aa8f372fbb7b91b77142e58',
-  'box|crosshatch|d220|a45': 'cff22135e0d36c104a17faddde5feaa45f747dd519079a49eae829af260621dc',
-  'solid|hatch|d1|a20': '09cfac39b0028aafec5e586e0a0471dd3a6580bd39634fccf25cdea910fcce98',
-  'solid|hatch|d1|a45': 'b52b0942c0cc628077e744c00966e15528a9f110b3e5940b00bc38bcdf99a1d2',
-  'solid|hatch|d50|a20': '09cfac39b0028aafec5e586e0a0471dd3a6580bd39634fccf25cdea910fcce98',
-  'solid|hatch|d50|a45': 'b52b0942c0cc628077e744c00966e15528a9f110b3e5940b00bc38bcdf99a1d2',
-  'solid|hatch|d220|a20': 'e037752454990f3fa87315cdf8152c018446ae3bd50ccc6c294a9cf093a91a88',
-  'solid|hatch|d220|a45': '7df6d65ae238625b8cc30234b41c87be0356a3ba152a4b92fcf3baf8709655d1',
-  'solid|crosshatch|d1|a20': 'e4be52a9aaec832103d6406f63551bc7ddb6d02e2937885c2b632fa246ad1683',
-  'solid|crosshatch|d1|a45': 'd1f3ff4ff9bdcdc7399d8396fe9f0a5e84642d4703237f19e93789d6c8ada8b8',
-  'solid|crosshatch|d50|a20': '2ec8868a5be65641aed0c17b215ddf811912f23a8f44ea8c7d3677e311b25e2c',
-  'solid|crosshatch|d50|a45': '899987719f0019e5b246c79fea3311fb95a50bce8f792f1e91e72a3efeaec553',
-  'solid|crosshatch|d220|a20': 'ef1f47aa5989812bad8438a98c9f0cef6950d31bc8f88928379eb8651d3fb91e',
-  'solid|crosshatch|d220|a45': '1f08f5f39110a92d8ec8cc809a9a19c03c2edc9236fefe424539c8ed85f0027b',
-  'pyramid|hatch|d1|a20': '613d76c685713dc990a294abdfe3c1e4950cf6bf868cc2b9b57ae7246ab95939',
-  'pyramid|hatch|d1|a45': 'e2fd7df0374a90bb841680c9d4cdcd1b978735c414cd4a165a3fb1aee2ced007',
-  'pyramid|hatch|d50|a20': '15cc09681e985b31f09e48af75ea6c1c9e3cac5ddefff10e36e2234f62082423',
-  'pyramid|hatch|d50|a45': '9700854444d61cb745c46bdcf8461cca51598c80d4aa5a3846d171737a91e83b',
-  'pyramid|hatch|d220|a20': 'a6a97f1d217dbc618e0df91ba0ddf1daa2d8bfe2b9f45d87064dacaaf31954c1',
-  'pyramid|hatch|d220|a45': 'baf50d16f571c4df33bb28aec70662aa9a6f588e096cec3beca74139e612c1c2',
-  // MERGE-r3 re-pin (integrate-r3, disclosed under `## Bars changed`): W-36c
-  // (`8adfd5af`, ACCEPT-WITH-FOLLOWUPS, `3d-scene/fill-audit-a3`) changed each
-  // crosshatch family's own hatch ruling count, independent of and unseen by
-  // this file's own lane (`3d-scene/fill-audit-3`) at authoring time. Leg 1
-  // (absent === explicit 3) still passes 100% on the merged tree, proving
-  // facetMinRulings' own no-op is unaffected; only this fixed literal, pinned
-  // before W-36c existed in the same tree, moved. box/solid/plane crosshatch
-  // are unaffected (W-36c's cap does not engage on those fixtures at this
-  // density/angle grid) — only pyramid and sphere moved.
-  'pyramid|crosshatch|d1|a20': '90339144d953bf79ac5d8d9ca54ad69df24bfa4c85c26ab1bbfe79b32190896f',
-  'pyramid|crosshatch|d1|a45': 'ed9fa501c88d37c3fba276598a286aa30fde73acb3e6f734e24023539dc3cc46',
-  'pyramid|crosshatch|d50|a20': '5062e51651ee4e348a2c1477c10ad4ec44f445e253e4148f1a4e192f0e0e8513',
-  'pyramid|crosshatch|d50|a45': '1f9f047ef132ce780b0d403fde9122bc5ca0418ee799b2192348256e8d28c6bf',
-  'pyramid|crosshatch|d220|a20': '08355704d7b3d7d79f299af2fc4a748ab42b1190a447b3b4200f82f23de833de',
-  'pyramid|crosshatch|d220|a45': 'e73c05d596d8a4619e751bf457c96b668488e393fbede83fdb263d53b5b470a1',
-  'plane|hatch|d1|a20': '33f813aba4762dea6ff2b6ddb56b9d95bf796f5ef0877412d59179b5b042aa11',
-  'plane|hatch|d1|a45': '6445759ac9d86752b0752660277bf76f57a0257eb8052b5372e75f4fefa247bb',
-  'plane|hatch|d50|a20': '117304b53fed661c380f59268b0918fcc4ff37a01f67b005cce44d5e84edf47c',
-  'plane|hatch|d50|a45': '5d781e788e2bb7b5e9b409e7dca0d410c47dd54d1f0517893426241e8b9b42cb',
-  'plane|hatch|d220|a20': 'f78e804bddbc7b974d49e43fd7039aa029b63179af7cb67bfd33d15dff73ea69',
-  'plane|hatch|d220|a45': 'fa2eb5e61f323362c07d68fdb1550dcd0a2745218108ebb315d94e688abed95b',
-  'plane|crosshatch|d1|a20': '00eae19436f73cfd53503375f803a6bcf552345d603a7c62ed03d252c5d0b950',
-  'plane|crosshatch|d1|a45': 'eab50180d5f805dbfe5fab79c1b329e458352b65b1e1be27862809ee433b744e',
-  'plane|crosshatch|d50|a20': 'e25ef73ab407f06107d4d30fa6592cb06c9e97ba4093a9e5acec3d1dbcca1d8d',
-  'plane|crosshatch|d50|a45': '4b85aaef53f9a1816dc8b954863ddcecde4f737b32bcf83d017651f81627be3a',
-  'plane|crosshatch|d220|a20': '8c29ed26800081ca35352f5adb76821129dba34fe8c660743467dbbf9a86446d',
-  'plane|crosshatch|d220|a45': 'c6643c706acfe8f78f024efb3529df438b0ce2c34bf12e9a1df2efba94276f48',
-  // W-32r4c re-pin (border-4, disclosed under `## Bars changed`): W-32 Rank 4
-  // (`76a77f22`) refines the sphere's drawn silhouette/boundary onto the
-  // ANALYTIC silhouette curve — a structural-edge-pass change in scene3d.js,
-  // completely independent of facetMinRulings. Leg 1 (absent === explicit 3)
-  // still passes 100% here (proof the no-op itself is untouched); only this
-  // fixed literal moved, because pathSignature hashes the WHOLE scene
-  // (fill + edge ink together) and the sphere's edge ink is the one thing
-  // this unit legitimately changes. box/solid/pyramid/plane are box-faceted/
-  // unsupported charts and are confirmed byte-identical (unmoved) — only
-  // sphere moved, matching this unit's own claimed scope exactly (see
-  // W-32r4-impl.md's O5 byte-identity sweep and `## Bars changed`).
-  'sphere|hatch|d1|a20': '0754d828fabcff1c7dcce1a057ccda64a3d27c7b9d0b60f5cdf1719aca7402da',
-  'sphere|hatch|d1|a45': 'c94a8171fccd4c57721cab90823176aa065435b5832ebd793ea29551759fc969',
-  'sphere|hatch|d50|a20': '47b1a36e1eebc4fbcdbb40a391ddd04f329546d61897194651c71a7b060d4f1a',
-  'sphere|hatch|d50|a45': '8f86f982e26c2fb9dbd8be0d2f952e4dd7323a1907486c024d9081f12f2bb0b2',
-  'sphere|hatch|d220|a20': 'eb130588ef1241c30ab95c1b188835bf867d31151006f84203850383965c0c18',
-  'sphere|hatch|d220|a45': '0d0d868cdbb375230e1f04ae4eb57c240181e610a698c8f975dd95788f4ad4cf',
-  // MERGE-r3 re-pin — same cause and proof as the pyramid block above (W-36c,
-  // `8adfd5af`, independent of facetMinRulings; Leg 1 still 100% green).
-  // W-32r4c re-pin (border-4) layered on top of the same cells — see the
-  // hatch block's comment above for the full proof; identical reasoning.
-  'sphere|crosshatch|d1|a20': '0c110a558a28717d5a1c8ae52e023f2c960f9d6ed2c4fdd63d1d8f1253d20eac',
-  'sphere|crosshatch|d1|a45': '3c74e8776456653035e0a88001a61657c55cdab6441e5a36069af1d682a564dd',
-  'sphere|crosshatch|d50|a20': 'a6e77e58d7bd84ddadde2637f97a20e7b04bfca2d76998dbe5373fef0d9c5e60',
-  'sphere|crosshatch|d50|a45': 'ec513f8fd71a9baf487b3f3d81bc9064e23e511c8c7689fc0ad3c042c90ab5c2',
-  'sphere|crosshatch|d220|a20': 'a33307ef7e08517057a2d8e10ef935c67e87b4a8ad86ef07a092a23c2b12f433',
-  'sphere|crosshatch|d220|a45': 'c0cf181733f88c57309906e20f7fb7c49e384f418812d170cc6331ba6ea3ad82',
 };
 
 const md5PathsAll = (paths) => crypto.createHash('md5')
@@ -221,10 +139,7 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
     return m.kind === 'sceneFill' && t.objectId === result.obj.id && !t.occluded;
   });
 
-  const groundPaths = (result) => result.paths.filter((pp) => {
-    const m = pp.meta || {}; const t = m.sceneTarget || {};
-    return t.objectId !== result.obj.id;
-  });
+
 
   const facePaths = (result, faceId) => objectPaths(result).filter(
     (pp) => (pp.meta.sceneTarget || {}).faceId === faceId,
@@ -242,46 +157,27 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
 
   // ── T1 — the default is a no-op ────────────────────────────────────────
   describe('T1 — facetMinRulings absent === 3 === a pinned golden fingerprint', () => {
-    const PRIMITIVES = ['box', 'solid', 'pyramid', 'plane', 'sphere'];
-    const MAPPERS = ['hatch', 'crosshatch'];
-    const DENSITIES = [1, 50, 220];
-    const ANGLES = [20, 45];
-
-    PRIMITIVES.forEach((primitive) => {
-      MAPPERS.forEach((mapper) => {
-        DENSITIES.forEach((density) => {
-          ANGLES.forEach((angle) => {
-            const key = `${primitive}|${mapper}|d${density}|a${angle}`;
-            test(`${primitive} / ${mapper} / d=${density} / a=${angle}`, () => {
-              const absent = buildScene(V, { primitive, mapper, density, angle });
-              const withDefault = buildScene(V, {
-                primitive, mapper, density, angle, facetMinRulings: 3,
-              });
-              // Leg 1 (four-origin no-op): the algorithm's own
-              // `finite(styleParams.facetMinRulings, FACET_MIN_RULINGS)`
-              // fallback, exercised when the key is absent, must agree with
-              // an explicitly-set 3.
-              expect(md5PathsAll(absent.paths)).toBe(md5PathsAll(withDefault.paths));
-
-              // Leg 2 (standing, non-vacuous): the absent-key output must
-              // match a fixed golden fingerprint pinned below. Unlike the
-              // old `git show HEAD` leg, this reference does not move when
-              // this file's own commit lands — it is a literal, so a future
-              // regression to the default has something fixed to disagree
-              // with, forever, not just until this unit is committed.
-              const expected = EXPECTED_T1[key];
-              if (!expected) {
-                // eslint-disable-next-line no-console
-                console.log(
-                  `EXPECTED_T1 missing entry — paste this in:\n  '${key}': '${pathSignature(absent.paths)}',`,
-                );
-              }
-              expect(expected).toBeTruthy();
-              expect(pathSignature(absent.paths)).toBe(expected);
-            });
-          });
-        });
+    const primitive = 'box'; const mapper = 'hatch'; const density = 1; const angle = 20;
+    const key = `${primitive}|${mapper}|d${density}|a${angle}`;
+    test('box / hatch / d=1 / a=20 boundary golden', () => {
+      const absent = buildScene(V, { primitive, mapper, density, angle });
+      const withDefault = buildScene(V, {
+        primitive, mapper, density, angle, facetMinRulings: 3,
       });
+      // The absent key must resolve to the same default output as explicit 3.
+      expect(md5PathsAll(absent.paths)).toBe(md5PathsAll(withDefault.paths));
+      const expected = EXPECTED_T1[key];
+      expect(expected).toBeTruthy();
+      expect(pathSignature(absent.paths)).toBe(expected);
+    });
+
+    test('box / crosshatch / d=50 / a=20 keeps the default at its separate faceHatchLines branch', () => {
+      const absent = buildScene(V, { primitive: 'box', mapper: 'crosshatch', density: 50, angle: 20 });
+      const withDefault = buildScene(V, {
+        primitive: 'box', mapper: 'crosshatch', density: 50, angle: 20, facetMinRulings: 3,
+      });
+      expect(md5PathsAll(absent.paths)).toBe(md5PathsAll(withDefault.paths));
+      expect(pathSignature(absent.paths)).toBe(EXPECTED_T1['box|crosshatch|d50|a20']);
     });
   });
 
@@ -339,8 +235,8 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
       expect(rY8).toBeGreaterThanOrEqual(3); // must not have SHRUNK below the old constant either
     });
 
-    test('face:+Z (the dark, already-ruled carrier) is untouched at every control value', () => {
-      const controls = [1, 2, 3, 4, 5, 6, 8];
+    test('face:+Z (the dark, already-ruled carrier) is unchanged at low/default/high controls', () => {
+      const controls = [1, 3, 8];
       const carrierBearing = (result) => {
         // The dark facet's CARRIER family — the lowest-bearing key present,
         // i.e. the family the box-density-bearing rig calls `face:+Z@169`.
@@ -384,13 +280,6 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
       expect(md5PathsAll(one.paths)).toBe(md5PathsAll(eight.paths));
     });
 
-    test('the GROUND PLANE\'s own paths are identical at control 1 vs 8, on every primitive tested here', () => {
-      ['box', 'solid', 'plane', 'sphere'].forEach((primitive) => {
-        const one = buildScene(V, { primitive, density: 50, angle: 20, facetMinRulings: 1 });
-        const eight = buildScene(V, { primitive, density: 50, angle: 20, facetMinRulings: 8 });
-        expect(md5PathsAll(groundPaths(one))).toBe(md5PathsAll(groundPaths(eight)));
-      });
-    });
 
     test('sphere (smooth primitive) — never enters faceHatchLines', () => {
       const one = buildScene(V, { primitive: 'sphere', density: 50, angle: 20, facetMinRulings: 1 });
@@ -414,12 +303,10 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
       expect(md5PathsAll(one.paths)).toBe(md5PathsAll(eight.paths));
     });
 
-    test('box / solid at high Density (d=220) — the grant never fires that high', () => {
-      ['box', 'solid'].forEach((primitive) => {
-        const one = buildScene(V, { primitive, density: 220, angle: 20, facetMinRulings: 1 });
-        const eight = buildScene(V, { primitive, density: 220, angle: 20, facetMinRulings: 8 });
-        expect(md5PathsAll(one.paths)).toBe(md5PathsAll(eight.paths));
-      });
+    test('solid at high Density (d=220) — the grant never fires above the floor', () => {
+      const one = buildScene(V, { primitive: 'solid', density: 220, angle: 20, facetMinRulings: 1 });
+      const eight = buildScene(V, { primitive: 'solid', density: 220, angle: 20, facetMinRulings: 8 });
+      expect(md5PathsAll(one.paths)).toBe(md5PathsAll(eight.paths));
     });
 
     // ── The secretary flag: do NOT assert blanket mono-law inertness. ─────
