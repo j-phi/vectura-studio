@@ -16026,3 +16026,132 @@ body.touch-wide-layout.touch-ui .ctxbar {
 .ctxbar-menu[data-scroll-cue~="above"]::before,
 .ctxbar-menu[data-scroll-cue~="below"]::after { opacity: 1; }
 /* === END TUX-012 follow-up === */
+
+/* === TUX-041 slice B4: side panels ===
+ * Every interactive target in the left pane (generator params, transform, fill controls, text panel, mirror modifier), the right
+ * pane (pens, layers) and the bottom pane has a hit area of at least --touch-target-min on coarse pointers. Boxes that can grow get a
+ * real min-height; the small visuals (switches, info dots) keep their size and take a centred ::before. Rules are keyed on
+ * body.touch-ui (a coarse pointer), never on width, and carry a pane id so they beat the skin's [data-ui-skin] #id rules.
+ * Desktop is unchanged. Scene3D and the Petal Designer are slice B5. */
+/* Every other button, summary and text field in the left pane (algorithm sections, add/delete rows, tool strips, lock dots, pop-out
+ * buttons) is at least a finger in both axes. Scene3D and the Petal Designer (slice B5) and the visuals that carry their own
+ * ::before extension are left out. */
+body.touch-ui #left-pane :is(button, summary, [role="button"], input:is([type="text"], [type="number"], [type="search"], :not([type]))):not(
+  .info-btn, .mp-info-trigger, .noise-grip, .vtp-sw-toggle, .sr-only, :is(.vs3-panel, [class*="petal-"]) *) {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  box-sizing: border-box;
+}
+/* Right pane: the same finger-tall floor for the pens tab (palette list, auto-colourisation fields) and the layer search/filter. Layer
+ * rows keep their own sizing (they pass already). The small switch, the info dot and the raw checkbox keep their visual and take a
+ * centred 44 px ::before; the row that holds one is a finger tall, so the extension never reaches the row above or below. */
+body.touch-ui #right-pane :is(button, summary, [role="button"], input:is([type="text"], [type="number"], [type="search"], :not([type]))):not(
+  .info-btn, .sw-toggle, .sr-only, .draw-order-settings, .draw-order-overlay-toggle, .pen-remove, #layer-list *) {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  box-sizing: border-box;
+}
+body.touch-ui #right-pane select:not(.sr-only) { height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui #right-pane :is(.info-btn, .sw-toggle, input[type="checkbox"]:not(.sr-only)) { position: relative; }
+body.touch-ui #right-pane :is(.info-btn, .sw-toggle, input[type="checkbox"]:not(.sr-only))::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+body.touch-ui #right-pane :is(.flex, .control-label, .ctrl-row):has(> :is(.sw-toggle, .info-btn, input[type="checkbox"])) { min-height: var(--touch-target-min); }
+/* A docked iPad pane (200 px) makes a pen card 153 px wide (129 px of content): swatch, value and remove take it all and squeeze the
+ * weight slider to 14 px. Under 150 px of content the slider moves to its own row. Wider cards (187 px of content and up) keep one row. */
+body.touch-ui #right-pane .pen-item { container-type: inline-size; container-name: pen-item; }
+@container pen-item (max-width: 150px) {
+  body.touch-ui #right-pane .pen-item .pen-row-b { flex-wrap: wrap; }
+  body.touch-ui #right-pane .pen-item .pen-width { order: 7; flex: 1 1 100%; margin: 0; }
+}
+/* The plotter heads, the plot-range row and the motion rack head seat an info dot (44 px ::before, 14 px past its edge) beside a 44 px
+ * button or slider: 16 px keeps their hit areas apart. */
+body.touch-ui #left-pane :is(.harmonograph-plotter-head, .harmonograph-plotter-row) { gap: 18px; }
+body.touch-ui #left-pane .harmonograph-plotter-head > * { flex-shrink: 0; }
+body.touch-ui #left-pane .harmonograph-plotter-head { padding-right: 16px; } /* keeps the last info dot's 44 px reach inside the pane */
+/* Pendulum card header (title, trace, Active switch, delete) and the 7 alignment buttons wrap instead of running off the pane. */
+body.touch-ui #left-pane :is(.pendulum-header, .pendulum-actions) { flex-wrap: wrap; }
+body.touch-ui .vtp-panel .vtp-align7 { flex-wrap: wrap; }
+body.touch-ui #left-pane .harmonograph-plotter-head { flex-wrap: wrap; }
+/* Pens tab: section headers, palette picker, Add. */
+body.touch-ui #right-pane :is(#pens-section-header, #auto-colorization-header) { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui #right-pane :is(#palette-toggle, #btn-add-pen) { height: var(--touch-target-min); min-width: var(--touch-target-min); box-sizing: border-box; }
+/* Left pane buttons that sat at 24-36 px. */
+body.touch-ui #left-pane :is(#btn-randomize-params, #paint-bucket-expand-btn, #dynamic-controls .mb-4.grid > button) { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui #transform-bbox-controls .tk-flip-btn { height: var(--touch-target-min); }
+body.touch-ui #transform-bbox-controls .tk-link-btn { width: var(--touch-target-min); height: var(--touch-target-min); }
+/* Fill type grid: whole-finger cells, wrapping to more rows (5 across in a 290 px pane). */
+body.touch-ui .paint-bucket-variant-grid { grid-template-columns: repeat(auto-fill, minmax(var(--touch-target-min), 1fr)); }
+body.touch-ui .pb-variant-btn { height: var(--touch-target-min); min-width: var(--touch-target-min); }
+/* Generator picker rows (the shared .lvl-algo-sub-item stays 34 px in the context bar fly-outs). */
+body.touch-ui #gm-module-menu .lvl-algo-sub-item { min-height: var(--touch-target-min); box-sizing: border-box; }
+/* The formula pane header is a finger tall when the pane is open (the pane height is fixed, so the canvas share does not change). */
+body.touch-ui #bottom-pane:not(.bottom-pane-collapsed) .bottom-pane-header { height: var(--touch-target-min); min-height: var(--touch-target-min); }
+body.touch-ui #bottom-pane:not(.bottom-pane-collapsed) .pane-toggle-bottom { width: var(--touch-target-min); height: var(--touch-target-min); }
+/* Text panel. Fields take a whole row (a half row cannot seat a 44 px handle, the value and a 44 px preset chevron). */
+body.touch-ui .vtp-panel .vtp-grid2 { grid-template-columns: 1fr; }
+body.touch-ui .vtp-panel .vtp-spec-head { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui .vtp-panel :is(.vtp-spec-head-btn, .vtp-spec-pill-head, .vtp-fontpick-trigger, .vtp-vselect, .vtp-ot-btn, .vtp-seg-ctrl button) {
+  min-height: var(--touch-target-min); box-sizing: border-box;
+}
+body.touch-ui .vtp-panel .vtp-vselect { height: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-glyph-btn { width: var(--touch-target-min); height: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-align7 .vtp-glyph-btn { width: auto; flex: 1 0 var(--touch-target-min); min-width: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-scrub { height: calc(var(--touch-target-min) + 2px); } /* + the 1 px border, so the inside is 44 */
+body.touch-ui .vtp-panel .vtp-scrub-handle { min-width: var(--touch-target-min); box-sizing: border-box; justify-content: center; }
+body.touch-ui .vtp-panel .vtp-scrub input { font-size: 16px; }
+/* The stepper pair lies side by side: two stacked 44 px buttons would make the field 88 px tall. */
+body.touch-ui .vtp-panel .vtp-scrub-steppers { flex-direction: row; width: auto; }
+body.touch-ui .vtp-panel .vtp-scrub-steppers button { min-width: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-scrub-steppers button:first-child { border-bottom: 0; border-right: 1px solid var(--ui-border); }
+body.touch-ui .vtp-panel .vtp-scrub-preset { min-width: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-row-toggle { min-height: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-sw-toggle::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+/* Align / Distribute (multi-selection): three buttons a row (seven 44 px columns do not fit), the spacers drop out, and the spacing field
+ * takes the row under the two spacing buttons and the slider. */
+body.touch-ui #left-pane .align-panel-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body.touch-ui #left-pane .align-panel-spacer { display: none; }
+body.touch-ui #left-pane :is(.align-btn, .align-target-btn) { height: var(--touch-target-min); }
+body.touch-ui #left-pane .align-panel-spacing { display: grid; grid-template-columns: var(--touch-target-min) var(--touch-target-min) minmax(0, 1fr); }
+body.touch-ui #left-pane .align-panel-spacing > #align-spacing-chip { grid-column: 1 / -1; width: 100%; max-width: none; }
+/* The shared floating menu (layer filter, row menus) has finger-tall entries and scrolls when it is taller than the screen. */
+body.touch-ui .menu-dropdown .menu-entry { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui .menu-dropdown {
+  max-height: calc(var(--app-vh) - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 16px);
+  overflow-y: auto; overscroll-behavior: contain;
+}
+/* Pathfinder: buttons wrap to as many 60 px cells as fit (six 44 px columns do not fit a 200 px docked pane). */
+body.touch-ui #left-pane :is(.pathfinder-panel-grid-shape-modes, .pathfinder-panel-grid-pathfinders) { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
+body.touch-ui #left-pane .pathfinder-panel-shape-modes { flex-wrap: wrap; }
+body.touch-ui #left-pane :is(.pf-btn, .pf-mode-btn, .pf-expand-btn) { height: var(--touch-target-min); }
+/* Mirror modifier panel. */
+body.touch-ui .mp-root :is(.mp-stack-add, .mp-change-cta, .mp-side-tile) { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui .mp-root .mp-change-cta { height: var(--touch-target-min); }
+body.touch-ui .mp-root .mp-row { grid-template-columns: var(--touch-target-min) 1fr auto; }
+body.touch-ui .mp-root .mp-row-thumb { width: var(--touch-target-min); height: var(--touch-target-min); aspect-ratio: auto; }
+body.touch-ui .mp-root .mp-ctrl-row-2 { grid-template-columns: 1fr; }
+body.touch-ui .mp-root .mp-info-trigger { position: relative; }
+body.touch-ui .mp-root .mp-info-trigger::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+body.touch-ui .mp-root .mp-ctrl-lbl:has(> .mp-info-trigger) { min-height: var(--touch-target-min); }
+/* === END TUX-041 slice B4 === */
+
+/* === TUX-046 follow-up: scroll cue on long modals ===
+ * data-scroll-cue (utils.scrollCue) lists the edges that still hide controls in the Export settings column and the Document Setup
+ * form. The fades are sticky, take no taps, and show nothing when everything fits. Touch only. */
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)::before,
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 3;
+  opacity: 0; transition: opacity 120ms ease;
+}
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)::before { top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent); }
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)::after { bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent); }
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)[data-scroll-cue~="above"]::before,
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)[data-scroll-cue~="below"]::after { opacity: 1; }
+/* === END TUX-046 follow-up === */

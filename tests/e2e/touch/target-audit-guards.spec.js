@@ -296,6 +296,55 @@ test('guard: Q15 rescue measures the true hit area when an unrelated open menu c
   expect(it.ph, `probed ${it.pw}x${it.ph}: an unrelated menu is not a neighbour, so the ::before is a 44 px target`).toBeGreaterThanOrEqual(44);
 });
 
+// B3 review: the rescue ignores an unrelated menu only when the menu covers the row solely because of the rescue scroll. A menu that
+// covers the top of the row's 44 px ::before where the row sits now (and after the scroll) is a real neighbour: the finger hit is about 26 px.
+test('guard: Q15 rescue keeps an open menu opaque when it covers the row ::before in both scroll positions @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  await page.evaluate(() => {
+    const st = document.createElement('style');
+    st.textContent = '#zz-cov{position:relative;display:block;width:150px;height:16px;padding:0;border:0;margin:0}#zz-cov::before{content:"";position:absolute;left:0;right:0;top:-14px;height:44px}';
+    document.head.appendChild(st);
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:100px;top:100px;width:200px;height:200px;overflow-y:auto;z-index:50;background:#222';
+    box.innerHTML = '<div style="height:190px"></div><button id="zz-cov">row</button><div style="height:400px"></div>';
+    document.body.appendChild(box);
+    const pop = document.createElement('div');
+    pop.setAttribute('role', 'menu');
+    pop.style.cssText = 'position:fixed;left:90px;top:255px;width:240px;height:30px;z-index:60;background:#555';
+    document.body.appendChild(pop);
+  });
+  const r = await measure(page, spec, testInfo.project.name);
+  const it = r.raw.items.find((i) => /zz-cov/.test(i.sel));
+  expect(it, 'the covered button is listed').toBeTruthy();
+  expect(it.clipped, 'the button is cut by its scroller').toBe(true);
+  expect(it.ph, `probed ${it.pw}x${it.ph}: the menu covers the top of the ::before, so the true hit height is under 44`).toBeLessThan(44);
+});
+
+// A modal control below the fold of the modal's own scrolling body is reachable by scrolling and counts in `reachable`. The same control
+// cut away by an overflow:hidden box (no scrolling) does not.
+test('guard: a modal control below its scroll fold counts as reachable, a hidden-overflow one does not @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  const base = await measure(page, spec, testInfo.project.name);
+  await page.evaluate(() => {
+    const modal = document.createElement('div');
+    modal.className = 'vectura-modal';
+    modal.style.cssText = 'position:fixed;left:100px;top:100px;width:300px;z-index:50;background:#222';
+    modal.innerHTML = '<div id="zz-scroll" style="height:80px;overflow-y:auto"><div style="height:200px"></div><button id="zz-below" style="height:44px;width:120px">below</button><div style="height:50px"></div></div>'
+      + '<div id="zz-hid" style="height:80px;overflow:hidden"><div style="height:200px"></div><button id="zz-lost" style="height:44px;width:120px">lost</button></div>';
+    document.body.appendChild(modal);
+  });
+  const r = await measure(page, spec, testInfo.project.name);
+  const below = r.raw.items.find((i) => /zz-below/.test(i.sel));
+  const lost = r.raw.items.find((i) => /zz-lost/.test(i.sel));
+  expect(below && !below.onscreen && below.scrollReach, 'the scrolling control is scroll-reachable').toBeTruthy();
+  expect(lost ? lost.scrollReach : false, 'the overflow:hidden control is not').toBeFalsy();
+  const onscreenReach = r.raw.items.filter((i) => i.onscreen && i.reach !== false && (i.hitState === 'ok' || i.hitState === 'ok-ancestor')).length;
+  expect(r.m.reachable, 'reachable counts the on-screen reachable controls plus the scrolling one only').toBe(onscreenReach + 1);
+  expect(base.m.reachable).toBeGreaterThan(0);
+});
+
 // Q15 hardening: a row taller than its scroller can never scroll fully into view, so it keeps its probed (clipped) size.
 test('guard: a row taller than its scroll container is not measured at full size @audit-extra', async ({ page, baseURL }, testInfo) => {
   const spec = PROJECTS[testInfo.project.name];

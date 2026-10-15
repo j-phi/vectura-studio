@@ -592,7 +592,15 @@ function measureInPage(cfg, helpers) {
         // pane). While probing, open menus and popups that do not contain the row are not neighbours: they are made transparent to
         // hit tests, so the probe sees the row's own target and its real neighbours only.
         const popups = Array.from(document.querySelectorAll('.top-menu-panel.open, .menu-dropdown.open, #gm-module-menu, .lvl-algo-menu, [role="menu"]'))
-          .filter((m) => !m.contains(el) && visible(m));
+          .filter((m) => !m.contains(el) && visible(m))
+          // A menu stays opaque when it already covers the row, or the 44 px reach around its centre, where the row sits before the
+          // rescue scroll: it covers the finger target for real. Only a menu that would cover it solely because of the rescue
+          // scroll is ignored.
+          .filter((m) => {
+            const mr = m.getBoundingClientRect();
+            const ex = { l: Math.min(r.left, (r.left + r.right) / 2 - 22), r: Math.max(r.right, (r.left + r.right) / 2 + 22), t: Math.min(r.top, (r.top + r.bottom) / 2 - 22), b: Math.max(r.bottom, (r.top + r.bottom) / 2 + 22) };
+            return !(mr.left < ex.r && mr.right > ex.l && mr.top < ex.b && mr.bottom > ex.t);
+          });
         const prevPe = popups.map((m) => m.style.pointerEvents);
         popups.forEach((m) => { m.style.pointerEvents = 'none'; });
         const nearest = (p, axis) => {
@@ -613,6 +621,15 @@ function measureInPage(cfg, helpers) {
         if (cut.x && pw < 49) pw = Math.max(pw, best.w);
       }
     }
+    // A modal control below the fold of its own scrolling body is reachable by scrolling (the modal body is a scroller by design, with a
+    // scroll cue). It is counted by `reachable` only: it is off screen now, so no size metric reads it.
+    let scrollReach = false;
+    if (!onscreen && hitState === 'offscreen' && visible(el)) {
+      const mroot = el.closest('#modal-overlay, #settings-panel, .vectura-modal');
+      const mr = mroot ? mroot.getBoundingClientRect() : null;
+      // The modal itself must be on screen: a closed Document Setup drawer parked off screen is not reachable by scrolling.
+      if (mr && mr.width > 1 && mr.height > 1 && mr.right > 0 && mr.left < window.innerWidth && mr.bottom > 0 && mr.top < window.innerHeight) scrollReach = scrollCut(el, r).y;
+    }
     const clipped = onscreen && (c.w + 1 < r.width || c.h + 1 < r.height);
     const isTextEntry = (tag === 'input' && TEXT_TYPES.has(type)) || tag === 'textarea' || tag === 'select' || el.isContentEditable;
     const fs = parseFloat(getComputedStyle(el).fontSize);
@@ -628,7 +645,7 @@ function measureInPage(cfg, helpers) {
     items.push({
       el, sel: cssPath(el), label: label(el), tag, type, role: el.getAttribute('role'), region: region(el),
       x: +r.left.toFixed(1), y: +r.top.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1),
-      onscreen, clipped, hitState, coveredBy, reach, probed, pw, ph, allow,
+      onscreen, clipped, hitState, coveredBy, reach, probed, pw, ph, allow, scrollReach,
       hig44: pw >= 44 && ph >= 44,
       min24: pw >= 24 && ph >= 24,
       textEntry: isTextEntry, fontSize: fs, iosZoom: isTextEntry && fs < 16,
@@ -888,7 +905,7 @@ function summarizeState(rec) {
     safeUnprotected: n(items.filter((i) => i.onscreen && !i.allow && i.safeUnprotected && i.safeUnprotected.length)),
     ghost: rec.ghost || 0,
     stranded: rec.stranded || 0,
-    reachable: n(reach),
+    reachable: n(reach) + n(items.filter((i) => !i.onscreen && i.scrollReach)),
     pageErrors,
     canvasPct: rec.canvasPct || 0,
     scaleOk: !!rec.scaleOk,

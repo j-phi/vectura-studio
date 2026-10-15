@@ -210,6 +210,8 @@
         el.__scrollCueBound = true;
         el.addEventListener('scroll', () => refresh(el), { passive: true });
         if (typeof ResizeObserver === 'function') new ResizeObserver(() => refresh(el)).observe(el);
+        // Content that arrives after the bind (a modal fills its column later) changes the scroll height without resizing the box.
+        if (typeof MutationObserver === 'function') new MutationObserver(() => refresh(el)).observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'aria-expanded', 'hidden'] });
       }
       refresh(el);
       if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => refresh(el));

@@ -1317,6 +1317,9 @@
       };
     }
 
+    // TUX-046: the settings column scrolls; mark the edges that still hide controls (UI.utils.scrollCue, TUX-012).
+    const cueUtils = window.Vectura?.UI?.utils;
+    if (cueUtils?.scrollCue) cueUtils.scrollCue.bind(root.querySelector('#export-settings-scroll'));
     this.openModal({
       title: 'Export SVG',
       body: root,

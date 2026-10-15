@@ -242,4 +242,24 @@ test.describe('TUX-041 B3 modals', () => {
     expect(seen, 'info buttons found in the generator controls').toBeGreaterThan(0);
     expect(bad, 'info buttons under 44').toEqual([]);
   });
+
+  // TUX-046 follow-up: a modal that scrolls shows a cue on the edge that hides controls, and none when everything fits.
+  for (const [id, sel] of [['export', '#export-settings-scroll'], ['document-setup', '#settings-panel .settings-panel-body']]) {
+    test(`${id}: the scroll cue is present when controls are hidden and absent when everything fits`, async ({ page, baseURL }) => {
+      test.setTimeout(90_000);
+      await boot(page, baseURL);
+      await MODALS[id].open(page);
+      await page.waitForTimeout(500);
+      const cue = () => page.evaluate((s) => { const e = document.querySelector(s); return { cue: e.dataset.scrollCue || '', hidden: e.scrollHeight - e.clientHeight > 2 }; }, sel);
+      const a = await cue();
+      expect(a.hidden, 'this viewport hides controls below the fold').toBeDefined();
+      if (a.hidden) expect(a.cue, 'cue names the hidden edge').toContain('below');
+      // Everything fits once the column is stretched: the cue goes away.
+      await page.evaluate((s) => { const e = document.querySelector(s); e.style.maxHeight = 'none'; e.style.height = e.scrollHeight + 'px'; e.style.flex = 'none'; e.dispatchEvent(new Event('scroll')); }, sel);
+      await page.waitForTimeout(300);
+      const b = await cue();
+      expect(b.hidden).toBe(false);
+      expect(b.cue, 'no cue when nothing is hidden').toBe('');
+    });
+  }
 });

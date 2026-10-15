@@ -104,6 +104,33 @@
     menu.style.top = `${r.bottom + 2}px`;
     menu.style.left = `${r.left}px`;
     menu.style.width = `${r.width}px`;
+    menu.style.maxHeight = '';
+    menu.style.bottom = '';
+    if (document.body.classList.contains('touch-ui')) {
+      // TUX-041 B4: with 44 px rows the 280 px list runs off a short screen (iPhone landscape) and over the Reset / Randomize row
+      // (iPad), where it cut that row's hit area. Fit it between the trigger and the screen edge, and stop above the first
+      // parameter row while at least three rows still fit. When fewer than three rows fit below the trigger, open it upward.
+      const top = r.bottom + 2;
+      const vh = window.innerHeight;
+      const rootStyle = getComputedStyle(document.documentElement);
+      const safeBottom = parseFloat(rootStyle.getPropertyValue('--safe-bottom')) || 0;
+      const pane = trigger.closest('#left-pane');
+      const paneTop = pane ? pane.getBoundingClientRect().top : 0;
+      let room = vh - top - 8 - safeBottom;
+      const next = document.getElementById('btn-randomize-params');
+      if (next && next.offsetParent) {
+        const gap = next.getBoundingClientRect().top - top - 2;
+        if (gap >= 132 && gap < room) room = gap;
+      }
+      const above = r.top - 2 - 8 - paneTop;
+      if (room < 132 && above > room) {
+        menu.style.top = 'auto';
+        menu.style.bottom = `${Math.round(vh - r.top + 2)}px`;
+        menu.style.maxHeight = `${Math.max(88, Math.min(280, Math.floor(above)))}px`;
+      } else {
+        menu.style.maxHeight = `${Math.max(88, Math.min(280, Math.floor(room)))}px`;
+      }
+    }
     menu.classList.remove('hidden');
   }
 
