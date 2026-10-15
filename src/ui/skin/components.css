@@ -14150,17 +14150,12 @@ body.mobile-layout #tool-bar .toolbar-footer { display: none; }
     pointer-events: auto;
   }
 
-  /* Context bar grip: 44px wide real box, 44px tall hit area via a transparent extender. */
+  /* Context bar grip: 44px wide real box. TUX-041 B2 (Q19): the bar is 52px tall on touch, so the grip stretches to a real
+     44px box and needs no ::before extender (it overlapped the canvas handles above and below the bar). */
   .ctxbar .ctxbar-handle {
     position: relative;
     width: var(--touch-target-min, 44px);
     min-width: var(--touch-target-min, 44px);
-  }
-  .ctxbar .ctxbar-handle::before {
-    content: '';
-    position: absolute;
-    left: 0; right: 0;
-    top: -12px; bottom: -12px;
   }
 }
 /* === END TUX-016 === */
@@ -15906,3 +15901,54 @@ body.touch-ui:not(.phone-layout) #top-menubar .top-menu-item {
   }
 }
 /* === END TUX-041 slice B1 === */
+
+/* === TUX-041 slice B2: canvas context bar ===
+ * Q19 (Jay, 2026-10-14): on touch the context bar grows to 52 px (44 px controls, 3 px padding, 1 px border) so every
+ * control inside has a real 44 x 44 box. No ::before expansion is used: the controls sit side by side with 2 px gaps and
+ * the bar floats over the canvas, so an invisible extension would steal pixels from neighbours or the canvas.
+ * Text-entry controls are 16 px so iOS does not zoom on focus. Gate: body.touch-ui (the pointer: coarse signal).
+ * Desktop keeps the 26 px controls. */
+body.touch-ui .ctxbar-content { min-height: var(--touch-target-min); }
+body.touch-ui .ctxbar .ctxbar-btn,
+body.touch-ui .ctxbar .ctxbar-text-field,
+body.touch-ui .ctxbar .ctxbar-text-size,
+body.touch-ui .ctxbar .ctxbar-stepper,
+body.touch-ui .ctxbar .ctxbar-overflow,
+body.touch-ui .ctxbar .ctxbar-auto-smooth,
+body.touch-ui .ctxbar .ctxbar-submode-exit,
+body.touch-ui .ctxbar .ctxbar-field {
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  height: var(--touch-target-min);
+}
+body.touch-ui .ctxbar .ctxbar-btn,
+body.touch-ui .ctxbar .ctxbar-stepper,
+body.touch-ui .ctxbar .ctxbar-overflow,
+body.touch-ui .ctxbar .ctxbar-text-size-caret {
+  min-width: var(--touch-target-min);
+  justify-content: center;
+}
+body.touch-ui .ctxbar .ctxbar-text-size,
+body.touch-ui .ctxbar .ctxbar-field { font-size: 16px; }
+body.touch-ui .ctxbar .ctxbar-text-size-caret {
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+}
+body.touch-ui .ctxbar .pen-chip {
+  box-sizing: border-box;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+}
+body.touch-ui .ctxbar .ctxbar-slider { min-height: var(--touch-target-min); }
+/* The More menu has six 44 px rows: on a short phone landscape it scrolls instead of running off the screen. */
+body.touch-ui .ctxbar .ctxbar-menu {
+  max-height: calc(var(--app-vh, 100vh) * 0.6);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.touch-ui .ctxbar .ctxbar-menu-item,
+body.touch-ui .ctxbar .ctxbar-add-layer-item {
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+}
+/* === END TUX-041 slice B2 === */

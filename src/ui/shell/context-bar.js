@@ -594,8 +594,9 @@
     return { left: rr.left - hr.left, right: rr.right - hr.left, top: rr.top - hr.top, bottom: rr.bottom - hr.top };
   };
 
-  // The touch grip's ::before hit extender reaches this far above the bar (components.css, TUX-016).
-  const GRIP_EXTENDER_PX = 12;
+  // The touch grip is a real 44 px box inside the 52 px bar (components.css, TUX-041 B2, Q19). It has no ::before
+  // extender any more, so nothing reaches past the bar edge. Kept as a named constant for the clearance sum below.
+  const GRIP_EXTENDER_PX = 0;
   // Bottom safe-area inset in px (env() is not readable from script; measure a probe).
   const safeBottomPx = () => {
     const d = G.document;
@@ -680,10 +681,25 @@
         renderer && renderer.getHandleClearancePx ? (renderer.getHandleClearancePx() ? renderer.getHandleClearancePx() + GRIP_EXTENDER_PX : 0) : 0),
       pad: t.viewportPadPx, railRect: railRectInViewport(),
     });
-    const { left } = anchored;
+    let { left } = anchored;
     let { top } = anchored;
     // TUX-022: the fill bar rides the bottom edge so it never covers the region being previewed.
     if (state.kind === 'fill') top = Math.max(0, v.h - b.h - (Number.isFinite(t.viewportPadPx) ? t.viewportPadPx : 8));
+    // TUX-041 B2 (touch only): the 52 px bar grew wider with its 44 px controls and can slide under the canvas HUD
+    // (zoom controls, z 40), which then steals part of the last button. Shift the bar left of the HUD when it fits.
+    if (G.document.body && G.document.body.classList.contains('touch-ui') && els.host) {
+      const hud = els.host.querySelector('.canvas-hud');
+      const hr = els.host.getBoundingClientRect();
+      const r = hud ? hud.getBoundingClientRect() : null;
+      if (r && r.width && r.height) {
+        const hl = r.left - hr.left; const ht = r.top - hr.top; const hb = r.bottom - hr.top;
+        const padPx = Number.isFinite(t.viewportPadPx) ? t.viewportPadPx : 8;
+        if (top < hb && top + b.h > ht && left + b.w > hl && left < r.right - hr.left) {
+          const shifted = hl - padPx - b.w;
+          if (shifted >= padPx) left = shifted;
+        }
+      }
+    }
     els.bar.style.left = `${left}px`;
     els.bar.style.top = `${top}px`;
     refreshMenuDirection();
