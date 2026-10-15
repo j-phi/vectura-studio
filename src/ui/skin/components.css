@@ -14847,6 +14847,9 @@ body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.control-
   min-height: var(--touch-target-min);
   align-items: center;
 }
+/* The legend covers most of a short phone preview. It only informs, so a pinch or pan starts through it; the gear stays tappable. */
+body.touch-ui #modal-overlay .export-preview-legend { pointer-events: none; }
+body.touch-ui #modal-overlay .export-preview-legend .export-legend-gear-btn { pointer-events: auto; }
 /* === END TUX-041 slice B3 === */
 
 /* === TUX-047: touch zoom surfaces === */

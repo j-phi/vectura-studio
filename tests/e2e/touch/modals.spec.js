@@ -632,7 +632,24 @@ test.describe('TUX-047 pinch and two-finger pan', () => {
     await openExportPreview(page);
     const vr = await visibleRect(page, 'export');
     expect(vr && vr.w > 120 && vr.h > 60, `export wrap visible ${JSON.stringify(vr)}`).toBeTruthy();
-    const { center, startDist, endDist } = pinchSpec(vr);
+    let { center, startDist, endDist } = pinchSpec(vr);
+    // A finger starts on the preview canvas, not on a control above it (the legend gear owns a 44 px target since B3). Search
+    // for the centre nearest the middle where every finger point, at the start and the end of the spread, resolves to the canvas.
+    const spot = await page.evaluate(({ vr, startDist, endDist }) => {
+      const canvas = window.app.ui.exportModalState.wrap.querySelector('canvas');
+      const on = (x, y) => document.elementFromPoint(x, y) === canvas;
+      let best = null;
+      for (let y = vr.top + 4; y < vr.bottom - 4; y += 4) {
+        for (let x = vr.left + endDist / 2; x <= vr.right - endDist / 2; x += 4) {
+          const pts = [[x - startDist / 2, y], [x + startDist / 2, y], [x - endDist / 2, y], [x + endDist / 2, y]];
+          if (!pts.every(([px, py]) => on(px, py))) continue;
+          const d = Math.hypot(x - vr.x, y - vr.y);
+          if (!best || d < best.d) best = { x, y, d };
+        }
+      }
+      return best;
+    }, { vr, startDist, endDist });
+    if (spot) center = { x: spot.x, y: spot.y };
     const v0 = await exportView(page);
     const W = { x: (center.x - vr.rawLeft - v0.offsetX) / v0.scale, y: (center.y - vr.rawTop - v0.offsetY) / v0.scale };
     await touch.pinch(page, center, { startDist, endDist, steps: 10, staggerMs: 60 });

@@ -587,24 +587,27 @@ function measureInPage(cfg, helpers) {
         const saved = [];
         const keep = (p) => { if (p && !saved.some((q) => q.p === p)) saved.push({ p, top: p.scrollTop, left: p.scrollLeft }); };
         keep(cut.py); keep(cut.px);
-        // The row is probed at several rests along the scroller (centre first, then the lower and upper thirds) and keeps the best
-        // result: a user can scroll to any of them. The centre alone can land under a popup that is open in this state (the generator
-        // picker covers the middle of the left pane), which is a property of the state and not of the control's CSS.
-        let best = { w: 0, h: 0 };
-        for (const f of [0.5, 0.8, 0.2]) {
-          if (cut.py) {
-            const pr = cut.py.getBoundingClientRect(); const rr = el.getBoundingClientRect();
-            cut.py.scrollTop += (rr.top + rr.bottom) / 2 - (pr.top + f * pr.height); // row centre at fraction f of the scroller
-          }
-          if (cut.px) {
-            const pr = cut.px.getBoundingClientRect(); const rr = el.getBoundingClientRect();
-            cut.px.scrollLeft += (rr.left + rr.right) / 2 - (pr.left + pr.width / 2);
-          }
-          const r2 = el.getBoundingClientRect();
-          const a2 = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx: (r2.left + r2.right) / 2, cy: (r2.top + r2.bottom) / 2 });
-          best = { w: Math.max(best.w, a2.w), h: Math.max(best.h, a2.h) };
-          if ((!cut.y || best.h >= 44) && (!cut.x || best.w >= 44)) break;
-        }
+        // Minimal scroll: bring the row (plus a 24 px probe margin) to the nearest edge of its scroller, never to the centre. The
+        // centre of a scroller can lie under a popup that is open in this state (the generator picker covers the middle of the left
+        // pane). While probing, open menus and popups that do not contain the row are not neighbours: they are made transparent to
+        // hit tests, so the probe sees the row's own target and its real neighbours only.
+        const popups = Array.from(document.querySelectorAll('.top-menu-panel.open, .menu-dropdown.open, #gm-module-menu, .lvl-algo-menu, [role="menu"]'))
+          .filter((m) => !m.contains(el) && visible(m));
+        const prevPe = popups.map((m) => m.style.pointerEvents);
+        popups.forEach((m) => { m.style.pointerEvents = 'none'; });
+        const nearest = (p, axis) => {
+          const pr = p.getBoundingClientRect(); const rr = el.getBoundingClientRect(); const m = 24;
+          if (axis === 'y') {
+            if (rr.bottom + m > pr.bottom) p.scrollTop += rr.bottom + m - pr.bottom;
+            else if (rr.top - m < pr.top) p.scrollTop -= pr.top - (rr.top - m);
+          } else if (rr.right + m > pr.right) p.scrollLeft += rr.right + m - pr.right;
+          else if (rr.left - m < pr.left) p.scrollLeft -= pr.left - (rr.left - m);
+        };
+        if (cut.py) nearest(cut.py, 'y');
+        if (cut.px) nearest(cut.px, 'x');
+        const r2 = el.getBoundingClientRect();
+        const best = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx: (r2.left + r2.right) / 2, cy: (r2.top + r2.bottom) / 2 });
+        popups.forEach((m, i) => { m.style.pointerEvents = prevPe[i]; });
         for (const q of saved) { q.p.scrollTop = q.top; q.p.scrollLeft = q.left; }
         if (cut.y && ph < 49) ph = Math.max(ph, best.h);
         if (cut.x && pw < 49) pw = Math.max(pw, best.w);

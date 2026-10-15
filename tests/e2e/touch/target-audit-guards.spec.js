@@ -271,9 +271,9 @@ test('guard: Q15 rescue reports the true 16 px for stacked rows with overlapping
   expect(await page.evaluate(() => document.getElementById('zz-ov-box').scrollTop), 'scrollTop restored').toBe(0);
 });
 
-// Q15 rescue tries several rests along the scroller and keeps the best: a popup that covers the middle of the scroller (the open
+// Q15 rescue scrolls the row to the nearest edge only and ignores unrelated open menus: a popup that covers the middle of the scroller (the open
 // generator picker covers the middle of the left pane) must not hide a control whose ::before is a real 44 px target.
-test('guard: Q15 rescue keeps the best rest when a popup covers the centre rest @audit-extra', async ({ page, baseURL }, testInfo) => {
+test('guard: Q15 rescue measures the true hit area when an unrelated open menu covers the scroller centre @audit-extra', async ({ page, baseURL }, testInfo) => {
   const spec = PROJECTS[testInfo.project.name];
   await boot(page, baseURL);
   await page.evaluate(() => {
@@ -281,18 +281,19 @@ test('guard: Q15 rescue keeps the best rest when a popup covers the centre rest 
     st.textContent = '#zz-edge{position:relative;display:block;width:150px;height:16px;padding:0;border:0;margin:0}#zz-edge::before{content:"";position:absolute;left:0;right:0;top:-14px;height:44px}';
     document.head.appendChild(st);
     const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;left:100px;top:300px;width:200px;height:200px;overflow-y:auto;z-index:50;background:#222';
+    box.style.cssText = 'position:fixed;left:100px;top:100px;width:200px;height:200px;overflow-y:auto;z-index:50;background:#222';
     box.innerHTML = '<div style="height:190px"></div><button id="zz-edge">row</button><div style="height:400px"></div>';
     document.body.appendChild(box);
     const pop = document.createElement('div');
-    pop.style.cssText = 'position:fixed;left:90px;top:370px;width:240px;height:60px;z-index:60;background:#555';
+    pop.setAttribute('role', 'menu');
+    pop.style.cssText = 'position:fixed;left:90px;top:170px;width:240px;height:60px;z-index:60;background:#555';
     document.body.appendChild(pop);
   });
   const r = await measure(page, spec, testInfo.project.name);
   const it = r.raw.items.find((i) => /zz-edge/.test(i.sel));
   expect(it, 'the edge button is listed').toBeTruthy();
   expect(it.clipped, 'the button is cut by its scroller').toBe(true);
-  expect(it.ph, `probed ${it.pw}x${it.ph}: the lower-third rest is clear of the popup, so the ::before is a 44 px target`).toBeGreaterThanOrEqual(44);
+  expect(it.ph, `probed ${it.pw}x${it.ph}: an unrelated menu is not a neighbour, so the ::before is a 44 px target`).toBeGreaterThanOrEqual(44);
 });
 
 // Q15 hardening: a row taller than its scroller can never scroll fully into view, so it keeps its probed (clipped) size.
