@@ -14806,6 +14806,49 @@ body.phone-layout.phone-short .pane.pane-force-open {
 body.touch-ui .modal-card .color-modal { padding-top: 4px; }
 /* === END TUX-046 (integration fix) === */
 
+/* === TUX-041 slice B3: modals ===
+ * Every interactive target in a modal (Export, Help, Document Setup, colour picker, Save Preset, info and confirm sheets) has a
+ * hit area of at least --touch-target-min on coarse pointers. Boxes that can grow get a real min-height. The small round
+ * visuals (info buttons, toggles, the legend gear) keep their size and get a centred 44 px ::before. The row that holds one is
+ * a finger tall, so the extension never reaches the row above or below. Keyed on body.touch-ui (a coarse pointer), never on
+ * width. Desktop is unchanged. The scope list is the modal roots: #modal-overlay, #settings-panel, .vectura-modal. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(button, [role="button"], select, textarea, summary,
+  input:is([type="text"], [type="number"], [type="search"], [type="email"], [type="url"], :not([type]))):not(
+  .sw-toggle, .info-btn, .export-info-btn, .export-legend-gear-btn, .modal-close, .sr-only) {
+  min-height: var(--touch-target-min);
+  box-sizing: border-box;
+}
+/* WebKit ignores min-height on some native selects, so they also get an explicit height. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) select:not(.sr-only) { height: var(--touch-target-min); }
+/* Icon-only steppers and tab strips are a finger wide too. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.num-step-btn, .help-tab-btn, .help-platform-btn, .opt-reset, .export-preview-toolbar button) { min-width: var(--touch-target-min); }
+/* The number stepper is a fixed 28 px box that clips its buttons; it grows to a finger. The narrow variant (100 px) leaves
+ * 10 px for the number once two 44 px buttons sit in it, so it widens to fit. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) .num-step { height: auto; min-height: var(--touch-target-min); }
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) .num-step--narrow { width: calc(2 * var(--touch-target-min) + 64px); flex: 0 0 calc(2 * var(--touch-target-min) + 64px); }
+/* The close ::before reaches 10 px below the header. The tabs (opacity < 1 stacks them above it) started 8 px below, so they took
+ * 2 px of it. Four more pixels of padding keep the close target whole. */
+body.touch-ui #modal-overlay .help-wrap { padding-top: 4px; }
+/* Help tabs may wrap rather than clip: seven 44 px tabs do not fit on a phone in one row. */
+body.touch-ui #modal-overlay .help-tabs { flex-wrap: wrap; }
+/* The 290 px Document Setup column seats Margin Line Gap in half a row: its slider shrank to 26 px, a thumb with no track.
+ * On touch the field takes the whole row, so the slider keeps a usable width. */
+body.touch-ui #settings-panel .line-style-control > .style-field:nth-child(3) { grid-column: 1 / -1; }
+/* Small visuals keep their size; a centred 44 px ::before owns the touch. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.info-btn, .export-info-btn, .export-legend-gear-btn, .sw-toggle) { position: relative; }
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.info-btn, .export-info-btn, .export-legend-gear-btn, .sw-toggle)::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min);
+  transform: translate(-50%, -50%);
+}
+/* The row that holds an extended visual is one finger tall, so the extension stays inside it. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.ctrl-row, .optimization-row, .optimization-control, .control-label, .flex):has(> :is(.sw-toggle, .info-btn, .export-info-btn)),
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.control-label, .flex, [class*="justify-between"]):has(> * > :is(.info-btn, .export-info-btn)) {
+  min-height: var(--touch-target-min);
+  align-items: center;
+}
+/* === END TUX-041 slice B3 === */
+
 /* === TUX-047: touch zoom surfaces === */
 .export-preview-canvas-wrap[data-touch-zoom] {
   touch-action: none;
