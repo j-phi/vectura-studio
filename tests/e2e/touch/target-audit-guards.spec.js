@@ -360,3 +360,31 @@ test('guard: a row taller than its scroll container is not measured at full size
   expect(it, 'the probe row is listed').toBeTruthy();
   expect(it.ph, `row probed at ${it.ph} px: the 30 px scroller never shows all 44 px`).toBeLessThan(40);
 });
+
+// Q22: a control below the fold of ANY scrollable pane body is reachable by scrolling when its real hit area after a minimal scroll is
+// at least 44 px. A non-scrolling overflow:hidden clip, or a control that stays covered after the scroll, is not.
+test('guard: Q22 pane scroll reach counts only a scrollable, uncovered, 44 px control @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  await page.evaluate(() => {
+    const pane = document.createElement('div');
+    pane.id = 'zz-pane';
+    pane.style.cssText = 'position:fixed;left:20px;top:120px;width:260px;z-index:50;background:#222';
+    pane.innerHTML = '<div id="zz-body" style="height:90px;overflow-y:auto"><div style="height:200px"></div>'
+      + '<button id="zz-ok" style="display:block;height:44px;width:140px;padding:0">ok</button><div style="height:60px"></div></div>'
+      + '<div id="zz-clip" style="height:90px;overflow:hidden"><div style="height:200px"></div><button id="zz-lost" style="display:block;height:44px;width:140px;padding:0">lost</button></div>'
+      + '<div id="zz-body2" style="height:90px;overflow-y:auto"><div style="height:200px"></div><button id="zz-cov" style="display:block;height:44px;width:140px;padding:0">cov</button><div style="height:60px"></div></div>';
+    document.body.appendChild(pane);
+    // A layer over the whole second scroller covers its control whatever the scroll position.
+    const rc = document.getElementById('zz-body2').getBoundingClientRect();
+    const cover = document.createElement('div');
+    cover.id = 'zz-cover';
+    cover.style.cssText = `position:fixed;left:${rc.left}px;top:${rc.top}px;width:${rc.width}px;height:${rc.height}px;z-index:60;background:#444`;
+    document.body.appendChild(cover);
+  });
+  const r = await measure(page, spec, testInfo.project.name);
+  const get = (id) => r.raw.items.find((i) => new RegExp(id).test(i.sel));
+  expect(get('zz-ok') && !get('zz-ok').onscreen && get('zz-ok').scrollReach, 'the scrollable, uncovered 44 px control counts').toBeTruthy();
+  expect(get('zz-lost') ? get('zz-lost').scrollReach : false, 'a control in a non-scrolling overflow:hidden clip stays unreachable').toBeFalsy();
+  expect(get('zz-cov') ? get('zz-cov').scrollReach : false, 'a control covered after the scroll stays unreachable').toBeFalsy();
+});

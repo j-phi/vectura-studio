@@ -216,7 +216,29 @@
       refresh(el);
       if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => refresh(el));
     };
-    return { bind, refresh };
+    // Q22: the pane bodies that scroll hide controls below the fold on touch. Bind the static ones now and the tool drawer body when it
+    // is created. Idempotent; the cue is drawn by CSS on touch-ui only.
+    const PANE_SELECTORS = '#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body';
+    const bindPanes = (root) => {
+      const host = root || (typeof document !== 'undefined' ? document : null);
+      if (!host || !host.querySelectorAll) return 0;
+      const list = host.querySelectorAll(PANE_SELECTORS);
+      list.forEach(bind);
+      if (!root && typeof MutationObserver === 'function' && !bindPanes.__observer && document.body) {
+        bindPanes.__observer = new MutationObserver((muts) => {
+          for (const m of muts) {
+            m.addedNodes.forEach((n) => {
+              if (n.nodeType !== 1) return;
+              if (n.matches && n.matches(PANE_SELECTORS)) bind(n);
+              if (n.querySelectorAll) n.querySelectorAll(PANE_SELECTORS).forEach(bind);
+            });
+          }
+        });
+        bindPanes.__observer.observe(document.body, { childList: true, subtree: true });
+      }
+      return list.length;
+    };
+    return { bind, refresh, bindPanes, PANE_SELECTORS };
   })();
 
   UI.utils = {

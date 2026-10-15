@@ -16155,3 +16155,20 @@ body.touch-ui :is(.export-settings-scroll, .settings-panel-body)::after { bottom
 body.touch-ui :is(.export-settings-scroll, .settings-panel-body)[data-scroll-cue~="above"]::before,
 body.touch-ui :is(.export-settings-scroll, .settings-panel-body)[data-scroll-cue~="below"]::after { opacity: 1; }
 /* === END TUX-046 follow-up === */
+
+/* === TUX-041 Q22: scroll cue on pane bodies ===
+ * data-scroll-cue (utils.scrollCue.bindPanes) lists the edges that still hide controls in the left pane, the right pane tabs, the
+ * formula pane and the tool drawer. Controls below the fold count as reachable by scrolling, so the fold needs a cue. The fades are
+ * sticky, take no taps, add no net height and show nothing when everything fits. Touch only. */
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)::before,
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 3;
+  opacity: 0; transition: opacity 120ms ease;
+}
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)::before { top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent); }
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)::after { bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent); }
+body.touch-ui .tool-drawer-body::before { margin-bottom: -40px; }
+body.touch-ui .tool-drawer-body::after { margin-top: -40px; }
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)[data-scroll-cue~="above"]::before,
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)[data-scroll-cue~="below"]::after { opacity: 1; }
+/* === END TUX-041 Q22 === */

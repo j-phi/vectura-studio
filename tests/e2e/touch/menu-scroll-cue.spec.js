@@ -63,3 +63,31 @@ test('(cue) an overflowing layer menu shows a fade where rows are hidden; a fitt
   await page.evaluate(() => { const m = document.querySelector('.menu-dropdown.is-context-menu.open'); m.scrollTop = m.scrollHeight; });
   await expect.poll(async () => { const c = await cue(page); return `${c.below}/${c.above}`; }, { timeout: 3000 }).toBe('false/true');
 });
+
+// Q22: a pane body that hides controls below its fold carries a scroll cue (data-scroll-cue) and draws the fade on touch.
+test('Q22: the left pane body marks the hidden edge and the fade shows', async ({ page, baseURL }) => {
+  const core = require('../helpers/target-audit-core');
+  const { STATES } = require('./target-audit-states');
+  await core.bootApp(page, baseURL);
+  const st = STATES.find((s) => s.id === 'text-panel');
+  await st.run(page);
+  await core.waitLayoutSettled(page);
+  await page.waitForTimeout(300);
+  const info = await page.evaluate(() => {
+    const el = document.getElementById('left-panel-content');
+    const max = el.scrollHeight - el.clientHeight;
+    const fade = (side) => { const cs = getComputedStyle(el, side); return { opacity: cs.opacity, h: cs.height, pe: cs.pointerEvents }; };
+    const top = { cue: el.dataset.scrollCue || '', max, after: fade('::after'), before: fade('::before') };
+    el.scrollTop = max;
+    return new Promise((res) => setTimeout(() => res({ top, bottom: { cue: el.dataset.scrollCue || '', before: fade('::before'), after: fade('::after') } }), 250));
+  });
+  expect(info.top.max, 'the text panel scrolls').toBeGreaterThan(1);
+  expect(info.top.cue).toContain('below');
+  expect(info.top.cue).not.toContain('above');
+  expect(info.top.after.opacity).toBe('1');
+  expect(info.top.after.pe).toBe('none');
+  expect(info.bottom.cue).toContain('above');
+  expect(info.bottom.cue).not.toContain('below');
+  expect(info.bottom.before.opacity).toBe('1');
+  expect(info.bottom.after.opacity).toBe('0');
+});

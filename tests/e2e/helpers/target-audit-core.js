@@ -472,6 +472,47 @@ function measureInPage(cfg, helpers) {
     }
     return cut;
   };
+  // Q15 rescue probe (shared with Q22): scroll the cutting scroller(s) minimally to bring `el` into view, probe its real hit area,
+  // restore the scroll positions. `r` is the row rect before the scroll.
+  const rescueProbe = (el, r, cut) => {
+        const saved = [];
+        const keep = (p) => { if (p && !saved.some((q) => q.p === p)) saved.push({ p, top: p.scrollTop, left: p.scrollLeft }); };
+        keep(cut.py); keep(cut.px);
+        (cut.all || []).forEach(keep);
+        // Minimal scroll: bring the row (plus a 24 px probe margin) to the nearest edge of its scroller, never to the centre. The
+        // centre of a scroller can lie under a popup that is open in this state (the generator picker covers the middle of the left
+        // pane). While probing, open menus and popups that do not contain the row are not neighbours: they are made transparent to
+        // hit tests, so the probe sees the row's own target and its real neighbours only.
+        const popups = Array.from(document.querySelectorAll('.top-menu-panel.open, .menu-dropdown.open, #gm-module-menu, .lvl-algo-menu, [role="menu"]'))
+          .filter((m) => !m.contains(el) && visible(m))
+          // A menu stays opaque when it already covers the row, or the 44 px reach around its centre, where the row sits before the
+          // rescue scroll: it covers the finger target for real. Only a menu that would cover it solely because of the rescue
+          // scroll is ignored.
+          .filter((m) => {
+            const mr = m.getBoundingClientRect();
+            const ex = { l: Math.min(r.left, (r.left + r.right) / 2 - 22), r: Math.max(r.right, (r.left + r.right) / 2 + 22), t: Math.min(r.top, (r.top + r.bottom) / 2 - 22), b: Math.max(r.bottom, (r.top + r.bottom) / 2 + 22) };
+            return !(mr.left < ex.r && mr.right > ex.l && mr.top < ex.b && mr.bottom > ex.t);
+          });
+        const prevPe = popups.map((m) => m.style.pointerEvents);
+        popups.forEach((m) => { m.style.pointerEvents = 'none'; });
+        const nearest = (p, axis) => {
+          const pr = p.getBoundingClientRect(); const rr = el.getBoundingClientRect(); const m = 24;
+          if (axis === 'y') {
+            if (rr.bottom + m > pr.bottom) p.scrollTop += rr.bottom + m - pr.bottom;
+            else if (rr.top - m < pr.top) p.scrollTop -= pr.top - (rr.top - m);
+          } else if (rr.right + m > pr.right) p.scrollLeft += rr.right + m - pr.right;
+          else if (rr.left - m < pr.left) p.scrollLeft -= pr.left - (rr.left - m);
+        };
+        if (cut.py) nearest(cut.py, 'y');
+        // Q22: nested scrollers (a modal body inside a scrolling column) all scroll, innermost first.
+        (cut.all || []).forEach((q) => nearest(q, 'y'));
+        if (cut.px) nearest(cut.px, 'x');
+        const r2 = el.getBoundingClientRect();
+        const best = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx: (r2.left + r2.right) / 2, cy: (r2.top + r2.bottom) / 2 });
+        popups.forEach((m, i) => { m.style.pointerEvents = prevPe[i]; });
+        for (const q of saved) { q.p.scrollTop = q.top; q.p.scrollLeft = q.left; }
+    return best;
+  };
   let parked = 0;
   let stranded = 0;
   const strandedSel = [];
@@ -584,51 +625,32 @@ function measureInPage(cfg, helpers) {
       // row is inside them, run the same elementFromPoint probe, then restore the scroll position. A ::before that a
       // neighbouring row covers therefore does not count (the CSS box alone would overstate the hit area).
       if ((cut.y && ph < 49) || (cut.x && pw < 49)) {
-        const saved = [];
-        const keep = (p) => { if (p && !saved.some((q) => q.p === p)) saved.push({ p, top: p.scrollTop, left: p.scrollLeft }); };
-        keep(cut.py); keep(cut.px);
-        // Minimal scroll: bring the row (plus a 24 px probe margin) to the nearest edge of its scroller, never to the centre. The
-        // centre of a scroller can lie under a popup that is open in this state (the generator picker covers the middle of the left
-        // pane). While probing, open menus and popups that do not contain the row are not neighbours: they are made transparent to
-        // hit tests, so the probe sees the row's own target and its real neighbours only.
-        const popups = Array.from(document.querySelectorAll('.top-menu-panel.open, .menu-dropdown.open, #gm-module-menu, .lvl-algo-menu, [role="menu"]'))
-          .filter((m) => !m.contains(el) && visible(m))
-          // A menu stays opaque when it already covers the row, or the 44 px reach around its centre, where the row sits before the
-          // rescue scroll: it covers the finger target for real. Only a menu that would cover it solely because of the rescue
-          // scroll is ignored.
-          .filter((m) => {
-            const mr = m.getBoundingClientRect();
-            const ex = { l: Math.min(r.left, (r.left + r.right) / 2 - 22), r: Math.max(r.right, (r.left + r.right) / 2 + 22), t: Math.min(r.top, (r.top + r.bottom) / 2 - 22), b: Math.max(r.bottom, (r.top + r.bottom) / 2 + 22) };
-            return !(mr.left < ex.r && mr.right > ex.l && mr.top < ex.b && mr.bottom > ex.t);
-          });
-        const prevPe = popups.map((m) => m.style.pointerEvents);
-        popups.forEach((m) => { m.style.pointerEvents = 'none'; });
-        const nearest = (p, axis) => {
-          const pr = p.getBoundingClientRect(); const rr = el.getBoundingClientRect(); const m = 24;
-          if (axis === 'y') {
-            if (rr.bottom + m > pr.bottom) p.scrollTop += rr.bottom + m - pr.bottom;
-            else if (rr.top - m < pr.top) p.scrollTop -= pr.top - (rr.top - m);
-          } else if (rr.right + m > pr.right) p.scrollLeft += rr.right + m - pr.right;
-          else if (rr.left - m < pr.left) p.scrollLeft -= pr.left - (rr.left - m);
-        };
-        if (cut.py) nearest(cut.py, 'y');
-        if (cut.px) nearest(cut.px, 'x');
-        const r2 = el.getBoundingClientRect();
-        const best = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx: (r2.left + r2.right) / 2, cy: (r2.top + r2.bottom) / 2 });
-        popups.forEach((m, i) => { m.style.pointerEvents = prevPe[i]; });
-        for (const q of saved) { q.p.scrollTop = q.top; q.p.scrollLeft = q.left; }
+        const best = rescueProbe(el, r, cut);
         if (cut.y && ph < 49) ph = Math.max(ph, best.h);
         if (cut.x && pw < 49) pw = Math.max(pw, best.w);
       }
     }
-    // A modal control below the fold of its own scrolling body is reachable by scrolling (the modal body is a scroller by design, with a
-    // scroll cue). It is counted by `reachable` only: it is off screen now, so no size metric reads it.
+    // Q22 (orchestrator decision 2026-10-15, Jay may override): a control below the fold of ANY genuinely scrollable pane, panel body,
+    // drawer body or modal body is reachable by scrolling it. All of: the scroller really scrolls (overflow auto/scroll and
+    // scrollHeight > clientHeight, via scrollCut), the scroller is visible and on screen, the control lies inside the scroll range,
+    // and after a minimal scroll into view its REAL hit area (elementFromPoint probe, Q15 rescue) is at least 44 x 44. A control inside
+    // a non-scrolling overflow:hidden clip, or one that stays covered after the scroll, is NOT reachable. Counted by `reachable` only.
     let scrollReach = false;
-    if (!onscreen && hitState === 'offscreen' && visible(el)) {
-      const mroot = el.closest('#modal-overlay, #settings-panel, .vectura-modal');
-      const mr = mroot ? mroot.getBoundingClientRect() : null;
-      // The modal itself must be on screen: a closed Document Setup drawer parked off screen is not reachable by scrolling.
-      if (mr && mr.width > 1 && mr.height > 1 && mr.right > 0 && mr.left < window.innerWidth && mr.bottom > 0 && mr.top < window.innerHeight) scrollReach = scrollCut(el, r).y;
+    if (!onscreen && hitState === 'offscreen' && visible(el) && !parkedDrawer(el)) {
+      const cut = scrollCut(el, r);
+      if (cut.y && cut.py) {
+        const sr = cut.py.getBoundingClientRect();
+        if (sr.width > 1 && sr.height > 1 && sr.right > 0 && sr.left < window.innerWidth && sr.bottom > 0 && sr.top < window.innerHeight) {
+          cut.all = [];
+          for (let q = cut.py.parentElement; q && q !== document.documentElement; q = q.parentElement) {
+            const qs = getComputedStyle(q);
+            if (/(auto|scroll)/.test(qs.overflowY) && q.scrollHeight > q.clientHeight + 1 && visible(q)) cut.all.push(q);
+            if (qs.position === 'fixed') break;
+          }
+          const best = rescueProbe(el, r, cut);
+          scrollReach = best.w >= 44 && best.h >= 44;
+        }
+      }
     }
     const clipped = onscreen && (c.w + 1 < r.width || c.h + 1 < r.height);
     const isTextEntry = (tag === 'input' && TEXT_TYPES.has(type)) || tag === 'textarea' || tag === 'select' || el.isContentEditable;
