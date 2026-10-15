@@ -587,19 +587,27 @@ function measureInPage(cfg, helpers) {
         const saved = [];
         const keep = (p) => { if (p && !saved.some((q) => q.p === p)) saved.push({ p, top: p.scrollTop, left: p.scrollLeft }); };
         keep(cut.py); keep(cut.px);
-        if (cut.py) {
-          const pr = cut.py.getBoundingClientRect(); const rr = el.getBoundingClientRect();
-          cut.py.scrollTop += (rr.top + rr.bottom) / 2 - (pr.top + pr.bottom) / 2; // centre the row: its expansion has room on both sides
+        // The row is probed at several rests along the scroller (centre first, then the lower and upper thirds) and keeps the best
+        // result: a user can scroll to any of them. The centre alone can land under a popup that is open in this state (the generator
+        // picker covers the middle of the left pane), which is a property of the state and not of the control's CSS.
+        let best = { w: 0, h: 0 };
+        for (const f of [0.5, 0.8, 0.2]) {
+          if (cut.py) {
+            const pr = cut.py.getBoundingClientRect(); const rr = el.getBoundingClientRect();
+            cut.py.scrollTop += (rr.top + rr.bottom) / 2 - (pr.top + f * pr.height); // row centre at fraction f of the scroller
+          }
+          if (cut.px) {
+            const pr = cut.px.getBoundingClientRect(); const rr = el.getBoundingClientRect();
+            cut.px.scrollLeft += (rr.left + rr.right) / 2 - (pr.left + pr.width / 2);
+          }
+          const r2 = el.getBoundingClientRect();
+          const a2 = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx: (r2.left + r2.right) / 2, cy: (r2.top + r2.bottom) / 2 });
+          best = { w: Math.max(best.w, a2.w), h: Math.max(best.h, a2.h) };
+          if ((!cut.y || best.h >= 44) && (!cut.x || best.w >= 44)) break;
         }
-        if (cut.px) {
-          const pr = cut.px.getBoundingClientRect(); const rr = el.getBoundingClientRect();
-          cut.px.scrollLeft += (rr.left + rr.right) / 2 - (pr.left + pr.right) / 2;
-        }
-        const r2 = el.getBoundingClientRect();
-        const a2 = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx: (r2.left + r2.right) / 2, cy: (r2.top + r2.bottom) / 2 });
         for (const q of saved) { q.p.scrollTop = q.top; q.p.scrollLeft = q.left; }
-        if (cut.y && ph < 49) ph = Math.max(ph, a2.h);
-        if (cut.x && pw < 49) pw = Math.max(pw, a2.w);
+        if (cut.y && ph < 49) ph = Math.max(ph, best.h);
+        if (cut.x && pw < 49) pw = Math.max(pw, best.w);
       }
     }
     const clipped = onscreen && (c.w + 1 < r.width || c.h + 1 < r.height);
