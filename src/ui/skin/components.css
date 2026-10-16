@@ -16135,6 +16135,12 @@ body.touch-ui #right-pane .pen-item { container-type: inline-size; container-nam
   body.touch-ui #right-pane .pen-item .pen-row-b { flex-wrap: wrap; }
   body.touch-ui #right-pane .pen-item .pen-width { order: 7; flex: 1 1 100%; margin: 0; }
 }
+/* TUX-042 (batch G): in the 200 px pane the grip (44) and remove (44) leave the name 41 px, and 16 px text needs about 90.
+ * Narrow cards give the name its own full line above [grip][remove]. */
+@container pen-item (max-width: 150px) {
+  body.touch-ui #right-pane [data-ui-skin] .pen-item .pen-name-input,
+  body.touch-ui #right-pane .pen-item .pen-name-input { order: 0; flex: 1 1 100%; }
+}
 /* The plotter heads, the plot-range row and the motion rack head seat an info dot (44 px ::before, 14 px past its edge) beside a 44 px
  * button or slider: 16 px keeps their hit areas apart. */
 body.touch-ui #left-pane :is(.harmonograph-plotter-head, .harmonograph-plotter-row) { gap: 18px; }
@@ -16341,3 +16347,25 @@ body.touch-ui #gm-module-menu[data-scroll-cue~="below"]::after { opacity: 1; }
 /* B4's pane rule (#left-pane button { min-width: 44px }, specificity with an id) is what grew it; the rule now skips .pane-toggle too. */
 body.touch-wide-layout.touch-ui :is(#left-pane, #right-pane).pane-collapsed .pane-toggle { width: auto; min-width: 0; }
 /* === END TUX-041 slice B5 === */
+
+/* === TUX-031 / TUX-034 (batch G): the context bar stays available on phones ===
+ * The generic phone rule above hides .ctxbar at <= 640px. A phone user then has no Shape Properties, no
+ * Selection menu and no align verbs. The bar floats over the canvas and hides itself when there is no
+ * context (.is-visible), so showing it costs no canvas area. Touch phones only; a narrow desktop window keeps the rule. */
+@media (max-width: 640px) {
+  body.touch-ui .ctxbar { display: flex; }
+  /* The bar is wider than the phone: the content scrolls sideways, the grip and the ⋯ menu stay in reach. */
+  body.touch-ui .ctxbar .ctxbar-content { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  body.touch-ui .ctxbar .ctxbar-content::-webkit-scrollbar { display: none; }
+  body.touch-ui .ctxbar .ctxbar-overflow-wrap { flex: 0 0 auto; }
+}
+/* === END TUX-031 / TUX-034 (batch G) === */
+
+/* === TUX-050 (batch G): Paper size stays on screen on the shortest phone landscape ===
+ * At 874 x 330 the Theme section pushed the Paper size select under the window edge. Paper holds the primary
+ * control, so on a short touch viewport it goes first. */
+@media (max-height: 360px) {
+  body.touch-ui #settings-panel .settings-panel-body { display: flex; flex-direction: column; }
+  body.touch-ui #settings-panel .settings-panel-body > .sect--color-paper { order: -1; }
+}
+/* === END TUX-050 (batch G) === */

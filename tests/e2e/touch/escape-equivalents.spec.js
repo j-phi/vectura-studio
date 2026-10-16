@@ -73,7 +73,6 @@ test.describe('TUX-031 keyboard-only controls by finger', () => {
   });
 
   test('polygon sides adjust by finger through Shape Properties', async ({ page }, testInfo) => {
-    test.fail(testInfo.project.name.includes('iphone-portrait'), 'phone ctxbar display:none - ownership gap (journeys.md:67)');
     await page.evaluate(() => { window.app.ui.setActiveTool('shape-polygon'); });
     const r = await page.evaluate(() => { const b = document.querySelector('#main-canvas').getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; });
     const from = { x: r.x + r.w * 0.45, y: r.y + r.h * 0.35 };
