@@ -225,6 +225,18 @@ jobs:
           node scripts/test-profile.js --log "$RUNNER_TEMP/pilot-shard-console.log" \
             --results "$RUNNER_TEMP/pilot-shard-results.json" --output "$RUNNER_TEMP/pilot-shard-profile.json" \
             --runner "${{ runner.os }}-${{ runner.arch }}" --workers "$VECTURA_VITEST_MAX_WORKERS" --setup-ms "$VECTURA_SHARD_SETUP_MS" --execution-ms "$execution_ms"
+      - name: List failing tests (diagnostic only)
+        if: failure()
+        run: |
+          node -e '
+            const fs = require("fs"); const p = process.argv[1];
+            if (!fs.existsSync(p)) { console.log("no Vitest JSON result"); process.exit(0); }
+            const r = JSON.parse(fs.readFileSync(p, "utf8"));
+            for (const f of r.testResults || []) {
+              if (f.status === "failed" && !(f.assertionResults || []).some((a) => a.status === "failed")) console.log(`FILE FAILED ${f.name}: ${(f.message || "").slice(0, 2000)}`);
+              for (const a of f.assertionResults || []) if (a.status === "failed") console.log(`FAILED ${f.name} > ${a.fullName}\n${(a.failureMessages || []).join("\n").slice(0, 2000)}`);
+            }
+          ' "$RUNNER_TEMP/pilot-shard-results.json"
       - name: Upload merge-only coverage blob and provenance
         if: success()
         uses: actions/upload-artifact@v7
