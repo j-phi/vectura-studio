@@ -1873,9 +1873,9 @@
             const { min, max } = dialRangeMeta(dial);
             const compass = pointToAngleDeg(ev.clientX, ev.clientY, r, false);
             v = rangeValueFromCompass(compass, min, max);
-            if (ev.shiftKey) v = Math.round(v / 5) * 5;
+            if (window.Vectura.InputModifiers.readModifiers(ev).shift) v = Math.round(v / 5) * 5;
           } else {
-            v = pointToAngleDeg(ev.clientX, ev.clientY, r, ev.shiftKey);
+            v = pointToAngleDeg(ev.clientX, ev.clientY, r, window.Vectura.InputModifiers.readModifiers(ev).shift);
           }
           if (+slider.value === v) return;
           slider.value = v;
@@ -2156,7 +2156,7 @@
           e.stopPropagation();
           const Presets = window.Vectura?.WallpaperPresets;
           if (!Presets?.randomize) return;
-          const locked = { lattice: !!(e.shiftKey) };
+          const locked = { lattice: !!(window.Vectura.InputModifiers.readModifiers(e).shift) };
           const override = Presets.randomize({ locked, current: mirror });
           // Same clean-base reset as the recipe path: randomize() omits
           // centerX/centerY, so without geomDefaults() a panned center would

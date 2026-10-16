@@ -2853,10 +2853,16 @@
               // Push history ONCE per drag, on pointerdown (sliders push on change).
               if (this.app.pushHistory) this.app.pushHistory();
               applyFromEvent(e);
+              try { canvas.setPointerCapture?.(e.pointerId); } catch (_) { /* synthetic ids */ }
               const move = (ev) => applyFromEvent(ev);
-              const up = () => { window.removeEventListener('pointermove', move); };
+              const up = () => {
+                window.removeEventListener('pointermove', move);
+                window.removeEventListener('pointerup', up);
+                window.removeEventListener('pointercancel', up);
+              };
               window.addEventListener('pointermove', move);
-              window.addEventListener('pointerup', up, { once: true });
+              window.addEventListener('pointerup', up);
+              window.addEventListener('pointercancel', up);
             };
             // Pointer events alone cover mouse, touch, and pen. Do NOT also bind
             // mousedown — real browsers emit a compatibility mousedown after

@@ -4105,7 +4105,7 @@
       const anchor = shape?.anchors?.[index];
       if (!anchor) return;
       const pRaw = this.canvasToDesigner(canvas, pos, view, { clampT: false });
-      const p = e?.shiftKey ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
+      const p = window.Vectura.InputModifiers.readModifiers(e).shift ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
       const prev = shape.anchors[index - 1];
       const next = shape.anchors[index + 1];
       const nextT = clamp(
@@ -4133,7 +4133,7 @@
       const anchor = shape.anchors[hit.index];
       if (!anchor) return;
       const pRaw = this.canvasToDesigner(canvas, pos, view, { clampT: hit.kind === 'anchor' });
-      const p = e?.shiftKey && hit.kind === 'handle' ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
+      const p = window.Vectura.InputModifiers.readModifiers(e).shift && hit.kind === 'handle' ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
       const controlPoint = hit.kind === 'handle' && hit.mirror ? { t: p.t, w: -p.w } : p;
       if (hit.kind === 'anchor') {
         if (hit.index === 0 || hit.index === shape.anchors.length - 1) return;

@@ -221,9 +221,11 @@
         const up = () => {
           el.removeEventListener('pointermove', move);
           el.removeEventListener('pointerup', up);
+          el.removeEventListener('pointercancel', up);
         };
         el.addEventListener('pointermove', move);
         el.addEventListener('pointerup', up, { once: true });
+        el.addEventListener('pointercancel', up, { once: true });
       });
     };
 

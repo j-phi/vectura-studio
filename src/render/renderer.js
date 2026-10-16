@@ -5036,7 +5036,7 @@
         }
       }
       if (!control || !this.directSelection) return false;
-      const modifiers = this.getModifierState ? this.getModifierState(e) : { alt: e.altKey, shift: e.shiftKey };
+      const modifiers = this.getModifierState(e);
       const sel = this.directSelection;
 
       if (control.type === 'anchor') {
@@ -5106,7 +5106,7 @@
       }
       if (drag.type === 'anchor') {
         // Shift: angle-constrain movement relative to drag start (adjusted for grab offset)
-        if (e?.shiftKey && drag.anchorStart) {
+        if (e && this.getModifierState(e).shift && drag.anchorStart) {
           const snapStart = drag.grabOffset
             ? { x: drag.anchorStart.x + drag.grabOffset.x, y: drag.anchorStart.y + drag.grabOffset.y }
             : drag.anchorStart;
@@ -6493,7 +6493,7 @@
           te.selectParagraphAtWorld?.(world.x, world.y);
         } else if (count === 2 && sameSession) {
           te.selectWordAtWorld?.(world.x, world.y);
-        } else if (e && e.shiftKey && sameSession) {
+        } else if (e && this.getModifierState(e).shift && sameSession) {
           te.extendSelectionToWorld?.(world.x, world.y);
         } else {
           te.placeCaretAtWorld(hit, world.x, world.y);
@@ -7418,7 +7418,7 @@
           const hit = this.findPathHitAtPoint(world) || this._morphChildPathHit(world);
           if (hit) {
             if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
-            const modifiers = this.getModifierState ? this.getModifierState(e) : { shift: e.shiftKey };
+            const modifiers = this.getModifierState(e);
             const alreadySamePath = this.directSelection?.layerId === hit.layer.id
               && this.directSelection?.pathIndex === hit.pathIndex;
             // Determine if this click lands on a segment connecting two already-selected anchors.

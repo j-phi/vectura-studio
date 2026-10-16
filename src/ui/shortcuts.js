@@ -932,8 +932,8 @@
         drawOrderDragMoved = false;
         drawOrderDragStartX = e.clientX;
         drawOrderDragStartY = e.clientY;
-        drawOrderClickShift = e.shiftKey;
-        drawOrderInput.step = e.shiftKey ? '0.1' : '1';
+        drawOrderClickShift = window.Vectura.InputModifiers.readModifiers(e).shift;
+        drawOrderInput.step = window.Vectura.InputModifiers.readModifiers(e).shift ? '0.1' : '1';
       });
       window.addEventListener('pointermove', (e) => {
         if (!drawOrderDragActive) return;
@@ -947,19 +947,22 @@
             this.app.renderer?.clearSelection?.();
           }
         }
-        drawOrderInput.step = e.shiftKey ? '0.1' : '1';
+        drawOrderInput.step = window.Vectura.InputModifiers.readModifiers(e).shift ? '0.1' : '1';
       });
-      window.addEventListener('pointerup', () => {
+      const endDrawOrderDrag = (e) => {
         if (!drawOrderDragActive) return;
         drawOrderDragActive = false;
         drawOrderInput.step = '1';
         // A click that never dragged the playhead starts the plot-order playback,
         // scrubbing forward from wherever the handle currently sits. A Shift-click
         // plays back at 1/10 speed instead of the normal rate.
-        if (!drawOrderDragMoved) {
+        // A cancelled press (system interruption) never starts playback.
+        if (!drawOrderDragMoved && !(e && e.type === 'pointercancel')) {
           startDrawOrderPlayback(drawOrderClickShift);
         }
-      });
+      };
+      window.addEventListener('pointerup', endDrawOrderDrag);
+      window.addEventListener('pointercancel', endDrawOrderDrag);
     }
     // Eye → toggle the line-sort overlay (the order colouring + its legend) on the
     // primary canvas via its own non-persisted flag, so it is closed by default and
@@ -1059,6 +1062,11 @@
     // The new LayerFilter menu primitive handles its own outside-click guard;
     // we still need to close the legacy add-menu + algo-submenu below.
     document.addEventListener('click', () => {
+      if (this.layerAddOpen) closeAddMenu();
+    });
+    // TUX-040b: a drag, pan or scroll outside never makes a click, so it must dismiss on pointerdown too.
+    // The trigger and the menu parts stay excluded so the toggle and the item taps still work.
+    window.Vectura.UI.utils.onOutsidePointer(document, (t) => !!(t && t.closest && t.closest('#layer-add-menu, #btn-add-layer, #lvl-algo-submenu')), () => {
       if (this.layerAddOpen) closeAddMenu();
     });
   }
