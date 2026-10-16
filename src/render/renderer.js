@@ -7679,7 +7679,7 @@
         }
 
         const topLayer =
-          this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world);
+          this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world, false, null, e.pointerType);
 
         // M5: double-clicking a text layer with the Selection OR Direct-Selection
         // tool enters Type editing (switches tool + places the caret). The direct
@@ -10502,10 +10502,13 @@
       return hit ? this._isolatedGroupMember(hit) : null;
     }
 
-    findLayerAtPoint(world, includeLocked = false, filterFn = null) {
+    // pointerType picks the stroke tolerance (HIT_TOLERANCE.strokePick: 5 px mouse / pen, 22 px touch); it defaults to the last
+    // pointer seen. When several layers lie within tolerance the NEAREST stroke wins; an exact tie keeps the topmost layer.
+    findLayerAtPoint(world, includeLocked = false, filterFn = null, pointerType = this.lastPointerType) {
       const layers = this.engine.layers.slice().reverse();
       let best = null;
-      let bestDist = Infinity;
+      let bestDistSq = Infinity;
+      const pick = window.Vectura.hitTolerance('strokePick', pointerType);
       layers.forEach((layer) => {
         if (!layer.visible) return;
         if (filterFn && !filterFn(layer)) return;
@@ -10519,30 +10522,27 @@
         if (this.engine.hasCompoundAncestor?.(layer)) return;
         if (!includeLocked && this.isLayerLocked?.(layer.id)) return;
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
-        const tol = Math.max(5 / (this.scale || 1), stroke * 2);
+        const tol = Math.max(pick / (this.scale || 1), stroke * 2);
         const tolSq = tol * tol;
+        let layerDistSq = Infinity;
         this.getInteractionPaths(layer).forEach((path) => {
           if (path && path.meta && path.meta.kind === 'circle') {
             const cx = path.meta.cx ?? path.meta.x ?? 0;
             const cy = path.meta.cy ?? path.meta.y ?? 0;
             const r = path.meta.r ?? path.meta.rx ?? 0;
             const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
-            if (dist * dist <= tolSq && dist < bestDist) {
-              bestDist = dist;
-              best = layer;
-            }
+            layerDistSq = Math.min(layerDistSq, dist * dist);
             return;
           }
           if (!Array.isArray(path) || path.length < 2) return;
           for (let i = 0; i < path.length - 1; i++) {
-            const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
-            if (d <= tolSq && d < bestDist) {
-              bestDist = d;
-              best = layer;
-              break;
-            }
+            layerDistSq = Math.min(layerDistSq, this.distanceToSegmentSq(world, path[i], path[i + 1]));
           }
         });
+        if (layerDistSq <= tolSq && layerDistSq < bestDistSq) {
+          bestDistSq = layerDistSq;
+          best = layer;
+        }
       });
       return best;
     }
