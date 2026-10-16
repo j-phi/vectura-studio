@@ -808,11 +808,10 @@
             if (!picked) return;
             pickAlgo(picked.dataset.algoType);
           });
-          document.addEventListener('click', (ev) => {
-            if (!el.classList.contains('hidden') && !el.contains(ev.target) && !algoDrawBtn.contains(ev.target)) {
-              el.classList.add('hidden');
-            }
-          }, true);
+          // TUX-040b: capture-phase pointerdown (utils.onOutsidePointer) so a drag or scroll outside dismisses too.
+          window.Vectura.UI.utils.onOutsidePointer(document, (t) => !!(t && (el.contains(t) || algoDrawBtn.contains(t))), () => {
+            if (!el.classList.contains('hidden')) el.classList.add('hidden');
+          });
           document.body.appendChild(el);
         }
         algoTouch?.bindMenu(el);

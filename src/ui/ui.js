@@ -1547,6 +1547,16 @@
       }
       this.setTopMenuOpen(null, false);
     });
+    // TUX-040b: pen and palette menus also close on a pointerdown outside (drags and scrolls make no click).
+    // The pen pill and the palette toggle stay excluded: their own click toggles the menu.
+    window.Vectura.UI.utils.onOutsidePointer(document, (t) => !!(t && t.closest && (
+      t.closest('.pen-pill, #palette-toggle')
+      || (this.openPenMenu && this.openPenMenu.contains(t))
+      || (this.openPaletteMenu && this.openPaletteMenu.contains(t))
+    )), () => {
+      if (this.openPenMenu) { this.openPenMenu.classList.add('hidden'); this.openPenMenu = null; }
+      if (this.openPaletteMenu) { this.openPaletteMenu.classList.add('hidden'); this.openPaletteMenu = null; }
+    });
     this.initPaneToggles();
     this.initBottomPaneToggle();
     this.initBottomPaneResizer();

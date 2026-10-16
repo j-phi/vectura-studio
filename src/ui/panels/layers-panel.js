@@ -2204,6 +2204,10 @@
     document.addEventListener('click', () => {
       getEl('layer-bar-palette-menu', { silent: true })?.classList.add('hidden');
     });
+    // TUX-040b: close on a pointerdown outside too (a drag or scroll makes no click). Trigger and menu stay excluded.
+    window.Vectura.UI.utils.onOutsidePointer(document, (t) => !!(t && t.closest && t.closest('#layer-bar-palette-trigger, #layer-bar-palette-menu')), () => {
+      getEl('layer-bar-palette-menu', { silent: true })?.classList.add('hidden');
+    });
     _updateLBPTrigger();
   }
 
