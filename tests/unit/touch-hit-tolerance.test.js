@@ -19,6 +19,7 @@ describe('TUX-024 hitTolerance table', () => {
   // kind: [mouse, touch]
   const TABLE = {
     anchor: [6, 22],
+    directPick: [0, 22],
     bezierHandle: [5, 22],
     cornerWidget: [7, 22],
     light: [6, 22],

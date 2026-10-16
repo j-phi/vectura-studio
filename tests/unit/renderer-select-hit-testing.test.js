@@ -175,4 +175,87 @@ describe('Renderer.findLayerAtPoint — standard select hit testing', () => {
       expect(renderer.findLayerAtPoint({ x: 150, y: 95 }, false, null, 'touch')).toBe(layer);
     });
   });
+
+  // --- TUX-024 Direct tool pick + locked-layer rule ---
+
+  describe('Direct tool pick (findLayerAtPointPrecise) is touch aware', () => {
+    const line = (id, y, o = {}) => makeLayer(id, [{ x: 100, y }, { x: 200, y }], o);
+
+    test('a touch tap 15-20 px from a stroke selects it; mouse keeps 1.5 world units', () => {
+      const layer = line('h', 100);
+      const renderer = makeRenderer([layer]);
+      [15, 20].forEach((off) => {
+        expect(renderer.findLayerAtPointPrecise({ x: 150, y: 100 - off }, 'touch')).toBe(layer);
+      });
+      expect(renderer.findLayerAtPointPrecise({ x: 150, y: 85 }, 'mouse')).toBeNull();
+      expect(renderer.findLayerAtPointPrecise({ x: 150, y: 85 })).toBeNull();
+      expect(renderer.findLayerAtPointPrecise({ x: 150, y: 98.7 }, 'mouse')).toBe(layer);
+      expect(renderer.findLayerAtPointPrecise({ x: 150, y: 97.5 }, 'mouse')).toBeNull();
+      expect(renderer.findLayerAtPointPrecise({ x: 150, y: 70 }, 'touch')).toBeNull();
+    });
+
+    test('the touch reach is screen space: zoomed in the world radius shrinks', () => {
+      const renderer = makeRenderer([line('h', 100)]);
+      renderer.scale = 4; // 22 px = 5.5 world
+      expect(renderer.findLayerAtPointPrecise({ x: 150, y: 94 }, 'touch')).toBeNull();
+      expect(renderer.findLayerAtPointPrecise({ x: 150, y: 95 }, 'touch')).not.toBeNull();
+    });
+
+    test('nearest wins, whatever the layer order', () => {
+      const near = line('near', 108);
+      const far = line('far', 118);
+      [[near, far], [far, near]].forEach((order) => {
+        const renderer = makeRenderer(order);
+        expect(renderer.findLayerAtPointPrecise({ x: 150, y: 100 }, 'touch')).toBe(near);
+      });
+    });
+  });
+
+  describe('a locked layer under the finger blocks the wide touch pick', () => {
+    const line = (id, y, o = {}) => makeLayer(id, [{ x: 100, y }, { x: 200, y }], o);
+    const setup = (lockedY, freeY) => {
+      const locked = line('locked', lockedY);
+      const free = line('free', freeY);
+      const renderer = makeRenderer([locked, free]);
+      renderer.isLayerLocked = (id) => id === 'locked';
+      return { renderer, locked, free };
+    };
+
+    test.each([['findLayerAtPoint'], ['findLayerAtPointPrecise']])('%s: a tap on or within mouse reach of locked geometry selects nothing', (fn) => {
+      const { renderer } = setup(100, 112);
+      const call = (y) => (fn === 'findLayerAtPoint'
+        ? renderer.findLayerAtPoint({ x: 150, y }, false, null, 'touch')
+        : renderer.findLayerAtPointPrecise({ x: 150, y }, 'touch'));
+      expect(call(100)).toBeNull();
+      expect(call(101)).toBeNull();
+    });
+
+    test.each([['findLayerAtPoint'], ['findLayerAtPointPrecise']])('%s: with no locked geometry under the finger the 22 px reach still applies', (fn) => {
+      const { renderer, free } = setup(60, 112);
+      const call = (y) => (fn === 'findLayerAtPoint'
+        ? renderer.findLayerAtPoint({ x: 150, y }, false, null, 'touch')
+        : renderer.findLayerAtPointPrecise({ x: 150, y }, 'touch'));
+      expect(call(95)).toBe(free);
+    });
+
+    test('an unlocked stroke within the mouse reach still wins over a nearby locked one (mouse parity)', () => {
+      const { renderer, free } = setup(100, 104);
+      expect(renderer.findLayerAtPoint({ x: 150, y: 104 }, false, null, 'touch')).toBe(free);
+    });
+
+    test('a tap inside a closed locked shape selects nothing', () => {
+      const box = [{ x: 100, y: 100 }, { x: 140, y: 100 }, { x: 140, y: 140 }, { x: 100, y: 140 }, { x: 100, y: 100 }];
+      const locked = makeLayer('locked', box);
+      const free = makeLayer('free', [{ x: 100, y: 150 }, { x: 200, y: 150 }]);
+      const renderer = makeRenderer([locked, free]);
+      renderer.isLayerLocked = (id) => id === 'locked';
+      expect(renderer.findLayerAtPoint({ x: 120, y: 130 }, false, null, 'touch')).toBeNull();
+      expect(renderer.findLayerAtPoint({ x: 120, y: 130 }, false, null, 'mouse')).toBeNull();
+    });
+
+    test('a mouse click is unchanged: a locked layer is skipped, an unlocked one 18 px away is not reached', () => {
+      const { renderer } = setup(100, 118);
+      expect(renderer.findLayerAtPoint({ x: 150, y: 100 }, false, null, 'mouse')).toBeNull();
+    });
+  });
 });

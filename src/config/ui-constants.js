@@ -65,6 +65,8 @@
       // The mouse and pen columns are the literals the renderer used before. Only 'touch' is coarse.
       // Stroke pick radius of findLayerAtPoint (selection by tap/click). A finger lands about 5-20 px off a 0.3 mm line; mouse and pen keep 5.
       strokePick: { mouse: 5, pen: 5, touch: 22 },
+      // Direct-tool layer pick. Mouse and pen use a fixed 1.5 WORLD units (not px) in findLayerAtPointPrecise; this row is the touch reach in screen px.
+      directPick: { mouse: 0, pen: 0, touch: 22 },
       anchor: { mouse: 6, pen: 6, touch: 22 },
       bezierHandle: { mouse: 5, pen: 5, touch: 22 },
       cornerWidget: { mouse: 7, pen: 7, touch: 22 },
