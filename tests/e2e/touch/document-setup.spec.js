@@ -52,9 +52,6 @@ test.beforeEach(async ({ page }, testInfo) => {
 });
 
 test('A: Paper starts expanded on touch and the size select takes the first tap', async ({ page }) => {
-  // Measured: on touch-iphone-landscape-chrome (innerHeight 330, browser chrome) the select rect
-  // [12,295,862,339] extends past the window bottom (330). Needs TUX-007 layout; no scroll hacks here.
-  test.fail(test.info().project.name === 'touch-iphone-landscape-chrome', 'select below 330px chrome viewport (TUX-007)');
   const hdr = page.locator(PAPER);
   expect(await hdr.getAttribute('aria-expanded'), 'Paper aria-expanded').toBe('true');
   expect(await hdr.evaluate((e) => e.classList.contains('is-open'))).toBe(true);

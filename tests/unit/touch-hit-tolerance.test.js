@@ -19,6 +19,8 @@ describe('TUX-024 hitTolerance table', () => {
   // kind: [mouse, touch]
   const TABLE = {
     anchor: [6, 22],
+    directPick: [0, 22],
+    pathPick: [2.5, 22],
     bezierHandle: [5, 22],
     cornerWidget: [7, 22],
     light: [6, 22],
@@ -28,8 +30,8 @@ describe('TUX-024 hitTolerance table', () => {
     doubleTapMs: [400, 400],
     penCurveSlop: [2, 6],
     'gizmo3d-marker': [9, 22],
-    'gizmo3d-centre': [5, 10],
-    'gizmo3d-ring-band': [5, 10],
+    'gizmo3d-centre': [5, 22],
+    'gizmo3d-ring-band': [5, 22],
   };
 
   const rows = [];

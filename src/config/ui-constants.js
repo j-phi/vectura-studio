@@ -65,6 +65,10 @@
       // The mouse and pen columns are the literals the renderer used before. Only 'touch' is coarse.
       // Stroke pick radius of findLayerAtPoint (selection by tap/click). A finger lands about 5-20 px off a 0.3 mm line; mouse and pen keep 5.
       strokePick: { mouse: 5, pen: 5, touch: 22 },
+      // Direct-tool layer pick. Mouse and pen use a fixed 1.5 WORLD units (not px) in findLayerAtPointPrecise; this row is the touch reach in screen px.
+      // Path hit of findPathHitAtPoint (Direct tool, pen anchor edits), screen px.
+      pathPick: { mouse: 2.5, pen: 2.5, touch: 22 },
+      directPick: { mouse: 0, pen: 0, touch: 22 },
       anchor: { mouse: 6, pen: 6, touch: 22 },
       bezierHandle: { mouse: 5, pen: 5, touch: 22 },
       cornerWidget: { mouse: 7, pen: 7, touch: 22 },
@@ -80,8 +84,8 @@
       penCurveSlop: { mouse: 2, pen: 2, touch: 6 },
       // TUX-025: 3D rotation gizmo (orbit pad, yaw, pitch, roll). Mouse/pen values are the old literals.
       'gizmo3d-marker': { mouse: 9, pen: 9, touch: 22 },
-      'gizmo3d-centre': { mouse: 5, pen: 5, touch: 10 },
-      'gizmo3d-ring-band': { mouse: 5, pen: 5, touch: 10 },
+      'gizmo3d-centre': { mouse: 5, pen: 5, touch: 22 },
+      'gizmo3d-ring-band': { mouse: 5, pen: 5, touch: 22 },
       // Extra reach past the orbit pad edge that still arms orbit (the old literal 7 px).
       'gizmo3d-pad-slack': { mouse: 7, pen: 7, touch: 7 },
     },

@@ -113,6 +113,7 @@
     let done = false;
     const cleanup = () => {
       document.removeEventListener('pointerup', onEnd, true);
+      document.removeEventListener('pointercancel', onEnd, true);
       document.removeEventListener('click', onEnd, true);
     };
     const run = () => {
@@ -124,6 +125,7 @@
     };
     function onEnd() { setTimeout(run, 0); }
     document.addEventListener('pointerup', onEnd, true);
+    document.addEventListener('pointercancel', onEnd, true);
     document.addEventListener('click', onEnd, true);
     setTimeout(run, 350);
   };

@@ -203,7 +203,22 @@ test.describe('TUX-032 keyboard inset', () => {
     expect(bottom, `Text field bottom ${bottom} vs ${ih - K}`).toBeLessThanOrEqual(ih - K);
   });
 
-  // Layer search (#layer-search-input) is a hidden bar until the layers search toggle is
-  // finger-reachable; it is covered by the same delegated focus handling as (b).
-  test.fixme('(g) layer search field rises above the keyboard', async () => {});
+  test('(g2) layer search field rises above the keyboard', async ({ page }) => {
+    await page.evaluate(() => { window.app.engine.addLayer('flowfield'); window.app.ui.renderLayers && window.app.ui.renderLayers(); });
+    // Open the Layers pane by finger (toggle or phone drawer button).
+    const open = async () => page.evaluate(() => { const e = document.getElementById('layer-search-input'); const r = e.getBoundingClientRect(); const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return r.width > 0 && (t === e); });
+    if (!(await open())) {
+      for (const id of ['btn-header-pane-right', 'btn-pane-toggle-right', 'btn-mobile-pane-right']) {
+        const btn = page.locator(`#${id}`);
+        if (await btn.isVisible().catch(() => false)) { await touch.tap(page, btn); await page.waitForTimeout(400); if (await open()) break; }
+      }
+    }
+    expect(await open(), 'layer search reachable by finger').toBe(true);
+    await touch.tap(page, page.locator('#layer-search-input'));
+    await page.evaluate((k) => window.__kb(k), K);
+    await page.waitForTimeout(300);
+    const m = await page.evaluate(() => ({ b: document.getElementById('layer-search-input').getBoundingClientRect().bottom, ih: innerHeight, focus: document.activeElement && document.activeElement.id }));
+    expect(m.focus).toBe('layer-search-input');
+    expect(m.b, `search bottom ${m.b} vs ${m.ih - K}`).toBeLessThanOrEqual(m.ih - K);
+  });
 });

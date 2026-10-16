@@ -321,6 +321,7 @@
         begun = false;
       };
       slider.addEventListener('pointerup', endSlide);
+      slider.addEventListener('pointercancel', endSlide);
       slider.addEventListener('change', endSlide);
 
       dec.addEventListener('click', () => applyWeight(readWeight() - b.step, { begin: true, commit: true }));
@@ -795,6 +796,7 @@
       sidesSlider.addEventListener('input', () => { renderer.setShapeSides(clampSides(sidesSlider.value)); refresh(); });
       const endSides = () => { if (!sidesBegun) return; sidesBegun = false; renderer.endShapePropsEdit(); refresh(); };
       sidesSlider.addEventListener('pointerup', endSides);
+      sidesSlider.addEventListener('pointercancel', endSides);
       sidesSlider.addEventListener('change', endSides);
       sDec.addEventListener('click', () => setSides(readSides() - 1));
       sInc.addEventListener('click', () => setSides(readSides() + 1));
@@ -836,6 +838,7 @@
     };
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeShapeProps(); } };
     document.addEventListener('pointerup', onDocUp, true);
+    document.addEventListener('pointercancel', onDocUp, true);
     document.addEventListener('keydown', onKey, true);
     // Defer the click-away binding so the opening click doesn't immediately close.
     let downBound = false;
@@ -847,6 +850,7 @@
       refresh,
       destroy: () => {
         document.removeEventListener('pointerup', onDocUp, true);
+        document.removeEventListener('pointercancel', onDocUp, true);
         document.removeEventListener('keydown', onKey, true);
         if (downBound) document.removeEventListener('pointerdown', onDocDown, true);
         pop.close();

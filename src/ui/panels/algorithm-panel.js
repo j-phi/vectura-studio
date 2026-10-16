@@ -613,9 +613,11 @@
     if (head) head.addEventListener('pointerdown', onHeadDown);
     window.addEventListener('pointermove', onWinMove);
     window.addEventListener('pointerup', onWinUp);
+    window.addEventListener('pointercancel', onWinUp);
     this._harmonographPlotterDragCleanup = () => {
       window.removeEventListener('pointermove', onWinMove);
       window.removeEventListener('pointerup', onWinUp);
+      window.removeEventListener('pointercancel', onWinUp);
     };
 
     // Place the wrapper into the float at the given rect, leaving a placeholder

@@ -144,14 +144,22 @@
         target = rootEl.querySelector(`${selector}[data-layer-id="${id}"]`) || target;
       }
       clearTimeout(h.ringTimer);
-      if (h.ring) { h.ring.remove(); h.ring = null; }
+      // A canvas hold has no card to pop: the progress ring itself pops, then goes (popRing).
+      let popEl = target;
+      if (h.popRing) {
+        if (!h.ring) h.ring = makeRing(h.x, h.y, 0);
+        popEl = h.ring;
+        const ring = h.ring;
+        setTimeout(() => ring.remove(), c.popMs);
+      } else if (h.ring) { h.ring.remove(); }
+      h.ring = null;
       h.fired = true;
       lastFireAt = now();
       h.blockers = installBlockers();
-      target.classList.add('touch-hold-pop');
-      target.style.setProperty('--th-pop-ms', `${c.popMs}ms`);
-      target.style.setProperty('--th-pop-scale', String(c.popScale));
-      setTimeout(() => target.classList.remove('touch-hold-pop'), c.popMs);
+      popEl.classList.add('touch-hold-pop');
+      popEl.style.setProperty('--th-pop-ms', `${c.popMs}ms`);
+      popEl.style.setProperty('--th-pop-scale', String(c.popScale));
+      setTimeout(() => popEl.classList.remove('touch-hold-pop'), c.popMs);
       try { if (G.navigator && typeof G.navigator.vibrate === 'function') G.navigator.vibrate(c.vibrateMs); } catch (_e) { /* noop */ }
       emit('touchhold:fire', { t: now() - h.t0, key: h.key });
       opts.onFire({ x: h.x, y: h.y, key: h.key, target });
@@ -172,6 +180,7 @@
       const h = {
         pointerId: e.pointerId, x: e.clientX, y: e.clientY, t0: now(), target: el, key: hit.key,
         fired: false, ring: null, ringTimer: 0, fireTimer: 0, blockers: null, restoreDrag: null,
+        slopPx: hit.slopPx || 0, popRing: !!hit.popRing,
       };
       // A draggable card would start a native HTML drag (lift + ghost image) on a touch hold.
       if (el.draggable === true) {
@@ -180,7 +189,7 @@
       }
       h.onMove = (ev) => {
         if (ev.pointerId !== h.pointerId || h.fired) return;
-        if (Math.hypot(ev.clientX - h.x, ev.clientY - h.y) >= c.slopPx) endActive('moved', h);
+        if (Math.hypot(ev.clientX - h.x, ev.clientY - h.y) >= (h.slopPx || c.slopPx)) endActive('moved', h);
       };
       h.onUp = (ev) => {
         if (ev.pointerId !== h.pointerId) return;

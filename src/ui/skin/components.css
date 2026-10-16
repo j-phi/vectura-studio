@@ -135,7 +135,9 @@
 }
 .hdr-btn:hover { background: var(--ui-ctrl-hov); border-color: var(--ui-border-hi); color: var(--ui-accent); }
 .hdr-btn.is-danger { background: var(--ui-danger); border-color: var(--ui-danger); color: var(--ui-on-danger); }
-.hdr-btn.is-danger:hover { opacity: 0.88; color: var(--ui-on-danger); }
+@media (hover: hover) {
+  .hdr-btn.is-danger:hover { opacity: 0.88; color: var(--ui-on-danger); }
+}
 
 /* ── MAIN LAYOUT ─────────────────────────────────────────────── */
 .app-main { display: flex; flex: 1; overflow: hidden; }
@@ -204,7 +206,9 @@
   margin-right: var(--spacing-sm);
   opacity: 0.45; transition: opacity 0.15s;
 }
-.sect-hdr:hover::before { opacity: 1; }
+@media (hover: hover) {
+  .sect-hdr:hover::before { opacity: 1; }
+}
 .sect-arrow {
   width: 20px; height: 20px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -583,7 +587,9 @@
     transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1),
     opacity 0.16s ease-out;
 }
-.toolbar-drag-handle:hover { opacity: 0.8; }
+@media (hover: hover) {
+  .toolbar-drag-handle:hover { opacity: 0.8; }
+}
 .toolbar-drag-handle:active { cursor: grabbing; }
 .toolbar-drag-handle .handle-vert { display: none; }
 
@@ -951,7 +957,9 @@
   border-radius: var(--radius-sm); cursor: pointer;
   transition: opacity 0.1s; white-space: nowrap;
 }
-.add-btn:hover { opacity: 0.88; }
+@media (hover: hover) {
+  .add-btn:hover { opacity: 0.88; }
+}
 
 .pen-list {
   display: flex; flex-direction: column; gap: 1px;
@@ -1866,8 +1874,10 @@
   opacity: 0.45;
   transition: opacity 0.15s;
 }
-[data-ui-skin] .left-panel-section-header:hover::before {
+@media (hover: hover) {
+  [data-ui-skin] .left-panel-section-header:hover::before {
   opacity: 1;
+}
 }
 [data-ui-skin] .left-panel-section-title {
   font-size: var(--font-size-sm);
@@ -2014,10 +2024,15 @@
   opacity: 0.75;
   transition: opacity 120ms ease, transform 120ms ease;
 }
-[data-ui-skin] .control-modified:hover::before,
 [data-ui-skin] .control-modified:focus-visible::before {
   opacity: 1;
   transform: scale(1.5);
+}
+@media (hover: hover) {
+  [data-ui-skin] .control-modified:hover::before {
+  opacity: 1;
+  transform: scale(1.5);
+}
 }
 [data-ui-skin] .control-modified:focus-visible {
   outline: 1px solid var(--ui-accent);
@@ -2239,12 +2254,14 @@
   gap: 4px;
   transition: opacity 0.1s, filter 0.1s;
 }
-[data-ui-skin] .lvl-add-btn:hover {
+@media (hover: hover) {
+  [data-ui-skin] .lvl-add-btn:hover {
   background: var(--ui-accent);
   border: none;
   color: var(--ui-on-accent);
   filter: brightness(1.05);
   opacity: 0.92;
+}
 }
 [data-ui-skin] .lvl-add-wrap {
   flex-shrink: 0;
@@ -2353,10 +2370,12 @@
   text-transform: none;
   transition: opacity 0.1s;
 }
-[data-ui-skin] #btn-add-pen:hover {
+@media (hover: hover) {
+  [data-ui-skin] #btn-add-pen:hover {
   background: var(--ui-accent);
   color: var(--ui-on-accent);
   opacity: 0.88;
+}
 }
 
 /* ─── Bottom pane (formula display + stats) ──────────────────────────── */
@@ -3989,7 +4008,9 @@
   transition: opacity 0.12s, transform 0.12s;
 }
 .hg-preset-save-pip svg { width: 15px; height: 15px; display: block; }
-.hg-preset-save-pip:hover { opacity: 0.88; }
+@media (hover: hover) {
+  .hg-preset-save-pip:hover { opacity: 0.88; }
+}
 .hg-preset-save-pip:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 .hg-preset-save-pip[hidden] { display: none; }
 
@@ -5906,9 +5927,14 @@
   transition: opacity 0.2s ease;
 }
 
-.pane-resizer:hover::before,
 .pane-resizer.active::before {
   opacity: 0.6;
+}
+
+@media (hover: hover) {
+  .pane-resizer:hover::before {
+  opacity: 0.6;
+}
 }
 
 .bottom-pane {
@@ -5956,9 +5982,14 @@
   transition: opacity 0.2s ease;
 }
 
-.bottom-resizer:hover::before,
 .bottom-resizer.active::before {
   opacity: 0.6;
+}
+
+@media (hover: hover) {
+  .bottom-resizer:hover::before {
+  opacity: 0.6;
+}
 }
 
 .layer-grip {
@@ -7980,7 +8011,9 @@
 .sect--color-palette { --sect-bar: #A78BFA; }
 .sect--color-history { --sect-bar: #60A5FA; }
 .sect[class*="sect--color-"] .sect-hdr::before { background: var(--sect-bar, var(--ui-accent)); opacity: 0.8; }
-.sect[class*="sect--color-"] .sect-hdr:hover::before { opacity: 1; }
+@media (hover: hover) {
+  .sect[class*="sect--color-"] .sect-hdr:hover::before { opacity: 1; }
+}
 
 /* Close affordance — circular outline button with a left-facing chevron,
    visually matching the .pane-toggle handles on the left/right panes but
@@ -10080,8 +10113,10 @@ input[type='color']::-webkit-color-swatch {
   line-height: 1;
   color: inherit;
 }
-.tutorial-close:hover {
+@media (hover: hover) {
+  .tutorial-close:hover {
   opacity: 0.9;
+}
 }
 .tutorial-title {
   font-size: 13px;
@@ -10151,15 +10186,19 @@ input[type='color']::-webkit-color-swatch {
   border-color: transparent;
   color: var(--ui-bg);
 }
-.tutorial-btn--next:hover {
+@media (hover: hover) {
+  .tutorial-btn--next:hover {
   opacity: 0.85;
+}
 }
 .tutorial-btn--back {
   opacity: 0.45;
   border-color: transparent;
 }
-.tutorial-btn--back:hover {
+@media (hover: hover) {
+  .tutorial-btn--back:hover {
   opacity: 0.75;
+}
 }
 .tutorial-sq-panel {
   margin-top: 12px;
@@ -10195,9 +10234,11 @@ input[type='color']::-webkit-color-swatch {
   opacity: 0.7;
   transition: opacity 0.15s, border-color 0.15s;
 }
-.tutorial-sq-card:hover {
+@media (hover: hover) {
+  .tutorial-sq-card:hover {
   opacity: 1;
   border-color: var(--ui-accent);
+}
 }
 .tutorial-sq-icon {
   font-size: 14px;
@@ -10241,15 +10282,19 @@ input[type='color']::-webkit-color-swatch {
   color: var(--ui-bg);
   font-weight: 600;
 }
-.tutorial-cta-primary:hover {
+@media (hover: hover) {
+  .tutorial-cta-primary:hover {
   opacity: 0.85;
+}
 }
 .tutorial-cta-secondary {
   opacity: 0.7;
 }
-.tutorial-cta-secondary:hover {
+@media (hover: hover) {
+  .tutorial-cta-secondary:hover {
   opacity: 1;
   border-color: var(--ui-accent);
+}
 }
 
 /* ── Tutorial highlight + focus indicators ───────────────────────────── */
@@ -10374,7 +10419,9 @@ kbd {
   color: inherit;
   transition: opacity 0.1s, background 0.1s;
 }
-.help-tab-btn:hover { opacity: 0.85; }
+@media (hover: hover) {
+  .help-tab-btn:hover { opacity: 0.85; }
+}
 .help-tab-btn.active {
   background: rgb(var(--vectura-accent-rgb, 99 179 237) / 0.12);
   border-color: var(--ui-accent);
@@ -10612,7 +10659,9 @@ kbd {
   border-bottom: 1px solid var(--ui-border);
 }
 .help-accordion[open] .help-accordion-summary::before { transform: rotate(180deg); }
-.help-accordion-summary:hover { opacity: 0.85; background: var(--ui-panel-alt); }
+@media (hover: hover) {
+  .help-accordion-summary:hover { opacity: 0.85; background: var(--ui-panel-alt); }
+}
 
 .help-accordion-body { padding: 4px 4px 6px; }
 
@@ -11871,7 +11920,9 @@ body.mobile-layout .hud-bar {
   border-radius: var(--radius-sm, 4px);
   opacity: 0.6;
 }
-.ctxbar-handle:hover { opacity: 0.95; }
+@media (hover: hover) {
+  .ctxbar-handle:hover { opacity: 0.95; }
+}
 .ctxbar-handle:active { cursor: grabbing; }
 .ctxbar-handle svg { width: 12px; height: 16px; }
 /* Content host (sub-modes fill this). */
@@ -12224,7 +12275,9 @@ body.mobile-layout .hud-bar {
   line-height: 1;
   opacity: 0.7;
 }
-.ctxbar-text-field:hover .ctxbar-text-caret { opacity: 1; }
+@media (hover: hover) {
+  .ctxbar-text-field:hover .ctxbar-text-caret { opacity: 1; }
+}
 /* The caret pivots (rotates through 180°) rather than swapping glyphs, so it
    reads as the same arrow turning over. Applied to both caret flavours — the
    pill carets and the standalone size-presets chevron — and driven from either
@@ -13485,10 +13538,14 @@ body.mobile-layout .hud-bar {
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity 0.12s, visibility 0s linear 0.12s;
 }
-.vs3-lawinfo-wrap:hover .vs3-lawinfo-pop,
 .vs3-lawinfo-wrap:focus-within .vs3-lawinfo-pop,
 .vs3-lawinfo-pop.is-open {
   opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s;
+}
+@media (hover: hover) {
+  .vs3-lawinfo-wrap:hover .vs3-lawinfo-pop {
+  opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s;
+}
 }
 .vs3-lawinfo-pop .vs3-lawnote:last-child { margin-bottom: 0; }
 /* X-ray control group header (scene3d Style tab, Phase 6). */
@@ -13952,14 +14009,16 @@ html.kb-open .export-settings-scroll {
     width: var(--touch-target-min); height: var(--touch-target-min);
     margin: 0; border: 0; border-radius: 0; overflow: visible;
   }
-  [data-ui-skin] .pen-item .pen-swatch::before {
-    content: ''; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px;
-    transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
-    background: var(--pen-color, currentColor); border: 1px solid var(--ui-border-hi);
-  }
+  /* The native colour input IS the visible swatch (a 22 px circle in the 44 px box). It was opacity 0 over a painted ::before,
+   * which the touch audit counts as a ghost target. */
+  [data-ui-skin] .pen-item .pen-swatch::before { content: none; }
   [data-ui-skin] .pen-item .pen-swatch .pen-color {
-    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 1; cursor: pointer;
+    padding: 0; border: 0; background: transparent; -webkit-appearance: none; appearance: none;
   }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch-wrapper { padding: 11px; }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color::-moz-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
   [data-ui-skin] .pen-item .pen-width { order: 5; flex: 1 1 0; min-width: 0; width: auto; margin: 0 var(--spacing-sm, 8px); }
   [data-ui-skin] .pen-item .pen-width-value {
     order: 6; flex: 0 0 auto; width: auto; min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
@@ -15340,6 +15399,19 @@ body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle::before {
 }
 body.touch-wide-layout.touch-ui .pane-left.pane-collapsed .pane-toggle::before { left: 0; right: -10px; }
 body.touch-wide-layout.touch-ui .pane-right.pane-collapsed .pane-toggle::before { right: 0; left: -10px; }
+/* Followup B5: the collapsed header held its 44 px padding and the 52 px tab margin open, so it ran 17 px past the screen edge.
+ * It is as wide as the rail now; the chevron's ::before still reaches 10 px onto the canvas for the 44 px finger target. */
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-header,
+body.touch-wide-layout.touch-ui #right-pane.pane-collapsed .pane-header,
+[data-ui-skin] body.touch-wide-layout.touch-ui #right-pane.pane-collapsed .pane-header,
+body.touch-wide-layout.touch-ui[data-ui-skin] #right-pane.pane-collapsed .pane-header {
+  padding-left: 0;
+  padding-right: 0;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-header .right-pane-tabs { display: none; }
 body.touch-wide-layout.touch-ui .pane-toggle svg { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
 body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle svg { transform: rotate(180deg); }
 /* === END TUX-010/011 === */
@@ -16159,6 +16231,12 @@ body.touch-ui #right-pane .pen-item { container-type: inline-size; container-nam
   body.touch-ui #right-pane .pen-item .pen-row-b { flex-wrap: wrap; }
   body.touch-ui #right-pane .pen-item .pen-width { order: 7; flex: 1 1 100%; margin: 0; }
 }
+/* TUX-042 (batch G): in the 200 px pane the grip (44) and remove (44) leave the name 41 px, and 16 px text needs about 90.
+ * Narrow cards give the name its own full line above [grip][remove]. */
+@container pen-item (max-width: 150px) {
+  body.touch-ui #right-pane [data-ui-skin] .pen-item .pen-name-input,
+  body.touch-ui #right-pane .pen-item .pen-name-input { order: 0; flex: 1 1 100%; }
+}
 /* The plotter heads, the plot-range row and the motion rack head seat an info dot (44 px ::before, 14 px past its edge) beside a 44 px
  * button or slider: 16 px keeps their hit areas apart. */
 body.touch-ui #left-pane :is(.harmonograph-plotter-head, .harmonograph-plotter-row) { gap: 18px; }
@@ -16365,3 +16443,33 @@ body.touch-ui #gm-module-menu[data-scroll-cue~="below"]::after { opacity: 1; }
 /* B4's pane rule (#left-pane button { min-width: 44px }, specificity with an id) is what grew it; the rule now skips .pane-toggle too. */
 body.touch-wide-layout.touch-ui :is(#left-pane, #right-pane).pane-collapsed .pane-toggle { width: auto; min-width: 0; }
 /* === END TUX-041 slice B5 === */
+
+/* === TUX-031 / TUX-034 (batch G): the context bar stays available on phones ===
+ * The generic phone rule above hides .ctxbar at <= 640px. A phone user then has no Shape Properties, no
+ * Selection menu and no align verbs. The bar floats over the canvas and hides itself when there is no
+ * context (.is-visible), so showing it costs no canvas area. Touch phones only; a narrow desktop window keeps the rule. */
+@media (max-width: 640px) {
+  body.touch-ui .ctxbar { display: flex; }
+  /* The bar is wider than the phone: the content scrolls sideways, the grip and the ⋯ menu stay in reach. */
+  body.touch-ui .ctxbar .ctxbar-content { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  body.touch-ui .ctxbar .ctxbar-content::-webkit-scrollbar { display: none; }
+  body.touch-ui .ctxbar .ctxbar-overflow-wrap { flex: 0 0 auto; }
+}
+/* === END TUX-031 / TUX-034 (batch G) === */
+
+/* === TUX-050 (batch G): Paper size stays on screen on the shortest phone landscape ===
+ * At 874 x 330 the Theme section pushed the Paper size select under the window edge. Paper holds the primary
+ * control, so on a short touch viewport it goes first. */
+@media (max-height: 360px) {
+  body.touch-ui #settings-panel .settings-panel-body { display: flex; flex-direction: column; }
+  body.touch-ui #settings-panel .settings-panel-body > .sect--color-paper { order: -1; }
+}
+/* === END TUX-050 (batch G) === */
+
+/* === Export legend gear above the footer on the shortest phone landscape (followups B3 b) ===
+ * At 874 x 330 the preview stage runs under the pinned modal footer, and the legend (anchored to the stage bottom) put its
+ * gear under the footer. On short touch screens the legend anchors to the stage top, which stays in the visible band. */
+@media (max-height: 400px) {
+  body.touch-ui .export-preview-legend { top: 12px; bottom: auto; }
+}
+/* === END export legend gear === */

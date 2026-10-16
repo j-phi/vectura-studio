@@ -609,28 +609,24 @@
       const header = pd.root.querySelector('[data-pd-header]');
       if (!header) return;
       let drag = null;
-      const onDown = (e) => {
-        if (e.target.closest('button,select,input')) return;
-        const rect = pd.root.getBoundingClientRect();
-        drag = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top };
-        pd.root.classList.add('dragging');
-        pd.root.style.transform = '';
-        e.preventDefault();
-      };
-      const onMove = (e) => {
-        if (!drag) return;
-        pd.root.style.left = `${drag.ox + e.clientX - drag.sx}px`;
-        pd.root.style.top = `${drag.oy + e.clientY - drag.sy}px`;
-      };
-      const onUp = () => { drag = null; pd.root.classList.remove('dragging'); };
-      header.addEventListener('pointerdown', onDown);
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      pd.cleanupDrag = () => {
-        header.removeEventListener('pointerdown', onDown);
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-      };
+      // TUX-018: the shared binder captures the pointer on down and pairs pointerup with pointercancel.
+      const unbind = window.Vectura.UI.bindPointerDrag(header, {
+        filter: (e) => !e.target.closest('button,select,input'),
+        down: (e) => {
+          const rect = pd.root.getBoundingClientRect();
+          drag = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top };
+          pd.root.classList.add('dragging');
+          pd.root.style.transform = '';
+          e.preventDefault();
+        },
+        move: (e) => {
+          if (!drag) return;
+          pd.root.style.left = `${drag.ox + e.clientX - drag.sx}px`;
+          pd.root.style.top = `${drag.oy + e.clientY - drag.sy}px`;
+        },
+        end: () => { drag = null; pd.root.classList.remove('dragging'); },
+      });
+      pd.cleanupDrag = () => { unbind(); };
       pd.root.style.top = '60px';
       pd.root.style.left = '50%';
       pd.root.style.transform = 'translateX(-50%)';
@@ -1443,7 +1439,7 @@
         const effectiveTool = pd.tool === 'fill' && window.Vectura.InputModifiers.readModifiers(e).alt
           ? 'fill-erase'
           : pd.tool;
-        const targets = getSelection(tx, ty, Boolean(e.shiftKey));
+        const targets = getSelection(tx, ty, Boolean(window.Vectura.InputModifiers.readModifiers(e).shift));
         const statusEl = pd.root.querySelector('[data-pd-status]');
         if (!targets.length) {
           if (statusEl) statusEl.textContent = 'No fill target at pointer';
@@ -1616,11 +1612,13 @@
       canvas.addEventListener('pointerdown', onDown);
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
       canvas.addEventListener('wheel', onWheel, { passive: false });
       pd.cleanupCanvas = () => {
         canvas.removeEventListener('pointerdown', onDown);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
         canvas.removeEventListener('wheel', onWheel);
         canvas.removeEventListener('pointerdown', onGateDown, true);
         window.removeEventListener('pointermove', onGateMove, true);
@@ -2359,13 +2357,13 @@
         const state = pd.directEditState;
         if (!state) return;
         if (control.type === 'anchor') {
-          if (e.shiftKey) {
+          if (window.Vectura.InputModifiers.readModifiers(e).shift) {
             if (state.selectedIndices.has(control.index)) state.selectedIndices.delete(control.index);
             else state.selectedIndices.add(control.index);
           } else if (!state.selectedIndices.has(control.index)) {
             state.selectedIndices = new Set([control.index]);
           }
-          if (e.altKey) {
+          if (window.Vectura.InputModifiers.readModifiers(e).alt) {
             // Duplicate anchor
             const orig = state.anchors[control.index];
             const dup = { x: orig.x, y: orig.y, in: orig.in ? { ...orig.in } : null, out: orig.out ? { ...orig.out } : null };
@@ -2400,7 +2398,7 @@
 
         if (directDrag.type === 'anchor') {
           let next = { x: tx, y: ty };
-          if (e.shiftKey && directDrag.anchorStart) {
+          if (window.Vectura.InputModifiers.readModifiers(e).shift && directDrag.anchorStart) {
             next = this._snapDirectAngle(directDrag.anchorStart, next, 15);
           }
           const dxm = next.x - anchor.x, dym = next.y - anchor.y;
@@ -2417,7 +2415,7 @@
         } else {
           // Bezier handle drag
           anchor[directDrag.type] = { x: tx, y: ty };
-          if (!e.altKey) {
+          if (!window.Vectura.InputModifiers.readModifiers(e).alt) {
             // Mirror opposite handle for smooth editing
             const mirror = directDrag.type === 'in' ? 'out' : 'in';
             const dx = anchor.x - tx, dy = anchor.y - ty;
@@ -2558,7 +2556,7 @@
             }
           }
           // Click on empty space — clear selection
-          if (!e.shiftKey) {
+          if (!window.Vectura.InputModifiers.readModifiers(e).shift) {
             pd.directEditState = null;
             this._renderPatternDesigner(pd);
           }
@@ -2755,7 +2753,10 @@
       // Register — canvas gets the pointer events, window gets keys
       canvas.addEventListener('pointerdown', onEditDown);
       window.addEventListener('pointermove', onEditMove);
+      // A cancelled pointer (system interruption) aborts every open edit session through the same list the gate uses.
+      const onEditCancel = () => { (pd._touchAborts || []).forEach((fn) => fn(false)); };
       window.addEventListener('pointerup', onEditUp);
+      window.addEventListener('pointercancel', onEditCancel);
       window.addEventListener('keydown', onEditKey);
 
       // Merge cleanup into pd.cleanupCanvas (already set by _bindPatternDesignerCanvas)
@@ -2765,6 +2766,7 @@
         canvas.removeEventListener('pointerdown', onEditDown);
         window.removeEventListener('pointermove', onEditMove);
         window.removeEventListener('pointerup', onEditUp);
+        window.removeEventListener('pointercancel', onEditCancel);
         window.removeEventListener('keydown', onEditKey);
         if (penDblTimer) clearTimeout(penDblTimer);
       };

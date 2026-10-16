@@ -449,7 +449,7 @@
         const move = (ev) => {
           const dx = ev.clientX - startX;
           if (!moved && dx !== 0) { moved = true; pushHist(); }
-          const c = ev.shiftKey ? 10 : 1;
+          const c = window.Vectura.InputModifiers.readModifiers(ev).shift ? 10 : 1;
           live(startVal + dx * cfg.perpx * c);
         };
         // opts.abort = teardown (destroy mid-drag): detach everything but never
@@ -507,7 +507,7 @@
         listen(b, 'click', (e) => {
           e.stopPropagation();
           const dir = parseInt(b.dataset.dir, 10) || 0;
-          const c = e.shiftKey ? 10 : 1;
+          const c = window.Vectura.InputModifiers.readModifiers(e).shift ? 10 : 1;
           commit(num(input.value, readVal()) + dir * cfg.step * c);
         });
       });

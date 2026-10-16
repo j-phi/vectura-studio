@@ -4135,61 +4135,74 @@
       return { anchors, closed };
     }
 
+    // Path hit for the Direct tool (and pen anchor edits). TUX-024: reach is HIT_TOLERANCE.pathPick (2.5 px mouse and
+    // pen, 22 px touch, nearest wins). Locked rule, touch and mouse: locked geometry within the MOUSE reach of the
+    // point blocks the pick (returns null); the wide touch reach looks at unlocked layers only.
     findPathHitAtPoint(world, options = {}) {
       if (!world) return null;
       const { restrictToLayerId = null } = options;
-      const layers = this.engine.layers.slice().reverse();
-      let best = null;
-      let bestDistSq = Infinity;
-      layers.forEach((layer) => {
-        if (!layer || layer.isGroup || !layer.visible) return;
-        if (restrictToLayerId && layer.id !== restrictToLayerId) return;
-        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
-        const tol = Math.max(2.5 / this.scale, stroke * 2);
-        const tolSq = tol * tol;
-        this.getInteractionPaths(layer).forEach((path, pathIndex) => {
-          if (path && path.meta && path.meta.kind === 'circle') {
-            const cx = path.meta.cx ?? path.meta.x ?? 0;
-            const cy = path.meta.cy ?? path.meta.y ?? 0;
-            const r = path.meta.r ?? Math.max(path.meta.rx ?? 0, path.meta.ry ?? 0);
-            const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
-            const dSq = dist * dist;
-            if (dSq <= tolSq && dSq < bestDistSq) {
-              bestDistSq = dSq;
-              best = { layer, pathIndex, path, segmentIndex: 0, point: { x: world.x, y: world.y }, distSq: dSq };
+      const pointerType = options.pointerType || this.lastPointerType;
+      const tolPx = (type) => window.Vectura.hitTolerance('pathPick', type);
+      const scan = (px, lockedMode) => {
+        const layers = this.engine.layers.slice().reverse();
+        let best = null;
+        let bestDistSq = Infinity;
+        layers.forEach((layer) => {
+          if (!layer || layer.isGroup || !layer.visible) return;
+          if (restrictToLayerId && layer.id !== restrictToLayerId) return;
+          const locked = Boolean(this.isLayerLocked?.(layer.id));
+          if (lockedMode === 'unlocked' && locked) return;
+          const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+          const tol = Math.max(px / this.scale, stroke * 2);
+          const tolSq = tol * tol;
+          this.getInteractionPaths(layer).forEach((path, pathIndex) => {
+            if (path && path.meta && path.meta.kind === 'circle') {
+              const cx = path.meta.cx ?? path.meta.x ?? 0;
+              const cy = path.meta.cy ?? path.meta.y ?? 0;
+              const r = path.meta.r ?? Math.max(path.meta.rx ?? 0, path.meta.ry ?? 0);
+              const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
+              const dSq = dist * dist;
+              if (dSq <= tolSq && dSq < bestDistSq) {
+                bestDistSq = dSq;
+                best = { layer, pathIndex, path, segmentIndex: 0, point: { x: world.x, y: world.y }, distSq: dSq };
+              }
+              return;
             }
-            return;
-          }
-          if (!Array.isArray(path) || path.length < 2) return;
-          for (let i = 0; i < path.length - 1; i++) {
-            const a = path[i];
-            const b = path[i + 1];
-            const dx = b.x - a.x;
-            const dy = b.y - a.y;
-            const lenSq = dx * dx + dy * dy;
-            if (lenSq < 1e-9) continue;
-            const t = Math.max(0, Math.min(1, ((world.x - a.x) * dx + (world.y - a.y) * dy) / lenSq));
-            const px = a.x + t * dx;
-            const py = a.y + t * dy;
-            const ox = world.x - px;
-            const oy = world.y - py;
-            const dSq = ox * ox + oy * oy;
-            if (dSq <= tolSq && dSq < bestDistSq) {
-              bestDistSq = dSq;
-              best = {
-                layer,
-                pathIndex,
-                path,
-                segmentIndex: i,
-                segmentT: t,
-                point: { x: px, y: py },
-                distSq: dSq,
-              };
+            if (!Array.isArray(path) || path.length < 2) return;
+            for (let i = 0; i < path.length - 1; i++) {
+              const a = path[i];
+              const b = path[i + 1];
+              const dx = b.x - a.x;
+              const dy = b.y - a.y;
+              const lenSq = dx * dx + dy * dy;
+              if (lenSq < 1e-9) continue;
+              const t = Math.max(0, Math.min(1, ((world.x - a.x) * dx + (world.y - a.y) * dy) / lenSq));
+              const px2 = a.x + t * dx;
+              const py2 = a.y + t * dy;
+              const ox = world.x - px2;
+              const oy = world.y - py2;
+              const dSq = ox * ox + oy * oy;
+              if (dSq <= tolSq && dSq < bestDistSq) {
+                bestDistSq = dSq;
+                best = {
+                  layer,
+                  pathIndex,
+                  path,
+                  segmentIndex: i,
+                  segmentT: t,
+                  point: { x: px2, y: py2 },
+                  distSq: dSq,
+                };
+              }
             }
-          }
+          });
         });
-      });
-      return best;
+        return best;
+      };
+      const near = scan(tolPx('mouse'), 'all');
+      if (near) return this.isLayerLocked?.(near.layer.id) ? null : near;
+      if (pointerType !== 'touch') return null;
+      return scan(tolPx('touch'), 'unlocked');
     }
 
     setDirectSelection(layer, pathIndex) {
@@ -5023,7 +5036,7 @@
         }
       }
       if (!control || !this.directSelection) return false;
-      const modifiers = this.getModifierState ? this.getModifierState(e) : { alt: e.altKey, shift: e.shiftKey };
+      const modifiers = this.getModifierState(e);
       const sel = this.directSelection;
 
       if (control.type === 'anchor') {
@@ -5093,7 +5106,7 @@
       }
       if (drag.type === 'anchor') {
         // Shift: angle-constrain movement relative to drag start (adjusted for grab offset)
-        if (e?.shiftKey && drag.anchorStart) {
+        if (e && this.getModifierState(e).shift && drag.anchorStart) {
           const snapStart = drag.grabOffset
             ? { x: drag.anchorStart.x + drag.grabOffset.x, y: drag.anchorStart.y + drag.grabOffset.y }
             : drag.anchorStart;
@@ -6480,7 +6493,7 @@
           te.selectParagraphAtWorld?.(world.x, world.y);
         } else if (count === 2 && sameSession) {
           te.selectWordAtWorld?.(world.x, world.y);
-        } else if (e && e.shiftKey && sameSession) {
+        } else if (e && this.getModifierState(e).shift && sameSession) {
           te.extendSelectionToWorld?.(world.x, world.y);
         } else {
           te.placeCaretAtWorld(hit, world.x, world.y);
@@ -7405,7 +7418,7 @@
           const hit = this.findPathHitAtPoint(world) || this._morphChildPathHit(world);
           if (hit) {
             if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
-            const modifiers = this.getModifierState ? this.getModifierState(e) : { shift: e.shiftKey };
+            const modifiers = this.getModifierState(e);
             const alreadySamePath = this.directSelection?.layerId === hit.layer.id
               && this.directSelection?.pathIndex === hit.pathIndex;
             // Determine if this click lands on a segment connecting two already-selected anchors.
@@ -7679,7 +7692,7 @@
         }
 
         const topLayer =
-          this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world, false, null, e.pointerType);
+          this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world, e.pointerType) : this.findLayerAtPoint(world, false, null, e.pointerType);
 
         // M5: double-clicking a text layer with the Selection OR Direct-Selection
         // tool enters Type editing (switches tool + places the caret). The direct
@@ -10502,13 +10515,13 @@
       return hit ? this._isolatedGroupMember(hit) : null;
     }
 
-    // pointerType picks the stroke tolerance (HIT_TOLERANCE.strokePick: 5 px mouse / pen, 22 px touch); it defaults to the last
-    // pointer seen. When several layers lie within tolerance the NEAREST stroke wins; an exact tie keeps the topmost layer.
-    findLayerAtPoint(world, includeLocked = false, filterFn = null, pointerType = this.lastPointerType) {
+    // Shared stroke scan for findLayerAtPoint and findLayerAtPointPrecise. `tolFor(layer)` returns the world-unit
+    // reach. `onlyLocked` scans just the locked layers (used by the touch locked-layer rule). The NEAREST stroke
+    // wins; an exact tie keeps the topmost layer.
+    _scanStrokeLayers(world, { includeLocked = false, onlyLocked = false, filterFn = null, tolFor, insideClosed = false }) {
       const layers = this.engine.layers.slice().reverse();
       let best = null;
       let bestDistSq = Infinity;
-      const pick = window.Vectura.hitTolerance('strokePick', pointerType);
       layers.forEach((layer) => {
         if (!layer.visible) return;
         if (filterFn && !filterFn(layer)) return;
@@ -10520,9 +10533,9 @@
         // Children inside a compound are consumed by their parent; clicks on
         // the unified silhouette should select the compound, not a child.
         if (this.engine.hasCompoundAncestor?.(layer)) return;
-        if (!includeLocked && this.isLayerLocked?.(layer.id)) return;
-        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
-        const tol = Math.max(pick / (this.scale || 1), stroke * 2);
+        const locked = Boolean(this.isLayerLocked?.(layer.id));
+        if (onlyLocked ? !locked : (!includeLocked && locked)) return;
+        const tol = tolFor(layer);
         const tolSq = tol * tol;
         let layerDistSq = Infinity;
         this.getInteractionPaths(layer).forEach((path) => {
@@ -10530,13 +10543,28 @@
             const cx = path.meta.cx ?? path.meta.x ?? 0;
             const cy = path.meta.cy ?? path.meta.y ?? 0;
             const r = path.meta.r ?? path.meta.rx ?? 0;
-            const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
-            layerDistSq = Math.min(layerDistSq, dist * dist);
+            const dist = Math.hypot(world.x - cx, world.y - cy);
+            const edge = Math.abs(dist - r);
+            layerDistSq = Math.min(layerDistSq, insideClosed && dist <= r ? 0 : edge * edge);
             return;
           }
           if (!Array.isArray(path) || path.length < 2) return;
           for (let i = 0; i < path.length - 1; i++) {
             layerDistSq = Math.min(layerDistSq, this.distanceToSegmentSq(world, path[i], path[i + 1]));
+          }
+          if (insideClosed && path.length >= 4 && layerDistSq > 0) {
+            const f = path[0];
+            const l = path[path.length - 1];
+            if (Math.abs(f.x - l.x) < 1e-6 && Math.abs(f.y - l.y) < 1e-6) {
+              let inside = false;
+              for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+                const pi = path[i];
+                const pj = path[j];
+                if ((pi.y > world.y) !== (pj.y > world.y)
+                  && world.x < ((pj.x - pi.x) * (world.y - pi.y)) / (pj.y - pi.y) + pi.x) inside = !inside;
+              }
+              if (inside) layerDistSq = 0;
+            }
           }
         });
         if (layerDistSq <= tolSq && layerDistSq < bestDistSq) {
@@ -10545,6 +10573,30 @@
         }
       });
       return best;
+    }
+
+    // TUX-024: a finger lands well off a hairline, so touch gets the wide reach. Locked-layer rule: if the touch
+    // point is on or within MOUSE reach of a locked layer's geometry (or inside a closed locked shape) and no
+    // unlocked stroke is within mouse reach, nothing is picked, as for a mouse click there. The wide reach
+    // applies only when no locked geometry is under the finger. `mouseTolFor` / `wideTolFor` give world reach.
+    _pickWithTouchRule(world, pointerType, opts, mouseTolFor, wideTolFor) {
+      const base = { ...opts, tolFor: mouseTolFor };
+      const near = this._scanStrokeLayers(world, base);
+      if (pointerType !== 'touch' || near) return near;
+      if (!opts.includeLocked && this._scanStrokeLayers(world, { ...base, onlyLocked: true, insideClosed: true })) return null;
+      return this._scanStrokeLayers(world, { ...opts, tolFor: wideTolFor });
+    }
+
+    // pointerType picks the stroke tolerance (HIT_TOLERANCE.strokePick: 5 px mouse / pen, 22 px touch); it defaults to the last
+    // pointer seen. When several layers lie within tolerance the NEAREST stroke wins; an exact tie keeps the topmost layer.
+    findLayerAtPoint(world, includeLocked = false, filterFn = null, pointerType = this.lastPointerType) {
+      const tolFor = (px) => (layer) => {
+        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+        return Math.max(px / (this.scale || 1), stroke * 2);
+      };
+      const tol = window.Vectura.hitTolerance;
+      return this._pickWithTouchRule(world, pointerType, { includeLocked, filterFn },
+        tolFor(tol('strokePick', 'mouse')), tolFor(tol('strokePick', 'touch')));
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -14392,44 +14444,15 @@
       return !(hasNeg && hasPos);
     }
 
-    findLayerAtPointPrecise(world) {
-      const layers = this.engine.layers.slice().reverse();
-      let best = null;
-      let bestDist = Infinity;
-      layers.forEach((layer) => {
-        if (!layer.visible) return;
-        const isCompound = layer.containerRole === 'compound';
-        if (!isCompound && layer.isGroup) return;
-        if (layer.mask?.enabled && layer.mask?.hideLayer) return;
-        if (this.engine.hasCompoundAncestor?.(layer)) return;
-        if (this.isLayerLocked?.(layer.id)) return;
+    // Direct tool pick. Mouse and pen keep the fixed 1.5 world units; touch reaches HIT_TOLERANCE.directPick
+    // screen px (TUX-024), nearest stroke wins, and the locked-layer rule of findLayerAtPoint applies.
+    findLayerAtPointPrecise(world, pointerType = this.lastPointerType) {
+      const tolFor = (wide) => (layer) => {
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
-        const tol = Math.max(1.5, stroke * 2);
-        const tolSq = tol * tol;
-        this.getInteractionPaths(layer).forEach((path) => {
-          if (path && path.meta && path.meta.kind === 'circle') {
-            const cx = path.meta.cx ?? path.meta.x ?? 0;
-            const cy = path.meta.cy ?? path.meta.y ?? 0;
-            const r = path.meta.r ?? path.meta.rx ?? 0;
-            const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
-            if (dist * dist <= tolSq && dist < bestDist) {
-              bestDist = dist;
-              best = layer;
-            }
-            return;
-          }
-          if (!Array.isArray(path) || path.length < 2) return;
-          for (let i = 0; i < path.length - 1; i++) {
-            const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
-            if (d <= tolSq && d < bestDist) {
-              bestDist = d;
-              best = layer;
-              break;
-            }
-          }
-        });
-      });
-      return best;
+        const reach = wide ? window.Vectura.hitTolerance('directPick', 'touch') / (this.scale || 1) : 1.5;
+        return Math.max(reach, stroke * 2);
+      };
+      return this._pickWithTouchRule(world, pointerType, {}, tolFor(false), tolFor(true));
     }
 
     getSelectionBounds(layers, temp) {
