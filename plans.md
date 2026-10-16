@@ -597,6 +597,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **dutyConst Density > 50 (2026-10-16).** Clearance tightens from the plot floor to one pen width (touching rulings, solid shadow) across Density 50-~93; <= 50 byte-identical. Open: cast-shadow hatching overruns the sphere limb by a few strokes at the contact (pre-existing, separate).
 - **Pre-push Rosetta hang (2026-10-14).** Intel `/usr/local/bin/git` ran the hook as x86_64 → x64 Chromium hung the feedback e2e; hook re-enters arm64 via `arch -arm64` when `sysctl.proc_translated` is 1.
 - **Mono Density test seed flake (2026-10-12).** `scene3d-fr-u5-legacy-mono-density` relied on random layer seeds; seeds pinned, dutyConst/turingStripe cases moved to Density 20 (85 is inert at the plot floor by design).
 - **U2 golden Node-major gate (2026-10-11).** mezzoRegion hash failed on Node 25 arm64 (V8 ULP drift, verified on base 383d7610); hashes now enforced on Node 20 only, counts everywhere; `.nvmrc` added.
