@@ -455,6 +455,12 @@ describe('SurfaceFill — F1-placement condition 4: WV6 laws byte-identical pre/
     preRuntime = await loadVecturaRuntime({ includeUi: true, ...f1pBaselineRuntimeOptions() });
     const Vpost = postRuntime.window.Vectura;
     const Vpre = preRuntime.window.Vectura;
+    // U2 (2026-10-02) moved the ribbon EROSION to `PenFill.erodeLevels` — a
+    // deliberate output change unrelated to placement. The baseline
+    // surface-fill.js predates it, so the post side is pinned to the polygon
+    // erosion it falls back to without `erodeLevels`, keeping this a test of
+    // PLACEMENT alone.
+    delete Vpost.PenFill.erodeLevels;
 
     const PRIMITIVES = ['torus', 'sphere', 'cone'];
     const DENSITIES = [25, 50, 100];

@@ -108,6 +108,86 @@ Reference:
 - The harness currently assumes Node 20.19+ and a matched Vitest 4 / V8 coverage-provider pair;
   version-specific pool configuration is documented in `docs/testing.md`.
 - Local Playwright compatibility notes also live in `docs/testing.md`; local browser fallbacks must stay documented there and in `AGENTS.md` whenever the e2e runtime contract changes.
+- **Shared local test queue.** Local test runs go through `scripts/test-queue.js`, one
+  machine-wide lock shared by every worktree and agent session. Agents run tests only through
+  the `npm run test:*` entrypoints (single files: `npm run test:vitest -- run <file>`,
+  `npm run test:playwright -- <spec>`), never `npx vitest` or `npx playwright test` directly.
+  Any new heavy test script in `package.json` must route through the queue; an aggregate script
+  wraps its whole chain once. CI bypasses the queue (`CI` set). Contract: `docs/testing.md` →
+  "Shared Local Test Queue".
+
+### Accelerated feedback and promotion
+
+Bounded `test:feedback` supplies local iteration and the pre-push gate; it does not certify
+full-suite coverage. Explicit path routing must fail broadly for unknown/shared/harness changes.
+Fresh VM/DOM profiles isolate mutable state, while only immutable compiled scripts may be cached.
+Local ordinary runs default to two workers, full local coverage to one, and CI retains two.
+Exhaustive rendering proofs remain in `tests/audit/`, and full coverage scope/thresholds remain
+unchanged. Existing GitHub gates stay required during shadow evaluation. Promotion needs a
+validated evidence ledger, exact-revision audit evidence and operational audit-failure ownership.
+Local execution, queue wait, hosted queue/setup and total runner-minutes must be reported separately.
+See `test-suite-acceleration.md` for targets and `test-suite-acceleration-punchlist.md` for findings.
+
+### Full PR correctness ownership (phase two)
+
+Full-scope coverage owns non-E2E Vitest correctness, including unit, integration, visual,
+performance and exhaustive audit files. Historical unit/integration/visual required checks
+may be compatibility aliases only when they depend on a successful authoritative coverage
+job; aliases are never independent test evidence. Lifecycle checks, uninstrumented
+performance and the complete configured browser roster retain explicit owners.
+`test:ci` mirrors these guarantees locally within one shared queue slot. `test:fast` is
+a bounded-feedback alias and cannot certify the full suite. Coverage thresholds remain
+unchanged. This is execution deduplication, not selective test-routing promotion.
+
+PR #97 proposes conditional full-Vitest sharding: a plan/guard binds the exact source SHA
+and timestamp to two disjoint duration-weighted partitions on pull requests and pushes to
+main, and a canonical required coverage job always runs for those events. It fails closed
+on a failed plan, guard, or shard; verifies same-run/same-SHA report provenance; checks
+each shard roster, merges V8 data, then strictly checks every file and the 57-skip baseline
+before acceptance; it applies the canonical statements 74%, branches
+62%, functions 74%, and lines 76% ratchets. Existing bounded feedback, probe, browser,
+performance, and lane-gate checks remain in place. The scheduled audit runs separately,
+followed by the uninstrumented visual and performance suites. Main stays unsharded until
+hosted CI, review, and screen validation pass. The PR #97 hosted graph is the validation trial.
+
+Local `test:ci`, queue behavior, worker defaults, and the 30-minute per-attempt deadline
+are unchanged. A separately measured two-worker full-coverage route took 39m40s, so that
+measurement does not establish that a plain local `npm run test:ci` invocation finishes.
+Historical schema 2/3 roster data remains readable but cannot qualify the new schema 4
+topology; promotion requires 20 genuine schema 4 observations. The local fast/pre-push lane
+remains unchanged.
+The custom duration sequencer is ESM so Vite can load `vitest/node` without rewriting a CommonJS import to an invalid file-URL `require`; the bounded probe exercises the real config path. Hosted feedback runs this small probe afterward as a separate step, outside feedback-lane timing metrics and the full-coverage critical path; the local fast/pre-push lane remains unchanged.
+For GitHub Actions shell commands with backslash-newline continuations, use a literal YAML block (`run: |`); a folded plain scalar turns the newline into a space and can corrupt CLI arguments.
+
+Changes to topology must synchronize the aggregate gate, versioned evidence roster and
+branch-protection compatibility. Engine/pool or sharding candidates require measured
+compatibility, source attribution and cleanup checks before promotion. Missing shards or
+coverage reports fail closed; never average per-shard coverage percentages. Promotion
+also requires strict current-topology evidence, review, at least 30% lower whole-chain
+latency and no more than about 15% extra allocated runner time. No speedup is claimed yet. See
+`test-suite-phase2.md` for baseline, implementation evidence and remaining targets.
+
+### Vitest lifecycle ownership
+
+All repository Vitest entrypoints use `scripts/run-vitest.js`, which launches a
+separate supervisor and owned process group. Cleanup runs independently of model
+availability, before retries and after completion, cancellation, wrapper death, or
+the configurable per-attempt deadline (30 minutes locally / three hours in CI). Deadline/cancellation/cleanup errors
+remain failures. Use `npm run test:runner` plus the wrapper-policy unit tests when
+changing this lifecycle. These checks are also part of the unit entrypoint.
+POSIX/WSL requirements and protection limits are documented in `docs/testing.md`.
+The shared queue owns the outer run; the Vitest supervisor handles each inner attempt.
+Waiting for the queue does not start the Vitest deadline. Playwright retains queue ownership.
+
+```mermaid
+flowchart LR
+  Q[Shared test queue] --> W[Vitest wrapper]
+  W -->|IPC liveness and cancellation| S[Detached supervisor]
+  S -->|launch and deadline| G[Owned Vitest process group]
+  G --> V[Vitest runner]
+  G --> F[Fork workers]
+  S -->|TERM then KILL on cleanup| G
+```
 
 ## 6) Documentation Synchronization Matrix
 

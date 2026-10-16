@@ -213,73 +213,26 @@ describe('U9b-2 — onePenDown shadow write-back (the ONE undisclosed exception,
     });
   });
 
-  // ── (d) the ONLY exception, enumerated + mutation-proven ────────────────
-  describe('(d) onePenDown is the ONLY ALIASES id the shadow bag resolves forward (every other id: raw pass-through)', () => {
-    test('sweep: every real ALIASES id either passes through raw, or (onePenDown alone) resolves to its survivor', () => {
-      const LAWS = V.SCENE3D_TONE_LAWS;
+  // ── (d) the exceptions, enumerated ──────────────────────────────────────
+  // Only a roster SHADOW_FORWARD id (onePenDown -> interlockWeave: its chart-space bridge has nothing to
+  // walk on a flat footprint) is rewritten by the shadow bag. Every other alias keeps its own id in the
+  // document, including the ones with no shadow recipe (isophoteWidth, defectSplit, deepFillTSP): shadows.js
+  // draws its plain-hatch fallback (= Ladder) for them at render time and the picker displays Ladder.
+  describe('(d) only SHADOW_FORWARD ids are rewritten by the shadow bag (every other id: raw pass-through)', () => {
+    const sweep = () => {
       const Params = V.Scene3D.Params;
-      const aliasIds = Object.keys(LAWS.ALIASES);
-      expect(aliasIds.length).toBeGreaterThan(0);
-      const resolved = [];
-      const exceptions = [];
-      aliasIds.forEach((id) => {
-        const out = Params.normalizeShadow({ shadowToneLaw: id }).shadowToneLaw;
-        resolved.push({ id, out });
-        if (out !== id) exceptions.push({ id, out });
-      });
-      // Every non-exception id passed straight through, unchanged.
-      resolved.forEach(({ id, out }) => {
-        if (id === 'onePenDown') return;
-        expect(out).toBe(id);
-      });
-      // The ONE exception is exactly onePenDown, resolving to its own
-      // ALIASES-declared survivor — never a different id, never more than one.
-      expect(exceptions).toEqual([{ id: 'onePenDown', out: LAWS.ALIASES.onePenDown.into }]);
-      expect(exceptions.length).toBe(1);
+      return Object.keys(V.SCENE3D_TONE_LAWS.ALIASES).map((id) => ({ id, out: Params.normalizeShadow({ shadowToneLaw: id }).shadowToneLaw }));
+    };
+    test('sweep: every ALIASES id passes through raw, bar onePenDown (-> interlockWeave)', () => {
+      const exceptions = sweep().filter(({ id, out }) => out !== id);
+      expect(exceptions).toEqual([{ id: 'onePenDown', out: 'interlockWeave' }]);
     });
-
-    test('mutation: if a SECOND real id also becomes shadow-indistinguishable (Shadows.toneLawApplies -> false), the "exactly one exception" guard trips RED', () => {
-      const LAWS = V.SCENE3D_TONE_LAWS;
-      const Params = V.Scene3D.Params;
-      const Shadows = V.Scene3D.Shadows;
-      const aliasIds = Object.keys(LAWS.ALIASES);
-      // Pick a real, currently-unaffected ALIASES id to mutate onto.
-      const secondId = aliasIds.find((id) => id !== 'onePenDown' && Shadows.toneLawApplies(id) === true);
-      expect(secondId).toBeTruthy(); // sanity: the mutation target exists and starts unaffected
-
-      const sweepExceptions = () => {
-        const exceptions = [];
-        aliasIds.forEach((id) => {
-          const out = Params.normalizeShadow({ shadowToneLaw: id }).shadowToneLaw;
-          if (out !== id) exceptions.push(id);
-        });
-        return exceptions;
-      };
-
-      // Baseline (unmutated): exactly one exception, onePenDown.
-      expect(sweepExceptions()).toEqual(['onePenDown']);
-
-      const originalToneLawApplies = Shadows.toneLawApplies;
-      try {
-        Shadows.toneLawApplies = (id) => (id === secondId ? false : originalToneLawApplies(id));
-        const mutatedExceptions = sweepExceptions();
-        // RED: the "onePenDown is the ONLY exception" invariant is now false —
-        // proves the guard is live, not vacuous, and that the write-back
-        // mechanism is genuinely driven by `Shadows.toneLawApplies` (general),
-        // not a hardcoded `=== 'onePenDown'` string check.
-        expect(mutatedExceptions).not.toEqual(['onePenDown']);
-        expect(mutatedExceptions).toEqual(expect.arrayContaining(['onePenDown', secondId]));
-        expect(mutatedExceptions.length).toBe(2);
-        // And the mutated second id resolves to ITS OWN alias survivor, not
-        // onePenDown's — confirming this is a real per-id resolve, not a
-        // shared fallback.
-        expect(Params.normalizeShadow({ shadowToneLaw: secondId }).shadowToneLaw)
-          .toBe(LAWS.ALIASES[secondId].into);
-      } finally {
-        Shadows.toneLawApplies = originalToneLawApplies;
-      }
-      // Restored: back to exactly one exception.
-      expect(sweepExceptions()).toEqual(['onePenDown']);
+    test('the recipe-less aliases keep their id and the picker shows Ladder for them', () => {
+      const FS = V.SCENE_FILL_STYLES;
+      ['isophoteWidth', 'defectSplit', 'deepFillTSP'].forEach((id) => {
+        expect(V.Scene3D.Params.normalizeShadow({ shadowToneLaw: id }).shadowToneLaw).toBe(id);
+        expect(FS.shadowDisplayLaw(id, FS.resolve(id))).toBe('ladder');
+      });
     });
   });
 });

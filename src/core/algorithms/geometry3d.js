@@ -11,10 +11,49 @@
   const COLLINEAR_EPS = 1e-6;
 
 
-  const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
-  const finite = (value, fallback = 0) => (Number.isFinite(Number(value)) ? Number(value) : fallback);
+  // T2-8b-5d (perf, no output change): a number skips the `Number()` coercion; every other input takes the
+  // original path, so the results (including -0 -> 0 in `clamp` and NaN -> fallback in `finite`) are identical.
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, (typeof value === 'number' ? value : Number(value)) || 0));
+  const finite = (value, fallback = 0) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : fallback;
+    if (value === undefined) return fallback; // Number(undefined) is NaN
+    return Number.isFinite(Number(value)) ? Number(value) : fallback;
+  };
   const degToRad = (deg) => (finite(deg) * Math.PI) / 180;
   const lerp = (a, b, t) => a + (b - a) * t;
+
+  // ── Scene Seed (U4a) ───────────────────────────────────────────────────────
+  // ONE shared, module-level seed state for every hash / jitter / dither site in
+  // the scene3d fill stack (geometry3d strokeHash, mappers hash2, mesh hash01,
+  // shadows hash01, surface-fill sfHash, scene3d ldHash and the golden-ratio
+  // phase walks). `scene3d.generate` sets it per compose / per object and ALWAYS
+  // restores it to zero (see `withSeed`), so nothing leaks between composes.
+  //
+  //   salt   int32 XORed into each hash's input BEFORE its avalanche.
+  //   phase  [0,1) added to the golden-ratio / ladder phase walks.
+  //   off    small int added to the sin-based mesh hash.
+  //
+  // ALL THREE ARE 0 FOR A LEGACY LAYER, and every consumer is written so that 0
+  // is an exact identity (x ^ 0, x + 0): a saved document renders bit-for-bit as
+  // it did before the Seed field was wired.
+  const SEED = { salt: 0, phase: 0, off: 0 };
+  const mix32 = (n) => {
+    let h = Math.imul((n | 0) ^ 0x9e3779b9, 0x85ebca6b);
+    h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+    return h | 0;
+  };
+  // `seeds` null/undefined ⇒ legacy (all zero). Otherwise an array of ints folded
+  // into one non-zero salt, so seed 0 is a real seed and differs from legacy.
+  const setSeedState = (seeds) => {
+    if (!Array.isArray(seeds) || !seeds.length) { SEED.salt = 0; SEED.phase = 0; SEED.off = 0; return; }
+    let h = 0x2545f491;
+    for (let i = 0; i < seeds.length; i += 1) h = mix32(h ^ (Math.round(Number(seeds[i]) || 0) | 0));
+    SEED.salt = h || 1;
+    SEED.phase = (mix32(h ^ 0x68e31da4) >>> 0) / 4294967296;
+    SEED.off = ((mix32(h ^ 0x1b873593) >>> 0) % 9973) + 1;
+  };
+  const snapshotSeedState = () => ({ salt: SEED.salt, phase: SEED.phase, off: SEED.off });
+  const restoreSeedState = (snap) => { SEED.salt = snap.salt; SEED.phase = snap.phase; SEED.off = snap.off; };
 
   const v = (x = 0, y = 0, z = 0) => ({ x, y, z });
   const add = (a, b) => v(a.x + b.x, a.y + b.y, a.z + b.z);
@@ -32,7 +71,81 @@
     return v(a.x / len, a.y / len, a.z / len);
   };
 
-  const rotatePoint = (point, angles = {}) => {
+  // ── Rotation: yaw (about Y) → pitch (about X) → roll (about Z) ────────────
+  //
+  // PRECOMPUTED TRIG, SAME ARITHMETIC (fill-style review F3, U2). The legacy
+  // `rotatePoint` re-derived three `degToRad`→`finite(Number())` coercions and
+  // six sin/cos per call, and allocated three destructuring arrays — and the
+  // curved fill calls it 4-8x per surface sample. `rotationTrig` resolves the
+  // angles exactly as before (same `??` fallbacks, same `degToRad`), and
+  // `rotateWithTrig` runs the identical three sequential 2-D rotations with the
+  // identical expression order, so the output is BIT-IDENTICAL (pinned by
+  // tests/unit/geometry3d-rotator-identity.test.js).
+  const rotationTrig = (angles = {}) => {
+    const yaw = degToRad(angles.yaw ?? angles.rotate ?? 0);
+    const pitch = degToRad(angles.pitch ?? angles.tilt ?? 0);
+    const roll = degToRad(angles.roll ?? 0);
+    return {
+      cy: Math.cos(yaw), sy: Math.sin(yaw),
+      cp: Math.cos(pitch), sp: Math.sin(pitch),
+      cr: Math.cos(roll), sr: Math.sin(roll),
+    };
+  };
+  const rotateWithTrig = (point, e) => {
+    const x0 = point.x; const y0 = point.y; const z0 = point.z;
+    const x1 = x0 * e.cy + z0 * e.sy; const z1 = -x0 * e.sy + z0 * e.cy;
+    const y2 = y0 * e.cp - z1 * e.sp; const z2 = y0 * e.sp + z1 * e.cp;
+    const x3 = x1 * e.cr - y2 * e.sr; const y3 = x1 * e.sr + y2 * e.cr;
+    return v(x3, y3, z2);
+  };
+  /** A rotator with the trig of `angles` resolved once: `(pt) => rotatePoint(pt, angles)`. */
+  const makeRotator = (angles = {}) => {
+    const e = rotationTrig(angles);
+    return (point) => rotateWithTrig(point, e);
+  };
+  // A 4-slot memo keyed on the RAW angle inputs, so every existing caller of
+  // `rotatePoint` (object rotation + camera, alternating per sample) gets the
+  // precomputed trig without changing its call site. `Object.is`, not `===`:
+  // `0 === -0`, but sin(-0) is -0 and a signed zero can survive into a later
+  // division, so the memo must never hand a -0 key the +0 entry.
+  const ROT_MEMO = [];
+  for (let i = 0; i < 4; i += 1) ROT_MEMO.push({ a: undefined, b: undefined, c: undefined, used: false, e: null });
+  let rotMemoNext = 0;
+  const isKey = (a) => typeof a === 'number' || typeof a === 'string';
+  // `memoTrig` is the single trig cache. `rotatePoint` and `rotTrig` (T2-8b-5d,
+  // main) both read it, so a scene that mixes the two pays for each angle
+  // triple once. The returned trig object is fresh per miss and never mutated,
+  // so a caller may hold it across later evictions.
+  const memoTrig = (ay, ap, ar) => {
+    // Only primitives are memoised: an object angle could coerce differently
+    // between calls (valueOf), so it always recomputes.
+    if (isKey(ay) && isKey(ap) && isKey(ar)) {
+      for (let i = 0; i < 4; i += 1) {
+        const m = ROT_MEMO[i];
+        if (m.used && Object.is(m.a, ay) && Object.is(m.b, ap) && Object.is(m.c, ar)) return m.e;
+      }
+      const m = ROT_MEMO[rotMemoNext];
+      rotMemoNext = (rotMemoNext + 1) & 3;
+      m.a = ay; m.b = ap; m.c = ar; m.used = true;
+      m.e = rotationTrig({ yaw: ay, pitch: ap, roll: ar });
+      m.e.ry = ay; m.e.rp = ap; m.e.rr = ar;
+      return m.e;
+    }
+    const e = rotationTrig({ yaw: ay, pitch: ap, roll: ar });
+    e.ry = ay; e.rp = ap; e.rr = ar;
+    return e;
+  };
+  // T2-8b-5d API (main): trig of a RAW angle triple `{ ry, rp, rr, cy, sy, cp,
+  // sp, cr, sr }`. Callers pass the already-resolved yaw / pitch / roll.
+  const rotTrig = (ry, rp, rr) => memoTrig(ry, rp, rr);
+  const rotatePoint = (point, angles = {}) => rotateWithTrig(point, memoTrig(
+    angles.yaw ?? angles.rotate ?? 0,
+    angles.pitch ?? angles.tilt ?? 0,
+    angles.roll ?? 0,
+  ));
+  // The legacy implementation, kept verbatim as the identity reference for the
+  // property test only — production code calls `rotatePoint` / `makeRotator`.
+  const rotatePointReference = (point, angles = {}) => {
     let { x, y, z } = point;
     const yaw = degToRad(angles.yaw ?? angles.rotate ?? 0);
     const pitch = degToRad(angles.pitch ?? angles.tilt ?? 0);
@@ -176,6 +289,7 @@
   // hash01 so wobble is stable across regenerations).
   const strokeHash = (a, b) => {
     let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+    h ^= SEED.salt; // 0 for a legacy layer ⇒ identity
     h ^= h >>> 13;
     h = Math.imul(h, 1274126177);
     h ^= h >>> 16;
@@ -1249,6 +1363,10 @@
     length,
     normalize,
     rotatePoint,
+    makeRotator,
+    rotatePointReference,
+    SEED, setSeedState, snapshotSeedState, restoreSeedState,
+    rotTrig,
     projectPoint,
     pathWithMeta,
     cleanPath,

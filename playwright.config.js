@@ -48,8 +48,8 @@ module.exports = defineConfig({
   },
   fullyParallel: false,
   // Match CI locally so `npm run test:ci` is a faithful pre-push gate.
-  // The dev server is a single-threaded `python3 -m http.server`; >2 workers
-  // saturates it and causes petalis-profile JSON requests to time out.
+  // Keep browser concurrency bounded while the Node static server serves
+  // presets and geometry assets; raising this needs measured resource evidence.
   retries: 1,
   workers: 2,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
@@ -73,7 +73,7 @@ module.exports = defineConfig({
         ...(useSystemChrome ? { channel: 'chrome' } : {}),
         viewport: { width: 1600, height: 1000 },
       },
-      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|type-tool-desktop\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|text-panel-field-desktop\.spec\.js$|keyboard-inset-desktop\.spec\.js$|modals-desktop\.spec\.js$|hidden-actions-desktop\.spec\.js$|toolbar-handles-desktop\.spec\.js$|mirror-dial-mouse\.spec\.js$|reorder-mouse\.spec\.js$|delete-undo-desktop\.spec\.js$|file-open-desktop\.spec\.js$|paint-bucket-mouse\.spec\.js$|reset-view-desktop\.spec\.js$|toolbar-submenu-desktop\.spec\.js$|value-entry-desktop\.spec\.js$|shell-header\.spec\.js$|modifier-bar-desktop\.spec\.js$|canvas-backing-desktop\.spec\.js$|bottom-pane-desktop\.spec\.js$|petal-designer-undo-desktop\.spec\.js$/,
+      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|type-tool-desktop\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|text-panel-field-desktop\.spec\.js$|keyboard-inset-desktop\.spec\.js$|modals-desktop\.spec\.js$|hidden-actions-desktop\.spec\.js$|toolbar-handles-desktop\.spec\.js$|mirror-dial-mouse\.spec\.js$|reorder-mouse\.spec\.js$|delete-undo-desktop\.spec\.js$|file-open-desktop\.spec\.js$|paint-bucket-mouse\.spec\.js$|reset-view-desktop\.spec\.js$|toolbar-submenu-desktop\.spec\.js$|value-entry-desktop\.spec\.js$|shell-header\.spec\.js$|modifier-bar-desktop\.spec\.js$|canvas-backing-desktop\.spec\.js$|bottom-pane-desktop\.spec\.js$|petal-designer-undo-desktop\.spec\.js$|feedback\.spec\.js$|ground-size\.spec\.js$|wavetable-image-noise\.spec\.js$/,
     },
     {
       name: 'desktop-visual-chromium',

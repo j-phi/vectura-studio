@@ -431,7 +431,7 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     pillByLabel('Highlight').click();
     setTreatment(NONE());
     expect(rowCtl(openFly(), 'Strength')).toBeFalsy();
-    setTreatment('sparse');
+    setTreatment('thin'); // U5: Sparse + Stipple are Thin
     expect(rowCtl(openFly(), 'Strength')).toBeTruthy();
     expect(rowCtl(openFly(), 'Pen')).toBeTruthy();
     // …and back off again.
@@ -459,8 +459,10 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     const C = window.Vectura.CONTEXT_BAR.sceneFlyouts.highlight;
     expect(Array.isArray(C.altFillMappers)).toBe(true);
     expect(C.altFillMappers.map((o) => o.value))
-      .toEqual(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']);
+      // U5 (R3-6): Hatch + Crosshatch are one Lines option with Layers 1 | 2.
+      .toEqual(['lines', 'contour', 'spiral', 'stipple']);
     expect(C.altFill.label).toBeTruthy();
+    expect(C.altFillLayers.options.map((o) => o.value)).toEqual([1, 2]);
   });
 
   test('I7: Alt fill treatment reveals the alt-fill mapper picker + density; hidden otherwise', async () => {
@@ -481,9 +483,9 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
     const mapCtl = rowCtl(openFly(), 'Alt fill');
     expect(mapCtl).toBeTruthy();
     expect(rowCtl(openFly(), 'Strength')).toBeTruthy();
-    // The picker exposes the five fill mappers.
+    // The picker exposes the fill mappers (Hatch + Crosshatch are Lines, U5).
     const opts = Array.from(mapCtl.querySelector('select').options).map((o) => o.value);
-    expect(opts).toEqual(expect.arrayContaining(['hatch', 'crosshatch', 'contour', 'spiral', 'stipple']));
+    expect(opts).toEqual(expect.arrayContaining(['lines', 'contour', 'spiral', 'stipple']));
   });
 
   test('I7: changing the alt-fill mapper writes style.params.altFillMapper scoped to the selection', async () => {
@@ -700,14 +702,14 @@ describe('Contextual Task Bar — scene-object flyouts (ask #8)', () => {
 
   // ── C4 Job 3 / fs-m2 Job 3 — Density max raised 200 -> 500 (context-bar
   // side only; engine-side ramps above 200 are a sibling branch's job). ────
-  test('C4/Job3: Style ▾ Density slider declares max 220', async () => {
+  test('C4/Job3: Style ▾ Density slider declares max 500 (U3: the engine clamp)', async () => {
     const scene = addSelectScene();
     app.renderer.setSceneObjectStyle(scene.id, ['obj-1'], { mapper: 'hatch' });
     CB.restoreState();
     pillByLabel('Style').click();
     const range = rowCtl(openFly(), 'Density').querySelector('input[type="range"]');
     expect(range).toBeTruthy();
-    expect(range.max).toBe('220');
+    expect(range.max).toBe('500');
   });
 
   // ── C4 Job 4 — Border Offset control (obj.border.offset). ──────────────

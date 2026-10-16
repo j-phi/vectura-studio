@@ -143,8 +143,10 @@
 
   // Deterministic 2D integer hash → [0,1) jitter, so stipple is stable across
   // regenerations (no RNG per A-17) yet not visibly gridded.
+  const SEED = (G3() && G3().SEED) || { salt: 0, phase: 0, off: 0 };
   const hash2 = (a, b) => {
     let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+    h ^= SEED.salt; // Scene Seed — 0 for a legacy layer ⇒ identity
     h ^= h >>> 13;
     h = Math.imul(h, 1274126177);
     h ^= h >>> 16;

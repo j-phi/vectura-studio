@@ -87,9 +87,9 @@ describe('onePenDown — promoted from unreachable to the roster (fs-r1)', () =>
   // resolves back to the exact internal id `onePenDown` — never `ladder`,
   // and the render is byte-identical (covered by the U8 cluster block in
   // tests/unit/scene3d-tone-law-collapse.test.js).
-  test('normalizeStyle migrates "onePenDown" to its survivor (interlockWeave + penDown:continuous), never to ladder (U8 fold)', () => {
+  test('normalizeStyle migrates "onePenDown" to its survivor (Wave + penDown:continuous), never to ladder (U8 fold, U5 re-keyed)', () => {
     const out = Params.normalizeStyle({ mapper: 'hatch', params: { toneLaw: 'onePenDown' } });
-    expect(out.params.toneLaw).toBe('interlockWeave');
+    expect(out.params.toneLaw).toBe('ampSpacing');
     expect(out.params.penDown).toBe('continuous');
     expect(out.params.toneLaw).not.toBe('ladder');
     // Round-trip: resolving the migrated bag lands back on the exact

@@ -1,6 +1,6 @@
 # 3D Scene fill audit + stroke-fill handoff continuation — HANDOFF
 
-**Current as of 2026-09-18 (round 4 merge, integration branch `3d-scene/integrate-r4`, v1.4.3).**
+**⚠ SUPERSEDED — read the ROUND 6 PAUSE POINT block below first (2026-10-10).** **Current as of 2026-09-18 (round 4 merge, integration branch `3d-scene/integrate-r4`, v1.4.3).**
 Local `main` before this merge was `b43fa4e3` (round 3 closed, v1.4.2) = `origin/main`. Round 4
 merged two lanes — `border-4` (W-32r4 + W-32r4b + W-32r4c, refined curved-primitive silhouette
 border) and `fill-audit-a4` (T3b, W-36e, F1-count, T2-5, T3c, T2-6, mkTick/mkDashRamp fill
@@ -209,6 +209,114 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
    fill-audit-c → fill-audit-d, resolve `scene3d.js`/`context-bar.js`/`surface-fill.js` overlaps,
    `npm run test:ci`, reconcile intentionally-red tests, bump version + `version:sync`, CHANGELOG/plans/
    README, commit, STOP.
+
+## T2-9R REJECTED — v1.4.7 KEPT (2026-10-11) — READ THIS FIRST
+
+**Jay viewed the final T2-9R crops against v1.4.7 and ruled: "Honestly 1.4.7 was better than T2-9R. Let's restore to that."**
+
+- The T2-9 redo (T2-9R, units U-R0…U-R5d) is **REJECTED and not merged**. `main` keeps the v1.4.7 mkTick code. Nothing was reverted on `main`, because T2-9R never landed there.
+- The work is parked on branch `3d-scene/fill-audit-a11`, tag `t2-9r-rejected-2026-10-11`. The plan, unit reports and pictures are in that branch under `docs/3d-audit/lane-reports/T2-9R-*.md` and `docs/3d-audit/fill-audit/after/T2-9R/`. The first attempt (`3d-scene/fill-audit-a10`) is also parked.
+- **Kept:** the test-only I1 budget fix (the "72 cells md5 identical" test gets an explicit 900 s timeout), cherry-picked onto `main`.
+- **Do not start another T2-9-style rewrite of the mkTick band logic.** If pole or rim work resumes, first show Jay a whole-object before/after on a prototype, before any units are built.
+- **Lessons:**
+  - Bars that pass unit by unit can still hide a worse overall picture.
+  - Measure perf cumulatively against the release, not against each unit's parent. T2-9R reached about 2× v1.4.7 that way.
+- The ROUND 6 PAUSE POINT block below is **SUPERSEDED** for the T2-9 item. Its other queued items (§d) are still open.
+
+## ROUND 6 PAUSE POINT (2026-10-10) — superseded for T2-9 by the block above
+
+**Context was high; Jay asked for a handoff. Nothing is mid-flight. Every agent has finished.**
+
+### (a) Where things are
+
+| thing | state |
+|---|---|
+| `origin/main` | **`83b9d24a`** (v1.4.7). This is the code at `84ec6ff2` plus reports. **GitHub "Tests" passed on all 6 jobs** (run 37167153441, coverage included). |
+| this handoff + `plans.md` leftovers | Committed on branch `3d-scene/perf-harden-b8` (worktree `.claude/worktrees/perf-harden-b8`), **on top of `83b9d24a`**. Push it with `git push origin HEAD:main` from that worktree. **If it is not on origin yet, the pre-push hook timed out under machine load.** Retry when the load average is under about 20. **Never use `SKIP_PREPUSH`** without Jay saying so. |
+| local `main` checkout | Shared with other sessions. Their touch-audit commits (`b0257728`, `87182920`) reached origin via `c7be39f1` on 2026-10-10. **Jay: "Leave other code alone."** Always integrate in a worktree based on `origin/main` and push with `git push origin HEAD:main`, never from the main checkout. |
+| lane `3d-scene/fill-audit-a10` | **T2-9 U1–U3. REJECTED by Jay's eye (2026-10-04), NOT merged.** Commits: `d2a459ac` (U1 no-hook), `822dc6c7` (U2 seam/overlap), `b15075c6` (U3 partial reach), `4f06a4b4` (perf fix), `9a2aff10` (needle). **The keepers:** `a4a6394c` (tests-only, I1 test gets an explicit 900 s budget; it timed out the pre-push hook at 180 s) and the U2 overlap trim. Report: `lane-reports/T2-9-impl.md`. Pictures: `fill-audit/after/T2-9/`. |
+| old lanes | `fill-audit-a6/a8/a9`, `followups-a7`, `sweep-b7`, `integrate-r5/r6/r7`, `perf-harden-b8`: all merged and spent. |
+
+### (b) What round 6 landed (all on origin, CI green)
+
+- **v1.4.4:** round-5 merge (T3c-onset, W-07b-2, T2-7, T2-8), plus the coverage ratchet re-pinned for Vitest 4 (74/76/74/62, Jay's decision).
+- **v1.4.5, T2-8b chain:** mkTick band continuation (BC → BC-E endpoint envelope → apex ticks with a scoped `MIN_RUN_MM` exemption). Fills the cone base wedges.
+- **v1.4.7, T2-8b-5/5b/5c/5d:** dark-side regular ticks extend to an even 0.6 mm off the outline, with no torus jogs or steps, and perf held at about 1.3×. **PERF-HARDEN** replaced the load-flaky wall-clock ratio perf tests with deterministic work counts.
+- **Housekeeping:** jsdom ≥30 and Vitest ≥5 are held in Dependabot (Node 20 toolchain; PR #80 closed). **Item 30:** ground-plane addenda on 9 reports. **Item 23:** clean. **W-07b-2 Clause C:** CONFIRMED on 1536 cells (`scripts/audit/w07b2-identity-sweep.js`).
+
+### (c) ⛔ NEXT: T2-9 REDO. Jay's rulings (BINDING, verbatim where quoted)
+
+1. **The band rule (2026-10-04, the governing principle):** *"Generally speaking the hatch lines should be in bands where the hatches are precisely parallel to the other hatches in that band, but where the length of the hatches may vary as the band approaches other bands or sides of the object in order to fill in the space available to them inside of the parameters and other bands."*
+   - Every fix must keep each band's ticks PARALLEL. Only LENGTH may vary.
+2. **"Crop testrig WL looks wrong — it was better before."**
+   - DROP U3 (partial reach). The test-rig W_L goes back to its v1.4.7 look.
+3. **The U1 failure under this rule:** U1 guarded straightening turned pole hooks into straight ticks at MIXED angles, including a "V". That violates the parallel rule.
+   - The pole needs ticks parallel to their band, or the stray ticks dropped. It must not be chord-straightened in arbitrary directions.
+4. **"The lines in the spheres, etc. must not have angles/hooks either."** Still binding.
+5. **Jay's markup:** `fill-audit/after/T2-9/JAY_markup_sphere.png`.
+   - BENDS: pole and lower-right rim.
+   - GAPS: the long inter-band seams, and the bottom rim.
+   - OVERLAPS: bottom-left.
+   - Root causes are in `T2-9-plan.md` §2.
+6. **Decisions D1–D6:** recorded in `T2-9-plan.md` §9. **D1 (guarded straightening) is now SUPERSEDED by rule 1.** Re-ask Jay if the parallel rule conflicts with any decision.
+   - D2 = uniform PMINT seams.
+   - D3 = keep stubs as apex runs.
+   - D4 = accept the lighter pole.
+   - D5 = even rim (U4).
+   - D6 = partial reach. **Superseded by rule 2 for the test rig.**
+7. **U4 (even rim margin):** STOPPED. The prototype is `fill-audit/after/T2-9/U4_trimE_prototype_NOT_COMMITTED.patch`. It got 88 → 11 touching ends, but cone bare went to 26.7 (> 26.45) and torus ink dropped 8%. **Jay: "Opus planner redesign."**
+8. **Crosshatch ink must stay ≥ 0.97 × v1.4.7 on BOTH rigs.** U1–U3 measured test torus at .964. Jay: "Require both setups."
+
+**Recommended path:**
+1. Opus planner, given T2-9-plan + T2-9-impl + the markup + rules 1–8.
+   - Redesign under the band rule.
+   - Decide which of U1/U2 survive.
+   - Redesign U4.
+2. Sonnet implementer, SHOW-ME-FIRST, on a fresh lane off `origin/main`.
+3. Jay's eye. Crops go to his phone via SendUserFile; the orchestrator looks at every picture first.
+4. Then bars, goldens, adversarial review, `test:ci`, merge (v1.4.8), push, and a GitHub CI watch.
+   - Estimate: 6–9 h wall clock, about 1.5–2.5M subagent tokens.
+
+### (d) Still queued after T2-9 (all in `plans.md` → Next, "mkTick follow-ups")
+
+- **Sphere pole hooks:** folded into T2-9.
+- **The T2-8b-5 extension fades with density:** all bars are d=50 only.
+- **Thin mutation margins.**
+- **Sphere d=220 runtime:** 1.32–1.44×.
+- **T2-7 leftovers:** G1 (partial), G3, G6, and the two named T4 exceptions.
+- **Test-rig W_L residual.**
+- **T2-3e row-lattice:** filed.
+- **Sphere G5:** effectively closed by the envelope rule (1.44 → 0.06 mm²). Needs Jay's eye to close.
+
+### (e) Process lessons from round 6 (apply them)
+
+- **Machine load is 40–90 from parallel sessions.**
+  - Absolute timings are meaningless. Measure perf only as old-vs-new **interleaved in ONE process**. The pattern is `scratchpad/perf.cjs`: scriptOverrides with `git show <sha>:<file>`.
+  - An implementer once reported 1.7 s when the real slowdown was 4.1×.
+- **The pre-push hook (`test:fast`) times out slow tests under load.**
+  - Retry when load is lower.
+  - Give slow tests explicit budgets (the CI-6 split pattern).
+  - Do not skip the hook.
+- **Push from an integration worktree based on `origin/main`** (`git push origin HEAD:main`). Never from the local main checkout, which is shared with other sessions.
+- **Use `node scripts/run-vitest.js run <file>`, not `npx vitest`.** It handles worker cleanup; see CLAUDE.md.
+- **Resumed implementers with huge contexts (600k+) get expensive.** Start a fresh Sonnet with a self-contained brief instead.
+- **Opus subagents hit the weekly limit once.** If an agent dies on a 429, re-launch it after the reset.
+
+### (f) Resume prompt for the next orchestrator (paste verbatim)
+
+> Resume the 3D fill audit at the ROUND 6 PAUSE POINT. Read `docs/3d-audit/fill-audit-handoff.md` (that block) first.
+>
+> Then read `docs/3d-audit/lane-reports/T2-9-plan.md` (§2 root causes, §9 decisions) and `T2-9-impl.md`, and look at `docs/3d-audit/fill-audit/after/T2-9/JAY_markup_sphere.png`.
+>
+> FIRST: confirm `3d-scene/perf-harden-b8` (handoff + plans.md) is on `origin/main`. If it is not, push it from that worktree with `git push origin HEAD:main` when load is under ~20. Never push the local main checkout: it holds another session's commits.
+>
+> THEN run the T2-9 REDO under Jay's binding band rule: hatches precisely parallel within a band, length varying to fill the space up to other bands and the object's sides. No hooks or angles. Drop U3 (the test-rig W_L was better before). Crosshatch ink ≥ 0.97× on both rigs. U4 even rim gets an Opus redesign.
+>
+> Staffing: one Opus planner, then a Sonnet implementer, SHOW-ME-FIRST, on a fresh lane off `origin/main`. Jay's eye is the acceptance test: send crops with SendUserFile and look at every picture first. Then bars, goldens, an adversarial review, `test:ci`, merge as v1.4.8, push (`push = A` after `test:ci` is green), and watch GitHub CI to green.
+>
+> Measure perf only as interleaved ratios. Leave other code alone.
+
+---
 
 ## ROUND 5 PAUSE POINT (2026-09-20) — READ THIS FIRST
 
