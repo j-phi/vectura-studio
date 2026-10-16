@@ -132,6 +132,10 @@
       }
     }
     menu.classList.remove('hidden');
+    // TUX-012 / B4 review: on a short screen the list scrolls and only two or three rows show; an iOS overlay scrollbar is invisible,
+    // so mark the edge that still hides rows (the fade is drawn by CSS on touch-ui).
+    const cue = window.Vectura.UI.utils.scrollCue;
+    if (cue && document.body.classList.contains('touch-ui')) { menu.scrollTop = 0; cue.bind(menu); }
   }
 
   function _syncModuleDisplay() {

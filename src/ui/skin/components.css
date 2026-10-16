@@ -16037,7 +16037,7 @@ body.touch-wide-layout.touch-ui .ctxbar {
  * buttons) is at least a finger in both axes. Scene3D and the Petal Designer (slice B5) and the visuals that carry their own
  * ::before extension are left out. */
 body.touch-ui #left-pane :is(button, summary, [role="button"], input:is([type="text"], [type="number"], [type="search"], :not([type]))):not(
-  .info-btn, .mp-info-trigger, .noise-grip, .vtp-sw-toggle, .sr-only, :is(.vs3-panel, [class*="petal-"]) *) {
+  .info-btn, .mp-info-trigger, .noise-grip, .vtp-sw-toggle, .sr-only, .pane-toggle, :is(.vs3-panel, [class*="petal-"]) *) {
   min-height: var(--touch-target-min);
   min-width: var(--touch-target-min);
   box-sizing: border-box;
@@ -16046,7 +16046,7 @@ body.touch-ui #left-pane :is(button, summary, [role="button"], input:is([type="t
  * rows keep their own sizing (they pass already). The small switch, the info dot and the raw checkbox keep their visual and take a
  * centred 44 px ::before; the row that holds one is a finger tall, so the extension never reaches the row above or below. */
 body.touch-ui #right-pane :is(button, summary, [role="button"], input:is([type="text"], [type="number"], [type="search"], :not([type]))):not(
-  .info-btn, .sw-toggle, .sr-only, .draw-order-settings, .draw-order-overlay-toggle, .pen-remove, #layer-list *) {
+  .info-btn, .sw-toggle, .sr-only, .draw-order-settings, .draw-order-overlay-toggle, .pen-remove, .pane-toggle, #layer-list *) {
   min-height: var(--touch-target-min);
   min-width: var(--touch-target-min);
   box-sizing: border-box;
@@ -16172,3 +16172,89 @@ body.touch-ui .tool-drawer-body::after { margin-top: -40px; }
 body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)[data-scroll-cue~="above"]::before,
 body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)[data-scroll-cue~="below"]::after { opacity: 1; }
 /* === END TUX-041 Q22 === */
+
+/* === TUX-041 slice B5: Scene3D, Petal Designer, Pattern designer ===
+ * Every target on these three surfaces is at least --touch-target-min in both axes on coarse pointers. Boxes grow for real where the
+ * layout can take it; the small visuals (info dots, switches) keep their size and take a centred ::before inside a 44 px row.
+ * The Batch R 24 px ::before extensions on the Scene3D tree buttons are replaced by real boxes (a ::before that overhangs a
+ * neighbour steals its pixels). Keyed on body.touch-ui, never on width. Desktop is unchanged. */
+/* Scene3D */
+body.touch-ui .vs3-panel :is(.tab-btn, .sect-hdr, .seg-opt, .tog-btn, .vs3-shelf-btn, .vs3-more-btn, .vs3-grp-new, .vs3-grp-del, .vs3-light-reset,
+  .vs3-tree-addbtn, .vs3-name-input, .vs3-grp-name, .vs3-rename, .vs3-tree-row) {
+  min-height: var(--touch-target-min); box-sizing: border-box;
+}
+body.touch-ui .vs3-panel :is(.seg-opt, .tog-btn, .vs3-tree-addbtn, .vs3-grp-new, .vs3-grp-del) { min-width: var(--touch-target-min); }
+body.touch-ui .vs3-more-menu .vs3-more-item { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui .vs3-more-menu { max-height: calc(var(--app-vh) - 8px); overflow-y: auto; overscroll-behavior: contain; }
+body.touch-ui .vs3-panel .tog-grp { flex-wrap: wrap; }
+/* +1 px: the shelf columns are fractional (1fr), and a caret of exactly 44 px can lose a pixel to the edge it sits on. */
+body.touch-ui .vs3-more-caret { width: calc(var(--touch-target-min) + 1px); min-height: var(--touch-target-min); }
+body.touch-ui .vs3-panel :is(.vs3-tree-vis, .vs3-tree-del, .vs3-grp-kid-btn) {
+  width: var(--touch-target-min); height: var(--touch-target-min); min-width: var(--touch-target-min);
+}
+body.touch-ui .vs3-panel :is(.vs3-tree-vis, .vs3-tree-del, .vs3-tree-addbtn)::before { content: none; }
+body.touch-ui .vs3-panel .vs3-tree-addlight { gap: 8px; }
+body.touch-ui .vs3-panel .vs3-tree-row { align-items: center; }
+body.touch-ui .vs3-panel .vs3-grp-kid { min-height: var(--touch-target-min); }
+body.touch-ui .vs3-panel .vs3-row { min-height: var(--touch-target-min); }
+body.touch-ui .vs3-panel .vs3-name-input { width: 100%; max-width: 100%; font-size: 16px; }
+/* A 4-option switch needs 4 x 44 px: the label takes its own line so the control gets the whole row. */
+body.touch-ui .vs3-panel .vs3-row:has(.seg-ctrl > .seg-opt:nth-child(4)) { flex-wrap: wrap; }
+body.touch-ui .vs3-panel .vs3-row:has(.seg-ctrl > .seg-opt:nth-child(4)) > .vs3-lbl { flex: 1 0 100%; }
+/* The More... split button takes two shelf cells: a 44 px caret beside the main button in one cell would squeeze it to 32 px. */
+body.touch-ui .vs3-shelf .vs3-more { grid-column: span 2; }
+body.touch-ui .vs3-panel .vs3-lawinfo-wrap { margin-right: 10px; } /* keeps the 44 px reach off the pane scrollbar */
+body.touch-ui .vs3-panel .sw-toggle { position: relative; }
+body.touch-ui .vs3-panel .sw-toggle::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+/* The info dot ("About ...") keeps its small look and takes a 44 px ::before; its row is a finger tall. */
+body.touch-ui .vs3-panel .vs3-lawinfo-btn { position: relative; }
+body.touch-ui .vs3-panel .vs3-lawinfo-btn::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+body.touch-ui .vs3-panel :is(.vs3-lbl, .vs3-subhead, .vs3-hl-hdr):has(.vs3-lawinfo-btn) { min-height: var(--touch-target-min); }
+/* Petal Designer (inline in the left pane and the pop-out window) */
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-profile-side-btn, .petal-ring-param-accordion-summary, .petal-designer-randomness summary, .petal-slider-label > select, .petal-profile-editor-actions button,
+  .petal-designer-structure input, .petal-designer-structure select, .petal-visualizer-mode select, .petal-designer-transition select) {
+  min-height: var(--touch-target-min); min-width: var(--touch-target-min); box-sizing: border-box;
+}
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-designer-structure input, .petal-designer-structure select, .petal-visualizer-mode select) { font-size: 16px; }
+/* WebKit ignores min-height on a native select: it needs a height. */
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-designer-structure select, .petal-visualizer-mode select, .petal-slider-label > select, .petal-designer-transition select) { height: var(--touch-target-min); }
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-profile-editor-thumbs, .petal-profile-thumbs) {
+  grid-template-columns: repeat(auto-fill, minmax(var(--touch-target-min), 1fr));
+}
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-profile-editor-thumbs, .petal-profile-thumbs) > button { min-width: var(--touch-target-min); min-height: var(--touch-target-min); }
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) .petal-transition-lock { min-height: var(--touch-target-min); }
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-transition-lock, .petal-shade-toggle) :is(.sw-toggle, input[type="checkbox"]) { position: relative; }
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-transition-lock, .petal-shade-toggle) :is(.sw-toggle, input[type="checkbox"])::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+/* The pop-out window floats over the canvas HUD and covers part of it, so the half-covered zoom buttons would be half dead: the HUD
+ * steps aside while the window is open (the window itself is the active surface; undo / redo live in its header, TUX-020). */
+body.touch-ui:has(#petal-designer-window:not(.petal-designer-inline)) .canvas-hud { display: none; }
+/* Pattern designer: its header row holds three buttons and the shared tool strip (8 x 44 px), which ran past the pane edge. Both rows wrap. */
+body.touch-ui .pattern-designer-inline .pd-header-row { flex-wrap: wrap; row-gap: 6px; }
+body.touch-ui .pattern-designer-inline .pd-header-actions { flex-wrap: wrap; row-gap: 6px; justify-content: flex-end; }
+/* A tablet drawer (Document Setup) slid over the left 14 px of the tool rail and took 5 px of every rail button: the rail rides above it. */
+body.touch-ui:not(.phone-layout):has(.settings-panel.open) #tool-bar { z-index: 41; }
+/* ...and the 14 px of drawer under the rail stay empty, so the rail never steals a control's reach. */
+body.touch-ui:not(.phone-layout) .settings-panel-body { padding-right: 16px; box-sizing: border-box; }
+/* Generator picker on a short screen: the list scrolls, so the hidden edge gets a fade (utils.scrollCue, bound when the list opens). */
+body.touch-ui #gm-module-menu::before, body.touch-ui #gm-module-menu::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 2;
+  opacity: 0; transition: opacity 120ms ease;
+}
+body.touch-ui #gm-module-menu::before { top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent); }
+body.touch-ui #gm-module-menu::after { bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent); }
+body.touch-ui #gm-module-menu[data-scroll-cue~="above"]::before,
+body.touch-ui #gm-module-menu[data-scroll-cue~="below"]::after { opacity: 1; }
+/* Collapsed touch-wide rail: the chevron fills the 36 px rail (its own ::before reaches 10 px onto the canvas). Its box had grown to 44 px,
+ * so 8 px more of it lay over the canvas (792 px2 instead of 440) and took the iPad landscape share to 74.999 % (the right chevron even ran 17 px off screen). The hit area stays 46 px wide. */
+/* B4's pane rule (#left-pane button { min-width: 44px }, specificity with an id) is what grew it; the rule now skips .pane-toggle too. */
+body.touch-wide-layout.touch-ui :is(#left-pane, #right-pane).pane-collapsed .pane-toggle { width: auto; min-width: 0; }
+/* === END TUX-041 slice B5 === */

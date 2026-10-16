@@ -2441,7 +2441,8 @@
       const mw = moreMenu.offsetWidth || 0;
       const belowRoom = window.innerHeight - rect.bottom;
       const up = belowRoom < mh + 8 && rect.top > belowRoom;
-      const top = up ? Math.max(4, rect.top - mh - 4) : rect.bottom + 4;
+      // Clamp into the viewport: an anchor scrolled out of sight (or finger-tall rows) must not leave rows off screen.
+      const top = Math.max(4, Math.min(up ? rect.top - mh - 4 : rect.bottom + 4, window.innerHeight - mh - 4));
       let left = rect.left;
       if (left + mw > window.innerWidth - 4) left = Math.max(4, window.innerWidth - mw - 4);
       moreMenu.style.top = `${Math.round(top)}px`;

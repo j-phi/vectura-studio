@@ -178,12 +178,12 @@
       });
 
       pd.root.innerHTML = `
-        <div class="flex items-center justify-between mb-2 px-1">
+        <div class="pd-header-row flex items-center justify-between mb-2 px-1">
           <div class="flex items-center gap-1.5">
             <span class="text-[11px] font-medium text-vectura-accent uppercase tracking-wide">Pattern Designer</span>
             <span data-pd-draft-badge class="hidden text-[9px] bg-vectura-accent text-black px-1 py-px rounded leading-tight">Unsaved</span>
           </div>
-          <div class="flex gap-1 items-center">
+          <div class="pd-header-actions flex gap-1 items-center">
             <button type="button" class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors" data-pd-import-tile>
               Import SVG Tile
             </button>
