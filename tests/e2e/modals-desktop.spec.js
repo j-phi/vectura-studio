@@ -180,4 +180,15 @@ test.describe('TUX-047 zoom surfaces on desktop', () => {
     await page.mouse.up();
     expect(await hist(), 'commit adds exactly one history entry').toBe(h0 + 1);
   });
+  test('TUX-052: mouse click keeps Click hints and Help opens on mac or win', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.mouse.click(640, 400);
+    await expect(page.locator('body')).toHaveAttribute('data-last-input', 'mouse');
+    await expect(page.locator('#status-bar')).toContainText(/Click/);
+    await page.click('#btn-menu-help');
+    await page.click('#btn-help');
+    await page.waitForSelector('#modal-overlay.open');
+    const active = await page.locator('.help-platform-btn.active').getAttribute('data-platform');
+    expect(['mac', 'win']).toContain(active);
+  });
 });

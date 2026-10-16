@@ -25,6 +25,59 @@
     seg('Shift+Drag', `to draw a ${constrained}`),
   ];
 
+  // TUX-052: touch-word twin of `tools` (same keys). Shown after touch/Pencil input.
+  // Modifier names come from touch-modifiers.js. A mouse segment with no proven
+  // touch path is omitted, never reworded into an invented gesture.
+  const touchShapeHint = (shape, constrained) => [
+    seg('Drag', `to draw ${/^[aeiou]/i.test(shape) ? 'an' : 'a'} ${shape}`),
+    seg('Constrain + Drag', `to draw a ${constrained}`),
+  ];
+  const touchTools = {
+    select: { hint: [
+      seg('Tap', 'the object to select'),
+      seg('Multi-select + Tap', 'to select multiple objects'),
+      seg('Duplicate + Drag', 'the object to duplicate'),
+    ] },
+    direct: { hint: [
+      seg('Tap', 'the path or anchor point of an object'),
+      seg('Multi-select + Tap', 'to select multiple anchor points or paths'),
+    ] },
+    lasso: { hint: [seg('Drag', 'around anchor points to select them')] },
+    type: { hint: [
+      seg('Tap or drag', 'to create a text box'),
+      seg('Type', 'the text'),
+      seg('Select', 'the text and edit it in the Text panel'),
+    ] },
+    'shape-rect': { hint: touchShapeHint('rectangle', 'square') },
+    'shape-oval': { hint: touchShapeHint('oval', 'circle') },
+    'shape-line': { hint: touchShapeHint('line', '45° line') },
+    'shape-polygon': { hint: touchShapeHint('polygon', 'polygon with aligned edges') },
+    'algo-draw': { hint: [seg('Drag', 'to draw the selected algorithm onto the canvas')] },
+    hand: { hint: [seg('Drag', 'to pan the canvas')] },
+    'pen-draw': { hint: [
+      seg('Tap', 'to place anchor points'),
+      seg('Drag', 'to pull out curve handles'),
+      seg('Double-tap', 'to finish the path'),
+    ] },
+    'pen-add': { hint: [seg('Tap', 'a path to add an anchor point')] },
+    'pen-delete': { hint: [seg('Tap', 'an anchor point to delete it')] },
+    'pen-anchor': { hint: [
+      seg('Tap', 'an anchor to toggle corner and smooth'),
+      seg('Drag', 'an anchor to pull out handles'),
+    ] },
+    'scissor-line': { hint: [
+      seg('Drag', 'across paths to cut them'),
+      seg('Constrain + Drag', 'to constrain the cut line angle'),
+    ] },
+    'scissor-rect': { hint: [seg('Drag', 'a rectangle to cut the paths inside it')] },
+    'scissor-circle': { hint: [seg('Drag', 'a circle to cut the paths inside it')] },
+    fill: { hint: [seg('Tap', 'inside a closed region to fill it')] },
+    'fill-erase': { hint: [seg('Tap', 'a filled region to erase its fill')] },
+    'fill-pattern': { hint: [seg('Tap', 'inside a closed region to apply the pattern')] },
+    'fill-pattern-erase': { hint: [seg('Tap', 'a patterned region to erase its pattern')] },
+    'light-source': { hint: [seg('Tap', 'the canvas to place the light source')] },
+  };
+
   Vectura.HINTS = {
     // HUD-3: toast auto-dismiss.
     toast: { durationMs: 2000 },
@@ -36,6 +89,7 @@
     toasts: {
       shapeExpanded: 'Shape Expanded',
     },
+    touchTools,
     tools: {
       select: {
         name: 'Selection',

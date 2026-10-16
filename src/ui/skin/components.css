@@ -15874,6 +15874,30 @@ body.touch-ui #vectura-toast-host .vectura-toast {
 body.touch-ui #vectura-toast-host .vectura-toast:not(.is-actionable) { pointer-events: none; }
 /* === END TUX-048 === */
 
+/* === TUX-052 === Help Touch page: stack the gesture rows on narrow screens */
+@media (max-width: 700px) {
+  .help-panel[data-panel="touch"] .help-kbd-table,
+  .help-panel[data-panel="touch"] .help-kbd-table tbody { display: block; }
+  .help-panel[data-panel="touch"] .help-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--help-border, rgba(255, 255, 255, 0.08));
+  }
+  .help-panel[data-panel="touch"] .help-row td { display: block; width: auto; text-align: left; padding: 0; white-space: normal; }
+}
+
+/* === TUX-052b === Help tab/platform buttons meet the 44px touch target */
+body.touch-ui .help-tab-btn,
+body.touch-ui .help-platform-btn {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* === END TUX-052b === */
 /* === TUX-041 / TUX-043: draw-order head clears the 44 px slider (integration fix) ===
  * TUX-041 gives the 18 px eye and gear icons a 44 px ::before (13 px past the icon on each side);
  * TUX-043 makes the draw-order slider a 44 px band. With the 5 px head margin the icon hit boxes
