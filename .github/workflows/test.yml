@@ -11,7 +11,7 @@ on:
 env:
   # Single source of truth for the coverage shard count (1..32) and per-shard Vitest worker cap.
   COVERAGE_SHARD_COUNT: '10'
-  VECTURA_VITEST_MAX_WORKERS: '4'
+  VECTURA_VITEST_MAX_WORKERS: '2'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
