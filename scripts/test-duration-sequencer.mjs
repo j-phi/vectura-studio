@@ -26,7 +26,8 @@ export default class DurationBalancedSequencer extends BaseSequencer {
     const root = this.ctx.config.root;
     const files = specifications.map((spec) => filePath(spec.moduleId, root)).sort();
     if (JSON.stringify(files) !== JSON.stringify(plan.inventory)) throw new Error('Vitest-collected file inventory differs from the deterministic shard plan');
-    const index = this.ctx.config.shard.index;
+    const { index, count } = this.ctx.config.shard;
+    if (count !== plan.shardCount) throw new Error(`vitest --shard count ${count} differs from the shard plan count ${plan.shardCount}`);
     const assigned = new Set(plan.shards[index - 1]?.files || []);
     if (!assigned.size) throw new Error(`shard ${index} has no assigned files`);
     return specifications.filter((spec) => assigned.has(filePath(spec.moduleId, root)));

@@ -8,6 +8,9 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const WEIGHTS_PATH = path.join(__dirname, 'test-shard-weights.json');
 const FULLY_SKIPPED_FILES = require('./test-lanes.json').ciRoster.testInventory.fullySkippedFiles || {};
+const MIN_SHARDS = 1;
+const MAX_SHARDS = 32;
+const DEFAULT_SHARD_COUNT = 2;
 const slash = (value) => value.split(path.sep).join('/');
 
 function inventoryTests(directory = path.join(ROOT, 'tests'), files = []) {
@@ -33,9 +36,9 @@ function planHash(plan) {
   return crypto.createHash('sha256').update(stableJson(content)).digest('hex');
 }
 
-function buildPlan({ files, weights, sha, shardCount = 2 }) {
+function buildPlan({ files, weights, sha, shardCount = DEFAULT_SHARD_COUNT }) {
   if (!/^[0-9a-f]{40}$/i.test(sha || '')) throw new Error('plan requires the exact 40-character workflow SHA');
-  if (!Number.isInteger(shardCount) || shardCount !== 2) throw new Error('the initial coverage pilot is bounded to exactly two shards');
+  if (!Number.isInteger(shardCount) || shardCount < MIN_SHARDS || shardCount > MAX_SHARDS) throw new Error(`shard count must be an integer between ${MIN_SHARDS} and ${MAX_SHARDS}`);
   const normalized = [...new Set(files)].sort();
   if (normalized.length !== files.length || !normalized.length) throw new Error('test inventory must be nonempty and contain no duplicate paths');
   const rows = normalized.map((file) => {
@@ -124,7 +127,7 @@ function main() {
     const planFile = args.plan || args['plan-out'];
     if (args['plan-out']) {
       const sha = args.sha || process.env.GITHUB_SHA;
-      const plan = buildPlan({ files: inventoryTests(), weights, sha, shardCount: Number(args.shards || 2) });
+      const plan = buildPlan({ files: inventoryTests(), weights, sha, shardCount: Number(args.shards || DEFAULT_SHARD_COUNT) });
       fs.writeFileSync(args['plan-out'], `${JSON.stringify(plan, null, 2)}\n`);
       process.stdout.write(JSON.stringify({ planHash: plan.hash, inventory: plan.inventory.length, shards: plan.shards.map(({ index, files, estimatedSeconds }) => ({ index, files: files.length, estimatedSeconds })), unknownWeightSeconds: plan.unknownFileWeightSeconds }) + '\n');
       return;
@@ -168,8 +171,8 @@ function main() {
         fs.copyFileSync(blob, destination);
         staged.push(destination);
       }
-      const artifactNames = fs.readdirSync(artifacts).filter((name) => name.startsWith('coverage-shard-')).sort();
-      if (artifactNames.length !== plan.shardCount || staged.length !== plan.shardCount) throw new Error('expected exactly two same-attempt shard artifacts');
+      const artifactNames = fs.readdirSync(artifacts).filter((name) => /^coverage-shard-\d+$/.test(name)).sort();
+      if (artifactNames.length !== plan.shardCount || staged.length !== plan.shardCount) throw new Error(`expected exactly ${plan.shardCount} same-attempt shard artifacts`);
       process.stdout.write(`[shard-plan] staged ${staged.length} provenance-verified blob reports for ${sha}, run ${runId}, attempt ${attempt}\n`);
       return;
     }
@@ -182,4 +185,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { buildPlan, inventoryTests, planHash, readPlan, validateReport };
+module.exports = { MAX_SHARDS, MIN_SHARDS, buildPlan, inventoryTests, planHash, readPlan, validateReport };

@@ -36,8 +36,11 @@ export default defineConfig({
     // RPC, and if it is starved on CI's shared runner the acks are what stall.
     // Bound local memory as well as CPU: at most two fresh DOM workers, and
     // one for full local coverage (which also collects exhaustive audits).
+    // VECTURA_VITEST_MAX_WORKERS overrides the cap (CI workflows set it and pass the same value to test-profile).
     // Keep CI's established two-worker configuration until hosted measurements.
-    maxWorkers: !CI && process.env.VECTURA_TEST_COVERAGE === '1' ? 1 : 2,
+    maxWorkers: Number.parseInt(process.env.VECTURA_VITEST_MAX_WORKERS || '', 10) > 0
+      ? Number.parseInt(process.env.VECTURA_VITEST_MAX_WORKERS, 10)
+      : !CI && process.env.VECTURA_TEST_COVERAGE === '1' ? 1 : 2,
     // NOTE: this block belongs under `test`. It sat as a sibling of it, where vitest
     // never reads it — so `include`/`exclude` silently did nothing and v8 instrumented
     // the WHOLE repo: build scripts, playwright.config.js, and (worst) the minified
