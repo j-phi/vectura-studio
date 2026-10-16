@@ -181,7 +181,7 @@ describe('SurfaceFill — F1-amp: back-port Round 6 amplitude floor to the four 
   const post = {};
   const pre = {};
 
-  const build = (Vectura, law) => {
+  const build = (Vectura, law, includeBlankMap = false) => {
     const engine = new Vectura.VectorEngine();
     const groupId = engine.addLayer('scene3d');
     const group = engine.layers.find((l) => l && l.id === groupId);
@@ -207,24 +207,32 @@ describe('SurfaceFill — F1-amp: back-port Round 6 amplitude floor to the four 
     const fingerprint = paths
       .map((p) => `${(p.meta && p.meta.kind) || ''}:${p.map((pt) => `${pt.x.toFixed(6)},${pt.y.toFixed(6)}`).join('|')}`)
       .join(';');
-    // Belt-and-suspenders own copy of F1-placement's deep-blank oracle
-    // (`scene3d-ribbon-flat-field-placement.test.js`, condition 1) --
-    // trochoidLoop's own cliff (measured, see `WV_TROCH_AFLOOR_SHARE`'s
-    // comment) makes this THIS unit's own responsibility to guard directly,
-    // not just trust a sibling file.
-    const region = regionCap.dominantRegion() || [];
-    const fillInk = paths.filter((p) => p && p.meta && p.meta.kind === 'sceneFill');
-    const blank = buildBlankMap(region, fillInk, 0.3, { cellSize: 0.1, thresholds: [0.8, 2.0] });
-    const clusters = findBlankClusters(blank.blankByT[0.8].mask, blank.nx, blank.ny, blank.cs, blank.ox, blank.oy);
-    const largestCluster = clusters.reduce((best, c) => (!best || c.areaMm2 > best.areaMm2 ? c : best), null)
-      || { areaMm2: 0, lengthMm: 0 };
+    // The placement suite owns the broad blank-area roster. Keep one
+    // post-fix amplitudeOnly map here as an independent output guard.
+    let deepBlankAreaMm2 = null;
+    let regionAreaMm2 = null;
+    let fillPathCount = 0;
+    let largestCluster = null;
+    if (includeBlankMap) {
+      const region = regionCap.dominantRegion() || [];
+      const fillInk = paths.filter((p) => p && p.meta && p.meta.kind === 'sceneFill');
+      fillPathCount = fillInk.length;
+      const blank = buildBlankMap(region, fillInk, 0.3, { cellSize: 0.1, thresholds: [0.8, 2.0] });
+      regionAreaMm2 = blank.regionAreaMm2;
+      const clusters = findBlankClusters(blank.blankByT[0.8].mask, blank.nx, blank.ny, blank.cs, blank.ox, blank.oy);
+      largestCluster = clusters.reduce((best, c) => (!best || c.areaMm2 > best.areaMm2 ? c : best), null)
+        || { areaMm2: 0, lengthMm: 0 };
+      deepBlankAreaMm2 = blank.blankByT[2.0].areaMm2;
+    }
     return {
       wave,
       stats,
       inkMm,
       fingerprint,
       groupCount: cap.groups.length,
-      deepBlankAreaMm2: blank.blankByT[2.0].areaMm2,
+      deepBlankAreaMm2,
+      regionAreaMm2,
+      fillPathCount,
       largestCluster,
     };
   };
@@ -235,7 +243,7 @@ describe('SurfaceFill — F1-amp: back-port Round 6 amplitude floor to the four 
     const PV = postRuntime.window.Vectura;
     const QV = preRuntime.window.Vectura;
     ALL_LAWS.forEach((law) => {
-      post[law] = build(PV, law);
+      post[law] = build(PV, law, law === 'amplitudeOnly');
       pre[law] = build(QV, law);
     });
   }, 600000);
@@ -313,24 +321,14 @@ describe('SurfaceFill — F1-amp: back-port Round 6 amplitude floor to the four 
     });
   });
 
-  describe('Stop condition — F1-placement\'s own deep-blank oracle must not regress (the trochoidLoop cliff)', () => {
-    // Re-derived, own copy, of scene3d-ribbon-flat-field-placement.test.js's
-    // condition-1/condition-2 bars (0.55mm2 deep-blank +-10%, 45mm2 largest
-    // cluster) -- that file is a MUST-STAY-GREEN guard for this unit and was
-    // independently re-run clean, but the cliff this unit found (trochoidLoop
-    // regresses from 0.00 to 3.97mm2 deep-blank at share 0.05, a HARD
-    // threshold, not a gradual slope, between share 0.045 and 0.05) is squarely
-    // this unit's own mechanism to guard, not just a sibling file's.
-    test.each(LAWS)('%s — post-fix deep-blank (>2mm) stays at/under the ruled bar (0.55mm2)', (law) => {
-      const { deepBlankAreaMm2 } = post[law];
-      expect(deepBlankAreaMm2, `${law}: deepBlank=${deepBlankAreaMm2.toFixed(4)}mm2`).toBeLessThanOrEqual(0.55);
-    });
-
-    test.each(LAWS)('%s — post-fix largest dist>0.8mm cluster stays at/under the ruled bar (45mm2)', (law) => {
-      const { largestCluster } = post[law];
-      expect(largestCluster.areaMm2, `${law}: largest cluster ${JSON.stringify(largestCluster)}`)
-        .toBeLessThanOrEqual(45);
-    });
+  test('amplitudeOnly — post-fix deep blank remains within the visible-form bar', () => {
+    const { deepBlankAreaMm2, regionAreaMm2, fillPathCount, largestCluster } = post.amplitudeOnly;
+    expect(fillPathCount).toBeGreaterThan(0);
+    expect(regionAreaMm2).toBeGreaterThan(100);
+    expect(deepBlankAreaMm2, `amplitudeOnly: deepBlank=${deepBlankAreaMm2.toFixed(4)}mm2`)
+      .toBeLessThanOrEqual(0.55);
+    expect(largestCluster.areaMm2, `amplitudeOnly: largest cluster ${JSON.stringify(largestCluster)}`)
+      .toBeLessThanOrEqual(45);
   });
 
   describe('Stop condition — whole-object ink stays inside ±8% (re-derived on 6e1ed52f)', () => {

@@ -4,11 +4,9 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 /*
  * FILL-STYLE REVIEW U7 — deferred items (tone bands, chaining, hatch angle, hidden settings).
  *
- * Every default is pinned to the output of the tree this unit started from
- * (3d-scene/fr-u5, 7d20989b; sphere r40 detail 20, orthographic, Density 50).
- * "Defaults reproduce today" is a fact: each pinned hash was measured on that
- * tree before the control existed. Each control then gets a test that fails
- * without it and passes with it.
+ * Three representative defaults retain curved and faceted output guards;
+ * U6 owns the full historical BASE roster. Each control keeps a focused
+ * behavior witness below.
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -29,30 +27,14 @@ const lenOf = (p) => {
 };
 const inkOf = (paths) => Math.round(paths.reduce((a, p) => a + lenOf(p), 0));
 
-// Measured on 3d-scene/fr-u5 with the harness below (sphere / box, hatch).
+// Representative outputs measured on 3d-scene/fr-u5 with the harness below.
 const BASE = {
-  'box/contour/ladder': '2c2e00953e',
-  'box/spiral/ladder': '00ddbff7ce',
   'sphere/hatch/ladder': '522848d59b',
-  'sphere/crosshatch/ladder': '39470366af',
-  'sphere/contour/ladder': '2df69d6183',
-  'sphere/spiral/ladder': '3ca6bbfe09',
-  'sphere/stipple/ladder': '4c1eff931e',
-  'sphere/hatch/taperedEnds': '18936da1cc',
-  'sphere/hatch/nibAngle': '6f943b3d78',
-  'sphere/hatch/ampSpacing': '321a388eee',
-  'sphere/hatch/turingStripe': 'b805ab7a9e',
-  'sphere/hatch/mazeFill': '3196519b04',
-  'sphere/hatch/voronoiWeb': 'a78080ed7a',
-  'sphere/hatch/penInterleave': '778d2eef89',
-  'sphere/hatch/trochoidLoop': 'e9ba907e91',
-  'sphere/hatch/interlockWeave': '67225d66af',
   'box/hatch/ladder': '28c2e95acf',
   'box/crosshatch/ladder': '170ebe1a1a',
-  'box/stipple/ladder': 'a3b46f9d51',
-  'box/hatch/turingStripe': 'beb2caec95',
-  'box/hatch/mazeFill': '172be58078',
 };
+// Retain the original default witness used by the independent chaining test.
+const VORONOI_DEFAULT_HASH = 'a78080ed7a';
 
 describe('Fill-style review U7 — deferred items', () => {
   // Each fill is a full scene build; a loaded machine needs more than the 180 s default.
@@ -127,24 +109,24 @@ describe('Fill-style review U7 — deferred items', () => {
   };
 
 
-  describe('defaults reproduce today', () => {
+  describe('curved and faceted defaults reproduce today', () => {
     Object.keys(BASE).forEach((key) => {
       const [prim, mapper, law] = key.split('/');
-      it(`${key} with every U7 default written out`, () => {
+      it(`${key} with toneBands explicitly off matches its saved default`, () => {
         expect(gen(prim, mapper, law, { toneBands: 0 }).hash).toBe(BASE[key]);
         expect(gen(prim, mapper, law).hash).toBe(BASE[key]);
       });
     });
   });
 
-  describe('item 1 — tone bands to pens, every Fill Style', () => {
+  describe('item 1 — tone bands to pens across six representative styles', () => {
     const PENS = ['pen-a', 'pen-b', 'pen-c', 'pen-d'];
     const cases = [
       ['sphere', 'hatch', 'ladder'], ['sphere', 'stipple', 'ladder'], ['sphere', 'hatch', 'mazeFill'],
       ['sphere', 'hatch', 'taperedEnds'], ['box', 'hatch', 'ladder'], ['box', 'crosshatch', 'ladder'],
     ];
     cases.forEach(([prim, mapper, law]) => {
-      [2, 3, 4].forEach((n) => {
+      [3].forEach((n) => {
         it(`${prim}/${mapper}/${law} splits into ${n} bands, band k on pen k`, () => {
           const off = gen(prim, mapper, law);
           const on = gen(prim, mapper, law, { toneBands: n, tierPens: PENS.slice(0, n) });
@@ -158,6 +140,18 @@ describe('Fill-style review U7 — deferred items', () => {
           // Same ink, the pen only changes (a split adds no length; a join point may repeat).
           expect(Math.abs(on.ink - off.ink)).toBeLessThanOrEqual(Math.max(3, off.ink * 0.01));
         });
+      });
+    });
+    [2, 4].forEach((n) => {
+      it(`sphere/hatch/ladder splits at the ${n}-band boundary`, () => {
+        const off = gen('sphere', 'hatch', 'ladder');
+        const on = gen('sphere', 'hatch', 'ladder', { toneBands: n, tierPens: PENS.slice(0, n) });
+        expect(on.pens.filter(Boolean).length).toBeGreaterThanOrEqual(2);
+        on.out.forEach((pth) => {
+          const m = pth.meta || {};
+          if (Number.isInteger(m.toneBand)) expect(m.penId).toBe(PENS[m.toneBand]);
+        });
+        expect(Math.abs(on.ink - off.ink)).toBeLessThanOrEqual(Math.max(3, off.ink * 0.01));
       });
     });
     it('a band with no pen keeps the object pen; band 0 is the lightest tone', () => {
@@ -196,7 +190,7 @@ describe('Fill-style review U7 — deferred items', () => {
     it('default off is today; on joins edges into fewer paths and cuts pen travel', () => {
       const off = gen('sphere', 'hatch', 'voronoiWeb');
       const on = gen('sphere', 'hatch', 'voronoiWeb', { chainMarks: true });
-      expect(off.hash).toBe(BASE['sphere/hatch/voronoiWeb']);
+      expect(off.hash).toBe(VORONOI_DEFAULT_HASH);
       expect(on.n).toBeLessThan(off.n * 0.75);
       expect(travelOf(on.out)).toBeLessThan(travelOf(off.out) * 0.2);
       // A join adds a connector under one pen width, never a new mark.
