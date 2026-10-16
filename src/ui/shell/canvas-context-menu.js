@@ -84,6 +84,20 @@
     };
   };
 
+  // Visible, unlocked, top-level-selectable layers for Select All.
+  const selectableIds = () => {
+    const engine = getEngine(); const renderer = getRenderer();
+    if (!engine || !Array.isArray(engine.layers)) return [];
+    return engine.layers
+      .filter((l) => l && l.visible !== false && !l.isGroup && !(renderer && renderer.isLayerLocked && renderer.isLayerLocked(l.id)))
+      .map((l) => l.id);
+  };
+  const cmdSelectAll = () => {
+    const renderer = getRenderer(); const ids = selectableIds();
+    if (!renderer || !ids.length) return;
+    renderer.setSelection(ids, ids[ids.length - 1]);
+  };
+
   // ── command routing (existing verbs only) ──────────────────────────────
   const cmdDuplicate = (s) => { const ui = getUi(); if (ui && ui.duplicateLayers) ui.duplicateLayers(s.layers); };
   const cmdDelete = (s) => {
@@ -304,7 +318,9 @@
     }
 
     if (!s.hasSelection) {
-      // Empty-selection subset: Undo / Redo only.
+      // Empty-selection subset: Select All (touch long-press on empty canvas) and Undo / Redo.
+      items.push({ id: 'select-all', label: L.selectAll || 'Select All', enabled: selectableIds().length > 0, reason: R.selectAll || '', run: cmdSelectAll });
+      items.push(SEP);
       items.push({ id: 'undo', label: L.undo || 'Undo', enabled: s.canUndo, reason: s.canUndo ? '' : (R.undo || ''), run: cmdUndo });
       items.push({ id: 'redo', label: L.redo || 'Redo', enabled: s.canRedo, reason: s.canRedo ? '' : (R.redo || ''), run: cmdRedo });
       return items;
@@ -466,6 +482,43 @@
     openAt(e.clientX, e.clientY, resolveSceneHit(e.clientX, e.clientY));
   };
 
+  // ── TUX-034b: touch long-press on the canvas ──────────────────────────
+  // With Select, Direct Selection or Hand, a finger held 500 ms opens this menu. Drawing and fill tools keep their own
+  // press-and-hold meaning (clause 11), so the hold never starts there. Quick move precedence (Q4): on a selected object
+  // a move of 6 px or more starts the move, so the hold slop there is 6 px; elsewhere it is the 10 px TouchHold slop.
+  const HOLD_TOOLS = ['select', 'direct', 'hand'];
+  const worldAt = (renderer, x, y) => {
+    const box = renderer.canvas.getBoundingClientRect();
+    return renderer.screenToWorld(x - box.left, y - box.top);
+  };
+  const holdResolve = (el, e) => {
+    const renderer = getRenderer();
+    if (!renderer || !renderer.ready || !HOLD_TOOLS.includes(renderer.activeTool)) return null;
+    if (renderer.touchPointers && renderer.touchPointers.size > 1) return null;
+    let onSelected = false;
+    try {
+      const hit = renderer.findLayerAtPoint(worldAt(renderer, e.clientX, e.clientY), false, null, e.pointerType);
+      onSelected = !!(hit && renderer.selectedLayerIds && renderer.selectedLayerIds.has(hit.id));
+    } catch (_e) { /* no hit-test */ }
+    return { key: 'canvas', anchorEl: el, popRing: true, slopPx: onSelected ? 6 : 0 };
+  };
+  const holdFire = ({ x, y }) => {
+    const renderer = getRenderer();
+    if (!renderer) return;
+    // Cancel what the same touch started (a pending move, marquee or deselect) without a history entry,
+    // so the lift and any finger movement after the menu opened run nothing.
+    renderer.abortActiveInteraction('long-press');
+    const hit = renderer.findLayerAtPoint(worldAt(renderer, x, y), false, null, 'touch');
+    if (hit && !(renderer.selectedLayerIds && renderer.selectedLayerIds.has(hit.id))) renderer.selectLayer(hit);
+    const clear = Number((Vectura.TOUCH_HOLD || {}).fingerClearPx) || 44;
+    openAt(x + clear / 2, y - clear / 4, resolveSceneHit(x, y));
+  };
+  const bindHold = (canvas) => {
+    const TH = UI.TouchHold;
+    if (!TH || typeof TH.bind !== 'function' || state.unbindHold) return;
+    state.unbindHold = TH.bind(canvas, { selector: '#main-canvas', resolve: holdResolve, onFire: holdFire, pointerTypes: ['touch', 'pen'] });
+  };
+
   const findCanvas = () => {
     const d = doc();
     if (!d) return null;
@@ -479,6 +532,7 @@
     const canvas = findCanvas();
     if (!canvas) return false;
     canvas.addEventListener('contextmenu', onContextMenu);
+    bindHold(canvas);
     state.canvas = canvas;
     state.listenerAttached = true;
     return true;
@@ -502,6 +556,7 @@
   const destroy = () => {
     close();
     if (state.canvas) state.canvas.removeEventListener('contextmenu', onContextMenu);
+    if (state.unbindHold) { state.unbindHold(); state.unbindHold = null; }
     state.canvas = null;
     state.listenerAttached = false;
     state.attachTries = 0;

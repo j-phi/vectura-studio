@@ -25,6 +25,7 @@
       delete: 'Delete',
       undo: 'Undo',
       redo: 'Redo',
+      selectAll: 'Select All',
       group: 'Group',
       ungroup: 'Ungroup',
       isolate: 'Isolate group',
