@@ -28,8 +28,8 @@ describe('TUX-024 hitTolerance table', () => {
     doubleTapMs: [400, 400],
     penCurveSlop: [2, 6],
     'gizmo3d-marker': [9, 22],
-    'gizmo3d-centre': [5, 10],
-    'gizmo3d-ring-band': [5, 10],
+    'gizmo3d-centre': [5, 22],
+    'gizmo3d-ring-band': [5, 22],
   };
 
   const rows = [];

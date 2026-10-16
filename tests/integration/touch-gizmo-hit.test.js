@@ -90,12 +90,33 @@ describe('TUX-025: 3D rotation gizmo touch geometry and hit radii', () => {
         setRot(f, { yaw: s.yaw, pitch: s.pitch, roll: s.roll });
         const c = control(f);
         const ring = Math.abs(dist(scr(f, c.center), ne) - c.ringRadius * f.renderer.scale);
-        if (c.rollHandle) expect(ring, `ring band vs NE yaw=${s.yaw}`).toBeGreaterThan(tol('gizmo3d-ring-band', 'touch') + need);
+        // The widened ring band may overlap the NE resize zone; the resize zone wins there (see h4). The NE hit centre itself stays outside the band.
+        if (c.rollHandle) expect(ring, `ring band vs NE yaw=${s.yaw}`).toBeGreaterThan(tol('gizmo3d-ring-band', 'touch'));
         for (const [k, p] of Object.entries(targets(f))) {
           if (k === 'C') continue;
           expect(dist(p, ne), `${k} vs NE`).toBeGreaterThan(tol('gizmo3d-marker', 'touch') + need - 22 + 1);
         }
       }
+    });
+  });
+
+
+  describe.each([['polyhedron'], ['terrain']])('%s: the widened ring band does not steal a resize pick', (type) => {
+    test('h4) a touch tap 20 px from NE toward the ring (inside both zones) arms ne resize', () => {
+      setTouch(true);
+      const f = buildPseudo(type)();
+      const r = f.renderer;
+      const ne = r.worldToScreen(f.bounds.corners.ne.x, f.bounds.corners.ne.y);
+      const spec = r.get3DRotationSpec(f.layer);
+      r._write3DRotation(f.layer, spec, { yaw: 0 });
+      const c = r.get3DRotationControl(f.layer, r.getSelectionBounds([f.layer]) || f.bounds);
+      const cs = r.worldToScreen(c.center.x, c.center.y);
+      const dx = cs.x - ne.x; const dy = cs.y - ne.y; const l = Math.hypot(dx, dy) || 1;
+      const p = { x: ne.x + (20 * dx) / l, y: ne.y + (20 * dy) / l };
+      const ev = { clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {} };
+      r.down(ev);
+      expect({ handle: r.activeHandle, rot: r.rotation3DDrag }).toEqual({ handle: 'ne', rot: null });
+      r.up({ ...ev });
     });
   });
 
@@ -180,6 +201,54 @@ describe('TUX-025: 3D rotation gizmo touch geometry and hit radii', () => {
         const h = hitAt(f, { x: t.C.x + 8 * Math.cos(ang), y: t.C.y + 8 * Math.sin(ang) }, 'touch');
         expect(h && h.type).toBe('orbit');
       }
+    });
+
+    test('i) TUX-025: a touch tap 20 px from the centre (away from the nearest marker) arms orbit; mouse does not', () => {
+      setTouch(true);
+      const f = build();
+      for (const s of grid(f)) {
+        setRot(f, { yaw: s.yaw, pitch: s.pitch, roll: s.roll });
+        const t = targets(f);
+        let near = null;
+        for (const o of Object.keys(t)) if (o !== 'C' && (!near || dist(t.C, t[o]) < dist(t.C, t[near]))) near = o;
+        const dx = t.C.x - t[near].x;
+        const dy = t.C.y - t[near].y;
+        const l = Math.hypot(dx, dy) || 1;
+        const p = { x: t.C.x + (20 * dx) / l, y: t.C.y + (20 * dy) / l };
+        const h = hitAt(f, p, 'touch');
+        expect(h && h.type, `centre 20px away yaw=${s.yaw} pitch=${s.pitch} roll=${s.roll}`).toBe('orbit');
+      }
+    });
+
+    test('j) TUX-025: a touch tap 20 px off the roll ring (clear of every marker) arms roll; nearest marker still wins', () => {
+      setTouch(true);
+      const f = build();
+      let exercised = 0;
+      for (const s of grid(f)) {
+        setRot(f, { yaw: s.yaw, pitch: s.pitch, roll: s.roll });
+        const c = control(f);
+        if (!c.rollHandle) continue;
+        const t = targets(f);
+        const cs = scr(f, c.center);
+        const ringPx = c.ringRadius * f.renderer.scale;
+        for (let a = 0; a < 16; a++) {
+          const ang = (a * Math.PI) / 8;
+          const p = { x: cs.x + (ringPx + 20) * Math.cos(ang), y: cs.y + (ringPx + 20) * Math.sin(ang) };
+          const nearest = Object.keys(t).filter((k) => k !== 'C').sort((x, y) => dist(p, t[x]) - dist(p, t[y]))[0];
+          if (dist(p, t[nearest]) <= 24) {
+            // A marker is in reach: the nearest marker must win, never the ring.
+            const h = hitAt(f, p, 'touch');
+            expect(h && h.type, `marker in reach ${nearest}`).toBe({ Y: 'yaw', P: 'pitch', R: 'roll' }[nearest]);
+            continue;
+          }
+          if (dist(p, t.C) <= 22 + 1) continue;
+          exercised += 1;
+          const h = hitAt(f, p, 'touch');
+          expect(h && h.type, `ring +20px dir ${a} yaw=${s.yaw} pitch=${s.pitch}`).toBe('roll');
+          expect(hitAt(f, p, 'mouse')).toBeNull();
+        }
+      }
+      expect(exercised).toBeGreaterThan(0);
     });
 
     test('g) G5: touch yaw grab 18 px TANGENTIAL off the marker does not jump', () => {

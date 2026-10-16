@@ -80,8 +80,8 @@
       penCurveSlop: { mouse: 2, pen: 2, touch: 6 },
       // TUX-025: 3D rotation gizmo (orbit pad, yaw, pitch, roll). Mouse/pen values are the old literals.
       'gizmo3d-marker': { mouse: 9, pen: 9, touch: 22 },
-      'gizmo3d-centre': { mouse: 5, pen: 5, touch: 10 },
-      'gizmo3d-ring-band': { mouse: 5, pen: 5, touch: 10 },
+      'gizmo3d-centre': { mouse: 5, pen: 5, touch: 22 },
+      'gizmo3d-ring-band': { mouse: 5, pen: 5, touch: 22 },
       // Extra reach past the orbit pad edge that still arms orbit (the old literal 7 px).
       'gizmo3d-pad-slack': { mouse: 7, pen: 7, touch: 7 },
     },
