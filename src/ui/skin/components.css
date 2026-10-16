@@ -16420,18 +16420,18 @@ body.touch-ui #gm-module-menu[data-scroll-cue~="below"]::after { opacity: 1; }
 body.touch-wide-layout.touch-ui :is(#left-pane, #right-pane).pane-collapsed .pane-toggle { width: auto; min-width: 0; }
 /* === END TUX-041 slice B5 === */
 
-/* === TUX-031 / TUX-034 (batch G): the context bar stays available on phones ===
- * The generic phone rule above hides .ctxbar at <= 640px. A phone user then has no Shape Properties, no
- * Selection menu and no align verbs. The bar floats over the canvas and hides itself when there is no
- * context (.is-visible), so showing it costs no canvas area. Touch phones only; a narrow desktop window keeps the rule. */
+/* === TUX-031 (batch G): a drawn shape keeps its Shape Properties button on phones ===
+ * The generic phone rule hides .ctxbar at <= 640px. A phone user then cannot reach polygon sides or corner radius after the draw.
+ * Only the shape context shows the bar there: showing it for every selection covered the canvas (honest share 75 -> 69 %) and a
+ * 20 px grip fell under 44 px. The bar floats over the canvas, hides itself without a context, and has no grip, like the pen draft. */
 @media (max-width: 640px) {
-  body.touch-ui .ctxbar { display: flex; }
-  /* The bar is wider than the phone: the content scrolls sideways, the grip and the ⋯ menu stay in reach. */
-  body.touch-ui .ctxbar .ctxbar-content { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
-  body.touch-ui .ctxbar .ctxbar-content::-webkit-scrollbar { display: none; }
-  body.touch-ui .ctxbar .ctxbar-overflow-wrap { flex: 0 0 auto; }
+  body.touch-ui .ctxbar.ctxbar--shape { display: flex; }
 }
-/* === END TUX-031 / TUX-034 (batch G) === */
+body.touch-ui .ctxbar.ctxbar--shape .ctxbar-handle { display: none; }
+body.touch-ui .ctxbar.ctxbar--shape .ctxbar-content { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+body.touch-ui .ctxbar.ctxbar--shape .ctxbar-content::-webkit-scrollbar { display: none; }
+body.touch-ui .ctxbar.ctxbar--shape .ctxbar-overflow-wrap { flex: 0 0 auto; }
+/* === END TUX-031 (batch G) === */
 
 /* === TUX-050 (batch G): Paper size stays on screen on the shortest phone landscape ===
  * At 874 x 330 the Theme section pushed the Paper size select under the window edge. Paper holds the primary

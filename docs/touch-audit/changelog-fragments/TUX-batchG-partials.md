@@ -6,12 +6,12 @@
 - A system interruption (pointercancel) now ends every drag in the tool dialogs, the color picker, the paint canvas, the pendulum pad, the Pattern Designer, the draw-order scrub and the shape-property sliders. The draw-order scrub does not start playback on a cancel.
 - Hover reveal rules (opacity, display, visibility) now sit inside `@media (hover: hover)`. The remaining 23 are done.
 - The pen menu, the palette menu, the Add Layer menu, the layer bar palette menu and the algorithm-draw menu close on any outside press, including drags and scrolls.
-- The phone context bar is shown on touch phones. Its content scrolls sideways. The Shape Properties button, align verbs and the more menu are reachable by finger on iPhone.
+- On touch phones the context bar now shows for a drawn shape, so Shape Properties (polygon sides, corner radius) is reachable by finger. The bar has no grip there and its content scrolls sideways. Other selections keep the bar hidden on phones: showing it always cut the iPhone portrait canvas share from 75 to 69 %.
 
 ## plans.md
 - TUX-018b done: R4 guard baseline is 0; `Vectura.UI.bindPointerDrag` (`src/ui/touch/bind-pointer-drag.js`) is the shared binder; the Pattern Designer header drag uses it.
 - TUX-033 done: R10 baseline cut from 38 to 17. The rest are keydown, wheel and HTML5 drag reads (exempt).
-- TUX-034b done except Paste (no copy command exists in the app; Select All added).
+- TUX-034b done except Paste and clause 13 on phones (the context bar stays hidden there for canvas share; the long-press menu and the layer card ⋯ reach the same menu) (no copy command exists in the app; Select All added).
 - TUX-036 req 4 done: R8 baseline 0.
 - TUX-040b done: click-only dismissals now also close on pointerdown.
 

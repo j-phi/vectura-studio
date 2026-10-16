@@ -2423,6 +2423,8 @@
     if (els.bar) els.bar.classList.toggle('ctxbar--fill', ctx.kind === 'fill');
     state.penSync = null;
     if (els.bar) els.bar.classList.toggle('ctxbar--pen-draft', ctx.kind === 'pen-draft');
+    // TUX-031: a drawn shape keeps its Shape Properties button on phones (the generic phone rule hides the bar).
+    if (els.bar) els.bar.classList.toggle('ctxbar--shape', ctx.kind === 'single-shape');
     switch (ctx.kind) {
       case 'pen-draft': renderPenDraft(ctx); break;
       case 'idle': renderIdle(); break;
