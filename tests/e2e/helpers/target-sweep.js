@@ -21,6 +21,8 @@ async function enumerate(page, roots, sel = TARGETS) {
           if (e.matches('input[type="hidden"], input[type="file"], .sr-only, [aria-hidden="true"][tabindex="-1"]')) continue;
           if (e.matches('input[type="checkbox"], input[type="radio"]') && (e.closest('label.sw-toggle') || cs.opacity === '0')) continue;
           if (e.closest('.sr-only')) continue;
+          // An inert subtree (a gated row: main's markRowDisabled) is not offered to the user, as in target-audit-core.
+          if (e.closest('[inert]')) continue;
           n += 1; e.setAttribute('data-sweep-probe', String(n));
           const lbl = (e.id ? '#' + e.id : e.dataset.info ? `info[${e.dataset.info}]` : (e.getAttribute('aria-label') || e.getAttribute('data-tab') || e.getAttribute('title') || e.className || e.tagName)).toString().trim().replace(/\s+/g, '.').slice(0, 56);
           const anc = []; for (let p = e.parentElement; p && anc.length < 2; p = p.parentElement) { const c = (typeof p.className === 'string' ? p.className : '').trim().split(/\s+/)[0]; if (c) anc.push(c); }

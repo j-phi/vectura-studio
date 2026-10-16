@@ -16268,9 +16268,22 @@ body.touch-ui .vs3-panel .vs3-tree-row { align-items: center; }
 body.touch-ui .vs3-panel .vs3-grp-kid { min-height: var(--touch-target-min); }
 body.touch-ui .vs3-panel .vs3-row { min-height: var(--touch-target-min); }
 body.touch-ui .vs3-panel .vs3-name-input { width: 100%; max-width: 100%; font-size: 16px; }
+/* Main widened .vs3-lbl from 58 to 74 px (U6) so long labels are not cut. On touch that took 16 px from every slider track
+   and left WebKit iPad landscape tracks at 42 px. Touch keeps the 58 px column and wraps a long label onto a second line
+   inside the 44 px row instead, so the full label still shows. */
+body.touch-ui .vs3-panel .vs3-lbl { flex-basis: 58px; white-space: normal; overflow-wrap: break-word; line-height: 1.2; }
 /* A 4-option switch needs 4 x 44 px: the label takes its own line so the control gets the whole row. */
 body.touch-ui .vs3-panel .vs3-row:has(.seg-ctrl > .seg-opt:nth-child(4)) { flex-wrap: wrap; }
 body.touch-ui .vs3-panel .vs3-row:has(.seg-ctrl > .seg-opt:nth-child(4)) > .vs3-lbl { flex: 1 0 100%; }
+/* A switch row that also carries an (i) (Bands, Shadows land on objects, ...): main widened .vs3-lbl to 74 px (U6), so label +
+   switch + a 44 px (i) no longer fit one line of a narrow pane, and the (i)'s 44 px ::before overhung the last option. On touch
+   the label and the (i) share line 1 (the (i) in its own 44 px slot), and the switch takes line 2 at full width. */
+body.touch-ui .vs3-panel .vs3-row:has(> .vs3-ctl > .seg-ctrl):has(> .vs3-lawinfo-wrap) { flex-wrap: wrap; }
+body.touch-ui .vs3-panel .vs3-row:has(> .vs3-ctl > .seg-ctrl):has(> .vs3-lawinfo-wrap) > .vs3-lbl { flex: 1 0 calc(100% - var(--touch-target-min) - 18px); order: 0; }
+body.touch-ui .vs3-panel .vs3-row:has(> .vs3-ctl > .seg-ctrl) > .vs3-lawinfo-wrap {
+  order: 1; flex: 0 0 var(--touch-target-min); min-height: var(--touch-target-min); align-items: center; justify-content: center;
+}
+body.touch-ui .vs3-panel .vs3-row:has(> .vs3-ctl > .seg-ctrl):has(> .vs3-lawinfo-wrap) > .vs3-ctl { order: 2; flex-basis: 100%; }
 /* The More... split button takes two shelf cells: a 44 px caret beside the main button in one cell would squeeze it to 32 px. */
 body.touch-ui .vs3-shelf .vs3-more { grid-column: span 2; }
 body.touch-ui .vs3-panel .vs3-lawinfo-wrap { margin-right: 10px; } /* keeps the 44 px reach off the pane scrollbar */
