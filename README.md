@@ -621,7 +621,7 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### 1.4.14
+### 1.4.15
 - **3D Scene — Duty Cycle · Constant responds to Density above 50.** Density 50 to 100 now
   tightens the rulings past the plot floor, evenly in ink coverage, down to one pen width (lines
   touching) near the top of the slider, so the deepest shadow floods to solid ink. Density 50 and
