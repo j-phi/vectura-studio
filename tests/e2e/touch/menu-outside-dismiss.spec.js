@@ -169,4 +169,27 @@ test.describe('menu outside dismiss (TUX-040)', () => {
     expect(await page.evaluate(() => window.app.ui.layerFilterType)).toBe('spiral');
     expect(await menuClosed(page)).toBe(true);
   });
+
+  // TUX-040/014: a tap that activates a control outside an open TOP menu (Insert, Object) must also close it.
+  for (const [trigger, tool] of [['#btn-menu-insert', 'pen'], ['#btn-menu-object', 'scissor']]) {
+    test(`(h) tapping the ${tool} tool with ${trigger} open switches the tool and closes the menu`, async ({ page }) => {
+      await page.evaluate(() => window.app.ui.setActiveTool('select'));
+      const trig = page.locator(trigger);
+      const tbox = await trig.boundingBox();
+      test.skip(!(tbox && tbox.width > 0), 'top menu trigger not reachable on this viewport');
+      await touch.tap(page, trig);
+      const panel = page.locator(`${trigger} + [data-top-menu-panel]`);
+      await expect(panel).toBeVisible();
+      const btn = page.locator(`#tool-bar .tool-btn[data-tool="${tool}"], .tool-btn[data-tool="${tool}"]`).first();
+      const bbox = await btn.boundingBox();
+      test.skip(!(bbox && bbox.width > 0), `${tool} tool not reachable on this viewport`);
+      const covered = await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('[data-top-menu-panel]'), { x: bbox.x + bbox.width / 2, y: bbox.y + bbox.height / 2 });
+      test.skip(covered, 'the open menu covers the tool button here');
+      await touch.tap(page, btn);
+      await page.waitForTimeout(300);
+      expect(await page.evaluate(() => window.app.ui.activeTool)).toBe(tool);
+      expect(await panel.isVisible()).toBe(false);
+      expect(await page.evaluate(() => window.app.ui.openTopMenuTrigger)).toBeNull();
+    });
+  }
 });

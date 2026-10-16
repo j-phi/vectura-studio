@@ -311,6 +311,16 @@
       });
     });
 
+    // TUX-040/014: a press on any control outside the open top menu closes it. Tool buttons and
+    // other pointer-driven controls do not always synthesize a click that reaches the document handler.
+    document.addEventListener('pointerdown', (e) => {
+      const open = this.openTopMenuTrigger;
+      if (!open) return;
+      const t = e.target;
+      if (t && t.closest && (open.contains(t) || t.closest('[data-top-menu-panel]'))) return;
+      this.setTopMenuOpen(null, false);
+    }, true);
+
     window.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape' || !this.openTopMenuTrigger) return;
       this.setTopMenuOpen(null, false);
