@@ -141,6 +141,9 @@ test('C: collapsed section controls are not hit-testable or focusable', async ({
   await touch.tap(page, page.locator(PAPER));
   await page.waitForTimeout(600);
   expect(await page.evaluate(() => getComputedStyle(document.querySelector('#settings-panel .sect--color-paper .sect-body')).visibility)).toBe('visible');
+  // With 44 px rows (TUX-041 B3) the select can sit below the fold of a 330 px landscape phone: scroll it into view first.
+  await page.locator('#machine-profile').scrollIntoViewIfNeeded();
+  await page.waitForTimeout(150);
   const c = await centreOf(page, '#machine-profile');
   await touch.tap(page, c);
   await page.waitForTimeout(150);

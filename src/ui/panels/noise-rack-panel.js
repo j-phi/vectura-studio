@@ -43,6 +43,8 @@
   const PETALIS_LAYER_TYPES = new Set(['petalisDesigner']);
   const isPetalisLayerType = (type) => PETALIS_LAYER_TYPES.has(type);
   const clone = window.Vectura.Utils.clone;
+  // control-defs-data.js loads before this panel; it owns the constant.
+  const { IMAGE_NOISE_DEFAULT_AMPLITUDE } = UI.ControlDefsData || {};
 
   // Image control defaults seeded onto the raster-plane `imageSource` base entry
   // so its full Image control set (rendered on the card) binds cleanly. All

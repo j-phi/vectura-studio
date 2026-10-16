@@ -387,7 +387,10 @@ test.describe('TUX-010 toast never covers pane controls', () => {
     const layout = await layoutOf(page);
     await page.evaluate(() => {
       const T = window.Vectura.UI.overlays.Toast;
-      T.show({ message: 'Copied 3 layers to clipboard and pasted them into the document, then selected the pasted layers on the canvas', duration: 20000 });
+      // TUX-048 lets a touch toast span the viewport width, so the message must be long enough to wrap on iPad landscape.
+      T.show({ message: 'Copied 3 layers to clipboard and pasted them into the document, then selected the pasted layers on the canvas. '
+        + 'The pasted layers keep their generator settings, pens, masks and modifiers, and they sit above the layer that was active before the paste. '
+        + 'Use Undo to remove them again, or drag them in the Layers panel to change their order in the stack.', duration: 20000 });
       T.show({ message: 'Added flowfield layer and moved it to the top of the stack', duration: 20000 });
     });
     await page.waitForTimeout(300);

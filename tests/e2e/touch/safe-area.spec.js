@@ -17,7 +17,7 @@ const PROFILES = {
 const ZERO = { top: 0, bottom: 0, left: 0, right: 0 };
 const TOL = 0.5;
 // Desktop/tablet base 38 px. The phone header holds 44 px TUX-001 buttons, so its base is 44 px.
-const baseHeaderH = (device) => (device === 'iPhP' || device === 'iPhL' ? 44 : 38);
+const baseHeaderH = () => 44 /* Q18: 44 px on every touch layout (tablet and touch-wide grew from 38) */;
 // Repo-relative by default (the worktree sits under <repo>/.claude/worktrees/<lane>); TUX_EVIDENCE_DIR overrides.
 const EVIDENCE = process.env.TUX_EVIDENCE_DIR || path.resolve(__dirname, '../../../docs/touch-audit/evidence/after/TUX-005');
 
@@ -60,7 +60,9 @@ const installHelpers = (page) => page.evaluate(() => {
   // TUX-007: on a short phone (iPhone landscape) every strip is an overlay, so nothing is in flow. The
   // status strip (#hud-bar) is then the bottom-most chrome and carries the bottom inset itself.
   const chrome = () => {
-    const shown = ['#hud-bar', '#touch-modifier-bar']
+    // Q17: on touch-wide the status strip is an overlay on the canvas; the collapsed bottom pane is the bottom-most strip.
+    const touchWide = document.body.classList.contains('touch-wide-layout');
+    const shown = (touchWide ? ['#bottom-pane', '#touch-modifier-bar'] : ['#hud-bar', '#touch-modifier-bar'])
       .map((s) => document.querySelector(s))
       .filter((e) => e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0);
     const flow = shown.filter(inFlow);

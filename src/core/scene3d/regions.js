@@ -601,6 +601,16 @@
   // +65°, never +90°: an orthogonal second family reads as a square grid / wire
   // mesh and beats against the raster (§2.3).
   const CROSS_OBJ_DEG = 65;
+  // U5 (NEW-7) — ONE source for the crossing-family angles. The second family's
+  // 65 deg, the third pass's 32 deg and the pen/shadow laws' 60 deg crossing used to
+  // be literals at 13 sites (scene3d.js, surface-fill.js, surface-fill-mono.js,
+  // shadows.js). Everything reads these now; every value is unchanged.
+  const CROSS_TRIPLE_DEG = 32;
+  // U5 (NEW-6) — the plot floor: the closest two neighbouring rulings may sit, in pen
+  // widths. It was copied at three sites (surface-fill PLOT_FLOOR_PEN, scene3d
+  // CURVED_FLOOR_PEN_MAX and MONO_PLOT_FLOOR_PEN); all three read this one now.
+  const PLOT_FLOOR_PEN = 2.2;
+  const CROSS_MARK_DEG = 60;
 
   // ── THE DIHEDRAL GATE (§5.5.2, O22) — ONE DEFINITION ───────────────────────
   //
@@ -791,9 +801,77 @@
     return { inRegion: true, stage, boost };
   };
 
+  // ── TONE SHAPER (fill-style review U6) ──────────────────────────────────────
+  //
+  // ONE point in the tone pipeline where an object's gamma, contrast and depth
+  // fade are applied. scene3d.js wraps `combinedIntensity` once; every Fill
+  // Style (faceted, curved, mono, marks) reads intensity through that wrapper,
+  // so no law has its own copy of the curve.
+  //
+  //   gamma     I' = I^gamma           gamma > 1 darkens the mid-tones (more ink)
+  //   contrast  c > 0 blends toward a smoothstep S-curve about the 0.5 pivot;
+  //             c < 0 blends away from it (a flatter, inverse S). Both keep 0 and 1 fixed.
+  //   fade      I'' = I' + (1 - I') * strength * t   t = 0 (near) .. 1 (far)
+  //
+  // `toneShapeOf` returns null when every control is at its default, so an
+  // untouched style takes the identity path and stays byte-identical.
+  const toneCurve = (I, gamma, contrast) => {
+    let x = clamp(finite(I, 0), 0, 1);
+    if (gamma !== 1) x = Math.pow(x, gamma);
+    if (contrast !== 0) {
+      const s = x * x * (3 - 2 * x);
+      x += contrast * (s - x);
+    }
+    return clamp(x, 0, 1);
+  };
+  // depth: { zNear, zFar, zOf(worldPoint) } — camera z, larger z is nearer.
+  const toneShapeOf = (sp, depth) => {
+    const FC = Vectura.SCENE_FILL_CONTROLS;
+    if (!FC || !sp) return null;
+    const gamma = FC.read(sp, 'toneGamma');
+    const contrast = FC.read(sp, 'toneContrast');
+    const g = gamma === undefined ? 1 : gamma;
+    const c = contrast === undefined ? 0 : contrast;
+    const fadeOn = sp.depthFade === true && depth && typeof depth.zOf === 'function';
+    let fade = null;
+    if (fadeOn) {
+      const strength = FC.read(sp, 'depthFadeStrength');
+      const near = FC.read(sp, 'depthFadeNear');
+      const far = FC.read(sp, 'depthFadeFar');
+      const st = strength === undefined ? FC.CONTROLS.depthFadeStrength.default : strength;
+      const n0 = near === undefined ? FC.CONTROLS.depthFadeNear.default : near;
+      const f0 = far === undefined ? FC.CONTROLS.depthFadeFar.default : far;
+      if (st > 0) fade = { strength: st, near: n0, far: Math.max(f0, n0 + 1e-3), depth };
+    }
+    if (g === 1 && c === 0 && !fade) return null;
+    return { gamma: g, contrast: c, fade };
+  };
+  // Depth fraction: 0 at the nearest scene surface, 1 at the farthest.
+  const depthFraction = (depth, worldPoint) => {
+    const span = depth.zNear - depth.zFar;
+    if (!(span > 1e-6)) return 0;
+    const z = depth.zOf(worldPoint);
+    if (!Number.isFinite(z)) return 0;
+    return clamp((depth.zNear - z) / span, 0, 1);
+  };
+  const shapeTone = (I, worldPoint, shape) => {
+    if (!shape) return I;
+    let x = toneCurve(I, shape.gamma, shape.contrast);
+    if (shape.fade) {
+      const f = shape.fade;
+      const t = clamp((depthFraction(f.depth, worldPoint) - f.near) / (f.far - f.near), 0, 1);
+      x += (1 - x) * f.strength * t;
+    }
+    return clamp(x, 0, 1);
+  };
+
   const Regions = {
     intensity,
     combinedIntensity,
+    toneCurve,
+    toneShapeOf,
+    shapeTone,
+    depthFraction,
     band,
     rankBands,
     RANK_MIN_SPREAD,
@@ -810,6 +888,9 @@
     shadowStage,
     FORM_ZONES,
     CROSS_OBJ_DEG,
+    PLOT_FLOOR_PEN,
+    CROSS_TRIPLE_DEG,
+    CROSS_MARK_DEG,
     TERMINATOR_SMOOTH_DEG,
     smoothShadedFaces,
     TERMINATOR_NL,

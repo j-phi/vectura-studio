@@ -1,5 +1,8 @@
 const { test, expect } = require('@playwright/test');
+const fs = require('fs');
+const path = require('path');
 const touch = require('../helpers/touch');
+const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch2/TUX-032';
 const h = require('../helpers/text-panel-setup');
 
 // TUX-032: fields and sheets stay above the on-screen keyboard; the font search does not
@@ -18,9 +21,7 @@ test.describe('TUX-032 keyboard inset', () => {
     await h.waitApp(page);
   });
 
-  test('(a) font picker: a finger tap does not focus the search; the list stays above the keyboard', async ({ page }, testInfo) => {
-    // iPhL-chrome leaves 120 px above the keyboard: the search fits, the first row does not.
-    test.fail(testInfo.project.name === 'touch-iphone-landscape-chrome', 'iPhL-chrome: 120 px visible, first font row below the keyboard line');
+  test('(a) font picker: a finger tap does not focus the search; the list stays above the keyboard', async ({ page }) => {
     await h.addDefaultTextLayer(page, touch);   // pane opened via app API where no finger path exists (TUX-010)
     const trigger = page.locator('.vtp-fontpick-trigger');
     await trigger.scrollIntoViewIfNeeded();
@@ -38,6 +39,89 @@ test.describe('TUX-032 keyboard inset', () => {
     }, SEARCH);
     expect(m.searchBottom, `search bottom ${m.searchBottom} vs visible line ${m.ih - K}`).toBeLessThanOrEqual(m.ih - K);
     expect(m.optTop, `first row top ${m.optTop} vs visible line ${m.ih - K}`).toBeLessThan(m.ih - K);
+  });
+
+  // TUX-032 batch 2 (review finding): the font popover must stay fully on screen and its options must be
+  // tappable on every touch viewport, with no keyboard open (iPhone landscape 874x402 was the failing one).
+  test('(g) font popover stays on screen and its first option is tappable', async ({ page }, testInfo) => {
+    await h.addDefaultTextLayer(page, touch);
+    const trigger = page.locator('.vtp-fontpick-trigger');
+    await trigger.scrollIntoViewIfNeeded();
+    await touch.tap(page, trigger);
+    await page.waitForSelector('.vtp-fp-pop.open .vtp-fp-opt', { state: 'attached' });
+    await page.waitForTimeout(250);
+    const m = await page.evaluate(() => {
+      const pop = document.querySelector('.vtp-fp-pop');
+      const r = pop.getBoundingClientRect();
+      const list = pop.querySelector('.vtp-fp-list').getBoundingClientRect();
+      const opts = [...pop.querySelectorAll('.vtp-fp-opt')];
+      const vis = opts.filter((o) => { const b = o.getBoundingClientRect(); return b.bottom <= list.bottom + 1 && b.top >= list.top - 1 && b.height > 0; });
+      const unsel = opts.find((o) => !o.classList.contains('sel') && vis.includes(o));
+      let hit = null;
+      if (unsel) { const b = unsel.getBoundingClientRect(); const e = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); hit = !!e && unsel.contains(e); }
+      return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, listH: list.height, visibleOpts: vis.length, hit };
+    });
+    expect(m.l, `popover rect ${JSON.stringify(m)}`).toBeGreaterThanOrEqual(0);
+    expect(m.t, `popover top ${m.t}`).toBeGreaterThanOrEqual(0);
+    expect(m.r, `popover right ${m.r} vs ${m.w}`).toBeLessThanOrEqual(m.w);
+    expect(m.b, `popover bottom ${m.b} vs ${m.h}`).toBeLessThanOrEqual(m.h);
+    expect(m.visibleOpts, `at least 2 option rows visible in the list (list height ${m.listH})`).toBeGreaterThanOrEqual(2);
+    expect(m.hit, 'an unselected option is the hit target at its centre').toBe(true);
+    await fs.promises.mkdir(EVID, { recursive: true }).catch(() => {});
+    await page.screenshot({ path: path.join(EVID, `font-popover-${testInfo.project.name}.png`) }).catch(() => {});
+  });
+
+  // TUX-032 follow-up: with the keyboard open in landscape the pinned popover keeps >= 3 option rows in view
+  // (a compact header: the category chips go away while the keyboard is up). Keyboard = the fake visualViewport.
+  test('(h) font popover with the keyboard open still shows at least 3 option rows (landscape)', async ({ page }, testInfo) => {
+    test.skip(!/iphone-landscape/.test(testInfo.project.name), 'iPhone landscape is the short viewport');
+    await h.addDefaultTextLayer(page, touch);
+    const trigger = page.locator('.vtp-fontpick-trigger');
+    await trigger.scrollIntoViewIfNeeded();
+    await touch.tap(page, trigger);
+    await page.waitForSelector('.vtp-fp-pop.open .vtp-fp-opt', { state: 'attached' });
+    await touch.tap(page, page.locator(SEARCH));
+    await page.evaluate((k) => window.__kb(k), K);
+    await page.waitForTimeout(350);
+    const m = await page.evaluate((k) => {
+      const pop = document.querySelector('.vtp-fp-pop');
+      const r = pop.getBoundingClientRect();
+      const listEl = pop.querySelector('.vtp-fp-list');
+      const firstOpt = listEl.querySelector('.vtp-fp-opt');
+      if (firstOpt) listEl.scrollTop = firstOpt.offsetTop - listEl.offsetTop - 2; // capacity: the list sits on its first row
+      const list = listEl.getBoundingClientRect();
+      const line = innerHeight - k;
+      const vis = [...pop.querySelectorAll('.vtp-fp-opt')].filter((o) => { const b = o.getBoundingClientRect(); return b.height > 0 && b.top >= list.top - 1 && b.bottom <= Math.min(list.bottom, line) + 1; });
+      const si = pop.querySelector('.vtp-fp-search input').getBoundingClientRect();
+      return { popT: r.top, popB: r.bottom, line, listH: list.height, rows: vis.length, rowH: vis[0] ? vis[0].getBoundingClientRect().height : 0, searchH: si.height };
+    }, K);
+    // §1.5 absolute floor: no target under 24 px, even in the typing-mode compact header (TUX-032 review).
+    expect(m.rowH, `compact option row height (${JSON.stringify(m)})`).toBeGreaterThanOrEqual(24);
+    expect(m.searchH, `compact search field height (${JSON.stringify(m)})`).toBeGreaterThanOrEqual(24);
+    expect(m.popB, `popover bottom ${m.popB} above the keyboard line ${m.line}`).toBeLessThanOrEqual(m.line + 1);
+    expect(m.rows, `option rows fully visible above the keyboard (list ${m.listH} px, row ${m.rowH} px, ${JSON.stringify(m)})`).toBeGreaterThanOrEqual(3);
+    await fs.promises.mkdir(EVID, { recursive: true }).catch(() => {});
+    await page.screenshot({ path: path.join('/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch3', `font-popover-keyboard-${testInfo.project.name}.png`) }).catch(() => {});
+  });
+
+  // TUX-032 review: with no keyboard the popover rows are finger targets (44 px on a coarse pointer).
+  test('(h2) font popover rows are at least 44 px with no keyboard', async ({ page }, testInfo) => {
+    await h.addDefaultTextLayer(page, touch);
+    const trigger = page.locator('.vtp-fontpick-trigger');
+    await trigger.scrollIntoViewIfNeeded();
+    await touch.tap(page, trigger);
+    await page.waitForSelector('.vtp-fp-pop.open .vtp-fp-opt', { state: 'attached' });
+    await page.waitForTimeout(250);
+    const m = await page.evaluate(() => {
+      const pop = document.querySelector('.vtp-fp-pop');
+      const hs = [...pop.querySelectorAll('.vtp-fp-opt')].slice(0, 12).map((o) => o.getBoundingClientRect().height);
+      return { compact: pop.classList.contains('kb-compact'), min: Math.min(...hs), n: hs.length, search: pop.querySelector('.vtp-fp-search input').getBoundingClientRect().height };
+    });
+    expect(m.compact).toBe(false);
+    expect(m.min, `smallest option row ${m.min} px (${JSON.stringify(m)})`).toBeGreaterThanOrEqual(43.5);
+    expect(m.search, `search field ${m.search} px`).toBeGreaterThanOrEqual(43.5);
+    await fs.promises.mkdir('/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch3b', { recursive: true }).catch(() => {});
+    await page.screenshot({ path: path.join('/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch3b', `font-popover-rows-${testInfo.project.name}.png`) }).catch(() => {});
   });
 
   test('(b) lower-pane numeric field rises above the keyboard', async ({ page }) => {

@@ -28,6 +28,38 @@
 
   let DEPS = null;
 
+  // U3 (fill-style review r3 headline 3) — an Object 3D row's pen. The scene
+  // compositor routes an object's ink by its STYLE pen (style.penId, or the
+  // scene group's pen when that is null); the layer's own penId only colours
+  // the row. So assigning a pen to an object3d row also writes its style pen,
+  // then recomposes the owning scene group so the canvas and export follow.
+  // Returns true when any target was an object3d (the caller then skips its
+  // render-only refresh in favour of this regen). Shared with pens-panel.js
+  // (armed-pen click) through UI.syncObject3dPen.
+  const syncObject3dPen = (app, targets, pen) => {
+    if (!pen || !Array.isArray(targets)) return false;
+    const engine = app && app.engine;
+    const groups = new Set();
+    targets.forEach((t) => {
+      if (!t || t.type !== 'object3d') return;
+      if (!t.params || typeof t.params !== 'object') return;
+      if (!t.params.style || typeof t.params.style !== 'object') t.params.style = { penId: null, mapper: 'wireframe', params: {} };
+      t.params.style.penId = pen.id;
+      // Walk to the owning scene group (object3d may sit inside a boolean).
+      let p = t;
+      const seen = new Set();
+      while (p && p.parentId && engine && engine.getLayerById && !seen.has(p.id)) {
+        seen.add(p.id);
+        p = engine.getLayerById(p.parentId);
+        if (p && p.type === 'scene3d' && p.isGroup) { groups.add(p.id); break; }
+      }
+    });
+    if (!groups.size && !targets.some((t) => t && t.type === 'object3d')) return false;
+    groups.forEach((gid) => { try { engine.generate(gid); } catch (_) { /* keep UI alive */ } });
+    return true;
+  };
+  UI.syncObject3dPen = syncObject3dPen;
+
   const requireDeps = (name) => {
     if (!DEPS) {
       throw new Error(`LayersPanel.${name} invoked before LayersPanel.bind(deps) — load order broken`);
@@ -114,6 +146,11 @@
               target.strokeWidth = pen.width;
               target.lineCap = target.lineCap || owner.lineCap || 'round';
             });
+            // U3 — an Object 3D row routes ink through its style pen.
+            if (syncObject3dPen(this.app, targets, pen)) {
+              try { this.storeLayerParams && targets.forEach((t) => this.storeLayerParams(t)); } catch (_) { /* */ }
+              try { if (this.buildControls) this.buildControls(); } catch (_) { /* */ }
+            }
           }
           penIcon.style.background = pen.color;
           penIcon.style.color = pen.color;
@@ -320,6 +357,7 @@
         let lastPos = null;
 
         const finishDrag = (commit) => {
+          stopEdgeScroll();
           el.draggable = true;
           if (isDragging) {
             if (commit && lastTargetId && lastPos) {
@@ -381,19 +419,40 @@
           startY = t.clientY;
         }, { passive: true });
 
-        handle.addEventListener('touchmove', (e) => {
-          const t = Array.from(e.touches).find((tt) => tt.identifier === startTouchId);
-          if (!t) return;
-          if (!isDragging) {
-            // The grip owns its touch (touch-action: none): never let the list scroll from it.
-            if (e.cancelable) e.preventDefault();
-            const slop = (G.Vectura?.TOUCH_HOLD?.gripDragPx);
-            if (Math.hypot(t.clientX - startX, t.clientY - startY) < slop) return;
-            beginDrag();
-          }
-          e.preventDefault();
+        // TUX-044 req 5: a finger that rests near the list's top or bottom edge fires no touchmove, so a
+        // frame loop scrolls the list and re-targets the drop row under the resting finger.
+        let dragPoint = null;
+        let edgeRaf = 0;
+        const stopEdgeScroll = () => { if (edgeRaf) cancelAnimationFrame(edgeRaf); edgeRaf = 0; dragPoint = null; };
+        const startEdgeScroll = () => {
+          if (edgeRaf) return;
+          const tick = () => {
+            edgeRaf = 0;
+            if (!isDragging || !dragPoint) return;
+            const r = list.getBoundingClientRect();
+            const zone = Math.min(48, r.height / 3);
+            const maxStep = 14;
+            let dy = 0;
+            if (dragPoint.clientY < r.top + zone) dy = -Math.ceil(maxStep * Math.min(1, (r.top + zone - dragPoint.clientY) / zone));
+            else if (dragPoint.clientY > r.bottom - zone) dy = Math.ceil(maxStep * Math.min(1, (dragPoint.clientY - (r.bottom - zone)) / zone));
+            if (dy) {
+              const before = list.scrollTop;
+              list.scrollTop = before + dy;
+              if (list.scrollTop !== before) track(dragPoint);
+            }
+            edgeRaf = requestAnimationFrame(tick);
+          };
+          edgeRaf = requestAnimationFrame(tick);
+        };
+        const track = (t) => {
           el.style.pointerEvents = 'none';
-          const below = document.elementFromPoint(t.clientX, t.clientY);
+          let below = document.elementFromPoint(t.clientX, t.clientY);
+          // A group-exit strip only counts for a row inside that group. Elsewhere, the row just above it takes the
+          // drop, so a finger resting at the list's bottom edge still reaches the last row (TUX-044 req 5).
+          const rawExit = below?.closest('[data-lvl-exit-group]');
+          if (rawExit && engine.getLayerById?.(_lvlDRAG.id)?.parentId !== rawExit.dataset.lvlExitGroup) {
+            below = document.elementFromPoint(t.clientX, rawExit.getBoundingClientRect().top - 2);
+          }
           el.style.pointerEvents = '';
           _lvlClrAllDrop();
           lastTargetId = null;
@@ -478,6 +537,22 @@
               }
             }
           }
+        };
+
+        handle.addEventListener('touchmove', (e) => {
+          const t = Array.from(e.touches).find((tt) => tt.identifier === startTouchId);
+          if (!t) return;
+          if (!isDragging) {
+            // The grip owns its touch (touch-action: none): never let the list scroll from it.
+            if (e.cancelable) e.preventDefault();
+            const slop = (G.Vectura?.TOUCH_HOLD?.gripDragPx);
+            if (Math.hypot(t.clientX - startX, t.clientY - startY) < slop) return;
+            beginDrag();
+          }
+          e.preventDefault();
+          dragPoint = { clientX: t.clientX, clientY: t.clientY };
+          track(dragPoint);
+          startEdgeScroll();
         }, { passive: false });
 
         handle.addEventListener('touchend', () => finishDrag(true));
@@ -977,6 +1052,9 @@
 
       const _lvlNameEl = (layer, cls) => {
         const sp = document.createElement('span'); sp.className = cls;
+        // TUX-012 (Jay, 2026-10-12): the docked 200 px pane may truncate a name. The name tooltip shows it in full
+        // (a touch long-press opens the row menu, which carries the full name as its header).
+        sp.title = layer.name;
         const q = this.layerSearchQ || '';
         if (!q) { sp.textContent = layer.name; return sp; }
         const lo = layer.name.toLowerCase(), idx = lo.indexOf(q.toLowerCase());
@@ -1033,8 +1111,11 @@
       const _lvlDoSel = (e, id) => {
         // Event time only. Never mix it with Date.now() or performance.now() (different clocks).
         const now = (this._lvlPdId === String(id) && Number.isFinite(this._lvlPdStamp)) ? this._lvlPdStamp : e.timeStamp;
+        // TUX-033: read modifiers through the shared reader so a Multi-select latch works by touch.
+        const mods = window.Vectura?.InputModifiers?.readModifiers(e) || {};
+        const toggleSel = mods.meta || mods.multiSelect;
         const onName = e.target?.closest?.('.lvl-name,.lvl-grp-name');
-        if (onName && !e.metaKey && !e.ctrlKey && !e.shiftKey
+        if (onName && !toggleSel && !mods.shift
             && Number.isFinite(this._lvlDblTime) && now - this._lvlDblTime < 350 && now >= this._lvlDblTime
             && this._lvlDblId === id) {
           this._lvlDblTime = null; this._lvlDblId = null;
@@ -1062,11 +1143,12 @@
           return;
         }
         this._lvlDblTime = now; this._lvlDblId = id;
-        if (e.metaKey || e.ctrlKey) {
+        if (toggleSel) {
           const ids = new Set(renderer?.selectedLayerIds || []);
           ids.has(id) ? ids.delete(id) : ids.add(id);
           renderer.setSelection([...ids], id);
-        } else if (e.shiftKey && this.lastLayerClickId) {
+        } else if (mods.shift && this.lastLayerClickId) {
+          // TUX-033: mods.shift = real Shift OR the touch Constrain task, so a finger gets range select.
           const ord = _lvlFlatOrder();
           const a = ord.indexOf(this.lastLayerClickId), b = ord.indexOf(id);
           const lo = Math.min(a, b), hi = Math.max(a, b);
@@ -1519,28 +1601,64 @@
           const anyVisible = selectedLayers.some((l) => l.visible);
           const anyLocked = selIds.some((id) => this.layerLockedIds.has(id));
           const hasCollapsedGroup = selectedLayers.some((l) => l.isGroup && l.groupCollapsed);
-          cmds.appendChild(mkCb('',
-            () => anyVisible ? this._LVL_I.eyeOff() : this._LVL_I.eye(),
-            anyVisible ? 'Hide selected' : 'Show selected',
-            () => this._lvlToggleVisibilitySel(anyVisible)));
-          cmds.appendChild(mkCb('',
-            () => anyLocked ? this._LVL_I.lockOpen() : this._LVL_I.lock(),
-            anyLocked ? 'Unlock selected' : 'Lock selected',
-            () => this._lvlToggleLockSel(!anyLocked)));
-          cmds.appendChild(mkCb('', () => this._LVL_I.grpPlus(), 'Group selected (⌘G)', () => this._lvlGroupSel()));
-          if (hasGrp || hasGroupedChildren) cmds.appendChild(mkCb('', () => this._LVL_I.ungroup(),
-            hasGrp ? 'Ungroup selected (⌘⇧G)' : 'Move out of group (⌘⇧G)',
-            () => this._lvlUngroupSel()));
-          cmds.appendChild(mkCb('mask-btn' + (maskOk ? '' : ' ineligible'), () => this._LVL_I.maskSrc(),
+          const explain = (msg) => () => {
+            const T = window.Vectura?.UI?.overlays?.Toast;
+            if (T && typeof T.show === 'function') T.show({ message: msg, variant: 'info' });
+          };
+          const hideLabel = anyVisible ? 'Hide selected' : 'Show selected';
+          const lockLabel = anyLocked ? 'Unlock selected' : 'Lock selected';
+          const hideFn = () => this._lvlToggleVisibilitySel(anyVisible);
+          const lockFn = () => this._lvlToggleLockSel(!anyLocked);
+          const ungroupLabel = hasGrp ? 'Ungroup selected (⌘⇧G)' : 'Move out of group (⌘⇧G)';
+          // An unavailable action stays tappable and answers with a toast (TUX-036): `title` and `disabled`
+          // are silent for a finger, so the reason would never show.
+          const maskBtn = () => mkCb('mask-btn' + (maskOk ? '' : ' ineligible'), () => this._LVL_I.maskSrc(),
             maskOk ? 'Create clipping mask group' : 'Top layer must be a clip-eligible layer',
-            maskOk ? () => this._lvlMaskSelGroup() : () => {}));
-          const expBtn = mkCb('', () => this._LVL_I.expand(),
-            hasCollapsedGroup ? 'Expand selected groups' : 'No collapsed groups in selection',
-            () => this._lvlExpandSel());
-          if (!hasCollapsedGroup) expBtn.disabled = true;
-          cmds.appendChild(expBtn);
-          cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected (⌘D)', () => this._lvlDupSel()));
-          cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected (⌫)', () => this._lvlDelSel()));
+            maskOk ? () => this._lvlMaskSelGroup() : explain('The top layer must be a clip-eligible layer to make a clipping mask.'));
+          if (document.body.classList.contains('touch-ui')) {
+            // TUX-036 / TUX-041: eight 44 px buttons do not fit the 200 px pane. Mask, Duplicate and Delete stay
+            // one tap away; the rest sit in a ⋯ menu (a disabled row names its reason).
+            const more = mkCb('lvl-sb-more', () => this._LVL_I.more?.() ?? '', 'More actions for the selection', () => {});
+            more.setAttribute('aria-haspopup', 'menu');
+            more.setAttribute('aria-label', 'More actions for the selection');
+            const items = [
+              { key: 'hide', label: hideLabel },
+              { key: 'lock', label: lockLabel },
+              { key: 'group', label: 'Group selected' },
+            ];
+            if (hasGrp || hasGroupedChildren) items.push({ key: 'ungroup', label: ungroupLabel.replace(/ \(.*\)$/, '') });
+            items.push({ key: 'expand', label: hasCollapsedGroup ? 'Expand selected groups' : 'Expand groups (none collapsed)', disabled: !hasCollapsedGroup });
+            const run = { hide: hideFn, lock: lockFn, group: () => this._lvlGroupSel(), ungroup: () => this._lvlUngroupSel(), expand: () => this._lvlExpandSel() };
+            more.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const Menu = window.Vectura?.UI?.overlays?.Menu;
+              if (!Menu) return;
+              if (!this._lvlStripMenu) this._lvlStripMenu = Menu(document.body, { items: [], onSelect: () => {} });
+              // TUX-036 review: the coarse 44 px row rule is keyed on .is-context-menu (rows were 30 px without it).
+              this._lvlStripMenu.el.classList.add('is-context-menu');
+              const m = this._lvlStripMenu;
+              if (m.isOpen && m.isOpen()) { m.close(); return; }
+              m.update({ items, onSelect: (key) => { m.close(); run[key]?.(); } });
+              m.open(more);
+            });
+            cmds.appendChild(more);
+            cmds.appendChild(maskBtn());
+            cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected', () => this._lvlDupSel()));
+            cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected', () => this._lvlDelSel()));
+          } else {
+            cmds.appendChild(mkCb('', () => anyVisible ? this._LVL_I.eyeOff() : this._LVL_I.eye(), hideLabel, hideFn));
+            cmds.appendChild(mkCb('', () => anyLocked ? this._LVL_I.lockOpen() : this._LVL_I.lock(), lockLabel, lockFn));
+            cmds.appendChild(mkCb('', () => this._LVL_I.grpPlus(), 'Group selected (⌘G)', () => this._lvlGroupSel()));
+            if (hasGrp || hasGroupedChildren) cmds.appendChild(mkCb('', () => this._LVL_I.ungroup(), ungroupLabel, () => this._lvlUngroupSel()));
+            cmds.appendChild(maskBtn());
+            const expBtn = mkCb('', () => this._LVL_I.expand(),
+              hasCollapsedGroup ? 'Expand selected groups' : 'No collapsed groups in selection',
+              hasCollapsedGroup ? () => this._lvlExpandSel() : explain('No collapsed groups in the selection.'));
+            if (!hasCollapsedGroup) { expBtn.classList.add('unavailable'); expBtn.setAttribute('aria-disabled', 'true'); }
+            cmds.appendChild(expBtn);
+            cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected (⌘D)', () => this._lvlDupSel()));
+            cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected (⌫)', () => this._lvlDelSel()));
+          }
           bar.appendChild(cmds);
           const sp = document.createElement('div'); sp.className = 'lvl-sb-spacer'; bar.appendChild(sp);
           const tot = document.createElement('span'); tot.className = 'lvl-sb-total';

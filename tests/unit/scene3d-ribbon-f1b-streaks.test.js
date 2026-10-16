@@ -199,6 +199,13 @@ const CLUSTER_STREAK_LENGTH_MM = 1.0;
 const REACHABILITY_DIVISOR_A = 12;
 const REACHABILITY_DIVISOR_B = 24;
 const LATTICE_SENSITIVITY_MAX_CELL_DELTA = 1;
+// U2 (fill-style review 2026-10-02, output change accepted by Jay): the
+// raster ribbon erosion leaves trochoidLoop with 77-79 reachable cells (was
+// 69/69) — about 0.045 mm² more residue, all single isolated cells (no
+// cluster, see the streak oracle below) — and two of them sit right on the
+// 12-vs-24 lattice margin. Allowance raised for that one law only; every
+// other law keeps the 1-cell bar.
+const LATTICE_SENSITIVITY_PER_LAW = { trochoidLoop: 2 };
 
 // Baseline `degenerate` ceilings, recorded from THIS test's own first run
 // against the untouched `d5af9e30` tree (see header). A fix may bring these
@@ -303,7 +310,7 @@ describe('SurfaceFill — F1B residual streaks in the self-crossing laws, torus'
     const delta = Math.abs(at24.reachableCount - at12.reachableCount);
     const msg = `${law}: reachable @divisor${REACHABILITY_DIVISOR_A}=${at12.reachableCount} `
       + `@divisor${REACHABILITY_DIVISOR_B}=${at24.reachableCount}`;
-    expect(delta, msg).toBeLessThanOrEqual(LATTICE_SENSITIVITY_MAX_CELL_DELTA);
+    expect(delta, msg).toBeLessThanOrEqual(LATTICE_SENSITIVITY_PER_LAW[law] || LATTICE_SENSITIVITY_MAX_CELL_DELTA);
   });
 
   // A2 (amended) — the actual "does a human see a streak" oracle, on all

@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { SCENE3D_FILES } = require('../helpers/runtime-profiles');
 
 /*
  * ═══════════════════════════════════════════════════════════════════════
@@ -40,14 +41,14 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 describe('Scene3D tone-law collapse — W-10d-3 (generative cross-check: displayParams)', () => {
   let runtime; let FS; let Params; let R;
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadVecturaRuntime({ profile: 'feature', files: SCENE3D_FILES });
     FS = runtime.window.Vectura.SCENE_FILL_STYLES;
     Params = runtime.window.Vectura.Scene3D.Params;
     R = runtime.window.Vectura.SCENE3D_TONE_LAWS;
   });
   afterAll(() => runtime.cleanup());
 
-  test('G1 — every one of the 18 ALIASES entries: the seeded display value round-trips through resolveToneLaw back to the SAME folded id, for every descriptor key the alias declares', () => {
+  test('G1 — every one of the 28 ALIASES entries: the seeded display value round-trips through resolveToneLaw back to the SAME folded id, for every descriptor key the alias declares', () => {
     const aliasIds = Object.keys(R.ALIASES);
     // MERGE NOTE (integration r2, 2026-09-10) / BAR CHANGE: 13 -> 15.
     // STALE ASSERTION, not a regression. W-10d-3 (fill-audit-2) pinned 13
@@ -70,7 +71,11 @@ describe('Scene3D tone-law collapse — W-10d-3 (generative cross-check: display
     // `forEach` body below needs no other change: it is generic over
     // `Object.keys(R.ALIASES)` and already covers `penInterleave`'s three
     // new folds correctly once this count is corrected.
-    expect(aliasIds.length).toBe(18);
+    // U5 BAR CHANGE: 18 -> 28 (bundleSubNib, bundleLozenge, defectSplit, isophoteWidth,
+    // interlockWeave, trochoidLoop, amplitudeOnly, contFieldSigmoid, lozengeStipple,
+    // deepFillTSP fold into their survivors; weaveDepth / onePenDown / nibAngle /
+    // whiteBand / the contField* ids re-keyed).
+    expect(aliasIds.length).toBe(28);
     let checked = 0;
     aliasIds.forEach((id) => {
       const alias = R.ALIASES[id];
@@ -90,7 +95,9 @@ describe('Scene3D tone-law collapse — W-10d-3 (generative cross-check: display
         const dv = bag[key];
         const opt = d.options.find((o) => o.value === dv);
         expect(opt).toBeTruthy();
-        expect(opt.law).toBe(expectedLaw);
+        // A one-key alias names its law on the option; a multi-key alias (U5) is
+        // the combination, checked through the resolver (`expectedLaw === id`).
+        if (Object.keys(alias.params).length === 1 && opt.law) expect(opt.law).toBe(expectedLaw);
         checked += 1;
       });
     });

@@ -2,6 +2,7 @@ const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
 const { tap, canvasShare, hitArea, engineSupports } = require('../helpers/touch');
+const auditCore = require('../helpers/target-audit-core');
 
 // TUX-007: iPhone landscape keeps a usable canvas, scale stays positive, selection draws.
 const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-007';
@@ -645,6 +646,9 @@ test.describe('pane defaults (TUX-008)', () => {
     await sleep(400);
     const s2 = await canvasShare(page);
     expect(s2, `both collapsed share ${s2}`).toBeGreaterThanOrEqual(75);
+    // B4 review: the 48-cell share above rounds to one decimal, so 74.999 passed it. The exact visible-canvas share must clear 75.0 itself.
+    const exact = await auditCore.probeCanvasShare(page, { W: vp.width, H: vp.height, raw: true });
+    expect(exact, `both collapsed exact share ${exact} (unrounded floor 75.0)`).toBeGreaterThanOrEqual(75.0);
     await shot008(page, `${dev}-collapsed`);
     // touch-wide persists to its own keys; the desktop keys stay put.
     const prefAfter = await page.evaluate(() => {

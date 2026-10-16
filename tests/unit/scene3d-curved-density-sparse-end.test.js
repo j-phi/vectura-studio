@@ -217,7 +217,10 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
 
     test('ribbon-ish ladder laws also open up: sphere/hatch/taperedEnds and torus/hatch/bundleCount', () => {
       const tapered = [1, 25, 50].map((d) => runCount(d, 'hatch', 'taperedEnds', defaults.objects[0]));
-      expect(tapered).toEqual([26, 49, 80]);
+      // RE-PINNED (U2, fill-style review 2026-10-02): the ribbon erosion now
+      // comes from one oriented distance field (accepted output change) —
+      // was [26, 49, 80]; still strictly increasing, which is the contract.
+      expect(tapered).toEqual([25, 49, 81]);
       for (let i = 1; i < tapered.length; i++) expect(tapered[i]).toBeGreaterThan(tapered[i - 1]);
 
       const bundle = [1, 25, 50].map((d) => runCount(d, 'hatch', 'bundleCount', torusObj));
@@ -326,7 +329,10 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     });
 
     test('sphere + hatch + taperedEnds at d=50', () => {
-      expect(runMd5(50, 'hatch', 'taperedEnds', defaults.objects[0])).toBe('4863491ddcae36305a5a897f70ce8091');
+      // RE-PINNED (U2, fill-style review 2026-10-02): taperedEnds is a ribbon
+      // law and its erosion moved to `PenFill.erodeLevels` (accepted output
+      // change). Was '4863491ddcae36305a5a897f70ce8091'.
+      expect(runMd5(50, 'hatch', 'taperedEnds', defaults.objects[0])).toBe('d52522765204beb91e06704ff294c669');
     });
 
     // MERGE NOTE (integration, 2026-09-06) / BAR CHANGE: both hashes below

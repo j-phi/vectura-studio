@@ -16,7 +16,9 @@ const DOC = path.join(DIR, '..', '..', '..', 'docs', 'touch-audit', 'journey-scr
 
 // Functions that may call page.evaluate and friends (state reads, setup, guard internals).
 const EVAL_ALLOWED = new Set([
-  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'waitAppReady', 'readRotateAffordance', 'waitNoToast',
+  'readState', 'loadFixture', 'assertInvariants', 'guardTarget', 'activeEditable', 'swipeStart', 'raiseUndoLimit', 'webkitProgrammaticScroll', 'hitAtCenter', 'waitAppReady', 'waitNoToast', 'readSavedPresetNames', 'spyShare', 'sharedFiles', 'readRotateAffordance',
+  // TUX-054: read-only save instrumentation (records navigator.share calls; the finger tap stays in the caller).
+  'savedFileName',
 ]);
 const EVAL_MARKER_CAP = 4;
 
@@ -33,9 +35,10 @@ const FORBIDDEN = [
   [/keyboard\.type\b/, 'keyboard.type'],
   [/keyboard\.press\b/, 'keyboard.press'],
   [/dispatchEvent/, 'dispatchEvent'],
-  [/scrollIntoView/, 'scrollIntoView'],
+  [/scrollIntoView/, 'scrollIntoView', ['webkitProgrammaticScroll']],
   [/\.skip\(|test\.skip|\.only\(|test\.only|test\.fail\(|test\.fixme/, '.skip/.only/test.fail'],
-  [/engineSupports/, 'engineSupports guard'],
+  [/engineSupports/, 'engineSupports guard', ['fingerScrollInto']],
+  [/console\.(log|debug|info)\(/, 'debug console output'],
 ];
 
 // Blank out comments, keep line numbers.
@@ -67,8 +70,10 @@ test.describe('journey static guard', () => {
   for (const f of FILES) {
     test(`${f}: no forbidden API`, () => {
       const code = stripComments(read(f));
-      for (const [re, label] of FORBIDDEN) {
-        const hit = code.split('\n').findIndex((l) => re.test(l));
+      const lines = code.split('\n');
+      for (const [re, label, allowedIn] of FORBIDDEN) {
+        // allowedIn: the one sanctioned function (WebKit has no native scroll for synthetic touches, see TUX-059).
+        const hit = lines.findIndex((l, i) => re.test(l) && !(allowedIn && allowedIn.includes(enclosing(lines, i))));
         expect(hit, `${f}:${hit + 1} uses ${label}`).toBe(-1);
       }
     });
@@ -145,6 +150,26 @@ test.describe('journey static guard', () => {
     }
   });
 
+  test('no ledger reason is a harness-guard or precondition message', () => {
+    const ledger = JSON.parse(fs.readFileSync(path.join(DIR, 'journey-status.json'), 'utf8'));
+    const bad = /end: covered|drag end: off-screen|end: off-screen|no empty canvas spot|no uncovered on-object spot|^(?:JRN-\d+ )?not found|^(?:JRN-\d+ )?off-screen:|exceeded the .* step budget|^(?:JRN-\d+ )?finger \d+: covered|the finger scroll never brought the target into view|covered by button\.sect-hdr \(target #machine-profile\)/;
+    for (const e of ledger.entries) {
+      expect(typeof e.reason, `${e.project}|${e.journey} needs a reason`).toBe('string');
+      expect(e.reason.length, `${e.project}|${e.journey} reason is empty`).toBeGreaterThan(0);
+      expect(bad.test(e.reason), `${e.project}|${e.journey} is pinned on a harness message: ${e.reason}`).toBe(false);
+    }
+  });
+
+  // An expected failure is a confirmed PRODUCT defect only (journey-triage.md): each entry names its owning TUX and
+  // the defect. A harness failure is fixed in the journey, never pinned.
+  test('every ledger entry is a triaged product defect with an owning TUX', () => {
+    const ledger = JSON.parse(fs.readFileSync(path.join(DIR, 'journey-status.json'), 'utf8'));
+    for (const e of ledger.entries) {
+      expect(typeof e.tux, `${e.project}|${e.journey} has no tux triage`).toBe('string');
+      expect(/^TUX-0\d\d\b.{12,}/.test(e.tux), `${e.project}|${e.journey} tux must start with the owning TUX id and name the defect: ${e.tux}`).toBe(true);
+    }
+  });
+
   test('the ledger names real cells and real steps, sorted', () => {
     const ledger = JSON.parse(fs.readFileSync(path.join(DIR, 'journey-status.json'), 'utf8'));
     expect(ledger.projects.length).toBe(8);
@@ -159,4 +184,10 @@ test.describe('journey static guard', () => {
       prev = key;
     }
   });
+});
+
+// The programmatic scroll is recorded per cell so the ledger can label it "WebKit finger-scroll unproven".
+test('the sanctioned programmatic scroll records itself for the ledger label', () => {
+  expect(stripComments(read('pages.js'))).toMatch(/programmaticScrolls/);
+  expect(read('merge-ledger.js')).toMatch(/WebKit finger-scroll unproven/);
 });

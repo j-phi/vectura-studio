@@ -6,7 +6,322 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Testing workflow
+- **Conditional two-shard PR validation proposal (PR #97).** Plan and guard bind two disjoint duration-weighted full-Vitest shards to an exact SHA and timestamp; the canonical coverage gate always runs and fails closed, verifies same-run provenance and strict inventory/57-skip reconciliation, merges V8 reports, then enforces unchanged global ratchets. Main remains unsharded pending hosted validation, review, and screen pass. This PR is the hosted validation trial; no speedup is claimed. Local `test:ci`, queue/worker defaults, fast feedback, browser/perf/probe/lane-gate checks remain unchanged. Full local two-worker coverage measured 39m40s, beyond the unchanged 30-minute default attempt cap.
+- **Full-scope shard pilot staging.** Keep multiline GitHub Actions shell commands with backslash continuations in literal YAML blocks so artifact and provenance arguments remain separate; a regression executes the workflow command against two fixture artifacts.
+- **Phase-two PR validation acceleration.** Full-scope coverage owns non-E2E correctness while preserving required-check compatibility, lifecycle/browser checks and uninstrumented performance. The queued local `test:ci`-equivalent decomposition passed with strict 765-file inventory; measured local coverage took 39m39.8s on two workers. PR #93 and the follow-up CLI correction passed required hosted checks; the manual full-scope pilot remains opt-in pending a successful run and measured comparison.
+- **Repair the coverage-pilot config loader and probe.** Load the custom duration sequencer as ESM so Vite can resolve `vitest/node` when bundling the pilot config. Expand the bounded three-file probe to cover the real config, queued shard and merge entrypoints, provenance validation and merged coverage-map parity; run it after hosted feedback as a separate CI step. It does not certify full-suite inventory or thresholds, and the local fast/pre-push lane remains unchanged.
+- **Bounded feedback and retained audits.** Add isolated runtime profiles and immutable
+  script caching, an explicit critical-feedback roster, a single complete browser invocation,
+  a physical exhaustive-proof audit lane, and fail-closed shadow routing/promotion evidence.
+  Pre-push runs bounded feedback; full correctness scope and coverage thresholds remain (phase two deduplicates the hosted executions).
+  Local worker limits bound memory. Independent review repairs and verification limits live
+  in `docs/test-suite-acceleration-punchlist.md`; hosted speed targets are not yet certified.
+
+
+### Fixed (tests)
+- **Pre-push feedback lane no longer hangs under an Intel git on Apple silicon.** An x86_64 git runs
+  hooks under Rosetta, so Playwright's Chromium started as x64 and the browser journey timed out at the
+  60 s lane deadline on every push. The hook now detects a translated process and runs the lane with
+  `arch -arm64`.
+- **Legacy mono Density test no longer passes or fails on random seeds.** Each build drew new
+  `Math.random()` layer seeds, so "Density 85 differs from 50" passed on the seed difference alone. For
+  dutyConst, two random seeds render alike about 0.4% of the time (3 matches in 40 pairs), which failed
+  CI coverage once. With the seeds pinned, dutyConst (sphere) and turingStripe (box) render 85 exactly as
+  50: both sit at the plot floor, so only a sparser Density moves them (by design, U4b). Those two cases
+  now test at Density 20. No product code changed.
+- **U2 byte-identity hashes are enforced on Node 20 only.** On an arm64 Mac running Node 25, the
+  sphere/hatch/mezzoRegion golden hashed `8ee322d6` instead of `c9eba689` and blocked every push. The
+  pre-U2 base `383d7610` gives the same `8ee322d6` on Node 25, so nothing moved: a newer V8 rounds a
+  Math result differently. The hashes were captured on Node 20 (CI's pinned major), so they are now
+  checked only there. On other majors, path and point counts must still match exactly. A guard fails
+  if CI ever runs another major. `.nvmrc` pins 20.20.2.
+- **Scene3D byte-identity goldens are pinned per CPU architecture.** The U2 kernel goldens and the Seed
+  legacy golden passed on arm64 Macs but failed on the x86_64 CI runner. V8's `Math.sin/cos/exp/atan2/...`
+  round the last ULP differently on arm64 and x86_64, so a full-precision hash holds on one arch only. Both
+  columns were regenerated on the original base commits (x64 under Rosetta matches CI exactly). No output changed.
+
+### Added (U7 deferred items, fill-style review)
+Defaults reproduce the previous output byte for byte (21 fills pinned before and after; saved documents
+with the old wireframe *Show hidden* load to the same drawing).
+- **Tone bands to pens, for every Fill Style** (`toneBands` 2 to 4, `tierPens` = the pen of each band).
+  Each mark takes the tone of the surface under it (face tone, scaled to the object's own range), band 1 is the
+  lightest. A line that crosses a band edge splits there. Curved shapes look up the face under each point;
+  box, plane and solid use the face tone. The three-pen styles keep their own tiers. Off by default.
+- **Pen pickers.** *Band N pen* rows (Tone bands) and *Tier N pen* rows (Tier pens) choose the pen of each band or
+  tier from the palette. A row left on *Object pen* keeps the object's pen. The SVG export puts each pen in its own group.
+- **Voronoi Web: Chain edges.** Joins edges that meet within one pen width, then orders the polylines by nearest
+  end. Maze Fill uses the same ordering. Sphere r45: 3885 -> 2401 paths, pen-up travel 70404 -> 5342 mm, ink +2.5 %
+  (the joins). Off by default.
+- **Stipple: Simplify.** Shown on a curved shape when Dot is *Dot* (18453 -> 5703 points on a sphere);
+  greyed with a reason for Ring, Plus and Tick. Smoothing stays hidden: it changes nothing on any mark.
+- **Alt fill: Alt angle.** The Alt fill lines turn with `altFillAngle` (default 45). A second layer crosses at the
+  shared `crossAngleDelta` (default 90, so 45 / 135). An absent key keeps the fixed 45 / 135.
+- **Help Guide: 3D Scene** accordion in the Algorithms tab (Type, Fill Style families, Seed, Shadow look, pen
+  routing, artistic controls).
+
+### Changed (U7)
+- **Wireframe *Show hidden* is folded into *Hidden edges: Dashed*.** Both drew the same dashed occluded edges.
+  `SCENE_VERSION` 5: a wireframe style's `showHidden: true` becomes `edgeStyles.hidden.hiddenTreatment: 'dash'`
+  (scene, per object, or on the leaf) and the key is removed. A face-level style keeps the old key.
+- **X-ray *Front line* is visible on a faceted shape**, greyed with a reason (the face path has one line type).
+
+### Not changed (U7)
+- **Light-relative hatch angle on curved shapes** stays hidden. A curved hatch angle turns inside the surface's own
+  grid; adding the sun's bearing tilts the whole grid and does not make the lines follow the sun (tested on a sphere).
+
+### Added (U6 artistic controls + pen routing, fill-style review)
+Every control below is absent from a saved style until you move it, and every default reproduces the
+previous output byte for byte (40 sphere and box fills pinned before and after, paths and pen metadata).
+Ranges and defaults live in `src/config/scene3d-fill-controls.js`. The controls sit in the Object 3D
+Style tab and in the scene Style editor.
+- **Tone shaping: Gamma and Contrast.** One curve in the tone pipeline (`Regions.shapeTone`, applied where
+  the scene wraps `combinedIntensity`), so every Fill Style reads the shaped tone. Gamma above 1 darkens the
+  mid-tones. Contrast steepens or flattens the curve about mid-grey. Both ends stay fixed. Per object.
+- **Depth fade** (row: Fade by depth). Far surfaces draw lighter: On / Off, *Fade strength*, *Fade starts* and *Fade full*
+  (fractions of the scene depth, nearest to farthest). Same single point as Gamma and Contrast, so it
+  reaches every Fill Style.
+- **Wave: Wavelength and Crest phase.** *Wavelength* (4 to 20 pen widths, default 7.3) scales every wave
+  build; a shorter wave adds samples so the crests stay round. *Crest phase* (From Phase, Aligned,
+  Alternating, Alternating + jitter, Drifting) reaches the four phases the engine already had.
+- **Width Ribbon: Nib angle and Nib contrast** (live when Width from = Calligraphic nib angle and Ends =
+  Hard), **Taper length, Tip width and Softness** (live when Ends = Tapered). The other group greys out
+  with an (i) reason.
+- **Turing Stripe: Maturity and Stripe scale** join Stripe align. Maturity is the relaxation step count
+  (40 to 400, default 170). Scale multiplies the stripe wavelength (0.5 to 3).
+- **Hatch Angle ref: Light.** Angle 0 hatches along the sun projected on the face, so the drawing turns with
+  the light. Faceted shapes (box, plane, solid) only. A flat (Wrap: Flat) hatch uses the sun's bearing on paper.
+- **Tier pens.** The six three-pen Fill Styles can draw tier 1, 2 and 3 with pens 1, 2 and 3 of the palette
+  (*Tier pens: Pens 1-3*). Each path carries its tier's pen, so the SVG export puts the tiers in separate pen
+  groups. Off by default. Curved shapes only (a box draws the plain ladder for these styles).
+- **Maze: Chain walls.** Joins maze walls that touch into polylines. No point moves, so the ink is the same
+  and the pen lifts drop (measured below). Off by default. Voronoi Web is not chained: its edges stop short
+  of the junctions, so a join would change the picture.
+
+### Changed (U6)
+- The Style tab label column is 74 px wide (was 58), so "Cross density" is no longer cut to "Cross den…".
+  Every label also carries its full text as a tooltip.
+
+### Changed (U5 Fill Style merges + sub-setting folds + shadow reach, fill-style review)
+- **Legacy monoline documents keep their look.** U4b made Density live on the nine monoline
+  laws. A document saved before it (no `seedMode`) now loads with `monoDensityLegacyAt` on each
+  style that names a monoline law at a Density other than 50. The law reads 50 while Density still
+  equals that value, so the saved picture is byte-identical. Any edit of Density releases it.
+- **The Fill Style picker goes from 31 rows to 20.** Each merged style keeps every old look as a
+  sub-control, and every old id loads through a migration (old id -> survivor + values) that draws
+  byte-identical output. Tests: 79 old ids and retired-key bags are pinned to hashes captured before
+  the merges (`tests/unit/scene3d-fr-u5-fill-style-migration.test.js`).
+  - **Ladder** (M5, M6): *Spacing* = Stepped rungs or Continuous field. Rungs keep *Rung detail*
+    (Coarse / Fine / Fine + phase / Perceptual) and gain *Extra marks* (flicks where rungs drop = Lozenge
+    Stipple; deep-shadow traverse = Deep Fill TSP). Continuous field keeps *Easing curve* (Sigmoid /
+    L*-linear), *Field metric* and *Closest approach* (Plot floor / Touching). Folds Continuous Field.
+  - **Width Ribbon** (M3, was Tapered Ends): *Width from* (Tone / Calligraphic nib angle / Isophotes)
+    and *Ends* (Tapered / Hard). Folds White Band, Nib Angle and Isophote Width. `bandProfile` is split.
+    Picking a width source that needs Hard ends snaps *Ends* to Hard.
+  - **Bundle** (M1, NEW-6): *Closest approach* (Touching / Overlapping = Sub-Nib) and *Bundle ends*
+    (Square / Lozenge) join *Bundle mode*.
+  - **Wave** (M4, was Amplitude Spacing): *Phase* (In-phase / Interlocked), *Waveform* (Serpentine /
+    Loop / Zigzag), *Pen down*, and *Amplitude* for the two interlocked builds. Folds Interlock Weave,
+    Weave Depth, Trochoid Loop, Amplitude Only and One Pen Down. Two labels were wrong: Weave Depth was
+    anti-phase, not "nested"; One Pen Down was in-phase with no clearance cap, not "interlock".
+  - **Flow Field** (M2, was ETF Direction Field): *Direction field* = Follows depth / Designed defects.
+    Mezzotint Region stays its own row: its mark class is Crosshatch, the others are Flow lines.
+  - **Origin Spiral is now Spiral > Centre: Glint** (M9a). A Hatch / Crosshatch / Contour style that
+    named it loads as Type Spiral with that Centre; the output is byte-identical. The torus write-back
+    still returns such a document to its old Type on Ladder.
+  - **Stipple > Dot Screen fill** (M9b): a button under the Stipple controls switches to Hatch with the
+    Dot Screen fill style. Stipple varies the dot count; Dot Screen varies the dot size on a hex lattice.
+    Different engines, so it stays a Fill Style.
+  - Options that do nothing on the selected shape are disabled in every sub-select (they were not).
+  - Retired keys (`bandProfile`, `nesting`, the old `penDown` on Interlock Weave, `fieldFloor`) are
+    rewritten through the id the old resolver drew. `fieldFloor` is now `closestApproach`.
+- **The shadow Fill Style row has the sub-controls too** (decision 1). 17 shadow textures from
+  earlier folds could only be reached through an old document. The row now offers the survivor's
+  sub-controls, limited to the textures that look materially different on a flat footprint. It still
+  stores one internal law id, so saved documents do not change. Restored: Weave Depth (anti-phase
+  wave pair) and Pen Stipple (end-trimmed). Reachable through the merged rows: Bundle Sub-Nib, Bundle
+  Lozenge, Lozenge Stipple, Interlock Weave. Not offered (same mark structure as a look that is
+  offered; pitch x0.85-1.15 or an angle nudge of at most 3.2 deg, same path count within 20 %, same
+  ink within 18 %): Nib Angle, White Band, Weight Smoothstep, Fine Ladder, Phase Fine Ladder,
+  Perceptual Ramp, Bundle Eased, Bundle Dither, Bundle Handoff, the four Continuous Field variants
+  and Continuous Field Sigmoid, Pen Pitch Match, Pen Facing, Trochoid Loop, Amplitude Only. Those
+  recipes still draw for a saved document that names them (`SHADOW_NONMATERIAL`).
+- **Sub-setting folds** (R3 / NEW-2 / NEW-3, each pinned to hashes captured before the fold):
+  - *Wrap* (Surface / Flat) replaces Contour *Style: Region*, Spiral *Mode: Flat* and Hatch *Angle ref:
+    Screen*. It is live on a curved Contour / Spiral and on a faceted Hatch.
+  - X-ray *Front: Faded* is *Front line: Dotted* and gains Dashed / Dashed-dot. X-ray *Back line* has no
+    *Solid* (it always drew Dashed: an occluded line is stamped [3,2] when its own dash is empty).
+    *Depth cue* is two toggles (Depth -> density, Depth -> weight).
+  - The Hidden edge class has one *Occluded* select (Drop / Dashed / Dotted / Dash-dot) instead of two rows.
+  - Highlight *Dashed* + *Dotted* are *Restyle line* with a *Line* type (solid / dashed / dotted /
+    dash-dot); *Sparse* + *Stipple* are *Thin* with *Thin by* Ruling / Sample.
+  - Alt fill *Hatch* + *Crosshatch* are *Lines* with *Layers* 1 / 2.
+  - Cross dots are Plus at 45 deg x 1.41 (the same marks; a stored Cross still draws and shows).
+  - Shadow *Layers* is one Off / 2 / 3 / 4 row in the docked panel (the context bar already had it).
+  - Burst (highlight) and Halo: Burst (emissive) share one radial-ray emitter.
+  - One source for the crossing-family angles (65, 32, 60 deg) and the plot floor (2.2 pen widths):
+    `Regions.CROSS_OBJ_DEG`, `CROSS_TRIPLE_DEG`, `CROSS_MARK_DEG`, `PLOT_FLOOR_PEN`. Values unchanged.
+- **Review fixes.** The legacy monoline Density pin fires on the first legacy load only (undo/redo and
+  save/reopen no longer re-pin). A shadow alias with no recipe keeps its own id in the document (the row
+  shows Ladder). The shadow row is one plain-language *Look* select per style (Triple lines, Braided double
+  wave, Looping wave...). Looping Wave, Triple lines (uneven) and Triple lines (tight) are offered again; a
+  seeded layer samples the looping wave finely enough for the loop to form, a legacy layer keeps the old
+  step. *Extra marks* labels now say they set Rung detail.
+- **Not done in this unit:** Show hidden (wireframe) keeps its own toggle; it is the same picture as
+  Hidden > Occluded: Dashed (pinned by a test) but is not yet moved into the edge table. Mezzotint Region
+  stays separate (class). Wave `cFlo` stays an internal constant. Alt fill still draws at fixed 45 / 135 deg.
+
+### Fixed / Changed (U4b engine defects, fill-style review)
+- **Monoline Crosshatch no longer redraws identical lines.** A monoline law that has no
+  direction (etfKang, defectSplit, originSpiral, turingStripe, voronoiWeb, mazeFill) ran its
+  second Crosshatch pass at another angle without ever reading the angle, so the same geometry
+  was inked twice. The second pass now runs only when pass one read the angle (mezzoRegion,
+  dutyConst, endShorten, and the unreachable directional laws), so Crosshatch draws those six as
+  Hatch. Sphere r40, Density 50, before -> after (paths = pen-downs, ink in mm): etfKang
+  850 -> 469 paths, 23123 -> 11687 mm; defectSplit 610 -> 349, 24320 -> 12286; originSpiral
+  1168 -> 628, 27832 -> 14042; turingStripe 794 -> 441, 15086 -> 7669; voronoiWeb 5224 -> 2656,
+  14001 -> 7126; mazeFill 17414 -> 8751, 13377 -> 6814. That is about -49 % ink and -43 to
+  -50 % pen-downs. The directional laws are byte-identical.
+- **Density and Angle work on the monoline laws.** Density scales every clearance (it was
+  ignored). Density 50 is byte-identical to before. Above 50, `dutyConst` and `endShorten`
+  already sit at the plot floor, so they cannot tighten; a denser setting also narrows the tone
+  range of the other laws as more of the form reaches the floor. Saved documents with a monoline
+  law at a Density other than 50 therefore change. Angle already worked on the laws that read it
+  (`mezzoRegion`, `dutyConst`, `endShorten`); the six direction-free laws now grey Angle and
+  Cross angle with an (i) reason. Cross angle moves the crossing pass of a directional law (its
+  designed 65 deg at the default).
+- **Contour is greyed under a monoline law.** Contour drew byte-for-byte what Hatch draws (the
+  laws never read the Type), so the Type list shows "Contour - same as Hatch" disabled and the
+  Fill Style (i) says why. No law has a contour form (all nine draw in screen space).
+- **Field metric keeps the sigmoid.** Picking a Field metric / Field floor sub-option under
+  Continuous Field used to change the curve from the Sterzik sigmoid to L*-linear as a side
+  effect. It now keeps the sigmoid. Documents saved with the retired ids (`contFieldFore`,
+  `contFieldSurface`, `contFieldQuant`, `contFieldTouch`) are pinned to the original L*-linear
+  curve with `fieldCurve:'lstar'` and render byte-identical.
+- **Perceptual ramp respects the even-spacing engine.** `rungMode:'perceptual'` kept the discrete
+  rung verdict and brought back the 1-and-2-pitch gaps W-26 removed (drawn gap ratio 2.00 on a
+  uniform cone and cylinder, bar 1.15). It now rides the continuous placement engine: gap ratio
+  within the bar, 128 -> 144 paths and 2481 -> 3491 mm on the Density-50 sphere.
+- **turingStripe stripe alignment is a real parameter.** The alignment term was multiplied by
+  0.0. `stripeAlign` (0-1.2, default 0 = today's output) wires it, with a "Stripe align" row.
+  The cap follows the measurement: 0.9 aligns the stripes in the lit zone, 3.0 breaks into noise.
+- **Curved Stipple honours Jitter.** The slider did nothing on curved shapes; it now scatters the
+  lattice (same 0-100 scale as faceted shapes). An absent key stays an exact lattice. A stipple
+  style that carries the seeded default (40) now shows jittered dots. The grey on Jitter is gone.
+- **penCross and mkDotScreen read their keys.** penCross's crossing family follows Cross angle
+  and Cross density on Crosshatch (its designed 60 deg / half density is the default).
+  mkDotScreen follows Dot size and Dot angle (new rows under that Fill Style on the line Types).
+- **Seed greys when it has no effect.** Seed and RANDOMIZE show "No effect for this style" with an
+  (i) when no fill in the layer can draw from the seed. The decision comes from a table measured
+  over every Fill Style, Type and a curved and a faceted shape, and fails open (anything unknown
+  stays live).
+- **Dead keys checked.** `highlightBands` is read only by the highlight-treatment dispatch, which
+  is switched off (`HL_STAGE.treatment`); it has no control and stays unwired. `xrayHiddenEdges`
+  is live (faceted x-ray with a dashed hidden-edge style) and has no control. Nothing to remove.
+- Tests re-pinned on purpose: `scene3d-faceted-tone-law` and `scene3d-voronoi-web-integrity` now
+  state their tone contract at the default Density 50 (the old fixtures used 85 / 60 while the
+  laws ignored Density); the Fill Style (i) test now reads the Fill Style row, not the first (i).
+
+### Fixed / Changed (U4a engine defects + Seed)
+- **Seed and RANDOMIZE now drive every scene3d fill.** Seed feeds all hash, jitter and dither
+  sites (stroke wobble, stipple jitter, shadow feather, light-driven dither, mono-law marks) and
+  the golden-ratio phase walks. A new 3D layer is `seedMode:'seeded'`. A saved document with no
+  `seedMode` loads as `'legacy'` and renders byte-identical to before (nine golden scenes
+  verified against the pre-seed base). A Seed edit or RANDOMIZE switches a legacy layer to
+  seeded. Expanded monolith children and bundled presets stay legacy. Both the group and each
+  object leaf fold their own Seed into the salt.
+- **Stroke Fill works on scene-tree objects.** The leaf panel and context bar wrote the child;
+  the compositor read the group. The child's value now reaches its style bag. A default child
+  never shadows a Stroke Fill an older document set on the group.
+- **Three-pen laws keep their pen tier tag** (`meta.penTier`) on the emitted path, so export can
+  route tiers to real pens.
+- **Fixed non-deterministic compose.** `FillBoolean` latched the last failed op in module state;
+  the shadow overlap lattice read a stale error from an earlier compose and dropped its
+  decomposition once (ground fill 85 vs 169 paths). Shadows now clear the latch at build start.
+- **Hot rotation callers use the precomputed rotator** (`scene.js`, `sampleAt`). Output is
+  bit-identical; the rotator itself runs about 60x faster than the legacy rotate in a micro-bench.
+
+### Performance
+- **3D Scene · Fill Style drags are interactive (U1 pipeline perf).** Rotating an object with
+  the gizmo, orbiting the camera, touch-dragging or dragging an Object-panel Style slider now
+  uses a *draft tier* instead of a full compose per pointer move. Cheap scenes (last settled
+  compose ≤ 40 ms) stay full quality. Slower scenes use the new **law-preserving draft**: the
+  full compose runs, but ribbon laws draw weighted centrelines and mono laws run on a coarser
+  (pen × 2.5) lattice, so the chosen Fill Style stays visible. Measured gizmo drag frames
+  (Chrome): taperedEnds 1151 → 35 ms, trochoidLoop 3933 → 51 ms, weaveDepth 3537 → 70 ms,
+  turingStripe 486 → 145 ms. Only if a law draft exceeds 400 ms does a drag fall back to the
+  flat silhouette hatch. The release still renders at full quality, now **deferred** past the
+  release paint and cancelled by the next drag on the same scene. (B1, F5, B3, NEW-4)
+- **Consumed scene objects no longer render twice.** Editing an object inside a scene ran a
+  standalone one-object render and threw it away before the scene compose. That render is gone;
+  output is identical. Object-panel commits on taperedEnds: 2529 → 1161 ms. (B2)
+- **Scene compose memo.** A full scene compose whose complete input (assembled scene, seed,
+  bounds, pen width, compositor switches) matches the previous one reuses its output. SVG export
+  of an unchanged trochoidLoop scene: 3.9 s → 0.3 s. A draft frame is never reused as final ink.
+  (NEW-3)
+
 ### Added
+- **3D Scene — the Object 3D Style tab reaches every style control.** In a scene tree each object
+  keeps its own style, so the scene group's Style editor only ever restyled the ground. The
+  Object 3D panel now offers every row that editor has: Cross angle / Cross density / Triple
+  hatch, Angle ref, Link fill, contour Style, the five spiral rows, the four dot rows, wireframe
+  Edges / Show hidden, a **Stroke** group (Line, Dash length, Wobble), a **Highlight** group and,
+  for an x-ray object, the **X-ray** group. Both surfaces render from one shared set of rows.
+- **3D Scene — engine controls that had no UI.** *Wobble scale* (shown once Wobble is on, on
+  faceted fills), *Overstroke* (every fill), spiral *Pitch* and contour *Step* (Auto follows
+  Density; Set fixes the spacing in mm — faceted shapes, Flat spirals, Region contours),
+  quantised-field *Levels* (Continuous Field ▸ Quantised, curved shapes) and the shadow's
+  *Tone depth* (flat shadows). Each is offered only where it measurably changes output.
+  **Defaults reproduce previous output** — opening the panel writes nothing.
+
+### Changed
+- **3D Scene — Density reaches 500** (was 220) on the Object 3D panel, the scene Style editor and
+  the context-bar Style flyout, matching the engine's own clamp.
+- **3D Scene — honest controls.** Rows that cannot apply to the shape are removed (Min rulings,
+  Angle ref and Link fill on curved shapes; Triple hatch, contour Style and spiral Centre / Mode
+  on faceted shapes; Dot angle for a round dot; x-ray Front on faceted shapes). Rows the current
+  Fill Style ignores are greyed with an (i) reason (Triple hatch under Ladder, Continuous Field,
+  Deep Fill and the field-driven styles; Cross angle / density, Angle ref and Link fill under
+  field-driven styles; Eccentricity under Ladder on curved shapes; Jitter on curved shapes). On
+  curved shapes the Highlight list disables the treatments that draw nothing there (PRH-027) and
+  drops Mode / Sensitivity / Shadow grade / HL density / HL pen. The Highlight band count is no
+  longer offered (it changed nothing anywhere). Tone ▸ Specular is greyed when no object in the
+  scene draws one; Tone ▸ Bands gains an (i) naming the fills that read it.
+- **3D Scene — the Fill Style picker no longer greys live styles on curved Spiral / Stipple.**
+  It greyed 45 of 48 styles as "no effect here"; measured against the engine, only Deep Fill
+  (and Fine Ladder on a pyramid + Stipple) draws exactly like Ladder. The rest are offered again;
+  width-based styles carry an (i) note that they draw centrelines only on these fills.
+
+### Fixed
+- **3D Scene — "Assign pen" on an Object 3D row in the Layers panel now routes that object's
+  ink.** It used to recolour the row only. It now sets the object's style pen and recomposes the
+  scene; the Style tab's Pen row keeps the row's pen dot in step.
+### Changed
+- **Tests · I1 identity budget.** The scene3d mkTick "72 cells md5 identical" test now has an explicit 900 s timeout, so it no longer times out the pre-push hook under machine load. Test-only.
+- **Docs · 3D fill audit.** Recorded that the T2-9 / T2-9R mkTick band-rule redesign was rejected and v1.4.7 kept (handoff + `plans.md`).
+
+### Added
+- **Tooling · shared local test queue.** Every heavy test command (`test:unit`, `test:integration`,
+  `test:e2e`, `test:visual`, `test:perf`, `test:coverage`, `test:update`, and the `test`,
+  `test:fast`, `test:ci` aggregates) now runs through `scripts/test-queue.js`: one machine-wide
+  lock in `~/.cache/vectura-studio/test-queue`, shared by every worktree and session. Other runs
+  wait in FIFO order and print the holder's PID, age, working directory, and command. The lock
+  is taken atomically (hard link), owners are identified by PID **and** process start time, and
+  stale locks (dead or reused PID) are recovered safely. The holder terminates its whole
+  subprocess tree on completion or cancellation before it releases the lock; a SIGKILLed
+  holder's orphans are terminated by the next run. Aggregates hold the lock once, and their
+  nested calls pass through without deadlock. New entrypoints: `test:vitest`, `test:playwright`,
+  `test:queue:status`. CI behavior is unchanged (`CI` set = no lock). `CLAUDE.md`, `AGENTS.md`,
+  and `docs/testing.md` now forbid direct `npx vitest` / `npx playwright test`.
+- **3D Scene · Ground size controls.** The Ground panel gains a **Size** group: **Width (X)** and
+  **Depth (Z)** sliders (0.25×–256×, log scale so each notch doubles), a **lock** that scales
+  both together and keeps their proportions, **Reset**, and **Fill frame** — one click sizes
+  the floor (keeping its proportions) so its edges sit just outside the artboard. The ground is
+  a flat plane, so it has no Y size. The same controls appear in a legacy scene's Ground
+  inspector. A floor that runs behind a perspective camera is now cut at the near plane
+  instead of folding its near edge up into the frame, and a floor enlarged past 1× is cut to the
+  artboard (+25 % pad) so it no longer hatches kilometres of off-paper ink into travel, time
+  estimates, and export. **At the default 1× every existing scene renders byte-identically.**
 - **3D Scene · Slices gains an End overlap control.** How far each depth-slice ring is carried
   past (or pulled back from) the object's silhouette, in pen widths (−2…8, step 0.25). **The
   default is 0 and is byte-identical to previous builds** — nothing about an existing scene
@@ -21,6 +336,19 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   Contour / Spiral / Stipple fills, or on the ground plane. (W-38, W-38b)
 
 ### Changed
+- **3D Scene · faster fill kernels (fill-style review U2).** Variable-width ribbon laws
+  (weaveDepth, trochoidLoop, onePenDown, nibAngle, taperedEnds and the rest of the ribbon
+  family) now erode each ribbon from ONE distance field in the ribbon's own principal-axis
+  frame (`PenFill.erodeLevels`) instead of two polygon-clipping band unions, and PenFill fills
+  the ribbon on that oriented grid. **Ribbon output changes slightly (accepted):** the outline is
+  snapped to exactly pen/2 off the clipped ribbon edge, with exact convex corners; containment
+  (no outline/fill vertex outside the ribbon or closer than pen/2 to its edge) and ring-fill
+  coverage (within 0.002 of the old numbers) are pinned by tests. No visual golden covers a
+  ribbon law, so none needed a refresh. Bit-identical speed-ups, pinned by golden hashes: the
+  mono streamline spacing grid (quarter-pitch cells, numeric keys), the turingStripe relaxation
+  (hoisted Dv, inlined clamps, no per-iteration allocation), the ground-shadow distance fields
+  (per-block candidate segments + scanline inside test) and a precomputed-trig
+  `Geometry3D.rotatePoint` (new `makeRotator`).
 - **Development toolchain:** Vitest and its V8 coverage provider now move together to 4.1.8,
   and the documented minimum Node runtime is 20.19 to match the current Vite, Playwright,
   ESLint, and jsdom toolchain.
@@ -85,6 +413,18 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   whether this reads correctly is being judged by eye, not by a bar.** (T2-6)
 
 ### Fixed
+- **3D Scene · Capsule hatch no longer bends at the cap seams.** An angled hatch (the 45° default
+  for new curved objects) wrapped the capsule as a helix that suddenly changed slope and pitch
+  where the barrel meets each cap. The fill's capsule chart split its length by height, so each
+  cap's quarter-arc got 1/1.57 of the parameter share it needed. The fill now places the seam by
+  arc length, so helices, tone rows, and contour rings stay evenly spaced from pole to pole. The
+  capsule mesh is unchanged.
+- **Vitest worker cleanup.** Supervise test process groups through exit, cancellation, wrapper death, and a configurable deadline (30 minutes locally / three hours in CI); remove surviving workers before retrying. Visual/perf commands now use the wrapper too. Added Node process-lifecycle regressions to the unit entrypoint. macOS/Linux supported; native Windows requires WSL.
+- **3D Scene · mkTick dark-side ticks reach the rim evenly.** Regular ticks in shaded areas now
+  extend their rim-facing end to an even 0.6 mm from the outline. Neighbouring ticks extend together,
+  so the rim edge has no isolated steps. An extension that would bend the tick more than 8° is
+  refused, so the extensions add no hooks. On the torus at density 220, generation runs about 1.3×
+  slower than in 1.4.5. (T2-8b-5)
 - **3D Scene · mkTick (Tick) fill reaches the dark corners.** Where a tick band ends at a rim or
   another band, it now carries on at its own spacing and direction. The ticks shorten gradually,
   and every tick end sits an even distance off the outline (0.6 mm) or the next band (0.5 mm).

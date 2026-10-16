@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const core = require('../helpers/target-audit-core');
 
 // TUX-023: transform handles by finger. A finger grabs a corner from ~14 px outside it, the
 // corner drag resizes (does not rotate), a small selection still moves from its centre, and the
@@ -13,6 +14,28 @@ const NAMED = {
   'webkit-iphone-portrait': 'iPhP-webkit',
 };
 const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-023';
+
+// Batch R3: the painted rotate disc is set by a frame, so wait for that frame instead of a fixed time.
+const waitAffordanceDrawn = (page) => page.waitForFunction(() => !!window.app.renderer._rotAffDrawn, null, { timeout: 6000, polling: 50 });
+
+// Batch R3: select the first layer by a finger tap. Geometry is settled before the target is read and the target is
+// re-read on every attempt, so a late layout shift cannot leave the tap on empty canvas (up to 3 attempts).
+const selectByFinger = async (page) => {
+  const picked = () => page.waitForFunction(() => (window.app.renderer.selectedLayerIds || new Set()).size === 1, null, { timeout: 2000 }).then(() => true, () => false);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await core.waitGeometryStable(page);
+    const at = await page.evaluate(() => {
+      const r = window.app.renderer;
+      const b = r.getSelectionBounds([window.app.engine.layers[0]]);
+      const c = r.worldToScreen(b.center.x, b.center.y);
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      return { x: c.x + box.left, y: c.y + box.top };
+    });
+    await touch.tap(page, at);
+    if (await picked()) return;
+  }
+  expect(false, 'the finger tap selected the layer').toBe(true);
+};
 
 // Create one rings layer, select it, size the view so the selection is `wantPx` wide on screen
 // and put its SE corner at a client point where the canvas is the top element all around.
@@ -259,19 +282,9 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
       window.app.renderer.draw();
     });
     await page.waitForTimeout(600);
-    const target = await page.evaluate(() => {
-      const r = window.app.renderer;
-      const layer = window.app.engine.layers[0];
-      const b = r.getSelectionBounds([layer]);
-      const c = r.worldToScreen(b.center.x, b.center.y);
-      const box = document.querySelector('#main-canvas').getBoundingClientRect();
-      return { x: c.x + box.left, y: c.y + box.top };
-    });
-    await touch.tap(page, target);
-    // Under load the first tap can land before the layout settles; retry once if nothing selected.
-    const picked = () => page.waitForFunction(() => (window.app.renderer.selectedLayerIds || new Set()).size === 1, null, { timeout: 2500 }).then(() => true, () => false);
-    if (!(await picked())) { await touch.tap(page, target); await picked(); }
-    await page.waitForTimeout(500);
+    await selectByFinger(page);
+    await core.waitGeometryStable(page);
+    await waitAffordanceDrawn(page);
     const res = await page.evaluate(() => {
       const r = window.app.renderer;
       const ids = Array.from(r.selectedLayerIds || []);
@@ -287,7 +300,7 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
     expect(res.selected).toBe(1);
     expect(res.id).toBe('main-canvas');
     // The affordance that was actually PAINTED (not a fresh compute) must also be clear of chrome.
-    await page.waitForTimeout(1000);
+    await waitAffordanceDrawn(page);
     const drawn = await page.evaluate(() => {
       const a = window.app.renderer._rotAffDrawn;
       if (!a) return null;
@@ -417,17 +430,9 @@ test.describe('TUX-023 rotate affordance clear of chrome after a corner resize (
       window.app.renderer.draw();
     });
     await page.waitForTimeout(600);
-    const centre = await page.evaluate(() => {
-      const r = window.app.renderer;
-      const b = r.getSelectionBounds([window.app.engine.layers[0]]);
-      const c = r.worldToScreen(b.center.x, b.center.y);
-      const box = document.querySelector('#main-canvas').getBoundingClientRect();
-      return { x: c.x + box.left, y: c.y + box.top };
-    });
-    await touch.tap(page, centre);
-    const picked = () => page.waitForFunction(() => (window.app.renderer.selectedLayerIds || new Set()).size === 1, null, { timeout: 2500 }).then(() => true, () => false);
-    if (!(await picked())) { await touch.tap(page, centre); await picked(); }
-    await page.waitForTimeout(500);
+    await selectByFinger(page);
+    await core.waitGeometryStable(page);
+    await waitAffordanceDrawn(page);
     const se = await page.evaluate(() => {
       const r = window.app.renderer;
       const b = r.getSelectionBounds([window.app.engine.layers[0]]);
@@ -436,7 +441,8 @@ test.describe('TUX-023 rotate affordance clear of chrome after a corner resize (
       return { x: p.x + box.left + 10, y: p.y + box.top + 10 };
     });
     await touch.drag(page, se, { x: se.x + 30, y: se.y + 30 });
-    await page.waitForTimeout(500);
+    await core.waitGeometryStable(page);
+    await waitAffordanceDrawn(page);
     const res = await page.evaluate(() => {
       const r = window.app.renderer;
       const a = r._rotAffDrawn;

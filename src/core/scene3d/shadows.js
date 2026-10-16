@@ -865,6 +865,35 @@
   // law's own verified-on-the-surface one), so — like isophoteWidth — this is
   // narrowed rather than given fabricated geometry.
   const TONE_LAW_NOT_DISTINGUISHABLE = new Set(['isophoteWidth', 'onePenDown']);
+  // U5 (fill-style review, decision 1 — "keep as many shadow looks as possible
+  // when they are materially different"). The shadow Fill Style row now reaches
+  // EVERY recipe through the survivor's sub-controls, except these. Each draws the
+  // same mark structure as the look named in `like`, differing only by a pitch
+  // multiplier within 0.85-1.15 (+/- 18 %), an angle nudge of at most 6.5 degrees,
+  // or a pass spacing of the same pass count (whiteBand, weightSmoothstep, bundleHandoff): measured against it on the flat
+  // footprint (tests/unit/scene3d-fr-u5-shadow-reach.test.js: same path count
+  // within 20 %, same ink within 18 %), and judged identical in the contact sheet.
+  // The recipes stay and keep drawing for a saved document that names them; only
+  // the picker stops offering them.
+  const SHADOW_NONMATERIAL = {
+    nibAngle: { like: 'ladder', why: 'angle nudge 2.5-6.5 deg, pitch x1.02' },
+    whiteBand: { like: 'penInterleave', why: '2 passes at 0.5 pitch against 0.45' },
+    weightSmoothstep: { like: 'weightModulated', why: '2 passes at 0.34 pitch against 0.28, 0.6 deg' },
+    fineLadder: { like: 'ladder', why: 'pitch x0.97' },
+    phaseFineLadder: { like: 'ladder', why: 'pitch x0.97, 1.2 deg' },
+    perceptualRamp: { like: 'ladder', why: 'pitch x1.05' },
+    bundleHandoff: { like: 'weightModulated', why: '2 passes at 0.30 pitch, 0.8 deg' },
+    contFieldSigmoid: { like: 'ladder', why: 'pitch x1.08' },
+    contFieldTouch: { like: 'ladder', why: 'pitch x0.85' },
+    contFieldFore: { like: 'ladder', why: '1.6 deg' },
+    contFieldSurface: { like: 'ladder', why: 'pitch x1.12, -1.6 deg' },
+    contFieldQuant: { like: 'ladder', why: 'pitch x0.93' },
+    penPitchMatch: { like: 'ladder', why: 'pitch x1.15' },
+    penFacing: { like: 'ladder', why: '2.4 deg' },
+    amplitudeOnly: { like: 'ampSpacing', why: 'plain sinusoid (straight at footprint scale)' },
+  };
+  const toneLawMaterial = (lawId) => !Object.prototype.hasOwnProperty.call(SHADOW_NONMATERIAL, lawId);
+
   // Exported predicate (see tail of file): lets the UI hide toneLaw options
   // whose mark class does not change shadow geometry, instead of offering a
   // choice that quietly does nothing.
@@ -905,12 +934,16 @@
     return casters.some((l) => !(explicitLayers || l.type === 'area'));
   };
 
-  const CROSS_MARK_DEG = 60;      // avoid a 90° square-grid moiré (mirrors CROSS_B_DEG's reasoning above)
+  const CROSS_MARK_DEG = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.CROSS_MARK_DEG) || 60;      // avoid a 90° square-grid moiré (mirrors CROSS_B_DEG's reasoning above)
   const CROSS_MARK_SPACING_MULT = 1.5; // wider pitch per crossed family so total ink stays comparable to plain hatch
   const DASH_PERIOD_MULT = 6;     // dash period scales with the ruling pitch, not a fixed screen-space stipple
   const DASH_DUTY = 0.5;
   const DOT_FLICK_LEN_MULT = 2.5; // a "dot" is drawn as a short flick — a bare vertex would fail MIN_RUN_MM below
   const WAVE_STEP_MM = 2.5;
+  // Seeded layers sample the trochoid shadow finely enough for its loop to form (its 3.85 mm
+  // wavelength is under 2 samples per cycle at WAVE_STEP_MM). Legacy layers keep the coarse step so
+  // a saved document draws exactly what it always drew. Set at the top of build().
+  let TROCHOID_FINE = false;
   const WAVE_WAVELEN_MM = 7;
 
   // dash: break one ruling segment into fixed-duty dashes.
@@ -944,7 +977,8 @@
     const amp = clamp((o.ampMult || 1) * 0.3 * spacing, 0.15, 2.2);
     const wavelen = Math.max(2, WAVE_WAVELEN_MM * (o.wavelenMult || 1));
     const phase = o.phase || 0;
-    const n = Math.max(2, Math.ceil(len / WAVE_STEP_MM));
+    const step = (o.fineStep && TROCHOID_FINE) ? Math.min(WAVE_STEP_MM, wavelen / 10) : WAVE_STEP_MM;
+    const n = Math.max(2, Math.ceil(len / step));
     const pts = [];
     for (let i = 0; i <= n; i++) {
       const s = (i / n) * len;
@@ -1218,7 +1252,7 @@
     interlockWeave: (rings, angleDeg, spacing) => hatchRingsEvenOdd(rings, angleDeg, spacing)
       .map(([a, b], i) => waveSegment(a, b, numericHint(spacing), { ampMult: 0.75, wavelenMult: 0.9, phase: (i % 2) ? Math.PI : 0 }))
       .filter(Boolean),
-    trochoidLoop: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, { ampMult: 1.1, wavelenMult: 0.55, secondHarmonic: true }),
+    trochoidLoop: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, { ampMult: 1.1, wavelenMult: 0.55, secondHarmonic: true, fineStep: true }),
     mkScribble: (rings, angleDeg, spacing) => waveBase(rings, angleDeg, spacing, { ampMult: 1.2, wavelenMult: 0.7, triangle: true }),
   };
 
@@ -1415,8 +1449,8 @@
   // square grid and beats against the raster).
   const UMBRA_RIN = 0.10;
   const PLOT_FLOOR_MULT = 1.2;   // min spacing for ANY single family, × penWidth
-  const CROSS_B_DEG = 65;
-  const CROSS_C_DEG = 32;
+  const CROSS_B_DEG = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.CROSS_OBJ_DEG) || 65;
+  const CROSS_C_DEG = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.CROSS_TRIPLE_DEG) || 32;
   const Z_CONTACT = 0;
   const Z_UMBRA = 1;
   const Z_PENUMBRA = 2;
@@ -1424,8 +1458,10 @@
 
   // Deterministic [0,1) hash. Feathering must be stable frame to frame or the
   // line ends swim as the camera orbits (same failure the hatch bearing has).
+  const SEED = G3.SEED || { salt: 0, phase: 0, off: 0 };
   const hash01 = (a, b) => {
-    let h = (Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul((b | 0) + 0x9e3779b9, 0x85ebca6b)) >>> 0;
+    // Scene Seed — salt is 0 for a legacy layer, and x ^ 0 is an exact identity.
+    let h = (Math.imul(a | 0, 0x27d4eb2d) ^ Math.imul((b | 0) + 0x9e3779b9, 0x85ebca6b) ^ SEED.salt) >>> 0;
     h ^= h >>> 15; h = Math.imul(h, 0x2545f491) >>> 0; h ^= h >>> 13;
     return (h >>> 0) / 4294967296;
   };
@@ -1538,6 +1574,100 @@
     return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
   };
 
+  // ── Exact accelerated distance-to-segments (fill-style review F9, U2) ──────
+  //
+  // `buildShadowFields` used to call `distToSegs` (O(segments)) for every one
+  // of up to 40 000 lattice cells, twice — half of the default scene's frame.
+  // `makeSegDistIndex` covers the lattice with coarse blocks (G = 4 lattice
+  // cells) and, ONCE per block, keeps only the segments that can be nearest to
+  // some point of it: with c the block centre and r its half-diagonal, the
+  // nearest segment s* of any point p in the block satisfies
+  //   |c, s*| <= |p, s*| + r <= |p, s_c| + r <= |c, s_c| + 2r,
+  // where s_c is the segment nearest c. A query then runs the IDENTICAL
+  // squared-distance expression over that candidate list only. The list always
+  // contains s*, and `min` is order-independent, so the result is EXACTLY what
+  // `distToSegs` returns (slack on r absorbs rounding; a non-finite segment —
+  // which `distToSegs` can never pick, since `NaN < best` is false — is never
+  // listed; a query outside the lattice falls back to the full scan). Pinned
+  // bit-identical by tests/unit/scene3d-u2-kernel-identity.test.js.
+  const segDist2 = (px, py, a, b) => {
+    const vx = b.x - a.x; const vy = b.y - a.y;
+    const wx = px - a.x; const wy = py - a.y;
+    const vv = vx * vx + vy * vy;
+    let s = vv > 1e-12 ? (wx * vx + wy * vy) / vv : 0;
+    if (s < 0) s = 0; else if (s > 1) s = 1;
+    const dx = wx - vx * s; const dy = wy - vy * s;
+    return dx * dx + dy * dy;
+  };
+  const makeSegDistIndex = (segs, lat) => {
+    const live = [];
+    for (let i = 0; i < segs.length; i++) {
+      const a = segs[i][0]; const b = segs[i][1];
+      if (Number.isFinite(a.x) && Number.isFinite(a.y) && Number.isFinite(b.x) && Number.isFinite(b.y)) live.push(segs[i]);
+    }
+    if (!live.length) return () => Infinity;
+    const G = lat.cell * 4;
+    const bx = Math.max(1, Math.ceil((lat.maxX - lat.minX) / G) + 1);
+    const by = Math.max(1, Math.ceil((lat.maxY - lat.minY) / G) + 1);
+    const r = (G * Math.SQRT2) / 2 * (1 + 1e-9) + 1e-9;
+    const lists = new Array(bx * by);
+    const dc = new Float64Array(live.length);
+    const blockOf = (cx, cy) => {
+      let best = Infinity;
+      for (let n = 0; n < live.length; n++) {
+        const d = Math.sqrt(segDist2(cx, cy, live[n][0], live[n][1]));
+        dc[n] = d;
+        if (d < best) best = d;
+      }
+      const lim = best + 2 * r + 1e-9 * (1 + best);
+      const out = [];
+      for (let n = 0; n < live.length; n++) if (dc[n] <= lim) out.push(live[n]);
+      return out;
+    };
+    const scan = (px, py, list) => {
+      let best = Infinity;
+      for (let n = 0; n < list.length; n++) {
+        const d = segDist2(px, py, list[n][0], list[n][1]);
+        if (d < best) best = d;
+      }
+      return best === Infinity ? Infinity : Math.sqrt(best);
+    };
+    return (px, py) => {
+      const fi = (px - lat.minX) / G; const fj = (py - lat.minY) / G;
+      if (!(fi >= 0 && fj >= 0)) return scan(px, py, live);
+      const i = Math.floor(fi); const j = Math.floor(fj);
+      if (i >= bx || j >= by) return scan(px, py, live);
+      const k = j * bx + i;
+      let list = lists[k];
+      if (!list) {
+        list = blockOf(lat.minX + (i + 0.5) * G, lat.minY + (j + 0.5) * G);
+        lists[k] = list;
+      }
+      return scan(px, py, list);
+    };
+  };
+  // Scanline replacement for the per-cell `pointInRings` over a whole lattice
+  // row: the edge crossings of row `py` are computed ONCE with the identical
+  // expression `pointInRings` uses, and a cell at `px` is inside iff an odd
+  // number of them satisfy `px < x` — exactly the toggles `pointInRings` makes.
+  const rowCrossings = (py, rings, out) => {
+    out.length = 0;
+    for (let r = 0; r < rings.length; r++) {
+      const ring = rings[r];
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[j]; const b = ring[i];
+        if (!isFinitePt(a) || !isFinitePt(b)) continue;
+        if ((a.y > py) !== (b.y > py)) {
+          const x = a.x + ((py - a.y) / ((b.y - a.y) || 1e-12)) * (b.x - a.x);
+          // A NaN crossing never satisfies `px < x`, so it never toggles.
+          if (x === x) out.push(x);
+        }
+      }
+    }
+    out.sort((p, q) => p - q);
+    return out;
+  };
+
   // Sample the two fields on a lattice ONCE, then bilinear-sample per hatch
   // segment. A ruling at the master pitch over a large footprint produces tens of
   // thousands of midpoint queries; against a boolean-produced outline (hundreds of
@@ -1561,6 +1691,9 @@
     const dC = new Float32Array(nx * ny);
     const dE = new Float32Array(nx * ny);
     const hasContact = cSegs.length > 0;
+    const latBox = { minX, minY, maxX: minX + (nx - 1) * cell, maxY: minY + (ny - 1) * cell, cell };
+    const distC = hasContact ? makeSegDistIndex(cSegs, latBox) : null;
+    const distE = edgeSegs.length ? makeSegDistIndex(edgeSegs, latBox) : null;
     for (let j = 0; j < ny; j++) {
       const y = minY + j * cell;
       for (let i = 0; i < nx; i++) {
@@ -1569,8 +1702,8 @@
         // Distance to the contact SEGMENTS, with no inside test: the collar hugs
         // the boundary of the contact set, it never fills it. Filling it is how a
         // rounded caster's band grows to a whole diameter.
-        dC[k] = hasContact ? distToSegs(x, y, cSegs) : 0;
-        dE[k] = edgeSegs.length ? distToSegs(x, y, edgeSegs) : 1e6;
+        dC[k] = distC ? distC(x, y) : 0;
+        dE[k] = distE ? distE(x, y) : 1e6;
       }
     }
     const sample = (arr, x, y) => {
@@ -1621,16 +1754,25 @@
     // throw-derived penumbra margin is sub-millimetre and the umbra becomes the
     // whole shadow.
     let Rin = 0;
+    const xs = [];
     for (let j = 0; j < ny; j++) {
       const y = minY + j * cell;
+      rowCrossings(y, footRings || [], xs);
+      if (!xs.length) continue;
+      // `p` = how many crossings are <= x; the cell is inside iff the count of
+      // crossings with x < xc (= xs.length - p) is odd.
+      let p = 0;
       for (let i = 0; i < nx; i++) {
         const x = minX + i * cell;
-        if (!pointInRings(x, y, footRings || [])) continue;
+        while (p < xs.length && !(x < xs[p])) p++;
+        if (((xs.length - p) & 1) === 0) continue;
         const d = dE[j * nx + i];
         if (d > Rin) Rin = d;
       }
     }
     return {
+      // The raw lattice, for the identity test only.
+      grid: { dC, dE, nx, ny, minX, minY, cell },
       L,
       Rin,
       throwAngleDeg,
@@ -2665,9 +2807,17 @@
   // 'castShadow'). Empty when there is no ground, no caster, or grazing light.
   const build = (scene, params, bounds = {}, clipper, lightDir, opts = {}) => {
     const out = [];
+    TROCHOID_FINE = Boolean(params && params.seedMode === 'seeded');
     if (!scene || !scene.ground || !clipper) return out;
     const HLR = Vectura.Scene3D && Vectura.Scene3D.HLR;
     const FillBoolean = Vectura.FillBoolean;
+    // FillBoolean latches the LAST failed op in module state until someone
+    // consumes it. A failure from ANY earlier compose (another scene, a
+    // different engine) would otherwise be read by `boolOk()` below as THIS
+    // build's failure, abandoning the overlap lattice once and then clearing
+    // itself — the same scene composing to 85 paths, then 169 (U4a item 4).
+    // Drop the stale latch so only failures raised inside this build count.
+    if (FillBoolean && typeof FillBoolean.consumeLastOpError === 'function') FillBoolean.consumeLastOpError();
     // build() casts for the ONE light passed in — the caller decides which
     // lights cast (multi-light) and filters out ambient / castShadows:false
     // lights before calling. A positional light supplies opts.lightPosition; a
@@ -3277,7 +3427,7 @@
   // distance field and run the gradient directly against SYNTHETIC, known
   // rings (e.g. a plain rectangle) so the ratio it measures is the mechanism's
   // alone. Read-only, prefixed so it reads as a seam, not API.
-  const __shadowFieldsForTest = (rings, contactSegs) => buildShadowFields(rings, contactSegs || [], []);
+  const __shadowFieldsForTest = (rings, contactSegs, edgeSegs) => buildShadowFields(rings, contactSegs || [], edgeSegs || []);
   const __toneGradientForTest = (lines, fields, tone, depth) => applyShadowToneGradient(lines, fields, tone, depth);
   const __ladderCoverageForTest = (I, tone) => ladderCoverageAt(I, tone);
   // Test seam #4 (fs-z2, shadowToneDepth Stage 1.1). Exercises the SPACING
@@ -3401,6 +3551,8 @@
       // class instead of a boolean.
       toneLawApplies,
       toneLawMarkClass,
+      toneLawMaterial,
+      SHADOW_NONMATERIAL,
       // fs-q1 — whole-row visibility gate (Layers ON, or any area light,
       // makes the row inert). See the comment above its definition.
       shadowFillStyleApplies,
@@ -3420,7 +3572,7 @@
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-      build, toneLawApplies, toneLawMarkClass, shadowFillStyleApplies, __ladderForTest, __overlapPitchForTest, __collarForTest,
+      build, toneLawApplies, toneLawMarkClass, toneLawMaterial, SHADOW_NONMATERIAL, shadowFillStyleApplies, __ladderForTest, __overlapPitchForTest, __collarForTest,
       __shadowFieldsForTest, __toneGradientForTest, __ladderCoverageForTest, __gradedHatchForTest,
       __buildGradedSpacingForTest, __zoneModelForTest, __zoneAreaShareForTest, __emitShadowRegionForTest,
     };

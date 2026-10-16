@@ -1209,6 +1209,7 @@
         <div class="petal-designer-header">
           <div class="petal-designer-title">Petal Designer</div>
           <div class="petal-designer-actions">
+            ${showPopIn ? '<button type="button" class="petal-hist petal-undo" aria-label="Undo" title="Undo">↶</button><button type="button" class="petal-hist petal-redo" aria-label="Redo" title="Redo">↷</button>' : ''}
             ${showPopOut ? '<button type="button" class="petal-popout" aria-label="Pop Out Petal Designer" title="Pop Out">⧉</button>' : ''}
             ${showPopIn ? '<button type="button" class="petal-popin" aria-label="Pop In Petal Designer" title="Pop In">↩</button>' : ''}
             ${showClose ? '<button type="button" class="petal-close" aria-label="Close Petal Designer">✕</button>' : ''}
@@ -2317,11 +2318,56 @@
       this.renderPetalDesignerProfileEditor(pd, pd.applyChanges);
     },
 
+    // Batch R3 / TUX-020, TUX-026: a designer edit pushes ONE history step per gesture, the way the panel
+    // gallery does (checkpoint before the first change). A live apply (drag, slider input) opens the gesture;
+    // the committing apply that follows closes it. A lone commit pushes its own step. The safety timer closes a
+    // gesture whose commit never arrives.
+    beginPetalDesignerEdit(pd, { live = false } = {}) {
+      if (!pd || !this.app || typeof this.app.pushHistory !== 'function') return;
+      if (!pd.editOpen) this.app.pushHistory();
+      this.holdPetalDesignerEdit(pd, live);
+    },
+
+    holdPetalDesignerEdit(pd, open = true) {
+      if (!pd) return;
+      if (pd.editTimer) clearTimeout(pd.editTimer);
+      pd.editTimer = null;
+      pd.editOpen = Boolean(open);
+      if (open) pd.editTimer = setTimeout(() => { pd.editOpen = false; pd.editTimer = null; }, 3000);
+    },
+
+    // Undo / redo rebuilds every layer, so the pop-out window re-reads its designer state from the restored layer
+    // (it would otherwise show, and write back, the undone edit). Called by App.applyState.
+    syncPetalDesignerAfterRestore() {
+      const pd = this.petalDesigner;
+      if (!pd?.state) return;
+      this.holdPetalDesignerEdit(pd, false);
+      const layer = this.getLayerById(pd.state.layerId);
+      if (!layer || !isPetalisLayerType(layer.type)) {
+        this.closePetalDesigner();
+        return;
+      }
+      const fresh = this.ensurePetalDesignerState(layer);
+      if (!fresh) return;
+      fresh.views = pd.state.views || fresh.views;
+      fresh.randomnessOpen = pd.state.randomnessOpen;
+      fresh.activeTarget = pd.state.activeTarget === 'outer' ? 'outer' : fresh.activeTarget;
+      fresh.target = fresh.activeTarget;
+      pd.state = fresh;
+      pd.drag = null;
+      this.syncPetalDesignerControls(pd);
+      this.renderPetalDesignerShadingStack(pd, pd.applyChanges);
+      this.renderPetalDesignerModifierStack(pd, pd.applyChanges);
+      this.renderPetalDesignerRandomnessPanel(pd, pd.applyChanges);
+      this.renderPetalDesigner(pd);
+    },
+
     bindPetalDesignerUI(pd, options = {}) {
       if (!pd?.root || !pd?.state) return;
       const { refreshControls = true } = options;
       const applyChanges = (opts = {}) => {
         const live = Boolean(opts.live);
+        this.beginPetalDesignerEdit(pd, { live });
         this.applyPetalDesignerToLayer(pd.state, {
           refreshControls: !live && refreshControls,
           persistState: !live,
@@ -2435,6 +2481,14 @@
       if (popOutBtn) popOutBtn.onclick = () => this.popOutInlinePetalDesigner();
       const popInBtn = pd.root.querySelector('.petal-popin');
       if (popInBtn) popInBtn.onclick = () => this.popInPetalDesigner();
+      // Batch R2 / TUX-020: the pop-out window covers the canvas HUD and the phone header, so it carries its own Undo / Redo
+      // (touch-ui only, CSS). They run the HUD's single history path; canvas-hud.js keeps their disabled state.
+      const histRun = (kind) => { const hud = window.Vectura && window.Vectura.CanvasHud; if (hud && hud.runHistory) hud.runHistory(kind); };
+      const undoBtn = pd.root.querySelector('.petal-undo');
+      if (undoBtn) undoBtn.onclick = () => histRun('undo');
+      const redoBtn = pd.root.querySelector('.petal-redo');
+      if (redoBtn) redoBtn.onclick = () => histRun('redo');
+      if ((undoBtn || redoBtn) && window.Vectura && window.Vectura.CanvasHud && window.Vectura.CanvasHud.syncFromApp) window.Vectura.CanvasHud.syncFromApp();
       this.renderPetalDesignerShadingStack(pd, applyChanges);
       this.renderPetalDesignerModifierStack(pd, applyChanges);
       this.renderPetalDesignerRandomnessPanel(pd, applyChanges);
@@ -2905,6 +2959,7 @@
       const { refreshControls = true } = options;
       const applyChanges = (opts = {}) => {
         const live = Boolean(opts.live);
+        this.beginPetalDesignerEdit(pd, { live });
         // Drawing on the profile canvas is the signal that this side is now a
         // hand-drawn profile (so it persists as designerInner/Outer rather than
         // falling back to the named profile).
@@ -3149,6 +3204,8 @@
               };
             }
             applyChanges();
+            // The new anchor and its handle drag are one gesture: keep it open until the pointer lifts.
+            if (pd.drag && pd.drag.mode === 'pen-new') this.holdPetalDesignerEdit(pd, true);
             setCursor(canvas, e);
             return;
           } else if (pd.tool === 'delete') {

@@ -151,3 +151,18 @@ One line per cell. Add lines only after a real device run. Do not enter results 
 | TUX-054#6 | Record whether a synchronous revoke failed before the fix. This tests the audit's unverified claim. |
 | TUX-051#1 | iPad landscape Safari: stray taps below the canvas never expand the bottom pane; chevron and divider drag work. | DEV-53 |
 | TUX-048#1 | iPhone home-screen standalone, portrait + landscape: toast clear of the home indicator and the Dynamic Island side. iPhone Safari with the toolbar shown or minimised: toast above the modifier bar. | DEV-54 |
+
+## TUX-033 device rows (panels and renderer read touch modifier tasks)
+
+| Row | Check |
+|---|---|
+| TUX-033#1 | iPad Safari and iPhone Pro Safari, portrait and landscape: latch Multi-select, tap two layer rows. Both rows are selected. Double-tap the button, then tap a selected row. It leaves the selection. |
+| TUX-033#2 | Fill tool, Multi-select latched, tap an existing fill. The fill is sampled. Constrain latched, drag a finger across 3 regions. 3 fills pour. |
+| TUX-033#3 | Apple Pencil: repeat TUX-033#1 with the Pencil. |
+| TUX-033#4 | Mac with a mouse: Cmd-click and Shift-click in the layer list are unchanged. Touch laptop with a task latched: a mouse click is unchanged. |
+
+## WebKit finger scroll (TUX-059 review)
+
+| ID | Check | TUX | Cells required | Pass when | Status |
+|---|---|---|---|---|---|
+| DEV-55 | WebKit finger scroll. Scroll the Layers list, the Generator pane and the algorithm drill list with one finger. Playwright WebKit cannot run a trusted touch scroll, so the WebKit journey cells that use the programmatic scroll are labelled "WebKit finger-scroll unproven" in `tests/e2e/touch/journey-status.json` (`unproven`). | TUX-059 | iPad P/L tab, iPhone P/L tab | Each list scrolls smoothly with one finger and stops at the end. No tap fires during the scroll. | open |

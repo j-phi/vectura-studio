@@ -17,6 +17,7 @@
 
 const P = require('./pages');
 
+
 const S = P.SELECTORS;
 const L = (c, sel) => c.page.locator(sel);
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
@@ -35,16 +36,6 @@ function boxOf(st, id) {
   const miny = Math.min(...ys);
   const maxy = Math.max(...ys);
   return { minx, maxx, miny, maxy, cx: (minx + maxx) / 2, cy: (miny + maxy) / 2, w: maxx - minx, h: maxy - miny, corners: b };
-}
-
-// The part of a box that lies on the canvas (inset), as a centre point.
-function visibleCenter(st, box) {
-  const cr = st.canvasRect;
-  const x0 = Math.max(box.minx, cr.x + 24);
-  const x1 = Math.min(box.maxx, cr.x + cr.w - 24);
-  const y0 = Math.max(box.miny, cr.y + 24);
-  const y1 = Math.min(box.maxy, cr.y + cr.h - 24);
-  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
 }
 
 // World-space move checks (a screen box also moves when the VIEW pans, so it proves nothing about the object).
@@ -86,24 +77,56 @@ function assertObjectBack(c, now, id) {
 
 const onCanvas = (c, x, y) => ({ x, y, within: L(c, S.canvas) });
 
-// A spot on the canvas where both start fingers of a pinch (cx +- 40) sit on empty canvas:
+// A spot on the canvas where the fingers of a pinch sit on empty canvas at the start AND at the end:
 // clear of the selected object and of the floating overlays (toolbar, HUD, context bar).
-// `opts.half` is the largest finger offset from the centre over the whole gesture
-// (max(startDist, endDist) / 2), so the end positions are clear too. `opts.drag` {dx, dy}
-// also clears the end point of a one-finger drag.
+// `opts.halves` lists the finger offsets from the centre to clear (startDist / 2 and endDist / 2).
+// `opts.drag` {dx, dy} clears the start and end point of a one-finger drag.
 function emptyPinchSpot(st, avoidBox, opts = {}) {
-  const half = opts.half === undefined ? 40 : opts.half;
+  const halves = opts.halves || [40];
+  const half = Math.max(...halves);
   const cr = st.canvasRect;
   const pad = 16;
   const rects = [avoidBox, ...st.overlays];
   let best = null;
   for (let y = cr.y + 40; y < cr.y + cr.h - 40; y += 20) {
     for (let x = cr.x + half + 70; x <= cr.x + cr.w - half - 70; x += 20) {
-      const pts = opts.drag ? [[x, y], [x + opts.drag.dx, y + opts.drag.dy]] : [[x - half, y], [x + half, y]];
+      // drag + halves (a two-finger pan): clear both fingers at the start and at the end of the move.
+      const dd = opts.drag;
+      const pts = dd && !opts.halves ? [[x, y], [x + dd.dx, y + dd.dy]]
+        : halves.flatMap((h) => [[x - h, y], [x + h, y], ...(dd ? [[x - h + dd.dx, y + dd.dy], [x + h + dd.dx, y + dd.dy]] : [])]);
       const clear = pts.every(([fx, fy]) => fx > cr.x && fx < cr.x + cr.w && fy > cr.y && fy < cr.y + cr.h && rects.every((r) => !(fx > r.minx - pad && fx < r.maxx + pad && fy > r.miny - pad && fy < r.maxy + pad)));
       if (!clear) continue;
-      const d = Math.hypot(x - (cr.x + cr.w / 2), y - (cr.y + cr.h / 2));
+      // opts.keepBox + opts.zoom: pick the pivot after which the zoomed object centre lies closest to the canvas centre, so the
+      // pinch does not throw the object off the canvas (the next step pinches on it).
+      let d = Math.hypot(x - (cr.x + cr.w / 2), y - (cr.y + cr.h / 2));
+      if (opts.keepBox) {
+        const k = opts.zoom || 1.8;
+        d = Math.hypot(x + k * (opts.keepBox.cx - x) - (cr.x + cr.w / 2), y + k * (opts.keepBox.cy - y) - (cr.y + cr.h / 2));
+      }
       if (!best || d < best.d) best = { x, y, d };
+    }
+  }
+  return best;
+}
+
+// A pinch centre where finger 1 (the left start point) lies on the visible part of the object and no start or end finger of
+// either hand is under a floating overlay. Returns null when no such spot exists (the caller then fails with a message the
+// ledger rejects, never a product reason).
+function objectPinchSpot(st, box, startDist, endDist) {
+  const cr = st.canvasRect;
+  const pad = 16;
+  const hs = startDist / 2;
+  const he = endDist / 2;
+  const free = (x, y) => x > cr.x && x < cr.x + cr.w && y > cr.y && y < cr.y + cr.h
+    && st.overlays.every((r) => !(x > r.minx - pad && x < r.maxx + pad && y > r.miny - pad && y < r.maxy + pad));
+  let best = null;
+  for (let y = Math.max(box.miny, cr.y); y <= Math.min(box.maxy, cr.y + cr.h); y += 12) {
+    for (let fx = Math.max(box.minx, cr.x); fx <= Math.min(box.maxx, cr.x + cr.w); fx += 12) {
+      const cx = fx + hs; // finger 1 starts at fx, on the object
+      const pts = [[fx, y], [cx + hs, y], [cx - he, y], [cx + he, y]];
+      if (!pts.every(([px, py]) => free(px, py))) continue;
+      const d = Math.hypot(fx - box.cx, y - box.cy);
+      if (!best || d < best.d) best = { x: cx, y, d };
     }
   }
   return best;
@@ -124,6 +147,11 @@ async function visibleInside(c, sel) {
   }
   return null;
 }
+
+// The layer list scrolls inside itself; on short screens (iPhone landscape: a 100 px list) a row can sit below its
+// fold, under the draw-order bar. A finger scrolls the list first. No-op when the row is already in view.
+
+const rowIntoView = (c, row) => P.fingerScrollInto(c.page, row, L(c, '#layer-list'), { topInset: 0 });
 
 // ---- reusable step builders ------------------------------------------------------------------
 const stepOpenLayers = (j) => ({
@@ -161,7 +189,11 @@ const stepPickAlgo = (j, type, extra = {}) => ({
   id: `${j}.pick-${type}`, action: 'tap', route: `Algorithm submenu > ${type}`, selector: `SELECTORS.algoItem('${type}')`,
   expects: `layers +1 of type ${type}; history +1; selected = the new layer`, jrn: 'JRN-007',
   expect: { layers: 1, history: 1, selected: (now, pre) => newIds(pre, now).length === 1 && sameSet(now.selectedIds, newIds(pre, now)) },
-  run: (c) => P.fingerTap(c.page, L(c, S.algoItem(type))),
+  run: async (c) => {
+    // The drill list scrolls inside itself (TUX-035 req 2): bring the row into view with a finger first.
+    await P.fingerScrollInto(c.page, L(c, S.algoItem(type)), L(c, S.algoSubmenu));
+    await P.fingerTap(c.page, L(c, S.algoItem(type)));
+  },
   post: async (c, pre, now) => {
     const id = newIds(pre, now)[0];
     const l = now.layers.find((x) => x.id === id);
@@ -177,9 +209,13 @@ const stepCanvasReady = (j, what) => ({
   post: () => {},
 });
 
-// J2 rename-open: latency threshold (margin over a fast machine) and the generous wait for the input to appear.
-const RENAME_MAX_MS = 1500;
+// J2 rename-open: the input must show within RENAME_MAX_MS of the double-tap, or the step fails. The old 1500 ms bound
+// is below the measured headless latency on the heavy document (iPad: 1583, 1615, 1728 ms in 4 runs; iPhone landscape
+// 658-667 ms; iPhone portrait 18-20 ms; WebKit 12-36 ms). That time is the headless software-canvas raster in
+// FinalizeFrame, not device emulation: a headed run with the GPU takes 79 ms. 2500 ms keeps about 45 % headroom over the
+// slowest measured headless run and still fails a rename that never opens (the clock defect, JRN-010, shows as "never").
 const RENAME_WAIT_MS = 6000;
+const RENAME_MAX_MS = 2500;
 
 // ---- the journeys ----------------------------------------------------------------------------
 const JOURNEYS = [];
@@ -237,11 +273,12 @@ JOURNEYS.push({
 // J2 ------------------------------------------------------------------------------------------
 JOURNEYS.push({
   id: 'J2', title: 'Add, rename (heavy document), reorder, hide/show, delete a layer', fixture: 'journey-heavy',
-  // WebKit-desktop runs the same document about 20x faster than Chromium device emulation (a layer tap blocks the main
-  // thread 40-90 ms against 900-1800 ms), so it would sit under the 350 ms double-tap window and flip with machine
-  // load. The WebKit projects load a document with 16x the flowfield density (a flowfield tap blocks about 0.8-0.9 s idle against
-  // the 0.46 s needed; more load only lengthens the block, so the failure holds under load) so the JRN-010 trigger holds deterministically in both engines.
-  fixtureWebkit: 'journey-heavy-webkit',
+  // Both engines load the same heavy document (an earlier light WebKit fixture is gone). Playwright WebKit once queued the
+  // second tap behind the busy main thread on a heavier document; the TUX-038 clock path on WebKit is also proven by
+  // rename-paths.spec.js with stamped events. JRN-010 was a clock defect (rename timed by handler time, not by
+  // event.timeStamp); TUX-038 req 5 fixed it, so a heavy document must still rename on a real double-tap.
+  // The Chromium double-tap carries hardware touch times (helpers/touch.js doubleTap); WebKit cannot stamp a
+  // touch, but runs this document ~20x faster, so its tap round trip stays inside the 350 ms window.
   // Every step on a heavy document is slow by design (JRN-010): a 5 s budget would pin cells on machine load, so J2 steps get 20 s.
   stepBudget: 20000,
   steps: [
@@ -257,13 +294,13 @@ JOURNEYS.push({
     {
       id: 'j2.rename-open', action: 'doubleTap', route: 'double-tap the name of a heavy layer (timestamp-based, TUX-038)', selector: 'SELECTORS.cardName',
       expects: `rename input appears within ${RENAME_MAX_MS} ms of the double-tap and holds focus; layers +0`, jrn: 'JRN-010', expect: { selected: 'any' },
-      // Own budget: the step waits up to RENAME_WAIT_MS for the input and MEASURES the latency. The pin is
-      // deterministic: the input must show within RENAME_MAX_MS (margin over a fast machine), or it never shows
-      // within RENAME_WAIT_MS. It is NOT pinned on exceeding the 5000 ms step budget.
+      // Own budget: the step waits up to RENAME_WAIT_MS for the input (the latency is recorded in c.vars.renameMs).
+      // The pin is deterministic: RENAME_MAX_MS, or never within RENAME_WAIT_MS. It is not pinned on the 5000 ms step budget.
       budget: RENAME_WAIT_MS + 40000,
       run: async (c) => {
         const st = await P.readState(c.page);
         c.vars.target = st.layers.find((l) => l.type === 'flowfield').id;
+        await rowIntoView(c, L(c, `${S.layerCard(c.vars.target)} ${S.cardName}`));
         await P.fingerDoubleTap(c.page, L(c, `${S.layerCard(c.vars.target)} ${S.cardName}`));
         const t0 = Date.now();
         c.vars.renameMs = null;
@@ -284,9 +321,14 @@ JOURNEYS.push({
       post: async (c) => { if ((await L(c, S.renameInput).inputValue()) !== 'Renamed') throw new Error('the typed name is not in the field'); },
     },
     {
-      id: 'j2.rename-commit', action: 'tap', route: 'tap a neutral spot in the pane to commit', selector: 'SELECTORS.layerStatusBar',
+      id: 'j2.rename-commit', action: 'tap', route: 'tap a neutral spot in the pane to commit (the status bar; where it has no height, the already-active Layers tab)', selector: 'SELECTORS.layerStatusBar | SELECTORS.layersTab',
       expects: 'layer name = Renamed; history +1', expect: { history: 1, selected: 'any' },
-      run: (c) => P.fingerTap(c.page, L(c, S.layerStatusBar)),
+      // The rename commits on blur, so any neutral tap commits it. On iPhone landscape the status bar is squeezed to
+      // 0 px under the draw-order bar (recorded in docs/touch-audit/journey-triage.md); a finger taps what it can see.
+      run: async (c) => {
+        const bar = await L(c, S.layerStatusBar).boundingBox();
+        await P.fingerTap(c.page, L(c, bar && bar.height >= 20 ? S.layerStatusBar : S.layersTab));
+      },
       post: (c, pre, now) => { if (!now.layers.some((l) => l.name === 'Renamed')) throw new Error('no layer carries the new name'); },
     },
     {
@@ -298,7 +340,12 @@ JOURNEYS.push({
         const grip = rows.nth(0).locator(S.cardGrip);
         const gb = await grip.boundingBox();
         c.vars.before = (await P.readState(c.page)).layerIds;
-        await P.fingerDrag(c.page, grip, { x: gb.x + gb.width / 2, y: second.y + second.height * 0.85 }, { steps: 14, stepDelayMs: 15 });
+        // Row 2 may sit below the list's fold (iPhone landscape: a 100 px list). A finger then drags to the list's
+        // bottom edge and rests there so the list auto-scrolls (TUX-044 req 5); it never drops outside the list.
+        const lb = await L(c, '#layer-list').boundingBox();
+        const want = second.y + second.height * 0.85;
+        const edge = lb.y + lb.height - 6;
+        await P.fingerDrag(c.page, grip, { x: gb.x + gb.width / 2, y: Math.min(want, edge) }, { steps: 14, stepDelayMs: 15, endHoldMs: want > edge ? 1500 : 0 });
       },
       post: (c, pre, now) => {
         if (!sameSet(now.layerIds, pre.layerIds)) throw new Error('the layer set changed');
@@ -310,6 +357,8 @@ JOURNEYS.push({
       expects: 'that layer is hidden', expect: { history: 'any', selected: 'any' },
       run: async (c) => {
         c.vars.id = (await L(c, S.layerCards).first().getAttribute('data-lvl-id'));
+        // After the reorder the list rests scrolled to its bottom edge (auto-scroll): finger-scroll the row back first.
+        await rowIntoView(c, L(c, `${S.layerCard(c.vars.id)} .lvl-ib[title="Hide"]`));
         await P.fingerTap(c.page, L(c, `${S.layerCard(c.vars.id)} .lvl-ib[title="Hide"]`));
       },
       post: (c, pre, now) => { if (now.layers.find((l) => l.id === c.vars.id).visible) throw new Error('the layer is still visible'); },
@@ -325,6 +374,7 @@ JOURNEYS.push({
       expects: 'layer menu visible; layers +0', expect: { selected: 'any' },
       run: async (c) => {
         c.vars.id = await L(c, S.layerCards).first().getAttribute('data-lvl-id');
+        await rowIntoView(c, L(c, `${S.layerCard(c.vars.id)} ${S.cardMore}`));
         await P.fingerTap(c.page, L(c, `${S.layerCard(c.vars.id)} ${S.cardMore}`));
       },
       post: async (c) => { if (!(await L(c, S.layerMenuEntry).first().isVisible())) throw new Error('the layer menu did not open'); },
@@ -414,7 +464,7 @@ JOURNEYS.push({
       expects: 'scale grows; selection kept; history +0; the object params are untouched', jrn: 'JRN-003',
       run: async (c) => {
         const st = await P.readState(c.page);
-        const spot = emptyPinchSpot(st, boxOf(st, c.vars.oval), { half: 75 });
+        const spot = emptyPinchSpot(st, boxOf(st, c.vars.oval), { halves: [40, 75], keepBox: boxOf(st, c.vars.oval), zoom: 150 / 80 });
         if (!spot) throw new Error('no empty canvas spot for the first finger');
         c.vars.scale = st.scale;
         c.vars.params = JSON.stringify(st.activeParams);
@@ -430,10 +480,11 @@ JOURNEYS.push({
       expects: 'scale grows; selection kept; the object is not moved or resized', jrn: 'JRN-003',
       run: async (c) => {
         const st = await P.readState(c.page);
-        const v = visibleCenter(st, boxOf(st, c.vars.oval));
+        const spot = objectPinchSpot(st, boxOf(st, c.vars.oval), 100, 150);
+        if (!spot) throw new Error('no uncovered on-object spot: the oval has no visible part clear of the overlays for a two-finger pinch');
         c.vars.scale = st.scale;
         c.vars.params = JSON.stringify(st.activeParams);
-        await P.fingerPinch(c.page, onCanvas(c, v.x + 50, v.y), { startDist: 100, endDist: 150, staggerMs: 40 });
+        await P.fingerPinch(c.page, onCanvas(c, spot.x, spot.y), { startDist: 100, endDist: 150, staggerMs: 40 });
       },
       post: (c, pre, now) => {
         if (!(now.scale > c.vars.scale * 1.1)) throw new Error(`scale ${c.vars.scale.toFixed(2)} -> ${now.scale.toFixed(2)}, want a zoom in`);
@@ -446,8 +497,10 @@ JOURNEYS.push({
       run: async (c) => {
         const st = await P.readState(c.page);
         c.vars.view = { x: st.offsetX, y: st.offsetY, s: st.scale };
-        const cr = st.canvasRect;
-        await P.fingerPan(c.page, onCanvas(c, cr.x + cr.w / 2, cr.y + cr.h / 2), { dx: -80, dy: 0, gap: 100 });
+        const nowhere = { minx: 1e9, maxx: 1e9, miny: 1e9, maxy: 1e9 };
+        const spot = emptyPinchSpot(st, nowhere, { halves: [50], drag: { dx: -80, dy: 0 } });
+        if (!spot) throw new Error('no empty canvas spot for the two-finger pan');
+        await P.fingerPan(c.page, onCanvas(c, spot.x, spot.y), { dx: -80, dy: 0, gap: 100 });
       },
       post: (c, pre, now) => {
         if (Math.abs(now.offsetX - c.vars.view.x) < 30) throw new Error(`view offset moved ${Math.round(now.offsetX - c.vars.view.x)} px, want about 80`);
@@ -461,7 +514,10 @@ JOURNEYS.push({
         const st = await P.readState(c.page);
         c.vars.view = { x: st.offsetX, y: st.offsetY, s: st.scale };
         c.vars.panes = await paneStates(c);
-        await P.fingerTap(c.page, await P.rendered(c.page, S.hudFit.map(P.visible)));
+        // No View > Reset View fallback (journey-scripts.md 'Forbidden routes'): a missing HUD Fit fails the step.
+        const hud = await P.rendered(c.page, S.hudFit.map(P.visible));
+        if (!(await hud.count() && await hud.boundingBox())) throw new Error(`TUX-020 missing direct control: ${S.hudFit.join(' | ')}`);
+        await P.fingerTap(c.page, hud);
       },
       post: async (c, pre, now) => {
         if (near(now.scale, c.vars.view.s, 0.001) && near(now.offsetX, c.vars.view.x, 1)) throw new Error('the view did not change');
@@ -531,7 +587,7 @@ JOURNEYS.push({
         await P.fingerLongPress(c.page, L(c, S.tool('shape')), { ms: 700 });
         await P.sleep(350);
       },
-      post: async (c) => { if (!(await L(c, '#tool-bar .tool-submenu[data-menu="shape"]').isVisible())) throw new Error('the shape variant menu closed or never opened'); },
+      post: async (c) => { if (!(await L(c, S.shapeMenu).isVisible())) throw new Error('the shape variant menu closed or never opened'); },
     },
     {
       id: 'j5.shape-pick', action: 'tap', route: 'tap Rectangle in the variant menu', selector: 'SELECTORS.shapeVariant(\'rect\')',
@@ -576,6 +632,47 @@ JOURNEYS.push({
   id: 'J6', title: 'Mirror modifier: add, change angle, apply a mask', fixture: 'journey-basic',
   steps: [
     stepOpenLayers('j6'),
+    // The mask source is the TOP row of the selection (Layers status bar), so the mask is applied first, while the oval is above the spiral.
+    // The Mirror modifier then wraps the active layer (TUX-045 journey order).
+    {
+      id: 'j6.select-source', action: 'tap', route: 'tap the oval row (mask source)', selector: 'SELECTORS.cardName',
+      expects: 'selected = [oval]', expect: { selected: (now) => now.selectedIds.length === 1 && now.layers.find((l) => l.id === now.selectedIds[0]).type === 'shape' },
+      run: async (c) => {
+        const st = await P.readState(c.page);
+        c.vars.src = layerOfType(st, 'shape').id;
+        c.vars.child = layerOfType(st, 'spiral').id;
+        await rowIntoView(c, L(c, `${S.layerCard(c.vars.src)} ${S.cardName}`));
+        await P.fingerTap(c.page, L(c, `${S.layerCard(c.vars.src)} ${S.cardName}`));
+      },
+      post: () => {},
+    },
+    {
+      id: 'j6.multi-latch', action: 'tap', route: 'tap the Multi-select modifier (one-shot latch, TUX-045)', selector: 'SELECTORS.modifier(\'multiSelect\')',
+      expects: 'the modifier shows as latched', jrn: 'JRN-016',
+      run: (c) => P.fingerTap(c.page, L(c, S.modifier('multiSelect'))),
+      post: async (c) => {
+        const el = L(c, S.modifier('multiSelect'));
+        const cls = (await el.getAttribute('class')) || '';
+        if (!(/active|latched|on\b/.test(cls) || (await el.getAttribute('aria-pressed')) === 'true')) throw new Error('the modifier does not show as latched');
+      },
+    },
+    {
+      id: 'j6.select-second', action: 'tap', route: 'tap the spiral row', selector: 'SELECTORS.cardName',
+      expects: 'selected = oval and spiral', expect: { selected: (now) => now.selectedIds.length === 2 },
+      run: async (c) => {
+        await rowIntoView(c, L(c, `${S.layerCard(c.vars.child)} ${S.cardName}`));
+        await P.fingerTap(c.page, L(c, `${S.layerCard(c.vars.child)} ${S.cardName}`));
+      },
+      post: () => {},
+    },
+    {
+      id: 'j6.apply-mask', action: 'tap', route: 'tap the visible mask control in the layer status bar', selector: 'SELECTORS.maskButton',
+      expects: 'the spiral is a child of the oval; history +1', jrn: 'JRN-006', expect: { history: 1, selected: 'any' },
+      run: async (c) => {
+        await P.fingerTap(c.page, L(c, S.maskButton));
+      },
+      post: (c, pre, now) => { if (now.layers.find((l) => l.id === c.vars.child).parentId !== c.vars.src) throw new Error('the mask was not applied'); },
+    },
     stepAddMenu('j6'),
     {
       id: 'j6.add-mirror', action: 'tap', route: 'Add Layer > Mirror Modifier Group', selector: 'SELECTORS.addItem(\'mirror\')',
@@ -594,41 +691,6 @@ JOURNEYS.push({
         c.vars.slider = await P.fingerSlider(c.page, sl, 0.25);
       },
       post: (c) => { if (c.vars.slider.before === c.vars.slider.after) throw new Error('the angle value did not change'); },
-    },
-    // Only one drawer is open at a time (TUX-008): the Generator drawer replaced Layers, so reopen Layers by finger.
-    { ...stepOpenLayers('j6'), id: 'j6.reopen-layers' },
-    {
-      id: 'j6.select-source', action: 'tap', route: 'tap the oval row (mask source)', selector: 'SELECTORS.cardName',
-      expects: 'selected = [oval]', expect: { selected: (now) => now.selectedIds.length === 1 && now.layers.find((l) => l.id === now.selectedIds[0]).type === 'shape' },
-      run: async (c) => {
-        const st = await P.readState(c.page);
-        c.vars.src = layerOfType(st, 'shape').id;
-        c.vars.child = layerOfType(st, 'spiral').id;
-        await P.fingerTap(c.page, L(c, `${S.layerCard(c.vars.src)} ${S.cardName}`));
-      },
-      post: () => {},
-    },
-    {
-      id: 'j6.multi-latch', action: 'tap', route: 'tap the Multi-select modifier (one-shot latch, TUX-045)', selector: 'SELECTORS.modifier(\'multiSelect\')',
-      expects: 'the modifier shows as latched', jrn: 'JRN-016',
-      run: (c) => P.fingerTap(c.page, L(c, S.modifier('multiSelect'))),
-      post: async (c) => {
-        const el = L(c, S.modifier('multiSelect'));
-        const cls = (await el.getAttribute('class')) || '';
-        if (!(/active|latched|on\b/.test(cls) || (await el.getAttribute('aria-pressed')) === 'true')) throw new Error('the modifier does not show as latched');
-      },
-    },
-    {
-      id: 'j6.select-second', action: 'tap', route: 'tap the spiral row', selector: 'SELECTORS.cardName',
-      expects: 'selected = oval and spiral', expect: { selected: (now) => now.selectedIds.length === 2 },
-      run: (c) => P.fingerTap(c.page, L(c, `${S.layerCard(c.vars.child)} ${S.cardName}`)),
-      post: () => {},
-    },
-    {
-      id: 'j6.apply-mask', action: 'tap', route: 'tap the visible mask control in the layer status bar', selector: 'SELECTORS.maskButton',
-      expects: 'the spiral is a child of the oval; history +1', jrn: 'JRN-006', expect: { history: 1, selected: 'any' },
-      run: (c) => P.fingerTap(c.page, L(c, S.maskButton)),
-      post: (c, pre, now) => { if (now.layers.find((l) => l.id === c.vars.child).parentId !== c.vars.src) throw new Error('the mask was not applied'); },
     },
   ],
 });
@@ -673,7 +735,10 @@ JOURNEYS.push({
     {
       id: 'j7.font-pick', action: 'tap', route: 'tap another font', selector: '.vtp-fp-opt:not(.sel)',
       expects: 'font param changed; history +1', expect: { history: 1 },
-      run: (c) => P.fingerTap(c.page, L(c, '.vtp-fp-opt:not(.sel)').first()),
+      run: async (c) => {
+        // The intended font is the first unselected option. The popover keeps it on screen on every viewport (TUX-032).
+        await P.fingerTap(c.page, L(c, '.vtp-fp-opt:not(.sel)').first());
+      },
       post: (c, pre, now) => { if (now.activeParams.font === pre.activeParams.font) throw new Error('the font did not change'); },
     },
     {
@@ -692,7 +757,8 @@ JOURNEYS.push({
       run: async (c) => {
         await P.softType(c.page, '72');
         // the field commits on blur: a tap on a neutral heading ends the edit
-        await P.fingerTap(c.page, L(c, '#left-pane .vtp-tab-heading').first());
+        // The finger scroll in j7.size-focus moves every heading off-screen: the sticky pane title is always on-screen and not focusable.
+        await P.fingerTap(c.page, L(c, '#left-pane .pane-header-left .pane-title'));
       },
       post: (c, pre, now) => { if (now.activeParams.fontSize !== 72) throw new Error(`font size is ${now.activeParams.fontSize}, want 72`); },
     },
@@ -712,13 +778,17 @@ JOURNEYS.push({
     },
     {
       id: 'j8.fill-tap', action: 'tap', route: 'tap inside the oval', selector: 'canvas point at the oval centre',
-      expects: 'a fill was committed (history +1, no stray draw)', jrn: 'JRN-005', expect: { layers: 'any', history: 1, selected: 'any' },
+      expects: 'a fill was committed (history +1, no stray draw)', jrn: 'JRN-005', expect: { layers: 0, history: 1, selected: 'any' },
       run: async (c) => {
         const st = await P.readState(c.page);
         const o = boxOf(st, layerOfType(st, 'shape').id);
         await P.fingerTap(c.page, onCanvas(c, o.cx, o.cy));
       },
-      post: () => {},
+      post: (c, pre, now) => {
+        // No stray draw: the same layers (ids and types) before and after; the fill rides on history +1.
+        const sig = (st) => st.layers.map((l) => `${l.id}:${l.type}`).join('|');
+        if (now.layerCount !== pre.layerCount || sig(now) !== sig(pre)) throw new Error(`the fill tap changed the layer set (${pre.layerCount} -> ${now.layerCount})`);
+      },
     },
   ],
 });
@@ -733,6 +803,7 @@ JOURNEYS.push({
       run: async (c) => {
         await P.openLayers(c.page);
         const st = await P.readState(c.page);
+        await rowIntoView(c, L(c, `${S.layerCard(layerOfType(st, 'spiral').id)} ${S.cardName}`));
         await P.fingerTap(c.page, L(c, `${S.layerCard(layerOfType(st, 'spiral').id)} ${S.cardName}`));
       },
       post: () => {},
@@ -760,7 +831,11 @@ JOURNEYS.push({
       id: 'j9.preset-confirm', action: 'tap', route: 'tap Save in the sheet', selector: '#modal-overlay Save button',
       expects: 'the sheet closes; the preset list names the new preset', expect: { history: 'any' },
       run: (c) => P.fingerTap(c.page, L(c, '.preset-save-confirm')),
-      post: async (c, pre, now) => { if (now.modalOpen) throw new Error('the save sheet is still open'); },
+      post: async (c, pre, now) => {
+        if (now.modalOpen) throw new Error('the save sheet is still open');
+        const names = await P.readSavedPresetNames(c.page);
+        if (!names.some((n) => /Touch59/.test(n))) throw new Error(`the preset list does not name the new preset (${names.length} saved)`);
+      },
     },
     {
       id: 'j9.menu-file', action: 'tap', route: 'File menu (phones: ☰ > File)', selector: 'SELECTORS.menuTrigger(\'file\') | SELECTORS.hamburger',
@@ -775,10 +850,23 @@ JOURNEYS.push({
       post: async (c) => { if (!(await L(c, S.settingsPanel).isVisible())) throw new Error('Document Setup did not open'); },
     },
     {
-      id: 'j9.paper-section', action: 'tap', route: 'tap the Paper section header once; it expands', selector: '#settings-panel .sect-hdr Paper',
-      expects: 'paper size select visible', jrn: 'JRN-019',
-      run: (c) => P.fingerTap(c.page, L(c, '#settings-panel .sect-hdr').filter({ hasText: /Paper/ })),
-      post: async (c) => { if (!(await L(c, '#machine-profile').isVisible())) throw new Error('the paper section did not expand'); },
+      id: 'j9.paper-section', action: 'tap', route: 'tap the Paper section header only when it is collapsed (it may open on touch)', selector: '#settings-panel .sect-hdr Paper',
+      expects: 'Paper section expanded (aria-expanded true); the Size select is the topmost element at its centre', jrn: 'JRN-019',
+      run: async (c) => {
+        const hdr = L(c, '#settings-panel .sect-hdr').filter({ hasText: /Paper/ });
+        // A tap toggles: tapping an already-open header would collapse it. Read the state first.
+        if ((await hdr.first().getAttribute('aria-expanded')) !== 'true') await P.fingerTap(c.page, hdr);
+      },
+      post: async (c) => {
+        const hdr = L(c, '#settings-panel .sect-hdr').filter({ hasText: /Paper/ });
+        const open = await hdr.first().getAttribute('aria-expanded');
+        if (open !== 'true') throw new Error(`the Paper section is not expanded (aria-expanded=${open})`);
+        // The preset-save toast from the previous step is transient and bottom-centre. With 44 px rows (TUX-041 B3) the Size select
+        // sits under it on a short landscape phone, so wait for the toast to go before testing what covers the select.
+        await L(c, '.vectura-toast').first().waitFor({ state: 'detached', timeout: 12000 }).catch(() => {});
+        const blocker = await P.hitAtCenter(c.page, L(c, '#machine-profile'));
+        if (blocker) throw new Error(`the Size select is covered by ${blocker}`);
+      },
     },
     {
       id: 'j9.paper-size', action: 'pickOption', route: 'tap the Size select and choose A4', selector: '#machine-profile',
@@ -807,13 +895,9 @@ JOURNEYS.push({
     },
     {
       id: 'j10.export-download', action: 'tap', route: 'tap Export SVG in the modal footer (it must lie on the screen)', selector: 'SELECTORS.exportSubmit',
-      expects: 'an .svg download starts', jrn: 'JRN-006',
+      expects: 'an .svg download starts (share sheet on WebKit, TUX-054)', jrn: 'JRN-006',
       run: async (c) => {
-        const dl = c.page.waitForEvent('download', { timeout: 4000 });
-        dl.catch(() => {});
-        await P.fingerTap(c.page, L(c, S.exportSubmit));
-        const file = await dl;
-        c.vars.file = file.suggestedFilename();
+        c.vars.file = await P.savedFileName(c.page, () => P.fingerTap(c.page, L(c, S.exportSubmit)));
       },
       post: (c) => { if (!/\.svg$/i.test(c.vars.file || '')) throw new Error(`download is ${c.vars.file}`); },
     },
@@ -838,12 +922,9 @@ JOURNEYS.push({
     },
     {
       id: 'j10.save-vectura', action: 'tap', route: 'File > Save .vectura', selector: 'SELECTORS.btnSaveVectura',
-      expects: 'a .vectura download starts',
+      expects: 'a .vectura download starts (share sheet on WebKit, TUX-054)',
       run: async (c) => {
-        const dl = c.page.waitForEvent('download', { timeout: 4000 });
-        dl.catch(() => {});
-        await P.fingerTap(c.page, L(c, S.btnSaveVectura));
-        c.vars.file = (await dl).suggestedFilename();
+        c.vars.file = await P.savedFileName(c.page, () => P.fingerTap(c.page, L(c, S.btnSaveVectura)));
       },
       post: (c) => { if (!/\.vectura$/i.test(c.vars.file || '')) throw new Error(`download is ${c.vars.file}`); },
     },
@@ -852,7 +933,7 @@ JOURNEYS.push({
 
 // J11 -----------------------------------------------------------------------------------------
 JOURNEYS.push({
-  id: 'J11', title: '3D scene: insert, orbit the camera with one finger on the canvas', fixture: null,
+  id: 'J11', title: '3D scene: insert, orbit the camera with one finger on the gizmo', fixture: null,
   steps: [
     stepOpenLayers('j11'),
     stepAddMenu('j11'),
@@ -861,7 +942,11 @@ JOURNEYS.push({
       id: 'j11.pick-scene3d', action: 'tap', route: 'Algorithm submenu > 3D Scene', selector: 'SELECTORS.algoItem(\'scene3d\')',
       expects: 'one new root layer of type scene3d; history +1; selected = the scene', jrn: 'JRN-007',
       expect: { layers: 'any', history: 1, selected: 'any' },
-      run: (c) => P.fingerTap(c.page, L(c, S.algoItem('scene3d'))),
+      run: async (c) => {
+        // The drill list scrolls inside itself (TUX-035 req 2); 3D Scene sits below the fold on every device.
+        await P.fingerScrollInto(c.page, L(c, S.algoItem('scene3d')), L(c, S.algoSubmenu));
+        await P.fingerTap(c.page, L(c, S.algoItem('scene3d')));
+      },
       post: (c, pre, now) => {
         const added = now.layers.filter((l) => !pre.layerIds.includes(l.id));
         const roots = added.filter((l) => !l.parentId);
@@ -883,21 +968,9 @@ JOURNEYS.push({
         if (near(now.sceneCamera.yaw, c.vars.cam.yaw, 1) && near(now.sceneCamera.pitch, c.vars.cam.pitch, 1)) throw new Error('the camera did not orbit');
       },
     },
-    {
-      id: 'j11.orbit-drag', action: 'drag', route: 'one-finger drag on empty canvas orbits the camera', selector: 'canvas point away from the scene',
-      expects: 'scene camera yaw or pitch changed; history +1', jrn: 'JRN-011', expect: { history: 1, selected: 'any' },
-      run: async (c) => {
-        const st = await P.readState(c.page);
-        c.vars.cam = st.sceneCamera;
-        const scene = layerOfType(st, 'scene3d');
-        const spot = emptyPinchSpot(st, st.boxes[scene.id] ? boxOf(st, scene.id) : { minx: 0, maxx: 0, miny: 0, maxy: 0 }, { drag: { dx: 70, dy: 30 } });
-        if (!spot) throw new Error('no empty canvas spot for the drag');
-        await P.fingerDrag(c.page, onCanvas(c, spot.x, spot.y), { dx: 70, dy: 30 }, { steps: 12, stepDelayMs: 8 });
-      },
-      post: (c, pre, now) => {
-        if (near(now.sceneCamera.yaw, c.vars.cam.yaw, 1) && near(now.sceneCamera.pitch, c.vars.cam.pitch, 1)) throw new Error('the camera did not orbit');
-      },
-    },
+    // No j11.orbit-drag: a one-finger drag on empty canvas does not orbit the camera for ANY input (mouse included,
+    // probed on touch-ipad-landscape), and no TUX asks for it. journeys.md J11 asks for "orbit camera"; the product
+    // orbits through the gizmo, sized for touch by TUX-025. See docs/touch-audit/journey-triage.md (decision for Jay).
   ],
 });
 
@@ -952,7 +1025,9 @@ JOURNEYS.push({
         const st = await P.readState(c.page);
         c.vars.scale = st.scale;
         const cr = st.canvasRect;
-        await P.fingerMultiTap(c.page, onCanvas(c, cr.x + cr.w / 2, cr.y + cr.h / 2), 2);
+        // A spot clear of the floating overlays (context bar, toolbar, HUD), else the canvas centre.
+        const spot = emptyPinchSpot(st, { minx: 0, maxx: 0, miny: 0, maxy: 0 }, { halves: [30] }) || { x: cr.x + cr.w / 2, y: cr.y + cr.h / 2 };
+        await P.fingerMultiTap(c.page, onCanvas(c, spot.x, spot.y), 2);
       },
       post: (c, pre, now) => { if (!near(now.scale, c.vars.scale, c.vars.scale * 0.01)) throw new Error('the tap changed the zoom'); },
     },

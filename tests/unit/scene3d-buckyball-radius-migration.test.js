@@ -148,10 +148,10 @@ describe('Scene3D — buckyball radius correction (SCENE_VERSION 3 → 4)', () =
   const render = (p) => ser(algo.generate(p, null, null, BOUNDS));
   const radiusOf = (p) => p.objects[0].params.radius;
 
-  test('SCENE_VERSION is 4 and the chain reaches it from every prior version', () => {
-    expect(Params.SCENE_VERSION).toBe(4);
+  test('SCENE_VERSION is 5 and the chain reaches it from every prior version', () => {
+    expect(Params.SCENE_VERSION).toBe(5);
     [1, 2, 3].forEach((from) => {
-      expect(Params.sanitizeSceneParams(scene({ solidType: 'buckyball', radius: 40 }, from)).sceneVersion).toBe(4);
+      expect(Params.sanitizeSceneParams(scene({ solidType: 'buckyball', radius: 40 }, from)).sceneVersion).toBe(5);
     });
   });
 
@@ -260,7 +260,7 @@ describe('Scene3D — buckyball radius correction (SCENE_VERSION 3 → 4)', () =
     const factor = Mesh.legacyTruncatedIcosahedronScale();
     const out = Params.migrateScene(leaf({ solidType: 'buckyball', radius: 40 }, 3));
     expect(out.params.radius).toBeCloseTo(40 * factor, 12);
-    expect(out.sceneVersion).toBe(4);
+    expect(out.sceneVersion).toBe(5);
   });
 
   test('a v4 object3d LEAF buckyball is left alone, and re-migrating never compounds', () => {

@@ -200,6 +200,11 @@ describe('TUX-045 touch modifier latches', () => {
     test('Multi-select latched: a diagonal touch drag is not axis-locked', async () => {
       IM.tap('multiSelect', 0);
       IM.tap('multiSelect', 100); // lock so the first gesture does not consume it
+      // TUX-024: a finger picks within 22 px of a stroke, and a latched multi-select press ON a selected stroke toggles it. A 40 px
+      // box has no interior point further than 20 px from its edge, so the drag starts inside a larger selected box instead.
+      A.sourcePaths = rect(0, 0, 120, 120);
+      engine.generate(A.id);
+      renderer.setSelection([A.id], A.id);
       const o = T();
       canvas().dispatchEvent(at('pointerdown', 60, 60, o));
       await sleep(400);

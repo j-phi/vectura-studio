@@ -104,7 +104,38 @@
     menu.style.top = `${r.bottom + 2}px`;
     menu.style.left = `${r.left}px`;
     menu.style.width = `${r.width}px`;
+    menu.style.maxHeight = '';
+    menu.style.bottom = '';
+    if (document.body.classList.contains('touch-ui')) {
+      // TUX-041 B4: with 44 px rows the 280 px list runs off a short screen (iPhone landscape) and over the Reset / Randomize row
+      // (iPad), where it cut that row's hit area. Fit it between the trigger and the screen edge, and stop above the first
+      // parameter row while at least three rows still fit. When fewer than three rows fit below the trigger, open it upward.
+      const top = r.bottom + 2;
+      const vh = window.innerHeight;
+      const rootStyle = getComputedStyle(document.documentElement);
+      const safeBottom = parseFloat(rootStyle.getPropertyValue('--safe-bottom')) || 0;
+      const pane = trigger.closest('#left-pane');
+      const paneTop = pane ? pane.getBoundingClientRect().top : 0;
+      let room = vh - top - 8 - safeBottom;
+      const next = document.getElementById('btn-randomize-params');
+      if (next && next.offsetParent) {
+        const gap = next.getBoundingClientRect().top - top - 2;
+        if (gap >= 132 && gap < room) room = gap;
+      }
+      const above = r.top - 2 - 8 - paneTop;
+      if (room < 132 && above > room) {
+        menu.style.top = 'auto';
+        menu.style.bottom = `${Math.round(vh - r.top + 2)}px`;
+        menu.style.maxHeight = `${Math.max(88, Math.min(280, Math.floor(above)))}px`;
+      } else {
+        menu.style.maxHeight = `${Math.max(88, Math.min(280, Math.floor(room)))}px`;
+      }
+    }
     menu.classList.remove('hidden');
+    // TUX-012 / B4 review: on a short screen the list scrolls and only two or three rows show; an iOS overlay scrollbar is invisible,
+    // so mark the edge that still hides rows (the fade is drawn by CSS on touch-ui).
+    const cue = window.Vectura.UI.utils.scrollCue;
+    if (cue && document.body.classList.contains('touch-ui')) { menu.scrollTop = 0; cue.bind(menu); }
   }
 
   function _syncModuleDisplay() {
@@ -204,11 +235,55 @@
       const item = e.target.closest?.('.top-menu-item');
       if (item && !item.classList.contains('top-menu-back')) setOpen(false);
     }, true);
+    // An outside tap on a non-action area only closes the sheet: it is swallowed so it never reaches the canvas
+    // (a Pen tap would add an anchor). Only events tied to that gesture are swallowed: its pointerId,
+    // its touch identifiers, and the single click that follows its pointerup on the same target.
+    // There is no time window, so a real tap right after the closing tap (Undo, the hamburger) still fires.
+    let swallowId = null;
+    const swallowTouches = new Set();
+    let clickTarget = null; // set at the swallowed pointerup; consumed by the one click that follows
+    const stop = (e) => { e.stopImmediatePropagation(); e.stopPropagation(); if (e.cancelable) e.preventDefault(); };
     doc.addEventListener('pointerdown', (e) => {
+      clickTarget = null; // a new gesture starts: no click from the old one is coming
       if (!body.classList.contains('phone-menu-open')) return;
       if (bar.contains(e.target) || burger.contains(e.target)) return;
       setOpen(false);
+      // A visible header action (Undo, Redo, Export) closes the sheet AND runs: only non-action areas are swallowed.
+      if (e.target.closest?.('#app-header button, #app-header [role="button"]')) return;
+      swallowId = e.pointerId;
+      swallowTouches.clear();
+      swallowDownTarget = e.target;
+      stop(e);
     }, true);
+    let swallowDownTarget = null;
+    ['pointermove', 'pointerup', 'pointercancel'].forEach((type) => {
+      doc.addEventListener(type, (e) => {
+        if (swallowId === null || e.pointerId !== swallowId) return;
+        if (type !== 'pointermove') {
+          swallowId = null;
+          clickTarget = type === 'pointerup' ? swallowDownTarget : null;
+        }
+        stop(e);
+      }, true);
+    });
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach((type) => {
+      doc.addEventListener(type, (e) => {
+        const ids = Array.from(e.changedTouches || [], (t) => t.identifier);
+        if (type === 'touchstart') {
+          // The touchstart of the swallowed gesture follows its pointerdown at once.
+          if (swallowId === null || swallowTouches.size) return;
+          ids.forEach((id) => swallowTouches.add(id));
+        } else if (!ids.some((id) => swallowTouches.has(id))) return;
+        if (type === 'touchend' || type === 'touchcancel') ids.forEach((id) => swallowTouches.delete(id));
+        stop(e);
+      }, { capture: true, passive: false });
+    });
+    doc.addEventListener('click', (e) => {
+      if (!clickTarget) return;
+      const t = clickTarget;
+      clickTarget = null;
+      if (t.isConnected && (t.contains(e.target) || e.target.contains(t))) stop(e);
+    }, { capture: true, passive: false });
     doc.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && body.classList.contains('phone-menu-open') && !ui.openTopMenuTrigger) setOpen(false);
     });

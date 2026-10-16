@@ -1063,6 +1063,8 @@
       this.ui.renderPens();
       this.ui.buildControls();
       this.ui.updateFormula();
+      // Batch R3: the Petal Designer window re-reads the restored layer (undo / redo rebuilt it).
+      if (this.ui.syncPetalDesignerAfterRestore) this.ui.syncPetalDesignerAfterRestore();
       this.render();
       // Restore rasterPlane sources. Noise sources resolve synchronously inside
       // generate(); painted/imported sources decode their embedded data URL

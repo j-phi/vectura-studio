@@ -178,12 +178,12 @@
       });
 
       pd.root.innerHTML = `
-        <div class="flex items-center justify-between mb-2 px-1">
+        <div class="pd-header-row flex items-center justify-between mb-2 px-1">
           <div class="flex items-center gap-1.5">
             <span class="text-[11px] font-medium text-vectura-accent uppercase tracking-wide">Pattern Designer</span>
             <span data-pd-draft-badge class="hidden text-[9px] bg-vectura-accent text-black px-1 py-px rounded leading-tight">Unsaved</span>
           </div>
-          <div class="flex gap-1 items-center">
+          <div class="pd-header-actions flex gap-1 items-center">
             <button type="button" class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors" data-pd-import-tile>
               Import SVG Tile
             </button>
@@ -640,6 +640,27 @@
       const canvas = pd.root.querySelector('[data-pd-canvas]');
       if (!canvas) return;
       const wrap = canvas.parentElement;
+      // TUX-008 integration fix: on phones the Generator pane starts closed, so an inline designer can be
+      // built inside a 0 x 0 wrap. It then sized itself to the 460 x 320 fallback and overflowed the pane
+      // once it opened. Re-fit once, after the wrap gets a real size and the pane's open transition settles.
+      if ((!wrap.clientWidth || !wrap.clientHeight) && typeof ResizeObserver === 'function') {
+        if (pd.__pdSizeWatch) pd.__pdSizeWatch.disconnect();
+        let settle = null;
+        const watch = new ResizeObserver(() => {
+          clearTimeout(settle);
+          if (!wrap.clientWidth || !wrap.clientHeight) return;
+          settle = setTimeout(() => {
+            if (!wrap.clientWidth || !wrap.clientHeight) return;
+            watch.disconnect();
+            if (pd.__pdSizeWatch === watch) pd.__pdSizeWatch = null;
+            if (!canvas.isConnected) return;
+            this._initPatternDesignerView(pd);
+            this._renderPatternDesigner(pd);
+          }, 250);
+        });
+        pd.__pdSizeWatch = watch;
+        watch.observe(wrap);
+      }
       const wrapW = wrap.clientWidth || 460;
       const wrapH = wrap.clientHeight || 320;
       canvas.width = wrapW;

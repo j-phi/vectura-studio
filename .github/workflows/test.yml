@@ -8,43 +8,86 @@ on:
   schedule:
     - cron: '0 8 * * *'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  unit:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+  lane-plan:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    outputs:
+      plan: ${{ steps.route.outputs.plan }}
+      lanes: ${{ steps.route.outputs.lanes }}
+      risk: ${{ steps.route.outputs.risk }}
+      classes: ${{ steps.route.outputs.classes }}
     steps:
-      # fetch-depth: 0 (full history) — several tests/unit/*.test.js RGR
-      # proofs read a historical revision of a file via `git show <sha>:path`
-      # (the pinned commit is always an ancestor of the checked-out ref, never
-      # a foreign branch) to prove a fix's guard trips against the real
-      # pre-fix tree. actions/checkout's default depth: 1 makes that sha
-      # unreachable and those tests fail with a git error, not a real
-      # regression (docs/3d-audit/lane-reports/CI-5-impl.md).
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run test:unit
+      - name: Resolve explicit risk plan
+        id: route
+        run: node scripts/test-lane-router.js --base "${{ github.event.pull_request.base.sha || github.event.before }}" --head "$GITHUB_SHA" --json
 
-  integration:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+  feedback:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [lane-plan]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VECTURA_RISK_CLASSES: ${{ needs.lane-plan.outputs.classes }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
+      - name: Start setup timing
+        run: echo "VECTURA_SETUP_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run test:integration
+      - run: npx playwright install --with-deps chromium
+      - name: Record setup timing
+        run: echo "VECTURA_SETUP_MS=$(( $(date +%s%3N) - VECTURA_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
+      - run: npm run test:feedback
+        env:
+          VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-metrics.jsonl
+      - name: Verify bounded coverage shard and merge plumbing
+        run: npm run test:coverage:probe
+        timeout-minutes: 5
+      - name: Upload lane timing and queue metrics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: feedback-lane-metrics
+          path: ${{ runner.temp }}/lane-metrics.jsonl
+          if-no-files-found: ignore
+
+  # Compatibility check name for existing branch protection. The full Vitest
+  # inventory (including unit tests) is executed once by `coverage`.
+  unit:
+    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    needs: [coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preserve the required check after full-scope coverage
+        env:
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+        run: test "$COVERAGE_RESULT" = success
+
+  integration:
+    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    needs: [coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preserve the required check after full-scope coverage
+        env:
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+        run: test "$COVERAGE_RESULT" = success
 
   e2e-smoke:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -92,29 +135,19 @@ jobs:
           if-no-files-found: ignore
 
   visual:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    needs: [coverage]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npm run test:visual
-      - name: Upload Visual Artifacts
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: visual-artifacts
-          path: |
-            tests/baselines
-            *.diff
-          if-no-files-found: ignore
+      - name: Preserve the required check after full-scope coverage
+        env:
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+        run: test "$COVERAGE_RESULT" = success
 
   perf:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main' || github.event_name == 'schedule'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -124,13 +157,46 @@ jobs:
       - run: npm install --no-audit --no-fund --loglevel=error
       - run: npm run test:perf
 
-  coverage:
-    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+  coverage-plan:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
+    outputs:
+      chain_started_ms: ${{ steps.clock.outputs.started_ms }}
     steps:
-      # fetch-depth: 0 — see the `unit` job's checkout step above; this job
-      # runs the exact same tests/unit/*.test.js RGR-history proofs (via
-      # `tests/**/*.test.js` under coverage) and needs the same full history.
+      - id: clock
+        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - name: Build exact-SHA full test inventory and shard plan
+        run: |
+          node scripts/test-shard-plan.js --plan-out "$RUNNER_TEMP/coverage-shard-plan.json" --sha "$GITHUB_SHA" --shards 2
+          test -s "$RUNNER_TEMP/coverage-shard-plan.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-plan
+          path: ${{ runner.temp }}/coverage-shard-plan.json
+          retention-days: 1
+          if-no-files-found: error
+
+  coverage-shard:
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [coverage-plan]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      VECTURA_TEST_TIMEOUT_MS: 10800000
+    steps:
+      # fetch-depth: 0 retains the full RGR-history inputs used by audit tests.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -138,13 +204,116 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - name: Start shard setup timing
+        run: echo "VECTURA_SHARD_SETUP_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
       - run: npm install --no-audit --no-fund --loglevel=error
-      # Runs through scripts/run-vitest.js, which tolerates vitest's birpc
-      # "Timeout calling onTaskUpdate" RPC timeout — and ONLY that, and only when
-      # zero tests failed. See the header of that script for why nothing else
-      # (fork count, console volume, sharding, coverage scope, the threads pool)
-      # eliminates it. A real failure still fails the job.
-      - run: npm run test:coverage
+      - name: Record shard setup timing
+        run: echo "VECTURA_SHARD_SETUP_MS=$(( $(date +%s%3N) - VECTURA_SHARD_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v7
+        with:
+          name: coverage-shard-plan
+          path: ${{ runner.temp }}
+      - name: Write same-run shard provenance
+        run: |
+          mkdir -p "$RUNNER_TEMP/pilot-artifact"
+          echo "VECTURA_SHARD_PLAN_FILE=$RUNNER_TEMP/coverage-shard-plan.json" >> "$GITHUB_ENV"
+          node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --metadata-out "$RUNNER_TEMP/pilot-artifact/metadata.json" \
+            --shard "$SHARD_INDEX" --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Run one full-scope V8 coverage shard
+        run: |
+          set -o pipefail
+          echo "VECTURA_SHARD_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+          npm run test:coverage:shard -- --config vitest.shard-pilot.config.mjs --shard="$SHARD_INDEX/2" \
+            --coverage.thresholds.statements=0 --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 \
+            --reporter=blob --reporter=json --outputFile.blob="$RUNNER_TEMP/pilot-artifact/blob.json" \
+            --outputFile.json="$RUNNER_TEMP/pilot-shard-results.json" 2>&1 | tee "$RUNNER_TEMP/pilot-shard-console.log"
+      - name: Verify exact assigned roster and record shard timing
+        if: always()
+        run: |
+          test -s "$RUNNER_TEMP/pilot-shard-results.json"
+          node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --verify-report \
+            --shard "$SHARD_INDEX" --report "$RUNNER_TEMP/pilot-shard-results.json"
+          test -s "$RUNNER_TEMP/pilot-shard-console.log"
+          test -s "$RUNNER_TEMP/pilot-artifact/blob.json"
+          execution_ms=$(( $(date +%s%3N) - VECTURA_SHARD_STARTED_MS ))
+          node scripts/test-profile.js --log "$RUNNER_TEMP/pilot-shard-console.log" \
+            --results "$RUNNER_TEMP/pilot-shard-results.json" --output "$RUNNER_TEMP/pilot-shard-profile.json" \
+            --runner "${{ runner.os }}-${{ runner.arch }}" --workers 2 --setup-ms "$VECTURA_SHARD_SETUP_MS" --execution-ms "$execution_ms"
+      - name: Upload merge-only coverage blob and provenance
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/pilot-artifact
+          retention-days: 7
+          if-no-files-found: error
+      - name: Upload parsed shard timing summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-shard-profile-${{ matrix.shard }}
+          path: ${{ runner.temp }}/pilot-shard-profile.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+  coverage:
+    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    needs: [coverage-plan, coverage-shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GUARD_RESULT: ${{ needs.coverage-plan.result }}
+      SHARDS_RESULT: ${{ needs.coverage-shard.result }}
+      COVERAGE_CHAIN_STARTED_MS: ${{ needs.coverage-plan.outputs.chain_started_ms }}
+      VECTURA_TEST_TIMEOUT_MS: 10800000
+    steps:
+      - name: Require the guard and both coverage shards to pass
+        run: |
+          test "$GUARD_RESULT" = success
+          test "$SHARDS_RESULT" = success
+          test -n "$COVERAGE_CHAIN_STARTED_MS"
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - name: Start merge setup timing
+        run: echo "VECTURA_MERGE_SETUP_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - run: npm install --no-audit --no-fund --loglevel=error
+      - name: Record merge setup timing
+        run: echo "VECTURA_MERGE_SETUP_MS=$(( $(date +%s%3N) - VECTURA_MERGE_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v7
+        with:
+          name: coverage-shard-plan
+          path: ${{ runner.temp }}
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: coverage-shard-[12]
+          path: ${{ runner.temp }}/coverage-shard-artifacts
+          merge-multiple: false
+      - name: Verify provenance and stage exactly two Vitest blob files
+        run: |
+          node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --stage-blobs \
+            --artifacts "$RUNNER_TEMP/coverage-shard-artifacts" --blob-dir "$RUNNER_TEMP/vitest-blobs" \
+            --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Merge blob reports and enforce global coverage thresholds once
+        run: |
+          set -o pipefail
+          npm run test:coverage:merge -- --config vitest.shard-pilot.config.mjs \
+            --merge-reports="$RUNNER_TEMP/vitest-blobs" --coverage --coverage.reporter=text --coverage.reporter=lcov --coverage.reporter=json \
+            --coverage.reportsDirectory=coverage --reporter=default --reporter=json \
+            --outputFile.json="$RUNNER_TEMP/merged-results.json" 2>&1 | tee "$RUNNER_TEMP/merged-coverage-console.log"
+      - name: Enforce merged full-scope inventory, skip baseline, and profile all file timings
+        run: |
+          test -s "$RUNNER_TEMP/merged-coverage-console.log"
+          test -s "$RUNNER_TEMP/merged-results.json"
+          mkdir -p coverage
+          node scripts/test-profile.js --strict --log "$RUNNER_TEMP/merged-coverage-console.log" \
+            --results "$RUNNER_TEMP/merged-results.json" --output coverage/full-profile.json \
+            --runner "${{ runner.os }}-${{ runner.arch }}" --workers 2 --setup-ms "$VECTURA_MERGE_SETUP_MS" \
+            --execution-start-ms "$COVERAGE_CHAIN_STARTED_MS" --execution-scope coverage-orchestration-critical-path
       - name: Upload Coverage Report
         if: always()
         uses: actions/upload-artifact@v7
@@ -152,4 +321,74 @@ jobs:
           name: coverage-report
           path: coverage
           retention-days: 7
+          if-no-files-found: ignore
+      - name: Upload full-scope timing summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fullscope-vitest-profile
+          path: coverage/full-profile.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  scheduled-audit:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - id: dependencies
+        run: npm install --no-audit --no-fund --loglevel=error
+      - id: browsers
+        run: npx playwright install --with-deps chromium
+      - run: npm run test:audit
+      - if: always() && steps.dependencies.outcome == 'success'
+        run: npm run test:visual
+      - if: always() && steps.dependencies.outcome == 'success'
+        run: npm run test:perf
+      - name: Upload scheduled visual artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-artifacts
+          path: |
+            tests/baselines
+            *.diff
+          if-no-files-found: ignore
+
+  lane-gate:
+    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    needs: [lane-plan, feedback, unit, integration, e2e-smoke, visual, perf, coverage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Require expected lanes for this SHA
+        env:
+          VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-roster-metrics.jsonl
+          VECTURA_LANE_PLAN: ${{ needs.lane-plan.outputs.plan }}
+          SHA: ${{ github.sha }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          BROWSER_RESULT: ${{ needs.e2e-smoke.result }}
+          VISUAL_RESULT: ${{ needs.visual.result }}
+          PERF_RESULT: ${{ needs.perf.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          FEEDBACK_RESULT: ${{ needs.feedback.result }}
+        run: node scripts/test-lane-aggregate.js --sha "$SHA" --job=unit="$UNIT_RESULT" --job=integration="$INTEGRATION_RESULT" --job=e2e-smoke="$BROWSER_RESULT" --job=visual="$VISUAL_RESULT" --job=perf="$PERF_RESULT" --job=coverage="$COVERAGE_RESULT" --job=feedback="$FEEDBACK_RESULT"
+      - name: Upload expected-roster evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: expected-roster-metrics
+          path: ${{ runner.temp }}/lane-roster-metrics.jsonl
           if-no-files-found: ignore

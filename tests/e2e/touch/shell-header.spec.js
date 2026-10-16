@@ -47,6 +47,86 @@ test.describe('TUX-001 closing round', () => {
     }
   });
 
+  test('TUX-001 outside tap closes the sheet and never reaches the canvas (Pen anchor)', async ({ page }, testInfo) => {
+    phoneOnly(testInfo);
+    await gotoApp(page);
+    await page.evaluate(() => {
+      window.app.pushHistory(); window.app.engine.addLayer('spiral'); window.app.render();
+      window.app.ui.setActiveTool('pen'); window.app.ui.setPenMode('draw');
+    });
+    const sel0 = await page.evaluate(() => JSON.stringify([window.app.renderer.selectedLayerId, [...(window.app.renderer.selectedLayerIds || [])]]));
+    await touch.tap(page, page.locator('#btn-menu-hamburger'));
+    await expect(page.locator('body.phone-menu-open')).toHaveCount(1);
+    // a canvas point NOT covered by the open sheet
+    const pt = await page.evaluate(() => {
+      const b = document.querySelector('#main-canvas').getBoundingClientRect();
+      const bar = document.getElementById('top-menubar').getBoundingClientRect();
+      for (let fy = 0.95; fy > 0.05; fy -= 0.05) {
+        for (let fx = 0.1; fx < 0.95; fx += 0.1) {
+          const x = b.x + b.width * fx; const y = b.y + b.height * fy;
+          if (y <= bar.bottom + 4) continue;
+          const e = document.elementFromPoint(x, y);
+          if (e && e.id === 'main-canvas') return { x, y, barBottom: bar.bottom };
+        }
+      }
+      return null;
+    });
+    // iPhL-c (874x330): the sheet fills the viewport, so the only outside surface is the header wordmark.
+    const target = pt || await page.evaluate(() => { const r = document.querySelector('#app-header h1').getBoundingClientRect(); return { x: r.x + 4, y: r.y + r.height / 2 }; });
+    await touch.tap(page, target);
+    await expect(page.locator('body.phone-menu-open')).toHaveCount(0);
+    const st = await page.evaluate(() => ({
+      draft: window.app.renderer.penDraft, sel: JSON.stringify([window.app.renderer.selectedLayerId, [...(window.app.renderer.selectedLayerIds || [])]]),
+    }));
+    expect(st.draft, 'penDraft after the closing tap').toBeNull();
+    expect(st.sel).toBe(sel0);
+    if (!pt) return;
+    // the next tap, with the sheet closed, does reach the canvas (the swallow is one-shot)
+    await touch.tap(page, pt);
+    await expect.poll(() => page.evaluate(() => (window.app.renderer.penDraft ? window.app.renderer.penDraft.anchors.length : 0))).toBe(1);
+  });
+
+  test('TUX-001 a real tap within 150 ms of the closing outside tap still fires (no time window)', async ({ page }, testInfo) => {
+    phoneOnly(testInfo);
+    await gotoApp(page);
+    await page.evaluate(() => { window.app.pushHistory(); window.app.engine.addLayer('spiral'); window.app.render(); window.app.ui.renderLayers(); });
+    const wordmark = () => page.evaluate(() => { const r = document.querySelector('#app-header h1').getBoundingClientRect(); return { x: r.x + 4, y: r.y + r.height / 2 }; });
+    const closeByOutsideTap = async () => {
+      await touch.tap(page, page.locator('#btn-menu-hamburger'));
+      await expect(page.locator('body.phone-menu-open')).toHaveCount(1);
+      await touch.tap(page, await wordmark());
+      return Date.now();
+    };
+    // (a) header Undo right after the closing tap
+    const layers0 = await page.evaluate(() => window.app.engine.layers.length);
+    let t0 = await closeByOutsideTap();
+    await touch.tap(page, page.locator('#btn-header-undo'));
+    const gapUndo = Date.now() - t0;
+    expect(await page.evaluate(() => window.app.engine.layers.length), `Undo fired ${gapUndo} ms after the closing tap`).toBe(layers0 - 1);
+    // (b) hamburger re-tap right after the closing tap reopens the sheet
+    t0 = await closeByOutsideTap();
+    await touch.tap(page, page.locator('#btn-menu-hamburger'));
+    const gapBurger = Date.now() - t0;
+    await expect(page.locator('body.phone-menu-open'), `hamburger reopened ${gapBurger} ms after the closing tap`).toHaveCount(1);
+    expect(Math.max(gapUndo, gapBurger), 'the taps landed inside the 150 ms bound the contract names').toBeLessThanOrEqual(150);
+  });
+
+  // TUX-001 review (batch 3b): a tap on a visible header ACTION while the sheet is open closes the sheet AND runs the action.
+  // Only taps on non-action areas (canvas, wordmark) are swallowed.
+  test('TUX-001 a tap on header Undo with the sheet open closes the sheet and undoes', async ({ page }, testInfo) => {
+    phoneOnly(testInfo);
+    await gotoApp(page);
+    await page.evaluate(() => { window.app.pushHistory(); window.app.engine.addLayer('spiral'); window.app.render(); window.app.ui.renderLayers(); });
+    const layers0 = await page.evaluate(() => window.app.engine.layers.length);
+    await touch.tap(page, page.locator('#btn-menu-hamburger'));
+    await expect(page.locator('body.phone-menu-open')).toHaveCount(1);
+    const hit = await page.evaluate(() => { const r = document.getElementById('btn-header-undo').getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return !!e && !!e.closest('#btn-header-undo'); });
+    expect(hit, 'header Undo is visible and hit-testable with the sheet open').toBe(true);
+    await touch.tap(page, page.locator('#btn-header-undo'));
+    await expect(page.locator('body.phone-menu-open'), 'the sheet closed').toHaveCount(0);
+    expect(await page.evaluate(() => window.app.engine.layers.length), 'Undo ran on the same tap').toBe(layers0 - 1);
+  });
+
   test('modifier bar phone presentation is icon plus short label (TUX-045)', async ({ page }, testInfo) => {
     phoneOnly(testInfo);
     await gotoApp(page);

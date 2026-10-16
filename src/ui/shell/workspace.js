@@ -40,6 +40,8 @@
     const headerLeftBtn = getEl('btn-header-pane-left');
     const headerRightBtn = getEl('btn-header-pane-right');
     if (!leftPane || !rightPane || !leftBtn || !rightBtn) return;
+    // Q22: scroll cue on every pane body that can hide controls below its fold (touch-ui CSS draws it).
+    if (UI.utils && UI.utils.scrollCue && UI.utils.scrollCue.bindPanes) UI.utils.scrollCue.bindPanes();
 
     if (bottomPane && SETTINGS.bottomPaneCollapsed === true) bottomPane.classList.add('bottom-pane-collapsed');
 

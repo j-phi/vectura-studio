@@ -2017,6 +2017,7 @@
     // companion state those interactions leave behind. Does NOT restore document state:
     // rollback runs the cancel paths and the snapshot restore first.
     cancelActiveInteractionsForTouchGesture() {
+      this._touchDragPourId = null;
       this.touchSlopCrossed = false;
       const flags = window.Vectura.TouchGestureArbiter.INTERACTION_FLAGS;
       flags.forEach((name) => { this[name] = name.startsWith('is') ? false : null; });
@@ -2208,6 +2209,7 @@
     }
 
     _abortToSnapshot(snap) {
+      this._touchDragPourId = null;
       this._touchDeferred = null; // deferred one-shots never ran, so there is nothing to undo
       const Arb = window.Vectura.TouchGestureArbiter;
       Arb.CANCEL_PATHS.forEach((name) => {
@@ -7278,7 +7280,9 @@
         // CMD/Ctrl+click on an existing fill adopts it as the active batch so
         // the user can tweak its params via the panel. Only meaningful in
         // pour mode; in erase mode CMD acts like a plain click.
-        if (this.activeTool === 'fill' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        // TUX-033: Cmd/Ctrl on desktop, the Multi-select task on touch.
+        const sampleMods = this.getModifierState(e);
+        if (this.activeTool === 'fill' && (sampleMods.meta || sampleMods.multiSelect) && !sampleMods.alt) {
           // CMD/Ctrl is a sample gesture, not a pour. If there is no fill
           // under the cursor (empty shape or empty canvas) leave the shape
           // empty rather than falling through to a normal pour.
@@ -7292,7 +7296,13 @@
         this._paintBucketHover(world, patternTileParams);
         const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
           ? 'erase' : 'pour';
-        if (this.isDeferredFillPointer(e)) {
+        // TUX-033: a touch / pen press that carries the Constrain (Shift) task is a drag-pour,
+        // exactly like a Shift-drag with a mouse: pour now, then pour into each new region.
+        // Only the Constrain task counts; a real Shift on a touch event keeps the TUX-022 deferred pour.
+        const dragMods = this.getModifierState(e);
+        const touchDragPour = this.isDeferredFillPointer(e) && !dragMods.rawShift && dragMods.shift;
+        this._touchDragPourId = touchDragPour ? e.pointerId : null;
+        if (this.isDeferredFillPointer(e) && !touchDragPour) {
           // TUX-022: touch / pen show the region preview and the loupe at once; the lift pours
           // into the last previewed region. A cancel, a drag off the paper or a second finger
           // drops the pending pour.
@@ -7669,7 +7679,7 @@
         }
 
         const topLayer =
-          this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world);
+          this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world, false, null, e.pointerType);
 
         // M5: double-clicking a text layer with the Selection OR Direct-Selection
         // tool enters Type editing (switches tool + places the caret). The direct
@@ -7987,7 +7997,8 @@
           : null;
         this._paintBucketHover(world, patternTileParams);
         this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
-        if (fillOwner) {
+        const touchDragPourMove = this._touchDragPourId !== null && this._touchDragPourId !== undefined && e.pointerId === this._touchDragPourId;
+        if (fillOwner && !touchDragPourMove) {
           const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase') ? 'erase' : 'pour';
           this._armFillPending(e, world, mode, patternTileParams);
           // TUX-022 req. 6 / CODE-017: the held pointer gets the same hover feedback a mouse
@@ -7999,7 +8010,7 @@
         // cross into a new region's loopId, pour again. lastPourLoopId is
         // reset on up(). Shift gating keeps a plain click from accidentally
         // filling adjacent regions when the mouse jiggles before release.
-        if (!this.isDeferredFillPointer(e) && (e.buttons & 1) && e.shiftKey && this.paintBucketStack?.length) {
+        if (((!this.isDeferredFillPointer(e) && (e.buttons & 1) && this.getModifierState(e).shift) || touchDragPourMove) && this.paintBucketStack?.length) {
           const target = this.paintBucketStack[this.paintBucketScopeIndex];
           if (target && target.loopId !== this.lastPourLoopId) {
             const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
@@ -8665,12 +8676,14 @@
       // TUX-017 latch: after a pinch/pan, a remaining finger starts and ends nothing until
       // every touch pointer has lifted.
       if (this.isTouchPointer(e) && this.touchArbiter.gestureActive) {
+        this._touchDragPourId = null;
         this._releaseActivePointer(e);
         this.updateCursor();
         return;
       }
       // TUX-022: touch / pen fill. The lift pours into the last previewed region. A cancel never
       // pours; the pending record and the preview are always cleared.
+      if (this._touchDragPourId === e.pointerId || e.type === 'pointercancel') this._touchDragPourId = null;
       const fillPend = this._fillPendingPour;
       if (fillPend && e.pointerId === fillPend.pointerId && this.isDeferredFillPointer(e)) {
         this._commitFillPending(fillPend, e.type !== 'pointercancel');
@@ -8964,7 +8977,7 @@
           clearActivePointer();
         };
         if (sceneLayer && bigEnough) {
-          const includeOccluded = Boolean(pending.alt || e.altKey);
+          const includeOccluded = Boolean(pending.alt || this.getModifierState(e).alt);
           if (pending.mode === 'object') {
             const ids = this._sceneObjectsInRect(sceneLayer, rect, { includeOccluded });
             if (ids.length) {
@@ -10489,10 +10502,13 @@
       return hit ? this._isolatedGroupMember(hit) : null;
     }
 
-    findLayerAtPoint(world, includeLocked = false, filterFn = null) {
+    // pointerType picks the stroke tolerance (HIT_TOLERANCE.strokePick: 5 px mouse / pen, 22 px touch); it defaults to the last
+    // pointer seen. When several layers lie within tolerance the NEAREST stroke wins; an exact tie keeps the topmost layer.
+    findLayerAtPoint(world, includeLocked = false, filterFn = null, pointerType = this.lastPointerType) {
       const layers = this.engine.layers.slice().reverse();
       let best = null;
-      let bestDist = Infinity;
+      let bestDistSq = Infinity;
+      const pick = window.Vectura.hitTolerance('strokePick', pointerType);
       layers.forEach((layer) => {
         if (!layer.visible) return;
         if (filterFn && !filterFn(layer)) return;
@@ -10506,30 +10522,27 @@
         if (this.engine.hasCompoundAncestor?.(layer)) return;
         if (!includeLocked && this.isLayerLocked?.(layer.id)) return;
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
-        const tol = Math.max(5 / (this.scale || 1), stroke * 2);
+        const tol = Math.max(pick / (this.scale || 1), stroke * 2);
         const tolSq = tol * tol;
+        let layerDistSq = Infinity;
         this.getInteractionPaths(layer).forEach((path) => {
           if (path && path.meta && path.meta.kind === 'circle') {
             const cx = path.meta.cx ?? path.meta.x ?? 0;
             const cy = path.meta.cy ?? path.meta.y ?? 0;
             const r = path.meta.r ?? path.meta.rx ?? 0;
             const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
-            if (dist * dist <= tolSq && dist < bestDist) {
-              bestDist = dist;
-              best = layer;
-            }
+            layerDistSq = Math.min(layerDistSq, dist * dist);
             return;
           }
           if (!Array.isArray(path) || path.length < 2) return;
           for (let i = 0; i < path.length - 1; i++) {
-            const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
-            if (d <= tolSq && d < bestDist) {
-              bestDist = d;
-              best = layer;
-              break;
-            }
+            layerDistSq = Math.min(layerDistSq, this.distanceToSegmentSq(world, path[i], path[i + 1]));
           }
         });
+        if (layerDistSq <= tolSq && layerDistSq < bestDistSq) {
+          bestDistSq = layerDistSq;
+          best = layer;
+        }
       });
       return best;
     }
@@ -11392,7 +11405,59 @@
     // regen time on populated scenes (12-object gate: ~130ms at balanced vs
     // ~33ms at draft), so per-move synchronous regens stall the drag. At most
     // one draft-quality regen per animation frame; release does the full one.
+    // B3 — deferred full-quality "settle" render after a scene drag release.
+    // rAF then a macrotask: the release frame paints first, then the full
+    // compose runs. One pending settle at a time; `after(layer)` runs once the
+    // settled ink is in (panel rebuild / formula refresh).
+    _scheduleSceneSettleRegen(layerId, after) {
+      const pending = this._sceneSettle;
+      if (pending && pending.layerId !== layerId) this.flushSceneSettleRegen();
+      else this._cancelSceneSettleRegen(layerId);
+      const token = { layerId, after, raf: null, timer: null };
+      const raf = typeof requestAnimationFrame === 'function'
+        ? requestAnimationFrame
+        : (fn) => setTimeout(fn, 16);
+      token.raf = raf(() => {
+        token.raf = null;
+        token.timer = setTimeout(() => {
+          token.timer = null;
+          if (this._sceneSettle === token) this.flushSceneSettleRegen();
+        }, 0);
+      });
+      this._sceneSettle = token;
+    }
+
+    // Cancel a pending settle (only for `layerId` when given). True if one was.
+    _cancelSceneSettleRegen(layerId) {
+      const token = this._sceneSettle;
+      if (!token) return false;
+      if (layerId != null && token.layerId !== layerId) return false;
+      if (token.raf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(token.raf);
+      }
+      if (token.timer != null) clearTimeout(token.timer);
+      this._sceneSettle = null;
+      return true;
+    }
+
+    // Run a pending settle now (export paths, tests). True if one ran.
+    flushSceneSettleRegen() {
+      const token = this._sceneSettle;
+      if (!token) return false;
+      this._cancelSceneSettleRegen();
+      const layer = this.engine.layers.find((l) => l.id === token.layerId);
+      if (!layer) return false;
+      this.engine.generate(layer.id);
+      if (typeof token.after === 'function') token.after(layer);
+      if (this.app?.render) this.app.render(); else this.draw();
+      return true;
+    }
+
     _scheduleSceneDragRegen(layerId) {
+      // B3 — a new drag on a scene whose previous release settle is still
+      // pending supersedes it: that settle would only be redrawn over.
+      this._cancelSceneSettleRegen(layerId);
       this._sceneDragRegenLayerId = layerId;
       if (this._sceneDragRegenRaf != null) return;
       const raf = typeof requestAnimationFrame === 'function'
@@ -12428,9 +12493,14 @@
             else obj.transform.roll = wrap360(obj.transform.roll);
           }
         }
-        this.engine.generate(layer.id);
-        this.app?.ui?.updateFormula?.();
-        this.app?.ui?.buildControls?.(layer);
+        // B3 — the release render is the gesture's ONLY full-quality compose
+        // (drag frames are draft tiers). Deferred past the release paint and
+        // cancelled by the next drag on this scene, so rapid nudges do not
+        // stack seconds of settle freezes.
+        this._scheduleSceneSettleRegen(layer.id, (settled) => {
+          this.app?.ui?.updateFormula?.();
+          this.app?.ui?.buildControls?.(settled);
+        });
       }
       this.updateCursor();
     }
@@ -16215,15 +16285,35 @@
       if (!this.isCoarseHandles()) return 0;
       const layers = this.getSelectedLayers();
       if (!layers.length) return 0;
+      // The context bar asks on every animation frame. A selection-bounds walk on a heavy document costs
+      // tens of ms, so cache until a draw, the view, the selection or the temp transform changes.
+      const ids = layers.map((l) => l.id).join(',');
+      const c = this._clearanceCache;
+      if (c && c.seq === (this._drawSeq || 0) && c.ids === ids && c.scale === this.scale
+        && c.ox === this.offsetX && c.oy === this.offsetY && c.temp === this.tempTransform) return c.value;
       const bounds = this.getSelectionBounds(layers, this.tempTransform);
-      const sb = this.getSelectionScreenBounds();
-      if (!bounds || !bounds.corners || !sb) return 0;
-      let beyond = 0;
-      this.getHandleHitPoints(bounds, 'touch').forEach((h) => {
-        const p = this.worldToScreen(h.x, h.y);
-        beyond = Math.max(beyond, p.y - sb.maxY, sb.minY - p.y);
-      });
-      return beyond + window.Vectura.hitTolerance('resize', 'touch');
+      let value = 0;
+      if (bounds && bounds.corners) {
+        // Screen bounds of the same corners (as getSelectionScreenBounds computes), without a second walk.
+        let minY = Infinity;
+        let maxY = -Infinity;
+        Object.values(bounds.corners).forEach((pt) => {
+          const s = this.worldToScreen(pt.x, pt.y);
+          minY = Math.min(minY, s.y); maxY = Math.max(maxY, s.y);
+        });
+        if (Number.isFinite(minY)) {
+          let beyond = 0;
+          this.getHandleHitPoints(bounds, 'touch').forEach((h) => {
+            const p = this.worldToScreen(h.x, h.y);
+            beyond = Math.max(beyond, p.y - maxY, minY - p.y);
+          });
+          value = beyond + window.Vectura.hitTolerance('resize', 'touch');
+        }
+      }
+      this._clearanceCache = {
+        seq: this._drawSeq || 0, ids, scale: this.scale, ox: this.offsetX, oy: this.offsetY, temp: this.tempTransform, value,
+      };
+      return value;
     }
 
     // Drop the cached affordance and repaint (touch only) after docked chrome moved.
@@ -16567,10 +16657,18 @@
       this._sceneDragRegenLayerId = null;
       const layer = this.engine.layers.find((l) => l.id === drag.layerId);
       if (layer && drag.historyPushed) {
-        this.engine.generate(layer.id);
-        this.app?.ui?.buildControls?.();
-        this.app?.ui?.updateFormula?.();
-        this.app?.ui?._activePresetGalleryRefresh?.();
+        const settle = () => {
+          this.app?.ui?.buildControls?.();
+          this.app?.ui?.updateFormula?.();
+          this.app?.ui?._activePresetGalleryRefresh?.();
+        };
+        if (layer.type === 'scene3d') {
+          // B3 — a scene's orbit drew draft tiers; settle once, deferred.
+          this._scheduleSceneSettleRegen(layer.id, settle);
+        } else {
+          this.engine.generate(layer.id);
+          settle();
+        }
       }
       this.updateCursor();
       this.draw();

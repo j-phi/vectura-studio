@@ -10,6 +10,7 @@ const touch = require('../helpers/touch');
 // and the layout viewport may be wider than the device viewport.
 const FIXTURE = path.join(__dirname, '..', '..', 'fixtures', 'touch', 'layers-mixed.vectura');
 const NAME_MIN = 96;
+const NAME_MIN_DOCKED = 48; // iPad landscape docked 200 px pane (Jay, 2026-10-12)
 const HIT_MIN = 44;
 
 const loadFixture = async (page) => {
@@ -163,6 +164,9 @@ const checkHitAreas = async (page, id) => {
   const bad = [];
   const row = page.locator(`#layer-list [data-lvl-id="${id}"]`).first();
   await row.scrollIntoViewIfNeeded();
+  // Centre the row in the list: "if needed" can stop at a fractional scroll offset that leaves the
+  // last row 0.5 px under the list edge (pane layout after TUX-051), which reads as a 43 px hit area.
+  await row.evaluate((e) => e.scrollIntoView({ block: 'center' }));
   for (const sel of HIT_TARGETS) {
     const els = row.locator(sel);
     const n = await els.count();
@@ -189,6 +193,28 @@ const checkHitAreas = async (page, id) => {
 
 const summarize = (rows, pick) => rows.filter(pick).map((r) => `${r.name}[d${r.depth} ${r.kind}${r.active ? ' active' : ''}] w=${r.nameW} font=${r.nameFont} hit=${r.nameHit} ovf=${JSON.stringify(r.overflow)}`);
 
+// TUX-012: a menu taller than the viewport (330 px iPhone landscape in browser chrome) scrolls inside itself.
+// A finger swipes the menu until the entry sits inside it, then taps. Fails when the menu does not scroll.
+const tapMenuEntry = async (page, key) => {
+  const entry = page.locator(`.menu-dropdown.open .menu-entry[data-key="${key}"]`);
+  await entry.waitFor({ timeout: 5000 });
+  for (let i = 0; i < 6; i += 1) {
+    const g = await page.evaluate((k) => {
+      const m = document.querySelector('.menu-dropdown.open'); const e = m.querySelector(`.menu-entry[data-key="${k}"]`);
+      const mr = m.getBoundingClientRect(); const er = e.getBoundingClientRect();
+      return { mt: mr.top, mb: mr.bottom, ml: mr.left, mw: mr.width, et: er.top, eb: er.bottom, oy: getComputedStyle(m).overflowY, sh: m.scrollHeight, ch: m.clientHeight };
+    }, key);
+    if (g.et >= g.mt - 0.5 && g.eb <= g.mb + 0.5) break;
+    expect(['auto', 'scroll'], 'a menu taller than the screen must scroll inside itself').toContain(g.oy);
+    expect(g.sh, 'the menu has scrollable overflow').toBeGreaterThan(g.ch);
+    const x = g.ml + g.mw / 2;
+    const down = g.et > g.mb;
+    await touch.drag(page, { x, y: down ? g.mb - 20 : g.mt + 20 }, { x, y: down ? g.mt + 20 : g.mb - 20 }, { steps: 8, stepDelayMs: 12 });
+    await page.waitForTimeout(250);
+  }
+  await touch.tap(page, entry);
+};
+
 test.describe('TUX-012 layers panel on touch', () => {
   test('names and actions fit', async ({ page }, testInfo) => {
     await setup(page, testInfo);
@@ -205,7 +231,10 @@ test.describe('TUX-012 layers panel on touch', () => {
     const depths = new Set(inactive.map((r) => r.depth));
     [0, 1, 2].forEach((d) => expect(depths.has(d), `fixture renders depth ${d}`).toBe(true));
     const fail = [];
-    const names = (rows) => rows.filter((r) => r.nameW < NAME_MIN || r.nameFont < 14 || !r.nameHit || r.overflow.length);
+    // Jay, 2026-10-12 (TUX-012 vs TUX-008): the iPad landscape docked pane stays 200 px, so names may be narrower there.
+    // The full name is then revealed by the name tooltip or a row long-press (test below).
+    const nameMin = /ipad-landscape/.test(testInfo.project.name) ? NAME_MIN_DOCKED : NAME_MIN;
+    const names = (rows) => rows.filter((r) => r.nameW < nameMin || r.nameFont < 14 || !r.nameHit || r.overflow.length);
     fail.push(...summarize(names(inactive), () => true));
 
     // Active pass: each row active in turn.
@@ -223,6 +252,19 @@ test.describe('TUX-012 layers panel on touch', () => {
       expect(r.hasMore, `${r.name} has .lvl-more`).toBe(true);
     }
     expect(badHit, `hit area < 44:\n${badHit.join('\n')}`).toEqual([]);
+  });
+
+  test('full layer name is revealed by the tooltip and by a long-press', async ({ page }, testInfo) => {
+    await setup(page, testInfo);
+    await prepViewport(page, testInfo);
+    const full = await page.evaluate(() => window.app.engine.layers.find((l) => (l.name || '').length === 40).name);
+    const row = page.locator('#layer-list [data-lvl-id]').filter({ has: page.locator('.lvl-name', { hasText: full }) }).first();
+    await row.evaluate((e) => e.scrollIntoView({ block: 'center' }));
+    expect(await row.locator('.lvl-name').first().getAttribute('title'), 'name tooltip holds the full name').toBe(full);
+    const box = await row.locator('.lvl-name').first().boundingBox();
+    await touch.longPress(page, { x: box.x + Math.min(box.width / 2, 30), y: box.y + box.height / 2 }, 700);
+    const header = page.locator('.lvl-ctx-menu .menu-cat').first();
+    await expect(header, 'the row menu names the layer in full').toHaveText(full);
   });
 
   test('narrow pane', async ({ page }, testInfo) => {
@@ -305,8 +347,7 @@ test.describe('TUX-012 layers panel on touch', () => {
     const grpMore = page.locator(`#layer-list [data-lvl-id="${grp.id}"] .lvl-more`).first();
     await grpMore.scrollIntoViewIfNeeded();
     await touch.tap(page, grpMore);
-    await page.locator('.menu-dropdown.open .menu-entry[data-key="ungroup"]').waitFor({ timeout: 5000 });
-    await touch.tap(page, page.locator('.menu-dropdown.open .menu-entry[data-key="ungroup"]'));
+    await tapMenuEntry(page, 'ungroup');
     await page.waitForTimeout(120);
     const after = await page.evaluate((g) => ({
       gone: !window.app.engine.getLayerById(g.id),
@@ -324,8 +365,7 @@ test.describe('TUX-012 layers panel on touch', () => {
     const tgtMore = page.locator(`#layer-list [data-lvl-id="${target.id}"] .lvl-more`).first();
     await tgtMore.scrollIntoViewIfNeeded();
     await touch.tap(page, tgtMore);
-    await page.locator('.menu-dropdown.open .menu-entry[data-key="mask-toggle"]').waitFor({ timeout: 5000 });
-    await touch.tap(page, page.locator('.menu-dropdown.open .menu-entry[data-key="mask-toggle"]'));
+    await tapMenuEntry(page, 'mask-toggle');
     await page.waitForTimeout(120);
     expect(await page.evaluate((id) => window.app.engine.getLayerById(id).mask.enabled, target.id)).toBe(true);
   });

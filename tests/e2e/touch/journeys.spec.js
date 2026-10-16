@@ -116,9 +116,17 @@ async function runSteps(c, steps) {
 }
 
 // Compares a run with the ledger entry for the cell.
+// A reason class: digits and element ids/classes vary run to run, so they are blanked.
+const reasonClass = (r) => String(r || '').replace(/^JRN-\d+ /, '').replace(/[0-9.,-]+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 50);
+
 function judge({ entry, failedStep, message }) {
   if (entry) {
-    if (failedStep === entry.failsAt) return { ok: true, note: `expected failure at ${entry.failsAt}` };
+    if (failedStep === entry.failsAt) {
+      if (entry.reason && reasonClass(message) !== reasonClass(entry.reason)) {
+        return { ok: false, note: `failure reason changed at ${entry.failsAt}: ledger "${entry.reason}", now "${message}"` };
+      }
+      return { ok: true, note: `expected failure at ${entry.failsAt}` };
+    }
     if (failedStep) return { ok: false, note: `failure moved from ${entry.failsAt} to ${failedStep} (${message})` };
     return { ok: false, note: `unexpectedly passed: remove ledger entry ${entry.project}|${entry.journey} (failsAt ${entry.failsAt})` };
   }
@@ -201,6 +209,7 @@ test.describe('finger-only journeys', () => {
         fs.mkdirSync(RESULTS_DIR, { recursive: true });
         fs.writeFileSync(path.join(RESULTS_DIR, `${project}__${J.id}.json`), JSON.stringify({
           project, journey: J.id, failsAt: result.failedStep, reason: result.failedStep ? reasonOf(result) : '', reached: result.passed.length, all: result.all,
+          renameMs: ctx.vars.renameMs ?? null, programmaticScrolls: P.jOf(page).programmaticScrolls || [],
         }));
       }
 
@@ -251,6 +260,30 @@ test.describe('harness self-test', () => {
       document.body.appendChild(o);
     });
     await expect(P.fingerTap(page, page.locator('#probe'))).rejects.toThrow(/covered/);
+  });
+
+  // (ii-b) visibility inherits but a descendant can set visibility:visible again: the guard must read the
+  // target's OWN computed visibility (plus the hit test), never reject on a hidden ancestor.
+  const probeInHidden = (page, childCss) => page.evaluate((css) => { // journey-eval-ok
+    const wrap = document.createElement('div');
+    wrap.id = 'probe-wrap';
+    wrap.style.cssText = 'visibility:hidden;position:fixed;top:120px;left:40px;width:120px;height:80px;z-index:99999';
+    const b = document.createElement('button');
+    b.id = 'probe';
+    b.textContent = 'probe';
+    b.style.cssText = `position:absolute;top:10px;left:10px;width:80px;height:50px;${css}`;
+    wrap.appendChild(b);
+    document.body.appendChild(wrap);
+  }, childCss);
+
+  test('(ii-b) fingerTap accepts a visible target under a visibility:hidden ancestor', async ({ page }) => {
+    await probeInHidden(page, 'visibility:visible');
+    expect(await P.fingerTap(page, page.locator('#probe'))).toBeTruthy();
+  });
+
+  test('(ii-b) fingerTap rejects a target that is itself hidden', async ({ page }) => {
+    await probeInHidden(page, '');
+    await expect(P.fingerTap(page, page.locator('#probe'))).rejects.toThrow(/invisible|covered/);
   });
 
   // (v) the end points of a drag, pinch and pan must lie on the device screen too.
@@ -318,5 +351,14 @@ test.describe('harness self-test', () => {
     expect(v.ok).toBe(false);
     expect(v.note).toMatch(/unexpectedly passed/);
     expect(judge({ entry: null, failedStep: 's1', message: 'x' }).ok).toBe(false);
+  });
+
+  test('(v) the ledger reason is judged: same class passes, a different class is reported', async () => {
+    const entry = { project: 'p', journey: 'JX', failsAt: 's1', reason: 'JRN-003 scale 2.11 -> 2.11, want a zoom in' };
+    const same = judge({ entry, failedStep: 's1', message: 'scale 1.23 -> 1.23, want a zoom in' });
+    expect(same.ok).toBe(true);
+    const changed = judge({ entry, failedStep: 's1', message: 'covered by div.ctxbar-overflow-wrap (target #main-canvas)' });
+    expect(changed.ok).toBe(false);
+    expect(changed.note).toMatch(/failure reason changed/);
   });
 });

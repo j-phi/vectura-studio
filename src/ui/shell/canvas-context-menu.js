@@ -425,6 +425,8 @@
     d.body.appendChild(menu);
     state.menu = menu;
     positionMenu(menu, x, y);
+    const cueUtils = G.Vectura && G.Vectura.UI && G.Vectura.UI.utils;
+    if (cueUtils && cueUtils.scrollCue) cueUtils.scrollCue.bind(menu);
     if (typeof G.requestAnimationFrame === 'function') G.requestAnimationFrame(() => { if (state.menu === menu) positionMenu(menu, x, y); });
 
     state.onDocDown = (e) => { if (state.menu && !state.menu.contains(e.target)) close(); };

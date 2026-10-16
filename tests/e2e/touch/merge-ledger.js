@@ -29,10 +29,18 @@ function main() {
   let old = [];
   try { old = JSON.parse(fs.readFileSync(LEDGER, 'utf8')).entries || []; } catch (e) { /* first run */ }
   const kept = old.filter((e) => !seen.has(`${e.project}|${e.journey}`));
-  const fresh = cells.filter((c) => PRIMARY.includes(c.project) && c.failsAt).map((c) => ({ project: c.project, journey: c.journey, failsAt: c.failsAt, reason: c.reason }));
+  // The triage (`tux`: the owning requirement and the product defect) is human-made: keep it while the cell still
+  // fails at the same step. A new or moved failure has no `tux`, and the static spec rejects it until it is triaged.
+  const triage = (c) => { const o = old.find((e) => e.project === c.project && e.journey === c.journey && e.failsAt === c.failsAt); return o && o.tux ? { tux: o.tux } : {}; };
+  const fresh = cells.filter((c) => PRIMARY.includes(c.project) && c.failsAt).map((c) => ({ project: c.project, journey: c.journey, failsAt: c.failsAt, reason: c.reason, ...triage(c) }));
   const entries = [...kept, ...fresh].sort((a, b) => (a.project < b.project ? -1 : a.project > b.project ? 1 : num(a.journey) - num(b.journey)));
-  const lines = entries.map((e) => `    ${JSON.stringify({ project: e.project, journey: e.journey, failsAt: e.failsAt, reason: e.reason })}`);
-  const body = `{\n  "projects": ${JSON.stringify(PRIMARY)},\n  "entries": [\n${lines.join(',\n')}${lines.length ? '\n' : ''}  ]\n}\n`;
+  const lines = entries.map((e) => `    ${JSON.stringify({ project: e.project, journey: e.journey, failsAt: e.failsAt, reason: e.reason, ...(e.tux ? { tux: e.tux } : {}) })}`);
+  // Cells whose steps used the sanctioned programmatic scroll (WebKit has no trusted touch scroll). A passing cell there
+  // proves the taps, not the finger scroll: label it, one line per cell.
+  const unprovenCells = cells.filter((c) => /^webkit-/.test(c.project) && (c.programmaticScrolls || []).length)
+    .sort((a, b) => (a.project < b.project ? -1 : a.project > b.project ? 1 : num(a.journey) - num(b.journey)));
+  const unproven = unprovenCells.map((c) => `    ${JSON.stringify({ project: c.project, journey: c.journey, label: 'WebKit finger-scroll unproven', steps: c.programmaticScrolls })}`);
+  const body = `{\n  "projects": ${JSON.stringify(PRIMARY)},\n  "entries": [\n${lines.join(',\n')}${lines.length ? '\n' : ''}  ],\n  "unproven": [\n${unproven.join(',\n')}${unproven.length ? '\n' : ''}  ]\n}\n`;
   fs.writeFileSync(LEDGER, body);
   const byProject = {};
   entries.forEach((e) => { byProject[e.project] = (byProject[e.project] || 0) + 1; });

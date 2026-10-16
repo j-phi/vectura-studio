@@ -53,6 +53,23 @@ test.describe('hitAreaInPage', () => {
   });
 });
 
+test.describe('open dropdown over a target (TUX-041 B5)', () => {
+  // An open menu panel is a dismiss-on-outside-tap layer, not a neighbour: a rail button that its edge cuts keeps its own size.
+  // A neighbour that is not a menu still steals the pixels (the 12 px overlay test above).
+  const panel = (cls) => `<div class="${cls}" style="position:absolute;left:100px;top:90px;width:12px;height:70px;background:rgba(255,0,0,.2)"></div>`;
+  test('a button cut by .top-menu-panel.open reports its own size', async ({ page }) => {
+    await page.setContent(page_html(box('a', 100, 100, 44, 44) + panel('top-menu-panel open')));
+    const r = await probe(page, 'a');
+    expect(r.w).toBeGreaterThanOrEqual(44);
+    expect(r.h).toBeGreaterThanOrEqual(44);
+  });
+  test('the same overlay as a plain element still cuts the button', async ({ page }) => {
+    await page.setContent(page_html(box('a', 100, 100, 44, 44) + panel('plain-overlay')));
+    const r = await probe(page, 'a');
+    expect(r.w).toBeLessThan(44);
+  });
+});
+
 test.describe('rounded targets (TUX-058 fix round 4)', () => {
   test('rounded 44x44 buttons (radius 8, 10, 12, 22) report >= 44 on both axes; 43x43 still < 44', async ({ page }) => {
     const radii = [8, 10, 12, 22];

@@ -275,43 +275,87 @@ describe('TUX-025: 3D rotation gizmo touch geometry and hit radii', () => {
     });
   });
 
-  test('e) precedence: an enlarged orbit zone yields to the scene object gizmo', () => {
+  // Screen points inside a finger-ENLARGED 3D-rotation zone that ALSO lie on another handle at that handle's own
+  // tolerance. Scanned (not hard-coded) so the test follows the real geometry; the caller asserts the list is non-empty,
+  // so a layout change that removes the overlap fails loudly instead of passing vacuously.
+  const overlapPoints = (f, otherHit, { x0 = -150, x1 = 450, y0 = -150, y1 = 300, step = 2, max = 4 } = {}) => {
+    const out = [];
+    const bounds = f.renderer.getSelectionBounds([f.layer]) || f.bounds;
+    for (let x = x0; x < x1 && out.length < max; x += step) {
+      for (let y = y0; y < y1 && out.length < max; y += step) {
+        const h = f.renderer.hit3DRotationControl(x, y, f.layer, bounds, 'touch');
+        if (!h || !h.enlarged) continue;
+        const o = otherHit(x, y, bounds);
+        if (o) out.push({ x, y, rot: h.type, other: o });
+      }
+    }
+    return out;
+  };
+  const tapDown = (renderer, p) => renderer.down({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {} });
+  const tapUp = (renderer, p) => renderer.up && renderer.up({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', preventDefault() {} });
+
+  test('e) precedence (G4): an enlarged rotation zone yields to the scene object gizmo where both hit', () => {
     setTouch(true);
     const f = buildScene();
     const { renderer, engine, layer } = f;
     const child = engine.getLayerDescendants(layer.id).find((l) => l.type === 'object3d');
-    renderer.setSelection([layer.id], layer.id);
-    renderer.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds: [child.id] });
-    const gz = renderer.getSceneObjectGizmo ? renderer.getSceneObjectGizmo(layer) : null;
-    expect(gz, 'object gizmo should show').toBeTruthy();
-    // Sample the object gizmo's own hit points; pick the one nearest the orbit centre.
-    const t = targets(f);
-    const pts = [];
-    (function collect(o, depth) {
-      if (!o || depth > 3 || typeof o !== 'object') return;
-      if (Number.isFinite(o.x) && Number.isFinite(o.y)) pts.push(renderer.worldToScreen(o.x, o.y));
-      else for (const k of Object.keys(o)) collect(o[k], depth + 1);
-    })(gz, 0);
-    expect(pts.length).toBeGreaterThan(0);
-    pts.sort((a, b) => dist(a, t.C) - dist(b, t.C));
-    let armedGizmo = null;
-    const armedTypes = [];
-    for (const p of pts.slice(0, 6)) {
-      const hit = renderer.hitSceneObjectGizmo(p.x, p.y, layer);
-      if (!hit) continue;
+    const select = () => {
       renderer.rotation3DDrag = null;
       renderer._sceneObjectGizmoDrag = null;
       renderer.setSelection([layer.id], layer.id);
       renderer.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds: [child.id] });
-      renderer.down({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {} });
-      armedGizmo = { type: renderer.rotation3DDrag && renderer.rotation3DDrag.type };
-      armedTypes.push(renderer._sceneObjectGizmoDrag && renderer._sceneObjectGizmoDrag.type);
-      expect(renderer.rotation3DDrag, `object gizmo point (${p.x.toFixed(0)},${p.y.toFixed(0)}) must beat orbit`).toBeNull();
-      renderer.up && renderer.up({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', preventDefault() {} });
+    };
+    select();
+    // Zoomed out, the touch roll ring crosses the object transform gizmo (at scale 1 they never overlap).
+    renderer.scale = 0.5;
+    expect(renderer.getSceneObjectGizmo(layer), 'object gizmo should show').toBeTruthy();
+    const pts = overlapPoints(f, (x, y) => renderer.hitSceneObjectGizmo(x, y, layer), { max: 3 });
+    expect(pts.length, 'an enlarged rotation zone must overlap the object gizmo somewhere (fixture precondition)').toBeGreaterThan(0);
+    for (const p of pts) {
+      select();
+      tapDown(renderer, p);
+      expect(renderer.rotation3DDrag, `rotation (${p.rot}) must NOT arm at (${p.x},${p.y}); object gizmo owns it`).toBeNull();
+      expect(renderer._sceneObjectGizmoDrag && renderer._sceneObjectGizmoDrag.type, `object gizmo arms at (${p.x},${p.y})`).toBeTruthy();
+      tapUp(renderer, p);
     }
-    expect(armedGizmo).toBeTruthy();
-    expect(armedTypes.length).toBeGreaterThan(0);
-    
-    expect(armedTypes.some((t) => t === 'move' || t === 'scale'), `object gizmo armed types ${armedTypes}`).toBe(true);
+  });
+
+  test('e2) precedence (G4 non-scene): an enlarged rotation zone yields to a 2D RESIZE handle, but not to a rotate band', () => {
+    setTouch(true);
+    const f = buildPseudo('topoform')();
+    const { renderer } = f;
+    const resizeHandle = (x, y, bounds) => {
+      const hh = renderer.hitHandle(x, y, bounds, { pointerType: 'touch' });
+      return hh && !String(hh).startsWith('rotate') ? hh : null;
+    };
+    const pts = overlapPoints(f, resizeHandle, { x0: 0, x1: 300, y0: -50, y1: 200, max: 3 });
+    expect(pts.length, 'an enlarged rotation zone must overlap a resize handle (fixture precondition)').toBeGreaterThan(0);
+    for (const p of pts) {
+      renderer.rotation3DDrag = null;
+      renderer.activeHandle = null;
+      renderer.setSelection([f.layer.id], f.layer.id);
+      tapDown(renderer, p);
+      expect(renderer.rotation3DDrag, `rotation (${p.rot}) must yield to resize '${p.other}' at (${p.x},${p.y})`).toBeNull();
+      expect(renderer.activeHandle, `resize handle arms at (${p.x},${p.y})`).toBe(p.other);
+      tapUp(renderer, p);
+    }
+    // The wide rotate band must NOT swallow a gizmo marker: a point in an enlarged zone that hits only a rotate band arms the gizmo.
+    const rotateOnly = [];
+    const bounds = renderer.getSelectionBounds([f.layer]) || f.bounds;
+    for (let x = 0; x < 300 && !rotateOnly.length; x += 2) {
+      for (let y = -50; y < 200 && !rotateOnly.length; y += 2) {
+        const h = renderer.hit3DRotationControl(x, y, f.layer, bounds, 'touch');
+        const hh = renderer.hitHandle(x, y, bounds, { pointerType: 'touch' });
+        if (h && h.enlarged && hh && String(hh).startsWith('rotate')) rotateOnly.push({ x, y, rot: h.type });
+      }
+    }
+    if (rotateOnly.length) {
+      renderer.rotation3DDrag = null;
+      renderer.activeHandle = null;
+      renderer.setSelection([f.layer.id], f.layer.id);
+      tapDown(renderer, rotateOnly[0]);
+      expect(renderer.rotation3DDrag && renderer.rotation3DDrag.type, 'rotate band does not swallow the gizmo').toBe(rotateOnly[0].rot);
+      tapUp(renderer, rotateOnly[0]);
+    }
   });
 });

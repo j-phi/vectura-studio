@@ -49,11 +49,15 @@ test('tap a point, then Remove point and Add point change the point count', asyn
     expect(b.width, 'button width').toBeGreaterThanOrEqual(44);
     expect(b.height, 'button height').toBeGreaterThanOrEqual(44);
   }
+  // The buttons appear under the curve; on a 330 px landscape phone they sit at the pane's scroll edge.
+  // Scroll each into view first, as a person does (the finger otherwise lands on the backdrop below the pane).
+  await remove.evaluate((e) => e.scrollIntoView({ block: 'center' }));
   await touch.tap(page, remove);
   await expect.poll(() => count(page, id)).toBe(4);
   // The selection moved to the previous point (an endpoint): Add stays, Remove is disabled.
   await expect(add).toBeVisible();
   await expect(page.locator('.motion-point-remove')).toBeDisabled();
+  await add.evaluate((e) => e.scrollIntoView({ block: 'center' }));
   await touch.tap(page, add);
   await expect.poll(() => count(page, id)).toBe(5);
   // A tap on empty space clears the selection.

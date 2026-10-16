@@ -364,13 +364,15 @@ ${isDevEligible() ? `
     const doc = host?.ownerDocument || (typeof document !== 'undefined' ? document : null);
     if (!doc) return null;
     const existing = doc.getElementById(PANEL_ID);
-    if (existing) return existing;
+    const bindCue = (p) => window.Vectura?.UI?.utils?.scrollCue?.bind(p?.querySelector('.settings-panel-body')); // TUX-046
+    if (existing) { bindCue(existing); return existing; }
     if (!host) return null;
 
     const tpl = doc.createElement('template');
     tpl.innerHTML = PANEL_HTML;
     const panel = tpl.content.firstElementChild;
     if (panel) host.appendChild(panel);
+    bindCue(panel);
     return panel;
   }
 
@@ -758,6 +760,8 @@ ${isDevEligible() ? `
       },
     });
     modalIsOpen = true;
+    // TUX-046: the form scrolls; mark the edges that still hide controls (UI.utils.scrollCue, TUX-012).
+    window.Vectura?.UI?.utils?.scrollCue?.bind(modalRoot.querySelector('.settings-panel-body'));
 
     // Initial paint + refresh on any control change.
     snapshotPreview(modalRoot);

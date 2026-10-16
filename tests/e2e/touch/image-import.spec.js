@@ -48,7 +48,10 @@ const boot = async (page) => {
   await page.goto('/');
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
   // SETUP: phone panes start closed; open them programmatically.
+  // TUX-008: a tablet drawer opens through the pane controller (pane-drawer-open); pane-force-open is phone-only.
   await page.evaluate(() => {
+    const ps = window.Vectura.UI.Workspace && window.Vectura.UI.Workspace.paneState;
+    if (ps && ps.layout() === 'tablet') { ps.open('left'); return; }
     document.getElementById('left-pane').classList.add('pane-force-open');
     document.getElementById('right-pane').classList.add('pane-force-open');
   });

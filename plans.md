@@ -22,6 +22,18 @@ or completes.
   the open findings from `test_refinement_plan.md` are under **Later**.
 
 ## Now
+- **IN PROGRESS — phase-two full PR validation acceleration (2026-10-14, PR #97).** PR #97 proposes conditional two-shard full-Vitest validation with exact-SHA planning, fail-closed canonical coverage, same-run artifact checks, strict full inventory/57-skip reconciliation, and unchanged global ratchets. Main remains unsharded pending hosted CI, review, and screen validation. Main's unsharded producer run 38516174360 took 101m23s; pilot shards took 38m49s and 49m31s but hosted aggregation failed. Raw-blob audit and Mac replay passed inventory/ratchet checks, though root-specific task IDs leave hosted strict acceptance pending. The two-worker full local route took 39m40s; ordinary local `test:ci` retains its 30-minute attempt cap. No controlled whole-chain speedup or cost claim is established. Promotion requires strict evidence and review, at least 30% less whole-chain latency, and at most about 15% extra runner time. See `docs/test-suite-phase2.md`.
+- **DONE — first-phase test-suite acceleration (2026-10-11, PR #90).** Focused isolated runtimes, exhaustive-proof separation, bounded feedback and fail-closed shadow routing merged. Completed PR run38282702522 passed full-scope coverage (8,863 tests;57 existing skips) and all required checks on `ae1de017`; coverage still took96m32s. Shadow routing is not promoted and hosted latency targets remain unmet; phase two above owns further acceleration.
+- **DONE — shared local test queue (2026-10-04, branch `chore/test-queue`).** All heavy
+  `npm run test:*` scripts route through `scripts/test-queue.js` (machine-wide lock, FIFO
+  waiters, PID + start-time identity, safe stale recovery, subprocess-tree cleanup, nested
+  pass-through, CI bypass). Covered by `tests/unit/test-queue.test.js`. Follow-up idea, not
+  built: a PreToolUse hook that blocks direct `npx vitest` / `npx playwright test` in agent Bash
+  calls.
+- **DONE — 3D Scene ground size controls (2026-10-02, branch `3d-scene/ground-scale`).** Ground
+  leaf + legacy inspector gain Width (X) / Depth (Z) log sliders, proportion lock, Reset, and
+  Fill frame (`Scene.groundCoverScale`). Ground quad is near-plane and artboard clipped in
+  world space. No Y control (flat plane; Jay's call).
 - **DONE — dependency PR consolidation (2026-09-20).** Keep Vitest and
   `@vitest/coverage-v8` paired at 4.1.8 on the Node 20 toolchain; the separate Dependabot PRs
   could not install independently, and Vitest 5 requires Node 22.12+.
@@ -233,6 +245,18 @@ or completes.
   unwire moves past Stage 1.
 
 ## Next
+- **3D fill audit — T2-9 / T2-9R REJECTED (2026-10-11).** Jay judged v1.4.7 mkTick better than the band-rule redesign; `main` keeps v1.4.7. Work is parked on `3d-scene/fill-audit-a11` (tag `t2-9r-rejected-2026-10-11`). Do not restart a T2-9-style rewrite without a whole-object prototype review with Jay first. See `docs/3d-audit/fill-audit-handoff.md`.
+- **3D fill audit — mkTick follow-ups (2026-10-03).** (1) Sphere pole hooks in REGULAR mkTick ticks
+  (create sphere/hatch: 39/689 ticks bend >30°, worst 134°, near the top pole) violate Jay's no-hooks rule;
+  Jay ruled "later". (2) T2-8b-5 rim extension fades with density (sphere rim candidates 29 at d=50 → 2 at
+  d=220); all bars are d=50 only. (3) Thin mutation margins (nostraight 0.01 mm; nocoh/nocohstrip trip on 1
+  cell). (4) Sphere d=220 runtime 1.32–1.44× of 1.4.5. See docs/3d-audit/lane-reports/T2-8b-5-review.md.
+  (5) T2-7 picture leftovers still open: G1 (partial), G3 (short horizontal bar below the cone apex),
+  G6 (highlight, tone-limited), and the two named T4 exceptions (create torus/hatch, create cone/hatch).
+  (6) Test-rig cone/hatch W_L residual 1.89 mm² bare ≥0.5 mm after T2-8b-5 (between bands / at the length
+  cap; extension cannot close it). (7) T2-3e row-lattice pattern — pre-existing, measured, filed unbuilt.
+  (8) Sphere G5 rim triangle: effectively closed by T2-8b-3's envelope rule (create bare ≥0.5 mm
+  1.44 → 0.06 mm²); test rig unchanged (1.95). Confirm with Jay's eye before closing.
 - **3D Scene: parentKey/pathKey quantization coherence (before the Phase 4A divisions
   UI ships).** `StrokeDivide.parentKeyOf` quantizes at a fixed 0.001mm while export/engine
   `pathKey` quantizes at `max(0.001, plotterOptimize)` — at any tolerance above 0.001 a
@@ -571,6 +595,89 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Pre-push Rosetta hang (2026-10-14).** Intel `/usr/local/bin/git` ran the hook as x86_64 → x64 Chromium hung the feedback e2e; hook re-enters arm64 via `arch -arm64` when `sysctl.proc_translated` is 1.
+- **Mono Density test seed flake (2026-10-12).** `scene3d-fr-u5-legacy-mono-density` relied on random layer seeds; seeds pinned, dutyConst/turingStripe cases moved to Density 20 (85 is inert at the plot floor by design).
+- **U2 golden Node-major gate (2026-10-11).** mezzoRegion hash failed on Node 25 arm64 (V8 ULP drift, verified on base 383d7610); hashes now enforced on Node 20 only, counts everywhere; `.nvmrc` added.
+
+- **2026-10-04 — Fill-style review U7: deferred items (branch `3d-scene/fr-u7`, NOT pushed).** (1) **Tone bands**
+  (`toneBands` 2-4, `tierPens`) route any Fill Style's marks to pens by the tone under each mark (curved: face lookup
+  under each point, lines split at band edges; faceted: per-face tone); (2) *Band N pen* / *Tier N pen* pickers (shared
+  `UI.Select`); (3) **Voronoi Web chaining** at emit within one pen width + nearest-end ordering (sphere r45: 3885 ->
+  2401 paths, travel 70404 -> 5342 mm, ink +2.5 %); Maze uses the same ordering; (4) **light-relative hatch angle on
+  curved shapes: NOT done.** The curved hatch angle lives in each chart's own tangent frame (poles, seams). Adding the sun's
+  screen bearing rotates the whole grid and the lines do not follow the sun (tested). The hidden gate stays. A real
+  version needs a per-sample flow field along the projected sun, which is a new Fill Style, not an angle ref;
+  (5) **Stipple Simplify** exposed (Dot only); **Smoothing stays hidden** because it changes nothing on any mark
+  (measured: dot, ring, plus, tick, cross, all unchanged); (6) wireframe **Show hidden folded** into Hidden edges: Dashed
+  with `SCENE_MIGRATIONS[4]` (SCENE_VERSION 5), **Alt fill angle** wired to `altFillAngle` + shared Cross angle, **X-ray
+  Front line** shown greyed on faceted shapes (measured dead there); (7) Help Guide **3D Scene** accordion. Tests:
+  `tests/unit/scene3d-fr-u7-deferred.test.js`, `tests/integration/scene3d-fr-u7-panel.test.js`. Open: a `toneBands`
+  UI note when Tone is off; face-level `showHidden` keeps the old key.
+- **2026-10-04 — Fill-style review U6: artistic controls + pen routing (branch `3d-scene/fr-u6`, NOT
+  pushed).** New table `src/config/scene3d-fill-controls.js` (ranges + defaults). Tone **Gamma / Contrast**
+  and **Depth fade** at one point (`Regions.shapeTone`, wrapped around `combinedIntensity` in scene3d.js),
+  so every Fill Style reads them. Wave **Wavelength / Crest phase**; Width Ribbon **Nib angle / contrast**
+  and **Taper length / Tip width / Softness**; Turing **Maturity / Stripe scale**; hatch **Angle ref: Light**
+  (faceted); three-pen laws **Tier pens** (tier k -> pen k, `meta.penId` + `meta.penTier`, SVG groups by
+  pen); Maze **Chain walls**. All defaults byte-identical (40 fills pinned). Style-tab label column 58 -> 74 px.
+  Deferred: tone bands (N bands) -> pens for non-three-pen fills (no per-ruling band tag yet); Voronoi Web
+  chaining (edges stop 0.3-0.6 mm short of junctions, needs a change inside the law, before the inset);
+  Light-relative hatch on curved shapes (the curved angle is in the chart frame); Crest phase on the
+  legacy loop / zigzag waves changes the phase only (their clearance model is unchanged); a scene-level
+  (not per-object) Tone shaping group; a per-tier pen picker (today: pens 1-3 of the palette).
+- **2026-10-03 — Fill-style review U5: Fill Style merges, sub-setting folds, shadow reach (branch
+  `3d-scene/fr-u5`, NOT pushed).** Item 0: legacy documents keep their look under the monoline laws
+  (`monoDensityLegacyAt`, released by a Density edit). Picker 31 -> 20: Ladder (+ Continuous Field,
+  flicks, traverse), Width Ribbon (+ White Band, Nib Angle, Isophote Width), Bundle (+ Sub-Nib, Lozenge),
+  Wave (+ Interlock, Weave Depth, Trochoid, Amplitude Only, One Pen Down), Flow Field (+ Defect Split);
+  Origin Spiral is Spiral > Centre: Glint; Stipple links to the Dot Screen fill. Multi-key survivors use a
+  pattern table (`ENTRIES`) and a shared resolver (`scripts/tone-law-resolver.js`), so a pick that is not a
+  real combination snaps the other sub-controls. Every old id and retired key (`bandProfile`, `nesting`,
+  `penDown`, `fieldFloor`) loads byte-identical (hash goldens captured before the merges). Shadow Fill Style
+  row has the sub-controls: Weave Depth and Pen Stipple restored, 18 near-duplicate recipes not offered.
+  Sub-setting folds: Wrap, X-ray Front line / Back line / Depth cue toggles, Occluded select, Restyle line,
+  Thin, Alt fill Lines + Layers, shared ray emitter, one source for cross angles and plot floor.
+  Deferred: Mezzotint Region stays separate (mark class); wireframe Show hidden keeps its toggle (same
+  picture as Occluded: Dashed, pinned by a test); Alt fill still draws at fixed 45 / 135 deg; wave `cFlo`
+  stays internal; a faceted port of X-ray Front line (the row is hidden on faceted shapes); the 11
+  sub-setting rows' Playwright coverage rides on the e2e smoke only.
+- **2026-10-03 — Fill-style review U4b: engine defects (branch `3d-scene/fr-u4b`, NOT pushed).**
+  Mono Crosshatch duplicate pass removed (about -49 % ink, -43 to -50 % pen-downs on six direction-free laws); mono
+  Density live, Angle greyed where the law has no direction, Contour greyed (screen-space laws);
+  fieldMetric keeps the sigmoid (legacy ids pinned `fieldCurve:'lstar'`); Perceptual ramp on the
+  W-26 engine; `stripeAlign` param + row; curved Stipple Jitter wired; penCross / mkDotScreen read
+  their keys; Seed greys with an (i) from a measured reach table (`Params.styleUsesSeed`).
+  Dead keys: `highlightBands` (stage off, no control) and `xrayHiddenEdges` (live, no control).
+  Deferred: Density above 50 cannot tighten `dutyConst` / `endShorten` (already at the plot floor);
+  U6 owns the remaining turingStripe controls; the seed-reach table covers curved shapes by
+  sphere only (other curved shapes are assumed to share the generic engine) and is a fixed
+  table, so a new Fill Style needs its row.
+- **U4a (fill-review): Seed wired to all scene3d fills (legacy migration), tree Stroke Fill, pen-tier tag, compose determinism (stale FillBoolean latch), makeRotator callers.** Deferred: golden-ratio low-discrepancy walks outside the listed sites stay structural; per-tier pen routing at export is U6.
+- **2026-10-02 — Fill-style review U3: Object 3D panel reach (branch `3d-scene/fr-u3`, NOT
+  pushed).** Leaf Style tab parity with the scene Style editor through shared row renderers;
+  hidden-but-live keys exposed (wobbleScale, overstroke, spiralPitch, contourStep,
+  toneQuantLevels, shadowToneDepth); Density cap 500; measured gating (CONTROL_GATES) for
+  rows that do nothing in context; Fill Style curved Spiral/Stipple gate re-measured (45 → 1
+  greyed); Layers-panel Assign pen on object3d rows routes ink. Engine-side follow-ups for U4/U5:
+  wire Jitter on curved stipple (then drop its gate), Seed / Stroke Fill plumbing, mark shapes
+  and curvature-field hatch need roster entries (not exposed here), xrayHiddenEdges stays unread.
+- **2026-10-02 — Fill-style review U2 (kernel perf), branch `3d-scene/fr-u2`, NOT merged.**
+  Ribbon erosion from one oriented distance field + oriented PenFill (output change accepted by
+  Jay; invariants pinned in `tests/unit/scene3d-ribbon-raster-erode.test.js`); bit-identical
+  mono streamline grid, turingStripe allocations, ground-shadow fields and rotator memo (pinned
+  in `tests/unit/scene3d-u2-kernel-identity.test.js` + `geometry3d-rotator-identity.test.js`);
+  perf ratios in `tests/perf/u2-kernel-perf.test.js`. Follow-up: switch the hot
+  `rotatePoint` / `Scene.applyObjectTransform` callers in scene.js / surface-fill.js `sampleAt`
+  to `Geometry3D.makeRotator` (outside U2's files).
+- **2026-10-02 — Fill Style review U1: pipeline perf (branch `3d-scene/fr-u1`, NOT merged/pushed).**
+  B1 draft flag forwarded to scene groups; F5 law-preserving draft tier (ribbon laws as weighted
+  centrelines via SurfaceFill `ribbonDraft`, mono laws at pen × 2.5) with adaptive tier choice
+  (full ≤ 40 ms settled, flat if a law draft > 400 ms); B2 consumed object3d skips its standalone
+  render and child previews route to the owning group; B3 deferred + cancellable release settle;
+  NEW-3 full-compose memo keyed on the complete input signature. Open: mono laws still pay a
+  ~130–250 ms fixed cost per draft frame (field set-up inside surface-fill-mono.js, U2 scope).
+- **Capsule cap-seam hatch bend (2026-10-11).** SurfaceFill's capsule chart is now arc-length parameterised (`capsuleArcChart`); angled hatch no longer kinks at the barrel/cap seam. Shadow-anatomy band-order clause re-pinned as a near-tie.
+- **Vitest process cleanup (2026-10-04).** Added independent supervision, per-attempt deadlines, owned-group cleanup, and process-level regression coverage; preserved the narrow RPC retry policy. Integrated inside the shared test queue.
 - **2026-09-10 — 3D fill audit round 2: five lanes merged, roster collapsed 48 → 33, v1.4.1
   (local integration branch `3d-scene/integrate-r2`, NOT pushed, `main` NOT fast-forwarded).**
   Merged `3d-scene/handoff-c2` → `3d-scene/fill-collapse-2` → `3d-scene/fill-audit-2` →
@@ -1919,6 +2026,11 @@ questions. Do not start these without a decision:
   shipped as **v1.2.0**. See `CHANGELOG.md` for the consolidated notes.
 
 ## Decisions
+- **2026-10-04 — Vitest cleanup belongs to a supervisor, not model follow-up.** POSIX process groups isolate each attempt; a configurable deadline (30 minutes locally / three hours in CI) bounds unattended runs. Vitest supervision runs inside the shared queue; Playwright retains queue ownership.
+- **One machine-wide local test lock (2026-10-04).** Local test runs serialize through
+  `scripts/test-queue.js` with its lock outside every worktree (`~/.cache/vectura-studio/test-queue`),
+  not per worktree: the contention is for this machine's CPU and the Playwright port, not for a
+  checkout. CI is excluded on purpose (`CI` set = no lock), so CI job concurrency is unchanged.
 - **Coverage ratchet re-pinned for Vitest 4 (2026-09-25, Jay).** `vitest.config.mjs` thresholds moved
   83/83/77/69 → statements 74 / lines 76 / functions 74 / branches 62. Vitest 4's AST-based v8 remapping
   measures the same 729 test files ~6–11 points lower than Vitest 3 did (lines 86.95 → 77.44). This is a
@@ -1982,3 +2094,5 @@ questions. Do not start these without a decision:
     10 ms over 500 paths; the stock flowfield has 1,165), and a rung *index* is incoherent for a
     scalar serialized into `.vectura` files and presets — reseed the layer and rung 7 means something
     else, or nothing.
+
+- Test acceleration publication: PR #90 merged after completed run38282702522 passed corrected full coverage and the aggregate gate. The exhaustive dispatch audit repair retained its ladder reference and known-defect witness. Full PR runtime remains far above target; phase two owns additional acceleration.

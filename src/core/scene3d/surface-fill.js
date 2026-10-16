@@ -28,9 +28,12 @@
   const globalScope = typeof window !== 'undefined' ? window : globalThis;
   const Vectura = (globalScope.Vectura = globalScope.Vectura || {});
   const G3 = Vectura.Geometry3D || {};
+  const SEED = G3.SEED || { salt: 0, phase: 0, off: 0 };
 
   const finite = G3.finite || ((val, f = 0) => (Number.isFinite(Number(val)) ? Number(val) : f));
   const clamp = G3.clamp || ((val, lo, hi) => Math.max(lo, Math.min(hi, Number(val) || 0)));
+  // T2-8b-5d (perf, no output change): clamp(x, 0, 1) for a number (NaN and -0 give +0, as `clamp` does).
+  const clamp01 = (x) => (x > 0 ? (x < 1 ? x : 1) : 0);
   const v = G3.v || ((x, y, z) => ({ x, y, z }));
   const sub = G3.sub || ((a, b) => v(a.x - b.x, a.y - b.y, a.z - b.z));
   const cross = G3.cross || ((a, b) => v(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x));
@@ -112,7 +115,43 @@
     return (a, b) => {
       if (a < lo) { const t = a / lo; const p = raw(0, b); return { x: p.x * t, y: p.y, z: p.z * t }; }
       if (both && a > hi) { const t = (1 - a) / f; const p = raw(1, b); return { x: p.x * t, y: p.y, z: p.z * t }; }
-      return raw(clamp((a - lo) / spanA, 0, 1), b);
+      return raw(clamp01((a - lo) / spanA), b);
+    };
+  };
+
+  // ── A CAPSULE'S CAP SEAM IS PLACED BY ARC LENGTH ──────────────────────────
+  //
+  // Live defect (Jay, 2026-10-10): an angled hatch on a capsule bent at each
+  // barrel/cap seam — "the lines suddenly angle and get closer together at the
+  // end of each cap". `Charts.topoCapsule` splits its along-axis coordinate by
+  // HEIGHT: a cap's quarter arc (r·π/2) gets the parameter share a straight run
+  // of length r would get, so the meridian speed jumps by π/2 at the seam and a
+  // helix (constant da/db) changes slope and pitch there. Meridians (angle 0)
+  // are straight and hid it until the curved Angle dial went live.
+  //
+  // This re-parameterises `a` so equal steps are equal arc length along the
+  // whole meridian, then maps back onto the raw chart's own split. Same
+  // placement as `cappedChart`, and for the same reason it lives HERE: the
+  // MESH calls `Charts.topoCapsule` directly, so mesh baselines are untouched.
+  const capsuleArcChart = (norm, sizes) => {
+    const sx = finite(sizes && sizes.sx, 1);
+    const sy = finite(sizes && sizes.sy, 1);
+    const sz = finite(sizes && sizes.sz, 1);
+    // Mirror topoCapsule's own radius / half-length / split.
+    const r = Math.max(1, Math.min(sx, sz));
+    const half = Math.max(r, sy);
+    const cylHalf = Math.max(0, half - r);
+    const rawCylFrac = cylHalf / half;
+    const capArc = r * Math.PI / 2;
+    const halfLen = cylHalf + capArc;
+    return (a, b) => {
+      const t = clamp01(a) * 2 - 1;              // -1..1, arc-uniform
+      const s = Math.abs(t) * halfLen;           // arc from the waist
+      const rawAbs = s <= cylHalf
+        ? s / half
+        : rawCylFrac + ((s - cylHalf) / capArc) * (1 - rawCylFrac);
+      const rawT = (t < 0 ? -1 : 1) * Math.min(1, rawAbs);
+      return norm((rawT + 1) / 2, b);
     };
   };
 
@@ -190,6 +229,7 @@
     }
     if (typeof raw !== 'function') return null;
     const norm = AROUND_IS_U.has(mode) ? (a, b) => raw(b, a) : raw;
+    if (mode === 'capsule') return capsuleArcChart(norm, sizes);
     return (mode === 'cylinder' || mode === 'cone') ? cappedChart(norm, sizes, mode) : norm;
   };
 
@@ -241,7 +281,7 @@
   // the object stops sitting on the ground). So family A is floored where it
   // measures ~0.45, leaving the cross the room it needs to make T read, and the
   // COMBINED perceived coverage is ceilinged outright.
-  const PLOT_FLOOR_PEN = 2.2;
+  const PLOT_FLOOR_PEN = (Vectura.Scene3D && Vectura.Scene3D.Regions && Vectura.Scene3D.Regions.PLOT_FLOOR_PEN) || 2.2;
   // I5 follow-up — this is the DEFAULT for the master grid's line-count
   // floor (see `floorPen` inside the `STAGE.masterGrid` block below), and
   // remains the ONLY value `floorPitch` (the module-scope plot-safety floor
@@ -1474,6 +1514,15 @@
     // never throw and never silently draw nothing.
     const TONE_LAWS = (Vectura.SCENE3D_TONE_LAWS && Vectura.SCENE3D_TONE_LAWS.IDS) || null;
     const askedLaw = typeof opts.toneLaw === 'string' ? opts.toneLaw : '';
+    // U5 (NEW-7) — the crossing-family angles come from ONE place (regions.js),
+    // resolved here per fill so a late-registering Regions is still honoured.
+    const crossDegOf = (name, fallback) => {
+      const RG = Vectura.Scene3D && Vectura.Scene3D.Regions;
+      return (RG && Number.isFinite(RG[name])) ? RG[name] : fallback;
+    };
+    const CROSS_B_DEG = crossDegOf('CROSS_OBJ_DEG', 65);
+    const CROSS_C_DEG = crossDegOf('CROSS_TRIPLE_DEG', 32);
+    const CROSS_MARK_DEG = crossDegOf('CROSS_MARK_DEG', 60);
     const TONE_ALGO = (askedLaw && (!TONE_LAWS || TONE_LAWS.indexOf(askedLaw) !== -1)
       && askedLaw !== 'none') ? askedLaw : TONE_ALGO_DEFAULT;
     // Relocated from module scope (see the comment left at the old site) — this
@@ -1489,6 +1538,13 @@
     // enforces on the way in, re-asserted here because `buildObject` is a
     // public boundary a test (or a future caller) can hit directly.
     const CF_LEVELS = clamp(Math.round(finite(opts.toneQuantLevels, CF_LEVELS_DEFAULT)), 4, 256);
+    // U6 — the artistic controls (src/config/scene3d-fill-controls.js). `fcNum`
+    // is the clamped style value, or undefined when the key is ABSENT; every
+    // consumer falls back to its own literal, so an absent key is today's output.
+    const FILL_CTL = Vectura.SCENE_FILL_CONTROLS || null;
+    const fcNum = (key) => (FILL_CTL ? FILL_CTL.read(opts, key) : undefined);
+    const WAVE_CREST_ASKED = (opts.waveCrest === 'in' || opts.waveCrest === 'anti'
+      || opts.waveCrest === 'jit' || opts.waveCrest === 'walk') ? opts.waveCrest : null;
     // Per-call `contourFlow` streamline family. `opts.toneFlowMode` anything
     // other than the literal 'grad' degrades to `FLOW_MODE_DEFAULT` ('iso') —
     // same rule `params.js` uses.
@@ -1519,6 +1575,14 @@
     const t = opts.transform || { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 };
     const rot = { yaw: finite(t.yaw, 0), pitch: finite(t.pitch, 0), roll: finite(t.roll, 0) };
     const cam = opts.camAngles || { yaw: 0, pitch: 0, roll: 0 };
+    // Rotation trig resolved once per build (bit-identical to rotatePoint).
+    const rotObj = G3.makeRotator ? G3.makeRotator(rot) : (pt) => rotatePoint(pt, rot);
+    const rotCam = G3.makeRotator ? G3.makeRotator(cam) : (pt) => rotatePoint(pt, cam);
+    // T2-8b-5d (perf, no output change): the trig of the object rotation and of the camera, taken once. The
+    // facing helpers below use it to rotate a normal and read only the camera-space z, with the same operations in
+    // the same order as `rotatePoint` (yaw, pitch, roll), and without its temporaries.
+    const rotT = G3.rotTrig ? G3.rotTrig(rot.yaw ?? rot.rotate ?? 0, rot.pitch ?? rot.tilt ?? 0, rot.roll ?? 0) : null;
+    const camT = G3.rotTrig ? G3.rotTrig(cam.yaw ?? cam.rotate ?? 0, cam.pitch ?? cam.tilt ?? 0, cam.roll ?? 0) : null;
     const toneOn = Boolean(opts.toneOn && typeof opts.intensityFn === 'function');
     const intensityFn = opts.intensityFn || null;
     // F7 — self-occlusion gate. `null` for a convex object (scene3d.js never
@@ -2734,6 +2798,42 @@
     const MK_TICK_BC_PROBES = 16;
     const MK_TICK_BC_BISECT = 6;
     const MK_TICK_BC_HI_I = 2 / 3;
+    // T2-8b-5 — RIM-STRIP extension (Jay: ends "evenly offset from the perimeter", applied to the
+    // regular ticks). A deferred, NON-SITE pass lengthens the rim-facing end of a regular
+    // (non-highlight, I < MK_TICK_BC_HI_I) main tick to EXACTLY c_E from the outline, by the same
+    // bisected walk BC-E uses, when the outline is what stops it.
+    //   `MK_TICK_RIM_MAX_MM` — longest extension per end; also bounded so the tick stays <= 2.05 row pitches.
+    //   `MK_TICK_RIM_MIN_MM` — smallest worthwhile extension.
+    // The site record (`pieceLen`, tickSites) is captured BEFORE this pass, so the master grid is untouched.
+    const MK_TICK_RIM_MAX_MM = 2.0;
+    const MK_TICK_RIM_MIN_MM = 0.1;
+    // T2-8b-5b — two general guards on the extension (Jay: "keep for cone, fix torus"):
+    //   `MK_TICK_RIM_DEV_PEN` — STRAIGHT: the appended part stays within this many pens of the straight
+    //                           continuation of the tick's own end direction (cut at the first violation).
+    //   `MK_TICK_RIM_GROW`    — TONE LENGTH: total growth <= this fraction of the tick's own drawn length
+    //                           (length carries tone; clamped, shared between both ends).
+    // The two `_OFF` switches exist only so the mutation tests can remove each guard.
+    const MK_TICK_RIM_DEV_PEN = 0.5;
+    const MK_TICK_RIM_GROW = 0.6;
+    const MK_TICK_RIM_STRAIGHT_OFF = false;
+    const MK_TICK_RIM_GROW_OFF = false;
+    const MK_TICK_RIM_BOTH_OFF = false;
+    const MK_TICK_RIM_TAPER_OFF = false;
+    // T2-8b-5c: max change of the extension fraction between neighbouring ticks of a run; and its mutation switch.
+    const MK_TICK_RIM_COH = 0.15;
+    const MK_TICK_RIM_COH_OFF = false;
+    // T2-8b-5c: a run of >= STRIP_N ticks whose rim gap changes by < STRIP_SLOPE mm per tick is a strip, held back whole.
+    const MK_TICK_RIM_STRIP_N = 10;
+    const MK_TICK_RIM_STRIP_SLOPE = 0.12;
+    const MK_TICK_RIM_STRIP_OFF = false;
+    // T2-8b-5c: a run of n ticks extends by at most ISO_MM x n (a lone tick cannot stick out of the edge).
+    const MK_TICK_RIM_ISO_MM = 0.45;
+    const MK_TICK_RIM_ISO_OFF = false;
+    // T2-8b-5c NO HOOK: max bend (degrees) at the join and between appended segments; mutation switch.
+    const MK_TICK_RIM_JOIN_DEG = 8;
+    const MK_TICK_RIM_HOOK_OFF = false;
+    // T2-8b-5c: a gain up to this is extended in full; between it and MAX_MM the extension fades to 0.
+    const MK_TICK_RIM_FULL_MM = 1.6;
     //   `MK_TICK_BC_APEX_MIN`  — T2-8b-3c: the APEX floor, in pens (1.0 = 0.3 mm). Where a
     //   `MK_TICK_BC_APEX_J`      chain is CLOSING into a wedge, its last ticks may be shorter
     //   `MK_TICK_BC_APEX_TAPER`  than the plot floor (0.69 mm) and even than the 0.6 mm crumb
@@ -2813,6 +2913,8 @@
       // cross-row wedge (a site scores fully covered the instant it draws
       // ANY tick inside its own cell), not because it is being re-trusted.
       tickSites: [],
+      // T2-8b-5c — per rim-extension candidate tick: [lineIndex, a, rowIdx, gainUp (-1: none), extUp, gainDn (-1), extDn] (mm).
+      rimExt: [],
       // W-06b (T4) — the deepest state of `mkDashRamp`'s dissolution ramp
       // (dot -> dash -> unbroken ruling -> BAND) any placed mark reached
       // this render: the count of parallel passes in one mark. 1 = never
@@ -2851,6 +2953,8 @@
     // every mapper has run: running them inline changed later rulings' clip
     // outcomes (site records moved on 10 of 24 measured runs).
     const mkEndQ = [];
+    // T2-8b-5 — the deferred rim-strip extension queue (see `MK_TICK_RIM_MAX_MM`), flushed before `mkEndQ`.
+    const mkExtQ = [];
     // T2-8 — set (and cleared) only by `emitTickWedgeRow`, around its own
     // `emitLine` call, while a §C5 wedge row's own ruling is being walked.
     // Read below, where `layMark`'s tick block decides the MAIN tick's clip
@@ -2996,9 +3100,17 @@
     // with a 38 L*/mm highlight falloff, which is that bug and nothing else.) So
     // each shape states its capacity, the tone solve clamps to it, and a law that
     // saturates saturates honestly — visibly, in the numbers — instead of lying.
+    // U4b item 8: the Dot size / Dot angle keys reach the dot screen's disc.
+    // Both are ABSENT/0 by default, which is today's output exactly: the disc
+    // radius is 0.58 of its cell, and Dot size (an absolute radius, default 0.7)
+    // scales that share around its own default; Dot angle winds the spiral's
+    // start. A disc past ~1.0 of its cell would overlap its neighbours, so the
+    // scale is capped.
+    const dotScreenScale = () => (Number.isFinite(opts.dotSize) ? clamp(opts.dotSize / 0.7, 0.25, 1.5) : 1);
+    const DOT_SCREEN_TWIST = (finite(opts.dotAngle, 0) * Math.PI) / 180;
     const mkCap = (kind, R, w) => {
       const nCap = Math.max(1, Math.floor((0.98 * R) / w));
-      if (kind === 'disc') { const r = 0.58 * R; return (Math.PI * r * r) / w; }
+      if (kind === 'disc') { const r = 0.58 * R * dotScreenScale(); return (Math.PI * r * r) / w; }
       if (kind === 'lozenge') {
         const k = 0.42; const A = (0.50 * R) / k; const per = 4 * Math.sqrt(1 + k * k);
         let acc = 0;
@@ -3031,7 +3143,7 @@
         // FILLS. Length of the spiral to angle φ is w·φ²/(4π), so the radius the
         // tone asks for inverts in closed form; the cap is half the row pitch,
         // at which point neighbouring discs touch and the field is solid.
-        const rMax = 0.58 * R;
+        const rMax = 0.58 * R * dotScreenScale();
         let phi = Math.sqrt((4 * Math.PI * Math.max(0, L)) / w);
         if ((w * phi) / (2 * Math.PI) > rMax) phi = (2 * Math.PI * rMax) / w;
         if (phi < Math.PI) return [[[-L / 2, 0], [L / 2, 0]]];   // a dot, not a disc
@@ -3039,7 +3151,7 @@
         const dphi = Math.PI / 7;
         for (let t = 0; t <= phi; t += dphi) {
           const r = (w * t) / (2 * Math.PI);
-          pts.push([r * Math.cos(t), r * Math.sin(t)]);
+          pts.push([r * Math.cos(t + DOT_SCREEN_TWIST), r * Math.sin(t + DOT_SCREEN_TWIST)]);
         }
         return [pts];
       }
@@ -3352,7 +3464,7 @@
     const adjThreshold = (k, lineIndex, arc) => {
       const base = k + 0.5;
       if (TONE_ALGO !== 'bundleDither') return base;
-      const ph = (Number(lineIndex) || 0) * 0.6180339887498949
+      const ph = (Number(lineIndex) || 0) * 0.6180339887498949 + SEED.phase
         + (finite(arc, 0) / ADJ_DITHER_MM);
       return base + ADJ_DITHER_AMPL * Math.sin(ph * Math.PI * 2);
     };
@@ -3452,8 +3564,9 @@
     // whiteBand's and makes the difference between them purely directional. An
     // un-normalised nib would just be whiteBand a third lighter, which measures
     // as a worse whiteBand and says nothing about direction.
-    const NIB_DEG = 45;          // the nib axis, in SCREEN space (the calligraphic 45°)
-    const NIB_FLOOR = 0.35;      // the nib's corner: the narrowest mark it can make
+    // U6: `nibAngleDeg` / `nibContrast` (contrast = 1 - floor) override the two literals.
+    const NIB_DEG = fcNum('nibAngleDeg') ?? 45;          // the nib axis, in SCREEN space (the calligraphic 45°)
+    const NIB_FLOOR = fcNum('nibContrast') !== undefined ? 1 - fcNum('nibContrast') : 0.35;      // the nib's corner: the narrowest mark it can make
     const NIB_MEAN = NIB_FLOOR + (1 - NIB_FLOOR) * (2 / Math.PI);
     const nibFactor = (theta) => {
       if (!Number.isFinite(theta)) return 1;
@@ -3482,9 +3595,10 @@
     //
     // Nothing is dropped and no run is shortened: a taper is a width, so the
     // ruling still runs end to end and the free-end count stays at zero.
-    const TAPER_MM = 3.5;        // how far in from a run's own end the taper reaches
-    const TAPER_FLOOR = 0.42;    // width at the very end, as a share of the tone's ask
-    const TAPER_SOFT = 0.09;     // softness of the light-end clamp, in grey units
+    // U6: `taperLength` / `taperTipWidth` / `taperSoftness` override the three literals.
+    const TAPER_MM = fcNum('taperLength') ?? 3.5;        // how far in from a run's own end the taper reaches
+    const TAPER_FLOOR = fcNum('taperTipWidth') ?? 0.42;    // width at the very end, as a share of the tone's ask
+    const TAPER_SOFT = fcNum('taperSoftness') ?? 0.09;     // softness of the light-end clamp, in grey units
     const softClamp = (v, lo, hi) => {
       // Smooth max then smooth min, both by the log-sum-exp softening. k is in
       // grey units, so the corner is rounded over TAPER_SOFT of the range.
@@ -4171,9 +4285,9 @@
     // family at div 2 rules at twice the pitch and every pitch-correct quantity
     // downstream follows without being told.
     const PEN_FAMILIES = {
-      penScreen: [{ layer: 1, deg: 60, div: 1 }, { layer: 2, deg: 120, div: 1 }],
+      penScreen: [{ layer: 1, deg: CROSS_MARK_DEG, div: 1 }, { layer: 2, deg: 2 * CROSS_MARK_DEG, div: 1 }],
       penOctaves: [{ layer: 1, deg: 0, div: 2 }, { layer: 2, deg: 0, div: 4 }],
-      penCross: [{ layer: 1, deg: 60, div: 2 }],
+      penCross: [{ layer: 1, deg: CROSS_MARK_DEG, div: 2 }],
       penReserve: [{ layer: 1, deg: 90, div: 1 }],
     };
     // The pen each LAYER of a multi-family law draws with.
@@ -4315,7 +4429,7 @@
     // own end, so the wave dies BEFORE the silhouette rather than at it.
     const WV_PITCH_PEN = 10;      // reserved pitch, in pen widths (whiteBand: 7.06)
     const WV_DARK_AREA = 0.92;    // the core shadow's delivered ink area
-    const WV_LAMBDA_PEN = 7.3;    // wavelength, in pen widths (2.2 mm at 0.3)
+    const WV_LAMBDA_PEN = fcNum('waveLength') ?? 7.3;    // wavelength, in pen widths (2.2 mm at 0.3); U6 `waveLength`
     const WV_AMAX = 0.42;         // peak amplitude, as a share of the reserved pitch
     const WV_I0 = 0.62;           // radiance above which the family is a plain ruling
     const WV_TAPER_MM = 2.0;      // the wave eases to nothing this far from a run end
@@ -4414,7 +4528,11 @@
     const isWv6 = () => WV6[TONE_ALGO] != null;
     // 'jit' is anti-phase with a walk ON TOP, so its closest approach is still
     // governed by the crest-into-trough geometry. Stated once, read everywhere.
-    const wv6Anti = () => { const c = wv6(); return !!c && (c.ph === 'anti' || c.ph === 'jit'); };
+    const wv6Anti = () => {
+      const c = wv6();
+      const k = WAVE_CREST_ASKED || (c && c.ph);
+      return !!c && (k === 'anti' || k === 'jit');
+    };
     const wvOctaveLaw = () => TONE_ALGO === 'hilbertDepth' || TONE_ALGO === 'nestedOctaves'
       || (isWv6() && wv6().dep === 1);
     // 'onePenDown' does NOT split along the line — a chain of abutting sub-paths
@@ -4582,18 +4700,20 @@
     const wvLinePhase = (lineIndex) => {
       const ord = Math.round((Number(lineIndex) || 0) * wvFlatCov());
       const c6 = wv6();
-      if (c6) {
-        if (c6.ph === 'anti') return Math.PI * ord;
+      // U6: `waveCrest` overrides the phase the law was built with (absent = the law's own).
+      const phk = WAVE_CREST_ASKED || (c6 ? c6.ph : null);
+      if (c6 || WAVE_CREST_ASKED) {
+        if (phk === 'anti') return Math.PI * ord;
         // 'weaveJitter' — anti-phase PLUS a bounded golden walk. Strict
         // alternation makes the crest rows PERIODIC, and a periodic crest row
         // is a periodic white lozenge between it and its neighbour: the eye
         // finds a lattice even where no single gap is wide. The walk is capped
         // at WV6_JIT of a period so the interlock survives it.
-        if (c6.ph === 'jit') return Math.PI * ord + 2 * Math.PI * WV6_JIT * ((ord * GOLDEN_STEP) % 1);
+        if (phk === 'jit') return Math.PI * ord + 2 * Math.PI * WV6_JIT * ((ord * GOLDEN_STEP) % 1);
         // 'ampPhaseWalk' — no alternation at all, only decorrelation. Every
         // ruling starts somewhere else in the period, so neighbouring crests
         // are never in register and the residual white cannot line up.
-        if (c6.ph === 'walk') return 2 * Math.PI * ((ord * GOLDEN_STEP) % 1);
+        if (phk === 'walk') return 2 * Math.PI * ((ord * GOLDEN_STEP) % 1);
         return 0;
       }
       if (TONE_ALGO === 'interlockWeave') return Math.PI * ord;
@@ -4968,7 +5088,7 @@
     // A quantisation step that lands on the same value for every neighbouring
     // ruling is what reads as a band; one that walks is a texture.
     const wDithered = (w, lineIndex) => {
-      const u = ((Number(lineIndex) || 0) * 0.6180339887498949) % 1;
+      const u = ((Number(lineIndex) || 0) * 0.6180339887498949 + SEED.phase) % 1;
       return clamp(w * (1 + W_DITHER * (u - 0.5) * 2), W_MIN, W_MAX);
     };
     // The per-sample weight the emitter records.
@@ -5120,12 +5240,25 @@
     // THE FIELD ITSELF: radiance → wanted clearance, in millimetres of screen.
     // Continuous everywhere, monotone in I by construction (every branch is a
     // monotone map of a monotone map), and it is the ONLY place tone is decided.
+    const CF_SIGMOID_VARIANTS = {
+      contFieldFore: 1, contFieldSurface: 1, contFieldQuant: 1, contFieldTouch: 1,
+    };
     const cfWantedPitch = (I) => {
       const pMin = cfTightPitch();
       const pMax = cfOpenPitch();
       const x = clamp(finite(I, 0), 0, 1);
       if (TONE_ALGO === 'contFieldEase') return pMin + (pMax - pMin) * ease(x);
-      if (TONE_ALGO === 'contFieldSigmoid') return pMin + (pMax - pMin) * sterzik(x);
+      // U4b item 4: the Sterzik curve is the survivor's OWN curve. Choosing a
+      // Field metric / Field floor sub-option resolves to contFieldFore /
+      // Surface / Quant / Touch, and those used to fall through to L*-linear —
+      // silently changing the curve as well as the metric. They keep the
+      // sigmoid now. A document migrated from the retired ids carries
+      // `fieldCurve:'lstar'` (params.js alias shim) and keeps its original
+      // L*-linear look.
+      if (TONE_ALGO === 'contFieldSigmoid'
+        || (CF_SIGMOID_VARIANTS[TONE_ALGO] === 1 && opts.fieldCurve !== 'lstar')) {
+        return pMin + (pMax - pMin) * sterzik(x);
+      }
       const a = cfAreaForTone(x, inkWidth() / pMin, inkWidth() / pMax);
       return clamp(inkWidth() / Math.max(1e-6, a), pMin, pMax);
     };
@@ -5144,8 +5277,14 @@
     // span-verdict a flat 1 for these three (see below) and nothing
     // downstream ever drops a ruling again — only WHERE the next one lands
     // moves.
+    // U4b item 5: `perceptualRamp` (Ladder > Rung detail > Perceptual ramp) joins
+    // the family. It used to return its coverage into the DISCRETE rung verdict,
+    // which reintroduced exactly the 1-and-2-pitch gaps W-26 removed. Only its
+    // tone TARGET (`perceptualCov`) survives; the placement is the continuous
+    // walk, like its three siblings.
     const isEvenLadder = () => TONE_ALGO === 'ladder' || TONE_ALGO === 'fineLadder'
-      || TONE_ALGO === 'phaseFineLadder' || TONE_ALGO === 'deepFillTSP';
+      || TONE_ALGO === 'phaseFineLadder' || TONE_ALGO === 'deepFillTSP'
+      || TONE_ALGO === 'perceptualRamp';
     // The tone TARGET is exactly what each law computed before this round —
     // ONLY the placement changes. `phaseFineLadder`'s `nestedCov` wants the
     // per-sample DRAWN pitch as its second argument, so a family already
@@ -5163,6 +5302,7 @@
       let cov;
       if (TONE_ALGO === 'fineLadder') cov = fineLadderCov(x);
       else if (TONE_ALGO === 'phaseFineLadder') cov = nestedCov(x, masterPitch);
+      else if (TONE_ALGO === 'perceptualRamp') cov = perceptualCov(x, masterPitch);
       else cov = coverageForSample(x);
       // THE SAME O6 SPARSE-END BAR the discrete ladder's own per-span
       // verdict charges (`litSpanFloor`, in `emitLineOnce`), applied to the
@@ -5686,8 +5826,8 @@
 
     // Sample the surface at (a,b) → screen point + front flag + Lambert intensity.
     const sampleAt = (a, b) => {
-      const aa = clamp(a, 0, 1);
-      const bb = clamp(b, 0, 1);
+      const aa = clamp01(a);
+      const bb = clamp01(b);
       const p0 = chart(aa, bb);
       // FORWARD DIFFERENCE, WITH A BACKWARD FALLBACK ON THE DOMAIN EDGE.
       //
@@ -5731,8 +5871,8 @@
       nLocal = mul(nLocal, 1 / nl);
       if (chartOrientation() < 0) nLocal = mul(nLocal, -1); // outward (see chartOrientation)
       const world = applyTransform(p0, t);
-      const wN = normalize(rotatePoint(nLocal, rot));
-      const camN = rotatePoint(wN, cam);
+      const wN = normalize(rotObj(nLocal));
+      const camN = rotCam(wN);
       const scr = projectWorld(world);
       if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
       // Screen-space derivatives of the parameter square. A wrapped family's
@@ -5758,6 +5898,119 @@
       // the silhouette, so it is the exact, projection-correct measure of "how
       // close to the contour is this sample" — used by the limb taper below.
       return { x: scr.x, y: scr.y, z: scr.z, front: camN.z > 0, nz: camN.z, I, S, wN, world, dA, dB };
+    };
+
+    // camera-space z of the unit world normal of the local normal (nx, ny, nz); bit-identical to
+    // `rotatePoint(normalize(rotatePoint(n, rot)), cam).z` (roll never changes z, so it is not applied the second time).
+    const camZOfNormal = (nx, ny, nz) => {
+      if (!rotT || !camT) return rotatePoint(normalize(rotatePoint(v(nx, ny, nz), rot)), cam).z;
+      const x1 = nx * rotT.cy + nz * rotT.sy;
+      const z1 = -nx * rotT.sy + nz * rotT.cy;
+      const y2 = ny * rotT.cp - z1 * rotT.sp;
+      const z2 = ny * rotT.sp + z1 * rotT.cp;
+      const x3 = x1 * rotT.cr - y2 * rotT.sr;
+      const y3 = x1 * rotT.sr + y2 * rotT.cr;
+      // normalize: len = |a| || 1, then divide
+      const len = Math.hypot(x3, y3, z2) || 1;
+      const wx = x3 / len; const wy = y3 / len; const wz = z2 / len;
+      const z1c = -wx * camT.sy + wz * camT.cy;
+      return wy * camT.sp + z1c * camT.cp;
+    };
+
+    // T2-8b-5d (perf, no output change) — `frontAt(a, b)`: the facing of `sampleAt(a, b)` and nothing else.
+    // Returns `true` / `false` for `sampleAt(a, b).front`, and `null` exactly where `sampleAt` returns null.
+    // The outline probes of the rim-strip pass (`edgeClear`, `ringClear`) read ONLY "is there a sample, and does it
+    // face the way the object does", and made up ~60 % of the pass; this skips the two extra screen
+    // derivatives, the tone and the specular terms that `sampleAt` also builds. Every branch that can return
+    // null in `sampleAt` is kept in the same order; the facing is computed with the same operations.
+    const frontAt = (a, b) => {
+      const aa = clamp01(a);
+      const bb = clamp01(b);
+      const p0 = chart(aa, bb);
+      const aFwd = aa + EPS <= 1;
+      const bFwd = bb + EPS <= 1;
+      const sgnA = aFwd ? 1 : -1;
+      const sgnB = bFwd ? 1 : -1;
+      const pa = chart(aFwd ? aa + EPS : aa - EPS, bb);
+      const pb = chart(aa, bFwd ? bb + EPS : bb - EPS);
+      if (!p0 || !pa || !pb) return null;
+      // (scalar form of mul(sub(pa, p0), sgnA) etc.: the same operations in the same order, without the temporaries)
+      let ax = (pa.x - p0.x) * sgnA; let ay = (pa.y - p0.y) * sgnA; let az = (pa.z - p0.z) * sgnA;
+      let bx = (pb.x - p0.x) * sgnB; let by = (pb.y - p0.y) * sgnB; let bz = (pb.z - p0.z) * sgnB;
+      let nx = ay * bz - az * by; let ny = az * bx - ax * bz; let nz = ax * by - ay * bx;
+      let nl = Math.hypot(nx, ny, nz);
+      if (nl < 1e-9) {
+        const ai = clamp(aa, EPS * 2, 1 - EPS * 2);
+        const bi = clamp(bb, EPS * 2, 1 - EPS * 2);
+        const q0 = chart(ai, bi);
+        const qa = chart(clamp(ai + EPS, 0, 1), bi);
+        const qb = chart(ai, clamp(bi + EPS, 0, 1));
+        if (!q0 || !qa || !qb) return null;
+        ax = qa.x - q0.x; ay = qa.y - q0.y; az = qa.z - q0.z;
+        bx = qb.x - q0.x; by = qb.y - q0.y; bz = qb.z - q0.z;
+        nx = ay * bz - az * by; ny = az * bx - ax * bz; nz = ax * by - ay * bx;
+        nl = Math.hypot(nx, ny, nz);
+        if (nl < 1e-9) return null;
+      }
+      const inv = 1 / nl;
+      nx *= inv; ny *= inv; nz *= inv;
+      if (chartOrientation() < 0) { nx *= -1; ny *= -1; nz *= -1; }
+      const world = applyTransform(p0, t);
+      const camZ = camZOfNormal(nx, ny, nz);
+      const scr = projectWorld(world);
+      if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
+      return camZ > 0;
+    };
+
+    // T2-8b-5d (perf, no output change) — `sampleLite(a, b)`: `sampleAt` without the tone (`I`) and specular (`S`)
+    // terms, which the rim-strip pass never reads (its `at` needs the position, the facing and the screen
+    // derivatives `dA`/`dB` that `frameFrom` builds from). Same null conditions and the same values for
+    // the fields it returns (`x`, `y`, `z`, `front`, `dA`, `dB`).
+    const sampleLite = (a, b) => {
+      const aa = clamp01(a);
+      const bb = clamp01(b);
+      const p0 = chart(aa, bb);
+      const aFwd = aa + EPS <= 1;
+      const bFwd = bb + EPS <= 1;
+      const sgnA = aFwd ? 1 : -1;
+      const sgnB = bFwd ? 1 : -1;
+      const pa = chart(aFwd ? aa + EPS : aa - EPS, bb);
+      const pb = chart(aa, bFwd ? bb + EPS : bb - EPS);
+      if (!p0 || !pa || !pb) return null;
+      let ax = (pa.x - p0.x) * sgnA; let ay = (pa.y - p0.y) * sgnA; let az = (pa.z - p0.z) * sgnA;
+      let bx = (pb.x - p0.x) * sgnB; let by = (pb.y - p0.y) * sgnB; let bz = (pb.z - p0.z) * sgnB;
+      let nx = ay * bz - az * by; let ny = az * bx - ax * bz; let nz = ax * by - ay * bx;
+      let nl = Math.hypot(nx, ny, nz);
+      if (nl < 1e-9) {
+        const ai = clamp(aa, EPS * 2, 1 - EPS * 2);
+        const bi = clamp(bb, EPS * 2, 1 - EPS * 2);
+        const q0 = chart(ai, bi);
+        const qa = chart(clamp(ai + EPS, 0, 1), bi);
+        const qb = chart(ai, clamp(bi + EPS, 0, 1));
+        if (!q0 || !qa || !qb) return null;
+        ax = qa.x - q0.x; ay = qa.y - q0.y; az = qa.z - q0.z;
+        bx = qb.x - q0.x; by = qb.y - q0.y; bz = qb.z - q0.z;
+        nx = ay * bz - az * by; ny = az * bx - ax * bz; nz = ax * by - ay * bx;
+        nl = Math.hypot(nx, ny, nz);
+        if (nl < 1e-9) return null;
+      }
+      const inv = 1 / nl;
+      nx *= inv; ny *= inv; nz *= inv;
+      if (chartOrientation() < 0) { nx *= -1; ny *= -1; nz *= -1; }
+      const world = applyTransform(p0, t);
+      const camZ = camZOfNormal(nx, ny, nz);
+      const scr = projectWorld(world);
+      if (!scr || !Number.isFinite(scr.x) || !Number.isFinite(scr.y)) return null;
+      let dA = null; let dB = null;
+      if (useLadder) {
+        const sa = projectWorld(applyTransform(pa, t));
+        const sb = projectWorld(applyTransform(pb, t));
+        if (sa && sb && Number.isFinite(sa.x) && Number.isFinite(sb.x)) {
+          dA = { x: ((sa.x - scr.x) / EPS) * sgnA, y: ((sa.y - scr.y) / EPS) * sgnA };
+          dB = { x: ((sb.x - scr.x) / EPS) * sgnB, y: ((sb.y - scr.y) / EPS) * sgnB };
+        }
+      }
+      return { x: scr.x, y: scr.y, z: scr.z, front: camZ > 0, dA, dB };
     };
 
     // PERPENDICULAR screen pitch between adjacent rulings at this sample.
@@ -6006,6 +6259,7 @@
     // Deterministic 2D hash (mirrors geometry3d strokeHash) for stippleOut.
     const sfHash = (a, b) => {
       let h = ((a | 0) * 73856093) ^ ((b | 0) * 19349663);
+      h ^= SEED.salt; // Scene Seed — 0 for a legacy layer ⇒ identity
       h ^= h >>> 13; h = Math.imul(h, 1274126177); h ^= h >>> 16;
       return (h >>> 0) / 4294967296;
     };
@@ -6403,7 +6657,7 @@
       const w = inkWidth();
       const PMIN = MK_PMIN();
       const li = Number(lineIndex) || 0;
-      const gold = ((li * GOLDEN_STEP) % 1 + 1) % 1;
+      const gold = ((li * GOLDEN_STEP + SEED.phase) % 1 + 1) % 1;
       const parity = ((li % 2) + 2) % 2;
 
       // W-05b — split into a pure function of (sample, along-dir, step-dir,
@@ -6526,6 +6780,9 @@
       // walked edges' length in the flat local frame, ≈ `sv.L` by
       // construction — exact when the pass sits on the ruling itself);
       // `drawnLen` is what actually landed on the curved surface.
+      // T2-8b-5b — the TRUE HUB of the last walked pass (frame + point), read by `extendTick` so its
+      // end walk starts where the tick's own arms started (the nominal one-jump hub is up to ~0.19 mm off).
+      let mkLastHub = null;
       const walkPoly = (fr0, uOff, theta, poly, stepCapMM) => {
         const c = Math.cos(theta || 0); const sn = Math.sin(theta || 0);
         const toUV = (pt) => ({
@@ -6662,6 +6919,7 @@
         let drawnLen = 0;
         for (let i = 1; i < pts.length; i += 1) drawnLen += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
         if (pts.length < 2) return { pts: null, askLen: 0, drawnLen: 0, truncated: false };
+        mkLastHub = { fr: hubFr, sm: hubPt };
         return { pts, askLen, drawnLen, truncated };
       };
 
@@ -7064,7 +7322,7 @@
           const iP5 = iOf(0.5 * aP); const iM5 = iOf(-0.5 * aM);
           const darkPlus = (iP5 != null && iM5 != null) ? (iP5 < iM5) : true;
           const gg = gutter / n;
-          const uu5 = ((k * 0.6180339887498949) % 1 + 1) % 1;
+          const uu5 = ((k * 0.6180339887498949 + SEED.phase) % 1 + 1) % 1;
           const shift = n > 1 ? (uu5 - 0.5) * 0.5 * gg : 0;
           const wts = []; let wsum = 0;
           for (let j = 0; j < n; j += 1) { const wj = MK_TICK_CHAIN_RHO ** j; wts.push(wj); wsum += wj; }
@@ -7342,7 +7600,13 @@
             mkClipArm.rm = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             mkClipArm.rp = (si === mainIdx && !mkWedgeActive) ? MK_TICK_MAIN_CLIP_FRAC * mkInkR : 0;
             const pieceLen = place(fr, [poly], a - arcMM[k], thetaAt(k, fr));
-            if (si === mainIdx) { mkMainRun = pieceLen ? mkLastRun : null; }
+            if (si === mainIdx) {
+              mkMainRun = pieceLen ? mkLastRun : null;
+              if (pieceLen && law.shape === 'tick' && sv.I < MK_TICK_BC_HI_I) {
+                const runX = mkMainRun; const uX = a - arcMM[k]; const sgX = [seg[0], seg[1]]; const frX = fr; const hubX = mkLastHub;
+                const liX = lineIndex; const aX = a; mkExtQ.push(() => ({ li: liX, a: aX, plan: planTick(frX, uX, sgX, runX, hubX) }));
+              }
+            }
             mkClipArm.m = false; mkClipArm.p = false; mkClipArm.rm = 0; mkClipArm.rp = 0;
             if (si === mainIdx) mkStat.tickSites.push(sv.I, sv.R, sv.P, pieceLen ? 1 : 0);
             if (pieceLen) {
@@ -7378,6 +7642,264 @@
         }
       };
 
+      // T2-8b-5 — the BC-E clearance toolkit (local-frame step `at`, other-row ink query,
+      // outline probe, and the bisected end walk `arm`), shared by `bcSide` and the rim-strip
+      // extension `extendTick`. `fr0` supplies the frame parameters (ld, st).
+      const bcTools = (fr0, lite) => {
+        const cE = MK_TICK_BC_EDGE_PEN * w; const cB = MK_TICK_BC_BAND_PEN * w; const admitR = MK_TICK_BC_ADMIT_PEN * w;
+        const at = (fr, du, dv) => {
+          const pp = fr.toParam(du, dv);
+          if (!(pp.a >= 0 && pp.a <= 1)) return null;
+          let bb = pp.b;
+          if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return null; bb = ((bb % 1) + 1) % 1; }
+          const sm = lite ? sampleLite(pp.a, bb) : sampleAt(pp.a, bb);
+          if (!sm || sm.front !== wantFront) return null;
+          const f = frameFrom(sm, fr0.ld, fr0.st, { a: pp.a, b: bb });
+          return f ? { sm, fr: f } : null;
+        };
+        const nb = Math.max(1, Math.ceil(Math.max(cB, admitR) / mkInkR));
+        const inkPre = wantFront ? '1:' : '0:'; // (same keys as `mkInkKey`, built without the template literal per cell)
+        const inkWithin = (x, y, r, anyLi) => {
+          const cx = Math.floor(x / mkInkR); const cy = Math.floor(y / mkInkR);
+          for (let dx = -nb; dx <= nb; dx += 1) {
+            const colKey = inkPre + (cx + dx) + ',';
+            for (let dy = -nb; dy <= nb; dy += 1) {
+              const bucket = mkInk.get(colKey + (cy + dy));
+              if (!bucket) continue;
+              for (let h = 0; h < bucket.length; h += 1) {
+                if ((anyLi || bucket[h].li !== lineIndex) && Math.hypot(bucket[h].x - x, bucket[h].y - y) < r) return true;
+              }
+            }
+          }
+          return false;
+        };
+        const edgeClear = (fr) => {
+          for (let q = 0; q < MK_TICK_BC_PROBES; q += 1) {
+            const th = (2 * Math.PI * q) / MK_TICK_BC_PROBES;
+            const pp = fr.toParam(Math.cos(th) * cE, Math.sin(th) * cE);
+            if (!(pp.a >= 0 && pp.a <= 1)) return false;
+            let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+            if (frontAt(pp.a, bb) !== wantFront) return false;
+          }
+          return true;
+        };
+        let why = '';
+        const clear = (h) => {
+          if (!h) { why = 'S'; return false; }
+          if (!edgeClear(h.fr)) { why = 'E'; return false; }
+          if (inkWithin(h.sm.x, h.sm.y, cB, false)) { why = 'I'; return false; }
+          return true;
+        };
+        // `have` (planTick only): the tick's own drawn length on this side. planTick reads an arm ONLY as
+        // "stopped for reason E beyond `have`" (gain = len - have). A stop for any other reason, or an E stop that
+        // lies inside the tick's own length (gain <= 0), is read as "no gain" whatever its length, so those skip the
+        // 6-step bisection (about 100 surface samples). bcSide passes no `have` and still bisects every stop.
+        const arm = (h0, sgn, maxLen, have) => {
+          let h = h0; let len = 0; let d0 = null; const pts = [];
+          while (len < maxLen - 1e-9) {
+            // per-arm step ceiling (`MK_MAX_WALK_STEPS`): a fine pen must not grow the point count
+            const st = Math.min(Math.max(MK_ARC_MM, maxLen / MK_MAX_WALK_STEPS), maxLen - len);
+            const nx = at(h.fr, 0, sgn * st);
+            let ok = !!nx && Math.hypot(nx.sm.x - h.sm.x, nx.sm.y - h.sm.y) <= MK_TICK_STEP_CAP_MM;
+            if (ok) {
+              const sx = nx.sm.x - h.sm.x; const sy = nx.sm.y - h.sm.y; const sl = Math.hypot(sx, sy);
+              if (sl > 1e-9) {
+                if (!d0) d0 = { x: sx / sl, y: sy / sl };
+                else if ((sx * d0.x + sy * d0.y) / sl < Math.cos((MK_TICK_BEND_CUT * Math.PI) / 180)) ok = false;
+              }
+            }
+            if (ok && clear(nx)) { h = nx; len += st; pts.push({ x: nx.sm.x, y: nx.sm.y, z: nx.sm.z }); continue; }
+            const reason = ok ? why : 'S';
+            if (have !== undefined && (reason !== 'E' || len + st <= have)) return { len, stopped: true, reason, pts };
+            let a = 0; let b = st;
+            for (let it = 0; it < MK_TICK_BC_BISECT; it += 1) {
+              const m = 0.5 * (a + b); const q = at(h.fr, 0, sgn * m); if (q && clear(q)) a = m; else b = m;
+            }
+            { const qa = a > 1e-4 ? at(h.fr, 0, sgn * a) : null; if (qa) { len += a; pts.push({ x: qa.sm.x, y: qa.sm.y, z: qa.sm.z }); } }
+            return { len, stopped: true, reason, pts };
+          }
+          return { len, stopped: false, reason: 'C', pts };
+        };
+        return { at, inkWithin, clear, arm };
+      };
+
+      // ── T2-8b-5 — rim-strip extension of a regular tick's outline-facing ends ──
+      const planTick = (fr, uO, seg, run, hub) => {
+        if (!run || run.length < 3 || !hub) return;
+        const T = bcTools(fr, true);
+        const RPn = masterPitch / markRowCoverage();
+        // the tick's TRUE hub (the walk's own hub, where its two arms started), located in the drawn run.
+        // (A nominal one-jump hub `T.at(fr, uO, mid)` is up to ~0.19 mm laterally off on a curved ruling and
+        // put a visible jog at the join: T2-8b-5b measurement.)
+        const h0 = { fr: hub.fr, sm: hub.sm };
+        let iHub = -1; let best = Infinity;
+        for (let i = 0; i < run.length; i += 1) {
+          const d = Math.hypot(run[i].x - h0.sm.x, run[i].y - h0.sm.y);
+          if (d < best) { best = d; iHub = i; }
+        }
+        if (iHub < 1 || iHub > run.length - 2 || best > 1e-6) return;
+        const armLen = (i0, i1) => { let L = 0; for (let i = i0 + 1; i <= i1; i += 1) L += Math.hypot(run[i].x - run[i - 1].x, run[i].y - run[i - 1].y); return L; };
+        const lenUp = armLen(iHub, run.length - 1); const lenDn = armLen(0, iHub);
+        const room = Math.min(MK_TICK_RIM_MAX_MM, 2.05 * RPn - (lenUp + lenDn));
+        if (room < MK_TICK_RIM_MIN_MM) return;
+        // walk each half from the hub to the bisected c_E envelope; keep it only when the OUTLINE stops it
+        // beyond the present end (never shortens, never extends past an ink-stopped end).
+        // cheap prefilter: an end whose line is still on the front surface a full reach (extension + c_E)
+        // beyond it is nowhere near an outline; skip it before any 16-probe walk (this pass must stay
+        // affordable at d=220, where it sees thousands of ticks).
+        // T2-8b-5d: the arm can reach at most `room` past the tick's end, so only an outline within `room` + c_E
+        // (+ 0.2) of it can stop the arm for reason E; the prefilter looks no further (it used the 2.0 mm cap,
+        // about 0.6-0.9 mm more than `room` at d=220).
+        const reach = MK_TICK_RIM_MAX_MM + MK_TICK_BC_EDGE_PEN * w + 0.2; // ring radius (unchanged)
+        const reachLine = room + MK_TICK_BC_EDGE_PEN * w + 0.2;
+        const ringClear = (vEnd) => {
+          const he = T.at(fr, uO, vEnd); if (!he) return false;
+          // T2-8b-5c / 5d: four probes (E, N, W, S) on one ring at 0.75 x reach. This is the cheap half of the
+          // prefilter; the `lineClear` walk is the half that sees a rim whose far side wraps onto another
+          // front-facing sheet (create torus/hatch: candidacy stopped at a 1.4 mm gap, not at the 2.0 mm cap).
+          // A wider ring (4 radii x 12 probes) cost 6x v1.4.5 at torus d=220.
+          for (let q = 0; q < 4; q += 1) {
+            const th = (Math.PI * q) / 2;
+            const pp = he.fr.toParam(Math.cos(th) * reach * 0.75, Math.sin(th) * reach * 0.75);
+            if (!(pp.a >= 0 && pp.a <= 1)) return false;
+            let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
+            if (frontAt(pp.a, bb) !== wantFront) return false;
+          }
+          return true;
+        };
+        // T2-8b-5c: the linearised ring alone wraps onto another front-facing sheet on a tube and missed rims
+        // ~2 mm away (the candidacy then stopped at a ~1.4 mm gap and cut the rim edge into a step). Walk the
+        // tick's own line outward on the surface (frame re-derived each 0.5 mm, no ink/outline probes, so it
+        // is ~1/16 of an `arm` step): if it leaves the front surface within the reach, an outline is near.
+        const lineClear = (sgn, have) => {
+          let h = h0; let len = 0; const full = have + reachLine;
+          while (len < full) {
+            const st = Math.min(0.75, full - len);
+            const nx = T.at(h.fr, 0, sgn * st);
+            if (!nx) return false;
+            h = nx; len += st;
+          }
+          return true;
+        };
+        const nearUp = !(ringClear(seg[1]) && lineClear(1, lenUp));
+        const nearDn = !(ringClear(seg[0]) && lineClear(-1, lenDn));
+        if (!nearUp && !nearDn) return;
+        const none = { len: 0, stopped: false, reason: 'C', pts: [] };
+        const up = nearUp ? T.arm(h0, 1, lenUp + room, lenUp) : none;
+        const dn = nearDn ? T.arm(h0, -1, lenDn + room, lenDn) : none;
+        const gainUp = (up.stopped && up.reason === 'E') ? up.len - lenUp : 0;
+        const gainDn = (dn.stopped && dn.reason === 'E') ? dn.len - lenDn : 0;
+        // T2-8b-5c COHERENCE. Both factors below are CONTINUOUS functions of the wanted gains, so two
+        // neighbouring ticks (whose gains differ by the rim's slope) never differ by a step in the rim edge.
+        //  - NEVER RIM TO RIM: the extension is scaled by 1 - min/max of the two ends' gains, so a tick that
+        //    could reach both outlines is not pinned at both (equal gains -> 0, one-sided -> full).
+        //    (5b used a hard "both >= 0.1 -> skip", which made the one-sided ticks beside a skipped run a step.)
+        //  - TAPER: a gain between `MK_TICK_RIM_FULL_MM` and `MK_TICK_RIM_MAX_MM` fades to 0, so the edge does
+        //    not stop at the reach cap with a jump.
+        const gU = Math.max(0, gainUp); const gD = Math.max(0, gainDn);
+        const gMax = Math.max(gU, gD); const gMin = Math.min(gU, gD);
+        const fBoth = (MK_TICK_RIM_BOTH_OFF || !(gMax > 0)) ? 1 : 1 - gMin / gMax;
+        const taperF = (g) => (MK_TICK_RIM_TAPER_OFF ? 1 : Math.max(0, Math.min(1, (MK_TICK_RIM_MAX_MM - g) / (MK_TICK_RIM_MAX_MM - MK_TICK_RIM_FULL_MM))));
+        const fUp = fBoth * taperF(gU); const fDn = fBoth * taperF(gD);
+        // keep the tick's own points and APPEND only the part of the envelope walk beyond the present end
+        // (rebuilding the whole half from the hub put visible jogs mid-tick)
+        const beyond = (pts, have) => {
+          const out = []; let cum = 0; let prev = run[iHub];
+          for (let i = 0; i < pts.length; i += 1) {
+            cum += Math.hypot(pts[i].x - prev.x, pts[i].y - prev.y); prev = pts[i];
+            if (cum > have + 0.02) out.push(pts[i]);
+          }
+          return out;
+        };
+        // T2-8b-5b RULE 1 — STRAIGHT. The appended part may leave the tick's OWN end direction by at most
+        // `MK_TICK_RIM_DEV_PEN` pens (perpendicular distance from the straight continuation of the tick's
+        // last ~0.4 mm). It is cut at the first point that breaks that, so a curved ruling never gets a jog.
+        const devCut = !MK_TICK_RIM_STRAIGHT_OFF;
+        const straight = (add, endPt, backPt, prevVtx) => {
+          if (!devCut || !add.length) return add;
+          let tx = endPt.x - backPt.x; let ty = endPt.y - backPt.y; const tl = Math.hypot(tx, ty);
+          if (!(tl > 1e-6)) return [];
+          tx /= tl; ty /= tl;
+          const lim = MK_TICK_RIM_DEV_PEN * w; const keep = [];
+          // T2-8b-5c NO HOOK: the bend at the join (tick's last segment -> first appended segment) and between
+          // appended segments may not exceed `MK_TICK_RIM_JOIN_DEG`. A join that bends refuses the extension
+          // (keeps the original end); a later bend cuts the appended part there. (Sphere limb ticks are curved;
+          // T2-8b-5 / 5b joined them with up to 15.5 deg kinks.)
+          const cosJ = Math.cos((MK_TICK_RIM_JOIN_DEG * Math.PI) / 180);
+          const bendOk = (p0, p1, p2) => {
+            const ax = p1.x - p0.x; const ay = p1.y - p0.y; const bx = p2.x - p1.x; const by = p2.y - p1.y;
+            const la = Math.hypot(ax, ay); const lb = Math.hypot(bx, by);
+            return !(la > 1e-6 && lb > 1e-6) || (ax * bx + ay * by) / (la * lb) >= cosJ;
+          };
+          for (let i = 0; i < add.length; i += 1) {
+            const rx = add[i].x - endPt.x; const ry = add[i].y - endPt.y;
+            const along = rx * tx + ry * ty; const perp = Math.abs(rx * ty - ry * tx);
+            if (along <= 0 || perp > lim) break;
+            if (!MK_TICK_RIM_HOOK_OFF) {
+              const p0 = i === 0 ? prevVtx : add[i - 2] || endPt; const p1 = i === 0 ? endPt : add[i - 1];
+              if (!bendOk(p0, p1, add[i])) break;
+            }
+            keep.push(add[i]);
+          }
+          return keep;
+        };
+        const backOf = (fromEnd) => {
+          // the run point at least 0.4 mm of arc back from the end (or the far point if the run is shorter)
+          const n = run.length; let acc = 0;
+          for (let k = 1; k < n; k += 1) {
+            const a0 = fromEnd ? run[n - k] : run[k - 1]; const a1 = fromEnd ? run[n - k - 1] : run[k];
+            if (!a1) return a0;
+            acc += Math.hypot(a1.x - a0.x, a1.y - a0.y);
+            if (acc >= 0.4) return a1;
+          }
+          return fromEnd ? run[0] : run[n - 1];
+        };
+        const addUp0 = gainUp >= MK_TICK_RIM_MIN_MM ? straight(beyond(up.pts, lenUp), run[run.length - 1], backOf(true), run[run.length - 2]) : [];
+        const addDn0 = gainDn >= MK_TICK_RIM_MIN_MM ? straight(beyond(dn.pts, lenDn), run[0], backOf(false), run[1]) : [];
+        if (!addUp0.length && !addDn0.length) return null;
+        const polyLen = (arr, from) => { let L = 0; let prev = from; arr.forEach((q) => { L += Math.hypot(q.x - prev.x, q.y - prev.y); prev = q; }); return L; };
+        const clampTo = (arr, from, allow) => {
+          const out = []; let L = 0; let prev = from;
+          for (let i = 0; i < arr.length; i += 1) {
+            const sl = Math.hypot(arr[i].x - prev.x, arr[i].y - prev.y);
+            if (L + sl <= allow + 1e-9) { out.push(arr[i]); L += sl; prev = arr[i]; continue; }
+            const t = (allow - L) / sl;
+            if (t > 0.05) out.push({ x: prev.x + (arr[i].x - prev.x) * t, y: prev.y + (arr[i].y - prev.y) * t, z: prev.z });
+            break;
+          }
+          return out;
+        };
+        // The plan is APPLIED later by `applyPlan`, once the neighbour-coherence pass has fixed `phi` per end.
+        return {
+          phi0Up: addUp0.length ? fUp : -1, phi0Dn: addDn0.length ? fDn : -1,
+          gUp: gainUp, gDn: gainDn,
+          apply: (phiUp, phiDn, this_li, this_a, this_idx) => {
+            let addUp = addUp0; let addDn = addDn0;
+            const eU = run[run.length - 1]; const eD = run[0];
+            const wU0 = polyLen(addUp, eU); const wD0 = polyLen(addDn, eD);
+            if (addUp.length && phiUp < 1) addUp = clampTo(addUp, eU, wU0 * phiUp);
+            if (addDn.length && phiDn < 1) addDn = clampTo(addDn, eD, wD0 * phiDn);
+            // T2-8b-5b RULE 2 — TONE LENGTH. Growth <= `MK_TICK_RIM_GROW` of the tick's own drawn length,
+            // shared between its two ends in proportion to what each wants (continuous: clamped, not dropped).
+            const wantUp = polyLen(addUp, eU); const wantDn = polyLen(addDn, eD);
+            const budget = MK_TICK_RIM_GROW * (lenUp + lenDn);
+            if (!MK_TICK_RIM_GROW_OFF && wantUp + wantDn > budget + 1e-9) {
+              const sc = budget / (wantUp + wantDn);
+              addUp = clampTo(addUp, eU, wantUp * sc);
+              addDn = clampTo(addDn, eD, wantDn * sc);
+            }
+            if (polyLen(addUp, eU) < MK_TICK_RIM_MIN_MM) addUp = [];
+            if (polyLen(addDn, eD) < MK_TICK_RIM_MIN_MM) addDn = [];
+            mkStat.rimExt.push([this_li, this_a, this_idx, addUp0.length ? gainUp : -1, polyLen(addUp, eU), addDn0.length ? gainDn : -1, polyLen(addDn, eD)]);
+            if (!addUp.length && !addDn.length) return;
+            addUp.forEach((pt) => run.push(pt));
+            addDn.forEach((pt) => run.unshift(pt));
+            mkInkAdd(addUp); mkInkAdd(addDn);
+          },
+        };
+      };
+
+
       // ── T2-8b-3 — BC-E: band continuation with an endpoint envelope (tick-only, deferred) ──
       // See `MK_TICK_BC_MAXJ`. The lattice is CONTINUED past the span end `kB`/`aB`
       // with the boundary site's OWN P, phase (`aB +- j*P`), segs and tone. Each tick
@@ -7393,74 +7915,10 @@
         if (!(svB.I < MK_TICK_BC_HI_I)) return;
         const fr0 = frameAt(kB); if (!fr0) return;
         const LPF = MK_TICK_PLOT_FLOOR * MIN_MARK_MM;
-        const cE = MK_TICK_BC_EDGE_PEN * w; const cB = MK_TICK_BC_BAND_PEN * w; const admitR = MK_TICK_BC_ADMIT_PEN * w;
+        const admitR = MK_TICK_BC_ADMIT_PEN * w;
         let lo0 = Infinity; let hi0 = -Infinity;
         svB.segs.forEach((q) => { lo0 = Math.min(lo0, q[0]); hi0 = Math.max(hi0, q[1]); });
-        const at = (fr, du, dv) => {
-          const pp = fr.toParam(du, dv);
-          if (!(pp.a >= 0 && pp.a <= 1)) return null;
-          let bb = pp.b;
-          if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return null; bb = ((bb % 1) + 1) % 1; }
-          const sm = sampleAt(pp.a, bb);
-          if (!sm || sm.front !== wantFront) return null;
-          const f = frameFrom(sm, fr0.ld, fr0.st, { a: pp.a, b: bb });
-          return f ? { sm, fr: f } : null;
-        };
-        const nb = Math.max(1, Math.ceil(Math.max(cB, admitR) / mkInkR));
-        const inkWithin = (x, y, r, anyLi) => {
-          const cx = Math.floor(x / mkInkR); const cy = Math.floor(y / mkInkR);
-          for (let dx = -nb; dx <= nb; dx += 1) {
-            for (let dy = -nb; dy <= nb; dy += 1) {
-              const bucket = mkInk.get(`${wantFront ? 1 : 0}:${cx + dx},${cy + dy}`);
-              if (!bucket) continue;
-              for (let h = 0; h < bucket.length; h += 1) {
-                if ((anyLi || bucket[h].li !== lineIndex) && Math.hypot(bucket[h].x - x, bucket[h].y - y) < r) return true;
-              }
-            }
-          }
-          return false;
-        };
-        const edgeClear = (fr) => {
-          for (let q = 0; q < MK_TICK_BC_PROBES; q += 1) {
-            const th = (2 * Math.PI * q) / MK_TICK_BC_PROBES;
-            const pp = fr.toParam(Math.cos(th) * cE, Math.sin(th) * cE);
-            if (!(pp.a >= 0 && pp.a <= 1)) return false;
-            let bb = pp.b; if (bb < 0 || bb > 1) { if (bb < -0.25 || bb > 1.25) return false; bb = ((bb % 1) + 1) % 1; }
-            const z = sampleAt(pp.a, bb); if (!z || z.front !== wantFront) return false;
-          }
-          return true;
-        };
-        let why = '';
-        const clear = (h) => {
-          if (!h) { why = 'S'; return false; }
-          if (!edgeClear(h.fr)) { why = 'E'; return false; }
-          if (inkWithin(h.sm.x, h.sm.y, cB, false)) { why = 'I'; return false; }
-          return true;
-        };
-        const arm = (h0, sgn, maxLen) => {
-          let h = h0; let len = 0; let d0 = null;
-          while (len < maxLen - 1e-9) {
-            const st = Math.min(MK_ARC_MM, maxLen - len);
-            const nx = at(h.fr, 0, sgn * st);
-            let ok = !!nx && Math.hypot(nx.sm.x - h.sm.x, nx.sm.y - h.sm.y) <= MK_TICK_STEP_CAP_MM;
-            if (ok) {
-              const sx = nx.sm.x - h.sm.x; const sy = nx.sm.y - h.sm.y; const sl = Math.hypot(sx, sy);
-              if (sl > 1e-9) {
-                if (!d0) d0 = { x: sx / sl, y: sy / sl };
-                else if ((sx * d0.x + sy * d0.y) / sl < Math.cos((MK_TICK_BEND_CUT * Math.PI) / 180)) ok = false;
-              }
-            }
-            if (ok && clear(nx)) { h = nx; len += st; continue; }
-            const reason = ok ? why : 'S';
-            let a = 0; let b = st;
-            for (let it = 0; it < MK_TICK_BC_BISECT; it += 1) {
-              const m = 0.5 * (a + b); const q = at(h.fr, 0, sgn * m); if (q && clear(q)) a = m; else b = m;
-            }
-            if (a > 1e-4 && at(h.fr, 0, sgn * a)) len += a;
-            return { len, stopped: true, reason };
-          }
-          return { len, stopped: false, reason: 'C' };
-        };
+        const { at, inkWithin, clear, arm } = bcTools(fr0);
         let h = at(fr0, aB - arcMM[kB], 0); if (!h) return;
         let vRel = 0; let pLo = lo0; let pHi = hi0;
         let pMid = { x: h.sm.x, y: h.sm.y }; let pDir = { x: fr0.v.x, y: fr0.v.y }; let Lprev = Infinity;
@@ -7863,7 +8321,7 @@
       if (TONE_ALGO === 'strokesGrow') return growLength(cov, vdc2(lineIndex)) > 0.02;
       const prev = ladderPhase.has(key)
         ? ladderPhase.get(key)
-        : (Number.isFinite(seed) ? seed : LADDER_PHASE0);
+        : (Number.isFinite(seed) ? seed : (LADDER_PHASE0 + SEED.phase) % 1);
       const r = ladderStep(prev, cov);
       ladderPhase.set(key, r.phase);
       return r.keep;
@@ -7987,6 +8445,10 @@
       // erosion coming back empty, and an erosion returning empty in silence is
       // exactly how the inert-ribbon blocker hid. Counted, never swallowed.
       outlineOnly: 0,
+      // The outline-depth guard of the raster erosion (`PenFill.erodeLevels`):
+      // outline vertices the raster put shallower than pen/2 (pushed back out
+      // to pen/2), and the ones it had to drop. Observability only.
+      guardShallow: 0, guardDropped: 0, outlineOpen: 0,
       noModule: 0, noRegion: 0, atMaxPaths: 0,
       // The 1-to-2-pen WALLS class (see `ribbonize`). `walls` counts stretches
       // that took it, `wallRings` the closed rings it shipped, `wallEmpty` the
@@ -8399,10 +8861,25 @@
         let any = false;
         // OUTLINE — the ribbon eroded by HALF a pen, so a real pen stroking it
         // lands its OUTER edge exactly on the ribbon boundary.
-        const outlineMP = erode(clippedMP, penWidth / 2);
-        // FILL — deeper again, chained off the outline because
-        // erode(R, a+b) === erode(erode(R, a), b) and two shallow cuts are much
-        // cheaper than one deep one.
+        // ONE DISTANCE FIELD, BOTH EROSIONS (fill-style review §2(d), U2).
+        // The two `insetMultiPolygon` band unions (now only the fallback below)
+        // were 42-66 % of every wave/weave ribbon law's frame. A Euclidean SDF
+        // composes —
+        // erode(R, a + b) is the a + b level set of R's own field — so
+        // `PenFill.erodeLevels` rasterizes the clipped ribbon ONCE, in its
+        // principal-axis frame, and contours both depths off it. The outline
+        // level is GUARDED: the raster cannot see a notch narrower than a cell,
+        // so every outline vertex is checked against the exact clipped boundary
+        // and pushed out to pen/2 (or dropped) — containment stays exact, as
+        // the polygon erosion's was. The fill region stays in the frame and is
+        // handed to PenFill as is, so PenFill's own grid is oriented too; its
+        // paths are rotated back. OUTPUT CHANGED vs the polygon erosion (a
+        // raster level, not a boolean): accepted by Jay 2026-10-02, goldens
+        // refreshed deliberately.
+        //
+        // FILL — deeper again. erode(R, a+b) === erode(erode(R, a), b), so the
+        // fill region is the deeper level of the SAME field (the polygon
+        // fallback below still chains it off the outline).
         //
         // THE DEPTH IS A PITCH, NOT A PEN RADIUS. Eroding by a further pen/2 put
         // the fill region's boundary exactly one pen in from the ribbon's, and
@@ -8421,18 +8898,66 @@
         // pass: the next pass then sits one `pitch` (= penWidth · (1 - overlap))
         // further in, exactly like every pass after it, and the seam carries the
         // same 15% overlap as the rest of the fill.
-        const fillMP = outlineMP.length
-          ? erode(outlineMP, penWidth * (0.5 - RIBBON_OVERLAP)) : [];
-        outlineMP.forEach((poly) => {
-          poly.forEach((r) => {
-            const pts = ringPts(r);
-            if (!pts) return;
-            outp.push(tag(closePath(pts, zOfPt), t0, t1));
-            ribbonStat.outlines += 1; any = true;
-          });
+        const ER = (PFm && typeof PFm.erodeLevels === 'function')
+          ? (() => {
+            try {
+              // Even-odd over every ring: shells and holes flattened together.
+              const allRings = [];
+              clippedMP.forEach((poly) => poly.forEach((r) => allRings.push(r)));
+              return PFm.erodeLevels(allRings, [penWidth / 2, penWidth * (1 - RIBBON_OVERLAP)],
+                // The outline is contoured a cell SHALLOW (so a sliver narrower
+                // than a cell — a tapered end just over one pen wide — is still
+                // found) and then SNAPPED to exactly pen/2 off the true clipped
+                // boundary, so the stroke's outer edge lands on the ribbon edge
+                // as the polygon erosion's did. The fill level is contoured at
+                // its depth; its raster error (about a cell) is well inside the
+                // 15 % pen overlap with the outline.
+                { guard: ['snap', false], levelOffset: [-1, 0] });
+            } catch (err) { return null; }
+          })()
+          : undefined;
+        let outlineRings; let fillRegions; let fromFrame = null;
+        if (ER !== undefined) {
+          // erodeLevels answers null only when the ribbon rasterizes to
+          // nothing — the erosion consumed it.
+          // A guarded outline piece may come back OPEN (`open`): the level
+          // pinches out there, and closing it would bridge the pinch.
+          outlineRings = ER ? ER.levels[0].map((l) => {
+            const w = l.map(ER.frame.toWorld);
+            if (l.open) w.open = true;
+            return w;
+          }) : [];
+          fillRegions = (ER && outlineRings.length && ER.levels[1].length) ? [ER.levels[1]] : [];
+          fromFrame = ER ? ER.frame.toWorld : null;
+          if (ER) {
+            ribbonStat.guardShallow += ER.guard.shallow;
+            ribbonStat.guardDropped += ER.guard.dropped;
+          }
+        } else {
+          // No PenFill.erodeLevels (a stripped-down harness): the polygon
+          // erosion, chained exactly as before.
+          const outlineMP = erode(clippedMP, penWidth / 2);
+          const fillMP = outlineMP.length
+            ? erode(outlineMP, penWidth * (0.5 - RIBBON_OVERLAP)) : [];
+          outlineRings = [];
+          outlineMP.forEach((poly) => poly.forEach((r) => outlineRings.push(r)));
+          fillRegions = fillMP.map((poly) => poly.map(ringPts).filter(Boolean)).filter((rs) => rs.length);
+        }
+        outlineRings.forEach((r) => {
+          if (r.open) {
+            const pts = r.filter((q) => Number.isFinite(q.x) && Number.isFinite(q.y));
+            if (pts.length < 2) return;
+            outp.push(tag(pts.map((q) => ({ x: q.x, y: q.y, z: zOfPt(q) })), t0, t1));
+            ribbonStat.outlines += 1; ribbonStat.outlineOpen += 1; any = true;
+            return;
+          }
+          const pts = ringPts(r);
+          if (!pts) return;
+          outp.push(tag(closePath(pts, zOfPt), t0, t1));
+          ribbonStat.outlines += 1; any = true;
         });
-        fillMP.forEach((poly) => {
-          const regionRings = poly.map(ringPts).filter(Boolean);
+        const fillMP = fillRegions;
+        fillMP.forEach((regionRings) => {
           if (!regionRings.length) return;
           let res = null;
           try {
@@ -8443,7 +8968,10 @@
           if (paths.length >= RIBBON_MAX_PATHS) ribbonStat.atMaxPaths += 1;
           paths.forEach((p) => {
             if (!Array.isArray(p) || p.length < 2) return;
-            outp.push(tag(p.map((q) => ({ x: q.x, y: q.y, z: zOfPt(q) })), t0, t1));
+            outp.push(tag(p.map((q0) => {
+              const q = fromFrame ? fromFrame(q0) : q0;
+              return { x: q.x, y: q.y, z: zOfPt(q) };
+            }), t0, t1));
             ribbonStat.fills += 1; any = true;
           });
         });
@@ -8997,8 +9525,16 @@
           // from the run mean immediately above. They are ribbon laws too, and
           // gating on the split predicate would leave all three at a fat-pen
           // multiplier.
+          // F5 (engine law-draft tier, `opts.ribbonDraft`): a live drag skips
+          // the ribbon build and ships the law's own weighted centrelines —
+          // the pre-ribbon delivery (`splitByWeight` / the run mean), which
+          // the renderer strokes at `weightScale`. Same placement, same width
+          // profile, no erosion/PenFill. Never set on a settled compose.
           const pieces = (isRibbonLaw() && wCnt > 0)
-            ? (deferRibbon() ? [pendRibbon(run, fam)] : ribbonize(run, wPts, ttPts, fam, back))
+            ? (opts.ribbonDraft === true
+              ? (splitsAlongLine() ? splitByWeight(run, wPts, ttPts, fam)
+                : (run.weightScale == null && (run.weightScale = meanW(wPts, 0, run.length - 1)), [run]))
+              : (deferRibbon() ? [pendRibbon(run, fam)] : ribbonize(run, wPts, ttPts, fam, back)))
             : ((splitsAlongLine() && wCnt > 0)
               ? splitByWeight(run, wPts, ttPts, fam)
               : [run]);
@@ -9251,8 +9787,13 @@
       // law's realised elongation (1.13x) fell a third short of the 1.8x its pen
       // had already been divided by. Any law that shortens its wavelength or
       // adds an octave states a bigger `steps` in the WV6 table and pays for it.
+      // U6: a wavelength under the default 7.3 pens needs proportionally more samples
+      // or the polyline corner-cuts the crests (see the WV6 `steps` note above).
+      const waveSteps = (toneOn && isWaveLaw())
+        ? (isWv6() ? Math.max(MAX_LINE_STEPS, wv6().steps) : MAX_LINE_STEPS) : 0;
       const nSteps = (toneOn && isWaveLaw())
-        ? (isWv6() ? Math.max(MAX_LINE_STEPS, wv6().steps) : MAX_LINE_STEPS)
+        ? (WV_LAMBDA_PEN < 7.3 && FILL_CTL
+          ? Math.min(FILL_CTL.WAVE_MAX_STEPS, Math.ceil(waveSteps * 7.3 / WV_LAMBDA_PEN)) : waveSteps)
         : Math.max(2, Math.min(MAX_LINE_STEPS,
           Number.isFinite(paramAt.steps) ? Math.round(paramAt.steps) : steps));
 
@@ -10242,7 +10783,7 @@
           if (prev < 0) {
             const fr = Number(threshold);
             const key = Number.isFinite(fr) ? Math.round((((fr % 1) + 1) % 1) * 4096) : (Number(lineIndex) || 0);
-            tspPh[s] = (key * GOLDEN_STEP) % 1;
+            tspPh[s] = (key * GOLDEN_STEP + SEED.phase) % 1;
           } else {
             tspPh[s] = tspPh[prev] + (arcMM[s] - arcMM[prev]) / P;
           }
@@ -10372,7 +10913,7 @@
           if (duty[s] < lozStat.dutyMin) lozStat.dutyMin = duty[s];
           if (duty[s] < 0.999) lozStat.dissolved += 1;
         }
-        const phi0 = ((Number(lineIndex) || 0) * GOLDEN_STEP) % 1;
+        const phi0 = ((Number(lineIndex) || 0) * GOLDEN_STEP + SEED.phase) % 1;
         const MARK = (TONE_ALGO === 'lozSwell') ? LZ_SWELL_MM()
           : (TONE_ALGO === 'lozBudget') ? LZ_BUDGET_MM() : LZ_MARK_MM();
         const PERIOD = LZ_PERIOD_MM();
@@ -11785,7 +12326,7 @@
       const sy = smp.dA.y * aDir.a + smp.dB.y * aDir.b;
       const L = Math.hypot(sx, sy);
       if (!(L > 1e-9)) return null;
-      const rad = (sense * finite(deg, 65) * Math.PI) / 180;
+      const rad = (sense * finite(deg, CROSS_B_DEG) * Math.PI) / 180;
       const c = Math.cos(rad); const s = Math.sin(rad);
       return pullbackDir(smp, (sx * c - sy * s) / L, (sx * s + sy * c) / L);
     };
@@ -11975,7 +12516,7 @@
     const buildCrossFamily = (baseAngleDeg, deg, count, flow) => {
       const key = `${baseAngleDeg}|${deg}|${count}|${flow || ''}`;
       if (crossFamilyCache.has(key)) return crossFamilyCache.get(key);
-      const nominal = angleFamily(finite(baseAngleDeg, 0) + finite(deg, 65));
+      const nominal = angleFamily(finite(baseAngleDeg, 0) + finite(deg, CROSS_B_DEG));
       const n = Math.max(2, Math.round(count * nominal.span));
       const step = nominal.span / n;
       const nomOff = { a: nominal.na * step, b: nominal.nb * step };
@@ -12424,8 +12965,8 @@
       // as even and as complete as the base one.
       const emitLayeredCross = (count, back) => {
         const base = finite(opts.fillAngle, 0);
-        emitAngledFamily(base + 65, count, back, ['X1', 'X2']);
-        emitAngledFamily(base + 32, count, back, ['X2']);
+        emitAngledFamily(base + CROSS_B_DEG, count, back, ['X1', 'X2']);
+        emitAngledFamily(base + CROSS_C_DEG, count, back, ['X2']);
       };
       // 'crossFade' — layeredCross's three layers with the gates taken OFF.
       //
@@ -12438,8 +12979,8 @@
       // thickening. Family A is layer 0 and was already emitted by the mapper.
       const emitCrossFade = (count, back) => {
         const base = finite(opts.fillAngle, 0);
-        xfLayer = 1; emitAngledFamily(base + 65, count, back);
-        xfLayer = 2; emitAngledFamily(base + 32, count, back);
+        xfLayer = 1; emitAngledFamily(base + CROSS_B_DEG, count, back);
+        xfLayer = 2; emitAngledFamily(base + CROSS_C_DEG, count, back);
         xfLayer = 0;
       };
       const emitTerminatorCross = (count, back) => {
@@ -12455,9 +12996,16 @@
           if (toneOn && plan) {
             const base = finite(opts.fillAngle, 0);
             plan.forEach((f) => {
-              const n = Math.max(2, Math.round(count / Math.max(1, f.div)));
+              // U4b item 8: penCross's own crossing family follows the Cross
+              // angle / Cross density dials (crosshatch Type). Its designed
+              // 60 deg / half density is the DEFAULT (Cross angle 90, density 1),
+              // so the shift is zero there and the default is byte-identical.
+              const isCrossDial = TONE_ALGO === 'penCross';
+              const deg = isCrossDial && f.deg ? f.deg + (crossDelta - 90) : f.deg;
+              const div = isCrossDial ? f.div * crossRatio : f.div;
+              const n = Math.max(2, Math.round(count / Math.max(1, div)));
               xfLayer = clamp(Math.round(f.layer), 0, 2);
-              if (f.deg) { emitAngledFamily(base + f.deg, n, back); return; }
+              if (deg) { emitAngledFamily(base + deg, n, back); return; }
               if (mapper === 'contour') emitFamily('a', n, back);
               else if (onMeridianAxis) emitFamily('b', n, back);
               else emitAngledFamily(hatchAngle, n, back);
@@ -12475,7 +13023,7 @@
         if (TONE_ALGO === 'weightCrossHandoff') {
           if (toneOn) {
             xfLayer = 1;
-            emitAngledFamily(finite(opts.fillAngle, 0) + 65, count, back);
+            emitAngledFamily(finite(opts.fillAngle, 0) + CROSS_B_DEG, count, back);
             xfLayer = 0;
           }
           return;
@@ -12615,6 +13163,12 @@
           minMarkMM: MIN_MARK_MM,
           hash: sfHash,
           angleDeg: finite(opts.fillAngle, 0),
+          densityScale: opts.densityScale,
+          crossDelta: crossDelta,
+          stripeAlign: opts.stripeAlign,
+          chainMarks: opts.chainMarks,
+          patternMaturity: opts.patternMaturity,
+          stripeScale: opts.stripeScale,
         });
       } else if (contMapper) {
         // W-36c: crosshatch's family A now also reads the per-family budget
@@ -12677,7 +13231,7 @@
         emitSecondary(hatchAngle + crossDelta, countB, back);      // the crossing family
         // §2.3 — the tone-driven third pass goes to +32°, not +45°: with family B
         // already at the user's delta, +45 lands close enough to A or B to beat.
-        if (crossTriple) emitSecondary(hatchAngle + 32, countB, back); // darkest-band third pass
+        if (crossTriple) emitSecondary(hatchAngle + CROSS_C_DEG, countB, back); // darkest-band third pass
         emitTerminatorCross(count, back);
         emitShadowInfill(onMeridianAxis ? meridianAt : angleFamily(hatchAngle).lineAt, count, back);
       } else if (mapper === 'contour') {
@@ -12909,12 +13463,23 @@
         const SEG = 6;
         const dotShape = typeof opts.dotShape === 'string' ? opts.dotShape : 'dot';
         const dotAngle = finite(opts.dotAngle, 0);
+        // U4b item 7: Jitter now reaches the curved lattice. The scale is the
+        // faceted one (Mappers.jitterFracFor: 0-100 -> 0-1.75 cells peak to
+        // peak). An ABSENT key stays an exact lattice, which is today's output.
+        const jitFrac = Number.isFinite(opts.stippleJitter)
+          ? (clamp(opts.stippleJitter, 0, 100) * 1.75) / 100 : 0;
         const legacy = dotShape === 'dot' && !Number.isFinite(opts.dotSize);
         const R = Number.isFinite(opts.dotSize) ? clamp(opts.dotSize, 0.1, 3) : legacyR;
         const Marks = Vectura.Scene3D && Vectura.Scene3D.Mappers;
         for (let r = 0; r < rows; r++) {
           for (let c = 0; c < colsPer; c++) {
-            const smp = sampleAt((r + 0.5) / rows, (c + 0.5) / colsPer);
+            let sa = (r + 0.5) / rows; let sb = (c + 0.5) / colsPer;
+            if (jitFrac > 0) {
+              sa = clamp(sa + ((sfHash(r * 977 + 41, c) - 0.5) * jitFrac) / rows, 0, 1);
+              sb = sb + ((sfHash(r * 977 + 43, c + 7919) - 0.5) * jitFrac) / colsPer;
+              sb -= Math.floor(sb);
+            }
+            const smp = sampleAt(sa, sb);
             if (!smp || smp.front !== wantFront) continue;
             if (toneOn) {
               // O18 — stipple used a hardcoded `(…%7)/7` dither and never read
@@ -12946,7 +13511,7 @@
                     ? algoCoverage(smp.I, false, smp, null)
                     : (zone ? zoneCoverage(zone, false) : coverageForSample(smp.I)));
                 if (!ladderKeeps(`stipple|${back ? 'B' : 'F'}|${r}`, clamp(cov, 0, 1),
-                  (r * GOLDEN_STEP) % 1)) continue;
+                  (r * GOLDEN_STEP + SEED.phase) % 1)) continue;
               } else if (STAGE.dither) {
                 const shade = clamp(1 - smp.I, 0, 1);
                 const th = ((r * colsPer + c) % 7) / 7; // scattered dither
@@ -13056,6 +13621,76 @@
     // Every chain is closed by now, so the deferred ribbons can be built — and
     // they must be built BEFORE the report, or the report describes a build that
     // has not happened yet.
+    // T2-8b-5c — NEIGHBOUR COHERENCE. Plans of one row, in site order. For each end, a RUN is a stretch of
+    // consecutive ticks that all want an extension at that end. Inside a run the extension fraction `phi` may
+    // change by at most `MK_TICK_RIM_COH` per tick (lower envelope, both directions): an isolated few ticks
+    // that could reach the rim beside neighbours that could not are held back together with them, so the
+    // rim-side ends read as one edge. `phi` only goes down, and never touches a run of one-sided equal-gain
+    // ticks (the cone wedge: phi = 1 throughout).
+    const runExtensions = () => {
+      const plans = mkExtQ.map((q) => q());
+      const byRow = new Map();
+      plans.forEach((pl) => { if (!byRow.has(pl.li)) byRow.set(pl.li, []); byRow.get(pl.li).push(pl); });
+      byRow.forEach((row) => {
+        row.sort((x, y) => x.a - y.a);
+        row.forEach((pl, ii) => { pl.idx = ii; });
+        ['Up', 'Dn'].forEach((e) => {
+          const key = `phi0${e}`; const out = `phi${e}`;
+          row.forEach((pl) => { pl[out] = (pl.plan && pl.plan[key] >= 0) ? pl.plan[key] : -1; });
+          // STRIP: a long run whose rim gap barely changes tick to tick is already an evenly offset edge
+          // (a tube's parallel margin). Extending it only turns the margin into a block, so the whole run is
+          // held back together. Wedges (the gap closing at >= `MK_TICK_RIM_STRIP_SLOPE` per tick) and short
+          // runs are not strips.
+          if (!MK_TICK_RIM_STRIP_OFF) {
+            const gk = e === 'Up' ? 'gUp' : 'gDn';
+            let i = 0;
+            while (i < row.length) {
+              if (!(row[i].plan && row[i].plan[key] >= 0)) { i += 1; continue; }
+              let j = i;
+              while (j + 1 < row.length && row[j + 1].plan && row[j + 1].plan[key] >= 0) j += 1;
+              const n = j - i + 1;
+              if (n >= MK_TICK_RIM_STRIP_N) {
+                let gMn = Infinity; let gMx = -Infinity;
+                for (let t = i; t <= j; t += 1) { gMn = Math.min(gMn, row[t].plan[gk]); gMx = Math.max(gMx, row[t].plan[gk]); }
+                if ((gMx - gMn) / (n - 1) < MK_TICK_RIM_STRIP_SLOPE) for (let t = i; t <= j; t += 1) row[t][out] = 0;
+              }
+              i = j + 1;
+            }
+          }
+          // ISOLATION: a run of n ticks may extend by at most `MK_TICK_RIM_ISO_MM` x n, so one or two ticks
+          // beside neighbours that do not extend cannot stick out of the edge (cone wedge runs of 4 reach
+          // 1.6 mm; a lone tick gets 0.45 mm).
+          if (!MK_TICK_RIM_ISO_OFF) {
+            const gk = e === 'Up' ? 'gUp' : 'gDn';
+            let i = 0;
+            while (i < row.length) {
+              if (!(row[i].plan && row[i].plan[key] >= 0)) { i += 1; continue; }
+              let j = i;
+              while (j + 1 < row.length && row[j + 1].plan && row[j + 1].plan[key] >= 0) j += 1;
+              const cap = MK_TICK_RIM_ISO_MM * (j - i + 1);
+              for (let t = i; t <= j; t += 1) {
+                const g = Math.max(row[t].plan[gk], 1e-6);
+                row[t][out] = Math.min(row[t][out], cap / g);
+              }
+              i = j + 1;
+            }
+          }
+          if (!MK_TICK_RIM_COH_OFF) {
+            let i = 0;
+            while (i < row.length) {
+              if (!(row[i][out] >= 0 && row[i].plan && row[i].plan[key] >= 0)) { i += 1; continue; }
+              let j = i;
+              while (j + 1 < row.length && row[j + 1].plan && row[j + 1].plan[key] >= 0) j += 1;
+              for (let t = i + 1; t <= j; t += 1) row[t][out] = Math.min(row[t][out], row[t - 1][out] + MK_TICK_RIM_COH);
+              for (let t = j - 1; t >= i; t -= 1) row[t][out] = Math.min(row[t][out], row[t + 1][out] + MK_TICK_RIM_COH);
+              i = j + 1;
+            }
+          }
+        });
+      });
+      plans.forEach((pl) => { if (pl.plan) pl.plan.apply(pl.phiUp >= 0 ? pl.phiUp : 1, pl.phiDn >= 0 ? pl.phiDn : 1, pl.li, pl.a, pl.idx); });
+    };
+    runExtensions();
     // T2-8b-3/3c (BC-E) — the deferred span-end continuations (see `mkEndQ`).
     for (let qi = 0; qi < mkEndQ.length; qi += 1) mkEndQ[qi]();
     flushDeferredRibbons();

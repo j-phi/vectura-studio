@@ -58,6 +58,13 @@ function hitAreaInPage(el, opts) {
   cy = Math.round(cy);
   const ownedAt = (dx, dy) => {
     const t = document.elementFromPoint(cx + dx, cy + dy);
+    // TUX-041 B5: an open dropdown that does not contain the target is a transient dismiss-on-outside-tap layer, not a neighbour
+    // that owns the pixels (the same rule as the Q13 backdrop). A rail button that the menu panel edge cuts is measured at its
+    // own size: the size does not depend on which menu is open. The centre sample (0, 0) is never excused.
+    if ((dx || dy) && t && t.closest) {
+      const m = t.closest('.top-menu-panel.open, .menu-dropdown.open');
+      if (m && !m.contains(el)) return true;
+    }
     return !!t && (t === el || el.contains(t) || (t.tagName === 'LABEL' && t.control === el));
   };
   if (!ownedAt(0, 0)) return { w: 0, h: 0 };
@@ -97,8 +104,126 @@ function canvasShareInPage(args) {
   return +(100 * hits / (N * N)).toFixed(1);
 }
 
+// canvasShareExactInPage({ W, H, selector }, env?) -> percent 0..100 (TUX-058, exact)
+// Exact visible canvas area: the canvas rect clipped to the spec viewport (W x H), minus the exact
+// union of every covering rect. Candidate rects are the pointer-hittable elements that intersect
+// the clipped canvas. Their edges cut the canvas into a coordinate-compressed lattice; each lattice
+// cell is hit-tested at its centre and four corners; a mixed cell is subdivided adaptively down to
+// 1 px (rotated, rounded and pseudo-element/overflow hit areas). The lattice is built per row band,
+// so the hit-test count stays near the number of distinct chrome pieces. `env` ({canvas, rects, hit}) is a test seam.
+function canvasShareExactInPage(args, env) {
+  const { W, H, selector } = args;
+  const sel = selector || '#main-canvas';
+  const useContainer = !selector || selector === '#main-canvas';
+  const canvas = env ? env.canvas : document.querySelector(sel);
+  if (!canvas) return 0;
+  const cr = env ? env.canvasRect : canvas.getBoundingClientRect();
+  const L = Math.max(0, cr.left); const R = Math.min(W, cr.right);
+  const T = Math.max(0, cr.top); const B = Math.min(H, cr.bottom);
+  if (R <= L || B <= T) return 0;
+  const q = (v) => Math.round(v * 4) / 4; // quarter-pixel snap: hit testing is whole-pixel anyway
+  const isCanvas = (h) => !!h && (h === canvas || canvas.contains(h) || (useContainer && h.id === 'viewport-container'));
+  const hit = env ? env.hit : (x, y) => document.elementFromPoint(x, y);
+  // Overlays: pointer-events:none boxes whose paint is >= 50 % opaque (own background alpha x opacity chain)
+  // hide the artwork under them, so that area is not canvas (an honest share). Border boxes only.
+  const overlays = [];
+  if (env) { for (const r of env.rects) if (r.overlay) overlays.push(r); }
+  else {
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el === canvas || canvas.contains(el) || el.contains(canvas)) continue;
+      const cs = getComputedStyle(el);
+      if (cs.pointerEvents !== 'none' || cs.visibility === 'hidden' || cs.display === 'none') continue;
+      const bg = cs.backgroundColor || '';
+      let a = 0;
+      const slash = bg.match(/\/\s*([\d.]+%?)\s*\)$/);
+      const rgba = bg.match(/^rgba\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*([\d.]+)\s*\)$/);
+      if (slash) a = slash[1].endsWith('%') ? parseFloat(slash[1]) / 100 : parseFloat(slash[1]);
+      else if (rgba) a = parseFloat(rgba[1]);
+      else if (/^(rgb|color|oklab|oklch|lab|lch|hsl)\(/.test(bg)) a = 1;
+      if (!(a > 0)) continue;
+      for (let n = el; n && n !== document.documentElement; n = n.parentElement) a *= parseFloat(getComputedStyle(n).opacity);
+      if (a < 0.5) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0 || r.right <= L || r.left >= R || r.bottom <= T || r.top >= B) continue;
+      overlays.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+    }
+  }
+  // Candidate rects. Each carries an optional `grow` {l,t,r,b}: how far the real hit area can extend past
+  // the border box (a ::before/::after hit area, or overflowing content). The lattice only seeds the
+  // sampling; the exact edge is found by adaptive subdivision, so a generous grow is harmless.
+  let rects = [];
+  if (env) rects = env.rects;
+  else {
+    for (const el of document.body.querySelectorAll('*')) {
+      if (el === canvas || canvas.contains(el) || el.contains(canvas)) continue;
+      const cs = getComputedStyle(el);
+      if (cs.pointerEvents === 'none') continue;
+      const r = el.getBoundingClientRect();
+      let g = 0;
+      for (const pe of ['::before', '::after']) {
+        const pc = getComputedStyle(el, pe);
+        if (pc.content !== 'none' && pc.content !== 'normal' && pc.pointerEvents !== 'none') g = 48;
+      }
+      const ovR = Math.max(0, el.scrollWidth - el.clientWidth);
+      const ovB = Math.max(0, el.scrollHeight - el.clientHeight);
+      const grow = { l: g, t: g, r: Math.max(g, ovR), b: Math.max(g, ovB) };
+      if (r.width <= 0 && r.height <= 0 && !g) continue;
+      if (r.right + grow.r <= L || r.left - grow.l >= R || r.bottom + grow.b <= T || r.top - grow.t >= B) continue;
+      rects.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom, grow });
+    }
+  }
+  const cand = [];
+  for (const r of [...rects.filter((x) => !x.overlay), ...overlays]) {
+    const gr = r.grow || { l: 0, t: 0, r: 0, b: 0 };
+    const c = { l: q(Math.max(L, r.left - gr.l)), r: q(Math.min(R, r.right + gr.r)), t: q(Math.max(T, r.top - gr.t)), b: q(Math.min(B, r.bottom + gr.b)) };
+    // the border-box edges stay lattice lines too, so a plain box is still resolved without subdividing
+    const e = [q(Math.max(L, r.left)), q(Math.min(R, r.right)), q(Math.max(T, r.top)), q(Math.min(B, r.bottom))];
+    if (c.r > c.l && c.b > c.t) cand.push({ l: c.l, r: c.r, t: c.t, b: c.b, e });
+  }
+  // coarse seed lines catch a hit area no rect predicted
+  const seedX = []; const seedY = [];
+  for (let x = Math.ceil(L / 32) * 32; x < R; x += 32) seedX.push(x);
+  for (let y = Math.ceil(T / 32) * 32; y < B; y += 32) seedY.push(y);
+  const ys = [...new Set([q(T), q(B), ...seedY, ...cand.flatMap((c) => [c.t, c.b, c.e[2], c.e[3]])])].sort((a, b) => a - b);
+  // Adaptive cell area: hit-test the centre and four corners (inset); uniform -> the whole cell, mixed
+  // -> split down to 1 px, then the centre decides. A budget caps pathological pages.
+  let budget = 400000;
+  const probe = (x, y) => {
+    budget -= 1;
+    if (overlays.some((o) => x >= o.left && x < o.right && y >= o.top && y < o.bottom)) return 0;
+    return isCanvas(hit(x, y)) ? 1 : 0;
+  };
+  const cellArea = (x0, y0, x1, y1) => {
+    const w = x1 - x0; const h = y1 - y0;
+    if (w <= 0 || h <= 0) return 0;
+    const cx = (x0 + x1) / 2; const cy = (y0 + y1) / 2;
+    const c = probe(cx, cy);
+    if (w <= 1 && h <= 1) return c * w * h;
+    if (budget <= 0) return c * w * h;
+    const ix = Math.min(0.5, w / 4); const iy = Math.min(0.5, h / 4);
+    const s = c + probe(x0 + ix, y0 + iy) + probe(x1 - ix, y0 + iy) + probe(x0 + ix, y1 - iy) + probe(x1 - ix, y1 - iy);
+    if (s === 0 || s === 5) return (s === 5 ? 1 : 0) * w * h;
+    const sx = w > 1; const sy = h > 1;
+    const xm = sx ? cx : x1; const ym = sy ? cy : y1;
+    let a = cellArea(x0, y0, xm, ym);
+    if (sx) a += cellArea(xm, y0, x1, ym);
+    if (sy) a += cellArea(x0, ym, xm, y1);
+    if (sx && sy) a += cellArea(xm, ym, x1, y1);
+    return a;
+  };
+  let area = 0;
+  for (let i = 0; i + 1 < ys.length; i += 1) {
+    const y0 = ys[i]; const y1 = ys[i + 1];
+    if (y1 <= y0) continue;
+    const band = cand.filter((c) => c.t < y1 && c.b > y0);
+    const xs = [...new Set([q(L), q(R), ...seedX, ...band.flatMap((c) => [c.l, c.r, c.e[0], c.e[1]])])].sort((a, b) => a - b);
+    for (let j = 0; j + 1 < xs.length; j += 1) area += cellArea(xs[j], y0, xs[j + 1], y1);
+  }
+  return args.raw ? 100 * area / (W * H) : +(100 * area / (W * H)).toFixed(1); // raw: unrounded, for floors that sit on a rounding edge
+}
+
 // measureInPage(cfg, helpers) -> raw record. cfg: { W, H, safe, allow: [selector] }.
-// helpers: { hitAreaInPage, canvasShareInPage } (injected by measurePage).
+// helpers: { hitAreaInPage, canvasShareInPage, canvasShareExactInPage } (injected by measurePage).
 function measureInPage(cfg, helpers) {
   const { W, H, safe } = cfg;
   const allowSel = cfg.allow || [];
@@ -329,6 +454,75 @@ function measureInPage(cfg, helpers) {
     }
     return false;
   };
+  const openMenus = Array.from(document.querySelectorAll('.top-menu-panel.open, .menu-dropdown.open')).filter(visible);
+  // Q15 (hardened): a row counts as cut by its own scroller only when the scroller is visible, the row fits inside it, and the
+  // scroll range really reaches the hidden part (the row can scroll fully into view). Anything else is a real clip.
+  const scrollCut = (el, r) => {
+    const cut = { x: false, y: false, py: null, px: null };
+    for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+      const cs = getComputedStyle(p);
+      const pr = p.getBoundingClientRect();
+      if (/(auto|scroll)/.test(cs.overflowY) || /(auto|scroll)/.test(cs.overflowX)) {
+        if (!visible(p) || cs.visibility === 'hidden' || pr.width < 1 || pr.height < 1) continue;
+      }
+      if (/(auto|scroll)/.test(cs.overflowY) && p.scrollHeight > p.clientHeight + 1 && r.height <= p.clientHeight + 0.5) {
+        const above = pr.top - r.top; const below = r.bottom - pr.bottom;
+        const roomDown = p.scrollHeight - p.clientHeight - p.scrollTop;
+        if ((above > 0.5 && above <= p.scrollTop + 0.5) || (below > 0.5 && below <= roomDown + 0.5)) { cut.y = true; if (!cut.py) cut.py = p; }
+      }
+      if (/(auto|scroll)/.test(cs.overflowX) && p.scrollWidth > p.clientWidth + 1 && r.width <= p.clientWidth + 0.5) {
+        const left = pr.left - r.left; const right = r.right - pr.right;
+        const roomRight = p.scrollWidth - p.clientWidth - p.scrollLeft;
+        if ((left > 0.5 && left <= p.scrollLeft + 0.5) || (right > 0.5 && right <= roomRight + 0.5)) { cut.x = true; if (!cut.px) cut.px = p; }
+      }
+      if (cs.position === 'fixed') break;
+    }
+    return cut;
+  };
+  // Q15 rescue probe (shared with Q22): scroll the cutting scroller(s) minimally to bring `el` into view, probe its real hit area,
+  // restore the scroll positions. `r` is the row rect before the scroll.
+  const rescueProbe = (el, r, cut, keepMenus) => {
+        const saved = [];
+        const keep = (p) => { if (p && !saved.some((q) => q.p === p)) saved.push({ p, top: p.scrollTop, left: p.scrollLeft }); };
+        keep(cut.py); keep(cut.px);
+        (cut.all || []).forEach(keep);
+        // Minimal scroll: bring the row (plus a 24 px probe margin) to the nearest edge of its scroller, never to the centre. The
+        // centre of a scroller can lie under a popup that is open in this state (the generator picker covers the middle of the left
+        // pane). While probing, open menus and popups that do not contain the row are not neighbours: they are made transparent to
+        // hit tests, so the probe sees the row's own target and its real neighbours only.
+        // keepMenus (the Q22 path): the row is below the fold, so its pre-scroll rect is off screen and the overlap test below cannot
+        // see a menu that covers the row once it is scrolled in. By finger no pane row can be reached while a menu is open, so every
+        // open menu stays opaque: the probe then reports the row as covered.
+        const popups = Array.from(document.querySelectorAll('.top-menu-panel.open, .menu-dropdown.open, #gm-module-menu, .lvl-algo-menu, [role="menu"]'))
+          .filter((m) => !keepMenus && !m.contains(el) && visible(m))
+          // A menu stays opaque when it already covers the row, or the 44 px reach around its centre, where the row sits before the
+          // rescue scroll: it covers the finger target for real. Only a menu that would cover it solely because of the rescue
+          // scroll is ignored.
+          .filter((m) => {
+            const mr = m.getBoundingClientRect();
+            const ex = { l: Math.min(r.left, (r.left + r.right) / 2 - 22), r: Math.max(r.right, (r.left + r.right) / 2 + 22), t: Math.min(r.top, (r.top + r.bottom) / 2 - 22), b: Math.max(r.bottom, (r.top + r.bottom) / 2 + 22) };
+            return !(mr.left < ex.r && mr.right > ex.l && mr.top < ex.b && mr.bottom > ex.t);
+          });
+        const prevPe = popups.map((m) => m.style.pointerEvents);
+        popups.forEach((m) => { m.style.pointerEvents = 'none'; });
+        const nearest = (p, axis) => {
+          const pr = p.getBoundingClientRect(); const rr = el.getBoundingClientRect(); const m = 24;
+          if (axis === 'y') {
+            if (rr.bottom + m > pr.bottom) p.scrollTop += rr.bottom + m - pr.bottom;
+            else if (rr.top - m < pr.top) p.scrollTop -= pr.top - (rr.top - m);
+          } else if (rr.right + m > pr.right) p.scrollLeft += rr.right + m - pr.right;
+          else if (rr.left - m < pr.left) p.scrollLeft -= pr.left - (rr.left - m);
+        };
+        if (cut.py) nearest(cut.py, 'y');
+        // Q22: nested scrollers (a modal body inside a scrolling column) all scroll, innermost first.
+        (cut.all || []).forEach((q) => nearest(q, 'y'));
+        if (cut.px) nearest(cut.px, 'x');
+        const r2 = el.getBoundingClientRect();
+        const best = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx: (r2.left + r2.right) / 2, cy: (r2.top + r2.bottom) / 2 });
+        popups.forEach((m, i) => { m.style.pointerEvents = prevPe[i]; });
+        for (const q of saved) { q.p.scrollTop = q.top; q.p.scrollLeft = q.left; }
+    return best;
+  };
   let parked = 0;
   let stranded = 0;
   const strandedSel = [];
@@ -403,7 +597,24 @@ function measureInPage(cfg, helpers) {
       if (!hit) hitState = 'none';
       else if (hit === el || el.contains(hit) || (hit.tagName === 'LABEL' && hit.control === el)) hitState = 'ok';
       else if (hit.contains(el)) hitState = 'ok-ancestor';
+      // An open dropdown menu, and the visible drawer backdrop (Jay 2026-10-12 Q13: it only dismisses), are transient
+      // dismiss-on-outside-tap layers: they sit over the tools by design (TUX-001, TUX-011). A target under one is inert
+      // for that state (not `reach`, not `covered`). Any other overlay still counts as `covered`.
+      // Exempt only a target OUTSIDE the covering layer: an item hidden inside its own menu is a real defect.
+      else if (hit.closest && hit.closest('.top-menu-panel.open, .menu-dropdown.open, #mobile-pane-backdrop.visible') && !hit.closest('.top-menu-panel.open, .menu-dropdown.open, #mobile-pane-backdrop.visible').contains(el)) { hitState = 'popup-covered'; coveredBy = 'open menu'; }
       else { hitState = 'covered'; coveredBy = (hit.id ? `#${hit.id}` : hit.tagName.toLowerCase() + (hit.classList[0] ? '.' + hit.classList[0] : '')); }
+    }
+    // Orchestrator decision 2026-10-12 (a), narrowed 2026-10-13 to the phone sheet (body.phone-menu-open): a control PARTLY covered by an open menu panel is not reachable while the menu
+    // is open (the menu dismisses on an outside tap), the same as a control covered at its centre. Menu panels only: the
+    // drawer backdrop sits behind its own drawer, so it stays a centre-point test.
+    if (onscreen && (hitState === 'ok' || hitState === 'ok-ancestor')) {
+      // Q14 applies to the phone menu sheet only (it swallows the outside tap). On iPad and touch-wide a tap on the uncovered
+      // part of a part-covered control activates it, so it stays reachable at its probed size (orchestrator review 2026-10-13).
+      for (const m of (document.body.classList.contains('phone-menu-open') ? openMenus : [])) {
+        if (m.contains(el)) continue;
+        const mr = m.getBoundingClientRect();
+        if (mr.left < c.x2 && mr.right > c.x1 && mr.top < c.y2 && mr.bottom > c.y1) { hitState = 'popup-covered'; coveredBy = 'open menu (part)'; break; }
+      }
     }
     const reach = hitState === 'ok' || hitState === 'ok-ancestor';
     // Hit dimension. EVERY reachable target is probed (a rect >= 44 can still be partly
@@ -415,6 +626,41 @@ function measureInPage(cfg, helpers) {
     if (hitState === 'ok') {
       const a = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx, cy });
       pw = a.w; ph = a.h; probed = true;
+    }
+    // Orchestrator decision 2026-10-12 (b): a row cut by its OWN scroll container (overflow auto/scroll) is measured at its
+    // full size on the cut axis. Its probed size would otherwise depend on the scroll position, not on the CSS.
+    if (probed) {
+      const cut = scrollCut(el, r);
+      // Q15 rescue measures the REAL hit area once the row is scrolled fully into view: scroll the cutting scroller(s) so the
+      // row is inside them, run the same elementFromPoint probe, then restore the scroll position. A ::before that a
+      // neighbouring row covers therefore does not count (the CSS box alone would overstate the hit area).
+      if ((cut.y && ph < 49) || (cut.x && pw < 49)) {
+        const best = rescueProbe(el, r, cut);
+        if (cut.y && ph < 49) ph = Math.max(ph, best.h);
+        if (cut.x && pw < 49) pw = Math.max(pw, best.w);
+      }
+    }
+    // Q22 (orchestrator decision 2026-10-15, Jay may override): a control below the fold of ANY genuinely scrollable pane, panel body,
+    // drawer body or modal body is reachable by scrolling it. All of: the scroller really scrolls (overflow auto/scroll and
+    // scrollHeight > clientHeight, via scrollCut), the scroller is visible and on screen, the control lies inside the scroll range,
+    // and after a minimal scroll into view its REAL hit area (elementFromPoint probe, Q15 rescue) is at least 44 x 44. A control inside
+    // a non-scrolling overflow:hidden clip, or one that stays covered after the scroll, is NOT reachable. Counted by `reachable` only.
+    let scrollReach = false;
+    if (!onscreen && hitState === 'offscreen' && visible(el) && !parkedDrawer(el)) {
+      const cut = scrollCut(el, r);
+      if (cut.y && cut.py) {
+        const sr = cut.py.getBoundingClientRect();
+        if (sr.width > 1 && sr.height > 1 && sr.right > 0 && sr.left < window.innerWidth && sr.bottom > 0 && sr.top < window.innerHeight) {
+          cut.all = [];
+          for (let q = cut.py.parentElement; q && q !== document.documentElement; q = q.parentElement) {
+            const qs = getComputedStyle(q);
+            if (/(auto|scroll)/.test(qs.overflowY) && q.scrollHeight > q.clientHeight + 1 && visible(q)) cut.all.push(q);
+            if (qs.position === 'fixed') break;
+          }
+          const best = rescueProbe(el, r, cut, true);
+          scrollReach = best.w >= 44 && best.h >= 44;
+        }
+      }
     }
     const clipped = onscreen && (c.w + 1 < r.width || c.h + 1 < r.height);
     const isTextEntry = (tag === 'input' && TEXT_TYPES.has(type)) || tag === 'textarea' || tag === 'select' || el.isContentEditable;
@@ -431,7 +677,7 @@ function measureInPage(cfg, helpers) {
     items.push({
       el, sel: cssPath(el), label: label(el), tag, type, role: el.getAttribute('role'), region: region(el),
       x: +r.left.toFixed(1), y: +r.top.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1),
-      onscreen, clipped, hitState, coveredBy, reach, probed, pw, ph, allow,
+      onscreen, clipped, hitState, coveredBy, reach, probed, pw, ph, allow, scrollReach,
       hig44: pw >= 44 && ph >= 44,
       min24: pw >= 24 && ph >= 24,
       textEntry: isTextEntry, fontSize: fs, iosZoom: isTextEntry && fs < 16,
@@ -463,15 +709,16 @@ function measureInPage(cfg, helpers) {
   }
   items.forEach((i) => { delete i.el; });
 
-  // Canvas fitness: 48x48 cell grid over the spec viewport.
+  // Canvas fitness: exact visible area (canvasPct); the old 48x48 grid reading is kept as canvasGridPct for comparison only.
   const canvas = document.getElementById('main-canvas');
-  let canvasPct = 0; let canvasBoxPct = 0;
+  let canvasPct = 0; let canvasBoxPct = 0; let canvasGridPct = 0;
   if (canvas) {
     const cr = canvas.getBoundingClientRect();
     const ix = Math.max(0, Math.min(cr.right, vw) - Math.max(cr.left, 0));
     const iy = Math.max(0, Math.min(cr.bottom, vh) - Math.max(cr.top, 0));
     canvasBoxPct = +(100 * ix * iy / (vw * vh)).toFixed(1);
-    canvasPct = helpers.canvasShareInPage({ W: vw, H: vh, selector: '#main-canvas', cells: 48 });
+    canvasPct = helpers.canvasShareExactInPage({ W: vw, H: vh, selector: '#main-canvas' });
+    canvasGridPct = helpers.canvasShareInPage({ W: vw, H: vh, selector: '#main-canvas', cells: 48 });
   }
 
   // Overflow. Denominator is the project constant (spec W x H), never innerWidth/clientWidth.
@@ -550,7 +797,7 @@ function measureInPage(cfg, helpers) {
     coarse: matchMedia('(pointer: coarse)').matches, hover: matchMedia('(hover: hover)').matches,
     bodyOverscroll: bodyCs.overscrollBehaviorY, htmlOverscroll: getComputedStyle(de).overscrollBehaviorY,
     canvasTouchAction: canvas ? getComputedStyle(canvas).touchAction : null,
-    canvasPct, canvasBoxPct, hOverflow, vOverflow, innerWidthExcess, scrollWidthExcess, overflowers, overlays, scrollers,
+    canvasPct, canvasGridPct, canvasBoxPct, hOverflow, vOverflow, innerWidthExcess, scrollWidthExcess, overflowers, overlays, scrollers,
     ghost, ghostSel, stranded, strandedSel, parkedTargets: parked, allowCounts, dockedPanes, scale, scaleOk: typeof scale === 'number' && scale > 0,
     safeSelectors: Object.fromEntries(Object.entries(safeSel).map(([k, v]) => [k, v.length])),
     safeVars: Object.fromEntries(Object.entries(safeVars).map(([k, v]) => [k, Array.from(new Set(v))])),
@@ -591,7 +838,7 @@ function probeHandles() {
 
 // Run the page-side functions from Node. The expressions inline the helper sources so the
 // functions stay self-contained when Playwright serialises them.
-const measureExpr = () => `(cfg) => (${measureInPage.toString()})(cfg, { hitAreaInPage: ${hitAreaInPage.toString()}, canvasShareInPage: ${canvasShareInPage.toString()} })`;
+const measureExpr = () => `(cfg) => (${measureInPage.toString()})(cfg, { hitAreaInPage: ${hitAreaInPage.toString()}, canvasShareInPage: ${canvasShareInPage.toString()}, canvasShareExactInPage: ${canvasShareExactInPage.toString()} })`;
 
 // Playwright does not call a function given as a string, so evaluate the source in-page and
 // invoke it. (The app ships no CSP.) Arguments may include ElementHandles.
@@ -604,6 +851,9 @@ async function probeHit(page, handle, opts) {
   return page.evaluate(({ src, el, opts }) => (new Function(`return (${src})`))()(el, opts), { src: hitAreaInPage.toString(), el: handle, opts });
 }
 async function probeCanvasShare(page, args) {
+  return evalSource(page, canvasShareExactInPage.toString(), args);
+}
+async function probeCanvasShareGrid(page, args) {
   return evalSource(page, canvasShareInPage.toString(), args);
 }
 
@@ -648,6 +898,9 @@ const METRICS = [
   { id: 'scaleOk', dir: 'bool' },
 ];
 const METRIC_IDS = METRICS.map((m) => m.id);
+// Q21 (orchestrator decision 2026-10-14, Jay may override): an open-menu state records canvasPct but never ratchets it.
+// The section 1.5 thresholds cover pane configurations; a transient menu closes on an outside tap (TUX-040).
+const recordOnlyMetrics = (stateId) => (/^menu-/.test(String(stateId)) ? ['canvasPct'] : []);
 // -c (browser chrome) projects only serve section 1.5's chrome-variants row.
 const CHROME_METRICS = ['canvasPct', 'hOverflow', 'innerWidthExcess'];
 
@@ -680,10 +933,11 @@ function summarizeState(rec) {
     wcag258Fail: n(reach.filter((i) => i.wcag258 === false)),
     iosZoom: n(reach.filter((i) => i.iosZoom)),
     covered: n(items.filter((i) => i.onscreen && i.hitState === 'covered')),
-    safeUnprotected: n(items.filter((i) => i.onscreen && i.safeUnprotected && i.safeUnprotected.length)),
+    // An allowlisted target (Jay 2026-10-12: the drawer backdrop only dismisses) is exempt from safe-area protection.
+    safeUnprotected: n(items.filter((i) => i.onscreen && !i.allow && i.safeUnprotected && i.safeUnprotected.length)),
     ghost: rec.ghost || 0,
     stranded: rec.stranded || 0,
-    reachable: n(reach),
+    reachable: n(reach) + n(items.filter((i) => !i.onscreen && i.scrollReach)),
     pageErrors,
     canvasPct: rec.canvasPct || 0,
     scaleOk: !!rec.scaleOk,
@@ -699,11 +953,12 @@ const onscreenCount = (rec) => (rec.items || []).filter((i) => i.onscreen).lengt
 
 // Pure comparator. baseline/measured are metric records. Returns { worse, better } message parts.
 // metricIds limits the comparison (chrome variants).
-function compareCell(baseline, measured, metrics, metricIds) {
+function compareCell(baseline, measured, metrics, metricIds, recordOnly) {
   const worse = [];
   const better = [];
   (metrics || METRICS).forEach((m) => {
     if (metricIds && !metricIds.includes(m.id)) return;
+    if (recordOnly && recordOnly.includes(m.id)) return; // Q21: recorded, never ratcheted
     const b = baseline ? baseline[m.id] : undefined;
     const g = measured[m.id];
     if (b === undefined) { worse.push({ metric: m.id, base: b, got: g, kind: 'missing' }); return; }
@@ -757,13 +1012,13 @@ function compareFinal(measured, ctx) {
 
 // Update-mode merge: per metric take the BETTER of existing and measured (never worsen).
 // `any` = true writes the measured values as-is (TOUCH_BASELINE=update-any).
-function mergeCell(existing, measured, metricIds, any) {
+function mergeCell(existing, measured, metricIds, any, recordOnly) {
   const out = {};
   METRICS.forEach((m) => {
     if (metricIds && !metricIds.includes(m.id)) return;
     const g = measured[m.id];
     const b = existing ? existing[m.id] : undefined;
-    if (any || b === undefined) { out[m.id] = g; return; }
+    if (any || b === undefined || (recordOnly && recordOnly.includes(m.id))) { out[m.id] = g; return; }
     if (m.dir === 'bool') out[m.id] = b || g;
     else if (m.dir === 'lower') out[m.id] = Math.min(b, g);
     else out[m.id] = Math.max(b, g);
@@ -841,11 +1096,11 @@ const writeAtomic = (file, text) => {
 };
 
 // Merge one cell into the baseline file. Atomic: lock, fresh read, temp file, rename.
-function updateBaselineCell(file, platform, project, state, measured, { metricIds, any, measuredAt } = {}) {
+function updateBaselineCell(file, platform, project, state, measured, { metricIds, any, measuredAt, recordOnly } = {}) {
   withLock(file, () => {
     const base = readBaseline(file);
     const cell = ((base[platform] || {})[project] || {})[state];
-    ((base[platform] = base[platform] || {})[project] = base[platform][project] || {})[state] = mergeCell(cell, measured, metricIds, any);
+    ((base[platform] = base[platform] || {})[project] = base[platform][project] || {})[state] = mergeCell(cell, measured, metricIds, any, recordOnly);
     if (measuredAt) base._measuredAt = measuredAt;
     writeAtomic(file, serializeBaseline(base));
   });
@@ -932,7 +1187,7 @@ async function waitGeometryStable(page, timeout = 8000) {
 
 module.exports = {
   // page section
-  measureInPage, hitAreaInPage, canvasShareInPage, probeHandles, measurePage, probeHit, probeCanvasShare,
+  measureInPage, hitAreaInPage, canvasShareInPage, canvasShareExactInPage, probeCanvasShareGrid, probeHandles, measurePage, recordOnlyMetrics, probeHit, probeCanvasShare,
   // node section
   METRICS, METRIC_IDS, CHROME_METRICS, SAFE_BANDS, THRESHOLDS,
   summarizeState, isBenignPageError, onscreenCount, compareCell, formatCompare, compareFinal, mergeCell, finalCanvasMin,

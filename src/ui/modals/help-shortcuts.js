@@ -115,6 +115,45 @@
       </ol>
       ${callout('Press and hold (mouse or touch) any toolbar button marked <b>▸</b> to reveal extra algorithm and tool options. Double-click a parameter value to edit it inline; double-click a control to reset it to its default (on touch: tap the value chip, or hold the label).')}`;
 
+    /* -- 3D Scene (an accordion inside the Algorithms tab) -- */
+    const scene3dBody = `
+      <div class="help-prose" id="help-scene3d" data-help-section="scene3d">
+        <p>A <strong>3D Scene</strong> layer holds objects (box, sphere, torus, solid, imported mesh), lights and
+        a camera. Each object has its own <strong>Style</strong> tab. The scene Style editor sets the defaults for
+        objects that have no style of their own.</p>
+        <p><strong>Type</strong> sets what the fill is made of: Hatch, Crosshatch, Contour, Spiral, Stipple or
+        Wireframe. <strong>Fill Style</strong> sets the law that spaces the marks by tone. The styles come in
+        families, and each family keeps its variants as sub-controls:</p>
+        <ul class="help-callout-list">
+          <li><strong>Ladder</strong> &mdash; rungs of fixed spacing that step with the tone, or a continuous field.</li>
+          <li><strong>Width Ribbon</strong> &mdash; strokes that change width: by tone, by calligraphic nib angle, or along isophotes.</li>
+          <li><strong>Bundle</strong> and <strong>Wave</strong> &mdash; groups of parallel passes, and wavy rulings with a set wavelength and crest phase.</li>
+          <li><strong>Pattern laws</strong> &mdash; Turing Stripe, Maze Fill and Voronoi Web draw their own marks and have no ruling angle.</li>
+          <li><strong>Three-pen styles</strong> &mdash; draw the fine, medium and broad tone tiers as separate passes.</li>
+        </ul>
+        <p>A control that does nothing for the current shape or Fill Style stays visible but greyed. Hover the
+        <strong>(i)</strong> badge to see why.</p>
+        <p><strong>Seed</strong> (Transform section) and <strong>RANDOMIZE</strong> change every random choice in the
+        fill: jitter, dither, stripe phase. A fill with no random choice does not change. A document saved before
+        the Seed was wired keeps its old look until you edit the Seed.</p>
+        <p><strong>Shadow look</strong> is the Fill Style row in the Shadow section. It picks the texture drawn inside cast
+        shadows. It offers the sub-controls of each family that look different on a flat footprint.</p>
+        <p><strong>Artistic controls</strong> are all off until you move them:</p>
+        <ul class="help-callout-list">
+          <li><strong>Tone shaping</strong> &mdash; Gamma and Contrast bend the tone before any Fill Style reads it. <strong>Fade by depth</strong> lightens far surfaces.</li>
+          <li><strong>Wave</strong> &mdash; Wavelength, Crest phase. <strong>Width Ribbon</strong> &mdash; Nib angle and contrast, Taper length, Tip width, Softness. <strong>Turing Stripe</strong> &mdash; Stripe align, Maturity, Stripe scale.</li>
+          <li><strong>Chain walls / Chain edges</strong> &mdash; join Maze walls or Voronoi edges into long polylines. The picture stays the same and the pen lifts far less.</li>
+          <li><strong>Alt angle</strong> &mdash; angle of the Alt fill lines in a highlight. A second layer crosses at the Cross angle.</li>
+        </ul>
+        <p><strong>Pen routing.</strong> An object draws with one pen by default. <strong>Tone bands</strong> (2 to 4)
+        split any Fill Style by the tone under each mark, light to dark. Band 1 to N draw with the pens you pick in
+        the <em>Band pen</em> rows. The rows start on pens 1 to N of the palette. The three-pen styles do the same
+        with <strong>Tier pens</strong>. Each pen exports as its own pen group in the SVG, so the plotter changes
+        pens between bands. <strong>Layers &rarr; Assign pen</strong> sets the single pen of an object.</p>
+        <p><strong>Hidden edges.</strong> Dashed occluded edges of a wireframe come from <em>Object &rarr; Edge Styles
+        &rarr; Hidden &rarr; Occluded</em>. The old <em>Show hidden</em> switch was folded into it.</p>
+      </div>`;
+
     /* -- Algorithms -- */
     const algorithms = `
       <table class="help-algo-table">
@@ -142,7 +181,8 @@
           ${algoRow('SVG Distort',  'structural',  'Imports external SVG, converts fills to hatch/waveline/contour fills, then applies Noise Rack point displacement.')}
         </tbody>
       </table>
-      ${callout('<strong>Noise Rack</strong> — many algorithms share a universal noise stacking system. Open the Noise Rack panel to layer multiple algorithms (Perlin, Simplex, Voronoi, Curl…) and control exactly how they modulate the generation.')}`;
+      ${callout('<strong>Noise Rack</strong> — many algorithms share a universal noise stacking system. Open the Noise Rack panel to layer multiple algorithms (Perlin, Simplex, Voronoi, Curl…) and control exactly how they modulate the generation.')}
+      ${accordion('3D Scene', scene3dBody)}`;
 
     /* -- Tools -- */
     const tools = `

@@ -221,7 +221,7 @@ describe('rounded-contour line-finish defaults', () => {
   });
 
   test('the SCENE version chain is untouched — this default needed no migration', () => {
-    expect(P.SCENE_VERSION).toBe(4);
+    expect(P.SCENE_VERSION).toBe(5);
     expect(Vectura.ALGO_DEFAULTS.object3d.sceneVersion).toBe(P.SCENE_VERSION);
     // And no line-finish key leaked into the factory bag (which a saved layer
     // would then inherit on load).

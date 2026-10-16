@@ -405,6 +405,8 @@ describe('Scene3D.Params — shadowToneLaw whitelist', () => {
         onePenDown: { into: 'interlockWeave', params: { penDown: 'continuous' } },
         fineLadder: { into: 'ladder', params: { rungMode: 'fine' } },
       },
+      // U5: the forward target is named by the roster (the survivor is now the merged Wave style).
+      SHADOW_FORWARD: { onePenDown: 'interlockWeave' },
     };
     globalScope.Vectura.Scene3D = {
       ...priorScene3D,

@@ -192,7 +192,57 @@
     return parts.join('');
   };
 
+  // TUX-012 review: a scrolling menu marks which edge still hides rows (data-scroll-cue="above below"); CSS draws a fade
+  // there. iOS overlay scrollbars are hidden, so without the fade a row below the fold has no cue. Idempotent per element.
+  const scrollCue = (() => {
+    const refresh = (el) => {
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
+      const parts = [];
+      if (max > 1 && el.scrollTop > 1) parts.push('above');
+      if (max > 1 && el.scrollTop < max - 1) parts.push('below');
+      if (parts.length) el.dataset.scrollCue = parts.join(' ');
+      else delete el.dataset.scrollCue;
+    };
+    const bind = (el) => {
+      if (!el) return;
+      if (!el.__scrollCueBound) {
+        el.__scrollCueBound = true;
+        el.addEventListener('scroll', () => refresh(el), { passive: true });
+        if (typeof ResizeObserver === 'function') new ResizeObserver(() => refresh(el)).observe(el);
+        // Content that arrives after the bind (a modal fills its column later) changes the scroll height without resizing the box.
+        if (typeof MutationObserver === 'function') new MutationObserver(() => refresh(el)).observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'aria-expanded', 'hidden'] });
+      }
+      refresh(el);
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => refresh(el));
+    };
+    // Q22: the pane bodies that scroll hide controls below the fold on touch. Bind the static ones now and the tool drawer body when it
+    // is created. Idempotent; the cue is drawn by CSS on touch-ui only.
+    const PANE_SELECTORS = '#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body';
+    const bindPanes = (root) => {
+      const host = root || (typeof document !== 'undefined' ? document : null);
+      if (!host || !host.querySelectorAll) return 0;
+      const list = host.querySelectorAll(PANE_SELECTORS);
+      list.forEach(bind);
+      if (!root && typeof MutationObserver === 'function' && !bindPanes.__observer && document.body) {
+        bindPanes.__observer = new MutationObserver((muts) => {
+          for (const m of muts) {
+            m.addedNodes.forEach((n) => {
+              if (n.nodeType !== 1) return;
+              if (n.matches && n.matches(PANE_SELECTORS)) bind(n);
+              if (n.querySelectorAll) n.querySelectorAll(PANE_SELECTORS).forEach(bind);
+            });
+          }
+        });
+        bindPanes.__observer.observe(document.body, { childList: true, subtree: true });
+      }
+      return list.length;
+    };
+    return { bind, refresh, bindPanes, PANE_SELECTORS };
+  })();
+
   UI.utils = {
+    scrollCue,
     clamp,
     formatNumber,
     tabularNum,

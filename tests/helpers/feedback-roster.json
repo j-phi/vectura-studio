@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "requiredMechanisms": [
+    "seed-zero",
+    "saved-state-export-equivalence",
+    "preset-default-origin",
+    "mask-transform-undo",
+    "curved-faceted-geometry",
+    "ribbon-width-placement-pen-scale",
+    "import-sanitization"
+  ],
+  "tests": [
+    {
+      "path": "tests/unit/rng-noise.test.js",
+      "covers": ["seed-zero"],
+      "witness": "SeededRNG(0) is deterministic, not a Math.random fallback"
+    },
+    {
+      "path": "tests/unit/engine_state.test.js",
+      "covers": ["saved-state-export-equivalence", "preset-default-origin"],
+      "witness": "importState defaults origin to {x:0, y:0} when payload omits it"
+    },
+    {
+      "path": "tests/integration/export-determinism.test.js",
+      "covers": ["saved-state-export-equivalence"],
+      "witness": "same seed + params produce identical SVG markup"
+    },
+    {
+      "path": "tests/unit/preset-library-contract.test.js",
+      "covers": ["preset-default-origin"],
+      "witness": "every algorithm default-preset id resolves to a real preset"
+    },
+    {
+      "path": "tests/unit/masking.test.js",
+      "covers": ["mask-transform-undo"],
+      "witness": "mask parents clip direct descendants without mutating source geometry"
+    },
+    {
+      "path": "tests/integration/flip-one-undo-step.test.js",
+      "covers": ["mask-transform-undo"],
+      "witness": "a flip of a selection is exactly ONE undo step; undo restores geometry"
+    },
+    {
+      "path": "tests/unit/scene3d-curves.test.js",
+      "covers": ["curved-faceted-geometry"],
+      "witness": "a box is NEVER curved, even with Curves ON"
+    },
+    {
+      "path": "tests/unit/feedback-ribbon-canary.test.js",
+      "covers": ["ribbon-width-placement-pen-scale"],
+      "witness": "screen-distance placement and pen-scaled ribbon width reject their known bad implementation"
+    },
+    {
+      "path": "tests/integration/vectura-import-safety.test.js",
+      "covers": ["import-sanitization"],
+      "witness": "importing a layer with NaN/Infinity/string numerics clamps them to safe values"
+    }
+  ]
+}

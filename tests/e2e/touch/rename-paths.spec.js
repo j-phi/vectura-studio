@@ -67,3 +67,29 @@ test('2: a layer renames through the long-press menu', async ({ page }) => {
   await page.keyboard.press('Enter');
   await expect.poll(() => nameOf(page, id)).toBe('Held Renamed');
 });
+
+// TUX-038 req 5, both engines: the double-tap interval is read from event time stamps, never from the wall clock when a
+// handler runs. Playwright WebKit queues a real second tap behind a busy main thread (J2 on the heavy document cannot make a
+// 110 ms double tap there), so this stamps the events itself: two taps stamped 110 ms apart, with the main thread blocked
+// for 700 ms between them. Date.now() at handler time would read 700+ ms and refuse the double tap; the stamp reads 110 ms.
+test('3: a double tap stamped 110 ms apart renames although the main thread blocks 700 ms between the taps', async ({ page }) => {
+  await boot(page);
+  await page.evaluate(() => { window.app.engine.addLayer('spiral'); window.app.ui.renderLayers(); });
+  await openPane(page, 'right');
+  const opened = await page.evaluate(() => {
+    const name = document.querySelector('#layer-list .lvl-name');
+    const fire = (type, stamp) => {
+      const ev = type === 'click'
+        ? new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, view: window })
+        : new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 77, pointerType: 'touch', isPrimary: true });
+      Object.defineProperty(ev, 'timeStamp', { value: stamp });
+      (document.querySelector('#layer-list .lvl-name') || name).dispatchEvent(ev);
+    };
+    fire('pointerdown', 5000); fire('pointerup', 5040); fire('click', 5040);
+    const t0 = performance.now();
+    while (performance.now() - t0 < 700) { /* the main thread is busy */ }
+    fire('pointerdown', 5110); fire('pointerup', 5150); fire('click', 5150);
+    return !!document.querySelector('.lvl-ren-inp');
+  });
+  expect(opened, 'the rename input opened from event time stamps 110 ms apart').toBe(true);
+});

@@ -10,7 +10,7 @@ export default defineConfig({
     include: ['tests/**/*.test.js'],
     exclude: ['tests/e2e/**'],
     // 180s, not 20s: the CI `test:coverage` job runs the full suite under v8
-    // instrumentation with fork contention (maxForks 4), which makes the heavy
+    // instrumentation with fork contention (historically four workers), which makes the heavy
     // full-stack jsdom mounts (e.g. preset-save-dev-mode) run ~5-8x slower than
     // an isolated local coverage run (~3.7s → >20s in CI). The plain test:ci job
     // never hits this. A genuine hang still fails well within 180s.
@@ -34,7 +34,10 @@ export default defineConfig({
     // Vitest 4 moved the old `poolOptions.forks.maxForks` limit to the top-level
     // `maxWorkers` option. Leave the parent a core: it services every worker's
     // RPC, and if it is starved on CI's shared runner the acks are what stall.
-    maxWorkers: CI ? 2 : 4,
+    // Bound local memory as well as CPU: at most two fresh DOM workers, and
+    // one for full local coverage (which also collects exhaustive audits).
+    // Keep CI's established two-worker configuration until hosted measurements.
+    maxWorkers: !CI && process.env.VECTURA_TEST_COVERAGE === '1' ? 1 : 2,
     // NOTE: this block belongs under `test`. It sat as a sibling of it, where vitest
     // never reads it — so `include`/`exclude` silently did nothing and v8 instrumented
     // the WHOLE repo: build scripts, playwright.config.js, and (worst) the minified

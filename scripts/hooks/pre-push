@@ -1,39 +1,38 @@
 #!/bin/sh
-# Pre-push gate: runs `npm run test:fast` (~12s — unit + integration +
-# visual + perf) before every push. Skips e2e by design; CI gates the
-# full suite on the remote.
-#
-# Bypass: SKIP_PREPUSH=1 git push   (use sparingly)
-#
-# Skipped automatically for branch deletions.
+# Bounded local feedback; CI retains the complete PR roster and routes it for evidence.
+# Bypass: SKIP_PREPUSH=1 git push. Branch deletions need no local run.
 
 if [ "$SKIP_PREPUSH" = "1" ]; then
-  echo "[pre-push] SKIP_PREPUSH=1 — skipping local test suite. CI will gate."
+  echo "[pre-push] SKIP_PREPUSH=1 — skipping local feedback. CI will gate."
   exit 0
 fi
 
 empty_sha="0000000000000000000000000000000000000000"
-any_real=0
+has_push=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$empty_sha" ] && continue
-  any_real=1
+  has_push=1
 done
-if [ "$any_real" = "0" ]; then
-  echo "[pre-push] Delete-only push — skipping test suite."
+if [ "$has_push" = "0" ]; then
+  echo "[pre-push] Delete-only push — skipping feedback."
   exit 0
 fi
 
-echo "[pre-push] Running test:fast (unit + integration + visual + perf, ~12s)…"
-echo "[pre-push] Bypass: SKIP_PREPUSH=1 git push   (only when intentional)"
-echo
+# An Intel (x86_64) git on an Apple-silicon Mac runs this hook under Rosetta, and
+# every universal binary it launches (Playwright's Chromium) starts as x64 too: the
+# browser journey then hangs past the lane deadline. Re-enter native arm64.
+run_feedback() {
+  if [ "$(uname -s)" = "Darwin" ] && [ "$(sysctl -in sysctl.proc_translated 2>/dev/null)" = "1" ]; then
+    arch -arm64 /bin/sh -c 'npm run test:feedback'
+  else
+    npm run test:feedback
+  fi
+}
 
-if ! npm run test:fast; then
-  echo
-  echo "[pre-push] ❌ test:fast failed. Push aborted."
+echo "[pre-push] Running bounded critical feedback lane…"
+if ! run_feedback; then
+  echo "[pre-push] ❌ test:feedback failed. Push aborted."
   echo "[pre-push]    Fix the failures, or rerun with SKIP_PREPUSH=1 git push if intentional."
   exit 1
 fi
-
-echo
-echo "[pre-push] ✅ test:fast passed. (e2e gated by CI, not local hook.)"
-exit 0
+echo "[pre-push] ✅ feedback passed. Full risk routing and test roster run in CI."

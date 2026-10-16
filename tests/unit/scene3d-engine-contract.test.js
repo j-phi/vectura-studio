@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { SCENE3D_FILES } = require('../helpers/runtime-profiles');
 
 /*
  * CONTRACT E — engine integration for scene3d (Phase 1 stream 1A), updated for
@@ -28,7 +29,7 @@ describe('scene3d engine contract (CONTRACT E)', () => {
   let V;
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadVecturaRuntime({ profile: 'feature', files: SCENE3D_FILES });
     V = runtime.window.Vectura;
   });
 

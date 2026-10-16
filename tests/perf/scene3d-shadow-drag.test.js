@@ -14,6 +14,7 @@
  * so shadow-generation cost isn't diluted by the rest of the pipeline).
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { installOccluderScanCounter } = require('../helpers/occluder-scan-counter');
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3, truncate: true, fastPreview: false };
@@ -22,6 +23,11 @@ const boxObj = (id, x, z, size = 24) => ({
   id, name: id, primitive: 'box', params: { sx: size, sy: size, sz: size },
   transform: { x, y: 0, z, yaw: id.charCodeAt(1) * 7, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
 });
+
+// Measured (deterministic): indexed c6=8,226 c24=64,446 ratio 7.83; forced
+// linear scan c6=24,894 c24=448,721 ratio 18.03. Thresholds sit between.
+const RATIO_MAX = 12;
+const N24_MAX = 200000;
 
 describe('Scene3D.Shadows drag performance (P2 — shared occluder index reuse)', () => {
   let runtime;
@@ -35,10 +41,10 @@ describe('Scene3D.Shadows drag performance (P2 — shared occluder index reuse)'
   afterAll(() => runtime.cleanup());
 
   // Build scene + occluder set + a FRESH clipper (matching scene3d.js's
-  // real per-frame createClipper call) + run Shadows.build once, timing only
-  // the cumulative time spent inside clipper.clipPath (the metric under
+  // real per-frame createClipper call) + run Shadows.build once, counting only
+  // the occluder candidates examined by the clipper (deterministic, no clock) (the metric under
   // test — same instrumentation technique as scene3d-drag.test.js).
-  const measureShadowClipPathMs = (count) => {
+  const measureShadowCandidateTests = (count) => {
     const defaults = V.ALGO_DEFAULTS.scene3d;
     const objects = [];
     const cols = Math.max(1, Math.ceil(Math.sqrt(count)));
@@ -62,34 +68,27 @@ describe('Scene3D.Shadows drag performance (P2 — shared occluder index reuse)'
 
     const run = () => {
       const HLR = V.Scene3D.HLR;
-      const clipper = HLR.createClipper(occ, { bias: 0.05 });
-      const origClipPath = clipper.clipPath;
-      let totalMs = 0;
-      clipper.clipPath = (...args) => {
-        const t0 = performance.now();
-        const result = origClipPath.apply(clipper, args);
-        totalMs += performance.now() - t0;
-        return result;
-      };
-      const lightDir = V.Scene3D.Lighting.lightWorldDir(p.lights[0]);
-      V.Scene3D.Shadows.build(scene, p, BOUNDS, clipper, lightDir, { shadow: p.shadow });
-      return totalMs;
+      const counter = installOccluderScanCounter(HLR);
+      try {
+        const clipper = HLR.createClipper(occ, { bias: 0.05 });
+        const lightDir = V.Scene3D.Lighting.lightWorldDir(p.lights[0]);
+        V.Scene3D.Shadows.build(scene, p, BOUNDS, clipper, lightDir, { shadow: p.shadow });
+      } finally {
+        counter.restore();
+      }
+      return counter.count();
     };
     run(); // warm-up
     return run();
   };
 
-  test('shadow-hatch clipPath cost scales sub-quadratically with occluder count', () => {
-    const t6 = measureShadowClipPathMs(6);
-    const t24 = measureShadowClipPathMs(24);
-    const ratio = t24 / Math.max(t6, 0.001);
+  test('shadow-hatch occluder candidate tests scale sub-quadratically with occluder count', () => {
+    const t6 = measureShadowCandidateTests(6);
+    const t24 = measureShadowCandidateTests(24);
+    const ratio = t24 / Math.max(t6, 1);
     // eslint-disable-next-line no-console
-    console.log('[perf] shadows clipPath scaling t6=%sms t24=%sms ratio=%s loadavg=%s',
-      t6.toFixed(2), t24.toFixed(2), ratio.toFixed(2), require('os').loadavg());
-    // Same reasoning as scene3d-drag.test.js's HLR ratio guard: a linear
-    // occluder scan is quadratic here (profiler: 0.24ms -> 90ms across this
-    // exact scaling, ~375x). The shared spatial index brings this down to
-    // close to linear.
-    expect(ratio).toBeLessThan(6);
+    console.log('[perf] shadows candidate tests c6=%s c24=%s ratio=%s', t6, t24, ratio.toFixed(2));
+    expect(ratio).toBeLessThan(RATIO_MAX);
+    expect(t24).toBeLessThan(N24_MAX);
   }, 60000);
 });

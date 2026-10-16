@@ -99,9 +99,10 @@ for (const st of states) {
       const cell = base ? base[st.id] : undefined;
       const platformKnown = !!core.readBaseline(BASELINE_FILE)[PLATFORM];
       if (cell) {
-        const cmp = core.compareCell(cell, measured, undefined, metricIds);
+        const recordOnly = core.recordOnlyMetrics(st.id);
+        const cmp = core.compareCell(cell, measured, undefined, metricIds, recordOnly);
         if (UPDATE) {
-          core.updateBaselineCell(BASELINE_FILE, PLATFORM, project, st.id, measured, { metricIds, any: UPDATE_ANY, measuredAt: gitSha() });
+          core.updateBaselineCell(BASELINE_FILE, PLATFORM, project, st.id, measured, { metricIds, any: UPDATE_ANY, measuredAt: gitSha(), recordOnly });
           if (!UPDATE_ANY) issues.push(...core.formatCompare(cellId, { worse: cmp.worse.filter((w) => w.kind !== 'missing'), better: [] })); // missing = new metric, seeded above
         } else {
           issues.push(...core.formatCompare(cellId, cmp));
@@ -134,6 +135,8 @@ test('allowlist is small, justified and every entry is at least 24 px', async ({
     const matches = await page.locator(e.selector).count();
     expect(matches, `allowlist selector ${e.selector} matches ${matches} elements (must match at most one)`).toBeLessThanOrEqual(1);
     if (matches === 0) continue;
+    // stateOnly: the element is hit-testable only in some UI states (the drawer backdrop). The per-state audit still checks its size (min24).
+    if (e.stateOnly) continue;
     const handle = await page.locator(e.selector).first().elementHandle({ timeout: 1000 });
     const a = await core.probeHit(page, handle, { probe: 2, radius: 24 });
     expect(a.w, `allowlisted ${e.selector} probed width`).toBeGreaterThanOrEqual(24);

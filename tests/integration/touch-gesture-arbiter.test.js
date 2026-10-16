@@ -189,7 +189,16 @@ describe('TUX-017 gesture arbiter (renderer)', () => {
   const rows2d = [
     ['Select: empty canvas, layer pre-selected', () => { add2d(); return { p1: { x: 110, y: 150 } }; }],
     ['Select: on the selected object', () => { add2d(); return { p1: { x: 60, y: 60 } }; }],
-    ['Select: on an unselected object (selects at down)', () => { add2d(); return { p1: { x: 160, y: 60 } }; }],
+    ['Select: on an unselected object (selects at down)', () => {
+      const { a, b } = add2d();
+      // TUX-024: a finger now picks within 22 px of a stroke, so (160, 60) really lands on B. Selecting B once builds its lazy
+      // paramStates (a UI side effect, not a rollback gap); do it before the "before" snapshot, as addScene does for scenes.
+      renderer.setSelection([b], b);
+      renderer.setSelection([a], a);
+      app.history = [];
+      app.pushHistory();
+      return { p1: { x: 160, y: 60 } };
+    }],
     ['Direct: empty canvas', () => { add2d(); app.ui.setActiveTool('direct'); return { p1: { x: 110, y: 150 } }; }],
     ['Direct: on an anchor', () => {
       const { a } = add2d();

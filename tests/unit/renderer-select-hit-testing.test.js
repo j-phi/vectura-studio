@@ -124,4 +124,55 @@ describe('Renderer.findLayerAtPoint — standard select hit testing', () => {
     const hit = renderer.findLayerAtPoint({ x: 150, y: 100 });
     expect(hit).toBe(top);
   });
+
+  // --- Pointer-type aware tolerance (a finger lands 5-20 px off a hairline) ---
+
+  describe('pointer type', () => {
+    const line = (id, y) => makeLayer(id, [{ x: 100, y }, { x: 200, y }]);
+
+    test('a touch tap 10-20 px from a stroke selects it', () => {
+      const layer = line('h', 100);
+      const renderer = makeRenderer([layer]);
+      [10, 15, 20].forEach((off) => {
+        expect(renderer.findLayerAtPoint({ x: 150, y: 100 - off }, false, null, 'touch')).toBe(layer);
+      });
+    });
+
+    test('a touch tap 30 px from a stroke still misses', () => {
+      const renderer = makeRenderer([line('h', 100)]);
+      expect(renderer.findLayerAtPoint({ x: 150, y: 70 }, false, null, 'touch')).toBeNull();
+    });
+
+    test('a mouse click 10 px from a stroke does not select it (5 px tolerance)', () => {
+      const renderer = makeRenderer([line('h', 100)]);
+      expect(renderer.findLayerAtPoint({ x: 150, y: 90 }, false, null, 'mouse')).toBeNull();
+      expect(renderer.findLayerAtPoint({ x: 150, y: 90 }, false, null, 'pen')).toBeNull();
+    });
+
+    test('the last pointer type is the default', () => {
+      const layer = line('h', 100);
+      const renderer = makeRenderer([layer]);
+      renderer.lastPointerType = 'touch';
+      expect(renderer.findLayerAtPoint({ x: 150, y: 88 })).toBe(layer);
+      renderer.lastPointerType = 'mouse';
+      expect(renderer.findLayerAtPoint({ x: 150, y: 88 })).toBeNull();
+    });
+
+    test('with two strokes in touch range the nearer one wins, whatever the layer order', () => {
+      const near = line('near', 108);
+      const far = line('far', 118);
+      [[near, far], [far, near]].forEach((order) => {
+        const renderer = makeRenderer(order);
+        expect(renderer.findLayerAtPoint({ x: 150, y: 100 }, false, null, 'touch')).toBe(near);
+      });
+    });
+
+    test('the tolerance is in screen pixels: zoomed in, the world radius shrinks', () => {
+      const layer = line('h', 100);
+      const renderer = makeRenderer([layer]);
+      renderer.scale = 4; // 22 screen px = 5.5 world px
+      expect(renderer.findLayerAtPoint({ x: 150, y: 94 }, false, null, 'touch')).toBeNull();
+      expect(renderer.findLayerAtPoint({ x: 150, y: 95 }, false, null, 'touch')).toBe(layer);
+    });
+  });
 });
