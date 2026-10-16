@@ -10,7 +10,7 @@ on:
 
 env:
   # Single source of truth for the coverage shard count (1..32) and per-shard Vitest worker cap.
-  COVERAGE_SHARD_COUNT: '10'
+  COVERAGE_SHARD_COUNT: '14'
   VECTURA_VITEST_MAX_WORKERS: '2'
 
 concurrency:
