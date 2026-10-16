@@ -23,7 +23,7 @@ or completes.
 
 ## Now
 - **IN PROGRESS - touch remediation (TUX-001 to TUX-062, branch `touch/integration`, not merged).** All requirements are done in simulation on 11 Chromium and WebKit touch projects (target audit: 0 targets under 44 px on 9 baseline projects). **Pending batch G:** its remaining items go here when they land. Remaining follow-ups:
-  - Run the real-device checklist (`docs/touch-audit/device-checklist.md`, DEV-01 to DEV-57; results log is empty). The README may claim "touch-ready" only when every row is `pass` or `deferred-by-Jay`.
+  - Run the real-device checklist (`docs/touch-audit/device-checklist.md`, DEV-01 to DEV-57; results log is empty). The README may claim the touch release label only when every row is `pass` or `deferred-by-Jay`.
   - Seed the `linux` section of `tests/e2e/touch/target-baseline.json` from the first CI or nightly artifact (`test-results/touch-target-measured-*.json`).
   - Stopped clauses: TUX-034 req 10 Paste (the app has no copy command); TUX-010 req 6 direct Document Setup entry on phones (Q5 keeps every top-level menu behind one hamburger).
   - Jay's calls: default the All Tools drawer to list view on touch (TUX-015); a View-menu "Reset toolbar position" entry (TUX-016).
