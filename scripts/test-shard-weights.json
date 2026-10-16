@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "source": {
-    "description": "Candidate full-scope two-worker V8 coverage profile from coverage/full-profile.json; dirty pre-commit tree based on be12125fb4ddb61eea78a281d5e888b453f2049b; approved source payload f473c39a997e0b481746952e3be0d987bba8ce50f614febf999774e58bec4bac; per-file wall times overlap; application algorithms unchanged",
-    "fileCount": 763,
-    "fileDurationSumSeconds": 3796,
+    "description": "Candidate full-scope two-worker V8 coverage profile from coverage/full-profile.json; dirty pre-commit tree based on be12125fb4ddb61eea78a281d5e888b453f2049b; approved source payload f473c39a997e0b481746952e3be0d987bba8ce50f614febf999774e58bec4bac; per-file wall times overlap; application algorithms unchanged; u6-artistic-controls split weights apportioned from local per-file timings (ci/sub-10min-pr)",
+    "fileCount": 769,
+    "fileDurationSumSeconds": 3773,
     "unknownFileWeightSeconds": 19.355
   },
   "weightsSeconds": {
@@ -569,7 +569,14 @@
     "tests/unit/scene3d-fr-u5-fill-style-migration.test.js": 60.831,
     "tests/unit/scene3d-fr-u5-shadow-reach.test.js": 0.423,
     "tests/unit/scene3d-fr-u5-subsettings.test.js": 9.267,
-    "tests/unit/scene3d-fr-u6-artistic-controls.test.js": 508.247,
+    "tests/unit/scene3d-fr-u6-artistic-controls-defaults-base.test.js": 70.06,
+    "tests/unit/scene3d-fr-u6-artistic-controls-fresh-default.test.js": 43.236,
+    "tests/unit/scene3d-fr-u6-artistic-controls-nib.test.js": 48.531,
+    "tests/unit/scene3d-fr-u6-artistic-controls-taper.test.js": 66.707,
+    "tests/unit/scene3d-fr-u6-artistic-controls-wave-crest-override.test.js": 37.766,
+    "tests/unit/scene3d-fr-u6-artistic-controls-wave-crest-phase.test.js": 69.884,
+    "tests/unit/scene3d-fr-u6-artistic-controls-wave-wavelength.test.js": 56.472,
+    "tests/unit/scene3d-fr-u6-artistic-controls.test.js": 92.649,
     "tests/unit/scene3d-fr-u7-deferred.test.js": 24.667,
     "tests/unit/scene3d-generate.test.js": 0.841,
     "tests/unit/scene3d-ground-double-plot.test.js": 7.806,
