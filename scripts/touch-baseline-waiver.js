@@ -22,6 +22,7 @@ const raisedCells = (before, after) => {
     Object.keys(a).forEach((cell) => {
       if (!b[cell]) return; // a new cell is seeding, not a raise
       Object.entries(DIRS).forEach(([id, [dir, tol]]) => {
+        if (id === 'canvasPct' && /\|menu-/.test(cell)) return; // Q21: recorded, never ratcheted
         const was = b[cell][id];
         const now = a[cell][id];
         if (typeof was !== 'number' || typeof now !== 'number') return;

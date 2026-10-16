@@ -21,6 +21,11 @@ describe('touch baseline waiver rule', () => {
     expect(raisedCells(base, { darwin: { 'p|s': { under44: 2, covered: 5, reachable: 40, canvasPct: 58.5 } } })).toEqual(['darwin/p|s canvasPct 60 -> 58.5']);
   });
 
+  test('canvasPct of an open-menu state is record-only (Q21)', () => {
+    const a = { darwin: { 'p|menu-file': { canvasPct: 50 } } };
+    expect(raisedCells(a, { darwin: { 'p|menu-file': { canvasPct: 30 } } })).toEqual([]);
+  });
+
   test('gains, new cells and unchanged cells are not raises', () => {
     const now = { darwin: { 'p|s': { under44: 1, covered: 5, reachable: 41, canvasPct: 61 }, 'p|new': { under44: 9 } } };
     expect(raisedCells(base, now)).toEqual([]);
