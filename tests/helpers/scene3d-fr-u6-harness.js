@@ -66,15 +66,16 @@ const useU6Harness = () => {
     trochoidLoop: { toneLaw: 'ampSpacing', waveForm: 'loop' },
     interlockWeave: { toneLaw: 'ampSpacing', wavePhase: 'anti' },
   };
-  // Default fixtures recur across controls. Cache one frozen summary per exact
-  // default scene (keyed, never cleared by nondefault renders). Full-output
-  // SHA-256 digests retain compact parity witnesses for each exact default scene.
+  // Default fixtures recur across controls. Keep only the most recent immutable
+  // summary; nondefault renders invalidate it. Full-output SHA-256 digests
+  // retain compact parity witnesses for each exact default scene.
   const defaultSceneCache = new Map();
   const defaultSceneSnapshots = new Map();
   const gen = (prim, mapper, law, extra = {}, opt = {}) => {
     const isDefaultScene = Object.keys(extra).length === 0 && Object.keys(opt).length === 0;
     const cacheKey = JSON.stringify([prim, mapper, law]);
     if (isDefaultScene && defaultSceneCache.has(cacheKey)) return defaultSceneCache.get(cacheKey);
+    if (!isDefaultScene) defaultSceneCache.clear();
     const p = clone(h.defaults);
     p.objects = [{
       id: 'o1', name: 's', primitive: prim,
@@ -106,6 +107,8 @@ const useU6Harness = () => {
       pens: Array.from(new Set(out.map((pth) => (pth.meta && pth.meta.penId) || ''))).sort(),
     };
     if (isDefaultScene) {
+      const baseKey = `${prim}/${mapper}/${law}`;
+      if (BASE[baseKey]) expect(result.hash).toBe(BASE[baseKey]);
       const outputDigest = sha256({ paths, out });
       if (defaultSceneSnapshots.has(cacheKey)) {
         expect(outputDigest).toBe(defaultSceneSnapshots.get(cacheKey));
@@ -113,15 +116,10 @@ const useU6Harness = () => {
         defaultSceneSnapshots.set(cacheKey, outputDigest);
       }
       const cachedResult = freezeDeep({ ...result, out: clone(out) });
+      defaultSceneCache.clear();
       defaultSceneCache.set(cacheKey, cachedResult);
     }
     return result;
-  };
-  // Re-render an exact default scene from scratch (bypasses the cache; the
-  // SHA-256 parity witness still applies).
-  gen.fresh = (prim, mapper, law) => {
-    defaultSceneCache.delete(JSON.stringify([prim, mapper, law]));
-    return gen(prim, mapper, law);
   };
   h.gen = gen;
   return h;

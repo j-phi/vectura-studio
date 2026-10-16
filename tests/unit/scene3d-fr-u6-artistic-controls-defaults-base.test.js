@@ -11,7 +11,6 @@ const { BASE, lenOf, useU6Harness } = require('../helpers/scene3d-fr-u6-harness'
 describe('Fill-style review U6 — artistic controls', () => {
   const h = useU6Harness();
   const gen = (...a) => h.gen(...a);
-  gen.fresh = (...a) => h.gen.fresh(...a);
 
   describe('defaults reproduce the output of the tree this unit started from', () => {
     Object.keys(BASE).forEach((key) => {

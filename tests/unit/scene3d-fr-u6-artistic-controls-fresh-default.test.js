@@ -11,7 +11,6 @@ const { BASE, lenOf, useU6Harness } = require('../helpers/scene3d-fr-u6-harness'
 describe('Fill-style review U6 — artistic controls', () => {
   const h = useU6Harness();
   const gen = (...a) => h.gen(...a);
-  gen.fresh = (...a) => h.gen.fresh(...a);
 
   it('a fresh default scene stays byte-identical after gamma and wave controls render', () => {
     const before = gen('sphere', 'hatch', 'ampSpacing');
