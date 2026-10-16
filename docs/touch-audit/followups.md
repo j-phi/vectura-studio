@@ -5,7 +5,7 @@ Items found during batch reviews. They are logged here, not fixed yet.
 ## From the B3 review
 
 - **(a) CLOSED in B5.** iPad landscape: tool-rail buttons under the Document Setup drawer. The rail now rides above the drawer.
-- **(b) 874 x 330: export legend gear under the footer.** The gear sits under the modal footer on the shortest phone landscape. This predates B3. Fix: move the legend above the footer or reserve space for it.
+- **(b) CLOSED in batch G.** 874 x 330: export legend gear under the footer. The gear sits under the modal footer on the shortest phone landscape. This predates B3. Fix: move the legend above the footer or reserve space for it.
 
 ## From B4
 
@@ -15,6 +15,10 @@ Items found during batch reviews. They are logged here, not fixed yet.
 
 ## From B5
 
-- **Collapsed right pane header is 52 px wide in a 36 px rail on touch-wide.** The header (not the chevron's hit area) runs 17 px past the screen edge. The chevron's own box is clipped, its hit area stays at least 44 px. Cause: `body.touch-ui .pane-header-right .pane-title { margin-left: 52px }` holds the header open. Not fixed here.
+- **CLOSED in batch G.** Collapsed right pane header is 52 px wide in a 36 px rail on touch-wide. The header (not the chevron's hit area) runs 17 px past the screen edge. The chevron's own box is clipped, its hit area stays at least 44 px. Cause: `body.touch-ui .pane-header-right .pane-title { margin-left: 52px }` holds the header open. Not fixed here.
 - **`pane-collapsed .pane-toggle` width:** B4's `#left-pane button` and `#right-pane button` min-width rules now skip `.pane-toggle`.
-- **874 x 330: export legend gear under the footer (B3 (b))** is not touched by B5.
+- **874 x 330: export legend gear under the footer (B3 (b))** was closed in batch G.
+
+## From batch G
+
+- **CLOSED.** `ghost` 3 in the right-pane-pens cell: the pen swatch colour input was opacity 0 over a painted circle. The input now draws the circle itself.

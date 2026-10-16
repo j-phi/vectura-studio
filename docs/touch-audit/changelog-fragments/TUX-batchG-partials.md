@@ -18,3 +18,14 @@
 ## README / help / shortcuts
 - Help (Canvas): "On touch, press and hold the canvas with Select, Direct Selection or Hand to open the canvas menu."
 - Shortcut list: no change.
+
+## Followups closed (batch G)
+- Export legend gear sits above the footer on short phone landscape (legend anchors to the preview top under 400 px height).
+- Collapsed right pane header on touch-wide is as wide as the rail (was 52 px in a 36 px rail).
+- Pen swatch colour input is the visible swatch (no opacity 0 ghost target).
+- DEV-54 row added to the device checklist (TUX-048#1).
+
+## Stopped clauses
+- TUX-010 req 6, phone: Document Setup stays 3 taps (☰, File, Document Setup). Decision Q5 puts every top-level menu behind one ☰, so a direct entry would contradict it.
+- TUX-034 req 10: Paste is not built. The app has no copy command to paste from. Select All is added.
+- TUX-058: the linux baseline section needs the first CI artifact (test-results/touch-target-measured-*.json).

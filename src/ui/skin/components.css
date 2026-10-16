@@ -14009,14 +14009,16 @@ html.kb-open .export-settings-scroll {
     width: var(--touch-target-min); height: var(--touch-target-min);
     margin: 0; border: 0; border-radius: 0; overflow: visible;
   }
-  [data-ui-skin] .pen-item .pen-swatch::before {
-    content: ''; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px;
-    transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
-    background: var(--pen-color, currentColor); border: 1px solid var(--ui-border-hi);
-  }
+  /* The native colour input IS the visible swatch (a 22 px circle in the 44 px box). It was opacity 0 over a painted ::before,
+   * which the touch audit counts as a ghost target. */
+  [data-ui-skin] .pen-item .pen-swatch::before { content: none; }
   [data-ui-skin] .pen-item .pen-swatch .pen-color {
-    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 1; cursor: pointer;
+    padding: 0; border: 0; background: transparent; -webkit-appearance: none; appearance: none;
   }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch-wrapper { padding: 11px; }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color::-moz-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
   [data-ui-skin] .pen-item .pen-width { order: 5; flex: 1 1 0; min-width: 0; width: auto; margin: 0 var(--spacing-sm, 8px); }
   [data-ui-skin] .pen-item .pen-width-value {
     order: 6; flex: 0 0 auto; width: auto; min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
@@ -15397,6 +15399,19 @@ body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle::before {
 }
 body.touch-wide-layout.touch-ui .pane-left.pane-collapsed .pane-toggle::before { left: 0; right: -10px; }
 body.touch-wide-layout.touch-ui .pane-right.pane-collapsed .pane-toggle::before { right: 0; left: -10px; }
+/* Followup B5: the collapsed header held its 44 px padding and the 52 px tab margin open, so it ran 17 px past the screen edge.
+ * It is as wide as the rail now; the chevron's ::before still reaches 10 px onto the canvas for the 44 px finger target. */
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-header,
+body.touch-wide-layout.touch-ui #right-pane.pane-collapsed .pane-header,
+[data-ui-skin] body.touch-wide-layout.touch-ui #right-pane.pane-collapsed .pane-header,
+body.touch-wide-layout.touch-ui[data-ui-skin] #right-pane.pane-collapsed .pane-header {
+  padding-left: 0;
+  padding-right: 0;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-header .right-pane-tabs { display: none; }
 body.touch-wide-layout.touch-ui .pane-toggle svg { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
 body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle svg { transform: rotate(180deg); }
 /* === END TUX-010/011 === */
@@ -16426,3 +16441,11 @@ body.touch-wide-layout.touch-ui :is(#left-pane, #right-pane).pane-collapsed .pan
   body.touch-ui #settings-panel .settings-panel-body > .sect--color-paper { order: -1; }
 }
 /* === END TUX-050 (batch G) === */
+
+/* === Export legend gear above the footer on the shortest phone landscape (followups B3 b) ===
+ * At 874 x 330 the preview stage runs under the pinned modal footer, and the legend (anchored to the stage bottom) put its
+ * gear under the footer. On short touch screens the legend anchors to the stage top, which stays in the visible band. */
+@media (max-height: 400px) {
+  body.touch-ui .export-preview-legend { top: 12px; bottom: auto; }
+}
+/* === END export legend gear === */
