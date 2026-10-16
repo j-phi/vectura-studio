@@ -1,7 +1,7 @@
 // Shared by tests/e2e/touch/direct-pick.spec.js and tests/e2e/direct-pick-desktop.spec.js (TUX-024).
 // One rings layer, Direct tool active, view placed so a clear canvas spot holds the topmost stroke point.
 // Returns the client point ON the stroke; the outward normal is straight up, so (x, y - d) is d px off it.
-const setupDirectPick = async (page) => page.evaluate(() => {
+const setupOnce = (page) => page.evaluate(() => {
   const app = window.app;
   const e = app.engine;
   const r = app.renderer;
@@ -40,6 +40,15 @@ const setupDirectPick = async (page) => page.evaluate(() => {
   throw new Error('no clear canvas spot for the stroke');
 });
 
+// The view can still be settling on a slow engine (WebKit under load): retry the spot search a few times.
+const setupDirectPick = async (page) => {
+  for (let i = 0; ; i += 1) {
+    try { return await setupOnce(page); } catch (err) {
+      if (i >= 5 || !/no clear canvas spot/.test(String(err.message))) throw err;
+      await page.waitForTimeout(500);
+    }
+  }
+};
 const picked = (page) => page.evaluate(() => {
   // A rings layer is not source-editable, so the Direct pick shows as a layer selection, not an anchor selection.
   const ids = [...window.app.renderer.selectedLayerIds];

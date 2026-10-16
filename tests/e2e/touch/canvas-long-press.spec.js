@@ -83,9 +83,9 @@ test.describe('TUX-034 canvas long-press', () => {
     const s = await setupDirectPick(page);
     await page.evaluate(() => window.app.renderer.setTool('select'));
     await touch.touchPhase(page, 'start', [{ x: s.x, y: s.y, id: 0 }]);
-    await page.waitForTimeout(250);
+    await page.waitForTimeout(100);
     await touch.touchPhase(page, 'move', [{ x: s.x + 15, y: s.y, id: 0 }]);
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(600);
     await touch.touchPhase(page, 'end', [{ x: s.x + 15, y: s.y, id: 0 }]);
     await page.waitForTimeout(200);
     expect(await page.locator(MENU).count()).toBe(0);
