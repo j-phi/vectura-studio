@@ -80,7 +80,7 @@ describe('TUX-052 touch copy', () => {
     const panel = wrap.querySelector('[data-panel="touch"]');
     expect(panel.hidden).toBe(false);
     for (const word of ['Tap', 'Drag', 'Pinch', 'Two-finger tap', 'Three-finger tap', 'Undo', 'Done',
-      'Multi-select', 'Constrain', 'Duplicate', '⋯', 'grip']) {
+      'Multi-select', 'Constrain', 'Duplicate', '⋯', 'grip', 'Hold the canvas', 'Hold an icon button']) {
       expect(panel.textContent, word).toContain(word);
     }
   });
@@ -94,7 +94,7 @@ describe('TUX-052 touch copy', () => {
   test('T6: no forbidden claims in touch copy', () => {
     window.app.ui.openHelp(false);
     const panel = document.querySelector('#modal-overlay [data-panel="touch"]');
-    expect(panel.textContent).not.toMatch(/hold (the )?canvas|tap outside|auto-scroll|double-tap (the )?canvas/i);
+    expect(panel.textContent).not.toMatch(/tap outside|auto-scroll|double-tap (the )?canvas/i);
     const touchTools = window.Vectura.HINTS.touchTools;
     expect(touchTools).toBeTruthy();
     expect(Object.keys(touchTools).sort()).toEqual(Object.keys(window.Vectura.HINTS.tools).sort());

@@ -412,6 +412,8 @@
           ${row(t('Done chip') + ' · ' + t('Double-tap'), 'Finish a pen path')}
           ${row(t('Modifier bar'),                 'Multi-select, Constrain, Duplicate and Pan apply to the next gesture', 'Double-tap a modifier to lock it')}
           ${row(t('Hold a layer row') + ' · ' + t('Tap ⋯'), 'Open the layer menu', '&ldquo;Selection menu&hellip;&rdquo; in the context bar')}
+          ${row(t('Hold the canvas'),              'Select the object under your finger and open the canvas menu', 'Select, Direct Selection and Hand tools · on empty canvas the menu offers Select All')}
+          ${row(t('Hold an icon button'),          'Show its name', 'The name shows while your finger is down and for 1.5 s after')}
           ${row(t('Drag a grip'),                  'Reorder layers and panels')}
           ${row(t('Tap a value chip'),             'Type a value', 'Hold a slider label to open its Reset to default menu')}
           ${row(t('Hold a button marked ▸'),       'Open its sub-menu (on touch, tap it again when it is active)')}
