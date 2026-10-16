@@ -621,6 +621,12 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### 1.4.14
+- **3D Scene — Duty Cycle · Constant responds to Density above 50.** Density 50 to 100 now
+  tightens the rulings past the plot floor, evenly in ink coverage, down to one pen width (lines
+  touching) near the top of the slider, so the deepest shadow floods to solid ink. Density 50 and
+  below draw exactly as before.
+
 ### 1.4.6
 - **3D Scene — pen routing, chaining and cleanups (U7).** **Tone bands** (2 to 4) split any Fill Style by
   the tone under each mark and draw band 1 to N with the pens you pick in the *Band pen* rows; the
@@ -702,6 +708,9 @@ CI lives in `.github/workflows/test.yml`:
   wave-ribbon weight while keeping the new even placement, are both open product decisions not
   settled by this release.
 
+<details>
+<summary>Older releases (1.4.1 and earlier)</summary>
+
 ### 1.4.1
 - **3D Scene · crosshatch draws a real crossing grid again.** The two crosshatch line families now
   split one shared coverage budget evenly instead of the second family receiving roughly a tenth of
@@ -737,9 +746,6 @@ CI lives in `.github/workflows/test.yml`:
 - **Known open.** T2/T3 (mark-length tone laws — T2 was measured, rejected and reverted),
   W-31b, W-32 Rank 3/4 (refine the fill border to the true silhouette), F-14, and nine frozen
   design decisions awaiting a call.
-
-<details>
-<summary>Older releases (1.4.0 and earlier)</summary>
 
 ### 1.4.0
 - **3D Scene Studio — the headline feature.** 3D Scene grew from a single mesh into a full

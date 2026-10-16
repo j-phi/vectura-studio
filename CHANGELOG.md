@@ -20,6 +20,12 @@ The format is intentionally human-curated with an `Unreleased` section that coll
   in `docs/test-suite-acceleration-punchlist.md`; hosted speed targets are not yet certified.
 
 
+### Changed (3D Scene)
+- **Duty Cycle · Constant: Density 50-100 is live.** The fill's ruling clearance was pinned at the plot
+  floor, so Density above 50 changed nothing. It now tightens linearly in ink coverage from the floor
+  (Density 50) to one pen width (about Density 93 and up), so full-duty shadow becomes solid ink.
+  Density 50 and below are byte-identical. `scene3d-fr-u5-legacy-mono-density` covers dutyConst at 85 again.
+
 ### Fixed (tests)
 - **Pre-push feedback lane no longer hangs under an Intel git on Apple silicon.** An x86_64 git runs
   hooks under Rosetta, so Playwright's Chromium started as x64 and the browser journey timed out at the

@@ -1491,7 +1491,14 @@
     const vx = -uy; const vy = ux;
     const cx = (C.minX + C.maxX) / 2; const cy = (C.minY + C.maxY) / 2;
     const half = Math.hypot(C.W, C.H) / 2;
-    const P = C.FLOOR * 1.05 * C.SPARSE;  // ONE fixed clearance, everywhere (Density < 50 widens it)
+    // ONE fixed clearance, everywhere. Density < 50 widens it (SPARSE). Density
+    // above 50 tightens it past the plot floor, linearly in ink coverage, down to
+    // ONE PEN WIDTH at the top of the slider: rulings that touch, so the
+    // full-duty shadow floods to solid black. Density <= 50 is byte-identical.
+    const P0 = C.FLOOR * 1.05 * C.SPARSE;
+    const tDense = clamp((1 - 1 / C.DS) / (1 - 1 / 4), 0, 1);
+    const cov0 = C.PEN / P0;
+    const P = tDense > 0 ? C.PEN / (cov0 + (1 - cov0) * tDense) : P0;
     const PERIOD = C.FLOOR * 2.0;         // ONE fixed mark period
     const nLines = Math.ceil((2 * half) / P);
     const NS = Math.max(70, Math.round((2 * half) / 0.24));
