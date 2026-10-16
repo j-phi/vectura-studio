@@ -225,16 +225,25 @@ Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar wit
 
 ### Mobile & Accessibility
 
-Vectura runs on phones. A touch-friendly shell with slide-over drawers, a bottom-docked tool rail, and independent panel scrolling makes the full workflow usable on small screens.
+Vectura works by finger and Apple Pencil on iPad and iPhone. Panels open as drawers, the tool rail is one row, and every control has a 44 px touch target. A canvas HUD, a modifier bar and a Help Touch tab replace the mouse and keyboard.
 
 <details>
 <summary>Full mobile & accessibility feature list</summary>
 
-- Mobile-first responsive shell for small phones including iPhone mini
-- Touch-friendly `File/View/Help` top menus, bottom-docked tool rail, and slide-over side drawers for Generator/Layers panels on small screens
-- Right-panel sections scroll independently on short screens including the Pens section
-- Collapsed side panes keep a visible edge tab on very small phones
-- Tablet/touch parity: pointer-native canvas interactions, one-finger tool input, two-finger pan/pinch zoom, and touch modifier buttons (`Shift`, `Alt`, `Meta`, `Pan`)
+- **Layouts:** a classifier picks desktop, touch-wide (iPad landscape), tablet (iPad portrait) or phone. Phones and iPad portrait start with both panels closed as drawers over a dimmed backdrop. iPad landscape docks both. The page never scrolls, rubber-bands or zooms.
+- **Safe areas:** header, drawers and the bottom chrome respect the notch, Dynamic Island and home indicator, including Home Screen mode.
+- **Canvas gestures:** pinch and two-finger pan work with every tool. A two-finger tap undoes and a three-finger tap redoes. A one-finger drag moves a selected object after 6 px. A system interruption cancels the edit with no history entry. Apple Pencil wins over a resting palm.
+- **Canvas HUD:** Undo, Redo, Zoom Out, Zoom In and Fit buttons at the bottom right.
+- **Modifier bar:** Multi-select, Constrain, Duplicate and Pan apply to the next gesture. A double-tap locks one. A badge names the active tasks.
+- **Finger-sized editing:** 22 px grab radius for resize corners, anchors, handles, corner widgets, the 3D gizmo and Petal Designer points. Pen closes on a tap near the start and finishes on a double-tap. Done, Remove Last Anchor and Cancel chips show during a pen draft.
+- **Menus and holds:** hold a layer row or the canvas for 0.5 s to open its menu. Hold a control label for "Reset to default". Hold an icon button to see its name. Tap a value chip to type a number.
+- **Panels:** two-line Layers rows, drag-a-grip reorder with auto-scroll, 44 px sliders that move only on a sideways drag, 0.5 degree mirror dials, and inputs at 16 px so iOS does not zoom.
+- **Keyboard and sheets:** fields and sheets stay above the on-screen keyboard. Export, Help, Document Setup, the colour picker and Save Preset use one pinned-header sheet. Toasts sit bottom-centre on touch, and deleting shows an Undo toast.
+- **Type tool:** a tap opens the on-screen keyboard. The Text panel has a multi-line Text field.
+- **iOS files:** open `.vectura` from the Files app and save through the share sheet. Camera-roll photos are resampled to 2048 px.
+- **Help:** a Touch tab and Touch toggle, opened by default in the touch layout. The status hints switch to touch words (Tap, Multi-select + Tap) after touch or Pencil input.
+- **Accessibility:** pane controls report `aria-expanded` and `aria-controls`. Menus have `aria-haspopup`. Focus moves into a drawer on open and back on close.
+- **Quality gates:** a touch target audit ratchet, finger-only journey specs, a static touch guard and a real-device checklist (`docs/touch-audit/device-checklist.md`). The device run is still pending, so the app is not yet labelled touch-ready.
 
 </details>
 
@@ -394,7 +403,7 @@ Click `Export SVG` to download.
 | Expand layer | `Cmd/Ctrl+E` |
 | Group layers | `Cmd/Ctrl+G` |
 | Ungroup | `Cmd/Ctrl+Shift+G` |
-| Rename layer | Double-click layer name |
+| Rename layer | Double-click layer name (touch: double-tap) |
 | Make clipping mask | `Shift + Drag` layer onto another in the layers panel |
 | **Editing** | |
 | Undo | `Cmd/Ctrl+Z` |
@@ -407,12 +416,38 @@ Click `Export SVG` to download.
 | Pen: freeze mirror handle | `Alt/Option` while dragging a bezier point |
 | Pen: commit | `Enter` |
 | Pen: cancel | `Esc` |
-| Reset value to default | Double-click control |
+| Reset value to default | Double-click control (touch: hold the label) |
 | Save current settings as a preset | `Cmd/Ctrl+S` (config panel focused, after editing a preset) |
 | Cycle wallpaper group within current lattice | `Cmd/Ctrl + ←` / `Cmd/Ctrl + →` |
 | **UI** | |
 | Document Setup | `Cmd/Ctrl+K` |
 | Help / shortcuts | `?` |
+
+</details>
+
+<details>
+<summary>Touch gestures</summary>
+
+| Gesture | Action |
+|---|---|
+| Tap | Select an object or layer |
+| Drag a selected object | Move it (starts after 6 px) |
+| Drag empty canvas | Marquee select |
+| Two-finger drag | Pan the canvas |
+| Pinch | Zoom the canvas |
+| Two-finger tap | Undo |
+| Three-finger tap | Redo |
+| Double-tap | Finish a pen path |
+| Press and hold the canvas (0.5 s) | Select the object and open the canvas menu (Select, Direct Selection, Hand) |
+| Press and hold a layer row (0.5 s) | Open the layer menu (or tap `⋯`) |
+| Drag a grip | Reorder layers and panel list rows |
+| Tap a value chip | Type an exact value |
+| Press and hold a control label (0.5 s) | Reset to default |
+| Press and hold an icon button (0.5 s) | Show its name |
+| Press and hold a tool marked `▸` | Open its variants (or tap the active tool again) |
+| Modifier bar: tap a task | Apply Multi-select, Constrain, Duplicate or Pan to the next gesture |
+| Modifier bar: double-tap a task | Lock it on |
+| Canvas HUD buttons | Undo, Redo, Zoom Out, Zoom In, Fit |
 
 </details>
 
@@ -431,6 +466,8 @@ Click `Export SVG` to download.
 | `npm run test:unit` | Deterministic unit coverage for RNG/noise, algorithms, and utility helpers |
 | `npm run test:integration` | Engine workflow, layer lifecycle, optimization pipeline, state roundtrip, export, UI bootstrap |
 | `npm run test:e2e` | Playwright smoke tests on desktop + tablet-touch Chromium |
+| `npm run test:e2e:touch` | Touch specs on 7 Chromium and 4 WebKit device projects (`PW_PORT` picks the dev-server port) |
+| `npm run test:e2e:touch:audit` | Touch target and layout audit against `tests/e2e/touch/target-baseline.json` (`:full` for every state) |
 | `npm run test:visual` | SVG baseline regression checks against `tests/baselines/svg` |
 | `npm run test:visual:screenshots` | Optional Playwright screenshot snapshot checks for high-risk UI shells |
 | `npm run test:perf` | Stress/performance checks for generation and optimization |
@@ -619,6 +656,13 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Touch support
+- **Touch and Apple Pencil across the whole app.** Phones and iPad portrait open panels as drawers. The tool rail is one row. A canvas HUD gives Undo, Redo, Zoom and Fit. Pinch and two-finger pan work with every tool. A two-finger tap undoes and a three-finger tap redoes. The modifier bar replaces Shift, Option and Cmd (Multi-select, Constrain, Duplicate, Pan). Hold a layer row or the canvas for its menu, hold a label to reset, tap a value chip to type.
+- **Finger-sized controls.** Every control has a 44 px hit area, sliders move only on a sideways drag, inputs are 16 px so iOS does not zoom, and fields stay above the keyboard. Handles, anchors, the pen, the Direct tool, the 3D gizmo and the Petal Designer use a 22 px grab radius.
+- **Help and hints.** Help has a Touch tab and a Touch toggle. Status hints use touch words after touch input. See the Touch gestures table under How to Use.
+- **iOS files.** Open `.vectura` from the Files app, save through the share sheet, and import large photos safely.
+- **Test and release gates.** Touch target audit, finger-only journeys, static touch guard and a real-device checklist. Real-device results are pending, so this is not yet labelled touch-ready. Details: `CHANGELOG.md` and `docs/touch-audit/`.
+
 ### 1.4.6
 - **3D Scene — pen routing, chaining and cleanups (U7).** **Tone bands** (2 to 4) split any Fill Style by
   the tone under each mark and draw band 1 to N with the pens you pick in the *Band pen* rows; the
@@ -674,6 +718,9 @@ CI lives in `.github/workflows/test.yml`:
 - **Known open.** Whether to retune the crosshatch cap's onset — measured infeasible without a
   different mechanism this round — and whether the tick fills' residual gap is acceptable, are
   both open product decisions not settled by this release.
+
+<details>
+<summary>Older releases (1.4.2 and earlier)</summary>
 
 ### 1.4.2
 - **3D Scene — "Min rulings" (per fill style).** Hatch and Crosshatch styles gain a *minimum
@@ -735,9 +782,6 @@ CI lives in `.github/workflows/test.yml`:
 - **Known open.** T2/T3 (mark-length tone laws — T2 was measured, rejected and reverted),
   W-31b, W-32 Rank 3/4 (refine the fill border to the true silhouette), F-14, and nine frozen
   design decisions awaiting a call.
-
-<details>
-<summary>Older releases (1.4.0 and earlier)</summary>
 
 ### 1.4.0
 - **3D Scene Studio — the headline feature.** 3D Scene grew from a single mesh into a full
