@@ -304,7 +304,7 @@ test.describe('TUX-017 gesture arbiter', () => {
     });
     const f0 = { x: startAt.x, y: startAt.y, id: 0 };
     await touch.touchPhase(page, 'start', [f0]);
-    await sleep(400);
+    await sleep(250); // under the 500 ms canvas long-press (TUX-034)
     for (let i = 1; i <= 8; i += 1) {
       await touch.touchPhase(page, 'move', [{ ...f0, x: f0.x + 5 * i }]);
       await sleep(25);

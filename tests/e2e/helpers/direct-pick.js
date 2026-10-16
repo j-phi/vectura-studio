@@ -49,5 +49,6 @@ const boot = async (page) => {
   await page.goto('/');
   await page.waitForFunction(() => !!(window.app && window.app.renderer && window.app.engine && window.app.ui));
   await page.waitForTimeout(400);
+  await require('./target-audit-core').waitGeometryStable(page);
 };
 module.exports = { setupDirectPick, picked, boot };

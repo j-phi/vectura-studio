@@ -89,7 +89,8 @@ test.describe('TUX-018a pointercancel aborts', () => {
     const { id, pt } = await fixture(page, testInfo, { tool: 'select' });
     const before = await probe(page, id);
     await touch.touchPhase(page, 'start', [{ ...pt, id: 0 }]);
-    await sleep(450);
+    // Held well under the 500 ms canvas long-press (TUX-034), so the touch stays a move.
+    await sleep(250);
     for (let i = 1; i <= 10; i += 1) {
       await touch.touchPhase(page, 'move', [{ x: pt.x + 5 * i, y: pt.y + 2 * i, id: 0 }]);
       await sleep(15);
