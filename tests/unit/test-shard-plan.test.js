@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe('deterministic coverage shard plan', () => {
-  it('keeps the full-coverage check as a fail-closed two-shard merge gate', () => {
+  it('keeps the full-coverage check as a fail-closed N-shard merge gate', () => {
     const workflow = fs.readFileSync(path.resolve('.github/workflows/test.yml'), 'utf8');
     const job = (name) => workflow.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z0-9-]+:\\n|(?![\\s\\S]))`, 'm'))?.[1] || '';
     const coverage = job('coverage');
@@ -27,8 +27,14 @@ describe('deterministic coverage shard plan', () => {
       expect(job(name)).toContain(`if: ${prOrMainPush}`);
     }
     expect(job('coverage-plan')).toContain('started_ms=$(date +%s%3N)');
-    expect(shard).toContain('matrix:\n        shard: [1, 2]');
-    expect(shard).toContain('--shard="$SHARD_INDEX/2"');
+    expect(workflow).toMatch(/^  COVERAGE_SHARD_COUNT: '?10'?$/m);
+    expect(job('coverage-plan')).toContain('shards: ${{ steps.count.outputs.shards }}');
+    expect(job('coverage-plan')).toContain('--shards "$COVERAGE_SHARD_COUNT"');
+    expect(shard).toContain('shard: ${{ fromJSON(needs.coverage-plan.outputs.shards) }}');
+    expect(shard).toContain('--shard="$SHARD_INDEX/$SHARD_COUNT"');
+    expect(shard).toContain('--workers "$VECTURA_VITEST_MAX_WORKERS"');
+    expect(coverage).toContain('pattern: coverage-shard-[0-9]*');
+    expect(workflow).not.toMatch(/\$SHARD_INDEX\/2|shard: \[1, 2\]|coverage-shard-\[12\]|--shards 2|--workers 2/);
     expect(coverage).toContain(`if: ${alwaysPrOrMainPush}`);
     expect(coverage).toContain('needs: [coverage-plan, coverage-shard]');
     expect(coverage).toContain('test "$GUARD_RESULT" = success');
@@ -68,7 +74,7 @@ describe('deterministic coverage shard plan', () => {
 
   it('stages pilot artifacts when the YAML literal block runs in bash', () => {
     const workflow = fs.readFileSync(path.resolve('.github/workflows/test-shard-pilot.yml'), 'utf8');
-    const runBlock = workflow.match(/      - name: Verify provenance and stage exactly two Vitest blob files\n        run: \|\n((?:          .*\n?)+)/);
+    const runBlock = workflow.match(/      - name: Verify provenance and stage every Vitest blob file\n        run: \|\n((?:          .*\n?)+)/);
     expect(runBlock).not.toBeNull();
     const mergeScript = runBlock[1].replace(/^ {10}/gm, '').trimEnd();
 
@@ -77,9 +83,10 @@ describe('deterministic coverage shard plan', () => {
     const sha = 'd'.repeat(40);
     const runId = 'fixture-run';
     const plan = buildPlan({
-      files: ['tests/unit/a.test.js', 'tests/unit/b.test.js'],
+      files: Array.from({ length: 12 }, (_, i) => `tests/unit/f${i}.test.js`),
       weights: { source: { description: 'fixture', unknownFileWeightSeconds: 1 }, weightsSeconds: {} },
       sha,
+      shardCount: 10,
     });
     fs.writeFileSync(path.join(root, 'coverage-shard-plan.json'), JSON.stringify(plan));
     const artifacts = path.join(root, 'coverage-shard-artifacts');
@@ -99,6 +106,10 @@ describe('deterministic coverage shard plan', () => {
       fs.writeFileSync(path.join(directory, 'blob.json'), '{}');
     }
 
+    // The workflow download pattern excludes these; stage-blobs must tolerate them anyway.
+    fs.mkdirSync(path.join(artifacts, 'coverage-shard-profile-1'), { recursive: true });
+    fs.mkdirSync(path.join(artifacts, 'coverage-shard-plan'), { recursive: true });
+
     const result = spawnSync('bash', ['-c', mergeScript], {
       cwd: process.cwd(),
       encoding: 'utf8',
@@ -111,8 +122,11 @@ describe('deterministic coverage shard plan', () => {
       },
     });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('staged 2 provenance-verified blob reports');
-    expect(fs.readdirSync(path.join(root, 'vitest-blobs')).sort()).toEqual(['shard-1.json', 'shard-2.json']);
+    expect(result.stdout).toContain('staged 10 provenance-verified blob reports');
+    expect(fs.readdirSync(path.join(root, 'vitest-blobs')).sort()).toEqual(plan.shards.map((shard) => `shard-${shard.index}.json`).sort());
+    fs.rmSync(path.join(artifacts, 'coverage-shard-7'), { recursive: true });
+    const missing = spawnSync('bash', ['-c', mergeScript], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, RUNNER_TEMP: root, GITHUB_SHA: sha, GITHUB_RUN_ID: runId, GITHUB_RUN_ATTEMPT: '1' } });
+    expect(missing.status).not.toBe(0);
   });
 
   it('balances known durations and gives unprofiled files a conservative nonzero weight', () => {
@@ -184,5 +198,25 @@ describe('deterministic coverage shard plan', () => {
     expect(report([])).toThrow(/roster mismatch/);
     expect(report([...assigned.map(passing), passing(assigned[0])])).toThrow(/roster mismatch/);
     expect(report([...assigned.map(passing), passing('tests/unit/extra.test.js')])).toThrow(/roster mismatch/);
+  });
+
+  it('plans 1..32 timing-balanced shards, rejects other counts, and covers every file exactly once', () => {
+    const files = Array.from({ length: 40 }, (_, i) => `tests/unit/t${i}.test.js`);
+    const fake = { source: { description: 'fixture', unknownFileWeightSeconds: 5 }, weightsSeconds: Object.fromEntries(files.map((f, i) => [f, 100 - i])) };
+    const plan = buildPlan({ files, weights: fake, sha: 'e'.repeat(40), shardCount: 10 });
+    expect(plan.shardCount).toBe(10);
+    expect(plan.shards.map((s) => s.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(plan.shards.flatMap((s) => s.files).sort()).toEqual([...files].sort());
+    const sums = plan.shards.map((s) => s.estimatedSeconds);
+    expect(Math.max(...sums) - Math.min(...sums)).toBeLessThanOrEqual(100);
+    expect(plan.hash).toBe(planHash(plan));
+    expect(buildPlan({ files, weights: fake, sha: 'e'.repeat(40), shardCount: 32 }).shardCount).toBe(32);
+    expect(buildPlan({ files, weights: fake, sha: 'e'.repeat(40), shardCount: 1 }).shards).toHaveLength(1);
+    for (const bad of [0, 33, 2.5, NaN]) expect(() => buildPlan({ files, weights: fake, sha: 'e'.repeat(40), shardCount: bad })).toThrow(/between 1 and 32/);
+  });
+
+  it('keeps the vitest worker cap overridable by VECTURA_VITEST_MAX_WORKERS', () => {
+    const config = fs.readFileSync(path.resolve('vitest.config.mjs'), 'utf8');
+    expect(config).toContain('VECTURA_VITEST_MAX_WORKERS');
   });
 });
