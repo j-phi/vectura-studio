@@ -1,0 +1,35 @@
+/**
+ * TUX-058 req 5: the touch target baseline cannot be raised without a TUX-WAIVER line in the commit body.
+ * Fixture cases prove the comparison. The live case walks the commits after the enforcement anchor.
+ */
+const { execFileSync } = require('child_process');
+const { raisedCells, unwaivedCommits } = require('../../scripts/touch-baseline-waiver');
+
+// Commits after this one are checked. Earlier ones seeded and re-seeded the baseline before the rule existed.
+const ANCHOR = '6711d22a';
+
+describe('touch baseline waiver rule', () => {
+  const base = { darwin: { 'p|s': { under44: 2, covered: 5, reachable: 40, canvasPct: 60 } } };
+
+  test('a lower-is-better metric that rises is a raise', () => {
+    const now = { darwin: { 'p|s': { under44: 3, covered: 5, reachable: 40, canvasPct: 60 } } };
+    expect(raisedCells(base, now)).toEqual(['darwin/p|s under44 2 -> 3']);
+  });
+
+  test('a higher-is-better metric that falls is a raise, canvasPct has 1 pp of tolerance', () => {
+    expect(raisedCells(base, { darwin: { 'p|s': { under44: 2, covered: 5, reachable: 39, canvasPct: 59.5 } } })).toEqual(['darwin/p|s reachable 40 -> 39']);
+    expect(raisedCells(base, { darwin: { 'p|s': { under44: 2, covered: 5, reachable: 40, canvasPct: 58.5 } } })).toEqual(['darwin/p|s canvasPct 60 -> 58.5']);
+  });
+
+  test('gains, new cells and unchanged cells are not raises', () => {
+    const now = { darwin: { 'p|s': { under44: 1, covered: 5, reachable: 41, canvasPct: 61 }, 'p|new': { under44: 9 } } };
+    expect(raisedCells(base, now)).toEqual([]);
+  });
+
+  test('no commit after the anchor raises the baseline without TUX-WAIVER', () => {
+    let known = true;
+    try { execFileSync('git', ['cat-file', '-e', `${ANCHOR}^{commit}`], { stdio: 'ignore' }); } catch (_) { known = false; }
+    if (!known) return; // shallow clone: the anchor is not here
+    expect(unwaivedCommits(`${ANCHOR}..HEAD`)).toEqual([]);
+  });
+});
