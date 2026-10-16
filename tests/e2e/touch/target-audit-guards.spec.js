@@ -388,3 +388,26 @@ test('guard: Q22 pane scroll reach counts only a scrollable, uncovered, 44 px co
   expect(get('zz-lost') ? get('zz-lost').scrollReach : false, 'a control in a non-scrolling overflow:hidden clip stays unreachable').toBeFalsy();
   expect(get('zz-cov') ? get('zz-cov').scrollReach : false, 'a control covered after the scroll stays unreachable').toBeFalsy();
 });
+
+// B4 review: the Q22 probe runs on a row that is OFF screen before the scroll, so an open menu must stay opaque. A menu that covers the
+// row's scrolled-in position means no finger can reach the row while the menu is open: it must not count as scroll-reachable.
+test('guard: Q22 keeps an open menu opaque when it covers the scrolled-in position @audit-extra', async ({ page, baseURL }, testInfo) => {
+  const spec = PROJECTS[testInfo.project.name];
+  await boot(page, baseURL);
+  await page.evaluate(() => {
+    const pane = document.createElement('div');
+    pane.style.cssText = 'position:fixed;left:20px;top:120px;width:260px;z-index:50;background:#222';
+    pane.innerHTML = '<div id="zz-body3" style="height:90px;overflow-y:auto"><div style="height:200px"></div>'
+      + '<button id="zz-under" style="display:block;height:44px;width:140px;padding:0">under</button><div style="height:60px"></div></div>';
+    document.body.appendChild(pane);
+    const rc = document.getElementById('zz-body3').getBoundingClientRect();
+    const menu = document.createElement('div');
+    menu.setAttribute('role', 'menu');
+    menu.style.cssText = `position:fixed;left:${rc.left}px;top:${rc.top}px;width:${rc.width}px;height:${rc.height}px;z-index:60;background:#444`;
+    document.body.appendChild(menu);
+  });
+  const r = await measure(page, spec, testInfo.project.name);
+  const it = r.raw.items.find((i) => /zz-under/.test(i.sel));
+  expect(it, 'the probe row is listed').toBeTruthy();
+  expect(it.scrollReach, 'a row under an open menu is not reachable by finger').toBeFalsy();
+});

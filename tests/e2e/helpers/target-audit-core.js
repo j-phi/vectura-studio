@@ -58,6 +58,13 @@ function hitAreaInPage(el, opts) {
   cy = Math.round(cy);
   const ownedAt = (dx, dy) => {
     const t = document.elementFromPoint(cx + dx, cy + dy);
+    // TUX-041 B5: an open dropdown that does not contain the target is a transient dismiss-on-outside-tap layer, not a neighbour
+    // that owns the pixels (the same rule as the Q13 backdrop). A rail button that the menu panel edge cuts is measured at its
+    // own size: the size does not depend on which menu is open. The centre sample (0, 0) is never excused.
+    if ((dx || dy) && t && t.closest) {
+      const m = t.closest('.top-menu-panel.open, .menu-dropdown.open');
+      if (m && !m.contains(el)) return true;
+    }
     return !!t && (t === el || el.contains(t) || (t.tagName === 'LABEL' && t.control === el));
   };
   if (!ownedAt(0, 0)) return { w: 0, h: 0 };
@@ -212,7 +219,7 @@ function canvasShareExactInPage(args, env) {
     const xs = [...new Set([q(L), q(R), ...seedX, ...band.flatMap((c) => [c.l, c.r, c.e[0], c.e[1]])])].sort((a, b) => a - b);
     for (let j = 0; j + 1 < xs.length; j += 1) area += cellArea(xs[j], y0, xs[j + 1], y1);
   }
-  return +(100 * area / (W * H)).toFixed(1);
+  return args.raw ? 100 * area / (W * H) : +(100 * area / (W * H)).toFixed(1); // raw: unrounded, for floors that sit on a rounding edge
 }
 
 // measureInPage(cfg, helpers) -> raw record. cfg: { W, H, safe, allow: [selector] }.
@@ -474,7 +481,7 @@ function measureInPage(cfg, helpers) {
   };
   // Q15 rescue probe (shared with Q22): scroll the cutting scroller(s) minimally to bring `el` into view, probe its real hit area,
   // restore the scroll positions. `r` is the row rect before the scroll.
-  const rescueProbe = (el, r, cut) => {
+  const rescueProbe = (el, r, cut, keepMenus) => {
         const saved = [];
         const keep = (p) => { if (p && !saved.some((q) => q.p === p)) saved.push({ p, top: p.scrollTop, left: p.scrollLeft }); };
         keep(cut.py); keep(cut.px);
@@ -483,8 +490,11 @@ function measureInPage(cfg, helpers) {
         // centre of a scroller can lie under a popup that is open in this state (the generator picker covers the middle of the left
         // pane). While probing, open menus and popups that do not contain the row are not neighbours: they are made transparent to
         // hit tests, so the probe sees the row's own target and its real neighbours only.
+        // keepMenus (the Q22 path): the row is below the fold, so its pre-scroll rect is off screen and the overlap test below cannot
+        // see a menu that covers the row once it is scrolled in. By finger no pane row can be reached while a menu is open, so every
+        // open menu stays opaque: the probe then reports the row as covered.
         const popups = Array.from(document.querySelectorAll('.top-menu-panel.open, .menu-dropdown.open, #gm-module-menu, .lvl-algo-menu, [role="menu"]'))
-          .filter((m) => !m.contains(el) && visible(m))
+          .filter((m) => !keepMenus && !m.contains(el) && visible(m))
           // A menu stays opaque when it already covers the row, or the 44 px reach around its centre, where the row sits before the
           // rescue scroll: it covers the finger target for real. Only a menu that would cover it solely because of the rescue
           // scroll is ignored.
@@ -647,7 +657,7 @@ function measureInPage(cfg, helpers) {
             if (/(auto|scroll)/.test(qs.overflowY) && q.scrollHeight > q.clientHeight + 1 && visible(q)) cut.all.push(q);
             if (qs.position === 'fixed') break;
           }
-          const best = rescueProbe(el, r, cut);
+          const best = rescueProbe(el, r, cut, true);
           scrollReach = best.w >= 44 && best.h >= 44;
         }
       }
