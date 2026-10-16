@@ -246,6 +246,9 @@
         <tbody>
           ${row(mouse('1 finger'),   'Tap selects; drag moves a selected object', 'See the Touch tab')}
           ${row(mouse('2 fingers'),  'Pan / pinch-zoom')}
+          ${row(mouse('2-finger tap'),  'Undo')}
+          ${row(mouse('3-finger tap'),  'Redo')}
+          ${row(mouse('hold canvas'),   'Select the object and open the canvas menu', 'Select, Direct Selection and Hand tools')}
         </tbody>
       </table>`;
     const contextBarBody = `
