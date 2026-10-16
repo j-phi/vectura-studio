@@ -67,6 +67,7 @@ Wall time runs from workflow creation to the last required check.
 | #100 | 38973673865 | 14 shards, dispatch split | 9m30s | Split tone-law-dispatch. Dropped one unread render. |
 | #100 | 38974810292 | 16 shards | 8m19s | Shard count 16. |
 | #100 | 38975939640 (head) | 16 shards, refreshed weights | 8m02s | Weights refreshed. Summed runner time 84.4 min. |
+| #100 | 38976955036 (main, post-merge) | 16 shards | 7m53s | First main run after merge. Summed runner time 85.7 min. |
 
 The final configuration has two samples (8m19s, 8m02s). Six consecutive green runs from 14 shards on ran 8m02s to 9m30s. This is not a P95 guarantee.
 
