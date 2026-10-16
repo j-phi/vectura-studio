@@ -16,6 +16,8 @@ const TESTS = [
   'tests/unit/bezier-adaptive-sampling.test.js',
   'tests/unit/runtime-loader-contract.test.js',
 ];
+// The probe roster has three files, so the shard count must stay <= 3 (an empty shard fails closed).
+const SHARD_COUNT = 2;
 const SOURCES = ['src/core/rng.js', 'src/core/noise.js'];
 const CONFIG = 'vitest.shard-pilot.config.mjs';
 const PLAN_BUILDER = path.join(ROOT, 'scripts/test-shard-plan.js');
@@ -105,7 +107,7 @@ function main() {
     if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error('probe requires a 40-character GITHUB_SHA or Git HEAD');
     const runId = `local-probe-${process.pid}`;
     const attempt = '1';
-    const plan = buildPlan({ files: TESTS, weights: WEIGHTS, sha, shardCount: 2 });
+    const plan = buildPlan({ files: TESTS, weights: WEIGHTS, sha, shardCount: SHARD_COUNT });
     const planFile = path.join(temp, 'coverage-shard-plan.json');
     fs.writeFileSync(planFile, `${JSON.stringify(plan, null, 2)}\n`);
     const env = { VECTURA_SHARD_PLAN_FILE: planFile, GITHUB_SHA: sha, GITHUB_RUN_ID: runId, GITHUB_RUN_ATTEMPT: attempt };
@@ -133,15 +135,15 @@ function main() {
       const coverage = path.join(temp, `shard-${index}-coverage`);
       const metadata = path.join(artifact, 'metadata.json');
       runNode([PLAN_BUILDER, '--plan', planFile, '--metadata-out', metadata, '--shard', index, '--sha', sha, '--run-id', runId, '--attempt', attempt], `write shard ${index} provenance`);
-      runNpm(`actual queued shard entrypoint ${index}/2`, 'test:coverage:shard', [
-        ...TESTS, '--config', CONFIG, `--shard=${index}/2`, ...coverageArgs(coverage, { zeroThresholds: true }),
+      runNpm(`actual queued shard entrypoint ${index}/${SHARD_COUNT}`, 'test:coverage:shard', [
+        ...TESTS, '--config', CONFIG, `--shard=${index}/${SHARD_COUNT}`, ...coverageArgs(coverage, { zeroThresholds: true }),
         '--reporter=blob', '--reporter=json', `--outputFile.blob=${blob}`, `--outputFile.json=${json}`,
       ], env);
       shardInventory.push(...validateReport(json, plan, shard.index));
       if (!fs.existsSync(blob)) throw new Error(`shard ${index} did not produce a blob report`);
     }
     if (shardInventory.length !== TESTS.length || new Set(shardInventory).size !== TESTS.length || TESTS.some((file) => !shardInventory.includes(file))) {
-      throw new Error(`two-shard partition mismatch; received ${shardInventory.join(', ')}`);
+      throw new Error(`shard partition mismatch; received ${shardInventory.join(', ')}`);
     }
 
     runNode([PLAN_BUILDER, '--plan', planFile, '--stage-blobs', '--artifacts', artifacts, '--blob-dir', blobDirectory, '--sha', sha, '--run-id', runId, '--attempt', attempt], 'stage same-run provenance-verified blobs');
