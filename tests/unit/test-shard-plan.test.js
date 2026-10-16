@@ -27,7 +27,7 @@ describe('deterministic coverage shard plan', () => {
       expect(job(name)).toContain(`if: ${prOrMainPush}`);
     }
     expect(job('coverage-plan')).toContain('started_ms=$(date +%s%3N)');
-    expect(workflow).toMatch(/^  COVERAGE_SHARD_COUNT: '?14'?$/m);
+    expect(workflow).toMatch(/^  COVERAGE_SHARD_COUNT: '?16'?$/m);
     expect(job('coverage-plan')).toContain('shards: ${{ steps.count.outputs.shards }}');
     expect(job('coverage-plan')).toContain('--shards "$COVERAGE_SHARD_COUNT"');
     expect(shard).toContain('shard: ${{ fromJSON(needs.coverage-plan.outputs.shards) }}');
