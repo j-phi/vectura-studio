@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "source": {
-    "description": "Hosted two-worker V8 coverage per-file durations from Vitest blob reports (file result.duration incl. hooks + collect/setup/env/prepare), ubuntu-latest: mean of PR Tests runs 38946788769 and 38950622465; 38950622465 alone for u6 artistic-controls files (harness changed between runs)",
-    "fileCount": 778,
+    "description": "Hosted two-worker V8 coverage per-file durations from Vitest blob reports (file result.duration incl. hooks + collect/setup/env/prepare), ubuntu-latest: mean of PR Tests runs 38946788769 and 38950622465; 38950622465 alone for u6 artistic-controls files (harness changed between runs); tone-law-dispatch and collapse-c-sweeps split afterwards, apportioned by local share",
+    "fileCount": 783,
     "fileDurationSumSeconds": 8055,
     "unknownFileWeightSeconds": 19.355
   },
@@ -14,10 +14,15 @@
     "tests/audit/scene3d-mktick-spacing-tone.test.js": 22.468,
     "tests/audit/scene3d-tone-law-collapse-a-combo.test.js": 241.297,
     "tests/audit/scene3d-tone-law-collapse-b-single.test.js": 140.847,
-    "tests/audit/scene3d-tone-law-collapse-c-sweeps.test.js": 250.603,
+    "tests/audit/scene3d-tone-law-collapse-c-sweeps-u6.test.js": 5.828,
+    "tests/audit/scene3d-tone-law-collapse-c-sweeps-u8-fresh.test.js": 62.165,
+    "tests/audit/scene3d-tone-law-collapse-c-sweeps-u8.test.js": 93.248,
+    "tests/audit/scene3d-tone-law-collapse-c-sweeps.test.js": 89.362,
     "tests/audit/scene3d-tone-law-collapse-d-sweep-u1-u5.test.js": 164.28,
+    "tests/audit/scene3d-tone-law-dispatch-mono.test.js": 100.962,
     "tests/audit/scene3d-tone-law-dispatch-mutant.test.js": 1.077,
-    "tests/audit/scene3d-tone-law-dispatch.test.js": 357.25,
+    "tests/audit/scene3d-tone-law-dispatch-wave.test.js": 132.027,
+    "tests/audit/scene3d-tone-law-dispatch.test.js": 124.261,
     "tests/integration/algo-config-collapsible-sections.test.js": 1.895,
     "tests/integration/algo-config-review-fixes.test.js": 11.335,
     "tests/integration/algo-config-shared-controls.test.js": 30.525,
