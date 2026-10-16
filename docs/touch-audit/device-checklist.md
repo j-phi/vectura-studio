@@ -102,6 +102,7 @@ JSON.stringify({w: innerWidth, h: innerHeight, dpr: devicePixelRatio, standalone
 | DEV-51 | [DEVICE] The gizmo marker stays visible beside the finger while dragging (from TUX-025). | TUX-025 | iPad P/L tab, iPhone P/L tab | Drag yaw, pitch and roll. The marker and the ring stay inside the canvas and are not hidden by the modifier bar. | open |
 | DEV-52 | [DEVICE] Apple Pencil keeps the mouse-precision radii on the 3D gizmo (from TUX-025). | TUX-025 | iPad L tab | A Pencil tap 14 px from a marker does not grab it. A tap on the marker does. | open |
 | DEV-53 | Bottom pane stray tap and divider drag (from TUX-051). | TUX-051 | iPad L tab | Tap 2, 8 and 16 px below the canvas bottom edge, 10 times each. The pane never expands. The chevron expands it on the first tap. A vertical divider drag resizes. | open |
+| DEV-54 | Toast safe area and stacking (from TUX-048). Show a toast in iPhone home-screen standalone mode and in Safari with the toolbar shown and minimised. | TUX-048 | iPhone P standalone, iPhone L standalone, iPhone P tab, iPhone L tab | The toast clears the home indicator and the Dynamic Island side. In Safari it sits above the modifier bar. Status is pending the device run. | open |
 
 ## Clause index
 

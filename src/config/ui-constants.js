@@ -66,6 +66,8 @@
       // Stroke pick radius of findLayerAtPoint (selection by tap/click). A finger lands about 5-20 px off a 0.3 mm line; mouse and pen keep 5.
       strokePick: { mouse: 5, pen: 5, touch: 22 },
       // Direct-tool layer pick. Mouse and pen use a fixed 1.5 WORLD units (not px) in findLayerAtPointPrecise; this row is the touch reach in screen px.
+      // Path hit of findPathHitAtPoint (Direct tool, pen anchor edits), screen px.
+      pathPick: { mouse: 2.5, pen: 2.5, touch: 22 },
       directPick: { mouse: 0, pen: 0, touch: 22 },
       anchor: { mouse: 6, pen: 6, touch: 22 },
       bezierHandle: { mouse: 5, pen: 5, touch: 22 },

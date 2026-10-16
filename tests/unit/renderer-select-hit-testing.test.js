@@ -258,4 +258,38 @@ describe('Renderer.findLayerAtPoint — standard select hit testing', () => {
       expect(renderer.findLayerAtPoint({ x: 150, y: 100 }, false, null, 'mouse')).toBeNull();
     });
   });
+
+  describe('findPathHitAtPoint (the Direct tool tap path) is touch aware and lock aware', () => {
+    const line = (id, y) => makeLayer(id, [{ x: 100, y }, { x: 200, y }]);
+
+    test('touch reaches 22 px, mouse and pen keep 2.5 px', () => {
+      const layer = line('h', 100);
+      const renderer = makeRenderer([layer]);
+      expect(renderer.findPathHitAtPoint({ x: 150, y: 83 }, { pointerType: 'touch' })?.layer).toBe(layer);
+      expect(renderer.findPathHitAtPoint({ x: 150, y: 83 }, { pointerType: 'mouse' })).toBeNull();
+      expect(renderer.findPathHitAtPoint({ x: 150, y: 83 }, { pointerType: 'pen' })).toBeNull();
+      expect(renderer.findPathHitAtPoint({ x: 150, y: 70 }, { pointerType: 'touch' })).toBeNull();
+      expect(renderer.findPathHitAtPoint({ x: 150, y: 98 }, { pointerType: 'mouse' })?.layer).toBe(layer);
+    });
+
+    test('nearest wins whatever the layer order', () => {
+      const near = line('near', 108);
+      const far = line('far', 118);
+      [[near, far], [far, near]].forEach((order) => {
+        const renderer = makeRenderer(order);
+        expect(renderer.findPathHitAtPoint({ x: 150, y: 100 }, { pointerType: 'touch' }).layer).toBe(near);
+      });
+    });
+
+    test('locked geometry under the pointer selects nothing, touch and mouse', () => {
+      const locked = line('locked', 100);
+      const free = line('free', 112);
+      const renderer = makeRenderer([free, locked]);
+      renderer.isLayerLocked = (id) => id === 'locked';
+      expect(renderer.findPathHitAtPoint({ x: 150, y: 100 }, { pointerType: 'touch' })).toBeNull();
+      expect(renderer.findPathHitAtPoint({ x: 150, y: 100 }, { pointerType: 'mouse' })).toBeNull();
+      // Away from the locked line the unlocked layer is reachable by finger.
+      expect(renderer.findPathHitAtPoint({ x: 150, y: 125 }, { pointerType: 'touch' }).layer).toBe(free);
+    });
+  });
 });
