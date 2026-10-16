@@ -2439,8 +2439,10 @@
 
       let penDblTimer = null;
 
+      let editPointerId = null;
       const onEditDown = (e) => {
         if (e.button !== 0) return;
+        editPointerId = e.pointerId;
         const rect = canvas.getBoundingClientRect();
         const ex = e.clientX - rect.left, ey = e.clientY - rect.top;
         const { x: tx, y: ty } = toTile(ex, ey);
@@ -2754,7 +2756,12 @@
       canvas.addEventListener('pointerdown', onEditDown);
       window.addEventListener('pointermove', onEditMove);
       // A cancelled pointer (system interruption) aborts every open edit session through the same list the gate uses.
-      const onEditCancel = () => { (pd._touchAborts || []).forEach((fn) => fn(false)); };
+      // Touch cancels reach the session abort list through the touch gate. A mouse or pen cancel aborts only the pointer
+      // that started the edit, so a cancel from another pointer never kills the drag.
+      const onEditCancel = (e) => {
+        if (!e || e.pointerType === 'touch' || e.pointerId !== editPointerId) return;
+        (pd._touchAborts || []).forEach((fn) => fn(false));
+      };
       window.addEventListener('pointerup', onEditUp);
       window.addEventListener('pointercancel', onEditCancel);
       window.addEventListener('keydown', onEditKey);
