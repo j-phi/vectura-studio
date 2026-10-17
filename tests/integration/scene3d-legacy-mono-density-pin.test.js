@@ -1,7 +1,7 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 /*
- * U5 item 0 — U4b made Density live on the monoline laws. A document saved
+ * Legacy Density pin. The fill-style review (U4b) made Density live on the monoline laws. A document saved
  * before that (no seedMode => legacy) was drawn with Density inert (= 50), so
  * the load migration pins those style bags and the document keeps its look. A
  * NEW layer, and a legacy bag whose Density the user then edits, use Density.

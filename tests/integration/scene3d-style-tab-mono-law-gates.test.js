@@ -1,5 +1,6 @@
 /**
- * Fill-style review U4b — panel gates for the engine defects.
+ * Object 3D Style tab — rows grey (with a reason) or appear where a Fill Style
+ * reads or ignores a control.
  *
  *   item 2/3  a monoline Fill Style greys Contour in the Type list and, when it
  *             has no direction, the Angle row (both with a reason in the (i)).
@@ -16,7 +17,7 @@ const FULL_STACK = {
   includeRenderer: true, includeUi: true, includeApp: true, includeMain: false, useIndexHtml: true,
 };
 
-describe('Fill-style review U4b — panel gates', () => {
+describe('Object 3D Style tab — mono-law gates and control rows', () => {
   let runtime; let window; let document;
 
   beforeAll(async () => {

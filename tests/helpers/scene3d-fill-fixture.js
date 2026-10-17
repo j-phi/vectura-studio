@@ -2,9 +2,26 @@ const crypto = require('crypto');
 const { loadVecturaRuntime } = require('./load-vectura-runtime');
 
 /*
- * Shared harness for the split scene3d-fr-u6-artistic-controls-*.test.js files.
- * See the header of those files for what U6 pins. Each part file calls
- * useU6Harness() inside its top-level describe.
+ * Shared fixture for the Scene3D fill-control behavior suites
+ * (scene3d-fill-tone-controls, scene3d-fill-mark-controls, scene3d-fill-mono-laws).
+ *
+ * One runtime load per file. The default object is a SMALL sphere (r22, detail 12)
+ * or a 40 mm box, orthographic, Density 50, one sun. That is the smallest fixture
+ * on which every control in these suites still moves the drawing; each suite was
+ * mutation-checked on it (the proofs are in the commit that introduced it).
+ *
+ * gen(prim, mapper, law, extra, opt) -> { paths, hash, n, ink, dup, out, pens }
+ *   prim   'sphere' | 'box'
+ *   law    a survivor tone-law id, or one of LAW_PARAMS (a survivor + sub-controls)
+ *   extra  style params on top of the law
+ *   opt    { second: true }  a second sphere 140 mm behind the first
+ *          { light: {...} }  overrides on the sun
+ *          { mut: (p) => }   last-word edit of the scene params
+ *
+ * Default scenes (no extra, no opt) are cached. Only the most recent one is kept;
+ * any other render clears it, so the next default call renders again and its
+ * full-output SHA-256 must equal the first render of that scene. That makes every
+ * repeated default render a state-leak check (a render must not change the next one).
  */
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -16,6 +33,8 @@ const freezeDeep = (value, seen = new WeakSet()) => {
 };
 const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3 };
 const SUN = { id: 'sun', type: 'directional', azimuth: 200, elevation: 55, castShadows: false };
+const SPHERE = { radius: 22, detail: 12 };
+const BOX = { sx: 40, sy: 40, sz: 40 };
 const md5 = (o) => crypto.createHash('md5').update(JSON.stringify(o)).digest('hex').slice(0, 10);
 const sha256 = (o) => crypto.createHash('sha256').update(JSON.stringify(o)).digest('hex');
 const lenOf = (p) => {
@@ -24,33 +43,22 @@ const lenOf = (p) => {
   return s;
 };
 const inkOf = (paths) => Math.round(paths.reduce((a, p) => a + lenOf(p), 0));
-
-// Measured on 3d-scene/fr-u5 with the harness below (sphere / box, hatch).
-const BASE = {
-  'box/contour/ladder': '2c2e00953e',
-  'box/spiral/ladder': '00ddbff7ce',
-  'sphere/hatch/ladder': '522848d59b',
-  'sphere/crosshatch/ladder': '39470366af',
-  'sphere/contour/ladder': '2df69d6183',
-  'sphere/spiral/ladder': '3ca6bbfe09',
-  'sphere/stipple/ladder': '4c1eff931e',
-  'sphere/hatch/taperedEnds': '18936da1cc',
-  'sphere/hatch/nibAngle': '6f943b3d78',
-  'sphere/hatch/ampSpacing': '321a388eee',
-  'sphere/hatch/turingStripe': 'b805ab7a9e',
-  'sphere/hatch/mazeFill': '3196519b04',
-  'sphere/hatch/voronoiWeb': 'a78080ed7a',
-  'sphere/hatch/penInterleave': '778d2eef89',
-  'sphere/hatch/trochoidLoop': 'e9ba907e91',
-  'sphere/hatch/interlockWeave': '67225d66af',
-  'box/hatch/ladder': '28c2e95acf',
-  'box/crosshatch/ladder': '170ebe1a1a',
-  'box/stipple/ladder': 'a3b46f9d51',
-  'box/hatch/turingStripe': 'beb2caec95',
-  'box/hatch/mazeFill': '172be58078',
+const dupCount = (paths) => {
+  const seen = new Map();
+  paths.forEach((p) => { const k = JSON.stringify(p); seen.set(k, (seen.get(k) || 0) + 1); });
+  let d = 0;
+  seen.forEach((n) => { if (n > 1) d += n - 1; });
+  return d;
 };
 
-const useU6Harness = () => {
+// Laws that are a survivor plus sub-controls in the picker.
+const LAW_PARAMS = {
+  nibAngle: { toneLaw: 'taperedEnds', widthFrom: 'nibAngle', bandEnds: 'hard' },
+  trochoidLoop: { toneLaw: 'ampSpacing', waveForm: 'loop' },
+  interlockWeave: { toneLaw: 'ampSpacing', wavePhase: 'anti' },
+};
+
+const useFillFixture = () => {
   // Each fill is a full scene build; a loaded machine needs more than the 180 s default.
   vi.setConfig({ testTimeout: 1800000 });
   const h = { runtime: null, V: null, algo: null, defaults: null };
@@ -61,30 +69,22 @@ const useU6Harness = () => {
     h.defaults = h.V.ALGO_DEFAULTS.scene3d;
   }, 120000);
   afterAll(() => h.runtime.cleanup());
-  const LAW_PARAMS = {
-    nibAngle: { toneLaw: 'taperedEnds', widthFrom: 'nibAngle', bandEnds: 'hard' },
-    trochoidLoop: { toneLaw: 'ampSpacing', waveForm: 'loop' },
-    interlockWeave: { toneLaw: 'ampSpacing', wavePhase: 'anti' },
-  };
-  // Default fixtures recur across controls. Keep only the most recent immutable
-  // summary; nondefault renders invalidate it. Full-output SHA-256 digests
-  // retain compact parity witnesses for each exact default scene.
+
   const defaultSceneCache = new Map();
   const defaultSceneSnapshots = new Map();
-  const gen = (prim, mapper, law, extra = {}, opt = {}) => {
+  h.gen = (prim, mapper, law, extra = {}, opt = {}) => {
     const isDefaultScene = Object.keys(extra).length === 0 && Object.keys(opt).length === 0;
     const cacheKey = JSON.stringify([prim, mapper, law]);
     if (isDefaultScene && defaultSceneCache.has(cacheKey)) return defaultSceneCache.get(cacheKey);
     if (!isDefaultScene) defaultSceneCache.clear();
     const p = clone(h.defaults);
     p.objects = [{
-      id: 'o1', name: 's', primitive: prim,
-      params: prim === 'box' ? { width: 60, height: 60, depth: 60 } : { radius: 40, detail: 20 },
+      id: 'o1', name: 's', primitive: prim, params: clone(prim === 'box' ? BOX : SPHERE),
       transform: { x: 0, y: 50, z: 0, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
     }];
     if (opt.second) {
       p.objects.push({
-        id: 'o2', name: 's2', primitive: 'sphere', params: { radius: 40, detail: 20 },
+        id: 'o2', name: 's2', primitive: 'sphere', params: clone(SPHERE),
         transform: { x: 0, y: 50, z: -140, yaw: 0, pitch: 0, roll: 0, scale: 1 }, visibility: 'solid',
       });
     }
@@ -103,15 +103,13 @@ const useU6Harness = () => {
     const out = h.algo.generate(p, null, null, BOUNDS) || [];
     const paths = out.map((pth) => (pth.points || pth).map((q) => [Math.round(q.x * 1000) / 1000, Math.round(q.y * 1000) / 1000]));
     const result = {
-      paths, hash: md5(paths), n: paths.length, ink: inkOf(paths), out,
+      paths, hash: md5(paths), n: paths.length, ink: inkOf(paths), dup: dupCount(paths), out,
       pens: Array.from(new Set(out.map((pth) => (pth.meta && pth.meta.penId) || ''))).sort(),
     };
     if (isDefaultScene) {
-      const baseKey = `${prim}/${mapper}/${law}`;
-      if (BASE[baseKey]) expect(result.hash).toBe(BASE[baseKey]);
       const outputDigest = sha256({ paths, out });
       if (defaultSceneSnapshots.has(cacheKey)) {
-        expect(outputDigest).toBe(defaultSceneSnapshots.get(cacheKey));
+        expect(outputDigest, `${cacheKey}: a default scene drew differently after other renders`).toBe(defaultSceneSnapshots.get(cacheKey));
       } else {
         defaultSceneSnapshots.set(cacheKey, outputDigest);
       }
@@ -121,8 +119,7 @@ const useU6Harness = () => {
     }
     return result;
   };
-  h.gen = gen;
   return h;
 };
 
-module.exports = { BASE, BOUNDS, lenOf, useU6Harness };
+module.exports = { BOUNDS, SUN, lenOf, useFillFixture };

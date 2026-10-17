@@ -1,12 +1,12 @@
 /**
- * Fill-style review U7 - panel reach for the deferred items.
+ * Object 3D Style tab - panel reach for tone bands, chaining and the folded rows.
  *   tone bands + per-band / per-tier pen pickers, Voronoi "Chain edges",
  *   Stipple Smoothing / Simplify, Alt angle, wireframe "Show hidden" removed,
  *   X-ray "Front line" kept (greyed with a reason) on a faceted shape.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-describe('U7 - Object 3D Style tab: deferred controls', () => {
+describe('Object 3D Style tab - tone bands, chaining and folded rows', () => {
   let runtime; let window; let document;
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();

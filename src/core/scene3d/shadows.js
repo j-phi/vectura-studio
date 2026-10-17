@@ -871,7 +871,7 @@
   // same mark structure as the look named in `like`, differing only by a pitch
   // multiplier within 0.85-1.15 (+/- 18 %), an angle nudge of at most 6.5 degrees,
   // or a pass spacing of the same pass count (whiteBand, weightSmoothstep, bundleHandoff): measured against it on the flat
-  // footprint (tests/unit/scene3d-fr-u5-shadow-reach.test.js: same path count
+  // footprint (tests/unit/scene3d-shadow-fill-style-reach.test.js: same path count
   // within 20 %, same ink within 18 %), and judged identical in the contact sheet.
   // The recipes stay and keep drawing for a saved document that names them; only
   // the picker stops offering them.

@@ -1,7 +1,7 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 /*
- * U5 item 1 — Jay's decision: "keep as many shadow looks as possible, when they
+ * Shadow Fill Style reach. Jay's decision: "keep as many shadow looks as possible, when they
  * are materially different". The shadow Fill Style row used to offer only the
  * picker survivors, so 17 shadow textures from earlier folds were reachable only
  * through an old saved document. The row now has the survivor's sub-controls
@@ -20,7 +20,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const BOUNDS = { width: 320, height: 220, penWidth: 0.3 };
 
-describe('U5 — shadow Fill Style reach (decision 1)', () => {
+describe('Shadow Fill Style reach: every materially different shadow texture is offered', () => {
   let runtime; let V; let Shadows; let FS; let R;
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
