@@ -45,6 +45,8 @@
       pan: false,
       // Task-only flags: a hardware Shift counts for rawShift, never a Constrain latch.
       rawShift: Boolean(ev.shiftKey),
+      // Meta alone (Cmd). `meta` merges Meta and Ctrl; a wheel needs them apart because Ctrl+wheel is a pinch-zoom.
+      rawMeta: Boolean(ev.metaKey),
       multiSelect: false,
       additive: Boolean(ev.shiftKey || ev.metaKey || ev.ctrlKey),
     };
