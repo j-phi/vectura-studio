@@ -31,6 +31,15 @@ describe('touch baseline waiver rule', () => {
     expect(raisedCells(base, now)).toEqual([]);
   });
 
+  test('the waiver ledger holds a reason for each recorded sha', () => {
+    const l = require('../../docs/touch-audit/baseline-waivers.json');
+    expect(Object.keys(l.waivers)).toEqual(expect.arrayContaining(['13b7d04b', '16bb75ee']));
+    Object.entries(l.waivers).forEach(([sha, why]) => {
+      expect(sha).toMatch(/^[0-9a-f]{8,40}$/);
+      expect(why.trim().length).toBeGreaterThanOrEqual(20);
+    });
+  });
+
   test('no commit after the anchor raises the baseline without TUX-WAIVER', () => {
     let known = true;
     try { execFileSync('git', ['cat-file', '-e', `${ANCHOR}^{commit}`], { stdio: 'ignore' }); } catch (_) { known = false; }

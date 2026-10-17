@@ -752,6 +752,7 @@
       this.onScissor = null;
       this.onDirectEditStart = null;
       this.onDirectEditCommit = null;
+      this.onDirectEditAbort = null;
       this.onPatternFill = null;
       this.patternFillPreviewPolygon = null;
       this.isLayerLocked = null;
@@ -3969,6 +3970,15 @@
       const pushed = Boolean(this._shapePropsEdit && this._shapePropsEdit.historyPushed);
       this._shapePropsEdit = null;
       if (pushed && this.onDirectEditCommit) this.onDirectEditCommit();
+      this.draw();
+      return pushed;
+    }
+
+    // pointercancel: restore the pre-drag value and push no history entry.
+    abortShapePropsEdit() {
+      const pushed = Boolean(this._shapePropsEdit && this._shapePropsEdit.historyPushed);
+      this._shapePropsEdit = null;
+      if (pushed && this.onDirectEditAbort) this.onDirectEditAbort();
       this.draw();
       return pushed;
     }

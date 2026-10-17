@@ -22,3 +22,7 @@ Items found during batch reviews. They are logged here, not fixed yet.
 ## From batch G
 
 - **CLOSED.** `ghost` 3 in the right-pane-pens cell: the pen swatch colour input was opacity 0 over a painted circle. The input now draws the circle itself.
+- **OPEN, feature gap (Q24).** The app has no Copy command and no Paste. TUX-034 req 10 reads "Paste when a clipboard exists", so the canvas menu offers only Select All today. Build Copy and Paste as a product feature, then add Paste to the empty-canvas menu.
+- **DEFERRED until Jay pushes.** TUX-058: the `linux` section of `tests/e2e/touch/target-baseline.json` needs the first CI artifact (`test-results/touch-target-measured-*.json`). Seed it from that artifact after the first push.
+- **DECIDED (Q23, Q25).** Document Setup is a pinned row in the phone hamburger sheet (2 taps). On phones, long-press plus the layer card ⋯ is the twin of the context-bar ⋯.
+- **Waiver ledger.** `docs/touch-audit/baseline-waivers.json` records baseline raises that carry no TUX-WAIVER line (13b7d04b, 16bb75ee), each with a reason. `scripts/touch-baseline-waiver.js` reads it.

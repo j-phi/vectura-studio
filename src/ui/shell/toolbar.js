@@ -737,6 +737,13 @@
       this.app.renderer.onDirectEditStart = () => {
         if (this.app.pushHistory) this.app.pushHistory();
       };
+      this.app.renderer.onDirectEditAbort = () => {
+        if (this.app.cancelLastHistory) this.app.cancelLastHistory();
+        this.renderLayers();
+        this.buildControls();
+        this.updateFormula();
+        this.app.render();
+      };
       this.app.renderer.onDirectEditCommit = () => {
         this.renderLayers();
         this.buildControls();

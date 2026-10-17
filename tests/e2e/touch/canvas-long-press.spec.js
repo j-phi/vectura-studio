@@ -42,8 +42,8 @@ test.describe('TUX-034 canvas long-press', () => {
       const p0 = await pos(page, s.id);
       const at = { x: s.x, y: s.y };
       await touch.touchPhase(page, 'start', [{ ...at, id: 0 }]);
-      await page.waitForTimeout(300);
-      expect(await page.locator('[data-touch-hold-progress]').count(), 'progress ring at 300 ms').toBeGreaterThan(0);
+      // The ring lives from 150 ms to the 500 ms fire: poll for it inside the hold window instead of one check at 300 ms.
+      await expect.poll(() => page.locator('[data-touch-hold-progress]').count(), { timeout: 450, intervals: [20] }).toBeGreaterThan(0);
       await expect(page.locator(MENU)).toBeVisible({ timeout: 2000 });
       await expect(page.locator(`${MENU} [data-ctx-id="duplicate"]`)).toBeVisible();
       expect(await page.evaluate(() => [...window.app.renderer.selectedLayerIds])).toEqual([s.id]);

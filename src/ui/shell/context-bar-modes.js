@@ -320,8 +320,15 @@
         if (begun) applyWeight(slider.value, { begin: false, commit: true });
         begun = false;
       };
+      // pointercancel aborts: restore the pre-drag weight and drop the gesture's history entry.
+      const abortSlide = () => {
+        if (!begun) return;
+        begun = false;
+        if (app && typeof app.cancelLastHistory === 'function') app.cancelLastHistory();
+        refresh();
+      };
       slider.addEventListener('pointerup', endSlide);
-      slider.addEventListener('pointercancel', endSlide);
+      slider.addEventListener('pointercancel', abortSlide);
       slider.addEventListener('change', endSlide);
 
       dec.addEventListener('click', () => applyWeight(readWeight() - b.step, { begin: true, commit: true }));
@@ -755,7 +762,7 @@
       });
       const endScrub = () => { if (!scrub) return; scrub = null; renderer.endShapePropsEdit(); refresh(); };
       cornerField.addEventListener('pointerup', endScrub);
-      cornerField.addEventListener('pointercancel', endScrub);
+      cornerField.addEventListener('pointercancel', () => { if (!scrub) return; scrub = null; renderer.abortShapePropsEdit(); refresh(); });
     }
 
     // Side Count (polygon only).
@@ -795,8 +802,9 @@
       sidesSlider.addEventListener('pointerdown', () => { renderer.beginShapePropsEdit(); sidesBegun = true; });
       sidesSlider.addEventListener('input', () => { renderer.setShapeSides(clampSides(sidesSlider.value)); refresh(); });
       const endSides = () => { if (!sidesBegun) return; sidesBegun = false; renderer.endShapePropsEdit(); refresh(); };
+      const abortSides = () => { if (!sidesBegun) return; sidesBegun = false; renderer.abortShapePropsEdit(); refresh(); };
       sidesSlider.addEventListener('pointerup', endSides);
-      sidesSlider.addEventListener('pointercancel', endSides);
+      sidesSlider.addEventListener('pointercancel', abortSides);
       sidesSlider.addEventListener('change', endSides);
       sDec.addEventListener('click', () => setSides(readSides() - 1));
       sInc.addEventListener('click', () => setSides(readSides() + 1));

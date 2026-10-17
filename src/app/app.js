@@ -1231,6 +1231,18 @@
       this._notifyHistory();
     }
 
+    // Abort a gesture that already pushed its push-before-change snapshot (pointercancel): restore it and
+    // drop it. Unlike undo(), nothing goes to the redo stack and the history is as if the gesture never began.
+    cancelLastHistory() {
+      if (!this.history.length) return false;
+      this.isRestoring = true;
+      const checkpoint = this.history.pop();
+      this.applyState(checkpoint);
+      this.isRestoring = false;
+      this._notifyHistory();
+      return true;
+    }
+
     undo() {
       if (this.history.length < 2) return;
       this.isRestoring = true;

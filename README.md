@@ -235,7 +235,7 @@ Vectura works by finger and Apple Pencil on iPad and iPhone. Panels open as draw
 - **Canvas gestures:** pinch and two-finger pan work with every tool. A two-finger tap undoes and a three-finger tap redoes. A one-finger drag moves a selected object after 6 px. A system interruption cancels the edit with no history entry. Apple Pencil wins over a resting palm.
 - **Canvas HUD:** Undo, Redo, Zoom Out, Zoom In and Fit buttons at the bottom right.
 - **Modifier bar:** Multi-select, Constrain, Duplicate and Pan apply to the next gesture. A double-tap locks one. A badge names the active tasks.
-- **Finger-sized editing:** 22 px grab radius for resize corners, anchors, handles, corner widgets, the 3D gizmo and Petal Designer points. Pen closes on a tap near the start and finishes on a double-tap. Done, Remove Last Anchor and Cancel chips show during a pen draft.
+- **Finger-sized editing:** a tap within 22 px of a stroke selects it with Select or Direct (a locked layer selects nothing). 22 px grab radius for resize corners, anchors, handles, corner widgets, the 3D gizmo and Petal Designer points. Pen closes on a tap near the start and finishes on a double-tap. Done, Remove Last Anchor and Cancel chips show during a pen draft.
 - **Menus and holds:** hold a layer row or the canvas for 0.5 s to open its menu. Hold a control label for "Reset to default". Hold an icon button to see its name. Tap a value chip to type a number.
 - **Panels:** two-line Layers rows, drag-a-grip reorder with auto-scroll, 44 px sliders that move only on a sideways drag, 0.5 degree mirror dials, and inputs at 16 px so iOS does not zoom.
 - **Keyboard and sheets:** fields and sheets stay above the on-screen keyboard. Export, Help, Document Setup, the colour picker and Save Preset use one pinned-header sheet. Toasts sit bottom-centre on touch, and deleting shows an Undo toast.
@@ -438,7 +438,7 @@ Click `Export SVG` to download.
 | Two-finger tap | Undo |
 | Three-finger tap | Redo |
 | Double-tap | Finish a pen path |
-| Press and hold the canvas (0.5 s) | Select the object and open the canvas menu (Select, Direct Selection, Hand) |
+| Press and hold the canvas (0.5 s) | Select the object and open the canvas menu (Select, Direct Selection, Hand). On empty canvas the menu offers Select All |
 | Press and hold a layer row (0.5 s) | Open the layer menu (or tap `⋯`) |
 | Drag a grip | Reorder layers and panel list rows |
 | Tap a value chip | Type an exact value |

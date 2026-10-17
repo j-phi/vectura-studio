@@ -9,7 +9,14 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ### Touch remediation (TUX-001 to TUX-062, branch `touch/integration`)
 Touch and Apple Pencil now work across the whole app on iPad and iPhone. Mouse and desktop behavior is unchanged unless a bullet says "all pointers". Items are grouped by area. Simulation proves them on 11 Chromium and WebKit touch projects. Real-device rows stay open in `docs/touch-audit/device-checklist.md`.
 
-> **Pending batch G.** Batch G is still running. Its remaining items go in this section when they land. Items already on `touch/integration` are listed below.
+#### Batch G (final touch items)
+- **Finger pick.** A finger tap within 22 px of a stroke selects it with Select, and the Direct tool picks within 22 px (nearest wins). Mouse and Pencil keep 2.5 px. A locked layer under the finger selects nothing, for touch and mouse. (TUX-024)
+- **Hold the canvas.** Press and hold for 0.5 s with Select, Direct Selection or Hand selects the object under the finger and opens the canvas menu. On empty canvas the menu offers Select All. The hold never starts with drawing or fill tools. A move of 10 px (6 px on a selected object) cancels it. (TUX-034)
+- **Menus close on any outside press.** The pen menu, palette menu, Add Layer menu, layer bar palette menu and algorithm-draw menu close on a drag or scroll outside, not only on a tap. (TUX-040b)
+- **Phone context bar for shapes.** On phones the context bar shows for a drawn shape, so Shape Properties (polygon sides, corner radius) is reachable by finger. The bar scrolls sideways. Other selections keep it hidden to protect canvas share (iPhone portrait 75 % against 69 %). (TUX-031)
+- **Review fixes.** The shape bar keeps its grip above 640 px (only phone widths drop it). Cancelling a drag on the polygon sides slider, the corner scrub or the stroke weight slider now restores the pre-drag value and keeps no history entry. A pinned "Document Setup…" row tops the phone hamburger sheet (2 taps).
+- **Follow-ups closed.** The Export legend gear sits above the footer on short phone landscape. The collapsed right pane header on touch-wide matches the rail width. The pen swatch colour input is the visible swatch, with no hidden ghost target. Device checklist row DEV-54 added.
+- **Stopped clauses.** TUX-010 req 6 (direct Document Setup entry on phones: Q5 keeps every menu behind one hamburger), TUX-034 req 10 (Paste: the app has no copy command) and TUX-058 linux baseline (needs the first CI artifact).
 
 #### Shell and layout
 - **Fixed touch shell.** The page no longer scrolls, rubber-bands, pulls to refresh or zooms on pinch. Heights use `--app-vh` (`100dvh`). Safe-area insets (`--safe-top/right/bottom/left`) land on the header and the bottom-most chrome. (TUX-002/003/004/005)

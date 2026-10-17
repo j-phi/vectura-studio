@@ -6,6 +6,14 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const FILE = 'tests/e2e/touch/target-baseline.json';
+// Commits that cannot carry a TUX-WAIVER line (already made, history is never rewritten) are recorded here, each with a reason.
+const LEDGER = path.join(ROOT, 'docs/touch-audit/baseline-waivers.json');
+const ledgerWaived = (sha) => {
+  try {
+    const l = JSON.parse(require('fs').readFileSync(LEDGER, 'utf8'));
+    return Object.entries(l.waivers || {}).some(([k, why]) => k.length >= 8 && sha.startsWith(k) && typeof why === 'string' && why.trim().length >= 20);
+  } catch (_) { return false; }
+};
 // dir 'lower' = a bigger number is worse; 'higher' = a smaller number is worse (canvasPct has a 1.0 pp tolerance).
 const DIRS = {
   hOverflow: ['lower', 0], vOverflow: ['lower', 0], innerWidthExcess: ['lower', 0], under44: ['lower', 0], under24: ['lower', 0],
@@ -47,7 +55,7 @@ const unwaivedCommits = (range) => {
     const raised = raisedCells(before, after);
     if (!raised.length) return;
     const body = git(['log', '-1', '--format=%B', sha]);
-    if (!/^TUX-WAIVER:/m.test(body)) bad.push({ sha, raised });
+    if (!/^TUX-WAIVER:/m.test(body) && !ledgerWaived(sha)) bad.push({ sha, raised });
   });
   return bad;
 };

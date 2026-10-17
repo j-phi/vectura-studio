@@ -141,6 +141,28 @@ describe('TB-10 — stroke weight sub-mode', () => {
     expect(events.pushes).toBe(1);
   });
 
+  test('pointercancel on the weight slider aborts: pre-drag weight restored, no history entry kept', () => {
+    const Modes = dom.window.Vectura.UI.ContextBarModes;
+    const stack = [];
+    app.pushHistory = () => { events.pushes += 1; stack.push(layer.strokeWidth); };
+    app.cancelLastHistory = () => { events.cancels = (events.cancels || 0) + 1; layer.strokeWidth = stack.pop(); return true; };
+    Modes.enterStrokeWeight({ app, layerIds: ['l1'], primaryLayer: layer });
+    const host = dom.window.document.getElementById('bar-content');
+    const slider = host.querySelector('.ctxbar-weight-slider');
+    fire(dom, slider, 'pointerdown');
+    slider.value = '1.5';
+    fire(dom, slider, 'input');
+    slider.value = '2.0';
+    fire(dom, slider, 'input');
+    expect(layer.strokeWidth).toBeCloseTo(2.0, 3);
+    fire(dom, slider, 'pointercancel');
+    expect(layer.strokeWidth).toBeCloseTo(0.3, 3);
+    expect(events.cancels).toBe(1);
+    expect(stack).toEqual([]);
+    fire(dom, slider, 'change');
+    expect(events.cancels, 'a later change does not abort twice').toBe(1);
+  });
+
   test('stepper + field each commit one undo step', () => {
     const Modes = dom.window.Vectura.UI.ContextBarModes;
     Modes.enterStrokeWeight({ app, layerIds: ['l1'], primaryLayer: layer });

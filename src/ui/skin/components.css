@@ -14039,8 +14039,15 @@ html.kb-open .export-settings-scroll {
 /* === TUX-001: phone header, hamburger menu sheet and direct actions === */
 .header-phone-btn, .header-phone-actions { display: none; }
 body.phone-layout #app-header { max-width: 100%; overflow-x: clip; }
-.top-menu-theme-row { display: none; }
-body.phone-layout .top-menu-theme-row { display: flex; }
+.top-menu-quick-row, .top-menu-theme-row, .top-menu-docsetup-row { display: none; }
+body.phone-layout .top-menu-quick-row { display: flex; align-items: stretch; }
+body.phone-layout .top-menu-theme-row, body.phone-layout .top-menu-docsetup-row { display: flex; }
+body.phone-layout #top-menubar .top-menu-quick-row > .top-menu-docsetup-row { flex: 1 1 auto; width: auto; min-width: 0; }
+/* Short phone landscape has room for 6 rows, not 7: the pinned Document Setup row is dropped and Theme returns to the end of the sheet.
+ * Document Setup stays under File there (Q23 covers phones with a normal height). */
+body.phone-layout.phone-short #top-menubar .top-menu-quick-row { order: 99; }
+body.phone-layout.phone-short #top-menubar .top-menu-docsetup-row { display: none; }
+body.phone-layout #top-menubar .top-menu-quick-row > .top-menu-theme-row { flex: 0 0 auto; width: auto; border-left-width: 1px; }
 body.phone-layout #app-header .header-phone-actions { display: inline-flex; gap: 2px; align-items: center; }
 body.phone-layout #app-header .header-phone-btn {
   display: inline-flex; align-items: center; justify-content: center;
@@ -14077,7 +14084,7 @@ body.phone-layout #top-menubar .top-menu-panel.open { display: flex; opacity: 1;
 body.phone-layout #top-menubar .top-menu-item { min-height: 44px; font-size: 14px; padding: 0 16px; box-sizing: border-box; }
 /* Drill-down: with a sub-level open, show only that panel. */
 body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-trigger,
-body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-theme-row { display: none; }
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-quick-row { display: none; }
 body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu:not(:has(.top-menu-panel.open)) { display: none; }
 body.phone-layout #top-menubar .top-menu-back { font-weight: 600; color: var(--ui-text-2); }
 .top-menu-back { display: none; }
@@ -16450,11 +16457,11 @@ body.touch-wide-layout.touch-ui :is(#left-pane, #right-pane).pane-collapsed .pan
  * 20 px grip fell under 44 px. The bar floats over the canvas, hides itself without a context, and has no grip, like the pen draft. */
 @media (max-width: 640px) {
   body.touch-ui .ctxbar.ctxbar--shape { display: flex; }
+  body.touch-ui .ctxbar.ctxbar--shape .ctxbar-handle { display: none; }
+  body.touch-ui .ctxbar.ctxbar--shape .ctxbar-content { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  body.touch-ui .ctxbar.ctxbar--shape .ctxbar-content::-webkit-scrollbar { display: none; }
+  body.touch-ui .ctxbar.ctxbar--shape .ctxbar-overflow-wrap { flex: 0 0 auto; }
 }
-body.touch-ui .ctxbar.ctxbar--shape .ctxbar-handle { display: none; }
-body.touch-ui .ctxbar.ctxbar--shape .ctxbar-content { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
-body.touch-ui .ctxbar.ctxbar--shape .ctxbar-content::-webkit-scrollbar { display: none; }
-body.touch-ui .ctxbar.ctxbar--shape .ctxbar-overflow-wrap { flex: 0 0 auto; }
 /* === END TUX-031 (batch G) === */
 
 /* === TUX-050 (batch G): Paper size stays on screen on the shortest phone landscape ===

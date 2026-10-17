@@ -408,7 +408,7 @@
     const touchPageRows = `
       <table class="help-kbd-table">
         <tbody>
-          ${row(t('Tap'),                          'Select an object or layer')}
+          ${row(t('Tap'),                          'Select an object or layer', 'A tap within 22 px of a stroke selects it · a locked layer selects nothing')}
           ${row(t('Drag'),                         'Move the selected object')}
           ${row(t('Pinch') + ' · ' + t('Two-finger drag'), 'Zoom · pan the canvas')}
           ${row(t('Undo / Redo buttons'),          'Undo and redo the last change', 'Two-finger tap = undo · Three-finger tap = redo · Zoom In, Zoom Out and Fit buttons set the view')}

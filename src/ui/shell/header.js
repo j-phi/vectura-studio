@@ -204,6 +204,13 @@
       e.stopPropagation();
       setOpen(!body.classList.contains('phone-menu-open'));
     });
+    // One pinned row at the top of the sheet holds Document Setup and Theme side by side, so the sheet is no taller
+    // than before (a short phone landscape fits 7 rows, not 8).
+    const quickRow = () => {
+      let q = bar.querySelector('.top-menu-quick-row');
+      if (!q) { q = doc.createElement('div'); q.className = 'top-menu-quick-row'; bar.insertBefore(q, bar.firstChild); }
+      return q;
+    };
     // Theme row (the header toggle is hidden in phone layout).
     const themeBtn = doc.getElementById('theme-toggle');
     if (themeBtn && !bar.querySelector('.top-menu-theme-row')) {
@@ -212,7 +219,18 @@
       row.className = 'top-menu-trigger top-menu-theme-row';
       row.textContent = 'Theme';
       row.addEventListener('click', (e) => { e.preventDefault(); themeBtn.click(); });
-      bar.appendChild(row);
+      quickRow().appendChild(row);
+    }
+    // Q23 (TUX-010 req 6): Document Setup is pinned at the top of the sheet, so it takes 2 taps (hamburger, row).
+    // The File menu keeps its own entry.
+    const settingsBtn = doc.getElementById('btn-settings');
+    if (settingsBtn && !bar.querySelector('.top-menu-docsetup-row')) {
+      const row = doc.createElement('button');
+      row.type = 'button';
+      row.className = 'top-menu-trigger top-menu-docsetup-row';
+      row.textContent = 'Document Setup\u2026';
+      row.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); setOpen(false); settingsBtn.click(); });
+      quickRow().insertBefore(row, quickRow().firstChild);
     }
     // Back row at the top of every sub-level.
     bar.querySelectorAll('[data-top-menu-panel]').forEach((panel) => {
