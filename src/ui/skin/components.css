@@ -14086,6 +14086,21 @@ body.phone-layout #top-menubar .top-menu-item { min-height: 44px; font-size: 14p
 body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-trigger,
 body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-quick-row { display: none; }
 body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu:not(:has(.top-menu-panel.open)) { display: none; }
+/* Review fix (874x330): an open sub-level taller than the sheet is clamped to it and scrolls itself, so the sheet never scrolls
+ * the sub-level out from under the cue. data-scroll-cue (utils.scrollCue, bound in header.js) draws sticky fades that take no taps. */
+body.phone-layout #top-menubar:has(.top-menu-panel.open) { overflow-y: hidden; }
+body.phone-layout #top-menubar .top-menu:has(> .top-menu-panel.open) { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+body.phone-layout #top-menubar .top-menu-panel.open { flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+body.phone-layout #top-menubar .top-menu-panel.open > .top-menu-item { flex: none; }
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open::before,
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 3;
+  opacity: 0; transition: opacity 120ms ease;
+}
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open::before { order: -1; top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-bg) 15%, transparent); }
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open::after { order: 99; bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-bg) 15%, transparent); }
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open[data-scroll-cue~="above"]::before,
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open[data-scroll-cue~="below"]::after { opacity: 1; }
 body.phone-layout #top-menubar .top-menu-back { font-weight: 600; color: var(--ui-text-2); }
 .top-menu-back { display: none; }
 body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: center; }

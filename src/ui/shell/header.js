@@ -246,6 +246,9 @@
         ui.setTopMenuOpen?.(null, false);
       });
       panel.insertBefore(back, panel.firstChild);
+      // A sub-level clamped to a short sheet scrolls itself; the cue marks the hidden edge (874x330 review fix).
+      const cue = window.Vectura?.UI?.utils?.scrollCue;
+      if (cue) cue.bind(panel);
     });
     // Choosing a command closes the whole sheet. Capture phase: menubar.js stops click
     // propagation at each panel, so a bubble listener on the bar never ran (TUX-046).

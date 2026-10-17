@@ -271,3 +271,50 @@ test.describe('TUX-001 toast vs header actions', () => {
     for (const h of m.hits) expect(h.ok, `${h.id} covered by ${h.cls}`).toBe(true);
   });
 });
+
+// Review fix: at 874x330 (phone-short) Document Setup lives only under ☰ › File, and it sat at y=370 below the fold with no cue.
+// The open sub-level is clamped to the viewport, scrolls itself, and shows the scroll cue. 3 taps (plus one scroll) reach it.
+test.describe('phone ☰ › File at 874x330', () => {
+  test('Document Setup is reachable in 3 taps; the sub-level is clamped, scrolls and shows the cue', async ({ page }, testInfo) => {
+    const dev = PROJECTS[testInfo.project.name];
+    test.skip(!dev || dev.device !== (dev.engine === 'webkit' ? 'iPhL' : 'iPhL-c'), 'phone landscape: iPhL-c in Chromium, iPhL resized to 874x330 in WebKit');
+    await page.setViewportSize({ width: 874, height: 330 });
+    await gotoApp(page);
+    await expect(page.locator('body.phone-short')).toHaveCount(1);
+    let taps = 0;
+    await touch.tap(page, page.locator('#btn-menu-hamburger')); taps += 1;
+    await touch.tap(page, page.locator('#btn-menu-file')); taps += 1;
+    const panelSel = '#top-menubar .top-menu-panel.open';
+    await expect(page.locator(panelSel)).toBeVisible();
+    await page.waitForTimeout(250);
+    const st = await page.evaluate((sel) => {
+      const p = document.querySelector(sel);
+      const r = p.getBoundingClientRect();
+      const a = getComputedStyle(p, '::after');
+      return { bottom: r.bottom, ih: innerHeight, scrolls: p.scrollHeight - p.clientHeight > 1, cue: p.dataset.scrollCue || '', afterOpacity: a.opacity, afterPe: a.pointerEvents };
+    }, panelSel);
+    expect(st.bottom, `the File sub-level is clamped to the viewport ${JSON.stringify(st)}`).toBeLessThanOrEqual(st.ih + 1);
+    expect(st.scrolls, 'the File sub-level scrolls itself').toBe(true);
+    expect(st.cue).toContain('below');
+    expect(st.afterOpacity, 'the bottom fade shows').toBe('1');
+    expect(st.afterPe, 'the fade takes no taps').toBe('none');
+    // One scroll gesture over the sub-level brings Document Setup into view.
+    const box = await page.locator(panelSel).boundingBox();
+    const cx = box.x + box.width / 2; const cy = box.y + box.height / 2;
+    if (touch.engineOf(page) === 'chromium') {
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Input.synthesizeScrollGesture', { x: Math.round(cx), y: Math.round(cy), yDistance: -400, gestureSourceType: 'touch', speed: 1200 });
+    } else {
+      // Playwright WebKit has no native touch or wheel scroll on mobile; scroll the sub-level as the swipe would.
+      await page.evaluate((sel) => { const p = document.querySelector(sel); p.scrollTop = p.scrollHeight; }, panelSel);
+    }
+    await expect.poll(() => page.evaluate(() => {
+      const r = document.getElementById('btn-settings').getBoundingClientRect();
+      const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return r.bottom <= innerHeight + 1 && !!e && !!e.closest('#btn-settings');
+    }), { timeout: 3000 }).toBe(true);
+    await touch.tap(page, page.locator('#btn-settings')); taps += 1;
+    await page.waitForSelector('#settings-panel.open', { timeout: 5000 });
+    expect(taps).toBe(3);
+  });
+});
