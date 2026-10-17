@@ -213,6 +213,13 @@ jobs:
       - run: npm ci --no-audit --no-fund --loglevel=error
       - name: Node process-lifecycle tests
         run: npm run test:runner
+      # TUX-058: no commit after the anchor may raise the touch target baseline without a TUX-WAIVER
+      # line. Fetches history back to the anchor date only. A missing anchor fails the step (exit 2).
+      - name: Touch baseline waiver rule
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --shallow-since="$(node scripts/touch-baseline-waiver.js --anchor-since)" origin "$GITHUB_SHA"
+          node scripts/touch-baseline-waiver.js --since-anchor
       - run: npm run test:perf
       # The probe runs three tiny files through the real shard + merge entrypoints. It only
       # guards the coverage plumbing, so it runs only when that plumbing changed. An unknown
@@ -254,10 +261,8 @@ jobs:
     steps:
       - id: clock
         run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
-      # fetch-depth: 0 retains the git-history inputs some unit tests read (R-18 removes them).
+      # Shallow on purpose: no test reads git history (tests/unit/no-git-history-in-tests.test.js).
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -337,8 +342,6 @@ jobs:
       - name: Require every coverage shard to pass
         run: test "$SHARDS_RESULT" = success
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 20
