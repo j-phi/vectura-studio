@@ -17,7 +17,9 @@ env:
   VECTURA_VITEST_MAX_WORKERS: '2'
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # The event name keeps the nightly (schedule) and manual (workflow_dispatch) runs out of the
+  # push-to-main group. Before this, a long nightly made every main push wait or get cancelled.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -472,3 +474,57 @@ jobs:
           name: expected-roster-metrics
           path: ${{ runner.temp }}/lane-roster-metrics.jsonl
           if-no-files-found: ignore
+
+  # The one required check for main (branch protection). It needs every job in this workflow.
+  # A job that runs by design on this event must succeed. A job that skips by design on this
+  # event must be skipped. Any failure or cancellation fails ci-ok. Classification lives in
+  # scripts/ci-ok.js; tests/unit/ci-ok.test.js keeps it in sync with this file.
+  ci-ok:
+    if: always()
+    needs: [lane-plan, feedback, unit, integration, e2e-smoke, visual, perf, coverage-plan, coverage-shard, coverage, lane-gate, touch-e2e-nightly, touch-audit-nightly, scheduled-audit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      failed: ${{ steps.verdict.outputs.failed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/ci-ok.js
+          sparse-checkout-cone-mode: false
+      - name: Require every expected job for this event
+        id: verdict
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: node scripts/ci-ok.js
+
+  # Red main gets an owner: a failed push-to-main or nightly run opens one tracking issue,
+  # or comments on the open one. Dedupe key: the ci-red-main label.
+  report-red-main:
+    if: always() && needs.ci-ok.result == 'failure' && (github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    needs: [ci-ok]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the red-main issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FAILED_JOBS: ${{ needs.ci-ok.outputs.failed }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          label=ci-red-main
+          title="CI is red on main"
+          gh label create "$label" --color B60205 --description "Tests workflow failed on main or nightly" 2>/dev/null || true
+          body="$(printf 'Tests run failed.\n\n- Event: %s\n- Commit: %s\n- Failed jobs: %s\n- Run: %s\n' "$EVENT_NAME" "$GITHUB_SHA" "${FAILED_JOBS:-unknown}" "$RUN_URL")"
+          issue="$(gh issue list --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "$body"
+            echo "Commented on #$issue"
+          else
+            gh issue create --title "$title" --label "$label" --body "$body"
+          fi

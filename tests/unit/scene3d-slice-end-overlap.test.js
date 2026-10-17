@@ -22,7 +22,9 @@
  * (57/57, W-27c-0a-4b's fingerprints) or `scene3d-contour-slice-corners.test.js`
  * (25/25, W-34's M1/M2 guards); both stay untouched and must stay green.
  *
- * T1 — no-op default (byte-identical: absent === 0 === pre-fix tree).
+ * T1 — no-op default (byte-identical: absent === 0). The pre-fix-tree leg
+ *      (`git show HEAD:`) was removed: after the fix landed, HEAD is the fixed
+ *      tree, so that leg compared the current code with itself.
  * T2 — positive k extends each open run's endpoint by EXACTLY k*penWidth mm
  *      of world-space arc (monotone), measured directly against
  *      `Slices.extendFrontChains` on a controlled synthetic ring — see the
@@ -41,7 +43,6 @@
  */
 const crypto = require('crypto');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
@@ -67,8 +68,8 @@ const md5Paths = (paths) => crypto.createHash('md5')
 const isOpenRun = (pts) => pts.length < 2
   || Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].y - pts[pts.length - 1].y) > 1e-6;
 
-// ── Harness factory — one closure per runtime, so T1's "current" and
-// "pre-fix" comparisons share IDENTICAL scene-building/stub code. ──────────
+// ── Harness factory — one closure per runtime, so the current and T7's
+// mutated runtime share IDENTICAL scene-building/stub code. ─────────────────
 const makeHarness = (runtime) => {
   const V = runtime.window.Vectura;
   const algo = V.AlgorithmRegistry && V.AlgorithmRegistry.scene3d;
@@ -116,50 +117,32 @@ const makeHarness = (runtime) => {
 describe('W-35 — sliceEndOverlap (end overlap / edge-fidelity control)', () => {
   let runtime;
   let H; // current (post-fix) harness
-  let preFixRuntime;
-  let preFixHarness;
 
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();
     H = makeHarness(runtime);
-
-    // T1's pre-fix baseline: HEAD is the base commit this unit started from
-    // (this worktree's working tree is uncommitted, so `git show HEAD:...`
-    // is exactly the tree BEFORE this unit's edits) — the same
-    // scriptOverrides technique `tests/helpers/pre-wip-surface-fill.js`
-    // documents (W-34 §5 used the same technique manually).
-    const preFixSrc = execFileSync('git', ['show', `HEAD:${SCENE3D_REL}`], {
-      cwd: ROOT_DIR, maxBuffer: 1024 * 1024 * 64,
-    }).toString('utf8');
-    preFixRuntime = await loadVecturaRuntime({ scriptOverrides: { [SCENE3D_REL]: preFixSrc } });
-    preFixHarness = makeHarness(preFixRuntime);
   }, 60000);
 
   afterAll(() => {
     H && H.restore();
-    preFixHarness && preFixHarness.restore();
     runtime && runtime.cleanup();
-    preFixRuntime && preFixRuntime.cleanup();
   });
 
   // ── T1 — no-op default, byte-identical by construction ───────────────────
-  describe('T1 — sliceEndOverlap absent === 0 === the pre-fix (pre-W-35) tree', () => {
+  describe('T1 — sliceEndOverlap absent === 0 (no-op default)', () => {
     ALL_PRIMITIVES.forEach((primitive) => {
       Object.keys(CAMERAS).forEach((camId) => {
         test(`${primitive} @ camera ${camId}`, () => {
           const cam = CAMERAS[camId];
           const absent = H.gen(primitive, cam, {});
           const zero = H.gen(primitive, cam, { sliceEndOverlap: 0 });
-          const pre = preFixHarness.gen(primitive, cam, {});
           // `plane` @ camera b legitimately emits ZERO contourSlice runs (the
           // flat sheet's front-facing footprint at that tilt has no plane
           // crossing) — a vacuous-but-still-honest identity, not a W-35
-          // regression (confirmed identical across all three at count 0).
+          // regression (confirmed identical at count 0).
           if (primitive !== 'plane') expect(absent.length).toBeGreaterThan(0);
           expect(absent.length).toBe(zero.length);
-          expect(absent.length).toBe(pre.length);
           expect(md5Paths(absent)).toBe(md5Paths(zero));
-          expect(md5Paths(absent)).toBe(md5Paths(pre));
         });
       });
     });
