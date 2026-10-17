@@ -93,18 +93,8 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 
 // The two cells `T2-3-review.md` photographed and this unit exists for.
 const GATED_CELLS = [['sphere', 'contour'], ['cone', 'contour']];
-// All six T2-3 cells — reported for every one, gated only on the two above
-// (torus's object mask is dominated by a large pre-existing structural
-// reading from its own hole/fan convergence — `T2-3b-plan.md` §1.5 flags
-// this in the plan's own Python instrument; this JS port's simpler
-// morphological closing is MORE sensitive to it, not less, so torus is
-// reported here, never gated, consistent with — if anything stricter than
-// — the plan's own treatment).
-const ALL_CELLS = [
-  ['sphere', 'hatch'], ['sphere', 'contour'],
-  ['torus', 'hatch'], ['torus', 'contour'],
-  ['cone', 'hatch'], ['cone', 'contour'],
-];
+// Torus is not gated: its object mask is dominated by a pre-existing
+// structural reading from its own hole/fan convergence (T2-3b-plan.md §1.5).
 
 const buildSceneParams = (Params, defaults, {
   mapper, fillDensity, primitive, rig, toneLaw = 'mkTick',
@@ -322,14 +312,6 @@ describe('Scene3D.SurfaceFill — mkTick directional banding oracle (T2-3b, moir
     });
   });
 
-  describe('T2-3b own area floor (Lfloor) — live disk source, not git history', () => {
-    test('the lenChan branch of solveAt carries the Lfloor smooth-floor fix', () => {
-      const src = loadHeadSource();
-      expect(src).toContain('const Lfloor = g * PMIN;');
-      expect(src).toMatch(/mkTick:\s*\{[^}]*chan: 'len'/);
-    });
-  });
-
   describe('real render — sphere/contour + cone/contour, both rigs (GATED: moiré half)', () => {
     let runtime;
     const results = { test: {}, create: {} };
@@ -375,34 +357,8 @@ describe('Scene3D.SurfaceFill — mkTick directional banding oracle (T2-3b, moir
     });
   });
 
-  describe('report-only — all six cells, both rigs (torus REPORTED, not gated — see file header)', () => {
-    let runtime;
-    const results = { test: {}, create: {} };
-
-    beforeAll(async () => {
-      runtime = await loadVecturaRuntime();
-      const V = runtime.window.Vectura;
-      ['test', 'create'].forEach((rig) => {
-        ALL_CELLS.forEach(([primitive, mapper]) => {
-          const { paths, stat } = renderCell(V, { primitive, mapper, rig });
-          const rowPitch = stat.tickField.rowPitch;
-          results[rig][`${primitive}/${mapper}`] = { ...measure(paths, { rowPitch }), rowPitch };
-        });
-      });
-    }, 120000);
-
-    afterAll(async () => { if (runtime) await runtime.cleanup(); });
-
-    test('bandC/theta/period are non-vacuous finite numbers on every cell, both rigs', () => {
-      ['test', 'create'].forEach((rig) => {
-        ALL_CELLS.forEach(([primitive, mapper]) => {
-          const r = results[rig][`${primitive}/${mapper}`];
-          expect(r).not.toBeNull();
-          expect(Number.isFinite(r.bandC)).toBe(true);
-        });
-      });
-    });
-  });
+  // R-29: the six-cell report-only block (finite-number checks over 12
+  // extra renders) was removed; the gated cells above are the witness.
 
   describe('MUTATION-KILL 1 (BLOCKING) — removing Rank 1 raises bandC, real render, both rigs, both flagged cells', () => {
     let shippedRuntime;

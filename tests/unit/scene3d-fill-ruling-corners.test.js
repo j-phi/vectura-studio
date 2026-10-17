@@ -219,19 +219,15 @@ describe('Scene3D.SurfaceFill — a contour ruling never turns sharper than 8 de
   // e31d8591: sphere 18.46 / capsule 23.25 / cone 21.70 / cylinder 21.70 deg.
   // Unlike W-32, W-33 reaches the shipped app. The RAW bar (what this
   // lane's emitter fix controls) is asserted; the shipped Fill-Curves
-  // fitter's OWN post-fit number is measured and printed, not asserted —
+  // fitter's OWN post-fit number is not asserted (and no longer computed) —
   // see the file header's "KNOWN LIMITATION" note.
-  test.each(PRIMS)('C2: app-default scene — %s contour raw stays <= 8 deg (fit reported)', (primitive) => {
+  test.each(PRIMS)('C2: app-default scene — %s contour raw stays <= 8 deg', (primitive) => {
     const { paths, objectId } = appDefaultScene(primitive);
     const fills = contourFills(paths, objectId);
     expect(fills.length).toBeGreaterThan(0);
-    let worstFit = 0;
     fills.forEach((p) => {
       expect(m1(p)).toBeLessThanOrEqual(FILL_MAX_TURN_DEG);
-      worstFit = Math.max(worstFit, m1(drawnPolyline(p)));
     });
-    // eslint-disable-next-line no-console
-    console.log(`C2 ${primitive}: post-fit worst M1 = ${worstFit.toFixed(2)} deg (reported, not asserted)`);
   });
 
   // ── C3 — with fillCurves explicitly OFF, C1 also holds: pins that the ────

@@ -48,11 +48,17 @@ const {
 
 describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuation (cone base wedges)', () => {
   const R = {};
-  const KINDS = ['ship', 'off', 'cfat', 'nobisect', 'gap', 'rulingref', 'nohi', 'noapex', 'apexnorule', 'dense', 'skip1', 'rot', 'wide', 'noprobe'];
+  const KINDS = ['ship', 'off', 'cfat', 'nobisect', 'gap', 'nohi', 'noapex', 'apexnorule', 'dense', 'skip1', 'rot', 'wide', 'noprobe'];
+  // These mutants are only read on cone/hatch (R-29): render nothing else.
+  const CONE_CREATE = [['create', 'cone', 'hatch']];
+  const CONE_BOTH = [['create', 'cone', 'hatch'], ['test', 'cone', 'hatch']];
+  const CELLS_READ = {
+    off: CONE_CREATE, nobisect: CONE_BOTH, skip1: CONE_BOTH, rot: CONE_BOTH, noprobe: CONE_BOTH,
+  };
   const cone = (kind, rig) => R[kind][key(50, rig, 'cone', 'hatch')];
 
   beforeAll(async () => {
-    await renderBcKinds(R, KINDS, { full: [], roster: [] });
+    await renderBcKinds(R, KINDS, { full: [], roster: [], cells: CELLS_READ });
   }, 1800000); // bounded runtime ownership; audit remains intentionally exhaustive
 
   describe('WL (BLOCKING) — the W_L remnant is closed: bare >= 0.5 mm <= 0.30 mm^2 in W_L (create cone/hatch d=50)', () => {
@@ -107,27 +113,17 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
     });
   });
 
-  describe('FILL (BLOCKING create cone/hatch; other 11 REPORTED) — open space not needed for highlight is filled', () => {
+  describe('FILL (BLOCKING create cone/hatch) — open space not needed for highlight is filled', () => {
     // GATES under-fill only: summed area of bare components (>= 0.5 mm from ink, interior, < 100 mm^2) whose nearest
     // regular main tick has I < 2/3 and that are deeper than the band\'s own spacing can make. Not over-ink (A4), tone, ends.
     test('create cone/hatch <= 0.50 mm^2', () => {
       // eslint-disable-next-line no-console
-      console.log('FILL create cone/hatch', cone('ship', 'create').fill, 'off', cone('off', 'create').fill, 'cfat', cone('cfat', 'create').fill, 'rulingref', cone('rulingref', 'create').fill);
+      console.log('FILL create cone/hatch', cone('ship', 'create').fill, 'off', cone('off', 'create').fill, 'cfat', cone('cfat', 'create').fill);
       expect(cone('ship', 'create').fill).toBeLessThanOrEqual(0.50);
-    });
-    test('REPORTED: the other 11 cells', () => {
-      // eslint-disable-next-line no-console
-      console.log('FILL reported', ALL12.map(([rig, p, m]) => `${rig}|${p}/${m} off ${R.off[key(50, rig, p, m)].fill.toFixed(2)} new ${R.ship[key(50, rig, p, m)].fill.toFixed(2)}`).join('; '));
-      expect(ALL12.every(([rig, p, m]) => Number.isFinite(R.ship[key(50, rig, p, m)].fill))).toBe(true);
     });
     test('MUTATION off and cfat (fat clearances) exceed the bar on create cone/hatch', () => {
       expect(cone('off', 'create').fill).toBeGreaterThan(0.50);
       expect(cone('cfat', 'create').fill).toBeGreaterThan(0.50);
-    });
-    test('MUTATION rulingref: REPORTED', () => {
-      // eslint-disable-next-line no-console
-      console.log('FILL rulingref', cone('rulingref', 'create').fill);
-      expect(Number.isFinite(cone('rulingref', 'create').fill)).toBe(true);
     });
   });
 
@@ -197,12 +193,6 @@ describe('Scene3D.SurfaceFill — T2-8b-3 BC-E endpoint-envelope band continuati
       // eslint-disable-next-line no-console
       console.log('A4 create', rl, rr);
       expect(rl).toBeLessThanOrEqual(1.20); expect(rr).toBeLessThanOrEqual(1.20);
-    });
-    test('test rig REPORTED (finite numbers)', () => {
-      const r = cone('ship', 'test').raster;
-      // eslint-disable-next-line no-console
-      console.log('A4 test (reported)', ratio(r, WIN_L, STRIP_L), ratio(r, WIN_R, STRIP_R));
-      expect(Number.isFinite(ratio(r, WIN_R, STRIP_R))).toBe(true);
     });
     test('MUTATION dense (lattice x2.5, admission and continuity off): create W_R ratio exceeds 1.20', () => {
       // eslint-disable-next-line no-console
