@@ -45,4 +45,45 @@ test.describe('panel resizers by finger', () => {
       }
     });
   }
+
+  test('a canvas tap just above the expanded bottom pane reaches the canvas', async ({ page }, testInfo) => {
+    test.skip(!WIDE.includes(testInfo.project.name), 'resizer visible layouts only');
+    await gotoApp(page);
+    await tap(page, page.locator('#btn-pane-toggle-bottom'));
+    await sleep(400);
+    const r = await page.evaluate(() => {
+      const p = document.getElementById('bottom-pane').getBoundingClientRect();
+      const c = document.getElementById('main-canvas').getBoundingClientRect();
+      return { top: p.top, x: c.left + c.width / 2, collapsed: document.getElementById('bottom-pane').classList.contains('bottom-pane-collapsed') };
+    });
+    expect(r.collapsed, 'pane expanded').toBe(false);
+    await spy(page);
+    // The 6 px bar spans [top-6, top). Chromium's touch targeting also claims taps up to ~4 px above the bar for
+    // the resizer (it carries a mouse handler so a finger on the bar does not fall through to the canvas). 11 px
+    // and more above the pane is canvas; the old 12 px strip above the bar took taps up to 18 px above the pane.
+    const h0 = await paneH(page, 'bottom-pane');
+    for (const off of [11, 14, 20]) {
+      await page.touchscreen.tap(r.x, r.top - off);
+      await sleep(120);
+    }
+    expect(await downs(page), 'every tap 5+ px above the bar reached the canvas').toEqual(['main-canvas', 'main-canvas', 'main-canvas']);
+    // TUX-051 stray-tap rule: a tap on the bar itself changes nothing (a touch press engages only after the slop).
+    await page.touchscreen.tap(r.x, r.top - 3);
+    await sleep(300);
+    expect(await paneH(page, 'bottom-pane'), 'a tap on the bar leaves the height').toBeCloseTo(h0, 0);
+    expect(await page.evaluate(() => document.getElementById('bottom-pane').classList.contains('bottom-pane-collapsed')), 'and the pane stays open').toBe(false);
+  });
+
+  test('a finger drag on the bottom resizer bar still resizes the expanded pane', async ({ page }, testInfo) => {
+    test.skip(!WIDE.includes(testInfo.project.name), 'resizer visible layouts only');
+    await gotoApp(page);
+    await tap(page, page.locator('#btn-pane-toggle-bottom'));
+    await sleep(400);
+    const h0 = await paneH(page, 'bottom-pane');
+    const b = await page.locator('#bottom-resizer').boundingBox();
+    const from = { x: b.x + b.width * 0.2, y: b.y + b.height / 2 };
+    await drag(page, from, { x: from.x, y: from.y - 40 });
+    await sleep(500);
+    expect(await paneH(page, 'bottom-pane') - h0).toBeGreaterThan(20);
+  });
 });
