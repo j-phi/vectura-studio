@@ -5994,11 +5994,36 @@
 }
 }
 
-/* Q27: a finger needs a bigger hit strip than the 6 px bar. Chromium retargets a touch on a thin element
- * that has no mouse handler to the nearest one that has (the canvas), so the pointer-event bottom
- * resizer extends its hit area upward with a transparent strip. The side resizers do not: the pane
- * collapse toggles sit at the pane edge and a strip would cover them. */
+/* Q27 (round 2): a finger needs a bigger hit strip than the 6 px bar. Chromium retargets a touch on a thin
+ * element to the nearest node with a mouse handler (the canvas); the resizers now carry a no-op mousedown
+ * handler (workspace.js, bottom-pane.js) plus a 24 px strip (the §1.5 floor). The strips stay clear of everything
+ * tappable and of the canvas share:
+ * - side resizers: the element is 24 px wide (11 px over the pane edge, the 6 px bar, 7 px over the canvas edge) with
+ *   negative margins, so the layout still gives the bar 6 px. The 7 px canvas part exists only between 30 % and 70 % of the
+ *   height (iPad landscape docked canvas share 44.99 -> 45.5 against the 45 floor). The pane part starts below the pane toggles
+ *   (44 px target + 4 px, via clip-path) and stops short of the first pane control (the Layers rows start 11 px from
+ *   the right pane edge). The element stops above the bottom safe-area band;
+ * - bottom resizer: reaches DOWN into the empty bottom pane header (labels only), never up over the canvas, the
+ *   canvas HUD or the tool rail's overflow button, so a canvas tap above the bar still reaches the canvas
+ *   (TUX-051). The clip-path leaves a notch for the centred pane toggle.
+ * [data-touch-target] marks the three bars for the touch audit (they are aria-hidden and have no pointer cursor).
+ * Mouse layouts (pointer: fine) keep the bare 6 px bar. */
 @media (pointer: coarse) {
+  #left-resizer,
+  #right-resizer {
+    width: 24px;
+    margin-bottom: var(--safe-bottom, 0px);
+  }
+  #left-resizer {
+    margin-inline: -11px -7px; /* 11 px over the pane: the Algorithm info close hit area reaches 12 px in */
+    clip-path: polygon(11px 0, 17px 0, 17px 30%, 100% 30%, 100% 70%, 17px 70%, 17px 100%, 0 100%, 0 calc(var(--touch-target-min, 44px) + 4px), 11px calc(var(--touch-target-min, 44px) + 4px));
+  }
+  #right-resizer {
+    margin-inline: -7px -11px; /* 11 px over the pane: the first Layers row control starts 11 px in */
+    clip-path: polygon(0 30%, 7px 30%, 7px 0, 13px 0, 13px calc(var(--touch-target-min, 44px) + 4px), 100% calc(var(--touch-target-min, 44px) + 4px), 100% 100%, 7px 100%, 7px 70%, 0 70%);
+  }
+  #left-resizer::before { inset: 0 auto 0 11px; width: 6px; }
+  #right-resizer::before { inset: 0 auto 0 7px; width: 6px; }
   .bottom-resizer::after {
     content: '';
     position: absolute;

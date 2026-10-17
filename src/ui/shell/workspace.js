@@ -418,6 +418,12 @@
       resizer.addEventListener('pointercancel', onCancel);
     };
 
+    // Chromium touch targeting: a touch on a bare 6 px bar goes to the nearest node that has a mouse/click
+    // handler (the canvas) unless the bar has one too. pointerdown does not count. preventDefault() on
+    // pointerdown suppresses the compat mouse events, so this handler never runs; it only marks the bar
+    // as a touch target.
+    leftResizer.addEventListener('mousedown', () => {});
+    rightResizer.addEventListener('mousedown', () => {});
     leftResizer.addEventListener('pointerdown', (e) => startDrag(e, 'left'));
     rightResizer.addEventListener('pointerdown', (e) => startDrag(e, 'right'));
   }
