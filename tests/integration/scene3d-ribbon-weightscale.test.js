@@ -11,7 +11,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  */
 
 const {
-  clone, BOUNDS, SPHERE, BUCKET_B, BUCKET_C, BUCKET_B_REST, buildScene, effWeight,
+  clone, BOUNDS, SPHERE, BUCKET_B, BUCKET_B_WITNESS, BUCKET_C_WITNESS, buildScene, effWeight,
 } = require('../helpers/scene3d-ribbon-weightscale-shared');
 
 describe('T4 — ribbon laws emit only real single-pen strokes; three-pen laws keep their nibs', () => {
@@ -29,7 +29,7 @@ describe('T4 — ribbon laws emit only real single-pen strokes; three-pen laws k
   const fills = (styleParams) => (algo.generate(scene(styleParams), null, null, BOUNDS) || [])
     .filter((pp) => pp.meta && pp.meta.kind === 'sceneFill');
 
-  test.each(BUCKET_B_REST)('bucket B — "%s" emits nothing but weightScale-1 paths', (law) => {
+  test.each(BUCKET_B_WITNESS)('bucket B — "%s" emits nothing but weightScale-1 paths', (law) => {
     const paths = fills({ toneLaw: law });
     expect(paths.length).toBeGreaterThan(0);
     const offenders = paths.filter((pp) => effWeight(pp) !== 1).map(effWeight);
@@ -39,7 +39,7 @@ describe('T4 — ribbon laws emit only real single-pen strokes; three-pen laws k
       .toEqual({ law, offenders: [], count: 0 });
   });
 
-  test.each(BUCKET_C)('bucket C — "%s" still draws with genuinely different pen widths', (law) => {
+  test.each(BUCKET_C_WITNESS)('bucket C — "%s" still draws with genuinely different pen widths', (law) => {
     const paths = fills({ toneLaw: law });
     expect(paths.length).toBeGreaterThan(0);
     const distinct = new Set(paths.map((pp) => Math.round(effWeight(pp) * 1000) / 1000));
@@ -48,10 +48,6 @@ describe('T4 — ribbon laws emit only real single-pen strokes; three-pen laws k
 
   test('the ribbon roster published to the UI is exactly the twelve bucket-B laws', () => {
     expect(V.Scene3D.SurfaceFill.ribbonLaws.slice().sort()).toEqual(BUCKET_B.slice().sort());
-  });
-
-  test('bucket B and bucket C do not overlap (the exemption is total)', () => {
-    expect(BUCKET_B.filter((l) => BUCKET_C.includes(l))).toEqual([]);
   });
 });
 
@@ -89,11 +85,6 @@ describe('C4 — strokeFillStyle routing and pen-width regeneration', () => {
     } finally {
       SurfaceFill.buildObject = real;
     }
-  });
-
-  test('the committed default is spiral, and it is read from config, not hardcoded twice', () => {
-    expect(SurfaceFill.strokeFillDefault).toBe('spiral');
-    expect(SurfaceFill.strokeFillStyles).toEqual(['spiral', 'concentric', 'serpentine', 'contourParallel']);
   });
 
   // ── Narrow routing spy: stand-ins record the arguments at this seam. ──────

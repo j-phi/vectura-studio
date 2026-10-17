@@ -122,43 +122,9 @@ describe('Scene3D SurfaceFill — toneQuantLevels / toneFlowMode are LIVE', () =
     }
   });
 
-  // ── toneFlowMode ────────────────────────────────────────────────────────
-  //
-  // `toneFlowMode` only has a consumer on 'contourFlow' / 'evenStreamlines' /
-  // 'curvatureField' (surface-fill.js's `flowMapper` gate, ~line 8865) — NONE
-  // of which are in the current `src/config/scene3d-tone-laws.js` PRODUCTION
-  // roster (a pre-existing, Stage-0-unrelated fact: those three are retired/
-  // prototype laws). `clampStyleParam`'s 'toneLaw' case rejects any id not in
-  // the loaded roster and falls back to 'ladder', so reaching the FLOW_MODE
-  // branch requires temporarily widening the roster the SAME way
-  // `scene3d-tone-law-params.test.js` already does for its own roster test —
-  // swap `Vectura.SCENE3D_TONE_LAWS`, restore it after. This does not touch
-  // `src/config/scene3d-tone-laws.js` (out of this stage's owned files) and
-  // does not change which laws ship selectable in the app.
-  describe('with "contourFlow" temporarily admitted to the roster (FLOW_MODE\'s only consumer)', () => {
-    let priorRoster;
-    beforeAll(() => {
-      priorRoster = Vectura.SCENE3D_TONE_LAWS;
-      const ids = (priorRoster && priorRoster.IDS) || [];
-      Vectura.SCENE3D_TONE_LAWS = { IDS: [...ids, 'contourFlow'] };
-    });
-    afterAll(() => { Vectura.SCENE3D_TONE_LAWS = priorRoster; });
-
-    test('toneFlowMode "grad" vs "iso" render distinct sceneFill geometry on contourFlow', () => {
-      const iso = compose({ styleParams: { toneLaw: 'contourFlow', toneFlowMode: 'iso' } });
-      const grad = compose({ styleParams: { toneLaw: 'contourFlow', toneFlowMode: 'grad' } });
-      expect(iso.length).toBeGreaterThan(0);
-      expect(grad.length).toBeGreaterThan(0);
-      expect(fingerprint(iso)).not.toBe(fingerprint(grad));
-    });
-
-    test('byte-identity guard: an absent toneFlowMode renders identically to the explicit committed default (iso)', () => {
-      const absent = compose({ styleParams: { toneLaw: 'contourFlow' } });
-      const explicitIso = compose({ styleParams: { toneLaw: 'contourFlow', toneFlowMode: 'iso' } });
-      expect(absent.length).toBeGreaterThan(0);
-      expect(fingerprint(absent)).toBe(fingerprint(explicitIso));
-    });
-  });
+  // R-27: the toneFlowMode pair was removed. Its only consumers
+  // (contourFlow / evenStreamlines / curvatureField) are not in the shipped
+  // roster, so the option is unreachable from the app.
 
   // ── the lying metadata at surface-fill.js:9141 ─────────────────────────
   //

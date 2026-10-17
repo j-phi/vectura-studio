@@ -12,9 +12,12 @@ const BUCKET_B = [
 const BUCKET_C = [
   'penInterleave', 'penStipple', 'penReserve', 'penCross', 'penPitchMatch', 'penFacing',
 ];
-// Slowest bucket-B laws; they live in the "-heavy" file. The rest stay in the main file.
-const BUCKET_B_HEAVY = ['weaveDepth', 'onePenDown', 'ampSpacing', 'trochoidLoop', 'interlockWeave'];
-const BUCKET_B_REST = BUCKET_B.filter((l) => !BUCKET_B_HEAVY.includes(l));
+// One witness per mechanism (R-27). Every bucket-B law reaches the same
+// ribbon gate (`isRibbonLaw()` in ribbonize), and ribbonizeCore throws on any
+// weightScale != 1 it would emit, so two light laws witness the gate. One
+// bucket-C law witnesses the multi-pen exemption.
+const BUCKET_B_WITNESS = ['taperedEnds', 'whiteBand'];
+const BUCKET_C_WITNESS = ['penInterleave'];
 
 const buildScene = (defaults, styleParams) => {
   const p = clone(defaults);
@@ -43,5 +46,5 @@ const effWeight = (pp) => {
 };
 
 module.exports = {
-  clone, BOUNDS, SPHERE, BUCKET_B, BUCKET_C, BUCKET_B_HEAVY, BUCKET_B_REST, buildScene, effWeight,
+  clone, BOUNDS, SPHERE, BUCKET_B, BUCKET_C, BUCKET_B_WITNESS, BUCKET_C_WITNESS, buildScene, effWeight,
 };

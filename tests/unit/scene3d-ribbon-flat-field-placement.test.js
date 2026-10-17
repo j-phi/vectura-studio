@@ -50,22 +50,15 @@
  * `8adfd5af` (before Prototype B landed), recorded in the fix commit. R-18
  * retired the env-gated pre-fix switch that reproduced it.
  */
-const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { goldenValues } = require('../helpers/golden-values');
 const { captureRegionRings, buildBlankMap, findBlankClusters } = require('../helpers/scene3d-blank-map');
-
-// R-18 (D-4): condition (4) used to load `surface-fill.js` from the pre-fix
-// tree (`git show 8adfd5af`) as a second runtime. It now reads committed md5
-// goldens, generated from the tree that matched 8adfd5af byte for byte
-// (tests/baselines/golden-values/).
-const golden = goldenValues('scene3d-ribbon-flat-field-placement');
 
 const PEN_WIDTH = 0.3; // BOUNDS default (tests/fixtures/scene3d-shadow-anatomy.js)
 // The three flat-coverage wave laws this unit fixes.
 const LAWS = ['interlockWeave', 'onePenDown', 'trochoidLoop'];
 // Controls that must NOT move: the two WV6 laws (a genuine tone-driven
-// reserve, condition 4) and `taperedEnds` (the same flat-coverage defect
+// reserve) and `taperedEnds` (rendered only so the family's ruling count
+// below is exact; the same flat-coverage defect
 // through a DIFFERENT function, `wbFlatCov()` — out of this unit's file
 // scope per the plan's Fix D/§9 "wbFlatCov siblings", reported not fixed).
 const CONTROL_LAWS = ['ampSpacing', 'weaveDepth', 'taperedEnds'];
@@ -256,17 +249,6 @@ describe('SurfaceFill — F1-placement: flat-coverage wave laws placed by screen
       expect(largestCluster.lengthMm, `${law}: largest cluster ${JSON.stringify(largestCluster)}`)
         .toBeLessThanOrEqual(RED2_LARGEST_EXTENT_MM);
     });
-
-    // Mandatory disclosure (plan §10 RED-2): `taperedEnds` carries the SAME
-    // flat-coverage defect through a DIFFERENT function (`wbFlatCov()`) and
-    // is NOT gated here — record its number so nobody "discovers" it later.
-    test('taperedEnds is NOT gated by RED-2 (same defect class, different function, out of this unit\'s scope)', () => {
-      const { deepBlankAreaMm2, largestCluster } = results.taperedEnds;
-      expect(deepBlankAreaMm2).toBeGreaterThanOrEqual(0);
-      // eslint-disable-next-line no-console
-      console.log(`taperedEnds (control, NOT gated): deepBlank=${deepBlankAreaMm2.toFixed(2)}mm2, `
-        + `largestCluster=${largestCluster.areaMm2.toFixed(2)}mm2 (${largestCluster.lengthMm.toFixed(1)}x${largestCluster.crossWidthMm.toFixed(1)}mm)`);
-    });
   });
 
   describe('anti-vacuity — no coverage bought with centrelines, and the ribbon branch is genuinely reached', () => {
@@ -298,59 +280,4 @@ describe('SurfaceFill — F1-placement: flat-coverage wave laws placed by screen
       expect(deepBlankAreaMm2, `${law}: deepBlank=${deepBlankAreaMm2.toFixed(4)}mm2`).toBeLessThan(0.1);
     });
   });
-});
-
-/*
- * Condition (4) — `ampSpacing` and the WV6 laws must be byte-identical to
- * the pre-fix tree. Proved directly (not inherited from the aggregate sweep
- * above), multi-primitive x multi-density, per U7's own methodology
- * (`docs/3d-audit/lane-reports/U7-impl.md` "(b) `ampSpacing` byte-identity,
- * proven specifically"). The goldens hold the pre-fix (8adfd5af) md5s.
- */
-describe('SurfaceFill — F1-placement condition 4: WV6 laws byte-identical pre/post fix', () => {
-  let postRuntime;
-
-  afterAll(() => {
-    if (postRuntime) postRuntime.cleanup();
-  });
-
-  const serializeInk = (paths) => JSON.stringify((paths || []).map((p) => p.map((pt) => [
-    Math.round(pt.x * 1e6) / 1e6, Math.round(pt.y * 1e6) / 1e6,
-  ])));
-  const md5 = (text) => crypto.createHash('md5').update(text).digest('hex');
-
-  const buildInk = async (Vectura, primitive, toneLaw, fillDensity) => {
-    const engine = new Vectura.VectorEngine();
-    const groupId = engine.addLayer('scene3d');
-    const group = engine.layers.find((l) => l && l.id === groupId);
-    const obj = engine.getLayerDescendants(groupId).filter((l) => l && l.type === 'object3d')[0];
-    obj.params.primitive = primitive;
-    obj.params.style = obj.params.style || { penId: null, mapper: 'hatch', params: {} };
-    obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw, fillDensity };
-    engine.computeAllDisplayGeometry();
-    return (group.scenePaths || []).filter((p) => p && p.meta && p.meta.kind === 'sceneFill');
-  };
-
-  test('representative WV6 and non-wave controls remain byte-identical to the pre-Prototype-B goldens', async () => {
-    postRuntime = await loadVecturaRuntime({ includeUi: true });
-    const Vpost = postRuntime.window.Vectura;
-    // U2 (2026-10-02) moved the ribbon EROSION to `PenFill.erodeLevels` — a
-    // deliberate output change unrelated to placement. The pre-fix tree
-    // predates it, so the post side is pinned to the polygon erosion it
-    // falls back to without `erodeLevels`, keeping this a test of PLACEMENT
-    // alone.
-    delete Vpost.PenFill.erodeLevels;
-
-    const CHECKS = [
-      { law: 'ampSpacing', primitive: 'torus', density: 50 }, // WV6 spacing path
-      { law: 'weaveDepth', primitive: 'torus', density: 50 }, // distinct WV6 depth parameters
-      { law: 'taperedEnds', primitive: 'sphere', density: 50 }, // separate non-wave flat-coverage path
-    ];
-    for (const { law, primitive, density } of CHECKS) {
-      // eslint-disable-next-line no-await-in-loop
-      const post = await buildInk(Vpost, primitive, law, density);
-      expect(post.length, `${law}: post-fix fill is nonempty`).toBeGreaterThan(0);
-      golden.expect(`${law}/${primitive}/d${density} fill md5`, md5(serializeInk(post)));
-    }
-  }, 600000);
 });

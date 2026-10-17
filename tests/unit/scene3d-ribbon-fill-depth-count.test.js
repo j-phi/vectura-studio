@@ -61,21 +61,10 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-// The bucket-B self-crossing slab-collapse roster, verbatim — same laws
-// `scene3d-ribbon-erode-refusal.test.js` and `scene3d-ribbon-f1b-streaks.test.js`
-// use as controls.
-const LAWS = ['interlockWeave', 'onePenDown', 'trochoidLoop', 'ampSpacing', 'weaveDepth'];
-
-// The three named cells F1-erode-impl.md's 8-mapper sweep found with a
-// fill-depth-only swallowed-and-empty `insetMultiPolygon` call (mapper !==
-// 'hatch' — those were `outlineOnly`-and-swallowed instances, distinct from
-// the two `hatch`/`crosshatch` `interlockWeave` cells whose OUTLINE also
-// failed and which therefore already surfaced as `erodeEmpty`).
-const NAMED_CELLS = [
-  { mapper: 'contour', law: 'trochoidLoop' },
-  { mapper: 'contour', law: 'weaveDepth' },
-  { mapper: 'crosshatch', law: 'weaveDepth' },
-];
+// R-27: the per-law existence checks (sec. 1) and the named-cell zero checks
+// (sec. 2) were removed. Sec. 3's healthy baseline still pins contour/weaveDepth
+// (one of the named cells) at fillEmpty 0 and erodeEmpty 0; the erodeEmpty
+// zero on hatch is held by tests/integration/scene3d-ribbon-region-clip.test.js.
 
 const buildTorusCell = (V, mapper, toneLaw) => {
   const engine = new V.VectorEngine();
@@ -88,8 +77,7 @@ const buildTorusCell = (V, mapper, toneLaw) => {
   obj.params.style.mapper = mapper;
   obj.params.style.params = { ...(obj.params.style.params || {}), toneLaw };
   // Default camera (3/4 view), default density (50), default pen (0.30) —
-  // identical fixture shape to `scene3d-ribbon-erode-refusal.test.js` and to
-  // every RGR test in this lane per ROUND3-RESUME-BRIEFS §0 rule 3.
+  // identical fixture shape to every RGR test in this lane per ROUND3-RESUME-BRIEFS §0 rule 3.
   group.params.tone = { ...(group.params.tone || {}), enabled: true };
   engine.computeAllDisplayGeometry();
   return { engine, group, stats: { ...(V.Scene3D.SurfaceFill.lastRibbonStats || {}) } };
@@ -105,59 +93,6 @@ describe('SurfaceFill — F1-count: fillEmpty production counter (fill-depth bli
   }, 600000);
 
   afterAll(() => runtime && runtime.cleanup());
-
-  describe('1. structural gate — fillEmpty exists in stats, in the same family as erodeEmpty/clipEmpty/degenerate', () => {
-    test.each(LAWS)('%s (hatch/torus) — lastRibbonStats.fillEmpty is a finite non-negative number', (law) => {
-      const { stats } = buildTorusCell(V, 'hatch', law);
-      expect(typeof stats.fillEmpty, `${law}: typeof fillEmpty`).toBe('number');
-      expect(Number.isFinite(stats.fillEmpty), `${law}: fillEmpty=${stats.fillEmpty}`).toBe(true);
-      expect(stats.fillEmpty, `${law}: fillEmpty=${stats.fillEmpty}`).toBeGreaterThanOrEqual(0);
-    });
-
-    test('fillEmpty sits next to erodeEmpty/clipEmpty/degenerate in the published stats object', () => {
-      const { stats } = buildTorusCell(V, 'hatch', 'onePenDown');
-      expect(Object.prototype.hasOwnProperty.call(stats, 'fillEmpty')).toBe(true);
-      expect(Object.prototype.hasOwnProperty.call(stats, 'erodeEmpty')).toBe(true);
-      expect(Object.prototype.hasOwnProperty.call(stats, 'clipEmpty')).toBe(true);
-      expect(Object.prototype.hasOwnProperty.call(stats, 'degenerate')).toBe(true);
-    });
-  });
-
-  describe('2. the four named blind-spot cells, live on a5d8a1be (post-F1-erode) — fillEmpty === 0', () => {
-    // hatch/interlockWeave and crosshatch/interlockWeave are the VISIBLE
-    // case (F1-erode-plan §1's own root-cause chain): the swallowed failure
-    // hit the OUTLINE-depth erode call (`penWidth / 2`), so BOTH outlineMP
-    // and fillMP were empty pre-fix and `erodeEmpty` already caught it —
-    // these are controls proving that case stayed fixed, NOT the blind-spot
-    // cells. `fillEmpty` (this unit's counter) is deliberately NOT asserted
-    // to be 0 here: measured live on this tree it is 3 / 4 respectively —
-    // `interlockWeave` legitimately ships many genuinely-too-narrow
-    // outline-only stretches unrelated to any swallowed failure (the same
-    // reason `outlineOnly`, the pre-existing counter this one mirrors, was
-    // never itself a bug signal). Asserting fillEmpty===0 here would be an
-    // unproven, and in fact false, claim.
-    test('hatch/interlockWeave (torus) — erodeEmpty is 0 post-F1-erode (the OUTLINE-depth case stays fixed)', () => {
-      const { stats } = buildTorusCell(V, 'hatch', 'interlockWeave');
-      expect(stats.erodeEmpty, `erodeEmpty=${stats.erodeEmpty}`).toBe(0);
-    });
-
-    test('crosshatch/interlockWeave (torus) — erodeEmpty is 0 post-F1-erode (the OUTLINE-depth case stays fixed)', () => {
-      const { stats } = buildTorusCell(V, 'crosshatch', 'interlockWeave');
-      expect(stats.erodeEmpty, `erodeEmpty=${stats.erodeEmpty}`).toBe(0);
-    });
-
-    // The four INVISIBLE cells (only three distinct mapper/law pairs — one,
-    // contour/weaveDepth, was TWO calls pre-fix). F1-erode-plan §1 named
-    // these with mapper/law by name; NOT reachable via `hatch` (the only
-    // mapper `scene3d-ribbon-erode-refusal.test.js` swept).
-    test.each(NAMED_CELLS)('$mapper/$law (torus) — fillEmpty === 0 post-F1-erode (was >0 pre-fix, F1-erode-impl.md)', ({ mapper, law }) => {
-      const { stats } = buildTorusCell(V, mapper, law);
-      expect(stats.fillEmpty, `${mapper}/${law}: fillEmpty=${stats.fillEmpty}`).toBe(0);
-      // erodeEmpty must ALSO be 0 — these cells' outline always succeeded,
-      // pre- and post-fix alike; that is precisely why they were invisible.
-      expect(stats.erodeEmpty, `${mapper}/${law}: erodeEmpty=${stats.erodeEmpty}`).toBe(0);
-    });
-  });
 
   describe('3. mutation proof — a forced fill-depth-empty trips fillEmpty and NOT erodeEmpty', () => {
     test('forcing one FILL-depth erosion level to come back empty increments fillEmpty, leaves erodeEmpty untouched', () => {

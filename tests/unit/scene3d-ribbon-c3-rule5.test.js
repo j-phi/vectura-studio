@@ -28,7 +28,9 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { captureClipGroups, measureRingFillRate } = require('../helpers/scene3d-ring-coverage');
 
 const LAWS = ['weightSmoothstep', 'nibAngle'];
-const PRIMITIVES = ['sphere', 'torus'];
+// Torus only (R-27): it is the primitive where both laws produce sub-2-pen
+// stretches; the sphere rows re-proved the same CLS_WALLS branch.
+const PRIMITIVES = ['torus'];
 const PEN_WIDTH = 0.3;
 
 describe('SurfaceFill — F4 sub-2-pen ribbons are not hollow doubled hairlines', () => {
