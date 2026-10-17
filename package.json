@@ -51,16 +51,16 @@
     "test:coverage:merge": "npm run patch:test-runtime && VECTURA_TEST_COVERAGE=1 node scripts/test-queue.js node scripts/run-vitest.js"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.0",
     "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.6.1",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^24.1.1",
     "postcss": "^8.5.29",
-    "prettier": "^3.9.9",
+    "prettier": "^3.9.10",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.3.3",
+    "vite": "^8.3.4",
     "vitest": "^4.1.11"
   },
   "engines": {
