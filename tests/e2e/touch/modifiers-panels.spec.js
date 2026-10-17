@@ -7,7 +7,7 @@ const { waitLayoutSettled } = require('../helpers/target-audit-core');
 // TUX-033: the Multi-select task works in the layer list with real finger taps in both engines.
 // WebKit reports pointerType "mouse" on the click that follows a tap, so a pointerType-only gate fails there.
 // iPhone projects open the layers pane by finger through #btn-header-pane-right.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-033';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-033');
 
 test.describe('TUX-033 layer list honours touch modifiers @needs-tall-pane', () => {
   test.beforeEach(async ({ page }, testInfo) => {

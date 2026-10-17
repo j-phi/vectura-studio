@@ -3,7 +3,7 @@ const touch = require('../helpers/touch');
 
 // TUX-030: pen draft controls (Done / Remove Last Anchor / Cancel) reachable by finger on every
 // touch viewport. Fingers only; tool selection is setup (app API), anchors and chips are taps.
-const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-030';
+const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-030');
 const CHIP = { done: '[data-action="pen-done"]', remove: '[data-action="pen-remove-last"]', cancel: '[data-action="pen-cancel"]' };
 
 const boot = async (page, testInfo) => {

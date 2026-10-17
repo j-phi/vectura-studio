@@ -7,7 +7,7 @@ const touch = require('../helpers/touch');
 // Setup (layer, zoom, offset) goes through page.evaluate. setup is a precondition, not the value
 // under test: there is no finger path for it in Phase 1 (HUD zoom is TUX-020, empty-canvas pinch is
 // TUX-017). The tested action (the View menu and Reset View) is finger-only.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-009';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-009');
 
 const boot = async (page) => {
   await page.goto('/');

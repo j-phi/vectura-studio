@@ -9,7 +9,8 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..', '..');
 const RESULTS = path.join(ROOT, 'test-results', 'journey-ledger');
-const LEDGER = path.join(__dirname, 'journey-status.json');
+// The ledger of the platform this merge runs on (journey-status.json on darwin, .linux.json on linux).
+const LEDGER = require('./journey-ledger-file').ledgerFile();
 const PRIMARY = [
   'touch-ipad-landscape', 'touch-ipad-portrait', 'touch-iphone-landscape', 'touch-iphone-portrait',
   'webkit-ipad-landscape', 'webkit-ipad-portrait', 'webkit-iphone-landscape', 'webkit-iphone-portrait',

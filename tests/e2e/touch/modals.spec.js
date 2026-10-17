@@ -7,7 +7,7 @@ const touch = require('../helpers/touch');
 // TUX-046: legacy #modal-overlay scaffold on touch (Export, Help, info, color picker).
 // Fix round: Document Setup (#settings-panel, R10) and the Save Preset sheet (.vectura-modal,
 // R11) are part of TUX-046 too.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-046';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-046');
 const KINDS = ['export', 'help', 'info', 'color'];
 const CSS_PATH = path.join(__dirname, '..', '..', '..', 'src', 'ui', 'skin', 'components.css');
 
@@ -490,7 +490,7 @@ test.describe('TUX-046 modal sheet', () => {
 // history. One finger keeps the active tool. Placement uses the VISIBLE rect (surface rect
 // intersected with the viewport): on iPhP the surfaces overhang the right edge.
 // ---------------------------------------------------------------------------------------------
-const EVIDENCE_047 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-047';
+const EVIDENCE_047 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-047');
 
 // surface: 'export' | 'pd'. Returns { x, y, w, h, left, top, right, bottom } (visible rect) or null.
 const visibleRect = (page, surface) => page.evaluate((surface) => {

@@ -13,7 +13,7 @@ const NAMED = {
   'touch-iphone-portrait': 'iPhP',
   'webkit-iphone-portrait': 'iPhP-webkit',
 };
-const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-023';
+const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-023');
 
 // Batch R3: the painted rotate disc is set by a frame, so wait for that frame instead of a fixed time.
 const waitAffordanceDrawn = (page) => page.waitForFunction(() => !!window.app.renderer._rotAffDrawn, null, { timeout: 6000, polling: 50 });

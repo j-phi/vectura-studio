@@ -6,7 +6,7 @@ const { PROJECTS } = require('./viewports');
 // TUX-053: File > Open must hand iOS Files an accept list it can match (adds
 // application/octet-stream on iOS only), and the chosen .vectura must load.
 // Finger-only. Desktop parity lives in tests/e2e/file-open-desktop.spec.js.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-053';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-053');
 const OCTET = 'application/octet-stream';
 
 const spec = (testInfo) => PROJECTS[testInfo.project.name];

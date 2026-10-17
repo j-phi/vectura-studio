@@ -13,6 +13,7 @@
 // and sits in the ledger.
 //
 // Regenerate after a lane merge: npm run test:e2e:touch:journeys:ledger
+// The ledger is per platform (journey-ledger-file.js). Without a linux ledger, linux cells only record.
 // Step table (human-readable source): docs/touch-audit/journey-scripts.md
 'use strict';
 
@@ -25,7 +26,7 @@ const { JOURNEYS, moveChecks } = require('./journey-defs');
 
 test.describe.configure({ retries: 0 });
 
-const LEDGER_FILE = path.join(__dirname, 'journey-status.json');
+const LEDGER = require('./journey-ledger-file');
 const WRITE = process.env.JOURNEY_LEDGER_WRITE === '1';
 const SHOTS = process.env.JOURNEY_SHOTS_DIR || '';
 const RESULTS_DIR = path.join(process.cwd(), 'test-results', 'journey-ledger');
@@ -35,7 +36,7 @@ const RESULTS_DIR = path.join(process.cwd(), 'test-results', 'journey-ledger');
 const RELAX = new Set((process.env.JOURNEY_RELAX || '').split(',').filter(Boolean));
 const CONTINUE = process.env.JOURNEY_CONTINUE === '1';
 
-const readLedger = () => JSON.parse(fs.readFileSync(LEDGER_FILE, 'utf8'));
+const readLedger = () => LEDGER.readLedger();
 
 // ---------------------------------------------------------------------------------------------
 // Runner
@@ -214,12 +215,13 @@ test.describe('finger-only journeys', () => {
       }
 
       const ledger = readLedger();
-      const pinned = ledger.projects.includes(project);
+      // No ledger for this platform yet (linux until seeded): measure and record, never fail.
+      const pinned = !!ledger && ledger.projects.includes(project);
       const entry = pinned ? ledger.entries.find((x) => x.project === project && x.journey === J.id) : null;
       const verdict = judge({ entry, failedStep: result.failedStep, message: result.message });
 
       if (!pinned) {
-        testInfo.annotations.push({ type: 'informational', description: result.failedStep ? `fails at ${result.failedStep}: ${result.message}` : 'all steps pass' });
+        testInfo.annotations.push({ type: ledger ? 'informational' : 'ledger-missing', description: result.failedStep ? `fails at ${result.failedStep}: ${result.message}` : 'all steps pass' });
         return;
       }
       if (verdict.ok && entry) testInfo.annotations.push({ type: 'expected-fail', description: entry.failsAt });

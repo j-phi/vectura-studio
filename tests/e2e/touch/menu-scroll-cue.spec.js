@@ -5,7 +5,7 @@ const touch = require('../helpers/touch');
 // TUX-012 review (batch 3b): a context menu that scrolls shows a visible fade at the scroll edge where more rows exist.
 // iOS overlay scrollbars are hidden, so at 874x330 "Make Clipping Mask" sat 46 px below the fold with no cue.
 // The cue is a ::after (more below) / ::before (more above) fade, driven by data-scroll-cue on the menu.
-const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch3b';
+const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch3b');
 
 const boot = async (page) => {
   await page.goto('/');

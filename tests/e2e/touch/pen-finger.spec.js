@@ -6,7 +6,7 @@ const touch = require('../helpers/touch');
 // point, finishes it with a double-tap that adds no extra anchor, and grabs an anchor from 15 px off it.
 // Finger only (tests/e2e/helpers/touch.js tap/drag). Tool setup uses page.evaluate.
 
-const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-024';
+const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-024');
 const SHOT_NAMES = {
   'touch-ipad-landscape': 'iPadL',
   'webkit-ipad-landscape': 'iPadL-webkit',

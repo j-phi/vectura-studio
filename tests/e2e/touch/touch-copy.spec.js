@@ -3,7 +3,7 @@ const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
 // TUX-052: after a touch tap the status hint uses touch words, and Help opens on the Touch page.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-052';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-052');
 const BANNED = /Click|Shift\+|Option\+|Cmd\+|Ctrl\+|Alt\+|double-click|right-click/i;
 
 const phoneLayout = (page) => page.evaluate(() => document.body.classList.contains('phone-layout'));

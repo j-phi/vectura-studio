@@ -15,7 +15,7 @@ const EXPECT = {
   iPhL: { layout: 'phone', mobile: true },
   'iPhL-c': { layout: 'phone', mobile: true },
 };
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-006';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-006');
 
 const gotoApp = async (page) => {
   await page.goto('/');
@@ -367,7 +367,7 @@ const TUX4_PROJECTS = [
 const TUX4_EXPECTED_FAIL = {}; // TUX-007 landed: the touch-iphone-landscape-chrome mark was removed (it reported 'Expected to fail, but passed')
 // Projects where #status-bar is display:none by design (measured: iPhone portrait, all three projects).
 const TUX4_STATUS_BAR_HIDDEN = ['touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-iphone-portrait-chrome'];
-const TUX234_EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after';
+const TUX234_EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after');
 
 const openLeftPane = (page) => page.evaluate(() => {
   const pane = document.getElementById('left-pane');

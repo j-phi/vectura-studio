@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 
 // TUX-037 desktop parity (D6): the Undo toast now also shows on a mouse delete, in the
 // same top-right spot every other toast uses, and a mouse click on Undo restores the layer.
-const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-037';
+const EVID = require('path').join(__dirname, '../..', 'docs/touch-audit/evidence/after/TUX-037');
 
 test('desktop: row Delete shows the toast top-right; mouse Undo restores', async ({ page }) => {
   await page.goto('/');

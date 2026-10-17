@@ -3,7 +3,7 @@ const touch = require('../helpers/touch');
 
 // TUX-031: touch equivalents for keyboard-only controls. Isolation exit (Escape), Arrange
 // (Cmd+[ / Cmd+]) and the shape-property verify-first checks. Fingers only; SETUP uses the app API.
-const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-031';
+const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-031');
 const phoneLayout = (page) => page.evaluate(() => document.body.classList.contains('phone-layout'));
 
 const boot = async (page) => {

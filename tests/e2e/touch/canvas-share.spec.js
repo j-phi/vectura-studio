@@ -5,7 +5,7 @@ const { tap, canvasShare, hitArea, engineSupports } = require('../helpers/touch'
 const auditCore = require('../helpers/target-audit-core');
 
 // TUX-007: iPhone landscape keeps a usable canvas, scale stays positive, selection draws.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-007';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-007');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const gotoApp = async (page) => {
@@ -451,7 +451,7 @@ void engineSupports;
 // TUX-008: pane defaults per layout class. Finger-only (tap()); setup through the app API is
 // fixture state only (adding and selecting a layer).
 // ---------------------------------------------------------------------------------------------
-const EVIDENCE_008 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-008';
+const EVIDENCE_008 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-008');
 const shot008 = async (page, name) => {
   await fs.promises.mkdir(EVIDENCE_008, { recursive: true });
   await page.screenshot({ path: `${EVIDENCE_008}/${name}.png` });

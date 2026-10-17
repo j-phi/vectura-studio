@@ -102,7 +102,7 @@ test.describe('TUX-047 zoom surfaces on desktop', () => {
     expect(v3.offsetX - v2.offsetX).toBeCloseTo(40, 0);
     expect(v3.offsetY - v2.offsetY).toBeCloseTo(25, 0);
     expect(await page.evaluate(() => getComputedStyle(document.getElementById('export-preview-canvas-wrap')).cursor)).toBe('grab');
-    await page.screenshot({ path: '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-047/desktop-export-1600x1000.png' });
+    await page.screenshot({ path: require('path').join(__dirname, '../..', 'docs/touch-audit/evidence/after/TUX-047/desktop-export-1600x1000.png') });
   });
 
   const openPd = async (page) => {

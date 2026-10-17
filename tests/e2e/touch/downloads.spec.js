@@ -12,7 +12,7 @@ const { PROJECTS } = require('./viewports');
 // Headless WebKit resolves navigator.share in ~3 ms with no sheet, so the recorder stores the
 // File's name/type/size and the user-activation state; a bare "share was called" proves nothing.
 // The trigger is a fixed 64x64 button so these tests do not depend on menu reachability.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-054';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-054');
 const SAVE_NAME = /^vectura-\d{4}-\d{2}-\d{2}\.vectura$/;
 const SAVE = { method: 'saveVecturaFile', filename: SAVE_NAME, type: 'application/json', toast: /Saved vectura-/ };
 const EXPORT = { method: 'exportSVG', filename: 'vectura.svg', type: 'image/svg+xml', toast: /Exported vectura\.svg/ };

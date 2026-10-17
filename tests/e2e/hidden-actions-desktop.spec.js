@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 
 // TUX-036 desktop parity: mouse hover still reveals row actions and a preset X still deletes in one click.
-const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-036';
+const EVID = require('path').join(__dirname, '../..', 'docs/touch-audit/evidence/after/TUX-036');
 
 test('desktop: hover reveals row actions; Delete works on one click', async ({ page }) => {
   await page.goto('/');

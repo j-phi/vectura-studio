@@ -6,7 +6,7 @@ const { openPane, addLayer } = require('./target-audit-states');
 const core = require('../helpers/target-audit-core');
 
 // TUX-045: modifier tasks (Multi-select, Constrain, Duplicate, Pan) as one-shot latches with a double-tap lock.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-045';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-045');
 const TASKS = ['multi-select', 'constrain', 'duplicate', 'pan'];
 
 const gotoApp = async (page) => {

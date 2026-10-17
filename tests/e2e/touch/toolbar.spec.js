@@ -3,8 +3,8 @@ const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
 const { tap, longPress, drag, hitArea, touchPhase, engineSupports } = require('../helpers/touch');
 
-const EVIDENCE_014 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-014';
-const EVIDENCE_013 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-013';
+const EVIDENCE_014 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-014');
+const EVIDENCE_013 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-013');
 
 // TUX-014: tool sub-menus open by tap / long-press and stay open (touch path).
 // TUX-013 and TUX-015 append their toolbar specs to this file later.
@@ -615,7 +615,7 @@ test.describe('TUX-013 guards', () => {
 // inflates it to 544, the proxy trap). The drawer scrolls, so every item is scrolled into view
 // programmatically first (WebKit synthetic touches cannot scroll containers).
 test.describe('TUX-015 all tools drawer', () => {
-  const EVIDENCE_015 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-015';
+  const EVIDENCE_015 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-015');
   const tapL = (page, t) => tap(page, typeof t === 'string' ? page.locator(t) : t);
   const openDrawer = async (page) => {
     await page.goto('/');
@@ -756,7 +756,7 @@ test.describe('TUX-015 all tools drawer', () => {
 // (iPadL, coarseWide): no footer, handles are 44px, touch-action none, and a finger drag
 // follows 1:1 and is never cancelled.
 test.describe('TUX-016 footer and handles', () => {
-  const EVIDENCE_016 = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-016';
+  const EVIDENCE_016 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-016');
   const ANCHORED = ['touch-ipad-portrait', 'webkit-ipad-portrait', 'touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-iphone-landscape', 'webkit-iphone-landscape', 'touch-iphone-portrait-chrome', 'touch-iphone-landscape-chrome'];
   const FLOATING = ['touch-ipad-landscape', 'webkit-ipad-landscape', 'touch-coarse-wide'];
   const CTX = ['touch-ipad-landscape', 'webkit-ipad-landscape', 'touch-iphone-landscape', 'webkit-iphone-landscape', 'touch-coarse-wide'];

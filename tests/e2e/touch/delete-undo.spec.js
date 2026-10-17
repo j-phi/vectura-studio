@@ -5,7 +5,7 @@ const touch = require('../helpers/touch');
 // Pane reachability on iPhone is TUX-010; this spec triggers the delete through the shared
 // command path (Edit > Delete -> CanvasContextMenu.runCommand('delete')) and exercises the
 // toast itself by finger. The finger-only path (long-press row menu) runs on iPad landscape.
-const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-037';
+const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-037');
 
 const boot = async (page, { clock = false } = {}) => {
   if (clock) await page.clock.install();

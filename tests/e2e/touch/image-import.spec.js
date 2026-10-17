@@ -7,7 +7,7 @@ const { PROJECTS } = require('./viewports');
 // long side, persisted previews must shrink with it, Save must survive, and small images must be
 // byte-identical to the old drawImage(img, 0, 0) path. Real engine only; jsdom covers the failure
 // branches (tests/integration/image-asset-downscale.test.js).
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-055';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-055');
 const CAP = 2048;
 const spec = (testInfo) => PROJECTS[testInfo.project.name];
 

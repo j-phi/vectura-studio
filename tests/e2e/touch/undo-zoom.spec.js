@@ -6,7 +6,7 @@ const touch = require('../helpers/touch');
 // every action under test is a finger (tests/e2e/helpers/touch.js). Multi-touch is synthetic in WebKit,
 // so the app-logic asserts run in both engines.
 
-const EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-020';
+const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-020');
 const SHOT = {
   'touch-ipad-portrait': 'iPadP', 'touch-ipad-landscape': 'iPadL', 'touch-iphone-portrait': 'iPhP',
   'touch-iphone-landscape': 'iPhL', 'touch-iphone-landscape-chrome': 'iPhL-c',

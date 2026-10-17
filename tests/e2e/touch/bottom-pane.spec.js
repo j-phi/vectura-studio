@@ -5,7 +5,7 @@ const { tap, drag, hitArea, canvasShare } = require('../helpers/touch');
 
 // TUX-051: a stray finger tap near the canvas bottom edge must not expand the bottom pane, and the
 // collapsed pane's chevron must be a 44 px target. Note: touch-coarse-wide has no WebKit twin.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-051';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-051');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const gotoApp = async (page) => {

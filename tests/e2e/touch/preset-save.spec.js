@@ -7,7 +7,7 @@ const { PROJECTS } = require('./viewports');
 // TUX-049: the Save Preset sheet is finger-sized, keeps Save below the name field, and rides above
 // the on-screen keyboard. The keyboard is a fake window.visualViewport (helpers/text-panel-setup).
 // Finger-only (no mouse). Opens through the real gallery pip so the real preset store is exercised.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-049';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-049');
 const SEED_ID = 'user-lissajous-tux049';
 const STORE_KEY = 'vectura.user_presets.lissajous';
 // Desktop (fine pointer, 1600x1000) footer sizes measured on the base before TUX-049.

@@ -14,7 +14,7 @@ const NAMED = {
   'webkit-iphone-portrait': 'iPhP-webkit',
   'webkit-iphone-landscape': 'iPhL-webkit',
 };
-const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-025';
+const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-025');
 
 // Add a 3D scene through the engine path the Add Layer command uses, select it, fit the view.
 const setup = async (page, { nearEdge = false } = {}) => {

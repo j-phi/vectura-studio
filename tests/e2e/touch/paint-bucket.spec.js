@@ -7,7 +7,7 @@ const touch = require('../helpers/touch');
 // Finger-only. Runs in every touch project (8 primary + the browser-chrome variants + coarseWide).
 // Mouse parity: tests/integration/paint-bucket-pointer-parity.test.js + tests/e2e/paint-bucket-mouse.spec.js.
 
-const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-022';
+const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-022');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const TOUCH_GAP = 48; // keep in step with the renderer's touch loupe gap
 const DISC = 44;

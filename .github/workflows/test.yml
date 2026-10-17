@@ -174,6 +174,12 @@ jobs:
       - run: npm run test:e2e:touch:audit:full
         env:
           TOUCH_BASELINE: ${{ github.event_name == 'workflow_dispatch' && 'update' || '' }}
+      # A manual run also measures the TUX-059 journey ledger on linux. It writes
+      # tests/e2e/touch/journey-status.linux.json (uploaded below). Until that file is committed,
+      # linux journey cells are record-only (`ledger-missing` annotation).
+      - name: Measure the linux journey ledger (manual runs only)
+        if: always() && github.event_name == 'workflow_dispatch'
+        run: npm run test:e2e:touch:journeys:ledger
       - name: Upload touch audit measurements
         if: always()
         uses: actions/upload-artifact@v7
@@ -183,6 +189,7 @@ jobs:
             test-results
             playwright-report
             tests/e2e/touch/target-baseline.json
+            tests/e2e/touch/journey-status.linux.json
           if-no-files-found: ignore
 
   visual:

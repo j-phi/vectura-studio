@@ -8,8 +8,8 @@ const touch = require('../helpers/touch');
 // the bottom-docked chrome, above modals. Measured against window.visualViewport + DEVICES, never innerWidth.
 // Desktop (fine pointer, any width) keeps the top-right placement. #canvas-toast is out of scope.
 const CHROME = ['#app-header', '#tool-bar', '#touch-modifier-bar', '#status-bar', '#bottom-pane', '#btn-pane-toggle-bottom'];
-const EVID = process.env.TUX_EVIDENCE_DIR || '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-048';
-const BATCH2_EVID = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/batch2/TUX-010';
+const EVID = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-048');
+const BATCH2_EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch2/TUX-010');
 const SHORT = 'Added Spiral layer';
 const LONG = 'Added a Flowfield layer to the document with the default preset and the current pen assignment';
 const TOL = 0.5;

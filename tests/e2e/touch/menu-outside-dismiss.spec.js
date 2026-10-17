@@ -5,7 +5,7 @@ const touch = require('../helpers/touch');
 
 // TUX-040: the layer filter menu (UI.overlays.Menu) must close on ANY outside pointer press,
 // including touch drags/scrolls that never synthesize a compat mousedown.
-const EVIDENCE = '/Users/jayphi/Documents/github/vectura-studio/docs/touch-audit/evidence/after/TUX-040';
+const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-040');
 
 const MENU = '.menu-dropdown.open';
 
