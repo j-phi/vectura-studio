@@ -15,7 +15,9 @@
  *     pushHistory(); layer.params[k]=v; storeLayerParams(layer); regen();
  *     updateFormula(); — fired ONCE on release; live drag updates the DOM only.
  *
- * The editable specimen IS the text field (writes layer.params.text). Specimen
+ * The Text field (textarea[data-text-content]) and the specimen preview both write
+ * layer.params.text through one session helper (TUX-029); the specimen stays
+ * inline-editable on fine pointers only. Specimen
  * rendering is owned by window.Vectura.UI.TextSpecimen (this panel only builds
  * the DOM + view prefs and calls spec.render(layer, view)). Every bespoke class
  * is prefixed `vtp-` and styled by the components.css "VECTURA TEXT PANEL" block.
@@ -129,7 +131,7 @@
       + `<div class="vtp-scrub" data-field="${field}" data-param="${cfg.param}" data-min="${cfg.min}" data-max="${cfg.max}" data-step="${cfg.step}" data-dec="${cfg.dec}" data-perpx="${cfg.perpx}">`
         + `<div class="vtp-scrub-handle" tabindex="0" role="slider" aria-label="${cfg.label}" aria-valuemin="${cfg.min}" aria-valuemax="${cfg.max}">${gicon}</div>`
         + steppers
-        + `<input type="text" inputmode="decimal" aria-label="${cfg.label} value">`
+        + `<input type="text" inputmode="${cfg.min < 0 ? 'text' : 'decimal'}" enterkeyhint="done" aria-label="${cfg.label} value">`
         + unit + preset
       + '</div>';
   }
@@ -195,7 +197,9 @@
     let favs = lsGet(LS.favs, []);
     let recent = lsGet(LS.recent, []);
     let activeTab = 'type';
-    let textTimer = null;
+    let regenTimer = null;       // live-update debounce (regen + formula)
+    let regenPending = false;
+    let sessionPushed = false;   // one text-editing session = ONE history entry
     // Active scrub gesture's abort handle — lets destroy() tear down a drag that
     // is still in flight (e.g. async font-load → regen → rebuild mid-scrub) so no
     // detached-DOM/window listener survives to fire flush() on a dead instance.
@@ -266,6 +270,7 @@
 
     // ── specimen controller ─────────────────────────────────────────────────
     const specTextEl = ref('specText');
+    const textField = ref('textField');
     const refs = {
       stage: ref('stage'),
       specText: specTextEl,
@@ -284,6 +289,11 @@
     });
     function renderSpec() {
       try { if (spec && spec.render) spec.render(layer, currentView()); } catch (_) { /* never throw */ }
+      // Mirror external text changes (undo, canvas edit) into the field, but never
+      // write it while it has focus - that would jump the caret.
+      if (textField && document.activeElement !== textField && textField.value !== String(layer.params.text || '')) {
+        textField.value = String(layer.params.text || '');
+      }
       updateCaption();
       updateLegend();
     }
@@ -303,14 +313,14 @@
     // NO CSS representation, so its previews used to fall back to the generic UI
     // font — misrepresenting the single-stroke letterforms. Draw the face name from
     // the actual StrokeFont outline instead, so the menu preview matches the plotted
-    // glyphs. Returns an inline <svg> string, or '' when unavailable (→ CSS text).
+    // glyphs. Returns an <svg> element, or null when unavailable (→ CSS text).
     const strokePreviewSvg = (v, label) => {
-      if (!SF.layout) return '';
+      if (!SF.layout) return null;
       const styleId = (v === builtinFamily.id) ? styleIds[0] : (SF.isStyle && SF.isStyle(v) ? v : styleIds[0]);
       let lay = null;
       try { lay = SF.layout(String(label || faceName(v)), { font: styleId, size: 100 }); } catch (_) { lay = null; }
       const paths = lay && lay.paths;
-      if (!Array.isArray(paths) || !paths.length) return '';
+      if (!Array.isArray(paths) || !paths.length) return null;
       let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
       let d = '';
       for (const stroke of paths) {
@@ -322,13 +332,25 @@
           d += `${i === 0 ? 'M' : 'L'}${pt.x.toFixed(2)} ${pt.y.toFixed(2)}`;
         }
       }
-      if (!d || !Number.isFinite(minX) || maxX <= minX || maxY <= minY) return '';
+      if (!d || !Number.isFinite(minX) || maxX <= minX || maxY <= minY) return null;
       const w = maxX - minX; const h = maxY - minY;
       // Height matches the option-name line; width follows the glyph aspect ratio.
       const H = 15; const W = Math.max(1, Math.round(H * (w / h)));
-      return `<svg class="vtp-fp-opt-svg" width="${W}" height="${H}" viewBox="${minX.toFixed(2)} ${minY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)}" `
-        + `role="img" aria-label="${faceName(v)}" fill="none" stroke="currentColor" stroke-width="4" `
-        + `stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"><path d="${d}"/></svg>`;
+      // Built with DOM APIs, never markup: the face name is layer state (any string a
+      // loaded file holds), so it must reach the DOM as an attribute value only.
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg');
+      const attrs = {
+        class: 'vtp-fp-opt-svg', width: String(W), height: String(H),
+        viewBox: `${minX.toFixed(2)} ${minY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)}`,
+        role: 'img', 'aria-label': faceName(v), fill: 'none', stroke: 'currentColor', 'stroke-width': '4',
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke',
+      };
+      Object.keys(attrs).forEach((k) => svg.setAttribute(k, attrs[k]));
+      const pathEl = document.createElementNS(NS, 'path');
+      pathEl.setAttribute('d', d);
+      svg.appendChild(pathEl);
+      return svg;
     };
     const ensureWeb = (v) => {
       if (isWeb(v) && GF.ensureFont) {
@@ -439,7 +461,7 @@
         const move = (ev) => {
           const dx = ev.clientX - startX;
           if (!moved && dx !== 0) { moved = true; pushHist(); }
-          const c = ev.shiftKey ? 10 : 1;
+          const c = window.Vectura.InputModifiers.readModifiers(ev).shift ? 10 : 1;
           live(startVal + dx * cfg.perpx * c);
         };
         // opts.abort = teardown (destroy mid-drag): detach everything but never
@@ -468,6 +490,7 @@
 
       if (handle) {
         listen(handle, 'pointerdown', (e) => beginDrag(e, handle));
+        // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
         listen(handle, 'dblclick', (e) => { e.preventDefault(); commit(defVal); });
         listen(handle, 'keydown', (e) => {
           const c = e.shiftKey ? 10 : 1;
@@ -479,7 +502,10 @@
       }
       if (nameEl) {
         listen(nameEl, 'pointerdown', (e) => beginDrag(e, nameEl));
+        // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
         listen(nameEl, 'dblclick', (e) => { e.preventDefault(); commit(defVal); });
+        // The kerning scrub has no param default of its own: it resets to 0 (defVal) like the dblclick.
+        if (Vectura.UI.attachResetHold) Vectura.UI.attachResetHold(nameEl, { reset: () => commit(defVal), label: cfg.label });
       }
       listen(input, 'change', () => commit(num(input.value, readVal())));
       listen(input, 'keydown', (e) => {
@@ -493,7 +519,7 @@
         listen(b, 'click', (e) => {
           e.stopPropagation();
           const dir = parseInt(b.dataset.dir, 10) || 0;
-          const c = e.shiftKey ? 10 : 1;
+          const c = window.Vectura.InputModifiers.readModifiers(e).shift ? 10 : 1;
           commit(num(input.value, readVal()) + dir * cfg.step * c);
         });
       });
@@ -844,7 +870,17 @@
         const up = () => { pad.removeEventListener('pointermove', mv); pad.removeEventListener('pointerup', up); pad.removeEventListener('pointercancel', up); flush(); };
         pad.addEventListener('pointermove', mv); pad.addEventListener('pointerup', up); pad.addEventListener('pointercancel', up);
       });
+      // Reset the whole field: offset to the centre and the max radius to its default.
+      const resetOffsetField = () => {
+        pushHist();
+        if (maxSlider) layer.params.fillOffsetMax = (DEF.fillOffsetMax != null ? DEF.fillOffsetMax : 20);
+        if (maxSlider) { maxSlider.value = padMax(); if (maxChip) maxChip.textContent = String(Math.round(padMax())); }
+        padApply(0, 0, false);
+        flush();
+      };
+      // touch-alt: TUX-038 the field label long-press opens "Reset to default" (resets offset and max)
       listen(pad, 'dblclick', () => { pushHist(); padApply(0, 0, false); flush(); });
+      if (Vectura.UI.attachResetHold) Vectura.UI.attachResetHold(pad.closest('.vtp-field-block')?.querySelector('.vtp-field-cap label'), { reset: resetOffsetField, label: 'Fill offset' });
       listen(pad, 'keydown', (e) => {
         const s = e.shiftKey ? 2 : 0.5; const x = layer.params.fillOffsetX || 0; const y = layer.params.fillOffsetY || 0; let hit = true;
         if (e.key === 'ArrowLeft') { pushHist(); padApply(x - s, y, false); flush(); }
@@ -867,6 +903,7 @@
           padApply(layer.params.fillOffsetX || 0, layer.params.fillOffsetY || 0, true);
         });
         listen(maxSlider, 'change', () => flush());
+        // touch-alt: TUX-038 the field label long-press resets the max radius with the offset
         listen(maxSlider, 'dblclick', (e) => {
           e.preventDefault(); pushHist();
           layer.params.fillOffsetMax = (DEF.fillOffsetMax != null ? DEF.fillOffsetMax : 20);
@@ -919,7 +956,16 @@
         const up = () => { cPad.removeEventListener('pointermove', mv); cPad.removeEventListener('pointerup', up); cPad.removeEventListener('pointercancel', up); flush(); };
         cPad.addEventListener('pointermove', mv); cPad.addEventListener('pointerup', up); cPad.addEventListener('pointercancel', up);
       });
+      const resetCenterField = () => {
+        pushHist();
+        if (cMaxSlider) layer.params.fillShiftMax = (DEF.fillShiftMax != null ? DEF.fillShiftMax : 20);
+        if (cMaxSlider) { cMaxSlider.value = cMax(); if (cMaxChip) cMaxChip.textContent = String(Math.round(cMax())); }
+        cApply(0, 0, false);
+        flush();
+      };
+      // touch-alt: TUX-038 the field label long-press opens "Reset to default" (resets centre and max)
       listen(cPad, 'dblclick', () => { pushHist(); cApply(0, 0, false); flush(); });
+      if (Vectura.UI.attachResetHold) Vectura.UI.attachResetHold(cPad.closest('.vtp-field-block')?.querySelector('.vtp-field-cap label'), { reset: resetCenterField, label: 'Centerpoint' });
       listen(cPad, 'keydown', (e) => {
         const s = e.shiftKey ? 2 : 0.5; const x = layer.params.fillShiftX || 0; const y = layer.params.fillShiftY || 0; let hit = true;
         if (e.key === 'ArrowLeft') { pushHist(); cApply(x - s, y, false); flush(); }
@@ -939,6 +985,7 @@
           cApply(layer.params.fillShiftX || 0, layer.params.fillShiftY || 0, true);
         });
         listen(cMaxSlider, 'change', () => flush());
+        // touch-alt: TUX-038 the field label long-press resets the max radius with the centre
         listen(cMaxSlider, 'dblclick', (e) => {
           e.preventDefault(); pushHist();
           layer.params.fillShiftMax = (DEF.fillShiftMax != null ? DEF.fillShiftMax : 20);
@@ -991,18 +1038,93 @@
     const guidePick = ref('guidePick');
     if (guidePick) { guidePick.value = viewPrefs.guides; listen(guidePick, 'change', (e) => { viewPrefs.guides = e.target.value; lsSet(LS.guides, viewPrefs.guides); renderSpec(); }); }
 
-    // ── editable specimen (the single text source) ─────────────────────────
-    specTextEl.textContent = layer.params.text || '';
-    const readSpec = () => { const raw = specTextEl.innerText; const s = (typeof raw === 'string' ? raw : specTextEl.textContent) || ''; return s.replace(/ /g, ' ').replace(/\n$/, ''); };
-    const commitText = () => {
-      if (textTimer) { clearTimeout(textTimer); textTimer = null; }
-      const t = readSpec();
-      if (t === layer.params.text) return;
-      pushHist(); layer.params.text = t; flush();
+    // ── text content: ONE session helper shared by the Text field and the specimen ─
+    // First real change in a session pushes history once; every change goes through
+    // the shared TextEditController.applyText op; regen/formula run on a short
+    // debounce (the live update) and blur flushes a pending one without pushing.
+    const REGEN_MS = 120;
+    const applyTextOp = (t) => {
+      const TC = Vectura.TextEditController;
+      const te = ui.app && ui.app.textEdit;
+      if (TC && typeof TC.applyText === 'function') return TC.applyText(layer, t, te);
+      if (t === layer.params.text) return false;
+      layer.params.text = t;
+      return true;
     };
-    listen(specTextEl, 'focus', () => renderSpec());
-    listen(specTextEl, 'input', () => { if (textTimer) clearTimeout(textTimer); textTimer = setTimeout(commitText, 400); renderSpec(); });
-    listen(specTextEl, 'blur', () => commitText());
+    const flushRegen = () => {
+      if (regenTimer) { clearTimeout(regenTimer); regenTimer = null; }
+      if (!regenPending) return;
+      regenPending = false;
+      flush();
+    };
+    let lastWritten = null;      // text this session last wrote; differs => changed from outside (undo/redo)
+    const changeText = (t) => {
+      if (t === layer.params.text) return false;
+      // Undo/redo (or the canvas) rewrote params.text while a field held focus: the
+      // earlier session entry no longer covers this edit, so start a new one.
+      if (sessionPushed && lastWritten !== null && layer.params.text !== lastWritten) sessionPushed = false;
+      if (!sessionPushed) { pushHist(); sessionPushed = true; }
+      applyTextOp(t);
+      lastWritten = layer.params.text;
+      if (String(layer.params.text || '').trim() !== '') handedOverBlank = null;
+      try { ui.storeLayerParams && ui.storeLayerParams(layer); } catch (_) { /* */ }
+      regenPending = true;
+      if (regenTimer) clearTimeout(regenTimer);
+      regenTimer = setTimeout(() => { regenTimer = null; flushRegen(); }, REGEN_MS);
+      renderSpec();
+      return true;
+    };
+    let handedOverBlank = null;  // blank layer a canvas Type session created and handed to the field
+    const endTextSession = () => {
+      flushRegen(); sessionPushed = false; lastWritten = null;
+      // M6: a handed-over layer that never got real text is discarded (with its creation history entry).
+      const l = handedOverBlank;
+      handedOverBlank = null;
+      if (l && String(l.params.text || '').trim() === '') {
+        const te = ui.app && ui.app.textEdit;
+        try { if (te && te.discardHandedOver) te.discardHandedOver(l); } catch (_) { /* */ }
+      }
+    };
+
+    // ── editable specimen (preview; inline-editable on fine pointers only) ──
+    specTextEl.textContent = layer.params.text || '';
+    const readSpec = () => { const raw = specTextEl.innerText; const s = (typeof raw === 'string' ? raw : specTextEl.textContent) || ''; return s.replace(/\u00a0/g, ' ').replace(/\n$/, ''); };
+    const coarsePointer = (() => { try { return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches); } catch (_) { return false; } })();
+    if (coarsePointer) {
+      // Touch: a contenteditable this small is not a usable field (sub-16px focus
+      // zoom, one-line stage, per-char jitter spans). The Text field owns typing;
+      // tapping the preview hands focus to it.
+      specTextEl.setAttribute('contenteditable', 'false');
+      specTextEl.removeAttribute('role');
+      specTextEl.setAttribute('aria-label', 'Specimen preview - tap to edit text');
+      specTextEl.title = 'Tap to edit text';
+      // Focus must happen inside the gesture (iOS opens the keyboard only then).
+      listen(specTextEl, 'click', () => { if (textField) textField.focus(); });
+    } else {
+      listen(specTextEl, 'focus', () => renderSpec());
+      listen(specTextEl, 'input', () => { changeText(readSpec()); });
+      listen(specTextEl, 'blur', () => endTextSession());
+    }
+
+    // ── Text content field (touch-first; also usable with a mouse) ─────────
+    if (textField) {
+      textField.value = String(layer.params.text || '');
+      listen(textField, 'focus', () => {
+        // A canvas Type session on this layer would fight over params.text.
+        const te = ui.app && ui.app.textEdit;
+        try {
+          if (te && typeof te.isActive === 'function' && te.isActive()
+            && typeof te.getActiveLayer === 'function' && te.getActiveLayer() && te.getActiveLayer().id === layer.id) {
+            te.end({ refreshPanel: false, keepLayer: true });
+            handedOverBlank = te.takeHandedOver ? te.takeHandedOver() : null;
+          }
+        } catch (_) { /* */ }
+        try { refresh(); } catch (_) { /* */ }
+        renderSpec();
+      });
+      listen(textField, 'input', () => { changeText(textField.value); });
+      listen(textField, 'blur', () => { endTextSession(); renderSpec(); });
+    }
 
     // ── font picker popover (body-level) ───────────────────────────────────
     let pop = document.createElement('div');
@@ -1101,9 +1223,9 @@
     function syncFontTrigger() {
       if (!fpName) return;
       const v = layer.params.font;
-      const svg = isWeb(v) ? '' : strokePreviewSvg(v);
-      if (svg) { fpName.innerHTML = svg; fpName.style.fontFamily = ''; fpName.setAttribute('aria-label', faceName(v)); }
-      else { fpName.innerHTML = ''; fpName.removeAttribute('aria-label'); fpName.textContent = faceName(v); fpName.style.fontFamily = faceCss(v); }
+      const svg = isWeb(v) ? null : strokePreviewSvg(v);
+      if (svg) { fpName.replaceChildren(svg); fpName.style.fontFamily = ''; fpName.setAttribute('aria-label', faceName(v)); }
+      else { fpName.removeAttribute('aria-label'); fpName.textContent = faceName(v); fpName.style.fontFamily = faceCss(v); }
       if (fpTagMini) fpTagMini.textContent = faceCat(v);
     }
     function makeOption(v) {
@@ -1117,8 +1239,8 @@
       star.innerHTML = `<svg viewBox="0 0 24 24" fill="${fav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.6"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.9 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg>`;
       listen(star, 'click', (ev) => { ev.stopPropagation(); const i = favs.indexOf(v); if (i >= 0) favs.splice(i, 1); else favs.push(v); lsSet(LS.favs, favs); rebuildList(); });
       const nm = document.createElement('span'); nm.className = 'vtp-fp-opt-name';
-      const nmSvg = isWeb(v) ? '' : strokePreviewSvg(v);
-      if (nmSvg) { nm.innerHTML = nmSvg; nm.setAttribute('aria-label', faceName(v)); }
+      const nmSvg = isWeb(v) ? null : strokePreviewSvg(v);
+      if (nmSvg) { nm.appendChild(nmSvg); nm.setAttribute('aria-label', faceName(v)); }
       else { nm.textContent = faceName(v); nm.style.fontFamily = faceCss(v); }
       const tg = document.createElement('span'); tg.className = 'vtp-fp-tag'; tg.textContent = faceCat(v);
       row.appendChild(star); row.appendChild(nm); row.appendChild(tg);
@@ -1168,20 +1290,46 @@
       rows[idx].classList.add('active');
       rows[idx].scrollIntoView({ block: 'nearest' });
     }
+    // Visible height = layout height minus the on-screen keyboard (Vectura.KeyboardInset, TUX-032).
+    const kbInset = () => { const KI = window.Vectura && window.Vectura.KeyboardInset; return KI ? (KI.inset || 0) : 0; };
+    const POP_MIN_ROOM = 240;   // px of list-side room below which positionPop() pins the popover to the viewport
     function positionPop() {
       const r = taskbarAnchorRect || fpTrigger.getBoundingClientRect();
+      const inset = kbInset();
+      const vh = window.innerHeight - inset;
       const w = Math.max(r.width, 260);
       pop.style.width = `${w}px`;
-      pop.style.left = `${Math.min(r.left, window.innerWidth - w - 8)}px`;
-      const below = window.innerHeight - r.bottom;
-      if (below < 240 && r.top > below) { pop.style.top = ''; pop.style.bottom = `${window.innerHeight - r.top + 6}px`; }
-      else { pop.style.bottom = ''; pop.style.top = `${r.bottom + 6}px`; }
+      pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+      const spaceBelow = vh - r.bottom - 14;
+      const spaceAbove = r.top - 14;
+      const flip = spaceBelow < 240 && spaceAbove > spaceBelow;
+      // Search box + the first list row must stay above the keyboard: cap the popover to the
+      // room on its side (the list inside scrolls) and never let its far edge pass the inset.
+      // TUX-032 (batch 2): on a short viewport (iPhone landscape, 402/330 px) neither side of the trigger has
+      // room for a usable list. Pin the popover to the visible viewport instead (it may cover the trigger;
+      // an outside tap or Escape closes it) so the search and several rows stay on screen.
+      const pinned = Math.max(spaceBelow, spaceAbove) < POP_MIN_ROOM;
+      // Compact header while pinned with the keyboard up: the category chips go away and the search and rows tighten, so
+      // the list keeps its rows in the little room that is left (TUX-032 follow-up).
+      pop.classList.toggle('kb-compact', pinned && inset > 0);
+      const maxH = pinned ? vh - 16 : Math.min(Math.max(150, flip ? spaceAbove : spaceBelow), vh - 16);
+      pop.style.maxHeight = `${maxH}px`;
+      if (pinned) {
+        pop.style.bottom = ''; pop.style.top = '8px';
+      } else if (flip) {
+        const edge = Math.min(r.top - 6, vh - 8);
+        pop.style.top = ''; pop.style.bottom = `${window.innerHeight - edge}px`;
+      } else {
+        const h = Math.min(pop.offsetHeight || maxH, maxH);
+        pop.style.bottom = ''; pop.style.top = `${Math.max(8, Math.min(r.bottom + 6, vh - h - 8))}px`;
+      }
     }
     const syncClearBtn = () => {
       const has = !!(fpSearch.value || '').length;
       if (fpClear) fpClear.classList.toggle('show', has);
       pop.classList.toggle('has-query', has);
     };
+    let openPointerType = null;   // pointerType of the gesture that opens the picker ('' = keyboard)
     function openPop() {
       if (popOpen) return; popOpen = true;
       // Capture the committed face so a hover preview can be reverted on dismiss.
@@ -1192,6 +1340,12 @@
       // TXT-4: no eager specimen fetch on open — un-cached web faces render in the
       // UI font until hovered (load-on-hover). Only the selected face is loaded
       // (at init) so the trigger + specimen show real letterforms.
+      // A finger or pen open must not raise the keyboard: the list is for browsing, and the search
+      // box takes focus on its own tap. Mouse and keyboard opens keep type-to-filter (TUX-032).
+      const KI = window.Vectura && window.Vectura.KeyboardInset;
+      const pt = openPointerType != null ? openPointerType : (KI && KI.lastPointerType ? KI.lastPointerType() : '');
+      openPointerType = null;
+      if (pt === 'touch' || pt === 'pen') return;
       setTimeout(() => { try { fpSearch.focus(); } catch (_) { /* */ } }, 20);
     }
     function closePop() { if (!popOpen) return; popOpen = false; taskbarAnchorRect = null; clearFontPreview(false); pop.classList.remove('open'); fpTrigger.setAttribute('aria-expanded', 'false'); }
@@ -1212,6 +1366,8 @@
       refresh();
       renderSpec();
     }
+    listen(fpTrigger, 'pointerdown', (e) => { openPointerType = e.pointerType || ''; });
+    listen(fpTrigger, 'keydown', () => { openPointerType = ''; });
     listen(fpTrigger, 'click', () => (popOpen ? closePop() : openPop()));
     listen(fpSearch, 'input', () => { syncClearBtn(); rebuildList(); });
     if (fpClear) {
@@ -1230,6 +1386,7 @@
     listen(document, 'pointerdown', (e) => { if (popOpen && !pop.contains(e.target) && !fpTrigger.contains(e.target)) closePop(); });
     listen(window, 'scroll', () => { if (popOpen) positionPop(); }, true);
     listen(window, 'resize', () => { if (popOpen) positionPop(); });
+    listen(document, 'vectura:kbinset', () => { if (popOpen) positionPop(); });
 
     // Kick the real catalog load; refresh names/list once it lands.
     if (GF.loadCatalog) {
@@ -1286,9 +1443,9 @@
       // Abort any in-flight scrub gesture so its window 'blur' + origin pointer
       // listeners are removed (they live outside the tracked `listeners` array).
       if (activeFinish) { try { activeFinish(); } catch (_) { /* */ } activeFinish = null; }
-      // Flush a pending debounced specimen edit before tearing down — otherwise
-      // the most recent keystrokes (within the 400ms window, pre-blur) are lost.
-      if (textTimer) { try { commitText(); } catch (_) { /* */ } textTimer = null; }
+      // Flush a pending debounced text edit before tearing down — otherwise the
+      // most recent keystrokes (inside the live-update window, pre-blur) are lost.
+      try { endTextSession(); } catch (_) { /* */ }
       // Revert an un-committed font hover-preview so tearing the panel down (e.g.
       // a layer switch) never leaves a previewed face applied without a history
       // step. The size preset menu reverts itself via its `dials` entry below.
@@ -1387,6 +1544,11 @@
 
     <section class="vtp-page active" data-page="type" role="tabpanel">
       <div class="vtp-tab-heading"><svg viewBox="0 0 24 24" aria-hidden="true">${tabSvg.type}</svg>Type — Character<span class="vtp-h-sub">face · size · metrics</span></div>
+
+      <div class="vtp-field-block vtp-text-content">
+        <div class="vtp-field-cap"><label>Text</label></div>
+        <textarea class="vtp-text-field" data-ref="textField" data-text-content rows="3" autocapitalize="sentences" autocorrect="on" autocomplete="off" inputmode="text" spellcheck="true" aria-label="Text" placeholder="Type your text"></textarea>
+      </div>
 
       <div class="vtp-field-block">
         <div class="vtp-field-cap"><label>Font source &amp; face</label></div>
@@ -1599,7 +1761,7 @@
               <div class="vtp-angle-mount" data-ref="fillAngleMount"></div>
             </div>
             <div class="vtp-field-block" style="margin-top:11px;">
-              <div class="vtp-field-cap"><label>Fill Offset <span class="vtp-drag-hint">drag · dbl-click resets</span></label></div>
+              <div class="vtp-field-cap"><label>Fill Offset <span class="vtp-drag-hint">drag · dbl-click or hold label resets</span></label></div>
               <div class="vtp-xypad-row">
                 <div class="vtp-xypad" data-ref="fillOffsetPad" role="slider" aria-label="Fill offset" aria-valuetext="centred" tabindex="0">
                   <div class="vtp-xypad-cross"></div>
@@ -1618,7 +1780,7 @@
                  but drags the radial fill's origin (fillShiftX/Y) instead of the
                  whole fill window. Shown only when the radial fill type is active. -->
             <div class="vtp-field-block" data-ref="fillCenterField" style="margin-top:11px; display:none;">
-              <div class="vtp-field-cap"><label>Centerpoint <span class="vtp-drag-hint">drag · dbl-click resets</span></label></div>
+              <div class="vtp-field-cap"><label>Centerpoint <span class="vtp-drag-hint">drag · dbl-click or hold label resets</span></label></div>
               <div class="vtp-xypad-row">
                 <div class="vtp-xypad" data-ref="fillCenterPad" role="slider" aria-label="Radial centerpoint offset" aria-valuetext="centred" tabindex="0">
                   <div class="vtp-xypad-cross"></div>

@@ -105,6 +105,160 @@
     return objs.map((o) => o.id);
   };
 
+  // TUX-037 — the one delete path for the row strip, group strip and ⋯ / right-click
+  // menu. Name is captured BEFORE removal; the token is the history snapshot this delete
+  // pushed, so the Undo toast can refuse to run once a later edit sits above it.
+  const _deleteLayerWithUndo = (ui, layer) => {
+    const app = ui.app;
+    const name = layer.name || 'layer';
+    if (app.pushHistory) app.pushHistory();
+    const token = app.history ? app.history[app.history.length - 1] : null;
+    ui.unlockMirrorChildrenOnDelete?.(layer.id);
+    app.engine.removeLayer(layer.id);
+    ui.renderLayers && ui.renderLayers();
+    app.render && app.render();
+    ui.notifyUndoable?.(`Deleted "${name}"`, token);
+  };
+
+  // ── TUX-012 — shared row-action list ──────────────────────────────────────
+  // ONE list feeds both the inline `.lvl-acts` / `.lvl-grp-acts` strips in
+  // layers-panel.js (desktop) and the ⋯ menu (touch + right-click). Every run
+  // body here is the body the inline strip used before the list existed.
+  // `masked` rows (masked-v2 cards) never show the mask toggle, as before.
+  const rowActions = (ui, layer, opts = {}) => {
+    const out = [];
+    if (!ui || !layer || !ui.app || !ui.app.engine) return out;
+    const engine = ui.app.engine;
+    const renderer = ui.app.renderer;
+    const I = () => ui._LVL_I || {};
+    const icon = (name, fallback) => () => {
+      const set = I();
+      const fn = set[name] || (fallback && set[fallback]);
+      return typeof fn === 'function' ? fn.call(set) : '';
+    };
+    const add = (key, label, title, cls, iconFn, run) => out.push({ key, label, title, cls, icon: iconFn, run });
+    const rerender = () => { ui.renderLayers(); ui.app.render(); };
+    const select = (id) => { if (id) { renderer?.setSelection?.([id], id); engine.setActiveLayerId?.(id); } };
+    const parent = layer.parentId ? engine.getLayerById?.(layer.parentId) : null;
+    const masked = opts.masked != null
+      ? !!opts.masked
+      : !!(parent && parent.mask && parent.mask.enabled && parent.maskCapabilities && parent.maskCapabilities.canSource);
+
+    if (layer.isGroup) {
+      if (layer.groupType === 'scene' && typeof engine.addObjectToScene === 'function') {
+        add('scene-add-object', 'Add box', 'Add box (right-click for more shapes)', 'lvl-add-object', icon('grpPlus'), () => {
+          if (ui.app.pushHistory) ui.app.pushHistory();
+          const oid = engine.addObjectToScene(layer.id);
+          select(oid);
+          rerender();
+        });
+        if (typeof engine.addLightToScene === 'function') {
+          add('scene-add-light', 'Add light', 'Add light', 'lvl-add-light', icon('sceneLight3d', 'grpPlus'), () => {
+            if (ui.app.pushHistory) ui.app.pushHistory();
+            const lid = engine.addLightToScene(layer.id, 'directional');
+            select(lid);
+            rerender();
+          });
+        }
+        if (typeof engine.addGroundToScene === 'function') {
+          const hasGround = engine.getLayerDescendants?.(layer.id)?.some((l) => l && l.type === 'sceneGround3d');
+          if (!hasGround) {
+            add('scene-add-ground', 'Add ground', 'Add ground', 'lvl-add-ground', icon('sceneGround3d', 'grpPlus'), () => {
+              if (ui.app.pushHistory) ui.app.pushHistory();
+              const gid = engine.addGroundToScene(layer.id);
+              select(gid);
+              rerender();
+            });
+          }
+        }
+      }
+      if (layer.groupType === 'modifier') {
+        add('expand-modifier', 'Expand to folder', 'Expand to folder', '', icon('expand'), () => {
+          if (ui.app.pushHistory) ui.app.pushHistory();
+          engine.expandModifierLayer(layer.id);
+          rerender();
+        });
+      }
+      add('ungroup', 'Ungroup', 'Ungroup (⌘⇧G)', '', icon('ungroup'), () => {
+        if (ui.app.pushHistory) ui.app.pushHistory();
+        ui.unlockMirrorChildrenOnDelete?.(layer.id);
+        const kids = (engine.layers || []).filter((l) => l.parentId === layer.id);
+        kids.forEach((l) => { l.parentId = layer.parentId ?? null; });
+        engine.removeLayer(layer.id);
+        renderer.setSelection(kids.map((l) => l.id), kids[0]?.id);
+        rerender();
+      });
+      add('duplicate', 'Duplicate', 'Duplicate group', '', icon('dup'), () => {
+        if (ui.app.pushHistory) ui.app.pushHistory();
+        engine.duplicateLayer(layer.id);
+        rerender();
+      });
+      add('delete', 'Delete', 'Delete group', 'del', icon('trash'), () => _deleteLayerWithUndo(ui, layer));
+      return out;
+    }
+
+    if (!masked && layer.maskCapabilities && layer.maskCapabilities.canSource) {
+      const isSrc = !!(layer.mask && layer.mask.enabled);
+      add('mask-toggle', isSrc ? 'Remove clipping mask' : 'Make clipping mask',
+        isSrc ? 'Remove clipping mask (click to deactivate)' : 'Make clipping mask — clips layer below',
+        'mask-btn' + (isSrc ? ' is-src' : ''),
+        icon(isSrc ? 'maskSrcActive' : 'maskSrc'),
+        () => {
+          const allLayers = engine.layers || [];
+          if (ui.app.pushHistory) ui.app.pushHistory();
+          if (isSrc) {
+            const kids = allLayers.filter((c) => c.parentId === layer.id);
+            kids.forEach((c) => { c.parentId = layer.parentId ?? null; });
+            layer.mask.enabled = false;
+          } else {
+            const sibs = allLayers.filter((s) => (s.parentId ?? null) === (layer.parentId ?? null));
+            const idx = sibs.indexOf(layer);
+            if (idx < sibs.length - 1) {
+              ui.assignLayersToParent(layer.id, [sibs[idx + 1]], { captureHistory: false });
+            }
+            layer.mask.enabled = true;
+          }
+          engine.computeAllDisplayGeometry?.();
+          ui.renderLayers();
+          ui.app.render?.();
+        });
+      if (isSrc) {
+        const isHidden = Boolean(layer.mask && layer.mask.hideLayer);
+        add('mask-outline', isHidden ? 'Show mask layer outline' : 'Hide mask layer outline',
+          isHidden ? 'Show mask layer outline' : 'Hide mask layer outline',
+          'mask-outline-btn' + (isHidden ? ' is-hidden' : ''),
+          icon(isHidden ? 'maskOutlineHide' : 'maskOutlineShow'),
+          () => {
+            ui.setLayerMaskHidden(layer, !isHidden, { captureHistory: true });
+            ui.renderLayers();
+            ui.app.render?.();
+          });
+      }
+    }
+    // The thin light/ground scene leaves have no sub-geometry to expand into a group.
+    const isSceneChildLeaf = layer.type === 'sceneLight3d' || layer.type === 'sceneGround3d';
+    if (layer.type !== 'shape' && !isSceneChildLeaf) {
+      add('expand-into-group', 'Expand into group', 'Expand into group', '', icon('expand'), () => ui.expandLayer?.(layer));
+    }
+    if (layer.type === 'shape' && Array.isArray(layer.fills) && layer.fills.length > 0) {
+      const n = layer.fills.length;
+      add('expand-fill', 'Expand Fill', `Expand ${n} fill${n === 1 ? '' : 's'} into a group`, '', icon('expand'),
+        () => ui._lvlExpandFill(layer));
+    }
+    if (layer.type === 'shape' && layer.sourceFillRecord && Array.isArray(layer.paths) && layer.paths.length > 0) {
+      const n = layer.paths.length;
+      add('explode-fill', 'Explode Fill into paths', `Explode fill into ${n} path${n === 1 ? '' : 's'}`, '', icon('expand'),
+        () => ui._lvlExplodeFill(layer));
+    }
+    add('duplicate', 'Duplicate', 'Duplicate (⌘D)', '', icon('dup'), () => {
+      if (ui.app.pushHistory) ui.app.pushHistory();
+      engine.duplicateLayer(layer.id);
+      rerender();
+    });
+    add('delete', 'Delete', 'Delete', 'del', icon('trash'), () => _deleteLayerWithUndo(ui, layer));
+    return out;
+  };
+
   const _itemsFor = (ui, layer) => {
     const items = [];
     // Scene-tree Increment C — scene / object actions lead the menu when the
@@ -157,7 +311,8 @@
       key: 'toggle-lock',
       label: locked ? 'Unlock' : 'Lock',
     });
-    if (layer && layer.type && layer.type !== 'shape' && !layer.isGroup) {
+    if (layer && layer.type && layer.type !== 'shape' && !layer.isGroup
+      && layer.type !== 'sceneLight3d' && layer.type !== 'sceneGround3d') {
       items.push({ separator: true });
       items.push({ key: 'expand-into-group', label: 'Expand into group' });
     }
@@ -178,6 +333,15 @@
     if (isBakedFill) {
       if (!hasFills) items.push({ separator: true });
       items.push({ key: 'explode-fill', label: 'Explode Fill into paths' });
+    }
+    // TUX-012 — every inline row action must be reachable from the menu. Append the
+    // shared-list keys this menu does not already carry (mask-toggle, mask-outline,
+    // ungroup, expand-modifier).
+    const present = new Set(items.map((i) => i.key).filter(Boolean));
+    const extra = rowActions(ui, layer).filter((a) => !present.has(a.key));
+    if (extra.length) {
+      items.push({ separator: true });
+      extra.forEach((a) => items.push({ key: a.key, label: a.label }));
     }
     return items;
   };
@@ -240,6 +404,7 @@
       return;
     }
     if (key === 'rename') {
+      if (typeof ui.startLayerRename === 'function' && ui.startLayerRename(layer.id)) return;
       const card = document.querySelector(`[data-layer-id="${layer.id}"] .lvl-name, [data-lvl-id="${layer.id}"] .lvl-name`);
       if (card && typeof card.focus === 'function') {
         card.focus();
@@ -257,11 +422,7 @@
       return;
     }
     if (key === 'delete') {
-      if (ui.app.pushHistory) ui.app.pushHistory();
-      ui.unlockMirrorChildrenOnDelete?.(layer.id);
-      engine.removeLayer(layer.id);
-      ui.renderLayers && ui.renderLayers();
-      ui.app.render && ui.app.render();
+      _deleteLayerWithUndo(ui, layer);
       return;
     }
     if (key === 'toggle-visibility') {
@@ -338,6 +499,9 @@
       ui.app.render && ui.app.render();
       return;
     }
+    // TUX-012 — keys that only exist in the shared row-action list.
+    const act = rowActions(ui, layer).find((a) => a.key === key);
+    if (act) act.run();
   };
 
   const _ensureMenu = () => {
@@ -346,18 +510,104 @@
       throw new Error('LayerContextMenu requires UI.overlays.Menu to be loaded first');
     }
     _menu = UI.overlays.Menu(document.body, { items: [], onSelect: () => {} });
+    if (_menu && _menu.el && _menu.el.classList) _menu.el.classList.add('lvl-ctx-menu');
     return _menu;
+  };
+
+  const TH = () => Vectura.TOUCH_HOLD || {};
+  const edgeGap = () => {
+    const g = Vectura.CONTEXT_MENU && Vectura.CONTEXT_MENU.edgeGapPx;
+    return Number.isFinite(g) ? g : 8;
+  };
+
+  // Safe-area insets in px (env() cannot be read directly: measure through a probe).
+  let _safeProbe = null;
+  const _safeInsets = () => {
+    if (!_safeProbe) {
+      _safeProbe = document.createElement('div');
+      _safeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;'
+        + 'padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+      document.body.appendChild(_safeProbe);
+    }
+    const cs = getComputedStyle(_safeProbe);
+    const n = (v) => parseFloat(v) || 0;
+    return { t: n(cs.paddingTop), r: n(cs.paddingRight), b: n(cs.paddingBottom), l: n(cs.paddingLeft) };
+  };
+
+  // Touch placement: keep the whole menu clear of the finger (no row under it) and inside the
+  // visual viewport. Prefer beside the contact point, then above or below; cap the height so
+  // the menu scrolls inside instead of leaving the screen.
+  const _placeForTouch = (menu, x, y) => {
+    const el = menu.el;
+    // Visual viewport via the single reader (TUX-032 KeyboardInset).
+    const KI = window.Vectura && window.Vectura.KeyboardInset;
+    const vv = KI && KI.viewportSize ? KI.viewportSize() : null;
+    const sa = _safeInsets();
+    const gap = edgeGap();
+    const clear = TH().fingerClearPx || 0;
+    const minX = sa.l + gap;
+    const minY = sa.t + gap;
+    const maxX = (vv ? vv.width : window.innerWidth) - sa.r - gap;
+    const maxY = (vv ? vv.height : window.innerHeight) - sa.b - gap;
+    el.style.maxHeight = `${Math.max(0, maxY - minY)}px`;
+    el.style.left = '0px';
+    el.style.top = '0px';
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    let left;
+    let top;
+    if (x + clear + w <= maxX) left = x + clear;
+    else if (x - clear - w >= minX) left = x - clear - w;
+    if (left !== undefined) {
+      top = Math.min(Math.max(y - h / 2, minY), Math.max(minY, maxY - h));
+    } else {
+      // No room beside the finger: stack above or below it, whichever has more room.
+      const roomAbove = y - clear - minY;
+      const roomBelow = maxY - (y + clear);
+      const below = roomBelow >= Math.min(h, roomAbove);
+      const room = below ? roomBelow : roomAbove;
+      if (h > room) el.style.maxHeight = `${Math.max(0, room)}px`;
+      const hh = Math.min(h, Math.max(0, room));
+      top = below ? y + clear : y - clear - hh;
+      left = Math.min(Math.max(x - w / 2, minX), Math.max(minX, maxX - w));
+    }
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
+  };
+
+  let _expandedAnchor = null;
+  let _expandObserver = null;
+  const _setExpanded = (btn, menu) => {
+    if (_expandObserver) { _expandObserver.disconnect(); _expandObserver = null; }
+    if (_expandedAnchor && _expandedAnchor !== btn) _expandedAnchor.setAttribute('aria-expanded', 'false');
+    _expandedAnchor = btn || null;
+    if (!btn) return;
+    btn.setAttribute('aria-expanded', 'true');
+    if (typeof MutationObserver !== 'function') return;
+    _expandObserver = new MutationObserver(() => {
+      if (menu.isOpen && menu.isOpen()) return;
+      btn.setAttribute('aria-expanded', 'false');
+      _expandObserver.disconnect();
+      _expandObserver = null;
+    });
+    _expandObserver.observe(menu.el, { attributes: true, attributeFilter: ['class', 'style'] });
   };
 
   // Position the singleton menu at an arbitrary {x, y} (ignoring anchor logic
   // that the primitive uses for buttons). We synthesize a 1×1 anchor.
-  const _openAt = (ui, layer, x, y) => {
+  // source 'touch' places the menu clear of the finger and adds `.is-touch`.
+  const _openAt = (ui, layer, x, y, { source = 'mouse', expandedBtn = null } = {}) => {
     const menu = _ensureMenu();
-    const items = _itemsFor(ui, layer);
+    const baseItems = _itemsFor(ui, layer);
+    // TUX-012 (Jay, 2026-10-12): a row long-press reveals the full layer name, which the docked 200 px pane can truncate.
+    const items = (source === 'touch' && layer.name) ? [{ category: layer.name }, ...baseItems] : baseItems;
     menu.update({
       items,
       onSelect: (key) => _runAction(ui, layer, key),
     });
+    menu.el.classList.add('is-context-menu');
+    menu.el.classList.toggle('is-touch', source === 'touch');
+    if (source !== 'touch') menu.el.style.maxHeight = '';
     // Synthesize a tiny zero-size element at (x, y) so the primitive's
     // viewport-aware positionAgainst() + clickOutside guard work cleanly.
     let anchor = document.getElementById('vectura-layer-ctx-anchor');
@@ -371,6 +621,29 @@
     anchor.style.left = `${x}px`;
     if (menu.isOpen && menu.isOpen()) menu.close();
     menu.open(anchor);
+    if (source === 'touch') _placeForTouch(menu, x, y);
+    _setExpanded(expandedBtn, menu);
+  };
+
+  // Open the row menu. Arguments after `layer`:
+  //   an element (the ⋯ button): anchored to it; or numbers x, y (viewport px);
+  //   opts.source 'touch' | 'mouse' (default: 'mouse' for numbers, 'touch' for a button on touch rows).
+  const openForLayer = (ui, layer, xOrEl, yOrOpts, maybeOpts) => {
+    if (!ui || !layer) return;
+    if (typeof xOrEl === 'number') {
+      const opts = maybeOpts || {};
+      _openAt(ui, layer, xOrEl, yOrOpts, { source: opts.source || 'mouse' });
+      return;
+    }
+    const opts = (yOrOpts && typeof yOrOpts === 'object') ? yOrOpts : {};
+    const r = xOrEl && xOrEl.getBoundingClientRect
+      ? xOrEl.getBoundingClientRect()
+      : { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
+    if (opts.source === 'touch') {
+      _openAt(ui, layer, r.left + r.width / 2, r.top + r.height / 2, { source: 'touch', expandedBtn: xOrEl });
+      return;
+    }
+    _openAt(ui, layer, r.left, r.bottom - 1, { source: 'mouse', expandedBtn: xOrEl });
   };
 
   const _onContextMenu = (ui) => (event) => {
@@ -381,6 +654,9 @@
     const layer = _findLayer(ui, id);
     if (!layer) return;
     event.preventDefault();
+    // A native long-press contextmenu right after a TouchHold fire would open a second menu.
+    const TouchHold = UI.TouchHold;
+    if (TouchHold && TouchHold.isSuppressingContextMenu && TouchHold.isSuppressingContextMenu()) return;
     _openAt(ui, layer, event.clientX, event.clientY);
   };
 
@@ -403,6 +679,9 @@
   UI.Menus.LayerContext = {
     bind(deps) { DEPS = deps || {}; },
     attach,
+    openForLayer,
+    placeForTouch: _placeForTouch, // TUX-038: shared by the reset-hold menu
+    rowActions,
     // Test helpers (not for production code paths).
     _itemsFor,
     _runAction,

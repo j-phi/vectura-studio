@@ -335,13 +335,25 @@
       saveBtn.className = 'add-btn preset-save-confirm';
       saveBtn.textContent = 'Save';
       saveBtn.addEventListener('click', () => commit(modalApi));
-      // On touch the Save button is pinned above the field via CSS order so the
-      // on-screen keyboard never covers it.
+      // DOM order is Cancel, Save. On touch the footer is pinned to the bottom of the sheet body
+      // (below the name field) and the sheet rides above the keyboard via --kb-inset (TUX-049).
       footer.appendChild(cancelBtn);
       footer.appendChild(saveBtn);
       body.appendChild(footer);
 
       syncSaveEnabled();
+    };
+
+    // Short visual viewport (iPhone landscape with the keyboard open): the skin hides the preview
+    // and note on `.is-kb-short` so the name field and Save fit. Touch only; desktop never toggles.
+    const SHORT_VIEWPORT_PX = 360;
+    let offViewport = null;
+    const syncShort = () => {
+      const sheet = modalApi && modalApi.dialog;
+      const KI = Vectura.KeyboardInset;
+      if (!sheet || !KI) return;
+      const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+      sheet.classList.toggle('is-kb-short', coarse && KI.viewportSize().height < SHORT_VIEWPORT_PX);
     };
 
     modalApi = overlays.Modal(host, {
@@ -350,10 +362,18 @@
       dismissOnBackdrop: true,
       render,
       onOpen: () => {
+        if (modalApi && modalApi.dialog) modalApi.dialog.classList.add('preset-save-sheet');
+        if (Vectura.KeyboardInset && !offViewport) {
+          offViewport = Vectura.KeyboardInset.onViewportChange(syncShort);
+          syncShort();
+        }
         // Pre-select the auto-name so typing replaces it wholesale.
         if (nameInput) { try { nameInput.focus(); nameInput.select(); } catch (_) { /* jsdom */ } }
       },
-      onClose: () => { if (modalApi) modalApi.destroy(); },
+      onClose: () => {
+        if (offViewport) { offViewport(); offViewport = null; }
+        if (modalApi) modalApi.destroy();
+      },
     });
     modalApi.open();
     return modalApi;

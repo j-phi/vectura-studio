@@ -107,3 +107,65 @@ describe('UI.overlays.Menu', () => {
     expect(el.parentNode).toBeNull();
   });
 });
+
+describe('UI.overlays.Menu outside pointerdown (TUX-040)', () => {
+  let runtime;
+  let Menu;
+  const items = [{ key: 'a', label: 'A' }, { key: 'b', label: 'B' }];
+  beforeEach(() => {
+    runtime = loadUIComponent(['utils', 'menu']);
+    Menu = runtime.window.Vectura.UI.overlays.Menu;
+  });
+  afterEach(() => runtime.cleanup());
+
+  const ptr = (target, type = 'pointerdown') => {
+    const win = runtime.window;
+    const Ctor = win.PointerEvent || win.MouseEvent;
+    const ev = new Ctor(type, { bubbles: true, composed: true, pointerType: 'touch' });
+    target.dispatchEvent(ev);
+  };
+  const mk = () => {
+    const doc = runtime.document;
+    const anchor = doc.createElement('button');
+    const outside = doc.createElement('div');
+    doc.body.appendChild(anchor);
+    doc.body.appendChild(outside);
+    const inst = Menu(doc.body, { items, onSelect: () => {} });
+    inst.open(anchor);
+    return { inst, anchor, outside };
+  };
+
+  test('pointerdown on an outside element closes the menu', () => {
+    const { inst, outside } = mk();
+    ptr(outside);
+    expect(inst.isOpen()).toBe(false);
+    expect(inst.el.style.display).toBe('none');
+    inst.destroy();
+  });
+  test('pointerdown inside the menu does not close it', () => {
+    const { inst } = mk();
+    ptr(inst.el.querySelector('.menu-entry'));
+    expect(inst.isOpen()).toBe(true);
+    inst.destroy();
+  });
+  test('pointerdown on the anchor does not close it', () => {
+    const { inst, anchor } = mk();
+    ptr(anchor);
+    expect(inst.isOpen()).toBe(true);
+    inst.destroy();
+  });
+  test('an outside target that stops propagation still closes the menu (capture phase)', () => {
+    const { inst, outside } = mk();
+    ['pointerdown', 'mousedown'].forEach((t) => outside.addEventListener(t, (e) => e.stopPropagation()));
+    ptr(outside);
+    expect(inst.isOpen()).toBe(false);
+    inst.destroy();
+  });
+  test('destroy removes the document listener', () => {
+    const { inst, outside } = mk();
+    inst.destroy();
+    inst.open && inst.open(outside);
+    ptr(outside);
+    expect(inst.isOpen()).toBe(true);
+  });
+});

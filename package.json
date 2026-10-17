@@ -1,6 +1,6 @@
 {
   "name": "vectura-studio",
-  "version": "1.4.14",
+  "version": "1.4.17",
   "private": true,
   "description": "Vectura Studio - physics-inspired vector generator",
   "scripts": {
@@ -27,9 +27,17 @@
     "test:lane:measure": "node scripts/test-lane-measure.js",
     "test:lane:promote": "node scripts/test-lane-measure.js --promote",
     "test:lane": "node scripts/test-queue.js node scripts/test-lane.js",
+    "test:e2e:smoke": "npm run patch:test-runtime && node scripts/test-queue.js node scripts/run-e2e-smoke.js",
     "test:e2e:all": "npm run patch:test-runtime && node scripts/test-queue.js playwright test tests/e2e --reporter=line",
     "test:audit": "node scripts/test-queue.js --shell 'npm run test:runner && npm run test:coverage && npm run test:e2e:all'",
     "test:coverage": "npm run patch:test-runtime && VECTURA_TEST_COVERAGE=1 node scripts/test-queue.js node scripts/run-vitest.js run --coverage",
+    "test:e2e:touch": "npm run patch:test-runtime && node scripts/test-queue.js playwright test tests/e2e/touch --reporter=line",
+    "test:e2e:touch:chromium": "npm run patch:test-runtime && node scripts/test-queue.js playwright test tests/e2e/touch --project='touch-*' --reporter=line",
+    "test:e2e:touch:webkit": "npm run patch:test-runtime && node scripts/test-queue.js playwright test tests/e2e/touch --project='webkit-*' --reporter=line",
+    "test:e2e:touch:journeys:ledger": "npm run patch:test-runtime && rm -rf test-results/journey-ledger && JOURNEY_LEDGER_WRITE=1 playwright test tests/e2e/touch/journeys.spec.js --project=touch-ipad-portrait --project=touch-ipad-landscape --project=touch-iphone-portrait --project=touch-iphone-landscape --project='webkit-*' --reporter=dot; node tests/e2e/touch/merge-ledger.js",
+    "test:e2e:touch:audit": "npm run patch:test-runtime && node scripts/test-queue.js node scripts/run-touch-audit.js",
+    "test:e2e:touch:audit:full": "npm run patch:test-runtime && node scripts/test-queue.js node scripts/run-touch-audit.js --full",
+    "test:e2e:touch:install": "playwright install chromium webkit",
     "test:update": "npm run patch:test-runtime && VECTURA_UPDATE_BASELINES=1 npm run test:visual",
     "test:vitest": "npm run patch:test-runtime && node scripts/test-queue.js node scripts/run-vitest.js",
     "test:playwright": "npm run patch:test-runtime && node scripts/test-queue.js playwright test",
@@ -43,16 +51,16 @@
     "test:coverage:merge": "npm run patch:test-runtime && VECTURA_TEST_COVERAGE=1 node scripts/test-queue.js node scripts/run-vitest.js"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.64.0",
     "@vitest/coverage-v8": "^4.1.11",
     "autoprefixer": "^10.6.1",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "jsdom": "^24.1.1",
     "postcss": "^8.5.29",
-    "prettier": "^3.9.9",
+    "prettier": "^3.9.10",
     "tailwindcss": "^4.3.3",
-    "vite": "^8.3.3",
+    "vite": "^8.3.4",
     "vitest": "^4.1.11"
   },
   "engines": {

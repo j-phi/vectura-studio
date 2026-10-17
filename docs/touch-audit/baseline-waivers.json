@@ -1,0 +1,7 @@
+{
+  "_doc": "Ledger for touch baseline raises whose commit has no TUX-WAIVER line. Key = commit sha prefix (8+ chars). Value = reason (20+ chars). Read by scripts/touch-baseline-waiver.js. Never rewrite history; add a row here instead.",
+  "waivers": {
+    "13b7d04b": "Merge of touch/integration into touch/docs. Jay approved taking touch/integration's baseline. The cells that rose were set by touch/integration, not by the docs lane.",
+    "16bb75ee": "Integration drift, not TUX-052. Covered on touch-coarse-wide (39->42) and the 4 webkit twins (+2..+4) rose on touch/integration at c992cc9c (merge of touch/shell), before this lane: the TUX-020 HUD buttons and the modifier bar sit under the modal."
+  }
+}

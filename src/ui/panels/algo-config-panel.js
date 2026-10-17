@@ -247,7 +247,7 @@
         if (!next) return;
         const nextOpts = valueEditorMap.get(next);
         if (!nextOpts) return;
-        window.requestAnimationFrame(() => openInlineEditor({ ...nextOpts, valueEl: next }));
+        window.requestAnimationFrame(() => openValueEditor({ ...nextOpts, valueEl: next }));
       };
 
       const nudge = (direction, multiplier = 1) => {
@@ -301,14 +301,92 @@
       });
     };
 
+    // TUX-038: a dual (min/max) value edits in two inputs, not one comma-separated field. The iOS decimal
+    // pad has no comma or minus key. inputmode follows the same rule as UI.Slider's chip (slider.js,
+    // chipInputMode): 'decimal' while the control min is >= 0, else 'text'. The first input's Enter hint
+    // is 'next' (Enter moves to max); the last is 'done'.
+    const openDualEditor = (opts) => {
+      const { def, valueEl, getValue, setValue, parseValue } = opts;
+      if (!valueEl || valueEl._dualEditing) return;
+      const { min } = getDisplayConfig(def);
+      const mode = Number.isFinite(min) && min < 0 ? 'text' : 'decimal';
+      const current = getValue();
+      const label = getDisplayLabel(def) || 'Range';
+      const editor = document.createElement('span');
+      editor.className = 'dual-value-editor';
+      const mk = (which, val, hint) => {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'dual-value-input';
+        input.dataset.handle = which;
+        input.inputMode = mode;
+        input.enterKeyHint = hint;
+        input.setAttribute('aria-label', `${label} (${which})`);
+        input.value = `${toDisplayValue(def, val)}`;
+        return input;
+      };
+      const minInput = mk('min', current.min, 'next');
+      const maxInput = mk('max', current.max, 'done');
+      const dash = document.createElement('span');
+      dash.className = 'dual-value-dash';
+      dash.textContent = '\u2013';
+      editor.append(minInput, dash, maxInput);
+      valueEl._dualEditing = true;
+      const prevDisplay = valueEl.style.display;
+      valueEl.style.display = 'none';
+      valueEl.insertAdjacentElement('afterend', editor);
+      minInput.focus({ preventScroll: true });
+      minInput.select();
+
+      let closed = false;
+      const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        editor.remove();
+        valueEl.style.display = prevDisplay;
+        valueEl._dualEditing = false;
+      };
+      const commit = () => {
+        const raw = `${minInput.value.trim()}, ${maxInput.value.trim()}`;
+        const parsed = parseValue ? parseValue(raw) : null;
+        cleanup();
+        if (!parsed) { this.showValueError(raw); return; }
+        setValue(parsed, { commit: true });
+      };
+      editor.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); cleanup(); return; }
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (e.target === minInput) { maxInput.focus({ preventScroll: true }); maxInput.select(); return; }
+        commit();
+      });
+      // Focus leaving BOTH inputs commits. Moving from min to max stays inside the editor.
+      editor.addEventListener('focusout', () => {
+        setTimeout(() => { if (!closed && !editor.contains(document.activeElement)) commit(); }, 0);
+      });
+    };
+
+    const openValueEditor = (opts) => (opts.dual ? openDualEditor(opts) : openInlineEditor(opts));
+
     const attachValueEditor = (opts) => {
       const { valueEl } = opts;
       if (!valueEl) return;
       valueEditorMap.set(valueEl, opts);
-      valueEl.ondblclick = (e) => {
+      // One tap opens the editor (a mouse click and a double-click land here too).
+      valueEl.addEventListener('click', (e) => {
         e.preventDefault();
-        openInlineEditor({ ...opts, valueEl });
-      };
+        openValueEditor({ ...opts, valueEl });
+      });
+    };
+
+    // TUX-038: the mouse double-click and the touch label long-press ("Reset to default") run ONE reset.
+    // `root` holds the control's `.control-label`. `getDefault` (optional) returns null when there is no default.
+    const bindReset = (target, root, reset, getDefault) => {
+      if (!target) return;
+      // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
+      target.addEventListener('dblclick', (e) => { e.preventDefault(); reset(); });
+      const labelEl = root && root.querySelector ? root.querySelector('.control-label') : null;
+      if (UI.attachResetHold && labelEl) UI.attachResetHold(labelEl, { reset, getDefault });
     };
 
     // Shared UI.Slider factory for def-driven controls. The component owns the
@@ -983,8 +1061,7 @@
             });
             span.textContent = def.options.find((opt) => opt.value === next)?.label || next;
           };
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
+          bindReset(input, control, () => {
             const defaults = getStepDefaults(stepConfig.id);
             const next = defaults[def.key] ?? def.options?.[0]?.value;
             if (next === undefined) return;
@@ -1028,6 +1105,7 @@
         // dblclick on the pill resets to the step default — legacy parity.
         const cbInput = toggle.el.querySelector('input[type="checkbox"]');
         if (cbInput) {
+          // touch-ok: TUX-038 two-state toggle, a tap is the reset
           cbInput.addEventListener('dblclick', (e) => {
             e.preventDefault();
             const defaults = getStepDefaults(stepConfig.id);
@@ -1042,51 +1120,24 @@
 
       const bindReorderGrip = (grip, card, stepId) => {
         if (!grip) return;
-        grip.onmousedown = (e) => {
-          e.preventDefault();
-          const dragEl = card;
-          dragEl.classList.add('dragging');
-          const indicator = document.createElement('div');
-          indicator.className = 'optimization-drop-indicator';
-          list.insertBefore(indicator, dragEl.nextSibling);
-          const currentOrder = config.steps.map((step) => step.id);
-          const startIndex = currentOrder.indexOf(stepId);
-          const onMove = (ev) => {
-            const y = ev.clientY;
-            const items = Array.from(list.querySelectorAll('.optimization-card')).filter((item) => item !== dragEl);
-            let inserted = false;
-            for (const item of items) {
-              const rect = item.getBoundingClientRect();
-              if (y < rect.top + rect.height / 2) {
-                list.insertBefore(indicator, item);
-                inserted = true;
-                break;
-              }
-            }
-            if (!inserted) list.appendChild(indicator);
-          };
-          const onUp = () => {
-            dragEl.classList.remove('dragging');
-            const siblings = Array.from(list.children);
-            const indicatorIndex = siblings.indexOf(indicator);
-            const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('optimization-card'));
-            const newIndex = before.length;
-            indicator.remove();
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            if (newIndex === startIndex || newIndex < 0) return;
+        window.Vectura.UI.PointerReorder.bind(grip, {
+          container: list,
+          itemSelector: '.optimization-card[data-step-id]',
+          dragEl: card,
+          indicatorClass: 'optimization-drop-indicator',
+          onCommit: (newIndex, startIndex) => {
             applyOptimization((cfg) => {
-              const order = cfg.steps.map((step) => step.id).filter((id) => id !== stepId);
+              // newIndex counts the step cards on screen (the Export Settings card is not a step).
+              const shown = Array.from(list.querySelectorAll('.optimization-card[data-step-id]')).map((node) => node.dataset.stepId);
+              const order = [...shown, ...cfg.steps.map((step) => step.id).filter((id) => !shown.includes(id))].filter((id) => id !== stepId);
               const targetIndex = Math.max(0, Math.min(order.length, newIndex));
               order.splice(targetIndex, 0, stepId);
               const map = new Map(cfg.steps.map((step) => [step.id, step]));
               cfg.steps = order.map((id) => map.get(id)).filter(Boolean);
             });
             this.buildControls();
-          };
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
-        };
+          },
+        });
       };
 
       list.appendChild(buildExportSettingsCard());
@@ -1906,6 +1957,10 @@
         this.buildControls();
       });
       label.appendChild(dot);
+      // A <label> with no `for` activates its first labelable descendant on a click. The dot is a button, so
+      // a plain tap or click on the label TEXT used to press the dot and reset the control (TUX-038: the
+      // label is now the touch reset-hold target, so a tap on it must do nothing).
+      label.addEventListener('click', (e) => { if (!e.target.closest('.control-modified')) e.preventDefault(); });
     };
 
     const renderDefBase = (def, targetEl) => {
@@ -2798,10 +2853,16 @@
               // Push history ONCE per drag, on pointerdown (sliders push on change).
               if (this.app.pushHistory) this.app.pushHistory();
               applyFromEvent(e);
+              try { canvas.setPointerCapture?.(e.pointerId); } catch (_) { /* synthetic ids */ }
               const move = (ev) => applyFromEvent(ev);
-              const up = () => { window.removeEventListener('pointermove', move); };
+              const up = () => {
+                window.removeEventListener('pointermove', move);
+                window.removeEventListener('pointerup', up);
+                window.removeEventListener('pointercancel', up);
+              };
               window.addEventListener('pointermove', move);
-              window.addEventListener('pointerup', up, { once: true });
+              window.addEventListener('pointerup', up);
+              window.addEventListener('pointercancel', up);
             };
             // Pointer events alone cover mouse, touch, and pen. Do NOT also bind
             // mousedown — real browsers emit a compatibility mousedown after
@@ -3185,56 +3246,23 @@
 
         const bindModifierReorderGrip = (grip, card, modifier) => {
           if (!grip) return;
-          grip.onmousedown = (e) => {
-            e.preventDefault();
-            const dragEl = card;
-            dragEl.classList.add('dragging');
-            const indicator = document.createElement('div');
-            indicator.className = 'noise-drop-indicator';
-            list.insertBefore(indicator, dragEl.nextSibling);
-            const currentOrder = modifiers.map((item) => item.id);
-            const startIndex = currentOrder.indexOf(modifier.id);
-
-            const onMove = (ev) => {
-              const y = ev.clientY;
-              const items = Array.from(list.querySelectorAll('.noise-card')).filter((item) => item !== dragEl);
-              let inserted = false;
-              for (const item of items) {
-                const rect = item.getBoundingClientRect();
-                if (y < rect.top + rect.height / 2) {
-                  list.insertBefore(indicator, item);
-                  inserted = true;
-                  break;
-                }
-              }
-              if (!inserted) list.appendChild(indicator);
-            };
-
-            const onUp = () => {
-              dragEl.classList.remove('dragging');
-              const siblings = Array.from(list.children);
-              const indicatorIndex = siblings.indexOf(indicator);
-              const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
-              const newIndex = before.length;
-              indicator.remove();
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
-
-              if (newIndex !== startIndex) {
-                const nextOrder = currentOrder.filter((id) => id !== modifier.id);
-                nextOrder.splice(newIndex, 0, modifier.id);
-                const map = new Map(modifiers.map((item) => [item.id, item]));
-                layer.params.centerModifiers = nextOrder.map((id) => map.get(id)).filter(Boolean);
-                this.storeLayerParams(layer);
-                this.app.regen();
-                this.buildControls();
-                this.updateFormula();
-              }
-            };
-
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
-          };
+          window.Vectura.UI.PointerReorder.bind(grip, {
+            container: list,
+            itemSelector: '.noise-card',
+            dragEl: card,
+            indicatorClass: 'noise-drop-indicator',
+            onCommit: (newIndex, startIndex) => {
+              const currentOrder = modifiers.map((item) => item.id);
+              const nextOrder = currentOrder.filter((id) => id !== modifier.id);
+              nextOrder.splice(newIndex, 0, modifier.id);
+              const map = new Map(modifiers.map((item) => [item.id, item]));
+              layer.params.centerModifiers = nextOrder.map((id) => map.get(id)).filter(Boolean);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+            },
+          });
         };
 
         modifiers.forEach((modifier, idx) => {
@@ -3411,56 +3439,23 @@
 
         const bindModifierReorderGrip = (grip, card, modifier) => {
           if (!grip) return;
-          grip.onmousedown = (e) => {
-            e.preventDefault();
-            const dragEl = card;
-            dragEl.classList.add('dragging');
-            const indicator = document.createElement('div');
-            indicator.className = 'noise-drop-indicator';
-            list.insertBefore(indicator, dragEl.nextSibling);
-            const currentOrder = modifiers.map((item) => item.id);
-            const startIndex = currentOrder.indexOf(modifier.id);
-
-            const onMove = (ev) => {
-              const y = ev.clientY;
-              const items = Array.from(list.querySelectorAll('.noise-card')).filter((item) => item !== dragEl);
-              let inserted = false;
-              for (const item of items) {
-                const rect = item.getBoundingClientRect();
-                if (y < rect.top + rect.height / 2) {
-                  list.insertBefore(indicator, item);
-                  inserted = true;
-                  break;
-                }
-              }
-              if (!inserted) list.appendChild(indicator);
-            };
-
-            const onUp = () => {
-              dragEl.classList.remove('dragging');
-              const siblings = Array.from(list.children);
-              const indicatorIndex = siblings.indexOf(indicator);
-              const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
-              const newIndex = before.length;
-              indicator.remove();
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
-
-              if (newIndex !== startIndex) {
-                const nextOrder = currentOrder.filter((id) => id !== modifier.id);
-                nextOrder.splice(newIndex, 0, modifier.id);
-                const map = new Map(modifiers.map((item) => [item.id, item]));
-                layer.params.petalModifiers = nextOrder.map((id) => map.get(id)).filter(Boolean);
-                this.storeLayerParams(layer);
-                this.app.regen();
-                this.buildControls();
-                this.updateFormula();
-              }
-            };
-
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
-          };
+          window.Vectura.UI.PointerReorder.bind(grip, {
+            container: list,
+            itemSelector: '.noise-card',
+            dragEl: card,
+            indicatorClass: 'noise-drop-indicator',
+            onCommit: (newIndex, startIndex) => {
+              const currentOrder = modifiers.map((item) => item.id);
+              const nextOrder = currentOrder.filter((id) => id !== modifier.id);
+              nextOrder.splice(newIndex, 0, modifier.id);
+              const map = new Map(modifiers.map((item) => [item.id, item]));
+              layer.params.petalModifiers = nextOrder.map((id) => map.get(id)).filter(Boolean);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+            },
+          });
         };
 
         modifiers.forEach((modifier, idx) => {
@@ -3723,56 +3718,23 @@
 
         const bindShadingReorderGrip = (grip, card, shading) => {
           if (!grip) return;
-          grip.onmousedown = (e) => {
-            e.preventDefault();
-            const dragEl = card;
-            dragEl.classList.add('dragging');
-            const indicator = document.createElement('div');
-            indicator.className = 'noise-drop-indicator';
-            list.insertBefore(indicator, dragEl.nextSibling);
-            const currentOrder = shadings.map((item) => item.id);
-            const startIndex = currentOrder.indexOf(shading.id);
-
-            const onMove = (ev) => {
-              const y = ev.clientY;
-              const items = Array.from(list.querySelectorAll('.noise-card')).filter((item) => item !== dragEl);
-              let inserted = false;
-              for (const item of items) {
-                const rect = item.getBoundingClientRect();
-                if (y < rect.top + rect.height / 2) {
-                  list.insertBefore(indicator, item);
-                  inserted = true;
-                  break;
-                }
-              }
-              if (!inserted) list.appendChild(indicator);
-            };
-
-            const onUp = () => {
-              dragEl.classList.remove('dragging');
-              const siblings = Array.from(list.children);
-              const indicatorIndex = siblings.indexOf(indicator);
-              const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
-              const newIndex = before.length;
-              indicator.remove();
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
-
-              if (newIndex !== startIndex) {
-                const nextOrder = currentOrder.filter((id) => id !== shading.id);
-                nextOrder.splice(newIndex, 0, shading.id);
-                const map = new Map(shadings.map((item) => [item.id, item]));
-                layer.params.shadings = nextOrder.map((id) => map.get(id)).filter(Boolean);
-                this.storeLayerParams(layer);
-                this.app.regen();
-                this.buildControls();
-                this.updateFormula();
-              }
-            };
-
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
-          };
+          window.Vectura.UI.PointerReorder.bind(grip, {
+            container: list,
+            itemSelector: '.noise-card',
+            dragEl: card,
+            indicatorClass: 'noise-drop-indicator',
+            onCommit: (newIndex, startIndex) => {
+              const currentOrder = shadings.map((item) => item.id);
+              const nextOrder = currentOrder.filter((id) => id !== shading.id);
+              nextOrder.splice(newIndex, 0, shading.id);
+              const map = new Map(shadings.map((item) => [item.id, item]));
+              layer.params.shadings = nextOrder.map((id) => map.get(id)).filter(Boolean);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+            },
+          });
         };
 
         const shadingRangeDefs = [
@@ -4218,8 +4180,7 @@
         });
         pad.addEventListener('pointerup', endPadDrag);
         pad.addEventListener('pointercancel', endPadDrag);
-        pad.addEventListener('dblclick', (e) => {
-          e.preventDefault();
+        bindReset(pad, div, () => {
           if (this.app.pushHistory) this.app.pushHistory();
           layer.params[azKey] = azDefault;
           layer.params[elKey] = elDefault;
@@ -4326,6 +4287,7 @@
         // the legacy hand-rolled toggle and with the sliders' dblclick-reset.
         const cbInput = toggle.el.querySelector('input[type="checkbox"]');
         if (cbInput) {
+          // touch-ok: TUX-038 two-state toggle, a tap is the reset
           cbInput.addEventListener('dblclick', (e) => {
             e.preventDefault();
             const defaultVal = getDefaultValue(def);
@@ -4417,8 +4379,7 @@
             this.updateFormula();
             maybeRebuildControls();
           };
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
+          bindReset(input, div, () => {
             const defaultVal = getDefaultValue(def);
             const fallback = def.options?.[0]?.value;
             const next = defaultVal !== null && defaultVal !== undefined ? defaultVal : fallback;
@@ -4495,8 +4456,7 @@
             this.app.regen();
             this.updateFormula();
           };
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
+          bindReset(input, div, () => {
             const defaultVal = getDefaultValue(def);
             if (!defaultVal) return;
             if (this.app.pushHistory) this.app.pushHistory();
@@ -4506,7 +4466,7 @@
             this.storeLayerParams(layer);
             this.app.regen();
             this.updateFormula();
-          });
+          }, () => getDefaultValue(def) || null);
         }
       } else if (def.type === 'rangeDual') {
         const minVal = layer.params[def.minKey];
@@ -4603,10 +4563,12 @@
             this.app.regen();
             this.updateFormula();
           });
-          minInput.addEventListener('dblclick', (e) => {
-            e.preventDefault();
-            resetToDefault();
+          // The label long-press runs the same reset (bindReset binds it once, on min).
+          bindReset(minInput, div, resetToDefault, () => {
+            const d = getDefaultValue(def);
+            return d && d.min !== undefined && d.max !== undefined ? d : null;
           });
+          // touch-alt: TUX-038 label long-press opens "Reset to default" (see bindReset above)
           maxInput.addEventListener('dblclick', (e) => {
             e.preventDefault();
             resetToDefault();
@@ -4615,6 +4577,7 @@
         if (valueBtn) {
           attachValueEditor({
             def,
+            dual: true,
             valueEl: valueBtn,
             getValue: () => ({
               min: layer.params[def.minKey],

@@ -1,0 +1,1 @@
+TUX-014 fix: on iPhone portrait the open tool sub-menus (Pen, Fill) ran under the collapsed right-pane sliver. Taps on the right end of a row closed the menu and selected no tool. The touch menu now has z-index 60, above the sliver (z-index 55). A new e2e test samples elementFromPoint across every row and taps the right end of a row.

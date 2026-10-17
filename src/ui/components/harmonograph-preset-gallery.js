@@ -31,6 +31,7 @@
   // Universal group vocabulary order. Empty groups are omitted at render time.
   const GROUP_ORDER = ['Classic', 'Geometric', 'Organic', 'Complex', 'Evolving', 'User'];
   const THUMB_SIZE = 28;
+  const ARM_MS = 3000; // touch two-tap Delete: how long the armed state lasts
 
   // Keys that belong to the layer's canvas placement, not the algorithm look —
   // stripped from a preset's params on both import and save so a preset never
@@ -591,13 +592,7 @@
               layers: [{ type: system, params }],
             };
             const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${_stem}.vectura`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(a.href);
+            window.Vectura.Download.saveBlob(blob, `${_stem}.vectura`).catch(() => { /* dev-only, best-effort */ });
           });
           opt.appendChild(setDefaultBtn);
         }
@@ -673,11 +668,41 @@
             btn.title = isBuiltIn ? 'Delete preset (removes the .vectura source file)' : 'Delete preset';
             btn.innerHTML = `<svg viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2l6 6M8 2l-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
           }
+          // TUX-036: with no hover (touch) a plain user Delete is two-tap. The first tap arms the
+          // button (is-armed + "Confirm delete" label); a second tap within ARM_MS deletes.
+          // Tapping elsewhere or waiting disarms. Mouse (hover: hover) stays one click.
+          const touchTwoStep = () => {
+            try { return affordance === 'delete' && !isBuiltIn && window.matchMedia('(hover: none)').matches; } catch (_) { return false; }
+          };
+          const idleLabel = btn.getAttribute('aria-label');
+          let armTimer = null;
+          let disarmListener = null;
+          const disarm = () => {
+            if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+            if (disarmListener) { document.removeEventListener('pointerdown', disarmListener, true); disarmListener = null; }
+            if (!btn.classList.contains('is-armed')) return;
+            btn.classList.remove('is-armed');
+            btn.setAttribute('aria-label', idleLabel);
+            const t = btn.querySelector('.hg-preset-delete-confirm');
+            if (t) t.remove();
+          };
+          const arm = () => {
+            btn.classList.add('is-armed');
+            btn.setAttribute('aria-label', `Confirm delete “${label}”`);
+            const t = document.createElement('span');
+            t.className = 'hg-preset-delete-confirm';
+            t.textContent = 'Delete?';
+            btn.appendChild(t);
+            armTimer = setTimeout(disarm, ARM_MS);
+            disarmListener = (ev) => { if (!btn.contains(ev.target)) disarm(); };
+            document.addEventListener('pointerdown', disarmListener, true);
+          };
           btn.addEventListener('click', (e) => {
             e.stopPropagation();
             if (affordance === 'revert') doRevert();
             else if (isBuiltIn) confirmThenDelete();
-            else doDelete();
+            else if (touchTwoStep() && !btn.classList.contains('is-armed')) arm();
+            else { disarm(); doDelete(); }
           });
           opt.appendChild(btn);
         }
@@ -743,46 +768,54 @@
         importBtn.className = 'hg-preset-import';
         importBtn.textContent = 'Import from .vectura…';
         importBtn.addEventListener('click', () => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = '.vectura';
+          // TUX-053: shared picker computes accept at open time (iOS adds octet-stream).
+          const FP = window.Vectura && window.Vectura.FilePicker;
+          const input = FP ? FP.pickFile({ kind: 'vectura-preset' }) : document.createElement('input');
+          if (!FP) { input.type = 'file'; input.accept = '.vectura'; }
           input.addEventListener('change', () => {
             const file = input.files && input.files[0];
             if (!file) return;
-            const reader = new FileReader();
-            reader.onload = () => {
-              let doc;
-              try { doc = JSON.parse(reader.result); } catch (_) {
+            const sniff = FP && FP.sniffJsonHead ? FP.sniffJsonHead(file) : Promise.resolve(true);
+            sniff.then((ok) => {
+              if (!ok) {
                 toast('Could not read .vectura file — invalid JSON.', 'danger');
                 return;
               }
-              const layers = Array.isArray(doc.layers) ? doc.layers : [];
-              const matchLayer = layers.find((l) => l.type === system);
-              if (!matchLayer) {
-                toast(`No ${system} layer found in this .vectura file.`, 'danger');
-                return;
-              }
-              const stem = file.name.replace(/\.vectura$/i, '');
-              const defaultName = stem.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-              // Async prompt dialog: the save moves into the resolution path.
-              // Cancel/Esc now aborts the import (the native prompt's null
-              // silently fell through to defaultName); confirming an empty
-              // field still falls back to the filename-derived default.
-              promptText({ title: 'Import Preset', message: 'Preset name:', value: defaultName })
-                .then((entered) => {
-                  if (entered === null) return;
-                  const name = `${entered}`.trim() || defaultName;
-                  const params = stripParams(matchLayer.params);
-                  const id = `user-${system}-${Date.now()}`;
-                  const newPreset = { id, name, preset_system: system, group: 'User', params };
-                  const updated = [...loadUserPresets(system), newPreset];
-                  saveUserPresets(system, updated);
-                  rebuildPopover();
-                });
-            };
-            reader.readAsText(file);
+              const reader = new FileReader();
+              reader.onload = () => {
+                let doc;
+                try { doc = JSON.parse(reader.result); } catch (_) {
+                  toast('Could not read .vectura file — invalid JSON.', 'danger');
+                  return;
+                }
+                const layers = Array.isArray(doc.layers) ? doc.layers : [];
+                const matchLayer = layers.find((l) => l.type === system);
+                if (!matchLayer) {
+                  toast(`No ${system} layer found in this .vectura file.`, 'danger');
+                  return;
+                }
+                const stem = file.name.replace(/\.vectura$/i, '');
+                const defaultName = stem.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+                // Async prompt dialog: the save moves into the resolution path.
+                // Cancel/Esc now aborts the import (the native prompt's null
+                // silently fell through to defaultName); confirming an empty
+                // field still falls back to the filename-derived default.
+                promptText({ title: 'Import Preset', message: 'Preset name:', value: defaultName })
+                  .then((entered) => {
+                    if (entered === null) return;
+                    const name = `${entered}`.trim() || defaultName;
+                    const params = stripParams(matchLayer.params);
+                    const id = `user-${system}-${Date.now()}`;
+                    const newPreset = { id, name, preset_system: system, group: 'User', params };
+                    const updated = [...loadUserPresets(system), newPreset];
+                    saveUserPresets(system, updated);
+                    rebuildPopover();
+                  });
+              };
+              reader.readAsText(file);
+            });
           });
-          input.click();
+          if (!FP) input.click();
         });
         popover.appendChild(importBtn);
       }
@@ -906,14 +939,7 @@
               meta: { presetId: preset.id, group: preset.group || 'User', system, savedAt: preset.savedAt || 0 },
               layers: [{ type: system, params: { ...preset.params } }] };
         const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${slugify(preset.name) || system}.vectura`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        window.Vectura.Download.saveBlob(blob, `${slugify(preset.name) || system}.vectura`).catch(() => { /* download blocked */ });
       } catch (_) { /* download blocked */ }
     };
 

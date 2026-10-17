@@ -564,6 +564,7 @@
     });
     const endPaint = () => { painting = false; };
     canvas.addEventListener('pointerup', endPaint);
+    canvas.addEventListener('pointercancel', endPaint);
     canvas.addEventListener('pointerleave', endPaint);
 
     const canvasWrap = document.createElement('div');

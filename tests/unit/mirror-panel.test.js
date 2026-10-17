@@ -103,6 +103,34 @@ describe('MirrorPanel — pure helpers (would fail against legacy UI)', () => {
     expect(out % 15).toBe(0);
   });
 
+  test('touchDialValue: 0.5 deg per px, zero travel keeps the start value (TUX-027)', () => {
+    expect(MirrorPanel.TOUCH_DIAL_DEG_PER_PX).toBe(0.5);
+    expect(MirrorPanel.touchDialValue(90, 0, 'compass', 0, 360)).toBe(90);
+    expect(MirrorPanel.touchDialValue(90, 40, 'compass', 0, 360)).toBe(110);
+    expect(MirrorPanel.touchDialValue(90, -40, 'compass', 0, 360)).toBe(70);
+  });
+
+  test('touchDialValue: compass wraps to 0..359 and rounds to whole degrees', () => {
+    expect(MirrorPanel.touchDialValue(350, 40, 'compass', 0, 360)).toBe(10);
+    expect(MirrorPanel.touchDialValue(5, -40, 'compass', 0, 360)).toBe(345);
+    expect(MirrorPanel.touchDialValue(359, 2, 'compass', 0, 360)).toBe(0);
+    expect(MirrorPanel.touchDialValue(90, 3, 'compass', 0, 360)).toBe(92); // 91.5 rounds up
+    expect(MirrorPanel.touchDialValue(0, -1, 'compass', 0, 360)).toBe(0); // -0.5 rounds to -0 -> 0
+    for (let dx = -2000; dx <= 2000; dx += 37) {
+      const v = MirrorPanel.touchDialValue(123, dx, 'compass', 0, 360);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(360);
+      expect(Number.isInteger(v)).toBe(true);
+    }
+  });
+
+  test('touchDialValue: range mode clamps to [min, max] with no wrap', () => {
+    expect(MirrorPanel.touchDialValue(90, 40, 'range', 45, 135)).toBe(110);
+    expect(MirrorPanel.touchDialValue(90, 400, 'range', 45, 135)).toBe(135);
+    expect(MirrorPanel.touchDialValue(90, -400, 'range', 45, 135)).toBe(45);
+    expect(MirrorPanel.touchDialValue(130, 7, 'range', 45, 135)).toBe(134); // 133.5 -> 134
+  });
+
 });
 
 describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
@@ -493,6 +521,47 @@ describe('MirrorPanel.build — DOM behavior (RGR for the v2 redesign)', () => {
     rows[1].getBoundingClientRect = () => ({ top: 0, height: 40, left: 0, right: 100, bottom: 40, width: 100 });
     rows[1].dispatchEvent(drop);
     expect(layer.modifier.mirrors.map((m) => m.id)).toEqual([ids[1], ids[0], ids[2]]);
+  });
+
+  test('TUX-044: the mirror grip reorders by pointer events and pointercancel leaves the order', () => {
+    const mk = () => mkLayer([
+      Modifiers.createMirrorLine(0),
+      Modifiers.createRadialMirror(1),
+      Modifiers.createArcMirror(2),
+    ]);
+    const stubRows = (container) => Array.from(container.querySelectorAll('.mp-row')).forEach((row, i) => {
+      row.getBoundingClientRect = () => ({ top: i * 100, height: 100, bottom: i * 100 + 100, left: 0, right: 100, width: 100 });
+    });
+    const fire = (target, type, y) => {
+      const ev = new runtime.window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: 5, clientY: y, button: 0 });
+      Object.defineProperty(ev, 'pointerId', { value: 1 });
+      Object.defineProperty(ev, 'pointerType', { value: 'touch' });
+      target.dispatchEvent(ev);
+    };
+    // commit
+    const layer = mk();
+    const container = document.createElement('div');
+    MirrorPanel.build(mkCtx(), layer, container);
+    const ids = layer.modifier.mirrors.map((m) => m.id);
+    stubRows(container);
+    expect(container.querySelectorAll('.mp-row-grip')).toHaveLength(3);
+    fire(container.querySelectorAll('.mp-row-grip')[2], 'pointerdown', 250);
+    fire(runtime.window, 'pointermove', 20);
+    fire(runtime.window, 'pointerup', 20);
+    expect(layer.modifier.mirrors.map((m) => m.id)).toEqual([ids[2], ids[0], ids[1]]);
+    // cancel
+    const layer2 = mk();
+    const container2 = document.createElement('div');
+    const ctx2 = mkCtx();
+    MirrorPanel.build(ctx2, layer2, container2);
+    const ids2 = layer2.modifier.mirrors.map((m) => m.id);
+    stubRows(container2);
+    const before = ctx2._calls.pushHistory;
+    fire(container2.querySelectorAll('.mp-row-grip')[2], 'pointerdown', 250);
+    fire(runtime.window, 'pointermove', 20);
+    fire(runtime.window, 'pointercancel', 20);
+    expect(layer2.modifier.mirrors.map((m) => m.id)).toEqual(ids2);
+    expect(ctx2._calls.pushHistory).toBe(before);
   });
 
   test('defaultParamsFor stays aligned with Modifiers.create* factory defaults', () => {

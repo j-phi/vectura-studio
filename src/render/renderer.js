@@ -202,6 +202,10 @@
     if (typeof document === 'undefined' || !document.documentElement) return '';
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   };
+  // TUX-007: canvas arc() throws IndexSizeError for a negative radius. Handle radii are k / scale, so a
+  // non-positive scale produced one. Used at the selection, text-widget, direct-select and pen sites.
+  const safeArcR = (r) => (Number.isFinite(r) && r > 0 ? r : 0);
+
   const getThemeToken = (name, fallback = '') => {
     if (typeof document === 'undefined' || !document.documentElement) return fallback;
     // Synchronously invalidate when skin id changes. applyTheme sets data-ui-skin
@@ -606,6 +610,7 @@
       this.activeHandle = null;
       this.dragStart = { x: 0, y: 0 };
       this.startBounds = null;
+      this.handleGrabOffset = null;
       this.tempTransform = null;
       this.rotateOrigin = null;
       this.rotateStartAngle = 0;
@@ -673,6 +678,12 @@
       this.paintBucketStack = null;
       this.paintBucketScopeIndex = 0;
       this.paintBucketStackKey = null;
+      // TUX-022: sticky scope offset set by the touch Scope chips (0 for mouse). A new hover
+      // starts at min(offset, stack.length - 1) instead of the innermost region.
+      this.paintBucketScopeOffset = 0;
+      // TUX-022: touch/pen fill pour armed at pointerdown, poured at pointerup.
+      // null | { pointerId, world, scopeIndex, loopId, mode, fillParamsOverride, tool, polygon }.
+      this._fillPendingPour = null;
       this.patternFillPreviewInnerPolygon = null;
       this.lastPourLoopId = null;
       // Refs to the fill records in the "active batch" — the set that panel
@@ -693,6 +704,7 @@
       this.penDragStart = null;
       this.penDragMirrorLock = null;
       this._penLastClick = null;
+      this._penJustCommitted = null;
       this.penSnapToOrigin = false;
       this.groupEditMode = null;
       this._selectLastClick = null;
@@ -740,6 +752,7 @@
       this.onScissor = null;
       this.onDirectEditStart = null;
       this.onDirectEditCommit = null;
+      this.onDirectEditAbort = null;
       this.onPatternFill = null;
       this.patternFillPreviewPolygon = null;
       this.isLayerLocked = null;
@@ -747,11 +760,19 @@
       this.snap = null;
       this.snapAllowed = true;
       this.activePointerId = null;
-      this.touchPointers = new Map();
+      this.activePointerType = null;
+      // TUX-017: the arbiter owns the touch pointer map (live x/y, down time, max travel),
+      // the second-finger decision and the gesture latch. The renderer only executes.
+      this.touchArbiter = window.Vectura.TouchGestureArbiter.create();
+      this.touchPointers = this.touchArbiter.pointers;
       this.touchGesture = null;
-      this.touchHoldTimer = null;
-      this.touchHoldPending = null;
-      this.touchHoldStartClient = null;
+      this._touchSnapshot = null;
+      // TUX-018: state captured at pointerdown; pointercancel restores it.
+      this._gestureMark = null;
+      this._touchDeferred = null;
+      // TUX-019: a touch press on a movable selection waits for the drag slop (no hold).
+      this._touchMovePending = null;
+      this.touchSlopCrossed = false;
       this.exportModalOpen = false;
       this.ready = Boolean(this.canvas && this.ctx);
 
@@ -778,7 +799,9 @@
         this.canvas.addEventListener('pointerdown', (e) => this.down(e));
         window.addEventListener('pointermove', this._boundMove);
         window.addEventListener('pointerup', this._boundUp);
-        window.addEventListener('pointercancel', this._boundUp);
+        // TUX-018: a cancel aborts the edit and restores the pre-gesture state. It never commits.
+        this._boundCancel = (e) => this.onPointerCancel(e);
+        window.addEventListener('pointercancel', this._boundCancel);
       } else {
         this._boundMouseMove = (e) => this.move(e);
         this._boundMouseUp = (e) => this.up(e);
@@ -913,7 +936,7 @@
       if (this._boundMove) {
         window.removeEventListener('pointermove', this._boundMove);
         window.removeEventListener('pointerup', this._boundUp);
-        window.removeEventListener('pointercancel', this._boundUp);
+        if (this._boundCancel) window.removeEventListener('pointercancel', this._boundCancel);
       }
       if (this._boundMouseMove) {
         window.removeEventListener('mousemove', this._boundMouseMove);
@@ -1147,6 +1170,8 @@
       }
       this.updateCursor();
       if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(tool)) {
+        this.paintBucketScopeOffset = 0;
+        this._fillPendingPour = null;
         this.hideFillLoupe?.();
         this.patternFillPreviewPolygon = null;
         this.patternFillPreviewInnerPolygon = null;
@@ -1206,9 +1231,9 @@
       this.draw();
     }
 
-    hitLightSource(world) {
+    hitLightSource(world, pointerType) {
       if (!this.lightSource || !world) return false;
-      const r = 6 / this.scale;
+      const r = window.Vectura.hitTolerance('light', pointerType) / this.scale;
       const dx = world.x - this.lightSource.x;
       const dy = world.y - this.lightSource.y;
       return dx * dx + dy * dy <= r * r;
@@ -1374,7 +1399,7 @@
         const settingsRef = (window.Vectura && window.Vectura.SETTINGS) || SETTINGS || {};
         let overControlOrHandle = false;
         if (tool === 'direct' || (tool === 'pen' && this.penMode !== 'draw')) {
-          const control = this.hitDirectControl(world);
+          const control = this.hitDirectControl(world, e && e.pointerType);
           if (control) {
             overControlOrHandle = true;
             const data = control.auxIdx >= 0
@@ -1393,7 +1418,7 @@
             ? this.getSelectionBounds(activeLayers, this.tempTransform)
             : null;
           if (bounds && !activeLayers.some((l) => this.isLayerLocked?.(l.id))) {
-            const handle = this.hitHandle(sx, sy, bounds);
+            const handle = this.hitHandle(sx, sy, bounds, { pointerType: e.pointerType || this.lastPointerType });
             if (handle && !handle.startsWith('rotate')) {
               overControlOrHandle = true;
               chipPoint = this.getHandlePoint(handle, bounds);
@@ -1493,7 +1518,7 @@
       if (this.fillLoupeEl) this.fillLoupeEl.style.display = 'none';
     }
 
-    showFillLoupe(clientX, clientY) {
+    showFillLoupe(clientX, clientY, pointerType) {
       const fillTools = ['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'];
       if (!fillTools.includes(this.activeTool)) {
         this.hideFillLoupe();
@@ -1558,17 +1583,24 @@
       const magW = this.fillLoupeMagEl?.width || 96;
       const magH = this.fillLoupeMagEl?.height || 96;
       const GAP = 18;
+      // TUX-022: a finger covers ~44 px around the contact point, so the touch magnifier sits
+      // above it with a larger gap (or below when there is no room above). Mouse is unchanged.
+      const TOUCH_GAP = 48; // >= the radius of a 44 px fingertip disc
+      const deferred = pointerType === 'touch' || pointerType === 'pen';
       const spaceRight = canvasRect.right - clientX;
       const spaceLeft = clientX - canvasRect.left;
       const spaceBelow = canvasRect.bottom - clientY;
       const spaceAbove = clientY - canvasRect.top;
       const placeRight = spaceRight >= magW + GAP || spaceRight >= spaceLeft;
-      const placeBelow = spaceBelow >= magH + GAP || spaceBelow >= spaceAbove;
+      const placeBelow = deferred
+        ? !(spaceAbove >= magH + TOUCH_GAP)
+        : (spaceBelow >= magH + GAP || spaceBelow >= spaceAbove);
+      const vGap = deferred ? TOUCH_GAP : GAP;
       const magEl = this.fillLoupeMagEl;
       if (magEl) {
         magEl.style.left = placeRight ? `${GAP}px` : `${-magW - GAP}px`;
         magEl.style.right = '';
-        magEl.style.top = placeBelow ? `${GAP}px` : `${-magH - GAP}px`;
+        magEl.style.top = placeBelow ? `${vGap}px` : `${-magH - vGap}px`;
       }
     }
 
@@ -1846,20 +1878,7 @@
     }
 
     getModifierState(e = {}) {
-      const mods = SETTINGS.touchModifiers || {};
-      const isTouchPointer = e.pointerType && e.pointerType !== 'mouse';
-      const touchShift = isTouchPointer && Boolean(mods.shift);
-      const touchAlt = isTouchPointer && Boolean(mods.alt);
-      const touchMeta = isTouchPointer && Boolean(mods.meta);
-      const touchCtrl = isTouchPointer && Boolean(mods.ctrl);
-      const touchPan = isTouchPointer && Boolean(mods.pan);
-      return {
-        shift: Boolean(e.shiftKey || touchShift),
-        alt: Boolean(e.altKey || touchAlt),
-        meta: Boolean(e.metaKey || e.ctrlKey || touchMeta || touchCtrl),
-        ctrl: Boolean(e.ctrlKey || touchCtrl),
-        pan: Boolean(touchPan),
-      };
+      return window.Vectura.InputModifiers.readModifiers(e);
     }
 
     wantsPan(e, modifiers = this.getModifierState(e)) {
@@ -1871,32 +1890,61 @@
     }
 
     updateTouchPointer(e) {
-      if (!this.isTouchPointer(e)) return;
-      this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      this.touchArbiter.update(e);
     }
 
+    // Returns the arbiter's multi-finger tap classification on the last lift, else null.
     removeTouchPointer(e) {
-      if (!this.isTouchPointer(e)) return;
-      this.touchPointers.delete(e.pointerId);
+      return this.touchArbiter.release(e);
     }
 
-    canStartTouchGesture() {
-      return !(
-        this.isLayerDrag ||
-        this.isSelecting ||
-        this.isLassoSelecting ||
-        this.isScissor ||
-        this.shapeCornerDrag ||
-        this.directDrag ||
-        this.isDirectMarquee ||
-        this.isPenDragging ||
-        this.isLightDrag
-      );
+    // TUX-020: the single view-scale clamp. Pinch, wheel and the HUD buttons all use it.
+    clampViewScale(next) {
+      const view = (window.Vectura && window.Vectura.VIEW) || {};
+      const lo = Number.isFinite(view.minScale) && view.minScale > 0 ? view.minScale : 0.1;
+      const hi = Number.isFinite(view.maxScale) && view.maxScale > lo ? view.maxScale : 1000;
+      const n = Number(next);
+      if (!Number.isFinite(n)) return lo;
+      return Math.max(lo, Math.min(n, hi));
+    }
+
+    // Zoom about a canvas-local point (default: the canvas centre). A user zoom: the view is no
+    // longer "auto", so a later resize keeps it.
+    zoomBy(factor, anchor) {
+      if (!this.ready || !this.canvas) return false;
+      const rect = this.canvas.getBoundingClientRect();
+      const ax = anchor && Number.isFinite(anchor.x) ? anchor.x : rect.width / 2;
+      const ay = anchor && Number.isFinite(anchor.y) ? anchor.y : rect.height / 2;
+      const wx = (ax - this.offsetX) / this.scale;
+      const wy = (ay - this.offsetY) / this.scale;
+      const next = this.clampViewScale(this.scale * factor);
+      this.offsetX = ax - wx * next;
+      this.offsetY = ay - wy * next;
+      this.scale = next;
+      this.userHasManipulated = true;
+      this.draw();
+      return true;
+    }
+
+    // Fit the artboard to the canvas. This is the "auto" state (userHasManipulated false).
+    fitToView() {
+      if (!this.ready || !this.canvas) return false;
+      this.center();
+      this.userHasManipulated = false;
+      this.draw();
+      return true;
     }
 
     getTouchGesturePair() {
       if (this.touchPointers.size < 2) return null;
       const points = Array.from(this.touchPointers.values());
+      const g = this.touchGesture;
+      if (g && g.ids) {
+        // The pinch belongs to the two fingers that started it; a third finger never joins.
+        const a = this.touchPointers.get(g.ids[0]);
+        const b = this.touchPointers.get(g.ids[1]);
+        return a && b ? [a, b] : null;
+      }
       return [points[0], points[1]];
     }
 
@@ -1908,6 +1956,10 @@
       const distance = Math.max(8, Math.hypot(b.x - a.x, b.y - a.y));
       this.cancelActiveInteractionsForTouchGesture();
       this.touchGesture = {
+        ids: [a.id, b.id],
+        startCenter: center,
+        // TUX-020: nothing moves until the span or centroid change passes the tap slop.
+        live: false,
         startDistance: distance,
         startScale: this.scale,
         worldCenter: {
@@ -1924,11 +1976,20 @@
       const [a, b] = pair;
       const center = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
       const distance = Math.max(8, Math.hypot(b.x - a.x, b.y - a.y));
-      const ratio = distance / Math.max(1e-6, this.touchGesture.startDistance);
-      const nextScale = Math.max(0.1, Math.min(this.touchGesture.startScale * ratio, 20));
+      const g = this.touchGesture;
+      if (!g.live) {
+        const slop = window.Vectura.TouchGestureArbiter.readConfig().TAP_SLOP_PX;
+        const spanMoved = Math.abs(distance - g.startDistance);
+        const centreMoved = Math.hypot(center.x - g.startCenter.x, center.y - g.startCenter.y);
+        if (spanMoved < slop && centreMoved < slop) return false;
+        g.live = true;
+      }
+      const ratio = distance / Math.max(1e-6, g.startDistance);
+      const nextScale = this.clampViewScale(g.startScale * ratio);
       this.scale = nextScale;
-      this.offsetX = center.x - this.touchGesture.worldCenter.x * nextScale;
-      this.offsetY = center.y - this.touchGesture.worldCenter.y * nextScale;
+      this.offsetX = center.x - g.worldCenter.x * nextScale;
+      this.offsetY = center.y - g.worldCenter.y * nextScale;
+      this.userHasManipulated = true;
       this.draw();
       return true;
     }
@@ -1938,45 +1999,362 @@
       this.updateCursor();
     }
 
-    clearTouchHold() {
-      if (this.touchHoldTimer) {
-        clearTimeout(this.touchHoldTimer);
-        this.touchHoldTimer = null;
-      }
-      this.touchHoldPending = null;
-      this.touchHoldStartClient = null;
+    // TUX-019: touch drag slop in CSS client px (config: UI_CONSTANTS.TOUCH_GESTURE.touchDragSlopPx).
+    _touchDragSlopPx() {
+      return window.Vectura.TouchGestureArbiter.readConfig().touchDragSlopPx;
     }
 
+    // Public interface for the long-press lane (TUX-034): set when a touch drag crosses the
+    // slop, cleared on lift. A pending canvas long-press must cancel when this goes true.
+    _markTouchSlopCrossed() {
+      if (this.touchSlopCrossed) return;
+      this.touchSlopCrossed = true;
+      if (typeof document !== 'undefined' && typeof CustomEvent === 'function') {
+        try { document.dispatchEvent(new CustomEvent('vectura:touch-slop-crossed')); } catch (_e) { /* noop */ }
+      }
+    }
+
+    // Clears every interaction flag (the single list lives in the arbiter) plus the
+    // companion state those interactions leave behind. Does NOT restore document state:
+    // rollback runs the cancel paths and the snapshot restore first.
     cancelActiveInteractionsForTouchGesture() {
-      this.clearTouchHold();
-      this.isPan = false;
-      this.isLayerDrag = false;
+      this._touchDragPourId = null;
+      this.touchSlopCrossed = false;
+      const flags = window.Vectura.TouchGestureArbiter.INTERACTION_FLAGS;
+      flags.forEach((name) => { this[name] = name.startsWith('is') ? false : null; });
       this._clearMorphDrag();
       this.dragMode = null;
       this.activeHandle = null;
       this.tempTransform = null;
       this.snap = null;
       this.guides = null;
-      this.isLightDrag = false;
-      this.isPenDragging = false;
-      this.isPenCloseDragging = false;
       this.penDragAnchor = null;
       this.penDragStart = null;
       this.penDragMirrorLock = null;
-      this.shapeCornerDrag = null;
-      this.freeformCornerDrag = null;
-      this.directDrag = null;
-      this.isScissor = false;
       this.scissorStart = null;
       this.scissorEnd = null;
-      this.isSelecting = false;
       this.selectionRect = null;
       this.selectionStart = null;
-      this.isLassoSelecting = false;
       this.lassoPath = null;
-      this.isDirectMarquee = false;
       this.directMarqueeStart = null;
       this.directMarqueeRect = null;
+      this._marqueeAdditive = false;
+      this._marqueeBaseIds = null;
+      this._sceneMarqueePending = null;
+      this._pendingSingleSelect = null;
+      this._areaResize = null;
+      // TUX-022: a gesture start / cancel drops the armed fill pour and its preview.
+      this._clearFillDeferred();
+    }
+
+    // ── TUX-017: second-finger arbitration ────────────────────────────────────
+    // Targeted first-touch snapshot. No captureState in the production path.
+    _takeTouchSnapshot() {
+      const app = this.app;
+      const te = app && app.textEdit;
+      const ss = this.sceneSelection;
+      const ds = this.directSelection;
+      const draft = this.penDraft;
+      return {
+        selectedLayerIds: new Set(this.selectedLayerIds),
+        selectedLayerId: this.selectedLayerId,
+        keyObjectId: this.keyObjectId,
+        activeLayerId: this.engine ? this.engine.activeLayerId : null,
+        sceneSelection: ss ? JSON.stringify(ss) : null,
+        directSelection: ds || null,
+        directSelectionAnchors: ds && Array.isArray(ds.anchors) ? this.cloneAnchors(ds.anchors) : null,
+        directSelectionMeta: ds && ds.meta ? { ...ds.meta } : null,
+        directSelectedIndices: ds && ds.selectedIndices ? new Set(ds.selectedIndices) : null,
+        // Multi-path anchor selection: the extra paths live in directAuxSelections.
+        directAux: (this.directAuxSelections || []).map((a) => ({
+          ...a,
+          anchors: Array.isArray(a.anchors) ? this.cloneAnchors(a.anchors) : a.anchors,
+          meta: a.meta ? { ...a.meta } : a.meta,
+          selectedIndices: a.selectedIndices ? new Set(a.selectedIndices) : a.selectedIndices,
+        })),
+        groupEditMode: this.groupEditMode ? { ...this.groupEditMode } : null,
+        activeTool: this.activeTool,
+        penDraft: draft ? JSON.parse(JSON.stringify(draft)) : null,
+        penLastClick: this._penLastClick ? { ...this._penLastClick } : null,
+        historyLen: app && Array.isArray(app.history) ? app.history.length : 0,
+        // Entry identities (not just the length): pushHistory shift()s at maxHistory, so the
+        // length does not change when a first-move push happens at the cap.
+        history: app && Array.isArray(app.history) ? app.history.slice() : null,
+        redoStack: app ? app.redoStack : null,
+        textLayerId: te && te.isActive && te.isActive() && te.getActiveLayer() ? te.getActiveLayer().id : null,
+      };
+    }
+
+    // Defer a destructive one-shot (touch only) so a second finger can still cancel it.
+    //   when 'slop'   run on the first move past the slop, or at pointerup
+    //   when 'window' run when the arbitration window closes (dt AND travel met), or at pointerup
+    _deferTouch(fn, when = 'window') {
+      const ids = [...this.touchPointers.keys()];
+      this._touchDeferred = { fn, when, pointerId: ids.length ? ids[0] : null };
+    }
+
+    _flushTouchDeferred() {
+      const d = this._touchDeferred;
+      if (!d) return;
+      this._touchDeferred = null;
+      d.fn();
+    }
+
+    _maybeFlushTouchDeferred(e) {
+      const d = this._touchDeferred;
+      if (!d || d.pointerId !== e.pointerId) return;
+      const rec = this.touchArbiter.get(e.pointerId);
+      if (!rec) return;
+      const cfg = window.Vectura.TouchGestureArbiter.readConfig();
+      const slopMet = rec.maxTravel >= cfg.ARBITRATION_SLOP_PX;
+      const timeMet = (Number(e.timeStamp) || 0) - rec.downTime >= cfg.ARBITRATION_MS;
+      if (d.when === 'slop' ? slopMet : (slopMet && timeMet)) this._flushTouchDeferred();
+    }
+
+    _cancelRotation3DDrag() {
+      const drag = this.rotation3DDrag;
+      if (!drag) return false;
+      this.rotation3DDrag = null;
+      this.hideDragTooltip();
+      if (this._sceneDragRegenRaf != null) {
+        const cancel = typeof cancelAnimationFrame === 'function' ? cancelAnimationFrame : clearTimeout;
+        cancel(this._sceneDragRegenRaf);
+        this._sceneDragRegenRaf = null;
+      }
+      this._sceneDragRegenLayerId = null;
+      const layer = this.engine.layers.find((l) => l.id === drag.layerId);
+      if (layer && drag.moved) {
+        const restore = drag.type === 'roll' ? { roll: drag.startRoll }
+          : drag.type === 'yaw' ? { yaw: drag.startYaw }
+            : drag.type === 'pitch' ? { pitch: drag.startPitch }
+              : { yaw: drag.startYaw, pitch: drag.startPitch };
+        this._write3DRotation(layer, drag.spec, restore);
+        if (drag.historyPushed && this.app && Array.isArray(this.app.history) && this.app.history.length > 1) {
+          this.app.history.pop();
+          this.app._notifyHistory?.();
+        }
+        this.engine.generate(layer.id);
+        this.app?.ui?.buildControls?.();
+        this.app?.ui?.updateFormula?.();
+      }
+      this.updateCursor();
+      this.draw();
+      return true;
+    }
+
+    _cancelModifierDrag() {
+      const drag = this.modifierDrag;
+      if (!drag) return false;
+      this.modifierDrag = null;
+      const mirror = drag.guide && drag.guide.mirror;
+      if (mirror) {
+        mirror.angle = drag.startAngle;
+        mirror.xShift = drag.startShiftX;
+        mirror.yShift = drag.startShiftY;
+        mirror.centerX = drag.startCenterX;
+        mirror.centerY = drag.startCenterY;
+        mirror.radius = drag.startRadius;
+        mirror.rotation = drag.startRotation;
+        if (this.onComputeDisplayGeometry) this.onComputeDisplayGeometry();
+        else this.engine.computeAllDisplayGeometry();
+      }
+      this.hideDragTooltip();
+      return true;
+    }
+
+    // Roll the first finger's action back completely: no selection change, no edit, no
+    // history entry. Existing cancel paths run first (same priority as the Escape handler),
+    // then the targeted snapshot is restored (only where it differs, to avoid UI cascades).
+    // TUX-021: executes the arbiter's pen-preempts-touch decision. Rolls every palm side effect
+    // back by snapshot (no history), stops a palm pinch/pan and restores the pre-gesture view
+    // (delegated default: Jay may override), and frees the canvas for the pen pointerdown.
+    _preemptTouchForPen(decision) {
+      const palmId = this.activePointerId;
+      if (decision.stopGesture) {
+        this.stopTouchGesture();
+        const snap = this._tapViewSnap;
+        if (decision.restoreView && snap) {
+          this.scale = snap.scale;
+          this.offsetX = snap.offsetX;
+          this.offsetY = snap.offsetY;
+          this.userHasManipulated = snap.userHasManipulated;
+        }
+      }
+      this._tapViewSnap = null;
+      if (palmId !== null && this.canvas && this.canvas.releasePointerCapture) {
+        try {
+          if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(palmId)) this.canvas.releasePointerCapture(palmId);
+        } catch (err) { /* capture already gone */ }
+      }
+      this._rollbackFirstTouchAction();
+      this.touchSlopCrossed = false;
+    }
+
+    _rollbackFirstTouchAction() {
+      const snap = this._touchSnapshot;
+      this._touchSnapshot = null;
+      this._abortToSnapshot(snap);
+    }
+
+    // TUX-018: abort the active interaction of ANY pointer type and restore the state that
+    // the pointerdown mark captured. One function for pointercancel; TUX-017's rollback
+    // shares the same body (_abortToSnapshot). Mouse and touch abort the same way. Escape
+    // keeps its own narrower ladder (_onDragCancelKey) so pen and marquee Escape semantics
+    // stay as they were. A cancel never touches the redo stack and never adds a history entry.
+    abortActiveInteraction(reason = 'abort') {
+      const snap = this._gestureMark;
+      this._gestureMark = null;
+      this._touchSnapshot = null;
+      this._abortToSnapshot(snap);
+      return reason;
+    }
+
+    _abortToSnapshot(snap) {
+      this._touchDragPourId = null;
+      this._touchDeferred = null; // deferred one-shots never ran, so there is nothing to undo
+      const Arb = window.Vectura.TouchGestureArbiter;
+      Arb.CANCEL_PATHS.forEach((name) => {
+        if (typeof this[name] === 'function') this[name]();
+      });
+      this._cancelRotation3DDrag();
+      this._cancelModifierDrag();
+      this.cancelActiveInteractionsForTouchGesture();
+      this._paintBucketClearHover();
+      this.patternFillPreviewPolygon = null;
+      this.hideFillLoupe?.();
+      this.hideDragTooltip();
+      this.clearMaskPreview();
+      this.activePointerId = null;
+      this.activePointerType = null;
+      if (snap) this._restoreTouchSnapshot(snap);
+      this.updateCursor();
+      this.draw();
+    }
+
+    onPointerCancel(e = {}) {
+      if (!this.ready || !this.canvas) return;
+      const id = e.pointerId;
+      // TUX-021: a cancel of an ignored palm must not abort the pen interaction.
+      if (this.touchArbiter.releaseIgnored(e)) return;
+      this.touchArbiter.penRelease(e);
+      const tracked = this.isTouchPointer(e) && this.touchPointers.has(id);
+      // A cancelled finger of a pinch/pan ends the gesture and keeps the view. The arbiter
+      // latch holds until every touch pointer has gone, so no one-finger action starts.
+      if (tracked && (this.touchGesture || this.touchArbiter.gestureActive)) {
+        this.removeTouchPointer(e);
+        if (this.touchGesture && this.touchPointers.size < 2) this.stopTouchGesture();
+        if (id === this.activePointerId) this._releaseActivePointer(e);
+        this.updateCursor();
+        this.draw();
+        return;
+      }
+      // Foreign cancels (panel controls, other pointers) must not abort the canvas drag.
+      if (id !== this.activePointerId && !tracked) return;
+      if (tracked && this.activePointerId !== null && id !== this.activePointerId) {
+        this.removeTouchPointer(e);
+        return;
+      }
+      this.abortActiveInteraction('pointercancel');
+      this.removeTouchPointer(e);
+      this._releaseActivePointer(e);
+    }
+
+    _restoreTouchSnapshot(snap) {
+      const app = this.app;
+      // 1. History: an edit that pushed its undo point on first movement (anchor, corner and
+      //    pen-anchor drags) is undone from the earliest entry that was not there before the
+      //    gesture (push-before-change, so it IS the pre-edit state). New entries are found by
+      //    identity because at maxHistory the oldest entry is shifted off and the length stays
+      //    the same. The old entries and the redo stack are then put back as they were.
+      if (app && Array.isArray(app.history) && Array.isArray(snap.history)) {
+        const known = new Set(snap.history);
+        const pushed = app.history.find((h) => !known.has(h));
+        const same = app.history.length === snap.history.length
+          && app.history.every((h, i) => h === snap.history[i]);
+        if (pushed) {
+          app.isRestoring = true;
+          try { app.applyState(pushed); } finally { app.isRestoring = false; }
+        }
+        if (!same) {
+          app.history.length = 0;
+          snap.history.forEach((h) => app.history.push(h));
+        }
+        if (pushed || !same) app.redoStack = snap.redoStack;
+        app._notifyHistory?.();
+      }
+      // 2. Pen draft and double-click timing.
+      this.penDraft = snap.penDraft;
+      this._penLastClick = snap.penLastClick;
+      this._penJustCommitted = null;
+      // 3. Text edit session started by this gesture.
+      const te = app && app.textEdit;
+      if (te && te.isActive && te.isActive()) {
+        const active = te.getActiveLayer();
+        if (!snap.textLayerId || (active && active.id !== snap.textLayerId)) te.end();
+      }
+      // 4. Tool switched by this gesture (double-tap on text enters Type).
+      if (snap.activeTool && this.activeTool !== snap.activeTool) {
+        if (app && app.ui && typeof app.ui.setActiveTool === 'function') app.ui.setActiveTool(snap.activeTool);
+        else this.setTool(snap.activeTool);
+      }
+      // 5. Isolation mode.
+      if (JSON.stringify(this.groupEditMode) !== JSON.stringify(snap.groupEditMode)) {
+        this.groupEditMode = snap.groupEditMode;
+        this._emitIsolationChanged();
+      }
+      // 6. Layer selection, only if it differs.
+      const sameIds = this.selectedLayerIds.size === snap.selectedLayerIds.size
+        && [...snap.selectedLayerIds].every((id) => this.selectedLayerIds.has(id));
+      if (!sameIds || this.selectedLayerId !== snap.selectedLayerId) {
+        this.setSelection([...snap.selectedLayerIds], snap.selectedLayerId);
+      }
+      this.keyObjectId = snap.keyObjectId;
+      if (this.engine && this.engine.activeLayerId !== snap.activeLayerId) this.engine.activeLayerId = snap.activeLayerId;
+      // 7. Scene sub-selection, only if it differs.
+      const sceneNow = this.sceneSelection ? JSON.stringify(this.sceneSelection) : null;
+      if (sceneNow !== snap.sceneSelection) {
+        this.setSceneSelection(snap.sceneSelection ? JSON.parse(snap.sceneSelection) : null);
+      }
+      // 8. Direct selection (reference + anchors + selected indices).
+      if (snap.directSelection) {
+        this.directSelection = snap.directSelection;
+        if (snap.directSelectionAnchors) this.directSelection.anchors = snap.directSelectionAnchors;
+        if (snap.directSelectionMeta) this.directSelection.meta = snap.directSelectionMeta;
+        if (snap.directSelectedIndices) this.directSelection.selectedIndices = snap.directSelectedIndices;
+      } else if (this.directSelection) {
+        this.directSelection = null;
+        this.directAuxSelections = [];
+      }
+      // 9. Aux paths of a multi-path Direct selection (setSelection / setDirectSelection and
+      //    anchor promotion clear them), restored last so it holds for both branches of step 8.
+      this.directAuxSelections = (snap.directAux || []).map((a) => ({
+        ...a,
+        anchors: Array.isArray(a.anchors) ? this.cloneAnchors(a.anchors) : a.anchors,
+        meta: a.meta ? { ...a.meta } : a.meta,
+        selectedIndices: a.selectedIndices ? new Set(a.selectedIndices) : a.selectedIndices,
+      }));
+    }
+
+    // Commit the first finger's action at its current state. This runs the SAME finalize
+    // code as pointerup (it does not remove the finger from the map), so the action adds
+    // exactly one history entry.
+    _commitFirstTouchAction(firstId) {
+      const rec = this.touchArbiter.get(firstId);
+      this._touchSnapshot = null;
+      this._flushTouchDeferred();
+      const ev = {
+        pointerId: firstId,
+        pointerType: 'touch',
+        clientX: rec ? rec.x : 0,
+        clientY: rec ? rec.y : 0,
+        button: 0,
+        buttons: 0,
+        cancelable: false,
+        preventDefault() {},
+      };
+      this._finishPointerInteraction(ev);
+      this.activePointerId = null;
+      this.activePointerType = null;
     }
 
     snapPenAngle(from, to) {
@@ -2077,17 +2455,24 @@
     handlePenDown(world, e) {
       if (!world) return;
       const modifiers = this.getModifierState(e);
-      const closeTol = 12 / this.scale;
+      // TUX-024: radii are screen px per pointer type. Only a finger gets the coarse ones.
+      const tolFn = window.Vectura.hitTolerance;
+      const closeTol = tolFn('penCloseDouble', e.pointerType) / this.scale;
+
+      // A finger that double-taps the tap that just closed or finished a path must not start a
+      // new one-anchor draft. The swallow is touch only and one shot.
+      const justDone = this._penJustCommitted;
+      this._penJustCommitted = null;
+      if (!this.penDraft && justDone && e.pointerType === 'touch' && justDone.pointerType === 'touch'
+        && this._isDoubleTap(justDone, e).isDouble) {
+        this._penLastClick = null;
+        return;
+      }
 
       // Manual double-click detection — pointerdown does not reliably carry e.detail > 1
-      const now = performance.now();
-      const prev = this._penLastClick;
-      const screenX = e.clientX ?? 0;
-      const screenY = e.clientY ?? 0;
-      const isDoubleClick = prev &&
-        (now - prev.time) < 400 &&
-        Math.hypot(screenX - prev.x, screenY - prev.y) < 8;
-      this._penLastClick = { time: now, x: screenX, y: screenY };
+      const tap = this._isDoubleTap(this._penLastClick, e);
+      const isDoubleClick = tap.isDouble;
+      this._penLastClick = tap.record;
 
       if (!this.penDraft) {
         this.penDraft = { anchors: [this.createAnchor(this.snapPointToGrid(world))], closed: false };
@@ -2118,7 +2503,7 @@
       let next = this.snapPointToGrid({ x: world.x, y: world.y });
       if (modifiers.shift) next = this.snapPenAngle(lastAnchor, next);
       const distToStart = Math.hypot(next.x - first.x, next.y - first.y);
-      const snapTol = 5 / this.scale;
+      const snapTol = tolFn('penClose', e.pointerType) / this.scale;
       const isSnapClose = !modifiers.meta && anchors.length >= 2 &&
         Math.hypot(world.x - first.x, world.y - first.y) <= snapTol;
 
@@ -2138,8 +2523,20 @@
         this.isPenCloseDragging = true;
         this.penDragAnchor = 0;
         this.penDragStart = { x: first.x, y: first.y };
+        // Close-drag slop and handle are measured from where the pointer touched down, not from the
+        // start anchor: a close tap lands up to 20 px (touch) from it.
+        this.penCloseDownWorld = { x: world.x, y: world.y };
         this.penDragMirrorLock = null;
         this.draw();
+        return;
+      }
+      if (isDoubleClick) {
+        // The first click of the pair already placed the last anchor. Finish with the path as it
+        // is; adding the second click would leave a duplicate anchor on top of it.
+        this.isPenDragging = false;
+        this.penDragAnchor = null;
+        this.penDragStart = null;
+        this.commitPenPath(e);
         return;
       }
       const anchor = this.createAnchor(next);
@@ -2149,14 +2546,12 @@
       this.penDragAnchor = anchors.length - 1;
       this.penDragStart = next;
       this.penDragMirrorLock = null;
-      if (isDoubleClick) {
-        this.commitPenPath();
-        return;
-      }
       this.draw();
     }
 
-    commitPenPath() {
+    // `e` (optional) is the pointer event that ended the path. A touch end is remembered so the
+    // finger's own follow-up tap does not start a new draft (see handlePenDown).
+    commitPenPath(e) {
       const anchors = this.penDraft?.anchors || [];
       if (!this.penDraft || anchors.length < 2) {
         this.cancelPenPath();
@@ -2194,6 +2589,9 @@
       this.penDragStart = null;
       this.penDragMirrorLock = null;
       this._penLastClick = null;
+      this._penJustCommitted = e && e.pointerType === 'touch'
+        ? this._isDoubleTap(null, e).record
+        : null;
       this.penSnapToOrigin = false;
       this.draw();
     }
@@ -2207,6 +2605,7 @@
       this.penDragStart = null;
       this.penDragMirrorLock = null;
       this._penLastClick = null;
+      this._penJustCommitted = null;
       this.penSnapToOrigin = false;
       this.penPurpose = 'draw';
       this.draw();
@@ -2467,13 +2866,20 @@
       }));
     }
 
-    hitShapeCornerHandle(world, layer, pathIndex = 0) {
+    hitShapeCornerHandle(world, layer, pathIndex = 0, pointerType) {
       const handles = this.getShapeCornerHandles(layer, pathIndex);
-      const tolSq = Math.pow(7 / this.scale, 2);
+      const tolSq = Math.pow(window.Vectura.hitTolerance('cornerWidget', pointerType) / this.scale, 2);
+      const touch = pointerType === 'touch';
+      let best = null;
+      let bestSq = Infinity;
       for (let i = 0; i < handles.length; i++) {
-        if (this.distanceToPointSq(world, handles[i].point) <= tolSq) return handles[i];
+        const dSq = this.distanceToPointSq(world, handles[i].point);
+        if (dSq > tolSq) continue;
+        // Mouse and pen keep first-match. A finger's wide radius needs the nearest widget.
+        if (!touch) return handles[i];
+        if (dSq < bestSq) { bestSq = dSq; best = handles[i]; }
       }
-      return null;
+      return best;
     }
 
     // Vertex indices whose corner is part of the current direct multi-selection.
@@ -2735,14 +3141,37 @@
     // reliably carry e.detail > 1 (same rationale as the pen tool's detector).
     // Keyed per-widget so two quick clicks on different corners don't count.
     _isCornerWidgetDoubleClick(e, key) {
-      const now = performance.now();
       const prev = this._cornerWidgetLastClick;
-      const x = e.clientX ?? 0;
-      const y = e.clientY ?? 0;
-      const isDouble = Boolean(prev && prev.key === key &&
-        (now - prev.time) < 400 && Math.hypot(x - prev.x, y - prev.y) < 8);
-      this._cornerWidgetLastClick = isDouble ? null : { key, time: now, x, y };
-      return isDouble;
+      const tap = this._isDoubleTap(prev && prev.key === key ? prev : null, e);
+      this._cornerWidgetLastClick = tap.isDouble ? null : { ...tap.record, key };
+      return tap.isDouble;
+    }
+
+    // TUX-024: one double-click / double-tap detector. pointerdown does not reliably carry
+    // e.detail > 1, so each tool keeps its previous tap record and asks here.
+    //  - touch: e.timeStamp (the event time, not the handler time), window and distance inclusive.
+    //  - mouse, pen and anything else: performance.now(), exclusive, the exact pre-TUX-024 semantics.
+    // The record carries the pointer class, so a touch tap never pairs with a mouse click.
+    // Returns { isDouble, record }; the caller stores `record` as its next `prev`.
+    _isDoubleTap(prev, e) {
+      const touch = Boolean(e) && e.pointerType === 'touch';
+      const tol = window.Vectura.hitTolerance;
+      const kind = touch ? 'touch' : 'mouse';
+      const time = touch && typeof e.timeStamp === 'number' ? e.timeStamp : performance.now();
+      const x = (e && e.clientX) ?? 0;
+      const y = (e && e.clientY) ?? 0;
+      const record = { time, x, y, pointerType: touch ? 'touch' : 'pointer' };
+      let isDouble = false;
+      if (prev && prev.pointerType === record.pointerType) {
+        const dt = time - prev.time;
+        const dist = Math.hypot(x - prev.x, y - prev.y);
+        const maxMs = tol('doubleTapMs', kind);
+        const maxDist = tol('doubleTapDist', kind);
+        isDouble = touch
+          ? dt >= 0 && dt <= maxMs && dist <= maxDist
+          : dt < maxMs && dist < maxDist;
+      }
+      return { isDouble, record };
     }
 
     // Corner indices a Live Corner edit applies to, mirroring drag scoping:
@@ -3072,14 +3501,20 @@
       return result;
     }
 
-    hitFreeformCornerHandle(world) {
+    hitFreeformCornerHandle(world, pointerType) {
       const handles = this._getFreeformCornerHandles();
-      const tolSq = Math.pow(7 / this.scale, 2);
+      const tolSq = Math.pow(window.Vectura.hitTolerance('cornerWidget', pointerType) / this.scale, 2);
+      const touch = pointerType === 'touch';
+      let best = null;
+      let bestSq = Infinity;
       for (const h of handles) {
         const dx = world.x - h.worldPoint.x, dy = world.y - h.worldPoint.y;
-        if (dx * dx + dy * dy <= tolSq) return h;
+        const dSq = dx * dx + dy * dy;
+        if (dSq > tolSq) continue;
+        if (!touch) return h;
+        if (dSq < bestSq) { bestSq = dSq; best = h; }
       }
-      return null;
+      return best;
     }
 
     // Fold a baked live-corner pair (start at `i`, end at `i+1`) back into its
@@ -3539,6 +3974,15 @@
       return pushed;
     }
 
+    // pointercancel: restore the pre-drag value and push no history entry.
+    abortShapePropsEdit() {
+      const pushed = Boolean(this._shapePropsEdit && this._shapePropsEdit.historyPushed);
+      this._shapePropsEdit = null;
+      if (pushed && this.onDirectEditAbort) this.onDirectEditAbort();
+      this.draw();
+      return pushed;
+    }
+
     cancelScissor() {
       if (!this.isScissor) return;
       this.isScissor = false;
@@ -3701,61 +4145,74 @@
       return { anchors, closed };
     }
 
+    // Path hit for the Direct tool (and pen anchor edits). TUX-024: reach is HIT_TOLERANCE.pathPick (2.5 px mouse and
+    // pen, 22 px touch, nearest wins). Locked rule, touch and mouse: locked geometry within the MOUSE reach of the
+    // point blocks the pick (returns null); the wide touch reach looks at unlocked layers only.
     findPathHitAtPoint(world, options = {}) {
       if (!world) return null;
       const { restrictToLayerId = null } = options;
-      const layers = this.engine.layers.slice().reverse();
-      let best = null;
-      let bestDistSq = Infinity;
-      layers.forEach((layer) => {
-        if (!layer || layer.isGroup || !layer.visible) return;
-        if (restrictToLayerId && layer.id !== restrictToLayerId) return;
-        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
-        const tol = Math.max(2.5 / this.scale, stroke * 2);
-        const tolSq = tol * tol;
-        this.getInteractionPaths(layer).forEach((path, pathIndex) => {
-          if (path && path.meta && path.meta.kind === 'circle') {
-            const cx = path.meta.cx ?? path.meta.x ?? 0;
-            const cy = path.meta.cy ?? path.meta.y ?? 0;
-            const r = path.meta.r ?? Math.max(path.meta.rx ?? 0, path.meta.ry ?? 0);
-            const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
-            const dSq = dist * dist;
-            if (dSq <= tolSq && dSq < bestDistSq) {
-              bestDistSq = dSq;
-              best = { layer, pathIndex, path, segmentIndex: 0, point: { x: world.x, y: world.y }, distSq: dSq };
+      const pointerType = options.pointerType || this.lastPointerType;
+      const tolPx = (type) => window.Vectura.hitTolerance('pathPick', type);
+      const scan = (px, lockedMode) => {
+        const layers = this.engine.layers.slice().reverse();
+        let best = null;
+        let bestDistSq = Infinity;
+        layers.forEach((layer) => {
+          if (!layer || layer.isGroup || !layer.visible) return;
+          if (restrictToLayerId && layer.id !== restrictToLayerId) return;
+          const locked = Boolean(this.isLayerLocked?.(layer.id));
+          if (lockedMode === 'unlocked' && locked) return;
+          const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+          const tol = Math.max(px / this.scale, stroke * 2);
+          const tolSq = tol * tol;
+          this.getInteractionPaths(layer).forEach((path, pathIndex) => {
+            if (path && path.meta && path.meta.kind === 'circle') {
+              const cx = path.meta.cx ?? path.meta.x ?? 0;
+              const cy = path.meta.cy ?? path.meta.y ?? 0;
+              const r = path.meta.r ?? Math.max(path.meta.rx ?? 0, path.meta.ry ?? 0);
+              const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
+              const dSq = dist * dist;
+              if (dSq <= tolSq && dSq < bestDistSq) {
+                bestDistSq = dSq;
+                best = { layer, pathIndex, path, segmentIndex: 0, point: { x: world.x, y: world.y }, distSq: dSq };
+              }
+              return;
             }
-            return;
-          }
-          if (!Array.isArray(path) || path.length < 2) return;
-          for (let i = 0; i < path.length - 1; i++) {
-            const a = path[i];
-            const b = path[i + 1];
-            const dx = b.x - a.x;
-            const dy = b.y - a.y;
-            const lenSq = dx * dx + dy * dy;
-            if (lenSq < 1e-9) continue;
-            const t = Math.max(0, Math.min(1, ((world.x - a.x) * dx + (world.y - a.y) * dy) / lenSq));
-            const px = a.x + t * dx;
-            const py = a.y + t * dy;
-            const ox = world.x - px;
-            const oy = world.y - py;
-            const dSq = ox * ox + oy * oy;
-            if (dSq <= tolSq && dSq < bestDistSq) {
-              bestDistSq = dSq;
-              best = {
-                layer,
-                pathIndex,
-                path,
-                segmentIndex: i,
-                segmentT: t,
-                point: { x: px, y: py },
-                distSq: dSq,
-              };
+            if (!Array.isArray(path) || path.length < 2) return;
+            for (let i = 0; i < path.length - 1; i++) {
+              const a = path[i];
+              const b = path[i + 1];
+              const dx = b.x - a.x;
+              const dy = b.y - a.y;
+              const lenSq = dx * dx + dy * dy;
+              if (lenSq < 1e-9) continue;
+              const t = Math.max(0, Math.min(1, ((world.x - a.x) * dx + (world.y - a.y) * dy) / lenSq));
+              const px2 = a.x + t * dx;
+              const py2 = a.y + t * dy;
+              const ox = world.x - px2;
+              const oy = world.y - py2;
+              const dSq = ox * ox + oy * oy;
+              if (dSq <= tolSq && dSq < bestDistSq) {
+                bestDistSq = dSq;
+                best = {
+                  layer,
+                  pathIndex,
+                  path,
+                  segmentIndex: i,
+                  segmentT: t,
+                  point: { x: px2, y: py2 },
+                  distSq: dSq,
+                };
+              }
             }
-          }
+          });
         });
-      });
-      return best;
+        return best;
+      };
+      const near = scan(tolPx('mouse'), 'all');
+      if (near) return this.isLayerLocked?.(near.layer.id) ? null : near;
+      if (pointerType !== 'touch') return null;
+      return scan(tolPx('touch'), 'unlocked');
     }
 
     setDirectSelection(layer, pathIndex) {
@@ -4138,6 +4595,47 @@
       return true;
     }
 
+    // One move-start path for mouse (at press) and touch (after the drag slop, TUX-019).
+    // `world` is the original press point so the object does not jump by the slop distance.
+    _beginLayerMove(world, layers, bounds, { alt = false } = {}) {
+      this.isLayerDrag = true;
+      this.snapAllowed = true;
+      this.dragMode = 'move';
+      this.dragStart = world;
+      this.startBounds = bounds;
+      this.startMaskPreviewForSelection(layers);
+      this._startMirrorDrag(layers);
+      this.setCanvasCursor(layers.length > 1 ? 'grabbing' : 'move');
+      this._attachShiftDragListener();
+      if (alt && layers.length) {
+        // SEL-2: Alt/Option-drag duplicates the whole selection (single or
+        // multi) and drags the copies. Never CMD/Ctrl — macOS Chrome
+        // cancels drops on that modifier.
+        this._beginAltDragDuplicate(layers, world, bounds);
+      }
+    }
+
+    // A press on a member of a multi-selection that never became a drag promotes that member
+    // to Key Object (second tap clears it). Shared by the mouse drop path and the touch tap.
+    _resolvePendingSingleSelect() {
+      const pending = this._pendingSingleSelect;
+      if (!pending) return;
+      // Standard semantics: when multi-selected and the user clicks
+      // (without modifiers) on a layer that's already in the selection,
+      // promote it to the Key Object instead of collapsing the selection.
+      // Click again on the same key → unset; click on a different selected
+      // layer → re-promote.
+      if (this.selectedLayerIds.size > 1 && this.selectedLayerIds.has(pending.id)) {
+        if (this.keyObjectId === pending.id) {
+          this.clearKeyObject();
+        } else {
+          this.setKeyObject(pending.id);
+        }
+      } else {
+        this.selectLayer(pending);
+      }
+    }
+
     // Cancel an in-flight layer drag (SEL-2: Escape mid-drag). Restores any
     // live-mutated mirror-drag geometry, removes alt-drag duplicates, restores
     // the pre-drag selection, and pops the pre-duplicate history snapshot when
@@ -4166,6 +4664,7 @@
         if (this.app?.history && this._altDupHistoryLen != null
             && this.app.history.length === this._altDupHistoryLen + 1) {
           this.app.history.pop();
+          this.app._notifyHistory?.();
         }
       }
       this._altDragDup = null;
@@ -4180,6 +4679,7 @@
       this.tempTransform = null;
       this.rotateOrigin = null;
       this.startBounds = null;
+      this.handleGrabOffset = null;
       this.lastDragWorld = null;
       this._areaResize = null;
       this._skipCommitHistory = false;
@@ -4278,9 +4778,32 @@
       return { layer, anchors };
     }
 
-    _hitControlInAnchors(world, anchors) {
-      const handleTol = 5 / this.scale;
+    _hitControlInAnchors(world, anchors, pointerType) {
+      const tolFn = window.Vectura.hitTolerance;
+      const handleTol = tolFn('bezierHandle', pointerType) / this.scale;
       const handleTolSq = handleTol * handleTol;
+      const anchorTol = tolFn('anchor', pointerType) / this.scale;
+      const anchorTolSq = anchorTol * anchorTol;
+      if (pointerType === 'touch') {
+        // A finger covers several targets at once. Take the nearest; on a tie the anchor wins.
+        let best = null;
+        let bestSq = Infinity;
+        const consider = (type, index, dSq, sqLimit) => {
+          if (dSq > sqLimit) return;
+          if (dSq < bestSq || (dSq === bestSq && type === 'anchor' && best.type !== 'anchor')) {
+            bestSq = dSq;
+            best = { type, index };
+          }
+        };
+        for (let i = 0; i < anchors.length; i++) {
+          const anchor = anchors[i];
+          consider('anchor', i, (world.x - anchor.x) ** 2 + (world.y - anchor.y) ** 2, anchorTolSq);
+          if (anchor.in) consider('in', i, (world.x - anchor.in.x) ** 2 + (world.y - anchor.in.y) ** 2, handleTolSq);
+          if (anchor.out) consider('out', i, (world.x - anchor.out.x) ** 2 + (world.y - anchor.out.y) ** 2, handleTolSq);
+        }
+        if (best) best.distSq = bestSq;
+        return best;
+      }
       for (let i = 0; i < anchors.length; i++) {
         const anchor = anchors[i];
         if (anchor.in) {
@@ -4292,8 +4815,6 @@
           if (dx * dx + dy * dy <= handleTolSq) return { type: 'out', index: i };
         }
       }
-      const anchorTol = 6 / this.scale;
-      const anchorTolSq = anchorTol * anchorTol;
       for (let i = 0; i < anchors.length; i++) {
         const anchor = anchors[i];
         const dx = world.x - anchor.x; const dy = world.y - anchor.y;
@@ -4321,21 +4842,54 @@
       return { seg, nextSeg };
     }
 
-    hitDirectControl(world) {
+    // TUX-024 nearest-wins, touch only. The Direct tool has up to four finger-sized targets that can
+    // overlap: anchor, handle, corner widget and the light. Returns { kind, distSq } for the nearest;
+    // ties go anchor, then handle, then corner widget. Mouse and pen never call this.
+    _touchDirectPick(world) {
+      const cands = [];
+      const control = this.hitDirectControl(world, 'touch');
+      if (control) cands.push({ kind: 'control', rank: control.type === 'anchor' ? 0 : 1, distSq: control.distSq });
+      const shape = this.getSelectedShapeLayer();
+      if (shape) {
+        const h = this.hitShapeCornerHandle(world, shape, 0, 'touch');
+        if (h) cands.push({ kind: 'corner', rank: 2, distSq: this.distanceToPointSq(world, h.point) });
+      } else if (this.directSelection && !this.directSelection.meta?.shape) {
+        const h = this.hitFreeformCornerHandle(world, 'touch');
+        if (h) cands.push({ kind: 'corner', rank: 2, distSq: (world.x - h.worldPoint.x) ** 2 + (world.y - h.worldPoint.y) ** 2 });
+      }
+      cands.sort((a, b) => (a.distSq - b.distSq) || (a.rank - b.rank));
+      return cands[0] || null;
+    }
+
+    // True when a finger on the Direct tool is nearer an anchor, handle or corner widget than the light.
+    _touchDirectBeatsLight(world, e) {
+      if (e.pointerType !== 'touch' || this.activeTool !== 'direct' || !this.lightSource) return false;
+      const pick = this._touchDirectPick(world);
+      if (!pick) return false;
+      const lightSq = (world.x - this.lightSource.x) ** 2 + (world.y - this.lightSource.y) ** 2;
+      return pick.distSq <= lightSq;
+    }
+
+    hitDirectControl(world, pointerType) {
+      const touch = pointerType === 'touch';
+      let bestTouch = null;
       const mainData = this.getDirectSelectionWorldAnchors();
       if (mainData) {
-        const hit = this._hitControlInAnchors(world, mainData.anchors);
-        if (hit) return { ...hit, auxIdx: -1 };
+        const hit = this._hitControlInAnchors(world, mainData.anchors, pointerType);
+        if (hit && !touch) return { ...hit, auxIdx: -1 };
+        if (hit) bestTouch = { ...hit, auxIdx: -1 };
       }
       const auxSels = this.directAuxSelections || [];
       for (let ai = 0; ai < auxSels.length; ai++) {
         const data = this._selectionWorldAnchors(auxSels[ai]);
         if (data) {
-          const hit = this._hitControlInAnchors(world, data.anchors);
-          if (hit) return { ...hit, auxIdx: ai };
+          const hit = this._hitControlInAnchors(world, data.anchors, pointerType);
+          if (hit && !touch) return { ...hit, auxIdx: ai };
+          // Touch: the nearest control across every selected path wins; a tie keeps the earlier path.
+          if (hit && (!bestTouch || hit.distSq < bestTouch.distSq)) bestTouch = { ...hit, auxIdx: ai };
         }
       }
-      return null;
+      return bestTouch;
     }
 
     _applySelectionPath(sel) {
@@ -4492,13 +5046,13 @@
         }
       }
       if (!control || !this.directSelection) return false;
-      const modifiers = this.getModifierState ? this.getModifierState(e) : { alt: e.altKey, shift: e.shiftKey };
+      const modifiers = this.getModifierState(e);
       const sel = this.directSelection;
 
       if (control.type === 'anchor') {
         if (control.preserveSelection) {
           // Drag started inside an existing multi-selection — keep all selected anchors as-is
-        } else if (modifiers.shift) {
+        } else if (modifiers.rawShift || modifiers.multiSelect) {
           // Multi-select: shift+click toggles anchor in/out of selection
           if (sel.selectedIndices.has(control.index)) sel.selectedIndices.delete(control.index);
           else sel.selectedIndices.add(control.index);
@@ -4532,6 +5086,9 @@
         index: control.index,
         moved: false,
         historyPushed: modifiers.alt, // already pushed above for alt-dup
+        // TUX-019: touch waits for the drag slop before any anchor/handle edit or history push.
+        touchStartClient: this.isTouchPointer(e) ? { x: e.clientX, y: e.clientY } : null,
+        touchSlopCrossed: false,
         anchorStart: anchor ? { x: anchor.x, y: anchor.y } : null,
         otherStarts,
         mergeTarget: null,
@@ -4559,7 +5116,7 @@
       }
       if (drag.type === 'anchor') {
         // Shift: angle-constrain movement relative to drag start (adjusted for grab offset)
-        if (e?.shiftKey && drag.anchorStart) {
+        if (e && this.getModifierState(e).shift && drag.anchorStart) {
           const snapStart = drag.grabOffset
             ? { x: drag.anchorStart.x + drag.grabOffset.x, y: drag.anchorStart.y + drag.grabOffset.y }
             : drag.anchorStart;
@@ -4788,14 +5345,14 @@
       return true;
     }
 
-    removeAnchorFromWorld(world) {
+    removeAnchorFromWorld(world, pointerType) {
       if (!this.directSelection) {
         const hitPath = this.findPathHitAtPoint(world);
         if (!hitPath) return false;
         this.selectLayer(hitPath.layer);
         if (!this.setDirectSelection(hitPath.layer, hitPath.pathIndex)) return false;
       }
-      const hit = this.hitDirectControl(world);
+      const hit = this.hitDirectControl(world, pointerType);
       if (!hit || hit.type !== 'anchor') return false;
       if (this.directSelection.anchors.length <= 2) return false;
       if (this.onDirectEditStart) this.onDirectEditStart();
@@ -4810,14 +5367,14 @@
       return true;
     }
 
-    toggleAnchorFromWorld(world) {
+    toggleAnchorFromWorld(world, pointerType) {
       if (!this.directSelection) {
         const hit = this.findPathHitAtPoint(world);
         if (!hit) return false;
         this.selectLayer(hit.layer);
         if (!this.setDirectSelection(hit.layer, hit.pathIndex)) return false;
       }
-      let control = this.hitDirectControl(world);
+      let control = this.hitDirectControl(world, pointerType);
       if (!control || control.type !== 'anchor') {
         const hitPath = this.findPathHitAtPoint(world, {
           restrictToLayerId: this.directSelection?.layerId || null,
@@ -4860,7 +5417,7 @@
         }
         return true;
       }
-      const control = this.hitDirectControl(world);
+      const control = this.hitDirectControl(world, e && e.pointerType);
       if (control) {
         if (control.type === 'in' || control.type === 'out') {
           this.startDirectDrag(control, e);
@@ -4871,17 +5428,41 @@
           return true;
         }
       }
-      return this.toggleAnchorFromWorld(world);
+      return this.toggleAnchorFromWorld(world, e && e.pointerType);
+    }
+
+    // TUX-056: one backing-DPR source for the main canvas. Coarse pointers (phones/tablets) cap at
+    // UI_CONSTANTS.TOUCH_CANVAS_MAX_DPR; fine pointers keep the raw device ratio (desktop parity).
+    _computeBackingDpr() {
+      const raw = window.devicePixelRatio || 1;
+      let coarse = false;
+      try { coarse = window.matchMedia?.('(pointer: coarse)')?.matches === true; } catch (err) { coarse = false; }
+      if (!coarse) return raw;
+      const cap = window.Vectura?.UI_CONSTANTS?.TOUCH_CANVAS_MAX_DPR ?? 2;
+      return Math.min(raw, cap);
+    }
+
+    getBackingDpr() {
+      return this.backingDpr || this._computeBackingDpr();
     }
 
     resize() {
       if (!this.ready || !this.canvas || !this.ctx) return;
       const p = this.canvas.parentElement.getBoundingClientRect();
-      this.canvas.width = p.width * window.devicePixelRatio;
-      this.canvas.height = p.height * window.devicePixelRatio;
+      const dpr = this._computeBackingDpr();
+      this.backingDpr = dpr;
+      const bw = Math.round(p.width * dpr);
+      const bh = Math.round(p.height * dpr);
+      if (
+        bw === this.canvas.width && bh === this.canvas.height && dpr === this._allocDpr
+        && this._lastCanvasW === p.width && this._lastCanvasH === p.height
+      ) return;
+      this.canvas.width = bw;
+      this.canvas.height = bh;
       this.canvas.style.width = `${p.width}px`;
       this.canvas.style.height = `${p.height}px`;
-      this.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this._allocDpr = dpr;
       // Auto-fit only when the canvas pixel dimensions actually changed (e.g. window
       // resize, pane toggle). ResizeObserver also fires for content-layout shifts that
       // don't change canvas size (layers panel content height, etc.); those must not
@@ -4898,17 +5479,29 @@
       this.userHasManipulated = false;
       const p = this.engine.currentProfile;
       const r = this.canvas.getBoundingClientRect();
-      const sx = (r.width - 60) / p.width;
-      const sy = (r.height - 60) / p.height;
-      this.scale = Math.min(sx, sy);
+      // TUX-007: the margin shrinks with the container (60 px at normal sizes, so desktop fit is
+      // unchanged) and the scale never drops below VIEW.minScale, so a collapsed container cannot
+      // yield a zero or negative scale (negative arc radius in the handle code).
+      const view = (window.Vectura && window.Vectura.VIEW) || {};
+      const minScale = Number.isFinite(view.minScale) && view.minScale > 0 ? view.minScale : 0.1;
+      const marginPx = Number.isFinite(view.fitMargin) ? view.fitMargin : 60;
+      const marginFrac = Number.isFinite(view.fitMarginMaxFraction) ? view.fitMarginMaxFraction : 0.1;
+      const mx = Math.min(marginPx, marginFrac * r.width);
+      const my = Math.min(marginPx, marginFrac * r.height);
+      const sx = (r.width - mx) / (p.width || 1);
+      const sy = (r.height - my) / (p.height || 1);
+      const fit = Math.min(sx, sy);
+      this.scale = Math.max(minScale, Number.isFinite(fit) ? fit : minScale);
       this.offsetX = (r.width - p.width * this.scale) / 2;
       this.offsetY = (r.height - p.height * this.scale) / 2;
     }
 
     draw() {
+      this._drawSeq = (this._drawSeq || 0) + 1; // lets coalesced repaint requests see an intervening frame
       if (!this.ready || !this.canvas || !this.ctx) return;
-      const w = this.canvas.width / window.devicePixelRatio;
-      const h = this.canvas.height / window.devicePixelRatio;
+      this._rotAffDrawn = null; // drawSelection re-sets it; a deselect or mouse frame leaves it cleared
+      const w = this.canvas.width / this.getBackingDpr();
+      const h = this.canvas.height / this.getBackingDpr();
       this.ctx.clearRect(0, 0, w, h);
       this.ctx.fillStyle = getThemeToken('--render-canvas', '#121214');
       this.ctx.fillRect(0, 0, w, h);
@@ -5659,17 +6252,17 @@
       if (fillToolActive) {
         const cw = this.canvas.width;
         const ch = this.canvas.height;
-        const dpr = window.devicePixelRatio;
+        const dpr = this.getBackingDpr();
         if (!this._loupeCleanCanvas) {
           this._loupeCleanCanvas = document.createElement('canvas');
           this._loupeCleanCanvas.width = cw;
           this._loupeCleanCanvas.height = ch;
           this._loupeCleanCtx = this._loupeCleanCanvas.getContext('2d');
-          this._loupeCleanCtx.scale(dpr, dpr);
+          this._loupeCleanCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
         } else if (this._loupeCleanCanvas.width !== cw || this._loupeCleanCanvas.height !== ch) {
           this._loupeCleanCanvas.width = cw;
           this._loupeCleanCanvas.height = ch;
-          this._loupeCleanCtx.scale(dpr, dpr);
+          this._loupeCleanCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
         const mainCtx = this.ctx;
         this.ctx = this._loupeCleanCtx;
@@ -5910,7 +6503,7 @@
           te.selectParagraphAtWorld?.(world.x, world.y);
         } else if (count === 2 && sameSession) {
           te.selectWordAtWorld?.(world.x, world.y);
-        } else if (e && e.shiftKey && sameSession) {
+        } else if (e && this.getModifierState(e).shift && sameSession) {
           te.extendSelectionToWorld?.(world.x, world.y);
         } else {
           te.placeCaretAtWorld(hit, world.x, world.y);
@@ -6086,7 +6679,7 @@
     drawTextModeWidget() {
       const info = this._textModeWidgetInfo();
       if (!info) return;
-      const r = 5 / this.scale;
+      const r = safeArcR(5 / this.scale);
       const { x, y } = info.point;
       this.ctx.save();
       const stroke = getThemeToken('--render-selection-handle-stroke', '#60a5fa');
@@ -6432,7 +7025,7 @@
       const wx = (mx - this.offsetX) / this.scale;
       const wy = (my - this.offsetY) / this.scale;
       const zoom = e.deltaY > 0 ? 0.9 : 1.1;
-      const nextScale = Math.max(0.1, Math.min(this.scale * zoom, 1000));
+      const nextScale = this.clampViewScale(this.scale * zoom);
       this.offsetX = mx - wx * nextScale;
       this.offsetY = my - wy * nextScale;
       this.scale = nextScale;
@@ -6442,14 +7035,45 @@
 
     down(e) {
       if (!this.ready) return;
+      this._notePointerType(e);
+      // TUX-021: an Apple Pencil pointer with contact preempts any touch interaction.
+      if (e.pointerType === 'pen') {
+        const decision = this.touchArbiter.penDown(e, {
+          touchActive: this.activePointerId !== null && this.activePointerType === 'touch',
+          touchGesture: !!this.touchGesture,
+        });
+        if (decision && decision.preempt) this._preemptTouchForPen(decision);
+      }
       if (this.isTouchPointer(e)) {
-        this.updateTouchPointer(e);
-        if (this.touchPointers.size >= 2) {
-          if (!this.touchGesture && this.canStartTouchGesture()) this.startTouchGesture();
-          if (this.touchGesture) {
-            if (e.cancelable) e.preventDefault();
-            return;
-          }
+        // TUX-021: a palm that lands while an Apple Pencil pointer is down starts nothing.
+        if (this.touchArbiter.touchPolicy(e).ignore) {
+          if (e.cancelable) e.preventDefault();
+          return;
+        }
+        // A pen or mouse stroke in flight owns the canvas; a touch is a resting palm.
+        if (this.activePointerId !== null && this.activePointerType && this.activePointerType !== 'touch') {
+          if (e.cancelable) e.preventDefault();
+          return;
+        }
+        // TUX-017: the second pointerdown is arbitrated BEFORE the activePointerId check.
+        // A second finger always starts a pinch/pan with every tool: it either rolls the
+        // first finger's action back or commits it as one history entry.
+        const info = this.touchArbiter.down(e);
+        if (info.role === 'first') {
+          // TUX-020: exact view numbers; a multi-finger tap restores them untouched.
+          this._tapViewSnap = { scale: this.scale, offsetX: this.offsetX, offsetY: this.offsetY, userHasManipulated: this.userHasManipulated };
+          this._touchSnapshot = this._takeTouchSnapshot();
+          this._gestureMark = this._touchSnapshot;
+        } else if (info.role === 'second') {
+          if (info.decision.rollback) this._rollbackFirstTouchAction();
+          else this._commitFirstTouchAction(info.firstId);
+          this.startTouchGesture();
+          if (e.cancelable) e.preventDefault();
+          return;
+        } else {
+          // Third finger, or a finger while the gesture latch is held: ignored.
+          if (e.cancelable) e.preventDefault();
+          return;
         }
       }
 
@@ -6457,8 +7081,10 @@
       if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
         return;
       }
+      if (!this.isTouchPointer(e)) this._gestureMark = this._takeTouchSnapshot();
       if (e.pointerId !== undefined) {
         this.activePointerId = e.pointerId;
+        this.activePointerType = e.pointerType || null;
         if (this.canvas.setPointerCapture) {
           try {
             this.canvas.setPointerCapture(e.pointerId);
@@ -6487,12 +7113,20 @@
       if (e.button !== undefined && e.button !== 0) return;
 
       if (this.lightSourcePlacement) {
+        if (this.isTouchPointer(e)) {
+          // Touch: place on release so a second finger can still cancel it (TUX-017).
+          this._deferTouch(() => {
+            this.setLightSource(world);
+            this.lightSourcePlacement = false;
+          }, 'window');
+          return;
+        }
         this.setLightSource(world);
         this.lightSourcePlacement = false;
         return;
       }
 
-      if (this.hitLightSource(world)) {
+      if (this.hitLightSource(world, e.pointerType) && !this._touchDirectBeatsLight(world, e)) {
         this.lightSourceSelected = true;
         this.isLightDrag = true;
         this.lightDragOffset = { x: world.x - this.lightSource.x, y: world.y - this.lightSource.y };
@@ -6588,17 +7222,26 @@
           this.handlePenDown(world, e);
           return;
         }
-        let handled = false;
-        if (this.penMode === 'add') handled = this.insertAnchorFromWorld(world);
-        if (this.penMode === 'delete') handled = this.removeAnchorFromWorld(world);
-        if (this.penMode === 'anchor') handled = this._handlePenAnchorDown(world, e);
-        if (!handled) {
-          const hit = this.findPathHitAtPoint(world);
-          if (hit) {
-            if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
-            this.setDirectSelection(hit.layer, hit.pathIndex);
-            this.draw();
+        const runPenEdit = () => {
+          let handled = false;
+          if (this.penMode === 'add') handled = this.insertAnchorFromWorld(world);
+          if (this.penMode === 'delete') handled = this.removeAnchorFromWorld(world, e.pointerType);
+          if (this.penMode === 'anchor') handled = this._handlePenAnchorDown(world, e);
+          if (!handled) {
+            const hit = this.findPathHitAtPoint(world);
+            if (hit) {
+              if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
+              this.setDirectSelection(hit.layer, hit.pathIndex);
+              this.draw();
+            }
           }
+        };
+        // Touch: add/delete-anchor geometry edits run at pointerup so a second finger can
+        // still cancel them (TUX-017). Anchor drags undo through the history restore.
+        if (this.isTouchPointer(e) && (this.penMode === 'add' || this.penMode === 'delete')) {
+          this._deferTouch(runPenEdit, 'window');
+        } else {
+          runPenEdit();
         }
         return;
       }
@@ -6632,7 +7275,19 @@
         if (!patternToolOnNonPatternLayer) {
           const poly = this._computeFillPreviewPolygon(world.x, world.y);
           if (poly && this.onPatternFill) {
-            this.onPatternFill({ tool: this.activeTool, polygon: poly, worldX: world.x, worldY: world.y });
+            const tool = this.activeTool;
+            if (this.isDeferredFillPointer(e)) {
+              // TUX-022: touch / pen preview the region and the loupe; the lift pours it.
+              this.patternFillPreviewPolygon = poly;
+              this._fillPendingPour = {
+                pointerId: e.pointerId, world: { x: world.x, y: world.y }, scopeIndex: 0, loopId: null,
+                mode: null, fillParamsOverride: null, tool, polygon: poly,
+              };
+              this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
+              this.draw();
+            } else {
+              this.onPatternFill({ tool, polygon: poly, worldX: world.x, worldY: world.y });
+            }
           }
           if (e.cancelable) e.preventDefault();
           return;
@@ -6648,7 +7303,9 @@
         // CMD/Ctrl+click on an existing fill adopts it as the active batch so
         // the user can tweak its params via the panel. Only meaningful in
         // pour mode; in erase mode CMD acts like a plain click.
-        if (this.activeTool === 'fill' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        // TUX-033: Cmd/Ctrl on desktop, the Multi-select task on touch.
+        const sampleMods = this.getModifierState(e);
+        if (this.activeTool === 'fill' && (sampleMods.meta || sampleMods.multiSelect) && !sampleMods.alt) {
           // CMD/Ctrl is a sample gesture, not a pour. If there is no fill
           // under the cursor (empty shape or empty canvas) leave the shape
           // empty rather than falling through to a normal pour.
@@ -6662,7 +7319,22 @@
         this._paintBucketHover(world, patternTileParams);
         const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
           ? 'erase' : 'pour';
-        this._paintBucketPour(world, mode, { startBatch: true, fillParamsOverride: patternTileParams });
+        // TUX-033: a touch / pen press that carries the Constrain (Shift) task is a drag-pour,
+        // exactly like a Shift-drag with a mouse: pour now, then pour into each new region.
+        // Only the Constrain task counts; a real Shift on a touch event keeps the TUX-022 deferred pour.
+        const dragMods = this.getModifierState(e);
+        const touchDragPour = this.isDeferredFillPointer(e) && !dragMods.rawShift && dragMods.shift;
+        this._touchDragPourId = touchDragPour ? e.pointerId : null;
+        if (this.isDeferredFillPointer(e) && !touchDragPour) {
+          // TUX-022: touch / pen show the region preview and the loupe at once; the lift pours
+          // into the last previewed region. A cancel, a drag off the paper or a second finger
+          // drops the pending pour.
+          this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
+          this._armFillPending(e, world, mode, patternTileParams);
+          this.draw();
+        } else {
+          this._paintBucketPour(world, mode, { startBatch: true, fillParamsOverride: patternTileParams });
+        }
         if (e.cancelable) e.preventDefault();
         return;
       }
@@ -6680,8 +7352,10 @@
             return;
           }
           const selectedShape = this.getSelectedShapeLayer();
-          if (selectedShape) {
-            const shapeCorner = this.hitShapeCornerHandle(world, selectedShape, 0);
+          // Touch: when an anchor or handle is nearer than a corner widget, the corner branches are skipped.
+          const controlOverCorner = e.pointerType === 'touch' && this._touchDirectPick(world)?.kind === 'control';
+          if (selectedShape && !controlOverCorner) {
+            const shapeCorner = this.hitShapeCornerHandle(world, selectedShape, 0, e.pointerType);
             if (shapeCorner) {
               // Multi-corner round: if 2+ corners are selected and the grabbed
               // handle is one of them, round the whole set together; else single.
@@ -6716,8 +7390,8 @@
               if (this.beginShapeCornerDrag(selectedShape, 0, shapeCorner, scope, cornerSet, world)) return;
             }
           }
-          if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape) {
-            const freeformCorner = this.hitFreeformCornerHandle(world);
+          if (!selectedShape && !controlOverCorner && this.directSelection && !this.directSelection.meta?.shape) {
+            const freeformCorner = this.hitFreeformCornerHandle(world, e.pointerType);
             if (freeformCorner) {
               if (this.getModifierState(e).alt) {
                 this.cycleFreeformCornerType(freeformCorner);
@@ -6743,7 +7417,7 @@
               if (this.beginFreeformCornerDrag(freeformCorner, world)) return;
             }
           }
-          const directControl = this.hitDirectControl(world);
+          const directControl = this.hitDirectControl(world, e.pointerType);
           if (directControl) {
             this.startDirectDrag(directControl, e);
             return;
@@ -6754,7 +7428,7 @@
           const hit = this.findPathHitAtPoint(world) || this._morphChildPathHit(world);
           if (hit) {
             if (!this.selectedLayerIds.has(hit.layer.id)) this.selectLayer(hit.layer);
-            const modifiers = this.getModifierState ? this.getModifierState(e) : { shift: e.shiftKey };
+            const modifiers = this.getModifierState(e);
             const alreadySamePath = this.directSelection?.layerId === hit.layer.id
               && this.directSelection?.pathIndex === hit.pathIndex;
             // Determine if this click lands on a segment connecting two already-selected anchors.
@@ -6770,12 +7444,12 @@
                 precomputedSeg = s;
               }
             }
-            const selection = (segInSelection || (modifiers.shift && alreadySamePath))
+            const selection = (segInSelection || ((modifiers.rawShift || modifiers.multiSelect) && alreadySamePath))
               ? this.directSelection
               : this.setDirectSelection(hit.layer, hit.pathIndex);
             if (selection && selection.anchors.length) {
               const worldAnchors = this.getDirectSelectionWorldAnchors();
-              const anchorTol = 6 / this.scale;
+              const anchorTol = window.Vectura.hitTolerance('anchor', e.pointerType) / this.scale;
               const anchorTolSq = anchorTol * anchorTol;
               let nearestIdx = -1;
               let nearestDistSq = Infinity;
@@ -6789,7 +7463,7 @@
               }
               if (nearestIdx >= 0 && nearestDistSq <= anchorTolSq) {
                 // Near an endpoint — select just that anchor (shift toggle handled in startDirectDrag)
-                if (!modifiers.shift) selection.selectedIndices = new Set([nearestIdx]);
+                if (!(modifiers.rawShift || modifiers.multiSelect)) selection.selectedIndices = new Set([nearestIdx]);
                 this.startDirectDrag({ type: 'anchor', index: nearestIdx }, e);
               } else {
                 // On segment body
@@ -6800,7 +7474,7 @@
                   this.startDirectDrag({ type: 'anchor', index: seg, preserveSelection: true }, e);
                 } else {
                   // Clicked on an unselected segment — select both endpoints
-                  ({ seg } = this._selectSegmentAnchors(selection, hit.segmentIndex ?? 0, modifiers.shift));
+                  ({ seg } = this._selectSegmentAnchors(selection, hit.segmentIndex ?? 0, (modifiers.rawShift || modifiers.multiSelect)));
                   this.startDirectDrag({ type: 'anchor', index: seg }, e);
                 }
                 // grabOffset: drag tracks from the click point, not the anchor corner
@@ -6837,7 +7511,15 @@
         if (this.activeTool === 'select' && selectedLayers.length === 1 && !this.isLayerLocked?.(selectedLayers[0].id)) {
           const shapeLayer = this.getSelectedShapeLayer();
           if (shapeLayer) {
-            const shapeCorner = this.hitShapeCornerHandle(world, shapeLayer, 0);
+            // Touch: the widget gets the finger radius (22 px) but shares the corner with the resize
+            // zone, so the nearer of the two centres wins (a tie goes to the widget). Mouse/pen keep
+            // the exact mouse radius and order.
+            let shapeCorner = this.hitShapeCornerHandle(world, shapeLayer, 0, e.pointerType);
+            if (shapeCorner && e.pointerType === 'touch' && selectionBounds) {
+              const wp = this.worldToScreen(shapeCorner.point.x, shapeCorner.point.y);
+              const widgetD = Math.hypot(sx - wp.x, sy - wp.y);
+              if (this._nearestResizeCentreDistance(sx, sy, selectionBounds) < widgetD) shapeCorner = null;
+            }
             if (shapeCorner) {
               // Option/Alt+click switches the corner style for every corner
               // (Select-tool scope is always the whole shape).
@@ -6877,6 +7559,7 @@
         // gizmo "teleported" off-canvas, and the next click deselected the
         // scene. get3DRotationControl still returns null for a NON-scene layer
         // without bounds.corners, so 2D layers stay byte-identical.
+        let deferredRotation3DHit = null;
         const rotationBoundsOptional = selectedLayers.length === 1
           && !!this._sceneRotationOwner(selectedLayers[0]);
         if (
@@ -6885,11 +7568,14 @@
           selectedLayers.length === 1 &&
           !this.isLayerLocked?.(selectedLayers[0].id)
         ) {
-          const rotation3DHit = this.hit3DRotationControl(sx, sy, selectedLayers[0], selectionBounds);
-          if (rotation3DHit && this.begin3DRotationDrag(rotation3DHit, e)) {
+          const rotation3DHit = this.hit3DRotationControl(sx, sy, selectedLayers[0], selectionBounds, e.pointerType);
+          // TUX-025: a touch hit that exists only because of the larger finger radius yields to the
+          // scene handles (light, shadow, object gizmo, resize, face-pull) at their own tolerances.
+          if (rotation3DHit && !rotation3DHit.enlarged && this.begin3DRotationDrag(rotation3DHit, e)) {
             e.preventDefault();
             return;
           }
+          deferredRotation3DHit = rotation3DHit && rotation3DHit.enlarged ? rotation3DHit : null;
         }
         // 3D Scene Studio (Phase 2): the sun widget + shadow handle win over
         // object selection so the light can be dragged where it overlaps art.
@@ -6944,6 +7630,17 @@
             return;
           }
         }
+        // TUX-025: a finger-enlarged gizmo hit also yields to the 2D transform handles of a non-scene layer.
+        // Only a RESIZE zone wins; the wide touch rotate band must not swallow gizmo markers.
+        if (deferredRotation3DHit && selectionBounds && !this._sceneRotationOwner(selectedLayers[0])
+          && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
+          const yieldHandle = this.hitHandle(sx, sy, selectionBounds, { pointerType: e.pointerType });
+          if (yieldHandle && !String(yieldHandle).startsWith('rotate')) deferredRotation3DHit = null;
+        }
+        if (deferredRotation3DHit && this.begin3DRotationDrag(deferredRotation3DHit, e)) {
+          e.preventDefault();
+          return;
+        }
         // 3D Scene Studio (§5.1 V / object mode): scene object picks +
         // ground-drag arming run after the gizmo (orbit wins) but before the
         // 2D handle/selection flow. Returns false when nothing scene-related
@@ -6959,7 +7656,7 @@
           && (selectedLayers[0].type === 'scene3d' || selectedLayers[0].type === 'object3d'
             || selectedLayers[0].type === 'booleanGroup3d');
         if (selectionBounds && !soleSceneSelected && !selectedLayers.some(l => this.isLayerLocked?.(l.id))) {
-          const handle = this.hitHandle(sx, sy, selectionBounds);
+          const handle = this.hitHandle(sx, sy, selectionBounds, { pointerType: e.pointerType });
           if (handle) {
             this.isLayerDrag = true;
             this.snapAllowed = true;
@@ -6981,6 +7678,10 @@
               this.setCanvasCursor('grabbing');
             } else {
               this.dragMode = 'resize';
+              // TUX-023: scale is measured from where the finger grabbed, not from the true handle
+              // point. A nudged touch zone (or any off-centre grab) must not jump on first move.
+              const gp = this.getHandlePoint(handle, selectionBounds);
+              this.handleGrabOffset = gp ? { x: world.x - gp.x, y: world.y - gp.y } : null;
               // Area-type text resizes its FRAME (reflow), not its glyphs. Capture
               // the start frame dims so the move handler can scale them by the
               // handle drag and re-wrap live instead of scaling the letterforms.
@@ -7001,19 +7702,16 @@
         }
 
         const topLayer =
-          this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world) : this.findLayerAtPoint(world);
+          this.activeTool === 'direct' ? this.findLayerAtPointPrecise(world, e.pointerType) : this.findLayerAtPoint(world, false, null, e.pointerType);
 
         // M5: double-clicking a text layer with the Selection OR Direct-Selection
         // tool enters Type editing (switches tool + places the caret). The direct
         // tool doesn't run the select branch below, so maintain its own dbl-click
         // timing here; the select branch keeps its own `_selectLastClick`.
         if ((this.activeTool === 'select' || this.activeTool === 'direct') && this.app && this.app.textEdit) {
-          const nowT = performance.now();
-          const prevT = this._selectLastClick;
-          const sXT = e.clientX ?? 0;
-          const sYT = e.clientY ?? 0;
-          const isDblText = !!(prevT && (nowT - prevT.time) < 400 && Math.hypot(sXT - prevT.x, sYT - prevT.y) < 8);
-          if (this.activeTool === 'direct') this._selectLastClick = { time: nowT, x: sXT, y: sYT };
+          const tapT = this._isDoubleTap(this._selectLastClick, e);
+          const isDblText = tapT.isDouble;
+          if (this.activeTool === 'direct') this._selectLastClick = tapT.record;
           // Clicking the point↔area conversion dot toggles the mode. It sits
           // OUTSIDE the layer bounds, so a double-click's first click would
           // deselect (hiding the widget) — a SINGLE click is used, and it runs
@@ -7040,12 +7738,9 @@
         // Group-aware selection: group move and sublayer edit mode
         let _groupHandled = false;
         if (this.activeTool === 'select') {
-          const now = performance.now();
-          const prev = this._selectLastClick;
-          const sX = e.clientX ?? 0;
-          const sY = e.clientY ?? 0;
-          const isDoubleClick = prev && (now - prev.time) < 400 && Math.hypot(sX - prev.x, sY - prev.y) < 8;
-          this._selectLastClick = { time: now, x: sX, y: sY };
+          const tapS = this._isDoubleTap(this._selectLastClick, e);
+          const isDoubleClick = tapS.isDouble;
+          this._selectLastClick = tapS.record;
 
           if (this.groupEditMode) {
             if (this.groupEditMode.kind === 'morph') {
@@ -7077,7 +7772,7 @@
               // immediate child of the isolated group.
               const member = this._findIsolatedMemberAtPoint(world);
               if (member) {
-                const additiveInGroup = modifiers.shift || modifiers.meta || modifiers.ctrl;
+                const additiveInGroup = modifiers.additive;
                 this.groupEditMode.activeLayerId = member.id;
                 if (additiveInGroup) {
                   // Shift/Cmd-click extends the multi-selection WITHIN the
@@ -7098,7 +7793,7 @@
               }
             }
           }
-          if (!_groupHandled && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
+          if (!_groupHandled && !modifiers.additive) {
             // A morph's blended output is only reachable when no normal layer is
             // under the cursor (children consumed, container skipped by
             // findLayerAtPoint), so probe it only when topLayer is null.
@@ -7171,7 +7866,7 @@
         }
 
         if (!_groupHandled) {
-          const additive = modifiers.shift || modifiers.meta || modifiers.ctrl;
+          const additive = modifiers.additive;
           if (additive && topLayer) {
             // SEL: Shift/Cmd-click toggles the clicked object in or out of the
             // multi-selection. This is a DISCRETE action —
@@ -7195,7 +7890,7 @@
                 this.selectLayer(topLayer);
               }
             }
-          } else if (topLayer && this.selectedLayerIds.size > 1 && !modifiers.shift && !modifiers.meta && !modifiers.ctrl) {
+          } else if (topLayer && this.selectedLayerIds.size > 1 && !modifiers.additive) {
             this._pendingSingleSelect = topLayer;
           }
         }
@@ -7205,45 +7900,24 @@
         // moves are ground-drags handled by _sceneDownSelect above; a press on
         // empty scene space falls through to the marquee below.
         const sceneBoundsDragSuppressed = updatedSelected.length === 1 && updatedSelected[0].type === 'scene3d';
-        if (bounds && !sceneBoundsDragSuppressed && this.pointInBounds(world, bounds) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
-          if (this.isTouchPointer(e) && !modifiers.alt) {
-            // Touch: hold to lift — defer drag until finger has been held still for 350ms
-            this._pendingSingleSelect = null;
-            this.touchHoldStartClient = { x: e.clientX, y: e.clientY };
-            this.touchHoldPending = { world, updatedSelected, bounds };
-            this.touchHoldTimer = setTimeout(() => {
-              this.touchHoldTimer = null;
-              if (!this.touchHoldPending) return;
-              const { world: w, updatedSelected: layers, bounds: b } = this.touchHoldPending;
-              this.touchHoldPending = null;
-              this.isLayerDrag = true;
-              this.snapAllowed = true;
-              this.dragMode = 'move';
-              this.dragStart = w;
-              this.startBounds = b;
-              this.startMaskPreviewForSelection(layers);
-              this._startMirrorDrag(layers);
-              this.setCanvasCursor(layers.length > 1 ? 'grabbing' : 'move');
-              this._attachShiftDragListener();
-              if (navigator.vibrate) navigator.vibrate(30);
-              this.draw();
-            }, 350);
+        // TUX-019: a finger cannot hit a zero-height line or a 1 px outline exactly, so touch also
+        // arms the move when the press hit (findLayerAtPoint tolerance) a layer in the selection.
+        // Mouse and pen keep the strict bounds test.
+        const touchHitSelected = this.isTouchPointer(e) && !!topLayer && updatedSelected.some(l => l.id === topLayer.id);
+        if (bounds && !sceneBoundsDragSuppressed && (this.pointInBounds(world, bounds) || touchHitSelected) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
+          if (this.isTouchPointer(e)) {
+            // TUX-019: touch waits for the drag slop, not a hold. move() promotes this into
+            // the same state the mouse sets here; a lift under the slop is a tap.
+            this._touchMovePending = {
+              pointerId: e.pointerId,
+              startClient: { x: e.clientX, y: e.clientY },
+              world,
+              updatedSelected,
+              bounds,
+              alt: Boolean(modifiers.alt),
+            };
           } else {
-            this.isLayerDrag = true;
-            this.snapAllowed = true;
-            this.dragMode = 'move';
-            this.dragStart = world;
-            this.startBounds = bounds;
-            this.startMaskPreviewForSelection(updatedSelected);
-            this._startMirrorDrag(updatedSelected);
-            this.setCanvasCursor(updatedSelected.length > 1 ? 'grabbing' : 'move');
-            this._attachShiftDragListener();
-            if (modifiers.alt && updatedSelected.length) {
-              // SEL-2: Alt/Option-drag duplicates the whole selection (single or
-              // multi) and drags the copies. Never CMD/Ctrl — macOS Chrome
-              // cancels drops on that modifier.
-              this._beginAltDragDuplicate(updatedSelected, world, bounds);
-            }
+            this._beginLayerMove(world, updatedSelected, bounds, { alt: Boolean(modifiers.alt) });
           }
           e.preventDefault();
         } else if (topLayer) {
@@ -7259,9 +7933,14 @@
             // SEL: a Shift/Cmd marquee is additive — preserve the existing
             // selection and union the marquee hits on commit. A plain marquee
             // clears first (replace semantics).
-            this._marqueeAdditive = !!(modifiers.shift || modifiers.meta || modifiers.ctrl);
+            this._marqueeAdditive = !!modifiers.additive;
             this._marqueeBaseIds = this._marqueeAdditive ? new Set(this.selectedLayerIds) : null;
-            if (!this._marqueeAdditive) this.clearSelection();
+            if (!this._marqueeAdditive) {
+              // Touch: the plain-marquee clear runs on the first move past the slop, or at
+              // pointerup for a tap-to-deselect, so a pinch never loses the selection (TUX-017).
+              if (this.isTouchPointer(e)) this._deferTouch(() => this.clearSelection(), 'slop');
+              else this.clearSelection();
+            }
           }
         }
       }
@@ -7269,6 +7948,26 @@
 
     move(e) {
       if (!this.ready) return;
+      this._notePointerType(e);
+      // TUX-021: a palm the pen preempted (or that landed under the pen) never drives anything.
+      if (this.touchArbiter.isIgnoredTouch(e)) {
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+      if (this.isTouchPointer(e)) {
+        // TUX-017: track the finger (max travel feeds the arbitration decision), then run
+        // the pinch/pan. While the gesture latch is held, a lone finger starts nothing.
+        this.touchArbiter.update(e);
+        if (this.touchGesture) {
+          if (this.touchPointers.size >= 2) {
+            this.updateTouchGesture();
+            if (e.cancelable) e.preventDefault();
+          }
+          return;
+        }
+        if (this.touchArbiter.gestureActive) return;
+        if (this._touchDeferred) this._maybeFlushTouchDeferred(e);
+      }
       // Type-tool press-drag → live selection (M4). Only while the primary button
       // is held and a drag was armed on down().
       if (this.activeTool === 'type' && this._typeDrag && (e.buttons === undefined || (e.buttons & 1))) {
@@ -7295,10 +7994,15 @@
         // leaves the canvas. Without this guard the hover would re-find a
         // region under the off-canvas coordinate and re-paint the blue
         // preview overlay we just cleared on pointerleave.
+        // TUX-022: only the finger that owns the fill drives it. A second touch (a chip tap
+        // with the other hand) must not move the preview.
+        if (this.isDeferredFillPointer(e) && this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
+        const fillOwner = this._isFillOwnerMove(e);
         const inside =
           e.clientX >= rect.left && e.clientX <= rect.right &&
           e.clientY >= rect.top && e.clientY <= rect.bottom;
         if (!inside) {
+          if (fillOwner) this._fillPendingPour = null;
           this._paintBucketClearHover();
           return;
         }
@@ -7307,6 +8011,7 @@
         // surrounding canvas margin, drop the blue fill preview and bail
         // before any pour logic — clicks in the margin must not fill.
         if (!this._isWorldInsidePaper(world)) {
+          if (fillOwner) this._fillPendingPour = null;
           this._paintBucketClearHover();
           return;
         }
@@ -7314,12 +8019,21 @@
           ? this.app?.ui?.getPatternTileFillParams?.()
           : null;
         this._paintBucketHover(world, patternTileParams);
-        this.showFillLoupe(e.clientX, e.clientY);
+        this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
+        const touchDragPourMove = this._touchDragPourId !== null && this._touchDragPourId !== undefined && e.pointerId === this._touchDragPourId;
+        if (fillOwner && !touchDragPourMove) {
+          const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase') ? 'erase' : 'pour';
+          this._armFillPending(e, world, mode, patternTileParams);
+          // TUX-022 req. 6 / CODE-017: the held pointer gets the same hover feedback a mouse
+          // gets (hover chips, semantic labels, hover highlight, 3D hover hint) before commit.
+          this._updateHoverFeedback(e);
+          this._updateSceneHoverHint(e);
+        }
         // Drag-pour: while the primary button AND Shift are held and we
         // cross into a new region's loopId, pour again. lastPourLoopId is
         // reset on up(). Shift gating keeps a plain click from accidentally
         // filling adjacent regions when the mouse jiggles before release.
-        if ((e.buttons & 1) && e.shiftKey && this.paintBucketStack?.length) {
+        if (((!this.isDeferredFillPointer(e) && (e.buttons & 1) && this.getModifierState(e).shift) || touchDragPourMove) && this.paintBucketStack?.length) {
           const target = this.paintBucketStack[this.paintBucketScopeIndex];
           if (target && target.loopId !== this.lastPourLoopId) {
             const mode = (this.activeTool === 'fill-erase' || this.activeTool === 'fill-pattern-erase')
@@ -7331,39 +8045,44 @@
       } else if (this.activeTool === 'fill-pattern' || this.activeTool === 'fill-pattern-erase') {
         const rect = this.canvas.getBoundingClientRect();
         const world = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-        if (!this._isWorldInsidePaper(world)) {
+        if (this.isDeferredFillPointer(e) && this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
+        const patOwner = this._isFillOwnerMove(e);
+        const patInside = e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+        if (!patInside || !this._isWorldInsidePaper(world)) {
+          if (patOwner) this._fillPendingPour = null;
           this.patternFillPreviewPolygon = null;
           this.hideFillLoupe?.();
           this.draw();
           return;
         }
         this.patternFillPreviewPolygon = this._computeFillPreviewPolygon(world.x, world.y);
-        this.showFillLoupe(e.clientX, e.clientY);
-        this.draw();
-      }
-      if (this.isTouchPointer(e)) this.updateTouchPointer(e);
-      if (this.touchGesture) {
-        if (this.touchPointers.size >= 2) {
-          this.updateTouchGesture();
-          if (e.cancelable) e.preventDefault();
+        this.showFillLoupe(e.clientX, e.clientY, e.pointerType);
+        if (patOwner && this.patternFillPreviewPolygon && this.onPatternFill) {
+          this._fillPendingPour = {
+            pointerId: e.pointerId, world: { x: world.x, y: world.y }, scopeIndex: 0, loopId: null,
+            mode: null, fillParamsOverride: null, tool: this.activeTool, polygon: this.patternFillPreviewPolygon,
+          };
+        } else if (patOwner) {
+          this._fillPendingPour = null;
         }
-        return;
+        if (patOwner) {
+          this._updateHoverFeedback(e);
+          this._updateSceneHoverHint(e);
+        }
+        this.draw();
       }
       if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
         return;
       }
       const modifiers = this.getModifierState(e);
-      if (this.touchHoldPending && this.isTouchPointer(e)) {
-        const dx = e.clientX - this.touchHoldStartClient.x;
-        const dy = e.clientY - this.touchHoldStartClient.y;
-        if (Math.hypot(dx, dy) > 12) {
-          this.clearTouchHold();
-          this.isPan = true;
-          this.lastM = { x: e.clientX, y: e.clientY };
-          this.setCanvasCursor('grabbing');
-        } else {
-          return;
-        }
+      if (this._touchMovePending && this.isTouchPointer(e)) {
+        // TUX-019: no move, and never a pan, until the finger travels the touch slop.
+        const pending = this._touchMovePending;
+        const travel = Math.hypot(e.clientX - pending.startClient.x, e.clientY - pending.startClient.y);
+        if (travel < this._touchDragSlopPx()) return;
+        this._touchMovePending = null;
+        this._markTouchSlopCrossed();
+        this._beginLayerMove(pending.world, pending.updatedSelected, pending.bounds, { alt: pending.alt });
       }
       if (this.isPan) {
         this.offsetX += e.clientX - this.lastM.x;
@@ -7425,7 +8144,7 @@
           const modifiers = this.getModifierState(e);
           const anchorWorld = this.sourceToWorldPoint(layer, anchor);
           const distWorld = Math.hypot(world.x - anchorWorld.x, world.y - anchorWorld.y);
-          const minDist = 2 / this.scale;
+          const minDist = window.Vectura.hitTolerance('penCurveSlop', e.pointerType) / this.scale;
           if (distWorld <= minDist) {
             anchor.out = null;
             anchor.in = null;
@@ -7451,6 +8170,20 @@
         const sx = e.clientX - rect.left;
         const sy = e.clientY - rect.top;
         const world = this.screenToWorld(sx, sy);
+        const dd = this.directDrag;
+        if (dd.touchStartClient && !dd.touchSlopCrossed) {
+          const travel = Math.hypot(e.clientX - dd.touchStartClient.x, e.clientY - dd.touchStartClient.y);
+          if (travel < this._touchDragSlopPx()) return;
+          dd.touchSlopCrossed = true;
+          this._markTouchSlopCrossed();
+          // Measure the edit from the original press point so the anchor does not jump by the slop.
+          const dLayer = this.getDirectSelectionLayer();
+          if (dd.type === 'anchor' && !dd.grabOffset && dd.anchorStart && dLayer) {
+            const downWorld = this.screenToWorld(dd.touchStartClient.x - rect.left, dd.touchStartClient.y - rect.top);
+            const downSrc = this.worldToSourcePoint(dLayer, downWorld);
+            dd.grabOffset = { x: downSrc.x - dd.anchorStart.x, y: downSrc.y - dd.anchorStart.y };
+          }
+        }
         this.updateDirectDrag(world, e);
         return;
       }
@@ -7662,7 +8395,8 @@
           const origin = fromCenter ? this.getBoundsCenter(this.startBounds) : this.getResizeAnchor(this.activeHandle, this.startBounds);
           const handlePoint = this.getHandlePoint(this.activeHandle, this.startBounds);
           const startVec = { x: handlePoint.x - origin.x, y: handlePoint.y - origin.y };
-          const currVec = { x: world.x - origin.x, y: world.y - origin.y };
+          const grab = this.handleGrabOffset || { x: 0, y: 0 };
+          const currVec = { x: world.x - grab.x - origin.x, y: world.y - grab.y - origin.y };
           const rot = -(this.startBounds.rotation || 0);
           const cosR = Math.cos(rot);
           const sinR = Math.sin(rot);
@@ -7749,17 +8483,21 @@
         if (this.isPenDragging && this.penDragAnchor !== null) {
           const anchor = anchors[this.penDragAnchor];
           if (anchor) {
-            const target = modifiers.shift ? this.snapPenAngle(anchor, next) : next;
+            // The close-drag handle is the drag delta from the press point, so Shift snaps about that point.
+            const snapFrom = this.isPenCloseDragging ? (this.penCloseDownWorld || anchor) : anchor;
+            const target = modifiers.shift ? this.snapPenAngle(snapFrom, next) : next;
             const dist = Math.hypot(target.x - anchor.x, target.y - anchor.y);
-            const minDist = 2 / this.scale;
+            // A finger jitters a few px while it taps. Under the slop it makes no Bezier handles.
+            const minDist = window.Vectura.hitTolerance('penCurveSlop', e.pointerType) / this.scale;
             if (this.isPenCloseDragging) {
               // Only update anchor[0].in — controls the incoming curve of the closing segment.
               // Do not touch anchor[0].out (set when the path was started).
-              if (dist <= minDist) {
+              const origin = this.penCloseDownWorld || anchor;
+              const cvec = { x: target.x - origin.x, y: target.y - origin.y };
+              if (Math.hypot(cvec.x, cvec.y) <= minDist) {
                 anchor.in = null;
               } else {
-                const vec = { x: target.x - anchor.x, y: target.y - anchor.y };
-                anchor.in = { x: anchor.x - vec.x, y: anchor.y - vec.y };
+                anchor.in = { x: anchor.x - cvec.x, y: anchor.y - cvec.y };
               }
             } else {
               if (dist <= minDist) {
@@ -7793,7 +8531,7 @@
           const snapped = this.snapPointToGrid(next);
           let preview = modifiers.shift && last ? this.snapPenAngle(last, snapped) : snapped;
           const first = anchors[0];
-          const snapTol = 5 / this.scale;
+          const snapTol = window.Vectura.hitTolerance('penClose', e.pointerType) / this.scale;
           if (!modifiers.meta && anchors.length >= 2 && first &&
               Math.hypot(next.x - first.x, next.y - first.y) <= snapTol) {
             preview = { x: first.x, y: first.y };
@@ -7902,32 +8640,51 @@
       }
     }
 
+    _releaseActivePointer(e) {
+      if (e.pointerId !== undefined && this.canvas.releasePointerCapture) {
+        try {
+          if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(e.pointerId)) {
+            this.canvas.releasePointerCapture(e.pointerId);
+          }
+        } catch (err) {
+          // Ignore pointer capture release issues.
+        }
+      }
+      this.activePointerId = null;
+      this.activePointerType = null;
+      this._gestureMark = null;
+    }
+
+    // TUX-020: a two-finger tap undoes, a three-finger tap redoes. The view is put back to the
+    // exact numbers seen at the first touch-down, and no tool sees the lift.
+    _finishMultiTap(e, tap) {
+      const snap = this._tapViewSnap;
+      this._tapViewSnap = null;
+      if (this.touchGesture) this.stopTouchGesture();
+      this.cancelActiveInteractionsForTouchGesture();
+      if (snap) {
+        this.scale = snap.scale;
+        this.offsetX = snap.offsetX;
+        this.offsetY = snap.offsetY;
+        this.userHasManipulated = snap.userHasManipulated;
+      }
+      this._releaseActivePointer(e);
+      this.updateCursor();
+      this.draw();
+      const hud = window.Vectura && window.Vectura.CanvasHud;
+      if (hud && typeof hud.runHistory === 'function') hud.runHistory(tap.count === 3 ? 'redo' : 'undo');
+    }
+
     up(e = {}) {
       if (!this.ready || !this.canvas) return;
-      // Commit a Type-tool empty-canvas creation gesture: drag → area frame,
-      // click → point type. Runs before other up() handling and consumes the event.
-      if (this.activeTool === 'type' && this._areaCreate) {
-        this.finishAreaCreate();
-        this.removeTouchPointer(e);
-        this.activePointerId = null;
+      // TUX-021: an ignored palm's lift ends only its own ignored status.
+      if (this.touchArbiter.releaseIgnored(e)) return;
+      this.touchArbiter.penRelease(e);
+      const tapResult = this.removeTouchPointer(e);
+      if (tapResult && tapResult.tap) {
+        this._finishMultiTap(e, tapResult);
         return;
       }
-      // End any active Type-tool press-drag (the selection is already applied).
-      this._typeDrag = null;
-      this.lastPourLoopId = null;
-      this.removeTouchPointer(e);
-      const clearActivePointer = () => {
-        if (e.pointerId !== undefined && this.canvas.releasePointerCapture) {
-          try {
-            if (this.canvas.hasPointerCapture && this.canvas.hasPointerCapture(e.pointerId)) {
-              this.canvas.releasePointerCapture(e.pointerId);
-            }
-          } catch (err) {
-            // Ignore pointer capture release issues.
-          }
-        }
-        this.activePointerId = null;
-      };
       if (this.touchGesture) {
         if (this.touchPointers.size >= 2) {
           this.updateTouchGesture();
@@ -7935,15 +8692,60 @@
         }
         this.stopTouchGesture();
         if (this.touchPointers.size > 0) {
-          clearActivePointer();
+          this._releaseActivePointer(e);
           return;
         }
       }
+      // TUX-017 latch: after a pinch/pan, a remaining finger starts and ends nothing until
+      // every touch pointer has lifted.
+      if (this.isTouchPointer(e) && this.touchArbiter.gestureActive) {
+        this._touchDragPourId = null;
+        this._releaseActivePointer(e);
+        this.updateCursor();
+        return;
+      }
+      // TUX-022: touch / pen fill. The lift pours into the last previewed region. A cancel never
+      // pours; the pending record and the preview are always cleared.
+      if (this._touchDragPourId === e.pointerId || e.type === 'pointercancel') this._touchDragPourId = null;
+      const fillPend = this._fillPendingPour;
+      if (fillPend && e.pointerId === fillPend.pointerId && this.isDeferredFillPointer(e)) {
+        this._commitFillPending(fillPend, e.type !== 'pointercancel');
+      }
+      // Touch one-shots deferred at pointerdown (plain-marquee clear, pen
+      // add/delete anchor) run now, before the normal finalize.
+      // Only the finger that owns the deferred action may run it; a second finger that
+      // lifts elsewhere must not fire the canvas finger's pour, clear or anchor edit.
+      if (this.isTouchPointer(e) && this._touchDeferred && this._touchDeferred.pointerId === e.pointerId) {
+        this._flushTouchDeferred();
+      }
+      this._finishPointerInteraction(e);
+    }
+
+    // Pointerup finalize for the active one-finger interaction. The second-finger COMMIT
+    // path calls this same method (TUX-017), so a commit is exactly what a lift would do.
+    _finishPointerInteraction(e = {}) {
+      // Commit a Type-tool empty-canvas creation gesture: drag → area frame,
+      // click → point type. Runs before other up() handling and consumes the event.
+      if (this.activeTool === 'type' && this._areaCreate) {
+        this.finishAreaCreate();
+        this.activePointerId = null;
+        this.activePointerType = null;
+        return;
+      }
+      // End any active Type-tool press-drag (the selection is already applied).
+      this._typeDrag = null;
+      this.lastPourLoopId = null;
+      const clearActivePointer = () => this._releaseActivePointer(e);
       if (this.activePointerId !== null && e.pointerId !== undefined && e.pointerId !== this.activePointerId && e.pointerType !== 'mouse') {
         return;
       }
-      if (this.touchHoldPending) {
-        this.clearTouchHold();
+      this.touchSlopCrossed = false;
+      if (this._touchMovePending) {
+        // TUX-019: lift under the slop is a tap. Same outcome as a mouse click: a member of a
+        // multi-selection becomes the Key Object; nothing moves and no history is added.
+        this._touchMovePending = null;
+        this._resolvePendingSingleSelect();
+        this._pendingSingleSelect = null;
         clearActivePointer();
         this.updateCursor();
         this.draw();
@@ -7955,13 +8757,14 @@
       }
       if (this.isPenDragging) {
         const wasCloseDrag = this.isPenCloseDragging;
+        this.penCloseDownWorld = null;
         this.isPenDragging = false;
         this.isPenCloseDragging = false;
         this.penDragAnchor = null;
         this.penDragStart = null;
         this.penDragMirrorLock = null;
         if (wasCloseDrag) {
-          this.commitPenPath();
+          this.commitPenPath(e);
           clearActivePointer();
           return;
         }
@@ -8133,23 +8936,7 @@
             : primary;
           if (effectivePrimary) this.updateTransformInputs(effectivePrimary);
         }
-        if (!this.tempTransform && this._pendingSingleSelect) {
-          const pending = this._pendingSingleSelect;
-          // Standard semantics: when multi-selected and the user clicks
-          // (without modifiers) on a layer that's already in the selection,
-          // promote it to the Key Object instead of collapsing the selection.
-          // Click again on the same key → unset; click on a different selected
-          // layer → re-promote.
-          if (this.selectedLayerIds.size > 1 && this.selectedLayerIds.has(pending.id)) {
-            if (this.keyObjectId === pending.id) {
-              this.clearKeyObject();
-            } else {
-              this.setKeyObject(pending.id);
-            }
-          } else {
-            this.selectLayer(pending);
-          }
-        }
+        if (!this.tempTransform) this._resolvePendingSingleSelect();
         this.clearMaskPreview();
         this.mirrorDragState = null;
         this.tempTransform = null;
@@ -8213,7 +9000,7 @@
           clearActivePointer();
         };
         if (sceneLayer && bigEnough) {
-          const includeOccluded = Boolean(pending.alt || e.altKey);
+          const includeOccluded = Boolean(pending.alt || this.getModifierState(e).alt);
           if (pending.mode === 'object') {
             const ids = this._sceneObjectsInRect(sceneLayer, rect, { includeOccluded });
             if (ids.length) {
@@ -8611,9 +9398,9 @@
       const fontPx = cfg?.labelFontPx ?? 10;
       const family = cfg?.labelFontFamily ?? 'system-ui, sans-serif';
       // worldToScreen yields CSS pixels; the canvas base transform is
-      // scale(dpr,dpr). Reset to the dpr base (NOT identity) so labels land at
+      // scale(dpr,dpr) with the backing dpr base. Reset to the dpr base (NOT identity) so labels land at
       // the correct CSS position on HiDPI displays and stay zoom-invariant.
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = this.getBackingDpr();
       hints.chips.forEach((chip) => {
         const screen = this.worldToScreen(chip.x, chip.y);
         this.ctx.save();
@@ -8832,7 +9619,7 @@
       // worldToScreen yields CSS pixels; reset to the dpr base transform (NOT
       // identity) so the label lands at the correct CSS position on HiDPI
       // displays instead of drifting to half-position toward the top-left.
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = this.getBackingDpr();
       ctx.save();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.font = `${fontPx}px ${family}`;
@@ -9338,7 +10125,8 @@
       const stackKey = stack.map((e) => e.loopId).join('|');
       if (stackKey !== this.paintBucketStackKey) {
         this.paintBucketStackKey = stackKey;
-        this.paintBucketScopeIndex = 0;
+        // TUX-022: the touch Scope chips keep a sticky offset (0 for mouse).
+        this.paintBucketScopeIndex = Math.min(this.paintBucketScopeOffset || 0, stack.length - 1);
       }
       this.paintBucketStack = stack;
       this.paintBucketScopeIndex = Math.min(this.paintBucketScopeIndex, stack.length - 1);
@@ -9457,6 +10245,108 @@
         ? this.lastPaintedFillRefs.length
         : 0;
       this.app?.paintBucketPanel?.onBatchStateChange?.({ activeCount: count });
+    }
+
+    // TUX-022: touch and pen defer the fill pour to the lift. Mouse pours at once.
+    isDeferredFillPointer(e) {
+      return e?.pointerType === 'touch' || e?.pointerType === 'pen';
+    }
+
+    // True when this move belongs to the deferred pointer that holds the canvas (a pressed
+    // touch / pen). A hovering pen or a mouse never arms a pending pour.
+    _isFillOwnerMove(e) {
+      if (!this.isDeferredFillPointer(e)) return false;
+      if (this.activePointerId === null || e.pointerId !== this.activePointerId) return false;
+      return e.pointerType === 'touch' || e.buttons === undefined || (e.buttons & 1) === 1;
+    }
+
+    // Record the region under the press so the lift pours into it, not where the finger lifts.
+    _armFillPending(e, world, mode, fillParamsOverride) {
+      const entry = Array.isArray(this.paintBucketStack) ? this.paintBucketStack[this.paintBucketScopeIndex] : null;
+      this._fillPendingPour = {
+        pointerId: e.pointerId,
+        world: { x: world.x, y: world.y },
+        scopeIndex: this.paintBucketScopeIndex,
+        loopId: entry ? entry.loopId : null,
+        mode,
+        fillParamsOverride: fillParamsOverride || null,
+        tool: this.activeTool,
+        polygon: null,
+      };
+    }
+
+    // The one place that drops the pending pour, the region preview, the stack and the loupe.
+    // Explicit on purpose: WebKit synthetic events never fire pointerleave.
+    _clearFillDeferred() {
+      this._fillPendingPour = null;
+      // Hover feedback shown for the held pointer ends with the hold (req. 6).
+      this.hoverHighlight = null;
+      this._hoverHighlightKey = null;
+      this.hoverCenter = null;
+      this._hoverCenterKey = null;
+      this.hoverReadout = null;
+      if (this._hoverChipActive) {
+        this._hoverChipActive = false;
+        this.hideDragTooltip?.();
+      }
+      this.hideAnchorLabel?.();
+      this._clearSceneHoverHint?.();
+      if (!['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(this.activeTool)) return;
+      this.paintBucketStack = null;
+      this.paintBucketStackKey = null;
+      this.paintBucketScopeIndex = 0;
+      this.patternFillPreviewPolygon = null;
+      this.patternFillPreviewInnerPolygon = null;
+      this.hideFillLoupe?.();
+      if (this.app?.ui?.setPaintBucketHint) {
+        this.app.ui.setPaintBucketHint('Click to fill · Alt-click to remove · Shift+drag to pour multiple');
+      }
+      this.draw();
+    }
+
+    _commitFillPending(pend, doPour = true) {
+      this._fillPendingPour = null;
+      if (doPour) {
+        if (pend.polygon && this.onPatternFill) {
+          this.onPatternFill({ tool: pend.tool, polygon: pend.polygon, worldX: pend.world.x, worldY: pend.world.y });
+        } else {
+          this.paintBucketScopeIndex = pend.scopeIndex;
+          this._paintBucketPour(pend.world, pend.mode || 'pour', { startBatch: true, fillParamsOverride: pend.fillParamsOverride || undefined });
+        }
+      }
+      this._clearFillDeferred();
+    }
+
+    // TUX-022: touch Scope chips. dir +1 widens (toward the enclosing loop), -1 narrows.
+    // The offset is sticky: the next preview starts at min(offset, stack.length - 1).
+    stepPaintBucketScope(dir) {
+      const stack = this.paintBucketStack;
+      let next = Math.max(0, Math.min(64, (this.paintBucketScopeOffset || 0) + (dir > 0 ? 1 : -1)));
+      const live = Array.isArray(stack) && stack.length > 0;
+      if (live) next = Math.min(next, stack.length - 1);
+      this.paintBucketScopeOffset = next;
+      if (live) {
+        this.paintBucketScopeIndex = next;
+        const entry = stack[next];
+        this.patternFillPreviewPolygon = entry?.polygon || null;
+        this.patternFillPreviewInnerPolygon = entry?.innerPolygon || null;
+        if (this._fillPendingPour && entry) {
+          this._fillPendingPour.scopeIndex = next;
+          this._fillPendingPour.loopId = entry.loopId;
+        }
+        if (this.app?.ui?.setPaintBucketHint && entry) {
+          if (entry.isDocBounds) {
+            this.app.ui.setPaintBucketHint('Scope: document bounds — lift to fill background');
+          } else {
+            this.app.ui.setPaintBucketHint(`Scope ${next + 1}/${stack.length - 1} · Scope ▲▼ to widen`);
+          }
+        }
+        this.draw();
+      }
+      if (typeof document !== 'undefined' && typeof CustomEvent === 'function') {
+        try { document.dispatchEvent(new CustomEvent('vectura:fill-scope', { detail: { offset: next } })); } catch (_e) { /* noop */ }
+      }
+      return next;
     }
 
     _paintBucketClearHover() {
@@ -9635,10 +10525,13 @@
       return hit ? this._isolatedGroupMember(hit) : null;
     }
 
-    findLayerAtPoint(world, includeLocked = false, filterFn = null) {
+    // Shared stroke scan for findLayerAtPoint and findLayerAtPointPrecise. `tolFor(layer)` returns the world-unit
+    // reach. `onlyLocked` scans just the locked layers (used by the touch locked-layer rule). The NEAREST stroke
+    // wins; an exact tie keeps the topmost layer.
+    _scanStrokeLayers(world, { includeLocked = false, onlyLocked = false, filterFn = null, tolFor, insideClosed = false }) {
       const layers = this.engine.layers.slice().reverse();
       let best = null;
-      let bestDist = Infinity;
+      let bestDistSq = Infinity;
       layers.forEach((layer) => {
         if (!layer.visible) return;
         if (filterFn && !filterFn(layer)) return;
@@ -9650,34 +10543,70 @@
         // Children inside a compound are consumed by their parent; clicks on
         // the unified silhouette should select the compound, not a child.
         if (this.engine.hasCompoundAncestor?.(layer)) return;
-        if (!includeLocked && this.isLayerLocked?.(layer.id)) return;
-        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
-        const tol = Math.max(5 / (this.scale || 1), stroke * 2);
+        const locked = Boolean(this.isLayerLocked?.(layer.id));
+        if (onlyLocked ? !locked : (!includeLocked && locked)) return;
+        const tol = tolFor(layer);
         const tolSq = tol * tol;
+        let layerDistSq = Infinity;
         this.getInteractionPaths(layer).forEach((path) => {
           if (path && path.meta && path.meta.kind === 'circle') {
             const cx = path.meta.cx ?? path.meta.x ?? 0;
             const cy = path.meta.cy ?? path.meta.y ?? 0;
             const r = path.meta.r ?? path.meta.rx ?? 0;
-            const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
-            if (dist * dist <= tolSq && dist < bestDist) {
-              bestDist = dist;
-              best = layer;
-            }
+            const dist = Math.hypot(world.x - cx, world.y - cy);
+            const edge = Math.abs(dist - r);
+            layerDistSq = Math.min(layerDistSq, insideClosed && dist <= r ? 0 : edge * edge);
             return;
           }
           if (!Array.isArray(path) || path.length < 2) return;
           for (let i = 0; i < path.length - 1; i++) {
-            const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
-            if (d <= tolSq && d < bestDist) {
-              bestDist = d;
-              best = layer;
-              break;
+            layerDistSq = Math.min(layerDistSq, this.distanceToSegmentSq(world, path[i], path[i + 1]));
+          }
+          if (insideClosed && path.length >= 4 && layerDistSq > 0) {
+            const f = path[0];
+            const l = path[path.length - 1];
+            if (Math.abs(f.x - l.x) < 1e-6 && Math.abs(f.y - l.y) < 1e-6) {
+              let inside = false;
+              for (let i = 0, j = path.length - 1; i < path.length; j = i++) {
+                const pi = path[i];
+                const pj = path[j];
+                if ((pi.y > world.y) !== (pj.y > world.y)
+                  && world.x < ((pj.x - pi.x) * (world.y - pi.y)) / (pj.y - pi.y) + pi.x) inside = !inside;
+              }
+              if (inside) layerDistSq = 0;
             }
           }
         });
+        if (layerDistSq <= tolSq && layerDistSq < bestDistSq) {
+          bestDistSq = layerDistSq;
+          best = layer;
+        }
       });
       return best;
+    }
+
+    // TUX-024: a finger lands well off a hairline, so touch gets the wide reach. Locked-layer rule: if the touch
+    // point is on or within MOUSE reach of a locked layer's geometry (or inside a closed locked shape) and no
+    // unlocked stroke is within mouse reach, nothing is picked, as for a mouse click there. The wide reach
+    // applies only when no locked geometry is under the finger. `mouseTolFor` / `wideTolFor` give world reach.
+    _pickWithTouchRule(world, pointerType, opts, mouseTolFor, wideTolFor) {
+      const base = { ...opts, tolFor: mouseTolFor };
+      const near = this._scanStrokeLayers(world, base);
+      if (pointerType !== 'touch' || near) return near;
+      if (!opts.includeLocked && this._scanStrokeLayers(world, { ...base, onlyLocked: true, insideClosed: true })) return null;
+      return this._scanStrokeLayers(world, { ...opts, tolFor: wideTolFor });
+    }
+
+    // pointerType picks the stroke tolerance (HIT_TOLERANCE.strokePick: 5 px mouse / pen, 22 px touch); it defaults to the last
+    // pointer seen. When several layers lie within tolerance the NEAREST stroke wins; an exact tie keeps the topmost layer.
+    findLayerAtPoint(world, includeLocked = false, filterFn = null, pointerType = this.lastPointerType) {
+      const tolFor = (px) => (layer) => {
+        const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
+        return Math.max(px / (this.scale || 1), stroke * 2);
+      };
+      const tol = window.Vectura.hitTolerance;
+      return this._pickWithTouchRule(world, pointerType, { includeLocked, filterFn },
+        tolFor(tol('strokePick', 'mouse')), tolFor(tol('strokePick', 'touch')));
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -10261,7 +11190,7 @@
         .filter((c) => this._isSceneLayerEditable(c.layer));
       const sceneLayer = stack.length ? stack[0].layer : this.getSceneShortcutLayer();
       if (!sceneLayer || !this._isSceneLayerEditable(sceneLayer)) return false;
-      const additive = Boolean(modifiers.shift || modifiers.meta || modifiers.ctrl);
+      const additive = Boolean(modifiers.additive);
       if (!stack.length) {
         // Empty scene click: a plain click clears the scene selection; the
         // normal empty-click flow below owns the marquee. Stash the scene
@@ -10336,7 +11265,7 @@
       const mode = this.sceneComponentMode === 'edge' ? 'edge' : 'face';
       const stack = this._sceneCandidatesAtPoint(world, mode)
         .filter((c) => this._isSceneLayerEditable(c.layer));
-      const additive = Boolean(modifiers.shift || modifiers.meta || modifiers.ctrl);
+      const additive = Boolean(modifiers.additive);
       if (!stack.length) {
         const sceneLayer = this.getSceneShortcutLayer();
         if (!sceneLayer || !this._isSceneLayerEditable(sceneLayer)) return false;
@@ -13191,7 +14120,7 @@
     }
 
     enterGroupEditMode(layer) {
-      this.clearTouchHold();
+      this._touchMovePending = null;
       this.groupEditMode = { groupId: layer.parentId, activeLayerId: layer.id, kind: 'group' };
       this.setSelection([layer.id], layer.id);
       this.draw();
@@ -13212,7 +14141,7 @@
     // isolation is keyed on the container id with kind 'morph'. Escape returns
     // to the container (see exitGroupEditMode), not to the consumed children.
     enterMorphEditMode(child, container) {
-      this.clearTouchHold();
+      this._touchMovePending = null;
       this.groupEditMode = { groupId: container.id, activeLayerId: child.id, kind: 'morph' };
       this.setSelection([child.id], child.id);
       this.draw();
@@ -13525,44 +14454,15 @@
       return !(hasNeg && hasPos);
     }
 
-    findLayerAtPointPrecise(world) {
-      const layers = this.engine.layers.slice().reverse();
-      let best = null;
-      let bestDist = Infinity;
-      layers.forEach((layer) => {
-        if (!layer.visible) return;
-        const isCompound = layer.containerRole === 'compound';
-        if (!isCompound && layer.isGroup) return;
-        if (layer.mask?.enabled && layer.mask?.hideLayer) return;
-        if (this.engine.hasCompoundAncestor?.(layer)) return;
-        if (this.isLayerLocked?.(layer.id)) return;
+    // Direct tool pick. Mouse and pen keep the fixed 1.5 world units; touch reaches HIT_TOLERANCE.directPick
+    // screen px (TUX-024), nearest stroke wins, and the locked-layer rule of findLayerAtPoint applies.
+    findLayerAtPointPrecise(world, pointerType = this.lastPointerType) {
+      const tolFor = (wide) => (layer) => {
         const stroke = layer.strokeWidth ?? SETTINGS.strokeWidth ?? 0.3;
-        const tol = Math.max(1.5, stroke * 2);
-        const tolSq = tol * tol;
-        this.getInteractionPaths(layer).forEach((path) => {
-          if (path && path.meta && path.meta.kind === 'circle') {
-            const cx = path.meta.cx ?? path.meta.x ?? 0;
-            const cy = path.meta.cy ?? path.meta.y ?? 0;
-            const r = path.meta.r ?? path.meta.rx ?? 0;
-            const dist = Math.abs(Math.hypot(world.x - cx, world.y - cy) - r);
-            if (dist * dist <= tolSq && dist < bestDist) {
-              bestDist = dist;
-              best = layer;
-            }
-            return;
-          }
-          if (!Array.isArray(path) || path.length < 2) return;
-          for (let i = 0; i < path.length - 1; i++) {
-            const d = this.distanceToSegmentSq(world, path[i], path[i + 1]);
-            if (d <= tolSq && d < bestDist) {
-              bestDist = d;
-              best = layer;
-              break;
-            }
-          }
-        });
-      });
-      return best;
+        const reach = wide ? window.Vectura.hitTolerance('directPick', 'touch') / (this.scale || 1) : 1.5;
+        return Math.max(reach, stroke * 2);
+      };
+      return this._pickWithTouchRule(world, pointerType, {}, tolFor(false), tolFor(true));
     }
 
     getSelectionBounds(layers, temp) {
@@ -14334,7 +15234,10 @@
 
     drawSelection(bounds, options = {}) {
       const { showHandles = true } = options;
-      const handleSize = 6 / this.scale;
+      // TUX-023: handle size and centres come from the same pointer-type source as hitHandle.
+      const coarse = this.isCoarseHandles();
+      const pointerType = coarse ? 'touch' : 'mouse';
+      const handleSize = window.Vectura.hitTolerance('handleDraw', pointerType) / this.scale;
       const { nw, ne, se, sw } = bounds.corners;
       this.ctx.save();
       this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
@@ -14351,15 +15254,55 @@
       this.ctx.fillStyle = getThemeToken('--render-selection-handle-fill', '#111827');
       this.ctx.strokeStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
       if (showHandles) {
-        const handles = this.getHandlePoints(bounds);
+        const handles = this.getHandleHitPoints(bounds, pointerType);
         handles.forEach((pt) => {
           this.ctx.beginPath();
           this.ctx.rect(pt.x - handleSize / 2, pt.y - handleSize / 2, handleSize, handleSize);
           this.ctx.fill();
           this.ctx.stroke();
         });
+        const aff = coarse ? this._computeRotateAffordance(bounds, 'touch') : null;
+        this._rotAffDrawn = aff || null; // what the last frame actually painted (read by e2e)
+        if (aff) this._drawRotateAffordance(aff);
       }
       this.ctx.restore();
+    }
+
+    // TUX-023: round touch rotate handle (filled disc + arc-and-arrowhead glyph).
+    _drawRotateAffordance(aff) {
+      const ctx = this.ctx;
+      const c = this.screenToWorld(aff.x, aff.y);
+      const u = 1 / this.scale;
+      const r = window.Vectura.hitTolerance('rotateAffordanceDraw', 'touch') * u;
+      const g = r * 0.46;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 1 * u;
+      ctx.stroke();
+      ctx.lineWidth = 1.6 * u;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, g, Math.PI * 0.15, Math.PI * 1.55);
+      ctx.stroke();
+      // Arrowhead at the arc end, pointing along the clockwise tangent.
+      const a = Math.PI * 1.55;
+      const tx = c.x + Math.cos(a) * g;
+      const ty = c.y + Math.sin(a) * g;
+      const dx = -Math.sin(a);
+      const dy = Math.cos(a);
+      const nx = Math.cos(a);
+      const ny = Math.sin(a);
+      const len = r * 0.27;
+      ctx.beginPath();
+      ctx.moveTo(tx + dx * len, ty + dy * len);
+      ctx.lineTo(tx + nx * len * 0.9, ty + ny * len * 0.9);
+      ctx.lineTo(tx - nx * len * 0.9, ty - ny * len * 0.9);
+      ctx.closePath();
+      ctx.fillStyle = getThemeToken('--render-selection-handle-stroke', '#f8fafc');
+      ctx.fill();
+      ctx.restore();
     }
 
     get3DRotationSpec(layer) {
@@ -14434,6 +15377,40 @@
       if (patch.roll !== undefined && spec.rollParam) layer.params[spec.rollParam] = patch.roll;
     }
 
+    // TUX-025: geometry gate for the 3D rotation gizmo. Never keyed on pointerType or width.
+    _touchGizmoLayout() {
+      try {
+        if (typeof document !== 'undefined' && document.body && document.body.classList.contains('touch-ui')) return true;
+        if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+          const m = window.matchMedia('(pointer: coarse)');
+          return !!(m && m.matches);
+        }
+      } catch (err) { /* no media query support */ }
+      return false;
+    }
+
+    // TUX-025: visible floating chrome over the canvas (canvas-local rects), from UI_CONSTANTS.GIZMO_3D_TOUCH.occluders.
+    _touchGizmoOccluders(canvasRect) {
+      const out = [];
+      try {
+        if (typeof document === 'undefined') return out;
+        const sels = window.Vectura.UI_CONSTANTS.GIZMO_3D_TOUCH.occluders || [];
+        sels.forEach((sel) => {
+          document.querySelectorAll(sel).forEach((node) => {
+            const r = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+            if (!r || r.width <= 0 || r.height <= 0) return;
+            const l = r.left - canvasRect.left;
+            const t = r.top - canvasRect.top;
+            const rr = r.right - canvasRect.left;
+            const bb = r.bottom - canvasRect.top;
+            if (rr <= 0 || bb <= 0 || l >= canvasRect.width || t >= canvasRect.height) return;
+            out.push({ l, t, r: rr, b: bb });
+          });
+        });
+      } catch (err) { /* no DOM */ }
+      return out;
+    }
+
     get3DRotationControl(layer, bounds) {
       // BUG 3 — the gizmo lives on the scene group even when a scene descendant
       // is the active layer. The incoming bounds only needs its corners (the
@@ -14467,15 +15444,66 @@
       const len = Math.hypot(vx, vy) || 1;
       const ux = vx / len;
       const uy = vy / len;
-      const padRadius = 17 * unit;
-      const ringRadius = 28 * unit;
-      const yawRadiusX = padRadius * 0.72;
-      const yawRadiusY = padRadius * 0.48;
+      // TUX-025: touch layout (body.touch-ui or a coarse pointer). Draw and hit share this one geometry.
+      const touchLayout = this._touchGizmoLayout();
+      const T3 = window.Vectura.UI_CONSTANTS.GIZMO_3D_TOUCH;
+      const padRadius = (touchLayout ? T3.padRadius : 17) * unit;
+      const ringRadius = (touchLayout ? T3.ringRadius : 28) * unit;
+      const yawRadiusX = touchLayout ? T3.yawRadiusX * unit : padRadius * 0.72;
+      const yawRadiusY = touchLayout ? T3.yawRadiusY * unit : padRadius * 0.48;
       const pitchRadiusX = padRadius * 0.62;
+      const anchorOffset = (touchLayout ? T3.anchorOffset : 35) * unit;
       const controlCenter = {
-        x: target.x + ux * 35 * unit,
-        y: target.y + uy * 35 * unit,
+        x: target.x + ux * anchorOffset,
+        y: target.y + uy * anchorOffset,
       };
+      let pitchSide = 1;
+      if (touchLayout) {
+        // Keep the whole footprint plus a finger of reach inside the canvas: shift the centre and,
+        // when the right side would clip, mirror the pitch track to the left.
+        const rect = this.canvas && this.canvas.getBoundingClientRect ? this.canvas.getBoundingClientRect() : null;
+        const W = rect ? rect.width : 0;
+        const H = rect ? rect.height : 0;
+        if (W > 0 && H > 0) {
+          const inset = T3.edgeInset;
+          const reach = T3.reachPad;
+          const sideExt = T3.pitchTrackX + reach;
+          const ringExt = T3.ringRadius + reach;
+          const cs = this.worldToScreen(controlCenter.x, controlCenter.y);
+          if (cs.x + sideExt > W - inset && cs.x - sideExt >= inset) pitchSide = -1;
+          const left = pitchSide < 0 ? sideExt : ringExt;
+          const right = pitchSide > 0 ? sideExt : ringExt;
+          const loX = inset + left;
+          const hiX = W - inset - right;
+          const loY = inset + ringExt;
+          const hiY = H - inset - ringExt;
+          let nx = loX > hiX ? (loX + hiX) / 2 : clamp(cs.x, loX, hiX);
+          let ny = loY > hiY ? (loY + hiY) / 2 : clamp(cs.y, loY, hiY);
+          // Floating canvas chrome (context bar, modifier bar, HUD) covers part of the canvas: move
+          // the whole footprint (plus finger reach) to the nearest spot that clears it.
+          const occ = this._touchGizmoOccluders(rect);
+          if (occ.length) {
+            const hits = (x, y) => occ.some((o) => x + right > o.l && x - left < o.r && y + ringExt > o.t && y - ringExt < o.b);
+            if (hits(nx, ny)) {
+              const xs = [nx];
+              const ys = [ny];
+              occ.forEach((o) => { xs.push(o.l - right, o.r + left); ys.push(o.t - ringExt, o.b + ringExt); });
+              let best = null;
+              xs.forEach((x) => ys.forEach((y) => {
+                if (x < loX || x > hiX || y < loY || y > hiY || hits(x, y)) return;
+                const d = Math.hypot(x - cs.x, y - cs.y);
+                if (!best || d < best.d) best = { x, y, d };
+              }));
+              if (best) { nx = best.x; ny = best.y; }
+            }
+          }
+          if (nx !== cs.x || ny !== cs.y) {
+            const w = this.screenToWorld(nx, ny);
+            controlCenter.x = w.x;
+            controlCenter.y = w.y;
+          }
+        }
+      }
       const rot = this._read3DRotation(layer, spec);
       const yaw = normalizeDegrees(rot.yaw);
       const pitch = clamp(
@@ -14490,9 +15518,11 @@
         x: controlCenter.x + Math.sin(yawRad) * yawRadiusX,
         y: controlCenter.y + Math.cos(yawRad) * yawRadiusY,
       };
+      const pitchTrackHeight = touchLayout ? T3.pitchTrackHeight * unit : padRadius * 1.28;
+      const pitchTrackX = touchLayout ? pitchSide * T3.pitchTrackX * unit : -pitchRadiusX;
       const pitchMarker = {
-        x: controlCenter.x - pitchRadiusX,
-        y: controlCenter.y + (0.5 - pitchT) * padRadius * 1.28,
+        x: controlCenter.x + pitchTrackX,
+        y: controlCenter.y + (0.5 - pitchT) * pitchTrackHeight,
       };
       const roll = rot.hasRoll
         ? normalizeDegrees(rot.roll)
@@ -14513,7 +15543,9 @@
         yawRadiusX,
         yawRadiusY,
         pitchRadiusX,
-        pitchTrackHeight: padRadius * 1.28,
+        pitchTrackHeight,
+        pitchTrackX,
+        touch: touchLayout,
         yawMarker,
         pitchMarker,
         rollHandle,
@@ -14539,7 +15571,9 @@
       this.ctx.lineCap = 'round';
       this.ctx.lineJoin = 'round';
 
-      this.ctx.lineWidth = 1.1 * unit;
+      const touchDraw = !!control.touch;
+      const ms = touchDraw ? window.Vectura.UI_CONSTANTS.GIZMO_3D_TOUCH.markerDraw / 3.4 : 1;
+      this.ctx.lineWidth = (touchDraw ? 1.6 : 1.1) * unit;
       this.ctx.globalAlpha = 0.78;
       this.ctx.strokeStyle = axisY;
       this.ctx.beginPath();
@@ -14547,7 +15581,14 @@
       this.ctx.stroke();
       this.ctx.strokeStyle = axisX;
       this.ctx.beginPath();
-      this.ctx.ellipse(center.x, center.y, pitchRadiusX, padRadius, 0, 0, TAU);
+      if (touchDraw) {
+        // Pitch is a vertical track outside the ring, not an ellipse through the yaw marker.
+        const half = (control.pitchTrackHeight / 2) + 6 * unit;
+        this.ctx.moveTo(center.x + control.pitchTrackX, center.y - half);
+        this.ctx.lineTo(center.x + control.pitchTrackX, center.y + half);
+      } else {
+        this.ctx.ellipse(center.x, center.y, pitchRadiusX, padRadius, 0, 0, TAU);
+      }
       this.ctx.stroke();
 
       this.ctx.globalAlpha = 0.92;
@@ -14560,26 +15601,26 @@
       this.ctx.strokeStyle = axisY;
       this.ctx.lineWidth = 1 * unit;
       this.ctx.beginPath();
-      this.ctx.arc(yawMarker.x, yawMarker.y, 3.4 * unit, 0, TAU);
+      this.ctx.arc(yawMarker.x, yawMarker.y, 3.4 * ms * unit, 0, TAU);
       this.ctx.fill();
       this.ctx.stroke();
       this.ctx.beginPath();
-      this.ctx.moveTo(yawMarker.x - 4.6 * unit, yawMarker.y);
-      this.ctx.lineTo(yawMarker.x - 7.2 * unit, yawMarker.y);
-      this.ctx.moveTo(yawMarker.x + 4.6 * unit, yawMarker.y);
-      this.ctx.lineTo(yawMarker.x + 7.2 * unit, yawMarker.y);
+      this.ctx.moveTo(yawMarker.x - 4.6 * ms * unit, yawMarker.y);
+      this.ctx.lineTo(yawMarker.x - 7.2 * ms * unit, yawMarker.y);
+      this.ctx.moveTo(yawMarker.x + 4.6 * ms * unit, yawMarker.y);
+      this.ctx.lineTo(yawMarker.x + 7.2 * ms * unit, yawMarker.y);
       this.ctx.stroke();
 
       this.ctx.strokeStyle = axisX;
       this.ctx.beginPath();
-      this.ctx.arc(pitchMarker.x, pitchMarker.y, 3.4 * unit, 0, TAU);
+      this.ctx.arc(pitchMarker.x, pitchMarker.y, 3.4 * ms * unit, 0, TAU);
       this.ctx.fill();
       this.ctx.stroke();
       this.ctx.beginPath();
-      this.ctx.moveTo(pitchMarker.x, pitchMarker.y - 4.6 * unit);
-      this.ctx.lineTo(pitchMarker.x, pitchMarker.y - 7.2 * unit);
-      this.ctx.moveTo(pitchMarker.x, pitchMarker.y + 4.6 * unit);
-      this.ctx.lineTo(pitchMarker.x, pitchMarker.y + 7.2 * unit);
+      this.ctx.moveTo(pitchMarker.x, pitchMarker.y - 4.6 * ms * unit);
+      this.ctx.lineTo(pitchMarker.x, pitchMarker.y - 7.2 * ms * unit);
+      this.ctx.moveTo(pitchMarker.x, pitchMarker.y + 4.6 * ms * unit);
+      this.ctx.lineTo(pitchMarker.x, pitchMarker.y + 7.2 * ms * unit);
       this.ctx.stroke();
 
       if (rollHandle) {
@@ -14593,7 +15634,7 @@
         this.ctx.globalAlpha = 1;
         this.ctx.fillStyle = fill;
         this.ctx.beginPath();
-        this.ctx.arc(rollHandle.x, rollHandle.y, 4.4 * unit, 0, TAU);
+        this.ctx.arc(rollHandle.x, rollHandle.y, 4.4 * ms * unit, 0, TAU);
         this.ctx.fill();
         this.ctx.stroke();
       }
@@ -14681,8 +15722,8 @@
       this.ctx.stroke();
       this.ctx.setLineDash([]);
 
-      const anchorR = 3.2 / this.scale;
-      const handleR = 2.2 / this.scale;
+      const anchorR = safeArcR(3.2 / this.scale);
+      const handleR = safeArcR(2.2 / this.scale);
       const selectedSet = sel.selectedIndices || new Set();
       worldAnchors.forEach((anchor, i) => {
         const isSelected = selectedSet.has(i);
@@ -14732,7 +15773,7 @@
         if (this.directDrag?.mergeTarget != null && data) {
           const wa = data.anchors[this.directDrag.mergeTarget];
           if (wa) {
-            const r = 3.2 / this.scale;
+            const r = safeArcR(3.2 / this.scale);
             this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
             this.ctx.lineWidth = 1.1 / this.scale;
             this.ctx.setLineDash([]);
@@ -14743,7 +15784,7 @@
         }
         if (this.directDrag?.endpointSnapTarget) {
           const sw = this.directDrag.endpointSnapTarget.world;
-          const r = 3.2 / this.scale;
+          const r = safeArcR(3.2 / this.scale);
           this.ctx.strokeStyle = getThemeToken('--render-direct-stroke', '#22d3ee');
           this.ctx.lineWidth = 1.1 / this.scale;
           this.ctx.setLineDash([3 / this.scale, 3 / this.scale]);
@@ -14770,7 +15811,7 @@
           this.ctx.strokeStyle = strokeColor;
           this.ctx.fillStyle = fillColor;
           this.ctx.lineWidth = 1 / this.scale;
-          const r = 3.2 / this.scale;
+          const r = safeArcR(3.2 / this.scale);
           const rd = r * 0.38;
           freeHandles.forEach((h) => {
             // Bullseye outer ring
@@ -14834,7 +15875,7 @@
       const fillColor = getThemeToken('--render-direct-handle-fill', '#0f172a');
       this.ctx.strokeStyle = strokeColor;
       this.ctx.fillStyle = fillColor;
-      const r = 3.2 / this.scale;
+      const r = safeArcR(3.2 / this.scale);
       const rd = r * 0.38;
       handles.forEach((handle) => {
         // Bullseye outer ring
@@ -14886,7 +15927,7 @@
       this.ctx.setLineDash([]);
       this.ctx.fillStyle = getThemeToken('--render-direct-handle-fill', '#0f172a');
       this.ctx.strokeStyle = '#38bdf8';
-      const r = 3 / this.scale;
+      const r = safeArcR(3 / this.scale);
       anchors.forEach((anchor, idx) => {
         if (anchor.in) {
           this.ctx.beginPath();
@@ -15104,38 +16145,310 @@
       return changed;
     }
 
-    hitHandle(sx, sy, bounds) {
-      const RESIZE_R = 10;
-      const ROTATE_R = 28;
-      const corners = [
-        { key: 'nw', ...bounds.corners.nw },
-        { key: 'ne', ...bounds.corners.ne },
-        { key: 'se', ...bounds.corners.se },
-        { key: 'sw', ...bounds.corners.sw },
+    // TUX-023: pointer-type aware handle geometry. One tolerance source: UI_CONSTANTS.HIT_TOLERANCE
+    // via Vectura.hitTolerance(). Only pointerType 'touch' is coarse; pen equals mouse.
+    // getHandlePoint/getHandlePoints/getResizeAnchor keep the TRUE corners.
+    isCoarseHandles() {
+      if (this.lastPointerType) return this.lastPointerType === 'touch';
+      return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    }
+
+    // Draw and hit centres. Mouse/pen: exactly getHandlePoints. Touch: a selection narrower
+    // than 3 resize radii has its corners nudged outward along its own axes (so the four
+    // zones do not crowd the centre) and loses the edge handles of that axis.
+    getHandleHitPoints(bounds, pointerType = 'mouse') {
+      if (pointerType !== 'touch') return this.getHandlePoints(bounds);
+      const tol = window.Vectura.hitTolerance;
+      const span = tol('resize', 'touch') * window.Vectura.UI_CONSTANTS.HIT_TOLERANCE.smallSelectionFactor;
+      const { nw, ne, sw } = bounds.corners;
+      const scale = this.scale || 1;
+      const wWorld = Math.hypot(ne.x - nw.x, ne.y - nw.y);
+      const hWorld = Math.hypot(sw.x - nw.x, sw.y - nw.y);
+      const ux = wWorld ? (ne.x - nw.x) / wWorld : 1;
+      const uy = wWorld ? (ne.y - nw.y) / wWorld : 0;
+      const vx = hWorld ? (sw.x - nw.x) / hWorld : 0;
+      const vy = hWorld ? (sw.y - nw.y) / hWorld : 1;
+      const nu = Math.max(0, (span - wWorld * scale) / 2) / scale;
+      const nv = Math.max(0, (span - hWorld * scale) / 2) / scale;
+      const nudge = (pt, su, sv) => ({
+        x: pt.x + su * nu * ux + sv * nv * vx,
+        y: pt.y + su * nu * uy + sv * nv * vy,
+      });
+      const c = bounds.corners;
+      const out = [
+        { key: 'nw', ...nudge(c.nw, -1, -1) },
+        { key: 'ne', ...nudge(c.ne, 1, -1) },
+        { key: 'se', ...nudge(c.se, 1, 1) },
+        { key: 'sw', ...nudge(c.sw, -1, 1) },
       ];
+      const wide = wWorld * scale >= span;
+      const tall = hWorld * scale >= span;
+      // Edge midpoints move outward along their normal when that side is under the span, so
+      // their zones never cover the centre of a thin selection (a centre drag must move it).
+      const edge = (key, su, sv) => {
+        const m = this._edgeMidpoint(bounds, key);
+        return { key, x: m.x + su * nu * ux + sv * nv * vx, y: m.y + su * nu * uy + sv * nv * vy };
+      };
+      if (wide) {
+        out.push(edge('n', 0, -1));
+        out.push(edge('s', 0, 1));
+      }
+      if (tall) {
+        out.push(edge('e', 1, 0));
+        out.push(edge('w', -1, 0));
+      }
+      return out;
+    }
+
+    // Screen-px centre {x, y, r} of the visible touch rotate handle, or null (non-touch).
+    // 34 px beyond the NE hit centre (mid-band: outside the 22 px resize zone, inside the
+    // 48 px band). Flips to NW, SE, SW when NE would sit off the canvas.
+    _computeRotateAffordance(bounds, pointerType) {
+      if (pointerType !== 'touch') return null;
+      // Cache per geometry for a short window: drawSelection and hitHandle both call this every
+      // frame/move, and the clear-canvas check runs elementFromPoint up to 20 times.
+      const c = bounds.corners;
+      const key = [this.scale, this.offsetX, this.offsetY, this.canvas && this.canvas.clientWidth,
+        this.canvas && this.canvas.clientHeight, c.nw.x, c.nw.y, c.ne.x, c.ne.y, c.sw.x, c.sw.y].join('|');
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const hit = this._rotAffCache;
+      if (hit && hit.key === key && now - hit.at < 120) return hit.value;
+      const value = this._computeRotateAffordanceUncached(bounds);
+      this._rotAffCache = { key, at: now, value };
+      return value;
+    }
+
+    _computeRotateAffordanceUncached(bounds) {
+      const tol = window.Vectura.hitTolerance;
+      const margin = tol('rotateAffordance', 'touch');
+      const offset = tol('rotateAffordanceOffset', 'touch');
+      const hits = this.getHandleHitPoints(bounds, 'touch');
+      const center = this.worldToScreen(bounds.center.x, bounds.center.y);
+      const cw = this.canvas && this.canvas.clientWidth;
+      const ch = this.canvas && this.canvas.clientHeight;
+      const measured = !!(cw && ch);
+      const inCanvas = (pt) => pt.x >= margin && pt.y >= margin && pt.x <= cw - margin && pt.y <= ch - margin;
+      const clamp = (pt) => ({
+        x: Math.min(Math.max(pt.x, margin), Math.max(margin, cw - margin)),
+        y: Math.min(Math.max(pt.y, margin), Math.max(margin, ch - margin)),
+        r: pt.r,
+      });
+      const at = (hp) => {
+        const sc = this.worldToScreen(hp.x, hp.y);
+        const vx = sc.x - center.x;
+        const vy = sc.y - center.y;
+        const len = Math.hypot(vx, vy) || 1;
+        return { x: sc.x + (vx / len) * offset, y: sc.y + (vy / len) * offset, r: margin };
+      };
+      this._rotAffOccluded = false;
+      let first = null;
+      // Pass 1: the four corner diagonals, unmodified.
+      const cands = [];
+      for (const key of ['ne', 'nw', 'se', 'sw']) {
+        const hp = hits.find((h) => h.key === key);
+        if (!hp) continue;
+        const pt = at(hp);
+        if (!first) first = pt;
+        if (!measured) return pt;
+        if (inCanvas(pt) && this._isCanvasTopAt(pt, margin)) return pt;
+        cands.push(pt);
+      }
+      if (!measured) return first;
+      // Pass 2: edge-midpoint normals at the same offset (e, w, n, s), then every candidate
+      // clamped into the canvas rect and re-checked against docked chrome.
+      const corners = bounds.corners;
+      const mid = (a, b2) => ({ x: (a.x + b2.x) / 2, y: (a.y + b2.y) / 2 });
+      const edges = [['e', corners.ne, corners.se], ['n', corners.nw, corners.ne],
+        ['w', corners.nw, corners.sw], ['s', corners.sw, corners.se]];
+      const edgePts = edges.map(([, p1, p2]) => at(mid(p1, p2)));
+      for (const pt of edgePts) {
+        if (inCanvas(pt) && this._isCanvasTopAt(pt, margin)) return pt;
+      }
+      const all = cands.concat(edgePts);
+      for (const pt of all) {
+        const cp = clamp(pt);
+        if (this._isCanvasTopAt(cp, margin)) return cp;
+      }
+      // Pass 3: step along each selection edge (outside by the offset) until a spot is clear.
+      for (const [, p1, p2] of edges) {
+        const s1 = this.worldToScreen(p1.x, p1.y);
+        const s2 = this.worldToScreen(p2.x, p2.y);
+        for (let i = 0; i <= 12; i += 1) {
+          const t = i / 12;
+          const ex = s1.x + (s2.x - s1.x) * t;
+          const ey = s1.y + (s2.y - s1.y) * t;
+          const vx = ex - center.x;
+          const vy = ey - center.y;
+          const len = Math.hypot(vx, vy) || 1;
+          const cp = clamp({ x: ex + (vx / len) * offset, y: ey + (vy / len) * offset, r: margin });
+          if (this._isCanvasTopAt(cp, margin)) return cp;
+        }
+      }
+      // Nothing is clear: return the clamped first candidate and record the occluded state.
+      this._rotAffOccluded = true;
+      return clamp(first);
+    }
+
+    // True when the canvas is the topmost element at the disc centre and at +/- r on each
+    // axis. Docked chrome (ctxbar, rails, panes) can overlay the canvas element. Skipped
+    // when the layout cannot be measured (jsdom has no elementFromPoint hit testing).
+    _isCanvasTopAt(pt, r) {
+      if (typeof document === 'undefined' || typeof document.elementFromPoint !== 'function') return true;
+      const rect = this.canvas.getBoundingClientRect();
+      const probes = [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]];
+      return probes.every(([dx, dy]) => {
+        const el = document.elementFromPoint(rect.left + pt.x + dx, rect.top + pt.y + dy);
+        return el === this.canvas;
+      });
+    }
+
+    // Track the pointer type. When it flips handles between coarse (touch) and fine
+    // (mouse/pen), redraw so the drawn handle size follows what hitHandle will use.
+    _notePointerType(e) {
+      if (!e || !e.pointerType) return;
+      const before = this.isCoarseHandles();
+      this.lastPointerType = e.pointerType;
+      if (this.isCoarseHandles() !== before) this.draw();
+    }
+
+    // Screen px a docked bar must clear below (or above) the selection so it never covers a
+    // touch resize zone: the farthest nudged hit centre beyond the selection edge plus the touch
+    // resize radius. 0 for mouse/pen. The context bar adds this to its anchor offset.
+    getHandleClearancePx() {
+      if (!this.isCoarseHandles()) return 0;
+      const layers = this.getSelectedLayers();
+      if (!layers.length) return 0;
+      // The context bar asks on every animation frame. A selection-bounds walk on a heavy document costs
+      // tens of ms, so cache until a draw, the view, the selection or the temp transform changes.
+      const ids = layers.map((l) => l.id).join(',');
+      const c = this._clearanceCache;
+      if (c && c.seq === (this._drawSeq || 0) && c.ids === ids && c.scale === this.scale
+        && c.ox === this.offsetX && c.oy === this.offsetY && c.temp === this.tempTransform) return c.value;
+      const bounds = this.getSelectionBounds(layers, this.tempTransform);
+      let value = 0;
+      if (bounds && bounds.corners) {
+        // Screen bounds of the same corners (as getSelectionScreenBounds computes), without a second walk.
+        let minY = Infinity;
+        let maxY = -Infinity;
+        Object.values(bounds.corners).forEach((pt) => {
+          const s = this.worldToScreen(pt.x, pt.y);
+          minY = Math.min(minY, s.y); maxY = Math.max(maxY, s.y);
+        });
+        if (Number.isFinite(minY)) {
+          let beyond = 0;
+          this.getHandleHitPoints(bounds, 'touch').forEach((h) => {
+            const p = this.worldToScreen(h.x, h.y);
+            beyond = Math.max(beyond, p.y - maxY, minY - p.y);
+          });
+          value = beyond + window.Vectura.hitTolerance('resize', 'touch');
+        }
+      }
+      this._clearanceCache = {
+        seq: this._drawSeq || 0, ids, scale: this.scale, ox: this.offsetX, oy: this.offsetY, temp: this.tempTransform, value,
+      };
+      return value;
+    }
+
+    // Drop the cached affordance and repaint (touch only) after docked chrome moved.
+    // Invalidates the cache and requests one repaint on the next animation frame. A draw that
+    // already happened since the request (pan, zoom, drag) absorbs it, so no extra frame is forced.
+    refreshRotateAffordance() {
+      this._rotAffCache = null;
+      const active = this.isCoarseHandles() && this.getSelectedLayers && this.getSelectedLayers().length;
+      if (!active) {
+        this._rotAffDrawn = null; // nothing is painted any more; never leave a stale value
+        return;
+      }
+      if (this._rotAffPending) return;
+      this._rotAffPending = true;
+      const seq = this._drawSeq || 0;
+      const schedule = (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function')
+        ? window.requestAnimationFrame.bind(window)
+        : (cb) => setTimeout(cb, 16);
+      schedule(() => {
+        this._rotAffPending = false;
+        if ((this._drawSeq || 0) !== seq) return;
+        this._rotAffCache = null;
+        if (this.isCoarseHandles() && this.getSelectedLayers().length) this.draw();
+      });
+    }
+
+    getRotateAffordance(bounds) {
+      if (!this.isCoarseHandles()) return null;
+      return this._computeRotateAffordance(bounds, 'touch');
+    }
+
+    // Screen distance from (sx, sy) to the nearest touch resize centre (nudged hit points and
+    // the true corners). Used to arbitrate the corner widget against the resize zone.
+    _nearestResizeCentreDistance(sx, sy, bounds) {
+      let best = Infinity;
+      const consider = (pt) => {
+        const sc = this.worldToScreen(pt.x, pt.y);
+        best = Math.min(best, Math.hypot(sx - sc.x, sy - sc.y));
+      };
+      this.getHandleHitPoints(bounds, 'touch').forEach(consider);
+      ['nw', 'ne', 'se', 'sw'].forEach((k) => consider(bounds.corners[k]));
+      return best;
+    }
+
+    hitHandle(sx, sy, bounds, { pointerType = 'mouse' } = {}) {
+      const tol = window.Vectura.hitTolerance;
+      const touch = pointerType === 'touch';
+      const RESIZE_R = tol('resize', pointerType);
+      const ROTATE_R = tol('rotate', pointerType);
+      const hits = this.getHandleHitPoints(bounds, pointerType);
+      const corners = hits.filter((h) => h.key.length === 2);
       // Corners win over edge midpoints when the zones overlap (small boxes).
       for (const c of corners) {
         const sc = this.worldToScreen(c.x, c.y);
         if (Math.hypot(sx - sc.x, sy - sc.y) <= RESIZE_R) return c.key;
       }
-      // SEL-1: edge-midpoint resize zones.
-      for (const edge of ['n', 'e', 's', 'w']) {
-        const pt = this._edgeMidpoint(bounds, edge);
-        const sc = this.worldToScreen(pt.x, pt.y);
-        if (Math.hypot(sx - sc.x, sy - sc.y) <= RESIZE_R) return edge;
-      }
-      let world = null;
-      for (const c of corners) {
-        const sc = this.worldToScreen(c.x, c.y);
-        if (Math.hypot(sx - sc.x, sy - sc.y) <= ROTATE_R) {
-          if (!world) world = this.screenToWorld(sx, sy);
-          if (!this.pointInBounds(world, bounds)) return `rotate-${c.key}`;
+      if (touch) {
+        // A nudged corner zone must still grab the true corner.
+        // Skipped when the true-corner zones overlap (side < 2 * trueR): tiny selections must
+        // move from the centre, and the nudged handles already give them a grab target.
+        const trueR = tol('resize', 'mouse');
+        const tl = this.worldToScreen(bounds.corners.nw.x, bounds.corners.nw.y);
+        const tr = this.worldToScreen(bounds.corners.ne.x, bounds.corners.ne.y);
+        const bl = this.worldToScreen(bounds.corners.sw.x, bounds.corners.sw.y);
+        const roomy = Math.min(Math.hypot(tr.x - tl.x, tr.y - tl.y), Math.hypot(bl.x - tl.x, bl.y - tl.y)) >= 2 * trueR;
+        // A corner far from the centre (long thin selection) stays grabbable even when the
+        // short side is small: its zone cannot reach the centre.
+        const mid = this.worldToScreen(bounds.center.x, bounds.center.y);
+        for (const key of ['nw', 'ne', 'se', 'sw']) {
+          const sc = this.worldToScreen(bounds.corners[key].x, bounds.corners[key].y);
+          const far = Math.hypot(mid.x - sc.x, mid.y - sc.y) >= 2 * trueR;
+          if ((roomy || far) && Math.hypot(sx - sc.x, sy - sc.y) <= trueR) return key;
         }
       }
-      return null;
+      // SEL-1: edge-midpoint resize zones.
+      for (const h of hits) {
+        if (h.key.length !== 1) continue;
+        const sc = this.worldToScreen(h.x, h.y);
+        if (Math.hypot(sx - sc.x, sy - sc.y) <= RESIZE_R) return h.key;
+      }
+      if (touch) {
+        const aff = this._computeRotateAffordance(bounds, 'touch');
+        if (aff && Math.hypot(sx - aff.x, sy - aff.y) <= tol('rotateAffordance', 'touch')) return 'rotate';
+      }
+      let world = null;
+      let best = null;
+      let bestD = Infinity;
+      for (const c of corners) {
+        const sc = this.worldToScreen(c.x, c.y);
+        const d = Math.hypot(sx - sc.x, sy - sc.y);
+        if (d <= ROTATE_R) {
+          if (!world) world = this.screenToWorld(sx, sy);
+          if (!this.pointInBounds(world, bounds)) {
+            if (!touch) return `rotate-${c.key}`;
+            if (d < bestD) { bestD = d; best = c.key; }
+          }
+        }
+      }
+      return best ? `rotate-${best}` : null;
     }
 
-    hit3DRotationControl(sx, sy, layer = null, bounds = null) {
+    hit3DRotationControl(sx, sy, layer = null, bounds = null, pointerType = 'mouse') {
       const targetLayer = layer || this.getSelectedLayer();
       const targetBounds = bounds || (targetLayer ? this.getSelectionBounds([targetLayer]) : null);
       const control = this.get3DRotationControl(targetLayer, targetBounds);
@@ -15147,28 +16460,61 @@
       const unit = 1 / Math.max(this.scale || 1, 0.001);
       const world = this.screenToWorld(sx, sy);
       const centerDist = Math.hypot(world.x - control.center.x, world.y - control.center.y);
-      if (centerDist <= 5 * unit) {
+      const tol = window.Vectura.hitTolerance;
+      if (pointerType === 'touch') {
+        // TUX-025: one nearest-wins arbitration over the point targets, then the ring band, then
+        // the pad fallback. Radii are screen px from the tolerance table (pen equals mouse).
+        const dist = (p) => Math.hypot(world.x - p.x, world.y - p.y);
+        const markerR = tol('gizmo3d-marker', 'touch') * unit;
+        const mouseMarkerR = tol('gizmo3d-marker', 'mouse') * unit;
+        const centreR = tol('gizmo3d-centre', 'touch') * unit;
+        const mouseCentreR = tol('gizmo3d-centre', 'mouse') * unit;
+        const cands = [];
+        if (centerDist <= centreR) cands.push({ type: 'orbit', distance: centerDist, enlarged: centerDist > mouseCentreR });
+        const yd = dist(control.yawMarker);
+        if (yd <= markerR) cands.push({ type: 'yaw', distance: yd, enlarged: yd > mouseMarkerR });
+        const pd = dist(control.pitchMarker);
+        if (pd <= markerR) cands.push({ type: 'pitch', distance: pd, enlarged: pd > mouseMarkerR });
+        if (control.rollHandle) {
+          const rd = dist(control.rollHandle);
+          if (rd <= markerR) cands.push({ type: 'roll', distance: rd, enlarged: rd > mouseMarkerR });
+        }
+        if (cands.length) {
+          cands.sort((a, b) => a.distance - b.distance);
+          const w = cands[0];
+          return { type: w.type, layer: hitLayer, spec: control.spec, control, distance: w.distance / unit, enlarged: w.enlarged };
+        }
+        if (control.rollHandle && Math.abs(centerDist - control.ringRadius) <= tol('gizmo3d-ring-band', 'touch') * unit) {
+          return { type: 'roll', layer: hitLayer, spec: control.spec, control, distance: Math.abs(centerDist - control.ringRadius) / unit, enlarged: true };
+        }
+        if (centerDist <= control.padRadius + tol('gizmo3d-pad-slack', 'touch') * unit) {
+          return { type: 'orbit', layer: hitLayer, spec: control.spec, control, distance: centerDist / unit, enlarged: true };
+        }
+        return null;
+      }
+      if (centerDist <= tol('gizmo3d-centre', pointerType) * unit) {
         return { type: 'orbit', layer: hitLayer, spec: control.spec, control };
       }
       const yawDist = Math.hypot(world.x - control.yawMarker.x, world.y - control.yawMarker.y);
       const pitchDist = Math.hypot(world.x - control.pitchMarker.x, world.y - control.pitchMarker.y);
+      const markerR = tol('gizmo3d-marker', pointerType) * unit;
       const markerHits = [];
-      if (yawDist <= 9 * unit) markerHits.push({ distance: yawDist, type: 'yaw' });
-      if (pitchDist <= 9 * unit) markerHits.push({ distance: pitchDist, type: 'pitch' });
+      if (yawDist <= markerR) markerHits.push({ distance: yawDist, type: 'yaw' });
+      if (pitchDist <= markerR) markerHits.push({ distance: pitchDist, type: 'pitch' });
       if (markerHits.length) {
         markerHits.sort((a, b) => a.distance - b.distance);
         return { type: markerHits[0].type, layer: hitLayer, spec: control.spec, control };
       }
       if (control.rollHandle) {
         const rollDist = Math.hypot(world.x - control.rollHandle.x, world.y - control.rollHandle.y);
-        if (rollDist <= 9 * unit) {
+        if (rollDist <= markerR) {
           return { type: 'roll', layer: hitLayer, spec: control.spec, control };
         }
-        if (Math.abs(centerDist - control.ringRadius) <= 5 * unit) {
+        if (Math.abs(centerDist - control.ringRadius) <= tol('gizmo3d-ring-band', pointerType) * unit) {
           return { type: 'roll', layer: hitLayer, spec: control.spec, control };
         }
       }
-      if (centerDist <= control.padRadius + 7 * unit) {
+      if (centerDist <= control.padRadius + tol('gizmo3d-pad-slack', pointerType) * unit) {
         return { type: 'orbit', layer: hitLayer, spec: control.spec, control };
       }
       return null;
@@ -15201,11 +16547,31 @@
         ),
         startRoll: startRot.hasRoll ? normalizeDegrees(startRot.roll) : 0,
         startRollAngle: rollAngle,
+        pointerType: event?.pointerType || 'mouse',
+        fingerYaw0: 0,
+        fingerPitchT0: 0,
         historyPushed: false,
         moved: false,
       };
+      // TUX-025: a finger grabs up to 22 px off the marker, so touch drags are offset-preserving.
+      // Mouse and pen keep the absolute mapping.
+      if (this.rotation3DDrag.pointerType === 'touch') {
+        const d = this.rotation3DDrag;
+        d.fingerYaw0 = this._fingerYawDeg(d, startWorld);
+        d.fingerPitchT0 = this._fingerPitchT(d, startWorld);
+      }
       this.setCanvasCursor('grabbing', 'rotate-3d');
       return true;
+    }
+
+    _fingerYawDeg(drag, world) {
+      const nx = (world.x - drag.center.x) / Math.max(1e-6, drag.yawRadiusX || 1);
+      const ny = (world.y - drag.center.y) / Math.max(1e-6, drag.yawRadiusY || 1);
+      return normalizeDegrees((Math.atan2(nx, ny) * 180) / Math.PI);
+    }
+
+    _fingerPitchT(drag, world) {
+      return 0.5 - ((world.y - drag.center.y) / Math.max(1e-6, drag.pitchTrackHeight || 1));
     }
 
     apply3DRotationDrag(event = {}) {
@@ -15238,9 +16604,8 @@
         const sx = (event.clientX ?? drag.startClient.x) - rect.left;
         const sy = (event.clientY ?? drag.startClient.y) - rect.top;
         const world = this.screenToWorld(sx, sy);
-        const nx = (world.x - drag.center.x) / Math.max(1e-6, drag.yawRadiusX || 1);
-        const ny = (world.y - drag.center.y) / Math.max(1e-6, drag.yawRadiusY || 1);
-        let nextYaw = normalizeDegrees((Math.atan2(nx, ny) * 180) / Math.PI);
+        let nextYaw = this._fingerYawDeg(drag, world);
+        if (drag.pointerType === 'touch') nextYaw = normalizeDegrees(drag.startYaw + ((((nextYaw - drag.fingerYaw0) % 360) + 540) % 360) - 180);
         if (modifiers.shift) nextYaw = Math.round(nextYaw / 15) * 15;
         this._write3DRotation(layer, drag.spec, { yaw: tidyDegrees(normalizeDegrees(nextYaw)) });
       } else if (drag.type === 'pitch') {
@@ -15248,8 +16613,13 @@
         const sy = (event.clientY ?? drag.startClient.y) - rect.top;
         const world = this.screenToWorld(0, sy);
         const pitchSpan = Math.max(1, drag.spec.pitchMax - drag.spec.pitchMin);
-        const pitchT = clamp(0.5 - ((world.y - drag.center.y) / Math.max(1e-6, drag.pitchTrackHeight || 1)), 0, 1);
-        let nextPitch = drag.spec.pitchMin + pitchT * pitchSpan;
+        let nextPitch;
+        if (drag.pointerType === 'touch') {
+          nextPitch = drag.startPitch + (this._fingerPitchT(drag, world) - drag.fingerPitchT0) * pitchSpan;
+        } else {
+          const pitchT = clamp(this._fingerPitchT(drag, world), 0, 1);
+          nextPitch = drag.spec.pitchMin + pitchT * pitchSpan;
+        }
         if (modifiers.shift) nextPitch = Math.round(nextPitch / 15) * 15;
         this._write3DRotation(layer, drag.spec, { pitch: tidyDegrees(clamp(nextPitch, drag.spec.pitchMin, drag.spec.pitchMax)) });
       } else {
@@ -15632,7 +17002,7 @@
       if (this.activeTool === 'direct') {
         const selectedShape = this.getSelectedShapeLayer();
         if (selectedShape) {
-          const cornerHit = this.hitShapeCornerHandle(world, selectedShape, 0);
+          const cornerHit = this.hitShapeCornerHandle(world, selectedShape, 0, e && e.pointerType);
           if (cornerHit) {
             // Style-specific corner cursor only — the radius label is shown
             // while dragging, never on hover.
@@ -15641,13 +17011,13 @@
           }
         }
         if (!selectedShape && this.directSelection && !this.directSelection.meta?.shape) {
-          const freeHit = this.hitFreeformCornerHandle(world);
+          const freeHit = this.hitFreeformCornerHandle(world, e && e.pointerType);
           if (freeHit) {
             this.setCanvasCursor(this.cursorDataUrl('cornerRadius', 4, 4, 'pointer', freeHit.cornerType));
             return;
           }
         }
-        const control = this.hitDirectControl(world);
+        const control = this.hitDirectControl(world, e && e.pointerType);
         if (control) {
           this.setCanvasCursor(control.type === 'anchor' ? 'move' : 'pointer');
           return;
@@ -15661,7 +17031,7 @@
         return;
       }
       if (this.activeTool === 'pen' && this.penMode !== 'draw' && !modifiers.meta) {
-        const control = this.hitDirectControl(world);
+        const control = this.hitDirectControl(world, e && e.pointerType);
         if (control) {
           this.setCanvasCursor(this.penMode === 'delete' ? 'not-allowed' : 'pointer');
           return;
@@ -15672,7 +17042,7 @@
         this.setCanvasCursor('crosshair');
         return;
       }
-      if (this.hitLightSource(world)) {
+      if (this.hitLightSource(world, e && e.pointerType)) {
         this.setCanvasCursor(this.isLightDrag ? 'grabbing' : 'move');
         return;
       }
@@ -15731,7 +17101,7 @@
         }
         return;
       }
-      const handle = this.hitHandle(sx, sy, bounds);
+      const handle = this.hitHandle(sx, sy, bounds, { pointerType: this.lastPointerType });
       if (handle) {
         const mode = handle.startsWith('rotate') ? 'rotate' : 'resize';
         this.setCanvasCursor(this.handleCursor(handle, bounds), mode);

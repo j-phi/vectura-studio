@@ -1,0 +1,12 @@
+[
+  {
+    "selector": "#mobile-pane-backdrop",
+    "reason": "Jay 2026-10-12: backdrop only dismisses",
+    "stateOnly": true
+  },
+  {
+    "selector": ".vtp-fp-pop.kb-compact .vtp-fp-opt",
+    "reason": "keyboard-open landscape: 3 rows needed; 24px meets WCAG 2.5.8 floor",
+    "stateOnly": true
+  }
+]

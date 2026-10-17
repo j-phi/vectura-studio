@@ -112,6 +112,9 @@
 
     setEnabled('btn-object-outline-text', sel.some((l) => l && l.type === 'text'));
     setEnabled('btn-object-lock', sel.length > 0);
+    // TUX-031: Arrange verbs act on the selected non-group layers (moveSelectedLayers ignores groups).
+    const canArrange = sel.some((l) => l && !l.isGroup);
+    ['bring-forward', 'send-backward', 'bring-to-front', 'send-to-back'].forEach((n) => setEnabled(`btn-object-${n}`, canArrange));
     const locked = this.app?.ui?.layerLockedIds;
     setEnabled('btn-object-unlock', !!(locked && locked.size > 0));
 
@@ -147,6 +150,10 @@
     wire('btn-menu-delete', () => run('delete'));
     wire('btn-object-flip-h', () => run('flip-h'));
     wire('btn-object-flip-v', () => run('flip-v'));
+    wire('btn-object-bring-forward', () => self.arrangeSelection('forward'));
+    wire('btn-object-send-backward', () => self.arrangeSelection('backward'));
+    wire('btn-object-bring-to-front', () => self.arrangeSelection('top'));
+    wire('btn-object-send-to-back', () => self.arrangeSelection('bottom'));
     wire('btn-object-isolate', () => run('isolate'));
     // Exit Isolation must work even with no selection (an isolated empty blend);
     // buildItems()/runCommand only expose it when something is selected, so call
@@ -303,6 +310,16 @@
         });
       });
     });
+
+    // TUX-040/014: a press on any control outside the open top menu closes it. Tool buttons and
+    // other pointer-driven controls do not always synthesize a click that reaches the document handler.
+    document.addEventListener('pointerdown', (e) => {
+      const open = this.openTopMenuTrigger;
+      if (!open) return;
+      const t = e.target;
+      if (t && t.closest && (open.contains(t) || t.closest('[data-top-menu-panel]'))) return;
+      this.setTopMenuOpen(null, false);
+    }, true);
 
     window.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape' || !this.openTopMenuTrigger) return;
