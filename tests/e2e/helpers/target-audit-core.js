@@ -268,7 +268,9 @@ function measureInPage(cfg, helpers) {
     '[role=button]', '[role=slider]', '[role=tab]', '[role=menuitem]', '[role=menuitemradio]',
     '[role=menuitemcheckbox]', '[role=option]', '[role=checkbox]', '[role=switch]', '[role=radio]',
   ].join(',');
-  const cands = Array.from(set).filter(visible).filter((el) => {
+  // cfg.overlay: a dialog or window covers the workspace (the state has `overlay: true`), so the panel resizers behind it are
+  // not reachable and are not measured. Every other item is, as before.
+  const cands = Array.from(set).filter(visible).filter((el) => !(cfg.overlay && el.hasAttribute('data-touch-target'))).filter((el) => {
     if (el.matches(SEMANTIC)) return true;
     let p = el.parentElement;
     while (p) { if (set.has(p) && visible(p) && p.tagName !== 'LABEL') return false; p = p.parentElement; }

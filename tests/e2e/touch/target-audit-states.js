@@ -165,19 +165,19 @@ const STATES = [
       await p.evaluate(() => document.getElementById('generator-module-trigger').click());
     },
     post: (p) => p.evaluate(() => (document.getElementById('gm-module-menu')?.checkVisibility() ? true : 'generator module menu not open')) },
-  { id: 'modal-document-setup', fast: false, minItems: 20, run: (p) => fileItem(p, 'btn-settings'),
+  { id: 'modal-document-setup', overlay: true, fast: false, minItems: 20, run: (p) => fileItem(p, 'btn-settings'),
     post: (p) => p.evaluate(() => (document.getElementById('settings-panel')?.checkVisibility() ? true : 'document setup panel not visible')) },
-  { id: 'modal-export', fast: true, minItems: 19,
+  { id: 'modal-export', overlay: true, fast: true, minItems: 19,
     run: async (p) => { await ensureLayer(p); await fileItem(p, 'btn-export'); },
     post: modalOpen(/export/) },
-  { id: 'modal-help', fast: true, minItems: 18,
+  { id: 'modal-help', overlay: true, fast: true, minItems: 18,
     run: async (p) => {
       await clickMenu(p, 'btn-menu-help');
       await p.waitForFunction(() => document.querySelector('#btn-menu-help ~ .top-menu-panel.open'), null, { timeout: 10000 });
       await clickId(p, 'btn-help');
     },
     post: modalOpen(/help|guide/) },
-  { id: 'modal-preset-save', fast: false, minItems: 13,
+  { id: 'modal-preset-save', overlay: true, fast: false, minItems: 13,
     run: async (p) => {
       await ensureLayer(p);
       await p.evaluate(() => {
@@ -203,7 +203,7 @@ const STATES = [
       return p.evaluate(() => (document.querySelector('.petal-designer-inline, [class*="petal-designer"]')?.checkVisibility() ? true : 'petal designer not visible'));
     } },
   // Pop-out floating Petal Designer window.
-  { id: 'petal-designer-window', fast: false, minItems: 21,
+  { id: 'petal-designer-window', overlay: true, fast: false, minItems: 21,
     run: async (p) => {
       const id = await addLayer(p, 'petalisDesigner');
       await p.evaluate((id) => {
@@ -237,7 +237,7 @@ const STATES = [
       if (t !== true) return t;
       return paneOpen(p, 'left');
     } },
-  { id: 'color-picker', fast: false, minItems: 24,
+  { id: 'color-picker', overlay: true, fast: false, minItems: 24,
     run: async (p) => {
       await openPaneSettled(p, 'right');
       await p.evaluate(() => document.querySelector('.right-pane-tab[data-tab="pens"]')?.click());

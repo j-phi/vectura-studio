@@ -46,6 +46,19 @@ test.describe('panel resizers by finger', () => {
     });
   }
 
+  for (const side of ['left', 'right']) {
+    test(`a finger on the ${side} resizer bar near its top and bottom ends still lands on it`, async ({ page }, testInfo) => {
+      test.skip(!WIDE.includes(testInfo.project.name), 'docked panes with a resizer: touch-wide only');
+      await gotoApp(page);
+      await spy(page);
+      const b = await page.locator(`#${side}-resizer`).boundingBox();
+      // The 24 px strip covers the middle of the bar; the 6 px bar alone must hold a finger at 12 % and 88 %.
+      const barX = await page.evaluate((id) => { const e = document.getElementById(id); const r = e.getBoundingClientRect(); const bar = getComputedStyle(e, '::before'); return r.left + parseFloat(bar.left) + parseFloat(bar.width) / 2; }, `${side}-resizer`);
+      for (const f of [0.12, 0.88]) await page.touchscreen.tap(barX, b.y + b.height * f);
+      expect(await downs(page)).toEqual([`${side}-resizer`, `${side}-resizer`]);
+    });
+  }
+
   test('a canvas tap just above the expanded bottom pane reaches the canvas', async ({ page }, testInfo) => {
     test.skip(!WIDE.includes(testInfo.project.name), 'resizer visible layouts only');
     await gotoApp(page);
