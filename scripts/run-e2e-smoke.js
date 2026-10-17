@@ -5,8 +5,8 @@
 //      one WebKit touch project.
 // The full touch roster (all 11 projects, every touch spec) runs nightly as a sharded matrix
 // (`touch-e2e-nightly` in .github/workflows/test.yml). Extra arguments pass to both runs.
-// desktop-visual-chromium is not in the PR smoke: its pixel snapshots are darwin-only, so all of
-// its tests skip on linux CI. It runs in the nightly scheduled-audit roster (and locally).
+// desktop-visual-chromium is not in CI: its pixel snapshots are darwin-only, so all of its tests
+// skip on linux. It runs locally (npm run test:e2e). The nightly reuses this PR smoke (R-19).
 'use strict';
 const { spawnSync } = require('child_process');
 const path = require('path');

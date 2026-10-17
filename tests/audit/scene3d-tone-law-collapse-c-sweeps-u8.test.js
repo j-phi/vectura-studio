@@ -1,5 +1,5 @@
 const {
-  loadVecturaRuntime, clone, createCapturedOptionsCache,
+  loadScene3dAuditRuntime, clone, createCapturedOptionsCache,
   BOUNDS, SUN, SLOW,
 } = require('../helpers/scene3d-tone-law-collapse-shared');
 
@@ -49,7 +49,7 @@ const SURVIVOR_WEIGHT_CLAIM_U8 = /\bweight\b(?:\s+\S+){0,1}\s+varies\b/;
 
 describe('Scene3D tone-law collapse — U8 caveat: BOTH the survivor (interlockWeave) AND the folded law (onePenDown) carry real, DIFFERENT measured caveats', () => {
   let runtime;
-  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  beforeAll(async () => { runtime = await loadScene3dAuditRuntime(); });
   afterAll(() => runtime.cleanup());
 
   test('BY_ID-direct: interlockWeave and onePenDown each carry their own non-empty, DISTINCT caveat — the roster corpus is untouched', () => {
@@ -146,7 +146,7 @@ describe('Scene3D tone-law collapse — U8 multi-primitive x multi-density: inte
   };
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;

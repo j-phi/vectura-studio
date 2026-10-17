@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { loadScene3dAuditRuntime } = require('../helpers/scene3d-audit-runtime');
 const crypto = require('crypto');
 const {
   contact, thirdsSplit, covByIBins, siteCoverage, pathLen, over2RP, subMinCount,
@@ -55,7 +55,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
     const results = { test: {}, create: {} };
 
     beforeAll(async () => {
-      runtime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      runtime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
       ['test', 'create'].forEach((rig) => {
         CELLS.forEach(([primitive, mapper]) => {
           const r = renderCellHooked(runtime, { primitive, mapper, rig });
@@ -231,7 +231,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
     const results = { test: {}, create: {} };
 
     beforeAll(async () => {
-      runtime = await loadVecturaRuntime();
+      runtime = await loadScene3dAuditRuntime();
       ['test', 'create'].forEach((rig) => {
         B7_CELLS.forEach(([primitive, mapper]) => {
           const V = runtime.window.Vectura;
@@ -281,8 +281,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         '          const c = 0.5 * cMax; // MUTATION: coverage no longer tracks tone -> P inert -> SP5 collapses',
         'SP5_MUTATION_NEEDLE',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const s = renderCellHooked(shippedRuntime, CELL);
         const m = renderCellHooked(mutantRuntime, CELL);
@@ -303,8 +303,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         'const MK_TICK_GAP_PEN = -0.9; // MUTATION: near-total overlap allowed',
         'GAP_MUTATION_NEEDLE',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const s = renderCellHooked(shippedRuntime, CELL);
         const m = renderCellHooked(mutantRuntime, CELL);
@@ -343,8 +343,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
             mkClipArm.rp = 0;`,
         'MAIN_CLIP_MUTATION_NEEDLE_2',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated2 } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated2 } });
       try {
         const TORUS_CELL = { primitive: 'torus', mapper: 'hatch', rig: 'test' };
         const s = renderCellHooked(shippedRuntime, TORUS_CELL);
@@ -366,7 +366,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         '          const f = Math.min(1, Lplot / Lall); // MUTATION: every tick pinned to the bare plot floor',
         'F_MUTATION_NEEDLE',
       );
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const m = renderCellHooked(mutantRuntime, CELL);
         const bins = covByIBins(m.sites, BOUNDS.penWidth);
@@ -393,7 +393,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         'CAP_MUTATION_NEEDLE_2',
       );
       const mutated = src;
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         // torus/contour, not CELL (cone/hatch): the cap only binds visibly
         // where real-neighbour extents already reach near RPn — measured to
@@ -416,8 +416,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         'if (false) { // MUTATION: HIDENS fallback disabled',
         'HIDENS_MUTATION_NEEDLE',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const V1 = shippedRuntime.window.Vectura;
         const V2 = mutantRuntime.window.Vectura;
@@ -503,7 +503,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
     const BLOCKING_CELL = 'cone/hatch/test';
 
     test('cone/hatch/test places wedge-row sites and most draw (wedgeFillFrac >= 0.3); other 3 cells reported', async () => {
-      const runtime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
+      const runtime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
       try {
         const table = [];
         WEDGE_CELLS.forEach(([primitive, mapper, rig]) => {
@@ -530,8 +530,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         'const emitTickWedgeRow = (rawAt, pitchStep, lineDir, back, side, count, zoneGate) => { if (true) return; // MUTATION: wedge pass disabled',
         'T28_WEDGE_DISABLE_NEEDLE',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const s = renderWedgeCell(shippedRuntime, { primitive: 'cone', mapper: 'hatch', rig: 'test' });
         const m = renderWedgeCell(mutantRuntime, { primitive: 'cone', mapper: 'hatch', rig: 'test' });

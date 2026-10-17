@@ -96,8 +96,7 @@ describe('full touch roster runs nightly', () => {
     expect(Object.keys(TOUCH).length).toBe(11);
   });
 
-  it('the scheduled-audit browser roster leaves touch projects to the nightly matrix', () => {
-    expect(job('scheduled-audit')).toMatch(/PW_TOUCH_PROJECTS: '0'/);
+  it('PW_TOUCH_PROJECTS=0 leaves only the desktop projects (touch runs in the nightly matrix)', () => {
     const off = configProjects({ PW_TOUCH_PROJECTS: '0' });
     expect(off.filter((n) => TOUCH[n])).toEqual([]);
     expect(off.sort()).toEqual([...smoke.DESKTOP_PROJECTS, ...smoke.NIGHTLY_ONLY_PROJECTS].sort());

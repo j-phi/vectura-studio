@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { loadScene3dAuditRuntime } = require('../helpers/scene3d-audit-runtime');
 const crypto = require('crypto');
 const {
   contact, thirdsSplit, covByIBins, siteCoverage, pathLen, over2RP, subMinCount,

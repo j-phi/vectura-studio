@@ -1,5 +1,5 @@
 const {
-  loadVecturaRuntime, clone, freezeDeep, cloneFixture, createCapturedOptionsCache,
+  loadScene3dAuditRuntime, clone, freezeDeep, cloneFixture, createCapturedOptionsCache,
   BOUNDS, SUN, SLOW, describeSingleParamCluster, describeComboCluster,
   recordedShadowResolvesToSurvivor,
 } = require('../helpers/scene3d-tone-law-collapse-shared');
@@ -8,7 +8,7 @@ const {
 
 describe('Scene3D tone-law collapse — U4 caveat-visibility gap (bundleDither, LIBRARY-tier, has a real caveat)', () => {
   let runtime;
-  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  beforeAll(async () => { runtime = await loadScene3dAuditRuntime(); });
   afterAll(() => runtime.cleanup());
 
   test('BY_ID-direct lookups (entry/note by raw id) still show the caveat — the roster corpus is untouched', () => {
@@ -53,7 +53,7 @@ describe('Scene3D tone-law collapse — U4 caveat-visibility gap (bundleDither, 
 
 describe('Scene3D tone-law collapse — U5 caveat-visibility gap (contFieldTouch, LIBRARY-tier, has a real caveat)', () => {
   let runtime;
-  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  beforeAll(async () => { runtime = await loadScene3dAuditRuntime(); });
   afterAll(() => runtime.cleanup());
 
   test('BY_ID-direct lookups still show the caveat — the roster corpus is untouched', () => {
@@ -111,7 +111,7 @@ describe('Scene3D tone-law collapse — U5 caveat-visibility gap (contFieldTouch
 describe('Scene3D tone-law collapse — U5b-2 (plain-language caveat copy)', () => {
   let runtime; let FS;
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     FS = runtime.window.Vectura.SCENE_FILL_STYLES;
   });
   afterAll(() => runtime.cleanup());
@@ -222,7 +222,7 @@ describe('Scene3D tone-law collapse — U1..U5 multi-primitive x multi-density (
   };
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;
@@ -334,7 +334,7 @@ describe('Scene3D tone-law collapse — U7-2 (plain-language pass over every rem
     'trochoidLoop', 'amplitudeOnly', 'onePenDown', 'mezzoRegion', 'dutyConst', 'endShorten',
   ];
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     FS = runtime.window.Vectura.SCENE_FILL_STYLES;
   });
   afterAll(() => runtime.cleanup());
@@ -374,7 +374,7 @@ describe('Scene3D tone-law collapse — U7-2 (plain-language pass over every rem
  */
 describe('U9b-2 — shadowResolvesToSurvivor coupling (test-side literal vs. production Shadows.toneLawApplies)', () => {
   let runtime; let V;
-  beforeAll(async () => { runtime = await loadVecturaRuntime(); V = runtime.window.Vectura; });
+  beforeAll(async () => { runtime = await loadScene3dAuditRuntime(); V = runtime.window.Vectura; });
   afterAll(() => runtime.cleanup());
 
   test('every roster SHADOW_FORWARD id is an ALIASES id Shadows.toneLawApplies judges NOT distinguishable, and is the ONLY forwarded id', () => {

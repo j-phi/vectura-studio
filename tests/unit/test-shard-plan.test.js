@@ -21,18 +21,19 @@ describe('deterministic coverage shard plan', () => {
     const coverage = job('coverage');
     const shard = job('coverage-shard');
 
-    const prOrMainPush = 'github.event_name == \'pull_request\' || (github.event_name == \'push\' && github.ref == \'refs/heads/main\')';
-    const alwaysPrOrMainPush = `always() && (${prOrMainPush})`;
+    // ci-plan decides whether the heavy graph runs (PR, main push, nightly; R-19, R-20).
+    const heavy = "needs.ci-plan.outputs.heavy == 'true'";
     for (const name of ['e2e-smoke', 'perf', 'coverage-shard']) {
-      expect(job(name)).toContain(`if: ${prOrMainPush}`);
+      expect(job(name)).toContain(`if: ${heavy}`);
     }
     // R-8: no coverage-plan job. The static matrix lists exactly 1..COVERAGE_SHARD_COUNT.
     expect(job('coverage-plan')).toBe('');
     const count = Number(workflow.match(/^  COVERAGE_SHARD_COUNT: '?(\d+)'?$/m)?.[1]);
-    expect(count).toBe(16);
+    // D-9: 12 shards after tests/audit left the roster (R-17).
+    expect(count).toBe(12);
     const matrix = JSON.parse(shard.match(/^        shard: (\[[\d, ]+\])$/m)?.[1] || 'null');
     expect(matrix).toEqual(Array.from({ length: count }, (_, i) => i + 1));
-    expect(shard).not.toContain('needs:');
+    expect(shard).toContain('needs: [ci-plan]');
     expect(shard).toContain('--plan-out "$RUNNER_TEMP/coverage-shard-plan.json" --sha "$GITHUB_SHA" --shards "$COVERAGE_SHARD_COUNT"');
     expect(shard).toContain('--started-ms "$SHARD_STARTED_MS"');
     expect(shard).toContain('--shard="$SHARD_INDEX/$COVERAGE_SHARD_COUNT"');
@@ -40,8 +41,8 @@ describe('deterministic coverage shard plan', () => {
     expect(shard).toContain('--workers "$VECTURA_VITEST_MAX_WORKERS"');
     expect(coverage).toContain('pattern: coverage-shard-[0-9]*');
     expect(workflow).not.toMatch(/\$SHARD_INDEX\/2|shard: \[1, 2\]|coverage-shard-\[12\]|--shards 2|--workers 2/);
-    expect(coverage).toContain(`if: ${alwaysPrOrMainPush}`);
-    expect(coverage).toContain('needs: [coverage-shard]');
+    expect(coverage).toContain(`if: always() && ${heavy}`);
+    expect(coverage).toContain('needs: [ci-plan, coverage-shard]');
     expect(coverage).toContain('test "$SHARDS_RESULT" = success');
     // The merge job rebuilds the plan from the same inputs; stage-blobs rejects any other hash.
     const merge = coverage.slice(coverage.indexOf('- name: Rebuild the shard plan'));
@@ -53,11 +54,8 @@ describe('deterministic coverage shard plan', () => {
     expect(coverage).toContain('--strict --log');
     expect(coverage).toContain('--execution-start-ms "$COVERAGE_CHAIN_STARTED_MS"');
 
-    expect(job('scheduled-audit')).toContain('if: github.event_name == \'schedule\'');
-    const scheduledSteps = job('scheduled-audit');
-    expect(scheduledSteps.indexOf('run: npm run test:audit')).toBeLessThan(scheduledSteps.indexOf('run: npm run test:visual'));
-    expect(scheduledSteps.indexOf('run: npm run test:visual')).toBeLessThan(scheduledSteps.indexOf('run: npm run test:perf'));
-    expect(scheduledSteps.match(/if: always\(\) && steps\.dependencies\.outcome == 'success'/g)).toHaveLength(2);
+    // R-19: the nightly reuses this graph; the single 85-108 min scheduled-audit job is gone.
+    expect(job('scheduled-audit')).toBe('');
   });
 
   it('stages shard artifacts when the merge YAML block runs in bash, and rejects a foreign plan hash', () => {
@@ -70,7 +68,7 @@ describe('deterministic coverage shard plan', () => {
     roots.push(root);
     const sha = 'd'.repeat(40);
     const runId = 'fixture-run';
-    const shardCount = 16;
+    const shardCount = 12;
     // The merge block rebuilds the real plan, so the fixture shards carry that same plan.
     const plan = buildPlan({ files: inventoryTests(), weights, sha, shardCount });
     const artifacts = path.join(root, 'coverage-shard-artifacts');
@@ -106,15 +104,25 @@ describe('deterministic coverage shard plan', () => {
     expect(runMerge().status).not.toBe(0);
   });
 
-  it('keeps tests/perf and tests/e2e out of the coverage roster, in the plan and in Vitest', () => {
+  it('keeps tests/perf, tests/audit and tests/e2e out of the coverage roster, in the plan and in Vitest', () => {
     const inventory = inventoryTests();
-    expect(COVERAGE_EXCLUDED_DIRS).toEqual(['tests/e2e', 'tests/perf']);
+    expect(COVERAGE_EXCLUDED_DIRS).toEqual(['tests/e2e', 'tests/perf', 'tests/audit']);
     expect(inventory.some((f) => f.startsWith('tests/perf/'))).toBe(false);
+    expect(inventory.some((f) => f.startsWith('tests/audit/'))).toBe(false);
+    expect(fs.readdirSync(path.resolve('tests/audit')).some((f) => f.endsWith('.test.js'))).toBe(true);
+    // The weights refresh keeps every Vitest file (the audit job splits by audit weights).
+    const all = inventoryTests(undefined, [], ['tests/e2e']);
+    expect(all.some((f) => f.startsWith('tests/audit/'))).toBe(true);
+    expect(fs.readFileSync(path.resolve('scripts/test-shard-weights-refresh.js'), 'utf8')).toContain("inventoryTests(undefined, [], ['tests/e2e'])");
     expect(inventory.some((f) => f.startsWith('tests/e2e/'))).toBe(false);
     expect(fs.readdirSync(path.resolve('tests/perf')).some((f) => f.endsWith('.test.js'))).toBe(true);
     expect(inventory.some((f) => f.startsWith('tests/unit/'))).toBe(true);
     const config = fs.readFileSync(path.resolve('vitest.config.mjs'), 'utf8');
-    expect(config).toContain("process.env.VECTURA_TEST_COVERAGE === '1' ? ['tests/perf/**'] : []");
+    expect(config).toContain("process.env.VECTURA_TEST_COVERAGE === '1' ? ['tests/perf/**', 'tests/audit/**'] : []");
+    // Local full runs still run the audits, uninstrumented.
+    const scripts = require('../../package.json').scripts;
+    expect(scripts['test:audit:proofs']).toContain('run-vitest.js run tests/audit');
+    for (const name of ['test:ci', 'test:audit']) expect(scripts[name], name).toContain('npm run test:audit:proofs');
   });
 
   it('balances known durations and gives an unweighted file its directory median', () => {

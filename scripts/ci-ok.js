@@ -3,33 +3,49 @@
  * ci-ok: the single required check for the Tests workflow (judgment R-1).
  *
  * Reads the `needs` context (NEEDS_JSON, from `toJSON(needs)`) and the event name.
- * A job that runs by design on this event must conclude `success`.
- * A job that skips by design on this event must conclude `skipped` (or `success`).
+ * The ci-plan job's outputs (heavy, audit) say which jobs run by design on this run.
+ * A job that runs by design must conclude `success`. A job that skips by design must conclude
+ * `skipped`: a dedup skip (R-19, R-20) and an audit path skip (R-17) are explicit plan outputs.
  * Any `failure` or `cancelled` result fails the check.
  */
 'use strict';
 
 const fs = require('fs');
 
-// Jobs that run on a pull request and on a push to main.
-const PR_GRAPH = ['e2e-smoke', 'perf', 'coverage-shard', 'coverage'];
-// Jobs that run only on the nightly schedule and on a manual dispatch.
+// The plan job: runs on every event and decides the rest (scripts/ci-plan.js).
+const PLAN = ['ci-plan'];
+// The heavy graph: runs when ci-plan says heavy=true (every PR; a main push unless a green PR
+// run already tested the same tree; the nightly unless a green main push did that day).
+const HEAVY = ['e2e-smoke', 'perf', 'coverage-shard', 'coverage'];
+// The Scene3D proof audits: run when ci-plan says audit=true (path-routed on PRs).
+const AUDIT = ['audit'];
+// Jobs that run only on the nightly schedule and on a manual dispatch. Never skipped by ci-plan.
 const TOUCH_NIGHTLY = ['touch-e2e-nightly', 'touch-audit-nightly'];
-// Jobs that run only on the nightly schedule.
-const SCHEDULE_ONLY = ['scheduled-audit'];
-const ALL_JOBS = [...PR_GRAPH, ...TOUCH_NIGHTLY, ...SCHEDULE_ONLY];
+const ALL_JOBS = [...PLAN, ...HEAVY, ...AUDIT, ...TOUCH_NIGHTLY];
+const PLANNED_EVENTS = ['pull_request', 'push', 'schedule', 'workflow_dispatch'];
 
-function expectedJobs(event) {
-  if (event === 'pull_request' || event === 'push') return PR_GRAPH;
-  if (event === 'schedule') return [...TOUCH_NIGHTLY, ...SCHEDULE_ONLY];
-  if (event === 'workflow_dispatch') return TOUCH_NIGHTLY;
-  return [];
+// The jobs that must succeed on this event, given ci-plan's outputs. A by-design skip is an
+// explicit `false` output from ci-plan, never an inferred `skipped` result.
+function expectedJobs(event, planOutputs = {}) {
+  const required = [];
+  if (PLANNED_EVENTS.includes(event)) required.push(...PLAN);
+  if (planOutputs.heavy === 'true') required.push(...HEAVY);
+  if (planOutputs.audit === 'true') required.push(...AUDIT);
+  if (event === 'schedule' || event === 'workflow_dispatch') required.push(...TOUCH_NIGHTLY);
+  return required;
 }
 
 function evaluate(needs, event) {
-  const required = new Set(expectedJobs(event));
+  const plan = (needs && needs['ci-plan']) || {};
+  const outputs = plan.outputs || {};
   const problems = [];
   const failed = [];
+  if (plan.result === 'success') {
+    for (const key of ['heavy', 'audit']) {
+      if (outputs[key] !== 'true' && outputs[key] !== 'false') problems.push(`ci-plan: output ${key}=${outputs[key]} is not true/false`);
+    }
+  }
+  const required = new Set(expectedJobs(event, outputs));
   const names = Object.keys(needs || {});
   for (const name of ALL_JOBS) {
     if (!names.includes(name)) problems.push(`${name}: missing from ci-ok needs`);
@@ -43,11 +59,27 @@ function evaluate(needs, event) {
     } else if (required.has(name) && result !== 'success') {
       failed.push(name);
       problems.push(`${name}: ${result} (must succeed on ${event})`);
-    } else if (!required.has(name) && result !== 'skipped' && result !== 'success') {
-      problems.push(`${name}: unexpected result ${result}`);
+    } else if (!required.has(name) && result !== 'skipped') {
+      // A job that ran although ci-plan did not ask for it means the plan and the job's `if:`
+      // disagree; fail rather than guess which one is right.
+      problems.push(`${name}: unexpected result ${result} (not planned on ${event})`);
     }
   }
   return { ok: problems.length === 0, problems, failed };
+}
+
+function verdictRecord(needs, event, env = process.env) {
+  const outputs = (needs['ci-plan'] && needs['ci-plan'].outputs) || {};
+  return {
+    schemaVersion: 1,
+    ok: evaluate(needs, event).ok,
+    event,
+    runId: String(env.GITHUB_RUN_ID || ''),
+    sha: env.GITHUB_SHA || '',
+    tree: outputs.tree || '',
+    heavy: outputs.heavy === 'true',
+    audit: outputs.audit === 'true',
+  };
 }
 
 if (require.main === module) {
@@ -68,7 +100,9 @@ if (require.main === module) {
     console.error(`ci-ok FAILED on ${event}:\n  ${problems.join('\n  ')}`);
     process.exit(1);
   }
+  // The verdict record a later main push reads to skip a duplicate run (scripts/ci-plan.js).
+  if (process.env.VERDICT_OUT) fs.writeFileSync(process.env.VERDICT_OUT, `${JSON.stringify(verdictRecord(needs, event, process.env))}\n`);
   console.log(`ci-ok: every required job passed on ${event}.`);
 }
 
-module.exports = { PR_GRAPH, TOUCH_NIGHTLY, SCHEDULE_ONLY, ALL_JOBS, expectedJobs, evaluate };
+module.exports = { PLAN, HEAVY, AUDIT, TOUCH_NIGHTLY, ALL_JOBS, expectedJobs, evaluate, verdictRecord };

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { loadScene3dAuditRuntime } = require('../helpers/scene3d-audit-runtime');
 
 const SOURCE = 'src/core/scene3d/surface-fill.js';
 const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3 };
@@ -14,7 +14,7 @@ describe('Scene3D tone-law dispatch — known module-default dispatch mutant', (
     const needle = "const TONE_ALGO = (askedLaw && (!TONE_LAWS || TONE_LAWS.indexOf(askedLaw) !== -1)\n      && askedLaw !== 'none') ? askedLaw : TONE_ALGO_DEFAULT;";
     expect(source.split(needle)).toHaveLength(2);
     const mutant = source.replace(needle, 'const TONE_ALGO = TONE_ALGO_DEFAULT;');
-    const runtime = await loadVecturaRuntime({ scriptOverrides: { [SOURCE]: mutant } });
+    const runtime = await loadScene3dAuditRuntime({ scriptOverrides: { [SOURCE]: mutant } });
     try {
       const V = runtime.window.Vectura;
       const defaults = V.ALGO_DEFAULTS.scene3d;

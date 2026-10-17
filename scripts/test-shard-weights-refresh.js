@@ -78,7 +78,9 @@ function main(argv) {
   const { inventoryTests } = require('./test-shard-plan.js');
   const previous = JSON.parse(fs.readFileSync(WEIGHTS_PATH, 'utf8'));
   const runs = args.blobs.map(readBlobDir);
-  const next = buildWeights({ runs, inventory: inventoryTests(), previous, runIds: args.runIds });
+  // Every Vitest file, not just the coverage roster: files that ran outside the coverage shards
+  // (tests/audit, tests/perf) keep their previous weight; the audit job splits by those weights.
+  const next = buildWeights({ runs, inventory: inventoryTests(undefined, [], ['tests/e2e']), previous, runIds: args.runIds });
   const old = previous.weightsSeconds || {};
   const changed = Object.keys(next.weightsSeconds).filter((f) => old[f] !== next.weightsSeconds[f]).length;
   const top = Object.entries(next.weightsSeconds).sort((a, b) => b[1] - a[1]).slice(0, 10);

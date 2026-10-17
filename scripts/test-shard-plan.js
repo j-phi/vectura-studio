@@ -7,11 +7,11 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const WEIGHTS_PATH = path.join(__dirname, 'test-shard-weights.json');
-const FULLY_SKIPPED_FILES = require('./test-lanes.json').ciRoster.testInventory.fullySkippedFiles || {};
+const FULLY_SKIPPED_FILES = require('./test-lanes.json').testInventory.fullySkippedFiles || {};
 const MIN_SHARDS = 1;
 const MAX_SHARDS = 32;
 const DEFAULT_SHARD_COUNT = 2;
-const COVERAGE_EXCLUDED_DIRS = ['tests/e2e', 'tests/perf'];
+const COVERAGE_EXCLUDED_DIRS = ['tests/e2e', 'tests/perf', 'tests/audit'];
 const FALLBACK_WEIGHT_SECONDS = 1;
 const slash = (value) => value.split(path.sep).join('/');
 
@@ -37,15 +37,18 @@ function unweightedFallback(weightsSeconds) {
   return { global, forFile: (file) => dirs[file.split('/').slice(0, 2).join('/')] ?? global };
 }
 
-function inventoryTests(directory = path.join(ROOT, 'tests'), files = []) {
+// `excluded` defaults to the coverage roster; scripts/test-shard-weights-refresh.js passes
+// ['tests/e2e'] so it keeps the weights of every Vitest file (the audit job splits by them).
+function inventoryTests(directory = path.join(ROOT, 'tests'), files = [], excluded = COVERAGE_EXCLUDED_DIRS) {
   if (!fs.existsSync(directory)) return files;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const full = path.join(directory, entry.name);
     const relative = slash(path.relative(ROOT, full));
     if (entry.isDirectory()) {
-      // tests/e2e is Playwright. tests/perf runs uninstrumented in the `perf` job, so it stays
-      // out of the coverage roster (and vitest.config.mjs excludes it under VECTURA_TEST_COVERAGE=1).
-      if (!COVERAGE_EXCLUDED_DIRS.includes(relative)) inventoryTests(full, files);
+      // tests/e2e is Playwright. tests/perf runs uninstrumented in the `perf` job and tests/audit
+      // in the path-routed `audit` job, so both stay out of the coverage roster (and
+      // vitest.config.mjs excludes them under VECTURA_TEST_COVERAGE=1).
+      if (!excluded.includes(relative)) inventoryTests(full, files, excluded);
     } else if (entry.isFile() && entry.name.endsWith('.test.js')) files.push(relative);
   }
   return files.sort();

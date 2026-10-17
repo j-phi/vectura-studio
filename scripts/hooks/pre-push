@@ -1,5 +1,5 @@
 #!/bin/sh
-# Bounded local feedback; CI retains the complete PR roster and routes it for evidence.
+# Bounded local feedback. CI (the Tests workflow, required check ci-ok) is the full gate.
 # Bypass: SKIP_PREPUSH=1 git push. Branch deletions need no local run.
 
 if [ "$SKIP_PREPUSH" = "1" ]; then
@@ -35,4 +35,4 @@ if ! run_feedback; then
   echo "[pre-push]    Fix the failures, or rerun with SKIP_PREPUSH=1 git push if intentional."
   exit 1
 fi
-echo "[pre-push] ✅ feedback passed. Full risk routing and test roster run in CI."
+echo "[pre-push] ✅ feedback passed. The full test roster runs in CI."

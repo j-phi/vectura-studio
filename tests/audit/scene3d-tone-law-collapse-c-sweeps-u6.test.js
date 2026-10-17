@@ -1,5 +1,5 @@
 const {
-  loadVecturaRuntime, clone, createCapturedOptionsCache,
+  loadScene3dAuditRuntime, clone, createCapturedOptionsCache,
   BOUNDS, SUN, SLOW,
 } = require('../helpers/scene3d-tone-law-collapse-shared');
 
@@ -7,7 +7,7 @@ const {
 
 describe('Scene3D tone-law collapse — U6 caveat: all FOUR members (penInterleave, penPitchMatch, penFacing, penStipple) carry real, non-empty measured caveats', () => {
   let runtime;
-  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  beforeAll(async () => { runtime = await loadScene3dAuditRuntime(); });
   afterAll(() => runtime.cleanup());
 
   test('BY_ID-direct: all four ids carry their own non-empty caveat; penStipple\'s and penInterleave\'s are each distinct from every sibling', () => {
@@ -121,7 +121,7 @@ describe('Scene3D tone-law collapse — U6 multi-primitive x multi-density: pen-
   };
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;

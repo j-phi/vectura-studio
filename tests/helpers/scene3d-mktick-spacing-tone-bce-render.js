@@ -1,7 +1,7 @@
 // Shared BC-E render driver for the split scene3d-mktick-spacing-tone BC-E audit files.
 const fs = require('fs');
 const path = require('path');
-const { loadVecturaRuntime } = require('./load-vectura-runtime');
+const { loadScene3dAuditRuntime } = require('./scene3d-audit-runtime');
 const crypto = require('crypto');
 const {
   contact, thirdsSplit, covByIBins, siteCoverage, pathLen, over2RP, subMinCount,
@@ -36,7 +36,7 @@ const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
 // their assertions need; no live Window/App/runtime survives into the next variant.
 const renderBcKinds = async (R, KINDS, { full = FULL, roster = ['off', 'ship', 'noflag'] } = {}) => {
     for (const kind of KINDS) {
-      const runtime = await loadVecturaRuntime({ scriptOverrides: kind === 'noflag'
+      const runtime = await loadScene3dAuditRuntime({ scriptOverrides: kind === 'noflag'
         ? { [REL_PATH]: buildBcSource(null), [SCENE3D_REL]: buildScene3dSource(kind) }
         : { [REL_PATH]: buildBcSource(kind === 'ship' ? null : kind) } });
       R[kind] = {};

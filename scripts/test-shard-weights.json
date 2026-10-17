@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "source": {
     "description": "Hosted V8 coverage per-file durations from Vitest blob reports (file result.duration incl. hooks + collect/setup/env/prepare): mean of runs 39033686706, 39033680097",
-    "fileCount": 830,
-    "fileDurationSumSeconds": 7593,
+    "fileCount": 829,
+    "fileDurationSumSeconds": 7592,
     "unweightedFilePolicy": "median of measured files in the same tests/<dir>/, else the global median"
   },
   "weightsSeconds": {
@@ -385,7 +385,6 @@
     "tests/unit/jsdom-canvas-export-stub.test.js": 0.527,
     "tests/unit/keyboard-inset-single-source.test.js": 0.066,
     "tests/unit/keyboard-inset.test.js": 0.447,
-    "tests/unit/lane-routing.test.js": 1.199,
     "tests/unit/layer-palette-icon-colors.test.js": 0.452,
     "tests/unit/layers-panel-dblclick-child-select.test.js": 0.488,
     "tests/unit/lissajous-close-lines.test.js": 0.555,

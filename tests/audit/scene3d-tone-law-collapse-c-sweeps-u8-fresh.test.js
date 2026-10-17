@@ -1,5 +1,5 @@
 const {
-  loadVecturaRuntime, clone, createCapturedOptionsCache,
+  loadScene3dAuditRuntime, clone, createCapturedOptionsCache,
   BOUNDS, SUN, SLOW,
 } = require('../helpers/scene3d-tone-law-collapse-shared');
 
@@ -53,7 +53,7 @@ describe('Scene3D tone-law collapse — U8 multi-primitive x multi-density: inte
   };
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;

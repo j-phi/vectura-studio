@@ -1,5 +1,5 @@
 const {
-  loadVecturaRuntime, clone, freezeDeep, cloneFixture, createCapturedOptionsCache,
+  loadScene3dAuditRuntime, clone, freezeDeep, cloneFixture, createCapturedOptionsCache,
   BOUNDS, SUN, SLOW, describeSingleParamCluster, describeComboCluster,
   recordedShadowResolvesToSurvivor,
 } = require('../helpers/scene3d-tone-law-collapse-shared');
@@ -77,7 +77,7 @@ describe('Scene3D tone-law collapse — U0 foundation', () => {
   };
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;
@@ -297,7 +297,7 @@ describe('Scene3D tone-law collapse — U1 (C-01, ladder/rungMode)', () => {
   };
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;
@@ -554,7 +554,7 @@ describe('Scene3D tone-law collapse — U5 honesty + unrepresentable combination
   let runtime; let V; let algo; let defaults; let SF; let Params; let hatchOpts;
   const FIVE = ['contFieldSigmoid', 'contFieldFore', 'contFieldSurface', 'contFieldQuant', 'contFieldTouch'];
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;
@@ -676,7 +676,7 @@ describeSingleParamCluster('Scene3D tone-law collapse — U6 (C-06, penInterleav
 
 describe('Scene3D tone-law collapse — U6 mark-class move: penStipple leaves "dot" for "hatch" (§2.4 invariant, the reason this unit was FROZEN-ON-JAY)', () => {
   let runtime;
-  beforeAll(async () => { runtime = await loadVecturaRuntime(); });
+  beforeAll(async () => { runtime = await loadScene3dAuditRuntime(); });
   afterAll(() => runtime.cleanup());
 
   test('penStipple now reports "hatch", not "dot" — matching all three of its cluster siblings', () => {

@@ -15,7 +15,7 @@ env:
   # Single source of truth for the coverage shard count (1..32) and per-shard Vitest worker cap.
   # The coverage-shard matrix lists 1..COVERAGE_SHARD_COUNT; tests/unit/test-shard-plan.test.js
   # keeps the two in step.
-  COVERAGE_SHARD_COUNT: '16'
+  COVERAGE_SHARD_COUNT: '12'
   VECTURA_VITEST_MAX_WORKERS: '2'
 
 concurrency:
@@ -25,8 +25,49 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Decides what runs (scripts/ci-plan.js): the heavy graph (coverage, perf, e2e-smoke) and the
+  # path-routed Scene3D audits. Read-only GitHub lookups: a main push whose tree a green PR run
+  # already tested skips the heavy graph (R-20); the nightly skips it when a green main push ran
+  # on the same SHA in the last 24 h (R-19). Any doubt runs everything.
+  ci-plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      heavy: ${{ steps.plan.outputs.heavy }}
+      audit: ${{ steps.plan.outputs.audit }}
+      tree: ${{ steps.plan.outputs.tree }}
+    steps:
+      # Blobless: the plan diffs trees and reads four small files.
+      - uses: actions/checkout@v7
+        with:
+          filter: blob:none
+          sparse-checkout: |
+            scripts/ci-plan.js
+            scripts/audit-paths.js
+            scripts/test-shard-weights.json
+            tests/helpers/runtime-profiles.js
+          sparse-checkout-cone-mode: false
+      - name: Fetch the comparison base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -n "${BASE_SHA//0/}" ]; then git fetch --no-tags --depth=1 origin "$BASE_SHA" || echo "::warning::could not fetch $BASE_SHA; the plan runs everything"; fi
+      - name: Plan the run
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: node scripts/ci-plan.js
+
   e2e-smoke:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [ci-plan]
+    if: needs.ci-plan.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -159,7 +200,8 @@ jobs:
   # (tests/process via test:runner), and the coverage shard/merge plumbing probe when that
   # plumbing changed.
   perf:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [ci-plan]
+    if: needs.ci-plan.outputs.heavy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -198,11 +240,12 @@ jobs:
   # inventory, same weights file -> same plan hash). The merge job rebuilds it and rejects any
   # shard whose provenance carries a different plan hash.
   coverage-shard:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    needs: [ci-plan]
+    if: needs.ci-plan.outputs.heavy == 'true'
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -211,7 +254,7 @@ jobs:
     steps:
       - id: clock
         run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
-      # fetch-depth: 0 retains the full RGR-history inputs used by audit tests.
+      # fetch-depth: 0 retains the git-history inputs some unit tests read (R-18 removes them).
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -283,8 +326,8 @@ jobs:
           if-no-files-found: ignore
 
   coverage:
-    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
-    needs: [coverage-shard]
+    if: always() && needs.ci-plan.outputs.heavy == 'true'
+    needs: [ci-plan, coverage-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -350,49 +393,40 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-  scheduled-audit:
-    if: github.event_name == 'schedule'
+  # Scene3D proof audits (tests/audit), uninstrumented, outside the coverage roster (R-17).
+  # A PR runs them only when its diff matches scripts/audit-paths.js; a main push and the nightly
+  # run them unless ci-plan found the same tree already proven. Three weight-balanced groups.
+  audit:
+    needs: [ci-plan]
+    if: needs.ci-plan.outputs.audit == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        audit_shard: [1, 2, 3]
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 60
     env:
-      # The 11 touch projects run in the sharded touch-e2e-nightly matrix, not here.
-      PW_TOUCH_PROJECTS: '0'
+      AUDIT_SHARD: ${{ matrix.audit_shard }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
-      - id: dependencies
-        run: npm ci --no-audit --no-fund --loglevel=error
-      - id: browsers
-        uses: ./.github/actions/setup-playwright
-        with:
-          browsers: chromium
-      - run: npm run test:audit
-      - if: always() && steps.dependencies.outcome == 'success'
-        run: npm run test:visual
-      - if: always() && steps.dependencies.outcome == 'success'
-        run: npm run test:perf
-      - name: Upload scheduled visual artifacts
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: visual-artifacts
-          path: |
-            tests/baselines
-            *.diff
-          if-no-files-found: ignore
+      - run: npm ci --no-audit --no-fund --loglevel=error
+      - name: Run one audit group
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(node scripts/audit-paths.js --shard "$AUDIT_SHARD/3")
+          test "${#files[@]}" -gt 0
+          npm run test:vitest -- run "${files[@]}"
 
   # The one required check for main (branch protection). It needs every job in this workflow.
-  # A job that runs by design on this event must succeed. A job that skips by design on this
-  # event must be skipped. Any failure or cancellation fails ci-ok. Classification lives in
+  # ci-plan's outputs say which jobs run by design: those must succeed, the rest must be skipped. Any failure or cancellation fails ci-ok. Classification lives in
   # scripts/ci-ok.js; tests/unit/ci-ok.test.js keeps it in sync with this file.
   ci-ok:
     if: always()
-    needs: [e2e-smoke, perf, coverage-shard, coverage, touch-e2e-nightly, touch-audit-nightly, scheduled-audit]
+    needs: [ci-plan, e2e-smoke, perf, coverage-shard, coverage, audit, touch-e2e-nightly, touch-audit-nightly]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -407,7 +441,19 @@ jobs:
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           EVENT_NAME: ${{ github.event_name }}
-        run: node scripts/ci-ok.js
+          VERDICT_OUT: ${{ runner.temp }}/ci-ok-verdict/ci-ok-verdict.json
+        run: |
+          mkdir -p "$(dirname "$VERDICT_OUT")"
+          node scripts/ci-ok.js
+      # A later main push of the same tree reads this to skip a duplicate run (scripts/ci-plan.js).
+      - name: Upload the ci-ok verdict
+        if: success() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-ok-verdict
+          path: ${{ runner.temp }}/ci-ok-verdict/ci-ok-verdict.json
+          retention-days: 30
+          if-no-files-found: error
 
   # Red main gets an owner: a failed push-to-main or nightly run opens one tracking issue,
   # or comments on the open one. Dedupe key: the ci-red-main label.
