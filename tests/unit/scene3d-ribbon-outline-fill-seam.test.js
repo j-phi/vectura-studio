@@ -38,7 +38,6 @@
  * claim to fix and does not assert against beyond the coarse 0.995 floor.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { preWipRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const { captureClipGroups, measureRingFillRate } = require('../helpers/scene3d-ring-coverage');
 
 const LAWS = ['ampSpacing', 'weaveDepth'];
@@ -50,7 +49,7 @@ describe('SurfaceFill — F7 wide-ribbon outline/fill seam, torus', () => {
   const results = {};
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preWipRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
 
     LAWS.forEach((toneLaw) => {

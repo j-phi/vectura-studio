@@ -44,16 +44,9 @@
  * RED proof (BASE_SHA = 83d1e021, this unit's own F2a commit — hole geometry
  * exists, single-fraction search does not yet):
  *
- *   VECTURA_PRE_W30D_THIN=1 npx vitest run tests/unit/scene3d-shadow-footprint-torus-thin-blank.test.js
+ *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
-
-const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
-// This unit's own F2a commit (hole-preserving footprint landed; the thin-
-// torus fallback search was still the single 0.9 fraction).
-const BASE_SHA = '83d1e021';
-const preW30dThinRuntimeOptions = makeMultiFilePreShaRuntimeOptions(BASE_SHA, 'VECTURA_PRE_W30D_THIN', [SCENE3D_REL]);
 
 const CAMERA = { projection: 'orthographic', yaw: 20, pitch: 45, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
 const BOUNDS = { width: 420, height: 420, m: 10, dW: 400, dH: 400, penWidth: 0.3, truncate: 4 };
@@ -156,32 +149,6 @@ describe('W-30d thin-torus blank-void fix (current tree)', () => {
   });
 
   test('regression guard — the already-working wide-band torus (sx=40/sy=12) is unaffected (max scanned ratio >= 2.5)', () => {
-    expect(maxScanRatio(V, wideTorusCaster, SUN, 40)).toBeGreaterThanOrEqual(2.5);
-  });
-});
-
-// ── RED-proof pin (BASE_SHA = 83d1e021, F2a done / this fix not yet).
-// UNCONDITIONAL — same assertions as GREEN. Run without VECTURA_PRE_W30D_THIN
-// this loads the CURRENT tree and passes trivially; run with
-// VECTURA_PRE_W30D_THIN=1 it loads the pinned 83d1e021 `scene3d.js` (single
-// 0.9 fraction) and the thin-torus assertion FAILS (measured directly against
-// this pin: ratio ~1.054) while the wide-band regression guard still holds
-// (measured: ratio ~2.914) — proof the blank-void bug was real on the THIN
-// rig specifically, not a general regression in the F2a hole fix.
-//
-//   VECTURA_PRE_W30D_THIN=1 npx vitest run tests/unit/scene3d-shadow-footprint-torus-thin-blank.test.js
-describe('W-30d thin-torus RED-proof pin (83d1e021)', () => {
-  let runtime;
-  let V;
-
-  beforeAll(async () => { runtime = await loadVecturaRuntime(preW30dThinRuntimeOptions()); V = runtime.window.Vectura; });
-  afterAll(() => runtime.cleanup());
-
-  test('razor-thin torus — same assertion as GREEN must FAIL on the single-fraction (pre-fix) tree', () => {
-    expect(maxScanRatio(V, thinTorusCaster, SUN, 160)).toBeGreaterThanOrEqual(1.8);
-  });
-
-  test('regression guard — same assertion as GREEN, unaffected either way (wide-band torus)', () => {
     expect(maxScanRatio(V, wideTorusCaster, SUN, 40)).toBeGreaterThanOrEqual(2.5);
   });
 });

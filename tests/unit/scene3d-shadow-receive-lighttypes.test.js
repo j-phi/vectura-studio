@@ -35,28 +35,18 @@
  * `scene3d-shadow-receive.test.js` already use for the same measurement).
  *
  * RED proof (this lane's HEAD at the W-30c briefing, 90f3411f, before F3):
- *
- *   VECTURA_PRE_W30C_C=1 npx vitest run tests/unit/scene3d-shadow-receive-lighttypes.test.js
+ * [ambient, point] read ratio ~1.0 there. Recorded in the fix commit (R-18
+ * retired the env-gated pre-fix switch).
  */
-const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
-const { execFileSync } = require('child_process');
-const path = require('path');
 const crypto = require('crypto');
+const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
 
-const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
-const BASE_SHA = '90f3411f'; // fill-collapse-2's HEAD at the W-30c briefing (U7, before F3)
-const preW30cRuntimeOptions = makeMultiFilePreShaRuntimeOptions(BASE_SHA, 'VECTURA_PRE_W30C_C', [SCENE3D_REL]);
-
-let cachedPreFixSource = null;
-const getPreFixScene3dSource = () => {
-  if (cachedPreFixSource) return cachedPreFixSource;
-  const rootDir = path.resolve(__dirname, '../..');
-  cachedPreFixSource = execFileSync('git', ['show', `${BASE_SHA}:${SCENE3D_REL}`], {
-    cwd: rootDir, maxBuffer: 1024 * 1024 * 64,
-  }).toString('utf8');
-  return cachedPreFixSource;
-};
+// R-18 (D-4): the [sun] guard used to load the pre-F3 tree (`git show
+// 90f3411f:src/core/algorithms/scene3d.js`) as a second runtime. It now reads
+// a committed md5 golden, generated from the tree that matched 90f3411f byte
+// for byte (tests/baselines/golden-values/).
+const golden = goldenValues('scene3d-shadow-receive-lighttypes');
 
 const CAMERA = { projection: 'orthographic', yaw: 20, pitch: 45, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
 const BOUNDS = { width: 420, height: 420, m: 10, dW: 400, dH: 400, penWidth: 0.3, truncate: 4 };
@@ -165,41 +155,10 @@ describe('W-30c F3/O3 — point/spot/area receive coverage through the full pipe
     expect(ratio).toBeGreaterThanOrEqual(2.0);
   });
 
-  test('guard — [sun] output is md5-identical old vs new tree (F3 is a no-op for an all-directional list)', async () => {
-    const runtimeOld = await loadVecturaRuntime({ scriptOverrides: { [SCENE3D_REL]: getPreFixScene3dSource() } });
-    try {
-      const Vold = runtimeOld.window.Vectura;
-      const pathsOld = runScene(Vold, [SUN]);
-      const pathsNew = runScene(V, [SUN]);
-      const md5 = (val) => crypto.createHash('md5').update(JSON.stringify(val)).digest('hex');
-      expect(pathsOld.length).toBeGreaterThan(0);
-      expect(md5(pathsNew)).toBe(md5(pathsOld));
-    } finally {
-      runtimeOld.cleanup();
-    }
-  });
-});
-
-// ── RED-proof pin (BASE_SHA = 90f3411f, before F3) ─────────────────────────
-// `buildFaceFootprint` still always used `light` (== lights[0]) there, so
-// `[ambient, point]` must reproduce the "shadow is gone" defect (ratio ~1.0)
-// — and the SAME assertion as the GREEN test's R4 case above must FAIL.
-//
-//   VECTURA_PRE_W30C_C=1 npx vitest run tests/unit/scene3d-shadow-receive-lighttypes.test.js
-describe('W-30c F3 RED-proof pin (90f3411f) — lights[0]-only footprint must be absent', () => {
-  let runtime;
-  let V;
-
-  beforeAll(async () => { runtime = await loadVecturaRuntime(preW30cRuntimeOptions()); V = runtime.window.Vectura; });
-  afterAll(() => runtime.cleanup());
-
-  test('same R4 assertion as GREEN — [ambient, point] ratio >= 2.0 — must FAIL on the pre-fix tree', () => {
-    const { ratio } = densityRatio(V, [AMBIENT, POINT]);
-    expect(ratio).toBeGreaterThanOrEqual(2.0);
-  });
-
-  test('control case — [point, ambient] (point FIRST) already worked pre-fix and must still pass here', () => {
-    const { ratio } = densityRatio(V, [POINT, AMBIENT]);
-    expect(ratio).toBeGreaterThanOrEqual(2.0);
+  test('guard — [sun] output matches the pre-F3 md5 golden (F3 is a no-op for an all-directional list)', () => {
+    const paths = runScene(V, [SUN]);
+    const md5 = (val) => crypto.createHash('md5').update(JSON.stringify(val)).digest('hex');
+    expect(paths.length).toBeGreaterThan(0);
+    golden.expect('[sun] receiver fills md5', md5(paths));
   });
 });

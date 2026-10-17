@@ -38,29 +38,9 @@
  */
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-// This unit's own base sha (the tree immediately BEFORE T3's fix landed) —
-// an EXPLICIT pin, never `HEAD`. T2-3's own self-test used `git show HEAD:`
-// and went silently RED at its own landing commit once `HEAD` moved past the
-// fix (T2-3-review.md, "the W-38 vacuous-leg class for the THIRD time in
-// this audit") — pinning a literal sha here is what avoids repeating that.
-const T3_BASE_SHA = '8780e97c';
 const SF_REL_PATH = 'src/core/scene3d/surface-fill.js';
-
-const getPreT3Source = (() => {
-  let cached = null;
-  return () => {
-    if (cached) return cached;
-    const rootDir = path.resolve(__dirname, '../..');
-    cached = execFileSync('git', ['show', `${T3_BASE_SHA}:${SF_REL_PATH}`], {
-      cwd: rootDir,
-      maxBuffer: 1024 * 1024 * 64,
-    }).toString('utf8');
-    return cached;
-  };
-})();
 
 const BOUNDS = { width: 1200, height: 1000, m: 20, dW: 1160, dH: 960, penWidth: 0.3 };
 const SUN = { id: 'sun', type: 'directional', azimuth: 135, elevation: 45, intensity: 1, castShadows: false };
@@ -168,11 +148,6 @@ describe('Scene3D.SurfaceFill — mkDashRamp LOW-DENSITY row-coverage floor (W-0
   });
 
   describe('O6 — sparse-but-complete: >= ~40 dashes on the 40mm sphere at d=1 (sphere/hatch, addLayer rig)', () => {
-    test('RED at T3 base sha 8780e97c: pre-fix draws far fewer than 40 (measured 7)', () => {
-      const src = getPreT3Source();
-      expect(src.includes('rowFloor')).toBe(false);
-    });
-
     test('GREEN: current tree draws >= 40 marks at d=1', () => {
       algo.generate(buildAddLayer('mkDashRamp', 'hatch', 1, 'sphere'), null, null, BOUNDS);
       const stat = SF.lastMarkStats;

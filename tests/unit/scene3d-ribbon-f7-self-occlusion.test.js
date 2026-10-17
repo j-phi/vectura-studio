@@ -46,22 +46,12 @@
  *
  * RED against `57e86f48` (the commit immediately before this fix),
  * reproducibly:
- *   VECTURA_PRE_F7=1 npx vitest run tests/unit/scene3d-ribbon-f7-self-occlusion.test.js
+ *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const {
   captureTorusSetup, buildOverlapField, overlapCellAt,
 } = require('../helpers/scene3d-torus-hole-oracle');
-
-const F7_BASELINE_SHA = '57e86f48';
-const F7_FILES = [
-  'src/core/scene3d/scene.js',
-  'src/core/scene3d/hlr.js',
-  'src/core/scene3d/surface-fill.js',
-  'src/core/algorithms/scene3d.js',
-];
-const preF7RuntimeOptions = makeMultiFilePreShaRuntimeOptions(F7_BASELINE_SHA, 'VECTURA_PRE_F7', F7_FILES);
 
 const LAWS = ['taperedEnds', 'weightSmoothstep'];
 
@@ -70,7 +60,7 @@ describe('SurfaceFill — F7 self-occlusion at the torus inner-hole (non-convex 
   let V;
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preF7RuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
   }, 120000);
 

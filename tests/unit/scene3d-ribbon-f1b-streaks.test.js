@@ -148,21 +148,12 @@
  * consumes the (already-proven) split honestly.
  *
  *   npx vitest run tests/unit/scene3d-ribbon-f1b-streaks.test.js                     # 26/26
- *   VECTURA_PRE_F1B=1 npx vitest run tests/unit/scene3d-ribbon-f1b-streaks.test.js   # 26/26 (same numbers, by construction — no src/ change)
+ *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const {
   captureClipGroups, captureSelfOcclusionFootprint, measureRingFillRate, classifyReachabilityAtDivisor,
 } = require('../helpers/scene3d-ring-coverage');
-
-const F1B_BASELINE_SHA = 'd5af9e30';
-const F1B_FILES = [
-  'src/core/scene3d/surface-fill.js',
-  'src/core/scene3d/ribbon-geometry.js',
-  'src/core/pen-fill.js',
-];
-const preF1BRuntimeOptions = makeMultiFilePreShaRuntimeOptions(F1B_BASELINE_SHA, 'VECTURA_PRE_F1B', F1B_FILES);
 
 // The F1 self-crossing slab-collapse list, verbatim (handoff doc, item A).
 const LAWS = ['interlockWeave', 'onePenDown', 'trochoidLoop', 'ampSpacing', 'weaveDepth'];
@@ -226,7 +217,7 @@ describe('SurfaceFill — F1B residual streaks in the self-crossing laws, torus'
   const results = {};
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preF1BRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
 
     [...LAWS, ...CONTROL_LAWS].forEach((toneLaw) => {

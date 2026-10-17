@@ -31,7 +31,7 @@
     "test:e2e:touch:audit": "node scripts/test-queue.js node scripts/run-touch-audit.js",
     "test:e2e:touch:audit:full": "node scripts/test-queue.js node scripts/run-touch-audit.js --full",
     "test:e2e:touch:install": "playwright install chromium webkit",
-    "test:update": "VECTURA_UPDATE_BASELINES=1 npm run test:visual",
+    "test:update": "node scripts/test-queue.js node scripts/test-update-baselines.js",
     "test:vitest": "node scripts/test-queue.js node scripts/run-vitest.js",
     "test:playwright": "node scripts/test-queue.js playwright test",
     "test:queue:status": "node scripts/test-queue.js --status",

@@ -25,7 +25,6 @@
  * unreliable under ~2 pens; `ringFillRate` measured below 0.995 there.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { preWipRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const { captureClipGroups, measureRingFillRate } = require('../helpers/scene3d-ring-coverage');
 
 const LAWS = ['weightSmoothstep', 'nibAngle'];
@@ -38,7 +37,7 @@ describe('SurfaceFill — F4 sub-2-pen ribbons are not hollow doubled hairlines'
   const results = {};
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preWipRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
 
     PRIMITIVES.forEach((primitive) => {

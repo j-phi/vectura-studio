@@ -49,10 +49,9 @@
  * truth — nowhere near the ceiling.
  *
  * RED against `e047c9a7`: run with `VECTURA_PRE_WALLS_FIX=1`.
- *   VECTURA_PRE_WALLS_FIX=1 npx vitest run tests/unit/scene3d-ribbon-wall-region-clip.test.js
+ *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { preWallsFixRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const { captureWallVsWideClips, ringArea, ringPerimeter } = require('../helpers/scene3d-wall-clip-oracle');
 
 const PEN_WIDTH = 0.3;
@@ -77,7 +76,7 @@ describe('SurfaceFill CLS_WALLS — clip target must not fabricate a phantom lob
   let V;
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preWallsFixRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
   }, 120000);
 

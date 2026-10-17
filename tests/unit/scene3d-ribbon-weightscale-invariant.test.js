@@ -33,7 +33,6 @@
  * regression test.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { preWipRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 
 const RIBBON_LAWS = [
   'nibAngle', 'taperedEnds', 'weightModulated', 'isophoteWidth', 'whiteBand',
@@ -75,7 +74,7 @@ describe('SurfaceFill — weightScale invariant (T4), torus', () => {
   };
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preWipRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
     SF = V.Scene3D.SurfaceFill;
 

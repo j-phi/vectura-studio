@@ -29,7 +29,6 @@
  * false, so assertion 1 fails for the right reason: the feature was absent.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { preWipRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const { captureClipGroups, captureSelfOcclusionFootprint, measureRingFillRate } = require('../helpers/scene3d-ring-coverage');
 
 const LAWS = [
@@ -45,7 +44,7 @@ describe('SurfaceFill CLS_WALLS — every bucket-B law, torus', () => {
   const results = {};
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preWipRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
 
     LAWS.forEach((toneLaw) => {

@@ -46,38 +46,20 @@
  * SCREEN distance", which is what makes the kept-ruling gaps track the
  * screen instead of the index.
  *
- * ANTI-VACUITY (RGR RED switch). `VECTURA_PRE_F1P=1` swaps `surface-fill.js`
- * for its revision at `F1P_BASELINE_SHA` (this unit's own base commit, before
- * Prototype B landed) — the SAME assertions below must FAIL under it:
- *
- *   npx vitest run tests/unit/scene3d-ribbon-flat-field-placement.test.js
- *   VECTURA_PRE_F1P=1 npx vitest run tests/unit/scene3d-ribbon-flat-field-placement.test.js
+ * RED proof: the same assertions failed on this unit's own base commit
+ * `8adfd5af` (before Prototype B landed), recorded in the fix commit. R-18
+ * retired the env-gated pre-fix switch that reproduced it.
  */
-const { execFileSync } = require('child_process');
-const path = require('path');
+const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
+const { goldenValues } = require('../helpers/golden-values');
 const { captureRegionRings, buildBlankMap, findBlankClusters } = require('../helpers/scene3d-blank-map');
 
-const F1P_BASELINE_SHA = '8adfd5af';
-const F1P_REL_PATH = 'src/core/scene3d/surface-fill.js';
-const F1P_FILES = [F1P_REL_PATH];
-const preF1PRuntimeOptions = makeMultiFilePreShaRuntimeOptions(F1P_BASELINE_SHA, 'VECTURA_PRE_F1P', F1P_FILES);
-
-// UNCONDITIONAL (not env-gated): condition (4)'s own byte-identity proof
-// needs the pre-fix source loaded into a SECOND runtime regardless of
-// VECTURA_PRE_F1P, so it can diff pre vs post within one test run.
-let f1pBaselineSourceCache = null;
-const f1pBaselineRuntimeOptions = () => {
-  if (!f1pBaselineSourceCache) {
-    const rootDir = path.resolve(__dirname, '../..');
-    f1pBaselineSourceCache = execFileSync('git', ['show', `${F1P_BASELINE_SHA}:${F1P_REL_PATH}`], {
-      cwd: rootDir,
-      maxBuffer: 1024 * 1024 * 64,
-    }).toString('utf8');
-  }
-  return { scriptOverrides: { [F1P_REL_PATH]: f1pBaselineSourceCache } };
-};
+// R-18 (D-4): condition (4) used to load `surface-fill.js` from the pre-fix
+// tree (`git show 8adfd5af`) as a second runtime. It now reads committed md5
+// goldens, generated from the tree that matched 8adfd5af byte for byte
+// (tests/baselines/golden-values/).
+const golden = goldenValues('scene3d-ribbon-flat-field-placement');
 
 const PEN_WIDTH = 0.3; // BOUNDS default (tests/fixtures/scene3d-shadow-anatomy.js)
 // The three flat-coverage wave laws this unit fixes.
@@ -95,11 +77,11 @@ const INK_SPREAD = 0.12;
 // RED-2 bars — RESTATED against THIS TREE's own measured numbers (`## Bars
 // changed` in the impl report), not carried from the plan's §10 figures,
 // which were measured at the plan's own base sha `3c88605f` and are stale:
-// other fixes landed on this lane between then and `F1P_BASELINE_SHA`, so
-// this tree's pre-fix deep-blank is already 1.79-4.00mm2, not 11.89-14.70.
+// other fixes landed on this lane between then and `8adfd5af`, so
+// this tree's pre-fix deep-blank was already 1.79-4.00mm2, not 11.89-14.70.
 //
 // Condition (1) PRIMARY oracle — measured on THIS tree: pre-fix
-// (`VECTURA_PRE_F1P=1`) 3.02 / 4.00 / 1.79 mm2; Prototype B 0.03 / 0.00 /
+// (8adfd5af) 3.02 / 4.00 / 1.79 mm2; Prototype B 0.03 / 0.00 /
 // 0.00 mm2. Bar set well inside BOTH populations (>=17x margin either side).
 const RED2_DEEP_BLANK_MM2 = 0.5;
 // Condition (2) restated total-area bar — measured on THIS tree, Prototype
@@ -190,7 +172,7 @@ describe('SurfaceFill — F1-placement: flat-coverage wave laws placed by screen
   };
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preF1PRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
     SF = V.Scene3D.SurfaceFill;
 
@@ -227,33 +209,14 @@ describe('SurfaceFill — F1-placement: flat-coverage wave laws placed by screen
   };
 
   describe('RED-1(a) — mechanism honesty: was the pre-fix coverage really flat, and is the fix not a no-op', () => {
-    const isPreFix = process.env.VECTURA_PRE_F1P === '1';
-
-    // Under VECTURA_PRE_F1P=1 (the pre-fix tree) this is the RED proof
-    // itself: a single masterPitch-derived constant, with no per-ruling
-    // term, reproduces the OBSERVED kept-index set EXACTLY — Sturmian words
-    // are sensitive to their driving constant, so this could not happen by
-    // accident. Under the shipped (Prototype B) tree this is NOT expected to
-    // hold any more — `wvPlaceCov` reads `localPitch`, which is NOT constant
-    // across the family — so it is recorded, not gated, there.
-    test.each(LAWS)('%s — masterPitch-derived flat constant vs. the observed kept-ruling set', (law) => {
-      const { reps } = results[law];
-      const predicted = flatModelPrediction(law);
-      const observed = reps.map((r) => r.li);
-      const msg = `${law}: predicted=${predicted.join(',')} observed=${observed.join(',')}`;
-      if (isPreFix) {
-        expect(predicted, msg).toEqual(observed);
-      } else {
-        // eslint-disable-next-line no-console
-        console.log(`${law} (post-fix, not gated): flat-model match = ${JSON.stringify(predicted) === JSON.stringify(observed)} — ${msg}`);
-      }
-    });
-
+    // On the pre-fix tree (8adfd5af) a single masterPitch-derived constant,
+    // with no per-ruling term, reproduced the OBSERVED kept-index set EXACTLY
+    // (the RED proof, recorded in the fix commit). On the shipped tree
+    // `wvPlaceCov` reads `localPitch`, which is not constant across the family.
     // Not-a-no-op guard: only meaningful on the shipped tree. At least one
     // subject law's kept set must now DIFFER from what the old flat model
     // predicts — otherwise Prototype B changed nothing observable.
     test('Prototype B is not a no-op: at least one subject law\'s kept set differs from the old flat-model prediction', () => {
-      if (isPreFix) return; // meaningless under the pre-fix tree — it's the baseline being described
       const changed = LAWS.some((law) => {
         const predicted = flatModelPrediction(law);
         const observed = results[law].reps.map((r) => r.li);
@@ -340,23 +303,21 @@ describe('SurfaceFill — F1-placement: flat-coverage wave laws placed by screen
 /*
  * Condition (4) — `ampSpacing` and the WV6 laws must be byte-identical to
  * the pre-fix tree. Proved directly (not inherited from the aggregate sweep
- * above): a SECOND runtime loaded from `F1P_BASELINE_SHA`'s own
- * `surface-fill.js`, multi-primitive x multi-density, per U7's own
- * methodology (`docs/3d-audit/lane-reports/U7-impl.md` "(b) `ampSpacing`
- * byte-identity, proven specifically").
+ * above), multi-primitive x multi-density, per U7's own methodology
+ * (`docs/3d-audit/lane-reports/U7-impl.md` "(b) `ampSpacing` byte-identity,
+ * proven specifically"). The goldens hold the pre-fix (8adfd5af) md5s.
  */
 describe('SurfaceFill — F1-placement condition 4: WV6 laws byte-identical pre/post fix', () => {
   let postRuntime;
-  let preRuntime;
 
   afterAll(() => {
     if (postRuntime) postRuntime.cleanup();
-    if (preRuntime) preRuntime.cleanup();
   });
 
   const serializeInk = (paths) => JSON.stringify((paths || []).map((p) => p.map((pt) => [
     Math.round(pt.x * 1e6) / 1e6, Math.round(pt.y * 1e6) / 1e6,
   ])));
+  const md5 = (text) => crypto.createHash('md5').update(text).digest('hex');
 
   const buildInk = async (Vectura, primitive, toneLaw, fillDensity) => {
     const engine = new Vectura.VectorEngine();
@@ -370,16 +331,14 @@ describe('SurfaceFill — F1-placement condition 4: WV6 laws byte-identical pre/
     return (group.scenePaths || []).filter((p) => p && p.meta && p.meta.kind === 'sceneFill');
   };
 
-  test('representative WV6 and non-wave controls remain byte-identical pre/post-Prototype-B', async () => {
+  test('representative WV6 and non-wave controls remain byte-identical to the pre-Prototype-B goldens', async () => {
     postRuntime = await loadVecturaRuntime({ includeUi: true });
-    preRuntime = await loadVecturaRuntime({ includeUi: true, ...f1pBaselineRuntimeOptions() });
     const Vpost = postRuntime.window.Vectura;
-    const Vpre = preRuntime.window.Vectura;
     // U2 (2026-10-02) moved the ribbon EROSION to `PenFill.erodeLevels` — a
-    // deliberate output change unrelated to placement. The baseline
-    // surface-fill.js predates it, so the post side is pinned to the polygon
-    // erosion it falls back to without `erodeLevels`, keeping this a test of
-    // PLACEMENT alone.
+    // deliberate output change unrelated to placement. The pre-fix tree
+    // predates it, so the post side is pinned to the polygon erosion it
+    // falls back to without `erodeLevels`, keeping this a test of PLACEMENT
+    // alone.
     delete Vpost.PenFill.erodeLevels;
 
     const CHECKS = [
@@ -390,11 +349,8 @@ describe('SurfaceFill — F1-placement condition 4: WV6 laws byte-identical pre/
     for (const { law, primitive, density } of CHECKS) {
       // eslint-disable-next-line no-await-in-loop
       const post = await buildInk(Vpost, primitive, law, density);
-      // eslint-disable-next-line no-await-in-loop
-      const pre = await buildInk(Vpre, primitive, law, density);
-      expect(pre.length, `${law}: pre-fix fill is nonempty`).toBeGreaterThan(0);
       expect(post.length, `${law}: post-fix fill is nonempty`).toBeGreaterThan(0);
-      expect(serializeInk(post), `${law}/${primitive}/d${density}`).toBe(serializeInk(pre));
+      golden.expect(`${law}/${primitive}/d${density} fill md5`, md5(serializeInk(post)));
     }
   }, 600000);
 });
