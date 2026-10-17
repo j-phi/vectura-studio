@@ -1,0 +1,66 @@
+{
+  "arm64": {
+    "box/hatch/etfKang": {
+      "hash": "7fa7bd11",
+      "paths": 249,
+      "pts": 14053
+    },
+    "sphere/hatch/etfKang": {
+      "hash": "458964db",
+      "paths": 285,
+      "pts": 13885
+    },
+    "sphere/hatch/ladder": {
+      "hash": "b8de834e",
+      "paths": 112,
+      "pts": 1589
+    },
+    "sphere/hatch/mezzoRegion": {
+      "hash": "c9eba689",
+      "paths": 534,
+      "pts": 17788
+    },
+    "sphere/hatch/turingStripe": {
+      "hash": "72b834ca",
+      "paths": 299,
+      "pts": 18773
+    },
+    "torus/crosshatch/ladder": {
+      "hash": "7b731dab",
+      "paths": 150,
+      "pts": 1430
+    }
+  },
+  "x64": {
+    "box/hatch/etfKang": {
+      "hash": "7fa7bd11",
+      "paths": 249,
+      "pts": 14053
+    },
+    "sphere/hatch/etfKang": {
+      "hash": "b2689b20",
+      "paths": 285,
+      "pts": 13885
+    },
+    "sphere/hatch/ladder": {
+      "hash": "f51e7a34",
+      "paths": 112,
+      "pts": 1589
+    },
+    "sphere/hatch/mezzoRegion": {
+      "hash": "a3a7eb6f",
+      "paths": 534,
+      "pts": 17788
+    },
+    "sphere/hatch/turingStripe": {
+      "hash": "ca0ee727",
+      "paths": 299,
+      "pts": 18773
+    },
+    "torus/crosshatch/ladder": {
+      "hash": "3d709a7b",
+      "paths": 150,
+      "pts": 1430
+    }
+  }
+}

@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
 
 /*
  * U4a item 2 — the Seed field drives every hash / dither site in scene3d fills.
@@ -113,36 +114,34 @@ describe('scene3d Seed', () => {
 
   // (a) GOLDEN: hashes captured on the pre-seed base (3d-scene/fill-review
   // d66ece3f) for legacy layers with seeds 42/43. They must never move.
+  // Stored in tests/baselines/golden-values/scene3d-seed.json.
   //
-  // Per-architecture entries: V8's Math.sin/cos/exp/atan2/... (C++ fdlibm)
+  // Per-architecture sections: V8's Math.sin/cos/exp/atan2/... (C++ fdlibm)
   // round the last ULP differently on arm64 and x86_64. The etfKang scene
   // amplifies that drift to ~1e-5 over its streamline passes, so the 1e-3
   // rounding below still flips a few coordinates and the hash differs by
   // arch. Both values were regenerated on d66ece3f itself (arm64 node and
   // x64 node 20.20.2 under Rosetta; x64 matches GitHub CI exactly), so each
-  // one is the true pre-seed identity on its own arch. An entry given as an
-  // object must carry both keys.
-  const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
-  const wantFor = (want) => (typeof want === 'string' ? want : want[ARCH]);
+  // one is the true pre-seed identity on its own arch. Every other scene has
+  // the same value in both sections.
   test('(a) legacy layers render byte-identical to the pre-seed base', () => {
+    const golden = goldenValues('scene3d-seed');
     const GOLD = [
-      ['box', 'stipple', {}, '289:35a54559'],
-      ['sphere', 'stipple', {}, '582:44be2fb8'],
-      ['sphere', 'hatch', { toneLaw: 'etfKang' }, { arm64: '323:7bd63c97', x64: '323:85bf278' }],
-      ['sphere', 'hatch', { toneLaw: 'taperedEnds' }, '267:e54fdc54'],
-      ['cylinder', 'crosshatch', {}, '305:1240fe8b'],
-      ['torus', 'hatch', { toneLaw: 'ladder' }, '363:78f59093'],
-      ['sphere', 'hatch', { toneLaw: 'mazeFill' }, '1676:f14b7ba7'],
-      ['box', 'hatch', { toneLaw: 'turingStripe' }, '544:2959bcac'],
-      ['sphere', 'hatch', { toneLaw: 'penStipple' }, '231:f6e3c3f1'],
+      ['box', 'stipple', {}],
+      ['sphere', 'stipple', {}],
+      ['sphere', 'hatch', { toneLaw: 'etfKang' }],
+      ['sphere', 'hatch', { toneLaw: 'taperedEnds' }],
+      ['cylinder', 'crosshatch', {}],
+      ['torus', 'hatch', { toneLaw: 'ladder' }],
+      ['sphere', 'hatch', { toneLaw: 'mazeFill' }],
+      ['box', 'hatch', { toneLaw: 'turingStripe' }],
+      ['sphere', 'hatch', { toneLaw: 'penStipple' }],
     ];
-    GOLD.forEach(([prim, mapper, params, want]) => {
-      // Regression guard (PR #87 CI): an arch-split golden needs both arches.
-      if (typeof want !== 'string') expect(Object.keys(want).sort()).toEqual(['arm64', 'x64']);
+    GOLD.forEach(([prim, mapper, params]) => {
       const s = scene(prim, mapper, params);
       s.group.params.seedMode = 'legacy'; s.child.params.seedMode = 'legacy';
       s.group.params.seed = 42; s.child.params.seed = 43;
-      expect(render(s)).toBe(wantFor(want));
+      golden.expect([prim, mapper, params.toneLaw].filter(Boolean).join('/'), render(s));
     });
   }, 300000);
 });

@@ -1,4 +1,5 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
 
 /*
  * fs-z1-boxangle — owner-reported live defect: "changing the Density of the
@@ -73,6 +74,8 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
  * decision, and silencing either is forbidden by CLAUDE.md.
  */
 
+// Fingerprints: tests/baselines/golden-values/scene3d-box-density-bearing.json.
+const golden = goldenValues('scene3d-box-density-bearing');
 const HASH = (s) => { let h = 0; for (let i = 0; i < s.length; i += 1) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0; return (h >>> 0).toString(16); };
 
 describe('Scene3D — how a BOX\'s rendered fill bearing responds to Density', () => {
@@ -199,18 +202,18 @@ describe('Scene3D — how a BOX\'s rendered fill bearing responds to Density', (
   // intact; this guard's job is only to catch the NEXT unrelated drift, so
   // it is re-pinned to the current (legitimate) numbers.
   test('BYTE-IDENTITY GUARD: box / solid / plane / sphere fingerprints across Density', () => {
-    expect(fingerprint(10)).toBe('4db89b89:4955');
-    expect(fingerprint(24)).toBe('1168154a:5023');
-    expect(fingerprint(50)).toBe('ccccaf18:5128');
-    expect(fingerprint(100)).toBe('60fff363:8006');
-    expect(fingerprint(150)).toBe('4cbf9fd8:9878');
-    expect(fingerprint(50, 'solid')).toBe('5d8296ce:4060');
-    expect(fingerprint(150, 'solid')).toBe('650b0061:11134');
+    golden.expect('box d=10', fingerprint(10));
+    golden.expect('box d=24', fingerprint(24));
+    golden.expect('box d=50', fingerprint(50));
+    golden.expect('box d=100', fingerprint(100));
+    golden.expect('box d=150', fingerprint(150));
+    golden.expect('solid d=50', fingerprint(50, 'solid'));
+    golden.expect('solid d=150', fingerprint(150, 'solid'));
     // W-15c re-pin (plan §5.3): the plane presents a single visible
     // orientation, so its carrier grant now tracks Density (3 -> 9 rulings at
     // d=50) instead of the tone-blind FACET_MIN_RULINGS constant. Every other
     // fingerprint in this guard is unchanged — see W-15c-impl-2.md.
-    expect(fingerprint(50, 'plane')).toBe('10a710a6:3909');
+    golden.expect('plane d=50', fingerprint(50, 'plane'));
     // RE-PINNED (W-26, PROOF, `3d-scene/fill-audit-a`): `sphere` is the one
     // curved primitive in this set — its default fill (`ladder`) moved from
     // a discrete grid-subset to continuous placement (`isEvenLadder`,
@@ -238,7 +241,7 @@ describe('Scene3D — how a BOX\'s rendered fill bearing responds to Density', (
     // claimed scope. Re-derived directly against this working tree (not
     // copied from any report), same convention as this file's own W-15c/
     // W-26 re-pins.
-    expect(fingerprint(50, 'sphere')).toBe('56fa048b:29028');
-    expect(fingerprint(150, 'sphere')).toBe('5ea7a962:61684');
+    golden.expect('sphere d=50', fingerprint(50, 'sphere'));
+    golden.expect('sphere d=150', fingerprint(150, 'sphere'));
   });
 });

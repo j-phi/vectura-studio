@@ -50,6 +50,10 @@
  * for that fixture's before/after table and C3/C6/C11 re-verification.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
+
+// Exact mark-stat pins: tests/baselines/golden-values/scene3d-shadow-zone-fragmentation.json.
+const golden = goldenValues('scene3d-shadow-zone-fragmentation');
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
@@ -138,37 +142,31 @@ describe('fs-z3 — the owner scenario, Layers off/2/3/4 (items 1-4 combined)', 
   // half, and total ink UP (structure recovered, not merely thinned).
   test('C12-equivalent — Layers Off is unchanged: 683.43mm / 61 paths, median 13.27mm', () => {
     const s = markStats(buildOwnerScene(20, 'off'));
-    expect(s.paths).toBe(61);
-    expect(s.ink).toBe(683.43);
-    expect(s.median).toBe(13.27);
-    expect(s.under2Pct).toBe(3.28);
+    golden.expect('layers off', {
+      paths: s.paths, ink: s.ink, median: s.median, under2Pct: s.under2Pct,
+    });
   });
 
   test('Layers 2 — 452.69mm / 70 paths, median 3.55mm, 11.43% under 2mm', () => {
     const s = markStats(buildOwnerScene(20, 2));
-    expect(s.paths).toBe(70);
-    expect(s.ink).toBe(452.69);
-    expect(s.median).toBe(3.55);
-    expect(s.under2Pct).toBe(11.43);
+    golden.expect('layers 2', {
+      paths: s.paths, ink: s.ink, median: s.median, under2Pct: s.under2Pct,
+    });
   });
 
   test('Layers 3 — 578.61mm / 123 paths, median 3.91mm, 13.01% under 2mm', () => {
     const s = markStats(buildOwnerScene(20, 3));
-    expect(s.paths).toBe(123);
-    expect(s.ink).toBe(578.61);
-    expect(s.median).toBe(3.91);
-    expect(s.under2Pct).toBe(13.01);
+    golden.expect('layers 3', {
+      paths: s.paths, ink: s.ink, median: s.median, under2Pct: s.under2Pct,
+    });
   });
 
   // THE HEADLINE. RED: 156 paths / 449.10mm / median 2.32mm / 40.4% under 2mm.
   test('Layers 4 — the reported defect: 537.35mm / 123 paths, median 3.59mm, 17.07% under 2mm', () => {
     const s = markStats(buildOwnerScene(20, 4));
-    expect(s.paths).toBe(123);
-    expect(s.ink).toBe(537.35);
-    expect(s.median).toBe(3.59);
+    golden.expect('layers 4', { paths: s.paths, ink: s.ink, median: s.median });
     // RED was 40.4% — this must be well below that, not merely under it.
     expect(s.under2Pct).toBeLessThan(20);
-    expect(s.median).toBe(3.59);
   });
 
   test('the median mark at Layers 4 moves toward the Layers-off figure, not away from it', () => {

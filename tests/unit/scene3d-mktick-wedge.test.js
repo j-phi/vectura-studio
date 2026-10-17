@@ -1,8 +1,9 @@
+const { goldenValues } = require('../helpers/golden-values');
 const fs = require('fs');
 const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const {
-  wedgeFromMasks, measureWedge, wedgeByBin, siteCoverage, lengthCarriesTone,
+  wedgeFromMasks, measureWedge, wedgeByBin, siteCoverage,
 } = require('../helpers/scene3d-mktick-wedge');
 const { pathSignature } = require('../helpers/path-signature');
 
@@ -30,7 +31,7 @@ const { pathSignature } = require('../helpers/path-signature');
  * FIRST per the orchestrator's ruling, before the fix it gates.
  *
  * WHICH HALF EACH ORACLE GATES (state it, per the standing ruling):
- *   - `lengthCarriesTone` (the O5 tests below) gates R1 ONLY: mean drawn
+ *   - `lengthCarriesTone` (O5, retired; see R-29 note below) gated R1 ONLY: mean drawn
  *     tick length, dark third vs light third, ratio >= 3.0 and monotone.
  *     It says NOTHING about whether the bare space between ticks is
  *     scattered (fine, legitimate light tone) or converged into a wedge
@@ -201,6 +202,8 @@ const disableStagger = (src) => patchOne(src, STAGGER_NEEDLE_SINGLE, STAGGER_REP
 // per-cell ceilings) are RETIRED. See `wedgeByBin`'s own describe block
 // below (T12) for the replacement monotone bar.
 
+const golden = goldenValues('scene3d-mktick-wedge');
+
 describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)', () => {
   describe('instrument correctness — synthetic masks (no renderer)', () => {
     const PPMM = 6;
@@ -274,28 +277,6 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
       // measure bare area over at all.
       expect(r.shadedPx).toBe(0);
       expect(r.wedge25).toBeNull();
-    });
-  });
-
-  // ── T2-3b deliverable (a): the `git show HEAD:...` "RED at the pre-fix
-  // tree" block above is provably vacuous at the commit that ships it — HEAD
-  // IS the post-fix tree the instant this file's own commit lands, so the
-  // second assertion throws inside `beforeAll` forever after
-  // (`T2-3-review.md` §7, BLOCKING; the same anti-pattern `W-38b` removed
-  // from `scene3d-facet-min-rulings.test.js`). Replaced with the `W-38b`
-  // pattern: pinned `pathSignature` goldens (a string constant in THIS file,
-  // not "the same code as the runtime under test") plus a live-disk-source
-  // mechanism assertion. `docs/3d-audit/lane-reports/T2-3b-plan.md` §5.
-  describe('mechanism assertions — read from the LIVE disk source, not `git show HEAD` (T2-3b)', () => {
-    test("mkTick is on the T2-2/T2-3 chan:'len' mechanism, not the pre-fix chan:'count' design", () => {
-      const src = loadHeadSource();
-      expect(src).toMatch(/mkTick:\s*\{[^}]*chan: 'len'/);
-      expect(src).not.toMatch(/mkTick:\s*\{[^}]*chan: 'count'/);
-    });
-
-    test("T2-3b's own area floor (Lfloor) is present in the lenChan branch of solveAt", () => {
-      const src = loadHeadSource();
-      expect(src).toContain('const Lfloor = g * PMIN;');
     });
   });
 
@@ -440,51 +421,17 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
     // The CONTRAST MUTATION test at the end of this block loads the shipped source
     // with the deferred flush removed and asserts the OLD hash on all 12 (so the
     // re-pin is BC-E and not drift). See `T2-8b-3-impl.md` `## Bars changed`.
-    const EXPECTED_SIGNATURE = {
-      'test|sphere/hatch': '57fe9092a37a5ea3cdf5aa20393739c2e0f994e837f22efc6047b46cb697678d',
-      'test|sphere/contour': '22665b454d753e2af51a6b5393fe6cedaf250466bac181758230cf481faeb2a2',
-      'test|torus/hatch': '50b53d5da3e3309dfba4fc09363106d3d17970b255166bb9ec08f6903d561ff4',
-      'test|torus/contour': '3c3f4fd7e2a3d1a531e9fbafeec2ea630e8865149f90e1869b6cd5321e9d9868',
-      'test|cone/hatch': '238cd003a989fad46c35ed317ce54a4e24222ef3e1a2af8e18f6a6be93ec3191',
-      'test|cone/contour': '9e5a82eedabde4851cbdb222124e21f62f75f73f7a923f3b716f9813771e6f06',
-      'create|sphere/hatch': '5d0ee1676702f2a82b8f00c0d9ff257bfdd1e18c6e4810cef4254edd0ba18163',
-      'create|sphere/contour': 'e9d1e0a7f99aaac34a64f2a0cb4e8e58b65c9ed6690751d44198d90a28e33b6e',
-      'create|torus/hatch': '569469202390ef1b4e7e784f084423f6ff81e82bf0f72f57ca713345478a693f',
-      'create|torus/contour': '5c204a071393999329b8caf6cb90da13be94f06b73c63e67cfe72258c1ad98eb',
-      'create|cone/hatch': '755d084361752180db43576edfbc50a4def62ffe526fb388d418d57248433b2a',
-      'create|cone/contour': '14090466cc9b339ec990e42fcab2545956bf6afb756aa06d2dd69c53425c55a1',
-    };
-    // T2-8b-5b: the rim-strip extension (`mkExtQ`) moves ALL 12 cells off the pre-T2-8b hash, so no cell is
-    // asserted equal to it any more; the contrast mutation below removes BOTH deferred flushes instead.
-    const CHANGED_BY_BCE = new Set(Object.keys(EXPECTED_SIGNATURE));
-    const PRE_T28B_SIGNATURE = {
-      'test|sphere/hatch': '0f7b7d17ed70c91984b6d59f5915cb861962bc1ce1759f6282b8fabb4a234042',
-      'test|sphere/contour': '6a5a1c0d5857c1db44bd3a5bb26c90ef5804e26dcbc3c4ec19b2429545123694',
-      'test|torus/hatch': '71328eb4d9e31e35a2a6de3b12042d7c6ca672636b1ca7eeaa15a2d9b9491374',
-      'test|torus/contour': 'fd5fa424967a558b111440f1618570b59aa97a2c32ac4186961eca30cc0c3c15',
-      'test|cone/hatch': 'd71d85d76e66384c8d80d0ce732615492dd47021cd08e8fa975d62c48e04a6b5',
-      'test|cone/contour': 'e75dac4c2988682631c120931ab9d17e2fe72c61ca58aec247ca81132bcc54b9',
-      'create|sphere/hatch': '9f4cd1f429f52a1587669b59f70b86edf8b093ac37ec6e19fb2786c0dca6bfd6',
-      'create|sphere/contour': 'd0e69590983285c7c623509f62579c28fb52a58790ee4362f6a7d4d9386f6c65',
-      'create|torus/hatch': '5bbcd92a3428377208aadcaf7299fcd37ed694be36723f133d64f3702b3bb1a2',
-      'create|torus/contour': 'a896dddf93b28bd164d24856e2a16841a94f839feac7c90a49ebb4882d1475e1',
-      'create|cone/hatch': 'ff1945b88b0fb28cae12b5151c1dec539d209b663ec6b6d1e1db87610dffbab4',
-      'create|cone/contour': 'd9fb1c7acc9a9461503f958100c085b375e7937d899c725711496754ef0e7958',
-    };
+    // R-30: the 12 shipped and 12 flush-off sha256 pins live in
+    // tests/baselines/golden-values/scene3d-mktick-wedge.json (regenerate only
+    // on a deliberate output change: npm run test:update).
+    // T2-8b-5b: the rim-strip extension (`mkExtQ`) moves ALL 12 cells off the pre-T2-8b hash; the contrast
+    // mutation below removes BOTH deferred flushes and must return the pre-T2-8b hash.
 
     ['test', 'create'].forEach((rig) => {
       CELLS.forEach(([primitive, mapper]) => {
         test(`${rig} rig — ${primitive}/${mapper}: pathSignature(paths, 4) is pinned`, () => {
           const key = `${rig}|${primitive}/${mapper}`;
-          const actual = results[rig][`${primitive}/${mapper}`];
-          const expected = EXPECTED_SIGNATURE[key];
-          if (expected === 'PENDING') {
-            // eslint-disable-next-line no-console
-            console.log(`EXPECTED_SIGNATURE missing entry — paste this in: '${key}': '${actual}',`);
-          }
-          expect(actual).toBe(expected);
-          // A cell BC-E leaves untouched must equal the pre-T2-8b hash, not fresh hex.
-          if (!CHANGED_BY_BCE.has(key)) expect(actual).toBe(PRE_T28B_SIGNATURE[key]);
+          golden.expect(`shipped ${key} pathSignature4`, results[rig][`${primitive}/${mapper}`]);
         });
       });
     });
@@ -508,7 +455,7 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
         ['test', 'create'].forEach((rig) => {
           CELLS.forEach(([primitive, mapper]) => {
             const { paths } = renderCell(V, { primitive, mapper, rig });
-            expect(pathSignature(paths, 4)).toBe(PRE_T28B_SIGNATURE[`${rig}|${primitive}/${mapper}`]);
+            golden.expect(`flush-off ${rig}|${primitive}/${mapper} pathSignature4`, pathSignature(paths, 4));
           });
         });
       } finally { await rt.cleanup(); }
@@ -534,36 +481,9 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
   // RETIRES. Verbatim: length carries tone, and it read 0/12 on proto3 AND
   // on proto6 under this tone. Tone is now gated on SP5 (spacing carries
   // tone) over the full population — `scene3d-mktick-spacing-tone.test.js`,
-  // T1. `lengthCarriesTone` is kept here as a REPORTED (non-gating) number
-  // for continuity with the audit's own history — Jay's B6 clause, "ticks
-  // can be any size", is explicitly reported-not-gated by the same ruling.
-  describe('six-cell O5 (R1, RETIRED as a gate) — REPORTED ONLY: see scene3d-mktick-spacing-tone.test.js T1 (SP5) for the tone gate', () => {
-    let runtime;
-    const results = { test: {}, create: {} };
-
-    beforeAll(async () => {
-      runtime = await loadVecturaRuntime();
-      const V = runtime.window.Vectura;
-      ['test', 'create'].forEach((rig) => {
-        CELLS.forEach(([primitive, mapper]) => {
-          const { stat } = renderCell(V, { primitive, mapper, rig });
-          results[rig][`${primitive}/${mapper}`] = lengthCarriesTone(stat.lenByThird, stat.cntByThird);
-        });
-      });
-    }, 120000);
-
-    afterAll(async () => { if (runtime) await runtime.cleanup(); });
-
-    ['test', 'create'].forEach((rig) => {
-      CELLS.forEach(([primitive, mapper]) => {
-        test(`${rig} rig — ${primitive}/${mapper}: O5 ratio is a non-vacuous finite number (reported, not gated)`, () => {
-          const r = results[rig][`${primitive}/${mapper}`];
-          expect(r.ratio).not.toBeNull();
-          expect(Number.isFinite(r.ratio)).toBe(true);
-        });
-      });
-    });
-  });
+  // T1. Jay's B6 clause, "ticks can be any size", is not gated either.
+  // R-29: the six-cell O5 block (R1, retired as a gate, reported only) was
+  // removed. The tone gate is scene3d-mktick-spacing-tone.test.js T1 (SP5).
 
   // T2-7 (Amendment 1, Jay's ruling: "wedge25 -> RE-DERIVE AS MONOTONE; the
   // fixed 0.090 cap retires"). `WEDGE_MEAN_BAR`/`WEDGE_CELL_CEILING` (fixed
@@ -583,7 +503,7 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
   // dropped.
   const WEDGE_INV_NONREGRESSION = { test: 6, create: 6 }; // t25 baseline ceiling, measured below
 
-  describe('six-cell wedge/hole (R2) — bare-distance-by-bin (T12) NON-REGRESSION vs t25; holeMax + siteCoverage REPORTED only', () => {
+  describe('six-cell wedge/hole (R2) — bare-distance-by-bin (T12) NON-REGRESSION vs t25; siteCoverage > 0.90', () => {
     let runtime;
     const results = { test: {}, create: {} };
 
@@ -593,12 +513,9 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
       ['test', 'create'].forEach((rig) => {
         CELLS.forEach(([primitive, mapper]) => {
           const { paths, stat } = renderCell(V, { primitive, mapper, rig });
-          const w = measureWedge({ tickField: stat.tickField, paths, penWidth: BOUNDS.penWidth });
           const bin = wedgeByBin({ tickField: stat.tickField, paths, penWidth: BOUNDS.penWidth });
           const cov = siteCoverage(stat.tickSites);
-          results[rig][`${primitive}/${mapper}`] = {
-            ...w, siteCoverage: cov, nInversions: bin.nInversions,
-          };
+          results[rig][`${primitive}/${mapper}`] = { siteCoverage: cov, nInversions: bin.nInversions };
         });
       });
     }, 120000);
@@ -613,11 +530,10 @@ describe('Scene3D.SurfaceFill — mkTick bare-wedge oracle (T2-3, R2) + O5 (R1)'
       });
     });
 
-    test('holeMax and siteCoverage are non-vacuous numbers on every cell, both rigs (REPORTED, not gated — see file header)', () => {
+    test('siteCoverage > 0.90 on every cell, both rigs', () => {
       ['test', 'create'].forEach((rig) => {
         CELLS.forEach(([primitive, mapper]) => {
           const r = results[rig][`${primitive}/${mapper}`];
-          expect(Number.isFinite(r.holeMax)).toBe(true);
           expect(r.siteCoverage).toBeGreaterThan(0.90);
         });
       });

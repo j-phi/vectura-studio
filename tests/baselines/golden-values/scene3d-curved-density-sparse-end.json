@@ -1,0 +1,216 @@
+{
+  "arm64": {
+    "cone + hatch + fineLadder counts d=1,10,25,50": [
+      13,
+      16,
+      23,
+      42
+    ],
+    "cone + hatch + fineLadder ink d=1,10,25,50": [
+      621.49,
+      777.78,
+      1263.12,
+      2311.12
+    ],
+    "cone + hatch + ladder counts d=1,10,25,50": [
+      11,
+      15,
+      22,
+      42
+    ],
+    "cone + hatch + ladder ink d=1,10,25,50": [
+      544.27,
+      703.38,
+      1099.1,
+      2338.95
+    ],
+    "cone/spiral/ladder counts d=1,25,50": [
+      8,
+      15,
+      29
+    ],
+    "cone/spiral/ladder d=50 md5": "7a0ccbd034de2a6c285130ee0f4e702c",
+    "sphere + hatch + fineLadder counts d=1,10,25,50": [
+      8,
+      10,
+      14,
+      25
+    ],
+    "sphere + hatch + fineLadder ink d=1,10,25,50": [
+      222.11,
+      309.04,
+      426.96,
+      769.44
+    ],
+    "sphere + hatch + ladder counts d=1,10,25,50": [
+      8,
+      9,
+      15,
+      25
+    ],
+    "sphere + hatch + ladder ink d=1,10,25,50": [
+      222.11,
+      266.46,
+      425.78,
+      768.56
+    ],
+    "sphere/hatch/ladder counts d=1,25,50,100": [
+      8,
+      15,
+      25,
+      53
+    ],
+    "sphere/hatch/ladder d=220 md5": "b22ef417149b144c61dedc3f8d6e5395",
+    "sphere/hatch/ladder d=50 md5": "0bf306c15bf1dd0ec0e6cb0adae5276e",
+    "sphere/hatch/taperedEnds counts d=1,25,50": [
+      25,
+      49,
+      81
+    ],
+    "sphere/hatch/taperedEnds d=50 md5": "d52522765204beb91e06704ff294c669",
+    "torus + hatch + fineLadder counts d=1,10,25,50": [
+      5,
+      6,
+      9,
+      12
+    ],
+    "torus + hatch + fineLadder ink d=1,10,25,50": [
+      471.15,
+      547.36,
+      773.24,
+      1254.94
+    ],
+    "torus + hatch + ladder counts d=1,10,25,50": [
+      5,
+      6,
+      7,
+      12
+    ],
+    "torus + hatch + ladder ink d=1,10,25,50": [
+      420.39,
+      474.98,
+      646.51,
+      1257.41
+    ],
+    "torus/contour/ladder counts d=1,25,50,100": [
+      24,
+      46,
+      94,
+      211
+    ],
+    "torus/contour/ladder d=50 md5": "bc212164fdc8e72486dcef4e200eaa8d",
+    "torus/hatch/bundleCount counts d=1,25,50": [
+      43,
+      75,
+      84
+    ],
+    "torus/hatch/bundleCount d=50 md5": "81cc7d53f6741b0199b8d07094093f38"
+  },
+  "x64": {
+    "cone + hatch + fineLadder counts d=1,10,25,50": [
+      13,
+      16,
+      23,
+      42
+    ],
+    "cone + hatch + fineLadder ink d=1,10,25,50": [
+      621.49,
+      777.78,
+      1263.12,
+      2311.12
+    ],
+    "cone + hatch + ladder counts d=1,10,25,50": [
+      11,
+      15,
+      22,
+      42
+    ],
+    "cone + hatch + ladder ink d=1,10,25,50": [
+      544.27,
+      703.38,
+      1099.1,
+      2338.95
+    ],
+    "cone/spiral/ladder counts d=1,25,50": [
+      8,
+      15,
+      29
+    ],
+    "cone/spiral/ladder d=50 md5": "7a0ccbd034de2a6c285130ee0f4e702c",
+    "sphere + hatch + fineLadder counts d=1,10,25,50": [
+      8,
+      10,
+      14,
+      25
+    ],
+    "sphere + hatch + fineLadder ink d=1,10,25,50": [
+      222.11,
+      309.04,
+      426.96,
+      769.44
+    ],
+    "sphere + hatch + ladder counts d=1,10,25,50": [
+      8,
+      9,
+      15,
+      25
+    ],
+    "sphere + hatch + ladder ink d=1,10,25,50": [
+      222.11,
+      266.46,
+      425.78,
+      768.56
+    ],
+    "sphere/hatch/ladder counts d=1,25,50,100": [
+      8,
+      15,
+      25,
+      53
+    ],
+    "sphere/hatch/ladder d=220 md5": "b22ef417149b144c61dedc3f8d6e5395",
+    "sphere/hatch/ladder d=50 md5": "0bf306c15bf1dd0ec0e6cb0adae5276e",
+    "sphere/hatch/taperedEnds counts d=1,25,50": [
+      25,
+      49,
+      81
+    ],
+    "sphere/hatch/taperedEnds d=50 md5": "d52522765204beb91e06704ff294c669",
+    "torus + hatch + fineLadder counts d=1,10,25,50": [
+      5,
+      6,
+      9,
+      12
+    ],
+    "torus + hatch + fineLadder ink d=1,10,25,50": [
+      471.15,
+      547.36,
+      773.24,
+      1254.94
+    ],
+    "torus + hatch + ladder counts d=1,10,25,50": [
+      5,
+      6,
+      7,
+      12
+    ],
+    "torus + hatch + ladder ink d=1,10,25,50": [
+      420.39,
+      474.98,
+      646.51,
+      1257.41
+    ],
+    "torus/contour/ladder counts d=1,25,50,100": [
+      24,
+      46,
+      94,
+      211
+    ],
+    "torus/contour/ladder d=50 md5": "bc212164fdc8e72486dcef4e200eaa8d",
+    "torus/hatch/bundleCount counts d=1,25,50": [
+      43,
+      75,
+      84
+    ],
+    "torus/hatch/bundleCount d=50 md5": "81cc7d53f6741b0199b8d07094093f38"
+  }
+}

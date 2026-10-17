@@ -1,4 +1,8 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
+
+// Exact path-count fingerprints: tests/baselines/golden-values/scene3d-hatch-density-500.json.
+const golden = goldenValues('scene3d-hatch-density-500');
 
 /*
  * fs-m1 — fillDensity ceiling raised 200 → 500 (engine half; UI slider `max`
@@ -169,7 +173,7 @@ describe('scene3d fillDensity ceiling 200→500 (fs-m1)', () => {
       for (let i = 1; i < results.length; i++) {
         expect(results[i].count).toBeGreaterThan(results[i - 1].count);
       }
-      expect(results.map((r) => r.count)).toEqual([178, 181, 185, 190]);
+      golden.expect('box counts d=200,300,400,500', results.map((r) => r.count));
     });
 
     test('curved sphere (SurfaceFill masterGrid path)', () => {
@@ -190,7 +194,7 @@ describe('scene3d fillDensity ceiling 200→500 (fs-m1)', () => {
       // [37, 38, 39, 40] (barely moving) — caught here, before landing, and
       // fixed by removing that redundant clamp (`masterPitch` is already
       // floored correctly; see `ladderWantedPitch`'s own comment).
-      expect(results.map((r) => r.count)).toEqual([97, 112, 131, 163]);
+      golden.expect('sphere counts d=200,300,400,500', results.map((r) => r.count));
     });
 
     test('curved torus (SurfaceFill masterGrid path, different mesh)', () => {
@@ -217,7 +221,7 @@ describe('scene3d fillDensity ceiling 200→500 (fs-m1)', () => {
       // landing bug as the sphere row above — see its comment. Was [41, 48,
       // 55, 70]; the first (buggy) `ladderWantedPitch` clamp flattened this
       // to [37, 38, 39, 40], caught here.
-      expect(results.map((r) => r.count)).toEqual([47, 56, 65, 81]);
+      golden.expect('torus counts d=200,300,400,500', results.map((r) => r.count));
     });
   });
 

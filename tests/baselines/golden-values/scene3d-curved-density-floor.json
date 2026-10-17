@@ -1,0 +1,52 @@
+{
+  "arm64": {
+    "sphere/crosshatch counts d=10 ratio=0.25,1.0 d=100 ratio=0.25,1.0": [
+      22,
+      18,
+      120,
+      116
+    ],
+    "sphere/hatch counts d=10,50,75,100": [
+      9,
+      25,
+      40,
+      53
+    ],
+    "sphere/hatch counts d=50,100,150,200": [
+      25,
+      53,
+      69,
+      97
+    ],
+    "sphere/hatch draft counts d=10,50,100": [
+      3,
+      5,
+      39
+    ]
+  },
+  "x64": {
+    "sphere/crosshatch counts d=10 ratio=0.25,1.0 d=100 ratio=0.25,1.0": [
+      22,
+      18,
+      120,
+      116
+    ],
+    "sphere/hatch counts d=10,50,75,100": [
+      9,
+      25,
+      40,
+      53
+    ],
+    "sphere/hatch counts d=50,100,150,200": [
+      25,
+      53,
+      69,
+      97
+    ],
+    "sphere/hatch draft counts d=10,50,100": [
+      3,
+      5,
+      39
+    ]
+  }
+}

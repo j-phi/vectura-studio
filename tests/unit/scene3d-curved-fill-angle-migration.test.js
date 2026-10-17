@@ -1,5 +1,6 @@
+const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const xrayGolden = require('../fixtures/xray-fold-golden.json');
+const { goldenValues } = require('../helpers/golden-values');
 
 /*
  * CURVED FILL ANGLE — SCENE_VERSION 2 → 3 migration.
@@ -25,6 +26,18 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3 };
 // scene3d paths are Arrays with a `.meta` property JSON.stringify drops.
 const ser = (paths) => (paths || []).map((pp) => ({ pts: Array.from(pp), meta: pp.meta || null }));
+// The x-ray fold sphere golden: tests/baselines/golden-values/
+// scene3d-curved-fill-angle-migration.json holds { paths, sha256 }, the same
+// value as `xraySphere` in scene3d-xray-fold.json. The sha256 is over the
+// key-sorted JSON.stringify of the full `ser()` output (full precision), so
+// it pins the same structure a deep toEqual compared.
+const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)
+  ? Object.keys(x).sort().reduce((o, key) => { o[key] = x[key]; return o; }, {}) : x));
+const pin = (serialized) => ({
+  paths: serialized.length,
+  sha256: crypto.createHash('sha256').update(canon(serialized)).digest('hex'),
+});
+const golden = goldenValues('scene3d-curved-fill-angle-migration');
 
 // Every primitive scene3d.js charts through SurfaceFill (TOPOFORM_MODES).
 const CURVED = {
@@ -138,7 +151,7 @@ describe('Scene3D — curved fill-angle migration (SCENE_VERSION 2 → 3)', () =
     };
     p.tone = { ...clone(defaults).tone, enabled: false };
     p.sceneVersion = 1;
-    expect(render(Params.sanitizeSceneParams(p))).toEqual(xrayGolden.xraySphere);
+    golden.expect('xraySphere', pin(render(Params.sanitizeSceneParams(p))));
   });
 
   // ── An ABSENT fillAngle is 45, not 0 (scene3d.js reads finite(sp.fillAngle, 45)).
