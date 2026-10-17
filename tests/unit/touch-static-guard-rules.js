@@ -616,7 +616,8 @@ function checkR11Coverage(sliderText, cssFiles) {
  * touch-alt v2 (batch G): a marker must cite its touch equivalent.
  *   touch-alt: TUX-nnn via <symbol-or-selector> - <reason>
  * The cited symbol must occur as code (comments stripped) in one of the given sources.
- * `legacy` maps file -> number of old-format markers still allowed (may only shrink).
+ * `legacy` maps file -> number of old-format markers still allowed. Each count must EQUAL the old-format markers the
+ * file really holds: a count above it is a stale allowance and fails, so the allowlist shrinks as legacy markers go.
  */
 const ALT_V2 = /touch-alt:\s*TUX-\d{3}\s+via\s+(\S+)\s+(?:-|\u2014|\u2013)\s+\S/;
 function stripComments(text, rel) {
@@ -644,6 +645,11 @@ function checkAltMarkers(markerList, sources, legacy = {}) {
     }
     const symbol = v2[1].replace(/[,;.]+$/, '');
     if (!code().some((t) => t.includes(symbol))) problems.push(`${m.file}:${m.line} touch-alt cites "${symbol}", which does not occur as code`);
+  });
+  Object.keys(left).forEach((file) => {
+    if (left[file] > 0) {
+      problems.push(`${file}: the legacy touch-alt allowlist says ${legacy[file]} old-format markers, the file holds ${legacy[file] - left[file]}; lower LEGACY_TOUCH_ALT to ${legacy[file] - left[file]}${legacy[file] - left[file] === 0 ? ' (delete the entry)' : ''}`);
+    }
   });
   return problems;
 }

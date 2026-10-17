@@ -413,7 +413,21 @@ describe('touch-alt v2: a marker must cite its touch equivalent', () => {
     const two = [...m('touch-alt: TUX-038 old a', 'src/old.js'), ...m('touch-alt: TUX-038 old b', 'src/old.js')];
     expect(R.checkAltMarkers(two, src, { 'src/old.js': 2 })).toEqual([]);
     expect(R.checkAltMarkers(two, src, { 'src/old.js': 1 }).length).toBe(1);
-    expect(R.checkAltMarkers(m('touch-alt: TUX-038 new', 'src/new.js'), src, { 'src/old.js': 2 }).length).toBe(1);
+    expect(R.checkAltMarkers(m('touch-alt: TUX-038 new', 'src/new.js'), src, { 'src/old.js': 2 }).length).toBe(2);
+  });
+  test('each legacy count must EQUAL the old-format markers the file holds (a stale allowance fails)', () => {
+    const two = [...m('touch-alt: TUX-038 old a', 'src/old.js'), ...m('touch-alt: TUX-038 old b', 'src/old.js')];
+    expect(R.checkAltMarkers(two, src, { 'src/old.js': 2 })).toEqual([]);
+    const over = R.checkAltMarkers(two, src, { 'src/old.js': 3 });
+    expect(over.length).toBe(1);
+    expect(over[0]).toMatch(/src\/old\.js.*says 3.*holds 2.*lower LEGACY_TOUCH_ALT to 2/);
+    // a legacy file whose markers were all migrated to the cited form must leave the allowlist
+    const migrated = m('touch-alt: TUX-044 via bindTouchDrag - grip reorders by finger', 'src/old.js');
+    const gone = R.checkAltMarkers(migrated, src, { 'src/old.js': 1 });
+    expect(gone.length).toBe(1);
+    expect(gone[0]).toMatch(/delete the entry/);
+    // a file with no markers at all, listed in the allowlist, fails too
+    expect(R.checkAltMarkers([], src, { 'src/ghost.js': 1 }).length).toBe(1);
   });
 });
 
