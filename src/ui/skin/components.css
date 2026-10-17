@@ -5998,14 +5998,14 @@
  * element to the nearest node with a mouse handler (the canvas); the resizers now carry a no-op mousedown
  * handler (workspace.js, bottom-pane.js), which keeps a finger on the 6 px bar, plus a 24 px strip (the §1.5 floor)
  * around the middle of the bar. The strips stay clear of everything tappable and of the canvas share:
- * - side resizers: the element is 24 px wide with negative margins (the 6 px bar plus 11 px over the pane edge and 7 px
- *   over the canvas edge on the left; 7 px canvas, bar, 11 px pane on the right), so layout is unchanged. Only the bar
- *   spans the full height. The 24 px strip is a 120 px window around the vertical centre of the bar: it is far below
- *   the pane toggles, clear of the floating tool rail (10 px from the canvas edge, so 7 px is safe), short of the first
- *   pane control (the Layers rows start 11 px from the right pane edge) and the info close hit area, and clear of
- *   the Paint Bucket angle chip (whose hit area an 11 px bite at the pane edge cut from 52 to 39 px). It costs the canvas
- *   share 0.1 point (iPad landscape docked stays 45.9 against the 45 floor). The element stops above the bottom
- *   safe-area band;
+ * - side resizers: the element is 24 px wide with negative margins (7 px over the pane edge, the 6 px bar and 11 px over
+ *   the canvas edge), so layout is unchanged. Only the bar spans the full height. The 24 px strip is a 120 px window
+ *   around the vertical centre of the bar: it is far below the pane toggles and costs the canvas share 0.1 point (iPad
+ *   landscape docked stays 45.9 against the 45 floor). Its edges are measured, not guessed: the canvas part ends where the
+ *   floating tool rail begins (10 px from the canvas edge, the rail's own padding holds the 11th px), and the pane part
+ *   is 7 px because a Paint Bucket angle chip, the Scene3D law-info buttons and the Layers rows reach to 7 px, 7 px and
+ *   11 px of the pane edge with a 44 px hit area that a wider bite would cut below 44. The element stops above the
+ *   bottom safe-area band;
  * - bottom resizer: reaches DOWN into the empty bottom pane header (labels only), never up over the canvas, the
  *   canvas HUD or the tool rail's overflow button, so a canvas tap above the bar still reaches the canvas
  *   (TUX-051). The clip-path leaves a notch for the centred pane toggle.
@@ -6020,15 +6020,15 @@
     margin-bottom: var(--safe-bottom, 0px);
   }
   #left-resizer {
-    margin-inline: -11px -7px;
-    clip-path: polygon(11px 0, 17px 0, 17px var(--rz-top), 100% var(--rz-top), 100% var(--rz-bot), 17px var(--rz-bot), 17px 100%, 11px 100%, 11px var(--rz-bot), 0 var(--rz-bot), 0 var(--rz-top), 11px var(--rz-top));
-  }
-  #right-resizer {
     margin-inline: -7px -11px;
     clip-path: polygon(7px 0, 13px 0, 13px var(--rz-top), 100% var(--rz-top), 100% var(--rz-bot), 13px var(--rz-bot), 13px 100%, 7px 100%, 7px var(--rz-bot), 0 var(--rz-bot), 0 var(--rz-top), 7px var(--rz-top));
   }
-  #left-resizer::before { inset: 0 auto 0 11px; width: 6px; }
-  #right-resizer::before { inset: 0 auto 0 7px; width: 6px; }
+  #right-resizer {
+    margin-inline: -11px -7px;
+    clip-path: polygon(11px 0, 17px 0, 17px var(--rz-top), 100% var(--rz-top), 100% var(--rz-bot), 17px var(--rz-bot), 17px 100%, 11px 100%, 11px var(--rz-bot), 0 var(--rz-bot), 0 var(--rz-top), 11px var(--rz-top));
+  }
+  #left-resizer::before { inset: 0 auto 0 7px; width: 6px; }
+  #right-resizer::before { inset: 0 auto 0 11px; width: 6px; }
   .bottom-resizer::after {
     content: '';
     position: absolute;
