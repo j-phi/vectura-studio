@@ -106,6 +106,17 @@ Node 20.19+ required. `package.json` is the canonical version source — run `ve
 | Docs-only | Link/path sanity review only |
 | Any PR / full confidence | `test:ci` (lifecycle + full-scope Vitest coverage + browser roster + uninstrumented perf) |
 
+## Test Performance Budget
+
+Full PR validation takes about 8 minutes. Keep it under 10. Full rules and history: [docs/test-performance-lessons.md](docs/test-performance-lessons.md).
+
+- A test file is the unit of sharding. Aim for at most ~120 s hosted coverage time per file. Split above ~240 s (by describe, shared helpers in `tests/helpers/`).
+- Prefer the cheapest layer. Do not repeat full scene renders. Every render must feed an assertion.
+- Every cache or trim needs a mutation proof that the witness still fails. Never compare a cached copy to itself.
+- Refresh shard weights only from Vitest blob durations (`scripts/test-shard-weights-refresh.js`). Keep 2 workers on CI. Re-run the whole workflow, not failed shards.
+- Never lower a threshold, add a skip, raise a timeout or move a test out of PR gating to save time.
+- Measure wall time from workflow creation to the last check, with at least two hosted runs. A local timing is not proof.
+
 ## Shared Local Test Queue
 
 Every heavy test command runs through `scripts/test-queue.js`, a machine-wide lock shared by **all** worktrees, clones, and Claude sessions (lock dir `~/.cache/vectura-studio/test-queue`). Only one Vitest/Playwright run executes at a time; the others wait and print who holds the lock.
