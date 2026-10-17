@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
@@ -14,7 +15,7 @@ const NAMED = {
   'webkit-iphone-portrait': 'iPhP-webkit',
   'webkit-iphone-landscape': 'iPhL-webkit',
 };
-const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-025');
+const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || evidenceDir('TUX-025');
 
 // Add a 3D scene through the engine path the Add Layer command uses, select it, fit the view.
 const setup = async (page, { nearEdge = false } = {}) => {
@@ -193,7 +194,7 @@ test.describe('TUX-025 3D rotation gizmo by finger', () => {
           // The skin hides the context bar on portrait phones (components.css), so only require it elsewhere.
           if (kind === 'polyhedron' && !/iphone-portrait/.test(testInfo.project.name)) expect(g.ctxbar, 'the layer context bar must be on screen for this fixture').not.toBeNull();
         }
-        if (!nearEdge) await page.screenshot({ path: `${EVIDENCE_DIR}/${NAMED[testInfo.project.name]}${kind === 'scene' ? '' : '-poly'}.png` });
+        if (!nearEdge) await shoot(page, { path: `${EVIDENCE_DIR}/${NAMED[testInfo.project.name]}${kind === 'scene' ? '' : '-poly'}.png` });
       });
     }
   }

@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
@@ -5,7 +6,7 @@ const touch = require('../helpers/touch');
 // Pane reachability on iPhone is TUX-010; this spec triggers the delete through the shared
 // command path (Edit > Delete -> CanvasContextMenu.runCommand('delete')) and exercises the
 // toast itself by finger. The finger-only path (long-press row menu) runs on iPad landscape.
-const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-037');
+const EVID = evidenceDir('TUX-037');
 
 const boot = async (page, { clock = false } = {}) => {
   if (clock) await page.clock.install();
@@ -67,7 +68,7 @@ test('toast geometry + undo by finger', async ({ page }, testInfo) => {
   expect(geo.toast.b).toBeLessThanOrEqual(geo.vh - geo.safe);
   expect(geo.header, 'toast overlaps #app-header').toBe(false);
   expect(geo.modbar, 'toast overlaps #touch-modifier-bar').toBe(false);
-  await page.screenshot({ path: `${EVID}/${testInfo.project.name}.png` }).catch(() => {});
+  await shoot(page, { path: `${EVID}/${testInfo.project.name}.png` }).catch(() => {});
 
   // Still visible at 4.9 s (default is 6 s with an action).
   await page.clock.runFor(4900);

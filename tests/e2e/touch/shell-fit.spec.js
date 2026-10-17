@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -15,7 +16,7 @@ const EXPECT = {
   iPhL: { layout: 'phone', mobile: true },
   'iPhL-c': { layout: 'phone', mobile: true },
 };
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-006');
+const EVIDENCE = evidenceDir('TUX-006');
 
 const gotoApp = async (page) => {
   await page.goto('/');
@@ -128,7 +129,7 @@ test.describe('TUX-006 shell layout', () => {
 
   test('screenshot evidence', async ({ page }, testInfo) => {
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: path.join(EVIDENCE, `${testInfo.project.name}.png`) });
+    await shoot(page, { path: path.join(EVIDENCE, `${testInfo.project.name}.png`) });
   });
 
   test('rotation iPad landscape -> portrait -> landscape', async ({ page }, testInfo) => {
@@ -149,7 +150,7 @@ test.describe('TUX-006 shell layout', () => {
     const events = await page.evaluate(() => window.__lc);
     expect(events.map((e) => e.to)).toEqual(['tablet', 'touch-wide']);
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: path.join(EVIDENCE, `${testInfo.project.name}-after-rotation.png`) });
+    await shoot(page, { path: path.join(EVIDENCE, `${testInfo.project.name}-after-rotation.png`) });
   });
 });
 
@@ -367,7 +368,7 @@ const TUX4_PROJECTS = [
 const TUX4_EXPECTED_FAIL = {}; // TUX-007 landed: the touch-iphone-landscape-chrome mark was removed (it reported 'Expected to fail, but passed')
 // Projects where #status-bar is display:none by design (measured: iPhone portrait, all three projects).
 const TUX4_STATUS_BAR_HIDDEN = ['touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-iphone-portrait-chrome'];
-const TUX234_EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after');
+const TUX234_EVIDENCE = evidenceDir();
 
 const openLeftPane = (page) => page.evaluate(() => {
   const pane = document.getElementById('left-pane');
@@ -437,7 +438,7 @@ test.describe('TUX-002 shell does not scroll under swipes', () => {
     await gotoFresh(page);
     await page.waitForTimeout(300);
     fs.mkdirSync(`${TUX234_EVIDENCE}/TUX-002`, { recursive: true });
-    await page.screenshot({ path: `${TUX234_EVIDENCE}/TUX-002/${name}.png` });
+    await shoot(page, { path: `${TUX234_EVIDENCE}/TUX-002/${name}.png` });
   });
   test('computed shell styles', async ({ page }, testInfo) => {
       const name = testInfo.project.name;
@@ -528,7 +529,7 @@ test.describe('TUX-003 pinch on chrome does not page-zoom', () => {
     await gotoFresh(page);
     await page.waitForTimeout(300);
     fs.mkdirSync(`${TUX234_EVIDENCE}/TUX-003`, { recursive: true });
-    await page.screenshot({ path: `${TUX234_EVIDENCE}/TUX-003/${name}.png` });
+    await shoot(page, { path: `${TUX234_EVIDENCE}/TUX-003/${name}.png` });
   });
   test('pinch scale stays 1', async ({ page }, testInfo) => {
       const name = testInfo.project.name;
@@ -605,7 +606,7 @@ test.describe('TUX-004 bottom chrome on screen (regression guard, passes before 
     await gotoFresh(page);
     await page.waitForTimeout(300);
     fs.mkdirSync(`${TUX234_EVIDENCE}/TUX-004`, { recursive: true });
-    await page.screenshot({ path: `${TUX234_EVIDENCE}/TUX-004/${name}.png` });
+    await shoot(page, { path: `${TUX234_EVIDENCE}/TUX-004/${name}.png` });
   });
   test('bottom bars inside the visible viewport', async ({ page }, testInfo) => {
       const name = testInfo.project.name;

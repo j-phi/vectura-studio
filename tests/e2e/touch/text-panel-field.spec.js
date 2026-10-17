@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
@@ -300,7 +301,7 @@ test.describe('TUX-029 Text panel content field', () => {
     await page.waitForTimeout(300);
     const name = { iPadP: 'iPadP', iPadL: 'iPadL', iPhP: 'iPhP', iPhL: 'iPhL' }[testInfo.project.name.replace(/^(touch|webkit)-/, '').replace('ipad-portrait', 'iPadP').replace('ipad-landscape', 'iPadL').replace('iphone-portrait', 'iPhP').replace('iphone-landscape', 'iPhL')];
     if (name && testInfo.project.name.startsWith('touch-')) {
-      await page.screenshot({ path: `${require('path').join(__dirname, '../../..')}/docs/touch-audit/evidence/after/TUX-029/${name}.png` });
+      await shoot(page, { path: `${evidenceDir('TUX-029')}/${name}.png` });
     }
     expect(await page.evaluate((sel) => !!document.querySelector(sel), FIELD)).toBe(true);
   });

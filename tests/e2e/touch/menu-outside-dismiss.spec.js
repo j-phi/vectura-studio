@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const { PROJECTS } = require('./viewports');
@@ -5,7 +6,7 @@ const touch = require('../helpers/touch');
 
 // TUX-040: the layer filter menu (UI.overlays.Menu) must close on ANY outside pointer press,
 // including touch drags/scrolls that never synthesize a compat mousedown.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-040');
+const EVIDENCE = evidenceDir('TUX-040');
 
 const MENU = '.menu-dropdown.open';
 
@@ -84,7 +85,7 @@ test.describe('menu outside dismiss (TUX-040)', () => {
     await touch.drag(page, p, { x: p.x + 60, y: p.y + 40 }, { steps: 10 });
     expect(await menuClosed(page)).toBe(true);
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE}/${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/${testInfo.project.name}.png` });
   });
 
   test('(b) RED: a one-finger scroll-drag of the layer list closes the menu', async ({ page }) => {

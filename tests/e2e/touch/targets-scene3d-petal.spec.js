@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -9,10 +10,10 @@ const { STATES } = require('./target-audit-states');
 // TUX-041 batch B5 (Scene3D, Petal Designer, Pattern designer), strict slice. Every interactive target on these surfaces has a hit
 // area of at least 44 x 44 CSS px on every touch project, and its centre resolves to itself (no neighbour owns it).
 // B5_LOG=1 prints the measured offenders per scenario. B5_SHOT=<dir> saves a screenshot per scenario.
-// Finger-tap screenshots go to docs/touch-audit/evidence/after/B5/ (untracked).
+// Finger-tap screenshots go to test-results/evidence/B5/ (with VECTURA_E2E_EVIDENCE=1).
 const MIN = sweep.MIN;
-const EVIDENCE = path.resolve(__dirname, '..', '..', '..', 'docs', 'touch-audit', 'evidence', 'after', 'B5');
-const shot = async (page, name) => { fs.mkdirSync(EVIDENCE, { recursive: true }); await page.screenshot({ path: path.join(EVIDENCE, `${name}.png`), scale: 'css' }); };
+const EVIDENCE = evidenceDir('B5');
+const shot = async (page, name) => { fs.mkdirSync(EVIDENCE, { recursive: true }); await shoot(page, { path: path.join(EVIDENCE, `${name}.png`), scale: 'css' }); };
 const ROOTS = ['.vs3-more-menu', '.petal-designer-window', '#left-pane', '#right-pane', '#bottom-pane'];
 const POPUPS = ['.vs3-more-menu', '.hg-preset-popover', '.lvl-ctx-menu', '[role="menu"]'];
 

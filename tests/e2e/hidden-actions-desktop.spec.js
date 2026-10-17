@@ -1,7 +1,8 @@
+const { evidenceDir, shoot } = require('./helpers/evidence');
 const { test, expect } = require('@playwright/test');
 
 // TUX-036 desktop parity: mouse hover still reveals row actions and a preset X still deletes in one click.
-const EVID = require('path').join(__dirname, '../..', 'docs/touch-audit/evidence/after/TUX-036');
+const EVID = evidenceDir('TUX-036');
 
 test('desktop: hover reveals row actions; Delete works on one click', async ({ page }) => {
   await page.goto('/');
@@ -21,7 +22,7 @@ test('desktop: hover reveals row actions; Delete works on one click', async ({ p
   const del = acts.locator('.lvl-ab.del');
   const hit = await del.evaluate((el) => { const r = el.getBoundingClientRect(); const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return h === el || el.contains(h); });
   expect(hit).toBe(true);
-  await page.screenshot({ path: `${EVID}/desktop-1600x1000-hover.png` }).catch(() => {});
+  await shoot(page, { path: `${EVID}/desktop-1600x1000-hover.png` }).catch(() => {});
   await del.click();
   expect(await page.evaluate(() => window.app.engine.layers.length)).toBe(1);
 });

@@ -1,9 +1,10 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
 // TUX-030: pen draft controls (Done / Remove Last Anchor / Cancel) reachable by finger on every
 // touch viewport. Fingers only; tool selection is setup (app API), anchors and chips are taps.
-const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-030');
+const EVID = evidenceDir('TUX-030');
 const CHIP = { done: '[data-action="pen-done"]', remove: '[data-action="pen-remove-last"]', cancel: '[data-action="pen-cancel"]' };
 
 const boot = async (page, testInfo) => {
@@ -62,7 +63,7 @@ const chipVisible = (page, sel) => page.evaluate((s) => {
   return r.width > 0 && r.height > 0 && !!cs && cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.9;
 }, sel);
 
-const shot = (page, testInfo, name) => page.screenshot({ path: `${EVID}/${name || testInfo.project.name}.png` }).catch(() => {});
+const shot = (page, testInfo, name) => shoot(page, { path: `${EVID}/${name || testInfo.project.name}.png` }).catch(() => {});
 
 test.describe('TUX-030 pen draft controls', () => {
   test.beforeEach(async ({ page }, testInfo) => { await boot(page, testInfo); });

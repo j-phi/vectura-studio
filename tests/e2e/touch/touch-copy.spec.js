@@ -1,9 +1,10 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
 // TUX-052: after a touch tap the status hint uses touch words, and Help opens on the Touch page.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-052');
+const EVIDENCE = evidenceDir('TUX-052');
 const BANNED = /Click|Shift\+|Option\+|Cmd\+|Ctrl\+|Alt\+|double-click|right-click/i;
 
 const phoneLayout = (page) => page.evaluate(() => document.body.classList.contains('phone-layout'));
@@ -23,7 +24,7 @@ test('touch tap switches hints to touch words and Help opens on the Touch page',
   expect(hint, 'status hint after a touch tap').not.toMatch(BANNED);
   if (process.env.TUX_EVIDENCE === '1') {
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE}/hint-${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/hint-${testInfo.project.name}.png` });
   }
 
   if (await phoneLayout(page)) {
@@ -56,6 +57,6 @@ test('touch tap switches hints to touch words and Help opens on the Touch page',
 
   if (process.env.TUX_EVIDENCE === '1') {
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE}/${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/${testInfo.project.name}.png` });
   }
 });

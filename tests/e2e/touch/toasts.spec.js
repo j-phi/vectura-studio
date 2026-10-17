@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -8,8 +9,8 @@ const touch = require('../helpers/touch');
 // the bottom-docked chrome, above modals. Measured against window.visualViewport + DEVICES, never innerWidth.
 // Desktop (fine pointer, any width) keeps the top-right placement. #canvas-toast is out of scope.
 const CHROME = ['#app-header', '#tool-bar', '#touch-modifier-bar', '#status-bar', '#bottom-pane', '#btn-pane-toggle-bottom'];
-const EVID = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-048');
-const BATCH2_EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch2/TUX-010');
+const EVID = process.env.TUX_EVIDENCE_DIR || evidenceDir('TUX-048');
+const BATCH2_EVID = evidenceDir('batch2/TUX-010');
 const SHORT = 'Added Spiral layer';
 const LONG = 'Added a Flowfield layer to the document with the default preset and the current pen assignment';
 const TOL = 0.5;
@@ -104,7 +105,7 @@ test.describe('touch toasts', () => {
       assertPlacement(await measure(page, CHROME), dev);
       if (name === 'short' || testInfo.project.name.endsWith('landscape-chrome')) {
         await fs.promises.mkdir(EVID, { recursive: true }).catch(() => {});
-        await page.screenshot({ path: path.join(EVID, `${testInfo.project.name}${name === 'short' ? '' : '-2line'}.png`) }).catch(() => {});
+        await shoot(page, { path: path.join(EVID, `${testInfo.project.name}${name === 'short' ? '' : '-2line'}.png`) }).catch(() => {});
       }
     });
   }
@@ -224,7 +225,7 @@ test.describe('plain toast vs primary controls', () => {
       expect(seen.has('#btn-add-layer') || seen.has('#layer-search-input'), 'Layers pane controls were measured at least once').toBe(true);
       if (name === 'short') {
         await fs.promises.mkdir(BATCH2_EVID, { recursive: true }).catch(() => {});
-        await page.screenshot({ path: path.join(BATCH2_EVID, `${testInfo.project.name}-toast-controls.png`) }).catch(() => {});
+        await shoot(page, { path: path.join(BATCH2_EVID, `${testInfo.project.name}-toast-controls.png`) }).catch(() => {});
       }
     });
   }
@@ -259,7 +260,7 @@ test.describe('desktop parity (fine pointer)', () => {
       }
       if (w === 1600) {
         await fs.promises.mkdir(EVID, { recursive: true }).catch(() => {});
-        await page.screenshot({ path: path.join(EVID, `desktop-${w}.png`) }).catch(() => {});
+        await shoot(page, { path: path.join(EVID, `desktop-${w}.png`) }).catch(() => {});
       }
       await ctx.close();
     });

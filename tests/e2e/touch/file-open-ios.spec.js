@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
@@ -6,7 +7,7 @@ const { PROJECTS } = require('./viewports');
 // TUX-053: File > Open must hand iOS Files an accept list it can match (adds
 // application/octet-stream on iOS only), and the chosen .vectura must load.
 // Finger-only. Desktop parity lives in tests/e2e/file-open-desktop.spec.js.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-053');
+const EVIDENCE = evidenceDir('TUX-053');
 const OCTET = 'application/octet-stream';
 
 const spec = (testInfo) => PROJECTS[testInfo.project.name];
@@ -66,5 +67,5 @@ test('File > Open takes a .vectura through the picker and loads it', async ({ pa
 
   fs.mkdirSync(EVIDENCE, { recursive: true });
   const tag = `${s.device}-${s.engine}`;
-  await page.screenshot({ path: `${EVIDENCE}/${tag}.png` });
+  await shoot(page, { path: `${EVIDENCE}/${tag}.png` });
 });

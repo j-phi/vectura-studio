@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
@@ -381,9 +382,9 @@ test.describe('TUX-034a menu fit', () => {
       expect(m2.open, 'finger scroll must not close the menu').toBe(true);
       expect(m2.scrollTop).toBeGreaterThan(0);
     }
-    const evid = `${require('path').join(__dirname, '../../..')}/docs/touch-audit/evidence/after/TUX-034`;
+    const evid = evidenceDir('TUX-034');
     require('fs').mkdirSync(evid, { recursive: true });
-    await page.screenshot({ path: `${evid}/${testInfo.project.name}-menu.png` });
+    await shoot(page, { path: `${evid}/${testInfo.project.name}-menu.png` });
   });
 
   test('(g2) the canvas selection menu fits, rows are 44 px, and a finger scroll scrolls it', async ({ page }, testInfo) => {

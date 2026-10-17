@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -77,7 +78,7 @@ test.describe('TUX-041 B2 context bar', () => {
     });
   }
   // Finger check: a real touch tap opens the More menu, and a neighbour tap never lands on the wrong control.
-  // Screenshots go to docs/touch-audit/evidence/after/B2/ (untracked).
+  // Screenshots go to test-results/evidence/B2/ (with VECTURA_E2E_EVIDENCE=1).
   test('finger taps: More opens its menu and each bar button is hit by its own centre', async ({ page, baseURL }, testInfo) => {
     await openState(page, baseURL, 'layer-selected-handles');
     const shown = await page.evaluate(() => (() => { const b = document.querySelector('.ctxbar.is-visible'); return !!b && b.checkVisibility(); })());
@@ -85,15 +86,15 @@ test.describe('TUX-041 B2 context bar', () => {
     const wrong = await page.evaluate(() => [...document.querySelectorAll('.ctxbar.is-visible .ctxbar-btn, .ctxbar.is-visible .pen-chip, .ctxbar.is-visible .ctxbar-handle')]
       .filter((e) => e.checkVisibility()).map((e) => { const r = e.getBoundingClientRect(); const t = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return t && (t === e || e.contains(t)) ? null : (e.className || e.tagName).toString(); }).filter(Boolean));
     expect(wrong, 'bar controls whose centre belongs to another element').toEqual([]);
-    const dir = path.join(__dirname, '..', '..', '..', 'docs', 'touch-audit', 'evidence', 'after', 'B2');
+    const dir = evidenceDir('B2');
     fs.mkdirSync(dir, { recursive: true });
     const name = testInfo.project.name;
-    await page.screenshot({ path: path.join(dir, `${name}-bar.png`), scale: 'css' });
+    await shoot(page, { path: path.join(dir, `${name}-bar.png`), scale: 'css' });
     const more = page.locator('.ctxbar.is-visible .ctxbar-overflow');
     if (await more.count()) {
       await touch.tap(page, more.first());
       await expect.poll(() => page.evaluate(() => !!document.querySelector('.ctxbar-menu.is-open')), { timeout: 5000 }).toBe(true);
-      await page.screenshot({ path: path.join(dir, `${name}-more-open.png`), scale: 'css' });
+      await shoot(page, { path: path.join(dir, `${name}-more-open.png`), scale: 'css' });
     }
   });
   // Q19b: on touch-wide the bar is 44 px tall (controls fill it). No control may overlap a neighbour or leave the bar.
