@@ -168,9 +168,10 @@ describe('Scene3D — the fill BORDER refined to the TRUE silhouette (W-32 Rank 
   // legitimate pole convergence is never scored as overshoot.
   const measureCell = (primitive, mapper, rig, angle, density, detailOverride) => {
     const { fill, border, actualBag, actualTransform } = build(primitive, mapper, rig, angle, density, detailOverride);
+    const rimEdgePaths = border.filter((p) => p.meta.sceneTarget.edgeClass === 'boundary').length;
     const bp = [];
     border.forEach((p) => (p.points || p).forEach((pt) => { if (Number.isFinite(pt.x)) bp.push({ x: pt.x, y: pt.y }); }));
-    if (bp.length < 3) return { primitive, mapper, rig, angle, density, error: 'no border ink', osDrawnMm: 0, osTrueMm: 0, liveEnds: 0 };
+    if (bp.length < 3) return { primitive, mapper, rig, angle, density, error: 'no border ink', osDrawnMm: 0, osTrueMm: 0, liveEnds: 0, rimEdgePaths };
     const Hd = hull(bp);
     const Ht = trueHullFor(primitive, angle, actualBag, actualTransform);
     const ends = [];
@@ -194,7 +195,7 @@ describe('Scene3D — the fill BORDER refined to the TRUE silhouette (W-32 Rank 
     const dd = live.map((r) => r.dd); const dt = live.map((r) => r.dt);
     const mx = (a) => (a.length ? Math.max(...a) : 0);
     return {
-      primitive, mapper, rig, angle, density, liveEnds: live.length,
+      primitive, mapper, rig, angle, density, liveEnds: live.length, rimEdgePaths,
       osDrawnMm: mx(dd), osTrueMm: mx(dt),
       overBarDrawn: dd.filter((d) => d > OVERSHOOT_BAR_MM).length,
     };
@@ -209,22 +210,33 @@ describe('Scene3D — the fill BORDER refined to the TRUE silhouette (W-32 Rank 
     return cache.get(id);
   };
 
-  const PRIMS = ['capsule', 'cone', 'cylinder', 'sphere', 'ellipsoid'];
-  const MAPS = ['hatch', 'contour', 'crosshatch', 'spiral'];
-  const ANGLES = ['a', 'b'];
-  const DENS = ['med', 'max'];
+  // These named cells retain the measured worst case (ellipsoid/hatch/d220),
+  // the sphere and capsule representatives, the cone base rim and cylinder
+  // cap rim handled by distinct analytic branches, and an alternate camera.
+  // Run each on both construction rigs; the old 160-cell Cartesian product
+  // mostly repeated the same silhouette-refinement path.
+  const WITNESS_CELLS = [
+    { primitive: 'ellipsoid', mapper: 'hatch', angle: 'a', density: 'max' },
+    { primitive: 'sphere', mapper: 'hatch', angle: 'a', density: 'med' },
+    { primitive: 'capsule', mapper: 'contour', angle: 'b', density: 'med' },
+    { primitive: 'cone', mapper: 'hatch', angle: 'a', density: 'max' },
+    { primitive: 'cylinder', mapper: 'crosshatch', angle: 'a', density: 'max' },
+  ];
 
   // ── O1 — overshoot past the DRAWN outline, `create` rig ──────────────────
   // "no ruling endpoint outside the [DRAWN] silhouette by more than 0.5 pen"
   // (W-32's own bar). RED today: 0.2172 mm, 41 ends over on
   // ellipsoid.hatch.a.d220 (W-32r4-plan.md §1.3).
   describe('O1 — overshoot past the DRAWN outline <= 0.15 mm (0.5 pen), create rig', () => {
-    PRIMS.forEach((primitive) => MAPS.forEach((mapper) => ANGLES.forEach((angle) => DENS.forEach((density) => {
+    WITNESS_CELLS.forEach(({ primitive, mapper, angle, density }) => {
       test(`${primitive}·${mapper}·${angle}·${density} (create)`, () => {
         const r = cellFor(primitive, mapper, 'create', angle, density);
+        expect(r.error).toBeUndefined();
+        expect(r.liveEnds).toBeGreaterThan(0);
+        if (primitive === 'cone' || primitive === 'cylinder') expect(r.rimEdgePaths).toBeGreaterThan(0);
         expect(r.osDrawnMm).toBeLessThanOrEqual(OVERSHOOT_BAR_MM);
       });
-    }))));
+    });
 
     // Mutation proof (W-32r4-plan.md §5.2 O1): the fix is ANALYTIC, so it
     // corrects a coarse (detail:8) mesh just as well as the create-rig
@@ -251,12 +263,15 @@ describe('Scene3D — the fill BORDER refined to the TRUE silhouette (W-32 Rank 
   // claim about one rig. RED today: 0.1564 mm, 15+26 ends over
   // (sphere/ellipsoid, W-32r4-plan.md §1.4).
   describe('O2 — overshoot past the DRAWN outline <= 0.15 mm (0.5 pen), addLayer rig', () => {
-    PRIMS.forEach((primitive) => MAPS.forEach((mapper) => ANGLES.forEach((angle) => DENS.forEach((density) => {
+    WITNESS_CELLS.forEach(({ primitive, mapper, angle, density }) => {
       test(`${primitive}·${mapper}·${angle}·${density} (addLayer)`, () => {
         const r = cellFor(primitive, mapper, 'addLayer', angle, density);
+        expect(r.error).toBeUndefined();
+        expect(r.liveEnds).toBeGreaterThan(0);
+        if (primitive === 'cone' || primitive === 'cylinder') expect(r.rimEdgePaths).toBeGreaterThan(0);
         expect(r.osDrawnMm).toBeLessThanOrEqual(OVERSHOOT_BAR_MM);
       });
-    }))));
+    });
   });
 
   // ── O3 — ANTI-CHEAT: overshoot vs the TRUE silhouette must stay small ────
@@ -264,12 +279,15 @@ describe('Scene3D — the fill BORDER refined to the TRUE silhouette (W-32 Rank 
   // by measurement) from passing O1/O2 by pulling ink OFF the true surface.
   // GREEN today (<= 0.0035 mm measured) and MUST STAY GREEN.
   describe('O3 — anti-cheat: overshoot past the TRUE silhouette <= 0.05 mm, both rigs', () => {
-    ['create', 'addLayer'].forEach((rig) => PRIMS.forEach((primitive) => MAPS.forEach((mapper) => ANGLES.forEach((angle) => DENS.forEach((density) => {
+    ['create', 'addLayer'].forEach((rig) => WITNESS_CELLS.forEach(({ primitive, mapper, angle, density }) => {
       test(`${primitive}·${mapper}·${angle}·${density} (${rig})`, () => {
         const r = cellFor(primitive, mapper, rig, angle, density);
+        expect(r.error).toBeUndefined();
+        expect(r.liveEnds).toBeGreaterThan(0);
+        if (primitive === 'cone' || primitive === 'cylinder') expect(r.rimEdgePaths).toBeGreaterThan(0);
         expect(r.osTrueMm).toBeLessThanOrEqual(TRUE_ANTI_CHEAT_MM);
       });
-    })))));
+    }));
 
     // Mutation proof + the ruled limitation of O1/O2 alone (W-32r4-plan.md
     // §5.2 O3, §426-428): insetting a ruling end 0.3 mm TOWARD the interior
@@ -308,15 +326,21 @@ describe('Scene3D — the fill BORDER refined to the TRUE silhouette (W-32 Rank 
       return h.digest('hex');
     };
 
-    PRIMS.forEach((primitive) => MAPS.forEach((mapper) => {
+    [
+      { primitive: 'ellipsoid', mapper: 'hatch', angle: 'a', density: 'max' },
+      { primitive: 'sphere', mapper: 'contour', angle: 'b', density: 'med' },
+      { primitive: 'capsule', mapper: 'spiral', angle: 'a', density: 'med' },
+    ].forEach(({ primitive, mapper, angle, density }) => {
       test(`${primitive}·${mapper} sceneFill md5 unchanged`, () => {
         runtime.window.__SIL_PROTO_OFF = true;
-        const off = build(primitive, mapper, 'create', 'a', 'med').fill;
+        const off = build(primitive, mapper, 'create', angle, density).fill;
         runtime.window.__SIL_PROTO_OFF = false;
-        const on = build(primitive, mapper, 'create', 'a', 'med').fill;
+        const on = build(primitive, mapper, 'create', angle, density).fill;
+        expect(off.length).toBeGreaterThan(0);
+        expect(on.length).toBeGreaterThan(0);
         expect(digestFill(on)).toBe(digestFill(off));
       });
-    }));
+    });
 
     // Mutation proof (W-32r4-plan.md §5.2 O4): flip one fill point by a
     // fraction of a millimetre and the digest MUST change — proves the 9dp
@@ -336,11 +360,9 @@ describe('Scene3D — the fill BORDER refined to the TRUE silhouette (W-32 Rank 
   });
 
   // ── O5 — BYTE-IDENTITY of the excluded set ───────────────────────────────
-  // Every faceted/unsupported primitive (box, plane, pyramid, solid,
-  // superellipsoid, torusKnot), the torus (excluded by the convexity gate),
-  // and the ground plane must be untouched — both sceneFill AND sceneEdge —
-  // with the fix ON vs OFF, across every mapper. GREEN today (48/48 faceted
-  // cells + torus + ground, W-32r4-plan.md §3.4).
+  // Representative unsupported chart, non-convex torus, and ground branches
+  // remain byte-identical with the fix ON vs OFF. Mapper choices differ to
+  // cover distinct routing while avoiding a repeated excluded-set cross product.
   describe('O5 — sceneFill and sceneEdge are byte-identical on the excluded set', () => {
     const digestAll = (paths, kind) => {
       const h = crypto.createHash('md5');
@@ -352,10 +374,12 @@ describe('Scene3D — the fill BORDER refined to the TRUE silhouette (W-32 Rank 
       });
       return h.digest('hex');
     };
-    const FACETED = ['box', 'plane', 'pyramid', 'solid', 'superellipsoid', 'torusKnot'];
-    const ALL_MAPPERS = ['none', 'hatch', 'wireframe', 'crosshatch', 'contour', 'spiral', 'stipple', 'contourSlice'];
+    const FACETED = [
+      { primitive: 'box', mapper: 'contour' },
+      { primitive: 'pyramid', mapper: 'crosshatch' },
+    ];
 
-    FACETED.forEach((primitive) => ALL_MAPPERS.forEach((mapper) => {
+    FACETED.forEach(({ primitive, mapper }) => {
       test(`${primitive}·${mapper} fully byte-identical (unsupported chart)`, () => {
         runtime.window.__SIL_PROTO_OFF = true;
         const off = build(primitive, mapper, 'create', 'a', 'med').paths;
@@ -363,9 +387,9 @@ describe('Scene3D — the fill BORDER refined to the TRUE silhouette (W-32 Rank 
         const on = build(primitive, mapper, 'create', 'a', 'med').paths;
         expect(digestAll(on)).toBe(digestAll(off));
       });
-    }));
+    });
 
-    ALL_MAPPERS.forEach((mapper) => {
+    ['hatch', 'spiral'].forEach((mapper) => {
       test(`torus·${mapper} fully byte-identical (excluded — non-convex, §3.3)`, () => {
         runtime.window.__SIL_PROTO_TORUS_ON = false;
         runtime.window.__SIL_PROTO_OFF = true;

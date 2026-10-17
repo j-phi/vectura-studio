@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: '0 8 * * *'
 
+env:
+  # Single source of truth for the coverage shard count (1..32) and per-shard Vitest worker cap.
+  COVERAGE_SHARD_COUNT: '16'
+  VECTURA_VITEST_MAX_WORKERS: '2'
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -162,6 +167,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       chain_started_ms: ${{ steps.clock.outputs.started_ms }}
+      shards: ${{ steps.count.outputs.shards }}
+      shard_count: ${{ steps.count.outputs.shard_count }}
     steps:
       - id: clock
         run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
@@ -174,8 +181,12 @@ jobs:
           cache: npm
       - name: Build exact-SHA full test inventory and shard plan
         run: |
-          node scripts/test-shard-plan.js --plan-out "$RUNNER_TEMP/coverage-shard-plan.json" --sha "$GITHUB_SHA" --shards 2
+          node scripts/test-shard-plan.js --plan-out "$RUNNER_TEMP/coverage-shard-plan.json" --sha "$GITHUB_SHA" --shards "$COVERAGE_SHARD_COUNT"
           test -s "$RUNNER_TEMP/coverage-shard-plan.json"
+      - name: Publish shard matrix from the verified plan
+        id: count
+        run: |
+          node -e "const p=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));const o=process.env.GITHUB_OUTPUT;require('fs').appendFileSync(o,'shard_count='+p.shardCount+'\\nshards='+JSON.stringify(p.shards.map(s=>s.index))+'\\n')" "$RUNNER_TEMP/coverage-shard-plan.json"
       - uses: actions/upload-artifact@v7
         with:
           name: coverage-shard-plan
@@ -189,11 +200,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: ${{ fromJSON(needs.coverage-plan.outputs.shards) }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
       SHARD_INDEX: ${{ matrix.shard }}
+      SHARD_COUNT: ${{ needs.coverage-plan.outputs.shard_count }}
       VECTURA_TEST_TIMEOUT_MS: 10800000
     steps:
       # fetch-depth: 0 retains the full RGR-history inputs used by audit tests.
@@ -223,7 +235,7 @@ jobs:
         run: |
           set -o pipefail
           echo "VECTURA_SHARD_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
-          npm run test:coverage:shard -- --config vitest.shard-pilot.config.mjs --shard="$SHARD_INDEX/2" \
+          npm run test:coverage:shard -- --config vitest.shard-pilot.config.mjs --shard="$SHARD_INDEX/$SHARD_COUNT" \
             --coverage.thresholds.statements=0 --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 \
             --reporter=blob --reporter=json --outputFile.blob="$RUNNER_TEMP/pilot-artifact/blob.json" \
             --outputFile.json="$RUNNER_TEMP/pilot-shard-results.json" 2>&1 | tee "$RUNNER_TEMP/pilot-shard-console.log"
@@ -238,7 +250,19 @@ jobs:
           execution_ms=$(( $(date +%s%3N) - VECTURA_SHARD_STARTED_MS ))
           node scripts/test-profile.js --log "$RUNNER_TEMP/pilot-shard-console.log" \
             --results "$RUNNER_TEMP/pilot-shard-results.json" --output "$RUNNER_TEMP/pilot-shard-profile.json" \
-            --runner "${{ runner.os }}-${{ runner.arch }}" --workers 2 --setup-ms "$VECTURA_SHARD_SETUP_MS" --execution-ms "$execution_ms"
+            --runner "${{ runner.os }}-${{ runner.arch }}" --workers "$VECTURA_VITEST_MAX_WORKERS" --setup-ms "$VECTURA_SHARD_SETUP_MS" --execution-ms "$execution_ms"
+      - name: List failing tests (diagnostic only)
+        if: failure()
+        run: |
+          node -e '
+            const fs = require("fs"); const p = process.argv[1];
+            if (!fs.existsSync(p)) { console.log("no Vitest JSON result"); process.exit(0); }
+            const r = JSON.parse(fs.readFileSync(p, "utf8"));
+            for (const f of r.testResults || []) {
+              if (f.status === "failed" && !(f.assertionResults || []).some((a) => a.status === "failed")) console.log(`FILE FAILED ${f.name}: ${(f.message || "").slice(0, 2000)}`);
+              for (const a of f.assertionResults || []) if (a.status === "failed") console.log(`FAILED ${f.name} > ${a.fullName}\n${(a.failureMessages || []).join("\n").slice(0, 2000)}`);
+            }
+          ' "$RUNNER_TEMP/pilot-shard-results.json"
       - name: Upload merge-only coverage blob and provenance
         if: success()
         uses: actions/upload-artifact@v7
@@ -267,7 +291,7 @@ jobs:
       COVERAGE_CHAIN_STARTED_MS: ${{ needs.coverage-plan.outputs.chain_started_ms }}
       VECTURA_TEST_TIMEOUT_MS: 10800000
     steps:
-      - name: Require the guard and both coverage shards to pass
+      - name: Require the guard and every coverage shard to pass
         run: |
           test "$GUARD_RESULT" = success
           test "$SHARDS_RESULT" = success
@@ -290,10 +314,10 @@ jobs:
           path: ${{ runner.temp }}
       - uses: actions/download-artifact@v7
         with:
-          pattern: coverage-shard-[12]
+          pattern: coverage-shard-[0-9]*
           path: ${{ runner.temp }}/coverage-shard-artifacts
           merge-multiple: false
-      - name: Verify provenance and stage exactly two Vitest blob files
+      - name: Verify provenance and stage every Vitest blob file
         run: |
           node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --stage-blobs \
             --artifacts "$RUNNER_TEMP/coverage-shard-artifacts" --blob-dir "$RUNNER_TEMP/vitest-blobs" \
@@ -312,7 +336,7 @@ jobs:
           mkdir -p coverage
           node scripts/test-profile.js --strict --log "$RUNNER_TEMP/merged-coverage-console.log" \
             --results "$RUNNER_TEMP/merged-results.json" --output coverage/full-profile.json \
-            --runner "${{ runner.os }}-${{ runner.arch }}" --workers 2 --setup-ms "$VECTURA_MERGE_SETUP_MS" \
+            --runner "${{ runner.os }}-${{ runner.arch }}" --workers "$VECTURA_VITEST_MAX_WORKERS" --setup-ms "$VECTURA_MERGE_SETUP_MS" \
             --execution-start-ms "$COVERAGE_CHAIN_STARTED_MS" --execution-scope coverage-orchestration-critical-path
       - name: Upload Coverage Report
         if: always()

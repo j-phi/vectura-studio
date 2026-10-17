@@ -34,11 +34,13 @@ npm run test:ci
 
 Node 20.19 or newer is required for the development and test toolchain.
 
-The full local coverage route has measured 39m40s with two workers, while the default
-per-attempt deadline is 30 minutes; a plain `npm run test:ci` invocation is not guaranteed
-to finish that route. PR #97 proposes conditional two-shard hosted coverage with strict
-same-SHA inventory and the existing global thresholds. Main remains unsharded until hosted
-validation, review, and screen pass. Details and current evidence: [testing guide](docs/testing.md)
+An earlier 765-file full-coverage route took 39m40s with two workers. The approved reductions
+were later certified across 763 files in 35m22s with two workers under a four-hour whole-run
+allowance. The ordinary local attempt cap remains 30 minutes, so this decomposed certification
+does not show that an unmodified `npm run test:ci` invocation finishes within its default cap. PR #97 enabled two-shard hosted coverage with strict same-SHA inventory and the existing
+global thresholds. Its first complete main run finished required checks in 53m32s.
+The approved render-test sampling reductions and their explicit coverage trade-offs are
+recorded in [render-test reductions](docs/render-test-reductions.md). Details and current evidence: [testing guide](docs/testing.md)
 and [phase-two rollout](docs/test-suite-phase2.md).
 
 > The `pre-push` hook runs `test:feedback` (bounded local feedback) before every push. A minimal browser journey runs locally; CI retains the full browser roster. Bypass with `SKIP_PREPUSH=1 git push`.
@@ -662,6 +664,11 @@ CI lives in `.github/workflows/test.yml`:
 - **Help and hints.** Help has a Touch tab and a Touch toggle. Status hints use touch words after touch input. See the Touch gestures table under How to Use.
 - **iOS files.** Open `.vectura` from the Files app, save through the share sheet, and import large photos safely.
 - **Test and release gates.** Touch target audit, finger-only journeys, static touch guard and a real-device checklist. Real-device results are pending, so the release label for touch is not yet claimed. Details: `CHANGELOG.md` and `docs/touch-audit/`.
+### 1.4.15
+- **3D Scene — Duty Cycle · Constant responds to Density above 50.** Density 50 to 100 now
+  tightens the rulings past the plot floor, evenly in ink coverage, down to one pen width (lines
+  touching) near the top of the slider, so the deepest shadow floods to solid ink. Density 50 and
+  below draw exactly as before.
 
 ### 1.4.6
 - **3D Scene — pen routing, chaining and cleanups (U7).** **Tone bands** (2 to 4) split any Fill Style by
@@ -746,6 +753,9 @@ CI lives in `.github/workflows/test.yml`:
 - **Known open.** Whether to retune the crosshatch cap's onset, and whether to restore
   wave-ribbon weight while keeping the new even placement, are both open product decisions not
   settled by this release.
+
+<details>
+<summary>Older releases (1.4.1 and earlier)</summary>
 
 ### 1.4.1
 - **3D Scene · crosshatch draws a real crossing grid again.** The two crosshatch line families now

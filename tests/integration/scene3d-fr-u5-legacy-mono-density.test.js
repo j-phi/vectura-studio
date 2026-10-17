@@ -48,10 +48,10 @@ describe('legacy documents keep their look under a monoline law (Density pin)', 
   };
 
   // Each case carries a Density the law is LIVE at for this primitive. Laws that
-  // already sit at the plot floor here (turingStripe on the box, dutyConst's
-  // floor-pitched clearance) cannot get denser, so 85 renders exactly as 50 —
-  // by design (U4b); only a sparser setting moves them.
-  const CASES = [['sphere', 'etfKang', 85], ['sphere', 'mazeFill', 85], ['box', 'turingStripe', 20], ['sphere', 'dutyConst', 20]];
+  // already sit at the plot floor here (turingStripe on the box) cannot get
+  // denser, so 85 renders exactly as 50 — by design (U4b); only a sparser
+  // setting moves them. dutyConst tightens past the floor toward one pen width.
+  const CASES = [['sphere', 'etfKang', 85], ['box', 'turingStripe', 20], ['sphere', 'dutyConst', 85]];
 
   test.each(CASES)('%s + %s: a legacy doc at Density %i renders as Density 50', (prim, law, d) => {
     const atD = reload(build(prim, law, d), { legacy: true });
