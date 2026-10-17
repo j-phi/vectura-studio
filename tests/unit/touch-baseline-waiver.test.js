@@ -40,6 +40,13 @@ describe('touch baseline waiver rule', () => {
     });
   });
 
+  test('the 16bb75ee reason matches its commit: integration drift from c992cc9c, not TUX-052', () => {
+    const why = require('../../docs/touch-audit/baseline-waivers.json').waivers['16bb75ee'];
+    expect(why).toContain('c992cc9c');
+    expect(why).toMatch(/not TUX-052/);
+    expect(why).not.toMatch(/from the new page/);
+  });
+
   test('no commit after the anchor raises the baseline without TUX-WAIVER', () => {
     let known = true;
     try { execFileSync('git', ['cat-file', '-e', `${ANCHOR}^{commit}`], { stdio: 'ignore' }); } catch (_) { known = false; }
