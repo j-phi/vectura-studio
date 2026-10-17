@@ -377,14 +377,17 @@ describe('Text panel (vtp-)', () => {
   });
 
   test('rebuild flushes a pending debounced specimen edit (no silent text loss)', () => {
-    const { container, layer, pushHistory } = mount();
+    // TUX-029: text now lands in params immediately; what stays pending for the
+    // ~120 ms live-update debounce is the regen, and a rebuild must flush it.
+    const { container, layer, pushHistory, regen } = mount();
     const spec = container.querySelector('.vtp-spec-text');
     spec.focus();
     spec.textContent = 'UNSAVED DRAFT';
-    fire(spec, 'input'); // starts the 400ms debounce, not yet committed
-    expect(layer.params.text).not.toBe('UNSAVED DRAFT');
-    mount(); // rebuild before the debounce elapses and before blur
+    fire(spec, 'input'); // text written live, regen still debounced
     expect(layer.params.text).toBe('UNSAVED DRAFT');
+    expect(regen).not.toHaveBeenCalled();
+    mount(); // rebuild before the debounce elapses and before blur
+    expect(regen).toHaveBeenCalledTimes(1);
     expect(pushHistory).toHaveBeenCalledTimes(1);
   });
 

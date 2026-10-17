@@ -39,7 +39,6 @@
   mask: var(--chevron-svg) center / contain no-repeat;
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.vectura-skin-app-wrapper { display: flex; flex-direction: column; height: 100vh; overflow: hidden; position: relative; }
 
 /* ── HEADER ──────────────────────────────────────────────────── */
 .app-header {
@@ -136,7 +135,9 @@
 }
 .hdr-btn:hover { background: var(--ui-ctrl-hov); border-color: var(--ui-border-hi); color: var(--ui-accent); }
 .hdr-btn.is-danger { background: var(--ui-danger); border-color: var(--ui-danger); color: var(--ui-on-danger); }
-.hdr-btn.is-danger:hover { opacity: 0.88; color: var(--ui-on-danger); }
+@media (hover: hover) {
+  .hdr-btn.is-danger:hover { opacity: 0.88; color: var(--ui-on-danger); }
+}
 
 /* ── MAIN LAYOUT ─────────────────────────────────────────────── */
 .app-main { display: flex; flex: 1; overflow: hidden; }
@@ -205,7 +206,9 @@
   margin-right: var(--spacing-sm);
   opacity: 0.45; transition: opacity 0.15s;
 }
-.sect-hdr:hover::before { opacity: 1; }
+@media (hover: hover) {
+  .sect-hdr:hover::before { opacity: 1; }
+}
 .sect-arrow {
   width: 20px; height: 20px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -584,7 +587,9 @@
     transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1),
     opacity 0.16s ease-out;
 }
-.toolbar-drag-handle:hover { opacity: 0.8; }
+@media (hover: hover) {
+  .toolbar-drag-handle:hover { opacity: 0.8; }
+}
 .toolbar-drag-handle:active { cursor: grabbing; }
 .toolbar-drag-handle .handle-vert { display: none; }
 
@@ -952,7 +957,9 @@
   border-radius: var(--radius-sm); cursor: pointer;
   transition: opacity 0.1s; white-space: nowrap;
 }
-.add-btn:hover { opacity: 0.88; }
+@media (hover: hover) {
+  .add-btn:hover { opacity: 0.88; }
+}
 
 .pen-list {
   display: flex; flex-direction: column; gap: 1px;
@@ -1064,6 +1071,7 @@
 [data-ui-skin] .petal-close,
 [data-ui-skin] .petal-popout,
 [data-ui-skin] .petal-popin,
+[data-ui-skin] .petal-hist,
 [data-ui-skin] .petal-copy-btn {
   border: 1px solid var(--ui-border);
   background: var(--ui-ctrl);
@@ -1080,6 +1088,7 @@
 [data-ui-skin] .petal-close:hover,
 [data-ui-skin] .petal-popout:hover,
 [data-ui-skin] .petal-popin:hover,
+[data-ui-skin] .petal-hist:hover,
 [data-ui-skin] .petal-copy-btn:hover {
   background: var(--ui-ctrl-hov);
   border-color: var(--ui-border-hi);
@@ -1269,12 +1278,15 @@
   font-size: var(--font-size-xs);
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-[data-ui-skin] .touch-modifier-bar button:hover,
-[data-ui-skin] #touch-modifier-bar button:hover {
-  background: var(--ui-ctrl-hov);
-  border-color: var(--ui-border-hi);
-  color: var(--ui-accent);
-}
+/* TUX-036: hover only where a real hover exists; a touch tap leaves :hover stuck. */
+@media (hover: hover) {
+  [data-ui-skin] .touch-modifier-bar button:hover,
+  [data-ui-skin] #touch-modifier-bar button:hover {
+    background: var(--ui-ctrl-hov);
+    border-color: var(--ui-border-hi);
+    color: var(--ui-accent);
+  }
+} /* TUX-036 */
 [data-ui-skin] .touch-modifier-bar button.active,
 [data-ui-skin] #touch-modifier-bar button.active {
   background: var(--ui-accent-2);
@@ -1862,8 +1874,10 @@
   opacity: 0.45;
   transition: opacity 0.15s;
 }
-[data-ui-skin] .left-panel-section-header:hover::before {
+@media (hover: hover) {
+  [data-ui-skin] .left-panel-section-header:hover::before {
   opacity: 1;
+}
 }
 [data-ui-skin] .left-panel-section-title {
   font-size: var(--font-size-sm);
@@ -2010,10 +2024,15 @@
   opacity: 0.75;
   transition: opacity 120ms ease, transform 120ms ease;
 }
-[data-ui-skin] .control-modified:hover::before,
 [data-ui-skin] .control-modified:focus-visible::before {
   opacity: 1;
   transform: scale(1.5);
+}
+@media (hover: hover) {
+  [data-ui-skin] .control-modified:hover::before {
+  opacity: 1;
+  transform: scale(1.5);
+}
 }
 [data-ui-skin] .control-modified:focus-visible {
   outline: 1px solid var(--ui-accent);
@@ -2235,12 +2254,14 @@
   gap: 4px;
   transition: opacity 0.1s, filter 0.1s;
 }
-[data-ui-skin] .lvl-add-btn:hover {
+@media (hover: hover) {
+  [data-ui-skin] .lvl-add-btn:hover {
   background: var(--ui-accent);
   border: none;
   color: var(--ui-on-accent);
   filter: brightness(1.05);
   opacity: 0.92;
+}
 }
 [data-ui-skin] .lvl-add-wrap {
   flex-shrink: 0;
@@ -2349,10 +2370,12 @@
   text-transform: none;
   transition: opacity 0.1s;
 }
-[data-ui-skin] #btn-add-pen:hover {
+@media (hover: hover) {
+  [data-ui-skin] #btn-add-pen:hover {
   background: var(--ui-accent);
   color: var(--ui-on-accent);
   opacity: 0.88;
+}
 }
 
 /* ─── Bottom pane (formula display + stats) ──────────────────────────── */
@@ -2774,7 +2797,7 @@
   border-radius: var(--radius-lg, 8px);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
   width: min(420px, calc(100vw - 32px));
-  max-height: calc(100vh - 64px);
+  max-height: calc(100vh - 64px); max-height: calc(var(--app-vh) - 64px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -3919,8 +3942,10 @@
   opacity: 0.6;
 }
 .hg-preset-delete svg { width: 10px; height: 10px; display: block; }
-.hg-preset-option:hover .hg-preset-delete { display: flex; }
-.hg-preset-delete:hover { color: var(--ui-accent); opacity: 1; }
+@media (hover: hover) {
+  .hg-preset-option:hover .hg-preset-delete { display: flex; }
+  .hg-preset-delete:hover { color: var(--ui-accent); opacity: 1; }
+} /* TUX-036 */
 
 /* Dev-only inline group reassignment select. Doubles as a visible group label at
    rest (low opacity); brightens on row hover/focus. Sits before the delete X. */
@@ -3933,13 +3958,17 @@
   cursor: pointer; opacity: 0.55;
   transition: opacity 0.08s, color 0.15s, border-color 0.15s;
 }
-.hg-preset-option:hover .hg-preset-group-select,
 .hg-preset-group-select:focus { opacity: 1; }
-.hg-preset-group-select:hover { color: var(--ui-text); border-color: var(--ui-accent); }
+@media (hover: hover) {
+  .hg-preset-option:hover .hg-preset-group-select { opacity: 1; }
+  .hg-preset-group-select:hover { color: var(--ui-text); border-color: var(--ui-accent); }
+} /* TUX-036 */
 
 /* Revert-to-default control: shares the delete button's sizing/hover-reveal but
    reads as a restore (neutral hover), not a destructive action. */
-.hg-preset-revert:hover { color: var(--ui-text); opacity: 1; }
+@media (hover: hover) {
+  .hg-preset-revert:hover { color: var(--ui-text); opacity: 1; }
+} /* TUX-036 */
 
 /* Dev-only "Set as Default" star button. Gold hover signals constructive action. */
 .hg-preset-set-default {
@@ -3949,8 +3978,10 @@
   opacity: 0.6;
 }
 .hg-preset-set-default svg { width: 10px; height: 10px; display: block; }
-.hg-preset-option:hover .hg-preset-set-default { display: flex; }
-.hg-preset-set-default:hover { color: #c8a84b; opacity: 1; }
+@media (hover: hover) {
+  .hg-preset-option:hover .hg-preset-set-default { display: flex; }
+  .hg-preset-set-default:hover { color: #c8a84b; opacity: 1; }
+} /* TUX-036 */
 
 .hg-preset-import {
   display: block; width: 100%; padding: 6px 10px; margin-top: 4px;
@@ -3977,13 +4008,11 @@
   transition: opacity 0.12s, transform 0.12s;
 }
 .hg-preset-save-pip svg { width: 15px; height: 15px; display: block; }
-.hg-preset-save-pip:hover { opacity: 0.88; }
+@media (hover: hover) {
+  .hg-preset-save-pip:hover { opacity: 0.88; }
+}
 .hg-preset-save-pip:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 .hg-preset-save-pip[hidden] { display: none; }
-@media (pointer: coarse) {
-  .hg-preset-save-pip { width: 36px; height: 36px; }
-  .hg-preset-save-pip svg { width: 18px; height: 18px; }
-}
 
 .preset-save-body { display: flex; flex-direction: column; gap: 12px; min-width: 280px; }
 .preset-save-preview { display: flex; justify-content: center; }
@@ -4025,7 +4054,6 @@
 @media (pointer: coarse) {
   .vectura-modal-backdrop { align-items: flex-end !important; }
   .vectura-modal { width: 100%; max-width: 100%; border-radius: 12px 12px 0 0; }
-  .preset-save-footer { order: -1; flex-direction: row-reverse; }
 }
 
 /* ── Snapping feedback (auto-changed chips + transient line) ───────────────── */
@@ -5899,9 +5927,14 @@
   transition: opacity 0.2s ease;
 }
 
-.pane-resizer:hover::before,
 .pane-resizer.active::before {
   opacity: 0.6;
+}
+
+@media (hover: hover) {
+  .pane-resizer:hover::before {
+  opacity: 0.6;
+}
 }
 
 .bottom-pane {
@@ -5949,9 +5982,14 @@
   transition: opacity 0.2s ease;
 }
 
-.bottom-resizer:hover::before,
 .bottom-resizer.active::before {
   opacity: 0.6;
+}
+
+@media (hover: hover) {
+  .bottom-resizer:hover::before {
+  opacity: 0.6;
+}
 }
 
 .layer-grip {
@@ -6024,7 +6062,7 @@
   width: max(80vw, 1080px);
   height: max(80vh, 720px);
   max-width: calc(100vw - 32px);
-  max-height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px); max-height: calc(var(--app-vh) - 32px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -6893,7 +6931,7 @@
 @media (max-width: 1100px) {
   .modal-card.modal-card--export {
     width: calc(100vw - 24px);
-    height: calc(100vh - 24px);
+    height: calc(100vh - 24px); height: calc(var(--app-vh) - 24px);
   }
 
   .export-modal-body {
@@ -6943,7 +6981,7 @@
   position: fixed;
   z-index: 95;
   width: min(720px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px); max-height: calc(var(--app-vh) - 32px);
   overflow: auto;
   border: 1px solid var(--ui-border-hi);
   border-radius: 14px;
@@ -7032,6 +7070,7 @@
 .petal-close,
 .petal-popout,
 .petal-popin,
+.petal-hist,
 .petal-copy-btn {
   border: 1px solid var(--ui-border-hi);
   background: var(--ui-panel-alt);
@@ -7049,6 +7088,7 @@
 .petal-close:hover,
 .petal-popout:hover,
 .petal-popin:hover,
+.petal-hist:hover,
 .petal-copy-btn:hover {
   border-color: #67e8f9;
   color: #cffafe;
@@ -7599,7 +7639,7 @@
   display: none; position: fixed; width: 180px;
   background: var(--ui-panel-alt); border: 1px solid var(--ui-border);
   border-radius: 6px; z-index: 9998;
-  max-height: calc(100vh - 16px); overflow-y: auto; overflow-x: hidden;
+  max-height: calc(100vh - 16px); max-height: calc(var(--app-vh) - 16px); overflow-y: auto; overflow-x: hidden;
   overscroll-behavior: contain;
   box-shadow: 0 4px 20px rgba(0,0,0,.7);
 }
@@ -7625,7 +7665,7 @@
   position: fixed; z-index: 9999; width: 175px;
   background: var(--ui-panel-alt); border: 1px solid var(--ui-border);
   border-radius: 6px;
-  max-height: calc(100vh - 16px); overflow-y: auto; overflow-x: hidden;
+  max-height: calc(100vh - 16px); max-height: calc(var(--app-vh) - 16px); overflow-y: auto; overflow-x: hidden;
   overscroll-behavior: contain;
   box-shadow: 0 4px 20px rgba(0,0,0,.7);
 }
@@ -7706,7 +7746,8 @@
 .lvl-ib.lk-anc { color: var(--ui-border-hi); opacity: .7 }
 .lvl-ib.lk-off { color: var(--ui-border-hi) }
 .lvl-acts { display: flex; align-items: center; gap: 1px; opacity: 0; transition: opacity .15s }
-.lvl-card:hover .lvl-acts, .lvl-card.is-active .lvl-acts { opacity: 1 }
+.lvl-card.is-active .lvl-acts { opacity: 1 }
+@media (hover: hover) { .lvl-card:hover .lvl-acts { opacity: 1 } } /* TUX-036 */
 .lvl-ab {
   width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
   border-radius: 3px; border: none; background: none; color: var(--ui-muted);
@@ -7755,7 +7796,8 @@
 .lvl-grp-hdr.modifier .lvl-grp-name { color: var(--lvl-cyan) }
 .lvl-grp-hdr.modifier.mod-off .lvl-grp-name { color: var(--ui-border-hi) }
 .lvl-grp-acts { display: flex; align-items: center; gap: 1px; opacity: 0; transition: opacity .12s }
-.lvl-grp-hdr:hover .lvl-grp-acts, .lvl-grp-hdr.is-active .lvl-grp-acts { opacity: 1 }
+.lvl-grp-hdr.is-active .lvl-grp-acts { opacity: 1 }
+@media (hover: hover) { .lvl-grp-hdr:hover .lvl-grp-acts { opacity: 1 } } /* TUX-036 */
 .lvl-caret {
   display: flex; align-items: center; justify-content: center;
   color: var(--ui-border-hi); transition: transform .15s; width: 14px; height: 14px;
@@ -7827,8 +7869,8 @@
 .lvl-cb.mask-btn:hover { color: var(--lvl-cyan); background: rgba(103,232,249,.1) }
 .lvl-cb.mask-btn.ineligible { color: rgba(255,255,255,.18); cursor: not-allowed }
 .lvl-cb.mask-btn.ineligible:hover { background: none; color: rgba(255,255,255,.18) }
-.lvl-cb:disabled { color: rgba(255,255,255,.18); cursor: not-allowed }
-.lvl-cb:disabled:hover { background: none; color: rgba(255,255,255,.18) }
+.lvl-cb:disabled, .lvl-cb.unavailable { color: rgba(255,255,255,.18); cursor: not-allowed }
+.lvl-cb:disabled:hover, .lvl-cb.unavailable:hover { background: none; color: rgba(255,255,255,.18) }
 
 .lvl-ren-inp {
   flex: 1; background: rgba(255,255,255,.09); border: 1px solid var(--lvl-cyan);
@@ -7857,30 +7899,6 @@
 [data-ui-skin='light'] .lvl-algo-sub-item:hover { background: rgba(56, 189, 248, 0.12); color: #0284c7; border-color: #38bdf8 }
 [data-ui-skin='light'] .algo-pick-item:hover { background: rgba(0,0,0,.04) }
 [data-ui-skin='light'] .lvl-pen-dot { border-color: rgba(0,0,0,.2) }
-
-/* ── 2× Layer cards on touch tablets (iPad portrait + landscape) ─── */
-@media (pointer: coarse) and (min-width: 600px) {
-  .lvl-r1 { height: 52px; padding-right: 12px; gap: 6px }
-  .lvl-r2 { height: 40px; padding-right: 12px; gap: 6px }
-  .lvl-caret-zone { width: 32px; padding-top: 12px }
-  .lvl-clr-bar { width: 8px; margin: 6px 10px 6px 0 }
-  .lvl-ib { width: 40px; height: 40px }
-  .lvl-ib svg { width: 22px; height: 22px }
-  .lvl-ab { width: 36px; height: 36px }
-  .lvl-ab svg { width: 22px; height: 22px }
-  .lvl-aico { width: 28px; height: 28px }
-  .lvl-aico svg { width: 22px; height: 22px }
-  .lvl-pen-dot { width: 20px; height: 20px }
-  .lvl-name { font-size: 18px }
-  .lvl-algo-label { font-size: 14px }
-  .lvl-grp-hdr { min-height: 60px }
-  .lvl-grp-content { height: 60px; gap: 6px; padding-right: 12px }
-  .lvl-grp-name { font-size: 18px }
-  .lvl-caret { width: 28px; height: 28px }
-  .lvl-caret svg { width: 22px; height: 22px }
-  .lvl-tree-children { padding-left: 24px }
-  .lvl-grp-exit-zone { margin-left: -24px }
-}
 
 /* ── Right-pane title bar: match v8 mockup compact header ─── */
 #right-pane .pane-header {
@@ -7993,7 +8011,9 @@
 .sect--color-palette { --sect-bar: #A78BFA; }
 .sect--color-history { --sect-bar: #60A5FA; }
 .sect[class*="sect--color-"] .sect-hdr::before { background: var(--sect-bar, var(--ui-accent)); opacity: 0.8; }
-.sect[class*="sect--color-"] .sect-hdr:hover::before { opacity: 1; }
+@media (hover: hover) {
+  .sect[class*="sect--color-"] .sect-hdr:hover::before { opacity: 1; }
+}
 
 /* Close affordance — circular outline button with a left-facing chevron,
    visually matching the .pane-toggle handles on the left/right panes but
@@ -8491,268 +8511,268 @@
   }
 }
 
-@media (max-width: 900px) {
-  :root {
-    --pane-left-width: min(88vw, 340px);
-    --pane-right-width: min(88vw, 340px);
-    --pane-collapsed-width: 40px;
-  }
+/* TUX-006: keyed on the JS layout class (phone/tablet), not viewport width.
+ * Bare selectors are wrapped in :where() so they keep the cascade weight of the
+ * deleted @media (max-width: 900px) block (e.g. #id = 1,0,0; .x = 0,1,0). */
+:root:where(:has(body.mobile-layout)) {
+  --pane-left-width: min(88vw, 340px);
+  --pane-right-width: min(88vw, 340px);
+  --pane-collapsed-width: 40px;
+}
 
-  #app-header {
-    padding-left: 10px;
-    padding-right: 10px;
-  }
+:where(body.mobile-layout) #app-header {
+  padding-left: 10px;
+  padding-right: 10px;
+}
 
-  .header-main {
-    align-items: flex-start;
-  }
+:where(body.mobile-layout) .header-main {
+  align-items: flex-start;
+}
 
-  .top-menubar {
-    gap: 10px;
-    padding-top: 0;
-  }
+:where(body.mobile-layout) .top-menubar {
+  gap: 10px;
+  padding-top: 0;
+}
 
-  .pane-resizer,
-  .bottom-resizer {
-    display: none;
-  }
+:where(body.mobile-layout) .pane-resizer,
+:where(body.mobile-layout) .bottom-resizer {
+  display: none;
+}
 
-  .mobile-pane-handle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
+:where(body.mobile-layout) .mobile-pane-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
-  .mobile-layout .pane {
-    position: absolute;
-    top: 0;
-    /* Reserve room for the pinned modifier bar at the viewport bottom
-     * (44px button + 12px padding + safe-area inset). Without this the
-     * drawer extends under the modifier bar and the bar's higher z-index
-     * intercepts clicks on the bottom of pane content. */
-    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
-    /* Must sit above #bottom-pane (z-index 50 in mobile-layout) so the
-     * bottom-pane drawer does not intercept clicks on right-pane content
-     * (Pens tab, auto-colorization header, etc.) at tablet-touch widths. */
-    z-index: 55;
-    max-width: calc(100vw - 18px);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-  }
+.mobile-layout .pane {
+  position: absolute;
+  top: 0;
+  /* Reserve room for the pinned modifier bar at the viewport bottom
+   * (44px button + 12px padding + safe-area inset). Without this the
+   * drawer extends under the modifier bar and the bar's higher z-index
+   * intercepts clicks on the bottom of pane content. */
+  bottom: var(--bottom-chrome-h, calc(56px + var(--safe-bottom))); /* TUX-005: measured by workspace.js */
+  /* Must sit above #bottom-pane (z-index 50 in mobile-layout) so the
+   * bottom-pane drawer does not intercept clicks on right-pane content
+   * (Pens tab, auto-colorization header, etc.) at tablet-touch widths. */
+  z-index: 55;
+  max-width: calc(100vw - 18px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
 
-  .mobile-layout .pane-left {
-    left: 0;
-    border-right-width: 1px;
-  }
+.mobile-layout .pane-left {
+  left: 0;
+  border-right-width: 1px;
+}
 
-  .mobile-layout .pane-right {
-    right: 0;
-    border-left-width: 1px;
-  }
+.mobile-layout .pane-right {
+  right: 0;
+  border-left-width: 1px;
+}
 
-  .mobile-layout .right-panel-section-scroll {
-    max-height: min(22vh, 180px);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
+.mobile-layout .right-panel-section-scroll {
+  max-height: min(22vh, 180px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
-  .mobile-layout .right-panel-section-primary {
-    max-height: min(42vh, 320px);
-  }
+.mobile-layout .right-panel-section-primary {
+  max-height: min(42vh, 320px);
+}
 
-  .mobile-layout #pens-section,
-  .mobile-layout #auto-colorization-wrap {
-    max-height: none;
-  }
+.mobile-layout #pens-section,
+.mobile-layout #auto-colorization-wrap {
+  max-height: none;
+}
 
-  .mobile-layout .auto-collapsed .pane:not(.pane-force-open),
-  .mobile-layout .pane.pane-collapsed {
-    width: var(--pane-collapsed-width);
-    box-shadow: none;
-  }
+.mobile-layout .auto-collapsed .pane:not(.pane-force-open),
+.mobile-layout .pane.pane-collapsed {
+  width: var(--pane-collapsed-width);
+  box-shadow: none;
+}
 
-  /* ─────────────────────────────────────────────────────────────
-     Mobile shell layout: top app bar → canvas → bottom pane → modifier bar.
-     Modifier bar is pinned to viewport bottom and always reachable;
-     bottom pane sits above it (does not cover it).
-     ───────────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────
+   Mobile shell layout: top app bar → canvas → bottom pane → modifier bar.
+   Modifier bar is pinned to viewport bottom and always reachable;
+   bottom pane sits above it (does not cover it).
+   ───────────────────────────────────────────────────────────── */
 
-  body.mobile-layout #tool-bar {
-    position: static;
-    top: auto;
-    left: auto;
-    right: auto;
-    bottom: auto;
-    transform: none;
-    order: 1;
-    width: 100%;
-    max-width: none;
-    flex-direction: row;
-    /* Wrap onto a second row at iPhone-mini widths instead of horizontally
-       scrolling — keeps every primary tool reachable in one tap. */
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    row-gap: 6px;
-    column-gap: 6px;
-    overflow-x: visible;
-    overflow-y: hidden;
-    max-height: none;
-    padding: 8px 12px;
-    padding-top: calc(8px + env(safe-area-inset-top, 0px));
-    padding-left: calc(12px + env(safe-area-inset-left, 0px));
-    padding-right: calc(12px + env(safe-area-inset-right, 0px));
-    border: none;
-    border-radius: 0;
-    border-bottom: 1px solid var(--ui-border);
-    background: var(--ui-panel);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
-    flex-shrink: 0;
-  }
+body.mobile-layout #tool-bar {
+  position: static;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  order: 1;
+  width: 100%;
+  max-width: none;
+  flex-direction: row;
+  /* Wrap onto a second row at iPhone-mini widths instead of horizontally
+     scrolling — keeps every primary tool reachable in one tap. */
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  row-gap: 6px;
+  column-gap: 6px;
+  overflow-x: visible;
+  overflow-y: hidden;
+  max-height: none;
+  padding: 8px 12px;
+  /* TUX-005: no top inset here; #app-header carries it. */
+  padding-left: calc(12px + var(--safe-left));
+  padding-right: calc(12px + var(--safe-right));
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--ui-border);
+  background: var(--ui-panel);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+}
 
-  /* Phone widths (auto-collapsed, < 640px): panes shrink to drawer slivers
-     (z:55). Bump the toolbar above the slivers so the leftmost/rightmost
-     tool buttons aren't occluded by the pane edges. At tablet widths
-     (640–900px) the panes are fully shown, not slivers, so the toolbar
-     must stay below them or it will paint over right-pane content like
-     the Add Layer button. */
-  body.mobile-layout.auto-collapsed #tool-bar {
-    z-index: 60;
-  }
+/* Phone widths (auto-collapsed, < 640px): panes shrink to drawer slivers
+   (z:55). Bump the toolbar above the slivers so the leftmost/rightmost
+   tool buttons aren't occluded by the pane edges. At tablet widths
+   (640–900px) the panes are fully shown, not slivers, so the toolbar
+   must stay below them or it will paint over right-pane content like
+   the Add Layer button. */
+body.mobile-layout.auto-collapsed #tool-bar {
+  z-index: 60;
+}
 
-  /* When a side pane is force-opened (full drawer), it should cover the
-     toolbar — the user is interacting with the pane, not the bar. */
-  body.mobile-layout.auto-collapsed .pane.pane-force-open {
-    z-index: 70;
-  }
+/* When a side pane is force-opened (full drawer), it should cover the
+   toolbar — the user is interacting with the pane, not the bar. */
+body.mobile-layout.auto-collapsed .pane.pane-force-open {
+  z-index: 70;
+}
 
-  /* Lock standard tool buttons to a 44×44 hit target — never shrink to fit. */
-  body.mobile-layout #tool-bar > .tool-btn,
-  body.mobile-layout #tool-bar > .tool-group > .tool-btn {
-    flex-shrink: 0;
-  }
+/* Lock standard tool buttons to a 44×44 hit target — never shrink to fit. */
+body.mobile-layout #tool-bar > .tool-btn,
+body.mobile-layout #tool-bar > .tool-group > .tool-btn {
+  flex-shrink: 0;
+}
 
-  body.mobile-layout #viewport-container {
-    order: 2;
-    flex: 1 1 auto;
-    min-height: 0;
-  }
+body.mobile-layout #viewport-container {
+  order: 2;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 
-  body.mobile-layout #bottom-pane {
-    order: 3;
-    position: relative;
-    z-index: 50;
-    padding-bottom: 0;
-    flex-shrink: 0;
-  }
+body.mobile-layout #bottom-pane {
+  order: 3;
+  position: relative;
+  z-index: 50;
+  padding-bottom: 0;
+  flex-shrink: 0;
+}
 
-  body.mobile-layout #bottom-pane .bottom-pane-header {
-    height: 32px;
-    min-height: 32px;
-    padding: 0 12px;
-    flex-shrink: 0;
-  }
+body.mobile-layout #bottom-pane .bottom-pane-header {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
 
-  body.mobile-layout #bottom-pane .bottom-pane-header > span {
-    display: none;
-  }
+body.mobile-layout #bottom-pane .bottom-pane-header > span {
+  display: none;
+}
 
-  body.mobile-layout #bottom-pane.bottom-pane-collapsed {
-    height: 32px;
-  }
+body.mobile-layout #bottom-pane.bottom-pane-collapsed {
+  height: 32px;
+}
 
-  body.mobile-layout #bottom-pane:not(.bottom-pane-collapsed) {
-    height: min(38vh, 280px);
-  }
+body.mobile-layout #bottom-pane:not(.bottom-pane-collapsed) {
+  height: min(38vh, 280px);
+}
 
-  body.mobile-layout #touch-modifier-bar {
-    position: static;
-    left: auto;
-    top: auto;
-    right: auto;
-    bottom: auto;
-    transform: none;
-    order: 4;
-    width: 100%;
-    max-width: none;
-    box-sizing: border-box;
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: stretch;
-    justify-content: stretch;
-    gap: 6px;
-    padding: 6px 8px;
-    padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-    padding-left: calc(8px + env(safe-area-inset-left, 0px));
-    padding-right: calc(8px + env(safe-area-inset-right, 0px));
-    border: none;
-    border-radius: 0;
-    border-top: 1px solid var(--ui-border);
-    background: var(--ui-panel);
-    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.25);
-    flex-shrink: 0;
-    z-index: 60;
-  }
+body.mobile-layout #touch-modifier-bar {
+  position: static;
+  left: auto;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  transform: none;
+  order: 4;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 6px;
+  padding: 6px 8px;
+  /* TUX-005: the bottom inset goes on the bottom-most chrome only (see the TUX-005 block at the end). */
+  padding-bottom: 6px;
+  padding-left: calc(8px + var(--safe-left));
+  padding-right: calc(8px + var(--safe-right));
+  border: none;
+  border-radius: 0;
+  border-top: 1px solid var(--ui-border);
+  background: var(--ui-panel);
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.25);
+  flex-shrink: 0;
+  z-index: 60;
+}
 
-  body.mobile-layout #touch-modifier-bar.hidden {
-    display: flex;
-  }
+body.mobile-layout #touch-modifier-bar.hidden {
+  display: flex;
+}
 
-  body.mobile-layout #touch-modifier-bar .touch-mod-btn {
-    flex: 1 1 0;
-    min-width: 0;
-    height: 44px;
-    padding: 0 8px;
-    font-size: 12px;
-    border-radius: 10px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
+body.mobile-layout #touch-modifier-bar .touch-mod-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 44px;
+  padding: 0 8px;
+  font-size: 12px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
-  body.mobile-layout #btn-mobile-pane-bottom {
-    display: none;
-  }
+body.mobile-layout #btn-mobile-pane-bottom {
+  display: none;
+}
 
-  /* Drawer backdrop — visible only when a pane drawer is open in mobile-layout. */
-  .mobile-pane-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 54;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 180ms ease;
-  }
+/* Drawer backdrop — visible only when a pane drawer is open in mobile-layout. */
+:where(body.mobile-layout) .mobile-pane-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 54;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
 
-  body.mobile-layout .mobile-pane-backdrop.visible {
-    opacity: 1;
-    pointer-events: auto;
-  }
+body.mobile-layout .mobile-pane-backdrop.visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 body:not(.mobile-layout) .mobile-pane-backdrop {
   display: none;
 }
 
-/* Phone-only: drop modifier-button labels, show platform glyphs instead. */
-@media (max-width: 540px) {
-  body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label {
-    display: none;
-  }
-
-  body.phone-layout #touch-modifier-bar .touch-mod-btn::before {
-    font-size: 18px;
-    line-height: 1;
-    font-weight: 600;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', system-ui, sans-serif;
-  }
-
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="shift"]::before { content: "\21E7"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="alt"]::before { content: "\2325"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="meta"]::before { content: "\2318"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="ctrl"]::before { content: "\2303"; }
-  body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="pan"]::before { content: "\270B"; }
+/* Phone-only (TUX-001: keyed on body.phone-layout, not width, so iPhone landscape gets glyphs too). */
+body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label {
+  display: none;
 }
+
+body.phone-layout #touch-modifier-bar .touch-mod-btn::before {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', system-ui, sans-serif;
+}
+
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="shift"]::before { content: "\21E7"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="alt"]::before { content: "\2325"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="meta"]::before { content: "\2318"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="ctrl"]::before { content: "\2303"; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod="pan"]::before { content: "\270B"; }
 
 /* Touch-device tap ergonomics — applies on any coarse pointer device. */
 @media (pointer: coarse) {
@@ -8764,21 +8784,6 @@ body:not(.mobile-layout) .mobile-pane-backdrop {
     -webkit-user-select: none;
     user-select: none;
     touch-action: manipulation;
-  }
-
-  input[type="text"],
-  input[type="number"],
-  input[type="email"],
-  input[type="search"],
-  input[type="password"],
-  select,
-  textarea {
-    font-size: max(16px, 1em);
-  }
-
-  body.mobile-layout .tool-btn {
-    width: 44px;
-    height: 44px;
   }
 }
 
@@ -10108,8 +10113,10 @@ input[type='color']::-webkit-color-swatch {
   line-height: 1;
   color: inherit;
 }
-.tutorial-close:hover {
+@media (hover: hover) {
+  .tutorial-close:hover {
   opacity: 0.9;
+}
 }
 .tutorial-title {
   font-size: 13px;
@@ -10179,15 +10186,19 @@ input[type='color']::-webkit-color-swatch {
   border-color: transparent;
   color: var(--ui-bg);
 }
-.tutorial-btn--next:hover {
+@media (hover: hover) {
+  .tutorial-btn--next:hover {
   opacity: 0.85;
+}
 }
 .tutorial-btn--back {
   opacity: 0.45;
   border-color: transparent;
 }
-.tutorial-btn--back:hover {
+@media (hover: hover) {
+  .tutorial-btn--back:hover {
   opacity: 0.75;
+}
 }
 .tutorial-sq-panel {
   margin-top: 12px;
@@ -10223,9 +10234,11 @@ input[type='color']::-webkit-color-swatch {
   opacity: 0.7;
   transition: opacity 0.15s, border-color 0.15s;
 }
-.tutorial-sq-card:hover {
+@media (hover: hover) {
+  .tutorial-sq-card:hover {
   opacity: 1;
   border-color: var(--ui-accent);
+}
 }
 .tutorial-sq-icon {
   font-size: 14px;
@@ -10269,15 +10282,19 @@ input[type='color']::-webkit-color-swatch {
   color: var(--ui-bg);
   font-weight: 600;
 }
-.tutorial-cta-primary:hover {
+@media (hover: hover) {
+  .tutorial-cta-primary:hover {
   opacity: 0.85;
+}
 }
 .tutorial-cta-secondary {
   opacity: 0.7;
 }
-.tutorial-cta-secondary:hover {
+@media (hover: hover) {
+  .tutorial-cta-secondary:hover {
   opacity: 1;
   border-color: var(--ui-accent);
+}
 }
 
 /* ── Tutorial highlight + focus indicators ───────────────────────────── */
@@ -10402,7 +10419,9 @@ kbd {
   color: inherit;
   transition: opacity 0.1s, background 0.1s;
 }
-.help-tab-btn:hover { opacity: 0.85; }
+@media (hover: hover) {
+  .help-tab-btn:hover { opacity: 0.85; }
+}
 .help-tab-btn.active {
   background: rgb(var(--vectura-accent-rgb, 99 179 237) / 0.12);
   border-color: var(--ui-accent);
@@ -10640,7 +10659,9 @@ kbd {
   border-bottom: 1px solid var(--ui-border);
 }
 .help-accordion[open] .help-accordion-summary::before { transform: rotate(180deg); }
-.help-accordion-summary:hover { opacity: 0.85; background: var(--ui-panel-alt); }
+@media (hover: hover) {
+  .help-accordion-summary:hover { opacity: 0.85; background: var(--ui-panel-alt); }
+}
 
 .help-accordion-body { padding: 4px 4px 6px; }
 
@@ -11899,7 +11920,9 @@ body.mobile-layout .hud-bar {
   border-radius: var(--radius-sm, 4px);
   opacity: 0.6;
 }
-.ctxbar-handle:hover { opacity: 0.95; }
+@media (hover: hover) {
+  .ctxbar-handle:hover { opacity: 0.95; }
+}
 .ctxbar-handle:active { cursor: grabbing; }
 .ctxbar-handle svg { width: 12px; height: 16px; }
 /* Content host (sub-modes fill this). */
@@ -12019,7 +12042,7 @@ body.mobile-layout .hud-bar {
    `max-height` would otherwise win the cascade and silently drop the clamp. */
 .ctxbar-align-flyout,
 .ctxbar-menu {
-  max-height: var(--ctxbar-menu-space, 100vh);
+  max-height: var(--ctxbar-menu-space, var(--app-vh));
   overflow-y: auto;
 }
 .ctxbar-align-group-label {
@@ -12036,7 +12059,7 @@ body.mobile-layout .hud-bar {
    box; items stretch full-width and left-align like a native menu. */
 .ctxbar-algo-flyout {
   gap: 1px;
-  max-height: min(320px, var(--ctxbar-menu-space, 100vh));
+  max-height: min(320px, var(--ctxbar-menu-space, var(--app-vh)));
   overflow-y: auto;
   min-width: 148px;
 }
@@ -12061,7 +12084,7 @@ body.mobile-layout .hud-bar {
 .ctxbar-scene-flyout {
   gap: 6px;
   min-width: 232px;
-  max-height: min(60vh, var(--ctxbar-menu-space, 100vh));
+  max-height: min(60vh, var(--ctxbar-menu-space, var(--app-vh)));
   overflow-y: auto;
 }
 .ctxbar-fly-row {
@@ -12252,7 +12275,9 @@ body.mobile-layout .hud-bar {
   line-height: 1;
   opacity: 0.7;
 }
-.ctxbar-text-field:hover .ctxbar-text-caret { opacity: 1; }
+@media (hover: hover) {
+  .ctxbar-text-field:hover .ctxbar-text-caret { opacity: 1; }
+}
 /* The caret pivots (rotates through 180°) rather than swapping glyphs, so it
    reads as the same arrow turning over. Applied to both caret flavours — the
    pill carets and the standalone size-presets chevron — and driven from either
@@ -13513,10 +13538,14 @@ body.mobile-layout .hud-bar {
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity 0.12s, visibility 0s linear 0.12s;
 }
-.vs3-lawinfo-wrap:hover .vs3-lawinfo-pop,
 .vs3-lawinfo-wrap:focus-within .vs3-lawinfo-pop,
 .vs3-lawinfo-pop.is-open {
   opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s;
+}
+@media (hover: hover) {
+  .vs3-lawinfo-wrap:hover .vs3-lawinfo-pop {
+  opacity: 1; visibility: visible; pointer-events: auto; transition-delay: 0s;
+}
 }
 .vs3-lawinfo-pop .vs3-lawnote:last-child { margin-bottom: 0; }
 /* X-ray control group header (scene3d Style tab, Phase 6). */
@@ -13649,3 +13678,2820 @@ body.mobile-layout .hud-bar {
 #seed-controls.is-seed-inert #inp-seed,
 #seed-controls.is-seed-inert #btn-rand-seed { opacity: .45; cursor: not-allowed; }
 #seed-controls .seed-inert-info { position: relative; }
+
+/* === TUX-028: text input proxy === */
+/* Hidden textarea that owns the soft keyboard during touch/pen Type sessions.
+   opacity:0 (never display/visibility/off-screen) so iOS still focuses it and
+   page scroll offsets stay 0; the controller parks it at the caret inside the
+   canvas rect. 16px font prevents iOS focus-zoom. */
+[data-ui-skin] textarea[data-text-proxy].text-input-proxy,
+textarea[data-text-proxy].text-input-proxy {
+  position: fixed; left: 0; top: 0; z-index: 1;
+  width: 1em; height: 1em; min-height: 0; margin: 0; padding: 0; border: 0;
+  font-size: 16px; line-height: 1;
+  opacity: 0; color: transparent; background: transparent; caret-color: transparent;
+  outline: none; box-shadow: none; resize: none; overflow: hidden;
+  pointer-events: none; -webkit-user-select: text; user-select: text;
+}
+/* === /TUX-028 === */
+
+/* === TUX-006: touch sizing keys on pointer type === */
+body.touch-ui .tool-btn {
+  width: 44px;
+  height: 44px;
+}
+/* === /TUX-006 === */
+/* === TUX-012: layer rows on coarse pointers ===
+ * Replaces the old "2x Layer cards" block (min-width:600px, 18px names, 36px actions).
+ * Keyed on the touch row template: layers-panel.js adds .lvl-touch-row only when
+ * `(pointer: coarse)` matches or body.touch-ui is set, so width never decides.
+ * Row 1 = [grip][name][⋯]; row 2 = [eye][lock][pen dot][icon + label] (cards) or
+ * [caret][eye][lock][icon + label] (group / modifier / scene headers).
+ * Hit areas are 44 px (var(--touch-target-min)); the pane is never widened. */
+@media (pointer: coarse) {
+  .lvl-tree-children { padding-left: 16px }
+  .lvl-grp-exit-zone { margin-left: -16px }
+}
+body.touch-ui .lvl-tree-children { padding-left: 16px }
+body.touch-ui .lvl-grp-exit-zone { margin-left: -16px }
+
+.lvl-touch-row .lvl-clr-bar { width: 6px; margin: 4px 0; align-self: stretch }
+.lvl-touch-row .lvl-card-body { min-width: 0 }
+.lvl-touch-row .lvl-r1 {
+  height: 48px; padding: 0 4px 0 0; gap: 4px; min-width: 0; box-sizing: border-box;
+}
+.lvl-touch-row .lvl-r2 {
+  height: 44px; padding: 0 4px 0 0; gap: 0; min-width: 0; box-sizing: border-box;
+}
+.lvl-card.masked-v2.lvl-touch-row .lvl-r1,
+.lvl-card.masked-v2.lvl-touch-row .lvl-r2 { padding-left: 0 }
+.lvl-touch-row .lvl-grip {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); display: flex; align-items: center; justify-content: center;
+  color: var(--ui-muted); cursor: grab; touch-action: none;
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none;
+}
+.lvl-touch-row .lvl-grip[aria-disabled='true'] { opacity: .35; cursor: default }
+.lvl-touch-row .lvl-grip svg { width: 20px; height: 20px; pointer-events: none }
+.lvl-touch-row .lvl-ab.lvl-more {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); opacity: 1; border-radius: 6px;
+}
+.lvl-touch-row .lvl-ab.lvl-more svg { width: 22px; height: 22px }
+.lvl-touch-row .lvl-ib {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); border-radius: 6px;
+}
+.lvl-touch-row .lvl-ib svg { width: 22px; height: 22px }
+.lvl-touch-row .lvl-caret-zone {
+  width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px);
+  flex: 0 0 var(--touch-target-min, 44px); padding: 0; align-items: center;
+}
+.lvl-touch-row .lvl-caret { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px) }
+.lvl-touch-row .lvl-caret svg { width: 20px; height: 20px }
+/* Pen dot: 20 px visual, 44 px hit area through ::before; neighbouring hit areas abut, never overlap. */
+.lvl-touch-row .lvl-pen-dot {
+  position: relative; width: 20px; height: 20px; margin: 0 12px; flex: 0 0 20px; box-sizing: border-box;
+}
+.lvl-touch-row .lvl-pen-dot::before {
+  content: ''; position: absolute; inset: -13px; border-radius: 6px;
+}
+.lvl-touch-row .lvl-aico { width: 24px; height: 24px; flex: 0 0 24px; margin: 0 4px 0 0 }
+.lvl-touch-row .lvl-aico svg { width: 20px; height: 20px }
+.lvl-touch-row .lvl-name,
+.lvl-touch-row .lvl-grp-name { font-size: 16px; flex: 1 1 auto; min-width: 0 }
+.lvl-touch-row .lvl-algo-label {
+  font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--ui-muted);
+  flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.lvl-grp-hdr.lvl-touch-row { min-height: 0 }
+.lvl-touch-row .lvl-grp-content {
+  flex: 1 1 auto; flex-direction: column; align-items: stretch; gap: 0;
+  height: auto; min-width: 0; padding: 0;
+}
+/* The ⋯ menu must fit the viewport on short screens and give rows finger height. */
+.lvl-ctx-menu { max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); overflow-y: auto; overscroll-behavior: contain }
+@media (pointer: coarse) {
+  .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
+}
+body.touch-ui .lvl-ctx-menu .menu-entry { min-height: var(--touch-target-min, 44px) }
+
+/* === TUX-029: text-content field ===
+   Multi-line "Text" field in the Type tab. Beats the older
+   `[data-ui-skin] #left-panel-content textarea` rule (fixed row height, small
+   font) and keeps >= 16px so iOS never zooms on focus. */
+[data-ui-skin] #left-panel-content .vtp-panel textarea.vtp-text-field,
+[data-ui-skin] .vtp-panel textarea.vtp-text-field,
+.vtp-panel textarea.vtp-text-field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  min-height: calc(3 * 1.35em + 2 * var(--spacing-sm, 8px));
+  padding: var(--spacing-sm, 8px);
+  font-family: var(--font-ui);
+  font-size: max(16px, var(--font-size-sm, 13px));
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-y: auto;
+  resize: vertical;
+  background: var(--ui-ctrl);
+  color: var(--ui-text);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  -webkit-user-select: text;
+  user-select: text;
+}
+[data-ui-skin] #left-panel-content .vtp-panel textarea.vtp-text-field:focus,
+[data-ui-skin] .vtp-panel textarea.vtp-text-field:focus {
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 3px var(--ui-accent-2);
+}
+/* === /TUX-029 === */
+
+/* === TUX-032: keyboard inset ===
+ * --kb-inset is written by src/ui/keyboard-inset.js (0 unless an editable has focus).
+ * Scroll containers gain bottom room only while the keyboard is open, so the last fields of a
+ * pane can scroll above it. Sheets and popovers read the same variable: the modal lane
+ * (TUX-046 Sheet / TUX-049) must keep consuming --kb-inset. */
+html.kb-open .pane-body,
+html.kb-open #left-panel-content,
+html.kb-open .export-settings-scroll {
+  padding-bottom: var(--kb-inset);
+  scroll-padding-bottom: calc(var(--kb-inset) + 8px);
+}
+@media (pointer: coarse) {
+  /* Save Preset bottom sheet (rule above uses !important on align-items): lift it by the inset. */
+  html.kb-open .vectura-modal-backdrop { padding-bottom: var(--kb-inset); box-sizing: border-box; }
+  html.kb-open .vectura-modal { max-height: calc(100% - 8px); }
+  /* iOS zooms inputs under 16px on focus, which would zero the inset (page zoom). */
+  .vtp-fp-search input { font-size: 16px; }
+}
+/* Font picker popover: the list scrolls inside the popover cap that positionPop() sets. */
+.vtp-fp-pop .vtp-fp-list { flex: 1 1 auto; min-height: 0; }
+.vtp-fp-pop .vtp-fp-search, .vtp-fp-pop .vtp-fp-tags { flex: none; }
+/* Pinned popover with the keyboard open (landscape): compact header so the list keeps >= 3 rows where they fit. */
+.vtp-fp-pop.kb-compact .vtp-fp-tags { display: none; }
+.vtp-fp-pop.kb-compact .vtp-fp-search { padding: 0 8px; }
+.vtp-fp-pop.kb-compact .vtp-fp-search input { padding-block: 0; min-height: 24px; height: 24px; box-sizing: border-box; }
+.vtp-fp-pop.kb-compact .vtp-fp-list { padding: 0 2px; }
+.vtp-fp-pop.kb-compact .vtp-fp-opt { padding: 0 8px; min-height: 24px; }
+.vtp-fp-pop.kb-compact .vtp-fp-sec { padding-block: 2px; }
+/* TUX-032 review: the compact typing header keeps the 24 px absolute floor (3 rows still fit at 874x330); without the
+ * keyboard the rows and the search field are 44 px finger targets on a coarse pointer. */
+@media (pointer: coarse) {
+  .vtp-fp-pop:not(.kb-compact) .vtp-fp-opt { min-height: var(--touch-target-min); box-sizing: border-box; }
+  .vtp-fp-pop:not(.kb-compact) .vtp-fp-search input { min-height: var(--touch-target-min); box-sizing: border-box; }
+}
+/* === /TUX-032 === */
+/* === TUX-042: text-entry >= 16px on coarse pointers ===
+ * iOS Safari zooms the page when a focused field computes below 16px. !important is the only
+ * way to beat the inline font-size:10px on the Text panel selects (ui-text-panel.js) and the
+ * skin rules at (0,2,0)-(0,3,0) in one place. [contenteditable] is deliberately NOT listed:
+ * the .vtp-spec-text specimen is 34px by design. Keyed on the pointer, never on width. */
+@media (pointer: coarse) {
+  :is(input:not([type]), input[type="text"], input[type="number"], input[type="search"],
+      input[type="email"], input[type="password"], input[type="url"], input[type="tel"],
+      select, textarea) {
+    font-size: max(var(--input-font-touch), 1em) !important;
+  }
+}
+/* === END TUX-042 === */
+
+/* === TUX-041: touch target token (owned surfaces: layers pane, left pane, pens rows, modifier bar) ===
+ * Every rule is keyed on (pointer: coarse); desktop is unchanged. Sizes only (no !important):
+ * min-width/min-height where the visual may grow, a centred ::before extension where the
+ * visual must stay small. Selectors carry [data-ui-skin] + a pane id to beat the skin rules.
+ * Remaining slices (menus, header, toolbar, ctxbar, Text panel, modals, sliders) are open
+ * ratchet work; see docs/touch-audit/changelog-fragments/TUX-041.md. */
+@media (pointer: coarse) {
+  /* Rows and boxes that can simply grow. */
+  [data-ui-skin] #left-pane :is(.left-panel-section-header, .global-section-header, .hg-preset-trigger,
+    #generator-module-trigger, select:not(.sr-only), button.w-full, input.w-full, .noise-add,
+    .noise-reset, .noise-rand, .slider-val, .slider-val-inp, .angle-inp-wrap, .paint-bucket-select) {
+    min-height: var(--touch-target-min);
+    box-sizing: border-box;
+  }
+  /* WebKit ignores min-height on some native selects, so selects also get an explicit height. */
+  [data-ui-skin] #left-pane select:not(.sr-only) { height: var(--touch-target-min); }
+  [data-ui-skin] .touch-mod-btn { min-height: var(--touch-target-min); }
+  [data-ui-skin] #right-pane .right-pane-tab { min-height: var(--touch-target-min); }
+  [data-ui-skin] #right-pane .lvl-search-wrap { min-height: var(--touch-target-min); height: auto; }
+  [data-ui-skin] #right-pane .lvl-search-bar .lvl-search-input,
+  [data-ui-skin] #right-pane .lvl-filter-btn,
+  [data-ui-skin] #right-pane .lvl-add-btn {
+    min-height: var(--touch-target-min);
+  }
+  [data-ui-skin] #right-pane .lvl-filter-btn { min-width: var(--touch-target-min); }
+  [data-ui-skin] #right-pane .lvl-add-btn { min-width: var(--touch-target-min); }
+  /* Draw-order icons keep their 18px visual (the bar must stay short on landscape phones); a
+   * 44px ::before owns the touch and 26px gaps keep neighbouring hit areas abutting. */
+  [data-ui-skin] #right-pane .draw-order-head-right { gap: 26px; }
+  [data-ui-skin] #right-pane :is(.draw-order-settings, .draw-order-overlay-toggle) { position: relative; }
+  [data-ui-skin] #right-pane :is(.draw-order-settings, .draw-order-overlay-toggle)::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+  }
+  .hg-preset-save-pip { width: var(--touch-target-min); height: var(--touch-target-min); }
+  .hg-preset-save-pip svg { width: 18px; height: 18px; }
+
+  /* Value chips: self-contained boxes sized for 16px mono text ("0.125" fits). TUX-043 puts the
+   * 44px slider band beside them. */
+  [data-ui-skin] #left-pane :is(.slider-val, .slider-val-inp),
+  [data-ui-skin] #left-pane .slider-row .value-chip {
+    width: calc(6ch + 2 * var(--spacing-sm, 8px));
+    min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
+    max-width: none;
+    flex: 0 0 auto;
+    padding: 0 var(--spacing-sm, 8px);
+    text-align: right;
+  }
+
+  /* WebKit number spinners eat the chip's digits; touch has no use for them. */
+  [data-ui-skin] :is(#left-pane, .settings-panel) input.slider-val-inp { -webkit-appearance: textfield; appearance: textfield; -moz-appearance: textfield; }
+  [data-ui-skin] :is(#left-pane, .settings-panel) input.slider-val-inp::-webkit-inner-spin-button,
+  [data-ui-skin] :is(#left-pane, .settings-panel) input.slider-val-inp::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; display: none; }
+
+  /* Small visuals keep their size; a centred 44px ::before owns the touch. */
+  [data-ui-skin] #left-pane :is(.info-btn, .noise-grip) {
+    position: relative;
+  }
+  [data-ui-skin] #left-pane :is(.info-btn, .noise-grip)::before,
+  [data-ui-skin] #left-pane .sw-toggle::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: var(--touch-target-min); height: var(--touch-target-min);
+    transform: translate(-50%, -50%);
+  }
+  /* The label row that holds an info button is one finger tall so the extension never reaches
+   * the control below. */
+  [data-ui-skin] #left-pane :has(> .info-btn) {
+    display: flex; min-height: var(--touch-target-min); align-items: center;
+  }
+  /* A justify-between row whose left child holds the label + info button: centre the value tag
+   * on the same line as the label instead of letting it float to the top of the 44px row. */
+  [data-ui-skin] #left-pane :is(.flex, [class*="justify-between"]):has(> * > .info-btn) { align-items: center; }
+  /* The angle chip is the wrapper (border + degree sign); the input inside stays borderless. */
+  [data-ui-skin] #left-pane .angle-inp-wrap { min-height: var(--touch-target-min); box-sizing: border-box; }
+  [data-ui-skin] #left-pane .angle-inp-wrap .angle-inp { width: 48px; min-height: var(--touch-target-min); height: 100%; padding: 0; border: 0; background: transparent; box-shadow: none; }
+  [data-ui-skin] #left-pane .noise-actions { gap: 0; }
+  [data-ui-skin] #left-pane .noise-actions .sw-toggle { margin: 0 7px; }
+  [data-ui-skin] #left-pane .noise-delete {
+    min-width: var(--touch-target-min); min-height: var(--touch-target-min);
+  }
+  [data-ui-skin] #left-pane .angle-ctrl .angle-dial,
+  [data-ui-skin] #left-pane .angle-dial {
+    width: var(--touch-target-min); height: var(--touch-target-min);
+  }
+  [data-ui-skin] #left-pane .sw-toggle { position: relative; }
+
+  /* On short coarse viewports (landscape phones) the header, search bar and draw-order bar used
+   * to squeeze the list to a sliver. The list keeps room for two finger-tall rows and the tab
+   * panel scrolls instead. */
+  [data-ui-skin] #right-pane .right-tab-panel { overflow-y: auto; }
+  [data-ui-skin] #right-pane #layer-list { flex-shrink: 0; min-height: calc(2 * var(--touch-target-min) + 12px); }
+
+  /* Touch scrolls by drag and iOS overlays its scrollbars; a classic 4-6px bar would steal the
+   * right edge of the row's last (44px) button. */
+  [data-ui-skin] #right-pane #layer-list { scrollbar-width: none; }
+  [data-ui-skin] #right-pane #layer-list::-webkit-scrollbar { display: none; }
+
+  /* Pens tab: its sections stack at natural height and the tab panel scrolls, so short landscape
+   * phones never squeeze the pen rows to a sliver. */
+  [data-ui-skin] #right-pane .right-tab-panel:not(.hidden)#right-tab-panel-pens { display: block; }
+  [data-ui-skin] #right-pane #pen-list { overflow: visible; }
+
+  /* The modifier bar overlays the bottom of the pane; leave room so the last control scrolls clear. */
+  [data-ui-skin] #left-panel-content { padding-bottom: 72px; }
+
+  /* Settings panel (Document Setup and canvas settings): same chip and row sizing. */
+  /* The 24px close icon keeps its visual; a centred 44px ::before owns the touch. */
+  [data-ui-skin] .settings-panel > .pane-hdr { min-height: calc(var(--touch-target-min) + 10px); box-sizing: border-box; }
+  [data-ui-skin] .settings-panel .settings-panel-close { position: relative; }
+  [data-ui-skin] .settings-panel .settings-panel-close::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+  }
+  [data-ui-skin] .settings-panel :is(.slider-val-inp, select.ctrl-sel, .sect-hdr) {
+    min-height: var(--touch-target-min); box-sizing: border-box;
+  }
+  /* 16px "Balanced" overflowed the 120px inline-width select wrap; min-width beats the inline width. */
+  [data-ui-skin] .settings-panel .ctrl-sel-wrap { min-width: 160px; }
+  [data-ui-skin] .settings-panel .slider-val-inp {
+    width: calc(6ch + 2 * var(--spacing-sm, 8px)); min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
+  }
+
+  /* Pens rows: two finger-tall lines. Line 1 = [grip][name][remove], line 2 = [swatch][weight]
+   * [value]. The two flex groups dissolve (display: contents) and order places the items; the
+   * ::after forces the line break. The round .pen-icon is hidden (the swatch carries the colour). */
+  [data-ui-skin] .pen-item {
+    flex-wrap: wrap; align-items: center; gap: 0; padding: 0 var(--spacing-sm, 8px); flex-shrink: 0;
+  }
+  [data-ui-skin] .pen-item::after { content: ''; flex: 0 0 100%; height: 0; order: 3; }
+  [data-ui-skin] .pen-item :is(.pen-row-a, .pen-row-b) { display: contents; }
+  [data-ui-skin] .pen-item .pen-icon { display: none; }
+  [data-ui-skin] .pen-item .pen-grip {
+    order: 1; flex: 0 0 var(--touch-target-min); width: var(--touch-target-min);
+    height: var(--touch-target-min); place-content: center; margin: 0;
+  }
+  [data-ui-skin] .pen-item .pen-name-input {
+    order: 2; flex: 1 1 0; min-width: 0; width: auto; min-height: var(--touch-target-min);
+  }
+  [data-ui-skin] .pen-item .pen-remove {
+    order: 3; position: relative; margin: 13px; flex: 0 0 18px;
+  }
+  [data-ui-skin] .pen-item .pen-remove::before {
+    content: ""; position: absolute; inset: -14px;
+  }
+  [data-ui-skin] .pen-item .pen-swatch {
+    order: 4; position: relative; flex: 0 0 var(--touch-target-min);
+    width: var(--touch-target-min); height: var(--touch-target-min);
+    margin: 0; border: 0; border-radius: 0; overflow: visible;
+  }
+  /* The native colour input IS the visible swatch (a 22 px circle in the 44 px box). It was opacity 0 over a painted ::before,
+   * which the touch audit counts as a ghost target. */
+  [data-ui-skin] .pen-item .pen-swatch::before { content: none; }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color {
+    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 1; cursor: pointer;
+    padding: 0; border: 0; background: transparent; -webkit-appearance: none; appearance: none;
+  }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch-wrapper { padding: 11px; }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
+  [data-ui-skin] .pen-item .pen-swatch .pen-color::-moz-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
+  [data-ui-skin] .pen-item .pen-width { order: 5; flex: 1 1 0; min-width: 0; width: auto; margin: 0 var(--spacing-sm, 8px); }
+  [data-ui-skin] .pen-item .pen-width-value {
+    order: 6; flex: 0 0 auto; width: auto; min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
+    min-height: var(--touch-target-min); padding: 0 var(--spacing-sm, 8px);
+  }
+  /* One shared row background: the name input and value chip drop their own fill (the skin gives
+   * inputs a lighter panel colour that read as a patchwork) and keep a hairline underline. */
+  [data-ui-skin] .pen-item :is(.pen-name-input, .pen-width-value) {
+    background: transparent; border: 0; border-bottom: 1px solid var(--ui-border); border-radius: 0;
+  }
+  /* WebKit draws native number spinners that eat the chip's digits; touch has no use for them. */
+  [data-ui-skin] .pen-item .pen-width-value { -webkit-appearance: textfield; appearance: textfield; -moz-appearance: textfield; }
+  [data-ui-skin] .pen-item .pen-width-value::-webkit-inner-spin-button,
+  [data-ui-skin] .pen-item .pen-width-value::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; display: none; }
+}
+/* === END TUX-041 === */
+
+/* === TUX-001: phone header, hamburger menu sheet and direct actions === */
+.header-phone-btn, .header-phone-actions { display: none; }
+body.phone-layout #app-header { max-width: 100%; overflow-x: clip; }
+.top-menu-quick-row, .top-menu-theme-row, .top-menu-docsetup-row { display: none; }
+body.phone-layout .top-menu-quick-row { display: flex; align-items: stretch; }
+body.phone-layout .top-menu-theme-row, body.phone-layout .top-menu-docsetup-row { display: flex; }
+body.phone-layout #top-menubar .top-menu-quick-row > .top-menu-docsetup-row { flex: 1 1 auto; width: auto; min-width: 0; }
+/* Short phone landscape has room for 6 rows, not 7: the pinned Document Setup row is dropped and Theme returns to the end of the sheet.
+ * Document Setup stays under File there (Q23 covers phones with a normal height). */
+body.phone-layout.phone-short #top-menubar .top-menu-quick-row { order: 99; }
+body.phone-layout.phone-short #top-menubar .top-menu-docsetup-row { display: none; }
+body.phone-layout #top-menubar .top-menu-quick-row > .top-menu-theme-row { flex: 0 0 auto; width: auto; border-left-width: 1px; }
+body.phone-layout #app-header .header-phone-actions { display: inline-flex; gap: 2px; align-items: center; }
+body.phone-layout #app-header .header-phone-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; box-sizing: border-box;
+  border: 1px solid var(--ui-border); background: var(--ui-panel-alt); color: var(--ui-text-2);
+}
+body.phone-layout #app-header .header-phone-btn.is-disabled { opacity: 0.4; }
+body.phone-layout #app-header .header-brand-menu { gap: 6px; flex: 1 1 0; min-width: 0; }
+body.phone-layout #app-header .header-brand-menu h1 { font-size: 12px; overflow: hidden; text-overflow: clip; min-width: 0; }
+body.phone-layout #app-header .header-brand-mark,
+body.phone-layout #app-header .header-menu-divider,
+body.phone-layout #app-header #theme-toggle { display: none; }
+body.phone-layout #app-header .header-status-actions { gap: 0; }
+body.phone-layout #top-menubar { display: none; }
+body.phone-layout.phone-menu-open #top-menubar {
+  display: flex; flex-direction: column; align-items: stretch; gap: 0;
+  position: fixed; left: 0; right: 0; top: var(--phone-menu-top, 56px); margin: 0;
+  max-height: calc(100vh - var(--phone-menu-top, 56px)); max-height: calc(100dvh - var(--phone-menu-top, 56px));
+  overflow-y: auto; overscroll-behavior: contain; white-space: normal;
+  padding: 4px max(0px, var(--safe-right)) max(4px, var(--safe-bottom)) max(0px, var(--safe-left));
+  background: var(--ui-bg); border-bottom: 1px solid var(--ui-border); box-shadow: 0 16px 30px rgba(0, 0, 0, 0.45);
+  z-index: 1500;
+}
+body.phone-layout #top-menubar .top-menu { position: static; display: block; width: 100%; }
+body.phone-layout #top-menubar .top-menu-trigger {
+  width: 100%; min-height: 44px; justify-content: flex-start; font-size: 14px; padding: 0 16px;
+  box-sizing: border-box; border-width: 0 0 1px; background: transparent;
+}
+body.phone-layout #top-menubar .top-menu-panel {
+  display: none; position: static; min-width: 0; width: 100%; box-sizing: border-box;
+  box-shadow: none; border: 0; padding: 0; transform: none; transition: none;
+}
+body.phone-layout #top-menubar .top-menu-panel.open { display: flex; opacity: 1; pointer-events: auto; }
+body.phone-layout #top-menubar .top-menu-item { min-height: 44px; font-size: 14px; padding: 0 16px; box-sizing: border-box; }
+/* Drill-down: with a sub-level open, show only that panel. */
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-trigger,
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu-quick-row { display: none; }
+body.phone-layout #top-menubar:has(.top-menu-panel.open) .top-menu:not(:has(.top-menu-panel.open)) { display: none; }
+/* Review fix (874x330): an open sub-level taller than the sheet is clamped to it and scrolls itself, so the sheet never scrolls
+ * the sub-level out from under the cue. data-scroll-cue (utils.scrollCue, bound in header.js) draws sticky fades that take no taps. */
+body.phone-layout #top-menubar:has(.top-menu-panel.open) { overflow-y: hidden; }
+body.phone-layout #top-menubar .top-menu:has(> .top-menu-panel.open) { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+body.phone-layout #top-menubar .top-menu-panel.open { flex-direction: column; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+body.phone-layout #top-menubar .top-menu-panel.open > .top-menu-item { flex: none; }
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open::before,
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 3;
+  opacity: 0; transition: opacity 120ms ease;
+}
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open::before { order: -1; top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-bg) 15%, transparent); }
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open::after { order: 99; bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-bg) 15%, transparent); }
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open[data-scroll-cue~="above"]::before,
+body.touch-ui.phone-layout #top-menubar .top-menu-panel.open[data-scroll-cue~="below"]::after { opacity: 1; }
+body.phone-layout #top-menubar .top-menu-back { font-weight: 600; color: var(--ui-text-2); }
+.top-menu-back { display: none; }
+body.phone-layout #top-menubar .top-menu-back { display: flex; align-items: center; }
+/* === end TUX-001 === */
+
+/* === TUX-013: compact one-row tool rail ===
+ * Static-rail layouts only: phone-layout, and tablet-layout on a coarse pointer.
+ * touch-wide and desktop keep the floating rail, drag handle and footer (TUX-016/041 own their sizing).
+ * Which slots stay on the rail comes from Vectura.TOOL_RAIL (src/config/tool-drawer.js);
+ * toolbar.js marks the rest `.rail-overflowed`. Budget: tablet <= 64 px, phone <= 52 px (border counted).
+ * No var(--safe-top) here: TUX-005 owns the top inset on #app-header.
+ * TODO(TUX-041): replace the literal 44px with the shared touch-target token once it lands. */
+body.touch-ui.tablet-layout #tool-bar,
+body.phone-layout #tool-bar {
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 0;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  padding-left: calc(12px + var(--safe-left));
+  padding-right: calc(12px + var(--safe-right));
+}
+body.phone-layout #tool-bar {
+  padding-top: 4px;
+  padding-bottom: 3px; /* 4 + 44 + 3 + 1 px border = 52 */
+}
+body.touch-ui.tablet-layout #tool-bar { padding-top: 8px; padding-bottom: 8px; }
+body.touch-ui.tablet-layout #tool-bar .toolbar-footer,
+body.touch-ui.tablet-layout #tool-bar .toolbar-drag-handle,
+body.phone-layout #tool-bar .toolbar-footer,
+body.phone-layout #tool-bar .toolbar-drag-handle { display: none; }
+body.touch-ui.tablet-layout #tool-bar .rail-overflowed,
+body.phone-layout #tool-bar .rail-overflowed { display: none; }
+body.touch-ui.tablet-layout #tool-bar .tool-group,
+body.phone-layout #tool-bar .tool-group { flex-direction: row; flex: 0 0 auto; }
+body.touch-ui.tablet-layout #tool-bar > .tool-divider {
+  width: 1px; height: 24px; margin: 0 2px; flex: 0 0 1px; align-self: center;
+}
+body.phone-layout #tool-bar > .tool-divider { display: none; }
+body.touch-ui.tablet-layout #tool-bar #tool-overflow-btn,
+body.phone-layout #tool-bar #tool-overflow-btn { margin-left: auto; order: 999; flex: 0 0 auto; }
+/* Collapsed-pane slivers (40 px, z 55) overlay the rail ends once a finger collapses a pane on
+ * tablet and wide-phone layouts (body is not .auto-collapsed there, so the rail stays at z 5).
+ * Inset the rail's inline padding by the sliver width so Select and the overflow button stay
+ * hittable. Narrow phones (.auto-collapsed) already lift the rail to z 60 above the slivers. */
+body.touch-ui.tablet-layout #tool-bar,
+body.phone-layout:not(.auto-collapsed) #tool-bar {
+  padding-left: calc(var(--pane-collapsed-width, 40px) + 4px + var(--safe-left));
+  padding-right: calc(var(--pane-collapsed-width, 40px) + 4px + var(--safe-right));
+}
+/* === /TUX-013 === */
+/* === TUX-034: touch hold + context menus ===
+   Scoped to .menu-dropdown.is-context-menu and .canvas-ctx-menu. The header menubar shares
+   bare .menu-dropdown / .menu-entry: never restyle those here. */
+.touch-hold-ring {
+  position: fixed; z-index: 10000; pointer-events: none;
+  width: var(--touch-hold-ring-size); height: var(--touch-hold-ring-size);
+  margin: calc(var(--touch-hold-ring-size) / -2) 0 0 calc(var(--touch-hold-ring-size) / -2);
+  border: 3px solid var(--touch-hold-ring-color); border-radius: 50%;
+  box-sizing: border-box; overflow: hidden;
+}
+.touch-hold-ring-fill {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: var(--touch-hold-ring-fill); transform-origin: 50% 50%;
+}
+/* A card hold must show no native callout, selection or drag lift (clause 16). */
+.lvl-card, .lvl-grp-hdr {
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+}
+.menu-dropdown.is-context-menu { overflow-y: auto; overscroll-behavior: contain; }
+@media (pointer: coarse) {
+  .menu-dropdown.is-context-menu {
+    max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 16px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .menu-dropdown.is-context-menu .menu-entry { min-height: var(--touch-target-min); }
+  .canvas-ctx-menu {
+    max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 16px);
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+    overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  .canvas-ctx-item { min-height: var(--touch-target-min); padding-top: 0; padding-bottom: 0; display: flex; align-items: center; }
+}
+/* TUX-012 review: scroll-edge fades on a scrolling context menu. data-scroll-cue (utils.scrollCue) lists the edges that
+ * still hide rows, so a menu that fits shows nothing. Sticky pseudo-elements overlay the first/last rows; they take no taps. */
+.menu-dropdown.is-context-menu::before, .menu-dropdown.is-context-menu::after,
+.canvas-ctx-menu::before, .canvas-ctx-menu::after {
+  content: ''; display: block; position: sticky; height: 28px; pointer-events: none; z-index: 2;
+  opacity: 0; transition: opacity 120ms ease;
+}
+.menu-dropdown.is-context-menu::before, .canvas-ctx-menu::before {
+  top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent);
+}
+.menu-dropdown.is-context-menu::after, .canvas-ctx-menu::after {
+  bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent);
+}
+.menu-dropdown.is-context-menu[data-scroll-cue~="above"]::before, .canvas-ctx-menu[data-scroll-cue~="above"]::before,
+.menu-dropdown.is-context-menu[data-scroll-cue~="below"]::after, .canvas-ctx-menu[data-scroll-cue~="below"]::after { opacity: 1; }
+/* === END TUX-034 === */
+
+/* === TUX-015: all tools drawer (touch) === */
+/* Stacking applies to every pointer: the drawer is a body-level popover and must sit above the rail and panes. */
+.tool-drawer { z-index: var(--z-tool-drawer, 80); }
+@media (pointer: coarse) {
+  .tool-drawer-body { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .tool-drawer[data-view="grid"] .tool-drawer-item { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+  .tool-drawer[data-view="list"] .tool-drawer-item { min-height: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+  .tool-drawer-view-btn { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+}
+body.touch-ui .tool-drawer-body { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+body.touch-ui .tool-drawer[data-view="grid"] .tool-drawer-item { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+body.touch-ui .tool-drawer[data-view="list"] .tool-drawer-item { min-height: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+body.touch-ui .tool-drawer-view-btn { width: var(--touch-target-min, 44px); height: var(--touch-target-min, 44px); }
+/* === END TUX-015 === */
+
+/* === TUX-035: add-layer touch drill-down === */
+/* Touch taps "Algorithm Layer" and the add menu swaps to the algorithm list (JS: shortcuts.js).
+   Scoped to #layer-add-menu so the shared .lvl-algo-sub-item (context bar, header fly-outs) is untouched. */
+#layer-add-menu .lvl-add-back,
+#layer-add-menu .lvl-add-drill-list { display: none; }
+#layer-add-menu.is-drill > .lvl-add-item:not(.lvl-add-back) { display: none; }
+#layer-add-menu.is-drill > .lvl-add-back {
+  display: flex;
+  align-items: center;
+  min-height: var(--touch-target-min);
+  border-radius: 6px 6px 0 0;
+  border-bottom: 1px solid var(--ui-border);
+  color: var(--ui-accent);
+}
+#layer-add-menu.is-drill > .lvl-add-drill-list {
+  display: block;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  border-radius: 0 0 6px 6px;
+}
+#layer-add-menu.is-drill .lvl-algo-sub-item {
+  min-height: var(--touch-target-min);
+  padding: 0 12px;
+  box-sizing: border-box;
+}
+@media (pointer: coarse) {
+  #layer-add-menu > .lvl-add-item { min-height: var(--touch-target-min); }
+}
+#layer-add-menu.is-touch > .lvl-add-item { min-height: var(--touch-target-min); }
+/* === /TUX-035 === */
+
+/* === TUX-016: toolbar footer + drag handles touch-safe ===
+ * (A) Anchored rail (body.mobile-layout, position: static): nothing can be dragged, so the
+ *     handle and the footer never render, for every pointer type. TUX-016 owns this rule;
+ *     TUX-013 requirement 4 is satisfied here.
+ * (B) Floating rail on a primary coarse pointer: the 13px footer buttons do not render (undock by
+ *     dragging the handle; pin is ignored by toolbar.js), and both handles are 44px finger targets
+ *     with touch-action: none so a one-finger drag moves the bar and never scrolls or cancels.
+ * Keyed on (pointer: coarse), the same signal as body.touch-ui. Not on any-pointer: a touch-screen
+ * laptop keeps the mouse UI. */
+body.mobile-layout #tool-bar .toolbar-drag-handle,
+body.mobile-layout #tool-bar .toolbar-footer { display: none; }
+
+@media (pointer: coarse) {
+  #tool-bar .toolbar-footer { display: none; }
+
+  .tool-bar .toolbar-drag-handle,
+  .ctxbar .ctxbar-handle { touch-action: none; }
+
+  /* Toolbar grip, vertical rail: full rail width, 44px tall (real box; the rail scrolls and the
+     handle clips overflow, so a ::before extender would be cut off). */
+  .tool-bar .toolbar-drag-handle {
+    box-sizing: border-box;
+    height: var(--touch-target-min, 44px);
+    min-height: var(--touch-target-min, 44px);
+    width: calc(100% + 2 * var(--spacing-sm));
+    margin: calc(-1 * var(--spacing-sm)) calc(-1 * var(--spacing-sm)) 1px;
+  }
+  /* Horizontal variants: a 44px-wide vertical strip at the leading edge. */
+  [data-ui-skin] .toolbar-docked-top .toolbar-drag-handle,
+  [data-ui-skin] .toolbar-docked-bottom .toolbar-drag-handle,
+  [data-ui-skin] .tool-bar.toolbar-floating-horizontal:not([class*="toolbar-docked"]) .toolbar-drag-handle {
+    width: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
+    height: auto;
+    min-height: var(--touch-target-min, 44px);
+    margin: 0 4px 0 0;
+  }
+  /* A persisted lock must never hide the grip or make it inert on touch. */
+  .tool-bar.toolbar-locked:not([class*="toolbar-docked"]) .toolbar-drag-handle {
+    height: var(--touch-target-min, 44px);
+    margin: calc(-1 * var(--spacing-sm)) calc(-1 * var(--spacing-sm)) 1px;
+    opacity: 0.45;
+    transform: none;
+    pointer-events: auto;
+  }
+
+  /* Context bar grip: 44px wide real box. TUX-041 B2 (Q19): the bar is 52px tall on touch, so the grip stretches to a real
+     44px box and needs no ::before extender (it overlapped the canvas handles above and below the bar). */
+  .ctxbar .ctxbar-handle {
+    position: relative;
+    width: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
+  }
+}
+/* === END TUX-016 === */
+
+/* === TUX-016 (fix round): touch modifier bar clears a top-docked toolbar ===
+ * Finger-docking the rail at the top is reachable now that the drag is not cancelled. The floating
+ * modifier bar (top: 58-66px of the shell) then sat on the docked bar and swallowed taps on every
+ * tool. toolbar.js publishes the docked height as --toolbar-dock-top-h on the shell. The anchored
+ * layout (mobile-layout) keeps its static, ordered bar. */
+body:not(.mobile-layout) .workspace-shell:has(> #tool-bar.toolbar-docked-top) > #touch-modifier-bar {
+  top: calc(var(--toolbar-dock-top-h, 56px) + 8px);
+}
+/* === END TUX-016 fix round === */
+
+/* === TUX-036: hidden-but-tappable actions === */
+/* Pointer-events follow the opacity:1 states for every input type, so a strip that is
+   transparent can never take a tap (a finger tap lands on the card and selects it). */
+.lvl-acts, .lvl-grp-acts { pointer-events: none; }
+.lvl-card.is-active .lvl-acts,
+.lvl-grp-hdr.is-active .lvl-grp-acts { pointer-events: auto; }
+@media (hover: hover) {
+  .lvl-card:hover .lvl-acts,
+  .lvl-grp-hdr:hover .lvl-grp-acts { pointer-events: auto; }
+}
+/* Locked and multi-select states keep winning (same specificity as the is-active rule above). */
+.lvl-card.is-locked .lvl-acts { pointer-events: none; }
+.lvl-list-multi .lvl-card.is-selected .lvl-acts,
+.lvl-list-multi .lvl-grp-hdr.is-selected .lvl-grp-acts { pointer-events: none; }
+
+/* Requirement 5: keep Delete away from its neighbour. Margin only; sizing belongs to TUX-041. */
+@media (pointer: coarse) {
+  .lvl-acts > .lvl-ab.del,
+  .lvl-grp-acts > .lvl-ab.del { margin-inline-start: 8px; }
+}
+
+/* Preset gallery on devices without hover: row controls are always shown. */
+@media (hover: none) {
+  .hg-preset-delete,
+  .hg-preset-set-default { display: flex; opacity: 1; }
+  .hg-preset-group-select { opacity: 1; }
+}
+/* Two-step touch Delete: the first tap arms the button. */
+.hg-preset-delete.is-armed {
+  width: auto; min-width: 18px; padding: 0 6px;
+  color: #fff; background: rgb(var(--vectura-danger-rgb, 239 68 68)); opacity: 1;
+  font-size: var(--font-size-xs, 11px); line-height: 18px; white-space: nowrap;
+}
+/* === /TUX-036 === */
+
+/* === TUX-043: sliders ===
+ * Finger-sized range inputs on coarse pointers. The <input> box itself is 44px tall (the audit
+ * measures the box; a wrapper band or overlay would read as "covered"). The visible 4px track
+ * (pen: 3px) is the ::-webkit-slider-runnable-track, centred in that box by the UA; the 28px
+ * thumb is re-centred with a logical margin so vertical ranges (writing-mode) work too.
+ * Fill colours come from the inherited --fill / --slider-start / --tux-fill-color vars.
+ * Specificity: [data-ui-skin] input[type=range]:not(.tux-nope) is (0,3,1) and the pseudo rules
+ * (0,3,2), so they beat every per-class slider rule earlier in this file. They tie only with
+ * `.noise-control input[type=range]` and win by coming later. Desktop (mouse) is unchanged.
+ * touch-action: pan-y keeps vertical scrolling native; Vectura.UI.RangeTouch (slider.js)
+ * owns the sideways drag. */
+@media (pointer: coarse) {
+  [data-ui-skin] input[type='range']:not(.tux-nope) {
+    -webkit-appearance: none; appearance: none;
+    box-sizing: border-box;
+    block-size: var(--touch-target-min); min-block-size: var(--touch-target-min);
+    margin-block: 0;
+    padding: 0;
+    touch-action: pan-y;
+    background: transparent;
+    border-radius: 0;
+    --tux-track: var(--touch-slider-track);
+  }
+  [data-ui-skin] input[type='range']:not(.tux-nope)::-webkit-slider-runnable-track {
+    block-size: var(--tux-track);
+    border-radius: 2px;
+    background: linear-gradient(to right,
+      var(--slider-start, var(--tux-fill-color, var(--ui-accent))) 0%,
+      var(--tux-fill-color, var(--ui-accent)) var(--fill, 0%),
+      var(--ui-border) var(--fill, 0%) 100%);
+  }
+  [data-ui-skin] input[type='range']:not(.tux-nope)::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    box-sizing: border-box;
+    inline-size: var(--touch-slider-thumb); block-size: var(--touch-slider-thumb);
+    width: var(--touch-slider-thumb); height: var(--touch-slider-thumb);
+    margin-block-start: calc((var(--tux-track) - var(--touch-slider-thumb)) / 2);
+    margin-top: calc((var(--tux-track) - var(--touch-slider-thumb)) / 2);
+    border-radius: 50%;
+  }
+  [data-ui-skin] input[type='range']:not(.tux-nope)::-moz-range-thumb {
+    box-sizing: border-box; width: var(--touch-slider-thumb); height: var(--touch-slider-thumb); border-radius: 50%;
+  }
+  /* Per-class variants of the visual only. */
+  [data-ui-skin] input.pen-sld[type='range']:not(.tux-nope) { --tux-track: var(--touch-slider-track-pen); }
+  [data-ui-skin] .mp-root input.mp-slider[type='range']:not(.tux-nope) { --tux-fill-color: var(--mp-type-color); }
+  [data-ui-skin] .morph-panel input.morph-slider[type='range']:not(.tux-nope) { --tux-fill-color: var(--morph-accent); }
+  /* Draw-order: gradient reveal track, 6px, white thumb with a tinted halo ring. */
+  [data-ui-skin] input.draw-order-slider[type='range']:not(.tux-nope) { --tux-track: 6px; }
+  [data-ui-skin] input.draw-order-slider[type='range']:not(.tux-nope)::-webkit-slider-runnable-track {
+    border-radius: 6px;
+    background:
+      linear-gradient(var(--ui-border), var(--ui-border)) right center / calc(100% - var(--draw-order-fill, 100%)) 100% no-repeat,
+      linear-gradient(90deg, var(--draw-order-start, #38bdf8) 0%, var(--draw-order-end, #f59e0b) 100%) left center / 100% 100% no-repeat,
+      var(--ui-border);
+  }
+  [data-ui-skin] input.draw-order-slider[type='range']:not(.tux-nope)::-webkit-slider-thumb { border-width: 3px; }
+  [data-ui-skin] input.draw-order-slider.is-progress[type='range']:not(.tux-nope)::-webkit-slider-thumb {
+    border-width: 0; border-radius: 0; margin-block-start: calc((6px - var(--touch-slider-thumb)) / 2);
+  }
+  /* Stacked dual ranges (plot range): the container grows to the 44px box; the shared track
+   * and fill are re-centred; inputs paint nothing themselves. */
+  .harmonograph-plotter-plotrange { height: var(--touch-target-min); }
+  .harmonograph-plotter-plotrange .hp-plotrange-fill { top: calc(50% - 9px); height: 18px; }
+  [data-ui-skin] .harmonograph-plotter-plotrange input[type='range']:not(.tux-nope)::-webkit-slider-runnable-track { background: transparent; }
+  .dual-range { height: var(--touch-target-min); }
+  .dual-range input[type='range'] { top: 0; }
+  /* Vertical range (Text panel max offset): 44px wide, pans sideways, length from its flex row. */
+  [data-ui-skin] input.vtp-vslider-vert[type='range']:not(.tux-nope) {
+    width: var(--touch-target-min); min-width: var(--touch-target-min); touch-action: pan-x;
+  }
+  .vtp-xypad-max { height: 120px; }
+  /* Layout: the row is as tall as its slider; chips stay 44px beside it. */
+  .vtp-vslider-wrap { height: auto; min-height: var(--touch-target-min); }
+}
+/* TUX-043 fix round: draw-order footer on short coarse viewports (iPhone landscape).
+ * The pane reserved only 56px for the modifier bar, but the bar is 57px and the HUD strip adds
+ * 27px more (shown above 640px), so the pane ran 28px under the bar and the bar covered the
+ * bottom of the draw-order slider (elementFromPoint at the track centre hit the bar). Reserve
+ * the real chrome, and on short viewports tighten the Layers tab above the draw-order band so the 44px
+ * slider and its thumb are on screen without scrolling. */
+@media (pointer: coarse) and (min-width: 641px) {
+  body.mobile-layout .pane { bottom: calc(84px + var(--safe-bottom, 0px)); }
+}
+@media (pointer: coarse) and (max-height: 520px) {
+  /* Pull the 44px slider up above the modifier bar: drop the idle status strip and the head gap.
+   * The 14px top padding keeps the 44px eye/gear hit boxes (TUX-041) off the last layer row:
+   * band top 237, head centre 261, slider 271-315 in the 318px-high scroller. */
+  [data-ui-skin] #right-pane .draw-order-bar { padding-top: 14px; }
+  [data-ui-skin] #right-pane .draw-order-bar .draw-order-head { margin-bottom: 0; }
+  [data-ui-skin] #right-pane #layer-status-bar:has(> .lvl-sb-idle) { min-height: 0; height: 0; padding-block: 0; overflow: hidden; border: 0; }
+}
+/* TUX-036 / TUX-041: the multi-select command strip wraps inside the pane. Every button is a 44 px
+ * target, Delete keeps 8 px from Duplicate, and nothing pans sideways (the old pan hid Duplicate and
+ * Delete off-screen with no cue). The strip grows taller instead; the label takes the first row. */
+@media (pointer: coarse) {
+  [data-ui-skin] #right-pane #layer-status-bar:not(:has(> .lvl-sb-idle)) {
+    flex-wrap: wrap; align-items: center; justify-content: flex-start; row-gap: 2px; column-gap: 0;
+    padding: 4px; overflow: visible; touch-action: auto;
+  }
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-sb-sel-label { flex: 1 0 100%; padding: 2px 4px 0; }
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-sb-sep,
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-sb-spacer,
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-sb-total { display: none; }
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-sb-cmds { flex-wrap: wrap; flex-shrink: 1; gap: 4px; max-width: 100%; }
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-cb {
+    width: var(--touch-target-min); height: var(--touch-target-min); min-width: var(--touch-target-min);
+  }
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-cb.del { margin-inline-start: 4px; }
+  [data-ui-skin] #right-pane #layer-status-bar .lvl-cb svg { width: 20px; height: 20px; }
+}
+/* Short landscape (iPhone, 330-402 px): with several layers selected the list gives up its 100 px floor
+ * (about one row stays) so the 44 px strip stays inside the pane instead of below its fold. */
+@media (pointer: coarse) and (max-height: 520px) {
+  [data-ui-skin] #right-pane #layer-list.lvl-list-multi { min-height: 52px; }
+}
+/* === END TUX-043 === */
+
+/* === TUX-046: modal sheet ===
+ * Contract for the legacy #modal-overlay sheet (Export, Help, info, colour picker).
+ * Slots: .vt-sheet (card), .vt-sheet__header, .vt-sheet__body, .vt-sheet__footer.
+ *   header and footer are flex:none. Only the body scrolls. TUX-026 and TUX-049 reuse the slots.
+ * Keys: body.touch-ui (any coarse pointer, set by TUX-006) for coarse sizing and the pinned
+ *   layout. body.phone-layout for the full-screen sheet. Never key on width alone. The one
+ *   max-width: 1100px query below mirrors the existing Export column-layout breakpoint.
+ * Z-band: #modal-overlay sits at 900. It must stay in 221-999: above #app-header (220), below
+ *   .vectura-modal-backdrop and the drag tooltip (1000+).
+ * Safe area: var(--safe-*), defined by TUX-005 in tokens.css.
+ * Sheet heights use % of the fixed overlay, never vh (vh includes the iOS toolbar).
+ */
+#modal-overlay { z-index: 900; }
+
+body.touch-ui .vt-sheet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: calc(100% - 32px - var(--safe-top) - var(--safe-bottom));
+}
+body.touch-ui .vt-sheet__header { flex: none; }
+body.touch-ui .vt-sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+body.touch-ui .vt-sheet__footer { flex: none; }
+/* The Export body hosts its own panes; the scroll happens inside it (see max-width block). */
+body.touch-ui .modal-card--export .vt-sheet__body { overflow: hidden; }
+
+/* Close: keep the 24px visual, extend the hit area to the touch minimum. */
+body.touch-ui .modal-close { position: relative; flex: none; }
+body.touch-ui .modal-close::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
+  transform: translate(-50%, -50%);
+}
+
+/* Footer buttons and Export nav tabs meet the touch minimum. */
+body.touch-ui .export-modal-footer button,
+body.touch-ui .color-modal-actions button {
+  min-height: var(--touch-target-min, 44px);
+  min-width: var(--touch-target-min, 44px);
+}
+body.touch-ui .export-modal-nav {
+  min-height: var(--touch-target-min, 44px);
+}
+body.touch-ui .export-nav-item { min-height: var(--touch-target-min, 44px); }
+
+/* Colour picker actions stay reachable while the body scrolls. */
+body.touch-ui .color-modal-actions {
+  position: sticky;
+  bottom: 0;
+  background: var(--ui-panel);
+  padding-top: 8px;
+}
+
+/* Export column layout (existing 1100px breakpoint): the pane stack scrolls, the nav keeps its size. */
+@media (max-width: 1100px) {
+  body.touch-ui .export-modal-body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  body.touch-ui .export-modal-body > * { flex-shrink: 0; }
+  /* flex: none lives here only. On wide layouts the nav is a 188px side column and must keep its basis. */
+  body.touch-ui .export-modal-nav {
+    flex: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  body.touch-ui .export-modal-settings {
+    flex: 0 0 auto;
+    max-width: none;
+    width: 100%;
+    min-width: 0;
+  }
+  /* The nav sticks to the top of the scrolling pane stack; the preview gets a fixed height. */
+  body.touch-ui .export-modal-nav {
+    order: -2;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  body.touch-ui .export-modal-preview { flex: 0 0 auto; height: 220px; min-height: 0; }
+}
+
+/* Phone: full-screen sheet inside the safe area, no backdrop. */
+body.phone-layout #modal-overlay .modal-card,
+body.phone-layout #modal-overlay .modal-card.modal-card--export {
+  position: fixed;
+  top: var(--safe-top);
+  right: var(--safe-right);
+  bottom: var(--safe-bottom);
+  left: var(--safe-left);
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+}
+/* Save Preset sheet (.vectura-modal, built by UI.overlays.Modal). Same slots as #modal-overlay.
+ * modal.js tags .vt-sheet / __header / __body / __footer. Coarse sizing keys on body.touch-ui. */
+body.touch-ui .vectura-modal.vt-sheet {
+  max-height: calc(100% - var(--safe-top) - var(--safe-bottom));
+}
+body.touch-ui .vectura-modal.vt-sheet > .vt-sheet__header { flex: none; }
+body.touch-ui .vectura-modal.vt-sheet > .vt-sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+/* The actions row stays in view while the body scrolls (it is ordered first on touch). */
+body.touch-ui .vectura-modal .preset-save-footer.vt-sheet__footer {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex: none;
+  background: var(--ui-panel);
+  padding-bottom: 8px;
+}
+body.touch-ui .vectura-modal .vt-sheet__footer button {
+  min-height: var(--touch-target-min, 44px);
+  min-width: var(--touch-target-min, 44px);
+}
+/* Phone: the Save Preset sheet fills the screen inside the safe area. No backdrop remains to tap,
+ * so Cancel (>= 44px) is the close. The keyboard inset (--kb-inset) keeps the field above the keys. */
+body.phone-layout .vectura-modal-backdrop > .vectura-modal.vt-sheet:has(.preset-save-footer) {
+  position: fixed;
+  top: var(--safe-top);
+  right: var(--safe-right);
+  bottom: calc(var(--safe-bottom) + var(--kb-inset, 0px));
+  left: var(--safe-left);
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+}
+
+/* Document Setup (#settings-panel). A drawer on tablets; on phones a full-screen sheet inside the
+ * safe area with a pinned header (.pane-hdr + close) and a scrolling body. It opens above the
+ * app header, within the 221-999 band. */
+#settings-panel > .pane-hdr { flex: none; }
+body.touch-ui #settings-panel .settings-panel-body {
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+body.phone-layout #settings-panel {
+  position: fixed;
+  top: var(--safe-top);
+  right: var(--safe-right);
+  bottom: calc(var(--safe-bottom) + var(--kb-inset, 0px));
+  left: var(--safe-left);
+  width: auto;
+  height: auto;
+  max-width: none;
+  border: 0;
+  z-index: 900;
+}
+/* === END TUX-046 === */
+
+/* === TUX-022: fill scope chips === */
+/* Scope up/down chips in the fill context bar (coarse pointer only, rendered by
+   Vectura.UI.PaintBucketScopeChips). Beats `.ctxbar-btn` (26 px) on specificity. */
+.ctxbar-fill-scope {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ctxbar .ctxbar-btn.ctxbar-fill-scope-btn {
+  min-width: var(--touch-target-min, 44px);
+  min-height: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
+  padding: 0 12px;
+  justify-content: center;
+  font-size: var(--font-size-md, 13px);
+  touch-action: manipulation;
+}
+.ctxbar-fill-scope-readout {
+  min-width: 56px;
+  text-align: center;
+  color: var(--ui-muted, #9a9a9a);
+  font-size: var(--font-size-sm, 11px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* The generic phone rule hides .ctxbar at <= 640px; the touch fill chips must stay reachable. */
+@media (max-width: 640px) {
+  .ctxbar.ctxbar--fill { display: flex; }
+}
+/* === END TUX-022 === */
+
+/* === TUX-002: fixed, non-scrolling shell ===
+ * The app is a fixed-size shell. The page itself must never scroll, rubber-band or pull to refresh.
+ * body IS the app wrapper (the Tailwind h-screen class was removed from index.html). Height comes
+ * from --app-vh (dynamic viewport). Only inner scroll regions scroll. */
+html, body { overflow: hidden; overscroll-behavior: none; }
+html { height: 100%; }
+body { position: fixed; top: 0; left: 0; right: 0; height: var(--app-vh); width: 100%; }
+
+/* Scroll-region rule (single list). Every element that scrolls on its own must contain its
+ * overscroll so a swipe at the end of the list never chains to the page. New scrollers join here.
+ * No universal * rule: it would also kill nested scroll-chaining on desktop. The body prefix
+ * out-ranks the runtime Tailwind overflow utilities. */
+body .pane-body, body .overflow-y-auto, body .overflow-auto,
+body .tool-bar, body .toolbar-docked-left, body .toolbar-docked-right, body .tool-drawer-body,
+body .vectura-modal-body, body .modal-card, body .modal-illustrations.scrollable,
+body .export-modal-nav, body .export-settings-scroll, body .petal-designer-window,
+body .lvl-layer-list, body #pen-list, body .pen-pick-list, body .vtp-fp-list, body .palette-options,
+body .gm-module-menu, body .settings-panel-body, body .right-panel-section-scroll,
+body .palette-picker-menu, body .hg-preset-popover, body .mp-root .mp-info-popover,
+body .ctxbar-menu, body .ctxbar-align-flyout, body .ctxbar-algo-flyout, body .ctxbar-scene-flyout,
+body .vtp-size-pop, body .lvl-algo-submenu, body .algo-draw-picker {
+  overscroll-behavior: contain;
+}
+/* === END TUX-002 === */
+
+/* === TUX-003: no page zoom on chrome ===
+ * Pinch on panels, toolbars and modals must not zoom the page. touch-action only affects touch
+ * input, so mouse and trackpad are unchanged. Surfaces that own a pinch (canvas, designers) opt in
+ * with [data-touch-zoom]; ui-touch.js installGestureZoomGuard() reads the same selector for the
+ * WebKit gesture* events. */
+html, body { touch-action: pan-x pan-y; }
+[data-touch-zoom] { touch-action: none; }
+/* === END TUX-003 === */
+
+/* === TUX-005: safe-area insets ===
+ * Outside any width media query: iPad landscape (1210 px) needs the same rules as the phones.
+ * Header: wins over the older #app-header rules. [data-ui-skin] #app-header (1,1,0) at the
+ * "Header & brand" block beats the dead :where(body.mobile-layout) #app-header padding (1,0,0).
+ * The height grows by the inset, otherwise the padding would eat the 38 px content box and
+ * .header-main would overflow onto the toolbar. */
+[data-ui-skin] #app-header {
+  box-sizing: border-box;
+  height: calc(38px + var(--safe-top));
+  padding-top: var(--safe-top);
+  padding-left: calc(14px + var(--safe-left));
+  padding-right: calc(14px + var(--safe-right));
+}
+/* Bottom inset sits on the bottom-most visible in-flow chrome only. #hud-bar is that strip while it
+ * shows (it hides under 640 px wide); below that the modifier bar is the bottom-most strip. */
+.hud-bar {
+  padding-bottom: calc(3px + var(--safe-bottom));
+}
+body.mobile-layout .hud-bar {
+  padding-left: calc(12px + var(--safe-left));
+  padding-right: calc(12px + var(--safe-right));
+}
+@media (max-width: 640px) {
+  body.mobile-layout #touch-modifier-bar {
+    padding-bottom: calc(6px + var(--safe-bottom));
+  }
+}
+/* Drawers in mobile-layout: the pane background reaches the screen edge, its content clears the
+ * side inset. The widths grow by the inset so the open and the collapsed pane keep their sizes. */
+body.mobile-layout .pane-left {
+  padding-left: var(--safe-left);
+  width: calc(var(--pane-left-width) + var(--safe-left));
+}
+body.mobile-layout .pane-right {
+  padding-right: var(--safe-right);
+  width: calc(var(--pane-right-width) + var(--safe-right));
+}
+/* Collapsed slivers keep their 40 px width and shift inward by the inset. The inset band stays
+ * transparent, so the canvas keeps its width and the sliver controls clear the notch. */
+body.mobile-layout .pane-left.pane-collapsed,
+body.mobile-layout.auto-collapsed .pane-left:not(.pane-force-open) {
+  width: var(--pane-collapsed-width);
+  left: var(--safe-left);
+  padding-left: 0;
+}
+body.mobile-layout .pane-right.pane-collapsed,
+body.mobile-layout.auto-collapsed .pane-right:not(.pane-force-open) {
+  width: var(--pane-collapsed-width);
+  right: var(--safe-right);
+  padding-right: 0;
+}
+/* Docked panes (touch-wide / desktop) end at the screen bottom: the scrolling bodies keep the last
+ * row above the home indicator. TUX-032 owns the keyboard-open padding, so it stays untouched. */
+html:not(.kb-open) body:not(.mobile-layout) .right-tab-panel {
+  padding-bottom: var(--safe-bottom);
+}
+/* Phone header: TUX-001 puts 44 px action buttons in the header, which the 38 px base cannot hold
+ * (they overflowed 3 px onto the toolbar). The phone header is 44 px of content plus the inset. */
+body.phone-layout #app-header {
+  height: calc(44px + var(--safe-top));
+}
+body.phone-layout #app-header .header-main {
+  height: 44px;
+  min-height: 44px;
+}
+/* Bottom inset fallback: with the modifier bar hidden (!showBar) and #hud-bar display:none (<= 640 px)
+ * no chrome strip carries the inset. The shell then reserves it itself. */
+@media (max-width: 640px) {
+  body.mobile-layout:has(#touch-modifier-bar.hidden) .workspace-shell {
+    padding-bottom: var(--safe-bottom);
+    box-sizing: border-box;
+  }
+}
+/* TUX-005: the phone Document Setup sheet is position:fixed with left:var(--safe-left), so the base
+ * translateX(-100%) parks it with its right edge at the inset (62 px on iPhone landscape): the closed
+ * drawer and its close button painted in the left band. Shift by the inset too, and hide it. */
+body.phone-layout #settings-panel:not(.open) {
+  transform: translateX(calc(-100% - var(--safe-left)));
+  visibility: hidden;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s linear 0.3s;
+}
+body.phone-layout #settings-panel.open {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0s;
+}
+/* === END TUX-005 === */
+
+/* === TUX-007: phone landscape canvas ===
+ * Short coarse-pointer phones (iPhone landscape, 874x402 and 874x330). Every rule is keyed on
+ * body.phone-layout.phone-short (set by Vectura.LayoutClassifier, the only short-height decision).
+ * Two classes plus an id outrank the single-class `body.mobile-layout #...` rules earlier in this
+ * file, and this block sits last, so each override below wins on specificity AND order.
+ * Nothing is hidden: the rail, modifier bar, formula pane and zoom readout stay reachable. */
+body.phone-layout.phone-short {
+  --tux7-rail-h: 52px;
+  --tux7-sliver: var(--pane-collapsed-width, 40px);
+  /* Height of the HUD strip above the bottom inset; an open pane stops above it (TUX-005 E). */
+  --tux7-hud-h: 24px;
+}
+/* Rail: ONE horizontal row <= 52 px. Beats `body.mobile-layout #tool-bar` (static, flex-wrap, full
+ * width) and any persisted vertical/docked class. Extra tools sit under All Tools (TUX-013). */
+body.phone-layout.phone-short #tool-bar {
+  position: static;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  /* The rail sits BETWEEN the two pane slivers (and the insets) so the sliver toggles stay tappable. */
+  width: auto;
+  margin-left: calc(var(--safe-left) + var(--tux7-sliver));
+  margin-right: calc(var(--safe-right) + var(--tux7-sliver));
+  max-width: none;
+  height: var(--tux7-rail-h);
+  max-height: var(--tux7-rail-h);
+  box-sizing: border-box;
+  /* 52 px = 4 + 44 + 3 padding + 1 px border: the 44 px buttons land on whole pixels. */
+  padding: 4px 6px 3px;
+  /* One overflow model: TUX-013 marks extra tools .rail-overflowed (display:none) and All Tools lists them. */
+  overflow-x: hidden;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+/* Modifier bar: a slim column on the right edge, left of the right pane sliver. Beats
+ * `body.mobile-layout #touch-modifier-bar` (static, full width, order 4) and the `.hidden` override
+ * that forces display:flex. Behavior and labels are unchanged (TUX-045 owns the redesign). */
+body.phone-layout.phone-short #touch-modifier-bar {
+  position: absolute;
+  top: calc(var(--tux7-rail-h) + 2px);
+  right: calc(var(--safe-right) + var(--tux7-sliver) + 6px);
+  bottom: auto;
+  left: auto;
+  /* Two columns x 3 rows of 44 px buttons (138 px): 5 x 44 px in one column is 220 px, more than the
+   * ~211 px free at 874x330, so a single column would push Pan under the home-indicator band. The
+   * max-height also subtracts the bottom inset, so the grid can never reach it. */
+  display: grid;
+  grid-template-columns: repeat(2, 46px);
+  grid-auto-rows: 44px;
+  width: auto;
+  max-height: calc(100% - var(--tux7-rail-h) - 4px - var(--safe-bottom));
+  gap: 0;
+  padding: 2px;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  overflow-y: auto;
+  scrollbar-width: none;
+  /* Above the pane backdrop (--z-backdrop, 65) and below the open pane (--z-drawer, 70): the modifier keys
+   * stay tappable while a pane is open (TUX-041, TUX-045 req 2: latch Multi-select, then tap a row). */
+  z-index: calc(var(--z-backdrop) + 1);
+}
+/* An open right pane (.pane-force-open, 258 px wide) would sit on the column, so the column hops to the
+ * left edge, clear of the collapsed left sliver. Only one pane opens at a time on a phone. */
+body.phone-layout.phone-short:has(.pane-right.pane-force-open) #touch-modifier-bar {
+  right: auto;
+  left: calc(var(--safe-left) + var(--tux7-sliver) + 6px);
+}
+body.phone-layout.phone-short #touch-modifier-bar .touch-mod-btn {
+  flex: 0 0 44px;
+  width: 46px;
+  height: 44px;
+  padding: 0;
+}
+/* Formula pane: no reserved row. Collapsed it is a 48x48 chip over the canvas bottom-left, inside the
+ * left sliver and the inset; expanded it is an overlay sheet. Beats `body.mobile-layout #bottom-pane`
+ * (relative, order 3, 32 px / 38vh height). */
+body.phone-layout.phone-short #bottom-pane {
+  position: absolute;
+  left: calc(var(--safe-left) + var(--tux7-sliver) + 8px);
+  bottom: calc(8px + var(--safe-bottom));
+  z-index: 46;
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+}
+body.phone-layout.phone-short #bottom-pane.bottom-pane-collapsed {
+  width: 48px;
+  height: 48px;
+}
+body.phone-layout.phone-short #bottom-pane.bottom-pane-collapsed .bottom-pane-header {
+  position: static;
+  width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+body.phone-layout.phone-short #bottom-pane.bottom-pane-collapsed .pane-toggle-bottom {
+  position: absolute;
+  inset: 0;
+  left: 0;
+  width: 48px;
+  height: 48px;
+  /* Keep the collapsed rotation (down chevron turned up = expand); base rule's translate is dropped. */
+  transform: rotate(180deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+body.phone-layout.phone-short #bottom-pane:not(.bottom-pane-collapsed) {
+  left: calc(var(--safe-left) + var(--tux7-sliver) + 8px);
+  /* End left of the modifier column (2 x 46 px + gap/padding = 98 px, 6 px from the sliver) so the
+   * column never covers the sheet's stats. */
+  right: calc(var(--safe-right) + var(--tux7-sliver) + 6px + 98px + 8px);
+  width: auto;
+  height: min(60%, 220px);
+}
+/* Batch R: the canvas HUD (3 view buttons, right offset = sliver + 8 px) sits on the bottom row, so the
+ * open sheet also ends left of it. Without this the sheet covered Zoom Out (iPhone landscape, 46x46 under the sheet).
+ * Batch R2: the HUD width is one token (3 x 44 px buttons, no gap, no padding, 1 px border = 134 px); the sheet and the status strip derive from it. */
+body.phone-layout.phone-short.touch-ui { --canvas-hud-w: 134px; }
+body.phone-layout.phone-short.touch-ui #bottom-pane:not(.bottom-pane-collapsed) {
+  right: calc(var(--safe-right) + var(--pane-collapsed-width, 40px) + 8px + var(--canvas-hud-w, 134px) + 8px);
+}
+/* Status strip: an overlay, not a row. It keeps the hints and the zoom readout (pointer-events none, so it
+ * never intercepts a canvas touch). It sits between the formula chip and the right sliver and, like any
+ * bottom chrome, carries the bottom inset in its own padding (TUX-005 contract). */
+body.phone-layout.phone-short .hud-bar {
+  position: absolute;
+  left: calc(var(--safe-left) + var(--tux7-sliver) + 64px);
+  right: calc(var(--safe-right) + var(--tux7-sliver) + 64px);
+  bottom: 0;
+  min-height: 0;
+  padding: 2px 8px calc(2px + var(--safe-bottom));
+  border: 0;
+  border-radius: 8px 8px 0 0;
+  background: color-mix(in srgb, var(--ui-panel) 80%, transparent);
+  pointer-events: none;
+  z-index: 44;
+}
+/* Side panes: the 84 px bottom reserve (`@media (pointer: coarse) and (min-width: 641px) body.mobile-layout
+ * .pane`) cleared the old full-width modifier bar and HUD row. Both now float over the canvas, so an
+ * open pane runs to the bottom inset and the draw-order slider keeps its 44 px hit area. Two classes
+ * plus one class outrank that rule, and this block is last. */
+body.phone-layout.phone-short .pane.pane-force-open {
+  bottom: calc(var(--safe-bottom, 0px) + var(--tux7-hud-h));
+}
+/* === END TUX-007 === */
+/* === TUX-046 (integration fix): colour modal clears the close hit area ===
+   The close ::before is 44px around a 24px button, so it reaches 10px below the header.
+   The positioned .color-sv-wrapper started 8px below and won the hit test for 2px.
+   Pad the colour body so the picker starts outside the close target. */
+body.touch-ui .modal-card .color-modal { padding-top: 4px; }
+/* === END TUX-046 (integration fix) === */
+
+/* === TUX-041 slice B3: modals ===
+ * Every interactive target in a modal (Export, Help, Document Setup, colour picker, Save Preset, info and confirm sheets) has a
+ * hit area of at least --touch-target-min on coarse pointers. Boxes that can grow get a real min-height. The small round
+ * visuals (info buttons, toggles, the legend gear) keep their size and get a centred 44 px ::before. The row that holds one is
+ * a finger tall, so the extension never reaches the row above or below. Keyed on body.touch-ui (a coarse pointer), never on
+ * width. Desktop is unchanged. The scope list is the modal roots: #modal-overlay, #settings-panel, .vectura-modal. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(button, [role="button"], select, textarea, summary,
+  input:is([type="text"], [type="number"], [type="search"], [type="email"], [type="url"], :not([type]))):not(
+  .sw-toggle, .info-btn, .export-info-btn, .export-legend-gear-btn, .modal-close, .sr-only) {
+  min-height: var(--touch-target-min);
+  box-sizing: border-box;
+}
+/* WebKit ignores min-height on some native selects, so they also get an explicit height. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) select:not(.sr-only) { height: var(--touch-target-min); }
+/* Icon-only steppers and tab strips are a finger wide too. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.num-step-btn, .help-tab-btn, .help-platform-btn, .opt-reset, .export-preview-toolbar button) { min-width: var(--touch-target-min); }
+/* The number stepper is a fixed 28 px box that clips its buttons; it grows to a finger. The narrow variant (100 px) leaves
+ * 10 px for the number once two 44 px buttons sit in it, so it widens to fit. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) .num-step { height: auto; min-height: var(--touch-target-min); }
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) .num-step--narrow { width: calc(2 * var(--touch-target-min) + 64px); flex: 0 0 calc(2 * var(--touch-target-min) + 64px); }
+/* The close ::before reaches 10 px below the header. The tabs (opacity < 1 stacks them above it) started 8 px below, so they took
+ * 2 px of it. Four more pixels of padding keep the close target whole. */
+body.touch-ui #modal-overlay .help-wrap { padding-top: 4px; }
+/* Help tabs may wrap rather than clip: seven 44 px tabs do not fit on a phone in one row. */
+body.touch-ui #modal-overlay .help-tabs { flex-wrap: wrap; }
+/* The 290 px Document Setup column seats Margin Line Gap in half a row: its slider shrank to 26 px, a thumb with no track.
+ * On touch the field takes the whole row, so the slider keeps a usable width. */
+body.touch-ui #settings-panel .line-style-control > .style-field:nth-child(3) { grid-column: 1 / -1; }
+/* Small visuals keep their size; a centred 44 px ::before owns the touch. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.info-btn, .export-info-btn, .export-legend-gear-btn, .sw-toggle) { position: relative; }
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.info-btn, .export-info-btn, .export-legend-gear-btn, .sw-toggle)::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min);
+  transform: translate(-50%, -50%);
+}
+/* The row that holds an extended visual is one finger tall, so the extension stays inside it. */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.ctrl-row, .optimization-row, .optimization-control, .control-label, .flex):has(> :is(.sw-toggle, .info-btn, .export-info-btn)),
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.control-label, .flex, [class*="justify-between"]):has(> * > :is(.info-btn, .export-info-btn)) {
+  min-height: var(--touch-target-min);
+  align-items: center;
+}
+/* The legend covers most of a short phone preview. It only informs, so a pinch or pan starts through it; the gear stays tappable. */
+body.touch-ui #modal-overlay .export-preview-legend { pointer-events: none; }
+body.touch-ui #modal-overlay .export-preview-legend .export-legend-gear-btn { pointer-events: auto; }
+/* === END TUX-041 slice B3 === */
+
+/* === TUX-047: touch zoom surfaces === */
+.export-preview-canvas-wrap[data-touch-zoom] {
+  touch-action: none;
+}
+/* === END TUX-047 === */
+
+/* === TUX-026: Petal Designer touch sizing and phone sheet ===
+ * Selectors carry the [data-ui-skin] prefix plus .petal-designer-window so they beat the skin rule
+ * `[data-ui-skin] .petal-tool-btn, .petal-close, ... { height: 26px; min-width: 26px }` (specificity 0,2,0).
+ * Coarse sizing keys on the pointer type, never on width. The phone sheet keys on the layout classifier
+ * class (TUX-006). Desktop (fine pointer, non-phone) is unchanged. */
+@media (pointer: coarse) {
+  [data-ui-skin] .petal-designer-window .petal-tool-btn,
+  [data-ui-skin] .petal-designer-window .petal-close,
+  [data-ui-skin] .petal-designer-window .petal-popout,
+  [data-ui-skin] .petal-designer-window .petal-popin,
+  [data-ui-skin] .petal-designer-window .petal-hist,
+  [data-ui-skin] .petal-designer-window .petal-copy-btn {
+    min-width: var(--touch-target-min, 44px);
+    min-height: var(--touch-target-min, 44px);
+    height: auto;
+  }
+  [data-ui-skin] .petal-designer-window .petal-designer-actions { gap: 6px; }
+  /* A finger drags the pop-out window by its header (not on the phone sheet, which cannot move). */
+  body:not(.phone-layout) .petal-designer-window:not(.petal-designer-inline) .petal-designer-header {
+    touch-action: none;
+  }
+}
+/* Phone: the pop-out is a full-screen sheet inside the safe area. The header stays pinned; the body scrolls. */
+body.phone-layout #petal-designer-window.petal-designer-window:not(.petal-designer-inline) {
+  position: fixed;
+  top: var(--safe-top, 0px);
+  right: var(--safe-right, 0px);
+  bottom: var(--safe-bottom, 0px);
+  left: var(--safe-left, 0px);
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  border: 0;
+  z-index: var(--z-floating-sheet, 850);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.phone-layout #petal-designer-window .petal-designer-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+/* Batch R2 / TUX-020: Undo / Redo in the pop-out window header. The window covers the canvas HUD and the phone header, so this
+ * pair is the finger-reachable history control while it is open. Touch only; a mouse keeps Cmd+Z and the menus. */
+.petal-designer-window .petal-hist { display: none; }
+body.touch-ui .petal-designer-window:not(.petal-designer-inline) .petal-hist { display: inline-flex; align-items: center; justify-content: center; }
+.petal-designer-window .petal-hist:disabled { opacity: 0.4; }
+/* === END TUX-026 === */
+/* === TUX-027: mirror row actions (touch) ===
+ * Disable / Lock / Delete get a >= 44px hit box on touch-ui. Specificity (0,4,1) beats the
+ * (0,2,0) `.mp-root .mp-icon-btn` 22px rule above. The gap keeps the hit rects apart. */
+/* Three 44px buttons beside the thumb leave the name ~52px wide in a 290px pane. The actions drop
+ * to their own right-aligned line so the name keeps >= 96px (no viewport media query, Q1). */
+body.touch-ui .mp-root .mp-row { grid-template-columns: 36px minmax(0, 1fr); }
+body.touch-ui .mp-root .mp-row-name-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+body.touch-ui .mp-root .mp-row-actions { grid-column: 1 / -1; justify-content: flex-end; gap: 2px; }
+body.touch-ui .mp-root .mp-row-actions .mp-icon-btn {
+  width: var(--touch-target-min); height: var(--touch-target-min);
+  min-width: var(--touch-target-min); min-height: var(--touch-target-min);
+}
+/* === END TUX-027 === */
+
+/* === TUX-049: Save Preset sheet touch sizing + keyboard lift ===
+ * 046 owns the sheet frame and the lift (html.kb-open pads the backdrop by --kb-inset). This block
+ * only sizes the controls and keeps the actions row BELOW the name field, pinned to the bottom of the
+ * scrolling body (the old order:-1 rule is deleted). Cancel stays first in the DOM, Save is last. */
+@media (pointer: coarse) {
+  body.touch-ui .vectura-modal .preset-save-footer.vt-sheet__footer {
+    order: 0;
+    flex-direction: row;
+    justify-content: flex-end;
+    top: auto;
+    bottom: 0;
+    padding: 8px 0 0;
+  }
+  .preset-save-footer button { min-height: 44px; min-width: 44px; padding-inline: 16px; }
+  /* Children keep their size and the body scrolls (flex-shrink squeezed the mode buttons to 33px). */
+  .preset-save-body { scroll-padding-bottom: 64px; }
+  .preset-save-body > * { flex-shrink: 0; }
+  .preset-save-input { height: 44px; font-size: 16px; }
+  .preset-save-seg .seg-opt { min-height: 44px; }
+  .preset-save-body select.ctrl-sel { min-height: 44px; font-size: 16px; }
+  /* The Overwrite confirmation Dialog shares these buttons. */
+  .vectura-dialog-footer button { min-height: 44px; min-width: 44px; }
+  /* iPhone landscape with the keyboard open: only the name field, mode and actions stay. */
+  .preset-save-sheet.is-kb-short .preset-save-preview,
+  .preset-save-sheet.is-kb-short .preset-save-note { display: none; }
+}
+/* === END TUX-049 === */
+
+/* === TUX-037: undo toast === */
+/* Host placement moved out of inline styles. Default = today's desktop values. */
+.vectura-toast-action {
+  flex: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ui-accent, #4e9ee1);
+  background: transparent;
+  border: 1px solid var(--ui-border, #333);
+  border-radius: var(--radius-sm, 4px);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+.vectura-toast-action:focus-visible {
+  outline: 2px solid var(--ui-accent, #4e9ee1);
+  outline-offset: 2px;
+}
+.vectura-toast-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (pointer: coarse) {
+  .vectura-toast-action {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+/* Phone: keep the toast host below the header so header actions stay tappable. */
+body.phone-layout #vectura-toast-host { top: calc(44px + var(--safe-top) + 8px); }
+/* === END TUX-037 === */
+
+/* === TUX-030: pen draft chips ===
+ * The pen-draft state of the context bar (Done / Remove Last Anchor / Cancel). The phone rule above
+ * hides the whole bar at <=640px; a draft still needs its controls there, so this block (later, and
+ * (0,2,0) against (0,1,0)) shows it. Chips get a 44px finger target on a coarse pointer. */
+@media (max-width: 640px) {
+  .ctxbar.ctxbar--pen-draft { display: flex; }
+}
+.ctxbar-btn.ctxbar-pen-chip[aria-disabled="true"] { opacity: 0.45; }
+/* The draft bar holds only the three chips: no drag grip (it never chases the selection) and no
+ * overflow menu (neither is a finger-sized control, and a draft has nothing to overflow). */
+.ctxbar.ctxbar--pen-draft .ctxbar-handle,
+.ctxbar.ctxbar--pen-draft .ctxbar-overflow-wrap { display: none; }
+.ctxbar.ctxbar--pen-draft { padding: 0; flex-wrap: wrap; justify-content: center; }
+.ctxbar.ctxbar--pen-draft .ctxbar-content { flex-wrap: wrap; justify-content: center; gap: 2px; }
+@media (pointer: coarse) {
+  .ctxbar .ctxbar-btn.ctxbar-pen-chip {
+    min-height: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
+    padding: 0 12px;
+    font-size: 14px;
+  }
+}
+/* === END TUX-030 === */
+
+/* === TUX-031: isolation exit + arrange ===
+ * The isolation back arrow is the touch equivalent of Escape. A real 44px box on a coarse pointer
+ * (a ::before extender would be clipped by the viewport at the top edge). */
+@media (pointer: coarse) {
+  .iso-breadcrumb .iso-bc-back {
+    width: var(--touch-target-min, 44px);
+    height: var(--touch-target-min, 44px);
+  }
+  .iso-breadcrumb .iso-bc-back .iso-bc-back-svg { width: 22px; height: 22px; }
+  /* Panes that overlay the viewport (portrait) must not bury the control. */
+  .iso-breadcrumb {
+    left: var(--iso-bc-inset-l, 0px);
+    right: var(--iso-bc-inset-r, 0px);
+  }
+}
+/* === END TUX-031 === */
+/* === TUX-008: tablet drawers + closed panes ===
+ * One model (src/ui/shell/pane-state.js, applied by workspace.js):
+ *   touch-wide  docked, open by default, width capped at TOUCH_LAYOUT.maxDockedPaneWidth.
+ *   tablet      drawer. Closed = .pane-collapsed with ZERO canvas footprint. Open = .pane-drawer-open.
+ *   phone       unchanged: .auto-collapsed slivers (TUX-011 owns the sliver) and .pane-force-open.
+ * Tablet rules need body.touch-ui: a fine pointer at 540-900 px keeps the old overlay panes.
+ * The old rules to beat: body.mobile-layout .pane-left.pane-collapsed (0,3,1), .mobile-layout .pane (0,2,0),
+ * and the unscoped .mobile-pane-handle { display: none } at the end of the legacy block. */
+
+/* Backdrop sits above the tool rail (z 60) and the modifier bar, below the open drawer. */
+body.mobile-layout .mobile-pane-backdrop {
+  z-index: var(--z-backdrop);
+}
+
+/* Closed tablet pane: nothing to see, nothing to hit, no canvas lost. */
+body.tablet-layout.touch-ui .pane.pane-collapsed {
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-width: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+/* Open tablet drawer: above the backdrop. The width comes from the .mobile-layout rules. */
+body.tablet-layout.touch-ui .pane.pane-drawer-open {
+  z-index: var(--z-drawer);
+  visibility: visible;
+  pointer-events: auto;
+}
+
+/* Interim openers (TUX-010 restyles and labels them). 44 px wide, header-band tall plus a 44 px hit area, never over the
+ * canvas or a tool button. Every pane control inside a closed pane is unreachable, so these are the
+ * only finger path to the Generator and Layers panels on a tablet. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left,
+body.tablet-layout.touch-ui .mobile-pane-handle-right {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  top: var(--safe-top, 0px);
+  bottom: auto;
+  width: 44px;
+  height: var(--touch-target-min, 44px); /* the header band (Q18: 44 px on touch-ui tablets) */
+  padding: 0;
+  transform: none;
+  writing-mode: horizontal-tb;
+  font-size: 0;
+  line-height: 0;
+  letter-spacing: 0;
+  border: 1px solid var(--ui-border-hi);
+  border-radius: 10px;
+  z-index: var(--z-pane-opener);
+}
+body.tablet-layout.touch-ui .mobile-pane-handle-left {
+  left: auto;
+  right: calc(100px + var(--safe-right, 0px));
+}
+body.tablet-layout.touch-ui .mobile-pane-handle-right {
+  right: calc(52px + var(--safe-right, 0px));
+}
+/* A panel glyph: an outlined box with the drawer side filled. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left::before,
+body.tablet-layout.touch-ui .mobile-pane-handle-right::before {
+  content: '';
+  display: block;
+  width: 22px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-radius: 3px;
+}
+body.tablet-layout.touch-ui .mobile-pane-handle-left::before {
+  background: linear-gradient(to right, currentColor 0 38%, transparent 38%);
+}
+body.tablet-layout.touch-ui .mobile-pane-handle-right::before {
+  background: linear-gradient(to left, currentColor 0 38%, transparent 38%);
+}
+/* Hit area: 44 x 45, extending past the header into the rail's top padding (no tool button there). */
+body.tablet-layout.touch-ui .mobile-pane-handle-left::after,
+body.tablet-layout.touch-ui .mobile-pane-handle-right::after {
+  content: '';
+  position: absolute;
+  inset: -3px 0 -4px;
+}
+body.tablet-layout.touch-ui:has(#left-pane.pane-drawer-open) .mobile-pane-handle-left,
+body.tablet-layout.touch-ui:has(#right-pane.pane-drawer-open) .mobile-pane-handle-right {
+  color: var(--ui-accent, currentColor);
+  border-color: var(--ui-accent, var(--ui-border-hi));
+}
+
+/* While a tablet drawer is open the header (menus and the two openers) stays above the backdrop, so the
+ * other opener swaps drawers in one tap. The drawer starts below the header, so nothing overlaps. */
+body.tablet-layout.touch-ui:has(.pane-drawer-open) #app-header {
+  z-index: calc(var(--z-backdrop) + 1);
+}
+
+/* touch-wide: docked panes never exceed the cap, even when a desktop session saved 520 px.
+ * --touch-wide-pane-max / --touch-wide-pane-max-right are pushed from TOUCH_LAYOUT by workspace.js; the saved
+ * width is never rewritten. A collapsed pane keeps its rail width. */
+body.touch-wide-layout .pane-left:not(.pane-collapsed) {
+  width: min(var(--pane-left-width), var(--touch-wide-pane-max, 260px));
+}
+body.touch-wide-layout .pane-right:not(.pane-collapsed) {
+  width: min(var(--pane-right-width), var(--touch-wide-pane-max-right, 200px));
+}
+/* touch-wide collapsed rail: 36 px instead of the 56 px desktop rail, and no 6 px resizer strip beside it
+ * (the strip is a mouse drag handle and eats canvas). Measured on the 48-cell grid at 1210 px: rail
+ * 56 -> 72.1 %, 44 -> 72.5 %, 40 -> 74.0 %, 36 -> 77.6 %. The floor is 75 %. The 28 px toggle fits the
+ * rail; TUX-010 grows its hit area past the rail edge, not the rail. */
+:root:has(body.touch-wide-layout) {
+  --pane-collapsed-width: 36px;
+}
+body.touch-wide-layout:has(#left-pane.pane-collapsed) #left-resizer,
+body.touch-wide-layout:has(#right-pane.pane-collapsed) #right-resizer {
+  display: none;
+}
+/* The modifier bar (Shift/Alt/Pan latches) stays tappable while a tablet drawer is open: multi-select
+   in the Layers drawer needs the Shift latch. Above the backdrop, below the drawer. */
+body.tablet-layout #touch-modifier-bar {
+  z-index: calc(var(--z-backdrop) + 1);
+}
+
+/* touch-wide, Layers pane capped at ~200 px (45 % canvas floor): the search field takes its own row so the
+ * input stays >= 44 px wide and finger-focusable; filter and Add Layer share the row below (TUX-008 fix round 3). */
+body.touch-wide-layout #right-pane .lvl-search-bar { flex-wrap: wrap; }
+body.touch-wide-layout #right-pane .lvl-search-bar .lvl-search-wrap { flex: 1 0 100%; min-width: 0; }
+body.touch-wide-layout #right-pane .lvl-search-bar .lvl-search-input { min-width: 0; flex: 1 1 auto; width: 100%; }
+body.touch-wide-layout #right-pane .lvl-search-bar .lvl-add-wrap { flex: 1 1 0; min-width: 0; margin-left: 0; }
+/* Draw Order header: the 44 px-pitch button group moves to its own row so no control passes the pane edge. */
+body.touch-wide-layout #right-pane .draw-order-head { flex-wrap: wrap; row-gap: 14px; }
+body.touch-wide-layout #right-pane .draw-order-head-right { flex: 1 0 100%; justify-content: space-between; gap: 0; padding: 0 4px; }
+/* === END TUX-008 === */
+
+/* === TUX-010/011: pane controls, drawers, slivers ===
+ * Older rules these beat (grep before changing): :8520 .mobile-layout .pane (z 55), :8568-8619 slivers and
+ * backdrop z 54, :8717-8735 backdrop, :9565-9600 unscoped .mobile-pane-handle, TUX-008 block above.
+ * Visibility keys on a layout class; sizes key on body.touch-ui, so desktop and fine-pointer narrow windows keep
+ * today's 24/28 px chevrons. */
+
+/* Phone header openers: Generator and Layers. Same 44 px box as the other header buttons (TUX-001). */
+body.phone-layout #app-header .header-pane-btn[aria-expanded="true"] {
+  color: var(--ui-accent, currentColor);
+  border-color: var(--ui-accent, var(--ui-border-hi));
+}
+/* An open phone drawer: the header stays above the backdrop so both openers keep working (one-tap swap). */
+body.phone-layout:has(.pane.pane-force-open) #app-header {
+  z-index: var(--z-phone-header);
+}
+
+/* Backdrop: a tap target for iOS Safari (cursor:pointer), above the tool rail, below the open drawer. */
+body.mobile-layout .mobile-pane-backdrop {
+  z-index: var(--z-backdrop);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+body.mobile-layout .pane.pane-force-open,
+body.tablet-layout.touch-ui .pane.pane-drawer-open {
+  z-index: var(--z-drawer);
+}
+
+/* Closed phone pane on a touch device: no 40 px sliver. Off screen, not hit-testable, not visible.
+ * (transform + visibility, never display:none, so a later transition stays possible.) The header
+ * buttons are the only open targets. A fine-pointer narrow window keeps its sliver. */
+body.phone-layout.touch-ui.auto-collapsed .pane:not(.pane-force-open) {
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: none;
+}
+body.phone-layout.touch-ui.auto-collapsed .pane-left:not(.pane-force-open) {
+  transform: translateX(calc(-100% - var(--safe-left, 0px) - 2px));
+}
+body.phone-layout.touch-ui.auto-collapsed .pane-right:not(.pane-force-open) {
+  transform: translateX(calc(100% + var(--safe-right, 0px) + 2px));
+}
+
+/* Tablet edge handles: 48 wide, header-band tall, glyph plus accessible label (aria-label). The TUX-008 ::after
+ * extender gives the 45 px tall finger target. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left,
+body.tablet-layout.touch-ui .mobile-pane-handle-right {
+  box-sizing: border-box;
+  width: calc(var(--touch-target-min, 44px) + 4px); /* 48: the 2 px hit probe grid reads a 44 px box as 43 */
+  height: var(--touch-target-min, 44px); /* the header band is 44 px (Q18), so the box is the finger target */
+  top: var(--safe-top, 0px);
+  z-index: var(--z-pane-opener);
+}
+/* The modifier bar (Shift/Alt latches) stays tappable above the backdrop on phone and tablet; the drawer ends above it. */
+body.mobile-layout #touch-modifier-bar {
+  z-index: calc(var(--z-backdrop) + 1);
+}
+/* Header buttons never shrink below 44 px when the two pane buttons join the phone action group. */
+body.phone-layout #app-header .header-phone-btn { flex: 0 0 auto; }
+/* Finger target: 48 x 45. The header sits at the top edge, so the extender grows downward only (into the rail's
+ * 8 px top padding, which holds no tool button). The TUX-008 inset of -3px at the top is clipped by the screen. */
+body.tablet-layout.touch-ui .mobile-pane-handle-left::after,
+body.tablet-layout.touch-ui .mobile-pane-handle-right::after {
+  inset: 0 0 -2px; /* Q18: the box is 44 px; 2 px of slack for the 2 px hit-probe grid */
+}
+/* The bottom handle belongs to TUX-051 and stays hidden in every layout. */
+body #btn-mobile-pane-bottom,
+body.mobile-layout #btn-mobile-pane-bottom {
+  display: none;
+}
+
+/* Close / collapse chevrons: 44 x 44 on every touch layout. */
+body.touch-ui .pane-toggle-left,
+body.touch-ui .pane-toggle-right {
+  width: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
+}
+body.touch-ui .pane-toggle-left { right: 4px; }
+body.touch-ui .pane-toggle-right { left: 4px; }
+body.touch-ui .pane-header-right .pane-title { margin-left: 52px; }
+/* The header must be as tall as the chevron, or the pane body paints over its bottom edge. */
+body.touch-ui .pane-header,
+body.touch-ui #left-pane .pane-header,
+body.touch-ui #right-pane .pane-header {
+  height: calc(var(--touch-target-min, 44px) + 4px);
+  min-height: calc(var(--touch-target-min, 44px) + 4px);
+  box-sizing: border-box;
+}
+
+/* touch-wide collapsed rail (36 px, TUX-008). The button fills the rail and its ::before reaches 10 px
+ * past the rail edge onto the canvas, so the finger target is 44 px wide without a wider rail (a 44 px
+ * rail would push the canvas share under the 75 % floor). The glyph rotates, not the button, so the
+ * extension keeps pointing at the canvas. */
+body.touch-wide-layout.touch-ui .pane.pane-collapsed {
+  overflow: visible;
+  z-index: var(--z-pane);
+}
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle {
+  width: var(--pane-collapsed-width, 36px);
+  height: var(--touch-target-min, 44px);
+  left: 0;
+  right: 0;
+  border-radius: 0;
+  transform: translateY(-50%);
+}
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+body.touch-wide-layout.touch-ui .pane-left.pane-collapsed .pane-toggle::before { left: 0; right: -10px; }
+body.touch-wide-layout.touch-ui .pane-right.pane-collapsed .pane-toggle::before { right: 0; left: -10px; }
+/* Followup B5: the collapsed header held its 44 px padding and the 52 px tab margin open, so it ran 17 px past the screen edge.
+ * It is as wide as the rail now; the chevron's ::before still reaches 10 px onto the canvas for the 44 px finger target. */
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-header,
+body.touch-wide-layout.touch-ui #right-pane.pane-collapsed .pane-header,
+[data-ui-skin] body.touch-wide-layout.touch-ui #right-pane.pane-collapsed .pane-header,
+body.touch-wide-layout.touch-ui[data-ui-skin] #right-pane.pane-collapsed .pane-header {
+  padding-left: 0;
+  padding-right: 0;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-header .right-pane-tabs { display: none; }
+body.touch-wide-layout.touch-ui .pane-toggle svg { transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
+body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle svg { transform: rotate(180deg); }
+/* === END TUX-010/011 === */
+
+/* === TUX-010: tab strip clear of the 44 px right chevron ===
+ * The right pane chevron sits at left:4px and is 44 px wide (to x=48 of the pane). The tab strip used to start
+ * at ~x=44, so a tap on the left edge of the first tab hit the chevron and collapsed the pane. */
+body.touch-ui #right-pane .right-pane-tabs {
+  margin-left: calc(var(--touch-target-min, 44px) + 8px);
+}
+/* === END TUX-010 tabs === */
+
+/* === TUX-014: touch tool sub-menus === */
+/* Menus are portaled to <body>, so selectors target .tool-submenu / .tool-sub-btn directly. */
+.tool-sub-label { display: none; }
+
+@media (pointer: coarse) {
+  .tool-submenu {
+    /* Above the collapsed right-pane sliver (z 55) so rows stay hittable edge to edge. */
+    z-index: 60;
+    flex-direction: column;
+    gap: 4px;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-submenu .tool-sub-btn {
+    min-width: 44px;
+    min-height: 44px;
+    width: auto;
+    height: auto;
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 0 12px;
+    white-space: nowrap;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-submenu .tool-sub-btn .tool-sub-label {
+    display: inline;
+    font-size: var(--font-size-sm, 12px);
+    font-weight: 500;
+    pointer-events: none;
+  }
+  .tool-submenu .tool-sub-btn svg { flex: none; pointer-events: none; }
+  [data-ui-skin] .algo-draw-picker .algo-pick-item,
+  .algo-draw-picker .algo-pick-item {
+    min-height: 44px;
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .tool-btn[data-has-submenu] {
+    -webkit-touch-callout: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .algo-draw-picker { touch-action: pan-y; }
+}
+/* === END TUX-014 === */
+
+/* === TUX-020: canvas HUD ===
+ * Undo / Redo / Zoom Out / Zoom In / Fit for fingers (src/render/canvas-hud.js), mounted bottom-right
+ * in #viewport-container. Only under body.touch-ui; never on a fine pointer. The container ignores
+ * pointers so the canvas stays reachable around it; the buttons take them. 44 px targets.
+ * Phone layout: Undo / Redo live in the header (TUX-001), so only the view buttons show here.
+ * Stays below the modifier column (61), panes (70) and modals (900). */
+.canvas-hud { display: none; }
+body.touch-ui .canvas-hud {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  position: absolute;
+  right: calc(var(--safe-right, 0px) + 8px);
+  bottom: calc(var(--safe-bottom, 0px) + 8px);
+  padding: 2px;
+  background: var(--ui-panel, #252525);
+  border: 1px solid var(--ui-border, #363636);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 40;
+  pointer-events: none;
+}
+.canvas-hud .canvas-hud-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  /* 46 px: the hit-area probe measures 2 px steps, so a 44 px box can read 43. */
+  min-width: 46px;
+  min-height: 46px;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ui-text, #e6e6e6);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.canvas-hud .canvas-hud-btn:active { background: var(--ui-hover, rgba(255, 255, 255, 0.12)); }
+.canvas-hud .canvas-hud-btn:disabled { opacity: 0.4; }
+.canvas-hud .canvas-hud-sep {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: 6px 2px;
+  background: var(--ui-border, #363636);
+}
+/* Phone panes collapse to slivers that overlay the canvas edges; the HUD clears the right one. */
+body.phone-layout.touch-ui .canvas-hud {
+  right: calc(var(--safe-right, 0px) + var(--pane-collapsed-width, 40px) + 8px);
+}
+body.phone-layout .canvas-hud .canvas-hud-history,
+body.phone-layout .canvas-hud .canvas-hud-sep { display: none; }
+/* Batch R: phone landscape is 402 px tall, so the three view buttons are exactly 44 px with no gap (they were 46 px + 2 px gaps and
+ * cost 2 points of canvas share). The 46 px size existed for the 2 px probe step; the audit still reads 44 here. */
+body.phone-layout.phone-short.touch-ui .canvas-hud .canvas-hud-btn { min-width: 44px; min-height: 44px; width: 44px; height: 44px; }
+body.phone-layout.phone-short.touch-ui .canvas-hud { gap: 0; padding: 0; border-radius: 10px; }
+/* === END TUX-020 === */
+
+/* === TUX-020: phone-short status strip clears the HUD ===
+ * On phone landscape the status strip (#hud-bar) is an overlay at the bottom edge and reached under the
+ * canvas HUD, so the zoom and rotation readouts drew inside the HUD box. The strip now ends left of the HUD:
+ * HUD right offset + the HUD width token (--canvas-hud-w, 134 px) + an 8 px gap. */
+body.phone-layout.phone-short .hud-bar {
+  right: calc(var(--safe-right, 0px) + var(--pane-collapsed-width, 40px) + 8px + var(--canvas-hud-w, 134px) + 8px);
+}
+/* === END TUX-020 (strip) === */
+
+/* === TUX-022: fill bar clears the canvas HUD ===
+ * The HUD (z 40) sat on top of the fill bar (z 35) and covered the Scope chip on iPhone portrait
+ * (Zoom In over Scope ▼). While the fill bar is mounted the HUD rides above it. */
+body.touch-ui #viewport-container:has(.ctxbar.ctxbar--fill) .canvas-hud {
+  bottom: calc(var(--safe-bottom, 0px) + 8px + 52px + 8px);
+}
+/* Batch R: the fill bar rides the bottom edge (context-bar.js, top = viewport height - bar - pad) and ignored the bottom
+ * safe-area inset, so on iPhone landscape (21 px home-indicator band) it sat inside the band. Lift it by the inset. */
+body.touch-ui .ctxbar.ctxbar--fill { margin-top: calc(-1 * var(--safe-bottom, 0px)); }
+/* === Batch R: Scene3D panel finger targets (wcag258Fail 1 -> 7 on iPad portrait) ===
+ * The caret (16 px wide), the visibility / delete toggles (20x20) and the add-light chips (22 px tall, 6 px apart) were under
+ * the 24 px floor with no spacing exception. On a coarse pointer each gets a 24 px hit area. The toggles and chips use a
+ * ::before extension, because growing their boxes pushed a section header of the scrolling panel below the fold
+ * (reachable 89 -> 88 on touch-wide). 44 px is the sweep target (TUX-041 group 9). */
+@media (pointer: coarse) {
+  .vs3-more-caret { width: var(--touch-target-floor, 24px); }
+  .vs3-tree-vis, .vs3-tree-del, .vs3-tree-addbtn { position: relative; }
+  .vs3-tree-vis::before, .vs3-tree-del::before { content: ''; position: absolute; inset: -2px; }
+  .vs3-tree-addbtn::before { content: ''; position: absolute; inset: -2px 0; }
+}
+/* === END TUX-022 === */
+/* === TUX-001: narrow mouse windows (500-640 px) keep every header control on-screen === */
+@media (max-width: 640px) {
+  body:not(.phone-layout) #app-header .header-brand-menu h1,
+  body:not(.phone-layout) #app-header .header-menu-divider { display: none; }
+  body:not(.phone-layout) #app-header .header-brand-menu { gap: 4px; }
+  body:not(.phone-layout) #app-header .top-menubar { gap: 0; }
+  body:not(.phone-layout) #app-header .top-menu-trigger { padding-left: 6px; padding-right: 6px; }
+  body:not(.phone-layout) #app-header .header-right { gap: 4px; }
+}
+/* === END TUX-001 === */
+
+/* === TUX-038: value entry + reset hold + motion points ===
+ * Older rules checked: .value-chip (9837, transparent button), .inline-value-input (absolute, single field),
+ * .motion-drawn-canvas (5353, already touch-action:none), .menu-dropdown.is-context-menu (44 px rows on coarse).
+ * Touch sizing is gated on (pointer: coarse), so the 1600 x 1000 desktop view does not change. */
+
+/* Dual value editor (min / max) that replaces the comma-parsed field on the legacy rangeDual chip. */
+.dual-value-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dual-value-input {
+  width: 5.5em;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--ui-panel-alt);
+  border: 1px solid var(--ui-border);
+  color: var(--ui-text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 6px;
+  text-align: right;
+  border-radius: 4px;
+}
+.dual-value-dash { color: var(--ui-muted); }
+
+/* Drawn-curve point buttons: shown by the rack only while a point is selected on a coarse pointer. */
+.motion-point-actions { display: flex; gap: 8px; margin-top: 6px; }
+.motion-point-actions[hidden] { display: none; }
+.motion-point-actions button {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-panel-alt);
+  color: var(--ui-text);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+.motion-point-actions button:disabled { opacity: 0.4; }
+
+@media (pointer: coarse) {
+  .dual-value-input { min-height: var(--touch-target-min, 44px); font-size: 16px; } /* 16 px: no iOS focus zoom */
+  .motion-point-actions button {
+    min-width: var(--touch-target-min, 44px);
+    min-height: var(--touch-target-min, 44px);
+    flex: 1 1 0;
+    font-size: 14px;
+  }
+  /* The reset hold target: no iOS text-selection loupe or callout on a long-press of a label. */
+  .control-label,
+  .mp-ctrl-lbl,
+  .vtp-scrub-name,
+  .vtp-field-cap label,
+  [data-reset-hold] {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+/* === END TUX-038 === */
+
+/* === TUX-044: reorder grips + angle dial ===
+ * The grips and the dial own their finger drag: touch-action none keeps the browser from
+ * panning the pane. Unscoped (0,1,0) beats the `button` rules. Hit boxes extend with a ::before
+ * so the 14x20 visual stays. The extension goes left and up/down only, away from the title,
+ * toggle and delete buttons. */
+.noise-grip, .pen-grip, .optimization-grip, .mp-row-grip, .angle-dial { touch-action: none; }
+.mp-root .mp-row-grip {
+  background: transparent; border: none; padding: 2px; cursor: grab;
+  display: grid; grid-template-columns: repeat(2, 4px); gap: 2px; place-content: center;
+  align-self: center; justify-self: start; position: relative;
+}
+.mp-root .mp-row-grip .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--ui-muted); }
+.mp-root .mp-row-grip:active { cursor: grabbing; }
+.mp-root .mp-row { grid-template-columns: auto 36px 1fr auto; }
+.mp-root .mp-row.dragging { opacity: 0.6; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); transform: scale(1.01); }
+.noise-card.dragging, .image-effect-card.dragging, .optimization-card.dragging { box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35); }
+@media (pointer: coarse) {
+  .optimization-grip, .mp-row-grip { position: relative; }
+  .optimization-grip::before, .mp-root .mp-row-grip::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    width: var(--touch-target-min); height: var(--touch-target-min);
+    transform: translate(-50%, -50%);
+  }
+}
+body.touch-ui .mp-root .mp-row { grid-template-columns: auto 36px minmax(0, 1fr); }
+body.touch-ui .optimization-grip, body.touch-ui .mp-root .mp-row-grip { position: relative; }
+body.touch-ui .optimization-grip::before, body.touch-ui .mp-root .mp-row-grip::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min);
+  transform: translate(-50%, -50%);
+}
+/* === END TUX-044 === */
+
+/* === TUX-010: toast clear of the tablet header band ===
+   The tablet drawer handles sit in the top-right band. A plain toast must not cover them (req 4). */
+body.tablet-layout #vectura-toast-host { top: calc(44px + var(--safe-top, 0px) + 8px); }
+/* === END TUX-010 toast === */
+
+/* === TUX-010: toast clear of the touch-wide pane chevrons ===
+   The pane chevrons sit at y 40-84 in the top-right. A wrapping toast must start below them (req 4). */
+body.touch-wide-layout #vectura-toast-host { top: calc(84px + var(--safe-top, 0px) + 8px); }
+/* === END TUX-010 toast touch-wide === */
+
+/* === TUX-045: touch modifier tasks (Multi-select, Constrain, Duplicate, Pan) ===
+   The bar is built by ui-touch.js from Vectura.TOUCH_MODIFIERS. A button is icon + full name; on a
+   phone it is icon + short label. latched = pressed for the next gesture, locked = lock glyph. */
+[data-ui-skin] .touch-mod-btn,
+.touch-mod-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.touch-mod-btn .touch-mod-icon { display: inline-flex; flex: 0 0 auto; }
+.touch-mod-btn .touch-mod-short { display: none; }
+.touch-mod-btn .touch-mod-lock {
+  display: none;
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  line-height: 0;
+  color: var(--ui-accent);
+}
+.touch-mod-btn[data-state="locked"] .touch-mod-lock { display: inline-flex; }
+[data-ui-skin] #touch-modifier-bar .touch-mod-btn[data-state="latched"],
+[data-ui-skin] #touch-modifier-bar .touch-mod-btn[data-state="locked"] {
+  background: var(--ui-accent-2);
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+[data-ui-skin] #touch-modifier-bar .touch-mod-btn[data-state="locked"] {
+  box-shadow: inset 0 0 0 2px var(--ui-accent);
+}
+/* Phone: icon over a short label. The old keyboard-glyph ::before rules no longer apply. */
+body.phone-layout #touch-modifier-bar .touch-mod-btn[data-touch-mod]::before { content: none; display: none; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn {
+  flex-direction: column;
+  gap: 1px;
+  font-size: 10px;
+  padding: 0 2px;
+}
+body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label { display: none; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-short { display: block; line-height: 1; }
+body.phone-layout #touch-modifier-bar .touch-mod-btn .touch-mod-icon svg { width: 18px; height: 18px; }
+/* iPhone landscape: one trailing column (TUX-007 placement kept; four tasks fit one 46 px column). */
+body.phone-layout.phone-short #touch-modifier-bar {
+  grid-template-columns: 46px;
+  row-gap: 2px;
+  max-height: calc(100% - var(--tux7-rail-h) - 4px - var(--safe-bottom));
+}
+/* The bar is for touch-capable devices. A mouse-only narrow window hides it (beats the forced flex). */
+body.mobile-layout #touch-modifier-bar.hidden,
+body.phone-layout.phone-short #touch-modifier-bar.hidden,
+body.tablet-layout #touch-modifier-bar.hidden { display: none; }
+
+.touch-mod-badge {
+  position: absolute;
+  top: var(--touch-mod-badge-top);
+  left: var(--touch-mod-badge-left);
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: calc(100% - var(--touch-mod-badge-left) - 8px - 160px);
+  pointer-events: none;
+}
+.touch-mod-badge[hidden] { display: none; }
+.touch-mod-chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-accent);
+  background: var(--ui-panel);
+  color: var(--ui-accent);
+  font: 600 11px/1.2 var(--font-ui);
+}
+.touch-mod-chip[data-state="locked"] {
+  background: var(--ui-accent);
+  color: var(--ui-panel);
+}
+/* === END TUX-045 === */
+
+/* === TUX-045: badge placement on touch-wide ===
+   The bar floats top-left of the canvas there (absolute, left 76 px). The badge sits below it, right of the rail. */
+body.touch-wide-layout .touch-mod-badge {
+  top: calc(var(--touch-mod-badge-top) + 82px + var(--toolbar-dock-top-h, 0px));
+  left: calc(var(--touch-mod-badge-left) + 76px);
+}
+/* The floating touch-wide bar covers canvas: short labels keep its footprint at or below the old five-key bar. */
+body.touch-wide-layout #touch-modifier-bar .touch-mod-btn { padding: 0 8px; gap: 4px; }
+body.touch-wide-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label { display: none; }
+body.touch-wide-layout #touch-modifier-bar .touch-mod-btn .touch-mod-short { display: block; }
+body.touch-wide-layout #touch-modifier-bar { padding: 4px; gap: 4px; }
+/* === END TUX-045 badge === */
+
+/* === TUX-051: bottom pane touch toggle === */
+/* Coarse pointers: the collapsed bottom pane grows to 45 px (44 px + 1 px border) so the chevron is a 44 x 44 target
+ * (overflow:hidden on the pane clips any ::after extension, so the box itself must be 44 px).
+ * The phone-short FAB (48 x 48, body.phone-layout.phone-short) has higher specificity and is untouched. */
+@media (pointer: coarse) {
+  body #bottom-pane.bottom-pane-collapsed,
+  body.mobile-layout #bottom-pane.bottom-pane-collapsed {
+    height: calc(var(--touch-bottom-collapsed-h, 44px) + var(--safe-bottom, 0px));
+    box-sizing: border-box;
+    border-top-width: 0;
+    padding-bottom: var(--safe-bottom, 0px);
+  }
+  body #bottom-pane.bottom-pane-collapsed .bottom-pane-header,
+  body.mobile-layout #bottom-pane.bottom-pane-collapsed .bottom-pane-header {
+    height: var(--touch-bottom-collapsed-h, 44px);
+    min-height: var(--touch-bottom-collapsed-h, 44px);
+  }
+  body #bottom-pane.bottom-pane-collapsed .pane-toggle-bottom,
+  body.mobile-layout #bottom-pane.bottom-pane-collapsed .pane-toggle-bottom {
+    top: 0;
+    width: var(--touch-target-min, 44px);
+    height: var(--touch-target-min, 44px);
+    transform: translateX(-50%) rotate(180deg);
+  }
+}
+/* Batch R: touch-wide only (iPad landscape, wide coarse windows). The status strip sits right under the pane there; on a phone it is
+ * hidden, and on iPad portrait the modifier bar (z 60) sits under the pane, so those keep the 44 px row.
+ * The 44 px chevron overhangs the 40 px pane by 4 px and sits over the status strip's top edge (z above the strip's 5).
+ * The pane row itself is 40 px, so the canvas keeps the share it had before TUX-051 (coarseWide 49.7 -> 47.7 with a 44 px row). */
+@media (pointer: coarse) {
+  body.touch-wide-layout.touch-ui #bottom-pane.bottom-pane-collapsed {
+    overflow: visible;
+    position: relative;
+    z-index: 6;
+  }
+}
+/* === END TUX-051 === */
+
+/* === TUX-048: toast placement ===
+ * Desktop (default) keeps the former inline look and the top-right anchor (pixel-identical).
+ * body.touch-ui (TUX-006) docks the host bottom-centre, inside the safe area, above the bottom chrome
+ * (toast.js sets --toast-bottom from the measured chrome) and above every modal layer (max 10001).
+ * Gate = body.touch-ui only: never width, mobile-layout or (pointer: coarse) (WebKit desktop reports no touch points).
+ * Beats TUX-037/TUX-010 `body.*-layout #vectura-toast-host { top }` (same specificity, later in the file). */
+#vectura-toast-host {
+  position: fixed;
+  top: var(--toast-edge);
+  right: var(--toast-edge);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+#vectura-toast-host .vectura-toast {
+  pointer-events: auto;
+  padding: 8px 14px;
+  min-width: 200px;
+  max-width: 320px;
+  background: var(--ui-panel, #252525);
+  color: var(--ui-text, #e0e0e0);
+  border: 1px solid var(--ui-border, #333);
+  border-left: 3px solid var(--ui-accent, #4e9ee1);
+  border-radius: var(--radius-sm, 4px);
+  font-family: var(--font-ui, system-ui, sans-serif);
+  font-size: var(--font-size-sm, 11px);
+  line-height: 1.4;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+#vectura-toast-host .vectura-toast.has-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: default;
+}
+#vectura-toast-host .vectura-toast-msg { flex: 1 1 auto; }
+body.touch-ui #vectura-toast-host {
+  top: auto;
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--toast-bottom, 0px) + var(--toast-chrome-gap) + var(--safe-bottom));
+  width: max-content;
+  max-width: calc(100% - 2 * var(--toast-edge) - var(--safe-left) - var(--safe-right));
+  align-items: center;
+  flex-direction: column-reverse;
+}
+body.touch-ui #vectura-toast-host .vectura-toast {
+  max-width: 100%;
+  min-width: 0;
+}
+body.touch-ui #vectura-toast-host .vectura-toast:not(.is-actionable) { pointer-events: none; }
+/* === END TUX-048 === */
+
+/* === TUX-052 === Help Touch page: stack the gesture rows on narrow screens */
+@media (max-width: 700px) {
+  .help-panel[data-panel="touch"] .help-kbd-table,
+  .help-panel[data-panel="touch"] .help-kbd-table tbody { display: block; }
+  .help-panel[data-panel="touch"] .help-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--help-border, rgba(255, 255, 255, 0.08));
+  }
+  .help-panel[data-panel="touch"] .help-row td { display: block; width: auto; text-align: left; padding: 0; white-space: normal; }
+}
+
+/* === TUX-052b === Help tab/platform buttons meet the 44px touch target */
+body.touch-ui .help-tab-btn,
+body.touch-ui .help-platform-btn {
+  min-height: 44px;
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* === END TUX-052b === */
+/* === TUX-041 / TUX-043: draw-order head clears the 44 px slider (integration fix) ===
+ * TUX-041 gives the 18 px eye and gear icons a 44 px ::before (13 px past the icon on each side);
+ * TUX-043 makes the draw-order slider a 44 px band. With the 5 px head margin the icon hit boxes
+ * covered the top 7 px of the slider, and the gear box (centre 21 px from the pane edge) was clipped
+ * to 43 px. The margin applies on every touch layout (touch-wide wraps the head but kept the 5 px margin);
+ * the 4 px inset only off touch-wide, which has its own. Short viewports (max-height: 520px) set the head
+ * margin to 0 above; this later rule (higher specificity) restores the clearance. */
+@media (pointer: coarse) {
+  body.touch-ui #right-pane .draw-order-bar .draw-order-head { margin-bottom: 14px; }
+  body.touch-ui:not(.touch-wide-layout) #right-pane .draw-order-head-right { padding-right: 4px; }
+}
+/* === END TUX-041 / TUX-043 draw-order head === */
+
+/* === TUX-020 / TUX-030: pen draft bar clears the canvas HUD (integration fix) ===
+ * The pen-draft context bar (Done / Remove Last Anchor / Cancel, 46 px tall at bottom 4 px) is centred
+ * and ran under the bottom-right HUD (z 40): Cancel resolved to the HUD history or view buttons on
+ * iPad landscape, iPhone portrait and touch-coarse-wide. Same treatment as the TUX-022 fill bar: while
+ * the draft bar is mounted the HUD rides above it. */
+body.touch-ui #viewport-container:has(.ctxbar.ctxbar--pen-draft) .canvas-hud {
+  bottom: calc(var(--safe-bottom, 0px) + 8px + 52px + 8px);
+}
+/* === END TUX-020 / TUX-030 === */
+
+/* === TUX-045 / TUX-020: very short phone landscape keeps two modifier columns (integration fix) ===
+ * TUX-045 moved the iPhone-landscape modifier bar to one 46 px column (4 x 44 px + gaps = about 188 px).
+ * At 874 x 330 (Safari with browser chrome) that column ran down into the bottom-right canvas HUD
+ * (Fit hit area 33 px, HUD overlapped the bar). TUX-007 sized this layout as two columns for that reason.
+ * Below 361 px tall the four tasks sit in a 2 x 2 grid (about 96 px tall), clear of the HUD. */
+@media (max-height: 360px) {
+  body.phone-layout.phone-short #touch-modifier-bar { grid-template-columns: repeat(2, 46px); column-gap: 2px; }
+}
+/* === END TUX-045 / TUX-020 === */
+
+/* === TUX-008 / TUX-011: WebKit drawer content restyle (integration fix) ===
+ * A closed tablet pane is `visibility: hidden` (TUX-011) and its content inherits that. When the drawer
+ * opens, WebKit does not always re-resolve the inherited value on children whose style was computed while
+ * the pane was hidden (for example the Generator sections rebuilt after a layer load): getComputedStyle
+ * keeps `hidden` on `.left-panel-sections` and most `.left-panel-section` rows of an open drawer. This
+ * rule names the open drawer's direct body children, so the class change re-resolves them. Grandchildren
+ * then inherit `visible`. No direct `.pane-body` child relies on `visibility: hidden` (they use display). */
+body.tablet-layout.touch-ui .pane.pane-drawer-open .pane-body > * { visibility: visible; }
+/* === END TUX-008 / TUX-011 WebKit drawer content restyle === */
+
+/* === TUX-020 / TUX-011: the canvas HUD steps aside under a drawer backdrop or a modal (integration fix) ===
+ * Under the open-drawer backdrop (TUX-011) or a modal the HUD buttons cannot take a tap (the backdrop
+ * or the modal does; history is a no-op under a modal), so they must not show as live controls there.
+ * visibility (not display) keeps the HUD's box, so nothing reflows when it returns. */
+body.touch-ui:not(.tablet-layout):has(#mobile-pane-backdrop.visible) .canvas-hud,
+body.touch-ui:has(#modal-overlay.open) .canvas-hud,
+body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud {
+  visibility: hidden;
+}
+body.touch-ui:not(.tablet-layout):has(#mobile-pane-backdrop.visible) .canvas-hud .canvas-hud-btn,
+body.touch-ui:has(#modal-overlay.open) .canvas-hud .canvas-hud-btn,
+body.touch-ui:has(.vectura-modal-backdrop[style*="flex"]) .canvas-hud .canvas-hud-btn {
+  pointer-events: none;
+}
+/* Batch R: canvas-hud.js marks a button another layer covers at its centre (Petal Designer window, formula sheet). */
+.canvas-hud .canvas-hud-btn[data-covered] { visibility: hidden; pointer-events: none; transition: none; }
+/* Tablet (no header Undo): the HUD stays reachable under an open drawer (batch 1, journey J12). It rides above the
+ * backdrop (the modifier bar does the same) and hops to the left edge when the right drawer would cover it. A
+ * modal still hides it (rule above). */
+body.tablet-layout.touch-ui:has(#mobile-pane-backdrop.visible) .canvas-hud {
+  z-index: calc(var(--z-backdrop) + 1);
+}
+body.tablet-layout.touch-ui:has(#right-pane.pane-drawer-open) .canvas-hud {
+  right: auto;
+  left: calc(var(--safe-left, 0px) + 8px);
+}
+/* Batch R: phone sheets (the Document Setup panel, a #modal-overlay card) fill the screen inside the safe area. The HUD and
+ * the header action buttons under them are covered and cannot take a tap, so they step aside the same way. The header band
+ * keeps its box (visibility), so nothing reflows when the sheet closes. */
+body.phone-layout.touch-ui:has(#settings-panel.open) .canvas-hud,
+body.phone-layout.touch-ui:has(#settings-panel.open) .canvas-hud .canvas-hud-btn {
+  visibility: hidden;
+  pointer-events: none;
+}
+body.phone-layout.touch-ui:has(#modal-overlay.open) #app-header button,
+body.phone-layout.touch-ui:has(#settings-panel.open) #app-header button {
+  visibility: hidden;
+}
+/* === END TUX-020 / TUX-011 HUD step-aside === */
+
+/* === TUX-012: the touch row menu shows the full layer name (Jay, 2026-10-12) ===
+ * The header wraps instead of truncating, so a long name stays readable in full. */
+.lvl-ctx-menu.is-touch .menu-cat {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: min(320px, calc(100vw - 24px));
+  text-transform: none;
+}
+/* === END TUX-012 === */
+
+/* === TUX-058 batch 3: text panel specimen head and docked-pane safe band ===
+ * The specimen header toggle and the outline pill were 14-21 px tall (WCAG 2.5.8 fail on iPad portrait). They keep their look and
+ * take a 44 px hit area through ::before (TUX-041 req 3). On a docked iPad landscape pane the pane reaches the screen edge, so its bottom band
+ * (the home-indicator strip) holds content that an unprotected select straddled: the pane now pads by the inset. */
+body.touch-ui .vtp-spec-head-btn,
+body.touch-ui .vtp-spec-pill-head { position: relative; }
+body.touch-ui .vtp-spec-head-btn::before,
+body.touch-ui .vtp-spec-pill-head::before {
+  content: ''; position: absolute; left: -4px; right: -4px; top: 50%; height: var(--touch-target-min); transform: translateY(-50%);
+}
+@media (pointer: coarse) {
+  body.touch-wide-layout #left-pane,
+  body.touch-wide-layout #right-pane { padding-bottom: var(--safe-bottom, 0px); }
+}
+/* === END TUX-058 batch 3 === */
+
+/* === TUX-058 batch R3 (Q17): iPad landscape canvas share ===
+ * With both panes collapsed the bottom stack took 73 px of the canvas (6 px #bottom-resizer, 40 px collapsed formula row, 27 px status
+ * strip), which left the canvas at 73.6 % against the 75 % of section 1.5. On touch-wide the status strip becomes a non-interactive
+ * overlay on the bottom edge of the canvas (as on phone landscape): it keeps the hints and the readouts, takes no row, and has a
+ * translucent background so the text stays legible over the paper. It sits right after the viewport in the flex column (order 1; the
+ * resizer and the pane move to order 2) and pulls itself up by its own height. Nothing in the strip is interactive (hint text and
+ * three readouts). The resizer has no use while the bottom pane is collapsed, so touch-ui hides it then. */
+body.touch-wide-layout.touch-ui .hud-bar {
+  order: 1;
+  position: relative;
+  box-sizing: border-box;
+  height: 18px; /* Q18 (Jay, 2026-10-14): 18 px, was 22 px */
+  min-height: 0;
+  margin-top: -18px;
+  /* ends left of the canvas HUD (251 px wide, 8 px from the canvas edge) */
+  margin-right: calc(var(--safe-right, 0px) + 8px + var(--canvas-hud-w-wide, 251px) + 8px);
+  padding: 1px 12px;
+  border-top: 0;
+  background: color-mix(in srgb, var(--ui-panel) 78%, transparent);
+  pointer-events: none;
+  z-index: 5;
+}
+body.touch-wide-layout.touch-ui #bottom-resizer,
+body.touch-wide-layout.touch-ui #bottom-pane { order: 2; }
+body.touch-ui #bottom-resizer:has(+ #bottom-pane.bottom-pane-collapsed) { display: none; }
+/* === END TUX-058 batch R3 === */
+
+/* === TUX-058 batch R3b (Q17): honest iPad landscape canvas share ===
+ * The overlay strip is 78 % opaque, so the artwork under it is mostly hidden and the audit now counts that band as not canvas
+ * (both collapsed: 76.9 % -> 74.5 %). To get back to 75 % the touch-wide collapsed formula row is 40 px (the 44 px token stays for
+ * iPad portrait and phones). The 44 px chevron overhangs the row by 4 px upward, into the pointer-events:none strip, so its hit
+ * area stays 44 px and the strip loses nothing (it is not interactive). The strip is 22 px (was 26): its 11 px text still fits. */
+@media (pointer: coarse) {
+  body.touch-wide-layout.touch-ui #bottom-pane.bottom-pane-collapsed {
+    height: calc(var(--touch-wide-bottom-collapsed-h, 36px) + var(--safe-bottom, 0px));
+  }
+  body.touch-wide-layout.touch-ui #bottom-pane.bottom-pane-collapsed .bottom-pane-header {
+    height: var(--touch-wide-bottom-collapsed-h, 36px);
+    min-height: var(--touch-wide-bottom-collapsed-h, 36px);
+  }
+  body.touch-wide-layout.touch-ui #bottom-pane.bottom-pane-collapsed .pane-toggle-bottom {
+    top: calc(var(--touch-wide-bottom-collapsed-h, 36px) - var(--touch-target-min, 44px));
+  }
+}
+/* Q18 (Jay, 2026-10-14) supersedes the numbers above: the header grows 38 -> 44 px, so the collapsed formula row is 36 px (the
+ * 44 px chevron overhangs it by 8 px into the strip) and the status strip is 18 px. Touch-wide only. */
+/* === END TUX-058 batch R3b === */
+
+/* === TUX-041 slice B1: header ===
+ * Q18 (Jay, 2026-10-14): the tablet and touch-wide header band is 44 px (phones already are). Every header control and every
+ * header menu item has a 44 x 44 hit area on touch. The triggers and the theme toggle keep their 26 px pill: an invisible ::before
+ * (the accent underline already owns ::after) widens the hit area to the token. The triggers touch side by side, so the
+ * expansion is vertical only. The theme toggle's 44 px box ends 3 px clear of the pane opener beside it.
+ * Gate: body.touch-ui (the pointer: coarse signal) and not a phone. Desktop keeps the 38 px header. */
+body.touch-ui:not(.phone-layout) #app-header {
+  height: calc(var(--touch-target-min) + var(--safe-top));
+}
+body.touch-ui:not(.phone-layout) #app-header .header-main {
+  height: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+body.touch-ui:not(.phone-layout) #top-menubar .top-menu-trigger {
+  position: relative;
+}
+body.touch-ui:not(.phone-layout) #top-menubar .top-menu-trigger::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--touch-target-min);
+  transform: translateY(-50%);
+}
+body.touch-ui:not(.phone-layout) #app-header .theme-toggle {
+  position: relative;
+}
+body.touch-ui:not(.phone-layout) #app-header .theme-toggle::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  transform: translate(-50%, -50%);
+}
+/* The panel hangs from the bottom of the (26 px) trigger: 9 px puts its top edge on the 44 px header band's bottom edge. */
+body.touch-ui:not(.phone-layout) #top-menubar .top-menu-panel {
+  top: calc(100% + 9px);
+  max-height: calc(var(--app-vh) - var(--touch-target-min) - var(--safe-top) - var(--safe-bottom) - 8px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.touch-ui:not(.phone-layout) #top-menubar .top-menu-item {
+  min-height: var(--touch-target-min);
+  box-sizing: border-box;
+}
+/* Welcome pane CTA: the gradient wrap follows the button (1 px ring). The wrap is not a control, so it keeps the default cursor. */
+@media (pointer: coarse) {
+  [data-ui-skin] .welcome-tour-btn-wrap { cursor: auto; }
+  [data-ui-skin] .welcome-tour-btn {
+    min-height: var(--touch-target-min);
+    box-sizing: border-box;
+    justify-content: center;
+  }
+}
+/* === END TUX-041 slice B1 === */
+
+/* === TUX-041 slice B2: canvas context bar ===
+ * Q19 (Jay, 2026-10-14): on touch the context bar grows to 52 px (44 px controls, 3 px padding, 1 px border) so every
+ * control inside has a real 44 x 44 box. No ::before expansion is used: the controls sit side by side with 2 px gaps and
+ * the bar floats over the canvas, so an invisible extension would steal pixels from neighbours or the canvas.
+ * Text-entry controls are 16 px so iOS does not zoom on focus. Gate: body.touch-ui (the pointer: coarse signal).
+ * Desktop keeps the 26 px controls. */
+body.touch-ui .ctxbar-content { min-height: var(--touch-target-min); }
+body.touch-ui .ctxbar .ctxbar-btn,
+body.touch-ui .ctxbar .ctxbar-text-field,
+body.touch-ui .ctxbar .ctxbar-text-size,
+body.touch-ui .ctxbar .ctxbar-stepper,
+body.touch-ui .ctxbar .ctxbar-overflow,
+body.touch-ui .ctxbar .ctxbar-auto-smooth,
+body.touch-ui .ctxbar .ctxbar-submode-exit,
+body.touch-ui .ctxbar .ctxbar-field {
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+  height: var(--touch-target-min);
+}
+body.touch-ui .ctxbar .ctxbar-btn,
+body.touch-ui .ctxbar .ctxbar-stepper,
+body.touch-ui .ctxbar .ctxbar-overflow,
+body.touch-ui .ctxbar .ctxbar-text-size-caret {
+  min-width: var(--touch-target-min);
+  justify-content: center;
+}
+body.touch-ui .ctxbar .ctxbar-text-size,
+body.touch-ui .ctxbar .ctxbar-field { font-size: 16px; }
+body.touch-ui .ctxbar .ctxbar-text-size-caret {
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+}
+body.touch-ui .ctxbar .pen-chip {
+  box-sizing: border-box;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+}
+body.touch-ui .ctxbar .ctxbar-slider { min-height: var(--touch-target-min); }
+/* The More menu has six 44 px rows: on a short phone landscape it scrolls instead of running off the screen. */
+body.touch-ui .ctxbar .ctxbar-menu {
+  /* Folds the bar's published --ctxbar-menu-space clamp into the cap (a bare 60 % rule outranked it and let the menu run
+     off a 330 px screen). */
+  max-height: min(calc(var(--app-vh) * 0.6), var(--ctxbar-menu-space, var(--app-vh)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+body.touch-ui .ctxbar .ctxbar-menu-item,
+body.touch-ui .ctxbar .ctxbar-add-layer-item {
+  box-sizing: border-box;
+  min-height: var(--touch-target-min);
+}
+/* === END TUX-041 slice B2 === */
+
+/* === TUX-041 slice B2b: touch-wide context bar is 44 px tall (Q19b) ===
+ * Q19 allows UP TO 52 px. On touch-wide (iPad landscape, both panes collapsed) the 52 px bar left only 74.7 % honest canvas
+ * share against the 75 % gate (TUX-008, TUX-010). Here the bar drops its 3 px vertical padding and its 1 px border, so the 44 px
+ * controls fill it edge to edge (44 px tall). The border becomes a 1 px ring drawn with box-shadow, which takes no layout
+ * space. Every control keeps its 44 x 44 box; gaps between controls stay 2 px, so no hit areas touch or overlap.
+ * Other layouts (iPad portrait, phones, desktop) keep the 52 px bar. */
+body.touch-wide-layout.touch-ui .ctxbar {
+  padding: 0 2px;
+  border-width: 0;
+  box-shadow: 0 0 0 1px var(--ui-border, #363636), 0 6px 20px rgba(0, 0, 0, 0.30);
+}
+/* === END TUX-041 slice B2b === */
+
+/* === TUX-012 follow-up: scroll cue on the context bar More menu ===
+ * data-scroll-cue (utils.scrollCue, bound when the menu opens) lists the edges that still hide rows. The fades are sticky,
+ * take no taps, and show nothing when the menu fits. */
+.ctxbar-menu::before, .ctxbar-menu::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 2;
+  opacity: 0; transition: opacity 120ms ease;
+}
+.ctxbar-menu::before { top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent); }
+.ctxbar-menu::after { bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent); }
+.ctxbar-menu[data-scroll-cue~="above"]::before,
+.ctxbar-menu[data-scroll-cue~="below"]::after { opacity: 1; }
+/* === END TUX-012 follow-up === */
+
+/* === TUX-041 slice B4: side panels ===
+ * Every interactive target in the left pane (generator params, transform, fill controls, text panel, mirror modifier), the right
+ * pane (pens, layers) and the bottom pane has a hit area of at least --touch-target-min on coarse pointers. Boxes that can grow get a
+ * real min-height; the small visuals (switches, info dots) keep their size and take a centred ::before. Rules are keyed on
+ * body.touch-ui (a coarse pointer), never on width, and carry a pane id so they beat the skin's [data-ui-skin] #id rules.
+ * Desktop is unchanged. Scene3D and the Petal Designer are slice B5. */
+/* Every other button, summary and text field in the left pane (algorithm sections, add/delete rows, tool strips, lock dots, pop-out
+ * buttons) is at least a finger in both axes. Scene3D and the Petal Designer (slice B5) and the visuals that carry their own
+ * ::before extension are left out. */
+body.touch-ui #left-pane :is(button, summary, [role="button"], input:is([type="text"], [type="number"], [type="search"], :not([type]))):not(
+  .info-btn, .mp-info-trigger, .noise-grip, .vtp-sw-toggle, .sr-only, .pane-toggle, :is(.vs3-panel, [class*="petal-"]) *) {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  box-sizing: border-box;
+}
+/* Right pane: the same finger-tall floor for the pens tab (palette list, auto-colourisation fields) and the layer search/filter. Layer
+ * rows keep their own sizing (they pass already). The small switch, the info dot and the raw checkbox keep their visual and take a
+ * centred 44 px ::before; the row that holds one is a finger tall, so the extension never reaches the row above or below. */
+body.touch-ui #right-pane :is(button, summary, [role="button"], input:is([type="text"], [type="number"], [type="search"], :not([type]))):not(
+  .info-btn, .sw-toggle, .sr-only, .draw-order-settings, .draw-order-overlay-toggle, .pen-remove, .pane-toggle, #layer-list *) {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  box-sizing: border-box;
+}
+body.touch-ui #right-pane select:not(.sr-only) { height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui #right-pane :is(.info-btn, .sw-toggle, input[type="checkbox"]:not(.sr-only)) { position: relative; }
+body.touch-ui #right-pane :is(.info-btn, .sw-toggle, input[type="checkbox"]:not(.sr-only))::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+body.touch-ui #right-pane :is(.flex, .control-label, .ctrl-row):has(> :is(.sw-toggle, .info-btn, input[type="checkbox"])) { min-height: var(--touch-target-min); }
+/* A docked iPad pane (200 px) makes a pen card 153 px wide (129 px of content): swatch, value and remove take it all and squeeze the
+ * weight slider to 14 px. Under 150 px of content the slider moves to its own row. Wider cards (187 px of content and up) keep one row. */
+body.touch-ui #right-pane .pen-item { container-type: inline-size; container-name: pen-item; }
+@container pen-item (max-width: 150px) {
+  body.touch-ui #right-pane .pen-item .pen-row-b { flex-wrap: wrap; }
+  body.touch-ui #right-pane .pen-item .pen-width { order: 7; flex: 1 1 100%; margin: 0; }
+}
+/* TUX-042 (batch G): in the 200 px pane the grip (44) and remove (44) leave the name 41 px, and 16 px text needs about 90.
+ * Narrow cards give the name its own full line above [grip][remove]. */
+@container pen-item (max-width: 150px) {
+  body.touch-ui #right-pane [data-ui-skin] .pen-item .pen-name-input,
+  body.touch-ui #right-pane .pen-item .pen-name-input { order: 0; flex: 1 1 100%; }
+}
+/* The plotter heads, the plot-range row and the motion rack head seat an info dot (44 px ::before, 14 px past its edge) beside a 44 px
+ * button or slider: 16 px keeps their hit areas apart. */
+body.touch-ui #left-pane :is(.harmonograph-plotter-head, .harmonograph-plotter-row) { gap: 18px; }
+body.touch-ui #left-pane .harmonograph-plotter-head > * { flex-shrink: 0; }
+body.touch-ui #left-pane .harmonograph-plotter-head { padding-right: 16px; } /* keeps the last info dot's 44 px reach inside the pane */
+/* Pendulum card header (title, trace, Active switch, delete) and the 7 alignment buttons wrap instead of running off the pane. */
+body.touch-ui #left-pane :is(.pendulum-header, .pendulum-actions) { flex-wrap: wrap; }
+body.touch-ui .vtp-panel .vtp-align7 { flex-wrap: wrap; }
+body.touch-ui #left-pane .harmonograph-plotter-head { flex-wrap: wrap; }
+/* Pens tab: section headers, palette picker, Add. */
+body.touch-ui #right-pane :is(#pens-section-header, #auto-colorization-header) { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui #right-pane :is(#palette-toggle, #btn-add-pen) { height: var(--touch-target-min); min-width: var(--touch-target-min); box-sizing: border-box; }
+/* Left pane buttons that sat at 24-36 px. */
+body.touch-ui #left-pane :is(#btn-randomize-params, #paint-bucket-expand-btn, #dynamic-controls .mb-4.grid > button) { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui #transform-bbox-controls .tk-flip-btn { height: var(--touch-target-min); }
+body.touch-ui #transform-bbox-controls .tk-link-btn { width: var(--touch-target-min); height: var(--touch-target-min); }
+/* Fill type grid: whole-finger cells, wrapping to more rows (5 across in a 290 px pane). */
+body.touch-ui .paint-bucket-variant-grid { grid-template-columns: repeat(auto-fill, minmax(var(--touch-target-min), 1fr)); }
+body.touch-ui .pb-variant-btn { height: var(--touch-target-min); min-width: var(--touch-target-min); }
+/* Generator picker rows (the shared .lvl-algo-sub-item stays 34 px in the context bar fly-outs). */
+body.touch-ui #gm-module-menu .lvl-algo-sub-item { min-height: var(--touch-target-min); box-sizing: border-box; }
+/* The formula pane header is a finger tall when the pane is open (the pane height is fixed, so the canvas share does not change). */
+body.touch-ui #bottom-pane:not(.bottom-pane-collapsed) .bottom-pane-header { height: var(--touch-target-min); min-height: var(--touch-target-min); }
+body.touch-ui #bottom-pane:not(.bottom-pane-collapsed) .pane-toggle-bottom { width: var(--touch-target-min); height: var(--touch-target-min); }
+/* Text panel. Fields take a whole row (a half row cannot seat a 44 px handle, the value and a 44 px preset chevron). */
+body.touch-ui .vtp-panel .vtp-grid2 { grid-template-columns: 1fr; }
+body.touch-ui .vtp-panel .vtp-spec-head { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui .vtp-panel :is(.vtp-spec-head-btn, .vtp-spec-pill-head, .vtp-fontpick-trigger, .vtp-vselect, .vtp-ot-btn, .vtp-seg-ctrl button) {
+  min-height: var(--touch-target-min); box-sizing: border-box;
+}
+body.touch-ui .vtp-panel .vtp-vselect { height: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-glyph-btn { width: var(--touch-target-min); height: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-align7 .vtp-glyph-btn { width: auto; flex: 1 0 var(--touch-target-min); min-width: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-scrub { height: calc(var(--touch-target-min) + 2px); } /* + the 1 px border, so the inside is 44 */
+body.touch-ui .vtp-panel .vtp-scrub-handle { min-width: var(--touch-target-min); box-sizing: border-box; justify-content: center; }
+body.touch-ui .vtp-panel .vtp-scrub input { font-size: 16px; }
+/* The stepper pair lies side by side: two stacked 44 px buttons would make the field 88 px tall. */
+body.touch-ui .vtp-panel .vtp-scrub-steppers { flex-direction: row; width: auto; }
+body.touch-ui .vtp-panel .vtp-scrub-steppers button { min-width: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-scrub-steppers button:first-child { border-bottom: 0; border-right: 1px solid var(--ui-border); }
+body.touch-ui .vtp-panel .vtp-scrub-preset { min-width: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-row-toggle { min-height: var(--touch-target-min); }
+body.touch-ui .vtp-panel .vtp-sw-toggle::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+/* Align / Distribute (multi-selection): three buttons a row (seven 44 px columns do not fit), the spacers drop out, and the spacing field
+ * takes the row under the two spacing buttons and the slider. */
+body.touch-ui #left-pane .align-panel-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+body.touch-ui #left-pane .align-panel-spacer { display: none; }
+body.touch-ui #left-pane :is(.align-btn, .align-target-btn) { height: var(--touch-target-min); }
+body.touch-ui #left-pane .align-panel-spacing { display: grid; grid-template-columns: var(--touch-target-min) var(--touch-target-min) minmax(0, 1fr); }
+body.touch-ui #left-pane .align-panel-spacing > #align-spacing-chip { grid-column: 1 / -1; width: 100%; max-width: none; }
+/* The shared floating menu (layer filter, row menus) has finger-tall entries and scrolls when it is taller than the screen. */
+body.touch-ui .menu-dropdown .menu-entry { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui .menu-dropdown {
+  max-height: calc(var(--app-vh) - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 16px);
+  overflow-y: auto; overscroll-behavior: contain;
+}
+/* Pathfinder: buttons wrap to as many 60 px cells as fit (six 44 px columns do not fit a 200 px docked pane). */
+body.touch-ui #left-pane :is(.pathfinder-panel-grid-shape-modes, .pathfinder-panel-grid-pathfinders) { grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); }
+body.touch-ui #left-pane .pathfinder-panel-shape-modes { flex-wrap: wrap; }
+body.touch-ui #left-pane :is(.pf-btn, .pf-mode-btn, .pf-expand-btn) { height: var(--touch-target-min); }
+/* Mirror modifier panel. */
+body.touch-ui .mp-root :is(.mp-stack-add, .mp-change-cta, .mp-side-tile) { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui .mp-root .mp-change-cta { height: var(--touch-target-min); }
+body.touch-ui .mp-root .mp-row { grid-template-columns: var(--touch-target-min) 1fr auto; }
+body.touch-ui .mp-root .mp-row-thumb { width: var(--touch-target-min); height: var(--touch-target-min); aspect-ratio: auto; }
+body.touch-ui .mp-root .mp-ctrl-row-2 { grid-template-columns: 1fr; }
+body.touch-ui .mp-root .mp-info-trigger { position: relative; }
+body.touch-ui .mp-root .mp-info-trigger::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+body.touch-ui .mp-root .mp-ctrl-lbl:has(> .mp-info-trigger) { min-height: var(--touch-target-min); }
+/* === END TUX-041 slice B4 === */
+
+/* === TUX-046 follow-up: scroll cue on long modals ===
+ * data-scroll-cue (utils.scrollCue) lists the edges that still hide controls in the Export settings column and the Document Setup
+ * form. The fades are sticky, take no taps, and show nothing when everything fits. Touch only. */
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)::before,
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 3;
+  opacity: 0; transition: opacity 120ms ease;
+}
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)::before { top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent); }
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)::after { bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent); }
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)[data-scroll-cue~="above"]::before,
+body.touch-ui :is(.export-settings-scroll, .settings-panel-body)[data-scroll-cue~="below"]::after { opacity: 1; }
+/* === END TUX-046 follow-up === */
+
+/* === TUX-041 Q22: scroll cue on pane bodies ===
+ * data-scroll-cue (utils.scrollCue.bindPanes) lists the edges that still hide controls in the left pane, the right pane tabs, the
+ * formula pane and the tool drawer. Controls below the fold count as reachable by scrolling, so the fold needs a cue. The fades are
+ * sticky, take no taps, add no net height and show nothing when everything fits. Touch only. */
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)::before,
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 3;
+  opacity: 0; transition: opacity 120ms ease;
+}
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)::before { top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent); }
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)::after { bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent); }
+body.touch-ui .tool-drawer-body::before { margin-bottom: -40px; }
+body.touch-ui .tool-drawer-body::after { margin-top: -40px; }
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)[data-scroll-cue~="above"]::before,
+body.touch-ui :is(#left-panel-content, .right-tab-panel, .bottom-pane-body, .tool-drawer-body)[data-scroll-cue~="below"]::after { opacity: 1; }
+/* === END TUX-041 Q22 === */
+
+/* === TUX-041 slice B5: Scene3D, Petal Designer, Pattern designer ===
+ * Every target on these three surfaces is at least --touch-target-min in both axes on coarse pointers. Boxes grow for real where the
+ * layout can take it; the small visuals (info dots, switches) keep their size and take a centred ::before inside a 44 px row.
+ * The Batch R 24 px ::before extensions on the Scene3D tree buttons are replaced by real boxes (a ::before that overhangs a
+ * neighbour steals its pixels). Keyed on body.touch-ui, never on width. Desktop is unchanged. */
+/* Scene3D */
+body.touch-ui .vs3-panel :is(.tab-btn, .sect-hdr, .seg-opt, .tog-btn, .vs3-shelf-btn, .vs3-more-btn, .vs3-grp-new, .vs3-grp-del, .vs3-light-reset,
+  .vs3-tree-addbtn, .vs3-name-input, .vs3-grp-name, .vs3-rename, .vs3-tree-row) {
+  min-height: var(--touch-target-min); box-sizing: border-box;
+}
+body.touch-ui .vs3-panel :is(.seg-opt, .tog-btn, .vs3-tree-addbtn, .vs3-grp-new, .vs3-grp-del) { min-width: var(--touch-target-min); }
+body.touch-ui .vs3-more-menu .vs3-more-item { min-height: var(--touch-target-min); box-sizing: border-box; }
+body.touch-ui .vs3-more-menu { max-height: calc(var(--app-vh) - 8px); overflow-y: auto; overscroll-behavior: contain; }
+body.touch-ui .vs3-panel .tog-grp { flex-wrap: wrap; }
+/* +1 px: the shelf columns are fractional (1fr), and a caret of exactly 44 px can lose a pixel to the edge it sits on. */
+body.touch-ui .vs3-more-caret { width: calc(var(--touch-target-min) + 1px); min-height: var(--touch-target-min); }
+body.touch-ui .vs3-panel :is(.vs3-tree-vis, .vs3-tree-del, .vs3-grp-kid-btn) {
+  width: var(--touch-target-min); height: var(--touch-target-min); min-width: var(--touch-target-min);
+}
+body.touch-ui .vs3-panel :is(.vs3-tree-vis, .vs3-tree-del, .vs3-tree-addbtn)::before { content: none; }
+body.touch-ui .vs3-panel .vs3-tree-addlight { gap: 8px; }
+body.touch-ui .vs3-panel .vs3-tree-row { align-items: center; }
+body.touch-ui .vs3-panel .vs3-grp-kid { min-height: var(--touch-target-min); }
+body.touch-ui .vs3-panel .vs3-row { min-height: var(--touch-target-min); }
+body.touch-ui .vs3-panel .vs3-name-input { width: 100%; max-width: 100%; font-size: 16px; }
+/* Main widened .vs3-lbl from 58 to 74 px (U6) so long labels are not cut. On touch that took 16 px from every slider track
+   and left WebKit iPad landscape tracks at 42 px. Touch keeps the 58 px column and wraps a long label onto a second line
+   inside the 44 px row instead, so the full label still shows. */
+body.touch-ui .vs3-panel .vs3-lbl { flex-basis: 58px; white-space: normal; overflow-wrap: break-word; line-height: 1.2; }
+/* A 4-option switch needs 4 x 44 px: the label takes its own line so the control gets the whole row. */
+body.touch-ui .vs3-panel .vs3-row:has(.seg-ctrl > .seg-opt:nth-child(4)) { flex-wrap: wrap; }
+body.touch-ui .vs3-panel .vs3-row:has(.seg-ctrl > .seg-opt:nth-child(4)) > .vs3-lbl { flex: 1 0 100%; }
+/* A switch row that also carries an (i) (Bands, Shadows land on objects, ...): main widened .vs3-lbl to 74 px (U6), so label +
+   switch + a 44 px (i) no longer fit one line of a narrow pane, and the (i)'s 44 px ::before overhung the last option. On touch
+   the label and the (i) share line 1 (the (i) in its own 44 px slot), and the switch takes line 2 at full width. */
+body.touch-ui .vs3-panel .vs3-row:has(> .vs3-ctl > .seg-ctrl):has(> .vs3-lawinfo-wrap) { flex-wrap: wrap; }
+body.touch-ui .vs3-panel .vs3-row:has(> .vs3-ctl > .seg-ctrl):has(> .vs3-lawinfo-wrap) > .vs3-lbl { flex: 1 0 calc(100% - var(--touch-target-min) - 18px); order: 0; }
+body.touch-ui .vs3-panel .vs3-row:has(> .vs3-ctl > .seg-ctrl) > .vs3-lawinfo-wrap {
+  order: 1; flex: 0 0 var(--touch-target-min); min-height: var(--touch-target-min); align-items: center; justify-content: center;
+}
+body.touch-ui .vs3-panel .vs3-row:has(> .vs3-ctl > .seg-ctrl):has(> .vs3-lawinfo-wrap) > .vs3-ctl { order: 2; flex-basis: 100%; }
+/* The More... split button takes two shelf cells: a 44 px caret beside the main button in one cell would squeeze it to 32 px. */
+body.touch-ui .vs3-shelf .vs3-more { grid-column: span 2; }
+body.touch-ui .vs3-panel .vs3-lawinfo-wrap { margin-right: 10px; } /* keeps the 44 px reach off the pane scrollbar */
+body.touch-ui .vs3-panel .sw-toggle { position: relative; }
+body.touch-ui .vs3-panel .sw-toggle::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+/* The info dot ("About ...") keeps its small look and takes a 44 px ::before; its row is a finger tall. */
+body.touch-ui .vs3-panel .vs3-lawinfo-btn { position: relative; }
+body.touch-ui .vs3-panel .vs3-lawinfo-btn::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+body.touch-ui .vs3-panel :is(.vs3-lbl, .vs3-subhead, .vs3-hl-hdr):has(.vs3-lawinfo-btn) { min-height: var(--touch-target-min); }
+/* Petal Designer (inline in the left pane and the pop-out window) */
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-profile-side-btn, .petal-ring-param-accordion-summary, .petal-designer-randomness summary, .petal-slider-label > select, .petal-profile-editor-actions button,
+  .petal-designer-structure input, .petal-designer-structure select, .petal-visualizer-mode select, .petal-designer-transition select) {
+  min-height: var(--touch-target-min); min-width: var(--touch-target-min); box-sizing: border-box;
+}
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-designer-structure input, .petal-designer-structure select, .petal-visualizer-mode select) { font-size: 16px; }
+/* WebKit ignores min-height on a native select: it needs a height. */
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-designer-structure select, .petal-visualizer-mode select, .petal-slider-label > select, .petal-designer-transition select) { height: var(--touch-target-min); }
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-profile-editor-thumbs, .petal-profile-thumbs) {
+  grid-template-columns: repeat(auto-fill, minmax(var(--touch-target-min), 1fr));
+}
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-profile-editor-thumbs, .petal-profile-thumbs) > button { min-width: var(--touch-target-min); min-height: var(--touch-target-min); }
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) .petal-transition-lock { min-height: var(--touch-target-min); }
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-transition-lock, .petal-shade-toggle) :is(.sw-toggle, input[type="checkbox"]) { position: relative; }
+body.touch-ui :is(.petal-designer-window, .petal-designer-inline) :is(.petal-transition-lock, .petal-shade-toggle) :is(.sw-toggle, input[type="checkbox"])::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: var(--touch-target-min); height: var(--touch-target-min); transform: translate(-50%, -50%);
+}
+/* The pop-out window floats over the canvas HUD and covers part of it, so the half-covered zoom buttons would be half dead: the HUD
+ * steps aside while the window is open (the window itself is the active surface; undo / redo live in its header, TUX-020). */
+body.touch-ui:has(#petal-designer-window:not(.petal-designer-inline)) .canvas-hud { display: none; }
+/* Pattern designer: its header row holds three buttons and the shared tool strip (8 x 44 px), which ran past the pane edge. Both rows wrap. */
+body.touch-ui .pattern-designer-inline .pd-header-row { flex-wrap: wrap; row-gap: 6px; }
+body.touch-ui .pattern-designer-inline .pd-header-actions { flex-wrap: wrap; row-gap: 6px; justify-content: flex-end; }
+/* A tablet drawer (Document Setup) slid over the left 14 px of the tool rail and took 5 px of every rail button: the rail rides above it. */
+body.touch-ui:not(.phone-layout):has(.settings-panel.open) #tool-bar { z-index: 41; }
+/* ...and the 14 px of drawer under the rail stay empty, so the rail never steals a control's reach. */
+body.touch-ui:not(.phone-layout) .settings-panel-body { padding-right: 16px; box-sizing: border-box; }
+/* Generator picker on a short screen: the list scrolls, so the hidden edge gets a fade (utils.scrollCue, bound when the list opens). */
+body.touch-ui #gm-module-menu::before, body.touch-ui #gm-module-menu::after {
+  content: ''; display: block; position: sticky; flex: none; height: 28px; pointer-events: none; z-index: 2;
+  opacity: 0; transition: opacity 120ms ease;
+}
+body.touch-ui #gm-module-menu::before { top: 0; margin-bottom: -28px; background: linear-gradient(to bottom, var(--ui-panel) 15%, transparent); }
+body.touch-ui #gm-module-menu::after { bottom: 0; margin-top: -28px; background: linear-gradient(to top, var(--ui-panel) 15%, transparent); }
+body.touch-ui #gm-module-menu[data-scroll-cue~="above"]::before,
+body.touch-ui #gm-module-menu[data-scroll-cue~="below"]::after { opacity: 1; }
+/* Collapsed touch-wide rail: the chevron fills the 36 px rail (its own ::before reaches 10 px onto the canvas). Its box had grown to 44 px,
+ * so 8 px more of it lay over the canvas (792 px2 instead of 440) and took the iPad landscape share to 74.999 % (the right chevron even ran 17 px off screen). The hit area stays 46 px wide. */
+/* B4's pane rule (#left-pane button { min-width: 44px }, specificity with an id) is what grew it; the rule now skips .pane-toggle too. */
+body.touch-wide-layout.touch-ui :is(#left-pane, #right-pane).pane-collapsed .pane-toggle { width: auto; min-width: 0; }
+/* === END TUX-041 slice B5 === */
+
+/* === TUX-031 (batch G): a drawn shape keeps its Shape Properties button on phones ===
+ * The generic phone rule hides .ctxbar at <= 640px. A phone user then cannot reach polygon sides or corner radius after the draw.
+ * Only the shape context shows the bar there: showing it for every selection covered the canvas (honest share 75 -> 69 %) and a
+ * 20 px grip fell under 44 px. The bar floats over the canvas, hides itself without a context, and has no grip, like the pen draft. */
+@media (max-width: 640px) {
+  body.touch-ui .ctxbar.ctxbar--shape { display: flex; }
+  body.touch-ui .ctxbar.ctxbar--shape .ctxbar-handle { display: none; }
+  body.touch-ui .ctxbar.ctxbar--shape .ctxbar-content { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+  body.touch-ui .ctxbar.ctxbar--shape .ctxbar-content::-webkit-scrollbar { display: none; }
+  body.touch-ui .ctxbar.ctxbar--shape .ctxbar-overflow-wrap { flex: 0 0 auto; }
+}
+/* === END TUX-031 (batch G) === */
+
+/* === TUX-050 (batch G): Paper size stays on screen on the shortest phone landscape ===
+ * At 874 x 330 the Theme section pushed the Paper size select under the window edge. Paper holds the primary
+ * control, so on a short touch viewport it goes first. */
+@media (max-height: 360px) {
+  body.touch-ui #settings-panel .settings-panel-body { display: flex; flex-direction: column; }
+  body.touch-ui #settings-panel .settings-panel-body > .sect--color-paper { order: -1; }
+}
+/* === END TUX-050 (batch G) === */
+
+/* === Export legend gear above the footer on the shortest phone landscape (followups B3 b) ===
+ * At 874 x 330 the preview stage runs under the pinned modal footer, and the legend (anchored to the stage bottom) put its
+ * gear under the footer. On short touch screens the legend anchors to the stage top, which stays in the visible band. */
+@media (max-height: 400px) {
+  body.touch-ui .export-preview-legend { top: 12px; bottom: auto; }
+}
+/* === END export legend gear === */

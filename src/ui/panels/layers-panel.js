@@ -67,11 +67,58 @@
     return DEPS;
   };
 
+  // ── TUX-012 — touch row template switch ───────────────────────────────────
+  // One predicate decides which row template renderLayers builds. Coarse pointers
+  // (or an explicit `touch-ui` body class) get the two-row template with a
+  // reorder grip and a ⋯ button; everything else keeps the desktop template.
+  // Viewport width is never part of the test (Decision Q1).
+  const _lvlTouchRows = () => {
+    try {
+      if (typeof G.matchMedia === 'function' && G.matchMedia('(pointer: coarse)').matches) return true;
+    } catch (_) { /* matchMedia unavailable */ }
+    return !!(G.document && G.document.body && G.document.body.classList.contains('touch-ui'));
+  };
+
+  // Re-render when the template choice flips (pointer type change, touch-ui toggled).
+  const _lvlInstallTouchWatch = (ui) => {
+    if (!ui || ui._lvlTouchWatch) return;
+    ui._lvlTouchWatch = true;
+    let last = _lvlTouchRows();
+    const check = () => {
+      const now = _lvlTouchRows();
+      if (now === last) return;
+      last = now;
+      if (typeof ui.renderLayers === 'function') ui.renderLayers();
+    };
+    try {
+      const mq = typeof G.matchMedia === 'function' ? G.matchMedia('(pointer: coarse)') : null;
+      if (mq && typeof mq.addEventListener === 'function') mq.addEventListener('change', check);
+      else if (mq && typeof mq.addListener === 'function') mq.addListener(check);
+    } catch (_) { /* noop */ }
+    try {
+      if (G.document && G.document.body && typeof G.MutationObserver === 'function') {
+        new G.MutationObserver(check).observe(G.document.body, { attributes: true, attributeFilter: ['class'] });
+      }
+    } catch (_) { /* noop */ }
+  };
+
   function renderLayers() {
     const { SETTINGS, escapeHtml } = requireDeps('renderLayers');
+    _lvlInstallTouchWatch(this);
       const list = document.getElementById('layer-list');
       if (!list) return;
       list.innerHTML = '';
+      // TUX-038: the double-tap interval is the gap between two pointerdown event timeStamps
+      // (the browser stamps them when it queues them). Date.now() at handler run time drifts when the
+      // main thread is busy, so a real double-tap read as two slow taps. One delegated listener, once.
+      if (!list._vecturaPdStamp) {
+        list._vecturaPdStamp = true;
+        list.addEventListener('pointerdown', (ev) => {
+          const row = ev.target?.closest?.('[data-lvl-id]');
+          this._lvlPdId = row ? row.dataset.lvlId : null;
+          this._lvlPdStamp = ev.timeStamp;
+        }, true);
+      }
 
       const engine = this.app.engine;
       const allLayers = engine.layers || [];
@@ -295,18 +342,22 @@
         this.renderLayers(); this.app.render?.();
       };
 
-      const _bindCardTouchDrag = (el, layer) => {
-        let holdTimer = null;
+      // _bindCardTouchDrag: touch reorder. TUX-044's PointerReorder builds on this function.
+      // TUX-034a removed the 350 ms card hold: a hold on the card body now opens the layer
+      // menu (TouchHold). Reorder starts only from the `.lvl-grip` handle (`immediate`), after
+      // about `gripDragPx` of movement. A plain card touch never reorders.
+      // `handle` (default: the card) is the element the touch listeners live on.
+      const _bindCardTouchDrag = (el, layer, { immediate = false, handle = el } = {}) => {
+        if (!immediate) return; // card body: TouchHold owns the hold; nothing to bind here.
         let isDragging = false;
         let startTouchId = null;
+        let startX = 0;
         let startY = 0;
         let lastTargetId = null;
         let lastPos = null;
 
-        const cancelHold = () => { clearTimeout(holdTimer); holdTimer = null; };
-
         const finishDrag = (commit) => {
-          cancelHold();
+          stopEdgeScroll();
           el.draggable = true;
           if (isDragging) {
             if (commit && lastTargetId && lastPos) {
@@ -351,33 +402,57 @@
           lastPos = null;
         };
 
-        el.addEventListener('touchstart', (e) => {
+        const beginDrag = () => {
+          isDragging = true;
+          _lvlDRAG.id = layer.id;
+          el.classList.add('dragging');
+        };
+
+        handle.addEventListener('touchstart', (e) => {
           if (e.touches.length !== 1) { finishDrag(false); return; }
-          // Disable native drag immediately so the browser (Safari, Brave, Chrome)
-          // does not intercept the touch as an element drag gesture.
+          // Disable native drag immediately so the browser does not intercept the touch
+          // as an element drag gesture.
           el.draggable = false;
           const t = e.touches[0];
           startTouchId = t.identifier;
+          startX = t.clientX;
           startY = t.clientY;
-          holdTimer = setTimeout(() => {
-            holdTimer = null;
-            isDragging = true;
-            _lvlDRAG.id = layer.id;
-            el.classList.add('dragging');
-            if (navigator.vibrate) navigator.vibrate(30);
-          }, 350);
         }, { passive: true });
 
-        el.addEventListener('touchmove', (e) => {
-          const t = Array.from(e.touches).find((tt) => tt.identifier === startTouchId);
-          if (!t) return;
-          if (!isDragging) {
-            if (Math.abs(t.clientY - startY) > 12) cancelHold();
-            return;
-          }
-          e.preventDefault();
+        // TUX-044 req 5: a finger that rests near the list's top or bottom edge fires no touchmove, so a
+        // frame loop scrolls the list and re-targets the drop row under the resting finger.
+        let dragPoint = null;
+        let edgeRaf = 0;
+        const stopEdgeScroll = () => { if (edgeRaf) cancelAnimationFrame(edgeRaf); edgeRaf = 0; dragPoint = null; };
+        const startEdgeScroll = () => {
+          if (edgeRaf) return;
+          const tick = () => {
+            edgeRaf = 0;
+            if (!isDragging || !dragPoint) return;
+            const r = list.getBoundingClientRect();
+            const zone = Math.min(48, r.height / 3);
+            const maxStep = 14;
+            let dy = 0;
+            if (dragPoint.clientY < r.top + zone) dy = -Math.ceil(maxStep * Math.min(1, (r.top + zone - dragPoint.clientY) / zone));
+            else if (dragPoint.clientY > r.bottom - zone) dy = Math.ceil(maxStep * Math.min(1, (dragPoint.clientY - (r.bottom - zone)) / zone));
+            if (dy) {
+              const before = list.scrollTop;
+              list.scrollTop = before + dy;
+              if (list.scrollTop !== before) track(dragPoint);
+            }
+            edgeRaf = requestAnimationFrame(tick);
+          };
+          edgeRaf = requestAnimationFrame(tick);
+        };
+        const track = (t) => {
           el.style.pointerEvents = 'none';
-          const below = document.elementFromPoint(t.clientX, t.clientY);
+          let below = document.elementFromPoint(t.clientX, t.clientY);
+          // A group-exit strip only counts for a row inside that group. Elsewhere, the row just above it takes the
+          // drop, so a finger resting at the list's bottom edge still reaches the last row (TUX-044 req 5).
+          const rawExit = below?.closest('[data-lvl-exit-group]');
+          if (rawExit && engine.getLayerById?.(_lvlDRAG.id)?.parentId !== rawExit.dataset.lvlExitGroup) {
+            below = document.elementFromPoint(t.clientX, rawExit.getBoundingClientRect().top - 2);
+          }
           el.style.pointerEvents = '';
           _lvlClrAllDrop();
           lastTargetId = null;
@@ -462,10 +537,26 @@
               }
             }
           }
+        };
+
+        handle.addEventListener('touchmove', (e) => {
+          const t = Array.from(e.touches).find((tt) => tt.identifier === startTouchId);
+          if (!t) return;
+          if (!isDragging) {
+            // The grip owns its touch (touch-action: none): never let the list scroll from it.
+            if (e.cancelable) e.preventDefault();
+            const slop = (G.Vectura?.TOUCH_HOLD?.gripDragPx);
+            if (Math.hypot(t.clientX - startX, t.clientY - startY) < slop) return;
+            beginDrag();
+          }
+          e.preventDefault();
+          dragPoint = { clientX: t.clientX, clientY: t.clientY };
+          track(dragPoint);
+          startEdgeScroll();
         }, { passive: false });
 
-        el.addEventListener('touchend', () => finishDrag(true));
-        el.addEventListener('touchcancel', () => finishDrag(false));
+        handle.addEventListener('touchend', () => finishDrag(true));
+        handle.addEventListener('touchcancel', () => finishDrag(false));
       };
 
       const bindCardDrag = (el, layer) => {
@@ -503,7 +594,6 @@
           _lvlClrAllDrop();
           setHint(null);
         });
-        _bindCardTouchDrag(el, layer);
       };
 
       const addCardDropZone = (el, layer) => {
@@ -962,6 +1052,9 @@
 
       const _lvlNameEl = (layer, cls) => {
         const sp = document.createElement('span'); sp.className = cls;
+        // TUX-012 (Jay, 2026-10-12): the docked 200 px pane may truncate a name. The name tooltip shows it in full
+        // (a touch long-press opens the row menu, which carries the full name as its header).
+        sp.title = layer.name;
         const q = this.layerSearchQ || '';
         if (!q) { sp.textContent = layer.name; return sp; }
         const lo = layer.name.toLowerCase(), idx = lo.indexOf(q.toLowerCase());
@@ -1004,12 +1097,28 @@
         inp.addEventListener('mousedown', (e4) => e4.stopPropagation());
       };
 
+      // TUX-038: the ⋯ / long-press menu "Rename" opens the same inline editor a double-tap opens.
+      // (It used to focus the .lvl-name span, which is not focusable, so nothing happened.)
+      this.startLayerRename = (id) => {
+        const el = document.querySelector(
+          `[data-lvl-id="${id}"] .lvl-name,[data-lvl-id="${id}"] .lvl-grp-name`);
+        const live = engine.getLayerById?.(id);
+        if (!el || !live) return false;
+        _lvlTriggerRename(el, live);
+        return true;
+      };
+
       const _lvlDoSel = (e, id) => {
-        const now = Date.now();
+        // Event time only. Never mix it with Date.now() or performance.now() (different clocks).
+        const now = (this._lvlPdId === String(id) && Number.isFinite(this._lvlPdStamp)) ? this._lvlPdStamp : e.timeStamp;
+        // TUX-033: read modifiers through the shared reader so a Multi-select latch works by touch.
+        const mods = window.Vectura?.InputModifiers?.readModifiers(e) || {};
+        const toggleSel = mods.meta || mods.multiSelect;
         const onName = e.target?.closest?.('.lvl-name,.lvl-grp-name');
-        if (onName && !e.metaKey && !e.ctrlKey && !e.shiftKey
-            && now - this._lvlDblTime < 350 && this._lvlDblId === id) {
-          this._lvlDblTime = 0; this._lvlDblId = null;
+        if (onName && !toggleSel && !mods.shift
+            && Number.isFinite(this._lvlDblTime) && now - this._lvlDblTime < 350 && now >= this._lvlDblTime
+            && this._lvlDblId === id) {
+          this._lvlDblTime = null; this._lvlDblId = null;
           // Double-click selects the target first so the panel/controls reflect
           // it — this matters for a child nested inside a group/modifier whose
           // single-click may not have left it active. Then enter rename. Use a
@@ -1034,11 +1143,12 @@
           return;
         }
         this._lvlDblTime = now; this._lvlDblId = id;
-        if (e.metaKey || e.ctrlKey) {
+        if (toggleSel) {
           const ids = new Set(renderer?.selectedLayerIds || []);
           ids.has(id) ? ids.delete(id) : ids.add(id);
           renderer.setSelection([...ids], id);
-        } else if (e.shiftKey && this.lastLayerClickId) {
+        } else if (mods.shift && this.lastLayerClickId) {
+          // TUX-033: mods.shift = real Shift OR the touch Constrain task, so a finger gets range select.
           const ord = _lvlFlatOrder();
           const a = ord.indexOf(this.lastLayerClickId), b = ord.indexOf(id);
           const lo = Math.min(a, b), hi = Math.max(a, b);
@@ -1064,6 +1174,7 @@
           b.innerHTML = on ? this._LVL_I.eye() : this._LVL_I.eyeOff();
           const modLabel = `${layer.modifier?.type === 'morph' ? 'morph' : 'mirror'} modifier`;
           b.title = (on ? 'Disable ' : 'Enable ') + modLabel;
+          b.setAttribute('aria-label', b.title);
           b.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.app.pushHistory) this.app.pushHistory();
@@ -1075,6 +1186,7 @@
           b.className = 'lvl-ib' + (layer.visible ? '' : ' vis-off');
           b.innerHTML = layer.visible ? this._LVL_I.eye() : this._LVL_I.eyeOff();
           b.title = layer.visible ? 'Hide' : 'Show';
+          b.setAttribute('aria-label', b.title);
           b.addEventListener('click', (e) => {
             e.stopPropagation();
             if (this.app.pushHistory) this.app.pushHistory();
@@ -1098,11 +1210,13 @@
         if (ancLk) {
           b.className = 'lvl-ib lk-anc'; b.innerHTML = this._LVL_I.lock();
           b.title = 'Locked by parent';
+          b.setAttribute('aria-label', b.title);
           b.addEventListener('click', (e) => e.stopPropagation());
         } else {
           b.className = 'lvl-ib ' + (selfLk ? 'lk-on' : 'lk-off');
           b.innerHTML = selfLk ? this._LVL_I.lock() : this._LVL_I.lockOpen();
           b.title = selfLk ? 'Unlock' : 'Lock';
+          b.setAttribute('aria-label', b.title);
           b.addEventListener('click', (e) => {
             e.stopPropagation();
             selfLk ? this.layerLockedIds.delete(layer.id) : this.layerLockedIds.add(layer.id);
@@ -1111,6 +1225,57 @@
         }
         return b;
       };
+
+      // ── TUX-012 shared row pieces ───────────────────────────────
+      const touchRows = _lvlTouchRows();
+      const LayerContextMenu = () => G.Vectura?.UI?.Menus?.LayerContext;
+
+      // Inline action button built from one `rowActions` entry (desktop strips).
+      const _lvlMkActBtn = (a) => {
+        const b = document.createElement('button');
+        b.className = 'lvl-ab' + (a.cls ? ' ' + a.cls : '');
+        b.title = a.title; b.type = 'button'; b.innerHTML = a.icon();
+        b.addEventListener('click', (e) => { e.stopPropagation(); a.run(); });
+        return b;
+      };
+      // Partial runtimes (unit harnesses that load only this file) have no menu module: no strip.
+      const _lvlRowActions = (layer, opts) => LayerContextMenu()?.rowActions?.(this, layer, opts) ?? [];
+
+      // Touch: reorder grip. Drag starts at once from the grip (no hold). A locked row
+      // still shows the grip but does not bind the drag.
+      const _lvlMkGrip = (layer, rowEl, locked) => {
+        const g = document.createElement('span');
+        g.className = 'lvl-grip'; g.setAttribute('role', 'button');
+        g.setAttribute('aria-label', `Reorder ${layer.name}`);
+        if (locked) g.setAttribute('aria-disabled', 'true');
+        g.innerHTML = this._LVL_I.grip?.() ?? '';
+        if (!locked) _bindCardTouchDrag(rowEl, layer, { immediate: true, handle: g });
+        return g;
+      };
+      // Touch: ⋯ opens the row menu (every secondary action lives there).
+      const _lvlMkMore = (layer) => {
+        const b = document.createElement('button');
+        b.className = 'lvl-ab lvl-more'; b.type = 'button';
+        b.setAttribute('aria-label', `More actions for ${layer.name}`);
+        b.setAttribute('aria-haspopup', 'menu');
+        b.setAttribute('aria-expanded', 'false');
+        b.innerHTML = this._LVL_I.more?.() ?? '';
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          LayerContextMenu()?.openForLayer?.(this, layer, b, { source: 'touch' });
+        });
+        return b;
+      };
+      const _lvlMkPenDot = (layer, card) => {
+        const pd = document.createElement('span');
+        pd.className = 'lvl-pen-dot'; pd.style.background = _lvlPenColor(layer);
+        pd.title = 'Assign pen';
+        pd.addEventListener('click', (e) => { e.stopPropagation(); card.querySelector('.pen-pill')?.click(); });
+        return pd;
+      };
+      // Scene-tree Increment E — friendlier labels for the thin 3D child kinds.
+      const LVL_TYPE_LABEL = { sceneLight3d: 'Light', sceneGround3d: 'Ground', object3d: 'Object 3D', booleanGroup3d: 'Boolean 3D' };
+      const LVL_GROUP_LABEL = { layer: 'Layer', modifier: 'Modifier', scene: 'Scene', boolean: 'Boolean', group: 'Group' };
 
       // ── Card builder ────────────────────────────────────────────
       const _lvlBuildCard = (layer, masked = false) => {
@@ -1127,54 +1292,37 @@
         if (locked) card.classList.add('is-locked');
 
         if (masked) {
-          // V8-style: no inner wrapper, no caret-zone, no clr-bar, no drag grip
+          // V8-style: no inner wrapper, no caret-zone, no clr-bar. Desktop has no drag grip;
+          // the touch template gives it one (TUX-012).
           const r1m = document.createElement('div'); r1m.className = 'lvl-r1';
-          r1m.appendChild(_lvlMkEye(layer));
-          r1m.appendChild(_lvlMkLock(layer));
-          r1m.appendChild(_lvlNameEl(layer, 'lvl-name'));
-          const pdm = document.createElement('span'); pdm.className = 'lvl-pen-dot';
-          pdm.style.background = _lvlPenColor(layer); pdm.title = 'Assign pen';
-          pdm.addEventListener('click', (e) => { e.stopPropagation(); card.querySelector('.pen-pill')?.click(); });
-          r1m.appendChild(pdm); card.appendChild(r1m);
-
           const r2m = document.createElement('div'); r2m.className = 'lvl-r2';
+          const pdm = _lvlMkPenDot(layer, card);
           const aim = document.createElement('span'); aim.className = 'lvl-aico';
           aim.innerHTML = (this._LVL_I[layer.type] ?? this._LVL_I.grid)?.() ?? '';
-          r2m.appendChild(aim);
           const alm = document.createElement('span'); alm.className = 'lvl-algo-label';
-          alm.textContent = layer.type || ''; r2m.appendChild(alm);
-          const actsm = document.createElement('div'); actsm.className = 'lvl-acts';
-          const mkAbM = (cls, iconFn, title, fn) => {
-            const b = document.createElement('button');
-            b.className = 'lvl-ab' + (cls ? ' ' + cls : '');
-            b.title = title; b.type = 'button'; b.innerHTML = iconFn();
-            b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
-          };
-          if (layer.type !== 'shape') {
-            actsm.appendChild(mkAbM('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
+          alm.textContent = layer.type || '';
+          if (touchRows) {
+            card.classList.add('lvl-touch-row');
+            r1m.appendChild(_lvlMkGrip(layer, card, locked));
+            r1m.appendChild(_lvlNameEl(layer, 'lvl-name'));
+            r1m.appendChild(_lvlMkMore(layer));
+            r2m.appendChild(_lvlMkEye(layer));
+            r2m.appendChild(_lvlMkLock(layer));
+            r2m.appendChild(pdm);
+            r2m.appendChild(aim);
+            r2m.appendChild(alm);
+          } else {
+            r1m.appendChild(_lvlMkEye(layer));
+            r1m.appendChild(_lvlMkLock(layer));
+            r1m.appendChild(_lvlNameEl(layer, 'lvl-name'));
+            r1m.appendChild(pdm);
+            r2m.appendChild(aim);
+            r2m.appendChild(alm);
+            const actsm = document.createElement('div'); actsm.className = 'lvl-acts';
+            _lvlRowActions(layer, { masked: true }).forEach((a) => actsm.appendChild(_lvlMkActBtn(a)));
+            r2m.appendChild(actsm);
           }
-          if (layer.type === 'shape' && Array.isArray(layer.fills) && layer.fills.length > 0) {
-            const n = layer.fills.length;
-            actsm.appendChild(mkAbM('', () => this._LVL_I.expand(),
-              `Expand ${n} fill${n === 1 ? '' : 's'} into a group`,
-              () => this._lvlExpandFill(layer)));
-          }
-          if (layer.type === 'shape' && layer.sourceFillRecord && Array.isArray(layer.paths) && layer.paths.length > 0) {
-            const n = layer.paths.length;
-            actsm.appendChild(mkAbM('', () => this._LVL_I.expand(),
-              `Explode fill into ${n} path${n === 1 ? '' : 's'}`,
-              () => this._lvlExplodeFill(layer)));
-          }
-          actsm.appendChild(mkAbM('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            engine.duplicateLayer(layer.id); this.renderLayers(); this.app.render();
-          }));
-          actsm.appendChild(mkAbM('del', () => this._LVL_I.trash(), 'Delete', () => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            this.unlockMirrorChildrenOnDelete?.(layer.id);
-            engine.removeLayer(layer.id); this.renderLayers(); this.app.render();
-          }));
-          r2m.appendChild(actsm); card.appendChild(r2m);
+          card.appendChild(r1m); card.appendChild(r2m);
 
           card.insertAdjacentHTML('beforeend', buildPenAssignment());
           wirePenAssignment(card, layer, () =>
@@ -1182,7 +1330,7 @@
           const _penDragOverM = card.ondragover;
           if (_penDragOverM) card.ondragover = (ev) => { if (_lvlDRAG.id) return; _penDragOverM.call(card, ev); };
           card.addEventListener('click', (e) => {
-            if (e.target.closest('.lvl-ib,.lvl-ab,.pen-assign')) return;
+            if (e.target.closest('.lvl-ib,.lvl-ab,.pen-assign,.lvl-grip,.lvl-more')) return;
             if (this.armedPenId && this.applyArmedPenToLayers?.([layer])) return;
             _lvlDoSel(e, layer.id);
           });
@@ -1190,105 +1338,44 @@
         }
 
         const inner = document.createElement('div'); inner.className = 'lvl-card-inner';
-        const cz = document.createElement('div'); cz.className = 'lvl-caret-zone';
-        inner.appendChild(cz);
-
         const bar = document.createElement('div');
         bar.className = 'lvl-clr-bar'; bar.style.background = _lvlBarColor(layer);
-        inner.appendChild(bar);
-
         const body = document.createElement('div'); body.className = 'lvl-card-body';
         const r1 = document.createElement('div'); r1.className = 'lvl-r1';
-        r1.appendChild(_lvlMkEye(layer));
-        r1.appendChild(_lvlMkLock(layer));
-        r1.appendChild(_lvlNameEl(layer, 'lvl-name'));
-        const pd = document.createElement('span');
-        pd.className = 'lvl-pen-dot'; pd.style.background = _lvlPenColor(layer);
-        pd.title = 'Assign pen';
-        pd.addEventListener('click', (e) => { e.stopPropagation(); card.querySelector('.pen-pill')?.click(); });
-        r1.appendChild(pd);
-        body.appendChild(r1);
-
         const r2 = document.createElement('div'); r2.className = 'lvl-r2';
+        const pd = _lvlMkPenDot(layer, card);
         const ai = document.createElement('span'); ai.className = 'lvl-aico';
         ai.innerHTML = (this._LVL_I[layer.type] ?? this._LVL_I.grid)?.() ?? '';
-        r2.appendChild(ai);
         const al = document.createElement('span'); al.className = 'lvl-algo-label';
-        // Scene-tree Increment E — friendlier labels for the thin 3D child kinds.
-        const LVL_TYPE_LABEL = { sceneLight3d: 'Light', sceneGround3d: 'Ground', object3d: 'Object 3D', booleanGroup3d: 'Boolean 3D' };
-        al.textContent = LVL_TYPE_LABEL[layer.type] || layer.type || ''; r2.appendChild(al);
-
-        const acts = document.createElement('div'); acts.className = 'lvl-acts';
-        const mkAb = (cls, iconFn, title, fn) => {
-          const b = document.createElement('button');
-          b.className = 'lvl-ab' + (cls ? ' ' + cls : '');
-          b.title = title; b.type = 'button'; b.innerHTML = iconFn();
-          b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
-        };
-        if (layer.maskCapabilities?.canSource) {
-          const isSrc = _lvlIsMaskSrc(layer.id);
-          acts.appendChild(mkAb(
-            'mask-btn' + (isSrc ? ' is-src' : ''), () => isSrc ? this._LVL_I.maskSrcActive() : this._LVL_I.maskSrc(),
-            isSrc ? 'Remove clipping mask (click to deactivate)' : 'Make clipping mask — clips layer below',
-            () => {
-              if (this.app.pushHistory) this.app.pushHistory();
-              if (isSrc) {
-                const kids = allLayers.filter((c) => c.parentId === layer.id);
-                kids.forEach((c) => { c.parentId = layer.parentId ?? null; });
-                layer.mask.enabled = false;
-              } else {
-                const sibs = allLayers.filter((s) => (s.parentId ?? null) === (layer.parentId ?? null));
-                const idx = sibs.indexOf(layer);
-                if (idx < sibs.length - 1) {
-                  this.assignLayersToParent(layer.id, [sibs[idx + 1]], { captureHistory: false });
-                }
-                layer.mask.enabled = true;
-              }
-              engine.computeAllDisplayGeometry?.();
-              this.renderLayers(); this.app.render?.();
-            }
-          ));
-          if (isSrc) {
-            const isHidden = Boolean(layer.mask?.hideLayer);
-            acts.appendChild(mkAb(
-              'mask-outline-btn' + (isHidden ? ' is-hidden' : ''),
-              () => isHidden ? this._LVL_I.maskOutlineHide() : this._LVL_I.maskOutlineShow(),
-              isHidden ? 'Show mask layer outline' : 'Hide mask layer outline',
-              () => {
-                this.setLayerMaskHidden(layer, !isHidden, { captureHistory: true });
-                this.renderLayers(); this.app.render?.();
-              }
-            ));
-          }
+        al.textContent = LVL_TYPE_LABEL[layer.type] || layer.type || '';
+        if (touchRows) {
+          // Row 1 = [grip][name][⋯]; row 2 = [eye][lock][pen dot][icon + type label].
+          // The colour bar sits in the grip column; no caret zone on a leaf card.
+          card.classList.add('lvl-touch-row');
+          inner.appendChild(bar);
+          r1.appendChild(_lvlMkGrip(layer, card, locked));
+          r1.appendChild(_lvlNameEl(layer, 'lvl-name'));
+          r1.appendChild(_lvlMkMore(layer));
+          r2.appendChild(_lvlMkEye(layer));
+          r2.appendChild(_lvlMkLock(layer));
+          r2.appendChild(pd);
+          r2.appendChild(ai);
+          r2.appendChild(al);
+        } else {
+          const cz = document.createElement('div'); cz.className = 'lvl-caret-zone';
+          inner.appendChild(cz);
+          inner.appendChild(bar);
+          r1.appendChild(_lvlMkEye(layer));
+          r1.appendChild(_lvlMkLock(layer));
+          r1.appendChild(_lvlNameEl(layer, 'lvl-name'));
+          r1.appendChild(pd);
+          r2.appendChild(ai);
+          r2.appendChild(al);
+          const acts = document.createElement('div'); acts.className = 'lvl-acts';
+          _lvlRowActions(layer).forEach((a) => acts.appendChild(_lvlMkActBtn(a)));
+          r2.appendChild(acts);
         }
-        // Scene-tree Increment E — the thin light/ground child leaves have no
-        // sub-geometry to expand into a group; skip the Expand affordance.
-        const isSceneChildLeaf = layer.type === 'sceneLight3d' || layer.type === 'sceneGround3d';
-        if (layer.type !== 'shape' && !isSceneChildLeaf) {
-          acts.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand into group', () => this.expandLayer?.(layer)));
-        }
-        if (layer.type === 'shape' && Array.isArray(layer.fills) && layer.fills.length > 0) {
-          const n = layer.fills.length;
-          acts.appendChild(mkAb('', () => this._LVL_I.expand(),
-            `Expand ${n} fill${n === 1 ? '' : 's'} into a group`,
-            () => this._lvlExpandFill(layer)));
-        }
-        if (layer.type === 'shape' && layer.sourceFillRecord && Array.isArray(layer.paths) && layer.paths.length > 0) {
-          const n = layer.paths.length;
-          acts.appendChild(mkAb('', () => this._LVL_I.expand(),
-            `Explode fill into ${n} path${n === 1 ? '' : 's'}`,
-            () => this._lvlExplodeFill(layer)));
-        }
-        acts.appendChild(mkAb('', () => this._LVL_I.dup(), 'Duplicate (⌘D)', () => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          engine.duplicateLayer(layer.id); this.renderLayers(); this.app.render();
-        }));
-        acts.appendChild(mkAb('del', () => this._LVL_I.trash(), 'Delete', () => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.unlockMirrorChildrenOnDelete?.(layer.id);
-          engine.removeLayer(layer.id); this.renderLayers(); this.app.render();
-        }));
-        r2.appendChild(acts);
+        body.appendChild(r1);
         body.appendChild(r2);
         inner.appendChild(body);
         card.appendChild(inner);
@@ -1301,7 +1388,7 @@
         if (_penDragOver) card.ondragover = (ev) => { if (_lvlDRAG.id) return; _penDragOver.call(card, ev); };
 
         card.addEventListener('click', (e) => {
-          if (e.target.closest('.lvl-ib,.lvl-ab,.pen-assign')) return;
+          if (e.target.closest('.lvl-ib,.lvl-ab,.pen-assign,.lvl-grip,.lvl-more')) return;
           if (this.armedPenId && this.applyArmedPenToLayers?.([layer])) return;
           _lvlDoSel(e, layer.id);
         });
@@ -1330,15 +1417,12 @@
         car.className = 'lvl-caret' + (layer.groupCollapsed ? '' : ' open');
         car.innerHTML = this._LVL_I.caret();
         car.addEventListener('click', (e) => { e.stopPropagation(); layer.groupCollapsed = !layer.groupCollapsed; this.renderLayers(); });
-        cz.appendChild(car); hdr.appendChild(cz);
+        cz.appendChild(car);
 
         const bar = document.createElement('div'); bar.className = 'lvl-clr-bar';
         bar.style.background = _lvlBarColor(layer) || 'var(--ui-border-hi)';
-        hdr.appendChild(bar);
 
         const gc = document.createElement('div'); gc.className = 'lvl-grp-content';
-        gc.appendChild(_lvlMkEye(layer));
-        gc.appendChild(_lvlMkLock(layer));
         const fi = document.createElement('span'); fi.className = 'lvl-aico';
         // Scene-tree Increment C — scene / boolean groups get their own glyphs;
         // everything else keeps the folder (layer-groups keep the layer icon).
@@ -1349,80 +1433,40 @@
             : layer.groupType === 'layer'
               ? (this._LVL_I.layer?.() ?? this._LVL_I.folder())
               : this._LVL_I.folder();
-        gc.appendChild(fi);
-        gc.appendChild(_lvlNameEl(layer, 'lvl-grp-name'));
 
-        const mkAb = (cls, iconFn, title, fn) => {
-          const b = document.createElement('button');
-          b.className = 'lvl-ab' + (cls ? ' ' + cls : '');
-          b.title = title; b.type = 'button'; b.innerHTML = iconFn();
-          b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
-        };
-        const ga = document.createElement('div'); ga.className = 'lvl-grp-acts';
-        // Scene-tree Increment C — a scene group gets an inline "+ object"
-        // affordance that inserts a new object3d child (default primitive).
-        if (layer.groupType === 'scene' && typeof engine.addObjectToScene === 'function') {
-          // Quick-add: always a box. Right-clicking the scene row (or the Scene
-          // panel's Add Objects shelf) offers every other shape — say so, so the
-          // fastest affordance doesn't read as the ONLY one.
-          ga.appendChild(mkAb('lvl-add-object', () => this._LVL_I.grpPlus(), 'Add box (right-click for more shapes)', () => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            const oid = engine.addObjectToScene(layer.id);
-            if (oid) { renderer.setSelection?.([oid], oid); engine.setActiveLayerId?.(oid); }
-            this.renderLayers(); this.app.render();
-          }));
-          // Scene-tree Increment E — inline "+ light" / "+ ground" affordances
-          // (ground only when no ground child exists yet). A right-click menu on
-          // the header (below) offers the same, plus a light-type submenu.
-          if (typeof engine.addLightToScene === 'function') {
-            ga.appendChild(mkAb('lvl-add-light', () => this._LVL_I.sceneLight3d?.() ?? this._LVL_I.grpPlus(), 'Add light', () => {
-              if (this.app.pushHistory) this.app.pushHistory();
-              const lid = engine.addLightToScene(layer.id, 'directional');
-              if (lid) { renderer.setSelection?.([lid], lid); engine.setActiveLayerId?.(lid); }
-              this.renderLayers(); this.app.render();
-            }));
-          }
-          if (typeof engine.addGroundToScene === 'function') {
-            const hasGround = engine.getLayerDescendants?.(layer.id)?.some((l) => l && l.type === 'sceneGround3d');
-            if (!hasGround) {
-              ga.appendChild(mkAb('lvl-add-ground', () => this._LVL_I.sceneGround3d?.() ?? this._LVL_I.grpPlus(), 'Add ground', () => {
-                if (this.app.pushHistory) this.app.pushHistory();
-                const gid = engine.addGroundToScene(layer.id);
-                if (gid) { renderer.setSelection?.([gid], gid); engine.setActiveLayerId?.(gid); }
-                this.renderLayers(); this.app.render();
-              }));
-            }
-          }
+        if (touchRows) {
+          // Row 1 = [grip][name][⋯]; row 2 = [caret][eye][lock][icon + label].
+          hdr.classList.add('lvl-touch-row');
+          hdr.appendChild(bar);
+          const gr1 = document.createElement('div'); gr1.className = 'lvl-r1';
+          gr1.appendChild(_lvlMkGrip(layer, hdr, _lvlEffLocked(layer.id)));
+          gr1.appendChild(_lvlNameEl(layer, 'lvl-grp-name'));
+          gr1.appendChild(_lvlMkMore(layer));
+          const gr2 = document.createElement('div'); gr2.className = 'lvl-r2';
+          gr2.appendChild(cz);
+          gr2.appendChild(_lvlMkEye(layer));
+          gr2.appendChild(_lvlMkLock(layer));
+          gr2.appendChild(fi);
+          const gl = document.createElement('span'); gl.className = 'lvl-algo-label';
+          gl.textContent = LVL_GROUP_LABEL[layer.groupType] || layer.groupType || 'Group';
+          gr2.appendChild(gl);
+          gc.appendChild(gr1); gc.appendChild(gr2);
+          hdr.appendChild(gc);
+        } else {
+          hdr.appendChild(cz);
+          hdr.appendChild(bar);
+          // Order: eye, lock, icon, name, actions.
+          gc.appendChild(_lvlMkEye(layer));
+          gc.appendChild(_lvlMkLock(layer));
+          gc.appendChild(fi);
+          gc.appendChild(_lvlNameEl(layer, 'lvl-grp-name'));
+          const ga = document.createElement('div'); ga.className = 'lvl-grp-acts';
+          _lvlRowActions(layer).forEach((a) => ga.appendChild(_lvlMkActBtn(a)));
+          gc.appendChild(ga); hdr.appendChild(gc);
         }
-        if (layer.groupType === 'modifier') {
-          ga.appendChild(mkAb('', () => this._LVL_I.expand(), 'Expand to folder', () => {
-            if (this.app.pushHistory) this.app.pushHistory();
-            engine.expandModifierLayer(layer.id);
-            this.renderLayers(); this.app.render();
-          }));
-        }
-        ga.appendChild(mkAb('', () => this._LVL_I.ungroup(), 'Ungroup (⌘⇧G)', () => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.unlockMirrorChildrenOnDelete?.(layer.id);
-          const kids = allLayers.filter((l) => l.parentId === layer.id);
-          kids.forEach((l) => { l.parentId = layer.parentId ?? null; });
-          engine.removeLayer(layer.id);
-          renderer.setSelection(kids.map((l) => l.id), kids[0]?.id);
-          this.renderLayers(); this.app.render();
-        }));
-        ga.appendChild(mkAb('', () => this._LVL_I.dup(), 'Duplicate group', () => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          engine.duplicateLayer(layer.id); this.renderLayers(); this.app.render();
-        }));
-        ga.appendChild(mkAb('del', () => this._LVL_I.trash(), 'Delete group', () => {
-          if (this.app.pushHistory) this.app.pushHistory();
-          this.unlockMirrorChildrenOnDelete?.(layer.id);
-          engine.removeLayer(layer.id); this.renderLayers(); this.app.render();
-        }));
-        gc.appendChild(ga); hdr.appendChild(gc);
 
         hdr.addEventListener('click', (e) => {
-          if (e.target.closest('.lvl-caret,.lvl-ib,.lvl-ab')) return;
+          if (e.target.closest('.lvl-caret,.lvl-ib,.lvl-ab,.lvl-grip,.lvl-more')) return;
           if (this.armedPenId && this.applyArmedPenToLayers?.([layer])) return;
           _lvlDoSel(e, layer.id);
         });
@@ -1557,28 +1601,64 @@
           const anyVisible = selectedLayers.some((l) => l.visible);
           const anyLocked = selIds.some((id) => this.layerLockedIds.has(id));
           const hasCollapsedGroup = selectedLayers.some((l) => l.isGroup && l.groupCollapsed);
-          cmds.appendChild(mkCb('',
-            () => anyVisible ? this._LVL_I.eyeOff() : this._LVL_I.eye(),
-            anyVisible ? 'Hide selected' : 'Show selected',
-            () => this._lvlToggleVisibilitySel(anyVisible)));
-          cmds.appendChild(mkCb('',
-            () => anyLocked ? this._LVL_I.lockOpen() : this._LVL_I.lock(),
-            anyLocked ? 'Unlock selected' : 'Lock selected',
-            () => this._lvlToggleLockSel(!anyLocked)));
-          cmds.appendChild(mkCb('', () => this._LVL_I.grpPlus(), 'Group selected (⌘G)', () => this._lvlGroupSel()));
-          if (hasGrp || hasGroupedChildren) cmds.appendChild(mkCb('', () => this._LVL_I.ungroup(),
-            hasGrp ? 'Ungroup selected (⌘⇧G)' : 'Move out of group (⌘⇧G)',
-            () => this._lvlUngroupSel()));
-          cmds.appendChild(mkCb('mask-btn' + (maskOk ? '' : ' ineligible'), () => this._LVL_I.maskSrc(),
+          const explain = (msg) => () => {
+            const T = window.Vectura?.UI?.overlays?.Toast;
+            if (T && typeof T.show === 'function') T.show({ message: msg, variant: 'info' });
+          };
+          const hideLabel = anyVisible ? 'Hide selected' : 'Show selected';
+          const lockLabel = anyLocked ? 'Unlock selected' : 'Lock selected';
+          const hideFn = () => this._lvlToggleVisibilitySel(anyVisible);
+          const lockFn = () => this._lvlToggleLockSel(!anyLocked);
+          const ungroupLabel = hasGrp ? 'Ungroup selected (⌘⇧G)' : 'Move out of group (⌘⇧G)';
+          // An unavailable action stays tappable and answers with a toast (TUX-036): `title` and `disabled`
+          // are silent for a finger, so the reason would never show.
+          const maskBtn = () => mkCb('mask-btn' + (maskOk ? '' : ' ineligible'), () => this._LVL_I.maskSrc(),
             maskOk ? 'Create clipping mask group' : 'Top layer must be a clip-eligible layer',
-            maskOk ? () => this._lvlMaskSelGroup() : () => {}));
-          const expBtn = mkCb('', () => this._LVL_I.expand(),
-            hasCollapsedGroup ? 'Expand selected groups' : 'No collapsed groups in selection',
-            () => this._lvlExpandSel());
-          if (!hasCollapsedGroup) expBtn.disabled = true;
-          cmds.appendChild(expBtn);
-          cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected (⌘D)', () => this._lvlDupSel()));
-          cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected (⌫)', () => this._lvlDelSel()));
+            maskOk ? () => this._lvlMaskSelGroup() : explain('The top layer must be a clip-eligible layer to make a clipping mask.'));
+          if (document.body.classList.contains('touch-ui')) {
+            // TUX-036 / TUX-041: eight 44 px buttons do not fit the 200 px pane. Mask, Duplicate and Delete stay
+            // one tap away; the rest sit in a ⋯ menu (a disabled row names its reason).
+            const more = mkCb('lvl-sb-more', () => this._LVL_I.more?.() ?? '', 'More actions for the selection', () => {});
+            more.setAttribute('aria-haspopup', 'menu');
+            more.setAttribute('aria-label', 'More actions for the selection');
+            const items = [
+              { key: 'hide', label: hideLabel },
+              { key: 'lock', label: lockLabel },
+              { key: 'group', label: 'Group selected' },
+            ];
+            if (hasGrp || hasGroupedChildren) items.push({ key: 'ungroup', label: ungroupLabel.replace(/ \(.*\)$/, '') });
+            items.push({ key: 'expand', label: hasCollapsedGroup ? 'Expand selected groups' : 'Expand groups (none collapsed)', disabled: !hasCollapsedGroup });
+            const run = { hide: hideFn, lock: lockFn, group: () => this._lvlGroupSel(), ungroup: () => this._lvlUngroupSel(), expand: () => this._lvlExpandSel() };
+            more.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const Menu = window.Vectura?.UI?.overlays?.Menu;
+              if (!Menu) return;
+              if (!this._lvlStripMenu) this._lvlStripMenu = Menu(document.body, { items: [], onSelect: () => {} });
+              // TUX-036 review: the coarse 44 px row rule is keyed on .is-context-menu (rows were 30 px without it).
+              this._lvlStripMenu.el.classList.add('is-context-menu');
+              const m = this._lvlStripMenu;
+              if (m.isOpen && m.isOpen()) { m.close(); return; }
+              m.update({ items, onSelect: (key) => { m.close(); run[key]?.(); } });
+              m.open(more);
+            });
+            cmds.appendChild(more);
+            cmds.appendChild(maskBtn());
+            cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected', () => this._lvlDupSel()));
+            cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected', () => this._lvlDelSel()));
+          } else {
+            cmds.appendChild(mkCb('', () => anyVisible ? this._LVL_I.eyeOff() : this._LVL_I.eye(), hideLabel, hideFn));
+            cmds.appendChild(mkCb('', () => anyLocked ? this._LVL_I.lockOpen() : this._LVL_I.lock(), lockLabel, lockFn));
+            cmds.appendChild(mkCb('', () => this._LVL_I.grpPlus(), 'Group selected (⌘G)', () => this._lvlGroupSel()));
+            if (hasGrp || hasGroupedChildren) cmds.appendChild(mkCb('', () => this._LVL_I.ungroup(), ungroupLabel, () => this._lvlUngroupSel()));
+            cmds.appendChild(maskBtn());
+            const expBtn = mkCb('', () => this._LVL_I.expand(),
+              hasCollapsedGroup ? 'Expand selected groups' : 'No collapsed groups in selection',
+              hasCollapsedGroup ? () => this._lvlExpandSel() : explain('No collapsed groups in the selection.'));
+            if (!hasCollapsedGroup) { expBtn.classList.add('unavailable'); expBtn.setAttribute('aria-disabled', 'true'); }
+            cmds.appendChild(expBtn);
+            cmds.appendChild(mkCb('', () => this._LVL_I.dup(), 'Duplicate selected (⌘D)', () => this._lvlDupSel()));
+            cmds.appendChild(mkCb('del', () => this._LVL_I.trash(), 'Delete selected (⌫)', () => this._lvlDelSel()));
+          }
           bar.appendChild(cmds);
           const sp = document.createElement('div'); sp.className = 'lvl-sb-spacer'; bar.appendChild(sp);
           const tot = document.createElement('span'); tot.className = 'lvl-sb-total';
@@ -1840,13 +1920,18 @@
 
     function _lvlDelSel() {
       if (this.app.pushHistory) this.app.pushHistory();
+      const token = this.app.history?.[this.app.history.length - 1];
       const ids = [...(this.app.renderer?.selectedLayerIds || [])];
+      const label = ids.length === 1
+        ? `Deleted "${this.app.engine.getLayerById?.(ids[0])?.name ?? 'layer'}"`
+        : `Deleted ${ids.length} layers`;
       [...ids].reverse().forEach((id) => {
         this.unlockMirrorChildrenOnDelete(id);
         this.app.engine.removeLayer(id);
       });
       this.renderLayers();
       this.app.render();
+      this.notifyUndoable(label, token);
     }
 
     function _lvlDupSel() {
@@ -2119,6 +2204,10 @@
     document.addEventListener('click', () => {
       getEl('layer-bar-palette-menu', { silent: true })?.classList.add('hidden');
     });
+    // TUX-040b: close on a pointerdown outside too (a drag or scroll makes no click). Trigger and menu stay excluded.
+    window.Vectura.UI.utils.onOutsidePointer(document, (t) => !!(t && t.closest && t.closest('#layer-bar-palette-trigger, #layer-bar-palette-menu')), () => {
+      getEl('layer-bar-palette-menu', { silent: true })?.classList.add('hidden');
+    });
     _updateLBPTrigger();
   }
 
@@ -2250,6 +2339,14 @@
     cascade(layerId);
   }
 
+  // TUX-037: one entry point for the "Deleted X — Undo" toast. `token` is the history
+  // snapshot the delete pushed (`this.app.history[last]` read right after pushHistory).
+  function notifyUndoable(label, token) {
+    const Toast = G.Vectura?.UI?.overlays?.Toast;
+    if (!Toast || typeof Toast.undoable !== 'function') return null;
+    return Toast.undoable({ app: this.app, label, token });
+  }
+
   function shouldLeaveParentScope(layer, prevId, nextId, selectedIds = new Set()) {
     if (!layer?.parentId || selectedIds.has(layer.parentId)) return false;
     const prevLayer = prevId ? this.getLayerById(prevId) : null;
@@ -2367,6 +2464,16 @@
       window.requestAnimationFrame(() => this.scrollLayerToTop(scrollTargetId));
     }
     return true;
+  }
+
+  // TUX-031: the one Arrange verb. The Cmd/Ctrl+[ ] shortcuts and the Object menu both call it.
+  // where: 'forward' | 'backward' | 'top' | 'bottom'. Returns true when the order changed.
+  function arrangeSelection(where) {
+    const direction = { forward: 'up', backward: 'down', top: 'top', bottom: 'bottom' }[where];
+    if (!direction) return false;
+    const changed = this.moveSelectedLayers(direction);
+    if (changed && this.app.pushHistory) this.app.pushHistory();
+    return changed;
   }
 
   function duplicateLayers(targetLayers, options = {}) {
@@ -2839,8 +2946,31 @@
   // context menu after each render. Was previously inlined as the legacy
   // `class UI` `renderLayers` method (which wrapped LayersPanel.renderLayers).
   // Now installed on UI.prototype as `renderLayers` so legacy is methodless.
+  // TUX-034a: one delegated TouchHold on #layer-list. A hold on a card body opens the
+  // layer menu beside the finger. Idempotent per list element; survives every renderLayers().
+  const _lvlBindTouchHold = (ui) => {
+    const TH = G.Vectura?.UI?.TouchHold;
+    const list = document.getElementById('layer-list');
+    if (!TH || !list || list._vecturaTouchHold) return;
+    list._vecturaTouchHold = TH.bind(list, {
+      selector: '[data-layer-id]',
+      pointerTypes: ['touch', 'pen'],
+      // Grip drags, row buttons and the rename field keep their own touch behaviour.
+      resolve: (t, e) => {
+        if (e && e.target && e.target.closest && e.target.closest('.lvl-grip, .lvl-more, .lvl-ib, button, input, textarea, [contenteditable]')) return null;
+        const id = t.getAttribute('data-layer-id');
+        return id ? { key: id, anchorEl: t } : null;
+      },
+      onFire: ({ x, y, key }) => {
+        const layer = ui.app?.engine?.getLayerById?.(key);
+        if (layer) G.Vectura?.UI?.Menus?.LayerContext?.openForLayer?.(ui, layer, x, y, { source: 'touch' });
+      },
+    });
+  };
+
   function renderLayersWithContextMenu() {
     const result = renderLayers.call(this);
+    try { _lvlBindTouchHold(this); } catch (_) { /* non-fatal */ }
     try {
       if (G.Vectura?.UI?.Menus?.LayerContext?.attach) {
         G.Vectura.UI.Menus.LayerContext.attach(this);
@@ -2872,11 +3002,13 @@
     getModifierState,
     assignLayersToParent,
     unlockMirrorChildrenOnDelete,
+    notifyUndoable,
     shouldLeaveParentScope,
     isDescendant,
     sceneNestContainerFor,
     normalizeGroupOrder,
     moveSelectedLayers,
+    arrangeSelection,
     duplicateLayers,
     getLayerChildren,
     getLayerDescendants,
@@ -2911,11 +3043,13 @@
       proto.getModifierState = function(layer) { return getModifierState.call(this, layer); };
       proto.assignLayersToParent = function(...args) { return assignLayersToParent.apply(this, args); };
       proto.unlockMirrorChildrenOnDelete = function(layerId) { return unlockMirrorChildrenOnDelete.call(this, layerId); };
+      proto.notifyUndoable = function(label, token) { return notifyUndoable.call(this, label, token); };
       proto.shouldLeaveParentScope = function(...args) { return shouldLeaveParentScope.apply(this, args); };
       proto.isDescendant = function(targetId, ancestorId) { return isDescendant.call(this, targetId, ancestorId); };
       proto.sceneNestContainerFor = function(tgt) { return sceneNestContainerFor.call(this, tgt); };
       proto.normalizeGroupOrder = function() { return normalizeGroupOrder.call(this); };
       proto.moveSelectedLayers = function(direction) { return moveSelectedLayers.call(this, direction); };
+      proto.arrangeSelection = function(where) { return arrangeSelection.call(this, where); };
       proto.duplicateLayers = function(targetLayers, options) { return duplicateLayers.call(this, targetLayers, options); };
       proto.getLayerChildren = function(layerId) { return getLayerChildren.call(this, layerId); };
       proto.getLayerDescendants = function(layerId) { return getLayerDescendants.call(this, layerId); };

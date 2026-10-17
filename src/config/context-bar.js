@@ -955,6 +955,7 @@
     overflow: {
       buttonTooltip: 'More options',
       items: {
+        selectionMenu: 'Selection menu…',
         showPanel: 'Show Properties panel',
         hideBar: 'Hide bar',
         resetPosition: 'Reset bar position',

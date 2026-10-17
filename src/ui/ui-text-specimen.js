@@ -856,6 +856,11 @@
         guideSvg.innerHTML = '';
         return;
       }
+      // A closed drawer gives the stage zero width: nothing to draw, and a negative <rect> width is an error.
+      if (!(W > 2 * 12 + 1) || !(H > 2 * 9 + 1)) {
+        guideSvg.innerHTML = '';
+        return;
+      }
       guideSvg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
       const parts = [];
       const ax = 12;

@@ -1,0 +1,430 @@
+/**
+ * TUX-025: touch-sized, separated 3D rotation gizmo (orbit pad, yaw, pitch, roll).
+ * Mouse and pen keep the old geometry and 9 px radii. Touch geometry keys on body.touch-ui or a
+ * coarse pointer. Touch radii (22 px) key on pointerType === 'touch'.
+ */
+const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+
+describe('TUX-025: 3D rotation gizmo touch geometry and hit radii', () => {
+  let runtime;
+  let V;
+  let win;
+
+  beforeAll(async () => {
+    runtime = await loadVecturaRuntime({ includeRenderer: true });
+    V = runtime.window.Vectura;
+    win = runtime.window;
+  });
+  afterAll(() => runtime.cleanup());
+  afterEach(() => {
+    win.document.body.classList.remove('touch-ui');
+    win.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+  });
+
+  const setTouch = (on) => {
+    win.document.body.classList.toggle('touch-ui', on);
+    win.matchMedia = () => ({ matches: on, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+  };
+
+  const buildScene = () => {
+    const engine = new V.VectorEngine();
+    engine.layers = [];
+    const gid = engine.addSceneTree();
+    engine.computeAllDisplayGeometry();
+    const renderer = new V.Renderer('main-canvas', engine);
+    renderer.app = { pushHistory: () => {}, render: () => {}, history: [{}, {}] };
+    renderer.activeTool = 'select';
+    renderer.ready = true;
+    renderer.setSelection([gid], gid);
+    renderer.setSceneSelection(null);
+    return { engine, renderer, layer: engine.getLayerById(gid), bounds: null };
+  };
+
+  const buildPoly = () => {
+    const engine = new V.VectorEngine();
+    engine.layers = [];
+    const id = engine.addLayer('polyhedron');
+    const renderer = new V.Renderer('main-canvas', engine);
+    renderer.app = { pushHistory: () => {}, render: () => {}, history: [{}, {}] };
+    renderer.activeTool = 'select';
+    renderer.ready = true;
+    renderer.setSelection([id], id);
+    const layer = engine.layers.find((l) => l.id === id);
+    return { engine, renderer, layer, bounds: renderer.getSelectionBounds([layer]) };
+  };
+
+  const buildPseudo = (type) => () => {
+    const engine = new V.VectorEngine();
+    engine.layers = [];
+    const id = engine.addLayer(type);
+    const renderer = new V.Renderer('main-canvas', engine);
+    renderer.app = { pushHistory: () => {}, render: () => {}, history: [{}, {}] };
+    renderer.activeTool = 'select';
+    renderer.ready = true;
+    renderer.setSelection([id], id);
+    const layer = engine.layers.find((l) => l.id === id);
+    return { engine, renderer, layer, bounds: renderer.getSelectionBounds([layer]) };
+  };
+
+  const fixtures = [['scene3d', buildScene], ['polyhedron', buildPoly]];
+
+  describe.each([['polyhedron'], ['terrain']])('%s: the 2D NE resize handle beats the 3D gizmo for a finger', (type) => {
+    test('h2) a touch tap on bounds.corners.ne arms the ne resize, not a rotation', () => {
+      setTouch(true);
+      const f = buildPseudo(type)();
+      const r = f.renderer;
+      const ne = f.renderer.worldToScreen(f.bounds.corners.ne.x, f.bounds.corners.ne.y);
+      const ev = { clientX: ne.x, clientY: ne.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {} };
+      r.down(ev);
+      expect({ handle: r.activeHandle, rot: r.rotation3DDrag }).toEqual({ handle: 'ne', rot: null });
+      r.up({ ...ev });
+    });
+
+    test('h3) no gizmo target sits within a finger of the NE corner in the touch layout', () => {
+      setTouch(true);
+      const f = buildPseudo(type)();
+      const ne = f.renderer.worldToScreen(f.bounds.corners.ne.x, f.bounds.corners.ne.y);
+      const tol = V.hitTolerance;
+      const need = tol('resize', 'touch');
+      for (const s of grid(f)) {
+        setRot(f, { yaw: s.yaw, pitch: s.pitch, roll: s.roll });
+        const c = control(f);
+        const ring = Math.abs(dist(scr(f, c.center), ne) - c.ringRadius * f.renderer.scale);
+        // The widened ring band may overlap the NE resize zone; the resize zone wins there (see h4). The NE hit centre itself stays outside the band.
+        if (c.rollHandle) expect(ring, `ring band vs NE yaw=${s.yaw}`).toBeGreaterThan(tol('gizmo3d-ring-band', 'touch'));
+        for (const [k, p] of Object.entries(targets(f))) {
+          if (k === 'C') continue;
+          expect(dist(p, ne), `${k} vs NE`).toBeGreaterThan(tol('gizmo3d-marker', 'touch') + need - 22 + 1);
+        }
+      }
+    });
+  });
+
+
+  describe.each([['polyhedron'], ['terrain']])('%s: the widened ring band does not steal a resize pick', (type) => {
+    test('h4) a touch tap 20 px from NE toward the ring (inside both zones) arms ne resize', () => {
+      setTouch(true);
+      const f = buildPseudo(type)();
+      const r = f.renderer;
+      const ne = r.worldToScreen(f.bounds.corners.ne.x, f.bounds.corners.ne.y);
+      const spec = r.get3DRotationSpec(f.layer);
+      r._write3DRotation(f.layer, spec, { yaw: 0 });
+      const c = r.get3DRotationControl(f.layer, r.getSelectionBounds([f.layer]) || f.bounds);
+      const cs = r.worldToScreen(c.center.x, c.center.y);
+      const dx = cs.x - ne.x; const dy = cs.y - ne.y; const l = Math.hypot(dx, dy) || 1;
+      const p = { x: ne.x + (20 * dx) / l, y: ne.y + (20 * dy) / l };
+      const ev = { clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {} };
+      r.down(ev);
+      expect({ handle: r.activeHandle, rot: r.rotation3DDrag }).toEqual({ handle: 'ne', rot: null });
+      r.up({ ...ev });
+    });
+  });
+
+  const control = (f) => f.renderer.get3DRotationControl(f.layer, f.renderer.getSelectionBounds([f.layer]) || f.bounds);
+  const scr = (f, p) => f.renderer.worldToScreen(p.x, p.y);
+  const targets = (f) => {
+    const c = control(f);
+    const t = { C: scr(f, c.center), Y: scr(f, c.yawMarker), P: scr(f, c.pitchMarker) };
+    if (c.rollHandle) t.R = scr(f, c.rollHandle);
+    return t;
+  };
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const setRot = (f, patch) => {
+    const spec = f.renderer.get3DRotationSpec(f.layer);
+    f.renderer._write3DRotation(f.layer, spec, patch);
+    return spec;
+  };
+  const hitAt = (f, p, pointerType) => f.renderer.hit3DRotationControl(p.x, p.y, f.layer, f.renderer.getSelectionBounds([f.layer]) || f.bounds, pointerType);
+
+  const grid = (f) => {
+    const spec = f.renderer.get3DRotationSpec(f.layer);
+    const pitches = [spec.pitchMin, (spec.pitchMin + spec.pitchMax) / 2, spec.pitchMax];
+    const rows = [];
+    for (const yaw of [0, 90, 180, 270]) for (const pitch of pitches) for (const roll of [0, 90, 180, 270]) rows.push({ yaw, pitch, roll });
+    return rows;
+  };
+
+  describe.each(fixtures)('%s', (name, build) => {
+    test('a) touch targets are pairwise >= 28 px apart in every state', () => {
+      setTouch(true);
+      const f = build();
+      let worst = Infinity;
+      let worstAt = '';
+      for (const s of grid(f)) {
+        setRot(f, { yaw: s.yaw, pitch: s.pitch, roll: s.roll });
+        const t = targets(f);
+        const keys = Object.keys(t);
+        for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
+          const d = dist(t[keys[i]], t[keys[j]]);
+          if (d < worst) { worst = d; worstAt = `${keys[i]}-${keys[j]} yaw=${s.yaw} pitch=${s.pitch} roll=${s.roll}`; }
+        }
+      }
+      expect({ worst: Math.round(worst * 10) / 10, worstAt }).toEqual({ worst: expect.any(Number), worstAt: expect.any(String) });
+      expect(worst, `separation expected >=28, got ${worst.toFixed(1)} px at ${worstAt}`).toBeGreaterThanOrEqual(28);
+    });
+
+    test('b) 12 px samples in 8 directions arm that marker; c) 18 px away samples arm it', () => {
+      setTouch(true);
+      const f = build();
+      for (const s of grid(f)) {
+        setRot(f, { yaw: s.yaw, pitch: s.pitch, roll: s.roll });
+        const t = targets(f);
+        const types = { Y: 'yaw', P: 'pitch', R: 'roll' };
+        for (const k of Object.keys(types)) {
+          if (!t[k]) continue;
+          for (let a = 0; a < 8; a++) {
+            const ang = (a * Math.PI) / 4;
+            const p = { x: t[k].x + 12 * Math.cos(ang), y: t[k].y + 12 * Math.sin(ang) };
+            const h = hitAt(f, p, 'touch');
+            expect(h && h.type, `${k} 12px dir ${a} yaw=${s.yaw} pitch=${s.pitch}`).toBe(types[k]);
+          }
+          // 18 px directly away from the nearest other target.
+          let near = null;
+          for (const o of Object.keys(t)) if (o !== k && (!near || dist(t[k], t[o]) < dist(t[k], t[near]))) near = o;
+          const dx = t[k].x - t[near].x;
+          const dy = t[k].y - t[near].y;
+          const l = Math.hypot(dx, dy) || 1;
+          const p = { x: t[k].x + (18 * dx) / l, y: t[k].y + (18 * dy) / l };
+          const h = hitAt(f, p, 'touch');
+          expect(h && h.type, `${k} 18px away yaw=${s.yaw} pitch=${s.pitch}`).toBe(types[k]);
+        }
+      }
+    });
+
+    test('d) a tap 8 px from the centre in 8 directions arms orbit', () => {
+      setTouch(true);
+      const f = build();
+      setRot(f, { yaw: 270 });
+      const t = targets(f);
+      for (let a = 0; a < 8; a++) {
+        const ang = (a * Math.PI) / 4;
+        const h = hitAt(f, { x: t.C.x + 8 * Math.cos(ang), y: t.C.y + 8 * Math.sin(ang) }, 'touch');
+        expect(h && h.type).toBe('orbit');
+      }
+    });
+
+    test('i) TUX-025: a touch tap 20 px from the centre (away from the nearest marker) arms orbit; mouse does not', () => {
+      setTouch(true);
+      const f = build();
+      for (const s of grid(f)) {
+        setRot(f, { yaw: s.yaw, pitch: s.pitch, roll: s.roll });
+        const t = targets(f);
+        let near = null;
+        for (const o of Object.keys(t)) if (o !== 'C' && (!near || dist(t.C, t[o]) < dist(t.C, t[near]))) near = o;
+        const dx = t.C.x - t[near].x;
+        const dy = t.C.y - t[near].y;
+        const l = Math.hypot(dx, dy) || 1;
+        const p = { x: t.C.x + (20 * dx) / l, y: t.C.y + (20 * dy) / l };
+        const h = hitAt(f, p, 'touch');
+        expect(h && h.type, `centre 20px away yaw=${s.yaw} pitch=${s.pitch} roll=${s.roll}`).toBe('orbit');
+      }
+    });
+
+    test('j) TUX-025: a touch tap 20 px off the roll ring (clear of every marker) arms roll; nearest marker still wins', () => {
+      setTouch(true);
+      const f = build();
+      let exercised = 0;
+      for (const s of grid(f)) {
+        setRot(f, { yaw: s.yaw, pitch: s.pitch, roll: s.roll });
+        const c = control(f);
+        if (!c.rollHandle) continue;
+        const t = targets(f);
+        const cs = scr(f, c.center);
+        const ringPx = c.ringRadius * f.renderer.scale;
+        for (let a = 0; a < 16; a++) {
+          const ang = (a * Math.PI) / 8;
+          const p = { x: cs.x + (ringPx + 20) * Math.cos(ang), y: cs.y + (ringPx + 20) * Math.sin(ang) };
+          const nearest = Object.keys(t).filter((k) => k !== 'C').sort((x, y) => dist(p, t[x]) - dist(p, t[y]))[0];
+          if (dist(p, t[nearest]) <= 24) {
+            // A marker is in reach: the nearest marker must win, never the ring.
+            const h = hitAt(f, p, 'touch');
+            expect(h && h.type, `marker in reach ${nearest}`).toBe({ Y: 'yaw', P: 'pitch', R: 'roll' }[nearest]);
+            continue;
+          }
+          if (dist(p, t.C) <= 22 + 1) continue;
+          exercised += 1;
+          const h = hitAt(f, p, 'touch');
+          expect(h && h.type, `ring +20px dir ${a} yaw=${s.yaw} pitch=${s.pitch}`).toBe('roll');
+          expect(hitAt(f, p, 'mouse')).toBeNull();
+        }
+      }
+      expect(exercised).toBeGreaterThan(0);
+    });
+
+    test('g) G5: touch yaw grab 18 px TANGENTIAL off the marker does not jump', () => {
+      setTouch(true);
+      const f = build();
+      const r = f.renderer;
+      const ev = (p, extra = {}) => ({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {}, ...extra });
+      const rot = () => r._read3DRotation(f.layer, r.get3DRotationSpec(f.layer));
+      const wrapD = (d) => (((d % 360) + 540) % 360) - 180;
+      let armedYaw = 0;
+      // Yaw: perpendicular to the radial direction C->Y, at several yaw states.
+      for (const yaw of [0, 90, 180, 270]) {
+        setRot(f, { yaw });
+        const t = targets(f);
+        const rx = t.Y.x - t.C.x; const ry = t.Y.y - t.C.y; const rl = Math.hypot(rx, ry) || 1;
+        for (const sgn of [1, -1]) {
+          setRot(f, { yaw });
+          const start = { x: t.Y.x + sgn * 18 * (-ry / rl), y: t.Y.y + sgn * 18 * (rx / rl) };
+          const h = hitAt(f, start, 'touch');
+          if (!h || h.type !== 'yaw') continue; // grab lands on another target: not a yaw grab
+          armedYaw += 1;
+          r.rotation3DDrag = null;
+          r.setSelection([f.layer.id], f.layer.id);
+          const before = rot().yaw;
+          r.down(ev(start));
+          expect(r.rotation3DDrag && r.rotation3DDrag.type, `yaw armed at yaw=${yaw}`).toBe('yaw');
+          r.move(ev({ x: start.x + 3, y: start.y }));
+          const jump = Math.abs(wrapD(rot().yaw - before));
+          r.up(ev({ x: start.x + 3, y: start.y }));
+          expect(jump, `yaw first-step jump at yaw=${yaw} sgn=${sgn}: ${jump.toFixed(1)} deg`).toBeLessThanOrEqual(12);
+        }
+      }
+      expect(armedYaw, 'tangential yaw grabs exercised').toBeGreaterThanOrEqual(4);
+    });
+
+    test('h) G5: touch pitch grab 18 px VERTICAL off the marker does not jump', () => {
+      setTouch(true);
+      const f = build();
+      const r = f.renderer;
+      const ev = (p, extra = {}) => ({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {}, ...extra });
+      const rot = () => r._read3DRotation(f.layer, r.get3DRotationSpec(f.layer));
+      // jsdom has no canvas rect to clamp the gizmo against: pan the view so the 106 px offset stays on screen.
+      r.offsetY += 200;
+      let armedPitch = 0;
+      // Pitch: straight up or down from the marker (whichever stays a pitch hit).
+      const spec0 = r.get3DRotationSpec(f.layer);
+      for (const pitch of [spec0.pitchMin + 20, (spec0.pitchMin + spec0.pitchMax) / 2, spec0.pitchMax - 20]) {
+        for (const dy of [18, -18]) {
+          setRot(f, { yaw: 270, pitch });
+          const t = targets(f);
+          const start = { x: t.P.x, y: t.P.y + dy };
+          const h = hitAt(f, start, 'touch');
+          if (!h || h.type !== 'pitch' || start.y < 0) continue; // off-canvas start is not a reachable grab
+          armedPitch += 1;
+          r.rotation3DDrag = null;
+          r.setSelection([f.layer.id], f.layer.id);
+          const before = rot().pitch;
+          r.down(ev(start));
+          expect(r.rotation3DDrag && r.rotation3DDrag.type, `pitch armed at pitch=${pitch}`).toBe('pitch');
+          r.move(ev({ x: start.x, y: start.y - 3 }));
+          const jump = Math.abs(rot().pitch - before);
+          r.up(ev({ x: start.x, y: start.y - 3 }));
+          const span = spec0.pitchMax - spec0.pitchMin;
+          const track = control(f).pitchTrackHeight * r.scale;
+          // A 3 px finger move may change pitch by 3/track*span (+ slack); an 18 px offset would add 18/track*span.
+          expect(jump, `pitch first-step jump at pitch=${pitch} dy=${dy}: ${jump.toFixed(1)} deg`).toBeLessThanOrEqual((3 / track) * span + 2);
+        }
+      }
+      expect(armedPitch, 'vertical pitch grabs exercised').toBeGreaterThanOrEqual(1);
+    });
+
+    test('f) mouse and pen keep the old geometry and 9 px radius', () => {
+      setTouch(false);
+      const f = build();
+      setRot(f, { yaw: 0 });
+      const c = control(f);
+      const unit = 1 / f.renderer.scale;
+      expect(c.touch).toBeFalsy();
+      expect(c.padRadius).toBeCloseTo(17 * unit, 6);
+      expect(c.ringRadius).toBeCloseTo(28 * unit, 6);
+      expect(c.yawRadiusX).toBeCloseTo(17 * 0.72 * unit, 6);
+      expect(c.yawRadiusY).toBeCloseTo(17 * 0.48 * unit, 6);
+      expect(c.pitchRadiusX).toBeCloseTo(17 * 0.62 * unit, 6);
+      expect(c.pitchMarker.x).toBeCloseTo(c.center.x - 17 * 0.62 * unit, 6);
+      const t = targets(f);
+      const near = { x: t.Y.x + 12, y: t.Y.y };
+      for (const pt of ['mouse', 'pen', undefined]) {
+        const h = hitAt(f, near, pt);
+        expect(h && h.type).not.toBe('yaw');
+      }
+      const on = hitAt(f, { x: t.Y.x + 4, y: t.Y.y }, 'pen');
+      expect(on && on.type).toBe('yaw');
+    });
+  });
+
+  // Screen points inside a finger-ENLARGED 3D-rotation zone that ALSO lie on another handle at that handle's own
+  // tolerance. Scanned (not hard-coded) so the test follows the real geometry; the caller asserts the list is non-empty,
+  // so a layout change that removes the overlap fails loudly instead of passing vacuously.
+  const overlapPoints = (f, otherHit, { x0 = -150, x1 = 450, y0 = -150, y1 = 300, step = 2, max = 4 } = {}) => {
+    const out = [];
+    const bounds = f.renderer.getSelectionBounds([f.layer]) || f.bounds;
+    for (let x = x0; x < x1 && out.length < max; x += step) {
+      for (let y = y0; y < y1 && out.length < max; y += step) {
+        const h = f.renderer.hit3DRotationControl(x, y, f.layer, bounds, 'touch');
+        if (!h || !h.enlarged) continue;
+        const o = otherHit(x, y, bounds);
+        if (o) out.push({ x, y, rot: h.type, other: o });
+      }
+    }
+    return out;
+  };
+  const tapDown = (renderer, p) => renderer.down({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', cancelable: true, preventDefault() {}, stopPropagation() {} });
+  const tapUp = (renderer, p) => renderer.up && renderer.up({ clientX: p.x, clientY: p.y, button: 0, pointerType: 'touch', preventDefault() {} });
+
+  test('e) precedence (G4): an enlarged rotation zone yields to the scene object gizmo where both hit', () => {
+    setTouch(true);
+    const f = buildScene();
+    const { renderer, engine, layer } = f;
+    const child = engine.getLayerDescendants(layer.id).find((l) => l.type === 'object3d');
+    const select = () => {
+      renderer.rotation3DDrag = null;
+      renderer._sceneObjectGizmoDrag = null;
+      renderer.setSelection([layer.id], layer.id);
+      renderer.setSceneSelection({ layerId: layer.id, mode: 'object', objectIds: [child.id] });
+    };
+    select();
+    // Zoomed out, the touch roll ring crosses the object transform gizmo (at scale 1 they never overlap).
+    renderer.scale = 0.5;
+    expect(renderer.getSceneObjectGizmo(layer), 'object gizmo should show').toBeTruthy();
+    const pts = overlapPoints(f, (x, y) => renderer.hitSceneObjectGizmo(x, y, layer), { max: 3 });
+    expect(pts.length, 'an enlarged rotation zone must overlap the object gizmo somewhere (fixture precondition)').toBeGreaterThan(0);
+    for (const p of pts) {
+      select();
+      tapDown(renderer, p);
+      expect(renderer.rotation3DDrag, `rotation (${p.rot}) must NOT arm at (${p.x},${p.y}); object gizmo owns it`).toBeNull();
+      expect(renderer._sceneObjectGizmoDrag && renderer._sceneObjectGizmoDrag.type, `object gizmo arms at (${p.x},${p.y})`).toBeTruthy();
+      tapUp(renderer, p);
+    }
+  });
+
+  test('e2) precedence (G4 non-scene): an enlarged rotation zone yields to a 2D RESIZE handle, but not to a rotate band', () => {
+    setTouch(true);
+    const f = buildPseudo('topoform')();
+    const { renderer } = f;
+    const resizeHandle = (x, y, bounds) => {
+      const hh = renderer.hitHandle(x, y, bounds, { pointerType: 'touch' });
+      return hh && !String(hh).startsWith('rotate') ? hh : null;
+    };
+    const pts = overlapPoints(f, resizeHandle, { x0: 0, x1: 300, y0: -50, y1: 200, max: 3 });
+    expect(pts.length, 'an enlarged rotation zone must overlap a resize handle (fixture precondition)').toBeGreaterThan(0);
+    for (const p of pts) {
+      renderer.rotation3DDrag = null;
+      renderer.activeHandle = null;
+      renderer.setSelection([f.layer.id], f.layer.id);
+      tapDown(renderer, p);
+      expect(renderer.rotation3DDrag, `rotation (${p.rot}) must yield to resize '${p.other}' at (${p.x},${p.y})`).toBeNull();
+      expect(renderer.activeHandle, `resize handle arms at (${p.x},${p.y})`).toBe(p.other);
+      tapUp(renderer, p);
+    }
+    // The wide rotate band must NOT swallow a gizmo marker: a point in an enlarged zone that hits only a rotate band arms the gizmo.
+    const rotateOnly = [];
+    const bounds = renderer.getSelectionBounds([f.layer]) || f.bounds;
+    for (let x = 0; x < 300 && !rotateOnly.length; x += 2) {
+      for (let y = -50; y < 200 && !rotateOnly.length; y += 2) {
+        const h = renderer.hit3DRotationControl(x, y, f.layer, bounds, 'touch');
+        const hh = renderer.hitHandle(x, y, bounds, { pointerType: 'touch' });
+        if (h && h.enlarged && hh && String(hh).startsWith('rotate')) rotateOnly.push({ x, y, rot: h.type });
+      }
+    }
+    if (rotateOnly.length) {
+      renderer.rotation3DDrag = null;
+      renderer.activeHandle = null;
+      renderer.setSelection([f.layer.id], f.layer.id);
+      tapDown(renderer, rotateOnly[0]);
+      expect(renderer.rotation3DDrag && renderer.rotation3DDrag.type, 'rotate band does not swallow the gizmo').toBe(rotateOnly[0].rot);
+      tapUp(renderer, rotateOnly[0]);
+    }
+  });
+});

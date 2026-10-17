@@ -30,7 +30,7 @@ describe('Help / Shortcuts modal', () => {
     runtime = null;
   });
 
-  test('opens via app.ui.openHelp() with all 7 tab buttons rendered', () => {
+  test('opens via app.ui.openHelp() with all 8 tab buttons rendered', () => {
     expect(typeof window.app.ui.openHelp).toBe('function');
     window.app.ui.openHelp(false);
 
@@ -43,9 +43,9 @@ describe('Help / Shortcuts modal', () => {
     expect(wrap).toBeTruthy();
 
     const tabBtns = wrap.querySelectorAll('.help-tab-btn');
-    expect(tabBtns.length).toBe(7);
+    expect(tabBtns.length).toBe(8);
 
-    const expectedTabs = ['quickstart', 'algorithms', 'tools', 'canvas', 'layers', 'pen', 'fileexport'];
+    const expectedTabs = ['quickstart', 'algorithms', 'tools', 'canvas', 'layers', 'pen', 'fileexport', 'touch'];
     for (const tab of expectedTabs) {
       expect(wrap.querySelector(`[data-tab="${tab}"]`)).toBeTruthy();
       expect(wrap.querySelector(`[data-panel="${tab}"]`)).toBeTruthy();
@@ -97,6 +97,12 @@ describe('Help / Shortcuts modal', () => {
     macBtn.click();
     expect(macBtn.classList.contains('active')).toBe(true);
     expect(sampleKbd.textContent).toBe(sampleKbd.dataset.mac);
+
+    expect(wrap.querySelectorAll('.help-platform-btn').length).toBe(3);
+    const touchBtn = wrap.querySelector('[data-platform="touch"]');
+    touchBtn.click();
+    expect(touchBtn.classList.contains('active')).toBe(true);
+    expect(macBtn.classList.contains('active')).toBe(false);
   });
 
   test('closeModal() removes the open class and clears _modalCleanup state', () => {

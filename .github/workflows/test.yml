@@ -7,6 +7,9 @@ on:
       - main
   schedule:
     - cron: '0 8 * * *'
+  # Manual trigger for the touch nightly jobs (touch-e2e-nightly, touch-audit-nightly), for
+  # example to seed the TUX-058 linux baseline from a branch.
+  workflow_dispatch:
 
 env:
   # Single source of truth for the coverage shard count (1..32) and per-shard Vitest worker cap.
@@ -100,9 +103,12 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm install --no-audit --no-fund --loglevel=error
-      # Smoke projects are desktop + touch-tablet + iPhone-mini emulation on Chromium.
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      # PR smoke (scripts/run-e2e-smoke.js): every non-touch project (desktop, desktop-visual,
+      # touch-tablet, iPhone mini), plus the touch smoke (harness, journeys, fast target-audit
+      # subset) on touch-iphone-portrait (Chromium) and webkit-ipad-portrait (WebKit).
+      # The full touch roster (11 projects) runs in touch-e2e-nightly.
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:e2e:smoke
       - name: Upload Playwright Report
         if: always()
         uses: actions/upload-artifact@v7
@@ -111,6 +117,79 @@ jobs:
           path: |
             playwright-report
             test-results
+          if-no-files-found: ignore
+
+  # TUX-061: every touch spec in all 11 touch projects (7 Chromium, 4 WebKit), nightly.
+  # Playwright-native sharding (--shard=i/n): main's coverage-plan / test-shard-plan
+  # inventory is Vitest-only. On a red shard, download its playwright-report artifact.
+  touch-e2e-nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        touch_shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TOUCH_SHARD: ${{ matrix.touch_shard }}
+      TOUCH_SHARD_COUNT: '10'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:playwright -- tests/e2e/touch --project='touch-*' --project='webkit-*' --shard="$TOUCH_SHARD/$TOUCH_SHARD_COUNT" --reporter=line
+      - name: Upload touch shard report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: touch-e2e-shard-${{ matrix.touch_shard }}
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # TUX-058: the full 26-state touch target audit on all 11 touch projects. The fast subset
+  # runs in e2e-smoke (two projects) and in touch-e2e-nightly (all 11). Uploads the measured
+  # JSON and the baseline file (see the seeding note on the audit step).
+  touch-audit-nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npx playwright install --with-deps chromium webkit
+      # A manual run (workflow_dispatch) seeds the linux baseline section: TOUCH_BASELINE=update
+      # writes every missing linux cell into tests/e2e/touch/target-baseline.json, which is
+      # uploaded below. Commit that file to seed linux. A scheduled run only measures (missing
+      # linux cells are soft `baseline-missing` annotations, never a failure).
+      - run: npm run test:e2e:touch:audit:full
+        env:
+          TOUCH_BASELINE: ${{ github.event_name == 'workflow_dispatch' && 'update' || '' }}
+      # A manual run also measures the TUX-059 journey ledger on linux. It writes
+      # tests/e2e/touch/journey-status.linux.json (uploaded below). Until that file is committed,
+      # linux journey cells are record-only (`ledger-missing` annotation).
+      - name: Measure the linux journey ledger (manual runs only)
+        if: always() && github.event_name == 'workflow_dispatch'
+        run: npm run test:e2e:touch:journeys:ledger
+      - name: Upload touch audit measurements
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: touch-audit-measured
+          path: |
+            test-results
+            playwright-report
+            tests/e2e/touch/target-baseline.json
+            tests/e2e/touch/journey-status.linux.json
           if-no-files-found: ignore
 
   visual:
@@ -333,6 +412,9 @@ jobs:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    env:
+      # The 11 touch projects run in the sharded touch-e2e-nightly matrix, not here.
+      PW_TOUCH_PROJECTS: '0'
     steps:
       - uses: actions/checkout@v7
         with:

@@ -150,6 +150,38 @@
           // Panel specimen is suppressed during a session; rebuild on end so it
           // re-syncs to the final text without two editors fighting params.text.
           refreshPanel: () => { this.ui?.buildControls?.(); },
+          // TUX-028 soft-keyboard proxy hooks (touch/pen sessions only). Caret
+          // position in CLIENT px (+ the canvas rect to clamp inside) so the hidden
+          // textarea sits at the caret, and a canvas pan used to keep the caret above
+          // the on-screen keyboard. Keyboard-inset seam: TUX-032 may absorb panCanvasBy.
+          getCaretClientPoint: () => {
+            const seg = this.textEdit?.getCaretSegment?.();
+            const canvas = this.renderer?.canvas || document.getElementById('main-canvas');
+            if (!seg || !canvas) return null;
+            const r = canvas.getBoundingClientRect();
+            const a = this.renderer.worldToScreen(seg.x0, seg.y0);
+            const b = this.renderer.worldToScreen(seg.x1, seg.y1);
+            return {
+              x: r.left + Math.min(a.x, b.x),
+              top: r.top + Math.min(a.y, b.y),
+              bottom: r.top + Math.max(a.y, b.y),
+              rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+            };
+          },
+          // Undo/redo chord pressed while the touch proxy (a TEXTAREA) had focus; the
+          // global shortcut handler skips TEXTAREA targets, so route via the menu action.
+          undoRedo: (kind) => { this.ui?.triggerTopMenuAction?.(kind === 'undo' ? 'btn-undo' : 'btn-redo'); },
+          // App-level accelerators (Cmd/Ctrl+S/E/O...) while the proxy has focus;
+          // shortcuts.js ignores TEXTAREA targets. Returns true when handled.
+          handleShortcut: (e) => !!this.ui?.handleTopMenuShortcut?.(e),
+          // Single source of truth for the modal guard (shared with shortcuts.js).
+          isModalOpen: () => !!this.ui?.isModalOverlayOpen?.(),
+          panCanvasBy: (dx, dy) => {
+            if (!this.renderer) return;
+            this.renderer.offsetX += dx || 0;
+            this.renderer.offsetY += dy || 0;
+            this.renderer.draw?.();
+          },
           // Commit / cancel (Cmd/Ctrl+Enter, Esc) returns to the Selection tool
           // via the toolbar API so the button state stays in sync.
           setTool: (tool) => { this.ui?.setActiveTool?.(tool); },
@@ -166,6 +198,7 @@
             if (opts.unwindHistory && this.history.length
               && this.history.length === this._textCreateHistoryLen) {
               this.history.pop();
+              this._notifyHistory();
             }
             this._textCreateHistoryLen = null;
             this.renderer?.setSelection?.([], null);
@@ -249,6 +282,7 @@
       this.maxHistory = SETTINGS.undoSteps ?? 20;
       this.isRestoring = false;
       this.pushHistory();
+      this._notifyHistory();
 
       this.render();
       this.persistPreferencesDebounced(0);
@@ -470,7 +504,6 @@
         undoSteps: SETTINGS.undoSteps,
         uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
         aboutVisible: SETTINGS.aboutVisible !== false,
-        touchModifiers: SETTINGS.touchModifiers ? clone(SETTINGS.touchModifiers) : null,
         documentUnits: normalizeDocumentUnits(SETTINGS.documentUnits),
         paperSize: SETTINGS.paperSize,
         paperWidth: SETTINGS.paperWidth,
@@ -506,6 +539,8 @@
         toolbarHorizontal: SETTINGS.toolbarHorizontal === true,
         leftPaneCollapsed: SETTINGS.leftPaneCollapsed === true,
         rightPaneCollapsed: SETTINGS.rightPaneCollapsed === true,
+        touchWideLeftPaneCollapsed: SETTINGS.touchWideLeftPaneCollapsed === true,
+        touchWideRightPaneCollapsed: SETTINGS.touchWideRightPaneCollapsed === true,
         bottomPaneCollapsed: SETTINGS.bottomPaneCollapsed === true,
         bottomPaneHeight: typeof SETTINGS.bottomPaneHeight === 'number' ? SETTINGS.bottomPaneHeight : null,
       };
@@ -652,12 +687,7 @@
         SETTINGS.uiSections = clone(snapshot.uiSections);
       }
       if (snapshot.aboutVisible !== undefined) SETTINGS.aboutVisible = snapshot.aboutVisible !== false;
-      if (snapshot.touchModifiers && typeof snapshot.touchModifiers === 'object' && !Array.isArray(snapshot.touchModifiers)) {
-        SETTINGS.touchModifiers = {
-          ...(SETTINGS.touchModifiers || {}),
-          ...snapshot.touchModifiers,
-        };
-      }
+      // TUX-045: legacy touchModifiers is ignored; modifier tasks are runtime-only.
       SETTINGS.documentUnits = normalizeDocumentUnits(snapshot.documentUnits ?? SETTINGS.documentUnits);
       SETTINGS.paperSize = takeSafeString('paperSize', SETTINGS.paperSize, 64);
       SETTINGS.paperWidth = takeNumber('paperWidth', SETTINGS.paperWidth, 1, 100000);
@@ -758,6 +788,8 @@
       SETTINGS.toolbarHorizontal = snapshot.toolbarHorizontal === true;
       SETTINGS.leftPaneCollapsed = snapshot.leftPaneCollapsed === true;
       SETTINGS.rightPaneCollapsed = snapshot.rightPaneCollapsed === true;
+      SETTINGS.touchWideLeftPaneCollapsed = snapshot.touchWideLeftPaneCollapsed === true;
+      SETTINGS.touchWideRightPaneCollapsed = snapshot.touchWideRightPaneCollapsed === true;
       SETTINGS.bottomPaneCollapsed = snapshot.bottomPaneCollapsed === true;
       if (typeof snapshot.bottomPaneHeight === 'number') {
         const bottomPaneHeight = V && V.finiteInRange(snapshot.bottomPaneHeight, 50, 10000);
@@ -864,7 +896,6 @@
           gridOverlay: SETTINGS.gridOverlay,
           uiSections: SETTINGS.uiSections ? clone(SETTINGS.uiSections) : null,
           aboutVisible: SETTINGS.aboutVisible !== false,
-          touchModifiers: SETTINGS.touchModifiers ? clone(SETTINGS.touchModifiers) : null,
           documentUnits: normalizeDocumentUnits(SETTINGS.documentUnits),
           paperSize: SETTINGS.paperSize,
           paperWidth: SETTINGS.paperWidth,
@@ -895,6 +926,7 @@
         },
         selectedLayerId: this.renderer.selectedLayerId,
         selectedLayerIds,
+        layerLockedIds: Array.from(this.ui?.layerLockedIds || []),
       };
     }
 
@@ -903,6 +935,9 @@
       // Undo/redo/open rebuild every Layer object via importState; end any active
       // edit session first so the controller can't keep an orphaned layer ref.
       this.textEdit?.notifyDocumentReplaced?.();
+      // TUX-030: a Pen draft refers to the document being replaced. Drop it here so the tool
+      // restore below cannot commit it as a layer in the restored document.
+      if (this.renderer?.penDraft) this.renderer.cancelPenPath?.();
       const s = state.settings || {};
       SETTINGS.margin = s.margin ?? SETTINGS.margin;
       SETTINGS.speedDown = s.speedDown ?? SETTINGS.speedDown;
@@ -935,12 +970,6 @@
         SETTINGS.uiSections = clone(s.uiSections);
       }
       if (s.aboutVisible !== undefined) SETTINGS.aboutVisible = s.aboutVisible !== false;
-      if (s.touchModifiers && typeof s.touchModifiers === 'object') {
-        SETTINGS.touchModifiers = {
-          ...(SETTINGS.touchModifiers || {}),
-          ...s.touchModifiers,
-        };
-      }
       SETTINGS.documentUnits = normalizeDocumentUnits(s.documentUnits ?? SETTINGS.documentUnits);
       SETTINGS.paperSize = s.paperSize ?? SETTINGS.paperSize;
       SETTINGS.paperWidth = s.paperWidth ?? SETTINGS.paperWidth;
@@ -983,6 +1012,7 @@
       if (this.engine && SETTINGS.paperSize) {
         this.engine.setProfile(SETTINGS.paperSize);
       }
+      const priorLayerIds = new Set((this.engine.layers || []).map((l) => l.id));
       this.engine.importState(state.engine);
       const selectedIds = Array.isArray(state.selectedLayerIds)
         ? state.selectedLayerIds.filter((id) => this.engine.layers.some((layer) => layer.id === id))
@@ -1012,10 +1042,29 @@
         refreshUi: true,
         render: false,
       });
+      // TUX-037: a restore brings back lock state only for layers it resurrects
+      // (absent before applyState) or their children. Locks set after the
+      // checkpoint on surviving layers are left alone.
+      if (Array.isArray(state.layerLockedIds) && this.ui.layerLockedIds) {
+        const snapLayers = Array.isArray(state.engine?.layers) ? state.engine.layers : [];
+        const restored = new Set(snapLayers.filter((l) => !priorLayerIds.has(l.id)).map((l) => l.id));
+        const parentOf = new Map(snapLayers.map((l) => [l.id, l.parentId]));
+        const wasRestored = (id) => {
+          for (let cur = id, n = 0; cur && n < 50; cur = parentOf.get(cur), n += 1) {
+            if (restored.has(cur)) return true;
+          }
+          return false;
+        };
+        state.layerLockedIds.forEach((id) => {
+          if (wasRestored(id)) this.ui.layerLockedIds.add(id);
+        });
+      }
       this.ui.renderLayers();
       this.ui.renderPens();
       this.ui.buildControls();
       this.ui.updateFormula();
+      // Batch R3: the Petal Designer window re-reads the restored layer (undo / redo rebuilt it).
+      if (this.ui.syncPetalDesignerAfterRestore) this.ui.syncPetalDesignerAfterRestore();
       this.render();
       // Restore rasterPlane sources. Noise sources resolve synchronously inside
       // generate(); painted/imported sources decode their embedded data URL
@@ -1158,6 +1207,19 @@
       return getThemeFamily(SETTINGS.uiTheme);
     }
 
+    // TUX-020: tell the HUD and the phone header whether Undo / Redo can act. canUndo needs two
+    // entries: the newest is the live state's own checkpoint. Call after every history mutation.
+    _notifyHistory() {
+      try {
+        if (typeof window === 'undefined' || typeof window.CustomEvent !== 'function') return;
+        const history = Array.isArray(this.history) ? this.history : [];
+        const redo = Array.isArray(this.redoStack) ? this.redoStack : [];
+        window.dispatchEvent(new window.CustomEvent('vectura:history', {
+          detail: { canUndo: history.length >= 2, canRedo: redo.length > 0 },
+        }));
+      } catch (_err) { /* never block history on a notify failure */ }
+    }
+
     pushHistory() {
       if (this.isRestoring) return;
       const snapshot = this.captureState();
@@ -1166,6 +1228,19 @@
         this.history.shift();
       }
       this.redoStack = [];
+      this._notifyHistory();
+    }
+
+    // Abort a gesture that already pushed its push-before-change snapshot (pointercancel): restore it and
+    // drop it. Unlike undo(), nothing goes to the redo stack and the history is as if the gesture never began.
+    cancelLastHistory() {
+      if (!this.history.length) return false;
+      this.isRestoring = true;
+      const checkpoint = this.history.pop();
+      this.applyState(checkpoint);
+      this.isRestoring = false;
+      this._notifyHistory();
+      return true;
     }
 
     undo() {
@@ -1178,6 +1253,7 @@
       const checkpoint = this.history.pop();
       this.applyState(checkpoint);
       this.isRestoring = false;
+      this._notifyHistory();
     }
 
     redo() {
@@ -1191,6 +1267,7 @@
       }
       this.applyState(next);
       this.isRestoring = false;
+      this._notifyHistory();
     }
 
     setUndoLimit(next) {
@@ -1198,6 +1275,7 @@
       while (this.history.length > this.maxHistory) {
         this.history.shift();
       }
+      this._notifyHistory();
     }
 
     // Bug-12 fix (v1.1.10 audit): regen() never pushed history, which meant

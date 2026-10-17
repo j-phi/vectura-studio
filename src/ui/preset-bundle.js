@@ -61,18 +61,18 @@
   // Trigger a download of the bundle. `stamp` (optional) is appended to the
   // filename by the caller-provided string (timestamps come from the caller —
   // this module stays deterministic/testable).
-  const download = (stamp) => {
+  // Returns true when the save STARTED (synchronous contract). The outcome
+  // ('shared' | 'downloaded' | 'cancelled') arrives later via opts.onResult.
+  const download = (stamp, opts = {}) => {
     const bundle = exportAll();
     try {
       const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = stamp ? `vectura-presets-${stamp}.json` : 'vectura-presets.json';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const filename = stamp ? `vectura-presets-${stamp}.json` : 'vectura-presets.json';
+      const pending = window.Vectura.Download.saveBlob(blob, filename);
+      pending.then(
+        (result) => { if (typeof opts.onResult === 'function') opts.onResult(result); },
+        () => { if (typeof opts.onResult === 'function') opts.onResult('failed'); },
+      );
       return true;
     } catch (_) { return false; }
   };

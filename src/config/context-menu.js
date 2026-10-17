@@ -25,6 +25,7 @@
       delete: 'Delete',
       undo: 'Undo',
       redo: 'Redo',
+      selectAll: 'Select All',
       group: 'Group',
       ungroup: 'Ungroup',
       isolate: 'Isolate group',
@@ -58,5 +59,19 @@
       flip: 'Select a shape or path to flip',
       sceneClearFaceStyle: 'Style tools not loaded',
     },
+  };
+
+  // TUX-034a: touch long-press. Every timing and distance TouchHold uses lives here.
+  Vectura.TOUCH_HOLD = {
+    holdMs: 500,            // press time before the menu opens
+    slopPx: 10,             // movement from the start point that cancels the hold
+    ringDelayMs: 150,       // the progress ring appears after this long
+    popMs: 120,             // pop (scale) feedback on the target at fire
+    popScale: 1.03,
+    vibrateMs: 10,          // haptic tick at fire (no-op where unsupported)
+    ghostClickMs: 800,      // window in which the compat mousedown/click after the lift is swallowed
+    contextMenuSuppressMs: 600, // native contextmenu events this soon after a fire are ignored
+    fingerClearPx: 44,      // menus open at least this far from the contact point
+    gripDragPx: 4,          // grip drag starts after this much movement
   };
 })();

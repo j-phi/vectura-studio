@@ -124,6 +124,8 @@
     const idx = pens.findIndex((pen) => pen.id === penId);
     if (idx === -1) return;
     if (this.app.pushHistory) this.app.pushHistory();
+    const penToken = this.app.history?.[this.app.history.length - 1];
+    const penName = pens[idx].name || 'pen';
     const fallback = pens[idx - 1] || pens[idx + 1];
     pens.splice(idx, 1);
     this.app.engine.layers.forEach((layer) => {
@@ -137,6 +139,7 @@
     this.renderPens();
     this.renderLayers();
     this.app.render();
+    this.notifyUndoable?.(`Deleted pen "${penName}"`, penToken);
   }
 
   function initPaletteControls() {
@@ -236,7 +239,7 @@
       el.className = 'pen-item flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2';
       el.dataset.penId = pen.id;
       el.innerHTML = `
-        <div class="flex items-center gap-2 flex-1 overflow-hidden">
+        <div class="pen-row-a flex items-center gap-2 flex-1 overflow-hidden">
           <button class="pen-grip" type="button" aria-label="Reorder pen">
             <span class="dot"></span><span class="dot"></span>
             <span class="dot"></span><span class="dot"></span>
@@ -244,12 +247,13 @@
           </button>
           <div class="pen-icon"></div>
           <input
+            type="text"
             class="pen-name-input w-full bg-transparent text-xs text-vectura-text focus:outline-none"
             value="${escapeHtml(pen.name)}"
           />
         </div>
-        <div class="flex items-center gap-2">
-          <div class="relative w-4 h-4 overflow-hidden rounded-full border border-vectura-border">
+        <div class="pen-row-b flex items-center gap-2">
+          <div class="pen-swatch relative w-4 h-4 overflow-hidden rounded-full border border-vectura-border">
             <input type="color" class="pen-color" value="${pen.color}" aria-label="Pen color">
           </div>
           <input type="range" min="0.05" max="2" step="0.05" value="${pen.width}" class="pen-width">
@@ -260,6 +264,7 @@
         </div>
       `;
       const icon = el.querySelector('.pen-icon');
+      const swatch = el.querySelector('.pen-swatch');
       const grip = el.querySelector('.pen-grip');
       const nameInput = el.querySelector('.pen-name-input');
       const colorInput = el.querySelector('.pen-color');
@@ -272,6 +277,8 @@
         icon.style.background = pen.color;
         icon.style.color = pen.color;
         icon.style.setProperty('--pen-width', pen.width);
+        // The coarse-pointer swatch (TUX-041) draws the colour from this variable.
+        if (swatch) swatch.style.setProperty('--pen-color', pen.color);
       };
       applyIcon();
 
@@ -447,6 +454,7 @@
           e.stopPropagation();
           this.setArmedPen(this.armedPenId === pen.id ? null : pen.id);
         });
+        // touch-alt: TUX-038 a finger arms the pen on pointerdown (above); tapping a layer then applies it
         icon.ondblclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -469,55 +477,21 @@
       }
 
       if (grip) {
-        grip.onmousedown = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const dragEl = el;
-          dragEl.classList.add('dragging');
-          const indicator = document.createElement('div');
-          indicator.className = 'layer-drop-indicator';
-          container.insertBefore(indicator, dragEl);
-          const currentOrder = pens.map((p) => p.id);
-          const startIndex = currentOrder.indexOf(pen.id);
-
-          const onMove = (ev) => {
-            const y = ev.clientY;
-            const items = Array.from(container.querySelectorAll('.pen-item')).filter((item) => item !== dragEl);
-            let inserted = false;
-            for (const item of items) {
-              const rect = item.getBoundingClientRect();
-              if (y < rect.top + rect.height / 2) {
-                container.insertBefore(indicator, item);
-                inserted = true;
-                break;
-              }
-            }
-            if (!inserted) container.appendChild(indicator);
-          };
-
-          const onUp = () => {
-            dragEl.classList.remove('dragging');
-            const siblings = Array.from(container.children);
-            const indicatorIndex = siblings.indexOf(indicator);
-            const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('pen-item'));
-            const newIndex = before.length;
-            indicator.remove();
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-
-            if (newIndex !== startIndex) {
-              const nextOrder = currentOrder.filter((id) => id !== pen.id);
-              nextOrder.splice(newIndex, 0, pen.id);
-              const map = new Map(pens.map((p) => [p.id, p]));
-              SETTINGS.pens = nextOrder.map((id) => map.get(id)).filter(Boolean);
-              this.renderPens();
-              this.renderLayers();
-            }
-          };
-
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
-        };
+        window.Vectura.UI.PointerReorder.bind(grip, {
+          container: container,
+          itemSelector: '.pen-item',
+          dragEl: el,
+          indicatorClass: 'layer-drop-indicator',
+          onCommit: (newIndex, startIndex) => {
+            const currentOrder = pens.map((p) => p.id);
+            const nextOrder = currentOrder.filter((id) => id !== pen.id);
+            nextOrder.splice(newIndex, 0, pen.id);
+            const map = new Map(pens.map((p) => [p.id, p]));
+            SETTINGS.pens = nextOrder.map((id) => map.get(id)).filter(Boolean);
+            this.renderPens();
+            this.renderLayers();
+          },
+        });
       }
 
       container.appendChild(el);

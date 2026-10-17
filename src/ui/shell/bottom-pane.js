@@ -63,24 +63,56 @@
     const minHeight = 80;
     const maxHeight = 360;
 
+    // TUX-051: remember the last pointer so a touch or pen press is told apart from a mouse press.
+    // MouseEvents (synthetic or compat) carry no pointerType, so the recorded pointerdown decides.
+    // Window capture runs before the touch-to-mouse bridge's document-capture listener (ui-touch.js).
+    // TODO(TUX-008): route collapse/expand through the pane-state controller once it lands.
+    let lastDown = null;
+    window.addEventListener('pointerdown', (e) => {
+      lastDown = { type: e.pointerType, target: e.target, t: performance.now() };
+    }, { capture: true, passive: true });
+    const TOUCH_WINDOW_MS = 1000;
+    const slopPx = () => {
+      const c = G.Vectura?.UI_CONSTANTS?.TOUCH_GESTURE;
+      const v = Number(c && c.touchDragSlopPx);
+      return Number.isFinite(v) && v >= 0 ? v : 6;
+    };
+
     const startDrag = (e) => {
+      const isTouch = !!lastDown
+        && (performance.now() - lastDown.t) < TOUCH_WINDOW_MS
+        && (lastDown.type === 'touch' || lastDown.type === 'pen');
+      // WebKit retargets the compat mousedown of a nearby tap onto the resizer: ignore it.
+      if (isTouch && !(lastDown.target instanceof Node && resizer.contains(lastDown.target))) return;
       e.preventDefault();
-      resizer.classList.add('active');
-      bottomPane.classList.remove('bottom-pane-collapsed');
       const startY = e.clientY;
-      const startHeight = bottomPane.getBoundingClientRect().height;
-      let lastHeight = startHeight;
+      let engaged = !isTouch; // mouse: expand on press (desktop parity)
+      let startHeight = 0;
+      let lastHeight = 0;
+      const engage = () => {
+        engaged = true;
+        resizer.classList.add('active');
+        bottomPane.classList.remove('bottom-pane-collapsed');
+        startHeight = bottomPane.getBoundingClientRect().height;
+        lastHeight = startHeight;
+      };
+      if (engaged) engage();
 
       const onMove = (ev) => {
         const dy = ev.clientY - startY;
+        if (!engaged) {
+          if (Math.abs(dy) < slopPx()) return;
+          engage();
+        }
         const next = Math.max(minHeight, Math.min(maxHeight, startHeight - dy));
         document.documentElement.style.setProperty('--bottom-pane-height', `${next}px`);
         lastHeight = next;
       };
       const onUp = () => {
-        resizer.classList.remove('active');
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
+        if (!engaged) return; // a touch tap that never passed the slop changes nothing
+        resizer.classList.remove('active');
         SETTINGS.bottomPaneHeight = Math.round(lastHeight);
         SETTINGS.bottomPaneCollapsed = false;
         this.app?.persistPreferencesDebounced?.();

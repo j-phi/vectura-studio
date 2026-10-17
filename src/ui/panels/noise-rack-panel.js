@@ -1647,8 +1647,7 @@
             if (def.key === 'type') this.buildControls();
             else maybeRebuildNoiseControls();
           };
-          input.addEventListener('dblclick', (e) => {
-            e.preventDefault();
+          const resetSelect = () => {
             const defaultVal = getNoiseDefault(idx, def.key);
             const fallback = def.options?.[0]?.value;
             const next = defaultVal !== undefined ? defaultVal : fallback;
@@ -1675,7 +1674,10 @@
             this.updateFormula();
             if (def.key === 'type') this.buildControls();
             else maybeRebuildNoiseControls();
-          });
+          };
+          // touch-alt: TUX-038 label long-press opens "Reset to default" (UI.attachResetHold)
+          input.addEventListener('dblclick', (e) => { e.preventDefault(); resetSelect(); });
+          if (UI.attachResetHold) UI.attachResetHold(control.querySelector('.control-label'), { reset: resetSelect, label: getDisplayLabel(def) });
         }
         return control;
       };
@@ -1778,6 +1780,7 @@
         // the noise card is off, matching the old behavior.)
         const cbInput = toggle.el.querySelector('input[type="checkbox"]');
         if (cbInput) {
+          // touch-ok: TUX-038 two-state toggle, a tap is the reset
           cbInput.addEventListener('dblclick', (e) => {
             e.preventDefault();
             if (cbInput.disabled) return;
@@ -2061,56 +2064,23 @@
 
         const bindEffectReorderGrip = (grip, card, effect) => {
           if (!grip) return;
-          grip.onmousedown = (e) => {
-            e.preventDefault();
-            const dragEl = card;
-            dragEl.classList.add('dragging');
-            const indicator = document.createElement('div');
-            indicator.className = 'image-effect-drop-indicator';
-            wrap.insertBefore(indicator, dragEl.nextSibling);
-            const currentOrder = effects.map((item) => item.id);
-            const startIndex = currentOrder.indexOf(effect.id);
-
-            const onMove = (ev) => {
-              const y = ev.clientY;
-              const items = Array.from(wrap.querySelectorAll('.image-effect-card')).filter((item) => item !== dragEl);
-              let inserted = false;
-              for (const item of items) {
-                const rect = item.getBoundingClientRect();
-                if (y < rect.top + rect.height / 2) {
-                  wrap.insertBefore(indicator, item);
-                  inserted = true;
-                  break;
-                }
-              }
-              if (!inserted) wrap.appendChild(indicator);
-            };
-
-            const onUp = () => {
-              dragEl.classList.remove('dragging');
-              const siblings = Array.from(wrap.children);
-              const indicatorIndex = siblings.indexOf(indicator);
-              const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('image-effect-card'));
-              const newIndex = before.length;
-              indicator.remove();
-              window.removeEventListener('mousemove', onMove);
-              window.removeEventListener('mouseup', onUp);
-
-              if (newIndex !== startIndex) {
-                const nextOrder = currentOrder.filter((id) => id !== effect.id);
-                nextOrder.splice(newIndex, 0, effect.id);
-                const map = new Map(effects.map((item) => [item.id, item]));
-                noise.imageEffects = nextOrder.map((id) => map.get(id)).filter(Boolean);
-                this.storeLayerParams(layer);
-                this.app.regen();
-                this.buildControls();
-                this.updateFormula();
-              }
-            };
-
-            window.addEventListener('mousemove', onMove);
-            window.addEventListener('mouseup', onUp);
-          };
+          window.Vectura.UI.PointerReorder.bind(grip, {
+            container: wrap,
+            itemSelector: '.image-effect-card',
+            dragEl: card,
+            indicatorClass: 'image-effect-drop-indicator',
+            onCommit: (newIndex, startIndex) => {
+              const currentOrder = effects.map((item) => item.id);
+              const nextOrder = currentOrder.filter((id) => id !== effect.id);
+              nextOrder.splice(newIndex, 0, effect.id);
+              const map = new Map(effects.map((item) => [item.id, item]));
+              noise.imageEffects = nextOrder.map((id) => map.get(id)).filter(Boolean);
+              this.storeLayerParams(layer);
+              this.app.regen();
+              this.buildControls();
+              this.updateFormula();
+            },
+          });
         };
 
         effects.forEach((effect, idx) => {
@@ -2185,56 +2155,23 @@
 
       const bindNoiseReorderGrip = (grip, card, noise) => {
         if (!grip) return;
-        grip.onmousedown = (e) => {
-          e.preventDefault();
-          const dragEl = card;
-          dragEl.classList.add('dragging');
-          const indicator = document.createElement('div');
-          indicator.className = 'noise-drop-indicator';
-          list.insertBefore(indicator, dragEl.nextSibling);
-          const currentOrder = noises.map((n) => n.id);
-          const startIndex = currentOrder.indexOf(noise.id);
-
-          const onMove = (ev) => {
-            const y = ev.clientY;
-            const items = Array.from(list.querySelectorAll('.noise-card')).filter((item) => item !== dragEl);
-            let inserted = false;
-            for (const item of items) {
-              const rect = item.getBoundingClientRect();
-              if (y < rect.top + rect.height / 2) {
-                list.insertBefore(indicator, item);
-                inserted = true;
-                break;
-              }
-            }
-            if (!inserted) list.appendChild(indicator);
-          };
-
-          const onUp = () => {
-            dragEl.classList.remove('dragging');
-            const siblings = Array.from(list.children);
-            const indicatorIndex = siblings.indexOf(indicator);
-            const before = siblings.slice(0, indicatorIndex).filter((node) => node.classList.contains('noise-card'));
-            const newIndex = before.length;
-            indicator.remove();
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-
-            if (newIndex !== startIndex) {
-              const nextOrder = currentOrder.filter((id) => id !== noise.id);
-              nextOrder.splice(newIndex, 0, noise.id);
-              const map = new Map(noises.map((n) => [n.id, n]));
-              assignNoiseStack(nextOrder.map((id) => map.get(id)).filter(Boolean));
-              this.storeLayerParams(layer);
-              this.app.regen();
-              this.buildControls();
-              this.updateFormula();
-            }
-          };
-
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
-        };
+        window.Vectura.UI.PointerReorder.bind(grip, {
+          container: list,
+          itemSelector: '.noise-card',
+          dragEl: card,
+          indicatorClass: 'noise-drop-indicator',
+          onCommit: (newIndex, startIndex) => {
+            const currentOrder = noises.map((item) => item.id);
+            const nextOrder = currentOrder.filter((id) => id !== noise.id);
+            nextOrder.splice(newIndex, 0, noise.id);
+            const map = new Map(noises.map((item) => [item.id, item]));
+            assignNoiseStack(nextOrder.map((id) => map.get(id)).filter(Boolean));
+            this.storeLayerParams(layer);
+            this.app.regen();
+            this.buildControls();
+            this.updateFormula();
+          },
+        });
       };
 
       noises.forEach((noise, idx) => {
