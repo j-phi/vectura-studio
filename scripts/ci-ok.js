@@ -12,10 +12,7 @@
 const fs = require('fs');
 
 // Jobs that run on a pull request and on a push to main.
-const PR_GRAPH = [
-  'lane-plan', 'feedback', 'unit', 'integration', 'e2e-smoke', 'visual', 'perf',
-  'coverage-plan', 'coverage-shard', 'coverage', 'lane-gate',
-];
+const PR_GRAPH = ['e2e-smoke', 'perf', 'coverage-shard', 'coverage'];
 // Jobs that run only on the nightly schedule and on a manual dispatch.
 const TOUCH_NIGHTLY = ['touch-e2e-nightly', 'touch-audit-nightly'];
 // Jobs that run only on the nightly schedule.

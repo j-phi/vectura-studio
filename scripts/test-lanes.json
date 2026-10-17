@@ -20,7 +20,7 @@
   "lanes": {
     "feedback": { "command": "npm run test:feedback:run", "maxSeconds": 60 },
     "core": { "command": "npm run test:unit && npm run test:integration", "maxSeconds": 7200 },
-    "browser": { "command": "npm run test:e2e:all", "maxSeconds": 3600 },
+    "browser": { "command": "npm run test:e2e", "maxSeconds": 3600 },
     "audit": { "command": "npm run test:audit", "maxSeconds": 18000 },
     "measure": { "command": "npm run test:lane:measure", "maxSeconds": 300 }
   },

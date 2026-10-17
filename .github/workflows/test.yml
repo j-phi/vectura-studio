@@ -13,6 +13,8 @@ on:
 
 env:
   # Single source of truth for the coverage shard count (1..32) and per-shard Vitest worker cap.
+  # The coverage-shard matrix lists 1..COVERAGE_SHARD_COUNT; tests/unit/test-shard-plan.test.js
+  # keeps the two in step.
   COVERAGE_SHARD_COUNT: '16'
   VECTURA_VITEST_MAX_WORKERS: '2'
 
@@ -23,77 +25,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  lane-plan:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
-    outputs:
-      plan: ${{ steps.route.outputs.plan }}
-      lanes: ${{ steps.route.outputs.lanes }}
-      risk: ${{ steps.route.outputs.risk }}
-      classes: ${{ steps.route.outputs.classes }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Resolve explicit risk plan
-        id: route
-        run: node scripts/test-lane-router.js --base "${{ github.event.pull_request.base.sha || github.event.before }}" --head "$GITHUB_SHA" --json
-
-  feedback:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    needs: [lane-plan]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    env:
-      VECTURA_RISK_CLASSES: ${{ needs.lane-plan.outputs.classes }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-      - name: Start setup timing
-        run: echo "VECTURA_SETUP_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npx playwright install --with-deps chromium
-      - name: Record setup timing
-        run: echo "VECTURA_SETUP_MS=$(( $(date +%s%3N) - VECTURA_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
-      - run: npm run test:feedback
-        env:
-          VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-metrics.jsonl
-      - name: Verify bounded coverage shard and merge plumbing
-        run: npm run test:coverage:probe
-        timeout-minutes: 5
-      - name: Upload lane timing and queue metrics
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: feedback-lane-metrics
-          path: ${{ runner.temp }}/lane-metrics.jsonl
-          if-no-files-found: ignore
-
-  # Compatibility check name for existing branch protection. The full Vitest
-  # inventory (including unit tests) is executed once by `coverage`.
-  unit:
-    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
-    needs: [coverage]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Preserve the required check after full-scope coverage
-        env:
-          COVERAGE_RESULT: ${{ needs.coverage.result }}
-        run: test "$COVERAGE_RESULT" = success
-
-  integration:
-    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
-    needs: [coverage]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Preserve the required check after full-scope coverage
-        env:
-          COVERAGE_RESULT: ${{ needs.coverage.result }}
-        run: test "$COVERAGE_RESULT" = success
-
   e2e-smoke:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
@@ -104,13 +35,26 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install --no-audit --no-fund --loglevel=error
-      # PR smoke (scripts/run-e2e-smoke.js): every non-touch project (desktop, desktop-visual,
-      # touch-tablet, iPhone mini), plus the touch smoke (harness, journeys, fast target-audit
-      # subset) on touch-iphone-portrait (Chromium) and webkit-ipad-portrait (WebKit).
+      - run: npm ci --no-audit --no-fund --loglevel=error
+      # PR smoke (scripts/run-e2e-smoke.js): every non-touch PR project (desktop, touch-tablet,
+      # iPhone mini), plus the touch smoke (harness, journeys, fast target-audit subset) on
+      # touch-iphone-portrait (Chromium) and webkit-ipad-portrait (WebKit).
       # The full touch roster (11 projects) runs in touch-e2e-nightly.
-      - run: npx playwright install --with-deps chromium webkit
+      - uses: ./.github/actions/setup-playwright
+        with:
+          browsers: chromium webkit
       - run: npm run test:e2e:smoke
+      - name: Report Playwright flakes
+        if: always()
+        run: node scripts/playwright-flaky.js summarize --job e2e-smoke --out playwright-flaky/e2e-smoke.json playwright-json/smoke-desktop.json playwright-json/smoke-touch.json
+      - name: Upload Playwright flake summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-flaky-e2e-smoke
+          path: playwright-flaky
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Upload Playwright Report
         if: always()
         uses: actions/upload-artifact@v7
@@ -122,8 +66,8 @@ jobs:
           if-no-files-found: ignore
 
   # TUX-061: every touch spec in all 11 touch projects (7 Chromium, 4 WebKit), nightly.
-  # Playwright-native sharding (--shard=i/n): main's coverage-plan / test-shard-plan
-  # inventory is Vitest-only. On a red shard, download its playwright-report artifact.
+  # Playwright-native sharding (--shard=i/n): the coverage shard plan (scripts/test-shard-plan.js)
+  # is Vitest-only. On a red shard, download its playwright-report artifact.
   touch-e2e-nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     strategy:
@@ -141,9 +85,24 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npx playwright install --with-deps chromium webkit
-      - run: npm run test:playwright -- tests/e2e/touch --project='touch-*' --project='webkit-*' --shard="$TOUCH_SHARD/$TOUCH_SHARD_COUNT" --reporter=line
+      - run: npm ci --no-audit --no-fund --loglevel=error
+      - uses: ./.github/actions/setup-playwright
+        with:
+          browsers: chromium webkit
+      - run: npm run test:playwright -- tests/e2e/touch --project='touch-*' --project='webkit-*' --shard="$TOUCH_SHARD/$TOUCH_SHARD_COUNT" --reporter=line,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-json/touch.json
+      - name: Report Playwright flakes
+        if: always()
+        run: node scripts/playwright-flaky.js summarize --job "touch-e2e-nightly-$TOUCH_SHARD" --out "playwright-flaky/touch-e2e-nightly-$TOUCH_SHARD.json" playwright-json/touch.json
+      - name: Upload Playwright flake summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-flaky-touch-e2e-nightly-${{ matrix.touch_shard }}
+          path: playwright-flaky
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Upload touch shard report
         if: always()
         uses: actions/upload-artifact@v7
@@ -167,8 +126,10 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install --no-audit --no-fund --loglevel=error
-      - run: npx playwright install --with-deps chromium webkit
+      - run: npm ci --no-audit --no-fund --loglevel=error
+      - uses: ./.github/actions/setup-playwright
+        with:
+          browsers: chromium webkit
       # A manual run (workflow_dispatch) seeds the linux baseline section: TOUCH_BASELINE=update
       # writes every missing linux cell into tests/e2e/touch/target-baseline.json, which is
       # uploaded below. Commit that file to seed linux. A scheduled run only measures (missing
@@ -194,16 +155,9 @@ jobs:
             tests/e2e/touch/journey-status.linux.json
           if-no-files-found: ignore
 
-  visual:
-    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
-    needs: [coverage]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Preserve the required check after full-scope coverage
-        env:
-          COVERAGE_RESULT: ${{ needs.coverage.result }}
-        run: test "$COVERAGE_RESULT" = success
-
+  # Uninstrumented checks: tests/perf timing budgets, the Node process-lifecycle tests
+  # (tests/process via test:runner), and the coverage shard/merge plumbing probe when that
+  # plumbing changed.
   perf:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
@@ -214,55 +168,49 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npm ci --no-audit --no-fund --loglevel=error
+      - name: Node process-lifecycle tests
+        run: npm run test:runner
       - run: npm run test:perf
-
-  coverage-plan:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    runs-on: ubuntu-latest
-    outputs:
-      chain_started_ms: ${{ steps.clock.outputs.started_ms }}
-      shards: ${{ steps.count.outputs.shards }}
-      shard_count: ${{ steps.count.outputs.shard_count }}
-    steps:
-      - id: clock
-        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-      - name: Build exact-SHA full test inventory and shard plan
+      # The probe runs three tiny files through the real shard + merge entrypoints. It only
+      # guards the coverage plumbing, so it runs only when that plumbing changed. An unknown
+      # base (first push, force push, fetch failure) runs it.
+      - name: Detect coverage plumbing changes
+        id: infra
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          node scripts/test-shard-plan.js --plan-out "$RUNNER_TEMP/coverage-shard-plan.json" --sha "$GITHUB_SHA" --shards "$COVERAGE_SHARD_COUNT"
-          test -s "$RUNNER_TEMP/coverage-shard-plan.json"
-      - name: Publish shard matrix from the verified plan
-        id: count
-        run: |
-          node -e "const p=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));const o=process.env.GITHUB_OUTPUT;require('fs').appendFileSync(o,'shard_count='+p.shardCount+'\\nshards='+JSON.stringify(p.shards.map(s=>s.index))+'\\n')" "$RUNNER_TEMP/coverage-shard-plan.json"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: coverage-shard-plan
-          path: ${{ runner.temp }}/coverage-shard-plan.json
-          retention-days: 1
-          if-no-files-found: error
+          set -euo pipefail
+          pattern='^(scripts/(test-shard-plan\.js|test-shard-weights\.json|test-coverage-probe\.js|test-duration-sequencer\.mjs|test-profile\.js|test-queue\.js|run-vitest\.js|vitest-supervisor\.js)|vitest\.config\.mjs|vitest\.coverage-shard\.config\.mjs|package\.json|package-lock\.json|\.github/workflows/test\.yml)$'
+          run=true
+          if [ -n "${BASE_SHA//0/}" ] && git fetch --no-tags --depth=1 origin "$BASE_SHA" 2>/dev/null; then
+            changed="$(git diff --name-only "$BASE_SHA" "$GITHUB_SHA")"
+            if ! grep -Eq "$pattern" <<< "$changed"; then run=false; fi
+          fi
+          echo "Coverage plumbing probe needed: $run"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+      - name: Verify bounded coverage shard and merge plumbing
+        if: steps.infra.outputs.run == 'true'
+        run: npm run test:coverage:probe
+        timeout-minutes: 5
 
+  # Each shard builds the deterministic plan itself (scripts/test-shard-plan.js: same SHA, same
+  # inventory, same weights file -> same plan hash). The merge job rebuilds it and rejects any
+  # shard whose provenance carries a different plan hash.
   coverage-shard:
     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    needs: [coverage-plan]
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.coverage-plan.outputs.shards) }}
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
       SHARD_INDEX: ${{ matrix.shard }}
-      SHARD_COUNT: ${{ needs.coverage-plan.outputs.shard_count }}
       VECTURA_TEST_TIMEOUT_MS: 10800000
     steps:
+      - id: clock
+        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
       # fetch-depth: 0 retains the full RGR-history inputs used by audit tests.
       - uses: actions/checkout@v7
         with:
@@ -273,38 +221,37 @@ jobs:
           cache: npm
       - name: Start shard setup timing
         run: echo "VECTURA_SHARD_SETUP_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
-      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npm ci --no-audit --no-fund --loglevel=error
       - name: Record shard setup timing
         run: echo "VECTURA_SHARD_SETUP_MS=$(( $(date +%s%3N) - VECTURA_SHARD_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v7
-        with:
-          name: coverage-shard-plan
-          path: ${{ runner.temp }}
-      - name: Write same-run shard provenance
+      - name: Build the exact-SHA shard plan and write same-run provenance
+        env:
+          SHARD_STARTED_MS: ${{ steps.clock.outputs.started_ms }}
         run: |
-          mkdir -p "$RUNNER_TEMP/pilot-artifact"
+          mkdir -p "$RUNNER_TEMP/shard-artifact"
+          node scripts/test-shard-plan.js --plan-out "$RUNNER_TEMP/coverage-shard-plan.json" --sha "$GITHUB_SHA" --shards "$COVERAGE_SHARD_COUNT"
           echo "VECTURA_SHARD_PLAN_FILE=$RUNNER_TEMP/coverage-shard-plan.json" >> "$GITHUB_ENV"
-          node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --metadata-out "$RUNNER_TEMP/pilot-artifact/metadata.json" \
-            --shard "$SHARD_INDEX" --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+          node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --metadata-out "$RUNNER_TEMP/shard-artifact/metadata.json" \
+            --shard "$SHARD_INDEX" --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --started-ms "$SHARD_STARTED_MS"
       - name: Run one full-scope V8 coverage shard
         run: |
           set -o pipefail
           echo "VECTURA_SHARD_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
-          npm run test:coverage:shard -- --config vitest.shard-pilot.config.mjs --shard="$SHARD_INDEX/$SHARD_COUNT" \
+          npm run test:coverage -- --config vitest.coverage-shard.config.mjs --shard="$SHARD_INDEX/$COVERAGE_SHARD_COUNT" \
             --coverage.thresholds.statements=0 --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 \
-            --reporter=blob --reporter=json --outputFile.blob="$RUNNER_TEMP/pilot-artifact/blob.json" \
-            --outputFile.json="$RUNNER_TEMP/pilot-shard-results.json" 2>&1 | tee "$RUNNER_TEMP/pilot-shard-console.log"
+            --reporter=blob --reporter=json --outputFile.blob="$RUNNER_TEMP/shard-artifact/blob.json" \
+            --outputFile.json="$RUNNER_TEMP/shard-results.json" 2>&1 | tee "$RUNNER_TEMP/shard-console.log"
       - name: Verify exact assigned roster and record shard timing
         if: always()
         run: |
-          test -s "$RUNNER_TEMP/pilot-shard-results.json"
+          test -s "$RUNNER_TEMP/shard-results.json"
           node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --verify-report \
-            --shard "$SHARD_INDEX" --report "$RUNNER_TEMP/pilot-shard-results.json"
-          test -s "$RUNNER_TEMP/pilot-shard-console.log"
-          test -s "$RUNNER_TEMP/pilot-artifact/blob.json"
+            --shard "$SHARD_INDEX" --report "$RUNNER_TEMP/shard-results.json"
+          test -s "$RUNNER_TEMP/shard-console.log"
+          test -s "$RUNNER_TEMP/shard-artifact/blob.json"
           execution_ms=$(( $(date +%s%3N) - VECTURA_SHARD_STARTED_MS ))
-          node scripts/test-profile.js --log "$RUNNER_TEMP/pilot-shard-console.log" \
-            --results "$RUNNER_TEMP/pilot-shard-results.json" --output "$RUNNER_TEMP/pilot-shard-profile.json" \
+          node scripts/test-profile.js --log "$RUNNER_TEMP/shard-console.log" \
+            --results "$RUNNER_TEMP/shard-results.json" --output "$RUNNER_TEMP/shard-profile.json" \
             --runner "${{ runner.os }}-${{ runner.arch }}" --workers "$VECTURA_VITEST_MAX_WORKERS" --setup-ms "$VECTURA_SHARD_SETUP_MS" --execution-ms "$execution_ms"
       - name: List failing tests (diagnostic only)
         if: failure()
@@ -317,13 +264,13 @@ jobs:
               if (f.status === "failed" && !(f.assertionResults || []).some((a) => a.status === "failed")) console.log(`FILE FAILED ${f.name}: ${(f.message || "").slice(0, 2000)}`);
               for (const a of f.assertionResults || []) if (a.status === "failed") console.log(`FAILED ${f.name} > ${a.fullName}\n${(a.failureMessages || []).join("\n").slice(0, 2000)}`);
             }
-          ' "$RUNNER_TEMP/pilot-shard-results.json"
+          ' "$RUNNER_TEMP/shard-results.json"
       - name: Upload merge-only coverage blob and provenance
         if: success()
         uses: actions/upload-artifact@v7
         with:
           name: coverage-shard-${{ matrix.shard }}
-          path: ${{ runner.temp }}/pilot-artifact
+          path: ${{ runner.temp }}/shard-artifact
           retention-days: 7
           if-no-files-found: error
       - name: Upload parsed shard timing summary
@@ -331,26 +278,21 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage-shard-profile-${{ matrix.shard }}
-          path: ${{ runner.temp }}/pilot-shard-profile.json
+          path: ${{ runner.temp }}/shard-profile.json
           retention-days: 7
           if-no-files-found: ignore
 
   coverage:
     if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
-    needs: [coverage-plan, coverage-shard]
+    needs: [coverage-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      GUARD_RESULT: ${{ needs.coverage-plan.result }}
       SHARDS_RESULT: ${{ needs.coverage-shard.result }}
-      COVERAGE_CHAIN_STARTED_MS: ${{ needs.coverage-plan.outputs.chain_started_ms }}
       VECTURA_TEST_TIMEOUT_MS: 10800000
     steps:
-      - name: Require the guard and every coverage shard to pass
-        run: |
-          test "$GUARD_RESULT" = success
-          test "$SHARDS_RESULT" = success
-          test -n "$COVERAGE_CHAIN_STARTED_MS"
+      - name: Require every coverage shard to pass
+        run: test "$SHARDS_RESULT" = success
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -360,27 +302,24 @@ jobs:
           cache: npm
       - name: Start merge setup timing
         run: echo "VECTURA_MERGE_SETUP_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
-      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npm ci --no-audit --no-fund --loglevel=error
       - name: Record merge setup timing
         run: echo "VECTURA_MERGE_SETUP_MS=$(( $(date +%s%3N) - VECTURA_MERGE_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v7
-        with:
-          name: coverage-shard-plan
-          path: ${{ runner.temp }}
       - uses: actions/download-artifact@v7
         with:
           pattern: coverage-shard-[0-9]*
           path: ${{ runner.temp }}/coverage-shard-artifacts
           merge-multiple: false
-      - name: Verify provenance and stage every Vitest blob file
+      - name: Rebuild the shard plan, verify each shard used it, and stage every Vitest blob file
         run: |
+          node scripts/test-shard-plan.js --plan-out "$RUNNER_TEMP/coverage-shard-plan.json" --sha "$GITHUB_SHA" --shards "$COVERAGE_SHARD_COUNT"
           node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/coverage-shard-plan.json" --stage-blobs \
             --artifacts "$RUNNER_TEMP/coverage-shard-artifacts" --blob-dir "$RUNNER_TEMP/vitest-blobs" \
-            --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+            --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --env-out "$GITHUB_ENV"
       - name: Merge blob reports and enforce global coverage thresholds once
         run: |
           set -o pipefail
-          npm run test:coverage:merge -- --config vitest.shard-pilot.config.mjs \
+          npm run test:coverage:merge -- --config vitest.coverage-shard.config.mjs \
             --merge-reports="$RUNNER_TEMP/vitest-blobs" --coverage --coverage.reporter=text --coverage.reporter=lcov --coverage.reporter=json \
             --coverage.reportsDirectory=coverage --reporter=default --reporter=json \
             --outputFile.json="$RUNNER_TEMP/merged-results.json" 2>&1 | tee "$RUNNER_TEMP/merged-coverage-console.log"
@@ -388,6 +327,7 @@ jobs:
         run: |
           test -s "$RUNNER_TEMP/merged-coverage-console.log"
           test -s "$RUNNER_TEMP/merged-results.json"
+          test -n "$COVERAGE_CHAIN_STARTED_MS"
           mkdir -p coverage
           node scripts/test-profile.js --strict --log "$RUNNER_TEMP/merged-coverage-console.log" \
             --results "$RUNNER_TEMP/merged-results.json" --output coverage/full-profile.json \
@@ -426,9 +366,11 @@ jobs:
           node-version: 20
           cache: npm
       - id: dependencies
-        run: npm install --no-audit --no-fund --loglevel=error
+        run: npm ci --no-audit --no-fund --loglevel=error
       - id: browsers
-        run: npx playwright install --with-deps chromium
+        uses: ./.github/actions/setup-playwright
+        with:
+          browsers: chromium
       - run: npm run test:audit
       - if: always() && steps.dependencies.outcome == 'success'
         run: npm run test:visual
@@ -444,44 +386,13 @@ jobs:
             *.diff
           if-no-files-found: ignore
 
-  lane-gate:
-    if: always() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
-    needs: [lane-plan, feedback, unit, integration, e2e-smoke, visual, perf, coverage]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-      - name: Require expected lanes for this SHA
-        env:
-          VECTURA_LANE_METRICS_FILE: ${{ runner.temp }}/lane-roster-metrics.jsonl
-          VECTURA_LANE_PLAN: ${{ needs.lane-plan.outputs.plan }}
-          SHA: ${{ github.sha }}
-          UNIT_RESULT: ${{ needs.unit.result }}
-          INTEGRATION_RESULT: ${{ needs.integration.result }}
-          BROWSER_RESULT: ${{ needs.e2e-smoke.result }}
-          VISUAL_RESULT: ${{ needs.visual.result }}
-          PERF_RESULT: ${{ needs.perf.result }}
-          COVERAGE_RESULT: ${{ needs.coverage.result }}
-          FEEDBACK_RESULT: ${{ needs.feedback.result }}
-        run: node scripts/test-lane-aggregate.js --sha "$SHA" --job=unit="$UNIT_RESULT" --job=integration="$INTEGRATION_RESULT" --job=e2e-smoke="$BROWSER_RESULT" --job=visual="$VISUAL_RESULT" --job=perf="$PERF_RESULT" --job=coverage="$COVERAGE_RESULT" --job=feedback="$FEEDBACK_RESULT"
-      - name: Upload expected-roster evidence
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: expected-roster-metrics
-          path: ${{ runner.temp }}/lane-roster-metrics.jsonl
-          if-no-files-found: ignore
-
   # The one required check for main (branch protection). It needs every job in this workflow.
   # A job that runs by design on this event must succeed. A job that skips by design on this
   # event must be skipped. Any failure or cancellation fails ci-ok. Classification lives in
   # scripts/ci-ok.js; tests/unit/ci-ok.test.js keeps it in sync with this file.
   ci-ok:
     if: always()
-    needs: [lane-plan, feedback, unit, integration, e2e-smoke, visual, perf, coverage-plan, coverage-shard, coverage, lane-gate, touch-e2e-nightly, touch-audit-nightly, scheduled-audit]
+    needs: [e2e-smoke, perf, coverage-shard, coverage, touch-e2e-nightly, touch-audit-nightly, scheduled-audit]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -527,4 +438,49 @@ jobs:
             echo "Commented on #$issue"
           else
             gh issue create --title "$title" --label "$label" --body "$body"
+          fi
+
+  # Flakes on main get the same owner path as red main, without failing the run: when any
+  # Playwright test on a main push or nightly passed only on retry, comment on the open
+  # ci-flaky issue (or open it). The per-job counts come from playwright-flaky-* artifacts.
+  report-flaky-main:
+    if: always() && (github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    needs: [ci-ok]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts/playwright-flaky.js
+          sparse-checkout-cone-mode: false
+      - name: Download flake summaries
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          pattern: playwright-flaky-*
+          path: ${{ runner.temp }}/playwright-flaky
+      - name: Count flakes
+        id: count
+        run: node scripts/playwright-flaky.js total "$RUNNER_TEMP/playwright-flaky"
+      - name: Open or update the flaky-main issue
+        if: steps.count.outputs.flaky != '' && steps.count.outputs.flaky != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          label=ci-flaky
+          gh label create "$label" --color FBCA04 --description "Playwright test passed only on retry on main or nightly" 2>/dev/null || true
+          body="$(printf -- '- Event: %s\n- Commit: %s\n- Run: %s\n\n' "$EVENT_NAME" "$GITHUB_SHA" "$RUN_URL"; cat "$RUNNER_TEMP/playwright-flaky/flaky-body.md")"
+          issue="$(gh issue list --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "$body"
+          else
+            gh issue create --title "Flaky Playwright tests on main" --label "$label" --body "$body"
           fi

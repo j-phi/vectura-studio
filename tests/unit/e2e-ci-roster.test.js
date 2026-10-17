@@ -22,9 +22,45 @@ const configProjects = (env = {}) => {
 };
 
 describe('PR e2e smoke roster', () => {
-  it('runs every non-touch project, so a new desktop project is never dropped silently', () => {
+  it('runs every non-touch project except the named nightly-only ones, so a new project is never dropped silently', () => {
     const nonTouch = configProjects().filter((n) => !TOUCH[n]);
-    expect([...smoke.DESKTOP_PROJECTS].sort()).toEqual(nonTouch.sort());
+    expect([...smoke.DESKTOP_PROJECTS, ...smoke.NIGHTLY_ONLY_PROJECTS].sort()).toEqual(nonTouch.sort());
+    // R-12: the visual project's snapshots are darwin-only, so it would only skip on linux CI.
+    expect(smoke.NIGHTLY_ONLY_PROJECTS).toEqual(['desktop-visual-chromium']);
+    expect(smoke.DESKTOP_PROJECTS).not.toContain('desktop-visual-chromium');
+  });
+
+  it('maps every non-touch spec to a PR smoke project (testIgnore, not a hand list)', () => {
+    // R-11: Playwright matches testMatch/testIgnore regexes against the absolute file path.
+    const config = require('../../playwright.config.js');
+    const asList = (v) => (v === undefined ? [] : Array.isArray(v) ? v : [v]);
+    const runsIn = (project, abs) => {
+      const match = asList(project.testMatch);
+      const matched = match.length ? match.some((re) => re.test(abs)) : /\.(spec|test)\.[cm]?[jt]sx?$/.test(abs);
+      return matched && !asList(project.testIgnore).some((re) => re.test(abs));
+    };
+    const desktop = config.projects.find((p) => p.name === 'desktop-chromium');
+    expect(desktop.testMatch).toBeUndefined();
+    expect(asList(desktop.testIgnore)).toHaveLength(3);
+    const prProjects = config.projects.filter((p) => smoke.DESKTOP_PROJECTS.includes(p.name));
+    const dir = path.join(ROOT, 'tests/e2e');
+    const specs = fs.readdirSync(dir).filter((f) => f.endsWith('.spec.js'));
+    expect(specs.length).toBeGreaterThan(20);
+    const orphans = specs.filter((f) => f !== 'visual.spec.js' && !prProjects.some((p) => runsIn(p, path.join(dir, f))));
+    expect(orphans).toEqual([]);
+    // desktop-chromium runs no touch, visual or iPhone-mini spec.
+    expect(runsIn(desktop, path.join(dir, 'touch/harness.spec.js'))).toBe(false);
+    expect(runsIn(desktop, path.join(dir, 'visual.spec.js'))).toBe(false);
+    expect(runsIn(desktop, path.join(dir, 'iphone-mini.spec.js'))).toBe(false);
+    expect(runsIn(desktop, path.join(dir, 'a-brand-new-desktop.spec.js'))).toBe(true);
+  });
+
+  it('asks for a JSON report per run on CI, so flakes can be counted', () => {
+    const [desktop, touch] = smoke.runs([], true);
+    expect(desktop).toContain('--reporter=line,json');
+    expect(touch).toContain('--reporter=line,json');
+    expect(smoke.runs([], false)[0]).toContain('--reporter=line');
+    expect(smoke.JSON_REPORTS).toEqual(['playwright-json/smoke-desktop.json', 'playwright-json/smoke-touch.json']);
   });
 
   it('runs the touch smoke specs on exactly one Chromium and one WebKit touch project', () => {
@@ -64,7 +100,7 @@ describe('full touch roster runs nightly', () => {
     expect(job('scheduled-audit')).toMatch(/PW_TOUCH_PROJECTS: '0'/);
     const off = configProjects({ PW_TOUCH_PROJECTS: '0' });
     expect(off.filter((n) => TOUCH[n])).toEqual([]);
-    expect(off.sort()).toEqual([...smoke.DESKTOP_PROJECTS].sort());
+    expect(off.sort()).toEqual([...smoke.DESKTOP_PROJECTS, ...smoke.NIGHTLY_ONLY_PROJECTS].sort());
     expect(configProjects().filter((n) => TOUCH[n]).length).toBe(11);
   });
 });

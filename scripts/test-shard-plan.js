@@ -11,7 +11,31 @@ const FULLY_SKIPPED_FILES = require('./test-lanes.json').ciRoster.testInventory.
 const MIN_SHARDS = 1;
 const MAX_SHARDS = 32;
 const DEFAULT_SHARD_COUNT = 2;
+const COVERAGE_EXCLUDED_DIRS = ['tests/e2e', 'tests/perf'];
+const FALLBACK_WEIGHT_SECONDS = 1;
 const slash = (value) => value.split(path.sep).join('/');
+
+function median(values) {
+  const sorted = values.filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const mid = Math.floor(sorted.length / 2);
+  return Number((sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2).toFixed(3));
+}
+
+// Weight for a file with no measured duration: the median of measured files in the same
+// tests/<dir>/ (audit files are heavy, unit files are light), else the global median.
+// A median, not a high percentile: most new files are cheap, and one heavy outlier is
+// refreshed from blob data (scripts/test-shard-weights-refresh.js) after it first runs.
+function unweightedFallback(weightsSeconds) {
+  const byDir = {};
+  for (const [file, seconds] of Object.entries(weightsSeconds || {})) {
+    const dir = file.split('/').slice(0, 2).join('/');
+    (byDir[dir] = byDir[dir] || []).push(seconds);
+  }
+  const global = median(Object.values(weightsSeconds || {})) ?? FALLBACK_WEIGHT_SECONDS;
+  const dirs = Object.fromEntries(Object.entries(byDir).map(([dir, values]) => [dir, median(values) ?? global]));
+  return { global, forFile: (file) => dirs[file.split('/').slice(0, 2).join('/')] ?? global };
+}
 
 function inventoryTests(directory = path.join(ROOT, 'tests'), files = []) {
   if (!fs.existsSync(directory)) return files;
@@ -19,7 +43,9 @@ function inventoryTests(directory = path.join(ROOT, 'tests'), files = []) {
     const full = path.join(directory, entry.name);
     const relative = slash(path.relative(ROOT, full));
     if (entry.isDirectory()) {
-      if (relative !== 'tests/e2e' && !relative.startsWith(`tests/e2e${path.sep}`)) inventoryTests(full, files);
+      // tests/e2e is Playwright. tests/perf runs uninstrumented in the `perf` job, so it stays
+      // out of the coverage roster (and vitest.config.mjs excludes it under VECTURA_TEST_COVERAGE=1).
+      if (!COVERAGE_EXCLUDED_DIRS.includes(relative)) inventoryTests(full, files);
     } else if (entry.isFile() && entry.name.endsWith('.test.js')) files.push(relative);
   }
   return files.sort();
@@ -41,10 +67,11 @@ function buildPlan({ files, weights, sha, shardCount = DEFAULT_SHARD_COUNT }) {
   if (!Number.isInteger(shardCount) || shardCount < MIN_SHARDS || shardCount > MAX_SHARDS) throw new Error(`shard count must be an integer between ${MIN_SHARDS} and ${MAX_SHARDS}`);
   const normalized = [...new Set(files)].sort();
   if (normalized.length !== files.length || !normalized.length) throw new Error('test inventory must be nonempty and contain no duplicate paths');
+  const fallback = unweightedFallback(weights.weightsSeconds);
   const rows = normalized.map((file) => {
     const raw = weights.weightsSeconds[file];
-    const seconds = Number.isFinite(raw) && raw > 0 ? raw : weights.source.unknownFileWeightSeconds;
-    return { file, seconds, weightSource: Number.isFinite(raw) && raw > 0 ? 'historical' : 'conservative-p95-default' };
+    const measured = Number.isFinite(raw) && raw > 0;
+    return { file, seconds: measured ? raw : fallback.forFile(file), weightSource: measured ? 'historical' : 'directory-median-default' };
   }).sort((a, b) => b.seconds - a.seconds || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0));
   const shards = Array.from({ length: shardCount }, (_, index) => ({ index: index + 1, estimatedSeconds: 0, files: [] }));
   for (const row of rows) {
@@ -60,7 +87,8 @@ function buildPlan({ files, weights, sha, shardCount = DEFAULT_SHARD_COUNT }) {
     shardCount,
     sourceProfile: weights.source.description,
     sourceWeightsSha256: crypto.createHash('sha256').update(fs.readFileSync(WEIGHTS_PATH)).digest('hex'),
-    unknownFileWeightSeconds: weights.source.unknownFileWeightSeconds,
+    unknownFileWeightSeconds: fallback.global,
+    unweightedFiles: rows.filter((row) => row.weightSource !== 'historical').map((row) => row.file).sort(),
     weightsSeconds: Object.fromEntries(rows.map(({ file, seconds }) => [file, seconds])),
     inventory: normalized,
     shards,
@@ -129,7 +157,7 @@ function main() {
       const sha = args.sha || process.env.GITHUB_SHA;
       const plan = buildPlan({ files: inventoryTests(), weights, sha, shardCount: Number(args.shards || DEFAULT_SHARD_COUNT) });
       fs.writeFileSync(args['plan-out'], `${JSON.stringify(plan, null, 2)}\n`);
-      process.stdout.write(JSON.stringify({ planHash: plan.hash, inventory: plan.inventory.length, shards: plan.shards.map(({ index, files, estimatedSeconds }) => ({ index, files: files.length, estimatedSeconds })), unknownWeightSeconds: plan.unknownFileWeightSeconds }) + '\n');
+      process.stdout.write(JSON.stringify({ planHash: plan.hash, inventory: plan.inventory.length, shards: plan.shards.map(({ index, files, estimatedSeconds }) => ({ index, files: files.length, estimatedSeconds })), unknownWeightSeconds: plan.unknownFileWeightSeconds, unweightedFiles: plan.unweightedFiles.length }) + '\n');
       return;
     }
     const plan = readPlan(planFile);
@@ -146,6 +174,8 @@ function main() {
       const attempt = Number(args.attempt || process.env.GITHUB_RUN_ATTEMPT);
       if (sha !== plan.sha || !runId || !Number.isInteger(attempt) || attempt < 1) throw new Error('metadata requires the plan SHA and exact GitHub run id/attempt');
       const metadata = { schemaVersion: 1, sha, runId, attempt, shard, shardCount: plan.shardCount, planHash: plan.hash, expectedFiles: plan.shards[shard - 1]?.files };
+      // When the shard job started; the merge job reports the coverage chain from the earliest one.
+      if (args['started-ms']) metadata.startedMs = Number(args['started-ms']);
       if (!metadata.expectedFiles) throw new Error(`unknown shard index ${shard}`);
       fs.writeFileSync(args['metadata-out'], `${JSON.stringify(metadata, null, 2)}\n`);
       return;
@@ -171,6 +201,10 @@ function main() {
         fs.copyFileSync(blob, destination);
         staged.push(destination);
       }
+      if (args['env-out']) {
+        const starts = plan.shards.map((shard) => JSON.parse(fs.readFileSync(path.join(artifacts, `coverage-shard-${shard.index}`, 'metadata.json'), 'utf8')).startedMs).filter(Number.isFinite);
+        if (starts.length) fs.appendFileSync(args['env-out'], `COVERAGE_CHAIN_STARTED_MS=${Math.min(...starts)}\n`);
+      }
       const artifactNames = fs.readdirSync(artifacts).filter((name) => /^coverage-shard-\d+$/.test(name)).sort();
       if (artifactNames.length !== plan.shardCount || staged.length !== plan.shardCount) throw new Error(`expected exactly ${plan.shardCount} same-attempt shard artifacts`);
       process.stdout.write(`[shard-plan] staged ${staged.length} provenance-verified blob reports for ${sha}, run ${runId}, attempt ${attempt}\n`);
@@ -185,4 +219,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { MAX_SHARDS, MIN_SHARDS, buildPlan, inventoryTests, planHash, readPlan, validateReport };
+module.exports = { COVERAGE_EXCLUDED_DIRS, MAX_SHARDS, MIN_SHARDS, buildPlan, unweightedFallback, inventoryTests, planHash, readPlan, validateReport };

@@ -54,7 +54,8 @@ function buildWeights({ runs, inventory, previous, runIds = [] }) {
       description: `Hosted V8 coverage per-file durations from Vitest blob reports (file result.duration incl. hooks + collect/setup/env/prepare): mean of ${label}`,
       fileCount: Object.keys(weights).length,
       fileDurationSumSeconds: Math.round(sum),
-      unknownFileWeightSeconds: prev.source?.unknownFileWeightSeconds,
+      // scripts/test-shard-plan.js derives the weight of an unmeasured file at plan time.
+      unweightedFilePolicy: 'median of measured files in the same tests/<dir>/, else the global median',
     },
     weightsSeconds: weights,
   };

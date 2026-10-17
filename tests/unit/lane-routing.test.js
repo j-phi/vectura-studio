@@ -57,7 +57,7 @@ describe('versioned risk routing', () => {
     expect(workflow).toContain('npm run test:coverage');
     expect(workflow).toContain('npm run test:perf');
     expect(workflow).toContain('npm run test:e2e');
-    expect(workflow).toContain('needs: [coverage]');
+    expect(workflow).toContain('needs: [coverage-shard]');
   });
 
   it('selects core and browser for core changes and resolves a merge base', () => {

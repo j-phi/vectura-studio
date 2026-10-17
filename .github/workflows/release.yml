@@ -55,9 +55,11 @@ jobs:
           node-version: 20
           cache: npm
 
-      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npm ci --no-audit --no-fund --loglevel=error
 
-      - run: npx playwright install --with-deps chromium
+      - uses: ./.github/actions/setup-playwright
+        with:
+          browsers: chromium
 
       - name: Build distributable zip
         run: scripts/release-build-zip.sh "${GITHUB_REF_NAME#v}"

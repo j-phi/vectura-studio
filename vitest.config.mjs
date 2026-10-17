@@ -8,7 +8,11 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./tests/helpers/vitest.setup.js'],
     include: ['tests/**/*.test.js'],
-    exclude: ['tests/e2e/**'],
+    // tests/e2e is Playwright. Coverage runs (VECTURA_TEST_COVERAGE=1: test:coverage, the CI
+    // shards and the merge) also skip tests/perf: the `perf` job runs it uninstrumented, and a
+    // timing budget under V8 instrumentation measures the instrumentation, not the code.
+    // scripts/test-shard-plan.js (COVERAGE_EXCLUDED_DIRS) keeps the shard roster in step.
+    exclude: ['tests/e2e/**', ...(process.env.VECTURA_TEST_COVERAGE === '1' ? ['tests/perf/**'] : [])],
     // 180s, not 20s: the CI `test:coverage` job runs the full suite under v8
     // instrumentation with fork contention (historically four workers), which makes the heavy
     // full-stack jsdom mounts (e.g. preset-save-dev-mode) run ~5-8x slower than

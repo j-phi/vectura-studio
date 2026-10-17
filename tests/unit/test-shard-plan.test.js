@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { buildPlan, planHash, validateReport } = require('../../scripts/test-shard-plan.js');
+const { COVERAGE_EXCLUDED_DIRS, buildPlan, inventoryTests, planHash, unweightedFallback, validateReport } = require('../../scripts/test-shard-plan.js');
 const weights = require('../../scripts/test-shard-weights.json');
 const roots = [];
 
@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 describe('deterministic coverage shard plan', () => {
-  it('keeps the full-coverage check as a fail-closed N-shard merge gate', () => {
+  it('keeps the full-coverage check as a fail-closed N-shard merge gate with no plan hop', () => {
     const workflow = fs.readFileSync(path.resolve('.github/workflows/test.yml'), 'utf8');
     const job = (name) => workflow.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z0-9-]+:\\n|(?![\\s\\S]))`, 'm'))?.[1] || '';
     const coverage = job('coverage');
@@ -23,48 +23,36 @@ describe('deterministic coverage shard plan', () => {
 
     const prOrMainPush = 'github.event_name == \'pull_request\' || (github.event_name == \'push\' && github.ref == \'refs/heads/main\')';
     const alwaysPrOrMainPush = `always() && (${prOrMainPush})`;
-    for (const name of ['lane-plan', 'feedback', 'e2e-smoke', 'perf', 'coverage-plan', 'coverage-shard']) {
+    for (const name of ['e2e-smoke', 'perf', 'coverage-shard']) {
       expect(job(name)).toContain(`if: ${prOrMainPush}`);
     }
-    expect(job('coverage-plan')).toContain('started_ms=$(date +%s%3N)');
-    expect(workflow).toMatch(/^  COVERAGE_SHARD_COUNT: '?16'?$/m);
-    expect(job('coverage-plan')).toContain('shards: ${{ steps.count.outputs.shards }}');
-    expect(job('coverage-plan')).toContain('--shards "$COVERAGE_SHARD_COUNT"');
-    expect(shard).toContain('shard: ${{ fromJSON(needs.coverage-plan.outputs.shards) }}');
-    expect(shard).toContain('--shard="$SHARD_INDEX/$SHARD_COUNT"');
+    // R-8: no coverage-plan job. The static matrix lists exactly 1..COVERAGE_SHARD_COUNT.
+    expect(job('coverage-plan')).toBe('');
+    const count = Number(workflow.match(/^  COVERAGE_SHARD_COUNT: '?(\d+)'?$/m)?.[1]);
+    expect(count).toBe(16);
+    const matrix = JSON.parse(shard.match(/^        shard: (\[[\d, ]+\])$/m)?.[1] || 'null');
+    expect(matrix).toEqual(Array.from({ length: count }, (_, i) => i + 1));
+    expect(shard).not.toContain('needs:');
+    expect(shard).toContain('--plan-out "$RUNNER_TEMP/coverage-shard-plan.json" --sha "$GITHUB_SHA" --shards "$COVERAGE_SHARD_COUNT"');
+    expect(shard).toContain('--started-ms "$SHARD_STARTED_MS"');
+    expect(shard).toContain('--shard="$SHARD_INDEX/$COVERAGE_SHARD_COUNT"');
+    expect(shard).toContain('--config vitest.coverage-shard.config.mjs');
     expect(shard).toContain('--workers "$VECTURA_VITEST_MAX_WORKERS"');
     expect(coverage).toContain('pattern: coverage-shard-[0-9]*');
     expect(workflow).not.toMatch(/\$SHARD_INDEX\/2|shard: \[1, 2\]|coverage-shard-\[12\]|--shards 2|--workers 2/);
     expect(coverage).toContain(`if: ${alwaysPrOrMainPush}`);
-    expect(coverage).toContain('needs: [coverage-plan, coverage-shard]');
-    expect(coverage).toContain('test "$GUARD_RESULT" = success');
+    expect(coverage).toContain('needs: [coverage-shard]');
     expect(coverage).toContain('test "$SHARDS_RESULT" = success');
+    // The merge job rebuilds the plan from the same inputs; stage-blobs rejects any other hash.
+    const merge = coverage.slice(coverage.indexOf('- name: Rebuild the shard plan'));
+    expect(merge.indexOf('--plan-out')).toBeLessThan(merge.indexOf('--stage-blobs'));
+    expect(coverage).toContain('--env-out "$GITHUB_ENV"');
     expect(coverage).toContain('npm run test:coverage:merge');
     expect(coverage).toContain('--coverage.reporter=lcov');
     expect(coverage).toContain('--coverage.reporter=json');
     expect(coverage).toContain('--strict --log');
     expect(coverage).toContain('--execution-start-ms "$COVERAGE_CHAIN_STARTED_MS"');
 
-    for (const alias of ['unit', 'integration', 'e2e-smoke', 'visual', 'perf', 'feedback', 'lane-gate']) {
-      expect(job(alias), `missing compatibility or required job ${alias}`).not.toBe('');
-    }
-    for (const alias of ['unit', 'integration']) {
-      expect(job(alias)).toContain(`if: ${alwaysPrOrMainPush}`);
-      expect(job(alias)).toContain('needs: [coverage]');
-      expect(job(alias)).toContain('test "$COVERAGE_RESULT" = success');
-    }
-    expect(job('visual')).toContain(`if: ${alwaysPrOrMainPush}`);
-    expect(job('visual')).toContain('needs: [coverage]');
-    expect(job('lane-gate')).toContain('coverage');
-    expect(job('lane-gate')).toContain(`if: ${alwaysPrOrMainPush}`);
-
-    const shouldRunRegularGraph = ({ event, ref }) => event === 'pull_request' || (event === 'push' && ref === 'refs/heads/main');
-    expect([
-      shouldRunRegularGraph({ event: 'pull_request', ref: 'refs/pull/97/merge' }),
-      shouldRunRegularGraph({ event: 'push', ref: 'refs/heads/main' }),
-      shouldRunRegularGraph({ event: 'push', ref: 'refs/heads/feature' }),
-      shouldRunRegularGraph({ event: 'schedule', ref: 'refs/heads/main' }),
-    ]).toEqual([true, true, false, false]);
     expect(job('scheduled-audit')).toContain('if: github.event_name == \'schedule\'');
     const scheduledSteps = job('scheduled-audit');
     expect(scheduledSteps.indexOf('run: npm run test:audit')).toBeLessThan(scheduledSteps.indexOf('run: npm run test:visual'));
@@ -72,9 +60,9 @@ describe('deterministic coverage shard plan', () => {
     expect(scheduledSteps.match(/if: always\(\) && steps\.dependencies\.outcome == 'success'/g)).toHaveLength(2);
   });
 
-  it('stages pilot artifacts when the YAML literal block runs in bash', () => {
-    const workflow = fs.readFileSync(path.resolve('.github/workflows/test-shard-pilot.yml'), 'utf8');
-    const runBlock = workflow.match(/      - name: Verify provenance and stage every Vitest blob file\n        run: \|\n((?:          .*\n?)+)/);
+  it('stages shard artifacts when the merge YAML block runs in bash, and rejects a foreign plan hash', () => {
+    const workflow = fs.readFileSync(path.resolve('.github/workflows/test.yml'), 'utf8');
+    const runBlock = workflow.match(/      - name: Rebuild the shard plan, verify each shard used it, and stage every Vitest blob file\n        run: \|\n((?:          .*\n?)+)/);
     expect(runBlock).not.toBeNull();
     const mergeScript = runBlock[1].replace(/^ {10}/gm, '').trimEnd();
 
@@ -82,74 +70,91 @@ describe('deterministic coverage shard plan', () => {
     roots.push(root);
     const sha = 'd'.repeat(40);
     const runId = 'fixture-run';
-    const plan = buildPlan({
-      files: Array.from({ length: 12 }, (_, i) => `tests/unit/f${i}.test.js`),
-      weights: { source: { description: 'fixture', unknownFileWeightSeconds: 1 }, weightsSeconds: {} },
-      sha,
-      shardCount: 10,
-    });
-    fs.writeFileSync(path.join(root, 'coverage-shard-plan.json'), JSON.stringify(plan));
+    const shardCount = 16;
+    // The merge block rebuilds the real plan, so the fixture shards carry that same plan.
+    const plan = buildPlan({ files: inventoryTests(), weights, sha, shardCount });
     const artifacts = path.join(root, 'coverage-shard-artifacts');
-    for (const shard of plan.shards) {
-      const directory = path.join(artifacts, `coverage-shard-${shard.index}`);
-      fs.mkdirSync(directory, { recursive: true });
-      fs.writeFileSync(path.join(directory, 'metadata.json'), JSON.stringify({
-        schemaVersion: 1,
-        sha,
-        runId,
-        attempt: 1,
-        shard: shard.index,
-        shardCount: plan.shardCount,
-        planHash: plan.hash,
-        expectedFiles: shard.files,
-      }));
-      fs.writeFileSync(path.join(directory, 'blob.json'), '{}');
-    }
+    const writeShards = (planHashValue) => {
+      fs.rmSync(artifacts, { recursive: true, force: true });
+      for (const shard of plan.shards) {
+        const directory = path.join(artifacts, `coverage-shard-${shard.index}`);
+        fs.mkdirSync(directory, { recursive: true });
+        fs.writeFileSync(path.join(directory, 'metadata.json'), JSON.stringify({
+          schemaVersion: 1, sha, runId, attempt: 1, shard: shard.index, shardCount, planHash: planHashValue, expectedFiles: shard.files, startedMs: 1000 + shard.index,
+        }));
+        fs.writeFileSync(path.join(directory, 'blob.json'), '{}');
+      }
+      // The workflow download pattern excludes these; stage-blobs must tolerate them anyway.
+      fs.mkdirSync(path.join(artifacts, 'coverage-shard-profile-1'), { recursive: true });
+    };
+    const githubEnv = path.join(root, 'github-env');
+    const env = { ...process.env, RUNNER_TEMP: root, GITHUB_SHA: sha, GITHUB_RUN_ID: runId, GITHUB_RUN_ATTEMPT: '1', GITHUB_ENV: githubEnv, COVERAGE_SHARD_COUNT: String(shardCount) };
+    const runMerge = () => spawnSync('bash', ['-c', mergeScript], { cwd: process.cwd(), encoding: 'utf8', env });
 
-    // The workflow download pattern excludes these; stage-blobs must tolerate them anyway.
-    fs.mkdirSync(path.join(artifacts, 'coverage-shard-profile-1'), { recursive: true });
-    fs.mkdirSync(path.join(artifacts, 'coverage-shard-plan'), { recursive: true });
-
-    const result = spawnSync('bash', ['-c', mergeScript], {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        RUNNER_TEMP: root,
-        GITHUB_SHA: sha,
-        GITHUB_RUN_ID: runId,
-        GITHUB_RUN_ATTEMPT: '1',
-      },
-    });
+    writeShards(plan.hash);
+    const result = runMerge();
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toContain('staged 10 provenance-verified blob reports');
+    expect(result.stdout).toContain(`staged ${shardCount} provenance-verified blob reports`);
     expect(fs.readdirSync(path.join(root, 'vitest-blobs')).sort()).toEqual(plan.shards.map((shard) => `shard-${shard.index}.json`).sort());
+    expect(fs.readFileSync(githubEnv, 'utf8')).toContain('COVERAGE_CHAIN_STARTED_MS=1001');
+
+    writeShards('f'.repeat(64));
+    expect(runMerge().status).not.toBe(0);
+
+    writeShards(plan.hash);
     fs.rmSync(path.join(artifacts, 'coverage-shard-7'), { recursive: true });
-    const missing = spawnSync('bash', ['-c', mergeScript], { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, RUNNER_TEMP: root, GITHUB_SHA: sha, GITHUB_RUN_ID: runId, GITHUB_RUN_ATTEMPT: '1' } });
-    expect(missing.status).not.toBe(0);
+    expect(runMerge().status).not.toBe(0);
   });
 
-  it('balances known durations and gives unprofiled files a conservative nonzero weight', () => {
-    const files = ['tests/unit/a.test.js', 'tests/unit/b.test.js', 'tests/unit/c.test.js', 'tests/unit/d.test.js', 'tests/unit/new.test.js'];
+  it('keeps tests/perf and tests/e2e out of the coverage roster, in the plan and in Vitest', () => {
+    const inventory = inventoryTests();
+    expect(COVERAGE_EXCLUDED_DIRS).toEqual(['tests/e2e', 'tests/perf']);
+    expect(inventory.some((f) => f.startsWith('tests/perf/'))).toBe(false);
+    expect(inventory.some((f) => f.startsWith('tests/e2e/'))).toBe(false);
+    expect(fs.readdirSync(path.resolve('tests/perf')).some((f) => f.endsWith('.test.js'))).toBe(true);
+    expect(inventory.some((f) => f.startsWith('tests/unit/'))).toBe(true);
+    const config = fs.readFileSync(path.resolve('vitest.config.mjs'), 'utf8');
+    expect(config).toContain("process.env.VECTURA_TEST_COVERAGE === '1' ? ['tests/perf/**'] : []");
+  });
+
+  it('balances known durations and gives an unweighted file its directory median', () => {
+    const files = ['tests/unit/a.test.js', 'tests/unit/b.test.js', 'tests/unit/c.test.js', 'tests/unit/d.test.js', 'tests/unit/new.test.js', 'tests/audit/new.test.js', 'tests/visual/new.test.js'];
     const fakeWeights = {
-      source: { description: 'fixture', unknownFileWeightSeconds: 51.72 },
+      source: { description: 'fixture' },
       weightsSeconds: {
         'tests/unit/a.test.js': 12,
         'tests/unit/b.test.js': 10,
         'tests/unit/c.test.js': 8,
         'tests/unit/d.test.js': 6,
+        'tests/audit/x.test.js': 100,
+        'tests/audit/y.test.js': 60,
+        'tests/audit/z.test.js': 80,
       },
     };
     const first = buildPlan({ files, weights: fakeWeights, sha: 'a'.repeat(40) });
     const second = buildPlan({ files: [...files].reverse(), weights: fakeWeights, sha: 'a'.repeat(40) });
     expect(first.hash).toBe(second.hash);
     expect(first.hash).toBe(planHash(first));
-    expect(first.weightsSeconds['tests/unit/new.test.js']).toBe(51.72);
+    // Median of tests/unit (6, 8, 10, 12) = 9; of tests/audit (60, 80, 100) = 80.
+    expect(first.weightsSeconds['tests/unit/new.test.js']).toBe(9);
+    expect(first.weightsSeconds['tests/audit/new.test.js']).toBe(80);
+    // No measured file in tests/visual: the global median of all 7 weights.
+    expect(first.weightsSeconds['tests/visual/new.test.js']).toBe(12);
+    expect(first.unknownFileWeightSeconds).toBe(12);
+    expect(first.unweightedFiles).toEqual(['tests/audit/new.test.js', 'tests/unit/new.test.js', 'tests/visual/new.test.js']);
     expect(first.shards.map((shard) => shard.files.length).reduce((sum, count) => sum + count, 0)).toBe(files.length);
-    expect(Math.abs(first.shards[0].estimatedSeconds - first.shards[1].estimatedSeconds)).toBeLessThanOrEqual(51.72);
     expect(first.shards[0].index).toBe(1);
     expect(first.shards[1].index).toBe(2);
+    expect(unweightedFallback({}).global).toBe(1);
+  });
+
+  it('keeps the committed weights fresh: every roster file but a handful has a measured weight', () => {
     expect(weights.source.fileCount).toBeGreaterThan(700);
+    expect(weights.source.unknownFileWeightSeconds).toBeUndefined();
+    const unweighted = inventoryTests().filter((file) => !(weights.weightsSeconds[file] > 0));
+    // A new file is fine until the next refresh (scripts/test-shard-weights-refresh.js); a
+    // large gap means the weights are stale and the shards drift out of balance.
+    expect(unweighted.length, unweighted.join('\n')).toBeLessThanOrEqual(25);
   });
 
   it('accepts only the approved fully-skipped file with its exact assertion count', () => {

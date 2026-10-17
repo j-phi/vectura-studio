@@ -7,6 +7,9 @@ const { CHROMIUM_PROJECTS, WEBKIT_PROJECTS, DEVICES } = require('./tests/e2e/tou
 const PORT = Number(process.env.PW_PORT || 4173);
 
 const TOUCH_MATCH = /touch\/.*\.spec\.js$/;
+// Specs that desktop-chromium must not run: touch projects own tests/e2e/touch, the visual
+// project owns visual.spec.js, and the iPhone mini project owns iphone-mini.spec.js.
+const DESKTOP_IGNORE = [TOUCH_MATCH, /visual\.spec\.js$/, /iphone-mini\.spec\.js$/];
 const touchUse = (d) => ({
   viewport: { width: d.width, height: d.height },
   deviceScaleFactor: d.dpr,
@@ -52,7 +55,11 @@ module.exports = defineConfig({
   // presets and geometry assets; raising this needs measured resource evidence.
   retries: 1,
   workers: 2,
-  reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+  // CI also writes a JSON report outside test-results/ (each Playwright run cleans that dir).
+  // scripts/playwright-flaky.js reads it to surface tests that passed only on retry.
+  reporter: process.env.CI
+    ? [['github'], ['html', { open: 'never' }], ['json', { outputFile: process.env.PLAYWRIGHT_JSON_OUTPUT_FILE || 'playwright-json/results.json' }]]
+    : 'list',
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'retain-on-failure',
@@ -73,7 +80,10 @@ module.exports = defineConfig({
         ...(useSystemChrome ? { channel: 'chrome' } : {}),
         viewport: { width: 1600, height: 1000 },
       },
-      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|type-tool-desktop\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|text-panel-field-desktop\.spec\.js$|keyboard-inset-desktop\.spec\.js$|modals-desktop\.spec\.js$|hidden-actions-desktop\.spec\.js$|toolbar-handles-desktop\.spec\.js$|mirror-dial-mouse\.spec\.js$|reorder-mouse\.spec\.js$|delete-undo-desktop\.spec\.js$|file-open-desktop\.spec\.js$|paint-bucket-mouse\.spec\.js$|reset-view-desktop\.spec\.js$|toolbar-submenu-desktop\.spec\.js$|value-entry-desktop\.spec\.js$|shell-header\.spec\.js$|modifier-bar-desktop\.spec\.js$|canvas-backing-desktop\.spec\.js$|bottom-pane-desktop\.spec\.js$|petal-designer-undo-desktop\.spec\.js$|feedback\.spec\.js$|ground-size\.spec\.js$|direct-pick-desktop\.spec\.js$|wavetable-image-noise\.spec\.js$/,
+      // Every spec under tests/e2e except the ones other projects own. A new desktop spec runs
+      // here (and in the PR smoke) with no list to update. tests/unit/e2e-ci-roster.test.js
+      // checks that every non-touch spec maps to a PR smoke project.
+      testIgnore: DESKTOP_IGNORE,
     },
     {
       name: 'desktop-visual-chromium',

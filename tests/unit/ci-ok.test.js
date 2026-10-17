@@ -28,7 +28,7 @@ const run = (needs, event) => spawnSync(process.execPath, [path.join(ROOT, 'scri
 
 describe('ci-ok required check', () => {
   it('needs every other job in test.yml, and the script classifies exactly those jobs', () => {
-    const real = allJobs.filter((n) => n !== 'ci-ok' && n !== 'report-red-main');
+    const real = allJobs.filter((n) => !['ci-ok', 'report-red-main', 'report-flaky-main'].includes(n));
     expect(needsOf('ci-ok').sort()).toEqual(real.sort());
     expect([...ciOk.ALL_JOBS].sort()).toEqual(real.sort());
     expect(job('ci-ok')).toMatch(/^    if: always\(\)$/m);
@@ -63,8 +63,8 @@ describe('ci-ok required check', () => {
     expect(ciOk.evaluate(results('schedule', { 'scheduled-audit': 'failure' }), 'schedule').ok).toBe(false);
     expect(ciOk.evaluate(results('workflow_dispatch', { 'touch-audit-nightly': 'skipped' }), 'workflow_dispatch').ok).toBe(false);
     const missing = results('pull_request');
-    delete missing['lane-gate'];
-    expect(ciOk.evaluate(missing, 'pull_request').problems).toContain('lane-gate: missing from ci-ok needs');
+    delete missing.coverage;
+    expect(ciOk.evaluate(missing, 'pull_request').problems).toContain('coverage: missing from ci-ok needs');
   });
 });
 
@@ -81,7 +81,55 @@ describe('red main gets an owner (R-5)', () => {
     expect(report).toContain('gh issue create');
     // The issue permission is scoped to this job only.
     expect(workflow.slice(0, workflow.indexOf('\njobs:\n'))).not.toMatch(/^permissions:/m);
-    expect(workflow.match(/issues: write/g)).toHaveLength(1);
+    expect(workflow.match(/issues: write/g)).toHaveLength(2);
+  });
+});
+
+describe('PR job graph (R-7)', () => {
+  it('has no alias, router or lane-gate hops: ci-ok is the only aggregate', () => {
+    for (const gone of ['lane-plan', 'feedback', 'unit', 'integration', 'visual', 'coverage-plan', 'lane-gate']) {
+      expect(allJobs, gone).not.toContain(gone);
+    }
+    expect([...ciOk.PR_GRAPH].sort()).toEqual(['coverage', 'coverage-shard', 'e2e-smoke', 'perf']);
+  });
+
+  it('runs the Node process-lifecycle tests in perf, and the coverage probe only on plumbing changes', () => {
+    const perf = job('perf');
+    expect(perf).toContain('run: npm run test:runner');
+    expect(perf).toContain('run: npm run test:perf');
+    const probe = perf.slice(perf.indexOf('- name: Verify bounded coverage shard and merge plumbing'));
+    expect(probe).toContain("if: steps.infra.outputs.run == 'true'");
+    expect(probe).toContain('run: npm run test:coverage:probe');
+    const detect = perf.slice(perf.indexOf('- name: Detect coverage plumbing changes'), perf.indexOf('- name: Verify bounded'));
+    for (const file of ['test-shard-plan', 'test-coverage-probe', 'vitest\\.coverage-shard\\.config', 'package-lock']) expect(detect, file).toContain(file);
+    // Fail-safe: an unknown base runs the probe.
+    expect(detect).toContain('run=true\n');
+  });
+});
+
+describe('Playwright flakes are visible (R-15)', () => {
+  it('summarizes flakes in every PR/nightly Playwright job and reports main flakes to an issue', () => {
+    for (const name of ['e2e-smoke', 'touch-e2e-nightly']) {
+      expect(job(name), name).toContain('node scripts/playwright-flaky.js summarize');
+      expect(job(name), name).toMatch(/name: playwright-flaky-/);
+    }
+    const report = job('report-flaky-main');
+    expect(report).toContain('needs: [ci-ok]');
+    expect(report).not.toContain('pull_request');
+    expect(report).toContain('pattern: playwright-flaky-*');
+    expect(report).toContain('playwright-flaky.js total');
+    expect(report).toContain('gh issue comment');
+  });
+});
+
+describe('setup hygiene (R-14)', () => {
+  it('installs with npm ci and caches Playwright browsers by Playwright version', () => {
+    expect(workflow).not.toContain('npm install');
+    expect(workflow).not.toMatch(/npx playwright install/);
+    const action = fs.readFileSync(path.join(ROOT, '.github/actions/setup-playwright/action.yml'), 'utf8');
+    expect(action).toContain("require('@playwright/test/package.json').version");
+    expect(action).toContain('path: ~/.cache/ms-playwright');
+    expect(action).toContain('steps.version.outputs.playwright');
   });
 });
 
