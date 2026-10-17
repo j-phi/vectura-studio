@@ -163,6 +163,26 @@ describe('TB-10 — stroke weight sub-mode', () => {
     expect(events.cancels, 'a later change does not abort twice').toBe(1);
   });
 
+  test('pointercancel after an early-return applyWeight pops no history (only a pushed entry is cancelled)', () => {
+    const Modes = dom.window.Vectura.UI.ContextBarModes;
+    app.cancelLastHistory = () => { events.cancels = (events.cancels || 0) + 1; return true; };
+    Modes.enterStrokeWeight({ app, layerIds: ['l1'], primaryLayer: layer });
+    const host = dom.window.document.getElementById('bar-content');
+    const slider = host.querySelector('.ctxbar-weight-slider');
+    const SM = dom.window.Vectura.StrokeModel;
+    dom.window.Vectura.StrokeModel = null; // applyWeight returns early: nothing is pushed
+    try {
+      fire(dom, slider, 'pointerdown');
+      slider.value = '1.5';
+      fire(dom, slider, 'input');
+      fire(dom, slider, 'pointercancel');
+    } finally {
+      dom.window.Vectura.StrokeModel = SM;
+    }
+    expect(events.pushes).toBe(0);
+    expect(events.cancels || 0, 'an unrelated history entry is not popped').toBe(0);
+  });
+
   test('stepper + field each commit one undo step', () => {
     const Modes = dom.window.Vectura.UI.ContextBarModes;
     Modes.enterStrokeWeight({ app, layerIds: ['l1'], primaryLayer: layer });

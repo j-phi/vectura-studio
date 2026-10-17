@@ -270,17 +270,21 @@
       let strokeOptionsPopover = null;
       let divisionsHandle = null;
 
+      // Returns true only when this call pushed a history entry (begin + a setter ran with app.pushHistory).
       const applyWeight = (mm, opts = {}) => {
         const M = Vectura.StrokeModel;
         const ls = layers();
-        if (!M || !ls.length) return;
+        if (!M || !ls.length) return false;
         const value = clampW(mm);
+        const canPush = !!(opts.begin && app && typeof app.pushHistory === 'function');
+        let pushed = false;
         if (ls.length > 1 && M.setStrokeWeightForLayers) {
-          M.setStrokeWeightForLayers(ls, value, { app, ...opts });
+          pushed = M.setStrokeWeightForLayers(ls, value, { app, ...opts }) !== null && canPush;
         } else if (M.setStrokeWeight) {
-          M.setStrokeWeight(primary(), value, { app, ...opts });
+          pushed = M.setStrokeWeight(primary(), value, { app, ...opts }) !== null && canPush;
         }
         refresh();
+        return pushed;
       };
 
       const wrap = el('div', { class: 'ctxbar-submode ctxbar-stroke-weight' });
@@ -311,20 +315,25 @@
 
       // Slider gesture → one undo step per drag.
       let begun = false;
-      slider.addEventListener('pointerdown', () => { begun = false; });
+      let historyPushed = false;
+      slider.addEventListener('pointerdown', () => { begun = false; historyPushed = false; });
       slider.addEventListener('input', () => {
-        applyWeight(slider.value, { begin: !begun, commit: false });
+        if (applyWeight(slider.value, { begin: !begun, commit: false })) historyPushed = true;
         begun = true;
       });
       const endSlide = () => {
         if (begun) applyWeight(slider.value, { begin: false, commit: true });
         begun = false;
+        historyPushed = false;
       };
       // pointercancel aborts: restore the pre-drag weight and drop the gesture's history entry.
+      // Pop only an entry this gesture pushed (an early-return applyWeight pushed nothing).
       const abortSlide = () => {
         if (!begun) return;
         begun = false;
-        if (app && typeof app.cancelLastHistory === 'function') app.cancelLastHistory();
+        const pushed = historyPushed;
+        historyPushed = false;
+        if (pushed && app && typeof app.cancelLastHistory === 'function') app.cancelLastHistory();
         refresh();
       };
       slider.addEventListener('pointerup', endSlide);
