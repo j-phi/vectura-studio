@@ -177,6 +177,8 @@ also requires strict current-topology evidence, review, at least 30% lower whole
 latency and no more than about 15% extra allocated runner time. Record each measured comparison and its scope. See
 `test-suite-phase2.md` for baseline, implementation evidence and remaining targets.
 
+Test performance budgets, trim rules and shard maintenance: see [test-performance-lessons.md](test-performance-lessons.md).
+
 ### Vitest lifecycle ownership
 
 All repository Vitest entrypoints use `scripts/run-vitest.js`, which launches a
