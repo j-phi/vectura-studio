@@ -1414,8 +1414,13 @@
       const leftPane = document.getElementById('left-pane');
       const rightPane = document.getElementById('right-pane');
       const bottomPane = document.getElementById('bottom-pane');
-      if (leftPane) leftPane.classList.remove('pane-collapsed', 'pane-force-open');
-      if (rightPane) rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      // TUX-008: the pane-state controller resets per layout (drawers closed, docked panes open).
+      const ps = window.Vectura?.UI?.Workspace?.paneState;
+      if (ps && ps.layout()) ps.resetForLayout();
+      else {
+        if (leftPane) leftPane.classList.remove('pane-collapsed', 'pane-force-open');
+        if (rightPane) rightPane.classList.remove('pane-collapsed', 'pane-force-open');
+      }
       if (bottomPane) bottomPane.classList.remove('bottom-pane-collapsed');
     }
   }
@@ -1443,7 +1448,7 @@
     this.layerFilterOpen = false;
     this.layerAddOpen    = false;
     this._lvlDblId       = null;
-    this._lvlDblTime     = 0;
+    this._lvlDblTime     = null;
     if (typeof this._bindDocumentSetupHandlers === 'function') {
       this._bindDocumentSetupHandlers();
     }
@@ -1529,6 +1534,7 @@
     this.initAlgorithmTransformSection();
     this.initTouchModifierBar();
     this.initTouchMouseBridge();
+    this.installGestureZoomGuard();
     this.initTopMenuBar();
     document.addEventListener('click', () => {
       if (this.openPenMenu) {
@@ -1540,6 +1546,16 @@
         this.openPaletteMenu = null;
       }
       this.setTopMenuOpen(null, false);
+    });
+    // TUX-040b: pen and palette menus also close on a pointerdown outside (drags and scrolls make no click).
+    // The pen pill and the palette toggle stay excluded: their own click toggles the menu.
+    window.Vectura.UI.utils.onOutsidePointer(document, (t) => !!(t && t.closest && (
+      t.closest('.pen-pill, #palette-toggle')
+      || (this.openPenMenu && this.openPenMenu.contains(t))
+      || (this.openPaletteMenu && this.openPaletteMenu.contains(t))
+    )), () => {
+      if (this.openPenMenu) { this.openPenMenu.classList.add('hidden'); this.openPenMenu = null; }
+      if (this.openPaletteMenu) { this.openPaletteMenu.classList.add('hidden'); this.openPaletteMenu = null; }
     });
     this.initPaneToggles();
     this.initBottomPaneToggle();

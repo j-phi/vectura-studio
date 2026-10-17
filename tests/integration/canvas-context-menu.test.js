@@ -76,11 +76,11 @@ describe('CTX-1 — canvas context menu', () => {
     expect(typeof CM.close).toBe('function');
   });
 
-  test('with NO selection, menu is the Undo / Redo subset only', async () => {
+  test('with NO selection, menu is the Select All + Undo / Redo subset only', async () => {
     await boot();
     app.renderer.setSelection([], null);
     const items = CM.buildItems();
-    expect(idsOf(items)).toEqual(['undo', 'redo']);
+    expect(idsOf(items)).toEqual(['select-all', 'undo', 'redo']);
   });
 
   test('with a multi-selection, menu lists the full verb set', async () => {

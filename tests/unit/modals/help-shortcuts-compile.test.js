@@ -74,12 +74,12 @@ describe('help-shortcuts modal compile gate', () => {
       .toThrow(/HelpShortcuts\.openHelp invoked before HelpShortcuts\.bind/);
   });
 
-  it('after bind({}), buildHelpContent returns a string with all 7 tab buttons', () => {
+  it('after bind({}), buildHelpContent returns a string with all 8 tab buttons', () => {
     HelpShortcuts.bind({});
     const html = HelpShortcuts.buildHelpContent.call({});
     expect(typeof html).toBe('string');
     expect(html).toContain('class="help-wrap"');
-    for (const tab of ['quickstart', 'algorithms', 'tools', 'canvas', 'layers', 'pen', 'fileexport']) {
+    for (const tab of ['quickstart', 'algorithms', 'tools', 'canvas', 'layers', 'pen', 'fileexport', 'touch']) {
       expect(html).toContain(`data-tab="${tab}"`);
       expect(html).toContain(`data-panel="${tab}"`);
     }
@@ -101,5 +101,21 @@ describe('help-shortcuts modal compile gate', () => {
     HelpShortcuts._applyHelpPlatform.call({}, root, 'mac');
     expect(root.querySelector('kbd').textContent).toBe('⌘');
     expect(root.querySelector('[data-platform="mac"]').classList.contains('active')).toBe(true);
+  });
+  it('_applyHelpPlatform touch: activates the touch button, kbd keeps the navigator mac/win value', () => {
+    HelpShortcuts.bind({});
+    const root = dom.window.document.createElement('div');
+    root.innerHTML = `
+      <kbd data-mac="⌘" data-win="Ctrl">x</kbd>
+      <button class="help-platform-btn" data-platform="mac">Mac</button>
+      <button class="help-platform-btn" data-platform="win">Win</button>
+      <button class="help-platform-btn" data-platform="touch">Touch</button>
+    `;
+    HelpShortcuts._applyHelpPlatform.call({}, root, 'touch');
+    const isMac = /Mac|iPod|iPhone|iPad/.test(dom.window.navigator.platform);
+    expect(root.querySelector('kbd').textContent).toBe(isMac ? '⌘' : 'Ctrl');
+    expect(root.querySelector('[data-platform="touch"]').classList.contains('active')).toBe(true);
+    expect(root.querySelector('[data-platform="mac"]').classList.contains('active')).toBe(false);
+    expect(root.querySelector('[data-platform="win"]').classList.contains('active')).toBe(false);
   });
 });

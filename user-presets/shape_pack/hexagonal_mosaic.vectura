@@ -126,13 +126,6 @@
         "multiSelectionPathfinderOpen": true
       },
       "aboutVisible": false,
-      "touchModifiers": {
-        "shift": false,
-        "alt": false,
-        "meta": false,
-        "ctrl": false,
-        "pan": false
-      },
       "documentUnits": "metric",
       "paperSize": "letter",
       "paperWidth": 216,

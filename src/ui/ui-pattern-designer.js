@@ -178,12 +178,12 @@
       });
 
       pd.root.innerHTML = `
-        <div class="flex items-center justify-between mb-2 px-1">
+        <div class="pd-header-row flex items-center justify-between mb-2 px-1">
           <div class="flex items-center gap-1.5">
             <span class="text-[11px] font-medium text-vectura-accent uppercase tracking-wide">Pattern Designer</span>
             <span data-pd-draft-badge class="hidden text-[9px] bg-vectura-accent text-black px-1 py-px rounded leading-tight">Unsaved</span>
           </div>
-          <div class="flex gap-1 items-center">
+          <div class="pd-header-actions flex gap-1 items-center">
             <button type="button" class="text-[10px] border border-vectura-border px-2 py-1 hover:bg-vectura-border text-vectura-muted transition-colors" data-pd-import-tile>
               Import SVG Tile
             </button>
@@ -609,28 +609,24 @@
       const header = pd.root.querySelector('[data-pd-header]');
       if (!header) return;
       let drag = null;
-      const onDown = (e) => {
-        if (e.target.closest('button,select,input')) return;
-        const rect = pd.root.getBoundingClientRect();
-        drag = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top };
-        pd.root.classList.add('dragging');
-        pd.root.style.transform = '';
-        e.preventDefault();
-      };
-      const onMove = (e) => {
-        if (!drag) return;
-        pd.root.style.left = `${drag.ox + e.clientX - drag.sx}px`;
-        pd.root.style.top = `${drag.oy + e.clientY - drag.sy}px`;
-      };
-      const onUp = () => { drag = null; pd.root.classList.remove('dragging'); };
-      header.addEventListener('pointerdown', onDown);
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      pd.cleanupDrag = () => {
-        header.removeEventListener('pointerdown', onDown);
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
-      };
+      // TUX-018: the shared binder captures the pointer on down and pairs pointerup with pointercancel.
+      const unbind = window.Vectura.UI.bindPointerDrag(header, {
+        filter: (e) => !e.target.closest('button,select,input'),
+        down: (e) => {
+          const rect = pd.root.getBoundingClientRect();
+          drag = { sx: e.clientX, sy: e.clientY, ox: rect.left, oy: rect.top };
+          pd.root.classList.add('dragging');
+          pd.root.style.transform = '';
+          e.preventDefault();
+        },
+        move: (e) => {
+          if (!drag) return;
+          pd.root.style.left = `${drag.ox + e.clientX - drag.sx}px`;
+          pd.root.style.top = `${drag.oy + e.clientY - drag.sy}px`;
+        },
+        end: () => { drag = null; pd.root.classList.remove('dragging'); },
+      });
+      pd.cleanupDrag = () => { unbind(); };
       pd.root.style.top = '60px';
       pd.root.style.left = '50%';
       pd.root.style.transform = 'translateX(-50%)';
@@ -640,6 +636,27 @@
       const canvas = pd.root.querySelector('[data-pd-canvas]');
       if (!canvas) return;
       const wrap = canvas.parentElement;
+      // TUX-008 integration fix: on phones the Generator pane starts closed, so an inline designer can be
+      // built inside a 0 x 0 wrap. It then sized itself to the 460 x 320 fallback and overflowed the pane
+      // once it opened. Re-fit once, after the wrap gets a real size and the pane's open transition settles.
+      if ((!wrap.clientWidth || !wrap.clientHeight) && typeof ResizeObserver === 'function') {
+        if (pd.__pdSizeWatch) pd.__pdSizeWatch.disconnect();
+        let settle = null;
+        const watch = new ResizeObserver(() => {
+          clearTimeout(settle);
+          if (!wrap.clientWidth || !wrap.clientHeight) return;
+          settle = setTimeout(() => {
+            if (!wrap.clientWidth || !wrap.clientHeight) return;
+            watch.disconnect();
+            if (pd.__pdSizeWatch === watch) pd.__pdSizeWatch = null;
+            if (!canvas.isConnected) return;
+            this._initPatternDesignerView(pd);
+            this._renderPatternDesigner(pd);
+          }, 250);
+        });
+        pd.__pdSizeWatch = watch;
+        watch.observe(wrap);
+      }
       const wrapW = wrap.clientWidth || 460;
       const wrapH = wrap.clientHeight || 320;
       canvas.width = wrapW;
@@ -967,20 +984,6 @@
         images: imagePayload,
         customPatterns: getPatternRegistry()?.exportAllCustomPatterns?.() || [],
       };
-    },
-
-    saveVecturaFile() {
-      const payload = this._serializeVecturaPayload();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const date = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `vectura-${date}.vectura`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
     },
 
     _applyVecturaPayload(data) {
@@ -1433,10 +1436,10 @@
         if (this.app.pushHistory) this.app.pushHistory();
       };
       const applyPourAt = (tx, ty, e, session) => {
-        const effectiveTool = pd.tool === 'fill' && (e.altKey || window.Vectura.SETTINGS?.touchModifiers?.alt)
+        const effectiveTool = pd.tool === 'fill' && window.Vectura.InputModifiers.readModifiers(e).alt
           ? 'fill-erase'
           : pd.tool;
-        const targets = getSelection(tx, ty, Boolean(e.shiftKey));
+        const targets = getSelection(tx, ty, Boolean(window.Vectura.InputModifiers.readModifiers(e).shift));
         const statusEl = pd.root.querySelector('[data-pd-status]');
         if (!targets.length) {
           if (statusEl) statusEl.textContent = 'No fill target at pointer';
@@ -1515,15 +1518,114 @@
         pd.view.zoom = newZoom;
         this._renderPatternDesigner(pd);
       };
+      // --- TUX-047: touch pinch/pan + single touch-intent gate -------------------------------
+      // Two fingers always zoom/pan (PinchZoom); one finger keeps the active tool, but a touch
+      // pointerdown is HELD until it is clearly a one-finger action: pointerup, 250 ms, or 10 px of
+      // movement. A second finger inside that window cancels it, so a pinch never pours, selects,
+      // anchors or pushes history. Mouse and pen take the exact original path (no deferral).
+      const aborts = (pd._touchAborts = []);
+      const abortSessions = (commit) => {
+        panState = null;
+        dragSession = null;
+        aborts.forEach((fn) => fn(commit));
+      };
+      let replaying = false;
+      let pending = null;
+      const touchDown = new Set();
+      const dropPending = () => {
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        pending = null;
+      };
+      const flushPending = () => {
+        if (!pending) return;
+        const { init } = pending;
+        dropPending();
+        replaying = true;
+        try { canvas.dispatchEvent(new PointerEvent('pointerdown', init)); } finally { replaying = false; }
+      };
+      // Replay carries the held modifier state unchanged (copy only; no modifier logic here).
+      const copyModifiers = (e) => Object.fromEntries(['alt', 'shift', 'ctrl', 'meta'].map((k) => [`${k}Key`, e[`${k}Key`]]));
+      const onGateDown = (e) => {
+        if (e.pointerType !== 'touch' || replaying) return;
+        touchDown.add(e.pointerId);
+        e.stopImmediatePropagation();
+        if (touchDown.size >= 2) { dropPending(); return; }
+        pending = {
+          id: e.pointerId,
+          sx: e.clientX,
+          sy: e.clientY,
+          timer: setTimeout(flushPending, 250),
+          init: {
+            bubbles: true, cancelable: true, composed: true,
+            pointerId: e.pointerId, pointerType: 'touch', isPrimary: e.isPrimary,
+            clientX: e.clientX, clientY: e.clientY, screenX: e.screenX, screenY: e.screenY,
+            button: 0, buttons: 1, pressure: 0.5,
+            ...copyModifiers(e),
+          },
+        };
+      };
+      const onGateMove = (e) => {
+        if (replaying || !pending || e.pointerId !== pending.id) return;
+        if (Math.hypot(e.clientX - pending.sx, e.clientY - pending.sy) >= 10) flushPending();
+      };
+      const onGateUp = (e) => {
+        if (replaying) return;
+        if (e.type === 'pointercancel') {
+          if (e.pointerType !== 'touch' || (!touchDown.has(e.pointerId) && !(pending && pending.id === e.pointerId))) return;
+          touchDown.delete(e.pointerId);
+          dropPending();
+          abortSessions(false);
+          return;
+        }
+        if (e.pointerType !== 'touch') return;
+        touchDown.delete(e.pointerId);
+        if (pending && e.pointerId === pending.id) flushPending();
+      };
+      let pz0 = null;
+      const PinchZoom = window.Vectura?.UI?.PinchZoom;
+      const pinch = PinchZoom ? PinchZoom.attach(canvas, {
+        filter: () => !replaying,
+        onStart: ({ cx, cy }) => {
+          dropPending();
+          abortSessions(true);
+          pz0 = { rect: canvas.getBoundingClientRect(), zoom: pd.view.zoom, ox: pd.view.offsetX, oy: pd.view.offsetY, cx, cy };
+        },
+        onUpdate: ({ ratio, cx, cy }) => {
+          if (!pz0) return;
+          const nextZoom = Math.max(0.1, Math.min(200, pz0.zoom * ratio));
+          const wx = (pz0.cx - pz0.rect.left - pz0.ox) / pz0.zoom;
+          const wy = (pz0.cy - pz0.rect.top - pz0.oy) / pz0.zoom;
+          pd.view.zoom = nextZoom;
+          pd.view.offsetX = (cx - pz0.rect.left) - wx * nextZoom;
+          pd.view.offsetY = (cy - pz0.rect.top) - wy * nextZoom;
+          this._renderPatternDesigner(pd);
+        },
+        onEnd: () => { pz0 = null; },
+      }) : null;
+      canvas.setAttribute('data-touch-zoom', '');
+      canvas.addEventListener('pointerdown', onGateDown, true);
+      window.addEventListener('pointermove', onGateMove, true);
+      window.addEventListener('pointerup', onGateUp, true);
+      window.addEventListener('pointercancel', onGateUp, true);
+
       canvas.addEventListener('pointerdown', onDown);
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
       canvas.addEventListener('wheel', onWheel, { passive: false });
       pd.cleanupCanvas = () => {
         canvas.removeEventListener('pointerdown', onDown);
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
         canvas.removeEventListener('wheel', onWheel);
+        canvas.removeEventListener('pointerdown', onGateDown, true);
+        window.removeEventListener('pointermove', onGateMove, true);
+        window.removeEventListener('pointerup', onGateUp, true);
+        window.removeEventListener('pointercancel', onGateUp, true);
+        dropPending();
+        pinch?.detach();
       };
     },
 
@@ -2057,14 +2159,8 @@
       if (!svg) return;
       try {
         const blob = new Blob([svg], { type: 'image/svg+xml' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${name || 'pattern'}.svg`.replace(/[^a-z0-9_\-. ]/gi, '_');
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        const filename = `${name || 'pattern'}.svg`.replace(/[^a-z0-9_\-. ]/gi, '_');
+        window.Vectura.Download.saveBlob(blob, filename).catch(() => { /* best-effort */ });
       } catch (err) {
         // Download is best-effort.
       }
@@ -2261,13 +2357,13 @@
         const state = pd.directEditState;
         if (!state) return;
         if (control.type === 'anchor') {
-          if (e.shiftKey) {
+          if (window.Vectura.InputModifiers.readModifiers(e).shift) {
             if (state.selectedIndices.has(control.index)) state.selectedIndices.delete(control.index);
             else state.selectedIndices.add(control.index);
           } else if (!state.selectedIndices.has(control.index)) {
             state.selectedIndices = new Set([control.index]);
           }
-          if (e.altKey) {
+          if (window.Vectura.InputModifiers.readModifiers(e).alt) {
             // Duplicate anchor
             const orig = state.anchors[control.index];
             const dup = { x: orig.x, y: orig.y, in: orig.in ? { ...orig.in } : null, out: orig.out ? { ...orig.out } : null };
@@ -2302,7 +2398,7 @@
 
         if (directDrag.type === 'anchor') {
           let next = { x: tx, y: ty };
-          if (e.shiftKey && directDrag.anchorStart) {
+          if (window.Vectura.InputModifiers.readModifiers(e).shift && directDrag.anchorStart) {
             next = this._snapDirectAngle(directDrag.anchorStart, next, 15);
           }
           const dxm = next.x - anchor.x, dym = next.y - anchor.y;
@@ -2319,7 +2415,7 @@
         } else {
           // Bezier handle drag
           anchor[directDrag.type] = { x: tx, y: ty };
-          if (!e.altKey) {
+          if (!window.Vectura.InputModifiers.readModifiers(e).alt) {
             // Mirror opposite handle for smooth editing
             const mirror = directDrag.type === 'in' ? 'out' : 'in';
             const dx = anchor.x - tx, dy = anchor.y - ty;
@@ -2343,8 +2439,10 @@
 
       let penDblTimer = null;
 
+      let editPointerId = null;
       const onEditDown = (e) => {
         if (e.button !== 0) return;
+        editPointerId = e.pointerId;
         const rect = canvas.getBoundingClientRect();
         const ex = e.clientX - rect.left, ey = e.clientY - rect.top;
         const { x: tx, y: ty } = toTile(ex, ey);
@@ -2460,7 +2558,7 @@
             }
           }
           // Click on empty space — clear selection
-          if (!e.shiftKey) {
+          if (!window.Vectura.InputModifiers.readModifiers(e).shift) {
             pd.directEditState = null;
             this._renderPatternDesigner(pd);
           }
@@ -2641,10 +2739,31 @@
         }
       };
 
+      // TUX-047: pinch start / pointercancel end any in-progress touch drag. `commit` keeps an
+      // already-moved direct drag (one history entry); previews that were never committed
+      // (move/select drag, shape drag) are discarded.
+      if (Array.isArray(pd._touchAborts)) {
+        pd._touchAborts.push((commit) => {
+          let changed = false;
+          if (directDrag) { if (commit) endDirectDrag(); else directDrag = null; changed = true; }
+          if (pd.moveDrag) { pd.moveDrag = null; changed = true; }
+          if (pd.dragShape) { pd.dragShape = null; changed = true; }
+          if (changed) this._renderPatternDesigner(pd);
+        });
+      }
+
       // Register — canvas gets the pointer events, window gets keys
       canvas.addEventListener('pointerdown', onEditDown);
       window.addEventListener('pointermove', onEditMove);
+      // A cancelled pointer (system interruption) aborts every open edit session through the same list the gate uses.
+      // Touch cancels reach the session abort list through the touch gate. A mouse or pen cancel aborts only the pointer
+      // that started the edit, so a cancel from another pointer never kills the drag.
+      const onEditCancel = (e) => {
+        if (!e || e.pointerType === 'touch' || e.pointerId !== editPointerId) return;
+        (pd._touchAborts || []).forEach((fn) => fn(false));
+      };
       window.addEventListener('pointerup', onEditUp);
+      window.addEventListener('pointercancel', onEditCancel);
       window.addEventListener('keydown', onEditKey);
 
       // Merge cleanup into pd.cleanupCanvas (already set by _bindPatternDesignerCanvas)
@@ -2654,6 +2773,7 @@
         canvas.removeEventListener('pointerdown', onEditDown);
         window.removeEventListener('pointermove', onEditMove);
         window.removeEventListener('pointerup', onEditUp);
+        window.removeEventListener('pointercancel', onEditCancel);
         window.removeEventListener('keydown', onEditKey);
         if (penDblTimer) clearTimeout(penDblTimer);
       };

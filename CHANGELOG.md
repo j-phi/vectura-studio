@@ -6,6 +6,74 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Touch remediation (TUX-001 to TUX-062, branch `touch/integration`)
+Touch and Apple Pencil now work across the whole app on iPad and iPhone. Mouse and desktop behavior is unchanged unless a bullet says "all pointers". Items are grouped by area. Simulation proves them on 11 Chromium and WebKit touch projects. Real-device rows stay open in `docs/touch-audit/device-checklist.md`.
+
+#### Batch G (final touch items)
+- **Finger pick.** A finger tap within 22 px of a stroke selects it with Select, and the Direct tool picks within 22 px (nearest wins). Mouse and Pencil keep 2.5 px. A locked layer under the finger selects nothing, for touch and mouse. (TUX-024)
+- **Hold the canvas.** Press and hold for 0.5 s with Select, Direct Selection or Hand selects the object under the finger and opens the canvas menu. On empty canvas the menu offers Select All. The hold never starts with drawing or fill tools. A move of 10 px (6 px on a selected object) cancels it. (TUX-034)
+- **Menus close on any outside press.** The pen menu, palette menu, Add Layer menu, layer bar palette menu and algorithm-draw menu close on a drag or scroll outside, not only on a tap. (TUX-040b)
+- **Phone context bar for shapes.** On phones the context bar shows for a drawn shape, so Shape Properties (polygon sides, corner radius) is reachable by finger. The bar scrolls sideways. Other selections keep it hidden to protect canvas share (iPhone portrait 75 % against 69 %). (TUX-031)
+- **Review fixes.** The shape bar keeps its grip above 640 px (only phone widths drop it). Cancelling a drag on the polygon sides slider, the corner scrub or the stroke weight slider now restores the pre-drag value and keeps no history entry. A pinned "Document Setup…" row tops the phone hamburger sheet (2 taps).
+- **Follow-ups closed.** The Export legend gear sits above the footer on short phone landscape. The collapsed right pane header on touch-wide matches the rail width. The pen swatch colour input is the visible swatch, with no hidden ghost target. Device checklist row DEV-54 added.
+- **Stopped clauses.** TUX-010 req 6 (direct Document Setup entry on phones: Q5 keeps every menu behind one hamburger), TUX-034 req 10 (Paste: the app has no copy command) and TUX-058 linux baseline (needs the first CI artifact).
+
+#### CI and security (PR #102)
+- **PR browser smoke is bounded.** The `e2e-smoke` job runs `npm run test:e2e:smoke`: the non-touch projects plus harness, journeys and the fast target audit on `touch-iphone-portrait` and `webkit-ipad-portrait`. The full touch roster (11 projects, 7,319 tests) ran past the 60-minute limit; it now runs nightly as the 10-shard `touch-e2e-nightly` matrix. A manual `workflow_dispatch` run seeds the TUX-058 linux baseline and a linux TUX-059 journey ledger (`journey-status.linux.json`); until it exists, linux journey cells are record-only. Evidence screenshots in e2e specs use repo-relative paths, not `/Users/jayphi/...`.
+- **Font picker preview is built with DOM APIs.** The stroke-face preview SVG no longer passes the face name through `innerHTML` (CodeQL js/xss-through-dom). A face name such as `<img src=x onerror=…>` renders as text.
+- **Static guard reads HTML comments from the parser.** `touch-ok` markers in multiline `index.html` comments now count (CodeQL bad HTML filtering regexp).
+
+#### Shell and layout
+- **Fixed touch shell.** The page no longer scrolls, rubber-bands, pulls to refresh or zooms on pinch. Heights use `--app-vh` (`100dvh`). Safe-area insets (`--safe-top/right/bottom/left`) land on the header and the bottom-most chrome. (TUX-002/003/004/005)
+- **Layout classifier.** `Vectura.LayoutClassifier` returns `desktop`, `touch-wide`, `tablet` or `phone`. Body gets `phone-layout`, `tablet-layout`, `touch-wide-layout`, `touch-ui` and `phone-short` classes. (TUX-006/007)
+- **Panels.** Phones and iPad portrait start with both panels closed. They open as drawers over a dimmed backdrop, one at a time. iPad landscape keeps both docked (260 px and 200 px). Phone headers get Generator and Layers buttons. Closed panels are `inert` and leave no sliver. The backdrop closes on `click` only. One pane-state controller owns all of it. (TUX-008/010/011)
+- **Reset View** only fits the paper on touch. It no longer forces 335 px panes. (TUX-009)
+- **iPhone landscape.** The tool rail is one 52 px row, the modifier bar is a column, the formula pane is a chip, and the status strip is an overlay. Canvas share is at least 60 %. (TUX-007)
+- **Phone header.** `#btn-menu-hamburger` opens a drill-down sheet. Undo, Redo and Export are direct 44 px buttons. A tap outside the open sheet only closes it. (TUX-001/013)
+- **Tool rail.** One row with a pinned `⋯` All Tools overflow (`Vectura.TOOL_RAIL`). Tablet portrait gains 143 px and iPhone portrait gains 202 px of canvas. The All Tools drawer opens inside the visible viewport. Floating toolbar and context-bar grips are 44 px, and the footer is hidden on touch. (TUX-013/015/016)
+- **iPad landscape canvas share.** The status strip is a translucent overlay and the bottom resizer is hidden while the bottom pane is collapsed. Share is 75 % or more with both panes collapsed. (TUX-058, Q17)
+- **Bottom pane.** A tap near the canvas edge no longer expands it. The divider needs a 6 px drag on touch. (TUX-051)
+
+#### Gestures and canvas
+- **Gesture arbitration.** Pinch and two-finger pan work with every tool. A second finger within 250 ms cancels the first action with no history entry. A later second finger commits the first action, then pinches. (TUX-017)
+- **System interruption.** `pointercancel` restores the pre-gesture state. It adds no history entry. Every drag in dialogs, the colour picker, the paint canvas, the Pattern Designer and sliders ends on a cancel. (TUX-018)
+- **Move by finger.** A one-finger drag on a selected object moves it after 6 px. There is no hold and no haptic buzz. (TUX-019)
+- **History and zoom.** A canvas HUD has Undo, Redo, Zoom Out, Zoom In and Fit. A two-finger tap undoes. A three-finger tap redoes. Pinch, wheel and HUD share one zoom range. The HUD steps aside under drawers, dialogs and covering windows. (TUX-020)
+- **Apple Pencil priority.** A Pencil takes the canvas from a resting palm. (TUX-021)
+- **Paint bucket.** Press shows the region preview and a loupe. Lift pours. Scope chips widen or narrow the region. (TUX-022)
+- **Finger-sized hit targets.** Resize corners 22 px, rotate band 48 px, anchors, handles, corner widgets and the light 22 px. A finger tap within 22 px of a stroke selects it (nearest wins). The Direct tool picks within 22 px. A tap on or beside locked geometry selects nothing. Mouse and Pencil keep their old sizes. (TUX-023/024)
+- **Pen.** Close with a tap near the start point. Finish with a double-tap. A pen draft shows Done, Remove Last Anchor and Cancel chips. A tool change commits a draft of two or more anchors. A double-click finish no longer leaves a duplicate anchor (all pointers). (TUX-024/030)
+- **3D rotation gizmo.** Separated layout, 22 px markers, nearest wins, and no value jump on the first move. The centre and roll ring band have a 22 px hit radius. (TUX-025)
+- **Modifier bar.** Four tasks (Multi-select, Constrain, Duplicate, Pan) replace keyboard keys. One tap applies a task to the next gesture. Two taps within 300 ms lock it. A badge names active tasks. The layer list, fill sample and drag-pour read the tasks. (TUX-033/045)
+- **Pinch on dialogs.** A two-finger pinch zooms the Export preview and the Pattern Designer. (TUX-047)
+- **Canvas long-press.** Hold the canvas for 0.5 s with Select, Direct Selection or Hand to select the object and open the canvas menu. The empty-canvas menu offers Select All. (TUX-034)
+
+#### Panels, lists and menus
+- **Layers on touch.** Rows use two lines with 44 px targets. Secondary actions move to the `⋯` menu. Hold a row for 0.5 s to open its menu with the full layer name. Drag the grip to reorder, and the list auto-scrolls near its edges. The multi-select action strip fits the pane. (TUX-012/034/036/044)
+- **Reorder.** Noise, effect, modifier, optimization, pen and mirror lists reorder by finger through `Vectura.UI.PointerReorder`. A downward drop lands in the slot shown (all pointers). (TUX-044)
+- **Menus.** The Add Layer menu drills into the algorithm list without adding a stray layer. The Object menu gains Bring Forward, Send Backward, Bring to Front and Send to Back. Context-bar `⋯` gains "Selection menu…". Tool sub-menus open by tap-again or hold, stay open after the lift, and close on any outside press, drag or scroll. A tap on a control outside an open top menu closes it. (TUX-014/031/034/035/040)
+- **Hover is not required.** Hover-only reveals sit inside `@media (hover: hover)`. Preset actions are always visible. (TUX-036)
+- **Value entry.** Tap the value chip to type an exact number (decimal keypad). Hold a control label for 0.5 s for "Reset to default". Rename a layer by double-tap. Hold an icon button for 0.5 s to see its name. (TUX-038/039)
+- **Controls.** Sliders are 44 px tall with a 28 px thumb and move only on a sideways drag. Mirror dials turn in 0.5 degree steps per pixel. Inputs compute at 16 px or more, so iOS does not zoom. Every control in panels, modals, the context bar, Scene3D, the Petal Designer and the Pattern Designer has a hit area of at least 44 x 44 CSS px. Gate: `body.touch-ui`. (TUX-027/041/042/043)
+- **Petal Designer.** Finger-sized grab radius, a pop-out that always fits the screen, a full-screen sheet on phones, its own Undo and Redo, and one history step per edit gesture. (TUX-026)
+
+#### Text, keyboard and dialogs
+- **Type tool and Text panel.** A tap opens the on-screen keyboard. The Text panel has a multi-line "Text" field. (TUX-028/029)
+- **Keyboard inset.** Fields and sheets stay above the keyboard (`--kb-inset`). A tap on a numeric field selects its value. (TUX-032)
+- **Sheets.** Export, Help, info dialogs, the colour picker, Document Setup and Save Preset share one `.vt-sheet` contract with a pinned header and footer. Save Preset has 44 px controls and lifts above the keyboard. Document Setup opens with Paper expanded. (TUX-046/049/050)
+- **Toasts.** On touch, toasts sit bottom-centre, inside the safe area and above the modifier bar. Plain status toasts take no taps. Deleting a layer, group, selection or pen shows a 6 s Undo toast. Desktop keeps the top-right placement. (TUX-037/048)
+
+#### Help, hints and copy
+- **Help speaks touch.** Help has a Touch tab and a Touch toggle, and opens on Touch in the touch layout. The Touch page documents tap, drag, pinch, two-finger pan, Undo and Redo, two- and three-finger taps, the modifier bar, layer-row hold, canvas hold, icon-button hold, grip reorder, value chips and sub-menus. The status hint line switches to touch words after touch or Pencil input and back after a mouse click. Help tab buttons are 44 px. (TUX-052)
+
+#### Files and performance
+- **iOS files.** File > Open accepts `.vectura` from the Files app. Save and Export open the share sheet ("Save to Files") where available. Blob URLs are revoked after 30 s. Large photos are resampled to 2048 px, and a decode failure shows a toast. (TUX-053/054/055)
+- **Canvas backing store** is capped at 2x on coarse pointers. `Renderer.resize()` returns early when nothing changed. (TUX-056)
+
+#### Test harness
+- **Touch harness.** 7 Chromium and 4 WebKit projects, `tests/e2e/helpers/touch.js`, `npm run test:e2e:touch`. A target audit ratchet (`test:e2e:touch:audit`, `:full`) measures 14 metrics per project and state against `tests/e2e/touch/target-baseline.json`, with a nightly job. A baseline can only get worse with a `TUX-WAIVER` line. Finger-only journey specs J1 to J12 have a step-pinned ledger. A static touch guard (rules R1 to R12) runs inside `npm run test:unit`. The audit reports 0 targets under 44 px on all 9 baseline projects. (TUX-057/058/059/060)
+- **Device checklist.** `docs/touch-audit/device-checklist.md` lists the real-device rows (DEV-01 to DEV-57) and gates the "touch-ready" release. (TUX-062)
+
 ### Testing workflow
 - **16 duration-balanced coverage shards (v1.4.14).** `COVERAGE_SHARD_COUNT` is 16. Shard weights now come from Vitest blob file durations (the old JSON start/end timing left out `beforeAll` work, e.g. 44 s recorded for a 357 s file); refresh them with `scripts/test-shard-weights-refresh.js`. Five slow files are split into smaller files with shared helpers and no removed assertions: u6 artistic-controls, tone-law-collapse, tone-law-dispatch, mktick-spacing-tone, and ribbon-weightscale (the dispatch split drops one crosshatch render that no assertion read). The u6 fresh-default witness re-renders for real and every default render is pinned to its fr-u5 hash. A failure-only step lists failing tests for a failed shard. `VECTURA_VITEST_MAX_WORKERS` overrides the Vitest worker cap (CI keeps 2; 4 was not faster). No test leaves PR gating. Hosted timings are in PR #100.
 - **Reduce render-test workload.** Retire standalone ribbon diagnostic-accounting tests and two named expansion-law samples, remove unused raster analysis and unrelated mutation controls, and narrow repeated historical render matrices while retaining distinct regression and boundary witnesses. Local certification passed strict 763-file/57-skip coverage and the lifecycle, browser and uninstrumented performance guarantees; the candidate two-worker coverage run measured 2,121.57s wall and exceeded all unchanged global ratchets. Accepted sampling losses and full measurements are in `docs/render-test-reductions.md`. Coverage thresholds, skip allowances, application algorithms and CI topology are unchanged.

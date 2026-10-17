@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const touch = require('./helpers/touch');
 
 const captureActiveLayerGeometry = async (page) =>
   page.evaluate(() => {
@@ -150,7 +151,28 @@ const captureRepresentativePatternIds = async (page) =>
   });
 
 
+// TUX-008: on a touch tablet (body.tablet-layout.touch-ui) both panes start closed and at most one
+// drawer is open, so a test that touches a pane control opens that pane first. Desktop and touch-wide
+// dock the panes, so the helper does nothing there. It uses the controller API (fixture, not the
+// behaviour under test); tests/e2e/touch/canvas-share.spec.js drives the real taps.
+const ensurePaneOpen = async (page, side) => {
+  await page.waitForFunction(() => !!(window.Vectura && window.Vectura.UI && window.Vectura.UI.Workspace && window.Vectura.UI.Workspace.paneState));
+  await page.evaluate((s) => {
+    const b = document.body;
+    if (!b.classList.contains('tablet-layout') || !b.classList.contains('touch-ui')) return;
+    window.Vectura.UI.Workspace.paneState.open(s);
+  }, side);
+};
+const closeDrawers = async (page) => {
+  await page.evaluate(() => {
+    const ps = window.Vectura && window.Vectura.UI && window.Vectura.UI.Workspace && window.Vectura.UI.Workspace.paneState;
+    const b = document.body;
+    if (ps && b.classList.contains('tablet-layout') && b.classList.contains('touch-ui')) ps.closeAll();
+  });
+};
+
 const addAlgoLayer = async (page) => {
+  await ensurePaneOpen(page, 'right');
   await page.click('#btn-add-layer');
   await page.click('.lvl-add-item[data-add="algo-parent"]');
 };
@@ -285,6 +307,8 @@ test.describe('Vectura smoke interactions', () => {
     await page.goto('/');
     const inMobileLayout = await page.evaluate(() => document.body.classList.contains('mobile-layout'));
     test.skip(!inMobileLayout, 'mobile-layout regression — only meaningful at < 900px viewport');
+    // TUX-008: the right pane is a closed drawer on a touch tablet; open it, then keep the occlusion check.
+    await ensurePaneOpen(page, 'right');
 
     const btn = page.locator('#btn-add-layer');
     await expect(btn).toBeVisible();
@@ -307,8 +331,11 @@ test.describe('Vectura smoke interactions', () => {
     await addAlgoLayer(page);
 
     await expect(page.locator('#status-bar')).toBeVisible();
+    await ensurePaneOpen(page, 'left');
     await expect(page.locator('#generator-module')).toBeVisible();
+    await ensurePaneOpen(page, 'right');
     await expect(page.locator('#layer-list [data-lvl-id]').first()).toBeVisible();
+    await closeDrawers(page);
     await page.locator('#btn-pane-toggle-bottom').click();
     await expect
       .poll(async () => (await page.locator('#formula-display').innerText()).trim().length)
@@ -323,6 +350,7 @@ test.describe('Vectura smoke interactions', () => {
 
     const initialGeometry = await captureActiveLayerGeometry(page);
     const nextType = initialGeometry.type === 'topo' ? 'lissajous' : 'topo';
+    await ensurePaneOpen(page, 'left');
     await page.selectOption('#generator-module', nextType);
     await expect.poll(async () => (await captureActiveLayerGeometry(page)).type).toBe(nextType);
     await expect.poll(async () => (await captureActiveLayerGeometry(page)).signature).not.toBe(initialGeometry.signature);
@@ -351,32 +379,8 @@ test.describe('Vectura smoke interactions', () => {
       const endX = Math.floor(box.x + box.width * 0.62);
       const endY = Math.floor(box.y + box.height * 0.55);
 
-      await page.dispatchEvent('#main-canvas', 'pointerdown', {
-        pointerType: 'touch',
-        pointerId: 1,
-        isPrimary: true,
-        clientX: startX,
-        clientY: startY,
-        buttons: 1,
-      });
-      // Hold-to-lift: wait for the 350ms hold timer to fire before dragging
-      await page.waitForTimeout(450);
-      await page.dispatchEvent('#main-canvas', 'pointermove', {
-        pointerType: 'touch',
-        pointerId: 1,
-        isPrimary: true,
-        clientX: endX,
-        clientY: endY,
-        buttons: 1,
-      });
-      await page.dispatchEvent('#main-canvas', 'pointerup', {
-        pointerType: 'touch',
-        pointerId: 1,
-        isPrimary: true,
-        clientX: endX,
-        clientY: endY,
-        buttons: 0,
-      });
+      // Hold-to-lift: the 350ms hold timer must fire before the drag moves.
+      await touch.drag(page, { x: startX, y: startY }, { x: endX, y: endY }, { holdMs: 450, steps: 1 });
     } else {
       await page.mouse.move(box.x + box.width * 0.45, box.y + box.height * 0.45);
       await page.mouse.down();
@@ -399,6 +403,7 @@ test.describe('Vectura smoke interactions', () => {
       await addAlgoLayer(page);
     }
 
+    await ensurePaneOpen(page, 'right');
     await page.click('.right-pane-tab[data-tab="pens"]');
     await page.click('#auto-colorization-header');
 
@@ -447,6 +452,10 @@ test.describe('Vectura smoke interactions', () => {
     await page.locator('#btn-menu-file').click();
     await page.click('#btn-settings');
     await expect(page.locator('#settings-panel')).toHaveClass(/open/);
+    // TUX-050: with a mouse Paper stays collapsed; on a coarse pointer (tablet-touch-chromium) it opens. Theme stays open.
+    const coarse = await page.evaluate(() => window.matchMedia('(pointer: coarse)').matches);
+    await expect(page.locator('#settings-panel .sect--color-paper [data-sect-toggle]')).toHaveAttribute('aria-expanded', coarse ? 'true' : 'false');
+    await expect(page.locator('#settings-panel .sect--color-theme [data-sect-toggle]')).toHaveAttribute('aria-expanded', 'true');
 
     await page.click('#btn-close-settings');
     await expect(page.locator('#settings-panel')).not.toHaveClass(/open/);
@@ -467,7 +476,8 @@ test.describe('Vectura smoke interactions', () => {
 
     await page.keyboard.press('ControlOrMeta+K');
     await expect(page.locator('#settings-panel')).toHaveClass(/open/);
-    await expect(page.locator('#set-document-units')).toBeVisible();
+    // TUX-050: Paper is collapsed (visibility:hidden) with a mouse, so assert presence only.
+    await expect(page.locator('#set-document-units')).toBeAttached();
     // The dimensions toggle is wrapped in `.sw-toggle`, which hides the raw
     // checkbox on Meridian-family skins (the default). Assert presence, not
     // visual visibility — the visible UI is the pill, not the input.
@@ -886,6 +896,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.click('#btn-insert-mirror-modifier');
 
     await expect(page.locator('#layer-list [data-lvl-id]')).toHaveCount(initialLayers + 1);
+    await ensurePaneOpen(page, 'left');
     await expect(page.locator('#left-section-primary-title')).toHaveText('Modifier');
     await expect(page.locator('#left-section-secondary-title')).toHaveText('Modifier Configuration');
     await expect(page.locator('#generator-module')).toHaveValue('mirror');
@@ -917,6 +928,7 @@ test.describe('Vectura smoke interactions', () => {
     await page.goto('/');
     await addAlgoLayer(page);
 
+    await ensurePaneOpen(page, 'left');
     await page.selectOption('#generator-module', 'rings');
     await page.locator('#btn-menu-insert').click();
     await page.click('#btn-insert-mirror-modifier');
@@ -1555,7 +1567,17 @@ test.describe('Vectura smoke interactions', () => {
       app.updateStats();
     });
 
-    await page.locator('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn').click();
+    // Desktop rows keep the inline outline toggle; touch rows (TUX-012) move it into the ⋯ menu.
+    const outlineBtn = page.locator('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn');
+    if (await outlineBtn.count()) {
+      // TUX-036: the action strip only takes pointer events once the row is hovered (as for a real mouse).
+      await page.locator('[data-layer-id="mask-parent-hidden-ui"]').hover();
+      await outlineBtn.click();
+    } else {
+      await ensurePaneOpen(page, 'right');
+      await page.locator('[data-layer-id="mask-parent-hidden-ui"] .lvl-more').click();
+      await page.locator('.menu-dropdown.open .menu-entry[data-key="mask-outline"]').click();
+    }
 
     const state = await page.evaluate(() => {
       const app = window.app;
@@ -1572,7 +1594,11 @@ test.describe('Vectura smoke interactions', () => {
         hideLayer: Boolean(parent.mask?.hideLayer),
         parentRenderableCount: app.engine.getRenderablePaths(parent).length,
         childOutsideCount: outsideCount,
-        outlineButtonHidden: document.querySelector('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn')?.classList.contains('is-hidden') || false,
+        // Touch rows have no inline outline button (TUX-012): the mask state is the contract there.
+        outlineButtonHidden: (() => {
+          const btn = document.querySelector('[data-layer-id="mask-parent-hidden-ui"] .mask-outline-btn');
+          return btn ? btn.classList.contains('is-hidden') : Boolean(parent.mask?.hideLayer);
+        })(),
       };
     });
 
@@ -1594,6 +1620,7 @@ test.describe('Vectura smoke interactions', () => {
       window.app.ui.renderLayers();
       window.app.ui.buildControls();
     });
+    await ensurePaneOpen(page, 'left');
 
     await page.evaluate(() => {
       document.getElementById('left-panel-content').scrollTop = 600;
@@ -1774,5 +1801,273 @@ test.describe('HUD hint bar & toast', () => {
     await expect(breadcrumb).not.toHaveClass(/is-visible/, { timeout: 5_000 });
 
     expect(pageErrors).toEqual([]);
+  });
+});
+
+// TUX-019 D6 guard: a mouse keeps 0 slop. A 3 px drag on a selected object moves it 3 px
+// and adds exactly one history entry; touch slop (6 px) must not leak into the mouse path.
+test.describe('TUX-019 mouse keeps zero drag slop', () => {
+  test('3 px mouse drag on a selected object moves it 3 px, one history entry', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.engine && window.app.renderer));
+    const setup = await page.evaluate(() => {
+      const app = window.app;
+      const r = app.renderer;
+      const rect = (x0, y0, x1, y1) => [[{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 }]];
+      const id = app.engine.addShapeLayer('TUX-019 mouse', rect(73, 40, 143, 110));
+      window.Vectura.SETTINGS.snapGuides = false;
+      window.Vectura.SETTINGS.showGuides = false;
+      app.ui.setActiveTool('select');
+      r.setSelection([id], id);
+      app.history = [];
+      app.pushHistory();
+      r.draw();
+      const box = r.canvas.getBoundingClientRect();
+      return { id, x: box.left + r.offsetX + 108 * r.scale, y: box.top + r.offsetY + 75 * r.scale, scale: r.scale };
+    });
+    const read = () => page.evaluate((id) => {
+      const app = window.app;
+      const l = app.engine.layers.find((x) => x.id === id);
+      const b = app.renderer.getSelectionBounds([l]);
+      return { cx: b.center.x, hist: app.history.length, ox: app.renderer.offsetX };
+    }, setup.id);
+    const before = await read();
+    await page.mouse.move(setup.x, setup.y);
+    await page.mouse.down();
+    await page.mouse.move(setup.x + 1, setup.y, { steps: 1 });
+    await page.mouse.move(setup.x + 3, setup.y, { steps: 2 });
+    await page.mouse.up();
+    const after = await read();
+    expect((after.cx - before.cx) * setup.scale, 'moved screen px').toBeGreaterThan(2.5);
+    expect((after.cx - before.cx) * setup.scale, 'moved screen px').toBeLessThan(3.5);
+    expect(after.hist - before.hist).toBe(1);
+    expect(after.ox).toBeCloseTo(before.ox, 3);
+  });
+});
+
+// TUX-019 mouse parity: the touch-only thin-object hit radius must not change mouse behaviour.
+// Lives in smoke.spec.js because desktop-chromium only matches this file (gestures.spec.js is touch-only).
+test.describe('TUX-019 mouse parity (desktop)', () => {
+  test('mouse drag from 2 px off a horizontal line keeps strict bounds (0 px hit radius)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
+    const geo = await page.evaluate(() => {
+      const app = window.app;
+      const r = app.renderer;
+      const id = app.engine.addShapeLayer('TUX-019 line', [[{ x: 120, y: 140 }, { x: 180, y: 140 }]]);
+      window.Vectura.SETTINGS.snapGuides = false;
+      window.Vectura.SETTINGS.showGuides = false;
+      r.setSelection([id], id);
+      app.ui.setActiveTool('select');
+      const box = document.querySelector('#main-canvas').getBoundingClientRect();
+      // Zoom so the edge-midpoint (10 px) and corner (28 px) handle zones leave a free stretch.
+      r.scale = Math.max(r.scale, 2.1);
+      r.offsetX = box.width / 2 - 150 * r.scale;
+      r.offsetY = box.height / 2 - 140 * r.scale;
+      app.history = [];
+      app.pushHistory();
+      r.draw();
+      return { id, x: box.left + r.offsetX + 150 * r.scale, y: box.top + r.offsetY + 140 * r.scale, scale: r.scale };
+    });
+    const read = () => page.evaluate((id) => {
+      const app = window.app;
+      const b = app.renderer.getSelectionBounds([app.engine.layers.find((l) => l.id === id)]);
+      return { cx: b.center.x, cy: b.center.y, hist: app.history.length, handle: app.renderer.activeHandle };
+    }, geo.id);
+    const before = await read();
+    // 14 px along the line from its centre (clear of the midpoint resize handle), 2 px off it.
+    const px = geo.x + 14;
+    const py = geo.y + 2;
+    await page.mouse.move(px, py);
+    await page.mouse.down();
+    const mid = await read();
+    expect(mid.handle, 'press must not grab a selection handle').toBeNull();
+    await page.mouse.move(px + 50, py + 25, { steps: 10 });
+    await page.mouse.up();
+    const after = await read();
+    // The strict bounds test fails 2 px off a 0-height line, so the mouse does not move it.
+    expect(Math.hypot(after.cx - before.cx, after.cy - before.cy) * geo.scale, 'moved px').toBeLessThan(0.5);
+    expect(after.hist - before.hist, 'history entries (no resize, no move)').toBe(0);
+    expect(after.handle).toBeNull();
+  });
+});
+
+// TUX-035 desktop parity (D6): mouse hover still opens the fly-out, mouse click on the
+// parent row still adds the default layer, and picking from the fly-out closes it (orphan fix).
+test.describe('TUX-035 add layer menu (mouse parity)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    await ensurePaneOpen(page, 'right');
+  });
+  const count = (page) => page.evaluate(() => window.app.engine.layers.length);
+
+  test('G1: hover opens the fly-out', async ({ page }) => {
+    await page.click('#btn-add-layer');
+    await page.hover('.lvl-add-item[data-add="algo-parent"]');
+    await expect(page.locator('#lvl-algo-submenu')).toBeVisible();
+  });
+
+  test('G2: click on the parent row adds exactly one default layer', async ({ page }) => {
+    const n0 = await count(page);
+    await page.click('#btn-add-layer');
+    await page.click('.lvl-add-item[data-add="algo-parent"]');
+    expect(await count(page)).toBe(n0 + 1);
+    await expect(page.locator('#layer-add-menu')).toBeHidden();
+    await expect(page.locator('#lvl-algo-submenu')).toBeHidden();
+  });
+
+  test('G3: picking a fly-out item adds that type and hides the fly-out', async ({ page }) => {
+    const n0 = await count(page);
+    await page.click('#btn-add-layer');
+    await page.hover('.lvl-add-item[data-add="algo-parent"]');
+    await page.click('#lvl-algo-submenu [data-algo-type="flowfield"]');
+    expect(await count(page)).toBe(n0 + 1);
+    expect(await page.evaluate(() => window.app.engine.getActiveLayer().type)).toBe('flowfield');
+    await expect(page.locator('#lvl-algo-submenu')).toBeHidden();
+  });
+});
+
+// TUX-005 desktop parity (D6): the safe-area tokens resolve to 0 on a mouse desktop, so the rewritten
+// header/hud rules must reproduce the pre-change boxes. Expected values were captured on the base
+// before the change (1600x1000): header 38px / "0px 14px", toolbar "8px", hud "3px 12px".
+test.describe('TUX-005 desktop parity', () => {
+  test('header, toolbar and hud boxes are unchanged at 1600x1000', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'desktop parity is defined for the desktop-chromium project (1600x1000, mouse)');
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    const boxes = await page.evaluate(() => {
+      const read = (sel) => {
+        const el = document.querySelector(sel);
+        const cs = getComputedStyle(el);
+        return { h: el.getBoundingClientRect().height, padding: `${cs.paddingTop} ${cs.paddingRight} ${cs.paddingBottom} ${cs.paddingLeft}` };
+      };
+      return { header: read('#app-header'), toolbar: read('#tool-bar'), hud: read('#hud-bar') };
+    });
+    expect(boxes.header.h).toBe(38);
+    expect(boxes.header.padding).toBe('0px 14px 0px 14px');
+    expect(boxes.toolbar.padding).toBe('8px 8px 8px 8px');
+    expect(boxes.hud.padding).toBe('3px 12px 3px 12px');
+  });
+});
+
+// TUX-008 desktop parity (D6): a fine pointer keeps today's pane behaviour at every width.
+// Deviation from the brief: the TUX-006 classifier labels a fine pointer at 540-900 px "tablet" (it adds
+// tablet-layout). The pane controller keys on the pointer too, so a fine pointer must still show open
+// overlay panes and no backdrop. The assertion is on the behaviour, not the class.
+test.describe('TUX-008 desktop parity', () => {
+  test('fine pointer: docked open at 1600x1000, open overlays and no backdrop at 800x900', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'desktop parity is defined for the desktop-chromium project (1600x1000, mouse)');
+    const read = () => page.evaluate(() => {
+      const one = (id) => {
+        const el = document.getElementById(id);
+        const r = el.getBoundingClientRect();
+        return { w: r.width, pos: getComputedStyle(el).position, collapsed: el.classList.contains('pane-collapsed'), force: el.classList.contains('pane-force-open') };
+      };
+      const b = document.getElementById('mobile-pane-backdrop');
+      const bd = b ? getComputedStyle(b) : null;
+      return {
+        left: one('left-pane'),
+        right: one('right-pane'),
+        backdropShown: !!b && b.classList.contains('visible'),
+        backdropBlocks: !!bd && bd.display !== 'none' && bd.pointerEvents !== 'none',
+        touchUi: document.body.classList.contains('touch-ui'),
+        touchWide: document.body.classList.contains('touch-wide-layout'),
+      };
+    });
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    let s = await read();
+    expect(s.left.collapsed || s.right.collapsed).toBe(false);
+    expect(s.left.pos).not.toBe('absolute');
+    expect(s.right.pos).not.toBe('absolute');
+    expect(s.left.w).toBeGreaterThan(200);
+    expect(s.right.w).toBeGreaterThan(200);
+    expect(s.backdropBlocks).toBe(false);
+    expect(s.touchUi).toBe(false);
+    expect(s.touchWide).toBe(false);
+    // Evidence screenshot: only when TUX_EVIDENCE_DIR is set, and never able to fail the test (CI has no such path).
+    if (process.env.TUX_EVIDENCE_DIR) {
+      try {
+        await require('fs').promises.mkdir(process.env.TUX_EVIDENCE_DIR, { recursive: true });
+        await page.screenshot({ path: require('path').join(process.env.TUX_EVIDENCE_DIR, 'desktop-1600x1000.png') });
+      } catch (e) { /* evidence only */ }
+    }
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.waitForTimeout(500);
+    s = await read();
+    expect(s.left.collapsed || s.right.collapsed, 'both panes open at 800x900').toBe(false);
+    expect(s.left.pos).toBe('absolute');
+    expect(s.right.pos).toBe('absolute');
+    expect(s.left.force || s.right.force).toBe(false);
+    expect(s.backdropShown).toBe(false);
+    expect(s.backdropBlocks).toBe(false);
+    expect(s.touchUi).toBe(false);
+  });
+});
+
+// TUX-008 fix round: Reset View must go through the pane controller. Before the fix it stripped the
+// classes only, so paneState.isOpen('left') stayed false and the next resize re-collapsed the pane.
+test.describe('TUX-008 desktop Reset View keeps controller and DOM in sync', () => {
+  test('collapse left, Reset View, resize: left stays open; one toggle click collapses it', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'desktop fine-pointer project only');
+    const left = () => page.evaluate(() => ({
+      w: Math.round(document.getElementById('left-pane').getBoundingClientRect().width),
+      open: window.Vectura.UI.Workspace.paneState.isOpen('left'),
+    }));
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    await page.locator('#btn-pane-toggle-left').click();
+    await page.waitForTimeout(400);
+    let s = await left();
+    expect(s.open, 'collapsed: controller closed').toBe(false);
+    expect(s.w, 'collapsed width').toBeLessThan(100);
+    await page.locator('#btn-menu-view').click();
+    await page.locator('#btn-reset-view').click();
+    await page.waitForTimeout(400);
+    s = await left();
+    expect(s.open, 'Reset View: controller open').toBe(true);
+    expect(s.w, 'Reset View: pane expanded').toBeGreaterThan(200);
+    await page.setViewportSize({ width: 1500, height: 1000 });
+    await page.waitForTimeout(500);
+    s = await left();
+    expect(s.open, 'after resize: controller still open').toBe(true);
+    expect(s.w, 'after resize: pane still expanded').toBeGreaterThan(200);
+    await page.locator('#btn-pane-toggle-left').click();
+    await page.waitForTimeout(400);
+    s = await left();
+    expect(s.open, 'one toggle collapses').toBe(false);
+    expect(s.w, 'one toggle collapses (width)').toBeLessThan(100);
+  });
+});
+
+// TUX-008 fix round 2: in the fine-pointer overlay band (540-900 px) Reset View shows one pane. It
+// must not persist a right-pane collapse into the shared desktop key.
+test.describe('TUX-008 overlay-band Reset View does not persist a collapse', () => {
+  test('800x900 Reset View then 1600x1000: both panes docked open', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'desktop-chromium', 'desktop fine-pointer project only');
+    const state = () => page.evaluate(() => ({
+      l: window.Vectura.UI.Workspace.paneState.isOpen('left'),
+      r: window.Vectura.UI.Workspace.paneState.isOpen('right'),
+      lw: Math.round(document.getElementById('left-pane').getBoundingClientRect().width),
+      rw: Math.round(document.getElementById('right-pane').getBoundingClientRect().width),
+      saved: [window.Vectura.SETTINGS.leftPaneCollapsed, window.Vectura.SETTINGS.rightPaneCollapsed],
+    }));
+    await page.setViewportSize({ width: 800, height: 900 });
+    await page.goto('/');
+    await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
+    await page.locator('#btn-menu-view').click();
+    await page.locator('#btn-reset-view').click();
+    await page.waitForTimeout(400);
+    await page.setViewportSize({ width: 1600, height: 1000 });
+    await page.waitForTimeout(600);
+    const s = await state();
+    expect(s.saved, 'no right-pane collapse persisted').toEqual([false, false]);
+    expect(s.l && s.r, 'both panes open at 1600').toBe(true);
+    expect(s.lw).toBeGreaterThan(250);
+    expect(s.rw).toBeGreaterThan(250);
   });
 });

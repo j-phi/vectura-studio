@@ -270,17 +270,21 @@
       let strokeOptionsPopover = null;
       let divisionsHandle = null;
 
+      // Returns true only when this call pushed a history entry (begin + a setter ran with app.pushHistory).
       const applyWeight = (mm, opts = {}) => {
         const M = Vectura.StrokeModel;
         const ls = layers();
-        if (!M || !ls.length) return;
+        if (!M || !ls.length) return false;
         const value = clampW(mm);
+        const canPush = !!(opts.begin && app && typeof app.pushHistory === 'function');
+        let pushed = false;
         if (ls.length > 1 && M.setStrokeWeightForLayers) {
-          M.setStrokeWeightForLayers(ls, value, { app, ...opts });
+          pushed = M.setStrokeWeightForLayers(ls, value, { app, ...opts }) !== null && canPush;
         } else if (M.setStrokeWeight) {
-          M.setStrokeWeight(primary(), value, { app, ...opts });
+          pushed = M.setStrokeWeight(primary(), value, { app, ...opts }) !== null && canPush;
         }
         refresh();
+        return pushed;
       };
 
       const wrap = el('div', { class: 'ctxbar-submode ctxbar-stroke-weight' });
@@ -311,16 +315,29 @@
 
       // Slider gesture → one undo step per drag.
       let begun = false;
-      slider.addEventListener('pointerdown', () => { begun = false; });
+      let historyPushed = false;
+      slider.addEventListener('pointerdown', () => { begun = false; historyPushed = false; });
       slider.addEventListener('input', () => {
-        applyWeight(slider.value, { begin: !begun, commit: false });
+        if (applyWeight(slider.value, { begin: !begun, commit: false })) historyPushed = true;
         begun = true;
       });
       const endSlide = () => {
         if (begun) applyWeight(slider.value, { begin: false, commit: true });
         begun = false;
+        historyPushed = false;
+      };
+      // pointercancel aborts: restore the pre-drag weight and drop the gesture's history entry.
+      // Pop only an entry this gesture pushed (an early-return applyWeight pushed nothing).
+      const abortSlide = () => {
+        if (!begun) return;
+        begun = false;
+        const pushed = historyPushed;
+        historyPushed = false;
+        if (pushed && app && typeof app.cancelLastHistory === 'function') app.cancelLastHistory();
+        refresh();
       };
       slider.addEventListener('pointerup', endSlide);
+      slider.addEventListener('pointercancel', abortSlide);
       slider.addEventListener('change', endSlide);
 
       dec.addEventListener('click', () => applyWeight(readWeight() - b.step, { begin: true, commit: true }));
@@ -754,7 +771,7 @@
       });
       const endScrub = () => { if (!scrub) return; scrub = null; renderer.endShapePropsEdit(); refresh(); };
       cornerField.addEventListener('pointerup', endScrub);
-      cornerField.addEventListener('pointercancel', endScrub);
+      cornerField.addEventListener('pointercancel', () => { if (!scrub) return; scrub = null; renderer.abortShapePropsEdit(); refresh(); });
     }
 
     // Side Count (polygon only).
@@ -794,7 +811,9 @@
       sidesSlider.addEventListener('pointerdown', () => { renderer.beginShapePropsEdit(); sidesBegun = true; });
       sidesSlider.addEventListener('input', () => { renderer.setShapeSides(clampSides(sidesSlider.value)); refresh(); });
       const endSides = () => { if (!sidesBegun) return; sidesBegun = false; renderer.endShapePropsEdit(); refresh(); };
+      const abortSides = () => { if (!sidesBegun) return; sidesBegun = false; renderer.abortShapePropsEdit(); refresh(); };
       sidesSlider.addEventListener('pointerup', endSides);
+      sidesSlider.addEventListener('pointercancel', abortSides);
       sidesSlider.addEventListener('change', endSides);
       sDec.addEventListener('click', () => setSides(readSides() - 1));
       sInc.addEventListener('click', () => setSides(readSides() + 1));
@@ -836,6 +855,7 @@
     };
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeShapeProps(); } };
     document.addEventListener('pointerup', onDocUp, true);
+    document.addEventListener('pointercancel', onDocUp, true);
     document.addEventListener('keydown', onKey, true);
     // Defer the click-away binding so the opening click doesn't immediately close.
     let downBound = false;
@@ -847,6 +867,7 @@
       refresh,
       destroy: () => {
         document.removeEventListener('pointerup', onDocUp, true);
+        document.removeEventListener('pointercancel', onDocUp, true);
         document.removeEventListener('keydown', onKey, true);
         if (downBound) document.removeEventListener('pointerdown', onDocDown, true);
         pop.close();

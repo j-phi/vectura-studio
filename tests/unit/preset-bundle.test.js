@@ -21,6 +21,7 @@ describe('PresetBundle', () => {
   beforeEach(() => {
     dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/', runScripts: 'outside-only' });
     win = dom.window;
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/ui/download-blob.js'), 'utf8'), dom.getInternalVMContext(), { filename: 'download-blob.js' });
     const code = fs.readFileSync(path.join(ROOT, 'src/ui/preset-bundle.js'), 'utf8');
     vm.runInContext(code, dom.getInternalVMContext(), { filename: 'preset-bundle.js' });
     B = win.Vectura.PresetBundle;

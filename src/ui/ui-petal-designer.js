@@ -598,14 +598,7 @@
 
     downloadJsonPayload(payload, filename = 'profile.json') {
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      return window.Vectura.Download.saveBlob(blob, filename);
     },
 
     async importPetalDesignerProfileFile(file, side, state) {
@@ -1109,7 +1102,8 @@
         const mainAttr = !isSubtool && value !== null && value !== undefined ? ` ${buttonAttr}="${value}"` : '';
         const subAttr = isSubtool && def.submenuKind ? ` data-${def.submenuKind}="${def.submenuValue}"` : '';
         const ariaPressed = includePressed && !isSubtool ? ' aria-pressed="false"' : '';
-        const ariaLabel = def.ariaLabel && !isSubtool ? ` aria-label="${def.ariaLabel}"` : '';
+        const ariaName = isSubtool ? (def.ariaLabel || def.label || '') : (def.ariaLabel || '');
+        const ariaLabel = ariaName ? ` aria-label="${String(ariaName).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}"` : '';
         const idAttr = def.id ? ` id="${def.id}"` : '';
         return `<button class="${classes}"${idAttr}${mainAttr}${subAttr} type="button"${ariaPressed}${ariaLabel} title="${title}">${renderIcon(def)}</button>`;
       };
@@ -1215,6 +1209,7 @@
         <div class="petal-designer-header">
           <div class="petal-designer-title">Petal Designer</div>
           <div class="petal-designer-actions">
+            ${showPopIn ? '<button type="button" class="petal-hist petal-undo" aria-label="Undo" title="Undo">↶</button><button type="button" class="petal-hist petal-redo" aria-label="Redo" title="Redo">↷</button>' : ''}
             ${showPopOut ? '<button type="button" class="petal-popout" aria-label="Pop Out Petal Designer" title="Pop Out">⧉</button>' : ''}
             ${showPopIn ? '<button type="button" class="petal-popin" aria-label="Pop In Petal Designer" title="Pop In">↩</button>' : ''}
             ${showClose ? '<button type="button" class="petal-close" aria-label="Close Petal Designer">✕</button>' : ''}
@@ -2323,11 +2318,56 @@
       this.renderPetalDesignerProfileEditor(pd, pd.applyChanges);
     },
 
+    // Batch R3 / TUX-020, TUX-026: a designer edit pushes ONE history step per gesture, the way the panel
+    // gallery does (checkpoint before the first change). A live apply (drag, slider input) opens the gesture;
+    // the committing apply that follows closes it. A lone commit pushes its own step. The safety timer closes a
+    // gesture whose commit never arrives.
+    beginPetalDesignerEdit(pd, { live = false } = {}) {
+      if (!pd || !this.app || typeof this.app.pushHistory !== 'function') return;
+      if (!pd.editOpen) this.app.pushHistory();
+      this.holdPetalDesignerEdit(pd, live);
+    },
+
+    holdPetalDesignerEdit(pd, open = true) {
+      if (!pd) return;
+      if (pd.editTimer) clearTimeout(pd.editTimer);
+      pd.editTimer = null;
+      pd.editOpen = Boolean(open);
+      if (open) pd.editTimer = setTimeout(() => { pd.editOpen = false; pd.editTimer = null; }, 3000);
+    },
+
+    // Undo / redo rebuilds every layer, so the pop-out window re-reads its designer state from the restored layer
+    // (it would otherwise show, and write back, the undone edit). Called by App.applyState.
+    syncPetalDesignerAfterRestore() {
+      const pd = this.petalDesigner;
+      if (!pd?.state) return;
+      this.holdPetalDesignerEdit(pd, false);
+      const layer = this.getLayerById(pd.state.layerId);
+      if (!layer || !isPetalisLayerType(layer.type)) {
+        this.closePetalDesigner();
+        return;
+      }
+      const fresh = this.ensurePetalDesignerState(layer);
+      if (!fresh) return;
+      fresh.views = pd.state.views || fresh.views;
+      fresh.randomnessOpen = pd.state.randomnessOpen;
+      fresh.activeTarget = pd.state.activeTarget === 'outer' ? 'outer' : fresh.activeTarget;
+      fresh.target = fresh.activeTarget;
+      pd.state = fresh;
+      pd.drag = null;
+      this.syncPetalDesignerControls(pd);
+      this.renderPetalDesignerShadingStack(pd, pd.applyChanges);
+      this.renderPetalDesignerModifierStack(pd, pd.applyChanges);
+      this.renderPetalDesignerRandomnessPanel(pd, pd.applyChanges);
+      this.renderPetalDesigner(pd);
+    },
+
     bindPetalDesignerUI(pd, options = {}) {
       if (!pd?.root || !pd?.state) return;
       const { refreshControls = true } = options;
       const applyChanges = (opts = {}) => {
         const live = Boolean(opts.live);
+        this.beginPetalDesignerEdit(pd, { live });
         this.applyPetalDesignerToLayer(pd.state, {
           refreshControls: !live && refreshControls,
           persistState: !live,
@@ -2441,6 +2481,14 @@
       if (popOutBtn) popOutBtn.onclick = () => this.popOutInlinePetalDesigner();
       const popInBtn = pd.root.querySelector('.petal-popin');
       if (popInBtn) popInBtn.onclick = () => this.popInPetalDesigner();
+      // Batch R2 / TUX-020: the pop-out window covers the canvas HUD and the phone header, so it carries its own Undo / Redo
+      // (touch-ui only, CSS). They run the HUD's single history path; canvas-hud.js keeps their disabled state.
+      const histRun = (kind) => { const hud = window.Vectura && window.Vectura.CanvasHud; if (hud && hud.runHistory) hud.runHistory(kind); };
+      const undoBtn = pd.root.querySelector('.petal-undo');
+      if (undoBtn) undoBtn.onclick = () => histRun('undo');
+      const redoBtn = pd.root.querySelector('.petal-redo');
+      if (redoBtn) redoBtn.onclick = () => histRun('redo');
+      if ((undoBtn || redoBtn) && window.Vectura && window.Vectura.CanvasHud && window.Vectura.CanvasHud.syncFromApp) window.Vectura.CanvasHud.syncFromApp();
       this.renderPetalDesignerShadingStack(pd, applyChanges);
       this.renderPetalDesignerModifierStack(pd, applyChanges);
       this.renderPetalDesignerRandomnessPanel(pd, applyChanges);
@@ -2792,22 +2840,41 @@
       this.renderPetalDesigner(pd);
     },
 
+    // Window placement goes only through the shared Sheet clamp (UI.overlays.Sheet). On a phone layout
+    // the window is a full-screen sheet owned by the stylesheet: no inline box, no header drag.
+    placePetalDesignerWindow(pd = this.petalDesigner) {
+      const Sheet = window.Vectura?.UI?.overlays?.Sheet;
+      if (!pd?.root || !Sheet) return;
+      const phone = Sheet.isPhone();
+      pd.root.classList.toggle('petal-designer-sheet', phone);
+      if (phone) {
+        Sheet.clearFloating(pd.root);
+        return;
+      }
+      // Keep the window below the app header: it is a workspace window, not a modal.
+      const minTop = document.getElementById('viewport-container')?.getBoundingClientRect().top;
+      Sheet.clampFloating(pd.root, { ...(pd.windowPos || {}), minTop });
+      const rect = pd.root.getBoundingClientRect();
+      pd.windowPos = { left: rect.left, top: rect.top };
+    },
+
     bindPetalDesignerDrag(pd = this.petalDesigner) {
       if (!pd?.root) return;
       const header = pd.root.querySelector('.petal-designer-header');
       if (!header) return;
+      const Sheet = window.Vectura?.UI?.overlays?.Sheet;
       const startDrag = (e) => {
+        if (Sheet?.isPhone()) return;
         if (e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
         const rect = pd.root.getBoundingClientRect();
-        pd.windowDrag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+        pd.windowDrag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top, pointerId: e.pointerId };
         pd.root.classList.add('dragging');
       };
       const move = (e) => {
         if (!pd.windowDrag) return;
-        const left = Math.max(12, e.clientX - pd.windowDrag.dx);
-        const top = Math.max(12, e.clientY - pd.windowDrag.dy);
-        pd.root.style.left = `${left}px`;
-        pd.root.style.top = `${top}px`;
+        if (pd.windowDrag.pointerId !== undefined && e.pointerId !== undefined && pd.windowDrag.pointerId !== e.pointerId) return;
+        pd.windowPos = { left: e.clientX - pd.windowDrag.dx, top: e.clientY - pd.windowDrag.dy };
+        this.placePetalDesignerWindow(pd);
       };
       const end = () => {
         pd.windowDrag = null;
@@ -2816,16 +2883,35 @@
       header.addEventListener('pointerdown', startDrag);
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+      const stopWatch = Sheet ? Sheet.watch(() => this.placePetalDesignerWindow(pd)) : null;
+      // Content grows after open (profile gallery, accordions): keep the whole box on screen.
+      let growFrame = 0;
+      const grow = typeof ResizeObserver === 'function'
+        ? new ResizeObserver(() => {
+          if (growFrame) return;
+          growFrame = requestAnimationFrame(() => {
+            growFrame = 0;
+            if (pd.root?.isConnected) this.placePetalDesignerWindow(pd);
+          });
+        })
+        : null;
+      if (grow) grow.observe(pd.root);
       pd.cleanupDrag = () => {
+        if (grow) grow.disconnect();
+        if (growFrame) cancelAnimationFrame(growFrame);
         header.removeEventListener('pointerdown', startDrag);
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        if (stopWatch) stopWatch();
       };
       const viewport = document.getElementById('viewport-container')?.getBoundingClientRect();
-      const fallbackLeft = viewport ? viewport.left + 24 : 120;
-      const fallbackTop = viewport ? viewport.top + 24 : 120;
-      pd.root.style.left = `${fallbackLeft}px`;
-      pd.root.style.top = `${fallbackTop}px`;
+      pd.windowPos = {
+        left: viewport ? viewport.left + 24 : 120,
+        top: viewport ? viewport.top + 24 : 120,
+      };
+      this.placePetalDesignerWindow(pd);
     },
 
     bindPetalDesignerShortcuts(pd = this.petalDesigner, options = {}) {
@@ -2873,6 +2959,7 @@
       const { refreshControls = true } = options;
       const applyChanges = (opts = {}) => {
         const live = Boolean(opts.live);
+        this.beginPetalDesignerEdit(pd, { live });
         // Drawing on the profile canvas is the signal that this side is now a
         // hand-drawn profile (so it persists as designerInner/Outer rather than
         // falling back to the named profile).
@@ -2947,15 +3034,7 @@
         });
       };
       if (!pd.canvasHover || typeof pd.canvasHover !== 'object') pd.canvasHover = {};
-      const readModifiers = (e) => {
-        const mods = SETTINGS.touchModifiers || {};
-        const isTouch = e?.pointerType === 'touch';
-        return {
-          shift: Boolean(e?.shiftKey || (isTouch && mods.shift)),
-          alt: Boolean(e?.altKey || (isTouch && mods.alt)),
-          meta: Boolean(e?.metaKey || e?.ctrlKey || (isTouch && mods.meta)),
-        };
-      };
+      const readModifiers = (e) => window.Vectura.InputModifiers.readModifiers(e || {});
       const setCursor = (canvas, e = null) => {
         if (!canvas) return;
         const role = getCanvasRole(canvas);
@@ -2972,7 +3051,7 @@
         let bodySide = null;
         if (shape && e && Number.isFinite(e.clientX) && Number.isFinite(e.clientY)) {
           const pos = this.getDesignerCanvasPoint(canvas, e);
-          hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
+          hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry, { pointerType: e.pointerType });
           bodySide =
             role === 'overlay'
               ? this.pickPetalDesignerShapeAtPoint(pd, canvas, pos)
@@ -3071,7 +3150,14 @@
           e.preventDefault();
           const side = getSideForCanvas(canvas);
           const pos = this.getDesignerCanvasPoint(canvas, e);
-          const selectedSide = role === 'overlay' ? this.pickPetalDesignerShapeAtPoint(pd, canvas, pos) : side;
+          // A finger's wide grab radius can reach an active-side control that lies outside the active
+          // silhouette. Test the active side first so the side-pick below cannot swallow the tap (touch only).
+          const activeFirst = e.pointerType === 'touch' && role === 'overlay' && pd.state[side]
+            && this.hitDesignerShapeControl(
+              pd.state[side], canvas, pos, getViewForCanvas(canvas, side),
+              this.getPetalDesignerSymmetryForSide(pd.state, side), { pointerType: 'touch' }
+            );
+          const selectedSide = activeFirst ? side : (role === 'overlay' ? this.pickPetalDesignerShapeAtPoint(pd, canvas, pos) : side);
           if (selectedSide && selectedSide !== side) {
             pd.state.target = selectedSide;
             pd.state.activeTarget = selectedSide;
@@ -3085,7 +3171,7 @@
           const shape = pd.state[activeSide];
           const view = getViewForCanvas(canvas, activeSide);
           const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, activeSide);
-          const hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
+          const hit = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry, { pointerType: e.pointerType });
           const modifiers = readModifiers(e);
           if (pd.tool === 'direct' || (pd.tool === 'pen' && modifiers.meta)) {
             if (hit) {
@@ -3118,6 +3204,8 @@
               };
             }
             applyChanges();
+            // The new anchor and its handle drag are one gesture: keep it open until the pointer lifts.
+            if (pd.drag && pd.drag.mode === 'pen-new') this.holdPetalDesignerEdit(pd, true);
             setCursor(canvas, e);
             return;
           } else if (pd.tool === 'delete') {
@@ -3178,7 +3266,7 @@
               const symmetry = this.getPetalDesignerSymmetryForSide(pd.state, side);
               if (shape) {
                 const pos = this.getDesignerCanvasPoint(canvas, e);
-                pd.canvasHover[hoverKey] = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry);
+                pd.canvasHover[hoverKey] = this.hitDesignerShapeControl(shape, canvas, pos, view, symmetry, { pointerType: e.pointerType });
               } else {
                 pd.canvasHover[hoverKey] = null;
               }
@@ -3234,9 +3322,18 @@
           setCursor(canvas);
         };
         const onResize = () => this.renderPetalDesigner(pd);
+        // Redraw on the next frame: drawing inside the observer callback resizes the canvas and makes WebKit
+        // report "ResizeObserver loop completed with undelivered notifications".
+        let resizeFrame = 0;
         const resizeObserver =
           typeof ResizeObserver === 'function'
-            ? new ResizeObserver(() => this.renderPetalDesigner(pd))
+            ? new ResizeObserver(() => {
+              if (resizeFrame) return;
+              resizeFrame = requestAnimationFrame(() => {
+                resizeFrame = 0;
+                this.renderPetalDesigner(pd);
+              });
+            })
             : null;
         if (resizeObserver) resizeObserver.observe(canvas);
         canvas.addEventListener('pointerdown', onDown);
@@ -3255,6 +3352,7 @@
           window.removeEventListener('pointercancel', onUp);
           window.removeEventListener('resize', onResize);
           if (resizeObserver) resizeObserver.disconnect();
+          if (resizeFrame) cancelAnimationFrame(resizeFrame);
         });
         this.syncDesignerCanvasResolution(canvas);
         setCursor(canvas);
@@ -3915,20 +4013,34 @@
       return out;
     },
 
-    hitDesignerShapeControl(shape, canvas, pos, view = null, symmetry = 'none') {
+    // pointerType 'touch' widens the grab radius (TUX-026). Mouse, pen and unset keep the nearest control
+    // inside the mouse radius. For a finger: a handle within touchHandle px that is nearer than the
+    // nearest anchor wins; else an anchor within the touch radius; else a handle within the touch radius.
+    hitDesignerShapeControl(shape, canvas, pos, view = null, symmetry = 'none', { pointerType = 'mouse' } = {}) {
+      const radius = UI_CONSTANTS.PETAL_DESIGNER_HIT_RADIUS;
       const controls = this.sampleDesignerControls(shape, canvas, view, symmetry);
-      let best = null;
-      let bestDist = Infinity;
-      controls.forEach((control) => {
-        const dx = pos.x - control.point.x;
-        const dy = pos.y - control.point.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = control;
-        }
-      });
-      return bestDist <= 10 ? best : null;
+      const nearest = (list) => {
+        let best = null;
+        let bestDist = Infinity;
+        list.forEach((control) => {
+          const dist = Math.hypot(pos.x - control.point.x, pos.y - control.point.y);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = control;
+          }
+        });
+        return { best, dist: bestDist };
+      };
+      if (pointerType !== 'touch') {
+        const { best, dist } = nearest(controls);
+        return dist <= radius.mouse ? best : null;
+      }
+      const h = nearest(controls.filter((c) => c.kind === 'handle'));
+      const a = nearest(controls.filter((c) => c.kind === 'anchor'));
+      if (h.best && h.dist <= radius.touchHandle && h.dist < a.dist) return h.best;
+      if (a.best && a.dist <= radius.touch) return a.best;
+      if (h.best && h.dist <= radius.touch) return h.best;
+      return null;
     },
 
     toggleDesignerAnchor(shape, index, which = null) {
@@ -3993,7 +4105,7 @@
       const anchor = shape?.anchors?.[index];
       if (!anchor) return;
       const pRaw = this.canvasToDesigner(canvas, pos, view, { clampT: false });
-      const p = e?.shiftKey ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
+      const p = window.Vectura.InputModifiers.readModifiers(e).shift ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
       const prev = shape.anchors[index - 1];
       const next = shape.anchors[index + 1];
       const nextT = clamp(
@@ -4009,7 +4121,7 @@
         return;
       }
       anchor.out = { t: nextT, w: nextW };
-      const breakHandle = Boolean(e?.altKey || SETTINGS.touchModifiers?.alt);
+      const breakHandle = window.Vectura.InputModifiers.readModifiers(e || {}).alt;
       if (!breakHandle) {
         const dt = anchor.t - nextT;
         const dw = anchor.w - nextW;
@@ -4021,7 +4133,7 @@
       const anchor = shape.anchors[hit.index];
       if (!anchor) return;
       const pRaw = this.canvasToDesigner(canvas, pos, view, { clampT: hit.kind === 'anchor' });
-      const p = e?.shiftKey && hit.kind === 'handle' ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
+      const p = window.Vectura.InputModifiers.readModifiers(e).shift && hit.kind === 'handle' ? this.snapDesignerHandle(anchor, pRaw) : pRaw;
       const controlPoint = hit.kind === 'handle' && hit.mirror ? { t: p.t, w: -p.w } : p;
       if (hit.kind === 'anchor') {
         if (hit.index === 0 || hit.index === shape.anchors.length - 1) return;
@@ -4047,7 +4159,7 @@
           t: controlPoint.t,
           w: controlPoint.w,
         };
-        const breakHandle = Boolean(e.altKey || SETTINGS.touchModifiers?.alt);
+        const breakHandle = window.Vectura.InputModifiers.readModifiers(e).alt;
         if (!breakHandle) {
           const dt = anchor.t - anchor[which].t;
           const dw = anchor.w - anchor[which].w;

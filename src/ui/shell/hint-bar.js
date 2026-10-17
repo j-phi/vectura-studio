@@ -63,7 +63,8 @@
     toastTimer: 0,
     drag: { engaged: false, active: false, x: 0, y: 0 },
     dragBound: false,
-    cache: { hintKey: null, hidden: null, tool: null, zoom: null, rotation: null },
+    inputMode: null,
+    cache: { hintKey: null, mode: null, hidden: null, tool: null, zoom: null, rotation: null },
   };
 
   const els = {};
@@ -91,9 +92,34 @@
     return tool;
   };
 
-  const renderHint = (key) => {
+  // TUX-052: input mode. touch/pen pointerType -> 'touch' (Pencil counts as touch);
+  // mouse -> 'mouse'. Initial mode follows body.touch-ui, never maxTouchPoints.
+  const BANNED_MOUSE_WORDS = /Click|Shift\+|Option\+|Cmd\+|Ctrl\+|Alt\+|double-click|right-click/i;
+  const inputMode = () => {
+    if (state.inputMode) return state.inputMode;
+    // No pointer seen yet: follow body.touch-ui live (the classifier may set it after boot).
+    const body = G.document && G.document.body;
+    return body && body.classList.contains('touch-ui') ? 'touch' : 'mouse';
+  };
+  const setInputMode = (mode) => {
+    state.inputMode = mode;
+    const body = G.document && G.document.body;
+    if (body) body.dataset.lastInput = mode;
+    refresh();
+  };
+  const hintEntry = (key, mode) => {
+    const mouse = (cfg().tools || {})[key];
+    if (mode !== 'touch') return mouse;
+    const touch = (cfg().touchTools || {})[key];
+    if (touch) return touch;
+    const text = mouse && Array.isArray(mouse.hint)
+      ? mouse.hint.map((s) => `${s.key || ''} ${s.text || ''}`).join(' ') : '';
+    return BANNED_MOUSE_WORDS.test(text) ? null : mouse;
+  };
+
+  const renderHint = (key, mode) => {
     const d = G.document;
-    const entry = (cfg().tools || {})[key];
+    const entry = hintEntry(key, mode);
     els.hints.textContent = '';
     if (!entry || !Array.isArray(entry.hint)) return;
     entry.hint.forEach((segment, i) => {
@@ -154,9 +180,11 @@
 
     // HUD-1 hint line.
     const hintKey = resolveHintKey(renderer);
-    if (hintKey !== c.hintKey) {
+    const mode = inputMode();
+    if (hintKey !== c.hintKey || mode !== c.mode) {
       c.hintKey = hintKey;
-      renderHint(hintKey);
+      c.mode = mode;
+      renderHint(hintKey, mode);
     }
     // HUD-4 gate + HUD-1 drag clearing (readouts unaffected).
     const hidden = settings().contextualHints === false || state.drag.active;
@@ -236,6 +264,17 @@
     refresh();
   };
 
+  const bindInputMode = () => {
+    if (!G.document || typeof G.document.addEventListener !== 'function') return;
+    G.document.addEventListener('pointerdown', (e) => {
+      const t = e && e.pointerType;
+      const mode = (t === 'touch' || t === 'pen') ? 'touch' : (t === 'mouse' ? 'mouse' : null);
+      if (!mode) return;
+      if (mode !== state.inputMode || G.document.body.dataset.lastInput !== mode) setInputMode(mode);
+    }, true);
+  };
+  bindInputMode();
+
   // ── event subscriptions (defensive — emitters live in other lanes) ────
   if (G.document && typeof G.document.addEventListener === 'function') {
     // Lane C (PTH-5) emits this after Expand; coordinate name via integrator.
@@ -250,7 +289,7 @@
   }
 
   UI.toast = toast;
-  UI.HintBar = { refresh, setContextualHints };
+  UI.HintBar = { refresh, setContextualHints, inputMode };
 
   start();
 })();

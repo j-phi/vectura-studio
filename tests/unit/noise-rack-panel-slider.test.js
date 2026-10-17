@@ -50,6 +50,7 @@ describe('noise-rack range controls ride UI.Slider', () => {
       'src/ui/utils.js',
       'src/ui/motion.js',
       'src/ui/components/slider.js',
+      'src/ui/components/pointer-reorder.js',
       'src/ui/panels/noise-rack-panel.js',
     ]);
     window = dom.window;

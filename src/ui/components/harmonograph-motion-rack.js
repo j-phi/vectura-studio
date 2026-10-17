@@ -18,6 +18,11 @@
   const Vectura = (window.Vectura = window.Vectura || {});
   const UI = (Vectura.UI = Vectura.UI || {});
 
+  // TUX-038: the selected drawn-curve point per source (coarse pointers only). It lives outside the
+  // source object so it never reaches the saved project, and it survives the re-render a commit does.
+  const POINT_SELECTION = new WeakMap();
+  const isCoarse = () => !!(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+
   let SEQ = 0;
   const nextId = (prefix) => { SEQ += 1; return `${prefix}-${SEQ}`; };
 
@@ -312,6 +317,9 @@
     // drag to move (x clamped within neighbors, y in −1..1), double-click a
     // point (or right-click) to remove it (endpoints stay). Commits on every
     // edit so the figure rebuilds. DPR-scaled like the virtual plotter.
+    // TUX-038 touch path: a finger taps a point (22 px hit radius) to select it, and the Add point /
+    // Remove point buttons below the curve (44 px) edit the selection. The mouse keeps dblclick and
+    // right-click.
     function buildDrawnEditor(src) {
       const W = 220;
       const H = 64;
@@ -325,8 +333,27 @@
       canvas.style.width = `${W}px`;
       canvas.style.height = `${H}px`;
       editor.appendChild(canvas);
-      editor.appendChild(el('div', 'motion-drawn-hint text-[9px] text-vectura-muted',
-        'Double-click to add a point · drag to shape · double-click a point to remove'));
+      const coarse = isCoarse();
+      editor.appendChild(el('div', 'motion-drawn-hint text-[9px] text-vectura-muted', coarse
+        ? 'Tap a point to select it · drag to shape · Add point / Remove point below'
+        : 'Double-click to add a point · drag to shape · double-click a point to remove'));
+
+      // Selected point (touch). -1 = none. Endpoints can be selected and moved but never removed.
+      let sel = coarse && POINT_SELECTION.has(src) ? POINT_SELECTION.get(src) : -1;
+      if (sel >= src.points.length) sel = -1;
+      const actions = el('div', 'motion-point-actions');
+      const addBtn = el('button', 'motion-point-add', 'Add point');
+      addBtn.type = 'button';
+      const removeBtn = el('button', 'motion-point-remove', 'Remove point');
+      removeBtn.type = 'button';
+      actions.append(addBtn, removeBtn);
+      editor.appendChild(actions);
+      const select = (i) => { sel = i; POINT_SELECTION.set(src, i); };
+      const syncActions = () => {
+        actions.hidden = !(coarse && sel >= 0);
+        removeBtn.disabled = !(sel > 0 && sel < src.points.length - 1);
+        removeBtn.setAttribute('aria-disabled', removeBtn.disabled ? 'true' : 'false');
+      };
 
       const ctx = canvas.getContext('2d');
 
@@ -367,32 +394,46 @@
         });
         ctx.stroke();
         ctx.fillStyle = getThemeToken('--ui-accent', '#6cf');
-        src.points.forEach((pt) => {
+        src.points.forEach((pt, i) => {
           const { cx, cy } = toCanvas(pt);
           ctx.beginPath();
-          ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+          ctx.arc(cx, cy, i === sel ? 5 : 3, 0, Math.PI * 2);
           ctx.fill();
+          if (i === sel) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+            ctx.stroke();
+          }
         });
       };
 
+      // 22 px on a touch screen (a finger covers about 40 px), 6 px for a mouse.
+      const hitRadius = () => (coarse ? 22 : 6);
       const hitPoint = (cx, cy) => {
         for (let i = 0; i < src.points.length; i += 1) {
           const { cx: px, cy: py } = toCanvas(src.points[i]);
-          if (Math.hypot(px - cx, py - cy) <= 6) return i;
+          if (Math.hypot(px - cx, py - cy) <= hitRadius()) return i;
         }
         return -1;
       };
 
       let dragIdx = -1;
+      let moved = false;
       canvas.onpointerdown = (ev) => {
         const { cx, cy } = eventPos(ev);
         const idx = hitPoint(cx, cy);
+        moved = false;
         if (idx >= 0) {
           dragIdx = idx;
+          if (coarse) select(idx);
           if (canvas.setPointerCapture && ev.pointerId != null) {
             try { canvas.setPointerCapture(ev.pointerId); } catch (_) { /* jsdom */ }
           }
+        } else if (coarse) {
+          select(-1); // a tap on empty space clears the selection
         }
+        draw();
+        syncActions();
       };
       canvas.onpointermove = (ev) => {
         if (dragIdx < 0) return;
@@ -408,6 +449,7 @@
           pt.x = Math.max(lo, Math.min(hi, np.x));
         }
         pt.y = Math.max(-1, Math.min(1, np.y));
+        moved = true;
         draw();
       };
       const endDrag = (ev) => {
@@ -416,10 +458,13 @@
         if (canvas.releasePointerCapture && ev && ev.pointerId != null) {
           try { canvas.releasePointerCapture(ev.pointerId); } catch (_) { /* jsdom */ }
         }
-        commit();
+        // A tap that moved nothing only selects: no history entry, no re-render.
+        if (moved || !coarse) commit();
+        else { draw(); syncActions(); }
       };
       canvas.onpointerup = endDrag;
       canvas.onpointercancel = endDrag;
+      // touch-alt: TUX-038 tap a point, then the Add point / Remove point buttons (below)
       canvas.ondblclick = (ev) => {
         const { cx, cy } = eventPos(ev);
         const idx = hitPoint(cx, cy);
@@ -437,6 +482,7 @@
         sortPoints();
         commit();
       };
+      // touch-alt: TUX-038 tap a point, then the Remove point button (below)
       canvas.oncontextmenu = (ev) => {
         if (ev.preventDefault) ev.preventDefault();
         const { cx, cy } = eventPos(ev);
@@ -447,7 +493,28 @@
         }
       };
 
+      // Add point: a new point halfway between the selected point and its next neighbour (previous one for the last point).
+      addBtn.onclick = () => {
+        const n = src.points.length;
+        if (sel < 0 || n < 2) return;
+        const j = sel < n - 1 ? sel + 1 : sel - 1;
+        const a = src.points[Math.min(sel, j)];
+        const b = src.points[Math.max(sel, j)];
+        const np = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        src.points.push(np);
+        sortPoints();
+        select(src.points.indexOf(np));
+        commit();
+      };
+      removeBtn.onclick = () => {
+        if (!(sel > 0 && sel < src.points.length - 1)) return;
+        src.points.splice(sel, 1);
+        select(sel - 1); // the selection moves to the previous point, so the buttons stay
+        commit();
+      };
+
       draw();
+      syncActions();
       return editor;
     }
 

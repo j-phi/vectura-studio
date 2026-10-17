@@ -44,6 +44,8 @@
     mounted: false,
     busy: false,               // a Lane H sub-mode owns the content host
     kind: null,                // last-rendered context kind
+    penAnchor: null,           // TUX-030: stable { left, top, key } while kind === 'pen-draft'
+    penSync: null,             // TUX-030: refreshes the Done chip's disabled state
     lastAnchor: null,          // last selection screen rect used for anchoring
     drag: { engaged: false, active: false, x: 0, y: 0 },
     canvasDragBound: false,
@@ -205,6 +207,11 @@
   };
 
   // ── TB-2: overflow menu ───────────────────────────────────────────────
+  const selectionMenuAvailable = () => {
+    const ccm = G.Vectura && G.Vectura.UI && G.Vectura.UI.CanvasContextMenu;
+    const renderer = getRenderer();
+    return !!(ccm && ccm.openForSelection && renderer && renderer.selectedLayerIds && renderer.selectedLayerIds.size > 0);
+  };
   const buildMenu = () => {
     const d = G.document;
     const c = cfg();
@@ -221,6 +228,13 @@
     // A sub-mode may prepend exactly one contextual item (e.g. Open Stroke Options).
     if (state.overflowExtra && state.overflowExtra.label) {
       add(state.overflowExtra.label, () => { try { state.overflowExtra.onClick?.(); } catch (_) { /* noop */ } }, true);
+    }
+    // TUX-034a: touch has no right-click. With a selection, the canvas context menu is one tap away.
+    if (selectionMenuAvailable()) {
+      add(items.selectionMenu || 'Selection menu…', () => {
+        const r = els.overflow.getBoundingClientRect();
+        G.Vectura.UI.CanvasContextMenu.openForSelection(r.left, r.bottom);
+      });
     }
     // "Show Properties panel" is a RESTORE affordance: it only appears while
     // the docked panel this context targets is collapsed or narrower than its
@@ -239,6 +253,8 @@
     els.menu.classList.add('is-open');
     els.menu.setAttribute('aria-hidden', 'false');
     els.overflow.setAttribute('aria-expanded', 'true');
+    const cue = G.Vectura && G.Vectura.UI && G.Vectura.UI.utils && G.Vectura.UI.utils.scrollCue;
+    if (cue) cue.bind(els.menu);
   };
   const closeMenu = () => {
     if (!els.menu) return;
@@ -341,11 +357,19 @@
     const side = paneSideFor(node);
     const s = settings();
     if (paneIsCollapsed(node)) {
-      node.classList.remove('pane-collapsed');
-      const body = G.document && G.document.body;
-      if (body && body.classList.contains('auto-collapsed')) node.classList.add('pane-force-open');
-      if (side === 'left') s.leftPaneCollapsed = false;
-      else if (side === 'right') s.rightPaneCollapsed = false;
+      // TUX-008: the pane-state controller is the single writer (classes, backdrop, per-layout
+      // persistence). The fallback keeps jsdom, where the shell never bound the controller.
+      const ws = G.Vectura && G.Vectura.UI && G.Vectura.UI.Workspace;
+      const ps = ws && ws.paneState;
+      if (ps && side && ps.layout()) {
+        ps.open(side);
+      } else {
+        node.classList.remove('pane-collapsed');
+        const body = G.document && G.document.body;
+        if (body && body.classList.contains('auto-collapsed')) node.classList.add('pane-force-open');
+        if (side === 'left') s.leftPaneCollapsed = false;
+        else if (side === 'right') s.rightPaneCollapsed = false;
+      }
     }
     if (side && paneIsShrunk(node, side)) {
       const w = paneDefaultWidth(side);
@@ -446,18 +470,27 @@
   };
 
   // ── TB-2: handle drag → move + implies Pin ────────────────────────────
+  // TODO(TUX-018): replace with Vectura.UI.bindPointerDrag once the shared helper lands.
   const bindHandleDrag = () => {
-    const onDown = (e) => {
+    // Events from another finger are ignored (pointerId is absent in some test doubles).
+    const mine = (e) => !state.handleDrag || state.handleDrag.pointerId === undefined
+      || e.pointerId === undefined || e.pointerId === state.handleDrag.pointerId;
+    const begin = (e) => {
+      if (state.handleDrag) return; // a drag is already running (second finger)
       if (e.button !== undefined && e.button !== 0) return;
       e.preventDefault();
       const left = parseFloat(els.bar.style.left) || 0;
       const top = parseFloat(els.bar.style.top) || 0;
-      state.handleDrag = { startX: e.clientX, startY: e.clientY, baseX: left, baseY: top, moved: false };
+      state.handleDrag = { startX: e.clientX, startY: e.clientY, baseX: left, baseY: top, moved: false, pointerId: e.pointerId };
+      // Capture keeps a touch drag attached to the handle even when the finger leaves it.
+      try { if (e.pointerId !== undefined) els.handle.setPointerCapture?.(e.pointerId); } catch (_) { /* synthetic ids */ }
       G.addEventListener('pointermove', onMove, true);
-      G.addEventListener('pointerup', onUp, true);
+      G.addEventListener('pointerup', end, true);
+      G.addEventListener('pointercancel', end, true);
+      els.handle.addEventListener('lostpointercapture', end);
     };
     const onMove = (e) => {
-      if (!state.handleDrag) return;
+      if (!state.handleDrag || !mine(e)) return;
       const dx = e.clientX - state.handleDrag.startX;
       const dy = e.clientY - state.handleDrag.startY;
       const thr = (cfg().timing && cfg().timing.dragPinThresholdPx) || 3;
@@ -469,12 +502,18 @@
       els.bar.style.top = `${ny}px`;
       // Deliberately NOT re-evaluating menu direction here: flipping the arrows
       // every frame the bar crosses the midline reads as thrash. The pivot
-      // settles once, on release (see onUp).
+      // settles once, on release (see end).
     };
-    const onUp = () => {
+    // Single teardown for pointerup, pointercancel and lostpointercapture. A cancel keeps the
+    // position reached so far, so a cancelled drag can never leave listeners that move the bar later.
+    const end = (e) => {
+      if (!state.handleDrag) return;
+      if (e && !mine(e)) return;
       G.removeEventListener('pointermove', onMove, true);
-      G.removeEventListener('pointerup', onUp, true);
-      if (state.handleDrag && state.handleDrag.moved) {
+      G.removeEventListener('pointerup', end, true);
+      G.removeEventListener('pointercancel', end, true);
+      els.handle.removeEventListener('lostpointercapture', end);
+      if (state.handleDrag.moved) {
         // A manual drag implies Pin (bar stays where the user left it).
         const p = prefs();
         p.pinned = true;
@@ -487,7 +526,7 @@
       // when dropped low, and up→down when dropped back near the top.
       refreshMenuDirection();
     };
-    els.handle.addEventListener('pointerdown', onDown);
+    els.handle.addEventListener('pointerdown', begin);
   };
 
   const viewportSize = () => {
@@ -557,6 +596,24 @@
     return { left: rr.left - hr.left, right: rr.right - hr.left, top: rr.top - hr.top, bottom: rr.bottom - hr.top };
   };
 
+  // The touch grip is a real 44 px box inside the 52 px bar (components.css, TUX-041 B2, Q19). It has no ::before
+  // extender any more, so nothing reaches past the bar edge. Kept as a named constant for the clearance sum below.
+  const GRIP_EXTENDER_PX = 0;
+  // Bottom safe-area inset in px (env() is not readable from script; measure a probe).
+  const safeBottomPx = () => {
+    const d = G.document;
+    if (!d || !d.body) return 0;
+    let probe = state.safeProbe;
+    if (!probe || !probe.isConnected) {
+      probe = d.createElement('div');
+      probe.setAttribute('aria-hidden', 'true');
+      probe.style.cssText = 'position:fixed;left:0;bottom:0;width:1px;height:var(--tux-safe-bottom, env(safe-area-inset-bottom, 0px));visibility:hidden;pointer-events:none';
+      d.body.appendChild(probe);
+      state.safeProbe = probe;
+    }
+    return probe.getBoundingClientRect().height || 0;
+  };
+
   const reanchor = () => {
     if (!els.bar) return;
     // While the user is dragging the bar by its grip, the pointermove handler
@@ -571,16 +628,80 @@
       refreshMenuDirection();
       return;
     }
+    if (state.kind === 'pen-draft') {
+      // TUX-030: stable bottom-centre spot, computed once per draft (and again only if the
+      // viewport changes). The bar never chases the selection while a draft is in progress.
+      const pv = viewportSize();
+      // Side panes overlay the canvas viewport on narrow layouts (iPad portrait, phone landscape).
+      // Inset the bar by their overlap, as the isolation breadcrumb does, so no chip is buried.
+      const hostRect = els.host ? els.host.getBoundingClientRect() : null;
+      const overlap = (sel, side) => {
+        const n = G.document.querySelector(sel);
+        if (!n || !hostRect) return 0;
+        const r = n.getBoundingClientRect();
+        if (!r.width || !r.height || r.bottom <= hostRect.top || r.top >= hostRect.bottom) return 0;
+        return side === 'left'
+          ? Math.max(0, Math.min(r.right, hostRect.right) - hostRect.left)
+          : Math.max(0, hostRect.right - Math.max(r.left, hostRect.left));
+      };
+      const insetL = Math.round(overlap('.pane-left', 'left'));
+      const insetR = Math.round(overlap('.pane-right', 'right'));
+      const key = `${pv.w}x${pv.h}:${insetL}:${insetR}`;
+      if (!state.penAnchor || state.penAnchor.key !== key) {
+        const pad = 4; // tight to the edge: a short canvas (phone landscape) keeps its central band free
+        const span = Math.max(120, pv.w - insetL - insetR - 2 * pad);
+        els.bar.style.maxWidth = `${span}px`; // chips wrap inside the uncovered span
+        els.bar.style.left = `${insetL + pad}px`; // measure from the span's edge, not the previous spot
+        const pb = barSize();
+        let bottom = pv.h - pad - safeBottomPx();
+        const mod = G.document.querySelector('#touch-modifier-bar:not(.hidden)');
+        const mr = mod && hostRect ? mod.getBoundingClientRect() : null;
+        // Only a modifier bar docked in the lower half pushes the bar up (it floats at the top on iPad).
+        if (mr && mr.width && mr.height && (mr.top - hostRect.top) > pv.h / 2) bottom = Math.min(bottom, mr.top - hostRect.top - pad);
+        state.penAnchor = {
+          key,
+          left: insetL + pad + Math.max(0, (span - pb.w) / 2),
+          top: Math.max(pad, bottom - pb.h),
+        };
+      }
+      els.bar.style.left = `${state.penAnchor.left}px`;
+      els.bar.style.top = `${state.penAnchor.top}px`;
+      refreshMenuDirection();
+      return;
+    }
+    if (state.penAnchor) { state.penAnchor = null; els.bar.style.maxWidth = ''; }
     const renderer = getRenderer();
     const bounds = renderer && renderer.getSelectionScreenBounds ? renderer.getSelectionScreenBounds() : null;
     state.lastAnchor = bounds;
     const v = viewportSize();
     const b = barSize();
     const t = cfg().timing || {};
-    const { left, top } = computeAnchor({
-      bounds, barW: b.w, barH: b.h, viewW: v.w, viewH: v.h,
-      offset: t.anchorOffsetPx, pad: t.viewportPadPx, railRect: railRectInViewport(),
+    const anchored = computeAnchor({
+      bounds: state.kind === 'fill' ? null : bounds, barW: b.w, barH: b.h, viewW: v.w, viewH: v.h,
+      // TUX-023: on touch, dock clear of the (nudged) resize zones so the bar never covers a corner.
+      offset: Math.max(Number.isFinite(t.anchorOffsetPx) ? t.anchorOffsetPx : 12,
+        renderer && renderer.getHandleClearancePx ? (renderer.getHandleClearancePx() ? renderer.getHandleClearancePx() + GRIP_EXTENDER_PX : 0) : 0),
+      pad: t.viewportPadPx, railRect: railRectInViewport(),
     });
+    let { left } = anchored;
+    let { top } = anchored;
+    // TUX-022: the fill bar rides the bottom edge so it never covers the region being previewed.
+    if (state.kind === 'fill') top = Math.max(0, v.h - b.h - (Number.isFinite(t.viewportPadPx) ? t.viewportPadPx : 8));
+    // TUX-041 B2 (touch only): the 52 px bar grew wider with its 44 px controls and can slide under the canvas HUD
+    // (zoom controls, z 40), which then steals part of the last button. Shift the bar left of the HUD when it fits.
+    if (G.document.body && G.document.body.classList.contains('touch-ui') && els.host) {
+      const hud = els.host.querySelector('.canvas-hud');
+      const hr = els.host.getBoundingClientRect();
+      const r = hud ? hud.getBoundingClientRect() : null;
+      if (r && r.width && r.height) {
+        const hl = r.left - hr.left; const ht = r.top - hr.top; const hb = r.bottom - hr.top;
+        const padPx = Number.isFinite(t.viewportPadPx) ? t.viewportPadPx : 8;
+        if (top < hb && top + b.h > ht && left + b.w > hl && left < r.right - hr.left) {
+          const shifted = hl - padPx - b.w;
+          if (shifted >= padPx) left = shifted;
+        }
+      }
+    }
     els.bar.style.left = `${left}px`;
     els.bar.style.top = `${top}px`;
     refreshMenuDirection();
@@ -616,7 +737,27 @@
     G.addEventListener('pointercancel', end, true);
   };
 
+  // ── TUX-022: touch fill context ───────────────────────────────────────
+  // With a fill tool on a coarse pointer, the bar shows the Scope up/down chips
+  // (Vectura.UI.PaintBucketScopeChips). Desktop (fine pointer) never changes.
+  const FILL_TOOLS = ['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'];
+  const isCoarsePointer = () => {
+    try { return !!(G.matchMedia && G.matchMedia('(pointer: coarse)').matches); } catch (_) { return false; }
+  };
+  const fillChipsActive = (renderer) => !!renderer && FILL_TOOLS.indexOf(renderer.activeTool) >= 0 && isCoarsePointer();
+  const fillSigOf = (renderer) => {
+    const layer = renderer && renderer.engine && renderer.engine.getActiveLayer ? renderer.engine.getActiveLayer() : null;
+    return `${renderer && renderer.activeTool}|${(layer && layer.type) || ''}`;
+  };
+
   // ── context detection ─────────────────────────────────────────────────
+  // TUX-030: true only while a DRAW-purpose Pen draft exists (not the pen-as-lasso purpose, not
+  // the add/delete/convert pen modes).
+  const penDraftActive = (app, renderer) => Boolean(
+    renderer && renderer.activeTool === 'pen' && renderer.penDraft
+    && renderer.penPurpose === 'draw'
+    && (app && app.ui && app.ui.penMode) === 'draw',
+  );
   const getContext = () => {
     const app = getApp();
     const renderer = getRenderer();
@@ -626,6 +767,13 @@
     const tool = renderer.activeTool || 'select';
     let kind;
     let primary = layers[0] || null;
+    if (fillChipsActive(renderer)) {
+      return { kind: 'fill', layerIds: ids, primaryLayer: primary, app, renderer, fillSig: fillSigOf(renderer) };
+    }
+    // TUX-030: an in-progress Pen draft owns the bar (Done / Remove Last / Cancel).
+    if (penDraftActive(app, renderer)) {
+      return { kind: 'pen-draft', layerIds: ids, primaryLayer: primary, app, renderer };
+    }
     // 3D Scene Studio (Phase 1C): a live scene selection (CONTRACT D) on a
     // selected scene3d layer morphs the bar into a scene context. Gated on
     // BOTH the selection API and the layer type so plain layer selection is
@@ -1108,8 +1256,8 @@
     const paint = () => {
       const penId = scenePenIdOf(wc);
       const pen = pens.find((p) => p && p.id === penId) || null;
-      if (pen) { icon.style.background = pen.color || 'transparent'; chip.title = `Pen — ${pen.name || pen.id}`; }
-      else { icon.style.background = 'transparent'; chip.title = 'Pen — inherits layer pen'; }
+      if (pen) { icon.style.background = pen.color || 'transparent'; chip.title = `Pen — ${pen.name || pen.id}`; chip.setAttribute('aria-label', chip.title); }
+      else { icon.style.background = 'transparent'; chip.title = 'Pen — inherits layer pen'; chip.setAttribute('aria-label', chip.title); }
     };
     paint();
     const wrap = el('span', 'ctxbar-align-wrap ctxbar-scene-menu-wrap ctxbar-scene-pen-wrap');
@@ -2231,10 +2379,54 @@
     if (sceneSelHasObjectDef(sceneSel(ctx))) pill('sceneXray', buildXrayBody, 'ctxbar-scene-xray', ic.sceneXray);
   };
 
+  const renderFill = (ctx) => {
+    const Chips = UI.PaintBucketScopeChips;
+    if (Chips && typeof Chips.render === 'function') Chips.render(els.content, ctx);
+  };
+
+  // TUX-030: pen draft chips. They call the same renderer methods as Enter / Backspace / Escape.
+  const renderPenDraft = (ctx) => {
+    const r = ctx.renderer;
+    const n = () => ((r && r.penDraft && r.penDraft.anchors) || []).length;
+    const chip = (action, label, tooltip, fn) => {
+      const btn = makeBtn({ label, tooltip, extraClass: 'ctxbar-pen-chip', onClick: fn });
+      btn.setAttribute('data-action', action);
+      return btn;
+    };
+    const done = chip('pen-done', 'Done', 'Finish the path', () => {
+      if (n() < 2) return; // commitPenPath would silently discard a one-anchor draft
+      r.commitPenPath();
+      refresh();
+    });
+    const sync = () => {
+      const off = n() < 2;
+      if (off) done.setAttribute('aria-disabled', 'true'); else done.removeAttribute('aria-disabled');
+      done.classList.toggle('is-disabled', off);
+    };
+    sync();
+    state.penSync = sync;
+    els.content.appendChild(done);
+    els.content.appendChild(chip('pen-remove-last', 'Remove Last Anchor', 'Remove the last anchor', () => {
+      r.undoPenPoint();
+      refresh();
+    }));
+    els.content.appendChild(chip('pen-cancel', 'Cancel', 'Discard the path', () => {
+      r.cancelPenPath();
+      refresh();
+    }));
+  };
+
   const renderContext = (ctx) => {
     if (!els.content) return;
     els.content.textContent = '';
+    // TUX-022: the fill chips stay visible on phones (the generic phone rule hides the bar).
+    if (els.bar) els.bar.classList.toggle('ctxbar--fill', ctx.kind === 'fill');
+    state.penSync = null;
+    if (els.bar) els.bar.classList.toggle('ctxbar--pen-draft', ctx.kind === 'pen-draft');
+    // TUX-031: a drawn shape keeps its Shape Properties button on phones (the generic phone rule hides the bar).
+    if (els.bar) els.bar.classList.toggle('ctxbar--shape', ctx.kind === 'single-shape');
     switch (ctx.kind) {
+      case 'pen-draft': renderPenDraft(ctx); break;
       case 'idle': renderIdle(); break;
       case 'single-text': renderText(ctx); break;
       case 'group': renderGroup(ctx); break;
@@ -2243,6 +2435,7 @@
       case 'single-path': renderSingle(ctx); break;
       case 'multi': renderMulti(ctx); break;
       case 'direct': renderDirect(ctx); break;
+      case 'fill': renderFill(ctx); break;
       case 'scene-object': renderSceneObject(ctx); break;
       case 'scene-face':
       case 'scene-edge': renderSceneComponent(ctx); break;
@@ -3031,12 +3224,19 @@
 
   // ── visibility + show/hide ────────────────────────────────────────────
   const shouldShow = () => {
-    if (!isEnabled()) return false;
     if (state.drag.active) return false;
+    // TUX-030: the pen-draft controls are the only way to finish a draft by finger, so on a coarse
+    // pointer they show even when the Contextual Task Bar preference is off. A fine pointer
+    // respects the preference.
+    if (!isEnabled()) {
+      return isCoarsePointer() && penDraftActive(getApp(), getRenderer());
+    }
     const a = getApp();
     if (a && a.textEdit && typeof a.textEdit.isActive === 'function' && a.textEdit.isActive()) return false;
     const renderer = getRenderer();
     if (!renderer) return false;
+    if (fillChipsActive(renderer)) return true;
+    if (penDraftActive(a, renderer)) return true;
     const size = renderer.selectedLayerIds ? renderer.selectedLayerIds.size : 0;
     if (size > 0) return true;
     // Nothing selected → idle only for the select tool.
@@ -3071,7 +3271,11 @@
     bindCanvasDrag();
     const vis = shouldShow();
     setVisible(vis);
-    if (!vis) return;
+    if (!vis) {
+      // TUX-030: a finished/cancelled draft must not leave its chips or anchor behind.
+      if (state.kind === 'pen-draft') { state.kind = null; state.penAnchor = null; if (els.bar) els.bar.style.maxWidth = ''; }
+      return;
+    }
     const ctx = getContext();
     // Re-render on kind change OR when the PRIMARY layer changes within the same
     // kind (e.g. selecting a different text layer) — otherwise the controls stay
@@ -3086,7 +3290,9 @@
     const sceneRenderer = getRenderer();
     const paramSig = ctx.kind === 'single-text'
       ? `${primaryParams.font || ''}|${primaryParams.fontWeight || ''}|${primaryParams.fontSize || ''}`
-      : ctx.kind === 'single-algo'
+      : ctx.kind === 'fill'
+        ? ctx.fillSig
+        : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
         // Scene contexts re-render when the scene selection or the Alt-cycle
         // readout changes within the same kind (renderer-owned signature).
@@ -3120,11 +3326,38 @@
       state.anchorSig = anchorSig;
       renderContext(ctx);
     }
+    if (ctx.kind === 'pen-draft' && state.penSync) state.penSync();
     reanchor();
+  };
+
+  // TUX-023: the touch rotate affordance avoids chrome, so it must be recomputed when the bar
+  // shows, hides or re-anchors (the renderer only redraws on its own events).
+  const syncRotateAffordance = () => {
+    const r = getRenderer();
+    if (!r || typeof r.refreshRotateAffordance !== 'function' || !els.bar) return;
+    // Desktop (mouse/pen) has no touch affordance: skip the layout reads and timers entirely.
+    if (typeof r.isCoarseHandles === 'function' && !r.isCoarseHandles()) { state.rotAffSig = null; return; }
+    const bar = els.bar;
+    const sig = `${state.visible ? 1 : 0}|${Math.round(parseFloat(bar.style.left) || 0)}|${Math.round(parseFloat(bar.style.top) || 0)}|${bar.offsetWidth}|${bar.offsetHeight}`;
+    if (sig === state.rotAffSig) return;
+    state.rotAffSig = sig;
+    // Coalesced by the renderer: invalidates the cache and repaints on the next frame only if
+    // no draw (pan/zoom/drag) already happened.
+    r.refreshRotateAffordance();
+    // The show/hide transition may still be running; re-check once it has settled. One timer.
+    if (typeof setTimeout === 'function') {
+      if (state.rotAffTimer) clearTimeout(state.rotAffTimer);
+      state.rotAffTimer = setTimeout(() => {
+        state.rotAffTimer = null;
+        const rr = getRenderer();
+        if (rr && rr.refreshRotateAffordance) rr.refreshRotateAffordance();
+      }, 350);
+    }
   };
 
   const tick = () => {
     refresh();
+    syncRotateAffordance();
     state.raf = typeof G.requestAnimationFrame === 'function'
       ? G.requestAnimationFrame(tick)
       : setTimeout(tick, 100);
@@ -3149,7 +3382,9 @@
     const rr = getRenderer();
     state.paramSig = ctx.kind === 'single-text'
       ? `${rp.font || ''}|${rp.fontWeight || ''}|${rp.fontSize || ''}`
-      : ctx.kind === 'single-algo'
+      : ctx.kind === 'fill'
+        ? ctx.fillSig
+        : ctx.kind === 'single-algo'
         ? (ctx.primaryLayer && ctx.primaryLayer.type) || ''
         : `${ctx.kind}`.startsWith('scene-') && rr && typeof rr.getSceneSelectionSignature === 'function'
           ? rr.getSceneSelectionSignature()

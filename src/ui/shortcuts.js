@@ -439,14 +439,8 @@
       if ((e.metaKey || e.ctrlKey) && (e.key === '[' || e.key === ']' || e.key === '{' || e.key === '}')) {
         e.preventDefault();
         const isRight = e.key === ']' || e.key === '}';
-        const direction = isRight ? 'up' : 'down';
-        let changed = false;
-        if (e.shiftKey || e.key === '{' || e.key === '}') {
-          changed = this.moveSelectedLayers(isRight ? 'top' : 'bottom');
-        } else {
-          changed = this.moveSelectedLayers(direction);
-        }
-        if (changed && this.app.pushHistory) this.app.pushHistory();
+        if (e.shiftKey || e.key === '{' || e.key === '}') this.arrangeSelection(isRight ? 'top' : 'bottom');
+        else this.arrangeSelection(isRight ? 'forward' : 'backward');
         return;
       }
 
@@ -463,7 +457,11 @@
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault();
         if (this.app.pushHistory) this.app.pushHistory();
+        const token = this.app.history?.[this.app.history.length - 1];
         const ids = Array.from(this.app.renderer?.selectedLayerIds || []);
+        const label = ids.length === 1
+          ? `Deleted "${this.app.engine.getLayerById?.(ids[0])?.name ?? 'layer'}"`
+          : `Deleted ${ids.length} layers`;
         ids.forEach((id) => {
           this.unlockMirrorChildrenOnDelete?.(id);
           this.app.engine.removeLayer(id);
@@ -474,6 +472,7 @@
         }
         this.renderLayers();
         this.app.render();
+        this.notifyUndoable?.(label, token);
         return;
       }
       const step = (e.metaKey || e.ctrlKey) ? 10 : 1;
@@ -604,30 +603,174 @@
     const _hideAlgoSub = () => {
       _algoSubHideTimer = setTimeout(() => { algoSubmenuEl.style.display = 'none'; }, 80);
     };
-    algoParentItem?.addEventListener('mouseenter', _showAlgoSub);
-    algoParentItem?.addEventListener('mouseleave', _hideAlgoSub);
-    algoSubmenuEl.addEventListener('mouseenter', () => clearTimeout(_algoSubHideTimer));
-    algoSubmenuEl.addEventListener('mouseleave', _hideAlgoSub);
+    // TUX-035: the fly-out is hover-driven for a mouse only. Touch drills down inside the
+    // add menu instead (compat mouseenter would otherwise open it and swallow the tap).
+    const _onlyMouse = (fn) => (e) => { if (e.pointerType === 'mouse') fn(e); };
+    algoParentItem?.addEventListener('pointerenter', _onlyMouse(_showAlgoSub));
+    algoParentItem?.addEventListener('pointerleave', _onlyMouse(_hideAlgoSub));
+    algoSubmenuEl.addEventListener('pointerenter', _onlyMouse(() => clearTimeout(_algoSubHideTimer)));
+    algoSubmenuEl.addEventListener('pointerleave', _onlyMouse(_hideAlgoSub));
 
     // Clicking a submenu item closes the submenu and the add menu
     algoSubmenuEl.addEventListener('click', (e) => {
       const item = e.target.closest('.lvl-algo-sub-item');
       if (!item) return;
-      algoSubmenuEl.style.display = 'none';
+      closeAddMenu();
       _doAddAlgoLayer(item.dataset.algoType || this.getPreferredNewLayerType?.() || 'wavetable');
-      this.layerAddOpen = false;
-      addMenuEl?.classList.add('hidden');
       this.renderLayers();
       this.app.render();
     });
 
     const addMenuEl = document.getElementById('layer-add-menu');
     const addBtn = document.getElementById('btn-add-layer');
+    // TUX-035: touch drill-down inside the add menu (enterDrill / leaveDrill / closeAddMenu).
+    // Branch on the real input type of the last press, never on a media query: a mouse click
+    // keeps the legacy "add default layer" behaviour even on a touch-capable device.
+    let lastAddMenuPointerType = 'mouse';
+    let drillBack = null;
+    let drillList = null;
+    // A finger menu lifts to <body> (position: fixed) so the pane body cannot clip or cover it.
+    const addWrap = addMenuEl ? addMenuEl.parentElement : null;
+    const _dockAddMenu = () => { if (addWrap && addMenuEl.parentElement !== addWrap) addWrap.appendChild(addMenuEl); };
+    const _isFingerInput = () => lastAddMenuPointerType === 'touch' || lastAddMenuPointerType === 'pen';
+    const _recordPointer = (e) => {
+      lastAddMenuPointerType = e.pointerType || 'mouse';
+      addMenuEl?.classList.toggle('is-touch', _isFingerInput());
+    };
+    addBtn?.addEventListener('pointerdown', _recordPointer, true);
+    addMenuEl?.addEventListener('pointerdown', _recordPointer, true);
+
+    // Fit the add menu (parent rows or drill list) inside the visual viewport, the tightest
+    // clipping ancestor and any visible fixed bottom overlay (the touch modifier bar).
+    const _fitDrill = () => {
+      if (!addMenuEl || addMenuEl.classList.contains('hidden')) return;
+      const drilling = addMenuEl.classList.contains('is-drill') && !!drillList;
+      const KI = window.Vectura && window.Vectura.KeyboardInset;
+      const vr = KI && KI.viewportRect
+        ? KI.viewportRect()
+        : { width: window.innerWidth, height: window.innerHeight, offsetTop: 0, offsetLeft: 0 };
+      const vw = vr.width;
+      const top = vr.offsetTop;
+      const left = vr.offsetLeft;
+      const PAD = 8;
+      let bottom = top + vr.height - PAD;
+      let clipTop = top + PAD;
+      // The pane body clips absolutely positioned overflow. A finger menu escapes it (position: fixed,
+      // set below); a mouse menu keeps the pane as its limit.
+      const clipLimits = !_isFingerInput();
+      if (clipLimits) {
+        for (let el = addMenuEl.parentElement; el && el !== document.body; el = el.parentElement) {
+          const cs = getComputedStyle(el);
+          if (cs.overflowY === 'visible' && cs.overflowX === 'visible') continue;
+          const r = el.getBoundingClientRect();
+          bottom = Math.min(bottom, r.bottom - PAD);
+          clipTop = Math.max(clipTop, r.top + PAD);
+        }
+      }
+      const FLOOR = 132;
+      addMenuEl.style.transform = '';
+      addMenuEl.style.maxHeight = '';
+      addMenuEl.style.overflowY = '';
+      ['position', 'top', 'left', 'right'].forEach((k) => { addMenuEl.style[k] = ''; });
+      _dockAddMenu();
+      addMenuEl.style.width = vw <= 480 ? `${Math.min(vw - 2 * PAD, 280)}px` : '';
+      if (drilling) drillList.style.maxHeight = '';
+      let m0 = addMenuEl.getBoundingClientRect();
+      if (!clipLimits) {
+        // Anchor where the menu sat, but detach from the clipping pane.
+        document.body.appendChild(addMenuEl);
+        Object.assign(addMenuEl.style, { position: 'fixed', top: `${m0.top}px`, left: `${m0.left}px`, right: 'auto' });
+        m0 = addMenuEl.getBoundingClientRect();
+      }
+      // Fixed bottom overlays (modifier bar) sit above the menu in z-order: treat them as the bottom limit.
+      document.querySelectorAll('.touch-modifier-bar, #touch-modifier-bar').forEach((bar) => {
+        if (bar.classList.contains('hidden')) return;
+        const cs = getComputedStyle(bar);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return;
+        const r = bar.getBoundingClientRect();
+        if (r.height > 0 && r.bottom > m0.top && r.top > m0.top) bottom = Math.min(bottom, r.top - PAD);
+      });
+      let shiftY = 0;
+      if (drilling) {
+        const backH = drillBack ? drillBack.offsetHeight : 44;
+        const chrome = addMenuEl.offsetHeight - drillList.offsetHeight;
+        const wanted = Math.max(FLOOR, bottom - m0.top - chrome);
+        let listH = Math.min(drillList.scrollHeight, wanted);
+        if (m0.top + chrome + listH > bottom) {
+          // Not enough room below the button: slide the menu up (never above the viewport top).
+          shiftY = Math.min(m0.top + chrome + listH - bottom, Math.max(0, m0.top - clipTop));
+          listH = Math.min(listH, bottom - (m0.top - shiftY) - chrome);
+        }
+        listH = Math.max(listH, Math.min(FLOOR, backH * 2));
+        drillList.style.maxHeight = `${Math.floor(listH)}px`;
+      } else {
+        const h = addMenuEl.offsetHeight;
+        if (m0.top + h > bottom) {
+          shiftY = Math.min(m0.top + h - bottom, Math.max(0, m0.top - clipTop));
+          const avail = bottom - (m0.top - shiftY);
+          if (h > avail) {
+            addMenuEl.style.maxHeight = `${Math.max(Math.floor(avail), 88)}px`;
+            addMenuEl.style.overflowY = 'auto';
+          }
+        }
+      }
+      let shiftX = 0;
+      if (m0.left < left + PAD) shiftX = left + PAD - m0.left;
+      else if (m0.right > left + vw - PAD) shiftX = left + vw - PAD - m0.right;
+      if (shiftX || shiftY) addMenuEl.style.transform = `translate(${shiftX}px, ${-shiftY}px)`;
+    };
+    const enterDrill = () => {
+      if (!addMenuEl) return;
+      if (!drillBack) {
+        drillBack = document.createElement('div');
+        drillBack.className = 'lvl-add-item lvl-add-back';
+        drillBack.dataset.add = 'algo-back';
+        drillBack.textContent = '\u2039 Algorithm Layer';
+        drillList = document.createElement('div');
+        drillList.className = 'lvl-add-drill-list';
+        drillList.innerHTML = window.Vectura.UI.utils.renderAlgoMenuHTML(_ALGO_LIST, null);
+        drillList.querySelectorAll('.lvl-algo-sub-item').forEach((item) => {
+          const ico = item.querySelector('.lvl-algo-sub-ico');
+          if (ico) ico.style.color = this._algoMenuColor(item.getAttribute('data-algo-type'));
+        });
+        addMenuEl.append(drillBack, drillList);
+      }
+      addMenuEl.classList.add('is-drill');
+      _fitDrill();
+    };
+    const leaveDrill = () => {
+      drillBack?.remove();
+      drillList?.remove();
+      drillBack = null;
+      drillList = null;
+      if (!addMenuEl) return;
+      addMenuEl.classList.remove('is-drill');
+      addMenuEl.style.transform = '';
+      addMenuEl.style.width = '';
+      addMenuEl.style.maxHeight = '';
+      addMenuEl.style.overflowY = '';
+      ['position', 'top', 'left', 'right'].forEach((k) => { addMenuEl.style[k] = ''; });
+      _fitDrill();
+    };
+    // Single close path: add menu, drill-down and the mouse fly-out together.
+    const closeAddMenu = () => {
+      this.layerAddOpen = false;
+      addMenuEl?.classList.add('hidden');
+      leaveDrill();
+      if (addMenuEl) _dockAddMenu();
+      if (algoSubmenuEl.style.display === 'block') algoSubmenuEl.style.display = 'none';
+    };
+    window.Vectura?.KeyboardInset?.onViewportChange?.(_fitDrill);
+
     if (addBtn) {
       addBtn.onclick = (e) => {
         e.stopPropagation();
-        this.layerAddOpen = !this.layerAddOpen;
-        addMenuEl?.classList.toggle('hidden', !this.layerAddOpen);
+        if (this.layerAddOpen) closeAddMenu();
+        else {
+          this.layerAddOpen = true;
+          addMenuEl?.classList.remove('hidden');
+          _fitDrill();
+        }
       };
     }
 
@@ -654,11 +797,24 @@
     };
 
     addMenuEl?.addEventListener('click', (e) => {
+      if (e.target.closest('[data-add="algo-back"]')) {
+        e.stopPropagation();
+        leaveDrill();
+        return;
+      }
       const item = e.target.closest('.lvl-add-item, .lvl-algo-sub-item');
-      if (!item) return;
-      this.layerAddOpen = false;
-      addMenuEl.classList.add('hidden');
+      if (!item) {
+        // Group headers / padding inside the drill list must not fall through to the outside-click close.
+        if (e.target.closest('.lvl-add-drill-list')) e.stopPropagation();
+        return;
+      }
       const t = item.dataset.add;
+      if (t === 'algo-parent' && _isFingerInput()) {
+        e.stopPropagation();
+        enterDrill();
+        return;
+      }
+      closeAddMenu();
       if (t === 'layer') {
         if (this.app.pushHistory) this.app.pushHistory();
         const id = this.app.engine.addEmptyLayer?.();
@@ -666,6 +822,8 @@
         _toast('Added empty layer');
       } else if (t === 'algo') {
         _doAddAlgoLayer(item.dataset.algoType || this.getPreferredNewLayerType?.() || 'wavetable');
+      } else if (!t && item.dataset.algoType) {
+        _doAddAlgoLayer(item.dataset.algoType);
       } else if (t === 'algo-parent') {
         _doAddAlgoLayer(this.getPreferredNewLayerType?.() || 'wavetable');
       } else if (t === 'group') {
@@ -774,8 +932,8 @@
         drawOrderDragMoved = false;
         drawOrderDragStartX = e.clientX;
         drawOrderDragStartY = e.clientY;
-        drawOrderClickShift = e.shiftKey;
-        drawOrderInput.step = e.shiftKey ? '0.1' : '1';
+        drawOrderClickShift = window.Vectura.InputModifiers.readModifiers(e).shift;
+        drawOrderInput.step = window.Vectura.InputModifiers.readModifiers(e).shift ? '0.1' : '1';
       });
       window.addEventListener('pointermove', (e) => {
         if (!drawOrderDragActive) return;
@@ -789,19 +947,22 @@
             this.app.renderer?.clearSelection?.();
           }
         }
-        drawOrderInput.step = e.shiftKey ? '0.1' : '1';
+        drawOrderInput.step = window.Vectura.InputModifiers.readModifiers(e).shift ? '0.1' : '1';
       });
-      window.addEventListener('pointerup', () => {
+      const endDrawOrderDrag = (e) => {
         if (!drawOrderDragActive) return;
         drawOrderDragActive = false;
         drawOrderInput.step = '1';
         // A click that never dragged the playhead starts the plot-order playback,
         // scrubbing forward from wherever the handle currently sits. A Shift-click
         // plays back at 1/10 speed instead of the normal rate.
-        if (!drawOrderDragMoved) {
+        // A cancelled press (system interruption) never starts playback.
+        if (!drawOrderDragMoved && !(e && e.type === 'pointercancel')) {
           startDrawOrderPlayback(drawOrderClickShift);
         }
-      });
+      };
+      window.addEventListener('pointerup', endDrawOrderDrag);
+      window.addEventListener('pointercancel', endDrawOrderDrag);
     }
     // Eye → toggle the line-sort overlay (the order colouring + its legend) on the
     // primary canvas via its own non-persisted flag, so it is closed by default and
@@ -901,11 +1062,12 @@
     // The new LayerFilter menu primitive handles its own outside-click guard;
     // we still need to close the legacy add-menu + algo-submenu below.
     document.addEventListener('click', () => {
-      if (this.layerAddOpen) {
-        this.layerAddOpen = false;
-        addMenuEl?.classList.add('hidden');
-        algoSubmenuEl.style.display = 'none';
-      }
+      if (this.layerAddOpen) closeAddMenu();
+    });
+    // TUX-040b: a drag, pan or scroll outside never makes a click, so it must dismiss on pointerdown too.
+    // The trigger and the menu parts stay excluded so the toggle and the item taps still work.
+    window.Vectura.UI.utils.onOutsidePointer(document, (t) => !!(t && t.closest && t.closest('#layer-add-menu, #btn-add-layer, #lvl-algo-submenu')), () => {
+      if (this.layerAddOpen) closeAddMenu();
     });
   }
 
@@ -919,9 +1081,11 @@
     },
     bindShortcuts,
     handleTopMenuShortcut,
+    isModalOverlayOpen,
     installOn(proto) {
       proto.bindShortcuts = function() { return bindShortcuts.call(this); };
       proto.handleTopMenuShortcut = function(e) { return handleTopMenuShortcut.call(this, e); };
+      proto.isModalOverlayOpen = function() { return isModalOverlayOpen(); };
     },
   };
 })();

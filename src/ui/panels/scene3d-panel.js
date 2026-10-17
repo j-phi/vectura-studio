@@ -3474,7 +3474,8 @@
       const mw = moreMenu.offsetWidth || 0;
       const belowRoom = window.innerHeight - rect.bottom;
       const up = belowRoom < mh + 8 && rect.top > belowRoom;
-      const top = up ? Math.max(4, rect.top - mh - 4) : rect.bottom + 4;
+      // Clamp into the viewport: an anchor scrolled out of sight (or finger-tall rows) must not leave rows off screen.
+      const top = Math.max(4, Math.min(up ? rect.top - mh - 4 : rect.bottom + 4, window.innerHeight - mh - 4));
       let left = rect.left;
       if (left + mw > window.innerWidth - 4) left = Math.max(4, window.innerWidth - mw - 4);
       moreMenu.style.top = `${Math.round(top)}px`;
@@ -3721,7 +3722,10 @@
         const name = document.createElement('span');
         name.className = 'vs3-tree-name';
         name.textContent = obj.name || obj.id;
-        name.title = 'Double-click to rename';
+        // TUX-038: the hint promises a double-click, so a touch screen does not get it. Touch renames through
+        // the selected object's Name field (.vs3-name-input), which every object row selects on tap.
+        if (!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)) name.title = 'Double-click to rename';
+        // touch-alt: TUX-038 the selected object's Name field (.vs3-name-input) renames on touch
         name.addEventListener('dblclick', (e) => { e.stopPropagation(); startRename(name, obj); });
         row.appendChild(name);
 

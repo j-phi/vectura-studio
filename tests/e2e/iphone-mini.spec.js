@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const touch = require('./helpers/touch');
 
 // Coverage for the smallest commonly-targeted phone viewport (iPhone 13 Mini at
 // 375×812 logical pixels). Validates that the standard toolbar is anchored to
@@ -43,8 +44,15 @@ test.describe('iPhone mini layout — standard toolbar', () => {
 
     // 3. Every primary tool button is a reachable touch target. Two-row wrap
     //    is fine — we only require each button to be 40×40+ and visible.
-    const toolButtons = await page.locator('#tool-bar .tool-btn[data-tool]').all();
-    expect(toolButtons.length, 'standard tool buttons rendered').toBeGreaterThanOrEqual(8);
+    // TUX-013: the one-row rail shows only Vectura.TOOL_RAIL.phone slots plus the ⋯ overflow;
+    // the other tools are intentionally hidden (reachable through the All Tools drawer).
+    const railTools = await page.evaluate(() => window.Vectura.TOOL_RAIL.phone);
+    expect(railTools.length, 'phone rail list').toBeGreaterThanOrEqual(6);
+    const toolButtons = [
+      ...(await Promise.all(railTools.map((t) => page.locator(`#tool-bar .tool-btn[data-tool="${t}"]`).first()))),
+      page.locator('#tool-overflow-btn'),
+    ];
+    expect(toolButtons.length, 'rail tools + overflow rendered').toBeGreaterThanOrEqual(7);
 
     const boxes = [];
     for (const btn of toolButtons) {
@@ -54,12 +62,13 @@ test.describe('iPhone mini layout — standard toolbar', () => {
       expect(box, 'tool button has a layout box').not.toBeNull();
       expect(box.width, `tool button width (${await btn.getAttribute('data-tool')})`).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX);
       expect(box.height, `tool button height (${await btn.getAttribute('data-tool')})`).toBeGreaterThanOrEqual(MIN_TOUCH_TARGET_PX);
-      boxes.push({ tool: await btn.getAttribute('data-tool'), ...box });
+      boxes.push({ tool: (await btn.getAttribute('data-tool')) || 'overflow', ...box });
     }
 
     // 4. Adjacent visible buttons never overlap. Allow either horizontal-row or
     //    wrapped-rows layouts: same-row neighbors must have a positive x-gap;
     //    different-row neighbors must have a positive y-gap.
+    boxes.sort((a, b) => (Math.abs(a.y - b.y) < 8 ? a.x - b.x : a.y - b.y)); // config order is not DOM order
     const sameRow = (a, b) => Math.abs(a.y - b.y) < Math.min(a.height, b.height) / 2;
     for (let i = 1; i < boxes.length; i += 1) {
       const prev = boxes[i - 1];
@@ -85,7 +94,7 @@ test.describe('iPhone mini layout — standard toolbar', () => {
     //    actual hit target, so taps actually reach the tool.
     const occluded = await page.evaluate((tools) =>
       tools.flatMap((tool) => {
-        const btn = document.querySelector(`#tool-bar .tool-btn[data-tool="${tool}"]`);
+        const btn = tool === 'overflow' ? document.getElementById('tool-overflow-btn') : document.querySelector(`#tool-bar .tool-btn[data-tool="${tool}"]`);
         if (!btn) return [];
         if (btn.classList.contains('hidden')) return [];
         const r = btn.getBoundingClientRect();
@@ -99,5 +108,14 @@ test.describe('iPhone mini layout — standard toolbar', () => {
       })
     , boxes.map((b) => b.tool));
     expect(occluded, 'tool button centers are not occluded').toEqual([]);
+  });
+
+  test('a finger tap on a tool button activates that tool', async ({ page }) => {
+    const tools = await page.locator('#tool-bar .tool-btn[data-tool]:not(.hidden)').evaluateAll((els) => els.map((e) => e.getAttribute('data-tool')));
+    const current = await page.evaluate(() => window.app.ui.activeTool);
+    const next = tools.find((t) => t !== current && t !== 'select' && !t.startsWith('shape'));
+    expect(next, 'a second tool exists').toBeTruthy();
+    await touch.tap(page, page.locator(`#tool-bar .tool-btn[data-tool="${next}"]`));
+    await expect.poll(() => page.evaluate(() => window.app.ui.activeTool)).toBe(next);
   });
 });

@@ -1,6 +1,15 @@
 (() => {
   'use strict';
   const ns = (window.Vectura = window.Vectura || {});
+  // TUX-006: layout mode comes from the classifier (phone/tablet = mobile layout).
+  const tutorialIsMobileLayout = () => {
+    const LC = ns.LayoutClassifier;
+    if (LC && typeof LC.classify === 'function') {
+      const l = LC.classify(LC.readInput());
+      return l === 'phone' || l === 'tablet';
+    }
+    return document.body.classList.contains('mobile-layout');
+  };
 
   // ─────────────────────────────────────────────────────────────────
   //  Vectura Studio — onboarding tour engine
@@ -336,7 +345,7 @@
     positionAt(targetSel, placement, offsetX = 0, offsetY = 0) {
       if (!this._el) return;
       if (this._userMoved) return;
-      const isMobile = window.innerWidth < 900;
+      const isMobile = tutorialIsMobileLayout();
 
       if (placement === 'center' || isMobile) {
         const pw = this._el.offsetWidth  || 270;
@@ -413,13 +422,20 @@
     return [{ x: x1, y: y1 }, { x: x2, y: y2 }];
   }
 
+  // TUX-038: "double-click" is a mouse word. A touch screen gets "double-tap".
+  const tapWord = () => {
+    const coarse = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    return coarse ? 'double-tap' : 'double-click';
+  };
+
   const STEPS = [
     {
       title: 'Pick the Rings Algorithm',
       phases: [
         {
           title: 'Press & Hold the Algorithm Tool',
-          target: '.tool-btn[data-tool="algo-draw"]',
+          // TUX-013: phones keep this slot in the ⋯ overflow; point at ⋯ when the slot is hidden.
+          target: '.tool-btn[data-tool="algo-draw"]:not(.rail-overflowed):not(.rail-overflowed *), #tool-overflow-btn',
           placement: 'right',
           body: 'Buttons with a tiny <b>▸</b> corner mark hide a family of related tools. <b>Press and hold</b> the algorithm button.',
           circleAll: '.tool-btn[data-has-submenu]',
@@ -455,7 +471,10 @@
           target: '#viewport-container',
           highlight: [],
           placement: 'top',
-          body: 'Now <b>double-click</b> the canvas to fill it, or <b>drag</b> a region to draw rings there.',
+          // TUX-038: a finger double-taps. The text reads the pointer type each time the step shows.
+          get body() {
+            return `Now <b>${tapWord()}</b> the canvas to fill it, or <b>drag</b> a region to draw rings there.`;
+          },
           hideNext: true,
           completion: When.layerOfType('rings'),
         },
@@ -911,7 +930,7 @@
       if (phaseIndex === 0) this.popover.resetUserMoved();
       this.popover.setMovable(!!step.movable);
 
-      const placement = window.innerWidth < 900 ? 'center' : (phase.placement || 'right');
+      const placement = tutorialIsMobileLayout() ? 'center' : (phase.placement || 'right');
 
       if (step.sideQuest) {
         // Side quest: show "Detour: Title (phase/total)" instead of main step counter
@@ -1060,7 +1079,7 @@
         const step  = STEPS[this._stepIndex];
         const phase = step?.phases?.[this._phaseIndex];
         if (!phase) return;
-        const placement = window.innerWidth < 900 ? 'center' : (phase.placement || 'right');
+        const placement = tutorialIsMobileLayout() ? 'center' : (phase.placement || 'right');
         this.popover.positionAt(phase.target, placement, phase.offsetX || 0, phase.offsetY || 0);
         this.highlight.reflow();
         this.circles.reflow();
@@ -1220,4 +1239,5 @@
   }
 
   ns.Tutorial = new TutorialManager();
+  ns.Tutorial.getSteps = () => STEPS; // read-only access for tests
 })();

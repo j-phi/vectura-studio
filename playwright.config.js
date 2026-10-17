@@ -1,5 +1,41 @@
 const fs = require('fs');
 const { defineConfig, devices } = require('@playwright/test');
+const { CHROMIUM_PROJECTS, WEBKIT_PROJECTS, DEVICES } = require('./tests/e2e/touch/viewports');
+
+// Parallel worktrees must never cross-attach to another worktree's server
+// (reuseExistingServer greened against the wrong tree once). Set PW_PORT per lane.
+const PORT = Number(process.env.PW_PORT || 4173);
+
+const TOUCH_MATCH = /touch\/.*\.spec\.js$/;
+const touchUse = (d) => ({
+  viewport: { width: d.width, height: d.height },
+  deviceScaleFactor: d.dpr,
+  hasTouch: true,
+  isMobile: true,
+  userAgent: d.ua,
+});
+// TUX-058: the browser-chrome variants (-c devices) only serve the audit's canvas/overflow row,
+// so they run the `default` state only. Non-default audit states carry @audit-extra in the title.
+// TUX-033: iPhone landscape shows about one layer row, so row-tap and ring-drag specs tagged
+// @needs-tall-pane run on the other projects only (a project filter, not a runtime skip).
+const chromeVariantGrep = (name) => {
+  const parts = [];
+  if (/-chrome$/.test(name)) parts.push('@audit-extra');
+  if (/iphone-landscape/.test(name)) parts.push('@needs-tall-pane');
+  return parts.length ? { grepInvert: new RegExp(parts.join('|')) } : {};
+};
+const chromiumTouchProjects = Object.entries(CHROMIUM_PROJECTS).map(([name, dev]) => ({
+  name,
+  use: { ...devices['Desktop Chrome'], ...touchUse(DEVICES[dev]) },
+  testMatch: TOUCH_MATCH,
+  ...chromeVariantGrep(name),
+}));
+const webkitTouchProjects = Object.entries(WEBKIT_PROJECTS).map(([name, dev]) => ({
+  name,
+  use: { ...devices['Desktop Safari'], ...touchUse(DEVICES[dev]) },
+  testMatch: TOUCH_MATCH,
+  ...chromeVariantGrep(name),
+}));
 
 const systemChromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const useSystemChrome = !process.env.CI && fs.existsSync(systemChromePath);
@@ -18,14 +54,14 @@ module.exports = defineConfig({
   workers: 2,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:4173',
+    baseURL: `http://127.0.0.1:${PORT}`,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: process.env.CI ? 'retain-on-failure' : 'off',
   },
   webServer: {
-    command: 'node scripts/dev-server.js 4173',
-    port: 4173,
+    command: `node scripts/dev-server.js ${PORT}`,
+    port: PORT,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
@@ -37,7 +73,7 @@ module.exports = defineConfig({
         ...(useSystemChrome ? { channel: 'chrome' } : {}),
         viewport: { width: 1600, height: 1000 },
       },
-      testMatch: /feedback\.spec\.js$|smoke\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|ground-size\.spec\.js$|wavetable-image-noise\.spec\.js$/,
+      testMatch: /smoke\.spec\.js$|layout-boundary\.spec\.js$|type-tool-desktop\.spec\.js$|mask-shift-drag\.spec\.js$|stroke-options\.spec\.js$|context-menus-pointer-parity\.spec\.js$|tool-drawer\.spec\.js$|import-3d\.spec\.js$|text-panel-field-desktop\.spec\.js$|keyboard-inset-desktop\.spec\.js$|modals-desktop\.spec\.js$|hidden-actions-desktop\.spec\.js$|toolbar-handles-desktop\.spec\.js$|mirror-dial-mouse\.spec\.js$|reorder-mouse\.spec\.js$|delete-undo-desktop\.spec\.js$|file-open-desktop\.spec\.js$|paint-bucket-mouse\.spec\.js$|reset-view-desktop\.spec\.js$|toolbar-submenu-desktop\.spec\.js$|value-entry-desktop\.spec\.js$|shell-header\.spec\.js$|modifier-bar-desktop\.spec\.js$|canvas-backing-desktop\.spec\.js$|bottom-pane-desktop\.spec\.js$|petal-designer-undo-desktop\.spec\.js$|feedback\.spec\.js$|ground-size\.spec\.js$|direct-pick-desktop\.spec\.js$|wavetable-image-noise\.spec\.js$/,
     },
     {
       name: 'desktop-visual-chromium',
@@ -77,5 +113,8 @@ module.exports = defineConfig({
       },
       testMatch: /iphone-mini\.spec\.js$/,
     },
+    // PW_TOUCH_PROJECTS=0 drops the 11 touch projects (the scheduled-audit roster; the full
+    // touch roster runs in the sharded touch-e2e-nightly matrix instead).
+    ...(process.env.PW_TOUCH_PROJECTS === '0' ? [] : [...chromiumTouchProjects, ...webkitTouchProjects]),
   ],
 });

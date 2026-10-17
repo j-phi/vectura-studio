@@ -39,6 +39,9 @@ describe('Reduced-motion compliance', () => {
     // Contextual Task Bar attention pulse (Tools parity, Phase 2 Lane G).
     // Reduced-motion fallback: `.ctxbar-pulse { animation: none; }`.
     'ctxbar-pulse': ['ctxbar-pulse', 'ctxbar', 'reduce'],
+    // TUX-034 touch-hold ring fill + card pop (reduced motion: ring full at once, no pop).
+    'touch-hold-fill': ['touch-hold-ring-fill', 'reduce'],
+    'touch-hold-pop': ['touch-hold-pop', 'reduce'],
   };
 
   test('motion.css declares a prefers-reduced-motion: reduce block', () => {
