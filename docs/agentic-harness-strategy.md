@@ -101,7 +101,7 @@ Artifact reporting standard:
 | Rendering output or baselines | `npm run test:visual` | `npm run test:perf` for heavy-path changes |
 | CI-gating confidence pass | `npm run test:ci` | Add visual/perf runs before release-critical merges |
 
-Touch changes (TUX-057/061): UI changes for touch run `npm run test:e2e:touch` (7 Chromium `touch-*` and 4 WebKit `webkit-*` projects). Set `PW_PORT` per worktree. Use `tests/e2e/helpers/touch.js` for every finger gesture, and guard engine-specific assertions with `engineSupports` (`trustedMultiTouch`, `maxTouchPoints`, `nativeDefaultActions`) instead of `test.skip`. The project list, capabilities, approved deviations and the list of what WebKit simulation does not prove are in `docs/testing.md`. Real-device items stay in the section 4.2 device run.
+Touch changes (TUX-057/061): UI changes for touch run `npm run test:e2e:touch` (7 Chromium `touch-*` and 4 WebKit `webkit-*` projects). Set `PW_PORT` per worktree. Use `tests/e2e/helpers/touch.js` for every finger gesture, and guard engine-specific assertions with `engineSupports` (`trustedMultiTouch`, `maxTouchPoints`, `nativeDefaultActions`) instead of `test.skip`. The project list, capabilities, approved deviations and the list of what WebKit simulation does not prove are in `docs/testing.md`. Real-device items stay in the section 4.2 device run. CI runs only a touch smoke on PRs (`e2e-smoke`, two projects) and the full touch roster nightly (`touch-e2e-nightly`), so the local `test:e2e:touch` run is the PR-time evidence for touch changes.
 
 Reference:
 - Test policies and command details live in `docs/testing.md`.

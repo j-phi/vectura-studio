@@ -113,7 +113,8 @@ module.exports = defineConfig({
       },
       testMatch: /iphone-mini\.spec\.js$/,
     },
-    ...chromiumTouchProjects,
-    ...webkitTouchProjects,
+    // PW_TOUCH_PROJECTS=0 drops the 11 touch projects (the scheduled-audit roster; the full
+    // touch roster runs in the sharded touch-e2e-nightly matrix instead).
+    ...(process.env.PW_TOUCH_PROJECTS === '0' ? [] : [...chromiumTouchProjects, ...webkitTouchProjects]),
   ],
 });

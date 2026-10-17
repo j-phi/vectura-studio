@@ -18,6 +18,11 @@ Touch and Apple Pencil now work across the whole app on iPad and iPhone. Mouse a
 - **Follow-ups closed.** The Export legend gear sits above the footer on short phone landscape. The collapsed right pane header on touch-wide matches the rail width. The pen swatch colour input is the visible swatch, with no hidden ghost target. Device checklist row DEV-54 added.
 - **Stopped clauses.** TUX-010 req 6 (direct Document Setup entry on phones: Q5 keeps every menu behind one hamburger), TUX-034 req 10 (Paste: the app has no copy command) and TUX-058 linux baseline (needs the first CI artifact).
 
+#### CI and security (PR #102)
+- **PR browser smoke is bounded.** The `e2e-smoke` job runs `npm run test:e2e:smoke`: the non-touch projects plus harness, journeys and the fast target audit on `touch-iphone-portrait` and `webkit-ipad-portrait`. The full touch roster (11 projects, 7,319 tests) ran past the 60-minute limit; it now runs nightly as the 10-shard `touch-e2e-nightly` matrix. A manual `workflow_dispatch` run seeds the TUX-058 linux baseline.
+- **Font picker preview is built with DOM APIs.** The stroke-face preview SVG no longer passes the face name through `innerHTML` (CodeQL js/xss-through-dom). A face name such as `<img src=x onerror=…>` renders as text.
+- **Static guard reads HTML comments from the parser.** `touch-ok` markers in multiline `index.html` comments now count (CodeQL bad HTML filtering regexp).
+
 #### Shell and layout
 - **Fixed touch shell.** The page no longer scrolls, rubber-bands, pulls to refresh or zooms on pinch. Heights use `--app-vh` (`100dvh`). Safe-area insets (`--safe-top/right/bottom/left`) land on the header and the bottom-most chrome. (TUX-002/003/004/005)
 - **Layout classifier.** `Vectura.LayoutClassifier` returns `desktop`, `touch-wide`, `tablet` or `phone`. Body gets `phone-layout`, `tablet-layout`, `touch-wide-layout`, `touch-ui` and `phone-short` classes. (TUX-006/007)

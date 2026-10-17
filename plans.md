@@ -24,7 +24,8 @@ or completes.
 ## Now
 - **IN PROGRESS - touch remediation (TUX-001 to TUX-062, branch `touch/integration`, not merged).** All requirements are done in simulation on 11 Chromium and WebKit touch projects (target audit: 0 targets under 44 px on 9 baseline projects). Batch G landed (finger pick, canvas hold with Select All, outside-press menu dismissal, phone shape context bar). Remaining follow-ups:
   - Run the real-device checklist (`docs/touch-audit/device-checklist.md`, DEV-01 to DEV-57; results log is empty). The README may claim the touch release label only when every row is `pass` or `deferred-by-Jay`.
-  - Seed the `linux` section of `tests/e2e/touch/target-baseline.json` from the first CI or nightly artifact (`test-results/touch-target-measured-*.json`).
+  - Seed the `linux` section of `tests/e2e/touch/target-baseline.json`: after merge, run `gh workflow run test.yml --ref main`, then commit the `target-baseline.json` from the `touch-audit-measured` artifact (steps in `docs/testing.md`, TUX-058). Until then linux audit cells are record-only.
+  - PR CI runs only a touch smoke (`e2e-smoke`); the full touch roster runs nightly in `touch-e2e-nightly` (10 shards). Check its first runs after merge.
   - Stopped clauses: TUX-034 req 10 Paste (the app has no copy command); TUX-010 req 6 direct Document Setup entry on phones (Q5 keeps every top-level menu behind one hamburger).
   - Jay's calls: default the All Tools drawer to list view on touch (TUX-015); a View-menu "Reset toolbar position" entry (TUX-016).
   - Debt: one add-layer drill-down shared by the Layers panel and the context bar (TUX-035); `Renderer.setTool(tool, {temporary})` keeps a pen draft (PRH-300); log in `docs/pre-release-hardening-log.md`: move algorithm generation off the main thread (TUX-056) and a compact `images` payload in `.vectura` (TUX-055).

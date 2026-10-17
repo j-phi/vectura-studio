@@ -11,7 +11,7 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
   `maxWorkers` option with the `forks` pool. Local ordinary runs and CI use at most two workers; full local coverage uses one to bound retained audit memory. CLI worker overrides are explicit experiments, not the default.
 - E2E smoke: Playwright (`playwright.config.js`)
 - Runtime loader for browser IIFE modules: `tests/helpers/load-vectura-runtime.js`
-- E2E smoke projects run on Chromium for both desktop and touch-tablet coverage (tablet uses touch/mobile emulation).
+- The PR `e2e-smoke` job runs `npm run test:e2e:smoke` (`scripts/run-e2e-smoke.js`): every non-touch project (desktop, desktop-visual, touch-tablet, iPhone mini, all Chromium), then the touch smoke. The touch smoke is `harness.spec.js`, `journeys.spec.js` and the fast `target-audit.spec.js` subset on `touch-iphone-portrait` (Chromium) and `webkit-ipad-portrait` (WebKit). The full touch roster (11 projects, every touch spec) runs nightly in `touch-e2e-nightly`.
 - Local Playwright runs patch unsupported Unicode-regex bundles first; when managed Chromium assets are missing locally, the config falls back to installed Chrome and disables local failure-video capture. CI remains the authoritative environment for uploaded video artifacts.
 
 ## Local Commands
@@ -21,7 +21,9 @@ Workflow governance and documentation synchronization rules live in `docs/agenti
 - `npm run test:unit` runs those lifecycle checks, then deterministic unit tests.
 - `npm run test:integration` runs engine integration tests, including app bootstrap integrity assertions for Layers/Mathematical Model/About population.
 - `npm run test:e2e` runs the complete Playwright spec roster in one invocation, including mask-shift-drag. The roster includes the 11 touch projects.
+- `npm run test:e2e:smoke` runs the PR browser smoke set (the CI `e2e-smoke` job). `tests/unit/e2e-ci-roster.test.js` keeps it in step with `playwright.config.js` and the workflow.
 - `npm run test:e2e:touch` runs every touch project (11) against `tests/e2e/touch`.
+- `PW_TOUCH_PROJECTS=0` drops the 11 touch projects from the Playwright config (the nightly `scheduled-audit` browser roster uses it).
 - `npm run test:e2e:touch:chromium` runs the 7 `touch-*` projects. `npm run test:e2e:touch:webkit` runs the 4 `webkit-*` projects.
 - `npm run test:e2e:touch:install` installs the Playwright Chromium and WebKit browsers.
 - `npm run test:visual` runs SVG baseline regression checks.
@@ -202,7 +204,7 @@ Commands:
 | Command | Purpose |
 |---|---|
 | `npm run test:e2e:touch:audit` | Fast subset (9 states) in the 11 touch projects. Also part of `test:e2e:touch`. |
-| `npm run test:e2e:touch:audit:full` | All 26 states (`TOUCH_AUDIT_FULL=1`). Runs nightly in CI (`touch-audit-nightly`). |
+| `npm run test:e2e:touch:audit:full` | All 26 states (`TOUCH_AUDIT_FULL=1`). Runs nightly in CI (`touch-audit-nightly`). The fast subset runs in the PR `e2e-smoke` job (two projects). |
 | `TOUCH_BASELINE=update npm run test:e2e:touch:audit:full` | Lower the baseline. Never worsens a cell. |
 | `TOUCH_TARGET_MODE=final npm run test:e2e:touch:audit` | Compare to the final targets. Not enabled in CI. |
 
@@ -250,7 +252,9 @@ Update mode:
 - Keys are sorted. Each `project|state` cell is one line, so merge conflicts stay local. The write is atomic (lock, fresh read, temp file, rename).
 - Baseline conflicts: regenerate on the merged tree. Never merge numbers by hand.
 - The baseline is keyed `baseline[platform][project][state]`. Platform is `darwin` or `linux`. A missing `linux` section is a soft state (annotation `baseline-missing`) so the first Linux CI run can seed it. A missing `darwin` cell on macOS fails.
-- Seed `linux` from the CI or nightly artifact `test-results/touch-target-measured-<project>.json`.
+- The `linux` section is not seeded yet. CI stays green without it: every PR and nightly audit cell on linux is record-only (`baseline-missing` annotation).
+- To seed it, Jay runs the workflow by hand: `gh workflow run test.yml --ref <branch>` (the `workflow_dispatch` trigger must be on `main` first). In a manual run, `touch-audit-nightly` sets `TOUCH_BASELINE=update`, so the full audit writes every missing linux cell. Download the `touch-audit-measured` artifact, copy its `tests/e2e/touch/target-baseline.json` over the local file, check that only the `linux` section changed, and commit it. The per-project measurements are also in the artifact (`test-results/touch-target-measured-<project>.json`).
+- After the linux section exists, a worse linux cell fails CI like a darwin cell.
 
 Branch rules: this ratchet merges before any product lane. After each lane merge the integrator re-runs `TOUCH_BASELINE=update` on the merged tree and commits the lowered cells. A product lane merges `touch/integration` into its branch before its ratchet check. It lowers cells only through `TOUCH_BASELINE=update`.
 
@@ -265,7 +269,9 @@ Unit proof: `tests/unit/touch-target-ratchet.test.js` tests the comparator, the 
 ## CI Policy
 - `.github/workflows/test.yml` enforces:
   - Pull requests and `main`: full-scope `test:coverage` owns all Vitest correctness; historical unit/integration/visual check names depend on its success. `test:e2e`, uninstrumented `test:perf`, and lifecycle plus bounded feedback remain distinct executions. Coverage inventory reconciliation is a required check; a missing file is not a pass.
-  - Nightly schedule: visual/perf plus a complete audit/coverage run.
+  - Pull requests and `main`: `e2e-smoke` runs `test:e2e:smoke` (non-touch projects plus the touch smoke on two projects), not the full touch roster.
+  - Nightly schedule: visual/perf plus a complete audit/coverage run. Its browser roster sets `PW_TOUCH_PROJECTS=0`.
+  - Nightly schedule (and `workflow_dispatch`): `touch-e2e-nightly` runs every touch spec in all 11 touch projects as a 10-shard matrix (Playwright `--shard=i/10`; the coverage shard planner is Vitest-only). Each shard uploads `touch-e2e-shard-<i>`. `touch-audit-nightly` runs the full 26-state target audit. Neither job is in `lane-gate`: a red nightly does not block a PR, so check the nightly results before a touch release.
 - `.github/workflows/dependency-review.yml` reviews dependency diffs on pull requests.
 - `.github/workflows/codeql.yml` runs GitHub code scanning on `main`, pull requests to `main`, and a weekly schedule.
 - Playwright artifacts are uploaded from CI on every `e2e-smoke` run.
@@ -304,4 +310,4 @@ The critical feedback roster is `tests/helpers/feedback-roster.json`. It include
 - Heavy fixture: `tests/fixtures/touch/journey-heavy.vectura` (Flowfield at 3x density plus Attractor). Each layer tap blocks the main thread for 100 ms or more (1-2 s in Chromium device emulation). Both engines load it for J2. JRN-010 was a clock defect, fixed by TUX-038 req 5 (the rename reads `event.timeStamp`). The Chromium double-tap therefore carries hardware touch times through CDP (`helpers/touch.js` `doubleTap`): CDP waits for the page to handle the first tap before it sends the second, so without the stamp a busy main thread reads as two slow taps that no real finger makes. WebKit cannot stamp a trusted touch; it runs the document about 20x faster, so its tap round trip stays inside the 350 ms window. J2 rename-open passes when the input shows within 6 s; the latency is not bounded, because it measures machine load, not the double-tap contract. The light fixture is `journey-basic.vectura`. `journey-heavy-webkit.vectura` is no longer loaded.
 - Budgets: `boot` (page load, app init, fixture load) has its own 45 s budget. Each later step has 5 s (J2: 20 s, because every step on a heavy document is slow by design). The benign `ResizeObserver loop completed with undelivered notifications` page error is noise and never pins a cell.
 - Guards: `fingerDrag`, `fingerPinch` and `fingerPan` also check that the end points lie on the device screen (self-test (v)). The object-move steps (`j3.move`, `j4.move`, `j4.undo`, `j4.redo`) assert WORLD movement of the object with `renderer.offsetX/offsetY` unchanged (self-test (vi)). A one-finger drag that only pans the view fails them.
-- Runtime: the journeys spec takes about 8.5 minutes over all 11 projects with 2 workers on a shared machine. TUX-061 requires every touch spec in every WebKit project, so no PR subset exists. Escalate to Jay before adding one.
+- Runtime: the journeys spec takes about 8.5 minutes over all 11 projects with 2 workers on a shared machine. TUX-061 (every touch spec in every WebKit project) is met by the nightly `touch-e2e-nightly` matrix. The PR `e2e-smoke` job runs only the touch smoke (harness, journeys, fast audit) on one Chromium and one WebKit project: the full roster (7,319 touch tests) exceeded the 60-minute PR job limit. Change the smoke set only with Jay's approval.

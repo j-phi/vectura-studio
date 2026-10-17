@@ -313,14 +313,14 @@
     // NO CSS representation, so its previews used to fall back to the generic UI
     // font — misrepresenting the single-stroke letterforms. Draw the face name from
     // the actual StrokeFont outline instead, so the menu preview matches the plotted
-    // glyphs. Returns an inline <svg> string, or '' when unavailable (→ CSS text).
+    // glyphs. Returns an <svg> element, or null when unavailable (→ CSS text).
     const strokePreviewSvg = (v, label) => {
-      if (!SF.layout) return '';
+      if (!SF.layout) return null;
       const styleId = (v === builtinFamily.id) ? styleIds[0] : (SF.isStyle && SF.isStyle(v) ? v : styleIds[0]);
       let lay = null;
       try { lay = SF.layout(String(label || faceName(v)), { font: styleId, size: 100 }); } catch (_) { lay = null; }
       const paths = lay && lay.paths;
-      if (!Array.isArray(paths) || !paths.length) return '';
+      if (!Array.isArray(paths) || !paths.length) return null;
       let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
       let d = '';
       for (const stroke of paths) {
@@ -332,13 +332,25 @@
           d += `${i === 0 ? 'M' : 'L'}${pt.x.toFixed(2)} ${pt.y.toFixed(2)}`;
         }
       }
-      if (!d || !Number.isFinite(minX) || maxX <= minX || maxY <= minY) return '';
+      if (!d || !Number.isFinite(minX) || maxX <= minX || maxY <= minY) return null;
       const w = maxX - minX; const h = maxY - minY;
       // Height matches the option-name line; width follows the glyph aspect ratio.
       const H = 15; const W = Math.max(1, Math.round(H * (w / h)));
-      return `<svg class="vtp-fp-opt-svg" width="${W}" height="${H}" viewBox="${minX.toFixed(2)} ${minY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)}" `
-        + `role="img" aria-label="${faceName(v)}" fill="none" stroke="currentColor" stroke-width="4" `
-        + `stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"><path d="${d}"/></svg>`;
+      // Built with DOM APIs, never markup: the face name is layer state (any string a
+      // loaded file holds), so it must reach the DOM as an attribute value only.
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg');
+      const attrs = {
+        class: 'vtp-fp-opt-svg', width: String(W), height: String(H),
+        viewBox: `${minX.toFixed(2)} ${minY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)}`,
+        role: 'img', 'aria-label': faceName(v), fill: 'none', stroke: 'currentColor', 'stroke-width': '4',
+        'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke',
+      };
+      Object.keys(attrs).forEach((k) => svg.setAttribute(k, attrs[k]));
+      const pathEl = document.createElementNS(NS, 'path');
+      pathEl.setAttribute('d', d);
+      svg.appendChild(pathEl);
+      return svg;
     };
     const ensureWeb = (v) => {
       if (isWeb(v) && GF.ensureFont) {
@@ -1211,9 +1223,9 @@
     function syncFontTrigger() {
       if (!fpName) return;
       const v = layer.params.font;
-      const svg = isWeb(v) ? '' : strokePreviewSvg(v);
-      if (svg) { fpName.innerHTML = svg; fpName.style.fontFamily = ''; fpName.setAttribute('aria-label', faceName(v)); }
-      else { fpName.innerHTML = ''; fpName.removeAttribute('aria-label'); fpName.textContent = faceName(v); fpName.style.fontFamily = faceCss(v); }
+      const svg = isWeb(v) ? null : strokePreviewSvg(v);
+      if (svg) { fpName.replaceChildren(svg); fpName.style.fontFamily = ''; fpName.setAttribute('aria-label', faceName(v)); }
+      else { fpName.removeAttribute('aria-label'); fpName.textContent = faceName(v); fpName.style.fontFamily = faceCss(v); }
       if (fpTagMini) fpTagMini.textContent = faceCat(v);
     }
     function makeOption(v) {
@@ -1227,8 +1239,8 @@
       star.innerHTML = `<svg viewBox="0 0 24 24" fill="${fav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.6"><path d="M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.9 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"/></svg>`;
       listen(star, 'click', (ev) => { ev.stopPropagation(); const i = favs.indexOf(v); if (i >= 0) favs.splice(i, 1); else favs.push(v); lsSet(LS.favs, favs); rebuildList(); });
       const nm = document.createElement('span'); nm.className = 'vtp-fp-opt-name';
-      const nmSvg = isWeb(v) ? '' : strokePreviewSvg(v);
-      if (nmSvg) { nm.innerHTML = nmSvg; nm.setAttribute('aria-label', faceName(v)); }
+      const nmSvg = isWeb(v) ? null : strokePreviewSvg(v);
+      if (nmSvg) { nm.appendChild(nmSvg); nm.setAttribute('aria-label', faceName(v)); }
       else { nm.textContent = faceName(v); nm.style.fontFamily = faceCss(v); }
       const tg = document.createElement('span'); tg.className = 'vtp-fp-tag'; tg.textContent = faceCat(v);
       row.appendChild(star); row.appendChild(nm); row.appendChild(tg);

@@ -243,6 +243,15 @@ describe('R9 icon-only button without aria-label', () => {
     expect(count(rule, page('<!-- <button></button> -->'), 'index.html')).toBe(0);
     expect(count(rule, page('\n<!-- touch-ok: TUX-039 reason -->\n<button></button>'), 'index.html')).toBe(0);
   });
+  test('a touch-ok marker inside a multiline html comment is read (CodeQL bad-tag-filter)', () => {
+    const src = page('\n<!--\n  touch-ok: TUX-039 reason\n-->\n<button></button>');
+    const ok = R.markers(src, 'index.html').touchOk;
+    expect(ok.length).toBe(1);
+    expect(ok[0].valid).toBe(true);
+    expect(count(rule, src, 'index.html')).toBe(0);
+    // A marker-like string outside any comment is not a marker.
+    expect(R.markers(page('<p>touch-ok: TUX-039 x</p>'), 'index.html').touchOk.length).toBe(0);
+  });
 });
 
 describe('R10 raw modifier flags outside the helper', () => {

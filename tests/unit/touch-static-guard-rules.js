@@ -485,13 +485,16 @@ function scanHtml(text, rel) {
       const iconOnly = t === '' || !/\p{L}/u.test(t);
       if (iconOnly && !el.hasAttribute('aria-label') && !el.hasAttribute('aria-labelledby')) add('R9', el);
     });
-    // markers: HTML comments, line based
+    // markers: HTML comments from the parser (not a regexp), so a comment that spans
+    // lines or ends in `--!>` is read exactly as the browser reads it.
     const lines = text.split('\n');
     const comments = [];
-    lines.forEach((ln, i) => {
-      const m = /<!--(.*?)(?:-->|$)/.exec(ln);
-      if (m) comments.push({ text: m[1], startLine: i + 1, endLine: i + 1, trailing: ln.slice(0, m.index).trim() !== '' });
-    });
+    const walker = doc.createTreeWalker(doc, dom.window.NodeFilter.SHOW_COMMENT);
+    for (let c = walker.nextNode(); c; c = walker.nextNode()) {
+      const loc = dom.nodeLocation(c);
+      if (!loc) continue;
+      comments.push({ text: c.data, startLine: loc.startLine, endLine: loc.endLine, trailing: isTrailing(lines, loc.startLine, loc.startCol - 1) });
+    }
     const markers = markersFromComments(comments);
     hits = applyTouchOk(hits, markers);
     return { hits, markers, stats: {} };
