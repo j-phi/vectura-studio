@@ -84,6 +84,19 @@ describe('R3 mousedown without pointerdown', () => {
     expect(count(rule, "c.addEventListener('pointerdown', d); e.addEventListener('mousedown', m);")).toBe(1);
     expect(count(rule, "el.addEventListener('mousedown', start);")).toBe(1);
   });
+  test('the pairing is scoped: an unrelated pointerdown on a same-named variable in another function does not pair', () => {
+    const unrelated = [
+      'function a() { const el = pick(); el.addEventListener(\'mousedown\', go); }',
+      'function b() { const el = other(); el.addEventListener(\'pointerdown\', go2); }',
+    ].join('\n');
+    expect(count(rule, unrelated)).toBe(1);
+    // module-level pointerdown does not pair a mousedown inside a function either
+    expect(count(rule, "el.addEventListener('pointerdown', d); function a() { el.addEventListener('mousedown', m); }")).toBe(1);
+    // the same function (and a nested listener block of it) still pairs
+    expect(count(rule, "function a() { el.addEventListener('pointerdown', d); el.addEventListener('mousedown', m); }")).toBe(0);
+    expect(count(rule, "function a() { el.addEventListener('pointerdown', d); } function b() { el.addEventListener('pointerdown', d); el.onmousedown = m; }")).toBe(0);
+    expect(count(rule, "const init = () => { el.onmousedown = m; el.addEventListener('pointerdown', d); };")).toBe(0);
+  });
   test('a neutral handler (stopPropagation only) is compliant', () => {
     expect(count(rule, "inp.addEventListener('mousedown', (e) => e.stopPropagation());")).toBe(0);
     expect(count(rule, "inp.addEventListener('mousedown', (e) => { e.stopPropagation(); start(e); });")).toBe(1);

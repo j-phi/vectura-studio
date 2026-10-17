@@ -257,6 +257,20 @@ function nearestFn(anc) {
   return null;
 }
 
+// The function a registration belongs to for R3 pairing. A callback handed straight to an array iterator
+// (TYPES.forEach((t) => d.addEventListener(t, ...))) is part of its caller, so it is skipped.
+const ITERATORS = new Set(['forEach', 'map', 'filter', 'some', 'every', 'flatMap']);
+function pairScope(anc) {
+  for (let i = anc.length - 1; i >= 0; i--) {
+    const n = anc[i];
+    if (!isFn(n)) continue;
+    const parent = anc[i - 1];
+    if (parent && parent.type === 'CallExpression' && parent.arguments.includes(n) && ITERATORS.has(propName(parent.callee))) continue;
+    return n;
+  }
+  return null;
+}
+
 function markKeyHandler(info, handler) {
   if (isFn(handler)) info.keyRegisteredFns.add(handler);
   else if (handler && handler.type === 'Identifier') info.keyRegisteredNames.add(handler.name);
@@ -356,11 +370,13 @@ function jsHits(info, rel) {
     add('R2', r.line);
   });
   // R3
-  // A mousedown is compliant when pointerdown is registered on the same target text (a fallback or
-  // a ghost-click swallow beside the pointer path) or when its handler is neutral (stopPropagation only).
-  const downTargets = new Set(regs.filter((r) => r.event === 'pointerdown').map((r) => r.target));
+  // A mousedown is compliant when pointerdown is registered on the same receiver expression in the SAME function
+  // (a fallback or a ghost-click swallow beside the pointer path) or when its handler is neutral (stopPropagation
+  // only). A pointerdown on a same-named variable in another function does not pair: round 2 of the static guard.
+  const downRegs = regs.filter((r) => r.event === 'pointerdown');
   evs(['mousedown']).forEach((r) => {
-    if (r.target != null && downTargets.has(r.target)) return;
+    const scope = pairScope(r.anc);
+    if (r.target != null && downRegs.some((d) => d.target === r.target && pairScope(d.anc) === scope)) return;
     if (isNeutralHandler(r.handler, info)) return;
     add('R3', r.line);
   });
