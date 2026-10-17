@@ -63,15 +63,11 @@
     const minHeight = 80;
     const maxHeight = 360;
 
-    // TUX-051: remember the last pointer so a touch or pen press is told apart from a mouse press.
-    // MouseEvents (synthetic or compat) carry no pointerType, so the recorded pointerdown decides.
-    // Window capture runs before the touch-to-mouse bridge's document-capture listener (ui-touch.js).
+    // Q27: Pointer Events with pointer capture. A touch or pen press waits for the slop before it
+    // engages (TUX-051); a mouse press engages at once (desktop parity). pointercancel restores the
+    // height and collapsed state the press started with.
     // TODO(TUX-008): route collapse/expand through the pane-state controller once it lands.
-    let lastDown = null;
-    window.addEventListener('pointerdown', (e) => {
-      lastDown = { type: e.pointerType, target: e.target, t: performance.now() };
-    }, { capture: true, passive: true });
-    const TOUCH_WINDOW_MS = 1000;
+    let dragging = false;
     const slopPx = () => {
       const c = G.Vectura?.UI_CONSTANTS?.TOUCH_GESTURE;
       const v = Number(c && c.touchDragSlopPx);
@@ -79,13 +75,15 @@
     };
 
     const startDrag = (e) => {
-      const isTouch = !!lastDown
-        && (performance.now() - lastDown.t) < TOUCH_WINDOW_MS
-        && (lastDown.type === 'touch' || lastDown.type === 'pen');
-      // WebKit retargets the compat mousedown of a nearby tap onto the resizer: ignore it.
-      if (isTouch && !(lastDown.target instanceof Node && resizer.contains(lastDown.target))) return;
+      if (dragging) return;
+      dragging = true;
+      const isTouch = e.pointerType === 'touch' || e.pointerType === 'pen';
       e.preventDefault();
+      const pointerId = e.pointerId;
       const startY = e.clientY;
+      const wasCollapsed = bottomPane.classList.contains('bottom-pane-collapsed');
+      const heightVarBefore = document.documentElement.style.getPropertyValue('--bottom-pane-height');
+      try { resizer.setPointerCapture(pointerId); } catch (_) { /* pointer already gone */ }
       let engaged = !isTouch; // mouse: expand on press (desktop parity)
       let startHeight = 0;
       let lastHeight = 0;
@@ -99,6 +97,7 @@
       if (engaged) engage();
 
       const onMove = (ev) => {
+        if (ev.pointerId !== pointerId) return;
         const dy = ev.clientY - startY;
         if (!engaged) {
           if (Math.abs(dy) < slopPx()) return;
@@ -108,20 +107,33 @@
         document.documentElement.style.setProperty('--bottom-pane-height', `${next}px`);
         lastHeight = next;
       };
-      const onUp = () => {
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
+      const finish = (ev, cancelled) => {
+        if (ev.pointerId !== pointerId) return;
+        dragging = false;
+        resizer.removeEventListener('pointermove', onMove);
+        resizer.removeEventListener('pointerup', onUp);
+        resizer.removeEventListener('pointercancel', onCancel);
+        try { resizer.releasePointerCapture(pointerId); } catch (_) { /* already released */ }
         if (!engaged) return; // a touch tap that never passed the slop changes nothing
         resizer.classList.remove('active');
+        if (cancelled) {
+          if (heightVarBefore) document.documentElement.style.setProperty('--bottom-pane-height', heightVarBefore);
+          else document.documentElement.style.removeProperty('--bottom-pane-height');
+          bottomPane.classList.toggle('bottom-pane-collapsed', wasCollapsed);
+          return;
+        }
         SETTINGS.bottomPaneHeight = Math.round(lastHeight);
         SETTINGS.bottomPaneCollapsed = false;
         this.app?.persistPreferencesDebounced?.();
       };
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp);
+      const onUp = (ev) => finish(ev, false);
+      const onCancel = (ev) => finish(ev, true);
+      resizer.addEventListener('pointermove', onMove);
+      resizer.addEventListener('pointerup', onUp);
+      resizer.addEventListener('pointercancel', onCancel);
     };
 
-    resizer.addEventListener('mousedown', startDrag);
+    resizer.addEventListener('pointerdown', startDrag);
   }
 
   UI.BottomPane = {

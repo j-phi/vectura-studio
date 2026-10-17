@@ -340,13 +340,20 @@
     const minRight = 200;
     const maxRight = 520;
 
+    // Q27: Pointer Events with pointer capture (mouse, touch and pen share one path). A second
+    // pointer is ignored while a drag runs; pointercancel restores the width the drag started at.
+    let dragging = false;
     const startDrag = (e, side) => {
+      if (dragging) return;
+      dragging = true;
       e.preventDefault();
+      const pointerId = e.pointerId;
       const startX = e.clientX;
       const startLeft = leftPane.getBoundingClientRect().width;
       const startRight = rightPane.getBoundingClientRect().width;
       const resizer = side === 'left' ? leftResizer : rightResizer;
       resizer.classList.add('active');
+      try { resizer.setPointerCapture(pointerId); } catch (_) { /* pointer already gone */ }
       // Dragging a resizer shows both panes (docked layouts only; the resizers are hidden on drawers).
       const ps = UI.Workspace.paneState;
       if (ps && ps.layout()) {
@@ -368,7 +375,11 @@
       const capRight = caps && Number.isFinite(caps.right) ? Math.min(maxRight, caps.right) : maxRight;
       let lastWidth = side === 'left' ? startLeft : startRight;
 
+      const widthVar = side === 'left' ? '--pane-left-width' : '--pane-right-width';
+      const widthVarBefore = document.documentElement.style.getPropertyValue(widthVar);
+
       const onMove = (ev) => {
+        if (ev.pointerId !== pointerId) return;
         const dx = ev.clientX - startX;
         if (side === 'left') {
           const next = Math.max(minLeft, Math.min(capLeft, startLeft + dx));
@@ -381,22 +392,34 @@
         }
       };
 
-      const onUp = () => {
+      const finish = (ev, cancelled) => {
+        if (ev.pointerId !== pointerId) return;
+        dragging = false;
         resizer.classList.remove('active');
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
+        resizer.removeEventListener('pointermove', onMove);
+        resizer.removeEventListener('pointerup', onUp);
+        resizer.removeEventListener('pointercancel', onCancel);
+        try { resizer.releasePointerCapture(pointerId); } catch (_) { /* already released */ }
+        if (cancelled) {
+          if (widthVarBefore) document.documentElement.style.setProperty(widthVar, widthVarBefore);
+          else document.documentElement.style.removeProperty(widthVar);
+          return;
+        }
         const rounded = Math.round(lastWidth);
         if (side === 'left') SETTINGS.paneLeftWidth = rounded;
         else SETTINGS.paneRightWidth = rounded;
         this.app?.persistPreferencesDebounced?.();
       };
+      const onUp = (ev) => finish(ev, false);
+      const onCancel = (ev) => finish(ev, true);
 
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp);
+      resizer.addEventListener('pointermove', onMove);
+      resizer.addEventListener('pointerup', onUp);
+      resizer.addEventListener('pointercancel', onCancel);
     };
 
-    leftResizer.addEventListener('mousedown', (e) => startDrag(e, 'left'));
-    rightResizer.addEventListener('mousedown', (e) => startDrag(e, 'right'));
+    leftResizer.addEventListener('pointerdown', (e) => startDrag(e, 'left'));
+    rightResizer.addEventListener('pointerdown', (e) => startDrag(e, 'right'));
   }
 
   UI.Workspace = {

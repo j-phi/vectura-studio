@@ -5913,6 +5913,7 @@
   width: 6px;
   flex: 0 0 auto;
   cursor: col-resize;
+  touch-action: none; /* Q27: pointer-event drag, a finger on the strip must not pan the page */
   background: transparent;
   position: relative;
   z-index: 15;
@@ -5968,6 +5969,7 @@
 .bottom-resizer {
   height: 6px;
   cursor: row-resize;
+  touch-action: none; /* Q27 */
   background: transparent;
   position: relative;
   z-index: 25;
@@ -5990,6 +5992,19 @@
   .bottom-resizer:hover::before {
   opacity: 0.6;
 }
+}
+
+/* Q27: a finger needs a bigger hit strip than the 6 px bar. Chromium retargets a touch on a thin element
+ * that has no mouse handler to the nearest one that has (the canvas), so the pointer-event bottom
+ * resizer extends its hit area upward with a transparent strip. The side resizers do not: the pane
+ * collapse toggles sit at the pane edge and a strip would cover them. */
+@media (pointer: coarse) {
+  .bottom-resizer::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    inset-block: -12px 0; /* upward only: the bottom pane header sits below the bar */
+  }
 }
 
 .layer-grip {
