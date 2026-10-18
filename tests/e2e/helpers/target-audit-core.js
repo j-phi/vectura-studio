@@ -61,7 +61,9 @@ function hitAreaInPage(el, opts) {
     // TUX-041 B5: an open dropdown that does not contain the target is a transient dismiss-on-outside-tap layer, not a neighbour
     // that owns the pixels (the same rule as the Q13 backdrop). A rail button that the menu panel edge cuts is measured at its
     // own size: the size does not depend on which menu is open. The centre sample (0, 0) is never excused.
-    if ((dx || dy) && t && t.closest) {
+    // Static-guard round 3: a [data-touch-target] strip (the panel resizers) gets no such excuse. A menu pixel is not a
+    // pixel the strip owns, so a strip the menu part-covers is measured on its uncovered segment only.
+    if ((dx || dy) && t && t.closest && !el.hasAttribute('data-touch-target')) {
       const m = t.closest('.top-menu-panel.open, .menu-dropdown.open');
       if (m && !m.contains(el)) return true;
     }

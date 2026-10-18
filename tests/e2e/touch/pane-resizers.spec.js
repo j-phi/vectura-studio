@@ -99,4 +99,37 @@ test.describe('panel resizers by finger', () => {
     await sleep(500);
     expect(await paneH(page, 'bottom-pane') - h0).toBeGreaterThan(20);
   });
+  // Static-guard round 3: an open top menu must not part-cover a resizer strip. A part-covered strip leaves a sliver
+  // (9 px on coarse-wide) that a trusted finger drag hits: it resized the pane (290 -> 250) and closed the menu.
+  for (const menu of ['object', 'view', 'help']) {
+    test(`with the ${menu} menu open no resizer sliver under 24 px is tappable`, async ({ page }, testInfo) => {
+      test.skip(!WIDE.includes(testInfo.project.name), 'docked panes with a resizer: touch-wide only');
+      await gotoApp(page);
+      for (const side of ['left', 'right']) {
+        await page.evaluate(() => { document.querySelector('.top-menu-panel.open') && document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
+        await tap(page, page.locator(`#btn-menu-${menu}`));
+        await sleep(400);
+        expect(await page.evaluate(() => !!document.querySelector('.top-menu-panel.open')), 'the menu is open').toBe(true);
+        const m = await page.evaluate((id) => {
+          const e = document.getElementById(id); const r = e.getBoundingClientRect(); const y = Math.round(r.top + r.height / 2);
+          const runs = []; let start = null;
+          for (let x = Math.floor(r.left) - 2; x <= Math.ceil(r.right) + 2; x += 1) {
+            const own = document.elementFromPoint(x, y) === e;
+            if (own && start === null) start = x;
+            if (!own && start !== null) { runs.push({ from: start, w: x - start }); start = null; }
+          }
+          const p = document.querySelector('.top-menu-panel.open').getBoundingClientRect();
+          return { runs, panel: { l: p.left, r: p.right, t: p.top, b: p.bottom }, vw: window.innerWidth, y };
+        }, `${side}-resizer`);
+        for (const run of m.runs) expect(run.w, `${side} resizer run ${JSON.stringify(run)} with the ${menu} menu open`).toBeGreaterThanOrEqual(24);
+        expect(m.panel.l, 'the menu stays on screen').toBeGreaterThanOrEqual(0);
+        expect(m.panel.r, 'the menu stays on screen').toBeLessThanOrEqual(m.vw);
+        // A trusted finger on every tappable pixel of the strip's row at the open menu's edge never lands on a short sliver.
+        if (side === 'left') await spy(page); else await page.evaluate(() => { window.__downs = []; });
+        for (const run of m.runs) await page.touchscreen.tap(run.from + 1, m.y);
+        const hit = (await downs(page)).filter((d) => d === `${side}-resizer`).length;
+        expect(hit, 'every tappable run is a full strip').toBe(m.runs.length);
+      }
+    });
+  }
 });

@@ -1,5 +1,5 @@
 {
-  "_measuredAt": "5ab9fa4e",
+  "_measuredAt": "a76f7da9",
   "darwin": {
     "touch-coarse-wide|bottom-pane-open": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":0,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":44,"canvasPct":40.9,"scaleOk":true},
     "touch-coarse-wide|color-picker": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":49,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":4,"canvasPct":0,"scaleOk":true},
@@ -13,7 +13,7 @@
     "touch-coarse-wide|menu-file": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":0,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":46,"canvasPct":45.4,"scaleOk":true},
     "touch-coarse-wide|menu-help": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":0,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":43,"canvasPct":46.6,"scaleOk":true},
     "touch-coarse-wide|menu-insert": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":0,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":41,"canvasPct":47.2,"scaleOk":true},
-    "touch-coarse-wide|menu-object": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":0,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":44,"canvasPct":38.1,"scaleOk":true},
+    "touch-coarse-wide|menu-object": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":0,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":45,"canvasPct":38.1,"scaleOk":true},
     "touch-coarse-wide|menu-view": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":0,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":44,"canvasPct":45.1,"scaleOk":true},
     "touch-coarse-wide|modal-document-setup": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":2,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":57,"canvasPct":47.7,"scaleOk":true},
     "touch-coarse-wide|modal-export": {"hOverflow":0,"vOverflow":0,"innerWidthExcess":0,"under44":0,"under24":0,"wcag258Fail":0,"iosZoom":0,"covered":67,"safeUnprotected":0,"ghost":0,"stranded":0,"pageErrors":0,"reachable":25,"canvasPct":0,"scaleOk":true},
