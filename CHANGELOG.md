@@ -18,6 +18,12 @@ Touch and Apple Pencil now work across the whole app on iPad and iPhone. Mouse a
 - **Follow-ups closed.** The Export legend gear sits above the footer on short phone landscape. The collapsed right pane header on touch-wide matches the rail width. The pen swatch colour input is the visible swatch, with no hidden ghost target. Device checklist row DEV-54 added.
 - **Stopped clauses.** TUX-010 req 6 (direct Document Setup entry on phones: Q5 keeps every menu behind one hamburger), TUX-034 req 10 (Paste: the app has no copy command) and TUX-058 linux baseline (needs the first CI artifact).
 
+#### Static guard at zero (TUX-060)
+- **The touch static guard is at 0 hits.** The baseline file is `{}`. The panel resizers (left, right, bottom) use Pointer Events with pointer capture and `touch-action: none`; a cancel restores the size. Mouse drag is unchanged. (Q27)
+- **Range inputs.** The guard now checks that the global touch-safe range controller and the coarse CSS exist, and flags only a range input that opts out of them. (Q26)
+- **Modifier reads.** Canvas wheel and the layer drag-and-drop read their modifiers through the shared reader. Ctrl+wheel still zooms, Cmd+wheel still pans.
+- **Small fixes.** The generator trigger has an accessible name. The pattern storage dot has a static label instead of a hover timer. The unused `layer-item` component is deleted. A `touch-alt` marker must now cite its touch equivalent.
+
 #### CI and security (PR #102)
 - **PR browser smoke is bounded.** The `e2e-smoke` job runs `npm run test:e2e:smoke`: the non-touch projects plus harness, journeys and the fast target audit on `touch-iphone-portrait` and `webkit-ipad-portrait`. The full touch roster (11 projects, 7,319 tests) ran past the 60-minute limit; it now runs nightly as the 10-shard `touch-e2e-nightly` matrix. A manual `workflow_dispatch` run seeds the TUX-058 linux baseline and a linux TUX-059 journey ledger (`journey-status.linux.json`); until it exists, linux journey cells are record-only. Evidence screenshots in e2e specs use repo-relative paths, not `/Users/jayphi/...`.
 - **Font picker preview is built with DOM APIs.** The stroke-face preview SVG no longer passes the face name through `innerHTML` (CodeQL js/xss-through-dom). A face name such as `<img src=x onerror=…>` renders as text.

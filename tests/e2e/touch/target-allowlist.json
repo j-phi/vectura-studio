@@ -8,5 +8,15 @@
     "selector": ".vtp-fp-pop.kb-compact .vtp-fp-opt",
     "reason": "keyboard-open landscape: 3 rows needed; 24px meets WCAG 2.5.8 floor",
     "stateOnly": true
+  },
+  {
+    "selector": "#left-resizer",
+    "reason": "static-guard round 2 (orchestrator decision, Jay may override): the side pane resizer strip is 24 px wide (the WCAG 2.5.8 floor), not 44. A wider strip covers the pane controls beside it (the Layers filter button sits 13 px from the pane edge) or the canvas share (iPad landscape docked 46.0 against the 45 floor). It stays clear of the pane toggles.",
+    "stateOnly": true
+  },
+  {
+    "selector": "#right-resizer",
+    "reason": "static-guard round 2 (orchestrator decision, Jay may override): the side pane resizer strip is 24 px wide (the WCAG 2.5.8 floor), not 44. A wider strip covers the pane controls beside it (the Layers filter button sits 13 px from the pane edge) or the canvas share (iPad landscape docked 46.0 against the 45 floor). It stays clear of the pane toggles.",
+    "stateOnly": true
   }
 ]
