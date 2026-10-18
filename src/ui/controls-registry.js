@@ -1106,7 +1106,7 @@
     ],
     rainfall: [
       { id: 'count', label: 'Drop Count', type: 'range', min: 20, max: 2000, step: 10, infoKey: 'rainfall.count' },
-      { id: 'traceLength', label: 'Trace Length', type: 'range', min: 20, max: 400, step: 5, infoKey: 'rainfall.traceLength' },
+      { id: 'traceLength', label: 'Trace Length', type: 'range', min: 0.01, max: 400, step: 0.01, infoKey: 'rainfall.traceLength' },
       {
         id: 'lengthJitter',
         label: 'Length Jitter',
