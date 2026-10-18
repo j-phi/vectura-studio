@@ -71,11 +71,29 @@ jobs:
           BEFORE_SHA: ${{ github.event.before }}
         run: node scripts/ci-plan.js
 
+  # PR smoke (scripts/run-e2e-smoke.js), one job per leg (R-41): the desktop run (every non-touch
+  # PR project: desktop, touch-tablet, iPhone mini) in Playwright shards, and the touch smoke
+  # (harness, journeys, fast target-audit subset) on touch-iphone-portrait (Chromium) and
+  # webkit-ipad-portrait (WebKit). The legs are E2E_SMOKE_LEGS in that script;
+  # tests/unit/e2e-ci-roster.test.js keeps this matrix in step. ci-ok needs the job, so every leg
+  # must pass. The full touch roster (11 projects) runs in touch-e2e-nightly.
   e2e-smoke:
     needs: [ci-plan]
     if: needs.ci-plan.outputs.heavy == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { run: desktop, shard: 1, of: 3 }
+          - { run: desktop, shard: 2, of: 3 }
+          - { run: desktop, shard: 3, of: 3 }
+          - { run: touch, shard: 1, of: 1 }
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
+    env:
+      SMOKE_RUN: ${{ matrix.run }}
+      SMOKE_LEG: ${{ matrix.run }}-${{ matrix.shard }}
+      SMOKE_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -83,22 +101,19 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci --no-audit --no-fund --loglevel=error
-      # PR smoke (scripts/run-e2e-smoke.js): every non-touch PR project (desktop, touch-tablet,
-      # iPhone mini), plus the touch smoke (harness, journeys, fast target-audit subset) on
-      # touch-iphone-portrait (Chromium) and webkit-ipad-portrait (WebKit).
-      # The full touch roster (11 projects) runs in touch-e2e-nightly.
+      # The desktop legs run Chromium only; the touch leg also needs WebKit.
       - uses: ./.github/actions/setup-playwright
         with:
-          browsers: chromium webkit
-      - run: npm run test:e2e:smoke
+          browsers: ${{ matrix.run == 'touch' && 'chromium webkit' || 'chromium' }}
+      - run: npm run test:e2e:smoke -- --run="$SMOKE_RUN" --shard="$SMOKE_SHARD"
       - name: Report Playwright flakes
         if: always()
-        run: node scripts/playwright-flaky.js summarize --job e2e-smoke --out playwright-flaky/e2e-smoke.json playwright-json/smoke-desktop.json playwright-json/smoke-touch.json
+        run: node scripts/playwright-flaky.js summarize --job "e2e-smoke-$SMOKE_LEG" --out "playwright-flaky/e2e-smoke-$SMOKE_LEG.json" "playwright-json/smoke-$SMOKE_RUN.json"
       - name: Upload Playwright flake summary
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-flaky-e2e-smoke
+          name: playwright-flaky-e2e-smoke-${{ matrix.run }}-${{ matrix.shard }}
           path: playwright-flaky
           retention-days: 7
           if-no-files-found: ignore
@@ -106,7 +121,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-e2e-smoke-${{ matrix.run }}-${{ matrix.shard }}
           path: |
             playwright-report
             test-results

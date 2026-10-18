@@ -77,11 +77,61 @@ describe('PR e2e smoke roster', () => {
     expect(scripts['test:e2e:smoke']).toContain('scripts/run-e2e-smoke.js');
     expect(scripts['test:e2e:smoke']).toContain('test-queue.js');
     const e2e = job('e2e-smoke');
-    expect(e2e).toContain('run: npm run test:e2e:smoke');
+    expect(e2e).toContain('run: npm run test:e2e:smoke -- --run="$SMOKE_RUN" --shard="$SMOKE_SHARD"');
     expect(e2e).not.toMatch(/run: npm run test:e2e\s*$/m);
     const timeout = Number((e2e.match(/timeout-minutes: (\d+)/) || [])[1]);
     expect(timeout).toBeGreaterThan(0);
     expect(timeout).toBeLessThanOrEqual(60);
+  });
+
+  // R-41: the smoke runs as one job per leg. Every run is fully covered by its shards, and the
+  // workflow matrix is exactly E2E_SMOKE_LEGS (a leg left out would drop tests silently).
+  it('runs as a matrix of legs that covers every shard of every run', () => {
+    const e2e = job('e2e-smoke');
+    const legs = [...e2e.matchAll(/^ {10}- \{ run: (\w+), shard: (\d+), of: (\d+) \}$/gm)].map((m) => ({ run: m[1], shard: `${m[2]}/${m[3]}` }));
+    expect(legs).toEqual(smoke.E2E_SMOKE_LEGS);
+    for (const run of smoke.RUN_NAMES) {
+      const mine = legs.filter((l) => l.run === run).map((l) => l.shard.split('/').map(Number));
+      expect(mine.length, run).toBeGreaterThan(0);
+      const total = mine[0][1];
+      expect(mine.every(([, n]) => n === total), run).toBe(true);
+      expect(mine.map(([i]) => i)).toEqual(Array.from({ length: total }, (_, i) => i + 1));
+    }
+    expect(e2e).toContain('fail-fast: false');
+    expect(e2e).toContain("browsers: ${{ matrix.run == 'touch' && 'chromium webkit' || 'chromium' }}");
+    // One flake summary per leg, from that leg's own JSON report (R-15 still sees every shard).
+    expect(e2e).toContain('--job "e2e-smoke-$SMOKE_LEG"');
+    expect(e2e).toContain('"playwright-json/smoke-$SMOKE_RUN.json"');
+    expect(e2e).toContain('name: playwright-flaky-e2e-smoke-${{ matrix.run }}-${{ matrix.shard }}');
+    expect(e2e).toContain('name: playwright-report-e2e-smoke-${{ matrix.run }}-${{ matrix.shard }}');
+    smoke.RUN_NAMES.forEach((r, i) => expect(smoke.JSON_REPORTS[i]).toBe(`playwright-json/smoke-${r}.json`));
+  });
+
+  // R-41: a journey cell with no ledger for its platform only annotates (it cannot fail), so the PR
+  // smoke leaves the record-only cells out and keeps the gating ones.
+  it('leaves record-only journey cells out of the touch run, and keeps gating ones', () => {
+    const { readLedger } = require('../../tests/e2e/touch/journey-ledger-file.js');
+    const exclude = `--grep-invert=${smoke.JOURNEY_CELLS}`;
+    expect(smoke.runs([], true, false)[1]).toContain(exclude);
+    expect(smoke.runs([], true, true)[1]).not.toContain(exclude);
+    expect(smoke.runs([], true, false)[0]).not.toContain(exclude);
+    expect(smoke.journeysGate(null)).toBe(false);
+    expect(smoke.journeysGate({ projects: ['touch-coarse-wide'] })).toBe(false);
+    expect(smoke.journeysGate({ projects: ['webkit-ipad-portrait'] })).toBe(true);
+    // The darwin ledger pins both smoke projects, so a local smoke run gates on every journey.
+    const darwin = readLedger('darwin');
+    smoke.TOUCH_SMOKE_PROJECTS.forEach((p) => expect(darwin.projects, p).toContain(p));
+    // The excluded title is the journey describe, not the harness self-test describe.
+    const spec = fs.readFileSync(path.join(ROOT, 'tests/e2e/touch/journeys.spec.js'), 'utf8');
+    expect(spec).toContain(`test.describe('${smoke.JOURNEY_CELLS}'`);
+    expect('harness self-test').not.toContain(smoke.JOURNEY_CELLS);
+  });
+
+  it('--run picks one run and leaves the other arguments for Playwright', () => {
+    expect(smoke.parseArgs(['--run=touch', '--shard=1/1'])).toEqual({ only: ['touch'], extra: ['--shard=1/1'] });
+    expect(smoke.parseArgs([])).toEqual({ only: smoke.RUN_NAMES, extra: [] });
+    expect(() => smoke.parseArgs(['--run=desktp'])).toThrow(/unknown --run=desktp/);
+    expect(() => smoke.parseArgs(['--run='])).toThrow(/unknown --run=/);
   });
 });
 
