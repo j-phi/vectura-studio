@@ -1,0 +1,734 @@
+{
+  "arm64": {
+    "0.5.42-harmonograph.vectura/0:harmonograph": {
+      "paths": 1,
+      "points": 6501,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        51.254,
+        25.372,
+        227.746,
+        190.628
+      ],
+      "hash": "079bc244"
+    },
+    "0.5.55-rings.vectura/0:rings": {
+      "paths": 89,
+      "points": 32129,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        27.436,
+        -2.753,
+        260.039,
+        207.936
+      ],
+      "hash": "d00df59e"
+    },
+    "0.8.0-mixed.vectura/0:wavetable": {
+      "paths": 130,
+      "points": 15600,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        14.063,
+        259,
+        201.602
+      ],
+      "hash": "5d0c58d7"
+    },
+    "0.8.0-mixed.vectura/1:rings": {
+      "paths": 19,
+      "points": 6859,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        61.096,
+        37.965,
+        210.927,
+        184.033
+      ],
+      "hash": "8e936287"
+    },
+    "0.8.0-mixed.vectura/2:spiral": {
+      "paths": 1,
+      "points": 4000,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        52.726,
+        18.446,
+        231.608,
+        193.152
+      ],
+      "hash": "9b051b3a"
+    },
+    "0.8.0-organic.vectura/0:petalisDesigner": {
+      "paths": 63,
+      "points": 1454,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        75.587,
+        46.897,
+        201.378,
+        170.999
+      ],
+      "hash": "c570f9a3"
+    },
+    "0.8.0-organic.vectura/1:flowfield": {
+      "paths": 1153,
+      "points": 28902,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20.206,
+        20.117,
+        258.995,
+        195.978
+      ],
+      "hash": "0a7da606"
+    },
+    "0.8.0-organic.vectura/2:phylla": {
+      "paths": 446,
+      "points": 892,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        27.495,
+        19.135,
+        250.024,
+        196.68
+      ],
+      "hash": "952745c3"
+    },
+    "1.0.0-mixed.vectura/0:wavetable": {
+      "paths": 130,
+      "points": 15600,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        14.063,
+        259,
+        201.602
+      ],
+      "hash": "5d0c58d7"
+    },
+    "1.0.0-mixed.vectura/1:rings": {
+      "paths": 19,
+      "points": 6859,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        61.096,
+        37.965,
+        210.927,
+        184.033
+      ],
+      "hash": "8e936287"
+    },
+    "1.0.0-mixed.vectura/2:spiral": {
+      "paths": 1,
+      "points": 4000,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        52.726,
+        18.446,
+        231.608,
+        193.152
+      ],
+      "hash": "9b051b3a"
+    },
+    "1.0.0-organic.vectura/0:petalisDesigner": {
+      "paths": 63,
+      "points": 1454,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        75.587,
+        46.897,
+        201.378,
+        170.999
+      ],
+      "hash": "c570f9a3"
+    },
+    "1.0.0-organic.vectura/1:flowfield": {
+      "paths": 1153,
+      "points": 28902,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20.206,
+        20.117,
+        258.995,
+        195.978
+      ],
+      "hash": "0a7da606"
+    },
+    "1.0.0-organic.vectura/2:phylla": {
+      "paths": 446,
+      "points": 892,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        27.495,
+        19.135,
+        250.024,
+        196.68
+      ],
+      "hash": "952745c3"
+    },
+    "1.1.61-shapepack.vectura/0:shapePack": {
+      "paths": 180,
+      "points": 1260,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        0.08,
+        2.676,
+        279,
+        214.873
+      ],
+      "hash": "fe727b71"
+    },
+    "1.2.0-curves.vectura/0:wavetable": {
+      "paths": 130,
+      "points": 15600,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        14.063,
+        259,
+        201.602
+      ],
+      "hash": "5d0c58d7"
+    },
+    "1.2.0-curves.vectura/1:harmonograph": {
+      "paths": 1,
+      "points": 6001,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        58.051,
+        24.775,
+        221.96,
+        187.276
+      ],
+      "hash": "c254f496"
+    },
+    "1.2.0-curves.vectura/2:shapePack": {
+      "paths": 153,
+      "points": 306,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        20,
+        259,
+        196
+      ],
+      "hash": "86df763f"
+    },
+    "1.3.0-text.vectura/0:text": {
+      "paths": 11,
+      "points": 135,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        31.95,
+        83.501,
+        247.05,
+        132.499
+      ],
+      "hash": "25d88c8f"
+    },
+    "1.3.0-text.vectura/1:harmonograph": {
+      "paths": 1,
+      "points": 6001,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        58.051,
+        24.775,
+        221.96,
+        187.276
+      ],
+      "hash": "c254f496"
+    },
+    "1.3.0-text.vectura/2:shapePack": {
+      "paths": 153,
+      "points": 306,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        20,
+        259,
+        196
+      ],
+      "hash": "86df763f"
+    },
+    "1.3.35-scene-monolith.vectura/0:scene3d": {
+      "paths": 96,
+      "points": 192,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        -146.341,
+        10.237,
+        425.341,
+        205.763
+      ],
+      "hash": "fa56f6fa"
+    },
+    "1.3.35-scene-monolith.vectura/1:lissajous": {
+      "paths": 1,
+      "points": 200,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        71.95,
+        40.671,
+        208.447,
+        176.111
+      ],
+      "hash": "ddaf2aa6"
+    },
+    "1.4.0-mixed.vectura/0:wavetable": {
+      "paths": 130,
+      "points": 15600,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        14.063,
+        259,
+        201.602
+      ],
+      "hash": "5d0c58d7"
+    },
+    "1.4.0-mixed.vectura/1:rings": {
+      "paths": 19,
+      "points": 6859,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        61.096,
+        37.965,
+        210.927,
+        184.033
+      ],
+      "hash": "8e936287"
+    },
+    "1.4.0-mixed.vectura/2:spiral": {
+      "paths": 1,
+      "points": 4000,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        52.726,
+        18.446,
+        231.608,
+        193.152
+      ],
+      "hash": "9b051b3a"
+    },
+    "1.4.0-scene.vectura/0:scene3d": {
+      "paths": 112,
+      "points": 1598,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        -146.341,
+        10.237,
+        425.341,
+        205.763
+      ],
+      "hash": "7e47f6d5"
+    },
+    "1.4.0-scene.vectura/1:lissajous": {
+      "paths": 1,
+      "points": 200,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        71.95,
+        40.671,
+        208.447,
+        176.111
+      ],
+      "hash": "ddaf2aa6"
+    }
+  },
+  "x64": {
+    "0.5.42-harmonograph.vectura/0:harmonograph": {
+      "paths": 1,
+      "points": 6501,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        51.254,
+        25.372,
+        227.746,
+        190.628
+      ],
+      "hash": "079bc244"
+    },
+    "0.5.55-rings.vectura/0:rings": {
+      "paths": 89,
+      "points": 32129,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        27.436,
+        -2.753,
+        260.039,
+        207.936
+      ],
+      "hash": "d00df59e"
+    },
+    "0.8.0-mixed.vectura/0:wavetable": {
+      "paths": 130,
+      "points": 15600,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        14.063,
+        259,
+        201.602
+      ],
+      "hash": "5d0c58d7"
+    },
+    "0.8.0-mixed.vectura/1:rings": {
+      "paths": 19,
+      "points": 6859,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        61.096,
+        37.965,
+        210.927,
+        184.033
+      ],
+      "hash": "8e936287"
+    },
+    "0.8.0-mixed.vectura/2:spiral": {
+      "paths": 1,
+      "points": 4000,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        52.726,
+        18.446,
+        231.608,
+        193.152
+      ],
+      "hash": "9b051b3a"
+    },
+    "0.8.0-organic.vectura/0:petalisDesigner": {
+      "paths": 63,
+      "points": 1454,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        75.587,
+        46.897,
+        201.378,
+        170.999
+      ],
+      "hash": "c570f9a3"
+    },
+    "0.8.0-organic.vectura/1:flowfield": {
+      "paths": 1153,
+      "points": 28902,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20.206,
+        20.117,
+        258.995,
+        195.978
+      ],
+      "hash": "0a7da606"
+    },
+    "0.8.0-organic.vectura/2:phylla": {
+      "paths": 446,
+      "points": 892,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        27.495,
+        19.135,
+        250.024,
+        196.68
+      ],
+      "hash": "952745c3"
+    },
+    "1.0.0-mixed.vectura/0:wavetable": {
+      "paths": 130,
+      "points": 15600,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        14.063,
+        259,
+        201.602
+      ],
+      "hash": "5d0c58d7"
+    },
+    "1.0.0-mixed.vectura/1:rings": {
+      "paths": 19,
+      "points": 6859,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        61.096,
+        37.965,
+        210.927,
+        184.033
+      ],
+      "hash": "8e936287"
+    },
+    "1.0.0-mixed.vectura/2:spiral": {
+      "paths": 1,
+      "points": 4000,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        52.726,
+        18.446,
+        231.608,
+        193.152
+      ],
+      "hash": "9b051b3a"
+    },
+    "1.0.0-organic.vectura/0:petalisDesigner": {
+      "paths": 63,
+      "points": 1454,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        75.587,
+        46.897,
+        201.378,
+        170.999
+      ],
+      "hash": "c570f9a3"
+    },
+    "1.0.0-organic.vectura/1:flowfield": {
+      "paths": 1153,
+      "points": 28902,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20.206,
+        20.117,
+        258.995,
+        195.978
+      ],
+      "hash": "0a7da606"
+    },
+    "1.0.0-organic.vectura/2:phylla": {
+      "paths": 446,
+      "points": 892,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        27.495,
+        19.135,
+        250.024,
+        196.68
+      ],
+      "hash": "952745c3"
+    },
+    "1.1.61-shapepack.vectura/0:shapePack": {
+      "paths": 180,
+      "points": 1260,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        0.08,
+        2.676,
+        279,
+        214.873
+      ],
+      "hash": "fe727b71"
+    },
+    "1.2.0-curves.vectura/0:wavetable": {
+      "paths": 130,
+      "points": 15600,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        14.063,
+        259,
+        201.602
+      ],
+      "hash": "5d0c58d7"
+    },
+    "1.2.0-curves.vectura/1:harmonograph": {
+      "paths": 1,
+      "points": 6001,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        58.051,
+        24.775,
+        221.96,
+        187.276
+      ],
+      "hash": "c254f496"
+    },
+    "1.2.0-curves.vectura/2:shapePack": {
+      "paths": 153,
+      "points": 306,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        20,
+        259,
+        196
+      ],
+      "hash": "86df763f"
+    },
+    "1.3.0-text.vectura/0:text": {
+      "paths": 11,
+      "points": 135,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        31.95,
+        83.501,
+        247.05,
+        132.499
+      ],
+      "hash": "25d88c8f"
+    },
+    "1.3.0-text.vectura/1:harmonograph": {
+      "paths": 1,
+      "points": 6001,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        58.051,
+        24.775,
+        221.96,
+        187.276
+      ],
+      "hash": "c254f496"
+    },
+    "1.3.0-text.vectura/2:shapePack": {
+      "paths": 153,
+      "points": 306,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        20,
+        259,
+        196
+      ],
+      "hash": "86df763f"
+    },
+    "1.3.35-scene-monolith.vectura/0:scene3d": {
+      "paths": 96,
+      "points": 192,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        -146.341,
+        10.237,
+        425.341,
+        205.763
+      ],
+      "hash": "fa56f6fa"
+    },
+    "1.3.35-scene-monolith.vectura/1:lissajous": {
+      "paths": 1,
+      "points": 200,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        71.95,
+        40.671,
+        208.447,
+        176.111
+      ],
+      "hash": "ddaf2aa6"
+    },
+    "1.4.0-mixed.vectura/0:wavetable": {
+      "paths": 130,
+      "points": 15600,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        20,
+        14.063,
+        259,
+        201.602
+      ],
+      "hash": "5d0c58d7"
+    },
+    "1.4.0-mixed.vectura/1:rings": {
+      "paths": 19,
+      "points": 6859,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        61.096,
+        37.965,
+        210.927,
+        184.033
+      ],
+      "hash": "8e936287"
+    },
+    "1.4.0-mixed.vectura/2:spiral": {
+      "paths": 1,
+      "points": 4000,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        52.726,
+        18.446,
+        231.608,
+        193.152
+      ],
+      "hash": "9b051b3a"
+    },
+    "1.4.0-scene.vectura/0:scene3d": {
+      "paths": 112,
+      "points": 1598,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        -146.341,
+        10.237,
+        425.341,
+        205.763
+      ],
+      "hash": "7e47f6d5"
+    },
+    "1.4.0-scene.vectura/1:lissajous": {
+      "paths": 1,
+      "points": 200,
+      "nonFinite": 0,
+      "zeroLength": 0,
+      "bbox": [
+        71.95,
+        40.671,
+        208.447,
+        176.111
+      ],
+      "hash": "ddaf2aa6"
+    }
+  }
+}
