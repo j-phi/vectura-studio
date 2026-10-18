@@ -256,7 +256,7 @@ describe('SurfaceFill — F1-placement: flat-coverage wave laws placed by screen
     // ladder": under Prototype B, `interlockWeave` hits ONE new
     // `[FillBoolean] polygon union failed on degenerate geometry` case that
     // does not occur at the pre-fix baseline (measured: 0 at
-    // `VECTURA_PRE_F1P=1`, 1 under Prototype B) — a real, pre-existing
+    // the pre-F1P tree, 1 under Prototype B) — a real, pre-existing
     // robustness gap in `insetMultiPolygon`'s degenerate-input handling that
     // Prototype B's changed geometry exposes, not a regression it
     // introduces (the fallback ladder still recovers a usable ring; this

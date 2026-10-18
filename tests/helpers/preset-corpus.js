@@ -35,6 +35,7 @@ const FULL_STACK = {
 // algo-config panel returns early for their bespoke panels, so
 // ui._applyActivePreset is never stashed for them). Reported as a finding;
 // the canary still loads their params through the file-open path.
+// Tracked as PRH-031 (stale ctxbar applier, possible data loss).
 const NO_UI_APPLY_PATH = new Set(['text', 'scene3d']);
 
 // Layer types that legitimately draw nothing from a preset alone.
@@ -49,6 +50,8 @@ const EMPTY_BY_DESIGN = new Set(['svgDistort', 'sceneLight3d', 'sceneGround3d', 
 // Known defects this canary found. Each entry inverts ONE assertion for ONE
 // preset: the test asserts the defect is still there, so a fix fails the test
 // until the entry is removed. Do not add entries to make a new failure pass.
+// Tracking: phylla emptyExport = PRH-029, rainfall roundTrip = PRH-030
+// (docs/pre-release-hardening-log.md, plans.md Next -> Canary findings).
 //   roundTrip:   export after save + reopen differs from the export before save.
 //   emptyExport: the layer has geometry but the exported SVG has no paths.
 const RAINFALL_NOISE_INJECTION = 'Opening the Rainfall panel (buildControls) seeds a default '

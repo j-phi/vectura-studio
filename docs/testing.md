@@ -1,66 +1,263 @@
 # Testing Guide
 
-Workflow governance and documentation synchronization rules live in `docs/agentic-harness-strategy.md`.
+This is the one operational guide for tests and CI. It covers commands, the CI job graph,
+baselines, corpora, shard weights and the local test queue.
+
+- Test policy (what must run, and when) lives in `docs/agentic-harness-strategy.md` section 5.
+- Rules for adding, trimming and timing tests live in the lessons ledger,
+  [test-performance-lessons.md](test-performance-lessons.md).
+- Earlier rollout, review and punchlist documents are in `docs/archive/`. They are history only.
 
 ## Toolchain
-- Node 20.19 or newer is required. `.nvmrc` pins 20.20.2, the major CI runs (`nvm use`). Byte-exact
-  float-hash goldens (for example `scene3d-u2-kernel-identity`) are enforced only on Node 20; other
-  majors check path/point counts only, because V8 versions round Math results differently.
-- Unit/Integration/Visual/Perf: Vitest 4 (`vitest.config.mjs`); keep `vitest` and
-  `@vitest/coverage-v8` on matching versions. Worker limits use Vitest 4's top-level
-  `maxWorkers` option with the `forks` pool. Local ordinary runs and CI use at most two workers; full local coverage uses one to bound retained audit memory. CLI worker overrides are explicit experiments, not the default.
-- E2E smoke: Playwright (`playwright.config.js`)
-- Runtime loader for browser IIFE modules: `tests/helpers/load-vectura-runtime.js`
-- The PR `e2e-smoke` job runs `npm run test:e2e:smoke` (`scripts/run-e2e-smoke.js`): every non-touch project (desktop, desktop-visual, touch-tablet, iPhone mini, all Chromium), then the touch smoke. The touch smoke is `harness.spec.js`, `journeys.spec.js` and the fast `target-audit.spec.js` subset on `touch-iphone-portrait` (Chromium) and `webkit-ipad-portrait` (WebKit). The full touch roster (11 projects, every touch spec) runs nightly in `touch-e2e-nightly`.
-- Local Playwright runs patch unsupported Unicode-regex bundles first; when managed Chromium assets are missing locally, the config falls back to installed Chrome and disables local failure-video capture. CI remains the authoritative environment for uploaded video artifacts.
+
+- Node 20.19 or newer is required. `.nvmrc` pins 20.20.2. CI runs Node 20 in every Vitest job.
+- Golden values are exact on Node 20 only, because V8 versions round `Math` results differently.
+  See [Goldens and baselines](#goldens-and-baselines).
+- Vitest 4 runs unit, integration, visual, perf and audit tests (`vitest.config.mjs`). Keep `vitest`
+  and `@vitest/coverage-v8` on the same version. Workers use the `forks` pool with at most two
+  workers locally and in CI (`VECTURA_VITEST_MAX_WORKERS`). Full local coverage uses one worker.
+- Playwright runs the browser tests (`playwright.config.js`). When the managed Chromium is missing
+  locally, the config falls back to an installed Chrome and turns off failure videos.
+- `tests/helpers/load-vectura-runtime.js` loads the browser IIFE modules into jsdom. Use the `core`
+  or `feature` profile for pure modules, `component` for small DOM fixtures, and the legacy or full
+  profile for app-shell checks. Each runtime is fresh and must be closed.
+- There is no desktop WebKit project (owner decision D-6). WebKit runs only in the touch projects.
 
 ## Local Commands
-- `npm run test` runs `test:unit` and `test:integration`.
-- `npm run version:sync` syncs the runtime/app badge version from `package.json`.
-- `npm run test:runner` runs process-lifecycle regression tests with Node's test runner.
-- `npm run test:unit` runs those lifecycle checks, then deterministic unit tests.
-- `npm run test:integration` runs engine integration tests, including app bootstrap integrity assertions for Layers/Mathematical Model/About population.
-- `npm run test:e2e` runs the complete Playwright spec roster in one invocation, including mask-shift-drag. The roster includes the 11 touch projects.
-- `npm run test:e2e:smoke` runs the PR browser smoke set (the CI `e2e-smoke` job). `tests/unit/e2e-ci-roster.test.js` keeps it in step with `playwright.config.js` and the workflow.
-- `npm run test:e2e:touch` runs every touch project (11) against `tests/e2e/touch`.
-- `PW_TOUCH_PROJECTS=0` drops the 11 touch projects from the Playwright config (the nightly `scheduled-audit` browser roster uses it).
-- `npm run test:e2e:touch:chromium` runs the 7 `touch-*` projects. `npm run test:e2e:touch:webkit` runs the 4 `webkit-*` projects.
-- `npm run test:e2e:touch:install` installs the Playwright Chromium and WebKit browsers.
-- `npm run test:visual` runs SVG baseline regression checks.
-- `npm run test:visual:screenshots` runs optional Playwright screenshot snapshots.
-- `npm run test:perf` runs stress/performance checks.
-- `npm run test:ci` holds one queue slot for lifecycle checks, full-scope Vitest coverage (unit + integration + visual + perf + audit), the complete configured Playwright roster, and uninstrumented performance checks. Each correctness suite runs once; the saved `coverage/vitest-full.json` must pass strict inventory and skip reconciliation before browser/perf execute. Parsed timings persist in `coverage/full-profile.json`. The default local per-attempt deadline remains 30 minutes. An earlier 765-file two-worker coverage route took 39m40s; the approved reduced 763-file candidate later passed in 35m22s under a four-hour whole-run allowance. That was a decomposed local certification, not an unmodified `test:ci` pass or validation of its default cap. Performance also runs without coverage because instrumentation changes timing.
-- `npm run test:fast` is an alias for bounded `test:feedback`; use `test:ci` for complete certification.
-- `npm run test:feedback` runs critical contracts and one minimal real browser journey with a 60-second execution deadline. Queue wait is separate; timeout fails.
-- `npm run test:lane -- <feedback|core|browser|audit|measure>` executes an explicit queued lane. Its execution deadline starts after lock acquisition; queue wait is recorded separately.
-- `npm run test:route -- --base <sha> --head <sha> --json` previews versioned risk routing. Unknown/shared/harness paths select broad verification.
-- `npm run test:lane:promote -- --head <sha> --ledger <jsonl>` validates shadow evidence before policy promotion.
-- `npm run test:coverage` runs the whole Vitest suite, including `tests/audit/`, under V8 coverage with `VECTURA_TEST_COVERAGE=1` to disable compiled-script caching.
-- `npm run test:audit` holds one queue slot for lifecycle checks, full coverage once, and the complete browser roster once.
-- `npm run test:vitest -- <vitest args>` runs Vitest with any arguments (for example `npm run test:vitest -- run tests/unit/foo.test.js`).
-- `npm run test:playwright -- <playwright test args>` runs `playwright test` with any arguments (for example `npm run test:playwright -- tests/e2e/foo.spec.js --reporter=line`).
-- `npm run test:profile -- --results <vitest-json> --strict --output <summary-json>` reconciles full Vitest inventory/approved skips; add `--log <saved-log>` for console timings. Diagnostic profiling without strict mode can inspect partial/historical runs.
-- `npm run test:coverage:probe` runs the bounded three-file/two-source coverage merge feasibility check through the real pilot config, sequencer, queued shard/merge entrypoints and provenance validator; CI runs it after hosted feedback. It does not certify full coverage or change production inventory/thresholds, and its separate step is outside feedback-lane timing metrics.
-- `npm run test:engine:pilot -- --roster all --pool both --workers 1 --repetitions 5 --warmups 1` compares compatible pool candidates on fixed small rosters within a ten-minute budget. All trials retain queue/supervisor ownership.
-- `test:coverage:shard` and `test:coverage:merge` are queued building blocks for full-scope sharding. Shards zero thresholds and the canonical merged report applies global ratchets; the bounded plumbing probe also uses zero thresholds on its three-file merge and does not certify full coverage.
-- PR #97 enabled two-shard (now N-shard; `COVERAGE_SHARD_COUNT` in `.github/workflows/test.yml`, 1..32, currently 16) full-Vitest coverage on PRs and pushes to main. A plan/guard records the exact SHA and timestamp and creates N disjoint duration-weighted partitions (LPT, sha256-hashed). The canonical required coverage job always runs for those events and fails closed if planning, any shard, provenance, or merge validation fails. Shards must come from the same run and SHA; each assigned roster is checked before upload, and the merged JSON is then reconciled against the strict all-file inventory and 57-skip baseline before the run is accepted. V8 data is merged and canonical global ratchets are applied (statements 74%, branches 62%, functions 74%, lines 76%). The rollout passed hosted validation and independent review; the first complete main graph took 52m59s for coverage and 53m32s through the final required gate. These are observations, not a latency guarantee. Nightly schedule runs the dedicated audit, then separate visual and uninstrumented performance suites, without duplicating the PR/main coverage graph. Keep lifecycle, bounded feedback, browser roster, uninstrumented perf, feedback probe, and lane-gate checks as distinct preserved guarantees.
-- Budgets, rules for adding or trimming tests, sharding maintenance and the per-PR timing history live in [test-performance-lessons.md](test-performance-lessons.md).
-- Refresh shard weights with `node scripts/test-shard-weights-refresh.js --blobs <dir> [--blobs <dir2> ...] [--run-ids a,b] [--write]`. Download the artifacts first: `gh run download <id> -p 'coverage-shard-[0-9]*' -D <dir>`. Each `<dir>` must hold `coverage-shard-N/blob.json`. The script uses the Vitest blob report, not the JSON report, because JSON `endTime - startTime` omits `beforeAll` time. Per file it adds `result.duration`, collect, setup, environment-load and prepare time. It averages the runs, skips `tests/e2e`, keeps the previous weight for unmeasured files, and keeps `unknownFileWeightSeconds`. Without `--write` it prints a summary only.
-- `VECTURA_VITEST_MAX_WORKERS` overrides the Vitest worker cap. CI sets it at workflow level (2) and passes the same value to `test-profile --workers`. 4 workers measured no faster and showed one intermittent shard failure in run 38924847714. Hosted timing is recorded in PR #100.
-- Historical timing: the unreduced 765-file local route took 39m40s using two workers. The approved 763-file candidate later took 35m22s for full coverage with two workers and an explicit four-hour whole-run allowance. This was a decomposed certification, not an unmodified `npm run test:ci` pass; the 30-minute default attempt cap and local worker policy remain unchanged.
-- `npm run test:queue:status` shows the shared test-lock holder and the waiting runs.
-- `npm run hooks:install` installs the local git hooks. **Run this once after cloning.**
-  - `pre-commit` — refreshes the graphify knowledge graph and stages output.
-  - `pre-push` — runs `test:feedback` (bounded feedback through the shared test queue) before every push. A minimal browser journey runs locally; the full browser roster remains in CI. Bypass with `SKIP_PREPUSH=1 git push` (CI still gates). When an Intel (x86_64) git runs the hook under Rosetta on an Apple-silicon Mac, the hook re-enters native arm64 for the lane; under Rosetta, Playwright's Chromium starts as x64 and the browser journey hangs.
 
-## Render-test sampling
+| Command | Purpose |
+|---|---|
+| `npm run test:feedback` | Bounded local feedback: lifecycle checks, the critical roster (`tests/helpers/feedback-roster.json`) and one real browser journey, with a 60 s execution deadline. The `pre-push` hook runs it. |
+| `npm run test:runner` | Process-lifecycle checks (`tests/process`, Node's test runner). No queue lock. |
+| `npm run test:unit` | Lifecycle checks, then `tests/unit`. |
+| `npm run test:integration` | `tests/integration`, including the preset and legacy-file corpora. |
+| `npm run test:visual` | SVG goldens in `tests/visual`. |
+| `npm run test:perf` | Stress and timing checks in `tests/perf`. Never under coverage. |
+| `npm run test:audit:proofs` | Scene3D proof audits in `tests/audit`. |
+| `npm run test:e2e` | The whole Playwright roster, all projects. |
+| `npm run test:e2e:smoke` | The PR browser smoke (desktop run, then the touch run). |
+| `npm run test:e2e:touch` | Every touch spec in the 11 touch projects. `:chromium` runs the 7 `touch-*` projects, `:webkit` the 4 `webkit-*` projects. |
+| `npm run test:e2e:touch:install` | Installs the Playwright Chromium and WebKit browsers. |
+| `npm run test:e2e:touch:audit` | Touch target audit, fast subset. `:full` runs all 26 states. |
+| `npm run test:e2e:touch:journeys:ledger` | Regenerates the journey ledger by measurement. |
+| `npm run test:visual:screenshots` | Compares the linux pixel snapshots in the pinned Playwright image (docker). `:update` rewrites them. |
+| `npm run test:coverage` | The coverage roster under V8 coverage (`VECTURA_TEST_COVERAGE=1`). It excludes `tests/perf`, `tests/audit` and `tests/e2e`. |
+| `npm run test:coverage:probe` | Small three-file shard-and-merge check of the coverage plumbing. |
+| `npm run test:profile -- --strict --results <json> --output <json>` | Checks a Vitest JSON report against the inventory and the 57-skip baseline. |
+| `npm run test:ci` | Everything once, in one queue slot: lifecycle, coverage, strict profile, audits, the browser roster and perf. Optional (see below). |
+| `npm run test:audit` | Lifecycle, coverage, audits and the browser roster. |
+| `npm run test:lane -- <feedback\|core\|browser\|audit>` | One queued lane from `scripts/test-lanes.json`. The deadline starts after the lock is taken. |
+| `npm run test:update` | Rewrites the SVG goldens and this architecture's golden-value sections. Node 20 only. |
+| `npm run test:vitest -- <args>` | Vitest with any arguments, for example `npm run test:vitest -- run tests/unit/foo.test.js`. |
+| `npm run test:playwright -- <args>` | `playwright test` with any arguments. |
+| `npm run test:queue:status` | Shows the lock holder and the waiting runs. |
+| `npm run hooks:install` | Installs the `pre-commit` (graphify) and `pre-push` (`test:feedback`) hooks. Run it once after cloning. |
 
-The user-approved reductions in `docs/render-test-reductions.md` retire standalone diagnostic
-accounting and two named expansion samples, and replace repeated render matrices with
-explicit regression and boundary witnesses. File inventory follows the actual test tree;
-retiring a file is not a new skip allowance. Global coverage ratchets, the 57 existing skipped
-assertions, raw-weight invariants, real-output guards and browser/performance owners remain.
-Record measured candidate timings separately from historical estimates.
+Notes:
+- `PW_PORT` sets the Playwright dev-server port (default 4173). Set it per worktree, for example
+  `PW_PORT=4611 npm run test:e2e`. Without it, parallel worktrees can attach to another tree's server.
+- `PW_TOUCH_PROJECTS=0` drops the 11 touch projects from a local Playwright run.
+- `PRESET_CORPUS_RT=all` runs the save-and-reopen check on all bundled presets, not only on the
+  factory default of each system.
+- The `pre-push` hook can be skipped with `SKIP_PREPUSH=1 git push`. CI still gates. Under Rosetta
+  the hook re-enters native arm64, because an x64 Chromium hangs on the browser journey.
+
+## Local Validation Before a Commit
+
+`ci-ok` is the full gate. Locally, run the feedback lane plus the test files your change touches
+(owner decision D-3):
+
+1. Red: write or find a test that fails without the change.
+2. Green: make the change. Run that test and the touched files, for example
+   `npm run test:vitest -- run tests/unit/foo.test.js`.
+3. Run `npm run test:feedback`.
+4. Pick extra suites from the Testing Matrix in `CLAUDE.md` when the change is broad.
+
+`npm run test:ci` is still available for a full local pass. It is not required before a commit.
+Put the RED proof (the failing output before the fix) in the commit message or the PR description.
+Do not commit tests that rebuild an old source tree from git history (owner decision D-4).
+`tests/unit/no-git-history-in-tests.test.js` enforces this.
+
+## CI: Pull Requests
+
+`.github/workflows/test.yml` runs one graph for pull requests. `ci-ok` is the one required check.
+
+```mermaid
+flowchart LR
+  P[ci-plan] --> E[e2e-smoke x4]
+  P --> F[perf]
+  P --> VS[vitest-shard x8] --> V[vitest merge]
+  P -.->|audit=true| A[audit x3]
+  W[touch-waiver]
+  E & F & V & A & W --> OK[ci-ok]
+```
+
+- **`ci-plan`** (`scripts/ci-plan.js`) decides what runs. On a PR it sets `heavy=true`,
+  `vitest=true` and `coverage=false`. It sets `audit=true` only when the diff from the merge ref's
+  first parent matches `scripts/audit-paths.js`, or when the ordered list of Scene3D `<script src>`
+  entries in `index.html` changes. An unknown diff runs everything.
+- **`vitest-shard`** (8 shards, `VITEST_SHARD_COUNT`) runs the whole Vitest roster without coverage.
+  `scripts/test-shard-plan.js` builds a weight-balanced plan in each shard. The plan excludes
+  `tests/e2e`, `tests/perf` and `tests/audit`.
+- **`vitest`** merges the shard reports. It checks the SHA, run id, plan hash and roster of each
+  shard. Then `test-profile --strict` checks the merged JSON: every inventory file ran, no file has
+  zero tests, no test failed, and the skip count is the 57-skip baseline.
+- **`e2e-smoke`** is a matrix of 4 legs (`E2E_SMOKE_LEGS` in `scripts/run-e2e-smoke.js`):
+  - 3 desktop legs (`--shard=1/3..3/3`): `desktop-chromium`, `tablet-touch-chromium` and
+    `phone-iphone-mini-chromium`. This includes `tests/e2e/algorithm-boot.spec.js`.
+  - 1 touch leg: `harness.spec.js`, `journeys.spec.js` and the fast `target-audit.spec.js` subset
+    on `touch-iphone-portrait` (Chromium) and `webkit-ipad-portrait` (WebKit). While no linux
+    journey ledger pins these projects, the record-only `finger-only journeys` cells are left out.
+    They return by themselves when the ledger is committed.
+  - `tests/unit/e2e-ci-roster.test.js` keeps the workflow matrix, the projects and the specs in step.
+- **`perf`** runs `npm run test:perf` and `npm run test:runner`. It runs the coverage probe only
+  when a coverage-plumbing file changed.
+- **`audit`** (3 weight-balanced groups, uninstrumented) runs `tests/audit` when `audit=true`.
+  `audit-paths.js --verify-results` checks that every file ran and passed, with no skips.
+  The audit loader throws if an audit evaluates a script outside the path filter, so the filter
+  stays sound.
+- **`touch-waiver`** always runs. It checks the TUX-058 rule: a raised touch baseline needs a
+  `TUX-WAIVER:` line (`scripts/touch-baseline-waiver.js`).
+- **`ci-ok`** (`scripts/ci-ok.js`) passes only when every job that should run on this event
+  passed and every by-design skip was skipped. A failure, a cancel or an inconsistent plan fails
+  it. On a green PR run it uploads a `ci-ok-verdict` artifact for push dedup.
+- Coverage does not run on PRs (owner decision D-2). The ratchet runs on the main push of the merge.
+- Flaky tests: `scripts/playwright-flaky.js` prints one warning per flaky Playwright test and
+  uploads a `playwright-flaky-*` summary. It never fails the run.
+- **Re-runs.** "Re-run failed jobs" is safe on a PR: the `vitest` merge accepts a shard from an
+  earlier attempt of the same run. Every upload uses `overwrite: true`.
+- Other workflows: `dependency-review.yml` reviews dependency diffs. `codeql.yml` runs code
+  scanning on `main`, on PRs to `main` and weekly.
+
+## CI: Main Push and Nightly
+
+The same workflow runs on every push to `main` and nightly at 08:00 UTC.
+
+- **Coverage ratchet.** Every main push runs `coverage-shard` (12 instrumented shards,
+  `COVERAGE_SHARD_COUNT`) and the `coverage` merge. The merge checks provenance, applies the global
+  thresholds (statements 74 %, branches 62 %, functions 74 %, lines 76 %) and runs
+  `test-profile --strict`. A coverage re-run must re-run all jobs, because the merge demands the
+  exact attempt.
+- **Push dedup.** When the pushed tree equals the merge-ref tree of a PR run whose `ci-ok` passed,
+  the push skips `e2e-smoke`, `perf` and the Vitest shards. It skips the audits only if that PR run
+  ran them. A push that changes `.github/`, `scripts/ci-plan.js`, `scripts/ci-ok.js` or
+  `scripts/audit-paths.js` never reuses a verdict.
+- **Nightly.** The nightly runs the heavy graph, coverage and the audits. It skips them when a push
+  run on the same main SHA passed `ci-ok` and `coverage` in the last 24 hours.
+- **Nightly-only jobs** (schedule and `workflow_dispatch`; they never depend on `ci-plan`):
+  - `touch-e2e-nightly`: every touch spec in all 11 touch projects, 10 Playwright shards
+    (owner decision D-7: the full touch roster is nightly; the 2-project touch smoke runs on every PR).
+  - `touch-audit-nightly`: the full 26-state target audit. On `workflow_dispatch` it also writes the
+    missing linux baseline cells and the linux journey ledger into the `touch-audit-measured` artifact.
+  - `visual-nightly`: `tests/e2e/visual.spec.js` on `desktop-visual-chromium` inside the pinned
+    `mcr.microsoft.com/playwright` image. The image tag must match the installed Playwright version.
+- **Red main.** When `ci-ok` fails or is cancelled on a main push or the nightly, `report-red-main`
+  comments on the open `ci-red-main` issue, or opens one. A coverage drop shows up there, on the
+  merge commit that caused it.
+- **Flaky on main.** `report-flaky-main` totals the flaky summaries and comments on the `ci-flaky`
+  issue when the count is above 0.
+- `workflow_dispatch` runs only the nightly-only jobs.
+
+## CI: Release
+
+`.github/workflows/release.yml` runs on a version tag.
+
+1. It waits (up to 90 minutes) for the Tests run of the tag's commit on `main`, and requires its
+   `ci-ok` job to be green. A commit with no green `ci-ok` fails the release with a clear error.
+2. `scripts/release-build-zip.sh` builds the zip. A missing listed path fails the build.
+3. `scripts/release-smoke.js <zip>` unzips, serves and loads the app in Chromium. It adds a spiral
+   layer and fails on page errors, same-origin HTTP errors or empty geometry.
+4. It creates the GitHub release.
+
+## Goldens and Baselines
+
+- **SVG goldens** live in `tests/baselines/svg/<id>-canonical.svg` (`tests/visual/svg-baseline.test.js`).
+  They are the same on arm64 and x64.
+- **Golden values** live in `tests/baselines/golden-values/<name>.json` and are read through
+  `tests/helpers/golden-values.js`. Each file has an `arm64` and an `x64` section, because V8 rounds
+  float `Math` results differently on each architecture. A missing file, section or key fails.
+  - On Node 20 the values are exact. On another major a check fails in CI, and prints one warning
+    and passes unchecked locally.
+  - `npm run test:update` rewrites this machine's section (and the SVG goldens). It refuses to run
+    on a Node major other than 20. Narrow it with file arguments.
+  - `scripts/test-update-goldens-x64.sh [files]` rewrites the x64 section in a linux/amd64 Node 20
+    container. It needs docker and holds the test lock.
+  - Regenerate only when the output changed on purpose. Say so in the commit. Never regenerate to
+    make a drift check pass.
+- **Linux pixel snapshots** live in `tests/e2e/visual.spec.js-snapshots/*-linux.png`. The spec skips
+  on other platforms. `npm run test:visual:screenshots:update` (`scripts/test-update-visual-linux.sh`)
+  regenerates them in the pinned Playwright image as linux/amd64. The check allows 100 different
+  pixels. Dynamic regions (version label, notifications, toasts) are masked.
+- **Touch target baseline** and **journey ledger**: see the touch sections below.
+
+## Corpora
+
+- **Preset corpus.** `tests/integration/preset-corpus-*.test.js` (4 balanced files, helper
+  `tests/helpers/preset-corpus.js`) runs every bundled preset through the real apply path, SVG
+  export and save-and-reopen. `tests/unit/preset-corpus-roster.test.js` checks that the bundle is
+  current and that the 4 files cover every preset system once.
+  - `KNOWN_DEFECTS` inverts one assertion for one preset. A fix makes the test fail until the entry
+    is removed. Never add an entry to make a new failure pass. Each entry has a PRH id in
+    `docs/pre-release-hardening-log.md`.
+- **Legacy saved-file corpus.** `tests/fixtures/legacy-vectura/` holds 13 real project files from
+  0.5.42 to 1.4.0. `tests/integration/legacy-vectura-corpus.test.js` opens each one through the
+  real file path and compares a geometry summary with
+  `tests/baselines/golden-values/legacy-vectura-corpus.json`. `KNOWN_EMPTY` works like
+  `KNOWN_DEFECTS`.
+- **Scene3D golden corpus.** `tests/audit/scene3d-golden-corpus.test.js` renders 35 small canonical
+  scenes and pins one hash per output path in
+  `tests/baselines/golden-values/scene3d-golden-corpus.json`. It is a broad drift canary. It does
+  not replace the mechanism tests. See `tests/audit/README.md`.
+- **Boot canary.** `tests/e2e/algorithm-boot.spec.js` selects every algorithm in a real browser and
+  checks for page errors and a non-empty canvas.
+
+## Shard Plans and Weights
+
+- `VITEST_SHARD_COUNT` (8, PR) and `COVERAGE_SHARD_COUNT` (12, main and nightly) in
+  `.github/workflows/test.yml` are the only sources of the shard counts (owner decision D-9).
+  `tests/unit/test-shard-plan.test.js` keeps each matrix in step.
+- Weights live in `scripts/test-shard-weights.json`. An unweighted file gets the median weight of
+  its `tests/<dir>/`, else the global median. A test fails when more than 25 roster files have no
+  weight.
+- Refresh weights only from Vitest blob reports:
+  `gh run download <id> -p 'coverage-shard-[0-9]*' -D <dir>`, then
+  `node scripts/test-shard-weights-refresh.js --blobs <dir> [--blobs <dir2>] [--run-ids a,b] [--write]`.
+  Without `--write` it prints a summary only. Do not use JSON start and end times: they leave out
+  `beforeAll` time.
+- Check the balance with a dry run:
+  `node scripts/test-shard-plan.js --plan-out <file> --sha $(git rev-parse HEAD) --shards 12`.
+- Scene3D budget (owner decision D-5): Scene3D tests should take at most 50 % of the coverage
+  file-seconds. This is reported, not a hard gate. The current share is about 55 %.
+
+## Push-Gated Follow-Ups
+
+These steps need a push to `main` or a hosted run. Do them in this order after the overhaul merges.
+
+1. **Branch protection.** Require `ci-ok` and CodeQL on `main` (no "up to date" rule):
+   ```
+   gh api -X PUT repos/j-phi/vectura-studio/branches/main/protection --input - <<'JSON'
+   {"required_status_checks":{"strict":false,"checks":[{"context":"ci-ok","app_id":15368},{"context":"Analyze JavaScript (javascript-typescript)","app_id":15368}]},
+    "enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null}
+   JSON
+   ```
+   Until this is on, the local rule in D-3 is not yet safe: run `npm run test:ci` for broad changes.
+2. **Seed the nightly (R-6).** Run `gh workflow run test.yml --ref main` once. From the
+   `touch-audit-measured` artifact, commit the linux section of
+   `tests/e2e/touch/target-baseline.json` and `tests/e2e/touch/journey-status.linux.json` (triage
+   each entry first). After the ledger lands, the journey cells return to the PR touch smoke. If the
+   touch leg then grows, split it into `1/2, 2/2`.
+3. **Confirm the x64 goldens** on the first hosted Vitest run. The new R-30, R-35 and R-40 keys
+   were made under emulated linux/amd64.
+4. **Confirm the linux pixel baselines** on the first `visual-nightly`. They were made under
+   Rosetta. If a hosted run differs, rename the uploaded `*-actual.png` files to the baseline names.
+5. **Measure the new graph.** Compare the first PR `vitest-shard` step times with the main
+   `coverage-shard` step times (local factor 1.33x). Check cross-attempt artifact re-runs.
+6. **Refresh shard weights** from the first hosted coverage blobs. The files that R-26, R-27 and
+   R-34 added are unweighted.
+7. **R-32 touch matrix trim**, after 2 real nightlies: keep all 11 projects for layout specs, and
+   1 Chromium plus 1 WebKit project for behavior specs.
+8. **Worker-aware shard packing.** Simulate 2 workers per shard in the planner, then measure it on
+   hosted runs.
 
 ## Shared Local Test Queue
 Several worktrees and agent sessions run tests on the same machine. Concurrent Vitest and
@@ -71,7 +268,7 @@ heavy test command runs at a time.
 **Rule:** run tests only through the `npm run test:*` entrypoints above. Do not run
 `npx vitest`, `npx playwright test`, or `node_modules/.bin/{vitest,playwright}` directly; that
 bypasses the queue. Environment-variable prefixes still work
-(`VECTURA_PRE_X=1 npm run test:vitest -- run tests/unit/x.test.js`).
+(`PRESET_CORPUS_RT=all npm run test:vitest -- run tests/integration/preset-corpus-image-and-rings.test.js`).
 
 How it works:
 - **One lock for the machine.** The lock dir is `$VECTURA_TEST_QUEUE_DIR`, else
@@ -261,41 +458,16 @@ Branch rules: this ratchet merges before any product lane. After each lane merge
 
 Unit proof: `tests/unit/touch-target-ratchet.test.js` tests the comparator, the update merge, the final targets and the serializer.
 
-## Visual Baselines
-- Canonical SVG baselines are stored in `tests/baselines/svg`.
-- Update baselines with:
-  - `npm run test:update`
-- Baselines should only be updated intentionally when output changes are expected.
-
-## CI Policy
-- `.github/workflows/test.yml` enforces:
-  - Pull requests and `main`: full-scope `test:coverage` owns all Vitest correctness; historical unit/integration/visual check names depend on its success. `test:e2e`, uninstrumented `test:perf`, and lifecycle plus bounded feedback remain distinct executions. Coverage inventory reconciliation is a required check; a missing file is not a pass.
-  - Pull requests and `main`: `e2e-smoke` runs `test:e2e:smoke` (non-touch projects plus the touch smoke on two projects), not the full touch roster.
-  - Nightly schedule: visual/perf plus a complete audit/coverage run. Its browser roster sets `PW_TOUCH_PROJECTS=0`.
-  - Nightly schedule (and `workflow_dispatch`): `touch-e2e-nightly` runs every touch spec in all 11 touch projects as a 10-shard matrix (Playwright `--shard=i/10`; the coverage shard planner is Vitest-only). Each shard uploads `touch-e2e-shard-<i>`. `touch-audit-nightly` runs the full 26-state target audit. Neither job is in `lane-gate`: a red nightly does not block a PR, so check the nightly results before a touch release.
-- `.github/workflows/dependency-review.yml` reviews dependency diffs on pull requests.
-- `.github/workflows/codeql.yml` runs GitHub code scanning on `main`, pull requests to `main`, and a weekly schedule.
-- Playwright artifacts are uploaded from CI on every `e2e-smoke` run.
-
-## Acceleration rollout
-
-Full Vitest scope, browser scope and the coverage ratchet remain during shadow evaluation. Phase two deduplicates execution: unit/integration/visual check names are coverage-dependent compatibility aliases, not independent suite runs.
-Routing/feedback and current-revision roster validation add evidence; passing focused checks alone
-does not promote a change. See [the acceleration contract](test-suite-acceleration.md) for the
-under-one-minute local and initial ordinary PR targets, promotion evidence, and audit
-failure policy. Phase-two full-PR checkpoints and evidence are tracked in `test-suite-phase2.md`; these are targets, not observed hosted speedups.
-
-Use `core`/`feature` loader profiles for explicit pure IIFE dependencies, `component` for minimal
-DOM markup and explicit scripts, and legacy/full profiles for app-shell checks. Each runtime is
-fresh and must be closed. Keep exhaustive geometry/history/mutation matrices in `tests/audit/`;
-retain routine guards for shipped failure mechanisms and verify their defect sensitivity.
-
 ## Writing New Tests
-- Prefer deterministic seeds and explicit parameter overrides.
-- Keep baseline scenarios small enough for fast CI but representative enough to catch regressions.
-- For visual coverage, prefer SVG output checks; use screenshot snapshots only when SVG baselines cannot capture the regression.
 
-The critical feedback roster is `tests/helpers/feedback-roster.json`. It includes live seed-zero, state/export, preset/default-origin, mask/undo, curved/faceted, compact ribbon placement/width, and import-sanitization checks. Known-fault seed/ribbon witnesses execute fresh isolated source variants; exhaustive ribbon proofs remain in broad verification. Runtime budgets fail visibly when exceeded. Conservative broad-job deadlines remain until completed measurements support lowering them.
+- Use deterministic seeds and explicit parameter overrides.
+- Keep scenarios small enough for fast CI and representative enough to catch the defect.
+- For visual coverage, prefer SVG output checks. Use pixel snapshots only when SVG cannot show the regression.
+- Put exhaustive matrices in `tests/audit/` (see `tests/audit/README.md`). Keep routine guards in `tests/unit/`, `tests/integration/` and `tests/visual/`.
+- Name a test file by the behavior it guards, not by a batch, ticket or review round.
+- Pin exact output through `tests/helpers/golden-values.js`, never through a literal table or a git-history read.
+- The feedback roster is `tests/helpers/feedback-roster.json`. Keep it small: its lane has a 60 s deadline.
+- Budgets and trim rules: [test-performance-lessons.md](test-performance-lessons.md).
 
 ## Finger-only Journey Specs and the Step-pinned Ledger (TUX-059)
 `tests/e2e/touch/journeys.spec.js` scripts the 12 core journeys (J1-J12) with finger input only. The step table is `docs/touch-audit/journey-scripts.md`. The code is `tests/e2e/touch/journey-defs.js` (steps) and `tests/e2e/touch/pages.js` (page objects and guards). It runs in the 8 primary projects (96 cells). The `-chrome` and `touch-coarse-wide` projects run the same steps as informational measurements and never fail.
@@ -304,7 +476,7 @@ The critical feedback roster is `tests/helpers/feedback-roster.json`. It include
 - After every step the runner asserts the layerCount, historyLen, redoLen and selectedIds deltas, `renderer.scale > 0`, no page errors, and the shell invariants (no scroll, no pan, no page zoom). `readState` is the only state read.
 - `tests/e2e/touch/journeys-static.spec.js` scans the three files as text and fails on `.click()`, `.fill()`, `page.mouse`, `keyboard.type`, `dispatchEvent`, `scrollIntoView`, `.skip`, `.only`, `selectOption` outside `pickOption`, `insertText` outside `softType`, and `evaluate` outside the allowlisted state helpers. It also compares the step ids in the doc with the code.
 - The ledger `tests/e2e/touch/journey-status.json` lists each failing cell as one line `{project, journey, failsAt, reason}`. A cell passes only when it fails at exactly `failsAt`. A different failing step fails the run ("failure moved from X to Y"). A passing cell with an entry fails ("unexpectedly passed: remove ledger entry"). This replaces the plain `test.fail()` of requirement TUX-059 item 3: a plain expected failure would hide a cell that regresses to an earlier step.
-- The ledger is per platform (`tests/e2e/touch/journey-ledger-file.js`): `journey-status.json` on darwin, `journey-status.linux.json` on linux. Linux CI runs another WebKit build on a slower runner and fails other cells (first PR #102 run: J5 on `touch-iphone-portrait`; J2, J3, J4, J7, J12 on `webkit-ipad-portrait`). While the linux file is missing, every linux cell is record-only (annotation `ledger-missing`), so the PR smoke and the nightly matrix gate journeys only through the harness self-tests. Seed it with the same manual run as the linux target baseline: `touch-audit-nightly` runs `npm run test:e2e:touch:journeys:ledger` on `workflow_dispatch` and uploads `journey-status.linux.json` in the `touch-audit-measured` artifact. Triage each entry (`tux`), then commit it.
+- The ledger is per platform (`tests/e2e/touch/journey-ledger-file.js`): `journey-status.json` on darwin, `journey-status.linux.json` on linux. Linux CI runs another WebKit build on a slower runner and fails other cells (first PR #102 run: J5 on `touch-iphone-portrait`; J2, J3, J4, J7, J12 on `webkit-ipad-portrait`). While the linux file is missing, every linux cell is record-only (annotation `ledger-missing`). The PR touch smoke then leaves the journey cells out (`--grep-invert`), and the nightly matrix records them. Journeys gate only through the harness self-tests until the ledger lands. Seed it with the same manual run as the linux target baseline: `touch-audit-nightly` runs `npm run test:e2e:touch:journeys:ledger` on `workflow_dispatch` and uploads `journey-status.linux.json` in the `touch-audit-measured` artifact. Triage each entry (`tux`), then commit it.
 - Regenerate the ledger by measurement, never by hand: `npm run test:e2e:touch:journeys:ledger`. It runs the 8 primary projects with `JOURNEY_LEDGER_WRITE=1` and merges `test-results/journey-ledger/*.json` into the ledger (`tests/e2e/touch/merge-ledger.js`). Run it after every lane merge into the integration branch, and commit the diff. A lane that flips a cell removes or moves the entry in its own commit.
 - Debug knobs (never set in CI): `JOURNEY_RELAX=id,id`, `JOURNEY_CONTINUE=1`, `JOURNEY_SHOTS_DIR=<dir>` (screenshot of each failing step).
 - The WebKit slider and scroll steps fail honestly at the step: a synthetic one-finger drag does not move a range input or scroll a container (`nativeDefaultActions` false). No engine guard exists in a journey step.
@@ -312,4 +484,4 @@ The critical feedback roster is `tests/helpers/feedback-roster.json`. It include
 - Heavy fixture: `tests/fixtures/touch/journey-heavy.vectura` (Flowfield at 3x density plus Attractor). Each layer tap blocks the main thread for 100 ms or more (1-2 s in Chromium device emulation). Both engines load it for J2. JRN-010 was a clock defect, fixed by TUX-038 req 5 (the rename reads `event.timeStamp`). The Chromium double-tap therefore carries hardware touch times through CDP (`helpers/touch.js` `doubleTap`): CDP waits for the page to handle the first tap before it sends the second, so without the stamp a busy main thread reads as two slow taps that no real finger makes. WebKit cannot stamp a trusted touch; it runs the document about 20x faster, so its tap round trip stays inside the 350 ms window. J2 rename-open passes when the input shows within 6 s; the latency is not bounded, because it measures machine load, not the double-tap contract. The light fixture is `journey-basic.vectura`. `journey-heavy-webkit.vectura` is no longer loaded.
 - Budgets: `boot` (page load, app init, fixture load) has its own 45 s budget. Each later step has 5 s (J2: 20 s, because every step on a heavy document is slow by design). The benign `ResizeObserver loop completed with undelivered notifications` page error is noise and never pins a cell.
 - Guards: `fingerDrag`, `fingerPinch` and `fingerPan` also check that the end points lie on the device screen (self-test (v)). The object-move steps (`j3.move`, `j4.move`, `j4.undo`, `j4.redo`) assert WORLD movement of the object with `renderer.offsetX/offsetY` unchanged (self-test (vi)). A one-finger drag that only pans the view fails them.
-- Runtime: the journeys spec takes about 8.5 minutes over all 11 projects with 2 workers on a shared machine. TUX-061 (every touch spec in every WebKit project) is met by the nightly `touch-e2e-nightly` matrix. The PR `e2e-smoke` job runs only the touch smoke (harness, journeys, fast audit) on one Chromium and one WebKit project: the full roster (7,319 touch tests) exceeded the 60-minute PR job limit. Change the smoke set only with Jay's approval.
+- Runtime: the journeys spec takes about 8.5 minutes over all 11 projects with 2 workers on a shared machine. TUX-061 (every touch spec in every WebKit project) is met by the nightly `touch-e2e-nightly` matrix. The PR `e2e-smoke` touch leg runs only the touch smoke (harness, journeys, fast audit) on one Chromium and one WebKit project: the full roster (7,319 touch tests) exceeded the 60-minute PR job limit. Change the smoke set only with Jay's approval.

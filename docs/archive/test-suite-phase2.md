@@ -1,3 +1,5 @@
+> **Archived 2026-10-18.** History only. The current test and CI system is described in [docs/testing.md](../testing.md).
+
 # Phase two: full PR validation acceleration
 
 Status: PR #97 merged as `1050bc012216faede796ce87b97b3b50ec397854`. The two-shard coverage graph is active on pull requests and pushes to main. Run 38601029835 passed exact-SHA provenance, strict 765-file/57-skip reconciliation, unchanged global ratchets and all required checks. Coverage plan-to-completion took 52m59s; first required job through lane-gate took 53m32s; allocated coverage subtree job time was 92m59s. Against the 101m23s unsharded coverage-job baseline, that is about 47.7% less elapsed coverage time and 8.3% less allocated coverage runner time. These are single equivalent-application, cross-SHA observations; dispatch/queue and total workflow cost are separate.

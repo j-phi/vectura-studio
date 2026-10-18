@@ -6,7 +6,8 @@
 
 - [ ] I ran the required validation commands for this change type.
 - [ ] I included test/manual verification notes in this PR description.
-- [ ] For test-routing/gating changes, I recorded current-revision evidence, retained audit/coverage protection, reconciled exact suite ownership (including any compatibility aliases), and distinguished measured timings from targets.
+- [ ] For a fix, the RED proof (the test failing before the fix) is in this description or the commit message.
+- [ ] For test-routing/gating changes, every test still runs pre-merge on each PR that can affect it, mutation proofs cover each removed assertion class, and measured timings are kept apart from projections.
 
 ## Agentic Harness and Documentation
 

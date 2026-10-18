@@ -1,3 +1,5 @@
+> **Archived 2026-10-18.** History only. The current test and CI system is described in [docs/testing.md](../testing.md).
+
 # Render-test workload reductions
 
 Status: merged in PR #99 (hosted run 38781571763 passed); local certification also passed. Candidate is based on `be12125fb4ddb61eea78a281d5e888b453f2049b` (includes the deterministic legacy-density seed fix). The source payload captured before certification has internal SHA-256 `f473c39a997e0b481746952e3be0d987bba8ce50f614febf999774e58bec4bac`; all 1,183 recorded file hashes matched at run time, and both approved retired files were absent. The coverage run and strict profile used that frozen payload. The later weight-file refresh is derived from its measured profile.

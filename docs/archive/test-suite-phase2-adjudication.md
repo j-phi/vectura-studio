@@ -1,3 +1,5 @@
+> **Archived 2026-10-18.** History only. The current test and CI system is described in [docs/testing.md](../testing.md).
+
 # Phase 2 Sol adjudication (read-only, 2026-10-12)
 
 Scope: current uncommitted `HEAD` diff in `/Users/jayphi/.codex/worktrees/phase2-publish/vectura-studio`, plus `/private/tmp/p2-sol-review.md`. No tests or worktree mutations. This is a static review; CI execution remains unverified here.

@@ -1,3 +1,5 @@
+> **Archived 2026-10-18.** History only. The current test and CI system is described in [docs/testing.md](../testing.md).
+
 # Phase 2 Sol adversarial review — interim CI pass (2026-10-12)
 
 Scope: read-only inspection of `/Users/jayphi/.codex/worktrees/phase2-publish/vectura-studio` before render/runtime packages arrive. No heavy tests run. `git diff --check` passed.

@@ -1,3 +1,5 @@
+> **Archived 2026-10-18.** History only. The current test and CI system is described in [docs/testing.md](../testing.md).
+
 # Test-suite acceleration adjudication — 2026-10-11
 
 Independent source review of the uncommitted implementation and `docs/test-suite-acceleration-review.md`. No full suite or hosted CI run was performed. The second implementation batch should fix every item below; retain the existing full PR jobs and coverage thresholds during shadow evaluation.

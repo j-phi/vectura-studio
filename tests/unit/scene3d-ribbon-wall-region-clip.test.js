@@ -48,7 +48,7 @@
  * the raw region (same object), so its hole area is bit-identical to ground
  * truth — nowhere near the ceiling.
  *
- * RED against `e047c9a7`: run with `VECTURA_PRE_WALLS_FIX=1`.
+ * RED against `e047c9a7` (the pre-fix tree).
  *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');

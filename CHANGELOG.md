@@ -6,6 +6,36 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Test and CI overhaul (v1.4.18, branch `ci/test-overhaul`)
+One required check, a faster PR gate, and new canaries for real user risk. Plan and evidence: `docs/archive/2026-10-test-ci-review.md`. Operation: `docs/testing.md`.
+
+#### Gate and graph
+- **`ci-ok` is the one required check (R-1).** It fails when a job that should run on the event fails, is cancelled or is skipped against the plan. Branch protection is not on yet (push-gated follow-up).
+- **PR graph (R-7, R-8, R-17, R-21, R-41).** `ci-plan` decides what runs. PRs run 8 uninstrumented Vitest shards with a strict merge (inventory, zero-test files, 57-skip baseline), 4 `e2e-smoke` legs (3 desktop, 1 touch smoke), perf with `test:runner`, the touch-waiver job, and the Scene3D audits (3 groups) only when `scripts/audit-paths.js` matches. The lane router, aliases, `lane-gate` and the plan hop are gone.
+- **Main and nightly (R-19, R-20, R-21, R-38).** Every main push runs the coverage ratchet (12 shards, thresholds unchanged). A push whose tree equals a green PR run skips the rest. The 85-108 min nightly audit job is gone: the nightly reuses the graph, plus the full touch roster, the touch audit and a new linux pixel-snapshot job in the pinned Playwright image.
+- **Owners for red (R-5, R-15).** A red main or nightly opens or comments on a `ci-red-main` issue. Flaky Playwright tests get warnings and a `ci-flaky` issue.
+- **Release (R-3).** A tag needs a green `ci-ok` on its commit. The zip build drops the deleted `styles.css` and fails on a missing path. A new smoke step loads the zip in Chromium.
+- **Hygiene.** Schedule runs have their own concurrency group (R-2). `npm ci` everywhere and a cached Playwright browser download (R-14). Least-privilege tokens, timeouts on every job, re-run-safe uploads.
+
+#### Test portfolio
+- **History-free tests (R-4, R-18, D-4).** No test reads git history. RED proofs live in the fix commit. Exact output is pinned in regenerable per-architecture golden values (`tests/helpers/golden-values.js`, `npm run test:update`, `scripts/test-update-goldens-x64.sh`). Coverage shards use shallow clones.
+- **Pruned with mutation proofs (R-26 to R-33).** The FR-U fill-style family became 11 behavior-named files. Ribbon and tone-law suites keep one witness per mechanism. Constant pins, report-only renders and source-text patch pins are gone. Files are named by behavior.
+- **New canaries (R-34 to R-37, R-40).** A preset corpus (155 presets through apply, export and save/reopen), a legacy saved-file corpus (13 files, 0.5.42 to 1.4.0), SVG goldens for the 11 algorithms that had none, a browser boot canary for every algorithm, and a 35-scene Scene3D golden corpus.
+- **Removed tools (R-13, R-24).** `test:fast`, `test:route`, the lane measure/promote/aggregate scripts, the Unicode patch step, the shard pilot workflow and the engine benchmark.
+
+#### Defects the canaries found (not fixed; PRH-029 to PRH-037)
+- Text and 3D Scene presets cannot be applied from the ctxbar flyout; a stale applier may reset another layer (possible data loss, PRH-031).
+- The Phylla default and 3 presets export an empty SVG (PRH-029).
+- The Rainfall panel adds noise without a regenerate; save and reopen drifts on 5 presets (PRH-030).
+- 0.5.x `petalis` layers open empty (PRH-032). Orphan `shape_pack/hexagonal_mosaic.vectura` (PRH-033). Petal Designer 404 log (PRH-034). Three test gaps (PRH-035 to PRH-037).
+
+#### Timing (measured vs projected)
+- Measured on hosted runners before the change: PR `e2e-smoke` 16.8 min (the critical path since PR #102). Measured locally: Scene3D pruning cut 1,319.5 to 884.4 file-s (R-27 to R-30) and 433.6 to 183.1 file-s (R-26); instrumented over uninstrumented Vitest is about 1.33x on arm64.
+- Projected, not yet measured on hosted runners: PR wall time about 6 min (Vitest chain about 5.5 min, slowest e2e leg about 5 min). Needs two hosted runs, plus confirmation of the x64 goldens and the linux pixel baselines.
+
+#### Policy
+- Every test runs pre-merge on every PR that can affect it and nightly on main (D-1). Coverage runs on main, not on PRs (D-2). Locally: `test:feedback` plus touched files; `test:ci` is optional (D-3). Scene3D tests target at most 50 % of coverage file-seconds, now about 55 % (D-5). Testing docs collapse into `docs/testing.md`; older rollout docs are in `docs/archive/` (D-8).
+
 ### Touch remediation (TUX-001 to TUX-062, branch `touch/integration`)
 Touch and Apple Pencil now work across the whole app on iPad and iPhone. Mouse and desktop behavior is unchanged unless a bullet says "all pointers". Items are grouped by area. Simulation proves them on 11 Chromium and WebKit touch projects. Real-device rows stay open in `docs/touch-audit/device-checklist.md`.
 

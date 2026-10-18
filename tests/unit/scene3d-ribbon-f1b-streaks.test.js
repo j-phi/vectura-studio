@@ -138,7 +138,7 @@
  * NO SOURCE FIX LANDS IN THIS COMMIT (A3, amended). `d5af9e30` remains the
  * historical red anchor for the *narrative* above (the three reverted
  * hypotheses were measured against it), but the assertions below are an
- * ORACLE-SIDE re-pin, not a source fix — `VECTURA_PRE_F1B=1` therefore
+ * ORACLE-SIDE re-pin, not a source fix — the pre-F1b tree therefore
  * produces the SAME numbers as the current tree for every law (no
  * `F1B_FILES` content changed), and every assertion below is written to be
  * equally true under both. The real RED/GREEN pivot for the oracle split

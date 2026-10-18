@@ -23,6 +23,7 @@ const BUNDLE = path.join(ROOT, 'src/config/user-presets.js');
 // shape_pack/hexagonal_mosaic.vectura is a full v1.1.61 project file in a
 // directory that matches no layer type; shapePack/hexagonal-mosaic.vectura is
 // the real preset. Kept as a legacy-format fixture (tests/fixtures/legacy-vectura).
+// Tracked as PRH-033.
 const NOT_PRESETS = new Set(['shape_pack/hexagonal_mosaic.vectura']);
 const RESERVED_DIRS = new Set(['wallpaper']);
 

@@ -1,3 +1,5 @@
+> **Archived 2026-10-18.** History only. The current test and CI system is described in [docs/testing.md](../testing.md).
+
 # Adversarial review of uncommitted test acceleration changes
 
 Read-only review performed 2026-10-11. I inspected the changed source, manifests, workflow, and docs; I did not run a full test command or bypass the shared queue. A tiny `node scripts/test-lane-aggregate.js` probe is noted below. Findings distinguish current blockers from evidence needed before future promotion.

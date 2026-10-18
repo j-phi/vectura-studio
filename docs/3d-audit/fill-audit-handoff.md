@@ -293,7 +293,7 @@ commit made at the session limit (agent died mid-unit; tests may be red — fini
 - **Machine load is 40–90 from parallel sessions.**
   - Absolute timings are meaningless. Measure perf only as old-vs-new **interleaved in ONE process**. The pattern is `scratchpad/perf.cjs`: scriptOverrides with `git show <sha>:<file>`.
   - An implementer once reported 1.7 s when the real slowdown was 4.1×.
-- **The pre-push hook (`test:fast`) times out slow tests under load.**
+- **The pre-push hook (`test:feedback`) times out slow tests under load.**
   - Retry when load is lower.
   - Give slow tests explicit budgets (the CI-6 split pattern).
   - Do not skip the hook.

@@ -9,6 +9,7 @@
  */
 const { test, expect } = require('@playwright/test');
 
+// The petal-profiles probe 404 is tracked as PRH-034.
 const EXPECTED_404 = [/\/favicon\.ico$/, /\/src\/config\/petal-profiles\/$/];
 // SVG Distort distorts an imported SVG; with no import it legitimately draws nothing.
 const EMPTY_BY_DESIGN = new Set(['svgDistort']);

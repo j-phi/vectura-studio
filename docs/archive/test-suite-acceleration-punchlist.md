@@ -1,3 +1,5 @@
+> **Archived 2026-10-18.** History only. The current test and CI system is described in [docs/testing.md](../testing.md).
+
 # Test-suite acceleration punchlist
 
 Status update, 2026-10-12: PR #90 merged after completed run38282702522 passed full-scope coverage (762 passing files,1 skipped;8,863 passing tests,57 skipped) and all required jobs on `ae1de017`. Coverage96m32s; whole-PR speed targets remain unmet. Phase two is tracked in `test-suite-phase2.md`. Earlier measurements below are historical snapshots.

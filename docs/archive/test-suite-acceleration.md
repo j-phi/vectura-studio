@@ -1,3 +1,5 @@
+> **Archived 2026-10-18.** History only. The current test and CI system is described in [docs/testing.md](../testing.md).
+
 # Test-suite acceleration
 
 This document describes the implementation contract for faster local feedback and GitHub

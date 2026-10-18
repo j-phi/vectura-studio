@@ -19,7 +19,7 @@
  * originally measured on, on BOTH sphere and torus, so a future change to the
  * WALLS class cannot regress the exact repro without failing here first.
  *
- * RED against `1b157bc6`, reproducibly: run this file with `VECTURA_PRE_WIP=1`
+ * RED against `1b157bc6`, reproducibly: run this file on that tree
  * and all 6 assertions fail. The pre-fix binary classifier ran these
  * widths through `erode(region, pen/2)` twice (outline, then fill), which is
  * unreliable under ~2 pens; `ringFillRate` measured below 0.995 there.

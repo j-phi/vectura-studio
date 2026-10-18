@@ -47,6 +47,7 @@ const EXPECTED_TYPES = {
 const KNOWN_EMPTY = {
   // Pre-0.6 files name the flower layer type 'petalis'. The type was renamed
   // petalisDesigner and nothing maps the old name, so the layer opens empty.
+  // Tracked as PRH-032.
   '0.5.47-petalis.vectura/0:petalis': 'legacy petalis layer type has no algorithm (no alias to petalisDesigner)',
 };
 
