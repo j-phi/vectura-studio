@@ -494,3 +494,14 @@ describe('parse failures', () => {
     expect(() => R.scan('function (', 'src/broken.js')).toThrow(/src\/broken\.js/);
   });
 });
+
+describe('HTML comment stripping (CodeQL js/incomplete-multi-character-sanitization)', () => {
+  test('a removal cannot splice a new comment opener together', () => {
+    // The old single regex replace left 'a<!-- y -->b'.
+    expect(R.stripHtmlComments('a<!<!-- x -->-- y -->b')).toBe('ab');
+  });
+  test('multiline comments and unterminated openers are removed', () => {
+    expect(R.stripHtmlComments('a<!--\nx\n-->b')).toBe('ab');
+    expect(R.stripHtmlComments('a<!-- open')).toBe('a');
+  });
+});

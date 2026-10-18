@@ -636,9 +636,30 @@ function checkR11Coverage(sliderText, cssFiles) {
  * file really holds: a count above it is a stale allowance and fails, so the allowlist shrinks as legacy markers go.
  */
 const ALT_V2 = /touch-alt:\s*TUX-\d{3}\s+via\s+(\S+)\s+(?:-|\u2014|\u2013)\s+\S/;
+// Removing one comment can splice a new `<!--` together (`<!<!-- a -->-- b -->`), so strip until stable.
+// An unterminated `<!--` drops the rest of the text, as an HTML parser would.
+function stripHtmlCommentsOnce(text) {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const open = text.indexOf('<!--', i);
+    if (open < 0) { out += text.slice(i); break; }
+    out += text.slice(i, open);
+    const close = text.indexOf('-->', open + 4);
+    if (close < 0) break;
+    i = close + 3;
+  }
+  return out;
+}
+function stripHtmlComments(text) {
+  let prev;
+  let out = text;
+  do { prev = out; out = stripHtmlCommentsOnce(prev); } while (out !== prev);
+  return out;
+}
 function stripComments(text, rel) {
   if (/\.css$/.test(rel)) return text.replace(/\/\*[\s\S]*?\*\//g, '');
-  if (/\.html?$/.test(rel)) return text.replace(/<!--[\s\S]*?-->/g, '');
+  if (/\.html?$/.test(rel)) return stripHtmlComments(text);
   const ast = parseJs(text, rel);
   let out = text;
   ast.comments.slice().sort((a, b) => b.range[0] - a.range[0]).forEach((c) => { out = out.slice(0, c.range[0]) + out.slice(c.range[1]); });
@@ -673,6 +694,7 @@ function checkAltMarkers(markerList, sources, legacy = {}) {
 module.exports = {
   checkR11Coverage,
   checkAltMarkers,
+  stripHtmlComments,
   ALT_V2,
   scan,
   scanFull,
