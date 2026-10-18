@@ -119,6 +119,7 @@ function analyzeJs(text, rel) {
   const info = {
     comments,
     touchHold: false,
+    pointerReorder: false,
     regs: [], // { event, line, handler, how }
     pendingAdds: [], // addEventListener with a non-literal event argument
     fnByName: new Map(),
@@ -128,7 +129,9 @@ function analyzeJs(text, rel) {
     keyRegisteredFns: new Set(),
     keyRegisteredNames: new Set(),
     draggable: [], // lines
-    rangeInput: [], // lines
+    rangeInput: [], // lines (range inputs created here; informational, they are covered by RangeTouch)
+    rangeOptOut: [], // lines that opt a range input out of RangeTouch and the coarse CSS (R11)
+    rangeTouch: false, // a RangeTouch member is assigned (UI.RangeTouch = ...)
     dragstart: [], // lines
     fnNames: new Map(),
     bridgeSelector: null,
@@ -142,6 +145,7 @@ function analyzeJs(text, rel) {
     switch (node.type) {
       case 'Identifier':
         if (node.name === 'TouchHold') info.touchHold = true;
+        if (node.name === 'PointerReorder') info.pointerReorder = true;
         break;
       case 'FunctionDeclaration':
         declareFn(node.id && node.id.name, node);
@@ -156,6 +160,7 @@ function analyzeJs(text, rel) {
       case 'MemberExpression': {
         const name = propName(node);
         if (name === 'TouchHold') info.touchHold = true;
+        if (name === 'PointerReorder') info.pointerReorder = true;
         if (name && KEY_PROPS.has(name) && isEventObject(node.object, nearestFn(anc))) {
           const fn = nearestFn(anc);
           if (fn) info.keyReadFns.add(fn);
@@ -177,6 +182,9 @@ function analyzeJs(text, rel) {
         }
         if (name === 'draggable' && ((node.right.type === 'Literal' && (node.right.value === true || node.right.value === 'true')))) info.draggable.push(line);
         if (name === 'type' && strValue(node.right) === 'range') info.rangeInput.push(line);
+        if (name === 'rangeTouch' && /^off$/i.test(strValue(node.right) || '')) info.rangeOptOut.push(line);
+        if (name === 'className' && /\btux-nope\b/.test(strValue(node.right) || '')) info.rangeOptOut.push(line);
+        if (name === 'RangeTouch') info.rangeTouch = true;
         if (node.left.property && isFn(node.right)) info.fnNames.set(node.right, name);
         break;
       }
@@ -203,6 +211,11 @@ function analyzeJs(text, rel) {
           const b = node.arguments[1];
           if (a === 'draggable' && ((b.type === 'Literal' && (b.value === true || b.value === 'true')))) info.draggable.push(line);
           if (a === 'type' && strValue(b) === 'range') info.rangeInput.push(line);
+          if (a === 'data-range-touch' && /^off$/i.test(strValue(b) || '')) info.rangeOptOut.push(line);
+          if (a === 'class' && /\btux-nope\b/.test(strValue(b) || '')) info.rangeOptOut.push(line);
+        } else if (name === 'add' && node.callee.object && propName(node.callee.object) === 'classList'
+          && node.arguments.some((a) => strValue(a) === 'tux-nope')) {
+          info.rangeOptOut.push(line);
         }
         break;
       }
@@ -244,9 +257,24 @@ function nearestFn(anc) {
   return null;
 }
 
+// The function a registration belongs to for R3 pairing. A callback handed straight to an array iterator
+// (TYPES.forEach((t) => d.addEventListener(t, ...))) is part of its caller, so it is skipped.
+const ITERATORS = new Set(['forEach', 'map', 'filter', 'some', 'every', 'flatMap']);
+function pairScope(anc) {
+  for (let i = anc.length - 1; i >= 0; i--) {
+    const n = anc[i];
+    if (!isFn(n)) continue;
+    const parent = anc[i - 1];
+    if (parent && parent.type === 'CallExpression' && parent.arguments.includes(n) && ITERATORS.has(propName(parent.callee))) continue;
+    return n;
+  }
+  return null;
+}
+
 function markKeyHandler(info, handler) {
   if (isFn(handler)) info.keyRegisteredFns.add(handler);
   else if (handler && handler.type === 'Identifier') info.keyRegisteredNames.add(handler.name);
+  else if (handler && handler.type === 'MemberExpression' && propName(handler)) info.keyRegisteredNames.add(propName(handler));
 }
 
 function arrayStrings(arr, info) {
@@ -276,6 +304,7 @@ function resolveLoopEvents(p, info) {
 
 const MARKUP_DRAG = /<[^<>]*\bdraggable\s*=\s*["']?true\b/g;
 const MARKUP_RANGE = /<[^<>]*\btype\s*=\s*["']?range\b/g;
+const MARKUP_RANGE_OPTOUT = /<[^<>]*(?:\bdata-range-touch\s*=\s*["']?off\b|\btux-nope\b)[^<>]*>/gi;
 function scanMarkupString(info, value, startLine) {
   if (value.indexOf('<') < 0) return;
   let m;
@@ -283,6 +312,8 @@ function scanMarkupString(info, value, startLine) {
   while ((m = MARKUP_DRAG.exec(value))) info.draggable.push(startLine + countNl(value, m.index));
   MARKUP_RANGE.lastIndex = 0;
   while ((m = MARKUP_RANGE.exec(value))) info.rangeInput.push(startLine + countNl(value, m.index));
+  MARKUP_RANGE_OPTOUT.lastIndex = 0;
+  while ((m = MARKUP_RANGE_OPTOUT.exec(value))) info.rangeOptOut.push(startLine + countNl(value, m.index));
 }
 const countNl = (s, upTo) => { let n = 0; for (let i = 0; i < upTo; i++) if (s.charCodeAt(i) === 10) n++; return n; };
 
@@ -339,15 +370,27 @@ function jsHits(info, rel) {
     add('R2', r.line);
   });
   // R3
-  evs(['mousedown']).forEach((r) => add('R3', r.line));
+  // A mousedown is compliant when pointerdown is registered on the same receiver expression in the SAME function
+  // (a fallback or a ghost-click swallow beside the pointer path) or when its handler is neutral (stopPropagation
+  // only). A pointerdown on a same-named variable in another function does not pair: round 2 of the static guard.
+  const downRegs = regs.filter((r) => r.event === 'pointerdown');
+  evs(['mousedown']).forEach((r) => {
+    const scope = pairScope(r.anc);
+    if (r.target != null && downRegs.some((d) => d.target === r.target && pairScope(d.anc) === scope)) return;
+    if (isNeutralHandler(r.handler, info)) return;
+    add('R3', r.line);
+  });
   // R4 (touch-ok removal is applied before counting, see filter below)
   hits.push(...[]);
   // R5
   evs(['dblclick']).forEach((r) => { if (!info.touchHold && !altNear(r.line)) add('R5', r.line); });
   // R6
-  info.draggable.concat(info.dragstart).forEach((line) => { if (!altNear(line)) add('R6', line); });
-  // R11
-  if (rel !== SLIDER_PATH) info.rangeInput.forEach((line) => add('R11', line));
+  // A file that references UI.PointerReorder has the pointer-reorder path (like TouchHold for R1).
+  info.draggable.concat(info.dragstart).forEach((line) => { if (!info.pointerReorder && !altNear(line)) add('R6', line); });
+  // R11 (Q26): a range input is touch-safe through the global controller (UI.RangeTouch) and the
+  // coarse-pointer CSS, so a bare range is fine. A site that opts OUT of that coverage is flagged.
+  // The coverage itself is checked once by checkR11Coverage.
+  info.rangeOptOut.forEach((line) => { if (!altNear(line)) add('R11', line, 'range input opts out of RangeTouch'); });
   // R10
   const named = (fn) => info.fnNames.get(fn) || (fn.id && fn.id.name) || nameOfDeclarator(info, fn);
   info.r10Raw = 0;
@@ -417,7 +460,10 @@ const stripVar = (value) => {
   return out;
 };
 const BARE_VH = /(^|[^\d.])100vh\b/;
-const DYN_VH = /\b\d+(?:\.\d+)?(?:dvh|svh|lvh)\b/;
+// Tokens that make a later same-property value dynamic: a literal dvh/svh/lvh length, or the
+// --app-vh token (tokens.css: 100vh fallback, redefined as 100dvh where supported).
+const DYN_VH_TOKENS = [/\b\d+(?:\.\d+)?(?:dvh|svh|lvh)\b/, /var\(\s*--app-vh\b/];
+const isDynVh = (value) => DYN_VH_TOKENS.some((re) => re.test(value));
 const HOVER_CAPABLE = /(?:\bany-hover|\bhover)\s*:\s*hover\b|\bpointer\s*:\s*fine\b/;
 
 function scanCss(text, rel) {
@@ -447,7 +493,7 @@ function scanCss(text, rel) {
       let seen = false;
       parent.each((sib) => {
         if (sib === decl) { seen = true; return; }
-        if (seen && sib.type === 'decl' && sib.prop.toLowerCase() === decl.prop.toLowerCase() && DYN_VH.test(sib.value)) later = true;
+        if (seen && sib.type === 'decl' && sib.prop.toLowerCase() === decl.prop.toLowerCase() && isDynVh(sib.value)) later = true;
       });
       if (!later) hits.push({ rule: 'R7', file: rel, line: decl.source.start.line, detail: `${decl.prop}: ${decl.value}` });
     });
@@ -479,7 +525,9 @@ function scanHtml(text, rel) {
       ['h-screen', 'min-h-screen', 'max-h-screen'].forEach((t) => { if (tokens.includes(t)) add('R7', body, t); });
     }
     doc.querySelectorAll('[draggable="true"]').forEach((el) => add('R6', el));
-    doc.querySelectorAll('input[type="range"]').forEach((el) => add('R11', el));
+    doc.querySelectorAll('input[type="range"]').forEach((el) => {
+      if (el.matches('.tux-nope') || el.closest('[data-range-touch="off" i]')) add('R11', el, 'range input opts out of RangeTouch');
+    });
     doc.querySelectorAll('button').forEach((el) => {
       const t = el.textContent.trim();
       const iconOnly = t === '' || !/\p{L}/u.test(t);
@@ -540,7 +588,114 @@ function checkR12(classes, cssFiles) {
   return classes.filter((c) => !covered.has(c)).map((c) => ({ rule: 'R12', file: 'src/ui/skin', line: 0, detail: c }));
 }
 
+const RANGE_SEL = /^input\[type\s*=\s*(?:"range"|'range'|range)\]$/;
+const RANGE_CONTROLLER_EVENTS = ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'];
+
+/**
+ * R11 coverage (Q26): the global touch layer that makes every bare range input safe must exist.
+ *  - slider.js assigns RangeTouch and registers document-level pointerdown/move/up/cancel.
+ *  - A skin rule inside @media (pointer: coarse) selects every range input (only :not(.tux-nope)
+ *    or [data-ui-skin] in front of it), sets touch-action other than auto, and sets a block size.
+ * Returns hits attributed to the slider file or src/ui/skin.
+ */
+function checkR11Coverage(sliderText, cssFiles) {
+  const hits = [];
+  const info = scanJs(sliderText, SLIDER_PATH).info;
+  const documentRegs = new Set(info.regs.filter((r) => r.target === 'document').map((r) => r.event));
+  const missing = RANGE_CONTROLLER_EVENTS.filter((ev) => !documentRegs.has(ev));
+  if (!info.rangeTouch) hits.push({ rule: 'R11', file: SLIDER_PATH, line: 0, detail: 'UI.RangeTouch is not assigned' });
+  if (missing.length) hits.push({ rule: 'R11', file: SLIDER_PATH, line: 0, detail: `RangeTouch has no document-level ${missing.join(', ')}` });
+  let covered = false;
+  cssFiles.forEach(({ rel, text }) => {
+    let root;
+    try { root = postcss.parse(text, { from: rel }); } catch (e) { throw new Error(`touch-static-guard: cannot parse ${rel}: ${e.message}`); }
+    root.walkRules((rule) => {
+      let coarse = false;
+      for (let p = rule.parent; p; p = p.parent) if (p.type === 'atrule' && /\bpointer\s*:\s*coarse\b/.test(p.params)) coarse = true;
+      if (!coarse || !rule.nodes) return;
+      const sizes = rule.nodes.some((n) => n.type === 'decl' && /^(?:block-size|height|min-block-size|min-height)$/i.test(n.prop));
+      const action = rule.nodes.some((n) => n.type === 'decl' && n.prop.toLowerCase() === 'touch-action' && !/^auto\b/i.test(n.value.trim()));
+      if (!sizes || !action) return;
+      const global = rule.selectors.some((sel) => {
+        const compound = sel.trim().replace(/\s+/g, ' ');
+        const rest = compound.replace(/^\[data-ui-skin\]\s+/, '').replace(/:not\(\.tux-nope\)$/, '');
+        return RANGE_SEL.test(rest);
+      });
+      if (global) covered = true;
+    });
+  });
+  if (!covered) hits.push({ rule: 'R11', file: 'src/ui/skin', line: 0, detail: 'no @media (pointer: coarse) rule sizes every input[type=range]' });
+  return hits;
+}
+
+/**
+ * touch-alt v2 (batch G): a marker must cite its touch equivalent.
+ *   touch-alt: TUX-nnn via <symbol-or-selector> - <reason>
+ * The cited symbol must occur as code (comments stripped) in one of the given sources.
+ * `legacy` maps file -> number of old-format markers still allowed. Each count must EQUAL the old-format markers the
+ * file really holds: a count above it is a stale allowance and fails, so the allowlist shrinks as legacy markers go.
+ */
+const ALT_V2 = /touch-alt:\s*TUX-\d{3}\s+via\s+(\S+)\s+(?:-|\u2014|\u2013)\s+\S/;
+// Removing one comment can splice a new `<!--` together (`<!<!-- a -->-- b -->`), so strip until stable.
+// An unterminated `<!--` drops the rest of the text, as an HTML parser would.
+function stripHtmlCommentsOnce(text) {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const open = text.indexOf('<!--', i);
+    if (open < 0) { out += text.slice(i); break; }
+    out += text.slice(i, open);
+    const close = text.indexOf('-->', open + 4);
+    if (close < 0) break;
+    i = close + 3;
+  }
+  return out;
+}
+function stripHtmlComments(text) {
+  let prev;
+  let out = text;
+  do { prev = out; out = stripHtmlCommentsOnce(prev); } while (out !== prev);
+  return out;
+}
+function stripComments(text, rel) {
+  if (/\.css$/.test(rel)) return text.replace(/\/\*[\s\S]*?\*\//g, '');
+  if (/\.html?$/.test(rel)) return stripHtmlComments(text);
+  const ast = parseJs(text, rel);
+  let out = text;
+  ast.comments.slice().sort((a, b) => b.range[0] - a.range[0]).forEach((c) => { out = out.slice(0, c.range[0]) + out.slice(c.range[1]); });
+  return out;
+}
+function checkAltMarkers(markerList, sources, legacy = {}) {
+  const problems = [];
+  const left = { ...legacy };
+  let stripped = null;
+  const code = () => {
+    if (!stripped) stripped = sources.map((s) => stripComments(s.text, s.rel));
+    return stripped;
+  };
+  markerList.forEach((m) => {
+    const v2 = ALT_V2.exec(m.text);
+    if (!v2) {
+      if (left[m.file] > 0) { left[m.file] -= 1; return; }
+      problems.push(`${m.file}:${m.line} touch-alt must cite its touch equivalent: "touch-alt: TUX-nnn via <symbol> - <reason>": ${m.text}`);
+      return;
+    }
+    const symbol = v2[1].replace(/[,;.]+$/, '');
+    if (!code().some((t) => t.includes(symbol))) problems.push(`${m.file}:${m.line} touch-alt cites "${symbol}", which does not occur as code`);
+  });
+  Object.keys(left).forEach((file) => {
+    if (left[file] > 0) {
+      problems.push(`${file}: the legacy touch-alt allowlist says ${legacy[file]} old-format markers, the file holds ${legacy[file] - left[file]}; lower LEGACY_TOUCH_ALT to ${legacy[file] - left[file]}${legacy[file] - left[file] === 0 ? ' (delete the entry)' : ''}`);
+    }
+  });
+  return problems;
+}
+
 module.exports = {
+  checkR11Coverage,
+  checkAltMarkers,
+  stripHtmlComments,
+  ALT_V2,
   scan,
   scanFull,
   markers,

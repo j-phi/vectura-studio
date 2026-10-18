@@ -1249,7 +1249,7 @@
                   <div class="border border-vectura-border px-2 py-1.5 flex items-center justify-between gap-2" data-pattern-row="${escapeHtml(p.id)}">
                     <div class="min-w-0 flex items-center gap-1.5">
                       <span class="shrink-0 w-2 h-2 rounded-full bg-orange-400 cursor-default"
-                        data-storage-tip title="${escapeHtml(STORAGE_TIP)}"></span>
+                        data-storage-tip role="img" aria-label="${escapeHtml(STORAGE_TIP)}" title="${escapeHtml(STORAGE_TIP)}"></span>
                       <div>
                         <div class="text-[11px] text-vectura-text truncate">${escapeHtml(p.name)}</div>
                         <div class="text-[9px] text-vectura-muted truncate">${escapeHtml(p.filename || p.id)}</div>
@@ -1319,16 +1319,7 @@
           });
         });
 
-        // Storage tooltip with 500ms hover delay
-        let tipTimer = null;
-        body.querySelectorAll('[data-storage-tip]').forEach((dot) => {
-          dot.addEventListener('mouseenter', () => {
-            tipTimer = setTimeout(() => {
-              dot.setAttribute('title', STORAGE_TIP);
-            }, 500);
-          });
-          dot.addEventListener('mouseleave', () => clearTimeout(tipTimer));
-        });
+        // Storage dot: the label is static (aria-label + title), so the touch tooltip (TUX-039) shows it on a hold.
       };
 
       this.openModal({ title: 'Load Pattern', body });

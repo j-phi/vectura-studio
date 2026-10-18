@@ -137,3 +137,17 @@ test.describe('nested controls and closed disclosures (TUX-058 round 3)', () => 
     expect(raw.stranded).toBe(1);
   });
 });
+
+test.describe('opt-in targets (static-guard round 2)', () => {
+  const cfg = { W: 600, H: 400, safe: { top: 0, bottom: 0, left: 0, right: 0 }, allow: [] };
+  test('an aria-hidden div with cursor:col-resize is measured when it carries data-touch-target', async ({ page }) => {
+    await page.setContent(page_html(
+      '<div id="rz" data-touch-target aria-hidden="true" style="position:absolute;left:100px;top:10px;width:6px;height:200px;cursor:col-resize"></div>'
+      + '<div id="plain" aria-hidden="true" style="position:absolute;left:300px;top:10px;width:6px;height:200px;cursor:col-resize"></div>'));
+    const raw = await core.measurePage(page, cfg);
+    const rz = raw.items.find((i) => i.sel === '#rz');
+    expect(rz, 'the opt-in resizer is an audit item').toBeTruthy();
+    expect(rz.hig44, 'a 6 px wide bar fails the 44 px floor').toBe(false);
+    expect(raw.items.find((i) => i.sel === '#plain'), 'an unmarked div is not').toBeFalsy();
+  });
+});

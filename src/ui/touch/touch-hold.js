@@ -184,8 +184,9 @@
       };
       // A draggable card would start a native HTML drag (lift + ghost image) on a touch hold.
       if (el.draggable === true) {
+        const wasDraggable = el.draggable;
         el.draggable = false;
-        h.restoreDrag = () => { el.draggable = true; };
+        h.restoreDrag = () => { el.draggable = wasDraggable; };
       }
       h.onMove = (ev) => {
         if (ev.pointerId !== h.pointerId || h.fired) return;

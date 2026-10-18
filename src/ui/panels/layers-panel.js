@@ -342,6 +342,10 @@
         this.renderLayers(); this.app.render?.();
       };
 
+      // HTML5 drag events carry no pointerType, so the shared modifier reader returns the plain Shift
+      // key (a mouse drag). The touch route to "make clipping mask" is the layer menu, not a drag.
+      const _dndShift = (e) => Boolean(window.Vectura?.InputModifiers?.readModifiers?.(e)?.shift);
+
       // _bindCardTouchDrag: touch reorder. TUX-044's PointerReorder builds on this function.
       // TUX-034a removed the 350 ms card hold: a hold on the card body now opens the layer
       // menu (TouchHold). Reorder starts only from the `.lvl-grip` handle (`immediate`), after
@@ -355,10 +359,11 @@
         let startY = 0;
         let lastTargetId = null;
         let lastPos = null;
+        let restoreDraggable = null; // the native-drag state the touch disabled (see touchstart)
 
         const finishDrag = (commit) => {
           stopEdgeScroll();
-          el.draggable = true;
+          if (restoreDraggable !== null) { el.draggable = restoreDraggable; restoreDraggable = null; }
           if (isDragging) {
             if (commit && lastTargetId && lastPos) {
               if (lastPos?.startsWith('exit-')) {
@@ -412,6 +417,7 @@
           if (e.touches.length !== 1) { finishDrag(false); return; }
           // Disable native drag immediately so the browser does not intercept the touch
           // as an element drag gesture.
+          if (restoreDraggable === null) restoreDraggable = el.draggable;
           el.draggable = false;
           const t = e.touches[0];
           startTouchId = t.identifier;
@@ -560,12 +566,13 @@
       };
 
       const bindCardDrag = (el, layer) => {
+        // touch-alt: TUX-044 via _bindCardTouchDrag - the .lvl-grip reorders by finger; HTML5 DnD is the mouse path
         el.draggable = true;
 
         el.addEventListener('dragstart', (e) => {
           const isSingleSel = renderer?.selectedLayerIds?.size === 1 && renderer.selectedLayerIds.has(layer.id);
           const canArm = isSingleSel && Boolean(layer.maskCapabilities?.canSource);
-          const armMask = canArm && Boolean(e.shiftKey);
+          const armMask = canArm && _dndShift(e);
           _lvlDRAG.id = layer.id;
           _lvlDRAG.canArm = canArm;
           _lvlDRAG.maskDrop = armMask;
@@ -601,7 +608,7 @@
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
           e.preventDefault(); e.stopPropagation();
           _lvlClrDrop(el);
-          _lvlDRAG.maskDrop = _lvlDRAG.canArm && !!e.shiftKey;
+          _lvlDRAG.maskDrop = _lvlDRAG.canArm && _dndShift(e);
           if (_lvlDRAG.maskDrop) {
             _lvlDRAG.maskTargetId = layer.id;
             el.classList.add('lvl-drop-mask');
@@ -633,7 +640,7 @@
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
           e.preventDefault(); e.stopPropagation();
           _lvlClrDrop(el);
-          _lvlDRAG.maskDrop = _lvlDRAG.canArm && !!e.shiftKey;
+          _lvlDRAG.maskDrop = _lvlDRAG.canArm && _dndShift(e);
           if (_lvlDRAG.maskDrop) {
             _lvlDRAG.maskTargetId = layer.id;
             el.classList.add('lvl-drop-mask');
@@ -683,7 +690,7 @@
           if (!_lvlDRAG.id || _lvlDRAG.id === srcLayer.id) return;
           e.preventDefault(); e.stopPropagation();
           _lvlClrDrop(el);
-          _lvlDRAG.maskDrop = _lvlDRAG.canArm && !!e.shiftKey;
+          _lvlDRAG.maskDrop = _lvlDRAG.canArm && _dndShift(e);
           if (_lvlDRAG.maskDrop) {
             _lvlDRAG.maskTargetId = srcLayer.id;
             el.classList.add('lvl-drop-mask');
@@ -739,7 +746,7 @@
           if (!_lvlDRAG.id || _lvlDRAG.id === layer.id) return;
           e.preventDefault(); e.stopPropagation();
           _lvlClrDrop(el);
-          _lvlDRAG.maskDrop = _lvlDRAG.canArm && !!e.shiftKey;
+          _lvlDRAG.maskDrop = _lvlDRAG.canArm && _dndShift(e);
           if (_lvlDRAG.maskDrop) {
             _lvlDRAG.maskTargetId = layer.id;
             el.classList.add('lvl-drop-mask');

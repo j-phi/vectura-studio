@@ -66,6 +66,7 @@ for (const st of states) {
 
     const raw = await core.measurePage(page, {
       W: spec.width, H: spec.height, safe: core.SAFE_BANDS[spec.device], allow: allowFor(project).map((e) => e.selector),
+      overlay: !!st.overlay,
     });
     raw.pageErrors = errors.slice(0, 5);
     raw.pageErrorCount = errors.length;

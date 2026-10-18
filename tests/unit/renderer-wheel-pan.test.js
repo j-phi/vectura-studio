@@ -104,4 +104,27 @@ describe('Renderer.wheel modifier-key pan', () => {
     r.wheel(fakeWheel({ metaKey: true, deltaY: -50 }));
     expect(r.scale).toBe(3);
   });
+
+  // TUX-060 R10: wheel() reads its modifiers through the shared reader. A wheel event has no
+  // pointerType, so the reader returns the plain keys (the mouse/trackpad result).
+  test('Ctrl + wheel (trackpad pinch) still zooms: it is not the Cmd pan', () => {
+    const r = createRenderer();
+    r.wheel(fakeWheel({ ctrlKey: true, deltaY: 100 }));
+    expect(r.scale).toBeCloseTo(0.9, 5);
+    expect(r.offsetY).toBeCloseTo(10, 5); // zoom about the cursor; a Cmd pan would add deltaY (100)
+  });
+
+  test('a latched touch Constrain or Duplicate task does not turn a plain wheel into a pan', () => {
+    const IM = runtime.window.Vectura.InputModifiers;
+    IM.tap('constrain', 0);
+    IM.tap('duplicate', 0);
+    try {
+      const r = createRenderer();
+      r.wheel(fakeWheel({ deltaY: 100 }));
+      expect(r.scale).toBeCloseTo(0.9, 5);
+      expect(r.offsetX).not.toBe(-100);
+    } finally {
+      IM.clearAll();
+    }
+  });
 });

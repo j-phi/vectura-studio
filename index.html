@@ -369,7 +369,7 @@
                 <button type="button" class="info-btn" data-info="global.algorithm" aria-label="Toggle About">i</button>
               </label>
               <select id="generator-module" class="sr-only" aria-hidden="true" tabindex="-1"></select>
-              <button id="generator-module-trigger" type="button"
+              <button id="generator-module-trigger" type="button" aria-labelledby="gm-current-label"
                 class="w-full bg-vectura-bg border border-vectura-border p-2 text-xs mb-4 flex items-center gap-2 gm-trigger">
                 <span id="gm-current-icon" class="lvl-algo-sub-ico flex-shrink-0"></span>
                 <span id="gm-current-label" class="flex-1 text-left truncate"></span>
@@ -640,7 +640,7 @@
       </div>
     </aside>
 
-    <div id="left-resizer" class="pane-resizer" aria-hidden="true"></div>
+    <div id="left-resizer" class="pane-resizer" aria-hidden="true" data-touch-target></div>
 
     <button id="btn-mobile-pane-bottom" class="mobile-pane-handle mobile-pane-handle-bottom" type="button"
       aria-label="Toggle mathematical model panel">
@@ -666,7 +666,7 @@
         </div>
       </div>
 
-      <div id="bottom-resizer" class="bottom-resizer" aria-hidden="true"></div>
+      <div id="bottom-resizer" class="bottom-resizer" aria-hidden="true" data-touch-target></div>
 
       <div id="bottom-pane" class="bottom-pane bottom-pane-collapsed bg-vectura-panel border-t border-vectura-border z-20 flex flex-col">
         <div class="bottom-pane-header flex justify-between items-start p-4">
@@ -717,7 +717,7 @@
 
     </section>
 
-    <div id="right-resizer" class="pane-resizer" aria-hidden="true"></div>
+    <div id="right-resizer" class="pane-resizer" aria-hidden="true" data-touch-target></div>
 
     <aside id="right-pane"
       class="pane pane-right bg-vectura-panel border-l border-vectura-border flex flex-col z-10 relative overflow-hidden">

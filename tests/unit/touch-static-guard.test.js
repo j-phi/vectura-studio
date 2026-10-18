@@ -43,7 +43,22 @@ const listFiles = (dir, test, skip = () => false) => {
   return out.sort();
 };
 
+// touch-alt v2 (batch G): every new marker cites its touch equivalent. These files still hold
+// old-format markers (count per file). The allowlist may only shrink.
+const LEGACY_TOUCH_ALT = {
+  'src/ui/ui-text-panel.js': 6,
+  'src/ui/panels/algo-config-panel.js': 2,
+  'src/ui/panels/noise-rack-panel.js': 1,
+  'src/ui/panels/mirror-panel.js': 1,
+  'src/ui/panels/scene3d-panel.js': 1,
+  'src/ui/panels/pens-panel.js': 1,
+  'src/ui/components/slider.js': 2,
+  'src/ui/components/angle-dial.js': 1,
+  'src/ui/components/harmonograph-motion-rack.js': 2,
+};
+
 let hits = [];
+let sources = [];
 let markers = { touchOk: [], touchAlt: [] };
 let baseline = {};
 let counts = {};
@@ -78,6 +93,8 @@ beforeAll(() => {
   });
   const classes = R.bridgeClasses(text['src/ui/ui-touch.js']);
   hits.push(...R.checkR12(classes, cssFiles.map((f) => ({ rel: rel(f), text: text[rel(f)] }))));
+  hits.push(...R.checkR11Coverage(text['src/ui/components/slider.js'], cssFiles.map((f) => ({ rel: rel(f), text: text[rel(f)] }))));
+  sources = all.map((r) => ({ rel: r, text: text[r] }));
   hits.forEach((h) => { counts[keyOf(h)] = (counts[keyOf(h)] || 0) + 1; });
 
   baseline = readBaseline();
@@ -132,7 +149,7 @@ describe('touch static guard', () => {
   test('hover-only reveal outside (hover: hover)', () => ratchet('R8'));
   test('icon-only button without aria-label', () => ratchet('R9'));
   test('raw modifier flags outside the helper', () => ratchet('R10'));
-  test('raw range input outside slider', () => ratchet('R11'));
+  test('range input outside the global touch-safe controller', () => ratchet('R11'));
   test('drag handle without touch-action none', () => ratchet('R12'));
 
   test('opt-out cap', () => {
@@ -141,6 +158,11 @@ describe('touch static guard', () => {
     markers.touchAlt.filter((m) => !m.valid).forEach((m) => problems.push(`${m.file}:${m.line} touch-alt must match /touch-alt:\\s*TUX-\\d{3}\\s+\\S+/: ${m.text}`));
     if (markers.touchOk.length > TOUCH_OK_CAP) problems.push(`touch-ok markers: ${markers.touchOk.length} > cap ${TOUCH_OK_CAP}`);
     if (markers.touchAlt.length > TOUCH_ALT_CAP) problems.push(`touch-alt markers: ${markers.touchAlt.length} > cap ${TOUCH_ALT_CAP}`);
+    if (problems.length) throw new Error(`\n${problems.join('\n')}`);
+  });
+
+  test('touch-alt markers cite a touch equivalent that exists as code', () => {
+    const problems = R.checkAltMarkers(markers.touchAlt, sources, LEGACY_TOUCH_ALT);
     if (problems.length) throw new Error(`\n${problems.join('\n')}`);
   });
 
