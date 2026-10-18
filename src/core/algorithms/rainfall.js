@@ -16,7 +16,7 @@
         const HEX_RATIO = Math.sqrt(3) / 2;
         const { m, dW, dH, width, height } = bounds;
         const count = Math.max(1, Math.floor(p.count ?? 1));
-        const traceLength = Math.max(4, p.traceLength ?? 40);
+        const traceLength = Math.max(0.01, p.traceLength ?? 40);
         const traceStep = Math.max(1, p.traceStep ?? 4);
         const lengthJitter = Math.max(0, Math.min(1, p.lengthJitter ?? 0));
         const stepJitter = Math.max(0, Math.min(1, p.stepJitter ?? 0));
@@ -724,9 +724,10 @@
           const perpX = -dirY;
           const perpY = dirX;
           const lenFactor = lengthJitter > 0 ? 1 + (rng.nextFloat() * 2 - 1) * lengthJitter : 1;
-          const localLength = Math.max(4, traceLength * lenFactor);
+          const localLength = Math.max(0.01, traceLength * lenFactor);
           const stepFactor = stepJitter > 0 ? 1 + (rng.nextFloat() * 2 - 1) * stepJitter : 1;
-          const localStep = Math.max(1, traceStep * stepFactor);
+          // Short traces shrink the step so the two-step minimum never overshoots the length.
+          const localStep = Math.min(Math.max(1, traceStep * stepFactor), localLength / 2);
           const steps = Math.max(2, Math.floor(localLength / localStep));
           const spacing = Math.max(0.35, dropSize * 0.25, localStep * 0.15);
 
