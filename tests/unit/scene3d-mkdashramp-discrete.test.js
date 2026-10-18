@@ -86,34 +86,28 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
 
-// This unit's own base sha — the tree immediately BEFORE T3c's fix landed
-// (T2-5, `75777240`, the fill-audit-a4 worktree's own HEAD before this
-// unit's edit). An EXPLICIT pin, never `HEAD`.
-const T3C_BASE_SHA = '75777240';
 const SF_REL_PATH = 'src/core/scene3d/surface-fill.js';
 
-const getPreT3cSource = (() => {
-  let cached = null;
-  return () => {
-    if (cached) return cached;
-    const rootDir = path.resolve(__dirname, '../..');
-    cached = execFileSync('git', ['show', `${T3C_BASE_SHA}:${SF_REL_PATH}`], {
-      cwd: rootDir,
-      maxBuffer: 1024 * 1024 * 64,
-    }).toString('utf8');
-    return cached;
-  };
-})();
+// R-18 (D-4): this file used to load the pre-T3c tree (`git show 75777240`)
+// as a second runtime. It no longer reads git history:
+//   - the fix-effect legs (RED value, mutation kill, <= 70% of pre-fix) run
+//     against `neutralAlgo` below, the LIVE source with only T3c's gate
+//     reverted. Measured equal to the 75777240 tree for every mkDashRamp
+//     cell this file reads (avg dark-third length, all three rigs, d=1..25).
+//   - the "byte-identical to the pre-T3c tree" legs read committed goldens
+//     (tests/baselines/golden-values/scene3d-mkdashramp-discrete.json),
+//     generated from the tree that matched 75777240 byte for byte.
+const golden = goldenValues('scene3d-mkdashramp-discrete');
 
-// R4-fix (round-4 merge, 2026-09-19): a SECOND mutant, built from the
-// CURRENT disk source (not a stale sha), for the ONE roster entry
+// R4-fix (round-4 merge, 2026-09-19): a mutant built from the
+// CURRENT disk source (not a stale sha), first added for the ONE roster entry
 // (`mkTick`) that legitimately moved for a reason that has nothing to do
 // with T3c — T2-6 (a later, unrelated unit on this SAME lane) added a
 // graded-comb mechanism to `mkTick` after `T3C_BASE_SHA` (`75777240`) was
-// cut, so comparing CURRENT (T2-6 present) against `getPreT3cSource()` (T2-6
+// cut, so comparing CURRENT (T2-6 present) against the 75777240 tree (T2-6
 // absent) necessarily disagrees for mkTick regardless of T3c's own health —
 // see the byte-identity sweep comment below and `R4-fix-impl.md`. This
 // mutant reverts ONLY T3c's own contribution (the `dashOnset`/
@@ -153,8 +147,7 @@ const BYTE_IDENTITY_ROSTER = [...OTHER_MARK_LAWS, ...LADDER_FAMILY];
 
 describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onset threshold (T3c)', () => {
   let runtime; let V; let algo; let defaults; let SF; let Params;
-  let mutantRuntime; let mutantV; let mutantAlgo; let mutantSF;
-  let neutralRuntime; let neutralAlgo;
+  let neutralRuntime; let neutralAlgo; let neutralSF;
 
   const buildSceneParams = (toneLaw, mapper, fillDensity, primitive, paramSet) => {
     const p = clone(defaults);
@@ -188,54 +181,39 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
     SF = V.Scene3D.SurfaceFill;
     Params = V.Scene3D.Params;
 
-    mutantRuntime = await loadVecturaRuntime({
-      scriptOverrides: { [SF_REL_PATH]: getPreT3cSource() },
-    });
-    mutantV = mutantRuntime.window.Vectura;
-    mutantAlgo = mutantV.AlgorithmRegistry.scene3d;
-    mutantSF = mutantV.Scene3D.SurfaceFill;
-
     neutralRuntime = await loadVecturaRuntime({
       scriptOverrides: { [SF_REL_PATH]: getT3cNeutralizedSource() },
     });
     neutralAlgo = neutralRuntime.window.Vectura.AlgorithmRegistry.scene3d;
+    neutralSF = neutralRuntime.window.Vectura.Scene3D.SurfaceFill;
   }, 120000);
   afterAll(() => {
     runtime.cleanup();
-    mutantRuntime.cleanup();
     neutralRuntime.cleanup();
   });
 
   describe('O14 — dash LENGTH bounded inside the onset ramp (sphere/hatch, addLayer rig) — BLOCKING mutation proof', () => {
-    test('RED at T3c base sha 75777240: pre-fix average dark-third mark length at d=1 is 3.329mm (unbounded, abutting)', () => {
-      const src = getPreT3cSource();
-      expect(src.includes('MK_DASH_LEN_FRAC')).toBe(false);
-      mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 1, 'sphere'), null, null, BOUNDS);
-      const avg = avgDarkLen(mutantSF.lastMarkStats);
-      expect(avg).toBeCloseTo(3.329, 2);
-    });
-
     test.each([1, 5, 10, 25])('GREEN: d=%i average dark-third mark length drops to <= 70%% of the pre-fix value', (d) => {
       algo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
       const after = avgDarkLen(SF.lastMarkStats);
-      mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
-      const before = avgDarkLen(mutantSF.lastMarkStats);
+      neutralAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
+      const before = avgDarkLen(neutralSF.lastMarkStats);
       expect(after).toBeLessThanOrEqual(before * 0.70);
       // Non-vacuous: a genuine, measured reduction, not a near-zero drop.
       expect(after).toBeLessThan(before * 0.65);
     });
 
-    test('MUTATION-KILL (blocking): reverting to the pre-T3c mechanism reproduces the unbounded 3.329mm at d=1', () => {
-      mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 1, 'sphere'), null, null, BOUNDS);
-      expect(avgDarkLen(mutantSF.lastMarkStats)).toBeCloseTo(3.329, 2);
+    test('MUTATION-KILL (blocking): reverting T3c\'s gate in the live source reproduces the unbounded pre-fix 3.329mm at d=1', () => {
+      neutralAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 1, 'sphere'), null, null, BOUNDS);
+      expect(avgDarkLen(neutralSF.lastMarkStats)).toBeCloseTo(3.329, 2);
     });
 
     test('reproduced independently on torus/addLayer (not the pinned fixture)', () => {
       [1, 5, 10, 25].forEach((d) => {
         algo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'torus'), null, null, BOUNDS);
         const after = avgDarkLen(SF.lastMarkStats);
-        mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'torus'), null, null, BOUNDS);
-        const before = avgDarkLen(mutantSF.lastMarkStats);
+        neutralAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'torus'), null, null, BOUNDS);
+        const before = avgDarkLen(neutralSF.lastMarkStats);
         expect(after).toBeLessThanOrEqual(before * 0.70);
       });
     });
@@ -244,8 +222,8 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
       [1, 5, 10, 25].forEach((d) => {
         algo.generate(buildCreate('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
         const after = avgDarkLen(SF.lastMarkStats);
-        mutantAlgo.generate(buildCreate('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
-        const before = avgDarkLen(mutantSF.lastMarkStats);
+        neutralAlgo.generate(buildCreate('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
+        const before = avgDarkLen(neutralSF.lastMarkStats);
         expect(after).toBeLessThanOrEqual(before * 0.70);
       });
     });
@@ -255,41 +233,29 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
     // T3b's own O11 (`scene3d-mkdashramp-single-pass.test.js`, NOT edited by
     // this unit) already pins the sphere array exactly; re-derived here
     // too, plus torus and the create rig, which no existing test pins.
-    test('sphere/addLayer mark counts at d=1,5,10,25,50 are BYTE-IDENTICAL to the pre-T3c tree', () => {
+    test('sphere/addLayer mark counts at d=1,5,10,25,50 are match their committed goldens (pre-T3c values)', () => {
       const counts = [1, 5, 10, 25, 50].map((d) => {
         algo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
         return SF.lastMarkStats.marks;
       });
       expect(counts).toEqual([46, 46, 62, 63, 73]);
-      const mutCounts = [1, 5, 10, 25, 50].map((d) => {
-        mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
-        return mutantSF.lastMarkStats.marks;
-      });
-      expect(counts).toEqual(mutCounts);
+      golden.expect('O15 marks sphere/addLayer d=1,5,10,25,50', counts);
     });
 
-    test('torus/addLayer mark counts at d=1,5,10,25,50 are BYTE-IDENTICAL to the pre-T3c tree', () => {
+    test('torus/addLayer mark counts at d=1,5,10,25,50 are match their committed goldens (pre-T3c values)', () => {
       const counts = [1, 5, 10, 25, 50].map((d) => {
         algo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'torus'), null, null, BOUNDS);
         return SF.lastMarkStats.marks;
       });
-      const mutCounts = [1, 5, 10, 25, 50].map((d) => {
-        mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'torus'), null, null, BOUNDS);
-        return mutantSF.lastMarkStats.marks;
-      });
-      expect(counts).toEqual(mutCounts);
+      golden.expect('O15 marks torus/addLayer d=1,5,10,25,50', counts);
     });
 
-    test('sphere/create mark counts at d=1,5,10,25,50 are BYTE-IDENTICAL to the pre-T3c tree', () => {
+    test('sphere/create mark counts at d=1,5,10,25,50 are match their committed goldens (pre-T3c values)', () => {
       const counts = [1, 5, 10, 25, 50].map((d) => {
         algo.generate(buildCreate('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
         return SF.lastMarkStats.marks;
       });
-      const mutCounts = [1, 5, 10, 25, 50].map((d) => {
-        mutantAlgo.generate(buildCreate('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
-        return mutantSF.lastMarkStats.marks;
-      });
-      expect(counts).toEqual(mutCounts);
+      golden.expect('O15 marks sphere/create d=1,5,10,25,50', counts);
     });
 
     test('O10 (T3b): single pass at d=1..4, sphere/hatch, addLayer rig — untouched', () => {
@@ -317,27 +283,24 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
   });
 
   describe('O16 — continuity/non-regression at and above MK_BAND_ONSET_D (d=35, d=50, d=220), both rigs', () => {
-    test('sphere/hatch/addLayer: d=35, d=50, d=220 are md5 byte-identical to the pre-T3c tree', () => {
+    test('sphere/hatch/addLayer: d=35, d=50, d=220 match their committed md5 goldens (pre-T3c values)', () => {
       [35, 50, 220].forEach((d) => {
         const cur = algo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
-        const mut = mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
-        expect(md5(cur)).toBe(md5(mut));
+        golden.expect(`O16 md5 mkDashRamp sphere/addLayer d=${d}`, md5(cur));
       });
     });
 
-    test('torus/hatch/addLayer: d=35, d=50, d=220 are md5 byte-identical to the pre-T3c tree', () => {
+    test('torus/hatch/addLayer: d=35, d=50, d=220 match their committed md5 goldens (pre-T3c values)', () => {
       [35, 50, 220].forEach((d) => {
         const cur = algo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'torus'), null, null, BOUNDS);
-        const mut = mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'torus'), null, null, BOUNDS);
-        expect(md5(cur)).toBe(md5(mut));
+        golden.expect(`O16 md5 mkDashRamp torus/addLayer d=${d}`, md5(cur));
       });
     });
 
-    test('sphere/hatch/create: d=35, d=50, d=220 are md5 byte-identical to the pre-T3c tree', () => {
+    test('sphere/hatch/create: d=35, d=50, d=220 match their committed md5 goldens (pre-T3c values)', () => {
       [35, 50, 220].forEach((d) => {
         const cur = algo.generate(buildCreate('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
-        const mut = mutantAlgo.generate(buildCreate('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
-        expect(md5(cur)).toBe(md5(mut));
+        golden.expect(`O16 md5 mkDashRamp sphere/create d=${d}`, md5(cur));
       });
     });
 
@@ -345,9 +308,9 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
       [35, 50].forEach((d) => {
         algo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
         const after = avgDarkLen(SF.lastMarkStats);
-        mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
-        const before = avgDarkLen(mutantSF.lastMarkStats);
-        expect(after).toBe(before);
+        neutralAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
+        expect(after).toBe(avgDarkLen(neutralSF.lastMarkStats));
+        golden.expect(`O16 avg dark-third length sphere/addLayer d=${d}`, after);
       });
     });
 
@@ -419,7 +382,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
     // R4-fix (round-4 merge, 2026-09-19): `mkTick` is compared against
     // `neutralAlgo` (this tree with ONLY T3c's own `eachDrawn` gate
     // reverted; T3b's onset ramp and T2-6's own mkTick comb both intact),
-    // NOT `mutantAlgo` (`T3C_BASE_SHA` = `75777240`, which predates T2-6).
+    // NOT the pinned `75777240` tree (which predates T2-6).
     // T2-6, a later, unrelated unit on this SAME lane, added a graded-comb
     // mechanism to `mkTick` after `75777240` was cut; comparing CURRENT
     // (T2-6 present) against `75777240` (T2-6 absent) would fail for mkTick
@@ -427,14 +390,17 @@ describe('Scene3D.SurfaceFill — mkDashRamp DISCRETE dash length below the onse
     // merged tree (see `R4-fix-impl.md`). `neutralAlgo` isolates the
     // question this test actually asks — "does T3c's own code leak into
     // mkTick" — independent of T2-6's legitimate, disclosed change; the
-    // other three roster members are untouched by T2-6 too, so `mutantAlgo`
-    // remains the right comparison for them.
+    // other three roster members are untouched by T2-6 too; R-18 moved their
+    // comparison from the 75777240 runtime to committed md5 goldens.
     test.each([...BYTE_IDENTITY_ROSTER])('%s is unaffected at d=1/50/220, sphere/hatch, addLayer rig', (law) => {
-      const baseline = law === 'mkTick' ? neutralAlgo : mutantAlgo;
       [1, 50, 220].forEach((d) => {
         const cur = algo.generate(buildAddLayer(law, 'hatch', d, 'sphere'), null, null, BOUNDS);
-        const mut = baseline.generate(buildAddLayer(law, 'hatch', d, 'sphere'), null, null, BOUNDS);
-        expect(md5(cur)).toBe(md5(mut));
+        if (law === 'mkTick') {
+          const mut = neutralAlgo.generate(buildAddLayer(law, 'hatch', d, 'sphere'), null, null, BOUNDS);
+          expect(md5(cur)).toBe(md5(mut));
+        } else {
+          golden.expect(`sweep md5 ${law} sphere/addLayer d=${d}`, md5(cur));
+        }
       });
     });
   });

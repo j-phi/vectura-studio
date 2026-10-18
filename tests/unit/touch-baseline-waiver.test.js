@@ -1,12 +1,15 @@
 /**
  * TUX-058 req 5: the touch target baseline cannot be raised without a TUX-WAIVER line in the commit body.
- * Fixture cases prove the comparison. The live case walks the commits after the enforcement anchor.
+ * Fixture cases prove the comparison. The git walk runs against a throwaway repo, so this file needs no
+ * repository history. The live rule (every commit after the anchor) runs in CI as its own job:
+ * `node scripts/touch-baseline-waiver.js --since-anchor` in `touch-waiver` (every event), which fails loudly on a
+ * missing anchor.
  */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { execFileSync } = require('child_process');
-const { raisedCells, unwaivedCommits } = require('../../scripts/touch-baseline-waiver');
-
-// Commits after this one are checked. Earlier ones seeded and re-seeded the baseline before the rule existed.
-const ANCHOR = '6711d22a';
+const { raisedCells, unwaivedCommits, checkSinceAnchor, FILE } = require('../../scripts/touch-baseline-waiver');
 
 describe('touch baseline waiver rule', () => {
   const base = { darwin: { 'p|s': { under44: 2, covered: 5, reachable: 40, canvasPct: 60 } } };
@@ -47,10 +50,46 @@ describe('touch baseline waiver rule', () => {
     expect(why).not.toMatch(/from the new page/);
   });
 
-  test('no commit after the anchor raises the baseline without TUX-WAIVER', () => {
-    let known = true;
-    try { execFileSync('git', ['cat-file', '-e', `${ANCHOR}^{commit}`], { stdio: 'ignore' }); } catch (_) { known = false; }
-    if (!known) return; // shallow clone: the anchor is not here
-    expect(unwaivedCommits(`${ANCHOR}..HEAD`)).toEqual([]);
+  describe('git walk (throwaway repo)', () => {
+    let dir;
+    const git = (...args) => execFileSync('git', args, { cwd: dir, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }).trim();
+    const commitBaseline = (under44, message) => {
+      fs.mkdirSync(path.join(dir, path.dirname(FILE)), { recursive: true });
+      fs.writeFileSync(path.join(dir, FILE), JSON.stringify({ darwin: { 'p|s': { under44 } } }));
+      git('add', FILE);
+      git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', message);
+      return git('rev-parse', 'HEAD');
+    };
+
+    beforeAll(() => {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tux-waiver-'));
+      git('init', '-q');
+    });
+    afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+    test('flags a raise without TUX-WAIVER, accepts a waived raise and a gain', () => {
+      const seed = commitBaseline(2, 'seed');
+      const raise = commitBaseline(3, 'raise without waiver');
+      commitBaseline(4, 'raise with waiver\n\nTUX-WAIVER: deliberate for this test');
+      commitBaseline(1, 'gain');
+      const bad = unwaivedCommits(`${seed}..HEAD`, { cwd: dir });
+      expect(bad.map((b) => b.sha)).toEqual([raise]);
+      expect(bad[0].raised).toEqual(['darwin/p|s under44 2 -> 3']);
+    });
+
+    test('a missing anchor fails loudly instead of passing', () => {
+      expect(() => checkSinceAnchor({ cwd: dir })).toThrow(/anchor .* is not in this clone/);
+    });
+
+    test('a shallow clone cut above a baseline commit fails loudly instead of skipping it', () => {
+      const shallow = fs.mkdtempSync(path.join(os.tmpdir(), 'tux-waiver-shallow-'));
+      try {
+        execFileSync('git', ['clone', '-q', '--depth', '1', `file://${dir}`, shallow], { stdio: 'ignore' });
+        const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: shallow, encoding: 'utf8' }).trim();
+        expect(() => unwaivedCommits(head, { cwd: shallow })).toThrow(/is not in this clone/);
+      } finally {
+        fs.rmSync(shallow, { recursive: true, force: true });
+      }
+    });
   });
 });

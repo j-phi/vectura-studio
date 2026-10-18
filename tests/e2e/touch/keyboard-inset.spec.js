@@ -1,8 +1,9 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const fs = require('fs');
 const path = require('path');
 const touch = require('../helpers/touch');
-const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch2/TUX-032');
+const EVID = evidenceDir('batch2/TUX-032');
 const h = require('../helpers/text-panel-setup');
 
 // TUX-032: fields and sheets stay above the on-screen keyboard; the font search does not
@@ -68,7 +69,7 @@ test.describe('TUX-032 keyboard inset', () => {
     expect(m.visibleOpts, `at least 2 option rows visible in the list (list height ${m.listH})`).toBeGreaterThanOrEqual(2);
     expect(m.hit, 'an unselected option is the hit target at its centre').toBe(true);
     await fs.promises.mkdir(EVID, { recursive: true }).catch(() => {});
-    await page.screenshot({ path: path.join(EVID, `font-popover-${testInfo.project.name}.png`) }).catch(() => {});
+    await shoot(page, { path: path.join(EVID, `font-popover-${testInfo.project.name}.png`) }).catch(() => {});
   });
 
   // TUX-032 follow-up: with the keyboard open in landscape the pinned popover keeps >= 3 option rows in view
@@ -101,7 +102,7 @@ test.describe('TUX-032 keyboard inset', () => {
     expect(m.popB, `popover bottom ${m.popB} above the keyboard line ${m.line}`).toBeLessThanOrEqual(m.line + 1);
     expect(m.rows, `option rows fully visible above the keyboard (list ${m.listH} px, row ${m.rowH} px, ${JSON.stringify(m)})`).toBeGreaterThanOrEqual(3);
     await fs.promises.mkdir(EVID, { recursive: true }).catch(() => {});
-    await page.screenshot({ path: path.join(require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch3'), `font-popover-keyboard-${testInfo.project.name}.png`) }).catch(() => {});
+    await shoot(page, { path: path.join(evidenceDir('batch3'), `font-popover-keyboard-${testInfo.project.name}.png`) }).catch(() => {});
   });
 
   // TUX-032 review: with no keyboard the popover rows are finger targets (44 px on a coarse pointer).
@@ -120,8 +121,8 @@ test.describe('TUX-032 keyboard inset', () => {
     expect(m.compact).toBe(false);
     expect(m.min, `smallest option row ${m.min} px (${JSON.stringify(m)})`).toBeGreaterThanOrEqual(43.5);
     expect(m.search, `search field ${m.search} px`).toBeGreaterThanOrEqual(43.5);
-    await fs.promises.mkdir(require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch3b'), { recursive: true }).catch(() => {});
-    await page.screenshot({ path: path.join(require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch3b'), `font-popover-rows-${testInfo.project.name}.png`) }).catch(() => {});
+    await fs.promises.mkdir(evidenceDir('batch3b'), { recursive: true }).catch(() => {});
+    await shoot(page, { path: path.join(evidenceDir('batch3b'), `font-popover-rows-${testInfo.project.name}.png`) }).catch(() => {});
   });
 
   test('(b) lower-pane numeric field rises above the keyboard', async ({ page }) => {

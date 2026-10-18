@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { loadScene3dAuditRuntime } = require('../helpers/scene3d-audit-runtime');
 const crypto = require('crypto');
 const {
   contact, thirdsSplit, covByIBins, siteCoverage, pathLen, over2RP, subMinCount,
@@ -138,7 +138,7 @@ describe('I1 (BLOCKING) — representative non-mkTick isolation and gate witness
   // Keep mkDashRamp across mapper routes: hatch alone does not expose the
   // nogate defect. One ordinary-law control retains a separate isolation path.
   const signatures = async (override) => {
-    const runtime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildBcSource(override) } });
+    const runtime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildBcSource(override) } });
     try {
       const V = runtime.window.Vectura;
       const cells = V.Scene3D.Params.MAPPERS.map((mapper) => [mapper, 'mkDashRamp']);

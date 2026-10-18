@@ -1,4 +1,8 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
+
+// Exact fill-count pins: tests/baselines/golden-values/scene3d-curved-density-floor.json.
+const golden = goldenValues('scene3d-curved-density-floor');
 
 /*
  * fs-k2 — the raised fill Density ceiling (0-200) on CURVED primitives.
@@ -171,7 +175,7 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
       // once the relaxed floor is honoured all the way through. Confirmed no
       // ruling ends in open surface at any of these densities
       // (`scene3d-fill-boundary-ends` stays green).
-      expect(results.map((r) => r.count)).toEqual([25, 53, 69, 97]);
+      golden.expect('sphere/hatch counts d=50,100,150,200', results.map((r) => r.count));
     });
 
     test('generate time at density 200 stays well under a second (no runaway)', () => {
@@ -265,10 +269,7 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
     // 28→18 crosshatch). d=50/75/100 are UNCHANGED by this third pass (the
     // lit-band floor rarely binds once Density is past the sparse end).
     test('hatch mapper: pinned fill counts at d=10/50/75/100', () => {
-      expect(runSphere(10, 'hatch').count).toBe(9);
-      expect(runSphere(50, 'hatch').count).toBe(25);
-      expect(runSphere(75, 'hatch').count).toBe(40);
-      expect(runSphere(100, 'hatch').count).toBe(53);
+      golden.expect('sphere/hatch counts d=10,50,75,100', [10, 50, 75, 100].map((d) => runSphere(d, 'hatch').count));
     });
 
     // RE-PINNED A SIXTH TIME (W-36c, PROOF — see `## Bars changed` in that
@@ -289,10 +290,12 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
     // ratio 0.25 -> B 9; ratio 1 -> B 7; ratio 2 -> B 4. d=100 ratio
     // 0.25 -> B 61; ratio 1 -> B 47; ratio 2 -> B 24.
     test('crosshatch mapper (per-family budget): pinned fill counts at d=10/100, ratio 0.25 and 1.0', () => {
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(22);
-      expect(runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(18);
-      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 0.25 }).count).toBe(120);
-      expect(runSphere(100, 'crosshatch', { crossDensityRatio: 1.0 }).count).toBe(116);
+      golden.expect('sphere/crosshatch counts d=10 ratio=0.25,1.0 d=100 ratio=0.25,1.0', [
+        runSphere(10, 'crosshatch', { crossDensityRatio: 0.25 }).count,
+        runSphere(10, 'crosshatch', { crossDensityRatio: 1.0 }).count,
+        runSphere(100, 'crosshatch', { crossDensityRatio: 0.25 }).count,
+        runSphere(100, 'crosshatch', { crossDensityRatio: 1.0 }).count,
+      ]);
     });
 
     // RE-PINNED (W-36c, PROOF — A CEILING GOING DOWN, disclosed under
@@ -483,9 +486,7 @@ describe('scene3d curved (SurfaceFill) hatch density ceiling (100-200) reaches d
         const paths = algo.generate(params, null, null, { ...BOUNDS, fastPreview: true }) || [];
         return fillCount(paths);
       };
-      expect(runDraft(10)).toBe(3);
-      expect(runDraft(50)).toBe(5);
-      expect(runDraft(100)).toBe(39);
+      golden.expect('sphere/hatch draft counts d=10,50,100', [10, 50, 100].map(runDraft));
     });
   });
 });

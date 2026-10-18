@@ -1,5 +1,6 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { pathSignature } = require('../helpers/path-signature');
+const { goldenValues } = require('../helpers/golden-values');
 
 /*
  * FS-F1: byte-identity guard for the HLR occluder spatial index (hlr.js) and
@@ -360,14 +361,11 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
   //   curvedOverlap-perspective-mixed-xray|draft:   pathCount 302 -> 302 (UNCHANGED), pointCount 604 -> 773 (+28.0%, draft outline refined too — see above)
   //   denseMixed-8obj-shadows|settled:              pathCount 662 -> 668 (+6, <1% — a few previously-collinear-merged edge chains no longer weld once refined, not a dropped/split defect: `scene3d-silhouette-contiguity` 6/6 and `scene3d-border-contiguity` 7/7 both still pass, and `scene3d-shadows`/`scene3d-shadow-light-silhouette` pass 18/18 + 4/4 unchanged — shadows ride FACES, not edges), pointCount 2712 -> 3032 (+11.8%)
   //   denseMixed-8obj-shadows|draft:                pathCount 466 -> 471 (+5, same cause), pointCount 932 -> 1146 (+23.0%)
-  const EXPECTED = {
-    'facetedOverlap-orthographic-hatch|settled': { hash: 'aa696fa2ebb27f1218aed6858298beb57b8cb7064c3e1e331f83fc80411ebbbd', pathCount: 208, pointCount: 416 },
-    'facetedOverlap-orthographic-hatch|draft': { hash: '82bacd44d6706bd4f484fa2c9b719bf119a7bd93b91a6b6cca798caed1634066', pathCount: 200, pointCount: 400 },
-    'curvedOverlap-perspective-mixed-xray|settled': { hash: '24653523df6f2ecde68b1e807a8f086cea19404d453c7d03a19cb38c4c180645', pathCount: 424, pointCount: 1760 },
-    'curvedOverlap-perspective-mixed-xray|draft': { hash: '3bfb988870d36a77aa88e5e9df77cb93224929b17b4eafc3bb6ca0c9e984d369', pathCount: 302, pointCount: 773 },
-    'denseMixed-8obj-shadows|settled': { hash: 'fe6516d18c34921f23364c7f8b539104f680b949f36a963e65b180242efa86cd', pathCount: 668, pointCount: 3032 },
-    'denseMixed-8obj-shadows|draft': { hash: 'fcfe9f21529f486d386ef9c1a19e4cc2f15a75a999e5ccf6275412c60b8d28d5', pathCount: 471, pointCount: 1146 },
-  };
+  // The pinned fingerprints live in
+  // tests/baselines/golden-values/scene3d-hlr-spatial-index-identity.json,
+  // keyed `<scenario>|settled` / `<scenario>|draft`. A missing key fails
+  // loudly (the helper never reads a missing baseline as "OK").
+  const golden = goldenValues('scene3d-hlr-spatial-index-identity');
 
   scenarios.forEach(({ name, objects, extra }) => {
     test(`${name}: settled + draft output is byte-identical to the pre-index baseline`, () => {
@@ -379,26 +377,10 @@ describe('Scene3D HLR spatial index — byte-identity guard', () => {
       const pathsDraft = algo.generate(paramsDraft, null, null, BOUNDS_DRAFT) || [];
       const fpDraft = fingerprint(pathsDraft);
 
-      const settledKey = `${name}|settled`;
-      const draftKey = `${name}|draft`;
-      const expectedSettled = EXPECTED[settledKey];
-      const expectedDraft = EXPECTED[draftKey];
-
-      if (!expectedSettled || !expectedDraft) {
-        // Capture mode: no baseline recorded yet for this scenario. Fail
-        // loudly with the value to paste into EXPECTED above, rather than
-        // silently passing (a null expectation must never read as "OK").
-        throw new Error(
-          `No baseline recorded for "${name}". Paste into EXPECTED:\n` +
-          `  '${settledKey}': { hash: '${fpSettled.hash}', pathCount: ${fpSettled.pathCount}, pointCount: ${fpSettled.pointCount} },\n` +
-          `  '${draftKey}': { hash: '${fpDraft.hash}', pathCount: ${fpDraft.pathCount}, pointCount: ${fpDraft.pointCount} },`,
-        );
-      }
-
       expect(fpSettled.pathCount).toBeGreaterThan(0);
-      expect(fpSettled).toEqual(expectedSettled);
+      golden.expect(`${name}|settled`, fpSettled);
       expect(fpDraft.pathCount).toBeGreaterThan(0);
-      expect(fpDraft).toEqual(expectedDraft);
+      golden.expect(`${name}|draft`, fpDraft);
     });
   });
 

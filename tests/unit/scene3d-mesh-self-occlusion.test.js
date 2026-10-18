@@ -77,7 +77,7 @@
  *    there: there is no 6mm bias in this path, because it never needed one —
  *    it isn't a blanket same-object skip in the first place.
  *
- * Because F7 never touched this code path, `VECTURA_PRE_F7=1` (57e86f48)
+ * Because F7 never touched this code path, the pre-F7 tree (57e86f48)
  * cannot serve as this test's non-vacuity proof — it would read 0 survivors
  * both before and after F7, telling you nothing. Instead, non-vacuity is
  * proven by SIMULATING the one defect class this path could plausibly have
@@ -267,7 +267,7 @@ describe('SurfaceFill (per-face fill) — Unit F: imported non-convex mesh vs th
     // "blanket same-object skip" defect class F7 fixed on the OTHER
     // (curved/flat-fallback) paths, as this test's non-vacuity proof (F7
     // itself never touched this per-face path — see header — so the usual
-    // VECTURA_PRE_F7 switch proves nothing here).
+    // pre-F7 tree proves nothing here).
     const HLR = V.Scene3D.HLR;
     const origCreateClipper = HLR.createClipper;
     const rawPositions = [];

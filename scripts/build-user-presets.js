@@ -34,7 +34,11 @@ const vm = require('vm');
 const { withoutShadowedLegacyKeys } = require('./lib/noise-canonical');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const OUTPUT_PATH = path.join(REPO_ROOT, 'src/config/user-presets.js');
+// VECTURA_USER_PRESETS_OUT redirects the output (the bundle-staleness test writes to a temp
+// file and compares it with the committed bundle).
+const OUTPUT_PATH = process.env.VECTURA_USER_PRESETS_OUT
+  ? path.resolve(process.env.VECTURA_USER_PRESETS_OUT)
+  : path.join(REPO_ROOT, 'src/config/user-presets.js');
 const USER_PRESETS_DIR = path.join(REPO_ROOT, 'user-presets');
 
 // Keys that belong to the layer's canvas placement, not the algorithm look.

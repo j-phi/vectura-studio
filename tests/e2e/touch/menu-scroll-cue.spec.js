@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
@@ -5,7 +6,7 @@ const touch = require('../helpers/touch');
 // TUX-012 review (batch 3b): a context menu that scrolls shows a visible fade at the scroll edge where more rows exist.
 // iOS overlay scrollbars are hidden, so at 874x330 "Make Clipping Mask" sat 46 px below the fold with no cue.
 // The cue is a ::after (more below) / ::before (more above) fade, driven by data-scroll-cue on the menu.
-const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch3b');
+const EVID = evidenceDir('batch3b');
 
 const boot = async (page) => {
   await page.goto('/');
@@ -49,7 +50,7 @@ test('(cue) an overflowing layer menu shows a fade where rows are hidden; a fitt
   await page.waitForTimeout(350);
   const c0 = await cue(page);
   fs.mkdirSync(EVID, { recursive: true });
-  await page.screenshot({ path: `${EVID}/menu-cue-${testInfo.project.name}.png` });
+  await shoot(page, { path: `${EVID}/menu-cue-${testInfo.project.name}.png` });
   if (!c0.overflow) {
     expect(c0.below, `a menu that fits shows no cue ${JSON.stringify(c0)}`).toBe(false);
     expect(c0.above).toBe(false);

@@ -1,7 +1,7 @@
 // Shared BC-E render driver for the split scene3d-mktick-spacing-tone BC-E audit files.
 const fs = require('fs');
 const path = require('path');
-const { loadVecturaRuntime } = require('./load-vectura-runtime');
+const { loadScene3dAuditRuntime } = require('./scene3d-audit-runtime');
 const crypto = require('crypto');
 const {
   contact, thirdsSplit, covByIBins, siteCoverage, pathLen, over2RP, subMinCount,
@@ -34,9 +34,11 @@ const key = (d, rig, prim, mapper) => `${d}|${rig}|${prim}/${mapper}`;
 // Mutant variants are deliberately loaded, rendered, summarized, and torn
 // down one at a time. The test tables retain only the geometry evidence
 // their assertions need; no live Window/App/runtime survives into the next variant.
-const renderBcKinds = async (R, KINDS, { full = FULL, roster = ['off', 'ship', 'noflag'] } = {}) => {
+// `cells` narrows a kind to the cells its caller actually reads (R-29: a
+// mutant rendered on all 12 cells but asserted on one is dead cost).
+const renderBcKinds = async (R, KINDS, { full = FULL, roster = ['off', 'ship', 'noflag'], cells = {} } = {}) => {
     for (const kind of KINDS) {
-      const runtime = await loadVecturaRuntime({ scriptOverrides: kind === 'noflag'
+      const runtime = await loadScene3dAuditRuntime({ scriptOverrides: kind === 'noflag'
         ? { [REL_PATH]: buildBcSource(null), [SCENE3D_REL]: buildScene3dSource(kind) }
         : { [REL_PATH]: buildBcSource(kind === 'ship' ? null : kind) } });
       R[kind] = {};
@@ -90,7 +92,7 @@ const renderBcKinds = async (R, KINDS, { full = FULL, roster = ['off', 'ship', '
           nohubstr: [['create', 'torus', 'hatch']], nostraight: [['test', 'torus', 'hatch']],
           nocoh: [['test', 'cone', 'hatch']], nocohstrip: [['create', 'torus', 'hatch']],
         };
-        const variantCells = exactMutationCells[kind]
+        const variantCells = cells[kind] || exactMutationCells[kind]
           || (RIM_KINDS.includes(kind)
             ? ['test', 'create'].flatMap((rig) => RIM_CELLS.map(([primitive, mapper]) => [rig, primitive, mapper]))
             : ['test', 'create'].flatMap((rig) => CELLS.map(([primitive, mapper]) => [rig, primitive, mapper])));

@@ -19,17 +19,18 @@
  * originally measured on, on BOTH sphere and torus, so a future change to the
  * WALLS class cannot regress the exact repro without failing here first.
  *
- * RED against `1b157bc6`, reproducibly: run this file with `VECTURA_PRE_WIP=1`
+ * RED against `1b157bc6`, reproducibly: run this file on that tree
  * and all 6 assertions fail. The pre-fix binary classifier ran these
  * widths through `erode(region, pen/2)` twice (outline, then fill), which is
  * unreliable under ~2 pens; `ringFillRate` measured below 0.995 there.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { preWipRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const { captureClipGroups, measureRingFillRate } = require('../helpers/scene3d-ring-coverage');
 
 const LAWS = ['weightSmoothstep', 'nibAngle'];
-const PRIMITIVES = ['sphere', 'torus'];
+// Torus only (R-27): it is the primitive where both laws produce sub-2-pen
+// stretches; the sphere rows re-proved the same CLS_WALLS branch.
+const PRIMITIVES = ['torus'];
 const PEN_WIDTH = 0.3;
 
 describe('SurfaceFill — F4 sub-2-pen ribbons are not hollow doubled hairlines', () => {
@@ -38,7 +39,7 @@ describe('SurfaceFill — F4 sub-2-pen ribbons are not hollow doubled hairlines'
   const results = {};
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preWipRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
 
     PRIMITIVES.forEach((primitive) => {

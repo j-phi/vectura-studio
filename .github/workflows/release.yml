@@ -5,43 +5,72 @@ on:
     tags:
       - 'v*'
 
+# Least privilege by default; the job below declares what it needs.
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 120
     permissions:
+      # actions: read lets the gate below read the Tests runs and their ci-ok job.
+      actions: read
       contents: write
     steps:
-      # fetch-depth: 0 (full history) — several tests/unit/*.test.js RGR
-      # proofs read a historical revision of a file via `git show <sha>:path`
-      # (the pinned commit is always an ancestor of the checked-out ref, never
-      # a foreign branch) to prove a fix's guard trips against the real
-      # pre-fix tree. actions/checkout's default depth: 1 makes that sha
-      # unreachable and those tests fail with a git error, not a real
-      # regression (docs/3d-audit/lane-reports/CI-5-impl.md,
-      # docs/3d-audit/lane-reports/CI-6-impl.md). This job runs test:unit and
-      # test:integration on a tag push and shares the same exposure.
+      # The tag's commit already ran the full Tests workflow on main. Its ci-ok job is the
+      # release evidence; this job does not re-run the suite (judgment R-3).
+      - name: Require a green ci-ok on main for the tag's commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Wait for an in-progress Tests run on this commit (for example, a tag pushed right
+          # after its merge), for at most 90 minutes.
+          for _ in $(seq 1 90); do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/runs?head_sha=$SHA&event=push&branch=main&per_page=20" \
+              --jq '.workflow_runs[] | "\(.id) \(.status)"')"
+            if [ -z "$runs" ]; then
+              echo "::error::No Tests run exists for $SHA on a push to main. Tag a commit that is on main and has a green ci-ok."
+              exit 1
+            fi
+            pending=0
+            while read -r run status; do
+              conclusion="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=100&filter=latest" \
+                --jq '[.jobs[] | select(.name == "ci-ok") | .conclusion // "pending"] | first // "missing"')"
+              echo "Tests run $run ($status): ci-ok = $conclusion"
+              if [ "$conclusion" = success ]; then
+                echo "ci-ok is green for $SHA (run $run)."
+                exit 0
+              fi
+              if [ "$status" != completed ]; then pending=1; fi
+            done <<< "$runs"
+            if [ "$pending" -eq 0 ]; then break; fi
+            sleep 60
+          done
+          echo "::error::ci-ok is not green on main for $SHA. Fix or re-run the Tests workflow on main, then re-run this release job."
+          exit 1
+
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
 
-      - run: npm install --no-audit --no-fund --loglevel=error
+      - run: npm ci --no-audit --no-fund --loglevel=error
 
-      - run: npx playwright install --with-deps chromium
-
-      - name: Run release candidate audit and coverage
-        run: npm run test:lane -- audit
+      - uses: ./.github/actions/setup-playwright
+        with:
+          browsers: chromium
 
       - name: Build distributable zip
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          zip -r "vectura-studio-${VERSION}.zip" \
-            index.html styles.css src assets patterns README.md CHANGELOG.md
+        run: scripts/release-build-zip.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Smoke-test the zip (unzip, serve, load, generate one layer)
+        run: node scripts/release-smoke.js "vectura-studio-${GITHUB_REF_NAME#v}.zip"
+        timeout-minutes: 5
 
       - name: Create GitHub release
         env:
@@ -51,5 +80,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "vectura-studio-${VERSION}.zip" \
             --title "Vectura Studio v${VERSION}" \
-            --notes "$(node scripts/extract-changelog.js $VERSION)" \
+            --notes "$(node scripts/extract-changelog.js "$VERSION")" \
             --verify-tag

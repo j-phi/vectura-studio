@@ -1,4 +1,4 @@
-const { loadVecturaRuntime } = require('./load-vectura-runtime');
+const { loadScene3dAuditRuntime } = require('./scene3d-audit-runtime');
 
 /*
  * THE 46-WAY TONE-LAW DISPATCH MATRIX.
@@ -141,7 +141,7 @@ describe('Scene3D.SurfaceFill — per-call TONE_ALGO dispatch (46-way matrix)', 
   };
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime();
+    runtime = await loadScene3dAuditRuntime();
     V = runtime.window.Vectura;
     algo = V.AlgorithmRegistry.scene3d;
     defaults = V.ALGO_DEFAULTS.scene3d;

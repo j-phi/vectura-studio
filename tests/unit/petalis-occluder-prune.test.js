@@ -17,6 +17,7 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { pathSignature } = require('../helpers/path-signature');
+const { goldenValues } = require('../helpers/golden-values');
 
 const bounds = { width: 800, height: 800, m: 40, dW: 720, dH: 720, truncate: true };
 
@@ -47,12 +48,8 @@ const base = (o = {}) => ({
 
 const SHADE = [{ type: 'radial', density: 1, enabled: true }];
 
-const SIGNATURES = {
-  layeredWhorl: 'd0ad3f905d1425c771e24e548830e0509c6795d8d6c7158b83bef43c2762dedf',
-  layeredWhorlShaded: '092d82a6bc5a30102ba39586fa80659af85655d9042282c99b9bfd90ca709a09',
-  layeredWhorlLit: '98dc86e54473e07c594abccaf05c4f956e4c188d45db76baabc3196197aae497',
-  spiralLayered: 'f535b1b569ae65516cca4bf9c806a3ca77390413442cad0faea1c2927b270fbe',
-};
+// The pre-optimization signatures: tests/baselines/golden-values/petalis-occluder-prune.json.
+const golden = goldenValues('petalis-occluder-prune');
 
 describe('petalis occluder-prune output invariance', () => {
   let runtime;
@@ -73,20 +70,20 @@ describe('petalis occluder-prune output invariance', () => {
     algo.generate(params, new SeededRNG(params.seed), new SimpleNoise(params.seed), bounds);
 
   test('layered whorl (no shading) geometry is unchanged', () => {
-    expect(pathSignature(gen(base()))).toBe(SIGNATURES.layeredWhorl);
+    golden.expect('layeredWhorl', pathSignature(gen(base())));
   });
 
   test('layered whorl with radial shading is unchanged', () => {
-    expect(pathSignature(gen(base({ shadings: SHADE })))).toBe(SIGNATURES.layeredWhorlShaded);
+    golden.expect('layeredWhorlShaded', pathSignature(gen(base({ shadings: SHADE }))));
   });
 
   test('layered whorl with light source (shadow split) is unchanged', () => {
     const params = base({ shadings: SHADE, lightSource: { x: 120, y: 120 } });
-    expect(pathSignature(gen(params))).toBe(SIGNATURES.layeredWhorlLit);
+    golden.expect('layeredWhorlLit', pathSignature(gen(params)));
   });
 
   test('spiral-mode layered geometry is unchanged', () => {
     const params = base({ layoutMode: 'spiral', outerCount: 18, innerCount: 0 });
-    expect(pathSignature(gen(params))).toBe(SIGNATURES.spiralLayered);
+    golden.expect('spiralLayered', pathSignature(gen(params)));
   });
 });

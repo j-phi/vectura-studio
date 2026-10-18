@@ -5,7 +5,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { loadVecturaRuntime } = require('./load-vectura-runtime');
+const { loadScene3dAuditRuntime } = require('./scene3d-audit-runtime');
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const freezeDeep = (value, seen = new WeakSet()) => {
@@ -126,7 +126,7 @@ function describeSingleParamCluster(label, {
     };
 
     beforeAll(async () => {
-      runtime = await loadVecturaRuntime();
+      runtime = await loadScene3dAuditRuntime();
       V = runtime.window.Vectura;
       algo = V.AlgorithmRegistry.scene3d;
       defaults = V.ALGO_DEFAULTS.scene3d;
@@ -310,7 +310,7 @@ function describeComboCluster(label, {
       return best.opts;
     };
     beforeAll(async () => {
-      runtime = await loadVecturaRuntime();
+      runtime = await loadScene3dAuditRuntime();
       V = runtime.window.Vectura;
       algo = V.AlgorithmRegistry.scene3d;
       defaults = V.ALGO_DEFAULTS.scene3d;
@@ -420,7 +420,7 @@ function describeComboCluster(label, {
 }
 
 module.exports = {
-  loadVecturaRuntime, clone, freezeDeep, cloneFixture, createCapturedOptionsCache,
+  loadScene3dAuditRuntime, clone, freezeDeep, cloneFixture, createCapturedOptionsCache,
   BOUNDS, SUN, SLOW, describeSingleParamCluster, describeComboCluster,
   recordedShadowResolvesToSurvivor,
 };

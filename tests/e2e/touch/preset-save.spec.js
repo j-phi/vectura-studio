@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
@@ -7,7 +8,7 @@ const { PROJECTS } = require('./viewports');
 // TUX-049: the Save Preset sheet is finger-sized, keeps Save below the name field, and rides above
 // the on-screen keyboard. The keyboard is a fake window.visualViewport (helpers/text-panel-setup).
 // Finger-only (no mouse). Opens through the real gallery pip so the real preset store is exercised.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-049');
+const EVIDENCE = evidenceDir('TUX-049');
 const SEED_ID = 'user-lissajous-tux049';
 const STORE_KEY = 'vectura.user_presets.lissajous';
 // Desktop (fine pointer, 1600x1000) footer sizes measured on the base before TUX-049.
@@ -109,7 +110,7 @@ test.describe('TUX-049 Save Preset sheet', () => {
     const r = { sheet: await rect(page, '.vectura-modal'), name: await rect(page, NAME_SEL), save: await rect(page, SAVE_SEL), cancel: await rect(page, CANCEL_SEL) };
     const msg = `${JSON.stringify(r)} vv=${JSON.stringify(vv)}`;
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE}/${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/${testInfo.project.name}.png` });
     expect(r.sheet.bottom, `sheet bottom inside the visual viewport ${msg}`).toBeLessThanOrEqual(hi + 1);
     for (const k of ['name', 'save']) {
       expect(r[k].top >= lo - 1 && r[k].bottom <= hi + 1, `${k} inside the visual viewport ${msg}`).toBe(true);
@@ -181,7 +182,7 @@ test('D: desktop parity (fine pointer) keeps the pre-change footer', async ({ br
     return { fine: matchMedia('(pointer: fine)').matches, save: q('.preset-save-confirm'), cancel: q('.preset-save-footer button:not(.preset-save-confirm)'), name: q('#preset-save-name'), sheet: q('.vectura-modal') };
   });
   fs.mkdirSync(EVIDENCE, { recursive: true });
-  await page.screenshot({ path: `${EVIDENCE}/desktop-1600x1000-${process.env.TUX049_SHOT || 'run'}.png` });
+  await shoot(page, { path: `${EVIDENCE}/desktop-1600x1000-${process.env.TUX049_SHOT || 'run'}.png` });
   await ctx.close();
   const msg = JSON.stringify(m);
   expect(m.fine, msg).toBe(true);

@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('./helpers/evidence');
 const { test, expect } = require('@playwright/test');
 
 // TUX-046 D6: desktop parity for the legacy #modal-overlay (fine pointer, mouse).
@@ -102,7 +103,7 @@ test.describe('TUX-047 zoom surfaces on desktop', () => {
     expect(v3.offsetX - v2.offsetX).toBeCloseTo(40, 0);
     expect(v3.offsetY - v2.offsetY).toBeCloseTo(25, 0);
     expect(await page.evaluate(() => getComputedStyle(document.getElementById('export-preview-canvas-wrap')).cursor)).toBe('grab');
-    await page.screenshot({ path: require('path').join(__dirname, '../..', 'docs/touch-audit/evidence/after/TUX-047/desktop-export-1600x1000.png') });
+    await shoot(page, { path: evidenceDir('TUX-047/desktop-export-1600x1000.png') });
   });
 
   const openPd = async (page) => {

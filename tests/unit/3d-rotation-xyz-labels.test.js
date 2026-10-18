@@ -11,7 +11,7 @@
  * only labels, ordering, tooltips, and help copy changed.
  *
  * Loads controls-registry.js into a JSDOM context, mirroring the harness in
- * 3d-wave2-controls.test.js. Gizmo drag-tooltip coverage lives in
+ * 3d-algo-control-schema.test.js. Gizmo drag-tooltip coverage lives in
  * 3d-rotation-gizmo-tooltips.test.js (loadVecturaRuntime is CJS-harness only).
  */
 import fs from 'node:fs';

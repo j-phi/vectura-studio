@@ -1,0 +1,52 @@
+{
+  "arm64": {
+    "layers 2": {
+      "paths": 70,
+      "ink": 452.69,
+      "median": 3.55,
+      "under2Pct": 11.43
+    },
+    "layers 3": {
+      "paths": 123,
+      "ink": 578.61,
+      "median": 3.91,
+      "under2Pct": 13.01
+    },
+    "layers 4": {
+      "paths": 123,
+      "ink": 537.35,
+      "median": 3.59
+    },
+    "layers off": {
+      "paths": 61,
+      "ink": 683.43,
+      "median": 13.27,
+      "under2Pct": 3.28
+    }
+  },
+  "x64": {
+    "layers 2": {
+      "paths": 70,
+      "ink": 452.69,
+      "median": 3.55,
+      "under2Pct": 11.43
+    },
+    "layers 3": {
+      "paths": 123,
+      "ink": 578.61,
+      "median": 3.91,
+      "under2Pct": 13.01
+    },
+    "layers 4": {
+      "paths": 123,
+      "ink": 537.35,
+      "median": 3.59
+    },
+    "layers off": {
+      "paths": 61,
+      "ink": 683.43,
+      "median": 13.27,
+      "under2Pct": 3.28
+    }
+  }
+}

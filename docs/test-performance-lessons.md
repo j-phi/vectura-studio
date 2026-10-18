@@ -1,21 +1,22 @@
 # Test performance lessons
 
-This file is the single ledger of lessons from the test-trimming work in PR #97, #99 and #100. Read it before you add, change or trim a test. Command details stay in `docs/testing.md`. Approved coverage trade-offs stay in `docs/render-test-reductions.md`.
+This file is the single ledger of lessons from the test-trimming work in PR #97, #99, #100 and the October 2026 overhaul (`ci/test-overhaul`). Read it before you add, change or trim a test. Commands and the CI graph are in `docs/testing.md`. Earlier trade-off records are in `docs/archive/`.
 
 ## Budgets and how to measure
 
-- Full PR validation takes about 8 minutes on hosted runners (PR #100). It was 53 minutes before PR #97. Treat 10 minutes as the ceiling.
-- No test left PR gating. Thresholds, skip allowances and per-test timeouts did not change. Do not change them to save time.
+- Full PR validation took about 8 minutes on hosted runners after PR #100, and grew to about 17 minutes after PR #102 added the touch smoke. The overhaul projects about 6 minutes (not yet measured on hosted runners). Treat 10 minutes as the ceiling.
+- Every test runs pre-merge on every PR that can affect it (path-routed, shared dependencies included). Every test runs on `main` nightly, with an auto-issue on red (owner decision D-1). Coverage runs on the main push, not on PRs (D-2).
+- Do not lower a threshold, add a skip allowance or raise a per-test timeout to save time.
 - Coverage thresholds: statements 74%, branches 62%, functions 74%, lines 76%. The skip baseline is 57.
 - Measure wall time from workflow creation to the last required check. This includes queue and setup time.
 - Report summed runner time as a separate number. More shards raise runner time. Runner time is free for this public repo.
 - One run is not proof. A local timing is not proof. Record at least two hosted runs of the final configuration, and name the run IDs.
 - The shard overhead is about 1 minute per shard (checkout 12-64 s, setup, coverage collection). The tail after the last shard is about 1.5 minutes.
-- 16 shards plus the other jobs sit near the account limit of 20 concurrent jobs. Parallel PRs can queue shards and push wall time over 10 minutes.
+- The account runs at most 20 concurrent jobs. A PR run now uses about 17 jobs at peak (8 Vitest shards, 4 e2e legs, up to 3 audit groups and the small jobs). Parallel PRs can queue and push wall time over 10 minutes.
 
 ## Rules for adding or changing tests
 
-- The coverage shards are the whole critical path. A test file is the unit of sharding. One slow file sets the floor for wall time.
+- A test file is the unit of sharding. One slow file sets the floor for the shard wall time.
 - Aim for at most about 120 s of hosted coverage time per file. The hard ceiling is about 240 s. Split any file above the ceiling.
 - Prefer the cheapest layer that can show the defect. Use a unit test on a resolver or a pure function before you render a scene.
 - Do not render the same full scene many times when one render is enough. Reuse an immutable summary across assertions.
@@ -33,7 +34,7 @@ This file is the single ledger of lessons from the test-trimming work in PR #97,
 3. Run the mutation check. Break the source on purpose. Confirm the kept test fails. If it does not fail, the trim lost the witness. Revert it.
 4. Compare titles and assertions old against new. Parity must hold, or each difference must be approved and recorded.
 5. Keep cross-file roster and recorder checks seeing the full set of tests.
-6. Record the accepted loss in `docs/render-test-reductions.md`.
+6. Record the accepted loss and the mutation proofs in the commit message and the PR description.
 
 What was reverted or caught before:
 
@@ -45,14 +46,14 @@ What was reverted or caught before:
 
 ## Sharding and weight maintenance
 
-- `COVERAGE_SHARD_COUNT` in `.github/workflows/test.yml` is the single source of the shard count. The planner accepts 1 to 32. The current value is 16.
+- `VITEST_SHARD_COUNT` (8, PR) and `COVERAGE_SHARD_COUNT` (12, main and nightly) in `.github/workflows/test.yml` are the single sources of the shard counts. The planner accepts 1 to 32.
 - More shards do not help unless the files are balanced. Split the heaviest file first.
 - Weights must come from Vitest blob durations. Use `scripts/test-shard-weights-refresh.js`. Do not use JSON start and end times. They leave out `beforeAll` time. One file showed 44 s when the real time was 357 s. This caused a 2x shard imbalance.
 - Refresh the weights when a heavy file changes, when you split a file, or when shard times drift apart. The command and its flags are in `docs/testing.md`.
 - Split a file by `describe`. Move shared helpers to `tests/helpers/`. Check title and assertion parity old against new. Check that cross-file roster checks still see all tests.
 - Check balance with a plan dry run:
-  `node scripts/test-shard-plan.js --plan-out <file> --sha $(git rev-parse HEAD) --shards 16`
-- Re-run the whole workflow after a failure. Do not re-run only the failed shard jobs. Provenance is pinned per attempt, so a partial re-run cannot pass.
+  `node scripts/test-shard-plan.js --plan-out <file> --sha $(git rev-parse HEAD) --shards 12`
+- On a PR, "Re-run failed jobs" is safe: the `vitest` merge accepts shards from earlier attempts. The main `coverage` merge pins the exact attempt, so re-run all jobs there.
 
 ## History
 
@@ -68,6 +69,8 @@ Wall time runs from workflow creation to the last required check.
 | #100 | 38974810292 | 16 shards | 8m19s | Shard count 16. |
 | #100 | 38975939640 (head) | 16 shards, refreshed weights | 8m02s | Weights refreshed. Summed runner time 84.4 min. |
 | #100 | 38976955036 (main, post-merge) | 16 shards | 7m53s | First main run after merge. Summed runner time 85.7 min. |
+| #102 | 39098941929 | 16 shards + touch smoke | about 17 min | `e2e-smoke` became the critical path: 16.8 min (desktop 7.0 min, then touch 8.4 min, of which 472 s were record-only journey cells). |
+| overhaul | not yet run | 8 uninstrumented PR shards, 4 e2e legs, routed audits | projected about 6 min | Projection only: Vitest chain about 5.5 min, slowest e2e leg about 5 min. Needs two hosted runs. |
 
 The final configuration has two samples (8m19s, 8m02s). Six consecutive green runs from 14 shards on ran 8m02s to 9m30s. This is not a P95 guarantee.
 
@@ -80,7 +83,8 @@ The final configuration has two samples (8m19s, 8m02s). Six consecutive green ru
 - Rendering a scene that no assertion reads.
 - Looping one scene over a full primitive, density and band matrix in a routine test.
 - Raising workers above 2 on the 4-vCPU runners.
-- Re-running only the failed shard jobs.
+- Re-running only the failed coverage shards on main.
 - Lowering a threshold, adding a skip or raising a timeout to save time.
-- Moving a test out of PR gating to make the number look better.
+- Taking a test out of every pre-merge path that can affect it (D-1).
+- Committing a test that rebuilds an old source tree from git history (D-4).
 - Claiming a speed-up from one run or a local timing.

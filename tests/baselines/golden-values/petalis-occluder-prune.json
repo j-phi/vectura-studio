@@ -1,0 +1,14 @@
+{
+  "arm64": {
+    "layeredWhorl": "d0ad3f905d1425c771e24e548830e0509c6795d8d6c7158b83bef43c2762dedf",
+    "layeredWhorlLit": "98dc86e54473e07c594abccaf05c4f956e4c188d45db76baabc3196197aae497",
+    "layeredWhorlShaded": "092d82a6bc5a30102ba39586fa80659af85655d9042282c99b9bfd90ca709a09",
+    "spiralLayered": "f535b1b569ae65516cca4bf9c806a3ca77390413442cad0faea1c2927b270fbe"
+  },
+  "x64": {
+    "layeredWhorl": "d0ad3f905d1425c771e24e548830e0509c6795d8d6c7158b83bef43c2762dedf",
+    "layeredWhorlLit": "98dc86e54473e07c594abccaf05c4f956e4c188d45db76baabc3196197aae497",
+    "layeredWhorlShaded": "092d82a6bc5a30102ba39586fa80659af85655d9042282c99b9bfd90ca709a09",
+    "spiralLayered": "f535b1b569ae65516cca4bf9c806a3ca77390413442cad0faea1c2927b270fbe"
+  }
+}

@@ -36,7 +36,7 @@
  *
  * RED proof (this lane's HEAD at the W-30c briefing, 90f3411f, before F2b):
  *
- *   VECTURA_PRE_W30C_B=1 npx vitest run tests/unit/scene3d-shadow-footprint-torus-visibility.test.js
+ *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  *
  * ── W-30d update (F2a lands; see scene3d-shadow-footprint-torus-hole-accuracy.test.js
  * for its own dedicated RED/GREEN pair) ──────────────────────────────────────
@@ -56,11 +56,6 @@
  * pinned to `2d931b1a` (F2b-only, this lane's HEAD immediately before W-30d).
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
-
-const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
-const BASE_SHA = '90f3411f'; // fill-collapse-2's HEAD at the W-30c briefing (U7, before F2b)
-const preW30cRuntimeOptions = makeMultiFilePreShaRuntimeOptions(BASE_SHA, 'VECTURA_PRE_W30C_B', [SCENE3D_REL]);
 
 const CAMERA = { projection: 'orthographic', yaw: 20, pitch: 45, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
 const BOUNDS = { width: 420, height: 420, m: 10, dW: 400, dH: 400, penWidth: 0.3, truncate: 4 };
@@ -173,37 +168,5 @@ describe('W-30c F2b/R3 — torus receive-shadow becomes visible (current tree)',
   test('torus, point light — probe at the footprint centroid (the real hole) is now UNSHADOWED (ratio < 1.3)', () => {
     const { ratio } = densityRatio(V, torusCaster, POINT, { x: 150.07, z: 0 });
     expect(ratio).toBeLessThan(1.3);
-  });
-});
-
-// ── W-30d note on this pin ───────────────────────────────────────────────
-// This describe block runs UNPINNED (against the CURRENT tree) whenever the
-// file is run normally — `makeMultiFilePreShaRuntimeOptions` only swaps in
-// the 90f3411f source when `VECTURA_PRE_W30C_B=1` is set by hand — so its two
-// torus assertions are, in normal CI, actually asserting something about the
-// CURRENT tree, not the pinned one. Before F2a they coincided (both "must be
-// shadowed", since F2b alone over-covered the whole hull including the hole);
-// after F2a the two probes are UNSHADOWED for two DIFFERENT reasons at the
-// two SHAs — pre-F2b, F2b's whole fix didn't exist yet (the original bug);
-// current tree, R2's hole is now correctly excluded — so a single shared
-// assertion can no longer discriminate them, and re-pointing it at the
-// current-tree truth (`< 1.3`, matching the block above) would make it pass
-// trivially under the manual pin too, ceasing to prove anything about F2b.
-// Retired here rather than left silently broken; `scene3d-shadow-footprint-
-// torus-hole-accuracy.test.js` carries the accurate, correctly-pinned (2d931b1a)
-// RED/GREEN proof for what actually changed (F2a/R2) in this unit (W-30d).
-// The sphere control below is untouched by any of this and still holds.
-//
-//   VECTURA_PRE_W30C_B=1 npx vitest run tests/unit/scene3d-shadow-footprint-torus-visibility.test.js
-describe('W-30c F2b RED-proof pin (90f3411f) — the occlusion-valid tone sample must be absent', () => {
-  let runtime;
-  let V;
-
-  beforeAll(async () => { runtime = await loadVecturaRuntime(preW30cRuntimeOptions()); V = runtime.window.Vectura; });
-  afterAll(() => runtime.cleanup());
-
-  test('sphere control (unaffected by F2b) still passes here — the sphere\'s centroid was always occluded', () => {
-    const { ratio } = densityRatio(V, sphereCaster, POINT, { x: 130, z: 0 });
-    expect(ratio).toBeGreaterThanOrEqual(1.5);
   });
 });

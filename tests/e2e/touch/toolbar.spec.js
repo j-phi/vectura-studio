@@ -1,10 +1,11 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
 const { tap, longPress, drag, hitArea, touchPhase, engineSupports } = require('../helpers/touch');
 
-const EVIDENCE_014 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-014');
-const EVIDENCE_013 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-013');
+const EVIDENCE_014 = evidenceDir('TUX-014');
+const EVIDENCE_013 = evidenceDir('TUX-013');
 
 // TUX-014: tool sub-menus open by tap / long-press and stay open (touch path).
 // TUX-013 and TUX-015 append their toolbar specs to this file later.
@@ -163,7 +164,7 @@ test.describe('TUX-014 tool sub-menus (touch)', () => {
       if (s.name === 'shape' || s.algo) {
         await fs.promises.mkdir(EVIDENCE_014, { recursive: true });
         const proj = testInfo.project.name.replace(/^touch-/, '');
-        await page.screenshot({ path: `${EVIDENCE_014}/${s.name}-${proj}.png` });
+        await shoot(page, { path: `${EVIDENCE_014}/${s.name}-${proj}.png` });
       }
 
       // Every row fully inside the visible menu area.
@@ -475,7 +476,7 @@ test.describe('TUX-013 one row', () => {
     // the canvas region grows by at least 100 px versus the pre-fix value
     expect(m.vc, 'viewport-container grows').toBeGreaterThan(RAIL_BASE[dev].vc + 100);
     await fs.promises.mkdir(EVIDENCE_013, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE_013}/${dev}${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
+    await shoot(page, { path: `${EVIDENCE_013}/${dev}${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
   });
 
   test('a 12th item (light tool) still fits one row', async ({ page }, testInfo) => {
@@ -606,7 +607,7 @@ test.describe('TUX-013 guards', () => {
     await sleep(500);
     expect(await railOccluders(page), 'rail buttons hittable with slivers').toEqual([]);
     await fs.promises.mkdir(EVIDENCE_013, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE_013}/iPhL${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
+    await shoot(page, { path: `${EVIDENCE_013}/iPhL${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
   });
 });
 
@@ -615,7 +616,7 @@ test.describe('TUX-013 guards', () => {
 // inflates it to 544, the proxy trap). The drawer scrolls, so every item is scrolled into view
 // programmatically first (WebKit synthetic touches cannot scroll containers).
 test.describe('TUX-015 all tools drawer', () => {
-  const EVIDENCE_015 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-015');
+  const EVIDENCE_015 = evidenceDir('TUX-015');
   const tapL = (page, t) => tap(page, typeof t === 'string' ? page.locator(t) : t);
   const openDrawer = async (page) => {
     await page.goto('/');
@@ -693,7 +694,7 @@ test.describe('TUX-015 all tools drawer', () => {
         expect(labels.length).toBeGreaterThan(10);
         expect(labels.filter((l) => !l.text || !l.shown)).toEqual([]);
       }
-      await page.screenshot({ path: `${EVIDENCE_015}/${shortName(testInfo.project.name)}-${view}${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
+      await shoot(page, { path: `${EVIDENCE_015}/${shortName(testInfo.project.name)}-${view}${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}.png` });
     }
     expect(failures).toEqual([]);
   });
@@ -756,7 +757,7 @@ test.describe('TUX-015 all tools drawer', () => {
 // (iPadL, coarseWide): no footer, handles are 44px, touch-action none, and a finger drag
 // follows 1:1 and is never cancelled.
 test.describe('TUX-016 footer and handles', () => {
-  const EVIDENCE_016 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-016');
+  const EVIDENCE_016 = evidenceDir('TUX-016');
   const ANCHORED = ['touch-ipad-portrait', 'webkit-ipad-portrait', 'touch-iphone-portrait', 'webkit-iphone-portrait', 'touch-iphone-landscape', 'webkit-iphone-landscape', 'touch-iphone-portrait-chrome', 'touch-iphone-landscape-chrome'];
   const FLOATING = ['touch-ipad-landscape', 'webkit-ipad-landscape', 'touch-coarse-wide'];
   const CTX = ['touch-ipad-landscape', 'webkit-ipad-landscape', 'touch-iphone-landscape', 'webkit-iphone-landscape', 'touch-coarse-wide'];
@@ -764,7 +765,7 @@ test.describe('TUX-016 footer and handles', () => {
   const short = (testInfo) => `${PROJECTS[testInfo.project.name]?.device || testInfo.project.name}${/webkit/.test(testInfo.project.name) ? '-webkit' : ''}`;
   const shot = async (page, testInfo, tag) => {
     await fs.promises.mkdir(EVIDENCE_016, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE_016}/${short(testInfo)}${tag ? `-${tag}` : ''}.png` });
+    await shoot(page, { path: `${EVIDENCE_016}/${short(testInfo)}${tag ? `-${tag}` : ''}.png` });
   };
   const load = async (page) => {
     await page.goto('/');

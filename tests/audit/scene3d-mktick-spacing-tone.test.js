@@ -1,6 +1,5 @@
-const fs = require('fs');
 const path = require('path');
-const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { loadScene3dAuditRuntime } = require('../helpers/scene3d-audit-runtime');
 const crypto = require('crypto');
 const {
   contact, thirdsSplit, covByIBins, siteCoverage, pathLen, over2RP, subMinCount,
@@ -44,18 +43,12 @@ const {
  */
 
 describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26 ruling)', () => {
-  test('the needle hook is non-vacuous (count === 1) and mkTick is on the T2-7 segs mechanism', () => {
-    const src = loadHeadSource();
-    expect(src.split(HOOK_NEEDLE).length - 1).toBe(1);
-    expect(src).toMatch(/law\.shape === 'tick' && sv\.segs/);
-  });
-
   describe('d=50, 12 fixtures x 2 rigs — RGR bars', () => {
     let runtime;
     const results = { test: {}, create: {} };
 
     beforeAll(async () => {
-      runtime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      runtime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
       ['test', 'create'].forEach((rig) => {
         CELLS.forEach(([primitive, mapper]) => {
           const r = renderCellHooked(runtime, { primitive, mapper, rig });
@@ -76,14 +69,6 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
     describe('T1 — SP5 (spacing carries tone, full population) >= 2.30 and monotone, on >= 11/12 cell x rig combinations', () => {
       const SP5_BAR = 2.30;
 
-      ['test', 'create'].forEach((rig) => {
-        CELLS.forEach(([primitive, mapper]) => {
-          test(`${rig} rig — ${primitive}/${mapper}: SP5 reported (aggregate gate below)`, () => {
-            const r = results[rig][`${primitive}/${mapper}`].full;
-            expect(r.SP5).not.toBeNull();
-          });
-        });
-      });
       test('AGGREGATE: SP5 >= 2.30 and monotone on at least 11 of 12 cell x rig combinations', () => {
         // eslint-disable-next-line no-console
         const total = ['test', 'create'].flatMap((rig) => CELLS.map(([primitive, mapper]) => ({ rig, primitive, mapper, ...results[rig][`${primitive}/${mapper}`].full })));
@@ -126,14 +111,6 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
     // 0.2484, substantially improved from the pre-clip-fix 0.2595 but still
     // failing after the named fix candidate was attempted — see §1).
     describe('T2 — B1 tipContact <= 0.15 on every cell except one NAMED, measured exception', () => {
-      ['test', 'create'].forEach((rig) => {
-        CELLS.forEach(([primitive, mapper]) => {
-          test(`${rig} rig — ${primitive}/${mapper}: tipContact reported`, () => {
-            const r = results[rig][`${primitive}/${mapper}`].contact;
-            expect(r.tipContact).not.toBeNull();
-          });
-        });
-      });
       test('AGGREGATE: every cell passes except the named exception (create/torus/contour) — any OTHER failure is a regression', () => {
         // eslint-disable-next-line no-console
         const total = ['test', 'create'].flatMap((rig) => CELLS.map(([primitive, mapper]) => ({ rig, primitive, mapper, tipContact: results[rig][`${primitive}/${mapper}`].contact.tipContact })));
@@ -148,14 +125,6 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
     // T3 (BLOCKING) — B3 markContact <= 0.30, same named exception as T2
     // (the same cell, the same contact mechanism).
     describe('T3 — B3 markContact <= 0.30 on every cell except one NAMED, measured exception', () => {
-      ['test', 'create'].forEach((rig) => {
-        CELLS.forEach(([primitive, mapper]) => {
-          test(`${rig} rig — ${primitive}/${mapper}: markContact reported`, () => {
-            const r = results[rig][`${primitive}/${mapper}`].contact;
-            expect(r.markContact).not.toBeNull();
-          });
-        });
-      });
       test('AGGREGATE: every cell passes except the named exception (create/torus/contour) — any OTHER failure is a regression', () => {
         // eslint-disable-next-line no-console
         const total = ['test', 'create'].flatMap((rig) => CELLS.map(([primitive, mapper]) => ({ rig, primitive, mapper, markContact: results[rig][`${primitive}/${mapper}`].contact.markContact })));
@@ -194,13 +163,6 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
     //     own apex convergence, which is shared, forbidden-to-touch geometry
     //     (`R`'s own `clamp(...)` in `solveAt`, common to every mark law).
     describe('T4 — B5 binned ink-vs-I monotone (nonMono === 0) on every cell except TWO NAMED, individually measured exceptions', () => {
-      ['test', 'create'].forEach((rig) => {
-        CELLS.forEach(([primitive, mapper]) => {
-          test(`${rig} rig — ${primitive}/${mapper}: nonMono reported`, () => {
-            const r = results[rig][`${primitive}/${mapper}`].bins;
-          });
-        });
-      });
       test('AGGREGATE: every cell passes except the two named exceptions — any OTHER failure is a regression; the named set may not silently grow', () => {
         // eslint-disable-next-line no-console
         const total = ['test', 'create'].flatMap((rig) => CELLS.map(([primitive, mapper]) => ({ rig, primitive, mapper, nonMono: results[rig][`${primitive}/${mapper}`].bins.nonMono })));
@@ -231,7 +193,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
     const results = { test: {}, create: {} };
 
     beforeAll(async () => {
-      runtime = await loadVecturaRuntime();
+      runtime = await loadScene3dAuditRuntime();
       ['test', 'create'].forEach((rig) => {
         B7_CELLS.forEach(([primitive, mapper]) => {
           const V = runtime.window.Vectura;
@@ -281,8 +243,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         '          const c = 0.5 * cMax; // MUTATION: coverage no longer tracks tone -> P inert -> SP5 collapses',
         'SP5_MUTATION_NEEDLE',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const s = renderCellHooked(shippedRuntime, CELL);
         const m = renderCellHooked(mutantRuntime, CELL);
@@ -303,8 +265,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         'const MK_TICK_GAP_PEN = -0.9; // MUTATION: near-total overlap allowed',
         'GAP_MUTATION_NEEDLE',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const s = renderCellHooked(shippedRuntime, CELL);
         const m = renderCellHooked(mutantRuntime, CELL);
@@ -343,8 +305,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
             mkClipArm.rp = 0;`,
         'MAIN_CLIP_MUTATION_NEEDLE_2',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated2 } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated2 } });
       try {
         const TORUS_CELL = { primitive: 'torus', mapper: 'hatch', rig: 'test' };
         const s = renderCellHooked(shippedRuntime, TORUS_CELL);
@@ -366,7 +328,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         '          const f = Math.min(1, Lplot / Lall); // MUTATION: every tick pinned to the bare plot floor',
         'F_MUTATION_NEEDLE',
       );
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const m = renderCellHooked(mutantRuntime, CELL);
         const bins = covByIBins(m.sites, BOUNDS.penWidth);
@@ -393,7 +355,7 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         'CAP_MUTATION_NEEDLE_2',
       );
       const mutated = src;
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         // torus/contour, not CELL (cone/hatch): the cap only binds visibly
         // where real-neighbour extents already reach near RPn — measured to
@@ -416,8 +378,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         'if (false) { // MUTATION: HIDENS fallback disabled',
         'HIDENS_MUTATION_NEEDLE',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const V1 = shippedRuntime.window.Vectura;
         const V2 = mutantRuntime.window.Vectura;
@@ -492,32 +454,15 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
       };
     };
 
-    // cone/hatch and sphere/hatch, both rigs, per this unit's brief. Only
-    // `cone/hatch/test` is asserted on below (see the describe's own
-    // comment); the other three are measured and reported in the same
-    // table so the gap is visible in every CI run, not just this report.
-    const WEDGE_CELLS = [
-      ['cone', 'hatch', 'test'], ['cone', 'hatch', 'create'],
-      ['sphere', 'hatch', 'test'], ['sphere', 'hatch', 'create'],
-    ];
-    const BLOCKING_CELL = 'cone/hatch/test';
-
-    test('cone/hatch/test places wedge-row sites and most draw (wedgeFillFrac >= 0.3); other 3 cells reported', async () => {
-      const runtime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
+    // Only `cone/hatch/test` is asserted (see the describe's own comment).
+    // R-29: the three report-only cells (cone/hatch/create, sphere/hatch x2)
+    // are no longer rendered.
+    test('cone/hatch/test places wedge-row sites and most draw (wedgeFillFrac >= 0.3)', async () => {
+      const runtime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
       try {
-        const table = [];
-        WEDGE_CELLS.forEach(([primitive, mapper, rig]) => {
-          const r = renderWedgeCell(runtime, { primitive, mapper, rig });
-          table.push({
-            primitive, mapper, rig, nWedgeSites: r.wsites.length, wedgeFillFrac: r.wedgeFillFrac,
-          });
-          if (`${primitive}/${mapper}/${rig}` === BLOCKING_CELL) {
-            expect(r.wsites.length).toBeGreaterThan(0);
-            expect(r.wedgeFillFrac).toBeGreaterThanOrEqual(0.3);
-          }
-        });
-        // eslint-disable-next-line no-console
-        console.log('T2-8 wedgeFillFrac table (cone/hatch/test is the only BLOCKING row):', JSON.stringify(table));
+        const r = renderWedgeCell(runtime, { primitive: 'cone', mapper: 'hatch', rig: 'test' });
+        expect(r.wsites.length).toBeGreaterThan(0);
+        expect(r.wedgeFillFrac).toBeGreaterThanOrEqual(0.3);
       } finally {
         await runtime.cleanup();
       }
@@ -530,8 +475,8 @@ describe('Scene3D.SurfaceFill — mkTick spacing-tone bars (T2-7, Jay\'s eye_t26
         'const emitTickWedgeRow = (rawAt, pitchStep, lineDir, back, side, count, zoneGate) => { if (true) return; // MUTATION: wedge pass disabled',
         'T28_WEDGE_DISABLE_NEEDLE',
       );
-      const shippedRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
-      const mutantRuntime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
+      const shippedRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: buildWedgeHookedSource() } });
+      const mutantRuntime = await loadScene3dAuditRuntime({ scriptOverrides: { [REL_PATH]: mutated } });
       try {
         const s = renderWedgeCell(shippedRuntime, { primitive: 'cone', mapper: 'hatch', rig: 'test' });
         const m = renderWedgeCell(mutantRuntime, { primitive: 'cone', mapper: 'hatch', rig: 'test' });

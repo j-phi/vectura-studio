@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
@@ -5,7 +6,7 @@ const touch = require('../helpers/touch');
 // TUX-036 + TUX-041: the multi-select action strip (#layer-status-bar) fits the Layers pane, every button
 // is a finger target (>= 44 px both axes), Delete keeps a gap to Duplicate, and an ineligible button
 // answers a tap with a toast (a `title` is invisible to a finger).
-const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch3/strip');
+const EVID = evidenceDir('batch3/strip');
 const MIN = 44;
 const SCREEN_SEL = ['#touch-modifier-bar'];
 
@@ -65,7 +66,7 @@ test.describe('TUX-036/041 multi-select strip', () => {
     expect(m.bar.sw, 'strip does not overflow sideways').toBeLessThanOrEqual(m.bar.cw + 1);
     expect(m.bar.sh, 'strip does not clip vertically').toBeLessThanOrEqual(m.bar.ch + 1);
     fs.mkdirSync(EVID, { recursive: true });
-    await page.screenshot({ path: `${EVID}/${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVID}/${testInfo.project.name}.png` });
   });
 
   test('Delete keeps a gap of at least 8 px to Duplicate (TUX-036 req 5)', async ({ page }) => {
@@ -106,8 +107,8 @@ test.describe('TUX-036/041 multi-select strip', () => {
     const rows = await page.evaluate(() => [...document.querySelectorAll('.menu-dropdown.open .menu-entry')].map((e) => ({ t: e.textContent.trim(), h: e.getBoundingClientRect().height })));
     expect(rows.length).toBeGreaterThanOrEqual(4);
     expect(rows.filter((r) => r.h < MIN - 0.5), `rows under ${MIN} px: ${JSON.stringify(rows)}`).toEqual([]);
-    fs.mkdirSync(require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/batch3b'), { recursive: true });
-    await page.screenshot({ path: `${require('path').join(__dirname, '../../..')}/docs/touch-audit/evidence/after/batch3b/strip-menu-${testInfo.project.name}.png` });
+    fs.mkdirSync(evidenceDir('batch3b'), { recursive: true });
+    await shoot(page, { path: `${evidenceDir('batch3b')}/strip-menu-${testInfo.project.name}.png` });
   });
 
   test('a tap on an ineligible strip button explains itself with a toast', async ({ page }) => {

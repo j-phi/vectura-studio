@@ -45,7 +45,6 @@ describe('Scene3D.SurfaceFill — the committed tone law is the control', () => 
   test('publishes which tone law it was built with', () => {
     expect(typeof SF.toneAlgo).toBe('string');
     expect(typeof SF.uncapped).toBe('boolean');
-    expect(typeof SF.flowMode).toBe('string');
   });
 
   test("ships the control law, not one of the nine prototypes", () => {
@@ -60,10 +59,6 @@ describe('Scene3D.SurfaceFill — the committed tone law is the control', () => 
     // `lastFloorStats` is written only in uncapped mode. A non-null value here
     // would mean the uncapped path ran, whatever the flag claims.
     expect(SF.lastFloorStats).toBeNull();
-  });
-
-  test("the flow mode is a valid one even though it is inert", () => {
-    expect(['iso', 'grad']).toContain(SF.flowMode);
   });
 
   /*

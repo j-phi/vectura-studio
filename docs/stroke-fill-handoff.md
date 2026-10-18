@@ -76,12 +76,14 @@ Historical: `sf/integration` (same work minus the merge), `sf/shadow-overlap`, `
 `sf/w6-voronoi`. Base was `3d-scene/fs-batch` @ `5e92311b`.
 
 Suites on `sf/preview`: unit 4669+, integration 1919, visual 99. Four RGR red proofs, each pinning
-a different baseline SHA via `tests/helpers/pre-wip-surface-fill.js`:
+a different baseline SHA. The env switches and their helper were retired in v1.4.18 (R-18, D-4: the
+suite no longer rebuilds old trees from git history). The SHAs below stay as the record of each
+RED proof:
 
-    VECTURA_PRE_WIP=1         # 1b157bc6 — sub-pen fix, 34-36 of 36 red on wall-coverage
-    VECTURA_PRE_WALLS_FIX=1   # e047c9a7 — phantom lobe, 58.27 vs 28.74 mm² ceiling
-    VECTURA_PRE_F6=1          # ecc50c16 — fold-cusp splitting
-    VECTURA_PRE_F7=1          # 57e86f48 — self-occlusion, the user's red-line rule
+    1b157bc6 — sub-pen fix, 34-36 of 36 red on wall-coverage
+    e047c9a7 — phantom lobe, 58.27 vs 28.74 mm² ceiling
+    ecc50c16 — fold-cusp splitting
+    57e86f48 — self-occlusion, the user's red-line rule
 
 ## DONE and independently verified
 
@@ -309,7 +311,7 @@ value; fixed via a new `perPointGrade` flag on `spacingBand` that skips the cach
 call site is byte-identical). RGR: `tests/unit/scene3d-shadow-receive.test.js` gained a box+plane
 describe block — an independent ray/AABB oracle proves inside/outside density clears 1.5x with the
 flag ON (measured ~2.4x with a stark ladder) and stays uniform (0.7-1.3x) with it OFF; a second pin
-(`VECTURA_PRE_FACETGRADE=1` on `2893d842`) reproduces the judge's exact defect (ratio 0.84, RED).
+(a retired env switch on `2893d842`, removed in v1.4.18) reproduced the judge's exact defect (ratio 0.84, RED).
 
 **Honest visual finding (not fully resolved).** Re-shot the judge's exact scene
 (`scripts/shadow-receive-plane-evidence.js`) and looked at the crops directly: with the SHIPPED

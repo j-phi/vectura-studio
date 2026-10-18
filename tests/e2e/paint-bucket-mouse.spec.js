@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('./helpers/evidence');
 const { test, expect } = require('@playwright/test');
 
 // TUX-022 D6: desktop (mouse) paint bucket is unchanged. The pour happens on mousedown, before
@@ -26,9 +27,9 @@ test('mouse: Fill pours on down and shows no touch chips', async ({ page }) => {
   expect(await page.locator('[data-fill-scope]').count()).toBe(0);
   expect(await page.evaluate(() => !!document.querySelector('.ctxbar.ctxbar--fill'))).toBe(false);
   if (process.env.TUX_EVIDENCE) {
-    const dir = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../..', 'docs/touch-audit/evidence/after/TUX-022');
+    const dir = process.env.TUX_EVIDENCE_DIR || evidenceDir('TUX-022');
     require('fs').mkdirSync(dir, { recursive: true });
-    await page.screenshot({ path: `${dir}/desktop-fill-hover.png` });
+    await shoot(page, { path: `${dir}/desktop-fill-hover.png` });
   }
   const before = await fills();
   await page.mouse.down();

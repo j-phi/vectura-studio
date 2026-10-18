@@ -91,36 +91,27 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
 
-// This unit's own base sha — the tree immediately BEFORE T3b's fix landed
-// (round 3 CLOSED, merged, gallery rebuilt; the fill-audit-a4 worktree's own
-// HEAD before any T3b edit). An EXPLICIT pin, never `HEAD` (T2-3's own
-// `git show HEAD:` self-test went silently RED once `HEAD` moved past its
-// own fix — `T2-3-review.md`).
-const T3B_BASE_SHA = 'b43fa4e3';
 const SF_REL_PATH = 'src/core/scene3d/surface-fill.js';
 
-const getPreT3bSource = (() => {
-  let cached = null;
-  return () => {
-    if (cached) return cached;
-    const rootDir = path.resolve(__dirname, '../..');
-    cached = execFileSync('git', ['show', `${T3B_BASE_SHA}:${SF_REL_PATH}`], {
-      cwd: rootDir,
-      maxBuffer: 1024 * 1024 * 64,
-    }).toString('utf8');
-    return cached;
-  };
-})();
+// R-18 (D-4): this file used to load the pre-T3b tree (`git show b43fa4e3`)
+// as a second runtime. It no longer reads git history:
+//   - the mutation kill (bandMax 6, 3.93 pens per mark at d=1) runs against
+//     `neutralAlgo` below, the LIVE source with T3b/T3c's onset ramp
+//     reverted. Measured equal to the b43fa4e3 tree on that cell.
+//   - the "byte-identical to the pre-T3b tree" legs read committed goldens
+//     (tests/baselines/golden-values/scene3d-mkdashramp-single-pass.json),
+//     generated from the tree that matched b43fa4e3 byte for byte.
+const golden = goldenValues('scene3d-mkdashramp-single-pass');
 
 // R4-fix (round-4 merge, 2026-09-19): a SECOND mutant, built from the
 // CURRENT disk source (not a stale sha), for the ONE roster entry
 // (`mkTick`) that legitimately moved for a reason that has nothing to do
 // with T3b — T2-6 (a later, unrelated unit on this SAME lane) added a
 // graded-comb mechanism to `mkTick` after `T3B_BASE_SHA` was cut, so
-// comparing CURRENT (T2-6 present) against `getPreT3bSource()` (T2-6 absent)
+// comparing CURRENT (T2-6 present) against the b43fa4e3 tree (T2-6 absent)
 // necessarily disagrees for mkTick regardless of T3b's own health — see the
 // file's own byte-identity sweep comment and `R4-fix-impl.md`. `bandOnsetCap`
 // is read at exactly THREE call sites, all inside `law.shape === 'morph'`
@@ -162,8 +153,7 @@ const BYTE_IDENTITY_ROSTER = [...OTHER_MARK_LAWS, ...LADDER_FAMILY];
 
 describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density threshold (T3b, Jay decision 12=B)', () => {
   let runtime; let V; let algo; let defaults; let SF; let Params;
-  let mutantRuntime; let mutantV; let mutantAlgo; let mutantSF;
-  let neutralRuntime; let neutralAlgo;
+  let neutralRuntime; let neutralAlgo; let neutralSF;
 
   const buildSceneParams = (toneLaw, mapper, fillDensity, primitive, paramSet) => {
     const p = clone(defaults);
@@ -203,35 +193,18 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
     SF = V.Scene3D.SurfaceFill;
     Params = V.Scene3D.Params;
 
-    mutantRuntime = await loadVecturaRuntime({
-      scriptOverrides: { [SF_REL_PATH]: getPreT3bSource() },
-    });
-    mutantV = mutantRuntime.window.Vectura;
-    mutantAlgo = mutantV.AlgorithmRegistry.scene3d;
-    mutantSF = mutantV.Scene3D.SurfaceFill;
-
     neutralRuntime = await loadVecturaRuntime({
       scriptOverrides: { [SF_REL_PATH]: getT3bT3cNeutralizedSource() },
     });
     neutralAlgo = neutralRuntime.window.Vectura.AlgorithmRegistry.scene3d;
+    neutralSF = neutralRuntime.window.Vectura.Scene3D.SurfaceFill;
   }, 120000);
   afterAll(() => {
     runtime.cleanup();
-    mutantRuntime.cleanup();
     neutralRuntime.cleanup();
   });
 
   describe('O10 — single pass at the sparse end (sphere/hatch, addLayer rig)', () => {
-    test('RED at T3b base sha: pre-fix pens-per-mark at d=1 is 3.93 (multi-pass bundle), not 1', () => {
-      const src = getPreT3bSource();
-      expect(src.includes('bandOnsetCap')).toBe(false);
-      mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 1, 'sphere'), null, null, BOUNDS);
-      const stat = mutantSF.lastMarkStats;
-      const pensPerMark = stat.pens / stat.marks;
-      expect(pensPerMark).toBeCloseTo(3.9347826086956523, 6);
-      expect(pensPerMark).toBeGreaterThan(1);
-    });
-
     test('GREEN: current tree draws exactly 1 pass per mark for d=1..4, sphere/hatch, addLayer rig', () => {
       [1, 2, 3, 4].forEach((d) => {
         algo.generate(buildAddLayer('mkDashRamp', 'hatch', d, 'sphere'), null, null, BOUNDS);
@@ -250,9 +223,9 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
       expect(SF.lastMarkStats.bandMax).toBe(1);
     });
 
-    test('MUTATION-KILL (blocking): reverting to the pre-T3b mechanism reproduces bandMax=6 / pens-per-mark=3.93 at d=1', () => {
-      mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 1, 'sphere'), null, null, BOUNDS);
-      const stat = mutantSF.lastMarkStats;
+    test('MUTATION-KILL (blocking): reverting the onset ramp in the live source reproduces the pre-fix bandMax=6 / pens-per-mark=3.93 at d=1', () => {
+      neutralAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 1, 'sphere'), null, null, BOUNDS);
+      const stat = neutralSF.lastMarkStats;
       expect(stat.bandMax).toBe(6);
       expect(stat.pens / stat.marks).toBeCloseTo(3.9347826086956523, 6);
     });
@@ -306,16 +279,14 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
     // side of it `bandOnsetCap` returns the SAME value (6, unrestricted),
     // so any residual delta is ordinary per-density noise already present
     // in the unmodified baseline (confirmed by the mutant-tree comparison).
-    test('addLayer rig: ink at d=34 and d=35 differs only by ordinary per-density noise (<2%), and matches the pre-T3b tree', () => {
+    test('addLayer rig: ink at d=34 and d=35 differs only by ordinary per-density noise (<2%), and matches its committed golden (pre-T3b value)', () => {
       const at34 = totalInk(algo.generate(buildAddLayer('mkDashRamp', 'hatch', 34, 'sphere'), null, null, BOUNDS));
       const at35 = totalInk(algo.generate(buildAddLayer('mkDashRamp', 'hatch', 35, 'sphere'), null, null, BOUNDS));
       const stepPct = Math.abs(at35 - at34) / at34 * 100;
       expect(stepPct).toBeLessThan(2);
 
-      const mutantAt34 = totalInk(mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 34, 'sphere'), null, null, BOUNDS));
-      const mutantAt35 = totalInk(mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 35, 'sphere'), null, null, BOUNDS));
-      expect(at34).toBeCloseTo(mutantAt34, 1);
-      expect(at35).toBeCloseTo(mutantAt35, 1);
+      golden.expect('O12 ink sphere/addLayer d=34', at34);
+      golden.expect('O12 ink sphere/addLayer d=35', at35);
     });
 
     test('create rig: same', () => {
@@ -348,29 +319,24 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
   });
 
   describe('O13 — non-regression: O8 (d=50) and T4b/G4 (d=220) territory untouched', () => {
-    test('sphere/hatch/mkDashRamp at d=50 (O8\'s own checkpoint) is byte-identical to the pre-T3b tree, addLayer rig', () => {
+    test('sphere/hatch/mkDashRamp at d=50 (O8\'s own checkpoint) matches its committed md5 golden (pre-T3b value), addLayer rig', () => {
       const cur = algo.generate(buildAddLayer('mkDashRamp', 'hatch', 50, 'sphere'), null, null, BOUNDS);
       const curStat = SF.lastMarkStats;
-      const mut = mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 50, 'sphere'), null, null, BOUNDS);
-      const mutStat = mutantSF.lastMarkStats;
-      expect(md5(cur)).toBe(md5(mut));
-      expect(curStat.bandMax).toBe(mutStat.bandMax);
+      golden.expect('O13 md5 mkDashRamp sphere/addLayer d=50', md5(cur));
+      golden.expect('O13 bandMax mkDashRamp sphere/addLayer d=50', curStat.bandMax);
       expect(curStat.bandMax).toBeGreaterThanOrEqual(2); // O8's own bar, re-derived here
     });
 
-    test('sphere/hatch/mkDashRamp at d=50, create rig — byte-identical to the pre-T3b tree', () => {
+    test('sphere/hatch/mkDashRamp at d=50, create rig — matches its committed md5 golden (pre-T3b value)', () => {
       const cur = algo.generate(buildCreate('mkDashRamp', 'hatch', 50, 'sphere'), null, null, BOUNDS);
-      const mut = mutantAlgo.generate(buildCreate('mkDashRamp', 'hatch', 50, 'sphere'), null, null, BOUNDS);
-      expect(md5(cur)).toBe(md5(mut));
+      golden.expect('O13 md5 mkDashRamp sphere/create d=50', md5(cur));
     });
 
-    test.each(['sphere', 'torus'])('%s/hatch/mkDashRamp at d=220 — byte-identical to the pre-T3b tree, BOTH rigs', (prim) => {
+    test.each(['sphere', 'torus'])('%s/hatch/mkDashRamp at d=220 — matches its committed md5 goldens (pre-T3b values), BOTH rigs', (prim) => {
       const curA = algo.generate(buildAddLayer('mkDashRamp', 'hatch', 220, prim), null, null, BOUNDS);
-      const mutA = mutantAlgo.generate(buildAddLayer('mkDashRamp', 'hatch', 220, prim), null, null, BOUNDS);
-      expect(md5(curA)).toBe(md5(mutA));
+      golden.expect(`O13 md5 mkDashRamp ${prim}/addLayer d=220`, md5(curA));
       const curC = algo.generate(buildCreate('mkDashRamp', 'hatch', 220, prim), null, null, BOUNDS);
-      const mutC = mutantAlgo.generate(buildCreate('mkDashRamp', 'hatch', 220, prim), null, null, BOUNDS);
-      expect(md5(curC)).toBe(md5(mutC));
+      golden.expect(`O13 md5 mkDashRamp ${prim}/create d=220`, md5(curC));
     });
 
     // The literal cell T4b's own CI guard measures (engine.addLayer('scene3d')
@@ -448,7 +414,7 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
     // R4-fix (round-4 merge, 2026-09-19): `mkTick` is compared against
     // `neutralAlgo` (this tree with T3b/T3c's onset-ramp/dash-length code
     // reverted, everything else — including T2-6's own mkTick comb —
-    // intact), NOT `mutantAlgo` (`T3B_BASE_SHA` = `b43fa4e3`). T2-6, a
+    // intact), NOT the pinned `b43fa4e3` tree. T2-6, a
     // later, unrelated unit on this SAME lane, added a graded-comb mechanism
     // to `mkTick` after `b43fa4e3` was cut; comparing CURRENT (T2-6 present)
     // against `b43fa4e3` (T2-6 absent) would fail for mkTick no matter how
@@ -456,14 +422,17 @@ describe('Scene3D.SurfaceFill — mkDashRamp SINGLE-PASS below a density thresho
     // merged tree (see `R4-fix-impl.md`). `neutralAlgo` isolates the
     // question this test actually asks — "does T3b/T3c's own code leak into
     // mkTick" — independent of T2-6's legitimate, disclosed change; the
-    // other three roster members are untouched by T2-6 too, so `mutantAlgo`
-    // remains the right comparison for them (unaffected by this switch).
+    // other three roster members are untouched by T2-6 too; R-18 moved their
+    // comparison from the b43fa4e3 runtime to committed md5 goldens.
     test.each([...BYTE_IDENTITY_ROSTER])('%s is unaffected at d=1/50/220, sphere/hatch, addLayer rig', (law) => {
-      const baseline = law === 'mkTick' ? neutralAlgo : mutantAlgo;
       [1, 50, 220].forEach((d) => {
         const cur = algo.generate(buildAddLayer(law, 'hatch', d, 'sphere'), null, null, BOUNDS);
-        const mut = baseline.generate(buildAddLayer(law, 'hatch', d, 'sphere'), null, null, BOUNDS);
-        expect(md5(cur)).toBe(md5(mut));
+        if (law === 'mkTick') {
+          const mut = neutralAlgo.generate(buildAddLayer(law, 'hatch', d, 'sphere'), null, null, BOUNDS);
+          expect(md5(cur)).toBe(md5(mut));
+        } else {
+          golden.expect(`sweep md5 ${law} sphere/addLayer d=${d}`, md5(cur));
+        }
       });
     });
   });

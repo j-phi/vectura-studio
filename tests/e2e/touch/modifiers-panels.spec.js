@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
@@ -7,7 +8,7 @@ const { waitLayoutSettled } = require('../helpers/target-audit-core');
 // TUX-033: the Multi-select task works in the layer list with real finger taps in both engines.
 // WebKit reports pointerType "mouse" on the click that follows a tap, so a pointerType-only gate fails there.
 // iPhone projects open the layers pane by finger through #btn-header-pane-right.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-033');
+const EVIDENCE = evidenceDir('TUX-033');
 
 test.describe('TUX-033 layer list honours touch modifiers @needs-tall-pane', () => {
   test.beforeEach(async ({ page }, testInfo) => {
@@ -44,7 +45,7 @@ test.describe('TUX-033 layer list honours touch modifiers @needs-tall-pane', () 
     fs.mkdirSync(EVIDENCE, { recursive: true });
     await latch(page);
     await touch.tap(page, rows(page).nth(1));
-    await page.screenshot({ path: `${EVIDENCE}/${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/${testInfo.project.name}.png` });
   });
 
   test('a locked Multi-select toggles rows in and out', async ({ page }) => {
@@ -124,6 +125,6 @@ test.describe('TUX-033 Constrain drag-pour with a finger @needs-tall-pane', () =
     await touch.drag(page, { x: pts.a, y: pts.y }, { x: pts.c, y: pts.y }, { steps: Math.max(30, Math.ceil((pts.c - pts.a) / 2)) });
     expect(await fills()).toBe(before + 3);
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE}/dragpour-${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/dragpour-${testInfo.project.name}.png` });
   });
 });

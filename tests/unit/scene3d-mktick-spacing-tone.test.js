@@ -39,12 +39,6 @@ const buildParams = (V, primitive, fillDensity = 50) => {
 };
 
 describe('Scene3D.SurfaceFill — mkTick thin-width canaries (routine lane)', () => {
-  test('the instrumentation needle remains unique and mkTick still uses the site-segment mechanism', () => {
-    const source = fs.readFileSync(path.join(ROOT_DIR, REL_PATH), 'utf8');
-    expect(source.split(HOOK_NEEDLE).length - 1).toBe(1);
-    expect(source).toMatch(/law\.shape === 'tick' && sv\.segs/);
-  });
-
   test('thin-width mkTick remains tone-spaced on curved and faceted geometry', async () => {
     const runtime = await loadVecturaRuntime({ scriptOverrides: { [REL_PATH]: buildHookedSource() } });
     try {

@@ -513,7 +513,7 @@ executed.
 **Problem.** 8 `if (el) expect(...)` sites go green if the control is removed/renamed.
 Most consequential: `tests/unit/3d-shading-capability.test.js` ~280/349/350 (focal/cam
 control contracts), `tests/integration/pendula-oscillator-controls.test.js` ~86 (the
-core one-history-push-per-drag assertion), `tests/integration/illus-p3-text-taskbar.test.js`
+core one-history-push-per-drag assertion), `tests/integration/text-taskbar.test.js`
 ~92, `tests/integration/wallpaper-center-rotate-handles.test.js` ~127. Find the full set
 with: `grep -rn "if (.*) expect(" tests/ | grep -v "//"` and manual review.
 
@@ -736,7 +736,7 @@ Paste both in the commit body.
 
 **DoD.** 0 tracked files under `src/inspiration/`; images still present on disk;
 dry-run zip shrinkage shown; suites green (nothing references the images, so
-`test:fast` suffices).
+`test:feedback` suffices).
 
 ---
 

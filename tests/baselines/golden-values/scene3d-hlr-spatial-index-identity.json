@@ -1,0 +1,66 @@
+{
+  "arm64": {
+    "curvedOverlap-perspective-mixed-xray|draft": {
+      "hash": "3bfb988870d36a77aa88e5e9df77cb93224929b17b4eafc3bb6ca0c9e984d369",
+      "pathCount": 302,
+      "pointCount": 773
+    },
+    "curvedOverlap-perspective-mixed-xray|settled": {
+      "hash": "24653523df6f2ecde68b1e807a8f086cea19404d453c7d03a19cb38c4c180645",
+      "pathCount": 424,
+      "pointCount": 1760
+    },
+    "denseMixed-8obj-shadows|draft": {
+      "hash": "fcfe9f21529f486d386ef9c1a19e4cc2f15a75a999e5ccf6275412c60b8d28d5",
+      "pathCount": 471,
+      "pointCount": 1146
+    },
+    "denseMixed-8obj-shadows|settled": {
+      "hash": "fe6516d18c34921f23364c7f8b539104f680b949f36a963e65b180242efa86cd",
+      "pathCount": 668,
+      "pointCount": 3032
+    },
+    "facetedOverlap-orthographic-hatch|draft": {
+      "hash": "82bacd44d6706bd4f484fa2c9b719bf119a7bd93b91a6b6cca798caed1634066",
+      "pathCount": 200,
+      "pointCount": 400
+    },
+    "facetedOverlap-orthographic-hatch|settled": {
+      "hash": "aa696fa2ebb27f1218aed6858298beb57b8cb7064c3e1e331f83fc80411ebbbd",
+      "pathCount": 208,
+      "pointCount": 416
+    }
+  },
+  "x64": {
+    "curvedOverlap-perspective-mixed-xray|draft": {
+      "hash": "3bfb988870d36a77aa88e5e9df77cb93224929b17b4eafc3bb6ca0c9e984d369",
+      "pathCount": 302,
+      "pointCount": 773
+    },
+    "curvedOverlap-perspective-mixed-xray|settled": {
+      "hash": "24653523df6f2ecde68b1e807a8f086cea19404d453c7d03a19cb38c4c180645",
+      "pathCount": 424,
+      "pointCount": 1760
+    },
+    "denseMixed-8obj-shadows|draft": {
+      "hash": "fcfe9f21529f486d386ef9c1a19e4cc2f15a75a999e5ccf6275412c60b8d28d5",
+      "pathCount": 471,
+      "pointCount": 1146
+    },
+    "denseMixed-8obj-shadows|settled": {
+      "hash": "fe6516d18c34921f23364c7f8b539104f680b949f36a963e65b180242efa86cd",
+      "pathCount": 668,
+      "pointCount": 3032
+    },
+    "facetedOverlap-orthographic-hatch|draft": {
+      "hash": "82bacd44d6706bd4f484fa2c9b719bf119a7bd93b91a6b6cca798caed1634066",
+      "pathCount": 200,
+      "pointCount": 400
+    },
+    "facetedOverlap-orthographic-hatch|settled": {
+      "hash": "aa696fa2ebb27f1218aed6858298beb57b8cb7064c3e1e331f83fc80411ebbbd",
+      "pathCount": 208,
+      "pointCount": 416
+    }
+  }
+}

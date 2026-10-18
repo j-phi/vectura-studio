@@ -216,6 +216,7 @@ test.describe('finger-only journeys', () => {
 
       const ledger = readLedger();
       // No ledger for this platform yet (linux until seeded): measure and record, never fail.
+      // The PR smoke leaves these record-only cells out (scripts/run-e2e-smoke.js, R-41).
       const pinned = !!ledger && ledger.projects.includes(project);
       const entry = pinned ? ledger.entries.find((x) => x.project === project && x.journey === J.id) : null;
       const verdict = judge({ entry, failedStep: result.failedStep, message: result.message });

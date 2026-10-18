@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
@@ -6,7 +7,7 @@ const { openPane, addLayer } = require('./target-audit-states');
 const core = require('../helpers/target-audit-core');
 
 // TUX-045: modifier tasks (Multi-select, Constrain, Duplicate, Pan) as one-shot latches with a double-tap lock.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-045');
+const EVIDENCE = evidenceDir('TUX-045');
 const TASKS = ['multi-select', 'constrain', 'duplicate', 'pan'];
 
 const gotoApp = async (page) => {
@@ -17,7 +18,7 @@ const st = (page, task) => page.evaluate((t) => window.Vectura.InputModifiers.ge
 const btn = (page, task) => page.locator(`#touch-modifier-bar [data-touch-mod="${task}"]`);
 const shot = async (page, testInfo, name) => {
   fs.mkdirSync(EVIDENCE, { recursive: true });
-  await page.screenshot({ path: `${EVIDENCE}/${testInfo.project.name}${name ? `-${name}` : ''}.png` });
+  await shoot(page, { path: `${EVIDENCE}/${testInfo.project.name}${name ? `-${name}` : ''}.png` });
 };
 const canvasPoint = (page) => page.evaluate(() => {
   const r = document.getElementById('main-canvas').getBoundingClientRect();

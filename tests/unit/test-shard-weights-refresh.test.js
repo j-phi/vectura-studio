@@ -37,7 +37,8 @@ describe('test-shard-weights-refresh', () => {
     expect(next.weightsSeconds).toEqual({ 'tests/unit/a.test.js': 15, 'tests/unit/b.test.js': 7 });
     expect(next.source.fileCount).toBe(2);
     expect(next.source.fileDurationSumSeconds).toBe(22);
-    expect(next.source.unknownFileWeightSeconds).toBe(19.355);
+    expect(next.source.unknownFileWeightSeconds).toBeUndefined();
+    expect(next.source.unweightedFilePolicy).toMatch(/median/);
     expect(next.source.description).toContain('1, 2');
   });
 });

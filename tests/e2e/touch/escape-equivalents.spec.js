@@ -1,9 +1,10 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
 // TUX-031: touch equivalents for keyboard-only controls. Isolation exit (Escape), Arrange
 // (Cmd+[ / Cmd+]) and the shape-property verify-first checks. Fingers only; SETUP uses the app API.
-const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-031');
+const EVID = evidenceDir('TUX-031');
 const phoneLayout = (page) => page.evaluate(() => document.body.classList.contains('phone-layout'));
 
 const boot = async (page) => {
@@ -31,7 +32,7 @@ test.describe('TUX-031 keyboard-only controls by finger', () => {
     const hit = await touch.hitArea(page, page.locator(sel));
     expect(hit.w, `exit control hit ${hit.w}x${hit.h}`).toBeGreaterThanOrEqual(44);
     expect(hit.h).toBeGreaterThanOrEqual(44);
-    await page.screenshot({ path: `${EVID}/${testInfo.project.name}-isolation.png` }).catch(() => {});
+    await shoot(page, { path: `${EVID}/${testInfo.project.name}-isolation.png` }).catch(() => {});
     await touch.tap(page, page.locator(sel));
     await expect.poll(() => page.evaluate(() => window.app.renderer.groupEditMode == null)).toBe(true);
   });
@@ -59,7 +60,7 @@ test.describe('TUX-031 keyboard-only controls by finger', () => {
     const items = ['bring-forward', 'send-backward', 'bring-to-front', 'send-to-back'].map((n) => `#btn-object-${n}`);
     for (const s of items) expect(await page.locator(s).count(), `${s} present`).toBe(1);
     for (const s of items) expect(await page.locator(s).isDisabled(), `${s} enabled with a selection`).toBe(false);
-    await page.screenshot({ path: `${EVID}/${testInfo.project.name}-object-menu.png` }).catch(() => {});
+    await shoot(page, { path: `${EVID}/${testInfo.project.name}-object-menu.png` }).catch(() => {});
     const h0 = await page.evaluate(() => window.app.history.length);
     const item = page.locator('#btn-object-bring-to-front');
     await item.scrollIntoViewIfNeeded();
@@ -84,7 +85,7 @@ test.describe('TUX-031 keyboard-only controls by finger', () => {
     await touch.tap(page, btn);
     const more = page.locator('.shape-props-popover .shape-props-sides .shape-props-stepper[aria-label="More sides"]');
     await expect(more).toBeVisible();
-    await page.screenshot({ path: `${EVID}/${testInfo.project.name}-shape-props.png` }).catch(() => {});
+    await shoot(page, { path: `${EVID}/${testInfo.project.name}-shape-props.png` }).catch(() => {});
     await touch.tap(page, more);
     await expect.poll(() => page.evaluate(() => window.app.renderer.getShapePropsState().sides)).toBe(sides0 + 1);
   });

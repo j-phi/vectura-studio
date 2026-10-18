@@ -1,0 +1,14 @@
+{
+  "arm64": {
+    "xraySphere": {
+      "paths": 112,
+      "sha256": "45ae5b59a85b95aa071798967f502e32f84bfcb8a20ce73ad1d66947a482723d"
+    }
+  },
+  "x64": {
+    "xraySphere": {
+      "paths": 112,
+      "sha256": "45ae5b59a85b95aa071798967f502e32f84bfcb8a20ce73ad1d66947a482723d"
+    }
+  }
+}

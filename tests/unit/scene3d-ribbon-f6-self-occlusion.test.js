@@ -62,14 +62,10 @@
  * `resolveRingSelfIntersections` or any other code this fix touches.
  *
  * RED against `ecc50c16` (the commit this fix starts from), reproducibly:
- *   VECTURA_PRE_F6=1 npx vitest run tests/unit/scene3d-ribbon-f6-self-occlusion.test.js
+ *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const { captureRegionRings, findSelfIntersectingRings } = require('../helpers/scene3d-region-ring-oracle');
-
-const F6_BASELINE_SHA = 'ecc50c16';
-const preF6RuntimeOptions = makePreShaRuntimeOptions(F6_BASELINE_SHA, 'VECTURA_PRE_F6');
 
 const LAWS = ['taperedEnds', 'weightSmoothstep'];
 
@@ -78,7 +74,7 @@ describe('SurfaceFill ribbon — F6 region self-intersection at the torus inner-
   let V;
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preF6RuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
   }, 120000);
 

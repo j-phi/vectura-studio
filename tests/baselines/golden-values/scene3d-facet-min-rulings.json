@@ -1,0 +1,10 @@
+{
+  "arm64": {
+    "box|crosshatch|d50|a20": "230f278e46e725bb7144ecacb6a9a49017d7d13d477fddf652c255685edd2cd5",
+    "box|hatch|d1|a20": "4e9e8d48202eb705de0c7f313332d369abe44304ebad37753a57d536317b0c56"
+  },
+  "x64": {
+    "box|crosshatch|d50|a20": "230f278e46e725bb7144ecacb6a9a49017d7d13d477fddf652c255685edd2cd5",
+    "box|hatch|d1|a20": "4e9e8d48202eb705de0c7f313332d369abe44304ebad37753a57d536317b0c56"
+  }
+}

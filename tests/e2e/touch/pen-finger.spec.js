@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
@@ -6,7 +7,7 @@ const touch = require('../helpers/touch');
 // point, finishes it with a double-tap that adds no extra anchor, and grabs an anchor from 15 px off it.
 // Finger only (tests/e2e/helpers/touch.js tap/drag). Tool setup uses page.evaluate.
 
-const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-024');
+const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || evidenceDir('TUX-024');
 const SHOT_NAMES = {
   'touch-ipad-landscape': 'iPadL',
   'webkit-ipad-landscape': 'iPadL-webkit',
@@ -105,7 +106,7 @@ test.describe('TUX-024 pen and anchors by finger', () => {
       const shot = SHOT_NAMES[testInfo.project.name];
       if (d === 20 && shot) {
         fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-        await page.screenshot({ path: `${EVIDENCE_DIR}/${shot}-pen-before-close.png` });
+        await shoot(page, { path: `${EVIDENCE_DIR}/${shot}-pen-before-close.png` });
       }
       const before = await layerCount(page);
       await touch.tap(page, at(c, { x: A1.x - d, y: A1.y }));
@@ -113,7 +114,7 @@ test.describe('TUX-024 pen and anchors by finger', () => {
       expect(await draft(page)).toBeNull();
       expect(await done(page)).toEqual([{ n: 3, closed: true }]);
       expect(await layerCount(page)).toBe(before + 1);
-      if (d === 20 && shot) await page.screenshot({ path: `${EVIDENCE_DIR}/${shot}-pen-closed.png` });
+      if (d === 20 && shot) await shoot(page, { path: `${EVIDENCE_DIR}/${shot}-pen-closed.png` });
     });
   }
 
@@ -223,7 +224,7 @@ test.describe('TUX-024 pen and anchors by finger', () => {
     const shot = SHOT_NAMES[testInfo.project.name];
     if (shot) {
       fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-      await page.screenshot({ path: `${EVIDENCE_DIR}/${shot}-anchor-dragged.png` });
+      await shoot(page, { path: `${EVIDENCE_DIR}/${shot}-anchor-dragged.png` });
     }
   });
 });

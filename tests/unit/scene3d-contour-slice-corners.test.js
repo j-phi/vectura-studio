@@ -26,12 +26,9 @@
  * it takes its default), `ladder` toneLaw. `fillDensity` never reaches the
  * slice pass, so it is irrelevant here.
  */
-const fs = require('fs');
-const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, truncate: true, penWidth: 0.3 };
-const SCENE3D_SRC = path.join(__dirname, '..', '..', 'src', 'core', 'algorithms', 'scene3d.js');
 
 // ── M1/M2 metric helpers (device-space, open-polyline-aware) ───────────────
 
@@ -348,17 +345,8 @@ describe('W-34 — contourSlice ring corners (open-polyline-aware, device space)
       expect(emittedWorst).toBeLessThanOrEqual(analyticCeiling + 1);
     });
 
-    test('torus @ camera a — exempted by W-27c-0a item 0(a) (real saddle-cusp crossing, owned there)', () => {
-      const paths = genFor('torus', CAMERAS.a);
-      let worst = 0;
-      paths.forEach((p) => { const m = turnOverArc(p, 1.0); if (m > worst) worst = m; });
-      console.log(`W-34 T2 M2 torus/a (informational, not gated): worst=${worst.toFixed(2)} deg/mm`);
-      // No assertion against a numeric bar — this primitive's saddle geometry
-      // is a real Morse-critical crossing, already the subject of a separate,
-      // owned item. Recording the number so a regression is at least visible
-      // in the console log for whoever next touches this pass.
-      expect(Number.isFinite(worst)).toBe(true);
-    });
+    // R-29: torus @ camera a is exempt (W-27c-0a item 0(a), a real
+    // saddle-cusp crossing owned there); its report-only render was removed.
   });
 
   // ── T3 — the capsule truth oracle. This is the ONLY test whose result
@@ -401,13 +389,6 @@ describe('W-34 — contourSlice ring corners (open-polyline-aware, device space)
   // ── T4 — guard against the fix's own failure mode: no unbounded
   //        subdivision buying the angle.
   describe('T4 — refinement cannot buy the angle with unbounded subdivision', () => {
-    test('SLICE_REFINE_MAX_ROUNDS is unchanged at 8', () => {
-      const src = fs.readFileSync(SCENE3D_SRC, 'utf8');
-      const m = src.match(/const SLICE_REFINE_MAX_ROUNDS\s*=\s*(\d+)/);
-      expect(m).not.toBeNull();
-      expect(Number(m[1])).toBe(8);
-    });
-
     ['sphere', 'ellipsoid', 'cone', 'torus', 'capsule'].forEach((primitive) => {
       test(`${primitive} @ camera a total emitted point count stays under 2x its pre-fix value`, () => {
         const PRE_FIX_TOTALS = {

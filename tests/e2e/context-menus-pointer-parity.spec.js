@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('./helpers/evidence');
 const { test, expect } = require('@playwright/test');
 
 // TUX-034a D6: fine-pointer (mouse) behaviour is unchanged. Desktop Chromium, 1600x1000.
@@ -56,9 +57,9 @@ test.describe('context menus: mouse parity (TUX-034a)', () => {
     // Desktop rows keep the inline action strip; the touch-only grip and ⋯ are absent.
     expect(await page.locator('#layer-list .lvl-more').count()).toBe(0);
     expect(await page.locator('#layer-list .lvl-grip').count()).toBe(0);
-    const dir = require('path').join(__dirname, '../..', 'docs/touch-audit/evidence/after/TUX-034');
+    const dir = evidenceDir('TUX-034');
     require('fs').mkdirSync(dir, { recursive: true });
-    await page.screenshot({ path: `${dir}/desktop-1600.png` });
+    await shoot(page, { path: `${dir}/desktop-1600.png` });
   });
 });
 

@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { normalizePaths } = require('../helpers/path-signature');
+const { goldenValues } = require('../helpers/golden-values');
 
 /*
  * F-01 / W-01 — the curved master grid's sparse end (fillDensity 1-49) was
@@ -74,6 +75,8 @@ const BOUNDS = {
 
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const md5 = (s) => crypto.createHash('md5').update(s).digest('hex');
+// Exact pins (counts, ink, md5): tests/baselines/golden-values/scene3d-curved-density-sparse-end.json.
+const golden = goldenValues('scene3d-curved-density-sparse-end');
 
 describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) responds to Density', () => {
   let runtime; let V; let algo; let defaults;
@@ -199,19 +202,19 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     // checkpoints" describe below for the full sweep this was caught on.
     test('sphere + hatch + ladder', () => {
       const counts = [1, 25, 50, 100].map((d) => runCount(d, 'hatch', 'ladder', defaults.objects[0]));
-      expect(counts).toEqual([8, 15, 25, 53]);
+      golden.expect('sphere/hatch/ladder counts d=1,25,50,100', counts);
       for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     });
 
     test('torus + contour + ladder', () => {
       const counts = [1, 25, 50, 100].map((d) => runCount(d, 'contour', 'ladder', torusObj));
-      expect(counts).toEqual([24, 46, 94, 211]);
+      golden.expect('torus/contour/ladder counts d=1,25,50,100', counts);
       for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     });
 
     test('cone + spiral + ladder (strictly increasing across the fix\'s own scope, 1/25/50)', () => {
       const counts = [1, 25, 50].map((d) => runCount(d, 'spiral', 'ladder', coneObj));
-      expect(counts).toEqual([8, 15, 29]);
+      golden.expect('cone/spiral/ladder counts d=1,25,50', counts);
       for (let i = 1; i < counts.length; i++) expect(counts[i]).toBeGreaterThan(counts[i - 1]);
     });
 
@@ -220,11 +223,11 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
       // RE-PINNED (U2, fill-style review 2026-10-02): the ribbon erosion now
       // comes from one oriented distance field (accepted output change) —
       // was [26, 49, 80]; still strictly increasing, which is the contract.
-      expect(tapered).toEqual([25, 49, 81]);
+      golden.expect('sphere/hatch/taperedEnds counts d=1,25,50', tapered);
       for (let i = 1; i < tapered.length; i++) expect(tapered[i]).toBeGreaterThan(tapered[i - 1]);
 
       const bundle = [1, 25, 50].map((d) => runCount(d, 'hatch', 'bundleCount', torusObj));
-      expect(bundle).toEqual([43, 75, 84]);
+      golden.expect('torus/hatch/bundleCount counts d=1,25,50', bundle);
       for (let i = 1; i < bundle.length; i++) expect(bundle[i]).toBeGreaterThan(bundle[i - 1]);
     });
   });
@@ -289,17 +292,17 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     // increasing at every checkpoint (the property this block exists to
     // guard).
     test.each([
-      ['sphere + hatch + ladder', 'hatch', 'ladder', () => defaults.objects[0], [8, 9, 15, 25], [222.11, 266.46, 425.78, 768.56]],
-      ['torus + hatch + ladder', 'hatch', 'ladder', () => torusObj, [5, 6, 7, 12], [420.39, 474.98, 646.51, 1257.41]],
-      ['cone + hatch + ladder', 'hatch', 'ladder', () => coneObj, [11, 15, 22, 42], [544.27, 703.38, 1099.1, 2338.95]],
-      ['sphere + hatch + fineLadder', 'hatch', 'fineLadder', () => defaults.objects[0], [8, 10, 14, 25], [222.11, 309.04, 426.96, 769.44]],
-      ['torus + hatch + fineLadder', 'hatch', 'fineLadder', () => torusObj, [5, 6, 9, 12], [471.15, 547.36, 773.24, 1254.94]],
-      ['cone + hatch + fineLadder', 'hatch', 'fineLadder', () => coneObj, [13, 16, 23, 42], [621.49, 777.78, 1263.12, 2311.12]],
-    ])('%s: count strictly increasing, ink strictly increasing', (label, mapper, style, obj, expectCounts, expectInk) => {
+      ['sphere + hatch + ladder', 'hatch', 'ladder', () => defaults.objects[0]],
+      ['torus + hatch + ladder', 'hatch', 'ladder', () => torusObj],
+      ['cone + hatch + ladder', 'hatch', 'ladder', () => coneObj],
+      ['sphere + hatch + fineLadder', 'hatch', 'fineLadder', () => defaults.objects[0]],
+      ['torus + hatch + fineLadder', 'hatch', 'fineLadder', () => torusObj],
+      ['cone + hatch + fineLadder', 'hatch', 'fineLadder', () => coneObj],
+    ])('%s: count strictly increasing, ink strictly increasing', (label, mapper, style, obj) => {
       const counts = CHECKPOINTS.map((d) => runCount(d, mapper, style, obj()));
       const ink = CHECKPOINTS.map((d) => runInk(d, mapper, style, obj()));
-      expect(counts).toEqual(expectCounts);
-      expect(ink).toEqual(expectInk);
+      golden.expect(`${label} counts d=1,10,25,50`, counts);
+      golden.expect(`${label} ink d=1,10,25,50`, ink);
       expectStrictlyIncreasing(counts);
       expectStrictlyIncreasing(ink);
     });
@@ -318,21 +321,21 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     // scoped to `ladder`/`fineLadder`/`phaseFineLadder` only, confirmed by
     // these two rows staying green with no edit.
     test('sphere + hatch + ladder at d=50 and d=220', () => {
-      expect(runMd5(50, 'hatch', 'ladder', defaults.objects[0])).toBe('0bf306c15bf1dd0ec0e6cb0adae5276e');
+      golden.expect('sphere/hatch/ladder d=50 md5', runMd5(50, 'hatch', 'ladder', defaults.objects[0]));
       // RE-PINNED AGAIN (W-26, same commit): d=220 sits past 200, inside
       // fs-m1's relaxed `masterFloorPen` taper — the redundant `floorPitch`
       // re-clamp `ladderWantedPitch` briefly carried (see
       // `scene3d-curved-density-floor.test.js`'s matching re-pin) bound
       // there too; removing it moves this hash. d=50 (well under the
       // taper's own range) is unaffected, confirmed unchanged above.
-      expect(runMd5(220, 'hatch', 'ladder', defaults.objects[0])).toBe('b22ef417149b144c61dedc3f8d6e5395');
+      golden.expect('sphere/hatch/ladder d=220 md5', runMd5(220, 'hatch', 'ladder', defaults.objects[0]));
     });
 
     test('sphere + hatch + taperedEnds at d=50', () => {
       // RE-PINNED (U2, fill-style review 2026-10-02): taperedEnds is a ribbon
       // law and its erosion moved to `PenFill.erodeLevels` (accepted output
       // change). Was '4863491ddcae36305a5a897f70ce8091'.
-      expect(runMd5(50, 'hatch', 'taperedEnds', defaults.objects[0])).toBe('d52522765204beb91e06704ff294c669');
+      golden.expect('sphere/hatch/taperedEnds d=50 md5', runMd5(50, 'hatch', 'taperedEnds', defaults.objects[0]));
     });
 
     // MERGE NOTE (integration, 2026-09-06) / BAR CHANGE: both hashes below
@@ -344,7 +347,7 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
     // Neither branch alone produced these two hashes; re-measured against
     // the actual merged source via this file's own `runMd5` helper.
     test('torus + hatch + bundleCount at d=50', () => {
-      expect(runMd5(50, 'hatch', 'bundleCount', torusObj)).toBe('81cc7d53f6741b0199b8d07094093f38');
+      golden.expect('torus/hatch/bundleCount d=50 md5', runMd5(50, 'hatch', 'bundleCount', torusObj));
     });
 
     test('torus + contour + ladder at d=50', () => {
@@ -368,11 +371,11 @@ describe('scene3d curved (SurfaceFill) master grid sparse end (Density 1-49) res
       // other 19 rows in this file pass UNEDITED, which is the proof that W-33
       // is scoped to `mapper === 'contour'` and disturbs neither the sphere/cone
       // rows nor main's rounding.
-      expect(runMd5(50, 'contour', 'ladder', torusObj)).toBe('bc212164fdc8e72486dcef4e200eaa8d');
+      golden.expect('torus/contour/ladder d=50 md5', runMd5(50, 'contour', 'ladder', torusObj));
     });
 
     test('cone + spiral + ladder at d=50', () => {
-      expect(runMd5(50, 'spiral', 'ladder', coneObj)).toBe('7a0ccbd034de2a6c285130ee0f4e702c');
+      golden.expect('cone/spiral/ladder d=50 md5', runMd5(50, 'spiral', 'ladder', coneObj));
     });
   });
 });

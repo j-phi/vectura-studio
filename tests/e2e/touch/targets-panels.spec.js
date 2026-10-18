@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -10,10 +11,10 @@ const { STATES } = require('./target-audit-states');
 // px on every touch project. hitArea() counts ::before extensions and returns what elementFromPoint really resolves to, so an
 // extension that a neighbour covers does not count. Each target's centre must also resolve to itself.
 // Scene3D, the Petal Designer and the Pattern designer (it reuses the Petal toolbar) belong to batch B5 and are not enumerated here.
-// Screenshots go to docs/touch-audit/evidence/after/B4/ (untracked).
+// Screenshots go to test-results/evidence/B4/ (with VECTURA_E2E_EVIDENCE=1).
 const MIN = 44;
-const EVIDENCE = path.resolve(__dirname, '..', '..', '..', 'docs', 'touch-audit', 'evidence', 'after', 'B4');
-const shot = async (page, name) => { fs.mkdirSync(EVIDENCE, { recursive: true }); await page.screenshot({ path: path.join(EVIDENCE, `${name}.png`), scale: 'css' }); };
+const EVIDENCE = evidenceDir('B4');
+const shot = async (page, name) => { fs.mkdirSync(EVIDENCE, { recursive: true }); await shoot(page, { path: path.join(EVIDENCE, `${name}.png`), scale: 'css' }); };
 const TARGETS = 'button, input, select, textarea, summary, a[href], [role="button"], [role="tab"], [role="radio"], [role="option"], [role^="menuitem"], [tabindex="0"], label.sw-toggle, .lvl-algo-sub-item';
 // Popups come first: a popup inside a pane is its own surface, so a pane row it covers is not stolen from a neighbour.
 const POPUPS = ['#gm-module-menu', '#layer-add-menu', '.vtp-fontpick-pop', '.hg-preset-popover', '.lvl-ctx-menu', '.palette-menu', '[role="menu"]'];

@@ -3,6 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { COVERAGE_EXCLUDED_DIRS } = require('./test-shard-plan.js');
 
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]/g;
 const FILE_DURATION = /(?:^|[\s✓✗❯])((?:\.\/)?tests\/[^\s]+\.test\.js)(?:\s+\([^\r\n)]*\))?\s+(\d+(?:\.\d+)?)\s*(ms|s)\s*$/;
@@ -24,12 +25,14 @@ function parseDurationLog(logText) {
   return entries;
 }
 
+// The coverage roster: every Vitest file outside COVERAGE_EXCLUDED_DIRS (tests/e2e is
+// Playwright; tests/perf and tests/audit run in their own CI jobs, uninstrumented).
 function walkTests(directory, root, files = []) {
   if (!fs.existsSync(directory)) return files;
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const fullPath = path.join(directory, entry.name);
-    const relative = path.relative(root, fullPath);
-    if (entry.isDirectory() && relative !== path.join('tests', 'e2e') && !relative.startsWith(path.join('tests', 'e2e') + path.sep)) walkTests(fullPath, root, files);
+    const relative = path.relative(root, fullPath).split(path.sep).join('/');
+    if (entry.isDirectory() && !COVERAGE_EXCLUDED_DIRS.includes(relative)) walkTests(fullPath, root, files);
     else if (entry.isFile() && entry.name.endsWith('.test.js')) files.push(path.relative(root, fullPath).split(path.sep).join('/'));
   }
   return files;
@@ -119,7 +122,7 @@ function buildProfile({ logText, results = null, strict = false, root = process.
     durationMs,
     sharePercent: totalFileMs ? Number((durationMs / totalFileMs * 100).toFixed(2)) : 0,
   })).sort((a, b) => b.durationMs - a.durationMs || a.file.localeCompare(b.file)).slice(0, 20);
-  const strictInventory = strict ? inspectJsonResults(results, { root, inventory, testInventory: require('./test-lanes.json').ciRoster.testInventory }) : null;
+  const strictInventory = strict ? inspectJsonResults(results, { root, inventory, testInventory: require('./test-lanes.json').testInventory }) : null;
 
   return {
     schemaVersion: 1,

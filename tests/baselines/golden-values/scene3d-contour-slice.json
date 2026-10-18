@@ -1,0 +1,70 @@
+{
+  "arm64": {
+    "torus small rings level/rawCount/closed/roundsUsed": [
+      {
+        "level": 2,
+        "rawCount": 3,
+        "closed": false,
+        "roundsUsed": 0
+      },
+      {
+        "level": 2,
+        "rawCount": 4,
+        "closed": false,
+        "roundsUsed": 0
+      },
+      {
+        "level": 6,
+        "rawCount": 3,
+        "closed": false,
+        "roundsUsed": 0
+      },
+      {
+        "level": 21,
+        "rawCount": 2,
+        "closed": false,
+        "roundsUsed": 0
+      },
+      {
+        "level": 25,
+        "rawCount": 4,
+        "closed": false,
+        "roundsUsed": 0
+      }
+    ]
+  },
+  "x64": {
+    "torus small rings level/rawCount/closed/roundsUsed": [
+      {
+        "level": 2,
+        "rawCount": 3,
+        "closed": false,
+        "roundsUsed": 0
+      },
+      {
+        "level": 2,
+        "rawCount": 4,
+        "closed": false,
+        "roundsUsed": 0
+      },
+      {
+        "level": 6,
+        "rawCount": 3,
+        "closed": false,
+        "roundsUsed": 0
+      },
+      {
+        "level": 21,
+        "rawCount": 2,
+        "closed": false,
+        "roundsUsed": 0
+      },
+      {
+        "level": 25,
+        "rawCount": 4,
+        "closed": false,
+        "roundsUsed": 0
+      }
+    ]
+  }
+}

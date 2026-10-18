@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
@@ -5,7 +6,7 @@ const { tap, canvasShare, hitArea, engineSupports } = require('../helpers/touch'
 const auditCore = require('../helpers/target-audit-core');
 
 // TUX-007: iPhone landscape keeps a usable canvas, scale stays positive, selection draws.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-007');
+const EVIDENCE = evidenceDir('TUX-007');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const gotoApp = async (page) => {
@@ -82,7 +83,7 @@ test.describe('TUX-007 phone landscape', () => {
     await assertLandscapeContract(page, testInfo, MIN_SHARE[dev], dev);
     await fs.promises.mkdir(EVIDENCE, { recursive: true });
     const eng = /webkit/.test(testInfo.project.name) ? 'webkit' : 'chromium';
-    await page.screenshot({ path: `${EVIDENCE}/${dev}-${eng}-default.png` });
+    await shoot(page, { path: `${EVIDENCE}/${dev}-${eng}-default.png` });
   });
 
   test('A2 selected layers draw without throwing', async ({ page }, testInfo) => {
@@ -451,10 +452,10 @@ void engineSupports;
 // TUX-008: pane defaults per layout class. Finger-only (tap()); setup through the app API is
 // fixture state only (adding and selecting a layer).
 // ---------------------------------------------------------------------------------------------
-const EVIDENCE_008 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-008');
+const EVIDENCE_008 = evidenceDir('TUX-008');
 const shot008 = async (page, name) => {
   await fs.promises.mkdir(EVIDENCE_008, { recursive: true });
-  await page.screenshot({ path: `${EVIDENCE_008}/${name}.png` });
+  await shoot(page, { path: `${EVIDENCE_008}/${name}.png` });
 };
 
 // Both sides: open per the controller API (geometry fallback), rect width, and docked.

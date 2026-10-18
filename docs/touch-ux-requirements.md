@@ -1165,7 +1165,7 @@ These six requirements form **Phase 0**. They land first, in ratchet mode, so th
   4. A `touch-alt` marker must cite its touch equivalent: `touch-alt: TUX-nnn via <symbol-or-selector> - <reason>`. The symbol must occur as code in `src/` or `index.html`. Markers written before this rule stay valid through a shrink-only allowlist in the test.
 - **RED:** With an all-zero baseline the test fails on main (e.g. `contextmenu` in `layer-context-menu.js:397` and `canvas-context-menu.js:467`, 7 bare `100vh`, `.lvl-acts:hover` opacity). Commit with today's counts as the baseline.
 - **GREEN/REFACTOR:** Each epic lowers its counts. Target: all zero (or opt-outs only) at the end of Phase 4.
-- **DoD:** D1–D3, D7; runs inside `test:unit` (pre-push `test:fast`).
+- **DoD:** D1–D3, D7; runs inside `test:unit` (pre-push `test:feedback`).
 
 #### TUX-061 — WebKit touch projects (mandatory) `P0`
 - **Sources:** all `[DEVICE]` notes; Playwright WebKit is **not installed** today (only Chromium caches exist).

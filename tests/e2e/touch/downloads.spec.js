@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
@@ -12,7 +13,7 @@ const { PROJECTS } = require('./viewports');
 // Headless WebKit resolves navigator.share in ~3 ms with no sheet, so the recorder stores the
 // File's name/type/size and the user-activation state; a bare "share was called" proves nothing.
 // The trigger is a fixed 64x64 button so these tests do not depend on menu reachability.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-054');
+const EVIDENCE = evidenceDir('TUX-054');
 const SAVE_NAME = /^vectura-\d{4}-\d{2}-\d{2}\.vectura$/;
 const SAVE = { method: 'saveVecturaFile', filename: SAVE_NAME, type: 'application/json', toast: /Saved vectura-/ };
 const EXPORT = { method: 'exportSVG', filename: 'vectura.svg', type: 'image/svg+xml', toast: /Exported vectura\.svg/ };
@@ -74,7 +75,7 @@ for (const flow of [SAVE, EXPORT]) {
     if (flow === SAVE) {
       const s = spec(testInfo);
       fs.mkdirSync(EVIDENCE, { recursive: true });
-      await page.screenshot({ path: `${EVIDENCE}/${s.device}-${s.engine}.png` });
+      await shoot(page, { path: `${EVIDENCE}/${s.device}-${s.engine}.png` });
     }
   });
 }

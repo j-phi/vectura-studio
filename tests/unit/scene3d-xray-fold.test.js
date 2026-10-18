@@ -1,6 +1,6 @@
+const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const golden = require('../fixtures/xray-fold-golden.json');
-const overlayGolden = require('../fixtures/xray-fold-overlay-golden.json');
+const { goldenValues } = require('../helpers/golden-values');
 
 /*
  * X-RAY FOLD (Option A, PURE) — x-ray owns only see-through back-face FILLS;
@@ -18,6 +18,20 @@ const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, penWidth: 0.3
 // scene3d paths are Arrays with a `.meta` property JSON.stringify drops — the
 // golden was captured with THIS serializer, so compare through it.
 const ser = (paths) => (paths || []).map((pp) => ({ pts: Array.from(pp), meta: pp.meta || null }));
+// The pre-fold goldens: tests/baselines/golden-values/scene3d-xray-fold.json
+// holds { paths, sha256 } per scene. The sha256 is over the key-sorted
+// JSON.stringify of the full `ser()` output (full float precision, no
+// rounding), so it pins the same structure a deep toEqual compared; the
+// values were computed from the original full-path fixtures
+// (tests/fixtures/xray-fold-golden.json + xray-fold-overlay-golden.json, since
+// deleted; see git history).
+const canon = (v) => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x)
+  ? Object.keys(x).sort().reduce((o, key) => { o[key] = x[key]; return o; }, {}) : x));
+const pin = (serialized) => ({
+  paths: serialized.length,
+  sha256: crypto.createHash('sha256').update(canon(serialized)).digest('hex'),
+});
+const golden = goldenValues('scene3d-xray-fold');
 
 describe('Scene3D x-ray fold — migration + emit', () => {
   let runtime; let V; let algo; let Params; let defaults;
@@ -119,7 +133,7 @@ describe('Scene3D x-ray fold — migration + emit', () => {
     const migrated = Params.sanitizeSceneParams(scene('box', 'xray'));
     const paths = algo.generate(migrated, null, null, BOUNDS);
     expect(hiddenEdges(paths).length).toBeGreaterThan(0); // dashed hidden edges survive
-    expect(ser(paths)).toEqual(golden.xrayBox);
+    golden.expect('xrayBox', pin(ser(paths)));
   });
 
   // fillAngle is pinned to 0 here — NOT a relaxation. The curved SurfaceFill
@@ -130,19 +144,19 @@ describe('Scene3D x-ray fold — migration + emit', () => {
   // golden holds, and it still matches BYTE-FOR-BYTE (fixture untouched).
   test('migrated x-ray SPHERE (curved back fills) renders byte-identically', () => {
     const migrated = Params.sanitizeSceneParams(scene('sphere', 'xray', { fillAngle: 0 }));
-    expect(ser(algo.generate(migrated, null, null, BOUNDS))).toEqual(golden.xraySphere);
+    golden.expect('xraySphere', pin(ser(algo.generate(migrated, null, null, BOUNDS))));
   });
 
   test('migrated MIXED scene (x-ray box + solid box) renders byte-identically', () => {
     const migrated = Params.sanitizeSceneParams(mixedScene());
-    expect(ser(algo.generate(migrated, null, null, BOUNDS))).toEqual(golden.mixed);
+    golden.expect('mixed', pin(ser(algo.generate(migrated, null, null, BOUNDS))));
   });
 
   test('migrated x-ray box with xrayHiddenEdges:false renders byte-identically', () => {
     const migrated = Params.sanitizeSceneParams(scene('box', 'xray', { xrayHiddenEdges: false }));
     const paths = algo.generate(migrated, null, null, BOUNDS);
     expect(hiddenEdges(paths).length).toBe(0);
-    expect(ser(paths)).toEqual(golden.xrayBoxHiddenOff);
+    golden.expect('xrayBoxHiddenOff', pin(ser(paths)));
   });
 
   // ── (b) x-ray back-face FILLS unchanged. ───────────────────────────────────
@@ -233,7 +247,7 @@ describe('Scene3D x-ray fold — migration + emit', () => {
     const migrated = Params.sanitizeSceneParams(overlayScene('xray', { hiddenTreatment: 'dash', ...OVERLAY }));
     const paths = algo.generate(migrated, null, null, BOUNDS);
     expect(overlaidHidden(paths).length).toBe(3);
-    expect(ser(paths)).toEqual(overlayGolden.xrayOverlayDash);
+    golden.expect('xrayOverlayDash', pin(ser(paths)));
   });
 
   // Defect 2 — x-ray + scene hidden REMOVE + overlay → pre-fold x-ray forced dash
@@ -242,7 +256,7 @@ describe('Scene3D x-ray fold — migration + emit', () => {
     const migrated = Params.sanitizeSceneParams(overlayScene('xray', { hiddenTreatment: 'remove', ...OVERLAY }));
     const paths = algo.generate(migrated, null, null, BOUNDS);
     expect(overlaidHidden(paths).length).toBe(3);
-    expect(ser(paths)).toEqual(overlayGolden.xrayOverlayRemove);
+    golden.expect('xrayOverlayRemove', pin(ser(paths)));
   });
 
   // Defect 3 — NON-x-ray surface-fill box + scene hidden dash → NO extra
@@ -250,6 +264,6 @@ describe('Scene3D x-ray fold — migration + emit', () => {
   test('non-x-ray surface-fill box + scene hidden=dash gains no extra creases — byte-identical', () => {
     const migrated = Params.sanitizeSceneParams(overlayScene('solid', { hiddenTreatment: 'dash', ...OVERLAY }));
     const paths = algo.generate(migrated, null, null, BOUNDS);
-    expect(ser(paths)).toEqual(overlayGolden.solidOverlayDash);
+    golden.expect('solidOverlayDash', pin(ser(paths)));
   });
 });

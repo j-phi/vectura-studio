@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -10,10 +11,10 @@ const { STATES } = require('./target-audit-states');
 // on every touch project (hitArea() counts ::before extensions and returns what elementFromPoint really resolves to, so an
 // expansion that a neighbour covers does not count). Each target's centre also resolves to itself (no neighbour steals it).
 // The generator picker's info button is part of this slice: it is the one small target the picker audit cell reported.
-// Screenshots go to docs/touch-audit/evidence/after/B3/ (untracked).
+// Screenshots go to test-results/evidence/B3/ (with VECTURA_E2E_EVIDENCE=1).
 const MIN = 44;
-const EVIDENCE = path.resolve(__dirname, '..', '..', '..', 'docs', 'touch-audit', 'evidence', 'after', 'B3');
-const shot = async (page, name) => { fs.mkdirSync(EVIDENCE, { recursive: true }); await page.screenshot({ path: path.join(EVIDENCE, `${name}.png`), scale: 'css' }); };
+const EVIDENCE = evidenceDir('B3');
+const shot = async (page, name) => { fs.mkdirSync(EVIDENCE, { recursive: true }); await shoot(page, { path: path.join(EVIDENCE, `${name}.png`), scale: 'css' }); };
 const TARGETS = 'button, input, select, textarea, summary, a[href], [role="button"], [role="tab"], [tabindex="0"], label.sw-toggle';
 
 async function boot(page, baseURL) {
