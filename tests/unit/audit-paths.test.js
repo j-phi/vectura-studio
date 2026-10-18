@@ -67,6 +67,18 @@ describe('audit path filter covers everything the audits touch (R-17)', () => {
     expect(outside).toEqual([]);
   });
 
+  it('every golden-values file an audit reads is in the filter', () => {
+    const goldens = new Set();
+    // The helper itself only names example keys in its docs.
+    for (const file of closure.filter((f) => rel(f) !== 'tests/helpers/golden-values.js')) {
+      const source = fs.readFileSync(file, 'utf8');
+      for (const match of source.matchAll(/goldenValues\(\s*['"`]([^'"`]+)['"`]/g)) goldens.add(`tests/baselines/golden-values/${match[1]}.json`);
+    }
+    expect([...goldens]).toContain('tests/baselines/golden-values/scene3d-golden-corpus.json');
+    expect([...goldens].filter((file) => !auditPaths.matches(file))).toEqual([]);
+    expect(auditPaths.matches('tests/baselines/golden-values/scene3d-seed.json')).toBe(false);
+  });
+
   it('every script the audit runtime evaluates is in the filter', async () => {
     const runtime = await loadScene3dAuditRuntime();
     try {

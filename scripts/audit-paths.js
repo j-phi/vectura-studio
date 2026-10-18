@@ -29,8 +29,9 @@ const SCENE3D_PATTERNS = [
   /^src\/core\/algorithms\/(scene3d|object3d|booleanGroup3d|sceneLight3d|sceneGround3d|geometry3d)\.js$/,
   /^src\/core\/(path-boolean|geometry-utils|fill-boolean|pen-fill)\.js$/,
 ];
-// The audits themselves, their helpers and fixtures.
-const TEST_PATTERNS = [/^tests\/(audit|helpers|fixtures)\//];
+// The audits themselves, their helpers and fixtures, and the golden values an audit reads
+// (tests/unit/audit-paths.test.js checks every golden-values file an audit names).
+const TEST_PATTERNS = [/^tests\/(audit|helpers|fixtures)\//, /^tests\/baselines\/golden-values\/scene3d-golden-corpus\.json$/];
 // Test infrastructure that decides how (or whether) the audits run.
 const INFRA_PATTERNS = [
   /^vitest(\.[a-z0-9-]+)?\.config\.mjs$/,
