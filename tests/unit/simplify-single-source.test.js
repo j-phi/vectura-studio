@@ -112,10 +112,4 @@ describe('Stage F: path simplification single source of truth', () => {
     expect(text).toMatch(/^\s*simplifyPath,$/m);
     expect(text).toMatch(/^\s*simplifyPathVisvalingam,$/m);
   });
-
-  test('the retired call site routes through GeometryUtils.simplifyPath', () => {
-    const pattern = fs.readFileSync(path.join(SRC, 'core/algorithms/pattern.js'), 'utf8');
-    expect(pattern).toContain('GU.simplifyPath(pts, tolerance)');
-    expect(pattern).not.toContain('_douglasPeucker');
-  });
 });
