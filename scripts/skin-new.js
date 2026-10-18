@@ -145,7 +145,7 @@ function main() {
   // Snippet shape mirrors existing meridian-* manifest entries.
   const snippet = `    '${args.id}': {
       id: '${args.id}',
-      label: '${label.replace(/'/g, "\\'")}',
+      label: '${label.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}',
       family: '${family}',
       stylesheet: '${stylesheet}',
       manifest: ${family === 'meridian' ? 'MERIDIAN_MANIFEST' : 'CLASSIC_MANIFEST'},
