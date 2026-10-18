@@ -9,7 +9,11 @@
  * - every source file the audits execute is in the Scene3D runtime manifest
  *   (tests/helpers/runtime-profiles.js SCENE3D_FILES), which the audits load through
  *   tests/helpers/scene3d-audit-runtime.js, and every manifest file is in this filter;
- * - the audits, their helpers and fixtures, and the test infrastructure match by directory.
+ * - the audits, their helpers and fixtures, and the test infrastructure match by directory;
+ * - index.html is not a path match (the version hook rewrites its `?v=` badge on every src
+ *   commit), but the audit runtime evaluates the manifest in index.html script order and throws
+ *   when a manifest file is missing there. So a change to the ordered list of manifest
+ *   `<script src>` entries counts as an audit change (manifestScriptsChanged).
  * tests/unit/audit-paths.test.js fails when an audit test loads or reads a file outside it.
  */
 'use strict';
@@ -35,7 +39,9 @@ const TEST_PATTERNS = [/^tests\/(audit|helpers|fixtures)\//, /^tests\/baselines\
 // Test infrastructure that decides how (or whether) the audits run.
 const INFRA_PATTERNS = [
   /^vitest(\.[a-z0-9-]+)?\.config\.mjs$/,
-  /^scripts\/(run-vitest|vitest-supervisor|test-queue|audit-paths|ci-plan)\.js$/,
+  /^scripts\/(run-vitest|vitest-supervisor|test-queue|audit-paths|ci-plan|test-profile)\.js$/,
+  // The audit job's strict results check (test-profile's inspector) and the inventory it loads.
+  /^scripts\/test-lanes\.json$/,
   /^scripts\/test-shard-[a-z0-9-]+\.(js|mjs|json)$/,
   /^scripts\/test-duration-sequencer\.mjs$/,
   /^package(-lock)?\.json$/,
@@ -48,14 +54,38 @@ const PATTERNS = [...SCENE3D_PATTERNS, ...TEST_PATTERNS, ...INFRA_PATTERNS, ...M
 
 const matches = (file) => PATTERNS.some((pattern) => pattern.test(String(file).replace(/^\.\//, '')));
 
+// The manifest files in index.html script order, as the audit runtime reads them
+// (the generic runtime loader's parseLocalScripts + normalizedScriptPath, in tests/helpers).
+const MANIFEST_SET = new Set(SCENE3D_FILES);
+function manifestScriptOrder(html) {
+  return [...String(html).matchAll(/<script[^>]*src="([^"]+)"[^>]*><\/script>/g)]
+    .map((match) => match[1].replace(/^\.\//, '').replace(/\?.*$/, ''))
+    .filter((file) => MANIFEST_SET.has(file));
+}
+
+// True when the ordered manifest script list differs between two commits' index.html, or when
+// either side cannot be read (doubt runs the audits).
+function manifestScriptsChanged(base, head, { cwd = process.cwd(), exec = execFileSync } = {}) {
+  const read = (rev) => String(exec('git', ['show', `${rev}:index.html`], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 16 * 1024 * 1024 }));
+  try {
+    return JSON.stringify(manifestScriptOrder(read(base))) !== JSON.stringify(manifestScriptOrder(read(head)));
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Decide whether the audits must run for a list of changed files.
- * `files === null` means the diff is unknown: run them.
+ * `files === null` means the diff is unknown: run them. `indexScriptsChanged` (called only when
+ * index.html is in the diff) says whether its manifest script list changed.
  */
-function decide(files) {
+function decide(files, { indexScriptsChanged = () => true } = {}) {
   if (!Array.isArray(files)) return { run: true, reason: 'unknown diff' };
   const hits = files.filter(matches);
   if (hits.length) return { run: true, reason: `${hits.length} audit path(s) changed, first: ${hits[0]}` };
+  if (files.some((file) => String(file).replace(/^\.\//, '') === 'index.html') && indexScriptsChanged()) {
+    return { run: true, reason: 'index.html changed the Scene3D manifest script list or order' };
+  }
   return { run: false, reason: `none of ${files.length} changed file(s) can affect the audits` };
 }
 
@@ -90,6 +120,13 @@ function shardFiles(index, count, { files = auditFiles(), weights = require('./t
   return groups.find((g) => g.i === index - 1).files.sort();
 }
 
+// Strict check of one audit group's Vitest JSON (test-profile's inspector): every file of the
+// group reported once, passed, and ran at least one test; no audit test is skipped.
+function verifyShardResults(results, files, { root = path.resolve(__dirname, '..') } = {}) {
+  const { inspectJsonResults } = require('./test-profile');
+  return inspectJsonResults(results, { root, inventory: files, testInventory: { expectedSkippedAssertions: 0, fullySkippedFiles: {} } });
+}
+
 function auditFiles(root = path.resolve(__dirname, '..')) {
   const dir = path.join(root, 'tests', 'audit');
   return fs.readdirSync(dir).filter((name) => name.endsWith('.test.js')).map((name) => `tests/audit/${name}`).sort();
@@ -101,13 +138,22 @@ if (require.main === module) {
     // Usage: node scripts/audit-paths.js --shard <i>/<n>   (prints the shard's files, one per line)
     const [index, count] = String(args[1]).split('/').map(Number);
     process.stdout.write(`${shardFiles(index, count).join('\n')}\n`);
+  } else if (args[0] === '--verify-results') {
+    // Usage: node scripts/audit-paths.js --verify-results <vitest-json> <i>/<n>
+    const [index, count] = String(args[2]).split('/').map(Number);
+    const verdict = verifyShardResults(JSON.parse(fs.readFileSync(args[1], 'utf8')), shardFiles(index, count));
+    if (!verdict.passed) {
+      process.stderr.write(`[audit-paths] audit group ${args[2]} results failed the strict check: ${verdict.failures.join('; ')}\n`);
+      process.exit(1);
+    }
+    process.stdout.write(`[audit-paths] audit group ${args[2]}: ${verdict.reported.length} file(s) passed the strict check\n`);
   } else {
     // Usage: node scripts/audit-paths.js <base> <head>   (prints run=true|false)
     const [base, head] = args;
-    const verdict = decide(changedFiles(base, head));
+    const verdict = decide(changedFiles(base, head), { indexScriptsChanged: () => manifestScriptsChanged(base, head) });
     process.stdout.write(`run=${verdict.run}\n`);
     process.stderr.write(`[audit-paths] ${verdict.reason}\n`);
   }
 }
 
-module.exports = { PATTERNS, SCENE3D_PATTERNS, TEST_PATTERNS, INFRA_PATTERNS, MANIFEST_PATTERNS, matches, decide, changedFiles, shardFiles, auditFiles };
+module.exports = { PATTERNS, SCENE3D_PATTERNS, TEST_PATTERNS, INFRA_PATTERNS, MANIFEST_PATTERNS, matches, decide, changedFiles, manifestScriptOrder, manifestScriptsChanged, verifyShardResults, shardFiles, auditFiles };

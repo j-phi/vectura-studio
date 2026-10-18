@@ -204,9 +204,59 @@ describe('red main gets an owner (R-5)', () => {
     expect(report).toContain('gh issue list --label "$label" --state open');
     expect(report).toContain('gh issue comment');
     expect(report).toContain('gh issue create');
-    // The issue permission is scoped to this job only.
-    expect(workflow.slice(0, workflow.indexOf('\njobs:\n'))).not.toMatch(/^permissions:/m);
+    // A cancelled (timed-out) ci-ok on main is red main too.
+    expect(report).toContain("(needs.ci-ok.result == 'failure' || needs.ci-ok.result == 'cancelled')");
+    // The issue permission is scoped to the report jobs only.
     expect(workflow.match(/issues: write/g)).toHaveLength(2);
+  });
+});
+
+describe('workflow hygiene', () => {
+  const top = (text) => text.slice(0, text.indexOf('\njobs:\n'));
+  it('gives every workflow a read-only default token; jobs declare anything more', () => {
+    expect(top(workflow)).toMatch(/^permissions:\n  contents: read\n\n/m);
+    for (const file of ['release.yml', 'codeql.yml', 'dependency-review.yml']) {
+      expect(top(fs.readFileSync(path.join(ROOT, '.github/workflows', file), 'utf8')), file).toMatch(/^permissions:\n  contents: read\n/m);
+    }
+    expect(job('ci-plan')).toMatch(/permissions:\n\s+contents: read\n\s+actions: read\n/);
+  });
+
+  it('every upload overwrites an earlier attempt, so "Re-run all jobs" cannot hit a 409 artifact conflict', () => {
+    const uploads = workflow.split('uses: actions/upload-artifact@').slice(1).map((step) => step.slice(0, step.search(/\n      - |\n  [a-z]/)));
+    expect(uploads.length).toBeGreaterThan(10);
+    for (const step of uploads) expect(step, step.match(/name: (\S+)/)?.[1]).toMatch(/\n\s+overwrite: true/);
+    expect(job('ci-ok')).toMatch(/name: ci-ok-verdict[\s\S]*overwrite: true/);
+  });
+
+  it('every job has a timeout', () => {
+    for (const name of allJobs) expect(job(name), name).toMatch(/^    timeout-minutes: \d+$/m);
+  });
+
+  it('the release smoke imports Chromium from the direct @playwright/test dependency', () => {
+    const smoke = fs.readFileSync(path.join(ROOT, 'scripts/release-smoke.js'), 'utf8');
+    expect(smoke).toContain("require('@playwright/test')");
+    expect(smoke).not.toMatch(/require\('playwright'\)/);
+  });
+});
+
+describe('touch baseline waiver rule (TUX-058)', () => {
+  it('runs on every event outside the plan, so a deduplicated main push still checks the merge commit', () => {
+    const waiver = job('touch-waiver');
+    expect(waiver).not.toMatch(/^    if:/m);
+    expect(needsOf('touch-waiver')).toEqual([]);
+    expect(waiver).toContain('git fetch --no-tags --shallow-since="$(node scripts/touch-baseline-waiver.js --anchor-since)" origin "$GITHUB_SHA"');
+    expect(waiver).toContain('node scripts/touch-baseline-waiver.js --since-anchor');
+    expect(waiver).toContain('docs/touch-audit/baseline-waivers.json');
+    expect(job('perf')).not.toContain('touch-baseline-waiver');
+    expect([...ciOk.ALWAYS]).toEqual(['touch-waiver']);
+    for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch']) {
+      expect(ciOk.expectedJobs(event, { heavy: 'false', vitest: 'false', coverage: 'false', audit: 'false' }), event).toContain('touch-waiver');
+    }
+    // A deduplicated push (heavy=false) with a red waiver fails ci-ok.
+    const verdict = ciOk.evaluate(results('push', { 'touch-waiver': 'failure' }, { heavy: 'false', audit: 'false' }), 'push');
+    expect(verdict.ok).toBe(false);
+    expect(verdict.failed).toEqual(['touch-waiver']);
+    expect(ciOk.evaluate(results('push', { 'touch-waiver': 'skipped' }, { heavy: 'false', audit: 'false' }), 'push').ok).toBe(false);
   });
 });
 
@@ -263,7 +313,8 @@ describe('setup hygiene (R-14)', () => {
 
 describe('concurrency (R-2)', () => {
   it('keeps schedule and dispatch runs out of the push-to-main group, and cancels only PR runs', () => {
-    expect(workflow).toContain('group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}');
+    // A push groups by SHA, so a queued main run is never replaced and every main SHA gets a ci-ok.
+    expect(workflow).toContain("group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}");
     expect(workflow).toContain("cancel-in-progress: ${{ github.event_name == 'pull_request' }}");
   });
 });

@@ -14,6 +14,9 @@ const fs = require('fs');
 
 // The plan job: runs on every event and decides the rest (scripts/ci-plan.js).
 const PLAN = ['ci-plan'];
+// History checks that run on every event, outside the plan: a dedup skip never drops them.
+// touch-waiver is the TUX-058 baseline waiver rule (it reads commit messages, not the tree).
+const ALWAYS = ['touch-waiver'];
 // Browser smoke + perf: run when ci-plan says heavy=true (every PR; a main push unless a green
 // PR run already tested the same tree; the nightly unless a green main push did that day).
 const HEAVY = ['e2e-smoke', 'perf'];
@@ -31,7 +34,7 @@ const TOUCH_NIGHTLY = ['touch-e2e-nightly', 'touch-audit-nightly'];
 // Linux pixel snapshots in the pinned Playwright image (R-38): nightly and manual runs only,
 // never skipped by ci-plan. On a PR or push they must be `skipped` (by design).
 const VISUAL_NIGHTLY = ['visual-nightly'];
-const ALL_JOBS = [...PLAN, ...HEAVY, ...VITEST, ...COVERAGE, ...AUDIT, ...TOUCH_NIGHTLY, ...VISUAL_NIGHTLY];
+const ALL_JOBS = [...PLAN, ...ALWAYS, ...HEAVY, ...VITEST, ...COVERAGE, ...AUDIT, ...TOUCH_NIGHTLY, ...VISUAL_NIGHTLY];
 const PLANNED_EVENTS = ['pull_request', 'push', 'schedule', 'workflow_dispatch'];
 const PLAN_KEYS = ['heavy', 'vitest', 'coverage', 'audit'];
 
@@ -39,7 +42,7 @@ const PLAN_KEYS = ['heavy', 'vitest', 'coverage', 'audit'];
 // explicit `false` output from ci-plan, never an inferred `skipped` result.
 function expectedJobs(event, planOutputs = {}) {
   const required = [];
-  if (PLANNED_EVENTS.includes(event)) required.push(...PLAN);
+  if (PLANNED_EVENTS.includes(event)) required.push(...PLAN, ...ALWAYS);
   if (planOutputs.heavy === 'true') required.push(...HEAVY);
   if (planOutputs.vitest === 'true') required.push(...VITEST);
   if (planOutputs.coverage === 'true') required.push(...COVERAGE);
@@ -135,4 +138,4 @@ if (require.main === module) {
   console.log(`ci-ok: every required job passed on ${event}.`);
 }
 
-module.exports = { PLAN, HEAVY, VITEST, COVERAGE, AUDIT, TOUCH_NIGHTLY, VISUAL_NIGHTLY, ALL_JOBS, PLAN_KEYS, expectedJobs, planProblems, evaluate, verdictRecord };
+module.exports = { PLAN, ALWAYS, HEAVY, VITEST, COVERAGE, AUDIT, TOUCH_NIGHTLY, VISUAL_NIGHTLY, ALL_JOBS, PLAN_KEYS, expectedJobs, planProblems, evaluate, verdictRecord };

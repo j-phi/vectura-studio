@@ -20,10 +20,17 @@ env:
   COVERAGE_SHARD_COUNT: '12'
   VECTURA_VITEST_MAX_WORKERS: '2'
 
+# Least privilege: jobs that run PR code get a read-only token. A job that needs more (ci-plan,
+# the report jobs) declares its own block.
+permissions:
+  contents: read
+
 concurrency:
   # The event name keeps the nightly (schedule) and manual (workflow_dispatch) runs out of the
   # push-to-main group. Before this, a long nightly made every main push wait or get cancelled.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # A push groups by SHA: a queued main run is never replaced by a later push, so every main
+  # SHA gets its own ci-ok (the release gate and the red-main issue rely on it).
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -47,9 +54,11 @@ jobs:
       audit: ${{ steps.plan.outputs.audit }}
       tree: ${{ steps.plan.outputs.tree }}
     steps:
-      # Blobless: the plan diffs trees and reads four small files.
+      # Blobless: the plan diffs trees and reads four small files (index.html blobs are fetched
+      # on demand). Depth 2: a PR plan diffs against the merge ref's first parent.
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 2
           filter: blob:none
           sparse-checkout: |
             scripts/ci-plan.js
@@ -117,6 +126,7 @@ jobs:
           path: playwright-flaky
           retention-days: 7
           if-no-files-found: ignore
+          overwrite: true
       - name: Upload Playwright Report
         if: always()
         uses: actions/upload-artifact@v7
@@ -126,6 +136,7 @@ jobs:
             playwright-report
             test-results
           if-no-files-found: ignore
+          overwrite: true
 
   # TUX-061: every touch spec in all 11 touch projects (7 Chromium, 4 WebKit), nightly.
   # Playwright-native sharding (--shard=i/n): the coverage shard plan (scripts/test-shard-plan.js)
@@ -165,6 +176,7 @@ jobs:
           path: playwright-flaky
           retention-days: 7
           if-no-files-found: ignore
+          overwrite: true
       - name: Upload touch shard report
         if: always()
         uses: actions/upload-artifact@v7
@@ -175,6 +187,7 @@ jobs:
             test-results
           retention-days: 7
           if-no-files-found: ignore
+          overwrite: true
 
   # TUX-058: the full 26-state touch target audit on all 11 touch projects. The fast subset
   # runs in e2e-smoke (two projects) and in touch-e2e-nightly (all 11). Uploads the measured
@@ -182,6 +195,7 @@ jobs:
   touch-audit-nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -216,6 +230,7 @@ jobs:
             tests/e2e/touch/target-baseline.json
             tests/e2e/touch/journey-status.linux.json
           if-no-files-found: ignore
+          overwrite: true
 
   # R-38: browser pixel snapshots (tests/e2e/visual.spec.js), nightly and on manual dispatch, in
   # the official Playwright image for the installed @playwright/test version (pinned here; the
@@ -249,6 +264,7 @@ jobs:
           path: playwright-flaky
           retention-days: 7
           if-no-files-found: ignore
+          overwrite: true
       - name: Upload snapshot report
         if: always()
         uses: actions/upload-artifact@v7
@@ -259,6 +275,28 @@ jobs:
             test-results
           retention-days: 14
           if-no-files-found: ignore
+          overwrite: true
+
+  # TUX-058: no commit after the anchor may raise the touch target baseline without a TUX-WAIVER
+  # line. It reads commit history, so it runs on every event, outside the plan: a main push whose
+  # tree a PR run already tested (R-20) still checks the merge's own commit message (a squash
+  # merge can drop the PR's waiver line). Fetches history back to the anchor date only; a
+  # missing anchor fails the job (exit 2). No Node install: the script uses Node built-ins.
+  touch-waiver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts/touch-baseline-waiver.js
+            docs/touch-audit/baseline-waivers.json
+          sparse-checkout-cone-mode: false
+      - name: Touch baseline waiver rule
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --shallow-since="$(node scripts/touch-baseline-waiver.js --anchor-since)" origin "$GITHUB_SHA"
+          node scripts/touch-baseline-waiver.js --since-anchor
 
   # Uninstrumented checks: tests/perf timing budgets, the Node process-lifecycle tests
   # (tests/process via test:runner), and the coverage shard/merge plumbing probe when that
@@ -277,13 +315,6 @@ jobs:
       - run: npm ci --no-audit --no-fund --loglevel=error
       - name: Node process-lifecycle tests
         run: npm run test:runner
-      # TUX-058: no commit after the anchor may raise the touch target baseline without a TUX-WAIVER
-      # line. Fetches history back to the anchor date only. A missing anchor fails the step (exit 2).
-      - name: Touch baseline waiver rule
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --shallow-since="$(node scripts/touch-baseline-waiver.js --anchor-since)" origin "$GITHUB_SHA"
-          node scripts/touch-baseline-waiver.js --since-anchor
       - run: npm run test:perf
       # The probe runs three tiny files through the real shard + merge entrypoints. It only
       # guards the coverage plumbing, so it runs only when that plumbing changed. An unknown
@@ -573,6 +604,7 @@ jobs:
           path: coverage
           retention-days: 7
           if-no-files-found: ignore
+          overwrite: true
       - name: Upload full-scope timing summary
         if: always()
         uses: actions/upload-artifact@v7
@@ -581,6 +613,7 @@ jobs:
           path: coverage/full-profile.json
           retention-days: 30
           if-no-files-found: ignore
+          overwrite: true
 
   # Scene3D proof audits (tests/audit), uninstrumented, outside the coverage roster (R-17).
   # A PR runs them only when its diff matches scripts/audit-paths.js; a main push and the nightly
@@ -603,19 +636,21 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci --no-audit --no-fund --loglevel=error
+      # The strict check fails a group whose file reported no test, a skipped test or a missing file.
       - name: Run one audit group
         run: |
           set -euo pipefail
           mapfile -t files < <(node scripts/audit-paths.js --shard "$AUDIT_SHARD/3")
           test "${#files[@]}" -gt 0
-          npm run test:vitest -- run "${files[@]}"
+          npm run test:vitest -- run "${files[@]}" --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/audit-results.json"
+          node scripts/audit-paths.js --verify-results "$RUNNER_TEMP/audit-results.json" "$AUDIT_SHARD/3"
 
   # The one required check for main (branch protection). It needs every job in this workflow.
   # ci-plan's outputs say which jobs run by design: those must succeed, the rest must be skipped. Any failure or cancellation fails ci-ok. Classification lives in
   # scripts/ci-ok.js; tests/unit/ci-ok.test.js keeps it in sync with this file.
   ci-ok:
     if: always()
-    needs: [ci-plan, e2e-smoke, perf, vitest-shard, vitest, coverage-shard, coverage, audit, touch-e2e-nightly, touch-audit-nightly, visual-nightly]
+    needs: [ci-plan, touch-waiver, e2e-smoke, perf, vitest-shard, vitest, coverage-shard, coverage, audit, touch-e2e-nightly, touch-audit-nightly, visual-nightly]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -643,11 +678,12 @@ jobs:
           path: ${{ runner.temp }}/ci-ok-verdict/ci-ok-verdict.json
           retention-days: 30
           if-no-files-found: error
+          overwrite: true
 
-  # Red main gets an owner: a failed push-to-main or nightly run opens one tracking issue,
-  # or comments on the open one. Dedupe key: the ci-red-main label.
+  # Red main gets an owner: a failed or cancelled (timed-out) push-to-main or nightly ci-ok
+  # opens one tracking issue, or comments on the open one. Dedupe key: the ci-red-main label.
   report-red-main:
-    if: always() && needs.ci-ok.result == 'failure' && (github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    if: always() && (needs.ci-ok.result == 'failure' || needs.ci-ok.result == 'cancelled') && (github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))
     needs: [ci-ok]
     runs-on: ubuntu-latest
     timeout-minutes: 5

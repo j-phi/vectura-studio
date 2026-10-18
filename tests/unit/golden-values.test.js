@@ -10,17 +10,17 @@ const HELPER = require.resolve('../helpers/golden-values');
 const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
 const OTHER = ARCH === 'arm64' ? 'x64' : 'arm64';
 
-// A fresh copy of the helper, reading and writing goldens in a temp dir.
-const loadHelper = (dir, update) => {
-  const saved = { u: process.env.VECTURA_UPDATE_BASELINES, d: process.env.VECTURA_GOLDEN_VALUES_DIR };
-  process.env.VECTURA_GOLDEN_VALUES_DIR = dir;
-  if (update) process.env.VECTURA_UPDATE_BASELINES = '1'; else delete process.env.VECTURA_UPDATE_BASELINES;
+// A fresh copy of the helper, reading and writing goldens in a temp dir. `env` sets (or, with
+// undefined, clears) extra variables while the helper loads: CI, VECTURA_GOLDEN_NODE_MAJOR.
+const loadHelper = (dir, update, env = {}) => {
+  const vars = { VECTURA_GOLDEN_VALUES_DIR: dir, VECTURA_UPDATE_BASELINES: update ? '1' : undefined, VECTURA_GOLDEN_NODE_MAJOR: undefined, ...env };
+  const saved = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  for (const [k, v] of Object.entries(vars)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   delete require.cache[HELPER];
   try {
     return require(HELPER);
   } finally {
-    if (saved.u === undefined) delete process.env.VECTURA_UPDATE_BASELINES; else process.env.VECTURA_UPDATE_BASELINES = saved.u;
-    if (saved.d === undefined) delete process.env.VECTURA_GOLDEN_VALUES_DIR; else process.env.VECTURA_GOLDEN_VALUES_DIR = saved.d;
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
     delete require.cache[HELPER];
   }
 };
@@ -50,10 +50,40 @@ describe('golden-values helper', () => {
     expect(() => g.expect('nope', 'abc')).toThrow(/Golden key "nope" is missing/);
     expect(() => goldenValues('noarch').expect('k', 'abc')).toThrow(new RegExp(`no ${ARCH} section`));
   });
+
+  test('off Node 20 a check fails in CI, warns once and passes unchecked locally, and update mode refuses to write', () => {
+    fs.writeFileSync(path.join(dir, 'node.json'), JSON.stringify({ [ARCH]: { k: 'abc' } }));
+    // On Node 20 the check is enforced with or without CI.
+    expect(() => loadHelper(dir, false, { VECTURA_GOLDEN_NODE_MAJOR: '20', CI: 'true' }).goldenValues('node').expect('k', 'abd')).toThrow(/Golden drift/);
+    // CI on another major: loud failure, even on a matching value.
+    expect(() => loadHelper(dir, false, { VECTURA_GOLDEN_NODE_MAJOR: '22', CI: 'true' }).goldenValues('node').expect('k', 'abc')).toThrow(/Node 20 only; this is Node 22\. CI must run golden checks on Node 20/);
+    // Locally on another major: one warning line per process, no failure.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const local = loadHelper(dir, false, { VECTURA_GOLDEN_NODE_MAJOR: '22', CI: undefined }).goldenValues('node');
+      expect(() => local.expect('k', 'abd')).not.toThrow();
+      expect(() => local.expect('k', 'abe')).not.toThrow();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toMatch(/WARNING: Golden values hold on Node 20 only; this is Node 22\. Golden checks are NOT enforced/);
+    } finally {
+      warn.mockRestore();
+    }
+    // Update mode on another major writes nothing.
+    const before = fs.readFileSync(path.join(dir, 'node.json'), 'utf8');
+    expect(() => loadHelper(dir, true, { VECTURA_GOLDEN_NODE_MAJOR: '22', CI: undefined }).goldenValues('node').expect('k', 'new')).toThrow(/Refusing to write/);
+    expect(fs.readFileSync(path.join(dir, 'node.json'), 'utf8')).toBe(before);
+  });
 });
 
 describe('npm run test:update file list', () => {
   const { goldenValueFiles, targets } = require('../../scripts/test-update-baselines');
+
+  test('refuses to regenerate on a Node major other than 20', () => {
+    const { nodeRefusal } = require('../../scripts/test-update-baselines');
+    expect(nodeRefusal('20.20.2')).toBeNull();
+    expect(nodeRefusal('22.1.0')).toMatch(/refusing to regenerate goldens on Node 22\.1\.0/);
+    expect(nodeRefusal('18.0.0')).toMatch(/refusing/);
+  });
 
   test('covers tests/visual and every test file that reads golden values', () => {
     const files = goldenValueFiles();

@@ -11,8 +11,10 @@
  * PER ARCHITECTURE. V8's Math.sin/cos/exp/atan2/... round the last ULP
  * differently on arm64 and x86_64 (see scene3d-u2-kernel-identity.test.js),
  * so a hash of float output holds on one architecture only. Each file keeps
- * one section per architecture. The values are enforced on Node 20 (CI's
- * pinned major, .nvmrc) only; other majors round differently again.
+ * one section per architecture. The values hold on Node 20 (CI's pinned
+ * major, .nvmrc) only; other majors round differently again. On another
+ * major a check fails in CI (CI is set), prints a one-line warning and
+ * passes unchecked locally, and update mode refuses to write.
  *
  * REGENERATION (deliberate only):
  *   npm run test:update                       # this machine's architecture
@@ -32,7 +34,11 @@ const GOLDEN_DIR = process.env.VECTURA_GOLDEN_VALUES_DIR || path.resolve(__dirna
 const UPDATE = process.env.VECTURA_UPDATE_BASELINES === '1';
 const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
 const GOLDEN_NODE_MAJOR = 20;
-const NODE_MAJOR = Number(process.versions.node.split('.')[0]);
+// VECTURA_GOLDEN_NODE_MAJOR (the detected major, overridden) exists only for the helper's own unit test.
+const NODE_MAJOR = Number(process.env.VECTURA_GOLDEN_NODE_MAJOR || process.versions.node.split('.')[0]);
+const IN_CI = !!process.env.CI;
+let warnedOffNode = false;
+const offNodeMessage = () => `Golden values hold on Node ${GOLDEN_NODE_MAJOR} only; this is Node ${NODE_MAJOR}.`;
 
 const goldenValues = (name) => {
   const file = path.join(GOLDEN_DIR, `${name}.json`);
@@ -57,6 +63,7 @@ const goldenValues = (name) => {
     file,
     expect(key, actual) {
       if (UPDATE) {
+        if (NODE_MAJOR !== GOLDEN_NODE_MAJOR) throw new Error(`${offNodeMessage()} Refusing to write ${rel}: regenerate on Node ${GOLDEN_NODE_MAJOR}.`);
         recorded[key] = actual;
         write();
         return;
@@ -67,11 +74,18 @@ const goldenValues = (name) => {
       if (!Object.prototype.hasOwnProperty.call(section, key)) {
         throw new Error(`Golden key "${key}" is missing from the ${ARCH} section of ${rel}. ${regen}`);
       }
-      if (NODE_MAJOR !== GOLDEN_NODE_MAJOR) return;
+      if (NODE_MAJOR !== GOLDEN_NODE_MAJOR) {
+        if (IN_CI) throw new Error(`${offNodeMessage()} CI must run golden checks on Node ${GOLDEN_NODE_MAJOR} (${rel} at "${key}").`);
+        if (!warnedOffNode) {
+          warnedOffNode = true;
+          console.warn(`[golden-values] WARNING: ${offNodeMessage()} Golden checks are NOT enforced in this run; use Node ${GOLDEN_NODE_MAJOR}.`);
+        }
+        return;
+      }
       expect(actual, `Golden drift in ${rel} at "${key}" (${ARCH}). If the output changed ON PURPOSE, `
         + 'regenerate with npm run test:update and say so in the commit.').toEqual(section[key]);
     },
   };
 };
 
-module.exports = { goldenValues, GOLDEN_DIR };
+module.exports = { goldenValues, GOLDEN_DIR, GOLDEN_NODE_MAJOR };

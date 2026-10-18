@@ -1,8 +1,9 @@
 /**
  * TUX-058 req 5: the touch target baseline cannot be raised without a TUX-WAIVER line in the commit body.
  * Fixture cases prove the comparison. The git walk runs against a throwaway repo, so this file needs no
- * repository history. The live rule (every commit after the anchor) runs in CI as its own step:
- * `node scripts/touch-baseline-waiver.js --since-anchor` in the perf job, which fails loudly on a missing anchor.
+ * repository history. The live rule (every commit after the anchor) runs in CI as its own job:
+ * `node scripts/touch-baseline-waiver.js --since-anchor` in `touch-waiver` (every event), which fails loudly on a
+ * missing anchor.
  */
 const fs = require('fs');
 const os = require('os');

@@ -12,8 +12,9 @@
  *   tree=<sha>           the tree of the tested commit (ci-ok records it for R-20)
  *   reason=<text>
  *
- * pull_request  heavy + vitest always, never coverage; audit only when the diff matches
- *               scripts/audit-paths.js (R-17).
+ * pull_request  heavy + vitest always, never coverage; audit only when the diff from the merge
+ *               ref's first parent matches scripts/audit-paths.js (R-17), or changes the
+ *               manifest script list in index.html.
  * push (main)   coverage always: a PR verdict carries no coverage, and running the ratchet on
  *               every merge makes a red-main issue (R-5) name the merge that eroded it. Skip
  *               heavy when the pushed tree equals the merge-ref tree of a PR run whose ci-ok
@@ -121,6 +122,16 @@ function schedulePushRuns({ gh, repo, sha }) {
   });
 }
 
+// HEAD^1 as a full SHA, or '' when it is not in the clone.
+function firstParent(git) {
+  try {
+    const sha = git(['rev-parse', '--verify', '--quiet', 'HEAD^1^{commit}']).toString('utf8').trim();
+    return /^[0-9a-f]{40}$/.test(sha) ? sha : '';
+  } catch {
+    return '';
+  }
+}
+
 function plan({ env = process.env, gh, git, unzip = defaultUnzip, now = Date.now() } = {}) {
   const event = env.EVENT_NAME || env.GITHUB_EVENT_NAME || '';
   let tree = '';
@@ -128,8 +139,11 @@ function plan({ env = process.env, gh, git, unzip = defaultUnzip, now = Date.now
   const out = (decision) => ({ ...vitestMode(event, decision), tree });
   try {
     if (event === 'pull_request') {
-      const audit = auditPaths.decide(auditPaths.changedFiles(env.BASE_SHA, 'HEAD'));
-      return out({ heavy: true, audit: audit.run, reason: `audit: ${audit.reason}` });
+      // The merge ref's first parent is the base the PR is tested against; pull_request.base.sha
+      // can lag it (a superset diff). Fall back to it when the parent is not in the clone.
+      const base = firstParent(git) || env.BASE_SHA;
+      const audit = auditPaths.decide(auditPaths.changedFiles(base, 'HEAD'), { indexScriptsChanged: () => auditPaths.manifestScriptsChanged(base, 'HEAD') });
+      return out({ heavy: true, audit: audit.run, reason: `audit: ${audit.reason} (base ${String(base).slice(0, 12)})` });
     }
     if (event === 'push') {
       if (env.GITHUB_REF !== 'refs/heads/main') return out(RUN_ALL(`push to ${env.GITHUB_REF}`));
@@ -159,4 +173,4 @@ if (require.main === module) {
   console.log(lines.join('\n'));
 }
 
-module.exports = { CI_SELF, WORKFLOW_FILE, VERDICT_ARTIFACT, VERDICT_FILE, decidePush, decideSchedule, plan, readVerdict, vitestMode };
+module.exports = { CI_SELF, WORKFLOW_FILE, VERDICT_ARTIFACT, VERDICT_FILE, decidePush, decideSchedule, firstParent, plan, readVerdict, vitestMode };

@@ -142,6 +142,38 @@ describe('pull_request and other events', () => {
     expect(withPushed(null, () => ciPlan.plan({ env, gh: fakeGh({}), git: git() }))).toMatchObject({ heavy: true, audit: true });
   });
 
+  it('a PR diffs against the merge ref first parent, falling back to pull_request.base.sha', () => {
+    const PARENT = '1'.repeat(40);
+    const env = { EVENT_NAME: 'pull_request', BASE_SHA: 'a'.repeat(40) };
+    const gitWithParent = (parent) => (args) => {
+      if (args.includes('HEAD^1^{commit}')) { if (!parent) throw new Error('unknown revision'); return Buffer.from(`${parent}\n`); }
+      return Buffer.from(`${TREE}\n`);
+    };
+    const bases = [];
+    const original = auditPaths.changedFiles;
+    auditPaths.changedFiles = (base) => { bases.push(base); return ['docs/x.md']; };
+    try {
+      ciPlan.plan({ env, gh: fakeGh({}), git: gitWithParent(PARENT) });
+      ciPlan.plan({ env, gh: fakeGh({}), git: gitWithParent('') });
+    } finally {
+      auditPaths.changedFiles = original;
+    }
+    expect(bases).toEqual([PARENT, 'a'.repeat(40)]);
+  });
+
+  it('a PR that only touches index.html runs the audits only when the manifest script list changed', () => {
+    const env = { EVENT_NAME: 'pull_request', BASE_SHA: 'a'.repeat(40) };
+    const original = auditPaths.manifestScriptsChanged;
+    try {
+      for (const changed of [false, true]) {
+        auditPaths.manifestScriptsChanged = () => changed;
+        expect(withPushed(['index.html', 'src/config/version.js'], () => ciPlan.plan({ env, gh: fakeGh({}), git: git() })).audit, String(changed)).toBe(changed);
+      }
+    } finally {
+      auditPaths.manifestScriptsChanged = original;
+    }
+  });
+
   it('workflow_dispatch runs neither (the touch nightly jobs do not use the plan)', () => {
     expect(ciPlan.plan({ env: { EVENT_NAME: 'workflow_dispatch' }, gh: fakeGh({}), git: git() })).toMatchObject({ heavy: false, vitest: false, coverage: false, audit: false });
   });
@@ -154,6 +186,8 @@ describe('workflow wiring', () => {
     expect(plan).toMatch(/permissions:\n\s+contents: read\n\s+actions: read\n\s+pull-requests: read\n/);
     expect(plan).not.toMatch(/: write/);
     expect(plan).toContain('git fetch --no-tags --depth=1 origin "$BASE_SHA"');
+    // HEAD^1 of the PR merge ref must be in the clone for the first-parent diff.
+    expect(plan).toMatch(/uses: actions\/checkout@v7\n\s+with:\n\s+fetch-depth: 2\n/);
     expect(plan).toContain('BEFORE_SHA: ${{ github.event.before }}');
     expect(plan).toContain('GH_TOKEN: ${{ github.token }}');
     for (const file of ['scripts/ci-plan.js', 'scripts/audit-paths.js', 'tests/helpers/runtime-profiles.js']) expect(plan).toContain(file);

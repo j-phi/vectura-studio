@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
 
+# Least privilege by default; the job below declares what it needs.
+permissions:
+  contents: read
+
 jobs:
   release:
     runs-on: ubuntu-latest

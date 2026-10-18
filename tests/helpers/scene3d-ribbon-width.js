@@ -4,8 +4,8 @@
  * F1-width-bar's canonical width/ink measurement — the ONE place this repo
  * measures ribbon WIDTH. Shared by `scripts/audit/scene3d-ribbon-width.js`
  * (the canonical CLI script, JOB 1 of `ROUND3-RESUME-BRIEFS.md` §4) and
- * `tests/unit/scene3d-ribbon-width-bar.test.js` (the guard, JOB 3), so the
- * script and the test can never silently drift apart.
+ * `tests/unit/feedback-ribbon-canary.test.js` (the width guard since R-27), so
+ * the script and the test can never silently drift apart.
  *
  * RIG: `engine.addLayer('scene3d')` — the OBJECT-GEOMETRY-DEFAULTS
  * construction every RGR file in this lane uses (f1b-streaks, wall-coverage,

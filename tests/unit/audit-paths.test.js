@@ -118,6 +118,51 @@ describe('audit routing decision', () => {
     expect(auditPaths.changedFiles('a'.repeat(40), 'HEAD', { exec: () => 'src/ui/ui.js\n\nREADME.md\n' })).toEqual(['src/ui/ui.js', 'README.md']);
   });
 
+  it('runs the audits when index.html changes the manifest script list, not for a version badge bump', () => {
+    // The real index.html: every manifest file is listed, in the order the audit runtime reads.
+    const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+    const order = auditPaths.manifestScriptOrder(html);
+    expect([...order].sort()).toEqual([...SCENE3D_FILES].sort());
+    const [first, second] = order;
+    const tag = (file) => new RegExp(`\\s*<script[^>]*src="\\./${file.replace(/[.]/g, '\\.')}[^"]*"[^>]*></script>`);
+    const variants = {
+      'version badge bump': html.replace(/\?v=[0-9.]+/g, '?v=99.0.0'),
+      'non-manifest script added': html.replace('</body>', '<script src="./src/ui/new-panel.js?v=1" defer></script>\n</body>'),
+      'manifest script removed': html.replace(tag(second), ''),
+      'manifest scripts reordered': html.replace(tag(first), '').replace('</body>', `<script src="./${first}?v=1" defer></script>\n</body>`),
+    };
+    expect(variants['manifest script removed']).not.toBe(html);
+    const exec = (texts) => (cmd, args) => { const rev = args[1].split(':')[0]; if (!(rev in texts)) throw new Error('bad object'); return texts[rev]; };
+    const changed = (variant) => auditPaths.manifestScriptsChanged('base', 'head', { exec: exec({ base: html, head: variants[variant] }) });
+    expect(changed('version badge bump')).toBe(false);
+    expect(changed('non-manifest script added')).toBe(false);
+    expect(changed('manifest script removed')).toBe(true);
+    expect(changed('manifest scripts reordered')).toBe(true);
+    // A side that cannot be read counts as a change.
+    expect(auditPaths.manifestScriptsChanged('base', 'head', { exec: exec({ base: html }) })).toBe(true);
+    // decide() asks only when index.html is in a diff with no other audit path.
+    expect(auditPaths.decide(['index.html'], { indexScriptsChanged: () => false }).run).toBe(false);
+    expect(auditPaths.decide(['index.html', 'README.md'], { indexScriptsChanged: () => true })).toMatchObject({ run: true, reason: expect.stringContaining('manifest script list') });
+    expect(auditPaths.decide(['index.html'])).toMatchObject({ run: true });
+    let asked = false;
+    expect(auditPaths.decide(['README.md'], { indexScriptsChanged: () => { asked = true; return true; } }).run).toBe(false);
+    expect(asked).toBe(false);
+  });
+
+  it('the audit job fails a group whose results miss a file, skip a test or report none', () => {
+    const files = ['tests/audit/a.test.js', 'tests/audit/b.test.js'];
+    const fileResult = (name, statuses) => ({ name: path.join(ROOT, name), status: statuses.every((st) => st === 'passed') && statuses.length ? 'passed' : 'skipped', assertionResults: statuses.map((status) => ({ status })) });
+    const results = (rows) => ({ success: true, testResults: rows });
+    expect(auditPaths.verifyShardResults(results([fileResult(files[0], ['passed']), fileResult(files[1], ['passed', 'passed'])]), files).passed).toBe(true);
+    expect(auditPaths.verifyShardResults(results([fileResult(files[0], ['passed'])]), files).failures.join(' ')).toContain('missing inventoried test files');
+    expect(auditPaths.verifyShardResults(results([fileResult(files[0], ['passed']), fileResult(files[1], ['skipped'])]), files).passed).toBe(false);
+    expect(auditPaths.verifyShardResults(results([fileResult(files[0], ['passed']), fileResult(files[1], [])]), files).failures.join(' ')).toContain('no assertions reported');
+    const workflow = fs.readFileSync(path.join(ROOT, '.github/workflows/test.yml'), 'utf8');
+    const audit = workflow.slice(workflow.indexOf('\n  audit:\n'), workflow.indexOf('\n  ci-ok:\n'));
+    expect(audit).toContain('--outputFile.json="$RUNNER_TEMP/audit-results.json"');
+    expect(audit).toContain('node scripts/audit-paths.js --verify-results "$RUNNER_TEMP/audit-results.json" "$AUDIT_SHARD/3"');
+  });
+
   it('splits every audit file into exactly one of the workflow audit groups', () => {
     const workflow = fs.readFileSync(path.join(ROOT, '.github/workflows/test.yml'), 'utf8');
     const audit = workflow.slice(workflow.indexOf('\n  audit:\n'), workflow.indexOf('\n  ci-ok:\n'));

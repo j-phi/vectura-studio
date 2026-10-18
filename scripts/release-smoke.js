@@ -13,7 +13,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const { execFileSync } = require('child_process');
-const { chromium } = require('playwright');
+const { chromium } = require('@playwright/test');
 
 const MIME = {
   '.js': 'application/javascript; charset=utf-8', '.mjs': 'application/javascript; charset=utf-8',
