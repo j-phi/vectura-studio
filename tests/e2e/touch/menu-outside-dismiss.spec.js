@@ -193,4 +193,24 @@ test.describe('menu outside dismiss (TUX-040)', () => {
       expect(await page.evaluate(() => window.app.ui.openTopMenuTrigger)).toBeNull();
     });
   }
+
+  test('the algorithm-draw menu closes on an outside pointerdown', async ({ page }) => {
+    await page.evaluate(() => { const b = document.querySelector('.tool-btn[data-tool="algo-draw"]'); window.app.ui._openAlgoPicker(b, { touch: true }); });
+    const picker = page.locator('#algo-draw-picker');
+    await expect(picker).toBeVisible();
+    const p = await page.evaluate(() => {
+      const cv = document.getElementById('main-canvas'); const b = cv.getBoundingClientRect();
+      const m = document.getElementById('algo-draw-picker').getBoundingClientRect();
+      for (let y = Math.max(b.top, 0) + 30; y < Math.min(b.bottom, innerHeight) - 60; y += 12) {
+        for (let x = Math.max(b.left, 0) + 30; x < Math.min(b.right, innerWidth) - 90; x += 12) {
+          if (x > m.left - 10 && x < m.right + 10 && y > m.top - 10 && y < m.bottom + 10) continue;
+          if (document.elementFromPoint(x, y) === cv) return { x, y };
+        }
+      }
+      return null;
+    });
+    expect(p, 'a clear canvas point').not.toBeNull();
+    await touch.drag(page, p, { x: p.x + 30, y: p.y + 20 }, { steps: 6 });
+    await expect(picker).toBeHidden();
+  });
 });

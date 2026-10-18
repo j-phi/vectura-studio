@@ -1,5 +1,5 @@
 /*
- * P3 feedback — text contextual task bar:
+ * Text contextual task bar:
  *  - family/style controls have a dropdown caret and open their picker anchored
  *    to the CLICKED chip (an anchor rect is forwarded to the Text panel picker)
  *    instead of the docked left-pane trigger.
@@ -12,7 +12,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const FULL_STACK = { includeRenderer: true, includeUi: true, includeApp: true, includeMain: false, useIndexHtml: true };
 const nextFrames = (ms = 90) => new Promise((r) => setTimeout(r, ms));
 
-describe('P3: text task bar (carets, anchored pickers, point/area, show properties)', () => {
+describe('Text task bar (carets, anchored pickers, point/area, show properties)', () => {
   let runtime, window, document, app, CB, SETTINGS;
 
   beforeAll(async () => {

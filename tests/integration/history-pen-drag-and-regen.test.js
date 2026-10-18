@@ -1,11 +1,10 @@
 /*
- * Integration tests for v1.1.10 audit history bugs:
+ * History entries for pen drags and regen():
  *
- *   Bugs-3  — Pen color/width drag commits must push exactly one history
- *             entry (on `change`, not on every `input` event).
- *   Bugs-12 — `regen()` must NOT push history by default (the existing
- *             pre-push convention is preserved); when explicitly opting in
- *             via `app.regen({ pushHistory: true })` it must push exactly one.
+ *   - A pen color/width drag pushes exactly one history entry on commit
+ *     (on `change`, not on every `input` event).
+ *   - `regen()` does not push history by default (callers pre-push); with
+ *     `app.regen({ pushHistory: true })` it pushes exactly one.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -32,7 +31,7 @@ const firePointerEvent = (window, el, type) => {
   el.dispatchEvent(event);
 };
 
-describe('v1.1.10 audit history bugs', () => {
+describe('History entries for pen drags and regen()', () => {
   let runtime, window;
 
   beforeEach(async () => {
@@ -47,7 +46,7 @@ describe('v1.1.10 audit history bugs', () => {
     runtime = null;
   });
 
-  describe('Bugs-3: pen color/width drag pushes one history entry on commit', () => {
+  describe('pen color/width drag pushes one history entry on commit', () => {
     test('color input: 50 input events do not grow history; trailing change pushes exactly 1', () => {
       const app = window.app;
       const SETTINGS = window.Vectura.SETTINGS;
@@ -109,7 +108,7 @@ describe('v1.1.10 audit history bugs', () => {
     });
   });
 
-  describe('Bugs-12: regen() history control', () => {
+  describe('regen() history control', () => {
     test('app.regen() with default args does NOT push history (preserves convention)', () => {
       const app = window.app;
       app.engine.addLayer('lissajous');

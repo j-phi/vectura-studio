@@ -1,8 +1,7 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
 /**
- * Convert-to-Scene Increment 3 (CtS I3) — panel + Add-Objects + inspector
- * parity for the `solid` (parametric polyhedron) primitive.
+ * Scene panel, Add-Objects shelf and inspector parity for the `solid` (parametric polyhedron) primitive.
  *
  * Group A (full stack): a scene-tree object3d `solid` LEAF exposes the
  * solidType dropdown + the 5 LIVE deformer sliders (expand / twist / explode /
@@ -44,7 +43,7 @@ const fixtureParams = (overrides = {}) => ({
 // ---------------------------------------------------------------------------
 // Group A — inspector parity for a scene-tree `solid` LEAF (full stack)
 // ---------------------------------------------------------------------------
-describe('CtS I3 — solid inspector (full stack)', () => {
+describe('Scene solid inspector (full stack)', () => {
   let runtime, window, document, app;
 
   beforeAll(async () => {
@@ -152,7 +151,7 @@ describe('CtS I3 — solid inspector (full stack)', () => {
 // ---------------------------------------------------------------------------
 // Group B — Add-Objects shelf lists a Solid entry (direct mount, monolith)
 // ---------------------------------------------------------------------------
-describe('CtS I3 — Add-Objects shelf Solid entry', () => {
+describe('Scene Add-Objects shelf Solid entry', () => {
   let runtime, window, document;
 
   beforeAll(async () => {

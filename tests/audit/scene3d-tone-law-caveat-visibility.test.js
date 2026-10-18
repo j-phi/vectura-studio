@@ -4,12 +4,12 @@ const {
   recordedShadowResolvesToSurvivor,
 } = require('../helpers/scene3d-tone-law-collapse-shared');
 
-// Split part D: U4/U5/U5b caveats, U7-2, U9b-2. (R-27: the U1..U5
-// primitive x density render sweep was removed; resolution is unit-tested in
+// Tone-law caveat visibility through effectiveLaw, caveat copy, and the
+// shadow-forward coupling. Law resolution is unit-tested in
 // tests/unit/scene3d-tone-law-collapse.test.js and end to end in
-// tests/unit/scene3d-tone-law-plumbing.test.js.)
+// tests/unit/scene3d-tone-law-plumbing.test.js.
 
-describe('Scene3D tone-law collapse — U4 caveat-visibility gap (bundleDither, LIBRARY-tier, has a real caveat)', () => {
+describe('Tone-law caveat visibility — bundleDither (LIBRARY-tier, has a real caveat)', () => {
   let runtime;
   beforeAll(async () => { runtime = await loadScene3dAuditRuntime(); });
   afterAll(() => runtime.cleanup());
@@ -30,7 +30,7 @@ describe('Scene3D tone-law collapse — U4 caveat-visibility gap (bundleDither, 
   // UI surfaces (scene3d-panel.js, context-bar.js) read the CAVEAT off this
   // effective id while still reading the (i) popover's blurb off the plain
   // survivor `entry`/`note` — the two are deliberately NOT the same lookup.
-  test('U5b FIX: effectiveLaw resolves the "Dithered" sub-control choice back to bundleDither, surfacing its own caveat', () => {
+  test('effectiveLaw resolves the "Dithered" sub-control choice back to bundleDither, surfacing its own caveat', () => {
     const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
     expect(typeof FS.effectiveLaw).toBe('function');
     expect(FS.effectiveLaw('bundleCount', { bundleMode: 'dither' })).toBe('bundleDither');
@@ -47,7 +47,7 @@ describe('Scene3D tone-law collapse — U4 caveat-visibility gap (bundleDither, 
   });
 });
 
-describe('Scene3D tone-law collapse — U5 caveat-visibility gap (contFieldTouch, LIBRARY-tier, has a real caveat)', () => {
+describe('Tone-law caveat visibility — contFieldTouch (LIBRARY-tier, has a real caveat)', () => {
   let runtime;
   beforeAll(async () => { runtime = await loadScene3dAuditRuntime(); });
   afterAll(() => runtime.cleanup());
@@ -64,7 +64,7 @@ describe('Scene3D tone-law collapse — U5 caveat-visibility gap (contFieldTouch
   // (exactly one descriptor active -> that descriptor's law; more than one
   // active at once -> deterministic fallback to the bare survivor, never a
   // throw) through effectiveLaw as well.
-  test('U5b FIX: effectiveLaw resolves the "Ink-width floor" sub-control choice back to contFieldTouch, surfacing its own caveat', () => {
+  test('effectiveLaw resolves the "Ink-width floor" sub-control choice back to contFieldTouch, surfacing its own caveat', () => {
     const FS = runtime.window.Vectura.SCENE_FILL_STYLES;
     const touch = { spacing: 'field', closestApproach: 'touch' };
     expect(FS.effectiveLaw('ladder', touch)).toBe('contFieldTouch');
@@ -97,7 +97,7 @@ describe('Scene3D tone-law collapse — U5 caveat-visibility gap (contFieldTouch
  * either of those record files, only the picker-facing copy.
  * ═══════════════════════════════════════════════════════════════════════
  */
-describe('Scene3D tone-law collapse — U5b-2 (plain-language caveat copy)', () => {
+describe('Tone-law caveats — plain-language copy (bundleDither, contFieldTouch)', () => {
   let runtime; let FS;
   beforeAll(async () => {
     runtime = await loadScene3dAuditRuntime();
@@ -161,7 +161,7 @@ describe('Scene3D tone-law collapse — U5b-2 (plain-language caveat copy)', () 
  * populated-data check here. Editorial wording, length, and archive details
  * do not need a render-backed audit matrix.
  */
-describe('Scene3D tone-law collapse — U7-2 (plain-language pass over every remaining caveat)', () => {
+describe('Tone-law caveats — plain-language copy (every remaining caveat)', () => {
   let runtime; let FS;
   const REWRITTEN_IDS = [
     'none', 'deepFillTSP', 'bundleSubNib', 'penInterleave', 'penReserve', 'penCross',
@@ -207,7 +207,7 @@ describe('Scene3D tone-law collapse — U7-2 (plain-language pass over every rem
  * are still edited by hand in two different places (this test does not
  * eliminate that), but a mismatch between them can no longer pass silently.
  */
-describe('U9b-2 — shadowResolvesToSurvivor coupling (test-side literal vs. production Shadows.toneLawApplies)', () => {
+describe('shadowResolvesToSurvivor coupling (test-side literal vs. production Shadows.toneLawApplies)', () => {
   let runtime; let V;
   beforeAll(async () => { runtime = await loadScene3dAuditRuntime(); V = runtime.window.Vectura; });
   afterAll(() => runtime.cleanup());

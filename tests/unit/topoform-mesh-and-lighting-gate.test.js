@@ -1,5 +1,5 @@
 /**
- * Topoform (topoform) geometry + lighting fixes — five-part regression.
+ * Topoform primitive meshes and the scene-lighting gate.
  *
  * 1. CUBE honors primitiveDetail and has uniformly outward face winding.
  * 2. SILHOUETTE coincides with the wireframe's projected outer boundary.
@@ -11,7 +11,7 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-describe('Topoform geometry + lighting fixes', () => {
+describe('Topoform primitive meshes and scene-lighting gate', () => {
   let runtime;
   let Vectura;
   let G3;
@@ -45,31 +45,7 @@ describe('Topoform geometry + lighting fixes', () => {
     );
   };
 
-  // Reach the module-private mesh builder by reconstructing it the same way the
-  // algorithm does: we cannot import it directly (IIFE-private), so we exercise
-  // it through the public render output where possible, and reflect mesh-level
-  // winding via a tiny in-test mesh probe that mirrors createPrimitiveMesh
-  // inputs. For mesh-structure assertions we instead drive generate() and read
-  // path counts / geometry, which is what users actually see.
-
-  const meshFor = (params) => {
-    // The algorithm exposes no mesh getter; rebuild the public path output and
-    // also use the shared G3 helpers to recompute normals where we need mesh
-    // structure. For winding tests we use the dedicated probe below.
-    return params;
-  };
-
-  // ── Mesh probe: replicate the registry's detail resolution and call into the
-  // private createPrimitiveMesh by round-tripping through generate with a
-  // wireframe render and counting unique projected edges is indirect; instead
-  // we attach a debug hook. Since none exists, winding is validated through
-  // faceNormal on the reconstructed primitive via the exported builder when
-  // available, else through render-output invariants.
-
-  // ---------------------------------------------------------------------------
-  // Fix 1 — CUBE honors detail + outward winding
-  // ---------------------------------------------------------------------------
-  describe('Fix 1 — cube subdivision + outward winding', () => {
+  describe('cube subdivision and outward winding', () => {
     const cubeMesh = (detail) => {
       // Mirror the registry: it builds the mesh then renders. We expose mesh via
       // a private debug hook installed by the algorithm (G3.__lastMesh) when the
@@ -113,10 +89,7 @@ describe('Topoform geometry + lighting fixes', () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // Fix 2 — silhouette hugs the wireframe projected boundary
-  // ---------------------------------------------------------------------------
-  describe('Fix 2 — silhouette alignment with wireframe', () => {
+  describe('silhouette alignment with the wireframe', () => {
     const bbox = (paths) => {
       let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
       paths.forEach((path) => path.forEach((pt) => {
@@ -147,10 +120,7 @@ describe('Topoform geometry + lighting fixes', () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // Fix 3 — grid primitive winding audit
-  // ---------------------------------------------------------------------------
-  describe('Fix 3 — grid primitive outward winding', () => {
+  describe('grid primitive outward winding', () => {
     // Star-shaped solids: outward = away from the global centroid (the centroid
     // sees every surface face from "inside"). torus/torusKnot are NOT star-shaped
     // from a single point, so they use a tube-center-line reference instead.
@@ -255,10 +225,7 @@ describe('Topoform geometry + lighting fixes', () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // Fix 4 — UV pole de-fan
-  // ---------------------------------------------------------------------------
-  describe('Fix 4 — sphere pole renders as rings, not an asterisk', () => {
+  describe('sphere pole renders as rings, not an asterisk', () => {
     // Orient a pole toward the camera and count very-short segments converging
     // on the projected pole point.
     const poleFanCount = (overrides) => {
@@ -317,7 +284,7 @@ describe('Topoform geometry + lighting fixes', () => {
       return worst;
     };
 
-    it('does NOT delete the pole spokes at low detail (no hole) — regression for the screen-relative threshold', () => {
+    it('keeps the pole spokes at low detail (no hole at the pole)', () => {
       // At detail 8 the pole's spokes read at full length; the de-fan threshold
       // must NOT remove them (which would leave a hole). The dense star at higher
       // detail is thinned by the sibling 'no large fan' test above.
@@ -333,10 +300,7 @@ describe('Topoform geometry + lighting fixes', () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // Fix 5 — scene lighting gating
-  // ---------------------------------------------------------------------------
-  describe('Fix 5 — scene lighting gating', () => {
+  describe('scene lighting gate', () => {
     const sig = (paths) => paths
       .map((p) => p.map((pt) => `${pt.x.toFixed(3)},${pt.y.toFixed(3)}`).join('|'))
       .join(';');
@@ -378,7 +342,7 @@ describe('Topoform geometry + lighting fixes', () => {
       expect(dashedNonHidden(paths).length).toBeGreaterThan(0);
     });
 
-    it('default output (hatch/depthcue off) is identical whether or not the gate exists', () => {
+    it('with hatch and depth cue off, sceneLighting changes no output', () => {
       // With both hatch and depthcue at their defaults (off), sceneLighting has
       // no effect — output must match between explicit-off and explicit-on.
       const off = gen({ sourceMode: 'sphere' });

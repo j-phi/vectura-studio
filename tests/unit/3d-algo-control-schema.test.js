@@ -1,22 +1,16 @@
 /*
- * 3D-audit Wave 3 schema additions (controls-registry.js).
+ * Control schema of the 3D algorithms (controls-registry.js).
  *
- * Covers the four label/flag/hint-only requirements from
- * docs/3d-audit/phase3-ux-requirements.md, implemented to the SHARED CONTRACT
- * for two new schema markers (the renderer lives in algo-config-panel.js):
- *
- *   - UX1 / WU7: the shared "Shading & Lines" section gains `collapsed: true`
- *     on all four 3D panels (renderer draws it as a closed disclosure group).
- *   - WU9 / D3: rasterPlane gets a `{ type:'sectionHint', text, showIf }`
- *     marker after the "Surface Noise" header and before noiseMode — visible
- *     only when the noise stack has no enabled layer.
- *   - UX9p2: spiralizer per-shape dimension labels are de-prefixed (the gated set
- *     is mutually exclusive, so the shape prefix was redundant); the co-display
- *     ellipsoid/torus pairs keep their distinguishing names.
- *   - UX6: topoform contourVisibility dashed-hidden option label is
- *     harmonized to the shared "See-Through" vocabulary (value unchanged).
- *
- * Loaded via the same JSDOM harness as 3d-shading-capability.test.js.
+ *   - The shared "Shading & Lines" section is collapsed:true on all four 3D
+ *     panels; no other section is collapsed.
+ *   - rasterPlane noise is driven by the noise stack alone: no global Noise
+ *     Mode / Amount controls and no empty-state hint about them.
+ *   - Compass-heading sliders use the angle dial (lightAzimuth from the shared
+ *     shading factory, topoform planeRotate); view yaw/pitch/roll stay ranges.
+ *   - spiralizer per-shape dimension labels are de-prefixed (the gated set is
+ *     mutually exclusive); co-displayed ellipsoid/torus pairs keep their names.
+ *   - topoform contourVisibility dashed-hidden option uses the shared
+ *     "See-Through" label (value unchanged).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -43,7 +37,7 @@ const loadInJSDOM = (scriptPaths) => {
 
 const findDef = (defs, id) => defs.find((d) => d.id === id);
 
-describe('3D-audit Wave 3 schema additions', () => {
+describe('3D algorithm control schema', () => {
   let dom;
   let CONTROL_DEFS;
 
@@ -60,7 +54,6 @@ describe('3D-audit Wave 3 schema additions', () => {
 
   afterAll(() => dom?.window?.close?.());
 
-  // UX1 / WU7 — collapsed-by-default "Shading & Lines" on all four 3D panels.
   it('marks the "Shading & Lines" section collapsed:true in all four 3D algos', () => {
     for (const algo of ['spiralizer', 'polyhedron', 'topoform', 'rasterPlane']) {
       const section = CONTROL_DEFS[algo].find(
@@ -81,8 +74,7 @@ describe('3D-audit Wave 3 schema additions', () => {
     }
   });
 
-  // Surface Noise — the global Noise Mode/Amount and their empty-state hint were
-  // removed; per-layer Blend Mode + Field Weight drive the displacement now.
+  // Per-layer Blend Mode + Field Weight drive the displacement.
   it('rasterPlane has a Noise Stack section with no Mode/Amount controls or hint', () => {
     const defs = CONTROL_DEFS.rasterPlane;
     const noiseSectionIdx = defs.findIndex(
@@ -97,7 +89,36 @@ describe('3D-audit Wave 3 schema additions', () => {
     expect(noiseList, 'Noise Stack section keeps the noise stack').toBeTruthy();
   });
 
-  // UX9p2 — helix shape-dimension labels de-prefixed (mutually exclusive set).
+  describe('compass-heading sliders use the angle dial', () => {
+    it('lightAzimuth (shared shading factory) is type angle', () => {
+      // lightAzimuth is injected into every 3D algo via buildShadingControls;
+      // assert on rasterPlane (which spreads the shading block).
+      const lightAzimuth = findDef(CONTROL_DEFS.rasterPlane, 'lightAzimuth');
+      expect(lightAzimuth).toBeTruthy();
+      expect(lightAzimuth.type).toBe('angle');
+      // wrap range + unit preserved
+      expect(lightAzimuth.min).toBe(0);
+      expect(lightAzimuth.max).toBe(360);
+      expect(lightAzimuth.displayUnit).toBe('°');
+    });
+
+    it('planeRotate (topoform) is type angle', () => {
+      const planeRotate = findDef(CONTROL_DEFS.topoform, 'planeRotate');
+      expect(planeRotate).toBeTruthy();
+      expect(planeRotate.type).toBe('angle');
+      expect(planeRotate.min).toBe(-180);
+      expect(planeRotate.max).toBe(180);
+    });
+
+    it('leaves topoform view yaw/pitch/roll as plain ranges', () => {
+      for (const id of ['yaw', 'pitch', 'roll']) {
+        const ctrl = findDef(CONTROL_DEFS.topoform, id);
+        expect(ctrl, id).toBeTruthy();
+        expect(ctrl.type, id).toBe('range');
+      }
+    });
+  });
+
   it('de-prefixes spiralizer mutually-exclusive shape dimension labels', () => {
     const defs = CONTROL_DEFS.spiralizer;
     const expected = {
@@ -136,7 +157,6 @@ describe('3D-audit Wave 3 schema additions', () => {
     }
   });
 
-  // UX6 — See-Through vocabulary unification (option label only; value unchanged).
   it('harmonizes topoform contourVisibility dashed-hidden label to See-Through', () => {
     const def = findDef(CONTROL_DEFS.topoform, 'contourVisibility');
     expect(def, 'topoform should declare contourVisibility').toBeTruthy();

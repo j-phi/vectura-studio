@@ -1,5 +1,5 @@
 /*
- * P3 feedback: each pen row must have a stroke-weight slider AND an editable
+ * Each pen row must have a stroke-weight slider AND an editable
  * numeric textbox, kept in sync. Before the fix the readout was a read-only
  * <span> (.pen-width-value) — you could not type an exact weight.
  */
@@ -9,7 +9,7 @@ const FULL_STACK = { includeRenderer: true, includeUi: true, includeApp: true, i
 const waitForUi = () => new Promise((r) => setTimeout(r, 80));
 const fire = (window, el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
 
-describe('P3: per-pen stroke-weight textbox', () => {
+describe('Per-pen stroke-weight textbox', () => {
   let runtime, window;
   beforeEach(async () => {
     runtime = await loadVecturaRuntime(FULL_STACK);

@@ -1,15 +1,12 @@
 /*
- * Regression guards for the Petalis visual-QA fix sweep. Each test asserts a
- * behaviour that was broken before the fix and would fail on the pre-fix code:
+ * Petalis petal asymmetry and center modifiers:
  *
- *  - petalAsymmetry produced a sub-perceptual (~0.2mm) tip nudge instead of a
- *    real bilateral lean; now it bows the petal centreline measurably.
- *  - center modifiers (ripple/twist/radialNoise/circularOffset) silently did
- *    nothing on circle elements (disk/dome/dot) because the displaced points
- *    were discarded in favour of the preserved `kind:'circle'` meta.
- *  - circularOffset never received a noise sampler and gated its whole effect on
- *    `randomness`, so it was dead — especially at randomness 0.
- *  - centerType 'dome' drew perfectly concentric rings (a flat bullseye).
+ *  - petalAsymmetry bows the petal centreline measurably (a real bilateral
+ *    lean, not a sub-mm tip nudge) and is byte-identical at 0.
+ *  - center modifiers (radialNoise, circularOffset) displace circle elements
+ *    (disk/dome/dot); the displaced points are drawn, not the `kind:'circle'` meta.
+ *  - circularOffset is driven by its amount, not by `randomness` (works at 0).
+ *  - centerType 'dome' draws eccentric rings, not a flat bullseye.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { pathSignature } = require('../helpers/path-signature');
@@ -46,7 +43,7 @@ const maxDeviation = (a, b) => {
   return max;
 };
 
-describe('Petalis QA fixes', () => {
+describe('Petalis petal asymmetry and center modifiers', () => {
   let runtime;
   beforeAll(async () => {
     runtime = await loadVecturaRuntime();

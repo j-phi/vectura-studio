@@ -9,17 +9,15 @@ const FULL_STACK = {
 };
 
 /*
- * Adversarial-review fixes A3 / A6 / A8 in the algo-config panel:
- *   A3 — lightPad: window-level pointerup/pointercancel fallback so a drag
- *        always ends even when setPointerCapture fails (unsupported/detached).
- *   A6 — optimization-step checkbox controls mount UI.SwToggle (keyboard
- *        Space/Enter + aria-checked) instead of hand-rolled .sw-toggle markup;
- *        dblclick-reset to the step default is preserved by external wiring.
- *   A8 — petalis modifier/shading sliders dblclick-reset to the param's TRUE
- *        default (the create* factory value a fresh modifier gets), no longer
- *        to def.min.
+ * Algo-config panel control interactions:
+ *   - lightPad: a window-level pointerup/pointercancel fallback ends a drag even
+ *     when setPointerCapture fails (unsupported/detached).
+ *   - optimization-step checkbox controls mount UI.SwToggle (keyboard
+ *     Space/Enter + aria-checked); dblclick-reset to the step default still works.
+ *   - petalis modifier/shading sliders dblclick-reset to the param's factory
+ *     default (the create* value a fresh modifier gets), not to def.min.
  */
-describe('Algo-config panel — adversarial-review fixes', () => {
+describe('Algo-config panel control interactions', () => {
   let runtime, window, document, app;
 
   const setup = async (type) => {
@@ -36,7 +34,7 @@ describe('Algo-config panel — adversarial-review fixes', () => {
   const layer = () => app.engine.getActiveLayer();
   const controlsHost = () => document.getElementById('dynamic-controls');
 
-  test('A3: lightPad drag ends via the window pointerup fallback when pointer capture fails', async () => {
+  test('lightPad drag ends via the window pointerup fallback when pointer capture fails', async () => {
     await setup('topoform');
     layer().params.sceneLighting = true;
     layer().params.hatchEnable = true;
@@ -68,7 +66,7 @@ describe('Algo-config panel — adversarial-review fixes', () => {
     expect(layer().params.lightElevation).toBe(elAfter);
   });
 
-  test('A6: optimization "Remove Tiny" is a UI.SwToggle — Space toggles the step config with aria sync', async () => {
+  test('optimization "Remove Tiny" is a UI.SwToggle — Space toggles the step config with aria sync', async () => {
     await setup('flowfield');
     // Enable the filter step so its controls are interactive (disabled steps
     // render disabled inputs — legacy parity the SwToggle migration keeps).
@@ -96,7 +94,7 @@ describe('Algo-config panel — adversarial-review fixes', () => {
     expect(readout.textContent).toBe(!before ? 'ON' : 'OFF');
   });
 
-  test('A8: petalis center-modifier slider dblclick resets to the factory default, not def.min', async () => {
+  test('petalis center-modifier slider dblclick resets to the factory default, not def.min', async () => {
     await setup('petalisDesigner');
     layer().params.centerModifiers = [{
       id: 'mod-test', enabled: true, type: 'ripple', amount: 7, frequency: 6, noises: [],

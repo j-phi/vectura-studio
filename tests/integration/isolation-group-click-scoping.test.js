@@ -1,5 +1,5 @@
 /**
- * P3 feedback: while a group is isolated, clicking OUTSIDE the group must not
+ * While a group is isolated, clicking OUTSIDE the group must not
  * select the foreign object — the click is swallowed and isolation stays active
  * (only Escape / the breadcrumb exits). Everything INSIDE the group is
  * selectable, including nested descendants (which resolve to the immediate
@@ -10,7 +10,7 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-describe('P3: isolate-group click scoping', () => {
+describe('Isolated-group click scoping', () => {
   let runtime;
 
   afterEach(() => {

@@ -1,5 +1,5 @@
 /**
- * P3 feedback: the anchor verbs to the right of Smooth in the edit-path task
+ * The anchor verbs to the right of Smooth in the edit-path task
  * bar were permanently disabled (renderDirect ran anchorEligibility ONCE at
  * entry, when no anchor was selected, and never re-ran; it also gated on the
  * full anchor list and passed raw geometry to the predicates instead of refs).
@@ -14,7 +14,7 @@ const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const FULL_STACK = { includeRenderer: true, includeUi: true, includeApp: true, includeMain: false, useIndexHtml: true };
 const nextFrames = (ms = 90) => new Promise((r) => setTimeout(r, ms));
 
-describe('P3: edit-path anchor-verb enabling', () => {
+describe('Edit-path anchor verbs follow the anchor selection', () => {
   let runtime, window, app, CB;
 
   beforeAll(async () => {

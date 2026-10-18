@@ -1,5 +1,5 @@
 /**
- * P3 feedback: Shift/Cmd-click must add/remove objects from a multi-selection
+ * Shift/Cmd-click must add/remove objects from a multi-selection
  *. Before the fix, the object-selection path in down()
  * never passed {toggle} to selectLayer, so shift-clicking a second object
  * *replaced* the selection (size stayed 1) instead of extending it.
@@ -9,7 +9,7 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
-describe('P3: shift/cmd-click multi-select + additive marquee', () => {
+describe('Shift/cmd-click multi-select and additive marquee', () => {
   let runtime;
 
   afterEach(() => {

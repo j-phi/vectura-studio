@@ -1,6 +1,5 @@
 /**
- * fs-c3-panel — three docked left-hand 3D panel fixes, all in
- * src/ui/panels/scene3d-panel.js:
+ * Docked left-hand 3D panel style controls (src/ui/panels/scene3d-panel.js):
  *
  *   Job 1 — the focused LEAF object3d panel's fill Angle switches from a
  *           plain 0-180 range slider to the same circular UI.AngleDial the
@@ -69,7 +68,7 @@ const fixtureObject = (n, primitive = 'box') => ({
   visibility: 'solid',
 });
 
-describe('fs-c3-panel — left-hand 3D panel: angle dial / density domain / leaf border+offset', () => {
+describe('Scene3D panel style controls: angle dial / density domain / leaf border+offset', () => {
   let runtime;
   let window;
   let document;
@@ -132,8 +131,8 @@ describe('fs-c3-panel — left-hand 3D panel: angle dial / density domain / leaf
   };
 
   // ── Job 1 — leaf fill-angle dial ──────────────────────────────────────────
-  describe('Job 1 — leaf fill angle is a circular AngleDial (0-360)', () => {
-    test('the leaf Style tab Angle row is an AngleDial, not the old 0-180 range slider', () => {
+  describe('leaf fill angle is a circular AngleDial (0-360)', () => {
+    test('the leaf Style tab Angle row is a 0-360 AngleDial', () => {
       const { container } = mountLeaf('hatch');
       clickTab(container, 'style');
       // RGR pin: the OLD leaf control was this exact slider.
@@ -174,7 +173,7 @@ describe('fs-c3-panel — left-hand 3D panel: angle dial / density domain / leaf
   // number). This only asserts the declared UI domain.
   // U3 (fill-style review, owner decision 2026-10-02) — raised 220 -> 500,
   // the engine's own clamp, on every surface.
-  describe('Job 2 — fillDensity UI max is 500 (consistent min) everywhere declared', () => {
+  describe('fillDensity UI max is 500 (consistent min) everywhere declared', () => {
     test('shared scene/object/face style editor (D_DENSITY) declares min 1 / max 500', () => {
       const { container } = mountGroupObjectScope();
       clickTab(container, 'style');
@@ -185,7 +184,7 @@ describe('fs-c3-panel — left-hand 3D panel: angle dial / density domain / leaf
       expect(density.max).toBe('500');
     });
 
-    test('leaf panel Density slider declares min 1 / max 500 (was min 5 / max 100)', () => {
+    test('leaf panel Density slider declares min 1 / max 500', () => {
       const { container } = mountLeaf('hatch');
       clickTab(container, 'style');
       const density = container.querySelector('input.ctrl-slider[aria-label="Fill density"]');
@@ -196,8 +195,8 @@ describe('fs-c3-panel — left-hand 3D panel: angle dial / density domain / leaf
   });
 
   // ── Job 3 — leaf object border + offset (everywhere weight exists) ───────
-  describe('Job 3 — leaf object border reachable + Offset beside every border Weight', () => {
-    test('leaf Style tab exposes a Border enable toggle (previously absent entirely)', () => {
+  describe('leaf object border reachable + Offset beside every border Weight', () => {
+    test('leaf Style tab exposes a Border enable toggle', () => {
       const { container } = mountLeaf('hatch');
       clickTab(container, 'style');
       const seg = container.querySelector('.seg-ctrl[aria-label="Silhouette border"]');

@@ -1,5 +1,5 @@
 /*
- * P3 feedback: every right-click context-menu control AND the contextual task
+ * Every right-click context-menu control AND the contextual task
  * bar's core controls must ALSO be available in the top menu system, plus the
  * contextual task bar toggle (not only Document Setup). This test verifies the
  * new Object/Edit/View menu items exist, route to the shared verbs, and gate
@@ -10,7 +10,7 @@ const { loadVecturaRuntime } = require('../../helpers/load-vectura-runtime');
 const FULL_STACK = { includeRenderer: true, includeUi: true, includeApp: true, includeMain: false, useIndexHtml: true };
 const nextFrames = (ms = 60) => new Promise((r) => setTimeout(r, ms));
 
-describe('P3: top-menu Object/Edit/View parity with right-click + task bar', () => {
+describe('Top-menu Object/Edit/View parity with right-click + task bar', () => {
   let runtime, window, document, app;
 
   beforeAll(async () => {

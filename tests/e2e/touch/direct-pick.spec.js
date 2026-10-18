@@ -31,4 +31,29 @@ test.describe('TUX-024 Direct pick by finger', () => {
     expect(await picked(page)).toBe(null);
   });
 
+  test('a finger tap on locked geometry over an unlocked layer selects nothing', async ({ page }, testInfo) => {
+    test.skip(!/touch|webkit/.test(testInfo.project.name), 'touch projects only');
+    const s = await setup(page);
+    const topId = await page.evaluate((baseId) => {
+      const e = window.app.engine;
+      const id = e.addLayer('rings');
+      // Same params and seed as the unlocked layer: the locked stroke lies exactly on top of it.
+      const base = e.layers.find((l) => l.id === baseId);
+      const top = e.layers.find((l) => l.id === id);
+      top.params = JSON.parse(JSON.stringify(base.params));
+      if (base.paramStates !== undefined) top.paramStates = JSON.parse(JSON.stringify(base.paramStates));
+      e.generate?.(id);
+      window.app.computeDisplayGeometry?.();
+      window.app.ui.layerLockedIds.add(id);
+      window.app.renderer.setSelection([], null);
+      window.app.renderer.setTool('direct');
+      window.app.renderer.draw();
+      return id;
+    }, s.id);
+    expect(topId).not.toBe(s.id);
+    await touch.tap(page, { x: s.x, y: s.y });
+    await page.waitForTimeout(250);
+    expect(await picked(page), 'the locked top layer swallows the tap; nothing below is picked').toBe(null);
+  });
+
 });
