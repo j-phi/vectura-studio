@@ -47,8 +47,8 @@ describe('ci-ok required check', () => {
       expect(needsOf(name), name).toEqual(['ci-plan']);
       expect(job(name), name).toMatch(/^    if: needs\.ci-plan\.outputs\.audit == 'true'$/m);
     }
-    // The touch nightly jobs never depend on the plan: a dedup skip must not drop them (R-19).
-    for (const name of ciOk.TOUCH_NIGHTLY) {
+    // The touch and visual nightly jobs never depend on the plan: a dedup skip must not drop them (R-19).
+    for (const name of [...ciOk.TOUCH_NIGHTLY, ...ciOk.VISUAL_NIGHTLY]) {
       expect(needsOf(name), name).toEqual([]);
       expect(job(name), name).toContain("if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'");
     }
@@ -102,6 +102,13 @@ describe('ci-ok required check', () => {
     expect(ciOk.evaluate(results('schedule', { audit: 'failure' }), 'schedule').ok).toBe(false);
     expect(ciOk.evaluate(results('schedule', { 'touch-e2e-nightly': 'skipped' }, { heavy: 'false', audit: 'false' }), 'schedule').ok).toBe(false);
     expect(ciOk.evaluate(results('workflow_dispatch', { 'touch-audit-nightly': 'skipped' }, { heavy: 'false', audit: 'false' }), 'workflow_dispatch').ok).toBe(false);
+    // R-38: the pixel snapshots must run (and pass) nightly, and must skip on a PR.
+    expect(ciOk.evaluate(results('schedule', { 'visual-nightly': 'skipped' }, { heavy: 'false', audit: 'false' }), 'schedule').ok).toBe(false);
+    const red = ciOk.evaluate(results('schedule', { 'visual-nightly': 'failure' }), 'schedule');
+    expect(red.ok).toBe(false);
+    expect(red.failed).toEqual(['visual-nightly']);
+    expect(ciOk.evaluate(results('pull_request', { 'visual-nightly': 'success' }), 'pull_request').ok).toBe(false);
+    expect(results('pull_request')['visual-nightly'].result).toBe('skipped');
     const missing = results('pull_request');
     delete missing.coverage;
     expect(ciOk.evaluate(missing, 'pull_request').problems).toContain('coverage: missing from ci-ok needs');

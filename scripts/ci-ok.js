@@ -21,7 +21,10 @@ const HEAVY = ['e2e-smoke', 'perf', 'coverage-shard', 'coverage'];
 const AUDIT = ['audit'];
 // Jobs that run only on the nightly schedule and on a manual dispatch. Never skipped by ci-plan.
 const TOUCH_NIGHTLY = ['touch-e2e-nightly', 'touch-audit-nightly'];
-const ALL_JOBS = [...PLAN, ...HEAVY, ...AUDIT, ...TOUCH_NIGHTLY];
+// Linux pixel snapshots in the pinned Playwright image (R-38): nightly and manual runs only,
+// never skipped by ci-plan. On a PR or push they must be `skipped` (by design).
+const VISUAL_NIGHTLY = ['visual-nightly'];
+const ALL_JOBS = [...PLAN, ...HEAVY, ...AUDIT, ...TOUCH_NIGHTLY, ...VISUAL_NIGHTLY];
 const PLANNED_EVENTS = ['pull_request', 'push', 'schedule', 'workflow_dispatch'];
 
 // The jobs that must succeed on this event, given ci-plan's outputs. A by-design skip is an
@@ -31,7 +34,7 @@ function expectedJobs(event, planOutputs = {}) {
   if (PLANNED_EVENTS.includes(event)) required.push(...PLAN);
   if (planOutputs.heavy === 'true') required.push(...HEAVY);
   if (planOutputs.audit === 'true') required.push(...AUDIT);
-  if (event === 'schedule' || event === 'workflow_dispatch') required.push(...TOUCH_NIGHTLY);
+  if (event === 'schedule' || event === 'workflow_dispatch') required.push(...TOUCH_NIGHTLY, ...VISUAL_NIGHTLY);
   return required;
 }
 
@@ -105,4 +108,4 @@ if (require.main === module) {
   console.log(`ci-ok: every required job passed on ${event}.`);
 }
 
-module.exports = { PLAN, HEAVY, AUDIT, TOUCH_NIGHTLY, ALL_JOBS, expectedJobs, evaluate, verdictRecord };
+module.exports = { PLAN, HEAVY, AUDIT, TOUCH_NIGHTLY, VISUAL_NIGHTLY, ALL_JOBS, expectedJobs, evaluate, verdictRecord };

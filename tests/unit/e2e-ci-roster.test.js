@@ -25,7 +25,7 @@ describe('PR e2e smoke roster', () => {
   it('runs every non-touch project except the named nightly-only ones, so a new project is never dropped silently', () => {
     const nonTouch = configProjects().filter((n) => !TOUCH[n]);
     expect([...smoke.DESKTOP_PROJECTS, ...smoke.NIGHTLY_ONLY_PROJECTS].sort()).toEqual(nonTouch.sort());
-    // R-12: the visual project's snapshots are darwin-only, so it would only skip on linux CI.
+    // R-12/R-38: the pixel snapshots run in the pinned Playwright image (visual-nightly), not here.
     expect(smoke.NIGHTLY_ONLY_PROJECTS).toEqual(['desktop-visual-chromium']);
     expect(smoke.DESKTOP_PROJECTS).not.toContain('desktop-visual-chromium');
   });
@@ -101,5 +101,36 @@ describe('full touch roster runs nightly', () => {
     expect(off.filter((n) => TOUCH[n])).toEqual([]);
     expect(off.sort()).toEqual([...smoke.DESKTOP_PROJECTS, ...smoke.NIGHTLY_ONLY_PROJECTS].sort());
     expect(configProjects().filter((n) => TOUCH[n]).length).toBe(11);
+  });
+});
+
+describe('linux pixel snapshots run nightly in the pinned Playwright image (R-38)', () => {
+  const visual = job('visual-nightly');
+  const lock = require('../../package-lock.json');
+  const snapshotDir = path.join(ROOT, 'tests/e2e/visual.spec.js-snapshots');
+
+  it('runs the visual project in the image that matches the locked Playwright version', () => {
+    const version = lock.packages['node_modules/@playwright/test'].version;
+    expect(require('@playwright/test/package.json').version).toBe(version);
+    expect(visual).toContain(`image: mcr.microsoft.com/playwright:v${version}-noble`);
+    expect(visual).toContain("if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'");
+    expect(visual).toContain('tests/e2e/visual.spec.js --project=desktop-visual-chromium');
+    expect(visual).toContain("ENABLE_SCREENSHOT_VISUALS: '1'");
+    // Failed snapshots (expected/actual/diff PNGs) upload even when the run is red.
+    const upload = visual.slice(visual.indexOf('- name: Upload snapshot report'));
+    expect(upload).toMatch(/if: always\(\)[\s\S]*test-results/);
+    // The local regeneration script derives the same image from the installed version.
+    const script = fs.readFileSync(path.join(ROOT, 'scripts/test-update-visual-linux.sh'), 'utf8');
+    expect(script).toContain('mcr.microsoft.com/playwright:v${PW_VERSION}-noble');
+    expect(script).toContain('--platform linux/amd64');
+    expect(scripts['test:visual:screenshots']).toContain('scripts/test-update-visual-linux.sh --check');
+  });
+
+  it('commits a linux baseline for every snapshot the spec takes, and no other platform', () => {
+    const spec = fs.readFileSync(path.join(ROOT, 'tests/e2e/visual.spec.js'), 'utf8');
+    const names = [...spec.matchAll(/toHaveScreenshot\('([^']+)\.png'/g)].map((m) => m[1]);
+    expect(names.length).toBeGreaterThanOrEqual(7);
+    const files = fs.readdirSync(snapshotDir).sort();
+    expect(files).toEqual(names.map((n) => `${n}-desktop-visual-chromium-linux.png`).sort());
   });
 });

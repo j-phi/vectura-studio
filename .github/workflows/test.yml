@@ -7,8 +7,8 @@ on:
       - main
   schedule:
     - cron: '0 8 * * *'
-  # Manual trigger for the touch nightly jobs (touch-e2e-nightly, touch-audit-nightly), for
-  # example to seed the TUX-058 linux baseline from a branch.
+  # Manual trigger for the nightly-only jobs (touch-e2e-nightly, touch-audit-nightly,
+  # visual-nightly), for example to seed the TUX-058 linux baseline from a branch.
   workflow_dispatch:
 
 env:
@@ -194,6 +194,49 @@ jobs:
             playwright-report
             tests/e2e/touch/target-baseline.json
             tests/e2e/touch/journey-status.linux.json
+          if-no-files-found: ignore
+
+  # R-38: browser pixel snapshots (tests/e2e/visual.spec.js), nightly and on manual dispatch, in
+  # the official Playwright image for the installed @playwright/test version (pinned here; the
+  # tag must match package-lock, tests/unit/e2e-ci-roster.test.js checks it). The linux
+  # baselines are made in the same image by scripts/test-update-visual-linux.sh. On a red run,
+  # download visual-nightly-report: each failed snapshot has its expected, actual and diff PNG.
+  # To seed or refresh baselines from CI, rename the *-actual.png files to the baseline names.
+  visual-nightly:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      options: --ipc=host
+    steps:
+      - uses: actions/checkout@v7
+      - run: npm ci --no-audit --no-fund --loglevel=error
+      - name: Pixel snapshots
+        run: npm run test:playwright -- tests/e2e/visual.spec.js --project=desktop-visual-chromium --reporter=line,json
+        env:
+          ENABLE_SCREENSHOT_VISUALS: '1'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-json/visual.json
+      - name: Report Playwright flakes
+        if: always()
+        run: node scripts/playwright-flaky.js summarize --job visual-nightly --out playwright-flaky/visual-nightly.json playwright-json/visual.json
+      - name: Upload Playwright flake summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-flaky-visual-nightly
+          path: playwright-flaky
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Upload snapshot report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-nightly-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 14
           if-no-files-found: ignore
 
   # Uninstrumented checks: tests/perf timing budgets, the Node process-lifecycle tests
@@ -429,7 +472,7 @@ jobs:
   # scripts/ci-ok.js; tests/unit/ci-ok.test.js keeps it in sync with this file.
   ci-ok:
     if: always()
-    needs: [ci-plan, e2e-smoke, perf, coverage-shard, coverage, audit, touch-e2e-nightly, touch-audit-nightly]
+    needs: [ci-plan, e2e-smoke, perf, coverage-shard, coverage, audit, touch-e2e-nightly, touch-audit-nightly, visual-nightly]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

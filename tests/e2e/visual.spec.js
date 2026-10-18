@@ -1,10 +1,39 @@
 const { test, expect } = require('@playwright/test');
-const fs = require('fs');
-const path = require('path');
+
+/*
+ * Pixel snapshots of the shell and the canvas (judgment R-38).
+ *
+ * The baselines are LINUX only, made in the pinned Playwright image
+ * (mcr.microsoft.com/playwright:v<@playwright/test version>-noble, linux/amd64), the same image
+ * the `visual-nightly` CI job runs in. Font rasterization differs by OS and by host, so a
+ * snapshot made anywhere else would not match. Regenerate or check locally with docker:
+ *   scripts/test-update-visual-linux.sh            # rewrite the *-linux.png baselines
+ *   scripts/test-update-visual-linux.sh --check    # compare only (diffs in test-results/visual-linux)
+ *
+ * Determinism: the unpinned Tailwind Play CDN is pinned to TAILWIND_CDN, Google Fonts are
+ * blocked (the image's own fonts render instead), animations and the caret are off, and the
+ * regions that change for reasons other than drawing (version label, toasts, notifications)
+ * are masked.
+ */
+const TAILWIND_CDN = 'https://cdn.tailwindcss.com/3.4.17';
+const SNAPSHOT_MASKS = ['.pane-meta', '#notification-area', '#canvas-toast', '#touch-mod-badge'];
 
 test.describe('Visual snapshots', () => {
-  test.skip(!process.env.ENABLE_SCREENSHOT_VISUALS, 'Set ENABLE_SCREENSHOT_VISUALS=1 to run screenshot snapshots.');
+  test.skip(!process.env.ENABLE_SCREENSHOT_VISUALS || process.platform !== 'linux',
+    'Linux baselines only: run scripts/test-update-visual-linux.sh --check (docker), or the visual-nightly CI job.');
   const DEFAULT_VISUAL_SEED = 38225;
+
+  test.beforeEach(async ({ page }) => {
+    await page.route(/^https:\/\/cdn\.tailwindcss\.com\/?(\?.*)?$/, (route) => route.continue({ url: TAILWIND_CDN }));
+    await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, (route) => route.abort());
+  });
+
+  const shot = (page) => ({
+    maxDiffPixels: 100,
+    animations: 'disabled',
+    caret: 'hide',
+    mask: SNAPSHOT_MASKS.map((selector) => page.locator(selector)),
+  });
 
   const buildOvalMaskParentScene = async (page) => {
     await page.evaluate(() => {
@@ -56,6 +85,8 @@ test.describe('Visual snapshots', () => {
 
       const wavetable = new Layer('masked-wavetable', 'wavetable', 'Wavetable 01');
       wavetable.parentId = maskParent.id;
+      // A new Layer draws a random seed; pin it or the snapshot changes every run.
+      wavetable.params.seed = 23;
       wavetable.params.lineStructure = 'horizontal';
       wavetable.params.lines = 48;
       wavetable.params.gap = 3.1;
@@ -260,9 +291,7 @@ test.describe('Visual snapshots', () => {
       app.render();
       app.updateStats();
     }, DEFAULT_VISUAL_SEED);
-    await expect(page.locator('main')).toHaveScreenshot('main-shell.png', {
-      maxDiffPixelRatio: 0.03,
-    });
+    await expect(page.locator('main')).toHaveScreenshot('main-shell.png', shot(page));
   });
 
   test('document dimensions render as blueprint labels outside the canvas', async ({ page }) => {
@@ -290,49 +319,37 @@ test.describe('Visual snapshots', () => {
       app.render();
       app.updateStats();
     }, DEFAULT_VISUAL_SEED);
-    await expect(page.locator('#main-canvas')).toHaveScreenshot('document-dimensions-canvas.png', {
-      maxDiffPixelRatio: 0.03,
-    });
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('document-dimensions-canvas.png', shot(page));
   });
 
 
   test('oval mask parent clips wavetable descendants inside the circle', async ({ page }) => {
     await page.goto('/');
     await buildOvalMaskParentScene(page);
-    await expect(page.locator('#main-canvas')).toHaveScreenshot('oval-mask-parent-wavetable-canvas.png', {
-      maxDiffPixelRatio: 0.03,
-    });
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('oval-mask-parent-wavetable-canvas.png', shot(page));
   });
 
   test('mirror modifiers keep masked circle artwork mirrored as closed masked objects', async ({ page }) => {
     await page.goto('/');
     await buildMirroredMaskedCircleScene(page);
-    await expect(page.locator('#main-canvas')).toHaveScreenshot('mirrored-masked-circles-canvas.png', {
-      maxDiffPixelRatio: 0.03,
-    });
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('mirrored-masked-circles-canvas.png', shot(page));
   });
 
   test('fresh rectangle and polygon shapes render as cornered primitives', async ({ page }) => {
     await page.goto('/');
     await buildPrimitiveShapeCreationScene(page);
-    await expect(page.locator('#main-canvas')).toHaveScreenshot('primitive-shape-creation-canvas.png', {
-      maxDiffPixelRatio: 0.03,
-    });
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('primitive-shape-creation-canvas.png', shot(page));
   });
 
   test('rotated polygon selection keeps handles aligned to the transformed shape', async ({ page }) => {
     await page.goto('/');
     await buildRotatedPrimitiveSelectionScene(page, 'polygon');
-    await expect(page.locator('#main-canvas')).toHaveScreenshot('rotated-polygon-selection-canvas.png', {
-      maxDiffPixelRatio: 0.03,
-    });
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('rotated-polygon-selection-canvas.png', shot(page));
   });
 
   test('rotated rectangle selection keeps handles aligned to the transformed shape', async ({ page }) => {
     await page.goto('/');
     await buildRotatedPrimitiveSelectionScene(page, 'rect');
-    await expect(page.locator('#main-canvas')).toHaveScreenshot('rotated-rectangle-selection-canvas.png', {
-      maxDiffPixelRatio: 0.03,
-    });
+    await expect(page.locator('#main-canvas')).toHaveScreenshot('rotated-rectangle-selection-canvas.png', shot(page));
   });
 });
