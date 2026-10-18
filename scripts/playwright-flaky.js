@@ -49,7 +49,7 @@ function readReports(files) {
   return { flaky: Math.max(statsFlaky, tests.length), tests, missing };
 }
 
-const escapeCell = (value) => String(value).replace(/\|/g, '\\|');
+const escapeCell = (value) => String(value).replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
 
 function summarize(args) {
   const { flaky, tests, missing } = readReports(args.files);

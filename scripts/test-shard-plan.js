@@ -178,7 +178,7 @@ function mergeShardResults({ plan, artifacts, prefix, sha, runId, attempt }) {
     if (Number.isFinite(metadata.startedMs)) merged.chainStartedMs = Math.min(merged.chainStartedMs ?? Infinity, metadata.startedMs);
     attempts.add(metadata.attempt);
   }
-  const names = fs.readdirSync(artifacts).filter((name) => new RegExp(`^${prefix}\\d+$`).test(name));
+  const names = fs.readdirSync(artifacts).filter((name) => name.startsWith(prefix) && /^\d+$/.test(name.slice(prefix.length)));
   if (names.length !== plan.shardCount) throw new Error(`expected exactly ${plan.shardCount} shard artifacts, found ${names.length}`);
   if (starts.length) merged.startTime = Math.min(...starts);
   merged.shardAttempts = [...attempts].sort((a, b) => a - b);

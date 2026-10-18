@@ -58,7 +58,7 @@ const matches = (file) => PATTERNS.some((pattern) => pattern.test(String(file).r
 // (the generic runtime loader's parseLocalScripts + normalizedScriptPath, in tests/helpers).
 const MANIFEST_SET = new Set(SCENE3D_FILES);
 function manifestScriptOrder(html) {
-  return [...String(html).matchAll(/<script[^>]*src="([^"]+)"[^>]*><\/script>/g)]
+  return [...String(html).matchAll(/<script\b[^>]*?\bsrc="([^"]+)"/gi)]
     .map((match) => match[1].replace(/^\.\//, '').replace(/\?.*$/, ''))
     .filter((file) => MANIFEST_SET.has(file));
 }

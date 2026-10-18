@@ -124,7 +124,7 @@ describe('audit routing decision', () => {
     const order = auditPaths.manifestScriptOrder(html);
     expect([...order].sort()).toEqual([...SCENE3D_FILES].sort());
     const [first, second] = order;
-    const tag = (file) => new RegExp(`\\s*<script[^>]*src="\\./${file.replace(/[.]/g, '\\.')}[^"]*"[^>]*></script>`);
+    const tag = (file) => new RegExp(`\\s*<script[^>]*src="\\./${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]*"[^>]*></script>`);
     const variants = {
       'version badge bump': html.replace(/\?v=[0-9.]+/g, '?v=99.0.0'),
       'non-manifest script added': html.replace('</body>', '<script src="./src/ui/new-panel.js?v=1" defer></script>\n</body>'),
