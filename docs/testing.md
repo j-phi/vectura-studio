@@ -320,7 +320,13 @@ waiting for another run does not consume it.
 
 Each attempt has a 30-minute local wall-clock deadline (three hours when `CI` is set), independent of model tokens or
 Vitest's per-test timers. Override it with a positive integer in milliseconds, e.g.
-`VECTURA_TEST_TIMEOUT_MS=3600000 npm run test:coverage`. Zero, malformed values, and
+`VECTURA_TEST_TIMEOUT_MS=3600000 npm run test:coverage`. The full local aggregates
+`test:ci` and `test:audit` export the CI default (`VECTURA_TEST_TIMEOUT_MS=10800000`,
+unless you set your own) to every step: local full-scope coverage runs in one worker and
+takes 35-40 minutes, so the 30-minute default can never fit it. Keep the Mac awake for a
+long local run (lid open, on power): the wall clock keeps running while the system sleeps,
+so a test that is in progress when the Mac sleeps can pass its 180 s `testTimeout`.
+Zero, malformed values, and
 values above 2147483647 are rejected. The deadline restarts
 for the existing single RPC-timeout retry. CI gets a longer default because the last
 successful coverage job took 102 minutes (unit tests took 42 minutes). Timeout exits 124; SIGINT/SIGTERM/SIGHUP

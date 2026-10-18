@@ -158,3 +158,22 @@ test('CI has room for measured coverage runs; explicit deadlines override defaul
   assert.equal(getRunTimeoutMs({ VECTURA_TEST_TIMEOUT_MS: '6000' }), 6000);
   assert.equal(getRunTimeoutMs({ VECTURA_TEST_TIMEOUT_MS: '0' }), 0);
 });
+
+test('full local aggregates (test:ci, test:audit) run every Vitest step under the CI deadline', () => {
+  // Local full-scope coverage runs in one worker and takes 35-40 min, so the 30-min local
+  // default can never fit it. The aggregate exports the CI default (overridable) to every step.
+  const { execFileSync } = require('node:child_process');
+  const root = require('node:path').resolve(__dirname, '../..');
+  const { scripts } = require('../../package.json');
+  const probe = "node -e \"process.stdout.write(String(require('./scripts/run-vitest').getRunTimeoutMs()))\"";
+  for (const name of ['test:ci', 'test:audit']) {
+    const line = scripts[name].match(/--shell '(.*)'$/)[1];
+    const prefix = line.slice(0, line.indexOf('npm run test:runner'));
+    const env = { ...process.env };
+    delete env.VECTURA_TEST_TIMEOUT_MS;
+    delete env.CI;
+    assert.equal(execFileSync('sh', ['-c', prefix + probe], { cwd: root, env, encoding: 'utf8' }), '10800000', name);
+    env.VECTURA_TEST_TIMEOUT_MS = '7000';
+    assert.equal(execFileSync('sh', ['-c', prefix + probe], { cwd: root, env, encoding: 'utf8' }), '7000', `${name} keeps an explicit override`);
+  }
+});
