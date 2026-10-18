@@ -12,7 +12,7 @@ const createCryptoFacade = () => Object.freeze({
   getRandomValues: (array) => crypto.webcrypto.getRandomValues(array),
 });
 
-const LOCAL_SRC_RE = /<script[^>]*src="([^"]+)"[^>]*><\/script>/g;
+const LOCAL_SRC_RE = /<script[^>]*src="([^"]+)"[^>]*><\/script\b[^>]*>/g;
 
 // 1x1 transparent PNG — what the stubbed canvas "exports".
 const EMPTY_PNG_DATA_URL =

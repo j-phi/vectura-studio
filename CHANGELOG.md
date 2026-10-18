@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Security (CodeQL alerts)
+- **SVG sanitizer regex fallback.** The no-DOMParser path now strips until stable, matches `</script >`-style end tags, and returns an empty SVG if any `<script`, `<style`, `<foreignObject`, `on*=` or `javascript:` remains. The control-character class no longer overlaps `\s`.
+- **Scripts and helpers.** `extract-changelog.js` matches the version heading literally (no RegExp from argv). `skin-new.js` escapes backslashes in labels. The test runtime loader matches `</script >` end tags. The text-panel design exploration escapes the typed font name.
+
 ### Touch remediation (TUX-001 to TUX-062, branch `touch/integration`)
 Touch and Apple Pencil now work across the whole app on iPad and iPhone. Mouse and desktop behavior is unchanged unless a bullet says "all pointers". Items are grouped by area. Simulation proves them on 11 Chromium and WebKit touch projects. Real-device rows stay open in `docs/touch-audit/device-checklist.md`.
 

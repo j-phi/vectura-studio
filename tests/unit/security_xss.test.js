@@ -659,3 +659,36 @@ describe('Pattern registry sanitizes stored SVG (Bugs-2 + Bugs-5)', () => {
     });
   });
 });
+
+// CodeQL js/incomplete-multi-character-sanitization: the no-DOMParser regex
+// fallback must not let one pass splice a fresh `<script` / `on*=` together.
+describe('SvgSanitize regex fallback (no DOMParser, no xmldom)', () => {
+  const loadFallbackSanitizer = () => {
+    const ctx = vm.createContext({
+      window: {},
+      require: () => { throw new Error('no xmldom'); },
+    });
+    const code = fs.readFileSync(path.join(ROOT, 'src/core/svg-sanitize.js'), 'utf8');
+    vm.runInContext(code, ctx, { filename: 'svg-sanitize.js' });
+    return ctx.window.Vectura.SvgSanitize.sanitize;
+  };
+
+  test('nested script fragments do not reassemble after one strip pass', () => {
+    const sanitize = loadFallbackSanitizer();
+    const out = sanitize('<svg><scr<script></script>ipt>alert(1)</scr<script></script>ipt></svg>');
+    expect(out).not.toMatch(/<\s*script/i);
+  });
+
+  test('script end tags with whitespace or junk are still stripped', () => {
+    const sanitize = loadFallbackSanitizer();
+    const out = sanitize('<svg><script>alert(1)</script\t\n bar><path d="M0 0"/></svg>');
+    expect(out).not.toMatch(/<\s*script|alert/i);
+    expect(out).toContain('<path d="M0 0"/>');
+  });
+
+  test('nested on* handlers do not reassemble', () => {
+    const sanitize = loadFallbackSanitizer();
+    const out = sanitize('<svg><path o onclick="x"nclick="alert(1)"/></svg>');
+    expect(out).not.toMatch(/\son[a-z]+\s*=/i);
+  });
+});
