@@ -8,15 +8,23 @@ const { spawnSync } = require('child_process');
  */
 const ROOT = path.resolve(__dirname, '../..');
 const ciOk = require('../../scripts/ci-ok.js');
+const ciPlan = require('../../scripts/ci-plan.js');
 const workflow = fs.readFileSync(path.join(ROOT, '.github/workflows/test.yml'), 'utf8');
 const job = (name) => workflow.match(new RegExp(`^  ${name}:\\n([\\s\\S]*?)(?=^  [a-z0-9-]+:\\n|(?![\\s\\S]))`, 'm'))?.[1] || '';
 const jobsBlock = workflow.slice(workflow.indexOf('\njobs:\n'));
 const allJobs = [...jobsBlock.matchAll(/^  ([a-z0-9-]+):$/gm)].map((m) => m[1]);
 const needsOf = (name) => (job(name).match(/^    needs: \[([^\]]*)\]/m)?.[1] || '').split(',').map((s) => s.trim()).filter(Boolean);
 
-// A full needs context: ci-plan says heavy/audit; every planned job succeeds, the rest skip.
+// The Vitest roster mode ci-plan pairs with each event (R-21): uninstrumented on a PR,
+// coverage on every main push and on a nightly that runs its heavy graph.
+const mode = (event, plan) => ({
+  vitest: event === 'pull_request' ? plan.heavy : 'false',
+  coverage: event === 'push' ? 'true' : event === 'schedule' ? plan.heavy : 'false',
+});
+// A full needs context: ci-plan says heavy/vitest/coverage/audit; every planned job succeeds,
+// the rest skip.
 const results = (event, overrides = {}, plan = { heavy: 'true', audit: 'true' }) => {
-  const outputs = { ...plan, tree: 'f'.repeat(40) };
+  const outputs = { ...mode(event, plan), ...plan, tree: 'f'.repeat(40) };
   const required = new Set(ciOk.expectedJobs(event, outputs));
   const needs = {};
   for (const name of ciOk.ALL_JOBS) needs[name] = { result: required.has(name) ? 'success' : 'skipped', outputs: {} };
@@ -39,10 +47,15 @@ describe('ci-ok required check', () => {
   });
 
   it('gates each job on the ci-plan output that ci-ok classifies it by', () => {
-    for (const name of ciOk.HEAVY) {
-      expect(needsOf(name), name).toContain('ci-plan');
-      expect(job(name), name).toMatch(/^    if: (always\(\) && )?needs\.ci-plan\.outputs\.heavy == 'true'$/m);
+    for (const [names, key] of [[ciOk.HEAVY, 'heavy'], [ciOk.VITEST, 'vitest'], [ciOk.COVERAGE, 'coverage']]) {
+      for (const name of names) {
+        expect(needsOf(name), name).toContain('ci-plan');
+        expect(job(name), name).toMatch(new RegExp(`^    if: (always\\(\\) && )?needs\\.ci-plan\\.outputs\\.${key} == 'true'$`, 'm'));
+      }
     }
+    // Each merge job waits for its own shards.
+    expect(needsOf('vitest')).toEqual(['ci-plan', 'vitest-shard']);
+    expect(needsOf('coverage')).toEqual(['ci-plan', 'coverage-shard']);
     for (const name of ciOk.AUDIT) {
       expect(needsOf(name), name).toEqual(['ci-plan']);
       expect(job(name), name).toMatch(/^    if: needs\.ci-plan\.outputs\.audit == 'true'$/m);
@@ -54,7 +67,7 @@ describe('ci-ok required check', () => {
     }
     expect(job('ci-plan')).not.toMatch(/^    if:/m);
     expect(job('ci-plan')).toContain('run: node scripts/ci-plan.js');
-    for (const key of ['heavy', 'audit', 'tree']) expect(job('ci-plan')).toContain(`${key}: \${{ steps.plan.outputs.${key} }}`);
+    for (const key of ['heavy', 'vitest', 'coverage', 'audit', 'tree']) expect(job('ci-plan')).toContain(`${key}: \${{ steps.plan.outputs.${key} }}`);
   });
 
   it('passes when every planned job succeeds and every by-design skip skips', () => {
@@ -67,17 +80,67 @@ describe('ci-ok required check', () => {
     expect(run(results('pull_request'), 'pull_request').status).toBe(0);
   });
 
-  it('a dedup-skipped push passes with the heavy graph and audits skipped', () => {
+  it('a dedup-skipped push passes with the heavy graph and audits skipped, but still needs coverage', () => {
     const needs = results('push', {}, { heavy: 'false', audit: 'false' });
-    for (const name of [...ciOk.HEAVY, ...ciOk.AUDIT]) expect(needs[name].result).toBe('skipped');
+    for (const name of [...ciOk.HEAVY, ...ciOk.VITEST, ...ciOk.AUDIT]) expect(needs[name].result).toBe('skipped');
+    for (const name of ciOk.COVERAGE) expect(needs[name].result).toBe('success');
     expect(run(needs, 'push').status).toBe(0);
+    // The PR verdict it reused carries no coverage: a skipped or red coverage merge fails main.
+    for (const result of ['skipped', 'failure']) {
+      const verdict = ciOk.evaluate(results('push', { coverage: result }, { heavy: 'false', audit: 'false' }), 'push');
+      expect(verdict.ok, result).toBe(false);
+      expect(verdict.failed).toEqual(['coverage']);
+    }
+  });
+
+  it('expects the uninstrumented roster on a PR and the coverage ratchet on main and nightly (R-21)', () => {
+    const on = (event, plan) => new Set(ciOk.expectedJobs(event, { ...mode(event, plan), ...plan }));
+    const pr = on('pull_request', { heavy: 'true', audit: 'false' });
+    for (const name of ciOk.VITEST) expect(pr.has(name), name).toBe(true);
+    for (const name of ciOk.COVERAGE) expect(pr.has(name), name).toBe(false);
+    for (const event of ['push', 'schedule']) {
+      const main = on(event, { heavy: 'true', audit: 'true' });
+      for (const name of ciOk.COVERAGE) expect(main.has(name), `${event} ${name}`).toBe(true);
+      for (const name of ciOk.VITEST) expect(main.has(name), `${event} ${name}`).toBe(false);
+    }
+    // A PR run whose coverage graph ran (or a main run whose PR graph ran) is a plan/if mismatch.
+    expect(ciOk.evaluate(results('pull_request', { coverage: 'success', 'coverage-shard': 'success' }), 'pull_request').ok).toBe(false);
+    expect(ciOk.evaluate(results('push', { vitest: 'success', 'vitest-shard': 'success' }), 'push').ok).toBe(false);
+    // A failed or skipped PR shard fails the gate; so does a skipped merge.
+    for (const name of ciOk.VITEST) {
+      for (const result of ['failure', 'skipped', 'cancelled']) {
+        expect(ciOk.evaluate(results('pull_request', { [name]: result }), 'pull_request').failed, `${name} ${result}`).toEqual([name]);
+      }
+    }
+  });
+
+  it('rejects a plan that breaks the per-event roster rules, so a ci-plan bug cannot drop a gate', () => {
+    const withPlan = (event, outputs) => {
+      const needs = results(event);
+      needs['ci-plan'].outputs = { ...needs['ci-plan'].outputs, ...outputs };
+      return ciOk.evaluate(needs, event).problems.join(' | ');
+    };
+    expect(withPlan('pull_request', { coverage: 'true' })).toContain('must not run the coverage graph');
+    expect(withPlan('pull_request', { vitest: 'false' })).toContain('gates on the Vitest roster');
+    expect(withPlan('push', { coverage: 'false' })).toContain('every main push must run the coverage ratchet');
+    expect(withPlan('push', { vitest: 'true' })).toContain('PR-only');
+    expect(withPlan('schedule', { coverage: 'false' })).toContain('the nightly runs coverage with its heavy graph');
+    expect(withPlan('pull_request', { vitest: undefined })).toContain('ci-plan: output vitest=undefined');
+    // ci-plan's real decisions pass these rules on every event (the two scripts agree).
+    for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch']) {
+      for (const heavy of [true, false]) {
+        const d = ciPlan.vitestMode(event, { heavy, audit: true });
+        const outputs = { heavy: String(heavy), vitest: String(d.vitest), coverage: String(d.coverage), audit: 'true' };
+        expect(ciOk.planProblems(event, outputs), `${event} heavy=${heavy}`).toEqual([]);
+      }
+    }
   });
 
   it('fails on a failed, cancelled, or skipped planned job', () => {
     for (const result of ['failure', 'cancelled', 'skipped']) {
-      const verdict = ciOk.evaluate(results('pull_request', { 'coverage-shard': result }), 'pull_request');
+      const verdict = ciOk.evaluate(results('pull_request', { 'vitest-shard': result }), 'pull_request');
       expect(verdict.ok, result).toBe(false);
-      expect(verdict.failed).toEqual(['coverage-shard']);
+      expect(verdict.failed).toEqual(['vitest-shard']);
       expect(ciOk.evaluate(results('pull_request', { audit: result }), 'pull_request').ok, `audit ${result}`).toBe(false);
     }
     const r = run(results('push', { perf: 'cancelled' }), 'push');
@@ -119,7 +182,7 @@ describe('ci-ok required check', () => {
     const out = path.join(dir, 'v.json');
     const r = run(results('pull_request', {}, { heavy: 'true', audit: 'false' }), 'pull_request', { VERDICT_OUT: out, GITHUB_RUN_ID: '42', GITHUB_SHA: 'a'.repeat(40) });
     expect(r.status, r.stderr).toBe(0);
-    expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual({ schemaVersion: 1, ok: true, event: 'pull_request', runId: '42', sha: 'a'.repeat(40), tree: 'f'.repeat(40), heavy: true, audit: false });
+    expect(JSON.parse(fs.readFileSync(out, 'utf8'))).toEqual({ schemaVersion: 2, ok: true, event: 'pull_request', runId: '42', sha: 'a'.repeat(40), tree: 'f'.repeat(40), heavy: true, vitest: true, coverage: false, audit: false });
     fs.rmSync(out);
     expect(run(results('pull_request', { perf: 'failure' }), 'pull_request', { VERDICT_OUT: out }).status).toBe(1);
     expect(fs.existsSync(out)).toBe(false);
@@ -152,7 +215,9 @@ describe('PR job graph (R-7)', () => {
     for (const gone of ['lane-plan', 'feedback', 'unit', 'integration', 'visual', 'coverage-plan', 'lane-gate']) {
       expect(allJobs, gone).not.toContain(gone);
     }
-    expect([...ciOk.HEAVY].sort()).toEqual(['coverage', 'coverage-shard', 'e2e-smoke', 'perf']);
+    expect([...ciOk.HEAVY].sort()).toEqual(['e2e-smoke', 'perf']);
+    expect([...ciOk.VITEST]).toEqual(['vitest-shard', 'vitest']);
+    expect([...ciOk.COVERAGE]).toEqual(['coverage-shard', 'coverage']);
     expect(allJobs).not.toContain('scheduled-audit');
   });
 

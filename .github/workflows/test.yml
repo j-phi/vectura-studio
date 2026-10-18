@@ -12,9 +12,11 @@ on:
   workflow_dispatch:
 
 env:
-  # Single source of truth for the coverage shard count (1..32) and per-shard Vitest worker cap.
-  # The coverage-shard matrix lists 1..COVERAGE_SHARD_COUNT; tests/unit/test-shard-plan.test.js
-  # keeps the two in step.
+  # Single source of truth for the shard counts (1..32) and the per-shard Vitest worker cap.
+  # The vitest-shard matrix lists 1..VITEST_SHARD_COUNT (the uninstrumented PR gate) and the
+  # coverage-shard matrix 1..COVERAGE_SHARD_COUNT (the main/nightly coverage ratchet);
+  # tests/unit/test-shard-plan.test.js keeps each matrix in step with its count.
+  VITEST_SHARD_COUNT: '8'
   COVERAGE_SHARD_COUNT: '12'
   VECTURA_VITEST_MAX_WORKERS: '2'
 
@@ -25,10 +27,12 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # Decides what runs (scripts/ci-plan.js): the heavy graph (coverage, perf, e2e-smoke) and the
-  # path-routed Scene3D audits. Read-only GitHub lookups: a main push whose tree a green PR run
-  # already tested skips the heavy graph (R-20); the nightly skips it when a green main push ran
-  # on the same SHA in the last 24 h (R-19). Any doubt runs everything.
+  # Decides what runs (scripts/ci-plan.js): the heavy graph (perf, e2e-smoke), the Vitest roster
+  # (uninstrumented `vitest-shard` on a PR, instrumented `coverage-shard` on main and nightly,
+  # R-21) and the path-routed Scene3D audits. Read-only GitHub lookups: a main push whose tree a
+  # green PR run already tested skips the heavy graph but still runs coverage (R-20, R-21); the
+  # nightly skips everything when a green main push covered the same SHA in the last 24 h
+  # (R-19). Any doubt runs everything.
   ci-plan:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -38,6 +42,8 @@ jobs:
       pull-requests: read
     outputs:
       heavy: ${{ steps.plan.outputs.heavy }}
+      vitest: ${{ steps.plan.outputs.vitest }}
+      coverage: ${{ steps.plan.outputs.coverage }}
       audit: ${{ steps.plan.outputs.audit }}
       tree: ${{ steps.plan.outputs.tree }}
     steps:
@@ -286,12 +292,141 @@ jobs:
         run: npm run test:coverage:probe
         timeout-minutes: 5
 
-  # Each shard builds the deterministic plan itself (scripts/test-shard-plan.js: same SHA, same
-  # inventory, same weights file -> same plan hash). The merge job rebuilds it and rejects any
-  # shard whose provenance carries a different plan hash.
+  # The PR gate (R-21): the coverage roster (every Vitest file outside tests/perf, tests/audit),
+  # uninstrumented, in VITEST_SHARD_COUNT weight-balanced shards. Same plan builder, sequencer
+  # and roster checks as coverage-shard; no V8 instrumentation and no thresholds. A failed shard
+  # may be re-run alone: the merge accepts a shard from an earlier attempt of the same run.
+  vitest-shard:
+    needs: [ci-plan]
+    if: needs.ci-plan.outputs.vitest == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SHARD_INDEX: ${{ matrix.shard }}
+      VECTURA_TEST_TIMEOUT_MS: 3600000
+    steps:
+      - id: clock
+        run: echo "started_ms=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
+      # Shallow on purpose: no test reads git history (tests/unit/no-git-history-in-tests.test.js).
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - name: Start shard setup timing
+        run: echo "VECTURA_SHARD_SETUP_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - run: npm ci --no-audit --no-fund --loglevel=error
+      - name: Record shard setup timing
+        run: echo "VECTURA_SHARD_SETUP_MS=$(( $(date +%s%3N) - VECTURA_SHARD_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
+      - name: Build the exact-SHA shard plan and write same-run provenance
+        env:
+          SHARD_STARTED_MS: ${{ steps.clock.outputs.started_ms }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/shard-artifact"
+          node scripts/test-shard-plan.js --plan-out "$RUNNER_TEMP/vitest-shard-plan.json" --sha "$GITHUB_SHA" --shards "$VITEST_SHARD_COUNT"
+          echo "VECTURA_SHARD_PLAN_FILE=$RUNNER_TEMP/vitest-shard-plan.json" >> "$GITHUB_ENV"
+          node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/vitest-shard-plan.json" --metadata-out "$RUNNER_TEMP/shard-artifact/metadata.json" \
+            --shard "$SHARD_INDEX" --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --started-ms "$SHARD_STARTED_MS"
+      - name: Run one uninstrumented Vitest shard
+        run: |
+          set -o pipefail
+          echo "VECTURA_SHARD_STARTED_MS=$(date +%s%3N)" >> "$GITHUB_ENV"
+          npm run test:vitest -- run --config vitest.coverage-shard.config.mjs --shard="$SHARD_INDEX/$VITEST_SHARD_COUNT" \
+            --reporter=json --outputFile.json="$RUNNER_TEMP/shard-artifact/results.json" 2>&1 | tee "$RUNNER_TEMP/shard-console.log"
+      - name: Verify exact assigned roster and record shard timing
+        if: always()
+        run: |
+          test -s "$RUNNER_TEMP/shard-artifact/results.json"
+          node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/vitest-shard-plan.json" --verify-report \
+            --shard "$SHARD_INDEX" --report "$RUNNER_TEMP/shard-artifact/results.json"
+          execution_ms=$(( $(date +%s%3N) - VECTURA_SHARD_STARTED_MS ))
+          node scripts/test-profile.js --log "$RUNNER_TEMP/shard-console.log" \
+            --results "$RUNNER_TEMP/shard-artifact/results.json" --output "$RUNNER_TEMP/shard-profile.json" \
+            --runner "${{ runner.os }}-${{ runner.arch }}" --workers "$VECTURA_VITEST_MAX_WORKERS" --setup-ms "$VECTURA_SHARD_SETUP_MS" --execution-ms "$execution_ms"
+      - name: List failing tests (diagnostic only)
+        if: failure()
+        run: node scripts/vitest-failures.js "$RUNNER_TEMP/shard-artifact/results.json"
+      # overwrite: a re-run of this shard replaces the artifact of its failed attempt.
+      - name: Upload shard results and provenance
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-artifact
+          retention-days: 7
+          if-no-files-found: error
+          overwrite: true
+      - name: Upload parsed shard timing summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-shard-profile-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-profile.json
+          retention-days: 7
+          if-no-files-found: ignore
+          overwrite: true
+
+  # Merges the PR shard results without a Node install or npm ci (plain Node scripts only):
+  # rebuilds the plan, checks each shard's provenance (SHA, run, plan hash, roster), and runs
+  # `test-profile --strict` on the merged JSON (every inventoried file reported once and passed,
+  # no zero-test file, the approved skip baseline).
+  vitest:
+    if: always() && needs.ci-plan.outputs.vitest == 'true'
+    needs: [ci-plan, vitest-shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SHARDS_RESULT: ${{ needs.vitest-shard.result }}
+    steps:
+      - name: Require every Vitest shard to pass
+        run: test "$SHARDS_RESULT" = success
+      # The plan and the strict profile read only scripts/, the tests/ file list and root files
+      # (cone mode keeps them): about 22 MB instead of the 475 MB tree.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            scripts
+            tests
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: vitest-shard-[0-9]*
+          path: ${{ runner.temp }}/vitest-shard-artifacts
+          merge-multiple: false
+      - name: Rebuild the shard plan, verify each shard used it, and merge the shard results
+        run: |
+          node scripts/test-shard-plan.js --plan-out "$RUNNER_TEMP/vitest-shard-plan.json" --sha "$GITHUB_SHA" --shards "$VITEST_SHARD_COUNT"
+          node scripts/test-shard-plan.js --plan "$RUNNER_TEMP/vitest-shard-plan.json" --merge-results \
+            --artifacts "$RUNNER_TEMP/vitest-shard-artifacts" --out "$RUNNER_TEMP/merged-results.json" \
+            --sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --env-out "$GITHUB_ENV"
+      - name: Enforce merged full-scope inventory, skip baseline, and profile all file timings
+        run: |
+          test -s "$RUNNER_TEMP/merged-results.json"
+          test -n "$VITEST_CHAIN_STARTED_MS"
+          mkdir -p vitest-profile
+          node scripts/test-profile.js --strict --results "$RUNNER_TEMP/merged-results.json" --output vitest-profile/full-profile.json \
+            --runner "${{ runner.os }}-${{ runner.arch }}" --workers "$VECTURA_VITEST_MAX_WORKERS" \
+            --execution-start-ms "$VITEST_CHAIN_STARTED_MS" --execution-scope vitest-orchestration-critical-path
+      - name: Upload full-scope timing summary
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vitest-profile
+          path: vitest-profile/full-profile.json
+          retention-days: 30
+          if-no-files-found: ignore
+          overwrite: true
+
+  # The coverage ratchet (R-21): main pushes and the nightly only. Each shard builds the
+  # deterministic plan itself (scripts/test-shard-plan.js: same SHA, same inventory, same weights
+  # file -> same plan hash). The merge job rebuilds it and rejects any shard whose provenance
+  # carries a different plan hash or another attempt (V8 maps merge from one attempt only).
   coverage-shard:
     needs: [ci-plan]
-    if: needs.ci-plan.outputs.heavy == 'true'
+    if: needs.ci-plan.outputs.coverage == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -346,16 +481,7 @@ jobs:
             --runner "${{ runner.os }}-${{ runner.arch }}" --workers "$VECTURA_VITEST_MAX_WORKERS" --setup-ms "$VECTURA_SHARD_SETUP_MS" --execution-ms "$execution_ms"
       - name: List failing tests (diagnostic only)
         if: failure()
-        run: |
-          node -e '
-            const fs = require("fs"); const p = process.argv[1];
-            if (!fs.existsSync(p)) { console.log("no Vitest JSON result"); process.exit(0); }
-            const r = JSON.parse(fs.readFileSync(p, "utf8"));
-            for (const f of r.testResults || []) {
-              if (f.status === "failed" && !(f.assertionResults || []).some((a) => a.status === "failed")) console.log(`FILE FAILED ${f.name}: ${(f.message || "").slice(0, 2000)}`);
-              for (const a of f.assertionResults || []) if (a.status === "failed") console.log(`FAILED ${f.name} > ${a.fullName}\n${(a.failureMessages || []).join("\n").slice(0, 2000)}`);
-            }
-          ' "$RUNNER_TEMP/shard-results.json"
+        run: node scripts/vitest-failures.js "$RUNNER_TEMP/shard-results.json"
       - name: Upload merge-only coverage blob and provenance
         if: success()
         uses: actions/upload-artifact@v7
@@ -364,6 +490,7 @@ jobs:
           path: ${{ runner.temp }}/shard-artifact
           retention-days: 7
           if-no-files-found: error
+          overwrite: true
       - name: Upload parsed shard timing summary
         if: always()
         uses: actions/upload-artifact@v7
@@ -372,9 +499,10 @@ jobs:
           path: ${{ runner.temp }}/shard-profile.json
           retention-days: 7
           if-no-files-found: ignore
+          overwrite: true
 
   coverage:
-    if: always() && needs.ci-plan.outputs.heavy == 'true'
+    if: always() && needs.ci-plan.outputs.coverage == 'true'
     needs: [ci-plan, coverage-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -472,7 +600,7 @@ jobs:
   # scripts/ci-ok.js; tests/unit/ci-ok.test.js keeps it in sync with this file.
   ci-ok:
     if: always()
-    needs: [ci-plan, e2e-smoke, perf, coverage-shard, coverage, audit, touch-e2e-nightly, touch-audit-nightly, visual-nightly]
+    needs: [ci-plan, e2e-smoke, perf, vitest-shard, vitest, coverage-shard, coverage, audit, touch-e2e-nightly, touch-audit-nightly, visual-nightly]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

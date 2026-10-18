@@ -3,17 +3,25 @@
  * ci-plan: the first job of the Tests workflow. It decides which parts of the graph run.
  *
  * Outputs (GITHUB_OUTPUT):
- *   heavy=true|false  the coverage shards + merge, perf and e2e-smoke
- *   audit=true|false  the Scene3D proof audits (tests/audit, job `audit`)
- *   tree=<sha>        the tree of the tested commit (ci-ok records it for R-20)
+ *   heavy=true|false     perf and e2e-smoke
+ *   vitest=true|false    the uninstrumented Vitest shards + merge (`vitest-shard`, `vitest`):
+ *                        the PR gate (R-21)
+ *   coverage=true|false  the V8 coverage shards + merge (`coverage-shard`, `coverage`): the
+ *                        coverage ratchet, on main pushes and the nightly only (R-21)
+ *   audit=true|false     the Scene3D proof audits (tests/audit, job `audit`)
+ *   tree=<sha>           the tree of the tested commit (ci-ok records it for R-20)
  *   reason=<text>
  *
- * pull_request  heavy always; audit only when the diff matches scripts/audit-paths.js (R-17).
- * push (main)   skip heavy when the pushed tree equals the merge-ref tree of a PR run whose
- *               ci-ok passed (R-20). The audits are skipped only when that PR run also ran them.
- * schedule      skip heavy + audit when a push run on this same main SHA passed ci-ok in the
- *               last 24 h (R-19). The touch nightly jobs do not depend on this plan.
- * other events  no heavy graph, no audit (workflow_dispatch runs the touch nightly jobs only).
+ * pull_request  heavy + vitest always, never coverage; audit only when the diff matches
+ *               scripts/audit-paths.js (R-17).
+ * push (main)   coverage always: a PR verdict carries no coverage, and running the ratchet on
+ *               every merge makes a red-main issue (R-5) name the merge that eroded it. Skip
+ *               heavy when the pushed tree equals the merge-ref tree of a PR run whose ci-ok
+ *               passed (R-20). The audits are skipped only when that PR run also ran them.
+ * schedule      skip heavy + coverage + audit when a push run on this same main SHA passed
+ *               ci-ok and the coverage merge in the last 24 h (R-19). Otherwise heavy +
+ *               coverage + audit. The touch nightly jobs do not depend on this plan.
+ * other events  nothing (workflow_dispatch runs the nightly-only jobs only).
  *
  * Any doubt (API error, missing artifact, unknown diff) runs everything.
  * GitHub lookups are read-only (GITHUB_TOKEN with actions: read, pull-requests: read).
@@ -35,26 +43,36 @@ const CI_SELF = /^(\.github\/|scripts\/(ci-plan|ci-ok|audit-paths)\.js$)/;
 
 const RUN_ALL = (reason) => ({ heavy: true, audit: true, reason });
 
+// The Vitest roster runs once per run: uninstrumented on a PR (the gate), instrumented on a
+// main push and on the nightly (the ratchet). A main push always runs coverage, also when the
+// rest of its graph was deduplicated against a PR verdict (the verdict has no coverage).
+function vitestMode(event, decision) {
+  if (event === 'pull_request') return { ...decision, vitest: decision.heavy, coverage: false };
+  if (event === 'push') return { ...decision, vitest: false, coverage: true };
+  return { ...decision, vitest: false, coverage: decision.heavy };
+}
+
 // R-20. `candidates`: [{ runId, verdict }] from PR runs that closed with conclusion success.
 // A candidate counts only when its verdict says ci-ok passed on a pull_request run of exactly
-// this tree, and that the heavy graph ran there.
+// this tree, and that the heavy graph and the uninstrumented Vitest roster ran there.
 function decidePush({ headTree, candidates }) {
   if (!/^[0-9a-f]{40}$/.test(headTree || '')) return RUN_ALL('unknown head tree');
   for (const { runId, verdict } of candidates || []) {
-    if (!verdict || verdict.schemaVersion !== 1 || verdict.ok !== true || verdict.event !== 'pull_request') continue;
-    if (String(verdict.runId) !== String(runId) || verdict.tree !== headTree || verdict.heavy !== true) continue;
+    if (!verdict || verdict.schemaVersion !== 2 || verdict.ok !== true || verdict.event !== 'pull_request') continue;
+    if (String(verdict.runId) !== String(runId) || verdict.tree !== headTree || verdict.heavy !== true || verdict.vitest !== true) continue;
     const audit = verdict.audit !== true;
     return { heavy: false, audit, reason: `tree ${headTree} passed ci-ok in PR run ${runId}${audit ? '; that run skipped the audits, so they run here' : ''}` };
   }
   return RUN_ALL('no green PR run tested this tree');
 }
 
-// R-19. `pushRuns`: [{ id, createdAt, ciOk }] push runs on this exact SHA.
+// R-19. `pushRuns`: [{ id, createdAt, ciOk, coverageOk }] push runs on this exact SHA. A skip
+// needs the coverage merge of that run to have passed too (the nightly then owes no ratchet).
 function decideSchedule({ now, pushRuns }) {
   for (const run of pushRuns || []) {
     const created = Date.parse(run.createdAt);
-    if (run.ciOk === true && Number.isFinite(created) && now - created >= 0 && now - created < DAY_MS) {
-      return { heavy: false, audit: false, reason: `push run ${run.id} on this SHA passed ci-ok at ${run.createdAt}` };
+    if (run.ciOk === true && run.coverageOk === true && Number.isFinite(created) && now - created >= 0 && now - created < DAY_MS) {
+      return { heavy: false, audit: false, reason: `push run ${run.id} on this SHA passed ci-ok and coverage at ${run.createdAt}` };
     }
   }
   return RUN_ALL('no green push run on this SHA in the last 24 h');
@@ -98,8 +116,8 @@ function schedulePushRuns({ gh, repo, sha }) {
   const runs = ghJson(gh, `repos/${repo}/actions/workflows/${WORKFLOW_FILE}/runs?event=push&branch=main&head_sha=${sha}&per_page=10`).workflow_runs || [];
   return runs.filter((r) => r.status === 'completed').slice(0, 5).map((run) => {
     const jobs = ghJson(gh, `repos/${repo}/actions/runs/${run.id}/jobs?per_page=100`).jobs || [];
-    const ciOk = jobs.find((job) => job.name === 'ci-ok');
-    return { id: run.id, createdAt: run.created_at, ciOk: Boolean(ciOk && ciOk.conclusion === 'success') };
+    const passed = (name) => jobs.some((job) => job.name === name && job.conclusion === 'success');
+    return { id: run.id, createdAt: run.created_at, ciOk: passed('ci-ok'), coverageOk: passed('coverage') };
   });
 }
 
@@ -107,7 +125,7 @@ function plan({ env = process.env, gh, git, unzip = defaultUnzip, now = Date.now
   const event = env.EVENT_NAME || env.GITHUB_EVENT_NAME || '';
   let tree = '';
   try { tree = git(['rev-parse', 'HEAD^{tree}']).toString('utf8').trim(); } catch { tree = ''; }
-  const out = (decision) => ({ ...decision, tree });
+  const out = (decision) => ({ ...vitestMode(event, decision), tree });
   try {
     if (event === 'pull_request') {
       const audit = auditPaths.decide(auditPaths.changedFiles(env.BASE_SHA, 'HEAD'));
@@ -136,9 +154,9 @@ if (require.main === module) {
   const gh = (args) => execFileSync('gh', args, { stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
   const git = (args) => execFileSync('git', args, { stdio: ['ignore', 'pipe', 'ignore'] });
   const result = plan({ gh, git });
-  const lines = [`heavy=${result.heavy}`, `audit=${result.audit}`, `tree=${result.tree}`, `reason=${result.reason.replace(/\n/g, ' ')}`];
+  const lines = [`heavy=${result.heavy}`, `vitest=${result.vitest}`, `coverage=${result.coverage}`, `audit=${result.audit}`, `tree=${result.tree}`, `reason=${result.reason.replace(/\n/g, ' ')}`];
   if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${lines.join('\n')}\n`);
   console.log(lines.join('\n'));
 }
 
-module.exports = { CI_SELF, WORKFLOW_FILE, VERDICT_ARTIFACT, VERDICT_FILE, decidePush, decideSchedule, plan, readVerdict };
+module.exports = { CI_SELF, WORKFLOW_FILE, VERDICT_ARTIFACT, VERDICT_FILE, decidePush, decideSchedule, plan, readVerdict, vitestMode };
