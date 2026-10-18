@@ -1,0 +1,8 @@
+{
+  "arm64": {
+    "[sun] receiver fills md5": "b67a5a5b237de712d4ff64a083fd5823"
+  },
+  "x64": {
+    "[sun] receiver fills md5": "b67a5a5b237de712d4ff64a083fd5823"
+  }
+}

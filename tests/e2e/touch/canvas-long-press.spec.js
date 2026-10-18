@@ -101,4 +101,37 @@ test.describe('TUX-034 canvas long-press', () => {
     expect(await page.locator(MENU).count()).toBe(0);
     await touch.touchPhase(page, 'end', [{ ...e, id: 0 }]);
   });
+
+  test('a second finger during the hold cancels it and the pinch zooms', async ({ page }, testInfo) => {
+    test.skip(!/touch|webkit/.test(testInfo.project.name), 'touch projects only');
+    const s = await setupDirectPick(page);
+    await page.evaluate(() => { window.app.renderer.setTool('select'); window.__holdEv = []; ['touchhold:cancel', 'touchhold:fire'].forEach((t) => document.addEventListener(t, (e) => window.__holdEv.push([t, e.detail && e.detail.reason]))); });
+    const z0 = await page.evaluate(() => window.app.renderer.scale);
+    const a = { x: s.x, y: s.y, id: 0 };
+    const b = { x: s.x + 40, y: s.y + 10, id: 1 };
+    await touch.touchPhase(page, 'start', [a]);
+    await page.waitForTimeout(120);
+    await touch.touchPhase(page, 'start', [a, b]);
+    for (let i = 1; i <= 8; i += 1) await touch.touchPhase(page, 'move', [a, { ...b, x: b.x + i * 12 }]);
+    await touch.touchPhase(page, 'end', [a, { ...b, x: b.x + 96 }]);
+    await page.waitForTimeout(700);
+    const ev = await page.evaluate(() => window.__holdEv);
+    expect(ev.some(([t, r]) => t === 'touchhold:cancel' && r === 'second-pointer'), JSON.stringify(ev)).toBe(true);
+    expect(ev.some(([t]) => t === 'touchhold:fire')).toBe(false);
+    expect(await page.locator('.canvas-ctx-menu').count(), 'no menu opened').toBe(0);
+    expect(await page.evaluate(() => window.app.renderer.scale), 'the pinch zoomed').not.toBe(z0);
+  });
+
+  test('the canvas hold pops the ring when it fires', async ({ page }, testInfo) => {
+    test.skip(!/touch|webkit/.test(testInfo.project.name), 'touch projects only');
+    const s = await setupDirectPick(page);
+    await page.evaluate(() => {
+      window.app.renderer.setTool('select');
+      window.__pop = null;
+      document.addEventListener('touchhold:fire', () => { window.__pop = !!document.querySelector('.touch-hold-ring.touch-hold-pop'); });
+    });
+    await touch.touchPhase(page, 'start', [{ x: s.x, y: s.y, id: 0 }]);
+    await expect.poll(() => page.evaluate(() => window.__pop), { timeout: 2500 }).toBe(true);
+    await touch.touchPhase(page, 'end', [{ x: s.x, y: s.y, id: 0 }]);
+  });
 });

@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('./helpers/evidence');
 const { test, expect } = require('@playwright/test');
 
 /*
@@ -180,7 +181,7 @@ test.describe('TUX-015 desktop parity', () => {
     expect([m.tw, m.th]).toEqual([24, 22]);
     expect(m.dl).toBeGreaterThanOrEqual(m.rr);
     expect(Math.abs(m.dt - Math.max(8, Math.min(m.vh - m.dh - 8, m.rt)))).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: require('path').join(__dirname, '../..', 'docs/touch-audit/evidence/after/TUX-015/desktop-1600x1000.png') });
+    await shoot(page, { path: evidenceDir('TUX-015/desktop-1600x1000.png') });
   });
 });
 

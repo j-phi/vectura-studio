@@ -13,6 +13,9 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { pathSignature } = require('../helpers/path-signature');
+const { goldenValues } = require('../helpers/golden-values');
+
+const golden = goldenValues('petalis-whorl-layout');
 
 const bounds = { width: 320, height: 220, m: 20, dW: 280, dH: 180, truncate: true };
 const CENTER = { x: bounds.width / 2, y: bounds.height / 2 };
@@ -141,7 +144,7 @@ describe('Petalis Whorl layout mode', () => {
     // layout change left spiral byte-identical to main; re-captured at v1.1.82
     // when the petal-shape model was rewritten (which intentionally changes ALL
     // petal geometry, both modes). Guards spiral packing against future drift.
-    const SPIRAL_ORACLE = '5e9b98dac90c8128fcef09837fb76718279779261a9d8df6277911bc73aa6ff9';
+    // The oracle lives in tests/baselines/golden-values/petalis-whorl-layout.json.
     const spiralParams = {
       seed: 4242, posX: 0, posY: 0, scaleX: 1, scaleY: 1, rotation: 0, smoothing: 0, simplify: 0,
       layoutMode: 'spiral',
@@ -158,7 +161,7 @@ describe('Petalis Whorl layout mode', () => {
       centerType: 'disk', centerRadius: 6, centerDensity: 12,
     };
     const out = algo.generate(spiralParams, rng(4242), noise(4242), bounds);
-    expect(pathSignature(out)).toBe(SPIRAL_ORACLE);
+    golden.expect('spiral oracle', pathSignature(out));
   });
 
   test('8 — whorl mode is deterministic', () => {

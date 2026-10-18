@@ -50,32 +50,19 @@
  * Unit-D-polish suites already use for the SAME `buildFaceFootprint`
  * mechanism (directional-light case).
  *
- * RED proof (this lane's WIP HEAD, before the one-line call-site swap):
- *   VECTURA_PRE_W30B=1 npx vitest run tests/unit/scene3d-shadow-footprint-wiring.test.js
+ * RED proof (this lane's WIP HEAD 1e681432, before the one-line call-site swap):
+ * probe/control ratio 1.01 there. Recorded in the fix commit (R-18 retired the
+ * env-gated pre-fix switch).
  */
-const { execFileSync } = require('child_process');
-const path = require('path');
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
+const { goldenValues } = require('../helpers/golden-values');
 
-const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
-// This lane's WIP HEAD at the time this unit started (U5b-2/3's checkpoint
-// commit) — the tree `buildFaceFootprint` still unconditionally used the
-// parallel projector in, i.e. the correct "before W-30b" pin.
-const BASE_SHA = '1e681432';
-const preW30bRuntimeOptions = makeMultiFilePreShaRuntimeOptions(BASE_SHA, 'VECTURA_PRE_W30B', [SCENE3D_REL]);
-
-let cachedPreFixSource = null;
-const getPreFixScene3dSource = () => {
-  if (cachedPreFixSource) return cachedPreFixSource;
-  const rootDir = path.resolve(__dirname, '../..');
-  cachedPreFixSource = execFileSync('git', ['show', `${BASE_SHA}:${SCENE3D_REL}`], {
-    cwd: rootDir,
-    maxBuffer: 1024 * 1024 * 64,
-  }).toString('utf8');
-  return cachedPreFixSource;
-};
+// R-18 (D-4): the directional-light guard used to load the pre-fix tree
+// (`git show 1e681432:src/core/algorithms/scene3d.js`) as a second runtime.
+// It now reads a committed md5 golden, generated from the tree that matched
+// 1e681432 byte for byte (tests/baselines/golden-values/).
+const golden = goldenValues('scene3d-shadow-footprint-wiring');
 
 const CAMERA = { projection: 'orthographic', yaw: 20, pitch: 45, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
 const BOUNDS = { width: 420, height: 420, m: 10, dW: 400, dH: 400, penWidth: 0.3, truncate: 4 };
@@ -214,8 +201,7 @@ describe('W-30b — buildFaceFootprint wired to the per-light-type projector (cu
     const HALF = 12;
     const probeD = inkInWindow(receiverFills, toScreen(PROBE), HALF) / ((HALF * 2) ** 2);
     const controlD = inkInWindow(receiverFills, toScreen(CONTROL), HALF) / ((HALF * 2) ** 2);
-    // Measured 3.03 on the fixed tree (RED-proof pin measures 1.01 — see the
-    // pinned describe block below).
+    // Measured 3.03 on the fixed tree (RED at 1e681432 measured 1.01).
     expect(probeD / (controlD || 1e-9)).toBeGreaterThanOrEqual(1.5);
   });
 
@@ -226,64 +212,23 @@ describe('W-30b — buildFaceFootprint wired to the per-light-type projector (cu
 });
 
 // ── Directional-light byte-identity guard ───────────────────────────────
-// Compares the CURRENT (fixed) tree's full `generate()` output against the
-// pinned pre-fix tree's output for a scene whose ONLY light is directional —
+// A scene whose ONLY light is directional must keep its exact pre-fix output:
 // `projectLightToPlane`'s `positional` branch is false for `type:
 // 'directional'`, so it falls straight through to the exact same
 // `projectAlongDirToPlane(P, fallbackDir, ...)` call the old code made
-// directly. Byte-identical proves the fix adds a new path without touching
-// the old one.
+// directly. The golden holds the pre-fix (1e681432) md5, which proves the fix
+// adds a new path without touching the old one.
 describe('W-30b — directional-light scene stays BYTE-IDENTICAL across the fix', () => {
-  let runtimeOld;
-  let runtimeNew;
-  let Vold;
-  let Vnew;
-
-  beforeAll(async () => {
-    runtimeOld = await loadVecturaRuntime({ scriptOverrides: { [SCENE3D_REL]: getPreFixScene3dSource() } });
-    runtimeNew = await loadVecturaRuntime();
-    Vold = runtimeOld.window.Vectura;
-    Vnew = runtimeNew.window.Vectura;
-  });
-  afterAll(() => { runtimeOld.cleanup(); runtimeNew.cleanup(); });
-
-  test('directional-light receiver fills are byte-identical old vs new (md5 of the serialized paths)', () => {
-    const pathsOld = runScene(Vold, SUN);
-    const pathsNew = runScene(Vnew, SUN);
-    const md5 = (v) => crypto.createHash('md5').update(JSON.stringify(v)).digest('hex');
-    const oldHash = md5(pathsOld);
-    const newHash = md5(pathsNew);
-    expect(pathsOld.length).toBeGreaterThan(0);
-    expect(newHash).toBe(oldHash);
-  });
-});
-
-// ── RED-proof pin (BASE_SHA = 1e681432, this lane's WIP HEAD immediately
-// before the W-30b call-site swap). Pinned `scene3d.js` still unconditionally
-// calls `Shadows.projectAlongDirToPlane(..., lightDir, ...)` regardless of
-// `light.type`, so the point light's TRUE position is never consulted — the
-// probe/control ink-density ratio below must FAIL against it.
-//
-//   VECTURA_PRE_W30B=1 npx vitest run tests/unit/scene3d-shadow-footprint-wiring.test.js
-describe('W-30b RED-proof pin (1e681432) — call-site wiring must be absent', () => {
   let runtime;
   let V;
 
-  beforeAll(async () => { runtime = await loadVecturaRuntime(preW30bRuntimeOptions()); V = runtime.window.Vectura; });
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); V = runtime.window.Vectura; });
   afterAll(() => runtime.cleanup());
 
-  test('same "probe denser than control" assertion as the GREEN test must FAIL here (point light)', () => {
-    // UNCONDITIONAL — the exact same assertion as the GREEN test above. Run
-    // without VECTURA_PRE_W30B this loads the CURRENT (fixed) tree and
-    // passes trivially; run with VECTURA_PRE_W30B=1 it loads the pinned
-    // 1e681432 `scene3d.js` (call site still always parallel/default-dir)
-    // and this assertion FAILS — proof the wiring bug was real and this fix
-    // closes it.
-    const receiverFills = runScene(V, POINT_LIGHT);
-    const toScreen = (pt) => V.Scene3D.Scene.projectWorldPoint({ x: pt.x, y: 0, z: pt.z }, CAMERA, BOUNDS);
-    const HALF = 12;
-    const probeD = inkInWindow(receiverFills, toScreen(PROBE), HALF) / ((HALF * 2) ** 2);
-    const controlD = inkInWindow(receiverFills, toScreen(CONTROL), HALF) / ((HALF * 2) ** 2);
-    expect(probeD / (controlD || 1e-9)).toBeGreaterThanOrEqual(1.5);
+  test('directional-light receiver fills match the pre-fix md5 golden', () => {
+    const paths = runScene(V, SUN);
+    const md5 = (val) => crypto.createHash('md5').update(JSON.stringify(val)).digest('hex');
+    expect(paths.length).toBeGreaterThan(0);
+    golden.expect('directional receiver fills md5', md5(paths));
   });
 });

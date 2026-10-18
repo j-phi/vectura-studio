@@ -30,24 +30,23 @@
  * average and is independent of `combinedIntensity` (the code under test) —
  * it only reuses `pointInShadow`, an existing primitive F1 does not touch.
  *
- * RED proof (this lane's HEAD at the W-30c briefing, 90f3411f, before F1):
+ * RED proof (this lane's HEAD at the W-30c briefing, 90f3411f, before F1),
+ * recorded in the fix commit (R-18 retired the env-gated pre-fix switch).
  *
- *   VECTURA_PRE_W30C_A=1 npx vitest run tests/unit/scene3d-area-light-shadow-softening.test.js
- *
- * Today's (pre-fix) numbers, measured in the planning export and reproduced
- * by the pinned describe block below: the profile takes exactly 2 distinct
+ * Pre-fix numbers, measured in the planning export: the profile takes exactly 2 distinct
  * values (0 and ~0.5645) across the whole march (assertion A), max
  * |current - gated| = 0.3985 at x=136 (assertion B), and the strictly-between-
  * 2%-and-98% penumbra band has width 0mm (assertion C) — the reference gives
  * ~32mm.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
+const { goldenValues } = require('../helpers/golden-values');
 
-const REGIONS_REL = 'src/core/scene3d/regions.js';
-// fill-collapse-2's HEAD at the W-30c briefing (U7's own fix, before F1).
-const BASE_SHA = '90f3411f';
-const preW30cRuntimeOptions = makeMultiFilePreShaRuntimeOptions(BASE_SHA, 'VECTURA_PRE_W30C_A', [REGIONS_REL]);
+// R-18 (D-4): guard D used to load the pre-F1 tree (`git show
+// 90f3411f:src/core/scene3d/regions.js`) as a second runtime. It now reads a
+// committed golden of the point-light march, generated from the tree that
+// matched 90f3411f bit for bit (tests/baselines/golden-values/).
+const golden = goldenValues('scene3d-area-light-shadow-softening');
 
 const v = (x, y, z) => ({ x, y, z });
 const sub = (a, b) => v(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -169,83 +168,25 @@ describe('W-30c F1/O2 — area-light penumbra survives partial occlusion (curren
 // ── Guard D — point/spot lights structurally untouched ─────────────────────
 // F1's edit lives entirely inside the `type === 'area'` branch; the shared
 // occlusion gate line simply moved one `if` block down, so a `point` light at
-// the SAME position must produce byte-identical `combinedIntensity` output
-// before and after the fix.
-describe('W-30c F1 guard D — point-light march is bit-identical old vs new tree', () => {
-  let runtimeOld;
-  let runtimeNew;
-  let Vold;
-  let Vnew;
-
-  beforeAll(async () => {
-    const { execFileSync } = require('child_process');
-    const path = require('path');
-    const rootDir = path.resolve(__dirname, '../..');
-    const oldSrc = execFileSync('git', ['show', `${BASE_SHA}:${REGIONS_REL}`], {
-      cwd: rootDir, maxBuffer: 1024 * 1024 * 64,
-    }).toString('utf8');
-    runtimeOld = await loadVecturaRuntime({ scriptOverrides: { [REGIONS_REL]: oldSrc } });
-    runtimeNew = await loadVecturaRuntime();
-    Vold = runtimeOld.window.Vectura;
-    Vnew = runtimeNew.window.Vectura;
-  });
-  afterAll(() => { runtimeOld.cleanup(); runtimeNew.cleanup(); });
-
-  test('point light at LIGHT.position — bit-identical march old vs new', () => {
-    const POINT_LIGHT = { id: 'p1', type: 'point', position: LIGHT.position, intensity: 1 };
-    const occOld = buildBoxOccluders(Vold);
-    const occNew = buildBoxOccluders(Vnew);
-    const shadowFnOld = (wp, lt) => Vold.Scene3D.ShadowReceive.pointInShadow(wp, lt, occOld, { excludeObjectId: 'plane' });
-    const shadowFnNew = (wp, lt) => Vnew.Scene3D.ShadowReceive.pointInShadow(wp, lt, occNew, { excludeObjectId: 'plane' });
-    let sawDifference = false;
-    let sawOccluded = false;
-    for (let x = 20; x <= 150; x += 2) {
-      const P = v(x, 0, 0);
-      const Iold = Vold.Scene3D.Regions.combinedIntensity(NORMAL, P, [POINT_LIGHT], shadowFnOld);
-      const Inew = Vnew.Scene3D.Regions.combinedIntensity(NORMAL, P, [POINT_LIGHT], shadowFnNew);
-      if (Iold === 0) sawOccluded = true;
-      if (Iold !== Inew) sawDifference = true;
-    }
-    expect(sawOccluded).toBe(true); // the march genuinely crosses the point light's own hard shadow
-    expect(sawDifference).toBe(false);
-  });
-});
-
-// ── RED-proof pin (BASE_SHA = 90f3411f, this lane's HEAD at the W-30c
-// briefing, before F1). The gate still sits ABOVE the area branch there, so
-// the SAME assertions as the GREEN describe block above must FAIL against
-// it.
-//
-//   VECTURA_PRE_W30C_A=1 npx vitest run tests/unit/scene3d-area-light-shadow-softening.test.js
-describe('W-30c F1 RED-proof pin (90f3411f) — the per-sub-sample gate must be absent', () => {
+// the SAME position must keep its exact pre-fix `combinedIntensity` march.
+// The golden holds that march (pre-fix 90f3411f values).
+describe('W-30c F1 guard D — point-light march is bit-identical to the pre-fix golden', () => {
   let runtime;
   let V;
-  let rows;
 
-  beforeAll(async () => {
-    runtime = await loadVecturaRuntime(preW30cRuntimeOptions());
-    V = runtime.window.Vectura;
-    rows = marchProfile(V);
-  });
+  beforeAll(async () => { runtime = await loadVecturaRuntime(); V = runtime.window.Vectura; });
   afterAll(() => runtime.cleanup());
 
-  test('same assertion A as the GREEN test — must FAIL on the pre-fix tree', () => {
-    const distinct = new Set(rows.map((r) => r.current.toFixed(6)));
-    expect(distinct.size).toBeGreaterThanOrEqual(4);
-  });
-
-  test('same assertion B as the GREEN test — must FAIL on the pre-fix tree', () => {
-    const maxErr = Math.max(...rows.map((r) => Math.abs(r.current - r.gated)));
-    expect(maxErr).toBeLessThanOrEqual(0.05);
-  });
-
-  test('same assertion C as the GREEN test — must FAIL on the pre-fix tree', () => {
-    const inBand = rows.filter((r) => {
-      const lo = 0.02 * r.unshadowed;
-      const hi = 0.98 * r.unshadowed;
-      return r.current > lo && r.current < hi;
-    });
-    const width = inBand.length ? (Math.max(...inBand.map((r) => r.x)) - Math.min(...inBand.map((r) => r.x))) : 0;
-    expect(width).toBeGreaterThanOrEqual(20);
+  test('point light at LIGHT.position — march matches the pre-fix golden', () => {
+    const POINT_LIGHT = { id: 'p1', type: 'point', position: LIGHT.position, intensity: 1 };
+    const occ = buildBoxOccluders(V);
+    const shadowFn = (wp, lt) => V.Scene3D.ShadowReceive.pointInShadow(wp, lt, occ, { excludeObjectId: 'plane' });
+    const march = [];
+    for (let x = 20; x <= 150; x += 2) {
+      march.push(V.Scene3D.Regions.combinedIntensity(NORMAL, v(x, 0, 0), [POINT_LIGHT], shadowFn));
+    }
+    expect(march.some((I) => I === 0)).toBe(true); // the march genuinely crosses the point light's own hard shadow
+    expect(march.some((I) => I > 0)).toBe(true);
+    golden.expect('guard D point-light march x=20..150 step 2', march);
   });
 });

@@ -1,0 +1,24 @@
+name: Set up Playwright browsers
+description: >-
+  Installs Playwright browsers with a cache keyed on the installed Playwright version
+  (run after npm ci). The OS packages (--with-deps) install on every run; only the
+  browser download is cached.
+inputs:
+  browsers:
+    description: Space-separated browser names, for example "chromium webkit".
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: version
+      shell: bash
+      run: echo "playwright=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v6
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.playwright }}-${{ inputs.browsers }}
+    - shell: bash
+      env:
+        BROWSERS: ${{ inputs.browsers }}
+      # Word splitting on BROWSERS is intended (one argument per browser).
+      run: npx playwright install --with-deps $BROWSERS

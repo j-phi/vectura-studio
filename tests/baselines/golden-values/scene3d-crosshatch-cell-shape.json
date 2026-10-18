@@ -1,0 +1,8 @@
+{
+  "arm64": {
+    "torus d=220 cam=a col2 aspect (3dp)": 0.926
+  },
+  "x64": {
+    "torus d=220 cam=a col2 aspect (3dp)": 0.937
+  }
+}

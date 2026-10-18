@@ -1,4 +1,7 @@
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
+
+const golden = goldenValues('scene3d-crosshatch-cell-shape');
 
 /*
  * W-31 — USER (Jay, verbatim, on `user-reports/13-w26-judge-montage.webp`):
@@ -356,12 +359,10 @@ describe('W-31 — crosshatch CELL SHAPE, Rank-3 non-regression ceiling (no sour
             // of an odd-length sample — a single sorted element, not an
             // average) is measurably PLATFORM-SPLIT, not a stale pin. Same
             // commit (a6879837), same test, same assertion:
-            //   macOS arm64 (this worktree, `node -v` v20.20.2): 0.9262980105396276
+            //   macOS arm64 (`node -v` v20.20.2): 0.9262980105396276
             //   ubuntu-latest x64 (GH Actions node-version: 20): 0.937078841874498
             //     — reproduced bit-for-bit identical across TWO separate real
-            //     CI runs (35451981431 R4-fix's own run, 35454205820 main's
-            //     later run; ci.log both report
-            //     "expected 0.937078841874498 to be close to 0.9263" verbatim)
+            //     CI runs (35451981431, 35454205820).
             // The other 4 columns in this same record (n=6/32/29/6) do NOT
             // diverge between platforms — only this one, at the boundary
             // sample count where a sub-ULP difference in the upstream
@@ -369,18 +370,16 @@ describe('W-31 — crosshatch CELL SHAPE, Rank-3 non-regression ceiling (no sour
             // last-bit results are not guaranteed identical across CPU
             // architectures) can flip which of two near-tied samples the
             // sorted median lands on, swinging the OUTPUT by ~1.2% even
-            // though every INPUT differs by ~1e-13. Anchored to BOTH
-            // independently-measured platform values (tight ±0.0005 each,
-            // not a blanket widen) rather than one — a real regression that
-            // moved the true median would still fail against both.
-            // `## Bars changed` in the commit body.
-            const PLATFORM_PINS = (rec.prim === 'torus' && rec.d === 220 && rec.cam === 'a' && i === 2)
-              ? [0.9262980105396276, 0.937078841874498]
-              : [col.aspect];
-            const nearest = PLATFORM_PINS.reduce((a, b) => (
-              Math.abs(stats.colMedians[i].aspect - a) <= Math.abs(stats.colMedians[i].aspect - b) ? a : b
-            ));
-            expect(stats.colMedians[i].aspect).toBeCloseTo(nearest, PLATFORM_PINS.length > 1 ? 3 : 2);
+            // though every INPUT differs by ~1e-13. It is a per-arch golden
+            // in tests/baselines/golden-values/scene3d-crosshatch-cell-shape.json,
+            // pinned to 3 decimals (the old toBeCloseTo(.., 3) precision):
+            // arm64 0.926, x64 0.937. A real regression that moves the true
+            // median still fails on both architectures.
+            if (rec.prim === 'torus' && rec.d === 220 && rec.cam === 'a' && i === 2) {
+              golden.expect('torus d=220 cam=a col2 aspect (3dp)', Math.round(stats.colMedians[i].aspect * 1000) / 1000);
+            } else {
+              expect(stats.colMedians[i].aspect).toBeCloseTo(col.aspect, 2);
+            }
           }
         });
       });

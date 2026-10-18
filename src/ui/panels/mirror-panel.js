@@ -1939,6 +1939,7 @@
         // wide, so the generic RangeTouch gain would turn 40 px into ~150 deg). The generic
         // controller is switched off for this input; mouse stays native (never intercepted here).
         // Direction lock matches TUX-043: past 8 px, mostly vertical = scroll (value untouched).
+        // touch-alt: TUX-043 via touchDialValue - this row's own finger drag (sg/sEnd below) replaces RangeTouch
         slider.setAttribute('data-range-touch', 'off');
         let sg = null;
         let sHeld = null; // { value, until } while a finger gesture (and its native tail) is guarded

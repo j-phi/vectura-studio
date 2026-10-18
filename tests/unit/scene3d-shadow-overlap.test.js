@@ -1,6 +1,5 @@
-const fs = require('fs');
-const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
 const F = require('../fixtures/scene3d-shadow-overlap-fixture');
 const crypto = require('crypto');
 
@@ -25,9 +24,8 @@ const crypto = require('crypto');
  *      against a digest captured on the parent commit).
  */
 
-const BASELINE = JSON.parse(fs.readFileSync(
-  path.join(__dirname, '../fixtures/scene3d-shadow-overlap-baseline.json'), 'utf8'
-));
+// The parent-commit digests: tests/baselines/golden-values/scene3d-shadow-overlap.json.
+const golden = goldenValues('scene3d-shadow-overlap');
 
 const digest = (paths) => crypto.createHash('sha256').update(JSON.stringify(paths)).digest('hex');
 
@@ -106,13 +104,11 @@ describe('Scene3D.Shadows — overlapping shadows darken', () => {
 
   test('a single caster is byte-identical to the pre-change renderer', () => {
     const paths = F.runScene(V, 'single');
-    expect(paths.length).toBe(BASELINE.single.paths);
-    expect(digest(paths)).toBe(BASELINE.single.sha256);
+    golden.expect('single', { paths: paths.length, sha256: digest(paths) });
   });
 
   test('two casters whose shadows do NOT overlap are byte-identical too', () => {
     const paths = F.runScene(V, 'apart');
-    expect(paths.length).toBe(BASELINE.apart.paths);
-    expect(digest(paths)).toBe(BASELINE.apart.sha256);
+    golden.expect('apart', { paths: paths.length, sha256: digest(paths) });
   });
 });

@@ -53,6 +53,20 @@ describe('saved Vitest timing profile', () => {
     expect(ownerOf('tests/process/lifecycle.test.cjs')).toBe('other');
   });
 
+  it('inventories the coverage roster only: tests/perf and tests/audit run in their own jobs', () => {
+    // Without this, the merge job's --strict check reports every perf/audit file as missing.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vectura-test-profile-roster-'));
+    roots.push(root);
+    for (const file of ['unit/a.test.js', 'perf/budget.test.js', 'audit/proof.test.js', 'helpers/audit/x.test.js']) {
+      const fullPath = path.join(root, 'tests', file);
+      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      fs.writeFileSync(fullPath, '');
+    }
+    const profile = buildProfile({ root, sha: 'a'.repeat(40), logText: '✓ tests/unit/a.test.js (1 test) 2s\n✓ tests/helpers/audit/x.test.js (1 test) 1s\n' });
+    expect(profile.inventory.total).toBe(2);
+    expect(profile.inventory.missing).toEqual([]);
+  });
+
   it('retains per-file timing weights from JSON reports when merge output has no console timings', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vectura-profile-json-'));
     roots.push(root);
@@ -108,7 +122,7 @@ describe('saved Vitest timing profile', () => {
   });
 
   it('pins the current 57-skip baseline and the known five-test full skip', () => {
-    const policy = JSON.parse(fs.readFileSync(path.resolve('scripts/test-lanes.json'), 'utf8')).ciRoster.testInventory;
+    const policy = JSON.parse(fs.readFileSync(path.resolve('scripts/test-lanes.json'), 'utf8')).testInventory;
     const inventory = ['tests/unit/other.test.js', 'tests/unit/scene3d-cross-frame.test.js'];
     const skipped = (count) => Array.from({ length: count }, () => ({ status: 'skipped' }));
     const results = {

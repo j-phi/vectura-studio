@@ -61,7 +61,9 @@ function hitAreaInPage(el, opts) {
     // TUX-041 B5: an open dropdown that does not contain the target is a transient dismiss-on-outside-tap layer, not a neighbour
     // that owns the pixels (the same rule as the Q13 backdrop). A rail button that the menu panel edge cuts is measured at its
     // own size: the size does not depend on which menu is open. The centre sample (0, 0) is never excused.
-    if ((dx || dy) && t && t.closest) {
+    // Static-guard round 3: a [data-touch-target] strip (the panel resizers) gets no such excuse. A menu pixel is not a
+    // pixel the strip owns, so a strip the menu part-covers is measured on its uncovered segment only.
+    if ((dx || dy) && t && t.closest && !el.hasAttribute('data-touch-target')) {
       const m = t.closest('.top-menu-panel.open, .menu-dropdown.open');
       if (m && !m.contains(el)) return true;
     }
@@ -235,6 +237,8 @@ function measureInPage(cfg, helpers) {
     '[role=button]', '[role=slider]', '[role=tab]', '[role=menuitem]', '[role=menuitemradio]',
     '[role=menuitemcheckbox]', '[role=option]', '[role=checkbox]', '[role=switch]', '[role=radio]',
     '[role=combobox]', '[tabindex]:not([tabindex="-1"])', '[onclick]', '[contenteditable="true"]',
+    // A pointer-driven control with no role and no cursor:pointer (the panel resizers, aria-hidden bars) opts in by hand.
+    '[data-touch-target]',
   ].join(',');
 
   const visible = (el) => {
@@ -266,7 +270,9 @@ function measureInPage(cfg, helpers) {
     '[role=button]', '[role=slider]', '[role=tab]', '[role=menuitem]', '[role=menuitemradio]',
     '[role=menuitemcheckbox]', '[role=option]', '[role=checkbox]', '[role=switch]', '[role=radio]',
   ].join(',');
-  const cands = Array.from(set).filter(visible).filter((el) => {
+  // cfg.overlay: a dialog or window covers the workspace (the state has `overlay: true`), so the panel resizers behind it are
+  // not reachable and are not measured. Every other item is, as before.
+  const cands = Array.from(set).filter(visible).filter((el) => !(cfg.overlay && el.hasAttribute('data-touch-target'))).filter((el) => {
     if (el.matches(SEMANTIC)) return true;
     let p = el.parentElement;
     while (p) { if (set.has(p) && visible(p) && p.tagName !== 'LABEL') return false; p = p.parentElement; }
@@ -624,7 +630,26 @@ function measureInPage(cfg, helpers) {
     let ph = +r.height.toFixed(1);
     let probed = false;
     if (hitState === 'ok') {
-      const a = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx, cy });
+      // A [data-touch-target] bar (the panel resizers) is a long thin strip whose centre can sit under a neighbour control
+      // (the bottom pane toggle is centred on its resizer, and the strip has a notch there) and whose hit strip can lie to one
+      // side of the bar. Its hit area is that of its best segment: probe from the centre, then every 8 px along the bar and up to
+      // 20 px across it, and keep the origin with the largest smaller side.
+      let a = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx, cy });
+      if (el.hasAttribute('data-touch-target') && !(a.w >= 44 && a.h >= 44)) {
+        const horizontal = c.w >= c.h;
+        const half = (horizontal ? c.w : c.h) / 2;
+        const full = () => a.w >= 44 && a.h >= 44;
+        for (let d = 0; d < half && !full(); d += 8) {
+          for (const sgn of d ? [1, -1] : [1]) {
+            for (const e of [0, 12, -12, 20, -20]) {
+              const ox = horizontal ? cx + sgn * d : cx + e;
+              const oy = horizontal ? cy + e : cy + sgn * d;
+              const b = helpers.hitAreaInPage(el, { probe: 2, radius: 24, stopAt: 44, cx: ox, cy: oy });
+              if (Math.min(b.w, b.h) > Math.min(a.w, a.h)) a = b;
+            }
+          }
+        }
+      }
       pw = a.w; ph = a.h; probed = true;
     }
     // Orchestrator decision 2026-10-12 (b): a row cut by its OWN scroll container (overflow auto/scroll) is measured at its

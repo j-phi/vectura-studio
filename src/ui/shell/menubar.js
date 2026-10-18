@@ -54,6 +54,46 @@
       }
     });
     this.openTopMenuTrigger = nextTrigger || null;
+    if (nextTrigger) {
+      const openPanel = nextTrigger.parentElement?.querySelector('[data-top-menu-panel]');
+      if (openPanel) clearResizerOverlap(openPanel);
+    }
+  }
+
+  // Static-guard round 3: on touch-wide an open top menu must not PART-cover a pane resizer strip. A part-covered strip leaves
+  // a sliver under 24 px that a finger drag can hit; it resized the pane (290 -> 250) and closed the menu. A menu that covers
+  // the strip's whole width leaves nothing to hit and stays where it is. The panel hangs from its trigger (left: 0), so a
+  // part-covering panel moves sideways until its edge clears the strip: right of the left strip, left of the right strip.
+  function clearResizerOverlap(panel) {
+    panel.style.left = '';
+    panel.style.width = '';
+    panel.style.minWidth = '';
+    if (!document.body.classList.contains('touch-wide-layout')) return;
+    const pr = panel.getBoundingClientRect();
+    if (pr.width < 1) return;
+    const vw = document.documentElement.clientWidth || window.innerWidth;
+    let shift = 0;
+    for (const id of ['left-resizer', 'right-resizer']) {
+      const el = document.getElementById(id);
+      const r = el && el.getBoundingClientRect();
+      if (!r || r.width < 1 || pr.top >= r.bottom || pr.bottom <= r.top) continue;
+      const l = pr.left + shift; const rt = l + pr.width;
+      if (l > r.left && l < r.right) shift += r.right - l; // the panel's left edge lies inside the strip
+      else if (rt > r.left && rt < r.right) shift -= rt - r.left; // its right edge lies inside the strip
+    }
+    if (pr.left + shift < 0) shift = -pr.left;
+    if (pr.left + shift + pr.width > vw) shift = vw - pr.width - pr.left;
+    if (!shift) return;
+    panel.style.left = `${Math.round(shift)}px`;
+    // Shrinking from the left edge keeps the right edge where it was, so the controls to the right of the panel stay
+    // reachable. The panel keeps the shift alone when its items no longer fit the narrower width.
+    if (shift > 0) {
+      const narrow = Math.round(pr.width - shift);
+      panel.style.minWidth = `${narrow}px`;
+      panel.style.width = `${narrow}px`;
+      const tight = Array.from(panel.querySelectorAll('*')).some((c) => c.scrollWidth > c.clientWidth + 1 && getComputedStyle(c).overflow !== 'visible');
+      if (tight || panel.scrollWidth > panel.clientWidth + 1) { panel.style.minWidth = ''; panel.style.width = ''; }
+    }
   }
 
   /**

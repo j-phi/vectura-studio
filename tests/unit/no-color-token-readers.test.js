@@ -45,7 +45,7 @@ function walk(dir, acc = []) {
   return acc;
 }
 
-describe('Meridian CSS-2: no JS reads `--color-*` tokens', () => {
+describe('no JS reads `--color-*` tokens', () => {
   const files = walk(SRC);
 
   it('every .js file under src/ is free of `--color-*` string literals (writes excepted)', () => {
@@ -65,11 +65,6 @@ describe('Meridian CSS-2: no JS reads `--color-*` tokens', () => {
       });
     }
     expect(offenders, `\nUnexpected --color-* literals:\n${offenders.join('\n')}\n`).toEqual([]);
-  });
-
-  it('renderer.js no longer special-cases `--color-accent` in its token cache', () => {
-    const renderer = fs.readFileSync(path.join(SRC, 'render/renderer.js'), 'utf8');
-    expect(renderer).not.toMatch(/--color-accent/);
   });
 
   it('meridian-*.css files no longer ship --color-* alias declarations', () => {

@@ -29,19 +29,14 @@ python -m http.server
 ```bash
 npm install
 npm run hooks:install   # one-time: installs pre-commit + pre-push (test:feedback) hooks
-npm run test:ci
+npm run test:feedback   # bounded local check; CI (`ci-ok`) is the full gate
 ```
 
 Node 20.19 or newer is required for the development and test toolchain.
 
-An earlier 765-file full-coverage route took 39m40s with two workers. The approved reductions
-were later certified across 763 files in 35m22s with two workers under a four-hour whole-run
-allowance. The ordinary local attempt cap remains 30 minutes, so this decomposed certification
-does not show that an unmodified `npm run test:ci` invocation finishes within its default cap. PR #97 enabled two-shard hosted coverage with strict same-SHA inventory and the existing
-global thresholds. Its first complete main run finished required checks in 53m32s.
-The approved render-test sampling reductions and their explicit coverage trade-offs are
-recorded in [render-test reductions](docs/render-test-reductions.md). Details and current evidence: [testing guide](docs/testing.md)
-and [phase-two rollout](docs/test-suite-phase2.md).
+CI is the full gate: the required `ci-ok` check covers the whole Vitest roster, the browser smoke,
+perf and the routed Scene3D audits on every PR. Coverage, the full touch roster and pixel snapshots
+run on `main` and nightly. Details: [testing guide](docs/testing.md).
 
 > The `pre-push` hook runs `test:feedback` (bounded local feedback) before every push. A minimal browser journey runs locally; CI retains the full browser roster. Bypass with `SKIP_PREPUSH=1 git push`.
 
@@ -462,19 +457,19 @@ Click `Export SVG` to download.
 | Command | Purpose |
 |---|---|
 | `npm run test:feedback` | Bounded local feedback: critical contracts and one real browser journey |
-| `npm run test:route -- --base <sha> --head <sha> --json` | Inspect explicit risk routing; unknown changes fall back broadly |
-| `npm run test:lane -- audit` | Exhaustive rendering proofs retained outside routine feedback |
+| `npm run test:audit:proofs` | Scene3D proof audits (`tests/audit`); CI runs them when `scripts/audit-paths.js` matches |
 | `npm run test:runner` | Process cleanup and cancellation regression checks |
 | `npm run test:unit` | Deterministic unit coverage for RNG/noise, algorithms, and utility helpers |
 | `npm run test:integration` | Engine workflow, layer lifecycle, optimization pipeline, state roundtrip, export, UI bootstrap |
-| `npm run test:e2e` | Playwright smoke tests on desktop + tablet-touch Chromium |
+| `npm run test:e2e` | The whole Playwright roster (desktop, tablet, phone and the 11 touch projects) |
+| `npm run test:e2e:smoke` | The PR browser smoke: desktop projects plus a 2-project touch smoke |
 | `npm run test:e2e:touch` | Touch specs on 7 Chromium and 4 WebKit device projects (`PW_PORT` picks the dev-server port) |
 | `npm run test:e2e:touch:audit` | Touch target and layout audit against `tests/e2e/touch/target-baseline.json` (`:full` for every state) |
 | `npm run test:visual` | SVG baseline regression checks against `tests/baselines/svg` |
-| `npm run test:visual:screenshots` | Optional Playwright screenshot snapshot checks for high-risk UI shells |
+| `npm run test:visual:screenshots` | Linux pixel snapshots in the pinned Playwright image (docker); runs nightly in CI |
 | `npm run test:perf` | Stress/performance checks for generation and optimization |
-| `npm run test:ci` | Full certification: lifecycle + full Vitest coverage + browser roster + uninstrumented perf |
-| `npm run test:update` | Regenerates visual SVG baselines (review before commit) |
+| `npm run test:ci` | Optional full local pass: lifecycle + coverage + audits + browser roster + perf |
+| `npm run test:update` | Regenerates SVG goldens and this architecture's golden values (Node 20; review before commit) |
 | `npm run test:vitest -- <args>` | Vitest with any arguments, e.g. one file: `npm run test:vitest -- run tests/unit/foo.test.js` |
 | `npm run test:playwright -- <args>` | `playwright test` with any arguments, e.g. one spec |
 | `npm run test:queue:status` | Shows who holds the shared local test lock and who is waiting |
@@ -485,12 +480,12 @@ Vitest scripts clean up owned workers on completion/cancellation and enforce a
 30-minute local per-attempt deadline (three hours in CI), even if the launching wrapper dies. Use
 `VECTURA_TEST_TIMEOUT_MS` to override it; see [cleanup behavior and platform limits](docs/testing.md#vitest-process-cleanup).
 
-Acceleration policy, evidence requirements and rollout limits: [test-suite acceleration](docs/test-suite-acceleration.md). Timing targets remain unproven until measured on the current revision.
+CI graph, goldens, corpora and push-gated follow-ups: [testing guide](docs/testing.md).
 
 Vitest config: `vitest.config.mjs` · Playwright config: `playwright.config.js`
 
 Manual CI-equivalent setup:
-- `npm install`
+- `npm ci`
 - `npx playwright install --with-deps chromium`
 - `npx playwright show-trace test-results/<failing-test>/trace.zip` opens a saved Playwright trace locally after a failed smoke run
 
@@ -501,7 +496,7 @@ Manual CI-equivalent setup:
 | UI interaction behavior | `test:integration` + `test:e2e` |
 | Rendering output or baselines | `test:visual` (+ `test:perf` for heavy paths) |
 | Docs-only | Link/path sanity review only |
-| CI-gating confidence | `test:ci` |
+| Full gate | CI `ci-ok` (local `test:ci` optional) |
 
 ### Knowledge Graph (graphify)
 
@@ -664,6 +659,12 @@ CI lives in `.github/workflows/test.yml`:
 - **Help and hints.** Help has a Touch tab and a Touch toggle. Status hints use touch words after touch input. See the Touch gestures table under How to Use.
 - **iOS files.** Open `.vectura` from the Files app, save through the share sheet, and import large photos safely.
 - **Test and release gates.** Touch target audit, finger-only journeys, static touch guard and a real-device checklist. Real-device results are pending, so the release label for touch is not yet claimed. Details: `CHANGELOG.md` and `docs/touch-audit/`.
+### 1.4.18 - Test and CI overhaul
+- **One required check.** `ci-ok` gates every PR. PRs run the whole Vitest roster in 8 uninstrumented shards, a 4-leg browser smoke, perf and the routed Scene3D audits. Coverage, the full touch roster and linux pixel snapshots run on `main` and nightly, and a red run opens an issue.
+- **New canaries.** Every bundled preset, 13 legacy saved files, every algorithm in a real browser, SVG goldens for 11 more algorithms and 35 canonical 3D scenes. They found 6 product defects (PRH-029 to PRH-034), logged in `plans.md`.
+- **Leaner suite.** Tests no longer read git history; golden values regenerate with `npm run test:update`. Duplicate Scene3D tests were cut with mutation proofs.
+- **Timing.** PR wall time is projected at about 6 minutes (from about 17). This is not yet measured on hosted runners. Details: `docs/testing.md`.
+
 ### 1.4.15
 - **3D Scene — Duty Cycle · Constant responds to Density above 50.** Density 50 to 100 now
   tightens the rulings past the plot floor, evenly in ink coverage, down to one pen width (lines

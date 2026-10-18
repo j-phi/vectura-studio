@@ -99,9 +99,9 @@ Artifact reporting standard:
 | Export/serialization/security surfaces | `npm run test:unit` + `npm run test:integration` | `npm run test:e2e` |
 | UI interaction behavior | `npm run test:integration` | `npm run test:e2e`, targeted manual UX pass |
 | Rendering output or baselines | `npm run test:visual` | `npm run test:perf` for heavy-path changes |
-| CI-gating confidence pass | `npm run test:ci` | Add visual/perf runs before release-critical merges |
+| Full gate | CI `ci-ok` (required check) | Local `npm run test:ci` is optional |
 
-Touch changes (TUX-057/061): UI changes for touch run `npm run test:e2e:touch` (7 Chromium `touch-*` and 4 WebKit `webkit-*` projects). Set `PW_PORT` per worktree. Use `tests/e2e/helpers/touch.js` for every finger gesture, and guard engine-specific assertions with `engineSupports` (`trustedMultiTouch`, `maxTouchPoints`, `nativeDefaultActions`) instead of `test.skip`. The project list, capabilities, approved deviations and the list of what WebKit simulation does not prove are in `docs/testing.md`. Real-device items stay in the section 4.2 device run. CI runs only a touch smoke on PRs (`e2e-smoke`, two projects) and the full touch roster nightly (`touch-e2e-nightly`), so the local `test:e2e:touch` run is the PR-time evidence for touch changes.
+Touch changes (TUX-057/061): UI changes for touch run `npm run test:e2e:touch` (7 Chromium `touch-*` and 4 WebKit `webkit-*` projects). Set `PW_PORT` per worktree. Use `tests/e2e/helpers/touch.js` for every finger gesture, and guard engine-specific assertions with `engineSupports` (`trustedMultiTouch`, `maxTouchPoints`, `nativeDefaultActions`) instead of `test.skip`. The project list, capabilities, approved deviations and the list of what WebKit simulation does not prove are in `docs/testing.md`. Real-device items stay in the section 4.2 device run. CI runs only a touch smoke on PRs (`e2e-smoke`, two projects) and the full touch roster nightly (`touch-e2e-nightly`), so a local run of the affected touch specs is the PR-time evidence for touch changes.
 
 Reference:
 - Test policies and command details live in `docs/testing.md`.
@@ -116,68 +116,44 @@ Reference:
   wraps its whole chain once. CI bypasses the queue (`CI` set). Contract: `docs/testing.md` →
   "Shared Local Test Queue".
 
-### Accelerated feedback and promotion
+### Test policy (owner decisions, October 2026)
 
-Bounded `test:feedback` supplies local iteration and the pre-push gate; it does not certify
-full-suite coverage. Explicit path routing must fail broadly for unknown/shared/harness changes.
-Fresh VM/DOM profiles isolate mutable state, while only immutable compiled scripts may be cached.
-Local ordinary runs default to two workers, full local coverage to one, and CI retains two.
-Exhaustive rendering proofs remain in `tests/audit/`, and full coverage scope/thresholds remain
-unchanged. Existing GitHub gates stay required during shadow evaluation. Promotion needs a
-validated evidence ledger, exact-revision audit evidence and operational audit-failure ownership.
-Local execution, queue wait, hosted queue/setup and total runner-minutes must be reported separately.
-See `test-suite-acceleration.md` for targets and `test-suite-acceleration-punchlist.md` for findings.
+These rules replace the earlier acceleration and phase-two contracts (now in `docs/archive/`).
+The adjudicated review is `docs/archive/2026-10-test-ci-review.md`.
 
-### Full PR correctness ownership (phase two)
+- **D-1 Gating.** Every test runs pre-merge on every PR that can affect it (path-routed, shared
+  dependencies included). Every test runs on `main` nightly, with an auto-issue on red. A path
+  filter must be sound: `scripts/audit-paths.js` covers every file the audits load, and the audit
+  loader throws on a script outside the filter. An unknown diff runs everything.
+- **D-2 Coverage.** The coverage ratchet (statements 74 %, branches 62 %, functions 74 %,
+  lines 76 %) runs on every main push and on a non-deduplicated nightly, not on PRs. PRs keep
+  `test-profile --strict` on the merged uninstrumented results.
+- **D-3 Local rule.** `ci-ok` is the full gate once branch protection requires it. Locally, run
+  `npm run test:feedback` plus the touched test files. `npm run test:ci` stays available and is no
+  longer required before a commit. Red–Green–Refactor still applies to every behavior change.
+- **D-4 Fix tests.** A fix commits a test of the *current* contract. The RED proof goes in the commit
+  message or the PR. Do not commit a reconstruction of the pre-fix tree. Exact output is pinned in
+  regenerable golden values (`tests/helpers/golden-values.js`), never read from git history.
+  `tests/unit/no-git-history-in-tests.test.js` enforces this.
+- **D-5 Scene3D budget.** Scene3D tests take at most 50 % of coverage file-seconds. This is a
+  reported target, not a gate. The share is about 55 % after the October 2026 cuts.
+- **D-6 Browsers.** No desktop WebKit project for now. WebKit runs in the touch projects.
+- **D-7 Touch.** The full touch roster runs nightly. The 2-project touch smoke runs on every PR.
+- **D-8 Docs.** `docs/testing.md` is the one operational test guide. Rollout, review and punchlist
+  documents go to `docs/archive/`.
+- **D-9 Shards.** 8 uninstrumented Vitest shards on PRs, 12 instrumented coverage shards on main
+  and nightly. Re-plan from blob weights when the roster changes.
+- **Trims.** Every removed assertion class needs a mutation proof that a remaining test still
+  fails. Keep one witness per failure mechanism. Never lower a threshold, add a skip or raise a
+  timeout to save time.
+- **Known defects.** A canary that finds a product defect records it in an inverted known-defect
+  entry (the fix fails the test until the entry goes), in `plans.md` and in
+  `docs/pre-release-hardening-log.md`.
 
-Full-scope coverage owns non-E2E Vitest correctness, including unit, integration, visual,
-performance and exhaustive audit files. Historical unit/integration/visual required checks
-may be compatibility aliases only when they depend on a successful authoritative coverage
-job; aliases are never independent test evidence. Lifecycle checks, uninstrumented
-performance and the complete configured browser roster retain explicit owners.
-`test:ci` mirrors these guarantees locally within one shared queue slot. `test:fast` is
-a bounded-feedback alias and cannot certify the full suite. Coverage thresholds remain
-unchanged. This is execution deduplication, not selective test-routing promotion.
-
-PR #97 enabled full-Vitest sharding after hosted validation and independent review: a plan/guard binds the exact source SHA
-and timestamp to two disjoint duration-weighted partitions on pull requests and pushes to
-main, and a canonical required coverage job always runs for those events. It fails closed
-on a failed plan, guard, or shard; verifies same-run/same-SHA report provenance; checks
-each shard roster, merges V8 data, then strictly checks every file and the 57-skip baseline
-before acceptance; it applies the canonical statements 74%, branches
-62%, functions 74%, and lines 76% ratchets. Existing bounded feedback, probe, browser,
-performance, and lane-gate checks remain in place. The scheduled audit runs separately,
-followed by the uninstrumented visual and performance suites. The first complete main graph
-passed on run 38601029835: coverage 52m59s, all required checks 53m32s. Compared with the
-101m23s unsharded coverage-job baseline, its coverage subtree used 92m59s allocated job
-time. This equivalent-application, cross-SHA observation is not a controlled benchmark.
-
-Render-test sampling decisions live in `docs/render-test-reductions.md`. Retiring an
-internal diagnostic oracle or named parameter sample requires recording the accepted loss;
-a unique assertion is not automatically a durable product contract. Preserve real-output
-regression witnesses, boundary cases, state isolation and raw/composed seam distinctions.
-Validate the combined remaining suite, since individually proposed deletions can depend
-on one another. Keep inventory strict and thresholds unchanged; do not convert retirement
-into skipped tests or fabricate speedup estimates from render counts.
-
-Local `test:ci`, queue behavior, worker defaults, and the 30-minute per-attempt deadline
-are unchanged. A separately measured two-worker full-coverage route took 39m40s, so that
-measurement does not establish that a plain local `npm run test:ci` invocation finishes.
-Historical schema 2/3 roster data remains readable but cannot qualify the new schema 4
-topology; promotion requires 20 genuine schema 4 observations. The local fast/pre-push lane
-remains unchanged.
-The custom duration sequencer is ESM so Vite can load `vitest/node` without rewriting a CommonJS import to an invalid file-URL `require`; the bounded probe exercises the real config path. Hosted feedback runs this small probe afterward as a separate step, outside feedback-lane timing metrics and the full-coverage critical path; the local fast/pre-push lane remains unchanged.
-For GitHub Actions shell commands with backslash-newline continuations, use a literal YAML block (`run: |`); a folded plain scalar turns the newline into a space and can corrupt CLI arguments.
-
-Changes to topology must synchronize the aggregate gate, versioned evidence roster and
-branch-protection compatibility. Engine/pool or sharding candidates require measured
-compatibility, source attribution and cleanup checks before promotion. Missing shards or
-coverage reports fail closed; never average per-shard coverage percentages. Promotion
-also requires strict current-topology evidence, review, at least 30% lower whole-chain
-latency and no more than about 15% extra allocated runner time. Record each measured comparison and its scope. See
-`test-suite-phase2.md` for baseline, implementation evidence and remaining targets.
-
-Test performance budgets, trim rules and shard maintenance: see [test-performance-lessons.md](test-performance-lessons.md).
+Timing claims need two hosted runs, measured from workflow creation to the last required check.
+Report runner time separately. Budgets, trim rules and history: [test-performance-lessons.md](test-performance-lessons.md).
+For GitHub Actions shell commands with backslash-newline continuations, use a literal YAML block
+(`run: |`); a folded plain scalar turns the newline into a space and can corrupt CLI arguments.
 
 ### Vitest lifecycle ownership
 
@@ -205,7 +181,7 @@ flowchart LR
 
 | Change category | Required documentation updates |
 | --- | --- |
-| Workflow/tooling/test policy changes | `docs/agentic-harness-strategy.md`, `AGENTS.md`, `plans.md`, `CHANGELOG.md`, and any impacted sections of `README.md`/`docs/testing.md` |
+| Workflow/tooling/test policy changes | `docs/agentic-harness-strategy.md` (policy) and `docs/testing.md` (operation); update the short summaries in `AGENTS.md`/`CLAUDE.md`/`README.md` only when they change; `CHANGELOG.md` |
 | PR governance/process changes | `.github/pull_request_template.md` plus harness doc if policy changed |
 | UI behavior / shortcuts / help changes | `README.md`, in-app help guide, in-app shortcut list, and `index.html` version increment |
 | Feature capability changes | `README.md` relevant sections, `plans.md`, `CHANGELOG.md`, and any feature-specific docs |
@@ -250,6 +226,8 @@ Current classification:
 | `README.md` | `authoritative` | Feature owners + PR authors | Every feature/change PR |
 | `CHANGELOG.md` | `authoritative` | Release owners + PR authors | Every user-visible or workflow-significant PR |
 | `docs/testing.md` | `operational` | Test/tooling maintainers + PR authors | Any test/CI workflow change |
+| `docs/test-performance-lessons.md` | `operational` | Test/tooling maintainers + PR authors | Any test trim, split or shard change |
+| `docs/archive/*` | `archive-candidate` | None | None |
 | `docs/github-governance.md` | `operational` | Repo administrators + PR authors | Any repo-governance change |
 | `docs/noise-rack-architecture.md` | `authoritative` | Architecture owners + PR authors | Any universal-noise architecture change |
 | `plans.md` | `operational` | Product/feature planning owner + PR authors | Every feature/change PR |

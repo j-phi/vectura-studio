@@ -46,17 +46,9 @@
  * probe-density anomaly rather than silently passing.
  *
  * RED proof:
- *   VECTURA_PRE_W30D_HOLE=1 npx vitest run tests/unit/scene3d-shadow-footprint-torus-hole-accuracy.test.js
+ *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
-
-const SHADOWS_REL = 'src/core/scene3d/shadows.js';
-const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
-// fill-collapse-2's HEAD immediately before this unit (W-30d) started — F2b
-// (torus-visible, hole still over-covered) done, F2a (hole preserved) not.
-const BASE_SHA = '2d931b1a';
-const preW30dRuntimeOptions = makeMultiFilePreShaRuntimeOptions(BASE_SHA, 'VECTURA_PRE_W30D_HOLE', [SHADOWS_REL, SCENE3D_REL]);
 
 const CAMERA = { projection: 'orthographic', yaw: 20, pitch: 45, roll: 0, cameraDistance: 620, focalLength: 520, zoom: 1 };
 const BOUNDS = { width: 420, height: 420, m: 10, dW: 400, dH: 400, penWidth: 0.3, truncate: 4 };
@@ -177,32 +169,5 @@ describe('W-30d F2a/R2 — torus footprint HOLE is no longer over-covered (curre
 
   test('point — the solid annulus band itself is still genuinely shadowed (max scanned ratio >= 1.5)', () => {
     expect(maxBandRatio(V, POINT)).toBeGreaterThanOrEqual(1.5);
-  });
-});
-
-// ── RED-proof pin (BASE_SHA = 2d931b1a, F2b done / F2a not yet). UNCONDITIONAL
-// — the exact same assertion as the GREEN test above (`< 1.3`). Run without
-// VECTURA_PRE_W30D_HOLE this loads the CURRENT tree and passes trivially; run
-// with VECTURA_PRE_W30D_HOLE=1 it loads the pinned 2d931b1a `shadows.js` +
-// `scene3d.js` (the hull still fills the hole there) and this assertion FAILS
-// — proof R2's over-coverage was real and F2a closes it. Measured directly
-// against this pin: directional ratio 2.869, point ratio 3.021 (matches
-// W-30c-impl.md's own GREEN numbers for F2b, which is exactly R2's bug: the
-// hole reads as shadowed as densely as the real ring).
-//
-//   VECTURA_PRE_W30D_HOLE=1 npx vitest run tests/unit/scene3d-shadow-footprint-torus-hole-accuracy.test.js
-describe('W-30d F2a RED-proof pin (2d931b1a) — the hole must be over-covered there', () => {
-  let runtime;
-  let V;
-
-  beforeAll(async () => { runtime = await loadVecturaRuntime(preW30dRuntimeOptions()); V = runtime.window.Vectura; });
-  afterAll(() => runtime.cleanup());
-
-  test('directional — same hole-centroid assertion as GREEN must FAIL on the pre-F2a tree', () => {
-    expect(holeRatio(V, SUN, { x: -4.34, z: 0 })).toBeLessThan(1.3);
-  });
-
-  test('point — same hole-centroid assertion as GREEN must FAIL on the pre-F2a tree', () => {
-    expect(holeRatio(V, POINT, { x: 150.07, z: 0 })).toBeLessThan(1.3);
   });
 });

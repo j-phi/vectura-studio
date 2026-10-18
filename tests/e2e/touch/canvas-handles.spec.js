@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 const core = require('../helpers/target-audit-core');
@@ -13,7 +14,7 @@ const NAMED = {
   'touch-iphone-portrait': 'iPhP',
   'webkit-iphone-portrait': 'iPhP-webkit',
 };
-const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-023');
+const EVIDENCE_DIR = process.env.TUX_EVIDENCE_DIR || evidenceDir('TUX-023');
 
 // Batch R3: the painted rotate disc is set by a frame, so wait for that frame instead of a fixed time.
 const waitAffordanceDrawn = (page) => page.waitForFunction(() => !!window.app.renderer._rotAffDrawn, null, { timeout: 6000, polling: 50 });
@@ -205,7 +206,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(after.center.x - before.center.x).toBeGreaterThan(24);
     expect(after.center.y - before.center.y).toBeGreaterThan(14);
     require('fs').mkdirSync(EVIDENCE_DIR, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE_DIR}/flat-centre-drag-${NAMED[test.info().project.name]}.png` });
+    await shoot(page, { path: `${EVIDENCE_DIR}/flat-centre-drag-${NAMED[test.info().project.name]}.png` });
   });
 
   test('nudged corner resize is relative to the grab point (no jump)', async ({ page }) => {
@@ -243,7 +244,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, aff)).toBe('main-canvas');
     const dir = require('fs');
     dir.mkdirSync(EVIDENCE_DIR, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE_DIR}/${NAMED[testInfo.project.name]}.png` });
+    await shoot(page, { path: `${EVIDENCE_DIR}/${NAMED[testInfo.project.name]}.png` });
     const before = await state(page, s.id);
     const vx = aff.x - before.center.x;
     const vy = aff.y - before.center.y;
@@ -311,7 +312,7 @@ test.describe('TUX-023 rotate affordance clear of chrome (iPhone landscape)', ()
     expect(drawn, 'a rotate affordance was drawn').not.toBeNull();
     expect(drawn.id, `drawn affordance at (${Math.round(drawn.x)},${Math.round(drawn.y)})`).toBe('main-canvas');
     require('fs').mkdirSync(EVIDENCE_DIR, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE_DIR}/iPhL-tap-select-${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE_DIR}/iPhL-tap-select-${testInfo.project.name}.png` });
     // Deterministic overlap: the ctxbar docks at different spots per layout pass, so also cover the
     // current affordance spot with a stand-in chrome element. The affordance must move off it.
     const moved = await page.evaluate(({ x, y }) => {
@@ -461,7 +462,7 @@ test.describe('TUX-023 rotate affordance clear of chrome after a corner resize (
     res.tops.forEach((id) => expect(id, `drawn disc at (${Math.round(res.x)},${Math.round(res.y)})`).toBe('main-canvas'));
     expect(String(res.hit)).toMatch(/rotate/);
     require('fs').mkdirSync(EVIDENCE_DIR, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE_DIR}/iPhL-resized-${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE_DIR}/iPhL-resized-${testInfo.project.name}.png` });
     expect(errors).toEqual([]);
   });
 });

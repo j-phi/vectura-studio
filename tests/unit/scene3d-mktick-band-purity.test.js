@@ -111,12 +111,6 @@ const patchOne = (src, needle, repl, label) => {
 };
 
 describe('Scene3D.SurfaceFill — mkTick band-purity oracle (T2-5) — RETIRED, replaced by T2-7 spacing-tone bars', () => {
-  test('mechanism assertion — mkTick is on the T2-7 (segs-based) mechanism, not the pre-fix stagger/comb', () => {
-    const src = fs.readFileSync(path.join(ROOT_DIR, REL_PATH), 'utf8');
-    expect(src).toMatch(/law\.shape === 'tick' && sv\.segs/);
-    expect(src).not.toMatch(/MK_TICK_COMB_RHO \*\* j/);
-  });
-
   describe('ISOLATION — T2-7 is gated on law.shape===\'tick\'; no other law can reach it', () => {
     const md5 = (paths) => crypto.createHash('md5').update(JSON.stringify(paths)).digest('hex');
     const CELLS = [

@@ -78,7 +78,6 @@ const record = (exitCode, signal) => {
     timedOut,
     ci: Boolean(process.env.CI),
     sha: process.env.GITHUB_SHA || null,
-    classes: (process.env.VECTURA_RISK_CLASSES || '').split(',').filter(Boolean),
   };
   const destination = process.env.VECTURA_LANE_METRICS_FILE || path.join(os.tmpdir(), 'vectura-test-lane-metrics.jsonl');
   try { fs.appendFileSync(destination, `${JSON.stringify(row)}\n`); }

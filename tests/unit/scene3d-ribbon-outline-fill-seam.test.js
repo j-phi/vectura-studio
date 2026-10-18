@@ -38,10 +38,13 @@
  * claim to fix and does not assert against beyond the coarse 0.995 floor.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { preWipRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const { captureClipGroups, measureRingFillRate } = require('../helpers/scene3d-ring-coverage');
 
-const LAWS = ['ampSpacing', 'weaveDepth'];
+// One witness (R-27). ampSpacing is the law where moving the first fill pass
+// to a full pen in (the seam-depth mutation) opens a measurable seam; the
+// weaveDepth row re-proved the same erosion depth. This file is the ONLY test
+// that kills that mutation: keep it.
+const LAWS = ['ampSpacing'];
 const PEN_WIDTH = 0.3;
 
 describe('SurfaceFill — F7 wide-ribbon outline/fill seam, torus', () => {
@@ -50,7 +53,7 @@ describe('SurfaceFill — F7 wide-ribbon outline/fill seam, torus', () => {
   const results = {};
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preWipRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
 
     LAWS.forEach((toneLaw) => {

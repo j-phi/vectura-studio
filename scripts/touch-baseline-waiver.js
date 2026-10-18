@@ -2,6 +2,7 @@
 // TUX-058 req 5: tests/e2e/touch/target-baseline.json may not get worse without a `TUX-WAIVER:` line in the
 // commit body. `raisedCells` compares two baseline objects; `unwaivedCommits` walks a git range.
 const { execFileSync } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -10,7 +11,7 @@ const FILE = 'tests/e2e/touch/target-baseline.json';
 const LEDGER = path.join(ROOT, 'docs/touch-audit/baseline-waivers.json');
 const ledgerWaived = (sha) => {
   try {
-    const l = JSON.parse(require('fs').readFileSync(LEDGER, 'utf8'));
+    const l = JSON.parse(fs.readFileSync(LEDGER, 'utf8'));
     return Object.entries(l.waivers || {}).some(([k, why]) => k.length >= 8 && sha.startsWith(k) && typeof why === 'string' && why.trim().length >= 20);
   } catch (_) { return false; }
 };
@@ -41,28 +42,61 @@ const raisedCells = (before, after) => {
   return out;
 };
 
-const git = (args) => execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
-const readAt = (sha) => { try { return JSON.parse(git(['show', `${sha}:${FILE}`])); } catch (_) { return null; } };
+// Commits after this one are checked. Earlier ones seeded and re-seeded the baseline before the rule existed.
+const ANCHOR = '6711d22a';
+// A date before the anchor's commit date (2026-10-16). CI fetches history back to here, never the whole repo.
+const ANCHOR_SINCE = '2026-10-15';
+
+const git = (args, cwd = ROOT) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 });
+const hasCommit = (rev, cwd) => { try { git(['cat-file', '-e', `${rev}^{commit}`], cwd); return true; } catch (_) { return false; } };
+const readAt = (sha, cwd) => { try { return JSON.parse(git(['show', `${sha}:${FILE}`], cwd)); } catch (_) { return null; } };
 
 // Commits in `range` that touch the baseline, raise a cell and carry no TUX-WAIVER line.
-const unwaivedCommits = (range) => {
-  const shas = git(['log', '--format=%H', range, '--', FILE]).split('\n').filter(Boolean);
+// A commit whose parent is missing (a shallow clone cut too short) throws: the rule never passes unchecked.
+const unwaivedCommits = (range, { cwd = ROOT } = {}) => {
+  const shas = git(['log', '--format=%H', range, '--', FILE], cwd).split('\n').filter(Boolean);
+  const shallowFile = path.resolve(cwd, git(['rev-parse', '--git-path', 'shallow'], cwd).trim());
+  const shallow = new Set(fs.existsSync(shallowFile) ? fs.readFileSync(shallowFile, 'utf8').split('\n').filter(Boolean) : []);
   const bad = [];
   shas.forEach((sha) => {
-    const before = readAt(`${sha}^`);
-    const after = readAt(sha);
+    const isRoot = !shallow.has(sha) && !git(['rev-list', '--parents', '-n', '1', sha], cwd).trim().split(' ')[1];
+    if (!isRoot && !hasCommit(`${sha}^`, cwd)) {
+      throw new Error(`touch-baseline-waiver: the parent of ${sha.slice(0, 8)} is not in this clone. Fetch more history.`);
+    }
+    const before = isRoot ? null : readAt(`${sha}^`, cwd);
+    const after = readAt(sha, cwd);
     if (!before || !after) return;
     const raised = raisedCells(before, after);
     if (!raised.length) return;
-    const body = git(['log', '-1', '--format=%B', sha]);
+    const body = git(['log', '-1', '--format=%B', sha], cwd);
     if (!/^TUX-WAIVER:/m.test(body) && !ledgerWaived(sha)) bad.push({ sha, raised });
   });
   return bad;
 };
 
-module.exports = { raisedCells, unwaivedCommits, FILE };
+// The live rule: every commit after ANCHOR. A missing anchor fails loudly (exit 2), it never passes.
+const checkSinceAnchor = ({ cwd = ROOT } = {}) => {
+  if (!hasCommit(ANCHOR, cwd)) {
+    throw new Error(`touch-baseline-waiver: anchor ${ANCHOR} is not in this clone. Fetch history with git fetch --shallow-since=${ANCHOR_SINCE}.`);
+  }
+  return unwaivedCommits(`${ANCHOR}..HEAD`, { cwd });
+};
+
+module.exports = { raisedCells, unwaivedCommits, checkSinceAnchor, FILE, ANCHOR, ANCHOR_SINCE };
 if (require.main === module) {
-  const bad = unwaivedCommits(process.argv[2] || 'origin/main..HEAD');
+  const arg = process.argv[2];
+  if (arg === '--anchor-since') {
+    process.stdout.write(`${ANCHOR_SINCE}\n`);
+    process.exit(0);
+  }
+  let bad;
+  try {
+    bad = arg === '--since-anchor' ? checkSinceAnchor() : unwaivedCommits(arg || 'origin/main..HEAD');
+  } catch (err) {
+    console.error(err.message);
+    process.exit(2);
+  }
   bad.forEach((b) => console.error(`${b.sha.slice(0, 8)} raises the touch baseline without a TUX-WAIVER line:\n  ${b.raised.slice(0, 5).join('\n  ')}`));
+  if (!bad.length) console.log(`touch-baseline-waiver: ok (${arg || 'origin/main..HEAD'})`);
   process.exit(bad.length ? 1 : 0);
 }

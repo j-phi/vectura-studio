@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -7,7 +8,7 @@ const touch = require('../helpers/touch');
 // TUX-046: legacy #modal-overlay scaffold on touch (Export, Help, info, color picker).
 // Fix round: Document Setup (#settings-panel, R10) and the Save Preset sheet (.vectura-modal,
 // R11) are part of TUX-046 too.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-046');
+const EVIDENCE = evidenceDir('TUX-046');
 const KINDS = ['export', 'help', 'info', 'color'];
 const CSS_PATH = path.join(__dirname, '..', '..', '..', 'src', 'ui', 'skin', 'components.css');
 
@@ -477,7 +478,7 @@ test.describe('TUX-046 modal sheet', () => {
     fs.mkdirSync(dir, { recursive: true });
     for (const kind of ['export', 'help', 'color']) {
       await openKind(page, kind);
-      await page.screenshot({ path: path.join(dir, `${s.engine}-${s.device}-${kind}.png`) });
+      await shoot(page, { path: path.join(dir, `${s.engine}-${s.device}-${kind}.png`) });
       await closeKind(page);
     }
     await sleep(0);
@@ -490,7 +491,7 @@ test.describe('TUX-046 modal sheet', () => {
 // history. One finger keeps the active tool. Placement uses the VISIBLE rect (surface rect
 // intersected with the viewport): on iPhP the surfaces overhang the right edge.
 // ---------------------------------------------------------------------------------------------
-const EVIDENCE_047 = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-047');
+const EVIDENCE_047 = evidenceDir('TUX-047');
 
 // surface: 'export' | 'pd'. Returns { x, y, w, h, left, top, right, bottom } (visible rect) or null.
 const visibleRect = (page, surface) => page.evaluate((surface) => {
@@ -671,7 +672,7 @@ test.describe('TUX-047 pinch and two-finger pan', () => {
     if (touch.engineSupports(page, 'trustedMultiTouch')) expect(st.vv, `page zoom (${msg})`).toBe(1);
     if (process.env.TUX_EVIDENCE === '1' && testInfo.project.name.startsWith('touch-')) {
       fs.mkdirSync(EVIDENCE_047, { recursive: true });
-      await page.screenshot({ path: path.join(EVIDENCE_047, `${spec(testInfo).device}.png`) });
+      await shoot(page, { path: path.join(EVIDENCE_047, `${spec(testInfo).device}.png`) });
     }
   });
 
@@ -741,7 +742,7 @@ test.describe('TUX-047 pinch and two-finger pan', () => {
       expect(Math.abs(vr.rawTop + b.oy + W.y * b.zoom - center.y), `focal y ${msg}`).toBeLessThanOrEqual(8);
       if (process.env.TUX_EVIDENCE === '1' && kind === 'window' && tool === 'fill' && stagger === 60 && testInfo.project.name.startsWith('touch-')) {
         fs.mkdirSync(EVIDENCE_047, { recursive: true });
-        await page.screenshot({ path: path.join(EVIDENCE_047, `pd-${s.device}.png`) });
+        await shoot(page, { path: path.join(EVIDENCE_047, `pd-${s.device}.png`) });
       }
     });
   });

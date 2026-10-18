@@ -318,3 +318,18 @@ test.describe('phone ☰ › File at 874x330', () => {
     expect(taps).toBe(3);
   });
 });
+
+// Phone portrait: the hamburger sheet pins a Document Setup row at the top (2 taps).
+test('phone: Document Setup opens in 2 taps from the phone hamburger sheet', async ({ page }) => {
+  await gotoApp(page);
+  test.skip(!(await page.evaluate(() => document.body.classList.contains('phone-layout'))), 'phone layout only');
+  test.skip(await page.evaluate(() => document.body.classList.contains('phone-short')), 'short phone landscape keeps Document Setup under File');
+  await touch.tap(page, page.locator('#btn-menu-hamburger'));
+  const row = page.locator('#top-menubar .top-menu-docsetup-row');
+  await expect(row).toBeVisible();
+  expect(await page.evaluate(() => document.querySelector('#top-menubar').firstElementChild.firstElementChild.classList.contains('top-menu-docsetup-row')), 'pinned at the top').toBe(true);
+  await touch.tap(page, row);
+  await page.waitForSelector('#settings-panel.open', { timeout: 5000 });
+  // The File menu keeps its own entry.
+  expect(await page.locator('#btn-settings').count()).toBe(1);
+});

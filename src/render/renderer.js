@@ -6982,8 +6982,10 @@
       e.preventDefault();
       // Paint bucket: wheel cycles through the ancestor stack of containing
       // closed loops without modifier keys; held modifiers still pan/zoom.
+      // A wheel event has no pointerType, so the shared reader returns the plain keys (mouse, trackpad).
+      const mods = this.getModifierState(e);
       if ((this.activeTool === 'fill' || this.activeTool === 'fill-erase') &&
-          !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey &&
+          !mods.shift && !mods.meta && !mods.alt &&
           Array.isArray(this.paintBucketStack) && this.paintBucketStack.length > 1) {
         const dir = e.deltaY > 0 ? -1 : 1;
         const next = Math.max(0, Math.min(this.paintBucketStack.length - 1, this.paintBucketScopeIndex + dir));
@@ -7007,13 +7009,13 @@
         }
         return;
       }
-      if (e.shiftKey) {
+      if (mods.shift) {
         this.offsetX += e.deltaX || e.deltaY;
         this.userHasManipulated = true;
         this.draw();
         return;
       }
-      if (e.metaKey) {
+      if (mods.rawMeta) { // Cmd only: Ctrl+wheel is the trackpad pinch-zoom and falls through
         this.offsetY += e.deltaY;
         this.userHasManipulated = true;
         this.draw();
@@ -16946,8 +16948,8 @@
       // _modState is authoritative — it's always updated by keydown/keyup before
       // this runs. Falling back to e.metaKey would read a stale value from
       // _lastPointerEvent when CMD is released (that event still has metaKey:true).
-      const altHeld = this._modState ? Boolean(this._modState.alt) : Boolean(e?.altKey);
-      const metaHeld = this._modState ? Boolean(this._modState.meta) : Boolean(e?.metaKey || e?.ctrlKey);
+      const altHeld = Boolean(this._modState.alt);
+      const metaHeld = Boolean(this._modState.meta);
       // Arch-5: delegate to recomputeCursor for the override decision so all
       // cursor logic lives in one place. We only commit the write when the
       // result is one of the modifier-override sentinels.

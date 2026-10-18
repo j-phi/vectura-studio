@@ -33,14 +33,9 @@
  *
  * RED against `8e9b0991` (branch HEAD immediately before this fix, per
  * `makeMultiFilePreShaRuntimeOptions`):
- *   VECTURA_PRE_W30=1 npx vitest run tests/unit/scene3d-shadow-footprint-direction.test.js
+ *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
-
-const SHADOWS_REL = 'src/core/scene3d/shadows.js';
-const BASE_SHA = '8e9b0991'; // branch HEAD assigned as this lane's base — immediately before W-30
-const preW30RuntimeOptions = makeMultiFilePreShaRuntimeOptions(BASE_SHA, 'VECTURA_PRE_W30', [SHADOWS_REL]);
 
 const v = (x, y, z) => ({ x, y, z });
 const sub = (a, b) => v(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -263,57 +258,4 @@ describe('Shadows — W-30 per-light-type direction fixtures (current/fixed code
     get(_target, prop) { return Shadows[prop]; },
   });
   runFixtures(lazyShadows);
-});
-
-// ── RED-proof pin (BASE_SHA = 8e9b0991, this lane's assigned base — the
-// commit immediately before W-30). The pinned shadows.js has neither
-// `projectFromPositionToPlane` nor `projectLightToPlane`, so
-// `NEW_projectFootprint`'s fallback kicks in and reproduces the OLD
-// (parallel, light-blind) behavior — the "agrees within 5 deg" and "agrees
-// with ground path" assertions below must FAIL against it.
-//
-//   VECTURA_PRE_W30=1 npx vitest run tests/unit/scene3d-shadow-footprint-direction.test.js
-describe('W-30 RED-proof pin (8e9b0991) — receive-direction fix must be absent', () => {
-  let runtime;
-  let Shadows;
-
-  beforeAll(async () => {
-    runtime = await loadVecturaRuntime(preW30RuntimeOptions());
-    Shadows = runtime.window.Vectura.Scene3D.Shadows;
-  });
-  afterAll(() => runtime.cleanup());
-
-  test('pinned shadows.js has neither new export (sanity that this really is the pre-fix tree)', () => {
-    if (process.env.VECTURA_PRE_W30 !== '1') {
-      // Without the env var this loads the CURRENT (fixed) tree — both
-      // exports are present, which is the expected/passing state; this
-      // sanity check is only meaningful under VECTURA_PRE_W30=1.
-      expect(typeof Shadows.projectLightToPlane).toBe('function');
-      return;
-    }
-    expect(Shadows.projectFromPositionToPlane).toBeUndefined();
-    expect(Shadows.projectLightToPlane).toBeUndefined();
-  });
-
-  test('same "agrees within 5 deg" assertion as the GREEN test must FAIL here (point light)', () => {
-    const light = { id: 'p1', type: 'point', position: v(80, 100, 0) };
-    const CASTER_CENTER = v(0, 40, 0);
-    const CASTER_R = 15;
-    const WALL_ANCHOR = v(-100, 40, 0);
-    const WALL_NORMAL = v(1, 0, 0);
-    const casterPts = casterRimPoints(CASTER_CENTER, CASTER_R);
-    const expectedDir = sub(CASTER_CENTER, light.position);
-    // UNCONDITIONAL — the exact same assertion the GREEN test in the
-    // "per-light-type direction fixtures" block above makes. Run without
-    // VECTURA_PRE_W30 this loads the CURRENT (fixed) tree and passes
-    // trivially; run with VECTURA_PRE_W30=1 it loads the pinned 8e9b0991
-    // `shadows.js` (no `projectLightToPlane` export), `NEW_projectFootprint`
-    // falls back to the OLD parallel path, and this assertion FAILS — proof
-    // the bug was real and this fix is what closes it.
-    const footprint = NEW_projectFootprint(Shadows, light, casterPts, WALL_ANCHOR, WALL_NORMAL);
-    const fc = centroid(footprint);
-    const gotDir = sub(fc, CASTER_CENTER);
-    const angle = angleBetweenDeg(gotDir, expectedDir);
-    expect(angle).toBeLessThanOrEqual(5);
-  });
 });

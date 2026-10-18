@@ -1,16 +1,15 @@
 /**
- * MSC-2 — Horizontal & Vertical Align Center (concentric snap).
+ * Align center-both (concentric snap).
  *
- * Verify-first finding: src/core/align-ops.js exposed separate alignCenterH /
- * alignCenterV ops but NO combined center-both op — so a single click could
- * only center one axis. MSC-2 adds `alignCenterBoth`, a compound op whose
- * delta map moves each layer on BOTH axes, so ONE apply inside ONE pushHistory
- * bracket (as the align surfaces already do) makes the selection concentric in
- * a single undo step.
+ * `alignCenterBoth` is a compound align op whose delta map moves each layer on
+ * BOTH axes, so ONE apply inside ONE pushHistory bracket makes the selection
+ * concentric in a single undo step.
  *
- * This exercises the op through the real engine apply path (the byte-identical
- * path the docked Align panel + Task Bar align flyout use: pushHistory →
- * engine.applyAlignDeltas), asserting concentricity and one-undo-step.
+ * The op test drives the engine apply path the docked Align panel and the Task
+ * Bar align flyout share (pushHistory -> engine.applyAlignDeltas). The button
+ * test clicks the real `.align-btn[data-align-op="alignCenterBoth"]` in the
+ * align grid, so it proves the button is routed through the multi-selection
+ * panel's align dispatch, not just that the op exists.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
@@ -22,13 +21,14 @@ const FULL_STACK = {
   useIndexHtml: true,
 };
 
-describe('MSC-2 — combined center-both align', () => {
-  let runtime, window, app;
+describe('Align center-both', () => {
+  let runtime, window, document, app;
 
   beforeAll(async () => {
     runtime = await loadVecturaRuntime(FULL_STACK);
-    ({ window } = runtime);
+    ({ window, document } = runtime);
     app = window.app = new window.Vectura.App();
+    window.Vectura.UI.MultiSelectionPanel.init(app);
   });
 
   afterAll(() => {
@@ -97,6 +97,41 @@ describe('MSC-2 — combined center-both align', () => {
 
     // Undo restores both positions (single step). applyState() deserializes
     // fresh layer objects, so re-fetch by id rather than trusting stale refs.
+    app.undo();
+    const aBack = app.engine.getLayerById(a.id);
+    const bBack = app.engine.getLayerById(b.id);
+    expect(aBack.params.posX).toBeCloseTo(-40, 6);
+    expect(bBack.params.posX).toBeCloseTo(30, 6);
+  });
+
+  test('the align-grid button exists', () => {
+    expect(document.querySelector('.align-btn[data-align-op="alignCenterBoth"]')).toBeTruthy();
+  });
+
+  test('clicking the align-grid button snaps the selection concentric in one undo step', () => {
+    const { a, b } = addTwoLayers({ x: -40, y: -20 }, { x: 30, y: 25 });
+    app.renderer.setSelection([a.id, b.id], a.id);
+
+    const beforeA = centerOf(a);
+    const beforeB = centerOf(b);
+    expect(Math.abs(beforeA.cx - beforeB.cx) + Math.abs(beforeA.cy - beforeB.cy)).toBeGreaterThan(1);
+
+    // Seed a baseline history entry so undo has a prior state to return to.
+    app.pushHistory();
+    const before = app.history.length;
+
+    const btn = document.querySelector('.align-btn[data-align-op="alignCenterBoth"]');
+    expect(btn).toBeTruthy();
+    btn.dispatchEvent(new window.Event('click', { bubbles: true }));
+
+    // Exactly one history push from the click.
+    expect(app.history.length).toBe(before + 1);
+
+    const afterA = centerOf(a);
+    const afterB = centerOf(b);
+    expect(afterA.cx).toBeCloseTo(afterB.cx, 3);
+    expect(afterA.cy).toBeCloseTo(afterB.cy, 3);
+
     app.undo();
     const aBack = app.engine.getLayerById(a.id);
     const bBack = app.engine.getLayerById(b.id);

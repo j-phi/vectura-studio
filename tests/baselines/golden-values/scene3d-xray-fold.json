@@ -1,0 +1,62 @@
+{
+  "arm64": {
+    "mixed": {
+      "paths": 84,
+      "sha256": "4db68062a57bc11c0144e9e3ed5005a2b7a009935b958a87e8b744e72b2138e7"
+    },
+    "solidOverlayDash": {
+      "paths": 33,
+      "sha256": "64a3173450a04b539b23e0fcb6c4e0b424d5062d46658be89315019bc6a56043"
+    },
+    "xrayBox": {
+      "paths": 51,
+      "sha256": "7e3d29d7593760786a33c106281a8e865f54a531165111e0f4c84db53a316b3a"
+    },
+    "xrayBoxHiddenOff": {
+      "paths": 48,
+      "sha256": "98e2673c3adbb0bbe7cdb4859f9ca1dfe2acb0b1984b48accec2a6a2d09d13bd"
+    },
+    "xrayOverlayDash": {
+      "paths": 51,
+      "sha256": "9e0ec07ac6c74a32ba4d0616dfa1b34ff4490082a9fccac34dc48e2b4e9ef6bb"
+    },
+    "xrayOverlayRemove": {
+      "paths": 51,
+      "sha256": "9e0ec07ac6c74a32ba4d0616dfa1b34ff4490082a9fccac34dc48e2b4e9ef6bb"
+    },
+    "xraySphere": {
+      "paths": 112,
+      "sha256": "45ae5b59a85b95aa071798967f502e32f84bfcb8a20ce73ad1d66947a482723d"
+    }
+  },
+  "x64": {
+    "mixed": {
+      "paths": 84,
+      "sha256": "4db68062a57bc11c0144e9e3ed5005a2b7a009935b958a87e8b744e72b2138e7"
+    },
+    "solidOverlayDash": {
+      "paths": 33,
+      "sha256": "64a3173450a04b539b23e0fcb6c4e0b424d5062d46658be89315019bc6a56043"
+    },
+    "xrayBox": {
+      "paths": 51,
+      "sha256": "7e3d29d7593760786a33c106281a8e865f54a531165111e0f4c84db53a316b3a"
+    },
+    "xrayBoxHiddenOff": {
+      "paths": 48,
+      "sha256": "98e2673c3adbb0bbe7cdb4859f9ca1dfe2acb0b1984b48accec2a6a2d09d13bd"
+    },
+    "xrayOverlayDash": {
+      "paths": 51,
+      "sha256": "9e0ec07ac6c74a32ba4d0616dfa1b34ff4490082a9fccac34dc48e2b4e9ef6bb"
+    },
+    "xrayOverlayRemove": {
+      "paths": 51,
+      "sha256": "9e0ec07ac6c74a32ba4d0616dfa1b34ff4490082a9fccac34dc48e2b4e9ef6bb"
+    },
+    "xraySphere": {
+      "paths": 112,
+      "sha256": "45ae5b59a85b95aa071798967f502e32f84bfcb8a20ce73ad1d66947a482723d"
+    }
+  }
+}

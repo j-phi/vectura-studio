@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
@@ -7,7 +8,7 @@ const { waitLayoutSettled } = require('../helpers/target-audit-core');
 // TUX-033: the Multi-select task works in the layer list with real finger taps in both engines.
 // WebKit reports pointerType "mouse" on the click that follows a tap, so a pointerType-only gate fails there.
 // iPhone projects open the layers pane by finger through #btn-header-pane-right.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-033');
+const EVIDENCE = evidenceDir('TUX-033');
 
 test.describe('TUX-033 layer list honours touch modifiers @needs-tall-pane', () => {
   test.beforeEach(async ({ page }, testInfo) => {
@@ -44,7 +45,7 @@ test.describe('TUX-033 layer list honours touch modifiers @needs-tall-pane', () 
     fs.mkdirSync(EVIDENCE, { recursive: true });
     await latch(page);
     await touch.tap(page, rows(page).nth(1));
-    await page.screenshot({ path: `${EVIDENCE}/${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/${testInfo.project.name}.png` });
   });
 
   test('a locked Multi-select toggles rows in and out', async ({ page }) => {
@@ -93,22 +94,26 @@ test.describe('TUX-033 Constrain drag-pour with a finger @needs-tall-pane', () =
         const st = PBO.findFillTargetStack(window.app.engine, w.x, w.y, { scope: 'all-objects', sensitivity: 5 }).stack;
         return st.length && !st[0].isDocBounds ? st[0].loopId : null;
       };
-      const runs = [];
+      // An obstruction (the tool rail, a resizer strip at a canvas edge) ends an unobstructed stretch; a triple of bands
+      // must lie inside one stretch. Bands found before the obstruction still count.
+      const tripleIn = (runs) => {
+        for (let i = 0; i + 2 < runs.length; i += 1) {
+          const [a, b, c] = [runs[i], runs[i + 1], runs[i + 2]];
+          if ([a, b, c].every((s) => s.x1 - s.x0 >= 4) && new Set([a.loopId, b.loopId, c.loopId]).size === 3) {
+            return { y, a: (a.x0 + a.x1) / 2, c: (c.x0 + c.x1) / 2 };
+          }
+        }
+        return null;
+      };
+      let runs = [];
       for (let x = Math.max(box.left + 4, 4); x < Math.min(innerWidth, box.right) - 4; x += 2) {
-        if (document.elementFromPoint(x, y) !== cv) { runs.length = 0; continue; }
+        if (document.elementFromPoint(x, y) !== cv) { const t = tripleIn(runs); if (t) return t; runs = []; continue; }
         const l = loopAt(x);
         if (l == null) { continue; }
         const last = runs[runs.length - 1];
         if (last && last.loopId === l) last.x1 = x; else runs.push({ loopId: l, x0: x, x1: x });
       }
-      const ok = runs.filter((s) => s.x1 - s.x0 >= 4);
-      for (let i = 0; i + 2 < runs.length; i += 1) {
-        const [a, b, c] = [runs[i], runs[i + 1], runs[i + 2]];
-        if ([a, b, c].every((s) => s.x1 - s.x0 >= 4) && new Set([a.loopId, b.loopId, c.loopId]).size === 3) {
-          return { y, a: (a.x0 + a.x1) / 2, c: (c.x0 + c.x1) / 2 };
-        }
-      }
-      return null;
+      return tripleIn(runs);
     });
     expect(pts, 'three adjacent ring bands').not.toBeNull();
     const fills = () => page.evaluate(() => window.app.engine.layers.reduce((n, l) => n + ((l.fills && l.fills.length) || 0), 0));
@@ -120,6 +125,6 @@ test.describe('TUX-033 Constrain drag-pour with a finger @needs-tall-pane', () =
     await touch.drag(page, { x: pts.a, y: pts.y }, { x: pts.c, y: pts.y }, { steps: Math.max(30, Math.ceil((pts.c - pts.a) / 2)) });
     expect(await fills()).toBe(before + 3);
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE}/dragpour-${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/dragpour-${testInfo.project.name}.png` });
   });
 });

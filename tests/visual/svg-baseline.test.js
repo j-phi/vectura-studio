@@ -7,6 +7,10 @@ const { pathsToSvg } = require('../helpers/svg');
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const UPDATE_BASELINES = process.env.VECTURA_UPDATE_BASELINES === '1';
 
+const square = (x, y, w, h) => [
+  { x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }, { x, y },
+];
+
 const SCENARIOS = [
   {
     id: 'flowfield-canonical',
@@ -412,6 +416,36 @@ const SCENARIOS = [
       topographyAngle: 12,
     },
   },
+  // One canonical scene per algorithm that had no SVG golden (attractor, boids, grid,
+  // halftone, hyphae, image weave, pattern, pendula, phylla, SVG distort, topo). Sizes are
+  // kept small (each renders in a few ms, SVG under ~120 KB). Byte-identical on arm64 and
+  // x64 (checked in a linux/amd64 Node 20 container when they were added).
+  { id: 'attractor-canonical', type: 'attractor', seed: 901, overrides: {} },
+  { id: 'boids-canonical', type: 'boids', seed: 902, overrides: { count: 40, steps: 80 } },
+  { id: 'grid-canonical', type: 'grid', seed: 903, overrides: {} },
+  // Built-in image source (imageSourceKind: builtin), so no image fixture is needed.
+  { id: 'halftone-canonical', type: 'halftone', seed: 904, overrides: { dotSpacing: 8, maxDotSize: 7 } },
+  { id: 'hyphae-canonical', type: 'hyphae', seed: 905, overrides: { sources: 4, steps: 120 } },
+  { id: 'image-weave-canonical', type: 'imageWeave', seed: 906, overrides: { lineCount: 20, detail: 16, frequency: 1200 } },
+  { id: 'pattern-canonical', type: 'pattern', seed: 907, overrides: {} },
+  { id: 'pendula-canonical', type: 'pendula', seed: 908, overrides: {} },
+  { id: 'phylla-canonical', type: 'phylla', seed: 909, overrides: { count: 220 } },
+  {
+    id: 'svgdistort-canonical',
+    type: 'svgDistort',
+    seed: 910,
+    overrides: {
+      // SVG Distort draws nothing without an import: two closed squares stand in for one.
+      importedGroups: [
+        { paths: [square(0, 0, 60, 60)], isClosed: true },
+        { paths: [square(70, 10, 40, 50)], isClosed: true },
+      ],
+      fillMode: 'hatch',
+      fillDensity: 6,
+      fillAngle: 30,
+    },
+  },
+  { id: 'topo-canonical', type: 'topo', seed: 911, overrides: {} },
 ];
 
 const buildMirroredMaskedSceneSvg = (runtime) => {

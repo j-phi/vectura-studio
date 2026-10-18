@@ -126,7 +126,11 @@ describe('TUX-045 touch modifier latches', () => {
     expect(c.shift).toBe(true);
     // Desktop result is unchanged: keyboard modifiers pass through bit-identically.
     const d = IM.readModifiers({ pointerType: 'mouse', shiftKey: true, ctrlKey: true });
-    expect(d).toEqual({ shift: true, alt: false, meta: true, ctrl: true, pan: false, additive: true, rawShift: true, multiSelect: false });
+    expect(d).toEqual({ shift: true, alt: false, meta: true, ctrl: true, pan: false, additive: true, rawShift: true, rawMeta: false, multiSelect: false });
+    // rawMeta is Cmd alone: Ctrl+wheel is the trackpad pinch-zoom, so a wheel reader needs them apart.
+    expect(IM.readModifiers({ metaKey: true }).rawMeta).toBe(true);
+    expect(IM.readModifiers({ ctrlKey: true }).rawMeta).toBe(false);
+    expect(IM.readModifiers({ ctrlKey: true }).meta).toBe(true);
   });
 
   describe('(g) renderer', () => {

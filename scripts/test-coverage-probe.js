@@ -19,7 +19,7 @@ const TESTS = [
 // The probe roster has three files, so the shard count must stay <= 3 (an empty shard fails closed).
 const SHARD_COUNT = 2;
 const SOURCES = ['src/core/rng.js', 'src/core/noise.js'];
-const CONFIG = 'vitest.shard-pilot.config.mjs';
+const CONFIG = 'vitest.coverage-shard.config.mjs';
 const PLAN_BUILDER = path.join(ROOT, 'scripts/test-shard-plan.js');
 const WEIGHTS = JSON.parse(fs.readFileSync(path.join(__dirname, 'test-shard-weights.json'), 'utf8'));
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -135,7 +135,7 @@ function main() {
       const coverage = path.join(temp, `shard-${index}-coverage`);
       const metadata = path.join(artifact, 'metadata.json');
       runNode([PLAN_BUILDER, '--plan', planFile, '--metadata-out', metadata, '--shard', index, '--sha', sha, '--run-id', runId, '--attempt', attempt], `write shard ${index} provenance`);
-      runNpm(`actual queued shard entrypoint ${index}/${SHARD_COUNT}`, 'test:coverage:shard', [
+      runNpm(`actual queued shard entrypoint ${index}/${SHARD_COUNT}`, 'test:coverage', [
         ...TESTS, '--config', CONFIG, `--shard=${index}/${SHARD_COUNT}`, ...coverageArgs(coverage, { zeroThresholds: true }),
         '--reporter=blob', '--reporter=json', `--outputFile.blob=${blob}`, `--outputFile.json=${json}`,
       ], env);

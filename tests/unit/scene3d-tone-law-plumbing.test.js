@@ -90,13 +90,6 @@ describe('Scene3D — toneLaw plumbed from style to SurfaceFill.buildObject', ()
     }
   });
 
-  test('an absent toneLaw resolves inside buildObject to the SAME output as an explicit "ladder"', () => {
-    const bare = fills(scene({}, { toneOn: true }));
-    const explicit = fills(scene({ toneLaw: 'ladder' }, { toneOn: true }));
-    expect(bare.length).toBeGreaterThan(0);
-    expect(geomKey(explicit)).toBe(geomKey(bare));
-  });
-
   test('a non-default toneLaw changes the composed scene ink (end to end through algo.generate)', () => {
     const ladder = fills(scene({ toneLaw: 'ladder' }, { toneOn: true }));
     const nibAngle = fills(scene({ toneLaw: 'nibAngle' }, { toneOn: true }));
@@ -105,10 +98,18 @@ describe('Scene3D — toneLaw plumbed from style to SurfaceFill.buildObject', ()
     expect(geomKey(nibAngle)).not.toBe(geomKey(ladder));
   });
 
-  test('an unknown toneLaw degrades to the default rather than throwing or drawing nothing', () => {
-    const ladder = fills(scene({ toneLaw: 'ladder' }, { toneOn: true }));
-    const bogus = fills(scene({ toneLaw: 'totallyBogusLawName' }, { toneOn: true }));
-    expect(bogus.length).toBeGreaterThan(0);
-    expect(geomKey(bogus)).toBe(geomKey(ladder));
+  // R-27: absent/unknown toneLaw -> ladder is witnessed once, in
+  // scene3d-tone-law-dispatch.test.js. This file keeps the composed seam.
+  // The alias resolver (scene3d.js `Params.resolveToneLaw(sp)`) had no
+  // routine-lane witness: a survivor + sub-control bag must draw exactly what
+  // the folded legacy id draws, end to end.
+  test('a folded id and its survivor + sub-control render identically (alias resolver is live)', () => {
+    const legacy = fills(scene({ toneLaw: 'fineLadder' }, { toneOn: true }));
+    const survivor = fills(scene({ toneLaw: 'ladder', rungMode: 'fine' }, { toneOn: true }));
+    const plain = fills(scene({ toneLaw: 'ladder' }, { toneOn: true }));
+    expect(legacy.length).toBeGreaterThan(0);
+    expect(geomKey(survivor)).toBe(geomKey(legacy));
+    // Non-vacuity: the sub-control changes the picture.
+    expect(geomKey(survivor)).not.toBe(geomKey(plain));
   });
 });

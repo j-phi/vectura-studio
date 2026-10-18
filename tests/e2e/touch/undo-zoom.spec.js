@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 
@@ -6,7 +7,7 @@ const touch = require('../helpers/touch');
 // every action under test is a finger (tests/e2e/helpers/touch.js). Multi-touch is synthetic in WebKit,
 // so the app-logic asserts run in both engines.
 
-const EVID = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-020');
+const EVID = evidenceDir('TUX-020');
 const SHOT = {
   'touch-ipad-portrait': 'iPadP', 'touch-ipad-landscape': 'iPadL', 'touch-iphone-portrait': 'iPhP',
   'touch-iphone-landscape': 'iPhL', 'touch-iphone-landscape-chrome': 'iPhL-c',
@@ -458,7 +459,7 @@ test.describe('TUX-020 R-h layout', () => {
         expect(hit, `${h.id} overlaps ${o.id}`).toBe(false);
       });
     });
-    if (SHOT[testInfo.project.name]) await page.screenshot({ path: `${EVID}/${SHOT[testInfo.project.name]}.png` }).catch(() => {});
+    if (SHOT[testInfo.project.name]) await shoot(page, { path: `${EVID}/${SHOT[testInfo.project.name]}.png` }).catch(() => {});
   });
 
   test('phone header Undo and Redo sit fully inside the viewport', async ({ page }, testInfo) => {

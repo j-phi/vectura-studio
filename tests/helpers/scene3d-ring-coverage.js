@@ -121,7 +121,7 @@ const captureClipGroups = (Vectura) => {
  * (the real `clipPath` call's result is returned untouched; the comparison
  * call is thrown away). It is also PRODUCTION-BEHAVIOUR-GATED, not an
  * independent geometric guess: when the pipeline never sets `selfOcclude`/
- * `analyticOccluder` on a `seg` (e.g. under `VECTURA_PRE_F7=1`, which
+ * `analyticOccluder` on a `seg` (e.g. on the pre-F7 tree 57e86f48, which
  * reverts `scene3d.js` to a revision that predates both fields), the extra
  * comparison call never runs, `segments` stays empty, and
  * `measureRingFillRate`'s correction (below) becomes a no-op BY
@@ -261,7 +261,7 @@ const buildCoverageGrid = (ringGroups, inkPaths, penWidth, opts = {}) => {
   // self-occlusion-removed chord at the SAME half-pen radius real ink would
   // have claimed there, and exclude every cell it touches from both ring and
   // ink below: a cell self-occlusion legitimately erased no longer counts as
-  // "ring" at all. Empty (the default, and what `VECTURA_PRE_F7=1` always
+  // "ring" at all. Empty (the default, and what the pre-F7 tree always
   // produces) => `excluded` stays all-zero => byte-identical to the
   // uncorrected computation.
   const excluded = new Uint8Array(nx * ny);
@@ -466,7 +466,7 @@ const findUncoveredClusters = (grid) => {
  * signature — is BYTE-IDENTICAL to the old, uncorrected computation; it is
  * also what `captureSelfOcclusionFootprint` itself produces (an empty list)
  * whenever the build under test never sets a self-occlusion flag on a `seg`
- * at all (e.g. every non-torus primitive, or `VECTURA_PRE_F7=1`). That is
+ * at all (e.g. every non-torus primitive, or the pre-F7 tree). That is
  * what makes the F7 RGR test's disabled-self-occlusion safeguard hold: this
  * correction cannot change a single one of the 12 old coverage numbers
  * unless the pipeline itself actually removed something via self-occlusion.

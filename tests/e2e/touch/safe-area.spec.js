@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -19,7 +20,7 @@ const TOL = 0.5;
 // Desktop/tablet base 38 px. The phone header holds 44 px TUX-001 buttons, so its base is 44 px.
 const baseHeaderH = () => 44 /* Q18: 44 px on every touch layout (tablet and touch-wide grew from 38) */;
 // Repo-relative by default (the worktree sits under <repo>/.claude/worktrees/<lane>); TUX_EVIDENCE_DIR overrides.
-const EVIDENCE = process.env.TUX_EVIDENCE_DIR || path.resolve(__dirname, '../../../docs/touch-audit/evidence/after/TUX-005');
+const EVIDENCE = process.env.TUX_EVIDENCE_DIR || evidenceDir('TUX-005');
 
 const gotoApp = async (page) => {
   await page.goto('/');
@@ -433,6 +434,6 @@ test.describe('TUX-005 safe-area insets', () => {
   test('D5 evidence screenshot with the profile injected', async ({ page }, testInfo) => {
     await inject(page, P);
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE}/${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/${testInfo.project.name}.png` });
   });
 });

@@ -6,7 +6,7 @@
  * depth-cue group are hidden; the geometry/visibility controls (creases, hidden
  * lines, outline, depth bias) stay ungated. The other 3D algos are untouched.
  *
- * Loaded via the same JSDOM harness as 3d-wave3-schema.test.js.
+ * Loaded via the same JSDOM harness as 3d-algo-control-schema.test.js.
  */
 import fs from 'node:fs';
 import path from 'node:path';

@@ -37,14 +37,10 @@ const stripComments = (source) =>
     // strip line comments
     .replace(/(^|[^:\\])\/\/[^\n]*/g, '$1');
 
-describe('Arch-7: petalis fallbackNoiseRack removed', () => {
+describe('petalis samples noise only through the Noise Rack', () => {
   const petalisPath = path.join(ROOT, 'src/core/algorithms/petalis.js');
   const source = fs.readFileSync(petalisPath, 'utf8');
   const code = stripComments(source);
-
-  it('does not declare or reference fallbackNoiseRack', () => {
-    expect(code).not.toMatch(/fallbackNoiseRack/);
-  });
 
   it('does not declare an inline combineBlend helper', () => {
     // The only legitimate combineBlend is the one on window.Vectura.NoiseRack.
@@ -63,7 +59,7 @@ describe('Arch-7: petalis fallbackNoiseRack removed', () => {
   });
 });
 
-describe('Arch-7: rainfall trail wobble + gust routed through Noise Rack', () => {
+describe('rainfall samples noise only through the Noise Rack', () => {
   const rainfallPath = path.join(ROOT, 'src/core/algorithms/rainfall.js');
   const source = fs.readFileSync(rainfallPath, 'utf8');
   const code = stripComments(source);

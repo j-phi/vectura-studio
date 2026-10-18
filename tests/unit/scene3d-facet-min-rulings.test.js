@@ -27,7 +27,7 @@
  * T1  — the default is a no-op: md5(key absent) === md5(=3) (the four-origin
  *       no-op — the algorithm's own `finite(...,3)` fallback agrees with an
  *       explicit 3), AND md5(key absent)'s `pathSignature` matches a PINNED
- *       golden fingerprint recorded once at W-38b (see EXPECTED_T1 below),
+ *       golden fingerprint recorded once at W-38b (see the golden-values file below),
  *       on one boundary fixture. The full historical grid duplicated broad
  *       output sampling without adding a distinct default-origin oracle.
  *
@@ -70,21 +70,20 @@ const crypto = require('crypto');
 const path = require('path');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 const { pathSignature } = require('../helpers/path-signature');
+const { goldenValues } = require('../helpers/golden-values');
 
 const ROOT_DIR = path.resolve(__dirname, '..', '..');
 const SCENE3D_REL = 'src/core/algorithms/scene3d.js';
 
 // T1's pinned boundary golden fingerprint (W-38b) — `pathSignature` (precision 4,
 // tests/helpers/path-signature.js) of the absent-key faceted output, one
-// per {primitive, mapper, density, angle} fixture. Recorded once against
-// 575f886d (v1.4.1, this file's own base sha) and NEVER moved except with
-// proof in the commit body (RGR numbers showing what product change
+// per {primitive, mapper, density, angle} fixture, stored in
+// tests/baselines/golden-values/scene3d-facet-min-rulings.json. Recorded once
+// against 575f886d (v1.4.1, this file's own base sha) and NEVER moved except
+// with proof in the commit body (RGR numbers showing what product change
 // legitimately moved it). See the T1 doc comment above for why this
 // replaced the vacuous `git show HEAD` leg.
-const EXPECTED_T1 = {
-  'box|hatch|d1|a20': '4e9e8d48202eb705de0c7f313332d369abe44304ebad37753a57d536317b0c56',
-  'box|crosshatch|d50|a20': '230f278e46e725bb7144ecacb6a9a49017d7d13d477fddf652c255685edd2cd5',
-};
+const golden = goldenValues('scene3d-facet-min-rulings');
 
 const md5PathsAll = (paths) => crypto.createHash('md5')
   .update(JSON.stringify((paths || []).map((p) => p.map((pt) => [
@@ -166,9 +165,7 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
       });
       // The absent key must resolve to the same default output as explicit 3.
       expect(md5PathsAll(absent.paths)).toBe(md5PathsAll(withDefault.paths));
-      const expected = EXPECTED_T1[key];
-      expect(expected).toBeTruthy();
-      expect(pathSignature(absent.paths)).toBe(expected);
+      golden.expect(key, pathSignature(absent.paths));
     });
 
     test('box / crosshatch / d=50 / a=20 keeps the default at its separate faceHatchLines branch', () => {
@@ -177,7 +174,7 @@ describe('W-38 — facetMinRulings ("Min rulings", per-style minimum facet rulin
         primitive: 'box', mapper: 'crosshatch', density: 50, angle: 20, facetMinRulings: 3,
       });
       expect(md5PathsAll(absent.paths)).toBe(md5PathsAll(withDefault.paths));
-      expect(pathSignature(absent.paths)).toBe(EXPECTED_T1['box|crosshatch|d50|a20']);
+      golden.expect('box|crosshatch|d50|a20', pathSignature(absent.paths));
     });
   });
 

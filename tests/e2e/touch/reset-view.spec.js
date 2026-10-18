@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
@@ -7,7 +8,7 @@ const touch = require('../helpers/touch');
 // Setup (layer, zoom, offset) goes through page.evaluate. setup is a precondition, not the value
 // under test: there is no finger path for it in Phase 1 (HUD zoom is TUX-020, empty-canvas pinch is
 // TUX-017). The tested action (the View menu and Reset View) is finger-only.
-const EVIDENCE = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-009');
+const EVIDENCE = evidenceDir('TUX-009');
 
 const boot = async (page) => {
   await page.goto('/');
@@ -172,7 +173,7 @@ test.describe('TUX-009 Reset View', () => {
     expect(errors, 'pageerror').toEqual([]);
 
     fs.mkdirSync(EVIDENCE, { recursive: true });
-    await page.screenshot({ path: `${EVIDENCE}/${testInfo.project.name}.png` });
+    await shoot(page, { path: `${EVIDENCE}/${testInfo.project.name}.png` });
   });
 
   test('keeps a user-chosen pane state', async ({ page }) => {

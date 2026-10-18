@@ -1,5 +1,5 @@
 const {
-  loadVecturaRuntime, clone, freezeDeep, cloneFixture, createCapturedOptionsCache,
+  loadScene3dAuditRuntime, clone, freezeDeep, cloneFixture, createCapturedOptionsCache,
   BOUNDS, SUN, SLOW, describeSingleParamCluster, describeComboCluster,
   recordedShadowResolvesToSurvivor,
 } = require('../helpers/scene3d-tone-law-collapse-shared');

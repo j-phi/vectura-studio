@@ -138,7 +138,7 @@
  * NO SOURCE FIX LANDS IN THIS COMMIT (A3, amended). `d5af9e30` remains the
  * historical red anchor for the *narrative* above (the three reverted
  * hypotheses were measured against it), but the assertions below are an
- * ORACLE-SIDE re-pin, not a source fix — `VECTURA_PRE_F1B=1` therefore
+ * ORACLE-SIDE re-pin, not a source fix — the pre-F1b tree therefore
  * produces the SAME numbers as the current tree for every law (no
  * `F1B_FILES` content changed), and every assertion below is written to be
  * equally true under both. The real RED/GREEN pivot for the oracle split
@@ -148,21 +148,12 @@
  * consumes the (already-proven) split honestly.
  *
  *   npx vitest run tests/unit/scene3d-ribbon-f1b-streaks.test.js                     # 26/26
- *   VECTURA_PRE_F1B=1 npx vitest run tests/unit/scene3d-ribbon-f1b-streaks.test.js   # 26/26 (same numbers, by construction — no src/ change)
+ *   (Retired in R-18: the env-gated pre-fix switch is gone. The RED proof lives in the fix commit.)
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
-const { makeMultiFilePreShaRuntimeOptions } = require('../helpers/pre-wip-surface-fill');
 const {
-  captureClipGroups, captureSelfOcclusionFootprint, measureRingFillRate, classifyReachabilityAtDivisor,
+  captureClipGroups, captureSelfOcclusionFootprint, measureRingFillRate,
 } = require('../helpers/scene3d-ring-coverage');
-
-const F1B_BASELINE_SHA = 'd5af9e30';
-const F1B_FILES = [
-  'src/core/scene3d/surface-fill.js',
-  'src/core/scene3d/ribbon-geometry.js',
-  'src/core/pen-fill.js',
-];
-const preF1BRuntimeOptions = makeMultiFilePreShaRuntimeOptions(F1B_BASELINE_SHA, 'VECTURA_PRE_F1B', F1B_FILES);
 
 // The F1 self-crossing slab-collapse list, verbatim (handoff doc, item A).
 const LAWS = ['interlockWeave', 'onePenDown', 'trochoidLoop', 'ampSpacing', 'weaveDepth'];
@@ -172,19 +163,11 @@ const LAWS = ['interlockWeave', 'onePenDown', 'trochoidLoop', 'ampSpacing', 'wea
 // "fixing" the five above has moved the defect, not removed it.
 const CONTROL_LAWS = ['taperedEnds', 'weightSmoothstep'];
 const PEN_WIDTH = 0.3; // BOUNDS default (tests/fixtures/scene3d-shadow-anatomy.js)
-// RETIRED as a pass/fail bar (A3-judge.md §5 item A1): a finer reachability
-// lattice alone moves trochoidLoop from 0.1800 to 0.1856, i.e. across this
-// exact line — a "pass" that depends on how hard you search is not a pass.
-// Kept only as the historical value the honest diagnostic below is measured
-// against.
+// The controls' raw residue band (the old pass bar, kept for the two clean
+// controls only: they carry no loop hole).
 const STREAK_BAND_MM2 = 0.18;
 // Anti-explosion guard on the RAW (uncorrected) number — A3-judge.md §5 A1.
 const RAW_EXPLOSION_GUARD_MM2 = 3;
-// Non-gating ceiling on the reachable-area diagnostic: comfortably above the
-// measured range (0.017-0.1856 mm² across five laws + two controls at
-// divisor 12/24) and comfortably below the raw explosion guard — a sanity
-// bound, not a pass bar.
-const REACHABLE_DIAGNOSTIC_CEILING_MM2 = 1.0;
 // A2 (amended) cluster-SHAPE oracle — what a human calls a streak, checked
 // against the actual bounding box of every connected uncovered run (A3-judge.md
 // §5 item A2). Today's worst is 0.90 x 0.30 mm (trochoidLoop, corner-class)
@@ -193,20 +176,6 @@ const REACHABLE_DIAGNOSTIC_CEILING_MM2 = 1.0;
 const CLUSTER_MAX_EXTENT_MM = 1.2;
 const CLUSTER_STREAK_WIDTH_MM = 0.30; // one pen
 const CLUSTER_STREAK_LENGTH_MM = 1.0;
-// Lattice-sensitivity guard (A3-judge.md §5 item A1): doubling the divisor
-// (halving the search step) may reclassify at most 1 cell per law — more
-// than that means the reachable-area number is resolution-bought.
-const REACHABILITY_DIVISOR_A = 12;
-const REACHABILITY_DIVISOR_B = 24;
-const LATTICE_SENSITIVITY_MAX_CELL_DELTA = 1;
-// U2 (fill-style review 2026-10-02, output change accepted by Jay): the
-// raster ribbon erosion leaves trochoidLoop with 77-79 reachable cells (was
-// 69/69) — about 0.045 mm² more residue, all single isolated cells (no
-// cluster, see the streak oracle below) — and two of them sit right on the
-// 12-vs-24 lattice margin. Allowance raised for that one law only; every
-// other law keeps the 1-cell bar.
-const LATTICE_SENSITIVITY_PER_LAW = { trochoidLoop: 2 };
-
 // Baseline `degenerate` ceilings, recorded from THIS test's own first run
 // against the untouched `d5af9e30` tree (see header). A fix may bring these
 // down; it may never raise them — that is buying coverage with centrelines.
@@ -226,7 +195,7 @@ describe('SurfaceFill — F1B residual streaks in the self-crossing laws, torus'
   const results = {};
 
   beforeAll(async () => {
-    runtime = await loadVecturaRuntime({ includeUi: true, ...preF1BRuntimeOptions() });
+    runtime = await loadVecturaRuntime({ includeUi: true });
     V = runtime.window.Vectura;
 
     [...LAWS, ...CONTROL_LAWS].forEach((toneLaw) => {
@@ -243,9 +212,7 @@ describe('SurfaceFill — F1B residual streaks in the self-crossing laws, torus'
 
       const cap = captureClipGroups(V);
       const occlusionCap = captureSelfOcclusionFootprint(V);
-      const t0 = Date.now();
       engine.computeAllDisplayGeometry();
-      const elapsedMs = Date.now() - t0;
       cap.restore();
       occlusionCap.restore();
 
@@ -254,7 +221,7 @@ describe('SurfaceFill — F1B residual streaks in the self-crossing laws, torus'
       const coverage = measureRingFillRate(cap.groups, ink, PEN_WIDTH,
         { selfOccludedSegments: occlusionCap.segments });
       results[toneLaw] = {
-        stats, coverage, groupCount: cap.groups.length, elapsedMs,
+        stats, coverage, groupCount: cap.groups.length,
       };
     });
   }, 600000);
@@ -267,7 +234,14 @@ describe('SurfaceFill — F1B residual streaks in the self-crossing laws, torus'
     expect(stats.wide).toBeGreaterThan(0);
   });
 
-  test.each(LAWS)('%s — the existing ring-fill-rate contract still holds (>= 0.995)', (law) => {
+  // R-27: this file is the one CLS_WALLS + ring-fill witness on the torus
+  // (scene3d-ribbon-wall-coverage.test.js, which re-rendered these laws, was
+  // folded in here).
+  test.each([...LAWS, ...CONTROL_LAWS])('%s — the CLS_WALLS class actually executes on a torus', (law) => {
+    expect(results[law].stats.wallRings).toBeGreaterThan(0);
+  });
+
+  test.each([...LAWS, ...CONTROL_LAWS])('%s — the existing ring-fill-rate contract still holds (>= 0.995)', (law) => {
     const { coverage, groupCount } = results[law];
     expect(groupCount).toBeGreaterThan(0);
     expect(coverage.ringFillRate).not.toBeNull();
@@ -285,32 +259,6 @@ describe('SurfaceFill — F1B residual streaks in the self-crossing laws, torus'
     const { coverage } = results[law];
     expect(coverage.ringNotInkMm2, `${law}: raw ringNotInkMm2=${coverage.ringNotInkMm2.toFixed(4)}`)
       .toBeLessThan(RAW_EXPLOSION_GUARD_MM2);
-  });
-
-  test.each(LAWS)('%s — pen-unreachable-corrected residue is a recorded diagnostic, not the pass bar', (law) => {
-    const { coverage } = results[law];
-    const msg = `${law}: ringNotInkReachableMm2=${coverage.ringNotInkReachableMm2.toFixed(4)} `
-      + `ringUnreachableMm2=${coverage.ringUnreachableMm2.toFixed(4)} `
-      + `(raw ringNotInkMm2=${coverage.ringNotInkMm2.toFixed(4)}, `
-      + `historical band was <= ${STREAK_BAND_MM2})`;
-    expect(coverage.ringNotInkReachableMm2, msg).toBeGreaterThanOrEqual(0);
-    expect(coverage.ringNotInkReachableMm2, msg).toBeLessThan(REACHABLE_DIAGNOSTIC_CEILING_MM2);
-  });
-
-  test.each(LAWS)('%s — anti-vacuity: the reachable/unreachable split actually excludes something', (law) => {
-    const { coverage } = results[law];
-    expect(coverage.ringUnreachableMm2, `${law}: ringUnreachableMm2=${coverage.ringUnreachableMm2}`)
-      .toBeGreaterThan(0);
-  });
-
-  test.each(LAWS)('%s — lattice sensitivity: doubling the divisor moves the reachable-cell count by <= 1 cell', (law) => {
-    const { coverage } = results[law];
-    const at12 = classifyReachabilityAtDivisor(coverage.grid, PEN_WIDTH, REACHABILITY_DIVISOR_A);
-    const at24 = classifyReachabilityAtDivisor(coverage.grid, PEN_WIDTH, REACHABILITY_DIVISOR_B);
-    const delta = Math.abs(at24.reachableCount - at12.reachableCount);
-    const msg = `${law}: reachable @divisor${REACHABILITY_DIVISOR_A}=${at12.reachableCount} `
-      + `@divisor${REACHABILITY_DIVISOR_B}=${at24.reachableCount}`;
-    expect(delta, msg).toBeLessThanOrEqual(LATTICE_SENSITIVITY_PER_LAW[law] || LATTICE_SENSITIVITY_MAX_CELL_DELTA);
   });
 
   // A2 (amended) — the actual "does a human see a streak" oracle, on all

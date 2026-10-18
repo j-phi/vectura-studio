@@ -13,6 +13,7 @@
  * (commit 5e75af6): a pathological detail×planes combo must not hang.
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
 
 const BOUNDS = { width: 320, height: 220, m: 20, dW: 280, dH: 180, truncate: true, penWidth: 0.3 };
 
@@ -2811,24 +2812,29 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
     // fragment/blob guards. Sorted by (level, rawCount) for a stable,
     // deterministic assertion order regardless of linkSegments' internal
     // iteration order.
+    // The exact discrete signature of each ring (level, rawCount, closed,
+    // roundsUsed) lives in tests/baselines/golden-values/scene3d-contour-slice.json.
+    // EXPECTED5 below keeps only the band reference values for the continuous
+    // outputs; row i pairs with golden row i (same (level, rawCount) sort).
+    const golden = goldenValues('scene3d-contour-slice');
     const EXPECTED5 = [
       {
-        level: 2, rawCount: 3, closed: false, finalCount: 3, finalLengthMm: 0.9577085225447255, deviceMaxTurn: 1.903903680150751, roundsUsed: 0,
+        finalCount: 3, finalLengthMm: 0.9577085225447255, deviceMaxTurn: 1.903903680150751,
       },
       {
-        level: 2, rawCount: 4, closed: false, finalCount: 4, finalLengthMm: 9.008240123917343, deviceMaxTurn: 2.2996801184195714, roundsUsed: 0,
+        finalCount: 4, finalLengthMm: 9.008240123917343, deviceMaxTurn: 2.2996801184195714,
       },
       {
         // W-27c-0a-6: re-pinned from finalCount 513/deviceMaxTurn 179.999.../
         // roundsUsed 8 (the pre-fix non-convergence) to the FIXED values —
         // see the describe-block header and W-27c-0a-6-impl.md.
-        level: 6, rawCount: 3, closed: false, finalCount: 3, finalLengthMm: 0.004099155900223327, deviceMaxTurn: 180, roundsUsed: 0,
+        finalCount: 3, finalLengthMm: 0.004099155900223327, deviceMaxTurn: 180,
       },
       {
-        level: 21, rawCount: 2, closed: false, finalCount: 2, finalLengthMm: 2.4294681743220017, deviceMaxTurn: 0, roundsUsed: 0,
+        finalCount: 2, finalLengthMm: 2.4294681743220017, deviceMaxTurn: 0,
       },
       {
-        level: 25, rawCount: 4, closed: false, finalCount: 4, finalLengthMm: 5.727369993006849, deviceMaxTurn: 5.440164012679135, roundsUsed: 0,
+        finalCount: 4, finalLengthMm: 5.727369993006849, deviceMaxTurn: 5.440164012679135,
       },
     ];
     const bandLo = (v) => v - Math.max(Math.abs(v) * 0.10, 0.001);
@@ -2840,14 +2846,13 @@ describe('CtS I5 — contourSlice depth-slice treatment', () => {
         .sort((a, b) => (a.level - b.level) || (a.rawCount - b.rawCount));
       // eslint-disable-next-line no-console
       console.log('W-27c-0a-5 small rings', JSON.stringify(small));
+      // Discrete facts — exact:
+      golden.expect('torus small rings level/rawCount/closed/roundsUsed', small.map((r) => ({
+        level: r.level, rawCount: r.rawCount, closed: r.closed, roundsUsed: r.roundsUsed,
+      })));
       expect(small.length).toBe(EXPECTED5.length);
       small.forEach((r, i) => {
         const e = EXPECTED5[i];
-        // Discrete facts — exact:
-        expect(r.level).toBe(e.level);
-        expect(r.rawCount).toBe(e.rawCount);
-        expect(r.closed).toBe(e.closed);
-        expect(r.roundsUsed).toBe(e.roundsUsed);
         // Continuous outputs — floor/ceiling +-10% band (a measurement pin,
         // NOT a claim these values are "right"; see describe-block header):
         expect(r.finalCount).toBeGreaterThanOrEqual(bandLo(e.finalCount));

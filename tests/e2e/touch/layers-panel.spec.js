@@ -1,3 +1,4 @@
+const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
@@ -432,9 +433,9 @@ test.describe('TUX-012 layers panel on touch', () => {
   test('evidence screenshot', async ({ page }, testInfo) => {
     if (!process.env.TUX_EVIDENCE) return; // evidence-only run
     await setup(page, testInfo);
-    const dir = require('path').join(__dirname, '../../..', 'docs/touch-audit/evidence/after/TUX-012');
+    const dir = evidenceDir('TUX-012');
     fs.mkdirSync(dir, { recursive: true });
     await page.evaluate(() => { document.getElementById('layer-list').scrollTop = 0; });
-    await page.screenshot({ path: path.join(dir, `${testInfo.project.name}.png`) });
+    await shoot(page, { path: path.join(dir, `${testInfo.project.name}.png`) });
   });
 });

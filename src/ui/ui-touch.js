@@ -119,7 +119,7 @@
       if (this.touchMouseBridgeInitialized) return;
       this.touchMouseBridgeInitialized = true;
       let activePointerId = null;
-      const bridgeSelector = '.pane-resizer, .bottom-resizer, .layer-grip, .pen-grip, .noise-grip, .optimization-grip, .angle-dial, .toolbar-drag-handle';
+      const bridgeSelector = '.pen-grip, .noise-grip, .optimization-grip, .angle-dial, .toolbar-drag-handle';
       const shouldBridge = (target) => {
         if (!target || !target.closest) return false;
         if (target.closest('#main-canvas')) return false;

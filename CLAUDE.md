@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **No user-visible change is "done" until observed in the running app.** Passing tests are not visual verification (harness-clean ≠ app-clean) — screenshot or interact with the real app and check the actual result before reporting completion. If you genuinely cannot verify (e.g., no browser available), lead your report with "NOT visually verified" instead of claiming it works.
 - When the user sends a numbered/multi-item feedback list, track every item as an explicit checklist and account for each one in the final report — silently dropping items from multi-part lists is a recurring failure mode.
-- Testing rules live in [Testing & Pre-Commit Validation](#testing--pre-commit-validation-redgreenrefactor) below — RGR for every change, full suite only pre-commit.
+- Testing rules live in [Testing & Pre-Commit Validation](#testing--pre-commit-validation-redgreenrefactor) below — RGR for every change; CI (`ci-ok`) is the full gate.
 
 ## Commit Hygiene
 
@@ -74,7 +74,7 @@ Vectura Studio is a **no-build, browser-native** physics-inspired vector generat
 python -m http.server          # serve at http://localhost:8000
 # OR open index.html directly in a browser
 
-# Tests: npm run test:{unit,integration,e2e,visual,perf,ci,fast,update}
+# Tests: npm run test:{feedback,unit,integration,e2e,visual,perf,update}
 # — suite purposes and CI policy in docs/testing.md; pick suites via the Testing Matrix below
 # Single files / custom flags (queued — never call npx vitest / npx playwright test directly):
 npm run test:vitest -- run tests/unit/foo.test.js
@@ -104,41 +104,42 @@ Node 20.19+ required. `package.json` is the canonical version source — run `ve
 | UI interaction behavior | `test:integration` + `test:e2e` |
 | Rendering output or baselines | `test:visual` (+ `test:perf` for heavy paths) |
 | Docs-only | Link/path sanity review only |
-| Any PR / full confidence | `test:ci` (lifecycle + full-scope Vitest coverage + browser roster + uninstrumented perf) |
+| Any PR / full confidence | CI `ci-ok` (local `test:ci` is optional) |
 
 ## Test Performance Budget
 
-Full PR validation takes about 8 minutes. Keep it under 10. Full rules and history: [docs/test-performance-lessons.md](docs/test-performance-lessons.md).
+Keep PR validation under 10 minutes. Rules and history: [docs/test-performance-lessons.md](docs/test-performance-lessons.md).
 
 - A test file is the unit of sharding. Aim for at most ~120 s hosted coverage time per file. Split above ~240 s (by describe, shared helpers in `tests/helpers/`).
 - Prefer the cheapest layer. Do not repeat full scene renders. Every render must feed an assertion.
 - Every cache or trim needs a mutation proof that the witness still fails. Never compare a cached copy to itself.
-- Refresh shard weights only from Vitest blob durations (`scripts/test-shard-weights-refresh.js`). Keep 2 workers on CI. Re-run the whole workflow, not failed shards.
-- Never lower a threshold, add a skip, raise a timeout or move a test out of PR gating to save time.
+- Refresh shard weights only from Vitest blob durations (`scripts/test-shard-weights-refresh.js`). Keep 2 workers on CI.
+- Never lower a threshold, add a skip or raise a timeout to save time. Every test runs pre-merge on every PR that can affect it (path-routed, shared dependencies included), and every test runs on `main` nightly with an auto-issue on red.
+- Scene3D tests: at most 50 % of coverage file-seconds (reported, not gated; now about 55 %).
 - Measure wall time from workflow creation to the last check, with at least two hosted runs. A local timing is not proof.
 
 ## Shared Local Test Queue
 
 Every heavy test command runs through `scripts/test-queue.js`, a machine-wide lock shared by **all** worktrees, clones, and Claude sessions (lock dir `~/.cache/vectura-studio/test-queue`). Only one Vitest/Playwright run executes at a time; the others wait and print who holds the lock.
 
-- **Always use the npm entrypoints** (`npm run test:unit`, `test:integration`, `test:e2e`, `test:visual`, `test:perf`, `test:ci`, `test:fast`, `test:coverage`, `test:update`, `test:vitest`, `test:playwright`). **Never run `npx vitest`, `npx playwright test`, or `node_modules/.bin/{vitest,playwright}` directly** — that bypasses the queue and starves the other sessions. Env-var prefixes still work: `VECTURA_PRE_X=1 npm run test:vitest -- run tests/unit/x.test.js`.
+- **Always use the npm entrypoints** (`npm run test:feedback`, `test:unit`, `test:integration`, `test:e2e`, `test:visual`, `test:perf`, `test:ci`, `test:coverage`, `test:update`, `test:vitest`, `test:playwright`). **Never run `npx vitest`, `npx playwright test`, or `node_modules/.bin/{vitest,playwright}` directly** — that bypasses the queue and starves the other sessions. Env-var prefixes still work: `PRESET_CORPUS_RT=all npm run test:vitest -- run <file>`.
 - A "Waiting for the test lock held by PID …" line is normal. Do not kill the holder, delete the lock, or set `VECTURA_TEST_QUEUE_DISABLE=1` to skip the line. Check `npm run test:queue:status`. Stale locks (dead or reused PID) are recovered automatically.
-- Aggregates (`test:ci`, `test:fast`, `test`) hold the lock once for the whole chain; their nested `npm run test:*` calls pass straight through. Do not wrap a queued command in another queued command by hand.
+- Aggregates (`test:ci`, `test:audit`, `test`) hold the lock once for the whole chain; their nested `npm run test:*` calls pass straight through. Do not wrap a queued command in another queued command by hand.
 - CI is unaffected: with `CI` set, the wrapper runs the command directly with no lock. Details in `docs/testing.md` → "Shared Local Test Queue".
 
 ## Testing & Pre-Commit Validation (Red–Green–Refactor)
 
-**Before every commit, validate that every behavior change is covered by tests and that all tests pass** (target: all tests passing, e.g., 741/936/950). This is non-negotiable — CI does not retroactively un-break a commit, and a green-locally-only refactor will silently regress a stale test.
+**Every behavior change is covered by a test, and every test passes in CI before merge.** `ci-ok` is the full gate. Locally, run `npm run test:feedback` plus the test files you touched.
 
 For every change, follow Red–Green–Refactor:
 
 1. **Red.** Identify or write a test that *currently fails* without your change and would catch a regression. For pure refactors with no behavior change, confirm the existing tests already exercise the touched paths; if they don't, add coverage first.
-2. **Green.** Make the change. The new/affected test must pass.
+2. **Green.** Make the change. The new/affected test must pass. Put the RED proof (failing output before the fix) in the commit message or PR; the committed test guards the *current* contract. Never rebuild an old tree from git history in a test (`no-git-history-in-tests` enforces it).
 3. **Refactor.** Clean up. All tests still pass.
 
 **Mandatory pre-commit checklist** — run before `git commit`:
 
-- [ ] Run the suites required by the [Testing Matrix](#testing-matrix) for your change class. For anything non-trivial, run `npm run test:ci`. After any CSS or layout change, also run e2e/visual tests to catch z-index, media query, and specificity regressions.
+- [ ] Run `npm run test:feedback`, the touched test files, and the [Testing Matrix](#testing-matrix) suites for a broad change. After a CSS or layout change, also run the affected e2e specs.
 - [ ] Every behavior change has at least one test that **fails without the change and passes with it** (RGR proof). UI-only changes get integration or e2e coverage; renderer/algorithm changes get unit coverage.
 - [ ] When a test fails after a refactor, decide deliberately:
   - **Stale assertion** (product behavior intentionally changed) → update the test to reflect the new contract; never delete coverage to "make it pass."
@@ -146,7 +147,7 @@ For every change, follow Red–Green–Refactor:
 - [ ] No skipped or `.only` tests left in the diff.
 - [ ] If you removed a public API/method that tests called, update the tests to use the replacement API in the same commit. Don't leave orphaned `TypeError: app.ui.foo is not a function` failures for the next push.
 
-Do **not** rely on CI to surface failures — run the relevant suite locally first. If a CI run on a previous commit is already red, treat fixing it as a blocker for any new commit on the branch.
+If CI on a previous commit is red, fixing it blocks any new commit on the branch. Until branch protection requires `ci-ok` (see `docs/testing.md` → "Push-Gated Follow-Ups"), also run `npm run test:ci` for broad changes.
 
 ## Architecture
 
@@ -277,7 +278,3 @@ Rules:
 - If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
 - The pre-commit hook (`scripts/hooks/pre-commit`) auto-runs graphify AST update and stages output before every commit — no manual `graphify update .` needed
 - **Exclude graphify-out from routine git output** — its generated churn is noise. Use `git status -- . ':!graphify-out'` and `git diff [--cached] -- . ':!graphify-out'` for habitual checks; only look at it when diagnosing the graphify hooks themselves
-
-### Test acceleration lanes
-
-Use `npm run test:feedback` for bounded local feedback and `npm run test:route -- --base <sha> --head <sha> --json` to inspect explicit risk routing. Focused feedback does not replace retained full CI gates. Exhaustive proofs live in `tests/audit/`; use `npm run test:lane -- audit`. Promotion requires recorded shadow evidence, not a local timing estimate. See `docs/testing.md` and `docs/test-suite-acceleration.md`.

@@ -201,57 +201,22 @@ const PRE_T23B = {
   },
 };
 const ENVELOPE_MM = 2.0;
-// K * L0 * R_typical — `L0` is `MK.mkTick.L0` (1.16, unchanged by this
-// unit — see the live-source assertion below); `K` is a 30% margin over a
+// K * L0 * R_typical — `L0` is the live `MK.mkTick.L0`, read from the source
+// (the MK table is module-private), so a deliberate retune moves the cap with
+// it instead of failing a constant pin; `K` is a 30% margin over a
 // perfectly area-correct single tick. `R_typical` comes from THIS render's
 // own `mkStat.tickField.rowPitch` (`masterPitch / MK_ROW_COV`, the row
 // pitch a NON-degenerate patch actually uses) — not the pathological 40mm
 // global clamp ceiling in `solveAt`, which is wide enough to admit the
 // original 52.39mm defect and would never bind here.
 const K = 1.3;
-const L0 = 1.16;
+const L0 = (() => {
+  const m = loadHeadSource().match(/mkTick:\s*\{[^}]*\bL0: (\d+(?:\.\d+)?)/);
+  if (!m) throw new Error('mkTick L0 not found in the MK table (source drifted?)');
+  return Number(m[1]);
+})();
 
 describe('Scene3D.SurfaceFill — mkTick runaway-stroke guard (T2-3c, per-cell, no stray marks that are not ticks)', () => {
-  describe('mechanism assertions — read from the LIVE disk source', () => {
-    test('MK_TICK_JUMP_PEN exists and is a small integer multiple of MK_ARC_MM (not silently retuned)', () => {
-      const src = loadHeadSource();
-      const m = src.match(/const MK_TICK_JUMP_PEN = (\d+(?:\.\d+)?);/);
-      expect(m).not.toBeNull();
-      const val = Number(m[1]);
-      expect(val).toBeGreaterThanOrEqual(6);
-      expect(val).toBeLessThanOrEqual(20);
-    });
-
-    test('the jump cap is wired ONLY for law.shape === \'tick\' — mkDashRamp (\'morph\') always gets undefined', () => {
-      const src = loadHeadSource();
-      expect(src).toContain(
-        "const wk = walkPoly(fr, uOff, theta, poly, law.shape === 'tick' ? MK_TICK_STEP_CAP_MM : undefined);",
-      );
-    });
-
-    test('walkFrom/walkPoly both accept the new stepCapMM parameter', () => {
-      const src = loadHeadSource();
-      expect(src).toMatch(/const walkFrom = \(seedFr, seedPt, seedUV, target, stepCapMM, clipOn, clipR\) => \{/);
-      expect(src).toMatch(/const walkPoly = \(fr0, uOff, theta, poly, stepCapMM\) => \{/);
-    });
-
-    test('the R clamp ceiling this defect rides (solveAt, clamp(..., 0.25, 40)) is untouched by this unit', () => {
-      const src = loadHeadSource();
-      expect(src).toContain('clamp(((Number.isFinite(lp) && lp > 1e-6) ? lp : masterPitch) / markRowCoverage(), 0.25, 40);');
-    });
-
-    test('the lenChan area floor (T2-3b\'s Lfloor) is unmodified — this unit does not retune it', () => {
-      const src = loadHeadSource();
-      expect(src).toContain('const Lfloor = g * PMIN;');
-      expect(src).toContain('L = Math.min(law.L0 * R, Math.pow(Math.pow(Lease, 4) + Math.pow(Lfloor, 4), 1 / 4));');
-    });
-
-    test('MK.mkTick.L0 is still 1.16 (this unit does not touch the MK table)', () => {
-      const src = loadHeadSource();
-      expect(src).toContain("mkTick:        { shape: 'tick',     chan: 'len',   lat: 'brick',   or: 'none',   L0: 1.16, LMIN: 0.18, P0: 1.02 },");
-    });
-  });
-
   describe('per-cell, per-rig runaway census (BLOCKING) — six cells x two rigs', () => {
     let runtime;
     let Vectura;

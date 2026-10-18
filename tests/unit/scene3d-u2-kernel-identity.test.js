@@ -25,7 +25,9 @@
  * no `grid`, so the oracle block fails; the scene goldens pass on both sides
  * by design (that is the identity claim).
  */
+const fs = require('fs');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
 
 const hashPaths = (paths) => {
   let h1 = 0x811c9dc5 >>> 0; let n = 0; let pts = 0;
@@ -38,38 +40,38 @@ const hashPaths = (paths) => {
   return { hash: h1.toString(16), paths: n, pts };
 };
 
-// Captured on 383d7610 (pre-U2), once per CPU architecture.
+// Captured on 383d7610 (pre-U2), once per CPU architecture, and stored in
+// tests/baselines/golden-values/scene3d-u2-kernel-identity.json (one section
+// per arch; value = { hash, paths, pts }).
 //
 // WHY TWO HASHES. The hash covers full-precision float strings, and V8's
 // Math.sin/cos/tan/exp/log/atan2/pow (its C++ fdlibm port) round the last
 // ULP differently on arm64 (FMA-contracted build) and x86_64. A probe of 20k
 // random inputs per function differs on ~0.5% of results. So one byte-exact
 // golden can only hold on one architecture: the arm64 hashes (dev Macs) fail
-// on GitHub's ubuntu x86_64 runner even though nothing moved. Both columns
+// on GitHub's ubuntu x86_64 runner even though nothing moved. Both sections
 // were regenerated on the pre-U2 base 383d7610 itself (arm64 node and x64
 // node 20.20.2 under Rosetta), so each one is a true pre-U2 identity on its
 // own arch, not a re-pin of current output. Coordinate drift between the two
-// columns is <= 1.7e-10 with identical path/point counts.
-// Regenerate x64 on a Mac: download node-v<ver>-darwin-x64 and run the same
-// scene through `arch -x86_64 <x64 node>`; the result matches CI exactly.
-const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
+// sections is <= 1.7e-10 with identical path/point counts.
+// Regenerate x64 with scripts/test-update-goldens-x64.sh.
 // WHY THE NODE MAJOR. The same ULP argument holds ACROSS V8 versions on one
 // arch: on arm64, Node 25 rounds a Math result differently from Node 20 and
 // the mezzoRegion scene hashes '8ee322d6' instead of 'c9eba689' — on the
 // pre-U2 base 383d7610 itself too (measured 2026-10-11), so nothing moved.
-// The hashes were captured on Node 20 (CI's pinned major, see .nvmrc), so
-// they are enforced only there. On any other major, the path and point
-// counts must still match exactly; only the float-string hash is waived.
+// The goldens were captured on Node 20 (CI's pinned major, see .nvmrc), and
+// the golden-values helper enforces them only there.
 const GOLDEN_NODE_MAJOR = 20;
 const NODE_MAJOR = Number(process.versions.node.split('.')[0]);
-const HASH_ENFORCED = NODE_MAJOR === GOLDEN_NODE_MAJOR;
+const golden = goldenValues('scene3d-u2-kernel-identity');
+const sceneKey = (g) => `${g.prim}/${g.mapper}/${g.law}`;
 const GOLDENS = [
-  { prim: 'sphere', mapper: 'hatch', law: 'ladder', hash: { arm64: 'b8de834e', x64: 'f51e7a34' }, paths: 112, pts: 1589 },
-  { prim: 'sphere', mapper: 'hatch', law: 'etfKang', hash: { arm64: '458964db', x64: 'b2689b20' }, paths: 285, pts: 13885 },
-  { prim: 'sphere', mapper: 'hatch', law: 'turingStripe', hash: { arm64: '72b834ca', x64: 'ca0ee727' }, paths: 299, pts: 18773 },
-  { prim: 'sphere', mapper: 'hatch', law: 'mezzoRegion', hash: { arm64: 'c9eba689', x64: 'a3a7eb6f' }, paths: 534, pts: 17788 },
-  { prim: 'box', mapper: 'hatch', law: 'etfKang', hash: { arm64: '7fa7bd11', x64: '7fa7bd11' }, paths: 249, pts: 14053 },
-  { prim: 'torus', mapper: 'crosshatch', law: 'ladder', hash: { arm64: '7b731dab', x64: '3d709a7b' }, paths: 150, pts: 1430 },
+  { prim: 'sphere', mapper: 'hatch', law: 'ladder' },
+  { prim: 'sphere', mapper: 'hatch', law: 'etfKang' },
+  { prim: 'sphere', mapper: 'hatch', law: 'turingStripe' },
+  { prim: 'sphere', mapper: 'hatch', law: 'mezzoRegion' },
+  { prim: 'box', mapper: 'hatch', law: 'etfKang' },
+  { prim: 'torus', mapper: 'crosshatch', law: 'ladder' },
 ];
 
 // ── Legacy shadows.js primitives, VERBATIM (the identity reference) ─────────
@@ -131,12 +133,14 @@ describe('U2 kernel perf — bit-identity', () => {
   afterAll(() => runtime && runtime.cleanup());
 
   // Regression guard (PR #87 CI): a golden pinned on one architecture only
-  // passes locally and fails CI. Every row must carry both columns.
+  // passes locally and fails CI. Every scene must carry both sections.
   test('every scene golden is pinned for both arm64 and x64', () => {
-    GOLDENS.forEach((g) => {
-      expect(Object.keys(g.hash).sort()).toEqual(['arm64', 'x64']);
-      expect(g.hash.arm64).toMatch(/^[0-9a-f]{1,8}$/);
-      expect(g.hash.x64).toMatch(/^[0-9a-f]{1,8}$/);
+    const stored = JSON.parse(fs.readFileSync(golden.file, 'utf8'));
+    expect(Object.keys(stored).sort()).toEqual(['arm64', 'x64']);
+    const want = GOLDENS.map(sceneKey).sort();
+    ['arm64', 'x64'].forEach((arch) => {
+      expect(Object.keys(stored[arch]).sort()).toEqual(want);
+      Object.values(stored[arch]).forEach((v) => expect(v.hash).toMatch(/^[0-9a-f]{1,8}$/));
     });
   });
 
@@ -159,8 +163,7 @@ describe('U2 kernel perf — bit-identity', () => {
     child.params.transform.roll = 0;
     engine.computeAllDisplayGeometry();
     const got = hashPaths(group.scenePaths);
-    expect({ paths: got.paths, pts: got.pts }).toEqual({ paths: g.paths, pts: g.pts });
-    if (HASH_ENFORCED) expect(got.hash).toBe(g.hash[ARCH]);
+    golden.expect(sceneKey(g), { hash: got.hash, paths: got.paths, pts: got.pts });
   }, 180000);
 
   test('shadow fields — segment-grid distance and scanline inside test match the brute force exactly', () => {
