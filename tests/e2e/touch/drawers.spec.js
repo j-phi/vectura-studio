@@ -53,6 +53,15 @@ const uncovered = (page, sel) => page.evaluate((s) => {
 
 const intersects = (a, b) => !(a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y);
 
+// End state of a pane toggle: the pane reports the wanted open state, its width transition has finished and two
+// frames have passed. A fixed wait read the right pane mid-transition on a slow runner (197.3 of 200 px).
+// The predicate is synchronous: waitForFunction takes a returned Promise as truthy without awaiting it.
+const paneSettled = async (page, side, open) => {
+  await page.waitForFunction(([s, o, sel]) => window.Vectura.UI.Workspace.paneState.isOpen(s) === o
+    && !document.querySelector(sel).getAnimations().some((a) => a.playState === 'running'), [side, open, SIDE[side].pane], { polling: 'raf' });
+  await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res))));
+};
+
 const firstHeader = (side) => (side === 'left' ? '#left-pane .left-panel-section-header' : '#right-pane .right-pane-tab');
 
 test.describe('TUX-010 pane controls', () => {
@@ -123,7 +132,7 @@ test.describe('TUX-010 pane controls', () => {
       expect(a.h, `${side} collapse hitArea h`).toBeGreaterThanOrEqual(HIT_MIN);
       expect(await uncovered(page, sel), `${side} collapse uncovered`).toBe(true);
       await touch.tap(page, page.locator(sel));
-      await page.waitForTimeout(400);
+      await paneSettled(page, side, false);
       expect((await rectOf(page, SIDE[side].pane)).w, `${side} collapsed width`).toBeCloseTo(collapsed, 0);
       const e = await hit(page, sel);
       expect(e.w, `${side} expand hitArea w`).toBeGreaterThanOrEqual(HIT_MIN);
@@ -135,7 +144,7 @@ test.describe('TUX-010 pane controls', () => {
     expect(await touch.canvasShare(page), 'share, both collapsed').toBeGreaterThanOrEqual(75);
     for (const side of ['left', 'right']) {
       await touch.tap(page, page.locator(SIDE[side].chevron));
-      await page.waitForTimeout(400);
+      await paneSettled(page, side, true);
       expect(Math.abs((await rectOf(page, SIDE[side].pane)).w - docked[side]), `${side} re-docked width`).toBeLessThanOrEqual(1);
     }
   });

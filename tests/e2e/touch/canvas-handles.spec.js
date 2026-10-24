@@ -151,12 +151,23 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     const s = await setup(page, 140);
     const start = { x: s.se.x + 10, y: s.se.y + 10 };
     const before = await state(page, s.id);
-    await touch.touchPhase(page, 'start', [{ ...start, id: 0 }]);
-    await touch.touchPhase(page, 'move', [{ x: start.x + 3, y: start.y + 3, id: 0 }]);
-    await page.waitForTimeout(700);
-    for (let i = 1; i <= 8; i += 1) await touch.touchPhase(page, 'move', [{ x: start.x + 3 + i * 4.625, y: start.y + 3 + i * 4.625, id: 0 }]);
-    await touch.touchPhase(page, 'end', [{ x: start.x + 40, y: start.y + 40, id: 0 }]);
-    await page.waitForTimeout(200);
+    // App time, not wall time: on a slow runner the round trips between touchstart and the first 3 px move
+    // reached 900 ms, so the hold fired before the drag had moved at all (nightly run 40131398918).
+    await clock.freeze(page);
+    try {
+      await touch.touchPhase(page, 'start', [{ ...start, id: 0 }]);
+      await clock.advance(page, 16);
+      await touch.touchPhase(page, 'move', [{ x: start.x + 3, y: start.y + 3, id: 0 }]);
+      await clock.advance(page, 700);
+      for (let i = 1; i <= 8; i += 1) {
+        await touch.touchPhase(page, 'move', [{ x: start.x + 3 + i * 4.625, y: start.y + 3 + i * 4.625, id: 0 }]);
+        await clock.advance(page, 16);
+      }
+      await touch.touchPhase(page, 'end', [{ x: start.x + 40, y: start.y + 40, id: 0 }]);
+      await clock.advance(page, 200);
+    } finally {
+      await clock.thaw(page);
+    }
     expect(await page.locator('.canvas-ctx-menu').count(), 'no long-press menu during a started resize').toBe(0);
     const after = await state(page, s.id);
     const grew = after.widthPx - before.widthPx;
@@ -463,7 +474,7 @@ test.describe('TUX-023 rotate affordance clear of chrome after a corner resize (
       const box = document.querySelector('#main-canvas').getBoundingClientRect();
       return { x: p.x + box.left + 10, y: p.y + box.top + 10 };
     });
-    await touch.drag(page, se, { x: se.x + 30, y: se.y + 30 });
+    await clock.frozenDrag(page, se, { x: se.x + 30, y: se.y + 30 });
     await core.waitGeometryStable(page);
     await waitAffordanceDrawn(page);
     const res = await page.evaluate(() => {

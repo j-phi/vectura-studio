@@ -2,6 +2,7 @@ const { evidenceDir, shoot } = require('../helpers/evidence');
 const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 
 // TUX-024: the pen tool and the direct tool by finger. A finger closes a path by a tap near the start
 // point, finishes it with a double-tap that adds no extra anchor, and grabs an anchor from 15 px off it.
@@ -92,6 +93,8 @@ test.describe('TUX-024 pen and anchors by finger', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
+    // The anchor drag runs on a frozen page clock (clock.frozenDrag): a slow runner cannot stretch it past the 500 ms hold.
+    await clock.install(page);
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.renderer && window.app.engine));
     await page.waitForTimeout(600);
@@ -124,7 +127,7 @@ test.describe('TUX-024 pen and anchors by finger', () => {
       await threeAnchors(page, c);
       const from = at(c, { x: A1.x - d, y: A1.y });
       // A finger jitters a few px between down and up.
-      await touch.drag(page, from, { x: from.x + 2, y: from.y }, { steps: 1 });
+      await clock.frozenDrag(page, from, { x: from.x + 2, y: from.y }, { steps: 1 });
       await gap(page, 300);
       expect(await draft(page)).toBeNull();
       expect(await done(page)).toEqual([{ n: 3, closed: true }]);
@@ -212,7 +215,7 @@ test.describe('TUX-024 pen and anchors by finger', () => {
     const k = 15 / Math.SQRT2;
     const from = { x: before[0].x - k, y: before[0].y - k };
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, from)).toBe('main-canvas');
-    await touch.drag(page, from, { x: from.x + 30, y: from.y + 30 }, { steps: 10 });
+    await clock.frozenDrag(page, from, { x: from.x + 30, y: from.y + 30 }, { steps: 10 });
     const after = await anchorsPx();
     expect(info).toBeTruthy();
     expect(Math.abs(after[0].x - (before[0].x + 30))).toBeLessThanOrEqual(2);

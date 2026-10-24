@@ -112,53 +112,70 @@ const touchPhase = async (page, phase, points, opts = {}) => {
     return;
   }
   await ensureWebkitShim(page);
-  await page.evaluate(({ phase, points }) => {
-    const names = { start: ['pointerdown', 'touchstart'], move: ['pointermove', 'touchmove'], end: ['pointerup', 'touchend'], cancel: ['pointercancel', 'touchcancel'] }[phase];
-    const state = (window.__touchHelper = window.__touchHelper || { down: new Map() });
-    const caps = window.__touchCaptureShim.caps;
-    const lifting = phase === 'end' || phase === 'cancel';
-    points.forEach((p) => {
-      const pid = 100 + p.id;
-      // A 'start' for a finger that is already down (pinch staggerMs calls start([f0]) then
-      // start([f0, f1])) must not re-dispatch pointerdown/touchstart for it (TUX-057 fix).
-      if (phase === 'start' && state.down.has(p.id)) {
-        const held = state.down.get(p.id);
-        held.x = p.x; held.y = p.y;
-        return;
-      }
-      const el = document.elementFromPoint(p.x, p.y) || document.body;
-      const startTarget = phase === 'start' ? el : (state.down.get(p.id)?.target || el);
-      if (phase === 'start') { state.down.set(p.id, { target: el, x: p.x, y: p.y }); caps.set(pid, null); }
-      else if (state.down.has(p.id)) { const d = state.down.get(p.id); d.x = p.x; d.y = p.y; }
-      const pointerTarget = caps.get(pid) || startTarget;
-      const base = { bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, screenX: p.x, screenY: p.y };
-      pointerTarget.dispatchEvent(new PointerEvent(names[0], {
-        ...base, pointerId: pid, pointerType: 'touch', isPrimary: p.id === 0, width: 1, height: 1,
-        pressure: lifting ? 0 : 0.5, button: phase === 'move' ? -1 : 0, buttons: lifting ? 0 : 1,
-      }));
-      // TouchEvent: WebKit has no `new Touch()` (Illegal constructor); use createTouch/createTouchList.
-      const mk = (id, d) => {
-        if (document.createTouch) return document.createTouch(window, d.target, id, d.x + scrollX, d.y + scrollY, d.x, d.y);
-        return new Touch({ identifier: id, target: d.target, clientX: d.x, clientY: d.y, screenX: d.x, screenY: d.y, pageX: d.x + scrollX, pageY: d.y + scrollY });
-      };
-      const list = (arr) => (document.createTouchList ? document.createTouchList(...arr) : arr);
-      const self = { target: startTarget, x: p.x, y: p.y };
-      const live = [...state.down.entries()].filter(([id]) => !(lifting && id === p.id)).map(([id, d]) => mk(id, d));
-      const changed = [mk(p.id, self)];
-      const ev = new TouchEvent(names[1], { bubbles: true, cancelable: true });
-      const own = list(live);
-      Object.defineProperty(ev, 'touches', { value: own });
-      Object.defineProperty(ev, 'targetTouches', { value: list(live.filter((t) => t.target === startTarget)) });
-      Object.defineProperty(ev, 'changedTouches', { value: list(changed) });
-      startTarget.dispatchEvent(ev);
-      if (lifting) {
-        const held = caps.get(pid);
-        state.down.delete(p.id);
-        caps.delete(pid);
-        if (held) held.dispatchEvent(new PointerEvent('lostpointercapture', { bubbles: true, pointerId: pid, pointerType: 'touch' }));
-      }
-    });
-  }, { phase, points });
+  await page.evaluate(webkitDispatch, { steps: [{ phase, points }] });
+};
+
+// In-page (WebKit): dispatch synthetic touch phases, in order, in ONE task. steps: [{ phase, points }].
+const webkitDispatch = ({ steps }) => steps.forEach(({ phase, points }) => {
+  const names = { start: ['pointerdown', 'touchstart'], move: ['pointermove', 'touchmove'], end: ['pointerup', 'touchend'], cancel: ['pointercancel', 'touchcancel'] }[phase];
+  const state = (window.__touchHelper = window.__touchHelper || { down: new Map() });
+  const caps = window.__touchCaptureShim.caps;
+  const lifting = phase === 'end' || phase === 'cancel';
+  points.forEach((p) => {
+    const pid = 100 + p.id;
+    // A 'start' for a finger that is already down (pinch staggerMs calls start([f0]) then
+    // start([f0, f1])) must not re-dispatch pointerdown/touchstart for it (TUX-057 fix).
+    if (phase === 'start' && state.down.has(p.id)) {
+      const held = state.down.get(p.id);
+      held.x = p.x; held.y = p.y;
+      return;
+    }
+    const el = document.elementFromPoint(p.x, p.y) || document.body;
+    const startTarget = phase === 'start' ? el : (state.down.get(p.id)?.target || el);
+    if (phase === 'start') { state.down.set(p.id, { target: el, x: p.x, y: p.y }); caps.set(pid, null); }
+    else if (state.down.has(p.id)) { const d = state.down.get(p.id); d.x = p.x; d.y = p.y; }
+    const pointerTarget = caps.get(pid) || startTarget;
+    const base = { bubbles: true, cancelable: true, composed: true, clientX: p.x, clientY: p.y, screenX: p.x, screenY: p.y };
+    pointerTarget.dispatchEvent(new PointerEvent(names[0], {
+      ...base, pointerId: pid, pointerType: 'touch', isPrimary: p.id === 0, width: 1, height: 1,
+      pressure: lifting ? 0 : 0.5, button: phase === 'move' ? -1 : 0, buttons: lifting ? 0 : 1,
+    }));
+    // TouchEvent: WebKit has no `new Touch()` (Illegal constructor); use createTouch/createTouchList.
+    const mk = (id, d) => {
+      if (document.createTouch) return document.createTouch(window, d.target, id, d.x + scrollX, d.y + scrollY, d.x, d.y);
+      return new Touch({ identifier: id, target: d.target, clientX: d.x, clientY: d.y, screenX: d.x, screenY: d.y, pageX: d.x + scrollX, pageY: d.y + scrollY });
+    };
+    const list = (arr) => (document.createTouchList ? document.createTouchList(...arr) : arr);
+    const self = { target: startTarget, x: p.x, y: p.y };
+    const live = [...state.down.entries()].filter(([id]) => !(lifting && id === p.id)).map(([id, d]) => mk(id, d));
+    const changed = [mk(p.id, self)];
+    const ev = new TouchEvent(names[1], { bubbles: true, cancelable: true });
+    const own = list(live);
+    Object.defineProperty(ev, 'touches', { value: own });
+    Object.defineProperty(ev, 'targetTouches', { value: list(live.filter((t) => t.target === startTarget)) });
+    Object.defineProperty(ev, 'changedTouches', { value: list(changed) });
+    startTarget.dispatchEvent(ev);
+    if (lifting) {
+      const held = caps.get(pid);
+      state.down.delete(p.id);
+      caps.delete(pid);
+      if (held) held.dispatchEvent(new PointerEvent('lostpointercapture', { bubbles: true, pointerId: pid, pointerType: 'touch' }));
+    }
+  });
+});
+
+// Several touch phases back to back with no harness round trip between them: steps [{ phase, points }].
+// WebKit: one page.evaluate dispatches them all in one task, so event.timeStamp gaps are dispatch time only
+// (separate evaluates let a busy runner put 250 ms+ between a tap's touchstart and touchend).
+// CDP: the sends are queued together (no await between them) and the browser runs them in order.
+const touchSequence = async (page, steps) => {
+  if (engineSupports(page, 'cdp')) {
+    await cdpSession(page);
+    await Promise.all(steps.map(({ phase, points }) => touchPhase(page, phase, points)));
+    return;
+  }
+  await ensureWebkitShim(page);
+  await page.evaluate(webkitDispatch, { steps });
 };
 
 const lerp = (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
@@ -281,4 +298,4 @@ async function hitArea(page, target, { probe = 2, radius = 48 } = {}) {
   return core.probeHit(page, handle, { probe, radius });
 }
 
-module.exports = { tap, doubleTap, longPress, drag, pinch, twoFingerPan, canvasShare, hitArea, engineSupports, engineOf, touchPhase };
+module.exports = { tap, doubleTap, longPress, drag, pinch, twoFingerPan, canvasShare, hitArea, engineSupports, engineOf, touchPhase, touchSequence };
