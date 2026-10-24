@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const sweep = require('../helpers/target-sweep');
 
 // TUX-041 (owned-surfaces slice, lane C1): every control on the surfaces below is >= 44px in
 // both axes by helpers/touch.js hitArea() (counts ::before extensions), or allowlisted.
@@ -127,9 +128,12 @@ const tagGroup = (page, group, selector) => page.evaluate(({ group, selector }) 
 const measureGroup = async (page, group, selector) => {
   const n = await tagGroup(page, group, selector);
   const res = { n, measured: 0, small: [], covered: [], allow: [] };
-  for (let i = 0; i < n; i += 1) {
-    const loc = page.locator(`[data-tuxm="${i}"]`);
-    const info = await loc.evaluate((el, allowSels) => {
+  // One page.evaluate per group (sweep.inPage) instead of two round trips per target; same steps and order as before.
+  const rows = await sweep.inPage(page, ({ n, allowSels }, kit) => {
+    const out = [];
+    for (let i = 0; i < n; i += 1) {
+      const el = document.querySelector(`[data-tuxm="${i}"]`);
+      if (!el) { out.push({ missing: i }); continue; }
       el.scrollIntoView({ block: 'center', inline: 'nearest' });
       const r = el.getBoundingClientRect();
       const cx = r.left + r.width / 2;
@@ -142,10 +146,15 @@ const measureGroup = async (page, group, selector) => {
         const b = o.getBoundingClientRect();
         return { x: b.left, y: b.top, w: b.width, h: b.height };
       });
-      return { on, sel, allowed, rect: { x: r.left, y: r.top, w: r.width, h: r.height }, others };
-    }, ALLOWLIST.map((a) => a.selector));
+      if (!on) { out.push({ on }); continue; }
+      out.push({ on, sel, allowed, rect: { x: r.left, y: r.top, w: r.width, h: r.height }, others, area: kit.hitArea(el) });
+    }
+    return out;
+  }, { n, allowSels: ALLOWLIST.map((a) => a.selector) });
+  for (const info of rows) {
+    if (info.missing !== undefined) { res.small.push({ sel: `[data-tuxm="${info.missing}"] left the DOM during the sweep`, w: 0, h: 0 }); continue; }
     if (!info.on) continue;
-    const area = await touch.hitArea(page, loc);
+    const { area } = info;
     res.measured += 1;
     if (area.w === 0 && area.h === 0) { res.covered.push({ sel: info.sel }); continue; }
     if (area.w >= MIN && area.h >= MIN) continue;
@@ -160,6 +169,8 @@ const measureGroup = async (page, group, selector) => {
 };
 
 test.describe('TUX-041 owned-surface touch targets', () => {
+  // Every test boots its own page, so the file runs fully parallel.
+  test.describe.configure({ mode: 'parallel' });
   test('allowlist is small and well formed', () => {
     expect(ALLOWLIST.length).toBeLessThanOrEqual(10);
     ALLOWLIST.forEach((a) => { expect(a.selector).toBeTruthy(); expect(a.reason).toBeTruthy(); });

@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const core = require('../helpers/target-audit-core');
-const touch = require('../helpers/touch');
+const sweep = require('../helpers/target-sweep');
 const { PROJECTS } = require('./viewports');
 const { openPane, addLayer } = require('./target-audit-states');
 
@@ -25,13 +25,18 @@ async function listVisible(page, selector) {
 
 async function probeAll(page, selector) {
   const items = await listVisible(page, selector);
+  // One page.evaluate for the whole list (sweep.inPage) instead of two round trips per target.
+  const res = await sweep.inPage(page, ({ items }, kit) => items.map((it) => {
+    const e = document.querySelector(`[data-b1-probe="${it.i}"]`);
+    if (!e) return { missing: true };
+    e.scrollIntoView({ block: 'nearest' });
+    return kit.hitArea(e);
+  }), { items });
   const bad = [];
-  for (const it of items) {
-    const loc = page.locator(`[data-b1-probe="${it.i}"]`);
-    await loc.evaluate((e) => e.scrollIntoView({ block: 'nearest' }));
-    const a = await touch.hitArea(page, loc);
-    if (a.w < MIN || a.h < MIN) bad.push(`${it.label} ${a.w}x${a.h}`);
-  }
+  res.forEach((a, k) => {
+    if (a.missing) bad.push(`${items[k].label} left the DOM during the sweep`);
+    else if (a.w < MIN || a.h < MIN) bad.push(`${items[k].label} ${a.w}x${a.h}`);
+  });
   return { count: items.length, bad };
 }
 
@@ -61,7 +66,8 @@ async function openMenu(page, id) {
 
 test.describe('TUX-041 B1 header + menus', () => {
   test.use({ reducedMotion: 'reduce' });
-  test.describe.configure({ retries: 0 });
+  // Every test boots its own page, so the file runs fully parallel.
+  test.describe.configure({ mode: 'parallel', retries: 0 });
 
   test('header controls are at least 44 x 44', async ({ page, baseURL }) => {
     await boot(page, baseURL);
