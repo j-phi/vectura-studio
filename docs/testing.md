@@ -145,8 +145,9 @@ The same workflow runs on every push to `main` and nightly at 08:00 UTC.
 - **Nightly.** The nightly runs the heavy graph, coverage and the audits. It skips them when a push
   run on the same main SHA passed `ci-ok` and `coverage` in the last 24 hours.
 - **Nightly-only jobs** (schedule and `workflow_dispatch`; they never depend on `ci-plan`):
-  - `touch-e2e-nightly`: every touch spec in all 11 touch projects, 10 Playwright shards
-    (owner decision D-7: the full touch roster is nightly; the 2-project touch smoke runs on every PR).
+  - `touch-e2e-nightly`: every touch spec in all 11 touch projects, in 21 per-project legs
+    (see [Touch Nightly Legs](#touch-nightly-legs)). Owner decision D-7: the full touch roster is
+    nightly; the 2-project touch smoke runs on every PR.
   - `touch-audit-nightly`: the full 26-state target audit. On `workflow_dispatch` it also writes the
     missing linux baseline cells and the linux journey ledger into the `touch-audit-measured` artifact.
   - `visual-nightly`: `tests/e2e/visual.spec.js` on `desktop-visual-chromium` inside the pinned
@@ -156,7 +157,8 @@ The same workflow runs on every push to `main` and nightly at 08:00 UTC.
   merge commit that caused it.
 - **Flaky on main.** `report-flaky-main` totals the flaky summaries and comments on the `ci-flaky`
   issue when the count is above 0.
-- `workflow_dispatch` runs only the nightly-only jobs.
+- `workflow_dispatch` runs only the nightly-only jobs. To run the full touch nightly and the touch
+  audit on a branch: `gh workflow run test.yml --ref <branch>` (the run uses the branch's workflow).
 
 ## CI: Release
 
@@ -245,7 +247,9 @@ These steps need a push to `main` or a hosted run. Do them in this order after t
    `touch-audit-measured` artifact, commit the linux section of
    `tests/e2e/touch/target-baseline.json` and `tests/e2e/touch/journey-status.linux.json` (triage
    each entry first). After the ledger lands, the journey cells return to the PR touch smoke. If the
-   touch leg then grows, split it into `1/2, 2/2`.
+   touch leg then grows, split it into `1/2, 2/2`. Before the merge, the same dispatch on the fix
+   branch (`--ref fix/touch-nightly-linux`) checks the touch nightly on hosted Linux. Read each
+   leg's wall time and re-size the legs ([Touch Nightly Legs](#touch-nightly-legs)).
 3. **Confirm the x64 goldens** on the first hosted Vitest run. The new R-30, R-35 and R-40 keys
    were made under emulated linux/amd64.
 4. **Confirm the linux pixel baselines** on the first `visual-nightly`. They were made under
@@ -393,6 +397,47 @@ WebKit simulation does not prove (these belong to the real-device run, requireme
 - Real performance (GPU, memory, frame rate).
 
 The real-device run and the release gate are in `docs/touch-audit/device-checklist.md`. `tests/unit/touch-device-checklist.test.js` checks that file.
+
+### Timer-dependent touch tests: `tests/e2e/helpers/app-clock.js`
+
+A hosted runner can stretch the gap between two Playwright steps from about 20 ms to 700 ms. A test that holds for "about 300 ms" with `waitForTimeout` can then pass the 500 ms long-press, the 250 ms Petal Designer one-finger gate or a double-tap window by accident. Such a test measures the runner, not the app.
+
+- Run timer-dependent gestures on a frozen page clock. `install(page)` before `page.goto`, `freeze(page)` before the gesture, `advance(page, ms)` for each gap the test names, `thaw(page)` after. The page's timers, `Date.now()` and `performance.now()` move only by the `advance` amounts.
+- Assert a hold through the `touchhold:progress`, `touchhold:fire` and `touchhold:cancel` events (`detail.t` is ms since pointerdown), not through a sleep.
+- `touch.pinch(..., { frozenClock: true })` staggers its fingers on the page clock. `touch.doubleTap` uses CDP-stamped events.
+- Proof that a test measures the app: add a 300 ms per-touch latency to the helper. The test must still pass. Break the guarded timer (for example `holdMs` 250). The test must fail.
+
+### Target sweeps: `inPage` in `tests/e2e/helpers/target-sweep.js`
+
+`sweep.inPage(page, fn, arg)` runs a whole sweep of targets in one `page.evaluate`. A per-target loop in Node costs about 7 round trips per target; on hosted WebKit most of a targets-* run was round trips. `fn` must be self-contained (no closure over Node variables). It gets `kit.hitArea(el, opts)` (the `hitArea` defaults: probe 2 px, radius 48 px) and `kit.frame()` (waits one animation frame). Every `targets-*` file runs `mode: 'parallel'`, so `--shard` splits inside it. A new targets-* file must do the same (`tests/unit/e2e-ci-roster.test.js`).
+
+### The canvas long-press yields to a started drag
+
+The canvas hold (TUX-034b, 500 ms) never takes back a drag that the same touch started.
+
+- `TouchHold.bind(..., { shouldYield })` asks `shouldYield({ moved })` on every move of the held pointer and again before the fire. True cancels the hold with reason `interaction`.
+- The canvas owner asks `renderer.longPressShouldYield({ moved })`. It is true when the touch crossed the touch drag slop. It is also true when the finger moved at all while a drag that edits from the first pixel is active: the flags in `TouchGestureArbiter.LONG_PRESS_YIELD_FLAGS` (layer, light, pen, corner, anchor, modifier, 3D gizmo and scene drags), or a Direct drag with no touch slop.
+- A stationary hold never yields, so the menu still opens there. Marquee, lasso and pan keep the hold's own slop.
+- A new drag type that edits from the first pixel must add its flag to `LONG_PRESS_YIELD_FLAGS`. The slow-drag e2e cases in `canvas-long-press`, `canvas-handles` and `gizmo-3d` (3 px or 8 px steps, a 700 ms rest, then more moves) guard the contract.
+
+### Touch Nightly Legs
+
+`touch-e2e-nightly` runs one matrix leg per touch project, or one leg per Playwright shard of a slow project (`--project=<p> --shard=i/n`). Each leg installs only its own engine. Target: every leg at or under about 25 minutes on a hosted runner, and fewer runner-minutes than the old 10-way `--shard` matrix (about 514 runner-minutes in run 39161828852, slowest shard 97 minutes).
+
+| Project | Legs | Project | Legs |
+|---|---|---|---|
+| `touch-ipad-portrait` | 2 | `webkit-ipad-portrait` | 2 |
+| `touch-ipad-landscape` | 2 | `webkit-ipad-landscape` | 3 |
+| `touch-iphone-portrait` | 2 | `webkit-iphone-portrait` | 2 |
+| `touch-iphone-landscape` | 2 | `webkit-iphone-landscape` | 2 |
+| `touch-iphone-portrait-chrome` | 1 | `touch-coarse-wide` | 2 |
+| `touch-iphone-landscape-chrome` | 1 | | |
+
+- Sizing source: the per-file times in the hosted run 39161828852 log (line-reporter timestamps, 2 workers), with the targets-* files at one third of their time (the U2 `inPage` sweeps: 2.7x to 3.3x faster in the docker noble image). The estimate is 15 to 23 minutes per leg and about 400 runner-minutes in total. On the hosted log, a WebKit project took about 1.3x its Chromium twin (with its failures); `webkit-ipad-landscape` is the slowest project. A WebKit project never gets fewer legs than its Chromium twin (unit test).
+- Playwright cuts a shard by test count, not by time. If a leg goes over 25 minutes, add a shard to that project (`of` + 1 and one more `include` row). `tests/unit/e2e-ci-roster.test.js` checks that each project's shards are exactly 1..`of`.
+- Retries stay at 1, so a test that passes on retry is a reported flake (`playwright-flaky-touch-e2e-nightly-<project>-<shard>` artifacts, then `report-flaky-main`). `--max-failures=20` stops a leg after 20 final failures (a flaky pass does not count): a retried deterministic failure costs double, and a leg with 20 failures is red anyway.
+- Leg timeout: 45 minutes. A timed-out leg is `cancelled`, so `ci-ok` fails and `report-red-main` runs on a schedule.
+- On a red leg, download `touch-e2e-<project>-<shard>` (traces, videos and screenshots of the failed tests).
 
 ## Touch Target Audit Ratchet (TUX-058)
 `tests/e2e/touch/target-audit.spec.js` measures touch targets and layout in every touch project and compares them to `tests/e2e/touch/target-baseline.json`. The baseline only goes down.
