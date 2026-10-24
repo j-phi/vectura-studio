@@ -176,11 +176,12 @@ test.describe('TUX-010 pane controls', () => {
         await touch.tap(page, page.locator(openerFor(layout, side)));
       }
       await page.waitForTimeout(800);
-      const r = await rectOf(page, pane);
       // Deviation (see commit notes): the right pane is 258 px by the skin manifest (200 on touch-wide, capped
       // by TUX-008), so its floor is 258 / 200. The left pane keeps the 260 floor.
       const floor = side === 'left' ? 260 : (layout === 'touch-wide' ? 200 : 258);
-      expect(r.w, `${side} pane width`).toBeGreaterThanOrEqual(floor);
+      // The touch-wide pane opens with a width transition. A slow WebKit runner was still mid-way after 800 ms
+      // (259.3 of 260), so the width is read once the pane has settled: polled until the floor, or a timeout fails.
+      await expect.poll(async () => (await rectOf(page, pane)).w, { timeout: 5000, message: `${side} pane width` }).toBeGreaterThanOrEqual(floor);
       if (layout === 'touch-wide') {
         expect(await page.locator(pane).evaluate((e) => e.classList.contains('pane-collapsed'))).toBe(false);
       } else {

@@ -319,8 +319,9 @@
         input.type = 'text';
         input.className = 'dual-value-input';
         input.dataset.handle = which;
-        input.inputMode = mode;
-        input.enterKeyHint = hint;
+        // Attributes, not properties: WebKit on Linux has no enterKeyHint IDL attribute (see slider.js).
+        input.setAttribute('inputmode', mode);
+        input.setAttribute('enterkeyhint', hint);
         input.setAttribute('aria-label', `${label} (${which})`);
         input.value = `${toDisplayValue(def, val)}`;
         return input;
@@ -339,9 +340,20 @@
       minInput.select();
 
       let closed = false;
+      // iOS does not blur an input when the finger lands on non-focusable text, so focusout alone may never
+      // come. A pointerdown outside the editor commits it (inside, min -> max, keeps it open).
+      const doc = editor.ownerDocument;
+      const onOutsidePointerDown = (e) => {
+        if (closed || (e.target && editor.contains(e.target))) return;
+        commit();
+      };
+      doc.addEventListener('pointerdown', onOutsidePointerDown, true);
       const cleanup = () => {
         if (closed) return;
         closed = true;
+        doc.removeEventListener('pointerdown', onOutsidePointerDown, true);
+        const active = doc.activeElement;
+        if (active && editor.contains(active) && typeof active.blur === 'function') active.blur();
         editor.remove();
         valueEl.style.display = prevDisplay;
         valueEl._dualEditing = false;

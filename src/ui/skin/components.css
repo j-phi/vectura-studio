@@ -13975,6 +13975,13 @@ html.kb-open .export-settings-scroll {
   [data-ui-skin] #left-pane :has(> .info-btn) {
     display: flex; min-height: var(--touch-target-min); align-items: center;
   }
+  /* An info button that ends its row keeps half a finger free after it, so the 44 px extension stays inside the row
+   * however wide the label renders (Linux text is wider; a long label pushed the button against the pane resizer). The
+   * label wraps instead. The visual is 14 px + 1 px borders = 16 px, so the room after it is 44 / 2 - 8 px. */
+  [data-ui-skin] #left-pane :has(> .info-btn) > .info-btn:last-child {
+    margin-right: calc(var(--touch-target-min) / 2 - 8px);
+    flex: 0 0 auto;
+  }
   /* A justify-between row whose left child holds the label + info button: centre the value tag
    * on the same line as the label instead of letting it float to the top of the 44px row. */
   [data-ui-skin] #left-pane :is(.flex, [class*="justify-between"]):has(> * > .info-btn) { align-items: center; }
@@ -15487,8 +15494,13 @@ body.touch-wide-layout.touch-ui .pane-collapsed .pane-toggle svg { transform: ro
 /* === TUX-010: tab strip clear of the 44 px right chevron ===
  * The right pane chevron sits at left:4px and is 44 px wide (to x=48 of the pane). The tab strip used to start
  * at ~x=44, so a tap on the left edge of the first tab hit the chevron and collapsed the pane. */
+/* The header padding clears the chevron (left 4 px + 44 px) and the strip starts 8 px after it. The margin used to add the
+ * chevron width on top of a 44 px header padding, which left 95 px for both tabs on touch-wide: wider Linux text overflowed
+ * the pane. min-width 0 lets the tabs share the strip instead of pushing it past the pane edge. */
+body.touch-ui #right-pane .pane-header-right { padding-left: calc(var(--touch-target-min, 44px) + 4px); }
 body.touch-ui #right-pane .right-pane-tabs {
-  margin-left: calc(var(--touch-target-min, 44px) + 8px);
+  margin-left: 8px;
+  min-width: 0;
 }
 /* === END TUX-010 tabs === */
 
@@ -15841,7 +15853,10 @@ body.touch-wide-layout .touch-mod-badge {
   left: calc(var(--touch-mod-badge-left) + 76px);
 }
 /* The floating touch-wide bar covers canvas: short labels keep its footprint at or below the old five-key bar. */
-body.touch-wide-layout #touch-modifier-bar .touch-mod-btn { padding: 0 8px; gap: 4px; }
+/* Fixed-width keys: the bar's canvas footprint must not follow text metrics (Linux renders the short labels 1-3 px
+ * wider, which put the both-collapsed canvas share under its 75 % floor). 60 px holds the 20 px icon, the gap and a
+ * short label up to 30 px. */
+body.touch-wide-layout #touch-modifier-bar .touch-mod-btn { padding: 0 2px; gap: 4px; flex: 0 0 60px; width: 60px; min-width: 0; box-sizing: border-box; }
 body.touch-wide-layout #touch-modifier-bar .touch-mod-btn .touch-mod-label { display: none; }
 body.touch-wide-layout #touch-modifier-bar .touch-mod-btn .touch-mod-short { display: block; }
 body.touch-wide-layout #touch-modifier-bar { padding: 4px; gap: 4px; }
@@ -15935,8 +15950,11 @@ body.touch-ui #vectura-toast-host {
   align-items: center;
   flex-direction: column-reverse;
 }
+/* At most the desktop 320 px (and never wider than the host): toast.js clears bottom chrome within 168 px of the centre
+ * line, so a toast wider than 336 px could sit on a strip it did not count. With the cap the placement no longer depends
+ * on how wide the text renders (a long message on Linux spanned the collapsed bottom pane on iPhone landscape). */
 body.touch-ui #vectura-toast-host .vectura-toast {
-  max-width: 100%;
+  max-width: min(100%, 320px);
   min-width: 0;
 }
 body.touch-ui #vectura-toast-host .vectura-toast:not(.is-actionable) { pointer-events: none; }
