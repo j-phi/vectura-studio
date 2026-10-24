@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 
 // TUX-018a: a pointercancel (Control Center swipe, notification, palm) aborts the canvas edit and
 // restores the pre-gesture state. It never commits and adds no history entry.
@@ -72,6 +73,7 @@ const probe = (page, id) => page.evaluate((id) => {
 test.describe('TUX-018a pointercancel aborts', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     test.skip(!PRIMARY.includes(testInfo.project.name), 'primary projects only');
+    await clock.install(page);
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
   });
@@ -88,17 +90,21 @@ test.describe('TUX-018a pointercancel aborts', () => {
   test('a cancelled object move returns the object and leaves no stuck state', async ({ page }, testInfo) => {
     const { id, pt } = await fixture(page, testInfo, { tool: 'select' });
     const before = await probe(page, id);
+    // Held well under the 500 ms canvas long-press (TUX-034), so the touch stays a move. The page clock is frozen
+    // through the gesture: the 250 ms rest is app time, so a slow runner cannot stretch it past the hold (nightly B1).
+    await clock.freeze(page);
     await touch.touchPhase(page, 'start', [{ ...pt, id: 0 }]);
-    // Held well under the 500 ms canvas long-press (TUX-034), so the touch stays a move.
-    await sleep(250);
+    await clock.advance(page, 250);
     for (let i = 1; i <= 10; i += 1) {
       await touch.touchPhase(page, 'move', [{ x: pt.x + 5 * i, y: pt.y + 2 * i, id: 0 }]);
-      await sleep(15);
+      await clock.advance(page, 15);
     }
     const live = await probe(page, id);
     expect(live.isLayerDrag, 'move in flight').toBe(true);
     expect(live.temp && Math.abs(live.temp.dx) > 1, 'temp offset present').toBeTruthy();
     await touch.touchPhase(page, 'cancel', [{ x: pt.x + 50, y: pt.y + 20, id: 0 }]);
+    await clock.advance(page, 80);
+    await clock.thaw(page);
     await sleep(80);
     const after = await probe(page, id);
     expect(Math.abs(after.posX - before.posX)).toBeLessThan(0.01);

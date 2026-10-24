@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 
 // TUX-001 closing round: sub-level fit/scroll in landscape, modifier glyphs in landscape,
 // header vs modal (and after the modal closes), narrow mouse window overflow, phone-path audit probe.
@@ -86,29 +87,56 @@ test.describe('TUX-001 closing round', () => {
     await expect.poll(() => page.evaluate(() => (window.app.renderer.penDraft ? window.app.renderer.penDraft.anchors.length : 0))).toBe(1);
   });
 
+  // The contract: the swallow has no time window, so a real tap right after the closing tap still fires. The two taps
+  // must land inside 150 ms of APP time, not of harness time (a hosted runner measured 288 ms between two Playwright
+  // taps). The page clock is frozen across the pair, so Date.now(), performance.now() and event.timeStamp (the page
+  // clock drives all three: measured gap 0) do not move between them. In Chromium each touch also carries a hardware
+  // time 30 ms after its touchstart, so the browser's gesture detector sees a tap, not a slow press.
   test('TUX-001 a real tap within 150 ms of the closing outside tap still fires (no time window)', async ({ page }, testInfo) => {
     phoneOnly(testInfo);
+    await clock.install(page);
     await gotoApp(page);
-    await page.evaluate(() => { window.app.pushHistory(); window.app.engine.addLayer('spiral'); window.app.render(); window.app.ui.renderLayers(); });
+    await page.evaluate(() => {
+      window.app.pushHistory(); window.app.engine.addLayer('spiral'); window.app.render(); window.app.ui.renderLayers();
+      window.__downs = [];
+      // Window capture runs before the sheet's document-capture swallow, which stops the closing tap's pointerdown.
+      window.addEventListener('pointerdown', (e) => window.__downs.push({ now: performance.now(), ts: e.timeStamp }), true);
+    });
+    const cdp = touch.engineSupports(page, 'cdp');
     const wordmark = () => page.evaluate(() => { const r = document.querySelector('#app-header h1').getBoundingClientRect(); return { x: r.x + 4, y: r.y + r.height / 2 }; });
-    const closeByOutsideTap = async () => {
+    const centre = (sel) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, sel);
+    const tapAt = async (p, sec) => {
+      if (!cdp) { await page.touchscreen.tap(p.x, p.y); return; }
+      await touch.touchPhase(page, 'start', [{ ...p, id: 0 }], { timestamp: sec });
+      await touch.touchPhase(page, 'end', [{ ...p, id: 0 }], { timestamp: sec + 0.03 });
+    };
+    // Close the sheet by an outside tap on the wordmark, then tap `next` at once (app time).
+    const closeThenTap = async (next) => {
       await touch.tap(page, page.locator('#btn-menu-hamburger'));
       await expect(page.locator('body.phone-menu-open')).toHaveCount(1);
-      await touch.tap(page, await wordmark());
-      return Date.now();
+      const w = await wordmark();
+      const n = await centre(next);
+      await page.evaluate(() => { window.__downs = []; });
+      await clock.freeze(page);
+      const t0 = Date.now() / 1000;
+      await tapAt(w, t0);
+      await tapAt(n, t0 + 0.1);
+      const downs = await page.evaluate(() => window.__downs);
+      await clock.thaw(page);
+      expect(downs.length, `two pointerdowns ${JSON.stringify(downs)}`).toBe(2);
+      const gap = { clock: downs[1].now - downs[0].now, stamp: downs[1].ts - downs[0].ts };
+      expect(gap.clock, `page clock gap ${JSON.stringify(gap)}`).toBeLessThanOrEqual(150);
+      expect(gap.stamp, `event.timeStamp gap ${JSON.stringify(gap)}`).toBeLessThanOrEqual(150);
+      return gap;
     };
     // (a) header Undo right after the closing tap
     const layers0 = await page.evaluate(() => window.app.engine.layers.length);
-    let t0 = await closeByOutsideTap();
-    await touch.tap(page, page.locator('#btn-header-undo'));
-    const gapUndo = Date.now() - t0;
-    expect(await page.evaluate(() => window.app.engine.layers.length), `Undo fired ${gapUndo} ms after the closing tap`).toBe(layers0 - 1);
+    const gapUndo = await closeThenTap('#btn-header-undo');
+    await expect.poll(() => page.evaluate(() => window.app.engine.layers.length), { message: `Undo fired ${JSON.stringify(gapUndo)} after the closing tap` }).toBe(layers0 - 1);
     // (b) hamburger re-tap right after the closing tap reopens the sheet
-    t0 = await closeByOutsideTap();
-    await touch.tap(page, page.locator('#btn-menu-hamburger'));
-    const gapBurger = Date.now() - t0;
-    await expect(page.locator('body.phone-menu-open'), `hamburger reopened ${gapBurger} ms after the closing tap`).toHaveCount(1);
-    expect(Math.max(gapUndo, gapBurger), 'the taps landed inside the 150 ms bound the contract names').toBeLessThanOrEqual(150);
+    await page.evaluate(() => { if (document.body.classList.contains('phone-menu-open')) document.getElementById('btn-menu-hamburger').click(); });
+    const gapBurger = await closeThenTap('#btn-menu-hamburger');
+    await expect(page.locator('body.phone-menu-open'), `hamburger reopened ${JSON.stringify(gapBurger)} after the closing tap`).toHaveCount(1);
   });
 
   // TUX-001 review (batch 3b): a tap on a visible header ACTION while the sheet is open closes the sheet AND runs the action.
@@ -302,8 +330,9 @@ test.describe('phone ☰ › File at 874x330', () => {
     const box = await page.locator(panelSel).boundingBox();
     const cx = box.x + box.width / 2; const cy = box.y + box.height / 2;
     if (touch.engineOf(page) === 'chromium') {
-      const cdp = await page.context().newCDPSession(page);
-      await cdp.send('Input.synthesizeScrollGesture', { x: Math.round(cx), y: Math.round(cy), yDistance: -400, gestureSourceType: 'touch', speed: 1200 });
+      // A real finger swipe (trusted CDP touches). Input.synthesizeScrollGesture with a touch source scrolls nothing
+      // in the Linux headless shell (measured: scrollTop stays 0), while the same swipe as touch events scrolls it.
+      await touch.drag(page, { x: cx, y: cy + 60 }, { x: cx, y: cy - 100 }, { steps: 16 });
     } else {
       // Playwright WebKit has no native touch or wheel scroll on mobile; scroll the sub-level as the swipe would.
       await page.evaluate((sel) => { const p = document.querySelector(sel); p.scrollTop = p.scrollHeight; }, panelSel);

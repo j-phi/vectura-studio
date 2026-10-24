@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 
 // TUX-017 — two fingers always pan and zoom, with every tool.
 // Finger-only input through the touch helpers (CDP in Chromium, synthetic events in WebKit).
@@ -194,6 +195,7 @@ const assertUntouched = (before, after, label) => {
 test.describe('TUX-017 gesture arbiter', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     test.skip(!PRIMARY.includes(testInfo.project.name), 'primary projects only');
+    await clock.install(page);
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
   });
@@ -214,7 +216,12 @@ test.describe('TUX-017 gesture arbiter', () => {
       const target = c.at === 'obj' ? { x: pts.obj.x + PINCH.startDist / 2, y: pts.obj.y } : pts.empty;
       await precondition(page, target, PINCH.startDist, project);
       const before = await observe(page);
-      await touch.pinch(page, target, { ...PINCH, staggerMs });
+      // Frozen page clock: the stagger is app time, so a slow runner cannot leave the first finger alone long enough
+      // to start a one-finger action (nightly B1: the Scene 3D case never zoomed on WebKit).
+      await clock.freeze(page);
+      await touch.pinch(page, target, { ...PINCH, staggerMs, frozenClock: true });
+      await clock.advance(page, 40);
+      await clock.thaw(page);
       await sleep(40);
       const after = await observe(page);
       const label = `${c.name} #${i + 1}`;
@@ -303,11 +310,13 @@ test.describe('TUX-017 gesture arbiter', () => {
       return { cx: b.center.x, cy: b.center.y, scale: r.scale, hist: window.app.history.length };
     });
     const f0 = { x: startAt.x, y: startAt.y, id: 0 };
+    // Frozen page clock: the rest and the steps are app time, so the hold cannot fire between slow round trips.
+    await clock.freeze(page);
     await touch.touchPhase(page, 'start', [f0]);
-    await sleep(250); // under the 500 ms canvas long-press (TUX-034)
+    await clock.advance(page, 250); // under the 500 ms canvas long-press (TUX-034)
     for (let i = 1; i <= 8; i += 1) {
       await touch.touchPhase(page, 'move', [{ ...f0, x: f0.x + 5 * i }]);
-      await sleep(25);
+      await clock.advance(page, 25);
     }
     const f0Now = { ...f0, x: f0.x + 40 };
     const f1 = { x: f0Now.x + 60, y: f0Now.y, id: 1 };
@@ -316,6 +325,8 @@ test.describe('TUX-017 gesture arbiter', () => {
       await touch.touchPhase(page, 'move', [{ ...f0Now, x: f0Now.x - 4.5 * i }, { ...f1, x: f1.x + 4.5 * i }]);
     }
     await touch.touchPhase(page, 'end', [{ ...f0Now, x: f0Now.x - 45 }, { ...f1, x: f1.x + 45 }]);
+    await clock.advance(page, 60);
+    await clock.thaw(page);
     await sleep(60);
     const after = await page.evaluate(() => {
       const r = window.app.renderer;
@@ -368,6 +379,7 @@ test.describe('TUX-019 direct drag', () => {
   let savedSettings = null;
   test.beforeEach(async ({ page }, testInfo) => {
     test.skip(!PRIMARY.includes(testInfo.project.name), 'primary projects only');
+    await clock.install(page);
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
     savedSettings = await page.evaluate(() => {
@@ -536,10 +548,13 @@ test.describe('TUX-019 direct drag', () => {
     const { id, pts } = await setup(page, testInfo, { tool: 'select', selectObject: true });
     const before = await probe(page, [id]);
     const f = { x: pts.obj.x, y: pts.obj.y, id: 0 };
+    // Frozen page clock through the gesture: the steps are 15 ms of app time apart, so the 500 ms hold cannot fire
+    // between two slow round trips (nightly B1).
+    await clock.freeze(page);
     await touch.touchPhase(page, 'start', [f]);
     for (let i = 1; i <= 8; i += 1) {
       await touch.touchPhase(page, 'move', [{ x: f.x + 6 * i, y: f.y + 3 * i, id: 0 }]);
-      await sleep(15);
+      await clock.advance(page, 15);
     }
     expect((await probe(page, [id])).isLayerDrag, 'move in flight').toBe(true);
     if (touch.engineSupports(page, 'cdp')) {
@@ -549,6 +564,8 @@ test.describe('TUX-019 direct drag', () => {
     } else {
       await touch.touchPhase(page, 'cancel', [{ x: f.x + 48, y: f.y + 24, id: 0 }]);
     }
+    await clock.advance(page, 60);
+    await clock.thaw(page);
     await sleep(60);
     const after = await probe(page, [id]);
     expect(Math.hypot(after.cx - before.cx, after.cy - before.cy) * before.scale, 'moved px').toBeLessThan(0.5);

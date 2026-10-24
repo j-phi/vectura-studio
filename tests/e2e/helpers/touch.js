@@ -225,21 +225,26 @@ async function drag(page, from, to, { holdMs = 0, steps = 10, stepDelayMs = 0, e
 
 // pinch: two fingers around `center` moving from startDist to endDist apart (horizontal axis).
 // staggerMs delays the second finger's touchstart (real fingers never land together).
-async function pinch(page, center, { startDist = 80, endDist = 240, steps = 10, staggerMs = 0 } = {}) {
+// frozenClock: the caller froze the page clock (helpers/app-clock.js). The stagger and a 16 ms frame per move step
+// then run on the page clock, so a slow runner cannot stretch the stagger past an app gate (the 250 ms one-finger
+// gate, the 500 ms hold) between the two touchstarts.
+async function pinch(page, center, { startDist = 80, endDist = 240, steps = 10, staggerMs = 0, frozenClock = false } = {}) {
   const c = await toPoint(center);
   const at = (d) => [
     { x: c.x - d / 2, y: c.y, id: 0 },
     { x: c.x + d / 2, y: c.y, id: 1 },
   ];
+  const wait = (ms) => (frozenClock ? page.clock.runFor(ms) : sleep(ms));
   if (staggerMs) {
     await touchPhase(page, 'start', [at(startDist)[0]]);
-    await sleep(staggerMs);
+    await wait(staggerMs);
     await touchPhase(page, 'start', at(startDist));
   } else {
     await touchPhase(page, 'start', at(startDist));
   }
   for (let i = 1; i <= steps; i += 1) {
     await touchPhase(page, 'move', at(startDist + (endDist - startDist) * (i / steps)));
+    if (frozenClock) await wait(16);
   }
   await touchPhase(page, 'end', at(endDist));
 }
