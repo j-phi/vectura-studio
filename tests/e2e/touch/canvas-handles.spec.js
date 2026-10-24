@@ -142,6 +142,25 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(grew).toBeLessThanOrEqual(52);
   });
 
+  // C1 (nightly): a corner drag starts at 0 px. A slow finger (3 px, then a rest past the 500 ms hold delay)
+  // must keep the resize: the canvas long-press yields to the started drag and opens no menu.
+  test('slow corner drag past the hold delay still resizes and opens no menu', async ({ page }) => {
+    const s = await setup(page, 140);
+    const start = { x: s.se.x + 10, y: s.se.y + 10 };
+    const before = await state(page, s.id);
+    await touch.touchPhase(page, 'start', [{ ...start, id: 0 }]);
+    await touch.touchPhase(page, 'move', [{ x: start.x + 3, y: start.y + 3, id: 0 }]);
+    await page.waitForTimeout(700);
+    for (let i = 1; i <= 8; i += 1) await touch.touchPhase(page, 'move', [{ x: start.x + 3 + i * 4.625, y: start.y + 3 + i * 4.625, id: 0 }]);
+    await touch.touchPhase(page, 'end', [{ x: start.x + 40, y: start.y + 40, id: 0 }]);
+    await page.waitForTimeout(200);
+    expect(await page.locator('.canvas-ctx-menu').count(), 'no long-press menu during a started resize').toBe(0);
+    const after = await state(page, s.id);
+    const grew = after.widthPx - before.widthPx;
+    expect(grew).toBeGreaterThanOrEqual(28);
+    expect(grew).toBeLessThanOrEqual(52);
+  });
+
   test('small object moves from its centre', async ({ page }) => {
     const s = await setup(page, 32);
     const before = await state(page, s.id);

@@ -91,6 +91,24 @@ test.describe('TUX-034 canvas long-press', () => {
     expect(await page.locator(MENU).count()).toBe(0);
   });
 
+  // C1 (nightly): a slow, precise finger drag must not be taken back by the hold. The first step crosses the 6 px
+  // move slop but stays under the 10 px hold slop, then the finger rests past the 500 ms hold delay (a slow runner
+  // or a careful user) before it continues. The move has started, so the hold must yield: no menu, the object moves.
+  test('a slow drag of an unselected object past the hold delay moves it and opens no menu', async ({ page }) => {
+    const s = await setupDirectPick(page);
+    await page.evaluate(() => { window.app.renderer.setTool('select'); window.app.renderer.setSelection([], null); });
+    const p0 = await pos(page, s.id);
+    await touch.touchPhase(page, 'start', [{ x: s.x, y: s.y, id: 0 }]);
+    await touch.touchPhase(page, 'move', [{ x: s.x + 8, y: s.y, id: 0 }]);
+    await page.waitForTimeout(700);
+    for (let i = 1; i <= 8; i += 1) await touch.touchPhase(page, 'move', [{ x: s.x + 8 + i * 4, y: s.y, id: 0 }]);
+    await touch.touchPhase(page, 'end', [{ x: s.x + 40, y: s.y, id: 0 }]);
+    await page.waitForTimeout(200);
+    expect(await page.locator(MENU).count(), 'no long-press menu during a started move').toBe(0);
+    const p1 = await pos(page, s.id);
+    expect(p1[0] - p0[0], 'the object moved right').toBeGreaterThan(0);
+  });
+
   test('a drawing tool keeps its own hold: no ring, no menu', async ({ page }) => {
     const s = await setupDirectPick(page);
     await page.evaluate(() => window.app.ui.setActiveTool('pen'));
