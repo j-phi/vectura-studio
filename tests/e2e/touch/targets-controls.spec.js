@@ -1,6 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
 const sweep = require('../helpers/target-sweep');
+const core = require('../helpers/target-audit-core');
 
 // TUX-041 (owned-surfaces slice, lane C1): every control on the surfaces below is >= 44px in
 // both axes by helpers/touch.js hitArea() (counts ::before extensions), or allowlisted.
@@ -186,6 +187,21 @@ test.describe('TUX-041 owned-surface touch targets', () => {
       if (group.startsWith('pens')) await page.click('.right-pane-tab[data-tab=pens]');
       else if (group.startsWith('layers')) await page.click('.right-pane-tab[data-tab=layers]');
       await page.waitForTimeout(250);
+      // Document Setup: the drawer slides in, and its controls inherit visibility through their own transitions,
+      // which a loaded WebKit runs hundreds of ms after the panel opens (nightly: 0 measured).
+      // Measure once the drawer is on screen and the close button and every rendered section header are visible.
+      if (side === 'settings') {
+        await page.waitForFunction(() => {
+          // Rendered headers (a box) must be visible; a header in a display:none sub-section has no box and is not waited for.
+          const close = document.getElementById('btn-close-settings');
+          const hdrs = [...document.querySelectorAll('.settings-panel .sect-hdr')].filter((e) => e.getClientRects().length);
+          // The drawer slides in (transform); a loaded runner can still have it off screen here.
+          const pr = document.getElementById('settings-panel').getBoundingClientRect();
+          if (pr.left < -0.5 || pr.right > innerWidth + 0.5) return false;
+          return !!close && close.checkVisibility({ checkVisibilityCSS: true }) && hdrs.length > 0 && hdrs.every((e) => getComputedStyle(e).visibility === 'visible');
+        }, null, { timeout: 10_000 });
+        await core.waitLayoutSettled(page);
+      }
       report[group] = await measureGroup(page, group, selector);
     }
     const lines = Object.entries(report).map(([g, r]) => `${g}: n=${r.n} measured=${r.measured} small=${r.small.length} covered=${r.covered.length}`);

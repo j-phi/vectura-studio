@@ -207,18 +207,22 @@ async function longPress(page, target, ms = 600) {
 // drag: optional holdMs before moving (long-press-drag), `steps` intermediate moves.
 // endHoldMs: rest the finger at the end point (1 px tremor every 60 ms, as a real finger) before lifting, e.g. at a
 // list edge so the list can auto-scroll under it (TUX-044 req 5).
-async function drag(page, from, to, { holdMs = 0, steps = 10, stepDelayMs = 0, endHoldMs = 0 } = {}) {
+// frozenClock: the caller froze the page clock (helpers/app-clock.js). holdMs, stepDelayMs (16 ms when 0) and
+// endHoldMs then run on the page clock, so a slow runner cannot stretch a quick drag past the 500 ms canvas hold.
+async function drag(page, from, to, { holdMs = 0, steps = 10, stepDelayMs = 0, endHoldMs = 0, frozenClock = false } = {}) {
   const a = await toPoint(from);
   const b = await toPoint(to);
+  const wait = (ms) => (frozenClock ? page.clock.runFor(ms) : sleep(ms));
+  const stepMs = frozenClock ? (stepDelayMs || 16) : stepDelayMs;
   await touchPhase(page, 'start', [{ ...a, id: 0 }]);
-  if (holdMs) await sleep(holdMs);
+  if (holdMs) await wait(holdMs);
   for (let i = 1; i <= steps; i += 1) {
     await touchPhase(page, 'move', [{ ...lerp(a, b, i / steps), id: 0 }]);
-    if (stepDelayMs) await sleep(stepDelayMs);
+    if (stepMs) await wait(stepMs);
   }
   for (let t = 0; t < endHoldMs; t += 60) {
     await touchPhase(page, 'move', [{ x: b.x, y: b.y + ((t / 60) % 2), id: 0 }]);
-    await sleep(60);
+    await wait(60);
   }
   await touchPhase(page, 'end', [{ ...b, id: 0 }]);
 }

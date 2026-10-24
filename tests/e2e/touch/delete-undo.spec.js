@@ -130,7 +130,17 @@ test('a plain toast stacks bottom-centre above an Undo toast and never covers th
       vw: innerWidth, vh: innerHeight, plain: { top: pr.top, right: pr.right, left: pr.left },
       undoMid: (ur.left + ur.right) / 2, undoTop: ur.top, plainBottom: pr.bottom,
       field: fr && fr.width > 0 ? hit(pr, fr) : false,
-      maxW: getComputedStyle(undo).maxWidth,
+      // The resolved width cap (max-width is min(100%, 320px), which getComputedStyle returns as text):
+      // a probe toast with a very long message shows the widest a toast can render here.
+      maxW: (() => {
+        const probe = undo.cloneNode(true);
+        const msg = probe.querySelector('.vectura-toast-msg') || probe;
+        msg.textContent = 'Deleted layer '.repeat(40);
+        undo.parentNode.appendChild(probe);
+        const w = probe.getBoundingClientRect().width;
+        probe.remove();
+        return w;
+      })(),
     };
   });
   // TUX-048 supersedes TUX-037 fix round 2: every touch toast is bottom-centre (the host stacks them).
@@ -139,7 +149,7 @@ test('a plain toast stacks bottom-centre above an Undo toast and never covers th
   expect(geo.plainBottom).toBeLessThan(geo.undoTop);
   expect(Math.abs(geo.undoMid - geo.vw / 2)).toBeLessThan(2);
   expect(geo.field).toBe(false);
-  expect(parseFloat(geo.maxW)).toBeLessThanOrEqual(geo.vw - 32 + 0.5);
+  expect(geo.maxW).toBeLessThanOrEqual(geo.vw - 32 + 0.5);
 });
 
 test('a finger tap on the Undo toast body does not stop auto-dismiss', async ({ page }, testInfo) => {

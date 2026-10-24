@@ -426,14 +426,15 @@ The canvas hold (TUX-034b, 500 ms) never takes back a drag that the same touch s
 
 | Project | Legs | Project | Legs |
 |---|---|---|---|
-| `touch-ipad-portrait` | 2 | `webkit-ipad-portrait` | 2 |
+| `touch-ipad-portrait` | 2 | `webkit-ipad-portrait` | 3 |
 | `touch-ipad-landscape` | 2 | `webkit-ipad-landscape` | 3 |
-| `touch-iphone-portrait` | 2 | `webkit-iphone-portrait` | 2 |
+| `touch-iphone-portrait` | 2 | `webkit-iphone-portrait` | 3 |
 | `touch-iphone-landscape` | 2 | `webkit-iphone-landscape` | 2 |
 | `touch-iphone-portrait-chrome` | 1 | `touch-coarse-wide` | 2 |
 | `touch-iphone-landscape-chrome` | 1 | | |
 
 - Sizing source: the per-file times in the hosted run 39161828852 log (line-reporter timestamps, 2 workers), with the targets-* files at one third of their time (the U2 `inPage` sweeps: 2.7x to 3.3x faster in the docker noble image). The estimate is 15 to 23 minutes per leg and about 400 runner-minutes in total. On the hosted log, a WebKit project took about 1.3x its Chromium twin (with its failures); `webkit-ipad-landscape` is the slowest project. A WebKit project never gets fewer legs than its Chromium twin (unit test).
+- Branch dispatch run 40123749378 (after the nightly fixes): legs took 10 to 38 minutes. `webkit-iphone-portrait` (38 + 16) and `webkit-ipad-portrait` (30 + 26) went over 25, so each has 3 legs now.
 - Playwright cuts a shard by test count, not by time. If a leg goes over 25 minutes, add a shard to that project (`of` + 1 and one more `include` row). `tests/unit/e2e-ci-roster.test.js` checks that each project's shards are exactly 1..`of`.
 - Retries stay at 1, so a test that passes on retry is a reported flake (`playwright-flaky-touch-e2e-nightly-<project>-<shard>` artifacts, then `report-flaky-main`). `--max-failures=20` stops a leg after 20 final failures (a flaky pass does not count): a retried deterministic failure costs double, and a leg with 20 failures is red anyway.
 - Leg timeout: 45 minutes. A timed-out leg is `cancelled`, so `ci-ok` fails and `report-red-main` runs on a schedule.

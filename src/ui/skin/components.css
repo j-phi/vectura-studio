@@ -15662,12 +15662,16 @@ body.touch-ui .ctxbar.ctxbar--fill { margin-top: calc(-1 * var(--safe-bottom, 0p
  * Touch sizing is gated on (pointer: coarse), so the 1600 x 1000 desktop view does not change. */
 
 /* Dual value editor (min / max) that replaces the comma-parsed field on the legacy rangeDual chip. */
+/* The editor shrinks to the row it replaces the chip in (min-width 0; each input gives up width down to its
+ * min-width): at a fixed 2 x 5.5em it ran 47 px past the row on a touch pane, under the pane edge with Linux fonts. */
 .dual-value-editor {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 .dual-value-input {
+  flex: 0 1 5.5em;
   width: 5.5em;
   min-width: 0;
   box-sizing: border-box;

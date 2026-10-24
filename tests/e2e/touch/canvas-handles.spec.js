@@ -1,6 +1,7 @@
 const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 const core = require('../helpers/target-audit-core');
 
 // TUX-023: transform handles by finger. A finger grabs a corner from ~14 px outside it, the
@@ -123,6 +124,8 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
   test.beforeEach(async ({ page }) => {
     errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
+    // Quick drags run on a frozen page clock (clock.frozenDrag): a slow runner cannot stretch them past the 500 ms hold.
+    await clock.install(page);
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.renderer && window.app.engine));
   });
@@ -134,7 +137,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, start)).toBe('main-canvas');
     const before = await state(page, s.id);
     expect(before.widthPx).toBeGreaterThanOrEqual(100);
-    await touch.drag(page, start, { x: start.x + 40, y: start.y + 40 }, { steps: 10 });
+    await clock.frozenDrag(page, start, { x: start.x + 40, y: start.y + 40 }, { steps: 10 });
     const after = await state(page, s.id);
     expect(Math.abs(after.rotation - before.rotation)).toBeLessThan(1e-3);
     const grew = after.widthPx - before.widthPx;
@@ -166,7 +169,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     const before = await state(page, s.id);
     expect(before.widthPx).toBeGreaterThanOrEqual(20);
     expect(before.widthPx).toBeLessThanOrEqual(44);
-    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y }, { steps: 10 });
+    await clock.frozenDrag(page, before.center, { x: before.center.x + 30, y: before.center.y }, { steps: 10 });
     const after = await state(page, s.id);
     expect(Math.abs(after.widthPx - before.widthPx)).toBeLessThanOrEqual(1);
     expect(Math.abs(after.rotation - before.rotation)).toBeLessThan(1e-3);
@@ -177,7 +180,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     const s = await setup(page, 10);
     const before = await state(page, s.id);
     expect(before.widthPx).toBeLessThanOrEqual(14);
-    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
+    await clock.frozenDrag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
     const after = await state(page, s.id);
     expect(Math.abs(after.widthPx - before.widthPx)).toBeLessThanOrEqual(1);
     expect(after.center.x - before.center.x).toBeGreaterThan(24);
@@ -218,7 +221,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(before.hPx).toBeGreaterThan(24);
     expect(before.hPx).toBeLessThan(36);
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, before.center)).toBe('main-canvas');
-    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
+    await clock.frozenDrag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
     const after = await measure();
     expect(Math.abs(after.hPx - before.hPx)).toBeLessThanOrEqual(1);
     expect(Math.abs(after.wPx - before.wPx)).toBeLessThanOrEqual(1);
@@ -241,7 +244,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, hit)).toBe('main-canvas');
     const before = await state(page, s.id);
     expect(before.widthPx).toBeLessThanOrEqual(44);
-    await touch.drag(page, hit, { x: hit.x + 8, y: hit.y + 8 }, { steps: 8 });
+    await clock.frozenDrag(page, hit, { x: hit.x + 8, y: hit.y + 8 }, { steps: 8 });
     const after = await state(page, s.id);
     const grew = after.widthPx - before.widthPx;
     expect(grew).toBeGreaterThanOrEqual(6);
@@ -275,7 +278,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     const plus = at(a0 + (30 * Math.PI) / 180);
     const minus = at(a0 - (30 * Math.PI) / 180);
     const end = inside(plus) ? plus : minus;
-    await touch.drag(page, aff, end, { steps: 12 });
+    await clock.frozenDrag(page, aff, end, { steps: 12 });
     const after = await state(page, s.id);
     expect(Math.abs(after.rotation - before.rotation)).toBeGreaterThan(5);
     expect(Math.abs(after.widthPx - before.widthPx) / before.widthPx).toBeLessThanOrEqual(0.02);

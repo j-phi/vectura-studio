@@ -8,6 +8,7 @@
 //   freeze(page)   pause the page clock (it first jumps a short lead forward; due timers fire then).
 //   advance(page, ms)  run the page clock forward by ms, firing the timers due in that span.
 //   thaw(page)     let the clock flow with real time again (rAF and render timers resume).
+//   frozenDrag(page, from, to, opts)  touch.drag on a frozen clock, then thaw.
 
 const install = (page) => page.clock.install();
 
@@ -28,4 +29,17 @@ const advance = (page, ms) => page.clock.runFor(ms);
 
 const thaw = (page) => page.clock.resume();
 
-module.exports = { install, freeze, advance, thaw };
+// A quick one-finger drag on a frozen page clock: the steps are app time (touch.drag frozenClock), then settleMs
+// of app time for the lift, then the clock flows again. Needs install() before page.goto.
+const frozenDrag = async (page, from, to, opts = {}, settleMs = 60) => {
+  const touch = require('./touch');
+  await freeze(page);
+  try {
+    await touch.drag(page, from, to, { ...opts, frozenClock: true });
+    await advance(page, settleMs);
+  } finally {
+    await thaw(page);
+  }
+};
+
+module.exports = { install, freeze, advance, thaw, frozenDrag };

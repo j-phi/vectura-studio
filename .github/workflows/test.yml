@@ -144,6 +144,8 @@ jobs:
   # by test count, so one shard took 97 min (webkit-ipad-landscape plus the serial targets-panels
   # file). The targets-* files run fullyParallel, so `--shard` can split inside them. Leg sizes
   # come from the per-file times of hosted run 39161828852 (docs/testing.md, "Touch nightly legs");
+  # Run 40123749378 (branch dispatch): webkit-iphone-portrait 38 + 16 min and webkit-ipad-portrait 30 + 26 min
+  # in two legs, so both have three.
   # tests/unit/e2e-ci-roster.test.js checks that the legs cover every touch project exactly once.
   # Retries stay on (a test that passes on retry is a reported flake), but --max-failures stops a
   # leg after 20 final failures: a retried deterministic failure costs double, and a broken leg
@@ -166,13 +168,15 @@ jobs:
           - { project: touch-iphone-landscape-chrome, shard: 1, of: 1 }
           - { project: touch-coarse-wide, shard: 1, of: 2 }
           - { project: touch-coarse-wide, shard: 2, of: 2 }
-          - { project: webkit-ipad-portrait, shard: 1, of: 2 }
-          - { project: webkit-ipad-portrait, shard: 2, of: 2 }
+          - { project: webkit-ipad-portrait, shard: 1, of: 3 }
+          - { project: webkit-ipad-portrait, shard: 2, of: 3 }
+          - { project: webkit-ipad-portrait, shard: 3, of: 3 }
           - { project: webkit-ipad-landscape, shard: 1, of: 3 }
           - { project: webkit-ipad-landscape, shard: 2, of: 3 }
           - { project: webkit-ipad-landscape, shard: 3, of: 3 }
-          - { project: webkit-iphone-portrait, shard: 1, of: 2 }
-          - { project: webkit-iphone-portrait, shard: 2, of: 2 }
+          - { project: webkit-iphone-portrait, shard: 1, of: 3 }
+          - { project: webkit-iphone-portrait, shard: 2, of: 3 }
+          - { project: webkit-iphone-portrait, shard: 3, of: 3 }
           - { project: webkit-iphone-landscape, shard: 1, of: 2 }
           - { project: webkit-iphone-landscape, shard: 2, of: 2 }
     runs-on: ubuntu-latest

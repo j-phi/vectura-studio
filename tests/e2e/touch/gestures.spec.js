@@ -63,6 +63,8 @@ const installFixture = (page, { tool, scene, selectObject, penDraft }) => page.e
 const prepare = (page, view) => page.evaluate(async (view) => {
   const app = window.app;
   const r = app.renderer;
+  // Pin the view like a user zoom would: a late layout resize otherwise re-fits it (renderer.resize -> center()).
+  r.userHasManipulated = true;
   r.scale = view.scale;
   r.offsetX = view.offsetX;
   r.offsetY = view.offsetY;
@@ -413,7 +415,7 @@ test.describe('TUX-019 direct drag', () => {
   test('(a) selected object moves with a quick drag', async ({ page }, testInfo) => {
     const { id, pts } = await setup(page, testInfo, { tool: 'select', selectObject: true });
     const before = await probe(page);
-    await touch.drag(page, pts.obj, to(pts.obj), { steps: 10, stepDelayMs: 15, holdMs: 0 });
+    await clock.frozenDrag(page, pts.obj, to(pts.obj), { steps: 10, stepDelayMs: 15, holdMs: 0 });
     await sleep(60);
     const after = await probe(page, [id]);
     const d = screenDelta(before, after);
@@ -435,8 +437,11 @@ test.describe('TUX-019 direct drag', () => {
       fs.mkdirSync(evidenceDir, { recursive: true });
       await page.screenshot({ path: path.join(evidenceDir, `${testInfo.project.name}-before.png`) });
     }
+    // Frozen page clock: the 30 ms rest and the 15 ms steps are app time, so slow round trips cannot let the
+    // 500 ms canvas hold fire before the finger crosses the slop (nightly: the hold menu opened mid-drag).
+    await clock.freeze(page);
     await touch.touchPhase(page, 'start', [f]);
-    await sleep(30);
+    await clock.advance(page, 30);
     // 3 px: still under the 6 px slop, nothing may have started yet.
     await touch.touchPhase(page, 'move', [{ ...f, x: f.x + 3 }]);
     const under = await probe(page);
@@ -444,7 +449,7 @@ test.describe('TUX-019 direct drag', () => {
     expect(under.isPan, 'never pans').toBe(false);
     for (let i = 1; i <= 8; i += 1) {
       await touch.touchPhase(page, 'move', [{ x: f.x + 3 + 7 * i, y: f.y + 3 * i, id: 0 }]);
-      await sleep(15);
+      await clock.advance(page, 15);
     }
     const mid = await probe(page);
     expect(mid.isLayerDrag, 'drag state active').toBe(true);
@@ -453,7 +458,8 @@ test.describe('TUX-019 direct drag', () => {
     expect(mid.offsetX).toBeCloseTo(before.offsetX, 0);
     if (evidenceDir) await page.screenshot({ path: path.join(evidenceDir, `${testInfo.project.name}-mid.png`) });
     await touch.touchPhase(page, 'end', [{ x: f.x + 59, y: f.y + 24, id: 0 }]);
-    await sleep(40);
+    await clock.advance(page, 40);
+    await clock.thaw(page);
     const end = await probe(page);
     expect(end.slop, 'touchSlopCrossed resets on lift').toBe(false);
     expect(end.isLayerDrag).toBe(false);
@@ -464,7 +470,7 @@ test.describe('TUX-019 direct drag', () => {
     const before = await probe(page, [id]);
     expect(before.sel).toEqual([]);
     const edge = await topEdge(page, pts, testInfo);
-    await touch.drag(page, edge, to(edge), { steps: 10, stepDelayMs: 15, holdMs: 0 });
+    await clock.frozenDrag(page, edge, to(edge), { steps: 10, stepDelayMs: 15, holdMs: 0 });
     await sleep(60);
     const after = await probe(page, [id]);
     expect(after.sel, 'selected').toEqual([id]);
@@ -484,7 +490,7 @@ test.describe('TUX-019 direct drag', () => {
     const a = { x: pts.obj.x + out, y: pts.obj.y + out };
     const b = { x: pts.obj.x, y: pts.obj.y };
     await precondition(page, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, Math.abs(a.x - b.x), testInfo.project.name);
-    await touch.drag(page, a, b, { steps: 12, stepDelayMs: 10 });
+    await clock.frozenDrag(page, a, b, { steps: 12, stepDelayMs: 10 });
     await sleep(60);
     const after = await probe(page, [id]);
     expect(after.sel, 'marquee selected the layer').toEqual([id]);
@@ -496,7 +502,7 @@ test.describe('TUX-019 direct drag', () => {
     const { id, pts } = await setup(page, testInfo, { tool: 'select', selectObject: false });
     const before = await probe(page, [id]);
     const edge = await topEdge(page, pts, testInfo);
-    await touch.drag(page, edge, { x: edge.x + 2, y: edge.y + 2 }, { steps: 3, stepDelayMs: 15 });
+    await clock.frozenDrag(page, edge, { x: edge.x + 2, y: edge.y + 2 }, { steps: 3, stepDelayMs: 15 });
     await sleep(60);
     const after = await probe(page, [id]);
     expect(after.sel).toEqual([id]);
@@ -534,7 +540,7 @@ test.describe('TUX-019 direct drag', () => {
     await precondition(page, { x: edge.x + DRAG.dx / 2, y: edge.y + DRAG.dy / 2 }, DRAG.dx, testInfo.project.name);
     const before = await probe(page, [id]);
     expect(before.sel.length).toBe(2);
-    await touch.drag(page, edge, { x: edge.x + 2, y: edge.y + 1 }, { steps: 3, stepDelayMs: 15 });
+    await clock.frozenDrag(page, edge, { x: edge.x + 2, y: edge.y + 1 }, { steps: 3, stepDelayMs: 15 });
     await sleep(60);
     const after = await probe(page, [id]);
     expect(after.key, 'key object is the tapped member').toBe(id);
@@ -639,7 +645,7 @@ test.describe('TUX-019 direct drag', () => {
     // bar that opens under a selection may float over the drag path.
     await precondition(page, press, 0, testInfo.project.name);
     const before = await probe(page, [id]);
-    await touch.drag(page, press, { x: press.x + THIN_DRAG.dx, y: press.y + THIN_DRAG.dy }, { steps: 10, stepDelayMs: 15, holdMs: 0 });
+    await clock.frozenDrag(page, press, { x: press.x + THIN_DRAG.dx, y: press.y + THIN_DRAG.dy }, { steps: 10, stepDelayMs: 15, holdMs: 0 });
     await sleep(60);
     const after = await probe(page, [id]);
     expect(after.sel, 'selected').toEqual([id]);
@@ -701,7 +707,7 @@ test.describe('TUX-019 direct drag', () => {
     const { id, anchorAt, index } = await directSetup(page, testInfo);
     const before = await anchorProbe(page, id, index);
     expect(before.x, 'anchor exists').not.toBeNull();
-    await touch.drag(page, anchorAt, { x: anchorAt.x + 3, y: anchorAt.y }, { steps: 3, stepDelayMs: 15 });
+    await clock.frozenDrag(page, anchorAt, { x: anchorAt.x + 3, y: anchorAt.y }, { steps: 3, stepDelayMs: 15 });
     await sleep(60);
     const after = await anchorProbe(page, id, index);
     expect(Math.hypot(after.wx - before.wx, after.wy - before.wy) * before.scale, 'anchor moved px').toBeLessThan(0.5);
@@ -713,7 +719,7 @@ test.describe('TUX-019 direct drag', () => {
     const { id, anchorAt, index } = await directSetup(page, testInfo);
     const before = await anchorProbe(page, id, index);
     expect(before.x, 'anchor exists').not.toBeNull();
-    await touch.drag(page, anchorAt, to(anchorAt), { steps: 10, stepDelayMs: 15 });
+    await clock.frozenDrag(page, anchorAt, to(anchorAt), { steps: 10, stepDelayMs: 15 });
     await sleep(60);
     const after = await anchorProbe(page, id, index);
     expect(Math.abs((after.wx - before.wx) * before.scale - DRAG.dx), 'dx error px').toBeLessThanOrEqual(SLOP_TOL_PX);
