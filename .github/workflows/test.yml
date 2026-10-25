@@ -276,7 +276,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
       options: --ipc=host
     steps:
       - uses: actions/checkout@v7
@@ -470,7 +470,7 @@ jobs:
           sparse-checkout: |
             scripts
             tests
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: vitest-shard-[0-9]*
           path: ${{ runner.temp }}/vitest-shard-artifacts
@@ -601,7 +601,7 @@ jobs:
       - run: npm ci --no-audit --no-fund --loglevel=error
       - name: Record merge setup timing
         run: echo "VECTURA_MERGE_SETUP_MS=$(( $(date +%s%3N) - VECTURA_MERGE_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: coverage-shard-[0-9]*
           path: ${{ runner.temp }}/coverage-shard-artifacts
@@ -763,7 +763,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Download flake summaries
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: playwright-flaky-*
           path: ${{ runner.temp }}/playwright-flaky

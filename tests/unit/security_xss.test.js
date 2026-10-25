@@ -659,3 +659,57 @@ describe('Pattern registry sanitizes stored SVG (Bugs-2 + Bugs-5)', () => {
     });
   });
 });
+
+// CodeQL js/incomplete-multi-character-sanitization: the no-DOMParser regex
+// fallback must not let one pass splice a fresh `<script` / `on*=` together.
+describe('SvgSanitize regex fallback (no DOMParser, no xmldom)', () => {
+  const loadFallbackSanitizer = () => {
+    const ctx = vm.createContext({
+      window: {},
+      require: () => { throw new Error('no xmldom'); },
+    });
+    const code = fs.readFileSync(path.join(ROOT, 'src/core/svg-sanitize.js'), 'utf8');
+    vm.runInContext(code, ctx, { filename: 'svg-sanitize.js' });
+    return ctx.window.Vectura.SvgSanitize.sanitize;
+  };
+
+  test('nested script fragments do not reassemble after one strip pass', () => {
+    const sanitize = loadFallbackSanitizer();
+    const out = sanitize('<svg><scr<script></script>ipt>alert(1)</scr<script></script>ipt></svg>');
+    expect(out).not.toMatch(/<\s*script/i);
+  });
+
+  test('script end tags with whitespace or junk are still stripped', () => {
+    const sanitize = loadFallbackSanitizer();
+    const out = sanitize('<svg><script>alert(1)</script\t\n bar><path d="M0 0"/></svg>');
+    expect(out).not.toMatch(/<\s*script|alert/i);
+    expect(out).toContain('<path d="M0 0"/>');
+  });
+
+  test('nested on* handlers do not reassemble', () => {
+    const sanitize = loadFallbackSanitizer();
+    const out = sanitize('<svg><path o onclick="x"nclick="alert(1)"/></svg>');
+    expect(out).not.toMatch(/\son[a-z]+\s*=/i);
+  });
+
+  // The post-fixed-point hostility check must look at markup only. Text that
+  // merely mentions `javascript:` or reads like ` one=1` is not an attack.
+  test('legitimate text content survives the hostility check', () => {
+    const sanitize = loadFallbackSanitizer();
+    const svg = '<svg><text x="1">count one=1</text><desc>no javascript: here</desc><path d="M0 0"/></svg>';
+    expect(sanitize(svg)).toBe(svg);
+  });
+
+  test('hostile markup left inside a tag still empties the output', () => {
+    const sanitize = loadFallbackSanitizer();
+    const empty = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+    // Unquoted handler: not matched by the quoted-value strip rules.
+    expect(sanitize('<svg><path onclick=alert(1) d="M0 0"/></svg>')).toBe(empty);
+    // Unquoted javascript: href.
+    expect(sanitize('<svg><a href=javascript:alert(1)><text>x</text></a></svg>')).toBe(empty);
+    // Unclosed script tag (no end tag for the strip rule to pair with).
+    expect(sanitize('<svg><script>alert(1)</svg>')).toBe(empty);
+    // Unterminated attribute quote hiding a payload.
+    expect(sanitize('<svg><a title="x onload=alert(1)></svg>')).toBe(empty);
+  });
+});
