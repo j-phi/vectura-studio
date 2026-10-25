@@ -2002,7 +2002,7 @@
     fontLoaded[name]=1;
     var l=document.createElement('link');
     l.rel='stylesheet';
-    l.href='https://fonts.googleapis.com/css2?family='+name.replace(/ /g,'+')+'&display=swap';
+    l.href='https://fonts.googleapis.com/css2?family='+encodeURIComponent(name).replace(/%20/g,'+')+'&display=swap';
     document.head.appendChild(l);
   }
 
@@ -2137,7 +2137,8 @@
           var typed=fpSearch.value.trim().replace(/\s+/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});
           var load=document.createElement('div');
           load.className='fp-load';
-          load.innerHTML='<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Load <b>'+typed+'</b> from Google Fonts</span>';
+          load.innerHTML='<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span>Load <b></b> from Google Fonts</span>';
+          load.querySelector('b').textContent=typed;
           load.addEventListener('click',function(){ addCustomFont(typed); });
           fpList.appendChild(load);
         }
