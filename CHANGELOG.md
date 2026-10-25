@@ -10,6 +10,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **SVG sanitizer regex fallback.** The no-DOMParser path now strips until stable, matches `</script >`-style end tags, and returns an empty SVG if any `<script`, `<style`, `<foreignObject`, `on*=` or `javascript:` remains. The control-character class no longer overlaps `\s`.
 - **Scripts and helpers.** `extract-changelog.js` matches the version heading literally (no RegExp from argv). `skin-new.js` escapes backslashes in labels. The test runtime loader matches `</script >` end tags. The text-panel design exploration escapes the typed font name.
 
+### Rainfall (v1.4.19)
+- **Trace Length goes down to 0.01 mm.** The slider minimum is 0.01 (step 0.01), down from 20. The engine floor drops from 4 mm to 0.01 mm. When a trace is shorter than two steps, the step shrinks to half the length, so short traces no longer overshoot (before, 0.01 mm drew 6 mm). Lengths of two steps or more are unchanged.
+
 ### Test and CI overhaul (v1.4.18, branch `ci/test-overhaul`)
 One required check, a faster PR gate, and new canaries for real user risk. Plan and evidence: `docs/archive/2026-10-test-ci-review.md`. Operation: `docs/testing.md`.
 
