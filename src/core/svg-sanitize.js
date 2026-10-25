@@ -223,7 +223,17 @@
       out = next;
     }
     // Anything still dangerous after the fixed point is hostile — store nothing.
-    if (/<\s*(?:script|style|foreignObject)\b|\son[a-z0-9_-]+\s*=|javascript:/i.test(out)) return EMPTY_SVG;
+    // Only markup is examined: text content that mentions `javascript:` or
+    // reads like ` one=1` is legitimate. Each tag runs from `<` to the closing
+    // `>` (quoted values may contain `>`), or to end of input if it never
+    // closes — an unterminated tag or quote is examined too, never skipped.
+    // Alternatives start on disjoint characters, so matching stays linear.
+    const TAG_RE = /<(?:[^<>"']|"[^"]*(?:"|$)|'[^']*(?:'|$))*/g;
+    const isHostileTag = (tag) => /^<\s*\/?\s*(?:script|style|foreignObject)\b/i.test(tag)
+      || /[\s"'/]on[a-z0-9_-]+\s*=/i.test(tag)
+      || /javascript:/i.test(tag);
+    const tags = out.match(TAG_RE) || [];
+    if (tags.some(isHostileTag)) return EMPTY_SVG;
     return out;
   };
 
