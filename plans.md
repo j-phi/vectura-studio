@@ -616,6 +616,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **SVG sanitizer mXSS (2026-10-26, v1.4.26).** CDATA and non-SVG names in the SVG namespace (`xmp`, `iframe`, `embed` …) survived, and `pattern.js` re-parsed tile SVG as HTML, so `<desc>` broke out to a live `<img onerror>`. Now: element allowlist, text-only `desc`/`title`/`metadata`, CDATA to text, comments/PIs/`xml:base` dropped, script-URL attribute and style checks, hostile animation targets dropped, an HTML re-parse safety net, and an `importNode` sink.
 - **SVG sanitizer namespace-prefix bypass (2026-10-26, v1.4.25).** DOM path keyed on `tagName`/`attr.name`, so `x:script`, `h:script` (XHTML), `x:foreignObject`, `x:onload` and XLink-bound `foo:href="javascript:"` passed. Checks now key on `localName` + `namespaceURI`; non-SVG elements and unexpected attribute namespaces are dropped.
 - **Touch spec match anchored (2026-10-26, v1.4.24).** `TOUCH_MATCH` matched any `touch/` in the absolute path, so a `wt-touch` checkout excluded every desktop spec. Anchored on `tests/e2e/touch/`; roster unit test covers it; `--list` unchanged.
 - **SVG sanitizer fallback hardening (2026-10-26, v1.4.23).** Adversarial-review follow-up: entity/whitespace-obfuscated `javascript:` URLs and animation values, and quadratic strip regexes, in the no-DOMParser fallback. Linear tokenizer rebuilds tags under the DOM path's policy; 8 MiB fallback cap; DOM path unchanged.

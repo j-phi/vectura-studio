@@ -38,6 +38,26 @@
  *     XHTML `<h:script>`) are dropped with their subtree; attributes outside
  *     no-namespace / XLink / XML / xmlns are removed.
  *
+ *   - Element ALLOWLIST: only the SVG vocabulary the app renders survives
+ *     (ALLOWED_ELEMENTS, matched on exact localName in the SVG namespace).
+ *     Anything else — `<xmp>`, `<iframe>`, `<embed>`, `<img>`, `<div>`,
+ *     `<math>`, `<noscript>` … even when bound to the SVG namespace — is
+ *     dropped with its subtree. Those names are HTML breakout / raw-text
+ *     elements once the markup is re-parsed with HTML rules (mXSS).
+ *   - <desc>, <title>, <metadata> are HTML integration points: they keep
+ *     text only, every child element is dropped.
+ *   - CDATA sections become plain text nodes (serialized escaped); comments
+ *     and processing instructions are dropped. Both survive XML
+ *     serialization verbatim and are read differently by the HTML parser.
+ *   - `xml:base` is stripped; any attribute whose value (entity-, percent-
+ *     and CSS-escape-decoded) carries javascript:/vbscript:/data:text/html is
+ *     removed; `style` is also removed on expression()/@import/binding.
+ *   - <animate>/<set>/... are dropped when attributeName targets on*, style,
+ *     href, src, base or similar (any prefix / case).
+ *   - Final safety net: when a DOM is available, the output is re-parsed
+ *     with HTML rules in an inert <template> and re-checked (namespace,
+ *     allowlist, handlers, element count). Any difference → EMPTY_SVG.
+ *
  * Defense-in-depth:
  *   - All javascript: checks decode HTML/URL entities (e.g. `javascript&#58;`,
  *     `%6Aavascript:`) and tolerate leading whitespace/tabs/newlines and
@@ -126,7 +146,48 @@
   // <script>: direct JS execution.
   // <style>: url(javascript:...), expression(), @import — drop instead of building a CSS sanitizer.
   const DROP_TAGS = new Set(['script', 'foreignobject', 'style']);
-  const ANIMATION_TAGS = new Set(['animate', 'set', 'animatetransform', 'animatemotion']);
+  const ANIMATION_TAGS = new Set(['animate', 'set', 'animatetransform', 'animatemotion', 'animatecolor']);
+
+  // SVG 1.1 / SVG 2 vocabulary the app can use, minus script, foreignObject
+  // and style. Exact-case localNames (XML is case-sensitive). Everything else
+  // is dropped with its subtree: unknown names in the SVG namespace become
+  // live HTML elements (`<embed>`, `<iframe>`, `<xmp>` …) when the markup is
+  // re-parsed as HTML.
+  const ALLOWED_ELEMENTS = new Set([
+    'svg', 'g', 'defs', 'symbol', 'use', 'switch', 'view', 'a',
+    'title', 'desc', 'metadata',
+    'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon',
+    'text', 'tspan', 'textPath',
+    'image', 'marker', 'pattern', 'clipPath', 'mask',
+    'linearGradient', 'radialGradient', 'stop', 'solidcolor', 'hatch', 'hatchpath',
+    'animate', 'animateMotion', 'animateTransform', 'animateColor', 'set', 'mpath',
+    'filter', 'feBlend', 'feColorMatrix', 'feComponentTransfer', 'feComposite',
+    'feConvolveMatrix', 'feDiffuseLighting', 'feDisplacementMap', 'feDistantLight',
+    'feDropShadow', 'feFlood', 'feFuncA', 'feFuncB', 'feFuncG', 'feFuncR',
+    'feGaussianBlur', 'feImage', 'feMerge', 'feMergeNode', 'feMorphology',
+    'feOffset', 'fePointLight', 'feSpecularLighting', 'feSpotLight', 'feTile',
+    'feTurbulence',
+  ]);
+  const ALLOWED_ELEMENTS_LOWER = new Set(Array.from(ALLOWED_ELEMENTS, (n) => n.toLowerCase()));
+  // HTML integration points (and metadata): text content only.
+  const TEXT_ONLY_TAGS = new Set(['title', 'desc', 'metadata']);
+  // Animation targets that can carry script or a URL.
+  const isDangerousAnimationTarget = (raw) => {
+    const compact = `${raw == null ? '' : raw}`.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
+    const colon = compact.lastIndexOf(':');
+    const target = colon >= 0 ? compact.slice(colon + 1) : compact;
+    return target.startsWith('on') || DANGEROUS_ANIMATION_TARGETS.has(target);
+  };
+  const DANGEROUS_ANIMATION_TARGETS = new Set([
+    'href', 'style', 'src', 'base', 'srcdoc', 'data', 'action', 'formaction', 'xmlns',
+  ]);
+
+  // Exact-case local name (prefix stripped), for allowlist checks.
+  const exactLocalName = (node) => {
+    const raw = `${(node && (node.localName || node.nodeName || node.tagName)) || ''}`;
+    const colon = raw.lastIndexOf(':');
+    return colon >= 0 ? raw.slice(colon + 1) : raw;
+  };
 
   const elementChildren = (node) => {
     const kids = node.childNodes ? Array.from(node.childNodes) : [];
@@ -159,14 +220,32 @@
     }
   };
 
-  // Pass 1: remove always-dangerous elements (<script>, <foreignObject>,
-  // <style>, under any prefix) and every element outside the SVG namespace.
-  // Walk top-down and skip descendants of a removed node.
+  // Pass 1: walk every node. Drop non-allowlisted / non-SVG elements with
+  // their subtree, comments, processing instructions and anything that is not
+  // an element or text; turn CDATA sections into text nodes; keep text only
+  // inside <desc>/<title>/<metadata>.
+  const isAllowedElement = (node) => isAllowedElementNs(node.namespaceURI)
+    && ALLOWED_ELEMENTS.has(exactLocalName(node))
+    && !DROP_TAGS.has(nodeLocalName(node));
   const removeDangerousNodes = (root) => {
     if (!root) return;
     const walk = (node) => {
-      elementChildren(node).forEach((kid) => {
-        if (!isAllowedElementNs(kid.namespaceURI) || DROP_TAGS.has(nodeLocalName(kid))) {
+      const textOnly = TEXT_ONLY_TAGS.has(exactLocalName(node));
+      const kids = node.childNodes ? Array.from(node.childNodes) : [];
+      kids.forEach((kid) => {
+        if (!kid) return;
+        if (kid.nodeType === 3) return;
+        if (kid.nodeType === 4) {
+          // CDATA → plain text (XMLSerializer escapes `<`, `>` and `&`).
+          const doc = kid.ownerDocument || node.ownerDocument;
+          const text = doc && typeof doc.createTextNode === 'function'
+            ? doc.createTextNode(`${kid.data || kid.nodeValue || ''}`)
+            : null;
+          if (text) node.replaceChild(text, kid);
+          else removeNode(kid);
+          return;
+        }
+        if (kid.nodeType !== 1 || textOnly || !isAllowedElement(kid)) {
           removeNode(kid);
           return;
         }
@@ -185,10 +264,7 @@
       if (!ANIMATION_TAGS.has(nodeLocalName(node))) return;
       // `attributeName="foo:href"` resolves through the element's prefixes;
       // any href target (whatever its prefix) is an href hijack.
-      const attrName = `${node.getAttribute('attributeName') || ''}`
-        .replace(/[\s\u0000-\u001f]/g, '')
-        .toLowerCase();
-      if (attrName === 'href' || attrName.endsWith(':href')) {
+      if (isDangerousAnimationTarget(node.getAttribute('attributeName'))) {
         removeNode(node);
         return;
       }
@@ -196,7 +272,7 @@
       // `values` is a semicolon-separated list — split before checking.
       const valueParts = `${node.getAttribute('values') || ''}`.split(';');
       const all = candidates.concat(valueParts);
-      if (all.some((v) => looksLikeJsUrl(v))) removeNode(node);
+      if (all.some((v) => looksLikeJsUrl(v) || isHostileAttrValue(v))) removeNode(node);
     });
   };
 
@@ -221,6 +297,18 @@
 
         // 3b. on* event handlers (any prefix): always strip.
         if (local.startsWith('on')) {
+          removeAttr(node, attr);
+          return;
+        }
+
+        // 3b'. xml:base can rebase every relative URL onto javascript:.
+        if (local === 'base' && (attr.namespaceURI === XML_NS || `${attr.name}`.toLowerCase() === 'xml:base')) {
+          removeAttr(node, attr);
+          return;
+        }
+
+        // 3b''. style: drop on script URLs / expression() / @import / bindings.
+        if (local === 'style' && isHostileStyle(attr.value)) {
           removeAttr(node, attr);
           return;
         }
@@ -252,6 +340,13 @@
               removeAttr(node, attr);
             }
           }
+          return;
+        }
+
+        // 3d. Any other attribute carrying a script URL (presentation
+        // attributes are CSS-parsed: fill="url(javascript:…)").
+        if (attr.namespaceURI !== XMLNS_NS && isHostileAttrValue(attr.value)) {
+          removeAttr(node, attr);
         }
       });
 
@@ -304,6 +399,35 @@
     .toLowerCase();
   const HOSTILE_SCHEME_RE = /javascript:|vbscript:|data:text\/html/;
   const hasHostileScheme = (raw) => HOSTILE_SCHEME_RE.test(compactForSchemeCheck(raw));
+
+  // CSS reading of a value: comments removed (linear indexOf scan) and
+  // `\6a` / `\j` escapes decoded, so `url(java\73 cript:…)` is caught.
+  const decodeCssEscapes = (raw) => {
+    const text = `${raw == null ? '' : raw}`;
+    let out = '';
+    let i = 0;
+    while (i < text.length) {
+      const open = text.indexOf('/*', i);
+      if (open < 0) { out += text.slice(i); break; }
+      out += text.slice(i, open);
+      const close = text.indexOf('*/', open + 2);
+      if (close < 0) break;
+      i = close + 2;
+    }
+    return out
+      .replace(/\\([0-9a-f]{1,6})[ \t\n\r\f]?/gi, (_, hex) => {
+        const cp = parseInt(hex, 16);
+        return Number.isFinite(cp) && cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+      })
+      .replace(/\\([^0-9a-f\n\r\f])/gi, '$1');
+  };
+  const isHostileAttrValue = (raw) => hasHostileScheme(raw)
+    || hasHostileScheme(decodeCssEscapes(decodeForUrlCheck(raw)));
+  const isHostileStyle = (raw) => {
+    if (isHostileAttrValue(raw)) return true;
+    const css = compactForSchemeCheck(decodeCssEscapes(decodeForUrlCheck(raw)));
+    return /expression\(|@import|binding|behavior:/.test(css);
+  };
 
   const localName = (name) => {
     const lower = `${name}`.toLowerCase();
@@ -384,6 +508,8 @@
       const attrLocal = localName(attr.name);
       // on* event handlers: always strip.
       if (attrLocal.startsWith('on')) return;
+      if (lower === 'xml:base') return;
+      if (attrLocal === 'style' && isHostileStyle(attr.value)) return;
       const decoded = decodeForUrlCheck(attr.value);
       if (FALLBACK_URL_ATTRS.has(attrLocal)) {
         if (hasHostileScheme(attr.value)) {
@@ -395,12 +521,11 @@
           if (local === 'use') dropElement = true;
           return;
         }
+      } else if (!lower.startsWith('xmlns') && isHostileAttrValue(attr.value)) {
+        return;
       }
       if (FALLBACK_ANIMATION_TAGS.has(local)) {
-        if (lower === 'attributename') {
-          const target = decoded.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
-          if (target === 'href' || target.endsWith(':href')) dropElement = true;
-        }
+        if (lower === 'attributename' && isDangerousAnimationTarget(decoded)) dropElement = true;
         if (FALLBACK_ANIMATION_VALUE_ATTRS.has(lower)) {
           // `values` is a semicolon list; split after decoding (`&#59;` is `;`).
           if (decoded.split(';').some((part) => hasHostileScheme(part)) || hasHostileScheme(attr.value)) {
@@ -423,6 +548,8 @@
     // its subtree (including nested same-name elements) is skipped.
     let skipName = null;
     let skipDepth = 0;
+    // Inside <desc>/<title>/<metadata>: text only, child tags are dropped.
+    let textOnlyName = null;
     const emit = (chunk) => { if (skipName === null) out.push(chunk); };
     while (i < n) {
       const lt = text.indexOf('<', i);
@@ -489,11 +616,21 @@
         }
         continue;
       }
+      const exactLocal = tag.name.slice(tag.name.lastIndexOf(':') + 1);
+      const allowed = ALLOWED_ELEMENTS.has(exactLocal) && !FALLBACK_DROP_TAGS.has(local);
       if (tag.closing) {
-        out.push(`</${tag.name}>`);
+        if (textOnlyName !== null) {
+          if (local === textOnlyName) {
+            textOnlyName = null;
+            out.push(`</${tag.name}>`);
+          }
+          continue;
+        }
+        // Closing tags of dropped (non-allowlisted) elements are dropped too.
+        if (allowed) out.push(`</${tag.name}>`);
         continue;
       }
-      const rebuilt = FALLBACK_DROP_TAGS.has(local) ? '' : rebuildStartTag(tag);
+      const rebuilt = !allowed || textOnlyName !== null ? '' : rebuildStartTag(tag);
       if (rebuilt === '') {
         if (!tag.selfClosing) {
           skipName = local;
@@ -502,6 +639,7 @@
         continue;
       }
       out.push(rebuilt);
+      if (TEXT_ONLY_TAGS.has(exactLocal) && !tag.selfClosing) textOnlyName = local;
     }
     // An element we were dropping never closed: we cannot know where its
     // content ends, so store nothing.
@@ -533,6 +671,88 @@
     return out;
   };
 
+  // Final safety net: read the output the way an HTML sink would
+  // (div.innerHTML / svg.innerHTML) inside an inert <template>, and require
+  // the same safe tree: SVG namespace, allowlisted names, no handlers, no
+  // script URLs, text-only integration points, and as many elements as the
+  // XML reading has. A parser differential that survives the passes above
+  // fails closed here. Skipped when no DOM is available (Node CLI).
+  const htmlReparseIsSafe = (markup, expectedCount) => {
+    if (typeof document === 'undefined' || !document || typeof document.createElement !== 'function') return true;
+    let root;
+    try {
+      const tpl = document.createElement('template');
+      if (tpl && tpl.content && typeof tpl.content.querySelectorAll === 'function') {
+        tpl.innerHTML = markup;
+        root = tpl.content;
+      } else if (document.implementation && typeof document.implementation.createHTMLDocument === 'function') {
+        const inert = document.implementation.createHTMLDocument('');
+        inert.body.innerHTML = markup;
+        root = inert.body;
+      } else {
+        return true;
+      }
+    } catch (_err) {
+      return false;
+    }
+    const elements = Array.from(root.querySelectorAll('*'));
+    if (expectedCount != null && elements.length !== expectedCount) return false;
+    return elements.every((el) => {
+      if (el.namespaceURI !== SVG_NS) return false;
+      const name = `${el.localName || ''}`.toLowerCase();
+      if (!ALLOWED_ELEMENTS_LOWER.has(name)) return false;
+      if (TEXT_ONLY_TAGS.has(name) && el.children && el.children.length) return false;
+      return Array.from(el.attributes || []).every((attr) => {
+        const local = `${attr.localName || attr.name || ''}`.toLowerCase();
+        if (local.startsWith('on')) return false;
+        if (local === 'href') return !looksLikeJsUrl(attr.value) && !hasHostileScheme(attr.value);
+        return attr.namespaceURI === XMLNS_NS || !isHostileAttrValue(attr.value);
+      });
+    });
+  };
+
+  // Rebuild the sanitized tree with canonical, unprefixed names: elements
+  // keep their namespace but lose any prefix (`<x:svg>` would be read by the
+  // HTML parser as an unknown HTML element `x:svg`), XLink/XML attributes use
+  // the `xlink:` / `xml:` prefixes, and only the default and `xmlns:xlink`
+  // declarations are kept. The serialized output then reads the same under
+  // XML and HTML rules.
+  const rebuildCanonical = (node, doc) => {
+    if (node.nodeType === 3) return doc.createTextNode(`${node.data || node.nodeValue || ''}`);
+    if (node.nodeType !== 1) return null;
+    const ns = node.namespaceURI || null;
+    const el = ns ? doc.createElementNS(ns, exactLocalName(node)) : doc.createElement(exactLocalName(node));
+    Array.from(node.attributes || []).forEach((attr) => {
+      const local = exactLocalName(attr);
+      const value = `${attr.value || ''}`;
+      try {
+        if (attr.namespaceURI === XMLNS_NS) {
+          if (attr.name === 'xmlns' && value === (ns || '')) el.setAttributeNS(XMLNS_NS, 'xmlns', value);
+          else if (attr.name === 'xmlns:xlink' && value === XLINK_NS) el.setAttributeNS(XMLNS_NS, 'xmlns:xlink', value);
+        } else if (attr.namespaceURI === XLINK_NS) {
+          el.setAttributeNS(XLINK_NS, `xlink:${local}`, value);
+        } else if (attr.namespaceURI === XML_NS) {
+          el.setAttributeNS(XML_NS, `xml:${local}`, value);
+        } else if (!attr.namespaceURI) {
+          el.setAttribute(attr.name, value);
+        }
+      } catch (_err) {
+        // Unrepresentable attribute name: drop it.
+      }
+    });
+    Array.from(node.childNodes || []).forEach((kid) => {
+      const copy = rebuildCanonical(kid, doc);
+      if (copy) el.appendChild(copy);
+    });
+    return el;
+  };
+
+  const countMarkupElements = (markup) => {
+    // Fallback output has no DOM tree; count start tags of the rebuilt markup.
+    const matches = `${markup}`.match(/<[A-Za-z_]/g);
+    return matches ? matches.length : 0;
+  };
+
   const sanitize = (svgString) => {
     if (svgString == null) return EMPTY_SVG;
     const input = `${svgString}`;
@@ -550,7 +770,8 @@
           ActiveDOMParser = xmldom.DOMParser;
           ActiveXMLSerializer = xmldom.XMLSerializer;
         } catch (e2) {
-          return fallbackRegexStrip(input);
+          const stripped = fallbackRegexStrip(input);
+          return htmlReparseIsSafe(stripped, countMarkupElements(stripped)) ? stripped : EMPTY_SVG;
         }
       }
     }
@@ -571,12 +792,16 @@
     removeHostileAnimations(svg);
     sanitizeAttributesAndUseElements(svg);
 
+    let out;
+    let canonical;
     try {
+      canonical = rebuildCanonical(svg, doc);
       const serializer = new ActiveXMLSerializer();
-      return serializer.serializeToString(svg);
+      out = serializer.serializeToString(canonical);
     } catch (_err) {
       return EMPTY_SVG;
     }
+    return htmlReparseIsSafe(out, collectAllElements(canonical).length) ? out : EMPTY_SVG;
   };
 
   Vectura.SvgSanitize = { sanitize };

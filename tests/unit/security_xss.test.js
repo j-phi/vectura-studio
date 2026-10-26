@@ -918,3 +918,162 @@ describe('SvgSanitize regex fallback (no DOMParser, no xmldom)', () => {
     expect(sanitize(big)).toBe('<svg xmlns="http://www.w3.org/2000/svg"/>');
   });
 });
+
+// ---------------------------------------------------------------------------
+// mXSS (HIGH): sanitized SVG re-parsed with HTML rules
+// ---------------------------------------------------------------------------
+// The sanitizer used to keep CDATA sections and any SVG-namespace element
+// name (`<xmp>`, `<iframe>`, `<embed>` ...). XMLSerializer output re-parsed as
+// HTML (div.innerHTML, or pattern.js copying `svg.innerHTML` into a live
+// <svg>) turned `<desc>`'s HTML integration point into a breakout:
+//   A: <desc><![CDATA[</svg><img onerror>]]></desc>
+//   B: <desc><xmp><![CDATA[</xmp><img onerror>]]></xmp></desc>
+describe('SvgSanitize mXSS: output stays inert when re-parsed as HTML', () => {
+  const NS = 'xmlns="http://www.w3.org/2000/svg"';
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const PAYLOAD_A = `<svg ${NS}><desc><![CDATA[</svg><img src=x onerror=window.__x=1>]]></desc></svg>`;
+  const PAYLOAD_B = `<svg ${NS}><desc><xmp><![CDATA[</xmp><img src=x onerror=window.__x=1>]]></xmp></desc></svg>`;
+  const BREAKOUTS = {
+    'payload A (CDATA in desc)': PAYLOAD_A,
+    'payload B (xmp + CDATA in desc)': PAYLOAD_B,
+    'title CDATA': `<svg ${NS}><title><![CDATA[</title></svg><img src=x onerror=window.__x=1>]]></title></svg>`,
+    'textarea in desc': `<svg ${NS}><desc><textarea>&lt;/textarea&gt;&lt;img src=x onerror=window.__x=1&gt;</textarea></desc></svg>`,
+    'noscript in desc': `<svg ${NS}><desc><noscript>&lt;/noscript&gt;&lt;img src=x onerror=window.__x=1&gt;</noscript></desc></svg>`,
+    'processing instruction': `<svg ${NS}><desc><?x a="></desc></svg><img src=x onerror=window.__x=1>"?></desc></svg>`,
+    'comment': `<svg ${NS}><desc><!-- </desc></svg><img src=x onerror=window.__x=1> --></desc></svg>`,
+    'embed/iframe/object/img/div breakouts': `<svg ${NS}><img src="x"/><div><a href="javascript:1">z</a></div><embed src="javascript:1"/><iframe srcdoc="&lt;script&gt;parent.__x=1&lt;/script&gt;"/><object data="javascript:1"/><math><mtext>x</mtext></math></svg>`,
+  };
+  const ALLOWED = new Set(['svg', 'g', 'path', 'rect', 'desc', 'title', 'a', 'text']);
+
+  const SINK_KEYS = Object.keys(BREAKOUTS);
+
+  const probeHtml = (dom, markup) => {
+    const doc = dom.window.document;
+    const div = doc.createElement('div');
+    div.innerHTML = markup;
+    // pattern.js sink: XML parse, then copy innerHTML into a live <svg>.
+    const parsed = new dom.window.DOMParser().parseFromString(markup, 'image/svg+xml');
+    const live = doc.createElementNS(SVG_NS, 'svg');
+    live.innerHTML = parsed.documentElement ? parsed.documentElement.innerHTML : '';
+    const bad = [];
+    [div, live].forEach((root) => {
+      root.querySelectorAll('*').forEach((el) => {
+        if (el.namespaceURI !== SVG_NS) bad.push(`ns:${el.localName}`);
+        if (!ALLOWED.has(el.localName)) bad.push(`el:${el.localName}`);
+        Array.from(el.attributes).forEach((a) => {
+          if (/^on/i.test(a.localName)) bad.push(`attr:${a.name}`);
+        });
+      });
+    });
+    return bad;
+  };
+
+  describe('DOM path (jsdom)', () => {
+    let env;
+    beforeAll(() => { env = loadSanitizerInJsdom(); });
+    afterAll(() => { env.dom.window.close(); });
+
+    test.each(SINK_KEYS)('%s: no HTML element or handler after re-parse', (key) => {
+      const out = env.sanitize(BREAKOUTS[key]);
+      expect(out).not.toMatch(/<!\[CDATA\[|<\?|<!--/);
+      expect(out).not.toMatch(/<(?:[\w-]+:)?(?:xmp|img|iframe|embed|object|div|math|textarea|noscript)\b/i);
+      expect(probeHtml(env.dom, out)).toEqual([]);
+    });
+
+    test('CDATA text is kept as escaped text, not dropped wholesale', () => {
+      const out = env.sanitize(`<svg ${NS}><desc><![CDATA[a < b]]></desc><rect width="1"/></svg>`);
+      expect(out).toContain('<desc>a &lt; b</desc>');
+      expect(out).toContain('<rect width="1"/>');
+    });
+
+    test('xml:base is stripped', () => {
+      const out = env.sanitize(`<svg ${NS} xml:base="javascript:window.__x=1"><a href="x"><text>t</text></a></svg>`);
+      expect(out).not.toMatch(/xml:base|javascript/i);
+    });
+
+    test('animations targeting style / on* / href (any case or prefix) are dropped', () => {
+      const out = env.sanitize(`<svg ${NS} xmlns:q="http://www.w3.org/1999/xlink"><set attributeName="onload" to="window.__x=1"/><animate attributeName="OnClick" values="1"/><rect width="1"><set attributeName="style" to="background:url(javascript:1)"/><set attributeName="q:HREF" to="#a"/><animate attributeName="fill" values="red;url(javascript:1)"/><animate attributeName="opacity" values="0;1" dur="1s"/></rect></svg>`);
+      expect(out).not.toMatch(/onload|onclick|style|href|javascript/i);
+      expect(out).toContain('attributeName="opacity"');
+    });
+
+    test('style attribute with a script URL is removed; plain style kept', () => {
+      const out = env.sanitize(`<svg ${NS}><rect style="background:url(javascript:window.__x=1)" width="5"/><rect style="background:url(&quot;java\\73 cript:1&quot;)"/><rect style="fill:red;stroke:blue" width="2"/></svg>`);
+      expect(out).not.toMatch(/javascript|java\\73/i);
+      expect(out).toContain('style="fill:red;stroke:blue"');
+    });
+
+    test('presentation attribute with a script URL is removed', () => {
+      const out = env.sanitize(`<svg ${NS}><rect fill="url(javascript:1)" width="1"/></svg>`);
+      expect(out).not.toMatch(/javascript/i);
+      expect(out).toContain('width="1"');
+    });
+
+    test('legit SVG vocabulary survives byte-for-byte', () => {
+      const legit = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop offset="0" stop-color="red"/></linearGradient><linearGradient id="h" xlink:href="#g"/><radialGradient id="r"/><pattern id="p" width="2" height="2" patternUnits="userSpaceOnUse"><rect width="1" height="1" fill="url(#h)"/></pattern><clipPath id="c"><circle r="3"/></clipPath><mask id="m"><ellipse rx="1" ry="2"/></mask><filter id="f"><feGaussianBlur stdDeviation="1"/><feOffset dx="1"/></filter><symbol id="s"><polyline points="0,0 1,1"/></symbol><marker id="mk"><line x2="1"/></marker><path id="pp" d="M0 0L5 5"/></defs><title>T</title><desc>D</desc><use href="#pp"/><use xlink:href="#s" transform="translate(1 1)"/><text x="1" y="2">Hi <tspan>there</tspan><textPath href="#pp">t</textPath></text><g clip-path="url(#c)" mask="url(#m)" filter="url(#f)" transform="rotate(5)"><rect fill="url(#p)" width="4" height="4" style="fill:red"/><polygon points="0,0 1,0 1,1"/></g><a href="#pp"><rect/></a><animateTransform attributeName="transform" type="rotate" from="0" to="90" dur="1s"/></svg>`;
+      expect(env.sanitize(legit)).toBe(legit);
+    });
+  });
+
+  describe('regex fallback (no DOMParser)', () => {
+    const loadFallback = () => {
+      const ctx = vm.createContext({ window: {}, require: () => { throw new Error('no xmldom'); } });
+      vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/core/svg-sanitize.js'), 'utf8'), ctx, { filename: 'svg-sanitize.js' });
+      return ctx.window.Vectura.SvgSanitize.sanitize;
+    };
+    let sanitize;
+    let dom;
+    beforeAll(() => {
+      sanitize = loadFallback();
+      dom = new JSDOM('<!DOCTYPE html><html><body></body></html>');
+    });
+    afterAll(() => dom.window.close());
+
+    test.each(SINK_KEYS)('%s: no HTML element or handler after re-parse', (key) => {
+      const out = sanitize(BREAKOUTS[key]);
+      expect(out).not.toMatch(/<(?:[\w-]+:)?(?:xmp|img|iframe|embed|object|div|math|textarea|noscript)\b/i);
+      expect(probeHtml(dom, out)).toEqual([]);
+    });
+
+    test('xml:base, hostile animations and style URLs are stripped', () => {
+      const out = sanitize(`<svg ${NS} xml:base="javascript:1"><set attributeName="onload" to="x"/><set attributeName="style" to="a"/><rect style="background:url(javascript:1)" width="1"/><rect style="fill:red"/></svg>`);
+      expect(out).not.toMatch(/xml:base|onload|attributeName="style"|javascript/i);
+      expect(out).toContain('width="1"');
+      expect(out).toContain('style="fill:red"');
+    });
+  });
+});
+
+// The fill sampler must move parsed nodes into the live document, never
+// serialize and re-parse them as HTML (mXSS sink, pattern.js).
+describe('pattern.js buildSourceFillSampler does not HTML-reparse tile SVG', () => {
+  test('source does not assign innerHTML from the parsed tile', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/core/algorithms/pattern.js'), 'utf8');
+    expect(src).not.toMatch(/\.innerHTML\s*=\s*svg\.innerHTML/);
+  });
+
+  test('payload B through the sampler leaves no live <img> or handler', () => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', { runScripts: 'outside-only', pretendToBeVisual: true });
+    const ctx = dom.getInternalVMContext();
+    // No SvgSanitize loaded: the sink alone must not HTML-reparse.
+    // pattern.js destructures OptimizationUtils at load; the sampler does not use it.
+    dom.window.Vectura = { OptimizationUtils: { isClosedPath: () => false } };
+    vm.runInContext(fs.readFileSync(path.join(ROOT, 'src/core/algorithms/pattern.js'), 'utf8'), ctx);
+    const build = dom.window.Vectura.AlgorithmRegistry._buildSourceFillSampler;
+    expect(typeof build).toBe('function');
+    // Unsanitized meta.svg: the sink must still not create HTML elements.
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><desc><xmp><![CDATA[</xmp><img src=x onerror=window.__x=1>]]></xmp></desc><rect width="5" height="5" fill="black"/></svg>';
+    const sampler = build({ svg });
+    expect(sampler).toBeTruthy();
+    const doc = dom.window.document;
+    expect(doc.querySelectorAll('img').length).toBe(0);
+    const mounted = doc.body.querySelector('svg');
+    expect(mounted.querySelector('rect')).toBeTruthy();
+    // Every mounted node stays an SVG-namespace element (no HTML breakout).
+    Array.from(mounted.querySelectorAll('*')).forEach((el) => {
+      expect(el.namespaceURI).toBe('http://www.w3.org/2000/svg');
+    });
+    sampler.cleanup();
+    dom.window.close();
+  });
+});
