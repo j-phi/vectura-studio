@@ -341,9 +341,9 @@ In overlay view, clicking the visible inactive silhouette selects that shape dir
 <details>
 <summary>Document Setup & theming</summary>
 
-`File > Document Setup` (`Cmd/Ctrl+K`) covers: machine size, the document-level Metric/Imperial switch, optional blueprint-style dimension labels outside the canvas, margin, on-canvas crop, margin guides, the **Default paper** (Paper & Selection: a paper type or *Theme (no default)*, its colour, and *Apply to this document*), selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`.
+`File > Document Setup` (`Cmd/Ctrl+K`) covers: machine size, the document-level Metric/Imperial switch, optional blueprint-style dimension labels outside the canvas, margin, on-canvas crop, margin guides, the **Default paper** (Paper & Selection: a paper type or *No default (follow theme)*, its colour, and *Apply to this document*), selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`.
 
-The sun/moon toggle in the upper-right header switches the full UI between dark and light themes. A theme change recolours the sheet only while the document is on a plain (None) paper and no default paper is set.
+The sun/moon toggle in the upper-right header switches the full UI between dark and light themes. A theme change recolours the sheet only while the document is on a plain (None) sheet in the theme's own colour and no default paper is set; an untouched Pen 1 always stays legible on the paper.
 
 </details>
 
@@ -654,7 +654,7 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### Unreleased - Paper selector (v1.4.20)
+### Unreleased - Paper selector (v1.4.21)
 - **Pen / Paper tab.** The Pens tab is now Pen / Paper with a Paper section on top: 11 paper types (None plus ten realistic stocks), any colour, Texture and Ink bleed sliders, Set as default / Use default.
 - **Realistic paper preview.** Seeded tooth, fibres, speckles and mottling sized in real millimetres; ink multiplies into the sheet, skips tooth valleys, and bleeds/feathers on absorbent stock. None is pixel-identical to before. SVG export is unchanged (no paper).
 - **Saved per project, one default.** Paper is stored in the `.vectura` file (`settings.paper`); the default paper lives in Document Setup ▸ Paper & Selection, replacing the Background colour picker.
