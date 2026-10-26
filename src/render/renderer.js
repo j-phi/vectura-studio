@@ -5608,6 +5608,12 @@
         return path;
       };
       const drawLayers = () => {
+        // Pen models / ink edge bleed: pens drawn by the ink renderer are
+        // collected here instead of traced (see _paperInkPlan). Null on a
+        // plain-pen document on paper None: the loop below is then exactly the
+        // pre-model path.
+        const inkPlan = this._inkFramePlan || null;
+        const inkTraits = inkPlan && inkPlan.penTraits;
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
           if (this.shouldSkipLayerForMaskPreview(l)) return;
@@ -5751,6 +5757,18 @@
             // keeps the single-stroke batching intact instead of degrading to
             // one ctx.stroke() per path.
             const pathCap = Renderer.resolvePathLineCap(path, layerCap);
+            // Ink renderer: round-capped, undashed paths of a collected pen go
+            // to the ink renderer (once per frame). Dashed / faded / filled /
+            // butt-capped paths keep the native stroke.
+            if (inkTraits && !fadeLayer && !dimMorphBlend && !dash && !layerDash
+              && (CANVAS_CAP[pathCap] || pathCap || 'round') === 'round' && inkTraits.has(currentPenId)) {
+              if (inkPlan.collecting) {
+                let list = inkPlan.collect.get(currentPenId);
+                if (!list) { list = []; inkPlan.collect.set(currentPenId, list); }
+                list.push({ path, layer: l, temp, useCurves, weightScale, uncached: Boolean(temp) || revealActive });
+              }
+              return;
+            }
             if (pathCap !== currentLineCap) {
               this.ctx.stroke();
               currentLineCap = pathCap;
@@ -6261,10 +6279,22 @@
       // into an offscreen ink canvas (dry-skip + bleed halo) and composited with
       // the paper's ink blend. paperInk is null for 'none' / pen-true preview,
       // and every pass below then calls drawLayers() directly, exactly as before.
+      // Pen models: the same plan also carries the pens the ink renderer
+      // draws (model pens anywhere; plain pens on realistic paper once their
+      // edge bleed is visible). On paper None (plan.direct) plain pens still
+      // draw straight onto the target and only the collected pens composite.
       const paperInk = this._paperInkPlan();
+      this._inkFramePlan = paperInk;
       const inkPass = () => {
         if (!paperInk) {
           drawLayers();
+          return;
+        }
+        if (paperInk.direct) {
+          drawLayers();
+          paperInk.collecting = false;
+          if (!paperInk.rendered) this._renderCollectedInk(paperInk, prof, null);
+          this._compositeCollectedInk(paperInk);
           return;
         }
         if (!paperInk.rendered) this._renderPaperInk(drawLayers, paperInk, prof);
@@ -6394,6 +6424,7 @@
           this.ctx.restore();
         }
       }
+      this._inkFramePlan = null;
 
       if (SETTINGS.marginLineVisible) {
         this.ctx.save();
@@ -9784,22 +9815,54 @@
 
     // Per-frame plan for realistic-paper ink, or null to draw ink directly
     // (plain paper, pen-true preview, or a context without transforms).
+    //
+    // Pen models: the plan also resolves each pen's ink traits
+    // (Vectura.PenModel.resolveTraits) and LOD tier (InkRenderer.tierFor).
+    // penTraits holds the pens the ink renderer draws: every non-plain pen,
+    // and plain pens on realistic paper once their edge bleed is visible.
+    // A plain-pen document on paper None returns null — the exact legacy path.
     _paperInkPlan() {
       const V = window.Vectura || {};
       const Paper = V.Paper;
       if (!Paper || this.paperPreviewActive()) return null;
-      const paper = Paper.effective();
-      if (!Paper.isRealistic(paper)) return null;
       if (!this.ctx || typeof this.ctx.getTransform !== 'function') return null;
       if (typeof document === 'undefined' || !this.canvas) return null;
-      const info = (V.PAPERS && V.PAPERS.TYPES && V.PAPERS.TYPES[paper.type]) || {};
+      const paper = Paper.effective();
+      const realistic = Paper.isRealistic(paper);
+      const TYPES = (V.PAPERS && V.PAPERS.TYPES) || {};
+      const info = (realistic ? TYPES[paper.type] : TYPES.none) || {};
+      const gesture = this._paperViewGesture();
+      let penTraits = null;
+      const PM = V.PenModel;
+      const IR = V.InkRenderer;
+      if (PM && IR && Array.isArray(SETTINGS.pens)) {
+        const pxPerMm = (this.scale || 1) * (typeof this.getBackingDpr === 'function' ? this.getBackingDpr() : 1);
+        const memo = this._inkTierMemo || (this._inkTierMemo = new Map());
+        SETTINGS.pens.forEach((pen) => {
+          if (!pen || !pen.id) return;
+          const t = PM.resolveTraits(pen, paper, info);
+          if (!t) { memo.delete(pen.id); return; }
+          t.tier = IR.tierFor(t, pxPerMm, memo.get(pen.id) || 0, gesture);
+          memo.set(pen.id, t.tier);
+          // A plain pen whose bleed is still sub-pixel keeps today's path.
+          if (t.plain && t.tier === 0) return;
+          if (!penTraits) penTraits = new Map();
+          penTraits.set(pen.id, t);
+        });
+      }
+      if (!realistic && !penTraits) return null;
       return {
         paper,
         info,
+        realistic,
+        direct: !realistic,
         blend: Paper.inkBlendFor(paper),
-        reuseHalo: this._paperViewGesture(),
+        reuseHalo: gesture,
         rendered: false,
         halo: null,
+        penTraits,
+        collect: new Map(),
+        collecting: true,
       };
     }
 
@@ -9841,6 +9904,7 @@
         this.ctx = target;
         ictx.setTransform(m);
       }
+      plan.collecting = false;
       plan.rendered = true;
       const { paper, info } = plan;
       const pxPerMm = Math.hypot(m.a, m.b);
@@ -9864,16 +9928,38 @@
       // sized (bleedMm), so it only shows once zoomed in far enough.
       const L = (window.Vectura.PAPERS && window.Vectura.PAPERS.LIMITS) || {};
       const radius = (info.bleedMm || 0) * paper.bleed * pxPerMm;
+      const HALO_DOWNSCALE = 2;
+      const wantHalo = radius >= (L.minBleedPx || 0.4);
+      const reusing = wantHalo && plan.reuseHalo && this._paperHaloMeta && this._paperHaloMeta.key === this._paperHaloKey(paper);
+      // Pen models: collected pens render into their class canvases now (with
+      // their own dry-skip); the halo then blurs a per-pen weighted source.
+      let haloSource = ink;
+      if (plan.collect && plan.collect.size) {
+        let hsrc = null;
+        if (wantHalo && !reusing) {
+          const hs = this._paperScratch('_inkHaloSrcCanvas', HALO_DOWNSCALE);
+          hsrc = hs.getContext('2d');
+          hsrc.setTransform(1, 0, 0, 1, 0, 0);
+          hsrc.globalAlpha = 1;
+          hsrc.globalCompositeOperation = 'source-over';
+          hsrc.clearRect(0, 0, hs.width, hs.height);
+          hsrc.drawImage(ink, 0, 0, hs.width, hs.height);
+          haloSource = hs;
+        }
+        const haloSrc = hsrc ? { ctx: hsrc, w: haloSource.width, h: haloSource.height } : null;
+        this._renderCollectedInk(plan, prof, { m, pxPerMm, view, sheet, skipAlpha, haloSrc, translucent: ictx });
+      } else {
+        plan.opaque = null;
+      }
       plan.halo = null;
-      if (radius < (L.minBleedPx || 0.4)) return;
-      if (plan.reuseHalo && this._paperHaloMeta && this._paperHaloMeta.key === this._paperHaloKey(paper)) {
+      if (!wantHalo) return;
+      if (reusing) {
         // View-only gesture: transform the last halo instead of rebuilding.
         const prev = this._paperHaloMeta.m;
         const k = m.a / prev.a;
         plan.halo = { canvas: this._paperHaloCanvas, k, tx: m.e - prev.e * k, ty: m.f - prev.f * k };
         return;
       }
-      const HALO_DOWNSCALE = 2;
       const halo = this._paperScratch('_paperHaloCanvas', HALO_DOWNSCALE);
       const hctx = halo.getContext('2d');
       const hr = radius / HALO_DOWNSCALE;
@@ -9883,7 +9969,7 @@
       hctx.clearRect(0, 0, halo.width, halo.height);
       if (this._paperCanvasFilter(hctx)) {
         hctx.filter = `blur(${hr.toFixed(2)}px)`;
-        hctx.drawImage(ink, 0, 0, halo.width, halo.height);
+        hctx.drawImage(haloSource, 0, 0, halo.width, halo.height);
         hctx.filter = 'none';
       } else {
         // No ctx.filter (older Safari): a ring of offset copies approximates the blur.
@@ -9891,7 +9977,7 @@
         hctx.globalAlpha = 1 / 3;
         for (let i = 0; i < steps; i += 1) {
           const a = (i / steps) * Math.PI * 2;
-          hctx.drawImage(ink, Math.cos(a) * hr * 0.7, Math.sin(a) * hr * 0.7, halo.width, halo.height);
+          hctx.drawImage(haloSource, Math.cos(a) * hr * 0.7, Math.sin(a) * hr * 0.7, halo.width, halo.height);
         }
         hctx.globalAlpha = 1;
       }
@@ -9915,6 +10001,84 @@
       }
       this._paperHaloMeta = { m: { a: m.a, e: m.e, f: m.f }, key: this._paperHaloKey(paper) };
       plan.halo = { canvas: halo, k: 1, tx: 0, ty: 0 };
+    }
+
+    // Pen models: render the pens collected by drawLayers through the ink
+    // renderer. Translucent inks land in `opts.translucent` (the paper ink
+    // canvas, or a class canvas of their own on paper None); opaque inks in
+    // _inkOpaqueCanvas, composited above them (approximation: opaque ink is
+    // always on top of translucent ink).
+    _renderCollectedInk(plan, prof, opts) {
+      const IR = window.Vectura && window.Vectura.InkRenderer;
+      plan.rendered = true;
+      plan.opaque = null;
+      plan.translucent = null;
+      if (!IR || !plan.collect || !plan.collect.size) return;
+      const o = opts || {};
+      const m = o.m || this.ctx.getTransform();
+      const pxPerMm = o.pxPerMm || Math.hypot(m.a, m.b);
+      const view = o.view || { x: -m.e / m.a, y: -m.f / m.d, w: this.canvas.width / m.a, h: this.canvas.height / m.d };
+      const sheet = o.sheet || { x: 0, y: 0, w: prof.width, h: prof.height };
+      const clearCanvas = (name) => {
+        const c = this._paperScratch(name);
+        const cx = c.getContext('2d');
+        cx.setTransform(1, 0, 0, 1, 0, 0);
+        cx.globalAlpha = 1;
+        cx.globalCompositeOperation = 'source-over';
+        cx.clearRect(0, 0, c.width, c.height);
+        return { c, cx };
+      };
+      let translucent = o.translucent || null;
+      if (!translucent) {
+        const t = clearCanvas('_inkTranslucentCanvas');
+        translucent = t.cx;
+        plan.translucent = t.c;
+      }
+      let opaque = null;
+      const PT = window.Vectura.PaperTexture;
+      const paper = plan.paper;
+      const self = this;
+      const traceInto = (ctx, path, layer, temp, useCurves) => {
+        const prev = self.ctx;
+        self.ctx = ctx;
+        try { self.traceLayerPath(path, layer, temp, useCurves); } finally { self.ctx = prev; }
+      };
+      IR.renderCollected(plan, {
+        m,
+        pxPerMm,
+        view,
+        pens: SETTINGS.pens || [],
+        gesture: plan.reuseHalo,
+        scratch: () => this._paperScratch('_inkPenScratch'),
+        translucent,
+        opaque: () => {
+          if (!opaque) { const o2 = clearCanvas('_inkOpaqueCanvas'); opaque = o2.cx; plan.opaque = o2.c; }
+          return opaque;
+        },
+        haloSrc: o.haloSrc || null,
+        trace: (ctx, path, useCurves) => traceInto(ctx, path, null, null, useCurves),
+        traceItem: (ctx, item) => traceInto(ctx, item.path, item.layer, item.temp, item.useCurves),
+        skipAlpha: plan.realistic ? (o.skipAlpha || 0) : 0,
+        skipMask: plan.realistic && PT ? (ctx) => PT.drawMask(ctx, paper, 'skip', { pxPerMm, view, sheet }) : null,
+        onReady: this._paperTileReady(),
+      });
+    }
+
+    // Paper None + collected pens: composite the class canvases (no halo).
+    _compositeCollectedInk(plan) {
+      const target = this.ctx;
+      const layers = [[plan.translucent, plan.blend], [plan.opaque, 'source-over']];
+      if (!layers.some(([c]) => c)) return;
+      const baseAlpha = Number.isFinite(target.globalAlpha) ? target.globalAlpha : 1;
+      target.save();
+      target.setTransform(1, 0, 0, 1, 0, 0);
+      layers.forEach(([c, op]) => {
+        if (!c) return;
+        target.globalCompositeOperation = op;
+        target.globalAlpha = baseAlpha;
+        target.drawImage(c, 0, 0);
+      });
+      target.restore();
     }
 
     _paperHaloKey(paper) {
@@ -9954,6 +10118,11 @@
       target.setTransform(1, 0, 0, 1, 0, 0);
       target.globalAlpha = baseAlpha * (info.inkOpacity == null ? 1 : info.inkOpacity);
       target.drawImage(ink, 0, 0);
+      // Pen models: opaque inks (gel, paint) cover what is below them.
+      if (plan.opaque) {
+        target.globalCompositeOperation = 'source-over';
+        target.drawImage(plan.opaque, 0, 0);
+      }
       target.restore();
     }
 

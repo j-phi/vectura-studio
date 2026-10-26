@@ -33,6 +33,7 @@
  *   thumbDataURL(type, { px }) -> data URL
  *   heightField(type, seed, x0Mm, y0Mm, sizePx, bucket) -> Float32Array (pure, tests)
  *   bucketFor(pxPerMm), chunkMmFor(bucket), clearCache(), cacheStats()
+ *   noise2(seed) -> (x, y) => simplex value (shared with the ink renderer)
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -883,5 +884,8 @@
     reportRepaintCost,
     flush,
     simplex: (seed, x, y) => simplex(permFor(seed), x, y),
+    // Fast seeded 2D simplex for one seed (the ink renderer's mm-locked edge
+    // noise): returns (x, y) => value in ≈[-1, 1].
+    noise2: (seed) => { const perm = permFor(seed); return (x, y) => simplex(perm, x, y); },
   };
 })();
