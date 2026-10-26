@@ -127,6 +127,26 @@ test.describe('touch toasts', () => {
     assertPlacement(await measure(page, CHROME), dev, ins, 'inset long ');
   });
 
+  // Nightly B3: toast.js clears bottom chrome within 168 px of the centre line (half the 320 px toast max). A touch toast
+  // could grow to the viewport width, so on iPhone landscape the LONG toast spanned the collapsed bottom strip (Linux text:
+  // 14 px wider) or the side modifier bar. The message here is wider than the viewport on every font: the toast must wrap
+  // inside 320 px and clear every chrome box, whatever the text metrics.
+  test('a very long toast wraps inside 320 px and clears the bottom strip and side chrome', async ({ page }, testInfo) => {
+    const dev = PROJECTS[testInfo.project.name];
+    const ins = INSETS[dev.device];
+    test.skip(!ins, 'iPhone profiles only');
+    await page.evaluate((v) => {
+      const s = document.documentElement.style;
+      s.setProperty('--safe-top', `${v.top}px`); s.setProperty('--safe-right', `${v.right}px`);
+      s.setProperty('--safe-bottom', `${v.bottom}px`); s.setProperty('--safe-left', `${v.left}px`);
+    }, ins);
+    await page.waitForTimeout(250);
+    await fire(page, `${LONG}, ${LONG.toLowerCase()}`);
+    const m = await measure(page, CHROME);
+    expect(m.r.w, `wide toast width ${m.r.w}`).toBeLessThanOrEqual(320 + TOL);
+    assertPlacement(m, dev, ins, 'wide ');
+  });
+
   test('non-actionable toast ignores pointer events on touch', async ({ page }) => {
     await page.evaluate(() => window.Vectura.UI.overlays.Toast.show({ message: 'Plain status', duration: 0 }));
     expect(await page.evaluate(() => getComputedStyle(document.querySelector('.vectura-toast')).pointerEvents)).toBe('none');

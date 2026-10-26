@@ -3365,8 +3365,19 @@
     getDesignerCanvasMetrics(canvas) {
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       const rect = canvas?.getBoundingClientRect?.() || { width: 0, height: 0 };
-      const width = Math.max(1, rect.width || canvas?.clientWidth || canvas?.width / dpr || 1);
-      const height = Math.max(1, rect.height || canvas?.clientHeight || canvas?.height / dpr || 1);
+      // The drawing surface is the content box. The canvas has a 1 px border and CSS height auto, so a backing store
+      // sized from the border box changed the aspect ratio the next layout used: the canvas grew on every redraw for
+      // seconds. Border and padding come off the rect (fractional, unlike clientWidth / clientHeight).
+      let insetX = 0;
+      let insetY = 0;
+      if (rect.width && canvas && typeof window.getComputedStyle === 'function') {
+        const cs = window.getComputedStyle(canvas);
+        const px = (v) => parseFloat(v) || 0;
+        insetX = px(cs.borderLeftWidth) + px(cs.borderRightWidth) + px(cs.paddingLeft) + px(cs.paddingRight);
+        insetY = px(cs.borderTopWidth) + px(cs.borderBottomWidth) + px(cs.paddingTop) + px(cs.paddingBottom);
+      }
+      const width = Math.max(1, (rect.width ? rect.width - insetX : 0) || canvas?.clientWidth || canvas?.width / dpr || 1);
+      const height = Math.max(1, (rect.height ? rect.height - insetY : 0) || canvas?.clientHeight || canvas?.height / dpr || 1);
       return { width, height, dpr };
     },
 
@@ -3384,7 +3395,11 @@
 
     getDesignerCanvasPoint(canvas, e) {
       const rect = canvas.getBoundingClientRect();
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      // Content-box coordinates, the same box getDesignerCanvasMetrics draws in.
+      const cs = typeof window.getComputedStyle === 'function' ? window.getComputedStyle(canvas) : null;
+      const offX = cs ? (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.paddingLeft) || 0) : 0;
+      const offY = cs ? (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.paddingTop) || 0) : 0;
+      return { x: e.clientX - rect.left - offX, y: e.clientY - rect.top - offY };
     },
 
     normalizePetalDesignerWidthRatio(value, fallback = 1) {

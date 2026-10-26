@@ -2,7 +2,7 @@
 // parameterised by the roots so the Scene3D, Petal Designer and Pattern designer specs can share it.
 // A target counts when hitArea() (which resolves ::before extensions and neighbours through elementFromPoint) is at least 44 x 44 and
 // its centre resolves to itself. A control that a collapsed section or a scroller clips away entirely is not on screen and is skipped.
-const touch = require('./touch');
+const core = require('./target-audit-core');
 
 const MIN = 44;
 const TARGETS = 'button, input, select, textarea, summary, a[href], [role="button"], [role="tab"], [role="radio"], [role="option"], [role^="menuitem"], [tabindex="0"], label.sw-toggle, .lvl-algo-sub-item';
@@ -34,14 +34,33 @@ async function enumerate(page, roots, sel = TARGETS) {
   }, { roots, sel });
 }
 
-async function measure(page, { roots, popups = [], min = MIN, scrollRoots = true }) {
-  const items = await enumerate(page, roots);
-  const bad = []; const stolen = []; const overflow = []; let skipped = 0;
+// inPage(page, fn, arg): runs fn(arg, kit) inside the page in ONE page.evaluate, so a sweep of N targets costs one CDP round
+// trip instead of ~7 per target (hosted WebKit spends most of a targets-* run on round trips). fn must be self-contained (no
+// closure over Node variables). kit.hitArea(el, opts) is target-audit-core's hitAreaInPage with the helpers/touch.js hitArea
+// defaults (probe 2, radius 48); kit.frame() waits one animation frame (scroll events and the handlers they drive run first).
+async function inPage(page, fn, arg) {
+  return page.evaluate(async ({ fnSrc, hitSrc, arg }) => {
+    const hit = (new Function(`return (${hitSrc})`))();
+    const frame = () => new Promise((resolve) => {
+      let done = false; const end = () => { if (!done) { done = true; resolve(); } };
+      requestAnimationFrame(() => setTimeout(end, 0)); setTimeout(end, 100); // rAF can be throttled: never hang
+    });
+    const kit = { hitArea: (el, opts) => hit(el, { probe: 2, radius: 48, ...(opts || {}) }), frame };
+    return (new Function(`return (${fnSrc})`))()(arg, kit);
+  }, { fnSrc: fn.toString(), hitSrc: core.hitAreaInPage.toString(), arg });
+}
+
+// In-page body of measure(): per target, scroll it into view (vertical only), skip it when clipped away, make foreign popups
+// transparent to hit tests, read its hit area and whether its centre resolves to itself. Same steps and order as the former
+// per-target round-trip loop.
+async function sweepTargetsInPage({ items, roots, popups }, kit) {
+  const out = [];
   for (const it of items) {
-    const loc = page.locator(`[data-sweep-probe="${it.i}"]`);
-    await loc.evaluate((e) => { e.scrollIntoView({ block: 'center', inline: 'nearest' }); for (let a = e.parentElement; a; a = a.parentElement) if (a.scrollLeft) a.scrollLeft = 0; });
-    await page.waitForTimeout(25);
-    const clipped = await loc.evaluate((e) => {
+    const e = document.querySelector(`[data-sweep-probe="${it.i}"]`);
+    if (!e) { out.push({ i: it.i, missing: true }); continue; }
+    e.scrollIntoView({ block: 'center', inline: 'nearest' }); for (let a = e.parentElement; a; a = a.parentElement) if (a.scrollLeft) a.scrollLeft = 0;
+    await kit.frame();
+    const clipped = (() => {
       const r = e.getBoundingClientRect();
       let l = r.left; let t = r.top; let rt = r.right; let b = r.bottom;
       for (let a = e.parentElement; a; a = a.parentElement) {
@@ -55,17 +74,13 @@ async function measure(page, { roots, popups = [], min = MIN, scrollRoots = true
       // A control that sticks out sideways past the box that clips it is half off screen: its tap is lost or the row is cut.
       const over = rt - l < r.width - 1.5;
       return b - t < 2 ? 'gone' : (over || rt - l < 2) ? 'over' : false;
-    });
-    if (clipped === 'gone') { skipped += 1; continue; }
-    if (clipped === 'over') overflow.push(it.label);
-    const prev = await loc.evaluate((e, sels) => {
-      const ps = sels.length ? [...document.querySelectorAll(sels.join(','))].filter((m) => !m.contains(e) && m.checkVisibility()) : [];
-      window.__sweepPopups = ps.map((m) => [m, m.style.pointerEvents]);
-      ps.forEach((m) => { m.style.pointerEvents = 'none'; });
-      return ps.length;
-    }, popups);
-    const a = await touch.hitArea(page, loc);
-    const own = await loc.evaluate((e, roots) => {
+    })();
+    if (clipped === 'gone') { out.push({ i: it.i, clipped }); continue; }
+    const ps = popups.length ? [...document.querySelectorAll(popups.join(','))].filter((m) => !m.contains(e) && m.checkVisibility()) : [];
+    const prev = ps.map((m) => [m, m.style.pointerEvents]);
+    ps.forEach((m) => { m.style.pointerEvents = 'none'; });
+    const a = kit.hitArea(e);
+    const own = (() => {
       const r = e.getBoundingClientRect();
       const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       if (!t) return true;
@@ -73,13 +88,27 @@ async function measure(page, { roots, popups = [], min = MIN, scrollRoots = true
       if (e.closest('.dual-range') && t.closest('.dual-range') === e.closest('.dual-range')) return 'other-surface';
       const rootOf = (n) => roots.map((s) => n.closest(s)).find(Boolean) || null;
       return rootOf(t) !== rootOf(e) ? 'other-surface' : false;
-    }, roots);
-    if (prev) await page.evaluate(() => { (window.__sweepPopups || []).forEach(([m, v]) => { m.style.pointerEvents = v; }); window.__sweepPopups = []; });
-    if (own === 'other-surface') { skipped += 1; continue; }
-    if (a.w < min || a.h < min) bad.push(`${it.label} ${a.w}x${a.h}`);
-    if (!own) stolen.push(it.label);
+    })();
+    prev.forEach(([m, v]) => { m.style.pointerEvents = v; });
+    out.push({ i: it.i, clipped, w: a.w, h: a.h, own });
   }
+  return out;
+}
+
+async function measure(page, { roots, popups = [], min = MIN }) {
+  const items = await enumerate(page, roots);
+  const res = await inPage(page, sweepTargetsInPage, { items, roots, popups });
+  const bad = []; const stolen = []; const overflow = []; let skipped = 0;
+  res.forEach((m, k) => {
+    const it = items[k];
+    if (m.missing) { bad.push(`${it.label} left the DOM during the sweep`); return; }
+    if (m.clipped === 'gone') { skipped += 1; return; }
+    if (m.clipped === 'over') overflow.push(it.label);
+    if (m.own === 'other-surface') { skipped += 1; return; }
+    if (m.w < min || m.h < min) bad.push(`${it.label} ${m.w}x${m.h}`);
+    if (!m.own) stolen.push(it.label);
+  });
   return { count: items.length - skipped, listed: items.length, bad, stolen, overflow };
 }
 
-module.exports = { MIN, TARGETS, enumerate, measure };
+module.exports = { MIN, TARGETS, enumerate, measure, inPage };

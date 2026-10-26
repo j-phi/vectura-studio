@@ -1,6 +1,7 @@
 const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 const core = require('../helpers/target-audit-core');
 
 // TUX-023: transform handles by finger. A finger grabs a corner from ~14 px outside it, the
@@ -123,6 +124,8 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
   test.beforeEach(async ({ page }) => {
     errors = [];
     page.on('pageerror', (e) => errors.push(String(e)));
+    // Quick drags run on a frozen page clock (clock.frozenDrag): a slow runner cannot stretch them past the 500 ms hold.
+    await clock.install(page);
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.renderer && window.app.engine));
   });
@@ -134,9 +137,39 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, start)).toBe('main-canvas');
     const before = await state(page, s.id);
     expect(before.widthPx).toBeGreaterThanOrEqual(100);
-    await touch.drag(page, start, { x: start.x + 40, y: start.y + 40 }, { steps: 10 });
+    await clock.frozenDrag(page, start, { x: start.x + 40, y: start.y + 40 }, { steps: 10 });
     const after = await state(page, s.id);
     expect(Math.abs(after.rotation - before.rotation)).toBeLessThan(1e-3);
+    const grew = after.widthPx - before.widthPx;
+    expect(grew).toBeGreaterThanOrEqual(28);
+    expect(grew).toBeLessThanOrEqual(52);
+  });
+
+  // C1 (nightly): a corner drag starts at 0 px. A slow finger (3 px, then a rest past the 500 ms hold delay)
+  // must keep the resize: the canvas long-press yields to the started drag and opens no menu.
+  test('slow corner drag past the hold delay still resizes and opens no menu', async ({ page }) => {
+    const s = await setup(page, 140);
+    const start = { x: s.se.x + 10, y: s.se.y + 10 };
+    const before = await state(page, s.id);
+    // App time, not wall time: on a slow runner the round trips between touchstart and the first 3 px move
+    // reached 900 ms, so the hold fired before the drag had moved at all (nightly run 40131398918).
+    await clock.freeze(page);
+    try {
+      await touch.touchPhase(page, 'start', [{ ...start, id: 0 }]);
+      await clock.advance(page, 16);
+      await touch.touchPhase(page, 'move', [{ x: start.x + 3, y: start.y + 3, id: 0 }]);
+      await clock.advance(page, 700);
+      for (let i = 1; i <= 8; i += 1) {
+        await touch.touchPhase(page, 'move', [{ x: start.x + 3 + i * 4.625, y: start.y + 3 + i * 4.625, id: 0 }]);
+        await clock.advance(page, 16);
+      }
+      await touch.touchPhase(page, 'end', [{ x: start.x + 40, y: start.y + 40, id: 0 }]);
+      await clock.advance(page, 200);
+    } finally {
+      await clock.thaw(page);
+    }
+    expect(await page.locator('.canvas-ctx-menu').count(), 'no long-press menu during a started resize').toBe(0);
+    const after = await state(page, s.id);
     const grew = after.widthPx - before.widthPx;
     expect(grew).toBeGreaterThanOrEqual(28);
     expect(grew).toBeLessThanOrEqual(52);
@@ -147,7 +180,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     const before = await state(page, s.id);
     expect(before.widthPx).toBeGreaterThanOrEqual(20);
     expect(before.widthPx).toBeLessThanOrEqual(44);
-    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y }, { steps: 10 });
+    await clock.frozenDrag(page, before.center, { x: before.center.x + 30, y: before.center.y }, { steps: 10 });
     const after = await state(page, s.id);
     expect(Math.abs(after.widthPx - before.widthPx)).toBeLessThanOrEqual(1);
     expect(Math.abs(after.rotation - before.rotation)).toBeLessThan(1e-3);
@@ -158,7 +191,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     const s = await setup(page, 10);
     const before = await state(page, s.id);
     expect(before.widthPx).toBeLessThanOrEqual(14);
-    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
+    await clock.frozenDrag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
     const after = await state(page, s.id);
     expect(Math.abs(after.widthPx - before.widthPx)).toBeLessThanOrEqual(1);
     expect(after.center.x - before.center.x).toBeGreaterThan(24);
@@ -199,7 +232,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(before.hPx).toBeGreaterThan(24);
     expect(before.hPx).toBeLessThan(36);
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, before.center)).toBe('main-canvas');
-    await touch.drag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
+    await clock.frozenDrag(page, before.center, { x: before.center.x + 30, y: before.center.y + 20 }, { steps: 10 });
     const after = await measure();
     expect(Math.abs(after.hPx - before.hPx)).toBeLessThanOrEqual(1);
     expect(Math.abs(after.wPx - before.wPx)).toBeLessThanOrEqual(1);
@@ -222,7 +255,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     expect(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y).id, hit)).toBe('main-canvas');
     const before = await state(page, s.id);
     expect(before.widthPx).toBeLessThanOrEqual(44);
-    await touch.drag(page, hit, { x: hit.x + 8, y: hit.y + 8 }, { steps: 8 });
+    await clock.frozenDrag(page, hit, { x: hit.x + 8, y: hit.y + 8 }, { steps: 8 });
     const after = await state(page, s.id);
     const grew = after.widthPx - before.widthPx;
     expect(grew).toBeGreaterThanOrEqual(6);
@@ -256,7 +289,7 @@ test.describe('TUX-023 canvas transform handles by finger', () => {
     const plus = at(a0 + (30 * Math.PI) / 180);
     const minus = at(a0 - (30 * Math.PI) / 180);
     const end = inside(plus) ? plus : minus;
-    await touch.drag(page, aff, end, { steps: 12 });
+    await clock.frozenDrag(page, aff, end, { steps: 12 });
     const after = await state(page, s.id);
     expect(Math.abs(after.rotation - before.rotation)).toBeGreaterThan(5);
     expect(Math.abs(after.widthPx - before.widthPx) / before.widthPx).toBeLessThanOrEqual(0.02);
@@ -441,7 +474,7 @@ test.describe('TUX-023 rotate affordance clear of chrome after a corner resize (
       const box = document.querySelector('#main-canvas').getBoundingClientRect();
       return { x: p.x + box.left + 10, y: p.y + box.top + 10 };
     });
-    await touch.drag(page, se, { x: se.x + 30, y: se.y + 30 });
+    await clock.frozenDrag(page, se, { x: se.x + 30, y: se.y + 30 });
     await core.waitGeometryStable(page);
     await waitAffordanceDrawn(page);
     const res = await page.evaluate(() => {

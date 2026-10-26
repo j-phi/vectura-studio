@@ -108,7 +108,8 @@ const SCENARIOS = {
 
 test.describe('TUX-041 B5 Scene3D, Petal and Pattern designers', () => {
   test.use({ reducedMotion: 'reduce' });
-  test.describe.configure({ retries: 0 });
+  // Every test boots its own page, so the file runs fully parallel.
+  test.describe.configure({ mode: 'parallel', retries: 0 });
 
   for (const [id, open] of Object.entries(SCENARIOS)) {
     test(`${id}: every target is at least 44 x 44`, async ({ page, baseURL }, testInfo) => {

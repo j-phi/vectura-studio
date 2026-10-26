@@ -231,6 +231,28 @@ test.describe('TUX-025 3D rotation gizmo by finger', () => {
     expect(Math.abs(after.pitch - before.pitch)).toBeLessThan(0.01);
   });
 
+  // C1 (nightly): the yaw ring drag starts at 0 px. A slow finger that rests past the 500 ms hold delay after its
+  // first small step must keep the drag: the canvas long-press yields, no menu opens, and the yaw follows the arc.
+  test('yaw: a slow ring drag past the hold delay keeps rotating and opens no menu', async ({ page }) => {
+    await setup(page);
+    await setRot(page, { yaw: 270 });
+    const g = await geometry(page);
+    const before = await rotation(page);
+    const rho = Math.hypot(g.Y.x - g.C.x, g.Y.y - g.C.y);
+    const a0 = Math.atan2(g.Y.x - g.C.x, g.Y.y - g.C.y);
+    const arc = (30 * Math.PI) / 180;
+    const at = (f) => ({ x: g.C.x + rho * Math.sin(a0 + arc * f), y: g.C.y + rho * Math.cos(a0 + arc * f), id: 0 });
+    await touch.touchPhase(page, 'start', [at(0)]);
+    await touch.touchPhase(page, 'move', [at(0.1)]);
+    await page.waitForTimeout(700);
+    for (let i = 2; i <= 10; i += 1) await touch.touchPhase(page, 'move', [at(i / 10)]);
+    await touch.touchPhase(page, 'end', [at(1)]);
+    await page.waitForTimeout(200);
+    expect(await page.locator('.canvas-ctx-menu').count(), 'no long-press menu during a started gizmo drag').toBe(0);
+    const after = await rotation(page);
+    expect(Math.abs(wrap(after.yaw - before.yaw)), 'the yaw followed the slow arc').toBeGreaterThan(10);
+  });
+
   test('pitch: an 18 px off-marker grab drags without a jump', async ({ page }) => {
     await setup(page);
     const g0 = await geometry(page);

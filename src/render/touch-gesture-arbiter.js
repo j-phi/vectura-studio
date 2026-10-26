@@ -76,6 +76,30 @@
     '_fillPendingPour',
   ]);
 
+  // C1 (TUX-034b): drags that edit the document from the first pixel of movement (gizmo, transform
+  // handle, corner, pen anchor, modifier, light and scene drags; a layer move once it is promoted).
+  // The canvas long-press yields to any of these once the finger has moved at all. Slop-gated drags
+  // (touch move, Direct anchor) count when they cross the touch drag slop (touchSlopCrossed).
+  // Marquee, lasso and pan are not here: the hold keeps its own slop for them. Each name is in
+  // INTERACTION_FLAGS (unit test).
+  const LONG_PRESS_YIELD_FLAGS = Object.freeze([
+    'isLayerDrag',
+    'isLightDrag',
+    'isPenDragging',
+    'isPenCloseDragging',
+    'shapeCornerDrag',
+    'freeformCornerDrag',
+    'penAnchorDrag',
+    'modifierDrag',
+    'rotation3DDrag',
+    '_sceneDrag',
+    '_sceneObjectGizmoDrag',
+    '_sceneLightGizmoDrag',
+    '_sceneResizeDrag',
+    '_sceneFacePullDrag',
+    '_sceneLightDrag',
+  ]);
+
   // Scene and layer drags know how to restore their own pre-drag state. Rollback
   // calls them in the same priority order as the Escape handler in the renderer.
   const CANCEL_PATHS = Object.freeze([
@@ -311,5 +335,5 @@
     return arbiter;
   };
 
-  Vectura.TouchGestureArbiter = { DEFAULT_CONFIG, INTERACTION_FLAGS, CANCEL_PATHS, readConfig, decide, classifyTap, isPenContact, create };
+  Vectura.TouchGestureArbiter = { DEFAULT_CONFIG, INTERACTION_FLAGS, LONG_PRESS_YIELD_FLAGS, CANCEL_PATHS, readConfig, decide, classifyTap, isPenContact, create };
 })();

@@ -3,6 +3,7 @@ const fs = require('fs');
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 const { openPane, addLayer } = require('./target-audit-states');
 const core = require('../helpers/target-audit-core');
 
@@ -11,6 +12,7 @@ const EVIDENCE = evidenceDir('TUX-045');
 const TASKS = ['multi-select', 'constrain', 'duplicate', 'pan'];
 
 const gotoApp = async (page) => {
+  await clock.install(page);
   await page.goto('/');
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.Vectura.InputModifiers));
 };
@@ -72,10 +74,14 @@ test.describe('TUX-045 modifier bar', () => {
     await page.waitForTimeout(450);
     await touch.tap(page, btn(page, 'constrain'));
     expect(await st(page, 'constrain')).toBe('off');
-    // Quick pair: dispatch two pointerups 120 ms apart on the real button (the tap helper's own latency varies by engine).
+    // Quick pair, 120 ms apart inside the 300 ms lock window, on a frozen page clock: the page clock drives Date.now()
+    // and event.timeStamp, so the app reads 120 ms however long the round trips take (a hosted runner stretched two
+    // plain taps past 300 ms).
+    await clock.freeze(page);
     await touch.tap(page, btn(page, 'duplicate'));
-    await page.waitForTimeout(60);
+    await clock.advance(page, 120);
     await touch.tap(page, btn(page, 'duplicate'));
+    await clock.thaw(page);
     expect(await st(page, 'duplicate')).toBe('locked');
     const badge = page.locator('#touch-mod-badge');
     await expect(badge).toBeVisible();

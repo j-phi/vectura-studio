@@ -4,6 +4,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const core = require('../helpers/target-audit-core');
 const touch = require('../helpers/touch');
+const sweep = require('../helpers/target-sweep');
 const { STATES } = require('./target-audit-states');
 
 // TUX-041 batch B4 (side panels), strict slice. Every interactive target in the left pane (algorithm params, noise rack,
@@ -18,6 +19,10 @@ const shot = async (page, name) => { fs.mkdirSync(EVIDENCE, { recursive: true })
 const TARGETS = 'button, input, select, textarea, summary, a[href], [role="button"], [role="tab"], [role="radio"], [role="option"], [role^="menuitem"], [tabindex="0"], label.sw-toggle, .lvl-algo-sub-item';
 // Popups come first: a popup inside a pane is its own surface, so a pane row it covers is not stolen from a neighbour.
 const POPUPS = ['#gm-module-menu', '#layer-add-menu', '.vtp-fontpick-pop', '.hg-preset-popover', '.lvl-ctx-menu', '.palette-menu', '[role="menu"]'];
+// Every generator the left-pane picker offers, minus batch B5 (Petalis Designer, Scene3D, Pattern), plus the Text layer.
+const ALGO_TYPES = ['attractor', 'boids', 'flowfield', 'grid', 'harmonograph', 'hyphae', 'lissajous', 'pendula', 'phylla', 'rainfall', 'rings',
+  'shapePack', 'spiral', 'spirograph', 'svgDistort', 'topo', 'wavetable', 'polyhedron', 'rasterPlane', 'spiralizer', 'terrain', 'topoform',
+  'halftone', 'imageWeave', 'text'];
 const ROOTS = ['#gm-module-menu', '#layer-add-menu', '.vtp-fontpick-pop', '.hg-preset-popover', '.lvl-ctx-menu', '.palette-menu', '[role="menu"]', '#left-pane', '#right-pane', '#bottom-pane'];
 
 async function boot(page, baseURL) {
@@ -71,16 +76,18 @@ async function enumerate(page) {
   }, { roots: ROOTS, sel: TARGETS });
 }
 
-async function measure(page) {
-  const items = await enumerate(page);
-  const bad = []; const stolen = []; let skipped = 0; let clippedN = 0; const clippedL = []; let otherN = 0;
+// In-page body of measure(): one page.evaluate per state (sweep.inPage) instead of ~7 round trips per target. Same steps and
+// order as the per-target loop it replaced.
+async function measureInPage({ items, roots, popups }, kit) {
+  const out = [];
   for (const it of items) {
-    const loc = page.locator(`[data-b4-probe="${it.i}"]`);
-    await loc.evaluate((e) => { e.scrollIntoView({ block: 'center', inline: 'nearest' }); for (let a = e.parentElement; a; a = a.parentElement) if (a.scrollLeft) a.scrollLeft = 0; }); // vertical scroll only: a control that overflows the pane sideways must not be rescued
-    await page.waitForTimeout(25);
+    const e = document.querySelector(`[data-b4-probe="${it.i}"]`);
+    if (!e) { out.push({ i: it.i, missing: true }); continue; }
+    e.scrollIntoView({ block: 'center', inline: 'nearest' }); for (let a = e.parentElement; a; a = a.parentElement) if (a.scrollLeft) a.scrollLeft = 0; // vertical scroll only: a control that overflows the pane sideways must not be rescued
+    await kit.frame();
     // A control that a collapsed section or a scroller clips away entirely is not on screen: skip it.
-    const clipped = await loc.evaluate((e) => {
-      let r = e.getBoundingClientRect();
+    const clipped = (() => {
+      const r = e.getBoundingClientRect();
       let l = r.left; let t = r.top; let rt = r.right; let b = r.bottom;
       for (let a = e.parentElement; a; a = a.parentElement) {
         const o = getComputedStyle(a);
@@ -91,18 +98,15 @@ async function measure(page) {
       }
       l = Math.max(l, 0); t = Math.max(t, 0); rt = Math.min(rt, innerWidth); b = Math.min(b, innerHeight);
       return rt - l < 2 || b - t < 2;
-    });
-    if (clipped) { skipped += 1; clippedN += 1; clippedL.push(it.label); continue; }
+    })();
+    if (clipped) { out.push({ i: it.i, clipped: true }); continue; }
     // An open popup that does not contain the control covers part of it by design (it dismisses on an outside tap): it is not a
     // neighbour, so it is made transparent to hit tests while the control is probed.
-    const prev = await loc.evaluate((e, sels) => {
-      const ps = [...document.querySelectorAll(sels.join(','))].filter((m) => !m.contains(e) && m.checkVisibility());
-      window.__b4Popups = ps.map((m) => [m, m.style.pointerEvents]);
-      ps.forEach((m) => { m.style.pointerEvents = 'none'; });
-      return ps.length;
-    }, POPUPS);
-    const a = await touch.hitArea(page, loc);
-    const own = await loc.evaluate((e, roots) => {
+    const ps = [...document.querySelectorAll(popups.join(','))].filter((m) => !m.contains(e) && m.checkVisibility());
+    const prev = ps.map((m) => [m, m.style.pointerEvents]);
+    ps.forEach((m) => { m.style.pointerEvents = 'none'; });
+    const a = kit.hitArea(e);
+    const own = (() => {
       const r = e.getBoundingClientRect();
       const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
       if (!t) return true;
@@ -113,12 +117,25 @@ async function measure(page) {
       // it is not a neighbour stealing the tap, so it is not this panel's defect.
       const rootOf = (n) => roots.map((s) => n.closest(s)).find(Boolean) || null;
       return rootOf(t) !== rootOf(e) ? 'other-surface' : false;
-    }, ROOTS);
-    if (prev) await page.evaluate(() => { (window.__b4Popups || []).forEach(([m, v]) => { m.style.pointerEvents = v; }); window.__b4Popups = []; });
-    if (own === 'other-surface') { skipped += 1; otherN += 1; continue; }
-    if (a.w < MIN || a.h < MIN) bad.push(`${it.label} ${a.w}x${a.h}`);
-    if (!own) stolen.push(it.label);
+    })();
+    prev.forEach(([m, v]) => { m.style.pointerEvents = v; });
+    out.push({ i: it.i, w: a.w, h: a.h, own });
   }
+  return out;
+}
+
+async function measure(page) {
+  const items = await enumerate(page);
+  const res = await sweep.inPage(page, measureInPage, { items, roots: ROOTS, popups: POPUPS });
+  const bad = []; const stolen = []; let skipped = 0; let clippedN = 0; const clippedL = []; let otherN = 0;
+  res.forEach((m, k) => {
+    const it = items[k];
+    if (m.missing) { bad.push(`${it.label} left the DOM during the sweep`); return; }
+    if (m.clipped) { skipped += 1; clippedN += 1; clippedL.push(it.label); return; }
+    if (m.own === 'other-surface') { skipped += 1; otherN += 1; return; }
+    if (m.w < MIN || m.h < MIN) bad.push(`${it.label} ${m.w}x${m.h}`);
+    if (!m.own) stolen.push(it.label);
+  });
   return { count: items.length - skipped, listed: items.length, clipped: clippedN, clippedL: process.env.B4_CLIP ? clippedL : undefined, other: otherN, bad, stolen };
 }
 
@@ -233,7 +250,8 @@ const SCENARIOS = {
 
 test.describe('TUX-041 B4 side panels', () => {
   test.use({ reducedMotion: 'reduce' });
-  test.describe.configure({ retries: 0 });
+  // Every test boots its own page and state, so the file runs fully parallel (the files share no state).
+  test.describe.configure({ mode: 'parallel', retries: 0 });
 
   for (const [id, open] of Object.entries(SCENARIOS)) {
     test(`${id}: every panel target is at least 44 x 44`, async ({ page, baseURL }, testInfo) => {
@@ -266,15 +284,18 @@ test.describe('TUX-041 B4 side panels', () => {
     expect(failures, 'text panel tabs with targets under 44').toEqual([]);
   });
 
-  // Every generator's parameter panel (Petalis Designer and Scene3D are batch B5).
-  test('every algorithm parameter panel: every target is at least 44 x 44', async ({ page, baseURL }, testInfo) => {
-    test.setTimeout(600_000);
+  // Every generator's parameter panel (Petalis Designer and Scene3D are batch B5), one test per generator so none nears its
+  // timeout. ALGO_TYPES is the static roster; the roster test below fails when the app's generator list drifts from it.
+  test('every algorithm parameter panel: the roster matches the app generator list', async ({ page, baseURL }) => {
     await boot(page, baseURL);
     const all = await page.evaluate(() => [...new Set([...document.querySelectorAll('[data-algo-type]')].map((e) => e.dataset.algoType))].filter((t) => !/^(petalisDesigner|scene3d|pattern)$/.test(t)).concat('text'));
-    const types = all.filter((t) => !process.env.B4_ALGO || process.env.B4_ALGO.split(',').includes(t));
     expect(all.length).toBeGreaterThan(8);
-    const failures = [];
-    for (const type of types) {
+    expect([...all].sort(), 'ALGO_TYPES in targets-panels.spec.js lists every generator the app offers').toEqual([...ALGO_TYPES].sort());
+  });
+  for (const type of ALGO_TYPES.filter((t) => !process.env.B4_ALGO || process.env.B4_ALGO.split(',').includes(t))) {
+    test(`algorithm ${type}: every parameter panel target is at least 44 x 44`, async ({ page, baseURL }, testInfo) => {
+      test.setTimeout(120_000);
+      await boot(page, baseURL);
       await page.evaluate((type) => {
         const eng = window.app.engine;
         eng.layers.slice().forEach((l) => eng.removeLayer && eng.removeLayer(l.id));
@@ -289,10 +310,11 @@ test.describe('TUX-041 B4 side panels', () => {
       await expandAll(page);
       const r = await measure(page);
       if (process.env.B4_LOG) console.log('B4RED', testInfo.project.name, `algo:${type}`, JSON.stringify(r));
-      if (r.bad.length || r.stolen.length) failures.push(`${type}: under ${JSON.stringify(r.bad)} stolen ${JSON.stringify(r.stolen)}`);
-    }
-    expect(failures, 'algorithm panels with targets under 44').toEqual([]);
-  });
+      expect(r.count, `${type}: has targets`).toBeGreaterThan(0);
+      expect(r.bad, `${type} parameter panel targets under ${MIN}`).toEqual([]);
+      expect(r.stolen, `${type} parameter panel targets whose centre a neighbour owns`).toEqual([]);
+    });
+  }
 
   // The draw-order icons keep an 18 px visual and a centred 44 px ::before. A blanket "grow every button" rule would give them a real
   // 44 px box that overlaps its neighbour (22 px hit area on the audit's probe), so they are asserted by name.

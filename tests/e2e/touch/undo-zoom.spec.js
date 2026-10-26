@@ -109,10 +109,11 @@ async function multiTap(page, pts, { skewMs = 0, holdMs = 0, driftPx = 4, ids } 
   }
   // Warm the CDP session / WebKit shim first (the first call awaits setup and would reorder the queue).
   await touch.touchPhase(page, 'end', []).catch(() => {});
-  await Promise.all([
-    touch.touchPhase(page, 'start', fingers),
-    touch.touchPhase(page, 'move', moved(1)),
-    touch.touchPhase(page, 'end', moved(1)),
+  // One batch: WebKit dispatches all three phases in one page task (no round trip can stretch the duration).
+  await touch.touchSequence(page, [
+    { phase: 'start', points: fingers },
+    { phase: 'move', points: moved(1) },
+    { phase: 'end', points: moved(1) },
   ]);
 }
 

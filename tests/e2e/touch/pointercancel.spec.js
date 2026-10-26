@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 
 // TUX-018a: a pointercancel (Control Center swipe, notification, palm) aborts the canvas edit and
 // restores the pre-gesture state. It never commits and adds no history entry.
@@ -33,15 +34,19 @@ const setup = (page, { tool, penDraft }) => page.evaluate(({ tool, penDraft }) =
   };
   const cx0 = Math.max(0, box.left) + (Math.min(innerWidth, box.right) - Math.max(0, box.left)) / 2;
   const cy0 = Math.max(0, box.top) + (Math.min(innerHeight, box.bottom) - Math.max(0, box.top)) / 2;
-  let best = null;
+  // The free spot nearest the canvas centre (ties: first in row-major scan order). Candidates are tested nearest
+  // first and the search stops at the first free one: the full scan ran ~70 elementFromPoint calls on every 8 px
+  // grid point and timed out on a loaded WebKit runner (iPad portrait).
+  const cands = [];
   for (let y = Math.max(0, box.top); y < Math.min(innerHeight, box.bottom); y += 8) {
-    for (let x = Math.max(0, box.left); x < Math.min(innerWidth, box.right); x += 8) {
-      if (!free(x, y)) continue;
-      const d = Math.hypot(x - cx0, y - cy0);
-      if (!best || d < best.d) best = { x, y, d };
-    }
+    for (let x = Math.max(0, box.left); x < Math.min(innerWidth, box.right); x += 8) cands.push({ x, y, d: Math.hypot(x - cx0, y - cy0) });
   }
+  cands.sort((a, b) => a.d - b.d);
+  const best = cands.find((c) => free(c.x, c.y)) || null;
   if (!best) throw new Error('no free canvas spot for the drag');
+  // Pin the view like a user zoom would: a late layout resize otherwise re-fits it (renderer.resize -> center())
+  // and the press lands beside the object (hosted WebKit: a marquee instead of a move).
+  r.userHasManipulated = true;
   r.scale = 3;
   r.offsetX = (best.x - box.left) - 120 * r.scale;
   r.offsetY = (best.y - box.top) - 90 * r.scale;
@@ -72,6 +77,7 @@ const probe = (page, id) => page.evaluate((id) => {
 test.describe('TUX-018a pointercancel aborts', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     test.skip(!PRIMARY.includes(testInfo.project.name), 'primary projects only');
+    await clock.install(page);
     await page.goto('/');
     await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
   });
@@ -88,17 +94,21 @@ test.describe('TUX-018a pointercancel aborts', () => {
   test('a cancelled object move returns the object and leaves no stuck state', async ({ page }, testInfo) => {
     const { id, pt } = await fixture(page, testInfo, { tool: 'select' });
     const before = await probe(page, id);
+    // Held well under the 500 ms canvas long-press (TUX-034), so the touch stays a move. The page clock is frozen
+    // through the gesture: the 250 ms rest is app time, so a slow runner cannot stretch it past the hold (nightly B1).
+    await clock.freeze(page);
     await touch.touchPhase(page, 'start', [{ ...pt, id: 0 }]);
-    // Held well under the 500 ms canvas long-press (TUX-034), so the touch stays a move.
-    await sleep(250);
+    await clock.advance(page, 250);
     for (let i = 1; i <= 10; i += 1) {
       await touch.touchPhase(page, 'move', [{ x: pt.x + 5 * i, y: pt.y + 2 * i, id: 0 }]);
-      await sleep(15);
+      await clock.advance(page, 15);
     }
     const live = await probe(page, id);
     expect(live.isLayerDrag, 'move in flight').toBe(true);
     expect(live.temp && Math.abs(live.temp.dx) > 1, 'temp offset present').toBeTruthy();
     await touch.touchPhase(page, 'cancel', [{ x: pt.x + 50, y: pt.y + 20, id: 0 }]);
+    await clock.advance(page, 80);
+    await clock.thaw(page);
     await sleep(80);
     const after = await probe(page, id);
     expect(Math.abs(after.posX - before.posX)).toBeLessThan(0.01);

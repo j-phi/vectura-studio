@@ -62,12 +62,24 @@ test('B: pick adds exactly one of that type', async ({ page }) => {
   await drill(page);
   const row = page.locator(`${DRILL} [data-algo-type="flowfield"]`);
   await row.scrollIntoViewIfNeeded();
+  // Record every toast the pick shows: the add toast lives 2.2 s, and the checks before the toast check can take
+  // longer than that on a loaded runner (hosted: the toast was gone before the locator polled).
+  await page.evaluate(() => {
+    window.__toasts = [];
+    const seen = new WeakSet();
+    new MutationObserver((recs) => recs.forEach((r) => r.addedNodes.forEach((n) => {
+      if (n.nodeType !== 1) return;
+      [...(n.matches('.vectura-toast') ? [n] : []), ...n.querySelectorAll('.vectura-toast')].forEach((t) => {
+        if (!seen.has(t)) { seen.add(t); window.__toasts.push(t.textContent); }
+      });
+    }))).observe(document.body, { childList: true, subtree: true });
+  });
   await touch.tap(page, row);
   expect(await layerCount(page)).toBe(n0 + 1);
   expect(await page.evaluate(() => window.app.engine.getActiveLayer().type)).toBe('flowfield');
   await expect(page.locator('#layer-add-menu')).toBeHidden();
   await expect(page.locator('#lvl-algo-submenu')).toHaveCSS('display', 'none');
-  await expect(page.locator('.vectura-toast', { hasText: 'flowfield' })).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => window.__toasts.filter((t) => /flowfield/i.test(t)).length)).toBe(1);
 });
 
 test('C: drill list fits the viewport and the last 3D entry is reachable', async ({ page }) => {

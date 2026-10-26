@@ -1,6 +1,7 @@
 const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 
 // TUX-034a: long-press and the ⋯ button open the layer menu; the context bar ⋯ opens the
 // canvas selection menu. Timing is asserted from in-page TouchHold CustomEvents (detail.t is
@@ -155,15 +156,20 @@ const layerSnapshot = (page) => page.evaluate(() => ({
 
 test.describe('TUX-034a layer card long-press', () => {
   test('(a) card hold: ring at 150ms, fire at 500ms, menu opens while the finger is down', async ({ page }) => {
+    // The 300 / 520 ms samples are app time on a frozen page clock: a slow runner stretched the wall-clock
+    // sleep past the 500 ms fire, and the ring was already gone at the "300 ms" sample (nightly).
+    await clock.install(page);
     const id = await setup(page);
     const p = await holdPoint(page, id);
+    await clock.freeze(page);
     await startHold(page, p);
-    await sleep(300);
+    await clock.advance(page, 300);
     const ring = await page.locator('[data-touch-hold-progress]').isVisible();
     expect(ring, '[data-touch-hold-progress] visible while held (sampled at 300 ms)').toBe(true);
-    await sleep(220);
+    await clock.advance(page, 220);
     const dragging = await page.evaluate((id) => document.querySelector(`#layer-list [data-layer-id="${id}"]`).classList.contains('dragging'), id);
     expect(dragging, 'card must not enter drag mode on a hold (measured at 520 ms)').toBe(false);
+    await clock.thaw(page);
     await waitFire(page);
     const progress = await events(page, 'touchhold:progress');
     const fire = await events(page, 'touchhold:fire');
