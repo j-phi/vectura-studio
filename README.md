@@ -654,7 +654,7 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### Unreleased - Paper selector (v1.4.21)
+### Unreleased - Paper selector (v1.4.22)
 - **Pen / Paper tab.** The Pens tab is now Pen / Paper with a Paper section on top: 11 paper types (None plus ten realistic stocks), any colour, Texture and Ink bleed sliders, Set as default / Use default.
 - **Realistic paper preview.** Seeded tooth, fibres, speckles and mottling sized in real millimetres; ink multiplies into the sheet, skips tooth valleys, and bleeds/feathers on absorbent stock. None is pixel-identical to before. SVG export is unchanged (no paper).
 - **Saved per project, one default.** Paper is stored in the `.vectura` file (`settings.paper`); the default paper lives in Document Setup ▸ Paper & Selection, replacing the Background colour picker.
