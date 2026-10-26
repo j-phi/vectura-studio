@@ -43,7 +43,6 @@
     const SETTINGS = (G.Vectura && G.Vectura.SETTINGS) || {};
     const THEMES = (G.Vectura && G.Vectura.THEMES) || {};
     const toggle = getEl('theme-toggle', { silent: true });
-    const bgColorInput = getEl('inp-bg-color', { silent: true });
     const current = `${SETTINGS.uiTheme || 'dark'}`.toLowerCase();
     if (toggle) {
       const NEXT_LABEL = {
@@ -57,7 +56,10 @@
       toggle.title = label;
       toggle.dataset.activeIcon = current;
     }
-    if (bgColorInput) bgColorInput.value = SETTINGS.bgColor || bgColorInput.value || '#ffffff';
+    // Paper selector: a theme change may recolour a plain sheet (and the
+    // theme colour shown when no default paper is set).
+    if (typeof this.refreshPaperUI === 'function') this.refreshPaperUI();
+    if (typeof this.refreshDefaultPaperControls === 'function') this.refreshDefaultPaperControls();
 
     const activeFamily = (THEMES[current] && THEMES[current].family) || 'meridian';
     const familyModern = getEl('theme-family-modern', { silent: true });

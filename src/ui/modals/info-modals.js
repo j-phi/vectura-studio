@@ -85,6 +85,10 @@
       title: 'Paper Size',
       description: 'Sets the paper dimensions used for bounds, centering, and export.',
     },
+    'global.defaultPaper': {
+      title: 'Default Paper',
+      description: 'The paper new documents start on: a paper type (or the plain theme colour) and its colour. Change the paper of the open document in the Pen / Paper tab; "Apply to this document" copies the default onto it. Paper is a preview only: SVG export never includes it.',
+    },
     'global.margin': {
       title: 'Margin',
       description: 'Keeps a safety border around the drawing area in millimeters.',
@@ -2755,6 +2759,7 @@
       { inputId: 'inp-scale-y', infoKey: 'global.scaleY' },
       { inputId: 'inp-rotation', infoKey: 'global.rotation' },
       { inputId: 'machine-profile', infoKey: 'global.paperSize' },
+      { inputId: 'default-paper-color-pill', infoKey: 'global.defaultPaper' },
       { inputId: 'set-margin', infoKey: 'global.margin' },
       { inputId: 'set-truncate', infoKey: 'global.truncate' },
       { inputId: 'set-crop-exports', infoKey: 'global.cropExports' },

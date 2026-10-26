@@ -73,7 +73,6 @@
     const orientationToggle = getEl('set-orientation');
     const orientationLabel = getEl('orientation-label');
     const customFields = getEl('custom-size-fields');
-    const bgColor = getEl('inp-bg-color');
     if (documentUnits) documentUnits.value = this.getDocumentUnits();
     if (speedDown) speedDown.value = SETTINGS.speedDown;
     if (speedUp) speedUp.value = SETTINGS.speedUp;
@@ -215,14 +214,9 @@
     if (devMode) devMode.checked = SETTINGS.devMode === true;
     const showTourEl = getEl('set-show-tour', { silent: true });
     if (showTourEl) showTourEl.checked = SETTINGS.showTourOnFirstLaunch === true;
-    if (bgColor) bgColor.value = SETTINGS.bgColor;
-    const bgColorPill = getEl('bg-color-pill', { silent: true });
-    if (bgColorPill) {
-      const color = SETTINGS.bgColor || '#ffffff';
-      bgColorPill.textContent = color.toUpperCase();
-      bgColorPill.style.background = color;
-      bgColorPill.style.color = getContrastTextColor(color);
-    }
+    // Paper selector: Document Setup "Default paper" row + the Paper panel.
+    if (typeof this.refreshDefaultPaperControls === 'function') this.refreshDefaultPaperControls();
+    if (typeof this.refreshPaperUI === 'function') this.refreshPaperUI();
     const orientationIsLandscape = (SETTINGS.paperOrientation || 'landscape') === 'landscape';
     if (orientationToggle) orientationToggle.checked = orientationIsLandscape;
     if (orientationLabel) {

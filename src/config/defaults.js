@@ -2513,6 +2513,11 @@
     strokeWidth: 0.3,
     strokeWidthOverride: false,
     bgColor: '#121214',
+    // Paper selector (src/config/papers.js, src/core/paper.js). paper = the
+    // project's paper {type,color,texture,bleed,seed} (bgColor mirrors its
+    // colour); paperDefault = the user's single default paper (null = none).
+    paper: null,
+    paperDefault: null,
     undoSteps: 20,
     truncate: true,
     cropExports: true,

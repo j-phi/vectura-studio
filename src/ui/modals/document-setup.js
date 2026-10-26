@@ -94,6 +94,19 @@
     </div>
   `;
 
+  // Paper selector: options for the Default paper <select>, from the catalogue.
+  const defaultPaperOptions = () => {
+    const PAPERS = Vectura.PAPERS || { ORDER: [], TYPES: {} };
+    const S = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PAPER_PANEL) || {};
+    const esc = (v) => (UI.utils && UI.utils.escapeHtml ? UI.utils.escapeHtml(v) : `${v ?? ''}`);
+    const opts = [`<option value="">${esc(S.NO_DEFAULT_OPTION || 'Theme (no default)')}</option>`];
+    PAPERS.ORDER.forEach((type) => {
+      const info = PAPERS.TYPES[type] || {};
+      opts.push(`<option value="${esc(type)}">${esc(info.label || type)}</option>`);
+    });
+    return opts.join('');
+  };
+
   const PANEL_HTML = `
     <div id="settings-panel" class="settings-panel">
       <div class="pane-hdr">
@@ -236,16 +249,21 @@
 
         <div class="sect sect--color-bg">
           <button type="button" class="sect-hdr" data-sect-toggle aria-expanded="false">
-            Background &amp; Selection
+            Paper &amp; Selection
             <span class="sect-arrow"></span>
           </button>
           <div class="sect-body" data-sect-body style="max-height:0;overflow:hidden;padding-top:0;padding-bottom:0;visibility:hidden">
-            <div class="ctrl-row">
-              <label class="ctrl-lbl" for="bg-color-pill">Background</label>
-              <span class="ctrl-row-trail">
-                <button id="bg-color-pill" type="button" class="value-chip">#FFFFFF</button>
-                <input type="color" id="inp-bg-color" class="hidden" aria-label="Background color" />
-              </span>
+            <div class="default-paper-block" id="default-paper-row">
+              <label class="ctrl-lbl" for="set-default-paper-type">Default paper</label>
+              <div class="default-paper-controls">
+                <span class="ctrl-sel-wrap">
+                  <select id="set-default-paper-type" class="ctrl-sel" aria-label="Default paper type">${defaultPaperOptions()}</select>
+                </span>
+                <button id="default-paper-color-pill" type="button" class="value-chip" aria-label="Default paper color">#FFFFFF</button>
+                <input type="color" id="inp-default-paper-color" class="hidden" aria-label="Default paper color" />
+              </div>
+              <p class="default-paper-hint">New documents start on this paper.</p>
+              <button id="btn-default-paper-apply" type="button" class="hdr-btn default-paper-apply">Apply to this document</button>
             </div>
             ${swToggle('set-paper-preview', 'Pen-true paper preview')}
             ${swToggle('set-selection-outline', 'Selection outline')}
@@ -792,7 +810,7 @@ ${isDevEligible() ? `
    * via the prototype, exactly as they did from inside bindGlobal.
    *
    * Element scope: every `#set-*` input, the `#machine-profile` dropdown,
-   * the `#orientation-*` toggles, the `#bg-color-*` pair, the plotter
+   * the `#orientation-*` toggles, the Default paper row, the plotter
    * physics row, and the `#btn-view-grid-toggle` (grid on/off shortcut).
    * Non-Document-Setup wiring (layer-list buttons, file I/O, theme toggle,
    * algorithm-module dropdown, header chrome) stays in bindGlobal until
@@ -1411,51 +1429,95 @@ ${isDevEligible() ? `
   }
 
   /**
-   * Grouped installer for the Document Setup panel's background-color
-   * picker (`inp-bg-color` + `bg-color-pill`). The elements live inside
-   * this panel's markup, so the wiring belongs alongside the other
-   * Document Setup listeners. `this` is the UI instance — handlers reach
-   * for `this.app.pushHistory`, `this.app.render` via the prototype.
+   * Paper selector: sync the Document Setup "Default paper" controls
+   * (`#set-default-paper-type`, `#default-paper-color-pill` +
+   * `#inp-default-paper-color`) from SETTINGS.paperDefault.
    */
-  function bindBgColorListeners() {
+  function refreshDefaultPaperControls() {
+    const { getEl, SETTINGS, getContrastTextColor } = requireDeps('refreshDefaultPaperControls');
+    const Paper = Vectura.Paper;
+    const def = SETTINGS.paperDefault && Paper ? Paper.normalize(SETTINGS.paperDefault) : null;
+    const select = getEl('set-default-paper-type', { silent: true });
+    if (select) select.value = def ? def.type : '';
+    const color = def ? def.color : (Paper ? Paper.themeDocumentBg() : (SETTINGS.bgColor || '#ffffff'));
+    const input = getEl('inp-default-paper-color', { silent: true });
+    if (input) input.value = color;
+    const pill = getEl('default-paper-color-pill', { silent: true });
+    if (pill) {
+      pill.textContent = color.toUpperCase();
+      pill.style.background = color;
+      pill.style.color = getContrastTextColor(color);
+      pill.classList.toggle('is-inherited', !def);
+    }
+  }
+
+  /**
+   * Paper selector: the Document Setup "Default paper" row replaces the old
+   * Background colour picker. These controls write ONLY the user's default
+   * paper (a preference — no undo entry); "Apply to this document" is the
+   * explicit project write (one undo step). `this` is the UI instance.
+   */
+  function bindDefaultPaperListeners() {
     const {
       getEl,
       SETTINGS,
-      getContrastTextColor,
       openColorPickerAnchoredTo,
-    } = requireDeps('bindBgColorListeners');
-    const bgColor = getEl('inp-bg-color');
-    if (!bgColor) return;
-    const bgColorPill = getEl('bg-color-pill', { silent: true });
-    let armed = false;
-    const updatePill = (color) => {
-      if (!bgColorPill || !color) return;
-      bgColorPill.textContent = color.toUpperCase();
-      bgColorPill.style.background = color;
-      bgColorPill.style.color = getContrastTextColor(color);
+    } = requireDeps('bindDefaultPaperListeners');
+    const Paper = Vectura.Paper;
+    const S = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PAPER_PANEL) || {};
+    const app = this.app;
+    const writeDefault = (cfg) => {
+      if (app && typeof app.setPaperDefault === 'function') app.setPaperDefault(cfg);
+      else SETTINGS.paperDefault = cfg;
+      refreshDefaultPaperControls.call(this);
     };
-    if (bgColorPill) {
-      bgColorPill.onclick = () => {
-        if (!armed && this.app.pushHistory) this.app.pushHistory();
-        armed = true;
-        openColorPickerAnchoredTo(bgColor, bgColorPill, { title: 'Background Color', uiInstance: this });
+    const select = getEl('set-default-paper-type', { silent: true });
+    if (select) {
+      select.onchange = (e) => {
+        const type = e.target.value;
+        if (!type || !Paper) {
+          writeDefault(null);
+          return;
+        }
+        writeDefault(Paper.forType(type, SETTINGS.paperDefault || null));
       };
     }
-    bgColor.onfocus = () => {
-      if (!armed && this.app.pushHistory) this.app.pushHistory();
-      armed = true;
-    };
-    bgColor.oninput = (e) => {
-      SETTINGS.bgColor = e.target.value;
-      updatePill(e.target.value);
-      this.app.render();
-    };
-    bgColor.onchange = (e) => {
-      SETTINGS.bgColor = e.target.value;
-      updatePill(e.target.value);
-      armed = false;
-      this.app.render();
-    };
+    const input = getEl('inp-default-paper-color', { silent: true });
+    const pill = getEl('default-paper-color-pill', { silent: true });
+    if (pill && input) {
+      pill.onclick = () => {
+        openColorPickerAnchoredTo(input, pill, {
+          title: S.DEFAULT_COLOR_PICKER_TITLE || 'Default Paper Color',
+          uiInstance: this,
+        });
+      };
+    }
+    if (input) {
+      const apply = (e) => {
+        const value = e.target.value;
+        if (!Paper || !Paper.isHexColor(value)) return;
+        const base = SETTINGS.paperDefault || { ...Paper.builtinDefault(), type: 'none' };
+        writeDefault({ ...base, color: value });
+      };
+      input.oninput = apply;
+      input.onchange = apply;
+    }
+    const applyBtn = getEl('btn-default-paper-apply', { silent: true });
+    if (applyBtn) {
+      applyBtn.onclick = () => {
+        if (!Paper) return;
+        const target = SETTINGS.paperDefault ? Paper.normalize(SETTINGS.paperDefault) : Paper.builtinDefault();
+        if (app && typeof app.setProjectPaper === 'function') app.setProjectPaper(target, { history: true });
+        else Paper.setActive(target, { app, history: true });
+      };
+    }
+    refreshDefaultPaperControls.call(this);
+  }
+
+  // Legacy name kept: the bootstrap sweep calls bindBgColorListeners(). The
+  // old Background picker is now the Default paper row.
+  function bindBgColorListeners() {
+    return bindDefaultPaperListeners.call(this);
   }
 
   /**
@@ -1682,6 +1744,8 @@ ${isDevEligible() ? `
     toggleSetupModal,
     bindDocumentSetupListeners,
     bindBgColorListeners,
+    bindDefaultPaperListeners,
+    refreshDefaultPaperControls,
     installOn(proto) {
       // Legacy alias preserved on the prototype.
       proto._bindDocumentSetupHandlers = function() { return bindHandlers.call(this); };
@@ -1691,9 +1755,16 @@ ${isDevEligible() ? `
       proto.bindDocumentSetupListeners = function() {
         return bindDocumentSetupListeners.call(this);
       };
-      // Meridian Unit 1.9b: bg color picker wiring (`inp-bg-color` + `bg-color-pill`).
+      // Meridian Unit 1.9b slot: now the paper selector's Default paper row
+      // (`set-default-paper-type`, `default-paper-color-pill`, `btn-default-paper-apply`).
       proto.bindBgColorListeners = function() {
         return bindBgColorListeners.call(this);
+      };
+      proto.bindDefaultPaperListeners = function() {
+        return bindDefaultPaperListeners.call(this);
+      };
+      proto.refreshDefaultPaperControls = function() {
+        return refreshDefaultPaperControls.call(this);
       };
       // Phase 2: dynamic Preset Storage section (FSA folder status + export/import).
       proto.renderPresetStorageUi = function() {

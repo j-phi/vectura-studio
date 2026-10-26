@@ -113,6 +113,10 @@
       // so clearSavedPreferences() can restore factory defaults later.
       this.defaultSettingsSnapshot = clone(SETTINGS);
       const hadCookiePreferences = this.applyPreferencesFromCookie();
+      // Paper selector: the explicitly saved default paper (own storage key,
+      // independent of cookie consent) wins over the preference snapshot copy.
+      const storedPaperDefault = window.Vectura.Paper?.loadDefault?.();
+      if (storedPaperDefault !== undefined) SETTINGS.paperDefault = storedPaperDefault;
       // Cold boot (no cookie): sync pen-1 to the active theme's pen1Color so a
       // fresh load on light/lark doesn't leave pen-1 white on the white artboard.
       // Document bg is also synced so the paper color matches the theme's intent.
@@ -125,6 +129,7 @@
         refreshUi: false,
         render: false,
       });
+      this.initDocumentPaper();
       this.engine = new VectorEngine();
       this.renderer = new Renderer('main-canvas', this.engine);
       this.renderer.app = this;
@@ -418,6 +423,7 @@
       Object.assign(SETTINGS, defaults);
       SETTINGS.cookiePreferencesEnabled = false;
       this.clearPreferenceCookie();
+      window.Vectura.Paper?.removeDefault?.();
 
       // Re-apply layout-affecting settings whose UI state lives outside SETTINGS
       // (CSS vars + class toggles). Without these the panes/toolbar would keep
@@ -466,6 +472,8 @@
         strokeWidth: SETTINGS.strokeWidth,
         strokeWidthOverride: SETTINGS.strokeWidthOverride === true,
         bgColor: SETTINGS.bgColor,
+        // Paper selector: the user's single default paper (null = none set).
+        paperDefault: SETTINGS.paperDefault ? clone(SETTINGS.paperDefault) : null,
         truncate: SETTINGS.truncate,
         cropExports: SETTINGS.cropExports,
         removeHiddenGeometry: SETTINGS.removeHiddenGeometry,
@@ -621,6 +629,7 @@
       SETTINGS.strokeWidth = takeNumber('strokeWidth', SETTINGS.strokeWidth, 0, 100);
       SETTINGS.strokeWidthOverride = snapshot.strokeWidthOverride === true;
       SETTINGS.bgColor = takeColor('bgColor', SETTINGS.bgColor);
+      this.applyPaperDefaultPreference(snapshot);
       SETTINGS.truncate = snapshot.truncate === undefined ? SETTINGS.truncate : snapshot.truncate === true;
       SETTINGS.cropExports = snapshot.cropExports === undefined ? SETTINGS.cropExports : snapshot.cropExports === true;
       SETTINGS.removeHiddenGeometry = snapshot.removeHiddenGeometry === undefined
@@ -860,6 +869,61 @@
       }, Math.max(0, delay));
     }
 
+    // Paper selector: migrate/validate the default paper from a preference
+    // snapshot. A snapshot written by a pre-paper build has no paperDefault;
+    // there, a saved bgColor that differs from that theme's document colour
+    // was a deliberate background choice and becomes the default paper. A
+    // theme-matching colour is just the theme's own sheet: no default, so
+    // theme toggles keep recolouring the paper as before.
+    applyPaperDefaultPreference(snapshot) {
+      const PaperModel = window.Vectura.Paper;
+      if (!PaperModel || !snapshot || typeof snapshot !== 'object') return;
+      if ('paperDefault' in snapshot) {
+        const raw = snapshot.paperDefault;
+        SETTINGS.paperDefault = raw && typeof raw === 'object' ? PaperModel.normalize(raw) : null;
+        return;
+      }
+      const V = window.Vectura.Validators;
+      const bg = snapshot.bgColor;
+      if (!(V ? V.isHexColor(bg) : PaperModel.isHexColor(bg))) return;
+      const theme = getThemeConfig(snapshot.uiTheme ?? SETTINGS.uiTheme);
+      const themeBg = PaperModel.toHex6(theme && theme.documentBg);
+      SETTINGS.paperDefault = PaperModel.toHex6(bg) !== themeBg ? PaperModel.fromLegacyBg(bg) : null;
+    }
+
+    // Cold boot / document start: the project paper starts from the user's
+    // default paper, else a plain sheet in the (possibly theme-synced) colour.
+    initDocumentPaper() {
+      const PaperModel = window.Vectura.Paper;
+      if (!PaperModel) return null;
+      const start = SETTINGS.paperDefault
+        ? PaperModel.normalize(SETTINGS.paperDefault)
+        : PaperModel.fromLegacyBg(SETTINGS.bgColor);
+      return PaperModel.setActive(start, { render: false });
+    }
+
+    // Write (or clear, with null) the user's single default paper. A
+    // preference, not a document edit: no undo entry, persisted immediately.
+    setPaperDefault(cfg) {
+      const PaperModel = window.Vectura.Paper;
+      if (!PaperModel) return null;
+      const next = cfg && typeof cfg === 'object' ? PaperModel.normalize(cfg) : null;
+      SETTINGS.paperDefault = next;
+      PaperModel.saveDefault(next);
+      this.persistPreferencesDebounced();
+      this.ui?.refreshPaperUI?.();
+      return next;
+    }
+
+    // Project paper write from the UI. history:true pushes one undo checkpoint.
+    setProjectPaper(cfg, { history = true } = {}) {
+      const PaperModel = window.Vectura.Paper;
+      if (!PaperModel) return null;
+      const next = PaperModel.setActive(cfg, { app: this, history, render: true });
+      this.ui?.refreshPaperUI?.();
+      return next;
+    }
+
     captureState() {
       const selectedLayerIds = Array.from(this.renderer?.selectedLayerIds || []).filter(Boolean);
       return {
@@ -872,6 +936,9 @@
           strokeWidth: SETTINGS.strokeWidth,
           strokeWidthOverride: SETTINGS.strokeWidthOverride === true,
           bgColor: SETTINGS.bgColor,
+          // Paper selector: the project's paper (type/colour/texture/bleed/seed).
+          // bgColor above stays as its colour mirror for older readers/builds.
+          paper: window.Vectura.Paper ? window.Vectura.Paper.effective() : null,
           undoSteps: SETTINGS.undoSteps,
           truncate: SETTINGS.truncate,
           cropExports: SETTINGS.cropExports,
@@ -945,7 +1012,14 @@
       SETTINGS.precision = s.precision ?? SETTINGS.precision;
       SETTINGS.strokeWidth = s.strokeWidth ?? SETTINGS.strokeWidth;
       SETTINGS.strokeWidthOverride = s.strokeWidthOverride === true;
-      SETTINGS.bgColor = s.bgColor ?? SETTINGS.bgColor;
+      // Paper selector: state.paper > legacy bgColor > user default > built-in.
+      if (window.Vectura.Paper) {
+        const paper = window.Vectura.Paper.resolveProjectPaper(s, SETTINGS.paperDefault);
+        SETTINGS.paper = paper;
+        SETTINGS.bgColor = paper.color;
+      } else {
+        SETTINGS.bgColor = s.bgColor ?? SETTINGS.bgColor;
+      }
       SETTINGS.undoSteps = s.undoSteps ?? SETTINGS.undoSteps;
       SETTINGS.truncate = s.truncate ?? SETTINGS.truncate;
       SETTINGS.cropExports = s.cropExports ?? SETTINGS.cropExports;
@@ -1028,6 +1102,7 @@
       this.renderer.directAuxSelections = [];
       this.engine.activeLayerId = selectedId;
       this.ui.initSettingsValues();
+      this.ui.refreshPaperUI?.();
       if (this.ui.setActiveTool) this.ui.setActiveTool(SETTINGS.activeTool || 'select');
       if (this.ui.setScissorMode) this.ui.setScissorMode(SETTINGS.scissorMode || 'line');
       if (this.ui.setPenMode) this.ui.setPenMode(SETTINGS.penMode || 'draw');
@@ -1129,7 +1204,16 @@
       if (themeColorMeta && theme.metaThemeColor) themeColorMeta.setAttribute('content', theme.metaThemeColor);
 
       if (syncDocumentBg && theme.documentBg) {
-        SETTINGS.bgColor = theme.documentBg;
+        // Paper selector theme-sync rule: the theme recolours the sheet only
+        // when the user has no default paper and the project paper is plain
+        // ('none'). A default or a textured paper is never overwritten.
+        const PaperModel = window.Vectura.Paper;
+        if (!PaperModel) {
+          SETTINGS.bgColor = theme.documentBg;
+        } else if (PaperModel.themeMaySync()) {
+          const base = SETTINGS.paper || PaperModel.fromLegacyBg(theme.documentBg);
+          PaperModel.setActive({ ...base, type: 'none', color: theme.documentBg }, { render: false });
+        }
       }
 
       if (syncGridColor) {

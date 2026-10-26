@@ -177,6 +177,30 @@
       LOUPE_OFFSET_PX: 16,
     },
     // === end COL ===
+
+    // Paper selector panel (src/ui/panels/paper-panel.js) + Document Setup
+    // "Default paper" row (src/ui/modals/document-setup.js).
+    PAPER_PANEL: {
+      TITLE: 'Paper',
+      TYPE_GROUP_LABEL: 'Paper type',
+      COLOR_LABEL: 'Color',
+      COLOR_PICKER_TITLE: 'Paper Color',
+      DEFAULT_COLOR_PICKER_TITLE: 'Default Paper Color',
+      TEXTURE_LABEL: 'Texture',
+      BLEED_LABEL: 'Ink bleed',
+      SET_DEFAULT: 'Set as default',
+      SET_DEFAULT_TITLE: 'Use this paper for new documents',
+      USE_DEFAULT: 'Use default',
+      USE_DEFAULT_TITLE: 'Apply your default paper to this document',
+      DEFAULT_BADGE: 'Default',
+      NO_DEFAULT_OPTION: 'Theme (no default)',
+      APPLY_TO_DOCUMENT: 'Apply to this document',
+      PREVIEW_NOTE: 'Preview only. SVG export stays plotter-clean.',
+      // Slider range (percent) and swatch thumbnail size (backing px, ~2x the 44 px swatch).
+      SLIDER_MIN: 0,
+      SLIDER_MAX: 100,
+      THUMB_PX: 96,
+    },
   };
 
   // TUX-023: pure lookup. 'touch' maps to touch values; 'pen', 'mouse', undefined and

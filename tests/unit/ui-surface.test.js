@@ -97,6 +97,7 @@ const EXPECTED_UI_SURFACE = [
   { name: 'LayersPanel', methods: ['renderLayers', 'createManualLayerFromPath', 'bindLayerListListeners', 'recenterLayerIfNeeded', 'getLayerById', 'isModifierLayer', 'getModifierState'], installOn: true },
   { name: 'ModifiersPanel', methods: ['refreshModifierLayer', 'ensureLayerMaskState', 'setLayerMaskEnabled', 'updatePrimaryPanelMode'], installOn: true },
   { name: 'NoiseRackPanel', methods: ['createWavetableNoise'], installOn: true },
+  { name: 'PaperPanel', methods: ['initPaperSection', 'refreshPaperUI'], installOn: true },
   { name: 'PensPanel', methods: ['renderPens', 'getPenById', 'applyArmedPenToLayers', 'refreshArmedPenUI', 'getPaletteList', 'getActivePalette'], installOn: true },
   { name: 'TransformPanel', methods: ['getDefaultTransformForType', 'storeLayerParams', 'restoreLayerParams'], installOn: true },
 

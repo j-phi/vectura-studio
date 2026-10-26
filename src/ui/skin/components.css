@@ -16541,3 +16541,178 @@ body.touch-wide-layout.touch-ui :is(#left-pane, #right-pane).pane-collapsed .pan
   body.touch-ui .export-preview-legend { top: 12px; bottom: auto; }
 }
 /* === END export legend gear === */
+
+/* Paper panel (paper selector) — src/ui/panels/paper-panel.js.
+   The Paper section sits above Pens in the right pane's Pen / Paper tab. */
+#paper-global-section {
+  flex: 0 0 auto;
+  margin-bottom: var(--spacing-md);
+}
+[data-ui-skin] #paper-section-header .paper-default-badge {
+  margin-left: auto;
+  margin-right: var(--spacing-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--ui-accent-2);
+  color: var(--ui-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+}
+[data-ui-skin] #paper-section-header .paper-default-badge[hidden] {
+  display: none;
+}
+.paper-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: var(--spacing-xs);
+}
+[data-ui-skin] .paper-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px 2px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ui-text-2);
+  cursor: pointer;
+  transition: border-color 0.12s, background-color 0.12s;
+}
+[data-ui-skin] .paper-swatch:hover {
+  background: var(--ui-ctrl-hov);
+  color: var(--ui-text);
+}
+[data-ui-skin] .paper-swatch:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+[data-ui-skin] .paper-swatch.active {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-2);
+  color: var(--ui-text);
+}
+.paper-swatch-thumb {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background-size: cover;
+  background-position: center;
+  box-shadow: inset 0 0 0 1px var(--ui-border-hi);
+}
+[data-ui-skin] .paper-swatch-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  line-height: 1.2;
+}
+[data-ui-skin] .paper-current {
+  margin: var(--spacing-sm) 0 var(--spacing-xs);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+  min-height: 1.2em;
+}
+.paper-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-height: var(--row-height);
+}
+[data-ui-skin] .paper-row-label {
+  flex: 0 0 64px;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+  color: var(--ui-text-2);
+}
+.paper-row .paper-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+[data-ui-skin] .paper-row .paper-slider:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+[data-ui-skin] .paper-slider-value {
+  flex: 0 0 38px;
+  text-align: right;
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+  font-variant-numeric: tabular-nums;
+}
+.paper-row .paper-color-pill {
+  margin-left: auto;
+  min-width: 84px;
+}
+.paper-actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
+}
+[data-ui-skin] .paper-action-btn {
+  flex: 1 1 0;
+  min-height: var(--row-height);
+  padding: 0 var(--spacing-sm);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-ctrl);
+  color: var(--ui-text-2);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: border-color 0.12s, background-color 0.12s, color 0.12s;
+}
+[data-ui-skin] .paper-action-btn:hover:not(:disabled) {
+  border-color: var(--ui-accent);
+  color: var(--ui-text);
+}
+[data-ui-skin] .paper-action-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+[data-ui-skin] .paper-note {
+  margin: var(--spacing-xs) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+}
+body.touch-ui #right-pane .paper-action-btn,
+body.touch-ui #right-pane #paper-section-header,
+body.touch-ui #right-pane .paper-row,
+body.touch-ui #right-pane .paper-color-pill,
+body.touch-ui #right-pane .paper-slider {
+  min-height: var(--touch-target-min);
+}
+/* Document Setup "Default paper" row (src/ui/modals/document-setup.js). */
+.default-paper-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-xs) 0 var(--spacing-sm);
+}
+.default-paper-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+.default-paper-controls .ctrl-sel-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.default-paper-controls .value-chip {
+  flex: 0 0 auto;
+  min-width: 76px;
+}
+[data-ui-skin] .default-paper-hint {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+}
+.default-paper-block .default-paper-apply {
+  align-self: flex-start;
+}

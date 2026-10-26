@@ -90,6 +90,8 @@ describe('UI bootstrap – core panels', () => {
     await Promise.resolve();
     expect(window.Vectura.SETTINGS.uiTheme).toBe('lark');
     expect(window.Vectura.SETTINGS.bgColor).toBe('#ffffff');
+    // Paper selector: the theme recolours the plain project sheet (no default set).
+    expect(window.Vectura.SETTINGS.paper).toMatchObject({ type: 'none', color: '#ffffff' });
     expect(pen1?.color).toBe('#000000');
     expect(activeLayer?.penId).toBe('pen-1');
     expect(activeLayer?.color).toBe('#000000');

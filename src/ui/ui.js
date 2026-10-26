@@ -1564,6 +1564,8 @@
     this.initToolBar();
     this.initRightPaneTabs();
     this.initPensSection();
+    // Paper selector: the Paper section above Pens in the Pen / Paper tab.
+    if (typeof this.initPaperSection === 'function') this.initPaperSection();
     this.renderLayers();
     this.renderPens();
     this.initPaletteControls();
@@ -1708,6 +1710,14 @@
   }
   if (window.Vectura?.UI?.PaneRight?.installOn) {
     window.Vectura.UI.PaneRight.installOn(UI.prototype);
+  }
+
+  // Paper selector: panels/paper-panel.js (Paper section of the Pen / Paper tab).
+  if (window.Vectura?.UI?.PaperPanel?.bind) {
+    window.Vectura.UI.PaperPanel.bind({ getEl, getContrastTextColor, openColorPickerAnchoredTo });
+  }
+  if (window.Vectura?.UI?.PaperPanel?.installOn) {
+    window.Vectura.UI.PaperPanel.installOn(UI.prototype);
   }
 
   // Phase 2 step 3: hand legacy IIFE-locals to shell/workspace.js.

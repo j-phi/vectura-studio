@@ -729,7 +729,7 @@
         </button>
         <div id="right-pane-tabs" class="right-pane-tabs" role="tablist" aria-label="Layers panel tabs">
           <button class="right-pane-tab active" type="button" role="tab" data-tab="layers" aria-selected="true" aria-controls="right-tab-panel-layers">Layers</button>
-          <button class="right-pane-tab" type="button" role="tab" data-tab="pens" aria-selected="false" aria-controls="right-tab-panel-pens">Pens</button>
+          <button class="right-pane-tab" type="button" role="tab" data-tab="pens" aria-selected="false" aria-controls="right-tab-panel-pens">Pen / Paper</button>
         </div>
       </div>
 
@@ -848,6 +848,16 @@
         </div>
         <div id="right-tab-panel-pens" class="right-tab-panel hidden" role="tabpanel" aria-labelledby="pens">
         <div id="pens-section" class="right-panel-section right-panel-section-scroll p-4 bg-vectura-panel">
+          <!-- Paper selector: per-project paper (type, colour, texture, ink bleed) and the
+               user's default paper. Body rendered by src/ui/panels/paper-panel.js. -->
+          <div id="paper-global-section" class="global-section">
+            <button id="paper-section-header" class="global-section-header" type="button" aria-expanded="true" aria-controls="paper-section-body">
+              <span class="global-section-title">Paper</span>
+              <span id="paper-default-badge" class="paper-default-badge" hidden>Default</span>
+              <span class="global-section-toggle" aria-hidden="true"></span>
+            </button>
+            <div id="paper-section-body" class="global-section-body"></div>
+          </div>
           <div id="pens-global-section" class="global-section">
             <button id="pens-section-header" class="global-section-header" type="button" aria-expanded="false">
               <span class="global-section-title">Pens</span>
@@ -931,6 +941,7 @@
   <script src="./src/config/version.js?v=1.4.19" defer></script>
   <script src="./src/config/machines.js?v=1.4.19" defer></script>
   <script src="./src/config/defaults.js?v=1.4.19" defer></script>
+  <script src="./src/config/papers.js?v=1.4.19" defer></script>
   <script src="./src/config/modifiers.js?v=1.4.19" defer></script>
   <script src="./src/config/palettes.js?v=1.4.19" defer></script>
   <script src="./src/config/user-presets.js?v=1.4.19" defer></script>
@@ -974,6 +985,7 @@
   <script src="./src/core/stl-parser.js?v=1.4.19" defer></script>
   <script src="./src/core/pen-validate.js?v=1.4.19" defer></script>
   <script src="./src/core/validators.js?v=1.4.19" defer></script>
+  <script src="./src/core/paper.js?v=1.4.19" defer></script>
   <script src="./src/core/rng.js?v=1.4.19" defer></script>
   <script src="./src/core/noise.js?v=1.4.19" defer></script>
   <script src="./src/core/noise-rack.js?v=1.4.19" defer></script>
@@ -1086,6 +1098,7 @@
   <script src="./src/core/text-outline-ops.js?v=1.4.19" defer></script>
   <script src="./src/render/touch-gesture-arbiter.js?v=1.4.19" defer></script>
   <script src="./src/render/canvas-hud.js?v=1.4.19" defer></script>
+  <script src="./src/render/paper-texture.js?v=1.4.19" defer></script>
   <script src="./src/render/renderer.js?v=1.4.19" defer></script>
   <!-- Skin SDK: tokens.js exposes window.Vectura.UI.tokens.get for renderer/UI lookups;
        skin-manager.js owns the active <link id="active-skin"> swap and dispatches the
@@ -1138,6 +1151,7 @@
   <script src="./src/ui/shell/menubar.js?v=1.4.19" defer></script>
   <script src="./src/ui/shell/pane-left.js?v=1.4.19" defer></script>
   <script src="./src/ui/shell/pane-right.js?v=1.4.19" defer></script>
+  <script src="./src/ui/panels/paper-panel.js?v=1.4.19" defer></script>
   <script src="./src/ui/shell/layout-classifier.js?v=1.4.19" defer></script>
   <script src="./src/ui/shell/pane-state.js?v=1.4.19" defer></script>
   <script src="./src/ui/shell/workspace.js?v=1.4.19" defer></script>
