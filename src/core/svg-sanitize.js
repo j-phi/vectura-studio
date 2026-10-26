@@ -38,6 +38,10 @@
  *     mixed case (`JavaScript:`, `\tjavascript:`).
  *   - Sanitize is idempotent: sanitize(sanitize(x)) === sanitize(x).
  *   - Runs without DOM mounts; safe to call before innerHTML / parseFromString.
+ *   - Without DOMParser/xmldom, a linear tokenizer rebuilds every tag under the
+ *     same policy (entity/whitespace-decoded scheme checks on href, xlink:href,
+ *     src and animation to/from/by/values), caps input at 8 MiB and fails
+ *     closed on anything it cannot read with certainty.
  *
  * Public API stays stable; this module is loaded before pattern.js, the
  * pattern designer, file I/O, and pattern-registry in index.html.
@@ -55,11 +59,11 @@
     // HTML numeric entities: &#58; &#x3A;
     value = value.replace(/&#x([0-9a-f]+);?/gi, (_, hex) => {
       const cp = parseInt(hex, 16);
-      return Number.isFinite(cp) ? String.fromCodePoint(cp) : '';
+      return Number.isFinite(cp) && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
     });
     value = value.replace(/&#(\d+);?/g, (_, dec) => {
       const cp = parseInt(dec, 10);
-      return Number.isFinite(cp) ? String.fromCodePoint(cp) : '';
+      return Number.isFinite(cp) && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
     });
     // Named entities we care about for URL schemes.
     value = value.replace(/&colon;/gi, ':').replace(/&Tab;/gi, '\t').replace(/&NewLine;/gi, '\n');
@@ -198,40 +202,270 @@
     });
   };
 
-  // Non-browser fallback: best-effort regex strip so we never store raw markup.
-  // Used only when DOMParser/XMLSerializer are unavailable (e.g., a CLI Node
-  // context without jsdom). Browser and the unit-test jsdom env use the DOM path.
-  const fallbackRegexStrip = (input) => {
-    const stripOnce = (text) => text
-      .replace(/<script\b[\s\S]*?<\/script\b[^>]*>/gi, '')
-      .replace(/<foreignObject\b[\s\S]*?<\/foreignObject\b[^>]*>/gi, '')
-      .replace(/<style\b[\s\S]*?<\/style\b[^>]*>/gi, '')
-      .replace(/\son[a-z0-9_-]+\s*=\s*"[^"]*"/gi, '')
-      .replace(/\son[a-z0-9_-]+\s*=\s*'[^']*'/gi, '')
-      .replace(/<animate\b[^>]*\battributeName\s*=\s*['"]?(?:xlink:)?href['"]?[^>]*\/?>(?:\s*<\/animate>)?/gi, '')
-      .replace(/<set\b[^>]*\battributeName\s*=\s*['"]?(?:xlink:)?href['"]?[^>]*\/?>(?:\s*<\/set>)?/gi, '')
-      .replace(/<animate\b[^>]*\b(?:to|from|values)\s*=\s*['"][^'"]*javascript:[^'"]*['"][^>]*\/?>(?:\s*<\/animate>)?/gi, '')
-      .replace(/<set\b[^>]*\b(?:to|from|values)\s*=\s*['"][^'"]*javascript:[^'"]*['"][^>]*\/?>(?:\s*<\/set>)?/gi, '')
-      .replace(/(href|xlink:href)\s*=\s*"\s*javascript:[^"]*"/gi, '$1="#"')
-      .replace(/(href|xlink:href)\s*=\s*'\s*javascript:[^']*'/gi, "$1='#'");
-    // Repeat until stable: one pass can splice a new `<script` / `on*=` together
-    // out of the fragments around a removed match (e.g. `<scr<script></script>ipt>`).
-    let out = input;
-    for (let i = 0; i < 16; i += 1) {
-      const next = stripOnce(out);
-      if (next === out) break;
-      out = next;
+  // ---------------------------------------------------------------------------
+  // Non-browser fallback. Used only when DOMParser/XMLSerializer are unavailable
+  // (e.g. a CLI Node context without jsdom or xmldom). The browser and the
+  // unit-test jsdom env use the DOM path above, which this code never touches.
+  //
+  // A single forward pass tokenizes the markup and rebuilds every tag from its
+  // parsed name and attributes, applying the same policy as the DOM path.
+  // Every character is consumed once and every search moves the cursor past
+  // what it scanned, so run time is linear (lazy `[\s\S]*?` strips went
+  // quadratic on unmatched open tags). Anything the tokenizer cannot read with
+  // certainty (an unterminated tag, quote, comment or dropped element, a `<`
+  // inside a tag) fails closed to EMPTY_SVG.
+  // ---------------------------------------------------------------------------
+
+  // The fallback has no streaming parser; bound memory and work. Applies to
+  // the fallback only — the DOM path has no cap.
+  const FALLBACK_MAX_INPUT = 8 * 1024 * 1024;
+  const FALLBACK_DROP_TAGS = DROP_TAGS;
+  const FALLBACK_ANIMATION_TAGS = new Set(['animate', 'set', 'animatetransform', 'animatemotion']);
+  const FALLBACK_ANIMATION_VALUE_ATTRS = new Set(['to', 'from', 'by', 'values']);
+  const FALLBACK_URL_ATTRS = new Set(['href', 'xlink:href', 'src']);
+  const NAME_START_RE = /[A-Za-z_]/;
+  const TAG_NAME_RE = /[A-Za-z_][\w:.-]*/y;
+  const ATTR_NAME_OK_RE = /^[A-Za-z_][\w:.-]*$/;
+  const TAG_SPACE_RE = /[\s/]/;
+  // Sticky scanners: each consumes a run of characters from `lastIndex`.
+  const ATTR_NAME_RUN_RE = /[^\s=/<>]*/y;
+  const SPACE_RUN_RE = /\s*/y;
+  const UNQUOTED_VALUE_RUN_RE = /[^\s>]*/y;
+  const scanRun = (re, text, j) => {
+    re.lastIndex = j;
+    re.exec(text);
+    return re.lastIndex;
+  };
+
+  // URL normalisation shared with the DOM path's `looksLikeJsUrl`: decode
+  // character references and percent-escapes, then drop ASCII whitespace and
+  // control characters the way a browser's URL parser does.
+  const compactForSchemeCheck = (raw) => decodeForUrlCheck(raw)
+    .replace(/[\s\u0000-\u001f\u007f]/g, '')
+    .toLowerCase();
+  const HOSTILE_SCHEME_RE = /javascript:|vbscript:|data:text\/html/;
+  const hasHostileScheme = (raw) => HOSTILE_SCHEME_RE.test(compactForSchemeCheck(raw));
+
+  const localName = (name) => {
+    const lower = `${name}`.toLowerCase();
+    const colon = lower.lastIndexOf(':');
+    return colon >= 0 ? lower.slice(colon + 1) : lower;
+  };
+
+  const escapeAttrValue = (value) => `${value}`.replace(/</g, '&lt;').replace(/"/g, '&quot;');
+  const escapeText = (value) => `${value}`.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const FAIL = null;
+
+  // Parse one start or end tag beginning at `text[i] === '<'`.
+  // Returns { end, closing, name, attrs, selfClosing } or FAIL.
+  const readTag = (text, i) => {
+    let j = i + 1;
+    const closing = text[j] === '/';
+    if (closing) j += 1;
+    TAG_NAME_RE.lastIndex = j;
+    const nameMatch = TAG_NAME_RE.exec(text);
+    if (!nameMatch) return FAIL;
+    const name = nameMatch[0];
+    j += name.length;
+    const attrs = [];
+    let selfClosing = false;
+    const n = text.length;
+    while (j < n) {
+      const ch = text[j];
+      if (ch === '>') {
+        return { end: j + 1, closing, name, attrs, selfClosing };
+      }
+      if (ch === '<') return FAIL;
+      if (TAG_SPACE_RE.test(ch)) {
+        selfClosing = ch === '/' && text[j + 1] === '>';
+        j += 1;
+        continue;
+      }
+      selfClosing = false;
+      // Attribute name: everything up to whitespace, `=`, `/`, `>` or `<`.
+      const nameStart = j;
+      j = scanRun(ATTR_NAME_RUN_RE, text, j);
+      const attrName = text.slice(nameStart, j);
+      j = scanRun(SPACE_RUN_RE, text, j);
+      let value = null;
+      if (text[j] === '=') {
+        j = scanRun(SPACE_RUN_RE, text, j + 1);
+        const quote = text[j];
+        if (quote === '"' || quote === "'") {
+          const close = text.indexOf(quote, j + 1);
+          if (close < 0) return FAIL;
+          value = text.slice(j + 1, close);
+          j = close + 1;
+        } else {
+          const valueStart = j;
+          j = scanRun(UNQUOTED_VALUE_RUN_RE, text, j);
+          value = text.slice(valueStart, j);
+          if (value.indexOf('<') >= 0) return FAIL;
+        }
+      }
+      attrs.push({ name: attrName, value: value == null ? '' : value });
     }
-    // Anything still dangerous after the fixed point is hostile — store nothing.
-    // Only markup is examined: text content that mentions `javascript:` or
-    // reads like ` one=1` is legitimate. Each tag runs from `<` to the closing
-    // `>` (quoted values may contain `>`), or to end of input if it never
-    // closes — an unterminated tag or quote is examined too, never skipped.
-    // Alternatives start on disjoint characters, so matching stays linear.
+    return FAIL; // ran off the end without `>`
+  };
+
+  // Apply the DOM path's policy to one parsed start tag. Returns the rebuilt
+  // tag string, or '' to drop the element.
+  const rebuildStartTag = (tag) => {
+    const local = localName(tag.name);
+    const kept = [];
+    const seen = new Set();
+    let dropElement = false;
+    tag.attrs.forEach((attr) => {
+      const lower = attr.name.toLowerCase();
+      if (!ATTR_NAME_OK_RE.test(attr.name) || seen.has(lower)) return;
+      seen.add(lower);
+      // on* event handlers: always strip.
+      if (lower.startsWith('on')) return;
+      const decoded = decodeForUrlCheck(attr.value);
+      if (FALLBACK_URL_ATTRS.has(lower)) {
+        if (hasHostileScheme(attr.value)) {
+          if (lower !== 'src') kept.push(`${attr.name}="#"`);
+          return;
+        }
+        if (lower !== 'src' && !isFragmentRef(decoded)) {
+          // External reference: drop <use> wholesale, strip the attribute elsewhere.
+          if (local === 'use') dropElement = true;
+          return;
+        }
+      }
+      if (FALLBACK_ANIMATION_TAGS.has(local)) {
+        if (lower === 'attributename') {
+          const target = decoded.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
+          if (target === 'href' || target === 'xlink:href') dropElement = true;
+        }
+        if (FALLBACK_ANIMATION_VALUE_ATTRS.has(lower)) {
+          // `values` is a semicolon list; split after decoding (`&#59;` is `;`).
+          if (decoded.split(';').some((part) => hasHostileScheme(part)) || hasHostileScheme(attr.value)) {
+            dropElement = true;
+          }
+        }
+      }
+      kept.push(`${attr.name}="${escapeAttrValue(attr.value)}"`);
+    });
+    if (dropElement) return '';
+    const attrText = kept.length ? ` ${kept.join(' ')}` : '';
+    return `<${tag.name}${attrText}${tag.selfClosing ? '/' : ''}>`;
+  };
+
+  const tokenizeAndRebuild = (text) => {
+    const out = [];
+    const n = text.length;
+    let i = 0;
+    // When dropping an element, track nesting of that same element name so
+    // its subtree (including nested same-name elements) is skipped.
+    let skipName = null;
+    let skipDepth = 0;
+    const emit = (chunk) => { if (skipName === null) out.push(chunk); };
+    while (i < n) {
+      const lt = text.indexOf('<', i);
+      if (lt < 0) {
+        emit(text.slice(i));
+        break;
+      }
+      if (lt > i) emit(text.slice(i, lt));
+      i = lt;
+      if (text.startsWith('<!--', i)) {
+        // Comments are dropped (HTML's `<!-->` / `<!--->` would end early;
+        // dropping everything up to `-->` covers both readings).
+        const close = text.indexOf('-->', i + 4);
+        if (close < 0) return FAIL;
+        i = close + 3;
+        continue;
+      }
+      if (text.startsWith('<![CDATA[', i)) {
+        const close = text.indexOf(']]>', i + 9);
+        if (close < 0) return FAIL;
+        emit(escapeText(text.slice(i + 9, close)));
+        i = close + 3;
+        continue;
+      }
+      if (text[i + 1] === '?') {
+        // Processing instructions (incl. xml-stylesheet): dropped.
+        const close = text.indexOf('?>', i + 2);
+        if (close < 0) return FAIL;
+        i = close + 2;
+        continue;
+      }
+      if (text[i + 1] === '!') {
+        // DOCTYPE (with an optional internal subset that may declare
+        // entities) and any other declaration: dropped.
+        const gt = text.indexOf('>', i + 2);
+        if (gt < 0) return FAIL;
+        const bracket = text.indexOf('[', i + 2);
+        if (bracket >= 0 && bracket < gt) {
+          const subsetEnd = text.indexOf(']', bracket + 1);
+          if (subsetEnd < 0) return FAIL;
+          const end = text.indexOf('>', subsetEnd + 1);
+          if (end < 0) return FAIL;
+          i = end + 1;
+        } else {
+          i = gt + 1;
+        }
+        continue;
+      }
+      const next = text[i + 1] === '/' ? text[i + 2] : text[i + 1];
+      if (next === undefined || !NAME_START_RE.test(next)) {
+        // A bare `<` that starts no tag is text.
+        emit('&lt;');
+        i += 1;
+        continue;
+      }
+      const tag = readTag(text, i);
+      if (tag === FAIL) return FAIL;
+      i = tag.end;
+      const local = localName(tag.name);
+      if (skipName !== null) {
+        if (local === skipName && !tag.selfClosing) {
+          skipDepth += tag.closing ? -1 : 1;
+          if (skipDepth === 0) skipName = null;
+        }
+        continue;
+      }
+      if (tag.closing) {
+        out.push(`</${tag.name}>`);
+        continue;
+      }
+      const rebuilt = FALLBACK_DROP_TAGS.has(local) ? '' : rebuildStartTag(tag);
+      if (rebuilt === '') {
+        if (!tag.selfClosing) {
+          skipName = local;
+          skipDepth = 1;
+        }
+        continue;
+      }
+      out.push(rebuilt);
+    }
+    // An element we were dropping never closed: we cannot know where its
+    // content ends, so store nothing.
+    if (skipName !== null) return FAIL;
+    return out.join('');
+  };
+
+  const fallbackRegexStrip = (input) => {
+    if (input.length > FALLBACK_MAX_INPUT) return EMPTY_SVG;
+    const out = tokenizeAndRebuild(input);
+    if (out === FAIL) return EMPTY_SVG;
+    // Final rejection: anything still dangerous in the rebuilt markup is
+    // hostile — store nothing. Only markup is examined: text content that
+    // mentions `javascript:` or reads like ` one=1` is legitimate. Each tag
+    // runs from `<` to the closing `>` (quoted values may contain `>`), or to
+    // end of input if it never closes. Alternatives start on disjoint
+    // characters, so matching stays linear. The scheme check reads the
+    // decoded, whitespace-stripped form a browser would resolve.
     const TAG_RE = /<(?:[^<>"']|"[^"]*(?:"|$)|'[^']*(?:'|$))*/g;
-    const isHostileTag = (tag) => /^<\s*\/?\s*(?:script|style|foreignObject)\b/i.test(tag)
-      || /[\s"'/]on[a-z0-9_-]+\s*=/i.test(tag)
-      || /javascript:/i.test(tag);
+    // Rebuilt values are always double-quoted with no `"` inside, so blanking
+    // them leaves attribute names only for the handler check (a title such
+    // as `a online=1` is text, not a handler).
+    const isHostileTag = (tag) => /^<\s*\/?\s*(?:[\w.-]+:)?(?:script|style|foreignObject)\b/i.test(tag)
+      || /[\s"'/]on[a-z0-9_-]+\s*=/i.test(tag.replace(/"[^"]*"/g, '""'))
+      || /javascript:/i.test(tag)
+      || (/[:&%]/.test(tag) && hasHostileScheme(tag));
     const tags = out.match(TAG_RE) || [];
     if (tags.some(isHostileTag)) return EMPTY_SVG;
     return out;
