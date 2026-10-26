@@ -616,6 +616,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **SVG sanitizer namespace-prefix bypass (2026-10-26, v1.4.25).** DOM path keyed on `tagName`/`attr.name`, so `x:script`, `h:script` (XHTML), `x:foreignObject`, `x:onload` and XLink-bound `foo:href="javascript:"` passed. Checks now key on `localName` + `namespaceURI`; non-SVG elements and unexpected attribute namespaces are dropped.
 - **Touch spec match anchored (2026-10-26, v1.4.24).** `TOUCH_MATCH` matched any `touch/` in the absolute path, so a `wt-touch` checkout excluded every desktop spec. Anchored on `tests/e2e/touch/`; roster unit test covers it; `--list` unchanged.
 - **SVG sanitizer fallback hardening (2026-10-26, v1.4.23).** Adversarial-review follow-up: entity/whitespace-obfuscated `javascript:` URLs and animation values, and quadratic strip regexes, in the no-DOMParser fallback. Linear tokenizer rebuilds tags under the DOM path's policy; 8 MiB fallback cap; DOM path unchanged.
 - **CodeQL alerts (2026-10-18).** 13 open alerts fixed (SVG sanitizer fallback, script regexes, design-exploration XSS); `scene3d-capture.js --only` regex is an intentional operator filter and was dismissed.
