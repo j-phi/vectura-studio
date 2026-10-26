@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { tap, drag } = require('../helpers/touch');
+const { waitLayoutSettled, waitGeometryStable } = require('../helpers/target-audit-core');
 
 // Q27 follow-up (static-guard round 2): a finger must reach the panel resizers. The side resizers are 6 px
 // wide, below the 24 px floor, so Chromium retargeted a trusted touch on them to #main-canvas and the pane
@@ -7,12 +8,35 @@ const { tap, drag } = require('../helpers/touch');
 // the canvas above the expanded bottom pane. Trusted touch in Chromium (CDP); WebKit dispatches at the
 // elementFromPoint target, which is the same hit test.
 const WIDE = ['touch-ipad-landscape', 'touch-coarse-wide', 'webkit-ipad-landscape'];
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Nightly flake (webkit-ipad-landscape, 2026-10): the bottom pane's 0.2 s height transition starts when the toggle's
+// click lands, which on a slow hosted WebKit is well after the tap returns; a fixed sleep then measured a pane top that
+// was still moving up, so taps "11 px above the pane" landed on the bar. Never measure after a fixed sleep: wait for the
+// state, then for no running transition and an unchanged box across two frames (settle).
+const settle = async (page, selector) => {
+  await waitLayoutSettled(page);
+  await page.waitForFunction((sel) => new Promise((res) => {
+    const e = document.querySelector(sel);
+    if (!e) return res(false);
+    const a = JSON.stringify(e.getBoundingClientRect());
+    requestAnimationFrame(() => requestAnimationFrame(() => res(
+      JSON.stringify(e.getBoundingClientRect()) === a && !document.getAnimations().some((x) => x.playState === 'running'),
+    )));
+  }), selector, { timeout: 10000, polling: 50 });
+};
+const isCollapsed = (page) => page.evaluate(() => document.getElementById('bottom-pane').classList.contains('bottom-pane-collapsed'));
+const expandBottom = async (page) => {
+  await tap(page, page.locator('#btn-pane-toggle-bottom'));
+  await expect.poll(() => isCollapsed(page), { message: 'pane expanded' }).toBe(false);
+  await settle(page, '#bottom-pane');
+};
 
 const gotoApp = async (page) => {
   await page.goto('/');
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
-  await sleep(700);
+  await page.evaluate(() => document.fonts.ready);
+  await waitLayoutSettled(page);
+  await waitGeometryStable(page);
 };
 
 const spy = (page) => page.evaluate(() => {
@@ -37,7 +61,7 @@ test.describe('panel resizers by finger', () => {
       const grow = before + 40 <= cap + 0.5;
       const dir = side === 'left' ? (grow ? 1 : -1) : (grow ? -1 : 1);
       await drag(page, from, { x: from.x + dir * 40, y: from.y });
-      await sleep(500);
+      await settle(page, `#${side}-pane`);
       expect(await downs(page), 'the finger landed on the resizer, not the canvas').toEqual([`${side}-resizer`]);
       const after = await paneW(page, `${side}-pane`);
       if (grow || before - 200 > 5) { // at the 200 px minimum and the cap there is no room to move
@@ -62,27 +86,29 @@ test.describe('panel resizers by finger', () => {
   test('a canvas tap just above the expanded bottom pane reaches the canvas', async ({ page }, testInfo) => {
     test.skip(!WIDE.includes(testInfo.project.name), 'resizer visible layouts only');
     await gotoApp(page);
-    await tap(page, page.locator('#btn-pane-toggle-bottom'));
-    await sleep(400);
+    await expandBottom(page);
+    const paneTop = () => page.evaluate(() => document.getElementById('bottom-pane').getBoundingClientRect().top);
     const r = await page.evaluate(() => {
       const p = document.getElementById('bottom-pane').getBoundingClientRect();
       const c = document.getElementById('main-canvas').getBoundingClientRect();
-      return { top: p.top, x: c.left + c.width / 2, collapsed: document.getElementById('bottom-pane').classList.contains('bottom-pane-collapsed') };
+      return { top: p.top, x: c.left + c.width / 2 };
     });
-    expect(r.collapsed, 'pane expanded').toBe(false);
     await spy(page);
     // The 6 px bar spans [top-6, top). Chromium's touch targeting also claims taps up to ~4 px above the bar for
     // the resizer (it carries a mouse handler so a finger on the bar does not fall through to the canvas). 11 px
     // and more above the pane is canvas; the old 12 px strip above the bar took taps up to 18 px above the pane.
     const h0 = await paneH(page, 'bottom-pane');
-    for (const off of [11, 14, 20]) {
+    for (const [i, off] of [11, 14, 20].entries()) {
+      expect(await paneTop(), 'the pane top is still where it settled').toBeCloseTo(r.top, 1);
       await page.touchscreen.tap(r.x, r.top - off);
-      await sleep(120);
+      await expect.poll(async () => (await downs(page)).length, { message: `tap ${off} px above the pane was delivered` }).toBe(i + 1);
     }
     expect(await downs(page), 'every tap 5+ px above the bar reached the canvas').toEqual(['main-canvas', 'main-canvas', 'main-canvas']);
     // TUX-051 stray-tap rule: a tap on the bar itself changes nothing (a touch press engages only after the slop).
     await page.touchscreen.tap(r.x, r.top - 3);
-    await sleep(300);
+    await expect.poll(async () => (await downs(page)).length, { message: 'the bar tap was delivered' }).toBe(4);
+    expect((await downs(page))[3], 'the 3 px tap is on the bar').toBe('bottom-resizer');
+    await settle(page, '#bottom-pane');
     expect(await paneH(page, 'bottom-pane'), 'a tap on the bar leaves the height').toBeCloseTo(h0, 0);
     expect(await page.evaluate(() => document.getElementById('bottom-pane').classList.contains('bottom-pane-collapsed')), 'and the pane stays open').toBe(false);
   });
@@ -90,13 +116,12 @@ test.describe('panel resizers by finger', () => {
   test('a finger drag on the bottom resizer bar still resizes the expanded pane', async ({ page }, testInfo) => {
     test.skip(!WIDE.includes(testInfo.project.name), 'resizer visible layouts only');
     await gotoApp(page);
-    await tap(page, page.locator('#btn-pane-toggle-bottom'));
-    await sleep(400);
+    await expandBottom(page);
     const h0 = await paneH(page, 'bottom-pane');
     const b = await page.locator('#bottom-resizer').boundingBox();
     const from = { x: b.x + b.width * 0.2, y: b.y + b.height / 2 };
     await drag(page, from, { x: from.x, y: from.y - 40 });
-    await sleep(500);
+    await settle(page, '#bottom-pane');
     expect(await paneH(page, 'bottom-pane') - h0).toBeGreaterThan(20);
   });
   // Static-guard round 3: an open top menu must not part-cover a resizer strip. A part-covered strip leaves a sliver
@@ -108,8 +133,8 @@ test.describe('panel resizers by finger', () => {
       for (const side of ['left', 'right']) {
         await page.evaluate(() => { document.querySelector('.top-menu-panel.open') && document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); });
         await tap(page, page.locator(`#btn-menu-${menu}`));
-        await sleep(400);
-        expect(await page.evaluate(() => !!document.querySelector('.top-menu-panel.open')), 'the menu is open').toBe(true);
+        await expect.poll(() => page.evaluate(() => !!document.querySelector('.top-menu-panel.open')), { message: 'the menu is open' }).toBe(true);
+        await settle(page, '.top-menu-panel.open');
         const m = await page.evaluate((id) => {
           const e = document.getElementById(id); const r = e.getBoundingClientRect(); const y = Math.round(r.top + r.height / 2);
           const runs = []; let start = null;

@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Touch nightly (pane-resizer tap-through flake, v1.4.25)
+- **`pane-resizers.spec.js` waits for a settled layout, not a fixed sleep.** "a canvas tap just above the expanded bottom pane reaches the canvas" failed intermittently on `webkit-ipad-landscape` (run 40248271782: the taps 11 and 14 px above the pane landed on `#bottom-resizer`). The bottom pane's 0.2 s height transition starts only when the toggle's click lands; the spec measured the pane top 400 ms after the tap returned, so on a slow host it read a top that was still moving up and tapped on the bar. RED: with the transition slowed to 0.6 s the old spec fails with the CI signature (`bottom-resizer`, `bottom-resizer`, `main-canvas`); the new one passes. The spec now waits for the expanded state, then for no running animation and an unchanged box across two frames, checks the top has not moved before each tap, and waits for each tap's `pointerdown` instead of sleeping. The side-drag, bottom-drag and menu tests and the boot wait use the same settle (no fixed sleeps left in the file). No product change: the bar's hit area is the 6 px bar plus a strip reaching down into the pane header.
+
 ### Test config (touch spec matching, v1.4.24)
 - **Checkout path no longer decides touch specs.** `TOUCH_MATCH` in `playwright.config.js` was `/touch\/.*\.spec\.js$/`, tested against the absolute spec path, so a checkout under a `touch/` directory (e.g. `/x/wt-touch/`) made every spec a touch spec and `desktop-chromium` (via `DESKTOP_IGNORE`) ran none. It is now anchored on `tests/e2e/touch/` with either separator. `--list` per-project spec lists are unchanged in a normal checkout (7943 tests in 101 files).
 
