@@ -1857,8 +1857,12 @@
 
   const buildSourceFillSampler = (meta) => {
     if (!meta?.svg || typeof DOMParser === 'undefined') return null;
+    // Defense in depth: stored meta.svg is sanitized on import/registry, but
+    // this sampler mounts the tile in the live document, so sanitize again.
+    const sanitizeSvg = window.Vectura?.SvgSanitize?.sanitize;
+    const safeSvg = typeof sanitizeSvg === 'function' ? sanitizeSvg(meta.svg) : meta.svg;
     const parser = new DOMParser();
-    const doc = parser.parseFromString(meta.svg, 'image/svg+xml');
+    const doc = parser.parseFromString(safeSvg, 'image/svg+xml');
     const svg = doc.querySelector('svg');
     if (!svg) return null;
     const viewBox = svg.getAttribute('viewBox');
@@ -1881,7 +1885,25 @@
     tempSvg.style.left = '-9999px';
     tempSvg.style.top = '-9999px';
     tempSvg.style.visibility = 'hidden';
-    tempSvg.innerHTML = svg.innerHTML || '';
+    // Move the parsed nodes across with importNode. Never copy innerHTML:
+    // the XML serialization re-parsed with HTML rules is an mXSS sink
+    // (`<desc>` is an HTML integration point).
+    // CDATA becomes text (it cannot live in an HTML document); comments and
+    // processing instructions are skipped.
+    const importSvgNode = (node) => {
+      if (node.nodeType === 3 || node.nodeType === 4) return document.createTextNode(node.data || '');
+      if (node.nodeType !== 1) return null;
+      const el = document.importNode(node, false);
+      Array.from(node.childNodes).forEach((child) => {
+        const copy = importSvgNode(child);
+        if (copy) el.appendChild(copy);
+      });
+      return el;
+    };
+    Array.from(svg.childNodes).forEach((child) => {
+      const copy = importSvgNode(child);
+      if (copy) tempSvg.appendChild(copy);
+    });
     document.body.appendChild(tempSvg);
     const fillElements = [...tempSvg.querySelectorAll('path, polygon, rect, circle, ellipse')].filter((el) => {
       const fill = resolveInheritedSvgAttribute(el, 'fill');
@@ -4709,6 +4731,7 @@
 
   // Expose for UI and testing
   window.Vectura.AlgorithmRegistry._generatePatternFillPaths = generatePatternFillPaths;
+  window.Vectura.AlgorithmRegistry._buildSourceFillSampler = buildSourceFillSampler;
   window.Vectura.AlgorithmRegistry._polyContainsPoint = polyContainsPoint;
   window.Vectura.AlgorithmRegistry._classifyRegionTopology = classifyRegionTopology;
   window.Vectura.AlgorithmRegistry._interiorPointOf = interiorPointOf;
