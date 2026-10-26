@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Test config (touch spec matching, v1.4.24)
+- **Checkout path no longer decides touch specs.** `TOUCH_MATCH` in `playwright.config.js` was `/touch\/.*\.spec\.js$/`, tested against the absolute spec path, so a checkout under a `touch/` directory (e.g. `/x/wt-touch/`) made every spec a touch spec and `desktop-chromium` (via `DESKTOP_IGNORE`) ran none. It is now anchored on `tests/e2e/touch/` with either separator. `--list` per-project spec lists are unchanged in a normal checkout (7943 tests in 101 files).
+
 ### Security (SVG sanitizer fallback hardening, v1.4.23)
 - **Obfuscated script schemes.** The no-DOMParser fallback now decodes character references and drops whitespace/control characters before checking `href`, `xlink:href`, `src` and animation `to`/`from`/`by`/`values`, as the DOM path does. `javascript&colon;`, `jav&#x61;script:`, `&#106;avascript:`, `java&#9;script:`, `ja&NewLine;vascript:`, a literal tab, and `<animate to="java&#115;cript:">` are neutralised (href rewritten to `#`, animation dropped). The final rejection check reads the decoded form.
 - **Linear time.** A single-pass tokenizer replaces the lazy `[\s\S]*?` strips, which went quadratic on unmatched open tags (`'<animate to="'` x 25k: 21.9 s before, under 1 ms after). The fallback refuses input over 8 MiB; the browser DOM path has no cap and is unchanged.
