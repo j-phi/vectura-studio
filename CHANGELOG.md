@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Security (SVG sanitizer namespace-prefix bypass, v1.4.24)
+- **Checks key on local name and namespace.** The DOM path (the one the browser uses for SVG import, the Pattern Designer and the pattern registry) matched elements and attributes by qualified name. `<x:script>` with `x` bound to the SVG namespace, `<x:foreignObject>`, `<x:style>`, `x:onload=` and `foo:href="javascript:..."` with `foo` bound to XLink all passed. Every check now reads `localName` (lower-cased) and `namespaceURI`: an `href` in no namespace or XLink under any prefix is a URL attribute, and any attribute whose local name starts with `on` is a handler.
+- **Foreign namespaces are dropped.** Elements outside the SVG namespace (XHTML `<h:script>`, `<h:img onerror>`, editor metadata) are removed with their subtree; attributes outside no-namespace, XLink, XML and xmlns are removed. A root that is not SVG returns an empty SVG. In Chromium the old output ran `<h:script>` and a prefixed `javascript:` link when mounted; the new output runs neither. Legit `xlink:href="#id"` refs are unchanged.
+- The no-DOMParser fallback reads attribute local names the same way (`x:onload`, `foo:href`, `attributeName="foo:href"`).
+
 ### Security (SVG sanitizer fallback hardening, v1.4.23)
 - **Obfuscated script schemes.** The no-DOMParser fallback now decodes character references and drops whitespace/control characters before checking `href`, `xlink:href`, `src` and animation `to`/`from`/`by`/`values`, as the DOM path does. `javascript&colon;`, `jav&#x61;script:`, `&#106;avascript:`, `java&#9;script:`, `ja&NewLine;vascript:`, a literal tab, and `<animate to="java&#115;cript:">` are neutralised (href rewritten to `#`, animation dropped). The final rejection check reads the decoded form.
 - **Linear time.** A single-pass tokenizer replaces the lazy `[\s\S]*?` strips, which went quadratic on unmatched open tags (`'<animate to="'` x 25k: 21.9 s before, under 1 ms after). The fallback refuses input over 8 MiB; the browser DOM path has no cap and is unchanged.

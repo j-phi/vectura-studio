@@ -32,6 +32,12 @@
  *       * any of to / from / values, after URL-decoding & whitespace-strip,
  *         contains `javascript:` (animated value can poison href post-mount).
  *
+ *   - Every DOM-path check keys on localName + namespaceURI, never on the
+ *     qualified tagName / attr.name (`<x:script>` bound to the SVG namespace,
+ *     `foo:href` bound to XLink). Elements outside the SVG namespace (e.g.
+ *     XHTML `<h:script>`) are dropped with their subtree; attributes outside
+ *     no-namespace / XLink / XML / xmlns are removed.
+ *
  * Defense-in-depth:
  *   - All javascript: checks decode HTML/URL entities (e.g. `javascript&#58;`,
  *     `%6Aavascript:`) and tolerate leading whitespace/tabs/newlines and
@@ -50,7 +56,6 @@
   const Vectura = (window.Vectura = window.Vectura || {});
 
   const EMPTY_SVG = '<svg xmlns="http://www.w3.org/2000/svg"/>';
-  const HREF_ATTR_NAMES = ['href', 'xlink:href'];
 
   // Decode HTML numeric/named entities and percent-encoding so attackers can't
   // smuggle `javascript:` past us with `javascript&#58;` or `%6Aavascript:`.
@@ -93,33 +98,82 @@
     return value === '' || value.startsWith('#');
   };
 
+  // Namespaces. Every DOM-path check keys on (namespaceURI, localName), never
+  // on tagName / attr.name: those are qualified names, so `<x:script>` with x
+  // bound to the SVG namespace (tagName "x:script") or `foo:href` bound to
+  // XLink would otherwise slip past a name-keyed allow/deny list.
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const XLINK_NS = 'http://www.w3.org/1999/xlink';
+  const XML_NS = 'http://www.w3.org/XML/1998/namespace';
+  const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
+  // Elements must be SVG (or unnamespaced, for xmlns-less input). Anything
+  // else — XHTML `<h:script>`, MathML, editor metadata — is dropped with its
+  // subtree: foreign-namespace content is the classic sanitizer bypass.
+  const isAllowedElementNs = (ns) => ns == null || ns === '' || ns === SVG_NS;
+  // Attributes may be unnamespaced or XLink/XML/xmlns; others are dropped.
+  const ALLOWED_ATTR_NS = new Set([XLINK_NS, XML_NS, XMLNS_NS]);
+  const isAllowedAttrNs = (ns) => ns == null || ns === '' || ALLOWED_ATTR_NS.has(ns);
+
+  const nodeLocalName = (node) => {
+    const raw = node && (node.localName || node.nodeName || node.tagName || node.name);
+    const lower = `${raw || ''}`.toLowerCase();
+    const colon = lower.lastIndexOf(':');
+    return colon >= 0 ? lower.slice(colon + 1) : lower;
+  };
+
   // Elements that should be dropped wholesale, never just stripped of attrs.
   // <foreignObject>: arbitrary HTML/XSS surface inside SVG.
   // <script>: direct JS execution.
   // <style>: url(javascript:...), expression(), @import — drop instead of building a CSS sanitizer.
   const DROP_TAGS = new Set(['script', 'foreignobject', 'style']);
+  const ANIMATION_TAGS = new Set(['animate', 'set', 'animatetransform', 'animatemotion']);
+
+  const elementChildren = (node) => {
+    const kids = node.childNodes ? Array.from(node.childNodes) : [];
+    return kids.filter((kid) => kid && kid.nodeType === 1);
+  };
 
   const collectAllElements = (root) => {
     const result = [];
     const walk = (node) => {
       if (!node || node.nodeType !== 1) return;
       result.push(node);
-      const kids = node.children ? Array.from(node.children) : [];
+      const kids = elementChildren(node);
       for (let i = 0; i < kids.length; i += 1) walk(kids[i]);
     };
     walk(root);
     return result;
   };
 
-  // Pass 1: remove always-dangerous elements (<script>, <foreignObject>, <style>).
+  const removeNode = (node) => {
+    if (node && node.parentNode) node.parentNode.removeChild(node);
+  };
+
+  const removeAttr = (node, attr) => {
+    if (typeof node.removeAttributeNode === 'function') {
+      node.removeAttributeNode(attr);
+    } else if (attr.namespaceURI && typeof node.removeAttributeNS === 'function') {
+      node.removeAttributeNS(attr.namespaceURI, attr.localName);
+    } else {
+      node.removeAttribute(attr.name);
+    }
+  };
+
+  // Pass 1: remove always-dangerous elements (<script>, <foreignObject>,
+  // <style>, under any prefix) and every element outside the SVG namespace.
+  // Walk top-down and skip descendants of a removed node.
   const removeDangerousNodes = (root) => {
     if (!root) return;
-    collectAllElements(root).forEach((node) => {
-      const tag = (node.tagName || '').toLowerCase();
-      if (DROP_TAGS.has(tag) && node.parentNode) {
-        node.parentNode.removeChild(node);
-      }
-    });
+    const walk = (node) => {
+      elementChildren(node).forEach((kid) => {
+        if (!isAllowedElementNs(kid.namespaceURI) || DROP_TAGS.has(nodeLocalName(kid))) {
+          removeNode(kid);
+          return;
+        }
+        walk(kid);
+      });
+    };
+    walk(root);
   };
 
   // Pass 2: remove <animate> / <set> elements that target href or carry a
@@ -128,52 +182,62 @@
   const removeHostileAnimations = (root) => {
     if (!root) return;
     collectAllElements(root).forEach((node) => {
-      const tag = (node.tagName || '').toLowerCase();
-      if (tag !== 'animate' && tag !== 'set' && tag !== 'animatetransform') return;
-      const attrName = `${node.getAttribute('attributeName') || ''}`.trim().toLowerCase();
-      if (attrName === 'href' || attrName === 'xlink:href') {
-        if (node.parentNode) node.parentNode.removeChild(node);
+      if (!ANIMATION_TAGS.has(nodeLocalName(node))) return;
+      // `attributeName="foo:href"` resolves through the element's prefixes;
+      // any href target (whatever its prefix) is an href hijack.
+      const attrName = `${node.getAttribute('attributeName') || ''}`
+        .replace(/[\s\u0000-\u001f]/g, '')
+        .toLowerCase();
+      if (attrName === 'href' || attrName.endsWith(':href')) {
+        removeNode(node);
         return;
       }
       const candidates = ['to', 'from', 'by', 'values'].map((a) => node.getAttribute(a) || '');
       // `values` is a semicolon-separated list — split before checking.
       const valueParts = `${node.getAttribute('values') || ''}`.split(';');
       const all = candidates.concat(valueParts);
-      if (all.some((v) => looksLikeJsUrl(v))) {
-        if (node.parentNode) node.parentNode.removeChild(node);
-      }
+      if (all.some((v) => looksLikeJsUrl(v))) removeNode(node);
     });
   };
 
-  // Pass 3: handle href/xlink:href and on* attributes per the policy above.
+  // Pass 3: handle href (unprefixed or under any prefix) and on* attributes
+  // per the policy above, keyed on each attribute's localName + namespace.
   const sanitizeAttributesAndUseElements = (root) => {
     if (!root) return;
     const dropElements = [];
     collectAllElements(root).forEach((node) => {
-      const tag = (node.tagName || '').toLowerCase();
+      const tag = nodeLocalName(node);
       const attrs = node.attributes ? Array.from(node.attributes) : [];
       let useHasExternalRef = false;
 
       attrs.forEach((attr) => {
-        const name = `${attr.name || ''}`;
-        const lower = name.toLowerCase();
+        const local = nodeLocalName(attr);
 
-        // 3a. on* event handlers: always strip.
-        if (lower.startsWith('on')) {
-          node.removeAttribute(name);
+        // 3a. Attributes in an unexpected namespace: strip.
+        if (!isAllowedAttrNs(attr.namespaceURI)) {
+          removeAttr(node, attr);
           return;
         }
 
-        // 3b. href / xlink:href handling.
-        if (HREF_ATTR_NAMES.includes(lower)) {
+        // 3b. on* event handlers (any prefix): always strip.
+        if (local.startsWith('on')) {
+          removeAttr(node, attr);
+          return;
+        }
+
+        // 3c. href in no namespace or XLink (any prefix) handling.
+        if (local === 'href' && attr.namespaceURI !== XMLNS_NS) {
           const value = `${attr.value || ''}`;
           if (looksLikeJsUrl(value)) {
             // Preserve existing policy: rewrite to a safe fragment. Keeps
             // <a href="javascript:..."> intact as a non-clickable anchor.
-            if (lower === 'xlink:href' && typeof node.setAttributeNS === 'function') {
-              node.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#');
-            } else {
-              node.setAttribute(name, '#');
+            attr.value = '#';
+            if (attr.value !== '#') {
+              if (attr.namespaceURI && typeof node.setAttributeNS === 'function') {
+                node.setAttributeNS(attr.namespaceURI, attr.name, '#');
+              } else {
+                node.setAttribute(attr.name, '#');
+              }
             }
             return;
           }
@@ -185,10 +249,7 @@
             if (tag === 'use') {
               useHasExternalRef = true;
             } else {
-              if (lower === 'xlink:href' && typeof node.removeAttributeNS === 'function') {
-                node.removeAttributeNS('http://www.w3.org/1999/xlink', 'href');
-              }
-              node.removeAttribute(name);
+              removeAttr(node, attr);
             }
           }
         }
@@ -197,9 +258,7 @@
       if (useHasExternalRef) dropElements.push(node);
     });
 
-    dropElements.forEach((node) => {
-      if (node && node.parentNode) node.parentNode.removeChild(node);
-    });
+    dropElements.forEach(removeNode);
   };
 
   // ---------------------------------------------------------------------------
@@ -220,9 +279,9 @@
   // the fallback only — the DOM path has no cap.
   const FALLBACK_MAX_INPUT = 8 * 1024 * 1024;
   const FALLBACK_DROP_TAGS = DROP_TAGS;
-  const FALLBACK_ANIMATION_TAGS = new Set(['animate', 'set', 'animatetransform', 'animatemotion']);
+  const FALLBACK_ANIMATION_TAGS = ANIMATION_TAGS;
   const FALLBACK_ANIMATION_VALUE_ATTRS = new Set(['to', 'from', 'by', 'values']);
-  const FALLBACK_URL_ATTRS = new Set(['href', 'xlink:href', 'src']);
+  const FALLBACK_URL_ATTRS = new Set(['href', 'src']);
   const NAME_START_RE = /[A-Za-z_]/;
   const TAG_NAME_RE = /[A-Za-z_][\w:.-]*/y;
   const ATTR_NAME_OK_RE = /^[A-Za-z_][\w:.-]*$/;
@@ -320,15 +379,18 @@
       const lower = attr.name.toLowerCase();
       if (!ATTR_NAME_OK_RE.test(attr.name) || seen.has(lower)) return;
       seen.add(lower);
+      // Prefix bindings are unknown here, so key on the local part: `x:onload`
+      // is a handler and `foo:href` a URL attribute under any prefix.
+      const attrLocal = localName(attr.name);
       // on* event handlers: always strip.
-      if (lower.startsWith('on')) return;
+      if (attrLocal.startsWith('on')) return;
       const decoded = decodeForUrlCheck(attr.value);
-      if (FALLBACK_URL_ATTRS.has(lower)) {
+      if (FALLBACK_URL_ATTRS.has(attrLocal)) {
         if (hasHostileScheme(attr.value)) {
-          if (lower !== 'src') kept.push(`${attr.name}="#"`);
+          if (attrLocal !== 'src') kept.push(`${attr.name}="#"`);
           return;
         }
-        if (lower !== 'src' && !isFragmentRef(decoded)) {
+        if (attrLocal !== 'src' && !isFragmentRef(decoded)) {
           // External reference: drop <use> wholesale, strip the attribute elsewhere.
           if (local === 'use') dropElement = true;
           return;
@@ -337,7 +399,7 @@
       if (FALLBACK_ANIMATION_TAGS.has(local)) {
         if (lower === 'attributename') {
           const target = decoded.replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
-          if (target === 'href' || target === 'xlink:href') dropElement = true;
+          if (target === 'href' || target.endsWith(':href')) dropElement = true;
         }
         if (FALLBACK_ANIMATION_VALUE_ATTRS.has(lower)) {
           // `values` is a semicolon list; split after decoding (`&#59;` is `;`).
@@ -503,7 +565,7 @@
     const parserError = doc.querySelector && doc.querySelector('parsererror');
     if (parserError) return EMPTY_SVG;
     const svg = doc.documentElement;
-    if (!svg || (svg.tagName || '').toLowerCase() !== 'svg') return EMPTY_SVG;
+    if (!svg || nodeLocalName(svg) !== 'svg' || !isAllowedElementNs(svg.namespaceURI)) return EMPTY_SVG;
 
     removeDangerousNodes(svg);
     removeHostileAnimations(svg);
