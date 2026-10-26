@@ -601,6 +601,114 @@ describe('SvgSanitize attack corpus (Tests-Gap-6 / Bugs-5)', () => {
   });
 });
 
+// Namespace-prefix bypasses on the DOM path (the one the browser app uses).
+// tagName / attr.name are qualified names, so `x:script` bound to the SVG
+// namespace or `h:script` in XHTML slipped past name-keyed checks.
+describe('SvgSanitize DOM path keys checks on localName + namespace', () => {
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const XLINK_NS = 'http://www.w3.org/1999/xlink';
+  let env;
+
+  beforeAll(() => {
+    env = loadSanitizerInJsdom();
+  });
+
+  afterAll(() => {
+    env.dom.window.close();
+  });
+
+  const parse = (out) => new env.dom.window.DOMParser().parseFromString(out, 'image/svg+xml');
+  const allElements = (doc) => Array.from(doc.getElementsByTagName('*'));
+  const assertNoHostileContent = (out) => {
+    const doc = parse(out);
+    expect(doc.querySelector('parsererror')).toBeNull();
+    allElements(doc).forEach((el) => {
+      const local = `${el.localName}`.toLowerCase();
+      expect(['script', 'foreignobject', 'style']).not.toContain(local);
+      expect(el.namespaceURI === SVG_NS || el.namespaceURI === null).toBe(true);
+      Array.from(el.attributes).forEach((attr) => {
+        const attrLocal = `${attr.localName}`.toLowerCase();
+        expect(attrLocal.startsWith('on')).toBe(false);
+        if (attrLocal === 'href') {
+          expect(attr.value.replace(/\s/g, '')).not.toMatch(/javascript:/i);
+        }
+      });
+    });
+    expect(out).not.toMatch(/alert\(1\)/);
+  };
+
+  test('SVG-namespace prefixed <x:script> is dropped', () => {
+    const out = env.sanitize(
+      `<svg xmlns="${SVG_NS}" xmlns:x="${SVG_NS}"><rect width="1" height="1"/><x:script>alert(1)</x:script></svg>`
+    );
+    assertNoHostileContent(out);
+    expect(parse(out).getElementsByTagNameNS(SVG_NS, 'rect').length).toBe(1);
+  });
+
+  test('XHTML-namespace <h:script> is dropped', () => {
+    const out = env.sanitize(
+      `<svg xmlns="${SVG_NS}"><h:script xmlns:h="http://www.w3.org/1999/xhtml">alert(1)</h:script><circle r="2"/></svg>`
+    );
+    assertNoHostileContent(out);
+    expect(parse(out).getElementsByTagNameNS(SVG_NS, 'circle').length).toBe(1);
+  });
+
+  test('XHTML-namespace subtree (h:div / h:img onerror) is dropped', () => {
+    const out = env.sanitize(
+      `<svg xmlns="${SVG_NS}" xmlns:h="http://www.w3.org/1999/xhtml"><h:div><h:img src="x" onerror="alert(1)"/></h:div></svg>`
+    );
+    assertNoHostileContent(out);
+    expect(out).not.toMatch(/img|div/i);
+  });
+
+  test('prefixed <x:foreignObject> and <x:style> are dropped', () => {
+    const out = env.sanitize(
+      `<svg xmlns="${SVG_NS}" xmlns:x="${SVG_NS}"><x:foreignObject><body xmlns="http://www.w3.org/1999/xhtml"><img src="x" onerror="alert(1)"/></body></x:foreignObject><x:style>*{background:url(javascript:alert(1))}</x:style></svg>`
+    );
+    assertNoHostileContent(out);
+    expect(out).not.toMatch(/foreignObject|style/i);
+  });
+
+  test('prefixed on* handler attribute is stripped (any namespace)', () => {
+    const out = env.sanitize(
+      `<svg xmlns="${SVG_NS}" xmlns:x="${SVG_NS}" xmlns:y="urn:evil"><rect x:onload="alert(1)" y:onclick="alert(1)" width="2" height="2"/></svg>`
+    );
+    assertNoHostileContent(out);
+    const rect = parse(out).getElementsByTagNameNS(SVG_NS, 'rect')[0];
+    expect(rect).toBeTruthy();
+    expect(rect.getAttribute('width')).toBe('2');
+  });
+
+  test('href bound to XLink under a custom prefix is a URL attribute (javascript: and entity-encoded)', () => {
+    const out = env.sanitize(
+      `<svg xmlns="${SVG_NS}" xmlns:foo="${XLINK_NS}"><a foo:href="javascript:alert(1)"><text>a</text></a><a foo:href="java&#x73;cript&#58;alert(1)"><text>b</text></a><image foo:href="https://attacker.example/x.png"/></svg>`
+    );
+    assertNoHostileContent(out);
+    expect(out).not.toMatch(/attacker\.example/);
+    expect(parse(out).getElementsByTagNameNS(SVG_NS, 'a').length).toBe(2);
+  });
+
+  test('<animate> retargeting a prefixed href is dropped', () => {
+    const out = env.sanitize(
+      `<svg xmlns="${SVG_NS}" xmlns:x="${SVG_NS}"><a href="#ok"><x:set attributeName="foo:href" to="javascript:alert(1)"/><text>c</text></a></svg>`
+    );
+    assertNoHostileContent(out);
+    expect(out).not.toMatch(/<[\w:]*set\b/i);
+  });
+
+  test('legit SVG with xlink:href="#id" fragment refs survives intact', () => {
+    const input = `<svg xmlns="${SVG_NS}" xmlns:xlink="${XLINK_NS}" viewBox="0 0 10 10"><defs><linearGradient id="g"><stop offset="0" stop-color="red"/></linearGradient><path id="p" d="M0 0 L10 10"/></defs><use xlink:href="#p" stroke="url(#g)"/><a href="#p"><circle r="1"/></a></svg>`;
+    const out = env.sanitize(input);
+    const doc = parse(out);
+    const use = doc.getElementsByTagNameNS(SVG_NS, 'use')[0];
+    expect(use).toBeTruthy();
+    expect(use.getAttributeNS(XLINK_NS, 'href')).toBe('#p');
+    expect(doc.getElementsByTagNameNS(SVG_NS, 'a')[0].getAttribute('href')).toBe('#p');
+    expect(doc.getElementsByTagNameNS(SVG_NS, 'stop').length).toBe(1);
+    expect(env.sanitize(out)).toBe(out);
+  });
+});
+
 describe('Pattern registry sanitizes stored SVG (Bugs-2 + Bugs-5)', () => {
   // The audit's Bugs-2 entry expects pattern-registry.normalizePattern to route
   // pattern.svg through Vectura.SvgSanitize.sanitize so hostile .vectura projects
@@ -684,6 +792,14 @@ describe('SvgSanitize regex fallback (no DOMParser, no xmldom)', () => {
     const out = sanitize('<svg><script>alert(1)</script\t\n bar><path d="M0 0"/></svg>');
     expect(out).not.toMatch(/<\s*script|alert/i);
     expect(out).toContain('<path d="M0 0"/>');
+  });
+
+  test('prefixed on* handlers and prefixed href are keyed on the local name', () => {
+    const sanitize = loadFallbackSanitizer();
+    const out = sanitize('<svg xmlns:x="http://www.w3.org/2000/svg" xmlns:foo="http://www.w3.org/1999/xlink"><rect x:onload="alert(1)" width="1"/><a foo:href="java&#x73;cript&#58;alert(1)"><text>a</text></a><x:script>alert(1)</x:script><x:set attributeName="foo:href" to="#x"/></svg>');
+    expect(out).not.toMatch(/onload|alert|script|<x:set/i);
+    expect(out).toContain('width="1"');
+    expect(out).toContain('foo:href="#"');
   });
 
   test('nested on* handlers do not reassemble', () => {
