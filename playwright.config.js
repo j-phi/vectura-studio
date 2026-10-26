@@ -6,7 +6,9 @@ const { CHROMIUM_PROJECTS, WEBKIT_PROJECTS, DEVICES } = require('./tests/e2e/tou
 // (reuseExistingServer greened against the wrong tree once). Set PW_PORT per lane.
 const PORT = Number(process.env.PW_PORT || 4173);
 
-const TOUCH_MATCH = /touch\/.*\.spec\.js$/;
+// Playwright tests these against the absolute file path, so anchor on the repo's tests/e2e/touch
+// dir: a bare `touch/` also matched a checkout path such as /x/wt-touch/ and made every spec touch.
+const TOUCH_MATCH = /(^|[\\/])tests[\\/]e2e[\\/]touch[\\/].*\.spec\.js$/;
 // Specs that desktop-chromium must not run: touch projects own tests/e2e/touch, the visual
 // project owns visual.spec.js, and the iPhone mini project owns iphone-mini.spec.js.
 const DESKTOP_IGNORE = [TOUCH_MATCH, /visual\.spec\.js$/, /iphone-mini\.spec\.js$/];

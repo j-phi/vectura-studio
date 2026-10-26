@@ -616,6 +616,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Touch spec match anchored (2026-10-26, v1.4.24).** `TOUCH_MATCH` matched any `touch/` in the absolute path, so a `wt-touch` checkout excluded every desktop spec. Anchored on `tests/e2e/touch/`; roster unit test covers it; `--list` unchanged.
 - **SVG sanitizer fallback hardening (2026-10-26, v1.4.23).** Adversarial-review follow-up: entity/whitespace-obfuscated `javascript:` URLs and animation values, and quadratic strip regexes, in the no-DOMParser fallback. Linear tokenizer rebuilds tags under the DOM path's policy; 8 MiB fallback cap; DOM path unchanged.
 - **CodeQL alerts (2026-10-18).** 13 open alerts fixed (SVG sanitizer fallback, script regexes, design-exploration XSS); `scene3d-capture.js --only` regex is an intentional operator filter and was dismissed.
 - **Rainfall Trace Length to 0.01 mm (2026-10-18).** Slider min 0.01; engine floor 0.01; step capped at half the length so short traces keep their length. Checked in the app: 210 traces at 0.0098-0.014 mm (spread from the default trail noise).
