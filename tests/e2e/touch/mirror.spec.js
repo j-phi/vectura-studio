@@ -140,8 +140,11 @@ test.describe('TUX-027 mirror dial and row actions', () => {
     })).toMatchObject({ mode: 'decimal' });
     expect(await chip.evaluate((el) => el === document.activeElement)).toBe(true);
     await chip.fill('37');
-    // Blur through a tap elsewhere in the panel (no Enter: iOS decimal keypads have no Return key).
-    const lbl = page.locator('.mp-root .mp-dial-row .mp-ctrl-lbl').first();
+    // Commit through a tap on plain text elsewhere in the panel (no Enter: iOS decimal keypads have no Return key, and a
+    // tap on text does not blur the input there). The "Mirror stack" heading is clear of every control: the Angle label sits
+    // 4 px above the range, and WebKit's tap adjustment sent the compat mousedown to the range, which jumped to 360.
+    const lbl = page.locator('.mp-root .mp-stack-lbl').first();
+    await lbl.scrollIntoViewIfNeeded();
     await touch.tap(page, lbl);
     await page.waitForTimeout(250);
     expect(await getAngle(page)).toBe(37);

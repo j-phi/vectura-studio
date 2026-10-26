@@ -53,6 +53,15 @@ const uncovered = (page, sel) => page.evaluate((s) => {
 
 const intersects = (a, b) => !(a.right <= b.x || b.right <= a.x || a.bottom <= b.y || b.bottom <= a.y);
 
+// End state of a pane toggle: the pane reports the wanted open state, its width transition has finished and two
+// frames have passed. A fixed wait read the right pane mid-transition on a slow runner (197.3 of 200 px).
+// The predicate is synchronous: waitForFunction takes a returned Promise as truthy without awaiting it.
+const paneSettled = async (page, side, open) => {
+  await page.waitForFunction(([s, o, sel]) => window.Vectura.UI.Workspace.paneState.isOpen(s) === o
+    && !document.querySelector(sel).getAnimations().some((a) => a.playState === 'running'), [side, open, SIDE[side].pane], { polling: 'raf' });
+  await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res))));
+};
+
 const firstHeader = (side) => (side === 'left' ? '#left-pane .left-panel-section-header' : '#right-pane .right-pane-tab');
 
 test.describe('TUX-010 pane controls', () => {
@@ -123,7 +132,7 @@ test.describe('TUX-010 pane controls', () => {
       expect(a.h, `${side} collapse hitArea h`).toBeGreaterThanOrEqual(HIT_MIN);
       expect(await uncovered(page, sel), `${side} collapse uncovered`).toBe(true);
       await touch.tap(page, page.locator(sel));
-      await page.waitForTimeout(400);
+      await paneSettled(page, side, false);
       expect((await rectOf(page, SIDE[side].pane)).w, `${side} collapsed width`).toBeCloseTo(collapsed, 0);
       const e = await hit(page, sel);
       expect(e.w, `${side} expand hitArea w`).toBeGreaterThanOrEqual(HIT_MIN);
@@ -135,7 +144,7 @@ test.describe('TUX-010 pane controls', () => {
     expect(await touch.canvasShare(page), 'share, both collapsed').toBeGreaterThanOrEqual(75);
     for (const side of ['left', 'right']) {
       await touch.tap(page, page.locator(SIDE[side].chevron));
-      await page.waitForTimeout(400);
+      await paneSettled(page, side, true);
       expect(Math.abs((await rectOf(page, SIDE[side].pane)).w - docked[side]), `${side} re-docked width`).toBeLessThanOrEqual(1);
     }
   });
@@ -176,11 +185,12 @@ test.describe('TUX-010 pane controls', () => {
         await touch.tap(page, page.locator(openerFor(layout, side)));
       }
       await page.waitForTimeout(800);
-      const r = await rectOf(page, pane);
       // Deviation (see commit notes): the right pane is 258 px by the skin manifest (200 on touch-wide, capped
       // by TUX-008), so its floor is 258 / 200. The left pane keeps the 260 floor.
       const floor = side === 'left' ? 260 : (layout === 'touch-wide' ? 200 : 258);
-      expect(r.w, `${side} pane width`).toBeGreaterThanOrEqual(floor);
+      // The touch-wide pane opens with a width transition. A slow WebKit runner was still mid-way after 800 ms
+      // (259.3 of 260), so the width is read once the pane has settled: polled until the floor, or a timeout fails.
+      await expect.poll(async () => (await rectOf(page, pane)).w, { timeout: 5000, message: `${side} pane width` }).toBeGreaterThanOrEqual(floor);
       if (layout === 'touch-wide') {
         expect(await page.locator(pane).evaluate((e) => e.classList.contains('pane-collapsed'))).toBe(false);
       } else {

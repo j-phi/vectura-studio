@@ -4,6 +4,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const core = require('../helpers/target-audit-core');
 const touch = require('../helpers/touch');
+const sweep = require('../helpers/target-sweep');
 const { PROJECTS } = require('./viewports');
 const { STATES } = require('./target-audit-states');
 
@@ -39,19 +40,25 @@ async function barTargets(page) {
 async function measure(page) {
   const items = await barTargets(page);
   if (!items) return { shown: false, bad: [], count: 0 };
+  // One page.evaluate for the whole bar (sweep.inPage) instead of two round trips per target.
+  const res = await sweep.inPage(page, ({ items }, kit) => items.map((it) => {
+    const e = document.querySelector(`[data-b2-probe="${it.i}"]`);
+    return e ? kit.hitArea(e) : { missing: true };
+  }), { items });
   const bad = []; const covered = [];
-  for (const it of items) {
-    const loc = page.locator(`[data-b2-probe="${it.i}"]`);
-    const a = await touch.hitArea(page, loc);
-    if (a.w === 0 && a.h === 0) { covered.push(it.label); continue; } // under an open pane: the audit `covered` metric owns that
+  res.forEach((a, k) => {
+    const it = items[k];
+    if (a.missing) { bad.push(`${it.label} left the DOM during the sweep`); return; }
+    if (a.w === 0 && a.h === 0) { covered.push(it.label); return; } // under an open pane: the audit `covered` metric owns that
     if (a.w < MIN || a.h < MIN) bad.push(`${it.label} ${a.w}x${a.h}`);
-  }
+  });
   return { shown: true, bad, covered, count: items.length };
 }
 
 test.describe('TUX-041 B2 context bar', () => {
   test.use({ reducedMotion: 'reduce' });
-  test.describe.configure({ retries: 0 });
+  // Every test boots its own page, so the file runs fully parallel.
+  test.describe.configure({ mode: 'parallel', retries: 0 });
 
   for (const id of BAR_STATES) {
     test(`${id}: every context bar target is at least 44 x 44`, async ({ page, baseURL }, testInfo) => {

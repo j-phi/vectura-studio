@@ -166,7 +166,19 @@ const STATES = [
     },
     post: (p) => p.evaluate(() => (document.getElementById('gm-module-menu')?.checkVisibility() ? true : 'generator module menu not open')) },
   { id: 'modal-document-setup', overlay: true, fast: false, minItems: 20, run: (p) => fileItem(p, 'btn-settings'),
-    post: (p) => p.evaluate(() => (document.getElementById('settings-panel')?.checkVisibility() ? true : 'document setup panel not visible')) },
+    // The panel's own visibility is not enough: its descendants inherit visibility through their own (test-shortened)
+    // transitions, which a loaded WebKit runs hundreds of ms later. Wait for the close button and every rendered section header.
+    post: (p) => p.evaluate(() => {
+      const sp = document.getElementById('settings-panel');
+      if (!sp?.checkVisibility()) return 'document setup panel not visible';
+      const pr = sp.getBoundingClientRect();
+      if (pr.left < -0.5 || pr.right > innerWidth + 0.5) return 'document setup panel still sliding in';
+      // Rendered headers (a box) must be visible; a header in a display:none sub-section has no box and is not waited for.
+      const close = document.getElementById('btn-close-settings');
+      const hdrs = [...sp.querySelectorAll('.sect-hdr')].filter((e) => e.getClientRects().length);
+      const ok = !!close && close.checkVisibility({ checkVisibilityCSS: true }) && hdrs.length > 0 && hdrs.every((e) => getComputedStyle(e).visibility === 'visible');
+      return ok ? true : 'document setup controls not visible yet';
+    }) },
   { id: 'modal-export', overlay: true, fast: true, minItems: 19,
     run: async (p) => { await ensureLayer(p); await fileItem(p, 'btn-export'); },
     post: modalOpen(/export/) },

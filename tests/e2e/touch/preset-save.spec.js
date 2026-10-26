@@ -12,7 +12,13 @@ const EVIDENCE = evidenceDir('TUX-049');
 const SEED_ID = 'user-lissajous-tux049';
 const STORE_KEY = 'vectura.user_presets.lissajous';
 // Desktop (fine pointer, 1600x1000) footer sizes measured on the base before TUX-049.
-const BASE = { save: [38.7, 24], cancel: [54.7, 26] };
+// Pre-change desktop footer, recorded on the base. Heights and the box model are exact. Widths follow the label's text, which
+// renders 2-3 px wider on Linux (38.7 / 54.7 on macOS, 41 / 56 on Linux), so a width is checked as the text width plus the
+// recorded padding and border: a min-width, a wider padding or a touch rule leaking to desktop still changes it.
+const BASE = {
+  save: { h: 24, pad: [8, 8], border: [0, 0] },
+  cancel: { h: 26, pad: [10, 10], border: [1, 1] },
+};
 const NAME_SEL = '#preset-save-name';
 const SAVE_SEL = '.preset-save-confirm';
 const CANCEL_SEL = '.preset-save-footer button:not(.preset-save-confirm)';
@@ -178,7 +184,14 @@ test('D: desktop parity (fine pointer) keeps the pre-change footer', async ({ br
   await page.waitForSelector('.vectura-modal-backdrop[style*="display: flex"]');
   await page.waitForTimeout(300);
   const m = await page.evaluate(() => {
-    const q = (s) => { const r = document.querySelector(s).getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10 }; };
+    const q = (s) => {
+      const e = document.querySelector(s); const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+      const rg = document.createRange(); rg.selectNodeContents(e); const tw = rg.getBoundingClientRect().width;
+      return {
+        l: Math.round(r.left), t: Math.round(r.top), w: Math.round(r.width * 10) / 10, h: Math.round(r.height * 10) / 10, tw: Math.round(tw * 10) / 10,
+        pad: [parseFloat(cs.paddingLeft), parseFloat(cs.paddingRight)], border: [parseFloat(cs.borderLeftWidth), parseFloat(cs.borderRightWidth)],
+      };
+    };
     return { fine: matchMedia('(pointer: fine)').matches, save: q('.preset-save-confirm'), cancel: q('.preset-save-footer button:not(.preset-save-confirm)'), name: q('#preset-save-name'), sheet: q('.vectura-modal') };
   });
   fs.mkdirSync(EVIDENCE, { recursive: true });
@@ -189,6 +202,10 @@ test('D: desktop parity (fine pointer) keeps the pre-change footer', async ({ br
   expect(m.cancel.l, `Cancel precedes Save ${msg}`).toBeLessThan(m.save.l);
   expect(m.save.t, `Save below the name field ${msg}`).toBeGreaterThan(m.name.t);
   // Baseline sizes recorded on the base before the change (see the commit body).
-  expect([m.save.w, m.save.h], msg).toEqual(BASE.save);
-  expect([m.cancel.w, m.cancel.h], msg).toEqual(BASE.cancel);
+  for (const k of ['save', 'cancel']) {
+    const b = m[k]; const base = BASE[k];
+    expect({ h: b.h, pad: b.pad, border: b.border }, `${k} box ${msg}`).toEqual(base);
+    const natural = b.tw + base.pad[0] + base.pad[1] + base.border[0] + base.border[1];
+    expect(Math.abs(b.w - natural), `${k} width ${b.w} = text ${b.tw} + padding + border (${natural}) ${msg}`).toBeLessThanOrEqual(0.5);
+  }
 });

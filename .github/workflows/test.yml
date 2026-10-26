@@ -139,19 +139,52 @@ jobs:
           overwrite: true
 
   # TUX-061: every touch spec in all 11 touch projects (7 Chromium, 4 WebKit), nightly.
-  # Playwright-native sharding (--shard=i/n): the coverage shard plan (scripts/test-shard-plan.js)
-  # is Vitest-only. On a red shard, download its playwright-report artifact.
+  # One leg per project, or project x Playwright shard for the slow ones, sized so that each leg
+  # stays at or under ~25 min on a hosted runner. A plain `--shard=i/10` over all 11 projects cut
+  # by test count, so one shard took 97 min (webkit-ipad-landscape plus the serial targets-panels
+  # file). The targets-* files run fullyParallel, so `--shard` can split inside them. Leg sizes
+  # come from the per-file times of hosted run 39161828852 (docs/testing.md, "Touch nightly legs");
+  # Run 40123749378 (branch dispatch): webkit-iphone-portrait 38 + 16 min and webkit-ipad-portrait 30 + 26 min
+  # in two legs, so both have three.
+  # tests/unit/e2e-ci-roster.test.js checks that the legs cover every touch project exactly once.
+  # Retries stay on (a test that passes on retry is a reported flake), but --max-failures stops a
+  # leg after 20 final failures: a retried deterministic failure costs double, and a broken leg
+  # has told us enough. On a red leg, download its touch-e2e-<project>-<shard> artifact.
   touch-e2e-nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
-        touch_shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        include:
+          - { project: touch-ipad-portrait, shard: 1, of: 2 }
+          - { project: touch-ipad-portrait, shard: 2, of: 2 }
+          - { project: touch-ipad-landscape, shard: 1, of: 2 }
+          - { project: touch-ipad-landscape, shard: 2, of: 2 }
+          - { project: touch-iphone-portrait, shard: 1, of: 2 }
+          - { project: touch-iphone-portrait, shard: 2, of: 2 }
+          - { project: touch-iphone-landscape, shard: 1, of: 2 }
+          - { project: touch-iphone-landscape, shard: 2, of: 2 }
+          - { project: touch-iphone-portrait-chrome, shard: 1, of: 1 }
+          - { project: touch-iphone-landscape-chrome, shard: 1, of: 1 }
+          - { project: touch-coarse-wide, shard: 1, of: 2 }
+          - { project: touch-coarse-wide, shard: 2, of: 2 }
+          - { project: webkit-ipad-portrait, shard: 1, of: 3 }
+          - { project: webkit-ipad-portrait, shard: 2, of: 3 }
+          - { project: webkit-ipad-portrait, shard: 3, of: 3 }
+          - { project: webkit-ipad-landscape, shard: 1, of: 3 }
+          - { project: webkit-ipad-landscape, shard: 2, of: 3 }
+          - { project: webkit-ipad-landscape, shard: 3, of: 3 }
+          - { project: webkit-iphone-portrait, shard: 1, of: 3 }
+          - { project: webkit-iphone-portrait, shard: 2, of: 3 }
+          - { project: webkit-iphone-portrait, shard: 3, of: 3 }
+          - { project: webkit-iphone-landscape, shard: 1, of: 2 }
+          - { project: webkit-iphone-landscape, shard: 2, of: 2 }
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45
     env:
-      TOUCH_SHARD: ${{ matrix.touch_shard }}
-      TOUCH_SHARD_COUNT: '10'
+      TOUCH_PROJECT: ${{ matrix.project }}
+      TOUCH_SHARD: ${{ matrix.shard }}/${{ matrix.of }}
+      TOUCH_LEG: ${{ matrix.project }}-${{ matrix.shard }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -161,27 +194,27 @@ jobs:
       - run: npm ci --no-audit --no-fund --loglevel=error
       - uses: ./.github/actions/setup-playwright
         with:
-          browsers: chromium webkit
-      - run: npm run test:playwright -- tests/e2e/touch --project='touch-*' --project='webkit-*' --shard="$TOUCH_SHARD/$TOUCH_SHARD_COUNT" --reporter=line,json
+          browsers: ${{ startsWith(matrix.project, 'webkit-') && 'webkit' || 'chromium' }}
+      - run: npm run test:playwright -- tests/e2e/touch --project="$TOUCH_PROJECT" --shard="$TOUCH_SHARD" --max-failures=20 --reporter=line,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-json/touch.json
       - name: Report Playwright flakes
         if: always()
-        run: node scripts/playwright-flaky.js summarize --job "touch-e2e-nightly-$TOUCH_SHARD" --out "playwright-flaky/touch-e2e-nightly-$TOUCH_SHARD.json" playwright-json/touch.json
+        run: node scripts/playwright-flaky.js summarize --job "touch-e2e-nightly-$TOUCH_LEG" --out "playwright-flaky/touch-e2e-nightly-$TOUCH_LEG.json" playwright-json/touch.json
       - name: Upload Playwright flake summary
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-flaky-touch-e2e-nightly-${{ matrix.touch_shard }}
+          name: playwright-flaky-touch-e2e-nightly-${{ matrix.project }}-${{ matrix.shard }}
           path: playwright-flaky
           retention-days: 7
           if-no-files-found: ignore
           overwrite: true
-      - name: Upload touch shard report
+      - name: Upload touch leg report
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: touch-e2e-shard-${{ matrix.touch_shard }}
+          name: touch-e2e-${{ matrix.project }}-${{ matrix.shard }}
           path: |
             playwright-report
             test-results
@@ -243,7 +276,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
-      image: mcr.microsoft.com/playwright:v1.64.0-noble
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
       options: --ipc=host
     steps:
       - uses: actions/checkout@v7
@@ -437,7 +470,7 @@ jobs:
           sparse-checkout: |
             scripts
             tests
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: vitest-shard-[0-9]*
           path: ${{ runner.temp }}/vitest-shard-artifacts
@@ -568,7 +601,7 @@ jobs:
       - run: npm ci --no-audit --no-fund --loglevel=error
       - name: Record merge setup timing
         run: echo "VECTURA_MERGE_SETUP_MS=$(( $(date +%s%3N) - VECTURA_MERGE_SETUP_STARTED_MS ))" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: coverage-shard-[0-9]*
           path: ${{ runner.temp }}/coverage-shard-artifacts
@@ -730,7 +763,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: Download flake summaries
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: playwright-flaky-*
           path: ${{ runner.temp }}/playwright-flaky

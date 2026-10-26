@@ -219,6 +219,33 @@ describe('TouchHold', () => {
     expect(fired[0].target).toBe(fresh);
   });
 
+  // C1: the owner started a drag (shouldYield true). The hold must not fire, even when the finger rests
+  // under the slop past holdMs. A stationary hold (moved false) still fires.
+  it('shouldYield cancels the hold on a move and at the fire check, with reason interaction', () => {
+    let started = false;
+    const asked = [];
+    const { fired } = bind({ shouldYield: (info) => { asked.push(info.moved); return started && info.moved; } });
+    const { inner } = card('a');
+    const reasons = [];
+    dom.window.document.addEventListener('touchhold:cancel', (e) => reasons.push(e.detail.reason));
+    inner.dispatchEvent(pe('pointerdown'));
+    advance(50);
+    dom.window.document.dispatchEvent(pe('pointermove', { clientX: 103, clientY: 100 }));
+    expect(asked).toEqual([true]);
+    started = true; // the owner's move handler started the drag after our move listener ran
+    advance(600);
+    expect(fired).toHaveLength(0);
+    expect(reasons).toEqual(['interaction']);
+  });
+
+  it('shouldYield false (stationary hold) still fires', () => {
+    const { fired } = bind({ shouldYield: (info) => info.moved });
+    const { inner } = card('a');
+    inner.dispatchEvent(pe('pointerdown'));
+    advance(510);
+    expect(fired).toHaveLength(1);
+  });
+
   it('unbind removes the listeners', () => {
     const { fired, unbind } = bind();
     const { inner } = card('a');

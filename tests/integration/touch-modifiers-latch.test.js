@@ -283,4 +283,32 @@ describe('TUX-045 touch modifier latches', () => {
     const badge = doc.getElementById('touch-mod-badge');
     expect(badge.textContent).toMatch(/Pan/);
   });
+
+  // Nightly (U1 item 2): the double-tap lock is timed by the pointerup's own timeStamp, not by when
+  // the handler happens to run. A busy main thread can run the second handler late; the taps were
+  // still 120 ms apart. The wall clock here says 900 ms apart, the events say 120 ms.
+  test('bar: double-tap lock uses the event timeStamp, not the handler wall clock', () => {
+    const upAt = (task, ts) => {
+      const ev = pe('pointerup', T(9));
+      Object.defineProperty(ev, 'timeStamp', { value: ts });
+      barBtn(task).dispatchEvent(ev);
+    };
+    const realNow = win.Date.now;
+    let clock = 1e6;
+    win.Date.now = () => clock;
+    try {
+      upAt('constrain', 5000);
+      expect(state('constrain')).toBe('latched');
+      clock += 900;
+      upAt('constrain', 5120);
+      expect(state('constrain')).toBe('locked');
+      // Two taps 900 ms apart by the event clock stay a latch-off pair, whatever the wall clock says.
+      upAt('duplicate', 8000);
+      clock += 50;
+      upAt('duplicate', 8900);
+      expect(state('duplicate')).toBe('off');
+    } finally {
+      win.Date.now = realNow;
+    }
+  });
 });

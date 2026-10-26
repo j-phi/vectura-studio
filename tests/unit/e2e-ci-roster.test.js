@@ -55,6 +55,27 @@ describe('PR e2e smoke roster', () => {
     expect(runsIn(desktop, path.join(dir, 'a-brand-new-desktop.spec.js'))).toBe(true);
   });
 
+  it('classifies touch specs by the repo touch dir, not by a "touch/" anywhere in the checkout path', () => {
+    // A worktree such as /x/wt-touch/ once made every spec a touch spec, so desktop-chromium ran none.
+    const config = require('../../playwright.config.js');
+    const desktop = config.projects.find((p) => p.name === 'desktop-chromium');
+    const touch = config.projects.find((p) => p.name === 'touch-ipad-portrait');
+    const ignored = (abs) => desktop.testIgnore.some((re) => re.test(abs));
+    const isTouch = (abs) => [].concat(touch.testMatch).some((re) => re.test(abs));
+    for (const root of ['/x/wt-touch', '/x/touch/repo', 'C:\\x\\wt-touch']) {
+      const sep = root.includes('\\') ? '\\' : '/';
+      const desktopSpec = [root, 'tests', 'e2e', 'foo.spec.js'].join(sep);
+      const touchSpec = [root, 'tests', 'e2e', 'touch', 'bar.spec.js'].join(sep);
+      expect(ignored(desktopSpec), desktopSpec).toBe(false);
+      expect(isTouch(desktopSpec), desktopSpec).toBe(false);
+      expect(ignored(touchSpec), touchSpec).toBe(true);
+      expect(isTouch(touchSpec), touchSpec).toBe(true);
+    }
+    expect(isTouch('/x/repo/tests/e2e/touch/bar.spec.js')).toBe(true);
+    expect(isTouch('/x/repo/tests/e2e/touch/nested/baz.spec.js')).toBe(true);
+    expect(isTouch('/x/repo/tests/e2e/not-touch/foo.spec.js')).toBe(false);
+  });
+
   it('asks for a JSON report per run on CI, so flakes can be counted', () => {
     const [desktop, touch] = smoke.runs([], true);
     expect(desktop).toContain('--reporter=line,json');
@@ -136,14 +157,49 @@ describe('PR e2e smoke roster', () => {
 });
 
 describe('full touch roster runs nightly', () => {
-  it('a schedule-only matrix shards every touch spec over all 11 touch projects', () => {
+  // The matrix `include:` legs: { project, shard, of }, one flow mapping per line.
+  const legs = (text) => [...text.matchAll(/^\s+- \{ project: ([a-z-]+), shard: (\d+), of: (\d+) \}$/gm)]
+    .map(([, project, shard, of]) => ({ project, shard: Number(shard), of: Number(of) }));
+
+  it('a nightly/dispatch matrix runs every touch spec once per touch project, in per-project legs', () => {
     const nightly = job('touch-e2e-nightly');
-    expect(nightly).toContain("if: github.event_name == 'schedule'");
-    expect(nightly).toContain('touch_shard:');
-    expect(nightly).toContain('--shard="$TOUCH_SHARD/$TOUCH_SHARD_COUNT"');
-    expect(nightly).toContain('chromium webkit');
-    expect(nightly).toMatch(/--project='touch-\*' --project='webkit-\*'/);
+    expect(nightly).toContain("if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'");
     expect(Object.keys(TOUCH).length).toBe(11);
+    const byProject = {};
+    legs(nightly).forEach((l) => { (byProject[l.project] = byProject[l.project] || []).push(l); });
+    // Every touch project, and nothing else.
+    expect(Object.keys(byProject).sort()).toEqual(Object.keys(TOUCH).sort());
+    // Each project's shards are exactly 1..of with one `of`, so no slice runs twice or never.
+    for (const [project, list] of Object.entries(byProject)) {
+      const of = list[0].of;
+      expect(list.every((l) => l.of === of), project).toBe(true);
+      expect(list.map((l) => l.shard).sort((a, b) => a - b), project).toEqual(Array.from({ length: of }, (_, i) => i + 1));
+    }
+    // WebKit is the slower engine: a WebKit project never gets fewer legs than its Chromium twin.
+    for (const [project, { device, engine }] of Object.entries(TOUCH)) {
+      if (engine !== 'webkit') continue;
+      const twin = Object.entries(TOUCH).find(([, p]) => p.engine === 'chromium' && p.device === device)[0];
+      expect(byProject[project].length, `${project} vs ${twin}`).toBeGreaterThanOrEqual(byProject[twin].length);
+    }
+    // One project and one slice per leg; the leg installs only its own engine.
+    expect(nightly).toContain('--project="$TOUCH_PROJECT" --shard="$TOUCH_SHARD"');
+    expect(nightly).toContain('TOUCH_PROJECT: ${{ matrix.project }}');
+    expect(nightly).toContain('TOUCH_SHARD: ${{ matrix.shard }}/${{ matrix.of }}');
+    expect(nightly).toContain("startsWith(matrix.project, 'webkit-') && 'webkit' || 'chromium'");
+    expect(nightly).not.toMatch(/--project='touch-\*'/);
+    // A broken leg stops after a bounded number of final failures (retries still flag flakes).
+    expect(nightly).toMatch(/--max-failures=\d+/);
+    // Artifact names are unique per leg (a duplicate name would overwrite another leg's upload).
+    expect(nightly).toContain('name: playwright-flaky-touch-e2e-nightly-${{ matrix.project }}-${{ matrix.shard }}');
+    expect(nightly).toContain('name: touch-e2e-${{ matrix.project }}-${{ matrix.shard }}');
+  });
+
+  it('the legs cover every touch spec: the targets-* files run fullyParallel so --shard splits inside them', () => {
+    // A serial targets-* file is one shard group; the legs are sized on the assumption it is not.
+    const dir = path.join(ROOT, 'tests/e2e/touch');
+    const targets = fs.readdirSync(dir).filter((f) => /^targets-.*\.spec\.js$/.test(f));
+    expect(targets.length).toBeGreaterThan(0);
+    for (const f of targets) expect(fs.readFileSync(path.join(dir, f), 'utf8'), f).toMatch(/mode: 'parallel'/);
   });
 
   it('PW_TOUCH_PROJECTS=0 leaves only the desktop projects (touch runs in the nightly matrix)', () => {

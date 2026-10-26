@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 const { boot } = require('../helpers/direct-pick');
 
 // The shape context bar on touch: its grip shows only above 640 px, and a pointercancel during a shape-props slider
@@ -9,13 +10,14 @@ const drawPolygon = async (page) => {
   await page.evaluate(() => { window.app.ui.setActiveTool('shape-polygon'); });
   const r = await page.evaluate(() => { const b = document.querySelector('#main-canvas').getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; });
   const from = { x: r.x + r.w * 0.45, y: r.y + r.h * 0.35 };
-  await touch.drag(page, from, { x: from.x + 90, y: from.y + 90 });
+  // App time: a slow runner cannot stretch the draw past the 500 ms canvas hold (clock.install in beforeEach).
+  await clock.frozenDrag(page, from, { x: from.x + 90, y: from.y + 90 });
   await expect.poll(() => page.evaluate(() => { const s = window.app.renderer.getShapePropsState && window.app.renderer.getShapePropsState(); return s && s.type; })).toBe('polygon');
 };
 
 test.describe('shape context bar on touch', () => {
   let errors;
-  test.beforeEach(async ({ page }) => { errors = []; page.on('pageerror', (e) => errors.push(String(e))); await boot(page); });
+  test.beforeEach(async ({ page }) => { errors = []; page.on('pageerror', (e) => errors.push(String(e))); await clock.install(page); await boot(page); });
   test.afterEach(() => { expect(errors).toEqual([]); });
 
   test('the shape bar keeps its grip above 640 px and drops it on phone widths only', async ({ page }) => {

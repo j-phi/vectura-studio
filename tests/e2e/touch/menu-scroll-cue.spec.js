@@ -74,21 +74,20 @@ test('Q22: the left pane body marks the hidden edge and the fade shows', async (
   await st.run(page);
   await core.waitLayoutSettled(page);
   await page.waitForTimeout(300);
-  const info = await page.evaluate(() => {
+  // The fades run a 120 ms opacity transition. A fixed wait read it mid-way on a slow WebKit runner ('0' where the end
+  // state is '1'), so each read polls until the computed opacities reach their end state, or times out failing.
+  const read = () => page.evaluate(() => {
     const el = document.getElementById('left-panel-content');
-    const max = el.scrollHeight - el.clientHeight;
     const fade = (side) => { const cs = getComputedStyle(el, side); return { opacity: cs.opacity, h: cs.height, pe: cs.pointerEvents }; };
-    const top = { cue: el.dataset.scrollCue || '', max, after: fade('::after'), before: fade('::before') };
-    el.scrollTop = max;
-    return new Promise((res) => setTimeout(() => res({ top, bottom: { cue: el.dataset.scrollCue || '', before: fade('::before'), after: fade('::after') } }), 250));
+    return { cue: el.dataset.scrollCue || '', max: el.scrollHeight - el.clientHeight, scrollTop: el.scrollTop, after: fade('::after'), before: fade('::before') };
   });
-  expect(info.top.max, 'the text panel scrolls').toBeGreaterThan(1);
-  expect(info.top.cue).toContain('below');
-  expect(info.top.cue).not.toContain('above');
-  expect(info.top.after.opacity).toBe('1');
-  expect(info.top.after.pe).toBe('none');
-  expect(info.bottom.cue).toContain('above');
-  expect(info.bottom.cue).not.toContain('below');
-  expect(info.bottom.before.opacity).toBe('1');
-  expect(info.bottom.after.opacity).toBe('0');
+  const top = await read();
+  expect(top.max, 'the text panel scrolls').toBeGreaterThan(1);
+  expect(top.cue).toContain('below');
+  expect(top.cue).not.toContain('above');
+  await expect.poll(async () => { const t = await read(); return `${t.before.opacity}/${t.after.opacity}`; }, { timeout: 3000, message: 'top: only the bottom fade shows' }).toBe('0/1');
+  expect((await read()).after.pe).toBe('none');
+  await page.evaluate(() => { const el = document.getElementById('left-panel-content'); el.scrollTop = el.scrollHeight - el.clientHeight; });
+  await expect.poll(async () => (await read()).cue, { timeout: 3000, message: 'scrolled to the end: the cue marks only the top edge' }).toBe('above');
+  await expect.poll(async () => { const t = await read(); return `${t.before.opacity}/${t.after.opacity}`; }, { timeout: 3000, message: 'end: only the top fade shows' }).toBe('1/0');
 });

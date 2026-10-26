@@ -80,8 +80,10 @@
     if (props.showChip) {
       chip = document.createElement('input');
       chip.type = 'text';
-      chip.inputMode = chipInputMode(props);
-      chip.enterKeyHint = 'done';
+      // Attributes, not the inputMode / enterKeyHint properties: an engine without the IDL attribute
+      // (WebKit on Linux) only makes an expando, and the keyboard never sees the hint.
+      chip.setAttribute('inputmode', chipInputMode(props));
+      chip.setAttribute('enterkeyhint', 'done');
       chip.className = props.variant === 'pen' ? 'pen-w' : 'slider-val';
       chip.setAttribute('aria-label', `${props.ariaLabel || 'Value'}: numeric`);
       el.appendChild(chip);
@@ -246,9 +248,26 @@
         }));
       }
     }
+    // iOS keeps a focused input focused when the finger lands on non-focusable text, so a blur-only chip
+    // never commits. While the chip has focus, a pointerdown anywhere outside it blurs it (blur commits).
+    let offOutside = null;
+    const onOutsidePointerDown = (event) => {
+      if (event.target === chip || (event.target && chip.contains(event.target))) return;
+      if (chip.ownerDocument.activeElement === chip) chip.blur();
+    };
+    const onChipFocus = () => {
+      if (offOutside) return;
+      const doc = chip.ownerDocument;
+      doc.addEventListener('pointerdown', onOutsidePointerDown, true);
+      offOutside = () => { doc.removeEventListener('pointerdown', onOutsidePointerDown, true); offOutside = null; };
+    };
+    const onChipFocusEnd = () => { if (offOutside) offOutside(); };
     if (chip) {
       bind(chip, 'keydown', onChipKey);
+      bind(chip, 'focus', onChipFocus);
+      bind(chip, 'blur', onChipFocusEnd);
       bind(chip, 'blur', onChipBlur);
+      offs.push(() => { if (offOutside) offOutside(); });
     }
 
     renderChip();
@@ -283,7 +302,7 @@
           merged.precision = inferPrecision(newProps.step);
         }
         // Re-attach inputs' min/max/step if changed.
-        if (chip && newProps && newProps.min != null) chip.inputMode = chipInputMode(merged);
+        if (chip && newProps && newProps.min != null) chip.setAttribute('inputmode', chipInputMode(merged));
         if (newProps && (newProps.min != null || newProps.max != null || newProps.step != null)) {
           const list = props.dual ? [sliderMin, sliderMax] : [slider];
           list.forEach((s) => {

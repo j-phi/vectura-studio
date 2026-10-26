@@ -12,7 +12,9 @@ const createCryptoFacade = () => Object.freeze({
   getRandomValues: (array) => crypto.webcrypto.getRandomValues(array),
 });
 
-const LOCAL_SRC_RE = /<script[^>]*src="([^"]+)"[^>]*><\/script>/g;
+// Opening <script> tags only: this extracts src attributes, it is not a tag filter.
+const SCRIPT_OPEN_RE = /<script\b([^>]*)>/gi;
+const SRC_ATTR_RE = /\bsrc="([^"]+)"/;
 
 // 1x1 transparent PNG — what the stubbed canvas "exports".
 const EMPTY_PNG_DATA_URL =
@@ -21,8 +23,9 @@ const EMPTY_PNG_DATA_URL =
 const parseLocalScripts = (html) => {
   const scripts = [];
   let match;
-  while ((match = LOCAL_SRC_RE.exec(html)) !== null) {
-    const src = match[1];
+  while ((match = SCRIPT_OPEN_RE.exec(html)) !== null) {
+    const srcMatch = SRC_ATTR_RE.exec(match[1]);
+    const src = srcMatch && srcMatch[1];
     if (!src || /^https?:\/\//i.test(src) || src.startsWith('//')) continue;
     scripts.push(src);
   }
