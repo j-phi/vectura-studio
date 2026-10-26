@@ -16646,9 +16646,12 @@ body.touch-wide-layout.touch-ui :is(#left-pane, #right-pane).pane-collapsed .pan
   color: var(--ui-muted);
   font-variant-numeric: tabular-nums;
 }
-.paper-row .paper-color-pill {
+[data-ui-skin] #right-pane #paper-section-body .paper-color-pill.value-chip {
   margin-left: auto;
-  min-width: 84px;
+  flex: 0 0 auto;
+  min-width: 92px;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 .paper-actions {
   display: flex;

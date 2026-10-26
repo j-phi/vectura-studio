@@ -99,10 +99,11 @@
     const PAPERS = Vectura.PAPERS || { ORDER: [], TYPES: {} };
     const S = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PAPER_PANEL) || {};
     const esc = (v) => (UI.utils && UI.utils.escapeHtml ? UI.utils.escapeHtml(v) : `${v ?? ''}`);
-    const opts = [`<option value="">${esc(S.NO_DEFAULT_OPTION || 'Theme (no default)')}</option>`];
+    const opts = [`<option value="">${esc(S.NO_DEFAULT_OPTION || 'No default (follow theme)')}</option>`];
     PAPERS.ORDER.forEach((type) => {
       const info = PAPERS.TYPES[type] || {};
-      opts.push(`<option value="${esc(type)}">${esc(info.label || type)}</option>`);
+      const label = type === 'none' ? (S.NONE_OPTION || 'None (plain colour)') : (info.label || type);
+      opts.push(`<option value="${esc(type)}">${esc(label)}</option>`);
     });
     return opts.join('');
   };
@@ -1438,7 +1439,7 @@ ${isDevEligible() ? `
     const Paper = Vectura.Paper;
     const def = SETTINGS.paperDefault && Paper ? Paper.normalize(SETTINGS.paperDefault) : null;
     const select = getEl('set-default-paper-type', { silent: true });
-    if (select) select.value = def ? def.type : '';
+    if (select) select.value = def ? (Paper.isKnownType(def.type) ? def.type : 'none') : '';
     const color = def ? def.color : (Paper ? Paper.themeDocumentBg() : (SETTINGS.bgColor || '#ffffff'));
     const input = getEl('inp-default-paper-color', { silent: true });
     if (input) input.value = color;

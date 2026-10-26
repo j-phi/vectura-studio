@@ -193,7 +193,8 @@
       USE_DEFAULT: 'Use default',
       USE_DEFAULT_TITLE: 'Apply your default paper to this document',
       DEFAULT_BADGE: 'Default',
-      NO_DEFAULT_OPTION: 'Theme (no default)',
+      NO_DEFAULT_OPTION: 'No default (follow theme)',
+      NONE_OPTION: 'None (plain colour)',
       APPLY_TO_DOCUMENT: 'Apply to this document',
       PREVIEW_NOTE: 'Preview only. SVG export stays plotter-clean.',
       // Slider range (percent) and swatch thumbnail size (backing px, ~2x the 44 px swatch).

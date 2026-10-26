@@ -51,6 +51,12 @@
 
   const typeInfo = (type) => catalogue().TYPES[hasType(type) ? type : 'none'] || {};
 
+  // A paper type this build doesn't know (saved by a newer build) is kept
+  // verbatim so the project round-trips, but renders as a plain sheet.
+  const SAFE_TYPE = /^[a-z0-9][a-z0-9-]{0,31}$/;
+  const keepType = (type) => (hasType(type) ? type
+    : (typeof type === 'string' && SAFE_TYPE.test(type) ? type : 'none'));
+
   // A type's stock colour; 'none' has no colour of its own and follows the theme.
   const baseColorFor = (type) => toHex6(typeInfo(type).color) || themeDocumentBg();
 
@@ -62,7 +68,7 @@
   const normalize = (cfg, opts = {}) => {
     const src = cfg && typeof cfg === 'object' ? cfg : {};
     const { DEFAULT, LIMITS } = catalogue();
-    const type = hasType(src.type) ? src.type : 'none';
+    const type = keepType(src.type);
     const color = toHex6(src.color) || toHex6(opts.fallbackColor) || baseColorFor(type);
     const seedRaw = Number(src.seed);
     const seedMax = (LIMITS && LIMITS.seedMax) || 0x7fffffff;
@@ -168,12 +174,19 @@
   };
 
   // Theme sync rule: a theme change may recolour the paper only when the user
-  // has no default paper and the project sheet is plain ('none').
-  const themeMaySync = () => {
+  // has no default paper and the project sheet is plain ('none') in the
+  // previous theme's colour.
+  // previousBg: the documentBg of the theme being left. The sheet follows the
+  // theme only while it is still that theme's own plain colour.
+  const themeMaySync = (previousBg) => {
     const S = settings();
     if (S.paperDefault) return false;
     const p = S.paper;
-    return !p || p.type === 'none' || !hasType(p.type);
+    if (!p) return true;
+    if (p.type !== 'none' && hasType(p.type)) return false;
+    const prev = toHex6(previousBg);
+    if (!prev) return true;
+    return toHex6(S.bgColor || p.color) === prev;
   };
 
   const storage = () => {
@@ -215,6 +228,7 @@
   };
 
   Vectura.Paper = {
+    isKnownType: hasType,
     loadDefault,
     saveDefault,
     removeDefault,

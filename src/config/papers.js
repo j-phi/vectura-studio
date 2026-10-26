@@ -14,6 +14,7 @@
  *   label / short full name (menus, tooltips) / swatch caption
  *   color         base stock colour (picking a type resets the colour to this)
  *   grainMm       feature size of the surface tooth (mm)
+ *   grainAngle / grainStretch  felt-mark direction (rad) and elongation (≥1)
  *   tooth         0..1 strength of the embossed tooth relief
  *   fiberDensity  0..1 amount of visible fibres
  *   fiberLenMm    typical fibre length (mm)
@@ -37,7 +38,7 @@
   const Vectura = G.Vectura = G.Vectura || {};
 
   const plain = {
-    grainMm: 1, tooth: 0, fiberDensity: 0, fiberLenMm: 1, fiberTone: 0, speckle: 0, mottle: 0,
+    grainAngle: 0, grainStretch: 1, grainMm: 1, tooth: 0, fiberDensity: 0, fiberLenMm: 1, fiberTone: 0, speckle: 0, mottle: 0,
     absorbency: 0, bleedMm: 0, feather: 0, dryskip: 0, inkOpacity: 1,
   };
 
@@ -56,7 +57,7 @@
       short: 'Hot press',
       hint: 'Smooth pressed cotton, crisp lines',
       color: '#f8f5ec',
-      grainMm: 0.55, tooth: 0.16, fiberDensity: 0.08, fiberLenMm: 1.6, fiberTone: 0.4, speckle: 0, mottle: 0.16,
+      grainAngle: 0.2, grainStretch: 1.15, grainMm: 0.55, tooth: 0.16, fiberDensity: 0.08, fiberLenMm: 1.6, fiberTone: 0.4, speckle: 0, mottle: 0.16,
       absorbency: 0.35, bleedMm: 0.07, feather: 0.2, dryskip: 0.06, inkOpacity: 0.96,
       defaultTexture: 0.55, defaultBleed: 0.45,
     },
@@ -65,7 +66,7 @@
       short: 'Cold press',
       hint: 'Medium tooth, slight broken line on peaks',
       color: '#f7f2e6',
-      grainMm: 1.25, tooth: 0.62, fiberDensity: 0.12, fiberLenMm: 2.2, fiberTone: 0.35, speckle: 0, mottle: 0.22,
+      grainAngle: 0.35, grainStretch: 1.25, grainMm: 1.25, tooth: 0.62, fiberDensity: 0.12, fiberLenMm: 2.2, fiberTone: 0.35, speckle: 0, mottle: 0.22,
       absorbency: 0.55, bleedMm: 0.11, feather: 0.35, dryskip: 0.38, inkOpacity: 0.94,
       defaultTexture: 0.7, defaultBleed: 0.55,
     },
@@ -74,7 +75,7 @@
       short: 'Rough',
       hint: 'Heavy tooth, ink skips across the peaks',
       color: '#f5f0e2',
-      grainMm: 2.3, tooth: 0.8, fiberDensity: 0.14, fiberLenMm: 2.6, fiberTone: 0.35, speckle: 0, mottle: 0.28,
+      grainAngle: 0.5, grainStretch: 1.3, grainMm: 2.3, tooth: 0.7, fiberDensity: 0.14, fiberLenMm: 2.6, fiberTone: 0.35, speckle: 0, mottle: 0.28,
       absorbency: 0.6, bleedMm: 0.13, feather: 0.4, dryskip: 0.62, inkOpacity: 0.93,
       defaultTexture: 0.8, defaultBleed: 0.55,
     },
@@ -101,7 +102,7 @@
       short: 'Cotton rag',
       hint: 'Soft, fibrous archival sheet',
       color: '#f4efe2',
-      grainMm: 0.95, tooth: 0.32, fiberDensity: 0.5, fiberLenMm: 3, fiberTone: 0.45, speckle: 0.02, mottle: 0.32,
+      grainAngle: 0.15, grainStretch: 1.2, grainMm: 0.95, tooth: 0.32, fiberDensity: 0.5, fiberLenMm: 3, fiberTone: 0.45, speckle: 0.02, mottle: 0.32,
       absorbency: 0.6, bleedMm: 0.12, feather: 0.55, dryskip: 0.14, inkOpacity: 0.95,
       defaultTexture: 0.65, defaultBleed: 0.55,
     },
@@ -110,7 +111,7 @@
       short: 'Kraft',
       hint: 'Brown unbleached stock with visible fibres',
       color: '#c39a6b',
-      grainMm: 0.8, tooth: 0.3, fiberDensity: 0.95, fiberLenMm: 3.4, fiberTone: -0.6, speckle: 0.25, mottle: 0.45,
+      grainMm: 0.8, tooth: 0.16, fiberDensity: 1, fiberLenMm: 3.4, fiberTone: -0.6, speckle: 0.25, mottle: 0.45,
       absorbency: 0.5, bleedMm: 0.1, feather: 0.45, dryskip: 0.1, inkOpacity: 0.92,
       defaultTexture: 0.7, defaultBleed: 0.5,
     },
@@ -163,16 +164,18 @@
 
   const LIMITS = Object.freeze({
     seedMax: 0x7fffffff,
-    // Texture tile size in px and the pxPerMm buckets the tile cache keys on.
-    tilePx: 512,
-    minBucket: 0.5,
-    maxBucket: 16,
-    tileCacheSize: 8,
-    // Large low-frequency formation tile: ~1 m period (longer than an A0
-    // short side, incommensurate with the power-of-two grain periods) so
-    // mottling never visibly repeats on big sheets.
-    mottleTilePx: 512,
-    mottlePeriodMm: 997,
+    // Texture chunks (src/render/paper-texture.js): CHUNK px square on a
+    // document-mm grid, rasterised at a power-of-two px/mm "bucket" near the
+    // on-screen density (never the sheet size), with an apron so adjacent
+    // chunks overlap seamlessly. maxBucket keeps chunks screen-sharp up to
+    // ~128 px/mm (extreme zoom); coarseBucket is the cheap level drawn at once
+    // while exact chunks refine when idle. The cache is capped in bytes.
+    chunkPx: 256,
+    apronPx: 2,
+    minBucket: 0.25,
+    maxBucket: 128,
+    coarseBucket: 1,
+    cacheBytes: 64 * 1024 * 1024,
     // Below this on-screen sheet size the texture overlay is skipped (LOD).
     minSheetPx: 96,
     // Below this halo radius (device px) bleed is skipped.

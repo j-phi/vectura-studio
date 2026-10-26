@@ -119,6 +119,9 @@ describe('document setup panel: default paper (replaces the background colour)',
     expect(document.getElementById('right-pane').contains(select)).toBe(false);
     const options = Array.from(select.options).map((o) => o.value);
     expect(options).toEqual(['', ...window.Vectura.PAPERS.ORDER]);
+    // Unambiguous: "no default" vs. the plain "None" paper.
+    expect(select.options[0].textContent).toBe('No default (follow theme)');
+    expect(select.querySelector('option[value="none"]').textContent).toBe('None (plain colour)');
   });
 
   test('Default paper row sits above the Selection Outline toggle inside Document Setup', () => {
@@ -154,7 +157,7 @@ describe('document setup panel: default paper (replaces the background colour)',
     expect(window.app.history.length).toBe(historyBefore + 1);
   });
 
-  test('choosing "Theme (no default)" clears the default paper', () => {
+  test('choosing "No default (follow theme)" clears the default paper', () => {
     const select = document.getElementById('set-default-paper-type');
     select.value = '';
     select.dispatchEvent(new window.Event('change', { bubbles: true }));

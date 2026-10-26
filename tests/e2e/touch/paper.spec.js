@@ -30,5 +30,9 @@ test('touch: Pen / Paper tab picks a paper with a tap', async ({ page }) => {
   expect(box.height).toBeGreaterThanOrEqual(44);
   await swatch.tap();
   await expect(swatch).toHaveAttribute('aria-checked', 'true');
+  // The colour chip fits its hex label with room to spare (not a 45 px sliver).
+  const pill = await page.locator('#paper-color-pill').boundingBox();
+  expect(pill.width).toBeGreaterThanOrEqual(84);
+  expect(pill.height).toBeGreaterThanOrEqual(44);
   expect(await page.evaluate(() => window.Vectura.SETTINGS.paper.type)).toBe('newsprint');
 });

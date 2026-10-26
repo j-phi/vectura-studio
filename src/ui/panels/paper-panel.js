@@ -92,9 +92,12 @@
     if (!body || !body.querySelector('.paper-swatch-grid')) return;
     const paper = currentPaper();
     const PAPERS = Vectura.PAPERS || { TYPES: {} };
-    const info = PAPERS.TYPES[paper.type] || {};
+    const known = Vectura.Paper ? Vectura.Paper.isKnownType(paper.type) : true;
+    const info = (known ? PAPERS.TYPES[paper.type] : PAPERS.TYPES.none) || {};
     body.querySelectorAll('.paper-swatch').forEach((btn) => {
-      const on = btn.dataset.paperType === paper.type;
+      // A paper type from a newer build renders (and is ticked) as None.
+      const shown = Vectura.Paper && !Vectura.Paper.isKnownType(paper.type) ? 'none' : paper.type;
+      const on = btn.dataset.paperType === shown;
       btn.classList.toggle('active', on);
       btn.setAttribute('aria-checked', on ? 'true' : 'false');
       btn.tabIndex = on ? 0 : -1;
@@ -135,7 +138,8 @@
     const setBtn = getEl('btn-paper-set-default', { silent: true });
     if (setBtn) setBtn.disabled = isDefault;
     const useBtn = getEl('btn-paper-reset-default', { silent: true });
-    if (useBtn) useBtn.disabled = isDefault;
+    // Nothing to apply without a default (the swatches cover the theme sheet).
+    if (useBtn) useBtn.disabled = isDefault || !S.paperDefault;
     if (typeof this.refreshDefaultPaperControls === 'function') this.refreshDefaultPaperControls();
   }
 
@@ -191,48 +195,51 @@
       next.focus();
     });
 
-    // Colour: any colour; one undo step per picker session.
+    // Colour: any colour; one undo step per picker session. The step is
+    // armed by the first ACTUAL colour change (opening the picker and
+    // cancelling leaves no empty undo step); each picker open starts a new
+    // session.
     const pill = getEl('paper-color-pill', { silent: true });
     const input = getEl('inp-paper-color', { silent: true });
     let colorArmed = false;
-    const armColor = () => {
-      if (!colorArmed && app && app.pushHistory) app.pushHistory();
-      colorArmed = true;
-    };
     if (pill && input) {
       pill.onclick = () => {
-        armColor();
+        colorArmed = false;
         if (typeof openColorPickerAnchoredTo === 'function') {
           openColorPickerAnchoredTo(input, pill, { title: S.COLOR_PICKER_TITLE || 'Paper Color', uiInstance: this });
         }
       };
-      input.onfocus = armColor;
       const applyColor = (value, done) => {
-        if (!Vectura.Paper || !Vectura.Paper.isHexColor(value)) return;
-        armColor();
-        write({ ...currentPaper(), color: value }, false);
+        const P = Vectura.Paper;
+        if (!P || !P.isHexColor(value)) return;
+        const cur = currentPaper();
+        if (P.toHex6(value) !== cur.color) {
+          if (!colorArmed && app && app.pushHistory) app.pushHistory();
+          colorArmed = true;
+          write({ ...cur, color: value }, false);
+        }
         if (done) colorArmed = false;
       };
       input.oninput = (e) => applyColor(e.target.value, false);
       input.onchange = (e) => applyColor(e.target.value, true);
     }
 
-    // Sliders: arm one undo step on the first interaction, disarm on commit.
+    // Sliders: one undo step per drag/keyboard session, armed by the first
+    // input that actually changes the value (Tab/focus/no-op keys push
+    // nothing); disarmed on commit.
     const bindSlider = (id, key) => {
       const el = getEl(id, { silent: true });
       if (!el) return;
       let armed = false;
-      const arm = () => {
-        if (armed || el.disabled) return;
-        if (app && app.pushHistory) app.pushHistory();
-        armed = true;
-      };
-      el.addEventListener('pointerdown', () => { arm(); el.dataset.dragging = 'true'; });
-      el.addEventListener('keydown', arm);
+      el.addEventListener('pointerdown', () => { el.dataset.dragging = 'true'; });
       el.addEventListener('input', () => {
-        arm();
+        if (el.disabled) return;
         const v = Math.max(0, Math.min(1, Number(el.value) / 100));
-        write({ ...currentPaper(), [key]: v }, false);
+        const cur = currentPaper();
+        if (Math.round(cur[key] * 100) === Math.round(v * 100)) return;
+        if (!armed && app && app.pushHistory) app.pushHistory();
+        armed = true;
+        write({ ...cur, [key]: v }, false);
       });
       el.addEventListener('change', () => {
         armed = false;

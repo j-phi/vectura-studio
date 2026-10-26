@@ -92,6 +92,19 @@ describe('paper default preference + legacy bgColor migration', () => {
     expect(fresh).toBeTruthy();
   });
 
+  test("a new document never inherits the last project's paper colour (only the default or the theme)", () => {
+    S.cookiePreferencesEnabled = true;
+    app.setPaperDefault(null);
+    app.setProjectPaper({ type: 'none', color: '#ff00aa' }, { history: false });
+    app.persistPreferences({ force: true });
+    const fresh = new window.Vectura.App();
+    expect(fresh).toBeTruthy();
+    const themeBg = window.Vectura.THEMES[S.uiTheme].documentBg;
+    expect(S.paper).toMatchObject({ type: 'none', color: themeBg });
+    expect(S.bgColor).toBe(themeBg);
+    S.cookiePreferencesEnabled = false;
+  });
+
   test('clearing saved preferences clears the stored default paper', () => {
     app.setPaperDefault({ type: 'kraft' });
     app.clearSavedPreferences();
@@ -194,6 +207,68 @@ describe('paper state round-trip, undo and theme sync', () => {
     S.paperDefault = Paper.fromLegacyBg('#336699');
     app.applyTheme('dark', { persist: false, syncDocumentBg: true, refreshUi: false, render: false });
     expect(S.bgColor).toBe('#336699');
+  });
+
+  test('theme toggle never overwrites a custom plain colour (no default set)', () => {
+    S.paperDefault = null;
+    app.applyTheme('dark', { persist: false, syncDocumentBg: true, refreshUi: false, render: false });
+    app.setProjectPaper({ type: 'none', color: '#ff0000' }, { history: false });
+    const before = app.history.length;
+    app.applyTheme('lark', { persist: false, syncDocumentBg: true, refreshUi: false, render: false });
+    expect(S.paper).toMatchObject({ type: 'none', color: '#ff0000' });
+    expect(S.bgColor).toBe('#ff0000');
+    expect(app.history.length).toBe(before);
+  });
+
+  // WCAG contrast of two hex colours.
+  const contrast = (a, b) => {
+    const la = Paper.luminance(a); const lb = Paper.luminance(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+  };
+  const pen1 = () => S.pens.find((p) => p.id === 'pen-1');
+
+  test('theme toggle keeps an untouched Pen 1 legible on the PAPER (black stock + light theme)', () => {
+    S.paperDefault = null;
+    app.applyTheme('dark', { persist: false, syncPen1: true, syncDocumentBg: true, refreshUi: false, render: false });
+    app.setProjectPaper(Paper.forType('black'), { history: false });
+    ['lark', 'light', 'dark', 'lark'].forEach((t) => {
+      app.applyTheme(t, { persist: false, syncPen1: true, syncDocumentBg: true, refreshUi: false, render: false });
+      expect(contrast(pen1().color, S.bgColor), `${t}: ${pen1().color} on ${S.bgColor}`).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  test('a pen the user customised is never recoloured by a theme toggle or a paper pick', () => {
+    app.applyTheme('dark', { persist: false, syncPen1: true, syncDocumentBg: true, refreshUi: false, render: false });
+    pen1().color = '#f4f1e8';
+    app.setProjectPaper(Paper.forType('hot-press'), { history: true });
+    expect(pen1().color).toBe('#f4f1e8');
+    app.applyTheme('light', { persist: false, syncPen1: true, syncDocumentBg: true, refreshUi: false, render: false });
+    expect(pen1().color).toBe('#f4f1e8');
+  });
+
+  test('picking light stock under the dark theme makes an untouched Pen 1 dark, in the SAME undo step', () => {
+    app.applyTheme('dark', { persist: false, syncPen1: true, syncDocumentBg: true, refreshUi: false, render: false });
+    app.setProjectPaper({ type: 'none', color: '#121214' }, { history: false });
+    pen1().color = '#e6f1ff';
+    const layer = app.engine.layers[0];
+    if (layer) { layer.penId = 'pen-1'; layer.color = '#e6f1ff'; }
+    const before = app.history.length;
+    app.setProjectPaper(Paper.forType('hot-press'), { history: true });
+    expect(app.history.length).toBe(before + 1);
+    expect(contrast(pen1().color, S.bgColor)).toBeGreaterThanOrEqual(3);
+    if (layer) expect(layer.color).toBe(pen1().color);
+    app.undo();
+    expect(S.paper.type).toBe('none');
+    expect(pen1().color).toBe('#e6f1ff');
+  });
+
+  test('a paper type from a newer build round-trips unchanged and renders as a plain sheet', () => {
+    const state = app.captureState();
+    state.settings.paper = { type: 'washi-2030', color: '#f0ece0', texture: 0.4, bleed: 0.2, seed: 3 };
+    app.applyState(JSON.parse(JSON.stringify(state)));
+    expect(S.paper.type).toBe('washi-2030');
+    expect(Paper.isRealistic(S.paper)).toBe(false);
+    expect(app.captureState().settings.paper).toMatchObject({ type: 'washi-2030', color: '#f0ece0' });
   });
 });
 }
@@ -306,6 +381,35 @@ describe('Paper panel (Pen / Paper tab)', () => {
     expect(S.paper.type).toBe('kraft');
     expect(app.history.length).toBe(before + 1);
     expect(document.getElementById('paper-default-badge').hidden).toBe(false);
+  });
+
+  test('Tab / no-op keys on a slider and an opened-then-cancelled colour picker push no undo step', () => {
+    const before = app.history.length;
+    const tex = document.getElementById('paper-texture');
+    tex.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    tex.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    tex.dispatchEvent(new window.Event('change', { bubbles: true }));
+    // Same value "input" (e.g. a click on the thumb) changes nothing.
+    tex.value = String(Math.round(S.paper.texture * 100));
+    tex.dispatchEvent(new window.Event('input', { bubbles: true }));
+    document.getElementById('paper-color-pill').click();
+    expect(app.history.length).toBe(before);
+    // A real change still records exactly one step.
+    tex.value = String(Math.round(S.paper.texture * 100) === 50 ? 60 : 50);
+    tex.dispatchEvent(new window.Event('input', { bubbles: true }));
+    tex.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(app.history.length).toBe(before + 1);
+  });
+
+  test('"Use default" is disabled when no default paper exists', () => {
+    app.setPaperDefault(null);
+    expect(document.getElementById('btn-paper-reset-default').disabled).toBe(true);
+    app.setProjectPaper(window.Vectura.Paper.forType('kraft'), { history: false });
+    app.setPaperDefault(window.Vectura.Paper.effective());
+    expect(document.getElementById('btn-paper-reset-default').disabled).toBe(true); // project already on it
+    swatch('rough').click();
+    expect(document.getElementById('btn-paper-reset-default').disabled).toBe(false);
+    app.undo();
   });
 
   test('undo of a paper change refreshes the panel', () => {
@@ -461,8 +565,8 @@ describe('renderer paper hooks', () => {
     expect(ink[0].globalAlpha).toBeCloseTo(window.Vectura.PAPERS.TYPES['cold-press'].inkOpacity, 5);
     // Ink strokes went to the offscreen canvas, not the main context.
     expect(calls.some((c) => c.op === 'stroke')).toBe(false);
-    // Texture overlay drawn at the texture strength.
-    expect(calls.some((c) => c.op === 'createPattern')).toBe(true);
+    // Textured surface drawn as document-mm chunks.
+    expect(calls.some((c) => c.op === 'drawImage' && c.image !== r._paperInkCanvas && c.args.length === 4)).toBe(true);
   });
 
   test('dark stock keeps light ink on top (source-over)', () => {
@@ -474,10 +578,9 @@ describe('renderer paper hooks', () => {
 
   // ---- physical (mm) texture scale -------------------------------------
 
-  // Grain pattern matrix for the current sheet/zoom (maps tile px → doc mm).
-  const grainMatrix = () => {
-    // Cold cache: the first tile of a paper is built synchronously at the
-    // exact bucket (a warm cache may lend a neighbouring bucket meanwhile).
+  // Surface chunk draws for the current sheet/zoom: each is
+  // drawImage(chunkCanvas, xMm, yMm, wMm, hMm) in document-mm space.
+  const surfaceDraws = () => {
     PT.clearCache();
     const ctx = recordingCtx(r.canvas);
     const dpr = r.getBackingDpr();
@@ -486,15 +589,29 @@ describe('renderer paper hooks', () => {
     ctx.scale(r.scale, r.scale);
     const prof = app.engine.currentProfile;
     expect(r.drawPaperTexture(ctx, prof)).toBe(true);
-    const tile = PT.getTile(Paper.effective(), r.scale * dpr);
-    const made = ctx.calls.filter((c) => c.op === 'createPattern').map((c) => c.pattern);
-    const grain = made.find((p) => p.image === tile.canvas);
-    return { m: grain.matrix, tile, pxPerMm: r.scale * dpr, prof };
+    PT.flush();
+    const again = recordingCtx(r.canvas);
+    again.setTransform(dpr, 0, 0, dpr, 0, 0);
+    again.translate(r.offsetX, r.offsetY);
+    again.scale(r.scale, r.scale);
+    r.drawPaperTexture(again, prof);
+    const pxPerMm = r.scale * dpr;
+    const bucket = PT.bucketFor(pxPerMm);
+    const draws = again.calls.filter((c) => c.op === 'drawImage' && c.args.length === 4)
+      .map((c) => ({ w: c.image.width, x: c.args[0], y: c.args[1], wMm: c.args[2], hMm: c.args[3] }));
+    return { draws, bucket, pxPerMm, prof };
   };
 
-  // Physically mapped = isotropic and exactly 1/bucket mm per tile pixel
-  // (so a grainMm feature is grainMm on the page), whatever the sheet size.
-  const isPhysical = ({ m, tile }) => m.b === 0 && m.c === 0 && m.a === m.d && Math.abs(m.a * tile.bucket - 1) < 1e-12;
+  // Physically mapped = isotropic, exactly `bucket` chunk px per document mm,
+  // and on a mm grid anchored at the sheet origin — whatever the sheet size.
+  const isPhysical = ({ draws, bucket }) => draws.length > 0 && draws.every((d) => {
+    const apron = window.Vectura.PAPERS.LIMITS.apronPx;
+    const C = PT.chunkMmFor(bucket);
+    const gx = (d.x + apron / bucket) / C;
+    const gy = (d.y + apron / bucket) / C;
+    return d.wMm === d.hMm && Math.abs(d.w / d.wMm - bucket) < 1e-9
+      && Math.abs(gx - Math.round(gx)) < 1e-9 && Math.abs(gy - Math.round(gy)) < 1e-9;
+  });
 
   const setSize = (key) => {
     S.paperSize = key;
@@ -507,79 +624,108 @@ describe('renderer paper hooks', () => {
   test('A6 vs A1 at fit-to-screen: same physical grain (mm), different on-screen size', () => {
     Paper.setActive(Paper.forType('cold-press'));
     setSize('a6');
-    const a6 = grainMatrix();
+    const a6 = surfaceDraws();
     setSize('a1');
-    const a1 = grainMatrix();
+    const a1 = surfaceDraws();
     expect(isPhysical(a6)).toBe(true);
     expect(isPhysical(a1)).toBe(true);
     const grainMm = window.Vectura.PAPERS.TYPES['cold-press'].grainMm;
-    // Grain lattice cell in document mm = (grainMm·bucket·1.6 tile px) × (1/bucket mm/px).
-    const cellMm = (x) => grainMm * x.tile.bucket * 1.6 * x.m.a;
-    expect(cellMm(a6)).toBeCloseTo(cellMm(a1), 10);
-    expect(cellMm(a6)).toBeCloseTo(grainMm * 1.6, 10);
-    // …but the small sheet fit-to-screen shows the grain much bigger.
+    // The small sheet fit-to-screen shows the (same, mm-sized) grain bigger…
     expect(grainMm * a6.pxPerMm).toBeGreaterThan(grainMm * a1.pxPerMm * 3);
-    // A tiny sheet still gets a sharp tile (bucket from on-screen px/mm).
-    expect(a6.tile.bucket).toBeGreaterThan(a1.tile.bucket);
+    // …and gets a sharper chunk resolution (bucket from on-screen px/mm).
+    expect(a6.bucket).toBeGreaterThan(a1.bucket);
   });
 
-  test('changing the paper size at a fixed zoom does not change the texture mapping', () => {
+  test('changing the paper size or orientation at a fixed zoom does not change the texture mapping', () => {
     setSize('a6');
-    r.scale = 2;
-    const small = grainMatrix();
+    r.scale = 2; r.offsetX = 0; r.offsetY = 0;
+    const small = surfaceDraws();
     setSize('a1');
-    r.scale = 2;
-    const big = grainMatrix();
+    r.scale = 2; r.offsetX = 0; r.offsetY = 0;
+    const big = surfaceDraws();
     S.paperOrientation = 'landscape';
     app.engine.setProfile('a1');
-    r.scale = 2;
-    const land = grainMatrix();
+    r.scale = 2; r.offsetX = 0; r.offsetY = 0;
+    const land = surfaceDraws();
     [small, big, land].forEach((x) => expect(isPhysical(x)).toBe(true));
-    expect(big.m.a).toBe(small.m.a);
-    expect(land.m.a).toBe(small.m.a);
-    expect(big.tile.key).toBe(small.tile.key);
-    expect(PT.periodMmFor(big.pxPerMm)).toBe(big.tile.size * big.m.a);
+    expect(big.bucket).toBe(small.bucket);
+    // The A6 sheet's chunks are exactly the A1 sheet's chunks at the same mm.
+    const key = (d) => `${d.x}|${d.y}|${d.wMm}`;
+    const bigKeys = new Set(big.draws.map(key));
+    small.draws.forEach((d) => expect(bigKeys.has(key(d))).toBe(true));
   });
 
   test('mutation witness: a sheet-fraction (stretched) mapping is rejected by the physical check', () => {
     setSize('a1');
-    const real = grainMatrix();
+    const real = surfaceDraws();
     const { width, height } = real.prof;
-    // What a "texture = fraction of the sheet" bug would produce.
-    const stretched = { ...real, m: new Mat(width / real.tile.size, 0, 0, height / real.tile.size, 0, 0) };
+    const stretched = { ...real, draws: [{ w: 256, x: 0, y: 0, wMm: width, hMm: height }] };
     expect(isPhysical(stretched)).toBe(false);
-    const sheetScaled = { ...real, m: new Mat(width / real.tile.size, 0, 0, width / real.tile.size, 0, 0) };
+    const sheetScaled = { ...real, draws: [{ w: 256, x: 0, y: 0, wMm: width, hMm: width }] };
     expect(isPhysical(sheetScaled)).toBe(false);
   });
 
-  test('zooming to an uncached bucket lends the nearest cached tile, builds the exact one when idle, then repaints', async () => {
+  test('a cold cache draws a cheap coarse level at once and refines when idle (no blocking build), then repaints', async () => {
+    setSize('a4');
+    Paper.setActive(Paper.forType('rough'));
     PT.clearCache();
-    const cfg = Paper.forType('rough');
-    const coarse = PT.getTile(cfg, 2);
     let ready = 0;
-    const lent = PT.getTile(cfg, 16, { onReady: () => { ready += 1; } });
-    expect(lent).toBe(coarse);
+    const ctx = recordingCtx(r.canvas);
+    ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.translate(r.offsetX, r.offsetY); ctx.scale(r.scale * 4, r.scale * 4);
+    expect(r.drawPaperTexture(ctx, app.engine.currentProfile, () => { ready += 1; })).toBe(true);
+    const st = PT.cacheStats();
+    // Only the coarse level (a handful of chunks) was built synchronously.
+    expect(st.builds).toBeLessThanOrEqual(2);
+    expect(st.queued).toBeGreaterThan(0);
     await new Promise((res) => setTimeout(res, 50));
-    expect(ready).toBe(1);
-    const exact = PT.getTile(cfg, 16);
-    expect(exact.bucket).toBe(16);
-    expect(exact).not.toBe(coarse);
+    for (let i = 0; i < 40 && PT.cacheStats().queued; i += 1) await new Promise((res) => setTimeout(res, 10));
+    expect(PT.cacheStats().queued).toBe(0);
+    expect(ready).toBeGreaterThan(0);
   });
 
-  test('tile cache: repeat lookups hit, a new seed misses', () => {
-    PT.clearCache();
-    const cfg = Paper.forType('kraft');
-    const first = PT.getTile(cfg, 4);
-    const again = PT.getTile({ ...cfg, color: '#000000', texture: 0.2 }, 4.2);
-    expect(again).toBe(first);
-    expect(PT.cacheStats()).toMatchObject({ hits: 1, misses: 1, builds: 1 });
-    const other = PT.getTile({ ...cfg, seed: 99 }, 4);
-    expect(other).not.toBe(first);
-    expect(PT.cacheStats()).toMatchObject({ hits: 1, misses: 2, builds: 2 });
-    // Witness: clearing the cache forces a rebuild of the same key.
-    PT.clearCache();
-    expect(PT.getTile(cfg, 4)).not.toBe(first);
-    expect(PT.cacheStats().builds).toBe(1);
+  test('chunk cache: repeat draws hit; the cache is capped in bytes', () => {
+    setSize('a4');
+    Paper.setActive(Paper.forType('kraft'));
+    surfaceDraws();
+    const st = PT.cacheStats();
+    const ctx = recordingCtx(r.canvas);
+    const dpr = r.getBackingDpr();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.translate(r.offsetX, r.offsetY); ctx.scale(r.scale, r.scale);
+    r.drawPaperTexture(ctx, app.engine.currentProfile);
+    expect(PT.cacheStats().builds).toBe(st.builds);
+    expect(PT.cacheStats().hits).toBeGreaterThan(st.hits);
+    expect(PT.cacheStats().bytes).toBeLessThanOrEqual(window.Vectura.PAPERS.LIMITS.cacheBytes);
+  });
+
+  test('export preview repaints itself (not the canvas) when refined texture lands', () => {
+    setSize('a4');
+    Paper.setActive(Paper.forType('cold-press'));
+    const seen = [];
+    const orig = PT.drawSurface;
+    PT.drawSurface = (ctx, cfg, opts) => { seen.push(opts.onReady); return true; };
+    try {
+      const ctx = recordingCtx(r.canvas);
+      ctx.scale(3, 3);
+      const cb = () => {};
+      r.drawPaperTexture(ctx, app.engine.currentProfile, cb);
+      expect(seen[0]).toBe(cb);
+    } finally { PT.drawSurface = orig; }
+  });
+
+  test('bleed halo stays on while panning (re-used, transformed) — no pop on/off', () => {
+    setSize('a4');
+    Paper.setActive(Paper.forType('newsprint'));
+    r.scale = 20; r.offsetX = -1000; r.offsetY = -1000;
+    r.isPan = false;
+    const idle = drawWith();
+    expect(r._paperHaloCanvas).toBeTruthy();
+    expect(idle.some((c) => c.op === 'drawImage' && c.image === r._paperHaloCanvas)).toBe(true);
+    r.isPan = true;
+    r.offsetX += 37;
+    try {
+      const panning = drawWith();
+      expect(panning.some((c) => c.op === 'drawImage' && c.image === r._paperHaloCanvas)).toBe(true);
+    } finally { r.isPan = false; }
   });
 });
 }

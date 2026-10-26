@@ -89,10 +89,10 @@ describe('PAPERS catalogue', () => {
     expect(T.tracing.absorbency).toBeLessThan(T['hot-press'].absorbency);
   });
 
-  test('limits: large low-frequency mottle tile is longer than an A0 short side', () => {
-    expect(PAPERS.LIMITS.mottlePeriodMm).toBeGreaterThan(841);
-    // Incommensurate with the power-of-two grain tile periods (in mm).
-    expect(Math.log2(PAPERS.LIMITS.mottlePeriodMm) % 1).not.toBe(0);
+  test('limits: chunks stay screen-sharp to extreme zoom and the cache is capped in bytes', () => {
+    expect(PAPERS.LIMITS.maxBucket).toBeGreaterThanOrEqual(128);
+    expect(PAPERS.LIMITS.cacheBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
+    expect(PAPERS.LIMITS.chunkPx).toBeGreaterThanOrEqual(128);
     expect(PAPERS.STORAGE_KEY).toBe('vectura.paperDefault');
   });
 });
@@ -132,10 +132,16 @@ describe('Vectura.Paper model', () => {
     V.SETTINGS.bgColor = '#121214';
   });
 
-  test('normalize clamps, validates and rejects unknown types', () => {
+  test('normalize clamps, validates, keeps future types and rejects unsafe ones', () => {
     expect(Paper.normalize({ type: 'cold-press', color: '#ABCDEF', texture: 4, bleed: -1, seed: 9.7 }))
       .toEqual({ type: 'cold-press', color: '#abcdef', texture: 1, bleed: 0, seed: 9 });
-    expect(Paper.normalize({ type: 'papyrus', color: '#fff' }).type).toBe('none');
+    // A type from a newer build is kept verbatim (renders as a plain sheet);
+    // anything that isn't a safe identifier is rejected.
+    expect(Paper.normalize({ type: 'papyrus', color: '#fff' }).type).toBe('papyrus');
+    expect(Paper.isRealistic({ type: 'papyrus', texture: 1, bleed: 1 })).toBe(false);
+    expect(Paper.isKnownType('papyrus')).toBe(false);
+    expect(Paper.normalize({ type: '<img src=x>', color: '#fff' }).type).toBe('none');
+    expect(Paper.normalize({ type: 'constructor' }).color).toBe('#121214');
     expect(Paper.normalize({ type: 'kraft', color: '#abc' }).color).toBe('#aabbcc');
     expect(Paper.normalize({ type: 'kraft', color: '#11223344' }).color).toBe('#112233');
     expect(Paper.normalize(null)).toMatchObject({ type: 'none', texture: 0.6, bleed: 0.5, seed: 1 });
@@ -204,15 +210,18 @@ describe('Vectura.Paper model', () => {
     expect(Paper.effective()).toMatchObject({ type: 'kraft', color: '#000000' });
   });
 
-  test('themeMaySync: only a plain project sheet with no user default follows the theme', () => {
-    expect(Paper.themeMaySync()).toBe(true);
-    Paper.setActive({ type: 'none', color: '#ffffff' });
-    expect(Paper.themeMaySync()).toBe(true);
+  test('themeMaySync: only a plain sheet still in the previous theme colour, with no user default, follows the theme', () => {
+    expect(Paper.themeMaySync('#121214')).toBe(true);
+    Paper.setActive({ type: 'none', color: '#121214' });
+    expect(Paper.themeMaySync('#121214')).toBe(true);
+    // A custom plain colour is the user's choice: never overwritten.
+    Paper.setActive({ type: 'none', color: '#ff0000' });
+    expect(Paper.themeMaySync('#121214')).toBe(false);
     Paper.setActive({ type: 'cold-press' });
-    expect(Paper.themeMaySync()).toBe(false);
-    Paper.setActive({ type: 'none', color: '#ffffff' });
+    expect(Paper.themeMaySync('#121214')).toBe(false);
+    Paper.setActive({ type: 'none', color: '#121214' });
     V.SETTINGS.paperDefault = Paper.fromLegacyBg('#ffffff');
-    expect(Paper.themeMaySync()).toBe(false);
+    expect(Paper.themeMaySync('#121214')).toBe(false);
   });
 
   test('equals compares the visible paper (rounded sliders), not object identity', () => {
@@ -223,28 +232,44 @@ describe('Vectura.Paper model', () => {
 });
 }
 
-// ---- from the former paper-texture.test.js ----
+// ---- texture synthesis ----
 {
 /*
  * Paper selector — texture synthesis (src/render/paper-texture.js).
  *
- * Fields must be seamless over the tile (periodic lattice), deterministic per
- * seed, and defined in physical millimetres: the tile resolution buckets on
- * on-screen px/mm only, never on the sheet size.
+ * The surface is one global, non-periodic function of document millimetres,
+ * rasterised at a zoom "bucket": the same bump must sit at the same mm
+ * position at every bucket (no re-randomising while zooming), nothing may
+ * repeat, and chunk resolution follows on-screen px/mm only.
  */
 
 const FILES = ['src/config/papers.js', 'src/core/rng.js', 'src/render/paper-texture.js'];
 
-// Mean |Δ| between horizontally adjacent pixels, inside the tile vs across
-// the wrap seam (last column → first column).
-const seamStats = (f, size) => {
-  let inner = 0;
-  let seam = 0;
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size - 1; x += 1) inner += Math.abs(f[y * size + x + 1] - f[y * size + x]);
-    seam += Math.abs(f[y * size] - f[y * size + size - 1]);
+const corr = (a, b) => {
+  const n = a.length;
+  let ma = 0; let mb = 0;
+  for (let i = 0; i < n; i += 1) { ma += a[i]; mb += b[i]; }
+  ma /= n; mb /= n;
+  let sab = 0; let saa = 0; let sbb = 0;
+  for (let i = 0; i < n; i += 1) {
+    const da = a[i] - ma; const db = b[i] - mb;
+    sab += da * db; saa += da * da; sbb += db * db;
   }
-  return { inner: inner / (size * (size - 1)), seam: seam / size };
+  return sab / Math.sqrt(saa * sbb);
+};
+
+// Box-downsample a size×size field by an integer factor.
+const down = (f, size, k) => {
+  const n = size / k;
+  const out = new Float32Array(n * n);
+  for (let y = 0; y < n; y += 1) {
+    for (let x = 0; x < n; x += 1) {
+      let s = 0;
+      for (let j = 0; j < k; j += 1) for (let i = 0; i < k; i += 1) s += f[(y * k + j) * size + x * k + i];
+      out[y * n + x] = s / (k * k);
+    }
+  }
+  return out;
 };
 
 describe('PaperTexture', () => {
@@ -260,63 +285,57 @@ describe('PaperTexture', () => {
 
   afterAll(() => runtime?.cleanup?.());
 
-  test('fields are seamless across the tile wrap (no edge discontinuity)', () => {
-    const size = 128;
-    const { height, fine } = PT.buildFields('cold-press', 3, 8, size);
-    [height, fine].forEach((f) => {
-      const { inner, seam } = seamStats(f, size);
-      expect(inner).toBeGreaterThan(0);
-      // The wrap seam is no rougher than an ordinary interior step.
-      expect(seam).toBeLessThan(inner * 2.5);
+  // The same 32 mm window at two adjacent zoom buckets, compared at the
+  // coarser resolution.
+  const bucketPair = (type, seed, b, x0 = 13.7, y0 = 41.2) => {
+    const mm = 32;
+    const lo = PT.heightField(type, seed, x0, y0, mm * b, b);
+    const hi = PT.heightField(type, seed, x0, y0, mm * b * 2, b * 2);
+    return corr(lo, down(hi, mm * b * 2, 2));
+  };
+
+  test('features are stable across zoom buckets (same bumps at the same mm)', () => {
+    ['cold-press', 'rough', 'hot-press', 'kraft'].forEach((type) => {
+      [2, 4, 8].forEach((b) => {
+        expect(bucketPair(type, 1, b), `${type} @${b}→${b * 2}`).toBeGreaterThan(0.85);
+      });
     });
   });
 
-  test('seam witness: a non-periodic field DOES show a seam (the check can fail)', () => {
-    // Mutation proof for the seam check above: an ordinary (non-wrapping)
-    // ramp-plus-noise field has a large seam relative to its interior steps.
-    const size = 128;
-    const f = new Float32Array(size * size);
-    for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) f[y * size + x] = x / size;
-    const { inner, seam } = seamStats(f, size);
-    expect(seam).toBeGreaterThan(inner * 2.5);
+  test('stability witness: an unrelated field (other seed) does NOT correlate', () => {
+    // Mutation proof for the check above: re-randomising per bucket (what a
+    // per-bucket lattice did) looks like a different seed.
+    const mm = 32; const b = 4;
+    const a = PT.heightField('rough', 1, 13.7, 41.2, mm * b, b);
+    const c = PT.heightField('rough', 2, 13.7, 41.2, mm * b, b);
+    expect(Math.abs(corr(a, c))).toBeLessThan(0.3);
   });
 
-  test('fields are deterministic per seed and differ between seeds', () => {
-    const a = PT.buildFields('rough', 7, 4, 64).height;
-    const b = PT.buildFields('rough', 7, 4, 64).height;
-    const c = PT.buildFields('rough', 8, 4, 64).height;
+  test('no repetition: windows 32–512 mm apart are uncorrelated', () => {
+    const b = 4; const size = 64;
+    const base = PT.heightField('kraft', 1, 10, 10, size, b);
+    [32, 64, 128, 256, 512].forEach((shift) => {
+      const other = PT.heightField('kraft', 1, 10 + shift, 10, size, b);
+      expect(Math.abs(corr(base, other)), `shift ${shift} mm`).toBeLessThan(0.3);
+    });
+  });
+
+  test('fields are deterministic per seed', () => {
+    const a = PT.heightField('rough', 7, 0, 0, 64, 4);
+    const b = PT.heightField('rough', 7, 0, 0, 64, 4);
     expect(Array.from(a)).toEqual(Array.from(b));
-    expect(Array.from(a)).not.toEqual(Array.from(c));
-    a.forEach((v) => { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1); });
+    a.forEach((v) => { expect(v).toBeGreaterThanOrEqual(-1); expect(v).toBeLessThanOrEqual(1); });
   });
 
-  test('tile buckets are powers of two of on-screen px/mm, clamped', () => {
+  test('chunk buckets are powers of two of on-screen px/mm, clamped, up to extreme zoom', () => {
     expect(PT.bucketFor(3.1)).toBe(4);
     expect(PT.bucketFor(5.5)).toBe(4);
     expect(PT.bucketFor(6)).toBe(8);
+    expect(PT.bucketFor(110)).toBe(128);
     expect(PT.bucketFor(0.01)).toBe(PAPERS.LIMITS.minBucket);
-    expect(PT.bucketFor(500)).toBe(PAPERS.LIMITS.maxBucket);
-  });
-
-  test('grain is physical: the lattice cell in mm is the same at every bucket', () => {
-    // Feature size in tile px scales with the bucket, so in document mm
-    // (tile px / bucket) the grain stays put as the view zooms.
-    const grainMm = PAPERS.TYPES['cold-press'].grainMm;
-    [1, 4, 16].forEach((bucket) => {
-      const cellPx = grainMm * bucket * 1.6;
-      expect(cellPx / bucket).toBeCloseTo(grainMm * 1.6, 10);
-    });
-    // Tile period in mm is a property of the zoom bucket only.
-    expect(PT.periodMmFor(4)).toBe(PT.tileSizeFor(4) / 4);
-    expect(PT.periodMmFor(16)).toBe(PT.tileSizeFor(16) / 16);
-  });
-
-  test('cache key ignores colour/texture/bleed (applied at draw time) but not type/seed/bucket', () => {
-    const base = { type: 'kraft', color: '#c39a6b', texture: 0.7, bleed: 0.5, seed: 1 };
-    expect(PT.cacheKey({ ...base, color: '#000000', texture: 0.1, bleed: 1 }, 4)).toBe(PT.cacheKey(base, 4));
-    expect(PT.cacheKey({ ...base, seed: 2 }, 4)).not.toBe(PT.cacheKey(base, 4));
-    expect(PT.cacheKey({ ...base, type: 'rough' }, 4)).not.toBe(PT.cacheKey(base, 4));
-    expect(PT.cacheKey(base, 8)).not.toBe(PT.cacheKey(base, 4));
+    expect(PT.bucketFor(5000)).toBe(PAPERS.LIMITS.maxBucket);
+    // A chunk covers chunkPx / bucket mm — a property of zoom, not sheet size.
+    expect(PT.chunkMmFor(4)).toBe(PAPERS.LIMITS.chunkPx / 4);
   });
 });
 }
