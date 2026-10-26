@@ -6,10 +6,30 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
-### Security (SVG sanitizer fallback hardening, v1.4.20)
+### Security (SVG sanitizer fallback hardening, v1.4.23)
 - **Obfuscated script schemes.** The no-DOMParser fallback now decodes character references and drops whitespace/control characters before checking `href`, `xlink:href`, `src` and animation `to`/`from`/`by`/`values`, as the DOM path does. `javascript&colon;`, `jav&#x61;script:`, `&#106;avascript:`, `java&#9;script:`, `ja&NewLine;vascript:`, a literal tab, and `<animate to="java&#115;cript:">` are neutralised (href rewritten to `#`, animation dropped). The final rejection check reads the decoded form.
 - **Linear time.** A single-pass tokenizer replaces the lazy `[\s\S]*?` strips, which went quadratic on unmatched open tags (`'<animate to="'` x 25k: 21.9 s before, under 1 ms after). The fallback refuses input over 8 MiB; the browser DOM path has no cap and is unchanged.
 - **Tags are rebuilt.** Every tag is re-emitted from its parsed name and attributes, so unquoted handlers are stripped and unquoted `javascript:` hrefs become `#` with the element kept. Comments, processing instructions and DOCTYPE (with entity declarations) are dropped; CDATA becomes escaped text. An unterminated tag, quote, comment or dropped element, or a `<` inside a tag, still returns an empty SVG.
+
+### Touch nightly on hosted Linux (v1.4.20, branch `fix/touch-nightly-linux`)
+The touch nightly had 139 red cells (123 failed, 16 flaky) in runs 39161828852 and 39127235973, the same in both. Each fix has a RED proof or a mutation proof in its commit.
+
+#### Product fixes
+- **A long-press no longer takes back a drag (C1, 43 cells).** A slow, deliberate drag of a gizmo ring, a handle, a pen anchor or an object that rested for 500 ms opened the canvas menu and reverted the drag. The hold now yields once the touch crossed the drag slop, or once the finger moved during a drag that edits from the first pixel (`TouchHold` `shouldYield`, `renderer.longPressShouldYield`, `LONG_PRESS_YIELD_FLAGS`). A still hold opens the menu as before.
+- **Modifier-bar double-tap lock** is timed by `event.timeStamp`, not by when the handler runs.
+- **Touch layout does not depend on font metrics (B3).** A long parameter label no longer squeezes the last info button under 44 px. Touch-wide modifier keys are a fixed 60 px (bar 262 px on every OS), so the both-collapsed canvas share is 75.07 % on Linux (was 74.96 %). The right-pane tab strip no longer clips "Pens". A touch toast is at most 320 px wide, the span `toast.js` assumes when it clears the bottom chrome.
+- **iOS value editors commit on an outside tap (B4).** The slider value chip and the min/max editor commit on a pointerdown outside them (iOS does not blur on a tap on text). `enterkeyhint` and `inputmode` are set as attributes.
+- **Petal Designer canvases keep their size (B5).** The backing store was sized from the border box, so each redraw grew the canvas by about 2 px for 3 s.
+
+#### Harness fixes
+- **Frozen page clock (B1, 48 cells).** New `tests/e2e/helpers/app-clock.js`. Timer-dependent touch tests (long-press, pointercancel, gestures, modals pinch, shell-header, modifier bar) advance the page clock by the gaps they name, so a slow runner cannot fire the 500 ms hold between two steps. Holds are asserted through `touchhold:*` events.
+- **One round trip per sweep (B2, 11 cells).** New `sweep.inPage` runs a whole targets-* sweep in one `page.evaluate`. The "every algorithm" test is 25 per-type tests plus a roster test. All targets-* files run fullyParallel. Docker noble `webkit-ipad-landscape` targets-*: 1,390 s to 495 s.
+- **Transition end states (B5).** Drawer width and the Q22 scroll cue poll the end state, not a fixed wait.
+
+#### CI
+- **`touch-e2e-nightly` runs 21 per-project legs** (`--project=<p> --shard=i/n`) instead of 10 `--shard` slices over all 11 projects. The old slices were cut by test count; one took 97 minutes. Legs are sized from the hosted per-file times (estimate 15 to 23 minutes each, about 400 runner-minutes in total, was about 514). WebKit projects never get fewer legs than their Chromium twin. Each leg installs one engine. `--max-failures=20` stops a broken leg (retries still report flakes). Leg timeout 45 minutes. Details: `docs/testing.md` → "Touch Nightly Legs".
+- Not yet measured on hosted runners: dispatch `gh workflow run test.yml --ref fix/touch-nightly-linux`, then commit the linux audit baseline and journey ledger from `touch-audit-measured`.
+- Follow-ups logged: PRH-038 (ctxbar residual font dependence), PRH-039 (toast placement assumes a 320 px span).
 
 ### Security (CodeQL alerts)
 - **SVG sanitizer regex fallback.** The no-DOMParser path now strips until stable, matches `</script >`-style end tags, and returns an empty SVG if any `<script`, `<style`, `<foreignObject`, `on*=` or `javascript:` remains inside a tag (text content such as `one=1` or a mention of `javascript:` is kept). The control-character class no longer overlaps `\s`.

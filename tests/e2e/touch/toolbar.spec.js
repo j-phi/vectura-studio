@@ -11,6 +11,16 @@ const EVIDENCE_013 = evidenceDir('TUX-013');
 // TUX-013 and TUX-015 append their toolbar specs to this file later.
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// The ctxbar at rest: shown, its show transition (translateY 4 px -> 0, 120 ms) finished, two frames passed. Its rect
+// includes that transform, so a read mid-transition reports a few px of drift that is not a position change.
+// The predicate is synchronous: waitForFunction takes a returned Promise as truthy without awaiting it.
+const ctxbarSettled = async (page) => {
+  await page.waitForFunction(() => {
+    const b = document.querySelector('.ctxbar');
+    return !!b && b.classList.contains('is-visible') && !b.getAnimations().some((a) => a.playState === 'running');
+  }, null, { polling: 'raf' });
+  await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res))));
+};
 
 // Surface table. Selectors and mode names come from toolbar.js / buildSharedToolbarMarkup.
 const SURFACES = [
@@ -947,7 +957,7 @@ test.describe('TUX-016 footer and handles', () => {
     expect(fitsDown || before.top + delta.y - 12 > host.top, 'target fits host vertically').toBe(true);
     const hc = centre(await rectOf(page, '.ctxbar .ctxbar-handle'));
     await drag(page, hc, { x: hc.x + delta.x, y: hc.y + delta.y }, { steps: 10 });
-    await sleep(200);
+    await ctxbarSettled(page);
     const after = await rectOf(page, '.ctxbar');
     const ev = await page.evaluate(() => window.__tux016);
     expect(Math.abs(after.left - before.left - delta.x), `dx ${after.left - before.left}`).toBeLessThanOrEqual(4);
@@ -967,12 +977,12 @@ test.describe('TUX-016 footer and handles', () => {
     } else {
       await touchPhase(page, 'cancel', [{ x: h2.x + 10, y: h2.y + 8, id: 0 }]);
     }
-    await sleep(100);
+    await ctxbarSettled(page);
     const rested = await rectOf(page, '.ctxbar');
     const vp = await rectOf(page, '#viewport-container');
     const from = { x: vp.left + vp.width * 0.5, y: vp.top + vp.height * 0.6 };
     await drag(page, from, { x: from.x + 120, y: from.y - 120 }, { steps: 8 });
-    await sleep(150);
+    await ctxbarSettled(page);
     const final = await rectOf(page, '.ctxbar');
     expect(Math.abs(final.left - rested.left), `stuck dx ${final.left - rested.left}`).toBeLessThanOrEqual(1);
     expect(Math.abs(final.top - rested.top), `stuck dy ${final.top - rested.top}`).toBeLessThanOrEqual(1);

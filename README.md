@@ -659,6 +659,12 @@ CI lives in `.github/workflows/test.yml`:
 - **Help and hints.** Help has a Touch tab and a Touch toggle. Status hints use touch words after touch input. See the Touch gestures table under How to Use.
 - **iOS files.** Open `.vectura` from the Files app, save through the share sheet, and import large photos safely.
 - **Test and release gates.** Touch target audit, finger-only journeys, static touch guard and a real-device checklist. Real-device results are pending, so the release label for touch is not yet claimed. Details: `CHANGELOG.md` and `docs/touch-audit/`.
+
+### 1.4.20 - Touch nightly on Linux
+- **Holds and drags.** A long-press on the canvas no longer opens its menu in the middle of a slow drag and reverts it (gizmo rings, handles, pen anchors, objects).
+- **Touch layout on every OS.** Info buttons, the modifier bar, the right-pane tabs and toasts no longer depend on font metrics. On iOS, the slider value chip and the min/max editor commit when you tap outside them.
+- **Faster, steadier touch nightly.** Timer-dependent touch tests run on a frozen page clock, target sweeps run in one browser call, and the nightly runs in 21 per-project legs (target 25 minutes each). Details: `CHANGELOG.md` and `docs/testing.md`.
+
 ### 1.4.18 - Test and CI overhaul
 - **One required check.** `ci-ok` gates every PR. PRs run the whole Vitest roster in 8 uninstrumented shards, a 4-leg browser smoke, perf and the routed Scene3D audits. Coverage, the full touch roster and linux pixel snapshots run on `main` and nightly, and a red run opens an issue.
 - **New canaries.** Every bundled preset, 13 legacy saved files, every algorithm in a real browser, SVG goldens for 11 more algorithms and 35 canonical 3D scenes. They found 6 product defects (PRH-029 to PRH-034), logged in `plans.md`.

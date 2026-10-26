@@ -2014,6 +2014,18 @@
       }
     }
 
+    // C1 (TUX-034b): true when the canvas long-press must yield to a drag that has started.
+    // A slop-gated drag counts once it crossed the touch drag slop; a drag that edits from the
+    // first pixel (LONG_PRESS_YIELD_FLAGS, or a Direct drag with no touch slop) counts once the
+    // finger has moved at all. A stationary hold never yields, so the menu still opens there.
+    longPressShouldYield({ moved = false } = {}) {
+      if (this.touchSlopCrossed) return true;
+      if (!moved) return false;
+      const dd = this.directDrag;
+      if (dd && (!dd.touchStartClient || dd.touchSlopCrossed)) return true;
+      return window.Vectura.TouchGestureArbiter.LONG_PRESS_YIELD_FLAGS.some((name) => !!this[name]);
+    }
+
     // Clears every interaction flag (the single list lives in the arbiter) plus the
     // companion state those interactions leave behind. Does NOT restore document state:
     // rollback runs the cancel paths and the snapshot restore first.

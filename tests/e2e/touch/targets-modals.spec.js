@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
 const core = require('../helpers/target-audit-core');
-const touch = require('../helpers/touch');
+const sweep = require('../helpers/target-sweep');
 const { PROJECTS } = require('./viewports');
 const { STATES } = require('./target-audit-states');
 
@@ -76,29 +76,38 @@ async function enumerate(page, root) {
   }, { root, sel: TARGETS });
 }
 
+// One page.evaluate per modal (sweep.inPage) instead of ~4 round trips per target; same steps and order as before.
 async function measure(page, root) {
   const items = await enumerate(page, root);
   if (!items) return null;
-  const bad = []; const stolen = [];
-  for (const it of items) {
-    const loc = page.locator(`[data-b3-probe="${it.i}"]`);
-    await loc.evaluate((e) => e.scrollIntoView({ block: 'center', inline: 'center' }));
-    await page.waitForTimeout(30);
-    const a = await touch.hitArea(page, loc);
-    if (a.w < MIN || a.h < MIN) bad.push(`${it.label} ${a.w}x${a.h}`);
-    const own = await loc.evaluate((e) => {
+  const res = await sweep.inPage(page, async ({ items }, kit) => {
+    const out = [];
+    for (const it of items) {
+      const e = document.querySelector(`[data-b3-probe="${it.i}"]`);
+      if (!e) { out.push({ missing: true }); continue; }
+      e.scrollIntoView({ block: 'center', inline: 'center' });
+      await kit.frame();
+      const a = kit.hitArea(e);
       const r = e.getBoundingClientRect();
       const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      return !!t && (t === e || e.contains(t) || t.contains(e) || (t.tagName === 'LABEL' && t.control === e));
-    });
-    if (!own) stolen.push(it.label);
-  }
+      out.push({ w: a.w, h: a.h, own: !!t && (t === e || e.contains(t) || t.contains(e) || (t.tagName === 'LABEL' && t.control === e)) });
+    }
+    return out;
+  }, { items });
+  const bad = []; const stolen = [];
+  res.forEach((m, k) => {
+    const it = items[k];
+    if (m.missing) { bad.push(`${it.label} left the DOM during the sweep`); return; }
+    if (m.w < MIN || m.h < MIN) bad.push(`${it.label} ${m.w}x${m.h}`);
+    if (!m.own) stolen.push(it.label);
+  });
   return { count: items.length, bad, stolen };
 }
 
 test.describe('TUX-041 B3 modals', () => {
   test.use({ reducedMotion: 'reduce' });
-  test.describe.configure({ retries: 0 });
+  // Every test boots its own page, so the file runs fully parallel.
+  test.describe.configure({ mode: 'parallel', retries: 0 });
 
   for (const [id, m] of Object.entries(MODALS)) {
     test(`${id}: every modal target is at least 44 x 44`, async ({ page, baseURL }, testInfo) => {
@@ -229,17 +238,20 @@ test.describe('TUX-041 B3 modals', () => {
     await runState(page, 'generator-picker');
     await page.evaluate(() => { const t = document.getElementById('generator-module-trigger'); if (document.getElementById('gm-module-menu')?.checkVisibility()) t.click(); });
     await page.waitForFunction(() => !document.getElementById('gm-module-menu')?.checkVisibility());
-    const n = await page.locator('#dynamic-controls button.info-btn').count();
-    const bad = []; let seen = 0;
-    for (let i = 0; i < n; i += 1) {
-      const loc = page.locator('#dynamic-controls button.info-btn').nth(i);
-      if (!(await loc.evaluate((e) => e.checkVisibility({ checkVisibilityCSS: true })))) continue;
-      seen += 1;
-      await loc.evaluate((e) => e.scrollIntoView({ block: 'center' }));
-      await page.waitForTimeout(40);
-      const a = await touch.hitArea(page, loc);
-      if (a.w < MIN || a.h < MIN) bad.push(`#${i} ${a.w}x${a.h}`);
-    }
+    const { bad, seen } = await sweep.inPage(page, async ({ min }, kit) => {
+      const bad = []; let seen = 0;
+      const all = [...document.querySelectorAll('#dynamic-controls button.info-btn')];
+      for (let i = 0; i < all.length; i += 1) {
+        const e = all[i];
+        if (!e.checkVisibility({ checkVisibilityCSS: true })) continue;
+        seen += 1;
+        e.scrollIntoView({ block: 'center' });
+        await kit.frame();
+        const a = kit.hitArea(e);
+        if (a.w < min || a.h < min) bad.push(`#${i} ${a.w}x${a.h}`);
+      }
+      return { bad, seen };
+    }, { min: MIN });
     expect(seen, 'info buttons found in the generator controls').toBeGreaterThan(0);
     expect(bad, 'info buttons under 44').toEqual([]);
   });

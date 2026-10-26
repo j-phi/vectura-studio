@@ -4,6 +4,7 @@ const path = require('path');
 const { test, expect } = require('@playwright/test');
 const { PROJECTS } = require('./viewports');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 
 // TUX-046: legacy #modal-overlay scaffold on touch (Export, Help, info, color picker).
 // Fix round: Document Setup (#settings-panel, R10) and the Save Preset sheet (.vectura-modal,
@@ -715,6 +716,7 @@ test.describe('TUX-047 pinch and two-finger pan', () => {
       const s = spec(testInfo);
       // Inline variant runs on iPadL and iPhL only (shared binding, saves CPU); not applicable elsewhere.
       test.skip(kind === 'inline' && !['iPadL', 'iPhL'].includes(s.device), 'inline PD variant runs on iPadL/iPhL only');
+      await clock.install(page);
       await openPd(page, kind);
       await setTool(page, tool);
       const vr = await visibleRect(page, 'pd');
@@ -726,8 +728,11 @@ test.describe('TUX-047 pinch and two-finger pan', () => {
       expect(center, 'a clear pinch spot exists on the canvas').toBeTruthy();
       const a = await pdSnap(page);
       const W = { x: (center.x - vr.rawLeft - a.ox) / a.zoom, y: (center.y - vr.rawTop - a.oy) / a.zoom };
-      await touch.pinch(page, center, { startDist, endDist, steps: 10, staggerMs: stagger });
-      await page.waitForTimeout(350);
+      // Frozen page clock: the 60 ms stagger is app time, under the designer's 250 ms one-finger gate (nightly B1).
+      await clock.freeze(page);
+      await touch.pinch(page, center, { startDist, endDist, steps: 10, staggerMs: stagger, frozenClock: true });
+      await clock.advance(page, 350);
+      await clock.thaw(page);
       await raf2(page);
       const b = await pdSnap(page);
       const msg = `${kind}/${tool}/${stagger}: fills ${a.fills}->${b.fills} history ${a.history}->${b.history} layerFills ${a.layerFills}->${b.layerFills} zoom ${a.zoom} -> ${b.zoom}`;

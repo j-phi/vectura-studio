@@ -66,6 +66,16 @@ test.describe('TUX-038 value entry', () => {
     await touch.tap(page, chip);
     const inputs = page.locator('.dual-value-editor input');
     await expect(inputs).toHaveCount(2);
+    // The editor fits the row it replaces the chip in: with a longer label (Linux font metrics) an overflowing
+    // max input ran under the pane edge and the canvas (nightly, iPad landscape).
+    const fit = await page.evaluate(() => {
+      const ed = document.querySelector('.dual-value-editor');
+      const row = ed.parentElement.getBoundingClientRect();
+      const r = ed.getBoundingClientRect();
+      return { left: r.left, right: r.right, rowLeft: row.left, rowRight: row.right };
+    });
+    expect(fit.right, `dual editor right edge ${fit.right} inside its row (${fit.rowRight})`).toBeLessThanOrEqual(fit.rowRight + 0.5);
+    expect(fit.left).toBeGreaterThanOrEqual(fit.rowLeft - 0.5);
     for (let i = 0; i < 2; i += 1) {
       await expect(inputs.nth(i), `input ${i} inputmode`).toHaveAttribute('inputmode', 'decimal');
       await inViewport(page, inputs.nth(i));

@@ -1,6 +1,7 @@
 const { evidenceDir, shoot } = require('../helpers/evidence');
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const clock = require('../helpers/app-clock');
 
 // TUX-031: touch equivalents for keyboard-only controls. Isolation exit (Escape), Arrange
 // (Cmd+[ / Cmd+]) and the shape-property verify-first checks. Fingers only; SETUP uses the app API.
@@ -8,6 +9,8 @@ const EVID = evidenceDir('TUX-031');
 const phoneLayout = (page) => page.evaluate(() => document.body.classList.contains('phone-layout'));
 
 const boot = async (page) => {
+  // Canvas drags run on a frozen page clock (clock.frozenDrag): a slow runner cannot stretch them past the 500 ms hold.
+  await clock.install(page);
   await page.goto('/');
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine));
 };
@@ -77,7 +80,7 @@ test.describe('TUX-031 keyboard-only controls by finger', () => {
     await page.evaluate(() => { window.app.ui.setActiveTool('shape-polygon'); });
     const r = await page.evaluate(() => { const b = document.querySelector('#main-canvas').getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; });
     const from = { x: r.x + r.w * 0.45, y: r.y + r.h * 0.35 };
-    await touch.drag(page, from, { x: from.x + 90, y: from.y + 90 });
+    await clock.frozenDrag(page, from, { x: from.x + 90, y: from.y + 90 });
     await expect.poll(() => page.evaluate(() => window.app.renderer.getShapePropsState && window.app.renderer.getShapePropsState() && window.app.renderer.getShapePropsState().type)).toBe('polygon');
     const sides0 = await page.evaluate(() => window.app.renderer.getShapePropsState().sides);
     const btn = page.locator('.ctxbar.is-visible .ctxbar-btn').filter({ has: page.locator('svg') }).locator('xpath=self::*[contains(@title,"hape") or contains(@aria-label,"hape")]').first();

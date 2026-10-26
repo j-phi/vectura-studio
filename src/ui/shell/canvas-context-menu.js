@@ -485,7 +485,8 @@
   // ── TUX-034b: touch long-press on the canvas ──────────────────────────
   // With Select, Direct Selection or Hand, a finger held 500 ms opens this menu. Drawing and fill tools keep their own
   // press-and-hold meaning (clause 11), so the hold never starts there. Quick move precedence (Q4): on a selected object
-  // a move of 6 px or more starts the move, so the hold slop there is 6 px; elsewhere it is the 10 px TouchHold slop.
+  // a move of 6 px or more starts the move, so the hold slop there is the touch drag slop (6 px); elsewhere it is the 10 px TouchHold slop.
+  // Any drag that starts before the slop (C1) also ends the hold through shouldYield.
   const HOLD_TOOLS = ['select', 'direct', 'hand'];
   const worldAt = (renderer, x, y) => {
     const box = renderer.canvas.getBoundingClientRect();
@@ -500,7 +501,15 @@
       const hit = renderer.findLayerAtPoint(worldAt(renderer, e.clientX, e.clientY), false, null, e.pointerType);
       onSelected = !!(hit && renderer.selectedLayerIds && renderer.selectedLayerIds.has(hit.id));
     } catch (_e) { /* no hit-test */ }
-    return { key: 'canvas', anchorEl: el, popRing: true, slopPx: onSelected ? 6 : 0 };
+    const dragSlop = typeof renderer._touchDragSlopPx === 'function' ? renderer._touchDragSlopPx() : 6;
+    return { key: 'canvas', anchorEl: el, popRing: true, slopPx: onSelected ? dragSlop : 0 };
+  };
+  // C1: the hold yields to any drag the same touch started (a move past the drag slop, or a gizmo,
+  // handle, corner or anchor drag that edits from the first pixel), so abortActiveInteraction never
+  // takes back a slow, deliberate drag.
+  const holdShouldYield = (info) => {
+    const renderer = getRenderer();
+    return !!(renderer && typeof renderer.longPressShouldYield === 'function' && renderer.longPressShouldYield(info));
   };
   const holdFire = ({ x, y }) => {
     const renderer = getRenderer();
@@ -516,7 +525,7 @@
   const bindHold = (canvas) => {
     const TH = UI.TouchHold;
     if (!TH || typeof TH.bind !== 'function' || state.unbindHold) return;
-    state.unbindHold = TH.bind(canvas, { selector: '#main-canvas', resolve: holdResolve, onFire: holdFire, pointerTypes: ['touch', 'pen'] });
+    state.unbindHold = TH.bind(canvas, { selector: '#main-canvas', resolve: holdResolve, onFire: holdFire, shouldYield: holdShouldYield, pointerTypes: ['touch', 'pen'] });
   };
 
   const findCanvas = () => {

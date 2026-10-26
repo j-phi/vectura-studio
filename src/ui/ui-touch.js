@@ -91,18 +91,21 @@
         btn.querySelector('.touch-mod-label').textContent = task.name;
         btn.querySelector('.touch-mod-short').textContent = task.shortLabel;
         // Pointer timing, not dblclick: touch-action:manipulation removes dblclick on iOS.
+        // The double-tap lock is timed by the event's own timeStamp, so a late handler on a busy main
+        // thread cannot split a quick double-tap. Date.now() is the fallback when no stamp exists.
+        const stampOf = (e) => (e && Number.isFinite(e.timeStamp) && e.timeStamp > 0 ? e.timeStamp : Date.now());
         btn.addEventListener('pointerdown', () => { btn.__tuxDown = true; });
         btn.addEventListener('pointercancel', () => { btn.__tuxDown = false; });
         btn.addEventListener('pointerup', (e) => {
           if (e.pointerType === 'mouse' && e.button > 0) return;
           btn.__tuxDown = false;
-          btn.__tuxTapAt = Date.now();
+          btn.__tuxTapAt = stampOf(e);
           IM.tap(task.id, btn.__tuxTapAt);
         });
         // Keyboard and assistive-tech activation arrive as a click with detail 0 and no pointerup.
         btn.addEventListener('click', (e) => {
           if (e.detail !== 0) return;
-          IM.tap(task.id, Date.now());
+          IM.tap(task.id, stampOf(e));
         });
         bar.appendChild(btn);
       });

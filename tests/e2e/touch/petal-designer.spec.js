@@ -99,6 +99,24 @@ test('pop-out window lies fully inside the viewport', async ({ page }, testInfo)
   expectFits(await winRect(page), page.viewportSize());
 });
 
+// ---- canvas size settles (nightly B5) ---------------------------------------------------------
+// The designer sized each canvas's backing store from its border box. With CSS height auto the next layout took the
+// 2 px border into the aspect ratio, so the canvas grew a little on every redraw for seconds (665 -> 734 px on iPhone
+// landscape; > 8 s on a slow runner, which timed out the audit's geometry-settle wait). The size must hold once drawn.
+test('the designer canvases keep their size after the first draw', async ({ page }, testInfo) => {
+  const s = spec(testInfo);
+  test.skip(!['iPhL', 'iPadL'].includes(s.device), 'one phone and one tablet project');
+  await openWindow(page, testInfo);
+  const sizes = () => page.evaluate(() => [...document.querySelectorAll('.petal-cell canvas')]
+    .filter((c) => c.getBoundingClientRect().width > 0)
+    .map((c) => { const r = c.getBoundingClientRect(); return `${Math.round(r.width)}x${Math.round(r.height)}`; }));
+  await sleep(300);
+  const a = await sizes();
+  expect(a.length, 'designer canvases are drawn').toBeGreaterThan(0);
+  await sleep(1500);
+  expect(await sizes(), 'canvas sizes 1.5 s later').toEqual(a);
+});
+
 // ---- phone sheet (clause 5) -------------------------------------------------------------------
 test('phone: pop-out is a full-screen sheet, close is tappable, header cannot drag it', async ({ page }, testInfo) => {
   const s = spec(testInfo);

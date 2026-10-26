@@ -13,11 +13,11 @@ const touch = require('../helpers/touch');
 const { engineSupports, touchPhase, hitArea } = touch;
 
 const SURFACES = {
-  noise: { grip: '#left-panel-content .noise-header .noise-grip', ind: '.noise-drop-indicator', pane: 'left' },
-  effect: { grip: '#left-panel-content .image-effect-header .noise-grip', ind: '.image-effect-drop-indicator', pane: 'left' },
-  modifier: { grip: '#left-panel-content .noise-grip[aria-label="Reorder modifier"]', ind: '.noise-drop-indicator', pane: 'left' },
-  mirror: { grip: '#left-panel-content .mp-row-grip', ind: '.mp-drop-indicator', pane: 'left' },
-  pen: { grip: '#pen-list .pen-grip', ind: '.layer-drop-indicator', pane: 'right' },
+  noise: { grip: '#left-panel-content .noise-header .noise-grip', ind: '.noise-drop-indicator', item: '.noise-card', pane: 'left' },
+  effect: { grip: '#left-panel-content .image-effect-header .noise-grip', ind: '.image-effect-drop-indicator', item: '.image-effect-card', pane: 'left' },
+  modifier: { grip: '#left-panel-content .noise-grip[aria-label="Reorder modifier"]', ind: '.noise-drop-indicator', item: '.noise-card', pane: 'left' },
+  mirror: { grip: '#left-panel-content .mp-row-grip', ind: '.mp-drop-indicator', item: '.mp-row', pane: 'left' },
+  pen: { grip: '#pen-list .pen-grip', ind: '.layer-drop-indicator', item: '.pen-item', pane: 'right' },
 };
 
 const boot = async (page) => {
@@ -156,8 +156,25 @@ const dragSecondToFirst = async (page, key, { end = true } = {}) => {
   for (let i = 1; i <= 10; i += 1) {
     await touchPhase(page, 'move', [{ x, y: start.y + (edgeY - start.y) * (i / 10), id: 0 }]);
   }
-  for (let t = 0; t < 15; t += 1) {
-    await page.waitForTimeout(100);
+  // Hold in the edge zone until the auto-scroll has carried the drop indicator above card 1, then lift. The hold is
+  // counted in animation frames (the auto-scroll steps once per frame), not wall time: a slow WebKit runner painted
+  // ~4 frames/s, so 1.5 s of wall time scrolled only ~430 of the px needed (nightly run 40131398918).
+  // HOLD_ROUNDS x 2 frames x >= 14 px per frame covers several times the tallest fixture; a broken auto-scroll never
+  // gets there and the order check fails.
+  const HOLD_ROUNDS = 200;
+  for (let t = 0; t < HOLD_ROUNDS; t += 1) {
+    const placed = await page.evaluate(({ ind, item }) => new Promise((res) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const dragged = document.querySelector('.dragging');
+        const marker = dragged && dragged.parentElement.querySelector(`:scope > ${ind}`);
+        if (!marker) return res(false);
+        for (let n = marker.previousElementSibling; n; n = n.previousElementSibling) {
+          if (n !== dragged && n.matches(item)) return res(false);
+        }
+        return res(true);
+      }));
+    }), SURFACES[key]);
+    if (placed) break;
     await touchPhase(page, 'move', [{ x, y: edgeY + (t % 2), id: 0 }]);
   }
   if (end) await touchPhase(page, 'end', [{ x, y: edgeY, id: 0 }]);

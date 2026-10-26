@@ -164,6 +164,14 @@ describe('TouchGestureArbiter pointer map and latch', () => {
     expect(A.CANCEL_PATHS[0]).toBe('_cancelSceneObjectGizmoDrag');
     expect(A.CANCEL_PATHS[A.CANCEL_PATHS.length - 1]).toBe('cancelLayerDrag');
   });
+
+  it('C1: every long-press yield flag is an interaction flag; soft marquee/pan/pending-move flags are not yield flags', () => {
+    expect(A.LONG_PRESS_YIELD_FLAGS.length).toBeGreaterThan(10);
+    A.LONG_PRESS_YIELD_FLAGS.forEach((f) => expect(A.INTERACTION_FLAGS).toContain(f));
+    ['isPan', 'isSelecting', 'isLassoSelecting', 'isDirectMarquee', '_touchMovePending', 'directDrag']
+      .forEach((f) => expect(A.LONG_PRESS_YIELD_FLAGS).not.toContain(f));
+    ['rotation3DDrag', '_sceneObjectGizmoDrag', 'isLayerDrag', 'penAnchorDrag'].forEach((f) => expect(A.LONG_PRESS_YIELD_FLAGS).toContain(f));
+  });
 });
 
 describe('TUX-021: Apple Pencil pointer preempts touch (pen-preempts-touch policy)', () => {

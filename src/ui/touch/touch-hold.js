@@ -9,6 +9,8 @@
  *   bind(rootEl, { selector, resolve(target) -> {key, anchorEl} | null,
  *                  onFire({x, y, key, target}), pointerTypes: ['touch','pen'],
  *                  capture: false }) -> unbind()
+ *   shouldYield({moved}) -> boolean: optional. Asked on every move of the held pointer and again
+ *   just before the fire. True cancels the hold (reason 'interaction'): the owner started a drag.
  *   capture:true listens in the capture phase (TUX-039: an icon-button owner on <body> must
  *   start before a card owner that sits deeper in the tree).
  *   isSuppressingContextMenu() -> boolean
@@ -135,8 +137,16 @@
       active = null;
     };
 
+    // The owner's own pointermove handler can run after ours, so a drag that started on this move is
+    // seen on the next move or at the fire check below (a slow finger may rest past holdMs).
+    const yieldsNow = (h) => {
+      if (typeof opts.shouldYield !== 'function') return false;
+      try { return !!opts.shouldYield({ moved: !!h.moved }); } catch (_e) { return false; }
+    };
+
     const fire = (h) => {
       if (active !== h) return;
+      if (yieldsNow(h)) { endActive('interaction', h); return; }
       let target = h.target;
       if (!target.isConnected) {
         // renderLayers() rebuilt the card while held: find it again by id.
@@ -180,7 +190,7 @@
       const h = {
         pointerId: e.pointerId, x: e.clientX, y: e.clientY, t0: now(), target: el, key: hit.key,
         fired: false, ring: null, ringTimer: 0, fireTimer: 0, blockers: null, restoreDrag: null,
-        slopPx: hit.slopPx || 0, popRing: !!hit.popRing,
+        slopPx: hit.slopPx || 0, popRing: !!hit.popRing, moved: false,
       };
       // A draggable card would start a native HTML drag (lift + ghost image) on a touch hold.
       if (el.draggable === true) {
@@ -190,7 +200,10 @@
       }
       h.onMove = (ev) => {
         if (ev.pointerId !== h.pointerId || h.fired) return;
-        if (Math.hypot(ev.clientX - h.x, ev.clientY - h.y) >= (h.slopPx || c.slopPx)) endActive('moved', h);
+        const dist = Math.hypot(ev.clientX - h.x, ev.clientY - h.y);
+        if (dist > 0) h.moved = true;
+        if (dist >= (h.slopPx || c.slopPx)) { endActive('moved', h); return; }
+        if (yieldsNow(h)) endActive('interaction', h);
       };
       h.onUp = (ev) => {
         if (ev.pointerId !== h.pointerId) return;
