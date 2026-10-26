@@ -195,7 +195,7 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 
 ### UI & Workflow
 
-Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar with `File/View/Insert/Help` menus, a pen palette with drag-to-assign, Document Setup (`Cmd/Ctrl+K`), and a multi-skin theme system (Classic Dark/Light, Lark, and the **Meridian Blue** family). Cookie-backed preference persistence keeps your settings between sessions.
+Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar with `File/View/Insert/Help` menus, a **Pen / Paper** tab with the pen palette (drag-to-assign) and a realistic paper selector, Document Setup (`Cmd/Ctrl+K`), and a multi-skin theme system (Classic Dark/Light, Lark, and the **Meridian Blue** family). Cookie-backed preference persistence keeps your settings between sessions.
 
 <details>
 <summary>Full UI & workflow feature list</summary>
@@ -203,8 +203,9 @@ Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar wit
 - Desktop menu bar beside `VECTURA.STUDIO` with shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help plus an `Insert` menu for modifier containers
 - Top menu dropdowns render as overlays above the canvas/panes so they're never clipped by the header
 - Multi-skin theme system: Classic Dark, Classic Light, Lark, **Meridian Blue · Dark**, **Meridian Blue · Light**, and **Meridian Blue · Lark**. Switching skin restyles the full shell, flips the document background default, and swaps `Pen 1` to a contrast-appropriate color. New skins can be authored without JavaScript edits — see [`docs/skin-authoring.md`](docs/skin-authoring.md) and run `npm run skin:new -- <id>` to scaffold one from the template.
-- `File > Document Setup` (`Cmd/Ctrl+K`) covers machine size, Metric/Imperial switch, optional blueprint-style dimension labels, margin, on-canvas crop, margin guides, selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`
+- `File > Document Setup` (`Cmd/Ctrl+K`) covers machine size, Metric/Imperial switch, optional blueprint-style dimension labels, margin, on-canvas crop, margin guides, the default paper, selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, and double-click-to-apply on selected layers
+- **Paper selector (Pen / Paper tab ▸ Paper):** pick the sheet per document — None (plain colour), Hot-press, Cold-press and Rough watercolor, Bristol smooth and vellum, Cotton rag, Kraft, Newsprint, Black stock or Tracing — and any paper colour. Realistic papers render seeded surface tooth, fibres, speckles and formation mottling, and the ink reacts: it multiplies into light stock, skips the tooth valleys on toothy paper, bleeds and feathers on absorbent stock (newsprint most) and sits thinner on newsprint and tracing. **Texture** and **Ink bleed** sliders scale the effect. Every feature is sized in real millimetres, so the grain is the same on A6 and A0 (a small sheet at fit-to-screen shows coarser grain). Paper is saved in the `.vectura` file and is a **preview only**: the SVG export stays plotter-clean. **Set as default** makes the paper the start of every new document (also in Document Setup ▸ Paper & Selection ▸ Default paper, which replaces the old Background colour); **Use default** applies it to the open document
 - Color controls use horizontal pills that open native color pickers; thickness controls use sliders with editable mm values and reset buttons
 - ABOUT card is visible by default, toggled by the Algorithm info button, and remembered in saved UI preferences
 - Parameter simplification controls with live line/point counts
@@ -340,9 +341,9 @@ In overlay view, clicking the visible inactive silhouette selects that shape dir
 <details>
 <summary>Document Setup & theming</summary>
 
-`File > Document Setup` (`Cmd/Ctrl+K`) covers: machine size, the document-level Metric/Imperial switch, optional blueprint-style dimension labels outside the canvas, margin, on-canvas crop, margin guides, selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`.
+`File > Document Setup` (`Cmd/Ctrl+K`) covers: machine size, the document-level Metric/Imperial switch, optional blueprint-style dimension labels outside the canvas, margin, on-canvas crop, margin guides, the **Default paper** (Paper & Selection: a paper type or *Theme (no default)*, its colour, and *Apply to this document*), selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`.
 
-The sun/moon toggle in the upper-right header switches the full UI between dark and light themes.
+The sun/moon toggle in the upper-right header switches the full UI between dark and light themes. A theme change recolours the sheet only while the document is on a plain (None) paper and no default paper is set.
 
 </details>
 
@@ -652,6 +653,11 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### Unreleased - Paper selector (v1.4.20)
+- **Pen / Paper tab.** The Pens tab is now Pen / Paper with a Paper section on top: 11 paper types (None plus ten realistic stocks), any colour, Texture and Ink bleed sliders, Set as default / Use default.
+- **Realistic paper preview.** Seeded tooth, fibres, speckles and mottling sized in real millimetres; ink multiplies into the sheet, skips tooth valleys, and bleeds/feathers on absorbent stock. None is pixel-identical to before. SVG export is unchanged (no paper).
+- **Saved per project, one default.** Paper is stored in the `.vectura` file (`settings.paper`); the default paper lives in Document Setup ▸ Paper & Selection, replacing the Background colour picker.
 
 ### Unreleased - Touch support
 - **Touch and Apple Pencil across the whole app.** Phones and iPad portrait open panels as drawers. The tool rail is one row. A canvas HUD gives Undo, Redo, Zoom and Fit. Pinch and two-finger pan work with every tool. A two-finger tap undoes and a three-finger tap redoes. The modifier bar replaces Shift, Option and Cmd (Multi-select, Constrain, Duplicate, Pan). Hold a layer row or the canvas for its menu, hold a label to reset, tap a value chip to type.

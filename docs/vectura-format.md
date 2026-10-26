@@ -26,6 +26,24 @@ Written by `saveVecturaFile` (`src/ui/ui-file-io.js`), read by `openVecturaFile`
 }
 ```
 
+### `settings.paper` (paper selector, v1.4.20)
+
+Additive field; the format version is unchanged.
+
+```jsonc
+"settings": {
+  "paper": { "type": "cold-press", "color": "#f7f2e6", "texture": 0.7, "bleed": 0.55, "seed": 1 },
+  "bgColor": "#f7f2e6"   // still written: the paper colour, for older builds
+}
+```
+
+- `type` is a key of `Vectura.PAPERS.TYPES` (`src/config/papers.js`); unknown → `none`.
+- `color` is a strict hex colour (anything else falls back to `bgColor`, then the stock colour).
+- `texture` / `bleed` are 0..1; `seed` is a positive integer (texture grain).
+- On open: `settings.paper` > legacy `settings.bgColor` (opens as a plain `none` sheet) >
+  the user's default paper > the built-in default (`Vectura.Paper.resolveProjectPaper`).
+- Paper is a canvas preview only; SVG export never includes it.
+
 ## Preset files (`user-presets/<type>/*.vectura`)
 
 Written by `PresetSync.buildDoc` (`src/ui/preset-sync.js`), read by `parseDoc` and the
