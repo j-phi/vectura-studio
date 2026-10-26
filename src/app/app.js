@@ -481,7 +481,8 @@
         strokeWidthOverride: SETTINGS.strokeWidthOverride === true,
         bgColor: SETTINGS.bgColor,
         // Paper selector: the user's single default paper (null = none set).
-        paperDefault: SETTINGS.paperDefault ? clone(SETTINGS.paperDefault) : null,
+        // (image papers: refs only — the pixels live in IndexedDB)
+        paperDefault: SETTINGS.paperDefault ? clone(window.Vectura.Paper?.leanCopy ? window.Vectura.Paper.leanCopy(SETTINGS.paperDefault) : SETTINGS.paperDefault) : null,
         truncate: SETTINGS.truncate,
         cropExports: SETTINGS.cropExports,
         removeHiddenGeometry: SETTINGS.removeHiddenGeometry,
