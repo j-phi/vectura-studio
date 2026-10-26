@@ -55,6 +55,27 @@ describe('PR e2e smoke roster', () => {
     expect(runsIn(desktop, path.join(dir, 'a-brand-new-desktop.spec.js'))).toBe(true);
   });
 
+  it('classifies touch specs by the repo touch dir, not by a "touch/" anywhere in the checkout path', () => {
+    // A worktree such as /x/wt-touch/ once made every spec a touch spec, so desktop-chromium ran none.
+    const config = require('../../playwright.config.js');
+    const desktop = config.projects.find((p) => p.name === 'desktop-chromium');
+    const touch = config.projects.find((p) => p.name === 'touch-ipad-portrait');
+    const ignored = (abs) => desktop.testIgnore.some((re) => re.test(abs));
+    const isTouch = (abs) => [].concat(touch.testMatch).some((re) => re.test(abs));
+    for (const root of ['/x/wt-touch', '/x/touch/repo', 'C:\\x\\wt-touch']) {
+      const sep = root.includes('\\') ? '\\' : '/';
+      const desktopSpec = [root, 'tests', 'e2e', 'foo.spec.js'].join(sep);
+      const touchSpec = [root, 'tests', 'e2e', 'touch', 'bar.spec.js'].join(sep);
+      expect(ignored(desktopSpec), desktopSpec).toBe(false);
+      expect(isTouch(desktopSpec), desktopSpec).toBe(false);
+      expect(ignored(touchSpec), touchSpec).toBe(true);
+      expect(isTouch(touchSpec), touchSpec).toBe(true);
+    }
+    expect(isTouch('/x/repo/tests/e2e/touch/bar.spec.js')).toBe(true);
+    expect(isTouch('/x/repo/tests/e2e/touch/nested/baz.spec.js')).toBe(true);
+    expect(isTouch('/x/repo/tests/e2e/not-touch/foo.spec.js')).toBe(false);
+  });
+
   it('asks for a JSON report per run on CI, so flakes can be counted', () => {
     const [desktop, touch] = smoke.runs([], true);
     expect(desktop).toContain('--reporter=line,json');

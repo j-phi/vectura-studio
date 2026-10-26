@@ -6,10 +6,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
-### Security (SVG sanitizer namespace-prefix bypass, v1.4.24)
+### Security (SVG sanitizer namespace-prefix bypass, v1.4.25)
 - **Checks key on local name and namespace.** The DOM path (the one the browser uses for SVG import, the Pattern Designer and the pattern registry) matched elements and attributes by qualified name. `<x:script>` with `x` bound to the SVG namespace, `<x:foreignObject>`, `<x:style>`, `x:onload=` and `foo:href="javascript:..."` with `foo` bound to XLink all passed. Every check now reads `localName` (lower-cased) and `namespaceURI`: an `href` in no namespace or XLink under any prefix is a URL attribute, and any attribute whose local name starts with `on` is a handler.
 - **Foreign namespaces are dropped.** Elements outside the SVG namespace (XHTML `<h:script>`, `<h:img onerror>`, editor metadata) are removed with their subtree; attributes outside no-namespace, XLink, XML and xmlns are removed. A root that is not SVG returns an empty SVG. In Chromium the old output ran `<h:script>` and a prefixed `javascript:` link when mounted; the new output runs neither. Legit `xlink:href="#id"` refs are unchanged.
 - The no-DOMParser fallback reads attribute local names the same way (`x:onload`, `foo:href`, `attributeName="foo:href"`).
+
+### Test config (touch spec matching, v1.4.24)
+- **Checkout path no longer decides touch specs.** `TOUCH_MATCH` in `playwright.config.js` was `/touch\/.*\.spec\.js$/`, tested against the absolute spec path, so a checkout under a `touch/` directory (e.g. `/x/wt-touch/`) made every spec a touch spec and `desktop-chromium` (via `DESKTOP_IGNORE`) ran none. It is now anchored on `tests/e2e/touch/` with either separator. `--list` per-project spec lists are unchanged in a normal checkout (7943 tests in 101 files).
 
 ### Security (SVG sanitizer fallback hardening, v1.4.23)
 - **Obfuscated script schemes.** The no-DOMParser fallback now decodes character references and drops whitespace/control characters before checking `href`, `xlink:href`, `src` and animation `to`/`from`/`by`/`values`, as the DOM path does. `javascript&colon;`, `jav&#x61;script:`, `&#106;avascript:`, `java&#9;script:`, `ja&NewLine;vascript:`, a literal tab, and `<animate to="java&#115;cript:">` are neutralised (href rewritten to `#`, animation dropped). The final rejection check reads the decoded form.
