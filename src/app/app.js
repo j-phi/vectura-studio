@@ -751,7 +751,12 @@
           const width = V && V.finiteInRange(p.width, 0, 100);
           if (!id || !color || width == null) { warn('pens[' + i + ']', p); continue; }
           const name = (typeof p.name === 'string' && p.name.length <= 128) ? p.name : id;
-          cleanPens.push({ id, name, color, width });
+          const pen = { id, name, color, width };
+          // Theme-managed Pen 1: explicit flag, else (pre-flag snapshot) a
+          // colour equal to a theme default.
+          if (typeof p.themeManaged === 'boolean') pen.themeManaged = p.themeManaged;
+          else if (id === 'pen-1') pen.themeManaged = THEME_PEN1_DEFAULTS.has(`${color}`.toLowerCase());
+          cleanPens.push(pen);
         }
         if (cleanPens.length) SETTINGS.pens = cleanPens;
       }
@@ -935,7 +940,7 @@
     }
 
     // Recolour Pen 1 (and layers drawn with it) for the current paper, but
-    // only while Pen 1 is an untouched theme-default colour: a pen the user
+    // only while Pen 1 is theme-managed (pen.themeManaged): a pen the user
     // picked is never changed. Returns true when it changed.
     syncPen1ToPaper(theme = getThemeConfig(SETTINGS.uiTheme)) {
       const PaperModel = window.Vectura.Paper;
@@ -943,7 +948,9 @@
       const pen1 = SETTINGS.pens.find((pen) => pen?.id === 'pen-1') || SETTINGS.pens[0];
       if (!pen1) return false;
       const current = `${pen1.color || ''}`.toLowerCase();
-      if (!THEME_PEN1_DEFAULTS.has(current)) return false;
+      // Only a theme-managed Pen 1 follows the paper; any user edit clears
+      // the flag (pens panel), so a deliberate #000/#fff stays put.
+      if (pen1.themeManaged !== true) return false;
       const target = PaperModel
         ? this.pen1ColorForPaper(theme, PaperModel.effective())
         : (theme && theme.pen1Color) || pen1.color;
@@ -1140,6 +1147,15 @@
         const validator = window.Vectura?.PenValidate?.validatePens;
         const validated = typeof validator === 'function' ? validator(s.pens) : clone(s.pens);
         if (validated.length) {
+          // Paper selector: a file without the themeManaged flag is legacy.
+          // Pre-paper files (no settings.paper): Pen 1 is managed only if it
+          // still has a theme-default colour. Files that have paper but no
+          // flag: leave Pen 1 alone.
+          const legacy = !(s.paper && typeof s.paper === 'object');
+          validated.forEach((pen) => {
+            if (pen.id !== 'pen-1' || typeof pen.themeManaged === 'boolean') return;
+            pen.themeManaged = legacy && THEME_PEN1_DEFAULTS.has(`${pen.color || ''}`.toLowerCase());
+          });
           SETTINGS.pens = validated;
         }
       }

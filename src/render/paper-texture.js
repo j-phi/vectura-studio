@@ -116,64 +116,106 @@
   };
 
   /**
-   * Accumulate one noise octave over a w×h pixel grid whose pixel (px, py)
-   * sits at mm (x0 + px/b, y0 + py/b). Coordinates are rotated by `ang` and
-   * stretched by `stretch` along the rotated u axis (slightly directional
-   * felt marks). Octaves much larger than a pixel are sampled on a coarse
-   * grid and bilinearly interpolated (they are smooth at that scale).
+   * Accumulate noise octaves over a w×h pixel grid whose pixel (px, py) sits
+   * at mm (x0 + (px+.5)/b, y0 + (py+.5)/b). Each octave:
+   *   { wl: wavelength mm, amp, ang: rotation rad, stretch (along u), off }
+   * Coordinates are rotated by `ang` and stretched (slightly directional
+   * felt marks). Octaves much larger than a pixel are smooth at that scale:
+   * they are summed on ONE shared coarse grid and interpolated once with a
+   * separable Catmull-Rom (C1, so the emboss that differentiates the field
+   * shows no facets); fine octaves are evaluated per pixel.
    */
-  const addOctave = (out, w, h, x0, y0, b, perm, wavelengthMm, amp, ang = 0, stretch = 1, offset = 0) => {
-    if (!(amp > 0)) return;
-    const ca = Math.cos(ang);
-    const sa = Math.sin(ang);
-    const inv = 1 / wavelengthMm;
-    const sample = (xm, ym) => {
-      const u = (xm * ca + ym * sa) / stretch;
-      const v = -xm * sa + ym * ca;
-      return simplex(perm, u * inv + offset, v * inv - offset);
+  const addOctaves = (out, w, h, x0, y0, b, perm, octaves) => {
+    const live = octaves.filter((o) => o && o.amp > 0);
+    if (!live.length) return;
+    const prep = live.map((o) => ({
+      ...o,
+      ca: Math.cos(o.ang || 0),
+      sa: Math.sin(o.ang || 0),
+      inv: 1 / o.wl,
+      st: o.stretch || 1,
+      off: o.off || 0,
+      wavePx: o.wl * b,
+    }));
+    const sampleAll = (list, xm, ym) => {
+      let v = 0;
+      for (let k = 0; k < list.length; k += 1) {
+        const o = list[k];
+        const u = (xm * o.ca + ym * o.sa) / o.st;
+        const vv = -xm * o.sa + ym * o.ca;
+        v += o.amp * simplex(perm, u * o.inv + o.off, vv * o.inv - o.off);
+      }
+      return v;
     };
-    const wavePx = wavelengthMm * b;
-    const step = wavePx >= 12 ? Math.max(1, Math.min(12, Math.floor(wavePx / 6))) : 1;
-    if (step === 1) {
+    const fine = prep.filter((o) => o.wavePx < 8);
+    const smoothList = prep.filter((o) => o.wavePx >= 8);
+    if (fine.length) {
       for (let py = 0; py < h; py += 1) {
         const ym = y0 + (py + 0.5) / b;
-        for (let px = 0; px < w; px += 1) {
-          out[py * w + px] += amp * sample(x0 + (px + 0.5) / b, ym);
-        }
+        for (let px = 0; px < w; px += 1) out[py * w + px] += sampleAll(fine, x0 + (px + 0.5) / b, ym);
       }
-      return;
     }
-    // Catmull-Rom (C1) interpolation: the emboss differentiates this field,
-    // and a bilinear grid would shade in flat facets (visible blocks).
+    if (!smoothList.length) return;
+    const minWave = Math.min(...smoothList.map((o) => o.wavePx));
+    const step = Math.max(1, Math.min(12, Math.floor(minWave / 4)));
     const gw = Math.ceil(w / step) + 4;
     const gh = Math.ceil(h / step) + 4;
     const grid = new Float32Array(gw * gh);
     for (let gy = 0; gy < gh; gy += 1) {
       const ym = y0 + ((gy - 1) * step + 0.5) / b;
-      for (let gx = 0; gx < gw; gx += 1) grid[gy * gw + gx] = sample(x0 + ((gx - 1) * step + 0.5) / b, ym);
+      for (let gx = 0; gx < gw; gx += 1) grid[gy * gw + gx] = sampleAll(smoothList, x0 + ((gx - 1) * step + 0.5) / b, ym);
     }
-    const cr = (p0, p1, p2, p3, t) => p1 + 0.5 * t * (p2 - p0 + t * (2 * p0 - 5 * p1 + 4 * p2 - p3 + t * (3 * (p1 - p2) + p3 - p0)));
-    const row = new Float32Array(4);
-    for (let py = 0; py < h; py += 1) {
-      const fy = py / step;
-      const gy = Math.floor(fy) + 1;
-      const ty = fy - (gy - 1);
+    // Catmull-Rom weights per output column / row (they repeat every step).
+    const weights = (n) => {
+      const idx = new Int32Array(n);
+      const wts = new Float32Array(n * 4);
+      for (let p = 0; p < n; p += 1) {
+        const f = p / step;
+        const g0 = Math.floor(f);
+        const t = f - g0;
+        const t2 = t * t; const t3 = t2 * t;
+        idx[p] = g0; // grid index of p1 is g0 + 1 (grid is offset by one)
+        wts[p * 4] = 0.5 * (-t3 + 2 * t2 - t);
+        wts[p * 4 + 1] = 0.5 * (3 * t3 - 5 * t2 + 2);
+        wts[p * 4 + 2] = 0.5 * (-3 * t3 + 4 * t2 + t);
+        wts[p * 4 + 3] = 0.5 * (t3 - t2);
+      }
+      return { idx, wts };
+    };
+    const cx = weights(w);
+    const cy = weights(h);
+    // Horizontal pass: every grid row → w columns.
+    const tmp = new Float32Array(gh * w);
+    for (let gy = 0; gy < gh; gy += 1) {
+      const row = gy * gw;
       for (let px = 0; px < w; px += 1) {
-        const fx = px / step;
-        const gx = Math.floor(fx) + 1;
-        const tx = fx - (gx - 1);
-        for (let k = 0; k < 4; k += 1) {
-          const r0 = (gy - 1 + k) * gw + gx;
-          row[k] = cr(grid[r0 - 1], grid[r0], grid[r0 + 1], grid[r0 + 2], tx);
-        }
-        out[py * w + px] += amp * cr(row[0], row[1], row[2], row[3], ty);
+        const g = row + cx.idx[px];
+        const k = px * 4;
+        tmp[gy * w + px] = grid[g] * cx.wts[k] + grid[g + 1] * cx.wts[k + 1] + grid[g + 2] * cx.wts[k + 2] + grid[g + 3] * cx.wts[k + 3];
+      }
+    }
+    // Vertical pass.
+    for (let py = 0; py < h; py += 1) {
+      const g = cy.idx[py];
+      const k = py * 4;
+      const w0 = cy.wts[k]; const w1 = cy.wts[k + 1]; const w2 = cy.wts[k + 2]; const w3 = cy.wts[k + 3];
+      const r0 = g * w; const r1 = r0 + w; const r2 = r1 + w; const r3 = r2 + w;
+      const o = py * w;
+      for (let px = 0; px < w; px += 1) {
+        out[o + px] += tmp[r0 + px] * w0 + tmp[r1 + px] * w1 + tmp[r2 + px] * w2 + tmp[r3 + px] * w3;
       }
     }
   };
 
+  // Single-octave convenience wrapper.
+  const addOctave = (out, w, h, x0, y0, b, perm, wl, amp, ang = 0, stretch = 1, off = 0) => addOctaves(out, w, h, x0, y0, b, perm, [{ wl, amp, ang, stretch, off }]);
+
   // Octave weight: fade an octave in as it becomes resolvable (wavelength
   // 1.5 → 3 px), so detail appears smoothly as you zoom instead of popping.
-  const resolveWeight = (wavelengthMm, b) => smooth(1.5, 3, wavelengthMm * b);
+  const resolveWeight = (wavelengthMm, b) => {
+    const wgt = smooth(1.5, 3, wavelengthMm * b);
+    return wgt < 0.04 ? 0 : wgt;
+  };
 
   /**
    * Tooth relief in [-1, 1] over a pixel grid (pure; used by chunks + tests).
@@ -189,11 +231,10 @@
     const st = info.grainStretch || 1;
     const octaves = [[g * 1.7, 1], [g * 0.8, 0.5], [g * 0.38, 0.22]];
     let total = 0;
-    octaves.forEach(([wl, amp], k) => {
-      const a = amp * resolveWeight(wl, b);
+    addOctaves(out, w, h, x0, y0, b, perm, octaves.map(([wl, amp], k) => {
       total += amp;
-      addOctave(out, w, h, x0, y0, b, perm, wl, a, ang + k * 0.4, st, k * 17.3);
-    });
+      return { wl, amp: amp * resolveWeight(wl, b), ang: ang + k * 0.4, stretch: st, off: k * 17.3 };
+    }));
     const k = 1.3;
     const norm = Math.tanh(k);
     for (let i = 0; i < out.length; i += 1) out[i] = Math.tanh((out[i] / total) * k * 1.6) / norm;
@@ -360,11 +401,24 @@
     ['surface', 'skip', 'feather', 'comp'].forEach((k) => { const c = e[k]; if (c && c.width) n += c.width * c.height * 4; });
     return n;
   };
+  // Chunks drawn in the current frame are PINNED: never evicted, so a big
+  // viewport can't evict what it is about to draw and re-queue it forever.
+  // The cap grows with the visible set (×1.5, bounded by hardCacheBytes).
+  let pinned = new Set();
+  let pinnedBytes = 0;
+  const capBytes = () => {
+    const L = limits();
+    const base = L.cacheBytes || 64 * 1024 * 1024;
+    const hard = L.hardCacheBytes || 128 * 1024 * 1024;
+    return Math.min(hard, Math.max(base, pinnedBytes * 1.5));
+  };
   const evict = () => {
-    const cap = limits().cacheBytes || 64 * 1024 * 1024;
-    while (stats.bytes > cap && cache.size > 1) {
-      const k = cache.keys().next().value;
-      stats.bytes -= cache.get(k).bytes || 0;
+    const cap = capBytes();
+    if (stats.bytes <= cap) return;
+    for (const [k, e] of cache) {
+      if (stats.bytes <= cap) break;
+      if (pinned.has(k)) continue;
+      stats.bytes -= e.bytes || 0;
       cache.delete(k);
     }
   };
@@ -394,8 +448,10 @@
     if ((info.mottle || 0) > 0) {
       const mp = permFor(seed * 7 + 37);
       // Formation: flocculent ~5–10 mm clouds over a broad ~30 mm swell.
-      addOctave(mot, W, W, x0, y0, b, mp, 8, 0.6, 0.3, 1.2, 5.5);
-      addOctave(mot, W, W, x0, y0, b, mp, 30, 0.4, 1.1, 1.0, 9.1);
+      addOctaves(mot, W, W, x0, y0, b, mp, [
+        { wl: 8, amp: 0.6, ang: 0.3, stretch: 1.2, off: 5.5 },
+        { wl: 30, amp: 0.4, ang: 1.1, stretch: 1.0, off: 9.1 },
+      ]);
     }
     // Micro-fibre web: under magnification paper is a mat of fine fibres.
     // Streak noise along a wandering fibre direction, faded in only once
@@ -537,33 +593,50 @@
 
   // ---- idle refinement queue ----------------------------------------------
 
-  const queue = new Map(); // key -> { cfg, b, i, j }
+  // Refinement queue: ONLY the active paper's chunks for the current view,
+  // nearest the view centre first (replaced on every frame, so switching
+  // paper or panning drops stale jobs). Built in time-budgeted slices
+  // (several chunks per ~10 ms slice, at least one), repainting after each.
+  let queue = new Map(); // key -> { cfg, b, i, j }
   const waiters = new Set();
   let scheduled = false;
+  const SLICE_MS = () => limits().refineSliceMs || 10;
+  // Repaint gap while refining: ≥180 ms and ≥3× the caller's measured
+  // repaint cost (reportRepaintCost), so slow full-frame repaints can't
+  // starve the refinement.
+  let repaintCost = 0;
+  const repaintGap = () => Math.max(180, repaintCost * 3);
+  const reportRepaintCost = (ms) => {
+    if (Number.isFinite(ms) && ms >= 0) repaintCost = repaintCost ? repaintCost * 0.5 + ms * 0.5 : ms;
+  };
+  let lastNotify = 0;
+  const now = () => (G.performance && typeof G.performance.now === 'function' ? G.performance.now() : Date.now());
   const schedule = () => {
     if (scheduled) return;
     scheduled = true;
-    const run = (deadline) => {
+    setTimeout(() => {
       scheduled = false;
-      const start = Date.now();
-      const budget = () => (deadline && typeof deadline.timeRemaining === 'function'
-        ? deadline.timeRemaining() > 2
-        : Date.now() - start < 10);
+      const start = now();
       let built = 0;
       for (const [key, job] of queue) {
-        if (built > 0 && !budget()) break;
+        if (built > 0 && now() - start >= SLICE_MS()) break;
         queue.delete(key);
-        if (!cache.has(key)) { getChunk(job.cfg, job.b, job.i, job.j, true); built += 1; }
+        if (!cache.has(key)) {
+          const c = getChunk(job.cfg, job.b, job.i, job.j, true);
+          if (c && job.pin) { pinned.add(key); pinnedBytes += c.bytes || 0; }
+          built += 1;
+        }
       }
       if (queue.size) schedule();
-      if (built) {
+      // Repaint at most every REPAINT_MS while refining (a repaint costs a
+      // full frame), and once when the queue drains.
+      if (built && (!queue.size || now() - lastNotify >= repaintGap())) {
+        lastNotify = now();
         const ws = Array.from(waiters);
         if (!queue.size) waiters.clear();
         ws.forEach((fn) => { try { fn(); } catch (_e) { /* caller repaint failed */ } });
       }
-    };
-    if (typeof G.requestIdleCallback === 'function') G.requestIdleCallback(run, { timeout: 60 });
-    else setTimeout(run, 0);
+    }, 0);
   };
 
   /**
@@ -579,49 +652,105 @@
     return { i0: Math.floor(x0 / C), i1: Math.floor((x1 - 1e-9) / C), j0: Math.floor(y0 / C), j1: Math.floor((y1 - 1e-9) / C) };
   };
 
+  const chunkCount = (r) => (r ? (r.i1 - r.i0 + 1) * (r.j1 - r.j0 + 1) : 0);
+  const CHUNK_BYTES = () => {
+    const W = CHUNK_PX() + 2 * APRON();
+    const FW = Math.ceil(W / 2);
+    return W * W * 4 * 3 + FW * FW * 4;
+  };
+
   /**
-   * Collect the chunks to draw: exact-bucket chunks where cached, else the
-   * nearest cached coarser/finer chunk covering it, else (once) a cheap coarse
-   * level built now. Missing exact chunks are queued for idle refinement.
+   * The bucket actually used for a view: the on-screen one, stepped down
+   * (coarser) until the visible set fits the visible-set budget, so a huge
+   * retina viewport never needs more chunks than memory allows.
    */
-  const plan = (cfg, pxPerMm, view, sheet, onReady, allowQueue = true) => {
-    const b = bucketFor(pxPerMm);
-    const range = chunkRange(b, view, sheet);
-    if (!range) return { layers: [], complete: true, b };
-    const exact = [];
-    let missing = 0;
-    for (let j = range.j0; j <= range.j1; j += 1) {
-      for (let i = range.i0; i <= range.i1; i += 1) {
-        const c = getChunk(cfg, b, i, j, false);
-        if (c) exact.push(c);
-        else {
-          missing += 1;
-          if (allowQueue) queue.set(chunkKey(cfg, b, i, j), { cfg: { type: cfg.type, seed: cfg.seed }, b, i, j });
-        }
+  const bucketForView = (pxPerMm, view, sheet) => {
+    const L = limits();
+    const budget = L.visibleBytes || 64 * 1024 * 1024;
+    const lo = L.minBucket || 0.25;
+    let b = bucketFor(pxPerMm);
+    while (b > lo && chunkCount(chunkRange(b, view, sheet)) * CHUNK_BYTES() > budget) b /= 2;
+    return b;
+  };
+
+  const centreOrder = (r, view, b) => {
+    const C = chunkMmFor(b);
+    const cx = view.x + view.w / 2;
+    const cy = view.y + view.h / 2;
+    const out = [];
+    for (let j = r.j0; j <= r.j1; j += 1) {
+      for (let i = r.i0; i <= r.i1; i += 1) {
+        const dx = (i + 0.5) * C - cx;
+        const dy = (j + 0.5) * C - cy;
+        out.push({ i, j, d: dx * dx + dy * dy });
       }
     }
+    out.sort((p, q) => p.d - q.d);
+    return out;
+  };
+
+  /**
+   * Collect the chunks to draw, coarse → fine:
+   *   1. a cheap fallback level (bucket/8) built now if missing — the same mm
+   *      lattice, so it is the same paper, just softer;
+   *   2. any cached intermediate levels (bucket/4, bucket/2) on top;
+   *   3. the exact chunks we have.
+   * When called for the main surface (`allowQueue`), the visible chunks are
+   * pinned and the queue is REPLACED with this view's missing chunks: first
+   * the bucket/4 level (fast, looks right), then exact, nearest the centre
+   * first. Jobs for another paper / bucket / view are dropped.
+   */
+  const plan = (cfg, pxPerMm, view, sheet, onReady, allowQueue = true) => {
+    const b = bucketForView(pxPerMm, view, sheet);
+    const range = chunkRange(b, view, sheet);
+    if (!range) return { layers: [], complete: true, b };
+    const L = limits();
+    const lo = L.minBucket || 0.25;
+    const job = { type: cfg.type, seed: cfg.seed };
+    const keep = new Set();
+    const nextQueue = new Map();
     const layers = [];
-    if (missing) {
-      // Fallback: the coarsest cheap level (few chunks) — built synchronously
-      // only if absent, then the exact chunks we already have on top.
-      const L = limits();
-      const coarseB = Math.max(L.minBucket || 0.25, Math.min(b / 4, L.coarseBucket || 1));
-      const cr = chunkRange(coarseB, view, sheet);
-      if (cr && coarseB < b) {
-        for (let j = cr.j0; j <= cr.j1; j += 1) {
-          for (let i = cr.i0; i <= cr.i1; i += 1) {
-            const c = getChunk(cfg, coarseB, i, j, true);
-            if (c) layers.push(c);
+    const exact = [];
+    const missing = [];
+    centreOrder(range, view, b).forEach(({ i, j }) => {
+      const key = chunkKey(cfg, b, i, j);
+      keep.add(key);
+      const c = getChunk(cfg, b, i, j, false);
+      if (c) exact.push(c); else missing.push({ i, j, key });
+    });
+    if (missing.length) {
+      const fb = Math.max(lo, b / 8);
+      const levels = [];
+      for (let lb = fb; lb < b; lb *= 2) levels.push(lb);
+      levels.forEach((lb, n) => {
+        const r = chunkRange(lb, view, sheet);
+        if (!r) return;
+        const sync = n === 0; // only the coarsest is built synchronously
+        centreOrder(r, view, lb).forEach(({ i, j }) => {
+          const key = chunkKey(cfg, lb, i, j);
+          const c = getChunk(cfg, lb, i, j, sync);
+          if (c) { layers.push(c); keep.add(key); } else if (allowQueue && lb === b / 4) {
+            nextQueue.set(key, { cfg: job, b: lb, i, j, pin: true });
+            keep.add(key);
           }
-        }
-      }
-      if (allowQueue) {
+        });
+      });
+      if (allowQueue) missing.forEach(({ i, j, key }) => nextQueue.set(key, { cfg: job, b, i, j, pin: true }));
+    }
+    if (allowQueue) {
+      pinned = keep;
+      pinnedBytes = 0;
+      keep.forEach((k) => { const e = cache.get(k); if (e) pinnedBytes += e.bytes || 0; });
+      queue = nextQueue;
+      if (queue.size) {
         if (typeof onReady === 'function') waiters.add(onReady);
         schedule();
+      } else {
+        waiters.clear();
       }
     }
     exact.forEach((c) => layers.push(c));
-    return { layers, complete: missing === 0, b };
+    return { layers, complete: missing.length === 0, b };
   };
 
   const drawChunk = (ctx, c, image) => {
@@ -711,6 +840,8 @@
   const clearCache = () => {
     cache.clear();
     queue.clear();
+    pinned = new Set();
+    pinnedBytes = 0;
     waiters.clear();
     thumbCache.clear();
     pitThresholds.clear();
@@ -720,7 +851,14 @@
     stats.bytes = 0;
   };
 
-  const cacheStats = () => ({ ...stats, size: cache.size, queued: queue.size, keys: Array.from(cache.keys()) });
+  const cacheStats = () => ({
+    ...stats,
+    size: cache.size,
+    queued: queue.size,
+    queuedKeys: Array.from(queue.keys()),
+    pinned: pinned.size,
+    keys: Array.from(cache.keys()),
+  });
 
   // Run queued refinement now (tests / screenshots).
   const flush = () => {
@@ -742,6 +880,7 @@
     chunkMmFor,
     clearCache,
     cacheStats,
+    reportRepaintCost,
     flush,
     simplex: (seed, x, y) => simplex(permFor(seed), x, y),
   };

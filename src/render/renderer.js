@@ -9749,7 +9749,14 @@
           const raf = typeof window.requestAnimationFrame === 'function' ? window.requestAnimationFrame : (fn) => setTimeout(fn, 16);
           raf(() => {
             this._paperRepaintQueued = false;
-            if (this.ready) this.draw();
+            if (!this.ready) return;
+            const t0 = (window.performance && window.performance.now) ? window.performance.now() : Date.now();
+            this.draw();
+            const PT = window.Vectura && window.Vectura.PaperTexture;
+            if (PT && PT.reportRepaintCost) {
+              const t1 = (window.performance && window.performance.now) ? window.performance.now() : Date.now();
+              PT.reportRepaintCost(t1 - t0);
+            }
           });
         };
       }

@@ -239,7 +239,12 @@ describe('paper state round-trip, undo and theme sync', () => {
 
   test('a pen the user customised is never recoloured by a theme toggle or a paper pick', () => {
     app.applyTheme('dark', { persist: false, syncPen1: true, syncDocumentBg: true, refreshUi: false, render: false });
-    pen1().color = '#f4f1e8';
+    // Edit Pen 1 through the real pens panel colour input (a user pick).
+    const input = window.document.querySelector('#pen-list input[type="color"]');
+    input.value = '#f4f1e8';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    input.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(pen1().themeManaged).toBe(false);
     app.setProjectPaper(Paper.forType('hot-press'), { history: true });
     expect(pen1().color).toBe('#f4f1e8');
     app.applyTheme('light', { persist: false, syncPen1: true, syncDocumentBg: true, refreshUi: false, render: false });
@@ -250,6 +255,7 @@ describe('paper state round-trip, undo and theme sync', () => {
     app.applyTheme('dark', { persist: false, syncPen1: true, syncDocumentBg: true, refreshUi: false, render: false });
     app.setProjectPaper({ type: 'none', color: '#121214' }, { history: false });
     pen1().color = '#e6f1ff';
+    pen1().themeManaged = true;
     const layer = app.engine.layers[0];
     if (layer) { layer.penId = 'pen-1'; layer.color = '#e6f1ff'; }
     const before = app.history.length;
@@ -260,6 +266,43 @@ describe('paper state round-trip, undo and theme sync', () => {
     app.undo();
     expect(S.paper.type).toBe('none');
     expect(pen1().color).toBe('#e6f1ff');
+  });
+
+  test('a deliberately chosen black or white Pen 1 is never recoloured (explicit managed flag, not colour matching)', () => {
+    app.setProjectPaper(Paper.forType('cold-press'), { history: false });
+    const input = window.document.querySelector('#pen-list input[type="color"]');
+    input.value = '#000000';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    input.dispatchEvent(new window.Event('change', { bubbles: true }));
+    app.setProjectPaper(Paper.forType('black'), { history: false });
+    expect(pen1().color).toBe('#000000');
+    input.value = '#ffffff';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    input.dispatchEvent(new window.Event('change', { bubbles: true }));
+    app.setProjectPaper(Paper.forType('hot-press'), { history: false });
+    expect(pen1().color).toBe('#ffffff');
+  });
+
+  test('the managed flag is saved with the project; legacy files infer it from colour only when they have no paper', () => {
+    pen1().color = '#e6f1ff';
+    pen1().themeManaged = true;
+    const saved = JSON.parse(JSON.stringify(app.captureState()));
+    expect(saved.settings.pens.find((p) => p.id === 'pen-1').themeManaged).toBe(true);
+    // Pre-paper file: no settings.paper, no flag, theme-default colour -> managed.
+    const legacy = JSON.parse(JSON.stringify(saved));
+    delete legacy.settings.paper;
+    legacy.settings.pens.forEach((p) => { delete p.themeManaged; });
+    app.applyState(legacy);
+    expect(pen1().themeManaged).toBe(true);
+    // Same but a custom colour -> not managed.
+    legacy.settings.pens.find((p) => p.id === 'pen-1').color = '#123456';
+    app.applyState(legacy);
+    expect(pen1().themeManaged).toBe(false);
+    // A file with paper but no flag (1.4.20/21) -> left alone.
+    const withPaper = JSON.parse(JSON.stringify(saved));
+    withPaper.settings.pens.forEach((p) => { delete p.themeManaged; });
+    app.applyState(withPaper);
+    expect(pen1().themeManaged).toBe(false);
   });
 
   test('a paper type from a newer build round-trips unchanged and renders as a plain sheet', () => {
@@ -681,6 +724,63 @@ describe('renderer paper hooks', () => {
     for (let i = 0; i < 40 && PT.cacheStats().queued; i += 1) await new Promise((res) => setTimeout(res, 10));
     expect(PT.cacheStats().queued).toBe(0);
     expect(ready).toBeGreaterThan(0);
+  });
+
+  // A huge retina view: 2560×1440 @ DPR2 (5120×2880 device px) at 35 px/mm.
+  const bigView = () => {
+    const pxPerMm = 35;
+    return { pxPerMm, view: { x: 20, y: 20, w: 5120 / pxPerMm, h: 2880 / pxPerMm }, sheet: { x: 0, y: 0, w: 432, h: 279 } };
+  };
+  const mmCtx = () => { const ctx = recordingCtx(r.canvas); ctx.scale(35, 35); return ctx; };
+
+  test('a huge viewport settles: refinement drains, redraws re-queue nothing, memory stays bounded (no thrash)', () => {
+    PT.clearCache();
+    const cfg = { ...Paper.forType('cold-press') };
+    const v = bigView();
+    PT.drawSurface(mmCtx(), cfg, v);
+    const first = PT.cacheStats();
+    expect(first.queued).toBeGreaterThan(0);
+    PT.flush();
+    expect(PT.cacheStats().queued).toBe(0);
+    const builds = PT.cacheStats().builds;
+    for (let n = 0; n < 3; n += 1) {
+      PT.drawSurface(mmCtx(), cfg, v);
+      expect(PT.cacheStats().queued, `redraw ${n}`).toBe(0);
+    }
+    expect(PT.cacheStats().builds).toBe(builds);
+    expect(PT.cacheStats().bytes).toBeLessThanOrEqual(window.Vectura.PAPERS.LIMITS.hardCacheBytes);
+  });
+
+  test('switching paper mid-refine drops the old paper\'s queued work; nearest-the-centre first', () => {
+    PT.clearCache();
+    const v = bigView();
+    PT.drawSurface(mmCtx(), { ...Paper.forType('rough') }, v);
+    expect(PT.cacheStats().queuedKeys.every((k) => k.startsWith('rough|'))).toBe(true);
+    PT.drawSurface(mmCtx(), { ...Paper.forType('kraft') }, v);
+    const q = PT.cacheStats().queuedKeys;
+    expect(q.length).toBeGreaterThan(0);
+    expect(q.every((k) => k.startsWith('kraft|'))).toBe(true);
+    // Ordering: the queued exact chunks start at the view centre.
+    const C = (k) => { const [, , b, i, j] = k.split('|').map(Number); const mm = 256 / b; return { b, x: (i + 0.5) * mm, y: (j + 0.5) * mm }; };
+    const exact = q.map(C).filter((c, idx, all) => c.b === Math.max(...all.map((a) => a.b)));
+    const cx = v.view.x + v.view.w / 2; const cy = v.view.y + v.view.h / 2;
+    const d = (c) => Math.hypot(c.x - cx, c.y - cy);
+    expect(d(exact[0])).toBeLessThanOrEqual(d(exact[exact.length - 1]));
+  });
+
+  test('cold cache: the coarse fallback is the same paper (bucket/8 built now), bucket/4 refines first', () => {
+    PT.clearCache();
+    const v = bigView();
+    const cfg = { ...Paper.forType('cold-press') };
+    PT.drawSurface(mmCtx(), cfg, v);
+    const st = PT.cacheStats();
+    const buckets = (keys) => Array.from(new Set(keys.map((k) => Number(k.split('|')[2])))).sort((a, b) => a - b);
+    const built = buckets(st.keys);
+    const queued = buckets(st.queuedKeys);
+    expect(built.length).toBe(1);
+    const exactB = Math.max(...queued);
+    expect(built[0]).toBe(exactB / 8);
+    expect(Number(st.queuedKeys[0].split('|')[2])).toBe(exactB / 4);
   });
 
   test('chunk cache: repeat draws hit; the cache is capped in bytes', () => {

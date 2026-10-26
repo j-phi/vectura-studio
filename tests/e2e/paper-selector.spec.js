@@ -42,6 +42,8 @@ test('paper selector: per-project paper survives save/reopen; default paper driv
   expect(plain.variance).toBeLessThan(1);
   await page.locator('.paper-swatch[data-paper-type="cold-press"]').click();
   await expect(page.locator('.paper-swatch[data-paper-type="cold-press"]')).toHaveAttribute('aria-checked', 'true');
+  // Texture refines in idle slices: wait for the queue to drain.
+  await page.waitForFunction(() => window.Vectura.PaperTexture.cacheStats().queued === 0, null, { timeout: 15000 });
   const textured = await sheetPixel(page);
   expect(textured.variance).toBeGreaterThan(plain.variance + 2);
 

@@ -89,6 +89,12 @@ describe('PAPERS catalogue', () => {
     expect(T.tracing.absorbency).toBeLessThan(T['hot-press'].absorbency);
   });
 
+  test('catalogue lookups never resolve inherited members (null prototype)', () => {
+    expect(PAPERS.TYPES.constructor).toBeUndefined();
+    expect(PAPERS.TYPES.toString).toBeUndefined();
+    expect(PAPERS.TYPES.__proto__).toBeUndefined();
+  });
+
   test('limits: chunks stay screen-sharp to extreme zoom and the cache is capped in bytes', () => {
     expect(PAPERS.LIMITS.maxBucket).toBeGreaterThanOrEqual(128);
     expect(PAPERS.LIMITS.cacheBytes).toBeLessThanOrEqual(64 * 1024 * 1024);

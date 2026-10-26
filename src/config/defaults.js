@@ -2662,7 +2662,7 @@
     autoColorizationCollapsed: true,
     pensCollapsed: false,
     pens: [
-      { id: 'pen-1', name: 'Pen 1', color: '#ffffff', width: 0.3 },
+      { id: 'pen-1', name: 'Pen 1', color: '#ffffff', width: 0.3, themeManaged: true },
       { id: 'pen-2', name: 'Pen 2', color: '#dbeafe', width: 0.5 },
       { id: 'pen-3', name: 'Pen 3', color: '#93c5fd', width: 0.8 },
     ],

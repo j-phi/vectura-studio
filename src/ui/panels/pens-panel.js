@@ -77,6 +77,8 @@
     const applyToLayers = options.applyToLayers !== undefined ? Boolean(options.applyToLayers) : Boolean(autoColorization.enabled);
     pens.forEach((pen, index) => {
       pen.color = palette.colors[index % palette.colors.length];
+      // A palette is a deliberate pick: the theme/paper stops managing Pen 1.
+      pen.themeManaged = false;
     });
     if (applyToLayers) {
       this.app.engine.layers.forEach((layer) => {
@@ -302,6 +304,8 @@
         // Mirrors the transform-commit pattern at app.js:111.
         const applyColor = (value) => {
           pen.color = value;
+          // A user-picked colour: the theme/paper stops managing this pen.
+          pen.themeManaged = false;
           applyIcon();
           this.app.engine.layers.forEach((layer) => {
             if (layer.penId === pen.id) {
@@ -315,8 +319,9 @@
           this.app.render();
         };
         let preDragColor = null;
+        let preDragManaged;
         const beginColorEdit = () => {
-          if (preDragColor === null) preDragColor = pen.color;
+          if (preDragColor === null) { preDragColor = pen.color; preDragManaged = pen.themeManaged; }
         };
         colorInput.addEventListener('pointerdown', beginColorEdit);
         colorInput.addEventListener('focus', beginColorEdit);
@@ -328,6 +333,7 @@
             // then re-apply the committed value. This preserves the
             // "push-before-change" invariant captureState() relies on.
             pen.color = preDragColor;
+            pen.themeManaged = preDragManaged;
             if (this.app.pushHistory) this.app.pushHistory();
           }
           preDragColor = null;

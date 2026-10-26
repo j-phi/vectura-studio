@@ -42,7 +42,9 @@
     absorbency: 0, bleedMm: 0, feather: 0, dryskip: 0, inkOpacity: 1,
   };
 
-  const TYPES = {
+  // Null-prototype map: an unknown type such as 'constructor' or 'toString'
+  // can never resolve to an inherited Object member.
+  const TYPES = Object.assign(Object.create(null), {
     none: {
       ...plain,
       label: 'None',
@@ -66,7 +68,7 @@
       short: 'Cold press',
       hint: 'Medium tooth, slight broken line on peaks',
       color: '#f7f2e6',
-      grainAngle: 0.35, grainStretch: 1.25, grainMm: 1.25, tooth: 0.62, fiberDensity: 0.12, fiberLenMm: 2.2, fiberTone: 0.35, speckle: 0, mottle: 0.22,
+      grainAngle: 0.35, grainStretch: 1.25, grainMm: 1.25, tooth: 0.46, fiberDensity: 0.12, fiberLenMm: 2.2, fiberTone: 0.35, speckle: 0, mottle: 0.22,
       absorbency: 0.55, bleedMm: 0.11, feather: 0.35, dryskip: 0.38, inkOpacity: 0.94,
       defaultTexture: 0.7, defaultBleed: 0.55,
     },
@@ -75,7 +77,7 @@
       short: 'Rough',
       hint: 'Heavy tooth, ink skips across the peaks',
       color: '#f5f0e2',
-      grainAngle: 0.5, grainStretch: 1.3, grainMm: 2.3, tooth: 0.7, fiberDensity: 0.14, fiberLenMm: 2.6, fiberTone: 0.35, speckle: 0, mottle: 0.28,
+      grainAngle: 0.5, grainStretch: 1.3, grainMm: 2.3, tooth: 0.52, fiberDensity: 0.14, fiberLenMm: 2.6, fiberTone: 0.35, speckle: 0, mottle: 0.28,
       absorbency: 0.6, bleedMm: 0.13, feather: 0.4, dryskip: 0.62, inkOpacity: 0.93,
       defaultTexture: 0.8, defaultBleed: 0.55,
     },
@@ -142,7 +144,7 @@
       absorbency: 0.04, bleedMm: 0.02, feather: 0.05, dryskip: 0, inkOpacity: 0.9,
       defaultTexture: 0.6, defaultBleed: 0.3,
     },
-  };
+  });
 
   const ORDER = [
     'none',
@@ -168,14 +170,19 @@
     // document-mm grid, rasterised at a power-of-two px/mm "bucket" near the
     // on-screen density (never the sheet size), with an apron so adjacent
     // chunks overlap seamlessly. maxBucket keeps chunks screen-sharp up to
-    // ~128 px/mm (extreme zoom); coarseBucket is the cheap level drawn at once
-    // while exact chunks refine when idle. The cache is capped in bytes.
+    // ~128 px/mm (extreme zoom). While exact chunks refine (time-sliced), the
+    // bucket/8 level is drawn at once. The cache is capped in bytes.
     chunkPx: 256,
     apronPx: 2,
     minBucket: 0.25,
     maxBucket: 128,
-    coarseBucket: 1,
     cacheBytes: 64 * 1024 * 1024,
+    // Visible-set budget: above it the view steps to a coarser bucket (no
+    // eviction thrash on huge retina viewports); the cap grows to 1.5× the
+    // pinned visible set but never past hardCacheBytes.
+    visibleBytes: 64 * 1024 * 1024,
+    hardCacheBytes: 128 * 1024 * 1024,
+    refineSliceMs: 10,
     // Below this on-screen sheet size the texture overlay is skipped (LOD).
     minSheetPx: 96,
     // Below this halo radius (device px) bleed is skipped.
