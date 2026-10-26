@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Security (SVG sanitizer fallback hardening, v1.4.23)
+- **Obfuscated script schemes.** The no-DOMParser fallback now decodes character references and drops whitespace/control characters before checking `href`, `xlink:href`, `src` and animation `to`/`from`/`by`/`values`, as the DOM path does. `javascript&colon;`, `jav&#x61;script:`, `&#106;avascript:`, `java&#9;script:`, `ja&NewLine;vascript:`, a literal tab, and `<animate to="java&#115;cript:">` are neutralised (href rewritten to `#`, animation dropped). The final rejection check reads the decoded form.
+- **Linear time.** A single-pass tokenizer replaces the lazy `[\s\S]*?` strips, which went quadratic on unmatched open tags (`'<animate to="'` x 25k: 21.9 s before, under 1 ms after). The fallback refuses input over 8 MiB; the browser DOM path has no cap and is unchanged.
+- **Tags are rebuilt.** Every tag is re-emitted from its parsed name and attributes, so unquoted handlers are stripped and unquoted `javascript:` hrefs become `#` with the element kept. Comments, processing instructions and DOCTYPE (with entity declarations) are dropped; CDATA becomes escaped text. An unterminated tag, quote, comment or dropped element, or a `<` inside a tag, still returns an empty SVG.
+
 ### Touch nightly on hosted Linux (v1.4.20, branch `fix/touch-nightly-linux`)
 The touch nightly had 139 red cells (123 failed, 16 flaky) in runs 39161828852 and 39127235973, the same in both. Each fix has a RED proof or a mutation proof in its commit.
 

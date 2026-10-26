@@ -703,13 +703,102 @@ describe('SvgSanitize regex fallback (no DOMParser, no xmldom)', () => {
   test('hostile markup left inside a tag still empties the output', () => {
     const sanitize = loadFallbackSanitizer();
     const empty = '<svg xmlns="http://www.w3.org/2000/svg"/>';
-    // Unquoted handler: not matched by the quoted-value strip rules.
-    expect(sanitize('<svg><path onclick=alert(1) d="M0 0"/></svg>')).toBe(empty);
-    // Unquoted javascript: href.
-    expect(sanitize('<svg><a href=javascript:alert(1)><text>x</text></a></svg>')).toBe(empty);
+    // Unquoted handler / javascript: href: the tokenizer parses unquoted
+    // values, so the handler is stripped and the href neutralised to `#`
+    // with the element kept (same policy as the DOM path).
+    expect(sanitize('<svg><path onclick=alert(1) d="M0 0"/></svg>')).toBe('<svg><path d="M0 0"/></svg>');
+    expect(sanitize('<svg><a href=javascript:alert(1)><text>x</text></a></svg>'))
+      .toBe('<svg><a href="#"><text>x</text></a></svg>');
+    // A `<` inside a tag cannot be read with certainty.
+    expect(sanitize('<svg><path d="M0 0" <script>alert(1)</script>/></svg>')).toBe(empty);
     // Unclosed script tag (no end tag for the strip rule to pair with).
     expect(sanitize('<svg><script>alert(1)</svg>')).toBe(empty);
     // Unterminated attribute quote hiding a payload.
     expect(sanitize('<svg><a title="x onload=alert(1)></svg>')).toBe(empty);
+  });
+
+  // Adversarial review follow-up: the fallback used to match `javascript:`
+  // only in its literal form, so entity- or whitespace-obfuscated schemes
+  // survived. Scan the output the way a browser would read the URL: decode
+  // character references, then drop ASCII whitespace/control characters.
+  const readAsBrowserUrl = (text) => `${text}`
+    .replace(/&#x([0-9a-f]+);?/gi, (_, h) => String.fromCodePoint(Math.min(parseInt(h, 16), 0x10ffff)))
+    .replace(/&#(\d+);?/g, (_, d) => String.fromCodePoint(Math.min(parseInt(d, 10), 0x10ffff)))
+    .replace(/&colon;/gi, ':').replace(/&Tab;/gi, '\t').replace(/&NewLine;/gi, '\n')
+    .replace(/[\s\u0000-\u001f]/g, '')
+    .toLowerCase();
+
+  const OBFUSCATED_SCHEME_PAYLOADS = {
+    'named &colon;': '<svg><a href="javascript&colon;alert(1)"><text>x</text></a></svg>',
+    'hex entity letter': '<svg><a href="jav&#x61;script:alert(1)"><text>x</text></a></svg>',
+    'decimal entity first letter': '<svg><a href="&#106;avascript:alert(1)"><text>x</text></a></svg>',
+    'xlink:href hex entity': '<svg><a xlink:href="&#x6A;avascript:alert(1)"><text>x</text></a></svg>',
+    'tab entity': '<svg><a href="java&#9;script:alert(1)"><text>x</text></a></svg>',
+    '&NewLine; entity': '<svg><a href="ja&NewLine;vascript:alert(1)"><text>x</text></a></svg>',
+    'literal tab': '<svg><a href="java\tscript:alert(1)"><text>x</text></a></svg>',
+    'single-quoted tab entity': "<svg><a href='java&#9;script:1'><text>x</text></a></svg>",
+    'vbscript entity': '<svg><a href="vb&#115;cript:msgbox(1)"><text>x</text></a></svg>',
+    'animate to=': '<svg><animate attributeName="x" to="java&#115;cript:alert(1)"/></svg>',
+    'animate values=': '<svg><animate attributeName="x" values="0;java&#115;cript:alert(1)"/></svg>',
+    'animate from=': '<svg><animate attributeName="x" from="&#106;avascript:alert(1)"/></svg>',
+    'animate by=': '<svg><animate attributeName="x" by="java&#9;script:alert(1)"/></svg>',
+    'set to=': '<svg><set attributeName="x" to="jav&#x61;script:alert(1)"/></svg>',
+    'set attributeName=href unquoted': '<svg><set attributeName=href to=javascript:alert(1) /></svg>',
+    'animate attributeName entity href': '<svg><animate attributeName="&#104;ref" values="#a;#b"/></svg>',
+  };
+
+  test.each(Object.entries(OBFUSCATED_SCHEME_PAYLOADS))(
+    'obfuscated script scheme is neutralised (%s)',
+    (_label, payload) => {
+      const sanitize = loadFallbackSanitizer();
+      const out = sanitize(payload);
+      const read = readAsBrowserUrl(out);
+      expect(read).not.toContain('javascript:');
+      expect(read).not.toContain('vbscript:');
+      expect(out).not.toMatch(/<\s*(?:animate|set)\b[^>]*attributeName\s*=\s*["']?(?:xlink:)?(?:href|&#)/i);
+    },
+  );
+
+  test('legitimate markup is preserved alongside the scheme checks', () => {
+    const sanitize = loadFallbackSanitizer();
+    const svg = '<svg><a href="#id"><text x="1">a &gt; b</text></a>'
+      + '<a href="https://example.com/x"><text>link</text></a>'
+      + '<desc>javascript: is mentioned here</desc>'
+      + '<rect style="fill:red;stroke:blue" width="2"/>'
+      + '<animate attributeName="opacity" values="0;1" dur="1s"/></svg>';
+    const out = sanitize(svg);
+    expect(out).toContain('<a href="#id">');
+    expect(out).toContain('<desc>javascript: is mentioned here</desc>');
+    expect(out).toContain('style="fill:red;stroke:blue"');
+    expect(out).toContain('<animate attributeName="opacity" values="0;1" dur="1s"/>');
+    expect(out).toContain('a &gt; b');
+  });
+
+  // Lazy `[\s\S]*?` strips used to go quadratic on unmatched open tags
+  // (`'<animate to="'` x 10k took ~3.8 s). The tokenizer is linear, so a
+  // ~300 KB pathological input must finish far inside a second even on a
+  // slow CI runner.
+  test.each([
+    ['<script', 45000],
+    ['<animate to="', 25000],
+    ['<animate ', 35000],
+    ['<style', 50000],
+    ['<a href="', 35000],
+  ])('pathological %j input stays linear', (chunk, count) => {
+    const sanitize = loadFallbackSanitizer();
+    const input = `<svg>${chunk.repeat(count)}`;
+    expect(input.length).toBeGreaterThan(250000);
+    const start = Date.now();
+    const out = sanitize(input);
+    const elapsed = Date.now() - start;
+    expect(typeof out).toBe('string');
+    expect(elapsed).toBeLessThan(1000);
+  });
+
+  test('oversized input is refused by the fallback only', () => {
+    const sanitize = loadFallbackSanitizer();
+    const big = `<svg>${'<path d="M0 0"/>'.repeat(600000)}</svg>`;
+    expect(big.length).toBeGreaterThan(8 * 1024 * 1024);
+    expect(sanitize(big)).toBe('<svg xmlns="http://www.w3.org/2000/svg"/>');
   });
 });
