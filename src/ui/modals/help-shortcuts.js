@@ -368,7 +368,19 @@
           ${row(mouse('scroll wheel'),       'Zoom both petals simultaneously')}
         </tbody>
       </table>`;
+    const paperRows = `
+      <table class="help-kbd-table">
+        <tbody>
+          ${row(mouse('click') + ' swatch', 'Pick a paper (Pen / Paper tab ▸ Paper)', 'one undo step')}
+          ${row(mouse('click') + ' Color', 'Any paper colour; keeps the paper type')}
+          ${row('Texture / Ink bleed', 'Surface tooth and how far ink wicks into the sheet')}
+          ${row('Set as default', 'New documents start on this paper')}
+          ${row('Use default', 'Apply your default paper to this document')}
+        </tbody>
+      </table>
+      ${callout('Paper is saved in the <strong>.vectura</strong> file. Texture and bleed are sized in real millimetres, so a small sheet shows coarser grain than a large one at fit-to-screen. They are a <strong>preview only</strong>: the SVG export stays plotter-clean (no paper, no texture). <strong>None</strong> is a plain sheet in the theme colour. The default paper can also be set in <strong>Document Setup ▸ Paper &amp; Selection</strong>.')}`;
     const pen = `
+      ${accordion('Paper (Pen / Paper tab)', paperRows, true)}
       ${accordion('Path Drawing', penDrawRows, true)}
       ${accordion('Modifier Keys', penModRows, true)}
       ${accordion('Petal Designer', petalRows)}`;

@@ -8,6 +8,14 @@
   const PREFERENCE_STORAGE_KEY = 'vectura_prefs';
   const PREFERENCE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
   const DEFAULT_THEME = 'dark';
+  // Pen 1 colours a theme ever assigns (plus the factory default). Pen 1 in
+  // one of these is "untouched" and may follow the paper; anything else was
+  // picked by the user and is never recoloured.
+  const THEME_PEN1_DEFAULTS = new Set(
+    [...Object.values(THEMES).map((t) => t && t.pen1Color), '#ffffff']
+      .filter(Boolean)
+      .map((c) => `${c}`.toLowerCase()),
+  );
   const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
   const normalizeThemeName = (theme) => {
     const key = `${theme || ''}`.trim().toLowerCase();
@@ -113,6 +121,10 @@
       // so clearSavedPreferences() can restore factory defaults later.
       this.defaultSettingsSnapshot = clone(SETTINGS);
       const hadCookiePreferences = this.applyPreferencesFromCookie();
+      // Paper selector: the explicitly saved default paper (own storage key,
+      // independent of cookie consent) wins over the preference snapshot copy.
+      const storedPaperDefault = window.Vectura.Paper?.loadDefault?.();
+      if (storedPaperDefault !== undefined) SETTINGS.paperDefault = storedPaperDefault;
       // Cold boot (no cookie): sync pen-1 to the active theme's pen1Color so a
       // fresh load on light/lark doesn't leave pen-1 white on the white artboard.
       // Document bg is also synced so the paper color matches the theme's intent.
@@ -125,6 +137,7 @@
         refreshUi: false,
         render: false,
       });
+      this.initDocumentPaper();
       this.engine = new VectorEngine();
       this.renderer = new Renderer('main-canvas', this.engine);
       this.renderer.app = this;
@@ -418,6 +431,7 @@
       Object.assign(SETTINGS, defaults);
       SETTINGS.cookiePreferencesEnabled = false;
       this.clearPreferenceCookie();
+      window.Vectura.Paper?.removeDefault?.();
 
       // Re-apply layout-affecting settings whose UI state lives outside SETTINGS
       // (CSS vars + class toggles). Without these the panes/toolbar would keep
@@ -466,6 +480,8 @@
         strokeWidth: SETTINGS.strokeWidth,
         strokeWidthOverride: SETTINGS.strokeWidthOverride === true,
         bgColor: SETTINGS.bgColor,
+        // Paper selector: the user's single default paper (null = none set).
+        paperDefault: SETTINGS.paperDefault ? clone(SETTINGS.paperDefault) : null,
         truncate: SETTINGS.truncate,
         cropExports: SETTINGS.cropExports,
         removeHiddenGeometry: SETTINGS.removeHiddenGeometry,
@@ -621,6 +637,7 @@
       SETTINGS.strokeWidth = takeNumber('strokeWidth', SETTINGS.strokeWidth, 0, 100);
       SETTINGS.strokeWidthOverride = snapshot.strokeWidthOverride === true;
       SETTINGS.bgColor = takeColor('bgColor', SETTINGS.bgColor);
+      this.applyPaperDefaultPreference(snapshot);
       SETTINGS.truncate = snapshot.truncate === undefined ? SETTINGS.truncate : snapshot.truncate === true;
       SETTINGS.cropExports = snapshot.cropExports === undefined ? SETTINGS.cropExports : snapshot.cropExports === true;
       SETTINGS.removeHiddenGeometry = snapshot.removeHiddenGeometry === undefined
@@ -734,7 +751,12 @@
           const width = V && V.finiteInRange(p.width, 0, 100);
           if (!id || !color || width == null) { warn('pens[' + i + ']', p); continue; }
           const name = (typeof p.name === 'string' && p.name.length <= 128) ? p.name : id;
-          cleanPens.push({ id, name, color, width });
+          const pen = { id, name, color, width };
+          // Theme-managed Pen 1: explicit flag, else (pre-flag snapshot) a
+          // colour equal to a theme default.
+          if (typeof p.themeManaged === 'boolean') pen.themeManaged = p.themeManaged;
+          else if (id === 'pen-1') pen.themeManaged = THEME_PEN1_DEFAULTS.has(`${color}`.toLowerCase());
+          cleanPens.push(pen);
         }
         if (cleanPens.length) SETTINGS.pens = cleanPens;
       }
@@ -860,6 +882,116 @@
       }, Math.max(0, delay));
     }
 
+    // Paper selector: migrate/validate the default paper from a preference
+    // snapshot. A snapshot written by a pre-paper build has no paperDefault;
+    // there, a saved bgColor that differs from that theme's document colour
+    // was a deliberate background choice and becomes the default paper. A
+    // theme-matching colour is just the theme's own sheet: no default, so
+    // theme toggles keep recolouring the paper as before.
+    applyPaperDefaultPreference(snapshot) {
+      const PaperModel = window.Vectura.Paper;
+      if (!PaperModel || !snapshot || typeof snapshot !== 'object') return;
+      if ('paperDefault' in snapshot) {
+        const raw = snapshot.paperDefault;
+        SETTINGS.paperDefault = raw && typeof raw === 'object' ? PaperModel.normalize(raw) : null;
+        return;
+      }
+      const V = window.Vectura.Validators;
+      const bg = snapshot.bgColor;
+      if (!(V ? V.isHexColor(bg) : PaperModel.isHexColor(bg))) return;
+      const theme = getThemeConfig(snapshot.uiTheme ?? SETTINGS.uiTheme);
+      const themeBg = PaperModel.toHex6(theme && theme.documentBg);
+      SETTINGS.paperDefault = PaperModel.toHex6(bg) !== themeBg ? PaperModel.fromLegacyBg(bg) : null;
+    }
+
+    // Cold boot / document start: the project paper starts from the user's
+    // default paper, else a plain sheet in the (possibly theme-synced) colour.
+    initDocumentPaper() {
+      const PaperModel = window.Vectura.Paper;
+      if (!PaperModel) return null;
+      // The previous project's colour (the bgColor preference mirror) never
+      // leaks into a new document: default paper, else the theme's sheet.
+      const start = SETTINGS.paperDefault
+        ? PaperModel.normalize(SETTINGS.paperDefault)
+        : PaperModel.builtinDefault();
+      const paper = PaperModel.setActive(start, { render: false });
+      this.syncPen1ToPaper();
+      return paper;
+    }
+
+    // Pen 1's colour for ink on `paper` under `theme`: the theme's own Pen 1
+    // when it reads on the paper (WCAG contrast ≥ 3), else the most legible
+    // Pen 1 among the same skin family's themes (then any theme).
+    pen1ColorForPaper(theme, paper) {
+      const PaperModel = window.Vectura.Paper;
+      const bg = paper && paper.color;
+      const contrast = (c) => {
+        const a = PaperModel.luminance(c);
+        const b = PaperModel.luminance(bg);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      };
+      if (theme && theme.pen1Color && contrast(theme.pen1Color) >= 3) return theme.pen1Color;
+      const family = theme && theme.family;
+      const pick = (list) => list.reduce((best, c) => (!best || contrast(c) > contrast(best) ? c : best), null);
+      const all = Object.values(THEMES).filter((t) => t && t.pen1Color);
+      const fam = all.filter((t) => t.family === family).map((t) => t.pen1Color);
+      const best = pick(fam.length ? fam : all.map((t) => t.pen1Color));
+      return best && contrast(best) >= 3 ? best : (PaperModel.luminance(bg) >= 0.18 ? '#000000' : '#ffffff');
+    }
+
+    // Recolour Pen 1 (and layers drawn with it) for the current paper, but
+    // only while Pen 1 is theme-managed (pen.themeManaged): a pen the user
+    // picked is never changed. Returns true when it changed.
+    syncPen1ToPaper(theme = getThemeConfig(SETTINGS.uiTheme)) {
+      const PaperModel = window.Vectura.Paper;
+      if (!Array.isArray(SETTINGS.pens) || !SETTINGS.pens.length) return false;
+      const pen1 = SETTINGS.pens.find((pen) => pen?.id === 'pen-1') || SETTINGS.pens[0];
+      if (!pen1) return false;
+      const current = `${pen1.color || ''}`.toLowerCase();
+      // Only a theme-managed Pen 1 follows the paper; any user edit clears
+      // the flag (pens panel), so a deliberate #000/#fff stays put.
+      if (pen1.themeManaged !== true) return false;
+      const target = PaperModel
+        ? this.pen1ColorForPaper(theme, PaperModel.effective())
+        : (theme && theme.pen1Color) || pen1.color;
+      if (!target || target.toLowerCase() === current) return false;
+      pen1.color = target;
+      if (this.engine?.layers?.length) {
+        this.engine.layers.forEach((layer) => {
+          if (layer.penId === pen1.id) layer.color = target;
+        });
+      }
+      return true;
+    }
+
+    // Write (or clear, with null) the user's single default paper. A
+    // preference, not a document edit: no undo entry, persisted immediately.
+    setPaperDefault(cfg) {
+      const PaperModel = window.Vectura.Paper;
+      if (!PaperModel) return null;
+      const next = cfg && typeof cfg === 'object' ? PaperModel.normalize(cfg) : null;
+      SETTINGS.paperDefault = next;
+      PaperModel.saveDefault(next);
+      this.persistPreferencesDebounced();
+      this.ui?.refreshPaperUI?.();
+      return next;
+    }
+
+    // Project paper write from the UI. history:true pushes one undo checkpoint.
+    setProjectPaper(cfg, { history = true } = {}) {
+      const PaperModel = window.Vectura.Paper;
+      if (!PaperModel) return null;
+      // One undo step covers the paper AND the Pen 1 legibility follow-up.
+      const next = PaperModel.setActive(cfg, { app: this, history, render: false });
+      if (this.syncPen1ToPaper()) {
+        this.ui?.renderPens?.();
+        this.ui?.renderLayers?.();
+      }
+      this.ui?.refreshPaperUI?.();
+      if (this.renderer) this.render();
+      return next;
+    }
+
     captureState() {
       const selectedLayerIds = Array.from(this.renderer?.selectedLayerIds || []).filter(Boolean);
       return {
@@ -872,6 +1004,9 @@
           strokeWidth: SETTINGS.strokeWidth,
           strokeWidthOverride: SETTINGS.strokeWidthOverride === true,
           bgColor: SETTINGS.bgColor,
+          // Paper selector: the project's paper (type/colour/texture/bleed/seed).
+          // bgColor above stays as its colour mirror for older readers/builds.
+          paper: window.Vectura.Paper ? window.Vectura.Paper.effective() : null,
           undoSteps: SETTINGS.undoSteps,
           truncate: SETTINGS.truncate,
           cropExports: SETTINGS.cropExports,
@@ -945,7 +1080,14 @@
       SETTINGS.precision = s.precision ?? SETTINGS.precision;
       SETTINGS.strokeWidth = s.strokeWidth ?? SETTINGS.strokeWidth;
       SETTINGS.strokeWidthOverride = s.strokeWidthOverride === true;
-      SETTINGS.bgColor = s.bgColor ?? SETTINGS.bgColor;
+      // Paper selector: state.paper > legacy bgColor > user default > built-in.
+      if (window.Vectura.Paper) {
+        const paper = window.Vectura.Paper.resolveProjectPaper(s, SETTINGS.paperDefault);
+        SETTINGS.paper = paper;
+        SETTINGS.bgColor = paper.color;
+      } else {
+        SETTINGS.bgColor = s.bgColor ?? SETTINGS.bgColor;
+      }
       SETTINGS.undoSteps = s.undoSteps ?? SETTINGS.undoSteps;
       SETTINGS.truncate = s.truncate ?? SETTINGS.truncate;
       SETTINGS.cropExports = s.cropExports ?? SETTINGS.cropExports;
@@ -1005,6 +1147,15 @@
         const validator = window.Vectura?.PenValidate?.validatePens;
         const validated = typeof validator === 'function' ? validator(s.pens) : clone(s.pens);
         if (validated.length) {
+          // Paper selector: a file without the themeManaged flag is legacy.
+          // Pre-paper files (no settings.paper): Pen 1 is managed only if it
+          // still has a theme-default colour. Files that have paper but no
+          // flag: leave Pen 1 alone.
+          const legacy = !(s.paper && typeof s.paper === 'object');
+          validated.forEach((pen) => {
+            if (pen.id !== 'pen-1' || typeof pen.themeManaged === 'boolean') return;
+            pen.themeManaged = legacy && THEME_PEN1_DEFAULTS.has(`${pen.color || ''}`.toLowerCase());
+          });
           SETTINGS.pens = validated;
         }
       }
@@ -1028,6 +1179,7 @@
       this.renderer.directAuxSelections = [];
       this.engine.activeLayerId = selectedId;
       this.ui.initSettingsValues();
+      this.ui.refreshPaperUI?.();
       if (this.ui.setActiveTool) this.ui.setActiveTool(SETTINGS.activeTool || 'select');
       if (this.ui.setScissorMode) this.ui.setScissorMode(SETTINGS.scissorMode || 'line');
       if (this.ui.setPenMode) this.ui.setPenMode(SETTINGS.penMode || 'draw');
@@ -1090,6 +1242,9 @@
       const themeName = normalizeThemeName(nextTheme ?? SETTINGS.uiTheme);
       const theme = getThemeConfig(themeName);
       if (!theme) return null;
+      // Paper selector theme-sync rule needs the colour the sheet had under
+      // the theme being left.
+      const previousTheme = getThemeConfig(SETTINGS.uiTheme);
       SETTINGS.uiTheme = themeName;
 
       const root = document.documentElement;
@@ -1129,7 +1284,17 @@
       if (themeColorMeta && theme.metaThemeColor) themeColorMeta.setAttribute('content', theme.metaThemeColor);
 
       if (syncDocumentBg && theme.documentBg) {
-        SETTINGS.bgColor = theme.documentBg;
+        // Paper selector theme-sync rule: the theme recolours the sheet only
+        // when the user has no default paper and the project paper is a plain
+        // ('none') sheet still in the previous theme's own colour. A default,
+        // a textured paper or a custom plain colour is never overwritten.
+        const PaperModel = window.Vectura.Paper;
+        if (!PaperModel) {
+          SETTINGS.bgColor = theme.documentBg;
+        } else if (PaperModel.themeMaySync(previousTheme && previousTheme.documentBg)) {
+          const base = SETTINGS.paper || PaperModel.fromLegacyBg(theme.documentBg);
+          PaperModel.setActive({ ...base, type: 'none', color: theme.documentBg }, { render: false });
+        }
       }
 
       if (syncGridColor) {
@@ -1137,18 +1302,10 @@
         if (theme.gridMinorColor) SETTINGS.gridMinorColor = theme.gridMinorColor;
       }
 
-      if (syncPen1 && Array.isArray(SETTINGS.pens) && SETTINGS.pens.length) {
-        const pen1 = SETTINGS.pens.find((pen) => pen?.id === 'pen-1') || SETTINGS.pens[0];
-        if (pen1) {
-          pen1.color = theme.pen1Color || pen1.color;
-          if (this.engine?.layers?.length) {
-            this.engine.layers.forEach((layer) => {
-              if (layer.penId === pen1.id) {
-                layer.color = pen1.color;
-              }
-            });
-          }
-        }
+      if (syncPen1) {
+        // Pen 1 follows the PAPER it draws on (not the UI theme), and only
+        // while it is still an untouched theme-default colour.
+        this.syncPen1ToPaper(theme);
       }
 
       if (refreshUi && this.ui) {

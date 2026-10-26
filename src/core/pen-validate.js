@@ -45,6 +45,8 @@
     if (typeof pen.lineCap === 'string' && /^[A-Za-z]+$/.test(pen.lineCap)) {
       out.lineCap = pen.lineCap;
     }
+    // Paper selector: true while Pen 1's colour is still theme/paper managed.
+    if (typeof pen.themeManaged === 'boolean') out.themeManaged = pen.themeManaged;
     return out;
   };
 

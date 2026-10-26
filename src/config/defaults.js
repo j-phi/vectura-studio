@@ -2513,6 +2513,11 @@
     strokeWidth: 0.3,
     strokeWidthOverride: false,
     bgColor: '#121214',
+    // Paper selector (src/config/papers.js, src/core/paper.js). paper = the
+    // project's paper {type,color,texture,bleed,seed} (bgColor mirrors its
+    // colour); paperDefault = the user's single default paper (null = none).
+    paper: null,
+    paperDefault: null,
     undoSteps: 20,
     truncate: true,
     cropExports: true,
@@ -2657,7 +2662,7 @@
     autoColorizationCollapsed: true,
     pensCollapsed: false,
     pens: [
-      { id: 'pen-1', name: 'Pen 1', color: '#ffffff', width: 0.3 },
+      { id: 'pen-1', name: 'Pen 1', color: '#ffffff', width: 0.3, themeManaged: true },
       { id: 'pen-2', name: 'Pen 2', color: '#dbeafe', width: 0.5 },
       { id: 'pen-3', name: 'Pen 3', color: '#93c5fd', width: 0.8 },
     ],

@@ -333,6 +333,9 @@
     ctx.shadowBlur = 20 / Math.max(scale, 0.001);
     ctx.fillRect(0, 0, snapshot.prof.width, snapshot.prof.height);
     ctx.shadowBlur = 0;
+    // Paper selector: the export preview shows the paper's colour + texture
+    // (no ink effects — the SVG itself never carries paper).
+    this.app?.renderer?.drawPaperTexture?.(ctx, snapshot.prof, () => this.renderExportPreview());
     ctx.strokeStyle = getThemeToken('--render-paper-outline', '#333333');
     ctx.lineWidth = 1 / Math.max(scale, 0.001);
     ctx.strokeRect(0, 0, snapshot.prof.width, snapshot.prof.height);

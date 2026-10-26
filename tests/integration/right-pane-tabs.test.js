@@ -8,7 +8,7 @@ const FULL_STACK = {
   useIndexHtml: true,
 };
 
-describe('right pane: Layers / Pens tabs', () => {
+describe('right pane: Layers / Pen / Paper tabs', () => {
   let runtime, window, document;
 
   beforeAll(async () => {
@@ -35,7 +35,9 @@ describe('right pane: Layers / Pens tabs', () => {
 
     const labels = Array.from(buttons).map((b) => (b.textContent || '').trim().toLowerCase());
     expect(labels).toContain('layers');
-    expect(labels).toContain('pens');
+    // Paper selector: the Pens tab is now "Pen / Paper" (data-tab stays "pens").
+    expect(labels).toContain('pen / paper');
+    expect(document.querySelector('.right-pane-tab[data-tab="pens"]').textContent.trim()).toBe('Pen / Paper');
   });
 
   test('Add layer control lives inside the Layers tab content (in the search bar) and is removed from the pane header', () => {
@@ -65,6 +67,11 @@ describe('right pane: Layers / Pens tabs', () => {
 
     expect(layersPanel.contains(document.getElementById('layer-list'))).toBe(true);
     expect(pensPanel.contains(document.getElementById('pens-section'))).toBe(true);
+    // Paper section sits above the Pens section inside the same tab.
+    const paperSection = document.getElementById('paper-global-section');
+    expect(pensPanel.contains(paperSection)).toBe(true);
+    const order = paperSection.compareDocumentPosition(document.getElementById('pens-global-section'));
+    expect(order & window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(pensPanel.contains(document.getElementById('auto-colorization-section'))).toBe(true);
   });
 
@@ -87,7 +94,7 @@ describe('right pane: Layers / Pens tabs', () => {
   });
 });
 
-describe('document setup panel: background section', () => {
+describe('document setup panel: default paper (replaces the background colour)', () => {
   let runtime, window, document;
 
   beforeAll(async () => {
@@ -102,32 +109,58 @@ describe('document setup panel: background section', () => {
     runtime = null;
   });
 
-  test('background color input lives inside the Document Setup settings panel, not the bottom or right pane', () => {
-    const bgInput = document.getElementById('inp-bg-color');
-    expect(bgInput).toBeTruthy();
-
+  test('the old Background colour picker is gone; the Default paper row lives in Document Setup', () => {
+    expect(document.getElementById('inp-bg-color')).toBeNull();
+    expect(document.getElementById('bg-color-pill')).toBeNull();
+    const select = document.getElementById('set-default-paper-type');
+    expect(select).toBeTruthy();
     const settingsPanel = document.getElementById('settings-panel');
-    const bottomPane = document.getElementById('bottom-pane');
-    const rightPane = document.getElementById('right-pane');
-    expect(settingsPanel.contains(bgInput)).toBe(true);
-    expect(bottomPane.contains(bgInput)).toBe(false);
-    expect(rightPane.contains(bgInput)).toBe(false);
+    expect(settingsPanel.contains(select)).toBe(true);
+    expect(document.getElementById('right-pane').contains(select)).toBe(false);
+    const options = Array.from(select.options).map((o) => o.value);
+    expect(options).toEqual(['', ...window.Vectura.PAPERS.ORDER]);
+    // Unambiguous: "no default" vs. the plain "None" paper.
+    expect(select.options[0].textContent).toBe('No default (follow theme)');
+    expect(select.querySelector('option[value="none"]').textContent).toBe('None (plain colour)');
   });
 
-  test('background pill sits above the Selection Outline toggle inside Document Setup', () => {
-    const bgPill = document.getElementById('bg-color-pill');
+  test('Default paper row sits above the Selection Outline toggle inside Document Setup', () => {
+    const row = document.getElementById('default-paper-row');
     const selectionOutline = document.getElementById('set-selection-outline');
-    expect(bgPill).toBeTruthy();
-    expect(selectionOutline).toBeTruthy();
-
-    const order = bgPill.compareDocumentPosition(selectionOutline);
+    const order = row.compareDocumentPosition(selectionOutline);
     expect(order & window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  test('changing background input still updates SETTINGS.bgColor (wiring preserved after move)', () => {
-    const bgInput = document.getElementById('inp-bg-color');
-    bgInput.value = '#123456';
-    bgInput.dispatchEvent(new window.Event('input', { bubbles: true }));
-    expect(window.Vectura.SETTINGS.bgColor.toLowerCase()).toBe('#123456');
+  test('default paper controls write only the default (a preference), not the project paper', () => {
+    const S = window.Vectura.SETTINGS;
+    const before = { ...window.Vectura.Paper.effective() };
+    const historyBefore = window.app.history.length;
+    const select = document.getElementById('set-default-paper-type');
+    select.value = 'kraft';
+    select.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(S.paperDefault.type).toBe('kraft');
+    expect(S.paperDefault.color).toBe(window.Vectura.PAPERS.TYPES.kraft.color);
+    const input = document.getElementById('inp-default-paper-color');
+    input.value = '#123456';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    expect(S.paperDefault).toMatchObject({ type: 'kraft', color: '#123456' });
+    expect(window.Vectura.Paper.effective()).toEqual(before);
+    expect(window.app.history.length).toBe(historyBefore);
+  });
+
+  test('"Apply to this document" applies the default to the project with one undo step', () => {
+    const S = window.Vectura.SETTINGS;
+    const historyBefore = window.app.history.length;
+    document.getElementById('btn-default-paper-apply').click();
+    expect(S.paper).toMatchObject({ type: 'kraft', color: '#123456' });
+    expect(S.bgColor).toBe('#123456');
+    expect(window.app.history.length).toBe(historyBefore + 1);
+  });
+
+  test('choosing "No default (follow theme)" clears the default paper', () => {
+    const select = document.getElementById('set-default-paper-type');
+    select.value = '';
+    select.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(window.Vectura.SETTINGS.paperDefault).toBeNull();
   });
 });

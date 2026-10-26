@@ -5521,11 +5521,9 @@
       this.ctx.translate(this.offsetX, this.offsetY);
       this.ctx.scale(this.scale, this.scale);
       const prof = this.engine.currentProfile;
-      this.ctx.fillStyle = SETTINGS.bgColor;
-      this.ctx.shadowColor = getThemeToken('--render-shadow', 'rgba(0,0,0,0.5)');
-      this.ctx.shadowBlur = 20;
-      this.ctx.fillRect(0, 0, prof.width, prof.height);
-      this.ctx.shadowBlur = 0;
+      // Paper selector: stock colour (+ shadow) and, for a realistic paper,
+      // its surface texture in document space. 'none' paints exactly as before.
+      this.drawPaper(this.ctx, prof);
       if (SETTINGS.gridType && SETTINGS.gridType !== 'none') this.drawGridOverlay(prof);
       this.ctx.strokeStyle = getThemeToken('--render-paper-outline', '#333');
       this.ctx.lineWidth = 1 / this.scale;
@@ -6259,6 +6257,20 @@
         });
       };
 
+      // Paper selector: on a realistic paper the ink is rendered once per frame
+      // into an offscreen ink canvas (dry-skip + bleed halo) and composited with
+      // the paper's ink blend. paperInk is null for 'none' / pen-true preview,
+      // and every pass below then calls drawLayers() directly, exactly as before.
+      const paperInk = this._paperInkPlan();
+      const inkPass = () => {
+        if (!paperInk) {
+          drawLayers();
+          return;
+        }
+        if (!paperInk.rendered) this._renderPaperInk(drawLayers, paperInk, prof);
+        this._compositePaperInk(paperInk);
+      };
+
       // Render artboard-only snapshot for fill loupe (no selection handles or UI overlays).
       const fillToolActive = ['fill', 'fill-erase', 'fill-pattern', 'fill-pattern-erase'].includes(this.activeTool);
       if (fillToolActive) {
@@ -6284,11 +6296,7 @@
         this.ctx.save();
         this.ctx.translate(this.offsetX, this.offsetY);
         this.ctx.scale(this.scale, this.scale);
-        this.ctx.fillStyle = SETTINGS.bgColor;
-        this.ctx.shadowColor = getThemeToken('--render-shadow', 'rgba(0,0,0,0.5)');
-        this.ctx.shadowBlur = 20;
-        this.ctx.fillRect(0, 0, prof.width, prof.height);
-        this.ctx.shadowBlur = 0;
+        this.drawPaper(this.ctx, prof);
         this.ctx.strokeStyle = getThemeToken('--render-paper-outline', '#333');
         this.ctx.lineWidth = 1 / this.scale;
         this.ctx.strokeRect(0, 0, prof.width, prof.height);
@@ -6297,7 +6305,7 @@
         this.ctx.beginPath();
         this.ctx.rect(m, m, innerW, innerH);
         this.ctx.clip();
-        drawLayers();
+        inkPass();
         this.ctx.restore();
         this.ctx.restore();
         this.ctx = mainCtx;
@@ -6309,7 +6317,7 @@
         this.ctx.rect(m, m, innerW, innerH);
         this.ctx.clip();
         drawSelectionOutline();
-        drawLayers();
+        inkPass();
         drawOptimizedOverlay();
         drawHelperOverlays();
         drawModifierGuides();
@@ -6344,7 +6352,7 @@
         this.ctx.rect(m, m, innerW, innerH);
         this.ctx.clip();
         drawSelectionOutline();
-        drawLayers();
+        inkPass();
         drawOptimizedOverlay();
         drawHelperOverlays();
         drawModifierGuides();
@@ -6382,7 +6390,7 @@
           this.ctx.rect(0, 0, prof.width, prof.height);
           this.ctx.rect(m, m, innerW, innerH);
           this.ctx.clip('evenodd');
-          drawLayers();
+          inkPass();
           this.ctx.restore();
         }
       }
@@ -9694,6 +9702,259 @@
 
     getInteractionPaths(layer) {
       return this.engine.getRenderablePaths ? this.engine.getRenderablePaths(layer, { useOptimized: false }) : layer?.paths || [];
+    }
+
+    // ---- Paper selector (src/config/papers.js, src/core/paper.js) -----------
+
+    // Paint the sheet: stock colour with the drop shadow, then (realistic
+    // papers only) the textured surface. 'none' is the exact legacy fill.
+    drawPaper(ctx, prof) {
+      ctx.fillStyle = SETTINGS.bgColor;
+      ctx.shadowColor = getThemeToken('--render-shadow', 'rgba(0,0,0,0.5)');
+      ctx.shadowBlur = 20;
+      ctx.fillRect(0, 0, prof.width, prof.height);
+      ctx.shadowBlur = 0;
+      this.drawPaperTexture(ctx, prof);
+    }
+
+    // Device px per document mm and the visible document-mm rect of `ctx`
+    // (scale + translate transforms only, as everywhere in the renderer).
+    _paperViewOf(ctx) {
+      if (!ctx || typeof ctx.getTransform !== 'function') return null;
+      const m = ctx.getTransform();
+      const pxPerMm = Math.hypot(m.a, m.b);
+      const cw = (ctx.canvas && ctx.canvas.width) || (this.canvas && this.canvas.width) || 0;
+      const ch = (ctx.canvas && ctx.canvas.height) || (this.canvas && this.canvas.height) || 0;
+      if (!(pxPerMm > 0) || !cw || !ch) return null;
+      return { m, pxPerMm, view: { x: -m.e / m.a, y: -m.f / m.d, w: cw / m.a, h: ch / m.d } };
+    }
+
+    // Draw the textured paper surface over the sheet rect. The texture is a
+    // function of document millimetres (src/render/paper-texture.js): the
+    // same grain on A6 and A0, stable while zooming, never repeating.
+    // `onReady` repaints whoever drew it once idle refinement lands
+    // (defaults to this renderer). Returns true when drawn.
+    drawPaperTexture(ctx, prof, onReady = null) {
+      const Paper = window.Vectura && window.Vectura.Paper;
+      const PT = window.Vectura && window.Vectura.PaperTexture;
+      if (!Paper || !PT || !ctx || !prof) return false;
+      const paper = Paper.effective();
+      if (!Paper.isRealistic(paper) || !(paper.texture > 0)) return false;
+      const v = this._paperViewOf(ctx);
+      if (!v) return false;
+      const L = (window.Vectura.PAPERS && window.Vectura.PAPERS.LIMITS) || {};
+      if (Math.max(prof.width, prof.height) * v.pxPerMm < (L.minSheetPx || 96)) return false;
+      return PT.drawSurface(ctx, paper, {
+        pxPerMm: v.pxPerMm,
+        view: v.view,
+        sheet: { x: 0, y: 0, w: prof.width, h: prof.height },
+        onReady: onReady || this._paperTileReady(),
+      });
+    }
+
+    // Repaint once when idle-built texture chunks land.
+    _paperTileReady() {
+      if (!this._paperTileReadyFn) {
+        this._paperTileReadyFn = () => {
+          if (this._paperRepaintQueued) return;
+          this._paperRepaintQueued = true;
+          const raf = typeof window.requestAnimationFrame === 'function' ? window.requestAnimationFrame : (fn) => setTimeout(fn, 16);
+          raf(() => {
+            this._paperRepaintQueued = false;
+            if (!this.ready) return;
+            const t0 = (window.performance && window.performance.now) ? window.performance.now() : Date.now();
+            this.draw();
+            const PT = window.Vectura && window.Vectura.PaperTexture;
+            if (PT && PT.reportRepaintCost) {
+              const t1 = (window.performance && window.performance.now) ? window.performance.now() : Date.now();
+              PT.reportRepaintCost(t1 - t0);
+            }
+          });
+        };
+      }
+      return this._paperTileReadyFn;
+    }
+
+    // A view-only gesture (pan / pinch / two-finger) changes only the view
+    // transform, so the last bleed halo can be re-used, transformed, instead
+    // of being rebuilt every frame (and without the effects popping off).
+    _paperViewGesture() {
+      return Boolean((this.isPan || this.touchGesture) && !this.isLayerDrag && !this.directDrag);
+    }
+
+    // Per-frame plan for realistic-paper ink, or null to draw ink directly
+    // (plain paper, pen-true preview, or a context without transforms).
+    _paperInkPlan() {
+      const V = window.Vectura || {};
+      const Paper = V.Paper;
+      if (!Paper || this.paperPreviewActive()) return null;
+      const paper = Paper.effective();
+      if (!Paper.isRealistic(paper)) return null;
+      if (!this.ctx || typeof this.ctx.getTransform !== 'function') return null;
+      if (typeof document === 'undefined' || !this.canvas) return null;
+      const info = (V.PAPERS && V.PAPERS.TYPES && V.PAPERS.TYPES[paper.type]) || {};
+      return {
+        paper,
+        info,
+        blend: Paper.inkBlendFor(paper),
+        reuseHalo: this._paperViewGesture(),
+        rendered: false,
+        halo: null,
+      };
+    }
+
+    _paperScratch(name, downscale = 1) {
+      const cw = Math.max(1, Math.ceil(this.canvas.width / downscale));
+      const ch = Math.max(1, Math.ceil(this.canvas.height / downscale));
+      let c = this[name];
+      if (!c) {
+        c = document.createElement('canvas');
+        this[name] = c;
+      }
+      if (c.width !== cw || c.height !== ch) {
+        c.width = cw;
+        c.height = ch;
+      }
+      return c;
+    }
+
+    // Render every visible layer's ink into the offscreen ink canvas (same
+    // device transform as the target), then apply dry-skip and build (or
+    // re-use) the bleed halo. Geometry and stroke widths are untouched.
+    _renderPaperInk(drawFn, plan, prof) {
+      const target = this.ctx;
+      const ink = this._paperScratch('_paperInkCanvas');
+      const ictx = ink.getContext('2d');
+      const m = target.getTransform();
+      ictx.setTransform(1, 0, 0, 1, 0, 0);
+      ictx.globalAlpha = 1;
+      ictx.globalCompositeOperation = 'source-over';
+      ictx.filter = 'none';
+      ictx.clearRect(0, 0, ink.width, ink.height);
+      ictx.setTransform(m);
+      ictx.lineJoin = target.lineJoin;
+      ictx.lineCap = target.lineCap;
+      this.ctx = ictx;
+      try {
+        drawFn();
+      } finally {
+        this.ctx = target;
+        ictx.setTransform(m);
+      }
+      plan.rendered = true;
+      const { paper, info } = plan;
+      const pxPerMm = Math.hypot(m.a, m.b);
+      const PT = window.Vectura && window.Vectura.PaperTexture;
+      const sheet = { x: 0, y: 0, w: prof.width, h: prof.height };
+      const view = { x: -m.e / m.a, y: -m.f / m.d, w: ink.width / m.a, h: ink.height / m.d };
+      // Dry-skip: the pen bridges the finest, deepest pits of the tooth. The
+      // mask is rasterised at screen resolution, so pinholes stay crisp at
+      // any zoom; it fades out where the view can't resolve ~0.2 mm.
+      const resolve = Math.max(0, Math.min(1, (0.2 * pxPerMm - 0.6) / 1.4));
+      const skipAlpha = (info.dryskip || 0) > 0 ? Math.min(1, paper.texture * 1.1) * resolve : 0;
+      if (PT && skipAlpha > 0.01) {
+        ictx.save();
+        ictx.globalCompositeOperation = 'destination-out';
+        ictx.globalAlpha = skipAlpha;
+        PT.drawMask(ictx, paper, 'skip', { pxPerMm, view, sheet });
+        ictx.restore();
+      }
+      // Bleed halo: ink wicking into the sheet along its fibres — a blurred
+      // copy frayed by the fibre-streak mask (not a uniform glow). Physically
+      // sized (bleedMm), so it only shows once zoomed in far enough.
+      const L = (window.Vectura.PAPERS && window.Vectura.PAPERS.LIMITS) || {};
+      const radius = (info.bleedMm || 0) * paper.bleed * pxPerMm;
+      plan.halo = null;
+      if (radius < (L.minBleedPx || 0.4)) return;
+      if (plan.reuseHalo && this._paperHaloMeta && this._paperHaloMeta.key === this._paperHaloKey(paper)) {
+        // View-only gesture: transform the last halo instead of rebuilding.
+        const prev = this._paperHaloMeta.m;
+        const k = m.a / prev.a;
+        plan.halo = { canvas: this._paperHaloCanvas, k, tx: m.e - prev.e * k, ty: m.f - prev.f * k };
+        return;
+      }
+      const HALO_DOWNSCALE = 2;
+      const halo = this._paperScratch('_paperHaloCanvas', HALO_DOWNSCALE);
+      const hctx = halo.getContext('2d');
+      const hr = radius / HALO_DOWNSCALE;
+      hctx.setTransform(1, 0, 0, 1, 0, 0);
+      hctx.globalAlpha = 1;
+      hctx.globalCompositeOperation = 'source-over';
+      hctx.clearRect(0, 0, halo.width, halo.height);
+      if (this._paperCanvasFilter(hctx)) {
+        hctx.filter = `blur(${hr.toFixed(2)}px)`;
+        hctx.drawImage(ink, 0, 0, halo.width, halo.height);
+        hctx.filter = 'none';
+      } else {
+        // No ctx.filter (older Safari): a ring of offset copies approximates the blur.
+        const steps = 8;
+        hctx.globalAlpha = 1 / 3;
+        for (let i = 0; i < steps; i += 1) {
+          const a = (i / steps) * Math.PI * 2;
+          hctx.drawImage(ink, Math.cos(a) * hr * 0.7, Math.sin(a) * hr * 0.7, halo.width, halo.height);
+        }
+        hctx.globalAlpha = 1;
+      }
+      if (PT && (info.feather || 0) > 0) {
+        // One full-frame feather mask (fibre streaks), then destination-in.
+        const mask = this._paperScratch('_paperFeatherCanvas', HALO_DOWNSCALE);
+        const mctx = mask.getContext('2d');
+        mctx.setTransform(1, 0, 0, 1, 0, 0);
+        mctx.globalCompositeOperation = 'source-over';
+        mctx.globalAlpha = 1;
+        mctx.clearRect(0, 0, mask.width, mask.height);
+        mctx.setTransform(m.a / HALO_DOWNSCALE, m.b / HALO_DOWNSCALE, m.c / HALO_DOWNSCALE, m.d / HALO_DOWNSCALE, m.e / HALO_DOWNSCALE, m.f / HALO_DOWNSCALE);
+        const drawn = PT.drawMask(mctx, paper, 'feather', { pxPerMm, view, sheet });
+        mctx.setTransform(1, 0, 0, 1, 0, 0);
+        if (drawn) {
+          hctx.save();
+          hctx.globalCompositeOperation = 'destination-in';
+          hctx.drawImage(mask, 0, 0);
+          hctx.restore();
+        }
+      }
+      this._paperHaloMeta = { m: { a: m.a, e: m.e, f: m.f }, key: this._paperHaloKey(paper) };
+      plan.halo = { canvas: halo, k: 1, tx: 0, ty: 0 };
+    }
+
+    _paperHaloKey(paper) {
+      return `${paper.type}|${paper.seed}|${paper.bleed}|${this.canvas.width}x${this.canvas.height}`;
+    }
+
+    _paperCanvasFilter(ctx) {
+      if (this._paperFilterOk != null) return this._paperFilterOk;
+      let ok = false;
+      try {
+        const prev = ctx.filter;
+        ctx.filter = 'blur(1px)';
+        ok = ctx.filter === 'blur(1px)';
+        ctx.filter = prev || 'none';
+      } catch (_e) { ok = false; }
+      this._paperFilterOk = ok;
+      return ok;
+    }
+
+    // Composite the rendered ink (and halo) onto the current target at device
+    // pixels. The target's clip and globalAlpha (e.g. the outside-margin pass)
+    // still apply.
+    _compositePaperInk(plan) {
+      const target = this.ctx;
+      const ink = this._paperInkCanvas;
+      if (!ink) return;
+      const { info } = plan;
+      const baseAlpha = Number.isFinite(target.globalAlpha) ? target.globalAlpha : 1;
+      target.save();
+      target.globalCompositeOperation = plan.blend;
+      if (plan.halo && plan.halo.canvas) {
+        const h = plan.halo;
+        target.setTransform(h.k, 0, 0, h.k, h.tx, h.ty);
+        target.globalAlpha = baseAlpha * (0.22 + 0.3 * (info.absorbency || 0));
+        target.drawImage(h.canvas, 0, 0, ink.width, ink.height);
+      }
+      target.setTransform(1, 0, 0, 1, 0, 0);
+      target.globalAlpha = baseAlpha * (info.inkOpacity == null ? 1 : info.inkOpacity);
+      target.drawImage(ink, 0, 0);
+      target.restore();
     }
 
     // CONTRACT L5 — paper-color pen-true preview. When SETTINGS.paperPreview is
