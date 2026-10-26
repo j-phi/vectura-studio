@@ -741,17 +741,22 @@
       SETTINGS.scissorMode = takeEnum('scissorMode', SETTINGS.scissorMode, ['line', 'shape', 'all']);
       SETTINGS.penMode = takeEnum('penMode', SETTINGS.penMode, ['draw', 'erase', 'shape']);
       if (Array.isArray(snapshot.pens) && snapshot.pens.length) {
-        // Validate each pen entry: id/name capped, color must be hex, width finite.
+        // Validate each pen entry through the shared pen validator (id, hex
+        // colour, finite width, and the pen-model fields: model / size /
+        // effect / color2 / clamped ink overrides). Ids are capped at 64 and
+        // names at 128 characters; at most 32 pens.
+        const validatePen = window.Vectura?.PenValidate?.validatePen;
         const cleanPens = [];
         for (let i = 0; i < snapshot.pens.length && i < 32; i++) {
           const p = snapshot.pens[i];
           if (!p || typeof p !== 'object') continue;
-          const id = V && V.safeString(p.id, 64);
-          const color = V && V.isHexColor(p.color) ? p.color : null;
-          const width = V && V.finiteInRange(p.width, 0, 100);
-          if (!id || !color || width == null) { warn('pens[' + i + ']', p); continue; }
+          const valid = typeof validatePen === 'function' && !(typeof p.id === 'string' && p.id.length > 64)
+            ? validatePen(p) : null;
+          if (!valid) { warn('pens[' + i + ']', p); continue; }
+          const { id, color } = valid;
           const name = (typeof p.name === 'string' && p.name.length <= 128) ? p.name : id;
-          const pen = { id, name, color, width };
+          const pen = { id, name, color, width: valid.width };
+          ['model', 'size', 'effect', 'color2', 'ink'].forEach((key) => { if (valid[key] !== undefined) pen[key] = valid[key]; });
           // Theme-managed Pen 1: explicit flag, else (pre-flag snapshot) a
           // colour equal to a theme default.
           if (typeof p.themeManaged === 'boolean') pen.themeManaged = p.themeManaged;

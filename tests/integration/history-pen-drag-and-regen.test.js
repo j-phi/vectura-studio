@@ -108,6 +108,33 @@ describe('History entries for pen drags and regen()', () => {
     });
   });
 
+  describe('pen models: legacy files stay plain, model state round-trips through undo', () => {
+    test('a legacy pen loads plain (no model keys); a model pick is undone in one step', () => {
+      const app = window.app;
+      const SETTINGS = window.Vectura.SETTINGS;
+      const legacy = [{ id: 'pen-1', name: 'Pen 1', color: '#000000', width: 0.3, themeManaged: false }];
+      const state = app.captureState();
+      state.settings.pens = JSON.parse(JSON.stringify(legacy));
+      app.applyState(state);
+      expect(JSON.stringify(SETTINGS.pens)).toBe(JSON.stringify(legacy));
+      // The project snapshot of a plain-pen document is byte-identical.
+      expect(JSON.stringify(app.captureState().settings.pens)).toBe(JSON.stringify(legacy));
+
+      const before = app.history.length;
+      app.pushHistory();
+      window.Vectura.PenModel.applyModel(SETTINGS.pens[0], 'sakura-pigma-micron', '08');
+      SETTINGS.pens[0].ink = { wetness: 0.9 };
+      expect(app.history.length).toBe(before + 1);
+      // Model fields survive a capture/apply round trip (a .vectura save/load).
+      const saved = JSON.parse(JSON.stringify(app.captureState()));
+      app.applyState(saved);
+      expect(SETTINGS.pens[0]).toMatchObject({ model: 'sakura-pigma-micron', size: '08', width: 0.55 });
+      expect(SETTINGS.pens[0].ink.wetness).toBe(0.9);
+      app.undo();
+      expect(JSON.stringify(SETTINGS.pens)).toBe(JSON.stringify(legacy));
+    });
+  });
+
   describe('regen() history control', () => {
     test('app.regen() with default args does NOT push history (preserves convention)', () => {
       const app = window.app;
