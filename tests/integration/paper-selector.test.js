@@ -8,6 +8,67 @@
  */
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
 
+// Minimal in-memory IndexedDB (one database, object stores with keyPath)
+// for the DOM-free runtime. failPut: throw this error from the next put.
+const makeFakeIdb = () => {
+  const dbs = new Map();
+  const fake = { failPut: null, opens: 0 };
+  const later = (fn) => Promise.resolve().then(fn);
+  fake.open = (name) => {
+    fake.opens += 1;
+    const req = {};
+    later(() => {
+      let db = dbs.get(name);
+      const isNew = !db;
+      if (!db) {
+        const stores = new Map();
+        db = {
+          stores,
+          objectStoreNames: { contains: (n) => stores.has(n) },
+          createObjectStore: (n, o) => { stores.set(n, { keyPath: o.keyPath, data: new Map() }); },
+          transaction: (n) => {
+            const st = stores.get(n);
+            const tx = {};
+            const reqs = [];
+            const mk = (fn) => { const r = {}; reqs.push(() => { r.result = fn(); if (r.onsuccess) r.onsuccess(); }); return r; };
+            tx.objectStore = () => ({
+              put: (rec) => {
+                if (fake.failPut) { const e = fake.failPut; fake.failPut = null; throw e; }
+                return mk(() => { st.data.set(rec[st.keyPath], JSON.parse(JSON.stringify(rec))); return rec[st.keyPath]; });
+              },
+              get: (k) => mk(() => (st.data.has(k) ? JSON.parse(JSON.stringify(st.data.get(k))) : undefined)),
+              delete: (k) => mk(() => { st.data.delete(k); }),
+              getAllKeys: () => mk(() => Array.from(st.data.keys())),
+            });
+            later(() => { reqs.forEach((f) => f()); if (tx.oncomplete) tx.oncomplete(); });
+            return tx;
+          },
+        };
+        dbs.set(name, db);
+      }
+      req.result = db;
+      if (isNew && req.onupgradeneeded) req.onupgradeneeded();
+      if (req.onsuccess) req.onsuccess();
+    });
+    return req;
+  };
+  // "Fresh profile": empty every store (connections stay valid).
+  fake.reset = () => dbs.forEach((db) => db.stores.forEach((st) => st.data.clear()));
+  return fake;
+};
+
+const bytesUrl = (mime, bytes) => `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const be32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+// Real image HEADERS (no pixel data): enough for the type sniff and the
+// header size check that runs before any decode.
+const pngBytes = (w, h, extra = []) => [...PNG_SIG, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...be32(w), ...be32(h), 8, 0, 0, 0, 0, ...extra];
+const jpegBytes = (w, h) => [0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0,
+  0xff, 0xc0, 0, 17, 8, (h >> 8) & 255, h & 255, (w >> 8) & 255, w & 255, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1];
+const webpBytes = (w, h) => [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x58, 10, 0, 0, 0, 0, 0, 0, 0,
+  (w - 1) & 255, ((w - 1) >> 8) & 255, ((w - 1) >> 16) & 255, (h - 1) & 255, ((h - 1) >> 8) & 255, ((h - 1) >> 16) & 255];
+const tinyPng = (salt = 1) => bytesUrl('image/png', pngBytes(16, 16, [salt, salt + 1, salt + 2, 7, 7, 7, 7, 7]));
+
 // ---- from the former paper-preference-migration.test.js ----
 {
 /*
@@ -463,6 +524,480 @@ describe('Paper panel (Pen / Paper tab)', () => {
     expect(S.paper.type).toBe('kraft');
     expect(swatch('kraft').getAttribute('aria-checked')).toBe('true');
   });
+
+  describe('custom papers (My papers) in the panel', () => {
+    const KEY = 'vectura.customPapers';
+    let prompts;
+    let saved;
+    let origPrompt;
+    let origSave;
+    beforeAll(() => {
+      origPrompt = window.Vectura.UI.overlays.Prompt.show;
+      origSave = window.Vectura.Download.saveBlob;
+      window.Vectura.UI.overlays.Prompt.show = (props) => { prompts.push(props); return Promise.resolve(prompts.answer); };
+      window.Vectura.Download.saveBlob = (blob, filename) => { saved.push({ blob, filename }); return Promise.resolve('downloaded'); };
+    });
+    afterAll(() => {
+      window.Vectura.UI.overlays.Prompt.show = origPrompt;
+      window.Vectura.Download.saveBlob = origSave;
+    });
+    beforeEach(() => {
+      prompts = [];
+      saved = [];
+    });
+    const P = () => window.Vectura.Paper;
+    const actions = () => app.ui._paperCustomActions;
+    const blobText = (blob) => new Promise((res) => { const fr = new window.FileReader(); fr.onload = () => res(fr.result); fr.readAsText(blob); });
+    const customSwatches = () => Array.from(document.querySelectorAll('.paper-swatch.is-custom')).map((b) => b.dataset.paperType);
+    const drag = (el, values) => {
+      el.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+      values.forEach((v) => { el.value = String(v); el.dispatchEvent(new window.Event('input', { bubbles: true })); });
+      el.dispatchEvent(new window.Event('change', { bubbles: true }));
+    };
+
+    test('+ Save as custom… names the paper, adds a swatch after the built-ins and switches the document to it (one undo step)', async () => {
+      window.localStorage.removeItem(KEY);
+      app.setProjectPaper(P().forType('rough'), { history: false });
+      const look = { ...P().effective() };
+      expect(document.getElementById('paper-advanced').hidden).toBe(true);
+      const before = app.history.length;
+      prompts.answer = 'My rough';
+      document.getElementById('btn-paper-save-custom').click();
+      await app.ui._paperSavePending;
+      expect(prompts[0].value).toBe('Rough watercolor (custom)');
+      const lib = P().customLibrary().list();
+      expect(lib).toHaveLength(1);
+      expect(lib[0]).toMatchObject({ name: 'My rough', base: 'rough', color: look.color, defaultTexture: look.texture, defaultBleed: look.bleed });
+      const id = lib[0].id;
+      // Swatch: after every built-in, a radio, checked, with its own thumbnail key.
+      const types = Array.from(document.querySelectorAll('#paper-section-body .paper-swatch')).map((b) => b.dataset.paperType);
+      expect(types).toEqual([...window.Vectura.PAPERS.ORDER, id]);
+      const sw = document.querySelector(`.paper-swatch[data-paper-type="${id}"]`);
+      expect(sw.getAttribute('role')).toBe('radio');
+      expect(sw.getAttribute('aria-checked')).toBe('true');
+      // The document now uses it, looks identical (same realism as rough) and embeds it.
+      expect(S.paper).toMatchObject({ type: id, color: look.color, texture: look.texture, bleed: look.bleed });
+      const T = window.Vectura.PAPERS.TYPES;
+      window.Vectura.PAPERS.PARAM_KEYS.forEach((k) => expect(T[id][k], k).toBe(T.rough[k]));
+      expect(app.captureState().settings.paper.custom).toMatchObject({ name: 'My rough', base: 'rough' });
+      expect(app.history.length).toBe(before + 1);
+      expect(document.getElementById('paper-current-name').textContent).toContain('My rough');
+      // Custom papers get the Advanced disclosure.
+      expect(document.getElementById('paper-advanced').hidden).toBe(false);
+      expect(document.getElementById('paper-custom-status').dataset.state).toBe('saved');
+      // Cancelling the name prompt saves nothing.
+      prompts.answer = null;
+      document.getElementById('btn-paper-save-custom').click();
+      await app.ui._paperSavePending;
+      expect(P().customLibrary().list()).toHaveLength(1);
+      expect(app.history.length).toBe(before + 1);
+    });
+
+    test('Advanced sliders: one undo step per drag, no empty steps; undo restores the realism; Update saved paper stores it', () => {
+      const id = S.paper.type;
+      const tooth = document.getElementById('paper-param-tooth');
+      const start = S.paper.custom.params.tooth;
+      const before = app.history.length;
+      // No-op interaction: focus/pointerdown/change and a same-value input push nothing.
+      tooth.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+      tooth.value = String(start);
+      tooth.dispatchEvent(new window.Event('input', { bubbles: true }));
+      tooth.dispatchEvent(new window.Event('change', { bubbles: true }));
+      expect(app.history.length).toBe(before);
+      drag(tooth, [0.2, 0.15, 0.1]);
+      expect(app.history.length).toBe(before + 1);
+      expect(S.paper.custom.params.tooth).toBe(0.1);
+      expect(window.Vectura.PAPERS.TYPES[id].tooth).toBe(0.1); // the renderer sees it
+      expect(document.getElementById('paper-param-tooth-value').textContent).toBe('10%');
+      drag(document.getElementById('paper-param-grainMm'), [2.2]);
+      expect(app.history.length).toBe(before + 2);
+      expect(document.getElementById('paper-param-grainMm-value').textContent).toBe('2.20 mm');
+      // Library still has the old values: status says so, Update is enabled.
+      expect(document.getElementById('paper-custom-status').dataset.state).toBe('modified');
+      expect(document.getElementById('btn-paper-update-saved').disabled).toBe(false);
+      app.undo();
+      expect(S.paper.custom.params.grainMm).toBe(window.Vectura.PAPERS.TYPES.rough.grainMm);
+      expect(window.Vectura.PAPERS.TYPES[id].grainMm).toBe(window.Vectura.PAPERS.TYPES.rough.grainMm);
+      expect(S.paper.custom.params.tooth).toBe(0.1);
+      const h = app.history.length;
+      document.getElementById('btn-paper-update-saved').click();
+      expect(P().customLibrary().get(id).params.tooth).toBe(0.1);
+      expect(document.getElementById('paper-custom-status').dataset.state).toBe('saved');
+      expect(document.getElementById('btn-paper-update-saved').disabled).toBe(true);
+      expect(app.history.length).toBe(h); // a library write is not a document edit
+      // Advanced is hidden for built-in papers.
+      document.querySelector('.paper-swatch[data-paper-type="kraft"]').click();
+      expect(document.getElementById('paper-advanced').hidden).toBe(true);
+      document.querySelector(`.paper-swatch[data-paper-type="${id}"]`).click();
+      expect(S.paper.custom.params.tooth).toBe(0.1);
+    });
+
+    test('per-swatch ⋯: Rename, Export; section ⋯: Export all; Import merges and shows hostile names as text', async () => {
+      const id = S.paper.type;
+      const more = document.querySelector(`.paper-swatch-more[data-paper-more="${id}"]`);
+      expect(more.tabIndex).toBe(0); // the checked custom swatch's ⋯ is keyboard reachable
+      more.click();
+      const menu = Array.from(document.querySelectorAll('.menu-dropdown.paper-menu')).find((m) => m.style.display !== 'none');
+      expect(Array.from(menu.querySelectorAll('.menu-entry')).map((e) => e.dataset.key)).toEqual(['rename', 'export', 'delete']);
+      prompts.answer = 'Rough & ready';
+      menu.querySelector('[data-key="rename"]').click();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(P().customLibrary().get(id).name).toBe('Rough & ready');
+      expect(S.paper.custom.name).toBe('Rough & ready');
+      expect(document.querySelector(`.paper-swatch[data-paper-type="${id}"]`).getAttribute('aria-label')).toContain('Rough & ready');
+      await actions().exportOne(id);
+      expect(saved[0].filename).toBe('vectura-papers-rough-ready.json');
+      const one = JSON.parse(await blobText(saved[0].blob));
+      expect(one).toMatchObject({ schema: 'vectura-papers', version: 1, papers: [{ id, name: 'Rough & ready' }] });
+      document.getElementById('btn-paper-library-menu').click();
+      const libMenu = Array.from(document.querySelectorAll('.menu-dropdown.paper-menu')).find((m) => m.style.display !== 'none');
+      expect(Array.from(libMenu.querySelectorAll('.menu-entry')).map((e) => e.dataset.key)).toEqual(['rename-current', 'export-current', 'delete-current', 'export-all', 'import']);
+      libMenu.querySelector('[data-key="export-all"]').click();
+      for (let i = 0; i < 20 && saved.length < 2; i += 1) await new Promise((r) => setTimeout(r, 5));
+      expect(saved[1].filename).toBe('vectura-papers.json');
+      // Import (through the real file input): one hostile entry, one duplicate.
+      const bundle = JSON.stringify({ schema: 'vectura-papers', version: 1, papers: [
+        { ...one.papers[0] },
+        { id: 'custom-evil1', name: '<img src=x onerror="window.__pwned=1">', color: 'red;}body{display:none', params: { tooth: 0.9 } },
+      ] });
+      const input = document.getElementById('inp-paper-import');
+      const file = new window.File([bundle], 'papers.json', { type: 'application/json' });
+      Object.defineProperty(input, 'files', { configurable: true, value: [file] });
+      input.dispatchEvent(new window.Event('change', { bubbles: true }));
+      const res = await app.ui._paperImportPending;
+      expect(res).toMatchObject({ ok: true, skipped: 1 });
+      expect(res.added.map((e) => e.id)).toEqual(['custom-evil1']);
+      expect(customSwatches()).toEqual([id, 'custom-evil1']);
+      const body = document.getElementById('paper-section-body');
+      expect(body.querySelector('img')).toBeNull();
+      expect(window.__pwned).toBeUndefined();
+      const evil = document.querySelector('.paper-swatch[data-paper-type="custom-evil1"]');
+      expect(evil.querySelector('.paper-swatch-label').textContent).toContain('<img');
+      expect(window.Vectura.PAPERS.TYPES['custom-evil1'].color).toBe(window.Vectura.PAPERS.TYPES['cold-press'].color);
+      // A hostile/foreign file surfaces an error and changes nothing.
+      expect(await actions().importText('{"schema":"vectura-papers","version":99,"papers":[{}]}')).toMatchObject({ ok: false, reason: 'version' });
+      expect(customSwatches()).toEqual([id, 'custom-evil1']);
+    });
+
+    test('image paper: import dialog (scale, attribution, BY-SA note) creates a lean library paper and an embedded document paper', async () => {
+      if (!window.indexedDB) window.indexedDB = makeFakeIdb();
+      const PI = window.Vectura.PaperImage;
+      const tile = tinyPng(21);
+      const origProcess = PI.processImport;
+      let seenOpts = null;
+      PI.processImport = async (blob, opts) => {
+        seenOpts = opts;
+        return { image: { tile, tileMm: opts.tileMm || 254, w: 16, h: 16, ref: PI.refFor(tile, '') }, meanColor: '#e8e0d0', srcW: 1600, srcH: 1600 };
+      };
+      try {
+        const before = app.history.length;
+        const source = { provider: 'Wikimedia Commons', providerId: 'wikimedia', assetId: '7', title: 'Old paper 7', author: 'Bo & Co', licence: 'CC BY-SA 4.0', licenceUrl: 'https://creativecommons.org/licenses/by-sa/4.0', url: 'https://commons.wikimedia.org/wiki/File:Old_paper_7.jpg', attribution: 'Bo & Co, CC BY-SA 4.0, via Wikimedia Commons' };
+        actions().openImport({ blob: new window.Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: 'image/jpeg' }), name: 'Old paper 7', source, tileMm: 150, scaleGuessed: true });
+        const dlg = document.querySelector('.paper-import-dialog');
+        expect(dlg).toBeTruthy();
+        expect(document.getElementById('paper-import-name').value).toBe('Old paper 7');
+        expect(document.getElementById('paper-import-scale-mode').value).toBe('mm');
+        expect(document.getElementById('paper-import-scale').value).toBe('150');
+        expect(dlg.querySelector('.paper-import-sa')).toBeTruthy();
+        expect(dlg.querySelector('.paper-attribution a').getAttribute('rel')).toBe('noopener noreferrer');
+        document.getElementById('paper-import-scale').value = '210';
+        document.getElementById('paper-import-create').click();
+        expect(await app.ui._paperImageImport.promise).not.toBe(false);
+        expect(seenOpts.tileMm).toBe(210);
+        const entry = P().customLibrary().list().find((e) => e.name === 'Old paper 7');
+        expect(entry.image).toEqual({ ref: PI.refFor(tile, ''), tileMm: 210, w: 16, h: 16 });
+        expect(entry.source).toMatchObject({ licence: 'CC BY-SA 4.0', author: 'Bo & Co', providerId: 'wikimedia', assetId: '7' });
+        expect(entry.color).toBe('#e8e0d0');
+        expect(entry.params.fiberDensity).toBe(0); // the photo supplies fibres/mottle
+        expect(window.localStorage.getItem(KEY)).not.toContain('base64');
+        expect(S.paper.type).toBe(entry.id);
+        expect(S.paper.custom.image.tile).toBe(tile); // embedded: portable
+        expect(app.captureState().settings.paper.custom.source.attribution).toBe('Bo & Co, CC BY-SA 4.0, via Wikimedia Commons');
+        expect(app.history.length).toBe(before + 1);
+        const attr = document.getElementById('paper-attribution');
+        expect(attr.hidden).toBe(false);
+        expect(attr.textContent).toContain('CC BY-SA 4.0');
+        // The licence is linked (CC BY requires it) and so is the source.
+        const links = Array.from(attr.querySelectorAll('a')).map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('rel')]);
+        expect(links).toEqual([
+          ['CC BY-SA 4.0', source.licenceUrl, 'noopener noreferrer'],
+          ['Source page', source.url, 'noopener noreferrer'],
+        ]);
+      } finally {
+        PI.processImport = origProcess;
+      }
+    });
+
+    test('search sheet (mocked network): results with licence badges + credits; a CORS-blocked download offers source page + upload', async () => {
+      const ov = (id, extra = {}) => ({ id, title: `Paper ${id}`, thumbnail: `https://api.openverse.org/v1/images/${id}/thumb/`, url: `https://live.staticflickr.com/1/${id}.jpg`, width: 4000, height: 3000, license: 'cc0', license_version: '1.0', license_url: 'https://creativecommons.org/publicdomain/zero/1.0/', creator: 'Ann <b>', foreign_landing_url: `https://www.flickr.com/photos/ann/${id}`, ...extra });
+      let fullMode = 'cors';
+      window.fetch = async (url) => {
+        if (url.startsWith('https://api.openverse.org/v1/images/?')) return { ok: true, json: async () => ({ results: [ov('a1'), ov('a2', { title: '<img src=x onerror="window.__pwned2=1">' }), ov('a3', { license: 'by-nc' })] }) };
+        if (url.startsWith('https://live.staticflickr.com/')) {
+          if (fullMode === 'cors') throw new TypeError('Failed to fetch');
+          return { ok: true, headers: { get: () => '3' }, blob: async () => new window.Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: 'image/jpeg' }) };
+        }
+        throw new TypeError('offline');
+      };
+      window.Vectura.PaperTextureSearch.clearCache();
+      try {
+        const sheet = actions().openSearch();
+        await sheet.pending;
+        const cards = Array.from(document.querySelectorAll('.paper-search-card'));
+        expect(cards.map((c) => c.dataset.result)).toEqual(['openverse:a1', 'openverse:a2']); // NC filtered out
+        expect(cards[0].querySelector('.paper-licence-badge').textContent).toBe('CC0 1.0');
+        expect(document.querySelector('.paper-search-sheet img[src^="x"]')).toBeNull();
+        expect(window.__pwned2).toBeUndefined();
+        expect(cards[1].querySelector('.paper-search-title').textContent).toContain('<img');
+        expect(document.querySelector('.paper-search-credits a').textContent).toBe('Powered by Openverse');
+        expect(document.querySelector('.paper-search-status').textContent).toMatch(/2 textures/);
+        // Key-gated collections are listed but disabled until a key is saved.
+        expect(document.querySelector('.paper-search-chip[data-provider="pexels"]').disabled).toBe(true);
+        // Use -> CORS refusal -> fallback actions.
+        cards[0].querySelector('.paper-search-use').click();
+        await cards[0].pending;
+        const open = cards[0].querySelector('a.paper-search-fallback');
+        expect(open.getAttribute('href')).toBe('https://www.flickr.com/photos/ann/a1');
+        expect(open.getAttribute('target')).toBe('_blank');
+        expect(open.getAttribute('rel')).toBe('noopener noreferrer');
+        expect(cards[0].querySelector('.paper-search-upload')).toBeTruthy();
+        expect(cards[0].querySelector('.paper-search-note').textContent).toMatch(/does not allow direct downloads/);
+        // Allowed download -> the import dialog opens with the attribution.
+        fullMode = 'ok';
+        cards[0].querySelector('.paper-search-use').click();
+        await cards[0].pending;
+        expect(document.getElementById('paper-import-name').value).toBe('Paper a1');
+        expect(document.querySelector('.paper-import-dialog .paper-attribution').textContent).toContain('CC0 1.0');
+        app.ui.closeModal();
+      } finally {
+        delete window.fetch;
+      }
+      // Back to the earlier custom paper for the tests below.
+      const rough = P().customLibrary().list().find((e) => e.name === 'Rough & ready');
+      document.querySelector(`.paper-swatch[data-paper-type="${rough.id}"]`).click();
+      expect(S.paper.type).toBe(rough.id);
+    });
+
+    test('BLOCKER: a from-file image paper saved to My papers stores its pixels; after a reload the library paper hydrates (and says so when the image is missing)', async () => {
+      const PI = window.Vectura.PaperImage;
+      const TS = window.Vectura.TextureStore;
+      PI.setDecoder(async () => ({ data: new Uint8ClampedArray(16 * 16 * 4).fill(200), w: 16, h: 16 }));
+      const tile = tinyPng(51);
+      const id = 'custom-fromfil1';
+      const before = S.paper.type;
+      try {
+        // A document from another machine: image paper embedded, not in the library, nothing in IndexedDB.
+        app.setProjectPaper({ type: id, color: '#ece6d8', texture: 0.8, bleed: 0.5, custom: { name: 'Shop photo', base: 'cold-press', color: '#ece6d8', params: { ...window.Vectura.PAPERS.TYPES['cold-press'] }, image: { tile, tileMm: 90, w: 16, h: 16 } } }, { history: false });
+        const ref = S.paper.custom.image.ref;
+        expect(await TS.shared().get(ref)).toBeNull();
+        expect(document.getElementById('paper-custom-status').dataset.state).toBe('from-file');
+        document.getElementById('btn-paper-custom-save').click();
+        expect(await app.ui._paperSavePending).toBeTruthy();
+        expect((await TS.shared().get(ref)).tile).toBe(tile); // RED before the fix: null
+        expect(P().customLibrary().get(id).image).toEqual({ ref, tileMm: 90, w: 16, h: 16 });
+        // Simulated reload: runtime registry + decoded maps gone, document on another paper.
+        app.setProjectPaper(P().forType('kraft'), { history: false });
+        P().unregisterCustomType(id);
+        PI.clearMaps();
+        app.ui._paperResync();
+        const lean = P().fromCustomEntry(P().customLibrary().get(id));
+        expect(lean.custom.image.tile).toBeUndefined();
+        app.setProjectPaper(lean, { history: false });
+        expect(await P().loadImageFor(id, window.Vectura.PAPERS.TYPES[id].image)).toBe(true);
+        expect(S.paper.custom.image.tile).toBe(tile); // hydrated: the document is portable again
+        // Image gone from this browser -> visible "missing" state with a re-upload action.
+        await TS.shared().remove(ref);
+        app.setProjectPaper(P().forType('kraft'), { history: false });
+        P().unregisterCustomType(id);
+        PI.clearMaps();
+        app.setProjectPaper(P().fromCustomEntry(P().customLibrary().get(id)), { history: false });
+        await P().loadImageFor(id, window.Vectura.PAPERS.TYPES[id].image);
+        expect(window.Vectura.PAPERS.TYPES[id].imageMissing).toBe(true);
+        app.ui.refreshPaperUI();
+        expect(document.getElementById('paper-custom-status').dataset.state).toBe('missing');
+        const btn = document.getElementById('btn-paper-custom-save');
+        expect(btn.hidden).toBe(false);
+        expect(btn.textContent).toBe('Re-upload image…');
+        // Saving a paper whose pixels are gone is refused (no lean entry pointing at nothing).
+        expect(await P().storeImage(S.paper.custom.image)).toEqual({ ok: false, reason: 'image-missing' });
+      } finally {
+        P().customLibrary().remove(id);
+        const back = P().customLibrary().list().find((e) => e.name === 'Rough & ready');
+        if (back) document.querySelector(`.paper-swatch[data-paper-type="${back.id}"]`).click();
+        PI.setDecoder(null);
+        expect(S.paper.type).toBe(before);
+      }
+    });
+
+    test('no IndexedDB: an image paper still applies to the document (embedded) with a notice, and is not added to My papers', async () => {
+      const TS = window.Vectura.TextureStore;
+      const origShared = TS.shared;
+      const count = P().customLibrary().list().length;
+      const before = S.paper.type;
+      TS.shared = () => TS.create({ indexedDB: () => null });
+      try {
+        const tile = tinyPng(61);
+        const image = { tile, tileMm: 120, w: 16, h: 16, ref: window.Vectura.PaperImage.refFor(tile, '') };
+        expect(await actions().createImagePaper({ image, meanColor: '#e0d8c8', name: 'Private photo', source: null })).toBe(true);
+        expect(P().customLibrary().list()).toHaveLength(count);
+        expect(S.paper.custom.image.tile).toBe(tile);
+        expect(S.paper.custom.name).toBe('Private photo');
+        const toasts = Array.from(document.querySelectorAll('.vectura-toast')).map((t) => t.textContent);
+        expect(toasts.some((t) => /document only/i.test(t))).toBe(true);
+      } finally {
+        TS.shared = origShared;
+        app.undo();
+        expect(S.paper.type).toBe(before);
+      }
+    });
+
+    test('another tab saving to My papers shows up here (storage event)', () => {
+      const KEYL = 'vectura.customPapers';
+      const doc = JSON.parse(window.localStorage.getItem(KEYL));
+      doc.papers.push({ id: 'custom-othertab1', name: 'From the other tab', base: 'kraft', color: '#c39a6b', defaultTexture: 0.7, defaultBleed: 0.5, params: { tooth: 0.2 } });
+      window.localStorage.setItem(KEYL, JSON.stringify(doc)); // a raw write, as another tab would
+      expect(document.querySelector('.paper-swatch[data-paper-type="custom-othertab1"]')).toBeNull();
+      window.dispatchEvent(new window.StorageEvent('storage', { key: KEYL }));
+      expect(document.querySelector('.paper-swatch[data-paper-type="custom-othertab1"]')).toBeTruthy();
+      P().customLibrary().remove('custom-othertab1');
+    });
+
+    test('deleting an image paper deletes its stored image once nothing references it', async () => {
+      if (!window.indexedDB) window.indexedDB = makeFakeIdb();
+      const TS = window.Vectura.TextureStore;
+      const tile = tinyPng(71);
+      const image = { tile, tileMm: 60, w: 16, h: 16, ref: window.Vectura.PaperImage.refFor(tile, '') };
+      expect((await P().storeImage(image)).ok).toBe(true);
+      const put = P().customLibrary().put({ name: 'Throwaway', base: 'cold-press', color: '#eeeeee', params: { tooth: 0.3 }, image: { ref: image.ref, tileMm: 60 } });
+      actions().deleteCustom(put.item.id);
+      Array.from(document.querySelectorAll('.vectura-dialog-footer button')).filter((b) => b.textContent === 'Delete').pop().click();
+      expect(await app.ui._paperReleasePending).toBe(true);
+      expect(await TS.shared().get(image.ref)).toBeNull();
+    });
+
+    test('closing the import dialog while processing never applies the paper later, and never closes another modal', async () => {
+      const PI = window.Vectura.PaperImage;
+      const origProcess = PI.processImport;
+      let release;
+      let sawSignal = null;
+      PI.processImport = (blob, opts) => { sawSignal = opts.signal; return new Promise((res) => { release = res; }); };
+      const created = [];
+      const origCreate = actions().createImagePaper;
+      try {
+        const count = P().customLibrary().list().length;
+        const type = S.paper.type;
+        const blobIn = new window.Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: 'image/jpeg' });
+        actions().openImport({ blob: blobIn, name: 'Slow photo' });
+        document.getElementById('paper-import-create').click();
+        const pending = app.ui._paperImageImport.promise;
+        // Esc / ✕ while processing.
+        app.ui.closeModal();
+        expect(sawSignal.aborted).toBe(true);
+        // Another modal is open by the time processing "finishes".
+        app.ui.openModal({ title: 'Other dialog', body: '<p>other</p>' });
+        const tile = tinyPng(81);
+        release({ image: { tile, tileMm: 50, w: 16, h: 16, ref: PI.refFor(tile, '') }, meanColor: '#ffffff' });
+        expect(await pending).toBe(false);
+        expect(P().customLibrary().list()).toHaveLength(count);
+        expect(S.paper.type).toBe(type);
+        expect(document.getElementById('modal-overlay').classList.contains('open')).toBe(true);
+        expect(app.ui.modal.titleEl.textContent).toBe('Other dialog');
+        app.ui.closeModal();
+      } finally {
+        PI.processImport = origProcess;
+        expect(created).toEqual([]);
+        expect(actions().createImagePaper).toBe(origCreate);
+      }
+    });
+
+    test('a default paper that is not in My papers is labelled as the default, not "From file"', () => {
+      const before = S.paper.type;
+      const def = { type: 'custom-defonly1', color: '#efe9dc', texture: 0.7, bleed: 0.5, custom: { name: 'Default only', base: 'rough', color: '#efe9dc', params: { tooth: 0.4 } } };
+      app.setPaperDefault(def);
+      app.setProjectPaper(def, { history: true });
+      expect(document.getElementById('paper-custom-status').dataset.state).toBe('default-only');
+      expect(document.getElementById('paper-custom-status-text').textContent).toBe('Your default paper — not in My papers');
+      app.setPaperDefault(null);
+      expect(document.getElementById('paper-custom-status').dataset.state).toBe('from-file');
+      app.undo();
+      expect(S.paper.type).toBe(before);
+    });
+
+    test('deleting the custom paper in use keeps the document working ("From file — Save to my papers")', () => {
+      const id = S.paper.type;
+      const params = { ...S.paper.custom.params };
+      actions().deleteCustom(id);
+      const confirm = Array.from(document.querySelectorAll('.vectura-dialog-footer button')).filter((b) => b.textContent === 'Delete').pop();
+      confirm.click();
+      expect(P().customLibrary().has(id)).toBe(false);
+      // Still the document's paper, still realistic, still embedded with its params.
+      expect(S.paper.type).toBe(id);
+      expect(P().isRealistic(S.paper)).toBe(true);
+      expect(window.Vectura.PAPERS.TYPES[id].tooth).toBe(params.tooth);
+      expect(app.captureState().settings.paper.custom.params).toEqual(params);
+      // It stays a (checked) swatch, flagged as from this file.
+      const wrap = document.querySelector(`.paper-swatch-wrap[data-custom-id="${id}"]`);
+      expect(wrap.classList.contains('is-from-file')).toBe(true);
+      expect(wrap.querySelector('.paper-swatch').getAttribute('aria-checked')).toBe('true');
+      expect(document.getElementById('paper-custom-status').dataset.state).toBe('from-file');
+      // Save to my papers -> back in the library under the same id.
+      document.getElementById('btn-paper-custom-save').click();
+      expect(P().customLibrary().get(id).params).toEqual(params);
+      expect(document.getElementById('paper-custom-status').dataset.state).toBe('saved');
+    });
+
+    test('a custom default paper survives reload (even after deleting it from the library) and is listed in Document Setup', () => {
+      const id = S.paper.type;
+      const params = { ...S.paper.custom.params };
+      document.getElementById('btn-paper-set-default').click();
+      expect(S.paperDefault.custom.params).toEqual(params);
+      expect(JSON.parse(window.localStorage.getItem('vectura.paperDefault')).custom.params).toEqual(params);
+      const select = document.getElementById('set-default-paper-type');
+      expect(select.value).toBe(id);
+      expect(select.querySelector(`optgroup option[value="${id}"]`).textContent).toBe('Rough & ready');
+      P().customLibrary().remove(id);
+      P().unregisterCustomType(id);
+      const fresh = new window.Vectura.App();
+      expect(fresh).toBeTruthy();
+      expect(S.paper).toMatchObject({ type: id });
+      expect(S.paper.custom.params).toEqual(params);
+      expect(window.Vectura.PAPERS.TYPES[id].tooth).toBe(params.tooth);
+      expect(P().isRealistic(S.paper)).toBe(true);
+      fresh.ui.refreshDefaultPaperControls();
+      const sel = document.getElementById('set-default-paper-type');
+      expect(sel.value).toBe(id);
+      // Picking a library paper as the default from Document Setup.
+      sel.value = 'custom-evil1';
+      sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+      expect(S.paperDefault).toMatchObject({ type: 'custom-evil1' });
+      expect(S.paperDefault.custom.params.tooth).toBe(0.9);
+      app.setPaperDefault(null);
+    });
+
+    test('quota failure on Save as custom: error toast, no library entry, no undo step', async () => {
+      const count = P().customLibrary().list().length;
+      const before = app.history.length;
+      const type = S.paper.type;
+      const proto = Object.getPrototypeOf(window.localStorage);
+      const orig = proto.setItem;
+      proto.setItem = function setItem(k, v) {
+        if (k === KEY) { const e = new Error('full'); e.name = 'QuotaExceededError'; throw e; }
+        return orig.call(this, k, v);
+      };
+      try {
+        prompts.answer = 'Too much';
+        document.getElementById('btn-paper-save-custom').click();
+        await app.ui._paperSavePending;
+      } finally {
+        proto.setItem = orig;
+      }
+      expect(P().customLibrary().list()).toHaveLength(count);
+      expect(app.history.length).toBe(before);
+      expect(S.paper.type).toBe(type);
+      const toasts = Array.from(document.querySelectorAll('.vectura-toast-danger')).map((t) => t.textContent);
+      expect(toasts.some((t) => /storage is full/i.test(t))).toBe(true);
+    });
+  });
 });
 }
 
@@ -753,6 +1288,24 @@ describe('renderer paper hooks', () => {
     expect(PT.cacheStats().bytes).toBeLessThanOrEqual(window.Vectura.PAPERS.LIMITS.hardCacheBytes);
   });
 
+  test('clearCache(type) drops only that paper\'s chunks (a custom paper edit does not rebuild every paper)', () => {
+    PT.clearCache();
+    const v = bigView();
+    PT.drawSurface(mmCtx(), { ...Paper.forType('rough') }, v);
+    PT.drawSurface(mmCtx(), { ...Paper.forType('kraft') }, v);
+    PT.flush();
+    const keys = () => PT.cacheStats().keys;
+    expect(keys().some((k) => k.startsWith('rough|'))).toBe(true);
+    expect(keys().some((k) => k.startsWith('kraft|'))).toBe(true);
+    PT.clearCache('rough');
+    expect(keys().some((k) => k.startsWith('rough|'))).toBe(false);
+    expect(keys().some((k) => k.startsWith('kraft|'))).toBe(true);
+    expect(PT.cacheStats().bytes).toBeGreaterThan(0);
+    // Witness: the no-argument form still clears everything.
+    PT.clearCache();
+    expect(keys()).toEqual([]);
+  });
+
   test('switching paper mid-refine drops the old paper\'s queued work; nearest-the-centre first', () => {
     PT.clearCache();
     const v = bigView();
@@ -812,6 +1365,32 @@ describe('renderer paper hooks', () => {
       r.drawPaperTexture(ctx, app.engine.currentProfile, cb);
       expect(seen[0]).toBe(cb);
     } finally { PT.drawSurface = orig; }
+  });
+
+  test('a custom-paper project opened on a clean profile (empty library) renders with its own realism', () => {
+    const id = 'custom-clean01';
+    expect(Paper.customLibrary().list().some((e) => e.id === id)).toBe(false);
+    expect(Paper.isKnownType(id)).toBe(false);
+    const { PARAM_KEYS, PARAM_LIMITS, TYPES } = window.Vectura.PAPERS;
+    const params = Object.fromEntries(PARAM_KEYS.map((k) => [k, TYPES.newsprint[k] ?? PARAM_LIMITS[k].min]));
+    Object.assign(params, { inkOpacity: 0.77, tooth: 0.6, grainMm: 1.9 });
+    const state = app.captureState();
+    state.settings.paper = { type: id, color: '#e9e2d0', texture: 0.7, bleed: 0.6, seed: 3, custom: { name: 'Shop newsprint', base: 'newsprint', color: '#e9e2d0', params } };
+    app.applyState(JSON.parse(JSON.stringify(state)));
+    const info = window.Vectura.PAPERS.TYPES[id];
+    window.Vectura.PAPERS.PARAM_KEYS.forEach((k) => expect(info[k], k).toBe(Math.round(params[k] * 1e4) / 1e4));
+    expect(Paper.isRealistic(S.paper)).toBe(true);
+    const prevCtx = r.ctx;
+    r.ctx = recordingCtx(r.canvas);
+    try { expect(r._paperInkPlan().info).toBe(info); } finally { r.ctx = prevCtx; }
+    setSize('a4');
+    PT.clearCache();
+    const calls = drawWith();
+    const ink = calls.find((c) => c.op === 'drawImage' && c.image === r._paperInkCanvas);
+    expect(ink.globalAlpha).toBeCloseTo(0.77, 5);
+    expect(PT.cacheStats().keys.some((k) => k.startsWith(`${id}|`))).toBe(true);
+    // Saving again embeds the same block (portable both ways).
+    expect(app.captureState().settings.paper.custom.params.inkOpacity).toBe(0.77);
   });
 
   test('bleed halo stays on while panning (re-used, transformed) — no pop on/off', () => {
@@ -943,9 +1522,16 @@ const FILES = [
   'src/config/machines.js',
   'src/config/defaults.js',
   'src/config/papers.js',
+  'src/config/paper-texture-sources.js',
   'src/core/validators.js',
+  'src/core/utils.js',
+  'src/core/user-library-store.js',
+  'src/core/texture-store.js',
+  'src/core/paper-texture-search.js',
   'src/core/paper.js',
+  'src/render/paper-image.js',
 ];
+
 
 describe('Vectura.Paper model', () => {
   let runtime;
@@ -956,6 +1542,20 @@ describe('Vectura.Paper model', () => {
     runtime = await loadVecturaRuntime({ profile: 'feature', files: FILES });
     V = runtime.window.Vectura;
     Paper = V.Paper;
+    // The DOM-free feature runtime has no Web Storage: give it a minimal one
+    // (a class, so a test can stub Storage.prototype.setItem like a browser's).
+    // Browser primitives the image/search code reads at call time.
+    Object.assign(runtime.window, { atob, Blob, Response, AbortController, DecompressionStream, TextEncoder });
+    runtime.window.indexedDB = makeFakeIdb();
+    if (!runtime.window.localStorage) {
+      class MemStorage {
+        constructor() { Object.defineProperty(this, 'm', { value: new Map() }); }
+        getItem(k) { return this.m.has(String(k)) ? this.m.get(String(k)) : null; }
+        setItem(k, v) { this.m.set(String(k), String(v)); }
+        removeItem(k) { this.m.delete(String(k)); }
+      }
+      runtime.window.localStorage = new MemStorage();
+    }
   });
 
   afterAll(() => runtime?.cleanup?.());
@@ -1059,6 +1659,672 @@ describe('Vectura.Paper model', () => {
     expect(Paper.themeMaySync('#121214')).toBe(false);
   });
 
+  // ---- custom papers (My papers) ----------------------------------------
+
+  const ARCHES = {
+    id: 'custom-arches1',
+    name: 'Arches 300',
+    base: 'cold-press',
+    color: '#f6f1e4',
+    defaultTexture: 0.8,
+    defaultBleed: 0.4,
+    params: {
+      grainMm: 1.6, grainAngle: 0.6, grainStretch: 1.4, tooth: 0.7, fiberDensity: 0.3, fiberLenMm: 2.8, fiberTone: 0.25,
+      speckle: 0.05, mottle: 0.35, absorbency: 0.65, bleedMm: 0.15, feather: 0.45, dryskip: 0.55, inkOpacity: 0.9,
+    },
+  };
+  const clearCustom = () => {
+    Object.keys(V.PAPERS.TYPES).filter((t) => t.startsWith('custom-')).forEach((t) => Paper.unregisterCustomType(t));
+    runtime.window.localStorage.removeItem('vectura.customPapers');
+  };
+
+  test('registerCustomType adds a full realistic type to the runtime catalogue (ORDER stays built-in only)', () => {
+    clearCustom();
+    const order = [...V.PAPERS.ORDER];
+    const info = Paper.registerCustomType(ARCHES);
+    expect(info).toMatchObject({ custom: true, base: 'cold-press', label: 'Arches 300', color: '#f6f1e4', defaultTexture: 0.8, defaultBleed: 0.4 });
+    // Every realism key the renderer and texture code read is present and is the custom value.
+    V.PAPERS.PARAM_KEYS.forEach((k) => expect(V.PAPERS.TYPES['custom-arches1'][k], k).toBe(ARCHES.params[k]));
+    expect(V.PAPERS.ORDER).toEqual(order);
+    expect(Paper.isKnownType('custom-arches1')).toBe(true);
+    expect(Paper.isBuiltinType('custom-arches1')).toBe(false);
+    expect(Paper.isBuiltinType('cold-press')).toBe(true);
+    expect(Paper.isRealistic({ type: 'custom-arches1', texture: 0.5, bleed: 0 })).toBe(true);
+    // Ids that are not custom ids never register (no shadowing built-ins / prototype names).
+    ['cold-press', '__proto__', 'constructor', 'custom-<img>', 'custom-', 'Custom-abc'].forEach((id) => {
+      expect(Paper.registerCustomType({ ...ARCHES, id }), id).toBeNull();
+    });
+    expect(V.PAPERS.TYPES['cold-press'].custom).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(V.PAPERS.TYPES, '__proto__')).toBe(false);
+  });
+
+  test('normalize embeds a clamped custom block for custom types only; hostile values never survive', () => {
+    clearCustom();
+    expect(Paper.normalize({ type: 'kraft' }).custom).toBeUndefined();
+    const evil = Paper.normalize({
+      type: 'custom-x1',
+      color: 'red; background:url(//x)',
+      custom: {
+        name: 'Nice\u0000<img src=x onerror=alert(1)>\n', base: '__proto__', color: 'url(javascript:alert(1))',
+        params: { grainMm: 'NaN', tooth: 9, inkOpacity: -4, fiberTone: -5, __proto__: { polluted: 1 }, extra: 'x', bleedMm: Infinity },
+      },
+    });
+    expect(evil.custom.name).toBe('Nice <img src=x onerror=alert(1)>');
+    expect(evil.custom.base).toBe('cold-press');
+    expect(evil.custom.color).toBe(V.PAPERS.TYPES['cold-press'].color);
+    expect(evil.color).toBe(evil.custom.color);
+    const P = evil.custom.params;
+    expect(Object.keys(P)).toEqual(V.PAPERS.PARAM_KEYS);
+    expect(P.grainMm).toBe(V.PAPERS.TYPES['cold-press'].grainMm); // NaN -> base value
+    expect(P.tooth).toBe(1);
+    expect(P.inkOpacity).toBe(V.PAPERS.PARAM_LIMITS.inkOpacity.min);
+    expect(P.fiberTone).toBe(-1);
+    expect(P.bleedMm).toBe(V.PAPERS.TYPES['cold-press'].bleedMm);
+    expect(({}).polluted).toBeUndefined();
+    // A block that is not an object (or has no params) is dropped.
+    expect(Paper.normalize({ type: 'custom-x1', custom: 'nope' }).custom).toBeUndefined();
+    expect(Paper.normalize({ type: 'custom-x1', custom: { name: 'a', params: [1, 2] } }).custom).toBeUndefined();
+  });
+
+  test('setActive registers the embedded block, and it wins over a library entry with the same id', () => {
+    clearCustom();
+    const calls = [];
+    const prevPT = V.PaperTexture;
+    V.PaperTexture = { clearCache: () => calls.push('clear') };
+    try {
+      Paper.registerCustomType(ARCHES); // the library's version
+      const fromFile = { ...ARCHES.params, tooth: 0.2, grainMm: 0.9 };
+      Paper.setActive({ type: 'custom-arches1', color: '#eeeeee', texture: 0.5, bleed: 0.5, custom: { name: 'Arches (file)', base: 'rough', params: fromFile } });
+      const T = V.PAPERS.TYPES['custom-arches1'];
+      expect(T.tooth).toBe(0.2);
+      expect(T.grainMm).toBe(0.9);
+      expect(T.base).toBe('rough');
+      expect(V.SETTINGS.paper.custom.params.tooth).toBe(0.2);
+      // Params changed for an already-registered type -> texture caches cleared once.
+      expect(calls).toEqual(['clear']);
+      // Re-applying the same block is a no-op for the caches.
+      Paper.setActive(V.SETTINGS.paper);
+      expect(calls).toEqual(['clear']);
+    } finally {
+      V.PaperTexture = prevPT;
+    }
+  });
+
+  test('a project on a custom paper opens on an empty library with exactly its own parameters', () => {
+    clearCustom();
+    const saved = JSON.parse(JSON.stringify({ paper: Paper.fromCustomEntry(ARCHES), bgColor: ARCHES.color }));
+    expect(saved.paper.custom.params).toEqual(ARCHES.params);
+    clearCustom(); // "another machine": nothing registered, nothing in the library
+    expect(Paper.isKnownType('custom-arches1')).toBe(false);
+    const opened = Paper.resolveProjectPaper(saved, null);
+    expect(opened).toEqual(saved.paper);
+    V.PAPERS.PARAM_KEYS.forEach((k) => expect(V.PAPERS.TYPES['custom-arches1'][k], k).toBe(ARCHES.params[k]));
+    expect(Paper.isRealistic(opened)).toBe(true);
+  });
+
+  test('equals compares custom parameters; forType / fromCustomEntry / entryFromPaper round-trip', () => {
+    clearCustom();
+    const a = Paper.fromCustomEntry(ARCHES);
+    expect(a).toMatchObject({ type: 'custom-arches1', color: '#f6f1e4', texture: 0.8, bleed: 0.4 });
+    const b = { ...a, custom: { ...a.custom, params: { ...a.custom.params, tooth: 0.1 } } };
+    expect(Paper.equals(a, JSON.parse(JSON.stringify(a)))).toBe(true);
+    expect(Paper.equals(a, b)).toBe(false);
+    Paper.registerCustomType(ARCHES);
+    expect(Paper.forType('custom-arches1').custom.params).toEqual(ARCHES.params);
+    const entry = Paper.entryFromPaper(a, 'Again');
+    expect(entry).toMatchObject({ id: null, name: 'Again', base: 'cold-press', color: '#f6f1e4', defaultTexture: 0.8, defaultBleed: 0.4, params: ARCHES.params });
+    // A built-in captured as a custom paper keeps the built-in's look.
+    const fromKraft = Paper.entryFromPaper(Paper.forType('kraft'), 'My kraft');
+    expect(fromKraft.base).toBe('kraft');
+    expect(fromKraft.params.fiberDensity).toBe(V.PAPERS.TYPES.kraft.fiberDensity);
+  });
+
+  describe('image papers: embed, IndexedDB library, export/import, hostile tiles', () => {
+    const KEY = 'vectura.customPapers';
+    const decoded = (w = 16, h = 16) => ({ data: new Uint8ClampedArray(w * h * 4).map((_, i) => (i % 4 === 3 ? 255 : (i * 37) % 251)), w, h });
+    let idb;
+    beforeEach(() => {
+      clearCustom();
+      idb = runtime.window.indexedDB;
+      idb.reset();
+      V.PaperImage.clearMaps();
+      // Test decoder: any image whose bytes contain DE AD is "corrupt".
+      V.PaperImage.setDecoder(async (src) => {
+        const bytes = typeof src === 'string' ? Buffer.from(src.split(',')[1] || '', 'base64') : Buffer.alloc(0);
+        if (bytes.includes(Buffer.from([0xde, 0xad]))) throw new Error('bad');
+        return decoded();
+      });
+    });
+    afterAll(() => V.PaperImage.setDecoder(null));
+    const imageBlock = (salt = 1, extra = {}) => ({ tile: tinyPng(salt), tileMm: 80, w: 16, h: 16, ...extra });
+    const IMG_PAPER = (salt = 1) => ({ ...ARCHES, id: undefined, name: `Photo ${salt}`, image: imageBlock(salt), source: { provider: 'ambientCG', title: 'Paper 006', author: 'ambientCG', licence: 'CC0 1.0', url: 'https://ambientcg.com/a/Paper006' } });
+
+    test('normalize keeps a validated image block (content ref, clamped tileMm) and attribution; hostile tiles reject the block', () => {
+      const p = Paper.normalize({ type: 'custom-img1', custom: IMG_PAPER(1) });
+      expect(p.custom.image).toMatchObject({ tileMm: 80, w: 16, h: 16, tile: tinyPng(1) });
+      expect(p.custom.image.ref).toBe(V.PaperImage.refFor(tinyPng(1), ''));
+      expect(p.custom.source).toEqual({ provider: 'ambientCG', title: 'Paper 006', author: 'ambientCG', licence: 'CC0 1.0', url: 'https://ambientcg.com/a/Paper006' });
+      expect(Paper.normalize({ type: 'custom-img1', custom: { ...IMG_PAPER(1), image: { ...imageBlock(1), tileMm: 1e9 } } }).custom.image.tileMm).toBe(2000);
+      const hostile = [
+        'data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+',
+        'data:text/html;base64,PHNjcmlwdD4=',
+        'javascript:alert(1)',
+        bytesUrl('image/jpeg', [...PNG_SIG, 1, 2, 3]), // PNG bytes claiming JPEG
+        `data:image/png;base64,${'A'.repeat(3 * 1024 * 1024)}`, // over the cap
+        'https://example.com/x.png',
+      ];
+      hostile.forEach((tile) => {
+        expect(Paper.normalize({ type: 'custom-img1', custom: { ...IMG_PAPER(1), image: { ...imageBlock(1), tile } } }).custom, tile.slice(0, 30)).toBeUndefined();
+      });
+      // Attribution: only https URLs, text capped and cleaned.
+      const src = Paper.normalizeSource({ url: 'javascript:alert(1)', author: 'A\u0000<b>', licenceUrl: 'http://x', title: 'x'.repeat(500) });
+      expect(src).toEqual({ author: 'A <b>', title: 'x'.repeat(120) });
+    });
+
+    test('a project on an image paper embeds the tile and opens on an empty library + empty IndexedDB with the same pixels', async () => {
+      Paper.setActive({ type: 'custom-img1', color: '#eeeadf', texture: 0.85, bleed: 0.5, custom: IMG_PAPER(2) });
+      const saved = JSON.parse(JSON.stringify({ paper: Paper.effective() }));
+      expect(saved.paper.custom.image.tile).toBe(tinyPng(2));
+      clearCustom();
+      idb.reset();
+      V.PaperImage.clearMaps();
+      const opened = Paper.resolveProjectPaper(saved, null);
+      expect(opened.custom.image).toEqual(saved.paper.custom.image);
+      expect(V.PAPERS.TYPES['custom-img1'].image.tile).toBe(tinyPng(2));
+      expect(await Paper.loadImageFor('custom-img1', V.PAPERS.TYPES['custom-img1'].image)).toBe(true);
+      const maps = V.PaperImage.mapsFor(V.PAPERS.TYPES['custom-img1'].image);
+      expect(maps).toMatchObject({ w: 16, h: 16, tileMm: 80 });
+    });
+
+    test('library entries stay lean (pixels in IndexedDB); a lean pick hydrates the document so it stays portable', async () => {
+      const full = Paper.normalizeCustomBlock(IMG_PAPER(3)).image;
+      expect((await Paper.storeImage(full)).ok).toBe(true);
+      const put = Paper.customLibrary().put(IMG_PAPER(3));
+      expect(put.ok).toBe(true);
+      expect(put.item.image).toEqual({ ref: full.ref, tileMm: 80, w: 16, h: 16 });
+      expect(runtime.window.localStorage.getItem(KEY)).not.toContain('base64');
+      clearCustom(); // runtime registry gone; library + IndexedDB remain…
+      Paper.customLibrary().put(put.item);
+      const lean = Paper.fromCustomEntry(put.item);
+      expect(lean.custom.image.tile).toBeUndefined();
+      Paper.setActive(lean);
+      expect(await Paper.loadImageFor(lean.type, V.PAPERS.TYPES[lean.type].image)).toBe(true);
+      expect(V.SETTINGS.paper.custom.image.tile).toBe(full.tile); // hydrated into the document
+      expect(JSON.stringify(Paper.leanCopy(V.SETTINGS.paper))).not.toContain('base64');
+    });
+
+    test('export inlines the pixels; import into a fresh profile re-stores them; identical re-import is skipped', async () => {
+      const full = Paper.normalizeCustomBlock(IMG_PAPER(4)).image;
+      await Paper.storeImage(full);
+      Paper.customLibrary().put(IMG_PAPER(4));
+      const exp = await Paper.exportCustomPapers(null);
+      expect(exp).toMatchObject({ ok: true, count: 1, missingImages: 0 });
+      const doc = JSON.parse(exp.text);
+      expect(doc.papers[0].image.tile).toBe(full.tile);
+      expect(doc.papers[0].source.licence).toBe('CC0 1.0');
+      // Fresh profile.
+      runtime.window.localStorage.removeItem(KEY);
+      idb.reset();
+      const r = await Paper.importCustomPapers(exp.text);
+      expect(r).toMatchObject({ ok: true, rejected: 0 });
+      expect(r.added).toHaveLength(1);
+      expect(r.added[0].image).toEqual({ ref: full.ref, tileMm: 80, w: 16, h: 16 });
+      expect((await V.TextureStore.shared().get(full.ref)).tile).toBe(full.tile);
+      expect(await Paper.importCustomPapers(exp.text)).toMatchObject({ ok: true, skipped: 1 });
+    });
+
+    test('hostile image imports: wrong format, undecodable, quota; nothing half-imported', async () => {
+      const bad = (image) => JSON.stringify({ schema: 'vectura-papers', version: 1, papers: [{ ...IMG_PAPER(5), image }] });
+      let r = await Paper.importCustomPapers(bad({ tile: 'data:image/svg+xml;base64,PHN2Zz4=', tileMm: 50 }));
+      expect(r).toMatchObject({ ok: true, rejected: 1, added: [] });
+      r = await Paper.importCustomPapers(bad({ tile: bytesUrl('image/png', pngBytes(16, 16, [0xde, 0xad, 2, 3])), tileMm: 50 }));
+      expect(r).toMatchObject({ ok: true, rejected: 1, added: [] }); // fails to decode
+      r = await Paper.importCustomPapers(bad({ ref: 'img-abcdefgh12', tileMm: 50 })); // lean, unknown image
+      expect(r).toMatchObject({ ok: true, rejected: 1, added: [] });
+      expect(await Paper.importCustomPapers('x'.repeat(64 * 1024 * 1024 + 1))).toEqual({ ok: false, reason: 'too-large' });
+      const quota = new Error('full'); quota.name = 'QuotaExceededError';
+      idb.failPut = quota;
+      r = await Paper.importCustomPapers(bad(imageBlock(6)));
+      expect(r).toEqual({ ok: false, reason: 'quota' });
+      expect(Paper.customLibrary().list()).toEqual([]);
+    });
+
+    test('uploads are size-checked from the header before decoding (decompression bombs never decode)', async () => {
+      let decodes = 0;
+      V.PaperImage.setDecoder(async () => { decodes += 1; return decoded(); });
+      const blob = (bytes) => new Blob([Buffer.from(bytes)]);
+      expect(await V.PaperImage.checkBlob(blob(pngBytes(16384, 16384)))).toEqual({ ok: false, reason: 'dimensions' }); // 268 MP
+      expect(await V.PaperImage.checkBlob(blob(pngBytes(20000, 100)))).toEqual({ ok: false, reason: 'dimensions' });
+      expect(await V.PaperImage.checkBlob(blob(jpegBytes(9000, 9000)))).toEqual({ ok: false, reason: 'dimensions' });
+      expect(await V.PaperImage.checkBlob(blob(PNG_SIG))).toEqual({ ok: false, reason: 'dimensions' }); // no header
+      expect(await V.PaperImage.checkBlob(blob(pngBytes(4000, 3000)))).toEqual({ ok: true, mime: 'image/png', w: 4000, h: 3000 });
+      await expect(V.PaperImage.processImport(blob(pngBytes(16384, 16384)))).rejects.toMatchObject({ reason: 'dimensions' });
+      expect(decodes).toBe(0);
+      // An embedded tile declaring a huge canvas is refused by normalize (never reaches decode).
+      const bomb = Paper.normalize({ type: 'custom-bomb1', custom: { ...IMG_PAPER(1), image: { tile: bytesUrl('image/png', pngBytes(16384, 16384)), tileMm: 50 } } });
+      expect(bomb.custom).toBeUndefined();
+      expect(decodes).toBe(0);
+    });
+
+    test('a validated tile is not re-validated or re-hashed on every normalize / setActive (slider cost)', () => {
+      const block = { ...IMG_PAPER(31) };
+      const first = Paper.normalize({ type: 'custom-cache1', color: '#eeeeee', custom: block });
+      const before = V.PaperImage.stats();
+      for (let i = 0; i < 5; i += 1) {
+        const cur = Paper.effective && V.SETTINGS.paper ? V.SETTINGS.paper : first;
+        Paper.setActive({ ...first, custom: { ...first.custom, params: { ...first.custom.params, tooth: 0.1 + i * 0.05 } } });
+        Paper.normalize(cur);
+        Paper.equals(first, V.SETTINGS.paper);
+      }
+      expect(V.PaperImage.stats()).toEqual(before);
+      // Mutation witness: a different tile string IS validated and hashed.
+      Paper.normalize({ type: 'custom-cache2', custom: { ...IMG_PAPER(32) } });
+      const after = V.PaperImage.stats();
+      expect(after.validations).toBeGreaterThan(before.validations);
+      expect(after.hashes).toBeGreaterThan(before.hashes);
+    });
+
+    test('storeImage refuses a lean block whose pixels are not stored; releaseImageIfUnused keeps referenced images', async () => {
+      const full = Paper.normalizeCustomBlock(IMG_PAPER(40)).image;
+      expect(await Paper.storeImage({ ref: full.ref, tileMm: 80 })).toEqual({ ok: false, reason: 'image-missing' });
+      expect((await Paper.storeImage(full)).ok).toBe(true);
+      expect(await Paper.storeImage({ ref: full.ref, tileMm: 80 })).toEqual({ ok: true, ref: full.ref });
+      const put = Paper.customLibrary().put(IMG_PAPER(40));
+      expect(await Paper.releaseImageIfUnused(full.ref)).toBe(false); // a library paper uses it
+      Paper.customLibrary().remove(put.item.id);
+      V.SETTINGS.paperDefault = Paper.normalize({ type: put.item.id, custom: { ...IMG_PAPER(40) } });
+      expect(await Paper.releaseImageIfUnused(full.ref)).toBe(false); // the default uses it
+      V.SETTINGS.paperDefault = null;
+      expect(await Paper.releaseImageIfUnused(full.ref)).toBe(true);
+      expect(await V.TextureStore.shared().get(full.ref)).toBeNull();
+    });
+
+    test('TextureStore: CRUD, invalid records, unavailable IndexedDB', async () => {
+      const TS = V.TextureStore.create({ dbName: 'test-db', indexedDB: () => idb });
+      const rec = { ref: 'img-0123456789', tile: tinyPng(7), tileMm: 30 };
+      expect(await TS.put(rec)).toEqual({ ok: true, ref: 'img-0123456789' });
+      expect(await TS.get('img-0123456789')).toMatchObject({ ref: 'img-0123456789', tile: tinyPng(7), tileMm: 30 });
+      expect(await TS.keys()).toEqual(['img-0123456789']);
+      expect(await TS.put({ ...rec, tile: 'data:image/svg+xml;base64,PHN2Zz4=' })).toEqual({ ok: false, reason: 'invalid' });
+      expect(await TS.put({ ...rec, ref: '__proto__' })).toEqual({ ok: false, reason: 'invalid' });
+      expect(await TS.remove('img-0123456789')).toEqual({ ok: true });
+      expect(await TS.get('img-0123456789')).toBeNull();
+      const none = V.TextureStore.create({ indexedDB: () => null });
+      expect(await none.put(rec)).toEqual({ ok: false, reason: 'unavailable' });
+      expect(await none.get('img-0123456789')).toBeNull();
+      const throwing = V.TextureStore.create({ indexedDB: () => ({ open() { throw new Error('SecurityError'); } }) });
+      expect(await throwing.keys()).toEqual([]);
+    });
+  });
+
+  describe('online texture search (mocked fetch)', () => {
+    let PTS;
+    let conf;
+    const prov = (id) => conf.PROVIDERS.find((p) => p.id === id);
+    const openverseItem = (id, extra = {}) => ({
+      id, title: `Paper ${id}`, thumbnail: `https://api.openverse.org/v1/images/${id}/thumb/`, url: `https://live.staticflickr.com/1/${id}.jpg`,
+      width: 4000, height: 3000, license: 'by', license_version: '2.0', license_url: 'https://creativecommons.org/licenses/by/2.0/',
+      creator: 'Ann', foreign_landing_url: `https://www.flickr.com/photos/ann/${id}`, attribution: `"Paper ${id}" by Ann is licensed under CC BY 2.0.`, ...extra,
+    });
+    const acgItem = (id, extra = {}) => ({
+      id, title: `Paper ${id}`, dimensions: { width: 30, height: 30 }, maps: ['color', 'displacement'],
+      thumbnails: { '512-JPG-FFFFFF': `https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/512-JPG-FFFFFF/${id}.jpg` }, ...extra,
+    });
+    const wikiPage = (pageid, ext = {}) => ({
+      pageid, title: `File:Old_paper_${pageid}.jpg`,
+      imageinfo: [{ url: `https://upload.wikimedia.org/x/${pageid}.jpg`, thumburl: `https://upload.wikimedia.org/thumb/${pageid}.jpg`, descriptionurl: `https://commons.wikimedia.org/wiki/File:Old_paper_${pageid}.jpg`,
+        width: 3000, height: 2000, mime: 'image/jpeg',
+        extmetadata: { LicenseShortName: { value: 'CC BY-SA 4.0' }, LicenseUrl: { value: 'https://creativecommons.org/licenses/by-sa/4.0' }, Artist: { value: '<a href="https://x/User:Bo" onclick="alert(1)">Bo &amp; Co</a>' }, ...ext } }],
+    });
+    const jsonRes = (body) => ({ ok: true, json: async () => body, headers: { get: () => null } });
+    beforeAll(() => {
+      PTS = V.PaperTextureSearch;
+      conf = V.PAPER_TEXTURE_SOURCES;
+    });
+    beforeEach(() => { PTS.clearCache(); runtime.window.localStorage.removeItem('vectura.textureKeys'); });
+
+    test('stripHtml decodes each entity once: "&amp;lt;" stays the literal text "&lt;" (CodeQL double-unescape)', () => {
+      expect(PTS.stripHtml('Bo &amp; Co')).toBe('Bo & Co');
+      expect(PTS.stripHtml('&amp;lt;b&amp;gt; &amp;quot;x&amp;quot;')).toBe('&lt;b&gt; &quot;x&quot;');
+      expect(PTS.stripHtml('<b>&lt;i&gt;</b>')).toBe(' <i> ');
+    });
+
+    test('normalise: Openverse / ambientCG / Wikimedia records map to one shape; NC/ND and non-https never survive', () => {
+      const ov = PTS.normalise(prov('openverse'), openverseItem('a1'));
+      expect(ov).toMatchObject({
+        provider: 'openverse', id: 'a1', title: 'Paper a1', fullUrl: 'https://live.staticflickr.com/1/a1.jpg', licence: 'CC BY 2.0',
+        licenceUrl: 'https://creativecommons.org/licenses/by/2.0/', author: 'Ann', sourceUrl: 'https://www.flickr.com/photos/ann/a1',
+        attribution: '"Paper a1" by Ann is licensed under CC BY 2.0.', width: 4000, scaleGuessed: true, physicalMm: 150,
+      });
+      expect(PTS.normalise(prov('openverse'), openverseItem('a2', { license: 'cc0' })).licence).toBe('CC0 1.0');
+      expect(PTS.normalise(prov('openverse'), openverseItem('a3', { license: 'by-nc', license_version: '2.0' }))).toBeNull();
+      expect(PTS.normalise(prov('openverse'), openverseItem('a4', { license: 'by-nd' }))).toBeNull();
+      expect(PTS.normalise(prov('openverse'), openverseItem('a5', { url: 'http://insecure/x.jpg' }))).toBeNull();
+      expect(PTS.normalise(prov('openverse'), openverseItem('a6', { thumbnail: 'javascript:alert(1)' }))).toBeNull();
+      expect(PTS.normalise(prov('openverse'), openverseItem('a7', { title: 'Watercolour sheet' })).physicalMm).toBe(300);
+      const acg = PTS.normalise(prov('ambientcg'), acgItem('Paper004'));
+      expect(acg).toMatchObject({
+        id: 'Paper004', licence: 'CC0 1.0', author: 'ambientCG', physicalMm: 300,
+        fullUrl: 'https://f003.backblazeb2.com/file/ambientCG-Web/media/surface-preview/Paper004/Paper004_SQ_Color.jpg',
+        heightUrl: 'https://f003.backblazeb2.com/file/ambientCG-Web/media/surface-preview/Paper004/Paper004_SQ_Displacement.jpg',
+        sourceUrl: 'https://ambientcg.com/view?id=Paper004',
+        hires: { url: 'https://ambientcg.com/get?file=Paper004_2K-JPG.zip', archive: 'zip' },
+      });
+      expect(acg.scaleGuessed).toBeUndefined();
+      expect(PTS.normalise(prov('ambientcg'), acgItem('Paper001', { dimensions: { width: 0 } })).scaleGuessed).toBe(true);
+      const wm = PTS.normalise(prov('wikimedia'), wikiPage(7));
+      expect(wm).toMatchObject({ id: '7', title: 'Old paper 7', author: 'Bo & Co', licence: 'CC BY-SA 4.0', shareAlike: true, fullUrl: 'https://upload.wikimedia.org/x/7.jpg' });
+      expect(PTS.normalise(prov('wikimedia'), wikiPage(8, { LicenseShortName: { value: 'CC BY-NC-SA 3.0' } }))).toBeNull();
+      expect(PTS.normalise(prov('wikimedia'), wikiPage(9, { LicenseShortName: { value: 'Fair use' } }))).toBeNull();
+      expect(PTS.normalise(prov('wikimedia'), wikiPage(10, { LicenseShortName: { value: 'Copyrighted free use' } }))).toBeNull();
+      const svg = wikiPage(11); svg.imageinfo[0].mime = 'image/svg+xml';
+      expect(PTS.normalise(prov('wikimedia'), svg)).toBeNull();
+    });
+
+    test('search: providers in parallel, Wikimedia keyed results, key-gated providers, caching, failures and timeouts', async () => {
+      const prevT = conf.TIMEOUT_MS;
+      conf.TIMEOUT_MS = 30;
+      const calls = [];
+      let ambientMode = 'ok';
+      const fetch = (url, init) => {
+        calls.push({ url, headers: init.headers });
+        if (url.startsWith('https://api.openverse.org/')) return Promise.resolve(jsonRes({ results: [openverseItem('o1'), openverseItem('o2', { license: 'by-nc' }), 'junk', null] }));
+        if (url.startsWith('https://commons.wikimedia.org/')) return Promise.resolve(jsonRes({ query: { pages: { 7: wikiPage(7), 8: wikiPage(8) } } }));
+        if (url.startsWith('https://ambientcg.com/')) {
+          if (ambientMode === 'hang') return new Promise((_res, rej) => init.signal.addEventListener('abort', () => rej(new Error('AbortError'))));
+          return Promise.reject(new TypeError('Failed to fetch'));
+        }
+        if (url.startsWith('https://api.pexels.com/')) return Promise.resolve(jsonRes({ photos: [{ id: 5, alt: 'Kraft paper', src: { medium: 'https://images.pexels.com/5m.jpg', original: 'https://images.pexels.com/5.jpg' }, url: 'https://www.pexels.com/photo/5/', photographer: 'Cy', width: 6000, height: 4000 }] }));
+        if (url.endsWith('index.json')) return Promise.resolve({ ok: false, status: 404 });
+        return Promise.reject(new Error(`unexpected ${url}`));
+      };
+      try {
+        let out = await PTS.search('cold press', { fetch });
+        expect(out.results.map((r) => `${r.provider}:${r.id}`)).toEqual(['openverse:o1', 'wikimedia:7', 'wikimedia:8']);
+        expect(out.errors).toEqual([{ provider: 'ambientcg', reason: 'network' }]);
+        expect(out.absent).toEqual(['bundle']);
+        expect(calls.some((c) => c.url.includes('pexels') || c.url.includes('unsplash'))).toBe(false); // no key yet
+        expect(calls[0].url).toContain('q=cold%20press');
+        const n = calls.length;
+        await PTS.search('cold press', { fetch, providers: ['openverse', 'wikimedia'] });
+        expect(calls.length).toBe(n); // cached
+        // A user key enables Pexels (sent as the Authorization header, stored locally only).
+        expect(PTS.setKey('pexels', 'bad key!')).toBe(false);
+        expect(PTS.setKey('openverse', 'abcdefgh1234')).toBe(false);
+        expect(PTS.setKey('pexels', 'abcdefgh1234')).toBe(true);
+        out = await PTS.search('kraft', { fetch, providers: ['pexels'] });
+        expect(out.results[0]).toMatchObject({ provider: 'pexels', title: 'Kraft paper', author: 'Cy', attribution: 'Photo by Cy on Pexels', licence: 'Pexels Licence' });
+        expect(calls[calls.length - 1].headers).toEqual({ Authorization: 'abcdefgh1234' });
+        // Timeout.
+        ambientMode = 'hang';
+        out = await PTS.search('rough', { fetch, providers: ['ambientcg'] });
+        expect(out.errors).toEqual([{ provider: 'ambientcg', reason: 'timeout' }]);
+      } finally {
+        conf.TIMEOUT_MS = prevT;
+      }
+    });
+
+    // A stored (method 0) zip with the given { name: bytes } members.
+    const storedZip = (files) => {
+      const parts = []; const central = []; let offset = 0;
+      Object.entries(files).forEach(([name, data]) => {
+        const nb = Buffer.from(name);
+        const local = Buffer.alloc(30); local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(0, 8);
+        local.writeUInt32LE(data.length, 18); local.writeUInt32LE(data.length, 22); local.writeUInt16LE(nb.length, 26);
+        parts.push(local, nb, Buffer.from(data));
+        const c = Buffer.alloc(46); c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(0, 10);
+        c.writeUInt32LE(data.length, 20); c.writeUInt32LE(data.length, 24); c.writeUInt16LE(nb.length, 28); c.writeUInt32LE(offset, 42);
+        central.push(c, nb);
+        offset += 30 + nb.length + data.length;
+      });
+      const cd = Buffer.concat(central);
+      const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(Object.keys(files).length, 10);
+      end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+      return Buffer.concat([...parts, cd, end]);
+    };
+    const blobRes = (bytes) => ({ ok: true, headers: { get: () => String(bytes.length) }, blob: async () => new Blob([bytes]) });
+
+    test('download: colour + height maps; High-res ZIP unpacked; CORS refusal -> fallback; caps; cors:no never fetches', async () => {
+      const r = PTS.normalise(prov('ambientcg'), acgItem('Paper006'));
+      const seen = [];
+      const ok = await PTS.download(r, { fetch: async (url) => { seen.push(url); return blobRes(Buffer.from(url.includes('Displacement') ? [0xff, 0xd8, 0xff, 9] : [0xff, 0xd8, 0xff, 1])); } });
+      expect(ok.ok).toBe(true);
+      expect(seen).toEqual([r.fullUrl, r.heightUrl]);
+      expect(Array.from(new Uint8Array(await ok.height.arrayBuffer()))).toEqual([0xff, 0xd8, 0xff, 9]);
+      const zip = storedZip({ 'Paper006_2K-JPG_Color.jpg': [0xff, 0xd8, 0xff, 1, 2], 'Paper006_2K-JPG_Displacement.jpg': [0xff, 0xd8, 0xff, 3], 'Paper006.usda': [1] });
+      const hi = await PTS.download(r, { hires: true, fetch: async (url) => { expect(url).toBe('https://ambientcg.com/get?file=Paper006_2K-JPG.zip'); return blobRes(zip); } });
+      expect(hi.ok).toBe(true);
+      expect(Array.from(new Uint8Array(await hi.albedo.arrayBuffer()))).toEqual([0xff, 0xd8, 0xff, 1, 2]);
+      expect(hi.albedo.type).toBe('image/jpeg');
+      expect(Array.from(new Uint8Array(await hi.height.arrayBuffer()))).toEqual([0xff, 0xd8, 0xff, 3]);
+      expect(await PTS.download(r, { fetch: () => Promise.reject(new TypeError('Failed to fetch')) })).toEqual({ ok: false, reason: 'cors' });
+      expect(await PTS.download(r, { fetch: async () => ({ ok: false, status: 404 }) })).toEqual({ ok: false, reason: 'http' });
+      expect(await PTS.download(r, { fetch: async () => ({ ok: true, headers: { get: () => String(1e9) }, blob: async () => new Blob([]) }) })).toEqual({ ok: false, reason: 'too-large' });
+      expect(await PTS.download(r, { hires: true, fetch: async () => blobRes(Buffer.from('not a zip')) })).toEqual({ ok: false, reason: 'archive' });
+      let fetched = false;
+      expect(await PTS.download({ ...r, cors: 'no' }, { fetch: async () => { fetched = true; } })).toEqual({ ok: false, reason: 'cors' });
+      expect(fetched).toBe(false);
+    });
+
+    test('curated bundle: listed only when its same-origin index exists; relative files resolve on this origin only', async () => {
+      Object.assign(runtime.window, { URL, location: { origin: 'http://localhost', href: 'http://localhost/index.html' } });
+      try {
+        const index = { schema: 'vectura-paper-texture-bundle', version: 1, textures: [
+          { id: 'ambientcg-paper004', title: 'ambientCG Paper004', source: 'ambientCG', author: 'ambientCG', licence: 'CC0 1.0', landingUrl: 'https://ambientcg.com/view?id=Paper004', albedo: 'ambientcg-paper004.webp', heightMap: 'ambientcg-paper004_height.webp', thumb: 'ambientcg-paper004_thumb.webp', physicalMm: 300, tags: ['paper'] },
+          { id: 'evil', title: 'Evil', licence: 'CC0 1.0', albedo: 'javascript:alert(1)', thumb: '//evil.example/x.webp' },
+          { id: 'up', title: 'Up', licence: 'CC0 1.0', albedo: '../../etc/x.webp', thumb: 'x.webp' },
+        ] };
+        const fetch = async (url) => (url === 'assets/paper-textures/index.json' ? jsonRes(index) : Promise.reject(new Error('offline')));
+        const out = await PTS.search('paper', { fetch, providers: ['bundle'] });
+        expect(out.results.map((r) => r.id)).toEqual(['ambientcg-paper004']);
+        expect(out.results[0]).toMatchObject({
+          fullUrl: 'http://localhost/assets/paper-textures/ambientcg-paper004.webp',
+          heightUrl: 'http://localhost/assets/paper-textures/ambientcg-paper004_height.webp',
+          physicalMm: 300, cors: 'yes', licence: 'CC0 1.0',
+        });
+        PTS.clearCache();
+        const none = await PTS.search('paper', { fetch: async () => ({ ok: false, status: 404 }), providers: ['bundle'] });
+        expect(none).toMatchObject({ results: [], errors: [], absent: ['bundle'] });
+      } finally {
+        delete runtime.window.location;
+        PTS.clearCache();
+      }
+    });
+
+    test('search: 429 is reported as rate limited; ambientCG results cached for the session; v3 shape change falls back to v2', async () => {
+      const prevCache = conf.CACHE_MS;
+      conf.CACHE_MS = 0; // only providers with their own session cache keep results
+      const calls = [];
+      let ovStatus = 429;
+      const v2 = { foundAssets: [{ assetId: 'Paper005', displayName: 'Paper 005', shortLink: 'https://ambientcg.com/a/Paper005', dimensionX: 25,
+        previewImage: { '512-JPG-FFFFFF': 'https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/512-JPG-FFFFFF/Paper005.jpg' },
+        downloadFolders: { default: { downloadFiletypeCategories: { zip: { downloads: [{ attribute: '2K-JPG', fullDownloadPath: 'https://ambientcg.com/get?file=Paper005_2K-JPG.zip' }] } } } } }] };
+      const fetch = async (url) => {
+        calls.push(url);
+        if (url.startsWith('https://api.openverse.org/')) return ovStatus === 200 ? jsonRes({ results: [openverseItem('o9')] }) : { ok: false, status: ovStatus };
+        if (url.startsWith('https://ambientcg.com/api/v3/')) return jsonRes({ assets: [] }); // shape changed
+        if (url.startsWith('https://ambientcg.com/api/v2/')) return jsonRes(v2);
+        if (url.endsWith('index.json')) return { ok: false, status: 404 };
+        throw new TypeError('offline');
+      };
+      try {
+        let out = await PTS.search('paper', { fetch, providers: ['openverse', 'ambientcg', 'bundle'] });
+        expect(out.errors).toEqual([{ provider: 'openverse', reason: 'rate-limited' }]);
+        expect(out.results.map((r) => r.id)).toEqual(['Paper005']);
+        expect(out.results[0]).toMatchObject({
+          fullUrl: 'https://f003.backblazeb2.com/file/ambientCG-Web/media/surface-preview/Paper005/Paper005_SQ_Color.jpg',
+          physicalMm: 250, hires: { url: 'https://ambientcg.com/get?file=Paper005_2K-JPG.zip' },
+        });
+        const n = calls.length;
+        ovStatus = 200;
+        out = await PTS.search('paper', { fetch, providers: ['openverse', 'ambientcg', 'bundle'] });
+        const again = calls.slice(n);
+        expect(again.some((u) => new URL(u).hostname === 'ambientcg.com')).toBe(false); // session cache
+        expect(again.filter((u) => u.endsWith('index.json'))).toEqual([]); // absent bundle probed once
+        expect(again.some((u) => u.includes('openverse'))).toBe(true); // others re-queried (CACHE_MS 0)
+      } finally {
+        conf.CACHE_MS = prevCache;
+      }
+    });
+
+    test('Openverse: a blocked original falls back to the Openverse image proxy (labelled); Wikimedia hosts are "Direct"', async () => {
+      const r = PTS.normalise(prov('openverse'), openverseItem('p1'));
+      expect(r.direct).toBe(false);
+      expect(r.proxyUrl).toBe('https://api.openverse.org/v1/images/p1/thumb/?full_size=true&compressed=false');
+      const wikiOv = PTS.normalise(prov('openverse'), openverseItem('p2', { url: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Paper.jpg' }));
+      expect(wikiOv.direct).toBe(true);
+      expect(PTS.normalise(prov('wikimedia'), wikiPage(12)).direct).toBe(true);
+      const seen = [];
+      const res = await PTS.download(r, { fetch: async (url) => {
+        seen.push(url);
+        if (url.includes('staticflickr')) throw new TypeError('Failed to fetch');
+        return blobRes(Buffer.from([0xff, 0xd8, 0xff, 5]));
+      } });
+      expect(res).toMatchObject({ ok: true, via: 'proxy' });
+      expect(seen).toEqual([r.fullUrl, r.proxyUrl]);
+      // Proxy refused too -> still the CORS fallback.
+      expect(await PTS.download(r, { fetch: () => Promise.reject(new TypeError('Failed to fetch')) })).toEqual({ ok: false, reason: 'cors' });
+    });
+
+    test('Unsplash: used photos report download_location with the key (provider rule)', async () => {
+      PTS.setKey('unsplash', 'abcdefgh1234');
+      const item = { id: 'u1', alt_description: 'white paper', urls: { small: 'https://images.unsplash.com/s.jpg', full: 'https://images.unsplash.com/f.jpg' },
+        links: { html: 'https://unsplash.com/photos/u1', download_location: 'https://api.unsplash.com/photos/u1/download' }, user: { name: 'Dee' }, width: 5000, height: 3000 };
+      const r = PTS.normalise(prov('unsplash'), item);
+      expect(r).toMatchObject({ attribution: 'Photo by Dee on Unsplash', sourceUrl: 'https://unsplash.com/photos/u1?utm_source=vectura_studio&utm_medium=referral' });
+      const calls = [];
+      await PTS.download(r, { fetch: async (url, init) => { calls.push([url, init.headers]); return blobRes(Buffer.from([0xff, 0xd8, 0xff])); } });
+      expect(calls[0]).toEqual(['https://api.unsplash.com/photos/u1/download', { Authorization: 'Client-ID abcdefgh1234' }]);
+      expect(calls[1][0]).toBe('https://images.unsplash.com/f.jpg');
+    });
+  });
+
+  describe('My papers library (UserLibraryStore)', () => {
+    const KEY = 'vectura.customPapers';
+    const ls = () => runtime.window.localStorage;
+    const lib = () => Paper.customLibrary();
+    beforeEach(() => clearCustom());
+
+    test('put / rename / remove persist in localStorage; a new store instance (reload) reads the same library', () => {
+      const res = lib().put({ ...ARCHES, id: undefined });
+      expect(res.ok).toBe(true);
+      expect(res.item.id).toMatch(/^custom-[a-z0-9]{7}$/);
+      const second = lib().put({ ...ARCHES, id: undefined });
+      expect(second.item.name).toBe('Arches 300 (2)');
+      expect(lib().rename(res.item.id, '  Arches\t300 rough  ').item.name).toBe('Arches 300 rough');
+      const stored = JSON.parse(ls().getItem(KEY));
+      expect(stored).toMatchObject({ schema: 'vectura-papers', version: 1 });
+      expect(stored.papers.map((p) => p.name)).toEqual(['Arches 300 rough', 'Arches 300 (2)']);
+      const reloaded = V.UserLibraryStore.create({ key: KEY, schema: 'vectura-papers', version: 1, itemsKey: 'papers', validate: Paper.normalizeCustomEntry, idPrefix: 'custom-' });
+      expect(reloaded.list()).toEqual(lib().list());
+      expect(reloaded.get(res.item.id).params).toEqual(ARCHES.params);
+      expect(lib().remove(res.item.id).ok).toBe(true);
+      expect(lib().list().map((p) => p.name)).toEqual(['Arches 300 (2)']);
+      expect(lib().remove('custom-missing').ok).toBe(false);
+    });
+
+    test('export one / all -> import into a fresh library: merge, identical-skip, collision rename', () => {
+      const a = lib().put(ARCHES).item;
+      const b = lib().put({ ...ARCHES, id: 'custom-hotp1', name: 'Smooth', base: 'hot-press', params: { ...ARCHES.params, tooth: 0.1 } }).item;
+      const one = lib().exportOne(a.id);
+      const all = lib().exportAll();
+      expect(one).toMatchObject({ ok: true, count: 1, filename: 'vectura-papers-arches-300.json' });
+      expect(all).toMatchObject({ ok: true, count: 2, filename: 'vectura-papers.json' });
+      expect(JSON.parse(all.text)).toMatchObject({ schema: 'vectura-papers', version: 1, papers: [{ id: a.id }, { id: b.id }] });
+      // Fresh profile.
+      ls().removeItem(KEY);
+      expect(lib().list()).toEqual([]);
+      let r = lib().importBundle(one.text, 'merge');
+      expect(r).toMatchObject({ ok: true, skipped: 0, renamed: 0, rejected: 0 });
+      expect(r.added.map((p) => p.id)).toEqual([a.id]);
+      // Export all over it: the identical one is skipped, the other added.
+      r = lib().importBundle(all.text, 'merge');
+      expect(r).toMatchObject({ ok: true, skipped: 1, renamed: 0 });
+      expect(lib().list().map((p) => p.id)).toEqual([a.id, b.id]);
+      // Same id, different content -> new id and "Name (2)"; same name -> "(2)" too.
+      const clash = JSON.parse(one.text);
+      clash.papers[0].params.tooth = 0.05;
+      r = lib().importBundle(JSON.stringify(clash), 'merge');
+      expect(r).toMatchObject({ ok: true, renamed: 1 });
+      expect(r.added[0].id).not.toBe(a.id);
+      expect(r.added[0].name).toBe('Arches 300 (2)');
+      expect(lib().get(a.id).params.tooth).toBe(ARCHES.params.tooth); // never overwritten
+    });
+
+    test('hostile imports are refused or sanitised; nothing is polluted', () => {
+      const ok = (o) => JSON.stringify({ schema: 'vectura-papers', version: 1, papers: o });
+      expect(lib().importBundle('x'.repeat(512 * 1024 + 1), 'merge')).toEqual({ ok: false, reason: 'too-large' });
+      expect(lib().importBundle('{"schema":', 'merge')).toEqual({ ok: false, reason: 'parse' });
+      expect(lib().importBundle('[]', 'merge')).toEqual({ ok: false, reason: 'schema' });
+      expect(lib().importBundle(JSON.stringify({ schema: 'vectura-pens', version: 1, papers: [ARCHES] }), 'merge')).toEqual({ ok: false, reason: 'schema' });
+      expect(lib().importBundle(JSON.stringify({ schema: 'vectura-papers', version: 2, papers: [ARCHES] }), 'merge')).toEqual({ ok: false, reason: 'version' });
+      expect(lib().importBundle(JSON.stringify({ schema: 'vectura-papers', version: 'x', papers: [ARCHES] }), 'merge')).toEqual({ ok: false, reason: 'schema' });
+      expect(lib().importBundle(ok([]), 'merge')).toEqual({ ok: false, reason: 'empty' });
+      const text = `{"schema":"vectura-papers","version":1,"__proto__":{"polluted":true},"papers":[
+        {"id":"__proto__","name":"P1","base":"cold-press","params":{"tooth":0.2}},
+        {"id":"constructor","name":"P2","params":{"tooth":0.3,"__proto__":{"polluted":true},"constructor":{"x":1}}},
+        {"id":"custom-ok1","name":"<img src=x onerror=alert(1)>","color":"red;background:url(x)","params":{"grainMm":"NaN","inkOpacity":null,"tooth":1e9}},
+        "not an object", null, 42, {"name":"no params"}, {"name":"array params","params":[]}
+      ]}`;
+      const r = lib().importBundle(text, 'merge');
+      expect(r.ok).toBe(true);
+      expect(r.rejected).toBe(5);
+      expect(r.added).toHaveLength(3);
+      r.added.forEach((p) => {
+        expect(p.id).toMatch(/^custom-[a-z0-9]{1,24}$/);
+        expect(Object.keys(p)).toEqual(['id', 'name', 'base', 'color', 'defaultTexture', 'defaultBleed', 'params']);
+        expect(Object.keys(p.params)).toEqual(V.PAPERS.PARAM_KEYS);
+      });
+      const evil = r.added[2];
+      expect(evil.id).toBe('custom-ok1');
+      expect(evil.color).toBe(V.PAPERS.TYPES['cold-press'].color);
+      expect(evil.params.grainMm).toBe(V.PAPERS.TYPES['cold-press'].grainMm);
+      expect(evil.params.inkOpacity).toBe(V.PAPERS.TYPES['cold-press'].inkOpacity);
+      expect(evil.params.tooth).toBe(1);
+      expect(({}).polluted).toBeUndefined();
+      expect(Object.prototype.polluted).toBeUndefined();
+      // A corrupt stored library reads as empty (never throws) and is replaced on the next write.
+      ls().setItem(KEY, '{broken');
+      expect(lib().list()).toEqual([]);
+      expect(lib().put(ARCHES).ok).toBe(true);
+    });
+
+    test('quota / blocked storage: writes fail cleanly with reason quota and leave the library unchanged', () => {
+      lib().put(ARCHES);
+      const before = ls().getItem(KEY);
+      const proto = Object.getPrototypeOf(ls());
+      const orig = proto.setItem;
+      proto.setItem = function setItem() {
+        const err = new Error('The quota has been exceeded.');
+        err.name = 'QuotaExceededError';
+        throw err;
+      };
+      try {
+        expect(lib().put({ ...ARCHES, id: undefined, name: 'More' })).toEqual({ ok: false, reason: 'quota' });
+        expect(lib().rename(ARCHES.id, 'Renamed')).toEqual({ ok: false, reason: 'quota' });
+        expect(lib().importBundle(JSON.stringify({ schema: 'vectura-papers', version: 1, papers: [{ ...ARCHES, id: 'custom-zz9', params: { tooth: 0.01 } }] }), 'merge'))
+          .toEqual({ ok: false, reason: 'quota' });
+      } finally {
+        proto.setItem = orig;
+      }
+      expect(ls().getItem(KEY)).toBe(before);
+      // A store whose storage throws on every access never throws itself.
+      const broken = V.UserLibraryStore.create({ key: KEY, schema: 'vectura-papers', validate: Paper.normalizeCustomEntry, idPrefix: 'custom-', storage: () => ({ getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } }) });
+      expect(broken.list()).toEqual([]);
+      expect(broken.put(ARCHES)).toEqual({ ok: false, reason: 'unavailable' });
+      const none = V.UserLibraryStore.create({ key: KEY, schema: 'vectura-papers', validate: Paper.normalizeCustomEntry, storage: () => null });
+      expect(none.put(ARCHES)).toEqual({ ok: false, reason: 'unavailable' });
+    });
+
+    test('the library is capped (max entries -> full)', () => {
+      const small = V.UserLibraryStore.create({ key: 'vectura.testCap', schema: 'vectura-papers', validate: Paper.normalizeCustomEntry, idPrefix: 'custom-', max: 2 });
+      expect(small.put({ ...ARCHES, id: undefined }).ok).toBe(true);
+      expect(small.put({ ...ARCHES, id: undefined, name: 'B' }).ok).toBe(true);
+      expect(small.put({ ...ARCHES, id: undefined, name: 'C' })).toEqual({ ok: false, reason: 'full' });
+      ls().removeItem('vectura.testCap');
+    });
+  });
+
   test('equals compares the visible paper (rounded sliders), not object identity', () => {
     expect(Paper.equals({ type: 'kraft', color: '#C39A6B', texture: 0.701, bleed: 0.5 }, { type: 'kraft', color: '#c39a6b', texture: 0.7, bleed: 0.5 })).toBe(true);
     expect(Paper.equals({ type: 'kraft', color: '#c39a6b' }, { type: 'rough', color: '#c39a6b' })).toBe(false);
@@ -1078,7 +2344,7 @@ describe('Vectura.Paper model', () => {
  * repeat, and chunk resolution follows on-screen px/mm only.
  */
 
-const FILES = ['src/config/papers.js', 'src/core/rng.js', 'src/render/paper-texture.js'];
+const FILES = ['src/config/papers.js', 'src/core/rng.js', 'src/render/paper-image.js', 'src/render/paper-texture.js'];
 
 const corr = (a, b) => {
   const n = a.length;
@@ -1160,6 +2426,230 @@ describe('PaperTexture', () => {
     const b = PT.heightField('rough', 7, 0, 0, 64, 4);
     expect(Array.from(a)).toEqual(Array.from(b));
     a.forEach((v) => { expect(v).toBeGreaterThanOrEqual(-1); expect(v).toBeLessThanOrEqual(1); });
+  });
+
+  // ---- image-based papers -------------------------------------------------
+
+  // A w×h RGBA "photo": fine random grain under a strong left→right lighting
+  // gradient, with mismatched edges (not tileable).
+  const photo = (w, h, seed = 3) => {
+    let s = seed;
+    const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const light = 0.45 + 0.5 * (x / (w - 1));
+        const v = Math.round(255 * light * (0.82 + 0.18 * rnd()));
+        const o = (y * w + x) * 4;
+        data[o] = v; data[o + 1] = v; data[o + 2] = Math.round(v * 0.95); data[o + 3] = 255;
+      }
+    }
+    return { data, w, h };
+  };
+  const meanOf = (f, w, x0, x1, h) => { let t = 0; let n = 0; for (let y = 0; y < h; y += 1) for (let x = x0; x < x1; x += 1) { t += f[y * w + x]; n += 1; } return t / n; };
+
+  test('image import pipeline: de-light removes the lighting gradient, tiling removes the seam', () => {
+    const PI = runtime.window.Vectura.PaperImage;
+    const { data, w, h } = photo(96, 64);
+    const lum = PI.luminance(data, w, h);
+    const left = meanOf(lum, w, 0, 24, h); const right = meanOf(lum, w, 72, 96, h);
+    expect(right / left).toBeGreaterThan(1.5);
+    const lit = PI.delight(lum, w, h);
+    const l2 = meanOf(lit, w, 0, 24, h); const r2 = meanOf(lit, w, 72, 96, h);
+    expect(Math.abs(r2 / l2 - 1)).toBeLessThan(0.08);
+    // Seam: the raw edges jump (gradient wraps), the tiled image does not.
+    expect(PI.seamScore(lum, w, h)).toBeGreaterThan(3);
+    const tiled = PI.makeTileable(lit, w, h);
+    expect(PI.seamScore(tiled, w, h)).toBeLessThan(1.5);
+    // Mutation witness: an un-feathered offset (pure wrap shift) keeps a seam inside.
+    const shifted = new Float32Array(w * h);
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) shifted[y * w + x] = lum[y * w + ((x + w / 2) % w)];
+    expect(PI.seamScore(shifted, w, h)).toBeLessThan(1.5);
+    expect(PI.seamScore(PI.makeTileable(lum, w, h), w, h)).toBeLessThan(1.5);
+    // Height: high-pass of the detail, bounded, zero-mean.
+    const maps = PI.mapsFromPixels({ data, w, h }, { tileMm: 40 });
+    let mean = 0; maps.height.forEach((v) => { expect(Math.abs(v)).toBeLessThanOrEqual(1); mean += v; });
+    expect(Math.abs(mean / maps.height.length)).toBeLessThan(0.05);
+    // A supplied height map wins over the derived one.
+    const flat = { data: new Uint8ClampedArray(w * h * 4).fill(128), w, h };
+    const withHeight = PI.mapsFromPixels({ data, w, h }, { tileMm: 40, height: flat });
+    expect(Math.max(...withHeight.height.map(Math.abs))).toBeLessThan(1e-6);
+  });
+
+  test('physical scale: dpi / tile width -> mm, clamped', () => {
+    const PI = runtime.window.Vectura.PaperImage;
+    expect(PI.tileMmFrom({ pxWidth: 3000, dpi: 300 })).toBe(254);
+    expect(PI.tileMmFrom({ pxWidth: 3000 })).toBe(254); // default 300 dpi
+    expect(PI.tileMmFrom({ pxWidth: 1200, dpi: 600 })).toBe(50.8);
+    expect(PI.tileMmFrom({ pxWidth: 3000, tileMm: 120 })).toBe(120);
+    expect(PI.tileMmFrom({ pxWidth: 1, dpi: 4800 })).toBe(PAPERS.IMAGE.tileMmMin);
+    expect(PI.tileMmFrom({ pxWidth: 1e9, dpi: 1 })).toBe(PAPERS.IMAGE.tileMmMax);
+  });
+
+  test('an image paper is sampled in document mm: wraps every tileMm, same bump at the same mm across zoom buckets', () => {
+    const V = runtime.window.Vectura;
+    const PI = V.PaperImage;
+    // A paper-like height field: random grain smoothed to ~0.5 mm features
+    // (4 map px per mm), tileable by construction (wrapping blur).
+    const w = 64; const h = 64;
+    let seed = 9;
+    const noise = Float32Array.from({ length: w * h }, () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff - 0.5; });
+    const field = PI.boxBlurWrap(noise, w, h, 2);
+    let mx = 0; field.forEach((v) => { mx = Math.max(mx, Math.abs(v)); });
+    const height = field.map((v) => v / mx);
+    const maps = { w, h, tileMm: 16, height, albedo: height.map((v) => v * 0.1) };
+    PI.putMaps('img-test0001', maps);
+    PAPERS.TYPES['custom-imgt1'] = { ...PAPERS.TYPES['cold-press'], custom: true, image: { ref: 'img-test0001', tileMm: 16 } };
+    try {
+      // Periodic in mm (tile = 16 mm) at and below the image's native 4 px/mm.
+      [2, 4].forEach((b) => {
+        const a = PT.heightField('custom-imgt1', 1, 3, 5, 32, b);
+        const c = PT.heightField('custom-imgt1', 1, 3 + 16, 5 - 32, 32, b);
+        a.forEach((v, i) => expect(c[i]).toBeCloseTo(v, 5));
+      });
+      // Value at an mm position = the map at mm × (px per mm), independent of the bucket.
+      const at = (b) => PT.heightField('custom-imgt1', 1, 7.3, 2.1, 1, b)[0];
+      const expectAt = (b) => PI.sampleWrap(maps.height, w, h, (7.3 + 0.5 / b) * (w / 16) - 0.5, (2.1 + 0.5 / b) * (w / 16) - 0.5);
+      expect(at(4)).toBeCloseTo(expectAt(4), 5); // ≤ native 4 px/mm: pure image
+      expect(bucketPair('custom-imgt1', 1, 1)).toBeGreaterThan(0.85);
+      // Isotropic: the albedo field is the map sampled with square mm pixels.
+      const alb = PT.albedoField('custom-imgt1', 0, 0, 8, 4);
+      expect(alb).toHaveLength(64);
+      expect(PT.albedoField('cold-press', 0, 0, 8, 4)).toBeNull();
+      // Past native resolution the procedural tooth is blended in (more relief than the bilinear image alone;
+      // the chunk's fine octave + fibre web add the sharpest detail on top).
+      const deep = PT.heightField('custom-imgt1', 1, 3, 3, 64, 64);
+      let hf = 0; for (let i = 1; i < 64; i += 1) hf += Math.abs(deep[i] - deep[i - 1]);
+      const smoothOnly = Array.from({ length: 64 }, (_, i) => PI.sampleWrap(maps.height, w, h, (3 + (i + 0.5) / 64) * 4 - 0.5, (3 + 0.5 / 64) * 4 - 0.5));
+      let hs = 0; for (let i = 1; i < 64; i += 1) hs += Math.abs(smoothOnly[i] - smoothOnly[i - 1]);
+      expect(hf).toBeGreaterThan(hs * 1.1);
+    } finally {
+      delete PAPERS.TYPES['custom-imgt1'];
+      PI.clearMaps();
+    }
+  });
+
+  test('procedural papers never take the image path (None + procedural unchanged)', () => {
+    const V = runtime.window.Vectura;
+    const withPI = PT.heightField('rough', 7, 1, 2, 32, 4);
+    const saved = V.PaperImage;
+    V.PaperImage = undefined;
+    try {
+      expect(Array.from(PT.heightField('rough', 7, 1, 2, 32, 4))).toEqual(Array.from(withPI));
+    } finally {
+      V.PaperImage = saved;
+    }
+  });
+
+  test('image validation: only real PNG/JPEG/WebP data URLs, sized from the HEADER before any decode', () => {
+    const PI = runtime.window.Vectura.PaperImage;
+    const url = (mime, bytes) => `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+    const png = pngBytes(64, 32);
+    const jpg = jpegBytes(320, 200);
+    const webp = webpBytes(500, 300);
+    expect(PI.sniffMime(new Uint8Array(png))).toBe('image/png');
+    expect(PI.sniffMime(new Uint8Array(jpg))).toBe('image/jpeg');
+    expect(PI.sniffMime(new Uint8Array(webp))).toBe('image/webp');
+    expect(PI.sniffMime(new Uint8Array(Buffer.from('<svg onload=alert(1)>')))).toBeNull();
+    expect(PI.imageSize(new Uint8Array(png))).toEqual({ w: 64, h: 32 });
+    expect(PI.imageSize(new Uint8Array(jpg))).toEqual({ w: 320, h: 200 });
+    expect(PI.imageSize(new Uint8Array(webp))).toEqual({ w: 500, h: 300 });
+    expect(PI.validateDataUrlInfo(url('image/png', png))).toMatchObject({ mime: 'image/png', w: 64, h: 32 });
+    expect(PI.validateDataUrl(url('image/jpeg', jpg))).toBeTruthy();
+    expect(PI.validateDataUrl(url('image/webp', webp))).toBeTruthy();
+    expect(PI.validateDataUrl(url('image/png', jpg))).toBeNull();
+    expect(PI.validateDataUrl(url('image/svg+xml', Buffer.from('<svg/>')))).toBeNull();
+    expect(PI.validateDataUrl(`${url('image/png', png)}"><img src=x>`)).toBeNull();
+    expect(PI.validateDataUrl(url('image/png', png), 4)).toBeNull();
+    expect(PI.validateDataUrl({ toString: () => url('image/png', png) })).toBeNull();
+    // No header size -> refused (a bare signature cannot be size-checked).
+    expect(PI.validateDataUrl(url('image/png', PNG_SIG))).toBeNull();
+    // Decompression bombs: a tiny file declaring a huge canvas is refused
+    // from its header (embedded tiles are capped at IMAGE.embedMaxPx).
+    const cap = PAPERS.IMAGE.embedMaxPx;
+    expect(PI.validateDataUrl(url('image/png', pngBytes(cap, cap)))).toBeTruthy();
+    expect(PI.validateDataUrl(url('image/png', pngBytes(cap + 1, 16)))).toBeNull();
+    expect(PI.validateDataUrl(url('image/png', pngBytes(16384, 16384)))).toBeNull();
+    expect(PI.validateDataUrl(url('image/jpeg', jpegBytes(16384, 16384)))).toBeNull();
+    expect(PI.validateDataUrl(url('image/webp', webpBytes(16384, 16384)))).toBeNull();
+    expect(PI.validateDataUrl(url('image/png', pngBytes(8, 8)))).toBeNull(); // below minPx
+  });
+
+  test('tiling has no seam anywhere (edge or interior) and keeps local contrast; old max(dx,dy) blend is caught', () => {
+    const PI = runtime.window.Vectura.PaperImage;
+    const { data, w, h } = photo(96, 64);
+    const lum = PI.luminance(data, w, h); // strong left->right lighting: a hard wrap seam
+    const lit = PI.delight(lum, w, h);
+    // The previous blend (offset-copy weight from max(dx, dy)) — the mutation witness.
+    const oldBlend = (f) => {
+      const out = new Float32Array(w * h); const hw = w / 2; const hh = h / 2; const sm = (t) => t * t * (3 - 2 * t);
+      for (let y = 0; y < h; y += 1) {
+        const dy = Math.abs(y + 0.5 - hh) / hh; const sy = (y + Math.floor(hh)) % h;
+        for (let x = 0; x < w; x += 1) {
+          const dx = Math.abs(x + 0.5 - hw) / hw; const t = Math.max(0, Math.min(1, (Math.max(dx, dy) - 0.5) / 0.5)); const wo = sm(t);
+          out[y * w + x] = f[y * w + x] * (1 - wo) + f[sy * w + ((x + Math.floor(hw)) % w)] * wo;
+        }
+      }
+      return out;
+    };
+    const blockStdRatio = (f, B = 8) => {
+      const v = [];
+      for (let by = 0; by < h; by += B) for (let bx = 0; bx < w; bx += B) {
+        let s1 = 0; let s2 = 0; let n = 0;
+        for (let y = by; y < by + B; y += 1) for (let x = bx; x < bx + B; x += 1) { const q = f[y * w + x]; s1 += q; s2 += q * q; n += 1; }
+        v.push(Math.sqrt(Math.max(0, s2 / n - (s1 / n) ** 2)));
+      }
+      v.sort((a, b) => a - b);
+      return v[0] / v[v.length >> 1];
+    };
+    expect(PI.seamProfile(lum, w, h)).toBeGreaterThan(5); // the raw photo's wrap seam
+    expect(PI.seamProfile(PI.makeTileable(lum, w, h), w, h)).toBeLessThan(1.6);
+    expect(PI.seamProfile(PI.makeTileable(lit, w, h), w, h)).toBeLessThan(1.6);
+    expect(PI.seamScore(PI.makeTileable(lit, w, h), w, h)).toBeLessThan(1.5);
+    expect(PI.seamProfile(oldBlend(lum), w, h)).toBeGreaterThan(3); // witness: interior seams
+    // Variance-preserving: no washed-out (blob) cross-fade areas.
+    expect(blockStdRatio(PI.makeTileable(lit, w, h))).toBeGreaterThan(0.75);
+    expect(blockStdRatio(oldBlend(lit))).toBeLessThan(0.7); // witness: contrast loss
+    // A half-shift is seamless at the wrap but has a seam through the middle.
+    const shifted = new Float32Array(w * h);
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) shifted[y * w + x] = lum[y * w + ((x + w / 2) % w)];
+    expect(PI.seamProfile(shifted, w, h)).toBeGreaterThan(5);
+  });
+
+  test('transparent pixels read as paper (white), not black', () => {
+    const PI = runtime.window.Vectura.PaperImage;
+    const rgba = new Uint8ClampedArray([0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 128, 255, 255, 255, 255]);
+    const l = PI.luminance(rgba, 4, 1);
+    expect(l[0]).toBeCloseTo(1, 5);
+    expect(l[1]).toBeCloseTo(0, 5);
+    expect(l[2]).toBeCloseTo(127 / 255, 2);
+    expect(PI.luminance(rgba, 4, 1, { linear: true })[0]).toBeCloseTo(1, 5);
+  });
+
+  test('processing is time-sliced by rows: no synchronous slice exceeds the budget; same result as one pass', async () => {
+    const PI = runtime.window.Vectura.PaperImage;
+    const { data, w, h } = photo(96, 64);
+    const lum = PI.luminance(data, w, h);
+    // Injected clock: every row step costs 1 "ms".
+    let t = 0;
+    const slices = [];
+    let yields = 0;
+    const out = await PI.runSliced(PI.gens.delightGen(lum, w, h), {
+      budgetMs: 8, now: () => { t += 1; return t; }, yieldFn: async () => { yields += 1; }, onSlice: (n) => slices.push(n),
+    });
+    expect(Math.max(...slices)).toBeLessThanOrEqual(8); // ≤ 8 rows/columns per slice
+    expect(yields).toBeGreaterThan(20); // 6 blur passes + 2 row passes over 64–96 lines
+    expect(Array.from(out)).toEqual(Array.from(PI.delight(lum, w, h)));
+    const tiled = await PI.runSliced(PI.gens.makeTileableGen(lum, w, h), { budgetMs: 4, now: () => { t += 1; return t; }, yieldFn: async () => {} });
+    expect(Array.from(tiled)).toEqual(Array.from(PI.makeTileable(lum, w, h)));
+    // Mutation witness: a non-yielding pass is ONE slice of everything.
+    const one = [];
+    await PI.runSliced((function* g() { for (let i = 0; i < 100; i += 1) { /* no yield per row */ } yield; }()), { budgetMs: 8, now: () => 0, yieldFn: async () => {}, onSlice: (n) => one.push(n) });
+    expect(one.length).toBe(1);
+    // Abort between slices.
+    const ctl = new AbortController();
+    ctl.abort();
+    await expect(PI.runSliced(PI.gens.delightGen(lum, w, h), { signal: ctl.signal })).rejects.toMatchObject({ reason: 'aborted' });
   });
 
   test('chunk buckets are powers of two of on-screen px/mm, clamped, up to extreme zoom', () => {

@@ -195,5 +195,79 @@
   // snapshot when preferences are on.
   const STORAGE_KEY = 'vectura.paperDefault';
 
-  Vectura.PAPERS = { DEFAULT, TYPES, ORDER, LIMITS, STORAGE_KEY };
+  // Custom papers ("My papers"): the realism parameters a user may tune, in
+  // the order the Advanced sliders show them, with their allowed ranges.
+  // Every value from a file, the library or a slider is clamped to these.
+  const PARAM_KEYS = Object.freeze([
+    'grainMm', 'grainAngle', 'grainStretch', 'tooth', 'fiberDensity', 'fiberLenMm', 'fiberTone',
+    'speckle', 'mottle', 'absorbency', 'bleedMm', 'feather', 'dryskip', 'inkOpacity',
+  ]);
+  const PARAM_LIMITS = Object.freeze({
+    grainMm: Object.freeze({ min: 0.2, max: 3, step: 0.05, unit: 'mm' }),
+    grainAngle: Object.freeze({ min: 0, max: 3.14, step: 0.05, unit: 'rad' }),
+    grainStretch: Object.freeze({ min: 1, max: 2.5, step: 0.05, unit: 'x' }),
+    tooth: Object.freeze({ min: 0, max: 1, step: 0.01, unit: '%' }),
+    fiberDensity: Object.freeze({ min: 0, max: 1, step: 0.01, unit: '%' }),
+    fiberLenMm: Object.freeze({ min: 0.5, max: 5, step: 0.1, unit: 'mm' }),
+    fiberTone: Object.freeze({ min: -1, max: 1, step: 0.05, unit: 'signed' }),
+    speckle: Object.freeze({ min: 0, max: 1, step: 0.01, unit: '%' }),
+    mottle: Object.freeze({ min: 0, max: 1, step: 0.01, unit: '%' }),
+    absorbency: Object.freeze({ min: 0, max: 1, step: 0.01, unit: '%' }),
+    bleedMm: Object.freeze({ min: 0, max: 0.5, step: 0.01, unit: 'mm' }),
+    feather: Object.freeze({ min: 0, max: 1, step: 0.01, unit: '%' }),
+    dryskip: Object.freeze({ min: 0, max: 1, step: 0.01, unit: '%' }),
+    inkOpacity: Object.freeze({ min: 0.5, max: 1, step: 0.01, unit: '%' }),
+  });
+
+  // The user's paper library: one localStorage key holding
+  // { schema, version, papers: [entry…] } — also the export/import file
+  // format. An entry is
+  //   { id: 'custom-xxxxxxx', name, base: <built-in type>, color,
+  //     defaultTexture, defaultBleed, params: { <PARAM_KEYS> } }
+  // A project on a custom paper embeds { name, base, color, params } in
+  // settings.paper.custom so it opens anywhere (the embedded block wins
+  // over a library entry with the same id).
+  const CUSTOM = Object.freeze({
+    LIBRARY_KEY: 'vectura.customPapers',
+    SCHEMA: 'vectura-papers',
+    VERSION: 1,
+    MAX_ENTRIES: 64,
+    MAX_BYTES: 512 * 1024,
+    NAME_MAX: 48,
+    SHORT_MAX: 11,
+    ID_PREFIX: 'custom-',
+    ID_RE: /^custom-[a-z0-9]{1,24}$/,
+    DEFAULT_BASE: 'cold-press',
+    FILE_STEM: 'vectura-papers',
+    HINT: 'Custom paper',
+    FALLBACK_NAME: 'Custom paper',
+  });
+
+  // Image-based custom papers (src/render/paper-image.js): accepted formats,
+  // caps, working/embedded sizes and the physical-scale default.
+  const IMAGE = Object.freeze({
+    MIME: Object.freeze(['image/png', 'image/jpeg', 'image/webp']),
+    ACCEPT: 'image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp',
+    fileMaxBytes: 40 * 1024 * 1024,   // an uploaded / downloaded source image
+    minPx: 16,
+    maxPx: 16384,                     // upload: per side (read from the header, before decoding)
+    maxPixels: 64 * 1024 * 1024,      // upload: total pixels (no decompression bombs)
+    resizeOnDecodePixels: 24e6,       // above this, decode straight to the working size (memory)
+    embedMaxPx: 2048,                 // an embedded/stored tile: per side (2 × tileMaxPx)
+    workMaxPx: 2048,                  // processing size (de-light, tiling)
+    sliceMs: 12,                      // processing time slice before yielding to the UI
+    tileMaxPx: 1024,                  // embedded tile size (per side)
+    tileMaxBytes: 1536 * 1024,        // embedded tile (+ height) budget
+    importMaxBytes: 64 * 1024 * 1024, // a papers file with images
+    defaultDpi: 300,
+    dpiMin: 25,
+    dpiMax: 4800,
+    tileMmMin: 5,
+    tileMmMax: 2000,
+    // Realism defaults for a new image paper: the photo supplies tone,
+    // fibres and mottle, so the procedural ones start off.
+    paramOverrides: Object.freeze({ fiberDensity: 0, speckle: 0, mottle: 0 }),
+  });
+
+  Vectura.PAPERS = { DEFAULT, TYPES, ORDER, LIMITS, STORAGE_KEY, PARAM_KEYS, PARAM_LIMITS, CUSTOM, IMAGE };
 })();

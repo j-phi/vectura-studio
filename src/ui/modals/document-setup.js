@@ -94,7 +94,23 @@
     </div>
   `;
 
-  // Paper selector: options for the Default paper <select>, from the catalogue.
+  // Paper selector: the custom papers the Default paper <select> lists —
+  // My papers, plus the current default's own custom paper when it is not
+  // (or no longer) in the library.
+  const customDefaultChoices = () => {
+    const Paper = Vectura.Paper;
+    const lib = Paper && Paper.customLibrary ? Paper.customLibrary() : null;
+    const entries = lib ? lib.list() : [];
+    const def = Vectura.SETTINGS && Vectura.SETTINGS.paperDefault;
+    const out = entries.map((e) => ({ id: e.id, name: e.name }));
+    if (def && def.custom && Paper && Paper.isCustomId(def.type) && !out.some((e) => e.id === def.type)) {
+      out.push({ id: def.type, name: def.custom.name });
+    }
+    return out;
+  };
+
+  // Paper selector: options for the Default paper <select>, from the catalogue
+  // and My papers.
   const defaultPaperOptions = () => {
     const PAPERS = Vectura.PAPERS || { ORDER: [], TYPES: {} };
     const S = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PAPER_PANEL) || {};
@@ -105,6 +121,12 @@
       const label = type === 'none' ? (S.NONE_OPTION || 'None (plain colour)') : (info.label || type);
       opts.push(`<option value="${esc(type)}">${esc(label)}</option>`);
     });
+    const custom = customDefaultChoices();
+    if (custom.length) {
+      opts.push(`<optgroup label="${esc(S.DEFAULT_GROUP_CUSTOM || 'My papers')}">`);
+      custom.forEach((c) => opts.push(`<option value="${esc(c.id)}">${esc(c.name)}</option>`));
+      opts.push('</optgroup>');
+    }
     return opts.join('');
   };
 
@@ -1439,7 +1461,16 @@ ${isDevEligible() ? `
     const Paper = Vectura.Paper;
     const def = SETTINGS.paperDefault && Paper ? Paper.normalize(SETTINGS.paperDefault) : null;
     const select = getEl('set-default-paper-type', { silent: true });
-    if (select) select.value = def ? (Paper.isKnownType(def.type) ? def.type : 'none') : '';
+    if (select) {
+      // My papers can change at any time: rebuild the options when they did.
+      const html = defaultPaperOptions();
+      if (select.dataset.optionsHtml !== html) {
+        select.innerHTML = html;
+        select.dataset.optionsHtml = html;
+      }
+      const listed = def && Array.from(select.options).some((o) => o.value === def.type);
+      select.value = def ? (listed ? def.type : 'none') : '';
+    }
     const color = def ? def.color : (Paper ? Paper.themeDocumentBg() : (SETTINGS.bgColor || '#ffffff'));
     const input = getEl('inp-default-paper-color', { silent: true });
     if (input) input.value = color;
@@ -1478,6 +1509,16 @@ ${isDevEligible() ? `
         const type = e.target.value;
         if (!type || !Paper) {
           writeDefault(null);
+          return;
+        }
+        // A custom paper is set from its library entry (or kept as the
+        // default's own embedded paper when it is not in the library).
+        if (Paper.isCustomId && Paper.isCustomId(type)) {
+          const lib = Paper.customLibrary ? Paper.customLibrary() : null;
+          const entry = lib ? lib.get(type) : null;
+          const prev = SETTINGS.paperDefault || null;
+          if (entry) writeDefault(Paper.fromCustomEntry(entry, prev));
+          else if (prev && prev.type === type) writeDefault(prev);
           return;
         }
         writeDefault(Paper.forType(type, SETTINGS.paperDefault || null));

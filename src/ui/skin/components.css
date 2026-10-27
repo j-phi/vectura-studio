@@ -16713,6 +16713,349 @@ body.touch-ui #right-pane .paper-color-pill,
 body.touch-ui #right-pane .paper-slider {
   min-height: var(--touch-target-min);
 }
+/* Custom papers ("My papers"): custom swatches follow the built-ins in the
+   same radiogroup; each carries a ⋯ actions button. */
+.paper-swatch-wrap {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.paper-swatch-wrap > .paper-swatch {
+  flex: 1 1 auto;
+  min-width: 44px;
+}
+[data-ui-skin] .paper-swatch.is-custom .paper-swatch-thumb {
+  box-shadow: inset 0 0 0 1px var(--ui-border-hi), inset 0 -3px 0 0 var(--ui-accent);
+}
+[data-ui-skin] .paper-swatch-wrap.is-from-file .paper-swatch-label {
+  font-style: italic;
+}
+[data-ui-skin] .paper-swatch-more {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-panel, var(--ui-ctrl));
+  color: var(--ui-text-2);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity 0.12s, border-color 0.12s, color 0.12s;
+}
+/* With a hover-capable pointer the ⋯ stays quiet until the swatch is
+   hovered, focused or checked; without one it is always shown. */
+@media (hover: hover) {
+  [data-ui-skin] .paper-swatch-wrap .paper-swatch-more {
+    opacity: 0;
+  }
+  [data-ui-skin] .paper-swatch-wrap:hover .paper-swatch-more,
+  [data-ui-skin] .paper-swatch-wrap:focus-within .paper-swatch-more,
+  [data-ui-skin] .paper-swatch-wrap.active .paper-swatch-more {
+    opacity: 1;
+  }
+}
+[data-ui-skin] .paper-swatch-more:hover,
+[data-ui-skin] .paper-swatch-more:focus-visible {
+  border-color: var(--ui-accent);
+  color: var(--ui-text);
+  outline: none;
+}
+.paper-custom-bar {
+  display: flex;
+  gap: var(--spacing-xs);
+  margin-top: var(--spacing-xs);
+}
+.paper-custom-bar .paper-save-custom {
+  flex: 1 1 auto;
+  text-align: left;
+}
+[data-ui-skin] .paper-icon-btn {
+  flex: 0 0 auto;
+  min-width: var(--row-height);
+  min-height: var(--row-height);
+  padding: 0;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-ctrl);
+  color: var(--ui-text-2);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+[data-ui-skin] .paper-icon-btn:hover,
+[data-ui-skin] .paper-icon-btn:focus-visible {
+  border-color: var(--ui-accent);
+  color: var(--ui-text);
+}
+.paper-custom-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-xs);
+}
+.paper-custom-status[hidden] {
+  display: none;
+}
+[data-ui-skin] .paper-custom-status-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+}
+.paper-custom-status .paper-custom-status-btn {
+  flex: 0 0 auto;
+}
+.paper-custom-status .paper-custom-status-btn[hidden] {
+  display: none;
+}
+.paper-advanced {
+  margin-top: var(--spacing-sm);
+}
+.paper-advanced[hidden] {
+  display: none;
+}
+[data-ui-skin] .paper-advanced-summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--row-height);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+  color: var(--ui-text-2);
+  cursor: pointer;
+  list-style: none;
+}
+.paper-advanced-summary::-webkit-details-marker {
+  display: none;
+}
+.paper-advanced-summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  margin-right: var(--spacing-xs);
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent currentColor;
+  transition: transform 0.12s;
+}
+.paper-advanced[open] > .paper-advanced-summary::before {
+  transform: rotate(90deg);
+}
+[data-ui-skin] .paper-advanced-summary:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 1px;
+}
+.paper-advanced-body .paper-row-label {
+  flex-basis: 80px;
+}
+.paper-advanced-body .paper-param-value {
+  flex-basis: 52px;
+}
+/* Touch: the ⋯ is a full 44 px target beside the swatch (the custom swatch
+   spans two grid columns), always visible. */
+body.touch-ui #right-pane .paper-swatch-wrap.is-custom {
+  grid-column: span 2;
+  gap: 2px;
+}
+body.touch-ui #right-pane .paper-swatch-more {
+  position: static;
+  flex: 0 0 auto;
+  align-self: center;
+  width: var(--touch-target-min);
+  height: var(--touch-target-min);
+  font-size: var(--font-size-md, 16px);
+  opacity: 1;
+}
+body.touch-ui #right-pane .paper-icon-btn,
+body.touch-ui #right-pane .paper-advanced-summary {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+}
+/* Image papers: texture button, attribution, import dialog, search sheet
+   (src/ui/panels/paper-texture-import.js). */
+.paper-custom-bar .paper-texture-btn {
+  flex: 0 0 auto;
+}
+[data-ui-skin] .paper-attribution {
+  margin: 0 0 var(--spacing-xs);
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+  overflow-wrap: anywhere;
+}
+.paper-attribution[hidden] {
+  display: none;
+}
+[data-ui-skin] .paper-attribution a {
+  color: var(--ui-accent);
+}
+.paper-import-dialog,
+.paper-search-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+.paper-import-preview {
+  height: 120px;
+  border-radius: var(--radius-sm);
+  background-color: var(--ui-ctrl);
+  background-size: cover;
+  background-position: center;
+  box-shadow: inset 0 0 0 1px var(--ui-border-hi);
+}
+[data-ui-skin] .paper-import-label {
+  font-size: var(--font-size-xs);
+  color: var(--ui-text-2);
+}
+.paper-import-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-width: 0;
+}
+[data-ui-skin] .paper-import-input {
+  min-height: var(--row-height);
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0 var(--spacing-sm);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-bg, var(--ui-ctrl));
+  color: var(--ui-text);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+}
+.paper-import-row .paper-import-scale {
+  flex: 0 0 96px;
+}
+[data-ui-skin] .paper-import-height-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+}
+.paper-import-row .paper-action-btn {
+  flex: 0 0 auto;
+}
+[data-ui-skin] .paper-import-status {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+}
+[data-ui-skin] .paper-import-status.is-error {
+  color: var(--ui-danger, #e5484d);
+}
+.paper-search-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+}
+[data-ui-skin] .paper-search-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--row-height);
+  padding: 0 var(--spacing-sm);
+  border: 1px solid var(--ui-border);
+  border-radius: 999px;
+  background: var(--ui-ctrl);
+  color: var(--ui-text-2);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+[data-ui-skin] .paper-search-chip[aria-pressed="true"] {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-2);
+  color: var(--ui-text);
+}
+[data-ui-skin] .paper-licence-badge {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--ui-ctrl-hov, var(--ui-ctrl));
+  color: var(--ui-text-2);
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+[data-ui-skin] .paper-search-status {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+}
+.paper-search-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--spacing-sm);
+  max-height: min(56vh, 520px);
+  overflow-y: auto;
+}
+[data-ui-skin] .paper-search-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm);
+  background: var(--ui-ctrl);
+}
+.paper-search-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--ui-bg, #111);
+}
+[data-ui-skin] .paper-search-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-sm);
+  color: var(--ui-text);
+}
+[data-ui-skin] .paper-search-meta {
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+}
+.paper-search-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.paper-search-actions .paper-action-btn {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+[data-ui-skin] .paper-search-note {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  color: var(--ui-muted);
+}
+.paper-search-note:empty {
+  display: none;
+}
+body.touch-ui .paper-search-chip,
+body.touch-ui .paper-import-input,
+body.touch-ui .paper-import-dialog .paper-action-btn,
+body.touch-ui .paper-search-actions .paper-action-btn,
+body.touch-ui .paper-import-footer button {
+  min-height: var(--touch-target-min);
+}
 /* Document Setup "Default paper" row (src/ui/modals/document-setup.js). */
 .default-paper-block {
   display: flex;
