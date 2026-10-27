@@ -12050,6 +12050,15 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
 .lights-off-chip:hover { border-color: var(--ui-accent); }
 .lights-off-chip:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 .lights-off-chip-note { color: var(--ui-muted); font-size: 10px; }
+/* Phones: the bottom of the canvas belongs to the zoom controls — the chip
+   sits at the top centre instead (the canvas area is already below the
+   safe-area-aware header, so no inset is needed here). */
+@media (max-width: 640px), (pointer: coarse) and (max-height: 500px) {
+  .lights-off-chip {
+    top: 12px; bottom: auto;
+    max-width: calc(100% - 24px); text-align: center; white-space: normal;
+  }
+}
 @media (pointer: coarse) {
   .ink-pop .fx-swatch, .pen-pick-fx .fx-swatch { width: var(--touch-target-min); height: var(--touch-target-min); }
   .ink-pop :is(.ink-save-lib, .ink-export-pen, .ink-lib-export-all, .ink-lib-btn) { min-height: var(--touch-target-min); min-width: var(--touch-target-min); }

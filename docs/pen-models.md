@@ -152,23 +152,46 @@ model's `fx` block for its own effect family, then `pen.ink.effectStrength` /
 | white | opaque source-over (≈ 0.92 on dark) | — | white gel / paint on dark stock |
 
 **Light model.** The light is fixed (high, up-left); the eye sits above the
-view centre at 1.1 × the larger view side. Each flake has a hashed facet normal
-(tilt ≤ 0.6 rad); its glint is the specular term of the half vector between
-light and eye at the flake. Panning moves the eye over the sheet and zooming
-changes its height, so different flakes glint and the sheen's hot spot travels
-— computed only inside a draw. Nothing depends on time: the same view draws the
-same pixels, and an idle view schedules no frames.
+view centre at 1.1 × the larger view side. The metallic sheen is one broad band
+across the line's width whose brightness follows the half vector (light + eye)
+at each stretch of the line — a wide hot spot up-left of the view centre, so a
+pan sweeps the highlight along the lines (no thin edge stripes). Dual metallic
+shifts from its base colour towards `color2` as the highlight comes up. On dark
+stock metallic ink is lifted a little, on white darkened a little. Zoomed in,
+each flake has a hashed facet normal (spread evenly over the solid angle up to
+1.2 rad) and glints when it mirrors the light to a closer "glint eye" (0.35 ×
+the view size). Nothing depends on time: the same view draws the same pixels,
+and an idle view schedules no frames.
+
+**Sub-pixel sparkle.** When a flake is smaller than 0.7 device px (normal
+zoom), metallic and glitter inks draw 1–2 px points of light instead: one
+candidate per ~1 device px of line on a power-of-two mm cell along the arc
+length (hashed from the path start, so the points stay on the sheet while
+panning), each with a hashed facet phase; the view's phase (view centre over
+6 % of the view size) picks which ones catch the light, so a pan of a few
+percent of the view lights a different set, and a pan by exactly that period
+lights the same sheet positions again. Light stock gets a bright shade of the
+ink, dark stock near-white. Budget: `FX_LIMITS.sparkleBudget` points per pen
+per frame; the cell widens with the view size only (never with the pan).
 
 **Flakes are mm-locked.** They are hashed per 0.5 mm arc-length cell from the
 path's start point (in mm) and the pen seed, so they stay put on the stroke at
 every pan and zoom. LOD: below 0.7 px a flake is sub-pixel and only the sheen
 draws; above 20 000 visible flakes per pen a per-flake rank thins them
-deterministically; the sheen sampling step grows to keep ≤ 20 000 samples per
-pen per frame.
+deterministically at a density that depends on the zoom only (assuming ink
+covers a quarter of the view), so panning never changes how many flakes a stroke
+shows; a very long path spreads its per-path cap evenly along its length. The
+sheen sampling step grows to keep ≤ 20 000 samples per pen per frame.
 
 **Lights off** (View ▸ Lights Off, `Shift+Alt+L`): after every ink pass the
 sheet is filled with `FX_LIMITS.lightsOffDim`, then each glow pen's paths are
-drawn emitting (half-resolution blurred bloom + sharp core). View state only.
+drawn emitting (half-resolution blurred bloom + sharp core). Glow pens skip
+their daylight ink (it would only be dimmed and covered). The blurred bloom is
+cached per glow pen and reused for idle repaints and, transformed, during a pan
+or pinch (rebuilt when the gesture ends). With paper preview (pen-true colours)
+the glow paths come straight from the layers. With Crop to margin off the glow
+outside the margin is dimmed by the outside opacity, like the daytime ink. View
+state only; Document Setup's preview shows the lit sheet.
 
 **Deferred:** UV (black-light) view for fluorescent inks (PRH-116), glow decay
 over time (PRH-117), effect pixel baselines (PRH-118).

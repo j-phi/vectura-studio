@@ -128,7 +128,10 @@ files). A model pen adds:
   (`effectStrength` 0–1 and `flakeDensity` 0–600 flakes/mm² tune the
   special-inks layer).
 - `effect` works on any pen (plain or model); a model's own default effect
-  applies when it is unset. For `glow`, `color2` is the emission colour shown
+  applies when it is unset. `"effect": "plain"` is kept only on a model pen:
+  it switches the model's built-in special ink off (Ink settings ▸ No special
+  ink on a Gelly Roll Metallic, Moonlight, …). `color2` is normalised to
+  `#rrggbb` (`#rgb` expanded, an alpha byte dropped). For `glow`, `color2` is the emission colour shown
   with **View ▸ Lights Off** (default `#7dff9a`); for `dual-metallic` it is the
   second (flake) colour. "Lights off" itself is view state and is never saved.
 - Older builds ignore the extra keys and draw a plain pen at `width`.
@@ -151,8 +154,9 @@ Pens ⋯ ▸ **Export pens** (and Ink settings ▸ **Export this pen**) download
 - **Import pens…** (`Vectura.PenLibrary.parseImport`): ≤ 256 KB, ≤ 64 pens;
   `schema` must be `vectura-pens`; a higher major `version` is refused with a
   message (update the app). Each pen is re-validated by
-  `PenValidate.validatePen` (invalid pens are skipped and counted); names are
-  control-stripped plain text, capped at 48 characters and always rendered
+  `PenValidate.validatePen` (invalid pens are skipped and counted, and so is
+  a width outside 0 < w ≤ 20 mm — never clamped); names are control- and
+  bidi-override-stripped plain text, capped at 48 characters and always rendered
   escaped. Imported pens are **added** with fresh `pen-xxxxxxx` ids (never
   overwriting a pen) in one undo step.
 - **My pens** is the same document in `localStorage["vectura.penLibrary"]`

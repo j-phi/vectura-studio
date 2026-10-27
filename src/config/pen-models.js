@@ -481,12 +481,12 @@
   // Special-inks layer + "Lights off" view (src/render/ink-renderer.js).
   const FX_LIMITS = Object.freeze({
     flakeBudget: 20000,      // flakes drawn per pen per frame (deterministic thinning above)
-    flakeMinPx: 0.7,         // below this a flake is sub-pixel: mean sheen tint instead
+    sparkleBudget: 40000,    // sub-pixel sparkle points tested per pen per frame
+    flakeMinPx: 0.7,         // below this a flake is sub-pixel: 1-px sparkle points instead
     flakeShowK: 0.06,        // fraction of the nominal flake density shown as sparkles
     flakeCellMm: 0.5,        // arc-length cell of the flake hash (mm-locked)
     maxFlakesPerPath: 60000, // per-path generation cap
-    edgePx: 3,               // laid width (device px) above which the edge highlight runs per segment
-    edgeSegBudget: 20000,    // sheen / edge samples per pen per frame (the sampling step grows above it)
+    edgeSegBudget: 20000,    // metallic sheen samples per pen per frame (the sampling step grows above it)
     haloMinPx: 0.5,          // fluorescent halo below this is skipped
     bloomMaxPx: 64,          // Lights off bloom radius cap (device px)
     lightsOffDim: 'rgba(3,5,9,0.965)', // the sheet with the lights off (~3 % luminance)
@@ -566,6 +566,7 @@
     libraryMax: 128,        // My pens entries
     libraryMaxBytes: 256 * 1024,
     nameMax: 48,
+    maxWidthMm: 20,         // a pen file / My pens width above this is rejected (not clamped)
     fileStem: 'vectura-pens',
     libraryIdPrefix: 'mypen-',
   });

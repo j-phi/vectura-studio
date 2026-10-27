@@ -446,6 +446,24 @@ describe('Special inks: effect resolution, effects layer, pen files, My pens', (
     PM.applyEffectSwatch(gel, PM.swatchById('neon-pink'));
     expect(gel.model).toBe('sakura-gelly-roll-metallic');
     expect(PM.effectOf(gel)).toBe('fluorescent');
+    // "No special ink" on a model with a built-in effect switches it off
+    // (explicit 'plain'), and the override survives validation + pen files.
+    ['sakura-gelly-roll-metallic', 'sakura-gelly-roll-moonlight', 'sakura-gelly-roll-stardust', 'pentel-hybrid-dual-metallic', 'glow-phosphorescent-marker'].forEach((id) => {
+      const p = PM.applyModel({ id: 'm', name: 'M', color: '#c9a048', width: 0.5 }, id);
+      expect(PM.effectOf(p), id).not.toBe('plain');
+      PM.applyEffectSwatch(p, null);
+      expect(PM.effectOf(p), id).toBe('plain');
+      expect(traitsOf(p).fx, id).toBeNull();
+      const back = V.PenValidate.validatePen(p);
+      expect(back.effect, id).toBe('plain');
+      expect(V.PenLibrary.toFilePen(p).effect, id).toBe('plain');
+    });
+    // On a plain pen 'plain' is meaningless and dropped.
+    expect(V.PenValidate.validatePen({ id: 'x', name: 'x', color: '#000000', width: 0.3, effect: 'plain' }).effect).toBeUndefined();
+    // A model without a built-in effect just drops the key.
+    const mic = PM.applyModel({ id: 'm', name: 'M', color: '#000000', width: 0.5 }, 'sakura-pigma-micron');
+    PM.applyEffectSwatch(mic, null);
+    expect(mic.effect).toBeUndefined();
   });
 
   it('resolveTraits: an effect makes a plain pen an ink-renderer pen with crisp edges; per-effect base ink', () => {
@@ -469,6 +487,11 @@ describe('Special inks: effect resolution, effects layer, pen files, My pens', (
     expect(sat(neon.inkColor)).toBeGreaterThan(sat('#cc6699'));
     const glow = traitsOf({ ...base, color: '#e6f2c8', effect: 'glow', color2: '#7dff9a' });
     expect(glow.alpha).toBeLessThan(0.8);
+    // On black the daylight glow lacquer is chalky cream (opaque, light), not olive.
+    const glowDark = traitsOf({ ...base, color: '#e6f2c8', effect: 'glow' }, none('#101012'));
+    expect(glowDark.alpha).toBeGreaterThanOrEqual(0.85);
+    const rgb = [1, 3, 5].map((i) => parseInt(glowDark.inkColor.slice(i, i + 2), 16));
+    expect(Math.min(...rgb)).toBeGreaterThan(200);
     expect(glow.fx.glow).toBe('#7dff9a');
     // Effect sliders: overrides clamp to PARAM_LIMITS; the defaults show only with an effect.
     const strong = traitsOf({ ...base, color: '#c9a24a', effect: 'glitter', ink: { effectStrength: 7, flakeDensity: -3 } });
@@ -498,34 +521,120 @@ describe('Special inks: effect resolution, effects layer, pen files, My pens', (
     expect(glints(zoomed)).not.toBe(glints(a));
   });
 
-  it('effects layer: flakes are locked to the stroke in mm (identical positions across pans)', () => {
+  it('effects layer: flakes are locked to the stroke in mm and their density never changes with a pan', () => {
     const pen = { id: 'p', name: 'P', color: '#c8a048', width: 0.6, effect: 'glitter' };
-    const path = wave();
-    const all = (view) => {
-      const { draws } = fxPass(pen, view, 40, none('#101012'), path);
-      // Every flake square of the faint particle layer (drawn regardless of glint).
-      const base = draws.find((d) => d.op === 'fill' && Math.abs(d.globalAlpha - 0.32 * traitsOf(pen).fx.strength) < 1e-9);
+    const path = wave(); // x 10..60, y 17..23
+    // A second, long path only the panned view sees: under the old
+    // "budget / visible count" thinning it changed how many flakes the wave showed.
+    const far = []; for (let r = 0; r < 40; r += 1) { const p = []; for (let k = 0; k <= 400; k += 1) p.push({ x: 75 + k * 0.12, y: 2 + r + Math.sin(k / 30) * 0.3 }); far.push(p); }
+    const flakesOn = (view) => {
+      const t = traitsOf(pen);
+      const { ctx, draws } = recorder();
+      V.InkRenderer.drawEffects(ctx, [{ path }, ...far.map((f) => ({ path: f }))], t, { pxPerMm: 40, view });
+      // Every particle of the faint particle layer (drawn regardless of glint) on the wave.
+      const base = draws.find((d) => d.op === 'fill' && Math.abs(d.globalAlpha - 0.32 * t.fx.strength) < 1e-9);
       const set = new Set();
-      for (let i = 0; i < base.ops.length; i += 5) set.add(`${base.ops[i][1].toFixed(6)},${base.ops[i][2].toFixed(6)}`);
+      for (let i = 0; i < base.ops.length; i += 5) {
+        const [, x, y] = base.ops[i];
+        if (x < 70 && y > 12) set.add(`${x.toFixed(6)},${y.toFixed(6)}`);
+      }
       return set;
     };
-    const big = { x: -100, y: -100, w: 400, h: 300 };
-    const a = all(big);
-    const b = all({ ...big, x: -90, y: -95 });
+    const saved = V.PEN_MODELS.FX_LIMITS;
+    // A budget the dense far block alone overruns (old thinning: keep =
+    // budget / visible count, so the wave lost flakes once it came in).
+    V.PEN_MODELS.FX_LIMITS = { ...saved, flakeBudget: 16000 };
+    let a; let b;
+    try {
+      a = flakesOn({ x: 0, y: 0, w: 72, h: 45 });
+      b = flakesOn({ x: 8, y: -5, w: 72, h: 45 }); // the wave is still fully in view, `far` comes in
+    } finally { V.PEN_MODELS.FX_LIMITS = saved; }
     expect(a.size).toBeGreaterThan(50);
+    expect(b.size).toBe(a.size);
     expect([...a].every((k) => b.has(k))).toBe(true);
     // Some glitter particles sit just past the ink edge.
-    const t = traitsOf(pen);
-    expect(t.fx.spread).toBeGreaterThan(1);
+    expect(traitsOf(pen).fx.spread).toBeGreaterThan(1);
   });
 
-  it('effects layer: LOD — sub-pixel flakes draw no flakes; the flake budget thins deterministically', () => {
+  it('effects layer: a long path spreads its flake cap evenly (never truncated at the far end)', () => {
+    const pen = { id: 'p', name: 'P', color: '#c8a048', width: 0.6, effect: 'glitter' };
+    const long = []; for (let k = 0; k <= 2000; k += 1) long.push({ x: k * 0.5, y: 10 });
+    const saved = V.PEN_MODELS.FX_LIMITS;
+    V.PEN_MODELS.FX_LIMITS = { ...saved, maxFlakesPerPath: 300, flakeBudget: 1e9 };
+    try {
+      const t = traitsOf(pen);
+      const { ctx, draws } = recorder();
+      V.InkRenderer.drawEffects(ctx, [{ path: long }], t, { pxPerMm: 40, view: { x: -5, y: 0, w: 1010, h: 20 } });
+      const base = draws.find((d) => d.op === 'fill' && Math.abs(d.globalAlpha - 0.32 * t.fx.strength) < 1e-9);
+      const xs = []; for (let i = 0; i < base.ops.length; i += 5) xs.push(base.ops[i][1]);
+      expect(xs.length).toBeLessThanOrEqual(300);
+      expect(xs.filter((x) => x > 750).length).toBeGreaterThan(40); // the last quarter has its share
+    } finally { V.PEN_MODELS.FX_LIMITS = saved; }
+  });
+
+  it('effects layer: sub-pixel flakes still sparkle at fit — mm-seeded 1-px points whose glints a small pan changes', () => {
+    const view = { x: 0, y: 0, w: 352, h: 318 }; // ≈ an 880 x 794 px canvas at 2.5 px/mm
+    const lines = []; for (let r = 0; r < 12; r += 1) { const p = []; for (let k = 0; k <= 300; k += 1) p.push({ x: 20 + k, y: 20 + r * 22 + Math.sin(k / 15 + r) * 6 }); lines.push(p); }
+    ['glitter', 'metallic'].forEach((effect) => {
+      const pen = { id: 'p', name: 'P', color: '#c8a048', width: 0.6, effect };
+      const t = traitsOf(pen);
+      const lit = (v) => {
+        const { ctx, draws } = recorder();
+        const res = V.InkRenderer.drawEffects(ctx, lines.map((path) => ({ path })), t, { pxPerMm: 2.5, view: v });
+        const pts = new Set();
+        draws.filter((d) => d.op === 'fill').forEach((d) => { for (let i = 0; i < d.ops.length; i += 5) pts.add(`${((d.ops[i][1] + d.ops[i + 2][1]) / 2).toFixed(5)},${((d.ops[i][2] + d.ops[i + 2][2]) / 2).toFixed(5)}`); });
+        return { res, pts };
+      };
+      const a = lit(view);
+      expect(a.res.sparkles, effect).toBeGreaterThan(60);
+      // Same view: identical.
+      expect([...lit(view).pts].join('|')).toBe([...a.pts].join('|'));
+      // A 37 px pan at fit (≈ 15 mm): a meaningful share of the lit points changes.
+      const b = lit({ ...view, x: 15 });
+      const kept = [...a.pts].filter((k) => b.pts.has(k)).length;
+      expect(1 - kept / a.pts.size, effect).toBeGreaterThan(0.3);
+      // The points are mm-locked: a pan by exactly one twinkle period
+      // (6 % of the view) lights the very same sheet positions again.
+      const c = lit({ ...view, x: 0.06 * 352 });
+      const inBoth = [...a.pts].filter((k) => Number(k.split(',')[0]) > 0.06 * 352 + 2 && Number(k.split(',')[0]) < 350);
+      expect(inBoth.length, effect).toBeGreaterThan(20);
+      expect(inBoth.filter((k) => c.pts.has(k)).length / inBoth.length, effect).toBeGreaterThan(0.95);
+    });
+  });
+
+  it('metallic sheen: a 200 px pan at fit sweeps the highlight (many samples change brightness); no striped edge bands', () => {
+    const pen = { id: 'p', name: 'P', color: '#c9a24a', width: 0.6, effect: 'metallic' };
+    const t = traitsOf(pen);
+    const lines = []; for (let r = 0; r < 12; r += 1) { const p = []; for (let k = 0; k <= 300; k += 1) p.push({ x: 20 + k, y: 20 + r * 22 + Math.sin(k / 15 + r) * 6 }); lines.push(p); }
+    const sheen = (v) => {
+      const { ctx, draws } = recorder();
+      V.InkRenderer.drawEffects(ctx, lines.map((path) => ({ path })), t, { pxPerMm: 2.5, view: v });
+      const map = new Map();
+      draws.filter((d) => d.op === 'stroke' && d.strokeStyle === t.fx.sheen).forEach((d) => {
+        d.ops.filter((o) => o[0] === 'M').forEach((o) => map.set(`${o[1].toFixed(4)},${o[2].toFixed(4)}`, d.globalAlpha));
+        expect(d.lineWidth).toBeCloseTo(t.laidW * 0.85, 9); // one broad band, never thin stripes
+      });
+      return map;
+    };
+    const a = sheen({ x: 0, y: 0, w: 352, h: 318 });
+    const b = sheen({ x: 80, y: 0, w: 352, h: 318 }); // 200 px at 2.5 px/mm
+    const common = [...a.keys()].filter((k) => b.has(k));
+    expect(common.length).toBeGreaterThan(100);
+    const changed = common.filter((k) => Math.abs(a.get(k) - b.get(k)) > 0.15).length;
+    expect(changed / common.length).toBeGreaterThan(0.2);
+    // On dark stock metallic ink is lifted (lighter than its swatch), never muddied.
+    const lum = (hex) => [1, 3, 5].reduce((acc, i) => acc + parseInt(hex.slice(i, i + 2), 16), 0);
+    expect(lum(traitsOf(pen, none('#101012')).inkColor)).toBeGreaterThan(lum('#c9a24a'));
+    // Dual metallic: the sheen shifts colour from the base towards color2.
+    const dual = traitsOf({ id: 'd', name: 'D', color: '#1a2a6a', color2: '#5a8aff', width: 0.55, effect: 'dual-metallic' });
+    const { ctx, draws } = recorder();
+    V.InkRenderer.drawEffects(ctx, lines.map((path) => ({ path })), dual, { pxPerMm: 2.5, view: { x: 0, y: 0, w: 352, h: 318 } });
+    expect(new Set(draws.filter((d) => d.op === 'stroke').map((d) => d.strokeStyle)).size).toBeGreaterThan(3);
+  });
+
+  it('effects layer: the zoomed-in flake budget thins deterministically', () => {
     const pen = { id: 'p', name: 'P', color: '#c9a24a', width: 0.6, effect: 'metallic' };
     const view = { x: 0, y: 0, w: 80, h: 60 };
-    const far = fxPass(pen, view, 4);
-    expect(far.res.flakes).toBe(0);
-    expect(far.res.segments).toBeGreaterThan(0); // the sheen still draws (and still follows the view)
-    const L = V.PEN_MODELS.FX_LIMITS;
     const many = []; for (let r = 0; r < 40; r += 1) { const p = []; for (let k = 0; k <= 200; k += 1) p.push({ x: k * 0.3, y: r * 1.2 + Math.sin(k / 9) }); many.push(p); }
     const t = traitsOf(pen);
     const run = (budget) => {
@@ -540,9 +649,9 @@ describe('Special inks: effect resolution, effects layer, pen files, My pens', (
     expect(full).toBeGreaterThan(400);
     const thinned = run(200);
     expect(thinned).toBeLessThan(full);
-    expect(thinned).toBeLessThanOrEqual(260);
+    expect(thinned).toBeLessThanOrEqual(200);
     expect(run(200)).toBe(thinned); // deterministic
-    expect(L.flakeBudget).toBe(20000);
+    expect(V.PEN_MODELS.FX_LIMITS.flakeBudget).toBe(20000);
   });
 
   it('glow: Lights off draws a sharp core and a bloom with lighter compositing', () => {
@@ -592,17 +701,26 @@ describe('Special inks: effect resolution, effects layer, pen files, My pens', (
       {"name":"<img src=x onerror=alert(1)>\\u0000","color":"#123456","width":0.5,"__proto__":{"isAdmin":true},
        "ink":{"__proto__":{"x":1},"constructor":5,"opacity":9,"evil":3},"effect":"lava","color2":"red;background:url(x)","model":"x\\"><b>"},
       {"name":"bad colour","color":"url(javascript:alert(1))","width":0.5},
-      {"name":"style","color":"#fff","width":"1e9"}]}`, { existingIds: [] });
+      {"name":"style","color":"#fff","width":"1e9"},
+      {"name":"huge","color":"#fff","width":1e308},
+      {"name":"\u202eevil\u2066name\u200f","color":"#abc","width":0.4,"effect":"glow","color2":"#7f9"},
+      {"name":"alpha","color":"#abc","width":0.4,"effect":"glow","color2":"#7dff9aff"}]}`, { existingIds: [] });
     expect(hostile.ok).toBe(true);
-    expect(hostile.rejected).toBe(1);
-    const [a, b] = hostile.pens;
+    // Bad colour, and absurd widths (1e9, 1e308) are rejected — never clamped to 100 mm.
+    expect(hostile.rejected).toBe(3);
+    const [a, bidi, alpha] = hostile.pens;
     expect(a.name).toBe('<img src=x onerror=alert(1)>'); // plain text (rendered escaped), control chars gone
     expect(Object.keys(a).sort()).toEqual(['color', 'id', 'ink', 'name', 'themeManaged', 'width']);
     expect(Object.keys(a.ink)).toEqual(['opacity']);
     expect(a.ink.opacity).toBe(1);
     expect({}.polluted).toBeUndefined();
     expect({}.isAdmin).toBeUndefined();
-    expect(b.width).toBe(100);
+    // Bidi overrides / isolates / marks are stripped from names.
+    expect(bidi.name).toBe('evilname');
+    // color2 is normalised to #rrggbb: #rgb expands, an alpha byte is dropped.
+    expect(bidi.color2).toBe('#77ff99');
+    expect(alpha.color2).toBe('#7dff9a');
+    expect(traitsOf(alpha).fx.glow).toBe('#7dff9a');
   });
 
   it('My pens: CRUD + persistence through localStorage, quota → { ok:false, reason:"quota" }', () => {

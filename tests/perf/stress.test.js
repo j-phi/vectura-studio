@@ -150,7 +150,7 @@ describe('Performance and stress checks', () => {
     // same 200 m — zoomed out (sheen only, no flakes) and zoomed in (flakes
     // under the per-frame budget). JS-side cost; raster is measured in the
     // browser (CHANGELOG).
-    test('special inks over 200 m: sheen-only at fit, flakes capped by the budget when zoomed in', () => {
+    test('special inks over 200 m: sheen + sparkle at fit, flakes capped by the budget when zoomed in', () => {
       const V = runtime.window.Vectura;
       const IR = V.InkRenderer;
       const { paths } = scene();
@@ -166,7 +166,9 @@ describe('Performance and stress checks', () => {
         return { ...res, ms: Date.now() - t0 };
       };
       const fit = run('metallic', 3, { x: 0, y: 0, w: 220, h: 210 });
-      expect(fit.flakes).toBe(0);
+      // Sub-pixel flakes: the 1-px sparkle set, within the budget.
+      expect(fit.sparkles).toBeGreaterThan(0);
+      expect(fit.sparkles).toBeLessThanOrEqual(FX.sparkleBudget);
       expect(fit.segments).toBeLessThanOrEqual(FX.edgeSegBudget * 1.1); // one sample per path end over the budget
       const zoom = run('glitter', 40, { x: 60, y: 60, w: 40, h: 25 });
       expect(zoom.flakes).toBeGreaterThan(0);
@@ -176,7 +178,7 @@ describe('Performance and stress checks', () => {
       expect(fit.ms).toBeLessThan(2000);
       expect(zoom.ms).toBeLessThan(2000);
       expect(zoomMetal.ms).toBeLessThan(2000);
-      process.stdout.write(`[perf] special inks 200 m: fit metallic ${fit.ms} ms (${fit.segments} segs); 40 px/mm glitter ${zoom.ms} ms (${zoom.flakes} flakes), metallic ${zoomMetal.ms} ms (${zoomMetal.flakes} flakes, ${zoomMetal.segments} segs)\n`);
+      process.stdout.write(`[perf] special inks 200 m: fit metallic ${fit.ms} ms (${fit.segments} segs, ${fit.sparkles} sparkles); 40 px/mm glitter ${zoom.ms} ms (${zoom.flakes} flakes), metallic ${zoomMetal.ms} ms (${zoomMetal.flakes} flakes, ${zoomMetal.segments} segs)\n`);
     }, 120000);
   });
 
@@ -291,6 +293,38 @@ describe('Performance and stress checks', () => {
       r.scale = 20; frame();
       const t = V.PenModel.resolveTraits(V.SETTINGS.pens[0], V.Paper.effective(), V.PAPERS.TYPES['cold-press']);
       expect(V.InkRenderer.tierFor(t, 20 * (r.getBackingDpr ? r.getBackingDpr() : 1))).toBe(2);
+    }, 120000);
+
+    // Special inks review: Lights off with 300 glow paths costs at most ~1.5x
+    // a normal frame (glow pens' daylight ink is skipped, the blurred bloom
+    // bitmap is cached per view) and idle repaints reuse the bloom.
+    test('Lights off: 300 glow paths within 1.5x of the normal frame; idle repaints reuse the bloom', () => {
+      const prevLayers = app.engine.layers;
+      const prevPens = V.SETTINGS.pens;
+      const L = new V.Layer('perf-glow', 'expanded', 'Glow');
+      L.paths = prevLayers[0].paths.slice(0, 300); L.effectivePaths = L.paths; L.penId = 'pen-glow'; L.visible = true;
+      app.engine.layers = [L];
+      V.SETTINGS.pens = [{ id: 'pen-glow', name: 'Glow', color: '#e6f2c8', color2: '#7dff9a', width: 0.8, effect: 'glow' }];
+      V.Paper.setActive({ type: 'none', color: '#101012' });
+      const IR = V.InkRenderer;
+      try {
+        [2.5, 6].forEach((scale) => {
+          r.scale = scale; r.offsetX = -scale * 20; r.offsetY = -scale * 20;
+          r.lightsOff = false; frame(); frame();
+          const normal = measure(6);
+          r.lightsOff = true; r._glowBloomCache = null; frame();
+          const builds = IR.cacheStats().bloomBuilds || 0;
+          const off = measure(6);
+          expect(IR.cacheStats().bloomBuilds || 0, `scale ${scale}: bloom rebuilt on an idle repaint`).toBe(builds);
+          expect(off.ms, `scale ${scale}: lights off ${off.ms} vs ${normal.ms} ms`).toBeLessThanOrEqual(normal.ms * 1.5 + 3);
+          process.stdout.write(`[perf] lights off 300 glow paths @${scale}: ${off.ms.toFixed(1)} ms vs normal ${normal.ms.toFixed(1)} ms (JS)\n`);
+        });
+      } finally {
+        r.lightsOff = false;
+        app.engine.layers = prevLayers;
+        V.SETTINGS.pens = prevPens;
+        V.Paper.setActive(V.Paper.forType('cold-press'));
+      }
     }, 120000);
   });
 });

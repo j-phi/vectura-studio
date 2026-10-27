@@ -673,8 +673,8 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### Unreleased - Special inks, Lights off, pen files (v1.4.32)
-- **Special inks.** Metallic, neon, glow-in-the-dark, glitter and opaque white inks on any pen; metallic and glitter glints move as you pan and zoom. Preview only: the SVG still plots the pen colour at the pen width.
+### Unreleased - Special inks, Lights off, pen files (v1.4.32–v1.4.33)
+- **Special inks.** Metallic, neon, glow-in-the-dark, glitter and opaque white inks on any pen; metallic and glitter sparkle at every zoom and their glints move as you pan and zoom. Preview only: the SVG still plots the pen colour at the pen width.
 - **Lights off.** View ▸ Lights Off (`Shift+Alt+L`) darkens the sheet so glow-in-the-dark inks emit.
 - **Pen files and My pens.** Export / import pens as `.json`; save pens to My pens in this browser and reuse them.
 

@@ -1194,8 +1194,12 @@
   const flakeCache = new WeakMap(); // path -> { key, sig, data: Float32Array, n, bbox }
   const FSTRIDE = 8; // x, y, nx, ny, nz, size, colour hash, rank
 
-  // The eye: above the view centre, at 1.1 × the larger view side (mm).
+  // The eye: above the view centre, at 1.1 × the larger view side (mm) — the
+  // broad sheen. Glints use a closer eye (0.35 ×): a flake's facet is tiny,
+  // so a small view change already swings its reflection past the eye (the
+  // twinkle of real metallic / glitter ink as you move).
   const eyeOf = (view) => ({ x: view.x + view.w / 2, y: view.y + view.h / 2, z: Math.max(view.w, view.h, 1e-3) * 1.1 });
+  const glintEyeOf = (view) => ({ x: view.x + view.w / 2, y: view.y + view.h / 2, z: Math.max(view.w, view.h, 1e-3) * 0.35 });
 
   // Half vector H between the light and the eye at a sheet point.
   const halfAt = (eye, x, y, out) => {
@@ -1224,8 +1228,10 @@
     const perMm2 = Math.max(0, fx.flakeDensity || 0) * (L.flakeShowK || 0.06);
     const perMm = perMm2 * 2 * halfW * Math.min(1, spread);
     const cell = L.flakeCellMm || 0.5;
-    const expected = perMm * cell;
     const cap = L.maxFlakesPerPath || 60000;
+    // A very long path spreads its cap evenly along its length (never
+    // truncated at the far end).
+    const expected = Math.min(perMm * cell, (cap * cell) / Math.max(flat.length || 0, 1e-9));
     const size0 = Math.max(0.005, fx.flakeSizeMm || 0.03);
     const jit = clamp(fx.sizeJitter || 0, 0, 0.9);
     const seed = t.seed | 0;
@@ -1262,11 +1268,12 @@
           const lat = (hash3(pathKey, c, j + 2) * 2 - 1) * halfW * spread;
           const x = x0 + dx * u - (dy / dl) * lat;
           const y = y0 + dy * u + (dx / dl) * lat;
-          // Facet: mostly flat-lying, tilted up to ~0.6 rad, any azimuth.
-          const tilt = 0.6 * hash3(pathKey, c, j + 3) ** 0.7;
+          // Facet: spread evenly over the solid angle up to 1.2 rad tilt, so
+          // the same share of flakes can glint anywhere in the view.
+          const ct = 1 - hash3(pathKey, c, j + 3) * 0.6376;
+          const st = Math.sqrt(1 - ct * ct);
           const az = 6.283185307 * hash3(pathKey, c, j + 4);
-          const st = Math.sin(tilt);
-          out.push(x, y, st * Math.cos(az), st * Math.sin(az), Math.cos(tilt),
+          out.push(x, y, st * Math.cos(az), st * Math.sin(az), ct,
             size0 * (1 - jit + 2 * jit * hash3(pathKey, c, j + 5)), hash3(pathKey, c, j + 6), hash3(pathKey, c, j + 7));
           n += 1;
         }
@@ -1329,6 +1336,99 @@
     };
   };
 
+  // Sub-pixel sparkle (see drawEffects). Returns the number of lit points.
+  const drawSparkles = (ctx, live, t, fx, env, view, ppm, pad, strength) => {
+    const L = FXL();
+    const budget = L.sparkleBudget || 40000;
+    // Spacing ≈ 1 device px, snapped to a power-of-two mm cell, and
+    // widened (still a power of two, so it depends on the view size only —
+    // never on the pan) when a view full of lines ~20 px apart would exceed
+    // the budget. Denser drawings hit the hard cap (tested points).
+    let cell = 2 ** Math.round(Math.log2(1 / ppm));
+    const fill = (view.w * view.h) / Math.max(1e-9, (20 / ppm) * cell);
+    if (fill > budget) cell *= 2 ** Math.ceil(Math.log2(fill / budget));
+    const geye = eyeOf(view);
+    const H = [0, 0, 0];
+    // View phase: a function of the view centre and size only (never time).
+    const span = 0.06 * Math.max(view.w, view.h, 1e-3);
+    const phase = (view.x + view.w / 2 + 0.71 * (view.y + view.h / 2)) / span;
+    const glitter = fx.effect === 'glitter';
+    const spread = Math.min(1, Number.isFinite(fx.spread) ? fx.spread : 0.9);
+    // Points of light: near-white with a tint of the ink on dark stock; on
+    // light stock a bright shade of the ink (pure white would read as a gap).
+    const PMx = Vectura.PenModel;
+    const tint = (c) => (PMx && PMx.mixHex ? PMx.mixHex(c, '#ffffff', fx.darkStock ? 0.55 : 0.2) : '#ffffff');
+    const cols = glitter ? [tint(fx.flake), fx.darkStock ? '#ffffff' : tint(fx.base || fx.flake), tint(fx.flakeAlt)] : [tint(fx.flake)];
+    const buckets = cols.map(() => LEVELS.map(() => []));
+    const seed = t.seed | 0;
+    const half = 0.75 / ppm; // ≈ 1.5 device px square
+    const x0 = view.x - pad; const x1 = view.x + view.w + pad;
+    const y0 = view.y - pad; const y1 = view.y + view.h + pad;
+    let lit = 0;
+    let tested = 0;
+    for (let li = 0; li < live.length && tested < budget; li += 1) {
+      const it = live[li];
+      const flat = flatten(it.path, it.useCurves, env.trace);
+      if (!flat.bbox || !intersects(flat.bbox, view, pad)) continue;
+      const halfW = Math.max(0.005, (t.laidW * (it.weightScale || 1)) / 2) * spread;
+      for (let si = 0; si < flat.subs.length; si += 1) {
+        const pts = flat.subs[si];
+        const m = pts.length >> 1;
+        if (m < 2) continue;
+        const pathKey = (hash3(seed ^ 0x5bd1e995, qmm(pts[0]), qmm(pts[1])) * 4294967296) | 0;
+        let s0 = 0; // arc length at vertex q
+        let c = 0;
+        let sc = hash3(pathKey, 0, 1) * cell; // candidate of cell c
+        for (let q = 0; q < m - 1; q += 1) {
+          const ax = pts[2 * q]; const ay = pts[2 * q + 1];
+          const dx = pts[2 * q + 2] - ax; const dy = pts[2 * q + 3] - ay;
+          const len = Math.hypot(dx, dy);
+          const s1 = s0 + len;
+          const segIn = len > 1e-12 && !(Math.max(ax, ax + dx) < x0 || Math.min(ax, ax + dx) > x1
+            || Math.max(ay, ay + dy) < y0 || Math.min(ay, ay + dy) > y1);
+          if (!segIn) {
+            // Off-view stretch: jump to the cell holding s1 (no hashing).
+            if (sc <= s1) { c = Math.max(c + 1, Math.floor(s1 / cell)); sc = (c + hash3(pathKey, c, 1)) * cell; }
+            if (sc <= s1) { c += 1; sc = (c + hash3(pathKey, c, 1)) * cell; }
+            s0 = s1;
+            continue;
+          }
+          for (; sc <= s1 && tested < budget; c += 1, sc = (c + hash3(pathKey, c, 1)) * cell) {
+            tested += 1;
+            const u = (sc - s0) / len;
+            const lat = (hash3(pathKey, c, 3) * 2 - 1) * halfW;
+            const x = ax + dx * u - (dy / len) * lat;
+            const y = ay + dy * u + (dx / len) * lat;
+            // Twinkle: each point has a hashed facet phase; the view sets the
+            // phase that catches the light (it turns a full cycle over a pan
+            // of ~6 % of the view), and the hot spot of the sheen brightens
+            // what glints near it.
+            const w = 0.5 + 0.5 * Math.cos(6.283185307 * (hash3(pathKey, c, 4) + phase));
+            const g = w ** (glitter ? 24 : 40);
+            if (g < 0.06) continue;
+            halfAt(geye, x, y, H);
+            const lv = levelOf(g * (0.55 + 0.45 * H[2] ** 30));
+            if (lv < 0) continue;
+            const ch = hash3(pathKey, c, 6);
+            buckets[glitter ? (ch < 0.55 ? 0 : ch < 0.85 ? 1 : 2) : 0][lv].push(x, y);
+            lit += 1;
+          }
+          s0 = s1;
+        }
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    buckets.forEach((levels, ci) => levels.forEach((arr, lv) => {
+      if (!arr.length) return;
+      ctx.globalAlpha = clamp(LEVELS[lv] * (0.5 + 0.5 * strength), 0, 1);
+      ctx.fillStyle = cols[ci];
+      ctx.beginPath();
+      for (let i = 0; i < arr.length; i += 2) square(ctx, arr[i], arr[i + 1], half * (lv === 3 ? 1.5 : lv === 2 ? 1.2 : 1));
+      ctx.fill();
+    }));
+    return lit;
+  };
+
   /**
    * Special-inks pass for one ink run (call right after drawRun, same ctx
    * and transform). env: { pxPerMm, view (mm), trace, traceItem }.
@@ -1384,13 +1484,13 @@
 
     const metallic = effect === 'metallic' || effect === 'dual-metallic';
     const H = [0, 0, 0];
-    // Metallic sheen (every zoom) + edge highlight (zoomed in): per decimated
-    // segment, bucketed into LEVELS.
+    // Metallic sheen (every zoom): a broad, smooth brightening across the
+    // line's width, strongest at the reflection hot spot (up-left of the
+    // view centre) — panning sweeps the highlight along the lines. Sampled
+    // per decimated stretch of the path's own vertices, 12 fine levels.
+    // Dual metallic shifts from its base towards its second colour as the
+    // highlight comes up (colour-shift ink).
     if (metallic && strength > 0) {
-      const edge = t.laidW * ppm >= (L.edgePx || 3);
-      // Visible paths first: the sheen sampling step grows so the visible
-      // set stays within FX_LIMITS.edgeSegBudget samples (every line keeps
-      // its sheen; only its granularity coarsens on huge scenes).
       const vis = [];
       let visLen = 0;
       live.forEach((it) => {
@@ -1400,19 +1500,13 @@
         visLen += flat.length;
       });
       const segMm = Math.max(4 / ppm, 0.04, visLen / (L.edgeSegBudget || 20000));
-      // The sheen is smooth along the line: 12 fine levels (no visible steps).
       const SHEEN_N = 12;
-      // Buckets hold polylines: [n, x0, y0, x1, y1, …] — the path's own
-      // vertices, so a coarse sampling step never cuts across a curve.
       const sheenB = Array.from({ length: SHEEN_N }, () => []);
-      const edgeB = LEVELS.map(() => []);
-      const pushLine = (arr, pts, i0, i1, ox, oy) => {
+      const pushLine = (arr, pts, i0, i1) => {
         arr.push(i1 - i0 + 1);
-        for (let q = i0; q <= i1; q += 1) arr.push(pts[2 * q] + ox, pts[2 * q + 1] + oy);
+        for (let q = i0; q <= i1; q += 1) arr.push(pts[2 * q], pts[2 * q + 1]);
       };
-      vis.forEach(({ it, flat }) => {
-        const ws = it.weightScale || 1;
-        const off = (t.laidW * ws) / 2 * 0.55;
+      vis.forEach(({ flat }) => {
         flat.subs.forEach((pts) => {
           const m = pts.length >> 1;
           let g0 = 0;
@@ -1421,31 +1515,12 @@
             acc += Math.hypot(pts[2 * i] - pts[2 * i - 2], pts[2 * i + 1] - pts[2 * i - 1]);
             if (acc < segMm && i < m - 1) continue;
             acc = 0;
-            const ax = pts[2 * g0]; const ay = pts[2 * g0 + 1];
-            const bx = pts[2 * i]; const by = pts[2 * i + 1];
-            const dx = bx - ax; const dy = by - ay;
-            const dl = Math.hypot(dx, dy);
-            const mx = (ax + bx) / 2; const my = (ay + by) / 2;
-            if (dl > 1e-9 && mx >= view.x - pad && mx <= view.x + view.w + pad && my >= view.y - pad && my <= view.y + view.h + pad) {
+            const mx = (pts[2 * g0] + pts[2 * i]) / 2; const my = (pts[2 * g0 + 1] + pts[2 * i + 1]) / 2;
+            if (mx >= view.x - pad && mx <= view.x + view.w + pad && my >= view.y - pad && my <= view.y + view.h + pad) {
               halfAt(eye, mx, my, H);
-              // Sheen of the ink body (flat normal): a soft base plus the
-              // reflection hot spot where the light's mirror image meets the eye.
-              const sh = 0.12 + 0.88 * H[2] ** 90;
+              const sh = 0.1 + 0.9 * H[2] ** 30;
               const lv = Math.min(SHEEN_N - 1, Math.round(sh * (SHEEN_N - 1)));
-              if (lv > 0) pushLine(sheenB[lv], pts, g0, i, 0, 0);
-              if (edge) {
-                // Rounded gel bead: normals tilted 30° out at its edges; the
-                // side facing the half vector glints.
-                const nx = -dy / dl; const ny = dx / dl;
-                const d1 = 0.5 * (nx * H[0] + ny * H[1]) + 0.866 * H[2];
-                const d2 = 0.5 * (-nx * H[0] - ny * H[1]) + 0.866 * H[2];
-                const e1 = clamp((d1 - 0.8) / 0.2, 0, 1);
-                const e2 = clamp((d2 - 0.8) / 0.2, 0, 1);
-                const l1 = levelOf(e1 * e1);
-                const l2 = levelOf(e2 * e2);
-                if (l1 >= 0) pushLine(edgeB[l1], pts, g0, i, nx * off, ny * off);
-                if (l2 >= 0) pushLine(edgeB[l2], pts, g0, i, -nx * off, -ny * off);
-              }
+              if (lv > 0) pushLine(sheenB[lv], pts, g0, i);
               res.segments += 1;
             }
             g0 = i;
@@ -1453,13 +1528,15 @@
         });
       });
       ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = fx.sheen;
       // Butt caps: segment joints must not double up into beads.
       ctx.lineCap = 'butt';
-      const strokeBuckets = (buckets, width, k, levels = LEVELS) => buckets.forEach((arr, lv) => {
+      ctx.lineWidth = t.laidW * 0.85;
+      const dual = effect === 'dual-metallic';
+      sheenB.forEach((arr, lv) => {
         if (!arr.length) return;
-        ctx.globalAlpha = clamp(levels[lv] * strength * k, 0, 1);
-        ctx.lineWidth = width;
+        const k = lv / (SHEEN_N - 1);
+        ctx.globalAlpha = clamp(k * strength * 0.85, 0, 1);
+        ctx.strokeStyle = dual && Vectura.PenModel ? Vectura.PenModel.mixHex(fx.base, fx.sheen, 0.25 + 0.75 * k) : fx.sheen;
         ctx.beginPath();
         let i = 0;
         while (i < arr.length) {
@@ -1470,13 +1547,23 @@
         }
         ctx.stroke();
       });
-      strokeBuckets(sheenB, t.laidW * (edge ? 0.36 : 0.62), 0.9, sheenB.map((_a, i) => i / (SHEEN_N - 1)));
-      if (edge) strokeBuckets(edgeB, t.laidW * 0.24, 0.85);
+    }
+
+    // Sub-pixel flakes still sparkle: a deterministic, mm-seeded set of
+    // one-device-pixel points (one candidate per ~3 px of line, hashed per
+    // arc-length cell from the path start, cell = a power-of-two mm size for
+    // the zoom bucket, so they stay put while panning). The glint test uses
+    // the close glint eye, so each pan lights a different subset.
+    const size0 = fx.flakeSizeMm || 0;
+    const sparkleFx = effect === 'metallic' || effect === 'dual-metallic' || effect === 'glitter';
+    if (sparkleFx && strength > 0 && (fx.flakeDensity || 0) > 0 && size0 * ppm < (L.flakeMinPx || 0.7)) {
+      res.sparkles = drawSparkles(ctx, live, t, fx, env, view, ppm, pad, strength);
+      res.flakes += res.sparkles;
     }
 
     // Flakes / particles / grain.
-    const size0 = fx.flakeSizeMm || 0;
     if (fx.flakes && size0 * ppm >= (L.flakeMinPx || 0.7) && (fx.flakeDensity || 0) > 0) {
+      const geye = glintEyeOf(view);
       const lists = [];
       let count = 0;
       live.forEach((it) => {
@@ -1485,12 +1572,16 @@
         lists.push(e);
         count += e.n;
       });
-      // Deterministic thinning to the per-frame budget (rank is per flake).
+      // Deterministic thinning (rank is per flake) at a density that depends
+      // on the zoom only — never on what the view happens to contain, so a
+      // pan never changes how many flakes a stroke shows. The budget assumes
+      // ink covers a quarter of the view; a hard cap still bounds the frame.
       const budget = L.flakeBudget || 20000;
-      const keep = count > budget ? budget / count : 1;
+      const perMm2 = Math.max(1e-9, (fx.flakeDensity || 0) * (L.flakeShowK || 0.06));
+      const keep = Math.min(1, budget / (perMm2 * view.w * view.h * 0.25));
       const glitter = effect === 'glitter';
       const glow = effect === 'glow';
-      const shiny = glitter ? 70 : 40;
+      const shiny = 60;
       // A flake reads as a point of light: never under ~1.2 device px.
       const minHalf = 0.6 / ppm;
       // buckets[colour][level] → flat list x, y, half-size
@@ -1505,12 +1596,13 @@
           if (d[i + 7] >= keep) continue;
           const x = d[i]; const y = d[i + 1];
           if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+          if (res.flakes >= budget) break;
           const hs = Math.max(minHalf, d[i + 5] * 0.8);
           const ci = glitter ? (d[i + 6] < 0.55 ? 0 : d[i + 6] < 0.85 ? 1 : 2) : 0;
           res.flakes += 1;
           if (glow) { buckets[0][1].push(x, y, hs); continue; }
           if (glitter) base.push(x, y, hs);
-          halfAt(eye, x, y, H);
+          halfAt(geye, x, y, H);
           const dd = d[i + 2] * H[0] + d[i + 3] * H[1] + d[i + 4] * H[2];
           if (dd <= 0) continue;
           const g = 0.85 * dd ** shiny + 0.15 * dd ** 6;
@@ -1559,6 +1651,24 @@
     return res;
   };
 
+  // Identity of a glow pen's bloom: its paths (flattened geometry objects are
+  // reused while a path is unchanged), traits that shape it and the canvas.
+  // Temp-transformed items (a drag in progress) never cache.
+  const objIds = new WeakMap();
+  let objSeq = 0;
+  const idOf = (o) => { let id = objIds.get(o); if (!id) { objSeq += 1; id = objSeq; objIds.set(o, id); } return id; };
+  const glowKey = (items, t, col, bloomPx, B, trace) => {
+    let k = `${col}|${t.laidW}|${bloomPx.toFixed(3)}|${B.width}x${B.height}|`;
+    for (let i = 0; i < items.length; i += 1) {
+      const it = items[i];
+      if (it.temp || it.uncached) return null;
+      k += `${idOf(flatten(it.path, it.useCurves, trace))},`;
+    }
+    return k;
+  };
+  const sameM = (a, b) => !!a && !!b && Math.abs(a.a - b.a) < 1e-9 && Math.abs(a.d - b.d) < 1e-9
+    && Math.abs(a.e - b.e) < 1e-6 && Math.abs(a.f - b.f) < 1e-6 && Math.abs(a.b - b.b) < 1e-9 && Math.abs(a.c - b.c) < 1e-9;
+
   /**
    * "Lights off": a glow-in-the-dark pen emitting on the darkened sheet — a
    * sharp core plus a blurred bloom, composited 'lighter'. env as
@@ -1584,12 +1694,28 @@
     ctx.strokeStyle = col;
     if (bloomPx >= 1) {
       const A = env && env.filterOk && typeof env.scratch === 'function' ? env.scratch('a') : null;
-      const B = A ? env.scratch('b') : null;
-      if (A && B && typeof ctx.getTransform === 'function') {
+      const B = A ? env.scratch(`b-${t.penId}`) : null;
+      const m0 = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+      // Bloom cache (per pen): the blurred bitmap is reused while the glow's
+      // geometry, colour and view are unchanged (an idle repaint costs one
+      // drawImage), and transformed during a pan / pinch like the bleed halo
+      // (no rebuild, no popping); it is rebuilt once the gesture ends.
+      const cache = env && env.bloomCache;
+      const key = A && m0 ? glowKey(items, t, col, bloomPx, B, env.trace) : null;
+      const hit = cache && key ? cache.get(t.penId) : null;
+      const same = hit && hit.key === key;
+      if (same && m0 && (sameM(hit.m, m0) || env.gesture)) {
+        const kk = m0.a / hit.m.a;
+        ctx.save();
+        ctx.setTransform(kk, 0, 0, kk, m0.e - hit.m.e * kk, m0.f - hit.m.f * kk);
+        ctx.globalAlpha = 0.7 * strength;
+        ctx.drawImage(B, 0, 0, B.width / hit.k, B.height / hit.k);
+        ctx.restore();
+        stats.bloomHits = (stats.bloomHits || 0) + 1;
+      } else if (A && B && m0) {
         // Half-resolution bloom: stroke the glow into scratch A, blur A into
-        // B, add B back upscaled — the blur (the costly part with the lights
-        // off) runs on a quarter of the pixels.
-        const m = ctx.getTransform();
+        // B, add B back upscaled — the blur runs on a quarter of the pixels.
+        const m = m0;
         const ax = A.getContext('2d');
         const k = A.width / Math.max(1, ctx.canvas ? ctx.canvas.width : A.width * 2);
         ax.setTransform(1, 0, 0, 1, 0, 0);
@@ -1616,6 +1742,8 @@
         ctx.globalAlpha = 0.7 * strength;
         ctx.drawImage(B, 0, 0, B.width / k, B.height / k);
         ctx.restore();
+        stats.bloomBuilds = (stats.bloomBuilds || 0) + 1;
+        if (cache) cache.set(t.penId, { key, m: { a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f }, k });
       } else if (env && env.filterOk) {
         ctx.filter = `blur(${(bloomPx * 1.6).toFixed(1)}px)`;
         ctx.globalAlpha = 0.7 * strength;

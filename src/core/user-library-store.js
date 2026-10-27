@@ -59,7 +59,10 @@
   const cleanName = (value, maxLen = 48) => {
     if (typeof value !== 'string') return '';
     // eslint-disable-next-line no-control-regex
-    return value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
+    // Bidi embeddings / overrides / isolates and marks are dropped too: a
+    // name must not reorder the text around it.
+    return value.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ')
       .replace(/\s+/g, ' ').trim().slice(0, maxLen).trim();
   };
 

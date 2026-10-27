@@ -24,7 +24,8 @@
  *                             the pen's id and name
  *   library()                 the My pens UserLibraryStore (key
  *                             PEN_MODELS.LIBRARY_KEY, ≤ FILE_LIMITS.libraryMax)
- * Caps: PEN_MODELS.FILE_LIMITS (256 KB, 64 pens per file, 128 My pens).
+ * Caps: PEN_MODELS.FILE_LIMITS (256 KB, 64 pens per file, 128 My pens,
+ * widths 0 < w ≤ 20 mm — a pen outside that is skipped and counted).
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -39,7 +40,7 @@
     const max = FL().nameMax || 48;
     if (U && U.cleanName) return U.cleanName(typeof v === 'string' ? v : '', max);
     // eslint-disable-next-line no-control-regex
-    return typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '';
+    return typeof v === 'string' ? v.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max) : '';
   };
   const appVersion = () => String(Vectura.APP_VERSION || Vectura.VERSION || '');
 
@@ -64,6 +65,10 @@
       ink: pen.ink,
     });
     if (!v) return null;
+    // A pen file / library pen must be a real pen: 0 < width ≤ maxWidthMm
+    // (the validator alone would clamp 1e308 to 100 mm).
+    const raw = typeof pen.width === 'string' ? Number(pen.width) : pen.width;
+    if (!(raw > 0) || raw > (FL().maxWidthMm || 20)) return null;
     const out = { name: cleanName(v.name) || 'Pen', color: v.color, width: v.width };
     FIELDS.forEach((k) => { if (own(v, k)) out[k] = v[k]; });
     if (v.ink) {

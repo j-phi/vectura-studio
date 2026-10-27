@@ -307,6 +307,19 @@ describe('SVG export effective per-path pen grouping', () => {
       }
     });
 
+    test("a model's built-in special ink is recorded; an explicit 'plain' override is not", async () => {
+      const SETTINGS = applyBaseSettings();
+      const { PenModel } = runtime.window.Vectura;
+      PenModel.applyModel(SETTINGS.pens[0], 'sakura-gelly-roll-metallic');
+      const layer = () => makeLayer({ paths: [makePath([[20, 20], [30, 20]])] });
+      expect(await exportScene([layer()])).toContain('data-vectura-ink-effect="metallic"');
+      PenModel.applyEffectSwatch(SETTINGS.pens[0], null);
+      expect(SETTINGS.pens[0].effect).toBe('plain');
+      const svg = await exportScene([layer()]);
+      expect(svg).not.toContain('data-vectura-ink-effect');
+      expect(svg).toContain('data-vectura-pen-model="sakura-gelly-roll-metallic"');
+    });
+
     test('a hostile model id cannot break out of the attribute', async () => {
       const SETTINGS = applyBaseSettings();
       SETTINGS.pens[0].model = 'x"><script>alert(1)</script>';

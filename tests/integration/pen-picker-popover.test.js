@@ -624,6 +624,25 @@ describe('Pen Picker popover (COL-1)', () => {
       window.Vectura.UI.InkSettings.close();
     });
 
+    test("special inks: 'No special ink' switches a model's built-in effect off (explicit 'plain'), pressed state follows", () => {
+      resetPens();
+      window.Vectura.PenModel.applyModel(SETTINGS.pens[0], 'sakura-gelly-roll-metallic');
+      app.ui.renderPens();
+      rowOf('pen-1').querySelector('.pen-ink-btn').click();
+      let pop = document.querySelector('.ink-pop-settings');
+      expect(pop.querySelector('.fx-swatch.fx-none').getAttribute('aria-pressed')).toBe('false');
+      let pushes = 0;
+      const push = app.pushHistory;
+      app.pushHistory = function countedPush(...args) { pushes += 1; return push.apply(this, args); };
+      try { pop.querySelector('.fx-swatch.fx-none').click(); } finally { app.pushHistory = push; }
+      expect(pushes).toBe(1);
+      expect(SETTINGS.pens[0]).toMatchObject({ model: 'sakura-gelly-roll-metallic', effect: 'plain' });
+      pop = document.querySelector('.ink-pop-settings');
+      expect(pop.querySelector('.fx-swatch.fx-none').getAttribute('aria-pressed')).toBe('true');
+      expect(pop.querySelector('.ink-slider[data-key="effectStrength"]')).toBeNull();
+      window.Vectura.UI.InkSettings.close();
+    });
+
     test('New Pen: a Special inks pick becomes the new pen\'s effect (the mixer colour stays the pen colour)', () => {
       resetPens();
       const layer = addTestLayer();

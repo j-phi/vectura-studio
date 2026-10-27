@@ -59,6 +59,8 @@
   // default; 'plain' when none.
   const effectOf = (pen) => {
     const E = cat().EFFECTS || [];
+    // An explicit 'plain' switches a model's built-in special ink off.
+    if (pen && pen.effect === 'plain') return 'plain';
     if (pen && typeof pen.effect === 'string' && E.includes(pen.effect)) return pen.effect;
     const model = modelOf(pen);
     return model && E.includes(model.effect) ? model.effect : 'plain';
@@ -108,7 +110,11 @@
   const applyEffectSwatch = (pen, swatch) => {
     if (!pen) return pen;
     if (!swatch) {
-      delete pen.effect;
+      // "No special ink": on a model with a built-in effect (Gelly Roll
+      // Metallic, Moonlight, …) that needs an explicit 'plain' override.
+      const model = modelOf(pen);
+      if (model && model.effect && model.effect !== 'plain') pen.effect = 'plain';
+      else delete pen.effect;
       delete pen.color2;
       return pen;
     }
@@ -365,16 +371,21 @@
         // Metallic gel is opaque; off the glint it reads darker than its swatch.
         effOpaque = true;
         if (!opaque) alpha = userOpacity != null ? userOpacity : (darkSheet ? 0.88 : 0.95);
-        inkColor = mixHex(pen.color, '#000000', clamp(num(fx.baseDarken) * (0.5 + 0.5 * strength), 0, 0.9));
+        // Off the glint metallic ink reads a little darker than its swatch
+        // on white; on dark stock its flakes scatter light, so it lifts.
+        inkColor = darkSheet
+          ? mixHex(pen.color, '#ffffff', 0.1 * strength)
+          : mixHex(pen.color, '#000000', clamp(num(fx.baseDarken) * 0.5 * strength, 0, 0.9));
       } else if (effect === 'fluorescent') {
         effOpaque = true;
         if (!opaque) alpha = userOpacity != null ? userOpacity : (darkSheet ? 0.82 : 0.95);
         inkColor = neonHex(pen.color);
       } else if (effect === 'glow') {
-        // Daylight: a pale, grainy, semi-transparent lacquer.
+        // Daylight: a pale, grainy, chalky lacquer — cream on dark stock
+        // (not a translucent olive), barely there on white.
         effOpaque = true;
-        alpha = userOpacity != null ? userOpacity : clamp(num(fx.dayAlpha, 0.6), 0.05, 1);
-        inkColor = pen.color;
+        alpha = userOpacity != null ? userOpacity : (darkSheet ? 0.88 : clamp(num(fx.dayAlpha, 0.6), 0.05, 1));
+        inkColor = darkSheet ? mixHex(pen.color, '#f4f1e2', 0.55) : pen.color;
       } else if (effect === 'glitter' && !model) {
         // Translucent tinted gel; the particles carry the sparkle.
         alpha = userOpacity != null ? userOpacity : clamp(num(fx.alpha, 0.7), 0.05, 1);
@@ -389,7 +400,7 @@
       // Glitter particles off the glint: lighter than the gel on dark
       // stock, a shade darker on light stock (so they read on white).
       fx.particle = darkSheet ? fx.flakeAlt : mixHex(pen.color, '#000000', 0.3);
-      fx.grainColor = mixHex(pen.color, '#8a9078', 0.55);
+      fx.grainColor = darkSheet ? mixHex(pen.color, '#b9b8a6', 0.6) : mixHex(pen.color, '#8a9078', 0.55);
       fx.glow = effect === 'glow' ? (second || cat().GLOW_DEFAULT_HEX || '#7dff9a') : null;
       fx.neon = effect === 'fluorescent' ? inkColor : null;
       fx.darkStock = darkSheet;

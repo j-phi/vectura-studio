@@ -602,6 +602,79 @@ describe('pen models: ink renderer integration', () => {
     } finally { r.setLightsOff(false); }
   });
 
+  // Review fixes: Lights off with paper preview, skipped daylight glow ink,
+  // the cached bloom, the outside-margin dim.
+  const glowStrokes = (calls, dim) => calls.filter((c, i) => i > dim && c.op === 'stroke' && c.globalCompositeOperation === 'lighter' && c.strokeStyle === '#7dff9a');
+  const dimAt = (calls) => calls.findIndex((c) => c.op === 'fillRect' && c.fillStyle === DIM());
+
+  test('Lights off emits with Paper preview (pen-true colours) on too — no ink plan needed', () => {
+    S.pens = glowPen();
+    V.Paper.setActive({ type: 'none', color: '#ffffff' });
+    view(3, 10, 10);
+    S.paperPreview = true;
+    r.lightsOff = true;
+    try {
+      expect(planWith()).toBeNull();
+      const on = drawWith();
+      const dim = dimAt(on);
+      expect(dim).toBeGreaterThanOrEqual(0);
+      expect(glowStrokes(on, dim).length).toBeGreaterThan(0);
+    } finally { S.paperPreview = false; r.lightsOff = false; }
+  });
+
+  test('Lights off: glow pens skip their daylight ink; the bloom is cached for idle repaints and reused while panning', () => {
+    S.pens = [...glowPen(), { id: 'pen-k', name: 'K', color: '#111111', width: 0.4 }];
+    V.Paper.setActive({ type: 'none', color: '#ffffff' });
+    view(3, 10, 10);
+    r.lightsOff = true;
+    r._glowBloomCache = null;
+    const IR = V.InkRenderer;
+    try {
+      const first = drawWith();
+      // The glow pen's daylight lacquer is never drawn under the dim.
+      // (An empty batch stroke() paints nothing: count strokes that trace a path.)
+      expect(paintedStrokes(first.slice(0, dimAt(first))).some((c) => c.strokeStyle === '#e6f2c8')).toBe(false);
+      expect(first.slice(0, dimAt(first)).some((c) => c.op === 'fill' && c.fillStyle === '#e6f2c8')).toBe(false);
+      const builds = IR.cacheStats().bloomBuilds || 0;
+      const hits = IR.cacheStats().bloomHits || 0;
+      drawWith(); // idle repaint, same view
+      expect(IR.cacheStats().bloomBuilds || 0).toBe(builds);
+      expect(IR.cacheStats().bloomHits || 0).toBe(hits + 1);
+      // A pan / pinch reuses (transforms) the bitmap…
+      r.isPan = true;
+      try { view(3, 30, 18); drawWith(); } finally { r.isPan = false; }
+      expect(IR.cacheStats().bloomBuilds || 0).toBe(builds);
+      // …and once the gesture ends the new view rebuilds it.
+      drawWith();
+      expect(IR.cacheStats().bloomBuilds || 0).toBe(builds + 1);
+      // Witness: without the cache every repaint rebuilds.
+      r._glowBloomCache = null;
+      const prev = r._glowBloomCache;
+      const getter = Object.getOwnPropertyDescriptor(r, '_glowBloomCache');
+      Object.defineProperty(r, '_glowBloomCache', { get: () => null, set: () => {}, configurable: true });
+      try { drawWith(); drawWith(); } finally { Object.defineProperty(r, '_glowBloomCache', getter || { value: prev, writable: true, configurable: true }); }
+      expect(IR.cacheStats().bloomBuilds || 0).toBe(builds + 3);
+    } finally { r.lightsOff = false; }
+  });
+
+  test('Lights off with Crop to margin off: the glow outside the margin is dimmed like the daytime ink there', () => {
+    S.pens = glowPen();
+    V.Paper.setActive({ type: 'none', color: '#ffffff' });
+    view(3, 10, 10);
+    const prevTrunc = S.truncate; const prevOut = S.outsideOpacity;
+    S.truncate = false; S.outsideOpacity = 0.4;
+    r.lightsOff = true;
+    try {
+      const on = drawWith();
+      const lastGlow = on.reduce((acc, c, i) => (c.op === 'stroke' && c.globalCompositeOperation === 'lighter' ? i : acc), -1);
+      const outside = on.findIndex((c, i) => i > lastGlow && c.op === 'fill' && c.fillStyle === DIM());
+      expect(lastGlow).toBeGreaterThan(0);
+      expect(outside).toBeGreaterThan(lastGlow);
+      expect(on[outside].globalAlpha).toBeCloseTo(0.6, 9);
+      expect(on[outside].args).toEqual(['evenodd']);
+    } finally { S.truncate = prevTrunc; S.outsideOpacity = prevOut; r.lightsOff = false; }
+  });
+
   test('Lights off: Shift+Alt+L toggles it; the View item reports aria-checked; the chip restores the lights', () => {
     const doc = window.document;
     S.pens = [{ id: 'pen-k', name: 'K', color: '#111111', width: 0.4 }];
@@ -629,5 +702,11 @@ describe('pen models: ink renderer integration', () => {
     expect(r.lightsOff).toBe(true);
     item.click();
     expect(r.lightsOff).toBe(false);
+    // Matched by the typed key too (a layout where L is not the KeyL position).
+    doc.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'L', code: 'KeyP', altKey: true, shiftKey: true, bubbles: true }));
+    expect(r.lightsOff).toBe(true);
+    r.setLightsOff(false);
+    // The chip's accessible name includes the note (no aria-label hides it).
+    expect(chip.hasAttribute('aria-label')).toBe(false);
   });
 });
