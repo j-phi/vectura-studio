@@ -14,8 +14,9 @@
  *   - model:  /^[a-z0-9-]+$/, ≤ LIMITS.modelIdMaxLen (48) (an id this build doesn't know is KEPT, for
  *             round-trip, and renders as a plain pen)
  *   - size:   string ≤ LIMITS.sizeMaxLen (48) chars, control characters stripped
- *   - effect: one of PEN_MODELS.EFFECTS
- *   - color2: hex colour
+ *   - effect: one of PEN_MODELS.EFFECTS, or 'plain' on a model pen (switches
+ *             the model's built-in special ink off)
+ *   - color2: hex colour, normalised to #rrggbb (#rgb expanded, alpha dropped)
  *   - ink:    only PEN_MODELS.INK_KEYS, finite numbers clamped to
  *             PARAM_LIMITS, on a null-prototype object (no __proto__ games);
  *             dropped when empty
@@ -34,6 +35,13 @@
   const HEX_RE = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
   const isHexColor = (value) => typeof value === 'string' && HEX_RE.test(value);
+  // '#rgb' / '#rgba' / '#rrggbb' / '#rrggbbaa' → '#rrggbb' (lower case); else null.
+  const normalizeHex6 = (value) => {
+    if (!isHexColor(value)) return null;
+    let h = value.slice(1).toLowerCase();
+    if (h.length === 3 || h.length === 4) h = h.slice(0, 3).split('').map((c) => c + c).join('');
+    return `#${h.slice(0, 6)}`;
+  };
   const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 
   // Length caps come from PEN_MODELS.LIMITS (fallbacks when standalone).
@@ -58,7 +66,12 @@
     }
     const effects = (C && Array.isArray(C.EFFECTS)) ? C.EFFECTS : FALLBACK_EFFECTS;
     if (typeof pen.effect === 'string' && effects.includes(pen.effect)) out.effect = pen.effect;
-    if (isHexColor(pen.color2)) out.color2 = pen.color2;
+    // 'plain' only means something on a model pen (it switches the model's
+    // built-in special ink off).
+    else if (pen.effect === 'plain' && out.model) out.effect = 'plain';
+    // color2 is always #rrggbb: #rgb expands, an alpha byte is dropped.
+    const c2 = normalizeHex6(pen.color2);
+    if (c2) out.color2 = c2;
     const ink = pen.ink;
     if (ink && typeof ink === 'object' && !Array.isArray(ink) && C && C.PARAM_LIMITS) {
       const clean = Object.create(null);
@@ -134,5 +147,5 @@
     return out;
   };
 
-  Vectura.PenValidate = { validatePens, validatePen, validateModelFields, resolveEffectivePenId };
+  Vectura.PenValidate = { validatePens, validatePen, validateModelFields, resolveEffectivePenId, normalizeHex6 };
 })();

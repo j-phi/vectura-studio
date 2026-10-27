@@ -291,6 +291,35 @@ describe('SVG export effective per-path pen grouping', () => {
 
     const groupsStroke = (svg) => penGroups(svg).map((g) => g.stroke);
 
+    test('special inks: every effect exports stroke = pen colour at pen width, geometry identical to the plain pen', async () => {
+      const SETTINGS = applyBaseSettings();
+      const layer = () => makeLayer({ paths: [makePath([[20, 20], [30, 25], [40, 20]])] });
+      const plainSvg = await exportScene([layer()]);
+      const strip = (svg) => svg.replace(/ data-vectura-ink-effect="[^"]*"/g, '');
+      for (const effect of runtime.window.Vectura.PEN_MODELS.EFFECTS) {
+        SETTINGS.pens[0].effect = effect;
+        SETTINGS.pens[0].color2 = '#7dff9a';
+        const svg = await exportScene([layer()]);
+        expect(svg, effect).toContain(`data-vectura-ink-effect="${effect}"`);
+        expect(groupsStroke(svg), effect).toEqual(['#111111']);
+        expect(svg, effect).not.toContain('#7dff9a');
+        expect(strip(svg), effect).toBe(plainSvg);
+      }
+    });
+
+    test("a model's built-in special ink is recorded; an explicit 'plain' override is not", async () => {
+      const SETTINGS = applyBaseSettings();
+      const { PenModel } = runtime.window.Vectura;
+      PenModel.applyModel(SETTINGS.pens[0], 'sakura-gelly-roll-metallic');
+      const layer = () => makeLayer({ paths: [makePath([[20, 20], [30, 20]])] });
+      expect(await exportScene([layer()])).toContain('data-vectura-ink-effect="metallic"');
+      PenModel.applyEffectSwatch(SETTINGS.pens[0], null);
+      expect(SETTINGS.pens[0].effect).toBe('plain');
+      const svg = await exportScene([layer()]);
+      expect(svg).not.toContain('data-vectura-ink-effect');
+      expect(svg).toContain('data-vectura-pen-model="sakura-gelly-roll-metallic"');
+    });
+
     test('a hostile model id cannot break out of the attribute', async () => {
       const SETTINGS = applyBaseSettings();
       SETTINGS.pens[0].model = 'x"><script>alert(1)</script>';

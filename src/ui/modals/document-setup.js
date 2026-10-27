@@ -739,11 +739,17 @@ ${isDevEligible() ? `
     const canvas = app.renderer.canvas;
     if (!canvas || typeof canvas.toDataURL !== 'function') return;
     if (!canvas.width || !canvas.height) return;
+    // Lights off is a view mode: the preview shows the normal (lit) sheet.
+    const r = app.renderer;
+    const dark = Boolean(r.lightsOff);
+    if (dark) { r.lightsOff = false; r.draw(); }
     try {
       img.src = canvas.toDataURL('image/png');
     } catch {
       // Browsers can throw SecurityError on tainted canvases.
       img.removeAttribute('src');
+    } finally {
+      if (dark) { r.lightsOff = true; r.draw(); }
     }
     if (hint) {
       const SETTINGS = (window.Vectura && window.Vectura.SETTINGS) || {};

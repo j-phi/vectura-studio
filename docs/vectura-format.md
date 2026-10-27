@@ -125,8 +125,44 @@ files). A model pen adds:
   snapshot): invalid fields are dropped; an unknown `model` id is kept (and
   drawn as a plain pen) so files from newer builds round-trip; `ink` keeps only
   `PEN_MODELS.INK_KEYS` with finite values clamped to `PARAM_LIMITS`
-  (`effectStrength` / `flakeDensity` are reserved for the special-inks layer).
+  (`effectStrength` 0–1 and `flakeDensity` 0–600 flakes/mm² tune the
+  special-inks layer).
+- `effect` works on any pen (plain or model); a model's own default effect
+  applies when it is unset. `"effect": "plain"` is kept only on a model pen:
+  it switches the model's built-in special ink off (Ink settings ▸ No special
+  ink on a Gelly Roll Metallic, Moonlight, …). `color2` is normalised to
+  `#rrggbb` (`#rgb` expanded, an alpha byte dropped). For `glow`, `color2` is the emission colour shown
+  with **View ▸ Lights Off** (default `#7dff9a`); for `dual-metallic` it is the
+  second (flake) colour. "Lights off" itself is view state and is never saved.
 - Older builds ignore the extra keys and draw a plain pen at `width`.
+
+### Pen files and My pens (`vectura-pens`, v1.4.32)
+
+Pens ⋯ ▸ **Export pens** (and Ink settings ▸ **Export this pen**) download:
+
+```jsonc
+{ "schema": "vectura-pens", "version": 1, "appVersion": "1.4.32",
+  "pens": [
+    { "name": "Gold", "color": "#c9a24a", "width": 0.55, "effect": "metallic" },
+    { "name": "Signo white", "color": "#f6f6f2", "width": 0.7,
+      "model": "uniball-signo-broad-um153", "size": "1.0", "effect": "white",
+      "ink": { "opacity": 0.8, "effectStrength": 0.6 } } ] }
+```
+
+- A file pen has the pen fields above without `id` / `themeManaged`
+  (`lineCap`, `model`, `size`, `effect`, `color2`, `ink` only when set).
+- **Import pens…** (`Vectura.PenLibrary.parseImport`): ≤ 256 KB, ≤ 64 pens;
+  `schema` must be `vectura-pens`; a higher major `version` is refused with a
+  message (update the app). Each pen is re-validated by
+  `PenValidate.validatePen` (invalid pens are skipped and counted, and so is
+  a width outside 0 < w ≤ 20 mm — never clamped); names are control- and
+  bidi-override-stripped plain text, capped at 48 characters and always rendered
+  escaped. Imported pens are **added** with fresh `pen-xxxxxxx` ids (never
+  overwriting a pen) in one undo step.
+- **My pens** is the same document in `localStorage["vectura.penLibrary"]`
+  (`Vectura.UserLibraryStore`; entries get `mypen-xxxxxxx` ids; ≤ 128 pens;
+  a full or blocked storage is reported, never thrown). It is not cleared by
+  "Clear saved preferences".
 
 ## Preset files (`user-presets/<type>/*.vectura`)
 

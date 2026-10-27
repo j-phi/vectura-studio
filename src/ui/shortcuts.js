@@ -207,6 +207,17 @@
         return;
       }
 
+      // Shift+Alt+L (Shift+Option+L) → View ▸ Lights Off (special inks: glow
+      // inks emit on a darkened sheet). Matched by the typed key ('L'), by the
+      // character a Mac types for Option+Shift+L ('Ò'), or by the physical
+      // key as a fallback. View-only state, never saved or undoable.
+      if (!e.metaKey && !e.ctrlKey && e.altKey && e.shiftKey
+        && (String(e.key || '').toLowerCase() === 'l' || e.key === 'Ò' || e.code === 'KeyL')) {
+        e.preventDefault();
+        this.app.renderer?.toggleLightsOff?.();
+        return;
+      }
+
       if (!e.metaKey && !e.ctrlKey && e.altKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];

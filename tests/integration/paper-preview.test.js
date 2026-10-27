@@ -517,4 +517,196 @@ describe('pen models: ink renderer integration', () => {
     expect(IR.tierFor(t, 1, 2, true)).toBe(2);
     expect(IR.tierFor(t, 1, 2, false)).toBe(0);
   });
+
+  // ---- Special inks + Lights off -------------------------------------------
+  const DIM = () => V.PEN_MODELS.FX_LIMITS.lightsOffDim;
+  const metallicPen = () => [{ id: 'pen-ink', name: 'Gold', color: '#c9a24a', width: 0.6, effect: 'metallic' }];
+  const glowPen = () => [{ id: 'pen-ink', name: 'Glow', color: '#e6f2c8', width: 0.8, effect: 'glow', color2: '#7dff9a' }];
+
+  test('special inks: an effect pen on paper None joins the ink plan and its effects draw right after its base ink', () => {
+    S.pens = metallicPen();
+    V.Paper.setActive({ type: 'none', color: '#101012' });
+    view(40, -800, -1500);
+    const plan = planWith();
+    expect(plan && plan.direct).toBe(true);
+    const t = plan.penTraits.get('pen-ink');
+    expect(t.fx.effect).toBe('metallic');
+    const main = drawWith();
+    const base = main.findIndex((c) => c.op === 'stroke' && c.strokeStyle === t.inkColor);
+    const sheen = main.findIndex((c) => c.op === 'stroke' && c.strokeStyle === t.fx.sheen);
+    const flake = main.findIndex((c) => c.op === 'fill' && c.fillStyle === t.fx.flake);
+    expect(base).toBeGreaterThanOrEqual(0);
+    expect(sheen).toBeGreaterThan(base);
+    expect(flake).toBeGreaterThan(base);
+    // Preview only: the effect never changes the plotted geometry or width.
+    expect(S.pens[0].width).toBe(0.6);
+    // Witness: the same pen without its effect is the legacy path again.
+    S.pens = [{ id: 'pen-ink', name: 'Gold', color: '#c9a24a', width: 0.6 }];
+    expect(planWith()).toBeNull();
+  });
+
+  test('special inks: no idle animation — a settled view schedules nothing and redraws identically', async () => {
+    S.pens = metallicPen();
+    V.Paper.setActive({ type: 'none', color: '#101012' });
+    view(40, -800, -1500);
+    drawWith();
+    V.InkRenderer.flush();
+    const a = drawWith();
+    // Count frame requests that come from the renderer / ink renderer (UI
+    // chrome has its own unrelated ticks) and repaint requests while idle.
+    let rafs = 0; let repaints = 0;
+    const prevRaf = window.requestAnimationFrame;
+    const prevReady = r._paperTileReadyFn;
+    window.requestAnimationFrame = (fn) => { if (/render(er)?\.js|ink-renderer\.js/.test(new Error().stack || '')) rafs += 1; return 0; };
+    r._paperTileReadyFn = () => { repaints += 1; };
+    let b;
+    try {
+      b = drawWith();
+      expect(V.InkRenderer.cacheStats().queued).toBe(0);
+      await new Promise((res) => setTimeout(res, 60));
+    } finally { window.requestAnimationFrame = prevRaf; r._paperTileReadyFn = prevReady; }
+    expect(rafs).toBe(0);
+    expect(repaints).toBe(0);
+    const norm = (calls) => JSON.stringify(calls.filter((c) => c.op !== 'drawImage').map(({ op, args, globalAlpha, fillStyle, strokeStyle }) => ({ op, args, globalAlpha, fillStyle, strokeStyle })));
+    expect(norm(b)).toBe(norm(a));
+    // …while a pan does change what glints (view-driven shine).
+    view(40, -830, -1490);
+    const c = drawWith();
+    const glints = (calls) => JSON.stringify(calls.filter((x) => x.op === 'fill' && x.globalAlpha >= 0.6).map((x) => x.globalAlpha));
+    expect(norm(c)).not.toBe(norm(a));
+    expect(glints(c) + norm(c)).not.toBe(glints(a) + norm(a));
+  });
+
+  test('Lights off: a view-only pass (only when toggled; never in captureState or undo history)', () => {
+    S.pens = [...glowPen(), { id: 'pen-k', name: 'K', color: '#111111', width: 0.4 }];
+    V.Paper.setActive({ type: 'none', color: '#ffffff' });
+    view(3, 10, 10);
+    r.lightsOff = false;
+    const off = drawWith();
+    expect(off.some((c) => c.op === 'fillRect' && c.fillStyle === DIM())).toBe(false);
+    expect(off.some((c) => c.globalCompositeOperation === 'lighter')).toBe(false);
+    const hist = (app.history || []).length;
+    r.setLightsOff(true);
+    try {
+      expect((app.history || []).length).toBe(hist);
+      const on = drawWith();
+      const dim = on.findIndex((c) => c.op === 'fillRect' && c.fillStyle === DIM());
+      expect(dim).toBeGreaterThanOrEqual(0);
+      const glow = on.filter((c, i) => i > dim && c.op === 'stroke' && c.globalCompositeOperation === 'lighter' && c.strokeStyle === '#7dff9a');
+      expect(glow.length).toBeGreaterThan(0);
+      // Non-glow ink is not re-emitted after the dim (nearly invisible).
+      expect(on.some((c, i) => i > dim && c.op === 'stroke' && c.strokeStyle === '#111111')).toBe(false);
+      // Not saved anywhere: the project / undo snapshot has no trace of it.
+      expect(JSON.stringify(app.captureState())).not.toMatch(/lightsOff|lights-off/i);
+      expect(S.lightsOff).toBeUndefined();
+    } finally { r.setLightsOff(false); }
+  });
+
+  // Review fixes: Lights off with paper preview, skipped daylight glow ink,
+  // the cached bloom, the outside-margin dim.
+  const glowStrokes = (calls, dim) => calls.filter((c, i) => i > dim && c.op === 'stroke' && c.globalCompositeOperation === 'lighter' && c.strokeStyle === '#7dff9a');
+  const dimAt = (calls) => calls.findIndex((c) => c.op === 'fillRect' && c.fillStyle === DIM());
+
+  test('Lights off emits with Paper preview (pen-true colours) on too — no ink plan needed', () => {
+    S.pens = glowPen();
+    V.Paper.setActive({ type: 'none', color: '#ffffff' });
+    view(3, 10, 10);
+    S.paperPreview = true;
+    r.lightsOff = true;
+    try {
+      expect(planWith()).toBeNull();
+      const on = drawWith();
+      const dim = dimAt(on);
+      expect(dim).toBeGreaterThanOrEqual(0);
+      expect(glowStrokes(on, dim).length).toBeGreaterThan(0);
+    } finally { S.paperPreview = false; r.lightsOff = false; }
+  });
+
+  test('Lights off: glow pens skip their daylight ink; the bloom is cached for idle repaints and reused while panning', () => {
+    S.pens = [...glowPen(), { id: 'pen-k', name: 'K', color: '#111111', width: 0.4 }];
+    V.Paper.setActive({ type: 'none', color: '#ffffff' });
+    view(3, 10, 10);
+    r.lightsOff = true;
+    r._glowBloomCache = null;
+    const IR = V.InkRenderer;
+    try {
+      const first = drawWith();
+      // The glow pen's daylight lacquer is never drawn under the dim.
+      // (An empty batch stroke() paints nothing: count strokes that trace a path.)
+      expect(paintedStrokes(first.slice(0, dimAt(first))).some((c) => c.strokeStyle === '#e6f2c8')).toBe(false);
+      expect(first.slice(0, dimAt(first)).some((c) => c.op === 'fill' && c.fillStyle === '#e6f2c8')).toBe(false);
+      const builds = IR.cacheStats().bloomBuilds || 0;
+      const hits = IR.cacheStats().bloomHits || 0;
+      drawWith(); // idle repaint, same view
+      expect(IR.cacheStats().bloomBuilds || 0).toBe(builds);
+      expect(IR.cacheStats().bloomHits || 0).toBe(hits + 1);
+      // A pan / pinch reuses (transforms) the bitmap…
+      r.isPan = true;
+      try { view(3, 30, 18); drawWith(); } finally { r.isPan = false; }
+      expect(IR.cacheStats().bloomBuilds || 0).toBe(builds);
+      // …and once the gesture ends the new view rebuilds it.
+      drawWith();
+      expect(IR.cacheStats().bloomBuilds || 0).toBe(builds + 1);
+      // Witness: without the cache every repaint rebuilds.
+      r._glowBloomCache = null;
+      const prev = r._glowBloomCache;
+      const getter = Object.getOwnPropertyDescriptor(r, '_glowBloomCache');
+      Object.defineProperty(r, '_glowBloomCache', { get: () => null, set: () => {}, configurable: true });
+      try { drawWith(); drawWith(); } finally { Object.defineProperty(r, '_glowBloomCache', getter || { value: prev, writable: true, configurable: true }); }
+      expect(IR.cacheStats().bloomBuilds || 0).toBe(builds + 3);
+    } finally { r.lightsOff = false; }
+  });
+
+  test('Lights off with Crop to margin off: the glow outside the margin is dimmed like the daytime ink there', () => {
+    S.pens = glowPen();
+    V.Paper.setActive({ type: 'none', color: '#ffffff' });
+    view(3, 10, 10);
+    const prevTrunc = S.truncate; const prevOut = S.outsideOpacity;
+    S.truncate = false; S.outsideOpacity = 0.4;
+    r.lightsOff = true;
+    try {
+      const on = drawWith();
+      const lastGlow = on.reduce((acc, c, i) => (c.op === 'stroke' && c.globalCompositeOperation === 'lighter' ? i : acc), -1);
+      const outside = on.findIndex((c, i) => i > lastGlow && c.op === 'fill' && c.fillStyle === DIM());
+      expect(lastGlow).toBeGreaterThan(0);
+      expect(outside).toBeGreaterThan(lastGlow);
+      expect(on[outside].globalAlpha).toBeCloseTo(0.6, 9);
+      expect(on[outside].args).toEqual(['evenodd']);
+    } finally { S.truncate = prevTrunc; S.outsideOpacity = prevOut; r.lightsOff = false; }
+  });
+
+  test('Lights off: Shift+Alt+L toggles it; the View item reports aria-checked; the chip restores the lights', () => {
+    const doc = window.document;
+    S.pens = [{ id: 'pen-k', name: 'K', color: '#111111', width: 0.4 }];
+    const press = () => doc.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Ò', code: 'KeyL', altKey: true, shiftKey: true, bubbles: true }));
+    const item = doc.getElementById('btn-view-lights-off');
+    const chip = doc.getElementById('lights-off-chip');
+    expect(item.getAttribute('role')).toBe('menuitemcheckbox');
+    r.lightsOff = false;
+    const tool = app.ui.activeTool;
+    press();
+    expect(r.lightsOff).toBe(true);
+    expect(app.ui.activeTool).toBe(tool); // not the oval tool (plain L)
+    expect(item.getAttribute('aria-checked')).toBe('true');
+    expect(chip.hidden).toBe(false);
+    // No glow ink in this document: the chip says so.
+    expect(chip.querySelector('.lights-off-chip-note').hidden).toBe(false);
+    S.pens = glowPen();
+    r._syncLightsOffUI();
+    expect(chip.querySelector('.lights-off-chip-note').hidden).toBe(true);
+    chip.click();
+    expect(r.lightsOff).toBe(false);
+    expect(item.getAttribute('aria-checked')).toBe('false');
+    expect(chip.hidden).toBe(true);
+    press();
+    expect(r.lightsOff).toBe(true);
+    item.click();
+    expect(r.lightsOff).toBe(false);
+    // Matched by the typed key too (a layout where L is not the KeyL position).
+    doc.body.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'L', code: 'KeyP', altKey: true, shiftKey: true, bubbles: true }));
+    expect(r.lightsOff).toBe(true);
+    r.setLightsOff(false);
+    // The chip's accessible name includes the note (no aria-label hides it).
+    expect(chip.hasAttribute('aria-label')).toBe(false);
+  });
 });

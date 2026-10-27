@@ -862,10 +862,15 @@
         // below); ink effects are preview-only. The model / special ink are
         // recorded as data attributes ONLY when set, so plain exports stay
         // byte-identical.
+        // The effective special ink: the pen's own, else its model's built-in
+        // one ('plain' — none, or switched off — adds no attribute).
+        const PMx = window.Vectura.PenModel;
+        const inkEffect = PMx && PMx.effectOf ? PMx.effectOf(pen)
+          : (typeof pen.effect === 'string' && pen.effect ? pen.effect : 'plain');
         const penModelAttrs = (typeof pen.model === 'string' && pen.model
           ? ` data-vectura-pen-model="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.model)}"` : '')
-          + (typeof pen.effect === 'string' && pen.effect
-            ? ` data-vectura-ink-effect="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.effect)}"` : '');
+          + (inkEffect !== 'plain'
+            ? ` data-vectura-ink-effect="${window.Vectura._UIExportUtil.escapeXmlAttr(inkEffect)}"` : '');
         svg += `<g id="${window.Vectura._UIExportUtil.escapeXmlAttr(`pen_${penName}`)}" stroke="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.color || 'black')}" fill="none"${penModelAttrs}>`;
         group.items.forEach((item, itemIndex) => {
           item.ancestorClipLayerIds.forEach((layerId) => {

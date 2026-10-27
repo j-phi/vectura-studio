@@ -17,8 +17,8 @@
  *   inkClass / tipShape          grouping in the model picker
  *   effect                       default special ink of the model ('plain',
  *                                'metallic', 'dual-metallic', 'fluorescent',
- *                                'glow', 'glitter', 'white'); effects render as
- *                                their base ink until the effects layer lands
+ *                                'glow', 'glitter', 'white'); drawn by the
+ *                                special-inks layer (preview only)
  *   sizes[]                      { label, nominalWidthMm, laidWidthMm } — the
  *                                laid width is what the pen really puts down;
  *                                picking a size writes it to pen.width, which
@@ -40,8 +40,8 @@
  *   widthJitter { amount, scaleMm }  slow width wobble
  *   nibDirectional { strength, angleRad }  fountain nib: width varies with the
  *                                stroke direction
- *   fx                           effect parameters (metallic, glitter, …) kept
- *                                for the special-inks layer
+ *   fx                           effect parameters (metallic, glitter, …) of
+ *                                the special-inks layer
  *   colours[]                    the maker's colours { name, hex, effect }
  *   confidence                   0..1 how well the numbers are sourced
  *
@@ -427,9 +427,70 @@
     'paint-marker': 'Paint markers',
   });
 
-  // Special inks. 'plain' means no effect. The look of each effect is the
-  // special-inks layer's job; until then every effect renders as its base ink.
+  // Special inks. 'plain' means no effect. The look of each effect is drawn
+  // by the special-inks layer of src/render/ink-renderer.js (preview only).
   const EFFECTS = Object.freeze(['metallic', 'dual-metallic', 'fluorescent', 'glow', 'glitter', 'white']);
+
+  // Effect parameters when a pen's model has none of its own (any pen can
+  // carry an effect). A model's `fx` block overrides these for its default
+  // effect; pen.ink.effectStrength / flakeDensity override both.
+  //   strength      0..1 overall effect weight (sheen, glints, halo, glow)
+  //   baseDarken    metallic ink looks darker than its swatch off the glint
+  //   flakeDensity  flakes per mm² of laid ink (shown sparsely: × FLAKE_SHOW_K)
+  //   flakeSizeMm   flake / particle size; sizeJitter ± fraction
+  //   spread        lateral flake spread in half-widths (>1: some past the edge)
+  //   haloMm        fluorescent halo; bloomMm glow-in-the-dark bloom (Lights off)
+  //   dayAlpha      glow ink coverage in daylight; grain day-time speckle
+  const EFFECT_DEFAULTS = Object.freeze({
+    metallic: Object.freeze({ strength: 0.7, baseDarken: 0.3, flakeDensity: 180, flakeSizeMm: 0.03, sizeJitter: 0.35, spread: 0.9 }),
+    'dual-metallic': Object.freeze({ strength: 0.8, baseDarken: 0.1, flakeDensity: 260, flakeSizeMm: 0.04, sizeJitter: 0.35, spread: 0.9 }),
+    fluorescent: Object.freeze({ strength: 0.8, haloMm: 0.15 }),
+    glow: Object.freeze({ strength: 0.85, bloomMm: 0.45, grain: 0.5, dayAlpha: 0.6, flakeDensity: 120, flakeSizeMm: 0.05, sizeJitter: 0.5, spread: 0.85 }),
+    glitter: Object.freeze({ strength: 0.85, flakeDensity: 320, flakeSizeMm: 0.05, sizeJitter: 0.5, spread: 1.2, alpha: 0.7 }),
+    white: Object.freeze({ strength: 1, coverOnDark: 0.92 }),
+  });
+
+  // "Special inks" strip (ink-settings popover, Pen Picker New Pen tab).
+  // Picking one sets pen.color + pen.effect (+ color2: the second colour of
+  // a dual metallic, or the emission colour of a glow ink). Dual metallics
+  // come with the Pentel Hybrid Dual Metallic model's own colours.
+  const EFFECT_SWATCHES = Object.freeze([
+    { id: 'metallic-gold', group: 'metallic', name: 'Metallic gold', hex: '#c9a24a', effect: 'metallic' },
+    { id: 'metallic-silver', group: 'metallic', name: 'Metallic silver', hex: '#b8bcc2', effect: 'metallic' },
+    { id: 'metallic-copper', group: 'metallic', name: 'Metallic copper', hex: '#b8673a', effect: 'metallic' },
+    { id: 'metallic-bronze', group: 'metallic', name: 'Metallic bronze', hex: '#8c6a3a', effect: 'metallic' },
+    { id: 'metallic-rose-gold', group: 'metallic', name: 'Metallic rose gold', hex: '#d39a8c', effect: 'metallic' },
+    { id: 'neon-green', group: 'fluorescent', name: 'Neon green', hex: '#5dff4a', effect: 'fluorescent' },
+    { id: 'neon-pink', group: 'fluorescent', name: 'Neon pink', hex: '#ff3fa4', effect: 'fluorescent' },
+    { id: 'neon-orange', group: 'fluorescent', name: 'Neon orange', hex: '#ff6a1a', effect: 'fluorescent' },
+    { id: 'neon-yellow', group: 'fluorescent', name: 'Neon yellow', hex: '#e9ff2a', effect: 'fluorescent' },
+    { id: 'neon-blue', group: 'fluorescent', name: 'Neon blue', hex: '#4ab8ff', effect: 'fluorescent' },
+    { id: 'glow-green', group: 'glow', name: 'Glow-in-the-dark green', hex: '#e6f2c8', effect: 'glow', color2: '#7dff9a' },
+    { id: 'glow-aqua', group: 'glow', name: 'Glow-in-the-dark aqua', hex: '#e2f0ee', effect: 'glow', color2: '#5ae0ff' },
+    { id: 'glitter-gold', group: 'glitter', name: 'Glitter gold', hex: '#c8a048', effect: 'glitter' },
+    { id: 'glitter-silver', group: 'glitter', name: 'Glitter silver', hex: '#b8bcc2', effect: 'glitter' },
+    { id: 'glitter-clear', group: 'glitter', name: 'Glitter clear', hex: '#f4f4f0', effect: 'glitter' },
+    { id: 'opaque-white', group: 'white', name: 'Opaque white', hex: '#f7f7f4', effect: 'white' },
+  ].map((s) => Object.freeze(s)));
+  const EFFECT_GROUP_LABELS = Object.freeze({
+    metallic: 'Metallic', fluorescent: 'Neon', glow: 'Glow in the dark', glitter: 'Glitter', white: 'Opaque white',
+  });
+  // Emission colour of a glow ink without its own color2.
+  const GLOW_DEFAULT_HEX = '#7dff9a';
+
+  // Special-inks layer + "Lights off" view (src/render/ink-renderer.js).
+  const FX_LIMITS = Object.freeze({
+    flakeBudget: 20000,      // flakes drawn per pen per frame (deterministic thinning above)
+    sparkleBudget: 40000,    // sub-pixel sparkle points tested per pen per frame
+    flakeMinPx: 0.7,         // below this a flake is sub-pixel: 1-px sparkle points instead
+    flakeShowK: 0.06,        // fraction of the nominal flake density shown as sparkles
+    flakeCellMm: 0.5,        // arc-length cell of the flake hash (mm-locked)
+    maxFlakesPerPath: 60000, // per-path generation cap
+    edgeSegBudget: 20000,    // metallic sheen samples per pen per frame (the sampling step grows above it)
+    haloMinPx: 0.5,          // fluorescent halo below this is skipped
+    bloomMaxPx: 64,          // Lights off bloom radius cap (device px)
+    lightsOffDim: 'rgba(3,5,9,0.965)', // the sheet with the lights off (~3 % luminance)
+  });
 
   // How a plain colour + diameter pen behaves on REALISTIC paper (item: ink
   // may bleed). On paper 'None' a plain pen is never touched: the renderer
@@ -458,7 +519,8 @@
   //   opacity   opacity (coverOnDark scales with it on dark stock)
   //   blobs     multiplier on start blob / end pool / corner pool (1 = model)
   //   skips     skip.rate               jitter     widthJitter.amount
-  //   effectStrength / flakeDensity     special-inks layer (kept, not drawn yet)
+  //   effectStrength / flakeDensity     special-inks layer (sheen, glints,
+  //                                     halo, glow; flakes per mm²)
   const INK_KEYS = Object.freeze(['wetness', 'roughness', 'opacity', 'blobs', 'skips', 'jitter', 'effectStrength', 'flakeDensity']);
   const PARAM_LIMITS = Object.freeze({
     wetness: Object.freeze([0, 1]),
@@ -493,9 +555,24 @@
     cornerDeg: 35,                       // a turn sharper than this is a corner (pool + round join)
   });
 
-  // Pen library / pen files (special-inks + pen import/export work).
+  // Pen library ("My pens") / pen files (src/core/pen-library.js). A pen file
+  // is { schema:'vectura-pens', version:1, appVersion, pens:[…] }; My pens is
+  // stored in localStorage under LIBRARY_KEY in the same shape.
   const LIBRARY_KEY = 'vectura.penLibrary';
   const SCHEMA = Object.freeze({ id: 'vectura-pens', version: 1 });
+  const FILE_LIMITS = Object.freeze({
+    maxBytes: 256 * 1024,   // pen file import cap
+    maxPens: 64,            // pens per imported file
+    libraryMax: 128,        // My pens entries
+    libraryMaxBytes: 256 * 1024,
+    nameMax: 48,
+    maxWidthMm: 20,         // a pen file / My pens width above this is rejected (not clamped)
+    fileStem: 'vectura-pens',
+    libraryIdPrefix: 'mypen-',
+  });
 
-  Vectura.PEN_MODELS = { MODELS, ORDER, CLASS_ORDER, CLASS_LABELS, EFFECTS, PLAIN_TRAITS, INK_KEYS, PARAM_LIMITS, LIMITS, LIBRARY_KEY, SCHEMA };
+  Vectura.PEN_MODELS = {
+    MODELS, ORDER, CLASS_ORDER, CLASS_LABELS, EFFECTS, EFFECT_DEFAULTS, EFFECT_SWATCHES, EFFECT_GROUP_LABELS, GLOW_DEFAULT_HEX,
+    FX_LIMITS, PLAIN_TRAITS, INK_KEYS, PARAM_LIMITS, LIMITS, LIBRARY_KEY, SCHEMA, FILE_LIMITS,
+  };
 })();
