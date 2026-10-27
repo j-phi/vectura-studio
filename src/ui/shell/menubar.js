@@ -210,6 +210,12 @@
     wire('btn-object-lock', () => self._menuToggleLock(true));
     wire('btn-object-unlock', () => self._menuToggleLock(false));
     wire('btn-object-outline-text', () => self._menuOutlineText());
+    wire('btn-view-lights-off', () => { self.app?.renderer?.toggleLightsOff?.(); });
+    const chip = getEl('lights-off-chip', { silent: true });
+    if (chip && !chip._vecturaWired) {
+      chip._vecturaWired = true;
+      chip.addEventListener('click', (e) => { e.preventDefault(); self.app?.renderer?.setLightsOff?.(false); });
+    }
     wire('btn-view-context-bar-toggle', () => {
       const CB = window.Vectura && window.Vectura.UI && window.Vectura.UI.ContextBar;
       if (CB && CB.setEnabled && CB.isEnabled) CB.setEnabled(!CB.isEnabled());

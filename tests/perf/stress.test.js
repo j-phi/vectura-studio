@@ -145,6 +145,39 @@ describe('Performance and stress checks', () => {
       expect(buildAllMs).toBeLessThan(60000);
       IR.clearCache();
     }, 120000);
+
+    // Special inks: the effects pass of a metallic / glitter pen over the
+    // same 200 m — zoomed out (sheen only, no flakes) and zoomed in (flakes
+    // under the per-frame budget). JS-side cost; raster is measured in the
+    // browser (CHANGELOG).
+    test('special inks over 200 m: sheen-only at fit, flakes capped by the budget when zoomed in', () => {
+      const V = runtime.window.Vectura;
+      const IR = V.InkRenderer;
+      const { paths } = scene();
+      const items = paths.map((path) => ({ path, useCurves: false, weightScale: 1 }));
+      const ctx = fakeCanvas().getContext('2d');
+      const FX = V.PEN_MODELS.FX_LIMITS;
+      const run = (effect, ppm, view) => {
+        const pen = { id: `fx-${effect}`, name: 'F', color: '#c9a24a', width: 0.5, effect };
+        const t = V.PenModel.resolveTraits(pen, { type: 'none', color: '#101012', seed: 1 }, {});
+        IR.drawEffects(ctx, items, t, { pxPerMm: ppm, view }); // warm (flatten + flake caches)
+        const t0 = Date.now();
+        const res = IR.drawEffects(ctx, items, t, { pxPerMm: ppm, view });
+        return { ...res, ms: Date.now() - t0 };
+      };
+      const fit = run('metallic', 3, { x: 0, y: 0, w: 220, h: 210 });
+      expect(fit.flakes).toBe(0);
+      expect(fit.segments).toBeLessThanOrEqual(FX.edgeSegBudget * 1.1); // one sample per path end over the budget
+      const zoom = run('glitter', 40, { x: 60, y: 60, w: 40, h: 25 });
+      expect(zoom.flakes).toBeGreaterThan(0);
+      expect(zoom.flakes).toBeLessThanOrEqual(FX.flakeBudget * 1.1);
+      const zoomMetal = run('metallic', 40, { x: 60, y: 60, w: 40, h: 25 });
+      // Loose CI floors (local: a few ms to tens of ms per pass).
+      expect(fit.ms).toBeLessThan(2000);
+      expect(zoom.ms).toBeLessThan(2000);
+      expect(zoomMetal.ms).toBeLessThan(2000);
+      process.stdout.write(`[perf] special inks 200 m: fit metallic ${fit.ms} ms (${fit.segments} segs); 40 px/mm glitter ${zoom.ms} ms (${zoom.flakes} flakes), metallic ${zoomMetal.ms} ms (${zoomMetal.flakes} flakes, ${zoomMetal.segments} segs)\n`);
+    }, 120000);
   });
 
   // Review item 6: plain pens on realistic paper must cost what the

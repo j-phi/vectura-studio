@@ -11968,6 +11968,99 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
    ============================================================================ */
 
 /* ============================================================================
+   SPECIAL INKS: Special inks strip (ink settings + Pen Picker New Pen tab),
+   My pens popover, Pens header ⋯ button, "Lights off" canvas chip
+   (src/ui/panels/ink-settings-popover.js, pen-picker-popover.js,
+   pens-panel.js, src/render/renderer.js). Swatch looks hint at the ink; the
+   canvas preview draws the real effect.
+   ============================================================================ */
+.ink-row-fx { align-items: flex-start; }
+.fx-strip { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 6px 8px; }
+.fx-group { display: flex; flex-direction: column; gap: 2px; }
+.fx-group-label { color: var(--ui-muted); font-size: 9px; text-transform: uppercase; letter-spacing: .3px; }
+.fx-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
+.fx-swatch {
+  position: relative; width: 18px; height: 18px; padding: 0; border-radius: 50%; cursor: pointer;
+  background: var(--swatch, var(--ui-ctrl)); border: 1px solid var(--ui-border-hi);
+}
+.fx-swatch.active, .fx-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ui-panel), 0 0 0 3px var(--ui-accent); }
+.fx-swatch:focus-visible { outline: 1px solid var(--ui-accent); outline-offset: 2px; }
+.fx-swatch.fx-none {
+  align-self: flex-end; background: transparent;
+  background-image: linear-gradient(135deg, transparent 45%, var(--ui-muted) 45%, var(--ui-muted) 55%, transparent 55%);
+}
+/* Metallic: a polished bar of the colour. Dual metallic: base → second colour. */
+:is(.fx-swatch, .ink-swatch).fx-metallic {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--swatch) 55%, black) 0%, var(--swatch) 36%,
+    color-mix(in srgb, var(--swatch) 25%, white) 50%, var(--swatch) 64%, color-mix(in srgb, var(--swatch) 60%, black) 100%);
+}
+:is(.fx-swatch, .ink-swatch).fx-dual-metallic {
+  background: linear-gradient(135deg, var(--swatch) 0%, var(--swatch) 40%, color-mix(in srgb, var(--swatch2) 40%, white) 55%, var(--swatch2) 100%);
+}
+/* Neon: the colour glows a little. */
+:is(.fx-swatch, .ink-swatch).fx-fluorescent { box-shadow: 0 0 5px 1px color-mix(in srgb, var(--swatch) 70%, transparent); }
+:is(.fx-swatch, .ink-swatch).fx-fluorescent.active { box-shadow: 0 0 0 2px var(--ui-panel), 0 0 0 3px var(--ui-accent), 0 0 6px 2px var(--swatch); }
+/* Glow in the dark: the pale day colour with its emission colour as a ring. */
+:is(.fx-swatch, .ink-swatch).fx-glow { background: radial-gradient(circle, var(--swatch) 45%, var(--swatch2) 100%); }
+/* Glitter: speckles over the tint. */
+:is(.fx-swatch, .ink-swatch).fx-glitter {
+  background:
+    radial-gradient(circle at 30% 30%, white 0 1px, transparent 1.5px),
+    radial-gradient(circle at 70% 55%, white 0 1px, transparent 1.5px),
+    radial-gradient(circle at 45% 78%, white 0 0.8px, transparent 1.3px),
+    var(--swatch);
+}
+:is(.fx-swatch, .ink-swatch).fx-white { background: var(--swatch); border-color: var(--ui-border-hi); box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--swatch) 80%, black); }
+.ink-actions { flex-wrap: wrap; gap: 6px; }
+.ink-save-lib, .ink-export-pen, .ink-lib-export-all {
+  padding: 4px 10px; background: transparent; color: var(--ui-text); border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-size-xs);
+}
+.ink-save-lib:hover, .ink-export-pen:hover, .ink-lib-export-all:hover:not(:disabled) { border-color: var(--ui-accent); color: var(--ui-accent); }
+.ink-lib-export-all:disabled { opacity: .45; cursor: default; }
+.pen-pick-fx-field { display: flex; flex-direction: column; gap: 4px; }
+/* My pens popover rows. */
+.ink-lib-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: var(--radius-sm); }
+.ink-lib-row:hover { background: var(--ui-ctrl); }
+.ink-lib-actions { flex: none; display: flex; gap: 2px; }
+.ink-lib-btn {
+  width: 24px; height: 24px; padding: 0; background: transparent; color: var(--ui-muted);
+  border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; font-size: 12px;
+}
+.ink-lib-btn:hover { color: var(--ui-text); border-color: var(--ui-border); }
+.ink-lib-btn:focus-visible { outline: 1px solid var(--ui-accent); outline-offset: -1px; }
+.ink-lib-foot { padding: 6px 10px 10px; border-top: 1px solid var(--ui-border); }
+/* Pens header ⋯ (Export / Import / My pens). */
+.pens-more-btn {
+  width: 24px; height: 22px; padding: 0; background: transparent; color: var(--ui-muted);
+  border: 1px solid var(--ui-border); cursor: pointer; font-size: 12px; line-height: 1;
+}
+.pens-more-btn:hover { color: var(--ui-text); border-color: var(--ui-border-hi); }
+.pens-more-btn:focus-visible { outline: 1px solid var(--ui-accent); outline-offset: 1px; }
+/* "Lights off" chip, bottom centre of the canvas. */
+.lights-off-chip {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 40;
+  display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 14px; min-height: 32px;
+  background: color-mix(in srgb, var(--ui-panel) 88%, transparent); color: var(--ui-text);
+  border: 1px solid var(--ui-border-hi); border-radius: 9999px; box-shadow: var(--shadow-lg);
+  font-size: var(--font-size-xs); cursor: pointer;
+}
+.lights-off-chip[hidden], .lights-off-chip-note[hidden] { display: none; }
+.lights-off-chip:hover { border-color: var(--ui-accent); }
+.lights-off-chip:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
+.lights-off-chip-note { color: var(--ui-muted); font-size: 10px; }
+@media (pointer: coarse) {
+  .ink-pop .fx-swatch, .pen-pick-fx .fx-swatch { width: var(--touch-target-min); height: var(--touch-target-min); }
+  .ink-pop :is(.ink-save-lib, .ink-export-pen, .ink-lib-export-all, .ink-lib-btn) { min-height: var(--touch-target-min); min-width: var(--touch-target-min); }
+  [data-ui-skin] .pens-more-btn { min-width: var(--touch-target-min); min-height: var(--touch-target-min); }
+  .lights-off-chip { min-height: var(--touch-target-min); }
+}
+/* ============================================================================
+   END SPECIAL INKS
+   ============================================================================ */
+
+/* ============================================================================
    HUD: hint bar, readouts & canvas toast (Lane F HUD-1…4)
    Markup: #hud-bar strip at the bottom of .workspace-shell (index.html);
    #canvas-toast pill inside #viewport-container. Logic: src/ui/shell/hint-bar.js;

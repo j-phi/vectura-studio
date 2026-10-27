@@ -582,5 +582,180 @@ describe('Pen Picker popover (COL-1)', () => {
         P.setActive(prev);
       }
     });
+
+    // ---- Special inks + pen files + My pens --------------------------------
+    test('special inks strip: one undo step per pick on any pen; effect sliders only while an effect is set', () => {
+      resetPens();
+      const layer = addTestLayer();
+      window.Vectura.PensPanel.assignPenToLayers(SETTINGS.pens, [layer], 'pen-2');
+      app.ui.renderPens();
+      rowOf('pen-2').querySelector('.pen-ink-btn').click();
+      let pop = document.querySelector('.ink-pop-settings');
+      expect(pop.querySelectorAll('.fx-swatch[data-swatch-id]').length).toBeGreaterThanOrEqual(17);
+      expect(pop.querySelector('.ink-slider[data-key="effectStrength"]')).toBeNull();
+      app.history.length = 0; // under the history cap, so +1 is observable
+      const before = app.history.length;
+      pop.querySelector('.fx-swatch[data-swatch-id="metallic-gold"]').click();
+      expect(SETTINGS.pens[1]).toMatchObject({ color: '#c9a24a', effect: 'metallic' });
+      expect(SETTINGS.pens[1].model).toBeUndefined(); // a plain pen keeps being plain
+      expect(layer.color).toBe('#c9a24a');
+      expect(app.history.length).toBe(before + 1);
+      pop = document.querySelector('.ink-pop-settings');
+      expect(pop.querySelector('.fx-swatch[data-swatch-id="metallic-gold"]').getAttribute('aria-pressed')).toBe('true');
+      expect(pop.querySelector('.ink-slider[data-key="effectStrength"]')).toBeTruthy();
+      expect(pop.querySelector('.ink-slider[data-key="flakeDensity"]')).toBeTruthy();
+      // One undo step per strength drag.
+      const strength = pop.querySelector('.ink-slider[data-key="effectStrength"]');
+      fire(strength, 'pointerdown');
+      [0.5, 0.4, 0.3].forEach((v) => { strength.value = String(v); fire(strength, 'input'); });
+      fire(strength, 'change');
+      expect(SETTINGS.pens[1].ink.effectStrength).toBeCloseTo(0.3, 6);
+      expect(app.history.length).toBe(before + 2);
+      // Opaque white: no flakes, so no flake slider.
+      pop.querySelector('.fx-swatch[data-swatch-id="opaque-white"]').click();
+      pop = document.querySelector('.ink-pop-settings');
+      expect(pop.querySelector('.ink-slider[data-key="flakeDensity"]')).toBeNull();
+      expect(app.history.length).toBe(before + 3);
+      // "No special ink" clears the effect only (one step).
+      pop.querySelector('.fx-swatch.fx-none').click();
+      expect(SETTINGS.pens[1].effect).toBeUndefined();
+      expect(SETTINGS.pens[1].color).toBe('#f7f7f4');
+      expect(app.history.length).toBe(before + 4);
+      window.Vectura.UI.InkSettings.close();
+    });
+
+    test('New Pen: a Special inks pick becomes the new pen\'s effect (the mixer colour stays the pen colour)', () => {
+      resetPens();
+      const layer = addTestLayer();
+      const { anchor } = openFor([layer.id], { tab: 'new' });
+      const pop = document.querySelector('.pen-pick-pop');
+      pop.querySelector('.pen-pick-fx .fx-swatch[data-swatch-id="glow-aqua"]').click();
+      expect(pop.querySelector('.color-modal-hex').value.toLowerCase()).toContain('e2f0ee');
+      app.history.length = 0; // under the history cap, so +1 is observable
+      const before = app.history.length;
+      pop.querySelector('.pen-pick-add').click();
+      const pen = SETTINGS.pens[SETTINGS.pens.length - 1];
+      expect(pen).toMatchObject({ effect: 'glow', color2: '#5ae0ff', color: '#e2f0ee' });
+      expect(app.history.length).toBe(before + 1);
+      closePopover();
+      anchor.remove();
+    });
+
+    test('pen files: Pens ⋯ ▸ Export pens downloads a vectura-pens file; importing it adds new pens in one undo step', async () => {
+      resetPens();
+      SETTINGS.pens[0].effect = 'metallic';
+      const saved = [];
+      const D = window.Vectura.Download;
+      const prevSave = D.saveBlob;
+      D.saveBlob = (blob, name) => { saved.push({ blob, name }); };
+      try {
+        document.getElementById('btn-pens-menu').click();
+        const exportItem = Array.from(document.querySelectorAll('.pens-menu [role="menuitem"]')).find((el) => /Export pens/.test(el.textContent));
+        expect(exportItem).toBeTruthy();
+        exportItem.click();
+      } finally { D.saveBlob = prevSave; }
+      expect(saved).toHaveLength(1);
+      expect(saved[0].name).toBe('vectura-pens.json');
+      const text = await new Promise((resolve) => { const fr = new window.FileReader(); fr.onload = () => resolve(String(fr.result)); fr.readAsText(saved[0].blob); });
+      const doc = JSON.parse(text);
+      expect(doc).toMatchObject({ schema: 'vectura-pens', version: 1 });
+      expect(doc.pens).toHaveLength(3);
+      expect(doc.pens[0]).toMatchObject({ name: 'Pen 1', effect: 'metallic' });
+      // Import (the file input path reads the same text): one undo step
+      // (counted at pushHistory: the history array may sit at its cap).
+      let pushes = 0;
+      const push = app.pushHistory;
+      app.pushHistory = function countedPush(...args) { pushes += 1; return push.apply(this, args); };
+      let res;
+      try { res = window.Vectura.UI.InkSettings.importPensText(app, text); } finally { app.pushHistory = push; }
+      expect(res.ok).toBe(true);
+      expect(SETTINGS.pens).toHaveLength(6);
+      const ids = SETTINGS.pens.map((p) => p.id);
+      expect(new Set(ids).size).toBe(6);
+      expect(pushes).toBe(1);
+      expect(document.querySelectorAll('#pen-list .pen-item')).toHaveLength(6);
+      app.undo();
+      expect(SETTINGS.pens).toHaveLength(3);
+      // The file input route (size cap first).
+      const input = document.getElementById('inp-pens-import');
+      expect(input && input.accept).toMatch(/json/);
+      const big = await window.Vectura.UI.InkSettings.importPensFile(app, { size: 300 * 1024, text: async () => text });
+      expect(big.reason).toBe('too-large');
+      const viaFile = await window.Vectura.UI.InkSettings.importPensFile(app, { size: text.length, text: async () => text });
+      expect(viaFile.ok).toBe(true);
+      expect(SETTINGS.pens).toHaveLength(6);
+      // A newer pens file is refused with a message, nothing changes.
+      const n = app.history.length;
+      const future = window.Vectura.UI.InkSettings.importPensText(app, JSON.stringify({ ...doc, version: 2 }));
+      expect(future).toMatchObject({ ok: false, reason: 'version' });
+      expect(SETTINGS.pens).toHaveLength(6);
+      expect(app.history.length).toBe(n);
+    });
+
+    test('pen files: hostile pen names import as text — no markup reaches the pens panel', () => {
+      resetPens();
+      const evil = JSON.stringify({ schema: 'vectura-pens', version: 1, pens: [
+        { name: '<img src=x onerror="window.__pwned=1">', color: '#123456', width: 0.4 },
+        { name: '"><style>*{display:none}</style>', color: '#654321', width: 0.4, effect: 'glitter' },
+      ] });
+      const res = window.Vectura.UI.InkSettings.importPensText(app, evil);
+      expect(res.ok).toBe(true);
+      const list = document.getElementById('pen-list');
+      expect(list.querySelector('img')).toBeNull();
+      expect(list.querySelector('style')).toBeNull();
+      expect(window.__pwned).toBeUndefined();
+      const names = Array.from(list.querySelectorAll('.pen-name-input')).map((i) => i.value);
+      expect(names).toContain('<img src=x onerror="window.__pwned=1">');
+    });
+
+    test('My pens: save from Ink settings, listed first in the model picker, apply (one step), rename / delete / add', async () => {
+      resetPens();
+      window.localStorage.removeItem(window.Vectura.PEN_MODELS.LIBRARY_KEY);
+      const O = window.Vectura.UI.overlays;
+      const prevPrompt = O.Prompt.show;
+      const prevDialog = O.Dialog;
+      const answers = ['My gold', 'Gold renamed'];
+      O.Prompt.show = () => Promise.resolve(answers.shift());
+      O.Dialog = (_host, props) => ({ open: () => props.onConfirm() });
+      try {
+        window.Vectura.PenModel.applyEffectSwatch(SETTINGS.pens[0], window.Vectura.PenModel.swatchById('metallic-gold'));
+        app.ui.renderPens();
+        rowOf('pen-1').querySelector('.pen-ink-btn').click();
+        document.querySelector('.ink-pop-settings .ink-save-lib').click();
+        await tick(); await tick();
+        const lib = window.Vectura.PenLibrary.library();
+        expect(lib.list().map((e) => e.name)).toEqual(['My gold']);
+        window.Vectura.UI.InkSettings.close();
+        // Model picker: My pens group first; picking applies the saved ink to pen 3.
+        rowOf('pen-3').querySelector('.pen-model-chip').click();
+        const rows = Array.from(document.querySelectorAll('.ink-pop-models .ink-model-row'));
+        expect(rows[0].classList.contains('ink-library-row')).toBe(true);
+        expect(document.querySelector('.ink-pop-models .ink-model-group').textContent).toBe('My pens');
+        app.history.length = 0; // under the history cap, so +1 is observable
+        const before = app.history.length;
+        rows[0].click();
+        expect(SETTINGS.pens[2]).toMatchObject({ id: 'pen-3', name: 'Pen 3', color: '#c9a24a', effect: 'metallic' });
+        expect(app.history.length).toBe(before + 1);
+        // My pens popover from the Pens ⋯ menu: rename, add to document, delete.
+        window.Vectura.UI.InkSettings.openMyPens({ anchorEl: document.getElementById('btn-pens-menu'), app });
+        let pop = document.querySelector('.ink-pop-library');
+        pop.querySelector('.ink-lib-btn[data-act="rename"]').click();
+        await tick(); await tick();
+        expect(lib.list()[0].name).toBe('Gold renamed');
+        pop = document.querySelector('.ink-pop-library');
+        const n = SETTINGS.pens.length;
+        pop.querySelector('.ink-lib-btn[data-act="add"]').click();
+        expect(SETTINGS.pens).toHaveLength(n + 1);
+        expect(SETTINGS.pens[n]).toMatchObject({ name: 'Gold renamed', effect: 'metallic' });
+        expect(['pen-1', 'pen-2', 'pen-3']).not.toContain(SETTINGS.pens[n].id);
+        document.querySelector('.ink-pop-library .ink-lib-btn[data-act="delete"]').click();
+        expect(lib.list()).toEqual([]);
+        expect(document.querySelector('.ink-pop-library .ink-model-empty')).toBeTruthy();
+        window.Vectura.UI.InkSettings.close();
+      } finally {
+        O.Prompt.show = prevPrompt;
+        O.Dialog = prevDialog;
+      }
+    });
   });
 });

@@ -414,6 +414,35 @@ describe('Bugs-1 (HIGH): pen-record validator rejects/coerces hostile values', (
     dom.window.close();
   });
 
+  // Special inks / My pens: a tampered vectura.penLibrary (localStorage is
+  // writable by anything on the origin) is rebuilt from whitelisted fields.
+  test('My pens: a tampered library in localStorage comes back sanitised (no markup ids, no proto keys, no bad inks)', () => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', { runScripts: 'outside-only', url: 'http://localhost/' });
+    const ctx = dom.getInternalVMContext();
+    ['src/config/pen-models.js', 'src/core/pen-validate.js', 'src/core/user-library-store.js', 'src/core/pen-library.js'].forEach((rel) => {
+      vm.runInContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), ctx, { filename: rel });
+    });
+    const V = dom.window.Vectura;
+    dom.window.localStorage.setItem(V.PEN_MODELS.LIBRARY_KEY, `{"schema":"vectura-pens","version":1,"pens":[
+      {"id":"mypen-ok12345","name":"<script>alert(1)</script>","color":"#123456","width":0.5,"effect":"metallic","__proto__":{"polluted":1}},
+      {"id":"\\"><img src=x onerror=alert(1)>","name":"bad id","color":"#123456","width":0.5},
+      {"id":"mypen-evil999","name":"css","color":"red;background:url(javascript:alert(1))","width":0.5},
+      {"id":"mypen-fx00001","name":"fx","color":"#ffffff","width":0.5,"effect":"<b>","color2":"javascript:x","ink":{"effectStrength":"<i>","flakeDensity":1e9}}
+    ]}`);
+    const items = V.PenLibrary.library().list();
+    // Malformed ids and invalid colours drop the entry; names stay plain text.
+    expect(items.map((e) => e.name)).toEqual(['<script>alert(1)</script>', 'fx']);
+    items.forEach((e) => expect(e.id).toMatch(/^mypen-[a-z0-9]+$/));
+    expect(items[0].effect).toBe('metallic');
+    const fx = items[1];
+    expect(fx.effect).toBeUndefined();
+    expect(fx.color2).toBeUndefined();
+    expect(fx.ink).toEqual({ flakeDensity: V.PEN_MODELS.PARAM_LIMITS.flakeDensity[1] });
+    expect(({}).polluted).toBeUndefined();
+    expect(dom.window.Object.prototype.polluted).toBeUndefined();
+    dom.window.close();
+  });
+
   test('app.js preference snapshot routes pens through the shared validatePen', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src/app/app.js'), 'utf8');
     const block = src.slice(src.indexOf('Array.isArray(snapshot.pens)'), src.indexOf('Array.isArray(snapshot.pens)') + 1600);

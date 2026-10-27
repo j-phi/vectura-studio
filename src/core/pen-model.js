@@ -53,6 +53,114 @@
 
   const isPlain = (pen) => !modelOf(pen) && !hasInk(pen);
 
+  // ---- special inks ---------------------------------------------------------
+
+  // The pen's effective special ink: its own `effect`, else its model's
+  // default; 'plain' when none.
+  const effectOf = (pen) => {
+    const E = cat().EFFECTS || [];
+    if (pen && typeof pen.effect === 'string' && E.includes(pen.effect)) return pen.effect;
+    const model = modelOf(pen);
+    return model && E.includes(model.effect) ? model.effect : 'plain';
+  };
+
+  // Model fx block for an effect (dual metallic reads the metallic block).
+  const modelFx = (model, effect) => {
+    const fx = model && model.fx;
+    if (!fx) return null;
+    if (effect === 'glow') return fx.glowInDark || null;
+    if (effect === 'dual-metallic') return fx.metallic || null;
+    if (effect === 'glitter' && fx.glitter) {
+      const g = fx.glitter;
+      return { flakeDensity: g.density, flakeSizeMm: g.sizeMm, sizeJitter: g.sizeJitter, strength: g.sparkle };
+    }
+    return fx[effect] || null;
+  };
+
+  // Effect parameters: EFFECT_DEFAULTS[effect] ← the model's fx (only for
+  // the model's own effect family) ← pen.ink.effectStrength / flakeDensity.
+  const fxOf = (pen, effectArg) => {
+    const effect = effectArg || effectOf(pen);
+    if (effect === 'plain') return null;
+    const D = (cat().EFFECT_DEFAULTS || {})[effect] || {};
+    const out = Object.assign({}, D);
+    const model = modelOf(pen);
+    const mfx = modelFx(model, effect);
+    if (mfx) {
+      Object.keys(D).forEach((k) => { if (Number.isFinite(mfx[k])) out[k] = mfx[k]; });
+    }
+    const ink = pen && pen.ink;
+    const lim = cat().PARAM_LIMITS || {};
+    if (ink && own(ink, 'effectStrength') && Number.isFinite(ink.effectStrength)) {
+      out.strength = clamp(ink.effectStrength, lim.effectStrength ? lim.effectStrength[0] : 0, lim.effectStrength ? lim.effectStrength[1] : 1);
+    }
+    if (own(out, 'flakeDensity') && ink && own(ink, 'flakeDensity') && Number.isFinite(ink.flakeDensity)) {
+      out.flakeDensity = clamp(ink.flakeDensity, lim.flakeDensity ? lim.flakeDensity[0] : 0, lim.flakeDensity ? lim.flakeDensity[1] : 600);
+    }
+    out.effect = effect;
+    return out;
+  };
+
+  const hasFlakes = (effect) => effect === 'metallic' || effect === 'dual-metallic' || effect === 'glitter' || effect === 'glow';
+
+  // Special-inks swatch pick: colour + effect (+ color2). One undo step is
+  // the caller's job (PensPanel.commitPenEdit). `null` clears the effect.
+  const applyEffectSwatch = (pen, swatch) => {
+    if (!pen) return pen;
+    if (!swatch) {
+      delete pen.effect;
+      delete pen.color2;
+      return pen;
+    }
+    if (typeof swatch.hex === 'string') pen.color = swatch.hex;
+    if (typeof swatch.effect === 'string' && (cat().EFFECTS || []).includes(swatch.effect)) pen.effect = swatch.effect;
+    else delete pen.effect;
+    const second = swatch.color2 || swatch.secondHex || swatch.glowHex;
+    if (typeof second === 'string' && /^#[0-9a-f]{6}$/i.test(second)) pen.color2 = second;
+    else delete pen.color2;
+    pen.themeManaged = false;
+    return pen;
+  };
+
+  const swatchById = (id) => (cat().EFFECT_SWATCHES || []).find((s) => s.id === id) || null;
+
+  // ---- colour helpers -------------------------------------------------------
+  const rgbOf = (hex) => {
+    const m = /^#?([0-9a-f]{3,8})$/i.exec(`${hex || ''}`);
+    if (!m) return [0, 0, 0];
+    let h = m[1];
+    if (h.length === 3 || h.length === 4) h = h.slice(0, 3).split('').map((c) => c + c).join('');
+    const v = parseInt(h.slice(0, 6), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  };
+  const hexOf = (rgb) => `#${rgb.map((c) => Math.round(clamp(c, 0, 255)).toString(16).padStart(2, '0')).join('')}`;
+  const mixHex = (a, b, k) => {
+    const x = rgbOf(a); const y = rgbOf(b);
+    return hexOf(x.map((c, i) => c + (y[i] - c) * k));
+  };
+  // Neon: push the chroma up (HSL saturation), keep the lightness.
+  const neonHex = (hex) => {
+    const [r, g, b] = rgbOf(hex).map((c) => c / 255);
+    const mx = Math.max(r, g, b); const mn = Math.min(r, g, b);
+    const l = (mx + mn) / 2;
+    if (mx === mn) return hexOf([r * 255, g * 255, b * 255]);
+    const d = mx - mn;
+    const s0 = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    let h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h /= 6;
+    const s = Math.min(1, s0 * 1.15 + 0.1);
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const f = (t) => {
+      let u = t; if (u < 0) u += 1; if (u > 1) u -= 1;
+      if (u < 1 / 6) return p + (q - p) * 6 * u;
+      if (u < 1 / 2) return q;
+      if (u < 2 / 3) return p + (q - p) * (2 / 3 - u) * 6;
+      return p;
+    };
+    return hexOf([f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255]);
+  };
+
   const sizeOf = (model, label) => {
     if (!model || !Array.isArray(model.sizes)) return null;
     return model.sizes.find((s) => s.label === label) || null;
@@ -115,7 +223,7 @@
 
   const inkDefaults = (pen) => {
     const b = baseOf(pen);
-    return {
+    const out = {
       wetness: num(b.bleed && b.bleed.wetness),
       roughness: num(b.edge && b.edge.roughness),
       opacity: num(b.opacity, 1),
@@ -123,6 +231,16 @@
       skips: num(b.skip && b.skip.rate),
       jitter: num(b.widthJitter && b.widthJitter.amount),
     };
+    // Special inks: the effect sliders' defaults (only while an effect is set).
+    const eff = effectOf(pen);
+    if (eff !== 'plain') {
+      const base = Object.assign({}, (cat().EFFECT_DEFAULTS || {})[eff] || {});
+      const mfx = modelFx(modelOf(pen), eff);
+      if (mfx) Object.keys(base).forEach((k) => { if (Number.isFinite(mfx[k])) base[k] = mfx[k]; });
+      out.effectStrength = num(base.strength, 1);
+      if (Number.isFinite(base.flakeDensity)) out.flakeDensity = base.flakeDensity;
+    }
+    return out;
   };
 
   const inkValue = (pen, key) => {
@@ -177,7 +295,8 @@
     if (!pen) return null;
     const model = modelOf(pen);
     const realistic = isRealisticPaper(paper);
-    if (!model && !hasInk(pen) && !realistic) return null;
+    const effect = effectOf(pen);
+    if (!model && !hasInk(pen) && !realistic && effect === 'plain') return null;
     const b = baseOf(pen);
     const info = realistic ? (paperInfo || {}) : {};
     const bleedS = realistic ? clamp(num(paper && paper.bleed), 0, 1) : 0;
@@ -227,12 +346,63 @@
     // Pools scale with the ink's wetness and the paper's absorbency a little.
     const poolK = blobsK * (0.75 + 0.5 * absorb * bleedS);
     const nib = model && model.nibDirectional ? { strength: num(model.nibDirectional.strength), angle: num(model.nibDirectional.angleRad) } : null;
-    const effect = (typeof pen.effect === 'string' && pen.effect) || (model && model.effect) || 'plain';
+
+    // Special inks (preview only): the base ink's colour / coverage per
+    // effect, plus the fx block the effects layer draws with.
+    const fx = fxOf(pen, effect);
+    let effOpaque = opaque;
+    if (fx) {
+      // Effects look at the sheet colour itself (paper None too).
+      const darkSheet = luminance(paper && paper.color) < 0.4;
+      const strength = clamp(num(fx.strength, 1), 0, 1);
+      const userOpacity = hasInk(pen) && own(pen.ink, 'opacity') ? clamp(opacity, 0, 1) : null;
+      if (effect === 'white') {
+        // Opaque white paint: covers dark stock (source-over), never multiplies.
+        effOpaque = true;
+        alpha = userOpacity != null ? userOpacity : (darkSheet ? num(fx.coverOnDark, 0.92) : Math.max(alpha, 0.95));
+        inkColor = pen.color;
+      } else if (effect === 'metallic' || effect === 'dual-metallic') {
+        // Metallic gel is opaque; off the glint it reads darker than its swatch.
+        effOpaque = true;
+        if (!opaque) alpha = userOpacity != null ? userOpacity : (darkSheet ? 0.88 : 0.95);
+        inkColor = mixHex(pen.color, '#000000', clamp(num(fx.baseDarken) * (0.5 + 0.5 * strength), 0, 0.9));
+      } else if (effect === 'fluorescent') {
+        effOpaque = true;
+        if (!opaque) alpha = userOpacity != null ? userOpacity : (darkSheet ? 0.82 : 0.95);
+        inkColor = neonHex(pen.color);
+      } else if (effect === 'glow') {
+        // Daylight: a pale, grainy, semi-transparent lacquer.
+        effOpaque = true;
+        alpha = userOpacity != null ? userOpacity : clamp(num(fx.dayAlpha, 0.6), 0.05, 1);
+        inkColor = pen.color;
+      } else if (effect === 'glitter' && !model) {
+        // Translucent tinted gel; the particles carry the sparkle.
+        alpha = userOpacity != null ? userOpacity : clamp(num(fx.alpha, 0.7), 0.05, 1);
+      }
+      const second = /^#[0-9a-f]{6}$/i.test(`${pen.color2 || ''}`) ? pen.color2 : null;
+      fx.base = pen.color;
+      fx.sheen = effect === 'dual-metallic'
+        ? mixHex(second || mixHex(pen.color, '#ffffff', 0.5), '#ffffff', 0.2)
+        : mixHex(pen.color, '#ffffff', effect === 'glitter' ? 0.45 : 0.55);
+      fx.flake = effect === 'dual-metallic' ? mixHex(second || pen.color, '#ffffff', 0.35) : mixHex(pen.color, '#ffffff', 0.7);
+      fx.flakeAlt = effect === 'glitter' ? mixHex(pen.color, '#ffffff', 0.25) : fx.flake;
+      // Glitter particles off the glint: lighter than the gel on dark
+      // stock, a shade darker on light stock (so they read on white).
+      fx.particle = darkSheet ? fx.flakeAlt : mixHex(pen.color, '#000000', 0.3);
+      fx.grainColor = mixHex(pen.color, '#8a9078', 0.55);
+      fx.glow = effect === 'glow' ? (second || cat().GLOW_DEFAULT_HEX || '#7dff9a') : null;
+      fx.neon = effect === 'fluorescent' ? inkColor : null;
+      fx.darkStock = darkSheet;
+      fx.flakes = hasFlakes(effect);
+    }
+    // A plain pen that only carries an effect, on paper None: crisp edges
+    // (no lumps, pools or skips) — the effect layer adds the look.
+    const crisp = !model && !hasInk(pen) && !realistic;
 
     // Pen-dependent noise seed on the paper's seed: deterministic, sheet-locked.
     const seed = ((num(paper && paper.seed, 1) | 0) ^ hashStr(pen.id || 'pen')) >>> 0;
 
-    return {
+    const out = {
       penId: pen.id,
       plain: !model,
       modelId: model ? model.id : null,
@@ -256,14 +426,20 @@
       starveStrength: clamp(num(b.starvation && b.starvation.strength), 0, 0.9),
       nib,
       alpha,
-      opaque,
+      opaque: effOpaque,
       overlapDarkening: clamp(num(b.overlapDarkening), 0, 1),
       dryskipK: clamp(0.5 + num(b.dryskipResponse, 0.5), 0, 2),
       haloWeight: clamp(wet / 0.5, 0, 1),
       effect,
+      fx,
       seed,
       realistic,
     };
+    if (crisp) {
+      out.edgeAmpMm = 0; out.jitter = 0; out.startBlobMm = 0; out.startBlobP = 0; out.endPoolMm = 0;
+      out.cornerPool = 0; out.skipRate = 0; out.starveLenMm = 0; out.starveStrength = 0; out.nib = null;
+    }
+    return out;
   };
 
   const r4 = (v) => Math.round(v * 1e4) / 1e4;
@@ -274,6 +450,13 @@
       r4(t.startBlobMm), r4(t.startBlobP), r4(t.endPoolMm), r4(t.cornerPool), r4(t.skipRate), r4(t.skipLenMm),
       r4(t.starveLenMm), r4(t.starveStrength), t.nib ? `${r4(t.nib.strength)}/${r4(t.nib.angle)}` : '-',
     ].join('|');
+  };
+
+  // Special ink name for labels ('' when plain).
+  const EFFECT_NAMES = { metallic: 'Metallic', 'dual-metallic': 'Dual metallic', fluorescent: 'Neon', glow: 'Glow in the dark', glitter: 'Glitter', white: 'Opaque white' };
+  const effectLabel = (pen) => {
+    const e = effectOf(pen);
+    return e === 'plain' ? '' : (EFFECT_NAMES[e] || e);
   };
 
   // Chip label: "Plain", or "<short> · <size>".
@@ -300,5 +483,12 @@
     labelOf,
     hashStr,
     dyeColor,
+    effectOf,
+    effectLabel,
+    fxOf,
+    applyEffectSwatch,
+    swatchById,
+    mixHex,
+    neonHex,
   };
 })();

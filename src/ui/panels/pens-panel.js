@@ -288,6 +288,51 @@
     if (addBtn) {
       addBtn.onclick = () => this.addPen();
     }
+    initPenFileControls.call(this);
+  }
+
+  // Pens header ⋯ menu: Export pens / Import pens… / My pens… (pen files and
+  // the My pens library: Vectura.PenLibrary + UI.InkSettings).
+  function initPenFileControls() {
+    const { getEl } = requireDeps('initPenFileControls');
+    const btn = getEl('btn-pens-menu', { silent: true });
+    const input = getEl('inp-pens-import', { silent: true });
+    if (!btn || btn._vecturaWired) return;
+    btn._vecturaWired = true;
+    const LBL = () => (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PEN_MODELS_UI) || {};
+    const IS = () => UI.InkSettings || {};
+    let menu = null;
+    if (input) {
+      input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        const done = IS().importPensFile ? IS().importPensFile(this.app, file) : Promise.resolve(null);
+        input.value = '';
+        this._penImportPending = done;
+      });
+    }
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const M = UI.overlays && UI.overlays.Menu;
+      const S = (DEPS && DEPS.SETTINGS) || Vectura.SETTINGS || {};
+      const items = [
+        { key: 'export', label: LBL().MENU_EXPORT_PENS || 'Export pens' },
+        { key: 'import', label: LBL().MENU_IMPORT_PENS || 'Import pens…' },
+        { separator: true },
+        { key: 'library', label: LBL().MENU_MY_PENS || 'My pens…' },
+      ];
+      const onSelect = (key) => {
+        if (key === 'export' && IS().exportPens) IS().exportPens(S.pens || []);
+        else if (key === 'import' && input) input.click();
+        else if (key === 'library' && IS().openMyPens) IS().openMyPens({ anchorEl: btn, app: this.app });
+      };
+      if (typeof M !== 'function') return;
+      if (menu && menu.isOpen()) { menu.close(); return; }
+      if (!menu) menu = M(document.body, { items, onSelect });
+      else menu.update({ items, onSelect });
+      menu.el.classList.add('pens-menu');
+      menu.open(btn);
+    });
   }
 
   function renderPens() {
@@ -528,7 +573,9 @@
       const model = PM ? PM.modelOf(pen) : null;
       if (modelChip) {
         // The size select carries the size, so the chip names the model only.
-        modelChip.textContent = model ? model.short : (PM ? PM.labelOf(pen) : (LBL.PLAIN_LABEL || 'Plain'));
+        // A plain pen with a special ink names the ink (e.g. "Metallic").
+        const fxName = !model && PM && PM.effectLabel ? PM.effectLabel(pen) : '';
+        modelChip.textContent = model ? model.short : (fxName || (PM ? PM.labelOf(pen) : (LBL.PLAIN_LABEL || 'Plain')));
         modelChip.title = LBL.CHIP_TITLE || 'Pen model';
         modelChip.setAttribute('aria-label', `${LBL.PICKER_TITLE || 'Pen model'}: ${modelChip.textContent}`);
         modelChip.classList.toggle('is-plain', !model);
@@ -736,6 +783,7 @@
     addPen,
     removePen,
     initPaletteControls,
+    initPenFileControls,
     renderPens,
     getPenById,
     applyArmedPenToLayers,

@@ -362,3 +362,274 @@ describe('Pen models: catalogue + PenModel.resolveTraits', () => {
     expect(validatePen({ ...base, id: 'pen-1', model: 'pentel-sign-pen', size: 's'.repeat(200) }).size).toHaveLength(L.sizeMaxLen);
   });
 });
+
+// Special inks (metallic, neon, glow, glitter, opaque white) + pen files /
+// My pens. Pure layers: PenModel effect resolution, the InkRenderer effects
+// pass on a recording ctx, PenLibrary parse/export and the My pens store.
+describe('Special inks: effect resolution, effects layer, pen files, My pens', () => {
+  let dom;
+  let V;
+  const FILES = ['src/config/papers.js', 'src/core/paper.js', 'src/config/pen-models.js', 'src/core/pen-model.js',
+    'src/core/pen-validate.js', 'src/render/ink-renderer.js', 'src/core/user-library-store.js', 'src/core/pen-library.js'];
+
+  beforeAll(() => {
+    dom = loadInJSDOM(FILES);
+    V = dom.window.Vectura;
+  });
+  afterAll(() => dom?.window?.close());
+
+  const none = (color = '#ffffff') => ({ type: 'none', color, texture: 0, bleed: 0, seed: 7 });
+  const traitsOf = (pen, paper = none()) => V.PenModel.resolveTraits(pen, paper, V.PAPERS.TYPES[paper.type] || {});
+
+  // Recording ctx: every fill / stroke with its style and the path ops since
+  // the last beginPath (document mm).
+  const recorder = () => {
+    const ops = [];
+    const draws = [];
+    const st = { globalAlpha: 1, globalCompositeOperation: 'source-over', fillStyle: '#000', strokeStyle: '#000', lineWidth: 1, lineCap: 'butt', lineJoin: 'miter', filter: 'none' };
+    const stack = [];
+    const ctx = {
+      save: () => stack.push({ ...st }),
+      restore: () => Object.assign(st, stack.pop() || {}),
+      beginPath: () => { ops.length = 0; },
+      moveTo: (x, y) => ops.push(['M', x, y]),
+      lineTo: (x, y) => ops.push(['L', x, y]),
+      arc: (...a) => ops.push(['A', ...a]),
+      ellipse: (...a) => ops.push(['E', ...a]),
+      closePath: () => ops.push(['Z']),
+      quadraticCurveTo: (...a) => ops.push(['Q', ...a]),
+      bezierCurveTo: (...a) => ops.push(['C', ...a]),
+      fill: () => draws.push({ op: 'fill', ops: ops.slice(), ...st }),
+      stroke: () => draws.push({ op: 'stroke', ops: ops.slice(), ...st }),
+    };
+    return { ctx: new Proxy(ctx, { get: (t, k) => (k in t ? t[k] : st[k]), set: (t, k, v) => { st[k] = v; return true; } }), draws };
+  };
+  const wave = () => { const p = []; for (let k = 0; k <= 200; k += 1) p.push({ x: 10 + k * 0.25, y: 20 + Math.sin(k / 12) * 3 }); return p; };
+  const fxPass = (pen, view, ppm, paper = none('#101012'), path = wave()) => {
+    const t = traitsOf(pen, paper);
+    const { ctx, draws } = recorder();
+    const res = V.InkRenderer.drawEffects(ctx, [{ path }], t, { pxPerMm: ppm, view });
+    return { t, draws, res, path };
+  };
+  const pts = (draws, pred) => draws.filter(pred).map((d) => JSON.stringify(d.ops.map((o) => o.map((v) => (typeof v === 'number' ? +v.toFixed(6) : v))))).join('|');
+
+  it('catalogue: the Special inks strip has every required swatch; each resolves to a valid effect', () => {
+    const { EFFECT_SWATCHES, EFFECTS, EFFECT_DEFAULTS } = V.PEN_MODELS;
+    ['metallic-gold', 'metallic-silver', 'metallic-copper', 'metallic-bronze', 'metallic-rose-gold',
+      'neon-green', 'neon-pink', 'neon-orange', 'neon-yellow', 'neon-blue', 'glow-green', 'glow-aqua',
+      'glitter-gold', 'glitter-silver', 'glitter-clear', 'opaque-white'].forEach((id) => expect(V.PenModel.swatchById(id), id).toBeTruthy());
+    EFFECT_SWATCHES.forEach((s) => {
+      expect(EFFECTS).toContain(s.effect);
+      expect(s.hex).toMatch(/^#[0-9a-f]{6}$/i);
+      expect(EFFECT_DEFAULTS[s.effect]).toBeTruthy();
+    });
+    // Dual metallic comes with the Pentel model's colours.
+    const dual = V.PEN_MODELS.MODELS['pentel-hybrid-dual-metallic'];
+    expect(dual.colours.every((c) => c.effect === 'dual-metallic' && /^#[0-9a-f]{6}$/i.test(c.secondHex))).toBe(true);
+  });
+
+  it('applyEffectSwatch sets colour + effect (+ color2) on any pen; null clears the effect only', () => {
+    const PM = V.PenModel;
+    const plain = { id: 'p', name: 'P', color: '#111111', width: 0.4, themeManaged: true };
+    PM.applyEffectSwatch(plain, PM.swatchById('glow-aqua'));
+    expect(plain).toMatchObject({ color: '#e2f0ee', effect: 'glow', color2: '#5ae0ff', themeManaged: false });
+    expect(PM.effectOf(plain)).toBe('glow');
+    PM.applyEffectSwatch(plain, PM.swatchById('metallic-gold'));
+    expect(plain.effect).toBe('metallic');
+    expect(plain.color2).toBeUndefined();
+    PM.applyEffectSwatch(plain, null);
+    expect(plain.effect).toBeUndefined();
+    expect(plain.color).toBe('#c9a24a'); // the colour stays
+    // A model pen keeps its model; its default effect applies when unset.
+    const gel = PM.applyModel({ id: 'g', name: 'G', color: '#c9a048', width: 0.5 }, 'sakura-gelly-roll-metallic');
+    expect(PM.effectOf(gel)).toBe('metallic');
+    PM.applyEffectSwatch(gel, PM.swatchById('neon-pink'));
+    expect(gel.model).toBe('sakura-gelly-roll-metallic');
+    expect(PM.effectOf(gel)).toBe('fluorescent');
+  });
+
+  it('resolveTraits: an effect makes a plain pen an ink-renderer pen with crisp edges; per-effect base ink', () => {
+    const PM = V.PenModel;
+    const base = { id: 'p', name: 'P', width: 0.5 };
+    // Plain pen, no effect, paper None: untouched (null = legacy path).
+    expect(traitsOf({ ...base, color: '#c9a24a' })).toBeNull();
+    const gold = traitsOf({ ...base, color: '#c9a24a', effect: 'metallic' });
+    expect(gold.fx.effect).toBe('metallic');
+    expect(gold.opaque).toBe(true);
+    expect(gold.inkColor).not.toBe('#c9a24a'); // darker base off the glint
+    expect(V.InkRenderer.tierFor(gold, 200)).toBe(0); // crisp: no lumps / pools / skips
+    expect([gold.edgeAmpMm, gold.jitter, gold.startBlobMm, gold.endPoolMm, gold.skipRate]).toEqual([0, 0, 0, 0, 0]);
+    // Opaque white covers black stock (source-over, ≥ 0.9) and never multiplies.
+    const white = traitsOf({ ...base, color: '#f7f7f4', effect: 'white' }, none('#000000'));
+    expect(white.opaque).toBe(true);
+    expect(white.alpha).toBeGreaterThanOrEqual(0.9);
+    // Neon pushes chroma; glow's daylight look is a pale, translucent lacquer.
+    const neon = traitsOf({ ...base, color: '#cc6699', effect: 'fluorescent' });
+    const sat = (hex) => { const v = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)); return Math.max(...v) - Math.min(...v); };
+    expect(sat(neon.inkColor)).toBeGreaterThan(sat('#cc6699'));
+    const glow = traitsOf({ ...base, color: '#e6f2c8', effect: 'glow', color2: '#7dff9a' });
+    expect(glow.alpha).toBeLessThan(0.8);
+    expect(glow.fx.glow).toBe('#7dff9a');
+    // Effect sliders: overrides clamp to PARAM_LIMITS; the defaults show only with an effect.
+    const strong = traitsOf({ ...base, color: '#c9a24a', effect: 'glitter', ink: { effectStrength: 7, flakeDensity: -3 } });
+    expect(strong.fx.strength).toBe(1);
+    expect(strong.fx.flakeDensity).toBe(0);
+    expect(PM.inkDefaults({ ...base, color: '#000000' }).effectStrength).toBeUndefined();
+    expect(PM.inkDefaults({ ...base, color: '#000000', effect: 'metallic' }).effectStrength).toBeGreaterThan(0);
+  });
+
+  it('effects layer: glints change with pan / zoom, never with time; same view → identical output', async () => {
+    const pen = { id: 'p', name: 'P', color: '#c9a24a', width: 0.6, effect: 'metallic' };
+    const view = { x: 0, y: 0, w: 60, h: 40 };
+    const a = fxPass(pen, view, 40);
+    expect(a.res.flakes).toBeGreaterThan(0);
+    expect(a.res.segments).toBeGreaterThan(0);
+    // Same view a moment later: byte-identical draws (no time term).
+    await new Promise((r) => setTimeout(r, 15));
+    const again = fxPass(pen, view, 40, none('#101012'), a.path);
+    expect(JSON.stringify(again.draws)).toBe(JSON.stringify(a.draws));
+    // A pan moves the light the view sees, so different flakes glint.
+    const panned = fxPass(pen, { ...view, x: 25, y: 8 }, 40, none('#101012'), a.path);
+    expect(V.InkRenderer.lightOf({ ...view, x: 25, y: 8 })).not.toBeCloseTo(V.InkRenderer.lightOf(view), 3);
+    const glints = (d) => pts(d.draws, (x) => x.op === 'fill' && x.globalAlpha >= 0.6);
+    expect(glints(panned)).not.toBe(glints(a));
+    // …and so does a zoom (eye height follows the view size).
+    const zoomed = fxPass(pen, { x: 15, y: 10, w: 30, h: 20 }, 80, none('#101012'), a.path);
+    expect(glints(zoomed)).not.toBe(glints(a));
+  });
+
+  it('effects layer: flakes are locked to the stroke in mm (identical positions across pans)', () => {
+    const pen = { id: 'p', name: 'P', color: '#c8a048', width: 0.6, effect: 'glitter' };
+    const path = wave();
+    const all = (view) => {
+      const { draws } = fxPass(pen, view, 40, none('#101012'), path);
+      // Every flake square of the faint particle layer (drawn regardless of glint).
+      const base = draws.find((d) => d.op === 'fill' && Math.abs(d.globalAlpha - 0.32 * traitsOf(pen).fx.strength) < 1e-9);
+      const set = new Set();
+      for (let i = 0; i < base.ops.length; i += 5) set.add(`${base.ops[i][1].toFixed(6)},${base.ops[i][2].toFixed(6)}`);
+      return set;
+    };
+    const big = { x: -100, y: -100, w: 400, h: 300 };
+    const a = all(big);
+    const b = all({ ...big, x: -90, y: -95 });
+    expect(a.size).toBeGreaterThan(50);
+    expect([...a].every((k) => b.has(k))).toBe(true);
+    // Some glitter particles sit just past the ink edge.
+    const t = traitsOf(pen);
+    expect(t.fx.spread).toBeGreaterThan(1);
+  });
+
+  it('effects layer: LOD — sub-pixel flakes draw no flakes; the flake budget thins deterministically', () => {
+    const pen = { id: 'p', name: 'P', color: '#c9a24a', width: 0.6, effect: 'metallic' };
+    const view = { x: 0, y: 0, w: 80, h: 60 };
+    const far = fxPass(pen, view, 4);
+    expect(far.res.flakes).toBe(0);
+    expect(far.res.segments).toBeGreaterThan(0); // the sheen still draws (and still follows the view)
+    const L = V.PEN_MODELS.FX_LIMITS;
+    const many = []; for (let r = 0; r < 40; r += 1) { const p = []; for (let k = 0; k <= 200; k += 1) p.push({ x: k * 0.3, y: r * 1.2 + Math.sin(k / 9) }); many.push(p); }
+    const t = traitsOf(pen);
+    const run = (budget) => {
+      const saved = V.PEN_MODELS.FX_LIMITS;
+      V.PEN_MODELS.FX_LIMITS = { ...saved, flakeBudget: budget };
+      try {
+        const { ctx } = recorder();
+        return V.InkRenderer.drawEffects(ctx, many.map((path) => ({ path })), t, { pxPerMm: 40, view }).flakes;
+      } finally { V.PEN_MODELS.FX_LIMITS = saved; }
+    };
+    const full = run(1e9);
+    expect(full).toBeGreaterThan(400);
+    const thinned = run(200);
+    expect(thinned).toBeLessThan(full);
+    expect(thinned).toBeLessThanOrEqual(260);
+    expect(run(200)).toBe(thinned); // deterministic
+    expect(L.flakeBudget).toBe(20000);
+  });
+
+  it('glow: Lights off draws a sharp core and a bloom with lighter compositing', () => {
+    const pen = { id: 'p', name: 'P', color: '#e6f2c8', width: 0.8, effect: 'glow', color2: '#5ae0ff' };
+    const t = traitsOf(pen);
+    const { ctx, draws } = recorder();
+    expect(V.InkRenderer.drawGlow(ctx, [{ path: wave() }], t, { pxPerMm: 10, filterOk: true })).toBe(true);
+    expect(draws.every((d) => d.globalCompositeOperation === 'lighter')).toBe(true);
+    expect(draws.some((d) => /blur\(/.test(d.filter) && d.strokeStyle === '#5ae0ff')).toBe(true);
+    expect(draws.some((d) => d.filter === 'none' && d.strokeStyle === '#5ae0ff' && d.lineWidth === t.laidW)).toBe(true);
+  });
+
+  it('pen files: export → import round-trip; imported pens always get new ids', () => {
+    const PL = V.PenLibrary;
+    const pens = [
+      { id: 'pen-1', name: 'Gold', color: '#c9a24a', width: 0.55, effect: 'metallic', themeManaged: false },
+      V.PenModel.applyModel({ id: 'pen-2', name: 'Signo', color: '#f6f6f2', width: 0.7, effect: 'white', ink: { opacity: 0.8 } }, 'uniball-signo-broad-um153'),
+    ];
+    pens[1].effect = 'white';
+    pens[1].ink = { opacity: 0.8, effectStrength: 0.4 };
+    const out = PL.exportText(pens);
+    expect(out.ok).toBe(true);
+    const doc = JSON.parse(out.text);
+    expect(doc).toMatchObject({ schema: 'vectura-pens', version: 1 });
+    expect(doc.pens[0]).not.toHaveProperty('id');
+    const back = PL.parseImport(out.text, { existingIds: ['pen-1', 'pen-2'] });
+    expect(back.ok).toBe(true);
+    expect(back.pens).toHaveLength(2);
+    back.pens.forEach((p) => expect(['pen-1', 'pen-2']).not.toContain(p.id));
+    expect(new Set(back.pens.map((p) => p.id)).size).toBe(2);
+    expect(back.pens[0]).toMatchObject({ name: 'Gold', color: '#c9a24a', width: 0.55, effect: 'metallic' });
+    expect(back.pens[1]).toMatchObject({ model: 'uniball-signo-broad-um153', effect: 'white', ink: { opacity: 0.8, effectStrength: 0.4 } });
+  });
+
+  it('pen files: hostile input is rejected or sanitised', () => {
+    const PL = V.PenLibrary;
+    const F = V.PEN_MODELS.FILE_LIMITS;
+    const file = (pens, extra = {}) => JSON.stringify({ schema: 'vectura-pens', version: 1, pens, ...extra });
+    const ok = { name: 'A', color: '#112233', width: 0.4 };
+    expect(PL.parseImport('x'.repeat(F.maxBytes + 1)).reason).toBe('too-large');
+    expect(PL.parseImport('{nope').reason).toBe('parse');
+    expect(PL.parseImport(file([ok], { schema: 'vectura-papers' })).reason).toBe('schema');
+    expect(PL.parseImport(file([ok], { version: 2 })).reason).toBe('version');
+    expect(PL.parseImport(file(Array.from({ length: F.maxPens + 1 }, () => ok))).reason).toBe('too-many');
+    expect(PL.parseImport(file([])).reason).toBe('empty');
+    const hostile = PL.parseImport(`{"schema":"vectura-pens","version":1,"__proto__":{"polluted":1},"pens":[
+      {"name":"<img src=x onerror=alert(1)>\\u0000","color":"#123456","width":0.5,"__proto__":{"isAdmin":true},
+       "ink":{"__proto__":{"x":1},"constructor":5,"opacity":9,"evil":3},"effect":"lava","color2":"red;background:url(x)","model":"x\\"><b>"},
+      {"name":"bad colour","color":"url(javascript:alert(1))","width":0.5},
+      {"name":"style","color":"#fff","width":"1e9"}]}`, { existingIds: [] });
+    expect(hostile.ok).toBe(true);
+    expect(hostile.rejected).toBe(1);
+    const [a, b] = hostile.pens;
+    expect(a.name).toBe('<img src=x onerror=alert(1)>'); // plain text (rendered escaped), control chars gone
+    expect(Object.keys(a).sort()).toEqual(['color', 'id', 'ink', 'name', 'themeManaged', 'width']);
+    expect(Object.keys(a.ink)).toEqual(['opacity']);
+    expect(a.ink.opacity).toBe(1);
+    expect({}.polluted).toBeUndefined();
+    expect({}.isAdmin).toBeUndefined();
+    expect(b.width).toBe(100);
+  });
+
+  it('My pens: CRUD + persistence through localStorage, quota → { ok:false, reason:"quota" }', () => {
+    const lib = V.PenLibrary.library();
+    dom.window.localStorage.clear();
+    const put = lib.put(V.PenLibrary.toFilePen({ name: 'My gold', color: '#c9a24a', width: 0.55, effect: 'metallic' }));
+    expect(put.ok).toBe(true);
+    expect(put.item.id).toMatch(/^mypen-[a-z0-9]{7}$/);
+    const raw = JSON.parse(dom.window.localStorage.getItem(V.PEN_MODELS.LIBRARY_KEY));
+    expect(raw).toMatchObject({ schema: 'vectura-pens', version: 1 });
+    expect(raw.pens[0]).toMatchObject({ name: 'My gold', effect: 'metallic' });
+    expect(lib.rename(put.item.id, 'Gold 2').item.name).toBe('Gold 2');
+    // Apply an entry to a document pen: ink copied, id + name kept.
+    const docPen = { id: 'pen-9', name: 'Mine', color: '#000000', width: 0.3, model: 'sakura-pigma-micron', size: '05' };
+    expect(V.PenLibrary.applyEntry(docPen, lib.get(put.item.id))).toBe(true);
+    expect(docPen).toMatchObject({ id: 'pen-9', name: 'Mine', color: '#c9a24a', width: 0.55, effect: 'metallic' });
+    expect(docPen.model).toBeUndefined();
+    expect(lib.remove(put.item.id).ok).toBe(true);
+    expect(lib.list()).toEqual([]);
+    // Quota: the storage refuses the write; the library is unchanged.
+    const proto = dom.window.Storage.prototype;
+    const orig = proto.setItem;
+    proto.setItem = () => { const e = new Error('full'); e.name = 'QuotaExceededError'; throw e; };
+    try {
+      expect(lib.put(V.PenLibrary.toFilePen({ name: 'X', color: '#000000', width: 0.3 }))).toEqual({ ok: false, reason: 'quota' });
+    } finally { proto.setItem = orig; }
+    expect(lib.list()).toEqual([]);
+    expect(lib.max).toBe(128);
+  });
+});

@@ -207,6 +207,15 @@
         return;
       }
 
+      // Shift+Alt+L (Shift+Option+L) → View ▸ Lights Off (special inks: glow
+      // inks emit on a darkened sheet). By e.code: Option+Shift+L types 'Ò' on
+      // a Mac. View-only state, never saved or undoable.
+      if (!e.metaKey && !e.ctrlKey && e.altKey && e.shiftKey && e.code === 'KeyL') {
+        e.preventDefault();
+        this.app.renderer?.toggleLightsOff?.();
+        return;
+      }
+
       if (!e.metaKey && !e.ctrlKey && e.altKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         const selectedLayers = this.app.renderer?.getSelectedLayers?.() || [];

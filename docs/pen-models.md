@@ -132,3 +132,44 @@ model default; Reset removes them): Bleed (`wetness`), Edge roughness
 (`roughness`), Opacity, Blobs & pools (`blobs`, a multiplier), Skips
 (`skips`, the skip rate) and Width jitter (`jitter`). Limits are in
 `PEN_MODELS.PARAM_LIMITS`; the validator clamps imported values to them.
+
+## Special inks (effects layer)
+
+Any pen can carry a special ink (`pen.effect`, picked from the **Special inks**
+strip or a model's own colours); a model's `effect` is its default. The look is
+drawn by `InkRenderer.drawEffects` right after the pen's base ink, in the same
+canvas (so layer order holds). Parameters: `PEN_MODELS.EFFECT_DEFAULTS`, a
+model's `fx` block for its own effect family, then `pen.ink.effectStrength` /
+`flakeDensity`. Budgets and LOD: `PEN_MODELS.FX_LIMITS`.
+
+| Effect | Base ink | Effect layer | Research note |
+|---|---|---|---|
+| metallic | opaque, darkened by `baseDarken` | sheen with a reflection hot spot, edge highlights (≥ 3 px lines), sparse specular flakes 0.02–0.04 mm | brightness comes from flakes catching the light; second gel pass looks dull |
+| dual-metallic | the dark base colour | flakes and sheen in `color2` | Pentel Hybrid Dual Metallic |
+| fluorescent | opaque, chroma raised | soft halo (`haloMm`), lighter on dark stock | Moonlight is fluorescent, not glow-in-the-dark |
+| glow | pale lacquer at `dayAlpha` with grain | Lights off: core + bloom in `color2` (`lighter`) | daylight: faint grainy pale yellow-green; lights off ≈ 3 % scene luminance |
+| glitter | translucent tinted gel (≈ 0.7) | particles (some past the edge), multicolour facet glints, sparkle crosses | 0.04–0.06 mm particles, only a fraction glint per light angle |
+| white | opaque source-over (≈ 0.92 on dark) | — | white gel / paint on dark stock |
+
+**Light model.** The light is fixed (high, up-left); the eye sits above the
+view centre at 1.1 × the larger view side. Each flake has a hashed facet normal
+(tilt ≤ 0.6 rad); its glint is the specular term of the half vector between
+light and eye at the flake. Panning moves the eye over the sheet and zooming
+changes its height, so different flakes glint and the sheen's hot spot travels
+— computed only inside a draw. Nothing depends on time: the same view draws the
+same pixels, and an idle view schedules no frames.
+
+**Flakes are mm-locked.** They are hashed per 0.5 mm arc-length cell from the
+path's start point (in mm) and the pen seed, so they stay put on the stroke at
+every pan and zoom. LOD: below 0.7 px a flake is sub-pixel and only the sheen
+draws; above 20 000 visible flakes per pen a per-flake rank thins them
+deterministically; the sheen sampling step grows to keep ≤ 20 000 samples per
+pen per frame.
+
+**Lights off** (View ▸ Lights Off, `Shift+Alt+L`): after every ink pass the
+sheet is filled with `FX_LIMITS.lightsOffDim`, then each glow pen's paths are
+drawn emitting (half-resolution blurred bloom + sharp core). View state only.
+
+**Deferred:** UV (black-light) view for fluorescent inks (PRH-116), glow decay
+over time (PRH-117), effect pixel baselines (PRH-118).
+

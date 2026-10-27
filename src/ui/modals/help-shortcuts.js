@@ -208,7 +208,8 @@
             row(SHF + k('C'), 'Anchor point tool')
           )}
           ${section('View',
-            row(k('Space'),   'Hand tool',            'hold for temporary pan')
+            row(k('Space'),   'Hand tool',            'hold for temporary pan') +
+            row(SHF + OPT + k('L'), 'Lights Off',     'glow-in-the-dark inks emit · view only')
           )}
         </tbody>
       </table>`;
@@ -394,9 +395,15 @@
           ${row('Size', 'Pick the model\'s size: sets the pen width to the width it really lays down')}
           ${row(mouse('click') + ' ink drop', 'Ink settings: Bleed, Edge roughness, Opacity, Blobs &amp; pools, Skips, Width jitter', 'one undo step per drag')}
           ${row('Reset to model defaults', 'Remove this pen\'s ink overrides')}
+          ${row('Special inks', 'Metallic, neon, glow-in-the-dark, glitter, opaque white on any pen (Ink settings, New Pen)', 'one undo step')}
+          ${row('Effect strength / Flake density', 'Tune the special ink (shown while one is set)')}
+          ${row(SHF + OPT + k('L'), 'View ▸ Lights Off: the sheet goes dark, glow inks emit', 'click the chip to restore')}
+          ${row('Pens ⋯', 'Export pens, Import pens… (.json), My pens…')}
+          ${row('Save to My pens', 'Keep a pen in this browser; My pens are listed first in the model picker')}
         </tbody>
       </table>
-      ${callout('A pen is a plain colour + diameter pen unless you give it a <strong>model</strong> (Micron, Sharpie, Uni-ball Signo, Gelly Roll, Sign Pen, fountain pen, …). The preview then draws the pen\'s real look: edge bleed, blobs at pen-down, pools at corners, gel skips, opacity. On a realistic paper plain pens bleed at the edges too. Typing a width marks the size <strong>custom</strong>. Everything is a <strong>preview only</strong>: the SVG plots the pen width in the pen colour.')}`;
+      ${callout('A pen is a plain colour + diameter pen unless you give it a <strong>model</strong> (Micron, Sharpie, Uni-ball Signo, Gelly Roll, Sign Pen, fountain pen, …). The preview then draws the pen\'s real look: edge bleed, blobs at pen-down, pools at corners, gel skips, opacity. On a realistic paper plain pens bleed at the edges too. Typing a width marks the size <strong>custom</strong>. Everything is a <strong>preview only</strong>: the SVG plots the pen width in the pen colour.')}
+      ${callout('<strong>Special inks</strong> catch the light: metallic and glitter flakes stay fixed to the stroke while their glints move as you pan and zoom. <strong>Lights Off</strong> is a view only (never saved). <strong>Pen files</strong> (.json) carry colour, width, model, size, special ink and ink settings; imported pens are added as new pens.')}`;
     const pen = `
       ${accordion('Paper (Pen / Paper tab)', paperRows, true)}
       ${accordion('Pen models &amp; ink', penModelRows, true)}

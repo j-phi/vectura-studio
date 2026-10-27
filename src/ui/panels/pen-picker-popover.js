@@ -322,6 +322,13 @@
       pen.width = width;
       PM.syncSizeToWidth(pen);
     }
+    // Special inks: the strip's pick is the new pen's ink effect (the colour
+    // stays whatever the mixer holds).
+    const fxPick = state.newFx;
+    if (fxPick && fxPick.effect) {
+      pen.effect = fxPick.effect;
+      if (fxPick.color2) pen.color2 = fxPick.color2;
+    }
     pens.push(pen);
 
     const PensPanel = Vectura.PensPanel;
@@ -611,6 +618,10 @@
           <span class="pen-pick-field-label pen-pick-model-label"></span>
           <select class="pen-pick-model"></select>
         </label>
+        <div class="pen-pick-field pen-pick-fx-field">
+          <span class="pen-pick-field-label pen-pick-fx-label"></span>
+          <div class="pen-pick-fx"></div>
+        </div>
         <label class="pen-pick-field">
           <span class="pen-pick-field-label"></span>
           <span class="pen-pick-width-wrap">
@@ -648,7 +659,7 @@
     el.querySelector('.pen-pick-tab[data-tab="new"]').textContent = labels.TAB_NEW;
     el.querySelector('.pen-pick-add').textContent = labels.ADD_PEN;
     el.querySelector('.pen-pick-eyedropper').title = labels.EYEDROPPER_TITLE;
-    const fieldLabels = el.querySelectorAll('.pen-pick-field-label:not(.pen-pick-model-label)');
+    const fieldLabels = el.querySelectorAll('.pen-pick-field-label:not(.pen-pick-model-label):not(.pen-pick-fx-label)');
     if (fieldLabels[0]) fieldLabels[0].textContent = labels.NAME;
     if (fieldLabels[1]) fieldLabels[1].textContent = labels.WIDTH;
     // Pen models: optional model for the new pen ("Plain" = today's pen).
@@ -718,6 +729,34 @@
           widthInput.value = `${clampWidth(sz.laidWidthMm)}`;
           syncWidthValue();
         }
+      });
+    }
+
+    // Special inks strip (shared markup with Ink settings).
+    const fxHost = el.querySelector('.pen-pick-fx');
+    const fxLabel = el.querySelector('.pen-pick-fx-label');
+    if (fxLabel) fxLabel.textContent = PMUI.FX_TITLE || 'Special inks';
+    state.newFx = null;
+    const renderFx = () => {
+      const IS = UI.InkSettings;
+      if (!fxHost || !IS || !IS.fxStripHtml) return;
+      const sw = state.newFx;
+      fxHost.innerHTML = IS.fxStripHtml(sw ? { color: sw.hex, effect: sw.effect } : { color: '#000000' });
+    };
+    renderFx();
+    if (fxHost) {
+      fxHost.addEventListener('click', (e) => {
+        const b = e.target && e.target.closest ? e.target.closest('.fx-swatch') : null;
+        if (!b || !state) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const PM = Vectura.PenModel;
+        const sw = b.dataset.swatchId && PM ? PM.swatchById(b.dataset.swatchId) : null;
+        state.newFx = sw;
+        if (sw && state.picker && state.picker.setHex) state.picker.setHex(sw.hex);
+        renderFx();
+        const again = fxHost.querySelector(`.fx-swatch[data-swatch-id="${sw ? sw.id : ''}"]`);
+        if (again) again.focus();
       });
     }
 

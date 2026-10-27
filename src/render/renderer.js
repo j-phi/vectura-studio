@@ -6451,6 +6451,7 @@
           this.ctx.restore();
         }
       }
+      if (this.lightsOff) this._drawLightsOff(paperInk, prof);
       if (paperInk && paperInk.penTraits && window.Vectura.InkRenderer) window.Vectura.InkRenderer.endFrame(this._paperTileReady());
       this._inkFramePlan = null;
 
@@ -9872,8 +9873,9 @@
           if (!t) { memo.delete(pen.id); return; }
           t.tier = IR.tierFor(t, pxPerMm, memo.get(pen.id) || 0, gesture);
           memo.set(pen.id, t.tier);
-          // A plain pen whose bleed is still sub-pixel keeps today's path.
-          if (t.plain && t.tier === 0) return;
+          // A plain pen whose bleed is still sub-pixel keeps today's path
+          // (unless it carries a special ink: the effects layer draws it).
+          if (t.plain && t.tier === 0 && !t.fx) return;
           if (!penTraits) penTraits = new Map();
           penTraits.set(pen.id, t);
         });
@@ -9897,6 +9899,9 @@
         stack: null,
         runSeq: 0,
         m: null,
+        // Lights off: glow-ink paths seen this frame (penId → { t, items:
+        // Map(path → item) }, deduped across the clip passes).
+        glow: this.lightsOff ? new Map() : null,
       };
     }
 
@@ -9951,6 +9956,119 @@
         runKey: `${penId}#${plan.runSeq++}`,
       }, { op, alpha, darken: darken >= 0.05 ? darken : 0 });
       dest.restore();
+      if (t.fx) this._drawInkEffects(plan, t, items, dest, m, traceInto);
+    }
+
+    // Special inks (preview only): the effects layer of one ink run, drawn
+    // right after its base ink. Flakes and sheen must not multiply, so on a
+    // realistic paper a translucent pen's effects go into an opaque canvas of
+    // the stack (above the run they belong to).
+    _drawInkEffects(plan, t, items, dest, m, traceInto) {
+      const IR = window.Vectura && window.Vectura.InkRenderer;
+      if (!IR || !IR.drawEffects) return;
+      let fxDest = dest;
+      if (!plan.direct && !t.opaque) fxDest = this._inkStackTop(plan, 'opaque').ctx;
+      const cw = (fxDest.canvas && fxDest.canvas.width) || this.canvas.width;
+      const ch = (fxDest.canvas && fxDest.canvas.height) || this.canvas.height;
+      const env = {
+        pxPerMm: Math.hypot(m.a, m.b),
+        view: { x: -m.e / m.a, y: -m.f / m.d, w: cw / m.a, h: ch / m.d },
+        trace: (ctx, path, useCurves) => traceInto(ctx, path, null, null, useCurves),
+        traceItem: (ctx, item) => traceInto(ctx, item.path, item.layer, item.temp, item.useCurves),
+      };
+      fxDest.save();
+      fxDest.setTransform(m);
+      if (plan.direct && Number.isFinite(this.ctx.globalAlpha)) fxDest.globalAlpha = this.ctx.globalAlpha;
+      IR.drawEffects(fxDest, items, t, env);
+      fxDest.restore();
+      if (plan.glow && t.effect === 'glow') {
+        let rec = plan.glow.get(t.penId);
+        if (!rec) { rec = { t, items: new Map() }; plan.glow.set(t.penId, rec); }
+        items.forEach((it) => { if (!rec.items.has(it.path)) rec.items.set(it.path, it); });
+      }
+    }
+
+    // ---- Lights off (view-only; never saved, never undoable) ----------------
+
+    // Toggle the "Lights off" view: the sheet goes near-black and
+    // glow-in-the-dark inks emit. Resets on reload (not in SETTINGS).
+    setLightsOff(on) {
+      const next = Boolean(on);
+      if (next === Boolean(this.lightsOff)) { this._syncLightsOffUI(); return next; }
+      this.lightsOff = next;
+      this._syncLightsOffUI();
+      this.draw();
+      return next;
+    }
+
+    toggleLightsOff() {
+      return this.setLightsOff(!this.lightsOff);
+    }
+
+    // Glow inks in the document (pens whose effective special ink is glow).
+    hasGlowInks() {
+      const PM = window.Vectura && window.Vectura.PenModel;
+      const pens = Array.isArray(SETTINGS.pens) ? SETTINGS.pens : [];
+      return Boolean(PM && PM.effectOf && pens.some((p) => p && PM.effectOf(p) === 'glow'));
+    }
+
+    _syncLightsOffUI() {
+      if (typeof document === 'undefined') return;
+      const on = Boolean(this.lightsOff);
+      const item = document.getElementById('btn-view-lights-off');
+      if (item) item.setAttribute('aria-checked', on ? 'true' : 'false');
+      const check = document.getElementById('view-lights-off-checkmark');
+      if (check) check.style.visibility = on ? 'visible' : 'hidden';
+      const chip = document.getElementById('lights-off-chip');
+      if (chip) {
+        chip.hidden = !on;
+        const note = chip.querySelector('.lights-off-chip-note');
+        if (note) note.hidden = !on || this.hasGlowInks();
+      }
+    }
+
+    // After every ink pass: darken the sheet to ~3 % and let the glow inks
+    // emit (sharp core + blurred bloom, 'lighter').
+    _drawLightsOff(plan, prof) {
+      const ctx = this.ctx;
+      const FX = (window.Vectura && window.Vectura.PEN_MODELS && window.Vectura.PEN_MODELS.FX_LIMITS) || {};
+      const IR = window.Vectura && window.Vectura.InkRenderer;
+      const mg = SETTINGS.margin || 0;
+      ctx.save();
+      // The whole sheet goes dark; the glow keeps the ink's own clip (the
+      // margin when Crop to margin is on).
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = FX.lightsOffDim || 'rgba(3,5,9,0.965)';
+      ctx.fillRect(0, 0, prof.width, prof.height);
+      ctx.beginPath();
+      if (SETTINGS.truncate) ctx.rect(mg, mg, prof.width - mg * 2, prof.height - mg * 2);
+      else ctx.rect(0, 0, prof.width, prof.height);
+      ctx.clip();
+      if (plan && plan.glow && plan.glow.size && IR && IR.drawGlow) {
+        const m = ctx.getTransform();
+        const self = this;
+        const traceInto = (c, path, layer, temp, useCurves) => {
+          const prev = self.ctx;
+          self.ctx = c;
+          try { self.traceLayerPath(path, layer, temp, useCurves); } finally { self.ctx = prev; }
+        };
+        const env = {
+          pxPerMm: Math.hypot(m.a, m.b),
+          view: { x: -m.e / m.a, y: -m.f / m.d, w: this.canvas.width / m.a, h: this.canvas.height / m.d },
+          trace: (c, path, useCurves) => traceInto(c, path, null, null, useCurves),
+          traceItem: (c, item) => traceInto(c, item.path, item.layer, item.temp, item.useCurves),
+          filterOk: this._paperCanvasFilter(ctx),
+          // Half-resolution scratch canvases for the bloom.
+          scratch: (k) => this._paperScratch(`_glowScratch_${k}`, 2),
+        };
+        (SETTINGS.pens || []).forEach((pen) => {
+          const rec = pen && plan.glow.get(pen.id);
+          if (rec) IR.drawGlow(ctx, Array.from(rec.items.values()), rec.t, env);
+        });
+      }
+      ctx.restore();
     }
 
     _inkStackCanvas(plan, kind) {

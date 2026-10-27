@@ -51,6 +51,9 @@
  *   beginFrame(), drawRun(ctx, items, traits, env, opts), endFrame(onReady)
  *   renderCollected(plan, host)  one-frame convenience wrapper
  *   drawSample(canvas, pen, paper, opts) model-picker thumbnail
+ *   drawEffects(ctx, items, traits, env) special-inks layer of one ink run
+ *   drawGlow(ctx, items, traits, env)    glow ink emitting ("Lights off")
+ *   lightOf(view)                light angle a view sees (pan / zoom only)
  *   clearCache(), cacheStats(), flush()
  */
 (() => {
@@ -1167,6 +1170,483 @@
     return { drawn };
   };
 
+  // ---- special inks (preview only) -------------------------------------------
+  //
+  // Drawn per ink run, right after the run's base ink, into the same canvas
+  // (so layer order holds): metallic sheen + edge highlight + specular
+  // flakes, glitter particles + facet glints, fluorescent halo, glow-ink
+  // day-time grain. A pure function of the path (mm), the pen traits and the
+  // VIEW: the light is fixed and the eye sits above the view centre at a
+  // height proportional to the view size, so panning / zooming moves the
+  // glints — and nothing ever changes with time (no animation, no RAF).
+  //
+  // Flakes are hashed per arc-length cell from the path's start point in mm
+  // and the pen seed: locked to the stroke (no swimming), deterministic.
+  // LOD: below FX_LIMITS.flakeMinPx a flake is sub-pixel and only the sheen
+  // tint draws; above FX_LIMITS.flakeBudget visible flakes per pen a
+  // deterministic rank thins them.
+
+  const FXL = () => (Vectura.PEN_MODELS && Vectura.PEN_MODELS.FX_LIMITS) || {};
+  // Fixed light: high, a little up-left of the eye (canvas y points down the
+  // sheet), so the reflection hot spot falls inside the view, up-left of its
+  // centre, and travels across the drawing as the view pans / zooms.
+  const LIGHT = (() => { const v = [-0.2, -0.25, 0.95]; const n = Math.hypot(v[0], v[1], v[2]); return v.map((c) => c / n); })();
+  const flakeCache = new WeakMap(); // path -> { key, sig, data: Float32Array, n, bbox }
+  const FSTRIDE = 8; // x, y, nx, ny, nz, size, colour hash, rank
+
+  // The eye: above the view centre, at 1.1 × the larger view side (mm).
+  const eyeOf = (view) => ({ x: view.x + view.w / 2, y: view.y + view.h / 2, z: Math.max(view.w, view.h, 1e-3) * 1.1 });
+
+  // Half vector H between the light and the eye at a sheet point.
+  const halfAt = (eye, x, y, out) => {
+    let vx = eye.x - x; let vy = eye.y - y; let vz = eye.z;
+    const vl = Math.hypot(vx, vy, vz) || 1;
+    vx /= vl; vy /= vl; vz /= vl;
+    let hx = LIGHT[0] + vx; let hy = LIGHT[1] + vy; let hz = LIGHT[2] + vz;
+    const hl = Math.hypot(hx, hy, hz) || 1;
+    hx /= hl; hy /= hl; hz /= hl;
+    out[0] = hx; out[1] = hy; out[2] = hz;
+    return out;
+  };
+
+  // Azimuth (radians) of the half vector a view sees at a sheet point
+  // (default: the sheet origin) — tests / debugging: it changes with pan and
+  // zoom only, never with time.
+  const lightOf = (view, x = 0, y = 0) => {
+    const H = halfAt(eyeOf(view), x, y, [0, 0, 0]);
+    return Math.atan2(H[1], H[0]);
+  };
+
+  const buildFlakes = (flat, t, fx, ws) => {
+    const L = FXL();
+    const halfW = Math.max(0.005, (t.laidW * ws) / 2);
+    const spread = Number.isFinite(fx.spread) ? fx.spread : 0.9;
+    const perMm2 = Math.max(0, fx.flakeDensity || 0) * (L.flakeShowK || 0.06);
+    const perMm = perMm2 * 2 * halfW * Math.min(1, spread);
+    const cell = L.flakeCellMm || 0.5;
+    const expected = perMm * cell;
+    const cap = L.maxFlakesPerPath || 60000;
+    const size0 = Math.max(0.005, fx.flakeSizeMm || 0.03);
+    const jit = clamp(fx.sizeJitter || 0, 0, 0.9);
+    const seed = t.seed | 0;
+    const out = [];
+    let n = 0;
+    if (!(expected > 0)) return { data: new Float32Array(0), n: 0 };
+    for (let si = 0; si < flat.subs.length && n < cap; si += 1) {
+      const pts = flat.subs[si];
+      const m = pts.length >> 1;
+      if (m < 2) continue;
+      const cum = new Float64Array(m);
+      for (let i = 1; i < m; i += 1) cum[i] = cum[i - 1] + Math.hypot(pts[2 * i] - pts[2 * i - 2], pts[2 * i + 1] - pts[2 * i - 1]);
+      const total = cum[m - 1];
+      if (!(total > 0)) continue;
+      const pathKey = (hash3(seed, qmm(pts[0]), qmm(pts[1])) * 4294967296) | 0;
+      const cells = Math.ceil(total / cell);
+      let seg = 0;
+      for (let c = 0; c < cells && n < cap; c += 1) {
+        const count = Math.floor(expected + hash3(pathKey, c, 101));
+        for (let k = 0; k < count && n < cap; k += 1) {
+          const j = k * 16;
+          const s = (c + hash3(pathKey, c, j + 1)) * cell;
+          if (s >= total) continue;
+          // Segment containing s (cells advance monotonically; flakes within a
+          // cell are unordered, so search from the cell's start segment).
+          while (seg < m - 2 && cum[seg + 1] < c * cell) seg += 1;
+          let q = seg;
+          while (q < m - 2 && cum[q + 1] < s) q += 1;
+          const Lq = cum[q + 1] - cum[q] || 1;
+          const u = clamp((s - cum[q]) / Lq, 0, 1);
+          const x0 = pts[2 * q]; const y0 = pts[2 * q + 1];
+          const dx = pts[2 * q + 2] - x0; const dy = pts[2 * q + 3] - y0;
+          const dl = Math.hypot(dx, dy) || 1;
+          const lat = (hash3(pathKey, c, j + 2) * 2 - 1) * halfW * spread;
+          const x = x0 + dx * u - (dy / dl) * lat;
+          const y = y0 + dy * u + (dx / dl) * lat;
+          // Facet: mostly flat-lying, tilted up to ~0.6 rad, any azimuth.
+          const tilt = 0.6 * hash3(pathKey, c, j + 3) ** 0.7;
+          const az = 6.283185307 * hash3(pathKey, c, j + 4);
+          const st = Math.sin(tilt);
+          out.push(x, y, st * Math.cos(az), st * Math.sin(az), Math.cos(tilt),
+            size0 * (1 - jit + 2 * jit * hash3(pathKey, c, j + 5)), hash3(pathKey, c, j + 6), hash3(pathKey, c, j + 7));
+          n += 1;
+        }
+      }
+    }
+    return { data: Float32Array.from(out), n };
+  };
+
+  const flakesFor = (item, t, fx, trace) => {
+    const ws = item.weightScale || 1;
+    const sig = pathSig(item.path, item.useCurves);
+    const key = `${t.seed}|${(t.laidW * ws).toFixed(4)}|${fx.flakeDensity}|${fx.flakeSizeMm}|${fx.spread}|${fx.sizeJitter}`;
+    const hit = flakeCache.get(item.path);
+    if (hit && hit.key === key && hit.sig === sig) return hit;
+    const flat = flatten(item.path, item.useCurves, trace, sig);
+    const built = buildFlakes(flat, t, fx, ws);
+    const e = { key, sig, data: built.data, n: built.n, bbox: flat.bbox };
+    if (item.path && typeof item.path === 'object') flakeCache.set(item.path, e);
+    stats.flakeBuilds = (stats.flakeBuilds || 0) + 1;
+    return e;
+  };
+
+  // Quantised alpha levels: one fill / stroke per level per colour.
+  const LEVELS = [0.2, 0.42, 0.7, 1];
+  const levelOf = (g) => (g >= 0.75 ? 3 : g >= 0.4 ? 2 : g >= 0.18 ? 1 : g >= 0.06 ? 0 : -1);
+
+  const square = (ctx, x, y, h) => {
+    ctx.moveTo(x - h, y - h); ctx.lineTo(x + h, y - h); ctx.lineTo(x + h, y + h); ctx.lineTo(x - h, y + h); ctx.closePath();
+  };
+
+  // Items whose flattened bbox meets the view (temp / uncached items, whose
+  // geometry is transformed on the fly, are always kept).
+  const cullItems = (items, view, pad, trace) => {
+    if (!view) return items;
+    return items.filter((it) => {
+      if (it.temp || it.uncached) return true;
+      const f = flatten(it.path, it.useCurves, trace);
+      return !!f.bbox && intersects(f.bbox, view, pad);
+    });
+  };
+
+  // One reusable path for several native strokes of the same items: the
+  // cached mm polylines in a Path2D (temp items, transformed on the fly, are
+  // traced). Returns stroke(ctx) — or null without Path2D (trace each time).
+  const strokerFor = (items, trace, traceItem) => {
+    if (!hasPath2D()) return null;
+    const p = new G.Path2D();
+    const loose = [];
+    items.forEach((it) => {
+      if (it.temp || it.uncached) { loose.push(it); return; }
+      const f = flatten(it.path, it.useCurves, trace);
+      f.subs.forEach((pts) => {
+        p.moveTo(pts[0], pts[1]);
+        for (let i = 2; i < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
+      });
+    });
+    return (ctx) => {
+      ctx.stroke(p);
+      if (loose.length) { ctx.beginPath(); loose.forEach((it) => traceItem(ctx, it)); ctx.stroke(); }
+    };
+  };
+
+  /**
+   * Special-inks pass for one ink run (call right after drawRun, same ctx
+   * and transform). env: { pxPerMm, view (mm), trace, traceItem }.
+   * Returns { flakes, segments } drawn (tests / perf).
+   */
+  const drawEffects = (ctx, items, t, env) => {
+    const fx = t && t.fx;
+    const res = { flakes: 0, segments: 0, halo: false };
+    if (!fx || !items || !items.length || !env || !env.view) return res;
+    const L = FXL();
+    const effect = fx.effect;
+    const ppm = env.pxPerMm || 1;
+    const view = env.view;
+    const eye = eyeOf(view);
+    const strength = clamp(Number.isFinite(fx.strength) ? fx.strength : 1, 0, 1);
+    const traceItem = env.traceItem || ((c, it) => defaultTrace(c, it.path, it.useCurves));
+    const live = items.filter((it) => !it.temp && !it.uncached);
+    const pad = t.laidW * 2 + 1 + (fx.haloMm || 0) * 4;
+    const inView = (bb) => intersects(bb, view, pad);
+    // Native-stroke passes (halo) only trace what the view can show.
+    const shown = cullItems(items, view, pad, env.trace);
+    const t0 = now();
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Fluorescent: a soft halo of the neon colour (lighter on dark stock).
+    if (effect === 'fluorescent' && strength > 0) {
+      const halo = Math.max(0, fx.haloMm || 0);
+      if (halo * ppm >= (L.haloMinPx || 0.5)) {
+        ctx.globalCompositeOperation = fx.darkStock ? 'lighter' : 'source-over';
+        ctx.strokeStyle = fx.neon || t.color;
+        [[2, 0.22], [4, 0.1]].forEach(([k, a]) => {
+          ctx.globalAlpha = a * strength;
+          ctx.lineWidth = t.laidW + k * halo;
+          ctx.beginPath();
+          shown.forEach((it) => traceItem(ctx, it));
+          ctx.stroke();
+        });
+        res.halo = true;
+      }
+      if (fx.darkStock) {
+        // The core glows a little on black.
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.25 * strength;
+        ctx.strokeStyle = fx.neon || t.color;
+        ctx.lineWidth = t.laidW * 0.5;
+        ctx.beginPath();
+        shown.forEach((it) => traceItem(ctx, it));
+        ctx.stroke();
+      }
+    }
+
+    const metallic = effect === 'metallic' || effect === 'dual-metallic';
+    const H = [0, 0, 0];
+    // Metallic sheen (every zoom) + edge highlight (zoomed in): per decimated
+    // segment, bucketed into LEVELS.
+    if (metallic && strength > 0) {
+      const edge = t.laidW * ppm >= (L.edgePx || 3);
+      // Visible paths first: the sheen sampling step grows so the visible
+      // set stays within FX_LIMITS.edgeSegBudget samples (every line keeps
+      // its sheen; only its granularity coarsens on huge scenes).
+      const vis = [];
+      let visLen = 0;
+      live.forEach((it) => {
+        const flat = flatten(it.path, it.useCurves, env.trace);
+        if (!flat.bbox || !inView(flat.bbox)) return;
+        vis.push({ it, flat });
+        visLen += flat.length;
+      });
+      const segMm = Math.max(4 / ppm, 0.04, visLen / (L.edgeSegBudget || 20000));
+      // The sheen is smooth along the line: 12 fine levels (no visible steps).
+      const SHEEN_N = 12;
+      // Buckets hold polylines: [n, x0, y0, x1, y1, …] — the path's own
+      // vertices, so a coarse sampling step never cuts across a curve.
+      const sheenB = Array.from({ length: SHEEN_N }, () => []);
+      const edgeB = LEVELS.map(() => []);
+      const pushLine = (arr, pts, i0, i1, ox, oy) => {
+        arr.push(i1 - i0 + 1);
+        for (let q = i0; q <= i1; q += 1) arr.push(pts[2 * q] + ox, pts[2 * q + 1] + oy);
+      };
+      vis.forEach(({ it, flat }) => {
+        const ws = it.weightScale || 1;
+        const off = (t.laidW * ws) / 2 * 0.55;
+        flat.subs.forEach((pts) => {
+          const m = pts.length >> 1;
+          let g0 = 0;
+          let acc = 0;
+          for (let i = 1; i < m; i += 1) {
+            acc += Math.hypot(pts[2 * i] - pts[2 * i - 2], pts[2 * i + 1] - pts[2 * i - 1]);
+            if (acc < segMm && i < m - 1) continue;
+            acc = 0;
+            const ax = pts[2 * g0]; const ay = pts[2 * g0 + 1];
+            const bx = pts[2 * i]; const by = pts[2 * i + 1];
+            const dx = bx - ax; const dy = by - ay;
+            const dl = Math.hypot(dx, dy);
+            const mx = (ax + bx) / 2; const my = (ay + by) / 2;
+            if (dl > 1e-9 && mx >= view.x - pad && mx <= view.x + view.w + pad && my >= view.y - pad && my <= view.y + view.h + pad) {
+              halfAt(eye, mx, my, H);
+              // Sheen of the ink body (flat normal): a soft base plus the
+              // reflection hot spot where the light's mirror image meets the eye.
+              const sh = 0.12 + 0.88 * H[2] ** 90;
+              const lv = Math.min(SHEEN_N - 1, Math.round(sh * (SHEEN_N - 1)));
+              if (lv > 0) pushLine(sheenB[lv], pts, g0, i, 0, 0);
+              if (edge) {
+                // Rounded gel bead: normals tilted 30° out at its edges; the
+                // side facing the half vector glints.
+                const nx = -dy / dl; const ny = dx / dl;
+                const d1 = 0.5 * (nx * H[0] + ny * H[1]) + 0.866 * H[2];
+                const d2 = 0.5 * (-nx * H[0] - ny * H[1]) + 0.866 * H[2];
+                const e1 = clamp((d1 - 0.8) / 0.2, 0, 1);
+                const e2 = clamp((d2 - 0.8) / 0.2, 0, 1);
+                const l1 = levelOf(e1 * e1);
+                const l2 = levelOf(e2 * e2);
+                if (l1 >= 0) pushLine(edgeB[l1], pts, g0, i, nx * off, ny * off);
+                if (l2 >= 0) pushLine(edgeB[l2], pts, g0, i, -nx * off, -ny * off);
+              }
+              res.segments += 1;
+            }
+            g0 = i;
+          }
+        });
+      });
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = fx.sheen;
+      // Butt caps: segment joints must not double up into beads.
+      ctx.lineCap = 'butt';
+      const strokeBuckets = (buckets, width, k, levels = LEVELS) => buckets.forEach((arr, lv) => {
+        if (!arr.length) return;
+        ctx.globalAlpha = clamp(levels[lv] * strength * k, 0, 1);
+        ctx.lineWidth = width;
+        ctx.beginPath();
+        let i = 0;
+        while (i < arr.length) {
+          const n = arr[i];
+          ctx.moveTo(arr[i + 1], arr[i + 2]);
+          for (let q = 1; q < n; q += 1) ctx.lineTo(arr[i + 1 + 2 * q], arr[i + 2 + 2 * q]);
+          i += 1 + 2 * n;
+        }
+        ctx.stroke();
+      });
+      strokeBuckets(sheenB, t.laidW * (edge ? 0.36 : 0.62), 0.9, sheenB.map((_a, i) => i / (SHEEN_N - 1)));
+      if (edge) strokeBuckets(edgeB, t.laidW * 0.24, 0.85);
+    }
+
+    // Flakes / particles / grain.
+    const size0 = fx.flakeSizeMm || 0;
+    if (fx.flakes && size0 * ppm >= (L.flakeMinPx || 0.7) && (fx.flakeDensity || 0) > 0) {
+      const lists = [];
+      let count = 0;
+      live.forEach((it) => {
+        const e = flakesFor(it, t, fx, env.trace);
+        if (!e.n || !e.bbox || !inView(e.bbox)) return;
+        lists.push(e);
+        count += e.n;
+      });
+      // Deterministic thinning to the per-frame budget (rank is per flake).
+      const budget = L.flakeBudget || 20000;
+      const keep = count > budget ? budget / count : 1;
+      const glitter = effect === 'glitter';
+      const glow = effect === 'glow';
+      const shiny = glitter ? 70 : 40;
+      // A flake reads as a point of light: never under ~1.2 device px.
+      const minHalf = 0.6 / ppm;
+      // buckets[colour][level] → flat list x, y, half-size
+      const cols = glitter ? [fx.flake, '#ffffff', fx.flakeAlt] : [glow ? fx.grainColor : fx.flake];
+      const buckets = cols.map(() => LEVELS.map(() => []));
+      const base = []; // glitter: every particle, faint (the gel's texture)
+      const x0 = view.x - pad; const x1 = view.x + view.w + pad;
+      const y0 = view.y - pad; const y1 = view.y + view.h + pad;
+      lists.forEach((e) => {
+        const d = e.data;
+        for (let i = 0; i < d.length; i += FSTRIDE) {
+          if (d[i + 7] >= keep) continue;
+          const x = d[i]; const y = d[i + 1];
+          if (x < x0 || x > x1 || y < y0 || y > y1) continue;
+          const hs = Math.max(minHalf, d[i + 5] * 0.8);
+          const ci = glitter ? (d[i + 6] < 0.55 ? 0 : d[i + 6] < 0.85 ? 1 : 2) : 0;
+          res.flakes += 1;
+          if (glow) { buckets[0][1].push(x, y, hs); continue; }
+          if (glitter) base.push(x, y, hs);
+          halfAt(eye, x, y, H);
+          const dd = d[i + 2] * H[0] + d[i + 3] * H[1] + d[i + 4] * H[2];
+          if (dd <= 0) continue;
+          const g = 0.85 * dd ** shiny + 0.15 * dd ** 6;
+          const lv = levelOf(g);
+          if (lv >= 0) buckets[ci][lv].push(x, y, hs * (lv === 3 ? 1.3 : 1));
+        }
+      });
+      ctx.globalCompositeOperation = 'source-over';
+      if (base.length) {
+        ctx.globalAlpha = 0.32 * strength;
+        ctx.fillStyle = fx.particle || fx.flakeAlt;
+        ctx.beginPath();
+        for (let i = 0; i < base.length; i += 3) square(ctx, base[i], base[i + 1], base[i + 2]);
+        ctx.fill();
+      }
+      buckets.forEach((levels, ci) => levels.forEach((arr, lv) => {
+        if (!arr.length) return;
+        ctx.globalAlpha = clamp(LEVELS[lv] * (glow ? 0.5 * (fx.grain || 0.5) : strength), 0, 1);
+        ctx.fillStyle = cols[ci];
+        ctx.beginPath();
+        for (let i = 0; i < arr.length; i += 3) square(ctx, arr[i], arr[i + 1], arr[i + 2]);
+        ctx.fill();
+      }));
+      // Glitter: the brightest facets flash a small cross once big enough.
+      if (glitter && size0 * ppm >= 2.5) {
+        ctx.strokeStyle = '#ffffff';
+        ctx.globalAlpha = 0.8 * strength;
+        ctx.lineWidth = size0 * 0.25;
+        ctx.beginPath();
+        buckets.forEach((levels) => {
+          const arr = levels[3];
+          for (let i = 0; i < arr.length; i += 3) {
+            const r = arr[i + 2] * 3.2;
+            ctx.moveTo(arr[i] - r, arr[i + 1]); ctx.lineTo(arr[i] + r, arr[i + 1]);
+            ctx.moveTo(arr[i], arr[i + 1] - r); ctx.lineTo(arr[i], arr[i + 1] + r);
+          }
+        });
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+    // Leave no current path behind: the caller's draw loop may stroke the
+    // current path again in another pen's colour.
+    ctx.beginPath();
+    stats.fxMs = (stats.fxMs || 0) + (now() - t0);
+    return res;
+  };
+
+  /**
+   * "Lights off": a glow-in-the-dark pen emitting on the darkened sheet — a
+   * sharp core plus a blurred bloom, composited 'lighter'. env as
+   * drawEffects (+ filterOk: ctx.filter blur is supported).
+   */
+  const drawGlow = (ctx, items, t, env) => {
+    const fx = t && t.fx;
+    if (!fx || !items || !items.length) return false;
+    const L = FXL();
+    const ppm = (env && env.pxPerMm) || 1;
+    const traceItem = (env && env.traceItem) || ((c, it) => defaultTrace(c, it.path, it.useCurves));
+    const strength = clamp(Number.isFinite(fx.strength) ? fx.strength : 1, 0, 1);
+    const col = fx.glow || (Vectura.PEN_MODELS && Vectura.PEN_MODELS.GLOW_DEFAULT_HEX) || '#7dff9a';
+    const bloomPx = Math.min(L.bloomMaxPx || 64, Math.max(0, (fx.bloomMm || 0.45) * ppm));
+    const shown = env && env.view ? cullItems(items, env.view, t.laidW * 3 + bloomPx / ppm * 3 + 1, env.trace) : items;
+    if (!shown.length) return false;
+    const stroker = strokerFor(shown, env && env.trace, traceItem);
+    const strokeAll = (c) => { if (stroker) stroker(c); else { c.beginPath(); shown.forEach((it) => traceItem(c, it)); c.stroke(); } };
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = col;
+    if (bloomPx >= 1) {
+      const A = env && env.filterOk && typeof env.scratch === 'function' ? env.scratch('a') : null;
+      const B = A ? env.scratch('b') : null;
+      if (A && B && typeof ctx.getTransform === 'function') {
+        // Half-resolution bloom: stroke the glow into scratch A, blur A into
+        // B, add B back upscaled — the blur (the costly part with the lights
+        // off) runs on a quarter of the pixels.
+        const m = ctx.getTransform();
+        const ax = A.getContext('2d');
+        const k = A.width / Math.max(1, ctx.canvas ? ctx.canvas.width : A.width * 2);
+        ax.setTransform(1, 0, 0, 1, 0, 0);
+        ax.globalCompositeOperation = 'source-over';
+        ax.globalAlpha = 1;
+        ax.filter = 'none';
+        ax.clearRect(0, 0, A.width, A.height);
+        ax.setTransform(m.a * k, m.b * k, m.c * k, m.d * k, m.e * k, m.f * k);
+        ax.lineCap = 'round'; ax.lineJoin = 'round';
+        ax.strokeStyle = col;
+        ax.lineWidth = t.laidW * 2.6;
+        strokeAll(ax);
+        ax.beginPath();
+        const bx = B.getContext('2d');
+        bx.setTransform(1, 0, 0, 1, 0, 0);
+        bx.globalCompositeOperation = 'source-over';
+        bx.globalAlpha = 1;
+        bx.clearRect(0, 0, B.width, B.height);
+        bx.filter = `blur(${(bloomPx * 1.6 * k).toFixed(1)}px)`;
+        bx.drawImage(A, 0, 0);
+        bx.filter = 'none';
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.globalAlpha = 0.7 * strength;
+        ctx.drawImage(B, 0, 0, B.width / k, B.height / k);
+        ctx.restore();
+      } else if (env && env.filterOk) {
+        ctx.filter = `blur(${(bloomPx * 1.6).toFixed(1)}px)`;
+        ctx.globalAlpha = 0.7 * strength;
+        ctx.lineWidth = t.laidW * 2.6;
+        strokeAll(ctx);
+        ctx.filter = 'none';
+      } else {
+        // No ctx.filter: concentric soft rings approximate the bloom.
+        [[1.2, 0.16], [0.8, 0.12], [0.4, 0.1]].forEach(([k, a]) => {
+          ctx.globalAlpha = a * strength;
+          ctx.lineWidth = t.laidW + 2 * k * (bloomPx / ppm);
+          strokeAll(ctx);
+        });
+      }
+    }
+    ctx.globalAlpha = 0.9 * strength;
+    ctx.lineWidth = t.laidW;
+    strokeAll(ctx);
+    // A hot centre line where the lacquer is thickest (once it is wide
+    // enough to see — it is one more full pass).
+    if (t.laidW * ppm >= 3) {
+      ctx.globalAlpha = 0.35 * strength;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = t.laidW * 0.35;
+      strokeAll(ctx);
+    }
+    ctx.restore();
+    ctx.beginPath();
+    return true;
+  };
+
   // ---- model picker thumbnail ----------------------------------------------
 
   /**
@@ -1206,6 +1686,11 @@
       ctx.beginPath();
       replay(ctx, built.cmds);
       ctx.fill();
+      // Special inks: the effect layer at the sample's own scale.
+      if (t.fx) {
+        ctx.globalAlpha = 1;
+        drawEffects(ctx, [{ path }], t, { pxPerMm: k, view: { x: 0, y: 0, w: wMm, h: hMm } });
+      }
     } else {
       ctx.lineWidth = pen.width || 0.3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.beginPath();
@@ -1256,6 +1741,9 @@
     drawRun,
     endFrame,
     drawSample,
+    drawEffects,
+    drawGlow,
+    lightOf,
     clearCache,
     cacheStats,
     flush,

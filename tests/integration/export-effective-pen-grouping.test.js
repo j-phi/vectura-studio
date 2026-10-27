@@ -291,6 +291,22 @@ describe('SVG export effective per-path pen grouping', () => {
 
     const groupsStroke = (svg) => penGroups(svg).map((g) => g.stroke);
 
+    test('special inks: every effect exports stroke = pen colour at pen width, geometry identical to the plain pen', async () => {
+      const SETTINGS = applyBaseSettings();
+      const layer = () => makeLayer({ paths: [makePath([[20, 20], [30, 25], [40, 20]])] });
+      const plainSvg = await exportScene([layer()]);
+      const strip = (svg) => svg.replace(/ data-vectura-ink-effect="[^"]*"/g, '');
+      for (const effect of runtime.window.Vectura.PEN_MODELS.EFFECTS) {
+        SETTINGS.pens[0].effect = effect;
+        SETTINGS.pens[0].color2 = '#7dff9a';
+        const svg = await exportScene([layer()]);
+        expect(svg, effect).toContain(`data-vectura-ink-effect="${effect}"`);
+        expect(groupsStroke(svg), effect).toEqual(['#111111']);
+        expect(svg, effect).not.toContain('#7dff9a');
+        expect(strip(svg), effect).toBe(plainSvg);
+      }
+    });
+
     test('a hostile model id cannot break out of the attribute', async () => {
       const SETTINGS = applyBaseSettings();
       SETTINGS.pens[0].model = 'x"><script>alert(1)</script>';
