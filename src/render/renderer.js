@@ -5608,6 +5608,27 @@
         return path;
       };
       const drawLayers = () => {
+        // Pen models / ink edge bleed: pens drawn by the ink renderer are
+        // collected here instead of traced (see _paperInkPlan). Null on a
+        // plain-pen document on paper None: the loop below is then exactly the
+        // pre-model path.
+        const inkPlan = this._inkFramePlan || null;
+        const inkTraits = inkPlan && inkPlan.penTraits;
+        // Contiguous run of one ink-renderer pen's paths, drawn the moment the
+        // draw order moves on (another pen, a plain path, a faded layer, the
+        // end) — so plain and model pens stack exactly in layer / plot order.
+        const inkRun = { penId: null, items: [] };
+        const flushInk = () => {
+          if (!inkRun.items.length) return;
+          this._drawInkRun(inkPlan, inkRun.penId, inkRun.items);
+          inkRun.items = [];
+          inkRun.penId = null;
+        };
+        const flushBeforePlain = () => {
+          if (!inkPlan) return;
+          flushInk();
+          this._inkEnsurePlainTop(inkPlan);
+        };
         this.engine.layers.forEach((l) => {
           if (!l.visible) return;
           if (this.shouldSkipLayerForMaskPreview(l)) return;
@@ -5630,6 +5651,8 @@
             || (this._morphDragActive && this.isLayerDrag && this._morphDragGroupIds?.has(l.id))
           );
           if (fadeLayer || dimMorphBlend) {
+            // Never leave a pending ink run under a faded layer's alpha.
+            flushBeforePlain();
             this.ctx.save();
             this.ctx.globalAlpha = dimMorphBlend ? 0.35 : 0.2;
           }
@@ -5714,6 +5737,43 @@
               if (key && seen.has(key)) return;
               if (key) seen.add(key);
             }
+            const dash = this.getPathStrokeDash(path);
+            // Variable line weight (silhouette / crease emphasis). A path carrying
+            // meta.weightScale != 1 is stroked in isolation at a scaled width
+            // (clamped to 6x) so it doesn't disturb the batched pen-group stroke.
+            // Renderer.resolvePathWeightScale is THE definition — the export
+            // preview, the emitted SVG and expand-into-group all read the same
+            // one, so the four can no longer disagree about a path's width.
+            const weightScale = Renderer.resolvePathWeightScale(path);
+            // Per-path cap override (`meta.strokeCap`, set by the pen-width
+            // ribbon geometry so its butt-ended fill passes cannot bulge past
+            // the clipped form). Batched, not isolated: ribbon fills arrive as
+            // long contiguous runs, so flipping the batch cap once per run
+            // keeps the single-stroke batching intact instead of degrading to
+            // one ctx.stroke() per path.
+            const pathCap = Renderer.resolvePathLineCap(path, layerCap);
+            // Ink renderer: round-capped, undashed, unfilled paths of an
+            // ink-renderer pen join the current run. Dashed / faded / filled /
+            // butt-capped paths keep the native stroke.
+            if (inkTraits && !path?.meta?.fill && !fadeLayer && !dimMorphBlend && !dash && !layerDash
+              && (CANVAS_CAP[pathCap] || pathCap || 'round') === 'round' && inkTraits.has(currentPenId)) {
+              if (inkRun.penId !== currentPenId) flushInk();
+              inkRun.penId = currentPenId;
+              inkRun.items.push({ path, layer: l, temp, useCurves, weightScale, uncached: Boolean(temp) || revealActive });
+              return;
+            }
+            if (inkRun.items.length) {
+              // A natively stroked path follows ink-renderer paths: draw them
+              // first (stacking), then carry the batch state onto the canvas
+              // plain ink now goes to.
+              flushBeforePlain();
+              this.ctx.lineWidth = currentStrokeWidth;
+              this.ctx.strokeStyle = currentStrokeStyle;
+              this._applyLayerStrokeCtx(l);
+              this.ctx.setLineDash(layerDash || []);
+              this.ctx.lineCap = CANVAS_CAP[currentLineCap] || currentLineCap || 'round';
+              this.ctx.beginPath();
+            }
             // Filled glyphs (e.g. spiralizer "Points" solid discs) carry meta.fill.
             // Flush the batched stroke group, then fill this path in isolation
             // with the active stroke color so the marker reads as a solid dot.
@@ -5736,21 +5796,6 @@
               this.ctx.lineCap = CANVAS_CAP[currentLineCap] || currentLineCap || 'round';
               return;
             }
-            const dash = this.getPathStrokeDash(path);
-            // Variable line weight (silhouette / crease emphasis). A path carrying
-            // meta.weightScale != 1 is stroked in isolation at a scaled width
-            // (clamped to 6x) so it doesn't disturb the batched pen-group stroke.
-            // Renderer.resolvePathWeightScale is THE definition — the export
-            // preview, the emitted SVG and expand-into-group all read the same
-            // one, so the four can no longer disagree about a path's width.
-            const weightScale = Renderer.resolvePathWeightScale(path);
-            // Per-path cap override (`meta.strokeCap`, set by the pen-width
-            // ribbon geometry so its butt-ended fill passes cannot bulge past
-            // the clipped form). Batched, not isolated: ribbon fills arrive as
-            // long contiguous runs, so flipping the batch cap once per run
-            // keeps the single-stroke batching intact instead of degrading to
-            // one ctx.stroke() per path.
-            const pathCap = Renderer.resolvePathLineCap(path, layerCap);
             if (pathCap !== currentLineCap) {
               this.ctx.stroke();
               currentLineCap = pathCap;
@@ -5814,6 +5859,7 @@
             }
           }
         });
+        flushInk();
       };
       const drawOptimizedOverlay = () => {
         if (!showOptimizedOverlay || this.exportModalOpen) return;
@@ -6261,9 +6307,20 @@
       // into an offscreen ink canvas (dry-skip + bleed halo) and composited with
       // the paper's ink blend. paperInk is null for 'none' / pen-true preview,
       // and every pass below then calls drawLayers() directly, exactly as before.
+      // Pen models: the same plan also carries the pens the ink renderer
+      // draws (model pens anywhere; plain pens on realistic paper once their
+      // edge bleed is visible). On paper None (plan.direct) plain pens still
+      // draw straight onto the target and only the collected pens composite.
       const paperInk = this._paperInkPlan();
+      this._inkFramePlan = paperInk;
       const inkPass = () => {
         if (!paperInk) {
+          drawLayers();
+          return;
+        }
+        if (paperInk.direct) {
+          // Paper None + ink-renderer pens: every pass draws straight onto the
+          // target, ink runs in order (geometry is cached across passes).
           drawLayers();
           return;
         }
@@ -6394,6 +6451,8 @@
           this.ctx.restore();
         }
       }
+      if (paperInk && paperInk.penTraits && window.Vectura.InkRenderer) window.Vectura.InkRenderer.endFrame(this._paperTileReady());
+      this._inkFramePlan = null;
 
       if (SETTINGS.marginLineVisible) {
         this.ctx.save();
@@ -9784,23 +9843,149 @@
 
     // Per-frame plan for realistic-paper ink, or null to draw ink directly
     // (plain paper, pen-true preview, or a context without transforms).
+    //
+    // Pen models: the plan also resolves each pen's ink traits
+    // (Vectura.PenModel.resolveTraits) and LOD tier (InkRenderer.tierFor).
+    // penTraits holds the pens the ink renderer draws: every non-plain pen,
+    // and plain pens on realistic paper once their edge bleed is visible.
+    // A plain-pen document on paper None returns null — the exact legacy path.
     _paperInkPlan() {
       const V = window.Vectura || {};
       const Paper = V.Paper;
       if (!Paper || this.paperPreviewActive()) return null;
-      const paper = Paper.effective();
-      if (!Paper.isRealistic(paper)) return null;
       if (!this.ctx || typeof this.ctx.getTransform !== 'function') return null;
       if (typeof document === 'undefined' || !this.canvas) return null;
-      const info = (V.PAPERS && V.PAPERS.TYPES && V.PAPERS.TYPES[paper.type]) || {};
+      const paper = Paper.effective();
+      const realistic = Paper.isRealistic(paper);
+      const TYPES = (V.PAPERS && V.PAPERS.TYPES) || {};
+      const info = (realistic ? TYPES[paper.type] : TYPES.none) || {};
+      const gesture = this._paperViewGesture();
+      let penTraits = null;
+      const PM = V.PenModel;
+      const IR = V.InkRenderer;
+      if (PM && IR && Array.isArray(SETTINGS.pens)) {
+        const pxPerMm = (this.scale || 1) * (typeof this.getBackingDpr === 'function' ? this.getBackingDpr() : 1);
+        const memo = this._inkTierMemo || (this._inkTierMemo = new Map());
+        SETTINGS.pens.forEach((pen) => {
+          if (!pen || !pen.id) return;
+          const t = PM.resolveTraits(pen, paper, info);
+          if (!t) { memo.delete(pen.id); return; }
+          t.tier = IR.tierFor(t, pxPerMm, memo.get(pen.id) || 0, gesture);
+          memo.set(pen.id, t.tier);
+          // A plain pen whose bleed is still sub-pixel keeps today's path.
+          if (t.plain && t.tier === 0) return;
+          if (!penTraits) penTraits = new Map();
+          penTraits.set(pen.id, t);
+        });
+      }
+      if (!realistic && !penTraits) return null;
+      if (penTraits) IR.beginFrame();
       return {
         paper,
         info,
+        realistic,
+        direct: !realistic,
         blend: Paper.inkBlendFor(paper),
-        reuseHalo: this._paperViewGesture(),
+        reuseHalo: gesture,
         rendered: false,
         halo: null,
+        penTraits,
+        // Realistic paper: the ink canvases in stacking order
+        // ({ kind: 'ink' | 'opaque', canvas }). Opaque ink sits in its own
+        // canvas (source-over) between the translucent ones it was drawn
+        // between, so layer order holds across ink classes.
+        stack: null,
+        runSeq: 0,
+        m: null,
       };
+    }
+
+    // Pen models: draw one contiguous run of an ink-renderer pen's paths,
+    // straight into the canvas it belongs to (no per-pen scratch).
+    //   paper None: the target, translucent ink with the paper blend
+    //   (multiply on light stock), opaque ink source-over;
+    //   realistic: translucent / plain ink into the current ink canvas,
+    //   opaque ink into the current opaque canvas of the stack.
+    _drawInkRun(plan, penId, items) {
+      const IR = window.Vectura && window.Vectura.InkRenderer;
+      const t = plan && plan.penTraits && plan.penTraits.get(penId);
+      if (!IR || !t || !items.length) return;
+      let dest;
+      let op;
+      const base = Number.isFinite(this.ctx.globalAlpha) ? this.ctx.globalAlpha : 1;
+      let alpha = t.alpha;
+      let darken = 0;
+      if (plan.direct) {
+        dest = this.ctx;
+        op = t.opaque ? 'source-over' : plan.blend;
+        alpha *= base;
+        if (!t.opaque && op === 'multiply') darken = t.overlapDarkening;
+      } else if (t.opaque) {
+        const top = this._inkStackTop(plan, 'opaque');
+        top.dryK = Math.max(top.dryK || 0, t.dryskipK);
+        top.haloW = Math.max(top.haloW || 0, t.haloWeight);
+        dest = top.ctx;
+        op = 'source-over';
+      } else {
+        this._inkEnsurePlainTop(plan);
+        dest = this.ctx;
+        op = 'source-over';
+        if (plan.blend === 'multiply') darken = t.overlapDarkening;
+      }
+      const m = plan.m || this.ctx.getTransform();
+      const cw = (dest.canvas && dest.canvas.width) || this.canvas.width;
+      const ch = (dest.canvas && dest.canvas.height) || this.canvas.height;
+      const self = this;
+      const traceInto = (ctx, path, layer, temp, useCurves) => {
+        const prev = self.ctx;
+        self.ctx = ctx;
+        try { self.traceLayerPath(path, layer, temp, useCurves); } finally { self.ctx = prev; }
+      };
+      dest.save();
+      dest.setTransform(m);
+      IR.drawRun(dest, items, t, {
+        pxPerMm: Math.hypot(m.a, m.b),
+        view: { x: -m.e / m.a, y: -m.f / m.d, w: cw / m.a, h: ch / m.d },
+        trace: (ctx, path, useCurves) => traceInto(ctx, path, null, null, useCurves),
+        traceItem: (ctx, item) => traceInto(ctx, item.path, item.layer, item.temp, item.useCurves),
+        runKey: `${penId}#${plan.runSeq++}`,
+      }, { op, alpha, darken: darken >= 0.05 ? darken : 0 });
+      dest.restore();
+    }
+
+    _inkStackCanvas(plan, kind) {
+      const n = plan.stack.length;
+      const c = this._paperScratch(`_inkStack${n}`);
+      const cx = c.getContext('2d');
+      cx.setTransform(1, 0, 0, 1, 0, 0);
+      cx.globalAlpha = 1;
+      cx.globalCompositeOperation = 'source-over';
+      cx.clearRect(0, 0, c.width, c.height);
+      cx.setTransform(plan.m);
+      const entry = { kind, canvas: c, ctx: cx };
+      plan.stack.push(entry);
+      return entry;
+    }
+
+    _inkStackTop(plan, kind) {
+      const top = plan.stack[plan.stack.length - 1];
+      return top.kind === kind ? top : this._inkStackCanvas(plan, kind);
+    }
+
+    // Realistic paper: plain / translucent ink after opaque ink goes into a
+    // new ink canvas above it; carry the stroke state over.
+    _inkEnsurePlainTop(plan) {
+      if (!plan || plan.direct || !plan.stack) return;
+      const top = plan.stack[plan.stack.length - 1];
+      if (top.kind === 'ink') return;
+      const prev = this.ctx;
+      const entry = this._inkStackCanvas(plan, 'ink');
+      const cx = entry.ctx;
+      ['lineWidth', 'strokeStyle', 'fillStyle', 'lineCap', 'lineJoin', 'miterLimit', 'globalAlpha', 'globalCompositeOperation']
+        .forEach((k) => { cx[k] = prev[k]; });
+      if (typeof prev.getLineDash === 'function') cx.setLineDash(prev.getLineDash() || []);
+      cx.beginPath();
+      this.ctx = cx;
     }
 
     _paperScratch(name, downscale = 1) {
@@ -9834,6 +10019,8 @@
       ictx.setTransform(m);
       ictx.lineJoin = target.lineJoin;
       ictx.lineCap = target.lineCap;
+      plan.m = m;
+      plan.stack = [{ kind: 'ink', canvas: ink, ctx: ictx }];
       this.ctx = ictx;
       try {
         drawFn();
@@ -9853,27 +10040,52 @@
       const resolve = Math.max(0, Math.min(1, (0.2 * pxPerMm - 0.6) / 1.4));
       const skipAlpha = (info.dryskip || 0) > 0 ? Math.min(1, paper.texture * 1.1) * resolve : 0;
       if (PT && skipAlpha > 0.01) {
-        ictx.save();
-        ictx.globalCompositeOperation = 'destination-out';
-        ictx.globalAlpha = skipAlpha;
-        PT.drawMask(ictx, paper, 'skip', { pxPerMm, view, sheet });
-        ictx.restore();
+        // Every canvas of the ink stack (pen models: opaque ink scaled by its
+        // pens' dry-skip response).
+        plan.stack.forEach((entry) => {
+          const cx = entry.ctx;
+          cx.save();
+          cx.setTransform(m);
+          cx.globalCompositeOperation = 'destination-out';
+          cx.globalAlpha = Math.min(1, skipAlpha * (entry.kind === 'opaque' ? (entry.dryK || 1) : 1));
+          PT.drawMask(cx, paper, 'skip', { pxPerMm, view, sheet });
+          cx.restore();
+        });
       }
       // Bleed halo: ink wicking into the sheet along its fibres — a blurred
       // copy frayed by the fibre-streak mask (not a uniform glow). Physically
       // sized (bleedMm), so it only shows once zoomed in far enough.
       const L = (window.Vectura.PAPERS && window.Vectura.PAPERS.LIMITS) || {};
       const radius = (info.bleedMm || 0) * paper.bleed * pxPerMm;
+      const HALO_DOWNSCALE = 2;
+      const wantHalo = radius >= (L.minBleedPx || 0.4);
+      const reusing = wantHalo && plan.reuseHalo && this._paperHaloMeta && this._paperHaloMeta.key === this._paperHaloKey(paper);
+      // Pen models: with more than one ink canvas the halo blurs a union of
+      // the stack (opaque ink weighted by its wetness); one canvas is today's
+      // path exactly.
+      let haloSource = ink;
+      if (plan.stack.length > 1 && wantHalo && !reusing) {
+        const hs = this._paperScratch('_inkHaloSrcCanvas', HALO_DOWNSCALE);
+        const hsrc = hs.getContext('2d');
+        hsrc.setTransform(1, 0, 0, 1, 0, 0);
+        hsrc.globalCompositeOperation = 'source-over';
+        hsrc.clearRect(0, 0, hs.width, hs.height);
+        plan.stack.forEach((entry) => {
+          hsrc.globalAlpha = entry.kind === 'opaque' ? Math.min(1, entry.haloW || 0.3) : 1;
+          hsrc.drawImage(entry.canvas, 0, 0, hs.width, hs.height);
+        });
+        hsrc.globalAlpha = 1;
+        haloSource = hs;
+      }
       plan.halo = null;
-      if (radius < (L.minBleedPx || 0.4)) return;
-      if (plan.reuseHalo && this._paperHaloMeta && this._paperHaloMeta.key === this._paperHaloKey(paper)) {
+      if (!wantHalo) return;
+      if (reusing) {
         // View-only gesture: transform the last halo instead of rebuilding.
         const prev = this._paperHaloMeta.m;
         const k = m.a / prev.a;
         plan.halo = { canvas: this._paperHaloCanvas, k, tx: m.e - prev.e * k, ty: m.f - prev.f * k };
         return;
       }
-      const HALO_DOWNSCALE = 2;
       const halo = this._paperScratch('_paperHaloCanvas', HALO_DOWNSCALE);
       const hctx = halo.getContext('2d');
       const hr = radius / HALO_DOWNSCALE;
@@ -9883,7 +10095,7 @@
       hctx.clearRect(0, 0, halo.width, halo.height);
       if (this._paperCanvasFilter(hctx)) {
         hctx.filter = `blur(${hr.toFixed(2)}px)`;
-        hctx.drawImage(ink, 0, 0, halo.width, halo.height);
+        hctx.drawImage(haloSource, 0, 0, halo.width, halo.height);
         hctx.filter = 'none';
       } else {
         // No ctx.filter (older Safari): a ring of offset copies approximates the blur.
@@ -9891,7 +10103,7 @@
         hctx.globalAlpha = 1 / 3;
         for (let i = 0; i < steps; i += 1) {
           const a = (i / steps) * Math.PI * 2;
-          hctx.drawImage(ink, Math.cos(a) * hr * 0.7, Math.sin(a) * hr * 0.7, halo.width, halo.height);
+          hctx.drawImage(haloSource, Math.cos(a) * hr * 0.7, Math.sin(a) * hr * 0.7, halo.width, halo.height);
         }
         hctx.globalAlpha = 1;
       }
@@ -9953,7 +10165,13 @@
       }
       target.setTransform(1, 0, 0, 1, 0, 0);
       target.globalAlpha = baseAlpha * (info.inkOpacity == null ? 1 : info.inkOpacity);
-      target.drawImage(ink, 0, 0);
+      const stack = plan.stack && plan.stack.length ? plan.stack : [{ kind: 'ink', canvas: ink }];
+      // Ink canvases with the paper blend, opaque ink (gel, paint) covering
+      // what is below it — in draw order.
+      stack.forEach((entry) => {
+        target.globalCompositeOperation = entry.kind === 'opaque' ? 'source-over' : plan.blend;
+        target.drawImage(entry.canvas, 0, 0);
+      });
       target.restore();
     }
 

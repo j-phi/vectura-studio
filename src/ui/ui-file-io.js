@@ -858,7 +858,15 @@
       groups.forEach((group) => {
         const pen = group.pen || {};
         const penName = normalizeSvgId(pen.name || pen.id || 'Pen', 'pen');
-        svg += `<g id="${window.Vectura._UIExportUtil.escapeXmlAttr(`pen_${penName}`)}" stroke="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.color || 'black')}" fill="none">`;
+        // Pen models: the laid width is already pen.width (stroke-width
+        // below); ink effects are preview-only. The model / special ink are
+        // recorded as data attributes ONLY when set, so plain exports stay
+        // byte-identical.
+        const penModelAttrs = (typeof pen.model === 'string' && pen.model
+          ? ` data-vectura-pen-model="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.model)}"` : '')
+          + (typeof pen.effect === 'string' && pen.effect
+            ? ` data-vectura-ink-effect="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.effect)}"` : '');
+        svg += `<g id="${window.Vectura._UIExportUtil.escapeXmlAttr(`pen_${penName}`)}" stroke="${window.Vectura._UIExportUtil.escapeXmlAttr(pen.color || 'black')}" fill="none"${penModelAttrs}>`;
         group.items.forEach((item, itemIndex) => {
           item.ancestorClipLayerIds.forEach((layerId) => {
             const clipId = layerClipIds.get(layerId);

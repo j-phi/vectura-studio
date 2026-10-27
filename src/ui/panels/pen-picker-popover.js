@@ -313,6 +313,15 @@
       color,
       width,
     };
+    // Pen models: a chosen model sets model + default size + laid width; a
+    // width typed after picking it marks the size 'custom'.
+    const modelSel = state.el.querySelector('.pen-pick-model');
+    const PM = Vectura.PenModel;
+    if (PM && modelSel && modelSel.value && modelSel.value !== 'plain' && PM.modelOf({ model: modelSel.value })) {
+      PM.applyModel(pen, modelSel.value);
+      pen.width = width;
+      PM.syncSizeToWidth(pen);
+    }
     pens.push(pen);
 
     const PensPanel = Vectura.PensPanel;
@@ -598,6 +607,10 @@
           <span class="pen-pick-field-label"></span>
           <input type="text" class="pen-pick-name" maxlength="40" autocomplete="off" spellcheck="false">
         </label>
+        <label class="pen-pick-field pen-pick-model-field">
+          <span class="pen-pick-field-label pen-pick-model-label"></span>
+          <select class="pen-pick-model"></select>
+        </label>
         <label class="pen-pick-field">
           <span class="pen-pick-field-label"></span>
           <span class="pen-pick-width-wrap">
@@ -635,9 +648,37 @@
     el.querySelector('.pen-pick-tab[data-tab="new"]').textContent = labels.TAB_NEW;
     el.querySelector('.pen-pick-add').textContent = labels.ADD_PEN;
     el.querySelector('.pen-pick-eyedropper').title = labels.EYEDROPPER_TITLE;
-    const fieldLabels = el.querySelectorAll('.pen-pick-field-label');
+    const fieldLabels = el.querySelectorAll('.pen-pick-field-label:not(.pen-pick-model-label)');
     if (fieldLabels[0]) fieldLabels[0].textContent = labels.NAME;
     if (fieldLabels[1]) fieldLabels[1].textContent = labels.WIDTH;
+    // Pen models: optional model for the new pen ("Plain" = today's pen).
+    const modelSel = el.querySelector('.pen-pick-model');
+    const modelLabel = el.querySelector('.pen-pick-model-label');
+    const PMUI = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PEN_MODELS_UI) || {};
+    if (modelLabel) modelLabel.textContent = PMUI.NEW_PEN_MODEL || 'Model';
+    if (modelSel) {
+      const C = Vectura.PEN_MODELS;
+      const plain = doc.createElement('option');
+      plain.value = 'plain';
+      plain.textContent = PMUI.PLAIN_ROW || 'Plain colour pen';
+      modelSel.appendChild(plain);
+      if (C) {
+        (C.CLASS_ORDER || []).forEach((cls) => {
+          const ids = (C.ORDER || []).filter((id) => C.MODELS[id] && C.MODELS[id].inkClass === cls);
+          if (!ids.length) return;
+          const group = doc.createElement('optgroup');
+          group.label = (C.CLASS_LABELS || {})[cls] || cls;
+          ids.forEach((id) => {
+            const o = doc.createElement('option');
+            o.value = id;
+            o.textContent = C.MODELS[id].label.toLowerCase().startsWith(C.MODELS[id].brand.toLowerCase()) ? C.MODELS[id].label : `${C.MODELS[id].brand} ${C.MODELS[id].label}`;
+            group.appendChild(o);
+          });
+          modelSel.appendChild(group);
+        });
+      }
+      modelSel.value = 'plain';
+    }
 
     // New Pen tab: reuse the modal's HSV+hex machinery (COL-1 — never
     // rebuild it). Guarded: absent helper leaves the mixer empty but the
@@ -667,6 +708,18 @@
       if (Number.isFinite(typed)) widthInput.value = `${clampWidth(typed)}`;
       syncWidthValue(); // snap the text to the clamped/normalized value
     });
+
+    if (modelSel) {
+      modelSel.addEventListener('change', () => {
+        const PM = Vectura.PenModel;
+        const md = PM && PM.modelOf({ model: modelSel.value });
+        const sz = md ? PM.defaultSizeOf(md) : null;
+        if (sz && Number.isFinite(sz.laidWidthMm)) {
+          widthInput.value = `${clampWidth(sz.laidWidthMm)}`;
+          syncWidthValue();
+        }
+      });
+    }
 
     const nameInput = el.querySelector('.pen-pick-name');
     nameInput.addEventListener('input', () => { state.nameTouched = true; });

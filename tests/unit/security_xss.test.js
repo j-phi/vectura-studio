@@ -369,6 +369,58 @@ describe('Bugs-1 (HIGH): pen-record validator rejects/coerces hostile values', (
     dom.window.close();
   });
 
+  // Pen models: hostile values in the new pen fields (.vectura files and the
+  // preference snapshot both go through validatePen).
+  const loadPenModelValidator = () => {
+    const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', { runScripts: 'outside-only' });
+    const ctx = dom.getInternalVMContext();
+    ['src/config/pen-models.js', 'src/core/pen-validate.js'].forEach((rel) => {
+      vm.runInContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), ctx, { filename: rel });
+    });
+    return dom;
+  };
+
+  test('pen-model fields: markup, prototype keys, wrong types and huge values never survive', () => {
+    const dom = loadPenModelValidator();
+    const { validatePens } = dom.window.Vectura.PenValidate;
+    const hostileInk = JSON.parse('{"__proto__":{"polluted":1},"constructor":{"prototype":{"polluted":1}},"wetness":"<img src=x onerror=alert(1)>","roughness":1e308,"opacity":-5,"blobs":"2","skips":null,"jitter":[0.1],"toString":1}');
+    const out = validatePens([
+      { id: 'pen-1', name: 'A', color: '#111111', width: 0.4, model: '"><img src=x onerror=alert(1)>', size: '<b>x</b>\u0000\u001b', effect: 'javascript:alert(1)', color2: 'url(javascript:alert(1))', ink: hostileInk },
+      { id: 'pen-2', name: 'B', color: '#222222', width: 0.4, model: 'pentel-sign-pen', size: `${'z'.repeat(500)}\n`, effect: 'glow', ink: [1, 2, 3] },
+      { id: 'pen-3', name: 'C', color: '#333333', width: 0.4, model: 'Constructor', ink: 'wetness=1' },
+    ]);
+    expect(out).toHaveLength(3);
+    const [a, b, c] = out;
+    expect(a.model).toBeUndefined();          // fails the id pattern
+    expect(a.size).toBeUndefined();           // no size without a model
+    expect(a.effect).toBeUndefined();
+    expect(a.color2).toBeUndefined();
+    // Only whitelisted keys; values clamped to PARAM_LIMITS; no prototype keys.
+    const L = dom.window.Vectura.PEN_MODELS.PARAM_LIMITS;
+    expect(Object.keys(a.ink).sort()).toEqual(['blobs', 'opacity', 'roughness']);
+    expect(a.ink.roughness).toBe(L.roughness[1]);
+    expect(a.ink.opacity).toBe(L.opacity[0]);
+    expect(a.ink.blobs).toBe(2);
+    expect(Object.getPrototypeOf(a.ink)).toBeNull();
+    expect(({}).polluted).toBeUndefined();
+    expect(dom.window.Object.prototype.polluted).toBeUndefined();
+    expect(b.model).toBe('pentel-sign-pen');
+    expect(b.size.length).toBeLessThanOrEqual(48);
+    expect(b.size).not.toMatch(/[\u0000-\u001f]/);
+    expect(b.effect).toBe('glow');
+    expect(b.ink).toBeUndefined();            // arrays are not ink blocks
+    expect(c.model).toBeUndefined();          // upper-case ids are rejected
+    expect(c.ink).toBeUndefined();
+    dom.window.close();
+  });
+
+  test('app.js preference snapshot routes pens through the shared validatePen', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/app/app.js'), 'utf8');
+    const block = src.slice(src.indexOf('Array.isArray(snapshot.pens)'), src.indexOf('Array.isArray(snapshot.pens)') + 1600);
+    expect(block).toMatch(/PenValidate\?\.validatePen\b/);
+    expect(block).toMatch(/i < 32/);
+  });
+
   test('app.js applyState routes incoming s.pens through PenValidate.validatePens', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src/app/app.js'), 'utf8');
     // Look for either direct call or PenValidate reference near the pens

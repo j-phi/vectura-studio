@@ -178,6 +178,44 @@
     },
     // === end COL ===
 
+    // Pen models (src/ui/panels/ink-settings-popover.js + the pen rows in
+    // src/ui/panels/pens-panel.js + the Pen Picker New Pen tab).
+    PEN_MODELS_UI: {
+      PLAIN_LABEL: 'Plain',
+      PLAIN_ROW: 'Plain colour pen',
+      PLAIN_HINT: 'Colour + diameter only, today\'s look',
+      CHIP_TITLE: 'Pen model — how this pen lays ink (preview only)',
+      SIZE_LABEL: 'Pen size',
+      CUSTOM_SIZE: 'custom',
+      INK_BUTTON: 'Ink settings',
+      PICKER_TITLE: 'Pen model',
+      SEARCH_PLACEHOLDER: 'Search pens',
+      NO_MATCH: 'No pen matches',
+      APPROX: 'approx.',
+      APPROX_TITLE: 'Parameters estimated from photos and reviews — tune them in Ink settings',
+      INK_TITLE: 'Ink',
+      MODEL_LABEL: 'Model',
+      MODEL_COLOURS: 'Model colours',
+      RESET: 'Reset to model defaults',
+      CLOSE: 'Close',
+      PREVIEW_NOTE: 'Preview only. The SVG plots {width} mm strokes in the pen colour.',
+      DYE_ON_DARK: 'Translucent ink — barely visible on dark paper.',
+      NEW_PEN_MODEL: 'Model',
+      // Ink-settings sliders (ranges: PEN_MODELS.PARAM_LIMITS). fmt: 'pct' |
+      // 'x' (multiplier). step is in the value's own units.
+      SLIDERS: [
+        { key: 'wetness', label: 'Bleed', hint: 'How much the ink wicks into the paper', fmt: 'pct', step: 0.01 },
+        { key: 'roughness', label: 'Edge roughness', hint: 'Lumpiness of the stroke edge', fmt: 'pct', step: 0.01 },
+        { key: 'opacity', label: 'Opacity', hint: 'Ink coverage', fmt: 'pct', step: 0.01 },
+        { key: 'blobs', label: 'Blobs & pools', hint: 'Ink pooled at pen-down, lift and corners', fmt: 'x', step: 0.05 },
+        { key: 'skips', label: 'Skips', hint: 'Gaps where the pen skips', fmt: 'pct', step: 0.005 },
+        { key: 'jitter', label: 'Width jitter', hint: 'Slow wobble of the line width', fmt: 'pct', step: 0.005 },
+      ],
+      SAMPLE_WIDTH_MM: 14,
+      OFFSET_PX: 6,
+      FLIP_THRESHOLD_PX: 360,
+    },
+
     // Paper selector panel (src/ui/panels/paper-panel.js) + Document Setup
     // "Default paper" row (src/ui/modals/document-setup.js).
     PAPER_PANEL: {

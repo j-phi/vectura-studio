@@ -254,4 +254,49 @@ describe('SVG export effective per-path pen grouping', () => {
     expect(groups.map((g) => g.id)).toEqual(['pen_PenOne']);
     expect(groups[0].xs).toEqual([20, 40, 60]);
   });
+
+  // Pen models: the SVG plots the model's laid width (pen.width, written by
+  // the model/size pick), never an ink effect, and names the model with a
+  // data attribute only when one is set.
+  describe('pen models', () => {
+    const attrsOf = (svg, id) => {
+      const doc = new runtime.window.DOMParser().parseFromString(svg, 'image/svg+xml');
+      const g = Array.from(doc.documentElement.children).find((el) => el.getAttribute('id') === id);
+      return g ? Array.from(g.attributes).map((a) => a.name).sort() : null;
+    };
+
+    test('a plain pen group carries no pen-model attributes (plain export unchanged)', async () => {
+      applyBaseSettings();
+      const svg = await exportScene([makeLayer({ paths: [makePath([[20, 20], [30, 20]])] })]);
+      expect(attrsOf(svg, 'pen_PenOne')).toEqual(['fill', 'id', 'stroke']);
+      expect(svg).not.toContain('data-vectura');
+    });
+
+    test('a model pen plots its laid width and names the model; effects stay out of the geometry', async () => {
+      const SETTINGS = applyBaseSettings();
+      const { PenModel } = runtime.window.Vectura;
+      const pen = SETTINGS.pens[0];
+      PenModel.applyModel(pen, 'pentel-sign-pen');
+      pen.effect = 'metallic';
+      pen.ink = { wetness: 1, roughness: 0.5 };
+      expect(pen.width).toBe(runtime.window.Vectura.PEN_MODELS.MODELS['pentel-sign-pen'].sizes[0].laidWidthMm);
+      const svg = await exportScene([makeLayer({ paths: [makePath([[20, 20], [30, 20]])] })]);
+      expect(svg).toContain('data-vectura-pen-model="pentel-sign-pen"');
+      expect(svg).toContain('data-vectura-ink-effect="metallic"');
+      expect(svg).toContain(`stroke-width="${pen.width.toFixed(3)}"`);
+      // Only ever stroke paths in the pen colour: no filters, fills or ribbons.
+      expect(svg).not.toMatch(/<filter|feTurbulence|fill="#/);
+      expect(groupsStroke(svg)).toEqual(['#111111']);
+    });
+
+    const groupsStroke = (svg) => penGroups(svg).map((g) => g.stroke);
+
+    test('a hostile model id cannot break out of the attribute', async () => {
+      const SETTINGS = applyBaseSettings();
+      SETTINGS.pens[0].model = 'x"><script>alert(1)</script>';
+      const svg = await exportScene([makeLayer({ paths: [makePath([[20, 20], [30, 20]])] })]);
+      expect(svg).not.toContain('<script');
+      expect(penGroups(svg).map((g) => g.id)).toEqual(['pen_PenOne']);
+    });
+  });
 });

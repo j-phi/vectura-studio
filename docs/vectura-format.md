@@ -100,6 +100,34 @@ or no papers are refused with a message; each paper is rebuilt from whitelisted 
 skipped; a clashing id gets a new id and a clashing name becomes "Name (2)". At most 64
 papers. Storage failures (quota, private mode) are reported, never thrown.
 
+### Pen model fields in `settings.pens[]` (pen models, v1.4.31)
+
+Additive; the format version is unchanged. A plain pen keeps exactly
+`{ id, name, color, width, lineCap?, themeManaged? }` (byte-identical to older
+files). A model pen adds:
+
+```jsonc
+{ "id": "pen-2", "name": "Pen 2", "color": "#1c1c1e", "width": 0.85,
+  "model": "pentel-sign-pen",            // Vectura.PEN_MODELS id (/^[a-z0-9-]{1,48}$/)
+  "size": "fine fibre",                  // a size label of the model, or "custom"
+  "effect": "metallic",                  // optional special ink (metallic, dual-metallic,
+                                         //   fluorescent, glow, glitter, white)
+  "color2": "#dfe2e8",                   // optional second ink colour (dual metallic)
+  "ink": { "wetness": 0.7, "roughness": 0.2, "opacity": 0.9,
+           "blobs": 1.2, "skips": 0.02, "jitter": 0.05 } }  // overrides only
+```
+
+- `width` is the plotted width; picking a model / size writes the size's laid
+  width there, and the SVG export plots it. Nothing else reaches the SVG
+  (a pen group gets `data-vectura-pen-model` / `data-vectura-ink-effect` only
+  when set).
+- Validation (`Vectura.PenValidate.validatePen`, also used for the preference
+  snapshot): invalid fields are dropped; an unknown `model` id is kept (and
+  drawn as a plain pen) so files from newer builds round-trip; `ink` keeps only
+  `PEN_MODELS.INK_KEYS` with finite values clamped to `PARAM_LIMITS`
+  (`effectStrength` / `flakeDensity` are reserved for the special-inks layer).
+- Older builds ignore the extra keys and draw a plain pen at `width`.
+
 ## Preset files (`user-presets/<type>/*.vectura`)
 
 Written by `PresetSync.buildDoc` (`src/ui/preset-sync.js`), read by `parseDoc` and the

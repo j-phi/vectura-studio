@@ -206,6 +206,7 @@ Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar wit
 - `File > Document Setup` (`Cmd/Ctrl+K`) covers machine size, Metric/Imperial switch, optional blueprint-style dimension labels, margin, on-canvas crop, margin guides, the default paper, selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`
 - Pen palette with assignable colors/widths, reorderable list, drag-to-assign per layer or selection, and double-click-to-apply on selected layers
 - **Paper selector (Pen / Paper tab ▸ Paper):** pick the sheet per document — None (plain colour), Hot-press, Cold-press and Rough watercolor, Bristol smooth and vellum, Cotton rag, Kraft, Newsprint, Black stock or Tracing — and any paper colour. Realistic papers render seeded surface tooth, fibres, speckles and formation mottling, and the ink reacts: it multiplies into light stock, skips the tooth valleys on toothy paper, bleeds and feathers on absorbent stock (newsprint most) and sits thinner on newsprint and tracing. **Texture** and **Ink bleed** sliders scale the effect. Every feature is sized in real millimetres, so the grain is the same on A6 and A0 (a small sheet at fit-to-screen shows coarser grain). Paper is saved in the `.vectura` file and is a **preview only**: the SVG export stays plotter-clean. **Set as default** makes the paper the start of every new document (also in Document Setup ▸ Paper & Selection ▸ Default paper, which replaces the old Background colour); **Use default** applies it to the open document. **My papers:** **+ Save as custom…** stores the current paper (type, colour, texture, bleed) in this browser as a first-class custom paper — its own swatch after the built-ins, usable as the default paper, with an **Advanced** disclosure to fine-tune grain size/angle/stretch, tooth, fibres, speckle, mottle, absorbency, bleed reach, feathering, dry skip and ink opacity (one undo step per drag; **Update saved paper** stores the change). Each custom swatch has a ⋯ menu (Rename, Delete, Export); the section ⋯ exports all papers or imports a papers `.json` (merge; duplicates skipped, clashes renamed). A document on a custom paper embeds the paper, so it opens identically on a machine without it (**From file — Save to my papers**). **Texture…** makes a paper from a photo or scan (upload, or search Openverse, ambientCG and Wikimedia Commons — Pexels/Unsplash with your own key): it is de-lit, made seamless, sized in real millimetres (scan dpi or width), tinted by the paper colour, and keeps its credit; see [docs/paper-textures.md](docs/paper-textures.md) (incl. the maintainer bundle script `scripts/fetch-paper-textures.js`)
+- **Pen models (Pen / Paper tab ▸ Pens):** pens stay plain colour + diameter pens by default; a model chip under each pen picks a real plotter pen (Sakura Pigma Micron, Rotring Isograph, Stabilo Point 88, Pentel Sign Pen, Sharpie Ultra Fine, Pilot Precise V5/V7, Pilot Kakuno fountain, Gelly Roll, Uni-ball Signo UM-153, Gelly Roll Metallic / Moonlight / Stardust, Pentel Dual Metallic, Posca, glow marker) and a size, which sets the pen width to the width that pen really lays down. The preview then draws its ink: lumpy bleed edges at the paper-grain scale, pen-down blobs, corner pools, gel skips, width wobble, translucent or opaque ink with overlap darkening. The ink drop button opens **Ink settings** (Bleed, Edge roughness, Opacity, Blobs & pools, Skips, Width jitter, Reset to model defaults). On a realistic paper plain pens bleed at the edges too. Edges are sized in real millimetres, locked to the sheet while you pan and zoom, and drawn in cached, level-of-detail ribbons. Preview only: the SVG plots the pen width in the pen colour (sources and confidence: `docs/pen-models.md`)
 - Color controls use horizontal pills that open native color pickers; thickness controls use sliders with editable mm values and reset buttons
 - ABOUT card is visible by default, toggled by the Algorithm info button, and remembered in saved UI preferences
 - Parameter simplification controls with live line/point counts
@@ -220,6 +221,20 @@ Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar wit
 </details>
 
 ---
+
+### Pens & Paper
+
+The **Pen / Paper** tab previews the plot the way it will come off the plotter: a realistic paper (tooth, fibres, bleed) and real pen models whose ink bleeds, blobs, pools and skips like the pen it names. Everything is a preview; the SVG stays plotter-clean.
+
+<details>
+<summary>Pens & paper details</summary>
+
+- Paper: 11 papers (None plus ten realistic stocks), any colour, Texture and Ink bleed sliders, a per-user default.
+- Pens: plain colour + diameter pens by default; a model chip per pen picks one of 15 real pens and its size (laid width = plotted width). Ink settings tune Bleed, Edge roughness, Opacity, Blobs & pools, Skips and Width jitter per pen.
+- Edge bleed is drawn for plain pens too on realistic paper; edges are mm-locked, deterministic and cached with level of detail.
+- Pen model sources, confidence and the pen × paper formulas: [`docs/pen-models.md`](docs/pen-models.md).
+
+</details>
 
 ### Mobile & Accessibility
 
@@ -653,6 +668,11 @@ CI lives in `.github/workflows/test.yml`:
 ---
 
 ## Release Notes
+
+### Unreleased - Pen models and ink edge bleed (v1.4.31)
+- **Pen models.** Pick a real plotter pen and size per pen (15 models); width becomes the pen's laid width, and the preview draws its ink: bleed edges, blobs, pools, skips, opacity and overlap darkening. Plain pens stay the default and unchanged on paper None.
+- **Ink settings.** Bleed, Edge roughness, Opacity, Blobs & pools, Skips and Width jitter per pen, one undo step per drag, Reset to model defaults.
+- **Ink edge bleed on realistic paper**, plain pens included; mm-locked, deterministic, cached with level of detail. SVG export unchanged.
 
 ### Unreleased - Custom papers (v1.4.30)
 - **My papers.** Save any paper as a custom paper in your browser, tune its realism under Advanced, rename/delete/export it, export all or import a papers file, and use it as the default paper. Documents embed their custom paper, so they open the same on any machine.
