@@ -54,8 +54,10 @@
 
   // HTML -> text without ever parsing it as markup.
   const stripHtml = (v) => String(v || '').replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
+    .replace(/&nbsp;/gi, ' ').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"').replace(/&#39;/gi, "'")
+    // &amp; last, so "&amp;lt;" decodes once to the literal text "&lt;" (no double unescape).
+    .replace(/&amp;/gi, '&');
 
   /** Evaluate a declarative field spec against one item. */
   const field = (item, spec) => {

@@ -1982,6 +1982,12 @@ describe('Vectura.Paper model', () => {
     });
     beforeEach(() => { PTS.clearCache(); runtime.window.localStorage.removeItem('vectura.textureKeys'); });
 
+    test('stripHtml decodes each entity once: "&amp;lt;" stays the literal text "&lt;" (CodeQL double-unescape)', () => {
+      expect(PTS.stripHtml('Bo &amp; Co')).toBe('Bo & Co');
+      expect(PTS.stripHtml('&amp;lt;b&amp;gt; &amp;quot;x&amp;quot;')).toBe('&lt;b&gt; &quot;x&quot;');
+      expect(PTS.stripHtml('<b>&lt;i&gt;</b>')).toBe(' <i> ');
+    });
+
     test('normalise: Openverse / ambientCG / Wikimedia records map to one shape; NC/ND and non-https never survive', () => {
       const ov = PTS.normalise(prov('openverse'), openverseItem('a1'));
       expect(ov).toMatchObject({
@@ -2152,7 +2158,7 @@ describe('Vectura.Paper model', () => {
         ovStatus = 200;
         out = await PTS.search('paper', { fetch, providers: ['openverse', 'ambientcg', 'bundle'] });
         const again = calls.slice(n);
-        expect(again.some((u) => u.includes('ambientcg.com'))).toBe(false); // session cache
+        expect(again.some((u) => new URL(u).hostname === 'ambientcg.com')).toBe(false); // session cache
         expect(again.filter((u) => u.endsWith('index.json'))).toEqual([]); // absent bundle probed once
         expect(again.some((u) => u.includes('openverse'))).toBe(true); // others re-queried (CACHE_MS 0)
       } finally {
