@@ -32,6 +32,7 @@
  *   drawMask(ctx, cfg, kind 'skip'|'feather', { pxPerMm, view, sheet, onReady, alpha, scale }) -> bool
  *   thumbDataURL(type, { px, stroke }) -> data URL (stroke: false = bare surface)
  *   heightField(type, seed, x0Mm, y0Mm, sizePx, bucket) -> Float32Array (pure, tests)
+ *   albedoField(type, x0Mm, y0Mm, sizePx, bucket) -> Float32Array | null (image papers)
  *   bucketFor(pxPerMm), chunkMmFor(bucket), clearCache(), cacheStats()
  *   noise2(seed) -> (x, y) => simplex value (shared with the ink renderer)
  */
@@ -224,7 +225,7 @@
    * slightly directional stretch, and tanh shaping makes flat plateaus with
    * soft valleys rather than pebbles.
    */
-  const heightGrid = (info, seed, x0, y0, w, h, b) => {
+  const proceduralHeightGrid = (info, seed, x0, y0, w, h, b) => {
     const perm = permFor(seed * 7 + 11);
     const out = new Float32Array(w * h);
     const g = Math.max(0.15, info.grainMm || 1);
@@ -242,7 +243,89 @@
     return out;
   };
 
+  // ---- image-based papers (custom papers made from a photo/scan) -----------
+  //
+  // A custom type registered with an `image` block carries a tileable,
+  // de-lit texture (src/render/paper-image.js). Once its maps are decoded the
+  // surface samples them in document mm (tileMm per tile, wrapping), so the
+  // texture is locked to the sheet and zoom-stable like the noise. Past the
+  // image's native resolution the procedural tooth is blended in so the
+  // surface stays sharp. Papers without an image never reach this code.
+
+  const imageMapsFor = (info) => {
+    const PI = Vectura.PaperImage;
+    if (!info || !info.image || !PI || typeof PI.mapsFor !== 'function') return null;
+    const maps = PI.mapsFor(info.image);
+    return maps && maps.tileMm > 0 && maps.w > 0 && maps.h > 0 ? maps : null;
+  };
+
+  // Sample one map field over a w×h pixel grid starting at mm (x0, y0).
+  const imageGrid = (maps, field, x0, y0, w, h, b) => {
+    const PI = Vectura.PaperImage;
+    // Pick the mip level nearest the chunk resolution (no aliasing when
+    // zoomed out): level L has (w / 2^L) / tileMm px per mm.
+    const native = maps.w / maps.tileMm;
+    const mips = PI.mipsFor ? PI.mipsFor(maps) : [maps];
+    const L = Math.max(0, Math.min(mips.length - 1, Math.floor(Math.log2(Math.max(1, native / b)))));
+    const lvl = mips[L];
+    const src = lvl[field];
+    const lw = lvl.w;
+    const lh = lvl.h;
+    const out = new Float32Array(w * h);
+    const k = lw / maps.tileMm; // level px per mm (tiles are square px per mm)
+    // Bilinear wrap sampling with the per-column / per-row taps precomputed
+    // (the grid is axis-aligned), so a chunk costs two lookups per pixel.
+    const cx0 = new Int32Array(w); const cx1 = new Int32Array(w); const ctu = new Float32Array(w);
+    for (let px = 0; px < w; px += 1) {
+      const u = (x0 + (px + 0.5) / b) * k - 0.5;
+      const fu = Math.floor(u);
+      const xa = ((fu % lw) + lw) % lw;
+      cx0[px] = xa; cx1[px] = xa + 1 === lw ? 0 : xa + 1; ctu[px] = u - fu;
+    }
+    for (let py = 0; py < h; py += 1) {
+      const v = (y0 + (py + 0.5) / b) * k - 0.5;
+      const fv = Math.floor(v);
+      const ya = ((fv % lh) + lh) % lh;
+      const r0 = ya * lw;
+      const r1 = (ya + 1 === lh ? 0 : ya + 1) * lw;
+      const tv = v - fv;
+      const row = py * w;
+      for (let px = 0; px < w; px += 1) {
+        const a0 = src[r0 + cx0[px]]; const a1 = src[r0 + cx1[px]];
+        const b0 = src[r1 + cx0[px]]; const b1 = src[r1 + cx1[px]];
+        const tu = ctu[px];
+        const a = a0 + (a1 - a0) * tu;
+        out[row + px] = a + (b0 + (b1 - b0) * tu - a) * tv;
+      }
+    }
+    return out;
+  };
+
+  // Weight of the procedural micro-tooth over an image: 0 while the image is
+  // at least screen-resolution, rising over the next three zoom octaves.
+  const microWeight = (maps, b) => {
+    const native = maps.w / maps.tileMm;
+    if (b <= native) return 0;
+    return Math.min(1, Math.log2(b / native) / 3) * 0.45;
+  };
+
+  const heightGrid = (info, seed, x0, y0, w, h, b) => {
+    const maps = imageMapsFor(info);
+    if (!maps) return proceduralHeightGrid(info, seed, x0, y0, w, h, b);
+    const out = imageGrid(maps, 'height', x0, y0, w, h, b);
+    const mw = microWeight(maps, b);
+    if (mw > 0.01) {
+      const micro = proceduralHeightGrid(info, seed, x0, y0, w, h, b);
+      for (let i = 0; i < out.length; i += 1) out[i] = Math.max(-1, Math.min(1, out[i] * (1 - mw * 0.5) + micro[i] * mw));
+    }
+    return out;
+  };
+
   const heightField = (type, seed, x0, y0, size, bucket) => heightGrid(typeInfo(type), seed, x0, y0, size, size, bucket);
+  const albedoField = (type, x0, y0, size, bucket) => {
+    const maps = imageMapsFor(typeInfo(type));
+    return maps ? imageGrid(maps, 'albedo', x0, y0, size, size, bucket) : null;
+  };
 
   // ---- deterministic per-cell RNG for fibres / speckles --------------------
 
@@ -475,12 +558,21 @@
         }
       }
     }
+    // Image papers: the photo's de-lit albedo is a light/dark delta on the
+    // paper colour (so the colour slider tints it).
+    const imgMaps = imageMapsFor(info);
+    const albedo = imgMaps ? imageGrid(imgMaps, 'albedo', x0, y0, W, W, b) : null;
+    // The photo already shows its paper's tone; its height (high-passed,
+    // percentile-normalised) is steeper than the procedural tooth, so image
+    // papers use a gentler emboss. Procedural papers are untouched (× 1).
+    const albedoGain = 0.55;
+    const imageRelief = imgMaps ? 0.3 : 1;
     const tooth = info.tooth || 0;
     const g = Math.max(0.15, info.grainMm || 1);
     // Emboss: slope per mm along the light diagonal × grain size gives a
     // dimensionless, zoom-independent relief; kept low so the sheet reads as
     // paper, not stucco.
-    const relief = 0.1 * tooth;
+    const relief = imgMaps ? 0.1 * tooth * imageRelief : 0.1 * tooth;
     const diag = (2 * Math.SQRT2) / b;
     const img = imageDataFor(ctx, W, W);
     const skip = makeCanvas(W, W);
@@ -496,10 +588,11 @@
           const hc = hgt[hi];
           const slope = (hgt[hi - HW - 1] - hgt[hi + HW + 1]) / diag;
           let delta = slope * g * relief
-            + hc * 0.035 * tooth
+            + hc * 0.035 * tooth * imageRelief
             + mot[py * W + px] * 0.11 * (info.mottle || 0)
             + fine[py * W + px] * 0.025
             + web[py * W + px] * 0.05;
+          if (albedo) delta += albedo[py * W + px] * albedoGain;
           if (delta < 0) delta *= 0.65;
           if (delta > 0.5) delta = 0.5; else if (delta < -0.5) delta = -0.5;
           const o = (py * W + px) * 4;
@@ -839,7 +932,22 @@
     return url;
   };
 
-  const clearCache = () => {
+  // clearCache(type): drop only that paper type's chunks, thumbnail and
+  // dry-skip threshold (a custom paper's parameters changed); other papers'
+  // cached work stays. No argument: clear everything.
+  const clearType = (type) => {
+    const prefix = `${type}|`;
+    for (const [k, e] of cache) {
+      if (k.startsWith(prefix)) { stats.bytes -= e.bytes || 0; cache.delete(k); pinned.delete(k); }
+    }
+    for (const k of Array.from(queue.keys())) if (k.startsWith(prefix)) queue.delete(k);
+    for (const k of Array.from(thumbCache.keys())) if (k.startsWith(prefix)) thumbCache.delete(k);
+    for (const k of Array.from(pitThresholds.keys())) if (k.startsWith(prefix)) pitThresholds.delete(k);
+    if (stats.bytes < 0) stats.bytes = 0;
+  };
+
+  const clearCache = (type) => {
+    if (typeof type === 'string' && type) { clearType(type); return; }
     cache.clear();
     queue.clear();
     pinned = new Set();
@@ -878,6 +986,7 @@
     drawMask,
     thumbDataURL,
     heightField,
+    albedoField,
     bucketFor,
     chunkMmFor,
     clearCache,

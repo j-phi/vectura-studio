@@ -376,9 +376,17 @@
           ${row('Texture / Ink bleed', 'Surface tooth and how far ink wicks into the sheet')}
           ${row('Set as default', 'New documents start on this paper')}
           ${row('Use default', 'Apply your default paper to this document')}
+          ${row('+ Save as custom…', 'Save this paper to My papers (this browser)')}
+          ${row('⋯ on a custom swatch', 'Rename, delete or export that paper', 'Shift+F10')}
+          ${row('⋯ beside Save as custom', 'Export all my papers / import a papers file')}
+          ${row('Advanced', 'Fine-tune a custom paper (grain, tooth, fibres, bleed…)', 'one undo step per drag')}
+          ${row('Texture… ▸ Upload image', 'Make a paper from a photo/scan (set its dpi or width in mm)')}
+          ${row('Texture… ▸ Search online', 'Openverse, ambientCG, Wikimedia (Pexels/Unsplash with your key)')}
         </tbody>
       </table>
-      ${callout('Paper is saved in the <strong>.vectura</strong> file. Texture and bleed are sized in real millimetres, so a small sheet shows coarser grain than a large one at fit-to-screen. They are a <strong>preview only</strong>: the SVG export stays plotter-clean (no paper, no texture). <strong>None</strong> is a plain sheet in the theme colour. The default paper can also be set in <strong>Document Setup ▸ Paper &amp; Selection</strong>.')}`;
+      ${callout('Paper is saved in the <strong>.vectura</strong> file. Texture and bleed are sized in real millimetres, so a small sheet shows coarser grain than a large one at fit-to-screen. They are a <strong>preview only</strong>: the SVG export stays plotter-clean (no paper, no texture). <strong>None</strong> is a plain sheet in the theme colour. The default paper can also be set in <strong>Document Setup ▸ Paper &amp; Selection</strong>.')}
+      ${callout('<strong>My papers</strong> are saved in this browser. A document on a custom paper stores the paper inside the file, so it opens the same anywhere; if the paper is not in your library the panel offers <strong>Save to my papers</strong>. Export/Import moves your papers between browsers as a <strong>.json</strong> file.')}
+      ${callout('<strong>Photo papers</strong> are de-lit, made seamless and sized in real millimetres; the paper Color tints them. The texture credit (author, licence, source) stays with the paper. If a site blocks direct downloads, use <strong>Open source page</strong> and upload the file.')}`;
     const penModelRows = `
       <table class="help-kbd-table">
         <tbody>

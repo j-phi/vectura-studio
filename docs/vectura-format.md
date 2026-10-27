@@ -44,6 +44,62 @@ Additive field; the format version is unchanged.
   the user's default paper > the built-in default (`Vectura.Paper.resolveProjectPaper`).
 - Paper is a canvas preview only; SVG export never includes it.
 
+#### `settings.paper.custom` (custom papers, v1.4.30)
+
+A project on a custom paper ("My papers") carries the paper's realism with it, so the file
+opens identically on a machine whose library does not have it:
+
+```jsonc
+"paper": {
+  "type": "custom-k3j9x2a",            // /^custom-[a-z0-9]{1,24}$/
+  "color": "#f6f1e4", "texture": 0.8, "bleed": 0.4, "seed": 1,
+  "custom": {
+    "name": "Arches 300 lb rough",     // ≤ 48 chars, control characters stripped
+    "base": "rough",                    // the built-in type it started from
+    "color": "#f6f1e4",                 // its stock colour
+    "params": { "grainMm": 2.3, "grainAngle": 0.5, "grainStretch": 1.3, "tooth": 0.52,
+                "fiberDensity": 0.14, "fiberLenMm": 2.6, "fiberTone": 0.35, "speckle": 0,
+                "mottle": 0.28, "absorbency": 0.6, "bleedMm": 0.13, "feather": 0.4,
+                "dryskip": 0.62, "inkOpacity": 0.93 }
+  }
+}
+```
+
+- `custom` is written whenever `type` is a custom id and read by `Vectura.Paper.normalize`:
+  unknown keys are dropped, every param is clamped to `PAPERS.PARAM_LIMITS` (non-numbers
+  take the base type's value), the colour must be a strict hex.
+- On open the embedded block is registered as `PAPERS.TYPES[type]` (`Paper.registerCustomType`)
+  and **wins over a library entry with the same id**; the Paper panel then shows
+  "From file — Save to my papers" (or "Changed from your saved paper").
+- Older builds keep the `type` verbatim and render a plain sheet in `color`.
+- The same block is embedded in the stored default paper (`vectura.paperDefault`).
+- **Image papers** add `custom.image = { ref, tileMm, w, h, tile, height? }`: `tile`/`height`
+  are base64 PNG/JPEG/WebP data URLs (≤ 1.5 MB, magic bytes checked; anything else rejects the
+  block), `ref` is the content hash `img-…` (recomputed from the tile), `tileMm` the physical
+  tile width (5–2000 mm). Texture attribution goes in `custom.source = { provider, providerId,
+  assetId, title, author, licence, licenceUrl, url, attribution }` (https URLs only). The stored
+  default and library entries keep `{ ref, tileMm, w, h }` only (pixels in IndexedDB); library
+  exports inline them again. See `docs/paper-textures.md`.
+
+### My papers library file (`vectura-papers`, v1)
+
+`localStorage['vectura.customPapers']` and the Export / Import files share one shape
+(`src/core/user-library-store.js`, `Vectura.Paper.customLibrary()`):
+
+```jsonc
+{ "schema": "vectura-papers", "version": 1, "appVersion": "1.4.30",
+  "papers": [ { "id": "custom-k3j9x2a", "name": "…", "base": "rough", "color": "#f6f1e4",
+                "defaultTexture": 0.8, "defaultBleed": 0.4, "params": { /* as above */ } } ] }
+```
+
+Import (merge only): papers files with images may be up to 64 MB (each tile re-validated,
+decoded and stored in IndexedDB; an unusable image rejects that paper); without images, files
+over 512 KB, invalid JSON, another `schema`, a higher `version`
+or no papers are refused with a message; each paper is rebuilt from whitelisted keys
+(malformed ids get a fresh `custom-xxxxxxx`); content identical to a saved paper is
+skipped; a clashing id gets a new id and a clashing name becomes "Name (2)". At most 64
+papers. Storage failures (quota, private mode) are reported, never thrown.
+
 ### Pen model fields in `settings.pens[]` (pen models, v1.4.31)
 
 Additive; the format version is unchanged. A plain pen keeps exactly
