@@ -80,6 +80,13 @@
         height: 'height',
       }),
       file: Object.freeze({ path: 'url' }),
+      // When the original's host refuses the app (most Flickr originals),
+      // fall back to Openverse's own image proxy (same CORS-enabled API;
+      // may be lower resolution). `full_size` is from the API source, not
+      // verified live.
+      proxyFile: Object.freeze({ tpl: 'https://api.openverse.org/v1/images/{id}/thumb/?full_size=true&compressed=false' }),
+      // Hosts that allow the app to load originals directly ("Direct" badge).
+      corsHosts: Object.freeze(['upload.wikimedia.org']),
       cors: Object.freeze({ api: 'yes', files: 'unverified' }),
       verified: 'Response fields from the Openverse public schema; API CORS from its source (CORS_ALLOW_ALL_ORIGINS). Originals live on provider hosts (Flickr, Wikimedia…): CORS varies. Mock-tested only.',
     }),
@@ -113,6 +120,35 @@
         members: Object.freeze({ albedo: '_Color\\.(jpe?g|png)$', height: '_Displacement\\.(jpe?g|png)$' }),
       }),
       physicalMm: Object.freeze({ path: 'dimensions.width', scale: 10 }), // cm → mm; 0 = unknown
+      // Single-operator site: results are cached for the whole session.
+      cacheMs: Infinity,
+      // v3 is documented but unverified live; on error or a changed shape,
+      // the v2 `full_json` shape (fetched live 2026-10-26) is used instead.
+      fallback: Object.freeze({
+        search: Object.freeze({
+          url: 'https://ambientcg.com/api/v2/full_json?type=Material&q={query}&limit=100&include=imageData,downloadData,dimensionsData',
+          results: 'foundAssets',
+        }),
+        fields: Object.freeze({
+          id: 'assetId',
+          title: 'displayName',
+          thumbUrl: 'previewImage.512-JPG-FFFFFF',
+          thumbUrlAlt: 'previewImage.256-JPG-FFFFFF',
+          sourceUrl: 'shortLink',
+          author: '=ambientCG',
+          attribution: Object.freeze({ tpl: '{displayName} from ambientCG.com (CC0 1.0)' }),
+        }),
+        file: Object.freeze({ tpl: 'https://f003.backblazeb2.com/file/ambientCG-Web/media/surface-preview/{assetId}/{assetId}_SQ_Color.jpg' }),
+        heightFile: Object.freeze({ tpl: 'https://f003.backblazeb2.com/file/ambientCG-Web/media/surface-preview/{assetId}/{assetId}_SQ_Displacement.jpg' }),
+        hires: Object.freeze({
+          from: 'downloadFolders.default.downloadFiletypeCategories.zip.downloads',
+          where: Object.freeze({ attribute: '2K-JPG' }),
+          field: 'fullDownloadPath',
+          archive: 'zip',
+          members: Object.freeze({ albedo: '_Color\\.(jpe?g|png)$', height: '_Displacement\\.(jpe?g|png)$' }),
+        }),
+        physicalMm: Object.freeze({ path: 'dimensionX', scale: 10 }),
+      }),
       cors: Object.freeze({ api: 'unverified', files: 'unverified' }),
       verified: 'v2 response shape fetched 2026-10-26 (q=paper: Paper001–006, Cardboard…); v3 fields + preview-map URLs from the research record (Paper004 dimensions 30 cm). CORS unknown. Mock-tested only.',
     }),
@@ -142,6 +178,7 @@
         mime: 'imageinfo.0.mime',
       }),
       file: Object.freeze({ path: 'imageinfo.0.url' }),
+      corsHosts: Object.freeze(['upload.wikimedia.org']),
       mimeAllow: '^image/(jpeg|png|webp)$',
       cors: Object.freeze({ api: 'yes', files: 'unverified' }),
       verified: 'Standard MediaWiki imageinfo schema; API CORS via origin=* (MediaWiki docs). upload.wikimedia.org CORS unverified. Mock-tested only.',

@@ -250,8 +250,12 @@
     ACCEPT: 'image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp',
     fileMaxBytes: 40 * 1024 * 1024,   // an uploaded / downloaded source image
     minPx: 16,
-    maxPx: 16384,                     // per side, before downscaling
+    maxPx: 16384,                     // upload: per side (read from the header, before decoding)
+    maxPixels: 64 * 1024 * 1024,      // upload: total pixels (no decompression bombs)
+    resizeOnDecodePixels: 24e6,       // above this, decode straight to the working size (memory)
+    embedMaxPx: 2048,                 // an embedded/stored tile: per side (2 × tileMaxPx)
     workMaxPx: 2048,                  // processing size (de-light, tiling)
+    sliceMs: 12,                      // processing time slice before yielding to the UI
     tileMaxPx: 1024,                  // embedded tile size (per side)
     tileMaxBytes: 1536 * 1024,        // embedded tile (+ height) budget
     importMaxBytes: 64 * 1024 * 1024, // a papers file with images

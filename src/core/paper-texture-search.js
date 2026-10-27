@@ -152,6 +152,13 @@
       const hu = pickFile(raw, provider.hires, base);
       if (hu) out.hires = { url: hu, archive: provider.hires.archive || null, members: { ...(provider.hires.members || {}) } };
     }
+    const proxyUrl = provider.proxyFile ? pickFile(raw, provider.proxyFile, base) : null;
+    if (proxyUrl) out.proxyUrl = proxyUrl;
+    // "Direct": the image host is known to allow the app to load it.
+    try {
+      const host = new G.URL(fullUrl).host;
+      out.direct = out.cors === 'yes' || (Array.isArray(provider.corsHosts) && provider.corsHosts.includes(host));
+    } catch (_e) { out.direct = out.cors === 'yes'; }
     if (provider.onUse) {
       const ou = safeUrl(getPath(raw, provider.onUse.path));
       if (ou) out.onUse = { url: ou, auth: Boolean(provider.onUse.auth) };
@@ -236,18 +243,21 @@
 
   // The curated bundle: a same-origin index (absent unless a maintainer ran
   // scripts/fetch-paper-textures.js). Probed once per session.
+  // null = not probed yet; false = absent (remembered for the session, so
+  // the 404 is requested once, not on every search).
   let bundleIndex = null;
   const loadBundle = async (provider, doFetch) => {
-    if (bundleIndex) return bundleIndex;
+    if (bundleIndex !== null) return bundleIndex || null;
     try {
       const res = await doFetch(provider.index, { credentials: 'same-origin' });
-      if (!res || !res.ok) return null;
+      if (!res || !res.ok) { bundleIndex = false; return null; }
       const json = await res.json();
-      if (!json || json.schema !== 'vectura-paper-texture-bundle' || !Array.isArray(json.textures)) return null;
+      if (!json || json.schema !== 'vectura-paper-texture-bundle' || !Array.isArray(json.textures)) { bundleIndex = false; return null; }
       const base = (G.location && G.location.href) ? new G.URL(provider.index, G.location.href).href : null;
       bundleIndex = { items: json.textures, base };
       return bundleIndex;
     } catch (_e) {
+      bundleIndex = false;
       return null;
     }
   };
@@ -262,7 +272,7 @@
     const idx = await loadBundle(provider, doFetch);
     if (!idx) return { results: [], absent: true };
     const words = String(query || '').toLowerCase().split(/\s+/).filter((w) => w && w !== 'paper' && w !== 'texture');
-    const spec = { ...provider, fields: BUNDLE_FIELDS, file: { path: 'albedo' }, heightFile: { path: 'height' }, physicalMm: { path: 'physicalMm' } };
+    const spec = { ...provider, fields: BUNDLE_FIELDS, file: { path: 'albedo' }, heightFile: { path: 'heightMap' }, physicalMm: { path: 'physicalMm' } };
     const results = idx.items
       .filter((it) => it && typeof it === 'object')
       .filter((it) => !words.length || words.every((w) => `${it.title || ''} ${(it.tags || []).join(' ')} ${it.source || ''}`.toLowerCase().includes(w)))
@@ -272,13 +282,10 @@
     return { results };
   };
 
-  const searchOne = async (provider, query, opts) => {
+  // One HTTP query of one provider record (or its `fallback` record).
+  const queryProvider = async (provider, query, opts) => {
     const C = conf();
-    if (provider.kind === 'bundle') return searchBundle(provider, query, opts);
     const doFetch = opts.fetch || G.fetch;
-    const key = `${provider.id}|${query}`;
-    const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < (C.CACHE_MS || 0)) return { results: hit.results };
     if (typeof doFetch !== 'function') return { error: 'network' };
     const { headers, key: apiKey } = authInit(provider);
     const url = fill(provider.search && provider.search.url, {
@@ -288,18 +295,21 @@
     const t = withTimeout(C.TIMEOUT_MS || 12000, opts.signal);
     try {
       const res = await doFetch(url, { signal: t.signal, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', headers });
-      if (!res || !res.ok) return { error: res && (res.status === 401 || res.status === 403) ? 'auth' : 'http' };
+      if (!res || !res.ok) {
+        const st = res && res.status;
+        return { error: st === 429 ? 'rate-limited' : (st === 401 || st === 403) ? 'auth' : 'http' };
+      }
       let json;
       try { json = await res.json(); } catch (_e) { return { error: 'parse' }; }
       let list = getPath(json, provider.search.results);
       if (provider.search.resultsAreMap && list && typeof list === 'object' && !Array.isArray(list)) {
         list = Object.keys(list).map((k) => list[k]);
       }
-      const results = (Array.isArray(list) ? list : [])
+      if (!Array.isArray(list)) return { error: 'shape' };
+      const results = list
         .map((raw) => normalise(provider, raw))
         .filter(Boolean)
         .slice(0, C.MAX_RESULTS || 24);
-      cache.set(key, { at: Date.now(), results });
       return { results };
     } catch (_e) {
       if (opts.signal && opts.signal.aborted) return { error: 'aborted' };
@@ -307,6 +317,25 @@
     } finally {
       t.done();
     }
+  };
+
+  const searchOne = async (provider, query, opts) => {
+    const C = conf();
+    if (provider.kind === 'bundle') return searchBundle(provider, query, opts);
+    const key = `${provider.id}|${query}`;
+    const hit = cache.get(key);
+    const ttl = provider.cacheMs != null ? provider.cacheMs : (C.CACHE_MS || 0);
+    if (hit && Date.now() - hit.at < ttl) return { results: hit.results };
+    let out = await queryProvider(provider, query, opts);
+    // A documented-but-unverified API that fails or changes shape falls back
+    // to the provider's alternative (e.g. ambientCG v3 -> the v2 shape that
+    // was observed live).
+    if (out.error && provider.fallback && !['aborted', 'rate-limited', 'auth'].includes(out.error)) {
+      const alt = await queryProvider({ ...provider, ...provider.fallback, fallback: null }, query, opts);
+      if (!alt.error) out = alt;
+    }
+    if (!out.error) cache.set(key, { at: Date.now(), results: out.results });
+    return out;
   };
 
   /** Query the enabled providers in parallel. Never throws. */
@@ -428,7 +457,17 @@
       try { Promise.resolve(doFetch(result.onUse.url, { mode: 'cors', credentials: 'omit', headers: init.headers })).catch(() => {}); } catch (_e) { /* noop */ }
     }
     try {
-      const blob = await get(result.fullUrl);
+      let blob;
+      let via = 'direct';
+      try {
+        blob = await get(result.fullUrl);
+      } catch (err) {
+        // The original's host refused the app: use the provider's own
+        // (CORS-enabled, possibly lower-resolution) image proxy if it has one.
+        if (!(err && err.reason === 'cors' && result.proxyUrl && !opts.hires)) throw err;
+        blob = await get(result.proxyUrl);
+        via = 'proxy';
+      }
       if (result.archive === 'zip') {
         const files = await unzip(await blob.arrayBuffer(), result.members || {}, max);
         if (!files.albedo) return { ok: false, reason: 'archive' };
@@ -438,7 +477,7 @@
       if (typeof result.heightUrl === 'string' && result.heightUrl) {
         try { height = await get(result.heightUrl); } catch (_e) { height = null; }
       }
-      return { ok: true, albedo: blob, height };
+      return { ok: true, albedo: blob, height, via };
     } catch (err) {
       return { ok: false, reason: (err && err.reason) || 'network' };
     } finally {

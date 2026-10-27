@@ -268,12 +268,33 @@
     const L = Math.max(0, Math.min(mips.length - 1, Math.floor(Math.log2(Math.max(1, native / b)))));
     const lvl = mips[L];
     const src = lvl[field];
+    const lw = lvl.w;
+    const lh = lvl.h;
     const out = new Float32Array(w * h);
-    const k = lvl.w / maps.tileMm; // level px per mm (tiles are square px per mm)
+    const k = lw / maps.tileMm; // level px per mm (tiles are square px per mm)
+    // Bilinear wrap sampling with the per-column / per-row taps precomputed
+    // (the grid is axis-aligned), so a chunk costs two lookups per pixel.
+    const cx0 = new Int32Array(w); const cx1 = new Int32Array(w); const ctu = new Float32Array(w);
+    for (let px = 0; px < w; px += 1) {
+      const u = (x0 + (px + 0.5) / b) * k - 0.5;
+      const fu = Math.floor(u);
+      const xa = ((fu % lw) + lw) % lw;
+      cx0[px] = xa; cx1[px] = xa + 1 === lw ? 0 : xa + 1; ctu[px] = u - fu;
+    }
     for (let py = 0; py < h; py += 1) {
       const v = (y0 + (py + 0.5) / b) * k - 0.5;
+      const fv = Math.floor(v);
+      const ya = ((fv % lh) + lh) % lh;
+      const r0 = ya * lw;
+      const r1 = (ya + 1 === lh ? 0 : ya + 1) * lw;
+      const tv = v - fv;
+      const row = py * w;
       for (let px = 0; px < w; px += 1) {
-        out[py * w + px] = PI.sampleWrap(src, lvl.w, lvl.h, (x0 + (px + 0.5) / b) * k - 0.5, v);
+        const a0 = src[r0 + cx0[px]]; const a1 = src[r0 + cx1[px]];
+        const b0 = src[r1 + cx0[px]]; const b1 = src[r1 + cx1[px]];
+        const tu = ctu[px];
+        const a = a0 + (a1 - a0) * tu;
+        out[row + px] = a + (b0 + (b1 - b0) * tu - a) * tv;
       }
     }
     return out;
@@ -292,7 +313,7 @@
     if (!maps) return proceduralHeightGrid(info, seed, x0, y0, w, h, b);
     const out = imageGrid(maps, 'height', x0, y0, w, h, b);
     const mw = microWeight(maps, b);
-    if (mw > 0) {
+    if (mw > 0.01) {
       const micro = proceduralHeightGrid(info, seed, x0, y0, w, h, b);
       for (let i = 0; i < out.length; i += 1) out[i] = Math.max(-1, Math.min(1, out[i] * (1 - mw * 0.5) + micro[i] * mw));
     }
@@ -909,7 +930,22 @@
     return url;
   };
 
-  const clearCache = () => {
+  // clearCache(type): drop only that paper type's chunks, thumbnail and
+  // dry-skip threshold (a custom paper's parameters changed); other papers'
+  // cached work stays. No argument: clear everything.
+  const clearType = (type) => {
+    const prefix = `${type}|`;
+    for (const [k, e] of cache) {
+      if (k.startsWith(prefix)) { stats.bytes -= e.bytes || 0; cache.delete(k); pinned.delete(k); }
+    }
+    for (const k of Array.from(queue.keys())) if (k.startsWith(prefix)) queue.delete(k);
+    for (const k of Array.from(thumbCache.keys())) if (k.startsWith(prefix)) thumbCache.delete(k);
+    for (const k of Array.from(pitThresholds.keys())) if (k.startsWith(prefix)) pitThresholds.delete(k);
+    if (stats.bytes < 0) stats.bytes = 0;
+  };
+
+  const clearCache = (type) => {
+    if (typeof type === 'string' && type) { clearType(type); return; }
     cache.clear();
     queue.clear();
     pinned = new Set();

@@ -258,6 +258,21 @@ test('image paper: upload a paper photo, save the project, reopen on a clean pro
     await page2.waitForFunction(() => window.Vectura.PaperTexture.cacheStats().queued === 0, null, { timeout: 15000 });
     const textured = await sheetPixel(page2);
     expect(textured.variance).toBeGreaterThan(2);
+
+    // From file -> Save to my papers -> real reload -> the library paper still has its pixels.
+    await page2.locator('.right-pane-tab[data-tab="pens"]').click();
+    await expect(page2.locator('#paper-custom-status')).toHaveAttribute('data-state', 'from-file');
+    await page2.locator('#btn-paper-custom-save').click();
+    await expect(page2.locator('#paper-custom-status')).toHaveAttribute('data-state', 'saved');
+    expect(await page2.evaluate((ref) => window.Vectura.TextureStore.shared().get(ref).then((r) => Boolean(r && r.tile)), paper.custom.image.ref)).toBe(true);
+    await boot(page2);
+    await page2.locator('.right-pane-tab[data-tab="pens"]').click();
+    await page2.locator(`.paper-swatch[data-paper-type="${paper.type}"]`).click();
+    await page2.waitForFunction((t) => {
+      const p = window.Vectura.SETTINGS.paper;
+      return p.type === t && p.custom.image.tile && window.Vectura.PaperImage.mapsFor(window.Vectura.PAPERS.TYPES[t].image);
+    }, paper.type, { timeout: 20000 });
+    await expect(page2.locator('#paper-custom-status')).toHaveAttribute('data-state', 'saved');
   } finally {
     await ctx2.close();
   }

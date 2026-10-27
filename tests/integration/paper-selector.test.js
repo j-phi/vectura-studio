@@ -59,7 +59,15 @@ const makeFakeIdb = () => {
 
 const bytesUrl = (mime, bytes) => `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-const tinyPng = (salt = 1) => bytesUrl('image/png', [...PNG_SIG, 0, 0, 0, 13, salt, salt + 1, salt + 2, 7, 7, 7, 7, 7]);
+const be32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+// Real image HEADERS (no pixel data): enough for the type sniff and the
+// header size check that runs before any decode.
+const pngBytes = (w, h, extra = []) => [...PNG_SIG, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, ...be32(w), ...be32(h), 8, 0, 0, 0, 0, ...extra];
+const jpegBytes = (w, h) => [0xff, 0xd8, 0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0,
+  0xff, 0xc0, 0, 17, 8, (h >> 8) & 255, h & 255, (w >> 8) & 255, w & 255, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1];
+const webpBytes = (w, h) => [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x58, 10, 0, 0, 0, 0, 0, 0, 0,
+  (w - 1) & 255, ((w - 1) >> 8) & 255, ((w - 1) >> 16) & 255, (h - 1) & 255, ((h - 1) >> 8) & 255, ((h - 1) >> 16) & 255];
+const tinyPng = (salt = 1) => bytesUrl('image/png', pngBytes(16, 16, [salt, salt + 1, salt + 2, 7, 7, 7, 7, 7]));
 
 // ---- from the former paper-preference-migration.test.js ----
 {
@@ -709,7 +717,12 @@ describe('Paper panel (Pen / Paper tab)', () => {
         const attr = document.getElementById('paper-attribution');
         expect(attr.hidden).toBe(false);
         expect(attr.textContent).toContain('CC BY-SA 4.0');
-        expect(attr.querySelector('a').getAttribute('href')).toBe(source.url);
+        // The licence is linked (CC BY requires it) and so is the source.
+        const links = Array.from(attr.querySelectorAll('a')).map((a) => [a.textContent, a.getAttribute('href'), a.getAttribute('rel')]);
+        expect(links).toEqual([
+          ['CC BY-SA 4.0', source.licenceUrl, 'noopener noreferrer'],
+          ['Source page', source.url, 'noopener noreferrer'],
+        ]);
       } finally {
         PI.processImport = origProcess;
       }
@@ -765,11 +778,156 @@ describe('Paper panel (Pen / Paper tab)', () => {
       expect(S.paper.type).toBe(rough.id);
     });
 
+    test('BLOCKER: a from-file image paper saved to My papers stores its pixels; after a reload the library paper hydrates (and says so when the image is missing)', async () => {
+      const PI = window.Vectura.PaperImage;
+      const TS = window.Vectura.TextureStore;
+      PI.setDecoder(async () => ({ data: new Uint8ClampedArray(16 * 16 * 4).fill(200), w: 16, h: 16 }));
+      const tile = tinyPng(51);
+      const id = 'custom-fromfil1';
+      const before = S.paper.type;
+      try {
+        // A document from another machine: image paper embedded, not in the library, nothing in IndexedDB.
+        app.setProjectPaper({ type: id, color: '#ece6d8', texture: 0.8, bleed: 0.5, custom: { name: 'Shop photo', base: 'cold-press', color: '#ece6d8', params: { ...window.Vectura.PAPERS.TYPES['cold-press'] }, image: { tile, tileMm: 90, w: 16, h: 16 } } }, { history: false });
+        const ref = S.paper.custom.image.ref;
+        expect(await TS.shared().get(ref)).toBeNull();
+        expect(document.getElementById('paper-custom-status').dataset.state).toBe('from-file');
+        document.getElementById('btn-paper-custom-save').click();
+        expect(await app.ui._paperSavePending).toBeTruthy();
+        expect((await TS.shared().get(ref)).tile).toBe(tile); // RED before the fix: null
+        expect(P().customLibrary().get(id).image).toEqual({ ref, tileMm: 90, w: 16, h: 16 });
+        // Simulated reload: runtime registry + decoded maps gone, document on another paper.
+        app.setProjectPaper(P().forType('kraft'), { history: false });
+        P().unregisterCustomType(id);
+        PI.clearMaps();
+        app.ui._paperResync();
+        const lean = P().fromCustomEntry(P().customLibrary().get(id));
+        expect(lean.custom.image.tile).toBeUndefined();
+        app.setProjectPaper(lean, { history: false });
+        expect(await P().loadImageFor(id, window.Vectura.PAPERS.TYPES[id].image)).toBe(true);
+        expect(S.paper.custom.image.tile).toBe(tile); // hydrated: the document is portable again
+        // Image gone from this browser -> visible "missing" state with a re-upload action.
+        await TS.shared().remove(ref);
+        app.setProjectPaper(P().forType('kraft'), { history: false });
+        P().unregisterCustomType(id);
+        PI.clearMaps();
+        app.setProjectPaper(P().fromCustomEntry(P().customLibrary().get(id)), { history: false });
+        await P().loadImageFor(id, window.Vectura.PAPERS.TYPES[id].image);
+        expect(window.Vectura.PAPERS.TYPES[id].imageMissing).toBe(true);
+        app.ui.refreshPaperUI();
+        expect(document.getElementById('paper-custom-status').dataset.state).toBe('missing');
+        const btn = document.getElementById('btn-paper-custom-save');
+        expect(btn.hidden).toBe(false);
+        expect(btn.textContent).toBe('Re-upload image…');
+        // Saving a paper whose pixels are gone is refused (no lean entry pointing at nothing).
+        expect(await P().storeImage(S.paper.custom.image)).toEqual({ ok: false, reason: 'image-missing' });
+      } finally {
+        P().customLibrary().remove(id);
+        const back = P().customLibrary().list().find((e) => e.name === 'Rough & ready');
+        if (back) document.querySelector(`.paper-swatch[data-paper-type="${back.id}"]`).click();
+        PI.setDecoder(null);
+        expect(S.paper.type).toBe(before);
+      }
+    });
+
+    test('no IndexedDB: an image paper still applies to the document (embedded) with a notice, and is not added to My papers', async () => {
+      const TS = window.Vectura.TextureStore;
+      const origShared = TS.shared;
+      const count = P().customLibrary().list().length;
+      const before = S.paper.type;
+      TS.shared = () => TS.create({ indexedDB: () => null });
+      try {
+        const tile = tinyPng(61);
+        const image = { tile, tileMm: 120, w: 16, h: 16, ref: window.Vectura.PaperImage.refFor(tile, '') };
+        expect(await actions().createImagePaper({ image, meanColor: '#e0d8c8', name: 'Private photo', source: null })).toBe(true);
+        expect(P().customLibrary().list()).toHaveLength(count);
+        expect(S.paper.custom.image.tile).toBe(tile);
+        expect(S.paper.custom.name).toBe('Private photo');
+        const toasts = Array.from(document.querySelectorAll('.vectura-toast')).map((t) => t.textContent);
+        expect(toasts.some((t) => /document only/i.test(t))).toBe(true);
+      } finally {
+        TS.shared = origShared;
+        app.undo();
+        expect(S.paper.type).toBe(before);
+      }
+    });
+
+    test('another tab saving to My papers shows up here (storage event)', () => {
+      const KEYL = 'vectura.customPapers';
+      const doc = JSON.parse(window.localStorage.getItem(KEYL));
+      doc.papers.push({ id: 'custom-othertab1', name: 'From the other tab', base: 'kraft', color: '#c39a6b', defaultTexture: 0.7, defaultBleed: 0.5, params: { tooth: 0.2 } });
+      window.localStorage.setItem(KEYL, JSON.stringify(doc)); // a raw write, as another tab would
+      expect(document.querySelector('.paper-swatch[data-paper-type="custom-othertab1"]')).toBeNull();
+      window.dispatchEvent(new window.StorageEvent('storage', { key: KEYL }));
+      expect(document.querySelector('.paper-swatch[data-paper-type="custom-othertab1"]')).toBeTruthy();
+      P().customLibrary().remove('custom-othertab1');
+    });
+
+    test('deleting an image paper deletes its stored image once nothing references it', async () => {
+      if (!window.indexedDB) window.indexedDB = makeFakeIdb();
+      const TS = window.Vectura.TextureStore;
+      const tile = tinyPng(71);
+      const image = { tile, tileMm: 60, w: 16, h: 16, ref: window.Vectura.PaperImage.refFor(tile, '') };
+      expect((await P().storeImage(image)).ok).toBe(true);
+      const put = P().customLibrary().put({ name: 'Throwaway', base: 'cold-press', color: '#eeeeee', params: { tooth: 0.3 }, image: { ref: image.ref, tileMm: 60 } });
+      actions().deleteCustom(put.item.id);
+      Array.from(document.querySelectorAll('.vectura-dialog-footer button')).filter((b) => b.textContent === 'Delete').pop().click();
+      expect(await app.ui._paperReleasePending).toBe(true);
+      expect(await TS.shared().get(image.ref)).toBeNull();
+    });
+
+    test('closing the import dialog while processing never applies the paper later, and never closes another modal', async () => {
+      const PI = window.Vectura.PaperImage;
+      const origProcess = PI.processImport;
+      let release;
+      let sawSignal = null;
+      PI.processImport = (blob, opts) => { sawSignal = opts.signal; return new Promise((res) => { release = res; }); };
+      const created = [];
+      const origCreate = actions().createImagePaper;
+      try {
+        const count = P().customLibrary().list().length;
+        const type = S.paper.type;
+        const blobIn = new window.Blob([new Uint8Array([0xff, 0xd8, 0xff])], { type: 'image/jpeg' });
+        actions().openImport({ blob: blobIn, name: 'Slow photo' });
+        document.getElementById('paper-import-create').click();
+        const pending = app.ui._paperImageImport.promise;
+        // Esc / ✕ while processing.
+        app.ui.closeModal();
+        expect(sawSignal.aborted).toBe(true);
+        // Another modal is open by the time processing "finishes".
+        app.ui.openModal({ title: 'Other dialog', body: '<p>other</p>' });
+        const tile = tinyPng(81);
+        release({ image: { tile, tileMm: 50, w: 16, h: 16, ref: PI.refFor(tile, '') }, meanColor: '#ffffff' });
+        expect(await pending).toBe(false);
+        expect(P().customLibrary().list()).toHaveLength(count);
+        expect(S.paper.type).toBe(type);
+        expect(document.getElementById('modal-overlay').classList.contains('open')).toBe(true);
+        expect(app.ui.modal.titleEl.textContent).toBe('Other dialog');
+        app.ui.closeModal();
+      } finally {
+        PI.processImport = origProcess;
+        expect(created).toEqual([]);
+        expect(actions().createImagePaper).toBe(origCreate);
+      }
+    });
+
+    test('a default paper that is not in My papers is labelled as the default, not "From file"', () => {
+      const before = S.paper.type;
+      const def = { type: 'custom-defonly1', color: '#efe9dc', texture: 0.7, bleed: 0.5, custom: { name: 'Default only', base: 'rough', color: '#efe9dc', params: { tooth: 0.4 } } };
+      app.setPaperDefault(def);
+      app.setProjectPaper(def, { history: true });
+      expect(document.getElementById('paper-custom-status').dataset.state).toBe('default-only');
+      expect(document.getElementById('paper-custom-status-text').textContent).toBe('Your default paper — not in My papers');
+      app.setPaperDefault(null);
+      expect(document.getElementById('paper-custom-status').dataset.state).toBe('from-file');
+      app.undo();
+      expect(S.paper.type).toBe(before);
+    });
+
     test('deleting the custom paper in use keeps the document working ("From file — Save to my papers")', () => {
       const id = S.paper.type;
       const params = { ...S.paper.custom.params };
       actions().deleteCustom(id);
-      const confirm = Array.from(document.querySelectorAll('.vectura-dialog-footer button')).find((b) => b.textContent === 'Delete');
+      const confirm = Array.from(document.querySelectorAll('.vectura-dialog-footer button')).filter((b) => b.textContent === 'Delete').pop();
       confirm.click();
       expect(P().customLibrary().has(id)).toBe(false);
       // Still the document's paper, still realistic, still embedded with its params.
@@ -1128,6 +1286,24 @@ describe('renderer paper hooks', () => {
     }
     expect(PT.cacheStats().builds).toBe(builds);
     expect(PT.cacheStats().bytes).toBeLessThanOrEqual(window.Vectura.PAPERS.LIMITS.hardCacheBytes);
+  });
+
+  test('clearCache(type) drops only that paper\'s chunks (a custom paper edit does not rebuild every paper)', () => {
+    PT.clearCache();
+    const v = bigView();
+    PT.drawSurface(mmCtx(), { ...Paper.forType('rough') }, v);
+    PT.drawSurface(mmCtx(), { ...Paper.forType('kraft') }, v);
+    PT.flush();
+    const keys = () => PT.cacheStats().keys;
+    expect(keys().some((k) => k.startsWith('rough|'))).toBe(true);
+    expect(keys().some((k) => k.startsWith('kraft|'))).toBe(true);
+    PT.clearCache('rough');
+    expect(keys().some((k) => k.startsWith('rough|'))).toBe(false);
+    expect(keys().some((k) => k.startsWith('kraft|'))).toBe(true);
+    expect(PT.cacheStats().bytes).toBeGreaterThan(0);
+    // Witness: the no-argument form still clears everything.
+    PT.clearCache();
+    expect(keys()).toEqual([]);
   });
 
   test('switching paper mid-refine drops the old paper\'s queued work; nearest-the-centre first', () => {
@@ -1700,7 +1876,7 @@ describe('Vectura.Paper model', () => {
       const bad = (image) => JSON.stringify({ schema: 'vectura-papers', version: 1, papers: [{ ...IMG_PAPER(5), image }] });
       let r = await Paper.importCustomPapers(bad({ tile: 'data:image/svg+xml;base64,PHN2Zz4=', tileMm: 50 }));
       expect(r).toMatchObject({ ok: true, rejected: 1, added: [] });
-      r = await Paper.importCustomPapers(bad({ tile: bytesUrl('image/png', [...PNG_SIG, 0, 0, 0, 13, 0xde, 0xad, 2, 3]), tileMm: 50 }));
+      r = await Paper.importCustomPapers(bad({ tile: bytesUrl('image/png', pngBytes(16, 16, [0xde, 0xad, 2, 3])), tileMm: 50 }));
       expect(r).toMatchObject({ ok: true, rejected: 1, added: [] }); // fails to decode
       r = await Paper.importCustomPapers(bad({ ref: 'img-abcdefgh12', tileMm: 50 })); // lean, unknown image
       expect(r).toMatchObject({ ok: true, rejected: 1, added: [] });
@@ -1710,6 +1886,56 @@ describe('Vectura.Paper model', () => {
       r = await Paper.importCustomPapers(bad(imageBlock(6)));
       expect(r).toEqual({ ok: false, reason: 'quota' });
       expect(Paper.customLibrary().list()).toEqual([]);
+    });
+
+    test('uploads are size-checked from the header before decoding (decompression bombs never decode)', async () => {
+      let decodes = 0;
+      V.PaperImage.setDecoder(async () => { decodes += 1; return decoded(); });
+      const blob = (bytes) => new Blob([Buffer.from(bytes)]);
+      expect(await V.PaperImage.checkBlob(blob(pngBytes(16384, 16384)))).toEqual({ ok: false, reason: 'dimensions' }); // 268 MP
+      expect(await V.PaperImage.checkBlob(blob(pngBytes(20000, 100)))).toEqual({ ok: false, reason: 'dimensions' });
+      expect(await V.PaperImage.checkBlob(blob(jpegBytes(9000, 9000)))).toEqual({ ok: false, reason: 'dimensions' });
+      expect(await V.PaperImage.checkBlob(blob(PNG_SIG))).toEqual({ ok: false, reason: 'dimensions' }); // no header
+      expect(await V.PaperImage.checkBlob(blob(pngBytes(4000, 3000)))).toEqual({ ok: true, mime: 'image/png', w: 4000, h: 3000 });
+      await expect(V.PaperImage.processImport(blob(pngBytes(16384, 16384)))).rejects.toMatchObject({ reason: 'dimensions' });
+      expect(decodes).toBe(0);
+      // An embedded tile declaring a huge canvas is refused by normalize (never reaches decode).
+      const bomb = Paper.normalize({ type: 'custom-bomb1', custom: { ...IMG_PAPER(1), image: { tile: bytesUrl('image/png', pngBytes(16384, 16384)), tileMm: 50 } } });
+      expect(bomb.custom).toBeUndefined();
+      expect(decodes).toBe(0);
+    });
+
+    test('a validated tile is not re-validated or re-hashed on every normalize / setActive (slider cost)', () => {
+      const block = { ...IMG_PAPER(31) };
+      const first = Paper.normalize({ type: 'custom-cache1', color: '#eeeeee', custom: block });
+      const before = V.PaperImage.stats();
+      for (let i = 0; i < 5; i += 1) {
+        const cur = Paper.effective && V.SETTINGS.paper ? V.SETTINGS.paper : first;
+        Paper.setActive({ ...first, custom: { ...first.custom, params: { ...first.custom.params, tooth: 0.1 + i * 0.05 } } });
+        Paper.normalize(cur);
+        Paper.equals(first, V.SETTINGS.paper);
+      }
+      expect(V.PaperImage.stats()).toEqual(before);
+      // Mutation witness: a different tile string IS validated and hashed.
+      Paper.normalize({ type: 'custom-cache2', custom: { ...IMG_PAPER(32) } });
+      const after = V.PaperImage.stats();
+      expect(after.validations).toBeGreaterThan(before.validations);
+      expect(after.hashes).toBeGreaterThan(before.hashes);
+    });
+
+    test('storeImage refuses a lean block whose pixels are not stored; releaseImageIfUnused keeps referenced images', async () => {
+      const full = Paper.normalizeCustomBlock(IMG_PAPER(40)).image;
+      expect(await Paper.storeImage({ ref: full.ref, tileMm: 80 })).toEqual({ ok: false, reason: 'image-missing' });
+      expect((await Paper.storeImage(full)).ok).toBe(true);
+      expect(await Paper.storeImage({ ref: full.ref, tileMm: 80 })).toEqual({ ok: true, ref: full.ref });
+      const put = Paper.customLibrary().put(IMG_PAPER(40));
+      expect(await Paper.releaseImageIfUnused(full.ref)).toBe(false); // a library paper uses it
+      Paper.customLibrary().remove(put.item.id);
+      V.SETTINGS.paperDefault = Paper.normalize({ type: put.item.id, custom: { ...IMG_PAPER(40) } });
+      expect(await Paper.releaseImageIfUnused(full.ref)).toBe(false); // the default uses it
+      V.SETTINGS.paperDefault = null;
+      expect(await Paper.releaseImageIfUnused(full.ref)).toBe(true);
+      expect(await V.TextureStore.shared().get(full.ref)).toBeNull();
     });
 
     test('TextureStore: CRUD, invalid records, unavailable IndexedDB', async () => {
@@ -1877,7 +2103,7 @@ describe('Vectura.Paper model', () => {
       Object.assign(runtime.window, { URL, location: { origin: 'http://localhost', href: 'http://localhost/index.html' } });
       try {
         const index = { schema: 'vectura-paper-texture-bundle', version: 1, textures: [
-          { id: 'ambientcg-paper004', title: 'ambientCG Paper004', source: 'ambientCG', author: 'ambientCG', licence: 'CC0 1.0', landingUrl: 'https://ambientcg.com/view?id=Paper004', albedo: 'ambientcg-paper004.webp', height: 'ambientcg-paper004_height.webp', thumb: 'ambientcg-paper004_thumb.webp', physicalMm: 300, tags: ['paper'] },
+          { id: 'ambientcg-paper004', title: 'ambientCG Paper004', source: 'ambientCG', author: 'ambientCG', licence: 'CC0 1.0', landingUrl: 'https://ambientcg.com/view?id=Paper004', albedo: 'ambientcg-paper004.webp', heightMap: 'ambientcg-paper004_height.webp', thumb: 'ambientcg-paper004_thumb.webp', physicalMm: 300, tags: ['paper'] },
           { id: 'evil', title: 'Evil', licence: 'CC0 1.0', albedo: 'javascript:alert(1)', thumb: '//evil.example/x.webp' },
           { id: 'up', title: 'Up', licence: 'CC0 1.0', albedo: '../../etc/x.webp', thumb: 'x.webp' },
         ] };
@@ -1896,6 +2122,61 @@ describe('Vectura.Paper model', () => {
         delete runtime.window.location;
         PTS.clearCache();
       }
+    });
+
+    test('search: 429 is reported as rate limited; ambientCG results cached for the session; v3 shape change falls back to v2', async () => {
+      const prevCache = conf.CACHE_MS;
+      conf.CACHE_MS = 0; // only providers with their own session cache keep results
+      const calls = [];
+      let ovStatus = 429;
+      const v2 = { foundAssets: [{ assetId: 'Paper005', displayName: 'Paper 005', shortLink: 'https://ambientcg.com/a/Paper005', dimensionX: 25,
+        previewImage: { '512-JPG-FFFFFF': 'https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/512-JPG-FFFFFF/Paper005.jpg' },
+        downloadFolders: { default: { downloadFiletypeCategories: { zip: { downloads: [{ attribute: '2K-JPG', fullDownloadPath: 'https://ambientcg.com/get?file=Paper005_2K-JPG.zip' }] } } } } }] };
+      const fetch = async (url) => {
+        calls.push(url);
+        if (url.startsWith('https://api.openverse.org/')) return ovStatus === 200 ? jsonRes({ results: [openverseItem('o9')] }) : { ok: false, status: ovStatus };
+        if (url.startsWith('https://ambientcg.com/api/v3/')) return jsonRes({ assets: [] }); // shape changed
+        if (url.startsWith('https://ambientcg.com/api/v2/')) return jsonRes(v2);
+        if (url.endsWith('index.json')) return { ok: false, status: 404 };
+        throw new TypeError('offline');
+      };
+      try {
+        let out = await PTS.search('paper', { fetch, providers: ['openverse', 'ambientcg', 'bundle'] });
+        expect(out.errors).toEqual([{ provider: 'openverse', reason: 'rate-limited' }]);
+        expect(out.results.map((r) => r.id)).toEqual(['Paper005']);
+        expect(out.results[0]).toMatchObject({
+          fullUrl: 'https://f003.backblazeb2.com/file/ambientCG-Web/media/surface-preview/Paper005/Paper005_SQ_Color.jpg',
+          physicalMm: 250, hires: { url: 'https://ambientcg.com/get?file=Paper005_2K-JPG.zip' },
+        });
+        const n = calls.length;
+        ovStatus = 200;
+        out = await PTS.search('paper', { fetch, providers: ['openverse', 'ambientcg', 'bundle'] });
+        const again = calls.slice(n);
+        expect(again.some((u) => u.includes('ambientcg.com'))).toBe(false); // session cache
+        expect(again.filter((u) => u.endsWith('index.json'))).toEqual([]); // absent bundle probed once
+        expect(again.some((u) => u.includes('openverse'))).toBe(true); // others re-queried (CACHE_MS 0)
+      } finally {
+        conf.CACHE_MS = prevCache;
+      }
+    });
+
+    test('Openverse: a blocked original falls back to the Openverse image proxy (labelled); Wikimedia hosts are "Direct"', async () => {
+      const r = PTS.normalise(prov('openverse'), openverseItem('p1'));
+      expect(r.direct).toBe(false);
+      expect(r.proxyUrl).toBe('https://api.openverse.org/v1/images/p1/thumb/?full_size=true&compressed=false');
+      const wikiOv = PTS.normalise(prov('openverse'), openverseItem('p2', { url: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/Paper.jpg' }));
+      expect(wikiOv.direct).toBe(true);
+      expect(PTS.normalise(prov('wikimedia'), wikiPage(12)).direct).toBe(true);
+      const seen = [];
+      const res = await PTS.download(r, { fetch: async (url) => {
+        seen.push(url);
+        if (url.includes('staticflickr')) throw new TypeError('Failed to fetch');
+        return blobRes(Buffer.from([0xff, 0xd8, 0xff, 5]));
+      } });
+      expect(res).toMatchObject({ ok: true, via: 'proxy' });
+      expect(seen).toEqual([r.fullUrl, r.proxyUrl]);
+      // Proxy refused too -> still the CORS fallback.
+      expect(await PTS.download(r, { fetch: () => Promise.reject(new TypeError('Failed to fetch')) })).toEqual({ ok: false, reason: 'cors' });
     });
 
     test('Unsplash: used photos report download_location with the key (provider rule)', async () => {
@@ -2253,17 +2534,20 @@ describe('PaperTexture', () => {
     }
   });
 
-  test('image validation: only real PNG/JPEG/WebP data URLs under the cap', () => {
+  test('image validation: only real PNG/JPEG/WebP data URLs, sized from the HEADER before any decode', () => {
     const PI = runtime.window.Vectura.PaperImage;
     const url = (mime, bytes) => `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
-    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0];
-    const jpg = [0xff, 0xd8, 0xff, 0xe0, 0, 0];
-    const webp = [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50];
+    const png = pngBytes(64, 32);
+    const jpg = jpegBytes(320, 200);
+    const webp = webpBytes(500, 300);
     expect(PI.sniffMime(new Uint8Array(png))).toBe('image/png');
     expect(PI.sniffMime(new Uint8Array(jpg))).toBe('image/jpeg');
     expect(PI.sniffMime(new Uint8Array(webp))).toBe('image/webp');
     expect(PI.sniffMime(new Uint8Array(Buffer.from('<svg onload=alert(1)>')))).toBeNull();
-    expect(PI.validateDataUrl(url('image/png', png))).toBeTruthy();
+    expect(PI.imageSize(new Uint8Array(png))).toEqual({ w: 64, h: 32 });
+    expect(PI.imageSize(new Uint8Array(jpg))).toEqual({ w: 320, h: 200 });
+    expect(PI.imageSize(new Uint8Array(webp))).toEqual({ w: 500, h: 300 });
+    expect(PI.validateDataUrlInfo(url('image/png', png))).toMatchObject({ mime: 'image/png', w: 64, h: 32 });
     expect(PI.validateDataUrl(url('image/jpeg', jpg))).toBeTruthy();
     expect(PI.validateDataUrl(url('image/webp', webp))).toBeTruthy();
     expect(PI.validateDataUrl(url('image/png', jpg))).toBeNull();
@@ -2271,6 +2555,94 @@ describe('PaperTexture', () => {
     expect(PI.validateDataUrl(`${url('image/png', png)}"><img src=x>`)).toBeNull();
     expect(PI.validateDataUrl(url('image/png', png), 4)).toBeNull();
     expect(PI.validateDataUrl({ toString: () => url('image/png', png) })).toBeNull();
+    // No header size -> refused (a bare signature cannot be size-checked).
+    expect(PI.validateDataUrl(url('image/png', PNG_SIG))).toBeNull();
+    // Decompression bombs: a tiny file declaring a huge canvas is refused
+    // from its header (embedded tiles are capped at IMAGE.embedMaxPx).
+    const cap = PAPERS.IMAGE.embedMaxPx;
+    expect(PI.validateDataUrl(url('image/png', pngBytes(cap, cap)))).toBeTruthy();
+    expect(PI.validateDataUrl(url('image/png', pngBytes(cap + 1, 16)))).toBeNull();
+    expect(PI.validateDataUrl(url('image/png', pngBytes(16384, 16384)))).toBeNull();
+    expect(PI.validateDataUrl(url('image/jpeg', jpegBytes(16384, 16384)))).toBeNull();
+    expect(PI.validateDataUrl(url('image/webp', webpBytes(16384, 16384)))).toBeNull();
+    expect(PI.validateDataUrl(url('image/png', pngBytes(8, 8)))).toBeNull(); // below minPx
+  });
+
+  test('tiling has no seam anywhere (edge or interior) and keeps local contrast; old max(dx,dy) blend is caught', () => {
+    const PI = runtime.window.Vectura.PaperImage;
+    const { data, w, h } = photo(96, 64);
+    const lum = PI.luminance(data, w, h); // strong left->right lighting: a hard wrap seam
+    const lit = PI.delight(lum, w, h);
+    // The previous blend (offset-copy weight from max(dx, dy)) — the mutation witness.
+    const oldBlend = (f) => {
+      const out = new Float32Array(w * h); const hw = w / 2; const hh = h / 2; const sm = (t) => t * t * (3 - 2 * t);
+      for (let y = 0; y < h; y += 1) {
+        const dy = Math.abs(y + 0.5 - hh) / hh; const sy = (y + Math.floor(hh)) % h;
+        for (let x = 0; x < w; x += 1) {
+          const dx = Math.abs(x + 0.5 - hw) / hw; const t = Math.max(0, Math.min(1, (Math.max(dx, dy) - 0.5) / 0.5)); const wo = sm(t);
+          out[y * w + x] = f[y * w + x] * (1 - wo) + f[sy * w + ((x + Math.floor(hw)) % w)] * wo;
+        }
+      }
+      return out;
+    };
+    const blockStdRatio = (f, B = 8) => {
+      const v = [];
+      for (let by = 0; by < h; by += B) for (let bx = 0; bx < w; bx += B) {
+        let s1 = 0; let s2 = 0; let n = 0;
+        for (let y = by; y < by + B; y += 1) for (let x = bx; x < bx + B; x += 1) { const q = f[y * w + x]; s1 += q; s2 += q * q; n += 1; }
+        v.push(Math.sqrt(Math.max(0, s2 / n - (s1 / n) ** 2)));
+      }
+      v.sort((a, b) => a - b);
+      return v[0] / v[v.length >> 1];
+    };
+    expect(PI.seamProfile(lum, w, h)).toBeGreaterThan(5); // the raw photo's wrap seam
+    expect(PI.seamProfile(PI.makeTileable(lum, w, h), w, h)).toBeLessThan(1.6);
+    expect(PI.seamProfile(PI.makeTileable(lit, w, h), w, h)).toBeLessThan(1.6);
+    expect(PI.seamScore(PI.makeTileable(lit, w, h), w, h)).toBeLessThan(1.5);
+    expect(PI.seamProfile(oldBlend(lum), w, h)).toBeGreaterThan(3); // witness: interior seams
+    // Variance-preserving: no washed-out (blob) cross-fade areas.
+    expect(blockStdRatio(PI.makeTileable(lit, w, h))).toBeGreaterThan(0.75);
+    expect(blockStdRatio(oldBlend(lit))).toBeLessThan(0.7); // witness: contrast loss
+    // A half-shift is seamless at the wrap but has a seam through the middle.
+    const shifted = new Float32Array(w * h);
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) shifted[y * w + x] = lum[y * w + ((x + w / 2) % w)];
+    expect(PI.seamProfile(shifted, w, h)).toBeGreaterThan(5);
+  });
+
+  test('transparent pixels read as paper (white), not black', () => {
+    const PI = runtime.window.Vectura.PaperImage;
+    const rgba = new Uint8ClampedArray([0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 128, 255, 255, 255, 255]);
+    const l = PI.luminance(rgba, 4, 1);
+    expect(l[0]).toBeCloseTo(1, 5);
+    expect(l[1]).toBeCloseTo(0, 5);
+    expect(l[2]).toBeCloseTo(127 / 255, 2);
+    expect(PI.luminance(rgba, 4, 1, { linear: true })[0]).toBeCloseTo(1, 5);
+  });
+
+  test('processing is time-sliced by rows: no synchronous slice exceeds the budget; same result as one pass', async () => {
+    const PI = runtime.window.Vectura.PaperImage;
+    const { data, w, h } = photo(96, 64);
+    const lum = PI.luminance(data, w, h);
+    // Injected clock: every row step costs 1 "ms".
+    let t = 0;
+    const slices = [];
+    let yields = 0;
+    const out = await PI.runSliced(PI.gens.delightGen(lum, w, h), {
+      budgetMs: 8, now: () => { t += 1; return t; }, yieldFn: async () => { yields += 1; }, onSlice: (n) => slices.push(n),
+    });
+    expect(Math.max(...slices)).toBeLessThanOrEqual(8); // ≤ 8 rows/columns per slice
+    expect(yields).toBeGreaterThan(20); // 6 blur passes + 2 row passes over 64–96 lines
+    expect(Array.from(out)).toEqual(Array.from(PI.delight(lum, w, h)));
+    const tiled = await PI.runSliced(PI.gens.makeTileableGen(lum, w, h), { budgetMs: 4, now: () => { t += 1; return t; }, yieldFn: async () => {} });
+    expect(Array.from(tiled)).toEqual(Array.from(PI.makeTileable(lum, w, h)));
+    // Mutation witness: a non-yielding pass is ONE slice of everything.
+    const one = [];
+    await PI.runSliced((function* g() { for (let i = 0; i < 100; i += 1) { /* no yield per row */ } yield; }()), { budgetMs: 8, now: () => 0, yieldFn: async () => {}, onSlice: (n) => one.push(n) });
+    expect(one.length).toBe(1);
+    // Abort between slices.
+    const ctl = new AbortController();
+    ctl.abort();
+    await expect(PI.runSliced(PI.gens.delightGen(lum, w, h), { signal: ctl.signal })).rejects.toMatchObject({ reason: 'aborted' });
   });
 
   test('chunk buckets are powers of two of on-screen px/mm, clamped, up to extreme zoom', () => {

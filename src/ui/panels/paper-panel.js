@@ -208,13 +208,20 @@
   }
 
   // Library state of the project's custom paper:
-  //   null (not custom) | 'from-file' | 'modified' | 'saved'
+  //   null (not custom) | 'missing' (library image not in this browser) |
+  //   'from-file' | 'default-only' (the default paper, not in My papers) |
+  //   'modified' | 'saved'
   const customState = (paper) => {
     const P = Paper();
     const lib = library();
     if (!P || !lib || !paper.custom || !P.isCustomId(paper.type)) return null;
+    const info = Vectura.PAPERS.TYPES[paper.type];
+    if (info && info.imageMissing && !(paper.custom.image && paper.custom.image.tile)) return 'missing';
     const entry = lib.get(paper.type);
-    if (!entry) return 'from-file';
+    if (!entry) {
+      const def = settings().paperDefault;
+      return def && def.type === paper.type ? 'default-only' : 'from-file';
+    }
     const same = entry.base === paper.custom.base && P.paramsEqual(entry.params, paper.custom.params)
       && entry.color === paper.color
       && Math.round(entry.defaultTexture * 100) === Math.round(paper.texture * 100)
@@ -232,14 +239,21 @@
     if (status) {
       status.hidden = !state;
       status.dataset.state = state || '';
-      if (statusText) {
-        statusText.textContent = state === 'from-file' ? (S.STATUS_FROM_FILE || 'From file')
-          : state === 'modified' ? (S.STATUS_MODIFIED || 'Changed from your saved paper')
-            : (S.STATUS_SAVED || 'Saved in My papers');
-      }
+      const TEXT = {
+        missing: S.STATUS_MISSING || 'Texture image missing in this browser',
+        'from-file': S.STATUS_FROM_FILE || 'From file',
+        'default-only': S.STATUS_DEFAULT_ONLY || 'Your default paper — not in My papers',
+        modified: S.STATUS_MODIFIED || 'Changed from your saved paper',
+        saved: S.STATUS_SAVED || 'Saved in My papers',
+      };
+      if (statusText) statusText.textContent = TEXT[state] || '';
       if (statusBtn) {
-        statusBtn.hidden = state !== 'from-file' && state !== 'modified';
-        statusBtn.textContent = state === 'from-file' ? (S.SAVE_TO_LIBRARY || 'Save to my papers') : (S.UPDATE_SAVED || 'Update saved paper');
+        const action = state === 'missing' ? 'reupload'
+          : (state === 'from-file' || state === 'default-only') ? 'save' : state === 'modified' ? 'update' : '';
+        statusBtn.hidden = !action;
+        statusBtn.dataset.action = action;
+        statusBtn.textContent = action === 'reupload' ? (S.REUPLOAD || 'Re-upload image…')
+          : action === 'save' ? (S.SAVE_TO_LIBRARY || 'Save to my papers') : (S.UPDATE_SAVED || 'Update saved paper');
       }
     }
     const attr = getEl('paper-attribution', { silent: true });
@@ -248,15 +262,25 @@
       attr.hidden = !src;
       attr.textContent = '';
       if (src) {
-        const parts = [src.title, src.author, src.provider, src.licence].filter((v, i, a) => v && a.indexOf(v) === i);
-        attr.appendChild(document.createTextNode(`${S.ATTRIBUTION_PREFIX || 'Texture:'} ${parts.join(' · ')}`));
-        if (src.url && /^https:\/\//.test(src.url)) {
+        const link = (href, text) => {
           const a = document.createElement('a');
-          a.href = src.url;
+          a.href = href;
           a.target = '_blank';
           a.rel = 'noopener noreferrer';
-          a.textContent = ` ${S.SEARCH_SOURCE || 'Source page'}`;
-          attr.appendChild(a);
+          a.textContent = text;
+          return a;
+        };
+        const okUrl = (u) => typeof u === 'string' && /^https?:\/\/[^\s"'<>`]+$/.test(u);
+        const parts = [src.title, src.author, src.provider].filter((v, i, a) => v && a.indexOf(v) === i);
+        attr.appendChild(document.createTextNode(`${S.ATTRIBUTION_PREFIX || 'Texture:'} ${parts.join(' · ')}`));
+        if (src.licence) {
+          attr.appendChild(document.createTextNode(' · '));
+          // CC BY and friends require the licence to be linked.
+          attr.appendChild(okUrl(src.licenceUrl) ? link(src.licenceUrl, src.licence) : document.createTextNode(src.licence));
+        }
+        if (okUrl(src.url)) {
+          attr.appendChild(document.createTextNode(' · '));
+          attr.appendChild(link(src.url, S.SEARCH_SOURCE || 'Source page'));
         }
       }
     }
@@ -276,8 +300,8 @@
     }
     const upd = getEl('btn-paper-update-saved', { silent: true });
     if (upd) {
-      upd.textContent = state === 'from-file' ? (S.SAVE_TO_LIBRARY || 'Save to my papers') : (S.UPDATE_SAVED || 'Update saved paper');
-      upd.disabled = state === 'saved';
+      upd.textContent = (state === 'from-file' || state === 'default-only') ? (S.SAVE_TO_LIBRARY || 'Save to my papers') : (S.UPDATE_SAVED || 'Update saved paper');
+      upd.disabled = state === 'saved' || state === 'missing';
     }
   }
 
@@ -286,7 +310,10 @@
     const { getEl, getContrastTextColor } = deps;
     const body = getEl('paper-section-body', { silent: true });
     if (!body || !body.querySelector('.paper-swatch-grid')) return;
-    if (body.dataset.customSig !== customSignature()) renderCustomSwatches(body);
+    // While an Advanced slider is being dragged, swatch thumbnails wait for
+    // the 'change' (rebuilding them on every input made drags sluggish).
+    const dragging = Boolean(body.querySelector('.paper-param-slider[data-dragging="true"]'));
+    if (!dragging && body.dataset.customSig !== customSignature()) renderCustomSwatches(body);
     const paper = currentPaper();
     const PAPERS = Vectura.PAPERS || { TYPES: {} };
     const known = Vectura.Paper ? Vectura.Paper.isKnownType(paper.type) : true;
@@ -469,15 +496,26 @@
     // Save the project's paper (or a built-in) into the library. With
     // `keepId` (Save to my papers / Update saved paper) the entry keeps the
     // project's id so the document and the library stay linked.
+    // Image papers: the pixels go to IndexedDB FIRST (a library entry only
+    // keeps the ref); if that fails nothing is saved and the user is told.
+    // Papers without an image save synchronously. Resolves the item or null.
     const saveCurrent = (name, { keepId = false } = {}) => {
       const lib = library();
-      if (!lib || !P0) return null;
+      if (!lib || !P0) return Promise.resolve(null);
       const cur = currentPaper();
       const id = keepId && cur.custom && P0.isCustomId(cur.type) ? cur.type : null;
       const entry = P0.entryFromPaper(cur, name, id);
-      const res = entry ? lib.put(entry) : { ok: false, reason: 'invalid' };
-      if (!res.ok) { toast(errorText(res.reason), 'danger'); return null; }
-      return res.item;
+      const finish = () => {
+        const res = entry ? lib.put(entry) : { ok: false, reason: 'invalid' };
+        if (!res.ok) { toast(errorText(res.reason), 'danger'); return null; }
+        return res.item;
+      };
+      const image = cur.custom && cur.custom.image;
+      if (!image) return Promise.resolve(finish());
+      return P0.storeImage(image).then((st) => {
+        if (!st.ok) { toast(errorText(st.reason), 'danger'); return null; }
+        return finish();
+      });
     };
 
     const promptName = (opts) => {
@@ -499,7 +537,8 @@
         confirmLabel: S.SAVE_PROMPT_CONFIRM || 'Save',
       }).then((name) => {
         if (name == null || !String(name).trim()) return null;
-        const item = saveCurrent(String(name));
+        return saveCurrent(String(name));
+      }).then((item) => {
         if (!item) return null;
         // The document switches to the new custom paper (one undo step);
         // it looks the same, now as a custom type.
@@ -537,6 +576,7 @@
       if (!lib || !lib.has(id)) return;
       const name = nameOf(id);
       const doDelete = () => {
+        const ref = (lib.get(id) || {}).image ? lib.get(id).image.ref : null;
         const res = lib.remove(id);
         if (!res.ok) { toast(errorText(res.reason), 'danger'); return; }
         // A document or default on this paper keeps working: its own block
@@ -544,6 +584,8 @@
         const S0 = settings();
         const inUse = (S0.paper && S0.paper.type === id) || (S0.paperDefault && S0.paperDefault.type === id);
         if (!inUse && P0 && P0.unregisterCustomType) P0.unregisterCustomType(id);
+        // Its image goes too once nothing (library, document, default) uses it.
+        if (ref && P0 && P0.releaseImageIfUnused) this._paperReleasePending = P0.releaseImageIfUnused(ref);
         refreshPaperUI.call(this);
         toast(fmt(S.TOAST_DELETED, { name }), 'info');
       };
@@ -667,22 +709,28 @@
     // From file → library (same id), or store the edited settings.
     const saveToLibrary = () => {
       const cur = currentPaper();
-      if (!cur.custom) return null;
+      if (!cur.custom) return Promise.resolve(null);
       const lib = library();
       const existed = Boolean(lib && lib.has(cur.type));
-      const item = saveCurrent(existed ? nameOf(cur.type) : cur.custom.name, { keepId: true });
-      if (!item) return null;
-      // Keep the document's embedded block in step with the stored entry.
-      write({ ...cur, custom: { ...cur.custom, name: item.name, color: item.color } }, false);
-      toast(fmt(existed ? S.TOAST_UPDATED : S.TOAST_SAVED, { name: item.name }), 'success');
-      return item;
+      const pendingSave = saveCurrent(existed ? nameOf(cur.type) : cur.custom.name, { keepId: true }).then((item) => {
+        if (!item) return null;
+        // Keep the document's embedded block in step with the stored entry.
+        const now = currentPaper();
+        write({ ...now, custom: { ...now.custom, name: item.name, color: item.color } }, false);
+        toast(fmt(existed ? S.TOAST_UPDATED : S.TOAST_SAVED, { name: item.name }), 'success');
+        return item;
+      });
+      this._paperSavePending = pendingSave;
+      return pendingSave;
     };
 
     // ---- image papers (photo/scan, upload or online search) ----------------
     const TI = () => UI.PaperTextureImport;
     let pendingSource = null;
     const imageErr = (reason) => ((S.IMAGE_ERRORS || {})[reason]) || errorText(reason);
-    const createImagePaper = async ({ image, meanColor, name, source }) => {
+    // replaceId: give an existing library paper (whose image is missing in
+    // this browser) a new image, keeping its name, realism and attribution.
+    const createImagePaper = async ({ image, meanColor, name, source, replaceId = null }) => {
       const lib = library();
       if (!lib || !P0 || !image) return false;
       const PAPERS = Vectura.PAPERS;
@@ -690,26 +738,43 @@
       const params = {};
       (PAPERS.PARAM_KEYS || []).forEach((k) => { params[k] = PAPERS.TYPES[base][k]; });
       Object.assign(params, (PAPERS.IMAGE && PAPERS.IMAGE.paramOverrides) || {});
-      const stored = await P0.storeImage(image);
-      if (!stored.ok) { toast(errorText(stored.reason), 'danger'); return false; }
       const lean = { ref: image.ref, tileMm: image.tileMm, w: image.w, h: image.h };
-      const res = lib.put({
-        name: name || S.IMPORT_DEFAULT_NAME || 'Paper photo', base, color: meanColor, params, image: lean, source,
-        defaultTexture: 0.85, defaultBleed: PAPERS.TYPES[base].defaultBleed,
-      });
+      const old = replaceId ? lib.get(replaceId) : null;
+      const entry = old
+        ? { ...old, image: { ...lean, tileMm: old.image ? old.image.tileMm : lean.tileMm } }
+        : {
+          name: name || S.IMPORT_DEFAULT_NAME || 'Paper photo', base, color: meanColor, params, image: lean, source,
+          defaultTexture: 0.85, defaultBleed: PAPERS.TYPES[base].defaultBleed,
+        };
+      const stored = await P0.storeImage(image);
+      if (!stored.ok) {
+        if (stored.reason !== 'unavailable' || old) { toast(errorText(stored.reason), 'danger'); return false; }
+        // No IndexedDB (private mode / blocked): the paper still works in
+        // this document — it is embedded in the file — but cannot join My
+        // papers in this browser.
+        const id = lib.newId();
+        const block = { name: entry.name, base, color: meanColor, params, image, source };
+        P0.registerCustomType({ ...block, defaultTexture: entry.defaultTexture, defaultBleed: entry.defaultBleed }, id);
+        const next = P0.fromCustomEntry({ ...entry, id }, currentPaper());
+        if (next) write({ ...next, custom: { ...next.custom, image } }, true);
+        toast(S.TOAST_DOCUMENT_ONLY || 'Applied to this document only: this browser cannot store My papers images.', 'warning');
+        return true;
+      }
+      const res = lib.put(old ? { ...entry, id: old.id } : entry);
       if (!res.ok) { toast(errorText(res.reason), 'danger'); return false; }
       // Register with the pixels we already have, then switch the document
       // to the new paper (one undo step).
-      P0.registerCustomType({ ...res.item, image }, res.item.id);
+      const fullImage = { ...image, tileMm: res.item.image.tileMm };
+      P0.registerCustomType({ ...res.item, image: fullImage }, res.item.id);
       const next = P0.fromCustomEntry(res.item, currentPaper());
       if (next) write(next, true);
-      toast(fmt(S.TOAST_SAVED, { name: res.item.name }), 'success');
+      toast(fmt(old ? S.TOAST_UPDATED : S.TOAST_SAVED, { name: res.item.name }), 'success');
       return true;
     };
     const openImport = (opts) => {
       const T = TI();
       if (!T) return null;
-      const dlg = T.openImportDialog(this, { ...opts, onCreate: createImagePaper });
+      const dlg = T.openImportDialog(this, { ...opts, onCreate: (r) => createImagePaper({ ...r, replaceId: opts.replaceId || null }) });
       this._paperImageImport = dlg;
       return dlg;
     };
@@ -720,16 +785,28 @@
         textureInput.value = '';
         if (!file) return;
         const source = pendingSource;
+        const replace = pendingReplace;
         pendingSource = null;
+        pendingReplace = null;
         P0 && Vectura.PaperImage && Vectura.PaperImage.checkBlob(file).then((chk) => {
           if (!chk.ok) { toast(imageErr(chk.reason), 'danger'); return; }
-          openImport({ blob: file, source, name: source && source.title });
+          openImport({ blob: file, source, name: (replace && replace.name) || (source && source.title), replaceId: replace ? replace.id : null, tileMm: replace ? replace.tileMm : 0 });
         });
       });
     }
-    const chooseTexture = (source = null) => {
+    let pendingReplace = null;
+    const chooseTexture = (source = null, replace = null) => {
       pendingSource = source;
+      pendingReplace = replace;
       if (textureInput) textureInput.click();
+    };
+    // "Texture image missing" -> pick the image again for the same paper.
+    const reuploadImage = () => {
+      const cur = currentPaper();
+      const lib = library();
+      const entry = lib && cur.custom ? lib.get(cur.type) : null;
+      if (!entry) return;
+      chooseTexture(entry.source || null, { id: entry.id, name: entry.name, tileMm: entry.image ? entry.image.tileMm : 0 });
     };
     const openSearch = () => {
       const T = TI();
@@ -773,7 +850,9 @@
     const libMenuBtn = getEl('btn-paper-library-menu', { silent: true });
     if (libMenuBtn) libMenuBtn.onclick = () => openLibraryMenu(libMenuBtn);
     const statusBtn = getEl('btn-paper-custom-save', { silent: true });
-    if (statusBtn) statusBtn.onclick = () => saveToLibrary();
+    if (statusBtn) {
+      statusBtn.onclick = () => (statusBtn.dataset.action === 'reupload' ? reuploadImage() : saveToLibrary());
+    }
     const updateBtn = getEl('btn-paper-update-saved', { silent: true });
     if (updateBtn) updateBtn.onclick = () => saveToLibrary();
 
@@ -803,7 +882,7 @@
     });
 
     // Test/automation seam: the same flows the controls drive.
-    this._paperCustomActions = { saveAsCustom, renameCustom, deleteCustom, exportOne, exportAll, importText, importFile, saveToLibrary, openSwatchMenu, openLibraryMenu, createImagePaper, openImport, openSearch, chooseTexture };
+    this._paperCustomActions = { saveAsCustom, renameCustom, deleteCustom, exportOne, exportAll, importText, importFile, saveToLibrary, openSwatchMenu, openLibraryMenu, createImagePaper, openImport, openSearch, chooseTexture, reuploadImage };
 
     // Colour: any colour; one undo step per picker session. The step is
     // armed by the first ACTUAL colour change (opening the picker and
@@ -882,6 +961,23 @@
       G.addEventListener('vectura:paper-change', this._paperChangeListener);
       // My papers changed (this tab or a store write): rebuild the swatches.
       G.addEventListener('vectura:library-change', this._paperChangeListener);
+      // …or in another tab: localStorage fires 'storage' here. Images live
+      // in IndexedDB (no event), so re-sync when the tab regains focus.
+      const libKey = ((Vectura.PAPERS && Vectura.PAPERS.CUSTOM) || {}).LIBRARY_KEY || 'vectura.customPapers';
+      this._paperStorageListener = (e) => {
+        if (!e || e.key === libKey || e.key === null) this._paperResync();
+      };
+      this._paperResync = () => {
+        const b = getEl('paper-section-body', { silent: true });
+        if (b) renderCustomSwatches(b);
+        refreshPaperUI.call(this);
+        if (typeof this.refreshDefaultPaperControls === 'function') this.refreshDefaultPaperControls();
+      };
+      G.addEventListener('storage', this._paperStorageListener);
+      G.addEventListener('focus', () => this._paperResync());
+      if (typeof document !== 'undefined' && document.addEventListener) {
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) this._paperResync(); });
+      }
     }
     refreshPaperUI.call(this);
   }

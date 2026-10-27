@@ -30,6 +30,7 @@
   const fmt = (t, vars) => String(t || '').replace(/\{(\w+)\}/g, (_m, k) => (vars && vars[k] != null ? String(vars[k]) : ''));
   const imgCfg = () => (Vectura.PAPERS && Vectura.PAPERS.IMAGE) || { defaultDpi: 300, dpiMin: 25, dpiMax: 4800, tileMmMin: 5, tileMmMax: 2000, ACCEPT: 'image/png,image/jpeg,image/webp' };
   const HTTPS_RE = /^https:\/\/[^\s"'<>`\\]{1,1000}$/;
+  const HTTP_RE = /^https?:\/\/[^\s"'<>`\\]{1,1000}$/;
 
   const el = (tag, attrs = {}, kids = []) => {
     const n = document.createElement(tag);
@@ -46,10 +47,17 @@
   const sourceLine = (source) => {
     if (!source) return null;
     const S = strings();
-    const parts = [source.title, source.author, source.provider, source.licence].filter((v, i, a) => v && a.indexOf(v) === i);
+    const parts = [source.title, source.author, source.provider].filter((v, i, a) => v && a.indexOf(v) === i);
     const line = el('p', { className: 'paper-attribution' }, [el('span', { text: `${S.ATTRIBUTION_PREFIX || 'Texture:'} ${parts.join(' · ')}` })]);
-    if (source.url && HTTPS_RE.test(source.url)) {
-      line.appendChild(document.createTextNode(' '));
+    if (source.licence) {
+      line.appendChild(document.createTextNode(' · '));
+      // CC BY and friends require the licence to be linked.
+      line.appendChild(source.licenceUrl && HTTP_RE.test(source.licenceUrl)
+        ? el('a', { href: source.licenceUrl, target: '_blank', rel: 'noopener noreferrer', className: 'paper-licence-link', text: source.licence })
+        : document.createTextNode(source.licence));
+    }
+    if (source.url && HTTP_RE.test(source.url)) {
+      line.appendChild(document.createTextNode(' · '));
       line.appendChild(el('a', { href: source.url, target: '_blank', rel: 'noopener noreferrer', text: S.SEARCH_SOURCE || 'Source page' }));
     }
     return line;
@@ -118,9 +126,23 @@
     ]);
 
     let busy = false;
+    let closed = false;
+    const ctl = typeof G.AbortController === 'function' ? new G.AbortController() : null;
     const done = { promise: null };
-    const close = () => { if (ui && typeof ui.closeModal === 'function') ui.closeModal(); };
-    cancel.addEventListener('click', () => { if (!busy) close(); });
+    // Close only THIS dialog (another modal may be open by the time an async
+    // step finishes).
+    const close = () => {
+      if (closed) return;
+      const bodyEl = ui && ui.modal && ui.modal.bodyEl;
+      if (bodyEl && !bodyEl.contains(body)) return;
+      if (ui && typeof ui.closeModal === 'function') ui.closeModal();
+    };
+    // Esc / ✕ / Cancel while processing: abort, and never apply the paper later.
+    const onClosed = () => {
+      closed = true;
+      if (ctl) ctl.abort();
+    };
+    cancel.addEventListener('click', () => close());
     create.addEventListener('click', () => {
       if (busy || !PI) return;
       const v = Number(scale.value);
@@ -131,10 +153,14 @@
       done.promise = PI.processImport(opts.blob, {
         ...scaleOpts,
         heightBlob,
+        signal: ctl ? ctl.signal : undefined,
         onProgress: (p) => { status.textContent = fmt(S.IMPORT_WORKING, { pct: Math.round(p * 100) }); },
-      }).then((res) => Promise.resolve(typeof opts.onCreate === 'function'
-        ? opts.onCreate({ ...res, name: nameInput.value, source: opts.source || null })
-        : true)).then((ok) => {
+      }).then((res) => {
+        if (closed) return false;
+        return Promise.resolve(typeof opts.onCreate === 'function'
+          ? opts.onCreate({ ...res, name: nameInput.value, source: opts.source || null })
+          : true);
+      }).then((ok) => {
         busy = false;
         if (ok !== false) close();
         else { create.disabled = false; status.textContent = ''; }
@@ -142,6 +168,7 @@
       }, (err) => {
         busy = false;
         create.disabled = false;
+        if (closed || (err && err.reason === 'aborted')) return false;
         status.textContent = E[(err && err.reason) || 'decode'] || E.decode || 'That image could not be read.';
         status.classList.add('is-error');
         return false;
@@ -152,6 +179,7 @@
       title: S.IMPORT_TITLE || 'New paper from an image',
       body,
       cardClass: 'paper-import-card',
+      onClose: onClosed,
     });
     return done;
   }
@@ -257,7 +285,10 @@
         thumb,
         el('span', { className: 'paper-search-title', text: r.title }),
         el('span', { className: 'paper-search-meta' }, [
-          el('span', { className: 'paper-licence-badge', text: r.licence }),
+          r.licenceUrl && HTTP_RE.test(r.licenceUrl)
+            ? el('a', { className: 'paper-licence-badge', href: r.licenceUrl, target: '_blank', rel: 'noopener noreferrer', text: r.licence })
+            : el('span', { className: 'paper-licence-badge', text: r.licence }),
+          r.direct ? el('span', { className: 'paper-direct-badge', title: S.SEARCH_DIRECT_TITLE || '', text: ` ${S.SEARCH_DIRECT || 'Direct'}` }) : null,
           el('span', { text: ` ${r.providerName}` }),
           r.scaleGuessed ? null : el('span', { text: ` · ${Math.round(r.physicalMm)} mm` }),
         ]),
@@ -270,7 +301,7 @@
         note.textContent = S.SEARCH_DOWNLOADING || 'Downloading…';
         const res = await PTS.download(r, dlOpts);
         if (res.ok) {
-          note.textContent = '';
+          note.textContent = res.via === 'proxy' ? (S.SEARCH_PROXY_NOTE || '') : '';
           if (typeof opts.onPicked === 'function') {
             opts.onPicked({ blob: res.albedo, heightBlob: res.height || null, name: r.title, source: sourceOf(r), tileMm: r.physicalMm || 0, scaleGuessed: Boolean(r.scaleGuessed) });
           }
@@ -302,7 +333,7 @@
       ctl = typeof G.AbortController === 'function' ? new G.AbortController() : null;
       status.textContent = S.SEARCH_LOADING || 'Searching…';
       grid.textContent = '';
-      const out = await PTS.search(input.value, { providers: Array.from(active), signal: ctl ? ctl.signal : undefined });
+      let out = await PTS.search(input.value, { providers: Array.from(active), signal: ctl ? ctl.signal : undefined });
       if (mine !== seq) return out;
       grid.textContent = '';
       out.results.forEach((r) => grid.appendChild(card(r)));
@@ -315,6 +346,12 @@
           const chip = chips.querySelector(`[data-provider="${id}"]`);
           if (chip) chip.hidden = true;
         });
+      }
+      const limited = out.errors.filter((e) => e.reason === 'rate-limited');
+      if (limited.length) {
+        const names = limited.map((e) => (providers.find((p) => p.id === e.provider) || {}).name || e.provider);
+        parts.push(fmt(S.SEARCH_RATE_LIMITED, { providers: names.join(', ') }));
+        out = { ...out, errors: out.errors.filter((e) => e.reason !== 'rate-limited') };
       }
       if (out.errors.length) {
         const names = out.errors.map((e) => (providers.find((p) => p.id === e.provider) || {}).name || e.provider);

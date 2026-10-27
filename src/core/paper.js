@@ -276,6 +276,8 @@
         info.image.tile = prevImg.tile;
         if (prevImg.height) info.image.height = prevImg.height;
       }
+      // Re-registering the same lean image keeps the "missing" verdict.
+      if (!info.image.tile && prevImg && prev.imageMissing) info.imageMissing = true;
     }
     if (block.source) info.source = block.source;
     const imgKey = (i) => (i && i.image ? `${i.image.ref}|${i.image.tileMm}` : '');
@@ -283,7 +285,7 @@
     T[id] = info;
     if (changed && prev) {
       const PT = Vectura.PaperTexture;
-      if (PT && typeof PT.clearCache === 'function') PT.clearCache();
+      if (PT && typeof PT.clearCache === 'function') PT.clearCache(id);
     }
     if (info.image) loadImageFor(id, info.image);
     return info;
@@ -329,10 +331,20 @@
         const TS = Vectura.TextureStore;
         if (!TS || !TS.shared) return Promise.resolve(null);
         return TS.shared().get(image.ref).then((rec) => {
-          if (!rec) return null;
+          if (!rec) {
+            // The library names an image this browser no longer holds: say
+            // so (the panel offers a re-upload) instead of silently falling
+            // back to the procedural base paper.
+            if (stillCurrent() && !T[id].image.tile) {
+              T[id].imageMissing = true;
+              notifyTexture(id);
+            }
+            return null;
+          }
           if (stillCurrent()) {
             T[id].image.tile = rec.tile;
             if (rec.height) T[id].image.height = rec.height;
+            delete T[id].imageMissing;
           }
           patchSettingsImage(rec);
           return { ...image, tile: rec.tile, height: rec.height };
@@ -341,18 +353,47 @@
     return withTile.then((img) => (img ? PI.loadMaps(img) : null)).then((maps) => {
       if (!maps || !stillCurrent()) return false;
       const PT = Vectura.PaperTexture;
-      if (PT && typeof PT.clearCache === 'function') PT.clearCache();
+      if (PT && typeof PT.clearCache === 'function') PT.clearCache(id);
       notifyTexture(id);
       return true;
     }, () => false);
   };
 
-  /** Store an image block's pixels in IndexedDB (library papers). */
-  const storeImage = (image) => {
+  /**
+   * Store an image block's pixels in IndexedDB (library papers). A lean
+   * block (no pixels) succeeds only when IndexedDB already holds its ref.
+   * -> { ok, ref } | { ok:false, reason: 'unavailable'|'quota'|'invalid'|'image-missing' }
+   */
+  const storeImage = async (image) => {
     const TS = Vectura.TextureStore;
-    if (!image || !image.tile) return Promise.resolve(image && image.ref ? { ok: true, ref: image.ref } : { ok: false, reason: 'invalid' });
-    if (!TS || !TS.shared) return Promise.resolve({ ok: false, reason: 'unavailable' });
+    if (!image || !image.ref) return { ok: false, reason: 'invalid' };
+    if (!TS || !TS.shared) return { ok: false, reason: 'unavailable' };
+    if (!image.tile) {
+      let rec = null;
+      try { rec = await TS.shared().get(image.ref); } catch (_e) { rec = null; }
+      return rec ? { ok: true, ref: image.ref } : { ok: false, reason: 'image-missing' };
+    }
     return TS.shared().put({ ref: image.ref, tile: image.tile, height: image.height, tileMm: image.tileMm, w: image.w, h: image.h });
+  };
+
+  /**
+   * Delete a stored image when nothing references it any more: no library
+   * paper, not the open document, not the default paper (in memory or in its
+   * own storage key). Resolves true when it was removed.
+   */
+  const releaseImageIfUnused = async (ref) => {
+    const TS = Vectura.TextureStore;
+    if (!ref || !TS || !TS.shared) return false;
+    const lib = customLibrary();
+    const S = settings();
+    const refOf = (cfg) => (cfg && cfg.custom && cfg.custom.image ? cfg.custom.image.ref : null);
+    let stored = null;
+    try { stored = loadDefault(); } catch (_e) { stored = null; }
+    const used = (lib ? lib.list() : []).some((e) => e.image && e.image.ref === ref)
+      || refOf(S.paper) === ref || refOf(S.paperDefault) === ref || refOf(stored) === ref;
+    if (used) return false;
+    const res = await TS.shared().remove(ref);
+    return Boolean(res && res.ok);
   };
 
   const leanImage = (image) => {
@@ -783,6 +824,7 @@
     normalizeSource,
     loadImageFor,
     storeImage,
+    releaseImageIfUnused,
     leanCopy,
     exportCustomPapers,
     importCustomPapers,
