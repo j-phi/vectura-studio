@@ -1524,6 +1524,7 @@ const FILES = [
   'src/config/papers.js',
   'src/config/paper-texture-sources.js',
   'src/core/validators.js',
+  'src/core/utils.js',
   'src/core/user-library-store.js',
   'src/core/texture-store.js',
   'src/core/paper-texture-search.js',

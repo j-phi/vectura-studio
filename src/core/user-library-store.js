@@ -63,7 +63,7 @@
       .replace(/\s+/g, ' ').trim().slice(0, maxLen).trim();
   };
 
-  const clone = (v) => JSON.parse(JSON.stringify(v));
+  const clone = Vectura.Utils.clone;
 
   const create = (opts = {}) => {
     const key = String(opts.key || '');
