@@ -13,34 +13,43 @@
  *      (floored near the edge-noise scale): coarse samples are a subset of
  *      finer ones, so zooming only refines the outline.
  *   3. Per sample: half-widths rL / rR = laid width/2 × jitter × nib ×
- *      starvation × skip gap + blob / pool swellings + edgeAmp × noise(edge
- *      point in mm). The noise is the paper's seeded simplex evaluated at the
- *      EDGE position on the sheet: deterministic, sheet-locked, identical at
- *      every zoom and pan, and shared by overlapping strokes (as on paper).
+ *      starvation × skip + blob / pool swellings + edgeAmp × edge noise.
+ *      The edge noise is 1-D value+gradient noise along the ARC LENGTH, one
+ *      stream per side, offset by a hash of the path's start point in mm and
+ *      seeded by paper seed × pen id: deterministic, sheet-locked, identical
+ *      at every zoom and pan; periodic over the length of a closed path (no
+ *      step at its start). Skips thin the line to a ragged streak.
  *   4. Emit one outline polygon per smooth run (left side forward, right side
  *      back), triangles where the inside of a tight turn folds, and discs for
  *      round ends / corners. Every shape has the same winding, so a nonzero
  *      fill is their exact union.
  *
- * LOD: tier 0 = a native ctx.stroke at the laid width (features below
- * LIMITS.tierPx device px are invisible); tier 1 = the ribbon. Decided per pen
- * per frame; during a pan / pinch a pen that was a ribbon stays a ribbon.
+ * LOD, three tiers decided per pen per frame: 0 a native ctx.stroke at the
+ * laid width; 1 skeleton (native stroke, thinned at skips, + pool discs) when
+ * only pools are visible; 2 the ribbon once edge lumps reach LIMITS.ribbonPx
+ * device px. During a pan / pinch a pen never drops a tier.
  *
  * Cache: WeakMap(path → Map(key → entry)), key = traits hash | ds | weight;
- * geometry kept as Float64Array commands (+ a Path2D when available); LRU
- * capped at LIMITS.ribbonCacheBytes, entries drawn this frame are pinned.
- * A frame builds exact ribbons for LIMITS.buildBudgetMs, then coarse (ds × 4)
- * ones, then falls back to the nearest cached ribbon or the native stroke and
- * refines on idle in time slices, repainting once through onReady. Nothing is
- * scheduled when the cache already covers the view (no idle re-render).
+ * geometry kept as Float64Array commands (+ Path2D when available); LRU
+ * capped at LIMITS.ribbonCacheBytes (grows to 1.5× the drawn set, hard cap
+ * ribbonHardBytes); entries drawn this frame are pinned. A frame builds exact
+ * ribbons for LIMITS.buildBudgetMs, then coarse (ds × 4) ones, then falls back
+ * to the nearest cached bucket or the native stroke and refines on idle in
+ * time slices, repainting once through onReady. Nothing is scheduled when the
+ * cache covers the view (no idle re-render).
+ *
+ * Drawing: runs of one pen's paths are drawn straight into the caller's canvas
+ * in layer order (beginFrame → drawRun … → endFrame), so plain and model pens
+ * stack correctly and no per-pen scratch canvas is needed.
  *
  * API
- *   tierFor(traits, pxPerMm, prevTier?, gesture?) -> 0 | 1
+ *   tierFor(traits, pxPerMm, prevTier?, gesture?) -> 0 | 1 | 2
  *   dsFor(traits, pxPerMm) -> sample spacing (mm)
- *   flatten(path, useCurves, trace?) -> { subs: [Float64Array], bbox }
- *   buildRibbon(flat, traits, ds, weightScale) -> { cmds: Float64Array, bytes, verts }
- *   replay(target, cmds)   moveTo/lineTo/arc/closePath into a ctx or Path2D
- *   renderCollected(plan, host) composite collected pens into class canvases
+ *   flatten(path, useCurves, trace?) -> { subs: [Float64Array], bbox, length }
+ *   buildRibbon(flat, traits, ds, weightScale) / buildSkeleton(flat, traits, ws)
+ *   replay(target, cmds, mode)   moveTo/lineTo/arc/closePath into a ctx or Path2D
+ *   beginFrame(), drawRun(ctx, items, traits, env, opts), endFrame(onReady)
+ *   renderCollected(plan, host)  one-frame convenience wrapper
  *   drawSample(canvas, pen, paper, opts) model-picker thumbnail
  *   clearCache(), cacheStats(), flush()
  */
@@ -102,7 +111,7 @@
     if (!t) return 0;
     const L = LIM();
     let tier = 0;
-    if (edgeMm(t) * pxPerMm >= (L.ribbonPx || 0.75)) tier = 2;
+    if (edgeMm(t) * pxPerMm >= (L.ribbonPx || 0.75) && pxPerMm >= (L.ribbonMinPxPerMm || 0)) tier = 2;
     else if (poolMm(t) * pxPerMm >= (L.tierPx || 0.35) || (t.skipRate > 0 && t.skipLenMm * pxPerMm >= 1.5)) tier = 1;
     if (gesture && prevTier > tier) return prevTier;
     return tier;
@@ -163,18 +172,20 @@
       cur.push(x, y); lx = x; ly = y;
     };
     const segs = (d) => clamp(Math.ceil(Math.sqrt(d / (4 * tol))), 1, 256);
+    const flattenQuad = (cx, cy, x, y) => {
+      const x0 = lx; const y0 = ly;
+      const n = segs(Math.hypot(x0 - 2 * cx + x, y0 - 2 * cy + y));
+      for (let i = 1; i <= n; i += 1) {
+        const t = i / n; const u = 1 - t;
+        push(u * u * x0 + 2 * u * t * cx + t * t * x, u * u * y0 + 2 * u * t * cy + t * t * y);
+      }
+    };
     return {
       subs,
       moveTo(x, y) { cur = null; push(x, y); },
       lineTo(x, y) { push(x, y); },
-      quadraticCurveTo(cx, cy, x, y) {
-        const x0 = lx; const y0 = ly;
-        const n = segs(Math.hypot(x0 - 2 * cx + x, y0 - 2 * cy + y));
-        for (let i = 1; i <= n; i += 1) {
-          const t = i / n; const u = 1 - t;
-          push(u * u * x0 + 2 * u * t * cx + t * t * x, u * u * y0 + 2 * u * t * cy + t * t * y);
-        }
-      },
+      // A recording sink for PathDraw (it flattens, never emits a curve).
+      quadraticCurveTo: flattenQuad,
       bezierCurveTo(c1x, c1y, c2x, c2y, x, y) {
         const x0 = lx; const y0 = ly;
         const d = Math.max(Math.hypot(x0 - 2 * c1x + c2x, y0 - 2 * c1y + c2y), Math.hypot(c1x - 2 * c2x + x, c1y - 2 * c2y + y));
@@ -242,7 +253,10 @@
         if (arr[i + 1] < y0) y0 = arr[i + 1]; if (arr[i + 1] > y1) y1 = arr[i + 1];
         if (i) length += Math.hypot(arr[i] - arr[i - 2], arr[i + 1] - arr[i - 1]);
       }
-      arr.closed = s.closed === true;
+      // A sub-path that ends where it starts is a loop even without
+      // closePath (a full ellipse, a closed polyline): noise runs periodic.
+      const n2 = arr.length;
+      arr.closed = s.closed === true || (n2 >= 6 && Math.abs(arr[0] - arr[n2 - 2]) < 1e-6 && Math.abs(arr[1] - arr[n2 - 1]) < 1e-6);
       return arr;
     });
     const out = { sig, subs, length, bbox: subs.length ? { x0, y0, x1, y1 } : null };
@@ -283,11 +297,11 @@
       for (let j = b; j >= a; j -= 1) { arr[n++] = RX[j]; arr[n++] = RY[j]; }
       this.n = n; this.verts += count;
     }
-    line(xs, ys, count) {
+    line(xs, ys, count, wf = 1) {
       if (count < 2) return;
-      this.grow(2 + count * 2);
+      this.grow(3 + count * 2);
       const a = this.a; let n = this.n;
-      a[n++] = OP_LINE; a[n++] = count;
+      a[n++] = OP_LINE; a[n++] = count; a[n++] = wf;
       for (let i = 0; i < count; i += 1) { a[n++] = xs[i]; a[n++] = ys[i]; }
       this.n = n; this.verts += count;
     }
@@ -333,12 +347,18 @@
   // Value + gradient noise: a random level AND slope at every lattice
   // point, so (unlike pure gradient noise) it does not cross zero at every
   // integer — no even "string of beads" along the edge.
-  const grad1 = (seed, x) => {
-    const i = Math.floor(x);
-    const f = x - i;
+  // period P > 0: the lattice wraps every P units (closed paths: the noise
+  // is periodic over the path length, so there is no step at the start).
+  const grad1 = (seed, x, P = 0) => {
+    const i0 = Math.floor(x);
+    const i = P > 0 ? ((i0 % P) + P) % P : i0;
+    const i1 = P > 0 ? (i + 1) % P : i + 1;
+    return grad1At(seed, i, i1, x - i0);
+  };
+  const grad1At = (seed, i, i1, f) => {
     const u = f * f * f * (f * (f * 6 - 15) + 10);
     const a = ihash(seed ^ 0x9e3779b9, i) * 0.55 + ihash(seed, i) * f;
-    const b = ihash(seed ^ 0x9e3779b9, i + 1) * 0.55 + ihash(seed, i + 1) * (f - 1);
+    const b = ihash(seed ^ 0x9e3779b9, i1) * 0.55 + ihash(seed, i1) * (f - 1);
     return (a + (b - a) * u) * 1.25;
   };
 
@@ -365,7 +385,7 @@
     const maxSamples = LIM().maxSamplesPerPath || 400000;
     const skipCell = t.skipLenMm * 4;
     const skipP = clamp(t.skipRate * 4, 0, 0.95);
-    const skipTaper = Math.max(0.12, r0 * 0.6);
+    const skipTaper = Math.max(0.3, r0 * 1.6);
     const nib = t.nib;
     const nibK = nib ? nib.strength : 0; const nibA = nib ? nib.angle : 0;
     const starve = t.starveLenMm > 0 && t.starveStrength > 0;
@@ -409,6 +429,11 @@
       // Per-path offsets into the noise (sheet-locked through the start point).
       const pathKey = (startHash * 4294967296) | 0;
       const off = (hash3(pathKey, 3, 5) * 4096) | 0;
+      // Closed path: whole lattice cells around the loop (periodic noise).
+      const per = (sc) => (closed ? Math.max(1, Math.round(total * sc)) : 0);
+      const P1 = per(esc); const P2 = per(esc2); const P3 = per(esc3); const PJ = per(jsc);
+      const k1 = closed ? P1 / total : esc; const k2 = closed ? P2 / total : esc2;
+      const k3 = closed ? P3 / total : esc3; const kJ = closed ? PJ / total : jsc;
 
       const step = Math.max(ds, total / maxSamples);
       const cap = Math.floor(total / step) + 3 + 2 * cornerS.length;
@@ -442,7 +467,6 @@
       const LX = new Float64Array(N); const LY = new Float64Array(N);
       const RX = new Float64Array(N); const RY = new Float64Array(N);
       const RM = new Float64Array(N);
-      const gap = new Uint8Array(N);
       const w = Math.max(r0 * 2, 0.1);
       const near = w * 3;
       let ci = 0;
@@ -450,7 +474,7 @@
         const s = S[j]; const x = X[j]; const y = Y[j];
         const nx = -TY[j]; const ny = TX[j];
         let r = r0;
-        if (jitter > 0) r *= 1 + jitter * grad1(sJ, s * jsc + off);
+        if (jitter > 0) r *= 1 + jitter * grad1(sJ, s * kJ + off, PJ);
         if (nib) r *= 1 + nibK * (2 * Math.abs(Math.sin(Math.atan2(TY[j], TX[j]) - nibA)) - 1);
         if (starve) r *= 1 - starveK * Math.min(1, s / starveLen);
         // Pools: pen-down blob, lift pool, swelling where the pen slows at corners.
@@ -468,8 +492,11 @@
             if (d < near) swell += cornerPool * r0 * 0.9 * Math.min(1, cornerTurn[q] / 1.6) * bump(d / w);
           }
         }
-        // Skips: gaps at hashed positions along the stroke, tapered at both ends.
+        // Skips: at hashed positions the ball starves — the line thins to a
+        // ragged streak dragged along one side (a partial skip, never a clean
+        // round-capped gap), tapered in and out.
         let g = 1;
+        let side = 0;
         if (skipP > 0) {
           const cell = Math.floor(s / skipCell);
           for (let c = cell - 1; c <= cell + 1; c += 1) {
@@ -477,34 +504,51 @@
             const centre = (c + 0.2 + 0.6 * hash3(pathKey, c, 11)) * skipCell;
             const half = (skipLen * (0.5 + 0.5 * hash3(pathKey, c, 13))) / 2;
             const d = Math.abs(s - centre) - half;
-            if (d < skipTaper) g = Math.min(g, smooth01(d / skipTaper));
+            if (d < skipTaper) {
+              const gc = smooth01(d / skipTaper);
+              if (gc < g) { g = gc; side = hash3(pathKey, c, 19) < 0.5 ? -1 : 1; }
+            }
           }
         }
-        r = (r + swell) * g;
+        let cx = x; let cy = y;
+        const skipK = 1 - g;
+        if (g < 1) {
+          const resid = 0.14 + 0.26 * (0.5 + 0.5 * grad1(sJ ^ 0x51ed27, s * 14 + off));
+          const gEff = resid + (1 - resid) * g;
+          const shift = skipK * r * 0.4 * side;
+          cx += nx * shift; cy += ny * shift;
+          r *= gEff; swell *= gEff;
+          g = gEff;
+        }
+        r += swell;
         RM[j] = r;
-        gap[j] = g < 0.04 ? 1 : 0;
         // Edge lumps: two octaves of noise per side along the arc length.
         let rl = r; let rr = r;
-        if (amp > 0 && g > 0) {
-          // ×1.8 brings the sum to a standard deviation of ≈ 0.4: edgeAmpMm
-          // is about the peak lump size.
-          // The lattice is domain-warped so lumps are irregularly spaced
-          // (fibre clumps), not an even scallop.
+        if (amp > 0) {
+          // ×1.4: edgeAmpMm is about the peak lump size. The lattice is
+          // domain-warped so lumps are irregularly spaced (fibre clumps),
+          // not an even scallop.
           const a = amp * g * 1.4;
-          const wl = 0.9 * grad1(sL3, s * esc3 + off);
-          const wr = 0.9 * grad1(sR3, s * esc3 + off);
-          const u = s * esc + off; const u2 = s * esc2 + off;
+          const wl = 0.9 * grad1(sL3, s * k3 + off, P3);
+          const wr = 0.9 * grad1(sR3, s * k3 + off, P3);
+          const u = s * k1 + off; const u2 = s * k2 + off;
           // Ink wicks OUT into the fibres: outward lumps at full size,
           // inward notches shallow (no pinched "string of beads").
-          const el = 0.86 * grad1(sL1, u + wl) + 0.14 * grad1(sL2, u2 + wl);
-          const er = 0.86 * grad1(sR1, u + wr) + 0.14 * grad1(sR2, u2 + wr);
+          const el = 0.86 * grad1(sL1, u + wl, P1) + 0.14 * grad1(sL2, u2 + wl, P2);
+          const er = 0.86 * grad1(sR1, u + wr, P1) + 0.14 * grad1(sR2, u2 + wr, P2);
           rl += a * (el > 0 ? el : 0.3 * el);
           rr += a * (er > 0 ? er : 0.3 * er);
           if (rl < 0) rl = 0;
           if (rr < 0) rr = 0;
         }
-        LX[j] = x + nx * rl; LY[j] = y + ny * rl;
-        RX[j] = x - nx * rr; RY[j] = y - ny * rr;
+        // A starved ball drags a broken, ragged edge (not a clean thin line).
+        if (skipK > 0) {
+          rl *= 1 - skipK * 0.55 * (0.5 + 0.5 * grad1(sL2 ^ 0x2f, s * 34 + off));
+          rr *= 1 - skipK * 0.55 * (0.5 + 0.5 * grad1(sR2 ^ 0x2f, s * 34 + off));
+        }
+        X[j] = cx; Y[j] = cy;
+        LX[j] = cx + nx * rl; LY[j] = cy + ny * rl;
+        RX[j] = cx - nx * rr; RY[j] = cy - ny * rr;
       }
 
       // Emit runs: strip polygons; break at corners (kind 2), gaps and folds.
@@ -514,18 +558,15 @@
       };
       let runStart = -1;
       for (let j = 0; j < N; j += 1) {
-        if (gap[j]) {
-          if (runStart >= 0) flush(runStart, j - 1);
-          runStart = -1;
-          continue;
-        }
         if (runStart < 0) { runStart = j; continue; }
         if (K[j] === 2) {
           flush(runStart, j - 1);
           runStart = j;
           continue;
         }
-        const dx = X[j] - X[j - 1]; const dy = Y[j] - Y[j - 1];
+        // Fold test against the path tangent, not the centre's step: a skip
+        // drags the centre sideways, which must not read as a fold.
+        const dx = TX[j]; const dy = TY[j];
         const fold = (LX[j] - LX[j - 1]) * dx + (LY[j] - LY[j - 1]) * dy < 0
           || (RX[j] - RX[j - 1]) * dx + (RY[j] - RY[j - 1]) * dy < 0;
         if (fold) {
@@ -540,11 +581,9 @@
         }
       }
       if (runStart >= 0) flush(runStart, N - 1);
-      // Round ends, corners and the ends of every skip gap.
+      // Round ends and corners.
       for (let j = 0; j < N; j += 1) {
-        if (gap[j]) continue;
-        const edgeOfGap = (j > 0 && gap[j - 1]) || (j < N - 1 && gap[j + 1]);
-        if (j === 0 || j === N - 1 || K[j] === 2 || edgeOfGap) {
+        if (j === 0 || j === N - 1 || K[j] === 2) {
           buf.disc((LX[j] + RX[j]) / 2, (LY[j] + RY[j]) / 2, Math.hypot(LX[j] - RX[j], LY[j] - RY[j]) / 2);
         }
       }
@@ -592,7 +631,9 @@
       };
       // Keep intervals between the skip gaps (same hashed gaps as the ribbon).
       const pathKey = (startHash * 4294967296) | 0;
-      const keep = [];
+      // Pieces between the skip gaps at full width; inside a gap the ball
+      // still drags a thin streak (a partial skip, not a clean break).
+      const pieces = [];
       let from = 0;
       if (skipP > 0) {
         const cells = Math.floor(total / skipCell) + 1;
@@ -602,17 +643,18 @@
           const half = (t.skipLenMm * (0.5 + 0.5 * hash3(pathKey, c, 13))) / 2;
           const a = Math.max(0, centre - half); const b = Math.min(total, centre + half);
           if (b <= a || a < from) continue;
-          if (a > from) keep.push([from, a]);
+          if (a > from) pieces.push([from, a, 1]);
+          pieces.push([a, b, Math.round((0.2 + 0.2 * hash3(pathKey, c, 17)) * 20) / 20]);
           from = b;
         }
       }
-      if (from < total) keep.push([from, total]);
-      keep.forEach(([a, b]) => {
+      if (from < total) pieces.push([from, total, 1]);
+      pieces.forEach(([a, b, wf]) => {
         const xs = []; const ys = [];
         const p0 = at(a); xs.push(p0[0]); ys.push(p0[1]);
         for (let i = 0; i < m; i += 1) if (cum[i] > a && cum[i] < b) { xs.push(px[i]); ys.push(py[i]); }
         const p1 = at(b); xs.push(p1[0]); ys.push(p1[1]);
-        buf.line(xs, ys, xs.length);
+        buf.line(xs, ys, xs.length, wf);
       });
       if (!closed) {
         if (blob > 0) { const p = at(Math.min(total, 0.25 * w)); buf.disc(p[0], p[1], r0 + blob * 0.87); }
@@ -633,21 +675,30 @@
   // Replay a command buffer into a ctx / Path2D (document mm). `mode`
   // 'fill' replays the closed shapes (polygons, discs), 'line' the open
   // skeleton polylines.
-  const replay = (target, cmds, mode = 'fill') => {
+  const replay = (target, cmds, mode = 'fill', onlyWf = null) => {
     const a = cmds;
     const fill = mode !== 'line';
     let i = 0;
     while (i < a.length) {
       const op = a[i];
-      if (op === OP_POLY || op === OP_LINE) {
+      if (op === OP_POLY) {
         const n = a[i + 1];
-        if ((op === OP_POLY) === fill) {
+        if (fill) {
           let j = i + 2;
           target.moveTo(a[j], a[j + 1]);
           for (let q = 1; q < n; q += 1) { j += 2; target.lineTo(a[j], a[j + 1]); }
-          if (op === OP_POLY) target.closePath();
+          target.closePath();
         }
         i += 2 + n * 2;
+      } else if (op === OP_LINE) {
+        const n = a[i + 1];
+        const wf = a[i + 2];
+        if (!fill && (onlyWf == null || onlyWf === wf)) {
+          let j = i + 3;
+          target.moveTo(a[j], a[j + 1]);
+          for (let q = 1; q < n; q += 1) { j += 2; target.lineTo(a[j], a[j + 1]); }
+        }
+        i += 3 + n * 2;
       } else if (op === OP_DISC) {
         if (fill) {
           const x = a[i + 1]; const y = a[i + 2]; const r = a[i + 3];
@@ -660,6 +711,20 @@
         break;
       }
     }
+  };
+
+  // Distinct line-width factors of a skeleton's polylines.
+  const lineWidthsOf = (cmds) => {
+    const out = [];
+    let i = 0;
+    while (i < cmds.length) {
+      const op = cmds[i];
+      if (op === OP_POLY) i += 2 + cmds[i + 1] * 2;
+      else if (op === OP_LINE) { if (!out.includes(cmds[i + 2])) out.push(cmds[i + 2]); i += 3 + cmds[i + 1] * 2; }
+      else if (op === OP_DISC) i += 4;
+      else break;
+    }
+    return out;
   };
 
   // ---- cache ----------------------------------------------------------------
@@ -703,7 +768,7 @@
     const old = m.get(key);
     if (old) { lru.delete(old); stats.bytes -= old.bytes; }
     entrySeq += 1;
-    const e = { id: entrySeq, key, sig, cmds: built.cmds, bytes: built.bytes, p2d: null, p2dLine: null, owner: m, base: meta && meta.base, ds: meta && meta.ds, ws: meta && meta.ws, kind: (meta && meta.kind) || 'ribbon' };
+    const e = { id: entrySeq, key, sig, cmds: built.cmds, bytes: built.bytes, p2d: null, lineGroups: null, owner: m, base: meta && meta.base, ds: meta && meta.ds, ws: meta && meta.ws, kind: (meta && meta.kind) || 'ribbon' };
     m.set(key, e);
     lru.set(e, true);
     stats.bytes += e.bytes;
@@ -723,9 +788,12 @@
       replay(p, e.cmds, 'fill');
       e.p2d = p;
       if (e.kind === 'skeleton') {
-        const l = new G.Path2D();
-        replay(l, e.cmds, 'line');
-        e.p2dLine = l;
+        e.lineGroups = new Map();
+        lineWidthsOf(e.cmds).forEach((wf) => {
+          const l = new G.Path2D();
+          replay(l, e.cmds, 'line', wf);
+          e.lineGroups.set(wf, l);
+        });
       }
     }
     return e.p2d;
@@ -843,153 +911,6 @@
 
   const OVERLAP_BATCHES = 6;
 
-  // Fill one pen's collected items into `ctx` (already cleared, transform m).
-  const fillPen = (ctx, items, t, tier, frame, darkenD) => {
-    const geo = [];
-    const native = [];
-    frame.tier = tier;
-    if (tier === 0) {
-      items.forEach((it) => native.push(it));
-    } else {
-      const pad = t.laidW * 2 + t.startBlobMm + t.endPoolMm + 1;
-      // Pass A: everything already cached for this view is pinned first, so
-      // building the rest can never evict what this frame is about to draw.
-      const ws1 = (it) => it.weightScale || 1;
-      const base = traitsBase(t);
-      const todo = [];
-      items.forEach((item) => {
-        if (item.temp || item.uncached) { native.push(item); return; }
-        const sig = pathSig(item.path, item.useCurves);
-        const flat = flatten(item.path, item.useCurves, frame.trace, sig);
-        if (!flat.subs.length || !intersects(flat.bbox, frame.cull, pad)) return;
-        const key = tier === 1 ? `${base}|S|${ws1(item)}` : `${base}|${frame.ds}|${ws1(item)}`;
-        const hit = entryFor(item.path, key, sig);
-        if (hit) { stats.hits += 1; pin(hit); touch(hit); geo.push(hit); return; }
-        todo.push({ item, sig, flat });
-      });
-      // Pass B: build / fall back for the misses.
-      todo.forEach(({ item, sig, flat }) => {
-        const e = geometryFor(item, t, frame, sig, flat);
-        if (!e) { native.push(item); return; }
-        pin(e);
-        touch(e);
-        geo.push(e);
-      });
-      evict();
-    }
-    const tFill = now();
-    frame.prof.prep += tFill - frame.tPen;
-    const colors = darkenD > 0 ? darkenColors(t.color, darkenD) : null;
-    const usePath2D = hasPath2D() && typeof ctx.fill === 'function';
-    const strokeNative = (color, op, each) => {
-      if (!native.length) return;
-      ctx.save();
-      ctx.globalCompositeOperation = op;
-      ctx.strokeStyle = color;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      if (each) {
-        const batches = Math.min(OVERLAP_BATCHES, native.length);
-        for (let b = 0; b < batches; b += 1) {
-          const byW = new Map();
-          native.forEach((it, i) => { if (i % batches !== b) return; const k = it.weightScale || 1; if (!byW.has(k)) byW.set(k, []); byW.get(k).push(it); });
-          byW.forEach((list, k) => {
-            ctx.lineWidth = t.laidW * k;
-            ctx.beginPath();
-            list.forEach((it) => frame.traceItem(ctx, it));
-            ctx.stroke();
-          });
-        }
-      } else {
-        const byW = new Map();
-        native.forEach((it) => { const k = it.weightScale || 1; if (!byW.has(k)) byW.set(k, []); byW.get(k).push(it); });
-        byW.forEach((list, k) => {
-          ctx.lineWidth = t.laidW * k;
-          ctx.beginPath();
-          list.forEach((it) => frame.traceItem(ctx, it));
-          ctx.stroke();
-        });
-      }
-      ctx.restore();
-    };
-    // Draw a set of entries: filled shapes, then skeleton lines stroked at
-    // the laid width (grouped by weight scale).
-    // The combined Path2D of a set of entries is cached per pen + slot and
-    // reused while the drawn set is unchanged (a pan inside the cull cell),
-    // so the browser can keep its tessellation of it too.
-    const combinedFor = (list, slot) => {
-      const key = `${frame.penId}|${slot}`;
-      const sig = list.map((e) => e.id).join(',');
-      const hit = combined.get(key);
-      frame.usedCombined.add(key);
-      if (hit && hit.sig === sig) return hit;
-      const fill = new G.Path2D();
-      const lines = new Map();
-      list.forEach((e) => {
-        fill.addPath(p2dOf(e));
-        if (e.kind === 'skeleton') { if (!lines.has(e.ws)) lines.set(e.ws, new G.Path2D()); lines.get(e.ws).addPath(e.p2dLine); }
-      });
-      const c = { sig, fill, lines };
-      combined.set(key, c);
-      return c;
-    };
-    const drawEntries = (list, color, op, slot) => {
-      if (!list.length) return;
-      ctx.save();
-      ctx.globalCompositeOperation = op;
-      ctx.fillStyle = color;
-      ctx.strokeStyle = color;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      if (usePath2D) {
-        const c = combinedFor(list, slot);
-        ctx.fill(c.fill);
-        c.lines.forEach((p, ws) => { ctx.lineWidth = t.laidW * (ws || 1); ctx.stroke(p); });
-      } else {
-        ctx.beginPath();
-        list.forEach((e) => replay(ctx, e.cmds, 'fill'));
-        ctx.fill();
-        list.forEach((e) => {
-          if (e.kind !== 'skeleton') return;
-          ctx.lineWidth = t.laidW * (e.ws || 1);
-          ctx.beginPath();
-          replay(ctx, e.cmds, 'line');
-          ctx.stroke();
-        });
-      }
-      ctx.restore();
-    };
-    // Pass 1: the union (nonzero fill of every shape at once).
-    drawEntries(geo, colors ? colors.u : t.color, 'source-over', 'u');
-    strokeNative(colors ? colors.u : t.color, 'source-over', false);
-    const tOver = now();
-    frame.prof.fill += tOver - tFill;
-    if (!colors) return;
-    // Pass 2: overlaps compound (multiply). Paths are dealt round-robin into
-    // OVERLAP_BATCHES groups and each group is one multiply pass, so a
-    // crossing of two paths in different groups darkens (neighbouring paths
-    // always are); two paths of the same group do not. Bounded cost: a few
-    // rasters instead of one per path.
-    const batches = Math.min(OVERLAP_BATCHES, geo.length);
-    for (let b = 0; b < batches; b += 1) {
-      drawEntries(geo.filter((_e, i) => i % batches === b), colors.g, 'multiply', `b${b}`);
-    }
-    strokeNative(colors.g, 'multiply', true);
-    frame.prof.overlap += now() - tOver;
-  };
-
-  /**
-   * Render every collected pen into its class canvas.
-   * plan.collect: Map(penId → items[{ path, layer, temp, useCurves, weightScale, uncached }])
-   * host: {
-   *   m, pxPerMm, view, gesture,
-   *   pens: SETTINGS.pens (plot order),
-   *   scratch(): canvas (device size), translucent: ctx, opaque(): ctx,
-   *   haloSrc: { ctx, w, h } | null (half-res halo source),
-   *   traceItem(ctx, item), trace(ctx, path, useCurves),
-   *   skipMask(ctx, alpha) | null, skipAlpha, onReady
-   * }
-   */
   // Cull rect: the view grown by half a view each way and snapped to a
   // half-view grid, so small pans keep the same drawn set (and its cached
   // combined path).
@@ -1002,97 +923,247 @@
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   };
 
+  // ---- frames ---------------------------------------------------------------
+  //
+  // A frame is beginFrame() → drawRun() per contiguous run of one pen's
+  // paths, in layer / plot order → endFrame(). Runs draw straight into the
+  // caller's canvas (no per-pen scratch, no extra full-canvas composites),
+  // so layer stacking between plain and model pens is exactly the draw order.
+
+  let frame = null;
   let lastFrame = null;
-  const renderCollected = (plan, host) => {
-    const collect = plan.collect;
-    if (!collect || !collect.size) return { drawn: 0 };
+  const newFrame = () => ({
+    spent: 0, coarseSpent: 0, queue: new Map(), qid: 0, ds: 0, tier: 0,
+    // prof: JS time per phase. Canvas 2D is deferred: raster cost lands
+    // wherever the browser flushes (usually the caller's next drawImage), not
+    // here — these numbers are build / submit time only.
+    prof: { prep: 0, fill: 0, overlap: 0 }, tPen: 0,
+    usedCombined: new Set(), runKey: '', view: null, cull: null, trace: null, traceItem: null,
+  });
+
+  const beginFrame = () => {
     pinned = new Set();
     pinnedBytes = 0;
-    const frameQueue = new Map();
-    const frame = {
-      spent: 0, coarseSpent: 0, queue: frameQueue, qid: 0, view: host.view,
-      trace: host.trace || null, traceItem: host.traceItem, ds: 0,
-      prof: { prep: 0, fill: 0, overlap: 0, mask: 0, composite: 0 }, tPen: 0,
-      cull: cullRect(host.view), usedCombined: new Set(), penId: null,
-    };
-    const tiers = plan.tiers || (plan.tiers = new Map());
-    let drawn = 0;
-    (host.pens || []).forEach((pen) => {
-      if (!pen) return;
-      const items = collect.get(pen.id);
-      const t = plan.penTraits && plan.penTraits.get(pen.id);
-      if (!items || !items.length || !t) return;
-      const tier = t.tier != null ? t.tier : tierFor(t, host.pxPerMm);
-      tiers.set(pen.id, tier);
-      frame.ds = dsFor(t, host.pxPerMm);
-      if (tier === 2) {
-        // Visible-set budget: a ribbon costs ≈ 2 vertices per sample; above
-        // LIMITS.ribbonVisibleBytes the spacing doubles (a coarser bucket,
-        // still nested) instead of evicting what the frame draws.
-        let len = 0;
-        const pad = t.laidW * 2 + 1;
-        items.forEach((it) => {
-          if (it.temp || it.uncached) return;
-          const f = flatten(it.path, it.useCurves, frame.trace);
-          if (f.bbox && intersects(f.bbox, frame.cull, pad)) len += f.length;
-        });
-        const budget = LIM().ribbonVisibleBytes || 96 * 1024 * 1024;
-        while ((len / frame.ds) * 2 * 26 > budget && frame.ds < 64) frame.ds *= 2;
-      }
-      frame.penId = pen.id;
-      const scratch = host.scratch();
-      const sctx = scratch.getContext('2d');
-      sctx.setTransform(1, 0, 0, 1, 0, 0);
-      sctx.globalAlpha = 1;
-      sctx.globalCompositeOperation = 'source-over';
-      sctx.clearRect(0, 0, scratch.width, scratch.height);
-      sctx.setTransform(host.m);
-      frame.tPen = now();
-      const darkenD = t.overlapDarkening >= 0.05 && !t.opaque ? t.overlapDarkening : 0;
-      fillPen(sctx, items, t, tier, frame, darkenD);
-      sctx.setTransform(1, 0, 0, 1, 0, 0);
-      const tMask = now();
-      // Dry-skip: the paper's tooth breaks the ink, scaled by the pen.
-      if (host.skipMask && host.skipAlpha > 0.01) {
-        sctx.save();
-        sctx.globalCompositeOperation = 'destination-out';
-        sctx.globalAlpha = clamp(host.skipAlpha * t.dryskipK, 0, 1);
-        sctx.setTransform(host.m);
-        host.skipMask(sctx);
-        sctx.restore();
-      }
-      const tComp = now();
-      frame.prof.mask += tComp - tMask;
-      const target = t.opaque ? host.opaque() : host.translucent;
-      if (!target) return;
-      target.save();
-      target.setTransform(1, 0, 0, 1, 0, 0);
-      target.globalCompositeOperation = 'source-over';
-      target.globalAlpha = t.alpha;
-      target.drawImage(scratch, 0, 0);
-      target.restore();
-      if (host.haloSrc && host.haloSrc.ctx && t.haloWeight > 0) {
-        const h = host.haloSrc.ctx;
-        h.save();
-        h.setTransform(1, 0, 0, 1, 0, 0);
-        h.globalCompositeOperation = 'source-over';
-        h.globalAlpha = clamp(t.haloWeight * Math.max(t.alpha, 0.25), 0, 1);
-        h.drawImage(scratch, 0, 0, host.haloSrc.w, host.haloSrc.h);
-        h.restore();
-      }
-      frame.prof.composite += now() - tComp;
-      drawn += 1;
-    });
+    frame = newFrame();
+    return frame;
+  };
+
+  const endFrame = (onReady) => {
+    if (!frame) return;
     lastFrame = frame.prof;
-    combined.forEach((_c, k) => { if (!frame.usedCombined.has(k)) combined.delete(k); });
+    const used = frame.usedCombined;
+    combined.forEach((_c, k) => { if (!used.has(k)) combined.delete(k); });
     // Replace the refine queue with this frame's (drop stale jobs).
-    queue = frameQueue;
+    queue = frame.queue;
     if (queue.size) {
-      if (typeof host.onReady === 'function') waiters.add(host.onReady);
+      if (typeof onReady === 'function') waiters.add(onReady);
       schedule();
     } else {
       waiters = new Set();
     }
+    frame = null;
+  };
+
+  // Fill one run's items into `ctx` (transform = document mm → device).
+  // opts: { op, alpha, color, darken } — the union pass uses `op` and
+  // `alpha`; with darken > 0 the union is drawn in u = c / g and overlaps
+  // compound in multiply batches of g = mix(1, c, darken).
+  const fillPen = (ctx, items, t, tier, fr, opts) => {
+    const geo = [];
+    const native = [];
+    fr.tier = tier;
+    if (tier === 0) {
+      items.forEach((it) => native.push(it));
+    } else {
+      const pad = t.laidW * 2 + t.startBlobMm + t.endPoolMm + 1;
+      // Pass A: everything already cached for this view is pinned first, so
+      // building the rest can never evict what this frame is about to draw.
+      const ws1 = (it) => it.weightScale || 1;
+      const base = traitsBase(t);
+      const todo = [];
+      items.forEach((item) => {
+        if (item.temp || item.uncached) { native.push(item); return; }
+        const sig = pathSig(item.path, item.useCurves);
+        const flat = flatten(item.path, item.useCurves, fr.trace, sig);
+        if (!flat.subs.length || !intersects(flat.bbox, fr.cull, pad)) return;
+        const key = tier === 1 ? `${base}|S|${ws1(item)}` : `${base}|${fr.ds}|${ws1(item)}`;
+        const hit = entryFor(item.path, key, sig);
+        if (hit) { stats.hits += 1; pin(hit); touch(hit); geo.push(hit); return; }
+        todo.push({ item, sig, flat });
+      });
+      // Pass B: build / fall back for the misses.
+      todo.forEach(({ item, sig, flat }) => {
+        const e = geometryFor(item, t, fr, sig, flat);
+        if (!e) { native.push(item); return; }
+        pin(e);
+        touch(e);
+        geo.push(e);
+      });
+      evict();
+    }
+    const tFill = now();
+    fr.prof.prep += tFill - fr.tPen;
+    const color = opts.color || t.inkColor || t.color;
+    const darken = opts.darken > 0 ? opts.darken : 0;
+    const colors = darken ? darkenColors(color, darken) : null;
+    const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
+    const usePath2D = hasPath2D() && typeof ctx.fill === 'function';
+    const strokeNative = (col, op, batched) => {
+      if (!native.length) return;
+      ctx.save();
+      ctx.globalCompositeOperation = op;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = col;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const batches = batched ? Math.min(OVERLAP_BATCHES, native.length) : 1;
+      for (let b = 0; b < batches; b += 1) {
+        const byW = new Map();
+        native.forEach((it, i) => { if (i % batches !== b) return; const k = it.weightScale || 1; if (!byW.has(k)) byW.set(k, []); byW.get(k).push(it); });
+        byW.forEach((list, k) => {
+          ctx.lineWidth = t.laidW * k;
+          ctx.beginPath();
+          list.forEach((it) => fr.traceItem(ctx, it));
+          ctx.stroke();
+        });
+      }
+      ctx.restore();
+    };
+    // Combined Path2D of a set of entries, cached per run + slot and reused
+    // while the drawn set is unchanged (a pan inside the cull cell), so the
+    // browser can keep its tessellation of it too.
+    const combinedFor = (list, slot) => {
+      const key = `${fr.runKey}|${slot}`;
+      const sig = list.map((e) => e.id).join(',');
+      const hit = combined.get(key);
+      fr.usedCombined.add(key);
+      if (hit && hit.sig === sig) return hit;
+      const fill = new G.Path2D();
+      const lines = new Map();
+      list.forEach((e) => {
+        fill.addPath(p2dOf(e));
+        if (e.kind === 'skeleton') {
+          e.lineGroups.forEach((p, wf) => {
+            const k = `${e.ws}|${wf}`;
+            if (!lines.has(k)) lines.set(k, { ws: e.ws, wf, p: new G.Path2D() });
+            lines.get(k).p.addPath(p);
+          });
+        }
+      });
+      const c = { sig, fill, lines };
+      combined.set(key, c);
+      return c;
+    };
+    const drawEntries = (list, col, op, slot) => {
+      if (!list.length) return;
+      ctx.save();
+      ctx.globalCompositeOperation = op;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = col;
+      ctx.strokeStyle = col;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      if (usePath2D) {
+        const c = combinedFor(list, slot);
+        ctx.fill(c.fill);
+        c.lines.forEach((g) => { ctx.lineWidth = t.laidW * (g.ws || 1) * g.wf; ctx.stroke(g.p); });
+      } else {
+        ctx.beginPath();
+        list.forEach((e) => replay(ctx, e.cmds, 'fill'));
+        ctx.fill();
+        list.forEach((e) => {
+          if (e.kind !== 'skeleton') return;
+          lineWidthsOf(e.cmds).forEach((wf) => {
+            ctx.lineWidth = t.laidW * (e.ws || 1) * wf;
+            ctx.beginPath();
+            replay(ctx, e.cmds, 'line', wf);
+            ctx.stroke();
+          });
+        });
+      }
+      ctx.restore();
+    };
+    // Pass 1: the union (nonzero fill of every shape at once).
+    drawEntries(geo, colors ? colors.u : color, opts.op || 'source-over', 'u');
+    strokeNative(colors ? colors.u : color, opts.op || 'source-over', false);
+    const tOver = now();
+    fr.prof.fill += tOver - tFill;
+    if (!colors) return;
+    // Pass 2: overlaps compound (multiply). Paths are dealt round-robin into
+    // OVERLAP_BATCHES groups and each group is one multiply pass, so a
+    // crossing of two paths in different groups darkens (neighbouring paths
+    // always are); two paths of the same group do not. A single coverage is
+    // u × g = c exactly.
+    const batches = Math.min(OVERLAP_BATCHES, geo.length);
+    for (let b = 0; b < batches; b += 1) {
+      drawEntries(geo.filter((_e, i) => i % batches === b), colors.g, 'multiply', `b${b}`);
+    }
+    strokeNative(colors.g, 'multiply', true);
+    fr.prof.overlap += now() - tOver;
+  };
+
+  /**
+   * Draw one contiguous run of a pen's paths into `ctx` (its transform maps
+   * document mm to device px).
+   *   env:  { pxPerMm, view (mm rect), trace(ctx, path, useCurves),
+   *           traceItem(ctx, item), runKey }
+   *   opts: { op, alpha, darken }
+   * Must be called between beginFrame() and endFrame().
+   */
+  const drawRun = (ctx, items, t, env, opts = {}) => {
+    if (!items || !items.length || !t) return;
+    const own = !frame;
+    if (own) beginFrame();
+    const fr = frame;
+    fr.view = env.view;
+    fr.cull = cullRect(env.view);
+    fr.trace = env.trace || null;
+    fr.traceItem = env.traceItem || ((c, it) => defaultTrace(c, it.path, it.useCurves));
+    fr.runKey = env.runKey || `${t.penId}`;
+    const tier = t.tier != null ? t.tier : tierFor(t, env.pxPerMm);
+    fr.ds = dsFor(t, env.pxPerMm);
+    if (tier === 2) {
+      // Visible-set budget: a ribbon costs ≈ 2 vertices per sample; above
+      // LIMITS.ribbonVisibleBytes the spacing doubles (a coarser bucket,
+      // still nested) instead of evicting what the frame draws.
+      let len = 0;
+      const pad = t.laidW * 2 + 1;
+      items.forEach((it) => {
+        if (it.temp || it.uncached) return;
+        const f = flatten(it.path, it.useCurves, fr.trace);
+        if (f.bbox && intersects(f.bbox, fr.cull, pad)) len += f.length;
+      });
+      const budget = LIM().ribbonVisibleBytes || 96 * 1024 * 1024;
+      while ((len / fr.ds) * 2 * 26 > budget && fr.ds < 64) fr.ds *= 2;
+    }
+    fr.tPen = now();
+    fillPen(ctx, items, t, tier, fr, opts);
+    if (own) endFrame(env.onReady);
+  };
+
+  /**
+   * Convenience wrapper (perf tests / thumbnails): one frame drawing every
+   * pen of plan.collect (Map penId → items) into host.translucent (a ctx) in
+   * host.pens order.
+   */
+  const renderCollected = (plan, host) => {
+    const collect = plan.collect;
+    if (!collect || !collect.size) return { drawn: 0 };
+    beginFrame();
+    let drawn = 0;
+    const ctx = host.translucent;
+    (host.pens || []).forEach((pen) => {
+      const items = pen && collect.get(pen.id);
+      const t = pen && plan.penTraits && plan.penTraits.get(pen.id);
+      if (!items || !items.length || !t || !ctx) return;
+      ctx.save();
+      if (host.m) ctx.setTransform(host.m);
+      drawRun(ctx, items, t, { pxPerMm: host.pxPerMm, view: host.view, trace: host.trace, traceItem: host.traceItem, runKey: pen.id },
+        { op: 'source-over', alpha: t.alpha, darken: t.opaque ? 0 : t.overlapDarkening });
+      ctx.restore();
+      drawn += 1;
+    });
+    endFrame(host.onReady);
     return { drawn };
   };
 
@@ -1127,7 +1198,8 @@
     }
     const path = pts;
     ctx.globalAlpha = t ? t.alpha : 1;
-    ctx.fillStyle = pen.color; ctx.strokeStyle = pen.color;
+    const col = (t && t.inkColor) || pen.color;
+    ctx.fillStyle = col; ctx.strokeStyle = col;
     if (t) {
       const ds = dsFor(t, k);
       const built = buildRibbon(flatten(path, false), { ...t, skipRate: t.skipRate }, ds, 1);
@@ -1180,6 +1252,9 @@
     buildRibbon,
     replay,
     renderCollected,
+    beginFrame,
+    drawRun,
+    endFrame,
     drawSample,
     clearCache,
     cacheStats,

@@ -743,15 +743,15 @@
       if (Array.isArray(snapshot.pens) && snapshot.pens.length) {
         // Validate each pen entry through the shared pen validator (id, hex
         // colour, finite width, and the pen-model fields: model / size /
-        // effect / color2 / clamped ink overrides). Ids are capped at 64 and
-        // names at 128 characters; at most 32 pens.
+        // effect / color2 / clamped ink overrides; ids capped at
+        // PEN_MODELS.LIMITS.penIdMaxLen). Names are capped at 128
+        // characters; at most 32 pens.
         const validatePen = window.Vectura?.PenValidate?.validatePen;
         const cleanPens = [];
         for (let i = 0; i < snapshot.pens.length && i < 32; i++) {
           const p = snapshot.pens[i];
           if (!p || typeof p !== 'object') continue;
-          const valid = typeof validatePen === 'function' && !(typeof p.id === 'string' && p.id.length > 64)
-            ? validatePen(p) : null;
+          const valid = typeof validatePen === 'function' ? validatePen(p) : null;
           if (!valid) { warn('pens[' + i + ']', p); continue; }
           const { id, color } = valid;
           const name = (typeof p.name === 'string' && p.name.length <= 128) ? p.name : id;

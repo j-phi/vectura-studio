@@ -4,16 +4,16 @@
  *
  * SETTINGS.pens is rendered into innerHTML by several panels; we must not
  * allow XSS payloads to survive an import. The validator enforces:
- *   - id:    must be a non-empty safe identifier (A-Z, a-z, 0-9, _, -)
+ *   - id:    non-empty safe identifier (A-Z, a-z, 0-9, _, -), ≤ LIMITS.penIdMaxLen (64)
  *   - color: must be a hex color (#rgb, #rgba, #rrggbb, #rrggbbaa)
  *   - width: must be a finite number, clamped to [0, 100]
  *   - name:  coerced to a string; left untouched (escapeHtml handles render)
  *
  * Pen models (src/config/pen-models.js) add optional fields, each kept only
  * when valid so a plain pen comes back with exactly its old keys:
- *   - model:  /^[a-z0-9-]{1,48}$/ (an id this build doesn't know is KEPT, for
+ *   - model:  /^[a-z0-9-]+$/, ≤ LIMITS.modelIdMaxLen (48) (an id this build doesn't know is KEPT, for
  *             round-trip, and renders as a plain pen)
- *   - size:   string ≤ 48 chars, control characters stripped
+ *   - size:   string ≤ LIMITS.sizeMaxLen (48) chars, control characters stripped
  *   - effect: one of PEN_MODELS.EFFECTS
  *   - color2: hex colour
  *   - ink:    only PEN_MODELS.INK_KEYS, finite numbers clamped to
@@ -36,7 +36,12 @@
   const isHexColor = (value) => typeof value === 'string' && HEX_RE.test(value);
   const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value);
 
-  const MODEL_RE = /^[a-z0-9-]{1,48}$/;
+  // Length caps come from PEN_MODELS.LIMITS (fallbacks when standalone).
+  const lim = (key, d) => {
+    const L = Vectura.PEN_MODELS && Vectura.PEN_MODELS.LIMITS;
+    return L && Number.isFinite(L[key]) ? L[key] : d;
+  };
+  const MODEL_RE = /^[a-z0-9-]+$/;
   // Fallback effect list when the catalogue is absent (standalone loads).
   const FALLBACK_EFFECTS = ['metallic', 'dual-metallic', 'fluorescent', 'glow', 'glitter', 'white'];
   const catalogue = () => Vectura.PEN_MODELS || null;
@@ -45,10 +50,10 @@
   // Validate the optional pen-model fields onto `out` (mutates, returns out).
   const validateModelFields = (pen, out) => {
     const C = catalogue();
-    if (typeof pen.model === 'string' && MODEL_RE.test(pen.model) && pen.model !== 'plain') out.model = pen.model;
+    if (typeof pen.model === 'string' && pen.model.length <= lim('modelIdMaxLen', 48) && MODEL_RE.test(pen.model) && pen.model !== 'plain') out.model = pen.model;
     if (out.model && typeof pen.size === 'string') {
       // eslint-disable-next-line no-control-regex
-      const size = pen.size.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 48).trim();
+      const size = pen.size.replace(/[\u0000-\u001f\u007f]/g, '').slice(0, lim('sizeMaxLen', 48)).trim();
       if (size) out.size = size;
     }
     const effects = (C && Array.isArray(C.EFFECTS)) ? C.EFFECTS : FALLBACK_EFFECTS;
@@ -75,7 +80,7 @@
   const validatePen = (pen) => {
     if (!pen || typeof pen !== 'object') return null;
     const id = `${pen.id ?? ''}`;
-    if (!id || !ID_RE.test(id)) return null;
+    if (!id || id.length > lim('penIdMaxLen', 64) || !ID_RE.test(id)) return null;
     if (!isHexColor(pen.color)) return null;
     let width = pen.width;
     if (typeof width === 'string') {

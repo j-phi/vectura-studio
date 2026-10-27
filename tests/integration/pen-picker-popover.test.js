@@ -431,13 +431,14 @@ describe('Pen Picker popover (COL-1)', () => {
       fire(slider, 'focus');
       fire(slider, 'input'); // value unchanged: no-op
       expect(app.history.length).toBe(before);
+      fire(slider, 'pointerdown');
       for (let i = 0; i < 20; i += 1) { slider.value = String(0.3 + i * 0.02); fire(slider, 'input'); }
       fire(slider, 'change');
       expect(app.history.length).toBe(before + 1);
       expect(SETTINGS.pens[0].ink.wetness).toBeCloseTo(0.68, 6);
       expect(rowOf('pen-1').querySelector('.pen-ink-btn').classList.contains('has-overrides')).toBe(true);
       // A second drag is a second step.
-      slider.value = '0.9'; fire(slider, 'input'); fire(slider, 'change');
+      fire(slider, 'pointerdown'); slider.value = '0.9'; fire(slider, 'input'); fire(slider, 'change');
       expect(app.history.length).toBe(before + 2);
       const reset = document.querySelector('.ink-pop-settings .ink-reset');
       expect(reset.disabled).toBe(false);
@@ -458,6 +459,128 @@ describe('Pen Picker popover (COL-1)', () => {
       expect(app.history.length).toBe(n + 1);
       window.Vectura.UI.InkSettings.close();
       expect(document.querySelector('.ink-pop')).toBeNull();
+    });
+
+    // Review item 7: arrow keys fire input+change on every press; a keyboard
+    // session (until the slider loses focus) is ONE undo step.
+    test('ink sliders: a keyboard session of arrow presses is one undo step', () => {
+      resetPens();
+      window.Vectura.PenModel.applyModel(SETTINGS.pens[0], 'pentel-sign-pen');
+      app.ui.renderPens();
+      rowOf('pen-1').querySelector('.pen-ink-btn').click();
+      const slider = document.querySelector('.ink-pop-settings .ink-slider[data-key="wetness"]');
+      slider.focus();
+      const before = app.history.length;
+      for (let i = 1; i <= 6; i += 1) {
+        slider.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+        slider.value = String(0.5 + i * 0.01); fire(slider, 'input'); fire(slider, 'change');
+      }
+      expect(app.history.length).toBe(before + 1);
+      expect(SETTINGS.pens[0].ink.wetness).toBeCloseTo(0.56, 6);
+      // Leaving the slider ends the session: the next arrow press is a new step.
+      fire(slider, 'blur');
+      slider.value = '0.6'; fire(slider, 'input'); fire(slider, 'change');
+      expect(app.history.length).toBe(before + 2);
+      app.undo();
+      expect(SETTINGS.pens[0].ink.wetness).toBeCloseTo(0.56, 6);
+      window.Vectura.UI.InkSettings.close();
+    });
+
+    // Review item 8: listbox keyboard model.
+    test('model picker keyboard: aria-activedescendant follows ArrowUp/Down, Enter picks, Esc closes back to the chip', () => {
+      resetPens();
+      app.ui.renderPens();
+      rowOf('pen-2').querySelector('.pen-model-chip').click();
+      const pop = document.querySelector('.ink-pop-models');
+      const search = pop.querySelector('.ink-pop-search');
+      expect(document.activeElement).toBe(search);
+      expect(search.getAttribute('role')).toBe('combobox');
+      const listbox = document.getElementById(search.getAttribute('aria-controls'));
+      expect(listbox.getAttribute('role')).toBe('listbox');
+      const active = () => document.getElementById(search.getAttribute('aria-activedescendant'));
+      expect(active().dataset.modelId).toBe('plain'); // the current model starts active
+      const key = (k) => search.dispatchEvent(new window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+      const ids = Array.from(pop.querySelectorAll('.ink-model-row')).map((r) => r.dataset.modelId);
+      key('ArrowDown'); key('ArrowDown');
+      expect(active().dataset.modelId).toBe(ids[2]);
+      expect(active().classList.contains('kbd-active')).toBe(true);
+      expect(active().getAttribute('role')).toBe('option');
+      key('ArrowUp');
+      expect(active().dataset.modelId).toBe(ids[1]);
+      key('ArrowUp'); key('ArrowUp'); // clamps at the top
+      expect(active().dataset.modelId).toBe('plain');
+      key('End');
+      expect(active().dataset.modelId).toBe(ids[ids.length - 1]);
+      // Search narrows and re-targets the first match.
+      search.value = 'micron'; fire(search, 'input');
+      expect(active().dataset.modelId).toBe('sakura-pigma-micron');
+      const before = app.history.length;
+      key('Enter');
+      expect(SETTINGS.pens[1].model).toBe('sakura-pigma-micron');
+      expect(app.history.length).toBe(before + 1);
+      expect(document.querySelector('.ink-pop')).toBeNull();
+      expect(document.activeElement).toBe(rowOf('pen-2').querySelector('.pen-model-chip'));
+      // Esc closes without a change and returns focus to the chip.
+      rowOf('pen-2').querySelector('.pen-model-chip').click();
+      const n = app.history.length;
+      document.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      expect(document.querySelector('.ink-pop')).toBeNull();
+      expect(app.history.length).toBe(n);
+      expect(document.activeElement).toBe(rowOf('pen-2').querySelector('.pen-model-chip'));
+    });
+
+    // Review item 9: focus survives the pens-list re-render and stays trapped.
+    test('ink settings: Reset then Esc returns focus to the re-rendered row button; Tab is trapped in the popover', () => {
+      resetPens();
+      window.Vectura.PenModel.applyModel(SETTINGS.pens[0], 'pentel-sign-pen');
+      SETTINGS.pens[0].ink = { wetness: 0.9 };
+      app.ui.renderPens();
+      const oldBtn = rowOf('pen-1').querySelector('.pen-ink-btn');
+      oldBtn.click();
+      const reset = document.querySelector('.ink-pop-settings .ink-reset');
+      reset.focus();
+      reset.click();
+      expect(SETTINGS.pens[0].ink).toBeUndefined();
+      // Reset disables itself: focus moved to a live control inside the popover, not <body>.
+      const pop = document.querySelector('.ink-pop-settings');
+      expect(pop.contains(document.activeElement)).toBe(true);
+      // Tab from the last focusable wraps to the first; Shift+Tab wraps back.
+      const focusables = Array.from(pop.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'));
+      expect(focusables.length).toBeGreaterThan(2);
+      focusables[focusables.length - 1].focus();
+      document.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+      expect(document.activeElement).toBe(focusables[0]);
+      document.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }));
+      expect(document.activeElement).toBe(focusables[focusables.length - 1]);
+      document.activeElement.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      expect(document.querySelector('.ink-pop')).toBeNull();
+      const btn = rowOf('pen-1').querySelector('.pen-ink-btn');
+      expect(btn.isConnected).toBe(true);
+      expect(document.activeElement).toBe(btn);
+      expect(document.activeElement).not.toBe(document.body);
+    });
+
+    // Review item 5: dye inks on dark stock are faint but visible, and say so.
+    test('ink settings on dark stock: a dye pen shows the "barely visible" hint; an opaque gel does not', () => {
+      resetPens();
+      const P = window.Vectura.Paper;
+      const prev = P.effective();
+      P.setActive(P.forType('black'));
+      try {
+        window.Vectura.PenModel.applyModel(SETTINGS.pens[0], 'sharpie-ultra-fine');
+        window.Vectura.PenModel.applyModel(SETTINGS.pens[1], 'uniball-signo-broad-um153');
+        app.ui.renderPens();
+        rowOf('pen-1').querySelector('.pen-ink-btn').click();
+        const warn = document.querySelector('.ink-pop-settings .ink-note-warn');
+        expect(warn).toBeTruthy();
+        expect(warn.textContent).toMatch(/barely visible on dark paper/i);
+        window.Vectura.UI.InkSettings.close();
+        rowOf('pen-2').querySelector('.pen-ink-btn').click();
+        expect(document.querySelector('.ink-pop-settings .ink-note-warn')).toBeNull();
+        window.Vectura.UI.InkSettings.close();
+      } finally {
+        P.setActive(prev);
+      }
     });
   });
 });

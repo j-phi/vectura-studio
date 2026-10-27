@@ -168,7 +168,7 @@ describe('COL-2: Vectura.PensPanel.getSelectionPenState (mixed-pen read)', () =>
 describe('Pen models: catalogue + PenModel.resolveTraits', () => {
   let dom;
   let V;
-  const MODEL_FILES = ['src/config/papers.js', 'src/core/paper.js', 'src/config/pen-models.js', 'src/core/pen-model.js', 'src/core/pen-validate.js'];
+  const MODEL_FILES = ['src/config/papers.js', 'src/core/paper.js', 'src/config/pen-models.js', 'src/core/pen-model.js', 'src/core/pen-validate.js', 'src/render/ink-renderer.js'];
   const HEX6 = /^#[0-9a-f]{6}$/i;
 
   beforeAll(() => {
@@ -248,9 +248,15 @@ describe('Pen models: catalogue + PenModel.resolveTraits', () => {
     expect(signo.skipRate).toBeGreaterThan(0);
     expect(sharpie.skipRate).toBe(0);
     expect(sharpie.overlapDarkening).toBeGreaterThan(signo.overlapDarkening);
-    // Dark stock: a dye pen nearly vanishes, an opaque gel covers.
+    // Dark stock: a dye pen is faint but never vanishes (floor), an opaque gel covers.
     const black = paper('black');
-    expect(V.PenModel.resolveTraits(modelPen('sharpie-ultra-fine'), black, info('black')).alpha).toBe(0);
+    const onBlack = V.PenModel.resolveTraits(modelPen('sharpie-ultra-fine'), black, info('black'));
+    expect(onBlack.alpha).toBeGreaterThanOrEqual(0.08);
+    expect(onBlack.alpha).toBeLessThanOrEqual(0.15);
+    expect(onBlack.alpha).toBe(V.PEN_MODELS.LIMITS.dyeOnDarkFloor);
+    expect(onBlack.dyeOnDark).toBe(true);
+    expect(sharpie.dyeOnDark).toBe(false);
+    expect(V.PenModel.resolveTraits(modelPen('uniball-signo-broad-um153'), black, info('black')).dyeOnDark).toBe(false);
     expect(V.PenModel.resolveTraits(modelPen('uniball-signo-broad-um153'), black, info('black')).alpha).toBeGreaterThan(0.8);
   });
 
@@ -280,9 +286,15 @@ describe('Pen models: catalogue + PenModel.resolveTraits', () => {
     const p = modelPen('stabilo-point-88');
     const d = V.PenModel.inkDefaults(p);
     expect(d.opacity).toBe(V.PEN_MODELS.MODELS['stabilo-point-88'].opacity);
+    const lum = (hex) => V.PenModel.luminance ? V.PenModel.luminance(hex) : V.Paper.luminance(hex);
+    const before = V.PenModel.resolveTraits(p, paper('hot-press'), info('hot-press'));
     p.ink = { opacity: 0.3 };
     expect(V.PenModel.inkValue(p, 'opacity')).toBe(0.3);
-    expect(V.PenModel.resolveTraits(p, paper('hot-press'), info('hot-press')).alpha).toBeCloseTo(0.3, 6);
+    // A translucent dye is an absorber: full alpha, a lighter transmittance colour.
+    const after = V.PenModel.resolveTraits(p, paper('hot-press'), info('hot-press'));
+    expect(after.alpha).toBe(1);
+    expect(after.inkColor).toBe(V.PenModel.dyeColor(p.color, Math.sqrt(0.3)));
+    expect(lum(after.inkColor)).toBeGreaterThan(lum(before.inkColor));
     delete p.ink;
     expect(V.PenModel.inkValue(p, 'opacity')).toBe(d.opacity);
   });
@@ -304,5 +316,49 @@ describe('Pen models: catalogue + PenModel.resolveTraits', () => {
     expect(out).toMatchObject({ model: 'pentel-sign-pen', size: 'fine fibre', effect: 'metallic', color2: '#c0c0c0' });
     expect({ ...out.ink }).toEqual({ wetness: 0.8, blobs: V.PEN_MODELS.PARAM_LIMITS.blobs[1] });
     expect(validatePen({ id: 'pen-3', name: 'F', color: '#111111', width: 0.4, model: 'future-pen-9000' }).model).toBe('future-pen-9000');
+  });
+
+  // Review item 2: black must read black. One pass of a black dye pen on a
+  // light stock lands within ~10 sRGB levels of the plain black pen.
+  it('a single pass of a black Sharpie / Micron / Sign Pen is within 10 levels of plain black', () => {
+    const lvl = (hex) => { const v = parseInt(hex.slice(1), 16); return Math.max((v >> 16) & 255, (v >> 8) & 255, v & 255); };
+    ['sharpie-ultra-fine', 'sakura-pigma-micron', 'pentel-sign-pen'].forEach((id) => {
+      ['cold-press', 'hot-press', 'cotton-rag'].forEach((pt) => {
+        const t = V.PenModel.resolveTraits(modelPen(id, { color: '#151515' }), paper(pt), info(pt));
+        // Composited with multiply on white at alpha t.alpha: out = 255·(1 - a + a·c).
+        const out = 255 * (1 - t.alpha) + t.alpha * lvl(t.inkColor);
+        expect(out - 0x15, `${id} on ${pt}`).toBeLessThanOrEqual(10);
+        expect(t.overlapDarkening, id).toBeGreaterThan(0); // crossings still compound
+      });
+    });
+    // A pale dye is not darkened into an opaque paint: it stays a transparent tint.
+    const yellow = V.PenModel.resolveTraits(modelPen('stabilo-point-88', { color: '#fff176' }), paper('cold-press'), info('cold-press'));
+    expect(lvl(yellow.inkColor)).toBeGreaterThan(240);
+    // Mutation witness: the old veil model (alpha = opacity, colour unchanged) is > 10 levels off.
+    const sh = V.PEN_MODELS.MODELS['sharpie-ultra-fine'];
+    expect(255 * (1 - sh.opacity) + sh.opacity * 0x15 - 0x15).toBeGreaterThan(10);
+  });
+
+  // Review item 4: bleed reads at working zoom.
+  it('a 0.4 mm fibre-tip line on absorbent stock bleeds about ±0.03 mm and turns ribbon from ~10 px/mm', () => {
+    const t = V.PenModel.resolveTraits(modelPen('sakura-pigma-micron', { width: 0.4 }), paper('cotton-rag'), info('cotton-rag'));
+    expect(t.edgeAmpMm).toBeGreaterThanOrEqual(0.02);
+    expect(t.edgeAmpMm).toBeLessThanOrEqual(0.045);
+    expect(V.InkRenderer.tierFor(t, 11)).toBe(2);
+    expect(V.InkRenderer.tierFor(t, 2)).toBeLessThan(2);
+    // Plain pen on the same stock also reaches the ribbon at working zoom.
+    const plain = V.PenModel.resolveTraits(pen(), paper('cotton-rag'), info('cotton-rag'));
+    expect(V.InkRenderer.tierFor(plain, 16)).toBe(2);
+  });
+
+  it('validatePen applies the catalogue length limits (pen id, model id, size)', () => {
+    const { validatePen } = V.PenValidate;
+    const L = V.PEN_MODELS.LIMITS;
+    const base = { name: 'P', color: '#111111', width: 0.4 };
+    expect(validatePen({ ...base, id: 'p'.repeat(L.penIdMaxLen) })).toBeTruthy();
+    expect(validatePen({ ...base, id: 'p'.repeat(L.penIdMaxLen + 1) })).toBeNull();
+    expect(validatePen({ ...base, id: 'pen-1', model: 'm'.repeat(L.modelIdMaxLen) }).model).toBe('m'.repeat(L.modelIdMaxLen));
+    expect(validatePen({ ...base, id: 'pen-1', model: 'm'.repeat(L.modelIdMaxLen + 1) }).model).toBeUndefined();
+    expect(validatePen({ ...base, id: 'pen-1', model: 'pentel-sign-pen', size: 's'.repeat(200) }).size).toHaveLength(L.sizeMaxLen);
   });
 });

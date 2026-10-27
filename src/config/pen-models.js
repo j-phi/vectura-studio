@@ -234,7 +234,7 @@
       absorbentWidthGainMm: 0, opacity: 0.95, coverOnDark: 0.8, blend: 'source-over', overlapDarkening: 0,
       edge: { roughness: 0.06, scaleMm: 0.03, softnessMm: 0.008 }, bleed: { wetness: 0.15, featherResponse: 0.15 }, dryskipResponse: 0.7,
       startBlob: { mm: 0.3, probability: 0.85 }, endPool: { mm: 0.08 }, cornerPool: 0.2,
-      starvation: { lengthMm: 3000, strength: 0.35 }, skip: { rate: 0.06, lengthMm: 1.5 }, widthJitter: { amount: 0.1, scaleMm: 3 },
+      starvation: { lengthMm: 3000, strength: 0.35 }, skip: { rate: 0.03, lengthMm: 1.5 }, widthJitter: { amount: 0.1, scaleMm: 3 },
       colours: [
         { name: 'White', hex: '#f8f8f4', effect: 'white' },
         { name: 'Black', hex: '#16161a', effect: 'plain' },
@@ -254,7 +254,7 @@
       absorbentWidthGainMm: 0, opacity: 0.97, coverOnDark: 0.88, blend: 'source-over', overlapDarkening: 0,
       edge: { roughness: 0.06, scaleMm: 0.03, softnessMm: 0.008 }, bleed: { wetness: 0.15, featherResponse: 0.15 }, dryskipResponse: 0.8,
       startBlob: { mm: 0.15, probability: 0.55 }, endPool: { mm: 0.06 }, cornerPool: 0.1,
-      starvation: { lengthMm: 4000, strength: 0.3 }, skip: { rate: 0.05, lengthMm: 1.2 }, widthJitter: { amount: 0.05, scaleMm: 3 },
+      starvation: { lengthMm: 4000, strength: 0.3 }, skip: { rate: 0.012, lengthMm: 1.2 }, widthJitter: { amount: 0.03, scaleMm: 3 },
       fx: { metallic: { strength: 0.55, baseDarken: 0.25, flakeDensity: 120, flakeSizeMm: 0.03, hueShift: 0, secondHex: null } },
       colours: [
         { name: 'White', hex: '#f6f6f2', effect: 'white' },
@@ -274,7 +274,7 @@
       absorbentWidthGainMm: 0, opacity: 0.95, coverOnDark: 0.85, blend: 'source-over', overlapDarkening: 0.2,
       edge: { roughness: 0.06, scaleMm: 0.03, softnessMm: 0.008 }, bleed: { wetness: 0.15, featherResponse: 0.15 }, dryskipResponse: 0.7,
       startBlob: { mm: 0.3, probability: 0.85 }, endPool: { mm: 0.06 }, cornerPool: 0.2,
-      starvation: { lengthMm: 3000, strength: 0.35 }, skip: { rate: 0.07, lengthMm: 1.5 }, widthJitter: { amount: 0.05, scaleMm: 3 },
+      starvation: { lengthMm: 3000, strength: 0.35 }, skip: { rate: 0.035, lengthMm: 1.5 }, widthJitter: { amount: 0.05, scaleMm: 3 },
       fx: { metallic: { strength: 0.75, baseDarken: 0.3, flakeDensity: 180, flakeSizeMm: 0.025, hueShift: 0, secondHex: null } },
       colours: [
         { name: 'Gold', hex: '#c9a048', effect: 'metallic' },
@@ -297,7 +297,7 @@
       absorbentWidthGainMm: 0, opacity: 0.9, coverOnDark: 0.75, blend: 'source-over', overlapDarkening: 0.2,
       edge: { roughness: 0.06, scaleMm: 0.03, softnessMm: 0.008 }, bleed: { wetness: 0.15, featherResponse: 0.15 }, dryskipResponse: 0.7,
       startBlob: { mm: 0.25, probability: 0.7 }, endPool: { mm: 0.06 }, cornerPool: 0.2,
-      starvation: { lengthMm: 0, strength: 0 }, skip: { rate: 0.02, lengthMm: 0.8 }, widthJitter: { amount: 0.05, scaleMm: 3 },
+      starvation: { lengthMm: 0, strength: 0 }, skip: { rate: 0.01, lengthMm: 0.8 }, widthJitter: { amount: 0.05, scaleMm: 3 },
       fx: { metallic: { strength: 0.8, baseDarken: 0.45, flakeDensity: 260, flakeSizeMm: 0.04, hueShift: 25 } },
       colours: [
         { name: 'Black + Red', hex: '#2a1a1e', effect: 'dual-metallic', secondHex: '#c8303a' },
@@ -321,7 +321,7 @@
       absorbentWidthGainMm: 0, opacity: 0.9, coverOnDark: 0.7, blend: 'source-over', overlapDarkening: 0.2,
       edge: { roughness: 0.06, scaleMm: 0.03, softnessMm: 0.008 }, bleed: { wetness: 0.15, featherResponse: 0.15 }, dryskipResponse: 0.7,
       startBlob: { mm: 0.3, probability: 0.85 }, endPool: { mm: 0.06 }, cornerPool: 0.2,
-      starvation: { lengthMm: 0, strength: 0 }, skip: { rate: 0.05, lengthMm: 1.2 }, widthJitter: { amount: 0.05, scaleMm: 3 },
+      starvation: { lengthMm: 0, strength: 0 }, skip: { rate: 0.025, lengthMm: 1.2 }, widthJitter: { amount: 0.05, scaleMm: 3 },
       fx: { fluorescent: { strength: 0.8, uvGlow: 0.9, haloMm: 0.15 } },
       colours: [
         { name: 'Fluorescent Yellow', hex: '#e8ff3a', effect: 'fluorescent' },
@@ -345,7 +345,7 @@
       absorbentWidthGainMm: 0, opacity: 0.7, coverOnDark: 0.35, blend: 'multiply', overlapDarkening: 0.35,
       edge: { roughness: 0.06, scaleMm: 0.03, softnessMm: 0.008 }, bleed: { wetness: 0.15, featherResponse: 0.15 }, dryskipResponse: 0.7,
       startBlob: { mm: 0.3, probability: 0.8 }, endPool: { mm: 0.06 }, cornerPool: 0.2,
-      starvation: { lengthMm: 0, strength: 0 }, skip: { rate: 0.05, lengthMm: 1.2 }, widthJitter: { amount: 0.05, scaleMm: 3 },
+      starvation: { lengthMm: 0, strength: 0 }, skip: { rate: 0.025, lengthMm: 1.2 }, widthJitter: { amount: 0.05, scaleMm: 3 },
       fx: { glitter: { density: 350, sizeMm: 0.05, sizeJitter: 0.5, sparkle: 0.8 } },
       colours: [
         { name: 'Gold', hex: '#c8a048', effect: 'glitter' },
@@ -473,8 +473,10 @@
 
   const LIMITS = Object.freeze({
     // Pen record caps (validator).
-    idMaxLen: 48,
+    modelIdMaxLen: 48,
+    penIdMaxLen: 64,
     sizeMaxLen: 48,
+    dyeOnDarkFloor: 0.12,                // a dye on black stock still leaves a faint trace
     // Ribbon renderer (src/render/ink-renderer.js).
     ribbonCacheBytes: 48 * 1024 * 1024, // LRU cap over cached ribbons (grows to 1.5× the drawn set)
     ribbonHardBytes: 128 * 1024 * 1024,  // … but never past this
@@ -483,7 +485,8 @@
     coarseBudgetMs: 12,                  // extra budget for coarse (ds × 4) fallbacks
     refineSliceMs: 10,                   // idle refinement slice
     tierPx: 0.35,                        // pool / blob size (device px) that switches on the skeleton tier
-    ribbonPx: 0.75,                      // edge lump size (device px) that switches on the ribbon tier
+    ribbonPx: 0.35,                      // visible edge lump size (device px) that switches on the ribbon tier
+    ribbonMinPxPerMm: 8,                 // never ribbon below this zoom: lumps are sub-pixel and the fill raster dominates the frame
     minSampleMm: 0.012,                  // finest ribbon sample spacing
     maxSamplesPerPath: 400000,
     flattenTolMm: 0.01,                  // curve flattening tolerance

@@ -47,7 +47,10 @@
     doc.removeEventListener('pointerdown', onDown, true);
     doc.removeEventListener('keydown', onKey, true);
     if (el && el.parentNode) el.parentNode.removeChild(el);
-    const returnFocus = state.returnFocus && anchorEl && anchorEl.isConnected ? anchorEl : null;
+    // The pens list may have re-rendered (an edit): return focus to the
+    // re-rendered row's control, never to <body>.
+    const target = state.returnFocus ? anchorFor() : null;
+    const returnFocus = target && target.isConnected ? target : (anchorEl && anchorEl.isConnected ? anchorEl : null);
     state = null;
     if (returnFocus && typeof returnFocus.focus === 'function') returnFocus.focus();
   };
@@ -101,10 +104,24 @@
       close();
     };
     const onKey = (e) => {
-      if (!state || e.key !== 'Escape') return;
-      e.stopPropagation();
-      state.returnFocus = true;
-      close();
+      if (!state) return;
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        e.preventDefault();
+        state.returnFocus = true;
+        close();
+        return;
+      }
+      if (e.key === 'Tab') {
+        // Focus stays inside the popover / sheet.
+        const f = Array.from(state.el.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]'))
+          .filter((x) => !x.hidden);
+        if (!f.length) return;
+        const i = f.indexOf(state.doc.activeElement);
+        const next = e.shiftKey ? (i <= 0 ? f.length - 1 : i - 1) : (i < 0 || i === f.length - 1 ? 0 : i + 1);
+        e.preventDefault();
+        f[next].focus();
+      }
     };
     doc.addEventListener('pointerdown', onDown, true);
     doc.addEventListener('keydown', onKey, true);
@@ -125,9 +142,12 @@
 
   // ---- model picker --------------------------------------------------------
 
+  // Thumbnails always sit on a light textured stock (cold-press), so the
+  // models' differences show whatever the project paper is.
+  const SAMPLE_TYPE = 'cold-press';
   const samplePaper = () => {
     const P = Vectura.Paper;
-    return P ? P.effective() : { type: 'none', color: '#ffffff', texture: 0, bleed: 0, seed: 1 };
+    return P && P.forType ? P.forType(SAMPLE_TYPE) : { type: SAMPLE_TYPE, color: '#f7f2e6', texture: 0.7, bleed: 0.55, seed: 1 };
   };
 
   const drawSampleInto = (canvas, pen) => {
@@ -139,8 +159,12 @@
     canvas.width = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
     const paper = samplePaper();
+    const PT = Vectura.PaperTexture;
     try {
-      IR.drawSample(canvas, pen, paper, { widthMm: L().SAMPLE_WIDTH_MM || 14, background: paper.color });
+      const thumb = PT && PT.thumbDataURL ? PT.thumbDataURL(SAMPLE_TYPE, { px: 96, stroke: false }) : '';
+      canvas.style.backgroundColor = paper.color;
+      if (thumb) { canvas.style.backgroundImage = `url('${thumb}')`; canvas.style.backgroundSize = 'cover'; }
+      IR.drawSample(canvas, pen, paper, { widthMm: L().SAMPLE_WIDTH_MM || 14 });
     } catch (_e) { /* thumbnail only */ }
   };
 
@@ -159,14 +183,28 @@
     const search = el.querySelector('.ink-pop-search');
     const current = PM && PM.modelOf(pen) ? pen.model : 'plain';
 
+    let optSeq = 0;
     const rowHtml = (id, name, sub, approx) => `
-      <button type="button" class="ink-model-row${id === current ? ' active' : ''}" role="option" aria-selected="${id === current}" data-model-id="${esc(id)}">
+      <button type="button" id="ink-model-opt-${optSeq++}" tabindex="-1" class="ink-model-row${id === current ? ' active' : ''}" role="option" aria-selected="${id === current}" data-model-id="${esc(id)}">
         <canvas class="ink-model-sample" aria-hidden="true"></canvas>
         <span class="ink-model-text"><span class="ink-model-name">${esc(name)}</span><span class="ink-model-sub">${esc(sub)}</span></span>
         ${approx ? `<span class="ink-model-approx" title="${esc(LB.APPROX_TITLE || '')}">${esc(LB.APPROX || 'approx.')}</span>` : ''}
       </button>`;
 
+    // Keyboard: the search box owns focus; ArrowUp / ArrowDown move the
+    // active option (aria-activedescendant), Enter picks it, Esc closes.
+    let activeIdx = -1;
+    const rows = () => Array.from(list.querySelectorAll('.ink-model-row'));
+    const setActive = (i) => {
+      const r = rows();
+      if (!r.length) { activeIdx = -1; search.removeAttribute('aria-activedescendant'); return; }
+      activeIdx = Math.max(0, Math.min(r.length - 1, i));
+      r.forEach((row, k) => row.classList.toggle('kbd-active', k === activeIdx));
+      search.setAttribute('aria-activedescendant', r[activeIdx].id);
+      if (typeof r[activeIdx].scrollIntoView === 'function') r[activeIdx].scrollIntoView({ block: 'nearest' });
+    };
     const render = (term = '') => {
+      optSeq = 0;
       const q = term.trim().toLowerCase();
       const match = (m2) => !q || `${m2.label} ${m2.short} ${m2.brand} ${m2.inkClass}`.toLowerCase().includes(q);
       let html = '';
@@ -193,12 +231,20 @@
       });
     };
     render();
-    search.addEventListener('input', () => render(search.value));
-    list.addEventListener('click', (e) => {
-      const row = e.target && e.target.closest ? e.target.closest('.ink-model-row') : null;
-      if (!row || !list.contains(row)) return;
-      e.preventDefault();
-      const id = row.dataset.modelId;
+    search.setAttribute('role', 'combobox');
+    search.setAttribute('aria-controls', 'ink-model-listbox');
+    search.setAttribute('aria-expanded', 'true');
+    list.id = 'ink-model-listbox';
+    const startIdx = rows().findIndex((r) => r.classList.contains('active'));
+    setActive(startIdx >= 0 ? startIdx : 0);
+    search.addEventListener('input', () => { render(search.value); setActive(0); });
+    search.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setActive(activeIdx + 1); } else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(activeIdx - 1); } else if (e.key === 'Home') { e.preventDefault(); setActive(0); } else if (e.key === 'End') { e.preventDefault(); setActive(rows().length - 1); } else if (e.key === 'Enter') {
+        const r = rows()[activeIdx];
+        if (r) { e.preventDefault(); pick(r.dataset.modelId); }
+      }
+    });
+    const pick = (id) => {
       const live = penById(state && state.penId);
       if (!live) { close(); return; }
       commit(app, live, (draft) => {
@@ -209,6 +255,12 @@
       });
       if (state) state.returnFocus = true;
       close();
+    };
+    list.addEventListener('click', (e) => {
+      const row = e.target && e.target.closest ? e.target.closest('.ink-model-row') : null;
+      if (!row || !list.contains(row)) return;
+      e.preventDefault();
+      pick(row.dataset.modelId);
     });
     position();
     if (typeof search.focus === 'function') search.focus();
@@ -227,15 +279,28 @@
     const PM = Vectura.PenModel;
     const C = Vectura.PEN_MODELS || { PARAM_LIMITS: {} };
 
+    const focusKeyOf = (node) => {
+      if (!node || !el.contains(node)) return null;
+      if (node.dataset && node.dataset.key) return `[data-key="${node.dataset.key}"]`;
+      if (node.dataset && node.dataset.hex) return `.ink-swatch[data-hex="${node.dataset.hex}"]`;
+      const cls = ['ink-model-btn', 'ink-size', 'ink-reset', 'ink-pop-close'].find((c) => node.classList && node.classList.contains(c));
+      return cls ? `.${cls}` : null;
+    };
     const build = () => {
       const pen = penById(state && state.penId);
       if (!pen) { close(); return; }
+      // Rebuilding must not drop keyboard focus to <body>.
+      const keep = focusKeyOf(state.doc.activeElement);
       const model = PM ? PM.modelOf(pen) : null;
       const sliders = (LB.SLIDERS || []).filter((sd) => C.PARAM_LIMITS[sd.key]);
       const colours = model ? model.colours.filter((c) => c.effect === 'plain') : [];
       const sizeOpts = model ? model.sizes.map((sz) => `<option value="${esc(sz.label)}"${sz.label === pen.size ? ' selected' : ''}>${esc(sz.label)} · ${Number(sz.laidWidthMm).toFixed(2)} mm</option>`).join('')
         + (model.sizes.some((sz) => sz.label === pen.size) ? '' : `<option value="custom" selected>${esc(LB.CUSTOM_SIZE || 'custom')} · ${Number(pen.width).toFixed(2)} mm</option>`) : '';
       const note = `${LB.PREVIEW_NOTE || ''}`.replace('{width}', Number(pen.width).toFixed(2));
+      const P = Vectura.Paper;
+      const paperNow = P ? P.effective() : null;
+      const traits = PM && paperNow ? PM.resolveTraits(pen, paperNow, ((Vectura.PAPERS || {}).TYPES || {})[paperNow.type]) : null;
+      const darkHint = traits && traits.dyeOnDark ? `<p class="ink-note ink-note-warn">${esc(LB.DYE_ON_DARK || 'Translucent ink — barely visible on dark paper.')}</p>` : '';
       el.innerHTML = `${header(LB.INK_TITLE || 'Ink', pen.name)}
         <div class="ink-pop-body">
           <div class="ink-row">
@@ -256,6 +321,7 @@
             </div>`;
           }).join('')}
           <div class="ink-actions"><button type="button" class="ink-reset"${PM && PM.hasInk(pen) ? '' : ' disabled'}>${esc(LB.RESET || 'Reset to model defaults')}</button></div>
+          ${darkHint}
           <p class="ink-note">${esc(note)}</p>
         </div>`;
       bindClose(el);
@@ -278,7 +344,12 @@
       // Sliders: live preview while dragging; ONE undo step per drag /
       // keyboard session, armed by the first real change.
       el.querySelectorAll('.ink-slider').forEach((input) => {
+        // One undo step per pointer drag, or per keyboard session (arrow keys
+        // until the slider loses focus / the popover closes).
         let armed = false;
+        let dragging = false;
+        input.addEventListener('pointerdown', () => { dragging = true; });
+        input.addEventListener('blur', () => { armed = false; dragging = false; });
         const key = input.dataset.key;
         const readout = input.parentNode.querySelector('.ink-slider-value');
         input.addEventListener('input', () => {
@@ -298,7 +369,7 @@
           if (app.render) app.render();
         });
         input.addEventListener('change', () => {
-          armed = false;
+          if (dragging) { armed = false; dragging = false; }
           const row = state && state.doc.querySelector(`.pen-item[data-pen-id="${state.penId}"] .pen-ink-btn`);
           const live = penById(state && state.penId);
           if (row && live && PM) row.classList.toggle('has-overrides', PM.hasInk(live));
@@ -310,6 +381,11 @@
         commit(app, penById(state.penId), (draft) => { if (!draft.ink) return false; delete draft.ink; return true; });
         build();
       });
+      if (keep) {
+        let f = el.querySelector(keep);
+        if (f && f.disabled) f = el.querySelector('.ink-model-btn');
+        if (f && typeof f.focus === 'function') f.focus();
+      }
     };
     build();
     position();

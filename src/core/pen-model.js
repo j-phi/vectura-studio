@@ -25,9 +25,11 @@
  * Combining pen × paper (pen fields scale the paper's, research formulas):
  *   laidW   = pen.width + absorbency · bleed · absorbentWidthGainMm · (wet / model wet)
  *   feather = paper.feather · featherResponse · (0.5 + wet)
- *   edgeAmp = ½ · laidW · roughness · (0.5 + feather) · paperK
+ *   edgeAmp = 0.8 · laidW · roughness · (0.5 + feather) · paperK
  *             paperK = 0.3 + 1.4 · paper bleed on realistic paper, 0.35 on None
- *   alpha   = dark stock ? coverOnDark · (opacity / model opacity) : opacity
+ *   ink     = translucent dye on light stock: colour c^√opacity at alpha 1
+ *             (absorbance); dark stock: alpha max(0.12, coverOnDark);
+ *             opaque ink: alpha opacity (coverOnDark on dark stock)
  * A plain pen with no overrides on a non-realistic paper resolves to null
  * (edgeAmp 0, the exact pre-model renderer path).
  */
@@ -154,6 +156,17 @@
     return 0.2126 * lin((v >> 16) & 255) + 0.7152 * lin((v >> 8) & 255) + 0.0722 * lin(v & 255);
   };
 
+  // Per-channel transmittance c^rho (sRGB, as the canvas multiplies it).
+  const dyeColor = (hex, rho) => {
+    const m = /^#?([0-9a-f]{3,8})$/i.exec(`${hex || ''}`);
+    if (!m) return hex;
+    let h = m[1];
+    if (h.length === 3 || h.length === 4) h = h.slice(0, 3).split('').map((c) => c + c).join('');
+    const v = parseInt(h.slice(0, 6), 16);
+    const ch = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((c) => Math.round(255 * ((c / 255) ** rho)));
+    return `#${ch.map((c) => c.toString(16).padStart(2, '0')).join('')}`;
+  };
+
   const isRealisticPaper = (paper) => {
     const P = Vectura.Paper;
     if (P && typeof P.isRealistic === 'function') return P.isRealistic(paper);
@@ -183,15 +196,33 @@
     const laidW = width + absorb * bleedS * num(b.absorbentWidthGainMm) * wetK;
     const feather = clamp(num(info.feather) * num(b.bleed && b.bleed.featherResponse) * (0.5 + wet), 0, 1.5);
     const paperK = realistic ? 0.3 + 1.4 * bleedS : 0.35;
-    const edgeAmpMm = 0.5 * laidW * rough * (0.5 + feather) * paperK;
+    // ×1.6 calibrated on the reference scan: a 0.4 mm fibre-tip line on
+    // absorbent stock shows ≈ ±0.03 mm lumps.
+    const edgeAmpMm = 0.8 * laidW * rough * (0.5 + feather) * paperK;
     // Edge lumps follow the paper grain (reference: lumps at ~0.3× the grain).
     const grain = realistic ? num(info.grainMm, 0.8) : 0.6;
     const edgeScaleMm = Math.max(num(b.edge && b.edge.scaleMm, 0.05) * 3, 0.3 * grain);
 
     const darkStock = realistic && luminance(paper && paper.color) < 0.4;
     const baseOpacity = num(b.opacity, 1) || 1;
-    const alpha = clamp(darkStock ? num(b.coverOnDark, 1) * (opacity / baseOpacity) : opacity, 0, 1);
     const opaque = b.blend === 'source-over';
+    // Translucent dye on light stock is an ABSORBER, not a veil: one pass
+    // multiplies the paper by the dye's transmittance c^ρ (Beer–Lambert,
+    // ρ = √opacity), drawn at full alpha — a black Sharpie stays near-black,
+    // a pale yellow stays a transparent yellow, and crossings compound.
+    // On dark stock a dye barely shows: coverOnDark with a small floor.
+    const dark = darkStock && !opaque;
+    const dyeFloor = (cat().LIMITS && cat().LIMITS.dyeOnDarkFloor) || 0.12;
+    let alpha;
+    let inkColor = pen.color;
+    if (opaque || !model) {
+      alpha = clamp(darkStock && model ? num(b.coverOnDark, 1) * (opacity / baseOpacity) : (model ? opacity : 1), 0, 1);
+    } else if (dark) {
+      alpha = clamp(Math.max(dyeFloor, num(b.coverOnDark)) * (opacity / baseOpacity), 0, 1);
+    } else {
+      alpha = 1;
+      inkColor = dyeColor(pen.color, Math.sqrt(clamp(opacity, 0.01, 1)));
+    }
 
     // Pools scale with the ink's wetness and the paper's absorbency a little.
     const poolK = blobsK * (0.75 + 0.5 * absorb * bleedS);
@@ -206,6 +237,8 @@
       plain: !model,
       modelId: model ? model.id : null,
       color: pen.color,
+      inkColor,
+      dyeOnDark: dark,
       width,
       laidW,
       edgeAmpMm,
@@ -266,5 +299,6 @@
     traitsKey,
     labelOf,
     hashStr,
+    dyeColor,
   };
 })();

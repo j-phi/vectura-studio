@@ -199,6 +199,7 @@
       RESET: 'Reset to model defaults',
       CLOSE: 'Close',
       PREVIEW_NOTE: 'Preview only. The SVG plots {width} mm strokes in the pen colour.',
+      DYE_ON_DARK: 'Translucent ink — barely visible on dark paper.',
       NEW_PEN_MODEL: 'Model',
       // Ink-settings sliders (ranges: PEN_MODELS.PARAM_LIMITS). fmt: 'pct' |
       // 'x' (multiplier). step is in the value's own units.

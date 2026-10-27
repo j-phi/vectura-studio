@@ -30,7 +30,7 @@
  * API
  *   drawSurface(ctx, cfg, { pxPerMm, view, sheet, onReady }) -> bool
  *   drawMask(ctx, cfg, kind 'skip'|'feather', { pxPerMm, view, sheet, onReady, alpha, scale }) -> bool
- *   thumbDataURL(type, { px }) -> data URL
+ *   thumbDataURL(type, { px, stroke }) -> data URL (stroke: false = bare surface)
  *   heightField(type, seed, x0Mm, y0Mm, sizePx, bucket) -> Float32Array (pure, tests)
  *   bucketFor(pxPerMm), chunkMmFor(bucket), clearCache(), cacheStats()
  *   noise2(seed) -> (x, y) => simplex value (shared with the ink renderer)
@@ -799,7 +799,8 @@
    */
   const thumbDataURL = (type, opts = {}) => {
     const px = opts.px || 96;
-    const key = `${type}|${px}`;
+    const withStroke = opts.stroke !== false;
+    const key = `${type}|${px}|${withStroke ? 's' : '-'}`;
     if (thumbCache.has(key)) return thumbCache.get(key);
     const c = makeCanvas(px, px);
     if (!c) return '';
@@ -825,7 +826,7 @@
     ctx.globalAlpha = info.inkOpacity || 1;
     ctx.lineWidth = Math.max(1.5, px * 0.03);
     ctx.lineCap = 'round';
-    if (typeof ctx.bezierCurveTo === 'function') {
+    if (withStroke && typeof ctx.bezierCurveTo === 'function') {
       ctx.beginPath();
       ctx.moveTo(px * 0.14, px * 0.7);
       ctx.bezierCurveTo(px * 0.38, px * 0.2, px * 0.6, px * 0.95, px * 0.86, px * 0.36);

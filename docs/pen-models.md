@@ -80,9 +80,46 @@ pen's Bleed override):
 ```
 laidW   = pen.width + absorbency · bleed · absorbentWidthGainMm · (wet / model wetness)
 feather = paper.feather · featherResponse · (0.5 + wet)
-edgeAmp = ½ · laidW · roughness · (0.5 + feather) · (0.3 + 1.4 · bleed)   (0.35 on paper None)
-alpha   = dark stock ? coverOnDark · (opacity / model opacity) : opacity
+edgeAmp = 0.8 · laidW · roughness · (0.5 + feather) · (0.3 + 1.4 · bleed)   (0.35 on paper None)
 ```
+
+Colour and alpha:
+
+- **Translucent dye on light stock** is an absorber, not a veil. One pass
+  multiplies the paper by the dye's transmittance `inkColor = c^√opacity`
+  (per sRGB channel) at alpha 1. A black Sharpie, Micron or Sign Pen stays
+  within ~10 levels of plain black; a pale yellow stays a transparent tint.
+  Crossings still compound through `overlapDarkening`.
+- **Translucent dye on dark stock** (luminance < 0.4): `alpha = max(LIMITS.dyeOnDarkFloor,
+  coverOnDark) · (opacity / model opacity)`, floor 0.12. The ink-settings
+  popover says "Translucent ink — barely visible on dark paper."
+- **Opaque ink** (gel, paint): `alpha = opacity`, or `coverOnDark` on dark stock.
+
+## Drawing order and LOD
+
+Every pen draws in layer / plot order. The renderer flushes each contiguous
+run of one pen's paths in place, so a plain pen layer above a model pen
+layer is drawn after it. On paper None runs draw straight onto the canvas
+with the paper blend. On realistic paper translucent ink and plain strokes
+share the paper ink canvas; an opaque run gets its own canvas in an ordered
+stack (`source-over`), and the ink drawn after it starts a new ink canvas,
+so stacking is kept. There is no per-pen scratch canvas.
+
+LOD: tier 0 native stroke, tier 1 skeleton (pools, thinned skips), tier 2
+ribbon once the edge lump reaches `LIMITS.ribbonPx` (0.35 device px) and the
+zoom is at least `LIMITS.ribbonMinPxPerMm` (8). A 0.4 mm Micron on cotton
+rag (±0.03 mm lumps) turns ribbon at about 11 px/mm.
+
+Gel skips are partial: over `skip.lengthMm` the ribbon thins to a 14–40 %
+residual streak dragged to one side, with a ragged edge and a long taper.
+They never break the line or add round caps.
+
+Closed loops (closePath, or a sub-path that ends at its start) use periodic
+edge noise, so there is no seam where the loop closes.
+
+Profiling (`InkRenderer.cacheStats().lastFrame`) is JS build / submit time
+only. Canvas raster is deferred and lands wherever the browser next flushes,
+so measure whole-frame time for raster cost.
 
 A plain pen on realistic paper uses `PEN_MODELS.PLAIN_TRAITS` (a light
 fibre-tip default) so its edges bleed too. A plain pen on paper **None** is

@@ -11,6 +11,19 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **Ink renderer (`src/render/ink-renderer.js`).** Strokes of model pens — and of plain pens on realistic paper once the bleed is visible — draw as a filled ribbon in document mm: lumpy, outward-biased edges at the paper-grain scale (value+gradient noise along the arc length, seeded by paper seed and pen id), pen-down blobs, lift pools, corner swelling, gel skips, width jitter, fountain nib direction. Deterministic and sheet-locked (identical across pans, power-of-two sample spacing nests across zoom buckets). LOD tiers: native stroke, skeleton (stroke split at skips + pool discs), ribbon; a pen never drops a tier mid-gesture. Cached per path (LRU byte cap growing with the drawn set, visible-set budget, pinned drawn entries), 8 ms exact + 12 ms coarse build budget per frame, idle refinement with one repaint, nothing scheduled when idle. Per-pen opacity and overlap darkening (multiply batches), per-pen dry skip, opaque inks composited above translucent ones (approximation), per-pen weighted bleed halo. Plain pens on paper None keep the exact legacy draw path.
 - **UI.** Each pen row gets a model chip, a size select and an ink-settings button (`src/ui/panels/ink-settings-popover.js`): a searchable model picker grouped by ink class with sample strokes on the project paper, and ink sliders (Bleed, Edge roughness, Opacity, Blobs & pools, Skips, Width jitter) with one undo step per drag (armed on the first real change) and Reset to model defaults. The Pen Picker New Pen tab gets a model select. 44 px targets and bottom sheets on touch. Help: Pen models & ink.
 - **Format and validation.** `settings.pens[]` gains optional `model`, `size`, `effect`, `color2`, `ink` (`docs/vectura-format.md`); validated in `.vectura` files and the preference snapshot (unknown model ids kept and drawn plain; ink keys whitelisted and clamped; null-prototype). SVG pen groups get `data-vectura-pen-model` / `data-vectura-ink-effect` only when set.
+- **Review fixes.**
+  - Layer order is kept with mixed plain and model pens. Ink runs flush in draw order; opaque runs on realistic paper get their own canvas in an ordered stack. The per-pen scratch canvas and its extra composite are gone.
+  - Dye inks are absorbers (`c^√opacity` at alpha 1), so a black Sharpie, Micron or Sign Pen reads black.
+  - Gel skips are ragged partial skips. Signo skips drop to 0.012.
+  - Edge bleed amplitude is ×1.6. The ribbon turns on at 0.35 px lumps and at least 8 px/mm.
+  - Dye on dark stock has a 0.12 floor and a hint in the popover.
+  - A slider keyboard session is one undo step.
+  - The model picker is a combobox and listbox (Arrow keys, Home, End, Enter, Esc).
+  - Focus returns to the re-rendered row after Reset → Esc, and Tab is trapped in the popover.
+  - Picker thumbnails draw on a cold-press swatch.
+  - Closed loops get periodic edge noise.
+  - Pen id, model id and size use the `PEN_MODELS.LIMITS` caps.
+  - Rows in the phone ink sheet no longer overlap.
 - Tests: `pens-panel-assign-pen`, `security_xss`, `export-effective-pen-grouping`, `history-pen-drag-and-regen`, `paper-preview`, `pen-picker-popover`, `pen-width-textbox`, `tests/perf/stress.test.js`.
 
 ### Paper selector (v1.4.28)

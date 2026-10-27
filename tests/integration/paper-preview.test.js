@@ -221,6 +221,17 @@ describe('pen models: ink renderer integration', () => {
     try { return r._paperInkPlan(); } finally { r.ctx = prev; }
   };
   const plainPen = () => [{ id: 'pen-ink', name: 'Ink', color: '#111111', width: 0.4 }];
+  // Strokes that actually paint: some path op since the previous beginPath.
+  const paintedStrokes = (calls) => {
+    const out = [];
+    let ops = 0;
+    calls.forEach((c) => {
+      if (c.op === 'beginPath') ops = 0;
+      else if (['moveTo', 'lineTo', 'arc', 'quadraticCurveTo', 'bezierCurveTo', 'rect'].includes(c.op)) ops += 1;
+      else if (c.op === 'stroke' && ops > 0) out.push(c);
+    });
+    return out;
+  };
   const pathOps = (calls) => calls.filter((c) => ['moveTo', 'lineTo', 'arc'].includes(c.op))
     .map((c) => c.args.map((v) => (typeof v === 'number' ? +v.toFixed(9) : v)));
 
@@ -240,7 +251,7 @@ describe('pen models: ink renderer integration', () => {
     expect(withInk.some((c) => c.op === 'stroke' && c.strokeStyle === '#111111')).toBe(true);
   });
 
-  test('a plain pen on realistic paper, zoomed in, is drawn as a filled ribbon (edge bleed) into the ink canvas', () => {
+  test('a plain pen on realistic paper, zoomed in, is a filled ribbon drawn straight into the ink canvas (no scratch, no extra composite)', () => {
     S.pens = plainPen();
     V.Paper.setActive(V.Paper.forType('cotton-rag'));
     V.InkRenderer.clearCache();
@@ -249,13 +260,15 @@ describe('pen models: ink renderer integration', () => {
     expect(plan.penTraits.get('pen-ink').plain).toBe(true);
     expect(plan.penTraits.get('pen-ink').tier).toBe(2);
     const main = drawWith();
-    const pen = scratch.get('_inkPenScratch').ctx.calls;
-    expect(pen.some((c) => c.op === 'fill' && c.fillStyle === '#111111')).toBe(true);
-    expect(pen.some((c) => c.op === 'arc')).toBe(true); // round ends
-    expect(pen.some((c) => c.op === 'stroke')).toBe(false); // no native stroke
-    // Composited into the paper ink canvas, which the main ctx then blends.
-    expect(scratch.get('_paperInkCanvas').ctx.calls.some((c) => c.op === 'drawImage' && c.image === scratch.get('_inkPenScratch'))).toBe(true);
-    expect(main.some((c) => c.op === 'drawImage' && c.image === scratch.get('_paperInkCanvas') && c.globalCompositeOperation === 'multiply')).toBe(true);
+    const ink = scratch.get('_paperInkCanvas').ctx.calls;
+    expect(ink.some((c) => c.op === 'fill' && c.fillStyle === '#111111')).toBe(true);
+    expect(ink.some((c) => c.op === 'arc')).toBe(true); // round ends
+    expect(paintedStrokes(ink).some((c) => c.strokeStyle === '#111111')).toBe(false); // no native stroke (an empty beginPath/stroke is a no-op)
+    // No per-pen scratch canvas and exactly one ink composite (today's cost).
+    expect(scratch.has('_inkPenScratch')).toBe(false);
+    const inkComposites = main.filter((c) => c.op === 'drawImage' && c.image === scratch.get('_paperInkCanvas'));
+    expect(inkComposites).toHaveLength(1);
+    expect(inkComposites[0].globalCompositeOperation).toBe('multiply');
     // Zoomed out the edge is sub-pixel: the plain pen keeps today's path.
     view(0.6, 0, 0);
     expect(planWith().penTraits).toBeNull();
@@ -267,10 +280,10 @@ describe('pen models: ink renderer integration', () => {
     V.InkRenderer.clearCache();
     view(60, -800, -2000);
     drawWith();
-    const a = pathOps(scratch.get('_inkPenScratch').ctx.calls);
+    const a = pathOps(scratch.get('_paperInkCanvas').ctx.calls);
     view(60, -837.5, -2013.25);
     drawWith();
-    const b = pathOps(scratch.get('_inkPenScratch').ctx.calls);
+    const b = pathOps(scratch.get('_paperInkCanvas').ctx.calls);
     expect(a.length).toBeGreaterThan(100);
     expect(b).toEqual(a);
     // Two zoom buckets: every coarse sample vertex is also a fine one (≤ 1e-6 mm).
@@ -280,16 +293,8 @@ describe('pen models: ink renderer integration', () => {
     const dsFine = IR.dsFor(t, 32);
     const dsCoarse = IR.dsFor(t, 8);
     expect(dsCoarse).toBe(dsFine * 4); // power-of-two spacing: samples nest
-    const verts = (ds) => {
-      const { cmds } = IR.buildRibbon(flat, t, ds, 1);
-      const out = [];
-      for (let i = 0; i < cmds.length;) {
-        if (cmds[i] === IR.OP_POLY) { const n = cmds[i + 1]; for (let q = 0; q < n; q += 1) out.push([cmds[i + 2 + 2 * q], cmds[i + 3 + 2 * q]]); i += 2 + 2 * n; } else i += 4;
-      }
-      return out;
-    };
-    const fine = verts(dsFine);
-    const coarse = verts(dsCoarse);
+    const fine = polyVerts(IR, IR.buildRibbon(flat, t, dsFine, 1).cmds);
+    const coarse = polyVerts(IR, IR.buildRibbon(flat, t, dsCoarse, 1).cmds);
     const near = (p) => fine.some((q) => Math.abs(q[0] - p[0]) <= 1e-6 && Math.abs(q[1] - p[1]) <= 1e-6);
     expect(coarse.length).toBeGreaterThan(20);
     coarse.forEach((p) => expect(near(p)).toBe(true));
@@ -298,7 +303,147 @@ describe('pen models: ink renderer integration', () => {
     expect(near([coarse[5][0] + 0.01, coarse[5][1]])).toBe(false);
   });
 
-  test('a model pen on paper None: collected and composited; plain pens still stroke directly', () => {
+  const discsOf = (IR, cmds) => {
+    const out = [];
+    for (let i = 0; i < cmds.length;) {
+      if (cmds[i] === IR.OP_POLY) i += 2 + 2 * cmds[i + 1];
+      else if (cmds[i] === IR.OP_LINE) i += 3 + 2 * cmds[i + 1];
+      else { out.push([cmds[i + 1], cmds[i + 2], cmds[i + 3]]); i += 4; }
+    }
+    return out;
+  };
+
+  // Review item 3: a gel skip is a ragged partial skip, not a dashed line.
+  test('gel skips thin the ribbon to a ragged streak: no breaks, no round caps inside the line', () => {
+    const IR = V.InkRenderer;
+    const gel = V.PenModel.applyModel({ id: 'pen-gel', name: 'G', color: '#111111', width: 0.5 }, 'uniball-signo-broad-um153');
+    gel.ink = { skips: 0.2 };
+    const t = V.PenModel.resolveTraits(gel, V.Paper.forType('hot-press'), V.PAPERS.TYPES['hot-press']);
+    expect(t.skipRate).toBeGreaterThan(0);
+    const line = [{ x: 0, y: 50 }, { x: 120, y: 50 }];
+    const ds = IR.dsFor(t, 32);
+    const { cmds } = IR.buildRibbon(IR.flatten(line, false), t, ds, 1);
+    const r0 = t.laidW / 2;
+    // Only the two end caps: a skip never adds round caps.
+    expect(discsOf(IR, cmds)).toHaveLength(2);
+    // Width profile along x: covered everywhere, thinned (not cut) in skips.
+    const bins = new Map();
+    polyVerts(IR, cmds).forEach(([x, y]) => {
+      const b = Math.floor(x / 0.25);
+      const e = bins.get(b) || [Infinity, -Infinity];
+      bins.set(b, [Math.min(e[0], y), Math.max(e[1], y)]);
+    });
+    const widths = [];
+    for (let b = 1; b < Math.floor(120 / 0.25) - 1; b += 1) {
+      const e = bins.get(b);
+      expect(e, `bin ${b}`).toBeTruthy();
+      widths.push(e[1] - e[0]);
+    }
+    const thin = widths.filter((w) => w < 1.2 * r0);
+    expect(thin.length).toBeGreaterThan(0); // skips exist…
+    widths.forEach((w) => expect(w).toBeGreaterThan(0.2 * r0)); // …and leave a residual streak
+    // Ragged: the residual width varies inside the skips.
+    expect(Math.max(...thin) - Math.min(...thin)).toBeGreaterThan(0.05 * r0);
+    // Lowered Signo default: about one skip per few cm, not a dash pattern.
+    expect(V.PenModel.inkDefaults({ ...gel, ink: undefined }).skips).toBeLessThanOrEqual(0.015);
+  });
+
+  test('closed loops get periodic edge noise: no seam where the loop ends', () => {
+    const IR = V.InkRenderer;
+    const t = V.PenModel.resolveTraits({ id: 'pen-ink', name: 'Ink', color: '#111111', width: 0.4 }, V.Paper.forType('cotton-rag'), V.PAPERS.TYPES['cotton-rag']);
+    const ring = [];
+    for (let i = 0; i <= 64; i += 1) ring.push({ x: 50 + 20 * Math.cos((i / 64) * 2 * Math.PI), y: 50 + 20 * Math.sin((i / 64) * 2 * Math.PI) });
+    ring[64] = { ...ring[0] };
+    const flat = IR.flatten(ring, false);
+    expect(flat.subs[0].closed).toBe(true);
+    const d = discsOf(IR, IR.buildRibbon(flat, t, IR.dsFor(t, 32), 1).cmds);
+    const [a, b] = d.slice(-2); // the two end caps sit on the seam
+    expect(Math.abs(a[0] - b[0])).toBeLessThan(1e-6);
+    expect(Math.abs(a[2] - b[2])).toBeLessThan(1e-9); // same width either side of the seam
+    // Mutation witness: the same ring left open (one end nudged) has a seam.
+    const open = ring.slice(0, 64).concat([{ x: ring[0].x + 1e-3, y: ring[0].y }]);
+    const o = discsOf(IR, IR.buildRibbon(IR.flatten(open, false), t, IR.dsFor(t, 32), 1).cmds).slice(-2);
+    expect(Math.abs(o[0][2] - o[1][2])).toBeGreaterThan(1e-4);
+  });
+
+  const polyVerts = (IR, cmds) => {
+    const out = [];
+    for (let i = 0; i < cmds.length;) {
+      if (cmds[i] === IR.OP_POLY) { const n = cmds[i + 1]; for (let q = 0; q < n; q += 1) out.push([cmds[i + 2 + 2 * q], cmds[i + 3 + 2 * q]]); i += 2 + 2 * n; } else if (cmds[i] === IR.OP_LINE) i += 3 + 2 * cmds[i + 1]; else i += 4;
+    }
+    return out;
+  };
+
+  // Stacking: layers draw in order whatever pen class they use (review repro:
+  // a red Posca layer UNDER a plain blue layer drew on top of it).
+  const withLayers = (defs, fn) => {
+    const saved = app.engine.layers;
+    app.engine.layers = defs.map(([id, penId, y]) => {
+      const L = new V.Layer(id, 'expanded', id);
+      L.paths = [[{ x: 20, y }, { x: 60, y: y + 1 }], [{ x: 40, y: y - 10 }, { x: 40, y: y + 10 }]];
+      L.effectivePaths = L.paths;
+      L.penId = penId;
+      L.visible = true;
+      return L;
+    });
+    try { return fn(); } finally { app.engine.layers = saved; }
+  };
+  const posca = () => V.PenModel.applyModel({ id: 'pen-posca', name: 'Posca', color: '#d01010', width: 0.8 }, 'uni-posca-pc1mr');
+  const blue = () => ({ id: 'pen-blue', name: 'Blue', color: '#1030d0', width: 0.4 });
+
+  // Last call that puts red ink on the target: a red fill/stroke, or the
+  // composite of a recorded canvas that holds red ink.
+  const RED = '#d01010';
+  const holdsRed = (img) => !!(img && img.ctx && img.ctx.calls && img.ctx.calls.some((c) => paintsRed(c)));
+  const paintsRed = (c) => ((c.op === 'fill' || c.op === 'stroke') && `${c.fillStyle}|${c.strokeStyle}`.includes(RED)) || (c.op === 'drawImage' && holdsRed(c.image));
+  const lastIndex = (arr, fn) => { for (let i = arr.length - 1; i >= 0; i -= 1) if (fn(arr[i])) return i; return -1; };
+
+  test('stacking on paper None: a model pen layer under a plain pen layer is drawn first (layer order kept)', () => {
+    S.pens = [posca(), blue()];
+    V.Paper.setActive({ type: 'none', color: '#ffffff' });
+    [3, 40].forEach((z) => { // native-stroke tier and ribbon tier
+      view(z, 10, 10);
+      withLayers([['bottom', 'pen-posca', 50], ['top', 'pen-blue', 52]], () => {
+        const main = drawWith();
+        const blueAt = main.findIndex((c) => c.op === 'stroke' && c.strokeStyle === '#1030d0');
+        expect(blueAt, `zoom ${z}`).toBeGreaterThan(0);
+        expect(main.findIndex(paintsRed), `zoom ${z}`).toBeGreaterThanOrEqual(0);
+        // Every red paint lands before the blue layer (review repro: red drew over blue).
+        expect(lastIndex(main, paintsRed), `zoom ${z}`).toBeLessThan(blueAt);
+      });
+      // …and swapped, the blue plain layer is under the red Posca.
+      withLayers([['bottom', 'pen-blue', 50], ['top', 'pen-posca', 52]], () => {
+        const main = drawWith();
+        const blueAt = lastIndex(main, (c) => c.op === 'stroke' && c.strokeStyle === '#1030d0');
+        expect(main.findIndex(paintsRed), `zoom ${z}`).toBeGreaterThan(blueAt);
+      });
+    });
+  });
+
+  test('stacking on realistic paper: opaque ink gets its own canvas between the translucent ink drawn before and after it', () => {
+    S.pens = [posca(), blue()];
+    V.Paper.setActive(V.Paper.forType('cold-press'));
+    view(3, 10, 10);
+    withLayers([['bottom', 'pen-posca', 50], ['top', 'pen-blue', 52]], () => {
+      const main = drawWith();
+      const order = main.filter((c) => c.op === 'drawImage' && /^_paperInkCanvas$|^_inkStack\d$/.test(nameOf(c.image))).map((c) => [nameOf(c.image), c.globalCompositeOperation]);
+      // base ink canvas (empty: the Posca is the bottom layer), then the
+      // opaque Posca canvas, then the plain blue ink canvas above it.
+      expect(order).toEqual([['_paperInkCanvas', 'multiply'], ['_inkStack1', 'source-over'], ['_inkStack2', 'multiply']]);
+      expect(scratch.get('_inkStack1').ctx.calls.some((c) => `${c.fillStyle}${c.strokeStyle}`.includes('#d01010'))).toBe(true);
+      expect(scratch.get('_inkStack2').ctx.calls.some((c) => c.op === 'stroke' && c.strokeStyle === '#1030d0')).toBe(true);
+    });
+    // Plain pens only: one ink canvas, no stack (today's path).
+    S.pens = [blue()];
+    withLayers([['top', 'pen-blue', 52]], () => {
+      const main = drawWith();
+      expect(main.filter((c) => c.op === 'drawImage' && /^_inkStack/.test(nameOf(c.image)))).toHaveLength(0);
+    });
+  });
+
+  const nameOf = (img) => { for (const [k, v] of scratch) if (v === img) return k; return ''; };
+
+  test('a model pen on paper None draws straight onto the target with the paper blend; plain pens still stroke directly', () => {
     S.pens = [...plainPen(), V.PenModel.applyModel({ id: 'pen-sharpie', name: 'S', color: '#202022', width: 0.3 }, 'sharpie-ultra-fine')];
     const L2 = new V.Layer('ink-2', 'expanded', 'Ink 2');
     L2.paths = [[{ x: 20, y: 80 }, { x: 60, y: 82 }]];
@@ -312,13 +457,15 @@ describe('pen models: ink renderer integration', () => {
       const plan = planWith();
       expect(plan.direct).toBe(true);
       expect(Array.from(plan.penTraits.keys())).toEqual(['pen-sharpie']);
+      const t = plan.penTraits.get('pen-sharpie');
       const main = drawWith();
       expect(main.some((c) => c.op === 'stroke' && c.strokeStyle === '#111111')).toBe(true);
-      const comp = main.find((c) => c.op === 'drawImage' && c.image === scratch.get('_inkTranslucentCanvas'));
-      expect(comp && comp.globalCompositeOperation).toBe('multiply');
-      // The model pen's alpha is the model's opacity.
-      const pen = scratch.get('_inkTranslucentCanvas').ctx.calls.find((c) => c.op === 'drawImage');
-      expect(pen.globalAlpha).toBeCloseTo(V.PEN_MODELS.MODELS['sharpie-ultra-fine'].opacity, 6);
+      // The dye multiplies in its absorbance colour at full alpha.
+      const ink = main.filter((c) => (c.op === 'fill' || c.op === 'stroke') && c.globalCompositeOperation === 'multiply');
+      expect(ink.length).toBeGreaterThan(0);
+      expect(ink.some((c) => `${c.fillStyle}${c.strokeStyle}`.includes(t.inkColor) || /rgb\(/.test(`${c.fillStyle}${c.strokeStyle}`))).toBe(true);
+      ink.forEach((c) => expect(c.globalAlpha).toBe(1));
+      expect(main.some((c) => c.op === 'drawImage')).toBe(false); // no class canvases
     } finally {
       app.engine.layers.pop();
     }
