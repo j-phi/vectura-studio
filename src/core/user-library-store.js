@@ -63,7 +63,11 @@
       .replace(/\s+/g, ' ').trim().slice(0, maxLen).trim();
   };
 
-  const clone = Vectura.Utils.clone;
+  // Copies handed out by the store are exactly what localStorage persists: a JSON
+  // round-trip, not a generic deep clone. Vectura.Utils.clone (structuredClone)
+  // hung the WebKit touch smoke in CI on these null-prototype items (PR #125), and
+  // JSON semantics are the contract here anyway (stored data is JSON).
+  const asStored = (v) => JSON.parse(JSON.stringify(v));
 
   const create = (opts = {}) => {
     const key = String(opts.key || '');
@@ -191,10 +195,10 @@
       .filter((it) => it.id !== exceptId)
       .map((it) => String(it[nameKey] || '').toLowerCase()));
 
-    const list = () => clone(read());
+    const list = () => asStored(read());
     const get = (id) => {
       const found = read().find((it) => it.id === id);
-      return found ? clone(found) : null;
+      return found ? asStored(found) : null;
     };
     const has = (id) => read().some((it) => it.id === id);
     const newId = () => newIdAgainst(new Set(read().map((it) => it.id)));
@@ -216,7 +220,7 @@
         items.push(item);
       }
       const res = write(items);
-      return res.ok ? { ok: true, item: clone(item) } : res;
+      return res.ok ? { ok: true, item: asStored(item) } : res;
     };
 
     const rename = (id, name) => {
@@ -231,7 +235,7 @@
       item.id = id;
       items[idx] = item;
       const res = write(items);
-      return res.ok ? { ok: true, item: clone(item) } : res;
+      return res.ok ? { ok: true, item: asStored(item) } : res;
     };
 
     const remove = (id) => {
@@ -306,7 +310,7 @@
       }
       const res = write(items);
       if (!res.ok) return res;
-      return { ok: true, added: clone(added), skipped, renamed, rejected, full };
+      return { ok: true, added: asStored(added), skipped, renamed, rejected, full };
     };
 
     const onChange = (fn) => {
