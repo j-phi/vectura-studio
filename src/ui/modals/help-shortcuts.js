@@ -379,8 +379,19 @@
         </tbody>
       </table>
       ${callout('Paper is saved in the <strong>.vectura</strong> file. Texture and bleed are sized in real millimetres, so a small sheet shows coarser grain than a large one at fit-to-screen. They are a <strong>preview only</strong>: the SVG export stays plotter-clean (no paper, no texture). <strong>None</strong> is a plain sheet in the theme colour. The default paper can also be set in <strong>Document Setup ▸ Paper &amp; Selection</strong>.')}`;
+    const penModelRows = `
+      <table class="help-kbd-table">
+        <tbody>
+          ${row(mouse('click') + ' model chip', 'Pick a pen model (Pen / Paper tab ▸ Pens, under each pen)', 'one undo step')}
+          ${row('Size', 'Pick the model\'s size: sets the pen width to the width it really lays down')}
+          ${row(mouse('click') + ' ink drop', 'Ink settings: Bleed, Edge roughness, Opacity, Blobs &amp; pools, Skips, Width jitter', 'one undo step per drag')}
+          ${row('Reset to model defaults', 'Remove this pen\'s ink overrides')}
+        </tbody>
+      </table>
+      ${callout('A pen is a plain colour + diameter pen unless you give it a <strong>model</strong> (Micron, Sharpie, Uni-ball Signo, Gelly Roll, Sign Pen, fountain pen, …). The preview then draws the pen\'s real look: edge bleed, blobs at pen-down, pools at corners, gel skips, opacity. On a realistic paper plain pens bleed at the edges too. Typing a width marks the size <strong>custom</strong>. Everything is a <strong>preview only</strong>: the SVG plots the pen width in the pen colour.')}`;
     const pen = `
       ${accordion('Paper (Pen / Paper tab)', paperRows, true)}
+      ${accordion('Pen models &amp; ink', penModelRows, true)}
       ${accordion('Path Drawing', penDrawRows, true)}
       ${accordion('Modifier Keys', penModRows, true)}
       ${accordion('Petal Designer', petalRows)}`;

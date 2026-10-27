@@ -36,6 +36,67 @@
     return DEPS;
   };
 
+  // Pen width feeds generated GEOMETRY for some layer types (text banding,
+  // scene3d / object3d surface fill + ribbons): regenerate every affected
+  // layer's outermost ancestor after a committed width change.
+  const PEN_GEOMETRY_TYPES = new Set(['text', 'scene3d', 'object3d']);
+  function regenPenGeometry(app, pen) {
+    const engine = app && app.engine;
+    if (!engine || !pen) return;
+    const S = (DEPS && DEPS.SETTINGS) || Vectura.SETTINGS || {};
+    const fallbackPen = S.pens && S.pens[0] && S.pens[0].id;
+    const usesPen = (layer) => PEN_GEOMETRY_TYPES.has(layer.type)
+      && ((layer.penId || null) === pen.id || (!layer.penId && fallbackPen === pen.id));
+    const rootOf = (layer) => {
+      let cur = layer;
+      let guard = 0;
+      while (cur && cur.parentId && guard < 64) {
+        const up = engine.getLayerById(cur.parentId);
+        if (!up) break;
+        cur = up; guard += 1;
+      }
+      return cur;
+    };
+    const ids = new Set();
+    engine.layers.forEach((layer) => { if (usesPen(layer)) ids.add(rootOf(layer).id); });
+    if (!ids.size) return;
+    ids.forEach((id) => engine.generate(id));
+    if (engine.computeAllDisplayGeometry) engine.computeAllDisplayGeometry();
+  }
+
+  /**
+   * Pen models: one undo step around a pen edit (model / size / colour pick /
+   * reset), then cascade the pen's colour + width to its layers, regenerate
+   * width-dependent geometry when the width changed, and repaint.
+   * `mutate(pen)` returns false to cancel (no history entry).
+   */
+  function commitPenEdit(app, pen, mutate, opts = {}) {
+    if (!pen || typeof mutate !== 'function') return false;
+    const before = JSON.stringify(pen);
+    const prevWidth = pen.width;
+    const draft = JSON.parse(before);
+    if (mutate(draft) === false) return false;
+    if (JSON.stringify(draft) === before) return false;
+    if (!opts.skipHistory && app && app.pushHistory) app.pushHistory();
+    Object.keys(pen).forEach((k) => { if (!(k in draft)) delete pen[k]; });
+    Object.assign(pen, draft);
+    if (app && app.engine) {
+      app.engine.layers.forEach((layer) => {
+        if (layer.penId !== pen.id) return;
+        layer.color = pen.color;
+        layer.strokeWidth = pen.width;
+      });
+      if (pen.width !== prevWidth) regenPenGeometry(app, pen);
+    }
+    const ui = app && app.ui;
+    if (ui && !opts.skipRender) {
+      if (ui.renderPens) ui.renderPens();
+      if (ui.renderLayers) ui.renderLayers();
+    }
+    if (app && app.render) app.render();
+    return true;
+  }
+
   function setArmedPen(penId) {
     const { getEl, escapeHtml, SETTINGS, PALETTES, getThemeToken } = requireDeps('setArmedPen');
     this.armedPenId = penId || null;
@@ -241,6 +302,7 @@
       el.className = 'pen-item flex items-center justify-between bg-vectura-bg border border-vectura-border p-2 mb-2';
       el.dataset.penId = pen.id;
       el.innerHTML = `
+        <div class="pen-line">
         <div class="pen-row-a flex items-center gap-2 flex-1 overflow-hidden">
           <button class="pen-grip" type="button" aria-label="Reorder pen">
             <span class="dot"></span><span class="dot"></span>
@@ -263,6 +325,14 @@
             class="pen-width-value w-10 bg-transparent text-[10px] text-vectura-muted text-right focus:outline-none"
             inputmode="decimal" aria-label="Pen stroke weight (mm)">
           <button class="pen-remove" type="button" aria-label="Remove pen">✕</button>
+        </div>
+        </div>
+        <div class="pen-row-c">
+          <button class="pen-model-chip" type="button" aria-haspopup="dialog"></button>
+          <select class="pen-size" aria-label="Pen size"></select>
+          <button class="pen-ink-btn" type="button" aria-haspopup="dialog">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 2.5c3.2 4.3 6 7.9 6 11.3A6 6 0 0 1 6 13.8c0-3.4 2.8-7 6-11.3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 14.5a3 3 0 0 0 3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
         </div>
       `;
       const icon = el.querySelector('.pen-icon');
@@ -384,30 +454,8 @@
         // set, and regenerating EVERY affected layer instead of calling
         // `app.regen()` — which regenerates `engine.activeLayerId` alone and
         // silently left a second layer on the same pen stale.
-        const PEN_GEOMETRY_TYPES = new Set(['text', 'scene3d', 'object3d']);
         const regenPenGeometryLayers = () => {
-          const engine = this.app.engine;
-          const fallbackPen = SETTINGS.pens && SETTINGS.pens[0] && SETTINGS.pens[0].id;
-          const usesPen = (layer) => PEN_GEOMETRY_TYPES.has(layer.type)
-            && ((layer.penId || null) === pen.id || (!layer.penId && fallbackPen === pen.id));
-          // A scene child does not emit its own paths — its GROUP composes
-          // them — so the regeneration has to be aimed at the outermost
-          // ancestor, exactly as the engine's own group paths do.
-          const rootOf = (layer) => {
-            let cur = layer;
-            let guard = 0;
-            while (cur && cur.parentId && guard < 64) {
-              const up = engine.getLayerById(cur.parentId);
-              if (!up) break;
-              cur = up; guard += 1;
-            }
-            return cur;
-          };
-          const ids = new Set();
-          engine.layers.forEach((layer) => { if (usesPen(layer)) ids.add(rootOf(layer).id); });
-          if (!ids.size) return;
-          ids.forEach((id) => engine.generate(id));
-          if (engine.computeAllDisplayGeometry) engine.computeAllDisplayGeometry();
+          regenPenGeometry(this.app, pen);
           this.app.render();
         };
         let preEditWidth = null;
@@ -422,6 +470,25 @@
           }
           preEditWidth = null;
           applyWidth(committed, source);
+          // Pen models: a typed / dragged width off the size's laid width
+          // marks the size 'custom' (the chip + size select show it).
+          if (Vectura.PenModel && Vectura.PenModel.modelOf(pen)) {
+            const prevSize = pen.size;
+            Vectura.PenModel.syncSizeToWidth(pen);
+            if (pen.size !== prevSize) {
+              const sel = el.querySelector('.pen-size');
+              if (sel) {
+                if (!Array.from(sel.options).some((o) => o.value === pen.size)) {
+                  const o = document.createElement('option');
+                  o.value = 'custom';
+                  sel.appendChild(o);
+                }
+                const custom = Array.from(sel.options).find((o) => o.value === 'custom');
+                if (custom) custom.textContent = `${(Vectura.UI_CONSTANTS?.PEN_MODELS_UI?.CUSTOM_SIZE) || 'custom'} · ${pen.width.toFixed(2)} mm`;
+                sel.value = pen.size;
+              }
+            }
+          }
           // Normalize the textbox display on commit even when the field was the
           // edit source — a number input does not auto-clamp its text to
           // min/max on blur, so "5" (max 2) would otherwise keep reading "5"
@@ -449,6 +516,58 @@
           e.preventDefault();
           e.stopPropagation();
           this.removePen(pen.id);
+        };
+      }
+
+      // Pen models: chip (model picker), size select, ink settings.
+      const modelChip = el.querySelector('.pen-model-chip');
+      const sizeSelect = el.querySelector('.pen-size');
+      const inkBtn = el.querySelector('.pen-ink-btn');
+      const PM = Vectura.PenModel;
+      const LBL = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PEN_MODELS_UI) || {};
+      const model = PM ? PM.modelOf(pen) : null;
+      if (modelChip) {
+        // The size select carries the size, so the chip names the model only.
+        modelChip.textContent = model ? model.short : (PM ? PM.labelOf(pen) : (LBL.PLAIN_LABEL || 'Plain'));
+        modelChip.title = LBL.CHIP_TITLE || 'Pen model';
+        modelChip.setAttribute('aria-label', `${LBL.PICKER_TITLE || 'Pen model'}: ${modelChip.textContent}`);
+        modelChip.classList.toggle('is-plain', !model);
+        modelChip.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const IS = UI.InkSettings;
+          if (IS && IS.openModelPicker) IS.openModelPicker({ anchorEl: modelChip, penId: pen.id, app: this.app });
+        };
+      }
+      if (sizeSelect) {
+        if (model) {
+          const opts = model.sizes.map((sz) => `<option value="${escapeHtml(sz.label)}">${escapeHtml(sz.label)} · ${Number(sz.laidWidthMm).toFixed(2)} mm</option>`);
+          if (pen.size === 'custom' || !model.sizes.some((sz) => sz.label === pen.size)) {
+            opts.push(`<option value="custom">${escapeHtml(LBL.CUSTOM_SIZE || 'custom')} · ${Number(pen.width).toFixed(2)} mm</option>`);
+          }
+          sizeSelect.innerHTML = opts.join('');
+          sizeSelect.value = model.sizes.some((sz) => sz.label === pen.size) ? pen.size : 'custom';
+          sizeSelect.hidden = false;
+          sizeSelect.title = LBL.SIZE_LABEL || 'Pen size';
+          sizeSelect.onchange = (e) => {
+            const label = e.target.value;
+            if (label === 'custom') return;
+            commitPenEdit(this.app, pen, (draft) => { PM.applySize(draft, label); });
+          };
+        } else {
+          sizeSelect.innerHTML = '';
+          sizeSelect.hidden = true;
+        }
+      }
+      if (inkBtn) {
+        inkBtn.title = LBL.INK_BUTTON || 'Ink settings';
+        inkBtn.setAttribute('aria-label', `${LBL.INK_BUTTON || 'Ink settings'}: ${pen.name || ''}`);
+        inkBtn.classList.toggle('has-overrides', Boolean(PM && PM.hasInk(pen)));
+        inkBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const IS = UI.InkSettings;
+          if (IS && IS.openInkSettings) IS.openInkSettings({ anchorEl: inkBtn, penId: pen.id, app: this.app });
         };
       }
 
@@ -624,6 +743,9 @@
     // bind() required). Also exposed at the SPEC-named alias Vectura.PensPanel.
     assignPenToLayers,
     getSelectionPenState,
+    // Pen models: shared one-undo-step pen edit + width-geometry regen.
+    commitPenEdit,
+    regenPenGeometry,
     installOn(proto) {
       proto.setArmedPen = function(penId) { return setArmedPen.call(this, penId); };
       proto.clearArmedPen = function() { return clearArmedPen.call(this); };

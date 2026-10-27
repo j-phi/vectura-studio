@@ -11814,6 +11814,156 @@ body.vtp-is-scrubbing * { cursor: ew-resize !important; user-select: none !impor
    ============================================================================ */
 
 /* ============================================================================
+   PEN MODELS: pen-row model chip / size / ink button, model picker + ink
+   settings popovers (src/ui/panels/pens-panel.js,
+   src/ui/panels/ink-settings-popover.js), Pen Picker New Pen model select.
+   ============================================================================ */
+/* Line 1 (.pen-line) keeps today's [grip][icon][name] + [swatch][weight]
+   [value][remove]; the model row is line 2. Items never shrink below their
+   content. */
+.pen-item { flex-wrap: wrap; flex-shrink: 0; }
+.pen-line { flex: 1 1 100%; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pen-row-c {
+  flex: 1 1 100%; display: flex; align-items: center; gap: 6px;
+  min-width: 0; padding: 0 0 2px 34px;
+}
+.pen-model-chip {
+  flex: 0 1 auto; min-width: 0; max-width: 60%; height: 20px; padding: 0 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  background: var(--ui-ctrl); color: var(--ui-text); border: 1px solid var(--ui-border);
+  border-radius: 9999px; font-size: 10px; cursor: pointer;
+}
+.pen-model-chip.is-plain { color: var(--ui-muted); background: transparent; }
+.pen-model-chip:hover { border-color: var(--ui-border-hi); }
+.pen-model-chip:focus-visible, .pen-ink-btn:focus-visible { outline: 1px solid var(--ui-accent); outline-offset: 1px; }
+.pen-size {
+  flex: 0 1 auto; min-width: 0; max-width: 40%; height: 20px; padding: 0 4px;
+  background: var(--ui-ctrl); color: var(--ui-text); border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm); font-size: 10px;
+}
+.pen-size[hidden] { display: none; }
+.pen-ink-btn {
+  position: relative; flex: none; margin-left: auto; width: 22px; height: 20px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--ui-muted); border: 1px solid transparent;
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.pen-ink-btn:hover { color: var(--ui-text); border-color: var(--ui-border); }
+/* A dot when the pen carries ink overrides. */
+.pen-ink-btn.has-overrides::after {
+  content: ''; position: absolute; top: 2px; right: 2px; width: 5px; height: 5px;
+  border-radius: 50%; background: var(--ui-accent);
+}
+
+.ink-pop {
+  position: fixed; z-index: 10000; width: 300px; max-height: min(560px, calc(100vh - 16px));
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--ui-panel); color: var(--ui-text); font-size: var(--font-size-xs);
+  border: 1px solid var(--ui-border-hi); border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+}
+.ink-pop.as-sheet {
+  left: 0; right: 0; bottom: 0; top: auto; width: auto; max-height: 75vh;
+  border-radius: var(--radius-md) var(--radius-md) 0 0; padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.ink-pop-head {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--ui-border);
+}
+.ink-pop-title { flex: 1; min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ink-pop-sub { margin-left: 6px; font-weight: 400; color: var(--ui-muted); }
+.ink-pop-close {
+  flex: none; width: 24px; height: 24px; padding: 0; background: transparent; color: var(--ui-muted);
+  border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer;
+}
+.ink-pop-close:hover { color: var(--ui-text); border-color: var(--ui-border); }
+.ink-pop-search {
+  margin: 8px 10px 4px; padding: 5px 8px; background: var(--ui-ctrl); color: var(--ui-text);
+  border: 1px solid var(--ui-border); border-radius: var(--radius-sm); font-size: var(--font-size-xs);
+}
+.ink-pop-search:focus { outline: none; border-color: var(--ui-accent); }
+.ink-pop-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 6px 8px; display: flex; flex-direction: column; gap: 2px; }
+.ink-model-group {
+  padding: 8px 4px 2px; color: var(--ui-muted); font-size: 10px; text-transform: uppercase; letter-spacing: .4px;
+}
+.ink-model-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 6px; text-align: left;
+  background: transparent; color: var(--ui-text); border: 1px solid transparent;
+  border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-size-xs);
+}
+.ink-model-row:hover { background: var(--ui-ctrl); border-color: var(--ui-border-hi); }
+.ink-model-row.active { border-color: var(--ui-accent); }
+.ink-model-row:focus-visible { outline: 1px solid var(--ui-accent); outline-offset: -1px; }
+.ink-model-sample {
+  flex: none; width: 88px; height: 22px; border-radius: 3px; border: 1px solid var(--ui-border);
+}
+.ink-model-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ink-model-name, .ink-model-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ink-model-sub { color: var(--ui-muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+.ink-model-approx {
+  flex: none; padding: 0 5px; border: 1px solid var(--ui-border); border-radius: 9999px;
+  color: var(--ui-muted); font-size: 9px; line-height: 14px;
+}
+.ink-model-empty { padding: 12px; color: var(--ui-muted); text-align: center; }
+.ink-pop-body { overflow-y: auto; padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+.ink-row { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.ink-row-label { flex: 0 0 92px; color: var(--ui-muted); }
+.ink-model-btn, .ink-size {
+  flex: 1; min-width: 0; height: 22px; padding: 0 8px; text-align: left;
+  background: var(--ui-ctrl); color: var(--ui-text); border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm); font-size: var(--font-size-xs); cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ink-model-btn:hover { border-color: var(--ui-border-hi); }
+.ink-row-colours { align-items: flex-start; }
+.ink-swatches { flex: 1; display: flex; flex-wrap: wrap; gap: 4px; }
+.ink-swatch {
+  width: 18px; height: 18px; padding: 0; border-radius: 50%; cursor: pointer;
+  background: var(--swatch); border: 1px solid var(--ui-border-hi);
+}
+.ink-swatch.active { box-shadow: 0 0 0 2px var(--ui-panel), 0 0 0 3px var(--ui-accent); }
+.ink-slider { flex: 1; min-width: 0; }
+.ink-slider-value { flex: 0 0 46px; text-align: right; color: var(--ui-muted); font-variant-numeric: tabular-nums; }
+.ink-slider-row.changed .ink-slider-value { color: var(--ui-accent); }
+.ink-actions { display: flex; justify-content: flex-end; }
+.ink-reset {
+  padding: 4px 10px; background: transparent; color: var(--ui-text); border: 1px solid var(--ui-border);
+  border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-size-xs);
+}
+.ink-reset:hover:not(:disabled) { border-color: var(--ui-accent); color: var(--ui-accent); }
+.ink-reset:disabled { opacity: .45; cursor: default; }
+.ink-note { margin: 0; color: var(--ui-muted); font-size: 10px; line-height: 1.4; }
+.pen-pick-model {
+  width: 100%; padding: 5px 6px; background: var(--ui-ctrl); color: var(--ui-text);
+  border: 1px solid var(--ui-border); border-radius: var(--radius-sm); font-size: var(--font-size-xs);
+}
+
+/* Touch: every new control is a finger tall (≥ 44 px), the popovers are sheets. */
+@media (pointer: coarse) {
+  /* The touch pen card (TUX-041) orders the line-1 controls itself. */
+  [data-ui-skin] .pen-item .pen-line { display: contents; }
+  [data-ui-skin] .pen-item .pen-row-c { order: 8; flex: 1 1 100%; padding: 0 0 4px; gap: 4px; }
+  [data-ui-skin] .pen-item :is(.pen-model-chip, .pen-size, .pen-ink-btn) {
+    min-height: var(--touch-target-min); height: var(--touch-target-min); font-size: var(--font-size-xs);
+  }
+  [data-ui-skin] .pen-item .pen-ink-btn { min-width: var(--touch-target-min); width: var(--touch-target-min); }
+  [data-ui-skin] .pen-item .pen-model-chip { flex: 1 1 0; min-width: var(--touch-target-min); max-width: none; }
+  [data-ui-skin] .pen-item .pen-size { flex: 1 1 0; min-width: calc(2 * var(--touch-target-min)); max-width: none; }
+  .ink-pop :is(.ink-pop-close, .ink-model-btn, .ink-size, .ink-reset, .ink-pop-search, .ink-model-row) {
+    min-height: var(--touch-target-min);
+  }
+  .ink-pop .ink-pop-close { min-width: var(--touch-target-min); }
+  .ink-pop .ink-row { min-height: var(--touch-target-min); }
+  .ink-pop .ink-slider { min-height: var(--touch-target-min); }
+  .ink-pop .ink-swatch { width: var(--touch-target-min); height: var(--touch-target-min); }
+  .pen-pick-model { min-height: var(--touch-target-min); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ink-pop * { transition-duration: .01ms !important; }
+}
+/* ============================================================================
+   END PEN MODELS
+   ============================================================================ */
+
+/* ============================================================================
    HUD: hint bar, readouts & canvas toast (Lane F HUD-1…4)
    Markup: #hud-bar strip at the bottom of .workspace-shell (index.html);
    #canvas-toast pill inside #viewport-container. Logic: src/ui/shell/hint-bar.js;

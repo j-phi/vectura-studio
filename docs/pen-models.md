@@ -47,7 +47,7 @@ Coffee Fox).
 | `uni-posca-pc1mr` | Uni Posca PC-1MR / PC-1M / PC-3M | paint-marker | PC-1MR (0.7 pin) 0.8, PC-1M (0.7-1.0 bullet) 1.0, PC-3M (0.9-1.3) 1.3 | 0.6 | [1](https://penplotterartwork.com/wp-content/uploads/2021/09/space_rays_generative_art-1024x1024.jpg) [2](https://penplotterartwork.com/wp-content/uploads/2021/09/warp_drive_generative_art_2-1024x1024.jpg) [3](https://penplotterartwork.com/wp-content/uploads/2021/09/space_rays_code_art_mac1-1024x1024.jpg) |
 | `glow-phosphorescent-marker` | Phosphorescent marker (Glow-Writer, Markal, glow paint in a tech pen) | paint-marker | fine nib 0.9 | 0.25 | [1](https://www.2spi.com/catalog/items/04962-AB.jpg) [2](https://cdn.hackaday.io/images/resize/600x600/1091971578962718025.png) [3](https://www.youtube.com/watch?v=jDtk6HzuQ1o) |
 
-Deferred models (logged as PRH-108): brush pens (Pentel Pocket Brush, Tombow
+Deferred models (logged as PRH-110): brush pens (Pentel Pocket Brush, Tombow
 Fudenosuke — pressure-driven width needs a speed/pressure model), the HP
 7475A fibre pens, and the remaining fineliner and gel variants in the research
 set.

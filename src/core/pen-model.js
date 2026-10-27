@@ -10,6 +10,8 @@
  *   sizeOf(model, label)         a size record, or null
  *   applyModel(pen, id, size?)   writes model/size/width for a model pick
  *                                (id null/'plain' clears it); returns pen
+ *   applySize(pen, label)        size pick: laid width, keeps ink overrides
+ *   syncSizeToWidth(pen)         typed width ≠ size laid width → 'custom'
  *   inkDefaults(pen)             the slider defaults ({ wetness, roughness,
  *                                opacity, blobs, skips, jitter })
  *   inkValue(pen, key)           override ?? model default
@@ -79,6 +81,31 @@
     delete pen.ink;
     delete pen.effect;
     delete pen.color2;
+    return pen;
+  };
+
+  // Size pick on a model pen: writes the size's laid width; keeps the ink
+  // overrides. 'custom' (or an unknown label) leaves the width alone.
+  const applySize = (pen, sizeLabel) => {
+    const model = modelOf(pen);
+    if (!model) return pen;
+    const size = sizeOf(model, sizeLabel);
+    if (!size) { pen.size = 'custom'; return pen; }
+    pen.size = size.label;
+    if (Number.isFinite(size.laidWidthMm)) pen.width = Math.round(size.laidWidthMm * 1000) / 1000;
+    return pen;
+  };
+
+  // A typed / dragged width on a model pen that no longer matches the size's
+  // laid width marks the size 'custom'.
+  const syncSizeToWidth = (pen) => {
+    const model = modelOf(pen);
+    if (!model) return pen;
+    const size = sizeOf(model, pen.size);
+    if (!size || Math.abs(size.laidWidthMm - pen.width) > 1e-6) {
+      const match = model.sizes.find((s) => Math.abs(s.laidWidthMm - pen.width) <= 1e-6);
+      pen.size = match ? match.label : 'custom';
+    }
     return pen;
   };
 
@@ -231,6 +258,8 @@
     sizeOf,
     defaultSizeOf,
     applyModel,
+    applySize,
+    syncSizeToWidth,
     inkDefaults,
     inkValue,
     resolveTraits,

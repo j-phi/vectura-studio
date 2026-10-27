@@ -352,4 +352,112 @@ describe('Pen Picker popover (COL-1)', () => {
     closePopover();
     anchor.remove();
   });
+
+  // Pen models: the New Pen tab can create a model pen; the pens row chip
+  // opens the model picker; the ink-settings popover edits pen.ink.
+  describe('pen models', () => {
+    const fire = (el, type) => el.dispatchEvent(new window.Event(type, { bubbles: true }));
+    const rowOf = (penId) => document.querySelector(`#pen-list .pen-item[data-pen-id="${penId}"]`);
+
+    test('New Pen with a model: model + default size + laid width, applied in one step', () => {
+      resetPens();
+      const layer = addTestLayer();
+      const { anchor } = openFor([layer.id], { tab: 'new' });
+      const pop = document.querySelector('.pen-pick-pop');
+      const sel = pop.querySelector('.pen-pick-model');
+      expect(sel.value).toBe('plain');
+      sel.value = 'sakura-pigma-micron';
+      fire(sel, 'change');
+      expect(parseFloat(pop.querySelector('.pen-pick-width-value').value)).toBeCloseTo(0.46, 5);
+      const before = app.history.length;
+      pop.querySelector('.pen-pick-add').click();
+      const pen = SETTINGS.pens[SETTINGS.pens.length - 1];
+      expect(pen).toMatchObject({ model: 'sakura-pigma-micron', size: '05', width: 0.46 });
+      expect(layer.strokeWidth).toBeCloseTo(0.46, 5);
+      expect(app.history.length).toBe(before + 1);
+      closePopover();
+      anchor.remove();
+    });
+
+    test('model picker: picking a model is one undo step and cascades the laid width; Plain clears it', () => {
+      resetPens();
+      const layer = addTestLayer();
+      window.Vectura.PensPanel.assignPenToLayers(SETTINGS.pens, [layer], 'pen-2');
+      app.ui.renderPens();
+      rowOf('pen-2').querySelector('.pen-model-chip').click();
+      const pop = document.querySelector('.ink-pop-models');
+      expect(pop).toBeTruthy();
+      const rows = Array.from(pop.querySelectorAll('.ink-model-row')).map((r) => r.dataset.modelId);
+      expect(rows[0]).toBe('plain');
+      expect(rows).toContain('sharpie-ultra-fine');
+      // Search filters the list.
+      const search = pop.querySelector('.ink-pop-search');
+      search.value = 'sharpie';
+      fire(search, 'input');
+      expect(Array.from(pop.querySelectorAll('.ink-model-row')).map((r) => r.dataset.modelId)).toEqual(['sharpie-ultra-fine']);
+      const before = app.history.length;
+      pop.querySelector('.ink-model-row').click();
+      expect(document.querySelector('.ink-pop')).toBeNull();
+      const pen = SETTINGS.pens[1];
+      expect(pen).toMatchObject({ model: 'sharpie-ultra-fine', size: 'Ultra Fine', width: 0.65 });
+      expect(layer.strokeWidth).toBeCloseTo(0.65, 5);
+      expect(app.history.length).toBe(before + 1);
+      expect(rowOf('pen-2').querySelector('.pen-model-chip').textContent).toBe('Sharpie');
+      app.undo();
+      expect(SETTINGS.pens[1].model).toBeUndefined();
+      expect(SETTINGS.pens[1].width).toBe(0.5);
+      // Re-picking the current model is a no-op (no empty undo step).
+      window.Vectura.PenModel.applyModel(SETTINGS.pens[1], 'sharpie-ultra-fine');
+      app.ui.renderPens();
+      rowOf('pen-2').querySelector('.pen-model-chip').click();
+      const n = app.history.length;
+      document.querySelector('.ink-model-row[data-model-id="sharpie-ultra-fine"]').click();
+      expect(app.history.length).toBe(n);
+      rowOf('pen-2').querySelector('.pen-model-chip').click();
+      document.querySelector('.ink-model-row[data-model-id="plain"]').click();
+      expect(SETTINGS.pens[1].model).toBeUndefined();
+      expect(app.history.length).toBe(n + 1);
+    });
+
+    test('ink settings: no undo step on open / focus / no-op input; one per drag; reset to model defaults is one step', () => {
+      resetPens();
+      window.Vectura.PenModel.applyModel(SETTINGS.pens[0], 'pentel-sign-pen');
+      app.ui.renderPens();
+      const before = app.history.length;
+      rowOf('pen-1').querySelector('.pen-ink-btn').click();
+      const pop = document.querySelector('.ink-pop-settings');
+      expect(pop).toBeTruthy();
+      const slider = pop.querySelector('.ink-slider[data-key="wetness"]');
+      fire(slider, 'focus');
+      fire(slider, 'input'); // value unchanged: no-op
+      expect(app.history.length).toBe(before);
+      for (let i = 0; i < 20; i += 1) { slider.value = String(0.3 + i * 0.02); fire(slider, 'input'); }
+      fire(slider, 'change');
+      expect(app.history.length).toBe(before + 1);
+      expect(SETTINGS.pens[0].ink.wetness).toBeCloseTo(0.68, 6);
+      expect(rowOf('pen-1').querySelector('.pen-ink-btn').classList.contains('has-overrides')).toBe(true);
+      // A second drag is a second step.
+      slider.value = '0.9'; fire(slider, 'input'); fire(slider, 'change');
+      expect(app.history.length).toBe(before + 2);
+      const reset = document.querySelector('.ink-pop-settings .ink-reset');
+      expect(reset.disabled).toBe(false);
+      reset.click();
+      expect(SETTINGS.pens[0].ink).toBeUndefined();
+      expect(app.history.length).toBe(before + 3);
+      expect(document.querySelector('.ink-pop-settings .ink-reset').disabled).toBe(true);
+      // Size select in the popover writes the laid width (one step).
+      window.Vectura.UI.InkSettings.close();
+      window.Vectura.PenModel.applyModel(SETTINGS.pens[0], 'sakura-pigma-micron');
+      app.ui.renderPens();
+      rowOf('pen-1').querySelector('.pen-ink-btn').click();
+      const size = document.querySelector('.ink-pop-settings .ink-size');
+      size.value = '08';
+      const n = app.history.length;
+      fire(size, 'change');
+      expect(SETTINGS.pens[0]).toMatchObject({ size: '08', width: 0.55 });
+      expect(app.history.length).toBe(n + 1);
+      window.Vectura.UI.InkSettings.close();
+      expect(document.querySelector('.ink-pop')).toBeNull();
+    });
+  });
 });
