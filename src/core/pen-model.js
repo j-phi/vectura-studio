@@ -325,7 +325,9 @@
     // absorbent stock shows ≈ ±0.03 mm lumps.
     const edgeAmpMm = 0.8 * laidW * rough * (0.5 + feather) * paperK;
     // Edge lumps follow the paper grain (reference: lumps at ~0.3× the grain).
-    const grain = realistic ? num(info.grainMm, 0.8) : 0.6;
+    // …at the paper's Scale (the Paper panel multiplies the physical grain).
+    const paperScale = realistic ? clamp(num(paper && paper.scale, 1) || 1, 0.25, 3) : 1;
+    const grain = realistic ? num(info.grainMm, 0.8) * paperScale : 0.6;
     const edgeScaleMm = Math.max(num(b.edge && b.edge.scaleMm, 0.05) * 3, 0.3 * grain);
 
     const darkStock = realistic && luminance(paper && paper.color) < 0.4;
