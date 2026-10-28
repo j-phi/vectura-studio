@@ -326,7 +326,8 @@
     const edgeAmpMm = 0.8 * laidW * rough * (0.5 + feather) * paperK;
     // Edge lumps follow the paper grain (reference: lumps at ~0.3× the grain).
     // …at the paper's Scale (the Paper panel multiplies the physical grain).
-    const paperScale = realistic ? clamp(num(paper && paper.scale, 1) || 1, 0.25, 3) : 1;
+    const PL = (Vectura.PAPERS && Vectura.PAPERS.LIMITS) || {};
+    const paperScale = realistic ? clamp(num(paper && paper.scale, 1) || 1, PL.scaleMin || 0.25, PL.scaleMax || 3) : 1;
     const grain = realistic ? num(info.grainMm, 0.8) * paperScale : 0.6;
     const edgeScaleMm = Math.max(num(b.edge && b.edge.scaleMm, 0.05) * 3, 0.3 * grain);
 

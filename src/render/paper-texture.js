@@ -135,16 +135,18 @@
    * they are summed on ONE shared coarse grid and interpolated once with a
    * separable Catmull-Rom (C1, so the emboss that differentiates the field
    * shows no facets); fine octaves are evaluated per pixel.
-   * With `out2`, a second sum with the octaves' `amp2` weights is written in
-   * the same pass (one noise evaluation feeds both: the pure field and the
-   * display-attenuated one).
+   * With `extra` (an array of up to two same-size outputs), further sums
+   * with each octave's `amps[n]` weights are written in the same pass: one
+   * noise evaluation feeds the pure field and the display-attenuated ones.
    */
-  const addOctaves = (out, w, h, x0, y0, b, perm, octaves, out2 = null) => {
-    const live = octaves.filter((o) => o && (o.amp > 0 || (out2 && o.amp2 > 0)));
+  const addOctaves = (out, w, h, x0, y0, b, perm, octaves, extra = null) => {
+    const E = extra ? extra.length : 0;
+    const live = octaves.filter((o) => o && (o.amp > 0 || (E && (o.amps || []).some((a) => a > 0))));
     if (!live.length) return;
     const prep = live.map((o) => ({
       ...o,
-      a2: out2 ? (o.amp2 || 0) : 0,
+      a1: E > 0 ? ((o.amps && o.amps[0]) || 0) : 0,
+      a2: E > 1 ? ((o.amps && o.amps[1]) || 0) : 0,
       ca: Math.cos(o.ang || 0),
       sa: Math.sin(o.ang || 0),
       inv: 1 / o.wl,
@@ -152,43 +154,51 @@
       off: o.off || 0,
       wavePx: o.wl * b,
     }));
-    let v2 = 0;
+    if (E > 2) throw new RangeError('addOctaves: at most 2 extra outputs');
+    // Up to two extra sums in locals (hot loop: no per-output array walk).
+    let v1 = 0; let v2 = 0;
     const sampleAll = (list, xm, ym) => {
       let v = 0;
-      v2 = 0;
+      v1 = 0; v2 = 0;
       for (let k = 0; k < list.length; k += 1) {
         const o = list[k];
         const u = (xm * o.ca + ym * o.sa) / o.st;
         const vv = -xm * o.sa + ym * o.ca;
         const n = simplex(perm, u * o.inv + o.off, vv * o.inv - o.off);
         v += o.amp * n;
+        v1 += o.a1 * n;
         v2 += o.a2 * n;
       }
       return v;
     };
+    const ex1 = E > 0 ? extra[0] : null;
+    const ex2 = E > 1 ? extra[1] : null;
     const fine = prep.filter((o) => o.wavePx < 8);
     const smoothList = prep.filter((o) => o.wavePx >= 8);
     if (fine.length) {
       for (let py = 0; py < h; py += 1) {
         const ym = y0 + (py + 0.5) / b;
         for (let px = 0; px < w; px += 1) {
-          out[py * w + px] += sampleAll(fine, x0 + (px + 0.5) / b, ym);
-          if (out2) out2[py * w + px] += v2;
+          const i = py * w + px;
+          out[i] += sampleAll(fine, x0 + (px + 0.5) / b, ym);
+          if (ex1) { ex1[i] += v1; if (ex2) ex2[i] += v2; }
         }
       }
     }
     if (!smoothList.length) return;
     const minWave = Math.min(...smoothList.map((o) => o.wavePx));
-    const step = Math.max(1, Math.min(12, Math.floor(minWave / 4)));
+    // ≥ 8 grid samples per wavelength: the emboss differentiates the field,
+    // and a coarser grid shows its interpolation seams as axis-aligned ridges.
+    const step = Math.max(2, Math.min(8, Math.floor(minWave / 8)));
     const gw = Math.ceil(w / step) + 4;
     const gh = Math.ceil(h / step) + 4;
     const grid = new Float32Array(gw * gh);
-    const grid2 = out2 ? new Float32Array(gw * gh) : null;
+    const grids = Array.from({ length: E }, () => new Float32Array(gw * gh));
     for (let gy = 0; gy < gh; gy += 1) {
       const ym = y0 + ((gy - 1) * step + 0.5) / b;
       for (let gx = 0; gx < gw; gx += 1) {
         grid[gy * gw + gx] = sampleAll(smoothList, x0 + ((gx - 1) * step + 0.5) / b, ym);
-        if (grid2) grid2[gy * gw + gx] = v2;
+        if (E > 0) { grids[0][gy * gw + gx] = v1; if (E > 1) grids[1][gy * gw + gx] = v2; }
       }
     }
     // Catmull-Rom weights per output column / row (they repeat every step).
@@ -234,7 +244,7 @@
       }
     };
     interp(grid, out);
-    if (grid2) interp(grid2, out2);
+    for (let e = 0; e < E; e += 1) interp(grids[e], extra[e]);
   };
 
   // Single-octave convenience wrapper.
@@ -256,10 +266,39 @@
    * bump positions never move (the field is the same; only its contrast is
    * attenuated), so zooming in reveals the detail smoothly.
    */
-  const mtfWeight = (wavelengthMm, b) => {
-    const lp = wavelengthMm * b;
-    const k = limits().mtfPx || 3;
-    return resolveWeight(wavelengthMm, b) * Math.exp(-(k / lp) * (k / lp));
+  // `p` is the TRUE on-screen px per (texture) mm, not the chunk bucket: the
+  // weight is a smooth function of p alone, so contrast changes continuously
+  // with zoom and Scale (a chunk at bucket b serves p in [b/√2, b·√2] and
+  // blends two such weights, see bandsFor). The raster fade keeps only
+  // features ≥ mtfRasterPx..2× raster px of the COARSEST chunk that can
+  // serve p (p/√2): both buckets either side of a bucket change then render
+  // the same content equally well, so the displayed contrast does not step.
+  const mtfWeight = (wavelengthMm, p) => {
+    const lp = wavelengthMm * p;
+    if (!(lp > 0)) return 0;
+    const k = limits().mtfPx || 2;
+    const lr = (wavelengthMm * p) / Math.SQRT2; // λ in raster px of the coarsest chunk that serves p
+    const a0 = limits().mtfRasterPx || 2.5;
+    const aa = smooth(a0, a0 * 2, lr);
+    return aa < 0.02 ? 0 : aa * Math.exp(-(k / lp) * (k / lp));
+  };
+  // The two display densities a bucket-b chunk is shaded for: its lowest and
+  // highest on-screen px/mm. Adjacent buckets share an edge (b·√2 = 2b/√2),
+  // so contrast is continuous across bucket changes.
+  const bandsFor = (b) => [b / Math.SQRT2, b * Math.SQRT2];
+  // Blend position (0..1) of on-screen density p within bucket b's band.
+  const bandT = (b, p) => {
+    if (!(p > 0)) return 0;
+    const t = Math.log2(p / (b / Math.SQRT2));
+    return t <= 0 ? 0 : (t >= 1 ? 1 : t);
+  };
+
+  // Response of the diagonal central difference (±1 px on both axes) to a
+  // wave of λ raster px along it, floored so the compensation stays ≤ 4×.
+  const embossResponse = (lpx) => {
+    if (!(lpx > 0)) return 1;
+    const ph = (2 * Math.PI * Math.SQRT2) / lpx;
+    return Math.max(0.25, Math.sin(ph) / ph);
   };
 
   // Felt-mark octaves (× grainMm): two broad ones give irregular rounded
@@ -280,9 +319,9 @@
    * Tooth relief in [-1, 1] over a pixel grid (pure; used by chunks + tests).
    * Felt-mark pattern: a slightly directional stretch, and tanh shaping makes
    * flat plateaus with soft valleys rather than pebbles.
-   * `shaded` (optional, same size): the same relief with every octave
-   * attenuated by the display MTF — what the eye sees at this zoom. The pure
-   * field (pits for dry-skip, tests) is unchanged by it.
+   * `shaded` (optional): { outs: [Float32Array…], ps: [px/mm…] } — the same
+   * relief with every octave attenuated by the display MTF at each on-screen
+   * density in `ps`. The pure field (pits for dry-skip, tests) is unchanged.
    */
   const proceduralHeightGrid = (info, seed, x0, y0, w, h, b, shaded = null) => {
     const perm = permFor(seed * 7 + 11);
@@ -291,15 +330,21 @@
     const ang = info.grainAngle || 0;
     const st = info.grainStretch || 1;
     let total = 0;
-    addOctaves(out, w, h, x0, y0, b, perm, TOOTH_OCTAVES.map(([m, amp], k) => {
+    addOctaves(out, w, h, x0, y0, b, perm, (limits().toothOctaves || TOOTH_OCTAVES).map(([m, amp], k) => {
       total += amp;
       const wl = g * m;
-      return { wl, amp: amp * resolveWeight(wl, b), amp2: amp * mtfWeight(wl, b), ang: ang + k * 0.4, stretch: st, off: k * 17.3 };
-    }), shaded);
+      // The emboss differentiates the shaded field over ±1 raster px; that
+      // finite difference loses contrast on octaves only a few raster px
+      // long, and differently per bucket. Pre-compensating each octave by
+      // the difference's response (sinc of its phase step, capped) makes the
+      // relief a function of the on-screen density only.
+      const fd = embossResponse(wl * b);
+      return { wl, amp: amp * resolveWeight(wl, b), amps: shaded ? shaded.ps.map((pp) => (amp * mtfWeight(wl, pp)) / fd) : [], ang: ang + k * 0.4, stretch: st, off: k * 17.3 };
+    }), shaded ? shaded.outs : null);
     const k = (TOOTH_K * 1.6) / total;
     const inv = 1 / TOOTH_NORM;
     for (let i = 0; i < out.length; i += 1) out[i] = ftanh(out[i] * k) * inv;
-    if (shaded) for (let i = 0; i < shaded.length; i += 1) shaded[i] = ftanh(shaded[i] * k) * inv;
+    if (shaded) shaded.outs.forEach((o) => { for (let i = 0; i < o.length; i += 1) o[i] = ftanh(o[i] * k) * inv; });
     return out;
   };
 
@@ -371,24 +416,35 @@
     return Math.min(1, Math.log2(b / native) / 3) * 0.45;
   };
 
-  // Mip bias for the shaded view of a photo: one level coarser while its
-  // texels are under ~4 device px, fading to none once well resolved.
-  const imageBias = (maps, b) => {
+  // Wavelength (mm) of the finest detail of the mip level sampled at bucket
+  // b: two texels of that level.
+  const imageTexelWl = (maps, b) => {
     const native = maps.w / maps.tileMm;
-    return b < native * 2 ? 1 : 0;
+    const L = Math.max(0, Math.floor(Math.log2(Math.max(1, native / b))));
+    return (2 * (2 ** L)) / native;
   };
 
   const heightGrid = (info, seed, x0, y0, w, h, b, shaded = null) => {
     const maps = imageMapsFor(info);
     if (!maps) return proceduralHeightGrid(info, seed, x0, y0, w, h, b, shaded);
     const out = imageGrid(maps, 'height', x0, y0, w, h, b);
-    if (shaded) shaded.set(imageGrid(maps, 'height', x0, y0, w, h, b, imageBias(maps, b)));
+    if (shaded) {
+      // Display MTF on a photo: its finest texels (the level sampled at
+      // this bucket) fade towards the next coarser mip by the MTF weight of
+      // their wavelength at each on-screen density.
+      const coarse = imageGrid(maps, 'height', x0, y0, w, h, b, 1);
+      const texelWl = imageTexelWl(maps, b);
+      shaded.outs.forEach((o, n) => {
+        const d = mtfWeight(texelWl, shaded.ps[n]);
+        for (let i = 0; i < o.length; i += 1) o[i] = coarse[i] + (out[i] - coarse[i]) * d;
+      });
+    }
     const mw = microWeight(maps, b);
     if (mw > 0.01) {
-      const microS = shaded ? new Float32Array(w * h) : null;
+      const microS = shaded ? { outs: shaded.outs.map(() => new Float32Array(w * h)), ps: shaded.ps } : null;
       const micro = proceduralHeightGrid(info, seed, x0, y0, w, h, b, microS);
       for (let i = 0; i < out.length; i += 1) out[i] = Math.max(-1, Math.min(1, out[i] * (1 - mw * 0.5) + micro[i] * mw));
-      if (shaded) for (let i = 0; i < out.length; i += 1) shaded[i] = Math.max(-1, Math.min(1, shaded[i] * (1 - mw * 0.5) + microS[i] * mw));
+      if (shaded) shaded.outs.forEach((o, n) => { const m = microS.outs[n]; for (let i = 0; i < o.length; i += 1) o[i] = Math.max(-1, Math.min(1, o[i] * (1 - mw * 0.5) + m[i] * mw)); });
     }
     return out;
   };
@@ -414,22 +470,36 @@
 
   const FIBRE_CELL_MM = 4;
 
-  // Fibres and speckles are rasterised in JS straight into the shade field
-  // (no canvas read-back; identical in every environment). Each is placed
-  // per 4 mm cell from the cell's own RNG, so a fibre is the same fibre in
-  // every chunk and at every zoom level. Coverage is area-preserving: a
-  // sub-pixel fibre spreads its (physical) width over a pixel at reduced
-  // contrast instead of being drawn with a fake minimum width — the same
-  // display-MTF law as the relief, so at fit fibres are a faint hint and they
-  // resolve as you zoom in. Light fibres brighten (+), dark ones darken (−).
+  // Fibres, speckles and the micro-fibre mat are rasterised in JS straight
+  // into the shade field (no canvas read-back; identical in every
+  // environment). Each is placed per cell from the cell's own RNG, so a fibre
+  // is the same fibre in every chunk and at every zoom level. Coverage is
+  // area-preserving; light fibres brighten (+), dark ones darken (−).
+  //   fibres   visible strands / bundles (4 mm cells, fiberDensity, fiberLenMm);
+  //            drawn at least MIN_FIBRE_PX wide with contrast × √(true/drawn
+  //            width), so kraft / rag / newsprint fibres stay perceptible at
+  //            arm's length (the eye integrates a thin dark line) without
+  //            looking like fat strokes;
+  //   speckles dark inclusions (speckle);
+  //   web      the mat of individual 12–30 µm fibres every sheet is made of
+  //            (1 mm cells, ~0.3–1 mm long, nearly straight, random
+  //            directions) — resolves only at deep zoom.
+  // Each class fades in by a weight of the ON-SCREEN density p (two bands per
+  // chunk, see bandsFor), so it appears continuously while zooming.
   const FIBRE_K = 1.1;
   const SPECK_K = 1.4;
+  const WEB_K = 1;
+  const MIN_FIBRE_PX = 0.8;
+  const WEB_CELL_MM = 1;
+  const WEB_DENSITY = 60; // fibres per mm²: the visible top layer of the mat covers the sheet
 
-  // Fibre: polyline `pts` (px) with half width hw; per-pixel max coverage of
-  // this fibre (stamp/cov) so its own segments never double-count.
-  const rasterFibre = (S, W, stamp, cov, id, pts, hw, amp) => {
+  // Fibre polyline `pts` (px), half width hw; per-pixel max coverage of this
+  // fibre (stamp/cov) so its own segments never double-count. Adds the
+  // coverage × amp × fs[n] into every target field Ss[n].
+  const rasterFibre = (Ss, fs, W, stamp, cov, id, pts, hw, amp) => {
     const thin = hw * 2 < 1;
     const reach = thin ? 1 : hw + 0.5;
+    const n = Ss.length;
     for (let k = 0; k + 3 < pts.length; k += 2) {
       const ax = pts[k]; const ay = pts[k + 1]; const bx = pts[k + 2]; const by = pts[k + 3];
       const minX = Math.max(0, Math.floor(Math.min(ax, bx) - reach));
@@ -452,17 +522,22 @@
           if (c <= 0) continue;
           const idx = py * W + px;
           if (stamp[idx] !== id) { stamp[idx] = id; cov[idx] = 0; }
-          if (c > cov[idx]) { S[idx] += (c - cov[idx]) * amp; cov[idx] = c; }
+          if (c > cov[idx]) {
+            const add = (c - cov[idx]) * amp;
+            for (let e = 0; e < n; e += 1) Ss[e][idx] += add * fs[e];
+            cov[idx] = c;
+          }
         }
       }
     }
   };
 
-  // The fibres / speckles of one 4 mm cell, in mm (deterministic per cell).
+  // The visible fibres of one 4 mm cell, in mm: fn(sx, sy, qx, qy, ex, ey, hwMm, amp, len).
   const cellFibres = (info, seed, cx, cy, fn) => {
     const density = info.fiberDensity || 0;
     const lenMm = info.fiberLenMm || 1;
     const tone = info.fiberTone || 0;
+    const widthK = info.fiberWidthK || 1;
     const rand = cellRng(seed, cx, cy, 101);
     const expect = FIBRE_CELL_MM * FIBRE_CELL_MM * density * 0.22;
     const count = Math.floor(expect) + (rand() < expect % 1 ? 1 : 0);
@@ -477,7 +552,26 @@
       const wMul = 0.6 + rand() * 0.9;
       const dx = Math.cos(ang) * len * 0.5;
       const dy = Math.sin(ang) * len * 0.5;
-      fn(x - dx, y - dy, x - Math.sin(ang) * bend, y + Math.cos(ang) * bend, x + dx, y + dy, 0.025 * wMul, (light ? 1 : -1) * alpha * FIBRE_K, len);
+      fn(x - dx, y - dy, x - Math.sin(ang) * bend, y + Math.cos(ang) * bend, x + dx, y + dy, 0.025 * wMul * widthK, (light ? 1 : -1) * alpha * FIBRE_K, len);
+    }
+  };
+  // The micro-fibres of one 1 mm cell (same callback shape).
+  const cellWeb = (info, seed, cx, cy, fn) => {
+    const rand = cellRng(seed, cx, cy, 307);
+    const expect = WEB_CELL_MM * WEB_CELL_MM * WEB_DENSITY;
+    const count = Math.floor(expect) + (rand() < expect % 1 ? 1 : 0);
+    const k = WEB_K * (0.5 + (info.tooth || 0));
+    for (let n = 0; n < count; n += 1) {
+      const x = (cx + rand()) * WEB_CELL_MM;
+      const y = (cy + rand()) * WEB_CELL_MM;
+      const len = 0.3 + rand() * 0.7;
+      const ang = rand() * Math.PI;
+      const bend = (rand() - 0.5) * len * 0.25;
+      const amp = (rand() < 0.5 ? 1 : -1) * (0.05 + rand() * 0.09) * k;
+      const hwMm = 0.006 + rand() * 0.009;
+      const dx = Math.cos(ang) * len * 0.5;
+      const dy = Math.sin(ang) * len * 0.5;
+      fn(x - dx, y - dy, x - Math.sin(ang) * bend, y + Math.cos(ang) * bend, x + dx, y + dy, hwMm, amp, len);
     }
   };
   const cellSpeckles = (info, seed, cx, cy, fn) => {
@@ -494,10 +588,17 @@
       fn(x, y, r, ry, rot, -alpha * SPECK_K);
     }
   };
-  // Below a few px a fibre (and a sub-0.35 px speckle) is only a mean tint:
-  // skip the work, fading in.
-  const fibreFadeAt = (info, b) => ((info.fiberDensity || 0) > 0 ? smooth(3, 6, (info.fiberLenMm || 1) * b) : 0);
-  const dotFadeAt = (info, b) => ((info.speckle || 0) > 0 ? smooth(0.35, 0.7, 0.06 * b) : 0);
+  // Fade-in weights of each class at on-screen density p (px per texture mm).
+  const fibreFadeAt = (info, p) => ((info.fiberDensity || 0) > 0 ? smooth(3, 6, (info.fiberLenMm || 1) * p) : 0);
+  const dotFadeAt = (info, p) => ((info.speckle || 0) > 0 ? smooth(0.35, 0.7, 0.06 * p) : 0);
+  // The mat's 12–30 µm fibres fade in once ~0.7 px wide on screen.
+  const webFadeAt = (p) => { const f = smooth(0.7, 1.6, 0.02 * p); return f < 0.15 ? 0 : f; };
+  // Drawn half width (px) and contrast factor of a visible fibre at raster b.
+  const fibreDraw = (hwMm, b) => {
+    const hw = hwMm * b;
+    const hd = Math.max(hw, MIN_FIBRE_PX / 2);
+    return { hw: hd, k: Math.sqrt(hw / hd) };
+  };
   const bezierPts = (pts, sx, sy, qx, qy, ex, ey, segs) => {
     pts.length = 0;
     for (let k = 0; k <= segs; k += 1) {
@@ -506,72 +607,81 @@
     }
     return pts;
   };
+  const segsFor = (lenPx) => Math.max(2, Math.min(24, Math.ceil(lenPx / 3)));
+  const polyLen = (pts) => { let L = 0; for (let k = 0; k + 3 < pts.length; k += 2) L += Math.hypot(pts[k + 2] - pts[k], pts[k + 3] - pts[k + 1]); return L; };
 
   /**
-   * Mean shade the strands add per pixel at bucket b — exact for the
-   * rasteriser (area-preserving coverage: a fibre covers length × width, a
-   * speckle its ellipse), measured over a fixed 8×8-cell block with the same
-   * cell RNG. Subtracted so fibres and speckles are zero-mean too.
+   * Mean shade the strands add per pixel in each band of bucket b — exact
+   * for the rasteriser (area-preserving coverage: a fibre covers length ×
+   * drawn width, a speckle its ellipse), measured over fixed cell blocks with
+   * the same cell RNG. Subtracted so fibres, speckles and the mat are
+   * zero-mean too. -> [meanLo, meanHi]
    */
   const strandMeanCache = new Map();
   const strandMean = (type, seed, b) => {
     const key = `${type}|${seed}|${b}`;
     if (strandMeanCache.has(key)) return strandMeanCache.get(key);
     const info = typeInfo(type);
-    const ff = fibreFadeAt(info, b);
-    const df = dotFadeAt(info, b);
-    let acc = 0;
+    const ps = bandsFor(b);
     const pts = [];
-    if (ff > 0 || df > 0) {
-      for (let cy = 0; cy < 8; cy += 1) {
-        for (let cx = 0; cx < 8; cx += 1) {
-          if (ff > 0) {
-            cellFibres(info, seed, cx, cy, (sx, sy, qx, qy, ex, ey, hwMm, amp, len) => {
-              const segs = Math.max(2, Math.min(24, Math.ceil((len * b) / 3)));
-              bezierPts(pts, sx, sy, qx, qy, ex, ey, segs);
-              let L = 0;
-              for (let k = 0; k + 3 < pts.length; k += 2) L += Math.hypot(pts[k + 2] - pts[k], pts[k + 3] - pts[k + 1]);
-              acc += L * 2 * hwMm * amp * ff; // mm²
-            });
-          }
-          if (df > 0) cellSpeckles(info, seed, cx, cy, (x, y, r, ry, rot, amp) => { acc += Math.PI * r * ry * amp * df; });
+    let fib = 0; let dot = 0; let web = 0;
+    const areaF = 64 * FIBRE_CELL_MM * FIBRE_CELL_MM;
+    const areaW = 64 * WEB_CELL_MM * WEB_CELL_MM;
+    const anyF = ps.some((p) => fibreFadeAt(info, p) > 0);
+    const anyD = ps.some((p) => dotFadeAt(info, p) > 0);
+    const anyW = ps.some((p) => webFadeAt(p) > 0);
+    for (let cy = 0; cy < 8; cy += 1) {
+      for (let cx = 0; cx < 8; cx += 1) {
+        if (anyF) {
+          cellFibres(info, seed, cx, cy, (sx, sy, qx, qy, ex, ey, hwMm, amp, len) => {
+            const L = polyLen(bezierPts(pts, sx, sy, qx, qy, ex, ey, segsFor(len * b)));
+            const d = fibreDraw(hwMm, b);
+            fib += L * ((2 * d.hw) / b) * amp * d.k; // mm²
+          });
+        }
+        if (anyD) cellSpeckles(info, seed, cx, cy, (x, y, r, ry, rot, amp) => { dot += Math.PI * r * ry * amp; });
+        if (anyW) {
+          cellWeb(info, seed, cx, cy, (sx, sy, qx, qy, ex, ey, hwMm, amp, len) => {
+            const L = polyLen(bezierPts(pts, sx, sy, qx, qy, ex, ey, segsFor(len * b)));
+            web += L * 2 * hwMm * amp;
+          });
         }
       }
     }
-    const out = acc / (64 * FIBRE_CELL_MM * FIBRE_CELL_MM);
+    const out = ps.map((p) => (fib / areaF) * fibreFadeAt(info, p) + (dot / areaF) * dotFadeAt(info, p) + (web / areaW) * webFadeAt(p));
     if (strandMeanCache.size > 96) strandMeanCache.delete(strandMeanCache.keys().next().value);
     strandMeanCache.set(key, out);
     return out;
   };
 
-  const rasterStrands = (S, W, info, seed, x0, y0, b) => {
-    const fibreFade = fibreFadeAt(info, b);
-    const dotFade = dotFadeAt(info, b);
-    if (!(fibreFade > 0) && !(dotFade > 0)) return;
+  // Rasterise every strand class of a W×W region at raster bucket b into the
+  // target fields Ss (one per on-screen density ps[n]).
+  const rasterStrands = (Ss, ps, W, info, seed, x0, y0, b) => {
+    const ff = ps.map((p) => fibreFadeAt(info, p));
+    const df = ps.map((p) => dotFadeAt(info, p));
+    const wf = ps.map((p) => webFadeAt(p));
+    const anyF = ff.some((v) => v > 0);
+    const anyD = df.some((v) => v > 0);
+    const anyW = wf.some((v) => v > 0);
+    if (!anyF && !anyD && !anyW) return;
     const wMm = W / b;
-    const reach = (info.fiberLenMm || 1) * 1.4 + 0.5;
-    const cx0 = Math.floor((x0 - reach) / FIBRE_CELL_MM);
-    const cx1 = Math.floor((x0 + wMm + reach) / FIBRE_CELL_MM);
-    const cy0 = Math.floor((y0 - reach) / FIBRE_CELL_MM);
-    const cy1 = Math.floor((y0 + wMm + reach) / FIBRE_CELL_MM);
     // Per-pixel max-coverage scratch, allocated on the first fibre that
     // actually touches this chunk.
     let stamp = null;
     let cov = null;
     let id = 0;
     const pts = [];
-    const fibre = (msx, msy, mqx, mqy, mex, mey, hwMm, amp, len) => {
+    const fibre = (fs, minWidth) => (msx, msy, mqx, mqy, mex, mey, hwMm, amp, len) => {
       const sx = (msx - x0) * b; const sy = (msy - y0) * b;
       const qx = (mqx - x0) * b; const qy = (mqy - y0) * b;
       const ex = (mex - x0) * b; const ey = (mey - y0) * b;
-      const hw = hwMm * b;
+      const d = minWidth ? fibreDraw(hwMm, b) : { hw: hwMm * b, k: 1 };
       // Off-chunk fibres (bbox test) cost nothing.
-      const pad = hw + 1;
+      const pad = d.hw + 1;
       if (Math.max(sx, ex, qx) < -pad || Math.min(sx, ex, qx) > W + pad || Math.max(sy, ey, qy) < -pad || Math.min(sy, ey, qy) > W + pad) return;
-      const segs = Math.max(2, Math.min(24, Math.ceil((len * b) / 3)));
       if (!stamp) { stamp = new Int32Array(W * W); cov = new Float32Array(W * W); }
       id += 1;
-      rasterFibre(S, W, stamp, cov, id, bezierPts(pts, sx, sy, qx, qy, ex, ey, segs), hw, amp * fibreFade);
+      rasterFibre(Ss, fs, W, stamp, cov, id, bezierPts(pts, sx, sy, qx, qy, ex, ey, segsFor(len * b)), d.hw, amp * d.k);
     };
     const speck = (x, y, rMm, ryMm, rot, ampFull) => {
       const r = rMm * b; const ry = ryMm * b;
@@ -580,7 +690,7 @@
       const minY = Math.max(0, Math.floor(ccy - r - 1)); const maxY = Math.min(W - 1, Math.ceil(ccy + r + 1));
       if (minX > maxX || minY > maxY) return;
       const ca = Math.cos(rot); const sa = Math.sin(rot);
-      const amp = (ampFull * dotFade) / 16;
+      const amp = ampFull / 16;
       // 4×4 supersampling: exact area at any size.
       for (let py = minY; py <= maxY; py += 1) {
         for (let px = minX; px <= maxX; px += 1) {
@@ -592,14 +702,33 @@
               if (lx * lx + ly * ly <= 1) hits += 1;
             }
           }
-          if (hits) S[py * W + px] += hits * amp;
+          if (hits) for (let e = 0; e < Ss.length; e += 1) Ss[e][py * W + px] += hits * amp * df[e];
         }
       }
     };
-    for (let cy = cy0; cy <= cy1; cy += 1) {
-      for (let cx = cx0; cx <= cx1; cx += 1) {
-        if (fibreFade > 0) cellFibres(info, seed, cx, cy, fibre);
-        if (dotFade > 0) cellSpeckles(info, seed, cx, cy, speck);
+    if (anyF || anyD) {
+      const reach = (info.fiberLenMm || 1) * 1.4 + 0.5;
+      const cx0 = Math.floor((x0 - reach) / FIBRE_CELL_MM);
+      const cx1 = Math.floor((x0 + wMm + reach) / FIBRE_CELL_MM);
+      const cy0 = Math.floor((y0 - reach) / FIBRE_CELL_MM);
+      const cy1 = Math.floor((y0 + wMm + reach) / FIBRE_CELL_MM);
+      const fFib = fibre(ff, true);
+      for (let cy = cy0; cy <= cy1; cy += 1) {
+        for (let cx = cx0; cx <= cx1; cx += 1) {
+          if (anyF) cellFibres(info, seed, cx, cy, fFib);
+          if (anyD) cellSpeckles(info, seed, cx, cy, speck);
+        }
+      }
+    }
+    if (anyW) {
+      const reach = 0.6;
+      const cx0 = Math.floor((x0 - reach) / WEB_CELL_MM);
+      const cx1 = Math.floor((x0 + wMm + reach) / WEB_CELL_MM);
+      const cy0 = Math.floor((y0 - reach) / WEB_CELL_MM);
+      const cy1 = Math.floor((y0 + wMm + reach) / WEB_CELL_MM);
+      const fWeb = fibre(wf, false);
+      for (let cy = cy0; cy <= cy1; cy += 1) {
+        for (let cx = cx0; cx <= cx1; cx += 1) cellWeb(info, seed, cx, cy, fWeb);
       }
     }
   };
@@ -674,7 +803,8 @@
   const entryBytes = (e) => {
     let n = 0;
     ['skip', 'feather', 'comp'].forEach((k) => { const c = e[k]; if (c && c.width) n += c.width * c.height * 4; });
-    if (e.sq) n += e.sq.byteLength;
+    if (e.sqL) n += e.sqL.byteLength;
+    if (e.sqH) n += e.sqH.byteLength;
     return n;
   };
   // Chunks drawn in the current frame are PINNED: never evicted, so a big
@@ -709,23 +839,46 @@
   //
   // The surface is a SHADE field s (dimensionless, zero-mean): emboss of the
   // MTF-attenuated relief under a top-left light, cavity tone, formation
-  // mottle, fine tooth, micro-fibre web, a photo's albedo and the fibres /
-  // speckles. A pixel's colour is, in LINEAR light,
-  //   out = gain · C · (1 + texture · s) + texture · SHEEN · s
-  // so lit facets brighten and shadowed ones darken around the chosen paper
-  // colour C (the old overlay only darkened: the sheet read grey). SHEEN is
-  // a small additive term so dark stock still shows its tooth. `gain`
-  // (≈1) is solved per paper / bucket / colour / strength on a fixed sample
-  // of the field so the sheet's mean luminance equals C's even where
-  // highlights clip on near-white stock.
+  // mottle, fine tooth, a photo's albedo, fibres, speckles and the
+  // micro-fibre mat. A pixel's colour is, per channel in LINEAR light,
+  //   v   = gain · C' · (1 + texture · s) + texture · SHEEN · s
+  //   out = v                              (v ≤ C')
+  //         C' + h · tanh((v − C') / h)    (v > C', h = 1 − C': soft knee)
+  // so lit facets brighten and shadowed ones darken around the paper colour
+  // (the old overlay only darkened: the sheet read grey), and highlights
+  // roll off smoothly instead of clipping. C' = C · (1 − dip): near-white or
+  // saturated stock gives up ≤ 1.5 % of its brightness (meanDip) so its
+  // tooth keeps real highlights — on #ffffff the relief would otherwise be
+  // shadows only, or vanish. SHEEN is a small additive term so dark stock
+  // still shows its tooth. `gain` (≈1) is solved per paper / bucket / band /
+  // colour / strength on a fixed sample so the mean luminance equals C'.
+  //
+  // Display MTF, continuous in the true on-screen density: every chunk holds
+  // the shade for the two ends of its bucket's density band (bandsFor) and
+  // the composite blends them by where the view's px/mm sits in the band
+  // (bandT, 1/16 steps); adjacent buckets share an edge, so contrast varies
+  // smoothly with zoom and Scale instead of stepping at bucket changes.
   const SHEEN = 0.03;
+  const DIP_MAX = 0.015;
+  const T_STEPS = 16;
+
+  // Fraction of brightness the base gives up for highlight headroom: 0 for
+  // stock whose brightest linear channel is ≤ 0.9, up to DIP_MAX for white
+  // or a fully saturated primary.
+  const meanDipFor = (lin) => {
+    const mx = Math.max(lin[0], lin[1], lin[2]);
+    return DIP_MAX * Math.max(0, Math.min(1, (mx - 0.9) / 0.1));
+  };
 
   const shadeGrid = (info, seed, x0, y0, W, b, withStrands = true) => {
     const HW = W + 2;
-    const hs = new Float32Array(HW * HW);
+    const ps = bandsFor(b);
+    const hsL = new Float32Array(HW * HW);
+    const hsH = new Float32Array(HW * HW);
     // Height on a grid with a 1 px border for the emboss differences: the
-    // pure field (dry-skip pits) and the display-attenuated one (shading).
-    const hgt = heightGrid(info, seed, x0 - 1 / b, y0 - 1 / b, HW, HW, b, hs);
+    // pure field (dry-skip pits) and the display-attenuated ones (shading,
+    // one per band end).
+    const hgt = heightGrid(info, seed, x0 - 1 / b, y0 - 1 / b, HW, HW, b, { outs: [hsL, hsH], ps });
     const fine = new Float32Array(W * W);
     fineOctave(fine, W, W, x0, y0, b, seed);
     const mot = new Float32Array(W * W);
@@ -737,44 +890,19 @@
         { wl: 30, amp: 0.4, ang: 1.1, stretch: 1.0, off: 9.1 },
       ]);
     }
-    // Micro-fibre web: under magnification paper is a mat of fine fibres.
-    // Streak noise along a wandering fibre direction, attenuated by the
-    // display MTF of its ~50 µm streaks (deep zoom only).
-    const web = new Float32Array(W * W);
-    const webW = mtfWeight(0.04, b);
-    if (webW > 0.01) {
-      const ap = permFor(seed * 7 + 71);
-      const sp = permFor(seed * 7 + 79);
-      const angle = new Float32Array(W * W);
-      // Fibres in a sheet cross at random: the local direction changes over
-      // ~0.6 mm (a felt, not brushed metal).
-      addOctave(angle, W, W, x0, y0, b, ap, 0.6, 1);
-      // Each streak layer has a FIXED orientation (6 of them, 30° apart) and
-      // the two nearest the local direction are blended:
-      // rotating global coordinates by a varying angle sweeps the streak
-      // phase (∝ distance from the origin) into moiré rings at deep zoom.
-      const DIRS = 6;
-      const dca = []; const dsa = [];
-      for (let k = 0; k < DIRS; k += 1) { dca.push(Math.cos((k * Math.PI) / DIRS)); dsa.push(Math.sin((k * Math.PI) / DIRS)); }
-      for (let py = 0; py < W; py += 1) {
-        const ym = y0 + (py + 0.5) / b;
-        for (let px = 0; px < W; px += 1) {
-          const xm = x0 + (px + 0.5) / b;
-          let u = ((angle[py * W + px] * DIRS) % DIRS + DIRS) % DIRS; // orientation in DIRS steps (mod π)
-          const k0 = Math.floor(u) % DIRS;
-          const k1 = (k0 + 1) % DIRS;
-          u -= Math.floor(u);
-          const w0 = 1 - u;
-          const n0 = simplex(sp, (xm * dca[k0] + ym * dsa[k0]) / 0.3 + k0 * 13.1, (-xm * dsa[k0] + ym * dca[k0]) / 0.04);
-          const n1 = simplex(sp, (xm * dca[k1] + ym * dsa[k1]) / 0.3 + k1 * 13.1, (-xm * dsa[k1] + ym * dca[k1]) / 0.04);
-          web[py * W + px] = webW * (n0 * w0 + n1 * u) / Math.sqrt(w0 * w0 + u * u);
-        }
-      }
-    }
-    // Image papers: the photo's de-lit albedo (display-MTF mip) is a
-    // light/dark delta on the paper colour (so the colour slider tints it).
+    // Image papers: the photo's de-lit albedo is a light/dark delta on the
+    // paper colour (so the colour slider tints it); its finest texels fade
+    // by the display MTF like the height.
     const imgMaps = imageMapsFor(info);
-    const albedo = imgMaps ? imageGrid(imgMaps, 'albedo', x0, y0, W, W, b, imageBias(imgMaps, b)) : null;
+    let albL = null; let albH = null;
+    if (imgMaps) {
+      const af = imageGrid(imgMaps, 'albedo', x0, y0, W, W, b);
+      const ac = imageGrid(imgMaps, 'albedo', x0, y0, W, W, b, 1);
+      const twl = imageTexelWl(imgMaps, b);
+      const dL = mtfWeight(twl, ps[0]); const dH = mtfWeight(twl, ps[1]);
+      albL = new Float32Array(W * W); albH = new Float32Array(W * W);
+      for (let i = 0; i < af.length; i += 1) { albL[i] = ac[i] + (af[i] - ac[i]) * dL; albH[i] = ac[i] + (af[i] - ac[i]) * dH; }
+    }
     // The photo already shows its paper's tone; its height (high-passed,
     // percentile-normalised) is steeper than the procedural tooth, so image
     // papers use a gentler emboss.
@@ -787,29 +915,30 @@
     const relief = SH.relief * tooth * imageRelief;
     const cavity = SH.cavity * tooth * imageRelief;
     const mottle = SH.mottle * (info.mottle || 0);
-    const fineK = resolveWeight(0.2, b) > 0 ? SH.fine * mtfWeight(0.2, b) / resolveWeight(0.2, b) : 0;
+    const rw = resolveWeight(0.2, b);
+    const fineL = rw > 0 ? (SH.fine * mtfWeight(0.2, ps[0])) / rw : 0;
+    const fineH = rw > 0 ? (SH.fine * mtfWeight(0.2, ps[1])) / rw : 0;
     const diag = (2 * Math.SQRT2) / b;
-    const s = new Float32Array(W * W);
+    const sL = new Float32Array(W * W);
+    const sH = new Float32Array(W * W);
+    const gr = g * relief;
     for (let py = 0; py < W; py += 1) {
       for (let px = 0; px < W; px += 1) {
         const hi = (py + 1) * HW + (px + 1);
-        const slope = (hs[hi - HW - 1] - hs[hi + HW + 1]) / diag;
         const k = py * W + px;
-        let v = slope * g * relief
-          + hs[hi] * cavity
-          + mot[k] * mottle
-          + fine[k] * fineK
-          + web[k] * SH.web;
-        if (albedo) v += albedo[k] * SH.albedo;
-        s[k] = v;
+        const base = mot[k] * mottle;
+        let vL = ((hsL[hi - HW - 1] - hsL[hi + HW + 1]) / diag) * gr + hsL[hi] * cavity + base + fine[k] * fineL;
+        let vH = ((hsH[hi - HW - 1] - hsH[hi + HW + 1]) / diag) * gr + hsH[hi] * cavity + base + fine[k] * fineH;
+        if (albL) { vL += albL[k] * SH.albedo; vH += albH[k] * SH.albedo; }
+        sL[k] = vL; sH[k] = vH;
       }
     }
-    if (withStrands) rasterStrands(s, W, info, seed, x0, y0, b);
-    return { s, hgt, fine, HW };
+    if (withStrands) rasterStrands([sL, sH], ps, W, info, seed, x0, y0, b);
+    return { sL, sH, hgt, fine, HW };
   };
 
   // Shading coefficients (LIMITS.shade overrides, for calibration).
-  const SHADE_DEFAULTS = { relief: 0.2, cavity: 0.08, mottle: 0.16, fine: 0.12, web: 0.22, albedo: 2.2 };
+  const SHADE_DEFAULTS = { relief: 0.32, cavity: 0.08, mottle: 0.16, fine: 0.12, albedo: 2.2 };
   const shadeK = () => ({ ...SHADE_DEFAULTS, ...(limits().shade || {}) });
 
   // A photo's maps need not be zero-mean (a user's height scan, a tile with
@@ -832,34 +961,36 @@
   };
 
   // Fixed calibration sample of the shade field per (paper, seed, bucket):
-  // 768 tiny 2×2 patches scattered over ~25 cm of the sheet (a golden-angle
-  // lattice), so the sample is close to independent draws of the field at
-  // every zoom — it sees all scales of the relief without building a chunk.
+  // 640 tiny 2×2 patches scattered over ~25 cm of the sheet (a
+  // golden-angle lattice): close to independent draws at every zoom, which
+  // the highlight-knee correction needs (it depends on the tails); it sees
+  // every scale of the relief without building a chunk.
   const statsCache = new Map();
-  const SAMPLE_N = 768;
+  const SAMPLE_N = 640;
   const SAMPLE_PATCH = 2;
   const statsFor = (type, seed, b) => {
     const key = `${type}|${seed}|${b}`;
     if (statsCache.has(key)) return statsCache.get(key);
     const info = typeInfo(type);
     const P = SAMPLE_PATCH;
-    const samples = new Float32Array(SAMPLE_N * P * P);
+    const lo = new Float32Array(SAMPLE_N * P * P);
+    const hi = new Float32Array(SAMPLE_N * P * P);
     for (let k = 0; k < SAMPLE_N; k += 1) {
       const rr = 125 * Math.sqrt((k + 0.5) / SAMPLE_N);
       const th = k * 2.399963229728653;
-      const { s } = shadeGrid(info, seed, 130 + rr * Math.cos(th), 130 + rr * Math.sin(th), P, b, false);
-      samples.set(s, k * P * P);
+      const f = shadeGrid(info, seed, 130 + rr * Math.cos(th), 130 + rr * Math.sin(th), P, b, false);
+      lo.set(f.sL, k * P * P);
+      hi.set(f.sH, k * P * P);
     }
     // Every term of the shade is zero-mean by construction (slopes of a
-    // stationary field, symmetric tanh relief, simplex mottle/web; strands
-    // are corrected exactly by strandMean), so the sample is centred and
-    // used ONLY for what clipping does to the mean (solveGain): a sample
-    // mean would add sampling noise, not remove bias.
-    let mean = 0;
-    for (let i = 0; i < samples.length; i += 1) mean += samples[i];
-    mean /= samples.length;
-    for (let i = 0; i < samples.length; i += 1) samples[i] -= mean;
-    const out = { mean: imageMean(info, b), sampleMean: mean, samples };
+    // stationary field, symmetric tanh relief, simplex mottle; strands are
+    // corrected exactly by strandMean), so the samples are centred and used
+    // ONLY for what the highlight knee does to the mean (solveGain): a
+    // sample mean would add sampling noise, not remove bias.
+    const centre = (f) => { let m = 0; for (let i = 0; i < f.length; i += 1) m += f[i]; m /= f.length; for (let i = 0; i < f.length; i += 1) f[i] -= m; return m; };
+    const mL = centre(lo);
+    centre(hi);
+    const out = { mean: imageMean(info, b), sampleMean: mL, lo, hi };
     if (statsCache.size > 96) statsCache.delete(statsCache.keys().next().value);
     statsCache.set(key, out);
     return out;
@@ -881,90 +1012,124 @@
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
   };
   const lumOf = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  const clip01 = (v) => (v <= 0 ? 0 : (v >= 1 ? 1 : v));
+  // Soft highlight knee above the channel's base c (see the shading notes).
+  const knee = (v, c) => {
+    if (v <= c) return v <= 0 ? 0 : v;
+    const h = 1 - c;
+    if (h <= 1e-6) return c;
+    return c + h * ftanh((v - c) / h);
+  };
+  const channel = (c, gain, t, x) => knee(gain * c * (1 + t * x) + t * SHEEN * x, c);
 
-  // Exposure gain so the mean linear luminance over the sample equals C's.
-  const solveGain = (lin, t, samples) => {
-    const target = lumOf(lin[0], lin[1], lin[2]);
+  // Exposure gain so the mean linear luminance over the sample equals the
+  // (dipped) base's.
+  const solveGain = (base, t, samples) => {
+    const target = lumOf(base[0], base[1], base[2]);
     if (!(t > 0) || !(target > 0)) return 1;
     const meanY = (gain) => {
       let acc = 0;
       for (let i = 0; i < samples.length; i += 1) {
         const x = samples[i];
-        const m = gain * (1 + t * x);
-        const sh = t * SHEEN * x;
-        acc += lumOf(clip01(lin[0] * m + sh), clip01(lin[1] * m + sh), clip01(lin[2] * m + sh));
+        acc += lumOf(channel(base[0], gain, t, x), channel(base[1], gain, t, x), channel(base[2], gain, t, x));
       }
       return acc / samples.length;
     };
     let lo = 0.6; let hi = 1.6;
     if (meanY(hi) <= target) return hi;
     if (meanY(lo) >= target) return lo;
-    for (let k = 0; k < 18; k += 1) {
+    for (let k = 0; k < 13; k += 1) { // ±0.01 % of gain
       const mid = (lo + hi) / 2;
       if (meanY(mid) < target) lo = mid; else hi = mid;
     }
     return (lo + hi) / 2;
   };
 
+  // LUT for one (paper, bucket, band position T, colour, strength). `cheap`
+  // (swatch thumbnails) skips the gain calibration: a 96 px swatch needs no
+  // exact mean, and boot builds one per paper type.
   const lutCache = new Map();
-  const lutFor = (type, seed, b, color, texture) => {
+  const lutFor = (type, seed, b, color, texture, T = 0, cheap = false) => {
     const t = Math.max(0, Math.min(1, Number(texture) || 0));
-    const key = `${type}|${seed}|${b}|${color}|${t}`;
+    const key = `${type}|${seed}|${b}|${T}|${color}|${t}|${cheap ? 'c' : ''}`;
     const hit = lutCache.get(key);
     if (hit) return hit;
-    const rgb = rgbOf(color);
-    const lin = rgb.map(toLin);
-    const gain = solveGain(lin, t, statsFor(type, seed, b).samples);
+    const lin = rgbOf(color).map(toLin);
+    const dip = meanDipFor(lin);
+    const base = lin.map((c) => c * (1 - dip));
+    let gain = 1;
+    if (!cheap && t > 0) {
+      const st = statsFor(type, seed, b);
+      const w = T / T_STEPS;
+      const smp = new Float32Array(st.lo.length);
+      for (let i = 0; i < smp.length; i += 1) smp[i] = st.lo[i] + (st.hi[i] - st.lo[i]) * w;
+      gain = solveGain(base, t, smp);
+    }
     const lut = new Uint32Array(Q);
     for (let q = 0; q < Q; q += 1) {
       const x = (q / (Q - 1)) * 2 * S_RANGE - S_RANGE;
-      const m = gain * (1 + t * x);
-      const sh = t * SHEEN * x;
-      const r = encode(lin[0] * m + sh); const g = encode(lin[1] * m + sh); const bb = encode(lin[2] * m + sh);
+      const r = encode(channel(base[0], gain, t, x));
+      const g = encode(channel(base[1], gain, t, x));
+      const bb = encode(channel(base[2], gain, t, x));
       lut[q] = LITTLE ? ((255 << 24) | (bb << 16) | (g << 8) | r) >>> 0 : ((r << 24) | (g << 16) | (bb << 8) | 255) >>> 0;
     }
-    const out = { lut, gain };
+    const out = { lut, gain, dip };
     if (lutCache.size > 64) lutCache.delete(lutCache.keys().next().value);
     lutCache.set(key, out);
     return out;
   };
 
-  // Quantised, mean-corrected shade of a W×W region (what a chunk stores).
-  const shadeQuant = (type, seed, x0, y0, W, b) => {
-    const info = typeInfo(type);
-    const field = shadeGrid(info, seed, x0, y0, W, b, true);
-    const mean = statsFor(type, seed, b).mean + strandMean(type, seed, b);
-    const sq = new Uint16Array(W * W);
-    const fs = field.s;
+  // Quantised, mean-corrected shade of a W×W region (what a chunk stores):
+  // one Uint16 field per band end.
+  const quantInto = (f, mean) => {
+    const sq = new Uint16Array(f.length);
     const qk = (Q - 1) / (2 * S_RANGE);
     const q0 = (S_RANGE - mean) * qk + 0.5;
     for (let i = 0; i < sq.length; i += 1) {
-      const q = (fs[i] * qk + q0) | 0;
+      const q = (f[i] * qk + q0) | 0;
       sq[i] = q < 0 ? 0 : (q > Q - 1 ? Q - 1 : q);
     }
-    return { sq, field };
+    return sq;
+  };
+  const shadeQuant = (type, seed, x0, y0, W, b) => {
+    const info = typeInfo(type);
+    const field = shadeGrid(info, seed, x0, y0, W, b, true);
+    const m = statsFor(type, seed, b).mean;
+    const sm = strandMean(type, seed, b);
+    return { sqL: quantInto(field.sL, m + sm[0]), sqH: quantInto(field.sH, m + sm[1]), field };
+  };
+
+  // Band position of on-screen density p for a bucket-b chunk, in 1/16 steps.
+  const bandStep = (b, p) => Math.round(bandT(b, p) * T_STEPS);
+  // Composite the blended shade through a LUT into a packed RGBA view.
+  const compositeInto = (o32, sqL, sqH, T, lut) => {
+    const n = sqL.length;
+    if (T <= 0) { for (let i = 0; i < n; i += 1) o32[i] = lut[sqL[i]]; return; }
+    if (T >= T_STEPS) { for (let i = 0; i < n; i += 1) o32[i] = lut[sqH[i]]; return; }
+    for (let i = 0; i < n; i += 1) {
+      const a = sqL[i];
+      o32[i] = lut[a + (((sqH[i] - a) * T) >> 4)];
+    }
   };
 
   /**
    * Opaque RGBA of the textured paper over a size×size pixel grid at mm
-   * (x0, y0), bucket px/mm — exactly what a chunk composites (pure; tests
+   * (x0, y0), rastered at bucket b and seen at on-screen density p (px per
+   * texture mm; default b) — exactly what a chunk composites (pure; tests
    * measure realism on it: mean luminance, highlights, contrast vs zoom).
    */
-  const surfacePixels = (cfg, x0, y0, size, b) => {
+  const surfacePixels = (cfg, x0, y0, size, b, p = b) => {
     const type = cfg && cfg.type;
     const seed = Number.isFinite(cfg && cfg.seed) ? cfg.seed : 1;
-    const { sq } = shadeQuant(type, seed, x0, y0, size, b);
-    const { lut } = lutFor(type, seed, b, cfg.color || typeInfo(type).color || '#ffffff', cfg.texture);
+    const { sqL, sqH } = shadeQuant(type, seed, x0, y0, size, b);
+    const T = bandStep(b, p);
+    const { lut } = lutFor(type, seed, b, cfg.color || typeInfo(type).color || '#ffffff', cfg.texture, T);
     const out = new Uint8ClampedArray(size * size * 4);
-    const o32 = new Uint32Array(out.buffer);
-    for (let i = 0; i < sq.length; i += 1) o32[i] = lut[sq[i]];
+    compositeInto(new Uint32Array(out.buffer), sqL, sqH, T, lut);
     return out;
   };
 
-  /** Rasterise one chunk (shade + skip + feather). */
+  /** Rasterise one chunk (shade bands + skip + feather). */
   const buildChunk = (type, seed, b, i, j) => {
-    const info = typeInfo(type);
     const N = CHUNK_PX();
     const A = APRON();
     const W = N + 2 * A;
@@ -975,11 +1140,11 @@
     const skip = makeCanvas(W, W);
     if (!skip) return null;
     stats.builds += 1;
-    const { sq, field } = shadeQuant(type, seed, x0, y0, W, b);
+    const { sqL, sqH, field } = shadeQuant(type, seed, x0, y0, W, b);
     const { hgt, fine, HW } = field;
     const skCtx = skip.getContext('2d');
     const skImg = skCtx ? imageDataFor(skCtx, W, W) : null;
-    if (skImg) {
+    if (skImg && skImg.data && skImg.data.length >= W * W * 4) {
       const thr = pitThreshold(type, seed);
       const pitSoft = 0.012;
       for (let py = 0; py < W; py += 1) {
@@ -997,7 +1162,7 @@
     const feather = makeCanvas(FW, FW);
     const fCtx = feather && feather.getContext('2d');
     const fImg = fCtx ? imageDataFor(fCtx, FW, FW) : null;
-    if (fImg) {
+    if (fImg && fImg.data && fImg.data.length >= FW * FW * 4) {
       const hb = b / 2;
       const ap = permFor(seed * 7 + 71);
       const sp = permFor(seed * 7 + 73);
@@ -1019,7 +1184,7 @@
       }
       if (typeof fCtx.putImageData === 'function') fCtx.putImageData(fImg, 0, 0);
     }
-    return { type, seed, sq, W, skip, feather, b, i, j, x0, y0, sizeMm: W / b };
+    return { type, seed, sqL, sqH, W, skip, feather, b, i, j, x0, y0, sizeMm: W / b };
   };
 
   const getChunk = (cfg, b, i, j, build) => {
@@ -1055,9 +1220,10 @@
     return scratch;
   };
 
-  // Opaque paper image for a chunk: the shade through the colour LUT.
-  const compositeFor = (chunk, color, texture) => {
-    if (chunk.comp && chunk.compColor === color && chunk.compTexture === texture) return chunk.comp;
+  // Opaque paper image for a chunk: the band-blended shade through the
+  // colour LUT. T = band position (bandStep) of the view's density.
+  const compositeFor = (chunk, color, texture, T = 0, cheap = false) => {
+    if (chunk.comp && chunk.compColor === color && chunk.compTexture === texture && chunk.compT === T) return chunk.comp;
     let c = chunk.comp;
     if (!c) {
       c = makeCanvas(chunk.W, chunk.W);
@@ -1068,14 +1234,11 @@
     }
     const cx = c.getContext('2d');
     // One scratch ImageData shared by every chunk (putImageData copies), so a
-    // Texture / colour drag allocates nothing per chunk.
+    // Texture / colour / zoom change allocates nothing per chunk.
     const img = cx ? scratchImage(cx, chunk.W) : null;
     if (img && typeof cx.putImageData === 'function') {
-      const { lut } = lutFor(chunk.type, chunk.seed, chunk.b, color, texture);
-      const o32 = scratch32;
-      const sq = chunk.sq;
-      const n = sq.length;
-      for (let i = 0; i < n; i += 1) o32[i] = lut[sq[i]];
+      const { lut } = lutFor(chunk.type, chunk.seed, chunk.b, color, texture, T, cheap);
+      compositeInto(scratch32, chunk.sqL, chunk.sqH, T, lut);
       cx.putImageData(img, 0, 0);
     } else if (cx) {
       cx.globalAlpha = 1;
@@ -1085,6 +1248,7 @@
     }
     chunk.compColor = color;
     chunk.compTexture = texture;
+    chunk.compT = T;
     return c;
   };
 
@@ -1153,7 +1317,7 @@
   const CHUNK_BYTES = () => {
     const W = CHUNK_PX() + 2 * APRON();
     const FW = Math.ceil(W / 2);
-    return W * W * (2 + 4 + 4) + FW * FW * 4; // shade + skip + composite, feather
+    return W * W * (2 + 2 + 4 + 4) + FW * FW * 4; // shade bands + skip + composite, feather
   };
 
   /**
@@ -1257,7 +1421,7 @@
   const scaleOf = (cfg) => {
     const L = limits();
     const v = Number(cfg && cfg.scale);
-    if (!Number.isFinite(v) || v <= 0) return 1;
+    if (Number.isNaN(v) || !(v > 0)) return 1; // same rule as Paper.clampScale
     return Math.max(L.scaleMin || 0.25, Math.min(L.scaleMax || 3, v));
   };
   const toTexture = (opts, sc) => ({
@@ -1287,7 +1451,9 @@
     ctx.rect(sheet.x, sheet.y, sheet.w, sheet.h);
     ctx.clip();
     if ('imageSmoothingEnabled' in ctx) ctx.imageSmoothingEnabled = true;
-    p.layers.forEach((c) => drawChunk(ctx, c, compositeFor(c, cfg.color, cfg.texture), sc));
+    // Each chunk is composited for the TRUE on-screen density (tx.pxPerMm),
+    // so contrast follows zoom / Scale continuously within its band.
+    p.layers.forEach((c) => drawChunk(ctx, c, compositeFor(c, cfg.color, cfg.texture, bandStep(c.b, tx.pxPerMm)), sc));
     ctx.restore();
     return true;
   };
@@ -1329,7 +1495,7 @@
     if (type !== 'none' && typeof ctx.drawImage === 'function') {
       const b = px / 16;
       const chunk = buildChunk(type, 7, b, 0, 0);
-      const comp = chunk ? compositeFor(chunk, color, info.defaultTexture || 0.4) : null;
+      const comp = chunk ? compositeFor(chunk, color, info.defaultTexture || 0.4, bandStep(b, b), true) : null;
       if (comp) {
         const A = APRON();
         ctx.drawImage(comp, A, A, px, px, 0, 0, px, px);
@@ -1415,9 +1581,12 @@
     heightField,
     albedoField,
     surfacePixels,
-    shadeStats: (type, seed, b) => { const sd = Number.isFinite(seed) ? seed : 1; const st = statsFor(type, sd, b); return { sampleMean: st.sampleMean, strandMean: strandMean(type, sd, b), n: st.samples.length }; },
+    shadeStats: (type, seed, b) => { const sd = Number.isFinite(seed) ? seed : 1; const st = statsFor(type, sd, b); return { sampleMean: st.sampleMean, strandMean: strandMean(type, sd, b), n: st.lo.length }; },
     mtfWeight,
     scaleOf,
+    // Raster bucket + band position for an on-screen density (px per texture mm).
+    levelFor: (p) => { const b = bucketFor(p); return { b, t: bandT(b, p), T: bandStep(b, p) }; },
+    meanDip: (color) => meanDipFor(rgbOf(color).map(toLin)),
     bucketFor,
     chunkMmFor,
     clearCache,

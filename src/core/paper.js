@@ -55,9 +55,11 @@
   // Paper Scale: a multiplier on every physical size of the surface,
   // clamped to LIMITS.scaleMin..scaleMax and rounded to 1 %. Missing or
   // invalid (an older file) -> the fallback (1 = calibrated real-world scale).
+  // Any positive number clamps (1e9 and +Infinity both -> scaleMax); NaN,
+  // non-numbers, 0 and negatives are invalid -> the fallback.
   const clampScale = (value, fallback = 1) => {
     const n = typeof value === 'number' ? value : Number(value);
-    if (value === null || value === undefined || value === '' || !Number.isFinite(n) || n <= 0) return fallback;
+    if (value === null || value === undefined || value === '' || Number.isNaN(n) || !(n > 0)) return fallback;
     const L = catalogue().LIMITS || {};
     return Math.round(Math.max(L.scaleMin || 0.25, Math.min(L.scaleMax || 3, n)) * 100) / 100;
   };
