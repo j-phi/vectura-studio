@@ -82,6 +82,8 @@ Do not commit tests that rebuild an old source tree from git history (owner deci
 
 `.github/workflows/test.yml` runs one graph for pull requests. `ci-ok` is the one required check.
 
+Jobs that install Playwright browsers (`e2e-smoke`, `touch-e2e-nightly`, `touch-audit-nightly`) run on a pinned `ubuntu-24.04` image, not `ubuntu-latest`: WebKit must match the OS image its build targets, and the `ubuntu-latest` move to Ubuntu 26 broke the WebKit touch leg. The browser cache in `.github/actions/setup-playwright` is keyed on `ImageOS`/`ImageVersion` for the same reason. Unpin only after the touch leg passes on the new image.
+
 ```mermaid
 flowchart LR
   P[ci-plan] --> E[e2e-smoke x4]

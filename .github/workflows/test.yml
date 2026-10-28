@@ -97,7 +97,9 @@ jobs:
           - { run: desktop, shard: 2, of: 3 }
           - { run: desktop, shard: 3, of: 3 }
           - { run: touch, shard: 1, of: 1 }
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest): WebKit needs the OS image Playwright's build targets; the
+    # ubuntu-latest move to Ubuntu 26 broke the WebKit touch leg (fast launch failures).
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       SMOKE_RUN: ${{ matrix.run }}
@@ -179,7 +181,7 @@ jobs:
           - { project: webkit-iphone-portrait, shard: 3, of: 3 }
           - { project: webkit-iphone-landscape, shard: 1, of: 2 }
           - { project: webkit-iphone-landscape, shard: 2, of: 2 }
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       TOUCH_PROJECT: ${{ matrix.project }}
@@ -227,7 +229,7 @@ jobs:
   # JSON and the baseline file (see the seeding note on the audit step).
   touch-audit-nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
