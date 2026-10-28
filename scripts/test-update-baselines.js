@@ -5,7 +5,7 @@
  * Runs tests/visual plus every test file that reads committed golden values
  * through tests/helpers/golden-values.js, with VECTURA_UPDATE_BASELINES=1.
  * Extra CLI arguments narrow the run (they replace the file list).
- * Refuses to run on a Node major other than 20: goldens hold on CI's pinned
+ * Refuses to run on a Node major other than 24: goldens hold on CI's pinned
  * major only, so values written on another major would break CI.
  */
 const fs = require('fs');
@@ -27,7 +27,7 @@ const goldenValueFiles = (root = ROOT) => walk(path.join(root, 'tests'))
 
 const targets = (argv = process.argv.slice(2), root = ROOT) => (argv.length ? argv : ['tests/visual', ...goldenValueFiles(root)]);
 
-const GOLDEN_NODE_MAJOR = 20;
+const GOLDEN_NODE_MAJOR = 24;
 // Null when this Node major may write goldens, else the reason it may not.
 const nodeRefusal = (version = process.versions.node) => {
   const major = Number(String(version).split('.')[0]);

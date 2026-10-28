@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Regenerate the x64 section of tests/baselines/golden-values/*.json.
 #
-# Runs the golden-value test files with VECTURA_UPDATE_BASELINES=1 in a linux/amd64 Node 20
+# Runs the golden-value test files with VECTURA_UPDATE_BASELINES=1 in a linux/amd64 Node 24
 # container, which rounds V8 Math exactly like GitHub's ubuntu x86_64 runner. Needs docker.
 # Arguments narrow the run to the given test files. Holds the shared test lock while it runs.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE="${VECTURA_X64_NODE_IMAGE:-node:20.20.2-bookworm-slim}"
+IMAGE="${VECTURA_X64_NODE_IMAGE:-node:24.22.1-bookworm-slim}"
 cd "$ROOT"
 if [ "$#" -gt 0 ]; then
   files="$*"

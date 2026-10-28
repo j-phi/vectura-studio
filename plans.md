@@ -258,6 +258,11 @@ or completes.
   unwire moves past Stage 1.
 
 ## Next
+- **Fast local golden regeneration for both architectures (Jay, 2026-10-27).** Goal: one command on the Mac regenerates arm64 and x64 golden values, with no Docker emulation. Today x64 needs `scripts/test-update-goldens-x64.sh` (linux/amd64 Docker, emulated on Apple silicon and slow), and `npm run test:update` runs every file in one process. Plan:
+  - `npm run test:update:all`: run the golden-value files sharded across cores (one Vitest process per file group, under the test queue lock), arm64 natively and x64 at the same time under Rosetta 2 (`arch -x86_64` with a darwin-x64 Node of the pinned major, installed once with `arch -x86_64 nvm install`), then a strict compare pass (`CI=1`) on both.
+  - Prove first that darwin-x64 under Rosetta rounds exactly like GitHub's linux x64 runner: regenerate x64 both ways on the same commit and require byte-identical JSON (the U2 x64 section was once captured under Rosetta, which suggests it does). If it does not, keep Docker but turn on Docker Desktop's Rosetta emulation for amd64 and shard inside the container.
+  - Fallback with no local cost: a `workflow_dispatch` "Regenerate goldens" job on ubuntu x64 that uploads the updated JSON as an artifact.
+  - Reference timings (2026-10-27 Node 24 move): arm64, 26 golden files plus `tests/visual`, file by file, about 3 min; x64 on a 2-core linux x64 host about 3.3 min.
 - **Canary findings (v1.4.18 test overhaul, 2026-10-18).** The new preset, legacy-file and boot canaries found these defects. None is fixed. Each one has an inverted known-defect test entry: the fix fails that test until the entry is removed. Details and the entry to remove: `docs/pre-release-hardening-log.md`.
   - **PRH-031 (do first: possible data loss).** Text and 3D Scene presets cannot be applied from the UI. The ctxbar preset flyout calls a stale applier bound to the previously built layer, which may reset that layer to defaults. Not browser-verified. Entry: `NO_UI_APPLY_PATH` in `tests/helpers/preset-corpus.js`.
   - **PRH-029.** The Phylla factory default and 3 presets (sunflower, dense-field, pinecone) export an empty SVG. Entry: `KNOWN_DEFECTS` `emptyExport`.

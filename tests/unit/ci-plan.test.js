@@ -187,7 +187,7 @@ describe('workflow wiring', () => {
     expect(plan).not.toMatch(/: write/);
     expect(plan).toContain('git fetch --no-tags --depth=1 origin "$BASE_SHA"');
     // HEAD^1 of the PR merge ref must be in the clone for the first-parent diff.
-    expect(plan).toMatch(/uses: actions\/checkout@v7\n\s+with:\n\s+fetch-depth: 2\n/);
+    expect(plan).toMatch(/uses: actions\/checkout@[0-9a-f]{40} # v7[^\n]*\n\s+with:\n\s+fetch-depth: 2\n/);
     expect(plan).toContain('BEFORE_SHA: ${{ github.event.before }}');
     expect(plan).toContain('GH_TOKEN: ${{ github.token }}');
     for (const file of ['scripts/ci-plan.js', 'scripts/audit-paths.js', 'tests/helpers/runtime-profiles.js']) expect(plan).toContain(file);
