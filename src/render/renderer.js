@@ -10215,8 +10215,10 @@
       const view = { x: -m.e / m.a, y: -m.f / m.d, w: ink.width / m.a, h: ink.height / m.d };
       // Dry-skip: the pen bridges the finest, deepest pits of the tooth. The
       // mask is rasterised at screen resolution, so pinholes stay crisp at
-      // any zoom; it fades out where the view can't resolve ~0.2 mm.
-      const resolve = Math.max(0, Math.min(1, (0.2 * pxPerMm - 0.6) / 1.4));
+      // any zoom; it fades out where the view can't resolve ~0.2 mm of tooth
+      // (× the paper's Scale: the pits are scaled with the grain).
+      const toothScale = (PT && PT.scaleOf) ? PT.scaleOf(paper) : 1;
+      const resolve = Math.max(0, Math.min(1, (0.2 * toothScale * pxPerMm - 0.6) / 1.4));
       const skipAlpha = (info.dryskip || 0) > 0 ? Math.min(1, paper.texture * 1.1) * resolve : 0;
       if (PT && skipAlpha > 0.01) {
         // Every canvas of the ink stack (pen models: opaque ink scaled by its
@@ -10309,7 +10311,7 @@
     }
 
     _paperHaloKey(paper) {
-      return `${paper.type}|${paper.seed}|${paper.bleed}|${this.canvas.width}x${this.canvas.height}`;
+      return `${paper.type}|${paper.seed}|${paper.bleed}|${paper.scale || 1}|${this.canvas.width}x${this.canvas.height}`;
     }
 
     _paperCanvasFilter(ctx) {

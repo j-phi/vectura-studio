@@ -106,7 +106,7 @@ describe('paper default preference + legacy bgColor migration', () => {
 
   test('legacy snapshot with a custom bgColor migrates to a plain default paper', () => {
     app.applyPreferenceSnapshot({ uiTheme: 'dark', bgColor: '#336699' });
-    expect(S.paperDefault).toEqual({ type: 'none', color: '#336699', texture: 0.6, bleed: 0.5, seed: 1 });
+    expect(S.paperDefault).toEqual({ type: 'none', color: '#336699', texture: 0.6, bleed: 0.5, scale: 1, seed: 1 });
   });
 
   test('legacy snapshot whose bgColor is just the theme colour sets no default (theme sync preserved)', () => {
@@ -123,7 +123,7 @@ describe('paper default preference + legacy bgColor migration', () => {
 
   test('a snapshot with paperDefault wins over its bgColor and is normalized', () => {
     app.applyPreferenceSnapshot({ uiTheme: 'dark', bgColor: '#336699', paperDefault: { type: 'kraft', color: 'nope', texture: 9 } });
-    expect(S.paperDefault).toEqual({ type: 'kraft', color: window.Vectura.PAPERS.TYPES.kraft.color, texture: 1, bleed: 0.5, seed: 1 });
+    expect(S.paperDefault).toEqual({ type: 'kraft', color: window.Vectura.PAPERS.TYPES.kraft.color, texture: 1, bleed: 0.5, scale: 1, seed: 1 });
     app.applyPreferenceSnapshot({ uiTheme: 'dark', bgColor: '#336699', paperDefault: null });
     expect(S.paperDefault).toBeNull();
   });
@@ -131,7 +131,7 @@ describe('paper default preference + legacy bgColor migration', () => {
   test('getPreferenceSnapshot carries paperDefault (and keeps bgColor for old builds)', () => {
     app.setPaperDefault({ type: 'rough', color: '#f5f0e2', texture: 0.8, bleed: 0.4, seed: 3 });
     const snap = app.getPreferenceSnapshot();
-    expect(snap.paperDefault).toEqual({ type: 'rough', color: '#f5f0e2', texture: 0.8, bleed: 0.4, seed: 3 });
+    expect(snap.paperDefault).toEqual({ type: 'rough', color: '#f5f0e2', texture: 0.8, bleed: 0.4, scale: 1, seed: 3 });
     expect(typeof snap.bgColor).toBe('string');
   });
 
@@ -211,13 +211,13 @@ describe('paper state round-trip, undo and theme sync', () => {
   test('captureState saves the project paper (and its bgColor mirror)', () => {
     app.setProjectPaper({ type: 'cold-press', color: '#f7f2e6', texture: 0.4, bleed: 0.3, seed: 5 }, { history: false });
     const state = app.captureState();
-    expect(state.settings.paper).toEqual({ type: 'cold-press', color: '#f7f2e6', texture: 0.4, bleed: 0.3, seed: 5 });
+    expect(state.settings.paper).toEqual({ type: 'cold-press', color: '#f7f2e6', texture: 0.4, bleed: 0.3, scale: 1, seed: 5 });
     expect(state.settings.bgColor).toBe('#f7f2e6');
     // JSON round-trip (what saveVecturaFile writes) restores it exactly.
     const reopened = JSON.parse(JSON.stringify(state));
     app.setProjectPaper({ type: 'kraft' }, { history: false });
     app.applyState(reopened);
-    expect(S.paper).toEqual({ type: 'cold-press', color: '#f7f2e6', texture: 0.4, bleed: 0.3, seed: 5 });
+    expect(S.paper).toEqual({ type: 'cold-press', color: '#f7f2e6', texture: 0.4, bleed: 0.3, scale: 1, seed: 5 });
     expect(S.bgColor).toBe('#f7f2e6');
   });
 
@@ -460,12 +460,39 @@ describe('Paper panel (Pen / Paper tab)', () => {
     expect(app.history.length).toBe(before + 2);
   });
 
+  test('Scale slider: 25–300 %, writes paper.scale (a multiplier), one undo step per drag, armed on the first real change', () => {
+    const sc = document.getElementById('paper-scale');
+    expect(sc).toBeTruthy();
+    expect(Number(sc.min)).toBe(25);
+    expect(Number(sc.max)).toBe(300);
+    expect(document.getElementById('paper-scale-value').textContent).toBe(`${Math.round((S.paper.scale || 1) * 100)}%`);
+    const before = app.history.length;
+    sc.dispatchEvent(new window.Event('pointerdown', { bubbles: true }));
+    sc.value = String(Math.round((S.paper.scale || 1) * 100)); // no-op input: nothing armed
+    sc.dispatchEvent(new window.Event('input', { bubbles: true }));
+    expect(app.history.length).toBe(before);
+    ['150', '175', '200'].forEach((v) => { sc.value = v; sc.dispatchEvent(new window.Event('input', { bubbles: true })); });
+    sc.dispatchEvent(new window.Event('change', { bubbles: true }));
+    expect(S.paper.scale).toBeCloseTo(2, 5);
+    expect(document.getElementById('paper-scale-value').textContent).toBe('200%');
+    expect(app.history.length).toBe(before + 1);
+    app.undo();
+    expect(S.paper.scale).not.toBeCloseTo(2, 5);
+    app.redo();
+    expect(S.paper.scale).toBeCloseTo(2, 5);
+    // A fresh type pick starts at the calibrated scale.
+    swatch('rough').click();
+    expect(S.paper.scale).toBe(1);
+  });
+
   test("'none' disables the texture/bleed sliders", () => {
     swatch('none').click();
     expect(S.paper.type).toBe('none');
     expect(document.getElementById('paper-texture').disabled).toBe(true);
     expect(document.getElementById('paper-bleed').disabled).toBe(true);
+    expect(document.getElementById('paper-scale').disabled).toBe(true);
     swatch('kraft').click();
+    expect(document.getElementById('paper-scale').disabled).toBe(false);
   });
 
   test('Set as default writes the preference (no undo step) and shows the Default badge', () => {
@@ -1184,13 +1211,17 @@ describe('renderer paper hooks', () => {
 
   // Physically mapped = isotropic, exactly `bucket` chunk px per document mm,
   // and on a mm grid anchored at the sheet origin — whatever the sheet size.
-  const isPhysical = ({ draws, bucket }) => draws.length > 0 && draws.every((d) => {
+  // The view's bucket, plus the coarser bucket cross-faded over it across
+  // the density band (continuity across bucket changes) — both on their own
+  // mm grid.
+  const isPhysical = ({ draws, bucket }) => draws.length > 0 && draws.some((d) => Math.abs(d.w / d.wMm - bucket) < 1e-9) && draws.every((d) => {
     const apron = window.Vectura.PAPERS.LIMITS.apronPx;
-    const C = PT.chunkMmFor(bucket);
-    const gx = (d.x + apron / bucket) / C;
-    const gy = (d.y + apron / bucket) / C;
-    return d.wMm === d.hMm && Math.abs(d.w / d.wMm - bucket) < 1e-9
-      && Math.abs(gx - Math.round(gx)) < 1e-9 && Math.abs(gy - Math.round(gy)) < 1e-9;
+    const bb = [bucket, bucket / 2].find((x) => Math.abs(d.w / d.wMm - x) < 1e-9);
+    if (!bb) return false;
+    const C = PT.chunkMmFor(bb);
+    const gx = (d.x + apron / bb) / C;
+    const gy = (d.y + apron / bb) / C;
+    return d.wMm === d.hMm && Math.abs(gx - Math.round(gx)) < 1e-9 && Math.abs(gy - Math.round(gy)) < 1e-9;
   });
 
   const setSize = (key) => {
@@ -1243,6 +1274,86 @@ describe('renderer paper hooks', () => {
     expect(isPhysical(stretched)).toBe(false);
     const sheetScaled = { ...real, draws: [{ w: 256, x: 0, y: 0, wMm: width, hMm: width }] };
     expect(isPhysical(sheetScaled)).toBe(false);
+  });
+
+  test('Scale: chunks live in texture-mm (document mm ÷ scale) — drawn scale× larger, finer bucket, reused while dragging', () => {
+    setSize('a4');
+    r.scale = 2; r.offsetX = -40; r.offsetY = -40;
+    Paper.setActive({ ...Paper.forType('cold-press'), scale: 2 });
+    const big = surfaceDraws();
+    const apron = window.Vectura.PAPERS.LIMITS.apronPx;
+    // Texture bucket = on-screen px per TEXTURE mm (px/mm × scale).
+    const tb = PT.bucketFor(big.pxPerMm * 2);
+    expect(big.draws.length).toBeGreaterThan(0);
+    expect(big.draws.some((d) => Math.abs(d.w / d.wMm - tb / 2) < 1e-9)).toBe(true);
+    big.draws.forEach((d) => {
+      expect(d.wMm).toBe(d.hMm);
+      // isotropic, 2× larger in document mm (the view's texture bucket, or
+      // the coarser one cross-faded over it)
+      const bb = [tb, tb / 2].find((x) => Math.abs(d.w / d.wMm - x / 2) < 1e-9);
+      expect(bb).toBeTruthy();
+      const g = (d.x / 2 + apron / bb) / PT.chunkMmFor(bb);
+      expect(Math.abs(g - Math.round(g))).toBeLessThan(1e-9); // on the texture-mm grid
+    });
+    // The chunks are the texture at the finer bucket (2× the texture detail
+    // per document mm)…
+    const bucketsOf = () => new Set(PT.cacheStats().keys.map((k) => Number(k.split('|')[2])));
+    expect(bucketsOf().has(tb)).toBe(true);
+    // …mutation witness: the same view at scale 1 never builds that bucket.
+    Paper.setActive({ ...Paper.forType('cold-press'), scale: 1 });
+    surfaceDraws();
+    expect(bucketsOf().has(tb)).toBe(false);
+    expect(bucketsOf().has(PT.bucketFor(big.pxPerMm))).toBe(true);
+    // Dragging Scale within a bucket reuses the cached chunks (no rebuild,
+    // no new keys): the chunk content does not depend on the scale.
+    const ctxAt = () => { const c = recordingCtx(r.canvas); const dpr = r.getBackingDpr(); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.translate(r.offsetX, r.offsetY); c.scale(r.scale, r.scale); return c; };
+    r.drawPaperTexture(ctxAt(), app.engine.currentProfile);
+    PT.flush();
+    const st = PT.cacheStats();
+    const keysBefore = new Set(st.keys);
+    S.paper.scale = 1.1; // same texture bucket as 1.0 here
+    r.drawPaperTexture(ctxAt(), app.engine.currentProfile);
+    PT.flush();
+    expect(PT.cacheStats().builds).toBe(st.builds);
+    PT.cacheStats().keys.forEach((k) => expect(keysBefore.has(k)).toBe(true));
+    S.paper.scale = 1;
+    r.scale = 1; r.center();
+  });
+
+  test('ink interactions follow the tooth at the paper Scale: dry-skip resolves on texture-mm, edge lumps scale with the grain', () => {
+    setSize('a4');
+    const PM = window.Vectura.PenModel;
+    const info = window.Vectura.PAPERS.TYPES['cold-press'];
+    const pen = { id: 'p1', color: '#202020', width: 0.4, model: window.Vectura.PEN_MODELS.ORDER.find((id) => id !== 'plain') };
+    const a = PM.resolveTraits(pen, { ...Paper.forType('cold-press'), scale: 1 }, info);
+    const b = PM.resolveTraits(pen, { ...Paper.forType('cold-press'), scale: 3 }, info);
+    expect(b.edgeScaleMm).toBeCloseTo(Math.max(a.edgeScaleMm, 0.3 * info.grainMm * 3), 6);
+    expect(b.edgeScaleMm).toBeGreaterThan(a.edgeScaleMm);
+    // The clamp is the catalogue's (LIMITS.scaleMin/scaleMax), not literals.
+    const P0 = window.Vectura.PAPERS;
+    const savedLimits = P0.LIMITS;
+    P0.LIMITS = { ...savedLimits, scaleMax: 2 };
+    try {
+      const c2 = PM.resolveTraits(pen, { ...Paper.forType('cold-press'), scale: 3 }, info);
+      expect(c2.edgeScaleMm).toBeCloseTo(Math.max(a.edgeScaleMm, 0.3 * info.grainMm * 2), 6);
+    } finally {
+      P0.LIMITS = savedLimits;
+    }
+    // Dry-skip pinholes: at a zoom where 0.2 mm pits are unresolvable at
+    // scale 1 the mask is skipped; at scale 3 the (3× larger) pits resolve.
+    const skipDrawn = (scale) => {
+      Paper.setActive({ ...Paper.forType('cold-press'), scale });
+      r.scale = 1.4 / r.getBackingDpr(); r.offsetX = 0; r.offsetY = 0;
+      const seen = [];
+      const orig = PT.drawMask;
+      PT.drawMask = (ctx, cfg, kind, opts) => { seen.push(kind); return orig(ctx, cfg, kind, opts); };
+      try { drawWith(); } finally { PT.drawMask = orig; }
+      return seen.includes('skip');
+    };
+    expect(skipDrawn(1)).toBe(false);
+    expect(skipDrawn(3)).toBe(true);
+    Paper.setActive(Paper.forType('cold-press'));
+    r.center();
   });
 
   test('a cold cache draws a cheap coarse level at once and refines when idle (no blocking build), then repaints', async () => {
@@ -1569,7 +1680,7 @@ describe('Vectura.Paper model', () => {
 
   test('normalize clamps, validates, keeps future types and rejects unsafe ones', () => {
     expect(Paper.normalize({ type: 'cold-press', color: '#ABCDEF', texture: 4, bleed: -1, seed: 9.7 }))
-      .toEqual({ type: 'cold-press', color: '#abcdef', texture: 1, bleed: 0, seed: 9 });
+      .toEqual({ type: 'cold-press', color: '#abcdef', texture: 1, bleed: 0, scale: 1, seed: 9 });
     // A type from a newer build is kept verbatim (renders as a plain sheet);
     // anything that isn't a safe identifier is rejected.
     expect(Paper.normalize({ type: 'papyrus', color: '#fff' }).type).toBe('papyrus');
@@ -1591,16 +1702,17 @@ describe('Vectura.Paper model', () => {
   });
 
   test('fromLegacyBg wraps an old background colour as a plain sheet', () => {
-    expect(Paper.fromLegacyBg('#FFEEDD')).toEqual({ type: 'none', color: '#ffeedd', texture: 0.6, bleed: 0.5, seed: 1 });
+    expect(Paper.fromLegacyBg('#FFEEDD')).toEqual({ type: 'none', color: '#ffeedd', texture: 0.6, bleed: 0.5, scale: 1, seed: 1 });
   });
 
   test('resolveProjectPaper precedence: state.paper > legacy bgColor > user default > built-in', () => {
     const userDefault = { type: 'kraft', color: '#c39a6b', texture: 0.7, bleed: 0.5, seed: 1 };
     const projectPaper = { type: 'rough', color: '#f5f0e2', texture: 0.3, bleed: 0.2, seed: 4 };
-    expect(Paper.resolveProjectPaper({ paper: projectPaper, bgColor: '#000000' }, userDefault)).toEqual(projectPaper);
+    // Files from before the Scale slider have no `scale`: it reads as 1.
+    expect(Paper.resolveProjectPaper({ paper: projectPaper, bgColor: '#000000' }, userDefault)).toEqual({ ...projectPaper, scale: 1 });
     expect(Paper.resolveProjectPaper({ bgColor: '#222222' }, userDefault)).toMatchObject({ type: 'none', color: '#222222' });
-    expect(Paper.resolveProjectPaper({}, userDefault)).toEqual(userDefault);
-    expect(Paper.resolveProjectPaper({}, null)).toEqual({ type: 'none', color: '#121214', texture: 0.6, bleed: 0.5, seed: 1 });
+    expect(Paper.resolveProjectPaper({}, userDefault)).toEqual({ ...userDefault, scale: 1 });
+    expect(Paper.resolveProjectPaper({}, null)).toEqual({ type: 'none', color: '#121214', texture: 0.6, bleed: 0.5, scale: 1, seed: 1 });
     // A tampered paper colour falls back to the file's bgColor.
     expect(Paper.resolveProjectPaper({ paper: { type: 'rough', color: 'x;y' }, bgColor: '#010203' }, null).color).toBe('#010203');
   });
@@ -1613,7 +1725,39 @@ describe('Vectura.Paper model', () => {
   test('forType resets colour/texture/bleed to the type and keeps the seed', () => {
     const next = Paper.forType('newsprint', { type: 'kraft', color: '#123456', texture: 0.1, bleed: 0.1, seed: 42 });
     const info = V.PAPERS.TYPES.newsprint;
-    expect(next).toEqual({ type: 'newsprint', color: info.color, texture: info.defaultTexture, bleed: info.defaultBleed, seed: 42 });
+    expect(next).toEqual({ type: 'newsprint', color: info.color, texture: info.defaultTexture, bleed: info.defaultBleed, scale: 1, seed: 42 });
+  });
+
+  test('Scale: clamped to 25–300 %, rounded to 1 %, missing/invalid -> 1; compared by equals; carried by custom papers', () => {
+    const at = (v) => Paper.normalize({ type: 'rough', scale: v }).scale;
+    expect(at(undefined)).toBe(1);
+    expect(at('x')).toBe(1);
+    expect(at(-2)).toBe(1);
+    expect(at(0.1)).toBe(V.PAPERS.LIMITS.scaleMin);
+    expect(at(9)).toBe(V.PAPERS.LIMITS.scaleMax);
+    expect(at(1.234)).toBe(1.23);
+    expect(at('2')).toBe(2);
+    // Every positive number clamps the same way; only NaN / ≤ 0 fall back.
+    expect(at(1e9)).toBe(V.PAPERS.LIMITS.scaleMax);
+    expect(at(Infinity)).toBe(V.PAPERS.LIMITS.scaleMax);
+    expect(at(-Infinity)).toBe(1);
+    expect(at(NaN)).toBe(1);
+    expect(at(0)).toBe(1);
+    const a = Paper.forType('rough');
+    expect(Paper.equals(a, { ...a, scale: 1.5 })).toBe(false);
+    expect(Paper.equals({ ...a, scale: 1.5 }, { ...a, scale: 1.5 })).toBe(true);
+    // 'none' keeps the previous scale (it has no texture); a type pick resets it.
+    expect(Paper.forType('none', { ...a, scale: 1.7 }).scale).toBe(1.7);
+    expect(Paper.forType('kraft', { ...a, scale: 1.7 }).scale).toBe(1);
+    // A custom paper remembers its scale: library entry -> fresh pick.
+    const entry = Paper.entryFromPaper({ ...a, scale: 0.6 }, 'Fine rough');
+    expect(entry.defaultScale).toBe(0.6);
+    expect(Paper.fromCustomEntry({ ...entry, id: 'custom-finer1' }).scale).toBe(0.6);
+    expect(Paper.normalizeCustomEntry({ ...entry, defaultScale: 99 }).defaultScale).toBe(V.PAPERS.LIMITS.scaleMax);
+    expect(Paper.normalizeCustomEntry({ ...entry, defaultScale: undefined }).defaultScale).toBe(1);
+    expect(Paper.registerCustomType({ ...entry, id: 'custom-finer1' }).defaultScale).toBe(0.6);
+    expect(Paper.forType('custom-finer1').scale).toBe(0.6);
+    Paper.unregisterCustomType('custom-finer1');
   });
 
   test('isRealistic and inkBlendFor', () => {
@@ -2272,7 +2416,7 @@ describe('Vectura.Paper model', () => {
       expect(r.added).toHaveLength(3);
       r.added.forEach((p) => {
         expect(p.id).toMatch(/^custom-[a-z0-9]{1,24}$/);
-        expect(Object.keys(p)).toEqual(['id', 'name', 'base', 'color', 'defaultTexture', 'defaultBleed', 'params']);
+        expect(Object.keys(p)).toEqual(['id', 'name', 'base', 'color', 'defaultTexture', 'defaultBleed', 'defaultScale', 'params']);
         expect(Object.keys(p.params)).toEqual(V.PAPERS.PARAM_KEYS);
       });
       const evil = r.added[2];
@@ -2389,7 +2533,7 @@ describe('PaperTexture', () => {
   // The same 32 mm window at two adjacent zoom buckets, compared at the
   // coarser resolution.
   const bucketPair = (type, seed, b, x0 = 13.7, y0 = 41.2) => {
-    const mm = 32;
+    const mm = Math.min(32, 128 / b); // ≤ 256 px at the finer bucket
     const lo = PT.heightField(type, seed, x0, y0, mm * b, b);
     const hi = PT.heightField(type, seed, x0, y0, mm * b * 2, b * 2);
     return corr(lo, down(hi, mm * b * 2, 2));
@@ -2397,7 +2541,12 @@ describe('PaperTexture', () => {
 
   test('features are stable across zoom buckets (same bumps at the same mm)', () => {
     ['cold-press', 'rough', 'hot-press', 'kraft'].forEach((type) => {
-      [2, 4, 8].forEach((b) => {
+      // From the first bucket where the coarsest tooth octave resolves
+      // (≥ 3 px; below that the field is legitimately flat, e.g. hot press
+      // at 2 px/mm).
+      const grain = PAPERS.TYPES[type].grainMm;
+      const b0 = Math.max(2, 2 ** Math.ceil(Math.log2(3 / (grain * 1.7))));
+      [b0, b0 * 2, b0 * 4].forEach((b) => {
         expect(bucketPair(type, 1, b), `${type} @${b}→${b * 2}`).toBeGreaterThan(0.85);
       });
     });
@@ -2426,6 +2575,227 @@ describe('PaperTexture', () => {
     const b = PT.heightField('rough', 7, 0, 0, 64, 4);
     expect(Array.from(a)).toEqual(Array.from(b));
     a.forEach((v) => { expect(v).toBeGreaterThanOrEqual(-1); expect(v).toBeLessThanOrEqual(1); });
+  });
+
+  // ---- realism: zero-mean lighting, display MTF, calibrated scale ----------
+
+  const linC = (c) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const lumHex = (hex) => { const n = parseInt(hex.slice(1), 16); return 0.2126 * linC((n >> 16) & 255) + 0.7152 * linC((n >> 8) & 255) + 0.0722 * linC(n & 255); };
+  // Sheet-wide statistics: many small windows (16 px) on a ~20 × 20 cm
+  // grid, so the relief and the low-frequency formation average out (a
+  // different lattice from the renderer's own calibration sample).
+  const sheetStats = (cfg, b, windows = 160) => {
+    const Yc = lumHex(cfg.color);
+    let sum = 0; let n = 0; let bright = 0; const ys = [];
+    const cols = Math.round(Math.sqrt(windows));
+    for (let k = 0; k < windows; k += 1) {
+      const px = PT.surfacePixels(cfg, 11.3 + (k % cols) * (203 / cols), 7.9 + Math.floor(k / cols) * (193 / cols), 16, b);
+      for (let i = 0; i < px.length; i += 4) {
+        const y = 0.2126 * linC(px[i]) + 0.7152 * linC(px[i + 1]) + 0.0722 * linC(px[i + 2]);
+        sum += y; n += 1; ys.push(y);
+        if (y > Yc * 1.002) bright += 1;
+      }
+    }
+    const mean = sum / n;
+    let v = 0; ys.forEach((y) => { v += (y - mean) ** 2; });
+    return { err: mean / Yc - 1, bright: bright / n, relSd: Math.sqrt(v / n) / Yc, Yc };
+  };
+
+  // What the screen shows at density p (px per texture mm): the chunk raster
+  // at p's bucket, bilinear-resampled to p (drawImage).
+  // Each window's luminance relative to its own mean (a local high-pass,
+  // like the photo measurement), pooled over `windows` windows of 24 px.
+  const screenStats = (cfg, p, windows = 12, old = false) => {
+    const L = PT.levelFor(p);
+    const M = 24;
+    const mm = M / p;
+    const raster = (b, x0, y0) => {
+      const N = Math.ceil(mm * b) + 2;
+      const px = PT.surfacePixels(cfg, x0, y0, N, b, old ? b : p);
+      const Y = (x, y) => { const i = (y * N + x) * 4; return 0.2126 * linC(px[i]) + 0.7152 * linC(px[i + 1]) + 0.0722 * linC(px[i + 2]); };
+      const out = new Float64Array(M * M);
+      for (let j = 0; j < M; j += 1) {
+        for (let i = 0; i < M; i += 1) {
+          const u = Math.max(0, ((i + 0.5) * b) / p - 0.5); const v = Math.max(0, ((j + 0.5) * b) / p - 0.5);
+          const xa = Math.floor(u); const ya = Math.floor(v); const fx = u - xa; const fy = v - ya;
+          const xb = Math.min(N - 1, xa + 1); const yb = Math.min(N - 1, ya + 1);
+          out[j * M + i] = (Y(xa, ya) * (1 - fx) + Y(xb, ya) * fx) * (1 - fy) + (Y(xa, yb) * (1 - fx) + Y(xb, yb) * fx) * fy;
+        }
+      }
+      return out;
+    };
+    let acc = 0; let n = 0;
+    for (let k = 0; k < windows; k += 1) {
+      const x0 = 13 + (k % 6) * 31.3; const y0 = 9 + Math.floor(k / 6) * 41.9;
+      const a = raster(L.b, x0, y0);
+      let m = 0; a.forEach((y) => { m += y; }); m /= a.length;
+      a.forEach((y) => { acc += (y / m - 1) ** 2; n += 1; });
+    }
+    return Math.sqrt(acc / n);
+  };
+
+  test('lighting is zero-mean around the paper colour (≤ 1 % + the near-white dip), with real highlights', () => {
+    PAPERS.ORDER.filter((t) => t !== 'none').forEach((type) => {
+      const info = PAPERS.TYPES[type];
+      const dip = PT.meanDip(info.color);
+      expect(dip).toBeLessThanOrEqual(0.015);
+      const ok = (err, what) => {
+        expect(err, `${what} mean error ${(err * 100).toFixed(2)} %`).toBeLessThan(0.01);
+        expect(err, `${what} mean error ${(err * 100).toFixed(2)} % (dip ${(dip * 100).toFixed(2)} %)`).toBeGreaterThan(-0.01 - dip);
+      };
+      [8, 32].forEach((b) => {
+        const st = sheetStats({ type, color: info.color, texture: info.defaultTexture, seed: 1 }, b);
+        ok(st.err, `${type} @${b}`);
+        if (b === 32 && info.tooth >= 0.1) {
+          // Lit facets are BRIGHTER than the paper colour (not shadows only).
+          expect(st.bright, `${type} @${b} highlight fraction`).toBeGreaterThan(0.2);
+        }
+      });
+      // Full strength too, at fit-to-screen density (the highlight knee is
+      // compensated; 576 windows keep the estimate inside the bound even for
+      // black stock, whose relative contrast is the largest).
+      ok(sheetStats({ type, color: info.color, texture: 1, seed: 1 }, 8, 576).err, `${type} @ texture 100 %`);
+    });
+    // Mutation witness: the old shadows-only overlay (every pixel ≤ the paper
+    // colour) fails the same check by far.
+    const info = PAPERS.TYPES['cold-press'];
+    const px = PT.surfacePixels({ type: 'cold-press', color: info.color, texture: 1, seed: 1 }, 20, 20, 128, 32);
+    const Yc = lumHex(info.color);
+    let m = 0;
+    for (let i = 0; i < px.length; i += 4) m += Math.min(Yc, 0.2126 * linC(px[i]) + 0.7152 * linC(px[i + 1]) + 0.0722 * linC(px[i + 2]));
+    expect(m / (px.length / 4) / Yc - 1).toBeLessThan(-0.01);
+  });
+
+  test('white and saturated stock keep their tooth: soft highlight knee, both lighter and darker pixels, bounded dip', () => {
+    ['#ffffff', '#fefefe', '#ff0000'].forEach((color) => {
+      const cfg = { type: 'cold-press', color, texture: 0.5, seed: 1 };
+      [8, 32].forEach((b) => {
+        const ys = [];
+        for (let k = 0; k < 8; k += 1) {
+          const px = PT.surfacePixels(cfg, 7 + k * 13.1, 11 + k * 7.7, 32, b);
+          for (let i = 0; i < px.length; i += 4) ys.push(0.2126 * linC(px[i]) + 0.7152 * linC(px[i + 1]) + 0.0722 * linC(px[i + 2]));
+        }
+        const mean = ys.reduce((a, y) => a + y, 0) / ys.length;
+        const sd = Math.sqrt(ys.reduce((a, y) => a + (y - mean) ** 2, 0) / ys.length) / mean;
+        const lighter = ys.filter((y) => y > mean * 1.001).length / ys.length;
+        const darker = ys.filter((y) => y < mean * 0.999).length / ys.length;
+        expect(sd, `${color} @${b} contrast`).toBeGreaterThan(0.01);
+        expect(lighter, `${color} @${b} lighter pixels`).toBeGreaterThan(0.1);
+        expect(darker, `${color} @${b} darker pixels`).toBeGreaterThan(0.1);
+        expect(mean / lumHex(color) - 1, `${color} @${b} mean`).toBeGreaterThan(-0.03);
+      });
+      expect(PT.meanDip(color)).toBeGreaterThan(0.012);
+      expect(PT.meanDip(color)).toBeLessThanOrEqual(0.015);
+    });
+    // Ordinary stock is not dipped.
+    expect(PT.meanDip(PAPERS.TYPES.kraft.color)).toBe(0);
+    expect(PT.meanDip(PAPERS.TYPES['cold-press'].color)).toBeLessThan(0.006);
+  });
+
+  test('contrast follows the TRUE on-screen density: smooth across bucket changes for zoom and Scale (mutation: bucket-quantised MTF steps)', () => {
+    const info = PAPERS.TYPES['cold-press'];
+    const cfg = { type: 'cold-press', color: info.color, texture: info.defaultTexture, seed: 1 };
+    // Zoom sweep in 1/8-octave steps (offset so no sample sits exactly on a
+    // power of two); a "step" is a sample off the local trend (second
+    // difference), which a smooth rise never produces.
+    const sweep = (ps, old) => ps.map((p) => screenStats(cfg, p, 6, old));
+    const maxKink = (v) => { let k = 0; for (let i = 1; i + 1 < v.length; i += 1) k = Math.max(k, Math.abs(v[i] - (v[i - 1] + v[i + 1]) / 2) / v[i]); return k; };
+    const zoomPs = Array.from({ length: 25 }, (_, e) => 2 ** ((e + 12.37) / 8)); // ≈ 2.9 … 23 px/mm
+    const smooth = sweep(zoomPs, false);
+    // Residual ≤ ~8 %: a chunk shown just above its bucket's top is
+    // bilinear-upsampled 1.41× (softer) and the next bucket's is downsampled.
+    expect(maxKink(smooth), `zoom sweep ${smooth.map((v) => (v * 100).toFixed(2)).join(' ')}`).toBeLessThan(0.1);
+    // Monotone (within 4 % once the relief saturates): more zoom never
+    // shows markedly less tooth.
+    for (let i = 1; i < smooth.length; i += 1) expect(smooth[i]).toBeGreaterThan(smooth[i - 1] * 0.96);
+    // Mutation witness: the bucket-quantised MTF (contrast from the bucket,
+    // flat inside it, jumping at its edge) fails the same check.
+    expect(maxKink(sweep(zoomPs, true))).toBeGreaterThan(0.25);
+    // The Scale slider is the same transform (texture px/mm = px/mm × scale):
+    // at fit (6 px/mm) a 60–300 % sweep has no dead zones or jumps (below
+    // ~60 % the tooth is under the MTF cut-off at fit and simply fades).
+    const scales = Array.from({ length: 19 }, (_, k) => 0.6 * 2 ** ((k + 0.37) / 8)); // ≈ 62–296 %
+    const sc = sweep(scales.map((s) => 6 * s), false);
+    expect(maxKink(sc), `Scale sweep ${sc.map((v) => (v * 100).toFixed(2)).join(' ')}`).toBeLessThan(0.1);
+    // levelFor: the bucket and band position of a density.
+    expect(PT.levelFor(8)).toMatchObject({ b: 8, T: 8 });
+    expect(PT.levelFor(8 / Math.SQRT2 + 1e-9).T).toBe(0);
+    expect(PT.levelFor(8 * Math.SQRT2 - 1e-9).T).toBe(16);
+  });
+
+  test('default contrast is calibrated to the reference photo (≈ 0.4–0.7× its high-pass contrast at fit, DPR 1)', () => {
+    // The user's photo of real sheets: local high-pass contrast ≈ 9.9 %
+    // (cold press) and 18.5 % (rough) at ~2–4 px/mm under raking light.
+    // Defaults sit at the subtle end: the old 70 % default (≈ 0.8×) was
+    // rejected as too bold.
+    const PHOTO = { 'cold-press': 0.099, rough: 0.185 };
+    Object.entries(PHOTO).forEach(([type, ref]) => {
+      const info = PAPERS.TYPES[type];
+      const r = screenStats({ type, color: info.color, texture: info.defaultTexture, seed: 1 }, 4, 12) / ref;
+      expect(r, `${type} ratio ${r.toFixed(2)}`).toBeGreaterThan(0.38);
+      expect(r, `${type} ratio ${r.toFixed(2)}`).toBeLessThan(0.75);
+    });
+    // Physical ordering at the same zoom: rough > cold > hot.
+    const at = (type) => screenStats({ type, color: PAPERS.TYPES[type].color, texture: PAPERS.TYPES[type].defaultTexture, seed: 1 }, 6, 12);
+    expect(at('rough')).toBeGreaterThan(at('cold-press'));
+    expect(at('cold-press')).toBeGreaterThan(at('hot-press') * 2);
+    // MTF weights: ~2 px features nearly gone, well-resolved ones intact.
+    expect(PT.mtfWeight(0.25, 8)).toBeLessThan(0.15);
+    expect(PT.mtfWeight(0.25, 64)).toBeGreaterThan(0.9);
+    // The attenuated relief keeps its bumps where they were: the same
+    // window at two buckets correlates (rough, resolved octaves).
+    const cfg = { type: 'rough', color: PAPERS.TYPES.rough.color, texture: PAPERS.TYPES.rough.defaultTexture, seed: 1 };
+    const lum = (px) => { const o = new Float32Array(px.length / 4); for (let i = 0; i < o.length; i += 1) o[i] = px[i * 4 + 1]; return o; };
+    const a = lum(PT.surfacePixels(cfg, 30, 30, 128, 16));
+    const c = lum(PT.surfacePixels(cfg, 30, 30, 256, 32));
+    expect(corr(a, down(c, 256, 2))).toBeGreaterThan(0.6);
+  });
+
+  test('fibres stay perceptible at fit on fibrous stock (min on-screen width, √-compensated contrast) and the mat resolves at deep zoom', () => {
+    const fibreContrast = (type, b) => {
+      const info = PAPERS.TYPES[type];
+      const cfg = { type, color: info.color, texture: info.defaultTexture, seed: 1 };
+      const saved = info.fiberDensity;
+      const a = PT.surfacePixels(cfg, 40, 40, 96, b);
+      info.fiberDensity = 0;
+      PT.clearCache(type);
+      const c = PT.surfacePixels(cfg, 40, 40, 96, b);
+      info.fiberDensity = saved;
+      PT.clearCache(type);
+      let peak = 0;
+      for (let i = 0; i < a.length; i += 4) peak = Math.max(peak, Math.abs(a[i + 1] - c[i + 1]));
+      return peak; // 8-bit levels
+    };
+    // Kraft at fit (~6–8 px/mm): fibre bundles show by several 8-bit levels.
+    expect(fibreContrast('kraft', 8)).toBeGreaterThanOrEqual(6);
+    expect(fibreContrast('cotton-rag', 8)).toBeGreaterThanOrEqual(3);
+    // Deep zoom: the micro-fibre mat adds sharp detail on every paper (it is
+    // absent at fit, where it would be sub-pixel).
+    const detail = (b) => {
+      const info = PAPERS.TYPES['hot-press'];
+      const px = PT.surfacePixels({ type: 'hot-press', color: info.color, texture: info.defaultTexture, seed: 1 }, 3, 3, 128, b);
+      let d = 0; for (let y = 0; y < 128; y += 1) for (let x = 1; x < 128; x += 1) d += Math.abs(px[(y * 128 + x) * 4 + 1] - px[(y * 128 + x - 1) * 4 + 1]);
+      return d / (128 * 127);
+    };
+    expect(detail(256)).toBeGreaterThan(detail(128) * 0.5);
+    expect(detail(256)).toBeGreaterThan(0.15);
+    expect(PAPERS.LIMITS.maxBucket).toBeGreaterThanOrEqual(512);
+  });
+
+  test('grain sizes are calibrated to real stock (felt-mark wavelengths in mm)', () => {
+    const T = PAPERS.TYPES;
+    // Coarsest felt octave = 1.7 × grainMm.
+    const coarse = (t) => T[t].grainMm * 1.7;
+    expect(coarse('hot-press')).toBeLessThan(0.7);
+    expect(coarse('cold-press')).toBeGreaterThan(0.9);
+    expect(coarse('cold-press')).toBeLessThan(1.6);
+    expect(coarse('rough')).toBeGreaterThan(2);
+    expect(coarse('rough')).toBeLessThan(3.2);
+    expect(T['bristol-smooth'].grainMm).toBeLessThanOrEqual(T['hot-press'].grainMm);
+    // Defaults: subtler than the old bold 55–80 % look.
+    PAPERS.ORDER.filter((t) => t !== 'none').forEach((t) => expect(T[t].defaultTexture, t).toBeLessThanOrEqual(0.55));
+    expect(T['cold-press'].defaultTexture).toBeGreaterThanOrEqual(0.45);
+    expect(T.rough.defaultTexture).toBeGreaterThanOrEqual(T['cold-press'].defaultTexture);
   });
 
   // ---- image-based papers -------------------------------------------------
@@ -2523,6 +2893,12 @@ describe('PaperTexture', () => {
       const smoothOnly = Array.from({ length: 64 }, (_, i) => PI.sampleWrap(maps.height, w, h, (3 + (i + 0.5) / 64) * 4 - 0.5, (3 + 0.5 / 64) * 4 - 0.5));
       let hs = 0; for (let i = 1; i < 64; i += 1) hs += Math.abs(smoothOnly[i] - smoothOnly[i - 1]);
       expect(hf).toBeGreaterThan(hs * 1.1);
+      // Photo papers are lit zero-mean too: the sheet keeps its colour.
+      [4, 16].forEach((b) => {
+        const st = sheetStats({ type: 'custom-imgt1', color: '#e8e1d0', texture: 1, seed: 1 }, b);
+        expect(Math.abs(st.err), `photo paper @${b}`).toBeLessThan(0.01);
+        expect(st.bright).toBeGreaterThan(0.2);
+      });
     } finally {
       delete PAPERS.TYPES['custom-imgt1'];
       PI.clearMaps();

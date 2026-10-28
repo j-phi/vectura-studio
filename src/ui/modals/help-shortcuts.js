@@ -375,6 +375,7 @@
           ${row(mouse('click') + ' swatch', 'Pick a paper (Pen / Paper tab ▸ Paper)', 'one undo step')}
           ${row(mouse('click') + ' Color', 'Any paper colour; keeps the paper type')}
           ${row('Texture / Ink bleed', 'Surface tooth and how far ink wicks into the sheet')}
+          ${row('Scale', 'Grain size: 100 % is the real sheet (25–300 %; also a photo paper\'s tile)', 'one undo step per drag')}
           ${row('Set as default', 'New documents start on this paper')}
           ${row('Use default', 'Apply your default paper to this document')}
           ${row('+ Save as custom…', 'Save this paper to My papers (this browser)')}

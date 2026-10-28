@@ -6,7 +6,8 @@
  *     Vectura.PaperTexture.thumbDataURL)
  *   - paper colour (any colour) — picking a type resets the colour to that
  *     type's stock colour; editing the colour keeps the type
- *   - Texture / Ink bleed sliders (disabled for 'none')
+ *   - Texture / Ink bleed / Scale sliders (disabled for 'none'; Scale 25–300 %
+ *     multiplies the calibrated physical grain, photo tiles included)
  *   - "Set as default" (writes the user's single default paper, a preference)
  *     and "Use default" (applies the default to this document, with undo)
  *   - a "Default" badge when the project paper equals the default
@@ -147,6 +148,10 @@
     }).join('');
     const min = S.SLIDER_MIN ?? 0;
     const max = S.SLIDER_MAX ?? 100;
+    const PL = PAPERS.LIMITS || {};
+    const scaleMin = Math.round((PL.scaleMin || 0.25) * 100);
+    const scaleMax = Math.round((PL.scaleMax || 3) * 100);
+    const scaleStep = S.SCALE_STEP || 5;
     const LIM = PAPERS.PARAM_LIMITS || {};
     const LABELS = S.PARAM_LABELS || {};
     const advancedRows = (PAPERS.PARAM_KEYS || []).map((key) => {
@@ -185,6 +190,11 @@
         <label class="paper-row-label" for="paper-bleed">${esc(S.BLEED_LABEL || 'Ink bleed')}</label>
         <input type="range" id="paper-bleed" class="ctrl-slider paper-slider" min="${min}" max="${max}" step="1" value="0" />
         <span id="paper-bleed-value" class="paper-slider-value">0%</span>
+      </div>
+      <div class="paper-row">
+        <label class="paper-row-label" for="paper-scale" title="${esc(S.SCALE_TITLE || '')}">${esc(S.SCALE_LABEL || 'Scale')}</label>
+        <input type="range" id="paper-scale" class="ctrl-slider paper-slider" min="${scaleMin}" max="${scaleMax}" step="${scaleStep}" value="100" title="${esc(S.SCALE_TITLE || '')}" />
+        <span id="paper-scale-value" class="paper-slider-value">100%</span>
       </div>
       <details id="paper-advanced" class="paper-advanced" hidden>
         <summary class="paper-advanced-summary">${esc(S.ADVANCED || 'Advanced')}</summary>
@@ -225,7 +235,8 @@
     const same = entry.base === paper.custom.base && P.paramsEqual(entry.params, paper.custom.params)
       && entry.color === paper.color
       && Math.round(entry.defaultTexture * 100) === Math.round(paper.texture * 100)
-      && Math.round(entry.defaultBleed * 100) === Math.round(paper.bleed * 100);
+      && Math.round(entry.defaultBleed * 100) === Math.round(paper.bleed * 100)
+      && Math.round((entry.defaultScale || 1) * 100) === Math.round((paper.scale || 1) * 100);
     return same ? 'saved' : 'modified';
   };
 
@@ -350,7 +361,7 @@
       pill.style.color = getContrastTextColor ? getContrastTextColor(paper.color) : '';
     }
     const plain = paper.type === 'none';
-    [['paper-texture', paper.texture], ['paper-bleed', paper.bleed]].forEach(([id, value]) => {
+    [['paper-texture', paper.texture], ['paper-bleed', paper.bleed], ['paper-scale', paper.scale || 1]].forEach(([id, value]) => {
       const el = getEl(id, { silent: true });
       const out = getEl(`${id}-value`, { silent: true });
       if (el) {
@@ -744,7 +755,7 @@
         ? { ...old, image: { ...lean, tileMm: old.image ? old.image.tileMm : lean.tileMm } }
         : {
           name: name || S.IMPORT_DEFAULT_NAME || 'Paper photo', base, color: meanColor, params, image: lean, source,
-          defaultTexture: 0.85, defaultBleed: PAPERS.TYPES[base].defaultBleed,
+          defaultTexture: (PAPERS.IMAGE && PAPERS.IMAGE.defaultTexture) || 0.6, defaultBleed: PAPERS.TYPES[base].defaultBleed,
         };
       const stored = await P0.storeImage(image);
       if (!stored.ok) {
@@ -916,16 +927,17 @@
     // Sliders: one undo step per drag/keyboard session, armed by the first
     // input that actually changes the value (Tab/focus/no-op keys push
     // nothing); disarmed on commit.
-    const bindSlider = (id, key) => {
+    // Scale is a percentage too (25–300 %), stored as a multiplier.
+    const bindSlider = (id, key, lo = 0, hi = 1) => {
       const el = getEl(id, { silent: true });
       if (!el) return;
       let armed = false;
       el.addEventListener('pointerdown', () => { el.dataset.dragging = 'true'; });
       el.addEventListener('input', () => {
         if (el.disabled) return;
-        const v = Math.max(0, Math.min(1, Number(el.value) / 100));
+        const v = Math.max(lo, Math.min(hi, Number(el.value) / 100));
         const cur = currentPaper();
-        if (Math.round(cur[key] * 100) === Math.round(v * 100)) return;
+        if (Math.round((cur[key] ?? 1) * 100) === Math.round(v * 100)) return;
         if (!armed && app && app.pushHistory) app.pushHistory();
         armed = true;
         write({ ...cur, [key]: v }, false);
@@ -938,6 +950,10 @@
     };
     bindSlider('paper-texture', 'texture');
     bindSlider('paper-bleed', 'bleed');
+    {
+      const PL = (Vectura.PAPERS && Vectura.PAPERS.LIMITS) || {};
+      bindSlider('paper-scale', 'scale', PL.scaleMin || 0.25, PL.scaleMax || 3);
+    }
 
     const setDefault = getEl('btn-paper-set-default', { silent: true });
     if (setDefault) {

@@ -2,7 +2,9 @@
  * Paper model (paper selector) — window.Vectura.Paper.
  *
  * Pure helpers around the project paper config
- *   { type, color: '#rrggbb', texture: 0..1, bleed: 0..1, seed: int }
+ *   { type, color: '#rrggbb', texture: 0..1, bleed: 0..1, scale: 0.25..3, seed: int }
+ * (scale: the Paper panel's Scale slider, 1 = calibrated physical grain;
+ * missing in older files -> 1)
  * plus the single writer of SETTINGS.paper (setActive), which also mirrors the
  * colour into the legacy SETTINGS.bgColor so every older reader (export modal
  * preview, animated-SVG background, old builds opening new files) keeps working.
@@ -25,7 +27,7 @@
   const G = (typeof window !== 'undefined' ? window : globalThis);
   const Vectura = G.Vectura = G.Vectura || {};
 
-  const catalogue = () => Vectura.PAPERS || { TYPES: { none: { color: null } }, ORDER: ['none'], DEFAULT: { type: 'none', color: null, texture: 0.6, bleed: 0.5, seed: 1 }, LIMITS: { seedMax: 0x7fffffff } };
+  const catalogue = () => Vectura.PAPERS || { TYPES: { none: { color: null } }, ORDER: ['none'], DEFAULT: { type: 'none', color: null, texture: 0.6, bleed: 0.5, scale: 1, seed: 1 }, LIMITS: { seedMax: 0x7fffffff, scaleMin: 0.25, scaleMax: 3 } };
   const settings = () => Vectura.SETTINGS || {};
 
   const HEX_RE = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
@@ -48,6 +50,18 @@
     const n = typeof value === 'number' ? value : Number(value);
     if (value === null || value === undefined || value === '' || !Number.isFinite(n)) return fallback;
     return Math.max(0, Math.min(1, n));
+  };
+
+  // Paper Scale: a multiplier on every physical size of the surface,
+  // clamped to LIMITS.scaleMin..scaleMax and rounded to 1 %. Missing or
+  // invalid (an older file) -> the fallback (1 = calibrated real-world scale).
+  // Any positive number clamps (1e9 and +Infinity both -> scaleMax); NaN,
+  // non-numbers, 0 and negatives are invalid -> the fallback.
+  const clampScale = (value, fallback = 1) => {
+    const n = typeof value === 'number' ? value : Number(value);
+    if (value === null || value === undefined || value === '' || Number.isNaN(n) || !(n > 0)) return fallback;
+    const L = catalogue().LIMITS || {};
+    return Math.round(Math.max(L.scaleMin || 0.25, Math.min(L.scaleMax || 3, n)) * 100) / 100;
   };
 
   const themeDocumentBg = () => {
@@ -213,6 +227,7 @@
       color: block.color,
       defaultTexture: clamp01(raw.defaultTexture, clamp01(baseInfo.defaultTexture, 0.6)),
       defaultBleed: clamp01(raw.defaultBleed, clamp01(baseInfo.defaultBleed, 0.5)),
+      defaultScale: clampScale(raw.defaultScale, 1),
       params: block.params,
     };
     if (block.image) out.image = block.image;
@@ -255,7 +270,7 @@
     const block = normalizeCustomBlock(entry);
     if (!block) return null;
     const base = T[block.base] || {};
-    const prevDefaults = prev ? { defaultTexture: prev.defaultTexture, defaultBleed: prev.defaultBleed } : {};
+    const prevDefaults = prev ? { defaultTexture: prev.defaultTexture, defaultBleed: prev.defaultBleed, defaultScale: prev.defaultScale } : {};
     const info = {
       label: block.name,
       short: shortName(block.name),
@@ -264,6 +279,7 @@
       ...block.params,
       defaultTexture: clamp01(entry.defaultTexture, clamp01(prevDefaults.defaultTexture, clamp01(base.defaultTexture, 0.6))),
       defaultBleed: clamp01(entry.defaultBleed, clamp01(prevDefaults.defaultBleed, clamp01(base.defaultBleed, 0.5))),
+      defaultScale: clampScale(entry.defaultScale, clampScale(prevDefaults.defaultScale, 1)),
       custom: true,
       base: block.base,
     };
@@ -428,6 +444,7 @@
       color: e.color,
       texture: e.defaultTexture,
       bleed: e.defaultBleed,
+      scale: e.defaultScale,
       seed: prev ? prev.seed : undefined,
       custom: { name: e.name, base: e.base, color: e.color, params: e.params, image, source: e.source },
     });
@@ -455,6 +472,7 @@
       color: p.color,
       defaultTexture: p.type === 'none' ? (T[base] || {}).defaultTexture : p.texture,
       defaultBleed: p.type === 'none' ? (T[base] || {}).defaultBleed : p.bleed,
+      defaultScale: p.type === 'none' ? 1 : p.scale,
       params,
       image: leanImage(image),
       source,
@@ -640,6 +658,7 @@
       color,
       texture: clamp01(src.texture, DEFAULT.texture),
       bleed: clamp01(src.bleed, DEFAULT.bleed),
+      scale: clampScale(src.scale, clampScale(DEFAULT.scale, 1)),
       seed,
     };
     if (custom) out.custom = custom;
@@ -660,6 +679,7 @@
       color: baseColorFor(type),
       texture: type === 'none' ? (prev ? prev.texture : undefined) : info.defaultTexture,
       bleed: type === 'none' ? (prev ? prev.bleed : undefined) : info.defaultBleed,
+      scale: type === 'none' ? (prev ? prev.scale : undefined) : clampScale(info.defaultScale, 1),
       seed: prev ? prev.seed : undefined,
       custom: isCustomType(type) ? blockFromRegistered(type) : undefined,
     });
@@ -716,7 +736,7 @@
       || (Boolean(na.custom && nb.custom) && na.custom.base === nb.custom.base
         && paramsEqual(na.custom.params, nb.custom.params) && imgRef(na.custom) === imgRef(nb.custom));
     return na.type === nb.type && na.color === nb.color
-      && r(na.texture) === r(nb.texture) && r(na.bleed) === r(nb.bleed) && sameCustom;
+      && r(na.texture) === r(nb.texture) && r(na.bleed) === r(nb.bleed) && r(na.scale) === r(nb.scale) && sameCustom;
   };
 
   /**
@@ -836,6 +856,7 @@
     themeDocumentBg,
     baseColorFor,
     normalize,
+    clampScale,
     builtinDefault,
     fromLegacyBg,
     forType,
