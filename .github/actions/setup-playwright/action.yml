@@ -16,7 +16,9 @@ runs:
     - uses: actions/cache@v6
       with:
         path: ~/.cache/ms-playwright
-        key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.playwright }}-${{ inputs.browsers }}
+        # ImageOS/ImageVersion: a browser build cached on one runner image must not be restored on
+        # another (a cached WebKit from an older image crashes at launch on a newer one).
+        key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ steps.version.outputs.playwright }}-${{ inputs.browsers }}
     - shell: bash
       env:
         BROWSERS: ${{ inputs.browsers }}

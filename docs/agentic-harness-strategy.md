@@ -92,6 +92,8 @@ Artifact reporting standard:
 
 ## 5) Testing Matrix (Minimum Required Checks)
 
+CI runner images: Playwright-browser jobs are pinned to `ubuntu-24.04` (see `docs/testing.md` → CI: Pull Requests); changing a runner image is a workflow change and must re-prove the WebKit touch leg.
+
 | Change class | Minimum checks | Additional checks when applicable |
 | --- | --- | --- |
 | Docs-only (no behavior change) | Link/path sanity review | None |
