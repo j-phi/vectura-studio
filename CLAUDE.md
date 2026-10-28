@@ -91,7 +91,7 @@ Use npm test scripts (`npm run test:vitest -- run <test-path>` for focused check
 deadline even while model usage is paused. See `docs/testing.md` for cancellation,
 `VECTURA_TEST_TIMEOUT_MS`, and platform limitations.
 
-Node 20.19+ required. `package.json` is the canonical version source — run `version:sync` whenever the version changes.
+Node 20.19+ required; use Node 24 (`.nvmrc`, CI, golden values). `package.json` is the canonical version source — run `version:sync` whenever the version changes.
 
 **Versioning:** Use plain semver patch increments — `0.8.9` → `0.8.10` → `0.8.11`. Never reset the patch digit after 9; the third number is unbounded (no rollover to a new minor).
 

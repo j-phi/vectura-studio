@@ -32,7 +32,7 @@ npm run hooks:install   # one-time: installs pre-commit + pre-push (test:feedbac
 npm run test:feedback   # bounded local check; CI (`ci-ok`) is the full gate
 ```
 
-Node 20.19 or newer is required for the development and test toolchain.
+Node 20.19 or newer is required for the development and test toolchain; use Node 24 (`.nvmrc`), the CI major and the only one where golden values are checked.
 
 CI is the full gate: the required `ci-ok` check covers the whole Vitest roster, the browser smoke,
 perf and the routed Scene3D audits on every PR. Coverage, the full touch roster and pixel snapshots
@@ -489,7 +489,7 @@ Click `Export SVG` to download.
 | `npm run test:visual:screenshots` | Linux pixel snapshots in the pinned Playwright image (docker); runs nightly in CI |
 | `npm run test:perf` | Stress/performance checks for generation and optimization |
 | `npm run test:ci` | Optional full local pass: lifecycle + coverage + audits + browser roster + perf |
-| `npm run test:update` | Regenerates SVG goldens and this architecture's golden values (Node 20; review before commit) |
+| `npm run test:update` | Regenerates SVG goldens and this architecture's golden values (Node 24; review before commit) |
 | `npm run test:vitest -- <args>` | Vitest with any arguments, e.g. one file: `npm run test:vitest -- run tests/unit/foo.test.js` |
 | `npm run test:playwright -- <args>` | `playwright test` with any arguments, e.g. one spec |
 | `npm run test:queue:status` | Shows who holds the shared local test lock and who is waiting |

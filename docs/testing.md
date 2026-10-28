@@ -10,8 +10,11 @@ baselines, corpora, shard weights and the local test queue.
 
 ## Toolchain
 
-- Node 20.19 or newer is required. `.nvmrc` pins 20.20.2. CI runs Node 20 in every Vitest job.
-- Golden values are exact on Node 20 only, because V8 versions round `Math` results differently.
+- Node 20.19 or newer runs the toolchain, but use Node 24: `.nvmrc` pins 24.22.1 and every CI job
+  runs Node 24. Node 20 is end of life and has no fix for the Brotli decoder RCE (CVE-2026-111497).
+- Golden values are exact on Node 24 only, because V8 versions round `Math` results differently.
+- Every third-party action is pinned to a full commit SHA with its release tag in a trailing
+  comment. Dependabot's `github-actions` updates keep both current.
   See [Goldens and baselines](#goldens-and-baselines).
 - Vitest 4 runs unit, integration, visual, perf and audit tests (`vitest.config.mjs`). Keep `vitest`
   and `@vitest/coverage-v8` on the same version. Workers use the `forks` pool with at most two
@@ -47,7 +50,7 @@ baselines, corpora, shard weights and the local test queue.
 | `npm run test:ci` | Everything once, in one queue slot: lifecycle, coverage, strict profile, audits, the browser roster and perf. Optional (see below). |
 | `npm run test:audit` | Lifecycle, coverage, audits and the browser roster. |
 | `npm run test:lane -- <feedback\|core\|browser\|audit>` | One queued lane from `scripts/test-lanes.json`. The deadline starts after the lock is taken. |
-| `npm run test:update` | Rewrites the SVG goldens and this architecture's golden-value sections. Node 20 only. |
+| `npm run test:update` | Rewrites the SVG goldens and this architecture's golden-value sections. Node 24 only. |
 | `npm run test:vitest -- <args>` | Vitest with any arguments, for example `npm run test:vitest -- run tests/unit/foo.test.js`. |
 | `npm run test:playwright -- <args>` | `playwright test` with any arguments. |
 | `npm run test:queue:status` | Shows the lock holder and the waiting runs. |
@@ -180,14 +183,19 @@ The same workflow runs on every push to `main` and nightly at 08:00 UTC.
 - **Golden values** live in `tests/baselines/golden-values/<name>.json` and are read through
   `tests/helpers/golden-values.js`. Each file has an `arm64` and an `x64` section, because V8 rounds
   float `Math` results differently on each architecture. A missing file, section or key fails.
-  - On Node 20 the values are exact. On another major a check fails in CI, and prints one warning
+  - On Node 24 the values are exact. On another major a check fails in CI, and prints one warning
     and passes unchecked locally.
   - `npm run test:update` rewrites this machine's section (and the SVG goldens). It refuses to run
-    on a Node major other than 20. Narrow it with file arguments.
-  - `scripts/test-update-goldens-x64.sh [files]` rewrites the x64 section in a linux/amd64 Node 20
+    on a Node major other than 24. Narrow it with file arguments.
+  - `scripts/test-update-goldens-x64.sh [files]` rewrites the x64 section in a linux/amd64 Node 24
     container. It needs docker and holds the test lock.
-  - Regenerate only when the output changed on purpose. Say so in the commit. Never regenerate to
-    make a drift check pass.
+  - Regenerate only when the output changed on purpose or the pinned Node major changes. Say so in
+    the commit. Never regenerate to make a drift check pass.
+  - Moving the pinned major (2026-10-27, Node 20 to 24) changed 6 arm64 and 7 x64 values in 4 files;
+    the SVG goldens did not change. When the move touches `scene3d-u2-kernel-identity`, re-capture
+    it on the pre-U2 base `383d7610` too (copy the current test and `tests/helpers/golden-values.js`
+    into a worktree there, set `VECTURA_GOLDEN_VALUES_DIR` to a scratch dir, run in update mode) and
+    check that every scene hash matches, so the identity claim still holds on the new major.
 - **Linux pixel snapshots** live in `tests/e2e/visual.spec.js-snapshots/*-linux.png`. The spec skips
   on other platforms. `npm run test:visual:screenshots:update` (`scripts/test-update-visual-linux.sh`)
   regenerates them in the pinned Playwright image as linux/amd64. The check allows 100 different

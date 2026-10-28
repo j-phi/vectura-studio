@@ -46,17 +46,17 @@ describe('golden-values helper', () => {
     const { goldenValues } = loadHelper(dir, false);
     const g = goldenValues('cmp');
     expect(() => g.expect('k', 'abc')).not.toThrow();
-    if (Number(process.versions.node.split('.')[0]) === 20) expect(() => g.expect('k', 'abd')).toThrow(/Golden drift/);
+    if (Number(process.versions.node.split('.')[0]) === 24) expect(() => g.expect('k', 'abd')).toThrow(/Golden drift/);
     expect(() => g.expect('nope', 'abc')).toThrow(/Golden key "nope" is missing/);
     expect(() => goldenValues('noarch').expect('k', 'abc')).toThrow(new RegExp(`no ${ARCH} section`));
   });
 
-  test('off Node 20 a check fails in CI, warns once and passes unchecked locally, and update mode refuses to write', () => {
+  test('off Node 24 a check fails in CI, warns once and passes unchecked locally, and update mode refuses to write', () => {
     fs.writeFileSync(path.join(dir, 'node.json'), JSON.stringify({ [ARCH]: { k: 'abc' } }));
-    // On Node 20 the check is enforced with or without CI.
-    expect(() => loadHelper(dir, false, { VECTURA_GOLDEN_NODE_MAJOR: '20', CI: 'true' }).goldenValues('node').expect('k', 'abd')).toThrow(/Golden drift/);
+    // On Node 24 the check is enforced with or without CI.
+    expect(() => loadHelper(dir, false, { VECTURA_GOLDEN_NODE_MAJOR: '24', CI: 'true' }).goldenValues('node').expect('k', 'abd')).toThrow(/Golden drift/);
     // CI on another major: loud failure, even on a matching value.
-    expect(() => loadHelper(dir, false, { VECTURA_GOLDEN_NODE_MAJOR: '22', CI: 'true' }).goldenValues('node').expect('k', 'abc')).toThrow(/Node 20 only; this is Node 22\. CI must run golden checks on Node 20/);
+    expect(() => loadHelper(dir, false, { VECTURA_GOLDEN_NODE_MAJOR: '22', CI: 'true' }).goldenValues('node').expect('k', 'abc')).toThrow(/Node 24 only; this is Node 22\. CI must run golden checks on Node 24/);
     // Locally on another major: one warning line per process, no failure.
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     try {
@@ -64,7 +64,7 @@ describe('golden-values helper', () => {
       expect(() => local.expect('k', 'abd')).not.toThrow();
       expect(() => local.expect('k', 'abe')).not.toThrow();
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0][0]).toMatch(/WARNING: Golden values hold on Node 20 only; this is Node 22\. Golden checks are NOT enforced/);
+      expect(warn.mock.calls[0][0]).toMatch(/WARNING: Golden values hold on Node 24 only; this is Node 22\. Golden checks are NOT enforced/);
     } finally {
       warn.mockRestore();
     }
@@ -78,9 +78,10 @@ describe('golden-values helper', () => {
 describe('npm run test:update file list', () => {
   const { goldenValueFiles, targets } = require('../../scripts/test-update-baselines');
 
-  test('refuses to regenerate on a Node major other than 20', () => {
+  test('refuses to regenerate on a Node major other than 24', () => {
     const { nodeRefusal } = require('../../scripts/test-update-baselines');
-    expect(nodeRefusal('20.20.2')).toBeNull();
+    expect(nodeRefusal('24.22.1')).toBeNull();
+    expect(nodeRefusal('20.20.2')).toMatch(/refusing to regenerate goldens on Node 20\.20\.2/);
     expect(nodeRefusal('22.1.0')).toMatch(/refusing to regenerate goldens on Node 22\.1\.0/);
     expect(nodeRefusal('18.0.0')).toMatch(/refusing/);
   });

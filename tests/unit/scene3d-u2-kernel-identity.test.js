@@ -60,8 +60,10 @@ const hashPaths = (paths) => {
 // the mezzoRegion scene hashes '8ee322d6' instead of 'c9eba689' — on the
 // pre-U2 base 383d7610 itself too (measured 2026-10-11), so nothing moved.
 // The goldens were captured on Node 20 (CI's pinned major, see .nvmrc), and
-// the golden-values helper enforces them only there.
-const GOLDEN_NODE_MAJOR = 20;
+// the golden-values helper enforces them only there. On 2026-10-27 CI moved to
+// Node 24 (Node 20 is end of life); both sections were re-captured on Node 24
+// (arm64 and x64), see the commit for the base-383d7610 identity check.
+const GOLDEN_NODE_MAJOR = 24;
 const NODE_MAJOR = Number(process.versions.node.split('.')[0]);
 const golden = goldenValues('scene3d-u2-kernel-identity');
 const sceneKey = (g) => `${g.prim}/${g.mapper}/${g.law}`;

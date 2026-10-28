@@ -11,7 +11,7 @@
  * PER ARCHITECTURE. V8's Math.sin/cos/exp/atan2/... round the last ULP
  * differently on arm64 and x86_64 (see scene3d-u2-kernel-identity.test.js),
  * so a hash of float output holds on one architecture only. Each file keeps
- * one section per architecture. The values hold on Node 20 (CI's pinned
+ * one section per architecture. The values hold on Node 24 (CI's pinned
  * major, .nvmrc) only; other majors round differently again. On another
  * major a check fails in CI (CI is set), prints a one-line warning and
  * passes unchecked locally, and update mode refuses to write.
@@ -33,7 +33,7 @@ const path = require('path');
 const GOLDEN_DIR = process.env.VECTURA_GOLDEN_VALUES_DIR || path.resolve(__dirname, '../baselines/golden-values');
 const UPDATE = process.env.VECTURA_UPDATE_BASELINES === '1';
 const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64';
-const GOLDEN_NODE_MAJOR = 20;
+const GOLDEN_NODE_MAJOR = 24;
 // VECTURA_GOLDEN_NODE_MAJOR (the detected major, overridden) exists only for the helper's own unit test.
 const NODE_MAJOR = Number(process.env.VECTURA_GOLDEN_NODE_MAJOR || process.versions.node.split('.')[0]);
 const IN_CI = !!process.env.CI;
