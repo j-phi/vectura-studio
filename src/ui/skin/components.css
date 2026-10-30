@@ -17557,3 +17557,67 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
   .sp-hdr { height: 48px; }
   .sp-aside button { min-height: 44px; padding: 0 6px; }
 }
+/* ===== Start Page — art (src/ui/start-page/ink.js) ===== */
+/* Tile: paper background from a colorway, art layer inset by --sp-pad. Recolor = custom properties only. */
+.sp-ink {
+  position: relative;
+  overflow: hidden;
+  contain: paint;
+  background-color: var(--sp-paper, #fbfaf6);
+  box-shadow: 0 0 0 1px var(--ui-border);
+}
+.sp-ink-art {
+  position: absolute;
+  inset: var(--sp-pad, 8%);
+}
+.sp-ink-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+  color: var(--sp-ink);
+  stroke-width: var(--sp-lw, 0.6px);
+  stroke-opacity: var(--sp-alpha, 1);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sp-ink-svg g { stroke: currentColor; }
+.sp-ink[data-sp-duo] .sp-ink-svg g { stroke: var(--sp-stroke); }
+.sp-ink-svg path,
+.sp-ink-svg circle,
+.sp-ink-svg polyline,
+.sp-ink-svg polygon,
+.sp-ink-svg line { vector-effect: non-scaling-stroke; }
+.sp-ink-svg [style*="--sp-w"] { stroke-width: calc(var(--sp-lw, 0.6px) * var(--sp-w)); }
+/* Large pieces: a device-pixel canvas (sized in JS) tinted in place. Plain element, no mask. */
+.sp-ink-canvas,
+.sp-ink-draw {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+/* Draw-in: the finished art hides while the plot canvas draws over it. */
+.sp-ink-drawing .sp-ink-svg,
+.sp-ink-drawing .sp-ink-canvas { opacity: 0; }
+/* Art-filled word: real text stays for layout and assistive tech; the canvas paints the fill. */
+.sp-word {
+  position: relative;
+  display: block;
+  white-space: nowrap;
+  overflow: visible;
+}
+.sp-word-text {
+  display: inline-block;
+  line-height: 1;
+}
+.sp-word-on .sp-word-text { color: transparent; }
+.sp-word-fill {
+  position: absolute;
+  pointer-events: none;
+}
+/* ===== END Start Page — art ===== */
