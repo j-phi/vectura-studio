@@ -6,6 +6,17 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Start Page cover and shell (phase P1)
+- **Cover.** The main column shows a cover in place of the P0 empty state, in three styles chosen in Settings: **Name in Ink** (default; each letter is filled with a different piece of your work, topped up with studio picks), **Cover Specimen** and **Portfolio band**.
+- **Name and practice line.** Both are click-to-edit. Settings adds **Show name** and **Show practice line** (both off by default) and a word picker: Vectura, Vectura Studio, Last name, First + Last, Studies, Botanicals, Experiments or Custom.
+- **Color controls.** Page-wide Curated, Mono, Basic and Wildcard schemes, plus a seeded **Randomize**. Schemes are built on the real paper and pen catalogue, with contrast floors of 4.5:1 for text and 3:1 for art, and no near-identical neighbors. Resume and Recent thumbnails are tinted to the colorway.
+- **Header.** The rail collapses into a colophon strip, remembered and always used at 900 px or less. The header adds a Settings gear, an animation toggle (**Still**) and the theme toggle. Turning Still on persists the choice and auto-enables cookie saving, with Undo.
+- **Crisp art.** Heavy pieces draw on a device-pixel canvas, re-rasterized on zoom, resize and device-pixel-ratio change.
+- **Studio picks.** Rendered offscreen from the bundled presets and cached in IndexedDB.
+
+### Changed: Start Page SVG export builder (phase P1)
+- SVG string-building moved into `ExportSvgBuilder`. The output is byte-identical, so exported files do not change.
+
 ### Added: Start Page (phase P0)
 - **Start Page on launch.** A Start Page opens over the editor with a rail for New blank canvas (`Cmd/Ctrl+N`, paper chips A4 / A3 / Letter / 9×12), Open file (`Cmd/Ctrl+O`), Resume and Recent thumbnails, plus a "Show Start Page on launch" checkbox. The main column is an empty state until the later phases land.
 - **Return paths.** The wordmark and `File → Start Page…` (`Shift+Cmd/Ctrl+H`) reopen the page; `File → New Canvas` (`Cmd/Ctrl+N`) starts a blank canvas.
