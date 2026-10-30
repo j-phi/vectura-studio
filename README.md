@@ -197,7 +197,7 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 
 Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar with `File/View/Insert/Help` menus, a **Pen / Paper** tab with the pen palette (drag-to-assign) and a realistic paper selector, Document Setup (`Cmd/Ctrl+K`), and a multi-skin theme system (Classic Dark/Light, Lark, and the **Meridian Blue** family). Cookie-backed preference persistence keeps your settings between sessions.
 
-**Start Page.** Vectura opens on a Start Page over the editor, with a rail for a new blank canvas (`Cmd/Ctrl+N`), Open file, Resume and Recent files. Return to it from the wordmark or `File → Start Page…` (`Shift+Cmd/Ctrl+H`). The page can be turned off with **Show Start Page on launch**. The main column is a cover: your name set in ink from your own work, with page-wide color schemes (Curated, Mono, Basic, Wildcard, Randomize). Below the cover, your works run as an editorial **Plates** section.
+**Start Page.** Vectura opens on a Start Page over the editor, with a rail for a new blank canvas (`Cmd/Ctrl+N`), Open file, Resume and Recent files. Return to it from the wordmark or `File → Start Page…` (`Shift+Cmd/Ctrl+H`). The page can be turned off with **Show Start Page on launch**. The main column is a cover: your name set in ink from your own work, with page-wide color schemes (Curated, Mono, Basic, Wildcard, Randomize). Below the cover, your works run as an editorial **Plates** section, then Studio picks and Community. Art animates in (page default or per plate), reacts to hover, and 3D pieces are live drag-to-rotate models; the **Still** toggle and the system reduced-motion setting stop all of it.
 
 <details>
 <summary>Full UI & workflow feature list</summary>
@@ -211,6 +211,7 @@ Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar wit
 - **Plate editor (phase P2):** words and title and description with suggestions; a layout picker with a suggested layout; a grouped colorway picker plus **the file's own colors**; manual Artwork, Text and Background colors with special fills (Iridescent, Iridescent animated, Duotone, Metallic gold and silver, Sunset); contrast warnings; **Frame art** (drag, scale, Fit / Fill, keyboard); per-plate motion; Undo and reset. **Edit** appears only in Curated and Basic; other modes keep saved edits hidden but intact
 - **Arrange, cover and colorways (phase P2):** Arrange reorders plates by pointer, touch or keyboard (`Alt/Option+Up/Down`), with announcements, Undo and Reset to suggested order. **Use as cover** is remembered across reloads. A Colorways fan shows alternates for a plate
 - **Open in the colors shown (phase P2):** opening any art opens it in exactly the colors on the page, as an unsaved copy named "<name> (colorway)". Save uses that name
+- **Motion, 3D, picks and Community (phase P3):** Settings has **Art animates in** (Plot, Sweep, Fade up, Ink bleed, Stroke cascade, Scan lines, Iris, None, with Preview) and **Hover effect** (Default, None, Re-trigger animation, Lift & tilt, Glare sweep, Re-plot, Hologram Foil, Pressure Ripple, Stipple Weather, Paper Breeze, Gravity Well, Light Current); a plate can override both in its editor, which also has **Replay animation**. **Still** and the system reduced-motion setting stop all of it. 3D pieces are live drag-to-rotate models on the Portfolio band and on plates. **Studio picks** (Open, Open as template) and **Community** (coming later, with a Notify toggle) follow the plates
 - **Crisp art (phase P1):** heavy pieces draw on a device-pixel canvas, re-rasterized on zoom, resize and device-pixel-ratio change. **Studio picks** are rendered offscreen from the bundled presets and cached in IndexedDB
 - **Show Start Page on launch** also lives in Document Setup (`Cmd/Ctrl+K`) ▸ History & Preferences. Turning it off while cookie saving is off turns on **Save preferences in cookie**, with a toast and Undo
 - **Recent files:** every Open and Save records a recent with a stored copy of the document in browser storage (IndexedDB). Chromium also remembers the file handle and reopens the real file; other browsers use the stored copy. `File → Open Recent ▸` lists thumbnail, name, algorithm and time, reopens with `Alt/Option+Cmd/Ctrl+1` to `8`, and offers **Clear Recent** with Undo
@@ -561,6 +562,7 @@ graphify update .
 - `CHANGELOG.md` is intentionally human-curated. Keep `Unreleased` current during development and cut versioned entries when shipping.
 - Architecture documentation uses Mermaid diagrams-as-code. Update diagrams whenever the system structure materially changes.
 - The universal multi-engine noise system is called `Noise Rack`; all future noise-capable algorithms should converge on that shared model.
+- `npm run start-page:picks` pre-renders the Start Page studio picks to `assets/start-page/picks/<id>.svg` plus the `src/config/start-page-picks-art.js` manifest; run it after changing a pick's preset or `START_PAGE_PICKS` (a unit test fails when the files are stale; `-- --check` reports without writing).
 - `npm run profiles:bundle` rebuilds `src/config/petal-profiles/library.js` from `index.json` + profile JSON files for `file://` local runs; run this after editing profile JSON files.
 
 ### Deployment (GitHub Pages)
@@ -631,6 +633,35 @@ flowchart TD
   Work --> Readme["README.md"]
   Work --> Harness["docs/agentic-harness-strategy.md"]
   Harness --> PR[".github/pull_request_template.md"]
+```
+
+```mermaid
+flowchart LR
+  App[App] <--> SP[StartPage controller]
+  SP --> Cover[cover]
+  SP --> Colors[color controls]
+  SP --> Plates["plates section: layouts, editor, arrange, fan"]
+  SP --> Picks[studio picks]
+  SP --> Community[community]
+  SP --> Rail[rail + recents]
+
+  Rail --> Recents[(RecentsStore, IndexedDB)]
+  Plates --> PlatesDb[(PlatesStore, IndexedDB)]
+  Cover --> Thumbs[(art thumbs cache, IndexedDB)]
+  SP --> Prefs[(startPage prefs, cookie / localStorage snapshot)]
+
+  Source[ArtSource] --> Renderer["ArtRenderer (offscreen VectorEngine)"]
+  Renderer --> Builder[ExportSvgBuilder]
+  Builder --> Ink["StartPageInk (sanitized SVG / DPR canvas)"]
+  Ink --> Cover
+  Ink --> Plates
+  Ink --> Picks
+
+  Cover --> OpenArt[OpenArt]
+  Plates --> OpenArt
+  Picks --> OpenArt
+  OpenArt --> Apply[App.applyState]
+  Apply --> App
 ```
 
 </details>

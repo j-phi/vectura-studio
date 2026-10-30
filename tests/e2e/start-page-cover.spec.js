@@ -8,10 +8,7 @@ const boot = async (page, query = '?startPage=launch') => {
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
 };
 
-const resetStorage = async (page) => {
-  await page.context().clearCookies();
-  await page.evaluate(() => { try { localStorage.clear(); indexedDB.deleteDatabase('vectura-start'); } catch (_) { /* noop */ } });
-};
+const { resetStorage } = require('./helpers/start-page');
 
 // Seven real works in the recents store, each a different algorithm (real export thumbnails).
 const seedWorks = async (page, types = TYPES) => {

@@ -364,13 +364,35 @@
       h.run = run; h.el.classList.add('sp-ink-drawing'); active.add(run); wake();
     }));
   };
-  const setMotion = (o) => {
-    if (o && typeof o.still === 'boolean') state.still = o.still;
-    try { if (state.still) D.documentElement.setAttribute('data-sp-motion', 'still'); else D.documentElement.removeAttribute('data-sp-motion'); } catch (e) { /* ignore */ }
-    if (isStill()) finish();
+  // ONE source of truth for motion: isStill() = the Still toggle OR prefers-reduced-motion. Every change (the toggle, or the
+  // OS setting flipping) is announced on `vectura:start-page-motion` { detail: { still } } so draw styles, hover effects,
+  // lift cards and the 3D models stop (or resume) together.
+  const announceMotion = () => {
+    try { W.dispatchEvent(new W.CustomEvent('vectura:start-page-motion', { detail: { still: isStill() } })); } catch (e) { /* ignore */ }
   };
+  const syncMotionAttrs = () => {
+    try {
+      const root = D.documentElement;
+      if (state.still) root.setAttribute('data-sp-motion', 'still'); else root.removeAttribute('data-sp-motion');
+      if (isStill()) root.setAttribute('data-start-page-still', ''); else root.removeAttribute('data-start-page-still');
+    } catch (e) { /* ignore */ }
+  };
+  const setMotion = (o) => {
+    const before = isStill();
+    if (o && typeof o.still === 'boolean') state.still = o.still;
+    syncMotionAttrs();
+    if (isStill()) finish();
+    if (isStill() !== before) announceMotion();
+  };
+  try {
+    const mq = W.matchMedia && W.matchMedia('(prefers-reduced-motion: reduce)');
+    if (mq && mq.addEventListener) mq.addEventListener('change', () => { syncMotionAttrs(); if (isStill()) finish(); announceMotion(); });
+  } catch (e) { /* ignore */ }
+  syncMotionAttrs();
 
   /* ------------------------------------------------------------------ tiles */
+  // 'cover' crops to the ink; 'object' shows the whole ink box scaled up to fill; anything else contains the paper
+  const fitOf = (f) => (f === 'cover' || f === 'object' ? f : 'contain');
   const mount = (el, art, opts) => {
     if (typeof el === 'string') el = D.querySelector(el);
     if (!el) return Promise.reject(new Error('StartPageInk.mount: no element'));
@@ -378,8 +400,8 @@
     if (!art || typeof art.svg !== 'string') return Promise.reject(new Error('StartPageInk.mount: art needs { id, svg }'));
     if (el._spInk || el._spWord) unmount(el);
     const id = ++uid; const gid = `sp-g${id}`;
-    const fit = opts.fit === 'cover' ? 'cover' : 'contain';
-    const pad = opts.pad == null ? (fit === 'cover' ? 0 : 0.08) : opts.pad;
+    const fit = fitOf(opts.fit);
+    const pad = opts.pad == null ? (fit === 'cover' ? 0 : fit === 'object' ? 0.04 : 0.08) : opts.pad;
     const h = {
       kind: 'tile', id, el, art, parsed: null, mode: 'svg', fit, frame: opts.frame || null, pad, colorway: normColorway(opts.colorway),
       w: 0, h: 0, win: null, s: 1, look: { lw: 0.6, alpha: 1 }, svg: null, canvas: null, bmp: null, rasterScale: 1, run: null, _gen: 0, _t: 0,
@@ -463,7 +485,7 @@
       h.paint(); startFill();
     };
     h.setFrame = (frame, nextFit) => {
-      h.frame = frame || null; if (nextFit) h.fit = nextFit === 'cover' ? 'cover' : 'contain';
+      h.frame = frame || null; if (nextFit) h.fit = fitOf(nextFit);
       h.measure(); h.applyLook(); h.setViewBox();
       if (h.mode === 'canvas') { clearTimeout(rT); rT = setTimeout(h.raster, 60); }
     };

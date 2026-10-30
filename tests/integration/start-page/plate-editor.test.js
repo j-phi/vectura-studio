@@ -17,7 +17,7 @@ const FILES = [
   'src/config/start-page-colorways.js', 'src/core/start-page/colorway.js',
   'src/config/start-page-plate-palette.js', 'src/core/start-page/plate-rhythm.js', 'src/core/start-page/plate-type.js',
   'src/core/start-page/art-geometry.js', 'src/core/start-page/plates-store.js', 'src/config/descriptions.js',
-  'src/core/start-page/plate-fills.js', 'src/ui/start-page/plates/colors.js', 'src/ui/start-page/plates/editor.js',
+  'src/core/start-page/plate-fills.js', 'src/ui/start-page/plates/colors.js', 'src/ui/start-page/settings.js', 'src/ui/start-page/plates/editor.js',
 ];
 
 const load = () => {
@@ -82,7 +82,7 @@ describe('plate editor', () => {
     V = load(); E = V.StartPagePlateEditor; S = V.StartPagePlatesStore;
     document.body.innerHTML = ''; host = document.createElement('div'); document.body.appendChild(host);
     toasts = []; calls = []; closed = 0;
-    V.UI = { overlays: { Toast: { show: (p) => { toasts.push(p); return { dismiss() {}, el: document.createElement('div') }; } } } };
+    V.UI = { StartPageSettings: V.UI.StartPageSettings, overlays: { Toast: { show: (p) => { toasts.push(p); return { dismiss() {}, el: document.createElement('div') }; } } } };
     plateEl = makePlate();
   });
 
@@ -539,6 +539,16 @@ describe('plate editor', () => {
       setVal($('select[data-spe-motion="hover"]'), '');
       expect(last()).toEqual({ motion: { hover: null } });
       expect($$('select[data-spe-motion="animateIn"] option').map((o) => o.value)).toEqual(['', 'plot', 'sweep', 'fade', 'bleed', 'cascade', 'scan', 'iris', 'none']);
+    });
+
+    it('the plate hover list is Settings\' list (same ids and labels, Re-trigger animation included) minus Default', () => {
+      open();
+      const opts = $$('select[data-spe-motion="hover"] option').map((o) => [o.value, o.textContent]);
+      const settings = V.UI.StartPageSettings.HOVER.filter(([v]) => v !== 'default');
+      expect(opts[0]).toEqual(['', 'Page default']);
+      expect(opts.slice(1)).toEqual(settings);
+      expect(opts.map((o) => o[0])).toContain('retrigger');
+      expect(E.HOVER_STYLES).toEqual(settings);
     });
 
     it('Reset plate calls onReset with the editable keys and offers Undo of the whole record', () => {

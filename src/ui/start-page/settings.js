@@ -1,10 +1,10 @@
 /**
  * Start Page settings popover — window.Vectura.UI.StartPageSettings (gear in the header).
  * Sections (P1): Cover style · Under the cover (Show name, Show practice line) · Launch (Show Start Page on launch).
- * Marked slots for the P3 sections ("Art animates in", "Hover effect") are left empty and hidden.
+ * P3 sections: "Art animates in" (startPage.animateIn, with a Preview that replays the cover) and "Hover effect" (startPage.hover).
  * Keyboard: the gear toggles it (aria-expanded), the style rows are a radiogroup (arrows), Esc closes and focus
  * returns to the gear, a click outside or focus leaving closes it.
- *   create({ root, button, prefs(), onStyle(k), onToggle(key, on) }) -> { open, close, toggle, sync, isOpen, el }
+ *   create({ root, button, prefs(), onStyle(k), onToggle(key, on), onPref(key, value), onPreview() }) -> { open, close, toggle, sync, isOpen, el }
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -20,7 +20,14 @@
       svg: '<svg viewBox="0 0 62 40" aria-hidden="true"><rect x="0" y="6" width="62" height="28" fill="#121214"/><path d="M26 28l6-7 4 3 6-9 5 6 4-3 7 10" stroke="#e6f1ff" fill="none" stroke-width=".9"/><path d="M26 31l7-5 5 2 6-5 6 4 8-2" stroke="#e6f1ff" fill="none" stroke-width=".6" opacity=".6"/><path d="M5 26h14" stroke="#e6f1ff" stroke-width="2"/><path d="M5 30h9" stroke="#e6f1ff" opacity=".5"/></svg>' },
   ];
 
-  const create = ({ root, button, prefs, onStyle, onToggle }) => {
+  // Page defaults for the art motion. Values are the startPage enum ids; labels are the owner's US wording.
+  const ANIMATE_IN = [['plot', 'Plot'], ['sweep', 'Sweep'], ['fade-up', 'Fade up'], ['ink-bleed', 'Ink bleed'], ['stroke-cascade', 'Stroke cascade'],
+    ['scan-lines', 'Scan lines'], ['iris', 'Iris'], ['none', 'None']];
+  const HOVER = [['default', 'Default'], ['none', 'None'], ['retrigger', 'Re-trigger animation'], ['lift', 'Lift & tilt'], ['glare', 'Glare sweep'],
+    ['replot', 'Re-plot'], ['holo', 'Hologram Foil'], ['ripple', 'Pressure Ripple'], ['stipple', 'Stipple Weather'], ['breeze', 'Paper Breeze'],
+    ['gravity', 'Gravity Well'], ['current', 'Light Current']];
+
+  const create = ({ root, button, prefs, onStyle, onToggle, onPref, onPreview }) => {
     const { h } = Vectura.StartPageDom;
     const isMac = () => /mac|iphone|ipad|ipod/.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`.toLowerCase());
     const mod = () => (isMac() ? '⌘' : 'Ctrl+');
@@ -43,9 +50,19 @@
         h('span', { class: 'sp-micro', text: 'Under the cover' }),
         sw('showName', 'Show name'), sw('showLine', 'Show practice line'),
         h('p', { class: 'sp-set-help', text: 'Your studio name and a line about your practice, saved on this device. Click either on the cover to edit it.' })),
-      // P3 slots: "Art animates in" (startPage.animateIn) and "Hover effect" (startPage.hover) render here.
-      h('section', { class: 'sp-set-sec sp-slot', 'data-slot': 'animate-in', hidden: true }),
-      h('section', { class: 'sp-set-sec sp-slot', 'data-slot': 'hover', hidden: true }),
+      h('section', { class: 'sp-set-sec sp-slot', 'data-slot': 'animate-in' },
+        h('span', { class: 'sp-micro', id: 'sp-set-anim-l', text: 'Art animates in' }),
+        h('div', { class: 'sp-set-pick' },
+          h('select', { class: 'sp-set-select', 'data-pref': 'animateIn', 'aria-labelledby': 'sp-set-anim-l' },
+            ANIMATE_IN.map(([v, n]) => h('option', { value: v, text: n }))),
+          h('button', { type: 'button', class: 'sp-set-btn', 'data-act': 'preview-animate', text: 'Preview', title: 'Replay the cover with this style' })),
+        h('p', { class: 'sp-set-help', text: 'The page default. A plate can set its own in its editor.' })),
+      h('section', { class: 'sp-set-sec sp-slot', 'data-slot': 'hover' },
+        h('span', { class: 'sp-micro', id: 'sp-set-hover-l', text: 'Hover effect' }),
+        h('div', { class: 'sp-set-pick' },
+          h('select', { class: 'sp-set-select', 'data-pref': 'hover', 'aria-labelledby': 'sp-set-hover-l' },
+            HOVER.map(([v, n]) => h('option', { value: v, text: n })))),
+        h('p', { class: 'sp-set-help', text: 'Default: plates draw themselves in again, cards lift and tilt. Effects only touch the art, never the text. Off while animations are paused.' })),
       h('section', { class: 'sp-set-sec' },
         h('span', { class: 'sp-micro', text: 'Launch' }),
         sw('showOnLaunch', 'Show Start Page on launch'),
@@ -56,6 +73,10 @@
     const sync = () => {
       const p = prefs();
       radios().forEach((r) => { const on = r.dataset.style === p.coverStyle; r.setAttribute('aria-checked', String(on)); r.tabIndex = on ? 0 : -1; });
+      pop.querySelectorAll('select[data-pref]').forEach((sel) => {
+        const want = p[sel.dataset.pref];
+        if (want != null && [...sel.options].some((o) => o.value === want)) sel.value = want;
+      });
       pop.querySelectorAll('[data-set]').forEach((b) => {
         const k = b.dataset.set;
         const on = k === 'showOnLaunch' ? p.showOnLaunch !== false : p[k] === true;
@@ -89,8 +110,17 @@
       const tg = e.target.closest && e.target.closest('[data-set]');
       if (tg) { onToggle(tg.dataset.set, tg.getAttribute('aria-checked') !== 'true'); sync(); }
     });
+    pop.addEventListener('change', (e) => {
+      const sel = e.target && e.target.closest && e.target.closest('select[data-pref]');
+      if (sel && typeof onPref === 'function') onPref(sel.dataset.pref, sel.value);
+    });
+    pop.addEventListener('click', (e) => {
+      const pv = e.target.closest && e.target.closest('[data-act="preview-animate"]');
+      if (pv && typeof onPreview === 'function') onPreview();
+    });
     pop.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); return; }
+      if (e.target && e.target.closest && e.target.closest('select')) return; // the selects own their arrow keys
       const r = radios();
       const i = r.indexOf(document.activeElement);
       if (i < 0) return;
@@ -110,5 +140,5 @@
     return { open, close, toggle: () => (isOpen ? close(true) : open()), sync, isOpen: () => isOpen, el: pop };
   };
 
-  UI.StartPageSettings = { create, STYLES };
+  UI.StartPageSettings = { create, STYLES, ANIMATE_IN, HOVER };
 })();

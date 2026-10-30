@@ -10,14 +10,14 @@
  *
  * Seams (other agents' modules, all optional until merged):
  *   StartPagePlateEditor.open(plateEl, { record, art, mode, index, colorway, placed, suggestedLayout, onChange(patch),
- *     onReset(keys), onRemove(), onClose() }) -> { close() }      plateEl = the plate's `.sp-pl` wrapper; the wrapper
+ *     onReset(keys), onRemove(), onClose(), onReplay() }) -> { close() }      plateEl = the plate's `.sp-pl` wrapper; the wrapper
  *     holds the `.spl` article (re-rendered on layout / text / frame changes: listen for 'sp-plate-rerender').
  *   StartPageArrange.enter(listEl, { plates: [{ id, name, colorway, hidden }], onMove(ids), onResetOrder(), onExit() })
  *     -> { exit() }
  *   StartPageFan.open(anchorEl, { art, index, alternates, onPick(colorway) }) -> { close() }
  *   cover.useAsCover(art, { colorway, frame, fill }) -> Promise     (setCoverApi)
  *   StartPagePlateFills.apply(article, { art, text, background })    painting for special fills (optional)
- *   StartPageOrbit3D.modelFor(art) -> model id | null                a live 3D model (P3); the SVG is used until then
+ *   StartPageMotion.modelFor(art) -> model id | null                a live 3D model (StartPageOrbit3D); the SVG is used otherwise
  * A manual color value is '#rrggbb' or { fill: 'iridescent' | ... }.
  *
  *   create({ host, app, prefs(), setPref(key, value), arts(), mode(), seed(), theme(), still(), scroller(),
@@ -243,8 +243,8 @@
         summary: [algoLabel(e), cw && cw.paperName, cw && cw.penName].filter(Boolean).join(' · '),
         specs: specs.filter((s) => s[1]),
         actions: [
-          { id: 'open', label: 'Open', primary: true, onClick: () => open(i, false) },
-          { id: 'template', label: 'Open as template', onClick: () => open(i, true) },
+          { id: 'open', label: 'Open', ariaLabel: `Open ${dash(t.title) || pretty(e.art.name)}`, primary: true, onClick: () => open(i, false) },
+          { id: 'template', label: 'Open as template', ariaLabel: `Open as template: ${dash(t.title) || pretty(e.art.name)}`, onClick: () => open(i, true) },
         ],
       };
     };
@@ -275,7 +275,12 @@
     };
 
     /* ------------------------------------------------------------------ plates */
-    const art3d = (e) => { try { const O = Vectura.StartPageOrbit3D; return O && typeof O.modelFor === 'function' ? O.modelFor(e.art) || null : null; } catch (_) { return null; } };
+    const Motion = () => Vectura.StartPageMotion;
+    const art3d = (e) => { try { const M = Motion(); return M ? M.modelFor(e.art) : null; } catch (_) { return null; } };
+    // The plate's own motion (set in its editor) wins over the page defaults in Settings.
+    const entryNow = (id) => entries.find((x) => x.id === id) || null;
+    const plateAnimateIn = (id) => { const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {}; return m.animateIn || ctx.prefs().animateIn || 'plot'; };
+    const plateHover = (id) => { const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {}; return m.hover || ctx.prefs().hover || 'default'; };
 
     const setData = (w, e, i) => {
       const cw = resolveCw(e, i);
@@ -349,6 +354,9 @@
         return;
       }
       const inner = w.querySelector('.sp-pl-in');
+      const fresh = !st.article || st.artId !== e.art.id;
+      st.artId = e.art.id;
+      if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } st.bind = null; }
       if (st.article) { try { Layouts().destroy(st.article); } catch (_) { /* noop */ } }
       if (st.article && st.article.parentNode === inner) { st.article.replaceWith(article); } else inner.replaceChildren(article);
       st.article = article;
@@ -365,7 +373,25 @@
       syncTools(w);
       const main = article.querySelector('.spl-print');
       if (main) { main.classList.add('sp-pl-art'); main.addEventListener('click', () => { if (!w.dataset.editing) open(entries.indexOf(e), false); }); }
-      Layouts().mount(article);
+      // Fresh plates draw themselves in (the plate's own style, else the page default). Still / reduced motion: shown finished.
+      const M = Motion();
+      const plays = !!(M && main && !model && !reduced() && !M.isStill() && M.styleId(plateAnimateIn(e.id)) !== 'none');
+      if (plays && fresh) main.classList.add('sp-pre');
+      const mounted = Layouts().mount(article);
+      if (M && main) {
+        if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } }
+        st.bind = M.bindArt(main, { handle: () => main._spInk || null, animateIn: () => plateAnimateIn(e.id), hover: () => plateHover(e.id), kind: 'plate' });
+        Promise.resolve(mounted).then(() => {
+          if (st.bind) st.bind.sync();
+          if (plays && fresh && main.isConnected && main._spInk) {
+            M.replay(main._spInk, plateAnimateIn(e.id));
+            let n = 0;
+            const reveal = () => { if (++n < 3) G.requestAnimationFrame(reveal); else main.classList.remove('sp-pre'); };
+            G.requestAnimationFrame(reveal);
+          } else main.classList.remove('sp-pre');
+        });
+        setTimeout(() => main.classList.remove('sp-pre'), 2500); // never leave a plate hidden
+      }
       paintFills(article, cw);
       try { w.dispatchEvent(new G.CustomEvent('sp-plate-rerender', { bubbles: true })); } catch (_) { /* noop */ }
     };
@@ -426,9 +452,10 @@
       if (!st || !st.article) return;
       const hgt = w.getBoundingClientRect().height;
       if (hgt > 40) w.style.setProperty('--sp-pl-h', `${Math.round(hgt)}px`);
+      if (st.bind) { try { st.bind.destroy(); } catch (_) { /* noop */ } st.bind = null; }
       try { Layouts().destroy(st.article); } catch (_) { /* noop */ }
       w.querySelector('.sp-pl-in').replaceChildren(placeholder(w));
-      st.article = null; st.sig = null;
+      st.article = null; st.sig = null; st.artId = null;
       st.gen = (st.gen || 0) + 1;
       w.dataset.state = 'idle';
     };
@@ -605,6 +632,15 @@
       try { ed.handle && ed.handle.close && ed.handle.close(); } catch (_) { /* noop */ }
       if (refocus && ed.btn && ed.btn.isConnected) { try { ed.btn.focus({ preventScroll: true }); } catch (_) { /* noop */ } }
     };
+    // Replay: draw the plate's art in again with its own style (else the page default); a live 3D model re-plots; Still shows it finished.
+    const replayPlate = (id) => {
+      const w = wrappers.get(id);
+      const M = Motion();
+      const main = w && w._sp.article && w._sp.article.querySelector('.spl-print.sp-pl-art');
+      if (!M || !main) return Promise.resolve(null);
+      if (main._vorbit) { if (!M.isStill()) main._vorbit.setModel(main._vorbit.model, { replot: true }); return Promise.resolve(main._vorbit); }
+      return main._spInk ? M.replay(main._spInk, plateAnimateIn(id)) : Promise.resolve(null);
+    };
     const openEditor = (info, btn) => {
       const Ed = Vectura.StartPagePlateEditor;
       if (!Ed || typeof Ed.open !== 'function') { toast('The plate editor is not available in this build.', 'warning'); return; }
@@ -631,6 +667,7 @@
           if (tokenR) undoToast(`Plate ${pad2(i + 1)} removed`, () => getStore().undoRemove(tokenR));
         },
         onClose: () => { if (editor && editor.id === e.id) closeEditor(true); },
+        onReplay: () => replayPlate(e.id),
       });
       editor = { id: e.id, handle, btn };
     };

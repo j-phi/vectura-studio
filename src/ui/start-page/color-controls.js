@@ -26,7 +26,7 @@
     const root = h('div', { class: 'sp-ctl-row', id: 'sp-ctl', role: 'group', 'aria-label': 'Page colorway' });
     const seg = h('div', { class: 'sp-seg', role: 'radiogroup', 'aria-label': 'Colorway mode' },
       modes.map((m) => h('button', { type: 'button', role: 'radio', 'data-sp-mode': m, text: LABELS[m] })));
-    const dice = h('button', { type: 'button', id: 'sp-dice', class: 'sp-dice', 'aria-pressed': 'false', title: 'Randomize colorways' },
+    const dice = h('button', { type: 'button', id: 'sp-dice', class: 'sp-dice', title: 'Randomize colorways' },
       h('span', { class: 'sp-dice-ico', html: Vectura.StartPageIcons.dice }), h('span', { class: 'sp-seed', 'aria-hidden': 'true' }), h('span', { class: 'sp-sr', 'data-live-dice': '' }));
     const sw = h('span', { class: 'sp-sw', 'aria-hidden': 'true' });
     const note = h('span', { class: 'sp-own-note' });
@@ -62,7 +62,6 @@
         b.setAttribute('aria-checked', String(on));
         b.tabIndex = on || (!any && i === 0) ? 0 : -1;
       });
-      dice.setAttribute('aria-pressed', String(random));
       dice.querySelector('.sp-seed').textContent = sd || previewSeed();
       dice.classList.toggle('is-random', random);
       dice.querySelector('[data-live-dice]').textContent = random ? `Randomize again, current seed ${String(sd).split('').join(' ')}` : 'Randomize colorways';

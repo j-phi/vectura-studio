@@ -74,7 +74,8 @@ describe('Start Page cover and controls', () => {
     await tick(80);
     expect(SETTINGS.startPage.coverStyle).toBe('band');
     expect(sp().querySelector('.sp-pf')).toBeTruthy();
-    expect(inkCalls.mount.at(-1).o.fit).toBe('cover');
+    // the band draws its piece covering the band, or turns it live when it is a 3D piece (picks and plates mount too, so look at the band itself)
+    expect(inkCalls.mount.some((c) => c.o.fit === 'cover' && !!c.el.closest('.sp-pf')) || sp().querySelector('.sp-pf').dataset.live === '3d').toBe(true);
     const snap = app.getPreferenceSnapshot();
     expect(snap.startPage.coverStyle).toBe('band');
   });
@@ -185,7 +186,7 @@ describe('Start Page cover and controls', () => {
     click(q('#sp-dice'));
     await tick(50);
     expect(SETTINGS.startPage.seed).toMatch(/^[A-Z0-9]{5}$/);
-    expect(q('#sp-dice').getAttribute('aria-pressed')).toBe('true');
+    expect(q('#sp-dice').classList.contains('is-random')).toBe(true);
     expect(q('.sp-seed').textContent).toBe(SETTINGS.startPage.seed);
     expect(inkCalls.fillWord.length).toBe(fills);
     click(q('[data-sp-mode="mono"]'));

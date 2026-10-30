@@ -133,7 +133,8 @@
     for (const dir of darkerFirst ? ['#0a0a0b', '#ffffff'] : ['#ffffff', '#0a0a0b']) {
       for (let t = 0.04; t <= 1.0001; t += 0.04) { const c = mix(src, dir, t); if (contrast(c, ground) >= min) return c; }
     }
-    return lum(ground) > 0.18 ? '#0a0a0b' : '#ffffff';
+    // Neither extreme reaches `min` (a mid-tone ground): take whichever is more legible, not a fixed side of 0.18.
+    return contrast('#0a0a0b', ground) >= contrast('#ffffff', ground) ? '#0a0a0b' : '#ffffff';
   };
 
   /* CSS variables of a plate for a placed colorway ({ ground | paper, ink, accent, textInk?, class?, exactInk?, exactText? }).

@@ -41,6 +41,8 @@
     let cover = null;
     let controls = null;
     let plates = null;
+    let picks = null;
+    let community = null;
     let settings = null;
     let railUI = null;
     let provider = null;
@@ -83,6 +85,12 @@
       const mode = pageMode();
       try { return C.colorwayFor({ mode, seed: mode === 'random' ? prefs().seed : undefined, theme: themeKey(), workId: id, index: 0 }); } catch (_) { return FALLBACK_CW; }
     };
+    const colorwayForPick = (art, index) => {
+      const C = Vectura.StartPageColorway;
+      if (!C) return FALLBACK_CW;
+      const mode = pageMode();
+      try { return C.colorwayFor({ mode, seed: mode === 'random' ? prefs().seed : undefined, theme: themeKey(), workId: art.id, index: index || 0 }); } catch (_) { return FALLBACK_CW; }
+    };
     const uniqueSwatches = () => {
       const seen = new Map();
       (cover ? cover.tiles() : []).forEach((t) => { if (t.cw && !seen.has(t.cw.key)) seen.set(t.cw.key, t.cw); });
@@ -93,11 +101,24 @@
       if (cover) cover.recolor();
       if (controls) controls.sync();
       if (plates) plates.recolor();
+      if (picks) picks.recolor();
+      if (community) community.recolor(communityColorway());
       renderRail();
     };
 
     /* ------------------------------------------------------------------ motion (Still) */
+    // ONE source of truth: StartPageInk.isStill() (the Still toggle OR prefers-reduced-motion); setMotion announces
+    // `vectura:start-page-motion` so draw styles, hover effects, lift cards and the 3D models all stop (or resume) together.
     const applyMotion = () => { try { Vectura.StartPageInk?.setMotion?.({ still: prefs().motionStill === true }); } catch (_) { /* noop */ } };
+    // The page defaults for "Art animates in" and "Hover effect" changed: every bound art element re-evaluates its plan.
+    const motionPrefsChanged = () => { try { Vectura.StartPageMotion?.changed?.(); } catch (_) { /* noop */ } };
+    const setMotionPref = (key, value) => {
+      const clean = cleanPref(key, value);
+      if (prefs()[key] === clean) return;
+      prefs()[key] = clean;
+      persist();
+      motionPrefsChanged();
+    };
     const syncMotionBtn = () => {
       const btn = root && root.querySelector('#sp-motion-btn');
       if (!btn) return;
@@ -162,8 +183,33 @@
       return { label: conf.label || key, text: `${conf.label || key} · ${Math.max(a, b)}×${Math.min(a, b)} mm · landscape` };
     };
 
+    // Community: the lead card is the user's first plate, else the first studio pick (never a made-up piece).
+    let communityLead = null;
+    const communityColorway = () => (communityLead ? colorwayForPick(communityLead, 0) : null);
+    const setCommunityNotify = (on) => {
+      const p = prefs();
+      const prev = p.communityNotify === true;
+      if (prev === !!on) return;
+      p.communityNotify = !!on;
+      if (on) {
+        app.ensurePreferencePersistence({
+          message: `We will note it here when Community opens. Save preferences in cookie was turned on so this is remembered. Re-enable it in Document Setup (${mod()}K), History & Preferences.`,
+          undo: () => { p.communityNotify = prev; persist(); community?.render?.(); },
+        });
+      } else persist();
+    };
+    const renderSections = async ({ picksToo = true } = {}) => {
+      let arts = [];
+      try { arts = await provider.list({ recentFirst: false }); } catch (_) { arts = []; }
+      communityLead = arts.find((a) => a.kind === 'work') || arts.find((a) => a.kind === 'pick') || null;
+      if (picksToo && picks) await picks.render();
+      if (community) await community.render();
+    };
+
     const build = () => {
-      root = h('div', { id: PAGE_ID, class: 'sp', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Start Page', hidden: true, 'data-rail': 'open' });
+      root = h('div', { id: PAGE_ID, class: 'sp', role: 'dialog', 'aria-label': 'Start Page', hidden: true, 'data-rail': 'open' });
+      // The page is a full page, not a modal: no aria-modal, so the toast host (a sibling kept live) is announced.
+      const skip = h('button', { class: 'sp-skip', type: 'button', 'data-act': 'skip', text: 'Skip to start actions' });
       const header = h('header', { class: 'sp-hdr' },
         h('button', { class: 'sp-brand', type: 'button', 'data-act': 'top', 'aria-label': 'Vectura Studio, back to the top of the Start Page' },
           h('span', { class: 'sp-mark' }),
@@ -187,7 +233,7 @@
       railUI = UI.StartPageRail.create();
       const { rail, colo } = railUI.build({ paperKeys: PAPER_KEYS(), paperLabel: (k) => paperInfo(k).label });
 
-      root.append(header, colo, h('div', { class: 'sp-body' }, main, rail));
+      root.append(skip, header, colo, h('div', { class: 'sp-body' }, main, rail));
 
       cover = UI.StartPageCover.create({
         host: coverSec,
@@ -260,6 +306,29 @@
       plates.setCoverApi(cover);
       ctl.plates = plates;
 
+      // Studio picks and Community sit under the plates, in the page colorways.
+      const mainEl = main.querySelector('#sp-main');
+      const picksEl = h('section', { id: 'sp-picks', class: 'sp-picks' });
+      const communityEl = h('section', { id: 'sp-community', class: 'sp-community' });
+      mainEl.append(picksEl, communityEl);
+      picks = Vectura.StartPagePicksSection.create(picksEl, {
+        artSource: { list: () => provider.list({ recentFirst: false }) },
+        colorwayFor: colorwayForPick,
+        openArt: (art, cw, opts) => ctl.openArt(art, cw, opts),
+        animateIn: () => Vectura.StartPageMotion?.styleId(prefs().animateIn) || 'plot',
+        hover: () => prefs().hover,
+      });
+      community = Vectura.StartPageCommunity.create(communityEl, {
+        leadArt: () => communityLead,
+        colorway: communityColorway,
+        hover: () => prefs().hover,
+        openArt: (art, cw) => ctl.openArt(art, cw),
+        notify: {
+          get: () => prefs().communityNotify === true,
+          set: (on) => setCommunityNotify(on),
+        },
+      });
+
       settings = UI.StartPageSettings.create({
         root,
         button: header.querySelector('#sp-settings-btn'),
@@ -270,6 +339,9 @@
           persist();
           cover.render({ animate: true });
         },
+        onPref: (key, value) => { if (key === 'animateIn' || key === 'hover') setMotionPref(key, value); },
+        // Preview: play the cover's draw-in again with the chosen style (Still shows it finished)
+        onPreview: () => { settings.close(false); cover.render({ animate: true }); },
         onToggle: (key, on) => {
           if (key === 'showOnLaunch') { app.setShowStartPageOnLaunch(on); return; }
           if (key === 'showName' || key === 'showLine') {
@@ -285,6 +357,13 @@
       header.querySelector('#sp-rail-toggle').addEventListener('click', () => setRail(prefs().railCollapsed !== true));
       header.querySelector('#sp-motion-btn').addEventListener('click', () => setStill(prefs().motionStill !== true));
       root.addEventListener('keydown', (e) => {
+        // Every other region is inert, so Tab wraps inside the page instead of dropping onto <body>.
+        if (e.key === 'Tab' && !e.defaultPrevented && !e.target.closest('[aria-modal="true"],[data-plate-editor]')) {
+          const tabs = [...root.querySelectorAll('button,a[href],input,select,textarea,[tabindex="0"]')]
+            .filter((n) => !n.disabled && n.tabIndex >= 0 && n.getClientRects().length && !n.closest('[inert],[hidden],[aria-hidden="true"]'));
+          const edge = e.shiftKey ? tabs[0] : tabs[tabs.length - 1];
+          if (tabs.length && e.target === edge) { e.preventDefault(); (e.shiftKey ? tabs[tabs.length - 1] : tabs[0]).focus(); return; }
+        }
         // An open popover owns Escape even when focus sits on the button that opened it: close it, keep the page.
         if (e.key === 'Escape' && !e.defaultPrevented) {
           if (settings && settings.isOpen()) { e.preventDefault(); settings.close(true); return; }
@@ -320,6 +399,7 @@
       if (t.dataset.recentId) { ctl.openRecent(t.dataset.recentId, ctl.resolvedColorway(t)); return; }
       if (t.dataset.resume === 'current') { ctl.hide(); return; }
       switch (t.dataset.act) {
+        case 'skip': root.querySelector(narrow || prefs().railCollapsed === true ? '#sp-colo-wrap [data-act="new"]' : '#sp-rail [data-act="new"]')?.focus?.(); break;
         case 'top': root.querySelector('#sp-scroll')?.scrollTo?.({ top: 0 }); break;
         case 'back': ctl.hide(); break;
         case 'theme': app.toggleTheme?.(); syncTheme(); recolor(); break;
@@ -456,6 +536,8 @@
       if (token !== renderToken) return;
       controls.sync();
       await plates.render();
+      if (token !== renderToken) return;
+      await renderSections();
     };
 
     // The works changed (an open or save while the page is up): refresh the rail; the cover only when its art did.
@@ -470,6 +552,7 @@
       await cover.render({ animate: false });
       controls.sync();
       plates.refresh();
+      renderSections({ picksToo: false });
     };
 
     /* ------------------------------------------------------------------ open art */

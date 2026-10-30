@@ -157,8 +157,10 @@
   };
 
   /* The art window [x, y, w, h] (viewBox units) shown in a box of bw x bh px, for fit
-     'contain' | 'cover' and a frame override { z, cx, cy }. Cover crops the INK extent (so a
-     small contained object scales up to fill) and centers on the densest region. */
+     'contain' | 'cover' | 'object' and a frame override { z, cx, cy }. Cover crops the INK extent (so a
+     small contained object scales up to fill) and centers on the densest region. 'object' is the
+     whole-piece view: the INK box (not the paper) fills the box at its own aspect, centered, so a small
+     object on a big sheet is scaled up with nothing cut off (the caller supplies the small pad). */
   const artWindow = (a, bw, bh, fit, frame) => {
     const fr = frame || {}; const z = clamp(num(fr.z, 1) || 1, 0.2, 8); const ar = bw / Math.max(1, bh);
     const hasC = fr.cx !== null && fr.cx !== undefined && fr.cy !== null && fr.cy !== undefined;
@@ -170,6 +172,13 @@
       let cx = x0 + c[0] * iw; let cy = y0 + c[1] * ih;
       if (ww <= iw) cx = Math.max(x0 + ww / 2, Math.min(x0 + iw - ww / 2, cx)); else if (!hasC) cx = x0 + iw / 2;
       if (wh <= ih) cy = Math.max(y0 + wh / 2, Math.min(y0 + ih - wh / 2, cy)); else if (!hasC) cy = y0 + ih / 2;
+      return [cx - ww / 2, cy - wh / 2, ww, wh];
+    }
+    if (fit === 'object') {
+      const [x0, y0, iw, ih] = inkInfo(a).box; let ww = iw, wh = ih;
+      if (iw / ih > ar) wh = iw / ar; else ww = ih * ar;
+      ww /= z; wh /= z;
+      const cx = x0 + (hasC ? +fr.cx : 0.5) * iw; const cy = y0 + (hasC ? +fr.cy : 0.5) * ih;
       return [cx - ww / 2, cy - wh / 2, ww, wh];
     }
     const [vx, vy, vw, vh] = a.vb; let ww = vw, wh = vh;

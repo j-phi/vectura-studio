@@ -7,7 +7,7 @@
  * Reset plate and Remove plate. Keyboard accessible; Done or Esc closes and returns focus to the opener.
  *
  *   open(plateEl, { record, art, mode, index, colorway, placed, specs?, orientation?, onChange(patch), onReset(keys),
- *                   onRemove(), onClose() }) -> { close(), update(record) }
+ *                   onRemove(), onClose(), onReplay() }) -> { close(), update(record) }
  *     record     a StartPagePlatesStore record; art { id, name, algorithm, collection, svg, model?, ownColors }
  *     colorway   the rhythm-placed colorway of this plate; placed = StartPagePlateRhythm.place(...) output of the page
  *     specs      [[label, value]] of the plate (Paper, Pen, Stock, Line, Strokes, Plot time ...), used for suggestions
@@ -46,8 +46,12 @@
 
   const AI_STYLES = [['plot', 'Plot'], ['sweep', 'Sweep'], ['fade', 'Fade up'], ['bleed', 'Ink bleed'], ['cascade', 'Stroke cascade'],
     ['scan', 'Scan lines'], ['iris', 'Iris'], ['none', 'None']];
-  const HOVER_STYLES = [['none', 'None'], ['lift', 'Lift & tilt'], ['glare', 'Glare sweep'], ['replot', 'Re-plot'], ['hologram', 'Hologram foil'],
-    ['ripple', 'Pressure ripple'], ['stipple', 'Stipple weather'], ['breeze', 'Paper breeze'], ['gravity', 'Gravity well'], ['current', 'Light current']];
+  // The plate hover list IS Settings' list (same ids, same labels, incl. Re-trigger animation) minus Default, which the
+  // select's blank "Page default" option already means. settings.js loads after this file, so it is read when needed.
+  const hoverStyles = () => {
+    const list = Vectura.UI && Vectura.UI.StartPageSettings && Vectura.UI.StartPageSettings.HOVER;
+    return (Array.isArray(list) ? list : []).filter(([v]) => v !== 'default').map((x) => x.slice());
+  };
   const GROUPS = [['light', 'Light papers'], ['ground', 'Color grounds'], ['dark', 'Darks']];
   const PARTS = [['art', 'Artwork'], ['text', 'Text'], ['background', 'Background']];
   const FIELDS_BY_MODE = {
@@ -496,7 +500,11 @@
       return s;
     };
     const selAnim = mkSel('animateIn', 'Animate in', AI_STYLES);
-    const selHover = mkSel('hover', 'Hover', HOVER_STYLES);
+    const selHover = mkSel('hover', 'Hover', hoverStyles());
+    // Replay: play this plate's animate-in again (Still shows it finished).
+    const replayBtn = h('button', { type: 'button', class: 'spe-lnk spl-edit-replay', 'data-spe-replay': '', text: 'Replay animation', title: "Play this plate's animate-in again" });
+    replayBtn.addEventListener('click', () => { if (typeof o.onReplay === 'function') o.onReplay(); });
+    moBody.appendChild(replayBtn);
 
     /* footer */
     const resetBtn = h('button', { type: 'button', class: 'spe-lnk', 'data-spe-reset': '', text: 'Reset plate' });
@@ -764,5 +772,5 @@
     return api;
   };
 
-  Vectura.StartPagePlateEditor = { open, LAYOUT_IDS, AI_STYLES, HOVER_STYLES, suggestionsFor };
+  Vectura.StartPagePlateEditor = { open, LAYOUT_IDS, AI_STYLES, get HOVER_STYLES() { return hoverStyles(); }, suggestionsFor };
 })();

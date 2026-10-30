@@ -101,6 +101,17 @@
     const pensSummary = () => (Array.isArray(Vectura.SETTINGS?.pens) ? Vectura.SETTINGS.pens : []).slice(0, 4)
       .map((p) => ({ color: p.color, width: p.width }));
 
+    const hexOf = (c) => (typeof c === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(c.trim()) ? c.trim().toLowerCase() : '');
+    // The document's own paper and primary ink (first drawn layer's pen), kept on the entry so a PNG thumbnail
+    // (which carries no readable ground) still shows in the file's colors.
+    const ownColors = () => {
+      const S = Vectura.SETTINGS || {};
+      const pens = Array.isArray(S.pens) ? S.pens : [];
+      const first = (app.engine?.layers || []).find((l) => l && !l.isGroup);
+      const pen = (first && pens.find((p) => p && p.id === first.penId)) || pens[0] || null;
+      return { paperColor: hexOf(S.paper?.color) || hexOf(S.bgColor), inkColor: hexOf(pen && pen.color) };
+    };
+
     const buildThumb = async () => {
       try {
         const doc = app.ui?.buildSvgDocument?.();
@@ -154,14 +165,16 @@
       },
 
       /** Record the document the editor holds right now. */
-      async record({ source = 'open', name, handle = null, payload = null, id, forceNew = false, algorithm, paper, pens, thumb: thumbOverride } = {}) {
+      async record({ source = 'open', name, handle = null, payload = null, id, forceNew = false, algorithm, paper, pens, thumb: thumbOverride, paperColor, inkColor } = {}) {
         if (!store) return null;
         try {
           const doc = payload || { type: 'vectura', version: app.ui?.getAppVersion?.() || '', state: app.captureState(), images: {} };
           if (doc.state) delete doc.state.layerLockedIds;
           const thumb = thumbOverride !== undefined ? thumbOverride : await buildThumb();
+          const own = ownColors();
           const entry = await store.record({
             name: name || 'untitled.vectura', algorithm: algorithm || algorithmLabel(), paper: paper || paperLabel(), pens: pens || pensSummary(),
+            paperColor: paperColor || own.paperColor, inkColor: inkColor || own.inkColor,
             thumb, payload: doc, handle: handle || undefined, source, id, forceNew,
           });
           if (entry && entry.id) app.currentRecentId = entry.id;

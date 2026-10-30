@@ -20,7 +20,7 @@
  * [data-slot="actions"] (the plate's buttons, empty unless texts.actions is given).
  *
  * Words are SVG <text> sized from the font's real ink box (src/core/start-page/plate-type.js), so no descender is
- * clipped. CSS lives in src/ui/skin/ (staging: _staging-layouts.css, folded in by the lead).
+ * clipped. CSS lives in src/ui/skin/ (components.css, Start Page plate sections).
  */
 (() => {
   const W = window;
@@ -132,6 +132,7 @@
     o = o || {};
     const b = el('button', `spl-btn ${o.primary ? 'spl-btn-p' : 'spl-btn-s'}`, { text: o.label || '', attrs: { type: 'button' } });
     if (o.id) b.dataset.action = o.id;
+    if (o.ariaLabel) b.setAttribute('aria-label', o.ariaLabel);
     if (typeof o.onClick === 'function') b.addEventListener('click', o.onClick);
     return b;
   };
@@ -361,8 +362,17 @@
     c.mounted = true;
     const Ink = ink();
     const jobs = [];
+    const O3 = Vectura.StartPageOrbit3D;
     if (Ink) {
       c.prints.forEach((p) => {
+        // A 3D piece is a live, drag-to-rotate model (idle sway, plot-in at 30 % visible), drawn in the plate's colors.
+        if (c.art && c.art.model && O3 && p.main) {
+          try {
+            O3.mount(p.el, { model: c.art.model, colorway: () => artColorway(c, p.disc), hint: false, label: `${c.title}, ${c.algo}`.replace(/^, |, $/g, '') });
+            p.el.classList.add('sp-print-3d');
+            return;
+          } catch (err) { if (W.console) W.console.warn('[PlateLayouts] 3D model failed, using the drawing', err); if (p.el._vorbit) p.el._vorbit.destroy(); }
+        }
         const user = p.main ? c.frameOverride : null;
         const fit = user && user.fit === 'contain' ? 'contain' : 'cover';
         jobs.push(Ink.mount(p.el, c.art, { label: false, pad: 0, fit, frame: T.frameFor(p.shape, user), colorway: artColorway(c, p.disc) }));
@@ -386,7 +396,7 @@
     if (!c) return;
     c.cw = cw; c.vars = T.plateVars(cw || {});
     applyVars(root, c);
-    c.prints.forEach((p) => { const h = p.el._spInk; if (h) h.setColorway(artColorway(c, p.disc)); });
+    c.prints.forEach((p) => { const h = p.el._spInk; if (h) h.setColorway(artColorway(c, p.disc)); if (p.el._vorbit) p.el._vorbit.setColorway(() => artColorway(c, p.disc)); });
     c.crops.forEach((k) => { const h = k.el._spInk; if (h) h.setColorway(artColorway(c, false)); });
     if (c.ko && c.ko._spWord) c.ko._spWord.setColorway({ paper: c.vars['--spl-paper'], ink: c.vars['--spl-art'], ink2: null });
     redrawStages(c);
@@ -398,7 +408,7 @@
     c.dead = true;
     const Ink = ink();
     if (Ink) {
-      c.prints.forEach((p) => Ink.unmount(p.el));
+      c.prints.forEach((p) => { if (p.el._vorbit) p.el._vorbit.destroy(); Ink.unmount(p.el); });
       c.crops.forEach((k) => Ink.unmount(k.el));
       if (c.ko) Ink.unmount(c.ko);
     }

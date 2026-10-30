@@ -10,10 +10,7 @@ const boot = async (page, query = '?startPage=launch') => {
 };
 
 // Preferences live in localStorage AND the vectura_prefs cookie; recents live in IndexedDB.
-const resetStorage = async (page) => {
-  await page.context().clearCookies();
-  await page.evaluate(() => { try { localStorage.clear(); indexedDB.deleteDatabase('vectura-start'); } catch (_) { /* noop */ } });
-};
+const { resetStorage } = require('./helpers/start-page');
 
 const makeFixture = async (page, types = ['wavetable', 'lissajous']) => page.evaluate((list) => {
   list.forEach((t) => window.app.engine.addLayer(t));

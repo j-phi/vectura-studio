@@ -7,10 +7,7 @@ const boot = async (page, query = '?startPage=launch') => {
   await page.goto(`/${query}`);
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
 };
-const resetStorage = async (page) => {
-  await page.context().clearCookies();
-  await page.evaluate(() => { try { localStorage.clear(); indexedDB.deleteDatabase('vectura-start'); } catch (_) { /* noop */ } });
-};
+const { resetStorage } = require('./helpers/start-page');
 const seedWorks = async (page, types = TYPES) => {
   await page.evaluate(async (list) => {
     for (const t of list) {
@@ -146,17 +143,14 @@ test.describe('Start Page review fixes', () => {
     await bootWithWorks(page);
     await page.evaluate(() => window.app.engine.addLayer('wavetable'));
     await page.evaluate(() => window.app.startPage.render());
-    await page.waitForTimeout(1500);
-    const count = (ms) => page.evaluate((span) => new Promise((res) => {
+    const count = (span) => page.evaluate((ms) => new Promise((res) => {
       let n = 0; const orig = window.requestAnimationFrame;
       window.requestAnimationFrame = (f) => { n += 1; return orig(f); };
-      setTimeout(() => { window.requestAnimationFrame = orig; res(n); }, span);
-    }), ms);
-    const open = await count(1500);
-    expect(open, 'rAF requests while the Start Page is open').toBeLessThanOrEqual(3);
+      setTimeout(() => { window.requestAnimationFrame = orig; res(n); }, ms);
+    }), span);
+    // poll until the page has settled instead of sleeping a guessed time (the first window can still hold the draw-ins)
+    await expect.poll(() => count(1000), { message: 'rAF requests per second while the Start Page is open', timeout: 30000, intervals: [250] }).toBeLessThanOrEqual(3);
     await page.locator('#start-page [data-act="back"]').click();
-    await page.waitForTimeout(200);
-    const closed = await count(1000);
-    expect(closed, 'rAF requests once the editor is back').toBeGreaterThan(20);
+    await expect.poll(() => count(1000), { message: 'rAF requests per second once the editor is back', timeout: 15000, intervals: [250] }).toBeGreaterThan(20);
   });
 });

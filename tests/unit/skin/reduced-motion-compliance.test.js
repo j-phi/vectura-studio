@@ -49,6 +49,8 @@ describe('Reduced-motion compliance', () => {
     'sp-roll': ['.sp-cv-stage > *, .sp-dice-ico.sp-roll { animation: none', 'reduce'],
     // Plate editor animated iridescent fills (reduced motion: the plate holds its still frame).
     'spe-turn': ['.spl[data-bgfill], .spl[data-txfill] { animation: none', 'reduce'],
+    // Start Page glare-sweep hover effect (reduced motion: the sweep never runs; Still switches it off too).
+    'sp-hfx-glare': ['.sp-hfx-glare::before, .sp-hfx-glare.go::before { animation: none', 'reduce'],
   };
 
   test('motion.css declares a prefers-reduced-motion: reduce block', () => {

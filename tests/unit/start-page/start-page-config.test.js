@@ -35,7 +35,7 @@ describe('START_PAGE config', () => {
       showOnLaunch: true, coverStyle: 'mosaic', showName: false, showLine: false,
       motionStill: false, railCollapsed: false, visiblePlates: 5, animateIn: 'plot', hover: 'default',
       colorMode: 'curated', seed: null, coverWord: 'vectura', customWord: '',
-      name: '', practiceLine: '', newPaper: 'A3', coverArtId: '', coverFrame: null, coverFill: '',
+      name: '', practiceLine: '', newPaper: 'A3', coverArtId: '', coverFrame: null, coverFill: '', communityNotify: false,
     });
   });
 
@@ -55,6 +55,13 @@ describe('START_PAGE config', () => {
   });
 
   describe('sanitize', () => {
+    it('communityNotify is a boolean preference, default false', () => {
+      expect(SP.sanitize({}).communityNotify).toBe(false);
+      expect(SP.sanitize({ communityNotify: true }).communityNotify).toBe(true);
+      expect(SP.sanitize({ communityNotify: 1 }).communityNotify).toBe(true);
+      expect(SP.sanitize({ communityNotify: 0 }).communityNotify).toBe(false);
+    });
+
     it('returns a complete default object for junk input', () => {
       [undefined, null, 5, 'x', [], {}].forEach((v) => expect(SP.sanitize(v)).toEqual(SP.DEFAULTS));
     });

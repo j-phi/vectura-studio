@@ -54,6 +54,7 @@ baselines, corpora, shard weights and the local test queue.
 | `npm run test:vitest -- <args>` | Vitest with any arguments, for example `npm run test:vitest -- run tests/unit/foo.test.js`. |
 | `npm run test:playwright -- <args>` | `playwright test` with any arguments. |
 | `npm run test:queue:status` | Shows the lock holder and the waiting runs. |
+| `npm run start-page:picks` | Not a test: regenerates the pre-rendered Start Page pick SVGs (`assets/start-page/picks/`) and manifest. `tests/unit/start-page/art-source-prerendered.test.js` fails when they are stale. |
 | `npm run hooks:install` | Installs the `pre-commit` (graphify) and `pre-push` (`test:feedback`) hooks. Run it once after cloning. |
 
 Notes:
@@ -529,6 +530,13 @@ A spec that tests the Start Page itself opts in with `?startPage=launch` in the 
 `App#shouldShowStartPageOnLaunch`, and Vitest runs are unaffected because `src/main.js` (the only caller) is not loaded
 by the integration runtime. Under automation, File > Open also keeps the plain `<input type=file>` path instead of
 Chromium's `showOpenFilePicker`, so `filechooser` events keep working.
+
+### Start Page tests
+
+- `tests/unit/start-page/`: pure modules (colorway, cover words, plate rhythm and fills, arrange, draw styles, lift card, motion wiring, orbit3d, open-art, stores, pre-rendered picks).
+- `tests/integration/start-page/`: shell, cover, plates section and editor, picks and community, review fixes (jsdom).
+- `tests/e2e/start-page-*.spec.js`: browser specs (shell, cover, plates, hover effects, P3 motion), each opting in with `?startPage=launch`.
+- `tests/e2e/touch/start-page-arrange.spec.js`: touch Arrange.
 
 ## Writing New Tests
 

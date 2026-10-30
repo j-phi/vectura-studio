@@ -7,12 +7,7 @@ const boot = async (page, query = '?startPage=launch') => {
   await page.goto(`/${query}`);
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer && window.app.startPage));
 };
-const resetStorage = async (page) => {
-  await page.context().clearCookies();
-  await page.evaluate(() => {
-    try { localStorage.clear(); ['vectura-start', 'vectura-start-plates', 'vectura-start-art'].forEach((n) => indexedDB.deleteDatabase(n)); } catch (_) { /* noop */ }
-  });
-};
+const { resetStorage, flush, worksReady } = require('./helpers/start-page');
 const seedWorks = async (page) => {
   await page.evaluate(async (list) => {
     window.Vectura.SETTINGS.cookiePreferencesEnabled = true;
@@ -32,8 +27,9 @@ const bootWithWorks = async (page) => {
   await seedWorks(page);
   await page.evaluate(() => window.app.startPage.show());
   await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 });
+  await worksReady(expect, page, TYPES.length);
 };
-const reload = async (page) => { await page.waitForTimeout(900); await boot(page); await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 }); };
+const reload = async (page) => { await flush(page); await boot(page); await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 }); };
 const order = (page) => page.locator('.sp-pl').evaluateAll((els) => els.map((e) => e.dataset.plateId));
 const showAll = async (page) => { await page.locator('#sp-pl-show').selectOption('all'); await page.waitForTimeout(500); };
 
@@ -41,6 +37,7 @@ test.describe('Start Page plates, integrated', () => {
   test('editor: word + layout + a manual color in Curated; hidden in Mono/Wildcard; Curated and a reload restore it', async ({ page }) => {
     await bootWithWorks(page);
     const plate = page.locator('.sp-pl').nth(2);
+    await plate.scrollIntoViewIfNeeded(); // plates mount lazily near the viewport
     const before = await plate.evaluate((e) => ({ paper: e.dataset.spPaper, layout: e.dataset.layout }));
     await plate.locator('[data-act="edit"]').click();
     const ed = page.locator('[data-plate-editor]');
@@ -134,6 +131,7 @@ test.describe('Start Page plates, integrated', () => {
   test('Use as cover persists across a reload, and a mode change recolors it', async ({ page }) => {
     await bootWithWorks(page);
     const plate = page.locator('.sp-pl').nth(3);
+    await plate.scrollIntoViewIfNeeded(); // plates mount lazily near the viewport
     const artId = await plate.evaluate((e) => e.dataset.artId);
     await plate.locator('[data-act="cover"]').click();
     await expect(page.locator('.vectura-toast', { hasText: /cover/i }).first()).toBeVisible({ timeout: 10000 });
@@ -163,7 +161,7 @@ test.describe('Start Page plates, integrated', () => {
     await page.locator('[data-sp-mode="wildcard"]').click(); await page.waitForTimeout(600);
     await check('wildcard');
     await page.locator('#sp-dice').click(); await page.waitForTimeout(600);
-    await expect(page.locator('#sp-dice')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#sp-dice')).toHaveClass(/is-random/);
     await check('random');
   });
 

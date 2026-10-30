@@ -348,6 +348,20 @@ html[data-sp-motion="still"] .sp-pl, html[data-sp-motion="still"] .sp-pl[data-of
   .sp-arr-list.dnd .sp-arr-row:not(.dragging), .sp-fan-card, .sp-fan-scrim, .sp-fan-head, .sp-fan-cap, .sp-fan-sheet, .sp-lt.sp-lt-new, .sp-pf.sp-pf-old { transition: none !important; }
 }
 /* ===== END Start Page - Plates motion ===== */
+/* ===== Start Page - P3 motion (hover effects, lift cards, live 3D) ===== */
+@keyframes sp-hfx-glare { 0% { opacity: 0; transform: translateX(0) skewX(-14deg); } 15% { opacity: 1; } 100% { opacity: 0; transform: translateX(420%) skewX(-14deg); } }
+.sp-hfx-wrap.xfade { transition: opacity 180ms linear; }
+.sp-hfx-wrap.still { transition: opacity 300ms linear; }
+.sp-hfx-glare.go::before { animation: sp-hfx-glare 900ms cubic-bezier(0.3, 0.6, 0.3, 1) both; }
+.sp-cm-switch .sp-switch-knob { transition: transform var(--dur-fast, 150ms) var(--ease, ease); }
+html[data-sp-motion="still"] .sp-hfx-glare::before, html[data-start-page-still] .sp-hfx-glare::before { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  /* sp-hfx-glare: the glare sweep is switched off; nothing animates, hover effects show nothing or their still frame */
+  .sp-hfx-glare::before, .sp-hfx-glare.go::before { animation: none; opacity: 0; }
+  .sp-hfx-wrap.xfade, .sp-hfx-wrap.still, .sp-cm-switch .sp-switch-knob, .sp-pick-btn { transition: none; }
+}
+/* ===== END Start Page - P3 motion ===== */
+
 
 /* Accessibility: respect reduced-motion preference */
 @media (prefers-reduced-motion: reduce) {

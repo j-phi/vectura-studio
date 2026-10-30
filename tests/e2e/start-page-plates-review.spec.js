@@ -3,14 +3,15 @@ const { test, expect } = require('@playwright/test');
 // P2 review fixes, end to end: framing survives edits, Use as cover keeps a special fill (and persists), arrange focus.
 const TYPES = ['rings', 'topo', 'flowfield', 'rainfall', 'lissajous', 'wavetable', 'spiral'];
 
+const { resetStorage, flush, worksReady } = require('./helpers/start-page');
+
 const boot = async (page) => {
   await page.goto('/?startPage=launch');
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.startPage && window.app.recents));
 };
 const bootWithWorks = async (page) => {
   await boot(page);
-  await page.context().clearCookies();
-  await page.evaluate(() => { try { localStorage.clear(); ['vectura-start', 'vectura-start-plates', 'vectura-start-art'].forEach((n) => indexedDB.deleteDatabase(n)); } catch (_) { /* noop */ } });
+  await resetStorage(page);
   await boot(page);
   await page.evaluate(async (list) => {
     window.Vectura.SETTINGS.cookiePreferencesEnabled = true;
@@ -18,8 +19,9 @@ const bootWithWorks = async (page) => {
     window.app.engine.layers.length = 0; window.app.markDocumentClean(); window.app.startPage.show();
   }, TYPES);
   await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 });
+  await worksReady(expect, page, TYPES.length);
 };
-const reload = async (page) => { await page.waitForTimeout(900); await boot(page); await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 }); };
+const reload = async (page) => { await flush(page); await boot(page); await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 }); };
 
 test.describe('Start Page plates: review fixes', () => {
   test('framing stays on through arrow keys, +, wheel and drag; Enter ends it and the frame survives a reload', async ({ page }) => {

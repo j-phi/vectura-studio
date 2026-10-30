@@ -76,3 +76,8 @@
   --plotter-path-base: rgba(82, 82, 91, 0.35);
   --plotter-head: var(--ui-accent);
 }
+
+/* Accent as text on the light panels (the fill is 4.2:1 on #efefef-tinted chips). */
+:root,
+[data-ui-skin="light"],
+[data-ui-skin="meridian-light"] { --ui-accent-text: #0b5fc4; }

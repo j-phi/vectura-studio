@@ -50,6 +50,15 @@
     // A stored thumbnail (SVG or PNG) painted in the work's colorway: strokes become the ink color on the paper, so a
     // raw dark-on-dark thumb never reads as a black block. The plain <img> stays in place until the tint lands and is the
     // permanent fallback, so the thumbnail is never blank.
+    const svgViewBox = (src) => {
+      if (typeof src !== 'string' || !src.startsWith('data:image/svg+xml')) return null;
+      try {
+        const text = decodeURIComponent(src.slice(src.indexOf(',') + 1));
+        const m = /<svg\b[^>]*\bviewBox="([^"]+)"/.exec(text);
+        const v = m ? m[1].trim().split(/[\s,]+/).map(Number) : null;
+        return v && v.length === 4 && v[2] > 0 && v[3] > 0 && v.every(Number.isFinite) ? v : null;
+      } catch (_) { return null; }
+    };
     const tintInto = (host, src, cw) => {
       const img = h('img', { alt: '', src });
       host.append(img);
@@ -58,9 +67,13 @@
       probe.onload = () => {
         try {
           const dpr = Math.max(1, Math.min(3, G.devicePixelRatio || 1));
-          const nw = probe.naturalWidth || 256;
-          const nh = probe.naturalHeight || 256;
-          const k = Math.min(1, (512 * dpr) / Math.max(nw, nh));
+          // A stored SVG thumbnail has only a viewBox, so the browser reports a default 300x150-ish natural size: draw it
+          // from the viewBox at 512 x dpr (never clamped down, or hairlines fall under a pixel). A PNG keeps its own size.
+          let nw = probe.naturalWidth || 256;
+          let nh = probe.naturalHeight || 256;
+          const vb = svgViewBox(src);
+          if (vb) { nw = vb[2]; nh = vb[3]; }
+          const k = vb ? (512 * dpr) / Math.max(nw, nh) : Math.min(1, (512 * dpr) / Math.max(nw, nh));
           const w = Math.max(1, Math.round(nw * k));
           const hh = Math.max(1, Math.round(nh * k));
           const cv = document.createElement('canvas');
@@ -107,7 +120,7 @@
     const mountResume = (cth, svg, cw) => {
       const ink = Vectura.StartPageInk;
       if (!ink || !svg || !cw) return;
-      ink.mount(cth, { id: `resume:${cw.key || 'x'}`, svg }, { colorway: cw, label: false }).catch(() => {});
+      ink.mount(cth, { id: `resume:${cw.key || 'x'}`, svg }, { colorway: cw, label: false, fit: 'object' }).catch(() => {});
     };
 
     const render = ({ app, root, live, entries, liveSvg, liveColorway, resumeSvg, resumeColorway, colorwayFor }) => {

@@ -91,6 +91,10 @@
   --ui-on-accent: #fff;
   --ui-on-danger: #fff;
   --ui-on-warning: #fff;
+  /* Accent / danger as TEXT on a panel (links, small labels). Defaults to the fill color; a skin whose fill
+     misses 4.5:1 as text on its panels overrides these (WCAG 1.4.3). */
+  --ui-accent-text: var(--ui-accent);
+  --ui-danger-text: var(--ui-danger);
 
   /* === SG: smart-guide accent (Tools Parity, Lane A) ===
    * Magenta family for object-to-object alignment guides, semantic labels,

@@ -67,6 +67,14 @@ describe('RecentsStore', () => {
       expect([...idb.dump('vectura-start', 'entries').values()][0]).not.toHaveProperty('payload');
     });
 
+    it('keeps the document\'s own paper and ink colors (#hex only) so a PNG thumbnail still shows in them', async () => {
+      const e = await store.record(base({ thumb: { kind: 'png', data: 'data:image/png;base64,AAAA' }, paperColor: '#F4EFE4', inkColor: '#1d3a8a' }));
+      expect(e).toMatchObject({ paperColor: '#f4efe4', inkColor: '#1d3a8a' });
+      expect((await store.get(e.id))).toMatchObject({ paperColor: '#f4efe4', inkColor: '#1d3a8a' });
+      const bad = await store.record(base({ name: 'Bad', paperColor: 'url(javascript:1)', inkColor: 'red' }));
+      expect(bad).toMatchObject({ paperColor: '', inkColor: '' });
+    });
+
     it('record({ id }) updates that entry in place, even under a new name', async () => {
       const a = await store.record(base());
       tick();

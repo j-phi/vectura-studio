@@ -7,12 +7,7 @@ const boot = async (page, query = '?startPage=launch') => {
   await page.goto(`/${query}`);
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer && window.app.startPage));
 };
-const resetStorage = async (page) => {
-  await page.context().clearCookies();
-  await page.evaluate(() => {
-    try { localStorage.clear(); ['vectura-start', 'vectura-start-plates', 'vectura-start-art'].forEach((n) => indexedDB.deleteDatabase(n)); } catch (_) { /* noop */ }
-  });
-};
+const { resetStorage, flush, worksReady } = require('./helpers/start-page');
 const seedWorks = async (page) => {
   await page.evaluate(async (list) => {
     for (const t of list) {
@@ -31,6 +26,7 @@ const bootWithWorks = async (page) => {
   await seedWorks(page);
   await page.evaluate(() => window.app.startPage.show());
   await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 });
+  await worksReady(expect, page, TYPES.length);
 };
 
 test.describe('Start Page plates', () => {
@@ -41,7 +37,7 @@ test.describe('Start Page plates', () => {
     await page.locator('#sp-pl-show').selectOption('3');
     await expect(page.locator('.sp-pl-more')).toContainText('Showing 3 of 7');
     await expect(page.locator('.sp-pl:not([data-off])')).toHaveCount(3);
-    await page.waitForTimeout(900);
+    await flush(page);
     await boot(page);
     await expect(page.locator('#sp-pl-show')).toHaveValue('3');
   });

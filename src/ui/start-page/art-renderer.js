@@ -218,7 +218,9 @@
       const base = Vectura.ALGO_DEFAULTS && Vectura.ALGO_DEFAULTS[type] ? copyOf(Vectura.ALGO_DEFAULTS[type]) : {};
       // The preset's own seed keeps the picture stable (the UI apply path keeps the layer's random seed instead).
       const params = { ...layer.params, ...base, ...copyOf(preset.params), ...TRANSFORM_RESET, preset: preset.id };
-      if (!Number.isFinite(Number(params.seed))) params.seed = 1;
+      // A preset without its own seed would otherwise inherit the new layer's RANDOM seed and draw a different picture
+      // on every render (and on every `npm run start-page:picks`); pin it so a cover piece is reproducible.
+      if (!Number.isFinite(Number(preset.params.seed))) params.seed = 1;
       if (NO_UI_APPLY_PATH.has(type)) {
         // Bespoke panels: load the params the way an opened file does.
         const doc = engine.exportState();

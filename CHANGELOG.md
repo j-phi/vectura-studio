@@ -6,6 +6,19 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Start Page motion, hover effects, live 3D, studio picks and community (phase P3)
+- **Art animates in.** Settings picks the page default: Plot, Sweep, Fade up, Ink bleed, Stroke cascade, Scan lines, Iris or None, with a Preview that replays the cover. It applies to the cover, plates (each plate can set its own in its editor) and the Studio picks. The plate editor has a **Replay animation** button.
+- **Hover effect.** Settings picks the page default: Default (plates draw themselves in again, cards lift and tilt), None, Re-trigger animation, Lift & tilt, Glare sweep, Re-plot, Hologram Foil, Pressure Ripple, Stipple Weather, Paper Breeze, Gravity Well, Light Current. Effects load only on first use and touch only the art, never the text.
+- **Still stops everything.** The animation toggle, and the system's reduced-motion setting, now stop draw-ins, hover effects, lift cards and the 3D sway and inertia together (one source of truth, announced on `vectura:start-page-motion`).
+- **Live 3D.** A Topoform, Spiralizer, Terrain or Polyhedron piece is a live, drag-to-rotate model (idle sway, arrow keys) on the Portfolio band and on plates; Plate 4 shows it on a lighter disc with no ring and a "Drag to rotate" hint. Opening such a piece still opens the document in the colors shown.
+- **Studio picks** (Open and Open as template, in the colors shown) and **Community** (one honest line that sharing comes later, a Notify toggle saved on this device, no feed) sit under the plates.
+
+### Fixed: Start Page review fixes (phase P3)
+- **Recents thumbnails keep their ink.** The rail, colophon and Resume thumbnails of stored SVG thumbnails are drawn at 512 px from the viewBox (they were rasterized at the browser's 194 x 150 default, hairlines under a pixel), and a file whose thumbnail is a PNG (over 250 KB) now shows in its own paper and ink: recents store the document's paper and primary ink at record time.
+- **Studio picks, Resume and the Community card fill their frame.** A new "object" fit scales the piece's ink box up to the frame (with a small pad) instead of containing the whole paper sheet.
+- **Idle CPU with a live 3D model.** The sway redraws at about 24 fps (was every frame), parks after about 20 seconds without interaction and resumes on pointer enter, focus or scrolling back into view; the z-buffer is reused while the view has not changed. Models that scroll out of view are paused, not destroyed. The 3D canvas is now an `application` whose name states the arrow keys.
+- **Plate editor Hover list** is Settings' list (Re-trigger animation included, same labels). A hover effect now attaches when a pointer arrives before the art has finished parsing (on the next move or when ready).
+
 ### Added: Start Page plates (phase P2)
 - **Plates.** Your work set as an editorial run in 16 layouts on a named palette of 32 plate colorways (12 light papers, 10 color grounds, 10 darks). A rhythm keeps two darks from being adjacent and near-identical neighbors apart. **Show** (default 5) with "Showing x of N". Plates persist in IndexedDB.
 - **Plate editor.** Words and title and description with suggestions; layout picker with a suggested layout; grouped colorway picker plus "the file's own colors"; manual Artwork, Text and Background colors with special fills (Iridescent, Iridescent animated, Duotone, Metallic gold and silver, Sunset); contrast warnings; Frame art (drag, scale, Fit / Fill, keyboard); per-plate motion; Undo and reset. Edit appears only in Curated and Basic.

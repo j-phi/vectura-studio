@@ -118,6 +118,17 @@ describe('StartPageArtSource', () => {
     expect(renders).toEqual({ doc: 0, preset: 0 });
   });
 
+  it('a work with a PNG thumbnail shows in its recorded paper and ink (old entries fall back to the SVG ground / first pen)', async () => {
+    await store.record({ name: 'big.vectura', algorithm: 'Rings', pens: [{ color: '#223344', width: 0.3 }], thumb: { kind: 'png', data: 'data:image/png;base64,AAAA' }, paperColor: '#14181f', inkColor: '#f2d27a', payload: doc(7), source: 'open' });
+    clock += 1000;
+    await store.record({ name: 'old.vectura', algorithm: 'Rings', pens: [{ color: '#223344', width: 0.3 }], thumb: { kind: 'png', data: 'data:image/png;base64,AAAA' }, payload: doc(8), source: 'open' });
+    const arts = await mkSource().list();
+    const big = arts.find((a) => a.name === 'big');
+    const old = arts.find((a) => a.name === 'old');
+    expect(big.ownColors).toMatchObject({ paper: '#14181f', ink: '#f2d27a' });
+    expect(old.ownColors).toMatchObject({ ink: '#223344' }); // no stored paper: the fallback paper, but the first pen's ink
+  });
+
   it('a work without an SVG thumbnail renders its stored document once and caches it', async () => {
     await seed();
     const source = newSource();

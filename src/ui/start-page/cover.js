@@ -3,8 +3,8 @@
  *   mosaic (Name in Ink, default): the word set huge, each letter a button filled with its own piece, plotted in
  *     letter by letter, with a key row (01 …) that names the piece on hover / focus;
  *   word (Cover Specimen): one piece fills the whole word;
- *   band (Portfolio band): a full-width band of one piece (static here; `data-live-hook` marks where the live 3D
- *     model mounts in P3).
+ *   band (Portfolio band): a full-width band of one piece; a 3D piece (StartPageMotion.modelFor) is a live,
+ *     drag-to-rotate StartPageOrbit3D model instead of the drawing.
  * Also the cover chrome: word picker button, info line, click-to-edit name and practice line, and the honest empty
  * state when there is no art yet. Recoloring (setColorway on every tile) never re-fits or re-plots.
  *
@@ -20,6 +20,8 @@
   const UI = Vectura.UI = Vectura.UI || {};
 
   const DRAW_MS = 1250;
+  // The page's "Art animates in" default as a registered draw style (the preference enum is hyphenated).
+  const animStyle = (prefs) => { const M = Vectura.StartPageMotion; return M ? M.styleId(prefs && prefs.animateIn) : ((prefs && prefs.animateIn) || 'plot'); };
   const reducedMotion = () => { try { return G.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; } };
 
   const create = (ctx) => {
@@ -60,7 +62,10 @@
       editors = [];
       const ink = Ink();
       if (hold) { tiles = tiles.filter((t) => t !== hold.tile); }
-      tiles.forEach((t) => { try { ink && ink.unmount(t.el); } catch (_) { /* noop */ } });
+      tiles.forEach((t) => {
+        try { ink && ink.unmount(t.el); } catch (_) { /* noop */ }
+        if (t.el._sp3d) { try { t.el._sp3d.destroy(); } catch (_) { /* noop */ } t.el._sp3d = null; }
+      });
       tiles = [];
       if (hold) [...stage.children].forEach((c) => { if (c !== hold.old) c.remove(); });
       else stage.textContent = '';
@@ -237,7 +242,7 @@
       if (my !== gen) return;
       fitMosaic();
       const ink = Ink();
-      const style = ctx.prefs().animateIn || 'plot';
+      const style = animStyle(ctx.prefs());
       const stagger = tiles.length > 9 ? 110 : 170;
       const started = Date.now();
       const fills = tiles.map((t, j) => svgPromises[j].then((svg) => {
@@ -276,7 +281,7 @@
       if (my !== gen) return;
       const ink = Ink();
       const p = ink.fillWord(el, word, { id: art.id, svg }, { fit: true, max: 290, colorway: cw });
-      if (animates(animate)) plotIn(el, { delay: 160, duration: 2000, style: ctx.prefs().animateIn || 'plot' });
+      if (animates(animate)) plotIn(el, { delay: 160, duration: 2000, style: animStyle(ctx.prefs()) });
       await p;
     };
 
@@ -302,12 +307,27 @@
       tools.addEventListener('click', () => ctx.onOpen(art, tiles[0].cw));
       const style = band.style;
       style.setProperty('--sp-text', cw.textInk || cw.ink);
+      // A 3D piece is a live, drag-to-rotate model on the right of the band (the same place the drawing sits).
+      const model = Vectura.StartPageMotion ? Vectura.StartPageMotion.modelFor(art) : null;
+      const O3 = Vectura.StartPageOrbit3D;
+      if (model && O3) {
+        const host3d = h('div', { class: 'sp-pf-3d' });
+        band.dataset.live = '3d';
+        band.append(host3d);
+        const paint = (c) => { band.style.background = c.paper; band.style.setProperty('--sp-paper', c.paper); band.style.setProperty('--sp-ink', c.ink); };
+        paint(cw);
+        const o3 = O3.mount(host3d, { model, colorway: () => (tiles.find((x) => x.el === band) || t).cw, hint: 'Drag to rotate', paper: false, label: `${art.name.replace(/\.vectura$/, '')}, ${art.algorithm || 'Piece'}` });
+        band._sp3d = { setColorway(c) { paint(c); o3.setColorway(() => c); }, destroy() { o3.destroy(); } };
+        setCwData(t);
+        band.append(h('div', { class: 'sp-pf-fade', 'aria-hidden': 'true' }), text, tools);
+        return Promise.resolve();
+      }
       const p = Ink().mount(band, { id: art.id, svg }, { colorway: cw, fit: 'cover', pad: 0, label: false, frame: (override && override.art.id === art.id && override.frame && override.frame.fit !== 'contain') ? override.frame : null, fill: (override && override.art.id === art.id && override.fill) || null });
       setCwData(t);
       // Text rides above the art layer: mount() appended the art box last, so lift the overlay content. The fade
       // that lets the art dissolve under the text is a gradient overlay element (never a CSS mask on the art).
       band.append(h('div', { class: 'sp-pf-fade', 'aria-hidden': 'true' }), text, tools);
-      return p.then(() => { if (animates(animate)) { plotIn(band, { delay: 120, duration: 1800, style: ctx.prefs().animateIn || 'plot' }); } });
+      return p.then(() => { if (animates(animate)) { plotIn(band, { delay: 120, duration: 1800, style: animStyle(ctx.prefs()) }); } });
     };
 
     const buildEmpty = (word) => {
@@ -421,7 +441,7 @@
       const cws = ctx.colorwaysFor(tiles.map((t) => t.art));
       tiles.forEach((t, i) => {
         t.cw = withFill(t.art, cws[i]);
-        const handle = t.el._spWord || t.el._spInk;
+        const handle = t.el._spWord || t.el._spInk || t.el._sp3d;
         if (handle && handle.setColorway) handle.setColorway(t.cw);
         setCwData(t);
       });
@@ -483,7 +503,7 @@
       if (fade) {
         void old.offsetWidth;
         old.style.opacity = '0';
-        later(() => { try { Ink() && Ink().unmount(old); } catch (_) { /* noop */ } old.remove(); stage.style.position = ''; }, 460);
+        later(() => { try { Ink() && Ink().unmount(old); } catch (_) { /* noop */ } if (old._sp3d) { try { old._sp3d.destroy(); } catch (_) { /* noop */ } } old.remove(); stage.style.position = ''; }, 460);
       }
     };
     const useAsCover = async (art, o = {}) => {

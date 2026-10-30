@@ -4,7 +4,7 @@
  * Browser-local history of opened/saved documents for the Start Page and
  * File > Open Recent. Bulky data lives in IndexedDB (database `vectura-start`),
  * independent of the cookie-preference setting:
- *   entries  { id, name, algorithm, paper, pens, thumb, addedAt, lastOpened, cleared, hasDoc, hasHandle, bytes, source }
+ *   entries  { id, name, algorithm, paper, paperColor, inkColor, pens, thumb, addedAt, lastOpened, cleared, hasDoc, hasHandle, bytes, source }
  *   docs     { id, payload }     full parsed .vectura object, dropped oldest-first when over budget
  *   handles  { id, handle }      FileSystemFileHandle (Chromium only)
  * When IndexedDB is missing or throws, the same API runs from memory.
@@ -50,6 +50,8 @@
     return s || 'Untitled';
   };
   const cleanText = (v) => (typeof v === 'string' ? v.slice(0, 120) : '');
+  // The document's own paper / primary ink as #rrggbb (Start Page shows a file in its own colors even for a PNG thumbnail).
+  const cleanHex = (v) => (typeof v === 'string' && /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(v.trim()) ? v.trim().toLowerCase() : '');
   const docBytes = (payload) => {
     try { return JSON.stringify(payload).length; } catch (_e) { return Infinity; }
   };
@@ -221,6 +223,8 @@
         name,
         algorithm: cleanText(data.algorithm),
         paper: cleanText(data.paper),
+        paperColor: cleanHex(data.paperColor),
+        inkColor: cleanHex(data.inkColor),
         pens: cleanPens(data.pens),
         thumb: cleanThumb(data.thumb),
         lastOpened: t,

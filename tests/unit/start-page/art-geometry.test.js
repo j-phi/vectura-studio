@@ -36,6 +36,32 @@ describe('parseArtSvg', () => {
   });
 });
 
+describe('artWindow: object (whole piece, scaled up)', () => {
+  // a 60x40 object in the middle of a 300x400 sheet
+  const sheet = () => ({ vb: [0, 0, 300, 400], polys: [new Float32Array([120, 180, 180, 180]), new Float32Array([120, 220, 180, 220]), new Float32Array([120, 180, 120, 220]), new Float32Array([180, 180, 180, 220])], widths: new Float32Array(4).fill(0.3), total: 200 });
+  test('the ink box fills the window (not the paper) and nothing is cut off', () => {
+    const a = sheet();
+    const w = G.artWindow(a, 400, 400, 'object');
+    expect(w[2] / w[3]).toBeCloseTo(1, 5);
+    expect(w[2]).toBeCloseTo(60, 4); // 60 wide ink limits a square window
+    expect(w[0]).toBeLessThanOrEqual(120 + 1e-6);
+    expect(w[0] + w[2]).toBeGreaterThanOrEqual(180 - 1e-6);
+    expect(w[1]).toBeLessThanOrEqual(180 + 1e-6);
+    expect(w[1] + w[3]).toBeGreaterThanOrEqual(220 - 1e-6);
+    expect(w[0] + w[2] / 2).toBeCloseTo(150, 4);
+    expect(w[1] + w[3] / 2).toBeCloseTo(200, 4);
+    // contain would show the whole 300x400 sheet: object is far tighter
+    expect(G.artWindow(a, 400, 400, 'contain')[3]).toBeGreaterThan(w[3] * 5);
+  });
+  test('a wide box widens the window around the ink; frame z zooms in', () => {
+    const a = sheet();
+    const w = G.artWindow(a, 800, 400, 'object');
+    expect(w[2] / w[3]).toBeCloseTo(2, 5);
+    expect(w[3]).toBeCloseTo(40, 4);
+    expect(G.artWindow(a, 400, 400, 'object', { z: 2 })[2]).toBeCloseTo(30, 4);
+  });
+});
+
 describe('artWindow: contain / cover', () => {
   test('contain shows the whole viewBox at the box aspect', () => {
     const art = makeArt();

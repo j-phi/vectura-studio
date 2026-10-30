@@ -16,6 +16,12 @@
  * piece id + a hash of the piece's CONTENT (picks) or its last-opened stamp (works) + RENDER_VERSION (a sibling of
  * the recents database, so its schema is untouched). The key does not carry the app version, so a patch release
  * does not re-render anything; bump RENDER_VERSION when the renderer or an algorithm changes how pieces look.
+ *
+ * Picks are fixed bundled presets, so their art is PRE-RENDERED at development time (`npm run start-page:picks`
+ * -> assets/start-page/picks/<id>.svg + the START_PAGE_PICKS_ART manifest). On a cache miss a pick first fetches
+ * that file, but only while the manifest's hash for it equals the preset's current content hash and the manifest's
+ * version equals RENDER_VERSION; a mismatch, a failed fetch (file://, offline) or a non-SVG body falls back to the
+ * live render, so an edited preset never shows stale art.
  * Entries from another RENDER_VERSION are pruned on first open. Without IndexedDB the cache lives in memory.
  */
 (() => {
@@ -136,6 +142,22 @@
     const picksCfg = () => opts.picks || Vectura.START_PAGE_PICKS || { STUDIO_PICKS: [], PICK_NAMES: {}, collectionFor: () => 'Studies' };
     const presetsList = () => opts.presets || Vectura.PRESETS || [];
     const inflight = new Map();
+    const artManifest = () => (opts.prerendered !== undefined ? opts.prerendered : Vectura.START_PAGE_PICKS_ART) || null;
+    const doFetch = () => opts.fetch || (typeof G.fetch === 'function' ? G.fetch.bind(G) : null);
+
+    // The pre-rendered SVG for a pick, or null (stale / missing / unreachable): the caller then renders live.
+    const prerenderedPick = async (preset, hash) => {
+      const m = artManifest();
+      const f = doFetch();
+      if (!m || !f || m.version !== RENDER_VERSION || !m.hashByPick || m.hashByPick[preset.id] !== hash) return null;
+      try {
+        const res = await f(`${m.path || './assets/start-page/picks/'}${encodeURIComponent(preset.id)}.svg`);
+        if (!res || !res.ok) return null;
+        const svg = await res.text();
+        if (typeof svg !== 'string' || !/^\s*(?:<\?xml[^>]*\?>\s*)?<svg\b/.test(svg)) return null;
+        return { svg, algorithm: preset.preset_system, ownColors: Object.assign({}, FALLBACK_COLORS), bytes: svg.length };
+      } catch (_e) { return null; }
+    };
 
     // One cached render per piece id; concurrent callers share the promise.
     const cached = (cacheId, render) => {
@@ -158,8 +180,9 @@
       const type = typeFromLabel(entry.algorithm);
       const pen = Array.isArray(entry.pens) && entry.pens[0] ? entry.pens[0] : null;
       const ownColors = {
-        paper: groundOf(entry.thumb && entry.thumb.kind === 'svg' ? entry.thumb.data : '') || FALLBACK_COLORS.paper,
-        ink: pen && isHex(pen.color) ? pen.color : FALLBACK_COLORS.ink,
+        // the document's own colors stored at record time; the SVG thumbnail's ground and the first pen serve entries from before
+        paper: (isHex(entry.paperColor) && entry.paperColor) || groundOf(entry.thumb && entry.thumb.kind === 'svg' ? entry.thumb.data : '') || FALLBACK_COLORS.paper,
+        ink: (isHex(entry.inkColor) && entry.inkColor) || (pen && isHex(pen.color) ? pen.color : FALLBACK_COLORS.ink),
         penName: 'Pen 1',
         paperName: FALLBACK_COLORS.paperName,
       };
@@ -200,7 +223,8 @@
           presetId: preset.id,
           ownColors: Object.assign({}, FALLBACK_COLORS),
           getSvg: async () => {
-            const rec = await cached(`pick:${preset.id}:${hashOf(preset)}`, () => getRenderer().renderPreset(preset));
+            const hash = hashOf(preset);
+            const rec = await cached(`pick:${preset.id}:${hash}`, async () => (await prerenderedPick(preset, hash)) || getRenderer().renderPreset(preset));
             if (rec.ownColors) Object.assign(art.ownColors, rec.ownColors);
             return rec.svg;
           },
@@ -245,6 +269,7 @@
     create,
     createCache,
     RENDER_VERSION,
+    hashOf,
     list: () => sharedSource().list(),
     listRecentFirst: () => sharedSource().listRecentFirst(),
     subscribe: (fn) => sharedSource().subscribe(fn),

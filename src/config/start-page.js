@@ -32,6 +32,7 @@
     coverArtId: '',
     coverFrame: null,
     coverFill: '',
+    communityNotify: false,
   });
 
   const ENUMS = Object.freeze({
@@ -115,6 +116,7 @@
       coverArtId: typeof pick('coverArtId') === 'string' && ID_RE.test(pick('coverArtId')) ? pick('coverArtId') : DEFAULTS.coverArtId,
       coverFrame: frame(pick('coverFrame')),
       coverFill: typeof pick('coverFill') === 'string' && FILL_RE.test(pick('coverFill')) ? pick('coverFill') : DEFAULTS.coverFill,
+      communityNotify: bool(pick('communityNotify'), DEFAULTS.communityNotify),
     };
   };
 
