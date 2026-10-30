@@ -38,27 +38,55 @@
   };
 
   // ---------------------------------------------------------------- isolation
-  // Reference snapshot of every SETTINGS key plus a JSON copy per key. Restore puts the original
-  // references back; a key whose content was mutated in place (not just reassigned) is rebuilt from its copy.
+  // Every render starts from a PRISTINE copy of the factory SETTINGS (the App's defaultSettingsSnapshot, taken before
+  // cookie preferences were applied; this module's own load-time copy when there is no App), overlaid with the
+  // document's settings. A document that omits lightSource / pens / optimizationDefaults therefore renders with the
+  // defaults, never with whatever the live editor has right now, and the cached thumbnail is reproducible.
+  // The live SETTINGS is restored IN PLACE (same object identities, deep-assigned) in finally, so modules holding a
+  // reference to SETTINGS or to one of its objects (pens, lightSource ...) never see a replacement.
+  const isObj = (v) => v !== null && typeof v === 'object';
+  const assignInPlace = (target, src) => {
+    if (Array.isArray(target)) {
+      const old = target.slice();
+      target.length = 0;
+      src.forEach((v, i) => { target[i] = reuse(old[i], v); });
+      return target;
+    }
+    const old = Object.assign({}, target);
+    Object.keys(target).forEach((k) => { delete target[k]; });
+    Object.keys(src).forEach((k) => { target[k] = reuse(old[k], src[k]); });
+    return target;
+  };
+  const reuse = (cur, next) => (isObj(cur) && isObj(next) && Array.isArray(cur) === Array.isArray(next) ? assignInPlace(cur, next) : next);
+  const LOAD_TIME_DEFAULTS = (() => { try { return copyOf(Vectura.SETTINGS); } catch (_e) { return null; } })();
+  const pristineSettings = () => (G.app && G.app.defaultSettingsSnapshot) || LOAD_TIME_DEFAULTS || null;
+
   const snapshotSettings = () => {
     const S = Vectura.SETTINGS;
-    const refs = new Map();
-    const json = new Map();
+    const saved = new Map();
     Object.keys(S).forEach((k) => {
-      refs.set(k, S[k]);
-      try { json.set(k, JSON.stringify(S[k])); } catch (_e) { /* not serializable: reference only */ }
+      let json;
+      try { json = JSON.stringify(S[k]); } catch (_e) { json = undefined; } // not serializable: reference only
+      saved.set(k, { ref: S[k], json });
     });
-    return () => {
-      Object.keys(S).forEach((k) => { if (!refs.has(k)) delete S[k]; });
-      refs.forEach((v, k) => {
-        if (S[k] !== v) S[k] = v;
-        const was = json.get(k);
-        if (was === undefined) return;
-        let now;
-        try { now = JSON.stringify(S[k]); } catch (_e) { now = null; }
-        if (now !== was) { try { S[k] = JSON.parse(was); } catch (_e) { /* keep reference */ } }
+    const restore = () => {
+      Object.keys(S).forEach((k) => { if (!saved.has(k)) delete S[k]; });
+      saved.forEach(({ ref, json }, k) => {
+        if (json === undefined) { S[k] = ref; return; }
+        const was = JSON.parse(json);
+        if (isObj(ref) && isObj(was) && Array.isArray(ref) === Array.isArray(was)) { assignInPlace(ref, was); S[k] = ref; } else S[k] = was;
       });
     };
+    const base = pristineSettings();
+    if (base) {
+      Object.keys(S).forEach((k) => {
+        if (!Object.prototype.hasOwnProperty.call(base, k)) { S[k] = undefined; return; }
+        const next = copyOf(base[k]);
+        const cur = saved.get(k) && saved.get(k).ref;
+        if (isObj(cur) && isObj(next) && Array.isArray(cur) === Array.isArray(next)) { assignInPlace(cur, next); S[k] = cur; } else S[k] = next;
+      });
+    }
+    return restore;
   };
 
   const snapshotNoiseImages = () => {
@@ -86,9 +114,13 @@
   const applyDocumentSettings = (s) => {
     const S = Vectura.SETTINGS;
     const take = (key) => { if (s[key] !== undefined) S[key] = s[key]; };
-    ['margin', 'precision', 'strokeWidth', 'truncate', 'cropExports', 'removeHiddenGeometry', 'paperSize',
-      'paperWidth', 'paperHeight', 'paperOrientation', 'preview3dQuality', 'plotterOptimize', 'globalLayerCount']
-      .forEach(take);
+    // A document is untrusted: numbers that reach the SVG export string must be numbers.
+    const takeNumber = (key) => {
+      const v = s[key];
+      if ((typeof v === 'number' || (typeof v === 'string' && v.trim() !== '')) && Number.isFinite(Number(v))) S[key] = Number(v);
+    };
+    ['margin', 'precision', 'strokeWidth', 'paperWidth', 'paperHeight', 'plotterOptimize', 'globalLayerCount'].forEach(takeNumber);
+    ['truncate', 'cropExports', 'removeHiddenGeometry', 'paperSize', 'paperOrientation', 'preview3dQuality'].forEach(take);
     S.strokeWidthOverride = s.strokeWidthOverride === true;
     if (s.lightSource) S.lightSource = copyOf(s.lightSource);
     if (s.optimizationDefaults) S.optimizationDefaults = copyOf(s.optimizationDefaults);
@@ -220,7 +252,9 @@
   const stat = { count: 0, slowestMs: 0, slowestId: null, lastMs: 0 };
   const onIdle = (fn) => new Promise((resolve, reject) => {
     const run = () => { try { resolve(fn()); } catch (err) { reject(err); } };
-    if (typeof G.requestIdleCallback === 'function') G.requestIdleCallback(run, { timeout: 1500 });
+    // No forcing timeout: a render is one long synchronous task, so it waits for a genuinely idle moment (the cover
+    // paints and takes input between pieces) instead of being force-run into the middle of a busy frame.
+    if (typeof G.requestIdleCallback === 'function') G.requestIdleCallback(run);
     else setTimeout(run, 0);
   });
   const nowMs = () => (G.performance && typeof G.performance.now === 'function' ? G.performance.now() : Date.now());

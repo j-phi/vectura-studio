@@ -1321,11 +1321,14 @@
       // restore below cannot commit it as a layer in the restored document.
       if (this.renderer?.penDraft) this.renderer.cancelPenPath?.();
       const s = state.settings || {};
-      SETTINGS.margin = s.margin ?? SETTINGS.margin;
+      // A document is untrusted input: numeric settings that reach the SVG export string are coerced, so a crafted
+      // file cannot smuggle markup through them (an unusable value keeps the current setting).
+      const numOr = (value, fallback) => (typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')) && Number.isFinite(Number(value)) ? Number(value) : fallback;
+      SETTINGS.margin = numOr(s.margin, SETTINGS.margin);
       SETTINGS.speedDown = s.speedDown ?? SETTINGS.speedDown;
       SETTINGS.speedUp = s.speedUp ?? SETTINGS.speedUp;
-      SETTINGS.precision = s.precision ?? SETTINGS.precision;
-      SETTINGS.strokeWidth = s.strokeWidth ?? SETTINGS.strokeWidth;
+      SETTINGS.precision = numOr(s.precision, SETTINGS.precision);
+      SETTINGS.strokeWidth = numOr(s.strokeWidth, SETTINGS.strokeWidth);
       SETTINGS.strokeWidthOverride = s.strokeWidthOverride === true;
       // Paper selector: state.paper > legacy bgColor > user default > built-in.
       if (window.Vectura.Paper) {

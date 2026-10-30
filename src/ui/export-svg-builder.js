@@ -24,6 +24,13 @@
     return cap === 'butt' ? 'butt' : 'round';
   };
 
+  // Everything numeric that is interpolated into the SVG string goes through here: a crafted document can carry a
+  // string where a number belongs (settings.margin, a custom paper size) and the export must never echo it as markup.
+  const finite = (value, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
   const formatDashArray = (pattern) =>
     pattern.map((value) => Number(value).toFixed(3).replace(/\.?0+$/, '')).join(' ');
 
@@ -41,17 +48,18 @@
       : () => engine.computeAllDisplayGeometry();
     const optimizeTargets = opts.optimizeTargets;
     const prof = engine.currentProfile;
-    const precision = Math.max(0, Math.min(6, SETTINGS.precision ?? 3));
+    const precision = Math.max(0, Math.min(6, finite(SETTINGS.precision, 3)));
     const useOptimized = Boolean(SETTINGS.optimizationExport);
     const removeHiddenGeometry = SETTINGS.removeHiddenGeometry !== false;
     const hardCrop = SETTINGS.cropExports !== false;
+    const margin = finite(SETTINGS.margin, 0);
     const destructiveMarginCrop = hardCrop || (removeHiddenGeometry && SETTINGS.truncate !== false);
     const marginRect = destructiveMarginCrop
       ? {
-          x: SETTINGS.margin,
-          y: SETTINGS.margin,
-          w: Math.max(0, prof.width - SETTINGS.margin * 2),
-          h: Math.max(0, prof.height - SETTINGS.margin * 2),
+          x: margin,
+          y: margin,
+          w: Math.max(0, prof.width - margin * 2),
+          h: Math.max(0, prof.height - margin * 2),
         }
       : null;
     const useSvgMarginClip = SETTINGS.truncate && !destructiveMarginCrop;
@@ -226,6 +234,7 @@
       removeHiddenGeometry,
       hardCrop,
       useSvgMarginClip,
+      margin,
       marginRect,
       groups,
       clipPolygonsByLayerId,
@@ -237,12 +246,14 @@
 
   const buildSvgDocument = (snapshot) => {
     const { prof, precision, groups, clipPolygonsByLayerId, useSvgMarginClip } = snapshot;
+    const pageW = finite(prof.width, 0);
+    const pageH = finite(prof.height, 0);
     const defs = [];
     const layerClipIds = new Map();
     if (useSvgMarginClip) {
-      const m = SETTINGS.margin;
-      const w = prof.width - m * 2;
-      const h = prof.height - m * 2;
+      const m = finite(snapshot.margin ?? SETTINGS.margin, 0);
+      const w = pageW - m * 2;
+      const h = pageH - m * 2;
       defs.push(`<clipPath id="margin-clip"><rect x="${m}" y="${m}" width="${w}" height="${h}" /></clipPath>`);
     }
     if (!snapshot.removeHiddenGeometry) {
@@ -254,7 +265,7 @@
         layerClipIds.set(layerId, clipId);
       });
     }
-    let svg = `<?xml version="1.0" standalone="no"?><svg width="${prof.width}mm" height="${prof.height}mm" viewBox="0 0 ${prof.width} ${prof.height}" xmlns="http://www.w3.org/2000/svg">`;
+    let svg = `<?xml version="1.0" standalone="no"?><svg width="${pageW}mm" height="${pageH}mm" viewBox="0 0 ${pageW} ${pageH}" xmlns="http://www.w3.org/2000/svg">`;
     if (defs.length) svg += `<defs>${defs.join('')}</defs>`;
     if (useSvgMarginClip) svg += `<g clip-path="url(#margin-clip)">`;
 

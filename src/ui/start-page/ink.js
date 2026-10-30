@@ -127,26 +127,78 @@
 
   /* ------------------------------------------------------------------ inline SVG preparation */
   let uid = 0;
-  const sanitize = (s) => s
-    .replace(/<!--[\s\S]*?-->/g, '').replace(/<\?xml[^>]*\?>/, '').replace(/<!DOCTYPE[\s\S]*?\]>|<!DOCTYPE[^>]*>/gi, '')
-    .replace(/<(script|foreignObject|style|image|use|iframe|object|embed)\b[\s\S]*?(<\/\1\s*>|\/>)/gi, '')
-    .replace(/\s(on[a-z]+)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/\s(?:xlink:)?href\s*=\s*("\s*javascript:[^"]*"|'\s*javascript:[^']*')/gi, '');
-  /* strokes keep their relative widths as --sp-w multipliers over the adaptive line weight */
-  const prepSvg = (txt, gid) => {
-    let s = sanitize(String(txt || '')).trim();
-    s = s.replace(/<(g|path|circle|polyline|polygon|line)\b([^>]*)>/g, (m0, tag, attrs) => {
-      let widthStyle = '';
-      attrs = attrs.replace(/\sstroke-width="([\d.]+)"/, (m1, w) => { const f = +w / 0.3; if (Math.abs(f - 1) >= 0.01) widthStyle = `--sp-w:${f.toFixed(3)}`; return ''; });
-      if (widthStyle) {
-        if (/\sstyle="/.test(attrs)) attrs = attrs.replace(/\sstyle="/, ` style="${widthStyle};`); else attrs += ` style="${widthStyle}"`;
-      }
-      return `<${tag}${attrs}>`;
+  /*
+   * Art SVG is untrusted (a crafted .vectura can carry anything through its settings). It is never handed to an HTML
+   * parser: the text is parsed as XML (DOMParser), then a NEW tree is built with createElementNS from an ALLOWLIST of
+   * elements and attributes. Everything else (scripts, handlers, href / xlink:href, style, foreignObject, use, image,
+   * a, animate*, set ...) is dropped; text survives only inside <title>. Not well-formed XML yields null.
+   */
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const ALLOWED_EL = new Set(['svg', 'g', 'path', 'polyline', 'polygon', 'line', 'circle', 'ellipse', 'rect', 'defs', 'clipPath', 'title']);
+  const ALLOWED_ATTR = new Set(['d', 'points', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry', 'width', 'height', 'transform',
+    'viewBox', 'id', 'fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'stroke-dasharray',
+    'stroke-dashoffset', 'stroke-opacity', 'fill-opacity', 'fill-rule', 'clip-rule', 'clip-path', 'clipPathUnits', 'opacity', 'vector-effect']);
+  const WIDTH_TAGS = new Set(['g', 'path', 'circle', 'polyline', 'polygon', 'line']);
+  const LOCAL_URL = /^url\(\s*#[A-Za-z_][\w.:-]*\s*\)$/;
+  const goodAttr = (name, value) => {
+    if (typeof value !== 'string' || value.length > 200000) return false;
+    if (/javascript:|data:|expression\(|[<>]/i.test(value)) return false;
+    if (/url\(/i.test(value)) return (name === 'clip-path' || name === 'fill' || name === 'stroke') && LOCAL_URL.test(value.trim());
+    if (name === 'id') return /^[A-Za-z_][\w.:-]*$/.test(value);
+    return true;
+  };
+  const num = (v, fb) => { const n = Number(v); return Number.isFinite(n) ? n : fb; };
+  const copyTree = (src, dst) => {
+    Array.prototype.forEach.call(src.childNodes, (n) => {
+      if (n.nodeType !== 1 || !ALLOWED_EL.has(n.localName) || n.localName === 'svg') return;
+      const out = D.createElementNS(SVG_NS, n.localName);
+      if (n.localName === 'title') out.textContent = String(n.textContent || '').slice(0, 200);
+      else copyTree(n, out);
+      Array.prototype.forEach.call(n.attributes, (a) => {
+        if (a.namespaceURI || a.prefix || !ALLOWED_ATTR.has(a.localName) || !goodAttr(a.localName, a.value)) return;
+        if (a.localName === 'stroke-width' && WIDTH_TAGS.has(n.localName) && /^[\d.]+$/.test(a.value)) {
+          // strokes keep their relative widths as --sp-w multipliers over the adaptive line weight
+          const f = +a.value / 0.3;
+          if (Math.abs(f - 1) >= 0.01) out.style.setProperty('--sp-w', f.toFixed(3));
+          return;
+        }
+        out.setAttribute(a.localName, a.value);
+      });
+      dst.appendChild(out);
     });
-    const vbm = s.match(/viewBox="([^"]+)"/);
-    const [vx, vy, vw, vh] = vbm ? vbm[1].trim().split(/[\s,]+/).map(Number) : [0, 0, 100, 100];
-    return s.replace(/<svg\b([^>]*)>/, (m0, attrs) => `<svg${attrs.replace(/\s(width|height|color)="[^"]*"/g, '')} class="sp-ink-svg" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">`
-      + `<defs><linearGradient id="${gid}" gradientUnits="userSpaceOnUse" x1="${vx}" y1="${vy}" x2="${vx + vw}" y2="${vy + vh}"><stop offset="0" style="stop-color:var(--sp-ink)"/><stop offset="1" style="stop-color:var(--sp-ink2,var(--sp-ink))"/></linearGradient></defs>`);
+  };
+  const safeSvg = (txt, gid) => {
+    if (typeof W.DOMParser === 'undefined') return null;
+    const text = String(txt || '').replace(/<!DOCTYPE[^>]*>/gi, '');
+    if (/<!ENTITY/i.test(text)) return null;
+    let doc;
+    try { doc = new W.DOMParser().parseFromString(text.trim(), 'image/svg+xml'); } catch (e) { return null; }
+    const src = doc && doc.documentElement;
+    if (!src || src.localName !== 'svg' || doc.getElementsByTagName('parsererror').length) return null;
+    const svg = D.createElementNS(SVG_NS, 'svg');
+    const vb = (src.getAttribute('viewBox') || '').trim();
+    const vbOk = /^[\d\s.,eE+-]+$/.test(vb) ? vb : '';
+    if (vbOk) svg.setAttribute('viewBox', vbOk);
+    const [vx, vy, vw, vh] = vbOk ? vbOk.split(/[\s,]+/).map((v) => num(v, 0)) : [0, 0, 100, 100];
+    svg.setAttribute('class', 'sp-ink-svg');
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    const defs = D.createElementNS(SVG_NS, 'defs');
+    const grad = D.createElementNS(SVG_NS, 'linearGradient');
+    const gradId = /^[A-Za-z_][\w.:-]*$/.test(String(gid)) ? String(gid) : 'sp-grad';
+    grad.setAttribute('id', gradId);
+    grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+    grad.setAttribute('x1', String(vx)); grad.setAttribute('y1', String(vy));
+    grad.setAttribute('x2', String(vx + vw)); grad.setAttribute('y2', String(vy + vh));
+    [['0', 'stop-color:var(--sp-ink)'], ['1', 'stop-color:var(--sp-ink2,var(--sp-ink))']].forEach(([off, style]) => {
+      const stop = D.createElementNS(SVG_NS, 'stop');
+      stop.setAttribute('offset', off); stop.setAttribute('style', style);
+      grad.appendChild(stop);
+    });
+    defs.appendChild(grad); svg.appendChild(defs);
+    copyTree(src, svg);
+    return svg;
   };
 
   /* ------------------------------------------------------------------ handles, observers, DPR / zoom watching */
@@ -380,8 +432,10 @@
       h.parsed = parsed; h.measure(); h.applyLook();
       const asCanvas = opts.raster === true || (opts.raster !== false && art.svg.length > (opts.rasterOver || RASTER_OVER));
       if (asCanvas) { h.mode = 'canvas'; el.classList.add('sp-ink-raster'); return h.raster(); }
-      box.insertAdjacentHTML('afterbegin', prepSvg(art.svg, gid));
-      h.svg = box.querySelector('svg'); h.setViewBox();
+      const safe = safeSvg(art.svg, gid);
+      if (!safe) throw new Error('StartPageInk: the art is not well-formed SVG');
+      box.insertBefore(safe, box.firstChild);
+      h.svg = safe; h.setViewBox();
       return null;
     }).then(() => { if (h.alive()) el.classList.add('sp-ink-ready'); return h; }, (err) => {
       el.classList.add('sp-ink-error'); if (W.console) W.console.warn('[StartPageInk]', err); return h;
@@ -523,6 +577,6 @@
 
   Vectura.StartPageInk = {
     mount, unmount, drawIn, finish, fillWord, setMotion, registerDrawStyle, DRAW_STYLES,
-    isStill, RASTER_OVER,
+    isStill, RASTER_OVER, safeSvg,
   };
 })();

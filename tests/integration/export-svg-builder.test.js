@@ -8,6 +8,8 @@
  */
 const crypto = require('crypto');
 const { loadVecturaRuntime } = require('../helpers/load-vectura-runtime');
+const { goldenValues } = require('../helpers/golden-values');
+const { buildRichDoc } = require('../helpers/export-golden-doc');
 
 const FULL_STACK = { includeRenderer: true, includeUi: true, includeApp: true, includeMain: false, useIndexHtml: true };
 const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
@@ -74,6 +76,20 @@ describe('ExportSvgBuilder byte identity', () => {
     expect(ui.length).toBeGreaterThan(200);
     expect(built).toBe(ui);
     expect(sha(ui)).toBe(GOLDEN[name]);
+  });
+
+  // The rich document (mask clip paths, line-sort + plotter-optimize on export, a path-level pen override and
+  // weightScale) has no trigonometric generators, so its hash is identical on both architectures. The value was
+  // captured from the pre-extraction exportSVG (ui-file-io.js at 350d986) on the same hand-built document.
+  test('rich: mask clip + optimized export + penId override + weightScale match the pre-extraction golden', () => {
+    buildRichDoc(window, app);
+    const ui = viaUi();
+    const built = viaBuilder();
+    expect(built).toBe(ui);
+    expect(ui).toContain('golden-frame-mask-clip');
+    expect(ui).toContain('pen_Pen_2');
+    expect(ui).toMatch(/stroke-width="0\.6"/);
+    goldenValues('export-svg-builder-rich').expect('rich/sha256', sha(ui));
   });
 
   test('the builder is side-effect free: a second build is identical and SETTINGS is untouched', () => {

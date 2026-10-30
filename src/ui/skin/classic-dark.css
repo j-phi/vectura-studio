@@ -86,3 +86,6 @@
   --plotter-path-base: rgba(113, 113, 122, 0.35);
   --plotter-head: var(--ui-accent);
 }
+
+/* Start Page: this skin's accent is near-white, so the shared white on-accent text would vanish on the primary button. */
+[data-ui-skin="classic-dark"] .sp { --ui-on-accent: #09090b; }

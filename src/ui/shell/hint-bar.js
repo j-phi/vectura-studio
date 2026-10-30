@@ -227,6 +227,7 @@
   // renderer.js. DOM writes only happen on diffs, so the per-frame cost is a
   // handful of property reads.
   const tick = () => {
+    if (Vectura.UI?.utils?.parkTicker?.(tick)) return; // Start Page open: park until it closes
     refresh();
     state.raf = typeof G.requestAnimationFrame === 'function'
       ? G.requestAnimationFrame(tick)

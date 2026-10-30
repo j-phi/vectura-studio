@@ -318,6 +318,7 @@
   };
 
   const tick = () => {
+    if (Vectura.UI?.utils?.parkTicker?.(tick)) return; // Start Page open: park until it closes
     const d = doc();
     if (!d || d.visibilityState !== 'hidden') {
       if (state.mounted || tryAutoMount()) sync();

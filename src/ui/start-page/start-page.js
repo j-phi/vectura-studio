@@ -260,6 +260,11 @@
       header.querySelector('#sp-rail-toggle').addEventListener('click', () => setRail(prefs().railCollapsed !== true));
       header.querySelector('#sp-motion-btn').addEventListener('click', () => setStill(prefs().motionStill !== true));
       root.addEventListener('keydown', (e) => {
+        // An open popover owns Escape even when focus sits on the button that opened it: close it, keep the page.
+        if (e.key === 'Escape' && !e.defaultPrevented) {
+          if (settings && settings.isOpen()) { e.preventDefault(); settings.close(true); return; }
+          if (cover && cover.words.isOpen()) { e.preventDefault(); cover.words.close(true); return; }
+        }
         if (e.key === 'Escape' && !e.defaultPrevented && hasLiveCanvas() && !document.querySelector('.vectura-modal-backdrop[style*="display: flex"]')) {
           e.preventDefault();
           ctl.hide();
@@ -333,11 +338,24 @@
     };
 
     /* ------------------------------------------------------------------ rail data */
+    // Building the live canvas export is a full plotter export. It is cached against a cheap fingerprint of the
+    // document (undo history length + newest entry, layer count), so a recolor, a mode click or a theme flip does
+    // not pay for it again; show() always starts fresh.
+    let liveCache = null;
+    const liveFingerprint = () => {
+      const hist = Array.isArray(app.history) ? app.history : [];
+      return { len: hist.length, last: hist[hist.length - 1], layers: (app.engine?.layers || []).length };
+    };
     const liveCanvasSvg = () => {
+      const fp = liveFingerprint();
+      if (liveCache && liveCache.len === fp.len && liveCache.last === fp.last && liveCache.layers === fp.layers) return liveCache.svg;
+      let svg = null;
       try {
         const doc = app.ui?.buildSvgDocument?.();
-        return doc && doc.svg ? Vectura.StartPageArtProvider.strokeSvg(doc.svg) : null;
-      } catch (_) { return null; }
+        svg = doc && doc.svg ? Vectura.StartPageArtProvider.strokeSvg(doc.svg) : null;
+      } catch (_) { svg = null; }
+      liveCache = { ...fp, svg };
+      return svg;
     };
     const renderRail = () => {
       if (!root || !railUI) return;
@@ -469,6 +487,7 @@
         if (!root) build();
         if (open) { render(); return; }
         open = true;
+        liveCache = null;
         returnFocus = document.activeElement;
         app.ui?.setTopMenuOpen?.(null, false);
         setEditorInert(true);

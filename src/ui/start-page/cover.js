@@ -171,8 +171,9 @@
     const buildMosaic = async (word, arts, animate, my) => {
       const chars = Words().letters(word);
       const assigned = Words().assignArts(chars.map((l) => l.ch), arts);
-      const svgs = await Promise.all(assigned.map((a) => a.getSvg().catch(() => '')));
-      if (my !== gen) return;
+      // Start every piece now, in letter order (the first-run renders queue one after another); each letter fills as its
+      // own piece arrives instead of the whole word waiting for the slowest one.
+      const svgPromises = assigned.map((a) => a.getSvg().catch(() => ''));
       const cws = ctx.colorwaysFor(assigned);
       const lines = splitLines(word);
       let k = 0;
@@ -184,7 +185,7 @@
             const a = assigned[i];
             const vw = h('span', { class: 'sp-vw', 'aria-hidden': 'true', 'data-ch': ch, text: ch });
             const btn = h('button', { type: 'button', class: 'sp-lt', 'data-k': String(i), 'data-art-id': a.id, 'aria-label': `${ch}, ${a.name.replace(/\.vectura$/, '')}. Open` }, vw);
-            tiles.push({ el: vw, art: a, cw: cws[i], k: i, kind: 'word', svg: svgs[i], ch });
+            tiles.push({ el: vw, art: a, cw: cws[i], k: i, kind: 'word', svg: '', ch });
             return btn;
           })),
           h('div', { class: 'sp-key-row', 'aria-hidden': 'true' })))));
@@ -205,11 +206,16 @@
       fitMosaic();
       const ink = Ink();
       const style = ctx.prefs().animateIn || 'plot';
-      const fills = tiles.map((t) => {
+      const stagger = tiles.length > 9 ? 110 : 170;
+      const started = Date.now();
+      const fills = tiles.map((t, j) => svgPromises[j].then((svg) => {
+        if (my !== gen) return null;
+        t.svg = svg;
         setCwData(t);
-        return ink.fillWord(t.el, t.ch, { id: t.art.id, svg: t.svg }, { fit: false, colorway: t.cw });
-      });
-      if (animates(animate)) tiles.forEach((t, j) => plotIn(t.el, { delay: 260 + j * (tiles.length > 9 ? 110 : 170), style }));
+        const p = ink.fillWord(t.el, t.ch, { id: t.art.id, svg }, { fit: false, colorway: t.cw });
+        if (animates(animate)) plotIn(t.el, { delay: Math.max(0, 260 + j * stagger - (Date.now() - started)), style });
+        return p;
+      }));
       await Promise.all(fills);
       if (my !== gen) return;
       renderKey();
@@ -224,15 +230,16 @@
       const svg = await art.getSvg().catch(() => '');
       if (my !== gen) return;
       const cw = ctx.colorwaysFor([art])[0];
-      const el = h('h1', { class: 'sp-xc-word', tabindex: '0', role: 'link', 'aria-label': `${word}, filled with ${art.name.replace(/\.vectura$/, '')}. Open the piece` }, word);
+      // The h1 stays the page's heading; the word inside it is a real button that opens the piece.
+      const el = h('button', { type: 'button', class: 'sp-xc-word', 'aria-label': `${word}, filled with ${art.name.replace(/\.vectura$/, '')}. Open the piece` }, word);
+      const heading = h('h1', { class: 'sp-xc-h' }, el);
       const cap = h('div', { class: 'sp-xc-cap' }, h('i', { class: 'sp-sw2' }), h('span', {}, h('b', { text: art.name.replace(/\.vectura$/, '') }), ` · ${art.algorithm || 'Piece'}`));
-      stage.append(el, cap);
+      stage.append(heading, cap);
       const t = { el, art, cw, k: 0, kind: 'word', svg, ch: word, cap };
       tiles.push(t); setCwData(t);
       cap.querySelector('.sp-sw2').style.setProperty('--p', cw.paper); cap.querySelector('.sp-sw2').style.setProperty('--i', cw.ink);
       const open = () => ctx.onOpen(art, tiles[0].cw);
-      el.addEventListener('click', open);
-      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+      el.addEventListener('click', open); // a native button: Enter and Space fire click
       try { if (G.document.fonts && G.document.fonts.ready) await G.document.fonts.ready; } catch (_) { /* noop */ }
       if (my !== gen) return;
       const ink = Ink();
@@ -265,8 +272,9 @@
       style.setProperty('--sp-text', cw.textInk || cw.ink);
       const p = Ink().mount(band, { id: art.id, svg }, { colorway: cw, fit: 'cover', pad: 0, label: false });
       setCwData(t);
-      // Text rides above the art layer: mount() appended the art box last, so lift the overlay content.
-      band.append(text, tools);
+      // Text rides above the art layer: mount() appended the art box last, so lift the overlay content. The fade
+      // that lets the art dissolve under the text is a gradient overlay element (never a CSS mask on the art).
+      band.append(h('div', { class: 'sp-pf-fade', 'aria-hidden': 'true' }), text, tools);
       return p.then(() => { if (animates(animate)) { plotIn(band, { delay: 120, duration: 1800, style: ctx.prefs().animateIn || 'plot' }); } });
     };
 

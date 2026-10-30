@@ -13,8 +13,10 @@
  * A work shows its stored thumbnail when that is an SVG (its paper-colored ground rect is removed so the
  * art recolors); otherwise its saved document is rendered once by StartPageArtRenderer. Picks are always
  * rendered. Every render is cached in IndexedDB, database `vectura-start-art`, store `thumbs`, keyed by
- * piece id + app version (a sibling of the recents database, so its schema is untouched); older versions
- * are pruned on first open. Without IndexedDB the cache lives in memory for the session.
+ * piece id + a hash of the piece's CONTENT (picks) or its last-opened stamp (works) + RENDER_VERSION (a sibling of
+ * the recents database, so its schema is untouched). The key does not carry the app version, so a patch release
+ * does not re-render anything; bump RENDER_VERSION when the renderer or an algorithm changes how pieces look.
+ * Entries from another RENDER_VERSION are pruned on first open. Without IndexedDB the cache lives in memory.
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -23,6 +25,7 @@
   const DB_NAME = 'vectura-start-art';
   const STORE = 'thumbs';
   const EVENT = 'vectura:recents-changed';
+  const RENDER_VERSION = 'r1';
   const FALLBACK_COLORS = Object.freeze({ paper: '#f4efe4', ink: '#111111', penName: 'Pen 1', paperName: 'Paper' });
 
   // ---------------------------------------------------------------- thumbs cache
@@ -99,6 +102,14 @@
     const m = /^\s*(?:<\?xml[^>]*\?>)?\s*<svg\b[^>]*>\s*<rect\b[^>]*\bfill="(#[0-9a-f]{3,8})"/i.exec(svg || '');
     return m ? m[1] : null;
   };
+  // FNV-1a over the JSON text: a cheap, stable content stamp for a preset (not a security hash).
+  const hashOf = (value) => {
+    let text = '';
+    try { text = JSON.stringify(value) || ''; } catch (_e) { text = String(value); }
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return h.toString(36);
+  };
   const isHex = (c) => typeof c === 'string' && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(c);
 
   const labelFor = (algorithm) => {
@@ -120,9 +131,8 @@
       || (Vectura.RecentsStore && Vectura.RecentsStore.shared && Vectura.RecentsStore.shared())
       || null;
     const getRenderer = () => opts.renderer || Vectura.StartPageArtRenderer;
-    const version = String(opts.version || Vectura.APP_VERSION || '0');
     const cache = opts.cache || createCache(
-      () => { try { return G.indexedDB || null; } catch (_e) { return null; } }, version);
+      () => { try { return G.indexedDB || null; } catch (_e) { return null; } }, RENDER_VERSION);
     const picksCfg = () => opts.picks || Vectura.START_PAGE_PICKS || { STUDIO_PICKS: [], PICK_NAMES: {}, collectionFor: () => 'Studies' };
     const presetsList = () => opts.presets || Vectura.PRESETS || [];
     const inflight = new Map();
@@ -190,7 +200,7 @@
           presetId: preset.id,
           ownColors: Object.assign({}, FALLBACK_COLORS),
           getSvg: async () => {
-            const rec = await cached(`pick:${preset.id}`, () => getRenderer().renderPreset(preset));
+            const rec = await cached(`pick:${preset.id}:${hashOf(preset)}`, () => getRenderer().renderPreset(preset));
             if (rec.ownColors) Object.assign(art.ownColors, rec.ownColors);
             return rec.svg;
           },
@@ -233,6 +243,8 @@
   const sharedSource = () => { if (!shared) shared = create(); return shared; };
   Vectura.StartPageArtSource = {
     create,
+    createCache,
+    RENDER_VERSION,
     list: () => sharedSource().list(),
     listRecentFirst: () => sharedSource().listRecentFirst(),
     subscribe: (fn) => sharedSource().subscribe(fn),

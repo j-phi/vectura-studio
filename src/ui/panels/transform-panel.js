@@ -380,6 +380,8 @@
     },
 
     tick() {
+      // Start Page open: park until it closes (one resume callback per controller)
+      if (Vectura.UI?.utils?.parkTicker?.(this._resume || (this._resume = () => this.tick()))) return;
       try { this.refresh(); } catch (_e) { /* stay resilient to mid-load state */ }
       const G2 = G;
       if (typeof G2.requestAnimationFrame === 'function') {

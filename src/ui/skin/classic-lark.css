@@ -97,3 +97,6 @@
 [data-ui-skin="classic-lark"] .light-pad {
   background: #ffffff;
 }
+
+/* Start Page: this skin's accent is near-white, so the shared white on-accent text would vanish on the primary button. */
+[data-ui-skin="classic-lark"] .sp { --ui-on-accent: #09090b; }

@@ -128,7 +128,7 @@ describe('StartPageArtSource', () => {
     expect(renders.doc).toBe(1);
   });
 
-  it('cache hit avoids re-render, across a fresh source (persisted) and not across app versions', async () => {
+  it('cache hit avoids re-render across a fresh source (persisted) and across app versions; changed content re-renders', async () => {
     const first = newSource();
     const [pick] = await first.list();
     await pick.getSvg();
@@ -142,9 +142,19 @@ describe('StartPageArtSource', () => {
     expect(pick2.ownColors.paper).toBe('#f4efe4');
     expect(renders.preset).toBe(0);
 
+    // A patch release (new app version) keeps the cache: the key is the piece's content, not the version.
     const next = newSource('10.0.0');
     const [pick3] = await next.list();
     await pick3.getSvg();
+    expect(renders.preset).toBe(0);
+
+    // The same id with different content is a different piece.
+    const edited = V.StartPageArtSource.create({
+      store, renderer, version: '10.0.0', picks: picks(),
+      presets: presets.map((p) => (p.id === 'wavetable-aa' ? { ...p, params: { amp: 2 } } : p)),
+    });
+    const [pick4] = await edited.list();
+    await pick4.getSvg();
     expect(renders.preset).toBe(1);
   });
 

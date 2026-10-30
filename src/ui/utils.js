@@ -241,7 +241,25 @@
     return { bind, refresh, bindPanes, PANE_SELECTORS };
   })();
 
+  // While the Start Page covers the editor (made inert) its idle requestAnimationFrame tickers (hint bar, context bar,
+  // breadcrumb, transform panel) have nothing to read. parkTicker(resume) returns true when the editor is covered and
+  // arranges for `resume` to run once the page closes ('vectura:start-page-hidden'); the caller then stops looping.
+  const editorParked = () => {
+    try { return document.documentElement.dataset.startPage === 'open'; } catch (_) { return false; }
+  };
+  const parkedTickers = new Set();
+  const parkTicker = (resume) => {
+    if (!editorParked() || typeof resume !== 'function') return false;
+    if (!parkedTickers.has(resume)) {
+      parkedTickers.add(resume);
+      window.addEventListener('vectura:start-page-hidden', () => { parkedTickers.delete(resume); resume(); }, { once: true });
+    }
+    return true;
+  };
+
   UI.utils = {
+    editorParked,
+    parkTicker,
     scrollCue,
     clamp,
     formatNumber,

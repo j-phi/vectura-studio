@@ -110,7 +110,7 @@ describe('StartPageArtRenderer', () => {
       const outs = await Promise.all(ids.map((id) => R.renderPreset(V.PRESETS.find((p) => p.id === id))));
       expect(outs).toHaveLength(3);
       expect(calls).toHaveLength(3);
-      expect(calls[0]).toEqual({ timeout: 1500 });
+      expect(calls[0]).toBeUndefined(); // no forcing timeout: a render waits for a genuinely idle moment
       expect(maxActive).toBe(1);
       expect(new Set(outs.map((o) => o.svg)).size).toBe(3);
     } finally {
