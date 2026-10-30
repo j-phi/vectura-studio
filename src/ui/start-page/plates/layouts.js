@@ -334,7 +334,8 @@
       const c = root._spl;
       if (!c || c.mounted || c.dead) return;
       if (root.isConnected) { mount(root); return; }
-      if (++n < 240) W.requestAnimationFrame(tick);
+      // The window may be gone by now (teardown, closed window): stop quietly.
+      if (++n < 240 && typeof W.requestAnimationFrame === 'function') W.requestAnimationFrame(tick);
     };
     W.requestAnimationFrame(tick);
   };

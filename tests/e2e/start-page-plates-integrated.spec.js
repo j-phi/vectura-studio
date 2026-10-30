@@ -176,7 +176,14 @@ test.describe('Start Page plates, integrated', () => {
     await row.click();
     await expect(page.locator('#start-page')).toBeHidden({ timeout: 15000 });
     const got = await page.evaluate(() => ({ name: window.app.documentName || null, recent: window.app.currentRecentId || null }));
-    expect(got.name).toBeNull();
+    // P4: reopening a recent keeps the file's own name (so Save does not rename it to a
+    // date) — and it is never a "(colorway)" fork.
+    const fileName = await page.evaluate(async (rid) => {
+      const e = (await window.Vectura.RecentsStore.shared().list()).find((x) => x.id === rid);
+      return e && e.name.replace(/\.vectura$/i, '');
+    }, id);
+    expect(got.name).toBe(fileName);
+    expect(got.name).not.toMatch(/\(colorway\)/);
     expect(got.recent).toBe(id);
   });
 });

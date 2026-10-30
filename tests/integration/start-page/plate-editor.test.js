@@ -427,6 +427,20 @@ describe('plate editor', () => {
       expect($('[data-spe-frame-controls]').hidden).toBe(false);
     });
 
+    it('framing scrolls the print into view instantly under Still, smoothly otherwise', () => {
+      const run = (still) => {
+        V.StartPageInk = { isStill: () => still };
+        const seen = [];
+        plateEl._pr.scrollIntoView = (o) => seen.push(o);
+        const h = open();
+        startFraming();
+        h.close();
+        return seen[0];
+      };
+      expect(run(true).behavior).toBe('auto');
+      expect(run(false).behavior).toBe('smooth');
+    });
+
     it('arrow keys nudge (Shift bigger), every nudge patches the frame and previews it on the art', () => {
       open();
       const pr = startFraming();

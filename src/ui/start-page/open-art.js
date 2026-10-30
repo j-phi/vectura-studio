@@ -13,11 +13,10 @@
  *
  * Special fills (iridescent, duotone, metallic, sunset) cannot be a plotter pen, so they freeze as the nearest
  * representative SOLID ink: the caller's own displayed ink when it supplies a hex, otherwise FILL_INKS[fill].
- * A duotone keeps ink and ink2 as its two solid pens. The fill itself is stashed in
- * `state.settings.startPageFill = { kind, ink, ink2|null }` so a future renderer could honor it. NOTE: the
- * importer (App.applyState) and App.captureState only handle an explicit list of settings keys, so the stash
- * survives into the opened document's payload but is dropped by a later Save; open() mirrors it onto
- * SETTINGS.startPageFill for the session.
+ * The plate draws every pen in the one ink, so every used pen (and layer) takes the ink; a duotone steps the used
+ * pens evenly from ink to ink2. The fill itself is stashed in `state.settings.startPageFill = { kind, ink, ink2|null }`
+ * so a renderer can honor it. applyState restores the stash onto SETTINGS.startPageFill and captureState writes it
+ * back, so it travels with the opened document (and a later Save) until New Canvas clears it.
  *
  * The opened document is a recolored COPY: dirty (unsaved), named "<name> (colorway)" or, as a template,
  * "<name> copy" (app.documentName), and detached from the recent it came from (app.currentRecentId = null), so
@@ -113,11 +112,22 @@
       // The theme must not recolor a pen the colorway chose.
       if (pen.id === 'pen-1' || typeof pen.themeManaged === 'boolean') pen.themeManaged = false;
     };
-    paint(used[0], ink);
-    if (used.length >= 2) paint(used[1], ink2);
+    // The plate draws EVERY pen in the one colorway ink (a duotone: a gradient from ink to ink2), so a solid-pen
+    // document gets the same: without ink2 every used pen is the ink; with ink2 the used pens step evenly from ink
+    // to ink2 (two pens: exactly ink and ink2).
+    const mix = (a, b, t) => {
+      const x = rgbOf(a); const y = rgbOf(b);
+      if (!x || !y) return a;
+      return `#${x.map((c, k) => Math.round(c + (y[k] - c) * t).toString(16).padStart(2, '0')).join('')}`;
+    };
+    const target = (i) => {
+      if (!ink2 || used.length < 2 || !ink) return ink;
+      return mix(ink, ink2, i / (used.length - 1));
+    };
+    used.forEach((pen, i) => paint(pen, target(i)));
     real.forEach((l) => {
       const pen = pens.find((p) => p && p.id === l.penId);
-      if (pen && (pen === used[0] || pen === used[1]) && hex6(pen.color)) l.color = pen.color;
+      if (pen && used.includes(pen) && hex6(pen.color)) l.color = pen.color;
       else if (!pen && used[0] && ink) { l.penId = used[0].id; l.color = used[0].color; }
     });
 

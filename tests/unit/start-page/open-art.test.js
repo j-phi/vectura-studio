@@ -109,10 +109,21 @@ describe('freezeColorway', () => {
     expect(pens.find((p) => p.id === 'pen-2').color).toBe('#445566');
   });
 
-  it('a two-pen document with no ink2 only recolors the primary pen', () => {
-    const pens = O.freezeColorway(doc(), { ...WILD, ink2: null }).state.settings.pens;
+  it('a two-pen document with no ink2 recolors EVERY used pen and layer in the ink (the plate draws all pens in one ink)', () => {
+    const out = O.freezeColorway(doc(), { ...WILD, ink2: null });
+    const pens = out.state.settings.pens;
     expect(pens.find((p) => p.id === 'pen-1').color).toBe('#e8c15a');
-    expect(pens.find((p) => p.id === 'pen-2').color).toBe('#445566');
+    expect(pens.find((p) => p.id === 'pen-2').color).toBe('#e8c15a');
+    expect(pens.find((p) => p.id === 'pen-3').color).toBe('#778899'); // unused: untouched
+    expect(out.state.engine.layers.map((l) => l.color)).toEqual(['#e8c15a', '#e8c15a', '#e8c15a']);
+  });
+
+  it('a three-pen duotone steps evenly from ink to ink2 (two pens: exactly ink, ink2)', () => {
+    const d = doc();
+    d.state.engine.layers = [layer('a', 'pen-1'), layer('b', 'pen-2'), layer('c', 'pen-3')];
+    const out = O.freezeColorway(d, { paper: '#000000', ink: '#000000', ink2: '#ffffff', fill: 'duotone' });
+    expect(out.state.settings.pens.map((p) => p.color)).toEqual(['#000000', '#808080', '#ffffff']);
+    expect(out.state.engine.layers.map((l) => l.color)).toEqual(['#000000', '#808080', '#ffffff']);
   });
 
   it('ignores groups and layers that point at an unknown pen (falls back to the first pen)', () => {
@@ -158,7 +169,7 @@ describe('freezeColorway', () => {
     const out = O.freezeColorway(doc(), { paper: '#fff', ink: '#abc', ink2: 'red' });
     expect(out.state.settings.paper.color).toBe('#ffffff');
     expect(out.state.settings.pens[0].color).toBe('#aabbcc');
-    expect(out.state.settings.pens[1].color).toBe('#445566');
+    expect(out.state.settings.pens[1].color).toBe('#aabbcc'); // every used pen takes the ink
     const bad = O.freezeColorway(doc(), { paper: 'url(x)', ink: '"><img>' });
     expect(bad.state.settings.paper.color).toBe('#f0e8d8');
     expect(bad.state.settings.pens[0].color).toBe('#112233');

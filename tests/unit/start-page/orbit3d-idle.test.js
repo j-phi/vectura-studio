@@ -1,6 +1,6 @@
 /**
  * Start Page live 3D models, idle cost + keyboard role (src/ui/start-page/orbit3d.js).
- * The idle sway redraws at ~24 fps (not the display rate), parks after ~20 s without interaction and resumes on
+ * The idle sway redraws at ~15 fps (not the display rate), parks after ~20 s without interaction and resumes on
  * pointer enter; the software z-buffer is reused while the view matrix is unchanged; the canvas is an operable
  * `application` whose name states the keys.
  */
@@ -47,13 +47,19 @@ describe('StartPageOrbit3D idle cost', () => {
   beforeEach(() => load());
   afterEach(() => dom.window.close());
 
-  it('the sway redraws at ~24 fps, not at the display rate', () => {
+  it('the sway redraws at ~15 fps, not at the display rate', () => {
     const el = W.document.getElementById('m');
     O.mount(el, { type: 'topoform', colorway: { paper: '#fff', ink: '#111' } });
     run(3000); // plot-in settled, idle threshold passed, sway eased in
     const renders = run(2000);
-    expect(renders).toBeGreaterThan(30); // it is still swaying
-    expect(renders).toBeLessThanOrEqual(54); // ~24 fps x 2 s (+ slack), a 60 fps loop would be ~120
+    expect(renders).toBeGreaterThan(18); // it is still swaying
+    expect(renders).toBeLessThanOrEqual(36); // ~15 fps x 2 s (+ slack), a 24 fps loop would be ~48, a 60 fps loop ~120
+  });
+
+  it('keeps the canvas on its own compositor layer so a sway frame never repaints the plate around it', () => {
+    const el = W.document.getElementById('m');
+    O.mount(el, { type: 'topoform', colorway: { paper: '#fff', ink: '#111' } });
+    expect(el.querySelector('canvas').style.willChange).toBe('transform');
   });
 
   it('the sway parks after ~20 s without interaction, schedules nothing, and resumes on pointer enter', () => {

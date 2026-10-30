@@ -138,9 +138,11 @@
         this.openModal({ title: 'Invalid File', body: errBody });
       };
       // TUX-053: reject a non-JSON file from its first bytes before the full read.
-      sniffJsonHead(file).then((ok) => {
-        if (!ok) { rejectInvalid(); return; }
-        this._readVecturaFile(file, opts);
+      // Resolves true once the file loaded. A reopen from Recents (`fromRecent`) fails quietly: its caller falls
+      // back to the stored copy.
+      return sniffJsonHead(file).then((ok) => {
+        if (!ok) { if (!opts.fromRecent) rejectInvalid(); return false; }
+        return this._readVecturaFile(file, opts);
       });
     },
 
@@ -184,21 +186,27 @@
     },
 
     _readVecturaFile(file, opts = {}) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        let parsed = null;
-        try { parsed = JSON.parse(reader.result); } catch (_) { parsed = null; }
-        if (!this.loadVecturaPayload(parsed)) return;
-        // Recents: every successful Open records a full copy (and the handle, when there is one).
-        this.app.recents?.record({ source: 'open', name: file.name || 'untitled.vectura', handle: opts.handle || null, payload: parsed });
-        this.app.startPage?.hide?.({ restoreFocus: false });
-      };
-      reader.readAsText(file);
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onerror = () => resolve(false);
+        reader.onload = () => {
+          let parsed = null;
+          try { parsed = JSON.parse(reader.result); } catch (_) { parsed = null; }
+          if (opts.fromRecent && !(parsed && (parsed.state || parsed).engine && (parsed.state || parsed).settings)) { resolve(false); return; }
+          if (!this.loadVecturaPayload(parsed, { name: file.name })) { resolve(false); return; }
+          // Recents: every successful Open records a full copy (and the handle, when there is one).
+          this.app.recents?.record({ source: 'open', name: file.name || 'untitled.vectura', handle: opts.handle || null, payload: parsed });
+          this.app.startPage?.hide?.({ restoreFocus: false });
+          resolve(true);
+        };
+        reader.readAsText(file);
+      });
     },
 
     // Apply a parsed .vectura object. Returns true when it loaded; on failure the editor is rolled back and
     // the user is told. `quiet` skips the "Project loaded" toast (callers that have their own message).
-    loadVecturaPayload(parsed, { quiet = false } = {}) {
+    // `name`: the file (or recent) the document came from; Save then keeps it ("Riverbed.vectura" -> "Riverbed").
+    loadVecturaPayload(parsed, { quiet = false, name = null } = {}) {
       // Snapshot BEFORE any mutation. If parse/apply throws mid-flight we
       // roll the engine + SETTINGS back so the user is never stranded with
       // a half-loaded project. Bugs-9.
@@ -253,7 +261,10 @@
       this.app.pushHistory();
       this.app.markDocumentClean?.();
       this.app.currentRecentId = null; // set again by recents.record() for the opened file
-      this.app.documentName = null; // a colorway copy sets its name again after this returns
+      // The opened file's name (minus .vectura) so Save downloads under it and its recent keeps its name; a colorway
+      // copy sets its own name again after this returns.
+      const opened = typeof name === 'string' ? name.replace(/\.vectura$/i, '').trim() : '';
+      this.app.documentName = opened || null;
       if (!quiet) toast('Project loaded', 'success');
       return true;
     },

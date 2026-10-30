@@ -37,7 +37,17 @@
     try { return T.show({ message, variant, duration: action ? 8000 : 3500, ...(action ? { action } : {}) }); } catch (_) { return null; }
   };
 
-  const svgToDataUri = (svg) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  // Encoding a thumbnail SVG (up to 250 KB) is costly and list() hands out the same immutable string on every render,
+  // so the encoded URI is cached per SVG string (small LRU).
+  const URI_CACHE_MAX = 64;
+  const uriCache = new Map();
+  const svgToDataUri = (svg) => {
+    if (uriCache.has(svg)) { const hit = uriCache.get(svg); uriCache.delete(svg); uriCache.set(svg, hit); return hit; }
+    const uri = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    uriCache.set(svg, uri);
+    if (uriCache.size > URI_CACHE_MAX) uriCache.delete(uriCache.keys().next().value);
+    return uri;
+  };
 
   // Re-shape the export SVG into a thumbnail: no mm size (it scales to its box) and a paper-colored ground.
   const thumbSvg = (svg, paperColor) => {
@@ -73,7 +83,9 @@
 
   const create = (app) => {
     const factory = Vectura.RecentsStore;
-    const store = factory && typeof factory.create === 'function' ? factory.create() : null;
+    const store = factory && typeof factory.create === 'function'
+      ? factory.create({ onWriteFailure: () => toast("This browser couldn't keep a saved copy of your work for Recents; it stays open in this tab.", 'warning') })
+      : null;
     const listeners = new Set();
     let entries = [];
     let menuEls = null;
@@ -201,9 +213,9 @@
             if (perm !== 'granted' && typeof handle.requestPermission === 'function') perm = await handle.requestPermission({ mode: 'read' });
             if (perm === 'granted') {
               const file = await handle.getFile();
-              app.startPage?.hide?.({ restoreFocus: false });
-              app.ui.openVecturaFile(file, { handle, fromRecent: true });
-              return true;
+              // Validated first: the page is hidden only once the file really opened (openVecturaFile hides it).
+              const opened = await app.ui.openVecturaFile(file, { handle, fromRecent: true });
+              if (opened !== false) return true;
             }
           } catch (_) { /* fall through to the stored copy */ }
         }
@@ -216,7 +228,8 @@
         const ok = app.ui.loadVecturaPayload(payload, { name: entry.name, quiet: true });
         if (ok) {
           toast(`Opened your saved copy from ${relativeTime(entry.lastOpened)}`, 'info');
-          await ctl.record({ source: 'open', name: entry.name, payload });
+          // id: update this recent in place (a name alone never identifies a work).
+          await ctl.record({ source: 'open', name: entry.name, payload, id: entry.id });
         }
         return ok;
       },

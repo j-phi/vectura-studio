@@ -533,9 +533,10 @@ Chromium's `showOpenFilePicker`, so `filechooser` events keep working.
 
 ### Start Page tests
 
-- `tests/unit/start-page/`: pure modules (colorway, cover words, plate rhythm and fills, arrange, draw styles, lift card, motion wiring, orbit3d, open-art, stores, pre-rendered picks).
-- `tests/integration/start-page/`: shell, cover, plates section and editor, picks and community, review fixes (jsdom).
-- `tests/e2e/start-page-*.spec.js`: browser specs (shell, cover, plates, hover effects, P3 motion), each opting in with `?startPage=launch`.
+- `tests/unit/start-page/`: pure modules (colorway, cover words, plate rhythm and fills, arrange, draw styles, lift card, motion wiring, orbit3d, open-art, stores, pre-rendered picks, `no-mask-image` guard).
+- `tests/unit/modals/help-start-page.test.js`: pins the Start Page rows of the in-app help guide and shortcut list (keys, once each, US spelling).
+- `tests/integration/start-page/`: shell, cover, plates section and editor, picks and community, review fixes, save name (jsdom).
+- `tests/e2e/start-page-*.spec.js`: browser specs (shell, cover, plates, hover effects, P3 motion, review fixes, accessibility), each opting in with `?startPage=launch`.
 - `tests/e2e/touch/start-page-arrange.spec.js`: touch Arrange.
 
 ## Writing New Tests

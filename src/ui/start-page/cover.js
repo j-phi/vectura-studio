@@ -22,7 +22,10 @@
   const DRAW_MS = 1250;
   // The page's "Art animates in" default as a registered draw style (the preference enum is hyphenated).
   const animStyle = (prefs) => { const M = Vectura.StartPageMotion; return M ? M.styleId(prefs && prefs.animateIn) : ((prefs && prefs.animateIn) || 'plot'); };
-  const reducedMotion = () => { try { return G.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; } };
+  const reducedMotion = () => {
+    try { const ink = Vectura.StartPageInk; if (ink && typeof ink.isStill === 'function' && ink.isStill()) return true; } catch (_) { /* fall through */ }
+    try { return G.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; }
+  };
 
   const create = (ctx) => {
     const { h, pad2 } = Vectura.StartPageDom;
@@ -42,7 +45,9 @@
     const pickBtn = h('button', { type: 'button', id: 'sp-word-btn', class: 'sp-word-btn', 'aria-label': 'Choose the cover word', title: 'Choose the cover word', html: Vectura.StartPageIcons.pencil });
     const kick = h('span', { class: 'sp-cv-kick-tx', id: 'sp-cv-kick' });
     const info = h('span', { class: 'sp-cv-info', id: 'sp-cv-info' });
-    top.append(h('span', { class: 'sp-cv-kick' }, pickBtn, kick), info);
+    // Colorways fan for the piece the cover shows (band / word: the one piece; mosaic: the letter last hovered or focused).
+    const fanBtn = h('button', { type: 'button', class: 'sp-cv-fan', id: 'sp-cv-fan', hidden: true, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', title: 'See this piece in other colorways' }, 'Colorways');
+    top.append(h('span', { class: 'sp-cv-kick' }, pickBtn, kick), h('span', { class: 'sp-cv-end' }, info, fanBtn));
     const stage = h('div', { class: 'sp-cv-stage', id: 'sp-cv-stage' });
     const who = h('div', { class: 'sp-cv-who', id: 'sp-cv-who' });
     host.append(top, stage, who);
@@ -55,7 +60,38 @@
     const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
     const clearTimers = () => { timers.forEach((t) => clearTimeout(t)); timers = []; };
 
+    let fanHandle = null;
+    let fanTile = 0; // mosaic: k of the letter the fan follows
+    const closeFan = () => { if (fanHandle) { try { fanHandle.close(false, true); } catch (_) { /* noop */ } fanHandle = null; } };
+    const fanTarget = () => (host.dataset.style === 'mosaic' ? (tiles.find((t) => t.k === fanTile) || tiles[0]) : tiles[0]);
+    const themeKey = () => {
+      if (typeof ctx.theme === 'function') return ctx.theme();
+      const id = String((Vectura.SETTINGS && Vectura.SETTINGS.uiTheme) || 'dark');
+      return /lark/.test(id) ? 'lark' : (/light/.test(id) ? 'light' : 'dark');
+    };
+    const syncFanBtn = () => {
+      const t = fanTarget();
+      fanBtn.hidden = !t;
+      if (t) fanBtn.setAttribute('aria-label', `Colorways of ${String(t.art.name || 'this piece').replace(/\.vectura$/, '')}`);
+    };
+    const openFan = () => {
+      const t = fanTarget();
+      const Fan = (Vectura.UI && Vectura.UI.StartPageFan) || UI.StartPageFan;
+      if (!t || !Fan || typeof Fan.open !== 'function') return;
+      closeFan();
+      const p = ctx.prefs();
+      const mode = typeof ctx.mode === 'function' ? ctx.mode() : (p.seed ? 'random' : (p.colorMode || 'curated'));
+      let alternates = [];
+      try {
+        alternates = typeof ctx.alternatesFor === 'function' ? ctx.alternatesFor(t.art, 4)
+          : Vectura.StartPageColorway.alternates(0, t.art.id, 4, { mode, seed: p.seed || undefined, theme: themeKey(), works: [{ id: t.art.id }] });
+      } catch (err) { if (G.console) G.console.warn('[Cover] alternates failed', err); }
+      fanHandle = Fan.open(fanBtn, { art: t.art, index: 0, alternates, onPick: (cw) => ctx.onOpen(t.art, cw, { asTemplate: false }), onClose: () => { fanHandle = null; } });
+    };
+    fanBtn.addEventListener('click', openFan);
+
     const teardown = () => {
+      closeFan();
       clearTimers();
       if (ro) { ro.disconnect(); ro = null; }
       editors.forEach((e) => e.destroy && e.destroy());
@@ -222,6 +258,7 @@
             const a = assigned[i];
             const vw = h('span', { class: 'sp-vw', 'aria-hidden': 'true', 'data-ch': ch, text: ch });
             const btn = h('button', { type: 'button', class: 'sp-lt', 'data-k': String(i), 'data-art-id': a.id, 'aria-label': `${ch}, ${a.name.replace(/\.vectura$/, '')}. Open` }, vw);
+            vw.style.setProperty('--sp-ph', cws[i].paper); // the placeholder leans toward its final paper until the art arrives
             tiles.push({ el: vw, art: a, cw: cws[i], k: i, kind: 'word', svg: '', ch });
             return btn;
           })),
@@ -233,7 +270,7 @@
         const t = tiles.find((x) => x.k === Number(b.dataset.k));
         if (t) ctx.onOpen(t.art, t.cw);
       });
-      const over = (e) => { const b = e.target.closest && e.target.closest('.sp-lt'); if (b) showKey(Number(b.dataset.k)); };
+      const over = (e) => { const b = e.target.closest && e.target.closest('.sp-lt'); if (b) { fanTile = Number(b.dataset.k); syncFanBtn(); showKey(fanTile); } };
       wrap.addEventListener('pointerover', over);
       wrap.addEventListener('focusin', over);
       wrap.addEventListener('pointerleave', hideKey);
@@ -422,7 +459,9 @@
       if (override) arts = [override.art, ...arts.filter((a) => a.id !== override.art.id)];
       const usingPicks = arts.length > 0 && arts.every((a) => a.kind === 'pick');
       renderInfo(style, arts, word, usingPicks);
+      fanTile = 0;
       if (!arts.length) {
+        fanBtn.hidden = true;
         buildEmpty(word);
         renderWho(style);
         return;
@@ -432,6 +471,7 @@
       else await buildBand(word, arts, animate, my);
       if (my !== gen) return;
       renderWho(style);
+      syncFanBtn();
       if (style === 'band') { const slot = stage.querySelector('.sp-pf:not(.sp-pf-old) .sp-pf-who'); if (slot && !slot.childNodes.length && !prefs.showName) slot.append(h('h1', { class: 'sp-cv-word', text: word })); }
     };
 

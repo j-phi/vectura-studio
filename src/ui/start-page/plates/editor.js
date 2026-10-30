@@ -609,7 +609,7 @@
       pr.addEventListener('wheel', printWheel, { passive: false }); pr.addEventListener('click', printClick, true);
       frToggle.setAttribute('aria-pressed', 'true'); frCtl.hidden = false;
       const det = frToggle.closest('details'); if (det) det.open = true;
-      try { if (pr.scrollIntoView) pr.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { /* ignore */ }
+      try { if (pr.scrollIntoView) pr.scrollIntoView({ block: 'nearest', behavior: (Vectura.StartPageInk && typeof Vectura.StartPageInk.isStill === 'function' && Vectura.StartPageInk.isStill()) ? 'auto' : 'smooth' }); } catch (e) { /* ignore */ }
       pr.focus({ preventScroll: true });
     };
     const endFraming = (focusToggle) => {

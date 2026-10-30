@@ -50,20 +50,31 @@
     // A stored thumbnail (SVG or PNG) painted in the work's colorway: strokes become the ink color on the paper, so a
     // raw dark-on-dark thumb never reads as a black block. The plain <img> stays in place until the tint lands and is the
     // permanent fallback, so the thumbnail is never blank.
+    // Only the head of the data URL can hold the viewBox: decoding a 1 MB thumbnail to read 40 characters is waste.
     const svgViewBox = (src) => {
       if (typeof src !== 'string' || !src.startsWith('data:image/svg+xml')) return null;
-      try {
-        const text = decodeURIComponent(src.slice(src.indexOf(',') + 1));
-        const m = /<svg\b[^>]*\bviewBox="([^"]+)"/.exec(text);
-        const v = m ? m[1].trim().split(/[\s,]+/).map(Number) : null;
-        return v && v.length === 4 && v[2] > 0 && v[3] > 0 && v.every(Number.isFinite) ? v : null;
-      } catch (_) { return null; }
+      const head = src.slice(src.indexOf(',') + 1, src.indexOf(',') + 1 + 4096).replace(/%[0-9A-Fa-f]?$/, '');
+      let text = '';
+      try { text = decodeURIComponent(head); } catch (_) {
+        // a multi-byte sequence cut at the end of the slice: drop the tail until it decodes
+        for (let n = head.length - 1; n > head.length - 12 && !text; n--) { try { text = decodeURIComponent(head.slice(0, n)); } catch (_e) { /* keep trimming */ } }
+      }
+      const m = /<svg\b[^>]*\bviewBox="([^"]+)"/.exec(text);
+      const v = m ? m[1].trim().split(/[\s,]+/).map(Number) : null;
+      return v && v.length === 4 && v[2] > 0 && v[3] > 0 && v.every(Number.isFinite) ? v : null;
     };
-    const tintInto = (host, src, cw) => {
-      const img = h('img', { alt: '', src });
-      host.append(img);
-      if (!cw || !cw.ink || !cw.paper || typeof document === 'undefined') return;
+    // One finished tint per (thumbnail, ink, paper). The rail and the colophon strip show the same files, so the second
+    // copy (and every re-render) is a canvas blit, not another decode + 512 px readback + per-pixel pass.
+    const TINT_MAX = 24;
+    const tints = new Map(); // key -> Promise<{canvas, paper}|null>
+    const tintKey = (src, cw) => {
+      let sample = '';
+      for (let i = 0; i < src.length; i += Math.max(1, src.length >> 6)) sample += src[i]; // a strided fingerprint, never the whole text
+      return `${src.length}:${sample}:${src.slice(-64)}|${cw.ink}|${cw.paper}`;
+    };
+    const buildTint = (src, cw) => new Promise((resolve) => {
       const probe = new G.Image();
+      probe.onerror = () => resolve(null);
       probe.onload = () => {
         try {
           const dpr = Math.max(1, Math.min(3, G.devicePixelRatio || 1));
@@ -85,7 +96,7 @@
           const bgA = d[3];
           const bg = [d[0], d[1], d[2]];
           const ink = [parseInt(cw.ink.slice(1, 3), 16), parseInt(cw.ink.slice(3, 5), 16), parseInt(cw.ink.slice(5, 7), 16)];
-          if (ink.some((v) => Number.isNaN(v))) return;
+          if (ink.some((v) => Number.isNaN(v))) { resolve(null); return; }
           for (let i = 0; i < d.length; i += 4) {
             const a = d[i + 3] / 255;
             const dist = bgA > 200 ? Math.max(Math.abs(d[i] - bg[0]), Math.abs(d[i + 1] - bg[1]), Math.abs(d[i + 2] - bg[2])) / 255 : 1;
@@ -93,18 +104,53 @@
             d[i] = ink[0]; d[i + 1] = ink[1]; d[i + 2] = ink[2]; d[i + 3] = Math.round(alpha * 255);
           }
           ctx.putImageData(px, 0, 0);
+          resolve(cv);
+        } catch (_) { resolve(null); /* keep the plain image */ }
+      };
+      probe.src = src;
+    });
+    const tintInto = (host, src, cw) => {
+      const img = h('img', { alt: '', src });
+      host.append(img);
+      if (!cw || !cw.ink || !cw.paper || typeof document === 'undefined') return;
+      const key = tintKey(src, cw);
+      let job = tints.get(key);
+      if (!job) {
+        job = buildTint(src, cw);
+        tints.set(key, job);
+        while (tints.size > TINT_MAX) tints.delete(tints.keys().next().value);
+      } else { tints.delete(key); tints.set(key, job); } // most recently used last
+      job.then((made) => {
+        if (!made) { if (tints.get(key) === job) tints.delete(key); return; }
+        try {
+          const cv = document.createElement('canvas');
+          cv.width = made.width; cv.height = made.height;
+          cv.getContext('2d').drawImage(made, 0, 0);
           cv.className = 'sp-tint';
           cv.setAttribute('aria-hidden', 'true');
           host.style.background = cw.paper;
           host.append(cv);
           img.remove();
         } catch (_) { /* keep the plain image */ }
-      };
-      probe.src = src;
+      });
+    };
+
+    // thumbSrc encodes the whole SVG (encodeURIComponent over up to 1 MB) on every call; the rail and the colophon strip
+    // ask for the same entry twice per render, so the encoded URL is kept per entry stamp.
+    const srcCache = new Map();
+    const srcOf = (app, entry) => {
+      const t = entry && entry.thumb;
+      if (!t || !t.data) return app.recents?.thumbSrc(entry);
+      const key = `${entry.id}:${entry.lastOpened}:${t.kind}:${t.data.length}`;
+      if (srcCache.has(key)) return srcCache.get(key);
+      const src = app.recents?.thumbSrc(entry);
+      srcCache.set(key, src);
+      while (srcCache.size > 24) srcCache.delete(srcCache.keys().next().value);
+      return src;
     };
 
     const thumbImg = (app, entry, cw) => {
-      const src = app.recents?.thumbSrc(entry);
+      const src = srcOf(app, entry);
       const th = h('span', { class: 'sp-thumb' });
       if (src) tintInto(th, src, cw);
       return th;
@@ -154,7 +200,7 @@
           h('span', { class: 'sp-nm', text: e.name }),
           h('span', { class: 'sp-mt', text: `${e.algorithm} · ${app.recents.relativeTime(e.lastOpened)}` })));
         // the file shows in its own colors (resumeColorway = the file's own paper and ink, or null for the plain thumbnail)
-        const resumeSrc = app.recents.thumbSrc(e);
+        const resumeSrc = srcOf(app, e);
         if (resumeSvg && resumeColorway) mountResume(cth, resumeSvg, resumeColorway);
         else if (resumeSrc) tintInto(cth, resumeSrc, resumeColorway || cwOf(e));
         rest = entries.slice(1);

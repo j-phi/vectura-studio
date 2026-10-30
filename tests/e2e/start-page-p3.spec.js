@@ -220,13 +220,31 @@ test.describe('Start Page P3', () => {
     // the band, with the 3D piece as the cover
     await page.locator('#sp-settings-btn').click();
     await page.locator('#sp-settings .sp-style[data-style="band"]').click();
+    await expect(page.locator('#sp-settings .sp-style[data-style="band"]')).toHaveAttribute('aria-checked', 'true');
+    // Esc closes the popover only while it is open; pressed any later it leaves the Start Page.
+    await expect(page.locator('#sp-settings')).toBeVisible();
     await page.keyboard.press('Escape');
+    await expect(page.locator('#sp-settings')).toBeHidden();
+    await expect(page.locator('#start-page')).toBeVisible();
     await page.locator('.sp-pl').nth(1).locator('[data-act="cover"]').click();
     const band = page.locator('.sp-pf:not(.sp-pf-old) .vorbit, .sp-pf.vorbit');
     await expect(band.first()).toBeAttached({ timeout: 10000 });
-    await band.first().scrollIntoViewIfNeeded();
-    await expect(page.locator('.sp-pf-old')).toHaveCount(0, { timeout: 15000 }); // the cover crossfade has finished
-    await expect.poll(() => band.first().evaluate((e) => (e._vorbit ? e._vorbit.plotted : 0)), { timeout: 15000 }).toBe(1);
+    // Wait for the cover crossfade to finish first: until then the band node can still be
+    // swapped out, and scrolling it fails with "Element is not attached to the DOM".
+    await expect(page.locator('.sp-pf-old')).toHaveCount(0, { timeout: 15000 });
+    // The cover may render once more after "Use as cover" settles (PRH-128); retry the scroll
+    // against whichever band node is current.
+    await expect(async () => {
+      await band.first().scrollIntoViewIfNeeded({ timeout: 2000 });
+      expect(await band.first().evaluate((e) => (e._vorbit ? e._vorbit.plotted : 0))).toBe(1);
+    }).toPass({ timeout: 15000 });
+    // Under load "Use as cover" can settle with one more cover render; wait until the same
+    // model node has been in place for two consecutive polls before dragging it.
+    let seen = null;
+    await expect.poll(async () => {
+      const tag = await band.first().evaluate((e) => { if (!e._vorbit) return null; e.dataset.t = e.dataset.t || String(Math.random()); return e.dataset.t; });
+      const same = tag && tag === seen; seen = tag; return same;
+    }, { timeout: 15000, intervals: [250] }).toBe(true);
     const bm0 = await band.first().evaluate((e) => e._vorbit.matrix.join(','));
     const bb = await band.first().locator('canvas').boundingBox();
     await page.mouse.move(bb.x + bb.width * 0.7, bb.y + bb.height * 0.5);

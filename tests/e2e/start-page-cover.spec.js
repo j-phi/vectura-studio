@@ -110,4 +110,72 @@ test.describe('Start Page cover', () => {
       expect(inside.top).toBeGreaterThanOrEqual(-0.5);
     });
   }
+
+  test('cover Colorways fan: opens in the chosen colorway through StartPageOpenArt, Esc returns focus, Still stills it', async ({ page }) => {
+    await bootWithWorks(page);
+    await page.evaluate(() => { window.Vectura.SETTINGS.startPage.coverStyle = 'band'; window.app.startPage.render(); });
+    const btn = page.locator('#start-page .sp-cv-fan');
+    await expect(btn).toBeVisible();
+    await btn.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.sp-fan .sp-fan-card')).toHaveCount(4);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.sp-fan')).toHaveCount(0);
+    await expect(btn).toBeFocused();
+    await page.evaluate(() => window.Vectura.StartPageInk.setMotion({ still: true }));
+    await btn.click();
+    await expect(page.locator('.sp-fan.still')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => window.Vectura.StartPageInk.setMotion({ still: false }));
+    await page.evaluate(() => {
+      const O = window.Vectura.StartPageOpenArt; const orig = O.open;
+      window.__picked = null;
+      O.open = (art, cw, o) => { window.__picked = cw; return orig.call(O, art, cw, o); };
+    });
+    await btn.click();
+    await page.locator('.sp-fan .sp-fan-card').nth(2).click();
+    // The seeded canvas is unsaved, so opening asks before replacing it.
+    await page.locator('.vectura-modal-backdrop button', { hasText: /^Open$/ }).click();
+    await expect(page.locator('#start-page')).toBeHidden({ timeout: 15000 });
+    const got = await page.evaluate(() => ({ picked: window.__picked, paper: (window.Vectura.SETTINGS.paper || {}).color, ink: window.Vectura.SETTINGS.pens[0].color }));
+    expect(got.picked).toBeTruthy();
+    expect(got.paper.toLowerCase()).toBe(got.picked.paper.toLowerCase());
+    expect(got.ink.toLowerCase()).toBe(got.picked.ink.toLowerCase());
+  });
+
+  test('fan captions and heading are fully readable at 400 px', async ({ page }) => {
+    await page.setViewportSize({ width: 400, height: 800 });
+    await bootWithWorks(page);
+    await page.evaluate(() => { window.Vectura.SETTINGS.startPage.coverStyle = 'band'; window.app.startPage.render(); });
+    await page.locator('#start-page .sp-cv-fan').click();
+    await expect(page.locator('.sp-fan .sp-fan-card')).toHaveCount(4);
+    await page.waitForTimeout(700);
+    const m = await page.evaluate(() => ({
+      caps: [...document.querySelectorAll('.sp-fan-cap')].map((c) => ({ w: c.scrollWidth - c.clientWidth, h: c.scrollHeight - c.clientHeight, ell: getComputedStyle(c).textOverflow })),
+      head: (() => { const r = document.querySelector('.sp-fan-head').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top }; })(),
+    }));
+    m.caps.forEach((c) => { expect(c.w).toBeLessThanOrEqual(1); expect(c.h).toBeLessThanOrEqual(1); expect(c.ell).not.toBe('ellipsis'); });
+    expect(m.head.l).toBeGreaterThanOrEqual(0);
+    expect(m.head.r).toBeLessThanOrEqual(400.5);
+    expect(m.head.t).toBeGreaterThanOrEqual(0);
+  });
+
+  test('narrow: colophon scrolls with the page, hints hidden, Tab starts at the top', async ({ page }) => {
+    await page.setViewportSize({ width: 400, height: 800 });
+    await bootWithWorks(page);
+    await expect.poll(() => page.evaluate(() => document.querySelector('#sp-colo-wrap').parentElement.id)).toBe('sp-scroll');
+    await expect(page.locator('#sp-colo-wrap .sp-co-btn kbd').first()).toBeHidden();
+    const hdr = await page.evaluate(() => document.querySelector('.sp-hdr').getBoundingClientRect().bottom);
+    expect(hdr).toBeLessThan(60);
+  });
+
+  test('wide: initial focus is at the top of the page and Tab visits header before cover before rail', async ({ page }) => {
+    await bootWithWorks(page);
+    await page.evaluate(() => { window.app.startPage.hide({ restoreFocus: false }); window.app.startPage.show(); });
+    await expect.poll(() => page.evaluate(() => !!document.activeElement.closest('.sp-hdr'))).toBe(true);
+    const order = await page.evaluate(() => { const r = document.querySelector('#start-page'); const a = [...r.querySelectorAll('button')].filter((b) => b.getClientRects().length && !b.closest('[inert]')); const idx = (sel) => a.findIndex((b) => b.matches(sel) || b.closest(sel)); return { skip: [...r.querySelectorAll('button')][0].dataset.act, hdr: idx('.sp-hdr'), cover: idx('#sp-cover'), rail: idx('#sp-rail') }; });
+    expect(order.skip).toBe('skip');
+    expect(order.hdr).toBeLessThan(order.cover);
+    expect(order.cover).toBeLessThan(order.rail);
+  });
 });

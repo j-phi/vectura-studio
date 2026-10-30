@@ -180,4 +180,16 @@ describe('StartPagePlatesStore', () => {
     expect(told).toBe(1);
     expect((await st.load()).plates).toHaveLength(2);
   });
+
+  it('onFallback fires once when a write fails (quota / abort), and the edit still lives in memory', async () => {
+    let told = 0;
+    const st = S.create({ indexedDB: () => idb, onFallback: () => { told += 1; } });
+    await st.load();
+    idb.failPut = (name) => { const e = new Error('full'); e.name = 'QuotaExceededError'; return name === 'plates' ? e : null; };
+    await st.upsert('w1', { layout: 'x' });
+    await st.upsert('w2', { layout: 'y' });
+    idb.failPut = null;
+    expect(told).toBe(1);
+    expect((await st.load()).plates.map((p) => p.id).sort()).toEqual(['w1', 'w2']);
+  });
 });

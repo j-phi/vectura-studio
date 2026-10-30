@@ -205,7 +205,7 @@ Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar wit
 - **Start Page (phase P0):** on launch the page covers the editor. The rail offers New blank canvas (`Cmd/Ctrl+N`) with paper-size chips A4, A3, Letter and 9×12, Open file (`Cmd/Ctrl+O`), Resume (the current canvas, or the newest recent) and Recent (thumbnails), plus a **Show Start Page on launch** checkbox. The main column is an empty state for now (P1 replaces it with the cover below)
 - **Cover (phase P1):** the main column shows a cover in one of three styles, chosen in Settings: **Name in Ink** (default; each letter is filled with a different piece of your work, topped up with studio picks), **Cover Specimen** and **Portfolio band**
 - **Name and practice line (phase P1):** both are click-to-edit. Settings has **Show name** and **Show practice line** (both off by default). A word picker offers Vectura, Vectura Studio, Last name, First + Last, Studies, Botanicals, Experiments and Custom
-- **Color controls (phase P1):** Curated, Mono, Basic and Wildcard schemes, plus a seeded **Randomize**. Schemes are built on the real paper and pen catalogue, hold text at ≥ 4.5:1 and art at ≥ 3:1 contrast, and avoid near-identical neighbors. Resume and Recent thumbnails are tinted to the colorway
+- **Color controls (phase P1):** Curated, Mono, Basic and Wildcard schemes, plus a seeded **Randomize**. Schemes are built on the real paper and pen catalog, hold text at ≥ 4.5:1 and art at ≥ 3:1 contrast, and avoid near-identical neighbors. Resume and Recent thumbnails are tinted to the colorway
 - **Header (phase P1):** the rail collapses into a colophon strip, which is remembered and always used at 900 px or less. The header adds a Settings gear, an animation toggle (**Still**) and the theme toggle. Turning Still on persists the choice and auto-enables cookie saving, with Undo
 - **Plates (phase P2):** your work set as an editorial run, one plate per work, in 16 layouts on a named palette of 32 plate colorways (12 light papers, 10 color grounds, 10 darks). A rhythm keeps two darks from being adjacent and keeps near-identical neighbors apart. **Show** (default 5) limits the run and reads "Showing x of N". Plates persist in IndexedDB
 - **Plate editor (phase P2):** words and title and description with suggestions; a layout picker with a suggested layout; a grouped colorway picker plus **the file's own colors**; manual Artwork, Text and Background colors with special fills (Iridescent, Iridescent animated, Duotone, Metallic gold and silver, Sunset); contrast warnings; **Frame art** (drag, scale, Fit / Fill, keyboard); per-plate motion; Undo and reset. **Edit** appears only in Curated and Basic; other modes keep saved edits hidden but intact
@@ -459,6 +459,8 @@ Click `Export SVG` to download.
 | New canvas | `Cmd/Ctrl+N` |
 | Reopen recent 1–8 | `Alt/Option+Cmd/Ctrl+1` to `8` |
 | Move plate (Start Page, Arrange mode) | `Alt/Option+Up` / `Alt/Option+Down` |
+| Leave the Start Page (when a canvas is open) | `Esc` |
+| Rotate a 3D piece (Start Page) | Drag it, or focus it and use the arrow keys (`Shift` for bigger turns) |
 | Help / shortcuts | `?` |
 
 </details>
@@ -724,6 +726,11 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Start Page (phases P0 to P3)
+- **A Start Page on launch.** A cover in your own ink, Recent files, Studio picks and a Community note ("coming later", with a Notify toggle) sit over the editor. Open it with `Shift+Cmd/Ctrl+H`, the wordmark or `File → Start Page…`; `Cmd/Ctrl+N` starts a blank canvas and `Alt/Option+Cmd/Ctrl+1` to `8` reopen recents. Turn it off with **Show Start Page on launch** (Settings or Document Setup).
+- **Plates.** Your work set as an editorial run: a plate editor, Arrange (`Alt/Option+Up/Down`), a Colorways fan and **Use as cover**; Open always keeps the colors shown.
+- **Motion.** Seven animate-in styles, twelve hover effects, live drag-to-rotate 3D models, and a **Still** toggle that stops it all.
+
 ### Unreleased - Realistic paper scale and lighting (v1.4.34)
 - **Paper looks like paper at fit-to-screen.** Grain sizes recalibrated against real hot / cold / rough watercolour sheets; default Texture tuned so cold press and rough show about half the tooth contrast of a raking-light photo of the real sheets; tooth fades smoothly as it nears pixel size and returns as you zoom (no jumps at zoom or Scale steps); fibres stay visible on kraft, rag and newsprint, and a fibre mat appears at deep zoom.
 - **No more grey sheets.** The surface is lit around the paper colour: lit facets brighten and shadows darken, so the sheet's average colour is the colour you picked; white and saturated stock keep visible tooth (soft highlight roll-off).
@@ -733,6 +740,9 @@ CI lives in `.github/workflows/test.yml`:
 - **Special inks.** Metallic, neon, glow-in-the-dark, glitter and opaque white inks on any pen; metallic and glitter sparkle at every zoom and their glints move as you pan and zoom. Preview only: the SVG still plots the pen colour at the pen width.
 - **Lights off.** View ▸ Lights Off (`Shift+Alt+L`) darkens the sheet so glow-in-the-dark inks emit.
 - **Pen files and My pens.** Export / import pens as `.json`; save pens to My pens in this browser and reuse them.
+
+<details>
+<summary>Older releases (1.4.31 and earlier)</summary>
 
 ### Unreleased - Pen models and ink edge bleed (v1.4.31)
 - **Pen models.** Pick a real plotter pen and size per pen (15 models); width becomes the pen's laid width, and the preview draws its ink: bleed edges, blobs, pools, skips, opacity and overlap darkening. Plain pens stay the default and unchanged on paper None.
@@ -827,6 +837,8 @@ CI lives in `.github/workflows/test.yml`:
 - **Known open.** Whether to retune the crosshatch cap's onset — measured infeasible without a
   different mechanism this round — and whether the tick fills' residual gap is acceptable, are
   both open product decisions not settled by this release.
+
+</details>
 
 <details>
 <summary>Older releases (1.4.2 and earlier)</summary>

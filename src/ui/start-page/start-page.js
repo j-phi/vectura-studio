@@ -162,6 +162,13 @@
       const colo = root.querySelector('#sp-colo-wrap');
       if (rail) { rail.inert = strip; rail.setAttribute('aria-hidden', String(strip)); }
       if (colo) { colo.inert = !strip; colo.setAttribute('aria-hidden', String(!strip)); }
+      // Narrow: only the header stays pinned; the New / Open / Resume strip and the colophon scroll away with the page
+      // (and sit first in the Tab flow, right after the header).
+      const scroller = root.querySelector('#sp-scroll');
+      if (colo && scroller) {
+        if (narrow) { if (colo.parentElement !== scroller) scroller.prepend(colo); }
+        else if (colo.parentElement !== root) root.insertBefore(colo, root.querySelector('.sp-body'));
+      }
       if (btn) btn.hidden = narrow; // at <= 900 px the strip is the only form
     };
     const setRail = (collapsed) => {
@@ -625,8 +632,9 @@
         watchTheme(true);
         render({ animate: true });
         app.recents?.refresh();
-        const strip = prefs().railCollapsed === true || narrow;
-        root.querySelector(strip ? '#sp-colo-wrap [data-act="new"]' : '#sp-rail [data-act="new"]')?.focus?.({ preventScroll: true });
+        // Initial focus is the first control at the top of the page (the skip link leads the order, then header, actions,
+        // cover, plates, picks, rail), so Tab walks the page top to bottom instead of starting in the last region.
+        root.querySelector('.sp-hdr button:not([hidden]):not([disabled])')?.focus?.({ preventScroll: true });
       },
       hide({ restoreFocus = true } = {}) {
         if (!open) return;

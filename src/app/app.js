@@ -63,6 +63,13 @@
       delete trimmed[COOKIE_TRIM_KEYS[i]];
       value = wrap(trimmed);
     }
+    if (value.length > PREFERENCE_COOKIE_BUDGET) {
+      // Still too big for a cookie (the browser would reject it whole): keep only the keys that must survive.
+      const sp = snapshot.startPage && typeof snapshot.startPage === 'object' ? snapshot.startPage : {};
+      const startPage = {};
+      ['showOnLaunch', 'motionStill'].forEach((k) => { if (k in sp) startPage[k] = sp[k]; });
+      value = wrap({ cookiePreferencesEnabled: snapshot.cookiePreferencesEnabled, startPage });
+    }
     return value;
   };
   const normalizeThemeName = (theme) => {
@@ -1098,6 +1105,7 @@
       state.engine.activeLayerId = null;
       state.selectedLayerIds = [];
       state.selectedLayerId = null;
+      delete state.settings.startPageFill; // a blank canvas carries no opened piece's special fill
       state.settings.paperSize = conf.machine;
       let w;
       let hgt;

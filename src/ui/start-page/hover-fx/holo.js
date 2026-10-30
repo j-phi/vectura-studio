@@ -84,7 +84,7 @@ void main(){
   vec2 q = vStage / uStage;
   vec3 ink = inkAt(vStage);
   float ks = keepScale(vStage);
-  vec2 tn = uTilt / uMaxT;                         /* normalised tilt (rx, ry) */
+  vec2 tn = uTilt / uMaxT;                         /* normalized tilt (rx, ry) */
   float tm = length(tn);
   /* tilt axis in doubled-angle form, so a line's response depends on its own direction against the axis */
   vec2 ax = tm > 1e-4 ? vec2(tn.y, -tn.x) / tm : vec2(.7071, .7071);
@@ -118,7 +118,7 @@ void main(){
 }`;
   register({
     id: 'holo', name: 'Hologram Foil', set: 'A', order: 1,
-    blurb: 'The whole sheet rocks like a foil card; every line flashes colour by its own direction.',
+    blurb: 'The whole sheet rocks like a foil card; every line flashes color by its own direction.',
     init(ctx) {
       const s = ctx.state;
       s.rx = ctx.Spring({ f: 1.4, z: 0.42 }); s.ry = ctx.Spring({ f: 1.4, z: 0.42 }); s.lift = ctx.Spring({ f: 1.1, z: 0.7 });

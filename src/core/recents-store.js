@@ -4,7 +4,7 @@
  * Browser-local history of opened/saved documents for the Start Page and
  * File > Open Recent. Bulky data lives in IndexedDB (database `vectura-start`),
  * independent of the cookie-preference setting:
- *   entries  { id, name, algorithm, paper, paperColor, inkColor, pens, thumb, addedAt, lastOpened, cleared, hasDoc, hasHandle, bytes, source }
+ *   entries  { id, name, hash, algorithm, paper, paperColor, inkColor, pens, thumb, addedAt, lastOpened, cleared, hasDoc, hasHandle, bytes, source }
  *   docs     { id, payload }     full parsed .vectura object, dropped oldest-first when over budget
  *   handles  { id, handle }      FileSystemFileHandle (Chromium only)
  * When IndexedDB is missing or throws, the same API runs from memory.
@@ -14,6 +14,9 @@
  *   await store.list({ limit, includeCleared }) | listWorks() | get(id) | getDoc(id) | getHandle(id)
  *   await store.clearRecent() -> token ; await store.undoClear(token) ; await store.remove(id)
  *   store.subscribe(fn) -> unsubscribe   (also dispatches window event 'vectura:recents-changed')
+ *
+ * Entries are never evicted by count: past `entriesMax` only the oldest entries' thumbnails are dropped. A failed
+ * storage write calls opts.onWriteFailure() once.
  *
  * Every method is async and never rejects for storage failures. Mutations are
  * serialized, so concurrent record() calls cannot interleave.
@@ -35,7 +38,13 @@
   };
 
   const copy = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
-  const publicEntry = (e) => copy(e);
+  // Entries are flat apart from pens[] and thumb{}: a shallow copy per level keeps callers from mutating the store
+  // without a JSON round trip of a (up to 250 KB) thumbnail on every list().
+  const publicEntry = (e) => ({
+    ...e,
+    pens: Array.isArray(e.pens) ? e.pens.map((p) => ({ ...p })) : e.pens,
+    thumb: e.thumb ? { ...e.thumb } : e.thumb,
+  });
 
   const cleanPens = (pens) => (Array.isArray(pens) ? pens : []).slice(0, 8)
     .filter((p) => p && typeof p === 'object')
@@ -55,6 +64,15 @@
   const docBytes = (payload) => {
     try { return JSON.stringify(payload).length; } catch (_e) { return Infinity; }
   };
+  // FNV-1a over the document JSON: tells "the same file again" from "another file with the same name".
+  const docHash = (payload) => {
+    let str;
+    try { str = JSON.stringify(payload); } catch (_e) { return ''; }
+    if (typeof str !== 'string') return '';
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i += 1) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    return `${str.length.toString(36)}-${h.toString(36)}`;
+  };
   const byOldest = (a, b) => (a.lastOpened - b.lastOpened) || (a.addedAt - b.addedAt);
 
   const create = (opts = {}) => {
@@ -69,6 +87,13 @@
     const handleCache = new Map();
     const entries = new Map();
     const subscribers = new Set();
+    let toldWriteFailure = false;
+    // A failed write (quota, abort) leaves the work only in this tab: tell the user once.
+    const writeFailed = () => {
+      if (toldWriteFailure) return;
+      toldWriteFailure = true;
+      try { if (typeof opts.onWriteFailure === 'function') opts.onWriteFailure(); } catch (_e) { /* isolated */ }
+    };
     let loaded = null;
     let queue = Promise.resolve();
     let idSeq = 0;
@@ -150,7 +175,11 @@
       } catch (_e) { /* no DOM */ }
     };
 
-    const saveEntry = (entry) => kvPut('entries', copy(entry));
+    const saveEntry = async (entry) => {
+      const res = await kvPut('entries', copy(entry));
+      if (!res.ok) writeFailed();
+      return res;
+    };
 
     const dropDoc = async (entry) => {
       await kvDel('docs', entry.id);
@@ -167,8 +196,11 @@
       return h;
     };
 
-    const findExisting = async (handle, name) => {
+    // Never merge on a name alone: a different file that shares a name must not overwrite another work's copy.
+    // Match the file handle, or (no handle to compare) the name AND the same document content.
+    const findExisting = async (handle, name, hash) => {
       const all = Array.from(entries.values());
+      const sameDoc = (e) => e.name === name && Boolean(hash) && e.hash === hash;
       if (handle) {
         for (const e of all) {
           if (!e.hasHandle) continue;
@@ -179,19 +211,21 @@
             if (typeof h.isSameEntry === 'function' && (await h.isSameEntry(handle))) return e;
           } catch (_e) { /* not comparable */ }
         }
-        return all.find((e) => !e.hasHandle && e.name === name) || null;
+        return all.find((e) => !e.hasHandle && sameDoc(e)) || null;
       }
-      return all.find((e) => e.name === name) || null;
+      return all.find(sameDoc) || null;
     };
 
+    // The cap bounds what the lists show (list() slices to the newest N), never what is kept: no work, doc or handle
+    // is deleted for being old. Past the cap only the oldest entries' thumbnails go (they are regenerable from the doc).
     const enforceEntryCap = async (keepId) => {
       const max = limits().entriesMax;
-      while (entries.size > max) {
-        const pool = Array.from(entries.values()).filter((e) => e.id !== keepId);
-        if (!pool.length) break;
-        const cleared = pool.filter((e) => e.cleared).sort(byOldest);
-        const victim = cleared.length ? cleared[0] : pool.sort(byOldest)[0];
-        await removeNow(victim.id);
+      if (entries.size <= max) return;
+      const beyond = Array.from(entries.values()).sort((a, b) => byOldest(b, a)).slice(max);
+      for (const e of beyond) {
+        if (e.id === keepId || !e.thumb) continue;
+        e.thumb = null;
+        await saveEntry(e);
       }
     };
 
@@ -214,7 +248,8 @@
       // `id` (optional): update that entry in place (Save of the document a recent already tracks).
       const byId = typeof data.id === 'string' && entries.has(data.id) ? entries.get(data.id) : null;
       // forceNew: never merge by name (a Save after New Canvas is a different document with a repeated filename)
-      const existing = byId || (data.forceNew === true ? null : await findExisting(handle, name));
+      const hash = data.payload === undefined ? '' : docHash(data.payload);
+      const existing = byId || (data.forceNew === true ? null : await findExisting(handle, name, hash));
       const entry = existing || {
         id: `r-${t.toString(36)}-${(idSeq += 1).toString(36)}`,
         addedAt: t,
@@ -229,6 +264,7 @@
         thumb: cleanThumb(data.thumb),
         lastOpened: t,
         cleared: false,
+        hash,
         source: data.source === 'save' ? 'save' : 'open',
       });
       // A Save to a different file leaves an old handle pointing at stale bytes: forget it.
@@ -260,6 +296,7 @@
           await dropDoc(others[0]);
         }
       }
+      if (!stored && data.payload !== undefined) writeFailed(); // the document copy could not be kept (too big, quota, abort)
       if (!stored && existing && existing.hasDoc) await kvDel('docs', entry.id);
       entry.hasDoc = stored;
       entry.bytes = stored ? bytes : 0;

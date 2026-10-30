@@ -7,7 +7,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const { makeFakeIdb } = require('../../helpers/fake-indexeddb.js');
@@ -98,17 +98,35 @@ describe('RecentsStore', () => {
       expect(await again.getDoc(e.id)).toEqual(payload());
     });
 
-    it('dedupes by name and updates in place', async () => {
+    it('dedupes by name + identical content and updates in place', async () => {
       const a = await store.record(base());
       tick();
-      const b = await store.record(base({ thumb: { kind: 'png', data: 'data:image/png;base64,AA' }, payload: payload(2), source: 'save' }));
+      const b = await store.record(base({ thumb: { kind: 'png', data: 'data:image/png;base64,AA' }, source: 'save' }));
       expect(b.id).toBe(a.id);
       expect(b.addedAt).toBe(a.addedAt);
       expect(b.lastOpened).toBe(clock);
       expect(b.thumb.kind).toBe('png');
       expect(b.source).toBe('save');
-      expect(await store.getDoc(a.id)).toEqual(payload(2));
+      expect(await store.getDoc(a.id)).toEqual(payload());
       expect(await store.listWorks()).toHaveLength(1);
+    });
+
+    it('never merges a different file that merely shares a name (no handle): it is a new entry and the first keeps its copy', async () => {
+      const a = await store.record(base({ payload: payload(1) }));
+      tick();
+      const b = await store.record(base({ payload: payload(2) }));
+      expect(b.id).not.toBe(a.id);
+      expect(await store.getDoc(a.id)).toEqual(payload(1));
+      expect(await store.getDoc(b.id)).toEqual(payload(2));
+      expect(await store.listWorks()).toHaveLength(2);
+    });
+
+    it('a handle record does not adopt a handle-less entry of the same name but different content', async () => {
+      const a = await store.record(base({ payload: payload(1) }));
+      tick();
+      const b = await store.record(base({ payload: payload(2), handle: { isSameEntry: async () => false } }));
+      expect(b.id).not.toBe(a.id);
+      expect(await store.getDoc(a.id)).toEqual(payload(1));
     });
 
     it('re-recording a cleared entry un-clears it', async () => {
@@ -247,30 +265,26 @@ describe('RecentsStore', () => {
     });
   });
 
-  describe('entry cap eviction', () => {
-    it('drops the oldest cleared entries first, then the oldest overall', async () => {
+  describe('entry cap (never deletes a work)', () => {
+    it('keeps every entry and doc past the cap; lists show the newest N; the oldest thumbnails are dropped, never docs', async () => {
       const s = mk({ dbName: 'cap' });
-      // Fill to the cap, clear everything, then add fresh visible ones.
       for (let i = 0; i < 48; i += 1) { tick(); await s.record(base({ name: `old${i}`, payload: payload(i) })); }
       await s.clearRecent();
       tick();
-      await s.record(base({ name: 'fresh0' }));
-      let names = (await s.listWorks()).map((e) => e.name);
-      expect(names).toHaveLength(48);
-      expect(names).not.toContain('old0');
-      expect(names).toContain('old1');
-      expect(names).toContain('fresh0');
-      // evicted entry's doc is gone too
-      expect(idb.dump('cap', 'docs').size).toBe(48);
-      // Now un-cleared fresh entries only: oldest overall goes when no cleared remain.
-      const s2 = mk({ dbName: 'cap2' });
-      for (let i = 0; i < 48; i += 1) { tick(); await s2.record(base({ name: `n${i}` })); }
+      await s.record(base({ name: 'fresh0', payload: payload(100) }));
       tick();
-      await s2.record(base({ name: 'extra' }));
-      names = (await s2.listWorks()).map((e) => e.name);
-      expect(names).toHaveLength(48);
-      expect(names).not.toContain('n0');
-      expect(names).toContain('extra');
+      await s.record(base({ name: 'fresh1', payload: payload(101) }));
+      const works = await s.listWorks();
+      expect(works).toHaveLength(50);
+      expect(works.map((e) => e.name)).toContain('old0');
+      expect(works.every((e) => e.hasDoc)).toBe(true);
+      expect(idb.dump('cap', 'docs').size).toBe(50);
+      expect((await s.list()).map((e) => e.name)).toEqual(['fresh1', 'fresh0']);
+      const byName = Object.fromEntries(works.map((e) => [e.name, e]));
+      expect(byName.old0.thumb).toBeNull(); // beyond the cap, oldest first: regenerable
+      expect(byName.old1.thumb).toBeNull();
+      expect(byName.fresh1.thumb).not.toBeNull();
+      expect(byName.old2.thumb).not.toBeNull(); // within the newest 48
     });
   });
 
@@ -326,6 +340,44 @@ describe('RecentsStore', () => {
       expect((await store.get(e.id)).name).toBe('B');
       expect((await store.get(e.id)).hasDoc).toBe(false);
       expect((await store.listWorks()).find((x) => x.name === 'A').hasDoc).toBe(false);
+    });
+  });
+
+  describe('write failures are reported once', () => {
+    it('onWriteFailure fires a single time when the document copy cannot be stored', async () => {
+      let told = 0;
+      const s = mk({ dbName: 'wf', onWriteFailure: () => { told += 1; } });
+      idb.failPut = (name) => (name === 'docs' ? quota() : null);
+      tick(); await s.record(base({ name: 'A' }));
+      tick(); await s.record(base({ name: 'B', payload: payload(2) }));
+      idb.failPut = null;
+      expect(told).toBe(1);
+    });
+
+    it('onWriteFailure fires when the entry write itself fails', async () => {
+      let told = 0;
+      const s = mk({ dbName: 'wf2', onWriteFailure: () => { told += 1; } });
+      idb.failPut = (name) => (name === 'entries' ? quota() : null);
+      await s.record(base({ name: 'A' }));
+      idb.failPut = null;
+      expect(told).toBe(1);
+    });
+  });
+
+  describe('list copies', () => {
+    it('list/listWorks/get hand out copies callers cannot use to mutate the store, without a JSON round trip per entry', async () => {
+      const e = await store.record(base());
+      const spy = vi.spyOn(JSON, 'stringify');
+      const a = (await store.list())[0];
+      const w = (await store.listWorks())[0];
+      const g = await store.get(e.id);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+      a.name = 'x'; a.thumb.data = 'x'; a.pens[0].color = '#fff'; w.pens.length = 0; g.thumb = null;
+      const again = await store.get(e.id);
+      expect(again.name).toBe('Study');
+      expect(again.thumb.data).toBe('<svg/>');
+      expect(again.pens[0].color).toBe('#111111');
     });
   });
 

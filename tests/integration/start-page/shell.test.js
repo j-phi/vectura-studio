@@ -73,6 +73,35 @@ describe('Start Page shell', () => {
     });
   });
 
+  describe('P4 ux: focus order and the narrow colophon', () => {
+    test('opening focuses the top of the page (header), not the rail; the skip link is first in DOM order', async () => {
+      await boot();
+      app.showStartPageOnLaunchIfWanted({ webdriver: false, search: '' });
+      const sp = document.getElementById('start-page');
+      expect(sp.contains(document.activeElement)).toBe(true);
+      expect(document.activeElement.closest('#sp-rail')).toBeNull();
+      expect(document.activeElement.closest('.sp-hdr')).not.toBeNull();
+      const order = [...sp.querySelectorAll('button')];
+      expect(order[0].dataset.act).toBe('skip');
+    });
+
+    test('at narrow widths the colophon scrolls with the page (inside #sp-scroll), wide it sits above the body', async () => {
+      await boot();
+      const calls = [];
+      window.ResizeObserver = class { constructor(cb) { calls.push(cb); } observe() {} disconnect() {} unobserve() {} };
+      app.showStartPageOnLaunchIfWanted({ webdriver: false, search: '' });
+      const sp = document.getElementById('start-page');
+      const colo = () => sp.querySelector('#sp-colo-wrap');
+      expect(colo().parentElement).toBe(sp);
+      Object.defineProperty(sp, 'clientWidth', { configurable: true, get: () => 400 });
+      calls.forEach((cb) => cb([]));
+      expect(colo().parentElement.id).toBe('sp-scroll');
+      Object.defineProperty(sp, 'clientWidth', { configurable: true, get: () => 1400 });
+      calls.forEach((cb) => cb([]));
+      expect(colo().parentElement).toBe(sp);
+    });
+  });
+
   describe('startPage preferences', () => {
     test('snapshot carries a sanitized startPage object and round trips', async () => {
       await boot();

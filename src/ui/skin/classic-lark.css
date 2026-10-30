@@ -100,3 +100,5 @@
 
 /* Start Page: this skin's accent is near-white, so the shared white on-accent text would vanish on the primary button. */
 [data-ui-skin="classic-lark"] .sp { --ui-on-accent: #09090b; }
+/* Start Page: near-white accent track, so the on-state switch knob must be dark to stay visible. */
+[data-ui-skin="classic-lark"] { --sp-knob-on: #09090b; }

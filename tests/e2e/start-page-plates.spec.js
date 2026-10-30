@@ -75,8 +75,13 @@ test.describe('Start Page plates', () => {
   test('opening a plate in Wildcard lands in the editor on the tile\'s paper and pen', async ({ page }) => {
     await bootWithWorks(page);
     await page.locator('[data-sp-mode="wildcard"]').click();
-    await page.waitForTimeout(600);
+    await expect(page.locator('#sp-plates')).toHaveAttribute('data-mode', 'wildcard');
     const plate = page.locator('.sp-pl:not([data-off])').nth(2);
+    // Plates mount lazily near the viewport (800 px margin) and plates are about a screen tall, so plate 3 has no Open
+    // button until it is scrolled toward. Bring it in, wait for it to mount, then read its colors.
+    await plate.scrollIntoViewIfNeeded();
+    await expect(plate.locator('.spl-btn-p')).toBeVisible({ timeout: 15000 });
+    await expect(plate).toHaveAttribute('data-cw-mode', 'wildcard');
     const shown = await plate.evaluate((e) => ({ paper: e.dataset.spPaper, ink: e.dataset.spInk }));
     await plate.locator('.spl-btn-p').click();
     await expect(page.locator('#start-page')).toBeHidden({ timeout: 15000 });

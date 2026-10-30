@@ -176,4 +176,16 @@ describe('StartPagePlateLayouts', () => {
     expect(seen).toHaveLength(1); expect(seen[0].w).toBe('Flowgrey');
     expect(seen[0].o.colorway.paper).toBe(CW.ground);
   });
+
+  // Seen in the P4 gate as an unhandled "W.requestAnimationFrame is not a function": a plate
+  // rendered but never attached keeps polling for isConnected, and a poll that runs after the
+  // window's rAF is gone (teardown, closed window) must stop quietly.
+  it('a never-attached plate stops polling once requestAnimationFrame is gone', async () => {
+    const queued = [];
+    window.requestAnimationFrame = (cb) => { queued.push(cb); return queued.length; };
+    render('knockout');
+    expect(queued).toHaveLength(1);
+    window.requestAnimationFrame = undefined;
+    expect(() => queued.shift()(0)).not.toThrow();
+  });
 });

@@ -20,6 +20,8 @@
   const LEAVE_MS = 2600;
   const SELF = (D.currentScript && D.currentScript.src) || '';
   let base = SELF ? SELF.replace(/[^/]*$/, '') : '';
+  // The release query (?v=) of this file rides on every lazy file, so a release never pairs a new index.js with stale effects.
+  const QUERY = (/\?[^#]*/.exec(SELF) || [''])[0];
 
   const EFFECTS = {
     lift: { name: 'Lift & tilt', file: 'lift.js', kind: 'simple' },
@@ -46,7 +48,7 @@
   /* ------------------------------------------------------------------ script loading */
   const loaded = new Map(); // url -> Promise
   const loadedFiles = [];
-  const urlFor = (file) => (base || '') + file;
+  const urlFor = (file) => (base || '') + file + QUERY;
   const loadScript = (file) => {
     const url = urlFor(file);
     if (loaded.has(url)) return loaded.get(url);

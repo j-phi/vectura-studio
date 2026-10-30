@@ -2,6 +2,7 @@
  * Canvas renderer for vector paths.
  */
 (() => {
+  const PAPER_WARM_MS = 4000; // idle warm-up delay for the held-back editor paper texture (see Renderer#_paperHeld)
   const { SETTINGS, Modifiers = {}, Masking = {}, UnitUtils = {}, UI_CONSTANTS = {} } = window.Vectura || {};
   const isModifierLayer = Modifiers.isModifierLayer || (() => false);
   const getMirrorAxis = Modifiers.getMirrorAxis || (() => null);
@@ -9804,12 +9805,53 @@
       if (!v) return false;
       const L = (window.Vectura.PAPERS && window.Vectura.PAPERS.LIMITS) || {};
       if (Math.max(prof.width, prof.height) * v.pxPerMm < (L.minSheetPx || 96)) return false;
+      if (this._paperHeld()) return false;
+      this._paperBuilt = true;
       return PT.drawSurface(ctx, paper, {
         pxPerMm: v.pxPerMm,
         view: v.view,
         sheet: { x: 0, y: 0, w: prof.width, h: prof.height },
         onReady: onReady || this._paperTileReady(),
       });
+    }
+
+    // Cold open under the Start Page: the page covers the editor, so the first texture build (a ~0.7 s block of
+    // noise, shading and chunk work) would only delay the page's first plate. While the page covers a never-painted
+    // editor (main.js sets Vectura.bootCover before the App is built, or the page is open) drawPaperTexture holds
+    // back. The texture is warmed in idle time once the page has settled, and at the latest when the page hides, so
+    // the editor shows the same surface when it appears. Once the texture has been built it is never held again.
+    _paperHeld() {
+      if (this._paperBuilt || this._paperReleased) return false;
+      const V = window.Vectura || {};
+      let covered = V.bootCover === true;
+      if (!covered) {
+        try { covered = Boolean(V.UI && V.UI.utils && V.UI.utils.editorParked && V.UI.utils.editorParked()); } catch (_) { covered = false; }
+      }
+      if (!covered) return false;
+      this._armPaperWarm();
+      return true;
+    }
+
+    _armPaperWarm() {
+      if (this._paperWarmArmed || typeof window.addEventListener !== 'function') return;
+      this._paperWarmArmed = true;
+      let timer = null;
+      let idle = null;
+      const release = () => {
+        if (timer) window.clearTimeout(timer);
+        if (idle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idle);
+        timer = null; idle = null;
+        window.removeEventListener('vectura:start-page-hidden', release);
+        this._paperReleased = true;
+        if (window.Vectura) window.Vectura.bootCover = false;
+        if (this.ready && !this._paperBuilt) this.draw();
+      };
+      window.addEventListener('vectura:start-page-hidden', release);
+      timer = window.setTimeout(() => {
+        timer = null;
+        if (typeof window.requestIdleCallback === 'function') idle = window.requestIdleCallback(release, { timeout: 2000 });
+        else release();
+      }, PAPER_WARM_MS);
     }
 
     // Repaint once when idle-built texture chunks land.
@@ -10220,7 +10262,7 @@
       const toothScale = (PT && PT.scaleOf) ? PT.scaleOf(paper) : 1;
       const resolve = Math.max(0, Math.min(1, (0.2 * toothScale * pxPerMm - 0.6) / 1.4));
       const skipAlpha = (info.dryskip || 0) > 0 ? Math.min(1, paper.texture * 1.1) * resolve : 0;
-      if (PT && skipAlpha > 0.01) {
+      if (PT && skipAlpha > 0.01 && !this._paperHeld()) {
         // Every canvas of the ink stack (pen models: opaque ink scaled by its
         // pens' dry-skip response).
         plan.stack.forEach((entry) => {
@@ -10288,7 +10330,7 @@
         }
         hctx.globalAlpha = 1;
       }
-      if (PT && (info.feather || 0) > 0) {
+      if (PT && (info.feather || 0) > 0 && !this._paperHeld()) {
         // One full-frame feather mask (fibre streaks), then destination-in.
         const mask = this._paperScratch('_paperFeatherCanvas', HALO_DOWNSCALE);
         const mctx = mask.getContext('2d');

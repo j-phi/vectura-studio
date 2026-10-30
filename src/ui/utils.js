@@ -197,6 +197,9 @@
   const scrollCue = (() => {
     const refresh = (el) => {
       if (!el) return;
+      // An editor pane under the open Start Page is inert and invisible: reading its scroll metrics only forces layout.
+      // The cue is refreshed when the page closes.
+      if (editorParked() && el.closest && el.closest('[inert]')) { parkTicker(el.__cueResume || (el.__cueResume = () => refresh(el))); return; }
       const max = el.scrollHeight - el.clientHeight;
       const parts = [];
       if (max > 1 && el.scrollTop > 1) parts.push('above');
@@ -257,7 +260,34 @@
     return true;
   };
 
+  // The editor is covered when the Start Page is open, or while a launch that will open it is still booting
+  // (main.js sets Vectura.bootCover before the App is built). afterEditorCover(fn, warmMs) runs `fn` once: when the page
+  // closes, or after `warmMs` of idle time while it is still open, whichever comes first. Editor-only work that nobody
+  // can see yet (paper swatch thumbnails) uses it to stay off the page's cold-open path. Runs `fn` now when uncovered.
+  const editorCovered = () => editorParked() || (window.Vectura && window.Vectura.bootCover === true);
+  const afterEditorCover = (fn, warmMs = 6000) => {
+    if (typeof fn !== 'function') return;
+    if (!editorCovered()) { fn(); return; }
+    let done = false; let timer = null; let idle = null;
+    const run = () => {
+      if (done) return;
+      done = true;
+      if (timer) window.clearTimeout(timer);
+      if (idle && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idle);
+      window.removeEventListener('vectura:start-page-hidden', run);
+      fn();
+    };
+    window.addEventListener('vectura:start-page-hidden', run);
+    timer = window.setTimeout(() => {
+      timer = null;
+      if (typeof window.requestIdleCallback === 'function') idle = window.requestIdleCallback(run, { timeout: 3000 });
+      else run();
+    }, warmMs);
+  };
+
   UI.utils = {
+    editorCovered,
+    afterEditorCover,
     editorParked,
     parkTicker,
     scrollCue,

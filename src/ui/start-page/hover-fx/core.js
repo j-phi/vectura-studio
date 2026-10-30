@@ -19,7 +19,7 @@
   const Geo = Vectura.StartPageArtGeometry;
   if (Vectura.StartPageHoverFxCore) return;
   const TAU = Math.PI * 2;
-  /* ================================================================ colour */
+  /* ================================================================ color */
   const hx = h => { h = String(h || '#000').trim(); const m = h.match(/rgba?\(([^)]+)\)/); if (m) return m[1].split(/[\s,/]+/).slice(0, 3).map(Number); h = h.replace('#', ''); if (h.length === 3) h = h.replace(/./g, c => c + c); const n = parseInt(h.slice(0, 6), 16) || 0; return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
   const toHex = a => '#' + a.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
   const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
@@ -57,7 +57,7 @@
       faint: mix(paper, ink, 0.22),
       add: dark ? 'lighter' : 'multiply',
       under, sheen,
-      /* spectrum(t): OKLCh ramp centred on the ink hue, ±150°, chroma clamped per stock */
+      /* spectrum(t): OKLCh ramp centered on the ink hue, ±150°, chroma clamped per stock */
       spectrum: t => oklch(sL, chroma, (grey ? hue : inkH) + (t - 0.5) * 300),
       inkHue: grey ? hue : inkH
     };
@@ -181,7 +181,7 @@ for(int k=0;k<7;k++){ if(k==i){ a = uSpec[k]; b = uSpec[k+1]; } } return mix(a, 
     tilt(Wd, Ht, rx, ry, o) {
       o = o || {}; const cx = o.cx == null ? Wd / 2 : o.cx, cy = o.cy == null ? Ht / 2 : o.cy, P = o.persp || 1400, z = o.z || 0, sc = o.scale || 1;
       const cX = Math.cos(rx), sX = Math.sin(rx), cY = Math.cos(ry), sY = Math.sin(ry);
-      /* model: translate(-c) → scale → rotY → rotX → translate(c) + z; then perspective about stage centre */
+      /* model: translate(-c) → scale → rotY → rotX → translate(c) + z; then perspective about stage center */
       const T1 = new Float32Array([sc, 0, 0, 0, 0, sc, 0, 0, 0, 0, sc, 0, -cx * sc, -cy * sc, 0, 1]);
       const RY = new Float32Array([cY, 0, -sY, 0, 0, 1, 0, 0, sY, 0, cY, 0, 0, 0, 0, 1]);
       const RX = new Float32Array([1, 0, 0, 0, 0, cX, sX, 0, 0, -sX, cX, 0, 0, 0, 0, 1]);
@@ -503,7 +503,7 @@ path,circle,polyline,polygon,line{vector-effect:non-scaling-stroke}[style*="--sp
         im.src = url;
       });
     }
-    function rasterise() {
+    function rasterize() {
       if (!gl || !handle.parsed || !handle.w) return Promise.resolve();
       const t0 = nowMs(); map(); const gen = ++rasterGen;
       const a = ctx.art, dpr = Math.min(2, W.devicePixelRatio || 1), tw = Math.max(1, Math.round(a.rect.w * dpr)), th = Math.max(1, Math.round(a.rect.h * dpr));
@@ -527,7 +527,7 @@ path,circle,polyline,polygon,line{vector-effect:non-scaling-stroke}[style*="--sp
       sizeC2d(); map();
     }
     let resizeT = 0;
-    function onResize() { if (ctl.destroyed) return; size(); clearTimeout(resizeT); resizeT = setTimeout(() => { if (ctl.destroyed) return; if (ctx.keep) ctx.keep.refresh(); rasterise(); if (inst && inst.def.resize) try { inst.def.resize(ctx); } catch (e) { warn(e); } }, 200); }
+    function onResize() { if (ctl.destroyed) return; size(); clearTimeout(resizeT); resizeT = setTimeout(() => { if (ctl.destroyed) return; if (ctx.keep) ctx.keep.refresh(); rasterize(); if (inst && inst.def.resize) try { inst.def.resize(ctx); } catch (e) { warn(e); } }, 200); }
 
     const ready = (async () => {
       if (handle.ready) await handle.ready;
@@ -535,7 +535,7 @@ path,circle,polyline,polygon,line{vector-effect:non-scaling-stroke}[style*="--sp
       ctx.geom = buildGeom(handle.parsed); ctx.samples = buildSamples(ctx.geom); ctl.stats.buildMs = ctx.geom.ms;
       refreshPalette(); size();
       ctx.keep = KeepOut(ctx, opts.keepOut || DEFAULT_KEEPOUT); ctx.keep.refresh();
-      await rasterise();
+      await rasterize();
       if (ctl.destroyed) return ctl;
       setEffect(effectId);
       if (opts.pointer && typeof opts.pointer.x === 'number') { const p = opts.pointer; if (p.clientX == null) input('enter', p.x, p.y); }
@@ -696,11 +696,11 @@ path,circle,polyline,polygon,line{vector-effect:non-scaling-stroke}[style*="--sp
     if (mqReduced && mqReduced.addEventListener) mqReduced.addEventListener('change', onMotion);
     ctx.reduced = !allowed();
     /* recolor: the handle's colorway changed (live recolor) */
-    ctl.recolor = () => { refreshPalette(); rasterise(); if (inst && inst.def.recolour) try { inst.def.recolour(ctx); } catch (e) { warn(e); } wake(); };
+    ctl.recolor = () => { refreshPalette(); rasterize(); if (inst && inst.def.recolor) try { inst.def.recolor(ctx); } catch (e) { warn(e); } wake(); };
     ctl.setColorway = (cw) => { cwOverride = cw || null; ctl.recolor(); };
     if (gl) {
       cv.addEventListener('webglcontextlost', (e) => { e.preventDefault(); stop(true); ctx.art.tex = null; ctx.art.ready = false; progCache.clear(); quadBuf = null; blank = null; artMesh = null; if (ctx.keep) ctx.keep.tex = null; });
-      cv.addEventListener('webglcontextrestored', () => { if (ctx.keep) ctx.keep.refresh(); rasterise().then(() => setEffect(ctl.effect)); });
+      cv.addEventListener('webglcontextrestored', () => { if (ctx.keep) ctx.keep.refresh(); rasterize().then(() => setEffect(ctl.effect)); });
     }
 
     function destroy() {

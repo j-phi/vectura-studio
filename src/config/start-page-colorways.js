@@ -32,7 +32,7 @@
     M('micron-burgundy', MICRON, 'Burgundy', '#6b1f2e'), M('micron-green', MICRON, 'Green', '#1f6b3a'),
     M('micron-sepia', MICRON, 'Sepia', '#5a3d2b'), M('micron-purple', MICRON, 'Purple', '#4a2a7a'),
     M('micron-royal', MICRON, 'Royal Blue', '#2a4fc4'), M('micron-orange', MICRON, 'Orange', '#e46a1e'),
-    M('micron-grey', MICRON, 'Grey (cool)', '#7a7f86'),
+    M('micron-grey', MICRON, 'Gray (cool)', '#7a7f86'),
     // Stabilo Point 88 (the dye fineliner box; the app has no Staedtler Triplus)
     M('stabilo-black', STABILO, 'Black', '#262628'), M('stabilo-blue', STABILO, 'Blue', '#1f4fb0'),
     M('stabilo-turquoise', STABILO, 'Turquoise', '#1aa0b8'), M('stabilo-pink', STABILO, 'Pink', '#e0418f'),

@@ -9,7 +9,7 @@
  * no sway and no inertia. `colorway` is { paper, ink, ink2? } or a () => that object; recolor live with setColorway.
  * Off-screen models are PAUSED, not destroyed: the IntersectionObserver stops the frame loop when the model leaves the viewport and the
  * canvas, matrix and plot state stay as they were; scrolling back kicks it again (nothing is rebuilt or re-plotted).
- * Idle cost: the sway redraws at ~24 fps (not the display rate), stops after SWAY_MAX (~20 s) with no interaction, and
+ * Idle cost: the sway redraws at ~15 fps (not the display rate), stops after SWAY_MAX (~20 s) with no interaction, and
  * resumes on pointer enter, focus or scrolling back into view. The z-buffer is reused while the view matrix is unchanged.
  * `disc:true` gives the Plate 4 look: round, on a slightly lighter paper, with no ring, border or outline. */
 (function (W, D) {
@@ -137,20 +137,21 @@
     css(); el.classList.add('vorbit');
     if (opts.disc) el.style.borderRadius = '50%'; /* Plate 4: a slightly lighter disc; deliberately no ring, border or outline */
     const cv = D.createElement('canvas'); cv.tabIndex = 0; cv.setAttribute('role', 'application'); cv.setAttribute('aria-roledescription', '3D viewer');
+    cv.style.willChange = 'transform'; /* own compositor layer: a sway frame repaints the canvas only, never the plate around it */
     el.appendChild(cv); const ctx = cv.getContext('2d');
     let hintEl = null; if (opts.hint) { hintEl = D.createElement('span'); hintEl.className = 'vorbit-hint'; hintEl.setAttribute('aria-hidden', 'true'); hintEl.textContent = typeof opts.hint === 'string' ? opts.hint : 'Drag to rotate'; el.appendChild(hintEl); }
 
     let name = norm(opts.model || modelFor(opts.type, opts.presetId) || 'torus'), M0 = model(name), M = M0.home, cwOpt = opts.colorway;
     let vel = [0, 0], drag = null, lastAct = -1e9, swayT = 0, swayA = [0, 0], dirty = true, plot = 0, plotting = null, shown = false, running = 0, visible = false, alive = true;
     let Wd = 0, Hd = 0, dpr = 1, ink = '#000', ink2 = null, inkFrom = null, inkT0 = 0, tPrev = 0;
-    const SWAY = [.10, .04], SWAY_P = [8.5, 12.5], IDLE = 1800, SWAY_MAX = 20000, SWAY_MS = 1000 / 24;
+    const SWAY = [.10, .04], SWAY_P = [8.5, 12.5], IDLE = 1800, SWAY_MAX = 20000, SWAY_MS = 1000 / 15;
     let timer = 0, lastR = -1e9;
     const dispM = () => (swayA[0] || swayA[1]) ? mul(mul(rx(swayA[1]), ry(swayA[0])), M) : M;
     const bake = () => { M = orthonorm(dispM()); swayA = [0, 0]; swayT = 0; };
     const label = () => (opts.label || (M0.title + ', ' + M0.algo)) + ', drawn live in 3D. Drag, or use the arrow keys, to rotate.';
     cv.setAttribute('aria-label', label());
 
-    /* colour */
+    /* color */
     const lighten = (c, t) => { const A = hex(c); if (!A) return c; const lum = (0.299 * A[0] + 0.587 * A[1] + 0.114 * A[2]) / 255; const to = [255, 255, 255]; const k = lum < .5 ? t : t * 1.6; return 'rgb(' + A.map((x, n) => Math.round(x + (to[n] - x) * k)).join(',') + ')'; };
     function resolveCw() {
       let cw = null;
@@ -159,7 +160,7 @@
       return Object.assign({ paper: '#ffffff', ink: '#111111', ink2: null }, cw || {});
     }
     const curInk = now => { if (!inkFrom) return [ink, ink2 || ink]; const t = Math.min(1, (now - inkT0) / 460); if (t >= 1) { inkFrom = null; return [ink, ink2 || ink]; } return [mix(inkFrom[0], ink, t), mix(inkFrom[1], ink2 || ink, t)]; };
-    function colour(animate) {
+    function color(animate) {
       const cw = resolveCw();
       if (opts.paper !== false) el.style.backgroundColor = opts.disc ? lighten(cw.paper, .07) : cw.paper;
       if (animate && motionOK() && shown) { inkFrom = curInk(performance.now()); inkT0 = performance.now(); } else inkFrom = null;
@@ -263,7 +264,7 @@
       const busy = plotting || drag || inkFrom || dirty || Math.abs(vel[0]) > 1e-3 || Math.abs(vel[1]) > 1e-3;
       if ((more || waitSway) && visible) {
         if (!running) {
-          /* sway alone redraws at ~24 fps; anything interactive keeps the display rate */
+          /* sway alone redraws at ~15 fps; anything interactive keeps the display rate */
           const delay = !busy ? SWAY_MS - (performance.now() - now) - 2 : 0;
           if (delay > 3) { running = 1; timer = setTimeout(() => { timer = 0; running = requestAnimationFrame(frame); }, delay); } else running = requestAnimationFrame(frame);
         }
@@ -292,7 +293,7 @@
     cv.addEventListener('pointerenter', wake); cv.addEventListener('focus', wake); cv.addEventListener('pointerdown', onDown); cv.addEventListener('pointermove', onMove); cv.addEventListener('pointerup', onUp); cv.addEventListener('pointercancel', onUp); cv.addEventListener('lostpointercapture', onUp); cv.addEventListener('keydown', onKey);
         const onMotion = (e) => { if (e && e.detail && typeof e.detail.still === 'boolean') stillEvt = e.detail.still; if (!motionOK()) { bake(); vel = [0, 0]; if (plotting) { plotting = null; plot = 1; } inkFrom = null; } kick(); };
     W.addEventListener('vectura:start-page-motion', onMotion); let mq = null; try { mq = W.matchMedia('(prefers-reduced-motion: reduce)'); mq.addEventListener && mq.addEventListener('change', onMotion); } catch (e) { mq = null; }
-    colour(false);
+    color(false);
 
     const handle = {
       el, canvas: cv,
@@ -302,8 +303,8 @@
       get plotted() { return plot; },
       get stats() { return { zbufferReuses: zhits, swaying: !!(running && swayT > 0), lastRender: lastR }; },
       setModel(m, o) { o = o || {}; name = norm(m); M0 = model(name); M = M0.home; vel = [0, 0]; swayA = [0, 0]; swayT = 0; if (o.label !== undefined) opts.label = o.label;
-        cv.setAttribute('aria-label', label()); colour(false); if (shown) plotIn(o.replot === false ? 0 : 1100); return handle; },
-      setColorway(cw) { cwOpt = cw || null; colour(true); return handle; },
+        cv.setAttribute('aria-label', label()); color(false); if (shown) plotIn(o.replot === false ? 0 : 1100); return handle; },
+      setColorway(cw) { cwOpt = cw || null; color(true); return handle; },
       destroy() { alive = false; if (timer) { clearTimeout(timer); timer = 0; } else if (running) cancelAnimationFrame(running); io && io.disconnect(); ro && ro.disconnect(); W.removeEventListener('vectura:start-page-motion', onMotion); mq && mq.removeEventListener && mq.removeEventListener('change', onMotion);
         cv.removeEventListener('pointerenter', wake); cv.removeEventListener('focus', wake); cv.removeEventListener('pointerdown', onDown); cv.removeEventListener('pointermove', onMove); cv.removeEventListener('pointerup', onUp); cv.removeEventListener('pointercancel', onUp); cv.removeEventListener('lostpointercapture', onUp); cv.removeEventListener('keydown', onKey);
         cv.remove(); hintEl && hintEl.remove(); el.classList.remove('vorbit'); if (opts.paper !== false) el.style.backgroundColor = ''; if (opts.disc) el.style.borderRadius = ''; el.style.removeProperty('--vorbit-ink'); delete el._vorbit; }

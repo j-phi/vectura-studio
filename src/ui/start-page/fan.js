@@ -128,10 +128,12 @@
       const step = W + gap; const span = step * (n - 1); const mid = (n - 1) / 2;
       let cx = a.left + a.width / 2; let cy = a.top + a.height / 2;
       cx = Math.max(24 + W / 2 + span / 2, Math.min(vw - 24 - W / 2 - span / 2, cx));
-      cy = Math.max(64 + H / 2, Math.min(vh - 48 - H / 2, cy));
+      cy = Math.max(96 + H / 2, Math.min(vh - 96 - H / 2, cy)); // room above for the wrapped heading, below for the wrapped captions
       const s0 = Math.min(1, Math.max(0.2, Math.min(a.width / W || 1, a.height / H || 1) * 0.9));
       fan.style.setProperty('--w', `${W}px`); fan.style.setProperty('--h', `${H}px`);
-      head.style.left = `${cx}px`; head.style.top = `${cy - H / 2 - 54}px`;
+      head.style.maxWidth = `${Math.max(120, vw - 32)}px`;
+      const hw = head.offsetWidth || 0;
+      head.style.left = `${Math.max(16 + hw / 2, Math.min(vw - 16 - hw / 2, cx))}px`; head.style.top = `${cy - H / 2 - 18}px`; // the heading grows upward when it wraps
       cards.forEach((c, k) => {
         const off = k - mid;
         c.to = { x: cx - W / 2 + off * step, y: cy - H / 2 + off * off * 7, r: off * 3.2, s: 1 };

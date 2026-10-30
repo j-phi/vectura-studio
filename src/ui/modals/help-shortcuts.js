@@ -373,7 +373,7 @@
       <table class="help-kbd-table">
         <tbody>
           ${row(mouse('click') + ' swatch', 'Pick a paper (Pen / Paper tab ▸ Paper)', 'one undo step')}
-          ${row(mouse('click') + ' Color', 'Any paper colour; keeps the paper type')}
+          ${row(mouse('click') + ' Color', 'Any paper color; keeps the paper type')}
           ${row('Texture / Ink bleed', 'Surface tooth and how far ink wicks into the sheet')}
           ${row('Scale', 'Grain size: 100 % is the real sheet (25–300 %; also a photo paper\'s tile)', 'one undo step per drag')}
           ${row('Set as default', 'New documents start on this paper')}
@@ -386,9 +386,9 @@
           ${row('Texture… ▸ Search online', 'Openverse, ambientCG, Wikimedia (Pexels/Unsplash with your key)')}
         </tbody>
       </table>
-      ${callout('Paper is saved in the <strong>.vectura</strong> file. Texture and bleed are sized in real millimetres, so a small sheet shows coarser grain than a large one at fit-to-screen. They are a <strong>preview only</strong>: the SVG export stays plotter-clean (no paper, no texture). <strong>None</strong> is a plain sheet in the theme colour. The default paper can also be set in <strong>Document Setup ▸ Paper &amp; Selection</strong>.')}
+      ${callout('Paper is saved in the <strong>.vectura</strong> file. Texture and bleed are sized in real millimeters, so a small sheet shows coarser grain than a large one at fit-to-screen. They are a <strong>preview only</strong>: the SVG export stays plotter-clean (no paper, no texture). <strong>None</strong> is a plain sheet in the theme color. The default paper can also be set in <strong>Document Setup ▸ Paper &amp; Selection</strong>.')}
       ${callout('<strong>My papers</strong> are saved in this browser. A document on a custom paper stores the paper inside the file, so it opens the same anywhere; if the paper is not in your library the panel offers <strong>Save to my papers</strong>. Export/Import moves your papers between browsers as a <strong>.json</strong> file.')}
-      ${callout('<strong>Photo papers</strong> are de-lit, made seamless and sized in real millimetres; the paper Color tints them. The texture credit (author, licence, source) stays with the paper. If a site blocks direct downloads, use <strong>Open source page</strong> and upload the file.')}`;
+      ${callout('<strong>Photo papers</strong> are de-lit, made seamless and sized in real millimeters; the paper Color tints them. The texture credit (author, licence, source) stays with the paper. If a site blocks direct downloads, use <strong>Open source page</strong> and upload the file.')}`;
     const penModelRows = `
       <table class="help-kbd-table">
         <tbody>
@@ -403,8 +403,8 @@
           ${row('Save to My pens', 'Keep a pen in this browser; My pens are listed first in the model picker')}
         </tbody>
       </table>
-      ${callout('A pen is a plain colour + diameter pen unless you give it a <strong>model</strong> (Micron, Sharpie, Uni-ball Signo, Gelly Roll, Sign Pen, fountain pen, …). The preview then draws the pen\'s real look: edge bleed, blobs at pen-down, pools at corners, gel skips, opacity. On a realistic paper plain pens bleed at the edges too. Typing a width marks the size <strong>custom</strong>. Everything is a <strong>preview only</strong>: the SVG plots the pen width in the pen colour.')}
-      ${callout('<strong>Special inks</strong> catch the light: metallic and glitter flakes stay fixed to the stroke while their glints move as you pan and zoom. <strong>Lights Off</strong> is a view only (never saved). <strong>Pen files</strong> (.json) carry colour, width, model, size, special ink and ink settings; imported pens are added as new pens.')}`;
+      ${callout('A pen is a plain color + diameter pen unless you give it a <strong>model</strong> (Micron, Sharpie, Uni-ball Signo, Gelly Roll, Sign Pen, fountain pen, …). The preview then draws the pen\'s real look: edge bleed, blobs at pen-down, pools at corners, gel skips, opacity. On a realistic paper plain pens bleed at the edges too. Typing a width marks the size <strong>custom</strong>. Everything is a <strong>preview only</strong>: the SVG plots the pen width in the pen color.')}
+      ${callout('<strong>Special inks</strong> catch the light: metallic and glitter flakes stay fixed to the stroke while their glints move as you pan and zoom. <strong>Lights Off</strong> is a view only (never saved). <strong>Pen files</strong> (.json) carry color, width, model, size, special ink and ink settings; imported pens are added as new pens.')}`;
     const pen = `
       ${accordion('Paper (Pen / Paper tab)', paperRows, true)}
       ${accordion('Pen models &amp; ink', penModelRows, true)}
@@ -426,6 +426,11 @@
             row(CMD + SHF + k('P'), 'Import SVG') +
             row(CMD + SHF + k('E'), 'Export SVG') +
             row(CMD + k('K'),       'Document Setup')
+          )}
+          ${section('Start Page',
+            row(k('Esc'),                'Leave the Start Page', 'Back to the canvas, when one is open; an open popover closes first') +
+            row(mouse('drag'),           'Rotate a 3D piece', 'On the Portfolio band and on plates; Still stops the sway') +
+            row(k('Arrow keys'),         'Turn a focused 3D piece', 'Shift turns it further')
           )}
           ${section('Start Page · Arrange plates',
             row(OPT + k('↑ / ↓'),   'Move the focused plate up or down', 'While arranging the Plates section; Esc or Done returns focus to Arrange')

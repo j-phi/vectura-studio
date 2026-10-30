@@ -10,7 +10,7 @@
  *           frame|null, motion|null, removed, removedAt? }
  *
  *   const store = Vectura.StartPagePlatesStore.create({ indexedDB: () => idb|null, dbName, onFallback? })
- *     onFallback() runs once when IndexedDB is blocked or fails to open (the store then keeps edits in memory).
+ *     onFallback() runs once when IndexedDB is blocked, fails to open, or a write fails (the store keeps edits in memory).
  *   await store.load() -> { plates, order }       await store.upsert(id, patch) -> record (deep-merge)
  *   await store.reset(id, keys?) -> previous record | null     await store.restore(record)
  *   await store.reorder(ids) | resetOrder() -> previous order
@@ -138,8 +138,17 @@
         t.onabort = () => resolve({ ok: false });
       });
     };
-    const put = (store, rec) => kv('readwrite', store, (s) => s.put(copy(rec)), (m) => { m.set(rec.id, copy(rec)); });
-    const del = (store, id) => kv('readwrite', store, (s) => s.delete(id), (m) => { m.delete(id); });
+    // A write that fails (quota, abort) is told once through the same onFallback toast: the edit lives in memory only.
+    const put = async (store, rec) => {
+      const res = await kv('readwrite', store, (s) => s.put(copy(rec)), (m) => { m.set(rec.id, copy(rec)); });
+      if (!res.ok) fellBack();
+      return res;
+    };
+    const del = async (store, id) => {
+      const res = await kv('readwrite', store, (s) => s.delete(id), (m) => { m.delete(id); });
+      if (!res.ok) fellBack();
+      return res;
+    };
     const all = (store) => kv('readonly', store, (s) => s.getAll(), (m) => Array.from(m.values()).map(copy));
 
     const ensureLoaded = () => {

@@ -110,11 +110,11 @@ void main(){
     frame(ctx, dt) {
       const s = ctx.state, P = ctx.pointer, W = ctx.W, H = ctx.H;
       s.spd = ease(s.spd, P.speed, dt, P.speed > s.spd ? 0.12 : 0.6);
-      /* wind: from the pointer along its motion; when nearly still, from the pointer toward the sheet centre */
+      /* wind: from the pointer along its motion; when nearly still, from the pointer toward the sheet center */
       let tx, ty; if (P.speed > 80) { tx = P.vx / P.speed; ty = P.vy / P.speed; } else { tx = W / 2 - P.sx; ty = H / 2 - P.sy; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l; }
       if (ctx.on) { s.wx.target = tx; s.wy.target = ty; }
       s.wx.step(dt); s.wy.step(dt);
-      /* lift axis: from the centre toward the pointer, so the nearest edge / corner rises */
+      /* lift axis: from the center toward the pointer, so the nearest edge / corner rises */
       if (ctx.on) { const cx = P.sx / W - 0.5, cy = P.sy / H - 0.5, l = Math.hypot(cx, cy) || 1; s.lx.target = cx / l; s.ly.target = cy / l; }
       s.lx.step(dt); s.ly.step(dt);
       const calm = Math.exp(-Math.max(0, P.dwell - 1.2) / 1.4);
