@@ -6,6 +6,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Start Page plates (phase P2)
+- **Plates.** Your work set as an editorial run in 16 layouts on a named palette of 32 plate colorways (12 light papers, 10 color grounds, 10 darks). A rhythm keeps two darks from being adjacent and near-identical neighbors apart. **Show** (default 5) with "Showing x of N". Plates persist in IndexedDB.
+- **Plate editor.** Words and title and description with suggestions; layout picker with a suggested layout; grouped colorway picker plus "the file's own colors"; manual Artwork, Text and Background colors with special fills (Iridescent, Iridescent animated, Duotone, Metallic gold and silver, Sunset); contrast warnings; Frame art (drag, scale, Fit / Fill, keyboard); per-plate motion; Undo and reset. Edit appears only in Curated and Basic.
+- **Arrange.** Reorder by pointer, touch or keyboard (`Alt/Option+Up/Down`) with announcements, Undo, and Reset to suggested order.
+- **Use as cover and Colorways fan.** Use as cover is remembered across reloads.
+- **Open in the colors shown.** Opening any art opens it in exactly the colors shown, as an unsaved copy named "<name> (colorway)"; Save uses that name.
+
 ### Added: Start Page cover and shell (phase P1)
 - **Cover.** The main column shows a cover in place of the P0 empty state, in three styles chosen in Settings: **Name in Ink** (default; each letter is filled with a different piece of your work, topped up with studio picks), **Cover Specimen** and **Portfolio band**.
 - **Name and practice line.** Both are click-to-edit. Settings adds **Show name** and **Show practice line** (both off by default) and a word picker: Vectura, Vectura Studio, Last name, First + Last, Studies, Botanicals, Experiments or Custom.

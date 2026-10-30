@@ -47,6 +47,8 @@ describe('Reduced-motion compliance', () => {
     // Start Page cover stage entrance and dice roll (reduced motion: `animation: none`).
     'sp-cv-in': ['.sp-cv-stage > *, .sp-dice-ico.sp-roll { animation: none', 'reduce'],
     'sp-roll': ['.sp-cv-stage > *, .sp-dice-ico.sp-roll { animation: none', 'reduce'],
+    // Plate editor animated iridescent fills (reduced motion: the plate holds its still frame).
+    'spe-turn': ['.spl[data-bgfill], .spl[data-txfill] { animation: none', 'reduce'],
   };
 
   test('motion.css declares a prefers-reduced-motion: reduce block', () => {

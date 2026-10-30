@@ -40,6 +40,7 @@
     let narrow = false;
     let cover = null;
     let controls = null;
+    let plates = null;
     let settings = null;
     let railUI = null;
     let provider = null;
@@ -91,6 +92,7 @@
       if (!root) return;
       if (cover) cover.recolor();
       if (controls) controls.sync();
+      if (plates) plates.recolor();
       renderRail();
     };
 
@@ -194,6 +196,13 @@
         colorwaysFor,
         still: () => prefs().motionStill === true,
         onOpen: (art, cw) => ctl.openArt(art, cw),
+        // "Use as cover" persists the piece id (colors follow the page mode), its framing and fill kind.
+        onCover: (o) => {
+          const p = prefs();
+          const clean = Vectura.START_PAGE.sanitize({ ...p, coverArtId: o ? o.art.id : '', coverFrame: o ? o.frame : null, coverFill: o && o.fill ? (o.fill.kind || o.fill) : '' });
+          p.coverArtId = clean.coverArtId; p.coverFrame = clean.coverFrame; p.coverFill = clean.coverFill;
+          persist();
+        },
         onPref: (key, value) => {
           const clean = cleanPref(key, value);
           if (prefs()[key] === clean) return;
@@ -234,6 +243,22 @@
           recolor();
         },
       });
+
+      plates = UI.StartPagePlatesSection.create({
+        host: main.querySelector('#sp-main'),
+        app,
+        prefs,
+        setPref: (key, value) => { prefs()[key] = cleanPref(key, value); persist(); },
+        arts: () => provider.list({ recentFirst: false }),
+        mode: pageMode,
+        seed: () => prefs().seed || undefined,
+        theme: themeKey,
+        still: () => prefs().motionStill === true,
+        scroller: () => root.querySelector('#sp-scroll'),
+        onOpen: (art, cw, opts) => ctl.openArt(art, cw, opts),
+      });
+      plates.setCoverApi(cover);
+      ctl.plates = plates;
 
       settings = UI.StartPageSettings.create({
         root,
@@ -292,7 +317,7 @@
         syncPaper();
         return;
       }
-      if (t.dataset.recentId) { app.recents?.open(t.dataset.recentId); return; }
+      if (t.dataset.recentId) { ctl.openRecent(t.dataset.recentId, ctl.resolvedColorway(t)); return; }
       if (t.dataset.resume === 'current') { ctl.hide(); return; }
       switch (t.dataset.act) {
         case 'top': root.querySelector('#sp-scroll')?.scrollTo?.({ top: 0 }); break;
@@ -357,6 +382,16 @@
       liveCache = { ...fp, svg };
       return svg;
     };
+    // Recents (Resume, rail, colophon, File > Open Recent) show and open the file in ITS OWN colors: no page-mode tint, and
+    // the click reopens the original file. The own colors come from the art source (thumbnail ground + first pen).
+    const ownCache = new Map();
+    const ownColorwayOf = (id) => ownCache.get(id) || null;
+    const refreshOwn = async () => {
+      let arts = [];
+      try { arts = await provider.list({ recentFirst: true }); } catch (_) { arts = []; }
+      ownCache.clear();
+      arts.forEach((a) => { if (a && a.kind === 'work' && a.ownColors && a.ownColors.paper && a.ownColors.ink) ownCache.set(a.recentId || a.workId, { key: 'own', paper: a.ownColors.paper, ink: a.ownColors.ink, ink2: null }); });
+    };
     const renderRail = () => {
       if (!root || !railUI) return;
       const entries = app.recents ? app.recents.list() : [];
@@ -369,16 +404,35 @@
       } else if (entries[0]) {
         const t = entries[0].thumb;
         if (t && t.kind === 'svg') resumeSvg = Vectura.StartPageArtProvider.strokeSvg(t.data);
-        resumeColorway = colorwayForWork(`work:${entries[0].id}`);
+        resumeColorway = ownColorwayOf(entries[0].id);
       }
       syncPaper();
-      railUI.render({ app, root, live, entries, liveSvg, liveColorway, resumeSvg, resumeColorway, colorwayFor: (e) => colorwayForWork(`work:${e.id}`) });
+      railUI.render({ app, root, live, entries, liveSvg, liveColorway, resumeSvg, resumeColorway, colorwayFor: (e) => ownColorwayOf(e.id) });
+      // Every recent opens in the colors its thumbnail shows (read back from these attributes on click).
+      root.querySelectorAll('[data-recent-id]').forEach((b) => {
+        const cw = ownColorwayOf(b.dataset.recentId);
+        if (!cw) { delete b.dataset.spPaper; delete b.dataset.spInk; delete b.dataset.spInk2; return; }
+        b.dataset.spPaper = cw.paper; b.dataset.spInk = cw.ink; delete b.dataset.spInk2;
+      });
     };
 
     const artSignature = async () => {
       let arts = [];
       try { arts = await provider.list({ recentFirst: true }); } catch (_) { arts = []; }
       return arts.map((a) => a.id).join('|');
+    };
+
+    // A saved "Use as cover" piece returns on load (its colors follow the page mode).
+    const restoreCover = async () => {
+      const id = prefs().coverArtId;
+      if (!id || cover.coverOverride()) return;
+      let arts = [];
+      try { arts = await provider.list({ recentFirst: true }); } catch (_) { arts = []; }
+      const art = arts.find((a) => a.id === id);
+      if (!art) return;
+      // the fill kind is kept; the cover rebuilds its spec from the colorway it shows
+      const fill = prefs().coverFill || null;
+      cover.setOverride({ art, frame: prefs().coverFrame, fill });
     };
 
     const render = async ({ animate = false } = {}) => {
@@ -391,16 +445,23 @@
       })();
       if (token !== renderToken) return;
       root.querySelector('[data-act="back"]').hidden = !hasLiveCanvas();
+      await refreshOwn();
+      if (token !== renderToken) return;
       renderRail();
       coverSig = await artSignature();
+      if (token !== renderToken) return;
+      await restoreCover();
       if (token !== renderToken) return;
       await cover.render({ animate });
       if (token !== renderToken) return;
       controls.sync();
+      await plates.render();
     };
 
     // The works changed (an open or save while the page is up): refresh the rail; the cover only when its art did.
     const onWorksChanged = async () => {
+      if (!open) return;
+      await refreshOwn();
       if (!open) return;
       renderRail();
       const sig = await artSignature();
@@ -408,22 +469,10 @@
       coverSig = sig;
       await cover.render({ animate: false });
       controls.sync();
+      plates.refresh();
     };
 
-    /* ------------------------------------------------------------------ open art (P2 hardens this) */
-    const applyColorway = (cw) => {
-      if (!cw) return;
-      try {
-        const s = S();
-        const pen = (s.pens || [])[0];
-        if (pen) pen.color = cw.ink;
-        if (s.paper && typeof s.paper === 'object') s.paper = { ...s.paper, color: cw.paper };
-        s.bgColor = cw.paper;
-        app.ui?.renderPens?.();
-        app.render?.();
-      } catch (err) { if (G.console) G.console.warn('[StartPage] applying the colorway failed', err); }
-    };
-
+    /* ------------------------------------------------------------------ open art */
     const setEditorInert = (on) => {
       if (on) {
         inerted = [...document.body.children].filter((el) => el.tagName !== 'SCRIPT' && !KEEP_LIVE.has(el.id)
@@ -459,29 +508,24 @@
         return { key: t.dataset.spKey || null, paper: t.dataset.spPaper, ink: t.dataset.spInk, ink2: t.dataset.spInk2 || null };
       },
       /**
-       * Open a cover piece in the editor in the colors it is showing: a work reopens through Recents, a studio
-       * pick opens as a new canvas holding the preset; then the paper and pen 1 take the colorway.
+       * Open a piece in the editor in EXACTLY the colors it is showing (cover letters, word and band, plates, fan
+       * cards, recents). Goes through StartPageOpenArt, which freezes the resolved colorway into the document.
+       * art = an Art ({ kind: 'work', recentId } | { kind: 'pick', presetId }); cw = { paper, ink, ink2?, paperType?, fill? }.
        */
-      async openArt(art, cw) {
+      async openArt(art, cw, { asTemplate = false } = {}) {
         if (!art) return false;
-        let ok = false;
-        if (art.recentId && app.recents) {
-          ok = await app.recents.open(art.recentId);
-        } else if (art.presetId) {
-          const preset = (Vectura.PRESETS || []).find((p) => p.id === art.presetId);
-          if (preset && await app.newCanvas({ paper: prefs().newPaper })) {
-            const id = app.engine.addLayer(preset.preset_system); // returns the new layer's id
-            const layer = app.engine.layers.find((l) => l.id === id);
-            if (layer) {
-              layer.params = { ...layer.params, ...(preset.params || {}), preset: preset.id };
-              app.engine.generate(layer.id);
-              ok = true;
-            }
-            ctl.hide({ restoreFocus: false });
-          }
-        }
-        if (ok) applyColorway(cw);
-        return ok;
+        const name = String(art.name || '').replace(/\.vectura$/i, '');
+        const spec = art.kind === 'pick' ? { kind: 'pick', presetId: art.presetId, name } : { kind: 'work', recentId: art.recentId || art.workId, name };
+        const O = Vectura.StartPageOpenArt;
+        const rid = art.recentId || art.workId;
+        // A piece shown in its own colors opens the ORIGINAL file (no "(colorway)" fork); any other colors make the copy.
+        if (art.kind !== 'pick' && rid && app.recents && !asTemplate && cw && !cw.fill && O && O.sameAsOwn && O.sameAsOwn(cw, art.ownColors || ownColorwayOf(rid))) return app.recents.open(rid);
+        if (!O || typeof O.open !== 'function') return rid && app.recents ? app.recents.open(rid) : false;
+        return O.open(spec, cw || null, { asTemplate, app });
+      },
+      /** A rail / colophon / Resume recent: always reopens the original file (it is shown in its own colors). */
+      async openRecent(id) {
+        return app.recents ? app.recents.open(id) : false;
       },
       show() {
         if (!root) build();
@@ -507,6 +551,7 @@
         renderToken += 1;
         settings?.close(false);
         cover?.words.close(false);
+        plates?.closeTransient();
         watchTheme(false);
         try { Vectura.StartPageInk?.finish?.(); } catch (_) { /* noop */ }
         root.hidden = true;

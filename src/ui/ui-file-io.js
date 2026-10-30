@@ -104,7 +104,11 @@
         };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
         const date = new Date().toISOString().slice(0, 10);
-        const filename = `vectura-${date}.vectura`;
+        // A named document (an opened colorway copy, "Riverbed (colorway)") saves under its name.
+        let named = `${this.app.documentName || ''}`.replace(/\.vectura$/i, '').replace(/[\\/:*?"<>|\u0000-\u001f]/g, '').replace(/^[\s.]+/, '').replace(/[\s.]+$/, '').slice(0, 80).trim();
+        // Windows device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9) are not usable as a file name, with or without an extension.
+        if (/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i.test(named)) named = `${named}-file`;
+        const filename = named ? `${named}.vectura` : `vectura-${date}.vectura`;
         // TUX-054: no await before saveBlob — the share sheet needs the tap's user activation.
         window.Vectura.Download.saveBlob(blob, filename).then((result) => {
           if (result === 'cancelled') return;
@@ -249,6 +253,7 @@
       this.app.pushHistory();
       this.app.markDocumentClean?.();
       this.app.currentRecentId = null; // set again by recents.record() for the opened file
+      this.app.documentName = null; // a colorway copy sets its name again after this returns
       if (!quiet) toast('Project loaded', 'success');
       return true;
     },

@@ -427,6 +427,9 @@
             row(CMD + SHF + k('E'), 'Export SVG') +
             row(CMD + k('K'),       'Document Setup')
           )}
+          ${section('Start Page · Arrange plates',
+            row(OPT + k('↑ / ↓'),   'Move the focused plate up or down', 'While arranging the Plates section; Esc or Done returns focus to Arrange')
+          )}
           ${section('Help',
             row(k('F1'),            'Help Guide') +
             row(k('?'),             'Keyboard shortcuts')

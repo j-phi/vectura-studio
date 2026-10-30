@@ -140,8 +140,10 @@
         resume.append(h('button', { class: 'sp-cont', type: 'button', 'data-recent-id': e.id, 'aria-label': `Open ${e.name}` }, cth,
           h('span', { class: 'sp-nm', text: e.name }),
           h('span', { class: 'sp-mt', text: `${e.algorithm} · ${app.recents.relativeTime(e.lastOpened)}` })));
-        mountResume(cth, resumeSvg, resumeColorway);
-        if (!resumeSvg && app.recents.thumbSrc(e)) tintInto(cth, app.recents.thumbSrc(e), resumeColorway || cwOf(e));
+        // the file shows in its own colors (resumeColorway = the file's own paper and ink, or null for the plain thumbnail)
+        const resumeSrc = app.recents.thumbSrc(e);
+        if (resumeSvg && resumeColorway) mountResume(cth, resumeSvg, resumeColorway);
+        else if (resumeSrc) tintInto(cth, resumeSrc, resumeColorway || cwOf(e));
         rest = entries.slice(1);
         hintBase = 2;
         resumeLabel = e.name.replace(/\.vectura$/, ''); resumeAttrs = { 'data-recent-id': e.id };

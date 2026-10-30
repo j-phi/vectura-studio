@@ -35,7 +35,7 @@ describe('START_PAGE config', () => {
       showOnLaunch: true, coverStyle: 'mosaic', showName: false, showLine: false,
       motionStill: false, railCollapsed: false, visiblePlates: 5, animateIn: 'plot', hover: 'default',
       colorMode: 'curated', seed: null, coverWord: 'vectura', customWord: '',
-      name: '', practiceLine: '', newPaper: 'A3',
+      name: '', practiceLine: '', newPaper: 'A3', coverArtId: '', coverFrame: null, coverFill: '',
     });
   });
 
@@ -80,6 +80,17 @@ describe('START_PAGE config', () => {
       expect(out.hover).toBe('default');
       expect(out.newPaper).toBe('A3');
       expect(out.coverWord).toBe('custom');
+    });
+
+    it('the Use-as-cover preferences are an id, a clamped frame and a fill kind', () => {
+      const ok = SP.sanitize({ coverArtId: 'work:abc-123', coverFrame: { fit: 'cover', z: 9, cx: 0.4, cy: 2 }, coverFill: 'iridescent' });
+      expect(ok.coverArtId).toBe('work:abc-123');
+      expect(ok.coverFrame).toEqual({ fit: 'cover', z: 4, cx: 0.4, cy: 1 });
+      expect(ok.coverFill).toBe('iridescent');
+      const bad = SP.sanitize({ coverArtId: '<img src=x>', coverFrame: 'nope', coverFill: 'Bad Fill!' });
+      expect(bad.coverArtId).toBe('');
+      expect(bad.coverFrame).toBeNull();
+      expect(bad.coverFill).toBe('');
     });
 
     it('handles visiblePlates numbers, numeric strings and all', () => {

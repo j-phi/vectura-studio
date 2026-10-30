@@ -1125,6 +1125,7 @@
       this.pushHistory();
       this.markDocumentClean();
       this.currentRecentId = null; // a Save after New Canvas starts a new recent
+      this.documentName = null;
       this.render();
       return true;
     }
@@ -1305,6 +1306,8 @@
             : null,
           pens: SETTINGS.pens ? clone(SETTINGS.pens) : [],
           globalLayerCount: SETTINGS.globalLayerCount,
+          // Start Page: the special fill an opened piece was showing (kept only when set, so plain files are unchanged).
+          ...(SETTINGS.startPageFill ? { startPageFill: clone(SETTINGS.startPageFill) } : {}),
         },
         selectedLayerId: this.renderer.selectedLayerId,
         selectedLayerIds,
@@ -1338,6 +1341,8 @@
       } else {
         SETTINGS.bgColor = s.bgColor ?? SETTINGS.bgColor;
       }
+      if (s.startPageFill && typeof s.startPageFill === 'object' && typeof s.startPageFill.kind === 'string') SETTINGS.startPageFill = clone(s.startPageFill);
+      else delete SETTINGS.startPageFill;
       SETTINGS.undoSteps = s.undoSteps ?? SETTINGS.undoSteps;
       SETTINGS.truncate = s.truncate ?? SETTINGS.truncate;
       SETTINGS.cropExports = s.cropExports ?? SETTINGS.cropExports;

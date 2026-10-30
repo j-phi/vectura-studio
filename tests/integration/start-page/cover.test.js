@@ -57,7 +57,7 @@ describe('Start Page cover and controls', () => {
     expect(letters).toHaveLength(7);
     expect(new Set(letters.map((l) => l.dataset.artId)).size).toBe(7);
     expect(letters[0].getAttribute('aria-label')).toMatch(/^V, Piece \d/);
-    expect(inkCalls.fillWord.map((c) => c.word).join('')).toBe('Vectura');
+    expect(inkCalls.fillWord.filter((c) => c.el.closest('#sp-cover')).map((c) => c.word).join('')).toBe('Vectura');
     expect(q('.sp-key-row')).toBeTruthy();
   });
 

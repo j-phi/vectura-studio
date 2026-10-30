@@ -6,6 +6,7 @@
  *
  *   renderDocument(payload) -> Promise<{ svg, bytes, algorithm, ownColors, pathCount, ms }>
  *   renderPreset(preset)    -> Promise<same>
+ *   presetPayload(preset)   -> .vectura object (sync) for opening a preset in the editor
  *   stats()                 -> { count, slowestMs, slowestId, lastMs }
  *
  * The engine and the export code read the global SETTINGS (paper, margin, pens,
@@ -195,7 +196,9 @@
     }
   };
 
-  const presetJob = (preset) => {
+  // Builds the private engine for a preset inside the settings/noise-image snapshot and hands it to `use`.
+  // The one preset -> document path: renderPreset draws it, presetPayload serializes it for the editor.
+  const withPresetEngine = (preset, use) => {
     const type = preset && preset.preset_system;
     if (!type || !preset.params) throw new Error('Not a preset');
     const restoreSettings = snapshotSettings();
@@ -236,16 +239,44 @@
         engine.generate(layer.id);
         engine.computeAllDisplayGeometry();
       }
-      const { svg, pathCount } = buildSvg(engine);
-      return {
-        svg, pathCount, algorithm: type,
-        ownColors: { paper: PRESET_PAPER.color, ink: PRESET_PEN.color, penName: PRESET_PEN.name, paperName: PRESET_PAPER.name },
-      };
+      return use(engine, type);
     } finally {
       restoreImages();
       restoreSettings();
     }
   };
+
+  const presetJob = (preset) => withPresetEngine(preset, (engine, type) => {
+    const { svg, pathCount } = buildSvg(engine);
+    return {
+      svg, pathCount, algorithm: type,
+      ownColors: { paper: PRESET_PAPER.color, ink: PRESET_PEN.color, penName: PRESET_PEN.name, paperName: PRESET_PAPER.name },
+    };
+  });
+
+  // A preset as a complete .vectura document (fixed Start Page sheet, pen and paper) that the editor can open.
+  // Synchronous: it borrows SETTINGS and puts them back before returning, so it cannot interleave with a render.
+  const presetPayload = (preset) => withPresetEngine(preset, (engine) => {
+    const S = Vectura.SETTINGS;
+    const profile = engine.currentProfile || {};
+    return {
+      type: 'vectura',
+      version: `${Vectura.APP_VERSION || ''}`,
+      state: {
+        engine: engine.exportState(),
+        settings: {
+          paperSize: S.paperSize, paperOrientation: S.paperOrientation, margin: S.margin,
+          paperWidth: profile.width, paperHeight: profile.height,
+          precision: S.precision, strokeWidth: S.strokeWidth, strokeWidthOverride: false,
+          truncate: S.truncate, cropExports: S.cropExports, removeHiddenGeometry: S.removeHiddenGeometry,
+          plotterOptimize: S.plotterOptimize,
+          paper: { type: 'none', color: PRESET_PAPER.color }, bgColor: PRESET_PAPER.color,
+          pens: copyOf(S.pens),
+        },
+      },
+      images: {},
+    };
+  });
 
   // ---------------------------------------------------------------- idle queue
   let tail = Promise.resolve();
@@ -276,6 +307,7 @@
   Vectura.StartPageArtRenderer = {
     renderDocument: (payload, label) => enqueue(label || 'document', () => documentJob(payload)),
     renderPreset: (preset) => enqueue(preset && preset.id, () => presetJob(preset)),
+    presetPayload,
     stats: () => Object.assign({}, stat),
     PRESET_SHEET,
     PRESET_PEN,

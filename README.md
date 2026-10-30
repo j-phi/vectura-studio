@@ -197,7 +197,7 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 
 Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar with `File/View/Insert/Help` menus, a **Pen / Paper** tab with the pen palette (drag-to-assign) and a realistic paper selector, Document Setup (`Cmd/Ctrl+K`), and a multi-skin theme system (Classic Dark/Light, Lark, and the **Meridian Blue** family). Cookie-backed preference persistence keeps your settings between sessions.
 
-**Start Page.** Vectura opens on a Start Page over the editor, with a rail for a new blank canvas (`Cmd/Ctrl+N`), Open file, Resume and Recent files. Return to it from the wordmark or `File → Start Page…` (`Shift+Cmd/Ctrl+H`). The page can be turned off with **Show Start Page on launch**. The main column is a cover: your name set in ink from your own work, with page-wide color schemes (Curated, Mono, Basic, Wildcard, Randomize).
+**Start Page.** Vectura opens on a Start Page over the editor, with a rail for a new blank canvas (`Cmd/Ctrl+N`), Open file, Resume and Recent files. Return to it from the wordmark or `File → Start Page…` (`Shift+Cmd/Ctrl+H`). The page can be turned off with **Show Start Page on launch**. The main column is a cover: your name set in ink from your own work, with page-wide color schemes (Curated, Mono, Basic, Wildcard, Randomize). Below the cover, your works run as an editorial **Plates** section.
 
 <details>
 <summary>Full UI & workflow feature list</summary>
@@ -207,6 +207,10 @@ Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar wit
 - **Name and practice line (phase P1):** both are click-to-edit. Settings has **Show name** and **Show practice line** (both off by default). A word picker offers Vectura, Vectura Studio, Last name, First + Last, Studies, Botanicals, Experiments and Custom
 - **Color controls (phase P1):** Curated, Mono, Basic and Wildcard schemes, plus a seeded **Randomize**. Schemes are built on the real paper and pen catalogue, hold text at ≥ 4.5:1 and art at ≥ 3:1 contrast, and avoid near-identical neighbors. Resume and Recent thumbnails are tinted to the colorway
 - **Header (phase P1):** the rail collapses into a colophon strip, which is remembered and always used at 900 px or less. The header adds a Settings gear, an animation toggle (**Still**) and the theme toggle. Turning Still on persists the choice and auto-enables cookie saving, with Undo
+- **Plates (phase P2):** your work set as an editorial run, one plate per work, in 16 layouts on a named palette of 32 plate colorways (12 light papers, 10 color grounds, 10 darks). A rhythm keeps two darks from being adjacent and keeps near-identical neighbors apart. **Show** (default 5) limits the run and reads "Showing x of N". Plates persist in IndexedDB
+- **Plate editor (phase P2):** words and title and description with suggestions; a layout picker with a suggested layout; a grouped colorway picker plus **the file's own colors**; manual Artwork, Text and Background colors with special fills (Iridescent, Iridescent animated, Duotone, Metallic gold and silver, Sunset); contrast warnings; **Frame art** (drag, scale, Fit / Fill, keyboard); per-plate motion; Undo and reset. **Edit** appears only in Curated and Basic; other modes keep saved edits hidden but intact
+- **Arrange, cover and colorways (phase P2):** Arrange reorders plates by pointer, touch or keyboard (`Alt/Option+Up/Down`), with announcements, Undo and Reset to suggested order. **Use as cover** is remembered across reloads. A Colorways fan shows alternates for a plate
+- **Open in the colors shown (phase P2):** opening any art opens it in exactly the colors on the page, as an unsaved copy named "<name> (colorway)". Save uses that name
 - **Crisp art (phase P1):** heavy pieces draw on a device-pixel canvas, re-rasterized on zoom, resize and device-pixel-ratio change. **Studio picks** are rendered offscreen from the bundled presets and cached in IndexedDB
 - **Show Start Page on launch** also lives in Document Setup (`Cmd/Ctrl+K`) ▸ History & Preferences. Turning it off while cookie saving is off turns on **Save preferences in cookie**, with a toast and Undo
 - **Recent files:** every Open and Save records a recent with a stored copy of the document in browser storage (IndexedDB). Chromium also remembers the file handle and reopens the real file; other browsers use the stored copy. `File → Open Recent ▸` lists thumbnail, name, algorithm and time, reopens with `Alt/Option+Cmd/Ctrl+1` to `8`, and offers **Clear Recent** with Undo
@@ -453,6 +457,7 @@ Click `Export SVG` to download.
 | Start Page (show, or leave when a canvas is open) | `Shift+Cmd/Ctrl+H` |
 | New canvas | `Cmd/Ctrl+N` |
 | Reopen recent 1–8 | `Alt/Option+Cmd/Ctrl+1` to `8` |
+| Move plate (Start Page, Arrange mode) | `Alt/Option+Up` / `Alt/Option+Down` |
 | Help / shortcuts | `?` |
 
 </details>

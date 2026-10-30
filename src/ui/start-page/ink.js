@@ -104,7 +104,8 @@
   const normColorway = (c) => {
     const cw = Object.assign({ paper: '#fbfaf6', ink: '#1a1a1a', ink2: null }, c || {});
     if (!cw.ink2) cw.ink2 = null;
-    if (!cw.key) cw.key = `custom|${cw.paper}|${cw.ink}|${cw.ink2 || ''}`;
+    if (!cw.fill) cw.fill = null;
+    if (!cw.key) cw.key = `custom|${cw.paper}|${cw.ink}|${cw.ink2 || ''}${cw.fill ? `|fill:${cw.fill.kind || 'custom'}` : ''}`;
     return cw;
   };
   const setVars = (el, cw) => {
@@ -115,12 +116,25 @@
     el.setAttribute('data-sp-key', cw.key);
   };
   /* tint a coverage bitmap with ink / duo gradient into a fresh or given canvas */
-  const tintInto = (dst, src, cw) => {
+  /* special fill (additive hook): cw.fill = { type: 'conic'|'linear', angle, stops: [[0..1, hex]], anim, speed } painted
+     over the coverage bitmap instead of a flat ink; `phase` (deg) turns a conic fill. */
+  const fillStyle = (c, f, w, h, phase) => {
+    let g = null;
+    if (f.type === 'conic' && typeof c.createConicGradient === 'function') g = c.createConicGradient(((f.angle || 0) + (phase || 0)) * Math.PI / 180, w / 2, h / 2);
+    else {
+      const a = ((f.type === 'conic' ? 125 : (f.angle || 125)) - 90) * Math.PI / 180; const r = Math.hypot(w, h) / 2;
+      g = c.createLinearGradient(w / 2 - Math.cos(a) * r, h / 2 - Math.sin(a) * r, w / 2 + Math.cos(a) * r, h / 2 + Math.sin(a) * r);
+    }
+    (f.stops || []).forEach((st) => { try { g.addColorStop(st[0], st[1]); } catch (e) { /* bad stop */ } });
+    return g;
+  };
+  const tintInto = (dst, src, cw, phase) => {
     const c = dst.getContext('2d'); const w = dst.width; const h = dst.height;
     c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.clearRect(0, 0, w, h);
     c.drawImage(src, 0, 0, w, h);
     c.globalCompositeOperation = 'source-in';
-    if (cw.ink2) { const g = c.createLinearGradient(0, 0, w, h); g.addColorStop(0, cw.ink); g.addColorStop(1, cw.ink2); c.fillStyle = g; } else c.fillStyle = cw.ink;
+    if (cw.fill && cw.fill.stops) c.fillStyle = fillStyle(c, cw.fill, w, h, phase);
+    else if (cw.ink2) { const g = c.createLinearGradient(0, 0, w, h); g.addColorStop(0, cw.ink); g.addColorStop(1, cw.ink2); c.fillStyle = g; } else c.fillStyle = cw.ink;
     c.fillRect(0, 0, w, h); c.globalCompositeOperation = 'source-over';
     return dst;
   };
@@ -397,7 +411,7 @@
     };
     h.paint = () => {
       if (h.mode !== 'canvas' || !h.canvas || !h.bmp) return;
-      tintInto(h.canvas, h.bmp, h.colorway);
+      tintInto(h.canvas, h.bmp, h.colorway, h.phase || 0);
     };
     h.raster = () => {
       if (!h.parsed || !h.w || !h.h) return Promise.resolve();
@@ -406,6 +420,7 @@
         if (!h.alive() || gen !== h._gen) return;
         if (!h.canvas) { h.canvas = D.createElement('canvas'); h.canvas.className = 'sp-ink-canvas'; h.canvas.setAttribute('aria-hidden', 'true'); box.appendChild(h.canvas); }
         h.canvas.width = pol.width; h.canvas.height = pol.height; h.rasterScale = pol.scale; h.bmp = b; h.paint();
+        if (h.colorway.fill && h.colorway.fill.anim && !fillRaf) startFill();
       });
     };
     let rT = 0;
@@ -417,8 +432,35 @@
     };
     h.rescale = () => { if (h.mode === 'canvas') h.raster(); };
     h.destroy = () => { clearTimeout(rT); clearTimeout(h._t); };
+    /* an animated conic fill repaints at ~30 fps while the tile is on screen and motion is allowed */
+    let fillRaf = 0; let fillLast = 0;
+    const stopFill = () => { if (fillRaf) W.cancelAnimationFrame(fillRaf); fillRaf = 0; };
+    const startFill = () => {
+      stopFill();
+      const f = h.colorway.fill;
+      if (!f || !f.anim || isStill()) { h.phase = 0; return; }
+      const tick = (t) => {
+        if (!h.alive()) return;
+        fillRaf = W.requestAnimationFrame(tick);
+        if (isStill()) { stopFill(); h.phase = 0; h.paint(); return; }
+        if (t - fillLast < 33) return;
+        fillLast = t;
+        const r = el.getBoundingClientRect();
+        if (!el.isConnected || r.bottom < 0 || r.top > (W.innerHeight || 0)) return;
+        h.phase = (t / 1000 * (f.speed || 36)) % 360; h.paint();
+      };
+      fillRaf = W.requestAnimationFrame(tick);
+    };
+    const prevDestroy = h.destroy;
+    h.destroy = () => { stopFill(); prevDestroy(); };
     h.setColorway = (c) => {
-      h.colorway = normColorway(c); setVars(el, h.colorway); h.applyLook(); h.paint();
+      h.colorway = normColorway(c); setVars(el, h.colorway); h.applyLook();
+      if (h.colorway.fill && h.mode === 'svg' && h.parsed) {
+        /* the vector tile cannot carry a conic or animated fill: continue as the crisp raster */
+        if (h.svg) { h.svg.remove(); h.svg = null; }
+        h.mode = 'canvas'; el.classList.add('sp-ink-raster'); h.raster().then(startFill); return;
+      }
+      h.paint(); startFill();
     };
     h.setFrame = (frame, nextFit) => {
       h.frame = frame || null; if (nextFit) h.fit = nextFit === 'cover' ? 'cover' : 'contain';
@@ -430,7 +472,7 @@
     h.ready = parseArt(art).then((parsed) => {
       if (!h.alive()) return h;
       h.parsed = parsed; h.measure(); h.applyLook();
-      const asCanvas = opts.raster === true || (opts.raster !== false && art.svg.length > (opts.rasterOver || RASTER_OVER));
+      const asCanvas = opts.raster === true || h.colorway.fill || (opts.raster !== false && art.svg.length > (opts.rasterOver || RASTER_OVER));
       if (asCanvas) { h.mode = 'canvas'; el.classList.add('sp-ink-raster'); return h.raster(); }
       const safe = safeSvg(art.svg, gid);
       if (!safe) throw new Error('StartPageInk: the art is not well-formed SVG');

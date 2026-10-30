@@ -325,6 +325,30 @@ html[data-sp-motion="still"] .sp *, html[data-sp-motion="still"] .sp *::before, 
 
 /* === Migrated from styles.css (Unit 2.6: reduced-motion fallback, 2026-05-20) === */
 
+/* ===== Start Page - Plates motion ===== */
+/* motion: still / reduced motion means no transitions on the plate itself */
+html[data-sp-motion="still"] .spl,html[data-sp-motion="still"] .spl-disc{transition:none}
+@media (prefers-reduced-motion:reduce){.spl,.spl-disc{transition:none}}
+
+.sp-pl { transition: grid-template-rows 380ms var(--ease, cubic-bezier(0.2, 0.7, 0.2, 1)), opacity 300ms var(--ease, ease), visibility 0s linear 0s; transition-delay: var(--sp-pl-delay, 0ms); }
+.sp-pl[data-off] { transition: grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1), opacity 220ms ease, visibility 0s linear 320ms; transition-delay: var(--sp-pl-delay, 0ms); }
+.sp-pl[data-instant], .sp-pl[data-instant][data-off] { transition: none; }
+.sp-pl-btn, .spl-tools .sp-pl-tool { transition: background-color var(--dur-fast, 150ms), border-color var(--dur-fast, 150ms), color var(--dur-fast, 150ms); }
+html[data-sp-motion="still"] .sp-pl, html[data-sp-motion="still"] .sp-pl[data-off] { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .sp-pl, .sp-pl[data-off], .sp-pl-btn, .spl-tools .sp-pl-tool { transition: none; }
+}
+/* Plate editor special fills: @property + keyframes, fan, arrange, use-as-cover */
+@property --sp-a{syntax:"<angle>";inherits:false;initial-value:0deg}
+:root:not([data-sp-motion="still"]) .spl[data-bgfill="iridescent-animated"],:root:not([data-sp-motion="still"]) .spl[data-txfill="iridescent-animated"]{ animation: spe-turn 14s linear infinite; }
+@keyframes spe-turn{to{--sp-a:360deg}}
+@media (prefers-reduced-motion: reduce) {
+  .spl[data-bgfill], .spl[data-txfill] { animation: none !important; }
+  .spe-sec-h::before { transition: none; }
+  .sp-arr-list.dnd .sp-arr-row:not(.dragging), .sp-fan-card, .sp-fan-scrim, .sp-fan-head, .sp-fan-cap, .sp-fan-sheet, .sp-lt.sp-lt-new, .sp-pf.sp-pf-old { transition: none !important; }
+}
+/* ===== END Start Page - Plates motion ===== */
+
 /* Accessibility: respect reduced-motion preference */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

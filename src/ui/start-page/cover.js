@@ -8,8 +8,11 @@
  * Also the cover chrome: word picker button, info line, click-to-edit name and practice line, and the honest empty
  * state when there is no art yet. Recoloring (setColorway on every tile) never re-fits or re-plots.
  *
- *   create({ host, prefs(), arts(), colorwaysFor(arts), still(), onOpen(art, cw), onPref(key, value),
- *            onWordPick(id, custom?) }) -> { render({animate}), recolor(), refit(), tiles(), destroy(), words }
+ *   create({ host, prefs(), arts(), colorwaysFor(arts), still(), onOpen(art, cw), onPref(key, value), onCover(override|null),
+ *            onWordPick(id, custom?) }) -> { render({animate}), recolor(), refit(), tiles(), destroy(), words,
+ *                                            useAsCover(art, { colorway, frame, fill }) -> Promise }
+ *   useAsCover: smooth-scrolls to the top, then the piece enters the current style (mosaic: letter 01 and every letter
+ *   re-plots; word: re-fills; band: cross-fades and draws in, with the plate's frame + fill) and an Undo toast is shown.
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -30,6 +33,8 @@
     let ro = null;
     let lastW = 0;
     let editors = [];
+    let override = null; // { art, colorway, frame, fill } set by useAsCover; survives style changes
+    let hold = null; // { old, tile }: the band kept on screen while its replacement mounts (cross-fade)
 
     const top = h('div', { class: 'sp-cv-top' });
     const pickBtn = h('button', { type: 'button', id: 'sp-word-btn', class: 'sp-word-btn', 'aria-label': 'Choose the cover word', title: 'Choose the cover word', html: Vectura.StartPageIcons.pencil });
@@ -54,9 +59,11 @@
       editors.forEach((e) => e.destroy && e.destroy());
       editors = [];
       const ink = Ink();
+      if (hold) { tiles = tiles.filter((t) => t !== hold.tile); }
       tiles.forEach((t) => { try { ink && ink.unmount(t.el); } catch (_) { /* noop */ } });
       tiles = [];
-      stage.textContent = '';
+      if (hold) [...stage.children].forEach((c) => { if (c !== hold.old) c.remove(); });
+      else stage.textContent = '';
     };
 
     const setCwData = (t) => {
@@ -65,6 +72,25 @@
       if (t.cw.ink2) t.el.dataset.spInk2 = t.cw.ink2; else delete t.el.dataset.spInk2;
       t.el.dataset.artId = t.art.id;
     };
+
+    const pinned = (art, cw) => (override && override.colorway && override.art.id === art.id ? override.colorway : cw);
+    const lumOf = (hex) => {
+      const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ''));
+      if (!m) return 1;
+      const n = parseInt(m[1], 16); const ch = (v) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+      return 0.2126 * ch((n >> 16) & 255) + 0.7152 * ch((n >> 8) & 255) + 0.0722 * ch(n & 255);
+    };
+    // The chosen piece keeps its special fill: the spec is rebuilt from the colorway on screen (so a mode switch or a
+    // restored session recolors it) and travels in colorway.fill, which is what StartPageInk paints.
+    const withFill = (art, cw) => {
+      if (!cw || !override || !override.fill || override.art.id !== art.id) return cw;
+      const F = Vectura.StartPagePlateFills;
+      const kind = typeof override.fill === 'string' ? override.fill : override.fill.kind;
+      let spec = null;
+      try { spec = kind && F ? F.spec(kind, { ink: cw.ink, accent: cw.ink2 || cw.ink, onDark: lumOf(cw.paper) < 0.2 }) : (override.fill && override.fill.stops ? override.fill : null); } catch (_) { spec = null; }
+      return spec ? Object.assign({}, cw, { fill: spec, key: undefined }) : cw;
+    };
+    const cwFor = (art, cw) => withFill(art, pinned(art, cw));
 
     /* -------------------------------------------------------------- measuring */
     let mctx = null;
@@ -171,10 +197,16 @@
     const buildMosaic = async (word, arts, animate, my) => {
       const chars = Words().letters(word);
       const assigned = Words().assignArts(chars.map((l) => l.ch), arts);
+      if (override && assigned.length) { // the chosen piece leads: letter 01, never repeated elsewhere
+        const at = assigned.findIndex((a) => a.id === override.art.id);
+        if (at > 0) { const t = assigned[0]; assigned[0] = assigned[at]; assigned[at] = t; } else if (at < 0) assigned[0] = override.art;
+      }
       // Start every piece now, in letter order (the first-run renders queue one after another); each letter fills as its
       // own piece arrives instead of the whole word waiting for the slowest one.
       const svgPromises = assigned.map((a) => a.getSvg().catch(() => ''));
       const cws = ctx.colorwaysFor(assigned);
+      if (override && override.colorway && cws.length) cws[0] = override.colorway;
+      if (override && cws.length) cws[0] = withFill(assigned[0], cws[0]);
       const lines = splitLines(word);
       let k = 0;
       stage.append(h('div', { class: `sp-word-wrap${lines.length > 1 ? ' two' : ''}`, role: 'group', 'aria-label': `${word}: each letter opens the piece it carries` },
@@ -229,7 +261,7 @@
       const art = arts[0];
       const svg = await art.getSvg().catch(() => '');
       if (my !== gen) return;
-      const cw = ctx.colorwaysFor([art])[0];
+      const cw = cwFor(art, ctx.colorwaysFor([art])[0]);
       // The h1 stays the page's heading; the word inside it is a real button that opens the piece.
       const el = h('button', { type: 'button', class: 'sp-xc-word', 'aria-label': `${word}, filled with ${art.name.replace(/\.vectura$/, '')}. Open the piece` }, word);
       const heading = h('h1', { class: 'sp-xc-h' }, el);
@@ -252,7 +284,7 @@
       const art = arts[0];
       const svg = await art.getSvg().catch(() => '');
       if (my !== gen) return;
-      const cw = ctx.colorwaysFor([art])[0];
+      const cw = cwFor(art, ctx.colorwaysFor([art])[0]);
       const prefs = ctx.prefs();
       const band = h('div', { class: 'sp-pf', 'data-live-hook': 'band-3d', role: 'group', 'aria-label': `Cover band: ${art.name.replace(/\.vectura$/, '')}` });
       const text = h('div', { class: 'sp-pf-in' });
@@ -270,7 +302,7 @@
       tools.addEventListener('click', () => ctx.onOpen(art, tiles[0].cw));
       const style = band.style;
       style.setProperty('--sp-text', cw.textInk || cw.ink);
-      const p = Ink().mount(band, { id: art.id, svg }, { colorway: cw, fit: 'cover', pad: 0, label: false });
+      const p = Ink().mount(band, { id: art.id, svg }, { colorway: cw, fit: 'cover', pad: 0, label: false, frame: (override && override.art.id === art.id && override.frame && override.frame.fit !== 'contain') ? override.frame : null, fill: (override && override.art.id === art.id && override.fill) || null });
       setCwData(t);
       // Text rides above the art layer: mount() appended the art box last, so lift the overlay content. The fade
       // that lets the art dissolve under the text is a gradient overlay element (never a CSS mask on the art).
@@ -331,7 +363,7 @@
       who.textContent = '';
       const els = identityEls();
       if (style === 'band') {
-        const slot = stage.querySelector('.sp-pf-who');
+        const slot = stage.querySelector('.sp-pf:not(.sp-pf-old) .sp-pf-who');
         if (slot) els.forEach((e) => slot.append(e)); // band: name + line sit over the art
         return;
       }
@@ -367,6 +399,7 @@
       let arts = [];
       try { arts = await ctx.arts(); } catch (_) { arts = []; }
       if (my !== gen) return;
+      if (override) arts = [override.art, ...arts.filter((a) => a.id !== override.art.id)];
       const usingPicks = arts.length > 0 && arts.every((a) => a.kind === 'pick');
       renderInfo(style, arts, word, usingPicks);
       if (!arts.length) {
@@ -379,14 +412,15 @@
       else await buildBand(word, arts, animate, my);
       if (my !== gen) return;
       renderWho(style);
-      if (style === 'band') { const slot = stage.querySelector('.sp-pf-who'); if (slot && !slot.childNodes.length && !prefs.showName) slot.append(h('h1', { class: 'sp-cv-word', text: word })); }
+      if (style === 'band') { const slot = stage.querySelector('.sp-pf:not(.sp-pf-old) .sp-pf-who'); if (slot && !slot.childNodes.length && !prefs.showName) slot.append(h('h1', { class: 'sp-cv-word', text: word })); }
     };
 
     const recolor = () => {
       if (!tiles.length) return [];
+      if (override) override.colorway = null; // the page mode owns the colors again
       const cws = ctx.colorwaysFor(tiles.map((t) => t.art));
       tiles.forEach((t, i) => {
-        t.cw = cws[i];
+        t.cw = withFill(t.art, cws[i]);
         const handle = t.el._spWord || t.el._spInk;
         if (handle && handle.setColorway) handle.setColorway(t.cw);
         setCwData(t);
@@ -396,7 +430,7 @@
         if (t) { k.style.setProperty('--p', t.cw.paper); k.style.setProperty('--i', t.cw.ink); }
       });
       stage.querySelectorAll('.sp-xc-cap .sp-sw2, .sp-pf-cap .sp-sw2').forEach((s) => { s.style.setProperty('--p', tiles[0].cw.paper); s.style.setProperty('--i', tiles[0].cw.ink); });
-      const band = stage.querySelector('.sp-pf');
+      const band = stage.querySelector('.sp-pf:not(.sp-pf-old)');
       if (band) band.style.setProperty('--sp-text', tiles[0].cw.textInk || tiles[0].cw.ink);
       return cws;
     };
@@ -406,6 +440,72 @@
       tiles.forEach((t) => { const hd = t.el._spWord; if (hd && hd.refit) hd.refit(); });
     };
 
+    /* -------------------------------------------------------------- use as cover */
+    const scrollParent = () => {
+      let node = host.parentElement;
+      while (node && node !== document.body && node !== document.documentElement) {
+        let oy = '';
+        try { oy = G.getComputedStyle(node).overflowY; } catch (_) { /* noop */ }
+        if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+        node = node.parentElement;
+      }
+      return null;
+    };
+    const scrollToTop = () => new Promise((resolve) => {
+      const sc = scrollParent();
+      const pos = () => (sc ? sc.scrollTop : (G.scrollY || G.pageYOffset || 0));
+      if (pos() < 4) { resolve(); return; }
+      const opt = { top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' };
+      try { if (sc) sc.scrollTo(opt); else G.scrollTo(opt); } catch (_) { if (sc) sc.scrollTop = 0; }
+      const t0 = Date.now();
+      const poll = () => { if (pos() < 4 || Date.now() - t0 > 1400) setTimeout(resolve, 80); else setTimeout(poll, 30); };
+      poll();
+    });
+    const toast = (message, onUndo) => {
+      const T = Vectura.UI && Vectura.UI.overlays && Vectura.UI.overlays.Toast;
+      if (!T || typeof T.show !== 'function') return null;
+      try { return T.show({ message, variant: 'info', duration: 8000, action: { label: 'Undo', ariaLabel: 'Undo use as cover', onAction: () => onUndo() } }); } catch (_) { return null; }
+    };
+    // Re-render for a changed cover piece. A band cross-fades: the old band stays (absolute, on top) until the new one is mounted.
+    const swapCover = async (animate) => {
+      const style = host.dataset.style;
+      const old = style === 'band' ? stage.querySelector('.sp-pf') : null;
+      const oldTile = old && tiles.find((t) => t.el === old);
+      const fade = !!(old && oldTile && animates(animate));
+      if (fade) {
+        const r = old.getBoundingClientRect();
+        if (G.getComputedStyle(stage).position === 'static') stage.style.position = 'relative';
+        old.classList.add('sp-pf-old');
+        old.style.width = `${r.width}px`; old.style.height = `${r.height}px`;
+        hold = { old, tile: oldTile };
+      }
+      try { await render({ animate }); } finally { hold = null; }
+      if (fade) {
+        void old.offsetWidth;
+        old.style.opacity = '0';
+        later(() => { try { Ink() && Ink().unmount(old); } catch (_) { /* noop */ } old.remove(); stage.style.position = ''; }, 460);
+      }
+    };
+    const useAsCover = async (art, o = {}) => {
+      if (!art) return false;
+      const prev = override;
+      await scrollToTop();
+      override = { art, colorway: o.colorway || null, frame: o.frame || null, fill: o.fill || null };
+      if (ctx.onCover) ctx.onCover(override);
+      await swapCover(true);
+      const style = host.dataset.style;
+      if (style === 'mosaic' && tiles[0] && tiles[0].el.parentNode && tiles[0].el.parentNode.classList) {
+        const lt = tiles[0].el.parentNode;
+        lt.classList.add('sp-lt-new');
+        later(() => lt.classList.remove('sp-lt-new'), 1600);
+      }
+      const nm = `\u201c${String(art.name || 'Piece').replace(/\.vectura$/, '')}\u201d`;
+      const where = style === 'mosaic' ? 'now leads the cover word, on its first letter' : style === 'word' ? 'now fills the cover word' : 'is now the cover';
+      const undo = async () => { override = prev; if (ctx.onCover) ctx.onCover(prev); await swapCover(false); };
+      toast(`${nm} ${where}.`, undo);
+      return { art, undo };
+    };
+
     const destroy = () => { gen++; teardown(); };
 
     return {
@@ -413,6 +513,10 @@
       tiles: () => tiles.map((t) => ({ el: t.el, art: t.art, cw: t.cw, k: t.k })),
       words: picker,
       syncWho: () => renderWho(host.dataset.style),
+      useAsCover,
+      /** Restore a saved cover piece without animating (the next render() shows it). */
+      setOverride: (o) => { override = o && o.art ? { art: o.art, colorway: null, frame: o.frame || null, fill: o.fill || null } : null; },
+      coverOverride: () => (override ? { ...override } : null),
     };
   };
 

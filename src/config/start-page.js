@@ -28,6 +28,10 @@
     name: '',
     practiceLine: '',
     newPaper: 'A3',
+    // "Use as cover": the chosen piece's id (colors follow the page mode), its framing and special fill kind.
+    coverArtId: '',
+    coverFrame: null,
+    coverFill: '',
   });
 
   const ENUMS = Object.freeze({
@@ -65,6 +69,19 @@
     const cleaned = value.replace(DISALLOWED_TEXT, '').replace(/\s+/g, ' ').trim();
     return cleaned.slice(0, max).trim();
   };
+  const ID_RE = /^[\w:#.\-]{1,80}$/;
+  const FILL_RE = /^[a-z][a-z-]{0,31}$/;
+  const num = (v, lo, hi) => (Number.isFinite(+v) && v !== null && v !== '' ? Math.max(lo, Math.min(hi, +v)) : null);
+  const frame = (v) => {
+    if (!v || typeof v !== 'object') return null;
+    const z = num(v.z, 0.5, 4);
+    const cx = num(v.cx, 0, 1); const cy = num(v.cy, 0, 1);
+    const out = {};
+    if (v.fit === 'cover' || v.fit === 'contain') out.fit = v.fit;
+    if (z != null) out.z = Math.round(z * 1000) / 1000;
+    if (cx != null && cy != null) { out.cx = Math.round(cx * 1000) / 1000; out.cy = Math.round(cy * 1000) / 1000; }
+    return Object.keys(out).length ? out : null;
+  };
   const oneOf = (list, value, fallback) => (list.includes(value) ? value : fallback);
   const bool = (value, fallback) => (value === undefined ? fallback : Boolean(value));
 
@@ -95,6 +112,9 @@
       name: text(pick('name'), LIMITS.textMax.name, DEFAULTS.name),
       practiceLine: text(pick('practiceLine'), LIMITS.textMax.practiceLine, DEFAULTS.practiceLine),
       newPaper: oneOf(ENUMS.newPaper, pick('newPaper'), DEFAULTS.newPaper),
+      coverArtId: typeof pick('coverArtId') === 'string' && ID_RE.test(pick('coverArtId')) ? pick('coverArtId') : DEFAULTS.coverArtId,
+      coverFrame: frame(pick('coverFrame')),
+      coverFill: typeof pick('coverFill') === 'string' && FILL_RE.test(pick('coverFill')) ? pick('coverFill') : DEFAULTS.coverFill,
     };
   };
 
