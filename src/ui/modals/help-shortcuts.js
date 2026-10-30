@@ -417,7 +417,10 @@
       <table class="help-kbd-table">
         <tbody>
           ${section('File',
+            row(CMD + SHF + k('H'), 'Start Page', 'Back to the Start Page; again to return to the canvas') +
+            row(CMD + k('N'),       'New canvas', 'Asks first when the canvas has unsaved changes') +
             row(CMD + k('O'),       'Open project') +
+            row(CMD + OPT + k('1–8'), 'Open a recent project', 'File ▸ Open Recent lists them') +
             row(CMD + k('S'),       'Save project') +
             row(CMD + k('S'),       'Save preset (config panel focused, after editing a preset)') +
             row(CMD + SHF + k('P'), 'Import SVG') +
@@ -430,6 +433,7 @@
           )}
         </tbody>
       </table>
+      ${callout('The <strong>Start Page</strong> holds New canvas, Open and your recent projects. Open it from <em>File ▸ Start Page…</em>, with the shortcut, or by clicking the wordmark at the top left; the canvas you were on stays alive underneath. Turn <em>Show Start Page on launch</em> off here or in <em>Document Setup ▸ History &amp; Preferences</em> (that also turns on <em>Save preferences in cookie</em>, so the choice is remembered). Some browsers keep <b>Cmd/Ctrl+N</b> and <b>Shift+Cmd/Ctrl+H</b> for themselves while Vectura runs in a tab; the File menu has the same actions.')}
       ${callout(`
         <strong>Export SVG</strong> includes four optimization passes you can mix and match:
         <ul class="help-callout-list">

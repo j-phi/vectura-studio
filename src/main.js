@@ -14,13 +14,20 @@
     UI?.PathfinderPanel?.init?.(app);
     UI?.PaintBucketPanel?.init?.(app);
     const S = window.Vectura.SETTINGS;
+    // Start Page on launch (the automation rule lives in App#shouldShowStartPageOnLaunch).
+    const startPageShown = app.showStartPageOnLaunchIfWanted?.() === true;
     if (S && S.showTourOnFirstLaunch && !S.tourSeen) {
-      setTimeout(() => {
-        window.Vectura.Tutorial?.start(() => {
-          S.tourSeen = true;
-          app.persistPreferences?.();
-        });
-      }, 800);
+      const startTour = () => {
+        setTimeout(() => {
+          window.Vectura.Tutorial?.start(() => {
+            S.tourSeen = true;
+            app.persistPreferences?.();
+          });
+        }, 800);
+      };
+      // The tour points at the editor, so it waits until the Start Page has been dismissed.
+      if (startPageShown) window.addEventListener('vectura:start-page-hidden', startTour, { once: true });
+      else startTour();
     }
   });
 })();

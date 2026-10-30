@@ -17,6 +17,21 @@
       .map((c) => `${c}`.toLowerCase()),
   );
   const normalizeDocumentUnits = UnitUtils.normalizeDocumentUnits || ((value) => (`${value || ''}`.trim().toLowerCase() === 'imperial' ? 'imperial' : 'metric'));
+  // Start Page preferences always pass through START_PAGE.sanitize (enum / length / character allowlists).
+  const sanitizeStartPage = (value) => {
+    const SP = window.Vectura.START_PAGE;
+    return SP && typeof SP.sanitize === 'function' ? SP.sanitize(value) : { showOnLaunch: value?.showOnLaunch !== false };
+  };
+  // The preference cookie is capped at 4 KB, so persist only the Start Page keys that differ from the
+  // defaults; sanitize() restores the rest on load.
+  const compactStartPage = (full) => {
+    const defaults = window.Vectura.START_PAGE?.DEFAULTS || {};
+    const out = {};
+    Object.keys(full || {}).forEach((key) => {
+      if (!(key in defaults) || full[key] !== defaults[key]) out[key] = full[key];
+    });
+    return out;
+  };
   const normalizeThemeName = (theme) => {
     const key = `${theme || ''}`.trim().toLowerCase();
     return Object.prototype.hasOwnProperty.call(THEMES, key) ? key : DEFAULT_THEME;
@@ -296,6 +311,17 @@
       this.isRestoring = false;
       this.pushHistory();
       this._notifyHistory();
+      this.markDocumentClean();
+      // Start Page + recents (File > Open Recent). The launch decision itself is made by main.js.
+      const uiNs = window.Vectura.UI || {};
+      this.recents = uiNs.RecentsController?.create ? uiNs.RecentsController.create(this) : null;
+      this.startPage = uiNs.StartPage?.create ? uiNs.StartPage.create(this) : null;
+      this.recents?.bindMenu();
+      // The editor wordmark is the way back to the Start Page.
+      if (typeof document !== 'undefined') {
+        document.querySelector('#app-header h1')?.addEventListener('click', () => this.startPage?.show());
+      }
+      this.recents?.refresh();
 
       this.render();
       this.persistPreferencesDebounced(0);
@@ -549,6 +575,7 @@
         paneRightWidth: SETTINGS.paneRightWidth,
         showTourOnFirstLaunch: SETTINGS.showTourOnFirstLaunch === true,
         tourSeen: SETTINGS.tourSeen === true,
+        startPage: compactStartPage(sanitizeStartPage(SETTINGS.startPage)),
         toolbarDock: SETTINGS.toolbarDock ?? null,
         toolbarX: SETTINGS.toolbarX ?? null,
         toolbarY: SETTINGS.toolbarY ?? null,
@@ -791,6 +818,8 @@
       }
       SETTINGS.showTourOnFirstLaunch = snapshot.showTourOnFirstLaunch === true;
       SETTINGS.tourSeen = snapshot.tourSeen === true;
+      // A snapshot written before the Start Page (or a partial one) carries no startPage: keep what is set.
+      if ('startPage' in snapshot) SETTINGS.startPage = sanitizeStartPage(snapshot.startPage);
       // toolbarDock: null is the canonical "no dock" sentinel; otherwise enum.
       if ('toolbarDock' in snapshot) {
         if (snapshot.toolbarDock == null) {
@@ -886,6 +915,174 @@
         this.preferencePersistTimer = null;
         this.persistPreferences();
       }, Math.max(0, delay));
+    }
+
+    // ---- Start Page ----------------------------------------------------------------------------------
+    // Launch rule. AUTOMATION RULE: under automation (navigator.webdriver) the page does not open on launch
+    // unless the URL carries ?startPage=launch, so the existing specs keep booting into the editor.
+    shouldShowStartPageOnLaunch(opts = {}) {
+      const webdriver = 'webdriver' in opts ? opts.webdriver === true : (typeof navigator !== 'undefined' && navigator.webdriver === true);
+      const search = 'search' in opts ? `${opts.search || ''}` : (typeof location !== 'undefined' ? location.search : '');
+      if (SETTINGS.startPage?.showOnLaunch === false) return false;
+      if (webdriver && !/[?&]startPage=launch(&|$)/.test(search)) return false;
+      return true;
+    }
+
+    showStartPageOnLaunchIfWanted(opts = {}) {
+      if (!this.startPage || !this.shouldShowStartPageOnLaunch(opts)) return false;
+      this.startPage.show();
+      return true;
+    }
+
+    openStartPage() {
+      this.startPage?.show();
+    }
+
+    _toast(message, variant = 'info', action = null, duration = null) {
+      const T = window.Vectura?.UI?.overlays?.Toast;
+      if (!T || typeof T.show !== 'function') return null;
+      try {
+        return T.show({ message, variant, duration: duration || (action ? 8000 : 3500), ...(action ? { action } : {}) });
+      } catch (_) { return null; }
+    }
+
+    _syncStartPagePrefs() {
+      const box = typeof document !== 'undefined' ? document.getElementById('set-show-start-page') : null;
+      if (box) box.checked = SETTINGS.startPage?.showOnLaunch !== false;
+      const cookie = typeof document !== 'undefined' ? document.getElementById('set-cookie-preferences') : null;
+      if (cookie) cookie.checked = SETTINGS.cookiePreferencesEnabled === true;
+      this.startPage?.syncPrefs?.();
+    }
+
+    /**
+     * A setting that only survives if preferences are saved asks for that. When "Save preferences in cookie" is
+     * off, it is turned on and persisted, and a toast says so with an Undo that restores BOTH the cookie setting
+     * and (through `undo`) the caller's own setting. Returns { changed } (true when it flipped the cookie setting).
+     */
+    ensurePreferencePersistence({ message, undo } = {}) {
+      if (SETTINGS.cookiePreferencesEnabled === true) {
+        this.persistPreferences({ force: true });
+        return { changed: false };
+      }
+      SETTINGS.cookiePreferencesEnabled = true;
+      this.persistPreferences({ force: true });
+      this._syncStartPagePrefs();
+      this._toast(message || 'Saving preferences in a cookie was turned on so this is remembered.', 'info', {
+        label: 'Undo',
+        onAction: () => {
+          SETTINGS.cookiePreferencesEnabled = false;
+          try { if (typeof undo === 'function') undo(); } finally {
+            this.clearPreferenceCookie();
+            this._syncStartPagePrefs();
+          }
+        },
+      });
+      return { changed: true };
+    }
+
+    setShowStartPageOnLaunch(on) {
+      const sp = SETTINGS.startPage || (SETTINGS.startPage = sanitizeStartPage({}));
+      const next = on !== false && on !== 0;
+      const prev = sp.showOnLaunch !== false;
+      if (prev === next) { this._syncStartPagePrefs(); return; }
+      sp.showOnLaunch = next;
+      if (next) {
+        this.persistPreferences();
+      } else {
+        const mod = /mac|iphone|ipad|ipod/i.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`) ? '⌘' : 'Ctrl+';
+        this.ensurePreferencePersistence({
+          message: `The Start Page will not open on launch. Save preferences in cookie was turned on so this sticks. Re-enable it in Document Setup (${mod}K), History & Preferences.`,
+          undo: () => {
+            sp.showOnLaunch = prev;
+            this.persistPreferences();
+          },
+        });
+      }
+      this._syncStartPagePrefs();
+    }
+
+    // ---- unsaved changes + New Canvas ----------------------------------------------------------------
+    _documentFingerprint() {
+      try {
+        return JSON.stringify([
+          this.engine.exportState(), SETTINGS.pens, SETTINGS.paper,
+          SETTINGS.paperSize, SETTINGS.paperWidth, SETTINGS.paperHeight, SETTINGS.paperOrientation,
+        ]);
+      } catch (_) { return `${Math.random()}`; }
+    }
+
+    markDocumentClean() {
+      this._cleanFingerprint = this._documentFingerprint();
+    }
+
+    isDocumentDirty() {
+      return this._documentFingerprint() !== this._cleanFingerprint;
+    }
+
+    // Resolves true when it is fine to replace the document: nothing unsaved, or the user chose to discard.
+    confirmDiscardChanges({ title = 'Discard unsaved changes?', message, confirmLabel = 'Discard' } = {}) {
+      if (!this.isDocumentDirty()) return Promise.resolve(true);
+      const Dialog = window.Vectura?.UI?.overlays?.Dialog;
+      if (typeof Dialog !== 'function') return Promise.resolve(true);
+      return new Promise((resolve) => {
+        let dlg = null;
+        let settled = false;
+        const settle = (value) => {
+          if (settled) return;
+          settled = true;
+          resolve(value);
+          setTimeout(() => { try { dlg?.destroy(); } catch (_) { /* noop */ } }, 0);
+        };
+        dlg = Dialog(document.body, {
+          title,
+          message: message || 'The canvas has changes that are not saved to a file. Replacing it cannot be undone.',
+          confirmLabel, cancelLabel: 'Keep editing', destructive: true,
+          onConfirm: () => settle(true),
+          onCancel: () => settle(false),
+        });
+        dlg.open();
+      });
+    }
+
+    getNewCanvasPaper() {
+      return SETTINGS.startPage?.newPaper || 'A3';
+    }
+
+    /** Replace the document with an empty one on the chosen paper. Resolves true when it happened. */
+    async newCanvas({ paper, confirm = true } = {}) {
+      const papers = window.Vectura.NEW_CANVAS_PAPERS || {};
+      const key = papers[paper] ? paper : (papers[this.getNewCanvasPaper()] ? this.getNewCanvasPaper() : Object.keys(papers)[0]);
+      const conf = papers[key];
+      if (!conf) return false;
+      if (confirm && !(await this.confirmDiscardChanges({
+        title: 'Start a new canvas?',
+        message: 'The current canvas has changes that are not saved to a file. A new canvas replaces it, and that cannot be undone.',
+        confirmLabel: 'New canvas',
+      }))) return false;
+      const MACHINES = window.Vectura.MACHINES || {};
+      const state = this.captureState();
+      state.engine.layers = [];
+      state.engine.activeLayerId = null;
+      state.selectedLayerIds = [];
+      state.selectedLayerId = null;
+      state.settings.paperSize = conf.machine;
+      if (conf.widthIn) {
+        state.settings.paperWidth = conf.widthIn * 25.4;
+        state.settings.paperHeight = conf.heightIn * 25.4;
+      } else {
+        state.settings.paperWidth = MACHINES[conf.machine]?.width ?? SETTINGS.paperWidth;
+        state.settings.paperHeight = MACHINES[conf.machine]?.height ?? SETTINGS.paperHeight;
+      }
+      this.applyState(state);
+      this.engine.setProfile(SETTINGS.paperSize);
+      this.ui?.initSettingsValues?.();
+      this.renderer?.center?.();
+      this.history = [];
+      this.redoStack = [];
+      this.pushHistory();
+      this.markDocumentClean();
+      this.render();
+      return true;
     }
 
     // Paper selector: migrate/validate the default paper from a preference

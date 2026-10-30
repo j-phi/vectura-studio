@@ -214,6 +214,8 @@
     if (devMode) devMode.checked = SETTINGS.devMode === true;
     const showTourEl = getEl('set-show-tour', { silent: true });
     if (showTourEl) showTourEl.checked = SETTINGS.showTourOnFirstLaunch === true;
+    const showStartPageEl = getEl('set-show-start-page', { silent: true });
+    if (showStartPageEl) showStartPageEl.checked = SETTINGS.startPage?.showOnLaunch !== false;
     // Paper selector: Document Setup "Default paper" row + the Paper panel.
     if (typeof this.refreshDefaultPaperControls === 'function') this.refreshDefaultPaperControls();
     if (typeof this.refreshPaperUI === 'function') this.refreshPaperUI();

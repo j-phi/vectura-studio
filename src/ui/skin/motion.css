@@ -300,3 +300,13 @@
   transition: opacity 160ms ease, visibility 160ms ease;
 }
 /* === END ISO motion === */
+
+/* Start Page: the overlay eases in over the editor (stilled for reduced-motion users). */
+@keyframes sp-in {
+  from { opacity: 0; transform: scale(0.992); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp { animation: none; }
+  .sp *, .sp *::before, .sp *::after { transition-duration: 0s !important; }
+}

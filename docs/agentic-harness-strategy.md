@@ -111,6 +111,7 @@ Reference:
   are enforced on Node 24 only) and a matched Vitest 4 / V8 coverage-provider pair. CI pins every
   third-party action to a commit SHA;
   version-specific pool configuration is documented in `docs/testing.md`.
+- Automation rule: under `navigator.webdriver === true` the app does not open the Start Page on launch unless the URL has `?startPage=launch`, so every existing e2e spec boots into the editor; Start Page specs opt in. Details in `docs/testing.md` ("Start Page and Automation").
 - Local Playwright compatibility notes also live in `docs/testing.md`; local browser fallbacks must stay documented there and in `AGENTS.md` whenever the e2e runtime contract changes.
 - **Shared local test queue.** Local test runs go through `scripts/test-queue.js`, one
   machine-wide lock shared by every worktree and agent session. Agents run tests only through

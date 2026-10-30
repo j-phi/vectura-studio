@@ -520,6 +520,16 @@ Branch rules: this ratchet merges before any product lane. After each lane merge
 
 Unit proof: `tests/unit/touch-target-ratchet.test.js` tests the comparator, the update merge, the final targets and the serializer.
 
+## Start Page and Automation
+
+The Start Page opens on launch by default. Under automation (`navigator.webdriver === true`, which every
+Playwright run sets) the app skips it and boots straight into the editor, so the existing specs need no change.
+A spec that tests the Start Page itself opts in with `?startPage=launch` in the URL (for example
+`page.goto('/?startPage=launch')`); turning the launch setting off still wins over the opt-in. The rule lives in
+`App#shouldShowStartPageOnLaunch`, and Vitest runs are unaffected because `src/main.js` (the only caller) is not loaded
+by the integration runtime. Under automation, File > Open also keeps the plain `<input type=file>` path instead of
+Chromium's `showOpenFilePicker`, so `filechooser` events keep working.
+
 ## Writing New Tests
 
 - Use deterministic seeds and explicit parameter overrides.

@@ -56,7 +56,7 @@
         </button>
         <div class="w-4 h-4 bg-vectura-accent header-brand-mark"></div>
         <h1 class="font-bold tracking-widest text-vectura-accent whitespace-nowrap">
-          VECTURA<span class="font-light text-vectura-muted">.STUDIO</span>
+          <button id="btn-wordmark" class="wordmark-btn" type="button" title="Start Page (Shift+Cmd+H)" aria-label="Vectura Studio — open the Start Page">VECTURA<span class="font-light text-vectura-muted">.STUDIO</span></button>
         </h1>
         <div class="header-menu-divider" aria-hidden="true"></div>
         <nav id="top-menubar" class="top-menubar" role="menubar" aria-label="Main menu">
@@ -65,10 +65,27 @@
               File
             </button>
             <div class="top-menu-panel" data-top-menu-panel role="menu" aria-label="File menu">
+              <button id="btn-start-page" class="top-menu-item" type="button" role="menuitem">
+                <span>Start Page…</span>
+                <span class="top-menu-shortcut" data-shortcut-mac="Shift+Cmd+H" data-shortcut-win="Shift+Ctrl+H"></span>
+              </button>
+              <button id="btn-new-canvas" class="top-menu-item" type="button" role="menuitem">
+                <span>New Canvas</span>
+                <span class="top-menu-shortcut" data-shortcut-mac="Cmd+N" data-shortcut-win="Ctrl+N"></span>
+              </button>
+              <hr class="top-menu-sep" role="separator">
               <button id="btn-open-vectura" class="top-menu-item" type="button" role="menuitem">
                 <span>Open Project…</span>
                 <span class="top-menu-shortcut" data-shortcut-mac="Cmd+O" data-shortcut-win="Ctrl+O"></span>
               </button>
+              <div class="top-menu-sub">
+                <button id="btn-open-recent" class="top-menu-item" type="button" role="menuitem" aria-haspopup="menu" aria-expanded="false" aria-controls="open-recent-panel">
+                  <span>Open Recent</span>
+                  <span class="top-menu-chevron" aria-hidden="true">›</span>
+                </button>
+                <div id="open-recent-panel" class="top-menu-subpanel" role="menu" aria-label="Open Recent" hidden></div>
+              </div>
+              <hr class="top-menu-sep" role="separator">
               <button id="btn-save-vectura" class="top-menu-item" type="button" role="menuitem">
                 <span>Save Project…</span>
                 <span class="top-menu-shortcut" data-shortcut-mac="Cmd+S" data-shortcut-win="Ctrl+S"></span>
@@ -958,6 +975,7 @@
 
   <script src="./src/config/version.js?v=1.4.36" defer></script>
   <script src="./src/config/machines.js?v=1.4.36" defer></script>
+  <script src="./src/config/start-page.js?v=1.4.36" defer></script>
   <script src="./src/config/defaults.js?v=1.4.36" defer></script>
   <script src="./src/config/papers.js?v=1.4.36" defer></script>
   <script src="./src/config/pen-models.js?v=1.4.36" defer></script>
@@ -1009,6 +1027,7 @@
   <script src="./src/core/user-library-store.js?v=1.4.36" defer></script>
   <script src="./src/core/pen-library.js?v=1.4.36" defer></script>
   <script src="./src/core/texture-store.js?v=1.4.36" defer></script>
+  <script src="./src/core/recents-store.js?v=1.4.36" defer></script>
   <script src="./src/core/paper-texture-search.js?v=1.4.36" defer></script>
   <script src="./src/core/paper.js?v=1.4.36" defer></script>
   <script src="./src/core/rng.js?v=1.4.36" defer></script>
@@ -1284,6 +1303,8 @@
        (helper locals, satellite bootstrap block, `class UI` stub, legacy
        mixin Object.assign chain) merged into `src/ui/ui.js` alongside the
        orchestrator init. Single entry point now owns the runtime UI class. -->
+  <script src="./src/ui/start-page/recents.js?v=1.4.36" defer></script>
+  <script src="./src/ui/start-page/start-page.js?v=1.4.36" defer></script>
   <script src="./src/ui/ui.js?v=1.4.36" defer></script>
   <script src="./src/ui/ui-tutorial.js?v=1.4.36" defer></script>
   <script src="./src/app/app.js?v=1.4.36" defer></script>

@@ -131,6 +131,9 @@
         window.Vectura.Download.saveBlob(blob, filename).then((result) => {
           if (result === 'cancelled') return;
           toast(`Saved ${filename}`, 'success');
+          this.app.markDocumentClean?.();
+          // Recents: a full copy of what was just saved (Save stays a download — no handle).
+          this.app.recents?.record({ source: 'save', name: filename, payload });
         }).catch((err) => {
           console.error('saveVecturaFile failed', err);
           toast('Could not save the project — see console for details', 'danger');
@@ -143,7 +146,7 @@
       }
     },
 
-    openVecturaFile(file) {
+    openVecturaFile(file, opts = {}) {
       if (!file) return;
       const rejectInvalid = () => {
         toast('Invalid .vectura file', 'danger');
@@ -155,70 +158,120 @@
       // TUX-053: reject a non-JSON file from its first bytes before the full read.
       sniffJsonHead(file).then((ok) => {
         if (!ok) { rejectInvalid(); return; }
-        this._readVecturaFile(file);
+        this._readVecturaFile(file, opts);
       });
     },
 
-    _readVecturaFile(file) {
+    // Open a file from anywhere: Chromium's file picker (keeps a handle for Recents) when it is usable,
+    // otherwise a plain <input type=file>. Under automation the input path is always used, so the
+    // existing specs (and their filechooser events) are unaffected.
+    pickVecturaFile({ input = null, host = null } = {}) {
+      const canUseFsa = typeof window.showOpenFilePicker === 'function'
+        && !(typeof navigator !== 'undefined' && navigator.webdriver === true) && window.isSecureContext !== false;
+      if (canUseFsa) {
+        window.showOpenFilePicker({
+          multiple: false,
+          types: [{ description: 'Vectura project', accept: { 'application/json': ['.vectura', '.json'] } }],
+        }).then(async ([handle]) => {
+          if (!handle) return;
+          const file = await handle.getFile();
+          this.openVecturaFile(file, { handle });
+        }).catch((err) => {
+          if (err && err.name === 'AbortError') return;
+          console.warn('showOpenFilePicker failed; using the input fallback', err);
+          this.pickVecturaFile({ input, host: host || document.body, forceInput: true });
+        });
+        return;
+      }
+      let el = input;
+      if (!el) {
+        // A transient input hosted inside the Start Page (the editor underneath is inert).
+        document.getElementById('sp-transient-open')?.remove();
+        el = document.createElement('input');
+        el.id = 'sp-transient-open';
+        el.type = 'file';
+        el.hidden = true;
+        el.onchange = () => {
+          const file = el.files?.[0];
+          if (file) this.openVecturaFile(file);
+          el.remove();
+        };
+        (host || document.body).appendChild(el);
+      }
+      Vectura.FilePicker.pickFile({ kind: 'vectura', input: el });
+    },
+
+    _readVecturaFile(file, opts = {}) {
       const reader = new FileReader();
       reader.onload = () => {
-        // Snapshot BEFORE any mutation. If parse/apply throws mid-flight we
-        // roll the engine + SETTINGS back so the user is never stranded with
-        // a half-loaded project. Bugs-9.
-        const rollback = this.app.captureState();
         let parsed = null;
-        try {
-          parsed = JSON.parse(reader.result);
-          const state = parsed?.state || parsed;
-          if (!state?.engine || !state?.settings) {
-            throw new Error('Missing state payload');
-          }
-          // AUD-02: a file from a FUTURE format still loads best-effort
-          // (importState migrates known versions; unknown-newer passes
-          // through), but the user must know settings may not apply.
-          const fileFormat = Number(state.engine.formatVersion) || 0;
-          const knownFormat = window.Vectura?.VECTURA_FORMAT_VERSION ?? 1;
-          if (fileFormat > knownFormat) {
-            toast(
-              'This file was saved by a newer version of Vectura Studio; some settings may not apply.',
-              'warning',
-              6000
-            );
-          }
-          if (parsed?.images) {
-            const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
-            Object.entries(parsed.images).forEach(([id, img]) => {
-              if (!img || !Array.isArray(img.data)) return;
-              store[id] = {
-                width: img.width,
-                height: img.height,
-                data: new Uint8ClampedArray(img.data),
-              };
-            });
-          }
-          this.app.applyState(state);
-        } catch (err) {
-          // Restore the pre-import state. applyState is idempotent so this
-          // safely undoes any half-applied SETTINGS or engine.layers mutation.
-          try { this.app.applyState(rollback); } catch (_) { /* best-effort */ }
-          console.error('openVecturaFile failed', err);
-          toast('Invalid .vectura file', 'danger');
-          // Bugs-4: build the body as a Node so we never feed an HTML string
-          // through the modal's sanitizer for this error path.
-          const errBody = document.createElement('p');
-          errBody.className = 'modal-text';
-          errBody.textContent = 'That file could not be loaded as a .vectura document.';
-          this.openModal({ title: 'Invalid File', body: errBody });
-          return;
-        }
-        // Only after the import installs cleanly: clear history and
-        // baseline the fresh state. Doing this inside the try would discard
-        // the user's undo stack even when the import ultimately fails.
-        this.app.history = [];
-        this.app.pushHistory();
-        toast('Project loaded', 'success');
+        try { parsed = JSON.parse(reader.result); } catch (_) { parsed = null; }
+        if (!this.loadVecturaPayload(parsed)) return;
+        // Recents: every successful Open records a full copy (and the handle, when there is one).
+        this.app.recents?.record({ source: 'open', name: file.name || 'untitled.vectura', handle: opts.handle || null, payload: parsed });
+        this.app.startPage?.hide?.({ restoreFocus: false });
       };
       reader.readAsText(file);
+    },
+
+    // Apply a parsed .vectura object. Returns true when it loaded; on failure the editor is rolled back and
+    // the user is told. `quiet` skips the "Project loaded" toast (callers that have their own message).
+    loadVecturaPayload(parsed, { quiet = false } = {}) {
+      // Snapshot BEFORE any mutation. If parse/apply throws mid-flight we
+      // roll the engine + SETTINGS back so the user is never stranded with
+      // a half-loaded project. Bugs-9.
+      const rollback = this.app.captureState();
+      try {
+        const state = parsed?.state || parsed;
+        if (!state?.engine || !state?.settings) {
+          throw new Error('Missing state payload');
+        }
+        // AUD-02: a file from a FUTURE format still loads best-effort
+        // (importState migrates known versions; unknown-newer passes
+        // through), but the user must know settings may not apply.
+        const fileFormat = Number(state.engine.formatVersion) || 0;
+        const knownFormat = window.Vectura?.VECTURA_FORMAT_VERSION ?? 1;
+        if (fileFormat > knownFormat) {
+          toast(
+            'This file was saved by a newer version of Vectura Studio; some settings may not apply.',
+            'warning',
+            6000
+          );
+        }
+        if (parsed?.images) {
+          const store = (window.Vectura.NOISE_IMAGES = window.Vectura.NOISE_IMAGES || {});
+          Object.entries(parsed.images).forEach(([id, img]) => {
+            if (!img || !Array.isArray(img.data)) return;
+            store[id] = {
+              width: img.width,
+              height: img.height,
+              data: new Uint8ClampedArray(img.data),
+            };
+          });
+        }
+        this.app.applyState(state);
+      } catch (err) {
+        // Restore the pre-import state. applyState is idempotent so this
+        // safely undoes any half-applied SETTINGS or engine.layers mutation.
+        try { this.app.applyState(rollback); } catch (_) { /* best-effort */ }
+        console.error('openVecturaFile failed', err);
+        toast('Invalid .vectura file', 'danger');
+        // Bugs-4: build the body as a Node so we never feed an HTML string
+        // through the modal's sanitizer for this error path.
+        const errBody = document.createElement('p');
+        errBody.className = 'modal-text';
+        errBody.textContent = 'That file could not be loaded as a .vectura document.';
+        this.openModal({ title: 'Invalid File', body: errBody });
+        return false;
+      }
+      // Only after the import installs cleanly: clear history and
+      // baseline the fresh state. Doing this inside the try would discard
+      // the user's undo stack even when the import ultimately fails.
+      this.app.history = [];
+      this.app.pushHistory();
+      this.app.markDocumentClean?.();
+      if (!quiet) toast('Project loaded', 'success');
+      return true;
     },
 
     importSvgFile(file) {
@@ -826,9 +879,9 @@
       };
     },
 
-    exportSVG() {
-      const progress = startProgress('Exporting SVG…');
-      try {
+    // Build the plotter SVG document for the current canvas without downloading it (export and the
+    // Recents thumbnail share this). Returns { svg, pathCount, snapshot }.
+    buildSvgDocument() {
       const snapshot =
         typeof this.getExportSnapshot === 'function'
           ? this.getExportSnapshot()
@@ -937,9 +990,18 @@
 
       if (useSvgMarginClip) svg += `</g>`;
       svg += `</svg>`;
+      const pathCount = groups.reduce((n, group) => n + (group.items?.length || 0), 0);
+      return { svg, pathCount, snapshot };
+    },
+
+    exportSVG() {
+      const progress = startProgress('Exporting SVG…');
+      try {
+      // `this` may be a bare { app } stand-in (tests call the prototype method), so fall back to the prototype.
+      const { svg, pathCount } = (typeof this.buildSvgDocument === 'function'
+        ? this.buildSvgDocument() : window.Vectura.UI.prototype.buildSvgDocument.call(this));
       // Delight moment: the snapshot's groups are already in hand, so the
       // path count comes for free — "Exported vectura.svg — 1,165 paths".
-      const pathCount = groups.reduce((n, group) => n + (group.items?.length || 0), 0);
       const filename = 'vectura.svg';
       // TUX-054: no await before saveBlob — the share sheet needs the tap's user activation.
       window.Vectura.Download.saveBlob(new Blob([svg], { type: 'image/svg+xml' }), filename).then((result) => {
@@ -1053,7 +1115,7 @@
       btnSaveVectura.onclick = () => this.saveVecturaFile();
     }
     if (btnOpenVectura && fileOpenVectura) {
-      btnOpenVectura.onclick = () => Vectura.FilePicker.pickFile({ kind: 'vectura', input: fileOpenVectura });
+      btnOpenVectura.onclick = () => this.pickVecturaFile({ input: fileOpenVectura });
       fileOpenVectura.onchange = () => {
         const file = fileOpenVectura.files?.[0];
         if (file) this.openVecturaFile(file);

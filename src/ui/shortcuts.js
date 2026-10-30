@@ -54,6 +54,25 @@
     requireDeps('handleTopMenuShortcut');
     const primary = e.metaKey || e.ctrlKey;
     const key = (e.key || '').toLowerCase();
+    // Start Page: Alt+Cmd+1..8 reopen a recent (matched on e.code: Option changes e.key on macOS),
+    // Shift+Cmd+H opens the page (or leaves it again when a canvas is live), Cmd+N starts a new canvas.
+    if (primary && e.altKey && !e.shiftKey && /^Digit[1-8]$/.test(e.code || '')) {
+      this.app?.recents?.openNth?.(Number(e.code.slice(5)) - 1);
+      this.setTopMenuOpen(null, false);
+      return true;
+    }
+    if (primary && e.shiftKey && !e.altKey && (key === 'h' || e.code === 'KeyH')) {
+      const sp = this.app?.startPage;
+      if (!sp) return false;
+      if (sp.isOpen() && (this.app.engine?.layers || []).length) sp.hide(); else sp.show();
+      this.setTopMenuOpen(null, false);
+      return true;
+    }
+    if (primary && !e.shiftKey && !e.altKey && key === 'n') {
+      this.setTopMenuOpen(null, false);
+      this.app?.newCanvas?.({ paper: this.app.getNewCanvasPaper?.() }).then((ok) => { if (ok) this.app.startPage?.hide?.({ restoreFocus: false }); });
+      return true;
+    }
     if (primary && !e.shiftKey && !e.altKey && key === 'z') {
       return this.triggerTopMenuAction('btn-undo');
     }

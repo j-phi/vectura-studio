@@ -362,6 +362,7 @@
             ${swToggle('set-cookie-preferences', 'Save preferences in cookie')}
             <button id="btn-clear-preferences" type="button" class="hdr-btn">Clear saved preferences</button>
             ${swToggle('set-show-tour', 'Show tour on first launch')}
+            ${swToggle('set-show-start-page', 'Show Start Page on launch')}
             ${swToggle('set-show-crystallographic-names', 'Show crystallographic group names (p4m, p3m1…)')}
           </div>
         </div>
@@ -1300,6 +1301,14 @@ ${isDevEligible() ? `
       setShowTour.onchange = (e) => {
         SETTINGS.showTourOnFirstLaunch = e.target.checked;
         this.app?.persistPreferences?.();
+      };
+    }
+    // Start Page: same setting as the Start Page's own checkbox. Turning it off keeps it across reloads by
+    // enabling "Save preferences in cookie" (with a toast and Undo) — see App#setShowStartPageOnLaunch.
+    const setShowStartPage = getEl('set-show-start-page', { silent: true });
+    if (setShowStartPage) {
+      setShowStartPage.onchange = (e) => {
+        this.app?.setShowStartPageOnLaunch?.(e.target.checked);
       };
     }
     const setShowCrystallographicNames = getEl('set-show-crystallographic-names', { silent: true });
