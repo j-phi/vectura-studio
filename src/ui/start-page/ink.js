@@ -5,7 +5,7 @@
  * object through CSS custom properties (--sp-paper / --sp-ink / --sp-ink2):
  *   - pieces <= 250 KB stay inline vector SVG (cover/contain via a viewBox window);
  *   - larger ones rasterize into a device-pixel <canvas> sized from the LAYOUT box x
- *     devicePixelRatio x visualViewport.scale (cap 4, max 4096 px), tinted in place, and
+ *     devicePixelRatio x pinch-zoom scale (via KeyboardInset.pageScale) (cap 4, max 4096 px), tinted in place, and
  *     re-rasterize on resize, DPR change and pinch zoom. Never CSS mask-image.
  * Also: draw-in (style registry; Plot ships), fillWord (art clipped to glyphs), motion.
  *
@@ -32,7 +32,7 @@
     try { return !!W.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; }
   };
   const isStill = () => state.still || reducedMotion();
-  const pinchZoom = () => { try { return W.visualViewport ? Math.max(1, W.visualViewport.scale || 1) : 1; } catch (e) { return 1; } };
+  const pinchZoom = () => { try { const K = Vectura.KeyboardInset; return K && K.pageScale ? K.pageScale() : 1; } catch (e) { return 1; } };
   const devicePx = () => Math.max(1, W.devicePixelRatio || 1);
   const policyFor = (cssWidth, cssHeight) => Geo.rasterPolicy({ cssWidth, cssHeight, dpr: devicePx(), zoom: pinchZoom() });
   const isHex = (c) => typeof c === 'string' && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(c);
@@ -179,10 +179,10 @@
     lastScale = devicePx() * pinchZoom();
     armDpr();
     try {
-      if (W.visualViewport && W.visualViewport.addEventListener) {
+      const K = Vectura.KeyboardInset;
+      if (K && K.onViewportChange) {
         const on = () => { clearTimeout(vvTimer); vvTimer = setTimeout(rescaleAll, 220); };
-        W.visualViewport.addEventListener('resize', on);
-        vvOff = () => W.visualViewport && W.visualViewport.removeEventListener('resize', on);
+        vvOff = K.onViewportChange(on);
       }
     } catch (e) { /* no visual viewport */ }
     try {

@@ -248,7 +248,11 @@
         };
         menuEls.close = close;
         menuEls.open = open;
-        trigger.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); open(false); });
+        // Touch-safe: a tap (click) opens the submenu; mouseenter is only the hover shortcut.
+        menuEls.sub.addEventListener('click', (e) => {
+          if (!trigger.contains(e.target)) return;
+          e.preventDefault(); e.stopPropagation(); open(false);
+        });
         menuEls.sub.addEventListener('mouseenter', () => open(false));
         menuEls.sub.addEventListener('mouseleave', () => { if (!panel.contains(document.activeElement)) close(false); });
         trigger.addEventListener('keydown', (e) => {

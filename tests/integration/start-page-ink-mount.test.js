@@ -32,6 +32,7 @@ const load = () => {
   window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 0);
   window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   window.eval(SRC('src/core/start-page/art-geometry.js'));
+  window.eval(SRC('src/ui/keyboard-inset.js')); // sole visualViewport reader (ink.js reads pinch scale through it)
   window.eval(SRC('src/ui/start-page/ink.js'));
   return window.Vectura.StartPageInk;
 };
