@@ -197,9 +197,16 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 
 Vectura's UI follows familiar desktop-editor conventions: a desktop menu bar with `File/View/Insert/Help` menus, a **Pen / Paper** tab with the pen palette (drag-to-assign) and a realistic paper selector, Document Setup (`Cmd/Ctrl+K`), and a multi-skin theme system (Classic Dark/Light, Lark, and the **Meridian Blue** family). Cookie-backed preference persistence keeps your settings between sessions.
 
+**Start Page.** Vectura opens on a Start Page over the editor, with a rail for a new blank canvas (`Cmd/Ctrl+N`), Open file, Resume and Recent files. Return to it from the wordmark or `File → Start Page…` (`Shift+Cmd/Ctrl+H`). The page can be turned off with **Show Start Page on launch**.
+
 <details>
 <summary>Full UI & workflow feature list</summary>
 
+- **Start Page (phase P0):** on launch the page covers the editor. The rail offers New blank canvas (`Cmd/Ctrl+N`) with paper-size chips A4, A3, Letter and 9×12, Open file (`Cmd/Ctrl+O`), Resume (the current canvas, or the newest recent) and Recent (thumbnails), plus a **Show Start Page on launch** checkbox. The main column is an empty state for now
+- **Show Start Page on launch** also lives in Document Setup (`Cmd/Ctrl+K`) ▸ History & Preferences. Turning it off while cookie saving is off turns on **Save preferences in cookie**, with a toast and Undo
+- **Recent files:** every Open and Save records a recent with a stored copy of the document in browser storage (IndexedDB). Chromium also remembers the file handle and reopens the real file; other browsers use the stored copy. `File → Open Recent ▸` lists thumbnail, name, algorithm and time, reopens with `Alt/Option+Cmd/Ctrl+1` to `8`, and offers **Clear Recent** with Undo
+- Under browser automation (`navigator.webdriver`) the Start Page does not open on its own unless the URL has `?startPage=launch`
+- Some browsers reserve `Cmd+N` and `Shift+Cmd+H` in a normal tab, so those shortcuts may not reach the page there
 - Desktop menu bar beside `VECTURA.STUDIO` with shortcuts for Open/Save/Import/Export/Document Setup/Reset View/Help plus an `Insert` menu for modifier containers
 - Top menu dropdowns render as overlays above the canvas/panes so they're never clipped by the header
 - Multi-skin theme system: Classic Dark, Classic Light, Lark, **Meridian Blue · Dark**, **Meridian Blue · Light**, and **Meridian Blue · Lark**. Switching skin restyles the full shell, flips the document background default, and swaps `Pen 1` to a contrast-appropriate color. New skins can be authored without JavaScript edits — see [`docs/skin-authoring.md`](docs/skin-authoring.md) and run `npm run skin:new -- <id>` to scaffold one from the template.
@@ -438,6 +445,9 @@ Click `Export SVG` to download.
 | **UI** | |
 | Lights Off (glow-in-the-dark inks emit; view only) | `Shift+Alt+L` |
 | Document Setup | `Cmd/Ctrl+K` |
+| Start Page (show, or leave when a canvas is open) | `Shift+Cmd/Ctrl+H` |
+| New canvas | `Cmd/Ctrl+N` |
+| Reopen recent 1–8 | `Alt/Option+Cmd/Ctrl+1` to `8` |
 | Help / shortcuts | `?` |
 
 </details>

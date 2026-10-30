@@ -6,6 +6,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Start Page (phase P0)
+- **Start Page on launch.** A Start Page opens over the editor with a rail for New blank canvas (`Cmd/Ctrl+N`, paper chips A4 / A3 / Letter / 9×12), Open file (`Cmd/Ctrl+O`), Resume and Recent thumbnails, plus a "Show Start Page on launch" checkbox. The main column is an empty state until the later phases land.
+- **Return paths.** The wordmark and `File → Start Page…` (`Shift+Cmd/Ctrl+H`) reopen the page; `File → New Canvas` (`Cmd/Ctrl+N`) starts a blank canvas.
+- **Recent files.** Every Open and Save records a recent with a stored copy in IndexedDB; Chromium reopens the real file through its remembered handle. `File → Open Recent ▸` shows thumbnail, name, algorithm and time, reopens with `Alt/Option+Cmd/Ctrl+1–8`, and offers Clear Recent with Undo.
+- **Preference.** Document Setup ▸ History & Preferences carries the same launch toggle. Turning it off while cookie saving is off enables "Save preferences in cookie", with a toast and Undo.
+- **Automation.** Under `navigator.webdriver` the page opens only with `?startPage=launch`.
+
 ### CI security hardening: Node 24 and pinned actions (Black October, v1.4.36)
 - **Node 24 everywhere.** Every CI job, `.nvmrc` (24.22.1) and the golden-value pin move from Node 20 (end of life, no fix for the Brotli decoder RCE CVE-2026-111497) to Node 24. `GOLDEN_NODE_MAJOR` is 24 in `tests/helpers/golden-values.js`, `scripts/test-update-baselines.js` and `scene3d-u2-kernel-identity.test.js`; the x64 regeneration image is `node:24.22.1-bookworm-slim`.
 - **Goldens re-captured for the new major, nothing else moved.** 6 arm64 and 7 x64 values in 4 files changed (`scene3d-mkdashramp-discrete`, `scene3d-mkdashramp-single-pass`, `scene3d-seed` x64, `scene3d-u2-kernel-identity` mezzoRegion); every SVG golden is unchanged. The U2 identity proof was re-run on the pre-U2 base `383d7610` on Node 24: all 6 scene hashes match current output on both architectures (the arm64 mezzoRegion hash `8ee322d6` is the one measured on the base for Node 25 on 2026-10-11).
