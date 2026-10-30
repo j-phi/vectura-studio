@@ -133,7 +133,7 @@
           toast(`Saved ${filename}`, 'success');
           this.app.markDocumentClean?.();
           // Recents: a full copy of what was just saved (Save stays a download — no handle).
-          this.app.recents?.record({ source: 'save', name: filename, payload });
+          this.app.recents?.record({ source: 'save', name: filename, payload, id: this.app.currentRecentId || undefined, forceNew: !this.app.currentRecentId });
         }).catch((err) => {
           console.error('saveVecturaFile failed', err);
           toast('Could not save the project — see console for details', 'danger');
@@ -165,8 +165,8 @@
     // Open a file from anywhere: Chromium's file picker (keeps a handle for Recents) when it is usable,
     // otherwise a plain <input type=file>. Under automation the input path is always used, so the
     // existing specs (and their filechooser events) are unaffected.
-    pickVecturaFile({ input = null, host = null } = {}) {
-      const canUseFsa = typeof window.showOpenFilePicker === 'function'
+    pickVecturaFile({ input = null, host = null, forceInput = false } = {}) {
+      const canUseFsa = !forceInput && typeof window.showOpenFilePicker === 'function'
         && !(typeof navigator !== 'undefined' && navigator.webdriver === true) && window.isSecureContext !== false;
       if (canUseFsa) {
         window.showOpenFilePicker({
@@ -270,6 +270,7 @@
       this.app.history = [];
       this.app.pushHistory();
       this.app.markDocumentClean?.();
+      this.app.currentRecentId = null; // set again by recents.record() for the opened file
       if (!quiet) toast('Project loaded', 'success');
       return true;
     },

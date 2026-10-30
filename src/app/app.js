@@ -22,8 +22,8 @@
     const SP = window.Vectura.START_PAGE;
     return SP && typeof SP.sanitize === 'function' ? SP.sanitize(value) : { showOnLaunch: value?.showOnLaunch !== false };
   };
-  // The preference cookie is capped at 4 KB, so persist only the Start Page keys that differ from the
-  // defaults; sanitize() restores the rest on load.
+  // Only NON-DEFAULT startPage keys are stored in the snapshot (localStorage and cookie alike): the preference
+  // cookie is capped at 4 KB, and sanitize() restores every missing key from START_PAGE.DEFAULTS on load.
   const compactStartPage = (full) => {
     const defaults = window.Vectura.START_PAGE?.DEFAULTS || {};
     const out = {};
@@ -31,6 +31,39 @@
       if (!(key in defaults) || full[key] !== defaults[key]) out[key] = full[key];
     });
     return out;
+  };
+  // Cookie payload: UTF-8 safe base64 (btoa alone throws on text like "José’s"). Legacy cookies were plain
+  // btoa of ASCII/Latin-1 JSON; decoding falls back to the raw atob() string for those.
+  const encodePrefsCookie = (json) => btoa(
+    encodeURIComponent(json).replace(/%([0-9A-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16))),
+  );
+  const decodePrefsCookie = (raw) => {
+    const bin = atob(raw);
+    try {
+      return decodeURIComponent(Array.from(bin, (c) => `%${c.charCodeAt(0).toString(16).padStart(2, '0')}`).join(''));
+    } catch (_) { return bin; }
+  };
+  // localStorage keeps the full snapshot; the cookie mirror must stay under the ~4 KB browser limit, so past
+  // this encoded size it is trimmed: Start Page text fields first, then other bulky optional keys.
+  // cookiePreferencesEnabled and startPage.showOnLaunch / motionStill are never dropped.
+  const PREFERENCE_COOKIE_BUDGET = 3900;
+  const COOKIE_TRIM_STARTPAGE_TEXT = ['name', 'practiceLine', 'customWord'];
+  const COOKIE_TRIM_KEYS = ['uiSections', 'autoColorization', 'contextBar', 'pens'];
+  const buildPreferenceCookieValue = (snapshot) => {
+    const wrap = (data) => encodePrefsCookie(JSON.stringify({ version: 1, data }));
+    let value = wrap(snapshot);
+    if (value.length <= PREFERENCE_COOKIE_BUDGET) return value;
+    const trimmed = { ...snapshot };
+    if (trimmed.startPage && typeof trimmed.startPage === 'object') {
+      trimmed.startPage = { ...trimmed.startPage };
+      COOKIE_TRIM_STARTPAGE_TEXT.forEach((k) => { delete trimmed.startPage[k]; });
+      value = wrap(trimmed);
+    }
+    for (let i = 0; i < COOKIE_TRIM_KEYS.length && value.length > PREFERENCE_COOKIE_BUDGET; i += 1) {
+      delete trimmed[COOKIE_TRIM_KEYS[i]];
+      value = wrap(trimmed);
+    }
+    return value;
   };
   const normalizeThemeName = (theme) => {
     const key = `${theme || ''}`.trim().toLowerCase();
@@ -870,7 +903,7 @@
       // Try base64 first; fall back to URL-decode for cookies written by older builds.
       let decodedCookie = null;
       if (cookieRaw) {
-        try { decodedCookie = atob(cookieRaw); } catch (_) {
+        try { decodedCookie = decodePrefsCookie(cookieRaw); } catch (_) {
           try { decodedCookie = decodeURIComponent(cookieRaw); } catch (_2) { /* ignore */ }
         }
       }
@@ -902,9 +935,9 @@
       if (!force && json === this.lastPreferenceHash) return;
       this.lastPreferenceHash = json;
       this.writeLocalStorage(PREFERENCE_STORAGE_KEY, json);
-      // btoa reduces cookie size vs encodeURIComponent (~33% vs ~45% overhead),
-      // keeping the value under the 4096-byte browser limit.
-      this.writeCookie(this.preferenceCookieName, btoa(json), PREFERENCE_COOKIE_MAX_AGE);
+      // base64 reduces cookie size vs encodeURIComponent (~33% vs ~45% overhead); the value is trimmed to
+      // PREFERENCE_COOKIE_BUDGET (localStorage above keeps the full snapshot).
+      this.writeCookie(this.preferenceCookieName, buildPreferenceCookieValue(snapshot), PREFERENCE_COOKIE_MAX_AGE);
     }
 
     persistPreferencesDebounced(delay = 280) {
@@ -1066,13 +1099,23 @@
       state.selectedLayerIds = [];
       state.selectedLayerId = null;
       state.settings.paperSize = conf.machine;
+      let w;
+      let hgt;
       if (conf.widthIn) {
-        state.settings.paperWidth = conf.widthIn * 25.4;
-        state.settings.paperHeight = conf.heightIn * 25.4;
+        w = conf.widthIn * 25.4;
+        hgt = conf.heightIn * 25.4;
       } else {
-        state.settings.paperWidth = MACHINES[conf.machine]?.width ?? SETTINGS.paperWidth;
-        state.settings.paperHeight = MACHINES[conf.machine]?.height ?? SETTINGS.paperHeight;
+        w = MACHINES[conf.machine]?.width ?? SETTINGS.paperWidth;
+        hgt = MACHINES[conf.machine]?.height ?? SETTINGS.paperHeight;
       }
+      // The chip caption reads "long x short mm - landscape": set the orientation from the chip's config
+      // (landscape unless it says otherwise) so a portrait document does not leak into the new sheet.
+      const orientation = conf.orientation === 'portrait' ? 'portrait' : 'landscape';
+      const long = Math.max(w, hgt);
+      const short = Math.min(w, hgt);
+      state.settings.paperOrientation = orientation;
+      state.settings.paperWidth = orientation === 'landscape' ? long : short;
+      state.settings.paperHeight = orientation === 'landscape' ? short : long;
       this.applyState(state);
       this.engine.setProfile(SETTINGS.paperSize);
       this.ui?.initSettingsValues?.();
@@ -1081,6 +1124,7 @@
       this.redoStack = [];
       this.pushHistory();
       this.markDocumentClean();
+      this.currentRecentId = null; // a Save after New Canvas starts a new recent
       this.render();
       return true;
     }

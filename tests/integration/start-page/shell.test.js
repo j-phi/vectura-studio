@@ -202,6 +202,7 @@ describe('Start Page shell', () => {
       const entry = await recordRecent('two.vectura');
       app.engine.layers = [];
       expect(app.engine.layers.length).toBe(0);
+      app.markDocumentClean(); // reopening asks first when there is unsaved work (covered in review-fixes)
       await app.recents.open(entry.id);
       expect(app.engine.layers.map((l) => l.type)).toEqual(expected);
     });
@@ -211,6 +212,7 @@ describe('Start Page shell', () => {
       app.engine.addLayer('wavetable');
       await recordRecent('one.vectura');
       app.engine.layers = [];
+      app.markDocumentClean();
       key({ code: 'Digit1', key: '¡', altKey: true, metaKey: true });
       await tick(60);
       expect(app.engine.layers.length).toBe(1);
@@ -254,8 +256,9 @@ describe('Start Page shell', () => {
       await boot();
       await app.newCanvas({ paper: '9x12' });
       expect(SETTINGS.paperSize).toBe('custom');
-      expect(Math.round(SETTINGS.paperWidth)).toBe(229);
-      expect(Math.round(SETTINGS.paperHeight)).toBe(305);
+      // landscape, matching the chip caption (305 x 229 mm)
+      expect(Math.round(SETTINGS.paperWidth)).toBe(305);
+      expect(Math.round(SETTINGS.paperHeight)).toBe(229);
     });
   });
 

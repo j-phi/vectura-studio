@@ -78,6 +78,9 @@
     let entries = [];
     let menuEls = null;
     let lastClear = null;
+    let refreshing = null;
+    let seq = 0;
+    let refreshedSeq = -1;
 
     const limit = () => Vectura.START_PAGE?.LIMITS?.recentsShown || 8;
     const isMac = () => /mac|iphone|ipad|ipod/.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`.toLowerCase());
@@ -130,17 +133,28 @@
       subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
       isMac,
 
-      async refresh() {
-        if (!store) { entries = []; } else {
-          try { entries = await store.list({ limit: limit() }); } catch (_) { entries = []; }
-        }
-        ctl.renderMenu();
-        emit();
-        return entries;
+      // Coalesced: the store's mutation hook and record()/clear() both ask for a refresh. A mutation bumps
+      // `seq`; `refresh({ ifStale: true })` returns the cached list when a refresh already covered it, so each
+      // mutation renders and notifies once.
+      refresh({ ifStale = false } = {}) {
+        if (refreshing) return refreshing;
+        if (ifStale && refreshedSeq === seq) return Promise.resolve(entries);
+        const mySeq = seq;
+        refreshing = (async () => {
+          if (!store) { entries = []; } else {
+            try { entries = await store.list({ limit: limit() }); } catch (_) { entries = []; }
+          }
+          refreshing = null;
+          refreshedSeq = mySeq;
+          ctl.renderMenu();
+          emit();
+          return entries;
+        })();
+        return refreshing;
       },
 
       /** Record the document the editor holds right now. */
-      async record({ source = 'open', name, handle = null, payload = null, algorithm, paper, pens, thumb: thumbOverride } = {}) {
+      async record({ source = 'open', name, handle = null, payload = null, id, forceNew = false, algorithm, paper, pens, thumb: thumbOverride } = {}) {
         if (!store) return null;
         try {
           const doc = payload || { type: 'vectura', version: app.ui?.getAppVersion?.() || '', state: app.captureState(), images: {} };
@@ -148,9 +162,10 @@
           const thumb = thumbOverride !== undefined ? thumbOverride : await buildThumb();
           const entry = await store.record({
             name: name || 'untitled.vectura', algorithm: algorithm || algorithmLabel(), paper: paper || paperLabel(), pens: pens || pensSummary(),
-            thumb, payload: doc, handle: handle || undefined, source,
+            thumb, payload: doc, handle: handle || undefined, source, id, forceNew,
           });
-          await ctl.refresh();
+          if (entry && entry.id) app.currentRecentId = entry.id;
+          await ctl.refresh({ ifStale: true });
           return entry;
         } catch (err) {
           console.warn('[Recents] record failed', err);
@@ -163,6 +178,9 @@
         if (!store) return false;
         const entry = await store.get(id);
         if (!entry) return false;
+        // Reopening replaces the canvas: ask first when there is unsaved work.
+        if (typeof app.confirmDiscardChanges === 'function'
+          && !(await app.confirmDiscardChanges({ title: 'Open this file?', message: 'The current canvas has changes that are not saved to a file. Opening replaces it, and that cannot be undone.', confirmLabel: 'Open' }))) return false;
         const handle = await store.getHandle(id).catch(() => null);
         if (handle && typeof handle.getFile === 'function') {
           try {
@@ -199,11 +217,11 @@
       async clear() {
         if (!store || !entries.length) return;
         lastClear = await store.clearRecent();
-        await ctl.refresh();
+        await ctl.refresh({ ifStale: true });
         const token = lastClear;
         toast('Recent list cleared', 'info', {
           label: 'Undo',
-          onAction: async () => { await store.undoClear(token); await ctl.refresh(); },
+          onAction: async () => { await store.undoClear(token); await ctl.refresh({ ifStale: true }); },
         });
       },
 
@@ -327,7 +345,7 @@
       },
     };
 
-    if (store && typeof store.subscribe === 'function') store.subscribe(() => { ctl.refresh(); });
+    if (store && typeof store.subscribe === 'function') store.subscribe(() => { seq += 1; ctl.refresh(); });
     return ctl;
   };
 

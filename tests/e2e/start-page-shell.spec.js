@@ -71,6 +71,21 @@ test.describe('Start Page shell', () => {
     await expect(page.locator('#start-page')).toBeVisible();
   });
 
+  test('editor shortcuts do nothing behind the Start Page', async ({ page }) => {
+    await boot(page);
+    await page.evaluate(() => {
+      window.app.startPage.hide({ restoreFocus: false });
+      window.app.engine.addLayer('wavetable');
+      window.app.renderer.selectLayer?.(window.app.engine.layers[0].id);
+    });
+    await page.locator('#app-header h1').click();
+    await expect(page.locator('#start-page')).toBeVisible();
+    await page.keyboard.press('Delete');
+    await page.keyboard.press('Control+z');
+    await page.keyboard.press('Control+d');
+    expect(await page.evaluate(() => window.app.engine.layers.length)).toBe(1);
+  });
+
   test('a recent is recorded on open, and reopens from the rail and from File > Open Recent', async ({ page }) => {
     await boot(page, '');
     const fixture = await makeFixture(page);
@@ -86,7 +101,7 @@ test.describe('Start Page shell', () => {
     await page.keyboard.press('Escape');
 
     // from the Start Page rail
-    await page.evaluate(() => { window.app.engine.layers = []; });
+    await page.evaluate(() => { window.app.engine.layers = []; window.app.markDocumentClean(); }); // reopening asks first when dirty
     await page.keyboard.press('Meta+Shift+H');
     const railRow = page.locator('#start-page [data-recent-id]').first();
     await expect(railRow).toContainText('orchid-study.vectura');
@@ -96,7 +111,7 @@ test.describe('Start Page shell', () => {
     expect(await page.evaluate(() => window.app.engine.layers.map((l) => l.type))).toEqual(expected);
 
     // from File > Open Recent
-    await page.evaluate(() => { window.app.engine.layers = []; });
+    await page.evaluate(() => { window.app.engine.layers = []; window.app.markDocumentClean(); }); // reopening asks first when dirty
     await page.locator('#btn-menu-file').click();
     await page.locator('#btn-open-recent').hover();
     await page.locator('#open-recent-panel [data-recent-id]').first().click();

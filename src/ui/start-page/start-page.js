@@ -158,7 +158,9 @@
 
     const syncTheme = () => {
       if (!root) return;
-      const light = !/dark/.test(`${S().uiTheme || 'dark'}`);
+      // The theme manifest says whether the chrome is dark ("lark" is dark chrome on a light sheet).
+      const theme = Vectura.THEMES?.[S().uiTheme];
+      const light = theme && theme.colorScheme ? theme.colorScheme !== 'dark' : !/dark/.test(`${S().uiTheme || 'dark'}`);
       root.dataset.light = String(light);
     };
 
@@ -246,6 +248,7 @@
       isOpen: () => open,
       render,
       syncPrefs,
+      syncTheme,
       show() {
         if (!root) build();
         if (open) { render(); return; }

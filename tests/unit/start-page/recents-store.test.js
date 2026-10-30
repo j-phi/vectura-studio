@@ -67,6 +67,22 @@ describe('RecentsStore', () => {
       expect([...idb.dump('vectura-start', 'entries').values()][0]).not.toHaveProperty('payload');
     });
 
+    it('record({ id }) updates that entry in place, even under a new name', async () => {
+      const a = await store.record(base());
+      tick();
+      const b = await store.record({ ...base(), name: 'Renamed', id: a.id, source: 'save' });
+      expect(b.id).toBe(a.id);
+      expect((await store.list()).map((x) => x.name)).toEqual(['Renamed']);
+    });
+
+    it('record({ forceNew }) never merges by name', async () => {
+      const a = await store.record(base());
+      tick();
+      const b = await store.record({ ...base(), forceNew: true });
+      expect(b.id).not.toBe(a.id);
+      expect((await store.list()).length).toBe(2);
+    });
+
     it('survives a reload (new store on the same IndexedDB)', async () => {
       const e = await store.record(base());
       const again = mk();

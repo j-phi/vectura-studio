@@ -209,7 +209,10 @@
       const name = cleanName(data.name);
       const handle = data.handle && typeof data.handle === 'object' ? data.handle : null;
       const t = now();
-      const existing = await findExisting(handle, name);
+      // `id` (optional): update that entry in place (Save of the document a recent already tracks).
+      const byId = typeof data.id === 'string' && entries.has(data.id) ? entries.get(data.id) : null;
+      // forceNew: never merge by name (a Save after New Canvas is a different document with a repeated filename)
+      const existing = byId || (data.forceNew === true ? null : await findExisting(handle, name));
       const entry = existing || {
         id: `r-${t.toString(36)}-${(idSeq += 1).toString(36)}`,
         addedAt: t,
@@ -224,6 +227,12 @@
         cleared: false,
         source: data.source === 'save' ? 'save' : 'open',
       });
+      // A Save to a different file leaves an old handle pointing at stale bytes: forget it.
+      if (byId && data.source === 'save' && !handle && byId.hasHandle) {
+        handleCache.delete(byId.id);
+        await kvDel('handles', byId.id);
+        existing.hasHandle = false;
+      }
       entry.hasHandle = Boolean(existing && existing.hasHandle) || Boolean(handle);
 
       // Document copy: keep the budget, then retry on quota by dropping the oldest others.

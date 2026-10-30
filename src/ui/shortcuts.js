@@ -50,6 +50,14 @@
     return Boolean(legacy && legacy.classList.contains('open'));
   };
 
+  const isStartPageShortcut = (e) => {
+    if (!(e.metaKey || e.ctrlKey)) return false;
+    const k = (e.key || '').toLowerCase();
+    if (e.altKey) return !e.shiftKey && /^Digit[1-8]$/.test(e.code || '');
+    if (e.shiftKey) return k === 'h' || e.code === 'KeyH';
+    return k === 'n' || k === 'o';
+  };
+
   function handleTopMenuShortcut(e) {
     requireDeps('handleTopMenuShortcut');
     const primary = e.metaKey || e.ctrlKey;
@@ -135,6 +143,10 @@
       // its pending onConfirm closure points at). Escape/Enter/Tab are handled
       // by the modal's own scoped listeners, which run independently of this.
       if (isModalOverlayOpen()) return;
+      // The Start Page overlay sits above a live editor: Delete / Cmd+Z / Cmd+D must not reach the hidden
+      // canvas. Only the page's own shortcuts pass (Shift+Cmd+H, Cmd+N, Cmd+O, Alt+Cmd+1..8); Esc is the
+      // page's own listener.
+      if (this.app?.startPage?.isOpen?.() && !isStartPageShortcut(e)) return;
       if (this.handleTopMenuShortcut(e)) {
         e.preventDefault();
         e.stopPropagation();
