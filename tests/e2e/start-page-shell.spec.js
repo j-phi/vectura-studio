@@ -59,7 +59,7 @@ test.describe('Start Page shell', () => {
     await boot(page);
     await expect(page.locator('#start-page [data-act="back"]')).toBeHidden();
     await page.locator('#start-page [data-paper="A4"]').click();
-    await page.locator('#start-page [data-act="new"]').click();
+    await page.locator('#sp-rail [data-act="new"]').click();
     await expect(page.locator('#start-page')).toBeHidden();
     await page.evaluate(() => window.app.engine.addLayer('wavetable'));
     await page.locator('#app-header h1').click();
@@ -103,7 +103,7 @@ test.describe('Start Page shell', () => {
     // from the Start Page rail
     await page.evaluate(() => { window.app.engine.layers = []; window.app.markDocumentClean(); }); // reopening asks first when dirty
     await page.keyboard.press('Meta+Shift+H');
-    const railRow = page.locator('#start-page [data-recent-id]').first();
+    const railRow = page.locator('#sp-rail [data-recent-id]').first();
     await expect(railRow).toContainText('orchid-study.vectura');
     await railRow.click();
     await expect(page.locator('#start-page')).toBeHidden();
@@ -125,10 +125,10 @@ test.describe('Start Page shell', () => {
     await boot(page, '');
     await openFixture(page, fixture, 'one.vectura');
     await page.keyboard.press('Meta+Shift+H');
-    await expect(page.locator('#start-page [data-recent-id]')).toHaveCount(1);
-    await page.locator('#start-page [data-act="clear-recent"]').click();
-    await expect(page.locator('#start-page [data-recent-id]')).toHaveCount(0);
+    await expect(page.locator('#sp-rail [data-recent-id]')).toHaveCount(1);
+    await page.locator('#sp-rail [data-act="clear-recent"]').click();
+    await expect(page.locator('#sp-rail [data-recent-id]')).toHaveCount(0);
     await page.locator('.vectura-toast [data-action="undo"]').click();
-    await expect(page.locator('#start-page [data-recent-id]')).toHaveCount(1);
+    await expect(page.locator('#sp-rail [data-recent-id]')).toHaveCount(1);
   });
 });

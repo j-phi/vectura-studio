@@ -44,6 +44,9 @@ describe('Reduced-motion compliance', () => {
     'touch-hold-pop': ['touch-hold-pop', 'reduce'],
     // Start Page overlay ease-in (reduced motion: `.sp { animation: none; }`).
     'sp-in': ['.sp { animation: none', 'reduce'],
+    // Start Page cover stage entrance and dice roll (reduced motion: `animation: none`).
+    'sp-cv-in': ['.sp-cv-stage > *, .sp-dice-ico.sp-roll { animation: none', 'reduce'],
+    'sp-roll': ['.sp-cv-stage > *, .sp-dice-ico.sp-roll { animation: none', 'reduce'],
   };
 
   test('motion.css declares a prefers-reduced-motion: reduce block', () => {

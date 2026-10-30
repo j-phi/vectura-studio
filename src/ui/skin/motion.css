@@ -308,6 +308,21 @@ html[data-sp-motion="still"] .sp-ink-drawing .sp-ink-svg,
 html[data-sp-motion="still"] .sp-ink-drawing .sp-ink-canvas { opacity: 1; }
 /* ===== END Start Page — art motion ===== */
 
+/* ===== Start Page - cover motion ===== */
+@keyframes sp-cv-in { from { opacity: 0; transform: translateY(8px); } }
+.sp-cv-stage > * { animation: sp-cv-in 420ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+@keyframes sp-roll { to { transform: rotate(360deg); } }
+.sp-dice-ico.sp-roll { animation: sp-roll 520ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+.sp-pre { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .sp-cv-stage > *, .sp-dice-ico.sp-roll { animation: none; }
+  .sp-rail, .sp-colo-wrap, .sp-colo, .sp-bar, .sp-kk { transition: none !important; }
+}
+html[data-sp-motion="still"] .sp-cv-stage > *,
+html[data-sp-motion="still"] .sp-dice-ico.sp-roll { animation: none; }
+html[data-sp-motion="still"] .sp *, html[data-sp-motion="still"] .sp *::before, html[data-sp-motion="still"] .sp *::after { transition-duration: 0s !important; transition-delay: 0s !important; }
+/* ===== END Start Page - cover motion ===== */
+
 /* === Migrated from styles.css (Unit 2.6: reduced-motion fallback, 2026-05-20) === */
 
 /* Accessibility: respect reduced-motion preference */
