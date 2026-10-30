@@ -277,6 +277,8 @@
       },
 
       renderMenu() {
+        // A refresh can resolve after the page is torn down (closed window, test teardown).
+        if (typeof document === 'undefined' || !document) return;
         const panel = document.getElementById('open-recent-panel');
         if (!panel) return;
         const mac = isMac();
