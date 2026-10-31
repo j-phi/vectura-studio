@@ -120,6 +120,31 @@ for (const theme of THEMES) {
   });
 }
 
+test('example plates explainer: real text, clears contrast in all four skins, no overflow at 400 px', async ({ page }) => {
+  test.setTimeout(240000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await boot(page);
+  await page.evaluate(() => { try { localStorage.clear(); ['vectura-start', 'vectura-start-plates', 'vectura-start-art'].forEach((n) => indexedDB.deleteDatabase(n)); } catch (_) { /* noop */ } });
+  await boot(page);
+  await page.evaluate(() => window.app.startPage.show());
+  const ex = page.locator('#sp-plates .sp-pl-explain');
+  await expect(ex).toBeVisible({ timeout: 20000 });
+  await expect(ex).toContainText('automatically when you save or open a file');
+  for (const theme of THEMES) {
+    await page.evaluate((t) => window.app.applyTheme(t), theme);
+    await page.waitForTimeout(500);
+    expect(await contrastFails(page, '#sp-plates .sp-pl-head'), `${theme} head`).toEqual([]);
+    expect(await contrastFails(page, '#sp-plates .sp-pl-explain'), `${theme} explainer`).toEqual([]);
+    expect(await contrastFails(page, '#sp-plates .sp-pl-empty'), `${theme} empty`).toEqual([]);
+  }
+  await page.setViewportSize({ width: 400, height: 900 });
+  await page.waitForTimeout(400);
+  const box = await ex.boundingBox();
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(400);
+  expect(await page.evaluate(() => document.getElementById('sp-scroll').scrollWidth <= document.getElementById('sp-scroll').clientWidth + 1)).toBe(true);
+});
+
 test('target size: recents Clear, Show all and editor links are at least 24x24 at 400 px (2.5.8)', async ({ page }) => {
   test.setTimeout(120000);
   await page.setViewportSize({ width: 400, height: 800 });

@@ -144,6 +144,36 @@ describe('Start Page example plates', () => {
     expect(qa('.sp-pl[data-example]')).toHaveLength(5);
   });
 
+
+  test('one explainer says these are examples, that own plates appear automatically on save/open, and that examples step aside', async () => {
+    await boot();
+    const ex = q('#sp-plates .sp-pl-explain');
+    expect(ex.hidden).toBe(false);
+    const t = ex.textContent;
+    expect(t).toMatch(/examples/i);
+    expect(t).toMatch(/your own plates appear here automatically/i);
+    expect(t).toMatch(/save or open a file/i);
+    expect(t).toMatch(/step aside/i);
+    expect(t).toMatch(/opening an example starts a new document/i);
+    expect(t).not.toMatch(/commission|colour|favour/i);
+    // real text, wired to the section for assistive tech, stated once (not per plate)
+    expect(q('#sp-plates').getAttribute('aria-describedby')).toBe(ex.id);
+    expect(qa('#sp-plates .sp-pl').filter((w) => /automatically/i.test(w.textContent))).toHaveLength(0);
+    expect(q('.sp-pl-count').textContent).toBe('5 examples · until you save or open a piece');
+    live().forEach((w) => { expect(w.querySelector('.sp-pl-example').getAttribute('title')).toMatch(/save or open a file/i); });
+  });
+
+  test('the explainer switches to the works copy (no example claims) once a work exists', async () => {
+    await boot();
+    works = [{ id: 'work:w1', kind: 'work', name: 'mine.vectura', algorithm: 'Flowfield', collection: 'Studies', recentId: 'w1', workId: 'w1', bytes: 900, ownColors: null, getSvg: async () => SVG(20) }];
+    await app.startPage.plates.refresh();
+    await tick(100);
+    const ex = q('#sp-plates .sp-pl-explain');
+    expect(ex.textContent).not.toMatch(/examples|step aside/i);
+    expect(ex.textContent).toMatch(/open or save becomes a plate automatically/i);
+    expect(q('#sp-plates').hasAttribute('aria-describedby')).toBe(false);
+  });
+
   test('without an example list the honest empty state stays', async () => {
     await boot();
     V.StartPageArtSource.examples = () => [];
@@ -151,5 +181,8 @@ describe('Start Page example plates', () => {
     await tick(60);
     expect(qa('.sp-pl')).toHaveLength(0);
     expect(q('.sp-pl-empty').hidden).toBe(false);
+    expect(q('.sp-pl-empty').textContent).toMatch(/save or open a file/i);
+    expect(q('.sp-pl-empty').textContent).toMatch(/automatically/i);
+    expect(q('#sp-plates .sp-pl-explain').hidden).toBe(true);
   });
 });

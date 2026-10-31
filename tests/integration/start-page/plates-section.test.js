@@ -102,6 +102,8 @@ describe('Start Page plates section', () => {
     await boot({ arts: [] });
     expect(q('#sp-plates .sp-pl-empty').textContent).toMatch(/studio picks/i);
     expect(q('#sp-plates .sp-pl-empty a[href="#sp-picks"]')).toBeTruthy();
+    expect(q('#sp-plates .sp-pl-empty').textContent).toMatch(/save or open a file/i);
+    expect(q('#sp-plates .sp-pl-empty').textContent).toMatch(/automatically/i);
     expect(qa('.sp-pl')).toHaveLength(0);
     expect(q('#sp-pl-add').hidden).toBe(true);
   });
