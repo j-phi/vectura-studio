@@ -3,7 +3,9 @@
  *   Curated · Mono · Basic · Wildcard (a radiogroup), Randomize (dice, seeded; shows the seed; "random" mode),
  *   a swatch strip of the colorways on the page (+N) and the ownership note.
  * Page mode = a seed (random) or else the saved colorMode. The caller owns state; this renders and reports.
- *   create({ host, mode(), seed(), previewSeed(), swatches(), onMode(m), onRandom() }) -> { sync, el }
+ *   create({ host, mode(), seed(), previewSeed(), swatches(), examples(), onMode(m), onRandom() }) -> { sync, el }
+ *   examples() is true while only example plates show (there are no plate edits yet, so the note says nothing about them)
+ *   and null until the plates have decided (no note until then).
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -18,9 +20,11 @@
     wildcard: 'Wildcard: saturated stocks · your edits return in Curated.',
     random: 'Random: a new run from the seed · your edits return in Curated.',
   };
+  // Example plates carry no edits: the Curated note is hidden and the others drop their "edits return" clause.
+  const EXAMPLE_NOTES = { curated: '', mono: 'Mono: theme colors for every plate.', basic: 'Basic: theme paper, ink-only color.', wildcard: 'Wildcard: saturated stocks.', random: 'Random: a new run from the seed.' };
   const MAX_SWATCHES = 6;
 
-  const create = ({ host, mode, seed, previewSeed, swatches, onMode, onRandom }) => {
+  const create = ({ host, mode, seed, previewSeed, swatches, examples, onMode, onRandom }) => {
     const { h } = Vectura.StartPageDom;
     const modes = ['curated', 'mono', 'basic', 'wildcard'];
     const root = h('div', { class: 'sp-ctl-row', id: 'sp-ctl', role: 'group', 'aria-label': 'Page colorway' });
@@ -65,7 +69,10 @@
       dice.querySelector('.sp-seed').textContent = sd || previewSeed();
       dice.classList.toggle('is-random', random);
       dice.querySelector('[data-live-dice]').textContent = random ? `Randomize again, current seed ${String(sd).split('').join(' ')}` : 'Randomize colorways';
-      note.textContent = NOTES[m] || NOTES.curated;
+      const ex = typeof examples === 'function' ? examples() : false; // null: the plates have not decided yet (no note flashes in)
+      const text = ex === null ? '' : ex ? (EXAMPLE_NOTES[m] != null ? EXAMPLE_NOTES[m] : '') : (NOTES[m] || NOTES.curated);
+      note.textContent = text;
+      note.hidden = !text;
       live.textContent = random ? `Random colorways, seed ${sd}` : `${LABELS[m] || m} colorways`;
       const list = swatches() || [];
       sw.textContent = '';
@@ -81,5 +88,5 @@
     return { sync, el: root };
   };
 
-  UI.StartPageColorControls = { create, LABELS, NOTES };
+  UI.StartPageColorControls = { create, LABELS, NOTES, EXAMPLE_NOTES };
 })();

@@ -195,6 +195,34 @@ describe('Start Page example plates', () => {
     expect(q('#sp-plates').hasAttribute('aria-describedby')).toBe(false);
   });
 
+  test('the "plate edits live in Curated" note is hidden while only examples show, and comes back with real plates', async () => {
+    await boot();
+    const note = q('.sp-own-note');
+    expect(note.hidden).toBe(true);
+    expect(note.textContent).toBe('');
+    // other modes: the mode is still described, but without the claim about plate edits that examples do not have
+    click(q('[data-sp-mode="mono"]'));
+    await tick(60);
+    expect(note.textContent).not.toMatch(/edits/i);
+    click(q('[data-sp-mode="curated"]'));
+    await tick(60);
+    expect(note.hidden).toBe(true);
+    works = [{ id: 'work:w1', kind: 'work', name: 'mine.vectura', algorithm: 'Flowfield', collection: 'Studies', recentId: 'w1', workId: 'w1', bytes: 900, ownColors: null, getSvg: async () => SVG(20) }];
+    await app.startPage.plates.refresh();
+    await tick(100);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toBe('Your plate edits live in Curated.');
+    click(q('[data-sp-mode="mono"]'));
+    await tick(60);
+    expect(note.textContent).toMatch(/your edits return in Curated/);
+    works = [];
+    await app.startPage.plates.refresh();
+    await tick(100);
+    click(q('[data-sp-mode="curated"]'));
+    await tick(60);
+    expect(note.hidden).toBe(true);
+  });
+
   test('without an example list the honest empty state stays', async () => {
     await boot();
     V.StartPageArtSource.examples = () => [];

@@ -70,6 +70,7 @@
     let unsub = null;
     let editor = null; // { id, handle, btn }
     let arrange = null;
+    let headed = false; // the header has been drawn once (exampleMode is known)
     let exampleMode = false; // first run: the example plates stand in until the user has a work (never stored)
     let removedWorks = []; // works whose plate was removed: listed in the Add plate menu so they can come back
     let fanHandle = null;
@@ -608,6 +609,8 @@
       arrBtn.disabled = !n; // nothing to arrange
       if (!n && arrange) exitArrange(true);
       arrBtn.setAttribute('aria-pressed', String(!!arrange));
+      headed = true;
+      if (typeof ctx.onHeader === 'function') { try { ctx.onHeader({ examples: exampleMode }); } catch (_) { /* noop */ } }
       arrBtn.innerHTML = arrange ? `${ICONS.check}<span>Done arranging</span>` : `${ICONS.grip}<span>Arrange</span>`;
     };
 
@@ -843,6 +846,7 @@
         if (editor && !canEdit()) closeEditor(false);
       },
       refresh: () => sync(),
+      isExamples: () => (headed ? exampleMode : null), // null until the first sync has decided
       closeTransient() { closeMenu(false); closeEditor(false); if (fanHandle) { try { fanHandle.close(); } catch (_) { /* noop */ } } if (arrange) exitArrange(true, false); },
       destroy() {
         destroyed = true;

@@ -283,6 +283,7 @@
         seed: () => prefs().seed,
         previewSeed: () => previewSeed || (previewSeed = Vectura.StartPageColorway?.newSeed?.() || 'K7PQ2'),
         swatches: uniqueSwatches,
+        examples: () => (plates && plates.isExamples ? plates.isExamples() : null),
         onMode: (m) => {
           const p = prefs();
           if (p.colorMode === m && !p.seed) return;
@@ -310,6 +311,7 @@
         still: () => prefs().motionStill === true,
         scroller: () => root.querySelector('#sp-scroll'),
         onOpen: (art, cw, opts) => ctl.openArt(art, cw, opts),
+        onHeader: () => { if (controls) controls.sync(); }, // examples <-> own plates changes the colorway note
       });
       plates.setCoverApi(cover);
       ctl.plates = plates;
