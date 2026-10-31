@@ -32,11 +32,11 @@
     Object.freeze({ presetId: 'user-spiralizer-1781359333969', title: 'Coiled Sphere', word: 'Sphere', layout: 'text-wrap', pin: 'black-silver' }),
     Object.freeze({ presetId: 'user-terrain-1781475148727', title: 'High Sierra', word: 'Terrain', layout: 'full-bleed-band' }),
     // the mockup's next five (specimen -> specimen-frame, kotitle -> knockout-title, bleed -> full-bleed-band, sheet -> full-sheet)
-    Object.freeze({ presetId: 'topoform-torus-contours', title: 'Torus Contours', layout: 'specimen-frame' }),
-    Object.freeze({ presetId: 'topo-mountain-range', title: 'Contour Survey No. 3', word: 'Topo', layout: 'knockout-title' }),
-    Object.freeze({ presetId: 'spiral-galaxy', title: 'Spiral Galaxy', word: 'Spiral', layout: 'full-bleed-band', pin: 'black-white' }),
-    Object.freeze({ presetId: 'wavetable-rolling-hills', title: 'Rolling Hills', word: 'Wavetable', layout: 'knockout-title' }),
-    Object.freeze({ presetId: 'shapepack-pebble-beach', title: 'Pebble Beach', word: 'Pebbles', layout: 'full-sheet' }),
+    Object.freeze({ presetId: 'topoform-torus-contours', title: 'Torus Contours', layout: 'specimen-frame', pin: 'kraft-sepia' }),
+    Object.freeze({ presetId: 'topo-mountain-range', title: 'Contour Survey No. 3', word: 'Topo', layout: 'knockout-title', pin: 'black-silver' }),
+    Object.freeze({ presetId: 'spiral-galaxy', title: 'Spiral Galaxy', word: 'Spiral', layout: 'full-bleed-band', pin: 'sky-prussian' }),
+    Object.freeze({ presetId: 'wavetable-rolling-hills', title: 'Rolling Hills', word: 'Wavetable', layout: 'knockout-title', pin: 'ochre-umber' }),
+    Object.freeze({ presetId: 'shapepack-pebble-beach', title: 'Pebble Beach', word: 'Pebbles', layout: 'full-sheet', pin: 'lavender-violet' }),
   ]);
 
   const PICK_NAMES = Object.freeze({});

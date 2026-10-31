@@ -9,6 +9,8 @@
  *   - penId / accentPenId: ids from Vectura.START_PAGE_COLORWAYS.PENS, or from PENS below (same shapes:
  *     { model, colour } = a Vectura.PEN_MODELS colour; { palette, index } = a palette color). `ink` and `accent`
  *     are those pens' exact hexes.
+ *   - pinOnly: true entries are reachable by a plate's pin (the Example plates, the editor's colorway chips) and
+ *     are never placed by the automatic rhythm, so adding one cannot reshuffle anyone's Auto colors.
  * Tables only: no logic lives here (src/core/start-page/plate-rhythm.js).
  */
 (() => {
@@ -33,6 +35,7 @@
   // (id, class, family, paperType, paperName, groundFrom, ground, penId, penName, ink, accentPenId, accent)
   const E = (id, cls, fam, paperType, paperName, groundFrom, ground, penId, penName, ink, accentPenId, accent) =>
     ({ id, name: penName + ' on ' + paperName, class: cls, fam, ground, ink, accent, paperType, paperName, penId, penName, accentPenId, groundFrom });
+  const PIN = (e) => Object.assign(e, { pinOnly: true });
 
   const ENTRIES = [
     // light papers: archival tones, deep inks
@@ -70,6 +73,10 @@
     E('oxblood-coral', 'dark', 'dark', 'black', 'Black stock · oxblood', CU, '#3a1414', 'posca-coral', 'Posca Coral Pink', '#ff8a7a', 'pal-butter', '#fde68a'),
     E('graphite-white', 'dark', 'dark', 'black', 'Black stock · graphite', CU, '#4a4c50', 'gelly-white', 'Gelly Roll White', '#f8f8f4', 'pal-gold', '#fcd45c'),
     E('graphite-orange', 'dark', 'dark', 'black', 'Black stock · deep graphite', CU, '#2f2f32', 'moon-orange-plate', 'Gelly Roll Moonlight Fluorescent Orange', '#ff7a2a', 'gelly-white', '#f8f8f4'),
+    // pin-only: the Example plates' mockup colors (the nearest real paper + pen); never placed by the rhythm
+    PIN(E('kraft-sepia', 'light', 'brown', 'kraft', 'Kraft · pale', TI('ambers-01', 0, 0.2), '#cfad85', 'micron-sepia', 'Pigma Micron Sepia', '#5a3d2b', 'micron-burgundy', '#6b1f2e')),
+    PIN(E('sky-prussian', 'light', 'blue', 'cold-press', 'Cold press · sky', TI('blues-01', 1, 0.4), '#dfe8f0', 'pal-prussian', 'Prussian', '#0c4a6e', 'pal-sienna', '#9a3412')),
+    PIN(E('ochre-umber', 'light', 'yellow', 'cold-press', 'Cold press · ochre wash', TI('ambers-01', 3, 0.3), '#f6d9a4', 'micron-sepia', 'Pigma Micron Sepia', '#5a3d2b', 'pal-cyan', '#0e7490')),
   ];
 
   Vectura.START_PAGE_PLATE_PENS = PENS;

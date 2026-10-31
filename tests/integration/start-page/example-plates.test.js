@@ -59,7 +59,8 @@ describe('Start Page example plates', () => {
     live().forEach((w) => { expect(w.dataset.spPaper).toMatch(/^#[0-9a-f]{6}$/); expect(w.dataset.spInk).toMatch(/^#[0-9a-f]{6}$/); });
     expect(live()[0].textContent).toMatch(/Old Growth Oak/);
     expect(live()[1].dataset.cwId).toBe('black-white');
-    expect(live()[7].dataset.cwId).toBe('black-white'); // Spiral Galaxy: black stock, white pen
+    // the mockup's last five: kraft, black + silver, sky, ochre wash, lavender
+    expect(live().slice(5).map((w) => w.dataset.cwId)).toEqual(['kraft-sepia', 'black-silver', 'sky-prussian', 'ochre-umber', 'lavender-violet']);
     // the placed colorways keep the rhythm: no two dark plates side by side, no repeated colorway neighbors
     const pal = new Map(V.START_PAGE_PLATE_PALETTE.map((c) => [c.id, c]));
     const ids = live().map((w) => w.dataset.cwId);

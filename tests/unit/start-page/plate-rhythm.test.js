@@ -41,11 +41,24 @@ const mixHex = (a, b, t) => {
 const placedCw = (res) => res.map((r) => r.colorway);
 
 describe('plate palette', () => {
-  it('has 32 entries: 12 light, 10 ground, 10 dark, unique ids', () => {
-    expect(PAL.length).toBe(32);
-    const n = (c) => PAL.filter((e) => e.class === c).length;
+  it('has 32 rhythm entries (12 light, 10 ground, 10 dark) plus 3 pin-only, unique ids', () => {
+    const auto = PAL.filter((e) => !e.pinOnly);
+    expect(auto.length).toBe(32);
+    const n = (c) => auto.filter((e) => e.class === c).length;
     expect([n('light'), n('ground'), n('dark')]).toEqual([12, 10, 10]);
-    expect(new Set(PAL.map((e) => e.id)).size).toBe(32);
+    expect(PAL.filter((e) => e.pinOnly).map((e) => e.id)).toEqual(['kraft-sepia', 'sky-prussian', 'ochre-umber']);
+    expect(new Set(PAL.map((e) => e.id)).size).toBe(35);
+  });
+  it('pin-only colorways are reachable by pin and never placed by the rhythm', () => {
+    const pins = ['kraft-sepia', 'sky-prussian', 'ochre-umber'];
+    const res = R.place(plates(3, { 0: pins[0], 1: pins[1], 2: pins[2] }), { mode: 'curated' });
+    expect(res.map((r) => r.colorway.id)).toEqual(pins);
+    for (const mode of ['curated', 'random', 'wildcard']) {
+      for (const seed of ['A', 'B', 'C', 'D']) {
+        const ids = R.place(plates(40), { mode, seed }).map((r) => r.colorway.id);
+        pins.forEach((p) => expect(ids, `${mode}/${seed}`).not.toContain(p));
+      }
+    }
   });
   it('every entry has the contract fields', () => {
     for (const e of PAL) {

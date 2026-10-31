@@ -96,7 +96,7 @@
     const byId = new Map(palette().map((e) => [e.id, e]));
     const rnd = mode === 'random' ? rng(hashStr('r' + seed)) : mode === 'wildcard' ? rng(hashStr('w' + seed)) : null;
     const lists = {}; const cur = { light: 0, ground: 0, dark: 0 };
-    CLASSES.forEach((c) => { const l = palette().filter((e) => e.class === c); lists[c] = rnd ? shuffle(l, rnd) : l; });
+    CLASSES.forEach((c) => { const l = palette().filter((e) => e.class === c && !e.pinOnly); lists[c] = rnd ? shuffle(l, rnd) : l; });
     const shift = mode === 'random' ? Math.floor(rnd() * CYCLE.length) : 0;
     const pinAt = (i) => {
       const p = plates[i] && plates[i].pin;
