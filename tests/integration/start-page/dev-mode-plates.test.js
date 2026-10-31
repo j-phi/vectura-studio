@@ -65,6 +65,21 @@ describe('Start Page Developer Mode: editable example plates', () => {
     expect(btn.closest('[data-dev-only]').hidden).toBe(true);
   });
 
+  test('the Developer Mode pill sits in a centered header slot, not beside the date', async () => {
+    await boot({ dev: true });
+    const pill = q('#sp-dev-pill');
+    const hdr = q('.sp-hdr');
+    expect(pill.parentElement).toBe(hdr);
+    expect(pill.nextElementSibling && pill.nextElementSibling.id).not.toBe('sp-today');
+    const css = require('fs').readFileSync(require('path').join(__dirname, '../../../src/ui/skin/components.css'), 'utf8');
+    expect(css).toMatch(/\.sp-hdr\s*\{[^}]*position:\s*relative/);
+    const rule = (css.match(/\.sp-dev-pill\s*\{[^}]*\}/) || [''])[0];
+    expect(rule).toMatch(/position:\s*absolute/);
+    expect(rule).toMatch(/left:\s*50%/);
+    expect(rule).toMatch(/translate\(-50%,\s*-50%\)/);
+    expect(css).toMatch(/@container sp \(max-width: 560px\)\s*\{[^}]*\.sp-dev-pill/);
+  });
+
   test('switching the existing flag on and off enters and leaves Developer Mode live', async () => {
     await boot();
     await flip(true);
