@@ -20,6 +20,7 @@
     // Start Page on launch (the automation rule lives in App#shouldShowStartPageOnLaunch).
     const startPageShown = app.showStartPageOnLaunchIfWanted?.() === true;
     if (!startPageShown) {
+      document.documentElement.removeAttribute('data-sp-boot'); // no page: the boot cover must not stay behind
       window.Vectura.bootCover = false;
       if (app.renderer?.ready) app.render();
     } else {

@@ -52,6 +52,7 @@
     let unsubArt = null;
     let previewSeed = null;
     let recolorTimer = 0;
+    let settleTimer = 0;
 
     const S = () => Vectura.SETTINGS;
     const prefs = () => S().startPage || (S().startPage = {});
@@ -522,6 +523,19 @@
       cover.setOverride({ art, frame: prefs().coverFrame, fill });
     };
 
+    // First render after show(): the page body is held blank until everything is laid out (two frames so the cover's
+    // outlines are painted), then the boot cover (if any) is lifted in the same step.
+    const settle = () => new Promise((res) => {
+      const done = () => {
+        clearTimeout(settleTimer);
+        if (root) delete root.dataset.settling;
+        document.documentElement.removeAttribute('data-sp-boot');
+        res();
+      };
+      if (!root || root.dataset.settling == null) { done(); return; }
+      const raf = G.requestAnimationFrame || ((f) => setTimeout(f, 16));
+      raf(() => raf(done));
+    });
     const render = async ({ animate = false } = {}) => {
       if (!root) return;
       const token = (renderToken += 1);
@@ -539,12 +553,22 @@
       if (token !== renderToken) return;
       await restoreCover();
       if (token !== renderToken) return;
-      await cover.render({ animate });
+      // The cover keeps filling as its pieces arrive (letters are outlines first, then the art plots in); the page does
+      // not wait for that, only for the letters / word to be laid out. The rest of the page renders alongside, so the
+      // first painted page is the final layout.
+      let mounted; const mountedP = new Promise((res) => { mounted = res; });
+      const coverP = cover.render({ animate, onMounted: () => mounted() });
+      await Promise.race([mountedP, coverP, new Promise((res) => setTimeout(res, 2500))]);
       if (token !== renderToken) return;
       controls.sync();
       await plates.render();
       if (token !== renderToken) return;
       await renderSections();
+      if (token !== renderToken) return;
+      await settle();
+      await coverP;
+      if (token !== renderToken) return;
+      controls.sync();
     };
 
     // The works changed (an open or save while the page is up): refresh the rail; the cover only when its art did.
@@ -625,6 +649,11 @@
         returnFocus = document.activeElement;
         app.ui?.setTopMenuOpen?.(null, false);
         setEditorInert(true);
+        root.dataset.settling = 'true';
+        // A launch behind the boot cover: the page is already revealed in one step, no fade-in on top of it.
+        if (document.documentElement.hasAttribute('data-sp-boot')) root.dataset.noFx = 'true'; else delete root.dataset.noFx;
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => { if (root) delete root.dataset.settling; document.documentElement.removeAttribute('data-sp-boot'); }, 4000); // never leave the page blank
         root.hidden = false;
         document.documentElement.dataset.startPage = 'open';
         applyMotion();
@@ -645,6 +674,8 @@
         plates?.closeTransient();
         watchTheme(false);
         try { Vectura.StartPageInk?.finish?.(); } catch (_) { /* noop */ }
+        clearTimeout(settleTimer);
+        delete root.dataset.settling;
         root.hidden = true;
         setEditorInert(false);
         delete document.documentElement.dataset.startPage;
