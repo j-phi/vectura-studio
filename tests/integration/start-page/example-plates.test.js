@@ -61,6 +61,23 @@ describe('Start Page example plates', () => {
     expect(live()[1].dataset.cwId).toBe('black-white');
   });
 
+  test('"drag it to turn it" copy appears only on plates with a live 3D model', async () => {
+    await boot();
+    const ws = live();
+    ws.forEach((w) => {
+      const live3d = !!w.querySelector('.spl-print[data-model]');
+      expect(/drag it to turn it/i.test(w.textContent), w.dataset.plateId).toBe(live3d);
+    });
+    expect(ws.filter((w) => w.querySelector('.spl-print[data-model]')).map((w) => w.dataset.plateId))
+      .toEqual(['example:user-spiralizer-1781359333969', 'example:user-terrain-1781475148727']);
+    // a 3D-oriented plate with no live model must not claim to be live
+    const art = V.StartPagePlateLayouts.render('text-wrap', {
+      plate: { id: 'x', orientation: '3d' }, art: { id: 'x', svg: SVG(10), model: null }, colorway: live()[0] && V.StartPagePlateRhythm.place([{ id: 'x' }], { mode: 'curated', seed: 'a', theme: 'dark' })[0].colorway,
+      index: 0, total: 1, texts: { word: 'W', title: 'T', description: 'Desc.', algorithm: 'A', summary: 'A', specs: [], actions: [] }, autoMount: false,
+    });
+    expect(art.textContent).not.toMatch(/drag it/i);
+  });
+
   test('examples carry no Edit, Remove, Arrange, Add plate, Show or Use as cover', async () => {
     await boot();
     expect(qa('.sp-pl [data-act="edit"]')).toHaveLength(0);
