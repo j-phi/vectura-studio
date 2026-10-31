@@ -45,7 +45,7 @@ const main = async () => {
   try {
     const V = runtime.window.Vectura;
     const Source = V.StartPageArtSource;
-    const picks = V.START_PAGE_PICKS.STUDIO_PICKS;
+    const picks = [...new Set([...V.START_PAGE_PICKS.STUDIO_PICKS, ...V.START_PAGE_PICKS.EXAMPLE_PLATES.map((e) => e.presetId)])]; // studio picks + the example plates
     const byId = new Map(V.PRESETS.map((p) => [p.id, p]));
     const hashByPick = {};
     const svgs = {};

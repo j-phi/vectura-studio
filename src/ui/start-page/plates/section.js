@@ -70,6 +70,7 @@
     let unsub = null;
     let editor = null; // { id, handle, btn }
     let arrange = null;
+    let exampleMode = false; // first run: five example plates stand in until the user has a work (never stored)
     let removedWorks = []; // works whose plate was removed: listed in the Add plate menu so they can come back
     let fanHandle = null;
     let coverApi = null;
@@ -119,6 +120,7 @@
       return store;
     };
     const visibleCount = (n) => {
+      if (exampleMode) return n; // the examples are a small fixed set: always all of them
       const v = ctx.prefs().visiblePlates;
       if (v === 'all') return n;
       const k = Number(v);
@@ -142,12 +144,27 @@
       return out;
     };
 
+    // Example plates: bundled presets pre-rendered like the studio picks (StartPageArtSource.examples). They exist only
+    // in memory: no store record, so nothing to edit, remove, arrange or persist.
+    const loadExamples = () => {
+      try {
+        const Src = Vectura.StartPageArtSource;
+        const P = Vectura.StartPageArtProvider;
+        const list = Src && typeof Src.examples === 'function' ? Src.examples() : [];
+        return (list || []).filter((a) => a && a.id && typeof a.getSvg === 'function').map((a) => {
+          const get = a.getSvg.bind(a);
+          return Object.assign({}, a, { getSvg: () => Promise.resolve(get()).then((svg) => (P && P.strokeSvg ? P.strokeSvg(svg) : svg)) });
+        });
+      } catch (_) { return []; }
+    };
+
     const effective = (e) => (Store() && e.rec ? Store().effectiveFor(e.rec, mode()) : { layout: null, texts: null, pin: null, colors: null, basicColors: null, frame: null, motion: null });
 
     const isRings = (e) => /\brings?\b/i.test(`${e.art.algorithm || ''}`);
     const pinFor = (e, i) => {
       const eff = effective(e);
       if (eff.pin) return eff.pin;
+      if (e.example && e.example.pin) return e.example.pin;
       return i === 1 && isRings(e) ? SPEC_SHEET_PIN : null;
     };
     const place = () => {
@@ -236,8 +253,8 @@
       const opened = e.art.lastOpened || (e.rec && e.rec.addedAt);
       if (opened) { try { specs.push(['Edited', new Date(opened).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })]); } catch (_) { /* noop */ } }
       return {
-        word: dash(t.word) || algoLabel(e),
-        title: dash(t.title) || pretty(e.art.name),
+        word: dash(t.word) || (e.example && e.example.word) || algoLabel(e),
+        title: dash(t.title) || (e.example && e.example.title) || pretty(e.art.name),
         description: dash(t.description) || defaultDescription(e),
         algorithm: algoLabel(e),
         summary: [algoLabel(e), cw && cw.paperName, cw && cw.penName].filter(Boolean).join(' · '),
@@ -254,11 +271,17 @@
     let layoutClass = [];
     const computeLayoutClasses = () => {
       try {
-        layoutClass = Rhythm().place(entries.map((e, i) => ({ id: e.id, pin: (e.rec && e.rec.pin) || (i === 1 && isRings(e) ? SPEC_SHEET_PIN : null) })), { mode: 'curated', theme: 'dark' })
+        layoutClass = Rhythm().place(entries.map((e, i) => ({ id: e.id, pin: (e.rec && e.rec.pin) || (e.example && e.example.pin) || (i === 1 && isRings(e) ? SPEC_SHEET_PIN : null) })), { mode: 'curated', theme: 'dark' })
           .map((p) => p.colorway.class);
       } catch (_) { layoutClass = []; }
     };
     const occurrence = (i) => { let n = 0; for (let j = 0; j < i; j++) if (layoutClass[j] === layoutClass[i]) n += 1; return n; };
+    const layoutFor = (e, i, orientation) => {
+      const eff = effective(e);
+      if (eff.layout && T().LAYOUTS.some((l) => l.id === eff.layout)) return eff.layout;
+      if (e.example && e.example.layout && T().LAYOUTS.some((l) => l.id === e.example.layout)) return e.example.layout;
+      return suggestedLayout(e, i, orientation);
+    };
     const suggestedLayout = (e, i, orientation) => {
       if (i === 1 && isRings(e)) return 'spec-sheet';
       const sug = Rhythm().suggestLayouts(layoutClass[i] || 'light', orientation);
@@ -287,6 +310,7 @@
       w.dataset.plateId = e.id;
       w.dataset.artId = e.art.id;
       w.dataset.index = String(i);
+      if (e.example) w.dataset.example = '1'; else delete w.dataset.example;
       if (!cw) return cw;
       const v = shown(cw);
       w.dataset.cwId = cw.id || cw.key || '';
@@ -304,11 +328,13 @@
       const art = w.querySelector('.spl');
       const slot = art && art.querySelector('[data-slot="tools"]');
       if (!slot) return;
+      const isExample = w.dataset.example === '1';
       if (!slot.querySelector('[data-act="fan"]')) {
-        slot.append(tool('fan', 'Colorways', ICONS.palette, 'Colorways: try this piece on other papers and pens'),
-          tool('cover', 'Use as cover', ICONS.book, 'Use this piece as the cover'));
+        slot.append(tool('fan', 'Colorways', ICONS.palette, 'Colorways: try this piece on other papers and pens'));
+        if (!isExample) slot.append(tool('cover', 'Use as cover', ICONS.book, 'Use this piece as the cover'));
       }
-      const want = canEdit();
+      if (isExample && !slot.querySelector('.sp-pl-example')) slot.prepend(h('span', { class: 'sp-pl-example', text: 'Example' }));
+      const want = canEdit() && !isExample;
       let ed = slot.querySelector('[data-act="edit"]');
       if (want && !ed) {
         ed = tool('edit', 'Edit', ICONS.edit, 'Edit this plate: text, layout, colors, framing');
@@ -340,7 +366,7 @@
       const model = art3d(e);
       const orientation = model ? '3d' : orientationOf(svg);
       const eff = effective(e);
-      const layout = (eff.layout && T().LAYOUTS.some((l) => l.id === eff.layout)) ? eff.layout : suggestedLayout(e, i, orientation);
+      const layout = layoutFor(e, i, orientation);
       const frame = frameFor(e);
       let article;
       try {
@@ -472,7 +498,7 @@
       if (!st || !st.article) return;
       if (!cw) return;
       const eff = effective(e);
-      const layout = (eff.layout && T().LAYOUTS.some((l) => l.id === eff.layout)) ? eff.layout : suggestedLayout(e, i, st.orientation || 'landscape');
+      const layout = layoutFor(e, i, st.orientation || 'landscape');
       if (sigOf(e, i, layout) !== st.sig) { renderPlate(w); return; }
       if (!patchCopy(st, st.article, e, cw)) { renderPlate(w); return; }
       Layouts().recolor(st.article, cw);
@@ -530,8 +556,8 @@
     const renderMore = (k) => {
       const n = entries.length;
       more.textContent = '';
-      more.hidden = !n;
-      if (!n) return;
+      more.hidden = !n || exampleMode;
+      if (!n || exampleMode) return;
       const lnk = (v, text) => h('button', { type: 'button', class: 'sp-pl-lnk', 'data-vis-set': String(v), text });
       if (arrange) more.append(`Arranging all ${n} plates${k < n ? ` · ${n - k} hidden from the page are marked` : ''}`);
       else if (k >= n) { more.append(`Showing all ${n} plate${n === 1 ? '' : 's'}`); if (n > 5) more.append(' · ', lnk(5, 'Show 5')); }
@@ -566,12 +592,14 @@
       const n = entries.length;
       const edit = canEdit();
       root.dataset.mode = mode();
-      count.textContent = n ? `${n} work${n === 1 ? '' : 's'} · in your order` : 'your work will hang here';
-      explain.textContent = n
+      count.textContent = exampleMode ? `${n} examples · until your first piece` : n ? `${n} work${n === 1 ? '' : 's'} · in your order` : 'your work will hang here';
+      explain.textContent = exampleMode
+        ? 'Five examples to show how your pieces will hang here. Open one, or open it as a template, to start a new document in the colors shown. Your own work replaces them as soon as you open or save a piece.'
+        : n
         ? `Each work you open or save becomes a plate: set on its own paper and laid out for the sheet. ${edit ? 'Edit the text, layout, color and framing of any plate; drag to reorder.' : 'Colors follow the page mode; your edits return in Curated.'}`
         : '';
       explain.hidden = !n;
-      addBtn.hidden = !(n || removedWorks.length); arrBtn.hidden = !n; showLbl.hidden = !n;
+      addBtn.hidden = exampleMode || !(n || removedWorks.length); arrBtn.hidden = !n || exampleMode; showLbl.hidden = !n || exampleMode;
       empty.hidden = !!n;
       arrBtn.disabled = !n; // nothing to arrange
       if (!n && arrange) exitArrange(true);
@@ -593,7 +621,12 @@
           if (destroyed || my !== token) return;
         }
         removedWorks = works.filter((a) => { const r = snap.plates.find((x) => x.id === a.id); return r && r.removed; });
-        entries = buildEntries(works, snap);
+        const ex = works.length ? [] : loadExamples();
+        exampleMode = ex.length > 0;
+        entries = exampleMode
+          ? ex.map((a) => ({ id: a.id, artId: a.id, art: a, rec: null, example: a.exampleMeta || {} }))
+          : buildEntries(works, snap);
+        if (exampleMode) removedWorks = [];
         placed = place();
         computeLayoutClasses();
         const keep = new Set(entries.map((e) => e.id));

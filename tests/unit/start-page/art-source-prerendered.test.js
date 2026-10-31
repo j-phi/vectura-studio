@@ -100,6 +100,8 @@ describe('pre-rendered picks: committed files match the bundled presets', () => 
       expect(fs.readFileSync(file, 'utf8')).toMatch(/^\s*(<\?xml[^>]*\?>\s*)?<svg\b/);
       expect(art.hashByPick[id], `${id} manifest hash is current`).toBe(V.StartPageArtSource.hashOf(byId.get(id)));
     }
-    expect(Object.keys(art.hashByPick).sort()).toEqual([...V.START_PAGE_PICKS.STUDIO_PICKS].sort());
+    // the manifest also covers the five example plates (same pipeline)
+    const wanted = new Set([...V.START_PAGE_PICKS.STUDIO_PICKS, ...V.START_PAGE_PICKS.EXAMPLE_PLATES.map((e) => e.presetId)]);
+    expect(Object.keys(art.hashByPick).sort()).toEqual([...wanted].sort());
   });
 });

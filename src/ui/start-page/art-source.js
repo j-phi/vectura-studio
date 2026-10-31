@@ -7,6 +7,7 @@
  *
  *   list()            -> Promise<Art[]>   works in addedAt order (plates), then studio picks
  *   listRecentFirst() -> Promise<Art[]>   works most recently opened first, then studio picks
+ *   examples()        -> Art[]            the five first-run example plates (kind 'pick', example:true, exampleMeta); not in list()
  *   subscribe(fn)     -> unsubscribe      fires when the saved works change ('vectura:recents-changed')
  *   create({ store, renderer, cache, picks, presets, version }) -> a private source (tests)
  *
@@ -210,27 +211,39 @@
       return art;
     };
 
-    const pickArts = () => {
+    const presetArt = (preset, extra) => {
       const cfg = picksCfg();
+      const art = Object.assign({
+        id: `pick:${preset.id}`,
+        kind: 'pick',
+        name: (cfg.PICK_NAMES && cfg.PICK_NAMES[preset.id]) || preset.name || preset.id,
+        algorithm: preset.preset_system,
+        collection: cfg.collectionFor ? cfg.collectionFor(preset.preset_system) : 'Studies',
+        presetId: preset.id,
+        ownColors: Object.assign({}, FALLBACK_COLORS),
+        getSvg: async () => {
+          const hash = hashOf(preset);
+          const rec = await cached(`pick:${preset.id}:${hash}`, async () => (await prerenderedPick(preset, hash)) || getRenderer().renderPreset(preset));
+          if (rec.ownColors) Object.assign(art.ownColors, rec.ownColors);
+          return rec.svg;
+        },
+      }, extra || {});
+      return art;
+    };
+
+    const pickArts = () => {
       const byId = new Map(presetsList().map((p) => [p.id, p]));
-      return (cfg.STUDIO_PICKS || []).map((id) => byId.get(id)).filter(Boolean).map((preset) => {
-        const art = {
-          id: `pick:${preset.id}`,
-          kind: 'pick',
-          name: (cfg.PICK_NAMES && cfg.PICK_NAMES[preset.id]) || preset.name || preset.id,
-          algorithm: preset.preset_system,
-          collection: cfg.collectionFor ? cfg.collectionFor(preset.preset_system) : 'Studies',
-          presetId: preset.id,
-          ownColors: Object.assign({}, FALLBACK_COLORS),
-          getSvg: async () => {
-            const hash = hashOf(preset);
-            const rec = await cached(`pick:${preset.id}:${hash}`, async () => (await prerenderedPick(preset, hash)) || getRenderer().renderPreset(preset));
-            if (rec.ownColors) Object.assign(art.ownColors, rec.ownColors);
-            return rec.svg;
-          },
-        };
-        return art;
-      });
+      return (picksCfg().STUDIO_PICKS || []).map((id) => byId.get(id)).filter(Boolean).map((preset) => presetArt(preset));
+    };
+
+    // The example plates: kind 'pick' (they open as a new document from the preset) with example:true and the
+    // mockup's copy / layout / pin. Never part of list(): the Plates section asks for them only on a first run.
+    const exampleArts = () => {
+      const byId = new Map(presetsList().map((p) => [p.id, p]));
+      return (picksCfg().EXAMPLE_PLATES || []).filter((e) => e && byId.has(e.presetId)).map((e) => presetArt(byId.get(e.presetId), {
+        id: `example:${e.presetId}`, name: e.title || byId.get(e.presetId).name, example: true,
+        exampleMeta: { title: e.title || null, word: e.word || null, layout: e.layout || null, pin: e.pin || null },
+      }));
     };
 
     const works = async () => {
@@ -252,6 +265,7 @@
         entries = entries.slice().sort((a, b) => (b.lastOpened - a.lastOpened) || (b.addedAt - a.addedAt));
         return entries.map(workArt).concat(pickArts());
       },
+      examples: exampleArts,
       subscribe(fn) {
         if (typeof fn !== 'function') return () => {};
         const handler = () => { try { fn(); } catch (_e) { /* subscriber errors stay local */ } };
@@ -273,6 +287,7 @@
     list: () => sharedSource().list(),
     listRecentFirst: () => sharedSource().listRecentFirst(),
     subscribe: (fn) => sharedSource().subscribe(fn),
+    examples: () => sharedSource().examples(),
     DB_NAME,
     STORE,
   };
