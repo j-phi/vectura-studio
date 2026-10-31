@@ -166,6 +166,35 @@ describe('Start Page example plates', () => {
   });
 
 
+  test('a lone work takes the plates over until it is cleared from Recent, which hands the example plates back', async () => {
+    await boot();
+    const work = (cleared) => ({ id: 'work:w1', kind: 'work', name: 'mine.vectura', algorithm: 'Flowfield', collection: 'Studies', recentId: 'w1', workId: 'w1', cleared, bytes: 900, ownColors: null, getSvg: async () => SVG(20) });
+    works = [work(false)];
+    await app.startPage.plates.refresh();
+    await tick(100);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(0);
+    expect(qa('.sp-pl')).toHaveLength(1);
+    works = [work(true)]; // Clear next to it in Recent: still a work, but hidden from Recent
+    await app.startPage.plates.refresh();
+    await tick(100);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(10);
+    works = [work(false)]; // opened again (or Undo): it is the only plate again
+    await app.startPage.plates.refresh();
+    await tick(100);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(0);
+    expect(qa('.sp-pl')).toHaveLength(1);
+  });
+
+  test('several works keep their plates when Recent is cleared (only a lone work hands the plates back)', async () => {
+    await boot();
+    const w = (n) => ({ id: `work:w${n}`, kind: 'work', name: `m${n}.vectura`, algorithm: 'Flowfield', collection: 'Studies', recentId: `w${n}`, workId: `w${n}`, cleared: true, bytes: 900, ownColors: null, getSvg: async () => SVG(20 + n) });
+    works = [w(1), w(2)];
+    await app.startPage.plates.refresh();
+    await tick(100);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(0);
+    expect(qa('.sp-pl')).toHaveLength(2);
+  });
+
   test('one explainer says these are examples, that own plates appear automatically on save/open, and that examples step aside', async () => {
     await boot();
     const ex = q('#sp-plates .sp-pl-explain');

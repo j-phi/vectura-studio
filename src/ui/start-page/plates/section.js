@@ -628,7 +628,9 @@
           if (destroyed || my !== token) return;
         }
         removedWorks = works.filter((a) => { const r = snap.plates.find((x) => x.id === a.id); return r && r.removed; });
-        const ex = works.length ? [] : loadExamples();
+        // Examples stand in with no works, and also when the ONLY work was cleared from Recent: a lone opened file
+        // takes the plates over until its Clear, which hands them back. Several works stay put (curated plates).
+        const ex = (!works.length || (works.length === 1 && works[0].cleared)) ? loadExamples() : [];
         exampleMode = ex.length > 0;
         entries = exampleMode
           ? ex.map((a) => ({ id: a.id, artId: a.id, art: a, rec: null, example: a.exampleMeta || {} }))

@@ -195,6 +195,7 @@
         collection: picksCfg().collectionFor ? picksCfg().collectionFor(type) : 'Studies',
         workId: entry.id,
         recentId: entry.id,
+        cleared: !!entry.cleared, // hidden from Recent by Clear (still a work)
         ownColors,
         getSvg: async () => {
           if (entry.thumb && entry.thumb.kind === 'svg' && entry.thumb.data) return stripGround(entry.thumb.data);
