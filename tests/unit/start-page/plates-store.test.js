@@ -35,7 +35,7 @@ describe('StartPagePlatesStore', () => {
     const { plates } = await b.load();
     expect(plates).toHaveLength(1);
     expect(plates[0]).toMatchObject({ id: 'w1', layout: 'left', pin: 'p1', removed: false, hidden: false });
-    expect(plates[0].colors).toEqual({ art: '#ff0000', text: null, background: null });
+    expect(plates[0].colors).toEqual({ art: '#ff0000', text: null, background: null, title: null, band: null });
   });
 
   it('deep-merges patches and keeps fill objects whole', async () => {
@@ -43,7 +43,7 @@ describe('StartPagePlatesStore', () => {
     await s.upsert('w1', { colors: { art: { fill: 'sunset' } } });
     const r = await s.upsert('w1', { colors: { text: '#111111' }, texts: { word: 'A' } });
     await s.upsert('w1', { texts: { title: 'T' } });
-    expect(r.colors).toEqual({ art: { fill: 'sunset' }, text: '#111111', background: null });
+    expect(r.colors).toEqual({ art: { fill: 'sunset' }, text: '#111111', background: null, title: null, band: null });
     const r2 = await s.upsert('w1', { colors: { art: { fill: 'duotone' } } });
     expect(r2.colors.art).toEqual({ fill: 'duotone' });
     const { plates } = await fresh().load();

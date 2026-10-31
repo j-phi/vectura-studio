@@ -32,6 +32,20 @@
     { id: 'pull-quote', name: 'Pull quote' },
   ].map((l) => Object.freeze(l)));
 
+  /* Manual color roles beyond Artwork / Text / Background that a layout really draws (plates/colors.js, plate editor):
+       title  the big display word (SVG text; follows the art fill when left on Auto)
+       band   a solid secondary ground (full-bleed band, knockout band, knockout-title bar; follows the pen ink when on Auto)
+     Layouts not listed use neither (text-wrap, specimen-frame, plot-stages, detail-full, four-crops, pull-quote). */
+  const COLOR_ROLES = Object.freeze({
+    'vertical-word': Object.freeze(['title']), 'spec-sheet': Object.freeze(['title']), waterfall: Object.freeze(['title']),
+    knockout: Object.freeze(['band']), 'full-sheet': Object.freeze(['title']), 'full-bleed-band': Object.freeze(['title', 'band']),
+    diptych: Object.freeze(['title']), 'big-numeral': Object.freeze(['title']), 'words-both-sides': Object.freeze(['title']),
+    'knockout-title': Object.freeze(['title', 'band']),
+  });
+  const rolesFor = (layoutId) => (COLOR_ROLES[layoutId] ? COLOR_ROLES[layoutId].slice() : []);
+  /* layouts whose display word sits on the band (so the Title is checked against the band, not the ground) */
+  const WORD_ON_BAND = Object.freeze(['full-bleed-band', 'knockout-title']);
+
   const FONT_FAMILY = '"Space Grotesk", system-ui, sans-serif';
   const FONT_WEIGHT = 700;
   const FONT = `${FONT_WEIGHT} 100px ${FONT_FAMILY}`;
@@ -173,7 +187,7 @@
   const DETAIL = Object.freeze({ z: 2.6, x: 0.46, y: 0.46 });
 
   Vectura.StartPagePlateType = {
-    LAYOUTS, SHAPES, FONT, FONT_FAMILY, FONT_WEIGHT, LETTER_SPACING, PAD, WATERFALL, STAGES, CROPS_4, DETAIL,
+    LAYOUTS, COLOR_ROLES, WORD_ON_BAND, rolesFor, SHAPES, FONT, FONT_FAMILY, FONT_WEIGHT, LETTER_SPACING, PAD, WATERFALL, STAGES, CROPS_4, DETAIL,
     estimateMetrics, wordBox, fitBox, verticalBox, cropStyle, cropMark, frameFor, aspectOf, plateVars, contrast, ensure, mix,
     firstSentence, normSpecs, pad2,
   };

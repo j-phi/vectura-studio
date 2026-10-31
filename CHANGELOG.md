@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Title and Band manual colors for plates; a colorway pick clears the custom palette
+- **Plate editor ▸ Manual colors gains Title and Band rows** where the plate's layout draws them. **Title** is the big display word (vertical-word, spec-sheet, waterfall, full-sheet, full-bleed-band, diptych, big-numeral, words-both-sides, knockout-title); **Band** is the solid secondary ground (full-bleed-band, knockout, knockout-title). Before, the band took the pen ink and the word followed the art fill, so a flat mint band and an iridescent word could not be set apart from the artwork. Each row has Auto (today's look, unchanged), the same swatches, custom color and six special fills as Artwork. **Text** stays the small caption and spec text; every row now carries a one-line hint.
+- A Title below 3:1 against what it sits on (the band on band layouts, else the ground) gets a contrast warning; text on a manual Band is nudged to stay readable. Saved plates without the new fields stay on Auto. Example plates in Developer Mode still hide manual colors (the example config cannot carry them).
+- **Fixed: picking a colorway left custom colors in place.** Choosing a named colorway, Auto · rhythm, "Use the rhythm's color" or the file's own colors now clears all five custom colors so the colorway applies in full, and Undo restores them together with the previous pin. The role table is `StartPagePlateType.COLOR_ROLES` / `rolesFor`.
+
 ### Added: Developer Mode edits the Start Page example plates
 - **The existing Developer Mode switch (Document Setup ▸ Contributor / Presets, `SETTINGS.devMode`) now also opens the shipped example plates for curation.** No second flag: `Vectura.DevMode` (`src/core/dev-mode.js`) wraps that one setting and announces changes, so the Start Page reacts live. With it off nothing is built.
 - **Document Setup ▸ Contributor / Presets ▸ "Edit Start Page plates…"** (visible only with Developer Mode on) closes the panel and opens the Start Page through `startPage.show({ editPlates: true })`, scrolled to the Plates section. The examples show and are editable even when you have saved works of your own.

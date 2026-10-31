@@ -30,7 +30,7 @@
   // Field -> default value, and the full object shape used when a patch merges into a null field.
   const SHAPES = {
     texts: { word: null, title: null, description: null },
-    colors: { art: null, text: null, background: null },
+    colors: { art: null, text: null, background: null, title: null, band: null },
     basicColors: { ink: null },
     frame: { fit: null, z: null, cx: null, cy: null },
     motion: { animateIn: null, hover: null },

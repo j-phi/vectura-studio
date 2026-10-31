@@ -207,14 +207,14 @@
       if (mode() === 'basic' && eff.basicColors && eff.basicColors.ink) return { art: eff.basicColors.ink };
       return null;
     };
-    const resolveCw = (e, i) => {
+    const resolveCw = (e, i, layout) => {
       const base = placed[i] && placed[i].colorway;
       if (!base) return null;
       const colors = manualColors(e);
       const Colors = Vectura.StartPagePlateColors;
       if (colors && Colors) {
         try {
-          const res = Colors.resolve(base, colors, { still: ctx.still() });
+          const res = Colors.resolve(base, colors, { still: ctx.still(), layout: layout || layoutFor(e, i, 'landscape') });
           return Object.assign({}, res.colorway, { resolved: res });
         } catch (err) { if (G.console) G.console.warn('[Plates] color resolve failed', err); }
       }
@@ -329,8 +329,8 @@
     const plateAnimateIn = (id) => { const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {}; return m.animateIn || ctx.prefs().animateIn || 'plot'; };
     const plateHover = (id) => { const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {}; return m.hover || ctx.prefs().hover || 'default'; };
 
-    const setData = (w, e, i) => {
-      const cw = resolveCw(e, i);
+    const setData = (w, e, i, layout) => {
+      const cw = resolveCw(e, i, layout);
       w.dataset.plateId = e.id;
       w.dataset.artId = e.art.id;
       w.dataset.index = String(i);
@@ -387,7 +387,8 @@
       e = entries.find((x) => x.id === w.dataset.plateId) || null;
       const i = e ? entries.indexOf(e) : -1;
       if (i < 0) return;
-      const cw = setData(w, e, i);
+      const model0 = svg ? art3d(e) : null;
+      const cw = setData(w, e, i, svg ? layoutFor(e, i, model0 ? '3d' : orientationOf(svg)) : undefined);
       if (!cw || !svg) { w.dataset.state = 'error'; return; }
       const model = art3d(e);
       const orientation = model ? '3d' : orientationOf(svg);
@@ -451,7 +452,7 @@
     const paintFills = (article, cw) => {
       const C = Vectura.StartPagePlateColors;
       if (!C || typeof C.apply !== 'function' || !cw) return;
-      const dirty = article.dataset.artfill || article.dataset.bgfill || article.dataset.txfill;
+      const dirty = article.dataset.artfill || article.dataset.bgfill || article.dataset.txfill || article.dataset.band || article.dataset.title;
       if (!cw.resolved && !dirty) return;
       try { C.apply(article, cw.resolved || C.resolve(cw, {}, { still: ctx.still() })); } catch (_) { /* painting is best effort */ }
     };
@@ -520,7 +521,7 @@
     // Refresh a mounted plate after a store / mode / theme change: rebuild only when its structure changed.
     const refreshPlate = (w, e, i) => {
       const st = w._sp;
-      const cw = setData(w, e, i);
+      const cw = setData(w, e, i, layoutFor(e, i, (st && st.orientation) || 'landscape'));
       if (!st || !st.article) return;
       if (!cw) return;
       const eff = effective(e);
