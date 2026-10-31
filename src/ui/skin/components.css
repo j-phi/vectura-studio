@@ -17739,6 +17739,8 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
 .sp-kk::before { content: ""; position: absolute; left: 50%; top: -1px; width: 1px; height: 6px; background: var(--ui-border-hi); }
 .sp-kk b { font-weight: 500; padding-top: 9px; font-variant-numeric: tabular-nums; }
 .sp-kk .sp-sw2, .sp-kk .t, .sp-kk .m { display: none; }
+/* At rest the key row is just its rule: no numbers or ticks under the letters. Only the hovered/focused key shows. */
+.sp-kk:not(.on) { visibility: hidden; }
 .sp-key-row.act .sp-kk { opacity: 0.28; }
 .sp-key-row .sp-kk.on { opacity: 1; color: var(--ui-text); z-index: 2; background: var(--ui-bg); padding: 0 8px 0 6px; gap: 8px; transform: none; }
 .sp-kk.on::before { display: none; }
