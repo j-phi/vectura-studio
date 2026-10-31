@@ -15,7 +15,7 @@ test.describe('Start Page example plates', () => {
     const plates = page.locator('#sp-plates .sp-pl[data-example]');
     await expect(plates).toHaveCount(5);
     await expect(page.locator('#sp-plates .sp-pl-empty')).toBeHidden();
-    await expect(page.locator('#sp-plates .sp-pl-example')).toHaveCount(5);
+    await expect(page.locator('#sp-plates .sp-pl-explain')).toContainText('These five are examples');
     await expect(page.locator('#sp-plates [data-act="edit"]')).toHaveCount(0);
     await expect(page.locator('#sp-pl-arrange')).toBeHidden();
 
@@ -29,6 +29,7 @@ test.describe('Start Page example plates', () => {
       await expect(pl.locator('.spl-note, .spl-wrap-txt').filter({ hasText: 'drag it to turn it' })).toHaveCount(live3d ? 1 : 0);
     }
 
+    await expect(page.locator('#sp-plates .sp-pl-example')).toHaveCount(5); // plates mount lazily; all are built after the walk above
     const first = plates.first();
     await first.scrollIntoViewIfNeeded();
     await expect(first.locator('.spl').first()).toBeVisible({ timeout: 20000 });

@@ -84,7 +84,7 @@
     const root = h('section', { class: 'sp-plates', id: 'sp-plates', 'aria-labelledby': 'sp-pl-h' });
     const title = h('h2', { id: 'sp-pl-h', class: 'sp-pl-title', text: 'Plates' });
     const count = h('span', { class: 'sp-pl-count' });
-    const explain = h('p', { class: 'sp-pl-explain' });
+    const explain = h('p', { class: 'sp-pl-explain', id: 'sp-pl-explain' });
     const addBtn = h('button', { type: 'button', id: 'sp-pl-add', class: 'sp-pl-btn', 'aria-haspopup': 'menu', 'aria-expanded': 'false', html: `${ICONS.plus}<span>Add plate</span>` });
     const arrBtn = h('button', { type: 'button', id: 'sp-pl-arrange', class: 'sp-pl-btn', 'aria-pressed': 'false' });
     const showSel = h('select', { id: 'sp-pl-show', 'aria-label': 'How many plates are visible' }, SHOW_OPTS.map(([v, l]) => h('option', { value: String(v), text: l })));
@@ -95,7 +95,7 @@
     const more = h('p', { class: 'sp-pl-more' });
     const empty = h('div', { class: 'sp-pl-empty', hidden: true },
       h('b', { text: 'Your plates start with your first piece.' }),
-      h('span', {}, 'Open or save a file and it hangs here as Plate 01, set on its own paper. Until then, start from one of the ',
+      h('span', {}, 'Save or open a file and it hangs here automatically as Plate 01, set on its own paper. Until then, start from one of the ',
         h('a', { href: '#sp-picks', text: 'studio picks' }), ' below.'));
     root.append(
       h('header', { class: 'sp-pl-head' },
@@ -333,7 +333,7 @@
         slot.append(tool('fan', 'Colorways', ICONS.palette, 'Colorways: try this piece on other papers and pens'));
         if (!isExample) slot.append(tool('cover', 'Use as cover', ICONS.book, 'Use this piece as the cover'));
       }
-      if (isExample && !slot.querySelector('.sp-pl-example')) slot.prepend(h('span', { class: 'sp-pl-example', text: 'Example' }));
+      if (isExample && !slot.querySelector('.sp-pl-example')) slot.prepend(h('span', { class: 'sp-pl-example', text: 'Example', title: 'Example plate. Your own plates appear here automatically when you save or open a file.' }));
       const want = canEdit() && !isExample;
       let ed = slot.querySelector('[data-act="edit"]');
       if (want && !ed) {
@@ -592,13 +592,15 @@
       const n = entries.length;
       const edit = canEdit();
       root.dataset.mode = mode();
-      count.textContent = exampleMode ? `${n} examples · until your first piece` : n ? `${n} work${n === 1 ? '' : 's'} · in your order` : 'your work will hang here';
+      count.textContent = exampleMode ? `${n} examples · until you save or open a piece` : n ? `${n} work${n === 1 ? '' : 's'} · in your order` : 'your work will hang here';
       explain.textContent = exampleMode
-        ? 'Five examples to show how your pieces will hang here. Open one, or open it as a template, to start a new document in the colors shown. Your own work replaces them as soon as you open or save a piece.'
+        ? 'These five are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples step aside as soon as your first arrives. Opening an example starts a new document; it becomes a plate once you save it.'
         : n
-        ? `Each work you open or save becomes a plate: set on its own paper and laid out for the sheet. ${edit ? 'Edit the text, layout, color and framing of any plate; drag to reorder.' : 'Colors follow the page mode; your edits return in Curated.'}`
+        ? `Each file you open or save becomes a plate automatically: set on its own paper and laid out for the sheet. ${edit ? 'Edit the text, layout, color and framing of any plate; drag to reorder.' : 'Colors follow the page mode; your edits return in Curated.'}`
         : '';
       explain.hidden = !n;
+      if (exampleMode) explain.dataset.example = '1'; else delete explain.dataset.example;
+      if (exampleMode) root.setAttribute('aria-describedby', explain.id); else root.removeAttribute('aria-describedby');
       addBtn.hidden = exampleMode || !(n || removedWorks.length); arrBtn.hidden = !n || exampleMode; showLbl.hidden = !n || exampleMode;
       empty.hidden = !!n;
       arrBtn.disabled = !n; // nothing to arrange
