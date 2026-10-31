@@ -299,6 +299,7 @@
         }
         document.getElementById('btn-start-page')?.addEventListener('click', () => app.startPage?.show());
         document.getElementById('btn-new-canvas')?.addEventListener('click', () => app.newCanvas({ paper: app.getNewCanvasPaper?.() }));
+        document.getElementById('btn-close-project')?.addEventListener('click', () => app.closeProject?.());
         ctl.renderMenu();
       },
 

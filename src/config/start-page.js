@@ -19,6 +19,7 @@
     motionStill: false,
     railCollapsed: false,
     visiblePlates: 5,
+    showExamples: true, // example plates show beside (after) the user's own works; unchecked hides them
     animateIn: 'plot',
     hover: 'default',
     colorMode: 'curated',
@@ -104,6 +105,7 @@
       motionStill: bool(pick('motionStill'), DEFAULTS.motionStill),
       railCollapsed: bool(pick('railCollapsed'), DEFAULTS.railCollapsed),
       visiblePlates: oneOf(ENUMS.visiblePlates, plates, DEFAULTS.visiblePlates),
+      showExamples: bool(pick('showExamples'), DEFAULTS.showExamples),
       animateIn: oneOf(ENUMS.animateIn, pick('animateIn'), DEFAULTS.animateIn),
       hover: oneOf(ENUMS.hover, pick('hover'), DEFAULTS.hover),
       colorMode: oneOf(ENUMS.colorMode, pick('colorMode'), DEFAULTS.colorMode),

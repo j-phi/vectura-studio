@@ -6,6 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed: Show example plates checkbox (replaces the automatic hide) (v1.4.43)
+- **A "Show example plates" checkbox in the Plates header** (default on, saved as the `showExamples` Start Page preference). Checked, the example plates sit after your own works in your saved order; unchecked, they are hidden (with no works, the empty state shows). They no longer step aside on their own. The Show count applies to your works only.
+- **Example plates are editable and removable like works.** Edit (layout, text, colors, framing, motion) and Remove work on an example, edits are saved per example id (the bundled definitions are never changed), and a removed example comes back from the Add plate menu under Removed.
+- A lone work cleared from Recent still leaves only the examples showing while the box is checked.
+
+### Added: File > Close and plates that follow Recent
+- **File > Close** drops the current project (asking first when it has unsaved changes), leaves a blank canvas and shows the Start Page. A project that was never saved or opened from a file was never a plate, so the example plates are back.
+- **Clear in Recent re-syncs the plates live.** With only one opened file in Recent, pressing Clear next to it leaves just the example plates (while "Show example plates" is checked); Undo brings the file's plate back. The Plates section now refreshes on every works change, not only when the set of art ids changes.
+
 ### Added: Start Page example plates (first run)
 - **Ten example plates fill the Plates section while you have no works of your own** (Old Growth Oak, Cybersigil on black stock, Downpour, Coiled Sphere as a live 3D disc, High Sierra, Torus Contours as a live 3D specimen, Contour Survey No. 3, Spiral Galaxy, Rolling Hills, Pebble Beach), in the mockup's layouts and colorways. Each is marked **Example** in its plate header, has Open and Open as template (a new unsaved document in the colors shown, never overwriting anything) and the Colorways fan, and has no Edit, Remove, Arrange, Add plate or Use as cover. They live in memory only, so nothing is saved to the plates store. As soon as you open or save a piece they are replaced by your own plates. A short note under the Plates heading says so: your own plates appear automatically when you save or open a file (New canvas, export and autosave do not add one), and opening an example starts a new document that becomes a plate once you save it.
 - Their art is pre-rendered with the studio picks (`npm run start-page:picks` now also covers `EXAMPLE_PLATES` in `src/config/start-page-picks.js`), so a first run does no live engine renders.

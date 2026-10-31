@@ -726,6 +726,12 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Show example plates
+- **Show example plates** (Plates header, on by default) shows the example plates after your own works; untick it to hide them. Examples can be edited and removed like your own plates; a removed one returns from **Add plate ▸ Removed**.
+
+### Unreleased - File > Close
+- **File > Close** closes the current project (with a discard prompt when it has unsaved changes) and returns to the Start Page. An opened file stays the only plate until you press Clear next to it in Recent, which brings the example plates back.
+
 ### Unreleased - Start Page (phases P0 to P3)
 - **A Start Page on launch.** A cover in your own ink, Recent files, Studio picks and a Community note ("coming later", with a Notify toggle) sit over the editor. Open it with `Shift+Cmd/Ctrl+H`, the wordmark or `File → Start Page…`; `Cmd/Ctrl+N` starts a blank canvas and `Alt/Option+Cmd/Ctrl+1` to `8` reopen recents. Turn it off with **Show Start Page on launch** (Settings or Document Setup).
 - **Plates.** Your work set as an editorial run: a plate editor, Arrange (`Alt/Option+Up/Down`), a Colorways fan and **Use as cover**; Open always keeps the colors shown.

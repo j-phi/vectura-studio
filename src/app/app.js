@@ -1107,6 +1107,22 @@
       });
     }
 
+    /**
+     * File > Close: drop the current project (asking first when it has unsaved changes), leave a blank canvas and
+     * show the Start Page. Plates follow the works list: a never-saved project was never a plate, so the example
+     * plates are back; an opened or saved file stays the only plate until its Clear in Recent.
+     */
+    async closeProject() {
+      if (!(await this.confirmDiscardChanges({
+        title: 'Close this project?',
+        message: 'The current canvas has changes that are not saved to a file. Closing discards them, and that cannot be undone.',
+        confirmLabel: 'Close',
+      }))) return false;
+      if (!(await this.newCanvas({ paper: this.getNewCanvasPaper(), confirm: false }))) return false;
+      this.startPage?.show?.();
+      return true;
+    }
+
     getNewCanvasPaper() {
       return SETTINGS.startPage?.newPaper || 'A3';
     }

@@ -33,7 +33,7 @@ describe('START_PAGE config', () => {
   it('exposes the contract defaults', () => {
     expect(SP.DEFAULTS).toEqual({
       showOnLaunch: true, coverStyle: 'mosaic', showName: false, showLine: false,
-      motionStill: false, railCollapsed: false, visiblePlates: 5, animateIn: 'plot', hover: 'default',
+      motionStill: false, railCollapsed: false, visiblePlates: 5, showExamples: true, animateIn: 'plot', hover: 'default',
       colorMode: 'curated', seed: null, coverWord: 'vectura', customWord: '',
       name: '', practiceLine: '', newPaper: 'A3', coverArtId: '', coverFrame: null, coverFill: '', communityNotify: false,
     });

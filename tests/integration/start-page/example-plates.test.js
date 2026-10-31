@@ -99,14 +99,15 @@ describe('Start Page example plates', () => {
     expect(art.textContent).not.toMatch(/drag it/i);
   });
 
-  test('examples carry no Edit, Remove, Arrange, Add plate, Show or Use as cover', async () => {
+  test('examples are edited and removed like works (Edit, Add plate, Arrange) but are not a cover piece; Show counts only own works', async () => {
     await boot();
-    expect(qa('.sp-pl [data-act="edit"]')).toHaveLength(0);
+    expect(qa('.sp-pl [data-act="edit"]')).toHaveLength(10);
     expect(qa('.sp-pl [data-act="cover"]')).toHaveLength(0);
     expect(qa('.sp-pl [data-act="fan"]')).toHaveLength(10);
-    expect(q('#sp-pl-add').hidden).toBe(true);
-    expect(q('#sp-pl-arrange').hidden).toBe(true);
-    expect(q('.sp-pl-show').hidden).toBe(true);
+    expect(q('#sp-pl-add').hidden).toBe(false);
+    expect(q('#sp-pl-arrange').hidden).toBe(false);
+    expect(q('#sp-pl-show').closest('.sp-pl-show').hidden).toBe(true); // no works of your own to count
+    expect(q('#sp-pl-examples').checked).toBe(true);
   });
 
   test('Open and Open as template have a11y names and pass the colors shown', async () => {
@@ -148,15 +149,16 @@ describe('Start Page example plates', () => {
     expect((await app.startPage.plates.store.load()).plates).toHaveLength(0);
   });
 
-  test('examples are gone as soon as the user has a work, and come back when none remain', async () => {
+  test('examples sit after the user\'s works, and the works go away to leave only examples', async () => {
     await boot();
     expect(qa('.sp-pl[data-example]')).toHaveLength(10);
     works = [{ id: 'work:w1', kind: 'work', name: 'mine.vectura', algorithm: 'Flowfield', collection: 'Studies', recentId: 'w1', workId: 'w1', bytes: 900, ownColors: null, getSvg: async () => SVG(20) }];
     await app.startPage.plates.refresh();
     await tick(100);
-    expect(qa('.sp-pl[data-example]')).toHaveLength(0);
-    expect(qa('.sp-pl')).toHaveLength(1);
-    expect(q('.sp-pl-example')).toBeNull();
+    expect(qa('.sp-pl[data-example]')).toHaveLength(10);
+    expect(qa('.sp-pl')).toHaveLength(11);
+    expect(qa('.sp-pl')[0].dataset.example).toBeUndefined(); // works first, then the examples
+    expect(qa('.sp-pl')[10].dataset.example).toBe('1');
     expect(q('.sp-pl [data-act="edit"]')).toBeTruthy();
     expect(q('#sp-pl-arrange').hidden).toBe(false);
     works = [];
@@ -166,7 +168,37 @@ describe('Start Page example plates', () => {
   });
 
 
-  test('one explainer says these are examples, that own plates appear automatically on save/open, and that examples step aside', async () => {
+  test('a lone work cleared from Recent leaves only the examples; Undo (or opening it again) brings it back first', async () => {
+    await boot();
+    const work = (cleared) => ({ id: 'work:w1', kind: 'work', name: 'mine.vectura', algorithm: 'Flowfield', collection: 'Studies', recentId: 'w1', workId: 'w1', cleared, bytes: 900, ownColors: null, getSvg: async () => SVG(20) });
+    works = [work(false)];
+    await app.startPage.plates.refresh();
+    await tick(100);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(10);
+    expect(qa('.sp-pl')).toHaveLength(11);
+    works = [work(true)]; // Clear next to it in Recent: still a work, but hidden from Recent
+    await app.startPage.plates.refresh();
+    await tick(100);
+    expect(qa('.sp-pl')).toHaveLength(10);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(10);
+    works = [work(false)]; // opened again (or Undo): it is back, ahead of the examples
+    await app.startPage.plates.refresh();
+    await tick(100);
+    expect(qa('.sp-pl')).toHaveLength(11);
+    expect(qa('.sp-pl')[0].dataset.example).toBeUndefined();
+  });
+
+  test('several works keep their plates when Recent is cleared (only a lone work hands the plates back)', async () => {
+    await boot();
+    const w = (n) => ({ id: `work:w${n}`, kind: 'work', name: `m${n}.vectura`, algorithm: 'Flowfield', collection: 'Studies', recentId: `w${n}`, workId: `w${n}`, cleared: true, bytes: 900, ownColors: null, getSvg: async () => SVG(20 + n) });
+    works = [w(1), w(2)];
+    await app.startPage.plates.refresh();
+    await tick(100);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(10);
+    expect(qa('.sp-pl')).toHaveLength(12);
+  });
+
+  test('one explainer says these are examples, that own plates appear automatically on save/open, and that the examples stay until hidden', async () => {
     await boot();
     const ex = q('#sp-plates .sp-pl-explain');
     expect(ex.hidden).toBe(false);
@@ -175,14 +207,15 @@ describe('Start Page example plates', () => {
     expect(t).not.toMatch(/\b(five|ten)\b/i); // count-agnostic: the count line carries the number
     expect(t).toMatch(/your own plates appear here automatically/i);
     expect(t).toMatch(/save or open a file/i);
-    expect(t).toMatch(/step aside/i);
+    expect(t).toMatch(/Show example plates/i);
+    expect(t).not.toMatch(/step aside/i);
     expect(t).toMatch(/opening an example starts a new document/i);
     expect(t).not.toMatch(/commission|colour|favour/i);
     // real text, wired to the section for assistive tech, stated once (not per plate)
     expect(q('#sp-plates').getAttribute('aria-describedby')).toBe(ex.id);
     expect(qa('#sp-plates .sp-pl').filter((w) => /automatically/i.test(w.textContent))).toHaveLength(0);
-    expect(q('.sp-pl-count').textContent).toBe('10 examples · until you save or open a piece');
-    live().forEach((w) => { expect(w.querySelector('.sp-pl-example').getAttribute('title')).toMatch(/save or open a file/i); });
+    expect(q('.sp-pl-count').textContent).toBe('10 examples · your own work will join them');
+    live().forEach((w) => { expect(w.querySelector('.sp-pl-example').getAttribute('title')).toMatch(/Show example plates/i); });
   });
 
   test('the explainer switches to the works copy (no example claims) once a work exists', async () => {

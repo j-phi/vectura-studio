@@ -587,12 +587,14 @@
       await refreshOwn();
       if (!open) return;
       renderRail();
+      // Plates follow every works change, not just a changed art list: Clear / Undo in Recent flips a work's `cleared`
+      // flag (same ids), and a lone cleared work hands the plates back to the examples.
+      plates.refresh();
       const sig = await artSignature();
       if (!open || sig === coverSig) return;
       coverSig = sig;
       await cover.render({ animate: false });
       controls.sync();
-      plates.refresh();
       renderSections({ picksToo: false });
     };
 

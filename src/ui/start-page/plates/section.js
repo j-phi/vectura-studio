@@ -71,7 +71,10 @@
     let editor = null; // { id, handle, btn }
     let arrange = null;
     let headed = false; // the header has been drawn once (exampleMode is known)
-    let exampleMode = false; // first run: the example plates stand in until the user has a work (never stored)
+    let exampleMode = false; // only example plates show (no works of the user's own): the first-run look
+    let worksShown = 0; // own works among the entries
+    let removedExamples = []; // example plates the user removed: listed in the Add plate menu so they can come back
+    let hasExamples = false; // the bundled example set is available (the checkbox is offered)
     let removedWorks = []; // works whose plate was removed: listed in the Add plate menu so they can come back
     let fanHandle = null;
     let coverApi = null;
@@ -90,6 +93,8 @@
     const arrBtn = h('button', { type: 'button', id: 'sp-pl-arrange', class: 'sp-pl-btn', 'aria-pressed': 'false' });
     const showSel = h('select', { id: 'sp-pl-show', 'aria-label': 'How many plates are visible' }, SHOW_OPTS.map(([v, l]) => h('option', { value: String(v), text: l })));
     const showLbl = h('label', { class: 'sp-pl-show', for: 'sp-pl-show' }, h('span', { text: 'Show' }), showSel);
+    const exBox = h('input', { type: 'checkbox', id: 'sp-pl-examples' });
+    const exLbl = h('label', { class: 'sp-pl-show sp-pl-examples-toggle', for: 'sp-pl-examples' }, exBox, h('span', { text: 'Show example plates' }));
     const menu = h('div', { class: 'sp-pl-menu', role: 'menu', 'aria-label': 'Add another plate of', hidden: true });
     const liveRegion = h('div', { class: 'sp-sr', 'aria-live': 'polite', role: 'status' });
     const list = h('div', { class: 'sp-pl-list', id: 'sp-pl-list' });
@@ -101,7 +106,7 @@
     root.append(
       h('header', { class: 'sp-pl-head' },
         h('div', { class: 'sp-pl-titles' }, title, count),
-        h('div', { class: 'sp-pl-tools' }, addBtn, arrBtn, showLbl, menu)),
+        h('div', { class: 'sp-pl-tools' }, addBtn, arrBtn, showLbl, exLbl, menu)),
       explain, empty, list, more, liveRegion);
     host.append(root);
 
@@ -120,13 +125,14 @@
       }
       return store;
     };
+    // The Show setting counts the user's own works; example plates (a small fixed set) are always all shown.
     const visibleCount = (n) => {
-      if (exampleMode) return n; // the examples are a small fixed set: always all of them
       const v = ctx.prefs().visiblePlates;
       if (v === 'all') return n;
       const k = Number(v);
       return Number.isFinite(k) ? Math.max(0, Math.min(n, k)) : Math.min(n, 5);
     };
+    const showExamples = () => ctx.prefs().showExamples !== false;
     const mode = () => ctx.mode();
     const canEdit = () => !!(Store() && Store().canEdit(mode()));
 
@@ -134,10 +140,10 @@
       const byArt = new Map(arts.map((a) => [a.id, a]));
       const recs = new Map(snap.plates.map((r) => [r.id, r]));
       const cand = new Map();
-      arts.forEach((a) => { const r = recs.get(a.id) || null; if (!(r && r.removed)) cand.set(a.id, { id: a.id, artId: a.id, art: a, rec: r }); });
+      arts.forEach((a) => { const r = recs.get(a.id) || null; if (!(r && r.removed)) cand.set(a.id, { id: a.id, artId: a.id, art: a, rec: r, ...(a.example ? { example: a.exampleMeta || {} } : {}) }); });
       snap.plates.forEach((r) => {
         if (r.removed || r.id === r.artId || !byArt.has(r.artId)) return;
-        cand.set(r.id, { id: r.id, artId: r.artId, art: byArt.get(r.artId), rec: r });
+        cand.set(r.id, { id: r.id, artId: r.artId, art: byArt.get(r.artId), rec: r, ...(byArt.get(r.artId).example ? { example: byArt.get(r.artId).exampleMeta || {} } : {}) });
       });
       const out = [];
       snap.order.forEach((id) => { if (cand.has(id)) { out.push(cand.get(id)); cand.delete(id); } });
@@ -145,8 +151,8 @@
       return out;
     };
 
-    // Example plates: bundled presets pre-rendered like the studio picks (StartPageArtSource.examples). They exist only
-    // in memory: no store record, so nothing to edit, remove, arrange or persist.
+    // Example plates: bundled presets pre-rendered like the studio picks (StartPageArtSource.examples). The definitions are
+    // never mutated; like works, a plate's edits / removal / order live in the plates store under the example's id.
     const loadExamples = () => {
       try {
         const Src = Vectura.StartPageArtSource;
@@ -334,8 +340,8 @@
         slot.append(tool('fan', 'Colorways', ICONS.palette, 'Colorways: try this piece on other papers and pens'));
         if (!isExample) slot.append(tool('cover', 'Use as cover', ICONS.book, 'Use this piece as the cover'));
       }
-      if (isExample && !slot.querySelector('.sp-pl-example')) slot.prepend(h('span', { class: 'sp-pl-example', text: 'Example', title: 'Example plate. Your own plates appear here automatically when you save or open a file.' }));
-      const want = canEdit() && !isExample;
+      if (isExample && !slot.querySelector('.sp-pl-example')) slot.prepend(h('span', { class: 'sp-pl-example', text: 'Example', title: 'Example plate. Edit or remove it like your own; hide them all with Show example plates.' }));
+      const want = canEdit();
       let ed = slot.querySelector('[data-act="edit"]');
       if (want && !ed) {
         ed = tool('edit', 'Edit', ICONS.edit, 'Edit this plate: text, layout, colors, framing');
@@ -533,12 +539,20 @@
     /* ------------------------------------------------------------------ visibility, lazy mount */
     // the list also hosts the Arrange panel while arranging; only plates take part in visibility/order
     const plateEls = () => [...list.children].filter((c) => c.classList && c.classList.contains('sp-pl'));
+    // Plates past the Show count are hidden; only the user's own works count, examples are never cut.
+    const offSet = (k) => {
+      const off = new Set();
+      let seen = 0;
+      entries.forEach((e) => { if (e.example) return; if (seen >= k) off.add(e.id); seen += 1; });
+      return off;
+    };
     const applyVisibility = (animate) => {
-      const k = visibleCount(entries.length);
+      const k = visibleCount(worksShown);
       const lastK = list._k;
       list._k = k;
+      const offIds = offSet(k);
       plateEls().forEach((w, i) => {
-        const off = i >= k;
+        const off = offIds.has(w.dataset.plateId);
         const was = w.hasAttribute('data-off');
         if (off === was && w.dataset.visInit) return;
         w.dataset.visInit = '1';
@@ -557,10 +571,10 @@
       renderMore(k);
     };
     const renderMore = (k) => {
-      const n = entries.length;
+      const n = worksShown;
       more.textContent = '';
-      more.hidden = !n || exampleMode;
-      if (!n || exampleMode) return;
+      more.hidden = !n;
+      if (!n) return;
       const lnk = (v, text) => h('button', { type: 'button', class: 'sp-pl-lnk', 'data-vis-set': String(v), text });
       if (arrange) more.append(`Arranging all ${n} plates${k < n ? ` · ${n - k} hidden from the page are marked` : ''}`);
       else if (k >= n) { more.append(`Showing all ${n} plate${n === 1 ? '' : 's'}`); if (n > 5) more.append(' · ', lnk(5, 'Show 5')); }
@@ -595,16 +609,21 @@
       const n = entries.length;
       const edit = canEdit();
       root.dataset.mode = mode();
-      count.textContent = exampleMode ? `${n} examples · until you save or open a piece` : n ? `${n} work${n === 1 ? '' : 's'} · in your order` : 'your work will hang here';
+      const ne = n - worksShown;
+      count.textContent = exampleMode ? `${n} examples · your own work will join them`
+        : !n ? 'your work will hang here'
+        : ne ? `${worksShown} work${worksShown === 1 ? '' : 's'} · ${ne} example${ne === 1 ? '' : 's'}`
+        : `${n} work${n === 1 ? '' : 's'} · in your order`;
       explain.textContent = exampleMode
-        ? 'These are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples step aside as soon as your first arrives. Opening an example starts a new document; it becomes a plate once you save it.'
+        ? 'These are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples stay beside them until you hide them with Show example plates. Edit or remove any plate, examples included. Opening an example starts a new document; it becomes a plate once you save it.'
         : n
         ? `Each file you open or save becomes a plate automatically: set on its own paper and laid out for the sheet. ${edit ? 'Edit the text, layout, color and framing of any plate; drag to reorder.' : 'Colors follow the page mode; your edits return in Curated.'}`
         : '';
       explain.hidden = !n;
       if (exampleMode) explain.dataset.example = '1'; else delete explain.dataset.example;
       if (exampleMode) root.setAttribute('aria-describedby', explain.id); else root.removeAttribute('aria-describedby');
-      addBtn.hidden = exampleMode || !(n || removedWorks.length); arrBtn.hidden = !n || exampleMode; showLbl.hidden = !n || exampleMode;
+      addBtn.hidden = !(n || removedWorks.length || removedExamples.length); arrBtn.hidden = !n; showLbl.hidden = !worksShown;
+      exLbl.hidden = !hasExamples; exBox.checked = showExamples();
       empty.hidden = !!n;
       arrBtn.disabled = !n; // nothing to arrange
       if (!n && arrange) exitArrange(true);
@@ -619,6 +638,7 @@
       const my = (token += 1);
       return Promise.all([ctx.arts(), getStore().load()]).then(async ([arts, snap]) => {
         if (destroyed || my !== token) return;
+        if (typeof document === 'undefined' || !document) return; // resolved after the page was torn down
         const works = (arts || []).filter((a) => a && a.kind === 'work');
         // a removed work that is opened or saved again comes back (its record is stamped with the removal time)
         const back = works.filter((a) => { const r = snap.plates.find((x) => x.id === a.id); return r && r.removed && Number(r.removedAt) && Number(a.lastOpened) > Number(r.removedAt); });
@@ -627,13 +647,18 @@
           snap = await getStore().load();
           if (destroyed || my !== token) return;
         }
-        removedWorks = works.filter((a) => { const r = snap.plates.find((x) => x.id === a.id); return r && r.removed; });
-        const ex = works.length ? [] : loadExamples();
-        exampleMode = ex.length > 0;
-        entries = exampleMode
-          ? ex.map((a) => ({ id: a.id, artId: a.id, art: a, rec: null, example: a.exampleMeta || {} }))
-          : buildEntries(works, snap);
-        if (exampleMode) removedWorks = [];
+        // Example plates show beside the works (after them) while Show example plates is checked. A lone work cleared
+        // from Recent hands the plates to the examples alone (several works stay put: curated plates).
+        const all = loadExamples();
+        hasExamples = all.length > 0;
+        const withEx = hasExamples && showExamples();
+        const ownWorks = withEx && works.length === 1 && works[0].cleared ? [] : works;
+        const exArts = withEx ? all : [];
+        removedExamples = all.filter((a) => { const r = snap.plates.find((x) => x.id === a.id); return r && r.removed; });
+        removedWorks = ownWorks.filter((a) => { const r = snap.plates.find((x) => x.id === a.id); return r && r.removed; });
+        entries = buildEntries(ownWorks.concat(exArts), snap);
+        worksShown = entries.filter((e) => !e.example).length;
+        exampleMode = withEx && !ownWorks.length && entries.length > 0;
         placed = place();
         computeLayoutClasses();
         const keep = new Set(entries.map((e) => e.id));
@@ -742,13 +767,14 @@
       if (!A || typeof A.enter !== 'function') { toast('Arranging is not available in this build.', 'warning'); return; }
       if (editor) closeEditor(false);
       if (fanHandle) { try { fanHandle.close(); } catch (_) { /* noop */ } }
-      const k = visibleCount(entries.length);
+      const k = visibleCount(worksShown);
+      const offIds = offSet(k);
       list.dataset.arranging = 'true';
       wrappers.forEach((w) => dropPlate(w));
       arrange = A.enter(list, {
         plates: entries.map((e, i) => {
           const cw = resolveCw(e, i); const v = cw && shown(cw);
-          return { id: e.id, name: textsOf(e).title, hidden: i >= k, colorway: v ? { ground: v['--spl-paper'], paper: v['--spl-paper'], ink: v['--spl-text'], class: cw.class } : null };
+          return { id: e.id, name: textsOf(e).title, hidden: offIds.has(e.id), colorway: v ? { ground: v['--spl-paper'], paper: v['--spl-paper'], ink: v['--spl-text'], class: cw.class } : null };
         }),
         onMove: (ids) => getStore().reorder(ids),
         onResetOrder: async () => { await getStore().resetOrder(); await sync(); return entries.map((x) => x.id); },
@@ -776,9 +802,9 @@
         if (seen.has(e.artId)) return; seen.add(e.artId);
         menu.append(h('button', { type: 'button', role: 'menuitem', 'data-add-art': e.artId, text: pretty(e.art.name) }));
       });
-      if (removedWorks.length) {
+      if (removedWorks.length || removedExamples.length) {
         menu.append(h('span', { class: 'sp-pl-menu-h', role: 'presentation', text: 'Removed' }));
-        removedWorks.forEach((a) => menu.append(h('button', { type: 'button', role: 'menuitem', 'data-restore-art': a.id, text: pretty(a.name) })));
+        removedWorks.concat(removedExamples).forEach((a) => menu.append(h('button', { type: 'button', role: 'menuitem', 'data-restore-art': a.id, text: pretty(a.name) })));
       }
       menu.hidden = false;
       addBtn.setAttribute('aria-expanded', 'true');
@@ -792,7 +818,7 @@
     const restorePlate = async (artId) => {
       const s = getStore();
       await s.upsert(artId, { removed: false, removedAt: null });
-      announce(`Restored the plate of ${pretty((removedWorks.find((a) => a.id === artId) || { name: '' }).name)}.`);
+      announce(`Restored the plate of ${pretty((removedWorks.concat(removedExamples).find((a) => a.id === artId) || { name: '' }).name)}.`);
       undoToast('Plate restored', () => s.remove(artId));
     };
     const addPlate = async (artId) => {
@@ -820,6 +846,11 @@
       else if (act === 'cover') useAsCover(info);
     });
     showSel.addEventListener('change', () => setShow(showSel.value));
+    exBox.addEventListener('change', () => {
+      ctx.setPref('showExamples', exBox.checked);
+      announce(exBox.checked ? 'Example plates shown.' : 'Example plates hidden.');
+      sync();
+    });
     root.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape' && !menu.hidden) { ev.preventDefault(); ev.stopPropagation(); closeMenu(true); }
     });
