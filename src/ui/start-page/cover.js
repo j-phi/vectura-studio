@@ -332,8 +332,7 @@
       const prefs = ctx.prefs();
       const band = h('div', { class: 'sp-pf', 'data-live-hook': 'band-3d', role: 'group', 'aria-label': `Cover band: ${art.name.replace(/\.vectura$/, '')}` });
       const text = h('div', { class: 'sp-pf-in' });
-      const eyebrow = h('div', { class: 'sp-pf-eyebrow', text: prefs.showName ? 'Studio of' : 'Set in your work' });
-      text.append(eyebrow);
+      if (prefs.showName) text.append(h('div', { class: 'sp-pf-eyebrow', text: 'Studio of' }));
       const slot = h('div', { class: 'sp-pf-who' });
       text.append(slot);
       const tools = h('button', { type: 'button', class: 'sp-pf-cap' },
@@ -432,12 +431,10 @@
     /* -------------------------------------------------------------- render */
     const renderInfo = (style, arts, word, usingPicks) => {
       const named = ['last-name', 'first-last'].includes(ctx.prefs().coverWord);
-      kick.textContent = style === 'band' ? 'Cover' : named ? 'Studio of' : 'Set in your work';
+      kick.textContent = style === 'band' ? 'Cover' : named ? 'Studio of' : ''; // no generic kicker: the word speaks for itself
       if (!arts.length) { info.textContent = 'Nothing to set yet'; return; }
       if (style === 'mosaic') {
-        const n = Words().letters(word).length;
-        info.textContent = '';
-        info.append(usingPicks ? 'Set in pieces from the Vectura studio until you make your own' : 'Each letter carries one of your pieces · ', usingPicks ? '' : h('b', { text: String(n) }), usingPicks ? '' : ' letters');
+        info.textContent = ''; // the letters carry their own labels on hover; no count line
       } else if (style === 'word') {
         info.textContent = '';
         info.append(`Cover word · filled with `, h('b', { text: arts[0].name.replace(/\.vectura$/, '') }));

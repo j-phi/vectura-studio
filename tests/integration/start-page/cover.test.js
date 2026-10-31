@@ -61,6 +61,17 @@ describe('Start Page cover and controls', () => {
     expect(q('.sp-key-row')).toBeTruthy();
   });
 
+  test('the cover header is quiet: no kicker, no letter-count line, Colorway label without "whole page"', async () => {
+    await boot();
+    expect(q('#sp-cv-kick').textContent).toBe('');
+    expect(q('#sp-cv-info').textContent).toBe('');
+    expect(sp().textContent).not.toMatch(/Set in your work|Each letter carries one of your pieces|whole page/i);
+    expect([...sp().querySelectorAll('.sp-ctl-lbl')].map((el) => el.textContent)).toContain('Colorway');
+    // The horizontal rule and the hover label stay: the key row is still built, one key per letter.
+    expect(q('.sp-key-row')).toBeTruthy();
+    expect(sp().querySelectorAll('.sp-key-row .sp-kk')).toHaveLength(7);
+  });
+
   test('cover style changes through Settings and persists', async () => {
     await boot();
     await openSettings();

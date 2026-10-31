@@ -35,7 +35,7 @@
     const sw = h('span', { class: 'sp-sw', 'aria-hidden': 'true' });
     const note = h('span', { class: 'sp-own-note' });
     const live = h('span', { class: 'sp-sr', 'aria-live': 'polite' });
-    root.append(h('span', { class: 'sp-ctl-lbl', text: 'Colorway · whole page' }), seg, dice, sw, note, live);
+    root.append(h('span', { class: 'sp-ctl-lbl', text: 'Colorway' }), seg, dice, sw, note, live);
     host.append(root);
 
     const btns = [...seg.querySelectorAll('[data-sp-mode]')];

@@ -80,6 +80,8 @@ test.describe('Start Page cover', () => {
     await page.keyboard.press('Escape');
     await expect(page.locator('#sp-settings')).toBeHidden();
     await expect(page.locator('#sp-settings-btn')).toBeFocused();
+    // At rest the key row is only its rule: no numbers or ticks under the letters.
+    await expect(page.locator('#start-page .sp-key-row .sp-kk').first()).toBeHidden();
     await page.locator('#start-page .sp-lt').first().focus();
     await expect(page.locator('#start-page .sp-key-row .sp-kk.on')).toBeVisible();
     await page.keyboard.press('Tab');

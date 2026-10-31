@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed: quieter Start Page cover header (v1.4.48)
+- **Removed** the "Set in your work" kicker, the "Each letter carries one of your pieces · N letters" / "Set in pieces from the Vectura studio…" line, and the resting numbers and ticks under each cover letter. The band cover drops its "Set in your work" eyebrow (it keeps "Studio of" when your name is shown).
+- **Kept** the horizontal rule under the letters and the hover/focus label (swatch, number, piece name, algorithm and pen, with the accent bar).
+- The color controls label now reads **Colorway** (was "Colorway · whole page").
+
 ### Fixed: dragging a Start Page 3D object no longer opens the art (v1.4.46)
 - **Only a fast single click opens art.** Releasing an orbit drag (or any press that moves more than 5 px, 10 px for touch/pen, or lasts longer than 350 ms) no longer opens the piece; the `click` the browser fires on release is swallowed. Keyboard Enter/Space and screen-reader activation still open it. One shared helper, `StartPageDom.onOpenClick`, now guards every open-on-click site: plates, cover letters, the word cover, the band caption, studio pick cards and the Community card. Thresholds live in `START_PAGE.CLICK` (`src/config/start-page.js`).
 - Plate art also resolves its entry by plate id when opened, so a re-sync that rebuilt the entry objects can no longer leave the art click a silent no-op.
