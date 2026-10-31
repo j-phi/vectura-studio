@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Changed: Show example plates checkbox (replaces the automatic hide)
+- **A "Show example plates" checkbox in the Plates header** (default on, saved as the `showExamples` Start Page preference). Checked, the example plates sit after your own works in your saved order; unchecked, they are hidden (with no works, the empty state shows). They no longer step aside on their own. The Show count applies to your works only.
+- **Example plates are editable and removable like works.** Edit (layout, text, colors, framing, motion) and Remove work on an example, edits are saved per example id (the bundled definitions are never changed), and a removed example comes back from the Add plate menu under Removed.
+- A lone work cleared from Recent still leaves only the examples showing while the box is checked.
+
 ### Added: File > Close and plates that follow Recent
 - **File > Close** drops the current project (asking first when it has unsaved changes), leaves a blank canvas and shows the Start Page. A project that was never saved or opened from a file was never a plate, so the example plates are back.
 - **An opened local file is the only plate until you Clear it.** Pressing Clear next to it in Recent hands the Plates section back to the example plates; opening it again (or Undo) restores it. Two or more works keep their plates when Recent is cleared.

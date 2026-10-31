@@ -726,6 +726,9 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Show example plates
+- **Show example plates** (Plates header, on by default) shows the example plates after your own works; untick it to hide them. Examples can be edited and removed like your own plates; a removed one returns from **Add plate ▸ Removed**.
+
 ### Unreleased - File > Close
 - **File > Close** closes the current project (with a discard prompt when it has unsaved changes) and returns to the Start Page. An opened file stays the only plate until you press Clear next to it in Recent, which brings the example plates back.
 

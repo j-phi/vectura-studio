@@ -46,17 +46,18 @@ describe('Start Page: Clear in Recent updates the plates while the page is open'
     });
     app.startPage.show();
     await tick(400);
-    expect(qa('.sp-pl[data-example]')).toHaveLength(0);
-    expect(qa('.sp-pl')).toHaveLength(1);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(10);
+    expect(qa('.sp-pl')).toHaveLength(11); // the opened file first, the examples after
 
     click(sp().querySelector('[data-act="clear-recent"]'));
     await tick(600);
     expect(app.recents.list()).toHaveLength(0);
     expect(qa('.sp-pl[data-example]')).toHaveLength(10);
+    expect(qa('.sp-pl')).toHaveLength(10); // the cleared file's plate steps out, leaving only the examples
 
     click(document.querySelector('#vectura-toast-host [data-action="undo"]'));
     await tick(600);
-    expect(qa('.sp-pl[data-example]')).toHaveLength(0);
-    expect(qa('.sp-pl')).toHaveLength(1);
+    expect(qa('.sp-pl')).toHaveLength(11);
+    expect(qa('.sp-pl')[0].dataset.example).toBeUndefined();
   });
 });

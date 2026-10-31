@@ -18133,6 +18133,8 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
 .sp-pl-btn[aria-pressed="true"] { color: var(--ui-text); border-color: var(--ui-accent); }
 .sp-pl-btn[hidden], .sp-pl-show[hidden] { display: none; }
 .sp-pl-show { display: inline-flex; align-items: center; gap: 7px; font: 500 10px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ui-muted); }
+.sp-pl-examples-toggle { cursor: pointer; }
+.sp-pl-examples-toggle input { width: 14px; height: 14px; margin: 0; accent-color: var(--ui-accent, currentColor); cursor: pointer; }
 .sp-pl-show select { height: 28px; padding: 0 8px; border: 1px solid var(--ui-border-hi); border-radius: var(--radius-sm); background: var(--ui-ctrl); color: var(--ui-text); font: 500 11.5px/1 var(--font-ui); letter-spacing: 0; text-transform: none; }
 .sp-pl-menu { position: absolute; z-index: 20; top: 32px; left: 0; min-width: 200px; max-height: 260px; overflow: auto; padding: 4px; display: flex; flex-direction: column; border: 1px solid var(--ui-border-hi); border-radius: var(--radius-sm); background: var(--ui-bg-2, var(--ui-bg)); box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28); }
 .sp-pl-menu[hidden] { display: none; }
