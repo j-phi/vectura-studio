@@ -15,7 +15,11 @@
  *        add(presetId, { title }) subscribe(fn)
  *        plates() -> the flat list (export form)   isDirty()   resetToShipped() -> undo token   undoReset(token)
  *   Records follow the plates-store shape (layout, texts { word, title }, pin, colors ...); only presetId, title, word, layout,
- *   pin and colors are shipped, so framing / motion / description edits are ignored by the draft.
+ *   pin, colors and hover are shipped, so framing / other motion / description edits are ignored by the draft.
+ *
+ * hover (optional): a hover-fx effect id (StartPageHoverFx EFFECTS key, e.g. 'holo' = Hologram Foil) that plate shows on hover until
+ * the user picks one of their own in the plate editor. Anything else (none, default, retrigger, aliases, unknown ids) is dropped.
+ * Kept in the draft record as motion.hover; exported after colors:  Object.freeze({ ..., colors: Object.freeze({ ... }), hover: 'holo' }),
  *
  * colors (optional): the plates store's manual colors, role -> value, where a value is a hex string ('#c0392b', '#abc') or a
  * special fill ({ fill: 'iridescent' | 'iridescent-animated' | 'duotone' | 'metallic-gold' | 'metallic-silver' | 'sunset' }).
@@ -33,8 +37,12 @@
   const SHIPPED_FIELDS = ['presetId', 'title', 'description', 'word', 'layout', 'pin'];
   const ROLES = ['art', 'text', 'background', 'title', 'band']; // StartPagePlatesStore SHAPES.colors order
   const FALLBACK_FILLS = ['iridescent', 'iridescent-animated', 'duotone', 'metallic-gold', 'metallic-silver', 'sunset'];
+  const FALLBACK_HOVERS = ['lift', 'glare', 'replot', 'holo', 'ripple', 'stipple', 'breeze', 'gravity', 'current']; // hover-fx EFFECTS keys
   const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i; // what StartPagePlateColors.resolve accepts
   const fillIds = () => { const F = Vectura.StartPagePlateFills; return F && Array.isArray(F.IDS) ? F.IDS : FALLBACK_FILLS; };
+  const hoverIds = () => { const H = Vectura.StartPageHoverFx; try { const ids = H && typeof H.ids === 'function' ? H.ids() : null; return Array.isArray(ids) && ids.length ? ids : FALLBACK_HOVERS; } catch (_e) { return FALLBACK_HOVERS; } };
+  // A hover-fx effect id (StartPageHoverFx EFFECTS key) or null: page-level values (none, default, retrigger) and aliases are not shipped.
+  const sanitizeHover = (v) => (typeof v === 'string' && hoverIds().includes(v) ? v : null);
   const copy = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
   const str = (v) => (typeof v === 'string' && v.trim() !== '' ? v : null);
   // A validated, frozen copy of a `colors` value, or null when nothing valid is left (= all Auto).
@@ -63,17 +71,17 @@
   const fromShipped = (list) => {
     const taken = new Set();
     return (Array.isArray(list) ? list : []).filter((e) => e && str(e.presetId)).map((e) => ({
-      key: keyFor(e.presetId, taken), presetId: e.presetId, title: str(e.title), description: str(e.description), word: str(e.word), layout: str(e.layout), pin: str(e.pin), colors: colorsOf(e.colors),
+      key: keyFor(e.presetId, taken), presetId: e.presetId, title: str(e.title), description: str(e.description), word: str(e.word), layout: str(e.layout), pin: str(e.pin), colors: colorsOf(e.colors), hover: sanitizeHover(e.hover),
     }));
   };
   const recordOf = (flat, order) => ({
     id: flat.key, artId: flat.key, presetId: flat.presetId, order, hidden: false,
     layout: flat.layout || null, texts: { word: flat.word || null, title: flat.title || null, description: flat.description || null },
-    pin: flat.pin || null, colors: colorsRecord(flat.colors), basicColors: null, frame: null, motion: null, removed: false,
+    pin: flat.pin || null, colors: colorsRecord(flat.colors), basicColors: null, frame: null, motion: sanitizeHover(flat.hover) ? { animateIn: null, hover: flat.hover } : null, removed: false,
   });
   const flatOf = (rec) => ({
     key: rec.id, presetId: rec.presetId, title: str(rec.texts && rec.texts.title), description: str(rec.texts && rec.texts.description), word: str(rec.texts && rec.texts.word),
-    layout: str(rec.layout), pin: str(rec.pin), colors: colorsOf(rec.colors),
+    layout: str(rec.layout), pin: str(rec.pin), colors: colorsOf(rec.colors), hover: sanitizeHover(rec.motion && rec.motion.hover),
   });
 
   /* ------------------------------------------------------------------ export */
@@ -82,6 +90,8 @@
     const parts = SHIPPED_FIELDS.filter((f) => str(e[f])).map((f) => `${f}: ${q(e[f])}`);
     const colors = sanitizeColors(e.colors);
     if (colors) parts.push(`colors: Object.freeze({ ${ROLES.filter((r) => colors[r]).map((r) => `${r}: ${typeof colors[r] === 'string' ? q(colors[r]) : `Object.freeze({ fill: ${q(colors[r].fill)} })`}`).join(', ')} })`);
+    const hover = sanitizeHover(e.hover);
+    if (hover) parts.push(`hover: ${q(hover)}`);
     return `    Object.freeze({ ${parts.join(', ')} }),`;
   };
   const serialize = (list) => {
@@ -131,7 +141,7 @@
       return recs;
     };
     const plates = () => ensure().filter((r) => !r.removed).map(flatOf);
-    const sig = (e) => SHIPPED_FIELDS.map((f) => e[f] || null).concat([colorsOf(e.colors)]);
+    const sig = (e) => SHIPPED_FIELDS.map((f) => e[f] || null).concat([colorsOf(e.colors), sanitizeHover(e.hover)]);
     const sameList = (a, b) => JSON.stringify(a.map(sig)) === JSON.stringify(b.map(sig));
     const isDirty = () => !sameList(plates(), shippedFlat());
     const changed = () => { ensure().forEach((r, i) => { r.order = i; }); persist(); notify(); };
@@ -163,8 +173,8 @@
         const r = find(id);
         if (!r) return null;
         const before = copy(r);
-        const list = Array.isArray(keys) && keys.length ? keys : ['layout', 'texts', 'pin', 'colors'];
-        list.forEach((k) => { if (k === 'texts') r.texts = { word: null, title: null, description: null }; else if (['layout', 'pin', 'colors'].includes(k)) r[k] = null; });
+        const list = Array.isArray(keys) && keys.length ? keys : ['layout', 'texts', 'pin', 'colors', 'motion'];
+        list.forEach((k) => { if (k === 'texts') r.texts = { word: null, title: null, description: null }; else if (['layout', 'pin', 'colors', 'motion'].includes(k)) r[k] = null; });
         changed();
         return before;
       },
@@ -210,7 +220,7 @@
         const taken = new Set(ensure().map((r) => r.id));
         let k = `example:${presetId}`;
         while (taken.has(k)) { seq += 1; k = `example:${presetId}#${seq}`; }
-        const rec = recordOf({ key: k, presetId, title: str(o.title), description: str(o.description), word: str(o.word), layout: str(o.layout), pin: str(o.pin), colors: o.colors }, recs.length);
+        const rec = recordOf({ key: k, presetId, title: str(o.title), description: str(o.description), word: str(o.word), layout: str(o.layout), pin: str(o.pin), colors: o.colors, hover: o.hover }, recs.length);
         recs.push(rec);
         changed();
         return copy(rec);
@@ -233,5 +243,5 @@
     };
   };
 
-  Vectura.StartPageExamplePlates = { create, fromShipped, sanitizeColors, serialize, replaceRegion, extractRegion, BEGIN, END, KEY, SHIPPED_FIELDS, COLOR_ROLES: ROLES };
+  Vectura.StartPageExamplePlates = { create, fromShipped, sanitizeColors, sanitizeHover, serialize, replaceRegion, extractRegion, BEGIN, END, KEY, SHIPPED_FIELDS, COLOR_ROLES: ROLES };
 })();

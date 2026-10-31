@@ -45,6 +45,7 @@
     edit: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>',
     palette: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="11" height="16" rx="1.5"/><path d="m8 7 8-2.5 4 12-8 2.7"/></svg>',
     book: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/></svg>',
+    info: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M12 11v5.5"/><path d="M12 7.6h.01"/></svg>',
     copy: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18M9 21V9"/></svg>',
   };
 
@@ -340,7 +341,16 @@
     // The plate's own motion (set in its editor) wins over the page defaults in Settings.
     const entryNow = (id) => entries.find((x) => x.id === id) || null;
     const plateAnimateIn = (id) => { const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {}; return m.animateIn || ctx.prefs().animateIn || 'plot'; };
-    const plateHover = (id) => { const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {}; return m.hover || ctx.prefs().hover || 'default'; };
+    // Precedence: the user's per-plate choice (editor > Motion > Hover), then the example plate's shipped hover (EXAMPLE_PLATES[].hover),
+    // then the page default in Settings. A page-wide "None" still silences a shipped hover.
+    const plateHover = (id) => {
+      const e = entryNow(id); const m = e ? (effective(e).motion || {}) : {};
+      const page = ctx.prefs().hover || 'default';
+      if (m.hover) return m.hover;
+      const shipped = e && e.example && e.example.hover;
+      if (shipped && page !== 'none') return shipped;
+      return page;
+    };
 
     const setData = (w, e, i, layout) => {
       const cw = resolveCw(e, i, layout);
@@ -370,7 +380,7 @@
         slot.append(tool('fan', 'Colorways', ICONS.palette, 'Colorways: try this piece on other papers and pens'));
         if (!isExample) slot.append(tool('cover', 'Use as cover', ICONS.book, 'Use this piece as the cover'));
       }
-      if (isExample && !slot.querySelector('.sp-pl-example')) slot.prepend(h('span', { class: 'sp-pl-example', text: 'Example', title: 'Example plate. Edit or remove it like your own; hide them all with Show example plates.' }));
+      if (isExample) syncInfo(w);
       const want = canEdit();
       let ed = slot.querySelector('[data-act="edit"]');
       if (want && !ed) {
@@ -380,6 +390,42 @@
         if (editor && editor.id === w.dataset.plateId) closeEditor(false);
         ed.remove();
       }
+    };
+    // The (i) after an example plate's name: a short note that it is a placeholder and how to switch the examples off. Hover and
+    // keyboard focus show it, a tap toggles it, Esc / an outside press closes it. The note floats (absolute), so it never shifts the header.
+    const INFO_TEXT = 'This is a placeholder example plate, shipped with Vectura Studio. Turn example plates off with \u201cShow example plates\u201d in Start Page settings (\u2699).';
+    let infoSeq = 0;
+    const syncInfo = (w) => {
+      const art = w.querySelector('.spl');
+      const name = art && art.querySelector('.spl-no b');
+      if (!name || (name.nextElementSibling && name.nextElementSibling.classList.contains('sp-pl-info'))) return;
+      infoSeq += 1;
+      const tip = h('span', { class: 'sp-pl-info-tip', role: 'tooltip', id: `sp-pl-info-tip-${infoSeq}`, text: INFO_TEXT });
+      const btn = h('button', { type: 'button', class: 'sp-pl-info-btn', 'aria-label': 'About this example plate', 'aria-describedby': tip.id, html: ICONS.info });
+      const wrap = h('span', { class: 'sp-pl-info' }, btn, tip);
+      const doc = w.ownerDocument;
+      let pointer = ''; // the last input kind on the button: a mouse / touch press must not count as keyboard focus
+      let pinned = false;
+      const set = (on) => {
+        if (on) wrap.dataset.open = '1'; else { delete wrap.dataset.open; pinned = false; }
+        if (on) { doc.addEventListener('keydown', onDocKey, true); doc.addEventListener('pointerdown', onDocDown, true); } else { doc.removeEventListener('keydown', onDocKey, true); doc.removeEventListener('pointerdown', onDocDown, true); }
+      };
+      const onDocKey = (ev) => { if (ev.key === 'Escape' && wrap.dataset.open) { ev.stopPropagation(); set(false); } };
+      const onDocDown = (ev) => { if (!wrap.contains(ev.target)) set(false); };
+      btn.addEventListener('pointerdown', (ev) => { pointer = ev.pointerType || 'mouse'; });
+      btn.addEventListener('keydown', () => { pointer = ''; });
+      btn.addEventListener('pointerenter', (ev) => { if (ev.pointerType !== 'touch') set(true); });
+      btn.addEventListener('pointerleave', (ev) => { if (ev.pointerType !== 'touch' && !pinned && doc.activeElement !== btn) set(false); });
+      btn.addEventListener('focus', () => { if (!pointer) set(true); });
+      btn.addEventListener('blur', () => { pointer = ''; set(false); });
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (pointer === 'touch' || !pointer) { set(!wrap.dataset.open); } else { set(true); pinned = true; } // a mouse click keeps the hover note open
+        pointer = '';
+      });
+      const stop = (ev) => ev.stopPropagation();
+      wrap.addEventListener('keydown', (ev) => { if (ev.key !== 'Escape') stop(ev); });
+      name.after(wrap);
     };
     const tool = (act, label, icon, titleText) => h('button', { type: 'button', class: 'sp-pl-tool', 'data-act': act, title: titleText, 'aria-label': titleText, html: `${icon}<span>${label}</span>` });
 

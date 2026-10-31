@@ -160,7 +160,10 @@ describe('StartPageExamplePlates: optional manual colors', () => {
 
   it('back-compat: entries without colors serialize byte-identically to the shipped file', () => {
     expect(M.serialize(M.fromShipped(shipped))).toBe(M.extractRegion(source));
-    expect(M.serialize(M.fromShipped(shipped))).not.toContain('colors');
+    // only plate 7 (iridescent art + title) ships colors; every other line carries none
+    const withColors = M.serialize(M.fromShipped(shipped)).split('\n').filter((l) => l.includes('colors:'));
+    expect(withColors).toHaveLength(1);
+    expect(withColors[0]).toContain('topo-mountain-range');
   });
 
   it('omits null, empty and all-Auto colors', () => {
@@ -221,5 +224,63 @@ describe('StartPageExamplePlates: optional manual colors', () => {
     const store = M.create({ storage: memStorage(), shipped: seeded });
     expect(store.isDirty()).toBe(false);
     expect(store.plates()[0].colors).toEqual({ title: { fill: 'sunset' } });
+  });
+});
+
+describe('StartPageExamplePlates: optional hover effect', () => {
+  let M; let source; let shipped;
+  beforeEach(() => {
+    const win = sandbox();
+    run('src/core/start-page/plates-store.js', win);
+    run('src/core/start-page/example-plates-draft.js', win);
+    M = win.Vectura.StartPageExamplePlates;
+    source = read('src/config/start-page-picks.js');
+    shipped = plain(evalConfig(source).EXAMPLE_PLATES);
+  });
+  const one = (extra) => [Object.assign({ presetId: 'spiral-galaxy', title: 'Spiral Galaxy', word: 'Spiral', layout: 'full-bleed-band', pin: 'sky-prussian' }, extra)];
+  const evalBlock = (block) => new Function('Object', `${block}\nreturn EXAMPLE_PLATES;`)(Object);
+
+  it('serializes hover after colors, and the export evaluates back to the same entry', () => {
+    const rows = one({ colors: { art: { fill: 'iridescent' } }, hover: 'holo' });
+    const block = M.serialize(M.fromShipped(rows));
+    expect(block).toContain("colors: Object.freeze({ art: Object.freeze({ fill: 'iridescent' }) }), hover: 'holo' })");
+    expect(plain(evalBlock(block))).toEqual(rows);
+    expect(M.serialize(M.fromShipped(one({ hover: 'holo' })))).toContain("pin: 'sky-prussian', hover: 'holo' })");
+  });
+
+  it('entries without hover serialize byte-identically to the shipped file', () => {
+    expect(M.serialize(M.fromShipped(one()))).not.toContain('hover');
+    const shippedNoHover = shipped.map((e) => { const c = Object.assign({}, e); delete c.hover; return c; });
+    expect(M.serialize(M.fromShipped(shippedNoHover)).split('\n').filter((l) => !l.includes('topo-mountain-range') && l.includes('presetId')))
+      .toEqual(M.extractRegion(source).split('\n').filter((l) => !l.includes('topo-mountain-range') && l.includes('presetId')));
+  });
+
+  it('the shipped file round-trips with plate 7 carrying hover holo (byte-identical export)', () => {
+    expect(shipped.find((e) => e.presetId === 'topo-mountain-range').hover).toBe('holo');
+    expect(M.serialize(M.fromShipped(shipped))).toBe(M.extractRegion(source));
+  });
+
+  it('validates the id: only a hover-fx effect id survives (unknown, alias, page-level values and non-strings drop)', () => {
+    ['holo', 'lift', 'glare', 'replot', 'ripple', 'stipple', 'breeze', 'gravity', 'current'].forEach((id) => expect(M.fromShipped(one({ hover: id }))[0].hover, id).toBe(id));
+    ['nope', 'hologram', 'none', 'default', 'retrigger', '', 5, null, [], {}, "holo'); alert(1);//"].forEach((v) => {
+      expect(M.fromShipped(one({ hover: v }))[0].hover, String(v)).toBeNull();
+      expect(M.serialize(M.fromShipped(one({ hover: v })))).not.toContain('hover');
+    });
+  });
+
+  it('the draft store carries hover: it seeds clean, an edit marks it dirty, persists and reloads, and reset(motion) clears it', async () => {
+    const st = memStorage();
+    const seeded = one({ hover: 'holo' });
+    const a = M.create({ storage: st, shipped: seeded });
+    expect(a.isDirty()).toBe(false);
+    expect(a.plates()[0].hover).toBe('holo');
+    await a.upsert('example:spiral-galaxy', { motion: { hover: 'glare' } });
+    expect(a.isDirty()).toBe(true);
+    expect(a.plates()[0].hover).toBe('glare');
+    expect(M.create({ storage: st, shipped: seeded }).plates()[0].hover).toBe('glare');
+    await a.reset('example:spiral-galaxy', ['motion']);
+    expect(a.plates()[0].hover).toBeNull();
+    await a.upsert('example:spiral-galaxy', { motion: { hover: 'holo' } });
+    expect(a.isDirty()).toBe(false);
   });
 });

@@ -244,12 +244,13 @@
     // then carries its draft key in exampleMeta.key. A pick with no pre-rendered file (or a stale one) renders live.
     // `colors` (optional manual colors, same shape as the plates store) is validated here: unknown roles / malformed values drop out.
     const exampleColors = (c) => { const X = Vectura.StartPageExamplePlates; return X && typeof X.sanitizeColors === 'function' ? X.sanitizeColors(c) : null; };
+    const exampleHover = (v) => { const X = Vectura.StartPageExamplePlates; return X && typeof X.sanitizeHover === 'function' ? X.sanitizeHover(v) : null; };
     const exampleArts = (list) => {
       const byId = new Map(presetsList().map((p) => [p.id, p]));
       const src = Array.isArray(list) ? list : (picksCfg().EXAMPLE_PLATES || []);
       return src.filter((e) => e && byId.has(e.presetId)).map((e) => presetArt(byId.get(e.presetId), {
         id: `example:${e.presetId}`, name: e.title || byId.get(e.presetId).name, example: true,
-        exampleMeta: { title: e.title || null, description: e.description || null, word: e.word || null, layout: e.layout || null, pin: e.pin || null, key: e.key || null, colors: exampleColors(e.colors) },
+        exampleMeta: { title: e.title || null, description: e.description || null, word: e.word || null, layout: e.layout || null, pin: e.pin || null, key: e.key || null, colors: exampleColors(e.colors), hover: exampleHover(e.hover) },
       }));
     };
 

@@ -25,7 +25,8 @@ test.describe('Start Page example plates', () => {
       const pl = plates.nth(i);
       await pl.scrollIntoViewIfNeeded();
       await expect(pl.locator('.spl').first()).toBeVisible({ timeout: 20000 });
-      await expect(pl.locator('.sp-pl-example')).toHaveCount(1); // marked while mounted (plates far from the viewport drop their art again)
+      await expect(pl.locator('.sp-pl-info button')).toHaveCount(1); // the (i) after the name, while mounted (plates far from the viewport drop their art again)
+      await expect(pl.locator('.sp-pl-example')).toHaveCount(0); // the dashed EXAMPLE badge is gone
       const live3d = i === 3 || i === 4 || i === 5; // Coiled Sphere, High Sierra and Torus Contours
       await expect(pl.locator('.vorbit')).toHaveCount(live3d ? 1 : 0, { timeout: 20000 });
       await expect(pl.locator('.spl-note, .spl-wrap-txt').filter({ hasText: 'drag it to turn it' })).toHaveCount(live3d ? 1 : 0);

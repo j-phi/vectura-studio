@@ -1,6 +1,6 @@
 /*
  * Start Page example plates: while the user has no works of their own the Plates section shows ten example plates
- * built from bundled presets (pre-rendered art, same plate layouts and colorways), each marked "Example", opening
+ * built from bundled presets (pre-rendered art, same plate layouts and colorways), each marked with an (i) note, opening
  * as a NEW unsaved document in the colors shown, and never touching the plates store. They vanish once a work exists.
  */
 const { loadVecturaRuntime } = require('../../helpers/load-vectura-runtime');
@@ -53,7 +53,7 @@ describe('Start Page example plates', () => {
     expect(live()).toHaveLength(10);
     expect(qa('.sp-pl[data-example]')).toHaveLength(10);
     expect(q('.sp-pl-empty').hidden).toBe(true);
-    live().forEach((w) => { expect(w.querySelector('.sp-pl-example').textContent).toBe('Example'); });
+    live().forEach((w) => { expect(w.querySelector('.sp-pl-example')).toBeNull(); expect(w.querySelector('.sp-pl-info button')).toBeTruthy(); });
     expect(q('.sp-pl-count').textContent).toMatch(/example/i);
     expect(live().map((w) => w.dataset.layout)).toEqual(['text-wrap', 'spec-sheet', 'vertical-word', 'text-wrap', 'full-bleed-band', 'specimen-frame', 'knockout-title', 'full-bleed-band', 'knockout-title', 'full-sheet']);
     live().forEach((w) => { expect(w.dataset.spPaper).toMatch(/^#[0-9a-f]{6}$/); expect(w.dataset.spInk).toMatch(/^#[0-9a-f]{6}$/); });
@@ -224,7 +224,7 @@ describe('Start Page example plates', () => {
     expect(q('#sp-plates').getAttribute('aria-describedby')).toBe(ex.id);
     expect(qa('#sp-plates .sp-pl').filter((w) => /automatically/i.test(w.textContent))).toHaveLength(0);
     expect(q('.sp-pl-count').textContent).toBe('10 examples · your own work will join them');
-    live().forEach((w) => { expect(w.querySelector('.sp-pl-example').getAttribute('title')).toMatch(/Show example plates/i); });
+    live().forEach((w) => { expect(w.querySelector('.sp-pl-info [role="tooltip"]').textContent).toMatch(/Show example plates/i); });
   });
 
   test('the explainer switches to the works copy (no example claims) once a work exists', async () => {

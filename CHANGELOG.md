@@ -20,6 +20,11 @@ Headlines since 1.4.0:
 - **Show example plates** is now a switch under **Plates** in Start Page settings (same preference); it is disabled while Developer Mode edits the example plates. The cover's **Colorways** button (the fan for one piece) stays where it is.
 - The horizontal rule under the letters stays; the cover simply ends there.
 
+### Changed: Start Page example plates, plate 7 and live color names (1.5.0)
+- The dashed **EXAMPLE** badge is gone. Each example plate has a small **(i)** after its name; hover, keyboard focus or a tap shows "This is a placeholder example plate, shipped with Vectura Studio. Turn example plates off with "Show example plates" in Start Page settings (gear)", and Esc or a press elsewhere closes it. User plates have none.
+- **Plate 7 (Contour Survey No. 3)** now ships iridescent artwork and an iridescent title on a dark ground, and shows the **Hologram Foil** hover. Example entries accept an optional `hover` effect id (validated against the hover effects; round-trips through Developer Mode and Export defaults, byte-identical for entries without it). A plate's own Hover choice wins, then the shipped one, then the page default (a page-wide None still silences it).
+- A plate's top meta line and PAPER / PEN rows now name the colors shown: a manual Artwork or Background gives the matching pen or paper name, else "Custom ink #hex" / "Custom paper #hex" or the special fill ("Iridescent ink"), and they follow colorway picks, mode changes and manual colors live.
+
 ### Fixed: Cybersigil example plate description (v1.4.51)
 - The **Cybersigil** Start Page plate now has its own description (hard-edged stepped rings, not tree rings); example plates accept an optional `description`, and Developer Mode export keeps it. Other Rings plates are unchanged.
 

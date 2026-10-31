@@ -7,9 +7,10 @@
  *                (the block between the begin/end marker comments is machine-replaced by Developer Mode >
  *                Export defaults on the Start Page: keep both markers, and run `npm run start-page:picks` afterwards)
  *                (the mockup's first ten plates: layout, word and pinned paper). Pre-rendered like the picks.
- *                Entry: { presetId, title?, word?, layout?, pin?, colors? }. `colors` (optional) uses the plates store's manual-color
+ *                Entry: { presetId, title?, word?, layout?, pin?, colors?, hover? }. `colors` (optional) uses the plates store's manual-color
  *                shape: roles art / text / background / title / band, each a hex or Object.freeze({ fill: <special fill id> });
  *                a missing role is Auto, malformed values are ignored, and a role overrides the pin's color for that role only.
+ *                `hover` (optional) is a hover-fx effect id ('holo' = Hologram Foil): that plate's hover effect until the user picks their own.
  * PICK_NAMES     optional display-name overrides (a pick otherwise uses the preset's own name).
  * COLLECTIONS    algorithm type -> 'Studies' | 'Botanicals' | 'Experiments' (the cover-word picker
  *                filters by these; there is deliberately no "Commissions").
@@ -38,7 +39,7 @@
     Object.freeze({ presetId: 'user-spiralizer-1781359333969', title: 'Coiled Sphere', word: 'Sphere', layout: 'text-wrap', pin: 'black-silver' }),
     Object.freeze({ presetId: 'user-terrain-1781475148727', title: 'High Sierra', word: 'Terrain', layout: 'full-bleed-band' }),
     Object.freeze({ presetId: 'topoform-torus-contours', title: 'Torus Contours', layout: 'specimen-frame', pin: 'kraft-sepia' }),
-    Object.freeze({ presetId: 'topo-mountain-range', title: 'Contour Survey No. 3', word: 'Topo', layout: 'knockout-title', pin: 'black-silver' }),
+    Object.freeze({ presetId: 'topo-mountain-range', title: 'Contour Survey No. 3', word: 'Topo', layout: 'knockout-title', pin: 'black-silver', colors: Object.freeze({ art: Object.freeze({ fill: 'iridescent' }), title: Object.freeze({ fill: 'iridescent' }), band: '#1c1c1e' }), hover: 'holo' }),
     Object.freeze({ presetId: 'spiral-galaxy', title: 'Spiral Galaxy', word: 'Spiral', layout: 'full-bleed-band', pin: 'sky-prussian' }),
     Object.freeze({ presetId: 'wavetable-rolling-hills', title: 'Rolling Hills', word: 'Wavetable', layout: 'knockout-title', pin: 'ochre-umber' }),
     Object.freeze({ presetId: 'shapepack-pebble-beach', title: 'Pebble Beach', word: 'Pebbles', layout: 'full-sheet', pin: 'lavender-violet' }),

@@ -34,6 +34,28 @@
   const r1 = (v) => Math.round(v * 10) / 10;
   const isHex = (v) => typeof v === 'string' && HEX.test(v);
 
+  // Manual Artwork / Background names: the palette's own pen / paper when the hex matches one, else a readable custom name,
+  // or the special fill's name. Auto (and Title / Band / Text) keep the palette entry's names.
+  const fillName = (id) => { const k = (F().KINDS || []).find((x) => x.id === id); return k ? k.name : id; };
+  const palette = () => (Array.isArray(Vectura.START_PAGE_PLATE_PALETTE) ? Vectura.START_PAGE_PLATE_PALETTE : []);
+  const manualPenName = (v, base) => {
+    if (F().isFill(v)) { const n = fillName(v.fill); return /\bink$/i.test(n) ? n : `${n} ink`; }
+    if (!isHex(v)) return null;
+    const k = v.toLowerCase();
+    if (base.ink && String(base.ink).toLowerCase() === k && base.penName) return base.penName;
+    const hit = palette().find((e) => e.ink && String(e.ink).toLowerCase() === k && e.penName);
+    return hit ? hit.penName : `Custom ink ${k}`;
+  };
+  const manualPaperName = (v, base) => {
+    if (F().isFill(v)) return `${fillName(v.fill)} paper`;
+    if (!isHex(v)) return null;
+    const k = v.toLowerCase();
+    const g = base.ground || base.paper;
+    if (g && String(g).toLowerCase() === k && base.paperName) return base.paperName;
+    const hit = palette().find((e) => e.ground && String(e.ground).toLowerCase() === k && e.paperName);
+    return hit ? hit.paperName : `Custom paper ${k}`;
+  };
+
   const resolve = (placed, colors, opts) => {
     const Fl = F(); const Ty = T();
     const base = placed || {};
@@ -84,6 +106,9 @@
     const cls = ground === baseGround ? base.class : (lum(ground) < 0.18 ? 'dark' : (base.class === 'dark' ? 'light' : base.class));
     const colorway = Object.assign({}, base, { ground, ink, accent: base.accent, class: cls });
     if (textInk) colorway.textInk = textInk;
+    // the names the plate prints (header meta line, PAPER / PEN rows) describe the colors shown, not the palette entry they replace
+    const penName = manualPenName(c.art, base); if (penName) colorway.penName = penName;
+    const paperName = manualPaperName(c.background, base); if (paperName) colorway.paperName = paperName;
     // manual picks are honored exactly: the plate shows them as chosen and the warning below says what is wrong with them
     if (Fl.isFill(c.art) || isHex(c.art)) colorway.exactInk = true; else delete colorway.exactInk;
     if (Fl.isFill(c.text) || isHex(c.text)) colorway.exactText = true; else delete colorway.exactText;

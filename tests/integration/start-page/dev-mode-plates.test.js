@@ -304,7 +304,7 @@ describe('Start Page Developer Mode: editable example plates', () => {
     expect(draft().plates()[SG].colors).toBeNull();
     expect(draft().plates()[SG].pin).toBe('black-white');
     expect(plateOf(SG).dataset.band).toBeUndefined();
-    expect(V.StartPageExamplePlates.serialize(draft().plates())).not.toContain('colors');
+    expect(V.StartPageExamplePlates.serialize(draft().plates()).split('\n').find((l) => l.includes('spiral-galaxy'))).not.toContain('colors');
   });
 
   test('a shipped colors entry seeds the dev draft (clean), and the plate shows it over the pin per role', async () => {
@@ -325,7 +325,7 @@ describe('Start Page Developer Mode: editable example plates', () => {
       expect(el.style.getPropertyValue('--spl-band')).toBe('#c0392b');
       expect(el.style.getPropertyValue('--spl-band-on')).toMatch(/^#[0-9a-f]{6}$/);
       expect(el.dataset.title).toBe('sunset');
-      expect(plateOf(SG - 1).dataset.band).toBeUndefined(); // neighbours are untouched
+      expect(plateOf(SG - 2).dataset.band).toBeUndefined(); // other plates are untouched (plate 7 ships its own colors)
       expect(live()[SG].dataset.spPaper).toBeTruthy(); // the pin's ground is still applied
     });
 

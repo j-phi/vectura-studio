@@ -49,3 +49,22 @@ describe('example plates config', () => {
     } finally { runtime.cleanup(); }
   });
 });
+
+describe('example plates config: hover', () => {
+  it('every hover is a hover-fx effect id, and plate 7 (Contour Survey No. 3) is iridescent with the hologram hover on black stock', async () => {
+    const fx = fs.readFileSync(path.join(ROOT, 'src/ui/start-page/hover-fx/index.js'), 'utf8');
+    const ids = [...(/const EFFECTS = \{([\s\S]*?)\n  \};/.exec(fx)[1]).matchAll(/^\s{4}(\w+):/gm)].map((m) => m[1]);
+    expect(ids).toContain('holo');
+    const runtime = await loadVecturaRuntime({ includeUi: true, useIndexHtml: true });
+    try {
+      const ex = runtime.window.Vectura.START_PAGE_PICKS.EXAMPLE_PLATES;
+      ex.filter((e) => e.hover != null).forEach((e) => expect(ids, e.presetId).toContain(e.hover));
+      const p7 = ex[6];
+      expect(p7.presetId).toBe('topo-mountain-range');
+      expect(p7.hover).toBe('holo');
+      expect(p7.pin).toBe('black-silver');
+      expect(JSON.parse(JSON.stringify(p7.colors))).toEqual({ art: { fill: 'iridescent' }, title: { fill: 'iridescent' }, band: '#1c1c1e' }); // band = the black stock, so the big word sits on the dark ground
+      expect(ex.filter((e) => e.hover).map((e) => e.presetId)).toEqual(['topo-mountain-range']);
+    } finally { runtime.cleanup(); }
+  });
+});
