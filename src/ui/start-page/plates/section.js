@@ -619,6 +619,7 @@
       const my = (token += 1);
       return Promise.all([ctx.arts(), getStore().load()]).then(async ([arts, snap]) => {
         if (destroyed || my !== token) return;
+        if (typeof document === 'undefined' || !document) return; // resolved after the page was torn down
         const works = (arts || []).filter((a) => a && a.kind === 'work');
         // a removed work that is opened or saved again comes back (its record is stamped with the removal time)
         const back = works.filter((a) => { const r = snap.plates.find((x) => x.id === a.id); return r && r.removed && Number(r.removedAt) && Number(a.lastOpened) > Number(r.removedAt); });
