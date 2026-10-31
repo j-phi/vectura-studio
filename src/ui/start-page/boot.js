@@ -42,6 +42,11 @@
     var show = sp.showOnLaunch !== false;
     if (show && env.webdriver === true && !/[?&]startPage=launch(&|$)/.test(env.search || '')) show = false;
     var theme = String(snap.uiTheme || '').trim().toLowerCase();
+    // "System" theme mode: uiTheme holds the last concrete id, which follows prefers-color-scheme at launch (same family).
+    if (snap.uiThemeSystem === true && SKIN_FILE[theme]) {
+      var dark = env.prefersDark !== false;
+      theme = (theme.indexOf('classic-') === 0 ? 'classic-' : '') + (dark ? 'dark' : 'light');
+    }
     return { show: show, skin: Object.prototype.hasOwnProperty.call(SKIN_FILE, theme) ? SKIN_FILE[theme] : null, theme: theme };
   }
 
@@ -51,7 +56,7 @@
     V.StartPageBoot = { decide: decide };
     try {
       var root = document.documentElement;
-      var d = decide({ localStorage: W.localStorage, cookie: document.cookie, atob: W.atob.bind(W), webdriver: W.navigator && W.navigator.webdriver, search: W.location.search });
+      var d = decide({ localStorage: W.localStorage, cookie: document.cookie, atob: W.atob.bind(W), webdriver: W.navigator && W.navigator.webdriver, search: W.location.search, prefersDark: !(W.matchMedia && W.matchMedia('(prefers-color-scheme: dark)').matches === false) });
       if (d.skin) {
         var link = document.getElementById('active-skin');
         if (link) {
