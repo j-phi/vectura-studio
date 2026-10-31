@@ -727,53 +727,14 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### Unreleased - Show example plates
-- **Show example plates** (Plates header, on by default) shows the example plates after your own works; untick it to hide them. Examples can be edited and removed like your own plates; a removed one returns from **Add plate ▸ Removed**.
-
-### Unreleased - File > Close
-- **File > Close** closes the current project (with a discard prompt when it has unsaved changes) and returns to the Start Page. An opened file stays the only plate until you press Clear next to it in Recent, which brings the example plates back.
-
-### Unreleased - Start Page (phases P0 to P3)
-- **A Start Page on launch.** A cover in your own ink, Recent files, Studio picks and a Community note ("coming later", with a Notify toggle) sit over the editor. Open it with `Shift+Cmd/Ctrl+H`, the wordmark or `File → Start Page…`; `Cmd/Ctrl+N` starts a blank canvas and `Alt/Option+Cmd/Ctrl+1` to `8` reopen recents. Turn it off with **Show Start Page on launch** (Settings or Document Setup).
-- **Plates.** Your work set as an editorial run: a plate editor, Arrange (`Alt/Option+Up/Down`), a Colorways fan and **Use as cover**; Open always keeps the colors shown.
+### 1.5.0 - Start Page
+- **A Start Page on launch.** A cover in your own ink, Recent files, Studio picks and a Community note ("coming later", with a Notify toggle) sit over the editor. Open it with `Shift+Cmd/Ctrl+H`, the wordmark or `File → Start Page…`; `Cmd/Ctrl+N` starts a blank canvas and `Alt/Option+Cmd/Ctrl+1` to `8` reopen recents. Turn it off with **Show Start Page on launch** (Settings or Document Setup). The page opens without an editor flash or late layout.
+- **Plates.** Your work set as an editorial run: a plate editor with manual colors (now including Title and Band), Arrange (`Alt/Option+Up/Down`), a Colorways fan and **Use as cover**; Open always keeps the colors shown. Ten example plates fill the page on a first run; **Show example plates** hides them, and Developer Mode lets contributors edit them.
 - **Motion.** Seven animate-in styles, twelve hover effects, live drag-to-rotate 3D models, and a **Still** toggle that stops it all.
-### Unreleased - Harmonograph curve fix and Trinodal preset (v1.4.37)
-- **Harmonograph curves stay on the figure.** With Curves on, a long figure could draw a stray arc that disappeared while dragging; the curve fit now always stays within tolerance.
-- **Trinodal preset** added to Harmonograph (Geometric).
-
-### Unreleased - Realistic paper scale and lighting (v1.4.34)
-- **Paper looks like paper at fit-to-screen.** Grain sizes recalibrated against real hot / cold / rough watercolour sheets; default Texture tuned so cold press and rough show about half the tooth contrast of a raking-light photo of the real sheets; tooth fades smoothly as it nears pixel size and returns as you zoom (no jumps at zoom or Scale steps); fibres stay visible on kraft, rag and newsprint, and a fibre mat appears at deep zoom.
-- **No more grey sheets.** The surface is lit around the paper colour: lit facets brighten and shadows darken, so the sheet's average colour is the colour you picked; white and saturated stock keep visible tooth (soft highlight roll-off).
-- **Scale slider** (Pen / Paper ▸ Paper, 25–300 %): grain size per document, saved in the file and in custom papers; it also scales a photo paper's tile. Saved Texture values are kept.
-
-### Unreleased - Special inks, Lights off, pen files (v1.4.32–v1.4.33)
-- **Special inks.** Metallic, neon, glow-in-the-dark, glitter and opaque white inks on any pen; metallic and glitter sparkle at every zoom and their glints move as you pan and zoom. Preview only: the SVG still plots the pen colour at the pen width.
-- **Lights off.** View ▸ Lights Off (`Shift+Alt+L`) darkens the sheet so glow-in-the-dark inks emit.
-- **Pen files and My pens.** Export / import pens as `.json`; save pens to My pens in this browser and reuse them.
-
-<details>
-<summary>Older releases (1.4.31 and earlier)</summary>
-
-### Unreleased - Pen models and ink edge bleed (v1.4.31)
-- **Pen models.** Pick a real plotter pen and size per pen (15 models); width becomes the pen's laid width, and the preview draws its ink: bleed edges, blobs, pools, skips, opacity and overlap darkening. Plain pens stay the default and unchanged on paper None.
-- **Ink settings.** Bleed, Edge roughness, Opacity, Blobs & pools, Skips and Width jitter per pen, one undo step per drag, Reset to model defaults.
-- **Ink edge bleed on realistic paper**, plain pens included; mm-locked, deterministic, cached with level of detail. SVG export unchanged.
-
-### Unreleased - Custom papers (v1.4.30)
-- **My papers.** Save any paper as a custom paper in your browser, tune its realism under Advanced, rename/delete/export it, export all or import a papers file, and use it as the default paper. Documents embed their custom paper, so they open the same on any machine.
-- **Photo papers.** Make a paper from a photo/scan or an open-licence texture found in the app (Openverse, ambientCG, Wikimedia Commons; Pexels/Unsplash with your key), sized in real millimetres with its attribution kept.
-
-### Unreleased - Paper selector (v1.4.28)
-- **Pen / Paper tab.** The Pens tab is now Pen / Paper with a Paper section on top: 11 paper types (None plus ten realistic stocks), any colour, Texture and Ink bleed sliders, Set as default / Use default.
-- **Realistic paper preview.** Seeded tooth, fibres, speckles and mottling sized in real millimetres; ink multiplies into the sheet, skips tooth valleys, and bleeds/feathers on absorbent stock. None is pixel-identical to before. SVG export is unchanged (no paper).
-- **Saved per project, one default.** Paper is stored in the `.vectura` file (`settings.paper`); the default paper lives in Document Setup ▸ Paper & Selection, replacing the Background colour picker.
-
-### Unreleased - Touch support
-- **Touch and Apple Pencil across the whole app.** Phones and iPad portrait open panels as drawers. The tool rail is one row. A canvas HUD gives Undo, Redo, Zoom and Fit. Pinch and two-finger pan work with every tool. A two-finger tap undoes and a three-finger tap redoes. The modifier bar replaces Shift, Option and Cmd (Multi-select, Constrain, Duplicate, Pan). Hold a layer row or the canvas for its menu, hold a label to reset, tap a value chip to type.
-- **Finger-sized controls.** Every control has a 44 px hit area, sliders move only on a sideways drag, inputs are 16 px so iOS does not zoom, and fields stay above the keyboard. Handles, anchors, the pen, the Direct tool, the 3D gizmo and the Petal Designer use a 22 px grab radius.
-- **Help and hints.** Help has a Touch tab and a Touch toggle. Status hints use touch words after touch input. See the Touch gestures table under How to Use.
-- **iOS files.** Open `.vectura` from the Files app, save through the share sheet, and import large photos safely.
-- **Test and release gates.** Touch target audit, finger-only journeys, static touch guard and a real-device checklist. Real-device results are pending, so the release label for touch is not yet claimed. Details: `CHANGELOG.md` and `docs/touch-audit/`.
+- **File > Close** closes the current project (with a discard prompt when it has unsaved changes) and returns to the Start Page.
+- **Harmonograph curves stay on the figure** (no stray arc with Curves on), and a **Trinodal** preset joins Harmonograph (Geometric).
+- **Paper, pens and inks.** Eleven paper types with realistic scale and lighting, a Scale slider, My papers and photo papers; fifteen pen models with ink edge bleed; special inks (metallic, neon, glow-in-the-dark, glitter, opaque white), View ▸ Lights Off, pen files and My pens; a System theme.
+- **Touch and Apple Pencil across the whole app.** Drawers on phones and iPad portrait, 44 px targets, pinch and two-finger pan with every tool, finger-sized handles and iOS file I/O. Real-device results are pending, so the release label for touch is not yet claimed. Details: `CHANGELOG.md` and `docs/touch-audit/`.
 
 ### 1.4.20 - Touch nightly on Linux
 - **Holds and drags.** A long-press on the canvas no longer opens its menu in the middle of a slow drag and reverts it (gizmo rings, handles, pen anchors, objects).
@@ -785,6 +746,9 @@ CI lives in `.github/workflows/test.yml`:
 - **New canaries.** Every bundled preset, 13 legacy saved files, every algorithm in a real browser, SVG goldens for 11 more algorithms and 35 canonical 3D scenes. They found 6 product defects (PRH-029 to PRH-034), logged in `plans.md`.
 - **Leaner suite.** Tests no longer read git history; golden values regenerate with `npm run test:update`. Duplicate Scene3D tests were cut with mutation proofs.
 - **Timing.** PR wall time is projected at about 6 minutes (from about 17). This is not yet measured on hosted runners. Details: `docs/testing.md`.
+
+<details>
+<summary>Older releases (1.4.15 and earlier)</summary>
 
 ### 1.4.15
 - **3D Scene — Duty Cycle · Constant responds to Density above 50.** Density 50 to 100 now

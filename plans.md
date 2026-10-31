@@ -623,6 +623,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Release 1.5.0 (2026-10-31, branch `feat/start-page`).** Version bump, CHANGELOG Unreleased cut to `## 1.5.0 - 2026-10-31` with headline bullets, README release notes consolidated (3 inline, older in `<details>`). Not pushed or tagged.
 - **Quieter Start Page cover header (2026-10-31, v1.4.49, branch `fix/start-page-header-trim`).** Dropped the generic kicker, the letter-count line, the resting key numbers/ticks (`.sp-kk:not(.on)` hidden) and "· whole page"; kept the rule and the hover label. Verified in real Chromium at rest and on hover.
 - **Start Page drag no longer opens art (2026-10-31, v1.4.46, branch `fix/start-page-drag-click`).** `StartPageDom.onOpenClick` swallows the click after a drag/long press (`START_PAGE.CLICK`: 5/10 px, 350 ms); used by plates, cover, band, picks, Community. Tests: `open-click-guard.test.js`, plates-section and picks-community specs. Verified in real Chromium (Playwright): drag and 800 ms press on the 3D Coiled Sphere plate do not open it; quick click and a 2 px wobble do.
 - **Show example plates checkbox (2026-10-31, branch `feat/file-close`).** `showExamples` pref + Plates-header checkbox replace the auto-hide; examples go through the plates store (edit/remove/restore via Add plate ▸ Removed); the Show count covers own works only. Tests: `example-plates-toggle.test.js` (+ updated `example-plates`, `clear-recent-plates`, config).

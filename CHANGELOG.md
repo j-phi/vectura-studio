@@ -6,6 +6,15 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+## 1.5.0 - 2026-10-31
+
+Headlines since 1.4.0:
+- **Start Page.** A launch page over the editor: a cover set in your own work, plates (16 layouts, 32 colorways with an automatic rhythm), animate-in motion, hover effects and live 3D models, Studio picks and Community, ten example plates on first run, and Developer Mode plate editing (including Title and Band colors). The launch-flicker fix removes the editor flash and late layout.
+- **File > Close.** Drops the current project (asking first on unsaved changes), shows a blank canvas and the Start Page; plates follow Recent live.
+- **Harmonograph fix and Trinodal preset.** Stray curve arcs on long figures are gone; Trinodal joins the Geometric presets.
+- **Paper, pens and inks.** Realistic paper stocks with My papers and photo papers, pen models with ink edge bleed, special inks, Lights off, pen files and My pens, plus a System theme.
+- **Touch and CI.** Touch and Apple Pencil support across the app (real-device results pending), a rebuilt CI with one required check, and SVG sanitizer security hardening.
+
 ### Fixed: Cybersigil example plate description (v1.4.51)
 - The **Cybersigil** Start Page plate now has its own description (hard-edged stepped rings, not tree rings); example plates accept an optional `description`, and Developer Mode export keeps it. Other Rings plates are unchanged.
 
