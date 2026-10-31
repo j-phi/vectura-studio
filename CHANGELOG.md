@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Start Page example plates (first run)
+- **Five example plates fill the Plates section while you have no works of your own** (Old Growth Oak, Cybersigil on black stock, Downpour, Coiled Sphere as a live 3D disc, High Sierra), in the mockup's layouts and colorways. Each is marked **Example** in its plate header, has Open and Open as template (a new unsaved document in the colors shown, never overwriting anything) and the Colorways fan, and has no Edit, Remove, Arrange, Add plate or Use as cover. They live in memory only, so nothing is saved to the plates store. As soon as you open or save a piece they are replaced by your own plates.
+- Their art is pre-rendered with the studio picks (`npm run start-page:picks` now also covers `EXAMPLE_PLATES` in `src/config/start-page-picks.js`), so a first run does no live engine renders.
+
 ### Changed: Start Page help guide and shortcut list (phase P4)
 - **Help guide.** The File & Export tab's shortcut list now has a "Start Page" section with `Esc` (leave the page when a canvas is open) and the 3D gestures (drag to rotate, arrow keys on a focused piece), beside the existing Start Page, New canvas, Open recent and "Arrange plates" (`Alt/Option+Up/Down`) rows. Each is listed once, with Mac and non-Mac keys. A new unit test pins the rows.
 - **US spelling.** "colour" became "color" in the help guide and the Hologram Foil hover blurb, and "catalogue" became "catalog" in the Start Page notes.

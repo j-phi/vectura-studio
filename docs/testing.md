@@ -54,7 +54,7 @@ baselines, corpora, shard weights and the local test queue.
 | `npm run test:vitest -- <args>` | Vitest with any arguments, for example `npm run test:vitest -- run tests/unit/foo.test.js`. |
 | `npm run test:playwright -- <args>` | `playwright test` with any arguments. |
 | `npm run test:queue:status` | Shows the lock holder and the waiting runs. |
-| `npm run start-page:picks` | Not a test: regenerates the pre-rendered Start Page pick SVGs (`assets/start-page/picks/`) and manifest. `tests/unit/start-page/art-source-prerendered.test.js` fails when they are stale. |
+| `npm run start-page:picks` | Not a test: regenerates the pre-rendered Start Page pick and example-plate SVGs (`assets/start-page/picks/`) and manifest. `tests/unit/start-page/art-source-prerendered.test.js` fails when they are stale. |
 | `npm run hooks:install` | Installs the `pre-commit` (graphify) and `pre-push` (`test:feedback`) hooks. Run it once after cloning. |
 
 Notes:
@@ -535,7 +535,7 @@ Chromium's `showOpenFilePicker`, so `filechooser` events keep working.
 
 - `tests/unit/start-page/`: pure modules (colorway, cover words, plate rhythm and fills, arrange, draw styles, lift card, motion wiring, orbit3d, open-art, stores, pre-rendered picks, `no-mask-image` guard).
 - `tests/unit/modals/help-start-page.test.js`: pins the Start Page rows of the in-app help guide and shortcut list (keys, once each, US spelling).
-- `tests/integration/start-page/`: shell, cover, plates section and editor, picks and community, review fixes, save name (jsdom).
+- `tests/integration/start-page/`: shell, cover, plates section and editor, first-run example plates, picks and community, review fixes, save name (jsdom).
 - `tests/e2e/start-page-*.spec.js`: browser specs (shell, cover, plates, hover effects, P3 motion, review fixes, accessibility), each opting in with `?startPage=launch`.
 - `tests/e2e/touch/start-page-arrange.spec.js`: touch Arrange.
 

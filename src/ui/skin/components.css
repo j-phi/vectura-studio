@@ -18139,6 +18139,7 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
 .spl-tools .sp-pl-tool { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--spl-text) 34%, transparent); border-radius: var(--radius-sm, 4px); background: transparent; color: var(--spl-text); font: 500 10.5px/1 var(--font-ui, system-ui); letter-spacing: 0; text-transform: none; white-space: nowrap; cursor: pointer; }
 .spl-tools .sp-pl-tool:hover { border-color: var(--spl-text); }
 .spl-tools .sp-pl-tool svg { flex: none; }
+.spl-tools .sp-pl-example { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border: 1px dashed color-mix(in srgb, var(--spl-text) 55%, transparent); border-radius: 999px; color: var(--spl-text); font: 600 10px/1 var(--font-ui, system-ui); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; user-select: none; }
 @container spl (max-width: 560px) { .spl-tools .sp-pl-tool span { display: none; } .spl-tools .sp-pl-tool { width: 28px; padding: 0; justify-content: center; } }
 /* ===== END Start Page — Plates ===== */
 
