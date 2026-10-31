@@ -212,6 +212,7 @@
     if (cookiePreferences) cookiePreferences.checked = SETTINGS.cookiePreferencesEnabled === true;
     if (showCrystallographicNames) showCrystallographicNames.checked = SETTINGS.showCrystallographicNames === true;
     if (devMode) devMode.checked = SETTINGS.devMode === true;
+    if (devMode && window.Vectura && window.Vectura.DevMode) window.Vectura.DevMode.syncDom();
     const showTourEl = getEl('set-show-tour', { silent: true });
     if (showTourEl) showTourEl.checked = SETTINGS.showTourOnFirstLaunch === true;
     const showStartPageEl = getEl('set-show-start-page', { silent: true });

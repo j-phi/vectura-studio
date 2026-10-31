@@ -6,6 +6,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Developer Mode edits the Start Page example plates
+- **The existing Developer Mode switch (Document Setup ▸ Contributor / Presets, `SETTINGS.devMode`) now also opens the shipped example plates for curation.** No second flag: `Vectura.DevMode` (`src/core/dev-mode.js`) wraps that one setting and announces changes, so the Start Page reacts live. With it off nothing is built.
+- **Document Setup ▸ Contributor / Presets ▸ "Edit Start Page plates…"** (visible only with Developer Mode on) closes the panel and opens the Start Page through `startPage.show({ editPlates: true })`, scrolled to the Plates section. The examples show and are editable even when you have saved works of your own.
+- **Same tools as your plates:** the plate editor (word, title, layout, colorway pin), Arrange for order, plus **Add from preset** (a filterable picker over `Vectura.PRESETS`), **Remove** and **Reset to shipped** (with Undo). Controls the example config cannot carry (manual colors, framing, motion, description) are hidden. A persistent Developer Mode badge in the header and a bar above the plates (with **Exit Developer Mode**) show the state. Pins are edited in Curated mode.
+- **Local draft:** edits preview live and are held in `localStorage` (`vectura_start_page_example_draft`), so a reload keeps them (`src/core/start-page/example-plates-draft.js`). A plate with no pre-rendered thumbnail renders live, so the preview is honest.
+- **Export defaults:** generates the exact `EXAMPLE_PLATES` block. In Chrome, "Write to start-page-picks.js" replaces the region between the new `<example-plates:begin>` / `<example-plates:end>` marker comments in the file you pick (File System Access API); otherwise Download or Copy. Then run `npm run start-page:picks` to pre-render the thumbnails.
+
 ### Changed: Show example plates checkbox (replaces the automatic hide) (v1.4.43)
 - **A "Show example plates" checkbox in the Plates header** (default on, saved as the `showExamples` Start Page preference). Checked, the example plates sit after your own works in your saved order; unchecked, they are hidden (with no works, the empty state shows). They no longer step aside on their own. The Show count applies to your works only.
 - **Example plates are editable and removable like works.** Edit (layout, text, colors, framing, motion) and Remove work on an example, edits are saved per example id (the bundled definitions are never changed), and a removed example comes back from the Add plate menu under Removed.
