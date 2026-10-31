@@ -5,13 +5,18 @@
  * rendered plate (StartPagePlateLayouts). Stored values: null (Auto) | '#hex' | { fill: <StartPagePlateFills id> }.
  *
  *   resolve(placed, colors, opts?) -> { colorway, art: { fill: spec|null }, text: { css|null }, ground: { css|null, hex },
+ *                                       title: { kind, css, spec, rep }, band: { kind, css, rep, on },
  *                                       stops: { art, text, ground }, contrast: { text, art, warnings: [{ code, part, message }] } }
- *     placed  the rhythm / mode colorway ({ ground, ink, accent, class, ... }); colors { art, text, background }
- *     (Basic passes { art: basicColors.ink }).
+ *     placed  the rhythm / mode colorway ({ ground, ink, accent, class, ... }); colors { art, text, background, title, band }
+ *     (Basic passes { art: basicColors.ink }). opts { still, layout }.
+ *     title  the big display word (layouts with the 'title' role, StartPagePlateType.rolesFor); Auto = today's look
+ *            (follows the art fill). band  the solid secondary ground of the band layouts; Auto = the pen ink.
+ *            Both are Auto (kind null) when not chosen, and apply() ignores them on layouts that do not draw them.
  *   apply(plateEl, resolved)   recolors the plate in place (no re-plot): plate variables, art tiles + knockout word with the
  *                              art fill, text and background gradients (data-txfill / data-bgfill / data-artfill).
  *   contrast(a, b)
- * Gradients are checked stop by stop against the ground (a gradient ground is averaged). Warnings: text < 4.5:1, art < 3:1.
+ * Gradients are checked stop by stop against the ground (a gradient ground is averaged). Warnings: text < 4.5:1, art < 3:1,
+ * title < 3:1 (against the band when the word sits on it, else the ground; only when opts.layout draws a title).
  */
 (() => {
   const W = typeof window !== 'undefined' ? window : globalThis;
@@ -53,6 +58,29 @@
     if (Fl.isFill(c.text)) {
       textKind = c.text.fill; textInk = Fl.representative(textKind, ctx); textStops = Fl.stops(textKind, ctx); textCss = Fl.css(textKind, ctx, { still });
     } else if (isHex(c.text)) { textInk = c.text; textStops = [c.text]; }
+    // Title (display word) and Band (secondary ground): independent of the art fill; Auto keeps today's derived look.
+    const layout = opts && opts.layout;
+    const known = !!layout && Ty.LAYOUTS.some((l) => l.id === layout);
+    const roles = known ? Ty.rolesFor(layout) : [];
+    const wordOnBand = known && Ty.WORD_ON_BAND.indexOf(layout) >= 0;
+    const band = { kind: null, css: null, rep: null, on: null };
+    let bandStops = null;
+    if (Fl.isFill(c.band)) {
+      const bctx = { ink: base.ink, accent: base.accent, onDark: lum(ground) < 0.2 };
+      bandStops = Fl.stops(c.band.fill, bctx);
+      Object.assign(band, { kind: c.band.fill, css: Fl.css(c.band.fill, bctx, { still }), rep: Fl.average(bandStops) });
+    } else if (isHex(c.band)) { bandStops = [c.band]; Object.assign(band, { kind: 'solid', css: c.band, rep: c.band }); }
+    if (band.kind) band.on = Ty.ensure(ground, band.rep, 4.6);
+    const backdrop = wordOnBand ? (band.rep || ink) : ground;
+    const title = { kind: null, css: null, spec: null, rep: null };
+    let titleStops = null;
+    if (Fl.isFill(c.title) || isHex(c.title)) {
+      if (Fl.isFill(c.title)) {
+        const tctx = { ink: base.ink, accent: base.accent, onDark: lum(backdrop) < 0.2 };
+        titleStops = Fl.stops(c.title.fill, tctx);
+        Object.assign(title, { kind: c.title.fill, spec: Fl.spec(c.title.fill, tctx), rep: Fl.representative(c.title.fill, tctx) });
+      } else { titleStops = [c.title]; Object.assign(title, { kind: 'solid', css: c.title, rep: c.title }); }
+    }
     const cls = ground === baseGround ? base.class : (lum(ground) < 0.18 ? 'dark' : (base.class === 'dark' ? 'light' : base.class));
     const colorway = Object.assign({}, base, { ground, ink, accent: base.accent, class: cls });
     if (textInk) colorway.textInk = textInk;
@@ -65,8 +93,14 @@
     const warnings = [];
     if (textC < TEXT_MIN) warnings.push({ code: 'text-contrast', part: 'text', message: `Text contrast ${r1(textC).toFixed(1)}:1 is below 4.5:1, so captions may be hard to read.` });
     if (artC < ART_MIN) warnings.push({ code: 'art-contrast', part: 'art', message: `Art contrast ${r1(artC).toFixed(1)}:1 is below 3:1, so the lines may fade into the ground.` });
+    // the word is the Title when chosen; with a manual Band the Auto word is the paper color knocked out of that band
+    const titleCheck = roles.indexOf('title') >= 0 ? (titleStops || (wordOnBand && bandStops ? [ground] : null)) : null;
+    if (titleCheck) {
+      const titleC = minContrast(titleCheck, wordOnBand ? (bandStops || [ink]) : [ground]);
+      if (titleC < ART_MIN) warnings.push({ code: 'title-contrast', part: 'title', message: `Title contrast ${r1(titleC).toFixed(1)}:1 is below 3:1, so the big word may fade into ${wordOnBand && bandStops ? 'the band' : 'the ground'}.` });
+    }
     return {
-      colorway, art: { fill: artSpec, kind: artSpec ? artSpec.kind : null },
+      title, band, colorway, art: { fill: artSpec, kind: artSpec ? artSpec.kind : null },
       text: { css: textCss, kind: textKind }, ground: { css: groundCss, hex: ground, kind: groundKind },
       stops: { art: artStops, text: textStops, ground: [ground] },
       contrast: { text: textC, art: artC, warnings },
@@ -74,7 +108,9 @@
   };
 
   /* display words (SVG text) follow the art fill through a gradient in one shared defs block */
-  const wordFill = (plateEl, spec) => {
+  const wordFill = (plateEl, spec, role) => {
+    const prop = role === 'title' ? '--spl-title' : '--spl-word-fill';
+    const key = role === 'title' ? '_speUidT' : '_speUid';
     const D = plateEl.ownerDocument;
     let defs = D.getElementById('spe-defs');
     if (!defs && spec) {
@@ -84,15 +120,15 @@
       svg.appendChild(D.createElementNS(SVGNS, 'defs'));
       D.body.appendChild(svg); defs = svg;
     }
-    if (!plateEl._speUid) plateEl._speUid = `spe-w${Math.random().toString(36).slice(2, 8)}`;
-    const id = plateEl._speUid;
+    if (!plateEl[key]) plateEl[key] = `spe-w${Math.random().toString(36).slice(2, 8)}`;
+    const id = plateEl[key];
     if (defs) { const old = defs.querySelector(`#${id}`); if (old) old.remove(); }
-    if (!spec) { plateEl.style.removeProperty('--spl-word-fill'); return; }
+    if (!spec) { plateEl.style.removeProperty(prop); return; }
     const g = D.createElementNS(SVGNS, 'linearGradient');
     g.setAttribute('id', id); g.setAttribute('x1', '0'); g.setAttribute('y1', '0'); g.setAttribute('x2', '1'); g.setAttribute('y2', '1');
     spec.stops.forEach((s) => { const st = D.createElementNS(SVGNS, 'stop'); st.setAttribute('offset', String(s[0])); st.setAttribute('stop-color', s[1]); g.appendChild(st); });
     defs.firstElementChild.appendChild(g);
-    plateEl.style.setProperty('--spl-word-fill', `url(#${id})`);
+    plateEl.style.setProperty(prop, `url(#${id})`);
   };
 
   const apply = (plateEl, res) => {
@@ -108,6 +144,19 @@
     set('txfill', '--spl-tx-fill', res.text.kind, res.text.css);
     if (res.art.fill) plateEl.dataset.artfill = res.art.kind; else delete plateEl.dataset.artfill;
     wordFill(plateEl, res.art.fill);
+    // Title and Band only where the plate's layout draws them (a stored value for another layout stays stored, unused)
+    const lay = plateEl.dataset.layout;
+    const roles = lay && T().LAYOUTS.some((l) => l.id === lay) ? T().rolesFor(lay) : ['title', 'band'];
+    const band = roles.indexOf('band') >= 0 && res.band && res.band.kind ? res.band : null;
+    const title = roles.indexOf('title') >= 0 && res.title && res.title.kind ? res.title : null;
+    if (band) {
+      plateEl.dataset.band = band.kind; plateEl.style.setProperty('--spl-band', band.css);
+      plateEl.style.setProperty('--spl-band-on', band.on); plateEl.style.setProperty('--spl-band-rep', band.rep);
+    } else { delete plateEl.dataset.band; ['--spl-band', '--spl-band-on', '--spl-band-rep'].forEach((k) => plateEl.style.removeProperty(k)); }
+    if (title) {
+      plateEl.dataset.title = title.kind;
+      if (title.spec) wordFill(plateEl, title.spec, 'title'); else { wordFill(plateEl, null, 'title'); plateEl.style.setProperty('--spl-title', title.css); }
+    } else { delete plateEl.dataset.title; wordFill(plateEl, null, 'title'); }
     if (c && !c.dead) {
       const withFill = (h) => {
         if (!h || !h.setColorway) return;

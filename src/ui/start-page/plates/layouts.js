@@ -416,7 +416,7 @@
     }
     c.stages.forEach((s) => { if (ro) ro.unobserve(s.el); s.el._splRedraw = null; });
     // the word-fill gradient this plate put in the shared #spe-defs block (colors.js) goes with it
-    if (root._speUid) { const g = D.getElementById(root._speUid); if (g && g.parentNode) g.parentNode.removeChild(g); }
+    [root._speUid, root._speUidT].forEach((uid) => { if (!uid) return; const g = D.getElementById(uid); if (g && g.parentNode) g.parentNode.removeChild(g); });
   };
 
   /* fonts: the ink box of every word is measured again once the face is really there */

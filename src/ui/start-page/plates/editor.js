@@ -55,7 +55,10 @@
     return (Array.isArray(list) ? list : []).filter(([v]) => v !== 'default').map((x) => x.slice());
   };
   const GROUPS = [['light', 'Light papers'], ['ground', 'Color grounds'], ['dark', 'Darks']];
-  const PARTS = [['art', 'Artwork'], ['text', 'Text'], ['background', 'Background']];
+  const PARTS = [['art', 'Artwork'], ['title', 'Title'], ['text', 'Text'], ['background', 'Background'], ['band', 'Band']];
+  // what each row paints, so Text (small captions) is never confused with Title (the big display word)
+  const PART_HINTS = { art: 'The pen lines of the artwork', title: 'The big display word', text: 'Small caption and spec text, not the big word',
+    background: 'The sheet behind everything', band: 'The solid bar or ground the title sits on' };
   const FIELDS_BY_MODE = {
     curated: ['layout', 'texts', 'pin', 'colors', 'frame', 'motion'],
     basic: ['layout', 'texts', 'basicColors', 'frame', 'motion'],
@@ -89,7 +92,7 @@
     });
     return out;
   };
-  const SHAPE = { texts: { word: null, title: null, description: null }, colors: { art: null, text: null, background: null },
+  const SHAPE = { texts: { word: null, title: null, description: null }, colors: { art: null, text: null, background: null, title: null, band: null },
     basicColors: { ink: null }, frame: { fit: null, z: null, cx: null, cy: null }, motion: { animateIn: null, hover: null } };
   const applyLocal = (rec, patch) => {
     const next = copy(rec);
@@ -253,7 +256,9 @@
       }
       return baseOpen;
     };
-    const resolved = () => Colors().resolve(baseColorway(), colorsNow(), { still: false });
+        const layoutNow = () => eff().layout || (plateEl && plateEl.dataset && plateEl.dataset.layout) || null; // the layout the plate shows (no suggestion: suggestions() reads resolved())
+    const rolesNow = () => (T() && T().rolesFor ? T().rolesFor(layoutNow() || suggestedLayout()) : []);
+    const resolved = () => Colors().resolve(baseColorway(), colorsNow(), { still: false, layout: layoutNow() });
 
     /* ---- toast + commit ---- */
     const showToast = (message, undo) => {
@@ -377,6 +382,9 @@
     const suggestions = () => (R() ? R().suggestLayouts(resolved().colorway.class, orientation) : []);
     const suggestedLayout = () => suggestions()[0] || LAYOUT_IDS[0];
 
+    // A colorway pick replaces the whole custom palette: every manual color (Artwork, Title, Text, Background, Band) goes back to Auto.
+    const manualKeys = () => (rec.colors ? Object.keys(rec.colors).filter((k) => rec.colors[k] != null) : []);
+    const clearManual = () => (manualKeys().length ? { colors: null } : {});
     /* colorway picker (Curated) */
     let palBody = null; let palGroup = null;
     const pinBtns = [];
@@ -403,11 +411,13 @@
         if (v === 'own') {
           const oc = art.ownColors || {};
           if (!oc.ink || !oc.paper) return;
-          commit({ pin: null, colors: { art: oc.ink, background: oc.paper } }, `Plate ${pad2(index + 1)} uses the file's own colors.`, 'pin');
+          const colors = { art: oc.ink, background: oc.paper };
+          manualKeys().forEach((k) => { if (!(k in colors)) colors[k] = null; }); // the file's own set replaces any other custom color
+          commit({ pin: null, colors }, `Plate ${pad2(index + 1)} uses the file's own colors.`, 'pin');
         } else {
           const pin = v === '' ? null : v;
-          if (pin === (rec.pin || null) && !(rec.colors && (rec.colors.art || rec.colors.background))) return;
-          commit({ pin }, `Plate ${pad2(index + 1)} ${pin ? 'pinned to' : 'back to'} ${pin ? ((Vectura.START_PAGE_PLATE_PALETTE || []).find((x) => x.id === pin) || {}).name || pin : 'the rhythm'}.`, 'pin');
+          if (pin === (rec.pin || null) && !manualKeys().length) return;
+          commit(Object.assign({ pin }, clearManual()), `Plate ${pad2(index + 1)} ${pin ? 'pinned to' : 'back to'} ${pin ? ((Vectura.START_PAGE_PLATE_PALETTE || []).find((x) => x.id === pin) || {}).name || pin : 'the rhythm'}.${manualKeys().length ? ' Custom colors cleared.' : ''}`, 'pin');
         }
       };
       palGroup.addEventListener('click', (e) => { const b = e.target.closest('[data-pin]'); if (b) pickPin(b); });
@@ -419,7 +429,7 @@
     const contrastBox = h('div', { class: 'spe-contrast', 'data-spe-contrast': '', role: 'status', 'aria-live': 'polite' });
     if (palBody) palBody.appendChild(adviceBox);
     adviceBox.addEventListener('click', (e) => {
-      if (e.target.closest('[data-spe-use-rhythm]')) commit({ pin: null }, `Plate ${pad2(index + 1)} back to the rhythm's color.`, 'pin');
+      if (e.target.closest('[data-spe-use-rhythm]')) commit(Object.assign({ pin: null }, clearManual()), `Plate ${pad2(index + 1)} back to the rhythm's color.`, 'pin');
     });
 
     /* manual colors */
@@ -444,13 +454,13 @@
         const group = h('div', { class: 'spe-mc-g', role: 'radiogroup', 'aria-label': mode === 'basic' ? 'Artwork ink' : label });
         group.append(auto, sws, sps);
         const head = h('div', { class: 'spe-mc-h' }, h('b', { text: mode === 'basic' ? 'Artwork ink' : label }), h('label', { class: 'spe-mc-cul' }, 'Custom ', custom));
-        const block = h('div', { class: 'spe-mc', 'data-mc-part': part }, head, group);
+        const block = h('div', { class: 'spe-mc', 'data-mc-part': part }, head, mode === 'basic' ? null : h('p', { class: 'spe-mc-hint', text: PART_HINTS[part] }), group);
         mcBody.appendChild(block);
         mcParts[part] = { block, auto, custom, items: [auto].concat(items), group };
         const setPart = (value) => {
           const cur = colorsNow()[part] != null ? colorsNow()[part] : null;
           if (same(cur, value)) return;
-          const names = { art: mode === 'basic' ? 'ink' : 'artwork', text: 'text', background: 'background' };
+          const names = { art: mode === 'basic' ? 'ink' : 'artwork', text: 'text', background: 'background', title: 'title', band: 'band' };
           const what = value == null ? 'back to Auto' : Fills().isFill(value) ? `set to ${Fills().KINDS.find((k) => k.id === value.fill).name}` : `set to ${value}`;
           const patch = mode === 'basic' ? { basicColors: { ink: value } } : { colors: { [part]: value } };
           preview = null;
@@ -695,7 +705,7 @@
       adviceBox.textContent = '';
       if (mode !== 'curated' || !R()) return;
       // the colorway the plate really shows: a manual background changes its class (dark or light)
-      const list = R().advise(placed.map((p, i) => (i === index ? { id: p.id, colorway: Colors().resolve(baseColorway(), colorsNow(), { still: false }).colorway } : p)), index);
+      const list = R().advise(placed.map((p, i) => (i === index ? { id: p.id, colorway: Colors().resolve(baseColorway(), colorsNow(), { still: false, layout: layoutNow() }).colorway } : p)), index);
       const msgs = list.filter((a) => a.code !== 'low-contrast' || !colorsNow().art);
       if (msgs.length) {
         const w = h('div', { class: 'spe-warn spe-advice-w' }, msgs.map((a) => a.message).join(' '));
@@ -718,8 +728,10 @@
     const syncColors = () => {
       if (!mcBody) return;
       const c = colorsNow();
+      const roles = rolesNow();
       Object.keys(mcParts).forEach((part) => {
         const v = c[part] != null ? c[part] : null; const p = mcParts[part];
+        if (part === 'title' || part === 'band') p.block.hidden = !roles.includes(part); // only the colors this layout draws
         setRadios(p.items, (b) => {
           if (b.hasAttribute('data-mc-auto')) return v == null;
           if (b.hasAttribute('data-fill')) return Fills().isFill(v) && v.fill === b.dataset.fill;
