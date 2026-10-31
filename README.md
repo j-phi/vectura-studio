@@ -378,7 +378,7 @@ In overlay view, clicking the visible inactive silhouette selects that shape dir
 
 `File > Document Setup` (`Cmd/Ctrl+K`) covers: machine size, the document-level Metric/Imperial switch, optional blueprint-style dimension labels outside the canvas, margin, on-canvas crop, margin guides, the **Default paper** (Paper & Selection: a paper type or *No default (follow theme)*, its colour, and *Apply to this document*), selection-outline styling, plotter physics, optional 10mm grid overlay, and cookie preference saving with `Clear Saved Preferences`.
 
-The sun/moon toggle in the upper-right header switches the full UI between dark and light themes. A theme change recolours the sheet only while the document is on a plain (None) sheet in the theme's own colour and no default paper is set; an untouched Pen 1 always stays legible on the paper.
+The theme button in the upper-right header (and the matching toggle on the Start Page) rotates **Dark, Lark, Light, System** within the active skin family. **System** (the Lucide sun-moon icon) follows the operating system's light or dark setting live and is remembered across reloads; new users start on Dark. Its tooltip and label name the current and the next state. A theme change recolours the sheet only while the document is on a plain (None) sheet in the theme's own colour and no default paper is set; an untouched Pen 1 always stays legible on the paper.
 
 </details>
 

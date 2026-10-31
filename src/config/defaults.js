@@ -2504,6 +2504,9 @@
 
   window.Vectura.SETTINGS = {
     uiTheme: 'dark',
+    // true = the theme follows prefers-color-scheme (the "System" state of the theme rotation); uiTheme then
+    // holds the resolved concrete theme id. New users start on explicit Dark.
+    uiThemeSystem: false,
     margin: 20,
     speedDown: 250,
     speedUp: 300,

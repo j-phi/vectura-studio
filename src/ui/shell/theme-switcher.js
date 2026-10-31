@@ -45,16 +45,18 @@
     const toggle = getEl('theme-toggle', { silent: true });
     const current = `${SETTINGS.uiTheme || 'dark'}`.toLowerCase();
     if (toggle) {
-      const NEXT_LABEL = {
-        dark: 'Switch to Lark theme',
-        lark: 'Switch to Light theme',
-        light: 'Switch to Dark theme',
-      };
-      const label = NEXT_LABEL[current] || NEXT_LABEL.dark;
-      toggle.setAttribute('aria-pressed', current === 'light' ? 'true' : 'false');
+      // The rotation state (dark -> lark -> light -> system) lives in App.getThemeState; this button and the
+      // Start Page toggle both render from it, so the label names the current and the next state.
+      const state = this.app?.getThemeState?.();
+      const mode = state ? state.mode : current;
+      const label = state
+        ? state.description
+        : ({ dark: 'Switch to Lark theme', lark: 'Switch to Light theme', light: 'Switch to Dark theme' }[current]
+          || 'Switch to Lark theme');
+      toggle.setAttribute('aria-pressed', mode === 'light' ? 'true' : 'false');
       toggle.setAttribute('aria-label', label);
       toggle.title = label;
-      toggle.dataset.activeIcon = current;
+      toggle.dataset.activeIcon = mode;
     }
     // Paper selector: a theme change may recolour a plain sheet (and the
     // theme colour shown when no default paper is set).

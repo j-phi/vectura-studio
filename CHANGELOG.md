@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: System theme in the theme selector
+- **System state.** The theme rotation is now Dark, Lark, Light, **System**, then Dark again (within the active Modern/Classic family), on both the editor header button and the Start Page toggle, which always show the same state. System uses Lucide's sun-moon icon and follows the operating system's light or dark setting live: Light or Dark of the current family, switching as the OS does. The button's label and tooltip name the current and the next state ("Theme: System (Light). Switch to Dark theme.").
+- **Remembered.** The choice (System versus an explicit theme) is saved with the other preferences, so a reload keeps it; it is applied before first paint, so there is no flash of the wrong theme. New users still start on Dark. The paper theme-sync rule is unchanged: when the OS flips, a plain sheet in the theme's own color follows, while a default paper, a textured sheet or a custom color stays put.
+
 ### Changed: Start Page help guide and shortcut list (phase P4)
 - **Help guide.** The File & Export tab's shortcut list now has a "Start Page" section with `Esc` (leave the page when a canvas is open) and the 3D gestures (drag to rotate, arrow keys on a focused piece), beside the existing Start Page, New canvas, Open recent and "Arrange plates" (`Alt/Option+Up/Down`) rows. Each is listed once, with Mac and non-Mac keys. A new unit test pins the rows.
 - **US spelling.** "colour" became "color" in the help guide and the Hologram Foil hover blurb, and "catalogue" became "catalog" in the Start Page notes.

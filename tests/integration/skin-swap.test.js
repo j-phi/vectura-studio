@@ -48,13 +48,17 @@ describe('Skin swap integration (registry + applyTheme)', () => {
   });
 
   test('toggleTheme cycles within the active theme family only', () => {
-    // Modern family: dark → lark → light → dark.
+    // Modern family: dark → lark → light → system → dark. System resolves to the family's dark/light theme
+    // for prefers-color-scheme (the jsdom stub does not match dark, so it resolves to light here).
     app.applyTheme('dark', { persist: false, render: false });
     app.toggleTheme();
     expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('lark');
     app.toggleTheme();
     expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('light');
     app.toggleTheme();
+    expect(runtime.window.Vectura.SETTINGS.uiThemeSystem).toBe(true);
+    app.toggleTheme();
+    expect(runtime.window.Vectura.SETTINGS.uiThemeSystem).toBe(false);
     expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('dark');
 
     // Classic family: classic-dark → classic-lark → classic-light → classic-dark.
@@ -63,6 +67,9 @@ describe('Skin swap integration (registry + applyTheme)', () => {
     expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('classic-lark');
     app.toggleTheme();
     expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('classic-light');
+    app.toggleTheme(); // → system (stays in the classic family)
+    expect(runtime.window.Vectura.SETTINGS.uiThemeSystem).toBe(true);
+    expect(runtime.window.Vectura.SETTINGS.uiTheme).toMatch(/^classic-(dark|light)$/);
     app.toggleTheme();
     expect(runtime.window.Vectura.SETTINGS.uiTheme).toBe('classic-dark');
   });
@@ -156,7 +163,9 @@ describe('Skin swap integration (registry + applyTheme)', () => {
       expect(runtime.window.Vectura.SETTINGS.gridColor).toBe('#000000');
       app.toggleTheme(); // lark → light
       expect(runtime.window.Vectura.SETTINGS.gridColor).toBe('#000000');
-      app.toggleTheme(); // light → dark
+      app.toggleTheme(); // light → system (stub OS = light, grid stays black)
+      expect(runtime.window.Vectura.SETTINGS.gridColor).toBe('#000000');
+      app.toggleTheme(); // system → dark
       expect(runtime.window.Vectura.SETTINGS.gridColor).toBe('#ffffff');
     });
 
@@ -201,11 +210,12 @@ describe('Skin swap integration (registry + applyTheme)', () => {
       expect(root.style.getPropertyValue('--ui-workspace')).toBe('#111111');
     });
 
-    test('toggleTheme 3× cycle leaves --render-canvas at dark value', () => {
+    test('toggleTheme full cycle leaves --render-canvas at dark value', () => {
       app.applyTheme('dark', { persist: false, render: false });
       app.toggleTheme(); // dark → lark
       app.toggleTheme(); // lark → light
-      app.toggleTheme(); // light → dark
+      app.toggleTheme(); // light → system
+      app.toggleTheme(); // system → dark
 
       const root = runtime.document.documentElement;
       expect(root.style.getPropertyValue('--render-canvas')).toBe('#121214');
