@@ -17981,7 +17981,7 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
 .spl-disc{float:left;position:relative;width:min(400px,42%);aspect-ratio:1;margin:0 34px 14px 0;border-radius:50%;shape-outside:circle(50%);shape-margin:14px;background:var(--spl-disc);transition:background-color 460ms var(--ease,ease)}
 .spl-disc .spl-print{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;border-radius:50%;overflow:hidden;box-shadow:none}
 .spl-disc .spl-print[data-3d]::after{display:none}
-.spl-3dhint{position:absolute;left:50%;bottom:7%;z-index:2;transform:translateX(-50%);font-size:10px;letter-spacing:.06em;color:var(--spl-mute);white-space:nowrap;opacity:.8}
+.spl-3dhint{position:absolute;left:50%;bottom:7%;z-index:2;transform:translateX(-50%);font-size:10px;letter-spacing:.06em;color:color-mix(in srgb,var(--spl-mute) 55%,var(--spl-text));white-space:nowrap}
 .spl-wrap-txt{margin:6px 0 0;font:400 25px/1.42 var(--font-ui,'Space Grotesk',system-ui,sans-serif);letter-spacing:-.01em;color:var(--spl-text);overflow-wrap:anywhere}
 .spl-wrap-txt b{font-weight:600}
 .spl-wrap-txt .al{margin:0 10px 0 8px;font-size:10px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--spl-acc);vertical-align:4px}
