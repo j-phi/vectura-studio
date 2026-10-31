@@ -231,7 +231,7 @@
           h('button', { class: 'sp-hbtn', type: 'button', id: 'sp-rail-toggle', 'aria-controls': 'sp-rail' }),
           h('button', { class: 'sp-hbtn', type: 'button', id: 'sp-settings-btn', 'aria-label': 'Start Page settings', title: 'Start Page settings', html: Icons().gear }),
           h('button', { class: 'sp-hbtn', type: 'button', id: 'sp-motion-btn', 'aria-pressed': 'false' })),
-        h('button', { class: 'sp-theme', type: 'button', 'data-act': 'theme', 'aria-label': 'Toggle theme', title: 'Toggle theme', html: ICONS.moon + ICONS.sun }));
+        h('button', { class: 'sp-theme', type: 'button', 'data-act': 'theme', 'data-mode': 'dark', 'aria-label': 'Toggle theme', title: 'Toggle theme', html: ICONS.moon + ICONS.sun + (Icons().sunMoon || '') }));
 
       const coverSec = h('section', { class: 'sp-cover', id: 'sp-cover', 'aria-label': 'Studio cover' });
       const main = h('main', { class: 'sp-scroll', id: 'sp-scroll' },
@@ -436,6 +436,14 @@
       const theme = Vectura.THEMES?.[S().uiTheme];
       const light = theme && theme.colorScheme ? theme.colorScheme !== 'dark' : !/dark/.test(`${S().uiTheme || 'dark'}`);
       root.dataset.light = String(light);
+      // The same rotation state (and label) as the editor header button: Dark, Lark, Light or System.
+      const btn = root.querySelector('.sp-theme');
+      const state = app.getThemeState?.();
+      if (btn && state) {
+        btn.dataset.mode = state.mode;
+        btn.setAttribute('aria-label', state.description);
+        btn.title = state.description;
+      }
     };
 
     const syncPrefs = () => {
@@ -581,7 +589,7 @@
         clearTimeout(recolorTimer);
         recolorTimer = setTimeout(() => { syncTheme(); recolor(); }, 30);
       });
-      themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-ui-skin'] });
+      themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-ui-skin', 'data-ui-theme-mode'] });
     };
 
     const ctl = {

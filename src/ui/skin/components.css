@@ -9561,8 +9561,15 @@ body {
 
 .theme-toggle[data-active-icon='light'] .theme-toggle-icon--light,
 .theme-toggle[data-active-icon='dark'] .theme-toggle-icon--dark,
-.theme-toggle[data-active-icon='lark'] .theme-toggle-icon--lark {
+.theme-toggle[data-active-icon='lark'] .theme-toggle-icon--lark,
+.theme-toggle[data-active-icon='system'] .theme-toggle-icon--system {
   display: inline-flex;
+}
+
+.theme-toggle__system {
+  display: block;
+  width: 1.05rem;
+  height: 1.05rem;
 }
 
 ::-webkit-scrollbar {
@@ -17419,9 +17426,12 @@ body.touch-ui .paper-import-footer button {
   border: 1px solid var(--ui-border); color: var(--ui-text-2);
 }
 .sp-theme:hover { background: var(--ui-ctrl-hov); color: var(--ui-text); }
-.sp-theme .sun { display: none; }
+.sp-theme .sun, .sp-theme .sp-ico-sun-moon { display: none; }
 .sp[data-light="true"] .sp-theme .sun { display: block; }
 .sp[data-light="true"] .sp-theme .moon { display: none; }
+/* System state: Lucide sun-moon replaces the moon/sun pair. */
+.sp-theme[data-mode="system"] .moon, .sp-theme[data-mode="system"] .sun { display: none !important; }
+.sp-theme[data-mode="system"] .sp-ico-sun-moon { display: block; width: 14px; height: 14px; }
 
 /* body */
 .sp-body { flex: 1; display: flex; min-height: 0; }
