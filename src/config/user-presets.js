@@ -736,6 +736,56 @@
         }
       },
       {
+        "id": "harmonograph-trinodal",
+        "name": "Trinodal",
+        "preset_system": "harmonograph",
+        "group": "Geometric",
+        "params": {
+          "renderMode": "line",
+          "samples": 6500,
+          "duration": 48,
+          "scale": 0.4,
+          "paperRotation": 0.34,
+          "loopDrift": 0,
+          "curves": true,
+          "pendulums": [
+            {
+              "id": "pend-1",
+              "enabled": true,
+              "ampX": 100,
+              "ampY": 100,
+              "phaseX": 90,
+              "phaseY": 0,
+              "freq": 3,
+              "micro": 0.01,
+              "damp": 0.002
+            },
+            {
+              "id": "pend-2",
+              "enabled": true,
+              "ampX": 100,
+              "ampY": 100,
+              "phaseX": 0,
+              "phaseY": 90,
+              "freq": 2,
+              "micro": 0.02,
+              "damp": 0.002
+            },
+            {
+              "id": "pend-3",
+              "enabled": true,
+              "ampX": 50,
+              "ampY": -50,
+              "phaseX": 270,
+              "phaseY": 0,
+              "freq": 3,
+              "micro": -0.01,
+              "damp": 0.002
+            }
+          ]
+        }
+      },
+      {
         "id": "harmonograph-unison-circle",
         "name": "Unison Circle",
         "preset_system": "harmonograph",

@@ -1522,34 +1522,56 @@
     return uPrime;
   };
 
-  const _fitCubic = (pts, first, last, tHat1, tHat2, errorTol, out, depth) => {
+  // Fit pts[first..last] with as few cubics as stay within errorTol, appending
+  // them to `out` in path order. Each failed fit splits at its worst-error
+  // point and fits both halves. The split is always strictly interior, so the
+  // subdivision terminates at 2-point spans by construction.
+  //
+  // ITERATIVE, with no depth cap. On a long self-crossing figure (Harmonograph
+  // emits its whole drawing as one 6,000+ point path) the worst-error splits
+  // land near a run's end over and over, so nesting depth tracks path LENGTH,
+  // not log(length). The old recursive form had a `depth > 48` backstop that
+  // then emitted the un-fitted cubic as-is — a stray arc several mm off the
+  // figure that looked like a line "come loose". An explicit stack removes the
+  // call-stack limit the backstop was guarding, so no span is ever accepted
+  // out of tolerance.
+  const _fitCubicSpan = (pts, first, last, tHat1, tHat2, errorTol, depth) => {
     if (last - first === 1) {
       const dist = _vLen(_vSub(pts[last], pts[first])) / 3;
-      out.push([pts[first], _vAdd(pts[first], _vScale(tHat1, dist)), _vAdd(pts[last], _vScale(tHat2, dist)), pts[last]]);
-      return;
+      return { bez: [pts[first], _vAdd(pts[first], _vScale(tHat1, dist)), _vAdd(pts[last], _vScale(tHat2, dist)), pts[last]] };
     }
     let u = _chordParams(pts, first, last);
     let bez = _generateBezier(pts, first, last, u, tHat1, tHat2);
     let res = _computeMaxError(pts, first, last, bez, u);
     const tolSq = errorTol * errorTol;
-    if (res.maxError < tolSq) { out.push(bez); return; }
+    if (res.maxError < tolSq) return { bez };
     if (res.maxError < tolSq * 16 && depth < 10) {
       for (let iter = 0; iter < 4; iter++) {
         const uPrime = _newtonReparam(pts, first, last, u, bez);
         bez = _generateBezier(pts, first, last, uPrime, tHat1, tHat2);
         res = _computeMaxError(pts, first, last, bez, uPrime);
         u = uPrime;
-        if (res.maxError < tolSq) { out.push(bez); return; }
+        if (res.maxError < tolSq) return { bez };
       }
     }
-    if (depth > 48) { out.push(bez); return; } // recursion backstop
-    const split = res.split;
-    const centerTangent = _vNorm({
-      x: (pts[split - 1].x - pts[split + 1].x) / 2,
-      y: (pts[split - 1].y - pts[split + 1].y) / 2,
-    });
-    _fitCubic(pts, first, split, tHat1, centerTangent, errorTol, out, depth + 1);
-    _fitCubic(pts, split, last, _vScale(centerTangent, -1), tHat2, errorTol, out, depth + 1);
+    return { split: res.split };
+  };
+
+  const _fitCubic = (pts, first, last, tHat1, tHat2, errorTol, out, depth = 0) => {
+    // LIFO: push the right half before the left so spans emit in path order.
+    const stack = [[first, last, tHat1, tHat2, depth]];
+    while (stack.length) {
+      const [f, l, t1, t2, d] = stack.pop();
+      const res = _fitCubicSpan(pts, f, l, t1, t2, errorTol, d);
+      if (res.bez) { out.push(res.bez); continue; }
+      const split = res.split;
+      const centerTangent = _vNorm({
+        x: (pts[split - 1].x - pts[split + 1].x) / 2,
+        y: (pts[split - 1].y - pts[split + 1].y) / 2,
+      });
+      stack.push([split, l, _vScale(centerTangent, -1), t2, d + 1]);
+      stack.push([f, split, t1, centerTangent, d + 1]);
+    }
   };
 
   // Round each detected corner into a fillet arc ("Smooth" on a

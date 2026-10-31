@@ -37,8 +37,8 @@ describe('Harmonograph presets', () => {
   test('the harmonograph preset library is filtered out of PRESETS', () => {
     const lib = window.Vectura.PresetLibraries.harmonograph;
     expect(Array.isArray(lib)).toBe(true);
-    // Four curated presets + the factory Default (the selected initial state).
-    expect(lib.length).toBe(5);
+    // Five curated presets + the factory Default (the selected initial state).
+    expect(lib.length).toBe(6);
     expect(lib.every((p) => p.preset_system === 'harmonograph')).toBe(true);
     expect(lib.map((p) => p.id)).toEqual(
       expect.arrayContaining([
@@ -47,6 +47,7 @@ describe('Harmonograph presets', () => {
         'harmonograph-classic-3-2-star',
         'harmonograph-4-3-star',
         'harmonograph-evolving-snake',
+        'harmonograph-trinodal',
       ])
     );
   });
@@ -67,10 +68,11 @@ describe('Harmonograph presets', () => {
     });
   });
 
-  test('the preset dropdown renders an option for each of the 5 presets', () => {
+  test('the preset dropdown renders an option for each of the 6 presets', () => {
     expect(document.querySelector('.hg-preset-dropdown-wrap')).toBeTruthy();
-    expect(document.querySelectorAll('.hg-preset-option[data-preset-id]:not([data-preset-id="custom"])').length).toBe(5);
+    expect(document.querySelectorAll('.hg-preset-option[data-preset-id]:not([data-preset-id="custom"])').length).toBe(6);
     expect(presetCard('harmonograph-default')).toBeTruthy();
+    expect(presetCard('harmonograph-trinodal')).toBeTruthy();
     expect(presetCard('harmonograph-unison-circle')).toBeTruthy();
     expect(presetCard('harmonograph-evolving-snake')).toBeTruthy();
   });

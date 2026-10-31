@@ -47,8 +47,8 @@ describe('Harmonograph-family preset dropdown (craft ladder)', () => {
       expect(groupTitles()).toEqual(['Classic', 'Geometric', 'Evolving']);
     });
 
-    test('renders one option per preset (5 total — incl. Default), each with a thumbnail canvas', () => {
-      expect(cards().length).toBe(5);
+    test('renders one option per preset (6 total — incl. Default), each with a thumbnail canvas', () => {
+      expect(cards().length).toBe(6);
       cards().forEach((c) => {
         expect(c.querySelector('canvas.hg-preset-option-thumb')).toBeTruthy();
       });
