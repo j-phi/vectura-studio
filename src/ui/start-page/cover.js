@@ -28,7 +28,7 @@
   };
 
   const create = (ctx) => {
-    const { h, pad2 } = Vectura.StartPageDom;
+    const { h, pad2, onOpenClick } = Vectura.StartPageDom;
     const Words = () => Vectura.StartPageCoverWords;
     const Ink = () => Vectura.StartPageInk;
     const host = ctx.host;
@@ -263,7 +263,7 @@
           })),
           h('div', { class: 'sp-key-row', 'aria-hidden': 'true' })))));
       const wrap = stage.querySelector('.sp-word-wrap');
-      wrap.addEventListener('click', (e) => {
+      onOpenClick(wrap, (e) => {
         const b = e.target.closest && e.target.closest('.sp-lt');
         if (!b) return;
         const t = tiles.find((x) => x.k === Number(b.dataset.k));
@@ -315,7 +315,7 @@
       tiles.push(t); setCwData(t);
       cap.querySelector('.sp-sw2').style.setProperty('--p', cw.paper); cap.querySelector('.sp-sw2').style.setProperty('--i', cw.ink);
       const open = () => ctx.onOpen(art, tiles[0].cw);
-      el.addEventListener('click', open); // a native button: Enter and Space fire click
+      onOpenClick(el, open); // a native button: Enter and Space fire click
       try { if (G.document.fonts && G.document.fonts.ready) await G.document.fonts.ready; } catch (_) { /* noop */ }
       if (my !== gen) return;
       const ink = Ink();
@@ -343,7 +343,7 @@
       tiles.push(t);
       band.append(text, tools);
       tools.querySelector('.sp-sw2').style.setProperty('--p', cw.paper); tools.querySelector('.sp-sw2').style.setProperty('--i', cw.ink);
-      tools.addEventListener('click', () => ctx.onOpen(art, tiles[0].cw));
+      onOpenClick(tools, () => ctx.onOpen(art, tiles[0].cw));
       const style = band.style;
       style.setProperty('--sp-text', cw.textInk || cw.ink);
       // A 3D piece is a live, drag-to-rotate model on the right of the band (the same place the drawing sits).

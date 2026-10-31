@@ -54,7 +54,7 @@
   const dash = (v) => (v == null || v === '' ? null : v);
 
   const create = (ctx) => {
-    const { h, pad2 } = Vectura.StartPageDom;
+    const { h, pad2, onOpenClick } = Vectura.StartPageDom;
     const Layouts = () => Vectura.StartPagePlateLayouts;
     const Rhythm = () => Vectura.StartPagePlateRhythm;
     const T = () => Vectura.StartPagePlateType;
@@ -407,7 +407,7 @@
       w.style.removeProperty('--sp-pl-h');
       syncTools(w);
       const main = article.querySelector('.spl-print');
-      if (main) { main.classList.add('sp-pl-art'); main.addEventListener('click', () => { if (!w.dataset.editing) open(entries.indexOf(e), false); }); }
+      if (main) { main.classList.add('sp-pl-art'); onOpenClick(main, () => { if (!w.dataset.editing) open(entries.findIndex((x) => x.id === w.dataset.plateId), false); }); } // opens by plate id: a re-sync rebuilds the entry objects
       // Fresh plates draw themselves in (the plate's own style, else the page default). Still / reduced motion: shown finished.
       const M = Motion();
       const plays = !!(M && main && !model && !reduced() && !M.isStill() && M.styleId(plateAnimateIn(e.id)) !== 'none');

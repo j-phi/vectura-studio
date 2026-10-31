@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: dragging a Start Page 3D object no longer opens the art (v1.4.44)
+- **Only a fast single click opens art.** Releasing an orbit drag (or any press that moves more than 5 px, 10 px for touch/pen, or lasts longer than 350 ms) no longer opens the piece; the `click` the browser fires on release is swallowed. Keyboard Enter/Space and screen-reader activation still open it. One shared helper, `StartPageDom.onOpenClick`, now guards every open-on-click site: plates, cover letters, the word cover, the band caption, studio pick cards and the Community card. Thresholds live in `START_PAGE.CLICK` (`src/config/start-page.js`).
+- Plate art also resolves its entry by plate id when opened, so a re-sync that rebuilt the entry objects can no longer leave the art click a silent no-op.
+
 ### Changed: Show example plates checkbox (replaces the automatic hide) (v1.4.43)
 - **A "Show example plates" checkbox in the Plates header** (default on, saved as the `showExamples` Start Page preference). Checked, the example plates sit after your own works in your saved order; unchecked, they are hidden (with no works, the empty state shows). They no longer step aside on their own. The Show count applies to your works only.
 - **Example plates are editable and removable like works.** Edit (layout, text, colors, framing, motion) and Remove work on an example, edits are saved per example id (the bundled definitions are never changed), and a removed example comes back from the Add plate menu under Removed.

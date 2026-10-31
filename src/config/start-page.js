@@ -49,6 +49,11 @@
     newPaper: Object.freeze(['A4', 'A3', 'Letter', '9x12']),
   });
 
+  // What counts as a genuine click that opens art (StartPageDom.onOpenClick). Anything past these is a drag (orbit,
+  // pan) or a long press, and the click the browser fires on release is swallowed. 350 ms sits under the ~500 ms OS
+  // long-press and above a deliberate click (typically 80-250 ms); touch gets a looser radius for finger wobble.
+  const CLICK = Object.freeze({ maxMovePx: 5, maxMoveTouchPx: 10, maxPressMs: 350, clickGapMs: 700 });
+
   const LIMITS = Object.freeze({
     recentsShown: 8,
     entriesMax: 48,
@@ -122,5 +127,5 @@
     };
   };
 
-  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, SHORTCUTS, sanitize });
+  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, CLICK, SHORTCUTS, sanitize });
 })();

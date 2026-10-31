@@ -622,6 +622,7 @@ questions. Do not start these without a decision:
   control for text, or build the de-curve.
 
 ## Done
+- **Start Page drag no longer opens art (2026-10-31, v1.4.44, branch `fix/start-page-drag-click`).** `StartPageDom.onOpenClick` swallows the click after a drag/long press (`START_PAGE.CLICK`: 5/10 px, 350 ms); used by plates, cover, band, picks, Community. Tests: `open-click-guard.test.js`, plates-section and picks-community specs. Not yet visually verified in a browser.
 - **Show example plates checkbox (2026-10-31, branch `feat/file-close`).** `showExamples` pref + Plates-header checkbox replace the auto-hide; examples go through the plates store (edit/remove/restore via Add plate ▸ Removed); the Show count covers own works only. Tests: `example-plates-toggle.test.js` (+ updated `example-plates`, `clear-recent-plates`, config).
 - **File > Close (2026-10-31, branch `feat/file-close`).** `app.closeProject()` + File menu item: confirm-discard, blank canvas, Start Page. Plates: a lone work flagged `cleared` (Clear in Recent) hands the Plates section back to the example plates; several works keep theirs. Tests: `tests/integration/start-page/file-close.test.js`, `example-plates.test.js`.
 - **CI WebKit runner pin (2026-10-28).** Touch smoke WebKit leg failed on every PR (control re-run of a green commit failed too) after the ubuntu-latest → Ubuntu 26 move; Playwright jobs pinned to ubuntu-24.04 and the browser cache keyed on ImageOS/ImageVersion. Follow-up: unpin once Playwright supports the new image (re-test the touch leg on ubuntu-latest).
