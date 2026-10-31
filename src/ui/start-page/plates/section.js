@@ -20,6 +20,10 @@
  *   StartPageMotion.modelFor(art) -> model id | null                a live 3D model (StartPageOrbit3D); the SVG is used otherwise
  * A manual color value is '#rrggbb' or { fill: 'iridescent' | ... }.
  *
+ * Developer Mode (SETTINGS.devMode, the Document Setup switch): the section shows an editable DRAFT of the shipped example
+ * plates instead of the user's works (StartPageExamplePlates store + StartPagePlatesDev bar), using the same editor and Arrange;
+ * with it off none of that is created.
+ *
  *   create({ host, app, prefs(), setPref(key, value), arts(), mode(), seed(), theme(), still(), scroller(),
  *            onOpen(art, colorway, { asTemplate }) }) -> { render, recolor, refresh, destroy, setCoverApi, store, entries }
  */
@@ -74,6 +78,11 @@
     let exampleMode = false; // first run: the example plates stand in until the user has a work (never stored)
     let removedWorks = []; // works whose plate was removed: listed in the Add plate menu so they can come back
     let fanHandle = null;
+    let devActive = false; // Developer Mode: the editable example-plate draft stands in for the works
+    let draftStore = null;
+    let unsubDraft = null;
+    let devTools = null;
+    const devOn = () => !!(Vectura.DevMode && Vectura.DevMode.isOn() && Vectura.StartPageExamplePlates && Vectura.StartPagePlatesStore && Vectura.UI && Vectura.UI.StartPagePlatesDev);
     let coverApi = null;
     let token = 0;
     let destroyed = false;
@@ -120,6 +129,14 @@
       }
       return store;
     };
+    const getDraft = () => {
+      if (!draftStore) {
+        draftStore = Vectura.StartPageExamplePlates.create({ shipped: () => (Vectura.START_PAGE_PICKS && Vectura.START_PAGE_PICKS.EXAMPLE_PLATES) || [] });
+        unsubDraft = draftStore.subscribe(() => { if (!destroyed && devActive) sync(); });
+      }
+      return draftStore;
+    };
+    const activeStore = () => (devActive ? getDraft() : getStore());
     const visibleCount = (n) => {
       if (exampleMode) return n; // the examples are a small fixed set: always all of them
       const v = ctx.prefs().visiblePlates;
@@ -147,11 +164,11 @@
 
     // Example plates: bundled presets pre-rendered like the studio picks (StartPageArtSource.examples). They exist only
     // in memory: no store record, so nothing to edit, remove, arrange or persist.
-    const loadExamples = () => {
+    const loadExamples = (draftList) => {
       try {
         const Src = Vectura.StartPageArtSource;
         const P = Vectura.StartPageArtProvider;
-        const list = Src && typeof Src.examples === 'function' ? Src.examples() : [];
+        const list = Src && typeof Src.examples === 'function' ? Src.examples(draftList) : [];
         return (list || []).filter((a) => a && a.id && typeof a.getSvg === 'function').map((a) => {
           const get = a.getSvg.bind(a);
           return Object.assign({}, a, { getSvg: () => Promise.resolve(get()).then((svg) => (P && P.strokeSvg ? P.strokeSvg(svg) : svg)) });
@@ -335,7 +352,7 @@
         if (!isExample) slot.append(tool('cover', 'Use as cover', ICONS.book, 'Use this piece as the cover'));
       }
       if (isExample && !slot.querySelector('.sp-pl-example')) slot.prepend(h('span', { class: 'sp-pl-example', text: 'Example', title: 'Example plate. Your own plates appear here automatically when you save or open a file.' }));
-      const want = canEdit() && !isExample;
+      const want = canEdit() && (!isExample || devActive);
       let ed = slot.querySelector('[data-act="edit"]');
       if (want && !ed) {
         ed = tool('edit', 'Edit', ICONS.edit, 'Edit this plate: text, layout, colors, framing');
@@ -595,8 +612,10 @@
       const n = entries.length;
       const edit = canEdit();
       root.dataset.mode = mode();
-      count.textContent = exampleMode ? `${n} examples · until you save or open a piece` : n ? `${n} work${n === 1 ? '' : 's'} · in your order` : 'your work will hang here';
-      explain.textContent = exampleMode
+      count.textContent = devActive ? `${n} example plate${n === 1 ? '' : 's'} · Developer Mode draft` : exampleMode ? `${n} examples · until you save or open a piece` : n ? `${n} work${n === 1 ? '' : 's'} · in your order` : 'your work will hang here';
+      explain.textContent = devActive
+        ? 'Developer Mode: these are the example plates that ship with Vectura Studio. Edit the word, title, layout and colorway, add a plate from any bundled preset, remove one, or drag to reorder. Export defaults writes them back to src/config/start-page-picks.js.'
+        : exampleMode
         ? 'These are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples step aside as soon as your first arrives. Opening an example starts a new document; it becomes a plate once you save it.'
         : n
         ? `Each file you open or save becomes a plate automatically: set on its own paper and laid out for the sheet. ${edit ? 'Edit the text, layout, color and framing of any plate; drag to reorder.' : 'Colors follow the page mode; your edits return in Curated.'}`
@@ -604,8 +623,11 @@
       explain.hidden = !n;
       if (exampleMode) explain.dataset.example = '1'; else delete explain.dataset.example;
       if (exampleMode) root.setAttribute('aria-describedby', explain.id); else root.removeAttribute('aria-describedby');
-      addBtn.hidden = exampleMode || !(n || removedWorks.length); arrBtn.hidden = !n || exampleMode; showLbl.hidden = !n || exampleMode;
-      empty.hidden = !!n;
+      addBtn.hidden = (exampleMode && !devActive) || !(n || removedWorks.length || devActive); arrBtn.hidden = !n || (exampleMode && !devActive); showLbl.hidden = !n || exampleMode;
+      empty.hidden = !!n || devActive;
+      { const lbl = addBtn.querySelector('span'); if (lbl) lbl.textContent = devActive ? 'Add from preset' : 'Add plate'; }
+      if (devActive) addBtn.setAttribute('aria-haspopup', 'dialog'); else addBtn.setAttribute('aria-haspopup', 'menu');
+      if (devTools) devTools.sync({ mode: mode(), count: n });
       arrBtn.disabled = !n; // nothing to arrange
       if (!n && arrange) exitArrange(true);
       arrBtn.setAttribute('aria-pressed', String(!!arrange));
@@ -614,17 +636,78 @@
       arrBtn.innerHTML = arrange ? `${ICONS.check}<span>Done arranging</span>` : `${ICONS.grip}<span>Arrange</span>`;
     };
 
-    const sync = () => {
-      if (!getStore()) return Promise.resolve();
+    const enterDev = () => {
+      devActive = true;
+      const Dev = Vectura.UI && Vectura.UI.StartPagePlatesDev;
+      devTools = Dev.create({
+        draft: getDraft(),
+        presets: () => Vectura.PRESETS || [],
+        toast: (m, v, a) => toast(m, v, a),
+        onExit: () => Vectura.DevMode.set(false),
+        onAdd: async (p) => {
+          const rec = await getDraft().add(p.id);
+          announce(`Added a plate of ${p.name || p.id}.`);
+          undoToast('Plate added', () => getDraft().remove(rec.id));
+        },
+      });
+      root.insertBefore(devTools.el, root.firstChild);
+    };
+    const leaveDev = () => {
+      if (editor) closeEditor(false);
+      if (arrange) exitArrange(true, false);
+      if (fanHandle) { try { fanHandle.close(); } catch (_) { /* noop */ } }
+      devActive = false;
+      if (devTools) { devTools.destroy(); devTools = null; }
+      if (unsubDraft) { unsubDraft(); unsubDraft = null; draftStore = null; }
+      entries = [];
+    };
+    // Developer Mode: the draft's plates, one entry per record (a preset may appear twice), in the draft's order.
+    const syncDev = () => {
       const my = (token += 1);
-      return Promise.all([ctx.arts(), getStore().load()]).then(async ([arts, snap]) => {
+      if (!devActive) enterDev();
+      return getDraft().load().then((snap) => {
+        if (destroyed || my !== token || !devActive) return;
+        const recs = snap.plates.filter((r) => r && !r.removed);
+        const arts = new Map(loadExamples(recs.map((r) => ({ key: r.id, presetId: r.presetId }))).map((a) => [a.exampleMeta && a.exampleMeta.key, a]));
+        exampleMode = true;
+        removedWorks = [];
+        entries = recs.filter((r) => arts.has(r.id)).map((r) => { const a = arts.get(r.id); return { id: r.id, artId: a.id, art: a, rec: r, example: {} }; });
+        applyEntries();
+      });
+    };
+    const applyEntries = () => {
+      placed = place();
+      computeLayoutClasses();
+      const keep = new Set(entries.map((e) => e.id));
+      wrappers.forEach((w, id) => {
+        if (!keep.has(id)) { if (editor && editor.id === id) closeEditor(false); if (io) io.unobserve(w); if (w._sp.article) Layouts().destroy(w._sp.article); w.remove(); wrappers.delete(id); }
+      });
+      entries.forEach((e, i) => {
+        let w = wrappers.get(e.id);
+        if (!w) { w = makeWrapper(e); wrappers.set(e.id, w); }
+        w.dataset.plateId = e.id;
+        const cur = plateEls();
+        if (cur[i] !== w) list.insertBefore(w, cur[i] || null);
+      });
+      header();
+      applyVisibility(false);
+      entries.forEach((e, i) => { const w = wrappers.get(e.id); setData(w, e, i); if (w._sp.article && !arrange) refreshPlate(w, e, i); });
+      if (editor && !canEdit()) closeEditor(false);
+    };
+
+    const sync = () => {
+      if (devOn()) return syncDev();
+      if (devActive) leaveDev();
+      if (!activeStore()) return Promise.resolve();
+      const my = (token += 1);
+      return Promise.all([ctx.arts(), activeStore().load()]).then(async ([arts, snap]) => {
         if (destroyed || my !== token) return;
         const works = (arts || []).filter((a) => a && a.kind === 'work');
         // a removed work that is opened or saved again comes back (its record is stamped with the removal time)
         const back = works.filter((a) => { const r = snap.plates.find((x) => x.id === a.id); return r && r.removed && Number(r.removedAt) && Number(a.lastOpened) > Number(r.removedAt); });
         if (back.length) {
-          for (const a of back) await getStore().upsert(a.id, { removed: false, removedAt: null });
-          snap = await getStore().load();
+          for (const a of back) await activeStore().upsert(a.id, { removed: false, removedAt: null });
+          snap = await activeStore().load();
           if (destroyed || my !== token) return;
         }
         removedWorks = works.filter((a) => { const r = snap.plates.find((x) => x.id === a.id); return r && r.removed; });
@@ -634,23 +717,7 @@
           ? ex.map((a) => ({ id: a.id, artId: a.id, art: a, rec: null, example: a.exampleMeta || {} }))
           : buildEntries(works, snap);
         if (exampleMode) removedWorks = [];
-        placed = place();
-        computeLayoutClasses();
-        const keep = new Set(entries.map((e) => e.id));
-        wrappers.forEach((w, id) => {
-          if (!keep.has(id)) { if (editor && editor.id === id) closeEditor(false); if (io) io.unobserve(w); if (w._sp.article) Layouts().destroy(w._sp.article); w.remove(); wrappers.delete(id); }
-        });
-        entries.forEach((e, i) => {
-          let w = wrappers.get(e.id);
-          if (!w) { w = makeWrapper(e); wrappers.set(e.id, w); }
-          w.dataset.plateId = e.id;
-          const cur = plateEls();
-          if (cur[i] !== w) list.insertBefore(w, cur[i] || null);
-        });
-        header();
-        applyVisibility(false);
-        entries.forEach((e, i) => { const w = wrappers.get(e.id); setData(w, e, i); if (w._sp.article && !arrange) refreshPlate(w, e, i); });
-        if (editor && !canEdit()) closeEditor(false);
+        applyEntries();
       });
     };
 
@@ -692,19 +759,19 @@
       const handle = Ed.open(art, {
         record: e.rec ? JSON.parse(JSON.stringify(e.rec)) : { id: e.id, artId: e.artId },
         art: { id: e.art.id, name: e.art.name, algorithm: e.art.algorithm, collection: e.art.collection, svg, model: art3d(e), ownColors: e.art.ownColors },
-        mode: mode(), index: i, colorway: placed[i] && placed[i].colorway, placed: placed.map((p, k) => { // neighbors count with the background they really show (a manual Curated background changes its class)
+        devExample: devActive, mode: mode(), index: i, colorway: placed[i] && placed[i].colorway, placed: placed.map((p, k) => { // neighbors count with the background they really show (a manual Curated background changes its class)
           const cwk = k === i ? null : resolveCw(entries[k], k);
           return cwk && p.colorway ? { id: p.id, colorway: Object.assign({}, p.colorway, { class: cwk.class || p.colorway.class, ground: cwk.ground || p.colorway.ground }) } : p;
         }),
         specs: w._sp.specs || [], orientation: w._sp.orientation || 'landscape',
         suggestedLayout: suggestedLayout(e, i, w._sp.orientation || 'landscape'),
         // The editor shows its own Undo toasts for changes and resets (Undo comes back through onChange).
-        onChange: (patch) => getStore().upsert(e.id, patch),
-        onReset: (keys) => getStore().reset(e.id, keys),
+        onChange: (patch) => activeStore().upsert(e.id, patch),
+        onReset: (keys) => activeStore().reset(e.id, keys),
         onRemove: async () => {
-          const tokenR = await getStore().remove(e.id);
+          const tokenR = await activeStore().remove(e.id);
           closeEditor(false);
-          if (tokenR) undoToast(`Plate ${pad2(i + 1)} removed`, () => getStore().undoRemove(tokenR));
+          if (tokenR) undoToast(`Plate ${pad2(i + 1)} removed`, () => activeStore().undoRemove(tokenR));
         },
         onClose: () => { if (editor && editor.id === e.id) closeEditor(true); },
         onReplay: () => replayPlate(e.id),
@@ -750,8 +817,8 @@
           const cw = resolveCw(e, i); const v = cw && shown(cw);
           return { id: e.id, name: textsOf(e).title, hidden: i >= k, colorway: v ? { ground: v['--spl-paper'], paper: v['--spl-paper'], ink: v['--spl-text'], class: cw.class } : null };
         }),
-        onMove: (ids) => getStore().reorder(ids),
-        onResetOrder: async () => { await getStore().resetOrder(); await sync(); return entries.map((x) => x.id); },
+        onMove: (ids) => activeStore().reorder(ids),
+        onResetOrder: async () => { await activeStore().resetOrder(); await sync(); return entries.map((x) => x.id); },
         onExit: () => exitArrange(false),
         scroller: ctx.scroller(),
       }) || { exit() {} };
@@ -790,13 +857,13 @@
       if (refocus) addBtn.focus();
     };
     const restorePlate = async (artId) => {
-      const s = getStore();
+      const s = activeStore();
       await s.upsert(artId, { removed: false, removedAt: null });
       announce(`Restored the plate of ${pretty((removedWorks.find((a) => a.id === artId) || { name: '' }).name)}.`);
       undoToast('Plate restored', () => s.remove(artId));
     };
     const addPlate = async (artId) => {
-      const s = getStore();
+      const s = activeStore();
       if (!(await s.load()).order.length) await s.reorder(entries.map((e) => e.id)); // keep today's order; the new plate lands last
       const rec = await s.add(artId, { duplicate: true });
       announce(`Added another plate of ${pretty((entries.find((e) => e.artId === artId) || { art: { name: '' } }).art.name)}.`);
@@ -808,7 +875,7 @@
       const t = ev.target.closest && ev.target.closest('button');
       if (!t) return;
       if (t.dataset.visSet != null) { setShow(t.dataset.visSet); return; }
-      if (t === addBtn) { menu.hidden ? openMenu() : closeMenu(true); return; }
+      if (t === addBtn) { if (devActive) { devTools && devTools.openPicker(); return; } menu.hidden ? openMenu() : closeMenu(true); return; }
       if (t.dataset.addArt) { closeMenu(false); addPlate(t.dataset.addArt); return; }
       if (t.dataset.restoreArt) { closeMenu(false); restorePlate(t.dataset.restoreArt); return; }
       if (t === arrBtn) { arrange ? exitArrange(true) : enterArrange(); return; }
@@ -825,10 +892,13 @@
     });
     root.addEventListener('focusout', (ev) => { if (!menu.hidden && !menu.contains(ev.relatedTarget) && ev.relatedTarget !== addBtn) closeMenu(false); });
 
+    // Developer Mode switched on or off in Document Setup while the page exists: rebuild the section for the new state.
+    const unsubMode = Vectura.DevMode && typeof Vectura.DevMode.subscribe === 'function' ? Vectura.DevMode.subscribe(() => { if (!destroyed && headed) sync(); }) : null;
+
     /* ------------------------------------------------------------------ public */
     const ctl = {
       el: root,
-      get store() { return getStore(); },
+      get store() { return activeStore(); },
       entries: () => entries.slice(),
       placed: () => placed.slice(),
       setCoverApi(api) { coverApi = api; },
@@ -846,14 +916,21 @@
         if (editor && !canEdit()) closeEditor(false);
       },
       refresh: () => sync(),
+      isDev: () => devActive,
+      get draft() { return devActive ? getDraft() : null; },
+      /** Scroll the section into view (Document Setup > Edit Start Page plates). */
+      reveal() { try { if (typeof root.scrollIntoView === 'function') root.scrollIntoView({ block: 'start' }); } catch (_) { /* noop */ } },
       isExamples: () => (headed ? exampleMode : null), // null until the first sync has decided
-      closeTransient() { closeMenu(false); closeEditor(false); if (fanHandle) { try { fanHandle.close(); } catch (_) { /* noop */ } } if (arrange) exitArrange(true, false); },
+      closeTransient() { closeMenu(false); if (devTools) devTools.closeDialogs(); closeEditor(false); if (fanHandle) { try { fanHandle.close(); } catch (_) { /* noop */ } } if (arrange) exitArrange(true, false); },
       destroy() {
         destroyed = true;
         if (io) io.disconnect();
         exitTimers.forEach((t) => clearTimeout(t));
         wrappers.forEach((w) => { if (w._sp.article) { try { Layouts().destroy(w._sp.article); } catch (_) { /* noop */ } } });
         if (unsub) unsub();
+        if (unsubDraft) unsubDraft();
+        if (unsubMode) unsubMode();
+        if (devTools) devTools.destroy();
         root.remove();
       },
     };

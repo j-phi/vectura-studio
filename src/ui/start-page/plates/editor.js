@@ -14,6 +14,8 @@
  *     onChange   called with a store patch for EVERY change ({ layout }, { texts: { word } }, { pin }, { colors: { art } },
  *                { basicColors: { ink } }, { frame }, { motion: { hover } } ...), also for Undo (the previous value as a patch)
  *     onReset    called with the keys to reset; Undo patches every key back through onChange
+ *   devExample: true (Developer Mode, a shipped example plate) hides the controls the example config cannot carry (manual colors,
+ *   framing, motion, description) and relabels Reset / Remove.
  *   close() / update(record) / setPlate(newPlateEl) (after the section re-renders the plate for a new layout).
  *   The editor previews live on the rendered plate (StartPagePlateColors.apply + the art handle's setFrame); the section
  *   re-applies the same values from the store, which is idempotent. The panel is inserted right after plateEl.
@@ -510,6 +512,18 @@
     const resetBtn = h('button', { type: 'button', class: 'spe-lnk', 'data-spe-reset': '', text: 'Reset plate' });
     const removeBtn = h('button', { type: 'button', class: 'spe-lnk spe-lnk-d', 'data-spe-remove': '', text: 'Remove plate' });
     root.appendChild(h('div', { class: 'spe-foot' }, resetBtn, removeBtn, h('span', { class: 'spe-grow' }), h('span', { class: 'spe-keys', text: 'Arrow keys move through options · Esc closes' })));
+
+    /* Developer Mode (shipped example plates): only word, title, layout and the colorway pin are written to the config. */
+    if (o.devExample) {
+      ['colors', 'frame', 'motion'].forEach((id) => { const d = root.querySelector(`[data-spe-sec="${id}"]`); if (d) d.hidden = true; });
+      const desc = inputs.description && inputs.description.closest('.spe-f');
+      if (desc) desc.hidden = true;
+      const own = root.querySelector('[data-pin="own"]');
+      if (own) own.hidden = true;
+      removeBtn.textContent = 'Remove example';
+      resetBtn.textContent = 'Reset to Auto';
+      root.dataset.devExample = '1';
+    }
 
     /* ---- frame logic ---- */
     const mainPrint = () => { const c = plateEl._spl; const p = c && c.prints && c.prints.find((x) => x.main); return p ? p.el : null; };

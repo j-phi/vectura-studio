@@ -225,6 +225,7 @@
         h('span', { class: 'sp-div', 'aria-hidden': 'true' }),
         h('span', { class: 'sp-crumb', text: 'Start Page' }),
         h('span', { class: 'sp-spacer' }),
+        h('span', { class: 'sp-dev-pill', id: 'sp-dev-pill', hidden: true, title: 'Developer Mode is on (Document Setup > Contributor / Presets). The example plates are editable.', text: 'Developer Mode' }),
         h('button', { class: 'sp-back', type: 'button', 'data-act': 'back', hidden: true, title: 'Back to canvas (Esc)' },
           h('span', { html: ICONS.back }), h('span', { text: 'Back to canvas' })),
         h('span', { class: 'sp-today', id: 'sp-today' }),
@@ -458,6 +459,8 @@
       applyRail();
       if (settings) settings.sync();
       if (controls) controls.sync();
+      const pill = root.querySelector('#sp-dev-pill');
+      if (pill) pill.hidden = !(Vectura.DevMode && Vectura.DevMode.isOn());
     };
 
     /* ------------------------------------------------------------------ rail data */
@@ -651,9 +654,14 @@
       async openRecent(id) {
         return app.recents ? app.recents.open(id) : false;
       },
-      show() {
+      /**
+       * show({ editPlates: true }) opens the page for curating the shipped example plates: only while Developer Mode is on
+       * (the Plates section then shows the editable draft whatever the user has saved), and scrolled to the Plates section.
+       */
+      show(opts = {}) {
         if (!root) build();
-        if (open) { render(); return; }
+        const reveal = () => { if (opts && opts.editPlates && Vectura.DevMode && Vectura.DevMode.isOn() && plates) plates.reveal(); };
+        if (open) { render().then(reveal); return; }
         open = true;
         liveCache = null;
         returnFocus = document.activeElement;
@@ -669,7 +677,7 @@
         applyMotion();
         if (!unsubArt && provider) unsubArt = provider.subscribe(onWorksChanged);
         watchTheme(true);
-        render({ animate: true });
+        render({ animate: true }).then(reveal);
         app.recents?.refresh();
         // Initial focus is the first control at the top of the page (the skip link leads the order, then header, actions,
         // cover, plates, picks, rail), so Tab walks the page top to bottom instead of starting in the last region.
@@ -700,6 +708,7 @@
 
     provider = Vectura.StartPageArtProvider.create(app);
     applyMotion();
+    if (Vectura.DevMode && Vectura.DevMode.subscribe) Vectura.DevMode.subscribe(() => { if (root) syncPrefs(); });
     return ctl;
   };
 

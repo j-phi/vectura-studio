@@ -7,7 +7,8 @@
  *
  *   list()            -> Promise<Art[]>   works in addedAt order (plates), then studio picks
  *   listRecentFirst() -> Promise<Art[]>   works most recently opened first, then studio picks
- *   examples()        -> Art[]            the first-run example plates (kind 'pick', example:true, exampleMeta); not in list()
+ *   examples(list?)   -> Art[]            the first-run example plates (kind 'pick', example:true, exampleMeta); not in list().
+ *                                         `list` = Developer Mode's draft entries instead of the shipped EXAMPLE_PLATES
  *   subscribe(fn)     -> unsubscribe      fires when the saved works change ('vectura:recents-changed')
  *   create({ store, renderer, cache, picks, presets, version }) -> a private source (tests)
  *
@@ -238,11 +239,14 @@
 
     // The example plates: kind 'pick' (they open as a new document from the preset) with example:true and the
     // mockup's copy / layout / pin. Never part of list(): the Plates section asks for them only on a first run.
-    const exampleArts = () => {
+    // `list` (Developer Mode's draft: [{ key, presetId, title, word, layout, pin }]) replaces the shipped EXAMPLE_PLATES; each art
+    // then carries its draft key in exampleMeta.key. A pick with no pre-rendered file (or a stale one) renders live.
+    const exampleArts = (list) => {
       const byId = new Map(presetsList().map((p) => [p.id, p]));
-      return (picksCfg().EXAMPLE_PLATES || []).filter((e) => e && byId.has(e.presetId)).map((e) => presetArt(byId.get(e.presetId), {
+      const src = Array.isArray(list) ? list : (picksCfg().EXAMPLE_PLATES || []);
+      return src.filter((e) => e && byId.has(e.presetId)).map((e) => presetArt(byId.get(e.presetId), {
         id: `example:${e.presetId}`, name: e.title || byId.get(e.presetId).name, example: true,
-        exampleMeta: { title: e.title || null, word: e.word || null, layout: e.layout || null, pin: e.pin || null },
+        exampleMeta: { title: e.title || null, word: e.word || null, layout: e.layout || null, pin: e.pin || null, key: e.key || null },
       }));
     };
 
@@ -287,7 +291,7 @@
     list: () => sharedSource().list(),
     listRecentFirst: () => sharedSource().listRecentFirst(),
     subscribe: (fn) => sharedSource().subscribe(fn),
-    examples: () => sharedSource().examples(),
+    examples: (list) => sharedSource().examples(list),
     DB_NAME,
     STORE,
   };

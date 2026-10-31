@@ -245,5 +245,5 @@
     };
   };
 
-  Vectura.StartPagePlatesStore = { create, effectiveFor, canEdit, FIELDS: FIELDS.slice() };
+  Vectura.StartPagePlatesStore = { create, effectiveFor, canEdit, applyPatch, FIELDS: FIELDS.slice() };
 })();
