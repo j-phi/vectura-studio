@@ -106,14 +106,12 @@
         return !!ok;
       } catch (_) { return false; }
     };
-    const download = (text) => {
+    // The one shared save path (TUX-054): never an inline anchor or revokeObjectURL.
+    const download = async (text) => {
       try {
         const blob = new G.Blob([text + '\n'], { type: 'text/javascript' });
-        const url = G.URL.createObjectURL(blob);
-        const a = h('a', { href: url, download: 'example-plates.snippet.js' });
-        G.document.body.append(a); a.click(); a.remove();
-        setTimeout(() => G.URL.revokeObjectURL(url), 2000);
-        return true;
+        const result = await G.Vectura.Download.saveBlob(blob, 'example-plates.snippet.js');
+        return result !== 'cancelled';
       } catch (_) { return false; }
     };
     const writeBack = async () => {
@@ -160,7 +158,7 @@
         if (!b) return;
         const what = b.dataset.devDo;
         if (what === 'copy') say((await copyText(text)) ? 'Copied the block to the clipboard.' : 'Copy was blocked. Select the text and copy it by hand.');
-        else if (what === 'download') say(download(text) ? 'Downloaded example-plates.snippet.js.' : 'Download failed. Use Copy.');
+        else if (what === 'download') say((await download(text)) ? 'Downloaded example-plates.snippet.js.' : 'Download failed. Use Copy.');
         else if (what === 'write') {
           try {
             const name = await writeBack();
