@@ -39,4 +39,11 @@ const inkReady = async (expect, locator) => {
 // acts before that races the re-render).
 const worksReady = (expect, page, n) => expect(page.locator('.sp-pl-more')).toContainText(n > 5 ? `of ${n}` : `all ${n}`, { timeout: 20000 });
 
-module.exports = { resetStorage, flush, persistedPref, inkReady, worksReady };
+// Example plates show beside the user's works by default and are never cut by the Show count. Specs that count or order
+// the works' own plates switch them off through the same checkbox a user would.
+const hideExamples = async (expect, page) => {
+  await page.locator('#sp-pl-examples').uncheck();
+  await expect(page.locator('.sp-pl[data-example]')).toHaveCount(0);
+};
+
+module.exports = { resetStorage, flush, persistedPref, inkReady, worksReady, hideExamples };

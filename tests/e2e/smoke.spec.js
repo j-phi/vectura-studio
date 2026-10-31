@@ -1626,6 +1626,11 @@ test.describe('Vectura smoke interactions', () => {
     });
     await ensurePaneOpen(page, 'left');
 
+    // scrollTop clamps to the scrollable range, so wait until the freshly built pane is tall enough to reach 600.
+    await page.waitForFunction(() => {
+      const el = document.getElementById('left-panel-content');
+      return el && el.scrollHeight - el.clientHeight >= 600;
+    });
     await page.evaluate(() => {
       document.getElementById('left-panel-content').scrollTop = 600;
     });

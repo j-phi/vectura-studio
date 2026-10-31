@@ -7,7 +7,7 @@ const boot = async (page, query = '?startPage=launch') => {
   await page.goto(`/${query}`);
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer && window.app.startPage));
 };
-const { resetStorage, flush, worksReady } = require('./helpers/start-page');
+const { resetStorage, flush, worksReady, hideExamples } = require('./helpers/start-page');
 const seedWorks = async (page) => {
   await page.evaluate(async (list) => {
     for (const t of list) {
@@ -27,6 +27,8 @@ const bootWithWorks = async (page) => {
   await page.evaluate(() => window.app.startPage.show());
   await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 });
   await worksReady(expect, page, TYPES.length);
+  await hideExamples(expect, page); // example plates are never cut by Show; these specs count the works' plates
+  await expect(page.locator('.sp-pl')).toHaveCount(TYPES.length);
 };
 
 test.describe('Start Page plates', () => {

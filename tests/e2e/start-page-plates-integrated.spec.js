@@ -7,7 +7,7 @@ const boot = async (page, query = '?startPage=launch') => {
   await page.goto(`/${query}`);
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer && window.app.startPage));
 };
-const { resetStorage, flush, worksReady } = require('./helpers/start-page');
+const { resetStorage, flush, worksReady, hideExamples } = require('./helpers/start-page');
 const seedWorks = async (page) => {
   await page.evaluate(async (list) => {
     window.Vectura.SETTINGS.cookiePreferencesEnabled = true;
@@ -28,6 +28,7 @@ const bootWithWorks = async (page) => {
   await page.evaluate(() => window.app.startPage.show());
   await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 });
   await worksReady(expect, page, TYPES.length);
+  await hideExamples(expect, page); // example plates sit beside the works; these specs drive the works' own plates
 };
 const reload = async (page) => { await flush(page); await boot(page); await expect(page.locator('#sp-plates .sp-pl:not([data-off]) .spl').first()).toBeVisible({ timeout: 15000 }); };
 const order = (page) => page.locator('.sp-pl').evaluateAll((els) => els.map((e) => e.dataset.plateId));
@@ -66,6 +67,7 @@ test.describe('Start Page plates, integrated', () => {
 
     await reload(page);
     const again = page.locator('.sp-pl').nth(2);
+    await again.scrollIntoViewIfNeeded(); // plates mount lazily near the viewport
     expect(await again.evaluate((e) => ({ paper: e.dataset.spPaper, layout: e.dataset.layout }))).toEqual(edited);
     await expect(again.locator('svg.spl-hword text, svg.spl-vword text, .spl-ko-word').first()).toBeAttached();
   });

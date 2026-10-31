@@ -174,7 +174,10 @@ test('semantics: dice is an action, Open buttons are named per item, toasts are 
   const names = await page.evaluate(() => [...document.querySelectorAll('#sp-plates .spl-btn')].map((b) => b.getAttribute('aria-label') || b.textContent.trim()));
   expect(names.length).toBeGreaterThan(3);
   expect(new Set(names).size).toBe(names.length);
-  expect(names.every((n) => /Rings|Topo|Flow|Rain|Lissajous|Wave|Spiral/i.test(n))).toBe(true);
+  // the seeded works are named for their algorithm; example plates (beside them by default) carry their own titles
+  const workNames = await page.evaluate(() => [...document.querySelectorAll('#sp-plates .sp-pl:not([data-example]) .spl-btn')].map((b) => b.getAttribute('aria-label') || b.textContent.trim()));
+  expect(workNames.length).toBeGreaterThan(3); // mounted work plates (Show 5 by default)
+  expect(workNames.every((n) => /Rings|Topo|Flow|Rain|Lissajous|Wave|Spiral/i.test(n))).toBe(true);
   const picks = await page.evaluate(() => [...document.querySelectorAll('.sp-pick-btn')].map((b) => b.getAttribute('aria-label') || ''));
   expect(picks.length).toBeGreaterThan(1);
   expect(picks.every((n) => n.startsWith('Open'))).toBe(true);

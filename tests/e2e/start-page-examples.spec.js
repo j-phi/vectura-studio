@@ -16,8 +16,9 @@ test.describe('Start Page example plates', () => {
     await expect(plates).toHaveCount(10);
     await expect(page.locator('#sp-plates .sp-pl-empty')).toBeHidden();
     await expect(page.locator('#sp-plates .sp-pl-explain')).toContainText('These are examples');
-    await expect(page.locator('#sp-plates [data-act="edit"]')).toHaveCount(0);
-    await expect(page.locator('#sp-pl-arrange')).toBeHidden();
+    // examples are editable, removable and arrangeable like any plate (the explainer says so)
+    await expect(page.locator('#sp-plates [data-act="edit"]').first()).toBeAttached({ timeout: 15000 });
+    await expect(page.locator('#sp-pl-arrange')).toBeVisible();
 
     // the "drag it" copy is only where a live 3D model (.vorbit) is mounted
     for (let i = 0; i < 10; i++) {
@@ -41,8 +42,12 @@ test.describe('Start Page example plates', () => {
     expect(doc.recent).toBeNull();
     expect(doc.layers).toBeGreaterThan(0);
 
-    // saving a work replaces the examples with the user's own plate
+    // saving a work adds the user's own plate in front; the examples stay beside it until Show example plates is unchecked
     await page.evaluate(async () => { await window.app.recents.record({ name: 'mine.vectura', source: 'save' }); window.app.startPage.show(); });
+    await expect(page.locator('#sp-plates .sp-pl')).toHaveCount(11, { timeout: 15000 });
+    await expect(page.locator('#sp-plates .sp-pl[data-example]')).toHaveCount(10);
+    await expect(page.locator('#sp-plates .sp-pl').first()).not.toHaveAttribute('data-example', '1');
+    await page.locator('#sp-pl-examples').uncheck();
     await expect(page.locator('#sp-plates .sp-pl[data-example]')).toHaveCount(0, { timeout: 15000 });
     await expect(page.locator('#sp-plates .sp-pl')).toHaveCount(1);
     await expect(page.locator('#sp-plates [data-act="edit"]').first()).toBeAttached({ timeout: 15000 });
