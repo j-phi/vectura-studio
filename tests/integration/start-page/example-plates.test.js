@@ -11,7 +11,7 @@ const SVG = (n) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100
 describe('Start Page example plates', () => {
   let runtime; let window; let document; let app; let V; let works; let realOpen;
 
-  const boot = async ({ stubOpen = true } = {}) => {
+  const boot = async ({ stubOpen = true, svgDelay = 0, wait = 150 } = {}) => {
     runtime = await loadVecturaRuntime({ includeRenderer: true, includeUi: true, includeApp: true, useIndexHtml: true });
     ({ window, document } = runtime);
     V = window.Vectura;
@@ -25,7 +25,7 @@ describe('Start Page example plates', () => {
     // the real example list (ids, names, presets), with the art swapped for a tiny SVG (jsdom has no engine canvas)
     V.StartPageArtSource = {
       list: async () => works, listRecentFirst: async () => works.slice(), subscribe: () => () => {},
-      examples: () => realSource.examples().map((a, i) => Object.assign({}, a, { getSvg: async () => SVG(10 + i) })),
+      examples: () => realSource.examples().map((a, i) => Object.assign({}, a, { getSvg: async () => { if (svgDelay) await tick(svgDelay); return SVG(10 + i); } })),
     };
     realOpen = V.StartPageOpenArt;
     if (stubOpen) V.StartPageOpenArt = Object.assign({}, realOpen, { open: async (art, colorway, o) => { (boot.calls = boot.calls || []).push({ art, colorway, o }); return true; } });
@@ -33,7 +33,7 @@ describe('Start Page example plates', () => {
     app = window.app = new V.App();
     await tick();
     app.startPage.show();
-    await tick(150);
+    await tick(wait);
   };
 
   afterEach(() => {
@@ -68,6 +68,17 @@ describe('Start Page example plates', () => {
       expect(pal.get(ids[i]).class === 'dark' && pal.get(ids[i - 1]).class === 'dark', `plates ${i} and ${i + 1} both dark`).toBe(false);
       expect(ids[i], `plates ${i} and ${i + 1} share a colorway`).not.toBe(ids[i - 1]);
     }
+  });
+
+  test('a re-sync while the art is still being fetched does not strand plates without art (first-run race)', async () => {
+    // The plates re-sync once the works finish loading; the example entries are rebuilt each time, so a render that was
+    // already waiting on its SVG must carry on with the new entry rather than give up and never retry.
+    await boot({ svgDelay: 120, wait: 20 });
+    await app.startPage.plates.refresh();
+    await tick(700);
+    const ws = live();
+    expect(ws).toHaveLength(10);
+    ws.forEach((w) => { expect(w.querySelector('.spl'), w.dataset.plateId).toBeTruthy(); expect(w.dataset.state, w.dataset.plateId).toBe('ready'); });
   });
 
   test('"drag it to turn it" copy appears only on plates with a live 3D model', async () => {

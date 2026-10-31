@@ -348,7 +348,7 @@
 
     const renderPlate = async (w) => {
       const st = w._sp;
-      const e = entries.find((x) => x.id === w.dataset.plateId);
+      let e = entries.find((x) => x.id === w.dataset.plateId);
       if (!e || !st || w.hasAttribute('data-off') || arrange) return;
       const my = (st.gen = (st.gen || 0) + 1);
       st.rendering = true;
@@ -359,7 +359,9 @@
       }
       st.rendering = false;
       if (destroyed || my !== st.gen || !w.isConnected || w.hasAttribute('data-off')) return;
-      const i = entries.indexOf(e);
+      // A re-sync during the fetch rebuilds the entries (examples are new objects each time): carry on with the current one.
+      e = entries.find((x) => x.id === w.dataset.plateId) || null;
+      const i = e ? entries.indexOf(e) : -1;
       if (i < 0) return;
       const cw = setData(w, e, i);
       if (!cw || !svg) { w.dataset.state = 'error'; return; }
