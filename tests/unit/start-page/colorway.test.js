@@ -101,6 +101,31 @@ describe('color math', () => {
     expect(C.newSeed(() => 0)).toBe('22222');
     expect(C.SEED_ALPHABET).toBe('23456789ABCDEFGHJKMNPQRSTVWXYZ');
   });
+  it('newSeed with crypto uses rejection sampling: skips the biased tail and maps by modulo', () => {
+    const n = C.SEED_ALPHABET.length;
+    const limit = 4294967296 - (4294967296 % n);
+    const feed = [limit, 4294967295, limit + 1, 0, 1, 2, 3, n, n + 1];
+    let k = 0; let fills = 0;
+    const fake = { getRandomValues: (a) => { fills++; for (let i = 0; i < a.length; i++) a[i] = feed[k++ % feed.length]; return a; } };
+    const desc = Object.getOwnPropertyDescriptor(dom.window, 'crypto');
+    Object.defineProperty(dom.window, 'crypto', { value: fake, configurable: true });
+    try {
+      // The first probe fill is discarded; the three biased values are never used.
+      const s = C.newSeed();
+      expect(s).toMatch(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{5}$/);
+      expect(fills).toBeGreaterThan(0);
+      const picked = [...s].map((ch) => C.SEED_ALPHABET.indexOf(ch));
+      expect(picked.every((v) => v >= 0 && v < n)).toBe(true);
+    } finally {
+      if (desc) Object.defineProperty(dom.window, 'crypto', desc); else delete dom.window.crypto;
+    }
+  });
+  it('newSeed falls back to Math.random when crypto is unavailable', () => {
+    const desc = Object.getOwnPropertyDescriptor(dom.window, 'crypto');
+    Object.defineProperty(dom.window, 'crypto', { value: undefined, configurable: true });
+    try { expect(C.newSeed()).toMatch(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{5}$/); }
+    finally { if (desc) Object.defineProperty(dom.window, 'crypto', desc); else delete dom.window.crypto; }
+  });
 });
 
 describe('colorway objects and contrast floors', () => {

@@ -48,9 +48,24 @@
   /* ------------------------------------------------------------------ script loading */
   const loaded = new Map(); // url -> Promise
   const loadedFiles = [];
-  const urlFor = (file) => (base || '') + file + QUERY;
+  const LOOPBACK = /^(localhost|127\.0\.0\.1|\[::1\])$/;
+  // Resolve a lazy file against the loader base (or this script, or the page) and accept it only when it
+  // cannot leave the page's origin: same origin, file: -> file:, or loopback -> loopback. Never upgrades or
+  // crosses origins. Same-origin http(s) files are returned root-relative so no scheme or host is ever set.
+  const urlFor = (file) => {
+    try {
+      const page = new URL(D.baseURI);
+      const u = new URL(file + QUERY, new URL(base || SELF || D.baseURI, D.baseURI));
+      if (u.protocol === 'file:') return page.protocol === 'file:' ? u.href : null;
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      if (u.origin === page.origin) return u.pathname + u.search;
+      if (LOOPBACK.test(page.hostname) && LOOPBACK.test(u.hostname) && u.protocol === page.protocol) return u.href;
+      return null;
+    } catch (e) { return null; }
+  };
   const loadScript = (file) => {
     const url = urlFor(file);
+    if (!url) return Promise.reject(new Error(`StartPageHoverFx: refusing to load ${file} from outside the page origin`));
     if (loaded.has(url)) return loaded.get(url);
     const p = new Promise((resolve, reject) => {
       const s = D.createElement('script');
@@ -127,6 +142,7 @@
     ids: () => Object.keys(EFFECTS),
     setBase: (b) => { base = String(b || ''); if (base && !/\/$/.test(base)) base += '/'; },
     getBase: () => base,
+    urlFor,
     loadedFiles: () => loadedFiles.slice(),
     setMotion: (o) => { if (o && typeof o.still === 'boolean') state.still = o.still; },
   };

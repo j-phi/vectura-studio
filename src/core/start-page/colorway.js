@@ -71,18 +71,30 @@
     };
   };
   const cleanSeed = (s) => String(s || '').toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 12);
+  // Unbiased index in [0, n) from uniform Uint32 draws: rejection sampling, so no modulo/float skew.
+  const unbiasedIndex = (draw, n) => {
+    const limit = 4294967296 - (4294967296 % n); // largest multiple of n at or below 2^32
+    for (;;) { const v = draw(); if (v < limit) return v % n; }
+  };
   const newSeed = (rand) => {
+    const n = SEED_ALPHABET.length;
     let out = '';
-    let src = rand;
-    if (typeof src !== 'function') {
-      src = null;
-      try {
-        const a = G.crypto.getRandomValues(new Uint32Array(5));
-        let i = 0;
-        src = () => a[i++] / 4294967296;
-      } catch (e) { src = Math.random; }
+    if (typeof rand === 'function') {
+      for (let i = 0; i < 5; i++) out += SEED_ALPHABET[Math.min(n - 1, Math.floor(rand() * n))];
+      return out;
     }
-    for (let i = 0; i < 5; i++) out += SEED_ALPHABET[Math.min(SEED_ALPHABET.length - 1, Math.floor(src() * SEED_ALPHABET.length))];
+    let draw = null;
+    try {
+      const buf = new Uint32Array(8);
+      let k = buf.length;
+      const c = G.crypto;
+      if (!c || typeof c.getRandomValues !== 'function') throw new Error('no crypto');
+      draw = () => { if (k >= buf.length) { c.getRandomValues(buf); k = 0; } return buf[k++]; };
+      draw(); k = 0; // probe once so a throwing crypto falls back before any char is chosen
+    } catch (e) { draw = null; }
+    for (let i = 0; i < 5; i++) {
+      out += draw ? SEED_ALPHABET[unbiasedIndex(draw, n)] : SEED_ALPHABET[Math.min(n - 1, Math.floor(Math.random() * n))];
+    }
     return out;
   };
   const gcd = (a, b) => (b ? gcd(b, a % b) : a);

@@ -13,6 +13,35 @@ describe('StartPageHoverFx loader', () => {
   beforeEach(() => { vi.useFakeTimers(); env = load(); });
   afterEach(() => { vi.useRealTimers(); });
 
+  test('urlFor resolves relative bases and refuses cross-origin or non-http(s) bases', () => {
+    const { H } = env;
+    expect(H.urlFor('lift.js')).toMatch(/^(https?:\/\/localhost(:\d+)?)?\/src\/ui\/start-page\/hover-fx\/lift\.js$/);
+    H.setBase('/assets/fx/');
+    expect(H.urlFor('lift.js')).toBe('/assets/fx/lift.js');
+    H.setBase('../fx/');
+    expect(H.urlFor('lift.js')).toMatch(/\/fx\/lift\.js$/);
+    H.setBase('https://evil.example/fx/');
+    expect(H.urlFor('lift.js')).toBeNull();
+    H.setBase(`${window.location.origin}/same/`);
+    expect(H.urlFor('lift.js')).toBe('/same/lift.js'); // same origin: root-relative, no scheme or host
+    H.setBase('http://example.test:9999/fx/');
+    expect(H.urlFor('lift.js')).toBeNull(); // different origin: never crossed
+    H.setBase('javascript:alert(1)//');
+    expect(H.urlFor('lift.js')).toBeNull();
+    H.setBase('data:text/javascript,1//');
+    expect(H.urlFor('lift.js')).toBeNull();
+  });
+
+  test('a cross-origin base never creates a script element', async () => {
+    const { H, fetched } = env;
+    H.setBase('https://evil.example/fx/');
+    const el = makeTile();
+    const ctl = H.attach(el, 'lift', { handle: el._spInk });
+    await flush();
+    expect(fetched.length).toBe(0);
+    expect(ctl).toBeTruthy();
+  });
+
   test('exports the contract API and the nine effect ids', () => {
     const H = env.H;
     for (const k of ['attach', 'detach', 'get', 'registerSimple', 'isStill', 'setBase', 'loadedFiles']) expect(typeof H[k]).toBe('function');
