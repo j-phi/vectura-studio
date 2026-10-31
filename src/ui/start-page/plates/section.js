@@ -70,7 +70,7 @@
     let unsub = null;
     let editor = null; // { id, handle, btn }
     let arrange = null;
-    let exampleMode = false; // first run: five example plates stand in until the user has a work (never stored)
+    let exampleMode = false; // first run: the example plates stand in until the user has a work (never stored)
     let removedWorks = []; // works whose plate was removed: listed in the Add plate menu so they can come back
     let fanHandle = null;
     let coverApi = null;
@@ -594,7 +594,7 @@
       root.dataset.mode = mode();
       count.textContent = exampleMode ? `${n} examples · until you save or open a piece` : n ? `${n} work${n === 1 ? '' : 's'} · in your order` : 'your work will hang here';
       explain.textContent = exampleMode
-        ? 'These five are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples step aside as soon as your first arrives. Opening an example starts a new document; it becomes a plate once you save it.'
+        ? 'These are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples step aside as soon as your first arrives. Opening an example starts a new document; it becomes a plate once you save it.'
         : n
         ? `Each file you open or save becomes a plate automatically: set on its own paper and laid out for the sheet. ${edit ? 'Edit the text, layout, color and framing of any plate; drag to reorder.' : 'Colors follow the page mode; your edits return in Curated.'}`
         : '';

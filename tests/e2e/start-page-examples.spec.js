@@ -1,35 +1,35 @@
 const { test, expect } = require('@playwright/test');
 const { resetStorage } = require('./helpers/start-page');
 
-// First run: five example plates fill the Plates section until the user has a work of their own.
+// First run: ten example plates fill the Plates section until the user has a work of their own.
 const boot = async (page) => {
   await page.goto('/?startPage=launch');
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer && window.app.startPage));
 };
 
 test.describe('Start Page example plates', () => {
-  test('first run shows five marked examples; Open makes a new document in the shown colors; a saved work replaces them', async ({ page }) => {
+  test('first run shows ten marked examples; Open makes a new document in the shown colors; a saved work replaces them', async ({ page }) => {
     await resetStorage(page);
     await boot(page);
     await page.evaluate(() => window.app.startPage.show());
     const plates = page.locator('#sp-plates .sp-pl[data-example]');
-    await expect(plates).toHaveCount(5);
+    await expect(plates).toHaveCount(10);
     await expect(page.locator('#sp-plates .sp-pl-empty')).toBeHidden();
-    await expect(page.locator('#sp-plates .sp-pl-explain')).toContainText('These five are examples');
+    await expect(page.locator('#sp-plates .sp-pl-explain')).toContainText('These are examples');
     await expect(page.locator('#sp-plates [data-act="edit"]')).toHaveCount(0);
     await expect(page.locator('#sp-pl-arrange')).toBeHidden();
 
     // the "drag it" copy is only where a live 3D model (.vorbit) is mounted
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 10; i++) {
       const pl = plates.nth(i);
       await pl.scrollIntoViewIfNeeded();
       await expect(pl.locator('.spl').first()).toBeVisible({ timeout: 20000 });
-      const live3d = i >= 3; // Coiled Sphere and High Sierra
+      const live3d = i === 3 || i === 4 || i === 5; // Coiled Sphere, High Sierra and Torus Contours
       await expect(pl.locator('.vorbit')).toHaveCount(live3d ? 1 : 0, { timeout: 20000 });
       await expect(pl.locator('.spl-note, .spl-wrap-txt').filter({ hasText: 'drag it to turn it' })).toHaveCount(live3d ? 1 : 0);
     }
 
-    await expect(page.locator('#sp-plates .sp-pl-example')).toHaveCount(5); // plates mount lazily; all are built after the walk above
+    await expect(page.locator('#sp-plates .sp-pl-example')).toHaveCount(10); // plates mount lazily; all are built after the walk above
     const first = plates.first();
     await first.scrollIntoViewIfNeeded();
     await expect(first.locator('.spl').first()).toBeVisible({ timeout: 20000 });

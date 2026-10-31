@@ -7,7 +7,7 @@
  *
  *   list()            -> Promise<Art[]>   works in addedAt order (plates), then studio picks
  *   listRecentFirst() -> Promise<Art[]>   works most recently opened first, then studio picks
- *   examples()        -> Art[]            the five first-run example plates (kind 'pick', example:true, exampleMeta); not in list()
+ *   examples()        -> Art[]            the first-run example plates (kind 'pick', example:true, exampleMeta); not in list()
  *   subscribe(fn)     -> unsubscribe      fires when the saved works change ('vectura:recents-changed')
  *   create({ store, renderer, cache, picks, presets, version }) -> a private source (tests)
  *

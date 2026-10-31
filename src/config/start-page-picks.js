@@ -3,8 +3,8 @@
  *
  * STUDIO_PICKS   bundled preset ids (window.Vectura.PRESETS) that make good covers; a first-run
  *                user, who has no saved work yet, sees these.
- * EXAMPLE_PLATES five bundled presets that fill the Plates section while the user has no works of their own
- *                (the mockup's first five plates: layout, word and pinned paper). Pre-rendered like the picks.
+ * EXAMPLE_PLATES ten bundled presets that fill the Plates section while the user has no works of their own
+ *                (the mockup's first ten plates: layout, word and pinned paper). Pre-rendered like the picks.
  * PICK_NAMES     optional display-name overrides (a pick otherwise uses the preset's own name).
  * COLLECTIONS    algorithm type -> 'Studies' | 'Botanicals' | 'Experiments' (the cover-word picker
  *                filters by these; there is deliberately no "Commissions").
@@ -31,6 +31,12 @@
     Object.freeze({ presetId: 'rainfall-downpour', title: 'Downpour', word: 'Rainfall', layout: 'vertical-word' }),
     Object.freeze({ presetId: 'user-spiralizer-1781359333969', title: 'Coiled Sphere', word: 'Sphere', layout: 'text-wrap', pin: 'black-silver' }),
     Object.freeze({ presetId: 'user-terrain-1781475148727', title: 'High Sierra', word: 'Terrain', layout: 'full-bleed-band' }),
+    // the mockup's next five (specimen -> specimen-frame, kotitle -> knockout-title, bleed -> full-bleed-band, sheet -> full-sheet)
+    Object.freeze({ presetId: 'topoform-torus-contours', title: 'Torus Contours', layout: 'specimen-frame' }),
+    Object.freeze({ presetId: 'topo-mountain-range', title: 'Contour Survey No. 3', word: 'Topo', layout: 'knockout-title' }),
+    Object.freeze({ presetId: 'spiral-galaxy', title: 'Spiral Galaxy', word: 'Spiral', layout: 'full-bleed-band', pin: 'black-white' }),
+    Object.freeze({ presetId: 'wavetable-rolling-hills', title: 'Rolling Hills', word: 'Wavetable', layout: 'knockout-title' }),
+    Object.freeze({ presetId: 'shapepack-pebble-beach', title: 'Pebble Beach', word: 'Pebbles', layout: 'full-sheet' }),
   ]);
 
   const PICK_NAMES = Object.freeze({});

@@ -1,5 +1,5 @@
 /*
- * Start Page example plates: while the user has no works of their own the Plates section shows five example plates
+ * Start Page example plates: while the user has no works of their own the Plates section shows ten example plates
  * built from bundled presets (pre-rendered art, same plate layouts and colorways), each marked "Example", opening
  * as a NEW unsaved document in the colors shown, and never touching the plates store. They vanish once a work exists.
  */
@@ -48,17 +48,26 @@ describe('Start Page example plates', () => {
   const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
   const live = () => qa('.sp-pl:not([data-off])');
 
-  test('first run shows five marked example plates instead of the empty state', async () => {
+  test('first run shows ten marked example plates instead of the empty state', async () => {
     await boot();
-    expect(live()).toHaveLength(5);
-    expect(qa('.sp-pl[data-example]')).toHaveLength(5);
+    expect(live()).toHaveLength(10);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(10);
     expect(q('.sp-pl-empty').hidden).toBe(true);
     live().forEach((w) => { expect(w.querySelector('.sp-pl-example').textContent).toBe('Example'); });
     expect(q('.sp-pl-count').textContent).toMatch(/example/i);
-    expect(live().map((w) => w.dataset.layout)).toEqual(['text-wrap', 'spec-sheet', 'vertical-word', 'text-wrap', 'full-bleed-band']);
+    expect(live().map((w) => w.dataset.layout)).toEqual(['text-wrap', 'spec-sheet', 'vertical-word', 'text-wrap', 'full-bleed-band', 'specimen-frame', 'knockout-title', 'full-bleed-band', 'knockout-title', 'full-sheet']);
     live().forEach((w) => { expect(w.dataset.spPaper).toMatch(/^#[0-9a-f]{6}$/); expect(w.dataset.spInk).toMatch(/^#[0-9a-f]{6}$/); });
     expect(live()[0].textContent).toMatch(/Old Growth Oak/);
     expect(live()[1].dataset.cwId).toBe('black-white');
+    expect(live()[7].dataset.cwId).toBe('black-white'); // Spiral Galaxy: black stock, white pen
+    // the placed colorways keep the rhythm: no two dark plates side by side, no repeated colorway neighbors
+    const pal = new Map(V.START_PAGE_PLATE_PALETTE.map((c) => [c.id, c]));
+    const ids = live().map((w) => w.dataset.cwId);
+    ids.forEach((id) => expect(pal.has(id), id).toBe(true));
+    for (let i = 1; i < ids.length; i++) {
+      expect(pal.get(ids[i]).class === 'dark' && pal.get(ids[i - 1]).class === 'dark', `plates ${i} and ${i + 1} both dark`).toBe(false);
+      expect(ids[i], `plates ${i} and ${i + 1} share a colorway`).not.toBe(ids[i - 1]);
+    }
   });
 
   test('"drag it to turn it" copy appears only on plates with a live 3D model', async () => {
@@ -69,7 +78,7 @@ describe('Start Page example plates', () => {
       expect(/drag it to turn it/i.test(w.textContent), w.dataset.plateId).toBe(live3d);
     });
     expect(ws.filter((w) => w.querySelector('.spl-print[data-model]')).map((w) => w.dataset.plateId))
-      .toEqual(['example:user-spiralizer-1781359333969', 'example:user-terrain-1781475148727']);
+      .toEqual(['example:user-spiralizer-1781359333969', 'example:user-terrain-1781475148727', 'example:topoform-torus-contours']);
     // a 3D-oriented plate with no live model must not claim to be live
     const art = V.StartPagePlateLayouts.render('text-wrap', {
       plate: { id: 'x', orientation: '3d' }, art: { id: 'x', svg: SVG(10), model: null }, colorway: live()[0] && V.StartPagePlateRhythm.place([{ id: 'x' }], { mode: 'curated', seed: 'a', theme: 'dark' })[0].colorway,
@@ -82,7 +91,7 @@ describe('Start Page example plates', () => {
     await boot();
     expect(qa('.sp-pl [data-act="edit"]')).toHaveLength(0);
     expect(qa('.sp-pl [data-act="cover"]')).toHaveLength(0);
-    expect(qa('.sp-pl [data-act="fan"]')).toHaveLength(5);
+    expect(qa('.sp-pl [data-act="fan"]')).toHaveLength(10);
     expect(q('#sp-pl-add').hidden).toBe(true);
     expect(q('#sp-pl-arrange').hidden).toBe(true);
     expect(q('.sp-pl-show').hidden).toBe(true);
@@ -129,7 +138,7 @@ describe('Start Page example plates', () => {
 
   test('examples are gone as soon as the user has a work, and come back when none remain', async () => {
     await boot();
-    expect(qa('.sp-pl[data-example]')).toHaveLength(5);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(10);
     works = [{ id: 'work:w1', kind: 'work', name: 'mine.vectura', algorithm: 'Flowfield', collection: 'Studies', recentId: 'w1', workId: 'w1', bytes: 900, ownColors: null, getSvg: async () => SVG(20) }];
     await app.startPage.plates.refresh();
     await tick(100);
@@ -141,7 +150,7 @@ describe('Start Page example plates', () => {
     works = [];
     await app.startPage.plates.refresh();
     await tick(100);
-    expect(qa('.sp-pl[data-example]')).toHaveLength(5);
+    expect(qa('.sp-pl[data-example]')).toHaveLength(10);
   });
 
 
@@ -150,7 +159,8 @@ describe('Start Page example plates', () => {
     const ex = q('#sp-plates .sp-pl-explain');
     expect(ex.hidden).toBe(false);
     const t = ex.textContent;
-    expect(t).toMatch(/examples/i);
+    expect(t).toMatch(/^These are examples\./);
+    expect(t).not.toMatch(/\b(five|ten)\b/i); // count-agnostic: the count line carries the number
     expect(t).toMatch(/your own plates appear here automatically/i);
     expect(t).toMatch(/save or open a file/i);
     expect(t).toMatch(/step aside/i);
@@ -159,7 +169,7 @@ describe('Start Page example plates', () => {
     // real text, wired to the section for assistive tech, stated once (not per plate)
     expect(q('#sp-plates').getAttribute('aria-describedby')).toBe(ex.id);
     expect(qa('#sp-plates .sp-pl').filter((w) => /automatically/i.test(w.textContent))).toHaveLength(0);
-    expect(q('.sp-pl-count').textContent).toBe('5 examples · until you save or open a piece');
+    expect(q('.sp-pl-count').textContent).toBe('10 examples · until you save or open a piece');
     live().forEach((w) => { expect(w.querySelector('.sp-pl-example').getAttribute('title')).toMatch(/save or open a file/i); });
   });
 
