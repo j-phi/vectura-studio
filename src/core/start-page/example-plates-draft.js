@@ -5,7 +5,8 @@
  * become a local DRAFT of plate records that the Plates section edits with the same tools as a user's plates; the draft
  * is held in localStorage so a reload keeps it. Nothing here touches the shipped config until you export.
  *
- *   fromShipped(list)            -> [{ key, presetId, title, word, layout, pin }]   (the draft's flat form)
+ *   fromShipped(list)            -> [{ key, presetId, title, word, layout, pin, colors }]   (the draft's flat form)
+ *   sanitizeColors(value)        -> a frozen { art?, text?, background?, title?, band? } or null (see "colors" below)
  *   serialize(list)              -> the marker-delimited EXAMPLE_PLATES region (text), ready for replaceRegion
  *   replaceRegion(source, block) -> source with the region between the markers replaced (throws if markers are missing)
  *   extractRegion(source)        -> the current region text, or null
@@ -13,8 +14,14 @@
  *        load() upsert(id, patch) reset(id, keys) restore(rec) reorder(ids) resetOrder() remove(id) undoRemove(token)
  *        add(presetId, { title }) subscribe(fn)
  *        plates() -> the flat list (export form)   isDirty()   resetToShipped() -> undo token   undoReset(token)
- *   Records follow the plates-store shape (layout, texts { word, title }, pin ...); only presetId, title, word, layout
- *   and pin are shipped, so colors / framing / motion edits are ignored by the draft.
+ *   Records follow the plates-store shape (layout, texts { word, title }, pin, colors ...); only presetId, title, word, layout,
+ *   pin and colors are shipped, so framing / motion / description edits are ignored by the draft.
+ *
+ * colors (optional): the plates store's manual colors, role -> value, where a value is a hex string ('#c0392b', '#abc') or a
+ * special fill ({ fill: 'iridescent' | 'iridescent-animated' | 'duotone' | 'metallic-gold' | 'metallic-silver' | 'sunset' }).
+ * Roles: art, text, background, title, band (the store's names). A missing / null role (or a missing `colors`) is Auto.
+ * Unknown roles and malformed values are dropped on load, never thrown. Exported canonical form (fixed role order):
+ *   Object.freeze({ presetId: 'spiral-galaxy', ..., colors: Object.freeze({ title: Object.freeze({ fill: 'sunset' }), band: '#c0392b' }) }),
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -24,8 +31,26 @@
   const END = '// <example-plates:end>';
   const KEY = 'vectura_start_page_example_draft';
   const SHIPPED_FIELDS = ['presetId', 'title', 'word', 'layout', 'pin'];
+  const ROLES = ['art', 'text', 'background', 'title', 'band']; // StartPagePlatesStore SHAPES.colors order
+  const FALLBACK_FILLS = ['iridescent', 'iridescent-animated', 'duotone', 'metallic-gold', 'metallic-silver', 'sunset'];
+  const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i; // what StartPagePlateColors.resolve accepts
+  const fillIds = () => { const F = Vectura.StartPagePlateFills; return F && Array.isArray(F.IDS) ? F.IDS : FALLBACK_FILLS; };
   const copy = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
   const str = (v) => (typeof v === 'string' && v.trim() !== '' ? v : null);
+  // A validated, frozen copy of a `colors` value, or null when nothing valid is left (= all Auto).
+  const sanitizeColors = (value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const out = {};
+    ROLES.forEach((role) => {
+      if (!Object.prototype.hasOwnProperty.call(value, role)) return;
+      const v = value[role];
+      if (typeof v === 'string' && HEX.test(v)) out[role] = v;
+      else if (v && typeof v === 'object' && !Array.isArray(v) && typeof v.fill === 'string' && fillIds().includes(v.fill)) out[role] = Object.freeze({ fill: v.fill });
+    });
+    return Object.keys(out).length ? Object.freeze(out) : null;
+  };
+  const colorsOf = (c) => sanitizeColors(c);
+  const colorsRecord = (c) => { const k = sanitizeColors(c); if (!k) return null; const r = {}; ROLES.forEach((role) => { r[role] = k[role] ? copy(k[role]) : null; }); return r; };
 
   /* ------------------------------------------------------------------ flat list <-> records */
   const keyFor = (presetId, taken) => {
@@ -38,23 +63,25 @@
   const fromShipped = (list) => {
     const taken = new Set();
     return (Array.isArray(list) ? list : []).filter((e) => e && str(e.presetId)).map((e) => ({
-      key: keyFor(e.presetId, taken), presetId: e.presetId, title: str(e.title), word: str(e.word), layout: str(e.layout), pin: str(e.pin),
+      key: keyFor(e.presetId, taken), presetId: e.presetId, title: str(e.title), word: str(e.word), layout: str(e.layout), pin: str(e.pin), colors: colorsOf(e.colors),
     }));
   };
   const recordOf = (flat, order) => ({
     id: flat.key, artId: flat.key, presetId: flat.presetId, order, hidden: false,
     layout: flat.layout || null, texts: { word: flat.word || null, title: flat.title || null, description: null },
-    pin: flat.pin || null, colors: null, basicColors: null, frame: null, motion: null, removed: false,
+    pin: flat.pin || null, colors: colorsRecord(flat.colors), basicColors: null, frame: null, motion: null, removed: false,
   });
   const flatOf = (rec) => ({
     key: rec.id, presetId: rec.presetId, title: str(rec.texts && rec.texts.title), word: str(rec.texts && rec.texts.word),
-    layout: str(rec.layout), pin: str(rec.pin),
+    layout: str(rec.layout), pin: str(rec.pin), colors: colorsOf(rec.colors),
   });
 
   /* ------------------------------------------------------------------ export */
   const q = (s) => `'${String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n')}'`;
   const line = (e) => {
     const parts = SHIPPED_FIELDS.filter((f) => str(e[f])).map((f) => `${f}: ${q(e[f])}`);
+    const colors = sanitizeColors(e.colors);
+    if (colors) parts.push(`colors: Object.freeze({ ${ROLES.filter((r) => colors[r]).map((r) => `${r}: ${typeof colors[r] === 'string' ? q(colors[r]) : `Object.freeze({ fill: ${q(colors[r].fill)} })`}`).join(', ')} })`);
     return `    Object.freeze({ ${parts.join(', ')} }),`;
   };
   const serialize = (list) => {
@@ -104,7 +131,8 @@
       return recs;
     };
     const plates = () => ensure().filter((r) => !r.removed).map(flatOf);
-    const sameList = (a, b) => JSON.stringify(a.map((e) => SHIPPED_FIELDS.map((f) => e[f] || null))) === JSON.stringify(b.map((e) => SHIPPED_FIELDS.map((f) => e[f] || null)));
+    const sig = (e) => SHIPPED_FIELDS.map((f) => e[f] || null).concat([colorsOf(e.colors)]);
+    const sameList = (a, b) => JSON.stringify(a.map(sig)) === JSON.stringify(b.map(sig));
     const isDirty = () => !sameList(plates(), shippedFlat());
     const changed = () => { ensure().forEach((r, i) => { r.order = i; }); persist(); notify(); };
     const find = (id) => ensure().find((r) => r.id === id);
@@ -135,8 +163,8 @@
         const r = find(id);
         if (!r) return null;
         const before = copy(r);
-        const list = Array.isArray(keys) && keys.length ? keys : ['layout', 'texts', 'pin'];
-        list.forEach((k) => { if (k === 'texts') r.texts = { word: null, title: null, description: null }; else if (['layout', 'pin'].includes(k)) r[k] = null; });
+        const list = Array.isArray(keys) && keys.length ? keys : ['layout', 'texts', 'pin', 'colors'];
+        list.forEach((k) => { if (k === 'texts') r.texts = { word: null, title: null, description: null }; else if (['layout', 'pin', 'colors'].includes(k)) r[k] = null; });
         changed();
         return before;
       },
@@ -182,7 +210,7 @@
         const taken = new Set(ensure().map((r) => r.id));
         let k = `example:${presetId}`;
         while (taken.has(k)) { seq += 1; k = `example:${presetId}#${seq}`; }
-        const rec = recordOf({ key: k, presetId, title: str(o.title), word: str(o.word), layout: str(o.layout), pin: str(o.pin) }, recs.length);
+        const rec = recordOf({ key: k, presetId, title: str(o.title), word: str(o.word), layout: str(o.layout), pin: str(o.pin), colors: o.colors }, recs.length);
         recs.push(rec);
         changed();
         return copy(rec);
@@ -205,5 +233,5 @@
     };
   };
 
-  Vectura.StartPageExamplePlates = { create, fromShipped, serialize, replaceRegion, extractRegion, BEGIN, END, KEY, SHIPPED_FIELDS };
+  Vectura.StartPageExamplePlates = { create, fromShipped, sanitizeColors, serialize, replaceRegion, extractRegion, BEGIN, END, KEY, SHIPPED_FIELDS, COLOR_ROLES: ROLES };
 })();

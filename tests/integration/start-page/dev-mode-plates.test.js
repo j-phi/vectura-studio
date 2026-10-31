@@ -11,7 +11,7 @@ const SVG = (n) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100
 describe('Start Page Developer Mode: editable example plates', () => {
   let runtime; let window; let document; let app; let V; let works;
 
-  const boot = async ({ dev = false, preload = null } = {}) => {
+  const boot = async ({ dev = false, preload = null, shipped = null } = {}) => {
     runtime = await loadVecturaRuntime({ includeRenderer: true, includeUi: true, includeApp: true, useIndexHtml: true });
     ({ window, document } = runtime);
     V = window.Vectura;
@@ -26,6 +26,10 @@ describe('Start Page Developer Mode: editable example plates', () => {
       list: async () => works, listRecentFirst: async () => works.slice(), subscribe: () => () => {},
       examples: (list) => realSource.examples(list).map((a, i) => Object.assign({}, a, { getSvg: async () => SVG(10 + i) })),
     };
+    if (shipped) { // a config whose entries carry shipped colors, merged onto the real list
+      const real = V.START_PAGE_PICKS;
+      V.START_PAGE_PICKS = Object.freeze(Object.assign({}, real, { EXAMPLE_PLATES: Object.freeze(real.EXAMPLE_PLATES.map((e) => (shipped[e.presetId] ? Object.freeze(Object.assign({}, e, { colors: shipped[e.presetId] })) : e))) }));
+    }
     if (preload) window.localStorage.setItem(V.StartPageExamplePlates.KEY, JSON.stringify(preload));
     V.SETTINGS.devMode = dev;
     app = window.app = new V.App();
@@ -226,6 +230,136 @@ describe('Start Page Developer Mode: editable example plates', () => {
     expect(written).toContain("title: 'Edited Title'");
     expect(written).toBe(M.replaceRegion(src, M.serialize(draft().plates())));
     expect(q('[data-dev-dialog="export"]').textContent).toMatch(/Wrote start-page-picks\.js/);
+  });
+
+  /* ---- manual colors on example plates (config field `colors`) ---- */
+  const SG = 7; // spiral-galaxy: full-bleed-band, pinned sky-prussian
+  const plateOf = (i) => live()[i].querySelector('.spl');
+  const mc = (part, sel) => q(`[data-plate-editor] [data-mc-part="${part}"] ${sel}`);
+  const SHIPPED = { 'spiral-galaxy': { band: '#c0392b', title: { fill: 'sunset' } } };
+
+  test('Developer Mode un-hides the manual colors; framing, motion and description stay hidden', async () => {
+    await boot({ dev: true });
+    await openEditor(SG);
+    expect(q('[data-plate-editor]').dataset.devExample).toBe('1');
+    expect(q('[data-spe-sec="colors"]').hidden).toBe(false);
+    ['art', 'text', 'background', 'title', 'band'].forEach((p) => expect(mc(p, '[data-mc-auto]'), p).not.toBeNull());
+    expect(q('[data-spe-sec="frame"]').hidden).toBe(true);
+    expect(q('[data-spe-sec="motion"]').hidden).toBe(true);
+  });
+
+  test('editing Band and Title in the draft renders, persists across a reload and appears in the Export defaults block', async () => {
+    await boot({ dev: true });
+    const key = live()[SG].dataset.plateId;
+    await openEditor(SG);
+    const bandHex = mc('band', '[data-mc-swatch]').dataset.value;
+    click(mc('band', '[data-mc-swatch]'));
+    click(mc('title', '[data-fill="metallic-gold"]'));
+    await tick(120);
+    expect(draft().plates().find((p) => p.key === key).colors).toEqual({ title: { fill: 'metallic-gold' }, band: bandHex });
+    expect(plateOf(SG).dataset.band).toBe('solid');
+    expect(plateOf(SG).style.getPropertyValue('--spl-band')).toBe(bandHex);
+    expect(plateOf(SG).dataset.title).toBe('metallic-gold');
+    expect(live()[SG].dataset.plateId).toBe(key);
+    expect(q('#sp-dev').dataset.dirty).toBe('true');
+    click(q('[data-dev-act="export"]'));
+    await tick(30);
+    const text = q('[data-dev-dialog="export"] textarea').value;
+    expect(text).toBe(V.StartPageExamplePlates.serialize(draft().plates()));
+    expect(text).toContain(`colors: Object.freeze({ title: Object.freeze({ fill: 'metallic-gold' }), band: '${bandHex}' })`);
+    click(q('[data-dev-close]'));
+    // a reload keeps them
+    const saved = JSON.parse(window.localStorage.getItem(V.StartPageExamplePlates.KEY));
+    app.startPage.hide({ restoreFocus: false });
+    runtime.cleanup();
+    await boot({ dev: true, preload: saved });
+    expect(plateOf(SG).dataset.band).toBe('solid');
+    expect(plateOf(SG).style.getPropertyValue('--spl-band')).toBe(bandHex);
+    expect(plateOf(SG).dataset.title).toBe('metallic-gold');
+  });
+
+  test('a colorway pick in the dev editor clears the draft colors, which also leave the Export block', async () => {
+    await boot({ dev: true });
+    await openEditor(SG);
+    click(mc('band', '[data-mc-swatch]'));
+    await tick(100);
+    expect(draft().plates()[SG].colors).not.toBeNull();
+    click(q('.spe-pal [data-pin="black-white"]'));
+    await tick(120);
+    expect(draft().plates()[SG].colors).toBeNull();
+    expect(draft().plates()[SG].pin).toBe('black-white');
+    expect(plateOf(SG).dataset.band).toBeUndefined();
+    expect(V.StartPageExamplePlates.serialize(draft().plates())).not.toContain('colors');
+  });
+
+  test('a shipped colors entry seeds the dev draft (clean), and the plate shows it over the pin per role', async () => {
+    await boot({ dev: true, shipped: SHIPPED });
+    expect(draft().isDirty()).toBe(false);
+    expect(draft().plates()[SG].colors).toEqual({ band: '#c0392b', title: { fill: 'sunset' } });
+    expect(plateOf(SG).dataset.band).toBe('solid');
+    expect(plateOf(SG).style.getPropertyValue('--spl-band')).toBe('#c0392b');
+    expect(plateOf(SG).dataset.title).toBe('sunset');
+    expect(draft().plates()[SG].pin).toBe('sky-prussian'); // the pin still sets the ground and art; colors win per role
+  });
+
+  describe('normal users with Show example plates', () => {
+    test('a shipped colors entry renders on the example plate like user manual colors (with the contrast-safe band label)', async () => {
+      await boot({ shipped: SHIPPED });
+      const el = plateOf(SG);
+      expect(el.dataset.band).toBe('solid');
+      expect(el.style.getPropertyValue('--spl-band')).toBe('#c0392b');
+      expect(el.style.getPropertyValue('--spl-band-on')).toMatch(/^#[0-9a-f]{6}$/);
+      expect(el.dataset.title).toBe('sunset');
+      expect(plateOf(SG - 1).dataset.band).toBeUndefined(); // neighbours are untouched
+      expect(live()[SG].dataset.spPaper).toBeTruthy(); // the pin's ground is still applied
+    });
+
+    test('an entry with invalid colors is ignored, not fatal', async () => {
+      await boot({ shipped: { 'spiral-galaxy': { band: 'red', rim: '#ffffff', title: { fill: 'nope' } } } });
+      expect(live()).toHaveLength(10);
+      expect(plateOf(SG).dataset.band).toBeUndefined();
+    });
+
+    test('the editor shows the shipped colors, an edit layers the user override over them per role, and Reset colors returns to them', async () => {
+      await boot({ shipped: SHIPPED });
+      await openEditor(SG);
+      expect(mc('band', '.spe-mc-cu').value).toBe('#c0392b'); // not a palette swatch: it shows in the Custom picker
+      expect(mc('band', '[data-mc-auto]').getAttribute('aria-checked')).toBe('false');
+      expect(mc('title', '[data-fill="sunset"]').getAttribute('aria-checked')).toBe('true');
+      const other = [...q('[data-plate-editor]').querySelectorAll('[data-mc-part="band"] [data-mc-swatch]')].find((b) => b.dataset.value !== '#c0392b');
+      click(other);
+      await tick(120);
+      expect(plateOf(SG).style.getPropertyValue('--spl-band')).toBe(other.dataset.value); // the user's override wins
+      expect(plateOf(SG).dataset.title).toBe('sunset'); // untouched roles keep the shipped value
+      click(q('[data-plate-editor] [data-spe-reset-colors]'));
+      await tick(120);
+      expect(plateOf(SG).style.getPropertyValue('--spl-band')).toBe('#c0392b');
+    });
+
+    test('picking a colorway clears the shipped colors for that user, and Auto afterwards does not bring them back', async () => {
+      await boot({ shipped: SHIPPED });
+      await openEditor(SG);
+      click(q('.spe-pal [data-pin="black-white"]'));
+      await tick(120);
+      expect(plateOf(SG).dataset.band).toBeUndefined();
+      expect(plateOf(SG).dataset.title).toBeUndefined();
+      click(q('.spe-pal [data-pin=""]'));
+      await tick(120);
+      expect(plateOf(SG).dataset.band).toBeUndefined();
+      expect(plateOf(SG).dataset.title).toBeUndefined();
+    });
+
+    test('shipped colors do not leak into the Developer Mode draft edits of a user override, and user overrides never touch the config', async () => {
+      await boot({ shipped: SHIPPED });
+      const before = JSON.stringify(V.START_PAGE_PICKS.EXAMPLE_PLATES);
+      await openEditor(SG);
+      click(mc('band', '[data-mc-auto]'));
+      await tick(120);
+      expect(plateOf(SG).dataset.band).toBeUndefined(); // the user set Band to Auto
+      expect(plateOf(SG).dataset.title).toBe('sunset');
+      expect(JSON.stringify(V.START_PAGE_PICKS.EXAMPLE_PLATES)).toBe(before);
+      expect(Object.isFrozen(V.START_PAGE_PICKS.EXAMPLE_PLATES[SG])).toBe(true);
+    });
   });
 
   test('Document Setup "Edit Start Page plates…" opens the Start Page in edit mode (Developer Mode only)', async () => {

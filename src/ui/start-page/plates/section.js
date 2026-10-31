@@ -201,9 +201,24 @@
 
     // The colorway the plate shows: rhythm + the mode's saved manual colors (StartPagePlateColors.resolve).
     // `.resolved` carries the full resolution (fills, gradients, contrast) for Colors.apply.
+    // Shipped example colors (EXAMPLE_PLATES[].colors, exampleMeta.colors). The user's layer wins: they apply only while the
+    // plate's record has no colorway pick (pin) and no color record of its own (colors === null; an all-Auto record is the
+    // user's explicit "none"). Per role they override the pin, exactly like a user's manual colors. Curated mode only.
+    const COLOR_ROLES = ['art', 'text', 'background', 'title', 'band'];
+    const liveEntry = (e) => entries.find((x) => x.id === e.id) || e;
+    const shippedColors = (e) => {
+      const x = liveEntry(e);
+      const c = x.example && x.example.colors;
+      const r = x.rec;
+      if (!c || mode() !== 'curated' || (r && (r.pin || r.colors != null))) return null;
+      return c;
+    };
+    const fullColors = (c) => { const o = {}; COLOR_ROLES.forEach((k) => { o[k] = c && c[k] != null ? JSON.parse(JSON.stringify(c[k])) : null; }); return o; };
     const manualColors = (e) => {
       const eff = effective(e);
       if (mode() === 'curated' && eff.colors && Object.keys(eff.colors).some((k) => eff.colors[k] != null)) return eff.colors;
+      const shipped = shippedColors(e);
+      if (shipped) return shipped;
       if (mode() === 'basic' && eff.basicColors && eff.basicColors.ink) return { art: eff.basicColors.ink };
       return null;
     };
@@ -634,7 +649,7 @@
         : ne ? `${worksShown} work${worksShown === 1 ? '' : 's'} · ${ne} example${ne === 1 ? '' : 's'}`
         : `${n} work${n === 1 ? '' : 's'} · in your order`;
       explain.textContent = devActive
-        ? 'Developer Mode: these are the example plates that ship with Vectura Studio. Edit the word, title, layout and colorway, add a plate from any bundled preset, remove one, or drag to reorder. Export defaults writes them back to src/config/start-page-picks.js.'
+        ? 'Developer Mode: these are the example plates that ship with Vectura Studio. Edit the word, title, layout, colorway and manual colors, add a plate from any bundled preset, remove one, or drag to reorder. Export defaults writes them back to src/config/start-page-picks.js.'
         : exampleMode
         ? 'These are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples stay beside them until you hide them with Show example plates. Edit or remove any plate, examples included. Opening an example starts a new document; it becomes a plate once you save it.'
         : n
@@ -784,7 +799,7 @@
       w.dataset.editing = '1';
       const svg = svgCache.get(e.art.id) || '';
       const handle = Ed.open(art, {
-        record: e.rec ? JSON.parse(JSON.stringify(e.rec)) : { id: e.id, artId: e.artId },
+        record: Object.assign(e.rec ? JSON.parse(JSON.stringify(e.rec)) : { id: e.id, artId: e.artId }, shippedColors(e) ? { colors: fullColors(shippedColors(e)) } : {}),
         art: { id: e.art.id, name: e.art.name, algorithm: e.art.algorithm, collection: e.art.collection, svg, model: art3d(e), ownColors: e.art.ownColors },
         devExample: devActive, mode: mode(), index: i, colorway: placed[i] && placed[i].colorway, placed: placed.map((p, k) => { // neighbors count with the background they really show (a manual Curated background changes its class)
           const cwk = k === i ? null : resolveCw(entries[k], k);
@@ -793,7 +808,13 @@
         specs: w._sp.specs || [], orientation: w._sp.orientation || 'landscape',
         suggestedLayout: suggestedLayout(e, i, w._sp.orientation || 'landscape'),
         // The editor shows its own Undo toasts for changes and resets (Undo comes back through onChange).
-        onChange: (patch) => activeStore().upsert(e.id, patch),
+        onChange: (patch) => {
+          // The editor shows the shipped colors as the plate's colors: the first color edit (or a colorway pick, which clears colors)
+          // writes the whole set as the user's own, so untouched roles keep the shipped value and "Auto" stays Auto.
+          const shipped = patch && Object.prototype.hasOwnProperty.call(patch, 'colors') ? shippedColors(e) : null;
+          if (shipped) patch = Object.assign({}, patch, { colors: patch.colors == null ? fullColors(null) : Object.assign(fullColors(shipped), patch.colors) });
+          return activeStore().upsert(e.id, patch);
+        },
         onReset: (keys) => activeStore().reset(e.id, keys),
         onRemove: async () => {
           const tokenR = await activeStore().remove(e.id);

@@ -7,6 +7,9 @@
  *                (the block between the begin/end marker comments is machine-replaced by Developer Mode >
  *                Export defaults on the Start Page: keep both markers, and run `npm run start-page:picks` afterwards)
  *                (the mockup's first ten plates: layout, word and pinned paper). Pre-rendered like the picks.
+ *                Entry: { presetId, title?, word?, layout?, pin?, colors? }. `colors` (optional) uses the plates store's manual-color
+ *                shape: roles art / text / background / title / band, each a hex or Object.freeze({ fill: <special fill id> });
+ *                a missing role is Auto, malformed values are ignored, and a role overrides the pin's color for that role only.
  * PICK_NAMES     optional display-name overrides (a pick otherwise uses the preset's own name).
  * COLLECTIONS    algorithm type -> 'Studies' | 'Botanicals' | 'Experiments' (the cover-word picker
  *                filters by these; there is deliberately no "Commissions").
