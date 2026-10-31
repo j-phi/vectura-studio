@@ -147,6 +147,7 @@
     const c = {
       id, plate, art: o.art, cw: o.colorway, index: o.index | 0, total: o.total | 0, orientation,
       is3d: orientation === '3d' || !!(o.art && o.art.model),
+      live3d: !!(o.art && o.art.model),
       vars: T.plateVars(o.colorway || {}),
       word: String(texts.word == null ? '' : texts.word), title: String(texts.title == null ? '' : texts.title),
       desc: String(texts.description == null ? '' : texts.description), algo: String(texts.algorithm || texts.word || ''),
@@ -154,7 +155,7 @@
       prints: [], crops: [], words: [], stages: [], ko: null, frameOverride: o.frame || plate.frame || null,
     };
     c.short = c.specs.slice(0, 4);
-    c.note = c.desc + (c.is3d ? HINT3 : '');
+    c.note = c.desc + (c.live3d ? HINT3 : '');
     c.algoBase = c.algo.split(/[·,]/)[0].trim() || c.word;
     c.ar = T.aspectOf(orientation);
     return c;
@@ -199,7 +200,7 @@
     o = o || {};
     const cap = el('div', `spl-cap${o.cls ? ` ${o.cls}` : ''}`);
     cap.appendChild(el('h3', 'spl-title', { text: c.title }));
-    if (!o.noNote) cap.appendChild(el('p', 'spl-note', { text: o.firstSentence ? T.firstSentence(c.desc) + (c.is3d ? HINT3 : '') : c.note }));
+    if (!o.noNote) cap.appendChild(el('p', 'spl-note', { text: o.firstSentence ? T.firstSentence(c.desc) + (c.live3d ? HINT3 : '') : c.note }));
     if (o.specs !== false && c.specs.length) cap.appendChild(mkSpec(o.specs || c.specs));
     if (!o.noActions) cap.appendChild(mkActions(c));
     return cap;
@@ -250,7 +251,7 @@
     'full-bleed-band': (c) => [
       el('div', 'spl-bleed-art', { kids: [mkPrint(c, 'band', '', { main: true })] }),
       el('div', 'spl-cband', { kids: [el('div', 'spl-band-w', { kids: [mkH(c, c.word, 74)] }),
-        el('div', null, { kids: [el('h3', 'spl-title', { text: c.title }), el('p', 'spl-note', { text: T.firstSentence(c.desc) + (c.is3d ? HINT3 : '') })] }),
+        el('div', null, { kids: [el('h3', 'spl-title', { text: c.title }), el('p', 'spl-note', { text: T.firstSentence(c.desc) + (c.live3d ? HINT3 : '') })] }),
         c.short.length ? mkSpec(c.short) : null, mkActions(c)] })],
     'diptych': (c) => [
       el('div', 'spl-dip-l', { kids: [mkPrint(c, 'square', 'framed', { main: true })] }),
@@ -259,7 +260,7 @@
       el('div', 'spl-spm-label', { text: `Specimen Nº ${T.pad2(c.index + 1)} · ${c.algoBase}` }),
       el('div', 'spl-spm-frame', { kids: [mkPrint(c, 'rect', '', { main: true })] }),
       el('h3', 'spl-title', { text: c.title }),
-      el('p', 'spl-note', { text: T.firstSentence(c.desc) + (c.is3d ? HINT3 : '') }),
+      el('p', 'spl-note', { text: T.firstSentence(c.desc) + (c.live3d ? HINT3 : '') }),
       el('div', 'spl-spm-meta', { kids: c.short.map((s) => el('span', null, { text: s.value })) }),
       mkActions(c)],
     'big-numeral': (c) => [

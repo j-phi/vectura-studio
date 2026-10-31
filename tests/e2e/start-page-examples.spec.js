@@ -19,6 +19,16 @@ test.describe('Start Page example plates', () => {
     await expect(page.locator('#sp-plates [data-act="edit"]')).toHaveCount(0);
     await expect(page.locator('#sp-pl-arrange')).toBeHidden();
 
+    // the "drag it" copy is only where a live 3D model (.vorbit) is mounted
+    for (let i = 0; i < 5; i++) {
+      const pl = plates.nth(i);
+      await pl.scrollIntoViewIfNeeded();
+      await expect(pl.locator('.spl').first()).toBeVisible({ timeout: 20000 });
+      const live3d = i >= 3; // Coiled Sphere and High Sierra
+      await expect(pl.locator('.vorbit')).toHaveCount(live3d ? 1 : 0, { timeout: 20000 });
+      await expect(pl.locator('.spl-note, .spl-wrap-txt').filter({ hasText: 'drag it to turn it' })).toHaveCount(live3d ? 1 : 0);
+    }
+
     const first = plates.first();
     await first.scrollIntoViewIfNeeded();
     await expect(first.locator('.spl').first()).toBeVisible({ timeout: 20000 });
