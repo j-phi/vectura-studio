@@ -9,7 +9,7 @@ const { JSDOM } = require('jsdom');
 const ROOT = path.resolve(__dirname, '../../..');
 const FILES = [
   'src/ui/start-page/dom.js', 'src/ui/start-page/icons.js', 'src/core/start-page/cover-words.js', 'src/core/start-page/plate-fills.js',
-  'src/ui/start-page/word-picker.js', 'src/ui/start-page/cover.js',
+  'src/ui/start-page/cover.js',
 ];
 
 let dom; let win; let doc; let Cover; let cover; let calls; let toasts; let reduce; let prefs; let scrolled;

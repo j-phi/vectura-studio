@@ -1,10 +1,14 @@
 /**
  * Start Page settings popover — window.Vectura.UI.StartPageSettings (gear in the header).
- * Sections (P1): Cover style · Under the cover (Show name, Show practice line) · Launch (Show Start Page on launch).
+ * Sections: Cover (cover word, cover style) · Colorway (mode, seed dice, swatches; color-controls.js renders into the section's
+ * host) · Plates (Show example plates) · Under the cover (Show name, Show practice line) · Launch (Show Start Page on launch).
  * P3 sections: "Art animates in" (startPage.animateIn, with a Preview that replays the cover) and "Hover effect" (startPage.hover).
  * Keyboard: the gear toggles it (aria-expanded), the style rows are a radiogroup (arrows), Esc closes and focus
  * returns to the gear, a click outside or focus leaving closes it.
- *   create({ root, button, prefs(), onStyle(k), onToggle(key, on), onPref(key, value), onPreview() }) -> { open, close, toggle, sync, isOpen, el }
+ *   create({ root, button, prefs(), onStyle(k), onWord(id, custom?), onToggle(key, on), onPref(key, value), onPreview(), examples() })
+ *     -> { open, close, toggle, sync, isOpen, el, colorwayHost }
+ *   examples() -> { dev, available }: Developer Mode edits the example plates themselves, so the toggle is disabled there;
+ *   it is hidden when the build ships no example plates.
  */
 (() => {
   const G = (typeof window !== 'undefined' ? window : globalThis);
@@ -27,25 +31,46 @@
     ['replot', 'Re-plot'], ['holo', 'Hologram Foil'], ['ripple', 'Pressure Ripple'], ['stipple', 'Stipple Weather'], ['breeze', 'Paper Breeze'],
     ['gravity', 'Gravity Well'], ['current', 'Light Current']];
 
-  const create = ({ root, button, prefs, onStyle, onToggle, onPref, onPreview }) => {
+  const create = ({ root, button, prefs, onStyle, onWord, onToggle, onPref, onPreview, examples }) => {
     const { h } = Vectura.StartPageDom;
     const isMac = () => /mac|iphone|ipad|ipod/.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`.toLowerCase());
     const mod = () => (isMac() ? '⌘' : 'Ctrl+');
     let isOpen = false;
+    let customOpen = false; // "Custom…" picked and its input showing, before a word is set
+    let wordSig = '';
+    const Words = () => Vectura.StartPageCoverWords;
 
     const sw = (key, label) => h('div', { class: 'sp-set-row' },
       h('span', { class: 'sp-set-label', id: `sp-set-${key}-l`, text: label }),
       h('button', { type: 'button', role: 'switch', class: 'sp-switch', 'data-set': key, 'aria-labelledby': `sp-set-${key}-l`, 'aria-checked': 'false' }, h('span', { class: 'sp-switch-knob' })));
 
+    const wordSel = h('select', { class: 'sp-set-select', id: 'sp-set-word', 'data-cover-word': '', 'aria-labelledby': 'sp-set-word-l' });
+    const wordInput = h('input', { type: 'text', class: 'sp-wp-input', id: 'sp-set-word-custom', 'aria-label': 'Custom cover word', placeholder: 'Your word', autocomplete: 'off', spellcheck: 'false' });
+    const wordApply = h('button', { type: 'button', class: 'sp-set-btn', 'data-act': 'set-word', text: 'Set word' });
+    const wordForm = h('div', { class: 'sp-wp-form', hidden: true }, wordInput, wordApply);
+    const colorwayHost = h('div', { class: 'sp-set-colorway' });
+    const exHelp = h('p', { class: 'sp-set-help', id: 'sp-set-showExamples-h' });
+
     const pop = h('div', { id: 'sp-settings', class: 'sp-settings', role: 'dialog', 'aria-labelledby': 'sp-settings-h', hidden: true },
       h('h2', { id: 'sp-settings-h', text: 'Start Page settings' }),
       h('div', { class: 'sp-set-sub', text: 'Saved on this device' }),
-      h('section', { class: 'sp-set-sec' },
-        h('span', { class: 'sp-micro', id: 'sp-set-cover-l', text: 'Cover style' }),
+      h('section', { class: 'sp-set-sec', 'data-slot': 'cover' },
+        h('span', { class: 'sp-micro', text: 'Cover' }),
+        h('span', { class: 'sp-set-label', id: 'sp-set-word-l', text: 'Cover word' }),
+        h('div', { class: 'sp-set-pick' }, wordSel),
+        wordForm,
+        h('span', { class: 'sp-set-label sp-set-label-gap', id: 'sp-set-cover-l', text: 'Cover style' }),
         h('div', { class: 'sp-styles', role: 'radiogroup', 'aria-labelledby': 'sp-set-cover-l' },
           STYLES.map((s) => h('button', { type: 'button', role: 'radio', class: 'sp-style', 'data-style': s.id, 'aria-checked': 'false', tabindex: '-1' },
             h('span', { class: 'sp-style-art', html: s.svg }),
             h('span', { class: 'sp-style-tx' }, h('b', {}, s.name, s.note ? h('em', { text: s.note }) : null), h('span', { text: s.desc })))))),
+      h('section', { class: 'sp-set-sec', 'data-slot': 'colorway' },
+        h('span', { class: 'sp-micro', text: 'Colorway' }),
+        colorwayHost),
+      h('section', { class: 'sp-set-sec', 'data-slot': 'plates' },
+        h('span', { class: 'sp-micro', text: 'Plates' }),
+        sw('showExamples', 'Show example plates'),
+        exHelp),
       h('section', { class: 'sp-set-sec' },
         h('span', { class: 'sp-micro', text: 'Under the cover' }),
         sw('showName', 'Show name'), sw('showLine', 'Show practice line'),
@@ -70,8 +95,40 @@
     root.append(pop);
 
     const radios = () => [...pop.querySelectorAll('.sp-style')];
+    const syncWords = () => {
+      const p = prefs();
+      const rows = Words().choices(p);
+      const sig = rows.map((c) => `${c.id}:${c.disabled ? 1 : 0}:${c.word}`).join('|');
+      if (sig !== wordSig) {
+        wordSig = sig;
+        wordSel.textContent = '';
+        rows.forEach((c) => wordSel.append(h('option', {
+          value: c.id, disabled: c.disabled ? '' : null,
+          text: c.disabled ? `${c.label} (${c.hint.toLowerCase()})` : (c.word && !c.custom ? `${c.label}${c.word === c.label ? '' : ` · ${c.word}`}` : c.label),
+        })));
+      }
+      const cur = (rows.find((c) => c.selected) || rows[0]).id;
+      wordSel.value = customOpen ? 'custom' : cur;
+      const showForm = wordSel.value === 'custom';
+      if (wordForm.hidden === showForm) { wordForm.hidden = !showForm; if (showForm) wordInput.value = p.customWord || ''; }
+    };
+    const commitWord = () => { customOpen = false; onWord('custom', wordInput.value); sync(); };
+
     const sync = () => {
       const p = prefs();
+      syncWords();
+      const ex = typeof examples === 'function' ? examples() : { dev: false, available: true };
+      const exRow = pop.querySelector('[data-set="showExamples"]');
+      if (exRow) {
+        exRow.closest('.sp-set-row').hidden = !ex.available;
+        exHelp.hidden = !ex.available;
+        exRow.disabled = !!ex.dev;
+        exRow.setAttribute('aria-disabled', String(!!ex.dev));
+        exRow.setAttribute('aria-describedby', exHelp.id);
+        exHelp.textContent = ex.dev
+          ? 'Developer Mode edits the example plates, so they always show. Turn Developer Mode off to hide them.'
+          : 'Example plates sit beside your own work. Hide them once you have your own.';
+      }
       radios().forEach((r) => { const on = r.dataset.style === p.coverStyle; r.setAttribute('aria-checked', String(on)); r.tabIndex = on ? 0 : -1; });
       pop.querySelectorAll('select[data-pref]').forEach((sel) => {
         const want = p[sel.dataset.pref];
@@ -79,7 +136,7 @@
       });
       pop.querySelectorAll('[data-set]').forEach((b) => {
         const k = b.dataset.set;
-        const on = k === 'showOnLaunch' ? p.showOnLaunch !== false : p[k] === true;
+        const on = k === 'showOnLaunch' ? p.showOnLaunch !== false : k === 'showExamples' ? p.showExamples !== false : p[k] === true;
         b.setAttribute('aria-checked', String(on));
       });
     };
@@ -87,6 +144,7 @@
     const close = (refocus = true) => {
       if (!isOpen) return;
       isOpen = false;
+      customOpen = false;
       pop.hidden = true;
       button.setAttribute('aria-expanded', 'false');
       if (refocus) button.focus();
@@ -108,7 +166,19 @@
       const st = e.target.closest && e.target.closest('.sp-style');
       if (st) { onStyle(st.dataset.style); sync(); return; }
       const tg = e.target.closest && e.target.closest('[data-set]');
+      if (tg && tg.disabled) return;
       if (tg) { onToggle(tg.dataset.set, tg.getAttribute('aria-checked') !== 'true'); sync(); }
+    });
+    wordSel.addEventListener('change', () => {
+      if (wordSel.value === 'custom') { customOpen = true; wordForm.hidden = false; wordInput.value = prefs().customWord || ''; wordInput.focus(); return; }
+      customOpen = false;
+      onWord(wordSel.value);
+      sync();
+    });
+    wordApply.addEventListener('click', commitWord);
+    wordInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commitWord(); }
+      else if (e.key !== 'Escape') e.stopPropagation();
     });
     pop.addEventListener('change', (e) => {
       const sel = e.target && e.target.closest && e.target.closest('select[data-pref]');
@@ -120,7 +190,7 @@
     });
     pop.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); return; }
-      if (e.target && e.target.closest && e.target.closest('select')) return; // the selects own their arrow keys
+      if (e.target && e.target.closest && e.target.closest('select,input')) return; // the selects own their arrow keys
       const r = radios();
       const i = r.indexOf(document.activeElement);
       if (i < 0) return;
@@ -137,7 +207,7 @@
     });
 
     sync();
-    return { open, close, toggle: () => (isOpen ? close(true) : open()), sync, isOpen: () => isOpen, el: pop };
+    return { open, close, toggle: () => (isOpen ? close(true) : open()), sync, isOpen: () => isOpen, el: pop, colorwayHost };
   };
 
   UI.StartPageSettings = { create, STYLES, ANIMATE_IN, HOVER };

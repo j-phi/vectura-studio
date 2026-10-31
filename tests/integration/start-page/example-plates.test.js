@@ -116,7 +116,7 @@ describe('Start Page example plates', () => {
     expect(q('#sp-pl-add').hidden).toBe(false);
     expect(q('#sp-pl-arrange').hidden).toBe(false);
     expect(q('#sp-pl-show').closest('.sp-pl-show').hidden).toBe(true); // no works of your own to count
-    expect(q('#sp-pl-examples').checked).toBe(true);
+    expect(q('#sp-settings [data-set="showExamples"]').getAttribute('aria-checked')).toBe('true');
   });
 
   test('Open and Open as template have a11y names and pass the colors shown', async () => {

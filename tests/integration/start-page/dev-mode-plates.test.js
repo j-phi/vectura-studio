@@ -128,6 +128,21 @@ describe('Start Page Developer Mode: editable example plates', () => {
     expect(live()).toHaveLength(1);
   });
 
+  test('Show example plates is disabled in Developer Mode (the examples are the draft) and live again after', async () => {
+    await boot({ dev: true });
+    const sw = () => q('#sp-settings [data-set="showExamples"]');
+    expect(sw().disabled).toBe(true);
+    expect(sw().getAttribute('aria-disabled')).toBe('true');
+    expect(q('#sp-settings-btn').getAttribute('aria-expanded')).toBe('false');
+    click(sw());
+    await tick(60);
+    expect(V.SETTINGS.startPage.showExamples).not.toBe(false); // a disabled switch does nothing
+    expect(live()).toHaveLength(10);
+    click(q('[data-dev-act="exit"]'));
+    await tick(200);
+    expect(sw().disabled).toBe(false);
+  });
+
   test('edits the word, title, layout and pin; the draft holds them and a reload keeps them', async () => {
     await boot({ dev: true });
     const id = live()[0].dataset.plateId;

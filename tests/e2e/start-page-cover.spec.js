@@ -8,7 +8,7 @@ const boot = async (page, query = '?startPage=launch') => {
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer));
 };
 
-const { resetStorage } = require('./helpers/start-page');
+const { resetStorage, setColorMode, openSettings } = require('./helpers/start-page');
 
 // Seven real works in the recents store, each a different algorithm (real export thumbnails).
 const seedWorks = async (page, types = TYPES) => {
@@ -47,7 +47,7 @@ test.describe('Start Page cover', () => {
     const handles = await page.evaluate(() => { window.__h = [...document.querySelectorAll('#start-page .sp-lt .sp-vw')].map((e) => e._spWord); return window.__h.length; });
     expect(handles).toBe(7);
     const before = await page.locator('#start-page .sp-lt .sp-vw').evaluateAll((els) => els.map((e) => e.dataset.spKey));
-    await page.locator('#start-page [data-sp-mode="wildcard"]').click();
+    await setColorMode(expect, page, 'wildcard');
     await expect.poll(async () => page.locator('#start-page .sp-lt .sp-vw').evaluateAll((els) => els.map((e) => e.dataset.spKey).join('|'))).not.toBe(before.join('|'));
     const same = await page.evaluate(() => [...document.querySelectorAll('#start-page .sp-lt .sp-vw')].every((e, i) => e._spWord === window.__h[i]));
     expect(same).toBe(true);
@@ -86,7 +86,8 @@ test.describe('Start Page cover', () => {
     await expect(page.locator('#start-page .sp-key-row .sp-kk.on')).toBeVisible();
     await page.keyboard.press('Tab');
     await expect(page.locator('#start-page .sp-lt').nth(1)).toBeFocused();
-    await page.locator('#start-page [data-sp-mode="curated"]').focus();
+    await openSettings(expect, page);
+    await page.locator('#sp-settings [data-sp-mode="curated"]').focus();
     await page.keyboard.press('ArrowRight');
     await expect(page.locator('#start-page [data-sp-mode="mono"]')).toHaveAttribute('aria-checked', 'true');
   });

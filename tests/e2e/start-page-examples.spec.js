@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { resetStorage } = require('./helpers/start-page');
+const { resetStorage, setShowExamples } = require('./helpers/start-page');
 
 // First run: ten example plates fill the Plates section until the user has a work of their own.
 const boot = async (page) => {
@@ -42,12 +42,12 @@ test.describe('Start Page example plates', () => {
     expect(doc.recent).toBeNull();
     expect(doc.layers).toBeGreaterThan(0);
 
-    // saving a work adds the user's own plate in front; the examples stay beside it until Show example plates is unchecked
+    // saving a work adds the user's own plate in front; the examples stay beside it until Show example plates is switched off
     await page.evaluate(async () => { await window.app.recents.record({ name: 'mine.vectura', source: 'save' }); window.app.startPage.show(); });
     await expect(page.locator('#sp-plates .sp-pl')).toHaveCount(11, { timeout: 15000 });
     await expect(page.locator('#sp-plates .sp-pl[data-example]')).toHaveCount(10);
     await expect(page.locator('#sp-plates .sp-pl').first()).not.toHaveAttribute('data-example', '1');
-    await page.locator('#sp-pl-examples').uncheck();
+    await setShowExamples(expect, page, false);
     await expect(page.locator('#sp-plates .sp-pl[data-example]')).toHaveCount(0, { timeout: 15000 });
     await expect(page.locator('#sp-plates .sp-pl')).toHaveCount(1);
     await expect(page.locator('#sp-plates [data-act="edit"]').first()).toBeAttached({ timeout: 15000 });

@@ -167,6 +167,7 @@ describe('Settings popover: Art animates in + Hover effect', () => {
   const settings = (prefs = {}) => {
     const env = boot();
     env.load('src/ui/start-page/icons.js');
+    env.load('src/core/start-page/cover-words.js');
     env.load('src/ui/start-page/settings.js');
     const { V, D } = env;
     V.StartPageDrawStyles = { LABELS: {} };

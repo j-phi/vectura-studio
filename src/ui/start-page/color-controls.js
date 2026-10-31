@@ -1,5 +1,5 @@
 /**
- * Start Page color controls — window.Vectura.UI.StartPageColorControls. Sits directly under the cover.
+ * Start Page color controls — window.Vectura.UI.StartPageColorControls. Lives in Start Page settings > Colorway (the gear).
  *   Curated · Mono · Basic · Wildcard (a radiogroup), Randomize (dice, seeded; shows the seed; "random" mode),
  *   a swatch strip of the colorways on the page (+N) and the ownership note.
  * Page mode = a seed (random) or else the saved colorMode. The caller owns state; this renders and reports.
@@ -35,7 +35,7 @@
     const sw = h('span', { class: 'sp-sw', 'aria-hidden': 'true' });
     const note = h('span', { class: 'sp-own-note' });
     const live = h('span', { class: 'sp-sr', 'aria-live': 'polite' });
-    root.append(h('span', { class: 'sp-ctl-lbl', text: 'Colorway' }), seg, dice, sw, note, live);
+    root.append(seg, dice, sw, note, live);
     host.append(root);
 
     const btns = [...seg.querySelectorAll('[data-sp-mode]')];

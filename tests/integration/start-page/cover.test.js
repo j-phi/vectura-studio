@@ -66,7 +66,12 @@ describe('Start Page cover and controls', () => {
     expect(q('#sp-cv-kick').textContent).toBe('');
     expect(q('#sp-cv-info').textContent).toBe('');
     expect(sp().textContent).not.toMatch(/Set in your work|Each letter carries one of your pieces|whole page/i);
-    expect([...sp().querySelectorAll('.sp-ctl-lbl')].map((el) => el.textContent)).toContain('Colorway');
+    // The pencil, the Colorway row and the examples checkbox are gone from the page: they live in the settings panel.
+    expect(q('#sp-word-btn')).toBeNull();
+    expect(q('#sp-cover .sp-word-btn')).toBeNull();
+    expect(q('#sp-main > .sp-ctl-row')).toBeNull();
+    expect(q('#sp-plates .sp-pl-tools input[type="checkbox"]')).toBeNull();
+    expect(q('#sp-settings .sp-ctl-row')).toBeTruthy();
     // The horizontal rule and the hover label stay: the key row is still built, one key per letter.
     expect(q('.sp-key-row')).toBeTruthy();
     expect(sp().querySelectorAll('.sp-key-row .sp-kk')).toHaveLength(7);
@@ -126,22 +131,24 @@ describe('Start Page cover and controls', () => {
     expect(SETTINGS.startPage.name).not.toBe('Nope');
   });
 
-  test('word picker: choose a word, name-based choices are disabled until a name exists, custom is sanitized', async () => {
+  test('cover word (Start Page settings > Cover): choose a word, name-based choices are disabled until a name exists, custom is sanitized', async () => {
     await boot();
-    click(q('#sp-word-btn'));
-    await tick();
-    const items = [...sp().querySelectorAll('#sp-word-menu [role="menuitemradio"]')];
-    expect(items.map((i) => i.dataset.word)).toEqual(['vectura', 'vectura-studio', 'last-name', 'first-last', 'studies', 'botanicals', 'experiments', 'custom']);
-    expect(items.find((i) => i.dataset.word === 'first-last').getAttribute('aria-disabled')).toBe('true');
-    click(items.find((i) => i.dataset.word === 'studies'));
+    await openSettings();
+    const sel = q('#sp-set-word');
+    expect(sel.getAttribute('aria-labelledby')).toBe('sp-set-word-l');
+    const opts = [...sel.options];
+    expect(opts.map((o) => o.value)).toEqual(['vectura', 'vectura-studio', 'last-name', 'first-last', 'studies', 'botanicals', 'experiments', 'custom']);
+    expect(opts.find((o) => o.value === 'first-last').disabled).toBe(true);
+    sel.value = 'studies';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
     await tick(80);
     expect(SETTINGS.startPage.coverWord).toBe('studies');
     expect(sp().querySelectorAll('.sp-lt')).toHaveLength(7);
-    click(q('#sp-word-btn'));
+    sel.value = 'custom';
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
     await tick();
-    click(sp().querySelector('#sp-word-menu [data-word="custom"]'));
-    await tick();
-    const input = sp().querySelector('#sp-word-menu input');
+    const input = q('#sp-set-word-custom');
+    expect(input.closest('.sp-wp-form').hidden).toBe(false);
     input.value = 'Rings<script>';
     input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     await tick(80);

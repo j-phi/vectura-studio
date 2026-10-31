@@ -5,11 +5,10 @@
  *   word (Cover Specimen): one piece fills the whole word;
  *   band (Portfolio band): a full-width band of one piece; a 3D piece (StartPageMotion.modelFor) is a live,
  *     drag-to-rotate StartPageOrbit3D model instead of the drawing.
- * Also the cover chrome: word picker button, info line, click-to-edit name and practice line, and the honest empty
+ * Also the cover chrome: info line, click-to-edit name and practice line, and the honest empty
  * state when there is no art yet. Recoloring (setColorway on every tile) never re-fits or re-plots.
  *
- *   create({ host, prefs(), arts(), colorwaysFor(arts), still(), onOpen(art, cw), onPref(key, value), onCover(override|null),
- *            onWordPick(id, custom?) }) -> { render({animate}), recolor(), refit(), tiles(), destroy(), words,
+ *   create({ host, prefs(), arts(), colorwaysFor(arts), still(), onOpen(art, cw), onPref(key, value), onCover(override|null) }) -> { render({animate}), recolor(), refit(), tiles(), destroy(),
  *                                            useAsCover(art, { colorway, frame, fill }) -> Promise }
  *   useAsCover: smooth-scrolls to the top, then the piece enters the current style (mosaic: letter 01 and every letter
  *   re-plots; word: re-fills; band: cross-fades and draws in, with the plate's frame + fill) and an Undo toast is shown.
@@ -42,20 +41,14 @@
     let hold = null; // { old, tile }: the band kept on screen while its replacement mounts (cross-fade)
 
     const top = h('div', { class: 'sp-cv-top' });
-    const pickBtn = h('button', { type: 'button', id: 'sp-word-btn', class: 'sp-word-btn', 'aria-label': 'Choose the cover word', title: 'Choose the cover word', html: Vectura.StartPageIcons.pencil });
     const kick = h('span', { class: 'sp-cv-kick-tx', id: 'sp-cv-kick' });
     const info = h('span', { class: 'sp-cv-info', id: 'sp-cv-info' });
     // Colorways fan for the piece the cover shows (band / word: the one piece; mosaic: the letter last hovered or focused).
     const fanBtn = h('button', { type: 'button', class: 'sp-cv-fan', id: 'sp-cv-fan', hidden: true, 'aria-haspopup': 'dialog', 'aria-expanded': 'false', title: 'See this piece in other colorways' }, 'Colorways');
-    top.append(h('span', { class: 'sp-cv-kick' }, pickBtn, kick), h('span', { class: 'sp-cv-end' }, info, fanBtn));
+    top.append(h('span', { class: 'sp-cv-kick' }, kick), h('span', { class: 'sp-cv-end' }, info, fanBtn));
     const stage = h('div', { class: 'sp-cv-stage', id: 'sp-cv-stage' });
     const who = h('div', { class: 'sp-cv-who', id: 'sp-cv-who' });
     host.append(top, stage, who);
-
-    const picker = UI.StartPageWordPicker.create({
-      button: pickBtn, prefs: ctx.prefs,
-      onPick: (id, custom) => ctx.onWordPick(id, custom),
-    });
 
     const later = (fn, ms) => { const t = setTimeout(fn, ms); timers.push(t); return t; };
     const clearTimers = () => { timers.forEach((t) => clearTimeout(t)); timers = []; };
@@ -455,7 +448,6 @@
       const { word } = Words().resolve(prefs);
       const style = ['mosaic', 'word', 'band'].includes(prefs.coverStyle) ? prefs.coverStyle : 'mosaic';
       host.dataset.style = style;
-      picker.sync();
       let arts = [];
       try { arts = await ctx.arts(); } catch (_) { arts = []; }
       if (my !== gen) return;
@@ -599,7 +591,6 @@
     return {
       render, recolor, refit, destroy,
       tiles: () => tiles.map((t) => ({ el: t.el, art: t.art, cw: t.cw, k: t.k })),
-      words: picker,
       syncWho: () => renderWho(host.dataset.style),
       useAsCover,
       /** Restore a saved cover piece without animating (the next render() shows it). */

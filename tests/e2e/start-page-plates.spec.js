@@ -7,7 +7,7 @@ const boot = async (page, query = '?startPage=launch') => {
   await page.goto(`/${query}`);
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer && window.app.startPage));
 };
-const { resetStorage, flush, worksReady, hideExamples } = require('./helpers/start-page');
+const { resetStorage, flush, worksReady, hideExamples, setColorMode } = require('./helpers/start-page');
 const seedWorks = async (page) => {
   await page.evaluate(async (list) => {
     for (const t of list) {
@@ -49,7 +49,7 @@ test.describe('Start Page plates', () => {
     await page.locator('#sp-pl-show').selectOption('all');
     await expect(page.locator('.sp-pl:not([data-off])')).toHaveCount(7);
     for (const [mode, edit] of [['curated', true], ['mono', false], ['basic', true], ['wildcard', false]]) {
-      await page.locator(`[data-sp-mode="${mode}"]`).click();
+      await setColorMode(expect, page, mode);
       await page.waitForTimeout(600);
       const n = await page.locator('.sp-pl .spl [data-act="edit"]').count();
       if (edit) expect(n).toBeGreaterThan(0); else expect(n).toBe(0);
@@ -76,7 +76,7 @@ test.describe('Start Page plates', () => {
 
   test('opening a plate in Wildcard lands in the editor on the tile\'s paper and pen', async ({ page }) => {
     await bootWithWorks(page);
-    await page.locator('[data-sp-mode="wildcard"]').click();
+    await setColorMode(expect, page, 'wildcard');
     await expect(page.locator('#sp-plates')).toHaveAttribute('data-mode', 'wildcard');
     const plate = page.locator('.sp-pl:not([data-off])').nth(2);
     // Plates mount lazily near the viewport (800 px margin) and plates are about a screen tall, so plate 3 has no Open

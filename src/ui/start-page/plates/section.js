@@ -102,8 +102,6 @@
     const arrBtn = h('button', { type: 'button', id: 'sp-pl-arrange', class: 'sp-pl-btn', 'aria-pressed': 'false' });
     const showSel = h('select', { id: 'sp-pl-show', 'aria-label': 'How many plates are visible' }, SHOW_OPTS.map(([v, l]) => h('option', { value: String(v), text: l })));
     const showLbl = h('label', { class: 'sp-pl-show', for: 'sp-pl-show' }, h('span', { text: 'Show' }), showSel);
-    const exBox = h('input', { type: 'checkbox', id: 'sp-pl-examples' });
-    const exLbl = h('label', { class: 'sp-pl-show sp-pl-examples-toggle', for: 'sp-pl-examples' }, exBox, h('span', { text: 'Show example plates' }));
     const menu = h('div', { class: 'sp-pl-menu', role: 'menu', 'aria-label': 'Add another plate of', hidden: true });
     const liveRegion = h('div', { class: 'sp-sr', 'aria-live': 'polite', role: 'status' });
     const list = h('div', { class: 'sp-pl-list', id: 'sp-pl-list' });
@@ -115,7 +113,7 @@
     root.append(
       h('header', { class: 'sp-pl-head' },
         h('div', { class: 'sp-pl-titles' }, title, count),
-        h('div', { class: 'sp-pl-tools' }, addBtn, arrBtn, showLbl, exLbl, menu)),
+        h('div', { class: 'sp-pl-tools' }, addBtn, arrBtn, showLbl, menu)),
       explain, empty, list, more, liveRegion);
     host.append(root);
 
@@ -651,7 +649,7 @@
       explain.textContent = devActive
         ? 'Developer Mode: these are the example plates that ship with Vectura Studio. Edit the word, title, layout, colorway and manual colors, add a plate from any bundled preset, remove one, or drag to reorder. Export defaults writes them back to src/config/start-page-picks.js.'
         : exampleMode
-        ? 'These are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples stay beside them until you hide them with Show example plates. Edit or remove any plate, examples included. Opening an example starts a new document; it becomes a plate once you save it.'
+        ? 'These are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples stay beside them until you hide them with Show example plates in Start Page settings. Edit or remove any plate, examples included. Opening an example starts a new document; it becomes a plate once you save it.'
         : n
         ? `Each file you open or save becomes a plate automatically: set on its own paper and laid out for the sheet. ${edit ? 'Edit the text, layout, color and framing of any plate; drag to reorder.' : 'Colors follow the page mode; your edits return in Curated.'}`
         : '';
@@ -659,7 +657,6 @@
       if (exampleMode) explain.dataset.example = '1'; else delete explain.dataset.example;
       if (exampleMode) root.setAttribute('aria-describedby', explain.id); else root.removeAttribute('aria-describedby');
       addBtn.hidden = !(n || removedWorks.length || removedExamples.length || devActive); arrBtn.hidden = !n; showLbl.hidden = !worksShown;
-      exLbl.hidden = !hasExamples || devActive; exBox.checked = showExamples();
       empty.hidden = !!n || devActive;
       { const lbl = addBtn.querySelector('span'); if (lbl) lbl.textContent = devActive ? 'Add from preset' : 'Add plate'; }
       addBtn.setAttribute('aria-haspopup', devActive ? 'dialog' : 'menu');
@@ -936,11 +933,6 @@
       else if (act === 'cover') useAsCover(info);
     });
     showSel.addEventListener('change', () => setShow(showSel.value));
-    exBox.addEventListener('change', () => {
-      ctx.setPref('showExamples', exBox.checked);
-      announce(exBox.checked ? 'Example plates shown.' : 'Example plates hidden.');
-      sync();
-    });
     root.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape' && !menu.hidden) { ev.preventDefault(); ev.stopPropagation(); closeMenu(true); }
     });
@@ -971,6 +963,14 @@
       },
       refresh: () => sync(),
       isDev: () => devActive,
+      /** The Start Page settings toggle: dev = the editable example draft stands in (the toggle is disabled); available = the build ships examples. */
+      examplesState: () => ({ dev: devActive, available: hasExamples }),
+      /** Show example plates (Start Page settings > Plates). */
+      setShowExamples(on) {
+        ctx.setPref('showExamples', !!on);
+        announce(on ? 'Example plates shown.' : 'Example plates hidden.');
+        return sync();
+      },
       get draft() { return devActive ? getDraft() : null; },
       /** Scroll the section into view (Document Setup > Edit Start Page plates). */
       reveal() { try { if (typeof root.scrollIntoView === 'function') root.scrollIntoView({ block: 'start' }); } catch (_) { /* noop */ } },

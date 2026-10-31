@@ -1,6 +1,6 @@
 /*
- * Show example plates: a checkbox in the Plates header (not an automatic hide). Checked (default) the examples show
- * after the user's own works; unchecked they are hidden (an empty state when there are no works). The setting is a
+ * Show example plates: a switch in Start Page settings > Plates (not an automatic hide). On (default) the examples show
+ * after the user's own works; off they are hidden (an empty state when there are no works). The setting is a
  * Start Page pref. Examples are edited and removed like works, a removed one comes back from the Add plate menu, and
  * an edit persists in the plates store under the example's id (the bundled definitions are never mutated).
  */
@@ -47,14 +47,23 @@ describe('Start Page: Show example plates', () => {
   const qa = (s) => [...sp().querySelectorAll(s)];
   const click = (el) => el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
   const plates = () => qa('.sp-pl:not([data-off])');
-  const box = () => q('#sp-pl-examples');
-  const toggle = async (on) => { box().checked = on; box().dispatchEvent(new window.Event('change', { bubbles: true })); await tick(300); };
+  const box = () => q('#sp-settings [data-set="showExamples"]');
+  const on = () => box().getAttribute('aria-checked') === 'true';
+  const toggle = async (want) => {
+    click(q('#sp-settings-btn'));
+    if (on() !== want) click(box());
+    await tick(300);
+    click(q('#sp-settings-btn'));
+  };
 
-  test('the checkbox is in the Plates header, checked by default, and toggles the examples live', async () => {
+  test('the switch is in Start Page settings (not the Plates header), on by default, and toggles the examples live', async () => {
     expect(box()).toBeTruthy();
-    expect(box().closest('.sp-pl-tools')).toBeTruthy();
-    expect(box().checked).toBe(true);
-    expect(q('label[for="sp-pl-examples"]').textContent).toMatch(/Show example plates/i);
+    expect(box().getAttribute('role')).toBe('switch');
+    expect(q('#sp-plates #sp-pl-examples')).toBeNull();
+    click(q('#sp-settings-btn'));
+    expect(on()).toBe(true);
+    expect(q('#sp-set-showExamples-l').textContent).toMatch(/Show example plates/i);
+    click(q('#sp-settings-btn'));
     expect(plates()).toHaveLength(10);
     await toggle(false);
     expect(plates()).toHaveLength(0);
@@ -73,7 +82,8 @@ describe('Start Page: Show example plates', () => {
     await tick(60);
     app.startPage.show();
     await tick(300);
-    expect(box().checked).toBe(false);
+    click(q('#sp-settings-btn'));
+    expect(on()).toBe(false);
     expect(plates()).toHaveLength(0);
   });
 

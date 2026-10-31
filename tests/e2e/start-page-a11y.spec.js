@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { setColorMode } = require('./helpers/start-page');
 
 // Start Page accessibility (WCAG 2.1 AA): text contrast in all four Meridian/Classic skins, 2.5.8 target size at
 // 400 px, and the structural fixes from the P4 audit (action vs toggle semantics, per-item names, focus order, toasts).
@@ -89,21 +90,17 @@ for (const theme of THEMES) {
     await page.waitForTimeout(800);
     const fails = {};
     for (const m of ['curated', 'mono', 'basic', 'wildcard']) {
-      await page.locator(`[data-sp-mode="${m}"]`).click();
+      await setColorMode(expect, page, m);
       await page.waitForTimeout(600);
       // Plates mount lazily: walk the page so every plate and the picks are in the DOM.
       await page.evaluate(async () => { const s = document.getElementById('sp-scroll'); for (let y = 0; y < s.scrollHeight; y += 450) { s.scrollTop = y; await new Promise((r) => setTimeout(r, 120)); } s.scrollTop = 0; });
       fails[`page/${m}`] = await contrastFails(page, '#sp-main');
     }
     fails.rail = await contrastFails(page, '#sp-rail');
-    await page.locator('[data-sp-mode="curated"]').click();
+    await setColorMode(expect, page, 'curated');
     await page.click('#sp-settings-btn');
     await page.waitForTimeout(300);
     fails.settings = await contrastFails(page, '.sp-settings');
-    await page.keyboard.press('Escape');
-    await page.click('[aria-label="Choose the cover word"]');
-    await page.waitForTimeout(300);
-    fails.wordpicker = await contrastFails(page, '#sp-word-menu');
     await page.keyboard.press('Escape');
     await page.locator('#sp-plates [data-act="edit"]').first().click();
     await page.waitForTimeout(500);

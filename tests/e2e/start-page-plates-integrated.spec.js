@@ -7,7 +7,7 @@ const boot = async (page, query = '?startPage=launch') => {
   await page.goto(`/${query}`);
   await page.waitForFunction(() => !!(window.app && window.app.ui && window.app.engine && window.app.renderer && window.app.startPage));
 };
-const { resetStorage, flush, worksReady, hideExamples } = require('./helpers/start-page');
+const { resetStorage, flush, worksReady, hideExamples, setColorMode, rollDice } = require('./helpers/start-page');
 const seedWorks = async (page) => {
   await page.evaluate(async (list) => {
     window.Vectura.SETTINGS.cookiePreferencesEnabled = true;
@@ -55,13 +55,13 @@ test.describe('Start Page plates, integrated', () => {
     await expect(ed).toHaveCount(0);
 
     for (const m of ['mono', 'wildcard']) {
-      await page.locator(`[data-sp-mode="${m}"]`).click();
+      await setColorMode(expect, page, m);
       await page.waitForTimeout(500);
       await expect(page.locator('.sp-pl .spl [data-act="edit"]')).toHaveCount(0);
       expect(await plate.evaluate((e) => e.dataset.layout)).toBe('big-numeral'); // layout applies in every mode
       expect(await plate.evaluate((e) => e.dataset.spPaper)).not.toBe(edited.paper);
     }
-    await page.locator('[data-sp-mode="curated"]').click();
+    await setColorMode(expect, page, 'curated');
     await page.waitForTimeout(500);
     expect(await plate.evaluate((e) => e.dataset.spPaper)).toBe(edited.paper);
 
@@ -109,7 +109,7 @@ test.describe('Start Page plates, integrated', () => {
 
   test('fan: opens four cards and a card opens the piece on that paper and pen', async ({ page }) => {
     await bootWithWorks(page);
-    await page.locator('[data-sp-mode="wildcard"]').click();
+    await setColorMode(expect, page, 'wildcard');
     await page.waitForTimeout(500);
     await page.evaluate(() => {
       const O = window.Vectura.StartPageOpenArt; const orig = O.open;
@@ -141,7 +141,7 @@ test.describe('Start Page plates, integrated', () => {
     await reload(page);
     await expect(page.locator('#sp-cover .sp-lt').first()).toHaveAttribute('data-art-id', artId, { timeout: 10000 });
     const paper = await page.locator('#sp-cover .sp-lt [data-sp-paper]').first().evaluate((e) => e.dataset.spPaper);
-    await page.locator('[data-sp-mode="wildcard"]').click();
+    await setColorMode(expect, page, 'wildcard');
     await page.waitForTimeout(700);
     await expect(page.locator('#sp-cover .sp-lt').first()).toHaveAttribute('data-art-id', artId);
     expect(await page.locator('#sp-cover .sp-lt [data-sp-paper]').first().evaluate((e) => e.dataset.spPaper)).not.toBe(paper);
@@ -160,16 +160,16 @@ test.describe('Start Page plates, integrated', () => {
       }
     };
     await check('curated');
-    await page.locator('[data-sp-mode="wildcard"]').click(); await page.waitForTimeout(600);
+    await setColorMode(expect, page, 'wildcard'); await page.waitForTimeout(600);
     await check('wildcard');
-    await page.locator('#sp-dice').click(); await page.waitForTimeout(600);
+    await rollDice(expect, page); await page.waitForTimeout(600);
     await expect(page.locator('#sp-dice')).toHaveClass(/is-random/);
     await check('random');
   });
 
   test('a rail recent shows the file in its own colors and reopens the ORIGINAL file (no "(colorway)" fork)', async ({ page }) => {
     await bootWithWorks(page);
-    await page.locator('[data-sp-mode="wildcard"]').click();
+    await setColorMode(expect, page, 'wildcard');
     await page.waitForTimeout(600);
     const row = page.locator('#sp-rail .sp-row[data-recent-id]').first();
     const id = await row.getAttribute('data-recent-id');

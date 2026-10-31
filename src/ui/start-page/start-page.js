@@ -244,6 +244,19 @@
 
       root.append(skip, header, colo, h('div', { class: 'sp-body' }, main, rail));
 
+      // Cover word chosen in Start Page settings (a name-based row needs a name; a custom word is sanitized).
+      const pickWord = (id, custom) => {
+        const p = prefs();
+        if (id === 'custom') {
+          const clean = cleanPref('customWord', custom);
+          if (!clean) return;
+          p.customWord = clean;
+        }
+        p.coverWord = Vectura.START_PAGE.ENUMS.coverWord.includes(id) ? id : 'vectura';
+        persist();
+        cover.render({ animate: true });
+      };
+
       cover = UI.StartPageCover.create({
         host: coverSec,
         prefs,
@@ -265,39 +278,6 @@
           persist();
           if (key === 'name' && ['last-name', 'first-last'].includes(prefs().coverWord)) cover.render();
         },
-        onWordPick: (id, custom) => {
-          const p = prefs();
-          if (id === 'custom') {
-            const clean = cleanPref('customWord', custom);
-            if (!clean) return;
-            p.customWord = clean;
-          }
-          p.coverWord = Vectura.START_PAGE.ENUMS.coverWord.includes(id) ? id : 'vectura';
-          persist();
-          cover.render({ animate: true });
-        },
-      });
-
-      controls = UI.StartPageColorControls.create({
-        host: main.querySelector('#sp-main'),
-        mode: pageMode,
-        seed: () => prefs().seed,
-        previewSeed: () => previewSeed || (previewSeed = Vectura.StartPageColorway?.newSeed?.() || 'K7PQ2'),
-        swatches: uniqueSwatches,
-        examples: () => (plates && plates.isExamples ? plates.isExamples() : null),
-        onMode: (m) => {
-          const p = prefs();
-          if (p.colorMode === m && !p.seed) return;
-          p.colorMode = m;
-          p.seed = null;
-          persist();
-          recolor();
-        },
-        onRandom: () => {
-          prefs().seed = Vectura.StartPageColorway?.newSeed?.() || 'K7PQ2';
-          persist();
-          recolor();
-        },
       });
 
       plates = UI.StartPagePlatesSection.create({
@@ -312,7 +292,7 @@
         still: () => prefs().motionStill === true,
         scroller: () => root.querySelector('#sp-scroll'),
         onOpen: (art, cw, opts) => ctl.openArt(art, cw, opts),
-        onHeader: () => { if (controls) controls.sync(); }, // examples <-> own plates changes the colorway note
+        onHeader: () => { if (controls) controls.sync(); if (settings) settings.sync(); }, // examples <-> own plates changes the colorway note and the examples toggle
       });
       plates.setCoverApi(cover);
       ctl.plates = plates;
@@ -350,16 +330,41 @@
           persist();
           cover.render({ animate: true });
         },
+        onWord: pickWord,
+        examples: () => (plates ? plates.examplesState() : { dev: false, available: true }),
         onPref: (key, value) => { if (key === 'animateIn' || key === 'hover') setMotionPref(key, value); },
         // Preview: play the cover's draw-in again with the chosen style (Still shows it finished)
         onPreview: () => { settings.close(false); cover.render({ animate: true }); },
         onToggle: (key, on) => {
           if (key === 'showOnLaunch') { app.setShowStartPageOnLaunch(on); return; }
+          if (key === 'showExamples') { plates.setShowExamples(on); return; }
           if (key === 'showName' || key === 'showLine') {
             prefs()[key] = on;
             persist();
             cover.syncWho();
           }
+        },
+      });
+
+      controls = UI.StartPageColorControls.create({
+        host: settings.colorwayHost,
+        mode: pageMode,
+        seed: () => prefs().seed,
+        previewSeed: () => previewSeed || (previewSeed = Vectura.StartPageColorway?.newSeed?.() || 'K7PQ2'),
+        swatches: uniqueSwatches,
+        examples: () => (plates && plates.isExamples ? plates.isExamples() : null),
+        onMode: (m) => {
+          const p = prefs();
+          if (p.colorMode === m && !p.seed) return;
+          p.colorMode = m;
+          p.seed = null;
+          persist();
+          recolor();
+        },
+        onRandom: () => {
+          prefs().seed = Vectura.StartPageColorway?.newSeed?.() || 'K7PQ2';
+          persist();
+          recolor();
         },
       });
 
@@ -378,7 +383,6 @@
         // An open popover owns Escape even when focus sits on the button that opened it: close it, keep the page.
         if (e.key === 'Escape' && !e.defaultPrevented) {
           if (settings && settings.isOpen()) { e.preventDefault(); settings.close(true); return; }
-          if (cover && cover.words.isOpen()) { e.preventDefault(); cover.words.close(true); return; }
         }
         if (e.key === 'Escape' && !e.defaultPrevented && hasLiveCanvas() && !document.querySelector('.vectura-modal-backdrop[style*="display: flex"]')) {
           e.preventDefault();
@@ -690,7 +694,6 @@
         open = false;
         renderToken += 1;
         settings?.close(false);
-        cover?.words.close(false);
         plates?.closeTransient();
         watchTheme(false);
         try { Vectura.StartPageInk?.finish?.(); } catch (_) { /* noop */ }

@@ -15,6 +15,11 @@ Headlines since 1.4.0:
 - **Paper, pens and inks.** Realistic paper stocks with My papers and photo papers, pen models with ink edge bleed, special inks, Lights off, pen files and My pens, plus a System theme.
 - **Touch and CI.** Touch and Apple Pencil support across the app (real-device results pending), a rebuilt CI with one required check, and SVG sanitizer security hardening.
 
+### Changed: Start Page controls move into the settings gear
+- **Removed** the pencil above the cover word and the **Colorway** row under it. The cover word (with Custom…) now sits under **Cover** in Start Page settings (the gear), next to Cover style; mode (Curated, Mono, Basic, Wildcard), the Randomize dice with its seed and the swatch preview live under **Colorway**.
+- **Show example plates** is now a switch under **Plates** in Start Page settings (same preference); it is disabled while Developer Mode edits the example plates. The cover's **Colorways** button (the fan for one piece) stays where it is.
+- The horizontal rule under the letters stays; the cover simply ends there.
+
 ### Fixed: Cybersigil example plate description (v1.4.51)
 - The **Cybersigil** Start Page plate now has its own description (hard-edged stepped rings, not tree rings); example plates accept an optional `description`, and Developer Mode export keeps it. Other Rings plates are unchanged.
 
