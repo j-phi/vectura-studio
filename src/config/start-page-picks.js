@@ -33,7 +33,7 @@
   // <example-plates:begin> Developer Mode > Export defaults replaces everything up to the end marker; keep both markers.
   const EXAMPLE_PLATES = Object.freeze([
     Object.freeze({ presetId: 'rings-old-growth-oak', title: 'Old Growth Oak', word: 'Oak', layout: 'text-wrap' }),
-    Object.freeze({ presetId: 'user-rings-1786211570394', title: 'Cybersigil', word: 'Rings', layout: 'spec-sheet', pin: 'black-white' }),
+    Object.freeze({ presetId: 'user-rings-1786211570394', title: 'Cybersigil', description: 'Concentric rings cut by hard, stepped offsets, so each band jumps like a glitch and the whole reads as a geometric sigil.', word: 'Rings', layout: 'spec-sheet', pin: 'black-white' }),
     Object.freeze({ presetId: 'rainfall-downpour', title: 'Downpour', word: 'Rainfall', layout: 'vertical-word' }),
     Object.freeze({ presetId: 'user-spiralizer-1781359333969', title: 'Coiled Sphere', word: 'Sphere', layout: 'text-wrap', pin: 'black-silver' }),
     Object.freeze({ presetId: 'user-terrain-1781475148727', title: 'High Sierra', word: 'Terrain', layout: 'full-bleed-band' }),

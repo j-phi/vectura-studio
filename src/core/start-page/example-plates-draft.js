@@ -30,7 +30,7 @@
   const BEGIN = '// <example-plates:begin> Developer Mode > Export defaults replaces everything up to the end marker; keep both markers.';
   const END = '// <example-plates:end>';
   const KEY = 'vectura_start_page_example_draft';
-  const SHIPPED_FIELDS = ['presetId', 'title', 'word', 'layout', 'pin'];
+  const SHIPPED_FIELDS = ['presetId', 'title', 'description', 'word', 'layout', 'pin'];
   const ROLES = ['art', 'text', 'background', 'title', 'band']; // StartPagePlatesStore SHAPES.colors order
   const FALLBACK_FILLS = ['iridescent', 'iridescent-animated', 'duotone', 'metallic-gold', 'metallic-silver', 'sunset'];
   const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i; // what StartPagePlateColors.resolve accepts
@@ -63,16 +63,16 @@
   const fromShipped = (list) => {
     const taken = new Set();
     return (Array.isArray(list) ? list : []).filter((e) => e && str(e.presetId)).map((e) => ({
-      key: keyFor(e.presetId, taken), presetId: e.presetId, title: str(e.title), word: str(e.word), layout: str(e.layout), pin: str(e.pin), colors: colorsOf(e.colors),
+      key: keyFor(e.presetId, taken), presetId: e.presetId, title: str(e.title), description: str(e.description), word: str(e.word), layout: str(e.layout), pin: str(e.pin), colors: colorsOf(e.colors),
     }));
   };
   const recordOf = (flat, order) => ({
     id: flat.key, artId: flat.key, presetId: flat.presetId, order, hidden: false,
-    layout: flat.layout || null, texts: { word: flat.word || null, title: flat.title || null, description: null },
+    layout: flat.layout || null, texts: { word: flat.word || null, title: flat.title || null, description: flat.description || null },
     pin: flat.pin || null, colors: colorsRecord(flat.colors), basicColors: null, frame: null, motion: null, removed: false,
   });
   const flatOf = (rec) => ({
-    key: rec.id, presetId: rec.presetId, title: str(rec.texts && rec.texts.title), word: str(rec.texts && rec.texts.word),
+    key: rec.id, presetId: rec.presetId, title: str(rec.texts && rec.texts.title), description: str(rec.texts && rec.texts.description), word: str(rec.texts && rec.texts.word),
     layout: str(rec.layout), pin: str(rec.pin), colors: colorsOf(rec.colors),
   });
 
@@ -210,7 +210,7 @@
         const taken = new Set(ensure().map((r) => r.id));
         let k = `example:${presetId}`;
         while (taken.has(k)) { seq += 1; k = `example:${presetId}#${seq}`; }
-        const rec = recordOf({ key: k, presetId, title: str(o.title), word: str(o.word), layout: str(o.layout), pin: str(o.pin), colors: o.colors }, recs.length);
+        const rec = recordOf({ key: k, presetId, title: str(o.title), description: str(o.description), word: str(o.word), layout: str(o.layout), pin: str(o.pin), colors: o.colors }, recs.length);
         recs.push(rec);
         changed();
         return copy(rec);

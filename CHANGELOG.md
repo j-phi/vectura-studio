@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Cybersigil example plate description (v1.4.51)
+- The **Cybersigil** Start Page plate now has its own description (hard-edged stepped rings, not tree rings); example plates accept an optional `description`, and Developer Mode export keeps it. Other Rings plates are unchanged.
+
 ### Changed: quieter Start Page cover header (v1.4.49)
 - **Removed** the "Set in your work" kicker, the "Each letter carries one of your pieces · N letters" / "Set in pieces from the Vectura studio…" line, and the resting numbers and ticks under each cover letter. The band cover drops its "Set in your work" eyebrow (it keeps "Studio of" when your name is shown).
 - **Kept** the horizontal rule under the letters and the hover/focus label (swatch, number, piece name, algorithm and pen, with the accent bar).

@@ -71,6 +71,15 @@ describe('Start Page example plates', () => {
     }
   });
 
+  test('Cybersigil carries its own description, not the Rings tree-ring text (other Rings plates keep theirs)', async () => {
+    await boot();
+    const sigil = live()[1];
+    expect(sigil.textContent).toMatch(/Cybersigil/);
+    expect(sigil.textContent).toContain('Concentric rings cut by hard, stepped offsets, so each band jumps like a glitch and the whole reads as a geometric sigil.');
+    expect(sigil.textContent).not.toMatch(/tree ring|organic|bark|wood|growth/i);
+    expect(live()[0].textContent).toMatch(/tree rings/i);
+  });
+
   test('a re-sync while the art is still being fetched does not strand plates without art (first-run race)', async () => {
     // The plates re-sync once the works finish loading; the example entries are rebuilt each time, so a render that was
     // already waiting on its SVG must carry on with the new entry rather than give up and never retry.

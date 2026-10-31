@@ -294,7 +294,7 @@
       return {
         word: dash(t.word) || (e.example && e.example.word) || algoLabel(e),
         title: dash(t.title) || (e.example && e.example.title) || pretty(e.art.name),
-        description: dash(t.description) || defaultDescription(e),
+        description: dash(t.description) || (e.example && e.example.description) || defaultDescription(e),
         algorithm: algoLabel(e),
         summary: [algoLabel(e), cw && cw.paperName, cw && cw.penName].filter(Boolean).join(' · '),
         specs: specs.filter((s) => s[1]),

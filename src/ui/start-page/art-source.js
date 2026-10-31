@@ -249,7 +249,7 @@
       const src = Array.isArray(list) ? list : (picksCfg().EXAMPLE_PLATES || []);
       return src.filter((e) => e && byId.has(e.presetId)).map((e) => presetArt(byId.get(e.presetId), {
         id: `example:${e.presetId}`, name: e.title || byId.get(e.presetId).name, example: true,
-        exampleMeta: { title: e.title || null, word: e.word || null, layout: e.layout || null, pin: e.pin || null, key: e.key || null, colors: exampleColors(e.colors) },
+        exampleMeta: { title: e.title || null, description: e.description || null, word: e.word || null, layout: e.layout || null, pin: e.pin || null, key: e.key || null, colors: exampleColors(e.colors) },
       }));
     };
 
