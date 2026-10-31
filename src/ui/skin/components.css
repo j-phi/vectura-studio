@@ -17378,6 +17378,13 @@ body.touch-ui .paper-import-footer button {
   animation: sp-in 320ms cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 .sp[hidden] { display: none; }
+/* Boot guard (start-page/boot.js): on a launch that will show the page, the editor is never painted first. Only the
+ * page-colored ground shows until the page has mounted and settled (start-page.js removes data-sp-boot). */
+html[data-sp-boot] { background: var(--ui-bg); }
+html[data-sp-boot] body { visibility: hidden; }
+html[data-sp-boot] .sp, .sp[data-no-fx] { animation: none; }
+/* The first render of the page: the body stays blank (page ground) until the cover, plates and picks are laid out. */
+.sp[data-settling] .sp-body, .sp[data-settling] #sp-colo-wrap { visibility: hidden; }
 .sp kbd {
   font: 500 10px/1 var(--font-mono);
   color: var(--ui-text-2);
@@ -17645,6 +17652,7 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
   position: absolute;
   pointer-events: none;
 }
+.sp-word-line { position: absolute; pointer-events: none; }
 /* ===== END Start Page — art ===== */
 
 /* ============================================================================
@@ -17716,7 +17724,9 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
 .sp-word-row { display: flex; align-items: flex-end; white-space: nowrap; width: max-content; max-width: none; line-height: 1; font-family: var(--font-ui); font-weight: 700; }
 .sp-lt { position: relative; display: inline-block; line-height: 1; border-radius: 2px; cursor: pointer; padding: 0; }
 .sp-lt .sp-word { display: inline-block; font-size: inherit; }
-.sp-lt .sp-vw:not(.sp-word-on) { color: color-mix(in srgb, var(--sp-ph, var(--ui-text-2)) 55%, var(--ui-text-2)); }
+/* Letters are never a solid placeholder: the hairline outline (canvas) leads, then the art plots inside the glyphs. */
+.sp-lt .sp-vw, .sp-lt .sp-vw .sp-word-text { color: transparent; }
+.sp-lt .sp-vw.sp-ink-error .sp-word-text { color: color-mix(in srgb, var(--sp-ph, var(--ui-text-2)) 55%, var(--ui-text-2)); }
 .sp-lt:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 4px; }
 .sp-gap { display: inline-block; width: 0.28em; }
 .sp-pre { opacity: 0; }

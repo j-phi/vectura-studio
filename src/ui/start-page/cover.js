@@ -220,17 +220,16 @@
     };
 
     /* -------------------------------------------------------------- plot-in */
+    // The word plays the prototype's sequence: hairline outline of the glyphs, then the paper wipes in left to right while
+    // the pen plots the piece clipped to the letters (fillWord({ hold }) keeps the finished art off screen until then).
+    // A letter never blanks: nothing solid is shown before, nothing is hidden during.
     const plotIn = (el, { delay = 0, duration = DRAW_MS, style = 'plot' } = {}) => {
       const ink = Ink();
       if (!ink || ink.isStill()) return;
-      el.classList.add('sp-pre');
       later(() => {
-        ink.drawIn(el, { style, duration });
-        let n = 0;
-        const reveal = () => { if (++n < 3) G.requestAnimationFrame(reveal); else el.classList.remove('sp-pre'); };
-        G.requestAnimationFrame(reveal);
+        const done = () => { const hd = el._spWord; if (hd && hd.release) hd.release(); };
+        ink.drawIn(el, { style, duration }).then(done, done);
       }, delay);
-      later(() => el.classList.remove('sp-pre'), delay + 400); // never leave a letter hidden
     };
     const animates = (animate) => animate && !ctx.still() && !reducedMotion();
 
@@ -282,14 +281,17 @@
       const style = animStyle(ctx.prefs());
       const stagger = tiles.length > 9 ? 110 : 170;
       const started = Date.now();
-      const fills = tiles.map((t, j) => svgPromises[j].then((svg) => {
-        if (my !== gen) return null;
-        t.svg = svg;
+      const play = animates(animate);
+      // Every letter is set NOW (outline only when it will play) and fills as its own piece arrives; the draw-in
+      // is scheduled on the page's clock, never on when a piece happened to render.
+      const fills = tiles.map((t, j) => {
         setCwData(t);
-        const p = ink.fillWord(t.el, t.ch, { id: t.art.id, svg }, { fit: false, colorway: t.cw });
-        if (animates(animate)) plotIn(t.el, { delay: Math.max(0, 260 + j * stagger - (Date.now() - started)), style });
+        const p = ink.fillWord(t.el, t.ch, { id: t.art.id, svg: svgPromises[j] }, { fit: false, colorway: t.cw, hold: play });
+        svgPromises[j].then((svg) => { if (my === gen) t.svg = svg; });
+        if (play) plotIn(t.el, { delay: Math.max(0, 260 + j * stagger - (Date.now() - started)), style });
         return p;
-      }));
+      });
+      signalMounted();
       await Promise.all(fills);
       if (my !== gen) return;
       renderKey();
@@ -317,7 +319,7 @@
       try { if (G.document.fonts && G.document.fonts.ready) await G.document.fonts.ready; } catch (_) { /* noop */ }
       if (my !== gen) return;
       const ink = Ink();
-      const p = ink.fillWord(el, word, { id: art.id, svg }, { fit: true, max: 290, colorway: cw });
+      const p = ink.fillWord(el, word, { id: art.id, svg }, { fit: true, max: 290, colorway: cw, hold: animates(animate) });
       if (animates(animate)) plotIn(el, { delay: 160, duration: 2000, style: animStyle(ctx.prefs()) });
       await p;
     };
@@ -445,9 +447,13 @@
       }
     };
 
-    const render = async ({ animate = false } = {}) => {
+    // onMounted: called once the letters / word are laid out (outlines set, pieces still arriving), so the page can reveal.
+    let mountedCb = null;
+    let builtSig = null; // what the mounted letters were built from (see the keep path in render)
+    const signalMounted = () => { const f = mountedCb; mountedCb = null; if (f) { try { f(); } catch (_) { /* noop */ } } };
+    const render = async ({ animate = false, onMounted = null } = {}) => {
       const my = ++gen;
-      teardown();
+      mountedCb = onMounted;
       const prefs = ctx.prefs();
       const { word } = Words().resolve(prefs);
       const style = ['mosaic', 'word', 'band'].includes(prefs.coverStyle) ? prefs.coverStyle : 'mosaic';
@@ -458,18 +464,43 @@
       if (my !== gen) return;
       if (override) arts = [override.art, ...arts.filter((a) => a.id !== override.art.id)];
       const usingPicks = arts.length > 0 && arts.every((a) => a.kind === 'pick');
+      // Same inputs as the letters on screen (word, style, pieces, chosen cover): nothing is torn down. The mounted letters
+      // stay exactly as they are (a re-render must never blank or re-plot them); only colors that changed are re-applied.
+      const sig = [style, word, arts.map((a) => a.id).join('|'), override ? `${override.art.id}${JSON.stringify([override.frame, override.fill])}` : ''].join('~');
+      if (!animate && style === 'mosaic' && builtSig === sig && tiles.length && tiles.every((t) => t.el.isConnected)) {
+        const cws = ctx.colorwaysFor(tiles.map((t) => t.art));
+        if (override && override.colorway && cws.length) cws[0] = override.colorway;
+        if (override && cws.length) cws[0] = withFill(tiles[0].art, cws[0]);
+        tiles.forEach((t, i) => {
+          if (!cws[i] || (cws[i].key === t.cw.key && cws[i].paper === t.cw.paper && cws[i].ink === t.cw.ink)) return;
+          t.cw = cws[i];
+          const handle = t.el._spWord;
+          if (handle && handle.setColorway) handle.setColorway(t.cw);
+          setCwData(t);
+        });
+        renderInfo(style, arts, word, usingPicks);
+        renderWho(style);
+        syncFanBtn();
+        signalMounted();
+        return;
+      }
+      builtSig = null;
+      teardown();
       renderInfo(style, arts, word, usingPicks);
       fanTile = 0;
       if (!arts.length) {
         fanBtn.hidden = true;
         buildEmpty(word);
         renderWho(style);
+        signalMounted();
         return;
       }
       if (style === 'mosaic') await buildMosaic(word, arts, animate, my);
       else if (style === 'word') await buildSpecimen(word, arts, animate, my);
       else await buildBand(word, arts, animate, my);
       if (my !== gen) return;
+      builtSig = sig;
+      signalMounted();
       renderWho(style);
       syncFanBtn();
       if (style === 'band') { const slot = stage.querySelector('.sp-pf:not(.sp-pf-old) .sp-pf-who'); if (slot && !slot.childNodes.length && !prefs.showName) slot.append(h('h1', { class: 'sp-cv-word', text: word })); }

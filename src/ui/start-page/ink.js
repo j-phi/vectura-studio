@@ -293,7 +293,7 @@
 
   /* A style is a function (handle, opts) => player { frame(k 0..1), dispose(fade) }. */
   const plotStyle = (h) => {
-    if (h.kind === 'word') return h.wipePlayer();
+    if (h.kind === 'word') return h.plotPlayer ? h.plotPlayer() : h.wipePlayer();
     let cv = null; let c = null; let S = 1; let OX = 0; let OY = 0; let lw = 0.6;
     let pi = 0; let pj = 1; let f = 0; let drawn = 0;
     const setup = () => {
@@ -360,7 +360,10 @@
       if (!h.alive() || isStill() || o.style === 'none') return resolve(h);
       const make = DRAW_STYLES[o.style] || DRAW_STYLES.plot;
       const run = { h, o, dur: Math.max(1, o.duration), t0: performance.now() + (o.delay || 0), resolve, done: false, player: null };
+      h._own = false;
       run.player = make(h, o);
+      // a style that animates the element itself (fade, bleed, iris...) needs the finished letter under it
+      if (h.kind === 'word' && h.release && !h._own) h.release();
       h.run = run; h.el.classList.add('sp-ink-drawing'); active.add(run); wake();
     }));
   };
@@ -512,8 +515,10 @@
   const fillWord = (el, word, art, opts) => {
     if (typeof el === 'string') el = D.querySelector(el);
     if (!el) return Promise.reject(new Error('StartPageInk.fillWord: no element'));
-    if (!art || typeof art.svg !== 'string') return Promise.reject(new Error('StartPageInk.fillWord: art needs { id, svg }'));
-    const o = Object.assign({ fit: false, min: 28, max: 330, outline: true, frame: null }, opts || {});
+    // art.svg may be a promise: the word then measures and shows its outline now and fills when the art arrives.
+    if (!art || !(typeof art.svg === 'string' || (art.svg && typeof art.svg.then === 'function'))) return Promise.reject(new Error('StartPageInk.fillWord: art needs { id, svg }'));
+    const o = Object.assign({ fit: false, min: 28, max: 330, outline: true, frame: null, hold: false }, opts || {});
+    let A = art;
     if (el._spInk || el._spWord) unmount(el);
     el.classList.add('sp-word'); el.textContent = '';
     const font = typeof o.font === 'string' ? { family: o.font } : (o.font || {});
@@ -522,6 +527,11 @@
     if (font.size) el.style.fontSize = typeof font.size === 'number' ? `${font.size}px` : font.size;
     const txt = D.createElement('span'); txt.className = 'sp-word-text'; txt.textContent = word; el.appendChild(txt);
     const cv = D.createElement('canvas'); cv.className = 'sp-word-fill'; cv.setAttribute('aria-hidden', 'true'); el.appendChild(cv);
+    // hold: the word is outline-only until its draw-in plays (the prototype's sequence): a hairline of the glyphs, then the
+    // paper wipes in left to right while the pen plots the piece clipped to the letters. Nothing solid shows first.
+    let line = null; let lc = null;
+    if (o.hold) { line = D.createElement('canvas'); line.className = 'sp-word-line'; line.setAttribute('aria-hidden', 'true'); el.appendChild(line); lc = line.getContext('2d'); }
+    let shown = o.hold ? 0 : 1; // how much of the finished composite is on screen
     const final = D.createElement('canvas'); // composed, un-wiped result
     const h = {
       kind: 'word', id: ++uid, el, word, art, parsed: null, colorway: normColorway(o.colorway), inkBox: null, dpr: 1, win: null,
@@ -555,6 +565,10 @@
       cv.width = Math.round(box.width * pol.scale); cv.height = Math.round(box.height * pol.scale);
       final.width = cv.width; final.height = cv.height;
       cv.style.left = `${x0 + box.left}px`; cv.style.top = `${box.top}px`; cv.style.width = `${box.width}px`; cv.style.height = `${box.height}px`;
+      if (line) {
+        line.width = cv.width; line.height = cv.height;
+        line.style.left = cv.style.left; line.style.top = cv.style.top; line.style.width = cv.style.width; line.style.height = cv.style.height;
+      }
       // never let the host clip a descender: grow its min-height to the ink box bottom
       const need = Math.ceil(box.top + box.height);
       if (need > (er.height || 0)) el.style.minHeight = `${need}px`;
@@ -575,9 +589,20 @@
         c.setTransform(h.dpr, 0, 0, h.dpr, 0, 0); c.font = g.font; try { c.letterSpacing = `${g.ls}px`; } catch (e) { /* ignore */ }
         c.globalAlpha = 0.34; c.strokeStyle = isHex(cw.ink) ? cw.ink : '#000'; c.lineWidth = 0.9; c.lineJoin = 'round'; c.strokeText(word, b.tx, b.ty); c.globalAlpha = 1;
       }
-      blit(1);
+      blit(shown);
+    };
+    const drawLine = () => {
+      if (!lc || !h.inkBox || !h.geo) return;
+      const b = h.inkBox; const g = h.geo;
+      lc.setTransform(1, 0, 0, 1, 0, 0); lc.clearRect(0, 0, line.width, line.height);
+      lc.setTransform(h.dpr, 0, 0, h.dpr, 0, 0); lc.font = g.font; try { lc.letterSpacing = `${g.ls}px`; } catch (e) { /* ignore */ }
+      lc.textBaseline = 'alphabetic'; lc.lineJoin = 'round'; lc.lineWidth = Math.max(0.9, Math.min(1.5, g.fs / 160));
+      let tone = '';
+      try { tone = W.getComputedStyle(el).getPropertyValue('--ui-text').trim(); } catch (e) { tone = ''; }
+      lc.globalAlpha = 0.34; lc.strokeStyle = isHex(tone) ? tone : (isHex(h.colorway.ink) ? h.colorway.ink : '#888888'); lc.strokeText(word, b.tx, b.ty); lc.globalAlpha = 1;
     };
     const blit = (k) => {
+      shown = k;
       const c = cv.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height);
       if (k >= 1) { c.drawImage(final, 0, 0); return; }
       c.save(); c.beginPath(); c.rect(0, 0, cv.width * Math.max(0, k), cv.height); c.clip(); c.drawImage(final, 0, 0); c.restore();
@@ -586,12 +611,12 @@
       const gen = ++h._gen; const b = h.inkBox;
       h.win = Geo.artWindow(h.parsed, b.width, b.height, 'cover', h.frame);
       const look = Geo.lineLook(h.parsed, b.width, b.height, isLight(h.colorway.paper), b.width / h.win[2], h.win);
-      return rasterArt(art, h.parsed, { w: b.width, h: b.height, dpr: h.dpr, lw: look.lw, alpha: look.alpha, color: '#ffffff', win: h.win }).then((bmp) => {
+      return rasterArt(A, h.parsed, { w: b.width, h: b.height, dpr: h.dpr, lw: look.lw, alpha: look.alpha, color: '#ffffff', win: h.win }).then((bmp) => {
         if (!h.alive() || gen !== h._gen) return false;
-        h.bmp = bmp; compose(); el.classList.add('sp-word-on'); return true;
+        h.bmp = bmp; compose(); drawLine(); el.classList.add('sp-word-on'); return true;
       });
     };
-    const refit = () => { if (!h.parsed) return; measure(); build(); };
+    const refit = () => { if (!h.parsed) return; if (h.run) endRun(h.run, true); measure(); drawLine(); build(); };
     let rT = 0; let lastW = el.clientWidth;
     h.refit = refit;
     h.rescale = refit;
@@ -600,17 +625,73 @@
       lastW = el.clientWidth; clearTimeout(rT); rT = setTimeout(refit, 150);
     };
     h.destroy = () => { clearTimeout(rT); h._gen++; };
-    h.setColorway = (c) => { h.colorway = normColorway(c); setVars(el, h.colorway); compose(); };
-    h.wipePlayer = () => ({
+    h.setColorway = (c) => { h.colorway = normColorway(c); setVars(el, h.colorway); if (h.run) endRun(h.run, true); compose(); drawLine(); };
+    h.wipePlayer = () => (h._own = true, {
       frame(k) { blit(Geo.plotEase(k) * 1.04); },
-      dispose() { blit(1); },
+      dispose() { blit(1); if (line) line.style.display = 'none'; },
     });
+    // The pen plot, clipped to the glyphs: the paper glyph is laid down, every stroke is drawn on top of it only where
+    // the letter is (source-atop), and a soft left-to-right mask lets the paper wipe in just behind the pen.
+    h.plotPlayer = () => {
+      const cw = h.colorway;
+      h._own = true;
+      if (cw.fill || !h.parsed || !h.win || !h.inkBox || !h.geo) return h.wipePlayer();
+      const a = h.parsed; const b = h.inkBox; const g = h.geo; const c = cv.getContext('2d');
+      const win = h.win; const S = b.width / win[2]; const OX = -win[0] * S; const OY = -win[1] * S;
+      const look = Geo.lineLook(a, b.width, b.height, isLight(cw.paper), S, win);
+      let pi = 0; let pj = 1; let f = 0; let drawn = 0; let begun = false; let curW = -1;
+      const begin = () => {
+        begun = true; c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height);
+        c.setTransform(h.dpr, 0, 0, h.dpr, 0, 0); c.font = g.font; try { c.letterSpacing = `${g.ls}px`; } catch (e) { /* ignore */ }
+        c.textBaseline = 'alphabetic'; c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1; c.fillStyle = cw.paper; c.fillText(word, b.tx, b.ty);
+        c.globalCompositeOperation = 'source-atop'; c.lineCap = 'round'; c.lineJoin = 'round'; c.globalAlpha = look.alpha;
+        if (cw.ink2) { const gr = c.createLinearGradient(0, 0, b.width, b.height); gr.addColorStop(0, cw.ink); gr.addColorStop(1, cw.ink2); c.strokeStyle = gr; } else c.strokeStyle = cw.ink;
+      };
+      const advanceTo = (L) => {
+        L = Math.min(L, a.total); let started = false; let px = 0; let py = 0; c.beginPath();
+        while (drawn < L && pi < a.polys.length) {
+          const P = a.polys[pi]; const w = look.lw * Math.max(0.5, a.widths[pi] / 0.3);
+          if (w !== curW) { if (started) { c.stroke(); c.beginPath(); started = false; } c.lineWidth = w; curW = w; }
+          const x0 = P[pj * 2 - 2]; const y0 = P[pj * 2 - 1]; const x1 = P[pj * 2]; const y1 = P[pj * 2 + 1];
+          const seg = Math.hypot(x1 - x0, y1 - y0); const remain = seg * (1 - f);
+          const sx = x0 + (x1 - x0) * f; const sy = y0 + (y1 - y0) * f;
+          if (!started || sx * S + OX !== px || sy * S + OY !== py) { c.moveTo(sx * S + OX, sy * S + OY); started = true; }
+          if (drawn + remain <= L) {
+            px = x1 * S + OX; py = y1 * S + OY; c.lineTo(px, py); drawn += remain; f = 0; pj++;
+            if (pj * 2 >= P.length) { pi++; pj = 1; }
+          } else {
+            const nf = f + (L - drawn) / (seg || 1);
+            px = (x0 + (x1 - x0) * nf) * S + OX; py = (y0 + (y1 - y0) * nf) * S + OY; c.lineTo(px, py); f = nf; drawn = L;
+          }
+        }
+        if (started) c.stroke();
+      };
+      const mask = (p) => {
+        const m = `linear-gradient(90deg,#000 0,#000 ${(p * 112 - 12).toFixed(2)}%,transparent ${(p * 112).toFixed(2)}%)`;
+        cv.style.webkitMaskImage = m; cv.style.maskImage = m;
+      };
+      return {
+        frame(k) {
+          if (!begun) begin();
+          const e = Geo.plotEase(k); mask(Math.min(1, e * 1.04 + 0.04));
+          advanceTo(a.total * e);
+        },
+        dispose() {
+          cv.style.webkitMaskImage = ''; cv.style.maskImage = '';
+          c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
+          blit(1); if (line) line.style.display = 'none';
+        },
+      };
+    };
+    // Show the finished letter now (no draw-in is coming: Still, a failed run, a style that does not play).
+    h.release = () => { if (h.run) return; o.hold = false; shown = 1; if (h.bmp) { blit(1); if (line) line.style.display = 'none'; } };
     h.measure = () => {};
     setVars(el, h.colorway);
     if (ro) { resizeTargets.set(el, h); ro.observe(el); }
-    h.ready = Promise.all([fontsReady(), parseArt(art)]).then(([, parsed]) => {
+    const artReady = Promise.resolve(art.svg).then((svg) => { A = { id: art.id, svg: String(svg || '') }; return parseArt(A); });
+    h.ready = Promise.all([fontsReady().then(() => { if (h.alive() && line) { measure(); drawLine(); } }), artReady]).then(([, parsed]) => {
       if (!h.alive()) return h;
-      h.parsed = parsed; measure(); return build().then(() => h);
+      h.parsed = parsed; measure(); drawLine(); return build().then(() => h);
     }).then((r) => r, (err) => { el.classList.add('sp-ink-error'); if (W.console) W.console.warn('[StartPageInk]', err); return h; });
     return h.ready;
   };
