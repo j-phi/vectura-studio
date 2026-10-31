@@ -673,6 +673,10 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Harmonograph curve fix and Trinodal preset (v1.4.37)
+- **Harmonograph curves stay on the figure.** With Curves on, a long figure could draw a stray arc that disappeared while dragging; the curve fit now always stays within tolerance.
+- **Trinodal preset** added to Harmonograph (Geometric).
+
 ### Unreleased - Realistic paper scale and lighting (v1.4.34)
 - **Paper looks like paper at fit-to-screen.** Grain sizes recalibrated against real hot / cold / rough watercolour sheets; default Texture tuned so cold press and rough show about half the tooth contrast of a raking-light photo of the real sheets; tooth fades smoothly as it nears pixel size and returns as you zoom (no jumps at zoom or Scale steps); fibres stay visible on kraft, rag and newsprint, and a fibre mat appears at deep zoom.
 - **No more grey sheets.** The surface is lit around the paper colour: lit facets brighten and shadows darken, so the sheet's average colour is the colour you picked; white and saturated stock keep visible tooth (soft highlight roll-off).

@@ -6,6 +6,11 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Harmonograph: stray curve arc fixed; Trinodal preset (v1.4.37)
+- **No more "loose" line with Curves on.** The curve fit (`GeometryUtils` `_fitCubic`, used by `reduceAnchors` for algorithm output) split a failing span at its worst-error point and recursed, with a `depth > 48` backstop that emitted the un-fitted cubic as-is. Harmonograph emits its whole figure as one long self-crossing path, so the splits landed near run ends and nesting grew with path length; on the Trinodal figure the backstop fired twice and drew a ~5 mm arc outside the lobes. It vanished during a drag (the preview draws differently) and came back on mouse-up. The fit is now iterative on an explicit stack with no depth cap; every split is strictly interior, so it always terminates, and no span is accepted out of tolerance. Output is unchanged for paths that never reached the cap.
+- **Trinodal preset** (Harmonograph ▸ Geometric): three pendulums (3 : 2 : 3), 48 s, paper rotation 0.34 Hz.
+- RED: `harmonograph-curve-fit-fidelity.test.js` measured a 5.09 mm worst deviation from the sampled figure (limit 1.5 mm) for both the committed fit and the drag preview; after the fix it passes.
+
 ### CI security hardening: Node 24 and pinned actions (Black October, v1.4.36)
 - **Node 24 everywhere.** Every CI job, `.nvmrc` (24.22.1) and the golden-value pin move from Node 20 (end of life, no fix for the Brotli decoder RCE CVE-2026-111497) to Node 24. `GOLDEN_NODE_MAJOR` is 24 in `tests/helpers/golden-values.js`, `scripts/test-update-baselines.js` and `scene3d-u2-kernel-identity.test.js`; the x64 regeneration image is `node:24.22.1-bookworm-slim`.
 - **Goldens re-captured for the new major, nothing else moved.** 6 arm64 and 7 x64 values in 4 files changed (`scene3d-mkdashramp-discrete`, `scene3d-mkdashramp-single-pass`, `scene3d-seed` x64, `scene3d-u2-kernel-identity` mezzoRegion); every SVG golden is unchanged. The U2 identity proof was re-run on the pre-U2 base `383d7610` on Node 24: all 6 scene hashes match current output on both architectures (the arm64 mezzoRegion hash `8ee322d6` is the one measured on the base for Node 25 on 2026-10-11).
