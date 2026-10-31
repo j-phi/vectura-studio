@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: dragging a Start Page 3D object no longer opens the art (v1.4.46)
+- **Only a fast single click opens art.** Releasing an orbit drag (or any press that moves more than 5 px, 10 px for touch/pen, or lasts longer than 350 ms) no longer opens the piece; the `click` the browser fires on release is swallowed. Keyboard Enter/Space and screen-reader activation still open it. One shared helper, `StartPageDom.onOpenClick`, now guards every open-on-click site: plates, cover letters, the word cover, the band caption, studio pick cards and the Community card. Thresholds live in `START_PAGE.CLICK` (`src/config/start-page.js`).
+- Plate art also resolves its entry by plate id when opened, so a re-sync that rebuilt the entry objects can no longer leave the art click a silent no-op.
+
 ### Added: Developer Mode edits the Start Page example plates
 - **The existing Developer Mode switch (Document Setup ▸ Contributor / Presets, `SETTINGS.devMode`) now also opens the shipped example plates for curation.** No second flag: `Vectura.DevMode` (`src/core/dev-mode.js`) wraps that one setting and announces changes, so the Start Page reacts live. With it off nothing is built.
 - **Document Setup ▸ Contributor / Presets ▸ "Edit Start Page plates…"** (visible only with Developer Mode on) closes the panel and opens the Start Page through `startPage.show({ editPlates: true })`, scrolled to the Plates section. The examples show and are editable even when you have saved works of your own.

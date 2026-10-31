@@ -108,7 +108,7 @@
         const artEl = h('div', { class: 'sp-pick-art' });
         const btn = h('button', { class: 'sp-pick-card', type: 'button', 'aria-label': `Open ${art.name} from the studio library` }, artEl);
         const card = { art, cw, artEl, mounted: false, lift: null };
-        btn.addEventListener('click', () => open(card, false));
+        Vectura.StartPageDom.onOpenClick(btn, () => open(card, false));
         const meta = [algoLabel(art.algorithm), art.collection].filter(Boolean).join(' · ');
         const openBtn = h('button', { class: 'sp-pick-btn sp-pick-btn-primary', type: 'button', text: 'Open', 'aria-label': `Open ${art.name}` });
         const tplBtn = h('button', { class: 'sp-pick-btn', type: 'button', text: 'Open as template', 'aria-label': `Open as template: ${art.name}` });

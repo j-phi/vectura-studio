@@ -95,7 +95,7 @@
         let card;
         if (typeof opts.openArt === 'function') {
           card = h('button', { class: 'sp-cm-card', type: 'button', 'aria-label': `${lead.name}: ${label.toLowerCase()}. Open it` }, artEl);
-          card.addEventListener('click', () => opts.openArt(lead, cw));
+          Vectura.StartPageDom.onOpenClick(card, () => opts.openArt(lead, cw));
         } else {
           card = h('div', { class: 'sp-cm-card', role: 'img', 'aria-label': `${lead.name}: ${label.toLowerCase()}` }, artEl);
         }

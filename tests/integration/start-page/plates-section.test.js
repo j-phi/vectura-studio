@@ -433,4 +433,28 @@ describe('Start Page plates section', () => {
     expect(w.querySelector('.spl').style.getPropertyValue('--spl-art').toLowerCase()).toBe(pick.toLowerCase());
     expect(w.dataset.spInk.toLowerCase()).toBe(pick.toLowerCase());
   });
+
+  describe('opening art needs a genuine quick click', () => {
+    const { ptr, click: rawClick, gesture } = require('../../helpers/pointer-gesture');
+    test('a drag or long press on a plate does not open it; a quick click and keyboard activation do', async () => {
+      await boot();
+      let clock = 1000;
+      window.performance.now = () => clock;
+      const tickClock = (ms) => { clock += ms; };
+      const art = q('.sp-pl:not([data-off]) .sp-pl-art');
+      expect(art).toBeTruthy();
+      gesture(window, art, { to: [60, 20], tick: tickClock }); // orbit drag, then the click the browser fires on release
+      gesture(window, art, { ms: 900, tick: tickClock }); // long press
+      await tick(60);
+      expect(calls.open).toHaveLength(0);
+      gesture(window, art, { tick: tickClock }); // fast single click
+      await tick(60);
+      expect(calls.open).toHaveLength(1);
+      ptr(window, art, 'pointerdown', 5, 5); ptr(window, art, 'pointermove', 90, 5); ptr(window, art, 'pointerup', 90, 5);
+      tickClock(2000);
+      rawClick(window, art); // no recent gesture: keyboard / assistive activation
+      await tick(60);
+      expect(calls.open).toHaveLength(2);
+    });
+  });
 });

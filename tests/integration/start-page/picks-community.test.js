@@ -227,3 +227,22 @@ describe('StartPageCommunity', () => {
     expect(ink.unmount.length).toBeGreaterThan(0);
   });
 });
+
+describe('picks and community cards open only on a genuine click', () => {
+  const { gesture } = require('../../helpers/pointer-gesture');
+  it('a dragged or long-pressed pick card does not open; a quick click does', async () => {
+    const { V, root, W } = boot();
+    let clock = 1000; W.performance.now = () => clock;
+    const tick = (ms) => { clock += ms; };
+    const calls = [];
+    const ctl = V.StartPagePicksSection.create(root, { artSource: { list: async () => arts(2) }, colorwayFor: (a, i) => cw(i), openArt: (...a) => calls.push(a) });
+    await ctl.render(); await nextTick(10);
+    const card = root.querySelector('button.sp-pick-card');
+    gesture(W, card, { to: [50, 0], tick });
+    gesture(W, card, { ms: 900, tick });
+    expect(calls).toHaveLength(0);
+    gesture(W, card, { tick });
+    expect(calls).toHaveLength(1);
+  });
+});
+
