@@ -735,7 +735,7 @@ CI lives in `.github/workflows/test.yml`:
 - **Play the plot order.** The Draw Order pane has a Play/Pause button beside its % readout, and the Export SVG **Line Sort Print Order** legend has one that draws the preview path by path in print order.
 
 ### Unreleased - Start Page tidy
-- **Vectura cover: tighter letters, bigger type.** The Name in Ink word sits closer together (V-e and u-r a touch more) and grows to fill the column. Until you have saved works, its seven letters carry High Sierra, Alpine Ridge, Cybersigil, River Current, Dahlia 'Cornel', Downpour and Old Growth Oak, each on a fixed paper and pen in the Curated mode.
+- **Vectura cover: tighter letters, bigger type.** The Name in Ink word sits closer together (V-e and u-r a touch more) and grows to fill the column. Until you have saved works, its seven letters carry High Sierra, Alpine Ridge, Cybersigil, Still Pool, Dahlia 'Cornel', Downpour and Old Growth Oak, each on a fixed paper and pen in the Curated mode.
 - **Examples note behind an (i).** The examples explainer moves from a box under Plates into a note on an **(i)** after the EXAMPLES count (hover, focus or click). The count line drops "your own work will join them".
 - **No cover Colorways button.** The Colorways button at the top of the title section is gone; plates keep theirs.
 - **Back to canvas** now shows (and Esc works) whenever the canvas has unsaved changes, not only when it has layers.

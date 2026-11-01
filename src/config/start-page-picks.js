@@ -54,7 +54,7 @@
     Object.freeze({ presetId: 'user-terrain-1781475148727', paper: 'blueWash', pen: 'micron-blue' }), // V  High Sierra
     Object.freeze({ presetId: 'terrain-alpine', paper: 'news', pen: 'micron-black' }), // e  Alpine Ridge
     Object.freeze({ presetId: 'user-rings-1786211570394', paper: 'black', pen: 'gelly-white' }), // c  Cybersigil
-    Object.freeze({ presetId: 'flowfield-river-current', paper: 'blueWash', pen: 'micron-blue' }), // t  River Current
+    Object.freeze({ presetId: 'flowfield-still-pool', paper: 'blueWash', pen: 'micron-blue' }), // t  Still Pool
     Object.freeze({ presetId: 'dahlia-cornel', paper: 'rose', pen: 'pal-wine' }), // u  Dahlia 'Cornel'
     Object.freeze({ presetId: 'rainfall-downpour', paper: 'hot', pen: 'pal-teal' }), // r  Downpour
     Object.freeze({ presetId: 'rings-old-growth-oak', paper: 'kraft', pen: 'micron-sepia' }), // a  Old Growth Oak
