@@ -182,6 +182,35 @@ describe('Start Page P0 review fixes', () => {
     });
   });
 
+  describe('7b. New Canvas is a standard canvas, whatever was opened before', () => {
+    test('a plate opened in a vivid colorway does not carry its paper or pens into New blank canvas', async () => {
+      await boot();
+      await app.newCanvas({ paper: 'A3', confirm: false });
+      const clean = { paper: SETTINGS.paper.color, bg: SETTINGS.bgColor, pens: JSON.stringify(SETTINGS.pens.map((p) => [p.id, p.color, p.width, !!p.themeManaged])) };
+      const preset = (window.Vectura.PRESETS || []).find((p) => p && /^rings-/.test(p.id)) || window.Vectura.PRESETS[0];
+      const vivid = { key: 'vivid', paper: '#ff00aa', ink: '#00ff66', ink2: null };
+      const ok = await window.Vectura.StartPageOpenArt.open({ kind: 'pick', id: `pick:${preset.id}`, presetId: preset.id, name: 'Vivid' }, vivid, { app });
+      expect(ok).toBe(true);
+      expect(SETTINGS.paper.color.toLowerCase()).toBe('#ff00aa');
+      expect(SETTINGS.pens.some((p) => p.color.toLowerCase() === '#00ff66')).toBe(true);
+      await app.newCanvas({ paper: 'A3', confirm: false });
+      expect(app.engine.layers).toHaveLength(0);
+      expect(SETTINGS.paper.color).toBe(clean.paper);
+      expect(SETTINGS.bgColor).toBe(clean.bg);
+      expect(JSON.stringify(SETTINGS.pens.map((p) => [p.id, p.color, p.width, !!p.themeManaged]))).toBe(clean.pens);
+      expect(SETTINGS.pens.some((p) => p.color.toLowerCase() === '#00ff66')).toBe(false);
+      expect(SETTINGS.startPageFill).toBeUndefined();
+    });
+
+    test("New Canvas uses the user's default paper when one is set", async () => {
+      await boot();
+      app.setPaperDefault({ ...window.Vectura.Paper.builtinDefault(), type: 'none', color: '#f4efe2' });
+      window.Vectura.Paper.setActive({ ...SETTINGS.paper, type: 'none', color: '#123456' }, { render: false });
+      await app.newCanvas({ paper: 'A4', confirm: false });
+      expect(SETTINGS.paper.color.toLowerCase()).toBe('#f4efe2');
+    });
+  });
+
   describe('9. recents reopen paths, Save recording, Undo', () => {
     test('a stored file handle is tried first', async () => {
       await boot();

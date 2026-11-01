@@ -182,6 +182,7 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 - Plotter optimization toggle with adjustable tolerance (mm) to remove fully overlapping paths per pen before export
 - Multi-layer `Line Sort` respects the selected optimization scope across preview, stats, overlay rendering, and optimized SVG export
 - When preview mode is `Overlay` and `Line Sort` is active, the overlay gradient runs from `Overlay Color` to its complement by default, with a per-Line Sort secondary-color override and an on-canvas print-order legend
+- The **Line Sort Print Order** legend has a Play/Pause button that draws the preview path by path in print order; the main-canvas **Draw Order** pane has a matching Play button beside its % readout
 - `Export Optimized` is enabled by default; optimization scope defaults to `All Layers`
 - `Line Simplify` is applied by default for new layers with Mode set to `Curve`; `Line Sort` is off by default for new layers
 - One-click export with configurable precision and grouping by pen assignment
@@ -727,6 +728,18 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
+### Unreleased - Cover art in Start Page settings
+- **Pick the cover's art and colors.** Start Page settings > Cover > **Cover art** chooses the piece (Automatic, one of your pieces, or a template) and the colorway (the page colorway, a piece's own colors, or an alternate) for each cover style. Name in Ink gets one choice per letter. **Reset cover art** returns to automatic.
+
+### Unreleased - Plot-order Play buttons
+- **Play the plot order.** The Draw Order pane has a Play/Pause button beside its % readout, and the Export SVG **Line Sort Print Order** legend has one that draws the preview path by path in print order.
+
+### Unreleased - Start Page tidy
+- **Examples note behind an (i).** The examples explainer moves from a box under Plates into a note on an **(i)** after the EXAMPLES count (hover, focus or click). The count line drops "your own work will join them".
+- **No cover Colorways button.** The Colorways button at the top of the title section is gone; plates keep theirs.
+- **Back to canvas** now shows (and Esc works) whenever the canvas has unsaved changes, not only when it has layers.
+- **New blank canvas starts clean.** It no longer keeps the paper and inks of the last plate you opened: you get your default paper (or the theme's sheet) and the stock pens.
+
 ### 1.5.0 - Start Page
 - **A Start Page on launch.** A cover in your own ink, Recent files, Studio picks and a Community note ("coming later", with a Notify toggle) sit over the editor. Open it with `Shift+Cmd/Ctrl+H`, the wordmark or `File → Start Page…`; `Cmd/Ctrl+N` starts a blank canvas and `Alt/Option+Cmd/Ctrl+1` to `8` reopen recents. Turn it off with **Show Start Page on launch** (Settings or Document Setup). The page opens without an editor flash or late layout.
 - **Plates.** Your work set as an editorial run: a plate editor with manual colors (now including Title and Band), Arrange (`Alt/Option+Up/Down`), a Colorways fan and **Use as cover**; Open always keeps the colors shown. Ten example plates fill the page on a first run; the **Show example plates** switch in Start Page settings hides them, and Developer Mode lets contributors edit them.
@@ -735,6 +748,9 @@ CI lives in `.github/workflows/test.yml`:
 - **Harmonograph curves stay on the figure** (no stray arc with Curves on), and a **Trinodal** preset joins Harmonograph (Geometric).
 - **Paper, pens and inks.** Eleven paper types with realistic scale and lighting, a Scale slider, My papers and photo papers; fifteen pen models with ink edge bleed; special inks (metallic, neon, glow-in-the-dark, glitter, opaque white), View ▸ Lights Off, pen files and My pens; a System theme.
 - **Touch and Apple Pencil across the whole app.** Drawers on phones and iPad portrait, 44 px targets, pinch and two-finger pan with every tool, finger-sized handles and iOS file I/O. Real-device results are pending, so the release label for touch is not yet claimed. Details: `CHANGELOG.md` and `docs/touch-audit/`.
+
+<details>
+<summary>Older releases (1.4.20 and earlier)</summary>
 
 ### 1.4.20 - Touch nightly on Linux
 - **Holds and drags.** A long-press on the canvas no longer opens its menu in the middle of a slow drag and reverts it (gizmo rings, handles, pen anchors, objects).
@@ -746,9 +762,6 @@ CI lives in `.github/workflows/test.yml`:
 - **New canaries.** Every bundled preset, 13 legacy saved files, every algorithm in a real browser, SVG goldens for 11 more algorithms and 35 canonical 3D scenes. They found 6 product defects (PRH-029 to PRH-034), logged in `plans.md`.
 - **Leaner suite.** Tests no longer read git history; golden values regenerate with `npm run test:update`. Duplicate Scene3D tests were cut with mutation proofs.
 - **Timing.** PR wall time is projected at about 6 minutes (from about 17). This is not yet measured on hosted runners. Details: `docs/testing.md`.
-
-<details>
-<summary>Older releases (1.4.15 and earlier)</summary>
 
 ### 1.4.15
 - **3D Scene — Duty Cycle · Constant responds to Density above 50.** Density 50 to 100 now

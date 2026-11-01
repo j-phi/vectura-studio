@@ -44,6 +44,7 @@
     let picks = null;
     let community = null;
     let settings = null;
+    let coverArtCtl = null;
     let railUI = null;
     let provider = null;
     let coverSig = '';
@@ -59,6 +60,12 @@
     const isMac = () => /mac|iphone|ipad|ipod/.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`.toLowerCase());
     const mod = () => (isMac() ? '⌘' : 'Ctrl+');
     const hasLiveCanvas = () => (app.engine?.layers || []).length > 0;
+    // Work in progress behind the page: layers on the canvas, or any unsaved change (paper, pens) the Open dialog would warn about.
+    // Either way the page must offer a way back to it (Back to canvas, Esc).
+    const hasWorkInProgress = () => {
+      if (hasLiveCanvas()) return true;
+      try { return typeof app.isDocumentDirty === 'function' && !!app.isDocumentDirty(); } catch (_) { return false; }
+    };
     const persist = () => app.persistPreferencesDebounced?.();
     const cleanPref = (key, value) => Vectura.START_PAGE.sanitize({ ...prefs(), [key]: value })[key];
 
@@ -97,9 +104,71 @@
       (cover ? cover.tiles() : []).forEach((t) => { if (t.cw && !seen.has(t.cw.key)) seen.set(t.cw.key, t.cw); });
       return [...seen.values()];
     };
+    /* ------------------------------------------------------------------ cover art + colorway choices (Start Page settings) */
+    const syncCoverArt = () => { if (coverArtCtl) coverArtCtl.sync(); };
+    const writeCoverChoice = (mutate) => {
+      const p = prefs();
+      const next = {
+        coverArt: { mosaic: [...(p.coverArt?.mosaic || [])], word: p.coverArt?.word || '', band: p.coverArt?.band || '' },
+        coverColors: { mosaic: [...(p.coverColors?.mosaic || [])], word: p.coverColors?.word || null, band: p.coverColors?.band || null },
+      };
+      mutate(next);
+      const clean = Vectura.START_PAGE.sanitize({ ...p, ...next });
+      p.coverArt = clean.coverArt; p.coverColors = clean.coverColors;
+      persist();
+    };
+    const setSlot = (next, kind, style, k, value, empty) => {
+      const t = next[kind];
+      if (style === 'mosaic') { while (t.mosaic.length <= k) t.mosaic.push(empty); t.mosaic[k] = value; } else t[style] = value;
+    };
+    const setCoverArt = (style, k, id) => {
+      writeCoverChoice((n) => setSlot(n, 'coverArt', style, k, id || '', ''));
+      // The swatches follow the piece now on the cover, so they re-sync once the cover has re-rendered.
+      syncCoverArt();
+      if (cover) cover.render({ animate: true }).then(syncCoverArt, syncCoverArt);
+    };
+    const setCoverColor = (style, k, cw) => {
+      writeCoverChoice((n) => setSlot(n, 'coverColors', style, k, cw || null, null));
+      if (cover) cover.recolor();
+      syncCoverArt();
+    };
+    const resetCoverArt = (style) => {
+      writeCoverChoice((n) => {
+        if (style === 'mosaic') { n.coverArt.mosaic = []; n.coverColors.mosaic = []; } else { n.coverArt[style] = ''; n.coverColors[style] = null; }
+      });
+      // The swatches follow the piece now on the cover, so they re-sync once the cover has re-rendered.
+      syncCoverArt();
+      if (cover) cover.render({ animate: true }).then(syncCoverArt, syncCoverArt);
+    };
+    // Colorways a cover slot can take: the page colorway it would get, the piece's own colors, then curated alternates.
+    const coverColorOptions = (slot) => {
+      const out = [];
+      try {
+        const art = slot && slot.art;
+        if (!art) return out;
+        const base = colorwaysFor([art])[0];
+        out.push({ id: 'page', label: 'Page colorway', cw: base });
+        const oc = art.ownColors;
+        if (art.kind === 'work' && oc && oc.paper && oc.ink) {
+          out.push({ id: 'own', label: 'Its own colors', cw: { key: 'own', paper: oc.paper, ink: oc.ink, ink2: null, textInk: oc.ink, paperName: oc.paperName || 'Paper', penName: oc.penName || 'Ink' } });
+        }
+        const C = Vectura.StartPageColorway;
+        const mode = pageMode();
+        const alts = C && C.alternates ? C.alternates(0, art.id, 6, { mode: mode === 'mono' ? 'curated' : mode, seed: prefs().seed || undefined, theme: themeKey() }) : [];
+        const seen = new Set(out.map((o) => o.id));
+        (alts || []).forEach((cw) => {
+          if (!cw || seen.has(cw.key)) return;
+          seen.add(cw.key);
+          out.push({ id: cw.key, label: cw.name || `${cw.penName} on ${cw.paperName}`, cw });
+        });
+      } catch (_) { /* options are best-effort */ }
+      return out;
+    };
+
     const recolor = () => {
       if (!root) return;
       if (cover) cover.recolor();
+      syncCoverArt();
       if (controls) controls.sync();
       if (plates) plates.recolor();
       if (picks) picks.recolor();
@@ -254,7 +323,7 @@
         }
         p.coverWord = Vectura.START_PAGE.ENUMS.coverWord.includes(id) ? id : 'vectura';
         persist();
-        cover.render({ animate: true });
+        cover.render({ animate: true }).then(syncCoverArt, syncCoverArt); // a new word means new letters (mosaic rows)
       };
 
       cover = UI.StartPageCover.create({
@@ -269,7 +338,12 @@
           const p = prefs();
           const clean = Vectura.START_PAGE.sanitize({ ...p, coverArtId: o ? o.art.id : '', coverFrame: o ? o.frame : null, coverFill: o && o.fill ? (o.fill.kind || o.fill) : '' });
           p.coverArtId = clean.coverArtId; p.coverFrame = clean.coverFrame; p.coverFill = clean.coverFill;
-          persist();
+          // The newest action wins: choosing a cover piece clears the explicit choice on the slot it takes.
+          if (o) {
+            const style = p.coverStyle || 'mosaic';
+            writeCoverChoice((n) => { setSlot(n, 'coverArt', style, 0, '', ''); setSlot(n, 'coverColors', style, 0, null, null); });
+          } else persist();
+          syncCoverArt();
         },
         onPref: (key, value) => {
           const clean = cleanPref(key, value);
@@ -328,9 +402,10 @@
           if (prefs().coverStyle === k) return;
           prefs().coverStyle = k;
           persist();
-          cover.render({ animate: true });
+          cover.render({ animate: true }).then(syncCoverArt);
         },
         onWord: pickWord,
+        onSync: syncCoverArt,
         examples: () => (plates ? plates.examplesState() : { dev: false, available: true }),
         onPref: (key, value) => { if (key === 'animateIn' || key === 'hover') setMotionPref(key, value); },
         // Preview: play the cover's draw-in again with the chosen style (Still shows it finished)
@@ -345,6 +420,17 @@
           }
         },
       });
+
+      coverArtCtl = UI.StartPageCoverArtControls && settings.coverArtHost ? UI.StartPageCoverArtControls.create({
+        host: settings.coverArtHost,
+        style: () => prefs().coverStyle || 'mosaic',
+        slots: () => (cover ? cover.slots() : []),
+        arts: () => provider.list({ recentFirst: true }),
+        colorOptions: (slot) => coverColorOptions(slot),
+        onArt: (style, k, id) => setCoverArt(style, k, id),
+        onColor: (style, k, cw) => setCoverColor(style, k, cw),
+        onReset: (style) => resetCoverArt(style),
+      }) : null;
 
       controls = UI.StartPageColorControls.create({
         host: settings.colorwayHost,
@@ -384,7 +470,7 @@
         if (e.key === 'Escape' && !e.defaultPrevented) {
           if (settings && settings.isOpen()) { e.preventDefault(); settings.close(true); return; }
         }
-        if (e.key === 'Escape' && !e.defaultPrevented && hasLiveCanvas() && !document.querySelector('.vectura-modal-backdrop[style*="display: flex"]')) {
+        if (e.key === 'Escape' && !e.defaultPrevented && hasWorkInProgress() && !document.querySelector('.vectura-modal-backdrop[style*="display: flex"]')) {
           e.preventDefault();
           ctl.hide();
         }
@@ -562,7 +648,7 @@
         try { return new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }); } catch (_) { return ''; }
       })();
       if (token !== renderToken) return;
-      root.querySelector('[data-act="back"]').hidden = !hasLiveCanvas();
+      root.querySelector('[data-act="back"]').hidden = !hasWorkInProgress();
       await refreshOwn();
       if (token !== renderToken) return;
       renderRail();
@@ -574,7 +660,7 @@
       // not wait for that, only for the letters / word to be laid out. The rest of the page renders alongside, so the
       // first painted page is the final layout.
       let mounted; const mountedP = new Promise((res) => { mounted = res; });
-      const coverP = cover.render({ animate, onMounted: () => mounted() });
+      const coverP = cover.render({ animate, onMounted: () => mounted() }).then(syncCoverArt);
       await Promise.race([mountedP, coverP, new Promise((res) => setTimeout(res, 2500))]);
       if (token !== renderToken) return;
       controls.sync();
@@ -601,6 +687,7 @@
       if (!open || sig === coverSig) return;
       coverSig = sig;
       await cover.render({ animate: false });
+      syncCoverArt();
       controls.sync();
       renderSections({ picksToo: false });
     };
@@ -634,6 +721,11 @@
       syncPrefs,
       syncTheme,
       colorwaysFor,
+      get cover() { return cover; },
+      setCoverArt,
+      setCoverColor,
+      resetCoverArt,
+      coverColorOptions,
       /** The resolved colorway of a cover tile / letter (opening art uses exactly this). */
       resolvedColorway(el) {
         const t = el && el.closest ? el.closest('[data-sp-paper]') : null;
