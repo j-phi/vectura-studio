@@ -71,8 +71,9 @@
     openRecent: 'Alt+Cmd+1..8',
   });
 
-  // Letters/numbers (any script), space, and . , ' ’ - & ( ) / ·
-  const DISALLOWED_TEXT = /[^\p{L}\p{N} .,'’\-&()/·]/gu;
+  // Identity text allows letters, numbers, punctuation and symbols (e.g. "Line + Design"). Only control/format
+  // characters and angle brackets (markup) are dropped; the text is always rendered via textContent.
+  const DISALLOWED_TEXT = /[\p{C}<>]/gu;
   const SEED_RE = /^[A-Z0-9]{5}$/;
 
   const text = (value, max, fallback) => {
