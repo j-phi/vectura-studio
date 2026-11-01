@@ -1777,9 +1777,48 @@
 
   // ---- model picker thumbnail ----------------------------------------------
 
+  // drawSample with opts.paths: each {pts:[{x,y}] (mm), pen?} is drawn as its
+  // own ribbon (its pen's traits, else the sample pen's). Translucent dye on a
+  // light sheet multiplies; opaque ink is source-over. Studio previews only.
+  const drawSamplePaths = (ctx, paths, pen, p, info, shared, k, wMm, hMm, opts) => {
+    const PM = Vectura.PenModel;
+    const origin = opts.originMm || { x: 0, y: 0 };
+    if (origin.x || origin.y) ctx.translate(-(origin.x || 0), -(origin.y || 0));
+    const lightSheet = !!(Vectura.Paper && Vectura.Paper.luminance ? Vectura.Paper.luminance(p.color) >= 0.4 : true);
+    paths.forEach((item) => {
+      const pts = item && Array.isArray(item.pts) ? item.pts : null;
+      if (!pts || pts.length < 2) return;
+      const own = item.pen || pen;
+      const t = item.pen && PM ? PM.resolveTraits(item.pen, p, info) : shared;
+      ctx.globalCompositeOperation = t && !t.opaque && !t.plain && !t.dyeOnDark && lightSheet ? 'multiply' : 'source-over';
+      ctx.globalAlpha = t ? t.alpha : 1;
+      const col = (t && t.inkColor) || own.color;
+      ctx.fillStyle = col; ctx.strokeStyle = col;
+      if (t) {
+        const ds = dsFor(t, k);
+        const built = buildRibbon(flatten(pts, false), { ...t, skipRate: t.skipRate }, ds, 1);
+        ctx.beginPath();
+        replay(ctx, built.cmds);
+        ctx.fill();
+        if (t.fx) {
+          ctx.globalAlpha = 1;
+          drawEffects(ctx, [{ path: pts }], t, { pxPerMm: k, view: { x: origin.x || 0, y: origin.y || 0, w: wMm, h: hMm } });
+        }
+      } else {
+        ctx.lineWidth = own.width || 0.3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.beginPath();
+        pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+        ctx.stroke();
+      }
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  };
+
   /**
    * Draw a short sample stroke of `pen` on `paper` into `canvas` (CSS px
    * sized; drawn at devicePixelRatio). A gentle S-curve + a loop, ~24 mm wide.
+   * opts: widthMm, background, and (Pen Studio) paths:[{pts,pen?}] mm paths
+   * that replace the sine, paperFill (paint paper.color first), originMm.
    */
   const drawSample = (canvas, pen, paper, opts = {}) => {
     if (!canvas || typeof canvas.getContext !== 'function') return false;
@@ -1797,8 +1836,14 @@
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, W, H);
     if (opts.background) { ctx.fillStyle = opts.background; ctx.fillRect(0, 0, W, H); }
+    if (opts.paperFill && p.color) { ctx.fillStyle = p.color; ctx.fillRect(0, 0, W, H); }
     ctx.setTransform(k, 0, 0, k, 0, 0);
     const hMm = H / k;
+    if (Array.isArray(opts.paths)) {
+      drawSamplePaths(ctx, opts.paths, pen, p, info, t, k, wMm, hMm, opts);
+      ctx.restore();
+      return true;
+    }
     const pts = [];
     for (let i = 0; i <= 60; i += 1) {
       const u = i / 60;
