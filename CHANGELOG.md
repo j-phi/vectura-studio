@@ -9,6 +9,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ### Fixed: Start Page name sanitizer test matched the old rules
 - The Start Page name test still expected `=` to be stripped after the sanitizer moved to a symbol-friendly blocklist (angle brackets and control characters removed; `=`, `&`, `+` kept), which turned main's CI red. The test now checks the current rules, and a new test confirms a hostile name or practice line renders as plain text with no injected elements.
 
+### Added: Cover typeface and size in Start Page settings, with global admin defaults
+- **Settings > Cover > Typeface and Size.** Pick Space Grotesk, JetBrains Mono, System sans or Serif for the cover word, and a size from 50% to 100% of the largest that fits the page. Both apply to every cover style, take effect at once, and are saved with your other preferences (`startPage.coverFont`, `startPage.coverScale`, sanitized in `src/config/start-page.js`). The V-e and u-r kerning is tuned for Space Grotesk only.
+- **Global defaults for administrators.** The defaults for everyone live in one block, `ADMIN` in `src/config/start-page.js`; a deployment can also set `window.Vectura.START_PAGE_ADMIN = { coverFont, coverScale, lockCoverType }` before that file loads. A user's own choice wins; picking the global default again stores no choice, so later admin changes reach that user. `lockCoverType: true` applies the admin values to everyone and disables the two controls ("Set by your administrator for everyone").
+
+### Changed: Letter t of the Vectura cover carries Still Pool
+- Replaces River Current (a 956 KB pre-rendered SVG) with Still Pool (490 KB), on the same blue wash + blue pairing.
+
 ### Changed: Vectura cover word: tighter letters, larger type, hand-set art and colors
 - **Tighter spacing.** Every letter of the **Name in Ink** cover sits closer to its neighbor, and the **V-e** and **u-r** pairs tuck in a little further (`TRACK` / `KERN` in `src/ui/start-page/cover.js`, in em, so they scale with the type).
 - **Larger type.** The word now fills 98.5% of the column (was 95.5%) and may grow to 40% of the window height, capped at 420 px (was 30%, 300 px). At 1440x900 the type grows from 269 px to 311 px.
