@@ -52,7 +52,7 @@ describe('pen catalogue fixes', () => {
     expect(M('sakura-gelly-roll-moonlight').opacity).toBe(0.9);
   });
   it('CATALOGUE_REV is exported', () => {
-    expect(V.PEN_MODELS.CATALOGUE_REV).toBe('2026-11-pen-lab');
+    expect(V.PEN_MODELS.CATALOGUE_REV).toBe('2026-11-pens20');
     expect(V.PEN_MODELS.LIMITS.studioStarveLenMm).toBe(3000);
   });
 });

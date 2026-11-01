@@ -46,6 +46,44 @@ Coffee Fox).
 | `sakura-gelly-roll-stardust` | Sakura Gelly Roll Stardust (glitter) | glitter-gel | 10 (bold) 0.5, fine 0.42 | 0.4 | [1](https://unsharpen.com/wp-content/uploads/Sparkle-Scan-1024x703.jpg) [2](https://cdn.modulor.de/products/d22kz/1_768_768_r_sakura_glitter_gelroller_stardust.jpg) |
 | `uni-posca-pc1mr` | Uni Posca PC-1MR / PC-1M / PC-3M | paint-marker | PC-1MR (0.7 pin) 0.8, PC-1M (0.7-1.0 bullet) 1.0, PC-3M (0.9-1.3) 1.3 | 0.6 | [1](https://penplotterartwork.com/wp-content/uploads/2021/09/space_rays_generative_art-1024x1024.jpg) [2](https://penplotterartwork.com/wp-content/uploads/2021/09/warp_drive_generative_art_2-1024x1024.jpg) [3](https://penplotterartwork.com/wp-content/uploads/2021/09/space_rays_code_art_mac1-1024x1024.jpg) |
 | `glow-phosphorescent-marker` | Phosphorescent marker (Glow-Writer, Markal, glow paint in a tech pen) | paint-marker | fine nib 0.9 | 0.25 | [1](https://www.2spi.com/catalog/items/04962-AB.jpg) [2](https://cdn.hackaday.io/images/resize/600x600/1091971578962718025.png) [3](https://www.youtube.com/watch?v=jDtk6HzuQ1o) |
+| `staedtler-pigment-liner-308` | Staedtler Pigment Liner 308 | pigment-fineliner | 0.05 0.07 ... 0.3 0.32, 0.5 0.52, 1.0 1.04, 1.2 1.24 (estimated) | 0.45 | [staedtler.com](https://www.staedtler.com/nz/en/products/products-for-colouring/fineliners/pigment-liner-308-fineliner-308-sb8/) [Schleiper](https://www.schleiper.com/onlinecatalogue/series/3337-staedtler-pigment-liner-308-calibred-fineliner-with-pigmented-ink-black?lang=en) |
+| `uni-pin-fineliner` | Uni-ball uni PIN | pigment-fineliner | 0.03 0.07 (floor), 0.05 0.07 ... 0.8 0.84 (estimated) | 0.45 | [Dick Blick](https://www.dickblick.com/items/uni-pin-fine-liner-pen-set-of-12-black/) [Officeworks](https://www.officeworks.com.au/shop/officeworks/p/uni-pin-fineliner-0-03-mm-black-unpin003bk) [uniball.co.uk](https://uniball.co.uk/brands/pin/uni-ball-draw-and-sketch-8-piece-uni-pin-fineliner-drawing-pens-black/) |
+| `staedtler-triplus-334` | Staedtler Triplus Fineliner 334 | dye-fineliner | 0.3 0.3 (published line width) | 0.5 | [Officeworks](https://www.officeworks.com.au/shop/officeworks/p/staedtler-triplus-0-3mm-fineliner-334-black-4-pack-st334sb4bk) |
+| `pilot-g2` | Pilot G2 | gel | 0.38 0.25, 0.5 0.3, 0.7 0.38, 1.0 0.5 (estimated) | 0.4 | [unsharpen](https://unsharpen.com/?p=4206) [JetPens](https://www.jetpens.com/Pilot-G2-Gel-Pen-0.7-mm-5-Basic-Color-Set/pd/27911) |
+| `pentel-energel` | Pentel EnerGel | gel | 0.5 0.3 (est.), 0.7 0.35, 1.0 0.5 | 0.4 | [Pentel guide](https://pentel.mywestamerica.com/2023ProductGuide/19/) [Cromwell XM](https://cromwell.co.uk/shop/office-supplies/pens/energel-xm-bl77-series-rollerball-pen-red-fine-tip-size-0-35mm-line-width-pack-of-12/p/PNL8460440K) [Cromwell X](https://cromwell.co.uk/shop/office-supplies/pens/energel-x-retractable-gel-rollerball-10mm/f/60019) |
+| `molotow-one4all-127hs` | Molotow ONE4ALL 127HS | paint-marker | 127HS-CO 1.5 -> 1.6, 127HS 2.0 -> 2.1 (estimated) | 0.35 | [Digitec](https://www.digitec.ch/en/s1/product/molotow-akrylmarker-15m) [Cass Art](https://www.cassart.co.uk/molotow-one4all-127hs-acrylic-pump) |
+| `faber-castell-pitt-artist-pen` | Faber-Castell PITT Artist Pen | pigment-fineliner | XXS 0.07, XS 0.12, S 0.32, F 0.52, M 0.74, Bullet 1.5 1.55, Bullet 2.5 2.55 (estimated) | 0.45 | [faber-castell.com](https://www.faber-castell.com/en/pitt-artist-pen) [De Serres](https://www.deserres.ca/products/8-pack-pitt-artist-pens-xxs) |
+| `copic-multiliner` | Copic Multiliner / Multiliner SP | pigment-fineliner | 0.03 0.07 ... 1.0 1.04 (estimated) | 0.45 | [Copic SP](https://www.copicmarkers.com/products/multiliner-sp-pen) [too.com](https://copic.too.com/blogs/educational/mutliliner-vs-multil) |
+| `lamy-safari` | Lamy Safari | fountain-dye | EF 0.4, F 0.5, M 0.7, B 0.9 (published line widths = nominal = laid) | 0.35 | [Fountain Pen Network](https://fountainpennetwork.com/forum/topic/216085-lamy-safar) |
+| `muji-gel-ballpoint` | Muji gel ink ballpoint | gel | 0.38 0.25, 0.5 0.3 (estimated) | 0.35 | [Muji AU](https://muji.com.au/products/gel-ink-ballpoint-pen-cap-type-) |
+
+Catalogue rev `2026-11-pens20` (unit G, pens20 ingest). New-model traits are
+copied from the nearest ink-class sibling (pigment fineliners from the Micron,
+Triplus from the Stabilo 88, gel pens from the Gelly Roll Classic, Molotow from
+the Posca, Lamy Safari from the Kakuno, EnerGel is a liquid-gel hybrid between
+gel and rollerball). Where no line width is published, laid width is estimated
+from the sibling ratio (fineliner: nominal + 0.02 up to 0.5 mm, + 0.04 above;
+gel: 0.6 / 0.5 of the ball size) and the model confidence stays at or below
+0.5. Colour names come from maker/retailer lists; their hexes are our
+approximations and carry `approx: true` (the original curated hexes are
+untouched). Each model has a `sizesSource` line, shown in the Pen Studio lab.
+Also added to existing models: Rotring Isograph 0.3, Sharpie Fine (1.0),
+Pilot V10 (1.0), Posca PC-5M (2.5, line 1.8 mm), and colours for Micron, Stabilo
+88, Sign Pen, Gelly Roll Classic / Metallic / Moonlight, Signo UM-153 and Posca.
+Sharpie and Stardust sizes were reordered so sizes ascend by nominal width.
+
+### Conflicts between research and existing values (existing kept)
+
+| Pen | Existing | Research | Decision |
+|---|---|---|---|
+| Posca PC-1M | nominal 0.85 (label 0.7-1.0) | Uni Posca Pen Guide PDF (third-party hosted): 1.0 | kept; 1.0 is the top of the existing range |
+| Posca PC-3M | nominal 1.1 (label 0.9-1.3) | same PDF: 1.5 | kept; range label covers it, revisit with the manufacturer page |
+| Sharpie Ultra Fine / Extra Fine | 0.5 / 0.4 nominal | Galaxus 0.5, Parkablogs Extra Fine 0.4 (agree); the official page gives no mm, other sources quote Ultra Fine 0.2-0.3 | kept |
+| Pentel Sign Pen S520 | fine fibre 0.8 | retailer title: 2.0 mm tip (page not fetched) | kept; not the manufacturer |
+| Pilot V5 / V7 laid | 0.33 / 0.45 | Cromwell "line width" 0.5 / 0.7 | kept; the retailer repeats the tip size, our laid value is measured from photos |
+| Gelly Roll Classic Black hex | `#16161a` | `#000000` | kept (hex values are fixed by the Start Page colorways) |
+| Pilot Kakuno | EF 0.3 / F 0.38 / M 0.5 | JetPens lists no mm | kept; the Kakuno source photo is an ink bottle, confidence unchanged but flagged |
+| uni PIN 0.03 / Multiliner 0.03 | n/a | nominal 0.03 | laid raised to 0.07: the catalogue floor for a laid width is above 0.05 mm |
 
 Deferred models (logged as PRH-110): brush pens (Pentel Pocket Brush, Tombow
 Fudenosuke — pressure-driven width needs a speed/pressure model), the HP
