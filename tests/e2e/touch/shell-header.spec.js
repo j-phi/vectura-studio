@@ -336,7 +336,12 @@ test.describe('phone ☰ › File at 874x330', () => {
     if (touch.engineOf(page) === 'chromium') {
       // A real finger swipe (trusted CDP touches). Input.synthesizeScrollGesture with a touch source scrolls nothing
       // in the Linux headless shell (measured: scrollTop stays 0), while the same swipe as touch events scrolls it.
-      await touch.drag(page, { x: cx, y: cy + 60 }, { x: cx, y: cy - 100 }, { steps: 16 });
+      // The File menu grew (Open Recent, Close, ...), so Document Setup can sit more than one swipe down: swipe until it shows.
+      for (let i = 0; i < 4; i += 1) {
+        await touch.drag(page, { x: cx, y: cy + 60 }, { x: cx, y: cy - 100 }, { steps: 16 });
+        const inView = await page.evaluate(() => { const r = document.getElementById('btn-settings').getBoundingClientRect(); return r.bottom <= innerHeight + 1; });
+        if (inView) break;
+      }
     } else {
       // Playwright WebKit has no native touch or wheel scroll on mobile; scroll the sub-level as the swipe would.
       await page.evaluate((sel) => { const p = document.querySelector(sel); p.scrollTop = p.scrollHeight; }, panelSel);
