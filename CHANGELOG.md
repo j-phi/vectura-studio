@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Nested clipping masks in the Layers panel
+- Every level of a nested clipping mask stays listed and indented in the Layers panel at any depth (rows under the second level used to vanish). A middle mask level now has its own mask toggle so it can be released, and turning a mask off then on again re-clips the same layers instead of masking nothing. Undo/redo safe.
+
 ### Fixed: Start Page vertical titles on iPad
 - The vertical word on the Vertical word, Spec sheet and Words both sides plates (for example Downpour and Cybersigil) collapsed to no width on iPad Safari and Brave, so only fragments of the letters showed at the art's left edge. The word column now has a definite width taken from the word's own proportions. Desktop and phone layouts are unchanged.
 
