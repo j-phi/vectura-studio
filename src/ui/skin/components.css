@@ -16323,11 +16323,12 @@ body.touch-ui .help-platform-btn {
    * beside the label (the row overflowed: label wrapped, outer ::before clipped to 36-43 px; the iPad
    * landscape pane is only 200 px wide). On touch the head becomes two rows: the label and the % readout
    * on top, the four icons spread across the full width below. `display: contents` lifts the readout and
-   * icons into the head's flex line; the head-right ::before is a zero-height full-width line break whose
-   * 14 px height doubles as the row gap. The 4 px side inset keeps the outer ::before inside the pane. */
+   * icons into the head's flex line; the head-right ::before is a full-width line break whose 2 px height
+   * is the row gap (the label and readout are not controls, so the icons' 44 px hit areas may reach up
+   * over them; a taller gap grew the bar 12 px and pushed the fourth layer row under the multi-select strip). The 4 px side inset keeps the outer ::before inside the pane. */
   body.touch-ui #right-pane .draw-order-head { flex-wrap: wrap; justify-content: space-between; row-gap: 0; padding: 0 4px; }
   body.touch-ui #right-pane .draw-order-head-right { display: contents; }
-  body.touch-ui #right-pane .draw-order-head-right::before { content: ''; order: 2; flex: 0 0 100%; height: 14px; }
+  body.touch-ui #right-pane .draw-order-head-right::before { content: ''; order: 2; flex: 0 0 100%; height: 2px; }
   body.touch-ui #right-pane .draw-order-label { order: 0; white-space: nowrap; }
   body.touch-ui #right-pane .draw-order-value { order: 1; }
   body.touch-ui #right-pane .draw-order-head-right > button { order: 3; }
