@@ -312,6 +312,83 @@
     this.renderExportPreview();
   }
 
+  // Line-sort playback in the Export preview ─────────────────────────────
+  // Full sweep length; matches the main-canvas Draw Order playback (35%/s).
+  const EXPORT_PLAY_DURATION_MS = 2860;
+
+  // How many of `total` print-ordered paths are visible at playback `progress`
+  // (null = not playing → all of them).
+  function getExportPlayRevealCount(total, progress) {
+    const n = Math.max(0, Math.floor(Number(total) || 0));
+    if (progress == null) return n;
+    const p = Math.max(0, Math.min(1, Number(progress) || 0));
+    return Math.min(n, Math.ceil(p * n));
+  }
+
+  function syncExportPlayControls() {
+    const state = this.exportModalState;
+    if (!state) return;
+    const playing = state.playRaf != null;
+    if (state.playBtn) {
+      state.playBtn.classList.toggle('is-playing', playing);
+      state.playBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+      state.playBtn.setAttribute('aria-label', playing ? 'Pause line sort order' : 'Play line sort order');
+      state.playBtn.title = playing ? 'Pause line sort order' : 'Play line sort order';
+    }
+    if (state.legendPlayhead) {
+      const active = state.playProgress != null;
+      state.legendPlayhead.classList.toggle('hidden', !active);
+      if (active) state.legendPlayhead.style.left = `${(state.playProgress * 100).toFixed(2)}%`;
+    }
+  }
+
+  function stopExportLinePlayback(opts = {}) {
+    const state = this.exportModalState;
+    if (!state) return;
+    if (state.playRaf != null) {
+      cancelAnimationFrame(state.playRaf);
+      state.playRaf = null;
+    }
+    if (opts.reset) state.playProgress = null;
+    this.syncExportPlayControls();
+    if (opts.reset && state.isOpen) this.renderExportPreview();
+  }
+
+  function startExportLinePlayback() {
+    const state = this.exportModalState;
+    if (!state) return;
+    if (state.playRaf != null) cancelAnimationFrame(state.playRaf);
+    let current = state.playProgress == null || state.playProgress >= 1 ? 0 : state.playProgress;
+    state.playProgress = current;
+    let last = null;
+    const tick = (ts) => {
+      const s = this.exportModalState;
+      if (!s || s !== state) return;
+      if (last == null) last = ts;
+      current = Math.min(1, current + (ts - last) / EXPORT_PLAY_DURATION_MS);
+      last = ts;
+      if (current >= 1) {
+        s.playRaf = null;
+        s.playProgress = null;
+      } else {
+        s.playProgress = current;
+        s.playRaf = requestAnimationFrame(tick);
+      }
+      this.syncExportPlayControls();
+      this.renderExportPreview();
+    };
+    state.playRaf = requestAnimationFrame(tick);
+    this.syncExportPlayControls();
+    this.renderExportPreview();
+  }
+
+  function toggleExportLinePlayback() {
+    const state = this.exportModalState;
+    if (!state) return;
+    if (state.playRaf != null) this.stopExportLinePlayback();
+    else this.startExportLinePlayback();
+  }
+
   function renderExportPreview() {
     const { SETTINGS, getThemeToken } = requireDeps('renderExportPreview');
     const state = this.exportModalState;
@@ -418,18 +495,28 @@
       ctx.restore();
     };
 
+    // Line-sort playback (legend Play button): reveal the ordered paths one by
+    // one in print order; everything not yet drawn stays as a faint ghost.
+    const playing = state.playProgress != null && orderedItems.length > 0 && previewMode !== 'off';
+    const revealCount = playing
+      ? getExportPlayRevealCount(orderedItems.length, state.playProgress)
+      : orderedItems.length;
+    const GHOST_ALPHA = 0.14;
     if (previewMode !== 'replace') {
-      items.forEach((item) => drawItem(item, item.strokeColor, { alpha: previewMode === 'overlay' ? 0.9 : 1 }));
+      const baseAlpha = playing ? GHOST_ALPHA : (previewMode === 'overlay' ? 0.9 : 1);
+      items.forEach((item) => drawItem(item, item.strokeColor, { alpha: baseAlpha }));
     }
     if (previewMode === 'replace') {
       if (orderedItems.length) {
-        orderedItems.forEach((item, index) => drawItem(item, colorForOrder(index)));
+        orderedItems.forEach((item, index) => drawItem(item, colorForOrder(index), index < revealCount ? {} : { alpha: GHOST_ALPHA }));
       } else {
         items.forEach((item) => drawItem(item, item.strokeColor));
       }
     } else if (previewMode === 'overlay' && orderedItems.length) {
       const overlayWidth = Math.max(0.05, state.overlayWidth ?? SETTINGS.optimizationOverlayWidth ?? 0.2);
-      orderedItems.forEach((item, index) => drawItem(item, colorForOrder(index), { lineWidth: overlayWidth, alpha: 0.92 }));
+      for (let index = 0; index < revealCount; index += 1) {
+        drawItem(orderedItems[index], colorForOrder(index), { lineWidth: overlayWidth, alpha: 0.92 });
+      }
     }
     ctx.restore();
 
@@ -438,6 +525,7 @@
     if (showLegend && state.legendGradient && renderer?.rgbToCss) {
       state.legendGradient.style.background = `linear-gradient(90deg, ${renderer.rgbToCss(baseRgb, 1)}, ${renderer.rgbToCss(endRgb || baseRgb, 1)})`;
     }
+    if (!showLegend && state.playRaf != null) this.stopExportLinePlayback({ reset: true });
     if (state.status) {
       state.status.textContent = `${previewMode === 'off' ? 'Plain export preview' : `Preview: ${previewMode}`}`;
     }
@@ -1092,9 +1180,21 @@
             <div id="export-preview-legend" class="export-preview-legend hidden" aria-hidden="true">
               <div class="export-preview-legend-row">
                 <div class="export-preview-legend-title">Line Sort Print Order</div>
-                <button type="button" id="export-legend-gear" class="export-legend-gear-btn" aria-label="Legend settings">⚙</button>
+                <div class="export-legend-actions">
+                  <button type="button" id="export-legend-play" class="export-legend-gear-btn export-legend-play-btn"
+                    aria-label="Play line sort order" title="Play line sort order" aria-pressed="false">
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" stroke="currentColor"
+                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path class="play-icon" d="M7 4.5v15l12-7.5z"></path>
+                      <g class="pause-icon"><rect x="6" y="4.5" width="4" height="15" rx="1"></rect><rect x="14" y="4.5" width="4" height="15" rx="1"></rect></g>
+                    </svg>
+                  </button>
+                  <button type="button" id="export-legend-gear" class="export-legend-gear-btn" aria-label="Legend settings">⚙</button>
+                </div>
               </div>
-              <div id="export-preview-legend-gradient" class="export-preview-legend-gradient"></div>
+              <div id="export-preview-legend-gradient" class="export-preview-legend-gradient">
+                <div id="export-preview-legend-playhead" class="export-preview-legend-playhead hidden"></div>
+              </div>
               <div class="export-preview-legend-labels">
                 <span>Start</span>
                 <span>End</span>
@@ -1136,6 +1236,12 @@
       ctx: root.querySelector('#export-preview-canvas')?.getContext('2d') || null,
       legend: root.querySelector('#export-preview-legend'),
       legendGradient: root.querySelector('#export-preview-legend-gradient'),
+      legendPlayhead: root.querySelector('#export-preview-legend-playhead'),
+      playBtn: root.querySelector('#export-legend-play'),
+      // Line-sort playback: null = full preview; 0..1 = fraction of the ordered
+      // paths revealed so far. playRaf is the in-flight animation frame (if any).
+      playProgress: null,
+      playRaf: null,
       view: { scale: 1, offsetX: 0, offsetY: 0, initialized: false },
       drag: null,
       previewMode: SETTINGS.optimizationPreview === 'replace' ? 'replace' : 'overlay',
@@ -1253,6 +1359,11 @@
       };
     }
 
+    root.querySelector('#export-legend-play')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggleExportLinePlayback();
+    });
+
     const gearBtn = root.querySelector('#export-legend-gear');
     const gearPanel = root.querySelector('#export-legend-settings');
     if (gearBtn && gearPanel) {
@@ -1329,6 +1440,7 @@
       cardClass: 'modal-card--export',
       onClose: () => {
         resizeObserver?.disconnect?.();
+        if (this.exportModalState?.playRaf != null) cancelAnimationFrame(this.exportModalState.playRaf);
         this.exportModalState?.wrap?.removeEventListener('wheel', onWheel);
         this.exportModalState?.wrap?.removeEventListener('pointerdown', onPointerDown);
         window.removeEventListener('pointermove', onPointerMove);
@@ -1442,6 +1554,10 @@
     fitExportPreview,
     resizeExportPreviewCanvas,
     renderExportPreview,
+    getExportPlayRevealCount,
+    startExportLinePlayback,
+    stopExportLinePlayback,
+    toggleExportLinePlayback,
     decorateExportControlsPanel,
     setExportSection,
     refreshExportNavStates,
@@ -1460,6 +1576,11 @@
       proto.fitExportPreview = function() { return fitExportPreview.call(this); };
       proto.resizeExportPreviewCanvas = function() { return resizeExportPreviewCanvas.call(this); };
       proto.renderExportPreview = function() { return renderExportPreview.call(this); };
+      proto.getExportPlayRevealCount = getExportPlayRevealCount;
+      proto.syncExportPlayControls = function() { return syncExportPlayControls.call(this); };
+      proto.startExportLinePlayback = function() { return startExportLinePlayback.call(this); };
+      proto.stopExportLinePlayback = function(opts) { return stopExportLinePlayback.call(this, opts); };
+      proto.toggleExportLinePlayback = function() { return toggleExportLinePlayback.call(this); };
       proto.decorateExportControlsPanel = function() { return decorateExportControlsPanel.call(this); };
       proto.setExportSection = function(id) { return setExportSection.call(this, id); };
       proto.refreshExportNavStates = function() { return refreshExportNavStates.call(this); };

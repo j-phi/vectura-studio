@@ -6,6 +6,10 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Added: Play buttons for the plot order
+- **Draw Order pane.** A Play button now sits right of the % readout. At 100% it replays the reveal from the start; below 100% it plays on from the handle; while playing it shows Pause. Shift-click plays at 1/10 speed, like Shift-clicking the slider.
+- **Export SVG ▸ Line Sort Print Order.** The legend has a Play/Pause button next to its gear. It draws the preview path by path in print order over a faint ghost of the whole plot, with a playhead on the gradient, then returns to the full preview. Closing the modal stops it.
+
 ### Changed: Start Page examples note, cover Colorways button, Back to canvas, New blank canvas
 - **Examples note moves into an (i).** The always-on "These are examples…" box under Plates is gone. Its text now sits in a note behind an **(i)** right after the **10 EXAMPLES** count: hover or keyboard focus shows it, a click pins it open, a tap toggles it, and Esc or a press elsewhere closes it. It stays the Plates section's accessible description.
 - **Shorter count line.** The count reads "10 examples"; the "· your own work will join them" tail is removed.

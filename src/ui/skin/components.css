@@ -6434,6 +6434,7 @@
 }
 
 .export-preview-legend-gradient {
+  position: relative;
   width: 100%;
   height: 8px;
   border-radius: 9999px;
@@ -6481,6 +6482,44 @@
 .export-legend-gear-btn:hover {
   color: var(--ui-accent);
   border-color: var(--ui-accent);
+}
+
+/* Line Sort legend Play/Pause + gradient playhead */
+.export-legend-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.export-legend-play-btn.is-playing {
+  color: var(--ui-accent);
+  border-color: var(--ui-accent);
+}
+.export-legend-play-btn .pause-icon,
+.export-legend-play-btn.is-playing .play-icon,
+[data-ui-skin] .draw-order-play .pause-icon,
+[data-ui-skin] .draw-order-play.is-playing .play-icon {
+  display: none;
+}
+.export-legend-play-btn.is-playing .pause-icon,
+[data-ui-skin] .draw-order-play.is-playing .pause-icon {
+  display: inline;
+}
+[data-ui-skin] .draw-order-play.is-playing {
+  color: var(--ui-accent);
+}
+.export-preview-legend-playhead {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: var(--ui-text, #fff);
+  box-shadow: 0 0 0 2px rgb(var(--vectura-panel-rgb) / 0.9);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.export-preview-legend-playhead.hidden {
+  display: none;
 }
 
 .export-legend-settings {

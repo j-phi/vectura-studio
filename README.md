@@ -182,6 +182,7 @@ The SVG export modal offers a large preview pane with zoom/pan inspection, plott
 - Plotter optimization toggle with adjustable tolerance (mm) to remove fully overlapping paths per pen before export
 - Multi-layer `Line Sort` respects the selected optimization scope across preview, stats, overlay rendering, and optimized SVG export
 - When preview mode is `Overlay` and `Line Sort` is active, the overlay gradient runs from `Overlay Color` to its complement by default, with a per-Line Sort secondary-color override and an on-canvas print-order legend
+- The **Line Sort Print Order** legend has a Play/Pause button that draws the preview path by path in print order; the main-canvas **Draw Order** pane has a matching Play button beside its % readout
 - `Export Optimized` is enabled by default; optimization scope defaults to `All Layers`
 - `Line Simplify` is applied by default for new layers with Mode set to `Curve`; `Line Sort` is off by default for new layers
 - One-click export with configurable precision and grouping by pen assignment
@@ -727,7 +728,10 @@ CI lives in `.github/workflows/test.yml`:
 
 ## Release Notes
 
-### 1.5.1 - Start Page tidy
+### Unreleased - Plot-order Play buttons
+- **Play the plot order.** The Draw Order pane has a Play/Pause button beside its % readout, and the Export SVG **Line Sort Print Order** legend has one that draws the preview path by path in print order.
+
+### Unreleased - Start Page tidy
 - **Examples note behind an (i).** The examples explainer moves from a box under Plates into a note on an **(i)** after the EXAMPLES count (hover, focus or click). The count line drops "your own work will join them".
 - **No cover Colorways button.** The Colorways button at the top of the title section is gone; plates keep theirs.
 - **Back to canvas** now shows (and Esc works) whenever the canvas has unsaved changes, not only when it has layers.
