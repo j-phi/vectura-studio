@@ -72,8 +72,8 @@ test.describe('TUX-001 closing round', () => {
       }
       return null;
     });
-    // iPhL-c (874x330): the sheet fills the viewport, so the only outside surface is the header wordmark.
-    const target = pt || await page.evaluate(() => { const r = document.querySelector('#app-header h1').getBoundingClientRect(); return { x: r.x + 4, y: r.y + r.height / 2 }; });
+    // iPhL-c (874x330): the sheet fills the viewport, so the only outside surface is the header brand mark (the wordmark itself is a button that opens the Start Page).
+    const target = pt || await page.evaluate(() => { const r = document.querySelector('#app-header .header-brand-mark').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
     await touch.tap(page, target);
     await expect(page.locator('body.phone-menu-open')).toHaveCount(0);
     const st = await page.evaluate(() => ({
@@ -107,7 +107,7 @@ test.describe('TUX-001 closing round', () => {
       window.addEventListener('pointerdown', (e) => window.__downs.push({ now: performance.now(), ts: e.timeStamp }), true);
     });
     const cdp = touch.engineSupports(page, 'cdp');
-    const wordmark = () => page.evaluate(() => { const r = document.querySelector('#app-header h1').getBoundingClientRect(); return { x: r.x + 4, y: r.y + r.height / 2 }; });
+    const wordmark = () => page.evaluate(() => { const r = document.querySelector('#app-header .header-brand-mark').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
     const centre = (sel) => page.evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }, sel);
     const tapAt = async (p, sec) => {
       if (!cdp) { await page.touchscreen.tap(p.x, p.y); return; }
@@ -336,7 +336,12 @@ test.describe('phone ☰ › File at 874x330', () => {
     if (touch.engineOf(page) === 'chromium') {
       // A real finger swipe (trusted CDP touches). Input.synthesizeScrollGesture with a touch source scrolls nothing
       // in the Linux headless shell (measured: scrollTop stays 0), while the same swipe as touch events scrolls it.
-      await touch.drag(page, { x: cx, y: cy + 60 }, { x: cx, y: cy - 100 }, { steps: 16 });
+      // The File menu grew (Open Recent, Close, ...), so Document Setup can sit more than one swipe down: swipe until it shows.
+      for (let i = 0; i < 4; i += 1) {
+        await touch.drag(page, { x: cx, y: cy + 60 }, { x: cx, y: cy - 100 }, { steps: 16 });
+        const inView = await page.evaluate(() => { const r = document.getElementById('btn-settings').getBoundingClientRect(); return r.bottom <= innerHeight + 1; });
+        if (inView) break;
+      }
     } else {
       // Playwright WebKit has no native touch or wheel scroll on mobile; scroll the sub-level as the swipe would.
       await page.evaluate((sel) => { const p = document.querySelector(sel); p.scrollTop = p.scrollHeight; }, panelSel);

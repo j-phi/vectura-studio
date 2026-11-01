@@ -14335,9 +14335,9 @@ html.kb-open .export-settings-scroll {
   [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch-wrapper { padding: 11px; }
   [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
   [data-ui-skin] .pen-item .pen-swatch .pen-color::-moz-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
-  [data-ui-skin] .pen-item .pen-width { order: 5; flex: 1 1 0; min-width: 0; width: auto; margin: 0 var(--spacing-sm, 8px); }
+  [data-ui-skin] .pen-item .pen-width { order: 5; flex: 1 1 0; min-width: var(--touch-target-min); width: auto; margin: 0 var(--spacing-sm, 8px); }
   [data-ui-skin] .pen-item .pen-width-value {
-    order: 6; flex: 0 0 auto; width: auto; min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
+    order: 6; flex: 0 0 auto; width: calc(6ch + 2 * var(--spacing-sm, 8px)); min-width: 0;
     min-height: var(--touch-target-min); padding: 0 var(--spacing-sm, 8px);
   }
   /* One shared row background: the name input and value chip drop their own fill (the skin gives
@@ -15292,6 +15292,8 @@ body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.num-step
 /* The number stepper is a fixed 28 px box that clips its buttons; it grows to a finger. The narrow variant (100 px) leaves
  * 10 px for the number once two 44 px buttons sit in it, so it widens to fit. */
 body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) .num-step { height: auto; min-height: var(--touch-target-min); }
+/* The stepper buttons keep a finger width when a narrow row squeezes the field (Undo steps in the Document Setup column). */
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) .num-step-btn { flex: 0 0 var(--touch-target-min); }
 body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) .num-step--narrow { width: calc(2 * var(--touch-target-min) + 64px); flex: 0 0 calc(2 * var(--touch-target-min) + 64px); }
 /* The close ::before reaches 10 px below the header. The tabs (opacity < 1 stacks them above it) started 8 px below, so they took
  * 2 px of it. Four more pixels of padding keep the close target whole. */
@@ -17365,6 +17367,14 @@ body.touch-ui .default-paper-controls .ctrl-sel-wrap { flex: 1 1 100%; }
 .default-paper-block .default-paper-apply {
   align-self: flex-start;
 }
+/* Touch: the label that carries the Info button is one finger tall (the button's centred 44 px ::before stays inside it),
+ * and the select takes the whole row so the longest paper name is not clipped beside the colour chip. */
+body.touch-ui :is(#settings-panel, .default-paper-block) .ctrl-lbl:has(> .info-btn) {
+  display: flex; align-items: center; min-height: var(--touch-target-min);
+  padding-right: calc(var(--touch-target-min) / 2); /* the button's 44 px ::before stays inside the label, off the control beside it */
+}
+body.touch-ui .default-paper-controls { flex-wrap: wrap; }
+body.touch-ui .default-paper-controls .ctrl-sel-wrap { flex: 1 1 100%; }
 
 /* ============================================================================
  * Start Page (P0 shell) — overlay above the editor. `.sp-` prefix.

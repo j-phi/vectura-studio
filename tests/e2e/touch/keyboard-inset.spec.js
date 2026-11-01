@@ -18,6 +18,13 @@ test.describe('TUX-032 keyboard inset', () => {
   let K;
   test.beforeEach(async ({ page }, testInfo) => {
     K = h.keyboardFor(testInfo);
+    // The font popover lists the Google Fonts catalog (fetched from api.fontsource.org). Serve a fixed one so the row
+    // counts below do not depend on the runner's network: offline the list holds one built-in row and a hint.
+    const FAMILIES = ['Inter', 'Roboto', 'Open Sans', 'Lato', 'Montserrat', 'Poppins', 'Oswald', 'Raleway'];
+    await page.route('https://api.fontsource.org/v1/fonts', (route) => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify(FAMILIES.map((f) => ({ id: f.toLowerCase().replace(/ /g, '-'), family: f, category: 'sans-serif', type: 'google', subsets: ['latin'], weights: [400, 700] }))),
+    }));
     await page.addInitScript(h.installKeyboardStub);
     await h.waitApp(page);
   });

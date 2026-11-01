@@ -53,6 +53,11 @@ test('File > Open takes a .vectura through the picker and loads it', async ({ pa
   const open = page.locator('#btn-open-vectura');
   await open.scrollIntoViewIfNeeded();
   await page.waitForTimeout(150);
+  // Record toasts as they appear: the confirmation lives 4 s, and a loaded runner can look after it is gone.
+  await page.evaluate(() => {
+    window.__toasts = [];
+    new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.classList && n.classList.contains('vectura-toast')) window.__toasts.push(n.textContent); }))).observe(document.body, { childList: true, subtree: true });
+  });
   const chooserP = page.waitForEvent('filechooser');
   await touch.tap(page, open);
   const chooser = await chooserP;
@@ -63,7 +68,7 @@ test('File > Open takes a .vectura through the picker and loads it', async ({ pa
   await page.waitForFunction((n) => window.app.engine.layers.length === n, expected.length, { timeout: 10000 });
   const after = await page.evaluate(() => window.app.engine.layers.map((l) => l.type));
   expect(after).toEqual(expected);
-  await expect(page.locator('.vectura-toast', { hasText: 'Project loaded' })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__toasts.join('|'))).toContain('Project loaded');
 
   fs.mkdirSync(EVIDENCE, { recursive: true });
   const tag = `${s.device}-${s.engine}`;
