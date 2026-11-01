@@ -9,6 +9,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ### Fixed: Duplicating a mask dropped its masked content
 - Cmd/Ctrl+D (and Option+D, the context-menu Duplicate and the panel's Duplicate selected) on a clipping mask, or on a group containing one, now copies the masked content with it — nested masks and groups come through intact, with the copy's mask clipping its own copied content. Duplicating a Unite shape keeps its compound data, the copy's layer order mirrors the original, and selecting a mask together with its content no longer copies the content twice. One undo removes the whole duplicate.
 
+### Fixed: United shapes snapped back when dragged
+- Dragging a Pathfinder shape (Unite and the other shape modes) with the Selection tool, or nudging it with the arrow keys, now moves it — before, it followed the mouse and then snapped back on release. Resize and rotate work the same way, the outline no longer lags behind after a move, and a drag that changes nothing no longer adds an empty undo step.
+
 ### Added: Cover art and colorway choices in Start Page settings
 - **Settings > Cover > Cover art.** A new block under Cover style lets you choose the piece and the colorway for every cover style. **Name in Ink** gets one row per letter, and **Cover Specimen** and **Portfolio band** get one row each.
 - **Pieces.** Each picker lists **Automatic** (the current behavior), then **Your pieces** (saved and opened works), then **Templates** (the studio picks).

@@ -8980,18 +8980,22 @@
       if (this.isLayerDrag) {
         const selectedLayers = this.getSelectedLayers();
         if (selectedLayers.length && this.tempTransform) {
-          if (this.onCommitTransform) this.onCommitTransform();
-          // Expand morph containers to their leaves so a container transform
-          // fans out; directly-selected leaves pass through unchanged.
-          const { targets, expandedMorph } = this._expandTransformTargets(selectedLayers);
+          // Expand morph containers and compound (Pathfinder) groups
+          // to their leaves so a container transform fans out;
+          // directly-selected leaves pass through unchanged.
+          const { targets, expandedMorph, expandedGroup } = this._expandTransformTargets(selectedLayers);
+          let commit = null;
           if (this.dragMode === 'move') {
             const snapDx = this.snapAllowed && this.snap ? this.snap.dx || 0 : 0;
             const snapDy = this.snapAllowed && this.snap ? this.snap.dy || 0 : 0;
             const committedDx = this.tempTransform.dx + snapDx;
             const committedDy = this.tempTransform.dy + snapDy;
             const moveTemp = { dx: committedDx, dy: committedDy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
-            targets.forEach((layer) =>
-              this._applyCommittedTransformToLeaf(layer, 'move', { dx: committedDx, dy: committedDy, moveTemp }));
+            commit = {
+              mode: 'move',
+              changed: Math.abs(committedDx) > 1e-9 || Math.abs(committedDy) > 1e-9,
+              ctx: { dx: committedDx, dy: committedDy, moveTemp },
+            };
           } else if (this.dragMode === 'resize' && selectedLayers.length) {
             let scaleX = this.tempTransform.scaleX;
             let scaleY = this.tempTransform.scaleY;
@@ -8999,18 +9003,31 @@
               if (this.snap.scaleX) scaleX *= this.snap.scaleX;
               if (this.snap.scaleY) scaleY *= this.snap.scaleY;
             }
-            const prof = this.engine.currentProfile;
-            targets.forEach((layer) =>
-              this._applyCommittedTransformToLeaf(layer, 'resize', { scaleX, scaleY, prof }));
+            commit = {
+              mode: 'resize',
+              changed: Math.abs(scaleX - 1) > 1e-9 || Math.abs(scaleY - 1) > 1e-9,
+              ctx: { scaleX, scaleY, prof: this.engine.currentProfile },
+            };
           } else if (this.dragMode === 'rotate') {
             const delta = this.tempTransform.rotation ?? 0;
             const origin = this.rotateOrigin || (this.startBounds ? this.startBounds.origin : null);
+            commit = { mode: 'rotate', changed: Math.abs(delta) > 1e-9, ctx: { delta, origin } };
+          }
+          // A drag that changes nothing (zero delta, identity scale, no
+          // transformable leaves) must not push an undo step. Alt-drag
+          // duplicates and live-mutating area resizes (_skipCommitHistory)
+          // keep the original commit call: they own their own history.
+          const changed = Boolean(commit && commit.changed && targets.length);
+          if (changed || this._skipCommitHistory) {
+            if (this.onCommitTransform) this.onCommitTransform();
+          }
+          if (changed) {
             targets.forEach((layer) =>
-              this._applyCommittedTransformToLeaf(layer, 'rotate', { delta, origin }));
+              this._applyCommittedTransformToLeaf(layer, commit.mode, commit.ctx));
           }
           // Refold the blend if a morph container was fanned out or a morph
           // descendant (isolation-mode child) was the drag target.
-          if (expandedMorph || this._dragHasMorphAncestor(selectedLayers)) {
+          if (changed && (expandedMorph || expandedGroup || this._dragHasMorphAncestor(selectedLayers))) {
             this._refreshMorphGeometry();
           }
           const primary = this.getSelectedLayer();
@@ -15365,8 +15382,9 @@
       const doMove = Math.abs(dx) > EPS || Math.abs(dy) > EPS;
       if (!doResize && !doMove) return false;
 
+      const { targets, expandedMorph, expandedGroup } = this._expandTransformTargets(layers);
+      if (!targets.length) return false;
       if (this.app && typeof this.app.pushHistory === 'function') this.app.pushHistory();
-      const { targets, expandedMorph } = this._expandTransformTargets(layers);
       const prof = this.engine.currentProfile;
 
       if (doResize) {
@@ -15383,13 +15401,40 @@
           this._applyCommittedTransformToLeaf(layer, 'move', { dx, dy, moveTemp }));
       }
 
-      if (expandedMorph || this._dragHasMorphAncestor(layers)) this._refreshMorphGeometry();
+      if (expandedMorph || expandedGroup || this._dragHasMorphAncestor(layers)) this._refreshMorphGeometry();
       const primary = this.getSelectedLayer();
       const effectivePrimary = (primary?.isGroup)
         ? layers.find((l) => !l.isGroup) || primary
         : primary;
       if (effectivePrimary) this.updateTransformInputs?.(effectivePrimary);
       this.draw();
+      return true;
+    }
+
+    // Arrow-key nudge of the selection by (dx, dy) document units. Shares the
+    // drag-commit target expansion, so a compound (Pathfinder) group
+    // moves its leaves and re-derives. One keypress = one undo step, and only
+    // when something actually moved. Returns true when a change was applied.
+    nudgeSelection(dx, dy) {
+      if (!(Math.abs(dx) > 1e-9 || Math.abs(dy) > 1e-9)) return false;
+      const all = this.getSelectedLayers();
+      const layers = all.filter((l) => !this.isLayerLocked?.(l.id));
+      const { targets, expandedMorph, expandedGroup, passthroughGroups } = this._expandTransformTargets(layers);
+      // Container kinds that keep their own transform params (scene groups,
+      // non-morph modifiers) are nudged through those params, as before.
+      const ownParamGroups = passthroughGroups.filter((g) => g.params && g.containerRole);
+      if (!targets.length && !ownParamGroups.length) return false;
+      if (this.app && typeof this.app.pushHistory === 'function') this.app.pushHistory();
+      const moveTemp = { dx, dy, scaleX: 1, scaleY: 1, origin: { x: 0, y: 0 } };
+      targets.forEach((layer) =>
+        this._applyCommittedTransformToLeaf(layer, 'move', { dx, dy, moveTemp }));
+      ownParamGroups.forEach((group) => {
+        group.params.posX = (group.params.posX ?? 0) + dx;
+        group.params.posY = (group.params.posY ?? 0) + dy;
+        window.Vectura?.PaintBucketOps?.translateLayerFills?.(group, dx, dy);
+        this.engine.generate(group.id);
+      });
+      if (expandedMorph || expandedGroup || this._dragHasMorphAncestor(layers)) this._refreshMorphGeometry();
       return true;
     }
 
@@ -15852,24 +15897,51 @@
     // Expand a transform selection into the concrete leaf layers to mutate.
     // A morph container is not itself transformable (its geometry is the blend
     // of its children), so a transform on the container fans out to every leaf
-    // descendant; the morph then refolds. Other group kinds carry no own params
-    // and are skipped (matching the historical `if (layer.isGroup) return;`).
+    // descendant; the morph then refolds. The same holds for a compound
+    // (Pathfinder) group, whose silhouette is derived from its children: the
+    // transform lands on the leaves and the compound re-derives at the new
+    // place. Other container kinds (plain groups, scene groups, non-morph
+    // modifiers) are skipped, matching the historical `if (layer.isGroup) return;`.
+    // Targets are de-duplicated so a group selected together with its own
+    // children moves them once.
     _expandTransformTargets(selectedLayers) {
       const targets = [];
+      const seen = new Set();
       let expandedMorph = false;
+      let expandedGroup = false;
+      const passthroughGroups = [];
+      const add = (leaf) => {
+        if (!leaf || leaf.isGroup || seen.has(leaf.id)) return;
+        seen.add(leaf.id);
+        targets.push(leaf);
+      };
       (selectedLayers || []).forEach((layer) => {
         if (layer.isGroup) {
           if (layer.modifier?.type === 'morph') {
-            (this.engine.getLayerDescendants(layer.id) || []).forEach((leaf) => {
-              if (!leaf.isGroup) targets.push(leaf);
-            });
+            (this.engine.getLayerDescendants(layer.id) || []).forEach(add);
             expandedMorph = true;
+            return;
+          }
+          // A plain group/folder is deliberately NOT fanned out (contract guard
+          // in tests/integration/morph-child-transform.test.js): it is selected
+          // through the Layers panel only, and its leaves are moved directly.
+          if (layer.containerRole === 'compound') {
+            (this.engine.getLayerDescendants(layer.id) || []).forEach((leaf) => {
+              if (leaf.isGroup) return;
+              if (this.isLayerLocked?.(leaf.id)) return;
+              if (this.engine._sceneOwnerGroup?.(leaf)) return;
+              add(leaf);
+            });
+            expandedGroup = true;
+          } else {
+            passthroughGroups.push(layer);
           }
           return;
         }
-        targets.push(layer);
+        add(layer);
+        if (this.engine.hasCompoundAncestor?.(layer)) expandedGroup = true;
       });
-      return { targets, expandedMorph };
+      return { targets, expandedMorph, expandedGroup, passthroughGroups };
     }
 
     // Apply a committed move/resize/rotate to a single leaf layer. Factored out

@@ -2662,6 +2662,13 @@
         if (!layer || layer.isGroup) return;
         this.computeLayerDisplayGeometry(layer.id);
       });
+      // Compound silhouettes read their children's DISPLAY geometry, which the
+      // loop above has only just refreshed; the pre-display pass saw the
+      // previous pass's. Re-derive once more (the cache signature carries a
+      // geometry fingerprint, so this is a no-op unless something changed).
+      if (window.Vectura?.PathfinderOps?.refreshAllCompounds) {
+        window.Vectura.PathfinderOps.refreshAllCompounds(this);
+      }
       this._computeMorphGroups();
       this._computeSceneGroups();
       // optimizeLayers ends by recutting stroke divisions (the division stage
