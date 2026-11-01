@@ -160,6 +160,11 @@ test('D: double-tap on one header leaves the section closed with a ~0 height bod
   await page.touchscreen.tap(c.x, c.y);
   const gap = Date.now() - t0;
   await page.waitForTimeout(900);
+  // WebKit only advances CSS transitions on rendered frames: pump rAF until the collapse settles.
+  await page.waitForFunction(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const b = document.querySelector('#settings-panel .sect--color-paper [data-sect-toggle]').nextElementSibling;
+    res(b.getBoundingClientRect().height < 2);
+  }))), null, { timeout: 4000, polling: 100 }).catch(() => {});
   const r = await page.evaluate(() => {
     const hdr = document.querySelector('#settings-panel .sect--color-paper [data-sect-toggle]');
     const body = hdr.nextElementSibling;

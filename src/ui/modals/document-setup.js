@@ -433,7 +433,16 @@ ${isDevEligible() ? `
     const body = hdr.nextElementSibling;
     if (!body || !body.matches('[data-sect-body]')) return;
     const hideIfStillClosed = () => {
-      if (!hdr.classList.contains('is-open')) body.style.visibility = 'hidden';
+      if (hdr.classList.contains('is-open')) return;
+      body.style.visibility = 'hidden';
+      // Pin the collapsed geometry without a transition: an interrupted open-then-close can leave
+      // WebKit's max-height transition parked mid-flight (invisible full-height body).
+      body.style.transition = 'none';
+      body.style.maxHeight = '0';
+      body.style.paddingTop = '0';
+      body.style.paddingBottom = '0';
+      void body.offsetHeight;
+      requestAnimationFrame(() => { if (!hdr.classList.contains('is-open')) body.style.transition = ''; });
     };
     // Drop any pending open-completion hook from an earlier open, so a
     // quick open-then-close cannot have it fire on the close transition.
