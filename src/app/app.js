@@ -28,7 +28,9 @@
     const defaults = window.Vectura.START_PAGE?.DEFAULTS || {};
     const out = {};
     Object.keys(full || {}).forEach((key) => {
-      if (!(key in defaults) || full[key] !== defaults[key]) out[key] = full[key];
+      if (!(key in defaults)) { out[key] = full[key]; return; }
+      const same = full[key] && typeof full[key] === 'object' ? JSON.stringify(full[key]) === JSON.stringify(defaults[key]) : full[key] === defaults[key];
+      if (!same) out[key] = full[key]; // object defaults (coverArt, coverColors) compare by value
     });
     return out;
   };
