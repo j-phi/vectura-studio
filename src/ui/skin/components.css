@@ -17955,12 +17955,17 @@ body.touch-ui .wordmark-btn { display: inline-flex; align-items: center; min-hei
 .spl-hword,.spl-vword{display:block;overflow:visible}
 .spl-hword text,.spl-vword text{fill:currentColor}
 .spl-hword{width:100%;height:auto;max-width:var(--spl-mw,100%)}
-.spl-vw{align-self:stretch;min-height:140px}
-.spl-vword{height:100%;width:auto;max-width:150px}
+.spl-vw{align-self:stretch;min-height:140px;position:relative;--spl-vh:320px;width:min(150px,calc(var(--spl-vh) * var(--spl-vr,.3)))}
+/* The column's width is definite (height x the word's aspect, capped); the SVG just fills it. A height:100%/width:auto SVG in an
+   auto grid column collapsed to 0 on iPad Safari, leaving the letters spilling out behind the art. */
+.spl-vword{position:absolute;inset:0;width:100%;height:100%}
 .spl-hw.inv{color:var(--spl-paper)}
 .spl-hw.num{color:var(--spl-ink)}
 
 /* vertical word / spec sheet */
+.spl-lay-vertical-word .spl-vw{--spl-vh:min(520px,62vh)}
+.spl-lay-spec-sheet .spl-vw{--spl-vh:min(500px,60vh)}
+.spl-lay-words-both-sides .spl-vw{--spl-vh:min(460px,56vh)}
 .spl-lay-vertical-word .spl-b,.spl-lay-spec-sheet .spl-b{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(240px,300px);gap:30px;align-items:stretch;height:min(520px,62vh);min-height:380px}
 .spl-lay-spec-sheet .spl-b{align-items:center;height:min(500px,60vh)}
 .spl-lay-vertical-word .spl-print,.spl-lay-spec-sheet .spl-print{height:100%;width:100%;aspect-ratio:auto}
@@ -18091,7 +18096,7 @@ body.touch-ui .wordmark-btn { display: inline-flex; align-items: center; min-hei
   .spl-lay-vertical-word .spl-print,.spl-lay-spec-sheet .spl-print{height:auto;aspect-ratio:var(--ar,4/3)}
   .spl-lay-vertical-word .spl-cap,.spl-lay-spec-sheet .spl-cap{grid-column:1/-1}
   .spl-lay-vertical-word .spl-vw,.spl-lay-spec-sheet .spl-vw{max-height:320px}
-  .spl-vword{max-width:58px}
+  .spl-vw{width:min(58px,calc(320px * var(--spl-vr,.3)))}
   .spl-title{font-size:24px}
   .spl-bleed-art{height:auto;min-height:0;aspect-ratio:4/3}
   .spl-cband{grid-template-columns:1fr;gap:12px}
