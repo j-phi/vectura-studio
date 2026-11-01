@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: GitHub release notes too long for the 1.5.0 release
+- `scripts/extract-changelog.js` now caps release notes at 120,000 characters (GitHub rejects bodies over 125,000 with HTTP 422). Longer sections are cut at the last `### ` heading (else the last line) and end with a link to the full CHANGELOG at that tag. Shorter sections are unchanged. The logic is the exported `extractChangelog()`; the CLI is unchanged.
+
 ## 1.5.0 - 2026-10-31
 
 Headlines since 1.4.0:
