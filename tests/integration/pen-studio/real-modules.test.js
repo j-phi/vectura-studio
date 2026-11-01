@@ -143,7 +143,7 @@ describe('Pen Studio with real modules', () => {
     const added = SETTINGS.pens[SETTINGS.pens.length - 1];
     expect(added.themeManaged).toBe(false);
     expect(added.ink && added.ink.wetness).toBe(0.7);
-    expect(app.history.length).toBeGreaterThanOrEqual(Math.min(before + 1, app.history.length));
+    expect(app.history.length).toBe(before + 1);
   });
 
   test('curated models carry sizesSource and the lab shows it', () => {

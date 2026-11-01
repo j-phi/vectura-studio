@@ -88,7 +88,7 @@ const install = (window) => {
     testSpec(kind, o) {
       calls.testSpec.push({ kind, mini: !!o.mini, paperType: o.paperType });
       const boxMm = o.mini ? { w: 14, h: 3 } : { w: 25, h: 2.4 };
-      return { kind, boxMm, values: { nib: '0.45', laid: '0.46', bleed: '0.02', blob: '0.12', pct: '15' },
+      return { kind, boxMm, values: { nib: '0.45', laid: '0.46', mm: '0.02', blob: '0.12', pct: '15' },
         strokes: [{ pen: o.pen, pts: [{ x: 1, y: 1 }, { x: 10, y: 1 }] }] };
     },
     weave: (n, mode) => Array.from({ length: n }, (_, i) => ({ pts: [{ x: 1, y: i }, { x: 9, y: i }],
@@ -126,6 +126,8 @@ const installRaf = (window) => {
   return { flush(max = 50) { for (let i = 0; i < max && q.length; i += 1) { const cur = q; q = []; cur.forEach(([, cb]) => cb(0)); } }, size: () => q.length };
 };
 
+const realCfg = require('./pen-studio-real-config');
+
 const makeCtx = ({ doc, state, rng, strings } = {}) => {
   const s = Object.assign({ selPenId: 'sp-a', selBoxId: 'box-1', testSize: null, paperType: 'bristol-smooth', view: 'one', comp: null, n: 5, weave: 'alt', drafts: {}, editing: null, note: null, overlay: null }, state || {});
   const mounted = [];
@@ -134,7 +136,7 @@ const makeCtx = ({ doc, state, rng, strings } = {}) => {
     getDoc: () => ctx.doc, getState: () => ctx.state,
     setDoc(d) { ctx.doc = d; ctx.docs.push(d); mounted.forEach((m) => m.update()); },
     set(patch) { ctx.sets.push(patch); Object.assign(ctx.state, patch); mounted.forEach((m) => m.update()); },
-    L: () => strings || {}, cfg: () => ({ CURATED_PAIRS: {} }),
+    L: () => strings || realCfg.load().strings, cfg: () => Object.assign({}, realCfg.load().config, { CURATED_PAIRS: {} }),
     rng: rng || undefined,
   };
   return ctx;

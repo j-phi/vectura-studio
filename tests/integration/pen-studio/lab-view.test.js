@@ -41,6 +41,17 @@ describe('PenStudioLab sizes', () => {
   });
 });
 
+describe('PenStudioLab size buttons', () => {
+  it('show the nib size and the laid line on the button, plus the testing marker', () => {
+    setup();
+    const btn = (l) => $$('.pen-studio-size').find((b) => b.dataset.key === l);
+    const lines = (b) => $$('.pen-studio-size-line', b).map((n) => n.textContent);
+    expect(lines(btn('05'))).toEqual(['✓ 05 · 0.45 mm', 'line ≈0.46 mm · testing']);
+    expect(lines(btn('08'))).toEqual(['08 · 0.50 mm', 'line ≈0.55 mm']);
+    expect(btn('03').textContent).toContain('0.35 mm');
+  });
+});
+
 describe('PenStudioLab papers and views', () => {
   it('paper click updates the strips through ctx.set only', () => {
     setup();
@@ -109,7 +120,8 @@ describe('PenStudioLab sliders and actions', () => {
     click($('.pen-studio-btn.is-save-new'));
     expect(ctx.sets[ctx.sets.length - 1].overlay).toEqual({ kind: 'saveNew' });
     click($('.pen-studio-btn.is-export'));
-    expect(ctx.state.overlay.kind).toBe('export');
+    // the overlay carries the pen scope; the dialog (dialogs.js) builds the file text
+    expect(ctx.state.overlay).toEqual({ kind: 'export', scope: 'pen', penId: 'sp-a', sizeLabel: '05' });
   });
 
   it('shows an evidence tooltip on each slider', () => {

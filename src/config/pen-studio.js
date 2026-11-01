@@ -139,6 +139,9 @@
     SLIDERS,
     TESTS: Object.freeze(['line', 'bleed', 'blob', 'cross', 'skip', 'starv']),
     MATRIX_TESTS: Object.freeze(['line', 'bleed', 'blob', 'cross']),
+    PX_PER_MM: Object.freeze({ strip: 14, cell: 8, weave: 7 }),
+    WEAVE_MM: Object.freeze({ w: 60, h: 40 }),
+    BACKUP_KEY: 'vectura.penStudio.bak',
     MATRIX_CELL_MM: Object.freeze({ w: 14, h: 3 }),
     STRIP_MM: Object.freeze({ w: 25, h: 2.4 }),
   };

@@ -264,7 +264,12 @@
     if (U && U.isQuotaError) return U.isQuotaError(err);
     return !!err && (/quota/i.test(String(err.name || '')) || Number(err.code) === 22 || Number(err.code) === 1014);
   };
+  // Set by load() when storage holds a newer document: it is kept untouched and
+  // this session runs in memory only.
+  let memoryOnly = null;
+  const status = () => ({ memoryOnly: !!memoryOnly, reason: memoryOnly });
   const save = (doc) => {
+    if (memoryOnly) return { ok: false, reason: memoryOnly };
     const ls = storage();
     if (!ls) return { ok: false, reason: 'unavailable' };
     let text;
@@ -276,18 +281,32 @@
   const load = () => {
     const ls = storage();
     let doc = null;
+    let rawText = null;
+    memoryOnly = null;
     if (ls) {
       try {
-        const text = ls.getItem(CFG().STORAGE_KEY || 'vectura.penStudio');
-        if (text) doc = sanitizeDoc(JSON.parse(text));
+        rawText = ls.getItem(CFG().STORAGE_KEY || 'vectura.penStudio') || null;
+        if (rawText) {
+          const raw = JSON.parse(rawText);
+          if (raw && typeof raw === 'object' && raw.schema === SCHEMA().id && Number(raw.version) > SCHEMA().version) memoryOnly = 'newer';
+          else doc = sanitizeDoc(raw);
+        }
       } catch (_e) { doc = null; }
     }
     if (doc) return doc;
-    // First run (or unreadable data): starter boxes, then My pens once.
+    // Unreadable or wrong-schema data is copied aside before anything is written.
+    if (rawText && !memoryOnly) {
+      try {
+        const bak = CFG().BACKUP_KEY || 'vectura.penStudio.bak';
+        if (ls.getItem(bak) == null) ls.setItem(bak, rawText);
+      } catch (_e) { /* best effort */ }
+    }
+    // First run: starter boxes, then My pens once. After unreadable data the
+    // migration is not repeated (the user may have deleted that box).
     doc = seedStarters(emptyDoc());
-    doc = migrateMyPens(doc);
+    if (!rawText) doc = migrateMyPens(doc);
     doc.migratedMyPens = true;
-    save(doc); // best effort; failure leaves storage as it was
+    save(doc); // best effort; refused in memory-only mode, failure leaves storage as it was
     return doc;
   };
 
@@ -298,7 +317,7 @@
     if (!nm) {
       const tpl = strings().NEW_BOX_NAME || 'My box {n}';
       const used = new Set(doc.boxes.map((b) => b.name));
-      let n = doc.boxes.length + 1;
+      let n = 1;
       nm = cleanBoxName(tpl.replace('{n}', String(n)));
       while (used.has(nm) && n < 1000) { n += 1; nm = cleanBoxName(tpl.replace('{n}', String(n))); }
     }
@@ -476,7 +495,7 @@
   }
 
   Vectura.PenStudioStore = {
-    load, save, emptyDoc, sanitizeDoc,
+    load, save, status, emptyDoc, sanitizeDoc,
     createBox, renameBox, setPinned, setOpen, deleteBox, sortedBoxes,
     addPen, movePen, removePen, setOwnedSizes, boxOf, updatePen, saveAsNew,
     sizesOf, toDocPen, exportBox, exportPen, importBox,

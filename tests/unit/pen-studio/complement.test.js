@@ -10,7 +10,7 @@ const load = () => {
   const win = {};
   win.window = win; win.globalThis = win;
   const ctx = vm.createContext(win);
-  ['src/config/papers.js', 'src/core/paper.js', 'src/config/pen-models.js', 'src/core/pen-model.js',
+  ['src/config/ui-constants.js', 'src/config/papers.js', 'src/core/paper.js', 'src/config/pen-models.js', 'src/core/pen-model.js',
     'src/core/pen-studio/lab.js', 'src/core/pen-studio/complement.js'].forEach((rel) => {
     vm.runInContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), ctx, { filename: rel });
   });

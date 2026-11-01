@@ -120,6 +120,18 @@ describe('box and pen operations', () => {
     expect(S.deleteBox(d, b.boxId).boxes).toHaveLength(1);
   });
 
+  it('names a new box with the first free "My box N", even after deletions', () => {
+    let d = S.createBox(S.emptyDoc()).doc;
+    d = S.createBox(d).doc;
+    d = S.createBox(d).doc;
+    d = S.deleteBox(d, d.boxes[0].id);
+    expect(d.boxes.map((b) => b.name)).toEqual(['My box 2', 'My box 3']);
+    d = S.createBox(d).doc;
+    expect(d.boxes[2].name).toBe('My box 1');
+    d = S.createBox(d).doc;
+    expect(d.boxes[3].name).toBe('My box 4');
+  });
+
   it('caps boxes', () => {
     let d = S.emptyDoc();
     for (let i = 0; i < V.PEN_STUDIO.LIMITS.maxBoxes; i += 1) d = S.createBox(d).doc;
@@ -259,5 +271,34 @@ describe('persistence', () => {
   it('falls back to a fresh seed on corrupt JSON', () => {
     ls.setItem('vectura.penStudio', '{nope');
     expect(S.load().boxes).toHaveLength(4);
+  });
+
+  it('keeps a backup of unreadable storage before reseeding, and does not re-run My pens migration', () => {
+    V.PenLibrary.library().put({ name: 'Mine', color: '#112233', width: 0.46, model: 'sakura-pigma-micron', size: '05' });
+    ls.setItem('vectura.penStudio', '{nope');
+    const doc = S.load();
+    expect(ls.getItem('vectura.penStudio.bak')).toBe('{nope');
+    expect(doc.migratedMyPens).toBe(true);
+    expect(doc.boxes.map((b) => b.name)).not.toContain('My pens');
+  });
+
+  it('backs up a wrong-schema document too, and never overwrites an existing backup', () => {
+    const alien = JSON.stringify({ schema: 'something-else', boxes: [], pens: [] });
+    ls.setItem('vectura.penStudio', alien);
+    S.load();
+    expect(ls.getItem('vectura.penStudio.bak')).toBe(alien);
+    ls.setItem('vectura.penStudio', '{again');
+    S.load();
+    expect(ls.getItem('vectura.penStudio.bak')).toBe(alien);
+  });
+
+  it('refuses to downgrade a newer document: keeps it, runs in memory only, and says why', () => {
+    const newer = JSON.stringify({ schema: 'vectura-pen-studio', version: 99, pens: [], boxes: [], future: true });
+    ls.setItem('vectura.penStudio', newer);
+    const doc = S.load();
+    expect(doc.boxes.length).toBeGreaterThan(0);
+    expect(S.status()).toEqual({ memoryOnly: true, reason: 'newer' });
+    expect(S.save(doc)).toEqual({ ok: false, reason: 'newer' });
+    expect(ls.getItem('vectura.penStudio')).toBe(newer);
   });
 });

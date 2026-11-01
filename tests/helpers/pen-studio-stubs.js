@@ -39,6 +39,7 @@ function installStubs(window, opts = {}) {
   const nid = (p) => `${p}-${(++seq).toString(36).padStart(7, '0')}`;
   const storage = { saved: null, failSave: null, saves: 0 };
 
+  V.UI_CONSTANTS = { PEN_STUDIO: require('./pen-studio-real-config').load().strings };
   V.PEN_MODELS = { MODELS, ORDER: Object.keys(MODELS), CLASS_LABELS: { 'pigment-fineliner': 'pigment fineliner', 'opaque-gel': 'opaque gel' } };
   V.PEN_STUDIO = {
     LIMITS: { maxBoxes: 32, maxPens: 256, nameMax: 48, descMax: 80, boxNameMax: 48 },
@@ -66,7 +67,9 @@ function installStubs(window, opts = {}) {
     createBox(doc, name) {
       const d = clone(doc);
       const id = nid('box');
-      d.boxes.push({ id, name: name || 'Box', pinned: false, open: true, items: [] });
+      let n = 1;
+      while (!name && d.boxes.some((b) => b.name === `My box ${n}`)) n += 1;
+      d.boxes.push({ id, name: name || `My box ${n}`, pinned: false, open: true, items: [] });
       return { doc: d, boxId: id };
     },
     setPinned(doc, id, v) { const d = clone(doc); findBox(d, id).pinned = !!v; return d; },

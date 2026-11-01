@@ -32,41 +32,25 @@
   if (!Shared) throw new Error('Pen Studio: load src/ui/pen-studio/shared.js first');
   const { fmt, el, setText, syncList, makeQueue, derive } = Shared;
 
+  // Fallbacks used only when the config carries no list (string-keys only; copy
+  // lives in UI_CONSTANTS.PEN_STUDIO, geometry in Vectura.PEN_STUDIO).
   const SLIDER_FALLBACK = [
-    { key: 'wetness', label: 'BLEED', min: 0, max: 1, step: 0.05, evidence: 'EV_BLEED' },
-    { key: 'blobs', label: 'BLOB', min: 0, max: 3, step: 0.05, evidence: 'EV_BLOB' },
-    { key: 'overlap', label: 'OVERLAP', min: 0, max: 1, step: 0.05, evidence: 'EV_OVERLAP' },
-    { key: 'skips', label: 'SKIPS', min: 0, max: 0.25, step: 0.005, evidence: 'EV_SKIPS' },
-    { key: 'starvation', label: 'STARVATION', min: 0, max: 0.9, step: 0.05, evidence: 'EV_STARVATION' },
-    { key: 'coverOnDark', label: 'COVER', min: 0, max: 1, step: 0.05, evidence: 'EV_COVER' },
+    { key: 'wetness', labelKey: 'SLIDER_BLEED', min: 0, max: 1, step: 0.05, evidence: 'EV_BLEED' },
+    { key: 'blobs', labelKey: 'SLIDER_BLOB', min: 0, max: 3, step: 0.05, evidence: 'EV_BLOB' },
+    { key: 'overlap', labelKey: 'SLIDER_OVERLAP', min: 0, max: 1, step: 0.05, evidence: 'EV_OVERLAP' },
+    { key: 'skips', labelKey: 'SLIDER_SKIPS', min: 0, max: 0.25, step: 0.005, evidence: 'EV_SKIPS' },
+    { key: 'starvation', labelKey: 'SLIDER_STARVATION', min: 0, max: 0.9, step: 0.05, evidence: 'EV_STARVATION' },
+    { key: 'coverOnDark', labelKey: 'SLIDER_COVER', min: 0, max: 1, step: 0.05, evidence: 'EV_COVER' },
   ];
-  const SLIDER_LITERAL = {
-    wetness: ['Bleed', 'P1 Micron on smooth: crisp. P8 Sharpie: soft edges on textured paper.'],
-    blobs: ['Pen-down blob', 'P8 Sharpie: bulbous stroke ends. P9 Signo: dots at starts.'],
-    overlap: ['Overlap darkening', 'P3 Stabilo CMYK hatch: dye colors mix where they cross.'],
-    skips: ['Skips / streaks', 'P9 Signo white and P6 white gel: streaky strokes.'],
-    starvation: ['Starvation', 'EMSL: Posca dries out on long plots. unsharpen: Signo Broad runs out on fills.'],
-    coverOnDark: ['Coverage on dark', 'P5 white Gelly on black: opaque. P7 Posca: white opaque, yellow semi.'],
-  };
   const TESTS_FALLBACK = ['line', 'bleed', 'blob', 'cross', 'skip', 'starv'];
   const MATRIX_FALLBACK = ['line', 'bleed', 'blob', 'cross'];
-  const STRIP_PX_PER_MM = 14;
-  const CELL_PX_PER_MM = 8;
-  const TEST_LITERAL = {
-    line: 'Nib vs line', bleed: 'Bleed · feathering', blob: 'Pen-down blob · lift',
-    cross: 'Crossings with complement', skip: 'Skips · streaks', starv: 'Starvation, long stroke',
-  };
-  const VAL_LITERAL = {
-    line: 'nib {nib} mm · line ≈{laid} mm', bleed: '{bleed} mm per side', blob: 'blob ≈{blob} mm',
-    crossDye: 'dye: {pct}% darker', crossOpaque: 'opaque: last pen wins', skip: '{pct}% of line',
-    starv: '{pct}% fade by end', none: 'none',
-  };
 
   const mount = (host, ctx) => {
     const win = (host.ownerDocument && host.ownerDocument.defaultView) || G;
     const doc = host.ownerDocument || document;
     const L = () => (ctx.L && ctx.L()) || {};
-    const T = (key, literal, vars) => fmt(L()[key] || literal, vars);
+    const T = (key, vars) => fmt(L()[key] || '', vars);
+    const pxPerMm = (kind) => (D && D.cfg.PX_PER_MM && D.cfg.PX_PER_MM[kind]) || 1;
     const q = makeQueue(win);
     let lastSig = null;
     let destroyed = false;
@@ -151,11 +135,11 @@
       const Draft = Vectura.PenStudioDraft;
       ctx.setDoc(Draft.commit(D.doc, D.pen.id, D.draft));
       const name = (D.draft.name && String(D.draft.name).trim()) || D.pen.name;
-      ctx.set({ drafts: withoutDraft(), editing: null, note: { text: T('NOTE_SAVED', 'Saved {name} ✓', { name }), tone: 'ok' } });
+      ctx.set({ drafts: withoutDraft(), editing: null, note: { text: T('NOTE_SAVED', { name }), tone: 'ok' } });
     });
     bDiscard.addEventListener('click', () => {
       if (!D || bDiscard.disabled) return;
-      ctx.set({ drafts: withoutDraft(), editing: null, note: { text: T('NOTE_DISCARDED', 'Changes discarded'), tone: 'ok' } });
+      ctx.set({ drafts: withoutDraft(), editing: null, note: { text: T('NOTE_DISCARDED'), tone: 'ok' } });
     });
     bReset.addEventListener('click', () => {
       if (!D) return;
@@ -256,12 +240,12 @@
 
     const valueText = (kind, values, dye) => {
       const v = values || {};
-      if (kind === 'line') return T('VAL_LINE', VAL_LITERAL.line, v);
-      if (kind === 'bleed') return T('VAL_BLEED', VAL_LITERAL.bleed, v);
-      if (kind === 'blob') return T('VAL_BLOB', VAL_LITERAL.blob, v);
-      if (kind === 'cross') return dye ? T('VAL_CROSS_DYE', VAL_LITERAL.crossDye, v) : T('VAL_CROSS_OPAQUE', VAL_LITERAL.crossOpaque, v);
-      if (kind === 'skip') return v.pct === 0 || v.pct === '0.0' ? T('VAL_NONE', VAL_LITERAL.none) : T('VAL_SKIP', VAL_LITERAL.skip, v);
-      if (kind === 'starv') return v.pct === 0 || v.pct === '0' ? T('VAL_NONE', VAL_LITERAL.none) : T('VAL_STARV', VAL_LITERAL.starv, v);
+      if (kind === 'line') return T('VAL_LINE', v);
+      if (kind === 'bleed') return T('VAL_BLEED', v);
+      if (kind === 'blob') return T('VAL_BLOB', v);
+      if (kind === 'cross') return dye ? T('VAL_CROSS_DYE', v) : T('VAL_CROSS_OPAQUE', v);
+      if (kind === 'skip') return v.pct === 0 || v.pct === '0.0' ? T('VAL_NONE') : T('VAL_SKIP', v);
+      if (kind === 'starv') return v.pct === 0 || v.pct === '0' ? T('VAL_NONE') : T('VAL_STARV', v);
       return '';
     };
 
@@ -272,11 +256,11 @@
       kinds.forEach((k) => {
         const r = stripRows[k];
         const spec = Lab.testSpec(k, { pen: D.docPen, comp: compDoc, paperType: D.paperType, mini: false });
-        setText(r.label, T('TEST_' + k.toUpperCase(), TEST_LITERAL[k] || k));
+        setText(r.label, T('TEST_' + k.toUpperCase()));
         const m = Lab.metrics ? Lab.metrics(D.docPen, D.paperType) : {};
         setText(r.value, valueText(k, spec.values, m && m.opaque === false));
         const docPen = D.docPen; const pt = D.paperType;
-        q.push(() => paintCanvas(r.canvas, spec, STRIP_PX_PER_MM, docPen, compDoc, pt));
+        q.push(() => paintCanvas(r.canvas, spec, pxPerMm('strip'), docPen, compDoc, pt));
       });
     };
 
@@ -288,15 +272,14 @@
         const r = matrixRows[p.type];
         const fit = Lab.fit(D.docPen.color, p.type, D.docPen);
         const key = fit.faint || fit.note === 'barely' ? 'NOTE_BARELY' : (fit.note === 'crisp' ? 'NOTE_CRISP' : 'NOTE_READS');
-        const lit = key === 'NOTE_BARELY' ? 'barely shows' : (key === 'NOTE_CRISP' ? 'crisp' : 'reads well');
-        setText(r.note, T(key, lit));
+        setText(r.note, T(key));
         r.note.classList.toggle('is-warn', key === 'NOTE_BARELY');
         r.row.classList.toggle('is-selected', p.type === D.paperType);
         r.row.setAttribute('aria-pressed', p.type === D.paperType ? 'true' : 'false');
         kinds.forEach((k, i) => {
           const spec = Lab.testSpec(k, { pen: D.docPen, comp: compDoc, paperType: p.type, mini: true });
           const docPen = D.docPen; const type = p.type; const canvas = r.cells[i];
-          q.push(() => paintCanvas(canvas, spec, CELL_PX_PER_MM, docPen, compDoc, type));
+          q.push(() => paintCanvas(canvas, spec, pxPerMm('cell'), docPen, compDoc, type));
         });
       });
     };
@@ -308,7 +291,7 @@
       if (!D) {
         q.bump(); lastSig = null;
         body.hidden = true; empty.hidden = false;
-        setText(empty, T('EMPTY_BOX', 'Select a pen to start testing.'));
+        setText(empty, T('EMPTY_BOX'));
         return;
       }
       empty.hidden = true; body.hidden = false;
@@ -316,29 +299,32 @@
       const st = D.st; const pen = D.pen;
 
       // sizes
-      setText(sizesHead, T('SIZES_HEAD', 'Sizes in {box}: click to add or remove. The outlined size is the one being tested.', { box: (D.box && D.box.name) || 'this box' }));
+      setText(sizesHead, T('SIZES_HEAD', { box: (D.box && D.box.name) || '' }));
       syncList(sizesRow, D.sizes, (s) => s.label,
         () => {
           const b = el(doc, 'button', 'pen-studio-size'); b.type = 'button';
+          b.append(el(doc, 'span', 'pen-studio-size-line'), el(doc, 'span', 'pen-studio-size-line is-sub'));
           b.addEventListener('click', () => toggleSize(b.dataset.key));
           return b;
         },
         (b, s) => {
           const own = D.owned.indexOf(s.label) >= 0; const testing = s.label === D.testLabel;
-          setText(b, (own ? '✓ ' : '') + s.label + (testing ? T('TESTING', ' · testing') : ''));
+          const name = T('SIZE_BUTTON', { label: s.label, nib: Number(s.nominalWidthMm).toFixed(2) });
+          const line = T('SIZE_LINE', { laid: Number(s.laidWidthMm).toFixed(2) });
+          setText(b.children[0], (own ? T('SIZE_OWNED_MARK') + ' ' : '') + name);
+          setText(b.children[1], testing ? line + ' · ' + T('SIZE_TESTING') : line);
           b.classList.toggle('is-owned', own); b.classList.toggle('is-testing', testing);
           b.setAttribute('aria-pressed', own ? 'true' : 'false');
-          b.title = 'nib ' + Number(s.nominalWidthMm).toFixed(2) + ' mm · line ' + Number(s.laidWidthMm).toFixed(2) + ' mm';
         });
       const PMd = Vectura.PEN_MODELS && Vectura.PEN_MODELS.MODELS && pen.model ? Vectura.PEN_MODELS.MODELS[pen.model] : null;
       const src = PMd && (PMd.sizesSource || PMd.sizeSource || PMd.source);
       sizesSrc.hidden = !src;
       const conf = PMd && Number.isFinite(PMd.confidence) ? Math.round(PMd.confidence * 100) + '%' : '';
-      setText(sizesSrc, src ? T('SIZES_SRC', 'Nib sizes: {source} · evidence {confidence}', { source: src, confidence: conf }) : '');
+      setText(sizesSrc, src ? T('SIZES_SRC', { source: src, confidence: conf }) : '');
 
       // papers
       const paperList = Lab.papers();
-      setText(papersHead, T('PAPER_HEAD', 'Paper'));
+      setText(papersHead, T('PAPER_HEAD'));
       syncList(papers, paperList, (p) => p.type,
         () => {
           const b = el(doc, 'button', 'pen-studio-paper'); b.type = 'button';
@@ -351,16 +337,16 @@
           const sel = p.type === D.paperType;
           b.children[0].style.background = p.color;
           setText(b.children[1], p.name);
-          const note = fit.faint ? T('FAINT', 'faint') : Number(fit.ratio).toFixed(1) + ':1';
+          const note = fit.faint ? T('FAINT') : Number(fit.ratio).toFixed(1) + ':1';
           setText(b.children[2], note);
           b.children[2].classList.toggle('is-warn', !!fit.faint);
           b.classList.toggle('is-selected', sel); b.classList.toggle('is-faint', !!fit.faint);
           b.setAttribute('aria-pressed', sel ? 'true' : 'false');
-          b.setAttribute('aria-label', p.name + ', ' + pen.name + (fit.faint ? ' barely shows' : ' contrast ' + Number(fit.ratio).toFixed(1)));
+          b.setAttribute('aria-label', T(fit.faint ? 'PAPER_FAINT_ARIA' : 'PAPER_CONTRAST_ARIA', { paper: p.name, pen: pen.name, ratio: Number(fit.ratio).toFixed(1) }));
         });
       const one = st.view !== 'all';
-      setText(btnOne, T('VIEW_ONE', 'One paper'));
-      setText(btnAll, T('VIEW_ALL', 'All {n} papers', { n: paperList.length }));
+      setText(btnOne, T('VIEW_ONE', { paper: (paperList.find((p) => p.type === D.paperType) || {}).name || '' }));
+      setText(btnAll, T('VIEW_ALL', { n: paperList.length }));
       btnOne.classList.toggle('is-selected', one); btnAll.classList.toggle('is-selected', !one);
       btnOne.setAttribute('aria-pressed', one ? 'true' : 'false'); btnAll.setAttribute('aria-pressed', one ? 'false' : 'true');
       strips.hidden = !one; matrix.hidden = one;
@@ -373,28 +359,27 @@
         const r = sliderRows[key];
         const value = Draft.valueOf(pen, D.draft, key);
         const state = Draft.keyState(pen, D.draft, key);
-        const lit = SLIDER_LITERAL[key] || [key, ''];
-        setText(r.label, L()[r.def.labelKey] || (r.def.labelKey ? r.def.label : lit[0]));
+        setText(r.label, L()[r.def.labelKey] || r.def.label || key);
         r.input.value = String(value);
         let readout = Number(value).toFixed(2);
         if (key === 'blobs' && Lab.metrics) {
           const m = Lab.metrics(D.docPen, D.paperType);
-          if (m && Number.isFinite(m.blobMm)) readout += ' ≈ ' + m.blobMm.toFixed(2) + ' mm';
+          if (m && Number.isFinite(m.blobMm)) readout = T('BLOB_READOUT', { value: readout, mm: m.blobMm.toFixed(2) });
         }
         setText(r.value, readout);
         r.value.className = 'pen-studio-slider-value is-' + state;
         r.value.dataset.state = state;
-        const ev = L()[r.def.evidence] || lit[1];
+        const ev = L()[r.def.evidence] || '';
         setText(r.ev, ev);
         r.row.title = ev;
       });
 
       // actions
       const dirty = !!Draft.isDirty(pen, D.draft);
-      setText(bDiscard, T('DISCARD', 'Discard')); setText(bReset, T('RESET', 'Reset to model'));
-      setText(bExport, T('EXPORT', 'Export')); setText(bSaveNew, T('SAVE_NEW', 'Save as new'));
-      setText(bSave, T('SAVE', 'Save changes'));
-      bSaveNew.title = T('SAVE_NEW_TITLE', 'Save these settings as a new pen');
+      setText(bDiscard, T('DISCARD')); setText(bReset, T('RESET'));
+      setText(bExport, T('EXPORT')); setText(bSaveNew, T('SAVE_NEW'));
+      setText(bSave, T('SAVE'));
+      bSaveNew.title = T('SAVE_NEW_TITLE');
       bSave.disabled = !dirty; bDiscard.disabled = !dirty;
       bSave.classList.toggle('is-clean', !dirty);
 

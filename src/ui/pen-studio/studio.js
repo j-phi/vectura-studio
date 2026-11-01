@@ -69,10 +69,15 @@
   };
 
   const selPen = () => penById(session.doc, state.selPenId);
-  const selBox = () => {
+  // A pen can sit in several boxes (import reuses pens): the box the user
+  // picked it in wins as long as it still holds the pen.
+  const boxHolding = (doc, penId, preferId) => {
     const S = store();
-    return state.selPenId && S ? S.boxOf(session.doc, state.selPenId) : null;
+    const pick = preferId ? (doc.boxes || []).find((b) => b.id === preferId) : null;
+    if (pick && pick.items.some((i) => i.penId === penId)) return pick;
+    return S ? S.boxOf(doc, penId) : null;
   };
+  const selBox = () => (state.selPenId && session ? boxHolding(session.doc, state.selPenId, state.selBoxId) : null);
   const ownedSizes = () => {
     const box = selBox();
     const item = box && box.items.find((i) => i.penId === state.selPenId);
@@ -93,7 +98,7 @@
     const S = store();
     const doc = session.doc;
     let pen = state.selPenId ? penById(doc, state.selPenId) : null;
-    let box = pen ? S.boxOf(doc, pen.id) : null;
+    let box = pen ? boxHolding(doc, pen.id, state.selBoxId) : null;
     if (!pen || !box) {
       pen = null; box = null;
       const boxes = S.sortedBoxes(doc);
@@ -118,7 +123,7 @@
       session.doc = doc;
       const res = store().save(doc);
       if (res && res.ok === false) {
-        setNote(res.reason === 'quota' ? (L().ERR_QUOTA || 'Storage is full. Changes are kept until you close Pen Studio.') : (L().ERR_UNAVAILABLE || 'Storage is unavailable. Changes are kept until you close Pen Studio.'), 'warn');
+        setNote(res.reason === 'newer' ? (L().ERR_NEWER || '') : res.reason === 'quota' ? (L().ERR_QUOTA || 'Storage is full. Changes are kept until you close Pen Studio.') : (L().ERR_UNAVAILABLE || 'Storage is unavailable. Changes are kept until you close Pen Studio.'), 'warn');
       }
       render();
     },
@@ -135,6 +140,7 @@
     ownedSizes,
     testSizeLabel,
     draftOf,
+    exportPen,
     afterRender: (fn) => { if (session) session.afterRender.push(fn); },
     get targetDocPen() { return targetDocPen(); },
   });
@@ -159,6 +165,19 @@
     }
     return eff;
   };
+
+  // Pen export text for the header and the Lab: the unsaved draft is merged in.
+  function exportPen(penId, label) {
+    const S = store();
+    const pen = penById(session.doc, penId);
+    if (!pen) return { ok: false, reason: 'missing' };
+    let doc = session.doc;
+    const D = draftApi();
+    if (D && D.isDirty && D.isDirty(pen, state.drafts[pen.id]) && S.updatePen) {
+      doc = S.updatePen(doc, pen.id, { name: displayName(pen), desc: displayDesc(pen), ink: effectivePen(pen).ink });
+    }
+    return S.exportPen(doc, pen.id, label);
+  }
 
   function useInDocument() {
     const pen = selPen();
@@ -301,10 +320,7 @@
     });
     actions.appendChild(move);
     actions.appendChild(btn('pen-studio-btn pen-studio-export-pen', L().EXPORT_PEN || 'Export pen', () => {
-      const label = testSizeLabel();
-      let doc = session.doc;
-      if (dirty && S.updatePen) doc = S.updatePen(doc, pen.id, { name: displayName(pen), desc: displayDesc(pen), ink: effectivePen(pen).ink });
-      const res = S.exportPen(doc, pen.id, label);
+      const res = exportPen(pen.id, testSizeLabel());
       state.overlay = res && res.ok
         ? { kind: 'export', title: fmt(L().EXPORT_PEN_TITLE || 'Export pen: {name}', { name: displayName(pen) }), text: res.text, filename: res.filename }
         : { kind: 'export', title: L().EXPORT_PEN || 'Export pen', text: '', error: true, filename: 'pen.vectura-pens.json' };
@@ -421,6 +437,8 @@
     };
     session.ctx = makeCtx(opts.app || null);
     pickInitialPen(doc, opts.penId);
+    const status = S.status ? S.status() : null;
+    state.note = status && status.memoryOnly ? { text: L().ERR_NEWER || '', tone: 'warn' } : state.note;
 
     const m = modal(document.body, {
       ariaLabel: L().TITLE || 'Pen Studio',

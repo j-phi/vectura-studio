@@ -39,7 +39,8 @@
     ],
     BOX_MATES_MAX: 3,
   };
-  const HUE_NAMES = { COMPLEMENT: 'Complement', SPLIT_MINUS: 'Split −', SPLIT_PLUS: 'Split +' };
+  const strings = () => (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PEN_STUDIO) || {};
+  const hueName = (key) => strings()[key] || key;
 
   const cfg = () => Vectura.PEN_STUDIO || {};
   const CONTRAST = () => ({ ...DEFAULTS.CONTRAST, ...(cfg().CONTRAST || {}) });
@@ -157,7 +158,7 @@
     const lig = Lh < 0.12 || Lh > 0.9 ? 0.5 : Lh;
     HUES().forEach((h) => {
       out.push({
-        id: h.id, hex: readable((H + h.deg) % 360, sat, lig, paper.color), name: HUE_NAMES[h.key] || h.key,
+        id: h.id, hex: readable((H + h.deg) % 360, sat, lig, paper.color), name: hueName(h.key),
         labelKey: h.key, kind: 'hue', real: false, deg: h.deg,
       });
     });
@@ -194,7 +195,7 @@
     if (rng() < 0.5 && pool.length) return pool[Math.floor(rng() * pool.length)];
     const H2 = rng() * 360;
     const sat = 0.55 + rng() * 0.3;
-    return { id: `rnd${Math.floor(rng() * 1e6)}`, hex: readable(H2, sat, 0.5, paper.color), name: 'Wildcard', kind: 'random', real: false };
+    return { id: `rnd${Math.floor(rng() * 1e6)}`, hex: readable(H2, sat, 0.5, paper.color), name: hueName('WILDCARD'), kind: 'random', real: false };
   };
 
   Vectura.PenStudioComplement = {

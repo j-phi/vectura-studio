@@ -18682,7 +18682,8 @@ button.sp-cm-card { cursor: pointer; }
 .pen-studio-sizes-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .pen-studio-sizes-src { font-size: 10.5px; color: var(--ui-text-2); }
 .pen-studio-sizes-src[hidden] { display: none; }
-.pen-studio-sizes-row .pen-studio-size { border: 0; border-radius: 5px; background: var(--ui-ctrl); color: var(--ui-text); font: 400 11px/1 var(--font-mono); padding: 6px 9px; cursor: pointer; }
+.pen-studio-sizes-row .pen-studio-size { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; border: 0; border-radius: 5px; background: var(--ui-ctrl); color: var(--ui-text); font: 400 11px/1.2 var(--font-mono); padding: 6px 9px; cursor: pointer; }
+.pen-studio-size-line.is-sub { font-size: 10px; color: var(--ui-text-2); }
 .pen-studio-size.is-owned { background: var(--ui-accent-2); }
 .pen-studio-size.is-testing { box-shadow: 0 0 0 2px var(--ui-accent); }
 .pen-studio-papers-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -18788,7 +18789,7 @@ button.sp-cm-card { cursor: pointer; }
 /* touch: full-screen sheet, >=44px targets */
 body.touch-ui .pen-studio-backdrop { padding: 0; align-items: stretch !important; }
 body.touch-ui .vectura-modal.pen-studio { width: 100%; max-width: 100%; height: 100%; max-height: 100%; border-radius: 0; }
-body.touch-ui .pen-studio :is(.pen-studio-btn, .pen-studio-box-toggle, .pen-studio-box-pin, .pen-studio-box-export, .pen-studio-box-delete, .pen-studio-box-add, .pen-studio-row-main, .pen-studio-row-remove, .pen-studio-size, .pen-studio-paper, .pen-studio-view-btn, .pen-studio-weave-btn, .pen-studio-chip, .pen-studio-matrix-row, .pen-studio-editable, .pen-studio-edit, .pen-studio-move, .pen-studio-field :is(input[type="text"], select)) { min-height: var(--touch-target-min); min-width: var(--touch-target-min); }
+body.touch-ui .pen-studio :is(.pen-studio-btn, .pen-studio-box-toggle, .pen-studio-box-pin, .pen-studio-box-export, .pen-studio-box-delete, .pen-studio-box-add, .pen-studio-row-main, .pen-studio-row-remove, .pen-studio-size, .pen-studio-paper, .pen-studio-view-btn, .pen-studio-weave-btn, .pen-studio-chip, .pen-studio-matrix-row, .pen-studio-editable, .pen-studio-edit, .pen-studio-move, .pen-studio-color, .pen-studio-field :is(input[type="text"], select)) { min-height: var(--touch-target-min); min-width: var(--touch-target-min); }
 body.touch-ui .pen-studio :is(.pen-studio-color) { width: var(--touch-target-min); height: var(--touch-target-min); }
 body.touch-ui .pen-studio input[type="range"] { min-height: var(--touch-target-min); }
 body.touch-ui .pen-studio .pen-studio-matrix-row { min-height: calc(var(--touch-target-min) + 4px); }

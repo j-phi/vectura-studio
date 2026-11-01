@@ -112,11 +112,11 @@ describe('Pen Studio dialogs', () => {
     test('invalid JSON, wrong schema, newer version and empty files show errors', () => {
       openImport();
       go('nope');
-      expect(t.q('.pen-studio-msg').textContent).toMatch(/JSON/);
+      expect(t.q('.pen-studio-msg').textContent).toMatch(/JSON/i);
       go(JSON.stringify({ schema: 'other', version: 1, pens: [] }));
-      expect(t.q('.pen-studio-msg').textContent).toMatch(/not a Vectura/);
+      expect(t.q('.pen-studio-msg').textContent).toMatch(/not a Vectura/i);
       go(JSON.stringify({ schema: 'vectura-pens', version: 3, pens: [{}] }));
-      expect(t.q('.pen-studio-msg').textContent).toMatch(/newer/);
+      expect(t.q('.pen-studio-msg').textContent).toMatch(/newer/i);
       go(JSON.stringify({ schema: 'vectura-pens', version: 2, pens: [] }));
       expect(t.q('.pen-studio-msg').textContent).toMatch(/no usable pens/);
       expect(ctx.getDoc().boxes).toHaveLength(3);

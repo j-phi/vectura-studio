@@ -25,15 +25,16 @@
   if (!Shared) throw new Error('Pen Studio: load src/ui/pen-studio/shared.js first');
   const { fmt, el, setText, syncList, makeQueue, derive } = Shared;
 
-  const WEAVE_MM = { w: 60, h: 40 };
-  const WEAVE_PX_PER_MM = 7;
-  const WEAVE_LITERAL = { alt: ['WEAVE_ALT', 'Alternate'], third: ['WEAVE_THIRD', 'Every 3rd'], mid: ['WEAVE_MID', 'Center'] };
+  const WEAVE_KEY = { alt: 'WEAVE_ALT', third: 'WEAVE_THIRD', mid: 'WEAVE_MID' };
+  const KIND_KEY = { curated: 'KIND_CURATED', hue: 'KIND_HUE', box: 'KIND_BOX', random: 'KIND_RANDOM' };
 
   const mount = (host, ctx) => {
     const win = (host.ownerDocument && host.ownerDocument.defaultView) || G;
     const doc = host.ownerDocument || document;
     const L = () => (ctx.L && ctx.L()) || {};
-    const T = (key, literal, vars) => fmt(L()[key] || literal, vars);
+    const T = (key, vars) => fmt(L()[key] || '', vars);
+    const weaveMm = () => (D && D.cfg.WEAVE_MM) || { w: 0, h: 0 };
+    const weavePx = () => (D && D.cfg.PX_PER_MM && D.cfg.PX_PER_MM.weave) || 1;
     const q = makeQueue(win);
     let lastSig = null;
     let destroyed = false;
@@ -78,12 +79,12 @@
       const Lab = Vectura.PenStudioLab; const IR = Vectura.InkRenderer;
       if (!IR || !IR.drawSample || !D) return;
       const dpr = Math.min(2, (win.devicePixelRatio || 1));
-      const wCss = Math.round(WEAVE_MM.w * WEAVE_PX_PER_MM); const hCss = Math.round(WEAVE_MM.h * WEAVE_PX_PER_MM);
+      const wCss = Math.round(weaveMm().w * weavePx()); const hCss = Math.round(weaveMm().h * weavePx());
       canvas.width = Math.round(wCss * dpr); canvas.height = Math.round(hCss * dpr);
       canvas.style.width = wCss + 'px'; canvas.style.height = hCss + 'px';
       const docPen = D.docPen; const compDoc = D.compDoc || D.docPen;
-      const strokes = Lab.weave(D.n, D.mode, WEAVE_MM).map((s) => ({ pts: s.pts, pen: s.comp ? compDoc : docPen }));
-      IR.drawSample(canvas, docPen, Lab.paperFor(D.paperType), { paths: strokes, paperFill: true, widthMm: WEAVE_MM.w });
+      const strokes = Lab.weave(D.n, D.mode, weaveMm()).map((s) => ({ pts: s.pts, pen: s.comp ? compDoc : docPen }));
+      IR.drawSample(canvas, docPen, Lab.paperFor(D.paperType), { paths: strokes, paperFill: true, widthMm: weaveMm().w });
     };
 
     const update = () => {
@@ -92,7 +93,7 @@
       if (!D) {
         q.bump(); lastSig = null;
         body.hidden = true; empty.hidden = false;
-        setText(empty, T('EMPTY_BOX', 'Select a pen to see pairings.'));
+        setText(empty, T('EMPTY_BOX'));
         return;
       }
       empty.hidden = true; body.hidden = false;
@@ -103,9 +104,9 @@
       const paperCfg = Lab.paperFor(D.paperType) || {};
       const paperName = (Lab.papers().find((p) => p.type === D.paperType) || {}).name || D.paperType;
 
-      setText(headTitle, T('COMP_HEAD', 'Complement'));
-      setText(headSub, T('COMP_SUB', 'Pairs that work with this pen on this paper'));
-      setText(random, T('RANDOMIZE', 'Randomize'));
+      setText(headTitle, T('COMP_HEAD'));
+      setText(headSub, T('COMP_SUB'));
+      setText(random, T('RANDOMIZE'));
       random.disabled = !D.ok.length;
 
       syncList(chips, D.ok, (c) => c.id,
@@ -123,15 +124,14 @@
           const sel = !!D.comp && c.id === D.comp.id;
           b.children[0].style.background = c.hex;
           setText(b.children[1], c.name);
-          const kindKey = { curated: ['KIND_CURATED', 'curated pairing'], hue: ['KIND_HUE', 'hue'], box: ['KIND_BOX', 'from this box'], random: ['KIND_RANDOM', 'random hue'] }[c.kind] || ['', c.kind || ''];
-          setText(b.children[2], kindKey[0] ? T(kindKey[0], kindKey[1]) : kindKey[1]);
+          setText(b.children[2], KIND_KEY[c.kind] ? T(KIND_KEY[c.kind], { deg: c.deg != null ? c.deg : '' }) : (c.kind || ''));
           b.classList.toggle('is-selected', sel);
           b.setAttribute('aria-pressed', sel ? 'true' : 'false');
           let tip;
-          if (c.real) tip = c.name + ' is a pen you own';
+          if (c.real) tip = T('COMP_OWNED_TITLE', { name: c.name });
           else {
             const near = Comp.nearestOwned ? Comp.nearestOwned(c.hex, D.doc.pens || [], D.effPen, D.paperType) : null;
-            tip = c.name + ' ' + c.hex + (near ? ', closest pen: ' + near.name : '');
+            tip = near ? T('COMP_COLOR_TITLE', { name: c.name, hex: c.hex, closest: near.name }) : T('COMP_COLOR_TITLE_PLAIN', { name: c.name, hex: c.hex });
           }
           b.title = tip;
         });
@@ -141,9 +141,9 @@
         const ratio = Comp.contrast(comp.hex, paperCfg.color);
         setText(contrast, comp.name + ' · ' + Number(ratio).toFixed(1) + ':1');
         let text = comp.real
-          ? T('COMP_REAL', '{name} is a real pen, ready to plot on {paper}.', { name: comp.name, paper: paperName })
-          : T('COMP_NOT_PEN', 'Not a pen yet. The closest pen you own that works on {paper} is {pen}. Add the color as a plain pen to plot it exactly.', { name: comp.name, paper: paperName, pen: D.nearest ? D.nearest.name : '—' });
-        if (D.hiddenNames.length) text += ' ' + T('COMP_HIDDEN', 'Hidden on {paper}: {names} (would barely show).', { paper: paperName, names: D.hiddenNames.join(', ') });
+          ? T('COMP_REAL', { name: comp.name, paper: paperName })
+          : (D.nearest ? T('COMP_NOT_PEN', { name: comp.name, paper: paperName, closest: D.nearest.name }) : T('COMP_NOT_PEN_NONE', { paper: paperName }));
+        if (D.hiddenNames.length) text += ' ' + T('COMP_HIDDEN', { paper: paperName, names: D.hiddenNames.join(', ') });
         setText(note, text);
         note.className = 'pen-studio-pair-note ' + (comp.real ? 'is-ok' : 'is-warn');
       } else {
@@ -153,7 +153,7 @@
 
       linesInput.min = String(weaveCfg.min); linesInput.max = String(weaveCfg.max); linesInput.step = '1';
       linesInput.value = String(n);
-      setText(linesLabel, T('LINES', 'Lines'));
+      setText(linesLabel, T('LINES'));
       setText(linesValue, String(n));
       syncList(weaves, weaveCfg.modes, (m) => m,
         (m) => {
@@ -162,8 +162,7 @@
           return b;
         },
         (b, m) => {
-          const lit = WEAVE_LITERAL[m] || ['', m];
-          setText(b, lit[0] ? T(lit[0], lit[1]) : lit[1]);
+          setText(b, WEAVE_KEY[m] ? T(WEAVE_KEY[m]) : m);
           const on = m === D.mode;
           b.classList.toggle('is-selected', on);
           b.setAttribute('aria-pressed', on ? 'true' : 'false');

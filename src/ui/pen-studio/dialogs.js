@@ -30,14 +30,13 @@
   const draftApi = () => Vectura.PenStudioDraft;
   const MODELS = () => (Vectura.PEN_MODELS && Vectura.PEN_MODELS.MODELS) || {};
 
-  const IMPORT_ERR = {
-    parse: 'That text is not valid JSON.',
-    schema: 'This is not a Vectura pen file.',
-    version: 'This file was made by a newer version of Vectura.',
-    empty: 'The file has no usable pens.',
-    'too-large': 'The file is too large to import.',
-    'too-many': 'The file has too many pens.',
+  const importError = (L, reason) => L[`IMPORT_ERR_${String(reason || '').toUpperCase().replace(/-/g, '_')}`] || L.IMPORT_ERR_GENERIC || '';
+  const nameMax = (ctx) => {
+    const n = ctx.cfg().LIMITS && ctx.cfg().LIMITS.nameMax;
+    return Number.isFinite(n) ? n : null;
   };
+  const clip = (text, max) => (max == null ? String(text) : String(text).slice(0, max));
+  const FOCUSABLE = 'button, input, select, textarea, a[href], [tabindex]';
 
   function frame(ctx, ov, title, sub, kindClass) {
     const L = ctx.L();
@@ -53,6 +52,18 @@
     dlg.appendChild(body);
     dlg.appendChild(foot);
     scrim.appendChild(dlg);
+    // Tab cycles inside the dialog (the Studio behind it is inert while it is open).
+    scrim.addEventListener('keydown', (e) => {
+      if (e.key !== 'Tab') return;
+      const items = Array.from(dlg.querySelectorAll(FOCUSABLE)).filter((n) => !n.disabled && !n.hidden && n.tabIndex >= 0);
+      if (!items.length) { e.preventDefault(); return; }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (!dlg.contains(active)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+      else if (e.shiftKey && active === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+    });
     const cancel = (label) => btn('pen-studio-btn pen-studio-dialog-cancel', label || L.CANCEL || 'Cancel', () => ctx.set({ overlay: null }));
     const focusOnce = (el, key) => {
       el.setAttribute('data-ps-focus', key);
@@ -78,9 +89,9 @@
     return Array.isArray(list) && list.length ? list : [{ name: 'Black', hex: '#000000' }];
   };
 
-  const defaultName = (modelId, colourName) => {
+  const defaultName = (ctx, modelId, colourName) => {
     const m = modelId ? MODELS()[modelId] : null;
-    return `${m && m.short ? `${m.short} ` : ''}${colourName}`.slice(0, 48);
+    return clip(`${m && m.short ? `${m.short} ` : ''}${colourName}`, nameMax(ctx));
   };
 
   const defaultSizeLabel = (modelId) => {
@@ -94,7 +105,7 @@
     const order = (Vectura.PEN_MODELS && Vectura.PEN_MODELS.ORDER) || Object.keys(MODELS());
     const model = order[0] || '';
     const c0 = coloursFor(ctx, model)[0];
-    ov.form = { model, color: c0.hex, colorName: c0.name, name: defaultName(model, c0.name), nameTouched: false, sizes: [defaultSizeLabel(model)] };
+    ov.form = { model, color: c0.hex, colorName: c0.name, name: defaultName(ctx, model, c0.name), nameTouched: false, sizes: [defaultSizeLabel(model)] };
     return ov.form;
   }
 
@@ -103,7 +114,7 @@
     const f = initAdd(ctx, ov);
     const doc = ctx.getDoc();
     const box = doc.boxes.find((b) => b.id === ov.boxId) || doc.boxes[0];
-    const fr = frame(ctx, ov, `${L.ADD_TITLE || 'Add a pen to'} ${box ? box.name : ''}`.trim(),
+    const fr = frame(ctx, ov, ctx.fmt(L.ADD_TITLE || 'Add a pen to {box}', { box: box ? box.name : '' }).trim(),
       L.ADD_SUB || 'Choose a model and color, then tick the sizes you own.', 'pen-studio-add');
 
     const sel = h('select', 'pen-studio-add-model');
@@ -121,7 +132,7 @@
       f.model = sel.value;
       const c0 = coloursFor(ctx, f.model)[0];
       f.color = c0.hex; f.colorName = c0.name;
-      if (!f.nameTouched) f.name = defaultName(f.model, c0.name);
+      if (!f.nameTouched) f.name = defaultName(ctx, f.model, c0.name);
       f.sizes = [defaultSizeLabel(f.model)];
       ctx.set({ overlay: ov });
     });
@@ -134,7 +145,7 @@
       const on = String(c.hex).toLowerCase() === String(f.color).toLowerCase();
       const b = btn(`pen-studio-color${on ? ' is-on' : ''}`, null, () => {
         f.color = c.hex; f.colorName = c.name;
-        if (!f.nameTouched) f.name = defaultName(f.model, c.name);
+        if (!f.nameTouched) f.name = defaultName(ctx, f.model, c.name);
         ctx.set({ overlay: ov });
       }, { title: c.name, 'aria-label': c.name, 'aria-pressed': on ? 'true' : 'false' });
       b.style.background = c.hex;
@@ -151,7 +162,7 @@
 
     const name = h('input', 'pen-studio-add-name');
     name.type = 'text';
-    name.maxLength = (ctx.cfg().LIMITS && ctx.cfg().LIMITS.nameMax) || 48;
+    if (nameMax(ctx) != null) name.maxLength = nameMax(ctx);
     name.value = f.name;
     fr.focusOnce(name, 'add-name');
     name.addEventListener('input', () => { f.name = name.value; f.nameTouched = true; });
@@ -198,13 +209,13 @@
     custom.addEventListener('change', () => {
       f.color = custom.value;
       f.colorName = L.CUSTOM_NAME || 'Custom';
-      if (!f.nameTouched) f.name = defaultName(f.model, f.colorName);
+      if (!f.nameTouched) f.name = defaultName(ctx, f.model, f.colorName);
       ctx.set({ overlay: ov });
     });
     fr.body.appendChild(fit);
 
     function confirm() {
-      const nm = String(f.name || '').replace(/\s+/g, ' ').trim().slice(0, 48) || (L.NEW_PEN_NAME || 'New pen');
+      const nm = clip(String(f.name || '').replace(/\s+/g, ' ').trim(), nameMax(ctx)) || (L.NEW_PEN_NAME || 'New pen');
       const res = store().addPen(ctx.getDoc(), box.id, { name: nm, color: f.color, model: f.model || null, sizes: f.sizes.slice() });
       if (!res || !res.doc) return;
       Object.assign(ctx.getState(), {
@@ -222,26 +233,35 @@
 
   function exportDialog(ctx, ov) {
     const L = ctx.L();
-    const fr = frame(ctx, ov, ov.title || L.EXPORT || 'Export', ov.filename || '', 'pen-studio-export');
-    if (ov.error || !ov.text) {
+    // A pen-scoped overlay (the Lab's Export) carries no text: build it here,
+    // draft tuning included, exactly like the header's "Export pen".
+    let view = ov;
+    if (ov.scope === 'pen' && ov.text == null) {
+      const pen = ctx.getDoc().pens.find((p) => p.id === ov.penId);
+      const res = pen && ctx.exportPen ? ctx.exportPen(ov.penId, ov.sizeLabel) : null;
+      const title = ctx.fmt(L.EXPORT_PEN_TITLE || '', { name: pen ? pen.name : '' });
+      view = res && res.ok ? { title, text: res.text, filename: res.filename } : { title, text: '', error: true, filename: '' };
+    }
+    const fr = frame(ctx, view, view.title || L.EXPORT || 'Export', view.filename || '', 'pen-studio-export');
+    if (view.error || !view.text) {
       fr.body.appendChild(h('p', 'pen-studio-error', L.EXPORT_NOTHING || 'Nothing to export.'));
     } else {
       const ta = h('textarea', 'pen-studio-textarea');
       ta.readOnly = true;
-      ta.value = ov.text;
-      ta.setAttribute('aria-label', ov.title || 'Export');
+      ta.value = view.text;
+      ta.setAttribute('aria-label', view.title || L.EXPORT || '');
       fr.body.appendChild(ta);
       fr.focusOnce(ta, 'export-text');
     }
     fr.foot.appendChild(fr.cancel(L.CLOSE || 'Close'));
-    if (ov.text) {
+    if (view.text) {
       fr.foot.appendChild(btn('pen-studio-btn pen-studio-copy', L.EXPORT_COPY || 'Copy', () => {
         const nav = G.navigator;
-        if (nav && nav.clipboard && nav.clipboard.writeText) nav.clipboard.writeText(ov.text).catch(() => {});
+        if (nav && nav.clipboard && nav.clipboard.writeText) nav.clipboard.writeText(view.text).catch(() => {});
       }));
       fr.foot.appendChild(btn('pen-studio-btn primary pen-studio-download', L.EXPORT_DOWNLOAD || 'Download', () => {
         const D = Vectura.Download;
-        if (D && D.saveBlob) D.saveBlob(new Blob([ov.text], { type: 'application/json' }), ov.filename || 'pens.vectura-pens.json');
+        if (D && D.saveBlob) D.saveBlob(new Blob([view.text], { type: 'application/json' }), view.filename || 'pens.vectura-pens.json');
       }));
     }
     return fr.scrim;
@@ -266,6 +286,12 @@
     file.addEventListener('change', () => {
       const f = file.files && file.files[0];
       if (!f) return;
+      const limit = Vectura.PEN_MODELS && Vectura.PEN_MODELS.FILE_LIMITS && Vectura.PEN_MODELS.FILE_LIMITS.maxBytes;
+      if (Number.isFinite(limit) && f.size > limit) {
+        ov.msg = { text: importError(L, 'too-large'), tone: 'error' };
+        ctx.set({ overlay: ov });
+        return;
+      }
       const reader = new G.FileReader();
       reader.onload = () => { ov.text = String(reader.result || ''); ov.msg = null; ctx.set({ overlay: ov }); };
       reader.readAsText(f);
@@ -280,14 +306,12 @@
     fr.foot.appendChild(btn('pen-studio-btn primary pen-studio-import-go', L.IMPORT_GO || 'Import', () => {
       const res = store().importBox(ctx.getDoc(), ov.text || '');
       if (!res || !res.ok) {
-        const reason = res && res.reason ? res.reason : 'schema';
-        const key = `IMPORT_ERR_${String(reason).toUpperCase().replace(/-/g, '_')}`;
-        ov.msg = { text: L[key] || IMPORT_ERR[reason] || IMPORT_ERR.schema, tone: 'error' };
+        ov.msg = { text: importError(L, res && res.reason ? res.reason : 'schema'), tone: 'error' };
         ctx.set({ overlay: ov });
         return;
       }
       const box = res.doc.boxes.find((b) => b.id === res.boxId);
-      ov.msg = { text: (L.IMPORT_OK || 'Added “{name}” · {count} pens').replace('{name}', box ? box.name : '').replace('{count}', String(res.count)), tone: 'ok' };
+      ov.msg = { text: ctx.fmt(L.IMPORT_OK || 'Added “{name}” · {n} pens', { name: box ? box.name : '', n: res.count }), tone: 'ok' };
       const first = box && box.items[0];
       Object.assign(ctx.getState(), { selBoxId: res.boxId, selPenId: first ? first.penId : ctx.getState().selPenId, testSize: null, comp: null, editing: null });
       ctx.setDoc(res.doc);
@@ -296,6 +320,12 @@
   }
 
   // ---- save as new -----------------------------------------------------------------
+
+  const saveNewError = (L, reason) => {
+    if (reason === 'full') return L.ERR_PEN_LIMIT || '';
+    if (reason === 'missing') return L.ERR_PEN_MISSING || '';
+    return L.ERR_NAME_EMPTY || '';
+  };
 
   function saveNewDialog(ctx, ov) {
     const L = ctx.L();
@@ -308,14 +338,14 @@
     const cur = ctx.selBox();
     if (ov.name == null) {
       const d = D && D.defaultSaveNewName ? D.defaultSaveNewName(pen, draft) : `${pen.name} (custom)`;
-      ov.name = String(d).slice(0, 48);
+      ov.name = clip(d, nameMax(ctx));
     }
     if (!ov.boxId) ov.boxId = cur ? cur.id : (doc.boxes[0] && doc.boxes[0].id);
-    const fr = frame(ctx, ov, L.SAVE_NEW_TITLE || 'Save as a new pen', (L.SAVE_NEW_SUB || 'Based on {pen}').replace('{pen}', pen.name), 'pen-studio-save-new');
+    const fr = frame(ctx, ov, L.SAVE_NEW_TITLE || 'Save as a new pen', ctx.fmt(L.SAVE_NEW_SUB || '', { name: pen.name }), 'pen-studio-save-new');
 
     const name = h('input', 'pen-studio-savenew-name');
     name.type = 'text';
-    name.maxLength = (ctx.cfg().LIMITS && ctx.cfg().LIMITS.nameMax) || 48;
+    if (nameMax(ctx) != null) name.maxLength = nameMax(ctx);
     name.value = ov.name;
     fr.focusOnce(name, 'savenew-name');
     const err = h('p', 'pen-studio-error', ov.err || '');
@@ -344,7 +374,7 @@
         const target = doc.boxes.find((b) => b.id === ov.boxId);
         ov.err = res && res.reason === 'name-taken'
           ? (L.ERR_NAME_TAKEN || 'There is already a pen called “{name}” in {box}.').replace('{name}', String(ov.name).trim()).replace('{box}', target ? target.name : '')
-          : (L.ERR_NAME_EMPTY || 'Give the new pen a name.');
+          : saveNewError(L, res && res.reason);
         ctx.set({ overlay: ov });
         return;
       }

@@ -50,9 +50,9 @@ describe('Pen Studio boxes', () => {
   });
 
   test('new box appends "My box n" and is empty', () => {
-    t.click(t.byText('.pen-studio-new-box', 'New box'));
+    t.click(t.q('.pen-studio-new-box'));
     const box = ctx.getDoc().boxes[3];
-    expect(box.name).toBe('My box 4');
+    expect(box.name).toBe('My box 1');
     expect(t.q(`[data-box-id="${box.id}"] .pen-studio-box-empty`)).toBeTruthy();
   });
 
@@ -128,7 +128,7 @@ describe('Pen Studio boxes', () => {
   });
 
   test('import opens the import dialog', () => {
-    t.click(t.byText('.pen-studio-import-box', 'Import box'));
+    t.click(t.q('.pen-studio-import-box'));
     expect(ctx.getState().overlay.kind).toBe('import');
   });
 });

@@ -63,8 +63,8 @@
       const pen = penById(doc, item.penId);
       if (!pen) return null;
       const st = ctx.getState();
-      const selected = st.selPenId === pen.id;
-      const editing = st.editing === `row:${pen.id}`;
+      const selected = st.selPenId === pen.id && st.selBoxId === box.id;
+      const editing = selected && st.editing === `row:${pen.id}`;
       const li = h('li', `pen-studio-row${selected ? ' is-selected' : ''}`);
       li.setAttribute('data-pen-id', pen.id);
       const sw = h('span', 'pen-studio-swatch');
@@ -90,7 +90,7 @@
         });
         main.appendChild(input);
         li.appendChild(main);
-        setTimeout(() => { if (input.isConnected) { input.focus(); input.select(); } }, 0);
+        ctx.afterRender(() => { if (input.isConnected) { input.focus(); input.select(); } });
         return li;
       }
 
@@ -123,7 +123,7 @@
       toggle.appendChild(h('span', 'pen-studio-box-name', box.name));
       toggle.appendChild(h('span', 'pen-studio-box-count', String(box.items.length)));
       head.appendChild(toggle);
-      const pinLabel = `${box.pinned ? (L().UNPIN || 'Unpin') : (L().PIN || 'Pin')} ${box.name}`;
+      const pinLabel = fmt(box.pinned ? (L().UNPIN || 'Unpin {name}') : (L().PIN || 'Pin {name}'), { name: box.name });
       head.appendChild(btn('pen-studio-box-pin', box.pinned ? '★' : '☆', () => ctx.setDoc(store().setPinned(ctx.getDoc(), box.id, !box.pinned)), {
         'aria-label': pinLabel, title: pinLabel, 'aria-pressed': box.pinned ? 'true' : 'false',
       }));
@@ -170,9 +170,7 @@
       const acts = h('div', 'pen-studio-boxes-actions');
       acts.appendChild(btn('pen-studio-btn pen-studio-import-box', L().IMPORT_BOX || 'Import box', () => ctx.set({ overlay: { kind: 'import' } })));
       acts.appendChild(btn('pen-studio-btn pen-studio-new-box', L().NEW_BOX || 'New box', () => {
-        const name = fmt(L().NEW_BOX_NAME || 'My box {n}', { n: doc.boxes.length + 1 });
-        const res = S.createBox(doc, name);
-        ctx.setDoc(res.doc);
+        ctx.setDoc(S.createBox(doc).doc);
       }));
       head.appendChild(acts);
       const list = h('div', 'pen-studio-box-list');
