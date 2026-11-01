@@ -15359,6 +15359,8 @@ body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.control-
 /* The legend covers most of a short phone preview. It only informs, so a pinch or pan starts through it; the gear stays tappable. */
 body.touch-ui #modal-overlay .export-preview-legend { pointer-events: none; }
 body.touch-ui #modal-overlay .export-preview-legend .export-legend-gear-btn { pointer-events: auto; }
+/* Play + gear each carry a centred 44 px ::before over a 22 px box: a 22 px gap makes the hit areas abut. */
+body.touch-ui #modal-overlay .export-preview-legend .export-legend-actions { gap: 22px; }
 /* === END TUX-041 slice B3 === */
 
 /* === TUX-047: touch zoom surfaces === */
@@ -16313,6 +16315,13 @@ body.touch-ui .help-platform-btn {
 @media (pointer: coarse) {
   body.touch-ui #right-pane .draw-order-bar .draw-order-head { margin-bottom: 14px; }
   body.touch-ui:not(.touch-wide-layout) #right-pane .draw-order-head-right { padding-right: 4px; }
+  /* Four head icons (Play, eye, palette, gear) need 4 x 44 px of hit area: with the label beside
+   * them the row overflowed the pane (label wrapped, last ::before clipped at 43 px). On every
+   * touch layout the label takes its own line and the readout + icons spread across the next,
+   * the same arrangement touch-wide-layout already uses. */
+  body.touch-ui #right-pane .draw-order-head { flex-wrap: wrap; row-gap: 14px; }
+  body.touch-ui #right-pane .draw-order-label { white-space: nowrap; }
+  body.touch-ui #right-pane .draw-order-head-right { flex: 1 0 100%; justify-content: space-between; gap: 0; padding: 0 4px; }
 }
 /* === END TUX-041 / TUX-043 draw-order head === */
 
