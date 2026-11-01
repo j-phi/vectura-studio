@@ -35,7 +35,7 @@ describe('START_PAGE config', () => {
       showOnLaunch: true, coverStyle: 'mosaic', showName: false, showLine: false,
       motionStill: false, railCollapsed: false, visiblePlates: 5, showExamples: true, animateIn: 'plot', hover: 'default',
       colorMode: 'curated', seed: null, coverWord: 'vectura', customWord: '',
-      name: '', practiceLine: '', newPaper: 'A3', coverArtId: '', coverFrame: null, coverFill: '', communityNotify: false,
+      name: '', practiceLine: '', newPaper: 'A3', coverArtId: '', coverFrame: null, coverFill: '', coverFont: 'grotesk', coverScale: 100, communityNotify: false,
       coverArt: { mosaic: [], word: '', band: '' }, coverColors: { mosaic: [], word: null, band: null },
     });
   });

@@ -123,9 +123,32 @@ describe('Start Page shell', () => {
     test('hostile or invalid values are sanitized on apply', async () => {
       await boot();
       app.applyPreferenceSnapshot({ startPage: { name: '<img src=x onerror=1>Eve', newPaper: 'Tabloid', showOnLaunch: 'nope', junk: 1 } });
-      expect(SETTINGS.startPage.name).not.toMatch(/[<>=]/);
+      // Contract: markup brackets and control chars are dropped; symbols like '=' / '&' / '+' are kept because
+      // every sink renders the text via textContent / text nodes / setAttribute (never innerHTML).
+      expect(SETTINGS.startPage.name).not.toMatch(/[<>\p{C}]/u);
+      expect(SETTINGS.startPage.name).toBe('img src=x onerror=1Eve');
       expect(SETTINGS.startPage.newPaper).toBe('A3');
       expect(SETTINGS.startPage.junk).toBeUndefined();
+    });
+
+    test('a hostile name and practice line render as inert text on the Start Page (no element or attribute injection)', async () => {
+      await boot();
+      app.applyPreferenceSnapshot({ startPage: { name: '<img src=x onerror=alert(1)>Eve & Co + Design', practiceLine: '"><svg onload=alert(2)>line', showName: true, showLine: true } });
+      expect(SETTINGS.startPage.name).toBe('img src=x onerror=alert(1)Eve & Co + Design');
+      app.showStartPageOnLaunchIfWanted({ webdriver: false, search: '' });
+      const sp = document.getElementById('start-page');
+      for (let i = 0; i < 60 && !sp.querySelector('.sp-name .sp-edit-btn'); i += 1) await tick(50); // cover renders async
+      const nameBtn = sp.querySelector('.sp-name .sp-edit-btn');
+      const lineBtn = sp.querySelector('.sp-line-text .sp-edit-btn');
+      expect(nameBtn.textContent).toBe('img src=x onerror=alert(1)Eve & Co + Design');
+      expect(lineBtn.textContent).toBe('"svg onload=alert(2)line');
+      expect(sp.querySelector('.sp-name img, .sp-line-text svg, .sp-name *:not(button), .sp-line-text *:not(button)')).toBeNull();
+      expect(sp.querySelectorAll('img[src="x"], [onerror], [onload]').length).toBe(0);
+      // Entering edit mode puts the text in the input's value attribute; it must not break out either.
+      nameBtn.click();
+      const input = sp.querySelector('.sp-name input');
+      expect(input.value).toBe('img src=x onerror=alert(1)Eve & Co + Design');
+      expect(sp.querySelectorAll('img[src="x"], [onerror], [onload]').length).toBe(0);
     });
 
     test('a partial snapshot without startPage does not wipe it', async () => {

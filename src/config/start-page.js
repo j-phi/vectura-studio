@@ -11,9 +11,37 @@
   const G = (typeof window !== 'undefined' ? window : globalThis);
   const Vectura = G.Vectura = G.Vectura || {};
 
+  // Cover type (the big Name in Ink / Specimen word). The typefaces on offer, the size range and the GLOBAL defaults.
+  // Admin: set the defaults for everyone either here, or by defining `window.Vectura.START_PAGE_ADMIN = { coverFont, coverScale,
+  // lockCoverType }` in a script that loads before this file (so a deployment can change them without editing source).
+  // A user's own choice (Start Page settings > Cover > Typeface / Size) is saved with their preferences and wins, unless
+  // `lockCoverType` is true: then the admin values apply to everyone and the controls are disabled. A user who picks the
+  // global default again is stored as "no choice", so later admin changes reach them too.
+  const COVER_FONTS = Object.freeze([
+    Object.freeze({ id: 'grotesk', name: 'Space Grotesk', css: '"Space Grotesk", system-ui, sans-serif', weight: 700, kern: true }),
+    Object.freeze({ id: 'mono', name: 'JetBrains Mono', css: '"JetBrains Mono", ui-monospace, monospace', weight: 700, kern: false }),
+    Object.freeze({ id: 'sans', name: 'System sans', css: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', weight: 700, kern: false }),
+    Object.freeze({ id: 'serif', name: 'Serif', css: 'Georgia, "Times New Roman", serif', weight: 700, kern: false }),
+  ]);
+  const COVER_SCALE = Object.freeze({ min: 50, max: 100, step: 5 }); // % of the size that fits the column (100 = as large as fits)
+  const fontId = (v, fallback) => (COVER_FONTS.some((f) => f.id === v) ? v : fallback);
+  const scaleOf = (v, fallback) => {
+    if (v === null || v === '' || !Number.isFinite(+v)) return fallback;
+    const s = Math.round(Math.max(COVER_SCALE.min, Math.min(COVER_SCALE.max, +v)) / COVER_SCALE.step) * COVER_SCALE.step;
+    return s;
+  };
+  const ADMIN_IN = (Vectura.START_PAGE_ADMIN && typeof Vectura.START_PAGE_ADMIN === 'object') ? Vectura.START_PAGE_ADMIN : {};
+  const ADMIN = Object.freeze({
+    coverFont: fontId(ADMIN_IN.coverFont, 'grotesk'),
+    coverScale: scaleOf(ADMIN_IN.coverScale, 100),
+    lockCoverType: ADMIN_IN.lockCoverType === true,
+  });
+
   const DEFAULTS = Object.freeze({
     showOnLaunch: true,
     coverStyle: 'mosaic',
+    coverFont: ADMIN.coverFont,
+    coverScale: ADMIN.coverScale,
     showName: false,
     showLine: false,
     motionStill: false,
@@ -139,6 +167,8 @@
     return {
       showOnLaunch: bool(pick('showOnLaunch'), DEFAULTS.showOnLaunch),
       coverStyle: oneOf(ENUMS.coverStyle, pick('coverStyle'), DEFAULTS.coverStyle),
+      coverFont: fontId(pick('coverFont'), DEFAULTS.coverFont),
+      coverScale: scaleOf(pick('coverScale'), DEFAULTS.coverScale),
       showName: bool(pick('showName'), DEFAULTS.showName),
       showLine: bool(pick('showLine'), DEFAULTS.showLine),
       motionStill: bool(pick('motionStill'), DEFAULTS.motionStill),
@@ -163,5 +193,13 @@
     };
   };
 
-  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, CLICK, SHORTCUTS, sanitize });
+  // The type the cover sets for a preference object: { id, css, weight, kern, scale (percent) }. The admin lock wins.
+  const coverType = (prefs) => {
+    const p = prefs && typeof prefs === 'object' ? prefs : {};
+    const id = ADMIN.lockCoverType ? ADMIN.coverFont : fontId(p.coverFont, ADMIN.coverFont);
+    const scale = ADMIN.lockCoverType ? ADMIN.coverScale : scaleOf(p.coverScale, ADMIN.coverScale);
+    return Object.assign({}, COVER_FONTS.find((f) => f.id === id), { scale });
+  };
+
+  Vectura.START_PAGE = Object.freeze({ DEFAULTS, ENUMS, LIMITS, CLICK, SHORTCUTS, COVER_FONTS, COVER_SCALE, ADMIN, coverType, sanitize });
 })();
