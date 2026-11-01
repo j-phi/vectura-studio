@@ -675,7 +675,7 @@ describe('Special inks: effect resolution, effects layer, pen files, My pens', (
     const out = PL.exportText(pens);
     expect(out.ok).toBe(true);
     const doc = JSON.parse(out.text);
-    expect(doc).toMatchObject({ schema: 'vectura-pens', version: 1 });
+    expect(doc).toMatchObject({ schema: 'vectura-pens', version: 2 });
     expect(doc.pens[0]).not.toHaveProperty('id');
     const back = PL.parseImport(out.text, { existingIds: ['pen-1', 'pen-2'] });
     expect(back.ok).toBe(true);
@@ -694,7 +694,7 @@ describe('Special inks: effect resolution, effects layer, pen files, My pens', (
     expect(PL.parseImport('x'.repeat(F.maxBytes + 1)).reason).toBe('too-large');
     expect(PL.parseImport('{nope').reason).toBe('parse');
     expect(PL.parseImport(file([ok], { schema: 'vectura-papers' })).reason).toBe('schema');
-    expect(PL.parseImport(file([ok], { version: 2 })).reason).toBe('version');
+    expect(PL.parseImport(file([ok], { version: 3 })).reason).toBe('version');
     expect(PL.parseImport(file(Array.from({ length: F.maxPens + 1 }, () => ok))).reason).toBe('too-many');
     expect(PL.parseImport(file([])).reason).toBe('empty');
     const hostile = PL.parseImport(`{"schema":"vectura-pens","version":1,"__proto__":{"polluted":1},"pens":[

@@ -167,9 +167,24 @@
     return hexOf([f(h + 1 / 3) * 255, f(h) * 255, f(h - 1 / 3) * 255]);
   };
 
+  // A renamed size label (model.sizeAliases, e.g. Micron '1' -> '10') resolves
+  // to its canonical label.
+  const aliasOf = (model, label) => {
+    const a = model && model.sizeAliases;
+    return a && own(a, label) && typeof a[label] === 'string' ? a[label] : label;
+  };
+
   const sizeOf = (model, label) => {
     if (!model || !Array.isArray(model.sizes)) return null;
-    return model.sizes.find((s) => s.label === label) || null;
+    const want = aliasOf(model, label);
+    return model.sizes.find((s) => s.label === want) || null;
+  };
+
+  // Canonical size label for a model id (unknown model/label: unchanged).
+  const canonicalSize = (modelId, label) => {
+    const M = cat().MODELS;
+    if (typeof modelId !== 'string' || !M || !own(M, modelId)) return label;
+    return aliasOf(M[modelId], label);
   };
 
   const defaultSizeOf = (model) => sizeOf(model, model && model.defaultSize) || (model && model.sizes && model.sizes[0]) || null;
@@ -236,6 +251,9 @@
       blobs: 1,
       skips: num(b.skip && b.skip.rate),
       jitter: num(b.widthJitter && b.widthJitter.amount),
+      overlap: num(b.overlapDarkening),
+      starvation: num(b.starvation && b.starvation.strength),
+      coverOnDark: num(b.coverOnDark, 1),
     };
     // Special inks: the effect sliders' defaults (only while an effect is set).
     const eff = effectOf(pen);
@@ -315,6 +333,11 @@
     const blobsK = inkValue(pen, 'blobs');
     const skipRate = inkValue(pen, 'skips');
     const jitter = inkValue(pen, 'jitter');
+    const coverOnDarkV = inkValue(pen, 'coverOnDark');
+    const overlapV = inkValue(pen, 'overlap');
+    const starveV = inkValue(pen, 'starvation');
+    const baseStarveLen = num(b.starvation && b.starvation.lengthMm);
+    const starveLenMm = (starveV > 0 && !(baseStarveLen > 0)) ? num((cat().LIMITS || {}).studioStarveLenMm, 3000) : baseStarveLen;
     const wetK = baseWet > 0 ? wet / baseWet : 1 + wet;
 
     const width = Math.max(0.01, num(pen.width, 0.3));
@@ -344,9 +367,9 @@
     let alpha;
     let inkColor = pen.color;
     if (opaque || !model) {
-      alpha = clamp(darkStock && model ? num(b.coverOnDark, 1) * (opacity / baseOpacity) : (model ? opacity : 1), 0, 1);
+      alpha = clamp(darkStock && model ? coverOnDarkV * (opacity / baseOpacity) : (model ? opacity : 1), 0, 1);
     } else if (dark) {
-      alpha = clamp(Math.max(dyeFloor, num(b.coverOnDark)) * (opacity / baseOpacity), 0, 1);
+      alpha = clamp(Math.max(dyeFloor, coverOnDarkV) * (opacity / baseOpacity), 0, 1);
     } else {
       alpha = 1;
       inkColor = dyeColor(pen.color, Math.sqrt(clamp(opacity, 0.01, 1)));
@@ -436,12 +459,12 @@
       cornerPool: num(b.cornerPool) * blobsK,
       skipRate: clamp(skipRate, 0, 0.25),
       skipLenMm: Math.max(0.2, num(b.skip && b.skip.lengthMm, 1)),
-      starveLenMm: num(b.starvation && b.starvation.lengthMm),
-      starveStrength: clamp(num(b.starvation && b.starvation.strength), 0, 0.9),
+      starveLenMm,
+      starveStrength: clamp(starveV, 0, 0.9),
       nib,
       alpha,
       opaque: effOpaque,
-      overlapDarkening: clamp(num(b.overlapDarkening), 0, 1),
+      overlapDarkening: clamp(overlapV, 0, 1),
       dryskipK: clamp(0.5 + num(b.dryskipResponse, 0.5), 0, 2),
       haloWeight: clamp(wet / 0.5, 0, 1),
       effect,
@@ -486,6 +509,7 @@
     hasInk,
     modelOf,
     sizeOf,
+    canonicalSize,
     defaultSizeOf,
     applyModel,
     applySize,
