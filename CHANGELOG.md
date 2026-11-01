@@ -8,6 +8,8 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ### Fixed: Paint bucket scope wheel
 - The scope ladder no longer repeats the outermost ring when another, smaller closed shape sits elsewhere on the page, and only offers rings that actually contain the cursor. A sideways (horizontal-only) scroll no longer changes the scope, and trackpad scrolls now accumulate so one step takes about one mouse-wheel notch instead of every tiny trackpad event jumping a step. When a mask and its content share the same outline, the fill goes to the masked content.
+### Fixed: Nested clipping masks in the Layers panel
+- Every level of a nested clipping mask stays listed and indented in the Layers panel at any depth (rows under the second level used to vanish). A middle mask level now has its own mask toggle so it can be released, and turning a mask off then on again re-clips the same layers instead of masking nothing. Undo/redo safe.
 
 ### Added: Play buttons for the plot order
 - **Draw Order pane.** A Play button now sits right of the % readout. At 100% it replays the reveal from the start; below 100% it plays on from the handle; while playing it shows Pause. Shift-click plays at 1/10 speed, like Shift-clicking the slider.
