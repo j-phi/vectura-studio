@@ -49,7 +49,7 @@
       const st = ctx.getState();
       const D = Vectura.PenStudioDraft;
       const d = st.drafts[pen.id];
-      if (D && D.isDirty && D.isDirty(pen, d)) return { text: `● ${L().UNSAVED_SHORT || 'unsaved'}`, cls: 'is-unsaved' };
+      if (D && D.isDirty && D.isDirty(pen, d)) return { text: L().UNSAVED_ROW || '● unsaved', cls: 'is-unsaved' };
       if (isFaint(pen, item.sizes)) return { text: L().FAINT || 'faint', cls: 'is-faint' };
       const tuned = pen.ink && Object.keys(pen.ink).length > 0;
       return { text: item.sizes.join(' ') + (tuned ? ' ✎' : ''), cls: '' };
@@ -97,7 +97,7 @@
       const main = btn('pen-studio-row-main', null, () => {
         if (selected) ctx.set({ editing: `row:${pen.id}` });
         else selectPen(box, pen);
-      }, { 'data-ps-focus': `row-${pen.id}`, 'aria-pressed': selected ? 'true' : 'false', title: selected ? (L().EDIT_NAME || 'Click to rename') : name });
+      }, { 'data-ps-focus': `row-${pen.id}`, 'aria-pressed': selected ? 'true' : 'false', title: selected ? (L().CLICK_RENAME || 'Click to rename') : name });
       main.appendChild(sw);
       main.appendChild(h('span', 'pen-studio-row-name', name));
       main.appendChild(h('span', `pen-studio-row-note ${note.cls}`.trim(), note.text));

@@ -39,7 +39,7 @@
     return PA.ORDER.filter((t) => t !== 'none').map((type) => {
       const color = paperFor(type).color;
       const info = PA.TYPES[type] || {};
-      return { type, name: info.short || info.label || type, color, dark: comp().isDark(color) };
+      return { type, name: info.short || info.label || type, color, dark: comp().isDark(color, type) };
     });
   };
 
@@ -97,7 +97,7 @@
     const p = paperFor(paperType);
     const ratio = comp().contrast(color, p.color);
     const cover = docPen && docPen.model ? inkKey(docPen, 'coverOnDark') : 1;
-    const faint = ratio < C.faint || (comp().isDark(p.color) && cover < C.darkFaintCover);
+    const faint = ratio < C.faint || (comp().isDark(p.color, paperType) && cover < C.darkFaintCover);
     return { ratio, note: faint ? 'barely' : (ratio > C.crisp ? 'crisp' : 'reads'), faint };
   };
 

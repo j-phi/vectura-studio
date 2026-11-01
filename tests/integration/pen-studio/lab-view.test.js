@@ -9,7 +9,7 @@ const $$ = (sel, root) => Array.from((root || env.document).querySelectorAll(sel
 const click = (n) => n.dispatchEvent(new env.window.Event('click', { bubbles: true }));
 
 const setup = (stateOver, docOver) => {
-  env = loadUIComponent(['src/ui/pen-studio/lab-view']);
+  env = loadUIComponent(['src/ui/pen-studio/shared', 'src/ui/pen-studio/lab-view']);
   calls = stubs.install(env.window);
   raf = stubs.installRaf(env.window);
   ctx = stubs.makeCtx({ state: stateOver, doc: docOver });
@@ -86,7 +86,8 @@ describe('PenStudioLab sliders and actions', () => {
     expect($('.pen-studio-slider[data-key="wetness"] .pen-studio-slider-value').dataset.state).toBe('draft');
     expect($('.pen-studio-slider[data-key="skips"] .pen-studio-slider-value').dataset.state).toBe('default');
     expect(save().disabled).toBe(false);
-    expect($('.pen-studio-note').textContent).toBe('Unsaved changes');
+    // exactly one note/unsaved indicator: the studio header owns it, not the lab
+    expect($('.pen-studio-note')).toBeNull();
   });
 
   it('Save commits and clears the draft; Discard drops it; Reset to model fills defaults', () => {

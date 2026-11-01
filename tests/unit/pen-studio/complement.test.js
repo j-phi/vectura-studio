@@ -93,6 +93,25 @@ describe('PenStudioComplement', () => {
     expect(C.candidates({ ...opts, paperType: 'bristol-smooth', pen: penOf('#111111') }).map((x) => x.id)).toContain('p:mi');
   });
 
+  it('Kraft is not dark stock: Micron Black is a valid pairing there; black stock is dark', () => {
+    expect(C.isDark('#c39a6b', 'kraft')).toBe(false);
+    expect(C.isDark('#111111', 'black')).toBe(true);
+    expect(C.isDark('#000000')).toBe(true);
+    const black = sp('bk', 'Micron Black', '#1b1b1d', 'sakura-pigma-micron');
+    const opts = { pen: penOf('#b3392b'), penId: 'main', paperType: 'kraft', boxPens: [black] };
+    expect(C.candidates(opts).map((x) => x.id)).toContain('p:bk');
+    expect(C.hidden(C.allCandidates(opts), opts.pen, 'kraft')).toEqual([]);
+    expect(V.PenStudioLab.papers().find((q) => q.type === 'kraft').dark).toBe(false);
+    expect(V.PenStudioLab.papers().find((q) => q.type === 'black').dark).toBe(true);
+    // Micron Black itself fits on Kraft (contrast, no dark-stock cover rule)...
+    expect(V.PenStudioLab.fit('#1b1b1d', 'kraft', black).faint).toBe(false);
+    // ...while dye pens are hidden on black stock.
+    const dye = sp('dy', 'Micron teal', '#1d8a8f', 'sakura-pigma-micron');
+    const onBlack = { pen: penOf('#ffffff'), penId: 'main', paperType: 'black', boxPens: [dye] };
+    expect(C.candidates(onBlack).map((x) => x.id)).not.toContain('p:dy');
+    expect(C.hidden(C.allCandidates(onBlack), onBlack.pen, 'black')).toEqual(['Micron teal']);
+  });
+
   it('a user coverOnDark override on a box pen is honoured', () => {
     const micron = { ...sp('mi', 'Micron red', '#c0262d', 'sakura-pigma-micron'), ink: { coverOnDark: 0.9 } };
     const ids = C.candidates({ pen: penOf('#ffffff'), paperType: 'black', boxPens: [micron] }).map((x) => x.id);

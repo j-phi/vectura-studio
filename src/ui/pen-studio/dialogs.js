@@ -113,7 +113,7 @@
       o.value = id;
       sel.appendChild(o);
     });
-    const plain = h('option', null, L.PLAIN_LABEL || 'Plain pen');
+    const plain = h('option', null, L.ADD_PLAIN_MODEL || 'Plain pen');
     plain.value = '';
     sel.appendChild(plain);
     sel.value = f.model;
@@ -224,7 +224,7 @@
     const L = ctx.L();
     const fr = frame(ctx, ov, ov.title || L.EXPORT || 'Export', ov.filename || '', 'pen-studio-export');
     if (ov.error || !ov.text) {
-      fr.body.appendChild(h('p', 'pen-studio-error', L.EXPORT_ERR || 'Nothing to export.'));
+      fr.body.appendChild(h('p', 'pen-studio-error', L.EXPORT_NOTHING || 'Nothing to export.'));
     } else {
       const ta = h('textarea', 'pen-studio-textarea');
       ta.readOnly = true;
@@ -235,11 +235,11 @@
     }
     fr.foot.appendChild(fr.cancel(L.CLOSE || 'Close'));
     if (ov.text) {
-      fr.foot.appendChild(btn('pen-studio-btn pen-studio-copy', L.COPY || 'Copy', () => {
+      fr.foot.appendChild(btn('pen-studio-btn pen-studio-copy', L.EXPORT_COPY || 'Copy', () => {
         const nav = G.navigator;
         if (nav && nav.clipboard && nav.clipboard.writeText) nav.clipboard.writeText(ov.text).catch(() => {});
       }));
-      fr.foot.appendChild(btn('pen-studio-btn primary pen-studio-download', L.DOWNLOAD || 'Download', () => {
+      fr.foot.appendChild(btn('pen-studio-btn primary pen-studio-download', L.EXPORT_DOWNLOAD || 'Download', () => {
         const D = Vectura.Download;
         if (D && D.saveBlob) D.saveBlob(new Blob([ov.text], { type: 'application/json' }), ov.filename || 'pens.vectura-pens.json');
       }));
@@ -262,7 +262,7 @@
     const file = h('input', 'pen-studio-file');
     file.type = 'file';
     file.accept = '.json,application/json';
-    file.setAttribute('aria-label', L.CHOOSE_FILE || 'Choose a file');
+    file.setAttribute('aria-label', L.IMPORT_CHOOSE_FILE || 'Choose a file');
     file.addEventListener('change', () => {
       const f = file.files && file.files[0];
       if (!f) return;

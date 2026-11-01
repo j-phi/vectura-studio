@@ -250,7 +250,7 @@
       return input;
     }
     const b = btn(`pen-studio-editable ${cls}`, text || placeholder || '', () => { state.editing = kind; render(); }, {
-      title: kind === 'name' ? (L().EDIT_NAME || 'Click to rename') : (L().EDIT_DESC || 'Click to edit the description'),
+      title: kind === 'name' ? (L().CLICK_RENAME || 'Click to rename') : (L().CLICK_EDIT_DESC || 'Click to edit the description'),
     });
     if (!text) b.classList.add('is-placeholder');
     return b;
@@ -274,7 +274,7 @@
     nameRow.appendChild(editable('name', 'pen-studio-name', displayName(pen)));
     const badge = h('span', 'pen-studio-badge', m
       ? `${m.label}${typeof m.confidence === 'number' ? ` · ${Math.round(m.confidence * 100)}%` : ''}`
-      : (L().PLAIN_LABEL || 'Plain pen'));
+      : (L().ADD_PLAIN_MODEL || 'Plain pen'));
     if (m && typeof m.confidence === 'number') badge.title = fmt(L().CONFIDENCE_TITLE || 'Model confidence {pct}%', { pct: Math.round(m.confidence * 100) });
     nameRow.appendChild(badge);
     if (dirty) nameRow.appendChild(h('span', 'pen-studio-unsaved', L().UNSAVED || 'Unsaved changes'));

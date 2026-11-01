@@ -9,7 +9,7 @@ const $$ = (sel) => Array.from(env.document.querySelectorAll(sel));
 const click = (n) => n.dispatchEvent(new env.window.Event('click', { bubbles: true }));
 
 const setup = (stateOver, opts = {}) => {
-  env = loadUIComponent(['src/ui/pen-studio/pair-view']);
+  env = loadUIComponent(['src/ui/pen-studio/shared', 'src/ui/pen-studio/pair-view']);
   calls = stubs.install(env.window);
   raf = stubs.installRaf(env.window);
   ctx = stubs.makeCtx(Object.assign({ state: stateOver }, opts));

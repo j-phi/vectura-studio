@@ -94,11 +94,11 @@
   const paperInfo = (type) => {
     const P = Vectura.Paper;
     const color = P && typeof P.forType === 'function' ? P.forType(type).color : '#ffffff';
-    return { color, dark: isDark(color) };
+    return { color, dark: isDark(color, type) };
   };
-  // Same test as PenModel.resolveTraits' darkStock (luminance < .4), so the
-  // studio hides exactly the pens the renderer would draw faintly (kraft too).
-  const isDark = (color) => lum(color) < 0.4;
+  // Dark stock = black paper, or luminance < 0.2 (mockup behavior). Kraft is
+  // mid-tone, so Micron Black stays a valid pairing on it.
+  const isDark = (color, type) => type === 'black' || lum(color) < 0.2;
 
   // coverOnDark of a pen-like {model?, ink?}: ink override, else model, else
   // null for a model-less pen (treated as fully covering).
@@ -119,7 +119,7 @@
     const paper = paperInfo(paperType);
     if (contrast(cand.hex, paper.color) < C.paperMin) return false;
     if (pen && pen.color && contrast(cand.hex, pen.color) < C.penMin) return false;
-    if (isDark(paper.color) && cand.model) {
+    if (paper.dark && cand.model) {
       const cov = coverOf(cand);
       if (cov != null && cov < C.darkCoverMin) return false;
     }

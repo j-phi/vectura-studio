@@ -607,6 +607,7 @@
       </div>
       <div class="pen-pick-body" data-tab="pens">
         <div class="pen-pick-list"></div>
+        <div class="pen-pick-footer"><button type="button" class="pen-pick-studio"></button></div>
       </div>
       <div class="pen-pick-body hidden" data-tab="new">
         <div class="pen-pick-mixer"></div>
@@ -658,6 +659,8 @@
     el.querySelector('.pen-pick-tab[data-tab="pens"]').textContent = labels.TAB_PENS;
     el.querySelector('.pen-pick-tab[data-tab="new"]').textContent = labels.TAB_NEW;
     el.querySelector('.pen-pick-add').textContent = labels.ADD_PEN;
+    const studioBtn = el.querySelector('.pen-pick-studio');
+    studioBtn.textContent = (Vectura.UI_CONSTANTS && Vectura.UI_CONSTANTS.PEN_STUDIO && Vectura.UI_CONSTANTS.PEN_STUDIO.PICKER_OPEN) || 'Open Pen Studio';
     el.querySelector('.pen-pick-eyedropper').title = labels.EYEDROPPER_TITLE;
     const fieldLabels = el.querySelectorAll('.pen-pick-field-label:not(.pen-pick-model-label):not(.pen-pick-fx-label)');
     if (fieldLabels[0]) fieldLabels[0].textContent = labels.NAME;
@@ -769,6 +772,18 @@
         e.stopPropagation();
         setTab(btn.dataset.tab);
       });
+    });
+    // Footer: open Pen Studio on the selection's current document pen.
+    studioBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const PS = UI.PenStudio;
+      if (!state || !PS || typeof PS.open !== 'function') return;
+      const studioApp = state.app;
+      const anchor = state.anchorEl || state.chipEl || null;
+      const sel = selectionPenState();
+      close();
+      PS.open({ app: studioApp, penId: sel && sel.penId ? sel.penId : undefined, anchorEl: anchor });
     });
     el.querySelector('.pen-pick-add').addEventListener('click', (e) => {
       e.preventDefault();
