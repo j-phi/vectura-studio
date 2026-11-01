@@ -334,7 +334,15 @@
     }
 
     // Sort ascending by area (smallest = innermost ring).
-    candidates.sort((a, b) => a.area - b.area);
+    // Equal-area ties (a mask source and the content clipped to its outline
+    // trace the same ring) resolve to the masked content layer, so the fill is
+    // attributed to - and clipped with - the layer the user sees painted.
+    const isMaskedContent = (c) => (c.layer?.mask?.enabled ? 1 : 0);
+    candidates.sort((a, b) => {
+      const d = a.area - b.area;
+      if (Math.abs(d) > 1e-6 * Math.max(a.area, b.area, 1)) return d;
+      return isMaskedContent(b) - isMaskedContent(a);
+    });
 
     // K = index of the smallest ring that contains the cursor.
     // The cursor sits in the band between candidates[K-1] and candidates[K].
@@ -360,15 +368,33 @@
     };
     const entries = [];
     if (K >= 0) {
-      const N = candidates.length;
-      for (let i = 0; ; i++) {
-        const outIdx = Math.min(K + i, N - 1);
+      // Only rings that actually contain the cursor can be outer rungs;
+      // larger rings elsewhere on the canvas are not ancestors and would
+      // otherwise surface as phantom (or repeated) scope steps.
+      const containers = [];
+      for (let i = K; i < candidates.length; i++) {
+        if (polyContainsPoint(candidates[i].path, worldX, worldY)) containers.push(i);
+      }
+      const M = containers.length;
+      // Region identity guard: identical-geometry rings (a mask source and
+      // its masked content, duplicated outlines) must not make two rungs.
+      const seenRegions = new Set();
+      const ringKey = (c) => {
+        const m = polyCentroid(c.path);
+        return `${Math.round(c.area * 100)}@${Math.round(m.x * 100)},${Math.round(m.y * 100)}`;
+      };
+      const regionKey = (outer, inner) => `${ringKey(outer)}|${inner ? ringKey(inner) : 'x'}`;
+      for (let i = 0; i < M; i++) {
+        const outIdx = containers[i];
         const inIdx  = K - 1 - i;
         const outer  = candidates[outIdx];
         const innerCandidate = inIdx >= 0 ? candidates[inIdx] : null;
         const c = innerCandidate ? polyCentroid(innerCandidate.path) : null;
         const inner = (innerCandidate && c && polyContainsPoint(outer.path, c.x, c.y))
           ? innerCandidate : null;
+        const key = regionKey(outer, inner);
+        if (seenRegions.has(key)) continue;
+        seenRegions.add(key);
         entries.push({
           layer: outer.layer,
           polygon: clonePolygon(outer.path),
@@ -377,7 +403,6 @@
           loopId: `band:${outIdx}:${inIdx >= 0 ? inIdx : 'x'}:${outer.layer.id}`,
           isDocBounds: false,
         });
-        if (outIdx === N - 1 && inIdx < 0) break;
       }
 
       // In all-objects mode: if open pen-path strokes from other layers divide
