@@ -124,8 +124,8 @@
   // ONE list feeds both the inline `.lvl-acts` / `.lvl-grp-acts` strips in
   // layers-panel.js (desktop) and the ⋯ menu (touch + right-click). Every run
   // body here is the body the inline strip used before the list existed.
-  // `masked` rows (masked-v2 cards) show the mask toggle only when they are themselves an enabled
-  // mask source (nested masking), so the user can release a middle level.
+  // `masked` rows (masked-v2 cards) show the mask toggle when they are an enabled mask source (so a
+  // middle level can be released) or can be one (closed silhouette, so a released level can be re-masked).
   const rowActions = (ui, layer, opts = {}) => {
     const out = [];
     if (!ui || !layer || !ui.app || !ui.app.engine) return out;

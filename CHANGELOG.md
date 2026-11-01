@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: A released middle mask level couldn't be re-masked
+- After releasing the middle level of a nested clipping mask, that layer had no mask toggle, so it couldn't be made a mask again. Any masked layer that can be a mask (a closed shape) now shows the toggle; turning it back on restores the original nesting, order and clipping. Layers that can't be masks still show no toggle.
+
 ### Added: Developer Mode can set the global cover typeface and size
 - There is no separate admin mode, so the global default now lives behind Developer Mode. With it on, Start Page settings show a dev-only row with "Lock for everyone" and "Set as global default…". The button rewrites the `ADMIN_BUILTIN` block in `src/config/start-page.js` (pick the file once; falls back to copying the block). Commit the file to ship it. While Developer Mode is on, the lock does not hide your own pick.
 
