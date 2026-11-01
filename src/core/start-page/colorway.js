@@ -197,10 +197,14 @@
       penModel: penA.model || null,
       paletteRef: penA.model ? null : penA.palette,
       penName: penB ? penFull(penA) + ' + ' + shortColour(penB) : penFull(penA),
+      penNameA: penFull(penA),
+      penNameB: penB ? penFull(penB) : null,
       name: (penB ? shortColour(penA) + ' & ' + shortColour(penB) : shortColour(penA)) + ' on ' + paper.name,
       contrast: round2(cMin),
       textContrast: round2(contrast(text.hex, paper.color)),
       nudged: a.nudged || (b ? b.nudged : false),
+      nudgedA: a.nudged,
+      nudgedB: b ? b.nudged : false,
     });
   };
   // Build from catalogue ids (memoized: colorways are immutable).
@@ -223,7 +227,7 @@
     return finish({
       key: 'mono-' + normTheme(theme), mode: 'mono', paper: paper.color, ink: a.hex, ink2: null, textInk: text,
       paperType: 'none', paperName: m.name, paperId: paper.id, penId: 'theme-pen-1', penId2: null, penModel: null, paletteRef: null,
-      penName: 'Pen 1 · theme ink', name: 'Pen 1 on ' + m.name,
+      penName: 'Pen 1 · theme ink', penNameA: null, penNameB: null, name: 'Pen 1 on ' + m.name,
       contrast: round2(contrast(a.hex, paper.color)), textContrast: round2(contrast(text, paper.color)), nudged: a.nudged,
     });
   };

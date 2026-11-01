@@ -136,6 +136,14 @@ describe('colorway objects and contrast floors', () => {
     expect(cw.paper).toMatch(/^#[0-9a-f]{6}$/);
     expect(V.PAPERS.TYPES[cw.paperType]).toBeTruthy();
   });
+  it('carries per-pen names and nudged flags', () => {
+    const cw = C.colorwayFor({ mode: 'curated', theme: 'dark', workId: 'abc', index: 0 });
+    for (const k of ['penNameA', 'penNameB', 'nudgedA', 'nudgedB']) expect(cw, k).toHaveProperty(k);
+    expect(typeof cw.penNameA).toBe('string');
+    expect(typeof cw.nudgedA).toBe('boolean');
+    expect(cw.penNameB === null || typeof cw.penNameB === 'string').toBe(true);
+    expect(cw.nudged).toBe(cw.nudgedA || cw.nudgedB);
+  });
   it('names read "Pen on Paper · tint"', () => {
     const cw = C.colorwayFor({ mode: 'curated', workId: 'x', index: 0 });
     expect(cw.name).toMatch(/ on /);
