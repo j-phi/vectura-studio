@@ -125,7 +125,7 @@ describe('START_PAGE config', () => {
       });
       expect(out.name).toBe('Ann bO\'Neil/b & Co.');
       expect(out.practiceLine).toHaveLength(120);
-      expect(out.customWord).toBe('abc');
+      expect(out.customWord).toBe('abc$%^');
       expect(SP.sanitize({ name: 'y'.repeat(100) }).name).toHaveLength(60);
       expect(SP.sanitize({ customWord: 'z'.repeat(100) }).customWord).toHaveLength(24);
     });
@@ -133,6 +133,11 @@ describe('START_PAGE config', () => {
     it('allows the contract punctuation set and unicode letters', () => {
       const s = "Zoë Núñez, (b. 1990) - a/b · it’s & ok.";
       expect(SP.sanitize({ name: s.slice(0, 60) }).name).toBe(s);
+    });
+
+    it('keeps symbols such as + in identity text (regression: "Line + Design" lost its +)', () => {
+      expect(SP.sanitize({ practiceLine: 'Line + Design' }).practiceLine).toBe('Line + Design');
+      expect(SP.sanitize({ name: 'A+B @ Studio #1 *' }).name).toBe('A+B @ Studio #1 *');
     });
 
     it('rejects non-strings for text fields', () => {

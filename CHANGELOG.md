@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Start Page name and practice line keep symbols
+- Typing "Line + Design" no longer drops the `+`. The name, practice line and custom cover word now keep any letter, number, punctuation or symbol; only control characters and `<` `>` are removed.
+
 ### Fixed: Nested clipping masks in the Layers panel
 - Every level of a nested clipping mask stays listed and indented in the Layers panel at any depth (rows under the second level used to vanish). A middle mask level now has its own mask toggle so it can be released, and turning a mask off then on again re-clips the same layers instead of masking nothing. Undo/redo safe.
 
