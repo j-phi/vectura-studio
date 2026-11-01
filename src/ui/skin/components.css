@@ -7907,6 +7907,7 @@
   border-left: 2px dashed var(--lvl-cyan45);
   border-radius: 0 4px 4px 0;
 }
+.lvl-mask-nest { padding-left: 20px } /* one level of nested clipping mask */
 .lvl-card.masked-v2 .lvl-r1 { padding-left: 6px }
 .lvl-card.masked-v2 .lvl-r2 { padding-left: 6px }
 .lvl-grp-hdr.masked-v2 {

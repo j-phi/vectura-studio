@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Nested clipping masks in the Layers panel
+- Every level of a nested clipping mask stays listed and indented in the Layers panel at any depth (rows under the second level used to vanish). A middle mask level now has its own mask toggle so it can be released, and turning a mask off then on again re-clips the same layers instead of masking nothing. Undo/redo safe.
+
 ### Added: Play buttons for the plot order
 - **Draw Order pane.** A Play button now sits right of the % readout. At 100% it replays the reveal from the start; below 100% it plays on from the handle; while playing it shows Pause. Shift-click plays at 1/10 speed, like Shift-clicking the slider.
 - **Export SVG ▸ Line Sort Print Order.** The legend has a Play/Pause button next to its gear. It draws the preview path by path in print order over a faint ghost of the whole plot, with a playhead on the gradient, then returns to the full preview. Closing the modal stops it.
