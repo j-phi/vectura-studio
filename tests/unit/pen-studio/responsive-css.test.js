@@ -16,7 +16,7 @@ describe('Pen Studio responsive CSS', () => {
     expect(block).toMatch(/\.pen-studio-box-toggle \{[^}]*min-width: 0/);
   });
   test('paper chips use an auto-fill grid', () => {
-    expect(block).toMatch(/\.pen-studio-papers \{[^}]*repeat\(auto-fill, minmax\(96px, 1fr\)\)/);
+    expect(block).toMatch(/\.pen-studio-papers \{[^}]*repeat\(auto-fill, minmax\(132px, 1fr\)\)/);
   });
   test('pair column stacks under the lab via a container query, not a viewport query', () => {
     expect(block).toMatch(/@container pen-studio \(max-width: 1100px\)/);

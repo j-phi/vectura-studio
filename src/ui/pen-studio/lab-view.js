@@ -234,6 +234,7 @@
       // Fixed CSS height (strips ~42px, matrix cells ~30px), fluid width. Backing
       // store = laid-out size x dpr. Strokes are drawn at the height-fit scale and
       // stretched along x only (stroke widths stay true) so they fill the width.
+      canvas.style.width = '100%';
       const nominalW = Math.round(spec.boxMm.w * pxPerMm);
       const wCss = Math.max(1, Math.round(canvas.clientWidth || nominalW));
       const isCell = /matrix-cell/.test(canvas.className || '');
