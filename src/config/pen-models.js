@@ -24,6 +24,8 @@
  *                                picking a size writes it to pen.width, which
  *                                is the width SVG export plots
  *   defaultSize                  size label picked with the model
+ *   sizeAliases                  optional { oldLabel: canonicalLabel } for renamed
+ *                                size labels (Micron '1' is now '10')
  *   absorbentWidthGainMm         extra width on absorbent paper (× absorbency
  *                                × paper bleed × wetness)
  *   opacity / coverOnDark        ink coverage on light / dark stock (0..1)
@@ -63,12 +65,15 @@
         { label: '01', nominalWidthMm: 0.25, laidWidthMm: 0.27 },
         { label: '02', nominalWidthMm: 0.3, laidWidthMm: 0.32 },
         { label: '03', nominalWidthMm: 0.35, laidWidthMm: 0.36 },
+        { label: '04', nominalWidthMm: 0.4, laidWidthMm: 0.42 },
         { label: '05', nominalWidthMm: 0.45, laidWidthMm: 0.46 },
         { label: '08', nominalWidthMm: 0.5, laidWidthMm: 0.55 },
-        { label: '1', nominalWidthMm: 0.6, laidWidthMm: 0.65 },
+        { label: '10', nominalWidthMm: 0.6, laidWidthMm: 0.65 },
+        { label: '12', nominalWidthMm: 0.7, laidWidthMm: 0.74 },
       ],
+      sizeAliases: { '1': '10' },
       defaultSize: '05',
-      absorbentWidthGainMm: 0.06, opacity: 0.92, coverOnDark: 0.05, blend: 'multiply', overlapDarkening: 0.25,
+      absorbentWidthGainMm: 0.06, opacity: 0.92, coverOnDark: 0.05, blend: 'multiply', overlapDarkening: 0.15,
       edge: { roughness: 0.12, scaleMm: 0.04, softnessMm: 0.01 }, bleed: { wetness: 0.35, featherResponse: 0.4 }, dryskipResponse: 0.25,
       startBlob: { mm: 0.06, probability: 0.3 }, endPool: { mm: 0.04 }, cornerPool: 0.15,
       starvation: { lengthMm: 0, strength: 0 }, skip: { rate: 0, lengthMm: 0 }, widthJitter: { amount: 0.04, scaleMm: 6 },
@@ -113,7 +118,7 @@
       id: 'stabilo-point-88', label: 'Point 88', short: 'Stabilo 88', brand: 'Stabilo',
       inkClass: 'dye-fineliner', tipShape: 'round', effect: 'plain', confidence: 0.6,
       sizes: [
-        { label: '0.4', nominalWidthMm: 0.4, laidWidthMm: 0.48 },
+        { label: '0.4', nominalWidthMm: 0.4, laidWidthMm: 0.4 },
       ],
       defaultSize: '0.4',
       absorbentWidthGainMm: 0.12, opacity: 0.78, coverOnDark: 0, blend: 'multiply', overlapDarkening: 0.6,
@@ -225,7 +230,7 @@
       id: 'sakura-gelly-roll-classic', label: 'Gelly Roll', short: 'Gelly Roll', brand: 'Sakura',
       inkClass: 'gel', tipShape: 'ball', effect: 'plain', confidence: 0.7,
       sizes: [
-        { label: '05', nominalWidthMm: 0.5, laidWidthMm: 0.25 },
+        { label: '05', nominalWidthMm: 0.5, laidWidthMm: 0.3 },
         { label: '06', nominalWidthMm: 0.6, laidWidthMm: 0.3 },
         { label: '08', nominalWidthMm: 0.8, laidWidthMm: 0.4 },
         { label: '10', nominalWidthMm: 1, laidWidthMm: 0.5 },
@@ -254,7 +259,7 @@
       absorbentWidthGainMm: 0, opacity: 0.97, coverOnDark: 0.88, blend: 'source-over', overlapDarkening: 0,
       edge: { roughness: 0.06, scaleMm: 0.03, softnessMm: 0.008 }, bleed: { wetness: 0.15, featherResponse: 0.15 }, dryskipResponse: 0.8,
       startBlob: { mm: 0.15, probability: 0.55 }, endPool: { mm: 0.06 }, cornerPool: 0.1,
-      starvation: { lengthMm: 4000, strength: 0.3 }, skip: { rate: 0.012, lengthMm: 1.2 }, widthJitter: { amount: 0.03, scaleMm: 3 },
+      starvation: { lengthMm: 4000, strength: 0.3 }, skip: { rate: 0.03, lengthMm: 1.2 }, widthJitter: { amount: 0.03, scaleMm: 3 },
       fx: { metallic: { strength: 0.55, baseDarken: 0.25, flakeDensity: 120, flakeSizeMm: 0.03, hueShift: 0, secondHex: null } },
       colours: [
         { name: 'White', hex: '#f6f6f2', effect: 'white' },
@@ -268,7 +273,7 @@
       inkClass: 'metallic-gel', tipShape: 'ball', effect: 'metallic', confidence: 0.65,
       sizes: [
         { label: '08', nominalWidthMm: 0.8, laidWidthMm: 0.45 },
-        { label: '10', nominalWidthMm: 1, laidWidthMm: 0.55 },
+        { label: '10', nominalWidthMm: 1, laidWidthMm: 0.45 },
       ],
       defaultSize: '08',
       absorbentWidthGainMm: 0, opacity: 0.95, coverOnDark: 0.85, blend: 'source-over', overlapDarkening: 0.2,
@@ -521,7 +526,7 @@
   //   skips     skip.rate               jitter     widthJitter.amount
   //   effectStrength / flakeDensity     special-inks layer (sheen, glints,
   //                                     halo, glow; flakes per mm²)
-  const INK_KEYS = Object.freeze(['wetness', 'roughness', 'opacity', 'blobs', 'skips', 'jitter', 'effectStrength', 'flakeDensity']);
+  const INK_KEYS = Object.freeze(['wetness', 'roughness', 'opacity', 'blobs', 'skips', 'jitter', 'effectStrength', 'flakeDensity', 'overlap', 'starvation', 'coverOnDark']);
   const PARAM_LIMITS = Object.freeze({
     wetness: Object.freeze([0, 1]),
     roughness: Object.freeze([0, 0.6]),
@@ -531,6 +536,9 @@
     jitter: Object.freeze([0, 0.3]),
     effectStrength: Object.freeze([0, 1]),
     flakeDensity: Object.freeze([0, 600]),
+    overlap: Object.freeze([0, 1]),
+    starvation: Object.freeze([0, 0.9]),
+    coverOnDark: Object.freeze([0, 1]),
   });
 
   const LIMITS = Object.freeze({
@@ -538,6 +546,7 @@
     modelIdMaxLen: 48,
     penIdMaxLen: 64,
     sizeMaxLen: 48,
+    studioStarveLenMm: 3000,             // Pen Studio: starvation length when the model has none but the user sets a strength
     dyeOnDarkFloor: 0.12,                // a dye on black stock still leaves a faint trace
     // Ribbon renderer (src/render/ink-renderer.js).
     ribbonCacheBytes: 48 * 1024 * 1024, // LRU cap over cached ribbons (grows to 1.5× the drawn set)
@@ -559,7 +568,11 @@
   // is { schema:'vectura-pens', version:1, appVersion, pens:[…] }; My pens is
   // stored in localStorage under LIBRARY_KEY in the same shape.
   const LIBRARY_KEY = 'vectura.penLibrary';
-  const SCHEMA = Object.freeze({ id: 'vectura-pens', version: 1 });
+  // v2 adds nibMm / desc / penName / box / catalogueRev to exported files. The
+  // My pens localStorage store still WRITES v1 (see pen-library.js) so older
+  // builds can read it; files are read from minVersion up.
+  const CATALOGUE_REV = '2026-11-pen-lab';
+  const SCHEMA = Object.freeze({ id: 'vectura-pens', version: 2, minVersion: 1 });
   const FILE_LIMITS = Object.freeze({
     maxBytes: 256 * 1024,   // pen file import cap
     maxPens: 64,            // pens per imported file
@@ -573,6 +586,6 @@
 
   Vectura.PEN_MODELS = {
     MODELS, ORDER, CLASS_ORDER, CLASS_LABELS, EFFECTS, EFFECT_DEFAULTS, EFFECT_SWATCHES, EFFECT_GROUP_LABELS, GLOW_DEFAULT_HEX,
-    FX_LIMITS, PLAIN_TRAITS, INK_KEYS, PARAM_LIMITS, LIMITS, LIBRARY_KEY, SCHEMA, FILE_LIMITS,
+    FX_LIMITS, PLAIN_TRAITS, INK_KEYS, PARAM_LIMITS, LIMITS, LIBRARY_KEY, SCHEMA, CATALOGUE_REV, FILE_LIMITS,
   };
 })();
