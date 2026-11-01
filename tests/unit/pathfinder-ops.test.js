@@ -1135,3 +1135,27 @@ describe('PathfinderOps — panel-top is "front" (layer-order semantics)', () =>
     expect(compound.color).toBe('#0000ff');  // B (panel-bottom) survives, so its color wins
   });
 });
+
+describe('PathfinderOps.recomputeCompound — stale-geometry invalidation', () => {
+  // Regression: a child whose display geometry moved while its params and point
+  // count stayed identical (the engine refreshes compounds before display
+  // geometry, so the first pass saw the old points and cached them under the
+  // final signature) must still invalidate the cached silhouette.
+  test('a child whose points changed (same params/point count) re-derives the union', () => {
+    const A = square('A', 0, 0, 10, 10);
+    const B = square('B', 6, 6, 16, 16);
+    const engine = fakeEngine(A, B);
+    const id = PO.createCompound(engine, [A, B], 'unite', 'silhouette');
+    const compound = engine.layers.find((l) => l.id === id);
+    const xs = () => compound.paths.flat().map((p) => p.x);
+    expect(Math.max(...xs())).toBeCloseTo(16, 6);
+
+    // Move B's geometry directly (params untouched, same point count).
+    const moved = B.displayPaths[0].map((p) => ({ x: p.x + 30, y: p.y }));
+    moved.meta = B.displayPaths[0].meta;
+    B.displayPaths = [moved];
+    B.paths = [moved];
+    PO.recomputeCompound(compound, engine);
+    expect(Math.max(...xs())).toBeCloseTo(46, 6);
+  });
+});
