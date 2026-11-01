@@ -9,6 +9,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ### Fixed: Duplicating a mask dropped its masked content
 - Cmd/Ctrl+D (and Option+D, the context-menu Duplicate and the panel's Duplicate selected) on a clipping mask, or on a group containing one, now copies the masked content with it — nested masks and groups come through intact, with the copy's mask clipping its own copied content. Duplicating a Unite shape keeps its compound data, the copy's layer order mirrors the original, and selecting a mask together with its content no longer copies the content twice. One undo removes the whole duplicate.
 
+### Fixed: Nested clipping masks dropped a level
+- Masking a mask with a shape that only partly covered it silently dropped the lower mask, so content spilled outside it (level 2 showed all of the upper shape; level 3 ignored the bottom mask). A mask's clip region now comes from its own unclipped closed shape, and every mask above is intersected, so each nesting level shows exactly the overlap of all its masks — on screen and in SVG export.
+
 ### Fixed: Nested clipping masks in the Layers panel
 - Every level of a nested clipping mask stays listed and indented in the Layers panel at any depth (rows under the second level used to vanish). A middle mask level now has its own mask toggle so it can be released, and turning a mask off then on again re-clips the same layers instead of masking nothing. Undo/redo safe.
 
