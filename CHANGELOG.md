@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Touch: layer rows hidden under the selection strip
+- On touch phones the two-row Draw Order header from the 44 px Play-button change made the bottom bar 12 px taller, so with several layers selected the 'N layers selected' strip covered a layer row and swallowed taps meant for it. The gap between the header rows shrinks from 14 px to 2 px; the Play, eye, palette and gear icons keep their 44 px tap areas.
+
 ### Changed: Vectura cover word: tighter letters, larger type, hand-set art and colors
 - **Tighter spacing.** Every letter of the **Name in Ink** cover sits closer to its neighbor, and the **V-e** and **u-r** pairs tuck in a little further (`TRACK` / `KERN` in `src/ui/start-page/cover.js`, in em, so they scale with the type).
 - **Larger type.** The word now fills 98.5% of the column (was 95.5%) and may grow to 40% of the window height, capped at 420 px (was 30%, 300 px). At 1440x900 the type grows from 269 px to 311 px.
