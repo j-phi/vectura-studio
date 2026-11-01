@@ -9,6 +9,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ### Fixed: Paint bucket scope wheel
 - The scope ladder no longer repeats the outermost ring when another, smaller closed shape sits elsewhere on the page, and only offers rings that actually contain the cursor. A sideways (horizontal-only) scroll no longer changes the scope, and trackpad scrolls now accumulate so one step takes about one mouse-wheel notch instead of every tiny trackpad event jumping a step. When a mask and its content share the same outline, the fill goes to the masked content.
 
+### Fixed: United shapes snapped back when dragged
+- Dragging a Pathfinder shape (Unite and the other shape modes) with the Selection tool, or nudging it with the arrow keys, now moves it — before, it followed the mouse and then snapped back on release. Resize and rotate work the same way, the outline no longer lags behind after a move, and a drag that changes nothing no longer adds an empty undo step.
+
 ### Added: Cover art and colorway choices in Start Page settings
 - **Settings > Cover > Cover art.** A new block under Cover style lets you choose the piece and the colorway for every cover style. **Name in Ink** gets one row per letter, and **Cover Specimen** and **Portfolio band** get one row each.
 - **Pieces.** Each picker lists **Automatic** (the current behavior), then **Your pieces** (saved and opened works), then **Templates** (the studio picks).
