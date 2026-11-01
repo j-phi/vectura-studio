@@ -164,6 +164,18 @@
 
   // ── Compound lifecycle ────────────────────────────────────────────────────
 
+  const geometryChecksum = (paths) => {
+    let sx = 0;
+    let sy = 0;
+    (paths || []).forEach((path) => {
+      if (!Array.isArray(path)) return;
+      path.forEach((pt) => {
+        if (pt && Number.isFinite(pt.x) && Number.isFinite(pt.y)) { sx += pt.x; sy += pt.y; }
+      });
+    });
+    return `${sx.toFixed(3)},${sy.toFixed(3)}`;
+  };
+
   const cacheSignature = (compoundLayer, engine) => {
     const { opType, sourceMode, childIds = [] } = compoundLayer.compound || {};
     const parts = [opType || '', sourceMode || ''];
@@ -188,6 +200,10 @@
         (child.displayPaths?.length || child.paths?.length || 0),
         (child.effectivePaths || child.displayPaths || child.paths || [])
           .reduce((sum, p) => sum + (p?.length || 0), 0),
+        // Geometry fingerprint of the exact source the silhouette is built
+        // from (see Masking.buildClosedPathSilhouettes): a child whose points
+        // moved without its params/point-count changing still invalidates.
+        geometryChecksum(child.displayPaths?.length ? child.displayPaths : child.effectivePaths?.length ? child.effectivePaths : child.paths),
         nested,
       ].join('|'));
     });

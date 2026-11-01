@@ -545,28 +545,18 @@
           renderer.draw();
           return;
         }
-        // Skip locked layers so arrow-key nudging respects the lock state
-        // the same way pointer-drag does.
-        const isLocked = this.app.renderer?.isLayerLocked;
-        const allSelected = this.app.renderer?.getSelectedLayers?.() || [];
-        const selectedLayers = isLocked
-          ? allSelected.filter((l) => !isLocked.call(this.app.renderer, l.id))
-          : allSelected;
-        if (selectedLayers.length) {
-          if (this.app.pushHistory) this.app.pushHistory();
-          selectedLayers.forEach((layer) => {
-            layer.params.posX += dx;
-            layer.params.posY += dy;
-            window.Vectura?.PaintBucketOps?.translateLayerFills?.(layer, dx, dy);
-            this.app.engine.generate(layer.id);
-          });
+        // Locked layers are skipped and compound/plain groups move their
+        // leaves (renderer.nudgeSelection shares the drag-commit expansion);
+        // history is pushed only when something actually moved.
+        const renderer2 = this.app.renderer;
+        if (renderer2?.nudgeSelection?.(dx, dy)) {
           this.app.render();
-          const primary = this.app.renderer?.getSelectedLayer?.();
+          const primary = renderer2.getSelectedLayer?.();
           if (primary) {
             const posX = getEl('inp-pos-x');
             const posY = getEl('inp-pos-y');
-            if (posX) posX.value = primary.params.posX;
-            if (posY) posY.value = primary.params.posY;
+            if (posX && primary.params) posX.value = primary.params.posX;
+            if (posY && primary.params) posY.value = primary.params.posY;
           }
         }
       }
