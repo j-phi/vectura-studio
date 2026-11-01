@@ -125,6 +125,14 @@
       return mix(ink, ink2, i / (used.length - 1));
     };
     used.forEach((pen, i) => paint(pen, target(i)));
+    // A pen keeps its catalogue name only when it was painted that pen's exact (un-nudged) color: the primary pen,
+    // and the secondary one only in a two-pen duotone. Intermediates, nudged inks and special fills keep document names.
+    if (!fill && ink) {
+      const nudgedA = typeof cw.nudgedA === 'boolean' ? cw.nudgedA : !!cw.nudged;
+      const nameA = cw.penNameA !== undefined ? cw.penNameA : (!ink2 && typeof cw.penName === 'string' ? cw.penName : null);
+      if (nameA && !nudgedA && used[0]) used[0].name = String(nameA);
+      if (ink2 && used.length === 2 && cw.penNameB && !cw.nudgedB) used[1].name = String(cw.penNameB);
+    }
     real.forEach((l) => {
       const pen = pens.find((p) => p && p.id === l.penId);
       if (pen && used.includes(pen) && hex6(pen.color)) l.color = pen.color;

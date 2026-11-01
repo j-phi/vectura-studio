@@ -235,3 +235,36 @@ describe('own-color detection and names', () => {
     expect(O.baseName('')).toBe('Untitled');
   });
 });
+
+describe('freezeColorway keeps pen names', () => {
+  const two = () => { const d = doc(); d.state.engine.layers = [layer('a', 'pen-1'), layer('b', 'pen-2')]; return d; };
+  const three = () => { const d = doc(); d.state.engine.layers = [layer('a', 'pen-1'), layer('b', 'pen-2'), layer('c', 'pen-3')]; return d; };
+  const names = (o) => o.state.settings.pens.map((p) => p.name);
+  const CW = { ...WILD, penNameA: 'Micron Black', penNameB: 'Gelly White', nudgedA: false, nudgedB: false, penName: 'Micron Black + White' };
+
+  it('names the primary and secondary used pens after the colorway pens', () => {
+    const n = names(O.freezeColorway(two(), CW));
+    expect(n[0]).toBe('Micron Black');
+    expect(n[1]).toBe('Gelly White');
+  });
+  it('never labels a contrast-nudged ink with the catalogue pen name', () => {
+    const n = names(O.freezeColorway(two(), { ...CW, nudgedA: true, nudgedB: true }));
+    expect(n.slice(0, 2)).toEqual(['Pen 1', 'Pen 2']);
+  });
+  it('intermediate duotone pens keep their document names', () => {
+    const n = names(O.freezeColorway(three(), CW));
+    expect(n[0]).toBe('Micron Black');
+    expect(n[1]).toBe('Pen 2');
+    expect(n[2]).toBe('Pen 3');
+  });
+  it('a special fill keeps document names', () => {
+    expect(names(O.freezeColorway(two(), { ...CW, fill: 'duotone' })).slice(0, 2)).toEqual(['Pen 1', 'Pen 2']);
+  });
+  it('without ink2 only the primary pen is renamed, from penName when penNameA is absent', () => {
+    const n = names(O.freezeColorway(two(), { paper: '#fff', ink: '#112233', penName: 'Plate Ink' }));
+    expect(n.slice(0, 2)).toEqual(['Plate Ink', 'Pen 2']);
+  });
+  it('penNameA null (theme ink) leaves names alone', () => {
+    expect(names(O.freezeColorway(two(), { paper: '#fff', ink: '#112233', penName: 'Pen 1 \u00b7 theme ink', penNameA: null })).slice(0, 2)).toEqual(['Pen 1', 'Pen 2']);
+  });
+});
