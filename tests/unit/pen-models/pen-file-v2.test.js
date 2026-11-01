@@ -25,7 +25,7 @@ describe('pen file schema v2', () => {
   });
   it('exportDoc writes v2 with catalogueRev, optional box, and nibMm/desc/penName', () => {
     const doc = V.PenLibrary.exportDoc([{ name: 'A 05', color: '#112233', width: 0.46, model: 'sakura-pigma-micron', size: '05', nibMm: 0.45, desc: 'fine', penName: 'A' }], { box: { name: 'Set' } });
-    expect(doc).toMatchObject({ schema: 'vectura-pens', version: 2, catalogueRev: '2026-11-pen-lab', box: { name: 'Set' } });
+    expect(doc).toMatchObject({ schema: 'vectura-pens', version: 2, catalogueRev: '2026-11-pens20', box: { name: 'Set' } });
     expect(doc.pens[0]).toMatchObject({ nibMm: 0.45, desc: 'fine', penName: 'A' });
     expect(V.PenLibrary.exportDoc([]).box).toBeUndefined();
   });
