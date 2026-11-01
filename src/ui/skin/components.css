@@ -15309,7 +15309,7 @@ body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.info-btn
   transform: translate(-50%, -50%);
 }
 /* The row that holds an extended visual is one finger tall, so the extension stays inside it. */
-body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.ctrl-row, .optimization-row, .optimization-control, .control-label, .flex):has(> :is(.sw-toggle, .info-btn, .export-info-btn)),
+body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.ctrl-row, .ctrl-lbl, .optimization-row, .optimization-control, .control-label, .flex):has(> :is(.sw-toggle, .info-btn, .export-info-btn)),
 body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.control-label, .flex, [class*="justify-between"]):has(> * > :is(.info-btn, .export-info-btn)) {
   min-height: var(--touch-target-min);
   align-items: center;
@@ -16986,6 +16986,10 @@ body.touch-ui #right-pane .paper-color-pill,
 body.touch-ui #right-pane .paper-slider {
   min-height: var(--touch-target-min);
 }
+/* A slider track is a 44 px target in width too: WebKit's wider label metrics squeezed it to 43 px, so the label yields
+ * (it wraps) before the track does. */
+body.touch-ui #right-pane .paper-row .paper-slider { min-width: var(--touch-target-min); }
+body.touch-ui #right-pane .paper-row .paper-row-label { flex: 0 1 64px; min-width: 0; overflow-wrap: anywhere; }
 /* Custom papers ("My papers"): custom swatches follow the built-ins in the
    same radiogroup; each carries a ⋯ actions button. */
 .paper-swatch-wrap {
@@ -17349,6 +17353,10 @@ body.touch-ui .paper-import-footer button {
   flex: 0 0 auto;
   min-width: 76px;
 }
+/* Touch: the longest paper name ("No default (follow theme)", "Cold-press watercolor") does not fit beside the colour chip
+ * in the 290 px column, so the select takes the whole row and the chip wraps below it. */
+body.touch-ui .default-paper-controls { flex-wrap: wrap; }
+body.touch-ui .default-paper-controls .ctrl-sel-wrap { flex: 1 1 100%; }
 [data-ui-skin] .default-paper-hint {
   margin: 0;
   font-size: var(--font-size-xs);
@@ -17589,7 +17597,8 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
 }
 .wordmark-btn:hover { filter: brightness(1.15); }
 .wordmark-btn:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; }
-@media (pointer: coarse) { .wordmark-btn { min-height: var(--touch-target-min, 44px); display: inline-flex; align-items: center; } }
+/* The header is 44 px tall on touch: the wordmark takes the whole band as its hit area. */
+body.touch-ui .wordmark-btn { display: inline-flex; align-items: center; min-height: var(--touch-target-min); min-width: var(--touch-target-min); }
 @media (pointer: coarse) {
   .sp-chips button { height: 44px; }
   .sp-primary, .sp-line { height: 48px; }

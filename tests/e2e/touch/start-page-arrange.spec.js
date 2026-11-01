@@ -20,7 +20,7 @@ test('a finger drag on a row handle reorders the plates', async ({ page }) => {
     window.app.startPage.show();
   }, TYPES);
   await expect(page.locator('#sp-plates .sp-pl .spl').first()).toBeVisible({ timeout: 15000 });
-  // Example plates show beside the user's works by default: this spec arranges the four works only.
+  // Example plates show beside the works by default and join the Arrange list; count only the four seeded works.
   await hideExamples(expect, page);
   const order = () => page.locator('.sp-pl').evaluateAll((els) => els.map((e) => e.dataset.plateId));
   const start = await order();

@@ -94,6 +94,10 @@ test.describe('TUX-001 closing round', () => {
   // time 30 ms after its touchstart, so the browser's gesture detector sees a tap, not a slow press.
   test('TUX-001 a real tap within 150 ms of the closing outside tap still fires (no time window)', async ({ page }, testInfo) => {
     phoneOnly(testInfo);
+    // The pair of taps must be timed in app time (a frozen page clock plus CDP touch timestamps). WebKit has no CDP, and
+    // its page.touchscreen.tap does not complete a tap on a frozen clock (the Undo tap never fired, measured in CI), so the
+    // contract is held by the Chromium projects, which run the identical app code (no timestamp or time window in it).
+    test.skip(!touch.engineSupports(page, 'cdp'), 'needs CDP touch timestamps and a frozen page clock');
     await clock.install(page);
     await gotoApp(page);
     await page.evaluate(() => {
