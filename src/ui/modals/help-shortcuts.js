@@ -399,15 +399,29 @@
           ${row('Special inks', 'Metallic, neon, glow-in-the-dark, glitter, opaque white on any pen (Ink settings, New Pen)', 'one undo step')}
           ${row('Effect strength / Flake density', 'Tune the special ink (shown while one is set)')}
           ${row(SHF + OPT + k('L'), 'View ▸ Lights Off: the sheet goes dark, glow inks emit', 'click the chip to restore')}
-          ${row('Pens ⋯', 'Export pens, Import pens… (.json), My pens…')}
+          ${row('Pens ⋯', 'Pen Studio…, Export pens, Import pens… (.json), My pens…')}
           ${row('Save to My pens', 'Keep a pen in this browser; My pens are listed first in the model picker')}
         </tbody>
       </table>
       ${callout('A pen is a plain color + diameter pen unless you give it a <strong>model</strong> (Micron, Sharpie, Uni-ball Signo, Gelly Roll, Sign Pen, fountain pen, …). The preview then draws the pen\'s real look: edge bleed, blobs at pen-down, pools at corners, gel skips, opacity. On a realistic paper plain pens bleed at the edges too. Typing a width marks the size <strong>custom</strong>. Everything is a <strong>preview only</strong>: the SVG plots the pen width in the pen color.')}
       ${callout('<strong>Special inks</strong> catch the light: metallic and glitter flakes stay fixed to the stroke while their glints move as you pan and zoom. <strong>Lights Off</strong> is a view only (never saved). <strong>Pen files</strong> (.json) carry color, width, model, size, special ink and ink settings; imported pens are added as new pens.')}`;
+    const penStudioRows = `
+      <table class="help-kbd-table">
+        <tbody>
+          ${row('Pens ⋯ ▸ Pen Studio…', 'Open Pen Studio (also the footer button of the pen picker)', 'Esc closes a dialog first, then the Studio')}
+          ${row('Pen boxes', 'Group the pens you own: pin, collapse, export a box, add a pen, new box, Import box…; click a selected pen again to rename it')}
+          ${row('Sizes', 'Click to add or remove a size you own; the outlined size is the one tested')}
+          ${row('Paper', 'Pick a paper to test on, or switch to All papers for a matrix; a faint note means the ink barely shows')}
+          ${row('Sliders', 'Tune Bleed, Pen-down blob, Overlap, Skips, Starvation and Coverage on dark; a change stays a draft (UNSAVED) until you Save changes, Save as new pen or Discard')}
+          ${row('Complement', 'Pick a paired ink (chips, Randomize, Lines 3 to 7, weave mode) and see both woven together')}
+          ${row('Use in document', 'Apply the tested pen and size to the document pen, or add it as a new pen', 'one undo step')}
+        </tbody>
+      </table>
+      ${callout('<strong>Pen Studio</strong> is a workshop: nothing you do there changes the document until you press <strong>Use in document</strong>. Boxes, sizes and tuned pens are stored in this browser. Pen files are schema v2; older versions of Vectura cannot read them.')}`;
     const pen = `
       ${accordion('Paper (Pen / Paper tab)', paperRows, true)}
       ${accordion('Pen models &amp; ink', penModelRows, true)}
+      ${accordion('Pen Studio', penStudioRows)}
       ${accordion('Path Drawing', penDrawRows, true)}
       ${accordion('Modifier Keys', penModRows, true)}
       ${accordion('Petal Designer', petalRows)}`;
