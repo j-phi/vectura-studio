@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const touch = require('../helpers/touch');
+const { hideExamples } = require('../helpers/start-page');
 
 // Start Page Arrange: a finger drags a row by its handle and the new order is kept (pointer + keyboard are in
 // tests/e2e/start-page-plates-integrated.spec.js).
@@ -19,6 +20,8 @@ test('a finger drag on a row handle reorders the plates', async ({ page }) => {
     window.app.startPage.show();
   }, TYPES);
   await expect(page.locator('#sp-plates .sp-pl .spl').first()).toBeVisible({ timeout: 15000 });
+  // Example plates show beside the works by default and join the Arrange list; count only the four seeded works.
+  await hideExamples(expect, page);
   const order = () => page.locator('.sp-pl').evaluateAll((els) => els.map((e) => e.dataset.plateId));
   const start = await order();
   await page.locator('#sp-pl-arrange').scrollIntoViewIfNeeded();

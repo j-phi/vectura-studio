@@ -9,6 +9,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 ### Fixed: Start Page vertical titles on iPad
 - The vertical word on the Vertical word, Spec sheet and Words both sides plates (for example Downpour and Cybersigil) collapsed to no width on iPad Safari and Brave, so only fragments of the letters showed at the art's left edge. The word column now has a definite width taken from the word's own proportions. Desktop and phone layouts are unchanged.
 
+### Fixed: GitHub release notes too long for the 1.5.0 release
+- `scripts/extract-changelog.js` now caps release notes at 120,000 characters (GitHub rejects bodies over 125,000 with HTTP 422). Longer sections are cut at the last `### ` heading (else the last line) and end with a link to the full CHANGELOG at that tag. Shorter sections are unchanged. The logic is the exported `extractChangelog()`; the CLI is unchanged.
+
 ## 1.5.0 - 2026-10-31
 
 Headlines since 1.4.0:

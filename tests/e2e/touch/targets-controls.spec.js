@@ -233,9 +233,10 @@ test.describe('TUX-041 owned-surface touch targets', () => {
     await boot(page);
     await showPane(page, 'right');
     await page.waitForTimeout(300);
-    const spill = await page.evaluate(() => [...document.querySelectorAll('#right-pane .lvl-card, #right-pane .lvl-grp-hdr')]
+    // The pane slides open: poll until it has its final width (WebKit was measured mid-slide, 31 px wide).
+    const measureSpill = () => page.evaluate(() => [...document.querySelectorAll('#right-pane .lvl-card, #right-pane .lvl-grp-hdr')]
       .filter((c) => c.scrollWidth > c.clientWidth + 1).map((c) => ({ cls: c.className, sw: c.scrollWidth, cw: c.clientWidth })));
-    expect(spill).toEqual([]);
+    await expect.poll(measureSpill, { timeout: 5000 }).toEqual([]);
   });
 
   // Layout regressions of the first attempt: label rows and the angle chip.
