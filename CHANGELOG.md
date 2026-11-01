@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Start Page name sanitizer test matched the old rules
+- The Start Page name test still expected `=` to be stripped after the sanitizer moved to a symbol-friendly blocklist (angle brackets and control characters removed; `=`, `&`, `+` kept), which turned main's CI red. The test now checks the current rules, and a new test confirms a hostile name or practice line renders as plain text with no injected elements.
+
 ### Changed: Vectura cover word: tighter letters, larger type, hand-set art and colors
 - **Tighter spacing.** Every letter of the **Name in Ink** cover sits closer to its neighbor, and the **V-e** and **u-r** pairs tuck in a little further (`TRACK` / `KERN` in `src/ui/start-page/cover.js`, in em, so they scale with the type).
 - **Larger type.** The word now fills 98.5% of the column (was 95.5%) and may grow to 40% of the window height, capped at 420 px (was 30%, 300 px). At 1440x900 the type grows from 269 px to 311 px.
