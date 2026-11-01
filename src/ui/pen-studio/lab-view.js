@@ -231,16 +231,19 @@
       const Lab = Vectura.PenStudioLab; const IR = Vectura.InkRenderer;
       if (!IR || !IR.drawSample) return;
       const dpr = Math.min(2, (win.devicePixelRatio || 1));
-      // Fill the element: backing store = laid-out width x dpr (fallback to the
-      // nominal mm size when the element has no layout yet), same aspect ratio.
-      canvas.style.width = '100%';
+      // Fixed CSS height (strips ~42px, matrix cells ~30px), fluid width. Backing
+      // store = laid-out size x dpr. Strokes are drawn at the height-fit scale and
+      // stretched along x only (stroke widths stay true) so they fill the width.
       const nominalW = Math.round(spec.boxMm.w * pxPerMm);
       const wCss = Math.max(1, Math.round(canvas.clientWidth || nominalW));
-      const hCss = Math.max(1, Math.round(wCss * spec.boxMm.h / spec.boxMm.w));
+      const isCell = /matrix-cell/.test(canvas.className || '');
+      const hCss = Math.max(1, Math.round(canvas.clientHeight || (isCell ? 30 : 42)));
       canvas.width = Math.max(1, Math.round(wCss * dpr)); canvas.height = Math.max(1, Math.round(hCss * dpr));
-      canvas.style.height = hCss + 'px';
-      const paths = spec.strokes.map((s) => ({ pts: s.pts, pen: s.pen }));
-      IR.drawSample(canvas, docPen, Lab.paperFor(paperType), { paths, paperFill: true, widthMm: spec.boxMm.w });
+      const pxMm = hCss / spec.boxMm.h;
+      const widthMm = wCss / pxMm;
+      const kx = widthMm / spec.boxMm.w;
+      const paths = spec.strokes.map((s) => ({ pts: s.pts.map((q) => ({ ...q, x: q.x * kx })), pen: s.pen }));
+      IR.drawSample(canvas, docPen, Lab.paperFor(paperType), { paths, paperFill: true, widthMm });
     };
 
     const valueText = (kind, values, dye) => {
