@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Start Page vertical titles on iPad
+- The vertical word on the Vertical word, Spec sheet and Words both sides plates (for example Downpour and Cybersigil) collapsed to no width on iPad Safari and Brave, so only fragments of the letters showed at the art's left edge. The word column now has a definite width taken from the word's own proportions. Desktop and phone layouts are unchanged.
+
 ## 1.5.0 - 2026-10-31
 
 Headlines since 1.4.0:

@@ -86,6 +86,8 @@
     const b = T.wordBox(measure(word)); const v = T.verticalBox(b, down);
     const s = svgEl('svg', { class: 'spl-vword', viewBox: `0 0 ${f2(v.width)} ${f2(v.height)}`, preserveAspectRatio: down ? 'xMidYMin meet' : 'xMidYMax meet', 'aria-hidden': 'true', focusable: 'false' });
     s.appendChild(textNode(word, 0, 0, { x: 0, y: 0, transform: v.transform }));
+    /* the column width comes from this ratio in CSS, not from the SVG's own height:100%/width:auto, which WebKit (iPad) cannot resolve while sizing a grid column */
+    host.style.setProperty('--spl-vr', String(+(v.width / v.height).toFixed(4)));
     host.replaceChildren(s);
     return s;
   };
