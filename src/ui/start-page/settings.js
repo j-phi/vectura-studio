@@ -41,6 +41,10 @@
     let customOpen = false; // "Custom…" picked and its input showing, before a word is set
     let wordSig = '';
     const Words = () => Vectura.StartPageCoverWords;
+    const SP = () => Vectura.START_PAGE && Vectura.START_PAGE.coverType ? Vectura.START_PAGE : {
+      COVER_FONTS: [{ id: 'grotesk', name: 'Space Grotesk' }], COVER_SCALE: { min: 50, max: 100, step: 5 }, ADMIN: { lockCoverType: false },
+      coverType: (p) => ({ id: 'grotesk', scale: Number((p || {}).coverScale) || 100 }),
+    };
 
     const sw = (key, label) => h('div', { class: 'sp-set-row' },
       h('span', { class: 'sp-set-label', id: `sp-set-${key}-l`, text: label }),
@@ -67,6 +71,15 @@
           STYLES.map((s) => h('button', { type: 'button', role: 'radio', class: 'sp-style', 'data-style': s.id, 'aria-checked': 'false', tabindex: '-1' },
             h('span', { class: 'sp-style-art', html: s.svg }),
             h('span', { class: 'sp-style-tx' }, h('b', {}, s.name, s.note ? h('em', { text: s.note }) : null), h('span', { text: s.desc }))))),
+        h('span', { class: 'sp-set-label sp-set-label-gap', id: 'sp-set-font-l', text: 'Typeface' }),
+        h('div', { class: 'sp-set-pick' },
+          h('select', { class: 'sp-set-select', 'data-pref': 'coverFont', 'aria-labelledby': 'sp-set-font-l' },
+            SP().COVER_FONTS.map((f) => h('option', { value: f.id, text: f.name })))),
+        h('span', { class: 'sp-set-label sp-set-label-gap', id: 'sp-set-size-l', text: 'Size' }),
+        h('div', { class: 'sp-set-pick sp-set-size' },
+          h('input', { type: 'range', class: 'sp-set-range', 'data-range': 'coverScale', 'aria-labelledby': 'sp-set-size-l', min: String(SP().COVER_SCALE.min), max: String(SP().COVER_SCALE.max), step: String(SP().COVER_SCALE.step), value: '100' }),
+          h('output', { class: 'sp-set-out', 'data-out': 'coverScale', text: '100%' })),
+        h('p', { class: 'sp-set-help', 'data-help': 'coverType', text: 'Size is a share of the largest that fits the page.' }),
         h('span', { class: 'sp-set-label sp-set-label-gap', id: 'sp-set-art-l', text: 'Cover art' }),
         coverArtHost),
       h('section', { class: 'sp-set-sec', 'data-slot': 'colorway' },
@@ -135,6 +148,16 @@
           : 'Example plates sit beside your own work. Hide them once you have your own.';
       }
       radios().forEach((r) => { const on = r.dataset.style === p.coverStyle; r.setAttribute('aria-checked', String(on)); r.tabIndex = on ? 0 : -1; });
+      const A = SP().ADMIN;
+      const ty = SP().coverType(p);
+      const fontSel = pop.querySelector('select[data-pref="coverFont"]');
+      const range = pop.querySelector('[data-range="coverScale"]');
+      const out = pop.querySelector('[data-out="coverScale"]');
+      if (range) { range.value = String(ty.scale); range.disabled = A.lockCoverType; }
+      if (out) out.textContent = `${ty.scale}%`;
+      if (fontSel) { fontSel.value = ty.id; fontSel.disabled = A.lockCoverType; }
+      const tyHelp = pop.querySelector('[data-help="coverType"]');
+      if (tyHelp) tyHelp.textContent = A.lockCoverType ? 'Set by your administrator for everyone.' : 'Size is a share of the largest that fits the page. Saved on this device.';
       pop.querySelectorAll('select[data-pref]').forEach((sel) => {
         const want = p[sel.dataset.pref];
         if (want != null && [...sel.options].some((o) => o.value === want)) sel.value = want;
@@ -189,6 +212,13 @@
     pop.addEventListener('change', (e) => {
       const sel = e.target && e.target.closest && e.target.closest('select[data-pref]');
       if (sel && typeof onPref === 'function') onPref(sel.dataset.pref, sel.value);
+    });
+    pop.addEventListener('input', (e) => {
+      const r = e.target && e.target.closest && e.target.closest('input[data-range]');
+      if (!r) return;
+      const o = pop.querySelector(`[data-out="${r.dataset.range}"]`);
+      if (o) o.textContent = `${r.value}%`;
+      if (typeof onPref === 'function') onPref(r.dataset.range, r.value);
     });
     pop.addEventListener('click', (e) => {
       const pv = e.target.closest && e.target.closest('[data-act="preview-animate"]');
