@@ -934,11 +934,20 @@
       const DRAW_ORDER_DRAG_THRESHOLD = 3;
       const DRAW_ORDER_PLAY_RATE = 35; // percent per second
 
+      const drawOrderPlayBtn = document.getElementById('draw-order-play');
+      const syncDrawOrderPlayBtn = () => {
+        if (!drawOrderPlayBtn) return;
+        const playing = drawOrderPlayRaf != null;
+        drawOrderPlayBtn.classList.toggle('is-playing', playing);
+        drawOrderPlayBtn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+        drawOrderPlayBtn.setAttribute('aria-label', playing ? 'Pause draw order' : 'Play draw order');
+      };
       const stopDrawOrderPlayback = () => {
         if (drawOrderPlayRaf != null) {
           cancelAnimationFrame(drawOrderPlayRaf);
           drawOrderPlayRaf = null;
         }
+        syncDrawOrderPlayBtn();
       };
       // Shift-click plays back at 1/10 speed with tenths visible, so a precise
       // stretch of the plot order can be watched unfold; a plain click plays at
@@ -964,9 +973,30 @@
           drawOrderInput.value = String(shown);
           applyDrawOrder(shown);
           drawOrderPlayRaf = shown < 100 ? requestAnimationFrame(tick) : null;
+          if (drawOrderPlayRaf == null) {
+            drawOrderInput.step = '1';
+            syncDrawOrderPlayBtn();
+          }
         };
         drawOrderPlayRaf = requestAnimationFrame(tick);
+        syncDrawOrderPlayBtn();
       };
+
+      // Play button (right of the % readout): pause while playing; otherwise play
+      // on from the handle — or from the very start when the reveal is complete.
+      drawOrderPlayBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (drawOrderPlayRaf != null) {
+          stopDrawOrderPlayback();
+          return;
+        }
+        if ((Number(drawOrderInput.value) || 0) >= 100) {
+          drawOrderInput.value = '0';
+          applyDrawOrder(0);
+        }
+        this.app.renderer?.clearSelection?.();
+        startDrawOrderPlayback(window.Vectura.InputModifiers.readModifiers(e).shift);
+      });
 
       drawOrderInput.addEventListener('pointerdown', (e) => {
         stopDrawOrderPlayback();
