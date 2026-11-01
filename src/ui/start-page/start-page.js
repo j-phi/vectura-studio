@@ -59,6 +59,12 @@
     const isMac = () => /mac|iphone|ipad|ipod/.test(`${navigator.platform || ''} ${navigator.userAgent || ''}`.toLowerCase());
     const mod = () => (isMac() ? '⌘' : 'Ctrl+');
     const hasLiveCanvas = () => (app.engine?.layers || []).length > 0;
+    // Work in progress behind the page: layers on the canvas, or any unsaved change (paper, pens) the Open dialog would warn about.
+    // Either way the page must offer a way back to it (Back to canvas, Esc).
+    const hasWorkInProgress = () => {
+      if (hasLiveCanvas()) return true;
+      try { return typeof app.isDocumentDirty === 'function' && !!app.isDocumentDirty(); } catch (_) { return false; }
+    };
     const persist = () => app.persistPreferencesDebounced?.();
     const cleanPref = (key, value) => Vectura.START_PAGE.sanitize({ ...prefs(), [key]: value })[key];
 
@@ -384,7 +390,7 @@
         if (e.key === 'Escape' && !e.defaultPrevented) {
           if (settings && settings.isOpen()) { e.preventDefault(); settings.close(true); return; }
         }
-        if (e.key === 'Escape' && !e.defaultPrevented && hasLiveCanvas() && !document.querySelector('.vectura-modal-backdrop[style*="display: flex"]')) {
+        if (e.key === 'Escape' && !e.defaultPrevented && hasWorkInProgress() && !document.querySelector('.vectura-modal-backdrop[style*="display: flex"]')) {
           e.preventDefault();
           ctl.hide();
         }
@@ -562,7 +568,7 @@
         try { return new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }); } catch (_) { return ''; }
       })();
       if (token !== renderToken) return;
-      root.querySelector('[data-act="back"]').hidden = !hasLiveCanvas();
+      root.querySelector('[data-act="back"]').hidden = !hasWorkInProgress();
       await refreshOwn();
       if (token !== renderToken) return;
       renderRail();

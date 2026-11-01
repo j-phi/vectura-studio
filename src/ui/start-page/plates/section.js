@@ -395,15 +395,14 @@
     // keyboard focus show it, a tap toggles it, Esc / an outside press closes it. The note floats (absolute), so it never shifts the header.
     const INFO_TEXT = 'This is a placeholder example plate, shipped with Vectura Studio. Turn example plates off with \u201cShow example plates\u201d in Start Page settings (\u2699).';
     let infoSeq = 0;
-    const syncInfo = (w) => {
-      const art = w.querySelector('.spl');
-      const name = art && art.querySelector('.spl-no b');
-      if (!name || (name.nextElementSibling && name.nextElementSibling.classList.contains('sp-pl-info'))) return;
+    // An (i) button + floating note: hover and keyboard focus show it, a tap toggles it, a mouse click pins it open,
+    // Esc / an outside press closes it.
+    const makeInfo = (text, label) => {
       infoSeq += 1;
-      const tip = h('span', { class: 'sp-pl-info-tip', role: 'tooltip', id: `sp-pl-info-tip-${infoSeq}`, text: INFO_TEXT });
-      const btn = h('button', { type: 'button', class: 'sp-pl-info-btn', 'aria-label': 'About this example plate', 'aria-describedby': tip.id, html: ICONS.info });
+      const tip = h('span', { class: 'sp-pl-info-tip', role: 'tooltip', id: `sp-pl-info-tip-${infoSeq}`, text });
+      const btn = h('button', { type: 'button', class: 'sp-pl-info-btn', 'aria-label': label, 'aria-describedby': tip.id, html: ICONS.info });
       const wrap = h('span', { class: 'sp-pl-info' }, btn, tip);
-      const doc = w.ownerDocument;
+      const doc = host.ownerDocument;
       let pointer = ''; // the last input kind on the button: a mouse / touch press must not count as keyboard focus
       let pinned = false;
       const set = (on) => {
@@ -425,8 +424,18 @@
       });
       const stop = (ev) => ev.stopPropagation();
       wrap.addEventListener('keydown', (ev) => { if (ev.key !== 'Escape') stop(ev); });
-      name.after(wrap);
+      wrap._spClose = () => set(false);
+      return { wrap, tip };
     };
+    const syncInfo = (w) => {
+      const art = w.querySelector('.spl');
+      const name = art && art.querySelector('.spl-no b');
+      if (!name || (name.nextElementSibling && name.nextElementSibling.classList.contains('sp-pl-info'))) return;
+      name.after(makeInfo(INFO_TEXT, 'About this example plate').wrap);
+    };
+    // The (i) after the EXAMPLES count in the header: the examples explainer lives in its note (first run only).
+    const EXAMPLES_TEXT = 'These are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples stay beside them until you hide them with Show example plates in Start Page settings. Edit or remove any plate, examples included. Opening an example starts a new document; it becomes a plate once you save it.';
+    let headInfo = null;
     const tool = (act, label, icon, titleText) => h('button', { type: 'button', class: 'sp-pl-tool', 'data-act': act, title: titleText, 'aria-label': titleText, html: `${icon}<span>${label}</span>` });
 
     const renderPlate = async (w) => {
@@ -688,20 +697,29 @@
       root.dataset.mode = mode();
       const ne = n - worksShown;
       count.textContent = devActive ? `${n} example plate${n === 1 ? '' : 's'} · Developer Mode draft`
-        : exampleMode ? `${n} examples · your own work will join them`
+        : exampleMode ? `${n} example${n === 1 ? '' : 's'}`
         : !n ? 'your work will hang here'
         : ne ? `${worksShown} work${worksShown === 1 ? '' : 's'} · ${ne} example${ne === 1 ? '' : 's'}`
         : `${n} work${n === 1 ? '' : 's'} · in your order`;
       explain.textContent = devActive
         ? 'Developer Mode: these are the example plates that ship with Vectura Studio. Edit the word, title, layout, colorway and manual colors, add a plate from any bundled preset, remove one, or drag to reorder. Export defaults writes them back to src/config/start-page-picks.js.'
         : exampleMode
-        ? 'These are examples. Your own plates appear here automatically when you save or open a file, one per piece, and the examples stay beside them until you hide them with Show example plates in Start Page settings. Edit or remove any plate, examples included. Opening an example starts a new document; it becomes a plate once you save it.'
+        ? ''
         : n
         ? `Each file you open or save becomes a plate automatically: set on its own paper and laid out for the sheet. ${edit ? 'Edit the text, layout, color and framing of any plate; drag to reorder.' : 'Colors follow the page mode; your edits return in Curated.'}`
         : '';
-      explain.hidden = !n;
-      if (exampleMode) explain.dataset.example = '1'; else delete explain.dataset.example;
-      if (exampleMode) root.setAttribute('aria-describedby', explain.id); else root.removeAttribute('aria-describedby');
+      explain.hidden = !n || (exampleMode && !devActive);
+      if (exampleMode && !devActive && !headInfo) {
+        headInfo = makeInfo(EXAMPLES_TEXT, 'About the example plates');
+        headInfo.wrap.classList.add('sp-pl-head-info');
+        count.after(headInfo.wrap);
+      }
+      if (headInfo) {
+        const on = exampleMode && !devActive;
+        if (!on && headInfo.wrap._spClose) headInfo.wrap._spClose();
+        headInfo.wrap.hidden = !on;
+      }
+      if (exampleMode && !devActive) root.setAttribute('aria-describedby', headInfo.tip.id); else root.removeAttribute('aria-describedby');
       addBtn.hidden = !(n || removedWorks.length || removedExamples.length || devActive); arrBtn.hidden = !n; showLbl.hidden = !worksShown;
       empty.hidden = !!n || devActive;
       { const lbl = addBtn.querySelector('span'); if (lbl) lbl.textContent = devActive ? 'Add from preset' : 'Add plate'; }

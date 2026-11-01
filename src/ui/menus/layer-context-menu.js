@@ -124,7 +124,8 @@
   // ONE list feeds both the inline `.lvl-acts` / `.lvl-grp-acts` strips in
   // layers-panel.js (desktop) and the ⋯ menu (touch + right-click). Every run
   // body here is the body the inline strip used before the list existed.
-  // `masked` rows (masked-v2 cards) never show the mask toggle, as before.
+  // `masked` rows (masked-v2 cards) show the mask toggle only when they are themselves an enabled
+  // mask source (nested masking), so the user can release a middle level.
   const rowActions = (ui, layer, opts = {}) => {
     const out = [];
     if (!ui || !layer || !ui.app || !ui.app.engine) return out;
@@ -197,8 +198,9 @@
       return out;
     }
 
-    if (!masked && layer.maskCapabilities && layer.maskCapabilities.canSource) {
-      const isSrc = !!(layer.mask && layer.mask.enabled);
+    const isSrcNow = !!(layer.mask && layer.mask.enabled);
+    if (isSrcNow || (!masked && layer.maskCapabilities && layer.maskCapabilities.canSource)) {
+      const isSrc = isSrcNow;
       add('mask-toggle', isSrc ? 'Remove clipping mask' : 'Make clipping mask',
         isSrc ? 'Remove clipping mask (click to deactivate)' : 'Make clipping mask — clips layer below',
         'mask-btn' + (isSrc ? ' is-src' : ''),
@@ -207,9 +209,27 @@
           const allLayers = engine.layers || [];
           if (ui.app.pushHistory) ui.app.pushHistory();
           if (isSrc) {
+            // Release: the masked children move to the mask's own parent (also for a middle level
+            // of a nested mask, which then becomes a plain masked child of its own source). The
+            // former mask is re-seated directly above its released children so a later
+            // "Make clipping mask" has the same layer below it and the round trip works.
             const kids = allLayers.filter((c) => c.parentId === layer.id);
+            const blockIds = new Set();
+            kids.forEach((c) => {
+              blockIds.add(c.id);
+              (engine.getLayerDescendants?.(c.id) || []).forEach((d) => blockIds.add(d.id));
+            });
             kids.forEach((c) => { c.parentId = layer.parentId ?? null; });
             layer.mask.enabled = false;
+            if (kids.length) {
+              const rest = allLayers.filter((c) => c !== layer);
+              const at = rest.findIndex((c) => blockIds.has(c.id));
+              if (at >= 0) {
+                rest.splice(at, 0, layer);
+                engine.reorderLayers?.(rest);
+                ui.normalizeGroupOrder?.();
+              }
+            }
           } else {
             const sibs = allLayers.filter((s) => (s.parentId ?? null) === (layer.parentId ?? null));
             const idx = sibs.indexOf(layer);
