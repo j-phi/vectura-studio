@@ -8001,8 +8001,10 @@
         const sceneBoundsDragSuppressed = updatedSelected.length === 1 && updatedSelected[0].type === 'scene3d';
         // TUX-019: a finger cannot hit a zero-height line or a 1 px outline exactly, so touch also
         // arms the move when the press hit (findLayerAtPoint tolerance) a layer in the selection.
-        // Mouse and pen keep the strict bounds test.
-        const touchHitSelected = this.isTouchPointer(e) && !!topLayer && updatedSelected.some(l => l.id === topLayer.id);
+        // Mouse and pen also arm the move on a stroke hit: a press exactly on the outline at the
+        // extreme edge of the bbox is outside the strict bounds test, yet findLayerAtPoint already
+        // picked that stroke (screen-px tolerance), so it must drag like a press just inside.
+        const touchHitSelected = !!topLayer && updatedSelected.some(l => l.id === topLayer.id);
         if (bounds && !sceneBoundsDragSuppressed && (this.pointInBounds(world, bounds) || touchHitSelected) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
           if (this.isTouchPointer(e)) {
             // TUX-019: touch waits for the drag slop, not a hold. move() promotes this into
