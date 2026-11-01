@@ -1044,14 +1044,18 @@
           return layer.type === ft;
         };
         if (selfOk()) return true;
-        if (layer.isGroup)
+        if (layer.isGroup || _lvlIsMaskSrc(layer.id))
           return allLayers.filter((c) => c.parentId === layer.id).some((c) => _lvlPasses(c));
         return false;
       };
 
       const _lvlIsMaskSrc = (layerId) => {
         const l = engine.getLayerById?.(layerId);
-        return !!(l?.mask?.enabled && l?.maskCapabilities?.canSource);
+        if (!l?.mask?.enabled) return false;
+        // A layer that still owns masked children stays a mask source in the tree even when its own
+        // silhouette capability is momentarily false (e.g. it is itself clipped by an outer mask),
+        // otherwise its children would vanish from the panel.
+        return !!(l.maskCapabilities?.canSource || allLayers.some((c) => c.parentId === layerId));
       };
 
       const _lvlEsc = (s) =>
@@ -1483,6 +1487,45 @@
         return hdr;
       };
 
+      // Render the masked children of mask source `src`. `put` appends an element at the
+      // source's own level; a nested mask source (masked child that is also a source)
+      // renders its own masked children inside an indented .lvl-mask-nest wrapper.
+      const _lvlBuildMaskedChildren = (src, put) => {
+        allLayers.filter((c) => c.parentId === src.id).forEach((m) => {
+          if (!_lvlPasses(m)) return;
+          if (m.isGroup) {
+            const mHdr = _lvlBuildGrpHdr(m, true);
+            put(mHdr);
+            if (!m.groupCollapsed) {
+              const cw = document.createElement('div'); cw.className = 'lvl-tree-children';
+              cw.style.marginLeft = '20px';
+              _lvlBuildChildren(m.id, cw); put(cw);
+            }
+          } else if (_lvlIsMaskSrc(m.id)) {
+            const mc = _lvlBuildCard(m, true);
+            addMaskSrcDropZone(mc, m);
+            if (!_lvlEffLocked(m.id)) bindCardDrag(mc, m);
+            put(mc);
+            const nest = document.createElement('div'); nest.className = 'lvl-mask-nest';
+            _lvlBuildMaskedChildren(m, (el) => nest.appendChild(el));
+            if (nest.childNodes.length) {
+              const exitBelow = document.createElement('div');
+              exitBelow.className = 'lvl-grp-exit-zone lvl-grp-exit-zone--below';
+              exitBelow.dataset.lvlExitGroup = m.id;
+              exitBelow.dataset.lvlExitDir = 'below';
+              addExitGroupDropZone(exitBelow, m, 'below');
+              nest.appendChild(exitBelow);
+              put(nest);
+            }
+          } else {
+            const mc = _lvlBuildCard(m, true);
+            addMaskedCardDropZone(mc, m, src.id);
+            if (!_lvlEffLocked(m.id)) bindCardDrag(mc, m);
+            put(mc);
+          }
+        });
+      };
+
       // ── Tree builder ────────────────────────────────────────────
       const _lvlBuildChildren = (parentId, container) => {
         const isRoot = parentId === null;
@@ -1516,26 +1559,11 @@
             const srcCard = _lvlBuildCard(l, false);
             addMaskSrcDropZone(srcCard, l);
             appendEl(srcCard);
-            // Masked children (actual children via parentId)
+            // Masked children (actual children via parentId). A masked child that is itself a
+            // mask source (nested masking) recurses so every depth stays listed.
             const maskedList = maskedBySrc.get(l.id) || [];
-            maskedList.forEach((m) => {
-              done.add(m.id);
-              if (!_lvlPasses(m)) return;
-              if (m.isGroup) {
-                const mHdr = _lvlBuildGrpHdr(m, true);
-                appendEl(mHdr);
-                if (!m.groupCollapsed) {
-                  const cw = document.createElement('div'); cw.className = 'lvl-tree-children';
-                  cw.style.marginLeft = '20px';
-                  _lvlBuildChildren(m.id, cw); container.appendChild(cw);
-                }
-              } else {
-                const mc = _lvlBuildCard(m, true);
-                addMaskedCardDropZone(mc, m, l.id);
-                if (!_lvlEffLocked(m.id)) bindCardDrag(mc, m);
-                appendEl(mc);
-              }
-            });
+            maskedList.forEach((m) => done.add(m.id));
+            _lvlBuildMaskedChildren(l, appendEl);
             // Exit zone below masked children (mirrors group exit zone at L1118)
             if (maskedList.some((m) => _lvlPasses(m))) {
               const exitBelow = document.createElement('div');
