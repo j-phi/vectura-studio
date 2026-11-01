@@ -18146,7 +18146,8 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
 /* the (i) after an example plate's name: a floating note, so it never shifts the header row */
 .spl-no .sp-pl-info { position: relative; display: inline-flex; vertical-align: middle; margin-left: 8px; }
 .sp-pl-info-btn { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--spl-text); opacity: .75; cursor: pointer; }
-.sp-pl-info-btn:hover, .sp-pl-info[data-open] .sp-pl-info-btn { opacity: 1; }
+.sp-pl-info[data-open] .sp-pl-info-btn { opacity: 1; }
+@media (hover: hover) { .sp-pl-info-btn:hover { opacity: 1; } }
 .sp-pl-info-btn:focus-visible { outline: 2px solid var(--spl-text); outline-offset: 1px; opacity: 1; }
 .sp-pl-info-tip { position: absolute; z-index: 30; top: calc(100% + 6px); left: -8px; width: max-content; max-width: min(260px, 70vw); padding: 8px 10px; border: 1px solid var(--ui-border-hi, #444); border-radius: var(--radius-sm, 4px); background: var(--ui-panel, #252525); color: var(--ui-text, #e0e0e0); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32); font: 400 11.5px/1.45 var(--font-ui, system-ui, sans-serif); letter-spacing: 0; text-transform: none; white-space: normal; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s, visibility 0s linear .12s; }
 .sp-pl-info[data-open] .sp-pl-info-tip { opacity: 1; visibility: visible; transition-delay: 0s; }
