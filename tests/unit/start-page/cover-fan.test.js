@@ -1,6 +1,6 @@
 /**
- * Cover Colorways fan (P4 ux): every cover style has a Colorways button that fans the shown piece's alternates through
- * StartPageFan and opens the picked card via ctx.onOpen (StartPageOpenArt.open in the page); Use as cover obeys Still.
+ * Cover chrome: the title section carries no Colorways button (removed; colorways stay on each plate's own Colorways
+ * button), in every cover style; Use as cover obeys Still.
  */
 const path = require('path');
 const { JSDOM } = require('jsdom');
@@ -66,39 +66,13 @@ const btn = () => doc.querySelector('.sp-cv-fan');
 beforeEach(load);
 afterEach(() => { try { cover && cover.destroy(); } catch (_) { /* noop */ } delete global.window; delete global.document; });
 
-describe('cover Colorways fan', () => {
-  test.each(['band', 'word', 'mosaic'])('%s: a labelled Colorways button fans the shown piece and opens the picked card', async (style) => {
-    const arts = await boot(style);
-    expect(btn()).not.toBeNull();
-    expect(btn().hidden).toBe(false);
-    expect(btn().getAttribute('aria-label')).toMatch(/Colorways/);
-    expect(btn().getAttribute('aria-haspopup')).toBe('dialog');
-    btn().click();
-    expect(fanCalls).toHaveLength(1);
-    expect(fanCalls[0].anchor).toBe(btn());
-    expect(fanCalls[0].o.art.id).toBe(arts[0].id);
-    expect(fanCalls[0].o.alternates).toHaveLength(4);
-    expect(fanCalls[0].o.alternates[0].mode).toBe('curated');
-    const cw = fanCalls[0].o.alternates[2];
-    fanCalls[0].o.onPick(cw);
-    expect(opened).toHaveLength(1);
-    expect(opened[0].art.id).toBe(arts[0].id);
-    expect(opened[0].cw).toBe(cw);
-  });
-
-  test('mosaic: the fan follows the letter last focused', async () => {
-    const arts = await boot('mosaic');
-    const lt = doc.querySelectorAll('.sp-lt')[2];
-    lt.dispatchEvent(new win.FocusEvent('focusin', { bubbles: true }));
-    btn().click();
-    expect(fanCalls[0].o.art.id).toBe(cover.tiles()[2].art.id);
-  });
-
-  test('no art: the button is hidden', async () => {
-    prefs = { coverStyle: 'band', coverWord: 'vectura', animateIn: 'plot', colorMode: 'curated' };
-    cover = Cover.create({ host: doc.getElementById('host'), prefs: () => prefs, arts: async () => [], colorwaysFor: () => [], still: () => false, onOpen() {}, onPref() {}, onWordPick() {} });
-    await cover.render({ animate: false });
-    expect(btn().hidden).toBe(true);
+describe('cover has no Colorways button', () => {
+  test.each(['band', 'word', 'mosaic'])('%s: no Colorways button at the top of the title section', async (style) => {
+    await boot(style);
+    expect(btn()).toBeNull();
+    expect([...doc.querySelectorAll('#host button')].filter((b) => /colorways/i.test(`${b.textContent} ${b.getAttribute('aria-label') || ''}`))).toHaveLength(0);
+    doc.querySelectorAll('.sp-lt').forEach((lt) => lt.dispatchEvent(new win.FocusEvent('focusin', { bubbles: true })));
+    expect(fanCalls).toHaveLength(0);
   });
 });
 

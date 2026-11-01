@@ -1145,6 +1145,12 @@
       state.selectedLayerIds = [];
       state.selectedLayerId = null;
       delete state.settings.startPageFill; // a blank canvas carries no opened piece's special fill
+      // A standard canvas: no opened piece's paper or pens carry over. The paper resolves like a cold start (the
+      // user's default paper, else the theme's plain sheet) and the pens are the stock set, Pen 1 following the paper.
+      delete state.settings.paper;
+      delete state.settings.bgColor;
+      const stockPens = window.Vectura.DEFAULT_PENS;
+      if (Array.isArray(stockPens) && stockPens.length) state.settings.pens = stockPens.map((pen) => ({ ...pen }));
       state.settings.paperSize = conf.machine;
       let w;
       let hgt;
@@ -1164,6 +1170,7 @@
       state.settings.paperWidth = orientation === 'landscape' ? long : short;
       state.settings.paperHeight = orientation === 'landscape' ? short : long;
       this.applyState(state);
+      this.syncPen1ToPaper();
       this.engine.setProfile(SETTINGS.paperSize);
       this.ui?.initSettingsValues?.();
       this.renderer?.center?.();

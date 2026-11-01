@@ -731,6 +731,12 @@ CI lives in `.github/workflows/test.yml`:
 ### Unreleased - Plot-order Play buttons
 - **Play the plot order.** The Draw Order pane has a Play/Pause button beside its % readout, and the Export SVG **Line Sort Print Order** legend has one that draws the preview path by path in print order.
 
+### Unreleased - Start Page tidy
+- **Examples note behind an (i).** The examples explainer moves from a box under Plates into a note on an **(i)** after the EXAMPLES count (hover, focus or click). The count line drops "your own work will join them".
+- **No cover Colorways button.** The Colorways button at the top of the title section is gone; plates keep theirs.
+- **Back to canvas** now shows (and Esc works) whenever the canvas has unsaved changes, not only when it has layers.
+- **New blank canvas starts clean.** It no longer keeps the paper and inks of the last plate you opened: you get your default paper (or the theme's sheet) and the stock pens.
+
 ### 1.5.0 - Start Page
 - **A Start Page on launch.** A cover in your own ink, Recent files, Studio picks and a Community note ("coming later", with a Notify toggle) sit over the editor. Open it with `Shift+Cmd/Ctrl+H`, the wordmark or `File → Start Page…`; `Cmd/Ctrl+N` starts a blank canvas and `Alt/Option+Cmd/Ctrl+1` to `8` reopen recents. Turn it off with **Show Start Page on launch** (Settings or Document Setup). The page opens without an editor flash or late layout.
 - **Plates.** Your work set as an editorial run: a plate editor with manual colors (now including Title and Band), Arrange (`Alt/Option+Up/Down`), a Colorways fan and **Use as cover**; Open always keeps the colors shown. Ten example plates fill the page on a first run; the **Show example plates** switch in Start Page settings hides them, and Developer Mode lets contributors edit them.
