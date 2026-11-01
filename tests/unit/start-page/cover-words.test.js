@@ -63,6 +63,11 @@ describe('piece assignment', () => {
     expect(out).toHaveLength(7);
     expect(new Set(out.map((a) => a.id)).size).toBe(7);
   });
+  it('gives a piece with a coverSlot its own letter and keeps it away from earlier letters', () => {
+    const slotted = [{ id: 's-last', bytes: 1, coverSlot: 2 }, { id: 'dense', bytes: 99999 }, { id: 'plain', bytes: 5 }];
+    const out = W.assignArts(['V', 'i', 'c'], slotted);
+    expect(out.map((a) => a.id)).toEqual(['dense', 'plain', 's-last']);
+  });
   it('puts the densest unused piece on a thin letter', () => {
     const out = W.assignArts(['i'], arts);
     expect(out[0].id).toBe('a7');

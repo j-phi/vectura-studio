@@ -46,6 +46,20 @@
   ]);
   // <example-plates:end>
 
+  // COVER_WORD_PICKS the pieces (and the paper + pen each is hung on) the default cover word, "Vectura", sets letter by letter
+  // while the user has no saved works: V e c t u r a, in that order. `paper` / `pen` / `pen2` are ids from
+  // START_PAGE_COLORWAYS (the pairing is pinned in the Curated color mode; any other mode recolors the letters as usual).
+  // Pre-rendered with the picks (`npm run start-page:picks`).
+  const COVER_WORD_PICKS = Object.freeze([
+    Object.freeze({ presetId: 'user-terrain-1781475148727', paper: 'blueWash', pen: 'micron-blue' }), // V  High Sierra
+    Object.freeze({ presetId: 'terrain-alpine', paper: 'news', pen: 'micron-black' }), // e  Alpine Ridge
+    Object.freeze({ presetId: 'user-rings-1786211570394', paper: 'black', pen: 'gelly-white' }), // c  Cybersigil
+    Object.freeze({ presetId: 'flowfield-river-current', paper: 'blueWash', pen: 'micron-blue' }), // t  River Current
+    Object.freeze({ presetId: 'dahlia-cornel', paper: 'rose', pen: 'pal-wine' }), // u  Dahlia 'Cornel'
+    Object.freeze({ presetId: 'rainfall-downpour', paper: 'hot', pen: 'pal-teal' }), // r  Downpour
+    Object.freeze({ presetId: 'rings-old-growth-oak', paper: 'kraft', pen: 'micron-sepia' }), // a  Old Growth Oak
+  ]);
+
   const PICK_NAMES = Object.freeze({});
 
   const COLLECTION_NAMES = Object.freeze(['Studies', 'Botanicals', 'Experiments']);
@@ -84,5 +98,5 @@
 
   const collectionFor = (type) => (Object.prototype.hasOwnProperty.call(COLLECTIONS, type) ? COLLECTIONS[type] : 'Studies');
 
-  Vectura.START_PAGE_PICKS = Object.freeze({ STUDIO_PICKS, EXAMPLE_PLATES, PICK_NAMES, COLLECTION_NAMES, COLLECTIONS, collectionFor });
+  Vectura.START_PAGE_PICKS = Object.freeze({ STUDIO_PICKS, EXAMPLE_PLATES, COVER_WORD_PICKS, PICK_NAMES, COLLECTION_NAMES, COLLECTIONS, collectionFor });
 })();

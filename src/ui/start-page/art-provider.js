@@ -8,6 +8,7 @@
  * ink runtime paints the paper from a colorway.
  *
  *   list({ recentFirst = true }) -> Promise<Art[]>
+ *   coverPicks() -> Art[]               the default cover word's pieces, one per letter (coverSlot + coverColorway)
  *   subscribe(fn) -> unsubscribe        (works changed)
  *   strokeSvg(svg) -> string
  *   byteSize(svg) -> number
@@ -43,6 +44,11 @@
       }
       return []; // one source of art: StartPageArtSource (works first, studio picks after)
     };
+    // The default cover word's pieces (letter order, with their pinned paper + pen); [] without a source.
+    const coverPicks = () => {
+      const src = source();
+      try { return ((src && typeof src.coverPicks === 'function' && src.coverPicks()) || []).map(normalize).filter(Boolean); } catch (_) { return []; }
+    };
     const subscribe = (fn) => {
       const offs = [];
       const src = source();
@@ -50,7 +56,7 @@
       if (app && app.recents && typeof app.recents.subscribe === 'function') offs.push(app.recents.subscribe(fn));
       return () => offs.forEach((off) => { try { if (typeof off === 'function') off(); } catch (_) { /* noop */ } });
     };
-    return { list, subscribe };
+    return { list, coverPicks, subscribe };
   };
 
   Vectura.StartPageArtProvider = { create, strokeSvg };

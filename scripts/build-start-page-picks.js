@@ -45,7 +45,7 @@ const main = async () => {
   try {
     const V = runtime.window.Vectura;
     const Source = V.StartPageArtSource;
-    const picks = [...new Set([...V.START_PAGE_PICKS.STUDIO_PICKS, ...V.START_PAGE_PICKS.EXAMPLE_PLATES.map((e) => e.presetId)])]; // studio picks + the example plates
+    const picks = [...new Set([...V.START_PAGE_PICKS.STUDIO_PICKS, ...V.START_PAGE_PICKS.EXAMPLE_PLATES.map((e) => e.presetId), ...V.START_PAGE_PICKS.COVER_WORD_PICKS.map((e) => e.presetId)])]; // studio picks + the example plates + the cover word's run
     const byId = new Map(V.PRESETS.map((p) => [p.id, p]));
     const hashByPick = {};
     const svgs = {};

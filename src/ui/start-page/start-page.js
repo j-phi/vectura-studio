@@ -81,7 +81,15 @@
       if (!C || !arts.length) return arts.map(() => FALLBACK_CW);
       const mode = pageMode();
       try {
-        return C.sequence(arts.map((a) => ({ id: a.id })), { mode, seed: mode === 'random' ? prefs().seed : undefined, theme: themeKey() });
+        // The default cover word's pieces keep their hand-set paper + pen in the Curated mode (other modes recolor them).
+        const pins = {};
+        if (mode === 'curated' && typeof C.fromCatalogue === 'function') {
+          arts.forEach((a) => {
+            const c = a.coverColorway && C.fromCatalogue(a.coverColorway.paper, a.coverColorway.pen, a.coverColorway.pen2);
+            if (c) pins[a.id] = c;
+          });
+        }
+        return C.sequence(arts.map((a) => ({ id: a.id })), { mode, seed: mode === 'random' ? prefs().seed : undefined, theme: themeKey(), pins });
       } catch (err) {
         if (G.console) G.console.warn('[StartPage] colorway failed', err);
         return arts.map(() => FALLBACK_CW);
@@ -329,7 +337,13 @@
       cover = UI.StartPageCover.create({
         host: coverSec,
         prefs,
-        arts: () => provider.list({ recentFirst: true }),
+        arts: async () => {
+          const list = await provider.list({ recentFirst: true });
+          // No saved works yet and the cover sets Vectura: its seven letters carry the hand-set run of pieces (V e c t u r a).
+          if (!list.length || !list.every((a) => a.kind === 'pick') || !['vectura', 'vectura-studio'].includes(prefs().coverWord || 'vectura')) return list;
+          const cv = typeof provider.coverPicks === 'function' ? provider.coverPicks() : [];
+          return cv.length ? cv.concat(list.filter((a) => !cv.some((c) => c.id === a.id))) : list;
+        },
         colorwaysFor,
         still: () => prefs().motionStill === true,
         onOpen: (art, cw) => ctl.openArt(art, cw),

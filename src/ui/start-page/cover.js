@@ -124,7 +124,12 @@
         return mctx.measureText(text).width * 1.06 + 8;
       } catch (_) { return text.length * 62; }
     };
-    const maxFs = () => Math.min(300, Math.max(110, (G.innerHeight || 900) * 0.3));
+    const maxFs = () => Math.min(420, Math.max(110, (G.innerHeight || 900) * 0.4));
+    // Letter spacing: every letter sits TRACK em closer to the one before it, and a few pairs tuck in further (the V's open
+    // lower right over the e, the stems of u and r). Margins are in em, so they scale with the fitted size.
+    const TRACK = -0.045;
+    const KERN = { Ve: -0.075, ur: -0.065 };
+    const gapEm = (prev, ch) => (prev && prev.trim() ? TRACK + (KERN[prev + ch] || 0) : 0);
     const stageWidth = () => Math.max(200, stage.clientWidth || host.clientWidth || 800);
     const splitLines = (word) => {
       const ws = word.trim().split(/\s+/);
@@ -191,7 +196,7 @@
       const w = Math.max(...rows.map((r) => r.getBoundingClientRect().width || 1));
       const two = rows.length > 1;
       const mf = maxFs() * (two ? 0.7 : 1);
-      const fs = Math.max(two ? 44 : 38, Math.min(mf, 100 * stageWidth() / w * 0.955));
+      const fs = Math.max(two ? 44 : 38, Math.min(mf, 100 * stageWidth() / w * 0.985));
       rows.forEach((r) => {
         r.style.fontSize = `${fs}px`;
         const kr = r.nextElementSibling;
@@ -234,12 +239,14 @@
       let k = 0;
       stage.append(h('div', { class: `sp-word-wrap${lines.length > 1 ? ' two' : ''}`, role: 'group', 'aria-label': `${word}: each letter opens the piece it carries` },
         lines.map((ln) => h('div', { class: 'sp-wline' },
-          h('div', { class: 'sp-word-row' }, [...ln].map((ch) => {
+          h('div', { class: 'sp-word-row' }, [...ln].map((ch, ci, chs) => {
             if (!ch.trim()) return h('span', { class: 'sp-gap', 'aria-hidden': 'true' });
             const i = k++;
             const a = assigned[i];
             const vw = h('span', { class: 'sp-vw', 'aria-hidden': 'true', 'data-ch': ch, text: ch });
             const btn = h('button', { type: 'button', class: 'sp-lt', 'data-k': String(i), 'data-art-id': a.id, 'aria-label': `${ch}, ${a.name.replace(/\.vectura$/, '')}. Open` }, vw);
+            const em = gapEm(chs[ci - 1], ch);
+            if (em) btn.style.marginLeft = `${em}em`;
             vw.style.setProperty('--sp-ph', cws[i].paper); // the placeholder leans toward its final paper until the art arrives
             tiles.push({ el: vw, art: a, cw: cws[i], k: i, kind: 'word', svg: '', ch });
             return btn;
