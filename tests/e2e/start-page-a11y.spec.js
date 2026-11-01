@@ -117,26 +117,32 @@ for (const theme of THEMES) {
   });
 }
 
-test('example plates explainer: real text, clears contrast in all four skins, no overflow at 400 px', async ({ page }) => {
+test('example plates explainer: (i) note text clears contrast in all four skins, no overflow at 400 px', async ({ page }) => {
   test.setTimeout(240000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await boot(page);
   await page.evaluate(() => { try { localStorage.clear(); ['vectura-start', 'vectura-start-plates', 'vectura-start-art'].forEach((n) => indexedDB.deleteDatabase(n)); } catch (_) { /* noop */ } });
   await boot(page);
   await page.evaluate(() => window.app.startPage.show());
-  const ex = page.locator('#sp-plates .sp-pl-explain');
-  await expect(ex).toBeVisible({ timeout: 20000 });
-  await expect(ex).toContainText('automatically when you save or open a file');
+  const info = page.locator('#sp-plates .sp-pl-titles .sp-pl-head-info');
+  const tip = info.locator('[role="tooltip"]');
+  const openTip = async () => { if (!(await info.getAttribute('data-open'))) await info.locator('button').click(); await expect(tip).toBeVisible(); };
+  await expect(info.locator('button')).toBeVisible({ timeout: 20000 });
+  await openTip();
+  await expect(tip).toContainText('automatically when you save or open a file');
   for (const theme of THEMES) {
     await page.evaluate((t) => window.app.applyTheme(t), theme);
     await page.waitForTimeout(500);
+    await openTip();
     expect(await contrastFails(page, '#sp-plates .sp-pl-head'), `${theme} head`).toEqual([]);
-    expect(await contrastFails(page, '#sp-plates .sp-pl-explain'), `${theme} explainer`).toEqual([]);
     expect(await contrastFails(page, '#sp-plates .sp-pl-empty'), `${theme} empty`).toEqual([]);
   }
+  await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 400, height: 900 });
   await page.waitForTimeout(400);
-  const box = await ex.boundingBox();
+  await info.locator('button').scrollIntoViewIfNeeded();
+  await openTip();
+  const box = await tip.boundingBox();
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(400);
   expect(await page.evaluate(() => document.getElementById('sp-scroll').scrollWidth <= document.getElementById('sp-scroll').clientWidth + 1)).toBe(true);

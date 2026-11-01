@@ -68,7 +68,7 @@ describe('Start Page example plates: info icon, plate 7, live names', () => {
 
   test('an info icon sits right after the plate name on example plates only, with the placeholder note', async () => {
     await boot();
-    const infos = qa('.sp-pl-info');
+    const infos = qa('.sp-pl .sp-pl-info'); // per-plate notes (the header's EXAMPLES note is separate)
     expect(infos).toHaveLength(10);
     live().forEach((w) => {
       const b = w.querySelector('.spl-no b');

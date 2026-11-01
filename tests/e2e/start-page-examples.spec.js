@@ -15,7 +15,15 @@ test.describe('Start Page example plates', () => {
     const plates = page.locator('#sp-plates .sp-pl[data-example]');
     await expect(plates).toHaveCount(10);
     await expect(page.locator('#sp-plates .sp-pl-empty')).toBeHidden();
-    await expect(page.locator('#sp-plates .sp-pl-explain')).toContainText('These are examples');
+    // the explainer is an (i) note after the EXAMPLES count, not an inline box
+    await expect(page.locator('#sp-plates .sp-pl-explain')).toBeHidden();
+    await expect(page.locator('#sp-plates .sp-pl-count')).toHaveText(/^10 examples$/i);
+    const headInfo = page.locator('#sp-plates .sp-pl-titles .sp-pl-head-info');
+    await headInfo.locator('button').click();
+    await expect(headInfo.locator('[role="tooltip"]')).toBeVisible();
+    await expect(headInfo.locator('[role="tooltip"]')).toContainText('These are examples');
+    await page.keyboard.press('Escape');
+    await expect(headInfo.locator('[role="tooltip"]')).toBeHidden();
     // examples are editable, removable and arrangeable like any plate (the explainer says so)
     await expect(page.locator('#sp-plates [data-act="edit"]').first()).toBeAttached({ timeout: 15000 });
     await expect(page.locator('#sp-pl-arrange')).toBeVisible();

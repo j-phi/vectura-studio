@@ -16,6 +16,13 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 - **Draw Order pane.** A Play button now sits right of the % readout. At 100% it replays the reveal from the start; below 100% it plays on from the handle; while playing it shows Pause. Shift-click plays at 1/10 speed, like Shift-clicking the slider.
 - **Export SVG ▸ Line Sort Print Order.** The legend has a Play/Pause button next to its gear. It draws the preview path by path in print order over a faint ghost of the whole plot, with a playhead on the gradient, then returns to the full preview. Closing the modal stops it.
 
+### Changed: Start Page examples note, cover Colorways button, Back to canvas, New blank canvas
+- **Examples note moves into an (i).** The always-on "These are examples…" box under Plates is gone. Its text now sits in a note behind an **(i)** right after the **10 EXAMPLES** count: hover or keyboard focus shows it, a click pins it open, a tap toggles it, and Esc or a press elsewhere closes it. It stays the Plates section's accessible description.
+- **Shorter count line.** The count reads "10 examples"; the "· your own work will join them" tail is removed.
+- **No Colorways button on the cover.** The Colorways button at the top of the title section is removed in every cover style. Each plate keeps its own Colorways button.
+- **Back to canvas whenever there is work behind the page.** The header's Back to canvas button (and Esc) used to need at least one layer, so an unsaved canvas with no layers, the same state the "Open this piece?" dialog warns about, left no way back. Both now also count unsaved changes.
+- **New blank canvas is a standard canvas.** Opening a plate gives the document that plate's paper and inks; a later New blank canvas (Start Page or File > Close) kept them. It now starts like a cold launch: your default paper (else the theme's plain sheet) and the stock pens (`Vectura.DEFAULT_PENS` in `src/config/defaults.js`), with Pen 1 following the paper.
+
 ### Fixed: Start Page vertical titles on iPad
 - The vertical word on the Vertical word, Spec sheet and Words both sides plates (for example Downpour and Cybersigil) collapsed to no width on iPad Safari and Brave, so only fragments of the letters showed at the art's left edge. The word column now has a definite width taken from the word's own proportions. Desktop and phone layouts are unchanged.
 
@@ -33,7 +40,7 @@ Headlines since 1.4.0:
 
 ### Changed: Start Page controls move into the settings gear
 - **Removed** the pencil above the cover word and the **Colorway** row under it. The cover word (with Custom…) now sits under **Cover** in Start Page settings (the gear), next to Cover style; mode (Curated, Mono, Basic, Wildcard), the Randomize dice with its seed and the swatch preview live under **Colorway**.
-- **Show example plates** is now a switch under **Plates** in Start Page settings (same preference); it is disabled while Developer Mode edits the example plates. The cover's **Colorways** button (the fan for one piece) stays where it is.
+- **Show example plates** is now a switch under **Plates** in Start Page settings (same preference); it is disabled while Developer Mode edits the example plates. The cover's **Colorways** button (the fan for one piece) stays where it is (removed later; see Unreleased).
 - The horizontal rule under the letters stays; the cover simply ends there.
 
 ### Changed: Start Page example plates, plate 7 and live color names (1.5.0)
