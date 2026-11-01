@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Duplicating a mask dropped its masked content
+- Cmd/Ctrl+D (and Option+D, the context-menu Duplicate and the panel's Duplicate selected) on a clipping mask, or on a group containing one, now copies the masked content with it — nested masks and groups come through intact, with the copy's mask clipping its own copied content. Duplicating a Unite shape keeps its compound data, the copy's layer order mirrors the original, and selecting a mask together with its content no longer copies the content twice. One undo removes the whole duplicate.
+
 ### Fixed: Start Page vertical titles on iPad
 - The vertical word on the Vertical word, Spec sheet and Words both sides plates (for example Downpour and Cybersigil) collapsed to no width on iPad Safari and Brave, so only fragments of the letters showed at the art's left edge. The word column now has a definite width taken from the word's own proportions. Desktop and phone layouts are unchanged.
 
