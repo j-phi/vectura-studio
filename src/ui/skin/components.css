@@ -18807,9 +18807,9 @@ body.touch-ui .vectura-modal.pen-studio { width: 100%; max-width: 100%; height: 
 body.touch-ui .pen-studio :is(.pen-studio-btn, .pen-studio-box-toggle, .pen-studio-box-pin, .pen-studio-box-export, .pen-studio-box-delete, .pen-studio-box-add, .pen-studio-row-main, .pen-studio-row-remove, .pen-studio-size, .pen-studio-paper, .pen-studio-view-btn, .pen-studio-weave-btn, .pen-studio-chip, .pen-studio-matrix-row, .pen-studio-editable, .pen-studio-edit, .pen-studio-move, .pen-studio-color, .pen-studio-field :is(input[type="text"], select)) { min-height: var(--touch-target-min); min-width: var(--touch-target-min); }
 body.touch-ui .pen-studio :is(.pen-studio-color) { width: var(--touch-target-min); height: var(--touch-target-min); }
 body.touch-ui .pen-studio input[type="range"] { min-height: var(--touch-target-min); }
-body.touch-ui .pen-studio .pen-studio-box-head :is(.pen-studio-box-pin, .pen-studio-box-export, .pen-studio-box-delete, .pen-studio-box-add) { min-width: 30px; width: 30px; padding: 0; }
-body.touch-ui .pen-studio .pen-studio-box-head .pen-studio-box-toggle { min-width: 0; }
-body.touch-ui .pen-studio .pen-studio-box-head .pen-studio-box-delete.is-armed { width: auto; padding: 0 6px; }
+body.touch-ui .pen-studio .pen-studio-box .pen-studio-box-head :is(.pen-studio-box-pin, .pen-studio-box-export, .pen-studio-box-delete, .pen-studio-box-add) { min-width: 30px; width: 30px; padding: 0; }
+body.touch-ui .pen-studio .pen-studio-box .pen-studio-box-head .pen-studio-box-toggle { min-width: 0; }
+body.touch-ui .pen-studio .pen-studio-box .pen-studio-box-head .pen-studio-box-delete.is-armed { width: auto; padding: 0 6px; }
 body.touch-ui .pen-studio .pen-studio-matrix-row { min-height: calc(var(--touch-target-min) + 4px); }
 
 @media (prefers-reduced-motion: reduce) {
