@@ -15359,6 +15359,12 @@ body.touch-ui :is(#modal-overlay, #settings-panel, .vectura-modal) :is(.control-
 /* The legend covers most of a short phone preview. It only informs, so a pinch or pan starts through it; the gear stays tappable. */
 body.touch-ui #modal-overlay .export-preview-legend { pointer-events: none; }
 body.touch-ui #modal-overlay .export-preview-legend .export-legend-gear-btn { pointer-events: auto; }
+/* Play + gear each carry a centred 44 px ::before over a 22 px box. On touch the legend sits over the
+ * middle of a phone's preview, so the two buttons go to the row's ends (Play left of the title, gear
+ * right) and the pass-through title stays in the middle: a one-finger pan started over the legend
+ * centre still reaches the canvas, and the two hit areas never touch. */
+body.touch-ui #modal-overlay .export-preview-legend .export-legend-actions { display: contents; }
+body.touch-ui #modal-overlay .export-preview-legend .export-legend-play-btn { order: -1; }
 /* === END TUX-041 slice B3 === */
 
 /* === TUX-047: touch zoom surfaces === */
@@ -16313,6 +16319,28 @@ body.touch-ui .help-platform-btn {
 @media (pointer: coarse) {
   body.touch-ui #right-pane .draw-order-bar .draw-order-head { margin-bottom: 14px; }
   body.touch-ui:not(.touch-wide-layout) #right-pane .draw-order-head-right { padding-right: 4px; }
+  /* Four head icons (Play, eye, palette, gear) need 4 x 44 px of hit area, more than the head row has
+   * beside the label (the row overflowed: label wrapped, outer ::before clipped to 36-43 px; the iPad
+   * landscape pane is only 200 px wide). On touch the head becomes two rows: the label and the % readout
+   * on top, the four icons spread across the full width below. `display: contents` lifts the readout and
+   * icons into the head's flex line; the head-right ::before is a zero-height full-width line break whose
+   * 14 px height doubles as the row gap. The 4 px side inset keeps the outer ::before inside the pane. */
+  body.touch-ui #right-pane .draw-order-head { flex-wrap: wrap; justify-content: space-between; row-gap: 0; padding: 0 4px; }
+  body.touch-ui #right-pane .draw-order-head-right { display: contents; }
+  body.touch-ui #right-pane .draw-order-head-right::before { content: ''; order: 2; flex: 0 0 100%; height: 14px; }
+  body.touch-ui #right-pane .draw-order-label { order: 0; white-space: nowrap; }
+  body.touch-ui #right-pane .draw-order-value { order: 1; }
+  body.touch-ui #right-pane .draw-order-head-right > button { order: 3; }
+}
+/* Short coarse viewports (landscape phones) cannot afford the extra row above the 44 px slider band
+ * (it was clipped to 40 px). There the head stays one row: the label is visually hidden (still read by
+ * screen readers) and the line break is dropped, so the readout + four icons share the row. */
+@media (pointer: coarse) and (max-height: 520px) {
+  body.touch-ui #right-pane .draw-order-head { flex-wrap: nowrap; }
+  body.touch-ui #right-pane .draw-order-head-right::before { display: none; }
+  body.touch-ui #right-pane .draw-order-label {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
 }
 /* === END TUX-041 / TUX-043 draw-order head === */
 
