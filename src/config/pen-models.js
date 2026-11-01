@@ -46,7 +46,6 @@
  *                                the special-inks layer
  *   colours[]                    the maker's colours { name, hex, effect, approx? }; approx:
  *                                true = the name is from a maker/retailer list, the hex is ours
- *   sizesSource                  short description of where the sizes come from (Pen Studio lab)
  *   confidence                   0..1 how well the numbers are sourced
  *   sizesSource                  short text naming where the nib sizes come from
  *                                (shown in Pen Studio; docs/pen-models.md has links)
@@ -63,7 +62,6 @@
     'sakura-pigma-micron': {
       id: 'sakura-pigma-micron', label: 'Pigma Micron', short: 'Micron', brand: 'Sakura',
       inkClass: 'pigment-fineliner', tipShape: 'round', effect: 'plain', confidence: 0.75,
-      sizesSource: 'softsolder.com macro measurements',
       sizes: [
         { label: '003', nominalWidthMm: 0.15, laidWidthMm: 0.17 },
         { label: '005', nominalWidthMm: 0.2, laidWidthMm: 0.22 },
@@ -103,7 +101,6 @@
     'rotring-isograph': {
       id: 'rotring-isograph', label: 'Isograph technical pen', short: 'Isograph', brand: 'Rotring',
       inkClass: 'technical-pen', tipShape: 'tube', effect: 'plain', confidence: 0.55,
-      sizesSource: 'Evil Mad Scientist wiki; macro swatches',
       sizes: [
         { label: '0.1', nominalWidthMm: 0.1, laidWidthMm: 0.12 },
         { label: '0.18', nominalWidthMm: 0.18, laidWidthMm: 0.2 },
@@ -127,7 +124,6 @@
     'stabilo-point-88': {
       id: 'stabilo-point-88', label: 'Point 88', short: 'Stabilo 88', brand: 'Stabilo',
       inkClass: 'dye-fineliner', tipShape: 'round', effect: 'plain', confidence: 0.6,
-      sizesSource: 'Dirt Alley Design CMYK tests',
       sizes: [
         { label: '0.4', nominalWidthMm: 0.4, laidWidthMm: 0.4 },
       ],
@@ -161,7 +157,6 @@
     'pentel-sign-pen': {
       id: 'pentel-sign-pen', label: 'Sign Pen S520', short: 'Sign Pen', brand: 'Pentel',
       inkClass: 'dye-fineliner', tipShape: 'round', effect: 'plain', confidence: 0.45,
-      sizesSource: 'macro writing samples',
       sizes: [
         { label: 'fine fibre', nominalWidthMm: 0.8, laidWidthMm: 0.85 },
       ],
@@ -187,7 +182,6 @@
     'sharpie-ultra-fine': {
       id: 'sharpie-ultra-fine', label: 'Sharpie Ultra Fine', short: 'Sharpie', brand: 'Sharpie',
       inkClass: 'alcohol-marker', tipShape: 'round', effect: 'plain', confidence: 0.55,
-      sizesSource: 'Evil Mad Scientist wiki; macro swatches',
       sizes: [
         { label: 'Extra Fine', nominalWidthMm: 0.4, laidWidthMm: 0.7 },
         { label: 'Ultra Fine', nominalWidthMm: 0.5, laidWidthMm: 0.65 },
@@ -213,7 +207,6 @@
     'pilot-precise-v5-v7': {
       id: 'pilot-precise-v5-v7', label: 'Precise V5 / V7', short: 'Precise', brand: 'Pilot',
       inkClass: 'liquid-rollerball', tipShape: 'needle', effect: 'plain', confidence: 0.5,
-      sizesSource: 'ZSA pen-plotting blog',
       sizes: [
         { label: 'V5 (0.5)', nominalWidthMm: 0.5, laidWidthMm: 0.33 },
         { label: 'V7 (0.7)', nominalWidthMm: 0.7, laidWidthMm: 0.45 },
@@ -239,7 +232,6 @@
     'pilot-kakuno-fountain': {
       id: 'pilot-kakuno-fountain', label: 'Kakuno fountain pen', short: 'Fountain', brand: 'Pilot',
       inkClass: 'fountain-dye', tipShape: 'nib', effect: 'plain', confidence: 0.55,
-      sizesSource: 'lostpixels.io; macro reviews',
       sizes: [
         { label: 'EF', nominalWidthMm: 0.25, laidWidthMm: 0.3 },
         { label: 'F', nominalWidthMm: 0.3, laidWidthMm: 0.38 },
@@ -263,7 +255,6 @@
     'sakura-gelly-roll-classic': {
       id: 'sakura-gelly-roll-classic', label: 'Gelly Roll', short: 'Gelly Roll', brand: 'Sakura',
       inkClass: 'gel', tipShape: 'ball', effect: 'plain', confidence: 0.7,
-      sizesSource: 'penplotterartwork.com',
       sizes: [
         { label: '05', nominalWidthMm: 0.5, laidWidthMm: 0.3 },
         { label: '06', nominalWidthMm: 0.6, laidWidthMm: 0.3 },
@@ -293,7 +284,6 @@
     'uniball-signo-broad-um153': {
       id: 'uniball-signo-broad-um153', label: 'Signo Broad UM-153', short: 'Signo UM-153', brand: 'Uni-ball',
       inkClass: 'gel', tipShape: 'ball', effect: 'plain', confidence: 0.6,
-      sizesSource: 'Parkablogs and TinkerLab white-pen tests',
       sizes: [
         { label: '1.0', nominalWidthMm: 1, laidWidthMm: 0.7 },
       ],
@@ -318,7 +308,6 @@
     'sakura-gelly-roll-metallic': {
       id: 'sakura-gelly-roll-metallic', label: 'Gelly Roll Metallic', short: 'Gelly Metallic', brand: 'Sakura',
       inkClass: 'metallic-gel', tipShape: 'ball', effect: 'metallic', confidence: 0.65,
-      sizesSource: 'penplotterartwork.com',
       sizes: [
         { label: '08', nominalWidthMm: 0.8, laidWidthMm: 0.45 },
         { label: '10', nominalWidthMm: 1, laidWidthMm: 0.45 },
@@ -348,7 +337,6 @@
     'pentel-hybrid-dual-metallic': {
       id: 'pentel-hybrid-dual-metallic', label: 'Hybrid Dual Metallic', short: 'Dual Metallic', brand: 'Pentel',
       inkClass: 'metallic-gel', tipShape: 'ball', effect: 'dual-metallic', confidence: 0.55,
-      sizesSource: 'Well-Appointed Desk; unsharpen',
       sizes: [
         { label: '1.0', nominalWidthMm: 1, laidWidthMm: 0.55 },
       ],
@@ -372,7 +360,6 @@
     'sakura-gelly-roll-moonlight': {
       id: 'sakura-gelly-roll-moonlight', label: 'Gelly Roll Moonlight', short: 'Moonlight', brand: 'Sakura',
       inkClass: 'fluorescent-gel', tipShape: 'ball', effect: 'fluorescent', confidence: 0.45,
-      sizesSource: 'A. Blair Neal; Royal Talens',
       sizes: [
         { label: '06', nominalWidthMm: 0.6, laidWidthMm: 0.3 },
         { label: '08', nominalWidthMm: 0.8, laidWidthMm: 0.4 },
@@ -403,7 +390,6 @@
     'sakura-gelly-roll-stardust': {
       id: 'sakura-gelly-roll-stardust', label: 'Gelly Roll Stardust', short: 'Stardust', brand: 'Sakura',
       inkClass: 'glitter-gel', tipShape: 'ball', effect: 'glitter', confidence: 0.4,
-      sizesSource: 'unsharpen sparkle scan',
       sizes: [
         { label: 'fine', nominalWidthMm: 0.8, laidWidthMm: 0.42 },
         { label: '10 (bold)', nominalWidthMm: 1, laidWidthMm: 0.5 },
@@ -429,7 +415,6 @@
     'uni-posca-pc1mr': {
       id: 'uni-posca-pc1mr', label: 'Posca paint marker', short: 'Posca', brand: 'Uni',
       inkClass: 'paint-marker', tipShape: 'round', effect: 'plain', confidence: 0.6,
-      sizesSource: 'penplotterartwork.com',
       sizes: [
         { label: 'PC-1MR (0.7 pin)', nominalWidthMm: 0.7, laidWidthMm: 0.8 },
         { label: 'PC-1M (0.7-1.0 bullet)', nominalWidthMm: 0.85, laidWidthMm: 1 },
@@ -753,7 +738,6 @@
     'glow-phosphorescent-marker': {
       id: 'glow-phosphorescent-marker', label: 'Glow-in-the-dark marker', short: 'Glow marker', brand: 'Generic',
       inkClass: 'paint-marker', tipShape: 'round', effect: 'glow', confidence: 0.25,
-      sizesSource: 'unsourced estimate',
       sizes: [
         { label: 'fine nib', nominalWidthMm: 0.8, laidWidthMm: 0.9 },
       ],
