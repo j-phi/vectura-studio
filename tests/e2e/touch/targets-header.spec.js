@@ -44,7 +44,8 @@ async function probeAll(page, selector) {
 // enabled item, so the box itself must be at least 44 px tall.
 async function disabledBoxes(page) {
   return page.evaluate((MIN) => [...document.querySelectorAll('.top-menu-panel.open .top-menu-item')]
-    .filter((e) => e.disabled || e.hasAttribute('disabled'))
+    // An item in a closed submenu (Open Recent's empty row) has no box at all and is not a target.
+    .filter((e) => (e.disabled || e.hasAttribute('disabled')) && e.checkVisibility())
     .map((e) => ({ id: e.id, h: Math.round(e.getBoundingClientRect().height) }))
     .filter((x) => x.h < MIN).map((x) => `${x.id} (disabled) box ${x.h}`), MIN);
 }

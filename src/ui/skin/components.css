@@ -14335,9 +14335,9 @@ html.kb-open .export-settings-scroll {
   [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch-wrapper { padding: 11px; }
   [data-ui-skin] .pen-item .pen-swatch .pen-color::-webkit-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
   [data-ui-skin] .pen-item .pen-swatch .pen-color::-moz-color-swatch { border: 1px solid var(--ui-border-hi); border-radius: 50%; }
-  [data-ui-skin] .pen-item .pen-width { order: 5; flex: 1 1 0; min-width: 0; width: auto; margin: 0 var(--spacing-sm, 8px); }
+  [data-ui-skin] .pen-item .pen-width { order: 5; flex: 1 1 0; min-width: var(--touch-target-min); width: auto; margin: 0 var(--spacing-sm, 8px); }
   [data-ui-skin] .pen-item .pen-width-value {
-    order: 6; flex: 0 0 auto; width: auto; min-width: calc(6ch + 2 * var(--spacing-sm, 8px));
+    order: 6; flex: 0 0 auto; width: calc(6ch + 2 * var(--spacing-sm, 8px)); min-width: 0;
     min-height: var(--touch-target-min); padding: 0 var(--spacing-sm, 8px);
   }
   /* One shared row background: the name input and value chip drop their own fill (the skin gives
@@ -17357,6 +17357,13 @@ body.touch-ui .paper-import-footer button {
 .default-paper-block .default-paper-apply {
   align-self: flex-start;
 }
+/* Touch: the label that carries the Info button is one finger tall (the button's centred 44 px ::before stays inside it),
+ * and the select takes the whole row so the longest paper name is not clipped beside the colour chip. */
+body.touch-ui .default-paper-block > .ctrl-lbl:has(> .info-btn) {
+  display: flex; align-items: center; min-height: var(--touch-target-min);
+}
+body.touch-ui .default-paper-controls { flex-wrap: wrap; }
+body.touch-ui .default-paper-controls .ctrl-sel-wrap { flex: 1 1 100%; }
 
 /* ============================================================================
  * Start Page (P0 shell) — overlay above the editor. `.sp-` prefix.
@@ -17582,6 +17589,7 @@ body.phone-layout #top-menubar .top-menu-recent .recent-name { max-width: 55vw; 
 }
 .wordmark-btn:hover { filter: brightness(1.15); }
 .wordmark-btn:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 3px; }
+@media (pointer: coarse) { .wordmark-btn { min-height: var(--touch-target-min, 44px); display: inline-flex; align-items: center; } }
 @media (pointer: coarse) {
   .sp-chips button { height: 44px; }
   .sp-primary, .sp-line { height: 48px; }
