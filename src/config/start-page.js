@@ -34,6 +34,10 @@
     coverFrame: null,
     coverFill: '',
     communityNotify: false,
+    // Per-slot cover choices set in Start Page settings. coverArt: a piece id per style ('' = automatic; mosaic is per
+    // letter). coverColors: a stored colorway per slot (null = follow the page colorway).
+    coverArt: Object.freeze({ mosaic: Object.freeze([]), word: '', band: '' }),
+    coverColors: Object.freeze({ mosaic: Object.freeze([]), word: null, band: null }),
   });
 
   const ENUMS = Object.freeze({
@@ -89,6 +93,35 @@
     if (cx != null && cy != null) { out.cx = Math.round(cx * 1000) / 1000; out.cy = Math.round(cy * 1000) / 1000; }
     return Object.keys(out).length ? out : null;
   };
+  const SLOTS_MAX = 40;
+  const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+  const KEY_RE = /^[\w:.\-|#]{1,80}$/;
+  const artId = (v) => (typeof v === 'string' && ID_RE.test(v) ? v : '');
+  const trimTail = (list, empty) => { const out = list.slice(); while (out.length && out[out.length - 1] === empty) out.pop(); return out; };
+  const colorway = (v) => {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    if (![v.paper, v.ink].every((c) => typeof c === 'string' && HEX_RE.test(c))) return null;
+    const ink = v.ink.toLowerCase();
+    const textInk = typeof v.textInk === 'string' && HEX_RE.test(v.textInk) ? v.textInk.toLowerCase() : ink;
+    return {
+      key: typeof v.key === 'string' && KEY_RE.test(v.key) ? v.key : 'custom',
+      paper: v.paper.toLowerCase(),
+      ink,
+      ink2: typeof v.ink2 === 'string' && HEX_RE.test(v.ink2) ? v.ink2.toLowerCase() : null,
+      textInk,
+      paperName: text(v.paperName, 60, ''),
+      penName: text(v.penName, 60, ''),
+    };
+  };
+  const objectOf = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const coverArt = (v) => {
+    const o = objectOf(v);
+    return { mosaic: trimTail((Array.isArray(o.mosaic) ? o.mosaic : []).slice(0, SLOTS_MAX).map(artId), ''), word: artId(o.word), band: artId(o.band) };
+  };
+  const coverColors = (v) => {
+    const o = objectOf(v);
+    return { mosaic: trimTail((Array.isArray(o.mosaic) ? o.mosaic : []).slice(0, SLOTS_MAX).map(colorway), null), word: colorway(o.word), band: colorway(o.band) };
+  };
   const oneOf = (list, value, fallback) => (list.includes(value) ? value : fallback);
   const bool = (value, fallback) => (value === undefined ? fallback : Boolean(value));
 
@@ -124,6 +157,8 @@
       coverFrame: frame(pick('coverFrame')),
       coverFill: typeof pick('coverFill') === 'string' && FILL_RE.test(pick('coverFill')) ? pick('coverFill') : DEFAULTS.coverFill,
       communityNotify: bool(pick('communityNotify'), DEFAULTS.communityNotify),
+      coverArt: coverArt(pick('coverArt')),
+      coverColors: coverColors(pick('coverColors')),
     };
   };
 
