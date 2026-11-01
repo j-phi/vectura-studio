@@ -6,6 +6,9 @@ The format is intentionally human-curated with an `Unreleased` section that coll
 
 ## Unreleased
 
+### Fixed: Pressing on a shape's outline didn't start a drag
+- With the Selection tool, pressing exactly on a shape's outline at the edge of its bounding box (for example the left edge of a rectangle) now selects it and starts a move, like pressing just inside. Resize and rotate handles still take priority.
+
 ### Added: Developer Mode can set the global cover typeface and size
 - There is no separate admin mode, so the global default now lives behind Developer Mode. With it on, Start Page settings show a dev-only row with "Lock for everyone" and "Set as global default…". The button rewrites the `ADMIN_BUILTIN` block in `src/config/start-page.js` (pick the file once; falls back to copying the block). Commit the file to ship it. While Developer Mode is on, the lock does not hide your own pick.
 
