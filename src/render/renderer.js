@@ -41,6 +41,7 @@
     ROTATE_TRIANGLE_UNDERLAY_HALF_WIDTH = 15.6,
     ROTATE_TRIANGLE_TIP_LENGTH = 10.8,
     ROTATE_TRIANGLE_UNDERLAY_TIP_LENGTH = 13.8,
+    BOUNDS_PRESS_SLOP_PX = 1,
   } = UI_CONSTANTS;
   const makeShapeReticleCursor = (color = 'white') => {
     const svg =
@@ -8001,11 +8002,13 @@
         const sceneBoundsDragSuppressed = updatedSelected.length === 1 && updatedSelected[0].type === 'scene3d';
         // TUX-019: a finger cannot hit a zero-height line or a 1 px outline exactly, so touch also
         // arms the move when the press hit (findLayerAtPoint tolerance) a layer in the selection.
-        // Mouse and pen also arm the move on a stroke hit: a press exactly on the outline at the
-        // extreme edge of the bbox is outside the strict bounds test, yet findLayerAtPoint already
-        // picked that stroke (screen-px tolerance), so it must drag like a press just inside.
-        const touchHitSelected = !!topLayer && updatedSelected.some(l => l.id === topLayer.id);
-        if (bounds && !sceneBoundsDragSuppressed && (this.pointInBounds(world, bounds) || touchHitSelected) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
+        // Mouse and pen stay strict on thin objects but get a ~1 screen-px slop so the exact
+        // outline pixel at the extreme bbox edge still drags (config: BOUNDS_PRESS_SLOP_PX).
+        const touchHitSelected = this.isTouchPointer(e) && !!topLayer && updatedSelected.some(l => l.id === topLayer.id);
+        const slop = this.isTouchPointer(e) ? 0 : BOUNDS_PRESS_SLOP_PX / (this.scale || 1);
+        const inBoundsWithSlop = bounds && (this.pointInBounds(world, bounds)
+          || this.pointInBounds(world, { ...bounds, minX: bounds.minX - slop, maxX: bounds.maxX + slop, minY: bounds.minY - slop, maxY: bounds.maxY + slop }));
+        if (bounds && !sceneBoundsDragSuppressed && (inBoundsWithSlop || touchHitSelected) && !updatedSelected.some(l => this.isLayerLocked?.(l.id))) {
           if (this.isTouchPointer(e)) {
             // TUX-019: touch waits for the drag slop, not a hold. move() promotes this into
             // the same state the mouse sets here; a lift under the slop is a tap.
