@@ -1970,10 +1970,11 @@
     }
 
     function _lvlDupSel() {
-      if (this.app.pushHistory) this.app.pushHistory();
-      [...(this.app.renderer?.selectedLayerIds || [])].forEach((id) => this.app.engine.duplicateLayer(id));
-      this.renderLayers();
-      this.app.render();
+      const ids = new Set(this.app.renderer?.selectedLayerIds || []);
+      const targets = this.app.engine.layers.filter((l) => ids.has(l.id));
+      // duplicateLayers drops targets whose ancestor is also selected (the
+      // ancestor's copy already carries its subtree) and pushes history.
+      this.duplicateLayers(targets, { select: false });
     }
 
     function _lvlExpandSel() {
@@ -2539,19 +2540,17 @@
       const dup = this.app.engine.duplicateLayer(layer.id);
       if (dup) {
         duplicates.push(dup);
-        if (dup.isGroup) {
-          const getDesc = (pid) => {
-            const out = [];
-            this.app.engine.layers.forEach(l => {
-              if (l.parentId === pid) {
-                out.push(l);
-                out.push(...getDesc(l.id));
-              }
-            });
-            return out;
-          };
-          duplicateDescendants.push(...getDesc(dup.id));
-        }
+        const getDesc = (pid) => {
+          const out = [];
+          this.app.engine.layers.forEach(l => {
+            if (l.parentId === pid) {
+              out.push(l);
+              out.push(...getDesc(l.id));
+            }
+          });
+          return out;
+        };
+        duplicateDescendants.push(...getDesc(dup.id));
       }
     });
 
